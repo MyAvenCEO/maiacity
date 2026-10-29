@@ -2751,7 +2751,7 @@ impl Shared {
         // A real browser task boundary lets pending page messages register foreground
         // work; immediately-ready Rust futures alone cannot yield the worker event loop.
         #[cfg(target_arch = "wasm32")]
-        if class == lab_schedule::Class::Background { time::sleep(Duration::ZERO).await; }
+        if class == lab_schedule::Class::Background { self.give_way().await; }
         let (what, asked) = (std::any::type_name_of_val(&f), Instant::now());
         let turn = self.lab_schedule.acquire(class).await;
         let shared = self.clone();
@@ -2824,7 +2824,7 @@ impl Shared {
             let began = Instant::now();
             let out = work();
             if began.elapsed() > LONG_TURN {
-                time::sleep(Duration::ZERO).await;
+                self.give_way().await;
             }
             Ok(out)
         }
@@ -2844,7 +2844,7 @@ impl Shared {
         f: impl FnOnce(&Lab, SignerId) -> T + Send + 'static,
     ) -> T {
         #[cfg(target_arch = "wasm32")]
-        if class == lab_schedule::Class::Background { time::sleep(Duration::ZERO).await; }
+        if class == lab_schedule::Class::Background { self.give_way().await; }
         let (what, asked) = (std::any::type_name_of_val(&f), Instant::now());
         let turn = self.lab_schedule.acquire(class).await;
         let shared = self.clone();
@@ -2862,7 +2862,7 @@ impl Shared {
             let began = Instant::now();
             let out = work();
             if began.elapsed() > LONG_TURN {
-                time::sleep(Duration::ZERO).await;
+                self.give_way().await;
             }
             out
         }
@@ -2880,6 +2880,17 @@ impl Shared {
         let asked = Instant::now();
         let lab = self.lab.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         HeldLab { lab, _timed: Timed::new(&self.lab_turns, lab_schedule::place(at), asked) }
+    }
+
+    /// Lets a page's worker run its event loop once (its packets, the page's messages), timed among its Lab's turns as
+    /// "worker away": how long the worker was gone before this task ran again. A long one with little Lab work held
+    /// meanwhile is the worker held by something else, or not run at all (fresh8, 2026-10-29: 239 s of these on one
+    /// page, 9 s of timed Lab work).
+    #[cfg(target_arch = "wasm32")]
+    async fn give_way(&self) {
+        let away = Instant::now();
+        time::sleep(Duration::ZERO).await;
+        self.lab_turns.took("worker away", away.elapsed().as_millis() as u64, 0);
     }
 
     /// Its Lab, for a turn that times itself (`Timed`).
@@ -3672,7 +3683,7 @@ impl Shared {
         let activity = self.admit()?;
         let _checking = self.receive_checking.clone().lock_owned().await;
         let preparation = self.read(move |lab, me| lab.prepare_receive(me, edits)).await;
-        let prepared = preparation.check_cooperatively(|| time::sleep(Duration::ZERO)).await;
+        let prepared = preparation.check_cooperatively(|| self.give_way()).await;
         Ok((prepared, permit, activity, owner))
     }
 

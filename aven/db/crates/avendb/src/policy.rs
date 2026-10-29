@@ -4559,11 +4559,26 @@ pub fn replay_on(was: Replay, edits: &[Edit], held: usize) -> Replay {
     replay_on_why(was, edits, held).0
 }
 
-/// `replay_on`, and how it went: `Why::Whole` where it replayed every edit again, saying why.
+/// `replay_on`, and how it went: `Why::Whole` where it replayed every edit again, saying why. Where it can't step on,
+/// it replays from the rung or mark before the first new edit to the end in one go (`rewind`), as a catch-up's steps do
+/// a slice at a time (`Lab::step_replay`), and every edit only where that can't be: a turn that needs the replay now
+/// costs the distance back, not the log (a fresh browser replayed every edit five times in 24 s of its turns, 6.6 s,
+/// fresh8 2026-10-29).
 pub fn replay_on_why(was: Replay, edits: &[Edit], held: usize) -> (Replay, Why) {
     match replay_on_or(was, edits, held, usize::MAX) {
         Ok(stepped) => stepped,
-        Err((_, why)) => (replay(edits), Why::Whole(why)),
+        Err((Some(mut was), why)) => match rewind(&mut was, edits, held) {
+            Ok(mut run) => {
+                let n = run.of();
+                run.step(&was, &edits[..n], usize::MAX);
+                match run.finish(was, edits) {
+                    Ok(replayed) => (replayed, Why::Rung),
+                    Err((_, why)) => (replay(edits), Why::Whole(why)),
+                }
+            }
+            Err(_) => (replay(edits), Why::Whole(why)),
+        },
+        Err((None, why)) => (replay(edits), Why::Whole(why)),
     }
 }
 

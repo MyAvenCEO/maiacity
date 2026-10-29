@@ -1189,6 +1189,11 @@ struct Store {
     /// The boxes it tried with the key they are to and that didn't open to their key, each by the edit it is of and
     /// which of its boxes it is (`IndexedBox`): tried once, not again at every refresh.
     unopened: HashSet<(EditId, usize)>,
+    /// The boxes to an entry's key it derived that key for from none of the audience keys it held then, each with the
+    /// audience it tried and how many of its keys it held (`box_audience`): tried again once that changed, not at every
+    /// refresh. A fresh browser looked at each of thousands of such boxes with each of its audience's keys at every
+    /// step, 1.4 s a step (fresh8, 2026-10-29).
+    underived: HashMap<(EditId, usize), (Option<KeyName>, usize)>,
     /// The bodies of the writes it opened, each opened as it is asked for where its stored view says it opened it
     /// (`Bodies`), and the writes whose bodies never open: garbled under the key they name.
     bodies: Bodies,
@@ -1348,6 +1353,7 @@ impl Default for Store {
             slices: HashMap::new(),
             unreadable: HashSet::new(),
             unopened: HashSet::new(),
+            underived: HashMap::new(),
             bodies: Bodies::default(),
             spoilt: HashSet::new(),
             readings: Readings::default(),
@@ -1504,6 +1510,7 @@ impl Store {
         self.slices.clear();
         self.unreadable.clear();
         self.unopened.clear();
+        self.underived.clear();
         self.bodies.clear();
         self.files_at = OnceLock::new();
         self.spoilt.clear();
@@ -7402,11 +7409,24 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
                 // a box to an entry's key, a link of its earlier stay's, derives that key where it is to open it
                 Recipient::Key { name: to, id: under } => match store.keys.get(&under, to) {
                     Some(k) => Some(k.clone()),
-                    None => entry_key_of(&store.keys, &store.replay.state, to, under, None).map(|(k, ..)| {
-                        store.perf.count("keys derived for a body or box", 1);
-                        more |= store.keys.insert(to, k.clone());
-                        k
-                    }),
+                    None => {
+                        let tried = box_audience(&store.keys, &store.replay.state, to);
+                        if store.underived.get(&(b.of, b.slot)) == Some(&tried) {
+                            continue;
+                        }
+                        match entry_key_of(&store.keys, &store.replay.state, to, under, None) {
+                            Some((k, ..)) => {
+                                store.perf.count("keys derived for a body or box", 1);
+                                more |= store.keys.insert(to, k.clone());
+                                Some(k)
+                            }
+                            None => {
+                                store.perf.count("keys: boxes underived", 1);
+                                store.underived.insert((b.of, b.slot), tried);
+                                None
+                            }
+                        }
+                    }
                 },
             };
             let Some(with) = with else { continue };
@@ -7502,15 +7522,29 @@ type NowKeys = HashMap<(AudienceId, u64), Vec<(EntryId, Option<EditId>)>>;
 /// (65 at 32,000 edits, 58 ms a step). An author writes under several audiences, its vault's and a coop's, each its own
 /// key: one hint for all of them missed at nearly every body (2026-10-28, the iPhone-size unlock).
 fn entry_key_of(keys: &Keyring, st: &State, name: KeyName, id: KeyId, by: Option<SignerId>) -> Option<(Secret, KeyName, KeyId)> {
-    let KeyName::Entry(e, s, g) = name else { return None };
-    let en = st.entry(e)?;
-    let audience = KeyName::Scoped(KeyFam::Audience(en.vault, en.stay_audience(s)?), g);
+    let KeyName::Entry(e, s, _) = name else { return None };
+    let audience = entry_audience(st, name)?;
     let hint = by.and_then(|b| keys.derived_by.get(&(b, audience)));
     let hinted = hint.and_then(|h| keys.by_id.get(h)).map(|(_, a)| a);
     hinted.into_iter().chain(keys.held(audience)).find_map(|a| {
         let k = keys::entry_key(a, e, s);
         (k.id() == id).then(|| (k, audience, a.id()))
     })
+}
+
+/// The audience key name an entry key `name` derives from (`entry_key_of`): its entry's audience in its stay, at its
+/// epoch; none where `name` is no entry key, or its entry or stay is not in `st`.
+fn entry_audience(st: &State, name: KeyName) -> Option<KeyName> {
+    let KeyName::Entry(e, s, g) = name else { return None };
+    let en = st.entry(e)?;
+    Some(KeyName::Scoped(KeyFam::Audience(en.vault, en.stay_audience(s)?), g))
+}
+
+/// What deriving entry key `name` from the audience keys held tries (`entry_key_of`, unhinted): the audience, and how
+/// many of its keys `keys` holds. Where it is as it was, a derivation that found none finds none again.
+fn box_audience(keys: &Keyring, st: &State, name: KeyName) -> (Option<KeyName>, usize) {
+    let audience = entry_audience(st, name);
+    (audience, audience.map_or(0, |a| keys.by_name.get(&a).map_or(0, Vec::len)))
 }
 
 /// The entries whose stays may have changed since device's store `store` last derived its entry keys (`derive`): those
