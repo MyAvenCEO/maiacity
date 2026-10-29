@@ -303,14 +303,50 @@ async fn an_edit_whose_signatures_fail_brings_a_head_of_the_whole_log() {
     node.shutdown().await.expect("it stops");
     drop(node);
     let after = files(dir.path());
-    // all but the slots, kept in place, which hold no history
-    for (name, bytes) in before.iter().filter(|(name, _)| !name.contains("/slots/")) {
-        assert_eq!(after.get(name), Some(bytes), "{name} stays as it was");
+    // what holds its history stays as it was: the rest is what its device worked out, which a derivation of the log it
+    // starts from replaces
+    let held = history(&before);
+    assert!(held.keys().any(|name| name.contains("/blobs/")), "the blobs its journal names are of it: {:?}", held.keys());
+    for (name, bytes) in held {
+        assert_eq!(after.get(&name), Some(&bytes), "{name} stays as it was");
     }
     assert!(after.contains_key(&format!("g{FLOOR}/heads/0000000000000001")), "a head of the whole log");
     let (node, _, _) = mac(dir.path()).await;
     assert_eq!(node.read(|lab, me| lab.log(me).ids().to_vec()).await, ids, "from which the Mac starts again");
     node.shutdown().await.expect("it stops");
+}
+
+/// What of a shelf's `files` holds its device's history (`avendb_net::edits`): its journal entries and heads, and the
+/// blobs they name, each pack of edits and McEliece key, with their outboards. The rest holds none: its slots, and the
+/// blobs only what its device worked out names (an index's pages, the packs of its kept showings and query views),
+/// which go once a newer derivation names them no more.
+fn history(files: &BTreeMap<String, Vec<u8>>) -> BTreeMap<String, Vec<u8>> {
+    let generation = format!("g{FLOOR}/");
+    let blobs = |bytes: &[u8], at: usize| {
+        let n = u32::from_be_bytes(bytes[at..at + 4].try_into().expect("4 bytes")) as usize;
+        let named: Vec<String> = (0..n).map(|i| iroh_blobs::Hash::from_bytes(bytes[at + 4 + i * 40..at + 36 + i * 40].try_into().expect("32 bytes")).to_hex()).collect();
+        (named, at + 4 + n * 40)
+    };
+    let mut named = Vec::new();
+    for (name, bytes) in files {
+        let Some(name) = name.strip_prefix(&generation) else { continue };
+        if name.starts_with("journal/") {
+            // after its header, its keys
+            named.extend(blobs(bytes, b"avenDB journal 1\n".len()).0);
+        } else if name.starts_with("heads/") {
+            // after its header and the journal entry it goes on from, its packs, then its keys
+            let (packs, at) = blobs(bytes, b"avenDB head 1\n".len() + 8);
+            named.extend(packs);
+            named.extend(blobs(bytes, at).0);
+        }
+    }
+    let held = |name: &str| {
+        name.strip_prefix(&generation).is_some_and(|n| {
+            n.starts_with("journal/") || n.starts_with("heads/")
+                || named.iter().any(|h| n == format!("blobs/{h}") || n == format!("outboards/{h}"))
+        })
+    };
+    files.iter().filter(|(name, _)| held(name)).map(|(n, b)| (n.clone(), b.clone())).collect()
 }
 
 /// The id of the last edit of journal entry `entry`: after its header, its keys, each 40 bytes (a BLAKE3 hash and a
