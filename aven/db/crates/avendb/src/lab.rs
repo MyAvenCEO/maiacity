@@ -128,7 +128,7 @@ mod query_coverage;
 use std::borrow::Cow;
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use rand_core::Rng as _;
@@ -1946,6 +1946,10 @@ pub struct Lab {
     /// The randomness of new keys, seals and nonces, which keeps nothing that draws again what it drew
     /// (`keys::SeededRng`).
     rng: SeededRng,
+    /// The nonce of the next pass a device signs (`api_pass`), counted on from a draw of its randomness as the Lab
+    /// opens: no two passes of a device are ever alike, though made in one second, by one Lab or by two of it opened
+    /// alike, so a service that takes each pass once takes every one. Atomic, as a pass is signed on a Lab held to read.
+    passes: AtomicU64,
     /// A Lab on a machine of its own (`with_entropy`, `split`): every key it makes draws from its randomness too, so
     /// that no two machines make the same keys under the same name.
     on_machine: bool,
@@ -2011,6 +2015,7 @@ impl Lab {
             stores: Stores::default(),
             made: 0,
             rng: SeededRng::new("lab randomness", entropy.as_ref().map_or(&[][..], |e| &e[..])),
+            passes: AtomicU64::new(0),
             on_machine: entropy.is_some(),
             spares: Spares::default(),
             offline: HashSet::new(),
@@ -2023,6 +2028,7 @@ impl Lab {
             batches: HashMap::new(),
             signing_events: HashMap::new(),
         };
+        lab.passes = AtomicU64::new(lab.rng.next_u64());
         lab.keep_spares(SPARES.load(Ordering::Relaxed));
         lab
     }
@@ -5480,6 +5486,7 @@ impl Lab {
             hand_keys: self.hand_keys.get(&d).map(|key| (d, key.clone())).into_iter().collect(),
             stores: Stores::from([(d, store)]),
             made: 0,
+            passes: AtomicU64::new(rng.next_u64()),
             rng,
             on_machine: true,
             spares,
@@ -5538,13 +5545,13 @@ impl Lab {
         Some(Statement { keys: k.keys(), checked, logs, files, sig })
     }
 
-    /// Device `d`'s pass to service `audience`, made now by the Lab's clock (`sign::ApiPass`): `None` while it is
-    /// locked.
+    /// Device `d`'s pass to service `audience`, made now by the Lab's clock under the Lab's next nonce
+    /// (`sign::ApiPass`): `None` while it is locked.
     pub fn api_pass(&self, d: SignerId, audience: &str) -> Option<ApiPass> {
         let Key::Device(k) = self.keys.get(&d)? else {
             return None;
         };
-        Some(k.api_pass(audience, self.now))
+        Some(k.api_pass(audience, self.now, self.passes.fetch_add(1, Ordering::Relaxed)))
     }
 
     /// What device `on`, the server of vault `home`, says of device `d` by its view and the cap groups it reads: the
