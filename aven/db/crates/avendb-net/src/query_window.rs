@@ -2,13 +2,12 @@
 //! of some labels (a type, a tag, a link), read from the shared index (`shared_index`, B1) and the tail of edits after
 //! its stamp, never from the log of what came before.
 //!
-//! The index is as current as the device's last settled save; the edits after it are of some entries alone
-//! (`Lab::shared_touched`). So the window is the window rule twice: the entries the tail names are taken out of what
+//! The index is as current as the device's last settled save; the entries whose rows changed since are those whose
+//! inputs did (`SharedIndex::changed`). So the window is the window rule twice: the entries the tail names are taken out of what
 //! the index lists and put back as their rows say now (`QW2_refill`: the index is read for `w` more than the entries the
 //! tail names, at most, as each may have left the window), and new entries come in by their creation (`QW1_append`).
-//! What it lists is what a scan of the rows every entry has now gives (`tests`). Where the tail is of another log (a
-//! key, a share) or the stamp is of no prefix of the log (a withdrawal), the index can't say: `None`, and the caller
-//! asks the engine.
+//! What it lists is what a scan of the rows every entry has now gives (`tests`), whatever edits came since (a key, a
+//! share, a withdrawal). Where a save steps the index on at every read, `None`, and the caller asks the engine.
 
 use std::cmp::Reverse;
 use std::collections::BTreeSet;
@@ -44,22 +43,19 @@ pub(crate) async fn window(
 ) -> io::Result<Option<Window>> {
     let locked = || lab.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     for _ in 0..4 {
-        let stamp = ix.stamp().await;
+        let (stamp, held) = ix.held();
         // the tail after the index, and the rows its entries have now, under one hold of the Lab
         let (tokens, tail, log_at) = {
             let lab = locked();
             let ids = lab.log(me).ids();
-            if ix.of_log(&lab, me) != Some(stamp) {
-                return Ok(None);
-            }
-            let Some(touched) = lab.shared_touched(me, stamp.at as usize) else { return Ok(None) };
+            let touched = SharedIndex::changed(&lab, me, stamp, &held);
             let tokens: BTreeSet<_> = lab.find_tokens(me, vault, labels).into_iter().collect();
             let tail: Vec<(EntryId, Option<avendb::index::shared::Of>)> =
                 touched.into_iter().map(|e| (e, lab.shared_of(me, e))).collect();
             (tokens, tail, ids.len())
         };
         let listed = ix.find(lab, me, vault, labels, before, w + tail.len()).await?;
-        if ix.stamp().await != stamp {
+        if ix.held().0 != stamp {
             // a save stepped the index on meanwhile: read again
             continue;
         }

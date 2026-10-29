@@ -27,6 +27,11 @@ state the node no longer holds.
   holds the same edits (`X4_same_root`), whatever it opened from (`ShelfIndex.I4_same_root`); a crash between the
   edits' save and the index's slot leaves the older slot, of a prefix of the log, which the node steps on again
   (`ShelfIndex.I3_crash`).
+- X5: where an entry's rows are a function of what they are worked out of (`Inputs`: a hash of its group's index keys
+  and one of everything else they read of it), the entries whose inputs differ between two states are entries that
+  cover every one whose rows differ (`X5_inputs_cover`), so stepping the index over them gives the index of the second
+  (`X5_step`), whatever edits came between: a key, a share, a schema, a log rewritten. The index keeps each entry's
+  inputs as a row of its own, owned by the entry, so a save compares them with the state's without the state before.
 -/
 
 namespace AvenDB.SharedIndex
@@ -194,5 +199,37 @@ theorem X4_same_root {R' : Type} (R : Rows S E K V) (build : Index K V → R') (
     (hcover : ∀ e, e ∉ touched → R.rows s e = R.rows s' e) (hevery : ∀ e, R.rows s' e ≠ [] → e ∈ every) :
     root build (step R s' (full R s) touched) = root build (step R s' empty every) := by
   rw [X1_step R s s' touched hcover, X2_rebuild R s' every hevery]
+
+/-- What each entry's rows are worked out of in a state, and the rows as a function of those inputs alone. -/
+structure Inputs (R : Rows S E K V) (I : Type) where
+  inputs : S → E → I
+  rowsOf : E → I → List (K × V)
+  factors : ∀ s e, R.rows s e = rowsOf e (inputs s e)
+
+/-- X5: an entry whose inputs are the same in two states has the same rows in both: the entries whose inputs differ
+    cover those whose rows differ. -/
+theorem X5_inputs_cover {I : Type} (R : Rows S E K V) (In : Inputs R I) (s s' : S) (touched : List E)
+    (hin : ∀ e, e ∉ touched → In.inputs s e = In.inputs s' e) :
+    ∀ e, e ∉ touched → R.rows s e = R.rows s' e := by
+  intro e he
+  rw [In.factors s e, In.factors s' e, hin e he]
+
+/-- X5: stepping the index of `s` over the entries whose inputs differ in `s'` gives the index of `s'`. -/
+theorem X5_step {I : Type} (R : Rows S E K V) (In : Inputs R I) (s s' : S) (touched : List E)
+    (hin : ∀ e, e ∉ touched → In.inputs s e = In.inputs s' e) :
+    step R s' (full R s) touched = full R s' :=
+  X1_step R s s' touched (X5_inputs_cover R In s s' touched hin)
+
+/-- X5 with two levels of inputs, an entry's group's and its own: an entry whose two are as they were has the rows it
+    had. -/
+theorem X5_two_levels {G O : Type} (R : Rows S E K V) (group : S → E → G) (own : S → E → O)
+    (rowsOf : E → G × O → List (K × V)) (hf : ∀ s e, R.rows s e = rowsOf e (group s e, own s e))
+    (s s' : S) (touched : List E)
+    (hin : ∀ e, e ∉ touched → group s e = group s' e ∧ own s e = own s' e) :
+    step R s' (full R s) touched = full R s' :=
+  X5_step R ⟨fun s e => (group s e, own s e), rowsOf, hf⟩ s s' touched
+    (fun e he => by
+      show (group s e, own s e) = (group s' e, own s' e)
+      rw [(hin e he).1, (hin e he).2])
 
 end AvenDB.SharedIndex

@@ -138,22 +138,44 @@ impl Lab {
         self.held(d).view().entries().iter().map(|en| en.id).collect()
     }
 
-    /// The entries whose rows in device `d`'s shared index its edits from place `from` on may have changed: those they
-    /// are of, where each is of an entry's log; `None`, every entry, where one is of another log (a key, a share, a
-    /// vault's settings), which may change the rows of any, or where `from` is past its log.
-    pub fn shared_touched(&self, d: SignerId, from: usize) -> Option<BTreeSet<EntryId>> {
-        let log = &self.held(d).log;
-        let (edits, ids) = (log.edits().get(from..)?, &log.ids()[from..]);
-        let mut out = BTreeSet::new();
-        for (edit, id) in edits.iter().zip(ids) {
-            match crate::sync::log_of(edit, *id) {
-                Some(LogId::Entry(e)) => {
-                    out.insert(e);
+    /// What the rows of each entry device `d`'s edits say exist are worked out of (`shared_of`, `index::shared::Inputs`,
+    /// `SharedIndex.X5_inputs_cover`), as two hashes of what it keeps: its group's, of the index keys the rows of its
+    /// vault and audience are under (`row_keys`), worked out once for each; and its own, of everything else `shared_of`
+    /// reads of it: its vault, audience, creation and retags, which of their readings it holds, its creation's depth,
+    /// whether it sees and landed it, and the print of its showing, which says its writes, the bodies it opened of them,
+    /// its vault's lane and the cap groups (`show_items`), and so its item and history. A walk of its entries, each
+    /// hashed once, nothing worked out of their bodies: what a save compares with what its index holds, to put again
+    /// exactly the entries whose inputs changed, wherever the edits that changed them were.
+    pub fn shared_inputs(&self, d: SignerId) -> BTreeMap<EntryId, index::shared::Inputs> {
+        let store = self.held(d);
+        let (st, r) = (store.view(), &store.readings);
+        let mut groups: HashMap<(VaultId, AudienceId), [u8; 32]> = HashMap::new();
+        st.entries()
+            .iter()
+            .map(|en| {
+                let x = en.audience();
+                let group = *groups.entry((en.vault, x)).or_insert_with(|| {
+                    let mut h = Hasher::new("avenDB shared index group 1");
+                    for (epoch, k) in self.row_keys(d, en.vault, x) {
+                        h.update(&epoch.to_be_bytes()).update(&k.bytes());
+                    }
+                    h.finalize()
+                });
+                let mut h = Hasher::new("avenDB shared index entry 1");
+                h.update(&en.vault.0).update(&x.0).update(&en.creation.0);
+                let header = r.headers.get(&en.creation).map(|h| h.ty.as_str()).unwrap_or_default();
+                h.update(&(header.len() as u64).to_be_bytes()).update(header.as_bytes());
+                h.update(&[r.headers.contains_key(&en.creation) as u8, r.tags.contains_key(&en.creation) as u8]);
+                for w in &en.retags {
+                    h.update(&w.0).update(&[r.tags.contains_key(w) as u8]);
                 }
-                _ => return None,
-            }
-        }
-        Some(out)
+                let created = store.log.entry_write(en.creation).map(|c| c.depth);
+                h.update(&created.map_or([0xff; 8], u64::to_be_bytes));
+                h.update(&[self.sees(d, en.id) as u8, self.landed(d, en.id) as u8]);
+                h.update(&store.shown.print(&en.id).unwrap_or_default());
+                (en.id, index::shared::Inputs { own: h.finalize(), group })
+            })
+            .collect()
     }
 
     /// Device `d` worked out everything its edits say, its keys opened, read and shown: what its shared index is of
@@ -168,18 +190,25 @@ impl Lab {
     /// of those keys. Its epoch is the newest of theirs.
     fn row(&self, d: SignerId, en: &crate::policy::Entry) -> Option<Row> {
         let x = en.audience();
-        let mut fams = vec![KeyFam::Seed(en.vault)];
-        fams.extend(self.held(d).view().audience_shares(x).unwrap_or_default().iter().map(|c| KeyFam::Share(en.vault, *c)));
-        let mut keys: Vec<(u64, Secret)> = fams.into_iter().flat_map(|fam| self.index_keys_of(d, fam, 1)).collect();
-        // else the audience's own key: what a device reading it by no seed or share holds (a DM in a friend's vault, a
-        // coop's room read by a share of another), whose tokens a device finds by that key alone
-        if keys.is_empty() {
-            keys = self.index_keys_of(d, KeyFam::Audience(en.vault, x), 1);
-        }
+        let keys = self.row_keys(d, en.vault, x);
         let epoch = keys.iter().map(|(e, _)| *e).max()?;
         let labels = self.labels(d, en)?;
         let indexes: Vec<Secret> = keys.into_iter().map(|(_, k)| k).collect();
         Some(Row { entry: en.id, epoch, tokens: index::tokens(&indexes, x, &labels) })
+    }
+
+    /// The index keys the rows device `d` tells of the entries of vault `vault` in audience `x` are under, each with its
+    /// epoch: the newest it holds of the vault's seed and of each share of that audience; else the audience's own key,
+    /// what a device reading it by no seed or share holds (a DM in a friend's vault, a coop's room read by a share of
+    /// another), whose tokens a device finds by that key alone.
+    fn row_keys(&self, d: SignerId, vault: VaultId, x: AudienceId) -> Vec<(u64, Secret)> {
+        let mut fams = vec![KeyFam::Seed(vault)];
+        fams.extend(self.held(d).view().audience_shares(x).unwrap_or_default().iter().map(|c| KeyFam::Share(vault, *c)));
+        let keys: Vec<(u64, Secret)> = fams.into_iter().flat_map(|fam| self.index_keys_of(d, fam, 1)).collect();
+        if keys.is_empty() {
+            return self.index_keys_of(d, KeyFam::Audience(vault, x), 1);
+        }
+        keys
     }
 
     /// The rows device `d` tells of vault `vault`: one for each entry of it that `d` reads and has landed, smallest
@@ -435,10 +464,9 @@ mod tests {
         assert!(of.windows(2).all(|p| p[0].created < p[1].created));
         let room_of = w.lab.shared_of(mac, room).expect("the room's row");
         assert!(!room_of.tokens.iter().any(|t| tokens.contains(t)), "the room links to no room");
-        assert!(w.lab.shared_touched(mac, 0).is_none(), "a vault's own edits are of other logs");
-        let n = w.lab.log(mac).ids().len();
+        let was = w.lab.shared_inputs(mac);
         w.lab.tag(mac, alice, room, &["pinned"], &[]).unwrap();
-        assert_eq!(w.lab.shared_touched(mac, n), Some([room].into_iter().collect()));
+        assert_eq!(shared::differ(&was, &w.lab.shared_inputs(mac)), [room].into_iter().collect(), "its inputs alone changed");
         assert_ne!(w.lab.shared_of(mac, room), Some(room_of), "a tag added changes its rows");
     }
 

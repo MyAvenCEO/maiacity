@@ -3,13 +3,13 @@
 //! the tail of edits after its stamp, never from a walk of every entry the device holds.
 //!
 //! Each vault the device holds an index key of gives its newest posts older than the cursor, at most a page and one
-//! more (`P1_parts`: a post on the page of all is on the page of its own vault); the entries the tail names are taken
+//! more (`P1_parts`: a post on the page of all is on the page of its own vault); the entries whose rows changed since (`SharedIndex::changed`) are taken
 //! out of what the index lists and put back as the device holds them now, as a query view's window is
 //! (`query_window`). Of those candidates, the newest first, `engine::posts_among` reads in full only the posts it
 //! shows and one more, each checked again (landed, public, of type post, not deleted); a vault's profile and its files
 //! everyone may read, which a post's name and pictures read, come off the index too. Where a candidate isn't shown
 //! (a post of the owners alone) and a vault may hold more, it reads that vault further. Where the index can't say (no
-//! shelf, a tail of another log, a stamp of no prefix of the log), `None`: the caller asks the engine.
+//! shelf, a save stepping it on at every read), `None`: the caller asks the engine.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
@@ -53,13 +53,10 @@ pub(crate) async fn page(
     let locked = || lab.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut want = limit + 1;
     for _ in 0..8 {
-        let stamp = ix.stamp().await;
+        let (stamp, held) = ix.held();
         let plan = {
             let lab = locked();
-            if !lab.log(me).of_log(stamp.into()) {
-                return Ok(None);
-            }
-            let Some(named) = lab.shared_touched(me, stamp.at as usize) else { return Ok(None) };
+            let named = SharedIndex::changed(&lab, me, stamp, &held);
             let cursor = match after {
                 None => None,
                 Some(a) => match world::post_key(&lab, me, a) {
@@ -102,7 +99,7 @@ pub(crate) async fn page(
             let profiles = fresh(ix.find_by(profiles, None, MOST_ROWS).await?);
             rows.insert(*v, [files, profiles]);
         }
-        if ix.stamp().await != stamp {
+        if ix.held().0 != stamp {
             // a save stepped the index on meanwhile: read again
             continue;
         }
