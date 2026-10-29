@@ -181,3 +181,41 @@ fn a_device_takes_bare_edits_sent_before_their_checkpoint() {
     assert!(ids.iter().all(|id| held.contains(id)), "every covered edit held");
     assert!(lab.state(phone).acts_for(phone, alice));
 }
+
+/// A device asks for its entries' logs alone, as a view's asking does, of a server that holds them bare on Alice's
+/// checkpoint, a vault log's edit (A2, 2026-10-29): the reply carries the checkpoint beside them, and the device takes
+/// them. Cut to those logs without it, the device dropped them on every asking, "edits dropped: signatures" 2, 4, 6, 8,
+/// and their logs read as lacked for good, the asking never failing.
+#[test]
+fn a_reply_cut_to_some_logs_carries_the_checkpoint_its_bare_edits_stand_on() {
+    use avendb::cast::*;
+    use avendb::lab::ReplyScope;
+    use avendb::sync::LogId;
+    let mut w = world();
+    let h = handbook(&mut w);
+    w.lab.sync_all(1);
+    // Bob's Mac, as it was before the checkpoint, but for the two documents' logs, which it is to ask for
+    let d = w.mac_b;
+    let logs: std::collections::BTreeSet<LogId> = [LogId::Entry(h.welcome), LogId::Entry(h.onboarding)].into();
+    let outside = |s: &&Signed| avendb::sync::log_of(&s.edit, s.edit.id()).is_none_or(|l| !logs.contains(&l));
+    let before: Vec<Signed> = w.lab.backup(d).signed().iter().filter(outside).cloned().collect();
+    let covers: Vec<_> = w.lab.backup(w.mac_a).signed().iter().map(|s| s.edit.id()).collect();
+    w.lab.submit(w.mac_a, &[w.passkey_a], Action::Checkpoint { vault: w.alice, covers }).expect("Alice's checkpoint");
+    w.lab.sync_all(2);
+    let bare = |s: &Signed| s.sigs.iter().all(|x| x.pq.is_empty() && x.webauthn.is_none());
+    assert!(w.lab.backup(w.server).signed().iter().any(bare), "the server holds edits bare");
+    w.lab.restore_from(d, Backup::new(before, []));
+    let mut request = w.lab.request(d, w.server);
+    request.ask.haves.retain(|l, _| logs.contains(l));
+    logs.iter().for_each(|l| _ = request.ask.haves.entry(*l).or_default());
+    let (page, blobs, more) = w.lab.reply_in(w.server, d, &request, 1 << 20, &ReplyScope::Logs(logs.clone()));
+    assert!(!more, "one page");
+    assert!(page.iter().any(|s| matches!(s.edit.action, Action::Checkpoint { .. })), "the checkpoint comes along");
+    let blobs = blobs.iter().filter_map(|b| w.lab.blob(w.server, *b)).collect();
+    let sent: Vec<_> = page.iter().filter(|s| !matches!(s.edit.action, Action::Checkpoint { .. })).map(|s| s.edit.id()).collect();
+    assert!(!sent.is_empty());
+    w.lab.receive_whose_now(d, page, blobs, true);
+    let held: Vec<_> = w.lab.backup(d).signed().iter().map(|s| s.edit.id()).collect();
+    assert!(sent.iter().all(|id| held.contains(id)), "the device holds every edit of those logs it was sent");
+    assert!(w.lab.perf(d)["counts"]["edits dropped: signatures"].is_null(), "and dropped none");
+}
