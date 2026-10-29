@@ -606,7 +606,7 @@ function running(d) {
 	if (!mac) noteLifecycle('open');
 	useDevice({
 		// Interest disposal belongs to this device even while a replacement is opening. Never send stale work to it.
-		run: (/** @type {any} */ op) => op?.op === 'interest' || op?.op === 'demand' ? d.run(op) : device === d ? send(op) : Promise.reject(new Error('the device changed')),
+		run: (/** @type {any} */ op) => op?.op === 'interest' ? d.run(op) : device === d ? send(op) : Promise.reject(new Error('the device changed')),
 		read: api.readFile
 	});
 	if (holders) watch();

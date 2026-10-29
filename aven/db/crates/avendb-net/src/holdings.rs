@@ -303,6 +303,20 @@ impl Logs {
         theirs.heads.iter().any(|h| !self.closed.contains(h)) || theirs.waiting.iter().any(|w| !self.at.contains_key(w))
     }
 
+    /// Whether, of a log a device holds `theirs` of, this one lacks only keys: it holds every edit `theirs` names and
+    /// their whole past in the log, some waiting for a McEliece key they name (`edits` being this one's). Such a log is
+    /// still asked, for the key comes with that asking (`Lab::request`'s wants), but nothing a read shows waits on
+    /// it, nor does a removal: a key is needed only to seal to its owner.
+    pub(crate) fn lacks_only_keys(&self, edits: &[Edit], theirs: &Frontier) -> bool {
+        let mut stack: Vec<EditId> = theirs.heads.iter().chain(&theirs.waiting).filter(|h| !self.closed.contains(h)).copied().collect();
+        let mut seen: HashSet<EditId> = stack.iter().copied().collect();
+        while let Some(id) = stack.pop() {
+            let Some(&i) = self.at.get(&id) else { return false };
+            stack.extend(edits[i].parents.iter().filter(|p| !self.closed.contains(*p) && seen.insert(**p)));
+        }
+        true
+    }
+
     /// How many of this one's edits of log `l` a device that holds `theirs` of it holds, `edits` being this one's
     /// edits, and of how many: those that are one of its heads or waiting edits, or one its heads build on, as far as
     /// this one's edits show it. It holds all of them when it covers the log: when each head of this one's frontier is
@@ -541,6 +555,30 @@ mod tests {
         assert_eq!(logs.held(edits, &log, &logs.of[&log].frontier), (of, of), "the whole log holds all of it");
         let held = logs.held(edits, &log, welcome);
         assert_eq!(held, (of - 1, of), "the cut log doesn't cover the whole: it holds all but its first edit");
+    }
+
+    #[test]
+    fn a_log_lacking_only_a_key_is_lacked_for_the_key_alone() {
+        let mut w = world();
+        handbook(&mut w);
+        w.lab.sync_all(1);
+        let (edits, ids) = (w.lab.log(w.mac_b).edits(), w.lab.log(w.mac_b).ids());
+        let all = Logs::of(edits, ids, w.lab.size(w.mac_b), ALL);
+        let keyed = edits.iter().position(|e| !e.blobs().is_empty()).expect("an edit naming a key");
+        let key = edits[keyed].blobs()[0];
+        let log = log_of(&edits[keyed], ids[keyed]).expect("its log");
+        let theirs = &all.of[&log].frontier;
+        // the same edits, that key lacked: the log is lacked, for the key alone
+        let lacking = |k: &BlobId| *k != key;
+        let keyless = Logs::of(edits, ids, w.lab.size(w.mac_b), &lacking);
+        assert!(keyless.lacks(theirs), "a device that holds the key holds what this one lacks");
+        assert!(keyless.lacks_only_keys(edits, theirs), "and this one holds every edit of it");
+        assert!(!all.lacks(&keyless.of[&log].frontier), "the one with the key lacks nothing of it");
+        // the edit itself gone: an edit is lacked, not only a key
+        let rest: Vec<Edit> = edits.iter().enumerate().filter(|(i, _)| *i != keyed).map(|(_, e)| e.clone()).collect();
+        let rest_ids: Vec<EditId> = rest.iter().map(Edit::id).collect();
+        let cut = Logs::of(&rest, &rest_ids, (0, 0), ALL);
+        assert!(cut.lacks(theirs) && !cut.lacks_only_keys(&rest, theirs), "a missing edit is no key");
     }
 
     #[test]

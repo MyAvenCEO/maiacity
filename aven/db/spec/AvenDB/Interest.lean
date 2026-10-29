@@ -328,4 +328,71 @@ theorem yields_only_for_asked {α : Type} [DecidableEq α] (asked before now : L
   intro l hl
   simp [h l hl]
 
+/-! ## A change asks what it newly wants now, at once
+
+When the views' Interests change, the entries the change newly wants now (`newNow`) are asked at once of every live
+peer that holds more of them than the device (`asksNow`): alone, with only the rules they rest on, and outside the
+backlog's turn, so a view's own logs come before any bulk page. Each such peer is asked every one of them it holds more
+of (`asksNow_whole`); a peer is asked only what it holds more of (`asksNow_only_who_holds_more`) and only what the
+change newly wants now (`asksNow_only_new`): what was wanted now before was asked when it came to be. A change that
+wants nothing new now asks nobody (`unchanged_asks_nobody`). The same holds for the entries a `bring` names, an
+Interest of its own while it is asked, and for entries that came to wait for their key, asked as they come to wait.
+
+Rust: `avendb-net/src/lib.rs` (`Shared::change_interests`, `Shared::ask_waits`), `live.rs` (`Shared::ask_now`).
+-/
+
+/-- What a change of the views' now tier from `before` to `after` newly wants. -/
+def newNow {α : Type} [DecidableEq α] (before after : List α) : List α :=
+  after.filter (fun l => !before.contains l)
+
+/-- The askings a change makes: of each peer `p` of `peers`, the logs it newly wants now that `p` holds more of
+    (`more p`); a peer with none of them is asked nothing. -/
+def asksNow {α π : Type} [DecidableEq α] (more : π → α → Bool) (peers : List π) (before after : List α) :
+    List (π × List α) :=
+  (peers.map fun p => (p, (newNow before after).filter (more p))).filter (fun a => !a.2.isEmpty)
+
+theorem asksNow_only_who_holds_more {α π : Type} [DecidableEq α] (more : π → α → Bool) (peers : List π)
+    (before after : List α) (a : π × List α) (ha : a ∈ asksNow more peers before after) (l : α) (hl : l ∈ a.2) :
+    more a.1 l = true := by
+  unfold asksNow at ha
+  rw [List.mem_filter, List.mem_map] at ha
+  obtain ⟨⟨p, hp, rfl⟩, _⟩ := ha
+  exact (List.mem_filter.mp hl).2
+
+theorem asksNow_only_new {α π : Type} [DecidableEq α] (more : π → α → Bool) (peers : List π)
+    (before after : List α) (a : π × List α) (ha : a ∈ asksNow more peers before after) (l : α) (hl : l ∈ a.2) :
+    l ∉ before := by
+  unfold asksNow at ha
+  rw [List.mem_filter, List.mem_map] at ha
+  obtain ⟨⟨p, hp, rfl⟩, _⟩ := ha
+  have h := (List.mem_filter.mp (List.mem_filter.mp hl).1).2
+  simpa using h
+
+theorem asksNow_whole {α π : Type} [DecidableEq α] (more : π → α → Bool) (peers : List π)
+    (before after : List α) (p : π) (hp : p ∈ peers) (l : α) (hafter : l ∈ after) (hbefore : l ∉ before)
+    (hmore : more p l = true) : ∃ a ∈ asksNow more peers before after, a.1 = p ∧ l ∈ a.2 := by
+  have hl : l ∈ (newNow before after).filter (more p) :=
+    List.mem_filter.mpr ⟨List.mem_filter.mpr ⟨hafter, by simpa using hbefore⟩, hmore⟩
+  refine ⟨(p, (newNow before after).filter (more p)), ?_, rfl, hl⟩
+  unfold asksNow
+  rw [List.mem_filter, List.mem_map]
+  refine ⟨⟨p, hp, rfl⟩, ?_⟩
+  cases h : (newNow before after).filter (more p) with
+  | nil => rw [h] at hl; cases hl
+  | cons _ _ => rfl
+
+theorem unchanged_asks_nobody {α π : Type} [DecidableEq α] (more : π → α → Bool) (peers : List π)
+    (before after : List α) (h : ∀ l ∈ after, l ∈ before) : asksNow more peers before after = [] := by
+  have hnew : newNow before after = [] := by
+    unfold newNow
+    rw [List.filter_eq_nil_iff]
+    intro l hl
+    simp [h l hl]
+  unfold asksNow
+  rw [hnew, List.filter_eq_nil_iff]
+  intro a ha
+  rw [List.mem_map] at ha
+  obtain ⟨p, _, rfl⟩ := ha
+  simp
+
 end AvenDB.Interest

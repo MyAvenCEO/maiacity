@@ -43,28 +43,8 @@ const CATCHING_UP: Duration = Duration::from_secs(5);
 /// most.
 const HEARD: Duration = Duration::from_secs(3);
 
-/// The most vaults, or entries, one `bring` names.
+/// The most entries one `bring` names.
 const MOST_BROUGHT: usize = 64;
-
-/// What one `bring` names: vaults, whose entries it brings, or the logs of entries.
-#[derive(Clone)]
-enum Brought {
-    Vaults(BTreeSet<VaultId>),
-    Logs(BTreeSet<LogId>),
-}
-
-impl Brought {
-    fn len(&self) -> usize {
-        match self {
-            Brought::Vaults(v) => v.len(),
-            Brought::Logs(l) => l.len(),
-        }
-    }
-
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-}
 
 /// No ceremony at hand, as for an agent: an op its vault's owners approve answers `approve` and makes nothing
 /// (`Node::run`). A ceremony asked of it fails.
@@ -120,8 +100,8 @@ impl Node {
             _ if engine::brings(&op) => self.put(op, bytes).await?,
             Some("jobs") => json!({ "ok": self.jobs().to_json_for(crate::acting()) }),
             Some("follow") => self.follow(op).await?,
-            Some("bring") => self.bring_vaults(&op).await?,
-            Some("interest" | "demand") => self.view_interest(&op),
+            Some("bring") => self.bring_entries(&op).await?,
+            Some("interest") => self.view_interest(&op),
             Some("find") => self.find(&op).await?,
             Some("synced") => json!({ "ok": self.synced().await }),
             Some("network") => json!({ "ok": self.network().await }),
@@ -174,9 +154,9 @@ impl Node {
     /// `offline` as of the device's last current read, or `behind` with the logs its live peers announced that it lacks
     /// and that may change what it shows (`Shared::heard`, `engine::footprint`): the log of an entry it may pick, or
     /// of one the device can't place yet, its vault's own log, and any share's or audience's. A query's coverage counts
-    /// those logs too (`Coverage.lean` `answer`): complete only once none is behind. A read that is behind asks for
-    /// those logs first (`wanted`), so its scope arrives before the rest. No clock: the announcements and the holdings
-    /// decide. `touched`, which says what changed and shows nothing, is not stamped. A read looks the walk up
+    /// those logs too (`Coverage.lean` `answer`): complete only once none is behind. What comes first is the views'
+    /// Interests' to say, never a read's. No clock: the announcements and the holdings decide. `touched`, which says
+    /// what changed and shows nothing, is not stamped. A read looks the walk up
     /// (`Shared::heard`): it runs once per change of what the peers or the device hold, not once per read.
     async fn fresh_read(&self, op: Value) -> Value {
         let vault = op.get("vault").and_then(Value::as_str).and_then(VaultId::from_hex);
@@ -193,23 +173,20 @@ impl Node {
             None => self.read(move |lab, me| engine::read(lab, me, &op)).await,
         };
         if !stamped || answer.get("ok").is_none() { return answer; }
-        let (heard, matching, new) = self.shared.heard(vault, picks).await;
+        let (heard, matching, _) = self.shared.heard(vault, picks).await;
         if engine::coverage::reads_open(&answer) { engine::coverage::add_logs(&mut answer, matching.len()); }
         engine::coverage::add_freshness(&mut answer, heard, matching.len());
-        if new && heard.live > 0 && !matching.is_empty() {
-            self.shared.wanted.lock().expect("wanted").extend(matching.iter().filter(|l| matches!(l, LogId::Entry(_))));
-        }
         answer
     }
 
     /// `interest`: replace one mounted view's Interests (`interest.rs`, Lean `Interest.lean`), or with
-    /// `release: "all"` clear every view's, as The OS does when its page loads again. `demand`, the op before it,
-    /// stays one release as one Interest on screen now. Scheduling metadata, never a signed edit or a capability: it
-    /// orders what the node brings, and an unmount (no wants) clears it; no lease, no timer.
+    /// `release: "all"` clear every view's, as The OS does when its page loads again. Scheduling metadata, never a
+    /// signed edit or a capability: it orders what the node brings, what it newly wants now asked at once
+    /// (`Shared::change_interests`), and an unmount (no wants) clears it; no lease, no timer.
     fn view_interest(&self, op: &Value) -> Value {
         let bad = |why: &str| Refused::BadOp(why.to_string()).to_json();
         if op.get("release").and_then(Value::as_str) == Some("all") {
-            let released = self.shared.interests.lock().expect("interests").release_all();
+            let released = self.shared.change_interests(|interests| interests.release_all());
             self.shared.size.send_modify(|_| {});
             return json!({"ok": {"released": released}});
         }
@@ -234,31 +211,22 @@ impl Node {
                     .filter(|qs| qs.iter().all(|q| q.valid())),
             }
         };
-        let wants = if engine::name(op) == Some("demand") {
-            let Some(entries) = ids(op.get("entries")).filter(|_| op.get("entries").is_some()) else {
-                return bad("demand entries is an array of at most 512 64-character hex entry IDs");
-            };
-            let Some(queries) = queries(op.get("queries")) else { return bad("invalid discovery selectors") };
-            vec![crate::interest::Want { tier: crate::interest::Tier::Now, entries, queries }]
-        } else {
-            let Some(raw) = op.get("wants").and_then(Value::as_array).filter(|w| w.len() <= crate::interest::MOST_WANTS) else {
-                return bad("an interest's wants is an array of at most 32 wants");
-            };
-            let mut wants = vec![];
-            for w in raw {
-                let tier = w.get("tier").and_then(Value::as_str).and_then(crate::interest::Tier::parse);
-                let Some(tier) = tier else { return bad("a want's tier is now, next, later or idle") };
-                if w.as_object().is_some_and(|m| m.keys().any(|k| !["tier", "entries", "queries"].contains(&k.as_str()))) {
-                    return bad("a want holds a tier, entries and queries");
-                }
-                let Some(entries) = ids(w.get("entries")) else { return bad("a want's entries are 64-character hex entry IDs") };
-                let Some(queries) = queries(w.get("queries")) else { return bad("a want's queries are bounded positive-type selectors") };
-                wants.push(crate::interest::Want { tier, entries, queries });
-            }
-            wants
+        let Some(raw) = op.get("wants").and_then(Value::as_array).filter(|w| w.len() <= crate::interest::MOST_WANTS) else {
+            return bad("an interest's wants is an array of at most 32 wants");
         };
+        let mut wants = vec![];
+        for w in raw {
+            let tier = w.get("tier").and_then(Value::as_str).and_then(crate::interest::Tier::parse);
+            let Some(tier) = tier else { return bad("a want's tier is now, next, later or idle") };
+            if w.as_object().is_some_and(|m| m.keys().any(|k| !["tier", "entries", "queries"].contains(&k.as_str()))) {
+                return bad("a want holds a tier, entries and queries");
+            }
+            let Some(entries) = ids(w.get("entries")) else { return bad("a want's entries are 64-character hex entry IDs") };
+            let Some(queries) = queries(w.get("queries")) else { return bad("a want's queries are bounded positive-type selectors") };
+            wants.push(crate::interest::Want { tier, entries, queries });
+        }
         let scope = scope.to_ascii_lowercase();
-        let result = self.shared.interests.lock().expect("interests").replace(scope.clone(), revision, wants);
+        let result = self.shared.change_interests(|interests| interests.replace(scope.clone(), revision, wants));
         match result {
             Ok(accepted) => {
                 if accepted { self.shared.size.send_modify(|_| {}); self.shared.bootstrap_due.notify_one(); self.shared.schedule_discovery(scope); }
@@ -404,69 +372,21 @@ impl Node {
         Ok(made)
     }
 
-    /// `bring`, `{"op": "bring", "vaults": [...]}`: each peer its device knows (`Lab::peers`) asked at once for the
-    /// entries of the vaults it names (`Node::bring`), until one of them handed over all it holds of them, or each
-    /// failed or took longer than `BRING`. `{"ok": {"new", "peers", "reached"}}`: how many edits were new, how many
-    /// peers it asked, and whether one of them answered whole. So a page that reads a vault's code off its own device
-    /// reads what its peers hold of it, the server's, before the rest of what it syncs, and not what it held before; a
-    /// device that reaches none, offline, reads what it holds.
-    ///
-    /// `{"op": "bring", "entries": [...]}` brings the logs that are no entry's (`Node::bring` of no vault), then the
-    /// logs of the entries it names alone, the same way (`Node::bring_logs`), as a page that knows which entries it reads (a world's recipes, a timeline's clips) asks
-    /// for those and not their whole vault; and marks them wanted (`Node::want`), so that the node's own asking of its
-    /// peers takes them before other entries' if this bring reaches nobody.
-    async fn bring_vaults(&self, op: &Value) -> Result<Value> {
-        let named = |key: &str| op.get(key).and_then(Value::as_array).map(|xs| xs.iter().map(|x| x.as_str()).collect::<Vec<_>>());
-        let scope = match (named("vaults"), named("entries")) {
-            (Some(xs), None) => xs.into_iter().map(|x| x.and_then(VaultId::from_hex)).collect::<Option<BTreeSet<_>>>().map(Brought::Vaults),
-            (None, Some(xs)) => xs
-                .into_iter()
-                .map(|x| x.and_then(EntryId::from_hex).map(LogId::Entry))
-                .collect::<Option<BTreeSet<_>>>()
-                .map(Brought::Logs),
-            _ => None,
+    /// `bring`, `{"op": "bring", "entries": [...]}`: the entries a page reads now, set as an Interest of their own on
+    /// screen now and asked at once of every live peer that holds more of them, with the rules they rest on
+    /// (`Shared::ask_now`); the Interest goes once those askings ended. `{"ok": {"new", "peers", "reached"}}`: how
+    /// many edits were new, how many live peers it asked, and whether every one of them answered whole. A device that
+    /// reaches none, offline, reads what it holds.
+    async fn bring_entries(&self, op: &Value) -> Result<Value> {
+        let logs = op.get("entries").and_then(Value::as_array)
+            .and_then(|xs| xs.iter().map(|x| x.as_str().and_then(EntryId::from_hex).map(LogId::Entry)).collect::<Option<BTreeSet<_>>>())
+            .filter(|logs| !logs.is_empty() && logs.len() <= MOST_BROUGHT);
+        let Some(logs) = logs else {
+            return Ok(Refused::BadOp(format!("bring names 1 to {MOST_BROUGHT} entries, each its id, 64 hex digits")).to_json());
         };
-        let scope = match scope {
-            Some(s) if !s.is_empty() && s.len() <= MOST_BROUGHT => s,
-            _ => {
-                let why = format!(
-                    "bring names 1 to {MOST_BROUGHT} vaults, or 1 to {MOST_BROUGHT} entries, each its id, 64 hex digits"
-                );
-                return Ok(Refused::BadOp(why).to_json());
-            }
-        };
-        if let Brought::Logs(logs) = &scope {
-            // Scoped views register renewable demand separately; do not leave an additional one-shot priority
-            // behind after that view closes. Older clients omit this and retain their original behavior.
-            if op.get("prioritize").and_then(Value::as_bool) != Some(false) {
-                self.try_want(logs.iter().copied())?;
-            }
-        }
-        let peers = self.read(|lab, me| lab.peers(me)).await;
-        let mut endpoints: Vec<EndpointId> = peers.into_iter().filter_map(|(_, key)| EndpointId::from_bytes(&key).ok()).collect();
-        let known = endpoints.len();
-        endpoints.sort_unstable();
-        endpoints.dedup();
-        endpoints.sort_by_key(|&peer| (self.shared.live(peer).is_none(), self.shared.pulls.rank(peer)));
-        let delay = endpoints.first().map(|&peer| self.shared.pulls.hedge_after(peer)).unwrap_or_default();
-        let ask = |peer: EndpointId| {
-            let scope = scope.clone();
-            async move {
-                let started = Instant::now();
-                let answer = async { match scope {
-                    Brought::Vaults(vaults) => self.bring(peer, vaults).await,
-                    // the logs that are no entry's first, which say who may do what (a vault named by none), then
-                    // the entries' own
-                    Brought::Logs(logs) => Ok(self.bring(peer, BTreeSet::new()).await? + self.bring_logs(peer, logs).await?),
-                } }.await;
-                self.shared.pulls.observed(peer, started.elapsed(), answer.is_ok());
-                answer.ok()
-            }
-        };
-        // The same total deadline as the former all-peer race. Keep these futures in this task so an acting
-        // identity remains scoped across each peer's authorization pull and subsequent entry pull.
-        let brought = time::timeout(BRING, crate::pulls::hedged(endpoints, crate::pulls::FANOUT, delay, ask)).await.ok().flatten();
-        Ok(json!({ "ok": { "new": brought.unwrap_or(0), "peers": known, "reached": brought.is_some() } }))
+        let _activity = self.shared.admit()?;
+        let asked = self.shared.bring_now(logs).await;
+        Ok(json!({ "ok": { "new": asked.new, "peers": asked.peers, "reached": asked.whole } }))
     }
 
     /// `follow`: run, and every peer asked again if the vaults the device follows changed.
@@ -498,7 +418,7 @@ impl Node {
         endpoints.extend(self.shared.peers.lock().expect("peers").keys().copied());
         let mut endpoints: Vec<_> =
             endpoints.into_iter().map(|peer| (self.shared.live(peer).is_some(), peer)).collect();
-        endpoints.sort_by_key(|&(live, peer)| (!live, self.shared.pulls.rank(peer)));
+        endpoints.sort_by_key(|&(live, _)| !live);
         let caught = crate::pulls::CatchUp::new(endpoints.iter().filter(|(live, _)| *live).count());
         let asks = crate::pulls::each_bounded(endpoints, crate::pulls::CATCH_UP_FANOUT, |(live, peer)| {
             let caught = &caught;

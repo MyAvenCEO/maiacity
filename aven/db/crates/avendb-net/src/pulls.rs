@@ -11,16 +11,14 @@ use anyhow::{Result, anyhow};
 use avendb::id::{BlobId, EditId, SignerId};
 use avendb::sync::LogId;
 use iroh::EndpointId;
-use n0_future::time::{self, Duration, Instant};
-use n0_future::{FuturesUnordered, StreamExt as _, future};
+use n0_future::time::Duration;
+use n0_future::{FuturesUnordered, StreamExt as _};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 /// Four-MiB server pages fit here, with space for their framing. A larger legacy page or indivisible edit is
 /// retried under exclusive page admission with the existing protocol ceiling, never silently truncated.
 pub(crate) const PAGE_BYTES: usize = 8 << 20;
-pub(crate) const FANOUT: usize = if cfg!(target_arch = "wasm32") { 2 } else { 3 };
 pub(crate) const CATCH_UP_FANOUT: usize = if cfg!(target_arch = "wasm32") { 4 } else { 8 };
-const HISTORY: usize = 128;
 /// A small change on an established connection can bypass a backlog round. A full announcement or a large
 /// catch-up delta stays on that round; a peer cannot grow the interactive queue without bound.
 pub(crate) const LIVE_LOGS: usize = 16;
@@ -79,7 +77,6 @@ pub(crate) struct Budget {
     /// Pages a pull asks ahead of the one it needs next (S6), apart from `pages`: taken only if free, never waited for,
     /// so asking ahead never holds another pull's page back, and bounded, as each holds a page's memory.
     ahead: Arc<Semaphore>,
-    recent: Mutex<VecDeque<(EndpointId, Estimate)>>,
     live: Arc<Mutex<LiveBook>>,
     /// A background catch-up runs on for what live pulls left of their views (`live::LIVE_VIEW`): one at a time.
     pub(crate) view_behind: AtomicBool,
@@ -157,12 +154,6 @@ impl Readiness {
     }
 }
 
-#[derive(Clone, Copy)]
-struct Estimate {
-    micros: u64,
-    failed: bool,
-}
-
 impl Default for Budget {
     fn default() -> Self {
         if cfg!(target_arch = "wasm32") {
@@ -191,7 +182,6 @@ impl Budget {
             background_pages: Arc::new(Semaphore::new(pages.saturating_sub(1).max(1) as usize)),
             page_slots: pages,
             ahead: Arc::new(Semaphore::new(ahead)),
-            recent: Mutex::default(),
             live: Arc::default(),
             view_behind: AtomicBool::new(false),
             witnesses: Mutex::default(),
@@ -378,52 +368,7 @@ impl Budget {
         Some(LiveWork { book: self.live.clone(), peer, sequence })
     }
 
-    pub(crate) fn observed(&self, peer: EndpointId, elapsed: Duration, success: bool) {
-        let mut recent = self.recent.lock().expect("pull estimates");
-        let previous = recent
-            .iter()
-            .position(|(p, _)| *p == peer)
-            .and_then(|i| recent.remove(i))
-            .map(|(_, e)| e);
-        let micros = elapsed.as_micros().min(u64::MAX as u128) as u64;
-        let micros = match (previous, success) {
-            (Some(e), true) => e.micros.saturating_mul(3).saturating_add(micros) / 4,
-            (Some(e), false) => e.micros,
-            _ => micros,
-        };
-        recent.push_back((
-            peer,
-            Estimate {
-                micros,
-                failed: !success,
-            },
-        ));
-        while recent.len() > HISTORY {
-            recent.pop_front();
-        }
-    }
 
-    /// Live peers are ranked first by the caller, then recent successes and observed whole-bring latency. This
-    /// history is a routing hint, never evidence that a peer has a complete or authorized view.
-    pub(crate) fn rank(&self, peer: EndpointId) -> (bool, u64) {
-        self.recent
-            .lock()
-            .expect("pull estimates")
-            .iter()
-            .find(|(p, _)| *p == peer)
-            .map(|(_, e)| (e.failed, e.micros))
-            .unwrap_or((false, 500_000))
-    }
-
-    pub(crate) fn hedge_after(&self, peer: EndpointId) -> Duration {
-        let (_, micros) = self.rank(peer);
-        Duration::from_micros(
-            micros
-                .saturating_mul(3)
-                .saturating_div(2)
-                .clamp(250_000, 2_000_000),
-        )
-    }
 }
 
 /// The fewest pages a pull keeps in flight once its peer tells it where they end (`session::CUTS`): the one it takes
@@ -581,61 +526,10 @@ pub(crate) async fn each_bounded<I, F, Fut>(
     }
 }
 
-/// First complete successful candidate, with at most `width` requests alive. Start one, hedge a slow candidate
-/// after `delay`, and replace a failed candidate immediately. Dropping this future or finding a success cancels
-/// the remaining requests in the caller's task, preserving its task-local acting identity. The caller supplies
-/// one total deadline; sequential failures must not each restart it.
-pub(crate) async fn hedged<I, T, F, Fut>(
-    peers: impl IntoIterator<Item = I>,
-    width: usize,
-    delay: Duration,
-    mut ask: F,
-) -> Option<T>
-where
-    F: FnMut(I) -> Fut,
-    Fut: Future<Output = Option<T>>,
-{
-    assert!(width > 0);
-    let mut peers = peers.into_iter().peekable();
-    let mut active = FuturesUnordered::new();
-    let mut due = Instant::now();
-    loop {
-        if active.is_empty() {
-            active.push(ask(peers.next()?));
-            due = Instant::now() + delay;
-        }
-        enum Event<T> {
-            Answer(Option<T>),
-            Hedge,
-        }
-        let event = if active.len() < width && peers.peek().is_some() {
-            future::or(
-                async { Event::Answer(active.next().await.expect("an active request")) },
-                async {
-                    time::sleep(due.saturating_duration_since(Instant::now())).await;
-                    Event::Hedge
-                },
-            )
-            .await
-        } else {
-            Event::Answer(active.next().await.expect("an active request"))
-        };
-        match event {
-            Event::Answer(Some(answer)) => return Some(answer),
-            Event::Answer(None) | Event::Hedge => {
-                if let Some(peer) = peers.next() {
-                    active.push(ask(peer));
-                    due = Instant::now() + delay;
-                }
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use n0_future::{future, time};
 
     #[tokio::test]
     async fn admission_bounds_waiters_and_reserves_foreground_then_recovers_on_cancellation() {
@@ -782,98 +676,6 @@ mod tests {
         assert_eq!(budget.pages.available_permits(), budget.page_slots as usize);
     }
 
-    struct Live(Arc<AtomicUsize>);
-    impl Drop for Live {
-        fn drop(&mut self) {
-            self.0.fetch_sub(1, Ordering::SeqCst);
-        }
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn hedging_bounds_concurrency_replaces_failures_and_cancels_losers() {
-        let live = Arc::new(AtomicUsize::new(0));
-        let peak = Arc::new(AtomicUsize::new(0));
-        let started = Arc::new(Mutex::new(Vec::new()));
-        let start = Instant::now();
-        let answer = hedged(0..20, 3, Duration::from_millis(300), |peer| {
-            let (live, peak, started) = (live.clone(), peak.clone(), started.clone());
-            async move {
-                let now = live.fetch_add(1, Ordering::SeqCst) + 1;
-                let _live = Live(live);
-                peak.fetch_max(now, Ordering::SeqCst);
-                started.lock().unwrap().push((peer, start.elapsed()));
-                match peer {
-                    0 | 1 => {
-                        time::sleep(Duration::from_secs(20)).await;
-                        None
-                    }
-                    2 => None,
-                    3 => {
-                        time::sleep(Duration::from_millis(20)).await;
-                        Some(peer)
-                    }
-                    _ => panic!("no unnecessary peers"),
-                }
-            }
-        })
-        .await;
-        assert_eq!(answer, Some(3));
-        assert_eq!(peak.load(Ordering::SeqCst), 3);
-        assert_eq!(
-            live.load(Ordering::SeqCst),
-            0,
-            "the slower requests were cancelled"
-        );
-        let started = started.lock().unwrap();
-        assert_eq!(started[0], (0, Duration::ZERO));
-        assert_eq!(started[1], (1, Duration::from_millis(300)));
-        assert_eq!(
-            started[2].1, started[3].1,
-            "failure is replaced without another hedge wait"
-        );
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn a_fast_success_never_starts_a_hedge_and_all_failures_end() {
-        let count = AtomicUsize::new(0);
-        let answer = hedged(0..10, 2, Duration::from_secs(1), |peer| {
-            count.fetch_add(1, Ordering::SeqCst);
-            async move { Some(peer) }
-        })
-        .await;
-        assert_eq!((answer, count.load(Ordering::SeqCst)), (Some(0), 1));
-        assert_eq!(
-            hedged(0..10, 2, Duration::from_secs(1), |_| async {
-                None::<usize>
-            })
-            .await,
-            None
-        );
-        assert_eq!(
-            hedged(0..0, 2, Duration::from_secs(1), |_| async { Some(1) }).await,
-            None
-        );
-    }
-
-    #[test]
-    fn estimates_adapt_with_bounded_delay_and_bounded_history() {
-        let budget = Budget::default();
-        let peer = iroh::SecretKey::generate().public();
-        assert_eq!(budget.hedge_after(peer), Duration::from_millis(750));
-        budget.observed(peer, Duration::from_millis(20), true);
-        assert_eq!(budget.hedge_after(peer), Duration::from_millis(250));
-        budget.observed(peer, Duration::from_secs(30), false);
-        assert!(budget.rank(peer).0);
-        budget.observed(peer, Duration::from_secs(30), true);
-        assert!(!budget.rank(peer).0);
-        assert_eq!(budget.hedge_after(peer), Duration::from_secs(2));
-        for _ in 0..HISTORY {
-            budget.observed(iroh::SecretKey::generate().public(), Duration::ZERO, true);
-        }
-        assert_eq!(budget.recent.lock().unwrap().len(), HISTORY);
-        assert_eq!(budget.hedge_after(peer), Duration::from_millis(750));
-    }
-
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_saturated_node_refuses_removal_even_with_an_up_to_date_live_claim() {
         use crate::{Node, Options};
@@ -951,22 +753,6 @@ mod tests {
         assert!(report.ms >= report.wait_ms, "service time must include the entire first request: {report:?}");
         mac.shutdown().await.unwrap();
         phone.shutdown().await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn a_hedged_request_keeps_the_callers_acting_identity() {
-        let signer = avendb::id::SignerId::from_u64(987);
-        let answer = crate::ACTING
-            .scope(
-                signer,
-                hedged(0..3, 2, Duration::ZERO, |_| async {
-                    assert_eq!(crate::acting(), Some(signer));
-                    Some(1)
-                }),
-            )
-            .await;
-        assert_eq!(answer, Some(1));
-        assert_eq!(crate::acting(), None);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1158,6 +944,7 @@ mod tests {
 #[cfg(test)]
 mod live_queue_tests {
     use super::*;
+    use n0_future::future;
     use avendb::id::EntryId;
 
     fn log(n: u64) -> LogId { LogId::Entry(EntryId::from_u64(n)) }
@@ -1264,6 +1051,7 @@ mod live_queue_tests {
 #[cfg(test)]
 mod pipelined_tests {
     use super::*;
+    use n0_future::{future, time::{self, Instant}};
     use std::collections::BTreeSet;
 
     #[test]

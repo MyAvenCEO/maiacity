@@ -228,7 +228,7 @@ async fn a_live_hint_does_not_authorize_a_private_entry() {
     );
     alice
         .shared
-        .pull_live(bob.id(), sender, [LogId::Entry(secret)].into(), &mut super::LiveTiming::default())
+        .pull_live(bob.id(), sender, [LogId::Entry(secret)].into(), crate::pulls::LIVE_LOGS, &mut super::LiveTiming::default())
         .await
         .unwrap();
     assert!(
@@ -349,9 +349,8 @@ async fn an_active_type_query_discovers_existing_entries_without_unrelated_histo
     assert_eq!(initial["ok"]["rows"], serde_json::json!([]));
     // Local capability and lease acceptance are distinct; remote discovery is always incomplete.
     // Requester identity must be bound by the connection, never selected by this payload.
-    let ack = phone.op(serde_json::json!({"op":"demand", "scope":"ab".repeat(16),
-        "revision":1, "entries":[],
-        "queries":[{"vault":coop.to_hex(), "types":["active-document"]}]})).await.unwrap();
+    let ack = phone.op(serde_json::json!({"op":"interest", "scope":"ab".repeat(16), "revision":1,
+        "wants":[{"tier":"now", "queries":[{"vault":coop.to_hex(), "types":["active-document"]}]}]})).await.unwrap();
     assert_eq!(ack["ok"]["discovery_supported"], true);
     assert_eq!(ack["ok"]["discovery_complete"], false);
     let useful = time::timeout(Duration::from_secs(2), async {
@@ -459,8 +458,6 @@ async fn every_read_is_offline_behind_or_current_as_its_peers_say() {
         assert_eq!(answer["fresh"]["state"], "behind", "{answer}");
         assert!(answer["fresh"]["logs"].as_u64().unwrap() > 0, "{answer}");
     }
-    // a read that is behind asks for its scope first
-    assert!(!phone.shared.wanted.lock().unwrap().is_empty());
 
     drop(stalled);
     wait_for(async || {

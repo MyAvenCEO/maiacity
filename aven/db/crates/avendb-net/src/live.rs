@@ -27,6 +27,11 @@ const LIVE_WAIT: Duration = Duration::from_secs(10);
 /// one that never settled (batch 4's upkeep loop), the live lane never ended and held its peer's slot.
 pub(crate) const LIVE_VIEW: Duration = Duration::from_millis(400);
 
+/// The most rule logs an asking of an Interest's now tier takes beside its entries (`Shared::ask_now`): with its
+/// `LIVE_LOGS` entries, fewer than 64 logs in all, asked before any page of the backlog. More rules than these are the
+/// backlog's to bring, as a live pull's are past `LIVE_LOGS`.
+const NOW_RULES: usize = 32;
+
 /// A live pull's logs, claimed so that no backlog asking names them meanwhile (`Claims::live`, F12), and released as
 /// it drops, however the pull ended: the peers its claim held back are asked again then.
 struct LiveClaimed {
@@ -56,6 +61,18 @@ impl Drop for LiveClaimed {
     }
 }
 
+/// A `bring`'s Interest (`Shared::bring_now`), dropped with it however the bring ended.
+struct Brought {
+    shared: Arc<Shared>,
+    scope: String,
+}
+
+impl Drop for Brought {
+    fn drop(&mut self) {
+        self.shared.interests_changed(|interests| interests.remove(&self.scope));
+    }
+}
+
 /// Where one live pull's time went, for `traffic::Live`.
 #[derive(Default)]
 struct LiveTiming {
@@ -69,6 +86,17 @@ struct LiveTiming {
     backlog: bool,
     /// Its view was left to the background catch-up at `LIVE_VIEW`.
     left: bool,
+    /// The logs its last asking named (`pull_live_logs`), till they are reported.
+    asked: Option<BTreeSet<LogId>>,
+}
+
+/// What an asking of an Interest's now tier came to (`Shared::ask_now`): how many live peers it asked, how many edits
+/// were new, and whether every one of those peers answered whole.
+#[derive(Default)]
+pub(crate) struct AskedNow {
+    pub peers: usize,
+    pub new: usize,
+    pub whole: bool,
 }
 
 fn ms(since: time::Instant) -> u64 {
@@ -210,7 +238,7 @@ impl Shared {
                 while let Some(logs) = work.next(&shared.views_want()) {
                     claimed.claim(&logs);
                     timing.logs += logs.len() as u64;
-                    shared.pull_live(endpoint, device, logs, &mut timing).await?;
+                    shared.pull_live(endpoint, device, logs, pulls::LIVE_LOGS, &mut timing).await?;
                 }
                 Ok::<(), anyhow::Error>(())
             })
@@ -297,6 +325,97 @@ impl Shared {
         self.jobs.stir();
     }
 
+    /// An Interest's now tier came to want `logs` (`Shared::change_interests`): asked at once of every live peer that
+    /// holds more of them than this device, with the rules they rest on, `LIVE_LOGS` entries an asking, alone and
+    /// outside the backlog's turn as a live pull is (`Claims::live`), so a view's own logs come before any bulk page
+    /// (Lean `Interest.lean`'s `asksNow`). A peer that holds no more of them is asked nothing. Ends once every such
+    /// asking ended. A lazy node asks so only for a `bring`, as it asks its peers only when told.
+    pub(crate) async fn ask_now(self: &Arc<Self>, logs: BTreeSet<LogId>) -> AskedNow {
+        if logs.is_empty() {
+            return AskedNow::default();
+        }
+        let peers: Vec<(EndpointId, SignerId)> = self.peers.lock().expect("peers").values()
+            .filter(|p| p.conn.close_reason().is_none()).map(|p| (p.endpoint, p.device)).collect();
+        let mut asks = vec![];
+        for (endpoint, device) in peers {
+            let Ok(activity) = self.admit() else { break };
+            let (shared, logs) = (self.clone(), logs.clone());
+            asks.push(task::spawn(async move {
+                let _activity = activity;
+                shared.ask_now_of(endpoint, device, logs).await
+            }));
+        }
+        let peers = asks.len();
+        let (mut new, mut whole) = (0, peers > 0);
+        for ask in crate::blind::join_all(asks).await {
+            match ask {
+                Ok(Ok((got, backlog))) => { new += got; whole &= !backlog; }
+                _ => whole = false,
+            }
+        }
+        AskedNow { peers, new, whole }
+    }
+
+    /// `device` stated all it holds (a full announcement: it connected): what the views want now is asked of it at once
+    /// (`ask_now`), alone and before its backlog's askings (Lean `Interest.lean`'s `asksNow`, of a peer new to the
+    /// device): the views' logs then come from it before any bulk page.
+    pub(crate) fn ask_now_of_device(self: &Arc<Self>, device: SignerId) {
+        if self.opts.lazy { return; }
+        let now = self.interests.lock().expect("interests").now();
+        let Some(endpoint) = self.endpoint_of(device) else { return };
+        if now.is_empty() { return; }
+        let Ok(activity) = self.admit() else { return };
+        let shared = self.clone();
+        task::spawn(async move {
+            let _activity = activity;
+            let _ = shared.ask_now_of(endpoint, device, now).await;
+        });
+    }
+
+    /// `ask_now` of the peer at `endpoint`, `device`: how many edits were new, and whether it left rules to the backlog.
+    async fn ask_now_of(self: &Arc<Self>, endpoint: EndpointId, device: SignerId, logs: BTreeSet<LogId>) -> anyhow::Result<(usize, bool)> {
+        let mut claimed = LiveClaimed::new(self);
+        let mut timing = LiveTiming::default();
+        let logs: Vec<LogId> = logs.into_iter().collect();
+        for chunk in logs.chunks(pulls::LIVE_LOGS) {
+            let hints: BTreeSet<LogId> = chunk.iter().copied().collect();
+            claimed.claim(&hints);
+            let (began, at) = (time::Instant::now(), jobs::now_ms());
+            let new = timing.new;
+            let got = time::timeout(LIVE_WAIT, self.pull_live(endpoint, device, hints, NOW_RULES, &mut timing)).await
+                .unwrap_or_else(|_| Err(anyhow::anyhow!("its now tier took longer than {LIVE_WAIT:?}")));
+            if let Some(asked) = timing.asked.take() {
+                self.traffic.asking(crate::traffic::Asking {
+                    device,
+                    at,
+                    stage: "now",
+                    logs: asked.len(),
+                    first: asked.iter().take(8).map(crate::traffic::log_name).collect(),
+                    wanted: chunk.len(),
+                    wants: logs.len(),
+                    ms: ms(began),
+                    new: (timing.new - new) as u64,
+                    yielded: false,
+                    failed: got.is_err(),
+                });
+            }
+            got?;
+        }
+        Ok((timing.new, timing.backlog))
+    }
+
+    /// `bring`: the entries `logs` a page reads now, an Interest of their own on screen now while they are asked
+    /// (`ask_now`), dropped once those askings ended.
+    pub(crate) async fn bring_now(self: &Arc<Self>, logs: BTreeSet<LogId>) -> AskedNow {
+        use std::sync::atomic::Ordering;
+        let scope = format!("bring {}", self.brings.fetch_add(1, Ordering::Relaxed));
+        let want = crate::interest::Want { tier: crate::interest::Tier::Now, entries: logs.iter().copied().collect(), queries: vec![] };
+        // a scope of its own at its first revision, of at most `MOST_BROUGHT` entries: never refused
+        let _accepted = self.interests_changed(|interests| interests.replace(scope.clone(), 1, vec![want]));
+        let _brought = Brought { shared: self.clone(), scope };
+        self.ask_now(logs).await
+    }
+
     /// The hinted `logs` a live pull asks (`LivePriority.lean` `inStep`): every log the announcement changed, and a
     /// witness only if this device holds none of it. A witness is an earlier entry's log, named for its creation alone
     /// (`live_witnesses`); asked of a device that holds that creation, it brought the rest of that log, the backlog, with
@@ -321,6 +440,7 @@ impl Shared {
         endpoint: EndpointId,
         device: SignerId,
         hints: BTreeSet<LogId>,
+        most_rules: usize,
         timing: &mut LiveTiming,
     ) -> anyhow::Result<()> {
         let at = time::Instant::now();
@@ -335,11 +455,11 @@ impl Shared {
         let rules: BTreeSet<_> = missing
             .iter()
             .filter(|log| !matches!(log, LogId::Entry(_)) && rests.contains(log))
-            .take(pulls::LIVE_LOGS + 1)
+            .take(most_rules + 1)
             .copied()
             .collect();
         // More rules than a live pull takes belong to the existing authority-first backlog scheduler.
-        if rules.len() > pulls::LIVE_LOGS {
+        if rules.len() > most_rules {
             timing.backlog = true;
             return Ok(());
         }
@@ -365,6 +485,7 @@ impl Shared {
         timing: &mut LiveTiming,
     ) -> anyhow::Result<()> {
         let at = time::Instant::now();
+        timing.asked = Some(logs.clone());
         timing.new += self.pull_expected(endpoint, Scope::Logs(logs), false, None, Some(device), None, None).await?;
         timing.pull_ms += ms(at);
         // A single interactive edit must wake reactive subscribers before the unrelated backlog finishes.

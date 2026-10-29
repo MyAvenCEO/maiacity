@@ -658,8 +658,8 @@ mod tests {
         let scope = "cd".repeat(16);
         let ack = phone
             .op(
-                json!({"op":"demand", "scope":scope,"revision":1,"entries":[],
-            "queries":[{"vault":vault.to_hex(), "types":["checkpoint-note"]}]}),
+                json!({"op":"interest", "scope":scope, "revision":1,
+            "wants":[{"tier":"now", "queries":[{"vault":vault.to_hex(), "types":["checkpoint-note"]}]}]}),
             )
             .await
             .unwrap();
@@ -749,8 +749,8 @@ mod tests {
         assert!(!node.shared.restore_view_checkpoint(entry, &scope, 1).await.unwrap(), "pin is not authority");
         node.shared.store.tags().set(tag(entry), HashAndFormat::new(Hash::from_bytes(root.hash), BlobFormat::Raw)).await.unwrap();
         drop(preserved);
-        let ack = node.op(json!({"op":"demand", "scope":scope, "revision":2, "entries":[],
-            "queries":[{"vault":vault.to_hex(),"types":["offline-note"]}]})).await.unwrap();
+        let ack = node.op(json!({"op":"interest", "scope":scope, "revision":2,
+            "wants":[{"tier":"now", "queries":[{"vault":vault.to_hex(),"types":["offline-note"]}]}]})).await.unwrap();
         assert_eq!(ack["ok"]["accepted"], true);
         let query = json!({"op":"query", "schema":"stored", "where":{"type":["offline-note"]}});
         let row = time::timeout(Duration::from_secs(5), async {
@@ -759,7 +759,7 @@ mod tests {
                 if answer["ok"]["rows"][0]["checkpoint"]["partial"] == true { break answer["ok"]["rows"][0].clone(); }
                 time::sleep(Duration::from_millis(5)).await;
             }
-        }).await.expect("offline manifest demand takes the pinned base again");
+        }).await.expect("an offline interest takes the pinned base again");
         assert_eq!(row["record"], expected);
         assert_eq!(row["readOnly"], true);
         assert_eq!(node.read(move |lab, me| lab.retained_base_hint(me, entry)).await, Some(snapshot));

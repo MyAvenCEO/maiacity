@@ -12,8 +12,7 @@ test('ordinary local write reaches execution with catch-up unfinished and peers 
 		behind: true,
 		bring: () => { calls.push('network'); return never(); },
 		refresh: async () => { calls.push('refresh'); },
-		waiting: () => calls.push('waiting'),
-		timeoutMs: 2000
+		waiting: () => calls.push('waiting')
 	});
 	calls.push('local engine');
 	expect(calls).toEqual(['local engine']);
@@ -44,11 +43,20 @@ test('unchanged conditional review proceeds, including empty explicitly supplied
 	expect(calls).toBe(1);
 });
 
-test('conditional catch-up remains bounded and clears waiting state', async () => {
+test('a conditional catch-up that reached no peer clears its waiting state and goes on', async () => {
 	const waiting = [];
 	await beforeLocalWrite({ entry, heads: ['shown'] }, {
-		behind: true, bring: never, refresh: async () => {}, waiting: (on) => waiting.push(on), timeoutMs: 1
+		behind: true, bring: async () => ({ ok: { new: 0, peers: 0, reached: false } }), refresh: async () => {}, waiting: (on) => waiting.push(on)
 	});
+	expect(waiting).toEqual([true, false]);
+});
+
+test('a conditional catch-up whose device went away clears its waiting state and fails', async () => {
+	const waiting = [];
+	const check = beforeLocalWrite({ entry, heads: ['shown'] }, {
+		behind: true, bring: async () => { throw new Error('the device changed'); }, refresh: async () => {}, waiting: (on) => waiting.push(on)
+	});
+	await expect(check).rejects.toThrow('the device changed');
 	expect(waiting).toEqual([true, false]);
 });
 

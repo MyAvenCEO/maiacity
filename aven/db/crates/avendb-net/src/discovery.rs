@@ -53,20 +53,18 @@ fn lane_queries(entries: &[LogId], waits: &[(EntryId,VaultId)]) -> Vec<Query> {
     }).collect()
 }
 impl Shared {
-    pub(crate) async fn prioritize_owner_lanes(self: &Arc<Self>) -> bool {
-        let waits=self.read(|lab,me|lab.owner_base_lane_waits(me)).await;
-        if waits.is_empty() { return false; }
-        let scopes=self.interests.lock().expect("interests").query_scopes();
-        let mut pending=false;
-        for scope in scopes {
-            let sources={
-                let demands=self.interests.lock().expect("interests");
-                demands.working_set(&scope).map(|(revision,_,_)|
-                    demands.dependency_entries(&scope,revision)).unwrap_or_default()
-            };
-            if !lane_queries(&sources,&waits).is_empty() { pending=true; self.schedule_discovery(scope); }
-        }
-        pending
+    /// The scopes whose entries wait for their vault's schemas and lenses (`waits`) find them (`lane_queries`), as
+    /// those entries come to wait (`Shared::ask_waits`).
+    pub(crate) fn find_lanes(self: &Arc<Self>, waits: &[(EntryId, VaultId)]) {
+        let scopes = {
+            let interests = self.interests.lock().expect("interests");
+            interests.query_scopes().into_iter().filter(|scope| {
+                let sources = interests.working_set(scope)
+                    .map(|(revision, _, _)| interests.dependency_entries(scope, revision)).unwrap_or_default();
+                !lane_queries(&sources, waits).is_empty()
+            }).collect::<Vec<_>>()
+        };
+        for scope in scopes { self.schedule_discovery(scope); }
     }
     /// A new device asks `find` before its vaults' keys came: once keys or audiences it finds under change, every
     /// live view's selectors find again under the new tokens, without waiting for the whole catch-up.
@@ -159,11 +157,16 @@ impl Shared {
                             let reply = time::timeout(Duration::from_secs(3).min(deadline.saturating_duration_since(Instant::now())), crate::blind::find_all(&peer, find.clone())).await;
                             let Ok(Ok(ids)) = reply else { break 'finds }; // legacy/refusing peers remain incomplete
                             let ids: Vec<LogId> = ids.into_iter().take(avendb::index::FIND_PAGE).map(LogId::Entry).collect();
-                            if !shared.interests.lock().expect("interests").discovered(&scope, revision, &ids) { break 'finds; }
+                            // what peers named joins the scope's Interest, whose change asks its now tier at once
+                            let current = shared.change_interests(|interests| {
+                                let current = interests.discovered(&scope, revision, &ids);
+                                if current && manifests { interests.found_manifests(&ids); }
+                                current
+                            });
+                            if !current { break 'finds; }
                             if !ids.is_empty() {
                                 let _ = shared.discovery_first_found.compare_exchange(0, round, Ordering::AcqRel, Ordering::Acquire);
                             }
-                            if manifests { shared.interests.lock().expect("interests").found_manifests(&ids); }
                             shared.size.send_modify(|_| {});
                             shared.bootstrap_due.notify_one();
                             // A bounded working-set checkpoint precedes ordinary history for this view.
@@ -173,12 +176,6 @@ impl Shared {
                                 if let LogId::Entry(entry) = id {
                                     if shared.fetch_view_checkpoint(&peer, *entry, &scope, revision, deadline).await.is_err() { checkpoints_supported = false; break; }
                                 }
-                            }
-                            // Retain all hints in demand: the bounded live lane may coalesce only its first batch.
-                            // Existing authenticated holdings, authority-first pulls and signed receive remain the gate.
-                            for chunk in ids.chunks(crate::pulls::LIVE_LOGS) {
-                                if !shared.discovery_current(&scope, revision) { break; }
-                                shared.live_announced(peer.device, false, chunk);
                             }
                           }
                         }
