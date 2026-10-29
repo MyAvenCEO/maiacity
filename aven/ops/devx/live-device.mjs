@@ -10,14 +10,16 @@
  *   node aven/ops/devx/live-device.mjs --setup ['<invite link>'] once: found the dev vault (through the app's gate, or
  *                                                                an invite's join page), print its id for Settings → Owners
  *   node aven/ops/devx/live-device.mjs --accept                  once, after Samuel invited it: accept co-owning
- *   node aven/ops/devx/live-device.mjs                           a run: reopen + unlock, sync, Chat, Assets, report
+ *   node aven/ops/devx/live-device.mjs                           a run: reopen + unlock, the views (#Bla, Devices,
+ *                                                                Assets) while catching up, sync, the views again,
+ *                                                                Chat, Assets, report
  *   node aven/ops/devx/live-device.mjs --roundtrip [Bla]         the release gate (Samuel 2026-10-28): a message in the
  *                                                                room reaches the other device within 3 s (--gate;
  *                                                                the target is 1 s), both ways, whenever both are
  *                                                                online, catching up or not
  *
  * Options: --engine webkit|chromium (webkit), --base https://maia.city, --sync 240 (seconds to watch sync: 4 min finds most stalls, Samuel 2026-10-28),
- * --profile <dir>, --page <dir>: a candidate page not released yet, the static build of a branch (`bun run build`,
+ * --profile <dir>, --room Bla (the room the views open), --page <dir>: a candidate page not released yet, the static build of a branch (`bun run build`,
  * its `build/` folder), served at --base's own origin so the always-on peer takes the passkey as it takes the live
  * site's; the peer stays the live one. Each run writes build/live-device/<time>/: screenshots in order, run.json (step times, the unlock
  * sheet's steps, the sync pill over time, first paints, every diagnostics report the page sent, which is the phone's),
@@ -39,6 +41,7 @@ const base = option('--base', 'https://maia.city').replace(/\/$/, '');
 const watchSync = Number(option('--sync', '240'));
 const pageDir = args.includes('--page') ? resolve(option('--page')) : null;
 const messages = Math.max(1, Number(option('--messages', '1')));
+const viewRoom = option('--room', 'Bla');
 const mac = platform() === 'darwin';
 const profile = option('--profile', mac ? join(homedir(), 'Library/Application Support/maiacity-live-device', engine) : join(homedir(), '.maiacity-live-device', engine));
 const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -48,7 +51,7 @@ mkdirSync(profile, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** What a run must meet. */
-export const TARGETS = { unlock: 5, firstPaint: 0.5, message: 1 };
+export const TARGETS = { unlock: 5, firstPaint: 0.5, message: 1, view: 2 };
 /** What the roundtrip gates at now (--gate, Samuel 2026-10-28: 3 s for this sync build), the 1 s target still reported. */
 const GATE = Number(option('--gate', '3'));
 
@@ -74,7 +77,7 @@ function keepKey(key) {
 
 // ─── the browser ───
 
-const log = { engine, base, started: new Date().toISOString(), steps: {}, sheet: [], sync: [], reports: [], errors: [], shots: [] };
+const log = { engine, base, started: new Date().toISOString(), steps: {}, sheet: [], views: {}, sync: [], reports: [], errors: [], shots: [] };
 let shotNo = 0;
 async function shot(page, name) {
 	const file = `${String(++shotNo).padStart(2, '0')}-${name}.png`;
@@ -252,6 +255,11 @@ async function run() {
 			if (!opened) throw new Error(`didn't open: ${(await words(page)).slice(0, 300)}`);
 		} else log.steps.unlock = 0;
 
+		// the views a person opens, right away while the device still catches up (each view's actor manifest asks for
+		// its own data first: Samuel 2026-10-29, "do you actually open the routes/actor views?"), then again once
+		// caught up
+		log.views.catchingUp = await views(page, 'catching');
+
 		// sync: the pill and its details, as they move
 		t0 = Date.now();
 		await page.click('.status .pill').catch(() => {});
@@ -264,6 +272,7 @@ async function run() {
 		}
 		await shot(page, 'sync-end');
 		await page.click('.status .pill').catch(() => {});
+		log.views.caughtUp = await views(page, 'synced');
 
 		// Chat: the room list, then the first room's messages
 		t0 = Date.now();
@@ -315,9 +324,11 @@ async function run() {
 	const behind = log.sync.map((x) => Number(/(\d+)\s*(?:logs?\s*)?behind/i.exec(x.pill)?.[1] ?? NaN)).filter((n) => !Number.isNaN(n));
 	const closing = !behind.length || behind.at(-1) === 0 || behind.at(-1) < behind[0];
 	const paint = [s.chatRoom, s.assetsList].filter((x) => x != null);
+	const opened = Object.values(log.views).flat();
 	const pass = {
 		unlock: s.unlock != null && s.unlock < TARGETS.unlock && (s.ceremonies ?? 1) <= 1,
 		firstPaint: paint.length === 2 && paint.every((x) => x < TARGETS.firstPaint),
+		[`views<${TARGETS.view}s`]: opened.length > 0 && opened.every((v) => v.paint != null && v.paint < TARGETS.view),
 		behind: closing,
 		errors: !log.errors.length
 	};
@@ -326,6 +337,7 @@ async function run() {
 	const line =
 		`${stamp} ${engine} load ${s.load}s gate ${s.gate}s unlock ${s.unlock}s (${s.ceremonies ?? 0} ceremony) ` +
 		`chat rooms ${s.chatRooms}s room ${s.chatRoom}s assets list ${s.assetsList}s asset ${s.asset}s ` +
+		`views ${Object.entries(log.views).map(([when, vs]) => `${when} ${vs.map((v) => `${v.view} ${v.paint ?? '-'}s`).join(' ')}`).join(', ')} ` +
 		`behind ${behind.length ? `${behind[0]}→${behind.at(-1)}` : 'n/a'} reports ${log.reports.length} errors ${log.errors.length} ` +
 		`| ${Object.entries(pass).map(([k, v]) => `${k} ${v ? 'PASS' : 'FAIL'}`).join(', ')}`;
 	writeFileSync(join(out, 'line.txt'), `${line}\n`);
@@ -342,6 +354,38 @@ async function openOn(page) {
 	await until(async () => (await page.$('.gate button.pill-btn')) || (await open(page)), 60);
 	for (const t of ['Unlock now', 'Sign in with your passkey']) if (await press(page, t)) break;
 	return (await until(() => open(page), 180)) ? Date.now() : null;
+}
+
+/** The views a run opens, each with what shows it painted: #room's messages in Chat, the vault's devices in Settings,
+ *  the assets list. A view's first paint is from the device's own data (local first): the 2 s target holds while the
+ *  device still catches up, never waiting on a peer. */
+const VIEWS = [
+	{ view: `#${viewRoom}`, href: `${base}/app/chat/`, pick: viewRoom, painted: '.chat-page article.msg' },
+	{ view: 'devices', href: `${base}/app/#settings/devices`, painted: '#settings-devices li.device' },
+	{ view: 'assets', href: `${base}/app/#assets`, painted: 'a.nav-item[href^="#assets/"]' }
+];
+
+/** Opens each of VIEWS on `page` and times it to its first paint, up to 30 s each: [{ view, paint (s or null), pill }]. */
+async function views(page, when) {
+	const seen = [];
+	for (const v of VIEWS) {
+		const t0 = Date.now();
+		await go(page, v.href);
+		// a room the device doesn't know yet hasn't painted, whatever other room Chat shows
+		const picked = !v.pick || (await until(
+				() =>
+					page.evaluate((name) => {
+						const b = [...document.querySelectorAll('.chat-page button.nav-item')].find((e) => e.textContent?.replace(/\s+/g, ' ').trim().replace(/^#\s*/, '') === name);
+						b?.click();
+						return !!b;
+					}, v.pick),
+				30
+			));
+		const painted = picked && (await until(() => page.$(v.painted), Math.max(0.1, 30 - (Date.now() - t0) / 1000)));
+		seen.push({ view: v.view, paint: painted ? Number(((Date.now() - t0) / 1000).toFixed(2)) : null, pill: await pill(page) });
+		await shot(page, `view-${when}-${v.view.replace(/\W/g, '')}`);
+	}
+	return seen;
 }
 
 /** Opens room `room` in Chat on `page`, once its device knows it: true, or false after `seconds`. */
