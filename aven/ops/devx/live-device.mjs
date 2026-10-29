@@ -11,7 +11,7 @@
  *                                                                an invite's join page), print its id for Settings → Owners
  *   node aven/ops/devx/live-device.mjs --accept                  once, after Samuel invited it: accept co-owning
  *   node aven/ops/devx/live-device.mjs                           a run: reopen + unlock, 5 reference walks (Chat →
- *                                                                #Bla, Assets → asset → variant, Studio → timeline,
+ *                                                                #Bla, Assets → asset → variant, Stories → story,
  *                                                                Proposals → AIP, Settings → Devices) while catching
  *                                                                up, sync, the walks again, Chat, Assets, report
  *   node aven/ops/devx/live-device.mjs --roundtrip [Bla]         the release gate (Samuel 2026-10-28): a message in the
@@ -359,30 +359,32 @@ async function openOn(page) {
 /** The reference walks (Samuel 2026-10-29: "just a few reference examples ... clicking sub items, like chat actor/room
  *  or assets/select asset item/variant ... 5 actor apps ... their composite leaf pattern like sub interests"): each
  *  goes from an app's composite view down to a leaf, a click at a time, so each level's sub-interest is asked for
- *  (a slot binds on select: Chat's room, Assets' asset, Studio's timeline). A step goes to `go` or clicks `click` (the
+ *  (a slot binds on select: Chat's room, Assets' asset). A step goes to `go` or clicks `click` (the
  *  first element it matches), and has painted once `painted` matches, with `text` in it where given. A view's first
  *  paint is from the device's own data (local first): the 2 s target holds while the device still catches up. */
 const WALKS = [
 	{
 		app: 'chat',
 		steps: [
-			{ level: 'rooms', go: `${base}/app/chat/`, painted: '.chat-page button.nav-item' },
+			// a room row, not the composite's own New message / New group / Note to self
+			{ level: 'rooms', go: `${base}/app/chat/`, painted: '.chat-page button.nav-item:not([disabled])', not: 'New |Note to self' },
 			{ level: `#${viewRoom}`, room: viewRoom, painted: '.chat-page article.msg' }
 		]
 	},
 	{
 		app: 'assets',
 		steps: [
-			{ level: 'list', go: `${base}/app/#assets`, painted: 'a.nav-item[href^="#assets/"]', vault: 'Maia City' },
+			// the recipes live in Maia City's coop vault, picked by its id where its name hasn't arrived yet
+			{ level: 'list', go: `${base}/app/#assets`, painted: 'a.nav-item[href^="#assets/"]', vault: 'Maia City|aee5 ?73fe' },
 			{ level: 'asset', click: 'a.nav-item[href^="#assets/"]', painted: '.about-head h3' },
 			{ level: 'variant', click: '.lines a.line:has(> i.dot:not(.main))', painted: '.about-head p.soft', text: 'a variant' }
 		]
 	},
 	{
-		app: 'studio',
+		app: 'stories',
 		steps: [
-			{ level: 'timelines', go: `${base}/app/studio/`, painted: '.picker button.now' },
-			{ level: 'timeline', click: '.picker button.now', then: '.picker .menu .row > button:first-child', painted: '.picker .menu .row.on' }
+			{ level: 'list', go: `${base}/app/#stories`, painted: 'a.card[href^="#stories/"]' },
+			{ level: 'story', click: 'a.card[href^="#stories/"]', painted: 'header.top input.title' }
 		]
 	},
 	{
@@ -425,13 +427,17 @@ async function views(page, when) {
 						}, step.room),
 					left()
 				));
-			const painted = () => page.evaluate(({ sel, text }) => [...document.querySelectorAll(sel)].some((e) => !text || e.textContent?.includes(text)), { sel: step.painted, text: step.text ?? '' });
+			const painted = () =>
+				page.evaluate(
+					({ sel, text, not }) => [...document.querySelectorAll(sel)].some((e) => (!text || e.textContent?.includes(text)) && (!not || !new RegExp(not).test(e.textContent ?? ''))),
+					{ sel: step.painted, text: step.text ?? '', not: step.not ?? '' }
+				);
 			let done = ready && (await until(painted, step.vault ? Math.min(5, left()) : left()));
 			// the recipes live in Maia City: where the vault picked holds none, pick it in the nav pill's vaults, as a person does
 			if (ready && !done && step.vault) {
 				await page.evaluate(() => document.querySelector('button.item.identity')?.click());
 				await sleep(300);
-				await page.evaluate((name) => [...document.querySelectorAll('button.acct[role=menuitemradio]')].find((b) => b.textContent?.includes(name) && !/COOP/.test(b.textContent ?? ''))?.click(), step.vault);
+				await page.evaluate((name) => [...document.querySelectorAll('button.acct[role=menuitemradio]')].find((b) => new RegExp(name).test(b.textContent?.replace(/\s+/g, ' ') ?? ''))?.click(), step.vault);
 				await sleep(300);
 				await go(page, step.go);
 				done = await until(painted, left());
