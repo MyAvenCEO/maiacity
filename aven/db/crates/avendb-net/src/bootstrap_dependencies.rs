@@ -95,31 +95,23 @@ pub(crate) fn missing_batch(lab: &Lab, me: SignerId, entry: EntryId) -> Vec<Edit
         .unwrap_or_default()
 }
 impl Shared {
-    /// One bounded sweep; disconnected/legacy peers leave the exact wait visible.
-    /// The caller backs off between unresolved sweeps, while new local work wakes it.
+    /// One sweep over every entry whose owner base still misses edits, asking up to three peers for each. True if it
+    /// brought some of them and some are missing still: the caller sweeps again at once, and otherwise waits until a
+    /// peer connects or announces, or new local work wakes it (`bootstrap_due`).
     pub(crate) async fn fetch_owner_dependencies(self: &Arc<Self>) -> bool {
-        let mut missing = self
-            .read_class(lab_schedule::Class::Background, |lab, me| {
-                lab.owner_base_missing(me)
-                    .into_iter()
-                    .filter_map(|(entry, ids)| {
-                        let ids: Vec<_> = ids
-                            .into_iter()
-                            .filter(|id| lab.signed_edit(me, *id).is_none())
-                            .take(32)
-                            .collect();
-                        (!ids.is_empty()).then_some((entry, ids))
-                    })
-                    .take(16)
-                    .collect::<Vec<_>>()
+        let missing_ids = |lab: &Lab, me| -> usize {
+            lab.owner_base_missing(me).into_iter()
+                .map(|(_, ids)| ids.into_iter().filter(|id| lab.signed_edit(me, *id).is_none()).count()).sum()
+        };
+        let (missing, before) = self
+            .read_class(lab_schedule::Class::Background, move |lab, me| {
+                let entries: Vec<_> = lab.owner_base_missing(me).into_iter().map(|(entry, _)| entry).collect();
+                (entries, missing_ids(lab, me))
             })
             .await;
-        if missing.is_empty() {
+        if before == 0 {
             return false;
         }
-        let offset = self.dependency_peer_turn.load(Ordering::Relaxed) % missing.len();
-        missing.rotate_left(offset);
-        missing.truncate(4);
         let peers: Vec<_> = {
             let peers = self.peers.lock().expect("peers");
             let start =
@@ -132,7 +124,7 @@ impl Shared {
                 .cloned()
                 .collect()
         };
-        for (entry, _) in missing {
+        for entry in missing {
             for peer in &peers {
                 let ids = self
                     .read_class(lab_schedule::Class::Background, move |lab, me| {
@@ -155,8 +147,8 @@ impl Shared {
                 }
             }
         }
-        self.read(|lab, me| !lab.owner_base_missing(me).is_empty())
-            .await
+        let after = self.read(move |lab, me| missing_ids(lab, me)).await;
+        after > 0 && after < before
     }
     async fn fetch_owner_dependency_batch(
         self: &Arc<Self>,

@@ -2470,14 +2470,11 @@ struct Differed {
 /// What a device holds that this node's device lacks (`Shared::lacked`): the logs where that may change what a read
 /// shows (`differ`), and those where it lacks only the bodies of boxes it holds stubs of, while it asks for them
 /// (`Lab::fetch_withheld`). A box's body changes nothing the device knows (`LazyBoxes.lean` S6): no read waits on
-/// `bodies`, and its askings bring them all the same. Nor does any wait on `keys`, the logs where it holds every edit
-/// and their past but lacks a McEliece key one names (`Logs::lacks_only_keys`): a key is needed only to seal to its
-/// owner, and comes with the asking of its log (`Lab::request`'s wants).
+/// `bodies`, and its askings bring them all the same.
 #[derive(Clone, Debug, Default)]
 struct Lacked {
     logs: BTreeSet<LogId>,
     bodies: BTreeSet<LogId>,
-    keys: BTreeSet<LogId>,
 }
 
 struct Shared {
@@ -2543,7 +2540,7 @@ struct Shared {
     /// Active app/query windows, replaced or released independently of one-shot brings.
     interests: Mutex<interest::Interests>,
     /// How many times the Interests changed (`Shared::change_interests`): what an asking of every log left yields to
-    /// (`Yield`) and a first asking waits for (`first_finds`) is read again only once it moved.
+    /// (`Yield`) is read again only once it moved.
     wants: watch::Sender<u64>,
     /// The entries of the Interests waiting for their key, and the entries waiting for their vault's schemas and lenses,
     /// as last asked for (`Shared::ask_waits`): each is asked once as it comes to wait.
@@ -3814,15 +3811,10 @@ impl Shared {
             if pending {
                 tokio::task::yield_now().await;
             } else {
-                let missing=self.fetch_owner_dependencies().await;
+                // what no peer gave yet is asked again once one connects or announces (`hear`), not on a timer
+                while self.fetch_owner_dependencies().await {}
                 self.ask_waits().await;
-                if missing {
-                    // Network failure is an explicit wait, not a tight reconstruction loop.
-                    tokio::select! {
-                        _=self.bootstrap_due.notified()=>{},
-                        _=time::sleep(self.opts.retry.max(Duration::from_millis(250)))=>{},
-                    }
-                } else { self.bootstrap_due.notified().await; }
+                self.bootstrap_due.notified().await;
             }
         }
     }
@@ -4079,6 +4071,8 @@ impl Shared {
         drop(held);
         if admitted { self.live_announced(device, full, &live_logs); }
         if admitted && full { self.ask_now_of_device(device); }
+        // a peer that connected or announced may hold the dependencies no peer gave yet (`bootstrap_pump`)
+        if admitted { self.bootstrap_due.notify_one(); }
         self.jobs.stir();
     }
 
@@ -4148,7 +4142,7 @@ impl Shared {
                 known.get(&device).is_some_and(|r| r.logs.contains(l))
                     || now.get_or_insert_with(|| reach(lab)).contains(l)
             };
-            let (mut lacking, mut bodies, mut by_stub, mut sample, mut lacked) = (BTreeSet::new(), BTreeSet::new(), 0, Vec::new(), Vec::new());
+            let (mut lacking, mut bodies, mut by_stub, mut sample) = (BTreeSet::new(), BTreeSet::new(), 0, Vec::new());
             for (l, f) in theirs {
                 if !mine.lacks(&f) {
                     continue;
@@ -4173,14 +4167,9 @@ impl Shared {
                     sample.push(json!({ "log": format!("{l:?}"), "held": mine.of.contains_key(&l), "lacked_heads": heads,
                         "held_unclosed": unclosed, "waiting": f.waiting.len() }));
                 }
-                lacked.push((l, f));
                 lacking.insert(l);
             }
-            drop(within);
-            let edits = lab.log(me).edits();
-            let keys: BTreeSet<LogId> = lacked.into_iter().filter(|(_, f)| mine.lacks_only_keys(edits, f)).map(|(l, _)| l).collect();
-            lacking.retain(|l| !keys.contains(l));
-            (Lacked { logs: lacking, bodies, keys }, Differed { by_stub, stubs: stubs.len(), sample })
+            (Lacked { logs: lacking, bodies }, Differed { by_stub, stubs: stubs.len(), sample })
         });
         let worked = worked.await;
         let mut last = self.differed.lock().expect("differed");
@@ -4214,10 +4203,9 @@ impl Shared {
         let _activity = self.admit()?;
         let peer = self.connection(endpoint).await?;
         // the logs no other peer is asked for now (`Claims`), claimed until this asking ends, however it ends: those that
-        // may change a read, and the bodies of the boxes it holds stubs of and the keys it lacks, which no read waits on
-        let Lacked { logs: mut differing, bodies, keys: lacked_keys } = self.lacked(peer.device).await;
+        // may change a read, and the bodies of the boxes it holds stubs of, which no read waits on
+        let Lacked { logs: mut differing, bodies } = self.lacked(peer.device).await;
         differing.extend(bodies);
-        differing.extend(lacked_keys);
         // how fast this peer's pages came lately, or as a new peer's are counted to (`pulls::Rate::start_per_second`)
         let rate = self.rates.lock().expect("rates").get(&peer.device).and_then(pulls::Rate::per_second);
         let rate = rate.unwrap_or_else(pulls::Rate::start_per_second);
@@ -4235,12 +4223,6 @@ impl Shared {
             });
         }
         let (mut new, mut keys, mut stage) = (0, BTreeSet::new(), AskingStage::Manifests);
-        // a new device's views ask by selectors before they know an entry: the first asking waits a moment for what
-        // peers name for them, Maia City's manifests first, else it would take every log at once and the views theirs
-        // only at its end; a catch-up of a few logs asks for them at once
-        if left.len() > FIRST_FINDS_LOGS {
-            self.first_finds().await;
-        }
         let asked = loop {
             let (logs, asked_as) = {
                 let interests = self.interests.lock().expect("interests");
@@ -4308,18 +4290,6 @@ impl Shared {
         // what every asking brought, brought up to date at last, however it ended
         self.catch_up_paced_class(true, lab_schedule::Class::Background).await;
         asked
-    }
-
-    /// Waits, at most `FIRST_FINDS`, until peers named something for the open views' selectors, while they ask by
-    /// selectors alone (`Interests::finding`): a new device's pages, which know no entry before their first find came
-    /// back. At once where no view asks so, or one names an entry.
-    async fn first_finds(self: &Arc<Self>) {
-        let until = Instant::now() + FIRST_FINDS;
-        let mut changed = self.wants.subscribe();
-        while self.interests.lock().expect("interests").finding() {
-            let left = until.saturating_duration_since(Instant::now());
-            if !matches!(time::timeout(left, changed.changed()).await, Ok(Ok(()))) { break; }
-        }
     }
 
     /// Brings its device's keys and items up to date with the edits it took since (`Lab::catch_up`), if it `must`, or
@@ -4747,13 +4717,6 @@ enum AskingStage {
     Rest,
 }
 
-
-/// How long a connection's first asking waits for what peers name for the views' selectors (`Shared::first_finds`),
-/// at most: a find's round trip over the relay, the device's keys of the vaults found on the way.
-const FIRST_FINDS: Duration = Duration::from_millis(1500);
-/// The fewest logs a connection's askings take for its first to wait for the views' finds (`FIRST_FINDS`): a catch-up
-/// of fewer comes at once, whatever the views want.
-const FIRST_FINDS_LOGS: usize = 64;
 
 /// The logs of `left` to ask for next, taken out of it (`Shared::ask_differing`), by `stage`, which it moves on. First
 /// the manifests peers named for the views (`manifests`), if any are left; then the logs the open views want
