@@ -145,6 +145,8 @@ mod pulls;
 mod live;
 mod ranges;
 mod run;
+#[cfg(test)]
+mod reopen_probe;
 mod scoped;
 pub mod server;
 mod session;
