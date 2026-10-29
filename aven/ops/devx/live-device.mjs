@@ -21,7 +21,8 @@
  *
  * Options: --engine webkit|chromium (webkit), --base https://maia.city, --sync 240 (seconds to watch sync: 4 min finds most stalls, Samuel 2026-10-28),
  * --profile <dir>, --room Bla (the room the views open), --remove <id,…> (earlier runs' test devices to remove, by
- * recorded id), --headed (a visible WebKit window), --page <dir>: a candidate page not released yet, the static build of a branch (`bun run build`,
+ * recorded id), --headed (a visible WebKit window), --name <name> (this device's
+ * name in Devices: test-device <profile>), --page <dir>: a candidate page not released yet, the static build of a branch (`bun run build`,
  * its `build/` folder), served at --base's own origin so the always-on peer takes the passkey as it takes the live
  * site's; the peer stays the live one. Each run writes build/live-device/<time>/: screenshots in order, run.json (step times, the unlock
  * sheet's steps, the sync pill over time, first paints, every diagnostics report the page sent, which is the phone's),
@@ -31,7 +32,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync, chmodSync } from 'node:fs';
 import { homedir, platform, tmpdir } from 'node:os';
-import { dirname, extname, join, normalize, resolve } from 'node:path';
+import { basename, dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { authenticator, passkey } from './passkey.mjs';
 
@@ -51,6 +52,8 @@ const removeIds = (option('--remove', '') ?? '').split(',').map((x) => x.trim().
 const headed = args.includes('--headed');
 const mac = platform() === 'darwin';
 const profile = option('--profile', mac ? join(homedir(), 'Library/Application Support/maiacity-live-device', engine) : join(homedir(), '.maiacity-live-device', engine));
+// the name this run's device carries in Devices (Samuel 2026-10-29: test devices get proper "test-device" names)
+const deviceName = option('--name', `test-device ${basename(profile)}`);
 const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 const out = join(root, 'build/live-device', stamp);
 mkdirSync(out, { recursive: true });
@@ -326,8 +329,9 @@ async function run() {
 		// the report the phone would send: the page sends one ~10 s after a view opens
 		await until(async () => log.reports.length > 0 || null, 45);
 
-		// this device's own id, for the next run's --remove, and the earlier runs' devices this one removes
+		// this device's own id, for the next run's --remove, its name, and the earlier runs' devices this one removes
 		await own(page);
+		log.named = await nameDevice(page, deviceName);
 		log.device = await page.evaluate(() => [...document.querySelectorAll('#settings-devices li.device')].find((li) => li.querySelector('.chip.accent'))?.querySelector('.soft.mono')?.textContent?.trim() ?? null);
 		for (const id of removeIds) log.removed.push({ id, ...(await removeDevice(page, id, log.device)) });
 	} catch (e) {
@@ -356,7 +360,7 @@ async function run() {
 		`chat rooms ${s.chatRooms}s room ${s.chatRoom}s assets list ${s.assetsList}s asset ${s.asset}s ` +
 		`views ${Object.entries(log.views).map(([when, vs]) => `${when} ${vs.map((v) => `${v.app}/${v.level} ${v.paint ?? '-'}s`).join(' ')}`).join(', ')} ` +
 		`behind ${behind.length ? `${behind[0]}→${behind.at(-1)}` : 'n/a'} reports ${log.reports.length} errors ${log.errors.length} ` +
-		`device ${log.device ?? '-'} removed ${log.removed.map((r) => `${r.id.slice(0, 8)} ${r.result}`).join(' ') || '-'} ` +
+		`device ${log.device ?? '-'} named ${log.named ?? '-'} removed ${log.removed.map((r) => `${r.id.slice(0, 8)} ${r.result}`).join(' ') || '-'} ` +
 		`memory free ${log.memory.length ? `${Math.min(...log.memory.map((m) => m.free ?? 100))}% min` : 'n/a'} ` +
 		`| ${Object.entries(pass).map(([k, v]) => `${k} ${v ? 'PASS' : 'FAIL'}`).join(', ')}`;
 	writeFileSync(join(out, 'line.txt'), `${line}\n`);
@@ -483,6 +487,22 @@ async function own(page) {
 	await until(() => page.$('#settings-devices li.device'), 30);
 }
 
+/** Names this device `name` in Settings → Devices on `page` (its own row's Rename), unless it is named so already. */
+async function nameDevice(page, name) {
+	const now = () => page.evaluate(() => [...document.querySelectorAll('#settings-devices li.device')].find((li) => li.querySelector('.chip.accent'))?.querySelector('.who b')?.textContent?.trim() ?? null);
+	if ((await now()) === name) return name;
+	const opened = await page.evaluate(() => {
+		const li = [...document.querySelectorAll('#settings-devices li.device')].find((li) => li.querySelector('.chip.accent'));
+		const b = [...(li?.querySelectorAll('button') ?? [])].find((b) => b.textContent?.trim() === 'Rename' && !b.disabled);
+		b?.click();
+		return !!b;
+	});
+	if (!opened || !(await until(() => page.$('#settings-devices li.device input.field'), 5))) return null;
+	await page.fill('#settings-devices li.device input.field', name);
+	await page.click('#settings-devices li.device input.field ~ button.btn.primary');
+	return (await until(async () => ((await now()) === name ? name : null), 30)) ?? null;
+}
+
 /** Removes the device `id` (a full id, or at least its first 8 hex) from Settings → Devices on `page`: only where
  *  exactly one row shows its short id and that row isn't this device (`me`, its short id): { result, why? }. */
 async function removeDevice(page, id, me) {
@@ -584,6 +604,10 @@ async function roundtrip(name) {
 			gate.from.push(await message(fresh.page, home.page, `${tag} ← fresh ${i}`, `from-fresh-${i}`));
 		}
 		gate.freshPillAfter = await pill(fresh.page);
+		// the fresh device stays one of the vault's: name it so it's known in Devices, and record its id for the next --remove
+		await own(fresh.page);
+		gate.freshDevice = await fresh.page.evaluate(() => [...document.querySelectorAll('#settings-devices li.device')].find((li) => li.querySelector('.chip.accent'))?.querySelector('.soft.mono')?.textContent?.trim() ?? null);
+		gate.freshNamed = await nameDevice(fresh.page, `test-device roundtrip ${stamp.slice(5, 16)}`);
 	} catch (e) {
 		log.errors.push(`roundtrip: ${e instanceof Error ? e.message : e}`);
 		await shot((fresh ?? home).page, 'roundtrip-failed');
