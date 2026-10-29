@@ -386,7 +386,8 @@ impl Drafting<'_> {
 /// as devices that make a family's key at the same time each make one; its keys are told apart by their ids.
 #[derive(Default)]
 struct Keyring {
-    revision: Arc<()>,
+    /// The sum of the ids of the keys it holds (`held::key_sum`): the same for the same keys, however they came.
+    sum: [u8; 32],
     /// Changes with each key it takes but an entry's: what the upkeep of every entry turns on (`UpkeepDue`).
     scoped: Arc<()>,
     /// The entries whose keys it took since the upkeep last looked (`UpkeepDue`), and since `read` last looked.
@@ -413,7 +414,7 @@ impl Keyring {
         if self.by_id.contains_key(&id) {
             return false;
         }
-        self.revision = Arc::new(());
+        held::key_sum(&mut self.sum, &id.0);
         match name {
             KeyName::Entry(e, ..) => {
                 self.entries_keyed.push(e);
@@ -1160,15 +1161,12 @@ struct Store {
     view_read_due: bool,
     /// Its first sync with the boxes held back, if it asks for one (`Lab::set_lazy_boxes`).
     lazy: LazyBoxes,
-    /// How many times it was taken mutably (`Stores::get_mut`): a query view stamped with the revision now saw every
-    /// change the store took (`query_view::Stamp`).
-    revision: u64,
     /// Its query views (`query_view`): the answers of the queries its pages asked, each at the head it was worked out
-    /// at. Its own, never an edit's, and none in a store made anew.
+    /// at. Its own, never an edit's.
     query_views: std::sync::Mutex<QueryViews>,
-    /// Whether its shared index lists every entry of a vault it reads (`index_complete`), each with the revision it
-    /// was worked out at.
-    complete: std::sync::Mutex<HashMap<VaultId, (u64, bool)>>,
+    /// Whether its shared index lists every entry of a vault it reads (`index_complete`), each with the stamp it was
+    /// worked out at.
+    complete: std::sync::Mutex<HashMap<VaultId, (query_view::Stamp, bool)>>,
 }
 
 /// A device's store taken out of its Lab for a probe of its memory (`Lab::probe_store`): of no use but to let go of.
@@ -1271,7 +1269,6 @@ impl Default for Store {
             view_wholes: 0,
             view_read_due: true,
             lazy: LazyBoxes::default(),
-            revision: 0,
             query_views: std::sync::Mutex::new(QueryViews::default()),
             complete: std::sync::Mutex::new(HashMap::new()),
         }
@@ -1816,39 +1813,8 @@ enum Work {
     Retag { vault: VaultId, entry: EntryId, body: Body },
 }
 
-/// The devices' stores, by device: read as a map; each one taken mutably counts on its revision, so that no query view
-/// stamped before it is read as current (`query_view`).
-#[derive(Default)]
-struct Stores(HashMap<SignerId, Store>);
-
-impl std::ops::Deref for Stores {
-    type Target = HashMap<SignerId, Store>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Stores {
-    fn get_mut(&mut self, d: &SignerId) -> Option<&mut Store> {
-        let store = self.0.get_mut(d)?;
-        store.revision += 1;
-        Some(store)
-    }
-
-    fn insert(&mut self, d: SignerId, store: Store) -> Option<Store> {
-        self.0.insert(d, store)
-    }
-
-    fn remove(&mut self, d: &SignerId) -> Option<Store> {
-        self.0.remove(d)
-    }
-}
-
-impl<const N: usize> From<[(SignerId, Store); N]> for Stores {
-    fn from(stores: [(SignerId, Store); N]) -> Stores {
-        Stores(HashMap::from(stores))
-    }
-}
+/// The devices' stores, by device.
+type Stores = HashMap<SignerId, Store>;
 
 pub struct Lab {
     /// The keys at hand: passkeys, owner keys, and unlocked devices.
@@ -4879,15 +4845,16 @@ impl Lab {
         self.held(d).view().vaults().iter().map(|v| v.id).collect()
     }
 
-    /// `index_complete`, kept while device `d`'s store takes no change (its revision): whether a view of vault `vault`
-    /// may list off the shared index alone.
+    /// `index_complete`, kept while device `d`'s query views are stamped as they were (`query_view_stamp`): whether a
+    /// view of vault `vault` may list off the shared index alone.
     pub fn index_lists_all(&self, d: SignerId, vault: VaultId) -> bool {
         let store = self.held(d);
+        let now = self.query_view_stamp(d);
         if let Some((at, yes)) = store.complete.lock().unwrap_or_else(|p| p.into_inner()).get(&vault) {
-            if *at == store.revision { return *yes; }
+            if *at == now { return *yes; }
         }
         let yes = self.index_complete(d, vault);
-        store.complete.lock().unwrap_or_else(|p| p.into_inner()).insert(vault, (store.revision, yes));
+        store.complete.lock().unwrap_or_else(|p| p.into_inner()).insert(vault, (now, yes));
         yes
     }
 
@@ -4935,23 +4902,41 @@ impl Lab {
         &self.held(d).query_views
     }
 
-    /// The head a query view of device `d` is stamped with now (`query_view::Stamp`): its store's revision, its size
-    /// and removals as `touched` reads them, and a digest of what a read depends on beside its log: its shares and the
-    /// selectors it opened, its cap groups, its lanes, its keys, the entries whose header it hasn't read, its query depth
-    /// and its own starts.
+    /// The head a query view of device `d` is stamped with now (`query_view::Stamp`): its log's head, and its size and
+    /// removals as `touched` reads them; the sum of what it works its items out of beside its log (`inputs`): the keys
+    /// it holds, its McEliece keys, its owner bases, what it follows, its query depth and its gate; the sum of what a
+    /// read depends on beside its log as it worked those out (`context`): its shares and the selectors it opened, its
+    /// cap groups and lanes, the entries whose header it hasn't read and those it shows from a base; and whether it
+    /// worked them all out of every edit it holds (`settled`).
     pub(crate) fn query_view_stamp(&self, d: SignerId) -> query_view::Stamp {
-        use std::hash::{Hash, Hasher as _};
+        use crate::hash::Hasher;
         let store = self.held(d);
+        let mut inputs = Hasher::new("avenDB query view inputs 1");
+        inputs.update(&store.keys.sum).update(&store.blobs.sum());
+        for (e, base) in &store.bases {
+            inputs.update(&e.0).update(&base.snapshot.0).update(&crate::hash::content(&base.sealed));
+        }
+        inputs.update(&(store.follow.len() as u64).to_be_bytes());
+        for v in &store.follow { inputs.update(&v.0); }
+        inputs.update(&(store.query_depth as u64).to_be_bytes()).update(&[store.gate as u8]);
         let r = &store.readings;
-        let mut h = std::collections::hash_map::DefaultHasher::new();
-        (r.selectors.len(), r.defines.len(), store.shown_groups, store.query_depth, store.keys.ids().count()).hash(&mut h);
-        // the entries whose header it hasn't read: one read since is no edit `touched` names
-        r.untyped.hash(&mut h);
-        (store.slices.len(), store.unreadable.len(), store.based.len(), store.follow.len()).hash(&mut h);
-        (Arc::as_ptr(&store.bootstrap_revision) as usize, Arc::as_ptr(&store.warm_revision) as usize).hash(&mut h);
-        for (v, (lane, _)) in &store.shown_lanes { (v, lane).hash(&mut h); }
-        query_view::Stamp { revision: store.revision, size: self.size(d), gone: store.log.gone(), aux: h.finish(),
-            settled: store.showing.is_none() && !store.behind }
+        let mut context = Hasher::new("avenDB query view context 1");
+        let sorted = |mut ids: Vec<[u8; 32]>| { ids.sort_unstable(); ids };
+        for part in [
+            sorted(r.selectors.keys().map(|s| s.0).collect()),
+            sorted(r.defines.keys().map(|e| e.0).collect()),
+            sorted(store.slices.keys().map(|s| s.0).collect()),
+            sorted(store.unreadable.iter().map(|s| s.0).collect()),
+            sorted(store.based.keys().map(|e| e.0).collect()),
+            r.untyped.iter().map(|e| e.0).collect(),
+        ] {
+            context.update(&(part.len() as u64).to_be_bytes());
+            part.iter().for_each(|id| { context.update(id); });
+        }
+        context.update(&store.shown_groups);
+        for (v, (lane, _)) in &store.shown_lanes { context.update(&v.0).update(lane); }
+        query_view::Stamp { head: store.log.head(), size: self.size(d), gone: store.log.gone(), inputs: inputs.finalize(),
+            context: context.finalize(), settled: store.showing.is_none() && !store.behind }
     }
 
     pub fn meaning(&self, d: SignerId, entry: EntryId) -> Option<Meaning> {

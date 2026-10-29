@@ -3,13 +3,17 @@
 //! the same query from it again while that answer is still the query on what the device holds now. Opening a view
 //! that is current reads no entry and no edit of the log.
 //!
-//! A view is current where the device took no change since its stamp (`Stamp::revision`: nothing took the store
-//! mutably since). Where it took one, the view is kept by the delta rule (`QV4_untouched`, `QF1_untouched`,
-//! `answer_untouched`): it stays where the change was entry edits alone (`Lab::touched`, never `all`), none of them
-//! named an entry the answer read (its rows, its waiting entries, what its links led to: `Reads::entries`), none of
-//! them is an entry the query's selector may now pick (`Reads::plan`) or a schema or lens its answer read through, and
-//! nothing beside the log that a read depends on moved (`Stamp::aux`: shares, cap groups, lanes, keys, depth, a
-//! showing left half done). Anything else works the answer out again. So the answer served is always the query's
+//! A view is current where it was worked out of every edit its device held (`Stamp::settled`), and the device holds
+//! the same log now (`Stamp::head`, the log's one head), works its items out of the same inputs beside it
+//! (`Stamp::inputs`: its keys, its owner bases, what it follows, its depth) and read them through the same shares, cap
+//! groups, lanes and headers (`Stamp::context`): the answer is a function of those alone (`QV3_open`), in this process
+//! or another. Where the
+//! log moved on, the view is kept by the delta rule (`QV4_untouched`, `QF1_untouched`, `answer_untouched`): it stays
+//! where the change was entry edits alone (`Lab::touched`, never `all`), none of them named an entry the answer read
+//! (its rows, its waiting entries, what its links led to: `Reads::entries`), none of them is an entry the query's
+//! selector may now pick (`Reads::plan`) or a schema or lens its answer read through, and nothing beside the log that
+//! a read depends on moved (`Stamp::inputs`, `Stamp::context`: shares, cap groups, lanes, keys, depth). Anything else
+//! works the answer out again. So the answer served is always the query's
 //! answer on the device's state; with `AVENDB_VIEW_ORACLE` set (and in this crate's own tests) every served view is
 //! checked against a run of the query, and a difference is a bug that panics.
 //!
@@ -31,16 +35,25 @@ pub const BUDGET: usize = 8 << 20;
 /// The most query views a device keeps.
 pub const MOST: usize = 256;
 
-/// The head a view was worked out at: the store's revision (how many times it was taken mutably), the log's size and
-/// removals as `Lab::touched` reads them, a digest of what a read depends on beside the log, and whether the device's
-/// items were all shown then.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+/// The head a view was worked out at (`Lab::query_view_stamp`): the log's head, and its size and removals as
+/// `Lab::touched` reads them; the sum of what the device works its items out of beside the log, and of what a read
+/// depends on beside the log as it worked them out; and whether it worked them out of every edit it held.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Stamp {
-    pub revision: u64,
+    pub head: crate::log_head::Head,
     pub size: (usize, usize),
     pub gone: u64,
-    pub aux: u64,
+    pub inputs: [u8; 32],
+    pub context: [u8; 32],
     pub settled: bool,
+}
+
+impl Stamp {
+    /// A view stamped `self` is the query's answer at `now`: worked out of every edit, of the same log and inputs,
+    /// through the same shares, cap groups, lanes and headers read.
+    fn current(&self, now: &Stamp) -> bool {
+        self.settled && self.head == now.head && self.inputs == now.inputs && self.context == now.context
+    }
 }
 
 /// What a query's answer read: the entries it showed or counted, waited on or followed a link to; the vaults whose
@@ -134,7 +147,8 @@ fn oracle() -> bool {
 /// Whether a change since `view`'s stamp, to `now`, leaves its answer as it was (`answer_untouched`).
 fn kept(lab: &Lab, me: SignerId, view: &View, now: &Stamp) -> bool {
     let was = &view.stamp;
-    if view.reads.opaque || !was.settled || !now.settled || was.aux != now.aux || was.gone != now.gone { return false; }
+    if view.reads.opaque || !was.settled || !now.settled || was.inputs != now.inputs || was.context != now.context
+        || was.gone != now.gone { return false; }
     let t = lab.touched(me, was.size.0, was.size.1, Some(was.gone));
     if t.all { return false; }
     let reads = &view.reads;
@@ -155,7 +169,7 @@ fn held(lab: &Lab, me: SignerId, key: &str, now: &Stamp) -> Option<(Value, u64)>
     let mut views = lab.query_views(me).lock().unwrap_or_else(|p| p.into_inner());
     views.tick += 1;
     let tick = views.tick;
-    let found = views.views.get(key).and_then(|v| if v.stamp == *now { Some(true) } else if kept(lab, me, v, now) {
+    let found = views.views.get(key).and_then(|v| if v.stamp.current(now) { Some(true) } else if kept(lab, me, v, now) {
         Some(false) } else { None });
     let Some(current) = found else {
         views.stats.worked += 1;
