@@ -9,6 +9,8 @@
 # it was: a cold build, as before. What it says goes to stderr, but for one line on stdout for the session.
 set -uo pipefail
 [ "${CLAUDE_CODE_REMOTE:-}" = true ] && [ "$(uname -s)-$(uname -m)" = Linux-x86_64 ] || exit 0
+# avenDB2's sessions (the avenSANDBOX cloud environment sets AVEN_DB2=1) build nothing of v1 (aven/DB2/SANDBOX.md)
+[ "${AVEN_DB2:-}" = 1 ] && exit 0
 
 # the page's avenDB device for this checkout (B1), from CI's build of its sources, in the background; never a build
 ( cd "${CLAUDE_PROJECT_DIR:-$(pwd)}" && bun aven/ops/devx/wasm.mjs ensure --fetch > /dev/null 2>&1 & )

@@ -1,0 +1,20 @@
+{
+	"name": "avendb2",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"up": "bun sandbox/up.mjs up",
+		"down": "bun sandbox/up.mjs down",
+		"logs": "bun sandbox/up.mjs logs",
+		"shot": "bun sandbox/up.mjs shot",
+		"build": "bun sandbox/up.mjs build",
+		"doctor": "bun sandbox/up.mjs doctor"
+	},
+	"devDependencies": {
+		"@sveltejs/vite-plugin-svelte": "7.3.1",
+		"playwright": "1.64.1",
+		"svelte": "5.57.3",
+		"vite": "8.3.5"
+	},
+	"packageManager": "bun@1.4.4"
+}

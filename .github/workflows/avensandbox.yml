@@ -1,0 +1,171 @@
+# avenSANDBOX on GitHub (aven/DB2/SANDBOX.md, "Production"). production takes changes from main only, and every change
+# to it boots the sandbox from the box's image and checks it: the same `bun run up --check` a Claude cloud session or a
+# Mac runs. Every push to production that passes becomes a release on its own: tagged by its date in Berlin and its
+# number that day (26.10.29v1, 26.10.29v2, ...), its changes listed, and the box it was checked in pinned to it.
+name: avenSANDBOX
+
+on:
+  pull_request:
+    branches: [production]
+  push:
+    branches: [production]
+  workflow_dispatch:
+
+permissions: {}
+
+# a newer push to a pull request replaces its older run; production's pushes wait their turn, so each can release
+concurrency:
+  group: avensandbox-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  from-main:
+    name: Only from main
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: The pull request comes from main
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ "$HEAD_REF" != main ] || [ "$HEAD_REPO" != "$REPO" ]; then
+            echo "::error::production takes changes from main only; this pull request comes from $HEAD_REPO:$HEAD_REF"
+            exit 1
+          fi
+
+  sandbox:
+    name: avenSANDBOX
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.box.outputs.image }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: 1.4.4
+      # The P2P lanes route between Docker networks, which Docker 28.2 and later block unless allowed. Milestone 1 runs
+      # on one network, so a runner whose Docker refuses the setting goes on without it, with a warning.
+      - name: Docker routes between its networks
+        run: |
+          sudo cat /etc/docker/daemon.json > /tmp/daemon.json 2>/dev/null || echo '{}' > /tmp/daemon.json
+          jq '. + {"allow-direct-routing": true}' /tmp/daemon.json | sudo tee /etc/docker/daemon.json > /dev/null
+          if ! sudo systemctl restart docker; then
+            echo "::warning::Docker $(docker version --format '{{.Client.Version}}') refused allow-direct-routing; running without it"
+            sudo cp /tmp/daemon.json /etc/docker/daemon.json
+            sudo systemctl reset-failed docker
+            sudo systemctl restart docker
+          fi
+          docker version --format 'Docker {{.Server.Version}}'
+      - uses: docker/login-action@v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: The box's image
+        id: box
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/avensandbox:$(sha256sum aven/DB2/box/Dockerfile | cut -c1-16)" >> "$GITHUB_OUTPUT"
+      - name: bun run up --check
+        working-directory: aven/DB2
+        env:
+          AVENSANDBOX_IMAGE: ${{ steps.box.outputs.image }}
+        run: bun run up --check
+      - name: Publish the box this run built, so the release can pin it
+        if: github.event_name == 'push'
+        env:
+          IMAGE: ${{ steps.box.outputs.image }}
+        run: docker buildx imagetools inspect "$IMAGE" > /dev/null 2>&1 || docker push "$IMAGE"
+      - name: Build the release's deliverables
+        if: github.event_name == 'push'
+        working-directory: aven/DB2
+        env:
+          AVENSANDBOX_IMAGE: ${{ steps.box.outputs.image }}
+        run: bun run build
+      - name: Keep the deliverables for the release
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: deliverables
+          path: aven/DB2/deliverables/
+          if-no-files-found: error
+      - name: The run's screenshot and report
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: avensandbox-run
+          path: aven/DB2/runs/
+          if-no-files-found: ignore
+
+  release:
+    name: Release
+    needs: sandbox
+    if: github.event_name == 'push' && github.ref == 'refs/heads/production'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: docker/login-action@v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: deliverables
+          path: deliverables
+      - name: Tag the commit, pin the box, attach the deliverables, write the changes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          IMAGE: ${{ needs.sandbox.outputs.image }}
+        run: |
+          day=$(TZ=Europe/Berlin date +%y.%m.%d)
+          last=$(gh api "repos/$REPO/git/matching-refs/tags/${day}v" --jq '.[].ref' \
+            | sed -n "s#^refs/tags/${day}v\([0-9][0-9]*\)\$#\1#p" | sort -n | tail -1)
+          tag="${day}v$(( ${last:-0} + 1 ))"
+
+          # avenSANDBOX: the exact box the check ran in, tagged with the release's name
+          box="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/avensandbox"
+          docker buildx imagetools create --tag "$box:$tag" "$IMAGE"
+          digest=$(docker buildx imagetools inspect "$box:$tag" --format '{{json .Manifest}}' | jq -r .digest)
+
+          # avenDB2: the landing page, named for the release
+          page="avendb2-landing-$tag.tar.gz"
+          mv deliverables/avendb2-landing.tar.gz "deliverables/$page"
+          (cd deliverables && sha256sum "$page" > SHA256SUMS)
+
+          previous=$(gh release list --repo "$REPO" --limit 1 --json tagName --jq '.[0].tagName // empty')
+          {
+            echo "## Deliverables"
+            echo
+            echo "**avenSANDBOX**, the box this release was checked in:"
+            echo
+            echo '```bash'
+            echo "docker pull $box:$tag"
+            echo '```'
+            echo
+            echo "Digest: \`$box@$digest\`"
+            echo
+            echo "**avenDB2**, the landing page: \`$page\` below, checksum in \`SHA256SUMS\`."
+            echo
+            if [ -n "$previous" ]; then
+              gh api "repos/$REPO/releases/generate-notes" -f tag_name="$tag" -f target_commitish="$SHA" \
+                -f previous_tag_name="$previous" --jq .body
+            else
+              echo "## What's changed"
+              echo
+              echo "The first production release."
+            fi
+          } > notes.md
+          gh release create "$tag" --repo "$REPO" --target "$SHA" --title "$tag" --notes-file notes.md \
+            "deliverables/$page" deliverables/SHA256SUMS
+          echo "Released **$tag** at \`$SHA\`: \`$box:$tag\` and \`$page\`" >> "$GITHUB_STEP_SUMMARY"

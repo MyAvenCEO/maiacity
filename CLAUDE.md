@@ -1,5 +1,12 @@
 # Working rules for agents in this repository
 
+## v1's GitHub workflows are parked (Samuel 2026-10-29)
+
+`ci.yml`, `release.yml` and `ops.yml` live in `.github/workflows-v1/` and don't run: `main` has no CI, nothing deploys
+v1, and the "CI required" check below no longer reports. GitHub runs only avenDB2's workflows: `avensandbox.yml` on the
+`production` branch, which takes changes from `main` only and releases every push as a dated release, and the box's
+image (`aven/DB2/SANDBOX.md`). The rules below describe v1's flow as it was.
+
 ## CI runs once per goal, not once per task (Samuel 2026-10-27)
 
 Many threads work in parallel (20 to 50 task branches at a time). CI on GitHub runs once, on the final pull request of a
