@@ -17,8 +17,9 @@ name: CI
 #   proofs        the Lean spec, avenDB's SSOT (it proves, and the committed vectors are the model's), and the protocol
 #                 models (Verifpal) with their negative controls
 #   browser       avenDB's device as WebAssembly in a real Chromium, against a real relay and server
-#   images        the release's images (the peer's, the API's), built from this tree and pushed by digest from this
-#                 repository's branches: release.yml promotes them when main's files are this run's (B2)
+#   image-avendb  the release's images, each on a runner of its own, built from this tree and pushed by digest from
+#   image-api     this repository's branches: release.yml promotes them when main's files are this run's (B2). The
+#                 peer's starts at once; the API's carries the page's device, so it starts after wasm
 #   mac           theOS compiles on a Mac and keeps its native contracts
 #   lean          Lean runs locked down as theOS runs it, on a Mac of its own
 #   site-same     the site builds byte for byte the same on macOS as the js job built it on Linux (what a Mac's witness of
@@ -92,8 +93,8 @@ jobs:
       key_protocol: ${{ steps.plan.outputs.key_protocol }}
       run_browser: ${{ steps.plan.outputs.run_browser }}
       key_browser: ${{ steps.plan.outputs.key_browser }}
-      run_images: ${{ steps.plan.outputs.run_images }}
-      images: ${{ steps.plan.outputs.images }}
+      run_image_avendb: ${{ steps.plan.outputs.run_image_avendb }}
+      run_image_api: ${{ steps.plan.outputs.run_image_api }}
       run_mac: ${{ steps.plan.outputs.run_mac }}
       key_mac: ${{ steps.plan.outputs.key_mac }}
       run_lean: ${{ steps.plan.outputs.run_lean }}
@@ -488,82 +489,43 @@ jobs:
 
   # Built once (B2): from this run's files, pushed by digest, never under a tag a release reads. release.yml promotes an
   # image only from the run whose files are byte for byte main's (reuse.mjs), by the digest that run's artifact names:
-  # a digest names its bytes, so no other run's push can stand in for it. A fork's pull request builds without pushing.
-  # Both on one runner, one after the other: the API's takes a minute, the peer's its Rust build (warm: seconds).
-  images:
-    needs: [plan, wasm]
-    if: needs.plan.outputs.run_images == 'true'
-    name: Images
+  # a digest names its bytes, so no other run's push can stand in for it. One job per image (.github/actions/image), each
+  # started once what it is built from is there: the peer's Rust build at once, the API's after the page's device.
+  image-avendb:
+    needs: plan
+    if: needs.plan.outputs.run_image_avendb == 'true'
+    name: The peer's image
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
       contents: read
       packages: write
-    env:
-      IMAGES: ${{ needs.plan.outputs.images }}
-      PUSH: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     steps:
       - uses: actions/checkout@v7.0.1
-      - id: want
-        run: |
-          echo "api=$(jq 'index("api") != null' <<<"$IMAGES")" >> "$GITHUB_OUTPUT"
-          echo "avendb=$(jq 'index("avendb") != null' <<<"$IMAGES")" >> "$GITHUB_OUTPUT"
-          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/image
+        with:
+          component: avendb
+          dockerfile: aven/db/Dockerfile.server
+          push: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+
+  image-api:
+    needs: [plan, wasm]
+    if: needs.plan.outputs.run_image_api == 'true'
+    name: The API's image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7.0.1
       # the API's image carries the page's device, which checks the proof of the code it runs (aven/api/Dockerfile)
-      - if: steps.want.outputs.api == 'true'
-        uses: ./.github/actions/page-device
-      - uses: docker/setup-buildx-action@v4.4.1
-      - if: env.PUSH == 'true'
-        uses: docker/login-action@v4.7.0
+      - uses: ./.github/actions/page-device
+      - uses: ./.github/actions/image
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-      - id: avendb
-        if: steps.want.outputs.avendb == 'true'
-        uses: docker/build-push-action@v7.4.0
-        with:
-          context: .
-          file: aven/db/Dockerfile.server
-          push: ${{ env.PUSH == 'true' }}
-          tags: ${{ steps.want.outputs.image }}-avendb:ci-${{ github.sha }}
-          cache-from: type=gha,scope=avendb
-          cache-to: type=gha,scope=avendb,mode=max
-      - id: api
-        if: ${{ !cancelled() && steps.want.outputs.api == 'true' }}
-        uses: docker/build-push-action@v7.4.0
-        with:
-          context: .
-          file: aven/api/Dockerfile
-          push: ${{ env.PUSH == 'true' }}
-          tags: ${{ steps.want.outputs.image }}-api:ci-${{ github.sha }}
-          cache-from: type=gha,scope=api
-          cache-to: type=gha,scope=api,mode=max
-      # each image's name and digest, as release.yml reads them
-      - if: ${{ !cancelled() && env.PUSH == 'true' }}
-        env:
-          IMAGE: ${{ steps.want.outputs.image }}
-          AVENDB: ${{ steps.avendb.outputs.digest }}
-          API: ${{ steps.api.outputs.digest }}
-        run: |
-          for component in $(jq -r '.[]' <<<"$IMAGES"); do
-            case "$component" in avendb) digest=$AVENDB ;; api) digest=$API ;; *) echo "::error::no image $component"; exit 1 ;; esac
-            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::the $component build named no digest"; exit 1; }
-            jq -n --arg image "$IMAGE-$component" --arg digest "$digest" --arg sha "$GITHUB_SHA" '{image:$image,digest:$digest,sha:$sha}' > "image-$component.json"
-            cat "image-$component.json"
-          done
-      - if: env.PUSH == 'true' && steps.want.outputs.avendb == 'true'
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          name: image-avendb
-          path: image-avendb.json
-          retention-days: 7
-      - if: env.PUSH == 'true' && steps.want.outputs.api == 'true'
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          name: image-api
-          path: image-api.json
-          retention-days: 7
+          component: api
+          dockerfile: aven/api/Dockerfile
+          push: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
 
   # theOS (Tauri) compiles on a Mac runner, so a change learns here whether its Rust builds there, not by queueing behind
   # Samuel's Mac. A check only: it signs and ships nothing; theOS itself is built on the Mac. The Secure Enclave bridge
@@ -699,7 +661,7 @@ jobs:
 
   required:
     name: CI required
-    needs: [plan, wasm, js, probes, rust, proofs, browser, images, mac, lean, site-same]
+    needs: [plan, wasm, js, probes, rust, proofs, browser, image-avendb, image-api, mac, lean, site-same]
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
