@@ -99,9 +99,9 @@ const buildPeers = [
 	'set -e',
 	'cargo build -q -p aven-peer',
 	'cargo build -q -p aven-peer-light --lib --target wasm32-unknown-unknown',
-	`wasm-bindgen --target web --no-typescript --out-dir target/light.next ${lightWasm}`,
-	// one swap, so Vite never serves half a build
-	'if ! cmp -s target/light.next/aven_peer_light_bg.wasm target/light/aven_peer_light_bg.wasm 2>/dev/null; then rm -rf target/light && mv target/light.next target/light; else rm -rf target/light.next; fi',
+	// wasm-bindgen takes 3 s even for nothing, so it runs only for a new wasm; one swap, so Vite never serves half a build
+	`src=$(sha256sum ${lightWasm} | cut -c1-64)`,
+	`if [ "$src" != "$(cat target/light/.source 2>/dev/null)" ]; then rm -rf target/light.next && wasm-bindgen --target web --no-typescript --out-dir target/light.next ${lightWasm} && echo "$src" > target/light.next/.source && rm -rf target/light && mv target/light.next target/light; fi`,
 	`sha256sum ${peerBinary} | cut -c1-16`,
 ].join(' && ');
 
