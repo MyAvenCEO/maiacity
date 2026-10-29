@@ -598,7 +598,7 @@ impl Edit {
     }
 
     /// Removals sort before anything else at the same depth.
-    fn rank(&self) -> u8 {
+    pub(crate) fn rank(&self) -> u8 {
         if self.is_removal() { 0 } else { 1 }
     }
 }
@@ -5679,6 +5679,38 @@ impl Log {
         if self.ids.len() != before {
             self.head.on(&self.ids[before..]);
         }
+    }
+
+    /// `receive_ids`, of an edit held where `place` says, never decoded: indexed by what its row says of it (its log,
+    /// its depth, the entry it writes and its rank), as its device worked them out of it when it took it
+    /// (`lab::log_rows`).
+    pub(crate) fn receive_rowed(
+        &mut self,
+        id: EditId,
+        place: crate::bulk::Place,
+        log: Option<crate::sync::LogId>,
+        depth: u64,
+        write: Option<(EntryId, u8)>,
+    ) {
+        if !self.held.insert(id) {
+            return;
+        }
+        let at = self.edits.len();
+        self.next_depth = self.next_depth.max(depth.saturating_add(1));
+        push_grown(&mut self.logs, log);
+        if let Some(l) = log {
+            self.by_log.entry(l).or_default().push(at);
+            if let crate::sync::LogId::Audience(v, x) = l {
+                self.audience_logs.entry(v).or_default().insert(x);
+            }
+        }
+        if let Some((entry, rank)) = write {
+            self.write_at.entry(id).or_insert(at);
+            self.entry_order.entry(entry).or_default().entry((depth, rank, id)).or_insert(at);
+        }
+        self.edits.push_placed(place);
+        push_grown(&mut self.ids, id);
+        self.head.on(&self.ids[at..]);
     }
 
     /// Each edit held by where `place` says its record is, if it says (`policy::edits`): the same edits, the same ids,

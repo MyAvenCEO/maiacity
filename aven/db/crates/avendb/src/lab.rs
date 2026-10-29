@@ -100,6 +100,9 @@ fn view_replay(bytes: &[u8]) -> Option<&[u8]> {
 /// What a stored view holds beside its replay, behind a header: what its device read (`stored_readings`).
 const VIEW_READ: &[u8] = b"avenDB view and readings 1\n";
 
+/// What a pack's rows are sealed under (`Lab::log_rows`).
+const LOG_ROWS: &[u8] = b"avenDB pack rows";
+
 /// A stored view's replay, and what its device read where it holds that (`VIEW_READ`).
 fn view_parts(bytes: &[u8]) -> Option<(&[u8], Option<&[u8]>)> {
     let Some(rest) = bytes.strip_prefix(VIEW_READ) else { return Some((bytes, None)) };
@@ -114,6 +117,9 @@ mod blind_index;
 mod bodies;
 #[path = "lab/stored_readings.rs"]
 mod stored_readings;
+#[path = "lab/log_rows.rs"]
+mod log_rows;
+pub use log_rows::LogRows;
 pub(crate) use bodies::BodyOf;
 use bodies::{Bodies, Opener, StoreBodies};
 #[path = "lab/held.rs"]
@@ -6890,6 +6896,99 @@ impl Lab {
             s
         }).collect();
         self.restore_page_of(d, r, page, &blobs, true, Some(&placed));
+    }
+
+    /// The rows of device `d`'s log's edits from place `from` on, whose records are `wire`, in order (`signed_wire`),
+    /// sealed for it alone: what its shelf keeps beside the pack of them (`log_rows`), for an open to take them back by.
+    /// None while it is locked, or where `wire` isn't of its edits there.
+    pub fn log_rows(&self, d: SignerId, from: usize, wire: &[Vec<u8>]) -> Option<Vec<u8>> {
+        let key = self.shelf_key(d)?;
+        let store = self.held(d);
+        let (ids, logs) = (store.log.ids(), store.log.logs());
+        let mut rows = LogRows::default();
+        let mut keys: HashMap<SignerId, u32> = HashMap::new();
+        for (k, record) in wire.iter().enumerate() {
+            // decoded from its record, not read from the log, which holds it by place where its shelf does
+            let signed = Signed::from_wire(record).ok()?;
+            let id = *ids.get(from + k)?;
+            if signed.edit.id() != id {
+                return None;
+            }
+            let signers = signed.sigs.iter().map(|sig| {
+                let s = sig.keys.id();
+                *keys.entry(s).or_insert_with(|| {
+                    rows.keys.push((s, sig.keys.clone()));
+                    rows.keys.len() as u32 - 1
+                })
+            }).collect();
+            rows.rows.push(log_rows::row(&signed.edit, id, logs[from + k], record, signers));
+        }
+        let bytes = rows.to_bytes();
+        // a nonce of what it seals: the same rows sealed again are the same bytes, telling nobody more
+        let mut rng = SeededRng::new("log rows", blake3::hash(&bytes).as_bytes());
+        Some(key.lock("log rows", &bytes, LOG_ROWS, &mut rng))
+    }
+
+    /// What `log_rows` sealed as `sealed` for device `d`, if it did.
+    pub fn open_rows(&self, d: SignerId, sealed: &[u8]) -> Option<LogRows> {
+        LogRows::from_bytes(&self.shelf_key(d)?.unlock("log rows", sealed, LOG_ROWS)?)
+    }
+
+    /// `restore_page_placed`, of a pack of the head its shelf named by its `checked` (`restore_start`), taken by its
+    /// rows `rows` (`open_rows`), each edit's record where `placed` says: never read, hashed or decoded, each held by
+    /// place and decoded as it is first read. False, taking nothing, where it can't take them so: its keys didn't name
+    /// that head, so it checks each edit's signatures, or it holds its edits in memory, not spilled; its caller reads
+    /// the pack then.
+    pub fn restore_rows(
+        &mut self,
+        d: SignerId,
+        r: &mut Restoring,
+        rows: LogRows,
+        placed: Vec<Placed>,
+        keys: impl IntoIterator<Item = Arc<[u8]>>,
+    ) -> bool {
+        let at = Perf::start();
+        let Some(store) = self.stores.get_mut(&self.at(d)) else { return false };
+        if !r.matched || !store.signed.spilled() || placed.len() != rows.len() {
+            return false;
+        }
+        let blobs: Blobs = keys.into_iter().map(|b| (BlobId::of(&b), b)).collect();
+        let n = rows.len();
+        (r.taken, r.vouched) = (r.taken + n, r.vouched + n);
+        r.vouch = r.taken;
+        let LogRows { keys, rows } = rows;
+        // what the checkpoints among them cover, as `keep_fresh_as` takes them
+        let more: HashSet<EditId> = rows.iter().flat_map(|row| row.covers.iter().copied()).collect();
+        store.bare.extend(more.iter().filter(|id| store.signed.contains_key(id)));
+        store.covers.extend(more);
+        for (row, placed) in rows.into_iter().zip(placed) {
+            if store.signed.contains_key(&row.id) {
+                continue;
+            }
+            if store.covers.contains(&row.id) {
+                store.bare.insert(row.id);
+            }
+            for b in &row.blobs {
+                match blobs.get(b) {
+                    Some(bytes) if !store.blobs.contains_key(b) => store.blobs.insert(*b, bytes.clone()),
+                    Some(_) => {}
+                    None if !store.blobs.contains_key(b) => {
+                        r.wanting.insert(*b);
+                    }
+                    None => {}
+                }
+            }
+            let signers = row.signers.iter().map(|&i| keys[i as usize].clone());
+            store.signed.insert_rowed(row.id, signers, &placed);
+            let place = store.signed.place(&row.id).expect("an edit it spilled");
+            store.log.receive_rowed(row.id, place, row.log, row.depth, row.write);
+        }
+        store.digests = None;
+        store.latest = OnceLock::new();
+        store.perf.add("keep", at);
+        store.perf.count("edits offered", n as u64);
+        store.perf.count("edits by rows", n as u64);
+        true
     }
 
     /// `restore_page`: in the order they came where `in_order`, else as `fresh` orders them, held bare first.

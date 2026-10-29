@@ -222,6 +222,43 @@ async fn the_edits_its_keys_name_are_not_checked_again_and_forged_keys_vouch_for
     node.shutdown().await.expect("it stops");
 }
 
+/// Alice's Mac as `mac` starts it, its edits spilled into folder `spill`, as theOS holds them (`avendb_device`).
+async fn spilled_mac(dir: &Path, spill: &Path) -> (Node, World, VaultId) {
+    static STARTS: AtomicU8 = AtomicU8::new(101);
+    let mut w = world();
+    let coop = handbook_ready(&mut w);
+    let mut lab = w.lab.split(w.mac_a, &[w.passkey_a], [STARTS.fetch_add(1, Ordering::Relaxed); 32]);
+    lab.spill(w.mac_a, &avendb::lab::Spill::new(spill, 1 << 20).expect("a spill")).expect("spilled");
+    let opts = Options { shelf: Some(disk::open(dir).expect("the shelf")), ..Options::local() };
+    let node = Node::spawn(lab, w.mac_a, opts).await.expect("a node");
+    (node, w, coop)
+}
+
+/// A spilled node starting again takes the packs of its newest head back by their rows (`Lab::log_rows`): never
+/// reading, hashing or decoding their edits, each held where its pack holds it and decoded as it is first read. The
+/// same edits in the same order, and what they say reads the same.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_spilled_node_takes_its_packs_back_by_their_rows() {
+    let (dir, spill) = (Folder::new("by-rows"), Folder::new("by-rows-spill"));
+    let (node, _, coop) = spilled_mac(dir.path(), spill.path()).await;
+    let first = write(&node, coop, "Note first", "the first note").await;
+    for n in 0..140 {
+        write(&node, coop, &format!("Note {n}"), &format!("note number {n}")).await;
+    }
+    warmed(&node).await;
+    let held = node.read(|lab, me| lab.log(me).ids().to_vec()).await;
+    node.shutdown().await.expect("it stops");
+    drop(node);
+    let rows = files(&dir.path().join(format!("g{FLOOR}")).join("rows")).len();
+    assert!(rows >= 1, "a pack's rows beside it");
+    let (node, _, _) = spilled_mac(dir.path(), spill.path()).await;
+    assert_eq!(node.read(|lab, me| lab.log(me).ids().to_vec()).await, held, "every edit, in its order");
+    let by_rows = node.read(|lab, me| counted(lab, me, "edits by rows")).await;
+    assert!(by_rows as usize * 3 > held.len() * 2, "the packs taken by their rows: {by_rows} of {}", held.len());
+    assert!(shows(&node, first, "the first note").await, "an edit by place reads as it did");
+    node.shutdown().await.expect("it stops");
+}
+
 /// A catch-up: many edits taken in a few saves, far fewer than the 64 a head follows. A head follows them all the
 /// same, once the journal holds `TAIL_EDITS` edits (64 with `test-fixtures`, a page without), and the next start checks
 /// only the edits after it, fewer than one save's, not every one.
