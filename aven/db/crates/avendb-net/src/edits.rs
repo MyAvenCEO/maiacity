@@ -1023,7 +1023,11 @@ impl Shared {
         let mut put = due.is_some();
         if let Some(due) = due {
             let before = edits.checked();
+            // timed among the Lab's turns, as the save's other steps: a shelf write that blocks a page's one worker
+            // names itself in its report
+            let _timed = crate::Timed::new(&self.lab_turns, "save: put edits", n0_future::time::Instant::now());
             edits.put_on(on, &mut book, due).await?;
+            drop(_timed);
             // a head it put, named by its keys at once (`keep_checked`)
             if edits.checked() != before {
                 self.keep_checked(on).await;
@@ -1052,6 +1056,7 @@ impl Shared {
         // is derived, so a shelf that can't take it costs the next save that step, never this one
         if let Some(index) = &self.shared_index {
             let held = edits.held(&self.locked_lab(), self.me);
+            let _timed = crate::Timed::new(&self.lab_turns, "save: step the shared index", n0_future::time::Instant::now());
             if let Err(e) = index.step(&self.lab, self.me, held).await {
                 tracing::warn!("avendb: the shared index can't be stepped on: {e:#}");
             }
@@ -1072,7 +1077,10 @@ impl Shared {
         // what it worked out only spares it time: a shelf that can't take it costs it that time, no more, and the
         // device gives it again at the next save
         if let Some(mut warming) = warming {
-            match edits.put_warm_on(on, &mut warming).await {
+            let timed = crate::Timed::new(&self.lab_turns, "save: put what it worked out", n0_future::time::Instant::now());
+            let put = edits.put_warm_on(on, &mut warming).await;
+            drop(timed);
+            match put {
                 Ok(()) => {
                     let shared = self.clone();
                     let warmed = move || {
@@ -1096,6 +1104,7 @@ impl Shared {
             }
         }
         // Derived summaries share the authoritative save lane but cannot prevent a clean shutdown.
+        let _timed = crate::Timed::new(&self.lab_turns, "save: range summaries", n0_future::time::Instant::now());
         if let Err(error) = self.edit_transfer.summaries.flush(on).await {
             tracing::warn!(%error, "avendb: optional range summary remains pending");
         }
