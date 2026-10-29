@@ -28,11 +28,15 @@ pub(crate) struct LogHead {
     marks: Vec<Hasher>,
     running: Hasher,
     at: usize,
+    /// The head of all of them, finalized once as they came.
+    now: Head,
 }
 
 impl Default for LogHead {
     fn default() -> LogHead {
-        LogHead { marks: vec![Hasher::new(PURPOSE)], running: Hasher::new(PURPOSE), at: 0 }
+        let running = Hasher::new(PURPOSE);
+        let now = Head { at: 0, sum: running.clone().finalize() };
+        LogHead { marks: vec![running.clone()], running, at: 0, now }
     }
 }
 
@@ -61,11 +65,12 @@ impl LogHead {
                 self.marks.push(self.running.clone());
             }
         }
+        self.now = Head { at: self.at as u64, sum: self.running.clone().finalize() };
     }
 
     /// The head of all the ids it is of.
     pub(crate) fn now(&self) -> Head {
-        Head { at: self.at as u64, sum: self.running.clone().finalize() }
+        self.now
     }
 
     /// The head of the first `n` of `ids`, the ids it is of, if there are that many: from the mark at or before `n`.

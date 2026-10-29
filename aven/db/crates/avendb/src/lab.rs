@@ -784,7 +784,8 @@ pub struct Warming {
     // Process-local receipt binding: no replacement store, lock, withdrawal or earlier acknowledgement may
     // make its counts describe a different key prefix or view. Appending edits alone keeps this receipt valid.
     revision: Arc<()>,
-    lineage: crate::policy::LogRevision,
+    /// The head of its log as it captured it: an acknowledgement counts only while the log goes on from it.
+    head: crate::log_head::Head,
     keys_of: Option<(Option<Checked>, usize)>,
     view_of: usize,
     view_wholes: u64,
@@ -855,20 +856,20 @@ pub enum ReplyScope {
 /// What a device worked out of its edits for its peers' syncs, while its edits stay as they were (Samuel's iPhone
 /// 2026-10-22, a page every 9 s): its frontiers, and, for each asking a peer makes page after page with the same
 /// request, the places of all it sends, in order (`Lab::reply`). Which edits an asker may receive needs no keeping: the
-/// log keeps each log's places as edits arrive (`Log::by_log`). Each is kept with the process-local revision of its log,
-/// checked in constant time. A changed log, including a checkpoint withdrawal or a restore of the same length,
-/// invalidates it without a history scan or hash collision.
+/// log keeps each log's places as edits arrive (`Log::by_log`). Each is kept with the head of its log (`Log::head`),
+/// checked in constant time: a log of other edits, a checkpoint withdrawal or a restore of the same length among them,
+/// has another head, and a log of the same edits works out the same.
 #[derive(Default)]
 struct Answers {
     basis: std::sync::Mutex<Option<Arc<RequestBasis>>>,
     #[cfg(test)]
     basis_builds: std::sync::atomic::AtomicUsize,
-    sends: std::sync::Mutex<HashMap<(SignerId, [u8; 32], ReplyScope), (crate::policy::LogRevision, Arc<ReplyPlan>)>>,
-    /// The writers `Lab::writers_shown` names to each peer, kept for the log's revision and the follow list.
-    writers: std::sync::Mutex<HashMap<SignerId, (crate::policy::LogRevision, Vec<VaultId>, Arc<BTreeSet<SignerId>>)>>,
-    /// What the removals its catch-up hasn't replayed yet may take away (`Lab::cuts`), for the log's revision and how
+    sends: std::sync::Mutex<HashMap<(SignerId, [u8; 32], ReplyScope), (crate::log_head::Head, Arc<ReplyPlan>)>>,
+    /// The writers `Lab::writers_shown` names to each peer, kept for the log's head and the follow list.
+    writers: std::sync::Mutex<HashMap<SignerId, (crate::log_head::Head, Vec<VaultId>, Arc<BTreeSet<SignerId>>)>>,
+    /// What the removals its catch-up hasn't replayed yet may take away (`Lab::cuts`), for the log's head and how
     /// far its replay is.
-    cuts: std::sync::Mutex<Option<(crate::policy::LogRevision, usize, Arc<Cuts>)>>,
+    cuts: std::sync::Mutex<Option<(crate::log_head::Head, usize, Arc<Cuts>)>>,
 }
 
 /// What the removals among a device's edits that its replay hasn't reached may take away from a peer it answers in
@@ -903,7 +904,7 @@ fn acts(action: &Action) -> bool {
 /// Disposable structural work, shared across peers only while the exact held edits/IDs stay unchanged.
 /// It contains NO permission decision, follow list, available-key state or persisted authority.
 struct RequestBasis {
-    revision: crate::policy::LogRevision,
+    head: crate::log_head::Head,
     ask: crate::sync::Ask,
 }
 
@@ -1020,8 +1021,9 @@ struct Store {
     /// How many of its edits that replay is of, the first of its log: those after it step on it (`replay_on`).
     replayed: usize,
     /// A replay of every edit it held when it began, run a slice a step of a catch-up where stepping on would replay
-    /// them all (`step_replay`): of a log of that lineage, the replay before it being of `replayed` edits then.
-    replaying: Option<(crate::policy::LogRevision, usize, crate::policy::ReplayRun)>,
+    /// them all (`step_replay`): of a log that goes on from that head, the replay before it being of `replayed` edits
+    /// then.
+    replaying: Option<(crate::log_head::Head, usize, crate::policy::ReplayRun)>,
     /// What its edits say now, those it kept since that replay too (`Lab::latest`): replayed once for the edits it
     /// holds now, not on every ask, announce and fetch. Empty while the replay is of every edit it holds and no entry is
     /// based, the replay then being `latest` itself.
@@ -1033,9 +1035,8 @@ struct Store {
     /// The stays of its audience, by their print, each audience key it derived for every one of them (`derive`): a key
     /// whose audience's stays are as they were then derives nothing new, and is left alone.
     derived_through: HashMap<KeyId, [u8; 32]>,
-    /// What its log and replay were when it last derived (`stays_changed`): its log's lineage and length, and its whole
-    /// replays.
-    stays_seen: Option<(crate::policy::LogRevision, usize, u64)>,
+    /// What its log and replay were when it last derived (`stays_changed`): its log's head, and its whole replays.
+    stays_seen: Option<(crate::log_head::Head, u64)>,
     /// The slices of the shares, keep shares among them, whose selectors it opened, and those whose selectors never
     /// open for it: garbled, or with no box for a key it holds that opens, or, where it is a steward, for no seed of
     /// the vault the share is over.
@@ -1126,7 +1127,7 @@ struct Store {
     /// How many edits the view its shelf keeps is of, as it last gave it or took it from there, none if 0; how many
     /// times it replayed every edit, and how many times when its shelf took that view (`Lab::warming`).
     view_given: usize,
-    view_lineage: Option<crate::policy::LogRevision>,
+    view_head: Option<crate::log_head::Head>,
     wholes: u64,
     view_wholes: u64,
     /// The view its shelf keeps holds not what it read (`stored_readings`): one of an older engine, one given before it
@@ -1243,7 +1244,7 @@ impl Default for Store {
             checked_given: None,
             view_given: 0,
             restore_whole: RESTORE_WHOLE,
-            view_lineage: None,
+            view_head: None,
             wholes: 0,
             view_wholes: 0,
             view_read_due: true,
@@ -1323,7 +1324,7 @@ impl Store {
     fn view_due(&self) -> bool {
         let n = self.replayed;
         let since = n.abs_diff(self.view_given);
-        let stale = self.wholes != self.view_wholes || self.view_lineage.as_ref() != Some(&self.log.lineage());
+        let stale = self.wholes != self.view_wholes || !self.view_head.is_some_and(|h| self.log.of_log(h));
         let read_due = self.view_read_due && stored_readings::sealable(self, n);
         n > 0 && n <= self.log.edits().len() && (self.view_given == 0 || stale || since >= VIEW_STEPS || read_due)
     }
@@ -1583,8 +1584,8 @@ impl IndexedBox {
 #[derive(Default)]
 struct KeyIndexed {
     ix: KeyIndex,
-    /// What it is of: the log's lineage and length, the store's whole replays, and the replay's length and last edit.
-    of: Option<(crate::policy::LogRevision, usize, u64, usize, EditId)>,
+    /// What it is of: the log's head, the store's whole replays, and the replay's length and last edit.
+    of: Option<(crate::log_head::Head, u64, usize, EditId)>,
 }
 
 impl KeyIndexed {
@@ -1618,9 +1619,9 @@ impl KeyIndexed {
     /// How many of the edits of `store`'s replay its index is of, if it grows on from there (`take`).
     fn from(store: &Store) -> Option<usize> {
         let (log, r) = (&store.log, &store.replay);
-        store.key_ix.of.as_ref().and_then(|(lineage, len, wholes, n, last)| {
-            let (len, n) = (*len, *n);
-            let grown = *lineage == log.lineage() && len <= log.edits().len() && *wholes == store.wholes;
+        store.key_ix.of.as_ref().and_then(|(head, wholes, n, last)| {
+            let (len, n) = (head.at as usize, *n);
+            let grown = log.of_log(*head) && *wholes == store.wholes;
             let kept = 0 < n && n <= r.ids.len() && r.ids[n - 1] == *last;
             let removes = log.edits()[len.min(log.edits().len())..].iter().any(Edit::is_removal);
             (grown && kept && !removes).then_some(n)
@@ -1644,7 +1645,7 @@ impl KeyIndexed {
         store.perf.count("keys: boxes indexed", (ix.boxes.len() - had) as u64);
         store.perf.count(if from.is_some() { "keys: index grown a step" } else { "keys: index begun a step" }, 1);
         let (log, r) = (&store.log, &store.replay);
-        store.key_ix.of = Some((log.lineage(), log.edits().len(), store.wholes, to, r.ids[to - 1]));
+        store.key_ix.of = Some((log.head(), store.wholes, to, r.ids[to - 1]));
         store.key_ix.ix = ix;
         true
     }
@@ -1652,7 +1653,7 @@ impl KeyIndexed {
     /// `ix`, taken of `store`'s replay as it is now, back.
     fn put(store: &mut Store, ix: KeyIndex) {
         let (log, r) = (&store.log, &store.replay);
-        store.key_ix.of = r.ids.last().map(|&last| (log.lineage(), log.edits().len(), store.wholes, r.ids.len(), last));
+        store.key_ix.of = r.ids.last().map(|&last| (log.head(), store.wholes, r.ids.len(), last));
         store.key_ix.ix = ix;
     }
 }
@@ -1700,7 +1701,7 @@ impl Spares {
 pub struct FileScan {
     keep: bool,
     entries: Vec<EntryId>,
-    revision: Option<crate::policy::LogRevision>,
+    head: Option<crate::log_head::Head>,
     at: usize,
     selected: HashSet<EntryId>,
     files: BTreeSet<FileRoot>,
@@ -3628,9 +3629,8 @@ impl Lab {
         }
         let at = Perf::start();
         // a replay of them all under way goes on, where its log and the replay it began after are as they were
-        let lineage = store.log.lineage();
-        let run = store.replaying.take().filter(|(l, from, run)| {
-            *l == lineage && *from == store.replayed && run.of() <= store.log.edits().len()
+        let run = store.replaying.take().filter(|(head, from, run)| {
+            store.log.of_log(*head) && *from == store.replayed && run.of() <= head.at as usize
         });
         let (mut run, why) = match run {
             Some((_, _, run)) => (run, None),
@@ -3694,7 +3694,7 @@ impl Lab {
             #[cfg(not(avendb_no_replay_checks))]
             debug_assert!(store.replay == replay(&store.log.edits()[..n]), "a replay run a slice a step differs from the whole");
         } else {
-            store.replaying = Some((lineage, store.replayed, run));
+            store.replaying = Some((store.log.head(), store.replayed, run));
         }
         store.perf.add("replay", at);
     }
@@ -3721,7 +3721,7 @@ impl Lab {
 
     /// Whether what device `d` answers its peers (`announce`, `request`) is by every edit it holds: false in the middle
     /// of a catch-up whose replay lags its log (`standing`), or where it answers nothing till then (`standing_or`).
-    /// Whatever is worked out of its answers then and kept for its log's revision is to be worked out again once it
+    /// Whatever is worked out of its answers then and kept for its log's head is to be worked out again once it
     /// caught up, though its log didn't change: a node that kept whom to tell what so never told a peer of the edits
     /// the catch-up brought (2026-10-28, `answer_current`).
     pub fn answers_current(&self, d: SignerId) -> bool {
@@ -3762,17 +3762,17 @@ impl Lab {
     }
 
     /// What the removals among device `d`'s edits that its replay hasn't reached may take away (`Cuts`), kept for its
-    /// log's revision and how far its replay is: one pass over its edits for the device removals among them, each
+    /// log's head and how far its replay is: one pass over its edits for the device removals among them, each
     /// with the edits the removed device signed that it doesn't keep. Until 2026-10-28 a device's removal took away
     /// everything from everyone wherever the removed device had ever signed a vault's share, kept or not: an iPhone in
     /// the middle of its catch-up of Maia City, whose history holds such removals, handed its Mac nothing, its own new
     /// chat message among it, for as long as the catch-up ran (Fix E).
     fn cuts(&self, d: SignerId) -> Arc<Cuts> {
         let store = self.held(d);
-        let revision = store.log.revision();
+        let head = store.log.head();
         let mut cached = store.answers.cuts.lock().expect("cuts");
         if let Some((at, replayed, cuts)) = cached.as_ref()
-            && *at == revision
+            && *at == head
             && *replayed == store.replayed
         {
             return cuts.clone();
@@ -3820,7 +3820,7 @@ impl Lab {
             }
         }
         let cuts = Arc::new(cuts);
-        *cached = Some((revision, store.replayed, cuts.clone()));
+        *cached = Some((head, store.replayed, cuts.clone()));
         cuts
     }
 
@@ -5624,19 +5624,19 @@ impl Lab {
         Arc::new(places)
     }
 
-    /// Log append/new receive/withdrawal rotate revision; replacing a Store drops this basis. Signature,
+    /// Log append/new receive/withdrawal give another head; replacing a Store drops this basis. Signature,
     /// key and view changes do not alter these structural inputs. Disclosure is still filtered per request.
     fn request_basis(&self, d: SignerId) -> Arc<RequestBasis> {
         let store = self.held(d);
-        let revision = store.log.revision();
+        let head = store.log.head();
         let mut cached = store.answers.basis.lock().expect("request basis");
-        if let Some(basis) = cached.as_ref().filter(|basis| basis.revision == revision) {
+        if let Some(basis) = cached.as_ref().filter(|basis| basis.head == head) {
             return basis.clone();
         }
         let (edits, ids) = (store.log.edits(), store.log.ids());
         let stubs = store.counted_stubs();
         let ask = crate::sync::asks_with_stubs(edits, ids, store.log.logs(), &stubs, &[]);
-        let basis = Arc::new(RequestBasis { revision, ask });
+        let basis = Arc::new(RequestBasis { head, ask });
         #[cfg(test)]
         store.answers.basis_builds.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         *cached = Some(basis.clone());
@@ -5676,12 +5676,12 @@ impl Lab {
     /// The writers device `d` may name to `peer` as those it holds segments of (S8, `Segments.lean`'s `shown`): the
     /// signers of the edits of the logs its request names to `peer` (`request`), whose ids it tells `peer` already, so
     /// naming their writers tells nothing more. Not the writers of any other log it holds, which would tell `peer` whom
-    /// `d` knows in vaults `peer` has no part in. Kept for the log's revision and `d`'s follow list.
+    /// `d` knows in vaults `peer` has no part in. Kept for the log's head and `d`'s follow list.
     pub fn writers_shown(&self, d: SignerId, peer: SignerId) -> Arc<BTreeSet<SignerId>> {
         let store = self.held(d);
-        let revision = store.log.revision();
+        let head = store.log.head();
         if let Some((at, follow, got)) = store.answers.writers.lock().expect("writers").get(&peer)
-            && *at == revision
+            && *at == head
             && *follow == store.follow
         {
             return got.clone();
@@ -5699,7 +5699,7 @@ impl Lab {
         let out = Arc::new(out);
         // worked out by a replay that lags, it is worked out again once caught up (`answers_current`)
         if self.answers_current(d) {
-            store.answers.writers.lock().expect("writers").insert(peer, (revision, store.follow.clone(), out.clone()));
+            store.answers.writers.lock().expect("writers").insert(peer, (head, store.follow.clone(), out.clone()));
         }
         out
     }
@@ -5906,7 +5906,7 @@ impl Lab {
     pub fn range_inventory(
         &self, d: SignerId, asker: SignerId, signer: SignerId, request: &Request,
         scope: &ReplyScope, max_edits: usize, max_wire: usize,
-    ) -> Option<(crate::policy::LogRevision, Vec<EditId>)> {
+    ) -> Option<(crate::log_head::Head, Vec<EditId>)> {
         let places = self.answered(d, asker, &request.ask.follow);
         let sends = self.sends(d, asker, request, &places, scope);
         // Bounds additional inventory work. Initial legacy authorization-plan construction still examines the
@@ -5921,7 +5921,7 @@ impl Lab {
             }
         }
         ids.sort_unstable();
-        Some((store.log.revision(), ids))
+        Some((store.log.head(), ids))
     }
 
     /// Select a requested subset through the SAME current authorization plan, with exact revision fencing.
@@ -5930,11 +5930,11 @@ impl Lab {
     /// Keys and excluded records are reconciled by the mandatory legacy pass after optional ranges.
     pub fn range_select(
         &self, d: SignerId, asker: SignerId, signer: SignerId, request: &Request,
-        scope: &ReplyScope, revision: &crate::policy::LogRevision, wanted: &BTreeSet<EditId>,
+        scope: &ReplyScope, revision: &crate::log_head::Head, wanted: &BTreeSet<EditId>,
         max_edits: usize, max_wire: usize,
     ) -> Option<(Vec<Signed>, bool)> {
         let store = self.held(d);
-        if &store.log.revision() != revision || wanted.is_empty() || wanted.len() > max_edits { return None; }
+        if &store.log.head() != revision || wanted.is_empty() || wanted.len() > max_edits { return None; }
         let places = self.answered(d, asker, &request.ask.follow);
         let sends = self.sends(d, asker, request, &places, scope);
         let mut selected = BTreeMap::new();
@@ -5970,7 +5970,7 @@ impl Lab {
     ) -> Arc<ReplyPlan> {
         let store = self.held(d);
         let (edits, ids) = (store.log.edits(), store.log.ids());
-        let fp = store.log.revision();
+        let fp = store.log.head();
         let mut h = Hasher::new("asking");
         h.update(&Request { after: None, ..request.clone() }.to_wire());
         let asked = h.finalize();
@@ -6091,11 +6091,11 @@ impl Lab {
             return FileScanned::Behind;
         }
         let store = self.held(d);
-        let revision = store.log.revision();
-        if scan.revision.as_ref() != Some(&revision) {
+        let head = store.log.head();
+        if scan.head.as_ref() != Some(&head) {
             let st = self.standing(d);
             let selected = scan.entries.iter().copied().filter(|e| st.entry(*e).is_some_and(|en| st.wants(d, en)));
-            *scan = FileScan { revision: Some(revision), at: 0, selected: selected.collect(), ..FileScan::new(scan.keep, std::mem::take(&mut scan.entries)) };
+            *scan = FileScan { head: Some(head), at: 0, selected: selected.collect(), ..FileScan::new(scan.keep, std::mem::take(&mut scan.entries)) };
         }
         let st = self.standing(d);
         let edits = store.log.edits();
@@ -6254,7 +6254,7 @@ impl Lab {
     }
 
     /// How many edits and McEliece keys device `d` holds. Counts alone are not a revision: checkpoint withdrawal
-    /// and restore can remove edits. Use `log(d).revision()` to invalidate derived work.
+    /// and restore can remove edits. Use `log(d).head()` to invalidate derived work.
     pub fn size(&self, d: SignerId) -> (usize, usize) {
         let store = self.held(d);
         (store.log.ids().len(), store.blobs.len())
@@ -6707,7 +6707,7 @@ impl Lab {
                     }
                     // a view an older engine kept with its adjunct is kept again without it
                     store.view_given = if older { 0 } else { held };
-                    store.view_lineage = Some(store.log.lineage());
+                    store.view_head = Some(store.log.head());
                     store.view_wholes = store.wholes;
                     store.perf.count("replay: from its stored view", 1);
                 }
@@ -6847,7 +6847,7 @@ impl Lab {
         let read = if view_due { stored_readings::seal(store, store.replayed) } else { None };
         let receipt = Warming {
             keys: None, view: None,
-            revision: store.warm_revision.clone(), lineage: store.log.lineage(), keys_of,
+            revision: store.warm_revision.clone(), head: store.log.head(), keys_of,
             view_of: if view_due { store.replayed } else { 0 },
             view_wholes: if view_due { store.wholes } else { 0 },
             view_read: read.is_some(),
@@ -6876,7 +6876,7 @@ impl Lab {
         let Some(store) = self.stores.get_mut(&d) else {
             return;
         };
-        if !Arc::ptr_eq(&store.warm_revision, &warming.revision) || store.log.lineage() != warming.lineage {
+        if !Arc::ptr_eq(&store.warm_revision, &warming.revision) || !store.log.of_log(warming.head) {
             return;
         }
         store.warm_revision = Arc::new(());
@@ -6890,7 +6890,7 @@ impl Lab {
             // a view given without what it read is given again once it can seal that beside it
             store.view_read_due = !warming.view_read;
             store.view_given = warming.view_of;
-            store.view_lineage = Some(warming.lineage);
+            store.view_head = Some(warming.head);
             store.view_wholes = warming.view_wholes;
         }
         if let Some((of, whole)) = warming.shown_of {
@@ -7161,7 +7161,7 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
             break;
         }
     }
-    store.stays_seen = Some((store.log.lineage(), store.log.edits().len(), store.wholes));
+    store.stays_seen = Some((store.log.head(), store.wholes));
     // every entry's key now that the first key it holds of its audience at its epoch derives, it derived
     #[cfg(debug_assertions)]
     {
@@ -7229,11 +7229,12 @@ fn entry_key_of(keys: &Keyring, st: &State, name: KeyName, id: KeyId, by: Option
 /// of the edits it took since, where each is of an entry's own log and no removal, which alone moves an entry or takes
 /// one away. `None` where it is to look at every entry: another edit came, its log began again, or its replay did.
 fn stays_changed(store: &Store) -> Option<HashSet<EntryId>> {
-    let (lineage, len, wholes) = store.stays_seen.as_ref()?;
+    let (head, wholes) = store.stays_seen.as_ref()?;
     let log = &store.log;
-    if log.lineage() != *lineage || log.edits().len() < *len || store.wholes != *wholes {
+    if !log.of_log(*head) || store.wholes != *wholes {
         return None;
     }
+    let len = &(head.at as usize);
     let mut out = HashSet::new();
     for (edit, place) in log.edits()[*len..].iter().zip(&log.logs()[*len..]) {
         match place {
@@ -7581,8 +7582,8 @@ struct ReadNew {
     then: Option<(usize, usize, usize, usize)>,
     bodies: Vec<EditId>,
     slices: Vec<ShareId>,
-    /// The log's lineage and length, and how many times the store replayed every edit, when it last looked.
-    log: Option<(crate::policy::LogRevision, usize, u64)>,
+    /// The log's head, and how many times the store replayed every edit, when it last looked.
+    log: Option<(crate::log_head::Head, u64)>,
     /// The writes it held whose bodies it didn't open as its replay didn't count them.
     uncounted: HashSet<EditId>,
     /// The writes whose bodies it didn't open as it lacked their entry's key, by the entry.
@@ -7596,7 +7597,7 @@ impl ReadNew {
     /// `None` where it is to look at every write its replay counts.
     fn since(&mut self, log: &Log, wholes: u64, keyed: Vec<EntryId>) -> Option<Vec<EditId>> {
         let fresh = match self.log.as_ref() {
-            Some((lineage, len, w)) if log.lineage() == *lineage && *len <= log.edits().len() && *w == wholes => *len,
+            Some((head, w)) if log.of_log(*head) && *w == wholes => head.at as usize,
             _ => {
                 self.uncounted.clear();
                 self.lacking.clear();
@@ -7614,7 +7615,7 @@ impl ReadNew {
 
     /// It looked at `log` and its replay now.
     fn looked(&mut self, log: &Log, wholes: u64) {
-        self.log = Some((log.lineage(), log.edits().len(), wholes));
+        self.log = Some((log.head(), wholes));
     }
 
     /// It reads on from what it read last time: what it holds now is that, and what it opened since, alone.
@@ -8434,18 +8435,18 @@ struct UpkeepDue {
     /// at the same first slice of every entry some 40 times a second, a lane among the rest each time, and never ended;
     /// `UpkeepSlices.lean`: it moves on and ends).
     unlooked: HashSet<EntryId>,
-    /// When it last looked: the log's lineage and length, the keys' revision, the selectors it read, the cap groups'
-    /// and the lanes' hashes.
-    then: Option<(crate::policy::LogRevision, usize, Arc<()>, usize, [u8; 32], Vec<(VaultId, [u8; 32])>)>,
+    /// When it last looked: the log's head, the keys' revision, the selectors it read, the cap groups' and the lanes'
+    /// hashes.
+    then: Option<(crate::log_head::Head, Arc<()>, usize, [u8; 32], Vec<(VaultId, [u8; 32])>)>,
 }
 
 impl UpkeepDue {
     /// The entries its upkeep is to look at, or `None` for every one.
     fn scope(&self, store: &Store) -> Option<HashSet<EntryId>> {
-        let (lineage, len, keys, slices, groups, lanes) = self.then.as_ref()?;
+        let (head, keys, slices, groups, lanes) = self.then.as_ref()?;
         let log = &store.log;
-        if log.lineage() != *lineage
-            || log.edits().len() < *len
+        let len = &(head.at as usize);
+        if !log.of_log(*head)
             || !Arc::ptr_eq(keys, &store.keys.scoped)
             || store.slices.len() != *slices
             || store.shown_groups != *groups
@@ -8496,7 +8497,7 @@ impl UpkeepDue {
     ) {
         self.entries = waiting;
         self.unlooked = unlooked;
-        self.then = Some((log.lineage(), log.edits().len(), keys.clone(), slices, groups, lanes_of(lanes)));
+        self.then = Some((log.head(), keys.clone(), slices, groups, lanes_of(lanes)));
     }
 }
 
@@ -8737,26 +8738,28 @@ mod range_payload_tests {
         let scope=ReplyScope::Logs([LogId::Entry(todos.door),LogId::Entry(todos.seeds)].into());
         let mut request=Request::default();
         request.ask.haves=[(LogId::Entry(todos.door),vec![]),(LogId::Entry(todos.seeds),vec![])].into();
-        let (revision,ids)=w.lab.range_inventory(from,to,from,&request,&scope,65536,usize::MAX).unwrap();
+        let (head,ids)=w.lab.range_inventory(from,to,from,&request,&scope,65536,usize::MAX).unwrap();
         assert!(!ids.is_empty());
         let expected:BTreeSet<_>=w.lab.reply_in(from,to,&request,usize::MAX,&scope).0.into_iter()
             .filter(|s|s.edit.author==from && range_write_bound(s).is_some()).map(|s|s.edit.id()).collect();
         assert_eq!(ids.iter().copied().collect::<BTreeSet<_>>(),expected);
         let wanted:BTreeSet<_>=ids.iter().copied().collect();
-        let (selected,more)=w.lab.range_select(from,to,from,&request,&scope,&revision,&wanted,256,usize::MAX).unwrap();
+        let (selected,more)=w.lab.range_select(from,to,from,&request,&scope,&head,&wanted,256,usize::MAX).unwrap();
         assert!(!more);assert_eq!(selected.iter().map(|s|s.edit.id()).collect::<BTreeSet<_>>(),expected);
         let narrow=ReplyScope::Logs([LogId::Entry(todos.seeds)].into());
-        assert!(w.lab.range_select(from,to,from,&request,&narrow,&revision,&wanted,256,usize::MAX).is_none(),"narrowed scope rejects even with the same revision");
-        assert!(w.lab.range_select(from,w.stranger,from,&request,&scope,&revision,&wanted,256,usize::MAX).is_none(),"another peer cannot reuse its authorization plan");
-        assert!(w.lab.range_select(from,to,from,&request,&scope,&revision,&wanted,256,1).is_none(),"size eligibility never permits an oversized clone");
+        assert!(w.lab.range_select(from,to,from,&request,&narrow,&head,&wanted,256,usize::MAX).is_none(),"narrowed scope rejects even with the same head");
+        assert!(w.lab.range_select(from,w.stranger,from,&request,&scope,&head,&wanted,256,usize::MAX).is_none(),"another peer cannot reuse its authorization plan");
+        assert!(w.lab.range_select(from,to,from,&request,&scope,&head,&wanted,256,1).is_none(),"size eligibility never permits an oversized clone");
         assert!(w.lab.range_inventory(from,to,from,&request,&scope,0,usize::MAX).is_none());
         let snapshot=w.lab.backup(from);
         w.lab.submit(from,&[from],Action::Revoke(Revoking::Grant{share:todos.carol_read,actor:w.alice,keep:vec![],via:vec![]})).unwrap();
-        assert!(w.lab.range_select(from,to,from,&request,&scope,&revision,&wanted,256,usize::MAX).is_none(),"revocation fences the captured set");
+        assert!(w.lab.range_select(from,to,from,&request,&scope,&head,&wanted,256,usize::MAX).is_none(),"revocation fences the captured set");
         let (_,now)=w.lab.range_inventory(from,to,from,&request,&scope,65536,usize::MAX).unwrap();
         assert!(now.is_empty(),"current permission also removes the entry from root/count/leaf disclosure");
         w.lab.restore_backup(from,&snapshot);
-        assert!(w.lab.range_select(from,to,from,&request,&scope,&revision,&wanted,256,usize::MAX).is_none(),"restoring prior contents does not resurrect a process-local revision");
+        assert_eq!(w.lab.log(from).head(),head,"restoring the same edits gives the same head");
+        let (again,_)=w.lab.range_select(from,to,from,&request,&scope,&head,&wanted,256,usize::MAX).expect("the same edits, judged anew");
+        assert_eq!(again.iter().map(|s|s.edit.id()).collect::<BTreeSet<_>>(),expected,"what it sends is worked out of the edits it holds, never of an earlier capture");
     }
 }
 

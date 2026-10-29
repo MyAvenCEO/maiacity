@@ -51,13 +51,6 @@ pub(crate) fn head(ids: &[avendb::id::EditId]) -> Stamp {
     avendb::log_head::head(ids).into()
 }
 
-/// The head of the first `stamp.at` edits of `log`, if it holds that many, is `stamp`: the index reflects them, so a
-/// read may take the edits after them as its tail. From the log's mark before them (`Log::head_at`), never hashing
-/// its edits from the first.
-fn of_prefix(stamp: Stamp, log: &avendb::policy::Log) -> bool {
-    log.head_at(stamp.at).map(Stamp::from) == Some(stamp)
-}
-
 /// How a save stepped the index on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Stepped {
@@ -77,16 +70,18 @@ pub(crate) struct SharedIndex {
 }
 
 impl SharedIndex {
-    /// The index on `shelf`, as its newest slot that opens left it: stepped on at the next save.
+    /// The index on `shelf`, as its newest slot that opens left it: stepped on at the next save. Where its slots can't
+    /// be read, the index of no edits, which the next save builds again of every entry (I3): a node always keeps one.
     pub(crate) async fn open(shelf: Shelf) -> io::Result<SharedIndex> {
-        let (index, _) = ShelfIndex::open_kept(shelf, NAME, BUDGET, empty_head()).await?;
+        let index = match ShelfIndex::open_kept(shelf.clone(), NAME, BUDGET, empty_head()).await {
+            Ok((index, _)) => index,
+            Err(e) => {
+                tracing::warn!("avendb: the shared index can't be read on the shelf, so it is built again: {e:#}");
+                ShelfIndex::empty(shelf, NAME, BUDGET, empty_head().head)?
+            }
+        };
         let stamp = Mutex::new(index.stamp());
         Ok(SharedIndex { index: tokio::sync::Mutex::new(index), stamp })
-    }
-
-    /// Stamp `stamp` is of a prefix of log `log` (`of_prefix`).
-    pub(crate) fn of_prefix(&self, stamp: Stamp, log: &avendb::policy::Log) -> bool {
-        of_prefix(stamp, log)
     }
 
     /// Steps it on to what device `me` of `lab` holds, if it is settled and the shelf holds `held` of its edits, every
@@ -124,10 +119,10 @@ impl SharedIndex {
 
     /// The head of the edits it is of, if they are the first edits of device `me`'s log in `lab` now; `None` where its
     /// log isn't one they begin (a withdrawal, a log restored otherwise): what a reader asks under its hold of the Lab
-    /// before it reads through the index and the tail of edits after it (`of_prefix`).
+    /// before it reads through the index and the tail of edits after it (`Log::of_log`).
     pub(crate) fn of_log(&self, lab: &Lab, me: SignerId) -> Option<Stamp> {
         let stamp = *self.stamp.lock().expect("stamp");
-        of_prefix(stamp, lab.log(me)).then_some(stamp)
+        lab.log(me).of_log(stamp.into()).then_some(stamp)
     }
 
     /// The rows its finds have read off the index so far, all told: a bench's count of what a read reads.
@@ -223,8 +218,8 @@ async fn step_on(
         }
         let stamp: Stamp = lab.log(me).head().into();
         let mark = (lab.index_mark(me) as u64).to_be_bytes().to_vec();
-        let of_prefix = of_prefix(was, lab.log(me));
-        let touched = if of_prefix && mark_was.as_deref() == Some(&mark[..]) {
+        let goes_on = lab.log(me).of_log(was.into());
+        let touched = if goes_on && mark_was.as_deref() == Some(&mark[..]) {
             lab.shared_touched(me, was.at as usize)
         } else {
             None

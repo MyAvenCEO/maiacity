@@ -101,7 +101,7 @@ fn trust_withdrawal_resets_prefix_before_next_latest() {
     check(&w.lab, d, &[w.mac_c, w.stranger]);
     let at = w.lab.at(d);
     let store = w.lab.stores.get_mut(&at).unwrap();
-    let old_revision = store.log.revision();
+    let old_head = store.log.head();
     let id = *store.log.ids().iter().find(|id| {
         store.signed.get(id).unwrap().edit.entry() == Some(todos.door)
     }).unwrap();
@@ -113,7 +113,7 @@ fn trust_withdrawal_resets_prefix_before_next_latest() {
     store.signed.insert(id, signed);
     store.bare.insert(id);
     assert!(trust(store));
-    assert_ne!(old_revision, store.log.revision());
+    assert_ne!(old_head, store.log.head());
     assert_eq!(store.replayed, 0);
     assert!(store.latest.get().is_none());
     assert!(!store.log.ids().contains(&id));
