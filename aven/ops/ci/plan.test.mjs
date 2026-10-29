@@ -19,6 +19,7 @@ test('an avenDB change runs its Rust shards, the spec, theOS on a Mac, and the p
  expect(p.rust.map(s => s.shard)).toEqual(['core', 'core-properties', 'net', 'server', 'device-browser']);
  expect(new Set(p.rust.map(s => s.key)).size).toBe(p.rust.length);
  expect(p.images).toEqual(['avendb', 'api']);
+ expect(outputs(p)).toMatchObject({ run_image_avendb: 'true', run_image_api: 'true' });
  // a test file builds no image and starts no Mac
  expect(plan(['aven/db/crates/avendb/tests/all/live.rs'], { key })).toMatchObject({ images: [], jobs: { rust: true, mac: false } });
 });
@@ -100,6 +101,11 @@ test('the release ships only what a green check of this commit\'s files built, a
  expect(release.jobs.ci.uses).toBe('./.github/workflows/ci.yml');
  expect(release.jobs.ci.if).toBe("needs.base.outputs.reuse_ci != 'true'");
  // an image is promoted by the digest its checked run names, and never built under a tag a release reads
- for (const id of ['avendb', 'api']) expect(ci.jobs.images.steps.find(s => s.id === id).with.tags).toContain(`-${id}:ci-\${{ github.sha }}`);
+ const image = Bun.YAML.parse(readFileSync('.github/actions/image/action.yml', 'utf8'));
+ expect(image.runs.steps.find(s => s.id === 'build').with.tags).toBe('${{ steps.name.outputs.image }}:ci-${{ github.sha }}');
+ for (const id of ['avendb', 'api']) expect(ci.jobs[`image-${id}`].steps.find(s => s.uses === './.github/actions/image').with.component).toBe(id);
+ // the peer's image is built from the Rust alone: it never waits for the page's device, which the API's carries
+ expect(ci.jobs['image-avendb'].needs).toBe('plan');
+ expect(ci.jobs['image-api'].needs).toEqual(['plan', 'wasm']);
  expect(JSON.stringify(release.jobs.images.steps)).toContain('imagetools create --tag \\"$IMAGE:$GITHUB_SHA\\" \\"$IMAGE@$DIGEST\\"');
 });

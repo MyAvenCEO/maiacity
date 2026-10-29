@@ -3,14 +3,16 @@
 // out yet: the next release compares with the last commit that did ship and ships (and checks) all of them. Nothing in
 // reach, or no history: an empty base, which rebuilds and validates every component.
 const REACH = 30;
+// the fields read here: a commit's full answer carries every file's patch (a goal's merge outgrew the shell's buffer)
+const RUNS = '{workflow_runs: [.workflow_runs[] | {head_sha, status, conclusion}]}';
 
 export async function releasedBase({ api, repo, head, reach = REACH }) {
  if (!/^[a-f0-9]{40}$/.test(head ?? '')) return '';
- const runs = (await api(`repos/${repo}/actions/workflows/release.yml/runs?branch=main&event=push&status=success&per_page=100`)).workflow_runs ?? [];
+ const runs = (await api(`repos/${repo}/actions/workflows/release.yml/runs?branch=main&event=push&status=success&per_page=100`, RUNS)).workflow_runs ?? [];
  const shipped = new Set(runs.filter(run => run.status === 'completed' && run.conclusion === 'success').map(run => run.head_sha));
  let sha = head;
  for (let step = 0; step < reach; step++) {
-  sha = (await api(`repos/${repo}/commits/${sha}`)).parents?.[0]?.sha;
+  sha = (await api(`repos/${repo}/git/commits/${sha}`)).parents?.[0]?.sha;
   if (!sha) return '';
   if (shipped.has(sha)) return sha;
  }
@@ -19,7 +21,7 @@ export async function releasedBase({ api, repo, head, reach = REACH }) {
 
 if (import.meta.main) {
  const { execFileSync } = await import('node:child_process');
- const api = async path => JSON.parse(execFileSync('gh', ['api', path], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+ const api = async (path, jq) => JSON.parse(execFileSync('gh', ['api', path, ...(jq ? ['--jq', jq] : [])], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
  let base = '';
  try { base = await releasedBase({ api, repo: process.env.GITHUB_REPOSITORY, head: process.env.CI_HEAD }); }
  catch { /* Unavailable history or a new workflow: rebuild and validate every component. */ }
