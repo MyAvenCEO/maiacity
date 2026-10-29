@@ -4912,7 +4912,11 @@ impl TailRun {
         let moving = |e: &Edit| matches!(e.action, Action::Mark { caps: Some(_), .. });
         // a revocation or a root handed on cuts what it hadn't seen anywhere before it, and is tried again among the
         // removals that say who may do what: the whole is replayed. A first sync asks those logs first
-        // (`ask_differing`), so its pages of entries' edits bring moves alone
+        // (`ask_differing`), so its pages of entries' edits bring moves alone. So with the other removal exits here
+        // and after the run (a grant resting on a revoked one, removals ranking otherwise, a move keeping an edit out):
+        // which removals stand is chosen by rank among every removal (`resolve`), and a rung is one only past the last
+        // removal (`hrem`, `hm` in `TailRungs.lean`), so none steps on from a rung or mark until a law says the removals
+        // before a place keep their standing when one comes after it ("resolve from a place", Goal 9)
         if fresh.iter().any(|e| e.is_removal() && !moving(e)) {
             return Err("replay whole: a revocation or a root handed on came");
         }
