@@ -348,3 +348,67 @@ fn a_checkpoint_and_the_edits_it_covers_replay_from_the_mark_before_them() {
         assert!(!whys.iter().any(|w| matches!(w, Why::Whole(_))), "checkpoint first {checkpoint_first}: {whys:?}");
     }
 }
+
+/// `far_page`, with Carol's Mac revoked 1,000 edits from the end: past the page's place, so before the fix every
+/// page of a peer's edits drafted further back than the last revocation replayed every edit (45 such on Samuel's Mac,
+/// 2026-10-29).
+fn far_page_before_a_revocation(writes: usize, back: usize) -> (Log, Replay, usize) {
+    let mut c = cast();
+    let alice = c.alice;
+    for i in 0..20 {
+        c.log.append(MAC_A, &[], creation(alice, EntryId::from_u64(1000 + i), alice, &[])).expect("an entry");
+    }
+    let mut st = c.log.view();
+    let mut then = None;
+    for n in 0..writes as u32 {
+        if writes - n as usize == back {
+            then = Some((c.log.clone(), st.clone()));
+        }
+        let w = write(&c.log, &st, MAC_A, EntryId::from_u64(1000 + n as u64 % 20), n);
+        c.log.receive([w]);
+        if n % 500 == 499 {
+            st = c.log.view();
+        }
+        if writes - n as usize == 1000 {
+            let leave = Action::Revoke(Revoking::Device { vault: c.carol, device: MAC_C, keep: vec![] });
+            c.log.append(PASSKEY_C, &[], leave).expect("Carol's passkey revokes her Mac");
+            st = c.log.view();
+        }
+    }
+    let was = replay(c.log.edits());
+    let held = c.log.edits().len();
+    let (then, then_st) = then.expect("what it held then");
+    let page: Vec<Edit> =
+        (0..5).map(|i| write(&then, &then_st, PHONE_A, EntryId::from_u64(1000 + i), 2_000_000 + i as u32)).collect();
+    c.log.receive(page);
+    (c.log, was, held)
+}
+
+/// A page of writes drafted before a revocation it sorts before replays from the mark before it, not every edit, and
+/// is the whole replayed, stepped on, from its stored view, and run a slice a step: no edit of it says who may do what,
+/// so the removals after the mark stand as they stood and take away what they took (`resolve_from_a_place`).
+#[test]
+fn a_page_before_a_later_revocation_replays_from_the_mark_before_it() {
+    let (log, was, held) = far_page_before_a_revocation(12_000, 6_000);
+    let whole = replay(log.edits());
+    let view = Replay::from_view(&was.to_view(held), log.edits(), log.ids()).expect("its stored view").0;
+    let mut sliced = was.clone();
+    let (stepped, why) = replay_on_why(was, log.edits(), held);
+    assert_eq!(why, Why::Rung, "stepped on");
+    assert!(stepped == whole, "stepped on, it differs from the whole");
+    let (opened, why) = replay_on_why(view, log.edits(), held);
+    assert_eq!(why, Why::Rung, "from its stored view");
+    assert!(opened == whole, "from its stored view, it differs from the whole");
+    let mut run = rewind(&mut sliced, log.edits(), held).expect("a rewind from a mark");
+    while !run.step(&sliced, log.edits(), 500) {}
+    let rewound = run.finish(sliced, log.edits()).unwrap_or_else(|(_, why)| panic!("{why}"));
+    assert!(rewound == whole, "rewound a slice a step, it differs from the whole");
+    // and the next page, after the revocation now, steps on from its place past it
+    let mut log = log;
+    let st = log.view();
+    let next = write(&log, &st, MAC_A, EntryId::from_u64(1000), 3_000_000);
+    let held = log.edits().len();
+    log.receive([next]);
+    let (stepped, why) = replay_on_why(rewound, log.edits(), held);
+    assert!(stepped == replay(log.edits()), "{why:?}: the next page, stepped on, differs from the whole");
+}
