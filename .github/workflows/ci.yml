@@ -53,6 +53,10 @@ on:
         description: The commit to compare with (release.yml's last released commit); none checks everything
         type: string
         default: ''
+      verdicts:
+        description: A merged pull request's ref (release.yml) whose verdicts count too, its jobs having run on the same files
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -112,6 +116,7 @@ jobs:
           SCHEDULE: ${{ github.event.schedule }}
           FULL: ${{ inputs.full || false }}
           BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || inputs.base }}
+          CI_VERDICTS_REF: ${{ inputs.verdicts }}
         run: |
           mode=changed
           [ "$FULL" != true ] || mode=full
