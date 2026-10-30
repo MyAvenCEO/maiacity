@@ -1170,7 +1170,9 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `chainError_none` | The first rule a chain breaks is none exactly when it keeps them all |
 | `Approve` | `approval_exact` | An approval holds only with k distinct owners, each having signed exactly its digest |
 | | `shown_is_signed` | What avenOS shows for a passkey tap is decoded from the exact bytes signed (A2, rule 25) |
-| `Revoke` | `seen_never_counts` | A revoked holder's envelope with the revocation in its own past never counts: no laundering |
+| `Past` | `reaches_iff`, `found_iff`, `inPast_iff` | An envelope's past among those a reader holds, decided: exactly Core's `Reaches`, the envelope itself and what is before it |
+| `Revoke` | `seen_never_counts` | A revoked holder's envelope with the revocation in its own past never counts: no laundering. Envelopes are Core's, and caps reads the vault, the cap chain and the acks of each from inside its seal |
+| | `saw_iff` | Having seen a revocation, in Core's past: its envelope is before the envelope, or the envelope or something it reaches acknowledges it |
 | | `doc_cap_kept` | Under a Doc cap, only the revocation's own past is kept |
 | | `elsewhere_kept` | Elsewhere, once the revocation reaches the Doc, only what its kept list or another writer's ack had seen counts |
 | | `revocation_wins` | The three together (rule 14). An envelope lists its whole chain, so revoking any link reaches it: the cascade |
@@ -1229,7 +1231,7 @@ Two smaller gaps:
 | File | What |
 |---|---|
 | `caps.json` | Chains on the cast, their lines in Core's form, each cap with its CBOR bytes, its id and the bytes its device signs, and each chain with the first rule it breaks or none; how avenOS shows a cap; 40 generated chains |
-| `revocations.json` | Docs, the revocations held, and verdicts: hand-written, and 30 generated Docs with every envelope's verdict |
+| `revocations.json` | Docs of Core envelopes, each with its name and what caps reads of it, the revocations held, and verdicts: hand-written, and 30 generated Docs with every envelope's verdict |
 | `epochs.json` | Who learns which key after Bob's removal and after Alice's heal |
 | `safe.json` | Requests to Alice's safe from her agent and from Mallory, on her Mac and on a host that keeps Doc keys inside, with what each gives back |
 | `approvals.json` | Signatures, thresholds and digests on the cast, and whether each approval holds |

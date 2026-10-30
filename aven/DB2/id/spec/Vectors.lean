@@ -31,8 +31,8 @@ import Aven.ID.Expiry
   members, the invites' states and what the door says of each key after every step. aven-id's tests replay them.
 - `caps.json`: cap chains on the cast, with the first rule each breaks or none (`Aven.ID.Caps`), how avenOS shows a cap
   for a passkey tap, and generated chains (`Aven.ID.CapsJson`).
-- `revocations.json`: Docs of envelopes, the revocations a reader holds, and each envelope's verdict (`Aven.ID.Revoke`),
-  hand-written and generated.
+- `revocations.json`: Docs of Core envelopes, each with its name and what caps reads of it, the revocations a reader
+  holds, and each envelope's verdict (`Aven.ID.Revoke`), hand-written and generated.
 - `epochs.json`: who learns which key after a removal and after a heal (`Aven.ID.Epochs`).
 - `approvals.json`: signatures, thresholds and digests on the cast, and whether each approval holds (`Aven.ID.Approve`).
 - `expiry.json`: writes under a cap that expires, with each envelope's signed time, and whether each counts for the
@@ -152,14 +152,15 @@ def capsVectors : List Json :=
     let cs := genChain (i + 1)
     vector s!"generated chain, seed {i + 1}" (chain cs) (chainResult cs)
 
+open RevokeExamples in
 def revocationVectors : List Json :=
-  (revocationExamples.map fun (name, doc, rs, id, _) =>
-    vector name (Json.mkObj (docJson doc rs ++ [("envelope", toJson id)]))
-      ((verdictOf doc rs id).elim Json.null Verdict.json)) ++
+  (revocationExamples.map fun (name, doc, rs, e, _) =>
+    vector name (Json.mkObj (docJson doc rs ++ [("envelope", Json.str (nm e).text)]))
+      (verdict nm reads doc rs e).json) ++
   (List.range generatedDocs).map fun i =>
     let (doc, rs) := genDoc (i + 1)
     vector s!"generated Doc, seed {i + 1}" (Json.mkObj (docJson doc rs))
-      (Json.mkObj (doc.map fun e => (e.id, (verdict doc rs e).json)))
+      (Json.mkObj (doc.map fun e => ((nm e).text, (verdict nm reads doc rs e).json)))
 
 def epochVectors : List Json :=
   let ask (w : World) (parties : List String) (story p k : String) :=
@@ -174,14 +175,14 @@ def approvalVectors : List Json :=
         ("vault", v), ("digest", d)])
       (Json.mkObj [("approved", cast.approved k v d sigs)])
 
+open RevokeExamples ExpiryExamples in
 /-- A write under a cap that expires: the Doc with each envelope's signed time, the cap, its expiry and the write,
 and whether it counts for the clock (`Aven.ID.Expiry`, R12). -/
 def expiryVectors : List Json :=
-  let timed (x : Timed) := Json.mkObj [("envelope", x.env.json), ("time", toJson x.time)]
-  let ask (name : String) (doc : List Timed) (e : Timed) :=
-    vector name (Json.mkObj [("doc", Json.arr (doc.map timed).toArray), ("cap", "cap-a"), ("expires", toJson (100 : Nat)),
-        ("write", e.env.id)])
-      (Json.mkObj [("inTime", inTime doc "cap-a" 100 e)])
+  let ask (name : String) (doc : List Aven.Core.Envelope) (e : Aven.Core.Envelope) :=
+    vector name (Json.mkObj [("doc", Json.arr (doc.map envelopeJson).toArray), ("expiry", Json.str expiryA.text),
+        ("expires", toJson (100 : Nat)), ("write", Json.str (nm e).text)])
+      (Json.mkObj [("inTime", inTime nm reads time doc expiryA 100 e)])
   [ask "a write before the expiry, which the ack had seen" expiryDoc bob90,
    ask "a write backdated after an ack of the expiry, which it hadn't seen" expiryDoc bobBackdated,
    ask "a write claiming a time past the expiry" expiryDoc bob105,
