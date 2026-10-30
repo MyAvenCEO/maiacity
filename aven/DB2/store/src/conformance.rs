@@ -140,6 +140,10 @@ pub async fn call(s: &impl Store, op: &Value) -> Value {
             Ok(h) => ok(s.get_range(&h, num(2)..num(3)).await, bytes),
             Err(e) => error(e),
         },
+        "size" => match hash(1) {
+            Ok(h) => ok(s.size(&h).await, |n| json!(n)),
+            Err(e) => error(e),
+        },
         "has" => match hash(1) {
             Ok(h) => ok(s.has(&h).await, |b| json!(b)),
             Err(e) => error(e),
@@ -338,4 +342,49 @@ pub async fn bench(
     }
     times.push(("set_ref 100 ×", now() - t));
     Ok(times)
+}
+
+/// The real workload, timed by `now` (milliseconds): a chat line (one small blob and its device's head moved, median of
+/// 50), a 1 MiB chunk put (median of 50), and catching up 500 lines (each a blob, the head moved once at the end). Each
+/// entry is (what, ms); the gates are per engine (`opfs/run.mjs`, store/README.md).
+pub async fn workload(
+    s: &impl Store,
+    now: impl Fn() -> f64,
+) -> Result<Vec<(&'static str, f64)>, Error> {
+    fn median(mut v: Vec<f64>) -> f64 {
+        v.sort_by(f64::total_cmp);
+        v[v.len() / 2]
+    }
+    let head = name("chat-bench");
+    let mut at = None;
+    let mut lines = Vec::new();
+    for i in 0..50 {
+        let t = now();
+        let h = s.put(noise(200, 5000 + i)).await?;
+        s.set_ref(&head, at, h).await?;
+        at = Some(h);
+        lines.push(now() - t);
+    }
+    let mut chunks = Vec::new();
+    for i in 0..50 {
+        let bytes = noise(1 << 20, 6000 + i);
+        let t = now();
+        s.put(bytes).await?;
+        chunks.push(now() - t);
+    }
+    let caught = name("chat-caught-up");
+    let t = now();
+    let mut last = None;
+    for i in 0..500 {
+        last = Some(s.put(noise(200, 7000 + i)).await?);
+    }
+    if let Some(h) = last {
+        s.set_ref(&caught, None, h).await?;
+    }
+    let catch_up = now() - t;
+    Ok(vec![
+        ("line", median(lines)),
+        ("chunk", median(chunks)),
+        ("catch-up", catch_up),
+    ])
 }

@@ -195,6 +195,14 @@ impl Store for DalStore {
         self.op.exists(&blob_path(hash)).await.map_err(backend)
     }
 
+    async fn size(&self, hash: &Hash) -> Result<Option<u64>> {
+        match self.op.stat(&blob_path(hash)).await {
+            Ok(meta) => Ok(Some(meta.content_length())),
+            Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(backend(e)),
+        }
+    }
+
     async fn list(&self) -> Result<Vec<Hash>> {
         // only names that are hashes: a crash's leftovers, if a backend leaves any, are never blobs
         let mut hashes: Vec<Hash> = self

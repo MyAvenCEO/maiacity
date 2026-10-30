@@ -243,6 +243,13 @@
 		transform: translateY(-1px);
 	}
 
+	/* on a phone, two tiles a row: a lone last tile takes the whole row */
+	@media (max-width: 560px) {
+		.app:last-child:nth-child(odd) {
+			grid-column: 1 / -1;
+		}
+	}
+
 	.app.off {
 		opacity: 0.55;
 		cursor: default;

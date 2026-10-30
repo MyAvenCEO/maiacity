@@ -14,6 +14,11 @@ impl Hash {
         Self(*blake3::hash(bytes).as_bytes())
     }
 
+    /// A hash read from where it was written: an index's list, iroh-blobs' name for a blob.
+    pub(crate) fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }

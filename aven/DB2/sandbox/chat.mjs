@@ -3,9 +3,9 @@
 // an empty store: the admin signs up and makes an invite (its link and QR code); a second profile opens the link,
 // joins with a name and a passkey, and lands on its dashboard; the link used again by a third profile is refused, and
 // so is an invite the admin withdrew; then the admin and the member chat both ways, the Aven Peer's join line arrives,
-// and a reload empties the room. In the cast's box, Alice's and Bob's Peer-Lights chat both ways too. Every screen is
-// photographed into the run's folder. What a line or a refusal should say comes from Lean's chat vectors or from the
-// page that wrote it, never from this file.
+// and a reload empties the room. In the cast's box, Alice's and Bob's Peer-Lights chat both ways too, and Alice's
+// second tab takes over her Peer-Light when the first closes. Every screen is photographed into the run's folder. What
+// a line or a refusal should say comes from Lean's chat vectors or from the page that wrote it, never from this file.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 
@@ -149,7 +149,8 @@ for (const b of [admin, member]) await b.context.close();
 // in the cast's box, Alice's and Bob's Peer-Lights chat the same way (MILESTONE2.md, "How it is checked")
 const cast = await chromium.launch();
 const castPage = async (who) => {
-	const page = await cast.newPage({ viewport: { width: 1100, height: 600 } });
+	// a context of its own, so a second tab of the same person can open in it (the takeover, below)
+	const page = await (await cast.newContext({ viewport: { width: 1100, height: 600 } })).newPage();
 	await page.goto(`http://${who}.localhost:5173/#/${who}/chat`);
 	await seen(page.locator('[data-view="chat"]'));
 	return page;
@@ -160,6 +161,39 @@ await seen(bob.locator('[data-testid="present"] li[data-vault="alice"]'));
 report.castAliceToBobMs = await sayAndHear(alice, bob, `alice to bob, ${started}`);
 report.castBobToAliceMs = await sayAndHear(bob, alice, `bob to alice, ${started}`);
 await shot(bob, 'cast-bob');
+
+// the leader's tab closes (store/README.md, the opfs driver, 3): Alice's first tab holds the Web Lock and runs her
+// Peer-Light; a second tab of hers follows it. Closed, the follower takes over within 5 s, and its line still arrives
+const follower = await alice.context().newPage();
+await follower.goto(`http://alice.localhost:5173/#/alice`);
+await seen(follower.locator('[data-testid="status"][data-phase="live"]'));
+const closed = Date.now();
+await alice.close();
+// the Web Lock passes to the follower, which starts the Peer-Light again: starting, connecting, live
+const led = await follower
+	.waitForFunction(() => globalThis.__avenLeader, null, { timeout: 5_000 })
+	.then(() => follower.evaluate(() => globalThis.__avenLeader), () => null);
+report.takeoverLockMs = led && led - closed;
+const restarted = led && (await follower.waitForFunction(() => document.querySelector('[data-testid="status"]')?.dataset.phase !== 'live', null, { timeout: 2_000 }).then(() => true, () => false));
+const live = restarted && (await seen(follower.locator('[data-testid="status"][data-phase="live"]'), 5_000));
+report.takeoverMs = Date.now() - closed;
+if (!led || !live || report.takeoverMs > 5_000) problems.push(`Alice's second tab didn't take over within 5 s of her first closing (${JSON.stringify({ lock: report.takeoverLockMs, restarted, live, ms: report.takeoverMs })})`);
+await follower.evaluate(() => (location.hash = '#/alice/chat'));
+await seen(follower.locator('[data-view="chat"]'));
+// the new Peer-Light joins the room again before a line reaches anyone: the old one's connection, under the same key,
+// lingers at the Aven Peer for about 2 s (measured 2.2 to 2.3 s, 30 Oct 2026), and gossip keeps nothing for a peer not
+// in it yet. So Alice says a line each second until Bob hears one, within 10 s. A line said in that gap is lost until
+// the city-dome's chains land: they upload a device's own lines the Aven Peer lacks, which covers it
+let through = false;
+for (let i = 0; i < 10 && !through; i++) {
+	const text = `alice after the takeover ${i}, ${started}`;
+	await follower.getByTestId('line').fill(text);
+	await follower.getByTestId('say').click();
+	through = await bob.getByTestId('lines').locator('li', { hasText: text }).waitFor({ timeout: 1_000 }).then(() => true, () => false);
+}
+report.castAfterTakeoverMs = Date.now() - closed;
+if (!through) problems.push(`no line of Alice's second tab reached Bob within 10 s of the takeover`);
+await shot(follower, 'cast-takeover');
 await cast.close();
 
 report.ok = problems.length === 0;

@@ -4,18 +4,12 @@
 [workspace]
 resolver = "3"
 members = ["db/core", "store", "id/core", "peer/native", "peer/light"]
-# OpenDAL's OPFS service, forked so it runs in a worker too (store/opendal-opfs/FORK.md): not ours to lint or test,
-# only patched in
-exclude = ["store/opendal-opfs"]
 
 [workspace.package]
 edition = "2024"
 rust-version = "1.99"
 license = "UNLICENSED"
 publish = false
-
-[patch.crates-io]
-opendal-service-opfs = { path = "store/opendal-opfs" }
 
 # Third-party crates build optimised, with line tables only (SANDBOX.md, "Open questions", 2): they come precompiled
 # in the box's image, so it costs nothing in the loop, and the Peer-Light's wasm shrinks from 21.5 MB to 8 MB,
