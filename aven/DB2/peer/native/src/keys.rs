@@ -36,7 +36,9 @@ impl Members {
     pub fn parse(list: &str) -> Result<Self, String> {
         let mut out = BTreeMap::new();
         for entry in list.split(',').map(str::trim).filter(|e| !e.is_empty()) {
-            let (name, key) = entry.split_once('=').ok_or_else(|| format!("{entry} is not name=key"))?;
+            let (name, key) = entry
+                .split_once('=')
+                .ok_or_else(|| format!("{entry} is not name=key"))?;
             out.insert(name.to_string(), public(key)?);
         }
         Ok(Members(out))
@@ -49,6 +51,11 @@ impl Members {
             .find(|(_, k)| *k == key)
             .map(|(name, _)| name.clone())
             .unwrap_or_else(|| key.fmt_short().to_string())
+    }
+
+    /// Every member's key and name.
+    pub fn keys(&self) -> impl Iterator<Item = (PublicKey, String)> + '_ {
+        self.0.iter().map(|(name, key)| (*key, name.clone()))
     }
 
     pub fn knows(&self, key: &PublicKey) -> bool {

@@ -12,6 +12,8 @@ export function useTree(json) {
 }
 // What a passkey signs and what browsers and passkeys are called, as aven-id computes them (PRODUCTION.md, Part A)
 export { challenge, claimText, deviceId, passkeyId, personId, signInText } from 'aven-id';
+// and invites, withdrawals and joins (MILESTONE2.md): their texts, an invite's id, and the one-time key a link carries
+export { inviteId, inviteText, joinText, oneTimePublic, signJoin, withdrawText } from 'aven-id';
 
 export const vaultName = (id) => tree.name(id) ?? id;
 // A vault's owners as the cast writes them, `key:<id>` or `vault:<id>`, split for the page.
