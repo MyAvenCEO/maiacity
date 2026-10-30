@@ -77,7 +77,8 @@ by the sender.
 Why two kinds of document, and not inboxes inside the receiver's Doc: in avenDB one Doc has one key and one
 grant. A sender that could write into the receiver's Doc could also read its state, its journal and every other
 sender's messages. With one inbox Doc per pair, each Doc keeps one writer, and a sender reaches nothing but
-its own messages. This is the shape avenDB's chat already has, one chain per device.
+its own messages. This is the shape avenDB's chat already has, one chain per device. Later, between devices, the
+inboxes from one vault's actors to another's travel together in one Doc per pair of vaults (section 15).
 
 The actor's own Doc still holds its whole history: its journal keeps each handled message whole, so an actor's
 record never needs its inbox Docs. They are how messages travel, and once journaled they may later be compacted.
@@ -503,13 +504,15 @@ Decided here, on those grounds:
   history is its Doc's own Loro history, each turn one commit of Loro operations, with Loro's snapshots as its
   checkpoints, and loads journaled as (Doc, version, query hash). Version 1 keeps the same shape in memory: an
   operation log and snapshots behind the Doc interface.
+- avenDB's A17, part 3 (Samuel, 30 Oct 2026): every actor keeps its own inbox, its own queue, read position and order
+  of handling. Between devices, messages are carried in one Doc per pair of vaults, written only by the sending
+  vault's home device, holding the messages of all its actors, each addressed to one actor; within one home, none.
+  The order from one actor to another stays the order sent (section 4). In version 1, in memory, the carrier is not
+  modelled: each pair of actors is one inbox log.
 - Values are integers only in version 1, in avenDB's one codec (section 2).
 
 Open, none of it blocking version 1 (the audit's findings, mostly avenDB's proposal A17, awaiting Samuel):
 
-- **Inboxes (A17, part 3).** Every actor keeps its own inbox: its own queue, its own read position and its own order
-  of handling. Open is only how messages are carried: one Doc per pair of actors, as now, or one Doc per pair of
-  vaults that holds the messages of all their actors, each addressed to one actor.
 - **Upgrades (A17, part 5):** a definition is a version of an actor type, and lenses carry state across `replaces`
   (K5).
 - **Effects that write data:** a `mutate` effect with its signer, Doc and footprint, atomic with the journal or through
