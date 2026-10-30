@@ -157,6 +157,8 @@ const buildPeers = [
 	`src=$(sha256sum ${lightWasm} | cut -c1-64)`,
 	`if [ "$src" != "$(cat target/light/.source 2>/dev/null)" ]; then rm -rf target/light.next && wasm-bindgen --target web --no-typescript --out-dir target/light.next ${lightWasm} && echo "$src" > target/light.next/.source && rm -rf target/light && mv target/light.next target/light; fi`,
 	'sh id/core/wasm/build.sh',
+	// the box's test certificate for the relay's QUIC address discovery, made once (box/qad.sh)
+	'sh sandbox/box/qad.sh',
 	`sha256sum ${peerBinary} | cut -c1-16`,
 ].join(' && ');
 

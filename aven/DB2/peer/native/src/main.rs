@@ -12,6 +12,11 @@
 //!     --relay                run the relay here: this is the Aven Peer
 //!     --relay-listen ADDR    the relay's HTTP socket (0.0.0.0:3340), with --relay
 //!     --relay-url URL        the relay every peer reaches, this one's included
+//!     --relay-cert PATH      with --relay: the certificate (PEM, its chain) its QUIC address discovery serves, so
+//!                            members learn their public address; without it the relay serves no QAD
+//!     --relay-key PATH       the certificate's key (PEM)
+//!     --relay-quic ADDR      QAD's UDP socket (0.0.0.0:7842, iroh's port, which every Peer probes)
+//!     --relay-ca PATH        an extra root (PEM) this Peer trusts for its relay's QAD: the box's test CA
 //!     --members LIST         name=key,…: the peers this one knows by name; the Aven Peer admits only them
 //!     --aven HOST:PORT       the Aven Peer's UDP address, without --relay
 //!     --aven-key HEX         the Aven Peer's key, without --relay
@@ -24,8 +29,9 @@
 //!     --s3-region NAME       its region (us-east-1)
 //!     --s3-key ID            its access key id (better by environment: AVEN_PEER_S3_KEY)
 //!     --s3-secret SECRET     its secret access key (better by environment: AVEN_PEER_S3_SECRET)
-//!     --s3-conditions on|off whether refs use the server's If-Match and If-None-Match (on); off leans on the store's
-//!                            lock and the one writer alone, for a server that gets them wrong (Hetzner, 30 Oct 2026)
+//!     --s3-conditions MODE   which of the server's conditional writes refs use: on (If-None-Match: * to create a ref,
+//!                            If-Match to change or delete one), create (If-None-Match: * only, as on Hetzner, which
+//!                            refuses a correct If-Match: 30 Oct 2026) or off (the store's lock and the one writer)
 //!     --rp-id ID             with --relay: keep the tree in the store, claimed by the first passkey to sign up;
 //!                            the passkeys' RP ID: maia.city in production, localhost in the box
 //!     --origin URLS          with --rp-id: avenOS's origins, comma-separated; an assertion must come from one, and a
@@ -53,7 +59,7 @@ use aven_peer::keys::{self, Members};
 use aven_peer::members::{Gate, Hook};
 use aven_peer::relay::Allow;
 use aven_peer::room::Room;
-use aven_peer::{Notes, door, door::Door, hub::Hub, link, now, record};
+use aven_peer::{Notes, door, door::Door, hub::Hub, link, now, record, tls};
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
 use iroh::{Endpoint, EndpointAddr, RelayMap, RelayMode, RelayUrl};
@@ -145,9 +151,10 @@ fn store(config: &Config) -> Result<(DalStore, String), Error> {
             access_key_id: config.need("s3-key")?,
             secret_access_key: config.need("s3-secret")?,
             conditions: match config.or("s3-conditions", "on").as_str() {
-                "on" => true,
-                "off" => false,
-                other => return Err(format!("--s3-conditions {other}: on or off").into()),
+                "on" => backend::Conditions::On,
+                "create" => backend::Conditions::Create,
+                "off" => backend::Conditions::Off,
+                other => return Err(format!("--s3-conditions {other}: on, create or off").into()),
             },
         })?,
         other => return Err(format!("--store {other}: memory, fs or s3").into()),
@@ -234,13 +241,24 @@ async fn main() -> Result<(), Error> {
                 }
             });
         }
-        None => gate.set(
-            members
-                .keys()
-                .chain([(key, me.clone())])
-                .map(|(k, n)| (k, n, None))
-                .collect::<Vec<_>>(),
-        ),
+        // and always the Aven Peer it links to, whom the door always admits: without it a Peer given no members (the
+        // deploy's probe) refused its own link to the Aven Peer in its hook
+        None => {
+            let aven = match config.get("aven-key") {
+                Some(k) if !relay => Some((keys::public(&k)?, "aven-peer".to_string())),
+                _ => None,
+            };
+            let known: Vec<_> = members.keys().collect();
+            let aven = aven.filter(|(k, _)| !known.iter().any(|(m, _)| m == k));
+            gate.set(
+                known
+                    .into_iter()
+                    .chain(aven)
+                    .chain([(key, me.clone())])
+                    .map(|(k, n)| (k, n, None))
+                    .collect::<Vec<_>>(),
+            )
+        }
     }
 
     // the Aven Peer's relay, in this process, for the door's keys only
@@ -255,10 +273,22 @@ async fn main() -> Result<(), Error> {
         });
         let mut server = iroh_relay::server::ServerConfig::default();
         server.relay = Some(relay_config);
+        // its QUIC address discovery, given a certificate: each member learns its public address from it
+        let qad = match (config.get("relay-cert"), config.get("relay-key")) {
+            (Some(cert), Some(key)) => {
+                let at: SocketAddr = config.or("relay-quic", "0.0.0.0:7842").parse()?;
+                let mut quic = iroh_relay::server::QuicConfig::new(at);
+                quic.server_config = Some(tls::qad_server(&cert, &key)?);
+                server.quic = Some(quic);
+                Some(at.to_string())
+            }
+            (None, None) => None,
+            _ => return Err("--relay-cert and --relay-key come together".into()),
+        };
         let server = iroh_relay::server::Server::spawn(server).await?;
         note(
             "relay",
-            json!({ "listen": server.http_addr().map(|a| a.to_string()), "url": relay_url.to_string() }),
+            json!({ "listen": server.http_addr().map(|a| a.to_string()), "url": relay_url.to_string(), "qad": qad }),
         );
         Some(server)
     } else {
@@ -271,6 +301,7 @@ async fn main() -> Result<(), Error> {
         .clear_ip_transports()
         .bind_addr(listen.as_str())?
         .alpns(vec![ALPN.to_vec(), iroh_gossip::ALPN.to_vec()])
+        .ca_tls_config(tls::trust(config.get("relay-ca").as_deref())?)
         .hooks(Hook {
             me: me.clone(),
             gate: gate.clone(),
@@ -281,8 +312,27 @@ async fn main() -> Result<(), Error> {
     note(
         "started",
         json!({ "key": endpoint.id().to_string(), "listen": listen, "relay": relay,
-            "s3Conditions": (kind == "s3").then(|| store.conditional_writes()) }),
+            "s3Conditions": (kind == "s3").then(|| store.conditions().name()) }),
     );
+
+    // the addresses others may reach it at, on every change: its own sockets and, once its relay's QAD has answered,
+    // the public address its NAT gave it
+    {
+        let (notes, me) = (notes.clone(), me.clone());
+        let mut addrs = iroh::Watcher::stream(endpoint.watch_addr());
+        tokio::spawn(async move {
+            use n0_future::StreamExt;
+            while let Some(addr) = addrs.next().await {
+                let direct: Vec<String> = addr.ip_addrs().map(|a| a.to_string()).collect();
+                notes(timeline::line(
+                    now(),
+                    &me,
+                    "addresses",
+                    json!({ "direct": direct }),
+                ));
+            }
+        });
+    }
 
     // gossip on the same Router as aven/db/1 (README, rule 9): the chat's room, joined through the Aven Peer
     let gossip = Gossip::builder().spawn(endpoint.clone());
