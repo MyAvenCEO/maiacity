@@ -79,7 +79,7 @@ async function ensureImages() {
 		);
 	if (/manifest unknown|not found/i.test(why)) {
 		if (!process.env.AVENSANDBOX_IMAGE && (await sameTools())) return;
-		throw new Error(`${missing.join(', ')} isn't published yet: GitHub builds the box after the push that changes the Dockerfile, in about 4 minutes`);
+		throw new Error(`${missing.join(', ')} isn't published yet, and no box with the same tools is here or on main: GitHub builds it after the push that changes one of its inputs, in 10 to 12 minutes`);
 	}
 	throw new Error(`can't pull ${missing.join(', ')}: ${why.trim().split('\n').at(-1)}`);
 }

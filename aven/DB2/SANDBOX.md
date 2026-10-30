@@ -19,15 +19,16 @@ Targets, measured in this milestone and reported on every run:
 | `bun run up` with a warm build, until every peer is live | < 10 s | **~9.5 s**: `up` 5.3–5.5 s, then all four live 4.0–4.2 s into the check, Chromium's start included |
 | A change to the page, visible | < 1 s (hot reload) | **82–193 ms** (a Svelte edit until the browser shows it, 5 runs) |
 | A Rust change, running on every peer | < 30 s | **14–17 s**: a change in the shared `link.rs`, so the binary and the Peer-Light's wasm both rebuild (7.9–10.8 s), the Peers restart, and every peer is live about 4 s later |
-| A new cloud session, image already on disk, until every peer is live | < 2 min | **NEWSESSION**: `bun run up --check` on empty volumes. The crates come precompiled in the image ([below](#the-third-party-crates-precompiled)): the first build compiles only our crates (28 s, was 137–183 s), `up` takes 37 s with the page's dependencies installed, Lean's vectors 12.5 s, then all four live 1.3 s into the check |
+| A new cloud session, image already on disk, until every peer is live | < 2 min | **35–54 s** (3 runs): `bun run up --check` with every volume empty, dockerd stopped in two of them. The crates come precompiled in the image ([below](#the-third-party-crates-precompiled)): the first build compiles only our crates (24–42 s, was 137–183 s), `up` takes 32–51 s with dockerd's start and the page's dependencies, Lean's vectors 1.6–12.5 s, then all four live 0.7–1.4 s into the check. The whole check passes in 50–71 s |
 | `bun run up --check` in all, warm | (none) | 25–32 s, of which the views 7 s and the restart and the wipe 12 s |
-| A change to the box's Dockerfile, pushed, until the new image pulls | (none) | cold, nothing cached: 11 min 42 s (amd64 10 min 22 s, arm64 6 min 38 s). A dependency change rebuilds only the crates' layer: REBUILD. The pull itself: 91 s, 3.23 GB |
+| A change to the box's Dockerfile, pushed, until the new image pulls | (none) | cold, nothing cached: 11 min 42 s (amd64 10 min 22 s, arm64 6 min 38 s). A dependency change rebuilds only the crates' layer, the tools coming from the registry's cache: 10 min 13 s (arm64 7 min 2 s, of it the crates 5 min 3 s and the export 80 s). The pull itself: 91 s, 3.23 GB |
 
 Smaller steps, measured by the threads: `lake build` warm 0.15 s each (cold, programs included, 6.1 s for `Aven.ID`,
 5.2 s for `Aven.DB`); `sandbox/vectors.sh --check`, both specs, 0.8–0.9 s warm; `cargo test -p aven-id` warm 4.4 s,
 2000 model cases; `cargo test -p aven-db-core` 1.1 s, 1000 traces; the store against the running model, 500 traces,
-1 s; `cargo test --workspace` 14 s warm; `db/store/check.sh`, all four backends, 11–12 s warm; an incremental `cargo build -p aven-peer` 1.3–2.4 s; aven-id's wasm 1.0 s incremental, 126 KB; the Peer-Light's
-debug wasm 21 MB, wasm-bindgen 3 s of every change to it.
+1 s; `cargo test --workspace` 9.1–9.6 s warm (14 s before its dependencies were optimised); `db/store/check.sh`, all four backends, 11–12 s warm; an incremental `cargo build -p aven-peer` 1.3–2.4 s; aven-id's wasm 1.0 s incremental, 126 KB; the Peer-Light's
+debug wasm 8 MB, wasm-bindgen 1.1 s of every change to it (21.5 MB and 2.5–2.9 s before its dependencies were
+optimised, [Open questions](#open-questions), 2).
 
 ## The cast
 
@@ -608,7 +609,7 @@ Raised by the threads, not settled in milestone 1:
 1. **Precompiled crates in the image** (settled 30 Oct 2026). The image compiles the third-party crates cargo-chef
    style, Docker copies them into a session's empty build folder on first mount, and the tag hashes every file the
    build reads ([The third-party crates, precompiled](#the-third-party-crates-precompiled)). A new session's first
-   build fell from 137–183 s to 28 s, all four peers live NEWSESSION after `up --check` starts. The image grew by
+   build fell from 137–183 s to 28 s, all four peers live 35–54 s after `up --check` starts. The image grew by
    0.79 GB compressed (amd64: 2.44 to 3.23 GB; arm64 0.75 GB), 3.1 GB on disk, and a new session copies another
    2.9 GB into its volumes. Left open: the store's own checks (`cargo test -p aven-db-store`, the OPFS wasm in
    release) resolve features of their own and still compile some crates on their first run; GitHub rebuilds the
