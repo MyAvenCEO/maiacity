@@ -20,7 +20,8 @@ import Aven.DB.Json
   range touches with the bytes read from them alone; files of the city-dome's size by their size alone
   (`Aven.DB.Files`).
 - `chats.json`: lines arriving at peers and peers catching up; after each step the answers, the peer's heads, loose
-  lines, forks and what its chat shows (`Aven.DB.Chains`); and what a line's device signs. Lines are named by labels,
+  lines, forks and what its chat shows (`Aven.DB.Chains`); what a line's device signs; and blobs read as lines or
+  refused as not canonical (`Aven.DB.Chains.read`). Lines are named by labels,
   which aven-db-core's tests replace with the hashes of real signed blobs.
 
 `aven-db-core`'s and `aven-db-store`'s tests load them. `bun run up --check` runs this again and fails when the files
@@ -336,6 +337,7 @@ def Aven.DB.Chains.Refusal.name : Refusal → String
   | .tooLong => "tooLong"
   | .badSeq => "badSeq"
   | .badFile => "badFile"
+  | .notCanonical => "notCanonical"
 
 open Chains in
 def Aven.DB.Chains.Answer.json : Answer → Json
@@ -395,8 +397,23 @@ def bodies : List Json :=
    Line.make "a text that reads like a file" "alice" 4 (some prev) 10 s!"file {prev}\nsize 1\ntype x\nname"].map fun l =>
     vector s!"what {l.id} signs" (Json.mkObj [("line", l.json)]) (Json.mkObj [("signs", l.signs)])
 
+open Chains in
+def Aven.DB.Chains.Fields.json (f : Fields) : Json :=
+  Json.mkObj [("network", f.network), ("device", f.device), ("seq", toJson f.seq), ("prev", toJson f.prev),
+    ("at", toJson f.time), ("sig", f.sig), ("body", f.body.json)]
+
+open Chains in
+/-- A blob read as a line, or refused (`Aven.DB.Chains.read`): canonical lines, and the same lines written another
+way. -/
+def reads : List Json :=
+  let one (name blob : String) :=
+    vector s!"read: {name}" (Json.mkObj [("read", blob)]) (match read blob with
+      | .ok f => Json.mkObj [("line", f.json)]
+      | .error why => Json.mkObj [("refused", why.name)])
+  [one "a text line" sample.blob, one "a first line, a file" sampleFile.blob] ++ variants.map fun (n, b) => one n b
+
 def chats : List Json :=
-  bodies ++ Chains.chainExamples.map (fun (name, steps, _) => chainVector name steps) ++
+  bodies ++ reads ++ Chains.chainExamples.map (fun (name, steps, _) => chainVector name steps) ++
   (List.range generated).map fun i => chainVector s!"seed {i + 1}" (randomChains (i + 1))
 
 /-- One vector per line, so a change reads as a diff of lines. -/

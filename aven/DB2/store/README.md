@@ -139,6 +139,30 @@ proposal kept the contract and split big files. **We split** (the architect, 30 
 4. **More holders, faster:** a native Peer fetches chunks from several holders at once. A Peer-Light's bytes all cross
    the relay, so the relay's bandwidth is its limit, however many members hold the file.
 
+## What a file may run
+
+A file's type is what its sender claims, and avenOS's origin holds the device's secret in OPFS, so the Service Worker
+([`files-sw.js`](../os/web/public/files-sw.js)) serves `/files/<hash>` as if the bytes were hostile (the security
+audit, 30 Oct 2026):
+
+- **Every answer** carries `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox; default-src
+  'none'` (with `img-src`, `media-src` and `object-src` only from the origin itself): a document opened from it has an
+  opaque origin of its own and runs no script, whatever its bytes.
+- **Inline only for passive types:** images but SVG (PNG, JPEG, GIF, WebP, AVIF, BMP), audio, video and PDF. Every
+  other type, SVG, HTML and XHTML among them, is served as `application/octet-stream` with `Content-Disposition:
+  attachment`: opening it downloads it.
+- **The chat shows files only as `<img>`, `<video>` or a PDF's frame,** for those same types; anything else is a
+  download link.
+- `bun run up --check` holds it in all three engines (`sandbox/inline.mjs`: an HTML page and an SVG, each with a
+  script, opened in a tab, framed, embedded and as an image, run nothing on the origin; a control served as HTML by
+  the test's own server does), and in the city-dome's chat (`sandbox/dome.mjs`).
+- **A PDF previews only where the engine renders one in a sandboxed document;** opening it still works, as a download
+  at worst. That is the price of the sandbox, until files move.
+- **Files should later move to an origin of their own** (the security fix's recommendation, 30 Oct 2026). The headers
+  are defence in depth: one mistake in the allow-list, or an engine's bug in sandboxing, would still run a sender's
+  bytes beside the device's secret. A separate origin that holds no secret (as open question 3 asks, the Service
+  Worker on the Peer-Light's origin or a files-only one) makes that mistake harmless; until then these headers hold.
+
 ## The chat keeps its history
 
 The draft had one ref `chat-city-dome` for everyone's lines. With plain lines the Aven Peer could read and segment
@@ -148,6 +172,12 @@ avenDB-old kept each device's changes; this stays when sealing comes:
 
 - **A line is a blob:** the device, its sequence number, the hash of its previous line, the time and the text, signed by
   the device's key. Lines are small, under bao's 16 KiB group.
+- **A line's bytes are canonical** (the security audit, 30 Oct 2026): a blob is taken only when it is exactly the
+  bytes its fields render to, hex lower-case and of its length, numbers in canonical decimal; anything else is refused
+  as `notCanonical`. So one signed line has one blob and one name (`Aven.DB.Chains.one_id`, `signed_one_id`), and
+  nobody relaying a line can make a copy with another name that would make the device's real line look like a fork.
+  Lines a peer kept before this rule are still read when it starts, and counted (the timeline's `chains` event,
+  `notCanonical`): our own code has always written canonical lines.
 - **The device's ref `chat-<device>`** points at its newest line. Each device writes only its own store (rule 1).
 - **Live:** the line travels on gossip as today, the whole blob, so every peer can keep it and nobody waits for a
   fetch.

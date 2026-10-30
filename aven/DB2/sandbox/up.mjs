@@ -198,6 +198,7 @@ async function check() {
 		result.exitCode === 0 &&
 		(await keeps(run)) &&
 		(await inEngines(run)) &&
+		(await inlines(run)) &&
 		(await claims(run)) &&
 		(await members(run)) &&
 		(await chats(run)) &&
@@ -286,6 +287,15 @@ async function inEngines(run) {
 	const built = Date.now() - timed;
 	const ok = (await $`${compose} exec -T browsers node sandbox/engines.mjs ${run}`.env(env).nothrow()).exitCode === 0;
 	say(`${ok ? 'Chromium, WebKit and Firefox run avenOS, its release build and its passkeys' : 'the engines step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s, the build ${(built / 1000).toFixed(1)} s)`);
+	return ok;
+}
+
+// A shared file never runs on avenOS's origin (store/README.md, "What a file may run"): sandbox/inline.mjs, in all
+// three engines, against the Service Worker alone
+async function inlines(run) {
+	const timed = Date.now();
+	const ok = (await $`${compose} exec -T browsers node sandbox/inline.mjs ${run}`.env(env).nothrow()).exitCode === 0;
+	say(`${ok ? 'no shared file runs on avenOS\'s origin, in Chromium, WebKit and Firefox' : 'the inline step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s)`);
 	return ok;
 }
 

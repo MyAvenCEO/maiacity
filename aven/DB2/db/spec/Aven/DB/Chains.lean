@@ -97,6 +97,8 @@ inductive Refusal where
   /-- a file line whose hash isn't one, whose type is empty, too long or breaks the line, or whose size is past
   `Files.maxFile` -/
   | badFile
+  /-- a blob that isn't exactly the bytes its line renders to (`Aven.DB.Chains.read`) -/
+  | notCanonical
   deriving DecidableEq, Repr
 
 /-- A body on its own: a text or a file's name of 1 to `maxText` bytes, and a file's hash and type well formed. -/

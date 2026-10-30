@@ -40,26 +40,23 @@ impl Body {
         }
     }
 
-    fn parse(s: &str) -> Result<Body, String> {
+    fn parse(s: &str) -> Option<Body> {
         if let Some(t) = s.strip_prefix("text\n") {
-            return Ok(Body::Text(t.to_string()));
+            return Some(Body::Text(t.to_string()));
         }
         let mut parts = s.splitn(4, '\n');
         let mut field = |name: &str| {
             parts
-                .next()
-                .and_then(|p| p.strip_prefix(name))
-                .and_then(|v| v.strip_prefix(' '))
+                .next()?
+                .strip_prefix(name)?
+                .strip_prefix(' ')
                 .map(str::to_string)
-                .ok_or_else(|| format!("a body without {name}"))
         };
         let file = field("file")?;
-        let size = field("size")?
-            .parse()
-            .map_err(|_| "a bad size".to_string())?;
+        let size = number(&field("size")?)?;
         let kind = field("type")?;
-        let name = parts.next().ok_or("a file without its name")?.to_string();
-        Ok(Body::File(Announcement {
+        let name = parts.next()?.to_string();
+        Some(Body::File(Announcement {
             file,
             size,
             name,
@@ -140,31 +137,57 @@ impl Line {
         .into_bytes()
     }
 
-    /// A blob read back, or why it is no line.
-    pub fn parse(blob: &[u8]) -> Result<Line, String> {
-        let text = std::str::from_utf8(blob).map_err(|_| "a line is UTF-8".to_string())?;
+    /// A blob read back, only when its bytes are canonical (`Aven.DB.Chains.read`): exactly what its fields render to,
+    /// the device, the previous line and the signature lower-case hex of their length, every number in canonical
+    /// decimal. So one signed line has one blob and one name (`Aven.DB.Chains.one_id`); anything else is
+    /// [`Refusal::NotCanonical`].
+    pub fn parse(blob: &[u8]) -> Result<Line, Refusal> {
+        match Line::fields(blob) {
+            Some(line) if line.blob() == blob && line.well_formed() => Ok(line),
+            _ => Err(Refusal::NotCanonical),
+        }
+    }
+
+    /// A line this peer kept before lines had to be canonical: read field by field, and whether it is canonical. Only
+    /// for what the store already holds (production is never wiped); everything heard goes through [`Line::parse`].
+    pub fn read_kept(blob: &[u8]) -> Option<(Line, bool)> {
+        let line = Line::fields(blob)?;
+        let canonical = line.blob() == blob && line.well_formed();
+        Some((line, canonical))
+    }
+
+    fn well_formed(&self) -> bool {
+        !self.network.contains('\n')
+            && lower_hex(&self.device, 64)
+            && self.prev.as_deref().is_none_or(|p| lower_hex(p, 64))
+            && lower_hex(&self.sig, 128)
+    }
+
+    /// Field by field, lenient: `parse` takes it only when it renders back to the same bytes.
+    fn fields(blob: &[u8]) -> Option<Line> {
+        let text = std::str::from_utf8(blob).ok()?;
         let mut parts = text.splitn(8, '\n');
-        let mut field = |name: &str| -> Result<String, String> {
-            let part = parts.next().ok_or_else(|| format!("no {name}"))?;
-            part.strip_prefix(name)
-                .and_then(|v| v.strip_prefix(' '))
+        let mut field = |name: &str| -> Option<String> {
+            parts
+                .next()?
+                .strip_prefix(name)?
+                .strip_prefix(' ')
                 .map(str::to_string)
-                .ok_or_else(|| format!("no {name}"))
         };
         if field("avenDB line")? != "1" {
-            return Err("not a line of version 1".into());
+            return None;
         }
         let network = field("network")?;
         let device = field("device")?;
-        let seq = field("seq")?.parse().map_err(|_| "a bad seq".to_string())?;
+        let seq = number(&field("seq")?)?;
         let prev = match field("prev")? {
             p if p == "none" => None,
             p => Some(p),
         };
-        let at = field("at")?.parse().map_err(|_| "a bad at".to_string())?;
+        let at = number(&field("at")?)?;
         let sig = field("sig")?;
-        let body = Body::parse(parts.next().ok_or("no body")?)?;
-        Ok(Line {
+        let body = Body::parse(parts.next()?)?;
+        Some(Line {
             network,
             device,
             seq,
@@ -174,6 +197,19 @@ impl Line {
             body,
         })
     }
+}
+
+/// One or more decimal digits that fit a `u64`; `parse` alone would also take a sign.
+fn number(s: &str) -> Option<u64> {
+    if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    s.parse().ok()
+}
+
+/// Exactly `n` lower-case hex digits.
+fn lower_hex(s: &str, n: usize) -> bool {
+    s.len() == n && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -189,6 +225,8 @@ pub enum Refusal {
     /// A file line whose hash isn't one, whose type is empty, too long or breaks the line, or whose size is past
     /// [`crate::files::MAX_FILE`].
     BadFile,
+    /// A blob that isn't exactly the bytes its line renders to ([`Line::parse`]).
+    NotCanonical,
 }
 
 impl Refusal {
@@ -201,6 +239,7 @@ impl Refusal {
             Refusal::TooLong => "tooLong",
             Refusal::BadSeq => "badSeq",
             Refusal::BadFile => "badFile",
+            Refusal::NotCanonical => "notCanonical",
         }
     }
 }
