@@ -1,9 +1,9 @@
 // avenOS on an Aven Peer's host without a cast (PRODUCTION.md, Part A): the host's `/aven.json` names its Aven Peer
 // and the passkeys' RP ID. This browser runs a Peer-Light with its own device key, made in the browser and kept in
 // its OPFS (peer/worker.js), and hears from the Aven Peer whether the network is claimed and, once this browser is
-// one of its devices, its tree. The claim and the sign-in are WebAuthn ceremonies here, on the page, since a worker
+// one of its devices, its tree, whose views the Peer-Light pushes (id.svelte.js). The claim and the sign-in are WebAuthn ceremonies here, on the page, since a worker
 // has no `navigator.credentials`; their statements go to the Aven Peer through the worker.
-import { challenge, claimText, deviceId, passkeyId, personId, signInText, validPersonName } from './id.js';
+import { askThrough, challenge, claimText, deviceId, hearViews, passkeyId, personId, signInText, tree, validPersonName } from './id.svelte.js';
 import { openWorker } from './peer/open.js';
 import { live, take, timeline } from './peers.svelte.js';
 import { hear, speakThrough } from './room.svelte.js';
@@ -42,6 +42,8 @@ export function runNetwork(config) {
 	port.onmessage = ({ data }) => {
 		clearTimeout(silent);
 		const line = JSON.parse(data);
+		hearViews(line);
+		if (line.event === 'views' || line.event === 'answer') return;
 		if (line.event === 'failed' || line.event === 'lost') net.trouble = line.why ?? line.event;
 		if (line.event === 'status' && line.phase === 'live') net.trouble = null;
 		if (line.event === 'started') Object.assign(net, { me: line.peer, key: line.key });
@@ -56,6 +58,7 @@ export function runNetwork(config) {
 	};
 	starting = { name: '', secret: 'opfs', avenKey: config.peer, avenName: 'aven-peer' };
 	speakThrough(port, starting);
+	askThrough(port, starting);
 	port.start?.();
 	port.postMessage({ start: starting });
 }
@@ -67,7 +70,7 @@ const unbase64url = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/
 export async function assertion(config, text, credential) {
 	const allowCredentials = credential ? [{ type: 'public-key', id: credential }] : [];
 	const got = await navigator.credentials.get({
-		publicKey: { challenge: unbase64url(challenge(text)), rpId: config.rpId, userVerification: 'required', allowCredentials },
+		publicKey: { challenge: unbase64url(await challenge(text)), rpId: config.rpId, userVerification: 'required', allowCredentials },
 	});
 	const r = got.response;
 	return { clientData: new TextDecoder().decode(r.clientDataJSON), authData: hex(r.authenticatorData), signature: hex(r.signature) };
@@ -88,7 +91,7 @@ export function send(frame) {
 export async function claim(config, { name, deliberate = false }) {
 	if (net.claimed && !deliberate) throw new Error('this network is claimed already');
 	name = name.trim();
-	if (!validPersonName(name)) throw new Error('a name is 1 to 48 characters, without control characters');
+	if (!(await validPersonName(name))) throw new Error('a name is 1 to 48 characters, without control characters');
 	const created = await navigator.credentials.create({
 		publicKey: {
 			rp: { id: config.rpId, name: 'Aven' },
@@ -103,33 +106,32 @@ export async function claim(config, { name, deliberate = false }) {
 	const spki = hex(created.response.getPublicKey());
 	const statement = {
 		network: config.network,
-		person: personId(spki),
+		person: await personId(spki),
 		name,
-		passkey: { id: passkeyId(spki), spki },
-		device: { id: deviceId(net.key), key: net.key },
+		passkey: { id: await passkeyId(spki), spki },
+		device: { id: await deviceId(net.key), key: net.key },
 	};
-	const text = claimText(statement.network, statement.person, name, statement.passkey.id, spki, statement.device.id, net.key);
+	const text = await claimText(statement.network, statement.person, name, statement.passkey.id, spki, statement.device.id, net.key);
 	statement.assertion = await assertion(config, text, created.rawId);
 	send({ frame: 'claim', statement: JSON.stringify(statement) });
 }
 
 // Sign in with the passkey that claimed the network: this browser becomes one more of its devices
 export async function signIn(config) {
-	const statement = { network: config.network, device: { id: deviceId(net.key), key: net.key } };
-	statement.assertion = await assertion(config, signInText(config.network, statement.device.id, net.key));
+	const statement = { network: config.network, device: { id: await deviceId(net.key), key: net.key } };
+	statement.assertion = await assertion(config, await signInText(config.network, statement.device.id, net.key));
 	send({ frame: 'sign_in', statement: JSON.stringify(statement) });
 }
 
-// The network's tree as avenOS's apps read a cast: its keys and vaults, and its devices as peers, this one by name
-export function castOf(treeJson, me) {
-	const tree = JSON.parse(treeJson);
+// The network's devices as avenOS's apps read a cast's peers, this one by name, from the views the Peer-Light pushed
+export function castOf(me) {
 	const peers = {};
-	for (const [id, vault] of Object.entries(tree.vaults)) {
-		if (vault.kind !== 'device') continue;
+	for (const id of tree.vaults()) {
+		if (tree.kind(id) !== 'device') continue;
 		peers[id] =
 			id === 'aven-peer'
 				? { name: 'Aven Peer', kind: 'peer', relay: true, store: 'S3' }
-				: { name: id === me ? 'This browser' : vault.name, kind: 'peer-light', store: 'OPFS' };
+				: { name: id === me ? 'This browser' : tree.name(id), kind: 'peer-light', store: 'OPFS' };
 	}
-	return { ...tree, peers };
+	return { peers };
 }

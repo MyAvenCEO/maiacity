@@ -9,13 +9,15 @@
 	import ControlRoom from './apps/ControlRoom.svelte';
 	import Invite from './apps/Invite.svelte';
 	import Vault from './apps/Vault.svelte';
-	import { ownerName, owners, tree, vaultName } from './id.js';
+	import { ownerName, owners, ready, tree, vaultName } from './id.svelte.js';
 	import { mayInvite } from './invites.js';
 
 	// `config`: the host's network (network.svelte.js), on an Aven Peer's host without a cast
 	let { cast, device, config = null } = $props();
 
-	const mine = $derived(device ? tree.accounts(device) : location.hostname === 'localhost' ? tree.accounts() : []);
+	// whom this host may act as, as its Peer-Light's views say; a visitor's host has none and may act as no one
+	const viewed = $derived(Boolean(device) || location.hostname === 'localhost');
+	const mine = $derived(viewed ? tree.accounts() : []);
 	// Invite is for the admin's owners only: a person whose passkey governs the network
 	const apps = $derived([
 		{ id: 'vault', name: 'Vault', what: 'Who owns it and all it governs', component: Vault },
@@ -78,7 +80,9 @@
 	</div>
 </header>
 
-{#if open}
+{#if viewed && !ready()}
+	<main data-view="starting"><p class="hint">Starting this device's Peer-Light…</p></main>
+{:else if open}
 	{@const App = open.component}
 	<App {cast} {account} {device} {config} target={route[2]} />
 {:else}

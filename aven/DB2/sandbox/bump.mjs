@@ -55,12 +55,10 @@ const relock = () =>
 cargo update -q
 rm -f bun.lock && bun install --silent
 chown "$owner" Cargo.lock bun.lock`);
-// Everything still builds: the workspace with its tests, both wasm crates, and avenOS's page
+// Everything still builds: the workspace with its tests, the Peer-Light's wasm (avenOS's one module), and avenOS's page
 const builds = () =>
 	run(`cargo check --locked -q --workspace --all-targets
 cargo check --locked -q -p aven-peer-light --lib --target wasm32-unknown-unknown
-cargo check --locked -q -p aven-id --lib --target wasm32-unknown-unknown
-[ -f target/wasm/aven-id/aven_id.js ] || sh id/core/wasm/build.sh
 node_modules/.bin/vite build --config vite.config.js --outDir /tmp/bump-dist --emptyOutDir --logLevel warn`);
 
 async function bump(list) {

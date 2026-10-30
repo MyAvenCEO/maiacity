@@ -144,7 +144,7 @@ async function install() {
 	if ((await $`${compose} ps -q browsers`.env(env).nothrow().quiet().text()).trim()) await $`${compose} restart browsers`.env(env).quiet();
 }
 
-// The builder (SANDBOX.md, "The box"): compiles the Peer, the Peer-Light's wasm and aven-id's wasm for avenOS once, into
+// The builder (SANDBOX.md, "The box"): compiles the Peer and the Peer-Light's wasm, avenOS's one module, once, into
 // the shared build folder, incrementally. The Peers run that binary and restart when it changes; Vite reloads the pages
 // when the wasm does.
 const peerBinary = '/work/target/debug/aven-peer';
@@ -156,7 +156,6 @@ const buildPeers = [
 	// wasm-bindgen takes 3 s even for nothing, so it runs only for a new wasm; one swap, so Vite never serves half a build
 	`src=$(sha256sum ${lightWasm} | cut -c1-64)`,
 	`if [ "$src" != "$(cat target/light/.source 2>/dev/null)" ]; then rm -rf target/light.next && wasm-bindgen --target web --no-typescript --out-dir target/light.next ${lightWasm} && echo "$src" > target/light.next/.source && rm -rf target/light && mv target/light.next target/light; fi`,
-	'sh id/core/wasm/build.sh',
 	// the box's test certificate for the relay's QUIC address discovery, made once (box/qad.sh)
 	'sh sandbox/box/qad.sh',
 	`sha256sum ${peerBinary} | cut -c1-16`,
@@ -347,19 +346,17 @@ async function up(args) {
 }
 
 // Every release's deliverables (SANDBOX.md, "Production"): for now avenOS for the browser, built in the box, with
-// aven-id's wasm and the Peer-Light in release at /peer-light/, where the dev server serves the loop's debug build
+// the Peer-Light in release at /peer-light/, the page's one WebAssembly module, where the dev server serves the loop's debug build
 // (sandbox/peers.mjs); a build without it never went live (aven.maia.city, 30 Oct 2026). The check builds and runs
 // this same build (sandbox/engines.mjs).
 async function buildPage() {
 	await $`docker volume create avensandbox_target`.quiet();
 	const volumes = ['-v', `${db2}:/work`, '-v', 'avensandbox_node_modules:/work/node_modules', ...rustVolumes];
-	// the Peer-Light in release, for phones, in a build folder of its own: beside aven-id's wasm, which resolves
-	// wasm-bindgen's features differently, each build would rebuild the other's (8 s every time). The loop's debug build
-	// stays as it is
+	// the Peer-Light in release, for phones, in a build folder of its own, so the release profile's settings below
+	// never rebuild the loop's crates. The loop's debug build stays as it is
 	const wasm = 'target/release-light/wasm32-unknown-unknown/release/aven_peer_light.wasm';
 	const script = [
 		'set -e',
-		'sh id/core/wasm/build.sh',
 		// sized for a phone, by environment so the workspace's Cargo.toml and the box's tag stay as they are: 3.9 MB, 1.4 MB
 		// gzipped, where release as it is gives 7.5 MB and the loop's debug build 8.8 MB (11.25 MB as first shipped). The
 		// box has no wasm-opt

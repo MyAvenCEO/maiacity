@@ -7,7 +7,7 @@
 	import App from './App.svelte';
 	import Join from './Join.svelte';
 	import Phase from './Phase.svelte';
-	import { useTree } from './id.js';
+	import { at, tree } from './id.svelte.js';
 	import { readLink } from './invites.js';
 	import { castOf, claim, net, signIn } from './network.svelte.js';
 	import { describe, live } from './peers.svelte.js';
@@ -24,7 +24,8 @@
 		return () => removeEventListener('hashchange', follow);
 	});
 
-	const member = $derived(Boolean(net.tree && net.me && JSON.parse(net.tree).vaults[net.me]));
+	// a device of the network once the Peer-Light's views of its tree have this browser in them
+	const member = $derived(Boolean(net.me && tree.has(net.me)));
 	let busy = $state(false);
 	let name = $state('');
 	let failed = $state('');
@@ -42,20 +43,16 @@
 		}
 	}
 
-	// the network's tree for avenOS's apps, swapped in before they read it: a prop is read only when used
-	const cast = $derived.by(() => {
-		if (!member) return null;
-		const cast = castOf(net.tree, net.me);
-		useTree(JSON.stringify(cast));
-		return cast;
-	});
+	// the network's devices for avenOS's apps, new with each snapshot of the views
+	const cast = $derived(member && at() ? castOf(net.me) : null);
+	const stamp = $derived(cast ? at() : null);
 	// whether the network is claimed: as the Aven Peer says, or, once the relay keeps this browser out, claimed (after
 	// the claim only members get in, MILESTONE2.md)
 	const claimed = $derived(net.claimed ?? (net.door === false ? true : null));
 </script>
 
 {#if member && route !== 'claim'}
-	{#key cast}
+	{#key stamp}
 		<App {cast} device={net.me} {config} />
 	{/key}
 {:else if link && claimed}

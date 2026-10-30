@@ -6,12 +6,14 @@
 //      from the other origin's and survives a reload, and whose record is kept there and found again. The check's
 //      Chromium is closed by now, and one engine runs at a time: two Peer-Lights with one key would take the relay
 //      from each other.
-//   2. avenOS's release build (dist/, `bun run build`), served as Caddy serves aven.maia.city (sandbox/prod.mjs,
+//   2. avenOS's views in WebKit and Firefox, held to Lean's vectors as check.mjs holds them in Chromium
+//      (sandbox/views.mjs): each pushed by a Peer-Light, the page's one WebAssembly module.
+//   3. avenOS's release build (dist/, `bun run build`), served as Caddy serves aven.maia.city (sandbox/prod.mjs,
 //      `served`, at localhost:5175, one of the prod peer's origins), in all three engines at once: each makes its
 //      device key in OPFS, reaches the Aven Peer, live, and finds the network unclaimed; and a worker nobody started
 //      asks for its start, refuses a line with why, and starts with a line that carries it. The dev server never runs
 //      the build; a build that left its Peer-Light behind showed "Connecting to the network…" on aven.maia.city.
-//   3. The passkeys on that build, in WebKit and Firefox, through Playwright's `context.credentials`: a stand-in for
+//   4. The passkeys on that build, in WebKit and Firefox, through Playwright's `context.credentials`: a stand-in for
 //      `navigator.credentials` that signs ES256 in Node, so it checks our ceremony, not the engine's own WebAuthn.
 //      WebKit signs up first, so claims the network, opens its dashboard and sees its own chat line shown; Firefox's
 //      deliberate second signup (`#/claim`) is refused; Firefox signs in with WebKit's passkey, as a synced one, and
@@ -21,12 +23,13 @@ import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { chromium, firefox, webkit } from 'playwright';
 import { served } from './prod.mjs';
 import { lines } from './records.mjs';
+import { walkViews } from './views.mjs';
 
 const run = process.argv[2] ?? 'runs/latest';
 mkdirSync(run, { recursive: true });
 const problems = [];
 const started = Date.now();
-const report = { cast: {}, build: {}, passkeys: {} };
+const report = { cast: {}, views: {}, build: {}, passkeys: {} };
 const launch = (engine, name) => {
 	const dir = `/tmp/avensandbox-${engine.name()}-${name}`;
 	rmSync(dir, { recursive: true, force: true });
@@ -88,7 +91,20 @@ async function cast(engine) {
 	await context.close();
 }
 
-// 2. The release build in one engine: live, and the network unclaimed
+// 2. Every view, as the model says, one engine at a time
+async function views(engine) {
+	const since = Date.now();
+	const context = await launch(engine, 'views');
+	const page = context.pages()[0] ?? (await context.newPage());
+	const name = engine.name();
+	problems.push(...(await walkViews(page, name)));
+	await page.goto('http://localhost:5173/#/alice/vault');
+	await page.screenshot({ path: `${run}/${name}-vault-alice.png` });
+	report.views[name] = { ms: timed(since) };
+	await context.close();
+}
+
+// 3. The release build in one engine: live, and the network unclaimed
 const origin = 'http://localhost:5175';
 // the Peer-Light's worker as the build names it
 const workerUrl = `/assets/${readdirSync('/work/dist/assets').find((file) => /^worker-.*\.js$/.test(file))}`;
@@ -134,7 +150,7 @@ async function build(engine) {
 	await context.close();
 }
 
-// 3. The passkeys, through `context.credentials`
+// 4. The passkeys, through `context.credentials`
 async function withPasskeys(engine, name) {
 	const context = await launch(engine, name);
 	await context.credentials.install();
@@ -210,6 +226,7 @@ async function passkeys() {
 }
 
 for (const engine of [webkit, firefox]) await cast(engine);
+for (const engine of [webkit, firefox]) await views(engine);
 const server = await served({ root: '/work/dist', port: 5175 });
 const builds = Date.now();
 await Promise.all([chromium, webkit, firefox].map(build));
@@ -224,6 +241,6 @@ writeFileSync(`${run}/engines.json`, `${JSON.stringify(report, null, 2)}\n`);
 for (const problem of problems) console.log(`avenSANDBOX: engines: ${problem}`);
 const seconds = (ms) => `${(ms / 1000).toFixed(1)} s`;
 console.log(
-	`avenSANDBOX: engines: ${problems.length ? 'FAILED' : 'ok'} (${seconds(report.ms)}: WebKit's Peer-Lights ${seconds(report.cast.webkit?.ms ?? 0)}, Firefox's ${seconds(report.cast.firefox?.ms ?? 0)}, the build in three engines ${seconds(report.build.ms)}, the passkeys ${seconds(report.passkeys.ms ?? 0)})`,
+	`avenSANDBOX: engines: ${problems.length ? 'FAILED' : 'ok'} (${seconds(report.ms)}: WebKit's Peer-Lights ${seconds(report.cast.webkit?.ms ?? 0)}, Firefox's ${seconds(report.cast.firefox?.ms ?? 0)}, the views ${seconds((report.views.webkit?.ms ?? 0) + (report.views.firefox?.ms ?? 0))}, the build in three engines ${seconds(report.build.ms)}, the passkeys ${seconds(report.passkeys.ms ?? 0)})`,
 );
 process.exit(problems.length ? 1 : 0);
