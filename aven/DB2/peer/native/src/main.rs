@@ -371,16 +371,8 @@ async fn main() -> Result<(), Error> {
                 Ok(addr)
             })
         });
-        // until it resolves, so the room's bootstrap is known before the room first dials it: iroh-gossip 0.101 never
-        // dials again a bootstrap its first join couldn't reach, and a Peer that starts beside the Aven Peer (the
-        // box's `up`, a restart of both) may look it up before its name exists
-        let mut told = false;
-        while let Err(why) = aven().await {
-            if !std::mem::replace(&mut told, true) {
-                note("waiting", json!({ "for": "aven", "why": why }));
-            }
-            tokio::time::sleep(Duration::from_millis(250)).await;
-        }
+        // until it resolves, so the room's bootstrap is known before the room first dials it
+        link::resolved(&aven, &me, &notes).await;
         tokio::spawn(link::run(
             endpoint.clone(),
             me.clone(),
