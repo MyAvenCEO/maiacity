@@ -188,11 +188,11 @@ the WebAssembly boundary's, not the part's.
 | --- | --- | --- | --- |
 | `state-runtime` | A declarative turn: for each message, updates to state (set, merge, append, remove by path) and messages to send. No code, so it always ends | A turn's output | avenVIBES's declarative inbox, where a payload merges into state with no code at all |
 | `js-runtime` | JavaScript: `init`, `turn`, `present` | A turn's output, or a view model | QuickJS compiled to WebAssembly. maiaCITY's logic core: a seeded random, a frozen clock, no binary buffers |
-| `prolog-runtime` | A machine: fact-only Prolog with a real term parser | Whether the machine is well formed, and which messages are legal in a state | avenOS's `machine.ts`, without its comma splitting (README, weak spot 12) |
 | `view-runtime` | A view: an allowlisted tag tree with `$`, `$$`, `$each`, `$on` and components | A safe node tree for one viewer. It also checks the face's `a11y`: every interactive node has an accessible name and role | avenVIBES's view grammar; aven-brands' component library; maiaCITY's view engine and Markdown engine, which write every tag themselves |
 | `style-runtime` | A style: tokens, component styles, variants and states as data | Scoped CSS text, from allowlisted properties and values only | avenVIBES's style engine and its eight states; aven-brands' brands as data. Raw CSS is never accepted |
 
-Later: `markdown-runtime`, `math-runtime`, `three-runtime`, `lean-runtime`, and actors written in Rust as WebAssembly.
+Later: `markdown-runtime`, `math-runtime`, `three-runtime`, `lean-runtime` (turns written in Lean, with proofs), a logic
+runtime if machines ever need rules, and actors written in Rust as WebAssembly.
 
 **The rules of faces**, which view-runtime and style-runtime enforce, after avenVIBES and the component library of
 aven-brands (`brands/CEO/design-system/src/brand/actors`: 53 components, each a JSON Value). Components themselves are
@@ -218,7 +218,7 @@ definitions, and every placed one is an actor (section 6).
 | Field | Meaning |
 | --- | --- |
 | `interface` | The messages it accepts, each with a JSON schema for its payload; an ask also names its reply's schema |
-| `machine` | Optional: a `prolog-runtime` part. If present, the kernel refuses any message the machine does not allow in the current `phase` |
+| `machine` | Optional: the interface's second part, a table of phases. If present, the kernel refuses any message the machine does not allow in the current `phase` |
 | `turn` | Required: `{ runtime, v, part }` on `state-runtime` or `js-runtime` |
 | `faces` | Optional: named faces, each `{ present, view, style, a11y }`. `present` (optional; without it the view sees the state) is a part on state- or js-runtime that gives the view model; `view` is a view-runtime part, `style` a style-runtime part, `a11y` the accessible names and roles view-runtime checks |
 | `init` | The first state |
@@ -268,18 +268,27 @@ turn(state, message, given) → { state', effects: [tell | ask | reply ...], pha
 `given` holds the turn's time and random seed, both written in the journal so a replay sees the same (later also the
 `now` tier of its loads, reserved).
 
-**A machine** is a short list of facts:
+**A machine** is data: Prolog's facts `transition(Message, From, To)`, and nothing else, written as a Value. The
+interface and the machine are one structure in two parts. The interface gives each message its name and schema, the
+same in every phase, since caps rely on a message keeping its schema. The machine gives, per phase, the messages
+allowed and the phases each may lead to:
 
-```prolog
-state(open).  state(done).
-initial(open).
-% transition(Message, From, To)
-transition(finish, open, done).
-transition(reopen, done, open).
+```json
+{ "initial": "open",
+  "phases": { "open": { "finish": ["done"] },
+              "done": { "reopen": ["open"] } } }
 ```
 
-A message `finish` reaches the turn only if `transition(finish, phase, To)` exists for the actor's current `phase`, and
-the turn's new `phase` must be that `To`. So the drawn machine and the behaviour cannot drift apart.
+A message `finish` reaches the turn only if the current `phase` allows it, and the turn's new `phase` must be one of
+the phases it lists; the kernel checks both with a lookup. So the drawn machine and the behaviour cannot drift apart.
+
+Prolog's roles are split (Samuel, 30 Oct 2026). Its facts are this table; there is no Prolog runtime. Its checks run
+once, when a definition is admitted: every phase named is declared, the initial phase exists, every message is in the
+interface, every phase is reachable from the initial one. That checker is proven correct in Lean once and replays
+Lean's vectors, so it can later admit definitions made by people or models with no Lean at run time. Deeper questions
+about one definition, such as "can it get stuck?", are Lean proofs in the repository, checked before it is frozen; a
+finite table is decided by Lean automatically. Kept from Prolog: facts as data, relations as tuples, "which messages
+are legal now" as a query over facts, every check declarative.
 
 ## 7. Layer 5: the kernel
 
@@ -335,6 +344,9 @@ sits inside avenDB, below the engine. A door:
 A standing read is not a message: it is the definition's `loads`, handed into each turn and journaled as (Doc,
 version, query hash). When a loaded Doc changes, the engine sends the actor one `changed` tell, and its next turn sees
 the new data. Turns keep three effects: tell, ask and reply (Samuel, 30 Oct 2026).
+
+**A timeout does not mean "not done".** A write asked of a door may still commit after its ask timed out, as on any
+network. The door's answer to a later read is the truth, so a turn that needs to know asks again.
 
 **Approvals are tells.** A turn that needs a person's decision tells the person actor, and the decision comes back as
 a tell whenever the person makes it, in minutes or days. An ask is for answers within its deadline (Samuel, 30 Oct
@@ -399,7 +411,7 @@ app spawns one `list`; each task is one more actor instance, spawned on demand. 
 | `kernel` | Spawns actors; is asked like any other | built in |
 | `clock` | Ticks and deadlines | built in |
 | `list` | Durable. Holds the tasks' addresses. Its face places a field and each task's row | `state-runtime` |
-| `task` | Durable. A title and a machine (open, done); its face, `row`, places a checkbox | `js-runtime`, `prolog-runtime` |
+| `task` | Durable. A title and a machine (open, done); its face, `row`, places a checkbox | `js-runtime` |
 | `field`, `checkbox` | Components from the library: face actors, mounted while their placer shows them | `state-runtime` |
 
 A person types into the field: each keystroke is a tell to the field's face actor, which keeps the text in its own
@@ -474,7 +486,7 @@ aven/actor/
   app/todo/          the version 1 app: its definitions and parts
 ```
 
-The runtimes are built in `aven/runtimes`, the one home of every runtime (Samuel, 30 Oct 2026): state, js, prolog,
+The runtimes are built in `aven/runtimes`, the one home of every runtime (Samuel, 30 Oct 2026): state, js,
 view and style in `aven/runtimes/actor/*`, one crate each, built to WebAssembly and frozen by hash. This file still
 says what they do: their parts, the turn's contract, determinism and fuel.
 
@@ -487,10 +499,11 @@ Test-first, as avenDB works: the Lean model and its theorems, then Rust tests th
    replaying a journal gives the same state; a machine refuses every illegal message; a face placed again is a new
    incarnation, whose messages are never taken for the old one's.
    Proven so far, for every trace and every schedule: `handled_in_order`, `replays`, `machine_sound`, `spawn_fresh`,
-   `answers_at_most_once`, `ask_answered_or_waiting` and `ask_not_overdue`. Next: the vectors it exports, and tying
-   each waiting ask to its message's deadline.
+   `answers_at_most_once`, `ask_answered_or_waiting` and `ask_not_overdue`. Next: the machine as a table of phases
+   and its admission checker, proven sound; retire as a tell to the kernel; the vectors it exports; and tying each
+   waiting ask to its message's deadline.
 2. **Layers 0 to 2** (`core`): Values and names, the in-memory Doc, messages, with the vectors.
-3. **Runtimes**: `prolog-runtime` and `state-runtime` first, then `js-runtime`; each with hostile parts that try to get
+3. **Runtimes**: `state-runtime` first, then `js-runtime`; each with hostile parts that try to get
    out, run too long or blow up, which must fail.
 4. **The kernel** (`core`): router, scheduler, turns, clock, spawning; native tests replay the vectors.
 5. **Faces**: `view-runtime`, `style-runtime`, the applier, events as tells.
@@ -553,22 +566,13 @@ Decided here, on those grounds:
   modelled: each pair of actors is one inbox log.
 - avenDB's A17, part 5 (Samuel, 30 Oct 2026): a definition is a version of an actor type; `replaces` names the
   version before it, and a lens carries the actor's state from the old version's shape into the new one's (K5).
+- Machines are data, merged with the interface; no Prolog runtime; their checker proven in Lean, and deeper
+  properties of a definition proven in Lean in the repository (section 6).
 - Values are integers only in version 1, in avenDB's one codec (section 2): deterministic CBOR (Samuel, 30 Oct 2026).
 
 Open, none of it blocking version 1 (the audit's findings, mostly avenDB's proposal A17, awaiting Samuel):
 
 - **The kernel's authority:** a narrow device vault for the actor host; click caps scoped to what the placer wired;
   who may spawn, and a bound on placement depth; a budget per run, and backpressure.
-- **A `timeout` does not mean "not done":** a write asked of a door may still commit after its ask timed out. The
-  door's answer to a later read is the truth.
 - **Performance gates** for wasm inside wasm, fuel across engines, and a shadow root per face.
-- **Machines as data (recommended, awaiting Samuel).** A machine is fact-only: `transition(Message, From, To)` and
-  nothing else, so it is a table, which a Value expresses exactly. Recommended: the interface and the machine as one
-  structure, two parts: the interface gives each message its name and schema, the same in every phase (caps rely on
-  a message keeping its schema); the machine gives, per phase, the messages allowed and the phases they may lead to.
-  It is checked once, when a definition is admitted: states declared, one initial state, every message in the
-  interface, every state reachable, proven in Lean. No Prolog runtime in version 1. Kept from Prolog: facts as data,
-  relations as tuples, "which messages are legal now" as a query over facts, and every check declarative. Rules,
-  guards and questions such as "can this machine get stuck?" come later, as a logic runtime beside the table, or as
-  proofs in Lean when a definition is admitted.
 - **Runtimes:** state-runtime's grammar.
