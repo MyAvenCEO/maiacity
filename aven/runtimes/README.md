@@ -99,9 +99,9 @@ run(part, input) → output | failure        part, input and output are Values; 
 - **Names** (decision 2). Actors' runtimes are named after their job: `state-runtime`, `js-runtime`, `markup-runtime`
   and `style-runtime`. There is no Prolog runtime: a machine is data, a table of phases checked by the kernel's
   admission checker (Samuel, 30 Oct 2026). File runtimes are named after their format: `svg-runtime`,
-  `markdown-runtime`, `text-runtime`, `csv-runtime`, `json-runtime` and `pdf-runtime`. A plugin's runtime is named after its plugin:
-  `ontology-runtime`. All share one namespace, so no two runtimes ever have one name. `json-runtime` is free since the
-  actors' declarative turn became `state-runtime`.
+  `markdown-runtime`, `text-runtime`, `csv-runtime`, `json-runtime` and `pdf-runtime`. A plugin's runtime is named
+  after its plugin: `ontology-runtime`. All share one namespace, so no two runtimes ever have one name.
+  `json-runtime` is free since the actors' declarative turn became `state-runtime`.
 - **Versions.** `svg-runtime@3` is the third frozen module of `svg-runtime`. A version is never rebuilt or changed. A
   new capability or a fix is the next version, beside the old ones.
 - **Hashes.** What names the code is the hash. A part, a journal entry, a lowered operation and a cached render all
