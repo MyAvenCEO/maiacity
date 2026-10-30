@@ -1,0 +1,15 @@
+{
+	"name": "@maia-city/game",
+	"version": "0.0.1",
+	"private": true,
+	"description": "The MaiaCity game, on its own: plain HTML and JavaScript, no build and no dependencies.",
+	"type": "module",
+	"exports": {
+		"./resources": "./resources.js",
+		"./pixels": "./pixels.js"
+	},
+	"scripts": {
+		"dev": "bun ./index.html",
+		"test": "bun test"
+	}
+}
