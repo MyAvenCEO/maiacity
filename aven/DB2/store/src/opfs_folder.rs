@@ -1,6 +1,7 @@
 //! The opfs driver's folder: the origin's private file system through sync access handles, which exist in a dedicated
-//! worker in every engine (store/README.md, "What the store asks of the opfs driver"). A write opens its file, writes,
-//! flushes and closes. Reads of blobs keep up to 16 handles open, the least recently used closed first: a movie seeks in
+//! worker in every engine (store/README.md, "What the store asks of the opfs driver"). A write opens its file, writes
+//! and closes; closing persists it (the File System Standard's `close()` flushes), and only then does it move, so a
+//! separate `flush()` (40% of a small write in Chromium) adds nothing. Reads of blobs keep up to 16 handles open, the least recently used closed first: a movie seeks in
 //! one chunk many times. The worker is the one writer under the Web Lock, so no other handle on these files exists.
 
 use std::cell::RefCell;
@@ -245,7 +246,7 @@ impl Folder for OpfsFolder {
                 }
                 done += n;
             }
-            h.flush().map_err(backend)
+            Ok(())
         })();
         h.close();
         written
