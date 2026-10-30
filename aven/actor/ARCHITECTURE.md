@@ -61,7 +61,7 @@ with the message it handled, whole. Messages travel in **inbox Docs**, one for e
 by the sender.
 
 ```
- actor Doc   <home>/<id>                written only by the actor's home kernel
+ actor Doc   <scope>/<id>/<n>           written only by the actor's home kernel
  ├─ def           the definition's name (its hash)
  ├─ state         the latest state, and the journal entry it follows
  └─ journal       one entry per turn: the message it handled, whole; the state hashes; the effects it sent
@@ -81,14 +81,14 @@ record never needs its inbox Docs. They are how messages travel, and once journa
 A Doc holds two things:
 
 - **Logs**: append-only, written only by the Doc's writer. Each entry is a record named `(writer, seq)`, where `seq` counts
-  the writer's entries from 1. That is how Loro names its operations (peer and counter), so a log maps
+  the writer's entries in that Doc from 1, with no gaps. That is how Loro names its operations (peer and counter), so a log maps
   onto a Loro list one to one.
 - **Fields**: named values that the writer replaces whole (`def`, `state`).
 
 Because every Doc has one writer, concurrent writers never conflict: two senders append to two different inbox
 documents. The receiver's journal says in which order it handled them.
 
-Everything is kept: every message, every turn, every trace. Compacting old journals and inbox Docs is a later
+Everything is kept: every message and every turn. Compacting old journals and inbox Docs is a later
 decision.
 
 In version 1 Docs live in memory, behind a small interface: append to a log, read a log from a position, set and
@@ -103,18 +103,24 @@ A message is a value. There are four kinds:
 | `tell` | Do or know this. No answer is expected |
 | `ask` | Answer this by a deadline. Exactly one `reply` or `fail` comes back |
 | `reply` | The answer to an ask |
-| `fail` | The ask could not be answered: `timeout`, `refused` (no such actor, illegal now, a payload that fails its schema) or `error` (the turn threw or ran out of fuel) |
+| `fail` | The ask could not be answered: `timeout`, `refused` (no such actor, illegal now, a payload that fails its schema) or `error` (the turn threw or ran out of fuel). Only an ask gets a `fail`. A refused or failed tell is journaled (section 7), and its sender is not told |
 
 | Field | Meaning |
 | --- | --- |
 | `kind` | One of the four |
-| `from`, `to` | Addresses, `<home>/<id>` |
-| `seq` | The sender's count. `(from, seq)` names the message, and is its entry name in the inbox Doc |
+| `from`, `to` | Addresses, `<scope>/<id>/<n>` (section 6) |
+| `seq` | The message's number in the inbox Doc from `from` to `to`: counted **per pair of actors**, from 1, with no gaps, so a receiver sees a missing one. `(from, to, seq)` names the message; inside its inbox Doc, `seq` alone does |
 | `name` | The message's name in the receiver's interface |
 | `payload` | A value, checked against the interface's schema for `name` |
-| `re` | For `reply` and `fail`: the ask it answers |
+| `re` | For `reply` and `fail`: the ask it answers, by its `(from, to, seq)` |
 | `deadline` | For `ask`: when it fails if unanswered. 30 s unless the asker says otherwise; at most 10 minutes |
 | `run` | The causal chain: every message a turn sends carries the run of the message it handled |
+| `cap` | Reserved for capabilities (section 11). Absent in version 1 |
+
+**Reserved fields.** Later steps add fields that version 1 does not use: a message's `cap`, the `now` tier of an
+actor's loads in `given`, a definition's `loads`, a Doc's `schema` (the version of its type) and `branch`, and the
+address's scope. Version 1 refuses any Value that sets a reserved field, so nothing comes to depend on it missing, and
+adding one later changes no shape.
 
 **Sending is appending.** To send, the sender's kernel appends the message to the inbox Doc for that sender and
 receiver. In
@@ -155,9 +161,9 @@ the WebAssembly boundary's, not the part's.
 | Runtime | Part it runs | Gives back | Takes from |
 | --- | --- | --- | --- |
 | `state-runtime` | A declarative turn: for each message, updates to state (set, merge, append, remove by path) and messages to send. No code, so it always ends | A turn's output | avenVIBES's declarative inbox, where a payload merges into state with no code at all |
-| `js-runtime` | JavaScript: `init`, `turn`, `present`, `preview` | A turn's output, or a view model | QuickJS compiled to WebAssembly. maiaCITY's logic core: a seeded random, a frozen clock, no binary buffers |
+| `js-runtime` | JavaScript: `init`, `turn`, `present` | A turn's output, or a view model | QuickJS compiled to WebAssembly. maiaCITY's logic core: a seeded random, a frozen clock, no binary buffers |
 | `prolog-runtime` | A machine: fact-only Prolog with a real term parser | Whether the machine is well formed, and which messages are legal in a state | avenOS's `machine.ts`, without its comma splitting (README, weak spot 12) |
-| `view-runtime` | A view: an allowlisted tag tree with `$`, `$$`, `$each`, `$on` and components | A safe node tree for one viewer | avenVIBES's view grammar; aven-brands' component library; maiaCITY's view engine and Markdown engine, which write every tag themselves |
+| `view-runtime` | A view: an allowlisted tag tree with `$`, `$$`, `$each`, `$on` and components | A safe node tree for one viewer. It also checks the face's `a11y`: every interactive node has an accessible name and role | avenVIBES's view grammar; aven-brands' component library; maiaCITY's view engine and Markdown engine, which write every tag themselves |
 | `style-runtime` | A style: tokens, component styles, variants and states as data | Scoped CSS text, from allowlisted properties and values only | avenVIBES's style engine and its eight states; aven-brands' brands as data. Raw CSS is never accepted |
 
 Later: `markdown-runtime`, `math-runtime`, `three-runtime`, `lean-runtime`, and actors written in Rust as WebAssembly.
@@ -188,7 +194,7 @@ definitions, and every placed one is an actor (section 6).
 | `interface` | The messages it accepts, each with a JSON schema for its payload; an ask also names its reply's schema |
 | `machine` | Optional: a `prolog-runtime` part. If present, the kernel refuses any message the machine does not allow in the current `phase` |
 | `turn` | Required: `{ runtime, v, part }` on `state-runtime` or `js-runtime` |
-| `faces` | Optional: named faces, each a `present` function plus a `view-runtime` part and a `style-runtime` part |
+| `faces` | Optional: named faces, each `{ present, view, style, a11y }`. `present` (optional; without it the view sees the state) is a part on state- or js-runtime that gives the view model; `view` is a view-runtime part, `style` a style-runtime part, `a11y` the accessible names and roles view-runtime checks |
 | `init` | The first state |
 | `lifetime` | `durable` (the default): the actor lasts until it is retired, and later persists in avenDB. `mounted`: it lives while the face that placed it shows it, and goes when it is unplaced |
 | `replaces` | Optional: the name of the definition this one upgrades. Its actors move to the new definition, and a cap follows the upgrade only as far as the old interface reached, and only in a vault that has itself adopted the new definition (section 11) |
@@ -197,11 +203,15 @@ definitions, and every placed one is an actor (section 6).
 An actor's code and faces are **parts**: values in a format, for the runtime of that format. Actors are mostly JSON;
 `js-runtime` is for the turns that need code.
 
-**An actor** is a live instance of a definition: an address `<home>/<id>` and its Doc. Its id is the hash of its
-definition's name, its spawner's address and the spawner's count, so a replay names the same actors.
+**An actor** is a live instance of a definition: an address `<scope>/<id>/<n>` and its Doc. Its id is the hash of its
+definition's name, its spawner's address and the spawner's count, so a replay names the same actors; a face actor's id
+is the hash of its placer's address and its place (section 6, placing). `n` is the **incarnation**: the kernel counts
+how often each id has been spawned, so an id spawned again, such as a face placed again after it was unplaced, is a
+new actor with a new Doc, whose messages count from seq 1 again without being taken for the old one's. The old Doc is
+kept, closed. The scope is `local` in version 1; what it names later is open (section 15).
 
 **A component is a definition, and every placed component is an actor.** A definition is the class: a Value, named by
-hash, under one schema. A component is a definition whose main part is its face, like the 53 in aven-brands' library.
+hash, under one schema. A component is a definition whose main part is its face, `faces.main`, like the 53 in aven-brands' library.
 Every instance of one that a face places on a screen is a **face actor**: an address, a state and an inbox, like every
 actor, with a `mounted` lifetime. A badge with nothing to remember is a face actor whose state is empty; a menu that
 opens, a tab that is selected or a field being typed into keeps that in its state. There is one primitive.
@@ -213,12 +223,11 @@ A component's definition adds to the fields above:
 | `props` | What its placer passes in: its first state, and later a `props` tell whenever they change |
 | `events` | The messages it sends out, to whatever address its placer wires them to (by default the placer) |
 | `slots` | The children its placer passes: faces of other actors. A leaf has no slots |
-| `view`, `styling`, `a11y` | Its face's parts: its tag tree for view-runtime, its styling for style-runtime, its accessible names and roles |
 | `name`, `description` | Its name, and why it is the way it is. A `$description` key is documentation at any depth |
 
 **Placing** is spawning. In a face's view, `$use: { component, props, slots, on }` places a component: on the first
 draw the kernel spawns a face actor at an address derived from its placer and its place (and, in `$each`, the item's
-key); a later draw with new props sends it a `props` tell; a draw without it retires it. `$use: { actor, face }`
+key); a later draw with new props sends it a `props` tell; a draw without it retires it, which ends that incarnation. `$use: { actor, face }`
 instead shows an existing actor's face, such as a durable task's row, without spawning anything.
 
 **What is not a message.** Hover, focus and the other states that change only how something looks are CSS, selected
@@ -230,20 +239,20 @@ by the browser. Anything the app should know of (a press, an input, a toggle) is
 turn(state, message, given) → { state', effects: [tell | ask | reply ...], phase'? }
 ```
 
-`given` holds the turn's time and random seed, both written in the journal so a replay sees the same.
+`given` holds the turn's time and random seed, both written in the journal so a replay sees the same (later also the
+`now` tier of its loads, reserved).
 
 **A machine** is a short list of facts:
 
 ```prolog
-state(open).  state(doing).  state(done).
+state(open).  state(done).
 initial(open).
 % transition(Message, From, To)
-transition(start,  open,  doing).
-transition(finish, doing, done).
-transition(reopen, done,  open).
+transition(finish, open, done).
+transition(reopen, done, open).
 ```
 
-A message `start` reaches the turn only if `transition(start, phase, To)` exists for the actor's current `phase`, and
+A message `finish` reaches the turn only if `transition(finish, phase, To)` exists for the actor's current `phase`, and
 the turn's new `phase` must be that `To`. So the drawn machine and the behaviour cannot drift apart.
 
 ## 7. Layer 5: the kernel
@@ -251,8 +260,8 @@ the turn's new `phase` must be that `To`. So the drawn machine and the behaviour
 The kernel is pure Rust with no I/O (avenDB's rule 2), compiled to WebAssembly for the browser and natively for tests.
 Its host feeds it time and events and takes back what it draws. It has four parts:
 
-- **Router.** Appends the message to the inbox Doc from its sender to its receiver. It answers an unknown
-  receiver, or a payload that fails its schema, with a `fail`.
+- **Router.** Appends the message to the inbox Doc from its sender to its receiver. A message to an unknown receiver
+  is refused: the sending turn's journal entry records that effect as `refused`, and an ask gets `fail(refused)`.
 - **Scheduler.** Picks an actor with unread inbox entries and runs one turn. One actor never runs two turns at once;
   different actors may run in parallel. Across senders, the oldest arrival goes first.
 - **Turns.** Each turn runs as shown below.
@@ -260,21 +269,24 @@ Its host feeds it time and events and takes back what it draws. It has four part
   ask whose deadline has passed into a `fail`.
 
 ```
- inbox entry ─▶ machine allows it now?  payload fits its schema?  ── no ──▶ fail(refused) to the sender
+ inbox entry ─▶ machine allows it now?  payload fits its schema?  ── no ──▶ journaled as refused; an ask gets fail(refused)
                     │ yes
                     ▼
                 runtime: turn(state, message, given), with fuel ──▶ output fits its schema?  new phase legal?
                     │ throws, out of fuel, or no                         │ yes
                     ▼                                                    ▼
-          fail(error) to the sender;                       journal: append the turn (message, state hashes,
-          the journal records the failure                  given, effects, fuel), then set the state
+          journaled as error, state unchanged;             journal: append the turn (message, state hashes,
+          an ask gets fail(error)                          given, effects, fuel), then set the state
                                                                          │
                                                                          ▼
                                                            router appends each effect to its inbox Doc
 ```
 
-A journal entry holds the message's name `(from, seq)`, the state hashes before and after, `given`, the effects, the
-fuel used and the outcome. Replaying a journal on the same runtimes gives the same state.
+A **journal entry** holds the message it handled, whole; the definition in force; the hash of the runtime that
+actually ran (after any floor) and the interpreter's version, which fixes the fuel schedule; `given`; the state hashes
+before and after; the effects; the fuel used; and the **outcome**: `done`, `refused` with its reason, or `error` with
+its reason. A refused or failed message is journaled too, and leaves the state as it was. Replaying a journal with
+what it pins gives the same state.
 
 **Spawning** is an ask to the kernel, which is an actor too: `spawn { def, init }` replies with the new address. In
 version 1 any local actor may spawn, but only definitions that come from the repository.
@@ -317,6 +329,9 @@ was clicked; its turn may send one of its `events` on, to the address its placer
 - **A click is a message.** The applier turns an event on a node with `$on` into a `tell` from the device's person
   actor to the face actor that owns the node, through the router into its inbox, like every other message. The face shows the change as pending at once
   and drops it if the turn refuses.
+- **Nothing leaves through a URL.** The page's CSP limits `img-src`, `font-src` and `media-src` to `'self'` and
+  `blob:`, and allows no script but the host's. style-runtime refuses `url()` except a content hash. A link opens only
+  through a confirmation the host draws, outside every face.
 - **Updates are deltas.** After each turn the applier receives only the nodes that changed.
 
 ## 9. Layer 7: the version 1 app
@@ -330,13 +345,15 @@ app spawns one `list`; each task is one more actor instance, spawned on demand. 
 | `person` | The device's person: clicks come from it | built in |
 | `kernel` | Spawns actors; is asked like any other | built in |
 | `clock` | Ticks and deadlines | built in |
-| `list` | Durable. Holds the tasks' addresses. Its face places a field, a button, and each task's row | `state-runtime` |
-| `task` | Durable. A title and a machine (open, doing, done); its face, `row`, places a checkbox | `js-runtime`, `prolog-runtime` |
-| `field`, `button`, `checkbox` | Components from the library: face actors, mounted while their placer shows them | `state-runtime` |
+| `list` | Durable. Holds the tasks' addresses. Its face places a field and each task's row | `state-runtime` |
+| `task` | Durable. A title and a machine (open, done); its face, `row`, places a checkbox | `js-runtime`, `prolog-runtime` |
+| `field`, `checkbox` | Components from the library: face actors, mounted while their placer shows them | `state-runtime` |
 
-A person types into the field and presses the button. The press goes to the button's face actor, which sends its
-`press` event to `list` as `add {title}`, as the list's face wired it; `list` asks `kernel` to spawn a `task`. Ticking a
-task's checkbox sends `toggle` to that task, legal only as its machine allows, and its row redraws. Every message, turn and trace stays in the actors' Docs, in memory.
+A person types into the field: each keystroke is a tell to the field's face actor, which keeps the text in its own
+state. Enter, or the button inside the field's own face, makes the field send its `submit {text}` event, which the
+list's face wired to `list` as `add`; `list` asks `kernel` to spawn a `task`. Ticking a task's checkbox makes the
+checkbox send its `check` or `uncheck` event, which the row wired to the task's `finish` or `reopen`, legal only as its
+machine allows, and the row redraws. Every message and turn stays in the actors' Docs, in memory.
 
 ## 10. Laws
 
@@ -357,7 +374,7 @@ task's checkbox sends `toggle` to that task, legal only as its machine allows, a
 10. **Laws are code.** The kernel checks them. Never prompts, and never a reading of a part's source.
 11. **Commit, then send.** A turn's state and journal entry commit together, in one write to the actor's Doc.
     Its effects are recorded in that entry and sent from it. A send lost in a crash is sent again from the journal,
-    and the receiver drops it if it already has it, by `(from, seq)`.
+    and the receiver drops it if it already has it, by its `seq` in that inbox.
 12. **One primitive.** A component is a definition, its class; every placed component is a face actor. An actor's
     lifetime, durable or mounted, decides whether it persists.
 
@@ -370,8 +387,8 @@ Each later step replaces a layer's implementation, not its interface:
 | **Persistence** | Each actor's Doc becomes one avenDB Doc under one schema (`def`, `state`, `journal`), its journal a Loro list whose entries keep their names `(writer, seq)`. Each inbox Doc becomes one avenDB Doc, written only by the sender's home device and readable by the receiver's home, like the chat's chain per device. Each Doc has one key and one writer, and commits atomically; law 11 covers the sends that cross Docs |
 | **Lifetimes** | Durable actors persist; mounted face actors stay in memory and go with their face. Whether their journals are kept after that is decided with compaction |
 | **Wants** | The definition's `loads` (section 6): avenDB's engine keeps them current and hands the `now` tier into each turn |
-| **Peers** | An actor lives on one peer, its home; its address names that peer's iroh `EndpointId`. Sending stays "append to the receiver's inbox log", now carried between peers by avenDB's sync. When the home is away, a keeper peer holds the inbox. Keepers are blind and see as little as possible: outside a segment only the Doc, the key epoch and the padded length; they hand out entries by arrival order, to readers who prove they hold the key (avenID caps, D13). There is no bus in the middle, and no gossip for messages |
-| **Live delivery** | For speed, `message` and `ack` frames on `aven/db/1` deliver an append directly, point to point, ahead of sync. The receiver drops duplicates by `(from, seq)` |
+| **Peers** | An actor lives on one peer, its home, which routing finds; whether the address's scope names the home or a vault is open (section 15). Sending stays "append to the receiver's inbox log", now carried between peers by avenDB's sync. When the home is away, a keeper peer holds the inbox. Keepers are blind and see as little as possible: outside a segment only the Doc, the key epoch and the padded length; they hand out entries by arrival order, to readers who prove they hold the key (avenID caps, D13). There is no bus in the middle, and no gossip for messages |
+| **Live delivery** | For speed, `message` and `ack` frames on `aven/db/1` deliver an append directly, point to point, ahead of sync. The receiver drops duplicates by their `seq` in the inbox |
 | **Capabilities** | Caps are held by vaults, and the kernel holds them for its actors: actors hold no keys, and the signer of every write is a device. A message gains a `cap` field beside `run`, the cap it acts under; a turn's effects carry that cap or a narrower one, and an actor uses its own standing cap only for messages its definition declares as its own. A tell cap names messages of an interface, which the definition's hash pins. The inbox Doc from A to B belongs to A's vault and is written by A's home device; B's vault reads it, and B's router checks the cap: checked twice. Across an upgrade, a definition names the one it `replaces`: a tell cap follows the upgrade while every message it names keeps its schema, and a message that is new or changed is not covered until it is granted. `replaces` is a claim anyone can write, so it moves a cap only when the vault that granted the cap has adopted the new definition; a look-alike elsewhere inherits nothing. An actor narrowing its cap for one message is not a grant; every grant needs its vault's owners' approval for now (avenID caps, D14). A cap targets an address, an address with `below: true` (it and every actor it spawned), or every actor of a definition in a vault, and may go to a group of vaults. The inbox Doc from A to B comes into being when B grants A a tell cap, together with B's read cap. Where an actor lives decides who can read it: a keeper is blind for actors it does not host, and face actors never live on the Aven Peer. Decided as avenID caps D16, in `aven/DB2/id/caps` |
 | **Compaction** | Old journal and inbox entries folded into snapshots, once we decide what may be forgotten |
 
@@ -411,7 +428,8 @@ Test-first, as avenDB works: the Lean model and its theorems, then Rust tests th
 
 1. **Lean** (`spec`): values, logs, messages, turns, asks, the journal. Theorems: messages from one actor to another are
    handled in order; every ask gets exactly one answer by its deadline; a message is handled once; a turn never waits;
-   replaying a journal gives the same state; a machine refuses every illegal message.
+   replaying a journal gives the same state; a machine refuses every illegal message; a face placed again is a new
+   incarnation, whose messages are never taken for the old one's.
 2. **Layers 0 to 2** (`core`): Values and names, the in-memory Doc, messages, with the vectors.
 3. **Runtimes**: `prolog-runtime` and `state-runtime` first, then `js-runtime`; each with hostile parts that try to get
    out, run too long or blow up, which must fail.
@@ -457,4 +475,22 @@ Decided here, on those grounds:
   `cap` beside `run` that only narrows per hop, never mixed with an actor's standing cap; tell caps on message names;
   the inbox Doc A→B in A's vault; a definition names the one it `replaces` (Samuel, 30 Oct 2026; caps D16).
 
-Open: nothing for version 1.
+- Every address carries an incarnation; `seq` counts per pair of actors; only an ask gets a `fail`, and every refusal
+  and error is journaled; a journal entry pins the definition, the runtime that ran and the fuel schedule (sections 4,
+  6 and 7). From the first-principles audit (`aven/DB2/ARCHITECTURE.md`).
+
+Open, none of it blocking version 1 (the audit's findings, mostly avenDB's proposals A16 and A17, awaiting Samuel):
+
+- **Identity and Docs (A17).** An address names a vault-scoped id, with the home as routing only; the journal becomes
+  the actor Doc's log; a message is stored once and referenced by hash; one inbox per pair of vaults, none within one
+  home; state as checkpoints, not replaced whole; loads journaled as (Doc, version, query hash); a definition is a
+  version of an actor type, and lenses carry state across `replaces` (K5).
+- **Effects that write data:** a `mutate` effect with its signer, Doc and footprint, atomic with the journal or through
+  the outbox.
+- **The kernel's authority:** a narrow device vault for the actor host; click caps scoped to what the placer wired;
+  who may spawn, and a bound on placement depth; a budget per run, and backpressure.
+- **Hosting on the Aven Peer** is an explicit read cap shown to the owner (A16).
+- **Approvals longer than 10 minutes,** and a `timeout` that does not mean "not done".
+- **Performance gates** for wasm inside wasm, fuel across engines, and a shadow root per face.
+- **Runtimes:** whether a fact table needs a Prolog runtime; state-runtime's grammar; and whether every runtime moves
+  to one package, `aven/runtimes` (Samuel considering).
