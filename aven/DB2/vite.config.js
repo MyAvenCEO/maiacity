@@ -16,8 +16,10 @@ export default defineConfig({
 	root: 'os/web',
 	plugins: [svelte(), peers(), prod()],
 	resolve: { alias: { 'aven-id': fileURLToPath(new URL('target/wasm/aven-id/aven_id.js', import.meta.url)) } },
-	// avenOS for the browser (`bun run build`), a deliverable of every release
+	// avenOS for the browser (`bun run build`), a deliverable of every release. The Peer-Light's worker is a module of
+	// its own (os/web/peer/open.js); `bun run build` puts the Peer-Light's wasm beside it in dist/peer-light
 	build: { outDir: '../../dist', emptyOutDir: true },
+	worker: { format: 'es' },
 	server: {
 		host: '0.0.0.0',
 		port: 5173,

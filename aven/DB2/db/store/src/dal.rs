@@ -30,6 +30,14 @@ impl DalStore {
         }
     }
 
+    /// The same store without the backend's conditional writes: its own lock and the one writer refuse a stale write.
+    pub(crate) fn unconditional(self) -> Self {
+        Self {
+            conditional: false,
+            ..self
+        }
+    }
+
     /// Whether the backend itself refuses stale ref writes.
     pub fn conditional_writes(&self) -> bool {
         self.conditional
@@ -42,10 +50,20 @@ impl DalStore {
             // A read racing a write sees the old value or the new one, but OPFS can also refuse it: the `File` it
             // read from went stale when the write committed, which it reports as `NotReadableError` or even
             // `NotFoundError`. So a ref is missing only if its file is; otherwise reading again sees the new value.
+            // WebKit's OPFS doesn't refuse such a read: it hands back the file empty or zero-filled while the write
+            // commits (measured in Safari 27.2's engine, 30 Oct 2026). So a ref that isn't a hash is read again too,
+            // and is `Corrupt` only if it stays so.
             let mut tries = 0;
             return loop {
                 let refused = match self.op.read(&path).await {
-                    Ok(buf) => break Ok((Some(parse_ref(&buf.to_bytes())?), None)),
+                    Ok(buf) => match parse_ref(&buf.to_bytes()) {
+                        Ok(hash) => break Ok((Some(hash), None)),
+                        Err(e) if tries == 8 => break Err(e),
+                        Err(_) => {
+                            tries += 1;
+                            continue;
+                        }
+                    },
                     Err(e)
                         if e.kind() == ErrorKind::NotFound
                             && !self.op.exists(&path).await.map_err(backend)? =>

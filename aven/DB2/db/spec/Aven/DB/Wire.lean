@@ -24,9 +24,16 @@ inductive Frame where
   | claim (statement : String)
   /-- a browser signs in with the passkey that claimed the network: the sign-in's statement as JSON text -/
   | signIn (statement : String)
-  /-- an Aven Peer that keeps its tree tells each peer whether it is claimed and, to a device of its tree, the tree -/
-  | network (claimed : Bool) (tree : Option String)
-  /-- a claim or sign-in the Aven Peer refused, and why -/
+  /-- the admin invites (`Aven.ID.Invite`): the invite's statement as JSON text -/
+  | invite (statement : String)
+  /-- the admin withdraws an open invite -/
+  | withdraw (statement : String)
+  /-- a browser joins with an invite -/
+  | join (statement : String)
+  /-- an Aven Peer that keeps its tree tells each peer whether it is claimed and, to a device the door admits, the
+  tree and every statement it holds, so each peer checks the members itself -/
+  | network (claimed : Bool) (tree : Option String) (statements : Option String)
+  /-- a statement the Aven Peer refused, and why -/
   | refused (why : String)
   deriving DecidableEq, Repr
 
@@ -39,7 +46,11 @@ def Frame.json : Frame → Json
   | .beat n => Json.mkObj [("frame", "beat"), ("n", toJson n)]
   | .claim st => Json.mkObj [("frame", "claim"), ("statement", st)]
   | .signIn st => Json.mkObj [("frame", "sign_in"), ("statement", st)]
-  | .network c t => Json.mkObj [("frame", "network"), ("claimed", toJson c), ("tree", toJson t)]
+  | .invite st => Json.mkObj [("frame", "invite"), ("statement", st)]
+  | .withdraw st => Json.mkObj [("frame", "withdraw"), ("statement", st)]
+  | .join st => Json.mkObj [("frame", "join"), ("statement", st)]
+  | .network c t st => Json.mkObj [("frame", "network"), ("claimed", toJson c), ("tree", toJson t),
+      ("statements", toJson st)]
   | .refused w => Json.mkObj [("frame", "refused"), ("why", w)]
 
 def Frame.parse (line : String) : Option Frame := do
@@ -50,7 +61,13 @@ def Frame.parse (line : String) : Option Frame := do
   | "beat" => .beat <$> (j.getObjValAs? Nat "n").toOption
   | "claim" => .claim <$> (j.getObjValAs? String "statement").toOption
   | "sign_in" => .signIn <$> (j.getObjValAs? String "statement").toOption
-  | "network" => .network <$> (j.getObjValAs? Bool "claimed").toOption <*>
+  | "invite" => .invite <$> (j.getObjValAs? String "statement").toOption
+  | "withdraw" => .withdraw <$> (j.getObjValAs? String "statement").toOption
+  | "join" => .join <$> (j.getObjValAs? String "statement").toOption
+  | "network" =>
+    -- `statements` absent, as an Aven Peer before milestone 2 sends it: none
+    let statements := (j.getObjValAs? (Option String) "statements").toOption.join
+    (.network · · statements) <$> (j.getObjValAs? Bool "claimed").toOption <*>
       (j.getObjValAs? (Option String) "tree").toOption
   | "refused" => .refused <$> (j.getObjValAs? String "why").toOption
   | _ => none
@@ -96,7 +113,12 @@ def wireExamples : List (String × List String × List (List Frame) × Option Wi
     ["{\"frame\":\"claim\",\"statement\":\"{}\"}\n{\"frame\":\"sign_in\",\"statement\":\"{}\"}\n",
       "{\"frame\":\"network\",\"claimed\":false,\"tree\":null}\n{\"frame\":\"network\",\"claimed\":true,\"tree\":\"{}\"}\n",
       "{\"frame\":\"refused\",\"why\":\"taken\"}\n"],
-    [[.claim "{}", .signIn "{}"], [.network false none, .network true (some "{}")], [.refused "taken"]], none),
+    [[.claim "{}", .signIn "{}"], [.network false none none, .network true (some "{}") none], [.refused "taken"]], none),
+  ("an invite, a withdrawal and a join, then the network with its statements",
+    ["{\"frame\":\"invite\",\"statement\":\"{}\"}\n{\"frame\":\"withdraw\",\"statement\":\"{}\"}\n{\"frame\":\"join\",\"statement\":\"{}\"}\n",
+      "{\"frame\":\"network\",\"claimed\":true,\"tree\":\"{}\",\"statements\":\"{}\"}\n"],
+    [[.invite "{}", .withdraw "{}", .join "{}"], [.network true (some "{}") (some "{}")]], none),
+  ("a join without its statement", ["{\"frame\":\"join\"}\n"], [], some .bad),
   ("a claim without its statement", ["{\"frame\":\"claim\"}\n"], [], some .bad),
   ("a line that isn't JSON", ["nope\n"], [], some .bad),
   ("a frame no peer sends", ["{\"frame\":\"shout\"}\n"], [], some .bad),

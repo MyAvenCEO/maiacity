@@ -13,6 +13,9 @@ import Aven.DB.Json
 - `store.json`: traces of store calls from an empty store; the result of each (`Aven.DB.Store`). Every backend
   replays them in the conformance suite.
 - `hashes.json`: spellings of a hash; whether the store reads each as one.
+- `chat.json`: messages arriving in a room and the clock moving on; after each step the answer, the body the message's
+  sender signs, who is present and the lines said (`Aven.DB.Chat`). The door admits `alice`, `aven` and `bob`; each
+  name is a test key, which aven-db-core's tests sign with for real.
 
 `aven-db-core`'s and `aven-db-store`'s tests load them. `bun run up --check` runs this again and fails when the files
 differ from what is committed. -/
@@ -157,6 +160,71 @@ def hashes : List Json :=
   Store.hashExamples.map fun (s, _) =>
     vector s!"{s.length} characters" (Json.mkObj [("hash", s)]) (toJson (Store.validHash s))
 
+/-! ## The chat -/
+
+open Chat in
+def Aven.DB.Chat.Message.json (m : Message) : Json :=
+  Json.mkObj [("network", m.network), ("from", m.sender), ("at", toJson m.time), ("kind", m.kind.name),
+    ("text", m.text), ("signer", m.signer), ("signed", m.signed)]
+
+open Chat in
+def Aven.DB.Chat.Refusal.name : Refusal → String
+  | .wrongNetwork => "wrongNetwork"
+  | .notMember => "notMember"
+  | .badSignature => "badSignature"
+  | .stale => "stale"
+  | .empty => "empty"
+  | .tooLong => "tooLong"
+  | .notSaid => "notSaid"
+
+open Chat in
+def chatVector (name : String) (steps : List Step) : Json :=
+  let input := Json.mkObj [("network", "aven"), ("members", toJson Chat.members),
+    ("steps", Json.arr (steps.map fun
+      | .arrive now m => Json.mkObj [("now", toJson now), ("message", m.json)]
+      | .clock now => Json.mkObj [("now", toJson now)]).toArray)]
+  let expected := (steps.zip (({} : Room).run steps)).map fun (step, answer, r) =>
+    Json.mkObj [("answer", match answer with | none => Json.mkObj [("ok", true)] | some why => Json.mkObj [("error", why.name)]),
+      ("body", match step with | .arrive _ m => toJson m.body | .clock _ => Json.null),
+      ("present", toJson (r.present step.now)),
+      ("said", Json.arr (r.said.map fun (who, text) => Json.arr #[who, text]).toArray)]
+  vector name input (Json.arr expected.toArray)
+
+open Chat in
+def randomChat (seed : Nat) : List Step := Id.run do
+  let (len, r) := (Rng.seed (seed + 500)).below 30
+  let mut r := r
+  let mut now := 0
+  let mut sent : Array Message := #[]
+  let mut steps := #[]
+  for _ in [0:len + 1] do
+    let (k, r1) := r.below 12
+    let (who, r2) := r1.below 4
+    let (gap, r3) := r2.below 16000
+    let (t, r4) := r3.below 8
+    r := r4
+    now := now + gap
+    let sender := ["alice", "aven", "bob", "eve"][who]!
+    let tamper : Tamper := match t with
+      | 0 => .signer "eve"
+      | 1 => .text "changed"
+      | 2 => .network "other"
+      | _ => .none
+    if k = 0 then steps := steps.push (.clock now)
+    else if k = 1 && !sent.isEmpty then steps := steps.push (.arrive now sent[now % sent.size]!)
+    else
+      let m := if k < 4 then Message.make sender now .here "" tamper
+        else if k < 5 then Message.make sender now .bye "" tamper
+        else if k < 6 then Message.make sender now .say (if t < 6 then "" else long) .none
+        else Message.make sender now .say s!"line {now}" tamper
+      sent := sent.push m
+      steps := steps.push (.arrive now m)
+  return steps.toList
+
+def chat : List Json :=
+  Chat.chatExamples.map (fun (name, steps, _) => chatVector name steps) ++
+  (List.range generated).map fun i => chatVector s!"seed {i + 1}" (randomChat (i + 1))
+
 /-- One vector per line, so a change reads as a diff of lines. -/
 def render (vs : List Json) : String :=
   "[\n" ++ ",\n".intercalate (vs.map Json.compress) ++ "\n]\n"
@@ -165,5 +233,6 @@ def main (args : List String) : IO Unit := do
   let dir : System.FilePath := args.headD "vectors"
   IO.FS.createDirAll dir
   for (file, vs) in [("status.json", status), ("presence.json", presence), ("timeline.json", timeline),
-      ("wire.json", wire), ("store.json", store), ("hashes.json", hashes)] do
+      ("wire.json", wire), ("store.json", store), ("hashes.json", hashes),
+      ("chat.json", chat)] do
     IO.FS.writeFile (dir / file) (render vs)

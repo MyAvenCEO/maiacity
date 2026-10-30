@@ -5,8 +5,10 @@
 	// signs in there with the passkey, which makes it a device too. `#/claim` shows the signup screen whatever the
 	// network says: a second signup is the Aven Peer's to refuse, and it does.
 	import App from './App.svelte';
+	import Join from './Join.svelte';
 	import Phase from './Phase.svelte';
 	import { useTree } from './id.js';
+	import { readLink } from './invites.js';
 	import { castOf, claim, net, signIn } from './network.svelte.js';
 	import { describe, live } from './peers.svelte.js';
 
@@ -14,8 +16,10 @@
 
 	const read = () => location.hash.replace(/^#\/?/, '').split('/')[0];
 	let route = $state(read());
+	// an invite's link, `#/join/<invite>.<secret>` (Join.svelte)
+	let link = $state(readLink(location.hash));
 	$effect(() => {
-		const follow = () => (route = read());
+		const follow = () => ((route = read()), (link = readLink(location.hash)));
 		addEventListener('hashchange', follow);
 		return () => removeEventListener('hashchange', follow);
 	});
@@ -45,21 +49,26 @@
 		useTree(JSON.stringify(cast));
 		return cast;
 	});
+	// whether the network is claimed: as the Aven Peer says, or, once the relay keeps this browser out, claimed (after
+	// the claim only members get in, MILESTONE2.md)
+	const claimed = $derived(net.claimed ?? (net.door === false ? true : null));
 </script>
 
 {#if member && route !== 'claim'}
 	{#key cast}
-		<App {cast} device={net.me} />
+		<App {cast} device={net.me} {config} />
 	{/key}
+{:else if link && claimed}
+	<Join {config} {link} />
 {:else}
-	<main data-view={net.claimed === null ? 'connecting' : !net.claimed || route === 'claim' ? 'claim' : 'invite-only'}>
+	<main data-view={claimed === null ? 'connecting' : !claimed || route === 'claim' ? 'claim' : 'invite-only'}>
 		<h1>avenOS</h1>
-		{#if net.claimed === null}
+		{#if claimed === null}
 			<p class="muted">Connecting to the network…</p>
-		{:else if !net.claimed || route === 'claim'}
+		{:else if !claimed || route === 'claim'}
 			<form onsubmit={(event) => (event.preventDefault(), run(() => claim(config, { name, deliberate: route === 'claim' })))}>
 				<h2>Sign up</h2>
-				{#if net.claimed}
+				{#if claimed}
 					<p class="muted" data-testid="claimed-note">This network is claimed already: the Aven Peer will refuse this signup, and the passkey it makes owns nothing.</p>
 				{:else}
 					<p class="muted">The first to sign up owns this network's admin coop. Your name, then a passkey on this device.</p>

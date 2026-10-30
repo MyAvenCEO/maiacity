@@ -2,6 +2,9 @@
 // server-sent events, a backlog and then each new line; a Peer-Light's own lines come straight from its worker. Each
 // peer's status is its newest status line, and its record (the first start it keeps through its store) its newest
 // stored line.
+import { openWorker } from './peer/open.js';
+import { hear, speakThrough } from './room.svelte.js';
+
 export const live = $state({ timeline: [], status: {}, paths: {}, stored: {}, own: null, ownStored: null });
 
 const keep = 300;
@@ -28,24 +31,25 @@ export function follow() {
 }
 
 // The box's configuration for a Peer-Light of the cast: its test signer's seed, sha256("avenSANDBOX test signer: <id>"),
-// public on purpose and valid only inside the box, and the Aven Peer's key.
+// public on purpose and valid only inside the box, the Aven Peer's key and the cast's members.
 async function configure(cast, me) {
 	const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`avenSANDBOX test signer: ${me}`));
 	const secret = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
-	return { name: me, secret, avenKey: cast.keys['aven-peer'], avenName: 'aven-peer' };
+	// the door's members are the cast's (MILESTONE2.md), as the Peers are given them
+	const members = Object.keys(cast.peers).map((id) => `${id}=${cast.keys[id]}`).join(',');
+	return { name: me, secret, avenKey: cast.keys['aven-peer'], avenName: 'aven-peer', members };
 }
 
 // Runs this origin's Peer-Light: one shared worker per origin, whatever the tabs and frames.
 export async function runLight(cast, me) {
-	const url = new URL('./peer/worker.js', import.meta.url);
-	const shared = typeof SharedWorker === 'function';
-	const worker = shared ? new SharedWorker(url, { type: 'module', name: me }) : new Worker(url, { type: 'module' });
-	const port = shared ? worker.port : worker;
+	const { port } = openWorker(me);
 	port.onmessage = ({ data }) => {
 		const line = JSON.parse(data);
 		if (line.event === 'status' || line.event === 'failed') live.own = line.event === 'failed' ? { ...line, phase: 'offline', peers: 0 } : line;
 		if (line.event === 'stored') live.ownStored = line;
+		hear(line);
 	};
+	speakThrough(port);
 	port.start?.();
 	port.postMessage({ start: await configure(cast, me) });
 }

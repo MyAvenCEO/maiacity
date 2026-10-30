@@ -31,13 +31,13 @@ async function deviceSecret() {
 // The Peer-Light is configured, never built for a place: its name, secret seed and the Aven Peer's key come from the
 // page (a secret `opfs` is this browser's own, and without a name it goes by its key); its relay is this origin,
 // where Vite (in the box) or Caddy (in production) passes /relay on to the Aven Peer.
-async function start({ name, secret, avenKey, avenName }) {
+async function start({ name, secret, avenKey, avenName, members }) {
 	try {
 		const url = '/peer-light/aven_peer_light.js';
 		light = await import(/* @vite-ignore */ url);
 		await light.default();
 		if (secret === 'opfs') secret = await deviceSecret();
-		await light.start(name, secret, self.location.origin, avenKey, avenName, tell);
+		await light.start(name, secret, self.location.origin, avenKey, avenName, tell, members ?? null);
 	} catch (error) {
 		tell(JSON.stringify({ t: Date.now(), peer: name, event: 'failed', why: String(error?.message ?? error) }));
 	}
@@ -47,11 +47,12 @@ function connect(port) {
 	pages.add(port);
 	port.onmessage = async ({ data }) => {
 		if (data?.start) started ??= start(data.start);
-		// a claim or a sign-in for the Aven Peer, from the page
-		if (data?.send) {
+		// a statement for the Aven Peer, a line for the chat's room, or a message as it is (the box's check), from the page
+		for (const call of ['send', 'say', 'post']) {
+			if (data?.[call] === undefined) continue;
 			await started;
 			try {
-				light.send(data.send);
+				light[call](data[call]);
 			} catch (error) {
 				port.postMessage(JSON.stringify({ t: Date.now(), peer: 'page', event: 'refused', why: String(error?.message ?? error) }));
 			}
