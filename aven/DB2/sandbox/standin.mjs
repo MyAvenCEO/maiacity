@@ -42,9 +42,11 @@ export function standin() {
 		const t = tree();
 		const open = [...invites.values()].filter((i) => !i.used && !i.withdrawn).map(({ id, key, made }) => ({ id, key, made }));
 		const present = ['aven-peer', ...clients.keys()].filter((id) => id === 'aven-peer' || t?.vaults[id]);
+		// nothing about the network until the real Aven Peer has said whether it is claimed
+		if (claimed === null) return;
 		for (const [device, res] of clients) {
 			const mine = t?.vaults[device] ? JSON.stringify(t) : null;
-			write(res, { event: 'network', claimed: claimed ?? false, tree: mine, ...(t && admins(t).includes(device) ? { invites: open } : {}) });
+			write(res, { event: 'network', claimed, tree: mine, ...(t && admins(t).includes(device) ? { invites: open } : {}) });
 			if (mine) write(res, { event: 'room', present });
 		}
 	}
