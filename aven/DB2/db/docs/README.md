@@ -841,6 +841,13 @@ against the Rust's Loro on random ops, so it can never be simpler than the code.
   removals included, gives what folding at once gives; a lookup finds every entry in its range, and only those.
   Vectors `indexes.json`.
 
+**What the proofs exposed** (the docs thread, 30 Oct 2026, for the cross-spec step):
+- **Loro's convergence is a stated property.** The model takes it in any order; Loro states it for causal orders, so
+  the Rust tests check Loro against the model on causal orders.
+- **A field merged by its later write needs a total order on stamps:** Lamport, then writer id. The lens law rests on
+  it.
+- **Size rules can't be in schemas:** a counterexample shows two fit writes merging into an unfit state.
+
 ## Order of work
 
 Each step starts with its Lean, then Rust tests against the vectors, then the code, and its plan names what is built.

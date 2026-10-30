@@ -17,7 +17,7 @@ What it proves:
 - `entries_sorted`, `entries_mem`, `sorted_unique`: the entries of a fold are the set of what went in, sorted, and
   nothing else could be;
 - `chunks_flatten`, `chunks_size`: the nodes hold exactly the entries, in order, each within the size limit;
-- `nodes_set`: the nodes depend only on the set of entries;
+- `nodes_set`, `root_set`: the nodes and the root depend only on the set of entries;
 - `fold_steps`, `fold_removes`: folding in steps gives what folding at once gives, removals included;
 - `lookup_complete`, `lookup_sound`: a lookup finds every entry in its range, and only those.
 -/
@@ -249,6 +249,31 @@ theorem chunks_size (hx : ∀ x, size x ≤ limit) (l : List Bytes) :
 theorem nodes_set {a b : List Bytes} (h : ∀ x, x ∈ a ↔ x ∈ b) :
     chunks boundary size limit (entries a) = chunks boundary size limit (entries b) := by
   rw [entries_set h]
+
+/-! ## The root -/
+
+/-- A node as a Value: its entries, or its children's summaries, in order. -/
+def nodeValue (c : List Bytes) : Value := .array (c.map .bytes)
+
+/-- A child's summary in its parent: its first entry, its last entry and its name. -/
+def summary (H : Bytes → Hash) (c : List Bytes) : Bytes :=
+  encode (.array [.bytes (c.headD []), .bytes (c.getLastD []), .bytes (nameOf H (nodeValue c)).bytes])
+
+/-- Build upwards, a level at a time, until one node is left; the same rule cuts every level. -/
+def rootFrom (H : Bytes → Hash) : Nat → List Bytes → Hash
+  | 0, level => nameOf H (nodeValue level)
+  | fuel + 1, level =>
+    let ns := chunks boundary size limit level
+    if ns.length ≤ 1 then nameOf H (nodeValue level) else rootFrom H fuel (ns.map (summary H))
+
+/-- A fold's root. -/
+def root (H : Bytes → Hash) (l : List Bytes) : Hash :=
+  rootFrom boundary size limit H (entries l).length (entries l)
+
+/-- The root depends only on the set of entries: two folds of one version give one root. -/
+theorem root_set (H : Bytes → Hash) {a b : List Bytes} (h : ∀ x, x ∈ a ↔ x ∈ b) :
+    root boundary size limit H a = root boundary size limit H b := by
+  simp only [root, entries_set h]
 
 /-! ## Lookups -/
 
