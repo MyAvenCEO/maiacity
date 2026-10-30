@@ -268,6 +268,14 @@ means something else in another part, and that part's meaning is named.
 - **spawn, retire**: create an actor by asking the kernel; end it.
 - **door actors**: the model, store, HTTP, files and push. ⚠ The door is admission.
 - **composite, skill**: an actor whose turn tells others; a product word for one.
+- **describe**: the ask every actor answers, from its definition, its current phase and the asker's caps: its tool
+  specs (Samuel, 30 Oct 2026).
+- **tool**: a message from `describe` that the caller's caps allow. A model's tool list is a projection of `describe`
+  and is never configured apart.
+- **sends**: the messages a definition declares it may send; the kernel enforces them.
+- **contracts** (requires, produces) **= interface types and `sends`**.
+- **type id** (of a message's payload): the schema's hash in version 1, later a type Doc's version (K5); versions a
+  lens joins are compatible. Edges between actors are derived by type id, never by name or prose.
 - **keeper, live delivery, `ack` frame, compaction**: a keeper holds an absent home's inboxes; point-to-point
   appends; a delivery mark (⚠ caps' ack); later.
 - **trace, outcome, preview**: used but undefined. To define.
