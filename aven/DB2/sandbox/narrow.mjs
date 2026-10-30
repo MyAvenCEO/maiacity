@@ -70,6 +70,8 @@ async function plays(card, kind) {
 					: '';
 				return { ok: Boolean(frame && open && head === '%PDF-'), frame: Boolean(frame), open: Boolean(open), head };
 			}
+			// a player loads once it is in view (Chat.svelte, `lazy`)
+			figure.scrollIntoView({ block: 'center' });
 			const el = figure.querySelector(kind);
 			if (!el) return { ok: false, why: `no <${kind}>` };
 			// what the element went through, for a failure's report

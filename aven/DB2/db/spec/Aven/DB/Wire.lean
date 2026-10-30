@@ -57,6 +57,10 @@ inductive Frame where
   /-- lines as their blobs, oldest first per chain: the Aven Peer's answer to `catchUp`, or a peer's own lines the
   Aven Peer is missing -/
   | lines (lines : List String)
+  /-- the Aven Peer tells a peer files it holds whole, by their names (an index's hash): each file as it keeps it, to
+  every link; and on each link the files of that peer's own chain it has kept, in pages (`keptPages`). A sender says
+  "Kept by the network" only then -/
+  | kept (files : List String)
   deriving DecidableEq, Repr
 
 /-- A line longer than this, without its newline, is refused: no peer needs one. -/
@@ -77,6 +81,7 @@ def Frame.json : Frame → Json
   | .heads hs more => Json.mkObj [("frame", "heads"), ("heads", toJson hs), ("more", toJson more)]
   | .catchUp hs only => Json.mkObj [("frame", "catch_up"), ("have", toJson hs), ("only", toJson only)]
   | .lines ls => Json.mkObj [("frame", "lines"), ("lines", toJson ls)]
+  | .kept fs => Json.mkObj [("frame", "kept"), ("files", toJson fs)]
 
 def Frame.parse (line : String) : Option Frame := do
   let j ← (Json.parse line).toOption
@@ -100,6 +105,7 @@ def Frame.parse (line : String) : Option Frame := do
   | "catch_up" => (.catchUp · ((j.getObjValAs? Bool "only").toOption.getD false)) <$>
       (j.getObjValAs? (List Have) "have").toOption
   | "lines" => .lines <$> (j.getObjValAs? (List String) "lines").toOption
+  | "kept" => .kept <$> (j.getObjValAs? (List String) "files").toOption
   | _ => none
 
 inductive WireError where
@@ -158,6 +164,10 @@ def wireExamples : List (String × List String × List (List Frame) × Option Wi
     ["{\"frame\":\"heads\",\"heads\":[{\"device\":\"ab\",\"id\":\"cd\",\"seq\":2}],\"more\":true}\n",
       "{\"frame\":\"catch_up\",\"have\":[{\"device\":\"ab\",\"seq\":0}],\"only\":true}\n"],
     [[.heads [⟨"ab", "cd", 2⟩] true], [.catchUp [⟨"ab", 0⟩] true]], none),
+  ("a file kept whole, then a page of the files of a peer's chain kept",
+    ["{\"frame\":\"kept\",\"files\":[\"ab\"]}\n{\"frame\":\"kept\",\"files\":[\"ab\",\"cd\"]}\n"],
+    [[.kept ["ab"], .kept ["ab", "cd"]]], none),
+  ("kept without its files", ["{\"frame\":\"kept\"}\n"], [], some .bad),
   ("a head without its number", ["{\"frame\":\"heads\",\"heads\":[{\"device\":\"ab\",\"id\":\"cd\"}]}\n"], [],
     some .bad),
   ("a join without its statement", ["{\"frame\":\"join\"}\n"], [], some .bad),
@@ -339,5 +349,28 @@ well under `maxFrame`. -/
 def longest : List Head := List.replicate pageSize ⟨String.ofList (List.replicate 64 'f'),
   String.ofList (List.replicate 64 'e'), 2 ^ 64 - 1⟩
 #guard ((Frame.heads longest true).json.compress.utf8ByteSize) * 2 < maxFrame
+
+/-! ## The files kept, in pages
+
+A peer that shared many files is told the ones kept in pages of at most `pageSize` names, as the heads are: together
+they are every file (`keptPages_files`), none is empty (`pages_ne_nil`), and a page of the longest names fits a frame. -/
+
+def keptPages (fs : List String) : List Frame := (pages pageSize fs).map .kept
+
+def Frame.kept? : Frame → List String
+  | .kept fs => fs
+  | _ => []
+
+/-- **The pages together are the files.** -/
+theorem keptPages_files (fs : List String) : (keptPages fs).flatMap Frame.kept? = fs := by
+  have whole := pages_flatten (n := pageSize) (by decide) fs.length fs (Nat.le_refl _)
+  unfold keptPages
+  rw [List.flatMap_map]
+  simpa [Frame.kept?] using whole
+
+#guard (keptPages (List.replicate 300 "f")).map (·.kept?.length) = [128, 128, 44]
+#guard keptPages [] = []
+#guard ((Frame.kept (List.replicate pageSize (String.ofList (List.replicate 64 'f')))).json.compress.utf8ByteSize) * 2 <
+  maxFrame
 
 end Aven.DB
