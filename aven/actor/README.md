@@ -4,9 +4,9 @@ What three systems that built an actor architecture taught us, reduced to first 
 There is no code here yet. The design itself is [`ARCHITECTURE.md`](ARCHITECTURE.md), the single source of truth for
 the next implementation; where the two disagree, it wins.
 
-Authority (accounts, signers, owners, capabilities, access control) has its own document,
-[`../DB2/id/caps/README.md`](../DB2/id/caps/README.md), because it will live with avenID's signing and vault infrastructure.
-This document links to it wherever authority comes up.
+Authority (accounts, signers, owners, capabilities, access control) is avenID's caps spec,
+[`../DB2/id/caps/README.md`](../DB2/id/caps/README.md), beside avenID's signing and vault infrastructure. This document
+links to it wherever authority comes up.
 
 "Actor" here means a software actor: an addressable unit with a mailbox. The people and animals of the worlds
 (`maia/content/actors`, the actor skill) are a different thing with the same word.
