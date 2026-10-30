@@ -18,6 +18,13 @@
 //! start and whenever the tree changes. The box's own view (`localhost`), which serves no vault, loads it only for that
 //! ([`views()`]). What a person's acts need computed (a passkey's texts, an invite's key) is in [`acts`].
 //!
+//! Offline first (README rule 3; `aven_peer::link::recall`): on an Aven Peer's host it keeps the network it was told in
+//! its store and reads it back at start, every statement checked again, so a returning browser pushes its views and
+//! opens its chat with its history before any link is up. A newcomer's statement (a claim, a sign-in or a join) is kept
+//! in its store as soon as the page signs it, and sent once the link is up, after a reload too: a `pending` line says
+//! so until the network takes it. [`wake`] makes the link dial again at once when the page comes back online or into
+//! view.
+//!
 //! Files (store/README.md, "How a file travels"): it serves its store's blobs to members over iroh-blobs, and fetches
 //! files by their index's hash, from the Aven Peer or another member: [`file_len`], [`file_range`] and [`file_fetch`].
 //! These three are the Peer-Light's stable API for files: the chat's Service Worker calls them through the leader to
@@ -83,23 +90,31 @@ fn views_line(me: &str, tree: &str) -> String {
 }
 
 /// The page's notes, and a new snapshot of the views whenever the Aven Peer tells this device a changed tree: the
-/// same tree told again (as with every invite) is no change, so no new snapshot (README rule 4).
+/// same tree told again (as with every invite) is no change, so no new snapshot (README rule 4). A tree it kept, told
+/// before any link, is one too; and once the Aven Peer tells no tree after one was shown (its store wiped in the box,
+/// so the network unclaimed, or this browser no device of it), the snapshot is empty: the page shows no vault it kept.
 fn pushing_views(me: String, page: Notes) -> Notes {
     let told = std::sync::Mutex::new(None::<String>);
     Arc::new(move |line: String| {
-        let tree = line
+        let network = line
             .contains("\"network\"")
             .then(|| serde_json::from_str::<serde_json::Value>(&line).ok())
             .flatten()
-            .filter(|l| l["event"] == "network")
-            .and_then(|l| l["tree"].as_str().map(str::to_string));
+            .filter(|l| l["event"] == "network");
         page(line);
-        if let Some(tree) = tree {
-            let mut told = told.lock().unwrap_or_else(|e| e.into_inner());
-            if told.as_deref() != Some(tree.as_str()) {
-                page(views_line(&me, &tree));
-                *told = Some(tree);
+        let Some(network) = network else { return };
+        let mut told = told.lock().unwrap_or_else(|e| e.into_inner());
+        match network["tree"].as_str() {
+            Some(tree) if told.as_deref() != Some(tree) => {
+                page(views_line(&me, tree));
+                *told = Some(tree.to_string());
             }
+            None if told.is_some() && network["kept"].is_null() => {
+                let empty = serde_json::json!({ "at": null, "device": me, "accounts": [], "keys": {}, "vaults": [] });
+                page(timeline::line(now(), &me, "views", empty));
+                *told = None;
+            }
+            _ => {}
         }
     })
 }
@@ -145,6 +160,85 @@ thread_local! {
     static PENDING: Cell<bool> = const { Cell::new(false) };
     /// A connection on iroh-blobs' protocol to each peer files came from, kept while it is open.
     static CONNECTIONS: RefCell<HashMap<PublicKey, Connection>> = RefCell::new(HashMap::new());
+    /// Whether the network this browser keeps has it among its devices already.
+    static MEMBER: Cell<bool> = const { Cell::new(false) };
+    /// What wakes the current binding's link.
+    static WAKE: RefCell<Option<futures_channel::mpsc::UnboundedSender<()>>> = const { RefCell::new(None) };
+}
+
+/// The ref a newcomer's statement waits under, as the frame's JSON, until the network takes it or refuses it.
+const PENDING_REF: &str = "statement";
+
+fn pending_ref() -> aven_db_store::RefName {
+    aven_db_store::RefName::new(PENDING_REF).expect("a fixed ref name is valid")
+}
+
+/// Keeps a newcomer's statement (the frame's JSON) in the store, in place of any before it.
+async fn keep_pending(frame: &str) -> Result<(), JsError> {
+    let (store, _) = store().await?;
+    let blob = store
+        .put(frame.as_bytes().to_vec().into())
+        .await
+        .map_err(js)?;
+    let current = store.get_ref(&pending_ref()).await.map_err(js)?;
+    store
+        .set_ref(&pending_ref(), current, blob)
+        .await
+        .map_err(js)
+}
+
+/// The newcomer's statement the store keeps, if one waits.
+async fn kept_pending() -> Option<String> {
+    let (store, _) = store().await.ok()?;
+    let blob = store.get_ref(&pending_ref()).await.ok().flatten()?;
+    let bytes = store.get(&blob).await.ok().flatten()?;
+    String::from_utf8(bytes.to_vec()).ok()
+}
+
+/// The statement no longer waits: the network took it (this browser is in the tree) or refused it.
+fn clear_pending() {
+    wasm_bindgen_futures::spawn_local(async {
+        let Ok((store, _)) = store().await else {
+            return;
+        };
+        if let Ok(Some(at)) = store.get_ref(&pending_ref()).await {
+            let _ = store.delete_ref(&pending_ref(), at).await;
+        }
+    });
+}
+
+/// The page's notes, clearing the waiting statement once the network has taken this device into its tree or refused
+/// the statement.
+fn settling(me: String, page: Notes) -> Notes {
+    Arc::new(move |line: String| {
+        let settles = (line.contains("\"refused\"") || line.contains("\"network\""))
+            .then(|| serde_json::from_str::<serde_json::Value>(&line).ok())
+            .flatten()
+            .is_some_and(|l| {
+                l["event"] == "refused"
+                    || (l["event"] == "network"
+                        && l["kept"].is_null()
+                        && l["tree"].as_str().is_some_and(|t| t.contains(&me)))
+            });
+        if settles {
+            clear_pending();
+        }
+        page(line);
+    })
+}
+
+/// The device may be back: the page came online or into view. iroh looks at the network again, and a link that
+/// isn't live dials at once.
+#[wasm_bindgen]
+pub fn wake() {
+    if let Ok(endpoint) = running(|r| Ok(r.files.endpoint.clone())) {
+        wasm_bindgen_futures::spawn_local(async move { endpoint.network_change().await });
+    }
+    WAKE.with(|w| {
+        if let Some(w) = w.borrow().as_ref() {
+            let _ = w.unbounded_send(());
+        }
+    });
 }
 
 fn running<T>(f: impl FnOnce(&Running) -> Result<T, JsError>) -> Result<T, JsError> {
@@ -170,7 +264,24 @@ pub fn send(frame: String) -> Result<(), JsError> {
     if newcomer && ADMITTED.get() != Some(true) {
         PENDING.set(true);
         let token = aven_peer::token(&frame);
+        let text = serde_json::to_string(&frame).map_err(js)?;
         wasm_bindgen_futures::spawn_local(async move {
+            // kept first: a reload, or a network that comes back later, sends it still
+            if let (Err(e), Some(config)) = (
+                keep_pending(&text).await,
+                CONFIG.with(|c| c.borrow().clone()),
+            ) {
+                let why = serde_json::json!({ "why": format!("the statement not kept: {e:?}") });
+                (config.notes)(timeline::line(now(), &config.name, "dropped", why));
+            }
+            if let Some(config) = CONFIG.with(|c| c.borrow().clone()) {
+                (config.notes)(timeline::line(
+                    now(),
+                    &config.name,
+                    "pending",
+                    serde_json::json!({ "frame": kind(&frame) }),
+                ));
+            }
             if let Some(old) = RUNNING.take() {
                 let _ = old.router.shutdown().await;
             }
@@ -184,6 +295,16 @@ pub fn send(frame: String) -> Result<(), JsError> {
         return Ok(());
     }
     running(|r| r.outbox.unbounded_send(frame).map_err(js))
+}
+
+/// A newcomer's frame by the name the page knows it.
+fn kind(frame: &Frame) -> &'static str {
+    match frame {
+        Frame::Claim { .. } => "claim",
+        Frame::SignIn { .. } => "sign_in",
+        Frame::Join { .. } => "join",
+        _ => "statement",
+    }
 }
 
 /// Says a line in the network's chat room.
@@ -415,6 +536,11 @@ pub async fn start(
         name
     };
     let notes = pushing_views(name.clone(), notes);
+    let notes = if members.is_none() {
+        settling(name.clone(), notes)
+    } else {
+        notes
+    };
     if let Some(cast) = &cast {
         notes(views_line(&name, cast));
     }
@@ -427,8 +553,26 @@ pub async fn start(
         members,
         notes,
     };
-    CONFIG.with(|c| *c.borrow_mut() = Some(config));
-    bind(None).await
+    let learns = config.members.is_none();
+    CONFIG.with(|c| *c.borrow_mut() = Some(config.clone()));
+    bind(None).await?;
+    // a newcomer's statement signed before a reload, and not yet taken: sent again, so the person needn't tap again
+    if learns && MEMBER.get() {
+        clear_pending();
+    } else if learns && let Some(frame) = kept_pending().await {
+        (config.notes)(timeline::line(
+            now(),
+            &config.name,
+            "pending",
+            serde_json::json!({ "kept": true }),
+        ));
+        if let Err(e) = send(frame) {
+            let why = serde_json::json!({ "why": format!("the kept statement: {e:?}") });
+            (config.notes)(timeline::line(now(), &config.name, "dropped", why));
+            clear_pending();
+        }
+    }
+    Ok(())
 }
 
 /// Binds the Peer-Light's endpoint, with a newcomer's relay token if it has one, and runs its link and room on it.
@@ -496,6 +640,11 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
         .await
         .map_err(js)?;
     notes(record::line(now(), &name, kind, &kept));
+    // the network as it was last told, checked again: the views and the members before any link (offline first)
+    if members.is_none() {
+        aven_peer::link::recall(&store, &name, &gate, &notes).await;
+        MEMBER.set(gate.admits(&secret.public()));
+    }
     // the chat's history, from the same store: shown before any peer answers (store/README.md, "Local first")
     let chats = Chats::open(
         name.clone(),
@@ -538,6 +687,8 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
     .await
     .map_err(js)?;
     let (outbox, frames) = futures_channel::mpsc::unbounded();
+    let (wakes, woken) = futures_channel::mpsc::unbounded();
+    WAKE.with(|w| *w.borrow_mut() = Some(wakes));
     // the cast's members are configuration; without a cast the statements say who they are
     let learns = members.is_none().then_some(gate);
     RUNNING.with(|r| {
@@ -557,6 +708,7 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
         Some(frames),
         learns,
         Some(chats),
+        Some(woken),
     ));
     Ok(())
 }

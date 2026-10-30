@@ -7,6 +7,7 @@
 	// for. A line is yours when it is said for the vault you act as, from any of its devices, this browser or another
 	// (Samuel, 30 Oct 2026). A line the network says through the Aven Peer (who joined) is its own kind.
 	import Avatar from '../Avatar.svelte';
+	import Offline from '../Offline.svelte';
 	import { tree, vaultName } from '../id.svelte.js';
 	import { room, say, share } from '../room.svelte.js';
 
@@ -148,6 +149,7 @@
 				><span>Send</span></button
 			>
 		</form>
+		<Offline />
 		{#if room.refused}<p class="refused" data-testid="refused">{room.refused}</p>{/if}
 	</section>
 </div>

@@ -4,16 +4,17 @@
 [`ARCHITECTURE.md`](../DB2/ARCHITECTURE.md#the-primitives-everything-shares): a pure function named by its hash, from
 this repository, `run(part, input) → output`. Three kinds of users need runtimes, and today their plans live apart:
 
-1. **Actors** run their parts on `state-runtime`, `js-runtime` (QuickJS inside wasmi), `prolog-runtime`,
-   `view-runtime` (the glossary proposes **markup-runtime**) and `style-runtime`. `aven/actor/ARCHITECTURE.md` (#1488,
-   section 5) places them in `aven/actor/runtimes/*`.
-2. **The engine's plugins** lower a grammar to core operations ([`db/engine`](../DB2/db/engine/README.md#the-core-and-its-plugins)).
-   **A18** proposes that a plugin is a runtime whose output is core operations, its lowering pinned by its hash.
-3. **File runtimes** (new) show shared files without trusting them: an SVG, a Markdown note, a CSV, a glTF model.
+1. **Actors** run their parts on `state-runtime`, `js-runtime` (QuickJS inside wasmi), `markup-runtime` and
+   `style-runtime`, specified in [`aven/actor/ARCHITECTURE.md`](../actor/ARCHITECTURE.md)
+   (section 5) and built here, in `aven/runtimes/actor/*`.
+2. **The engine's plugins** lower a grammar to core operations
+   ([`db/engine`](../DB2/db/engine/README.md#the-core-and-its-plugins)). **A18** proposes that a plugin is a runtime
+   whose output is core operations, its lowering pinned by its hash.
+3. **File runtimes** (new) show shared files without trusting them: an SVG, a Markdown note, a CSV, a PDF.
 
-This file is a plan, written on 30 Oct 2026 (Samuel: "just plan them, don't start them"). Nothing here is built yet:
-no crate, no Lean file, no change to the box. It says what comes later, in what order, and what Samuel decides first
-([Open questions](#open-questions-for-samuel)). The words are those of [`GLOSSARY.md`](../DB2/GLOSSARY.md).
+This file is a plan, written on 30 Oct 2026 (Samuel: "just plan them, don't start them"). Nothing here is built yet: no
+crate, no Lean file, no change to the box. It says what comes later and in what order, and records Samuel's answers to
+its questions ([Decisions](#decisions)). The words are those of [`GLOSSARY.md`](../DB2/GLOSSARY.md).
 
 ## Contents
 
@@ -32,7 +33,7 @@ no crate, no Lean file, no change to the box. It says what comes later, in what 
 13. [The first file runtimes, in order](#the-first-file-runtimes-in-order)
 14. [Moving the actors' runtimes and the plugins in](#moving-the-actors-runtimes-and-the-plugins-in)
 15. [The order of work](#the-order-of-work)
-16. [Open questions for Samuel](#open-questions-for-samuel)
+16. [Decisions](#decisions)
 
 ## Why one home
 
@@ -95,11 +96,12 @@ run(part, input) → output | failure        part, input and output are Values; 
 
 ## Names, versions, hashes and floors
 
-- **Names.** Actors' runtimes keep the names the actor spec decided after their job: `state-runtime`, `js-runtime`,
-  `prolog-runtime`, `view-runtime` (or `markup-runtime`, A1) and `style-runtime`. File runtimes are named after their
-  format: `svg-runtime`, `markdown-runtime`, `text-runtime`, `csv-runtime`, `json-runtime`, `gltf-runtime`,
-  `pdf-runtime`. A plugin's runtime is named after its plugin: `ontology-runtime`. All share one namespace, so no two
-  runtimes ever have one name. `json-runtime` is free since the actors' declarative turn became `state-runtime`.
+- **Names** (decision 2). Actors' runtimes are named after their job: `state-runtime`, `js-runtime`, `markup-runtime`
+  and `style-runtime`. There is no Prolog runtime: a machine is data, a table of phases checked by the kernel's
+  admission checker (Samuel, 30 Oct 2026). File runtimes are named after their format: `svg-runtime`,
+  `markdown-runtime`, `text-runtime`, `csv-runtime`, `json-runtime` and `pdf-runtime`. A plugin's runtime is named
+  after its plugin: `ontology-runtime`. All share one namespace, so no two runtimes ever have one name.
+  `json-runtime` is free since the actors' declarative turn became `state-runtime`.
 - **Versions.** `svg-runtime@3` is the third frozen module of `svg-runtime`. A version is never rebuilt or changed. A
   new capability or a fix is the next version, beside the old ones.
 - **Hashes.** What names the code is the hash. A part, a journal entry, a lowered operation and a cached render all
@@ -143,10 +145,10 @@ aven/runtimes/
   freeze/            the reproducible build and the checks: no imports, declared memory, hash = manifest
   registry/          aven-runtimes-registry: the file registry, the sniffer, decide(); built native and to wasm
   tree/              the node-tree allowlist, shared with actors' faces
-  formats/           file runtimes, one crate each, wasm32: text/ json/ csv/ markdown/ svg/ gltf/ pdf/
-  actor/             actors' runtimes when they move in: state/ js/ prolog/ view/ style/
+  formats/           file runtimes, one crate each, wasm32: text/ json/ csv/ markdown/ svg/ pdf/
+  actor/             actors' runtimes when they move in: state/ js/ markup/ style/
   plugins/           plugin runtimes when they move in: ontology/
-  drawers/           the trusted host code that draws checked output: tree (the applier), pixels, table, scene
+  drawers/           the trusted host code that draws checked output: tree (the applier), pixels, table
   hostile/           hostile parts and files per runtime, and the fuzz targets
 ```
 
@@ -176,13 +178,12 @@ types.
 For each file, from its first bytes, its size and its claimed type, `decide` gives one **decision**:
 
 1. **What the file really is,** by its bytes. Each binary type has signatures (bytes at an offset, with a mask: PNG's
-   `89 50 4E 47 0D 0A 1A 0A`, JPEG's `FF D8 FF`, `RIFF….WEBP`, `ftyp` boxes for MP4 and AVIF, `%PDF-`, glTF's
-   `glTF` header). Text types have no magic: a file is text when its head is valid UTF-8 (or UTF-16 with a BOM)
-   without NUL, and then a parse decides among them: an XML prolog or root element (`<svg` is SVG; anything with an
-   HTML root, `<!DOCTYPE html` or `<script` is HTML), JSON by a bounded parse, glTF JSON by its `asset.version`. Only
-   then may the claimed type, or the name's extension, choose among formats the bytes can't tell apart: Markdown, CSV,
-   TSV, code or plain text. **A claim never makes a file more able than its bytes:** a PNG claimed as HTML is a PNG,
-   and HTML claimed as PNG is HTML, which downloads.
+   `89 50 4E 47 0D 0A 1A 0A`, JPEG's `FF D8 FF`, `RIFF….WEBP`, `ftyp` boxes for MP4 and AVIF, `%PDF-`). Text types have
+   no magic: a file is text when its head is valid UTF-8 (or UTF-16 with a BOM) without NUL, and then a parse decides
+   among them: an XML prolog or root element (`<svg` is SVG; anything with an HTML root, `<!DOCTYPE html` or `<script`
+   is HTML), JSON by a bounded parse. Only then may the claimed type, or the name's extension, choose among formats the
+   bytes can't tell apart: Markdown, CSV, TSV, code or plain text. **A claim never makes a file more able than its
+   bytes:** a PNG claimed as HTML is a PNG, and HTML claimed as PNG is HTML, which downloads.
 2. **How it shows:**
    - `native`: in the browser's own decoder, through `<img>`, `<audio>` or `<video>`. Those decoders are sandboxed
      and hardware-accelerated, and we never rewrite a codec. Only for binary types whose bytes say so, and within
@@ -267,16 +268,11 @@ A file runtime's output is only one of two things.
 2. **A plain Value** that a small trusted drawer shows:
    - **pixels:** `{width, height, rgba}`, drawn to a canvas with `putImageData`. SVG gives pixels: rasterized, an
      SVG never reaches the DOM, where its scripts, styles, links and external references would come with it;
-   - **a table:** `{columns, rows, total}`, drawn as a virtualized table of text cells (a large CSV);
-   - **a scene graph:** meshes as typed arrays, materials as numbers, textures as files by hash, nodes as
-     transforms. glTF gives a scene.
+   - **a table:** `{columns, rows, total}`, drawn as a virtualized table of text cells (a large CSV).
 
-**The drawers** are host code in `drawers/`, written once, reviewed like a runtime, small, and fed only checked
-output: the **tree** drawer is the applier; the **pixel** drawer is a canvas; the **table** drawer is one component; the
-**scene** drawer is three.js (or WebGPU directly), pinned, given only a scene graph that `gltf-runtime` validated, never
-a glTF file. What needs the GPU or a native codec stays in a drawer, and what parses hostile bytes stays in a runtime.
-A scene's textures are image files in their own right: each goes through `decide`, so a PNG texture is decoded by the
-browser's own decoder as a `native` image is.
+**The drawers** are host code in `drawers/`, written once, reviewed like a runtime, small, and fed only checked output:
+the **tree** drawer is the applier; the **pixel** drawer is a canvas; the **table** drawer is one component. What needs
+the GPU or a native codec stays in a drawer, and what parses hostile bytes stays in a runtime.
 
 ## Hostile files and their limits
 
@@ -287,13 +283,13 @@ Every file is hostile until its runtime has parsed it, and every limit holds bef
 |---|---|
 | A claim that lies (HTML sent as `image/png`) | The bytes decide; the claim only chooses among text formats. Served with `nosniff` and a sandbox CSP regardless |
 | A polyglot (bytes valid as both PNG and HTML) | The sniffed type decides the one path; no type ever leads to HTML on any origin |
-| A decompression bomb (zlib in PNG and SVGZ, Deflate in PDF, Draco or meshopt in glTF) | Decoded bytes count against memory and output limits inside the runtime; a native image's declared dimensions are checked before it reaches the decoder |
+| A decompression bomb (zlib in PNG and SVGZ, Deflate in PDF) | Decoded bytes count against memory and output limits inside the runtime; a native image's declared dimensions are checked before it reaches the decoder |
 | Huge dimensions (a 100,000 × 100,000 SVG or PNG) | The header's dimensions against the registry's limit for `native`; for SVG the params give the raster size, capped by the output's pixel limit |
 | Deep nesting (JSON, XML, Markdown block quotes and lists) | Each parser has a depth limit below its stack; fuel ends the rest |
 | Entity expansion (billion laughs in SVG) | No DTD and no entities: an SVG that declares one is refused |
 | Fuel exhaustion (a slow path in a parser) | Fuel per instruction ends the run as `outOfFuel`; the file shows as a download |
 | Output floods (a million nodes, a 1 GB pixel buffer) | Output bytes, nodes, depth and pixels are limited by the runtime, checked by the host, and checked again by the drawer |
-| External references (SVG `<image href>`, `<use>` across files, fonts; Markdown images; glTF `uri`) | A runtime can't fetch: it imports nothing. A reference to another file of the same Doc by hash becomes a separate file, decided on its own; anything else is dropped. Links in a tree keep only allowed schemes (`https:`, `mailto:`) and are never followed without a click |
+| External references (SVG `<image href>`, `<use>` across files, fonts; Markdown images; PDF links and embedded files) | A runtime can't fetch: it imports nothing. A reference to another file of the same Doc by hash becomes a separate file, decided on its own; anything else is dropped. Links in a tree keep only allowed schemes (`https:`, `mailto:`) and are never followed without a click |
 | Data carried out through URLs (a tracking pixel, a link with secrets in it) | No remote image, ever; a link opens only by a click, in a new context, with `noopener` and `noreferrer` |
 | A bug in a runtime | The wasm wall, then the worker, then the files origin, then the drawer's second check |
 | A bug in a native decoder | The browser's own sandbox; we limit the formats and dimensions we hand it |
@@ -349,16 +345,16 @@ The starting proposal, to be measured, for a cold run (module compiled and cache
 | `markdown-runtime` | 200 KiB of GitHub-flavoured Markdown | 50 ms | 100 ms | 20 ms |
 | `svg-runtime` | a 10 KiB icon at 512 × 512 | 50 ms | 100 ms | 20 ms |
 | `svg-runtime` | a 1 MiB map at 2048 × 2048 | 2 s | 4 s | 800 ms |
-| `gltf-runtime` | a 20 MB GLB to a scene graph | 1 s | 2 s | 400 ms |
 
-wasmi interprets, which costs perhaps ten times a JIT for parsing and more for rasterizing. If a runtime misses its
-gate in wasmi, the actor spec's fallback applies to all runtimes: the module is frozen with fuel counters injected at
-build, and runs on the host's own WebAssembly engine (the browser's, or wasmtime natively) with the same fuel on every
-device. That is open question 5.
+Every runtime runs in wasmi (decision 5): an interpreter in safe Rust, the same everywhere, with no JIT to attack and
+fuel that stops at the same instruction on every device. It costs perhaps ten times a JIT for parsing and more for
+rasterizing. A runtime that misses its gate is made to do less (a smaller raster, fewer rows, a lazier parse) before
+anything else; running modules on the host's own WebAssembly engine with injected fuel counters stays a later
+decision of its own, taken only with the measurements in hand.
 
 ## The first file runtimes, in order
 
-1. **What the chat needs next,** all from text, all giving trees except one:
+1. **What the chat needs next,** giving trees, a table or pixels:
    - `text-runtime`: plain text and code: UTF-8 (UTF-16 by its BOM), lines with numbers, long files to their first
      lines; highlighting comes in a later version;
    - `json-runtime`: JSON as a collapsible tree, with a depth limit;
@@ -367,16 +363,14 @@ device. That is open question 5.
      schemes only, images only as other files of the same Doc by hash;
    - `svg-runtime`: SVG rasterized to pixels, with resvg compiled to wasm: no DTD, no scripts, no external
      references, one font compiled into the module for text.
-2. **`gltf-runtime` and the scene drawer,** for maiaCITY's 3D assets: GLB and glTF parsed and validated (accessor
-   bounds, index ranges, buffer views inside their buffers, counts within limits), compressed meshes decoded inside the
-   runtime within limits, and a scene graph to the trusted three.js drawer.
-3. **`pdf-runtime` last.** Until then, a PDF keeps the browser's own viewer in a sandboxed frame where the engine
+2. **`pdf-runtime` last.** Until then, a PDF keeps the browser's own viewer in a sandboxed frame where the engine
    renders one there, and downloads where it doesn't (as [`store`](../DB2/store/README.md#what-a-file-may-run) has it
-   today). A PDF renderer in wasm is the largest runtime by far; which one is chosen after a spike (open question
-   10).
+   today). A PDF renderer in wasm is the largest runtime by far. The one that renders most beautifully wins
+   (decision 10): a spike renders a corpus of real PDFs with each candidate and compares them to the reference.
 
-Later: `audio-runtime` and `video-runtime` never, since native players are the right answer; `math-runtime`,
-`lean-runtime` and `three-runtime` as the actor spec lists them, on the same contract.
+Later: `gltf-runtime` and a trusted scene drawer for maiaCITY's 3D assets (not needed for now, Samuel, 30 Oct 2026), on
+the same contract, its output a scene graph Value. `audio-runtime` and `video-runtime` never, since native players are
+the right answer; `math-runtime`, `lean-runtime` and `three-runtime` as the actor spec lists them, on the same contract.
 
 ## Moving the actors' runtimes and the plugins in
 
@@ -385,7 +379,7 @@ questions 1 and 8): they are built here from their first line, in `aven/runtimes
 the kernel's runtime host, and the actor spec's section 13 points here instead of to `aven/actor/runtimes`. avenACTORS
 keeps owning what each actor runtime does, its parts and its schemas; this package owns the contract, the host, the
 import check, the manifest and the node-tree allowlist they share with file runtimes. avenACTORS agrees, and the order
-of its version 1 (prolog and state first, then js, then view and style) stays its own.
+of its version 1 (state first, then js, then markup and style) stays its own.
 
 **The plugins** are built-in Rust, versioned with the engine (engine D1), and A18 makes each a runtime. Both hold:
 - a plugin's lowering is a pure Rust function in `aven/runtimes/plugins/<name>`, with no I/O;
@@ -401,8 +395,8 @@ grammar and its Lean model.
 
 ## The order of work
 
-Each step is Lean first, then Rust tests that replay its vectors, then code, as every part of avenDB works. None of
-it starts before Samuel decides the open questions it depends on.
+Each step is Lean first, then Rust tests that replay its vectors, then code, as every part of avenDB works. Nothing
+starts until Samuel says so (plan only).
 
 1. **Lean `Aven.Runtime`:** the contract, the registry and its vectors, the node-tree allowlist.
 2. **The registry, alone** (`registry/`): the crate, its wasm, the Service Worker and the chat reading it, `passive`
@@ -416,42 +410,40 @@ it starts before Samuel decides the open questions it depends on.
    `markdown-runtime`.
 6. **Values:** the table drawer and `csv-runtime`; the pixel drawer and `svg-runtime`. The performance spike runs
    here, and its gates go into the check.
-7. **Scenes:** `gltf-runtime` and the scene drawer.
-8. **PDF:** the spike, then `pdf-runtime`; the `frame` mode retires.
-9. **Moves:** the actors' runtimes as avenACTORS builds them (from step 3 on), the ontology plugin when the engine has
+7. **PDF:** the spike, then `pdf-runtime`; the `frame` mode retires.
+8. **Moves:** the actors' runtimes as avenACTORS builds them (from step 3 on), the ontology plugin when the engine has
    it.
 
-## Open questions for Samuel
+## Decisions
 
-Each comes with a recommendation.
+Samuel answered the plan's twelve questions on 30 Oct 2026. Where he left one to us ("do what's best"), the choice is
+the safer one, and it is marked so.
 
 1. **One home.** Every runtime (actors', plugins', files') lives in `aven/runtimes`, its own workspace, with one
-   contract, one host and one manifest. *Decided: yes (Samuel, 30 Oct 2026).*
-2. **Names.** File runtimes are named after their format (`svg-runtime`), actors' after their job, as decided
-   (`state-runtime`), plugins' after their plugin, all in one namespace. *Recommend: yes; the glossary's actor entry
-   moves from `json-runtime` and `css-runtime` to `state-runtime` and `style-runtime`.*
+   contract, one host and one manifest. *Yes.*
+2. **Names.** File runtimes are named after their format (`svg-runtime`), actors' after their job (`state-runtime`,
+   `js-runtime`, `markup-runtime`, `style-runtime`), plugins' after their plugin, all in one
+   namespace. *Yes;* the glossary and the actor spec use these names.
 3. **No file runtime before the files origin** (A15). The registry ships first, with `native`, `frame` and `download`
-   only. *Recommend: yes; an opaque sandboxed frame as a stopgap host is possible, but weaker and throwaway.*
-4. **The registry is one Rust crate, also built to wasm,** which the Service Worker and the chat load, instead of a
-   generated JSON with a JS reader beside the Rust one. *Recommend: the wasm, so one implementation decides
-   everywhere; the generated JSON stays as the data and the vectors.*
-5. **wasmi everywhere, or fuel injected at freeze** and run on the host's WebAssembly engine. *Recommend: wasmi
-   first, since it is the actor spec's choice and the simplest determinism; the gates decide per runtime, and injected
-   fuel is the planned fallback for `svg-runtime`, `gltf-runtime` and `pdf-runtime`.*
-6. **Byte strings in Values.** A file runtime takes a file's bytes and gives pixels and buffers. *Decided by A2
-   (Samuel, 30 Oct 2026: "CBOR is good"): the one codec is deterministic CBOR, whose native byte strings carry file
-   bytes, pixels and buffers in Values.*
+   only. *Yes.*
+4. **One implementation of the registry.** The registry is one Rust crate, also built to wasm, which the Service
+   Worker and the chat load, so the same code decides everywhere, instead of a Rust reader and a JS reader that could
+   drift apart. *Ours: the wasm.* The generated JSON stays as the data and the vectors.
+5. **wasmi everywhere.** *Ours, the more secure:* an interpreter has no JIT to attack, and its fuel is the same on
+   every device. A runtime too slow there is made to do less first; a faster engine is a decision of its own later.
+6. **Byte strings in Values.** *Decided by A2* ("CBOR is good"): the one codec is deterministic CBOR, whose byte strings
+   carry file bytes, pixels and buffers in Values.
 7. **Plugins as runtimes, built twice:** native in the engine, frozen as wasm whose hash names the lowering, with
-   the check proving them equal. *Recommend: yes; it reconciles D1 (built-in Rust) with A18.*
-8. **The actors' runtimes are born here,** not in `aven/actor/runtimes`, with avenACTORS still owning their
-   behaviour. *Decided: yes (Samuel, 30 Oct 2026), in `aven/runtimes/actor/*`; avenACTORS agrees.*
-9. **One node-tree allowlist and one applier,** here, used by faces and files alike. *Recommend: yes; a second
-   allowlist would be the two-lists problem again.*
-10. **The PDF renderer.** A pure-Rust renderer to wasm, pdf.js in the runtime worker, or PDFium compiled to wasm.
-    *Recommend: decide after a spike at step 8; prefer pure Rust (one toolchain, smaller, fuzzable), PDFium if no
-    pure-Rust one renders real files well enough.*
-11. **Frozen modules: rebuilt, not committed.** The repository holds the source and the manifest's hashes; the box
-    rebuilds reproducibly and the check compares; releases carry the bytes. *Recommend: yes; committing binaries
-    would put unreviewable bytes in the repository.*
+   the check proving them equal. *Yes;* it reconciles D1 (built-in Rust) with A18.
+8. **The actors' runtimes are born here,** in `aven/runtimes/actor/*`, with avenACTORS still owning what they do.
+   *Yes;* avenACTORS agrees.
+9. **One node-tree allowlist and one applier,** here, used by faces and files alike. *Ours: yes,* since a second
+   allowlist would be the two-lists problem again.
+10. **The PDF renderer:** *the most beautiful one.* A spike renders a corpus of real PDFs (text, fonts, vector
+    drawings, images, forms) with each candidate that runs in wasm (PDFium, pdf.js's renderer, a pure-Rust one) and
+    picks the one closest to the reference, within the runtime's limits.
+11. **Frozen modules are rebuilt, not committed.** *Ours:* the repository holds the source and the manifest's hashes,
+    the box rebuilds each module the same way every time and the check compares hashes, and releases carry the bytes,
+    so no unreviewable binary sits in the repository.
 12. **Nothing outside the network in a render:** no remote image, font or stylesheet, ever; links only by a click.
-    *Recommend: yes, as a law of the registry.*
+    *Yes,* a law of the registry.

@@ -4,7 +4,10 @@
 //! does the same with what it hears. A restart or a reload loads the chains from the store, and catching up takes the
 //! lines another peer holds that this one misses.
 //!
-//! Local first: a line this peer writes is in its store and on its page before any peer has it. What the page hears,
+//! Local first: a line this peer writes is in its store and on its page before any peer has it. A device whose store
+//! holds its key knows its head from its store (`Aven.DB.Chains.own_store_never_forks`), so it writes on its chain at
+//! once, offline too; one whose key is given apart from its store learns its head from the Aven Peer first, and keeps
+//! what it writes until then in its store (`queued`), so a reload loses nothing. What the page hears,
 //! as timeline lines: `chat` (a line shown, with its place: device, number, name), `fork` (a fork raised) and `dropped`.
 
 use std::collections::BTreeMap;
@@ -76,6 +79,62 @@ pub fn batches(lines: Vec<String>) -> Vec<Frame> {
     out
 }
 
+/// The ref that says a store is its device's: the device's key (hex), set once the device knows its head. A
+/// Peer-Light's store says it by holding the device's secret (`device-key`).
+pub const KEY_REF: &str = "chain-key";
+/// A Peer-Light's device secret, kept in its store (peer/light, `deviceSecret`).
+pub const SECRET_REF: &str = "device-key";
+/// What a device whose store isn't its key's yet wrote before it knew its head: a JSON list of bodies.
+pub const QUEUED_REF: &str = "queued";
+
+fn fixed_ref(name: &str) -> RefName {
+    RefName::new(name).expect("a fixed ref name is valid")
+}
+
+/// Whether `store` is the store of the device whose secret is `secret`: it holds that secret (a Peer-Light's), or says
+/// it is that key's (`chain-key`). Then it holds every line the key signed, and is the device's truth. Read by the refs'
+/// hashes alone, never the blobs: a blob read keeps an OPFS handle open, and a second worker of the same origin must
+/// still read its secret (sandbox/engines.mjs, a worker nobody started).
+pub async fn owns(store: &Shared, secret: &SecretKey) -> bool {
+    let at = async |name: &str| store.get_ref(&fixed_ref(name)).await.ok().flatten();
+    let secret_hex = hex(&secret.to_bytes());
+    at(SECRET_REF).await == Some(Hash::of(secret_hex.as_bytes()))
+        || at(KEY_REF).await == Some(Hash::of(secret.public().to_string().as_bytes()))
+}
+
+/// Sets `name` to a blob of `bytes`, whatever it held: under the one writer, so a lost race is only a retry.
+async fn put_ref(store: &Shared, name: &str, bytes: Vec<u8>) -> Result<(), String> {
+    let name = fixed_ref(name);
+    let blob = store.put(bytes.into()).await.map_err(|e| e.to_string())?;
+    let mut expected = store.get_ref(&name).await.map_err(|e| e.to_string())?;
+    for _ in 0..4 {
+        if expected == Some(blob) {
+            return Ok(());
+        }
+        match store.set_ref(&name, expected, blob).await {
+            Ok(()) => return Ok(()),
+            Err(aven_db_store::Error::Stale { current }) => expected = current,
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    Err(format!("{name:?} kept moving"))
+}
+
+fn body_json(body: &Body) -> serde_json::Value {
+    match body {
+        Body::Text(t) => json!({ "text": t }),
+        Body::File(f) => json!({ "file": f }),
+    }
+}
+
+fn body_of(v: &serde_json::Value) -> Option<Body> {
+    match (v["text"].as_str(), v.get("file")) {
+        (Some(t), _) => Some(Body::Text(t.to_string())),
+        (None, Some(f)) => serde_json::from_value(f.clone()).ok().map(Body::File),
+        _ => None,
+    }
+}
+
 fn ref_name(device: &str) -> Result<RefName, String> {
     RefName::new(format!("{}{device}", chain::REF)).map_err(|e| e.to_string())
 }
@@ -141,6 +200,19 @@ impl Chats {
             lines.reverse();
             chains.push((device.to_string(), lines));
         }
+        let learned = owns(&store, &secret).await;
+        // what waited for its head before a reload, from the store
+        let queued: Vec<Body> = match store.get_ref(&fixed_ref(QUEUED_REF)).await {
+            Ok(Some(blob)) => store
+                .get(&blob)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|b| serde_json::from_slice::<Vec<serde_json::Value>>(&b).ok())
+                .map(|v| v.iter().filter_map(body_of).collect())
+                .unwrap_or_default(),
+            _ => vec![],
+        };
         let chats = Chats {
             me,
             network: network.to_string(),
@@ -152,7 +224,7 @@ impl Chats {
             gaps: Arc::default(),
             moved: Arc::default(),
             on_file: Arc::default(),
-            learned: Arc::default(),
+            learned: Arc::new(learned.into()),
             queued: Arc::default(),
             replacing: Arc::default(),
         };
@@ -168,7 +240,64 @@ impl Chats {
             chats.show(h);
         }
         chats.note("chains", json!({ "notCanonical": not_canonical }));
+        for body in queued {
+            chats.enqueue(body);
+        }
+        // a store that knew its key, with lines that waited for its head (a stop between `learn` keeping `chain-key` and clearing `queued`): chained now
+        if learned && !chats.queued.lock().unwrap().is_empty() {
+            chats
+                .learned
+                .store(false, std::sync::atomic::Ordering::Relaxed);
+            chats.learn().await;
+        }
         Ok(chats)
+    }
+
+    /// A line that waits for this device's head, shown as queued.
+    fn enqueue(&self, body: Body) {
+        let name = format!("queued-{}-{}", now(), self.queued.lock().unwrap().len());
+        let text = match &body {
+            Body::Text(t) => t.clone(),
+            Body::File(f) => f.name.clone(),
+        };
+        let (from, vault) = match crate::keys::public(&self.device()) {
+            Ok(k) => self.gate.name(&k),
+            Err(_) => (self.device(), None),
+        };
+        self.note(
+            "chat",
+            json!({ "from": from, "vault": vault, "key": self.device(), "text": text, "at": now(), "seq": 0,
+                "id": name, "queued": true }),
+        );
+        self.queued.lock().unwrap().push((name, body));
+    }
+
+    /// What waits for this device's head, as the store keeps it: none once it is all chained.
+    async fn keep_queued(&self) -> Result<(), String> {
+        let bodies: Vec<serde_json::Value> = self
+            .queued
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_, b)| body_json(b))
+            .collect();
+        if bodies.is_empty() {
+            let name = fixed_ref(QUEUED_REF);
+            return match self.store.get_ref(&name).await.map_err(|e| e.to_string())? {
+                Some(at) => self
+                    .store
+                    .delete_ref(&name, at)
+                    .await
+                    .map_err(|e| e.to_string()),
+                None => Ok(()),
+            };
+        }
+        put_ref(
+            &self.store,
+            QUEUED_REF,
+            serde_json::to_vec(&bodies).map_err(|e| e.to_string())?,
+        )
+        .await
     }
 
     /// Tells the page every line again, each with its sender as the door now names it: when the door changes, as a
@@ -235,6 +364,11 @@ impl Chats {
     /// What to do with each `file` line chained from now on; set once.
     pub fn on_file(&self, f: OnFile) {
         let _ = self.on_file.set(f);
+    }
+
+    /// The store its chains rest in.
+    pub fn store(&self) -> Shared {
+        self.store.clone()
     }
 
     /// This device's key, as lines name it.
@@ -396,6 +530,13 @@ impl Chats {
         {
             return vec![];
         }
+        // from now on this store is its key's: it holds every line the key signs (`own_store_never_forks`)
+        if let Err(why) = put_ref(&self.store, KEY_REF, self.device().into_bytes()).await {
+            self.note(
+                "dropped",
+                json!({ "why": format!("{KEY_REF} not kept: {why}") }),
+            );
+        }
         let queued = std::mem::take(&mut *self.queued.lock().unwrap());
         let mut out = vec![];
         for (name, body) in queued {
@@ -407,6 +548,12 @@ impl Chats {
             }
             self.replacing.lock().unwrap().take();
         }
+        if let Err(why) = self.keep_queued().await {
+            self.note(
+                "dropped",
+                json!({ "why": format!("{QUEUED_REF} not cleared: {why}") }),
+            );
+        }
         out
     }
 
@@ -415,21 +562,9 @@ impl Chats {
     pub async fn write(&self, body: Body) -> Result<Option<Line>, String> {
         if !self.learned() {
             body.check().map_err(|why| why.name().to_string())?;
-            let name = format!("queued-{}-{}", now(), self.queued.lock().unwrap().len());
-            let text = match &body {
-                Body::Text(t) => t.clone(),
-                Body::File(f) => f.name.clone(),
-            };
-            let (from, vault) = match crate::keys::public(&self.device()) {
-                Ok(k) => self.gate.name(&k),
-                Err(_) => (self.device(), None),
-            };
-            self.note(
-                "chat",
-                json!({ "from": from, "vault": vault, "key": self.device(), "text": text, "at": now(), "seq": 0,
-                    "id": name, "queued": true }),
-            );
-            self.queued.lock().unwrap().push((name, body));
+            self.enqueue(body);
+            // kept in the store as soon as it is written: a reload finds it waiting still
+            self.keep_queued().await?;
             return Ok(None);
         }
         let line = {
@@ -501,6 +636,9 @@ impl Chats {
                         .cloned()
                         .collect()
                 };
+                // the ref first: a line is shown once a reload would find it again (a reload half a second after a
+                // line was shown in WebKit lost it, 30 Oct 2026)
+                self.advance(&device).await;
                 for h in &held {
                     self.show(h);
                     if let (Body::File(file), Some(f), Ok(from)) = (
@@ -511,7 +649,6 @@ impl Chats {
                         f(from, file.clone());
                     }
                 }
-                self.advance(&device).await;
             }
             Answer::Gap => {
                 self.gaps.lock().unwrap().insert(id.to_hex(), Some(now()));

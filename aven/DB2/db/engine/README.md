@@ -566,6 +566,10 @@ Notes for that iteration, from this one's discussion:
    it, older history comes by keeper number, and period Docs bound it
    ([docs](../docs/README.md#what-the-engine-and-actors-build-on), need 6).
 6. Is a vault's directory kept by every mutation that creates a document, or by the kinds' compiled operations?
+7. **The `changed` tell, the seam to actors** (Samuel's actor decisions, 30 Oct 2026, #1504). An actor reaches other Docs
+   only through door actors, and the engine is one: a query is an ask to it, and so is a write that can be refused.
+   Standing reads are an actor's `loads`, plus a `changed` tell from the engine when a loaded Doc moves. Once the want
+   queue is decided (ARCHITECTURE.md, A9), it sends `changed` for every loaded Doc whose version it moves.
 
 ## Not in this spec
 

@@ -227,15 +227,16 @@ means something else in another part, and that part's meaning is named.
 
 - **Value**: JSON only: null, bool, finite number, string, array, map. **= Value**.
 - **part**: code or data in one format, for one runtime. ⚠ A want has a **depth**.
-- **runtime**: shared primitive. #1488 names them after their job: **state-runtime** (was json-runtime),
-  **js-runtime**, **prolog-runtime**, **style-runtime** (was css-runtime), and **view-runtime → markup-runtime**,
-  since Samuel keeps "view" for the engine's sense. Their future home is [`aven/runtimes`](../runtimes/README.md).
+- **runtime**: shared primitive. Actors' runtimes are named after their job (Samuel, 30 Oct 2026): **state-runtime**
+  (not json-runtime), **js-runtime**, **markup-runtime** (not view-runtime: "view" is the engine's) and
+  **style-runtime** (not css-runtime). There is no prolog-runtime (Samuel, 30 Oct 2026). Their home is
+  [`aven/runtimes`](../runtimes/README.md).
 - **floor, fuel, shim, hostile parts**: the oldest runtime still run; work counted per instruction; the deterministic
   answer to clock and random calls; test parts that try to escape.
 - **definition**: the class: `interface`, `machine`, `turn`, `faces`, `init`, `lifetime`, `replaces`, `loads`.
   **= a version of an actor type** (**A17**); **`replaces` = the version before**.
-- **component**: a definition whose main part is its face: `props`, `events`, `slots`, `styling`, `a11y`, and
-  **`view` → `markup`**.
+- **component**: a definition whose main part is its face: `props`, `events`, `slots`, `styling`, `a11y` and
+  `markup` (not `view`).
 - **actor, instance**: shared primitive; an instance is an actor.
 - **face, face actor**: an actor's drawn view; a placed component instance with a mounted lifetime.
 - **placing, placer, place, `$use`**: spawning by drawing; the face that places; where.
@@ -255,8 +256,9 @@ means something else in another part, and that part's meaning is named.
 - **turn, given, effects**: handling one message, a mutation of the actor's Doc; the inputs the kernel hands it; the
   messages it sends.
 - **journal, journal entry**: **= the actor Doc's log; an entry is a turn's envelope** (K9).
-- **state, phase, machine, transition**: the actor's data; the machine's current state; fact-only Prolog
-  `state/1`, `initial/1`, `transition/3`.
+- **state, phase, machine, transition**: the actor's data; the machine's current phase; a machine is data, a table of
+  phases and transitions in the interface, checked by the kernel's admission checker, proven in Lean (Samuel, 30 Oct
+  2026: no Prolog).
 - **present, view model, node tree**: state to a view model to an allowlisted tree.
 - **kernel, router, scheduler, clock** (`tick`, `at`): routing, laws, one turn per actor at a time, time. ⚠
   "scheduler" in the engine is the want queue.
@@ -268,7 +270,35 @@ means something else in another part, and that part's meaning is named.
 - **keeper, live delivery, `ack` frame, compaction**: a keeper holds an absent home's inboxes; point-to-point
   appends; a delivery mark (⚠ caps' ack); later.
 - **trace, outcome, preview**: used but undefined. To define.
-- **`$`, `$$`, `$each`, `$on`, `$use`, `$description`**: the view grammar's keys.
+- **`$`, `$$`, `$each`, `$on`, `$use`, `$description`**: the markup grammar's keys.
+
+## runtimes
+
+[`aven/runtimes`](../runtimes/README.md), the one home of every runtime.
+
+- **runtime name**: `<job>-runtime` for actors (above), `<format>-runtime` for files (**svg-runtime**,
+  **markdown-runtime**, **text-runtime**, **csv-runtime**, **json-runtime**, **pdf-runtime**), and after its plugin for
+  a plugin (**ontology-runtime**). One namespace.
+- **version, hash, floor**: `svg-runtime@3`, the third frozen module; `b3:<hex>` of its bytes, which is what names the
+  code; the oldest version still run.
+- **manifest**: the append-only list of every frozen runtime: name, version, hash, floor, schemas, limits, users.
+- **host** (`aven-runtimes-host`): loads a module by hash, refuses any import, meters fuel and memory, checks the
+  schemas and the output's limits. ⚠ avenOS's page is "the host" in actors; this one is the runtime host.
+- **freeze**: the reproducible build that names a module by its hash.
+- **file runtime**: a runtime whose part is a file's bytes and whose input is a render's params.
+- **registry, entry, decide, decision**: the one list of file types; one type's line in it; the function from a file's
+  first bytes, size and claimed type to a decision: its type, how it shows, its limits, how it is served.
+- **sniff, signature**: what the bytes say a file is; bytes at an offset that mark a type. ⚠ A claim is only what the
+  sender says.
+- **show**: `native` (the browser's own decoder), `runtime`, `frame` (PDF's viewer in a sandboxed frame, until
+  pdf-runtime) or `download`.
+- **files origin**: the origin that serves files and runs file runtimes, holding no secret (**A15**).
+- **render, render cache**: a file runtime's output for one file and one set of params; kept on the device by
+  (runtime hash, file hash, params hash), never synced.
+- **node tree, allowlist**: the one output faces and file runtimes draw as DOM; the one list of elements, attributes
+  and URL schemes it may hold.
+- **drawer**: trusted host code that shows checked output: the tree drawer (**= the applier**), pixels, table, scene.
+- **hostile corpus**: test files per runtime that try to escape, explode or flood, each with its exact failure.
 
 ## avenPEER, the products and the box
 

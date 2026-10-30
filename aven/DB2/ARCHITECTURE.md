@@ -463,16 +463,19 @@ Some tokens already work as an index today, and each gets a fix:
   - loads are wants.
 - *Weak:*
   - a re-placed face reused its address, breaking replay (fixed in #1488: an incarnation in the address);
-  - location is part of identity;
-  - replay didn't pin the runtime, definition or fuel schedule (fixed in #1488); load versions wait for A17;
-  - every entity is a root Doc;
-  - an inbox per actor pair;
-  - state replaced whole grows history quadratically;
-  - no effect writes data;
+  - location was part of identity (decided in A17: a vault-scoped id, and the home only routes);
+  - replay didn't pin the runtime, definition or fuel schedule (fixed in #1488); load versions are recommended in A17;
+  - every entity was a root Doc. Samuel's doors (30 Oct 2026) settle it: an actor's own data is its state, and every
+    other Doc is reached through a door actor such as the engine, so tasks can be Records;
+  - an inbox per actor pair (decided in A17: one carrier Doc per pair of vaults);
+  - state replaced whole grew history quadratically (decided in A17: a turn is one Loro commit);
+  - no effect wrote data (settled by the doors: a write that can be refused is an ask to the engine);
   - views could carry data out through URLs (fixed in #1488: a CSP for faces, `url()` only by hash, links through an
     interstitial);
-  - the kernel acts with the whole device cap.
-- *Verdict:* version 1 is sound and small. Its later layers should fold into docs and caps (K5, K9, **A16**, **A17**).
+  - the kernel acts with the whole device cap. Doors act only with the message's cap, and a narrow device for the
+    actor host is still open.
+- *Verdict:* version 1 is sound and small, and its later layers now fold into docs and caps (K5, K9, **A16** and
+  **A17** decided).
 
 **avenPEER and the network**
 - *Strong:*
