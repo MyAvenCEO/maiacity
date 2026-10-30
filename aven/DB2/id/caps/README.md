@@ -1169,9 +1169,9 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `role_pinned` | A new version of a role changes nothing a cap naming the old one grants (D6) |
 | | `chainError_none` | The first rule a chain breaks is none exactly when it keeps them all |
 | `Approve` | `approval_exact` | An approval holds only with k distinct owners, each having signed exactly its digest |
-| | `shown_is_signed` | What avenOS shows for a passkey tap is decoded from the exact bytes signed (A2, rule 25) |
 | | `approvesF_exact`, `approves_signed` | An owner that is a vault approves by its own quorum, recursively: a vault approves only with its threshold of distinct owners, each a key that signed exactly the digest or a vault that approves it, and with every threshold at least one, an approval rests on such a signature by a key above the vault |
 | | `approves_iff` | In a well-formed tree, looking as many levels up as the tree has vaults finds every approval: a vault's owners stand lower than it |
+| | `shown_is_signed` | What avenOS shows for a passkey tap is decoded from the exact bytes signed (A2, rule 25) |
 | `Revoke` | `seen_never_counts` | A revoked holder's envelope with the revocation in its own past never counts: no laundering |
 | | `doc_cap_kept` | Under a Doc cap, only the revocation's own past is kept |
 | | `elsewhere_kept` | Elsewhere, once the revocation reaches the Doc, only what its kept list or another writer's ack had seen counts |
