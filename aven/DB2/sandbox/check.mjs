@@ -2,8 +2,8 @@
 // avenOS: the vaults each host may act as, what each vault's Control Room and Vault show, and each Peer-Light on its
 // own origin with its own OPFS, whose mark survives a reload and differs from every other origin's. Whom each host may
 // act as, what each Control Room and Vault shows, whom each vault acts through and whom each Peer-Light serves come
-// from Lean (id/spec/vectors/avenos.json, README rule 10), not from the code under test; only the names they are shown
-// by come from the cast.
+// from Lean (id/spec/vectors/avenos.json, README rule 10), not from the code under test, and so do the names they are
+// shown by: every vault has one in the model (Maia City, the admin coop, among them).
 // Photographs every screen as it goes. First it waits until all four peers are live: Alice Peer direct to the Aven
 // Peer over UDP, both Peer-Lights through the relay, each showing "4 peers"; it writes the run's timeline beside the
 // screenshots. Each peer keeps a record through its store (its first start), in the backend it is configured with;
@@ -16,8 +16,8 @@ import { lines as allLines, profile, records, stores } from './records.mjs';
 // What avenOS shows on the cast, as the model says (`Aven.ID.OS`), and the names the page shows vaults by
 const read = (path) => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
 const avenos = read('../id/spec/vectors/avenos.json');
-const names = Object.fromEntries(Object.entries(read('./cast.json').vaults).map(([id, vault]) => [id, vault.name]));
 const shown = (key) => avenos.filter((v) => key in v.input);
+const names = shown('names')[0].expected;
 const vaultPath = ({ vault, target }) => (target ? `${vault}/${target}` : vault);
 
 const expected = {
@@ -166,6 +166,9 @@ for (const [path, tree] of Object.entries(expected.tree)) {
 	await page.goto(`http://localhost:5173/#/${vault}/vault${target ? `/${target}` : ''}`);
 	await page.locator(`[data-view="vault"][data-account="${vault}"][data-shown="${tree[0]}"]`).waitFor();
 	differ(`${path}'s Vault`, await ids('[data-vault]', 'vault'), tree);
+	// each vault by the model's name
+	const shownNames = await page.locator('[data-vault] > a strong').allTextContents();
+	differ(`${path}'s Vault names`, shownNames.map((n) => n.trim()), tree.map((id) => names[id]));
 	if (expected.actsThrough[path])
 		differ(`${path} acts through`, (await page.getByTestId('acts-through').textContent()).trim(), expected.actsThrough[path]);
 	if (vault === 'alice') await page.screenshot({ path: `${out}/vault-${path.replace('/', '-')}.png`, fullPage: true });

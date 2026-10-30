@@ -123,6 +123,9 @@ def no (why : ClaimError) : Option ClaimError := some why
 
 /-- Each example: its server, its steps, and for each step the answer and how many devices the tree has after it. -/
 def claimExamples : List (String × Server × List Op × List (Option ClaimError × Nat)) := [
+  -- `sandbox/claim.mjs` holds the box's tree to this trace's, the ids of real passkeys and browsers put in
+  ("the box's check: Ada signs up, a second signup is refused, Ada signs in on a second browser", boxServer,
+    [.claim "a" "1" {}, .claim "b" "2" {}, .signIn "a" "2" {}], [(ok, 2), (no .taken, 2), (ok, 3)]),
   ("the first signup claims, a second signup with another passkey is refused",
     boxServer, [.claim "a" "1" {}, .claim "b" "2" {}, .claim "a" "1" {}],
     [(ok, 2), (no .taken, 2), (no .taken, 2)]),
