@@ -518,7 +518,7 @@ the spec that owns it.
   answers the runtimes plan's question 6, a bytes leaf. Canonical JSON (RFC 8785) can't tell bytes from text and is
   weak on large integers. What a person approves is shown decoded from the exact bytes the passkey signs, never from a
   separate copy, and Lean's vectors include that rendering, so what is shown and what is signed can't drift (from the
-  caps thread). *Yes; Samuel to confirm.*
+  caps thread). *Decided: yes, "CBOR is good" (Samuel, 30 Oct 2026).*
 - **A3. Envelopes name what they build on by hash** (rule 2). *Decided: yes (Samuel, 30 Oct 2026).*
 - **A4. Splits are final,** with no settlement that revives a side, and "fork" means only a copy into a new Doc. The
   store's and Lean's fork becomes split. *Decided: yes (Samuel, 30 Oct 2026).*
@@ -585,8 +585,9 @@ the spec that owns it.
     *decided, yes*;
   - every actor keeps its own inbox (queue, read position, order of handling). Between devices one carrier Doc per
     pair of vaults, written by the sending vault's home device; none within one home: *decided, yes*;
-  - loads are journaled as versions: *recommend yes*;
-  - a definition is a version of an actor type, and lenses carry its state: *open*.
+  - loads are journaled as versions, not as data: *recommend yes*;
+  - a definition is a version of an actor type, `replaces` names the version before, and a lens carries the state:
+    *decided, yes*.
 - **A18. Plugins are runtimes.** A lowering is pinned by its runtime's hash, and an envelope carries the lowered hash.
   *Yes; the engine thread agrees.*
 - **A19. One update grammar:** put, patch, remove and a new `edit` for text, lists and trees, each with a verb and a
