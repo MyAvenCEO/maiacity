@@ -253,6 +253,18 @@ def chatKept : List (Kept WantKey) := [
 -- Over a budget of 250 bytes: the screen's room stays, then the later projects; the idle Docs go.
 #guard (evict 250 chatKept).map (·.key) == [room, projectsKey]
 
+-- The room's key waits for a cap; the outbox's upload waits on nothing: the round sends the upload, the room's wait
+-- stops nothing else.
+#guard (roundW (fun k => if k == roomKey then 1 else if k == outbox then 2 else 0)
+    (fun k => if k == roomKey then some Wait.cap else none) [outbox] [roomKey, room] (fun _ => true)).1 ==
+  .moved outbox
+
+-- When every key with work left waits, the round names each and what it waits for.
+#guard (roundW (fun k => if k == roomKey then 1 else if k == room then 3 else 0)
+    (fun k => if k == roomKey then some Wait.cap else if k == room then some Wait.key else none) [] [roomKey, room]
+    (fun _ => true)).1 ==
+  .waiting [(roomKey, .cap), (room, .key)]
+
 def wantExamples : List Json := [
   wantVector "a chat room on screen, the outbox first" chatWants chatCaps chatPre
     [(room, 3), (roomKey, 1), (outbox, 2)] [outbox] [outbox] 250 chatKept,
