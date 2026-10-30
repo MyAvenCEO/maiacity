@@ -225,10 +225,12 @@ the `ProtocolHandler` registered for its ALPN. avenDB's own protocol plugs in th
    and the Aven Peer goes live at `aven.maia.city`. Everyone else waits for milestone 2's invites.
 2. **Network:** the invite-only door (invites, the relay's allow-list, the device handshake) and members-only gossip,
    with the first example app: a live chat ([`MILESTONE2.md`](MILESTONE2.md)).
+   Then **the store upgrade** ([`db/store`](db/store/README.md)): files in the chat (images, PDFs, movies that play
+   from any point), the chat's history, the city-dome's shared secret, and our own OPFS driver.
 3. **avenID and caps:** more passkeys per vault, owners k of n, recovery, rotation, devices and their revocation; caps,
    roles, delegation.
 4. **Docs:** Loro documents in signed, sealed envelopes; the one writer and its snapshots; the store; one document
-   synced. The chat gets its history.
+   synced. The chat's history becomes Loro's.
 5. **Version control:** history, versions, variants, proposals.
 6. **Schemas and lenses.**
 7. **Sync manifest and queries.**
