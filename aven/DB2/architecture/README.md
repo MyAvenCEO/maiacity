@@ -13,22 +13,22 @@ part requires another sideways: avenID, below docs, never requires docs (the arc
 
 **Where the rules stand** (30 Oct 2026):
 
-| Rule | Composed | Missing |
-|---|---|---|
-| 1. One codec | yes | — |
-| 2. History by hash | yes, on Core's envelopes; Loro's op ids and the hashes name the same past | — |
-| 3. One writer per log | splits final; a chain holds none; a write fits from its own log alone; a split spreads to every reader that syncs | — |
-| 4. Readers judge | order-free verdicts; operations lowered alike; fit per envelope surviving merges; caps' verdict over Core envelopes | one verdict joining signature, cap chain, footprint and fit |
-| 5. Reading is the key | on caps' model | a link from Core's envelopes and docs' segments to their sealing |
-| 6. Demand never grants | yes: served = wants ∩ read grants; keepers serve on fetch proofs | — |
-| 7. No privilege by position | keepers blind; index roots only from writers; no peer the only relay or holder; hosting an explicit read cap | — |
-| 8. Cache or checkpoint | snapshots, checkpoints naming their tips and runtime and taken only from writers (A5), runtimes' determinism, index roots | — |
-| 9. Sealed beyond the device | keepers blind; plain bytes only to readers, relays see ciphertext | — |
-| 10. Every input has a limit | queries, runtimes, index nodes, wire frames | envelopes, blobs, pages, fan-out (docs rule 24); a quota per vault |
-| 11. Every wait ends | a wait names what ends it, by hash | the stall alarm; waits never blocking unrelated work |
-| 12. Order causal, time a claim | the past is what is named | caps' time conditions judged by acks |
-| 13. Keys in the safe | — | the safe (caps D17) has no model |
-| 14. One protocol | — | a node property, held by vectors and the box's check |
+| Rule | Composed | Missing | Owner |
+|---|---|---|---|
+| 1. One codec | yes | — | — |
+| 2. History by hash | yes, on Core's envelopes; Loro's op ids and the hashes name the same past | — | — |
+| 3. One writer per log | splits final; a chain holds none; a write fits from its own log alone; a split spreads to every reader that syncs | — | — |
+| 4. Readers judge | order-free verdicts; operations lowered alike; fit per envelope surviving merges; caps' verdict over Core envelopes (ready in the parts: the engine's footprint and docs' fit over one change view) | one verdict joining signature, cap chain, footprint and fit | caps: the chain over envelopes (#1574); docs: composing `rule4_one_verdict` |
+| 5. Reading is the key | keys of any kind (Core's bytes); keepers blind to segments of Core envelopes; stale epochs refused | — | — |
+| 6. Demand never grants | yes: served = wants ∩ read grants; keepers serve on fetch proofs | — | — |
+| 7. No privilege by position | keepers blind; index roots only from writers; no peer the only relay or holder; hosting an explicit read cap | — | — |
+| 8. Cache or checkpoint | snapshots, checkpoints naming their tips and runtime and taken only from writers (A5), runtimes' determinism, index roots | — | — |
+| 9. Sealed beyond the device | keepers blind; plain bytes only to readers, relays see ciphertext | — | — |
+| 10. Every input has a limit | queries, runtimes, index nodes, wire frames | envelopes, blobs, pages, fan-out (docs rule 24); a quota per vault | docs: envelope, blob and page limits; caps: the quota; docs: composing |
+| 11. Every wait ends | a wait names what ends it, by hash; waits never block unrelated work; every round moves, waits naming each key, or raises the stall alarm | — | — |
+| 12. Order causal, time a claim | the past is what is named | caps' time conditions judged by acks (`time_acked`) | caps; docs: composing |
+| 13. Keys in the safe | — | the safe (caps D17) has no model | caps; docs: composing |
+| 14. One protocol | — | a node property, held by every format's vectors and the box's check; no theorem planned | — |
 
 **Run it in the box,** from `aven/DB2`: `bun run box sh -c 'cd /aven/DB2/architecture/spec && lake build'` (the path
 under `/aven`, so it reaches `aven/runtimes` and `aven/actor`); `bun run box sh sandbox/vectors.sh --check` builds it
