@@ -16,3 +16,11 @@ publish = false
 
 [patch.crates-io]
 opendal-service-opfs = { path = "db/store/opendal-opfs" }
+
+# Third-party crates build optimised, with line tables only (SANDBOX.md, "Open questions", 2): they come precompiled
+# in the box's image, so it costs nothing in the loop, and the Peer-Light's wasm shrinks from 21.5 MB to 8 MB,
+# wasm-bindgen from 2.7 s to 1.1 s and the workspace's tests from 15.6 s to 3.2 s. Our own crates stay at opt-level 0
+# with full debug info.
+[profile.dev.package."*"]
+opt-level = 1
+debug = "line-tables-only"

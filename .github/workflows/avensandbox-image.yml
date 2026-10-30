@@ -1,14 +1,21 @@
-# avenSANDBOX's image (aven/DB2/SANDBOX.md, "The box"): the tools only, never our code. Built for amd64 (cloud sessions,
-# CI) and arm64 (OrbStack on Apple Silicon), each on a runner of its own kind, and joined into one image when its
-# Dockerfile changes. Tagged with the first 16 hex digits of the Dockerfile's SHA-256, so every checkout runs exactly its
-# own box (aven/DB2/sandbox/up.mjs computes the same tag); main's build is also "latest". Public, so it pulls without a
-# token.
+# avenSANDBOX's image (aven/DB2/SANDBOX.md, "The box"): the tools and the third-party crates, compiled, never our code.
+# Built for amd64 (cloud sessions, CI) and arm64 (OrbStack on Apple Silicon), each on a runner of its own kind, and
+# joined into one image when any file its build reads changes. Tagged with a hash of those files
+# (aven/DB2/sandbox/box/tag.mjs, which aven/DB2/sandbox/up.mjs shares), so every checkout runs exactly its own box; the
+# paths below are the same files. main's build is also "latest". Public, so it pulls without a token.
 name: avenSANDBOX image
 
 on:
   push:
     paths:
       - aven/DB2/sandbox/box/Dockerfile
+      - aven/DB2/sandbox/box/deps.sh
+      - aven/DB2/sandbox/box/tag.mjs
+      - aven/DB2/.dockerignore
+      - aven/DB2/Cargo.toml
+      - aven/DB2/Cargo.lock
+      - aven/DB2/**/Cargo.toml
+      - aven/DB2/db/store/opendal-opfs/**
       - .github/workflows/avensandbox-image.yml
   workflow_dispatch:
 
@@ -29,6 +36,7 @@ jobs:
     outputs:
       name: ${{ steps.box.outputs.name }}
       image: ${{ steps.box.outputs.image }}
+      tools: ${{ steps.box.outputs.tools }}
       complete: ${{ steps.built.outputs.complete }}
     steps:
       - uses: actions/checkout@v7.0.1
@@ -37,7 +45,9 @@ jobs:
         run: |
           name="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/aven/sandbox"
           echo "name=$name" >> "$GITHUB_OUTPUT"
-          echo "image=$name:$(sha256sum aven/DB2/sandbox/box/Dockerfile | cut -c1-16)" >> "$GITHUB_OUTPUT"
+          echo "image=$name:$(node aven/DB2/sandbox/box/tag.mjs)" >> "$GITHUB_OUTPUT"
+          echo "tools=$(node aven/DB2/sandbox/box/tag.mjs --tools)" >> "$GITHUB_OUTPUT"
+          node aven/DB2/sandbox/box/tag.mjs --files
       - uses: docker/login-action@v4.7.0
         with:
           registry: ghcr.io
@@ -81,14 +91,21 @@ jobs:
         id: push
         uses: docker/build-push-action@v7.4.0
         with:
-          context: aven/DB2/sandbox/box
+          # aven/DB2, cut down by its .dockerignore to the manifests, the patched fork and deps.sh
+          context: aven/DB2
+          file: aven/DB2/sandbox/box/Dockerfile
           platforms: linux/${{ matrix.arch }}
+          # avensandbox.tools, the Dockerfile's hash: up.mjs runs a box with the same tools while a checkout's own
+          # isn't built yet
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.description=avenSANDBOX: the tools avenDB is built and tested with
+            avensandbox.tools=${{ needs.plan.outputs.tools }}
           outputs: type=image,name=${{ needs.plan.outputs.name }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=avensandbox-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=avensandbox-${{ matrix.arch }}
+          # The layers' cache lives in the registry beside the image: the compiled crates are a layer of several GB,
+          # more than GitHub's 10 GB Actions cache holds for both platforms
+          cache-from: type=registry,ref=${{ needs.plan.outputs.name }}:cache-${{ matrix.arch }}
+          cache-to: type=registry,ref=${{ needs.plan.outputs.name }}:cache-${{ matrix.arch }},mode=max
       - name: Keep the digest
         env:
           DIGEST: ${{ steps.push.outputs.digest }}

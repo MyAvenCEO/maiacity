@@ -19,15 +19,16 @@ Targets, measured in this milestone and reported on every run:
 | `bun run up` with a warm build, until every peer is live | < 10 s | **~9.5 s**: `up` 5.3–5.5 s, then all four live 4.0–4.2 s into the check, Chromium's start included |
 | A change to the page, visible | < 1 s (hot reload) | **82–193 ms** (a Svelte edit until the browser shows it, 5 runs) |
 | A Rust change, running on every peer | < 30 s | **14–17 s**: a change in the shared `link.rs`, so the binary and the Peer-Light's wasm both rebuild (7.9–10.8 s), the Peers restart, and every peer is live about 4 s later |
-| A new cloud session, image already on disk, until every peer is live | < 2 min | not yet: an empty build folder costs 137–183 s of crates before the peers start ([Open questions](#open-questions), 1) |
+| A new cloud session, image already on disk, until every peer is live | < 2 min | **35–54 s** (3 runs): `bun run up --check` with every volume empty, dockerd stopped in two of them. The crates come precompiled in the image ([below](#the-third-party-crates-precompiled)): the first build compiles only our crates (24–42 s, was 137–183 s), `up` takes 32–51 s with dockerd's start and the page's dependencies, Lean's vectors 1.6–12.5 s, then all four live 0.7–1.4 s into the check. The whole check passes in 50–71 s |
 | `bun run up --check` in all, warm | (none) | 25–32 s, of which the views 7 s and the restart and the wipe 12 s |
-| A change to the box's Dockerfile, pushed, until the new image pulls | (none) | 227 s: GitHub builds both platforms |
+| A change to the box's Dockerfile, pushed, until the new image pulls | (none) | cold, nothing cached: 11 min 42 s (amd64 10 min 22 s, arm64 6 min 38 s). A dependency change rebuilds only the crates' layer, the tools coming from the registry's cache: 10 min 13 s (arm64 7 min 2 s, of it the crates 5 min 3 s and the export 80 s). The pull itself: 91 s, 3.23 GB |
 
 Smaller steps, measured by the threads: `lake build` warm 0.15 s each (cold, programs included, 6.1 s for `Aven.ID`,
 5.2 s for `Aven.DB`); `sandbox/vectors.sh --check`, both specs, 0.8–0.9 s warm; `cargo test -p aven-id` warm 4.4 s,
 2000 model cases; `cargo test -p aven-db-core` 1.1 s, 1000 traces; the store against the running model, 500 traces,
-1 s; `cargo test --workspace` 14 s warm; `db/store/check.sh`, all four backends, 11–12 s warm; an incremental `cargo build -p aven-peer` 1.3–2.4 s; aven-id's wasm 1.0 s incremental, 126 KB; the Peer-Light's
-debug wasm 21 MB, wasm-bindgen 3 s of every change to it.
+1 s; `cargo test --workspace` 9.1–9.6 s warm (14 s before its dependencies were optimised); `db/store/check.sh`, all four backends, 11–12 s warm; an incremental `cargo build -p aven-peer` 1.3–2.4 s; aven-id's wasm 1.0 s incremental, 126 KB; the Peer-Light's
+debug wasm 8 MB, wasm-bindgen 1.1 s of every change to it (21.5 MB and 2.5–2.9 s before its dependencies were
+optimised, [Open questions](#open-questions), 2).
 
 ## The cast
 
@@ -263,11 +264,11 @@ One image holds every tool; every command runs in it.
   - bun;
   - Lean, through elan;
   - the third-party crates (iroh, Loro, OpenDAL and the rest), already compiled, so a fresh box builds only our own
-    code.
+    code ([below](#the-third-party-crates-precompiled)).
 
   It's built for amd64 (cloud, CI) and arm64 (OrbStack on Apple Silicon, natively). A GitHub workflow builds it when
-  the box's files change and with every daily version bump. The repository is public, so the image is too, and it
-  pulls without a token. Each image is tagged with the hash of the box's inputs, so every checkout runs exactly its
+  any file its build reads changes, and with every daily version bump. The repository is public, so the image is too,
+  and it pulls without a token. Each image is tagged with a hash of those files, so every checkout runs exactly its
   own box; `latest` is main's.
 - **Containers** (`sandbox/box/compose.yml`):
   - `aven`: the Aven Peer, the Peer binary with `--relay`;
@@ -296,7 +297,7 @@ The image never holds our code. It holds the tools; our crates and pages come fr
 | Layer | Where it lives | Changes when |
 |---|---|---|
 | Tools: Rust, wasm-bindgen, bun, Lean, Chromium | the image | a version bump, at most daily |
-| Third-party crates, compiled | the image, keyed by `Cargo.lock` | a dependency changes |
+| Third-party crates, compiled | the image, keyed by its tag (`Cargo.lock`, the manifests, the fork) | a dependency changes |
 | Our code: crates, pages, spec | the checkout, mounted into the containers | every edit |
 | Our builds | one build folder in a Docker volume, kept across `up` and `down` | every build, incrementally |
 | Each peer's data | a volume per peer, the S3 server's included; `wipe` empties one | the peers write |
@@ -304,6 +305,40 @@ The image never holds our code. It holds the tools; our crates and pages come fr
 So a Rust edit costs one incremental build in `builder` and a restart of the peers that run it, about a second; a page
 edit is a hot reload; and nothing is ever re-imaged for our own changes. The Peers run the binary straight from the
 build folder, and Vite serves the Peer-Light's wasm from it, reloading the pages when it changes.
+
+### The third-party crates, precompiled
+
+The image's last layer compiles the workspace's dependencies, cargo-chef style
+([`sandbox/box/deps.sh`](sandbox/box/deps.sh)):
+
+- **The build context is `aven/DB2`,** cut down by its [`.dockerignore`](.dockerignore) to `Cargo.toml`, `Cargo.lock`,
+  every crate's `Cargo.toml`, the patched fork `db/store/opendal-opfs` whole (opendal calls into it, so it can't be a
+  stub), and `deps.sh`. Never our code.
+- **Each of our crates gets a stub:** an empty library, and `fn main() {}` for every bin, example, test and bench its
+  manifest names.
+- **The stubs build exactly as the loop builds them:** `cargo build -p aven-peer`, the Peer-Light's wasm
+  (`-p aven-peer-light --lib --target wasm32-unknown-unknown`), aven-id's wasm in release, and
+  `cargo test --workspace --no-run`. Same profiles, targets and features; no RUSTFLAGS anywhere. Then the stubs' own
+  artifacts go (`cargo clean -p`, each profile and target), and the fork's too, since the checkout brings its source
+  again with newer times. The registry keeps the downloaded `.crate` files: without them cargo downloads all 385
+  crates again, though it compiles none.
+- **Docker fills an empty named volume from the image's content at its mount path.** So the compiled crates sit at
+  `/work/target`, where `avensandbox_target` mounts, and their sources at `/opt/cargo/registry`, where
+  `avensandbox_cargo_registry` mounts: a new session's first build finds all 342 dependencies `Fresh` (`cargo build
+  -v`) and compiles only our five crates, plus the fork and opendal's thin facade for wasm. A volume that already holds
+  a build keeps it.
+- **The layers run tools first, crates last,** so a dependency change rebuilds only the crates' layer. GitHub keeps the
+  layers' cache in the registry, beside the image (`:cache-amd64`, `:cache-arm64`): the crates' layer is too big for
+  its 10 GB Actions cache.
+- **The tag** is the first 16 hex digits of a SHA-256 over one line per input, its path and its content's SHA-256:
+  `Dockerfile`, `deps.sh`, `tag.mjs`, `.dockerignore`, `Cargo.toml`, `Cargo.lock`, every `Cargo.toml` and the fork's
+  files. [`sandbox/box/tag.mjs`](sandbox/box/tag.mjs) is the one definition: `up.mjs` imports it, and both workflows run
+  `node aven/DB2/sandbox/box/tag.mjs` (`--files` lists the inputs). The image workflow's paths are the same files.
+- **A new dependency doesn't stop the loop.** Until GitHub has built the checkout's own box, `bun run up` runs one with
+  the same tools: one on disk, or main's `latest`, whose label `avensandbox.tools` holds its Dockerfile's hash. The
+  build folder compiles the crates that changed.
+- **One box on disk:** once the containers run on the checkout's box, `up` removes the older ones. Each is about
+  14 GB on disk (3.2 GB compressed), and a cloud session has 30 GB.
 
 The box is never deployed. What ships is avenPEER's own image, `ghcr.io/myavenceo/aven/peer`, built in two stages:
 the binary is compiled in the box's image, then copied onto a minimal base, tens of MB rather than the box's 5 GB.
@@ -342,7 +377,7 @@ origin as its relay. It always stores in OPFS.
 | Place | How |
 |---|---|
 | **Mac** (OrbStack) | `bun run up` in `aven/DB2`. OrbStack's Docker engine config gets `"allow-direct-routing": true`. avenOS opens in any Mac browser, and the Peer-Lights can then run in your browser too. The build folder lives in a Docker volume, not in a folder shared with the Mac, where many small writes are slower. |
-| **Claude cloud session** | A cloud environment named avenSANDBOX. Its setup script starts `dockerd` with the setting and pulls the image. Anthropic snapshots the disk, image included, and new sessions start from that snapshot for about 7 days; the script must finish in about 5 minutes. The snapshot keeps files, not processes, so `bun run up` starts `dockerd` itself when it isn't running, in a session of its own so it outlives the command. `bun run up` only pulls the image: GitHub builds it, and a pull that fails names why. The environment sets `AVEN_DB2=1`, so the repository's hook skips v1's Rust cache. |
+| **Claude cloud session** | A cloud environment named avenSANDBOX. Its setup script starts `dockerd` with the setting and pulls the image. Anthropic snapshots the disk, image included, and new sessions start from that snapshot for about 7 days; the script must finish in about 5 minutes. The snapshot keeps files, not processes, so `bun run up` starts `dockerd` itself when it isn't running, in a session of its own so it outlives the command. It keeps the last `dockerd`'s pid files too, and a new session reuses those pids, so `up` first removes a pid file whose process isn't `dockerd` or `containerd` (otherwise dockerd refuses to start, as it did on 30 Oct 2026). `bun run up` only pulls the image: GitHub builds it, and a pull that fails names why. The environment sets `AVEN_DB2=1`, so the repository's hook skips v1's Rust cache. |
 | **GitHub CI** | The `production` branch's checks run `bun run up --check` on a Linux runner, from the same image (macOS runners have no Docker). |
 
 The box is a whole development machine in one image, the same on every platform that runs Docker: a Mac (OrbStack),
@@ -382,8 +417,8 @@ didn't change gets no new version; a push that changes none releases nothing.
 - **avenPEER's builds** join as a package of its own once they exist: the native Peer for each platform, the
   Peer-Light's wasm, and the node's image, `ghcr.io/myavenceo/aven/peer:<version>`. On any host but the box's, the released avenOS shows only "avenOS · coming soon".
 
-[`avensandbox-image.yml`](../../.github/workflows/avensandbox-image.yml) builds the box's image whenever its
-Dockerfile changes, on any branch, and tags main's as `latest`.
+[`avensandbox-image.yml`](../../.github/workflows/avensandbox-image.yml) builds the box's image whenever a file its
+build reads changes, on any branch, and tags main's as `latest`.
 
 **v1's three workflows are parked** in [`.github/workflows-v1/`](../../.github/workflows-v1/README.md) (Samuel, 29
 Oct 2026): moved, not deleted, so `main` runs no CI and deploys nothing. v1's site, API and peer keep running as they
@@ -571,13 +606,26 @@ Made in milestone 1's threads and its integration (29–30 Oct 2026).
 
 Raised by the threads, not settled in milestone 1:
 
-1. **Precompiled crates in the image.** A first build from an empty build folder takes 137–183 s, most of it
-   third-party crates (iroh, OpenDAL, reqwest, rustls). cargo-chef style, the image would build them into
-   `/work/target`, and Docker copies that into an empty volume on first mount. The image's tag would then need
-   `Cargo.lock`'s hash, and it grows by an estimated 1–2 GB. The alternative, for CI only, is GitHub's cache.
-2. **`opt-level` for dependencies.** wasm-bindgen takes 3 s per changed Peer-Light wasm, because the code is
-   unoptimised (the debug wasm is 19.6 MB, 17 MB without debug info). `[profile.dev.package."*"] opt-level = 1` should
-   shrink it and speed up wasm-bindgen and the page's load. Not measured.
+1. **Precompiled crates in the image** (settled 30 Oct 2026). The image compiles the third-party crates cargo-chef
+   style, Docker copies them into a session's empty build folder on first mount, and the tag hashes every file the
+   build reads ([The third-party crates, precompiled](#the-third-party-crates-precompiled)). A new session's first
+   build fell from 137–183 s to 28 s, all four peers live 35–54 s after `up --check` starts. The image grew by
+   0.79 GB compressed (amd64: 2.44 to 3.23 GB; arm64 0.75 GB), 3.1 GB on disk, and a new session copies another
+   2.9 GB into its volumes. Left open: the store's own checks (`cargo test -p aven-db-store`, the OPFS wasm in
+   release) resolve features of their own and still compile some crates on their first run; GitHub rebuilds the
+   crates' layer whole on any dependency change.
+2. **`opt-level` for dependencies** (settled 30 Oct 2026): `[profile.dev.package."*"]` with `opt-level = 1` and
+   `debug = "line-tables-only"`, our crates unchanged. Measured in the box, warm:
+
+   | | opt-level 0, full debug | opt-level 1 | opt-level 1, line tables |
+   |---|---|---|---|
+   | the Peer-Light's wasm, before and after wasm-bindgen | 148 MB, 21.5 MB | 170 MB, 8.1 MB | 71 MB, 8.1 MB |
+   | wasm-bindgen | 2.5–2.9 s | 1.1–1.3 s | 1.1 s |
+   | a change in `aven-peer`, both builds | 4.5 s | 3.5 s | 2.7 s |
+   | `cargo test --workspace` (without the store), warm | 15.6 s | 3.0 s | 3.2 s |
+   | the crates, compiled in the image (4 vCPU) | 3 min, 4.1 GB | 7.6 min, 4.8 GB | 5.8 min, 2.6 GB |
+
+   Line tables keep file and line in a dependency's backtrace, and halve what the image and every volume hold.
 3. **Hetzner's `If-Match`.** The Aven Peer's server-side compare-and-set needs Hetzner Object Storage to honour
    `If-Match` on PUT and DELETE. Otherwise it relies on the one writer alone, like fs. Check before production.
 4. **`set_ref` on a missing blob.** The store doesn't require the blob to exist. Should the core enforce it?

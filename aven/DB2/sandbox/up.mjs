@@ -1,18 +1,19 @@
 // avenSANDBOX's runner (SANDBOX.md, "The box"): `bun run up [--check]`, `down [--wipe]`, `logs`, `shot`, `build`,
 // `doctor`, and `box <command>`, which runs any command in the box: `bun run box cargo test`.
 // It runs on the host (a Mac with OrbStack, a Claude cloud session, a CI runner) and drives Docker; everything else
-// runs in the box's image, whose tag is the first 16 hex digits of its Dockerfile's SHA-256, as the image workflow
+// runs in the box's image, whose tag is a hash of every file its build reads (box/tag.mjs), as the image workflow
 // (.github/workflows/avensandbox-image.yml) tags it.
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { $ } from 'bun';
+import { boxTag, toolsTag } from './box/tag.mjs';
 import { fence } from './fence.mjs';
 
 const db2 = resolve(import.meta.dir, '..');
 const box = join(db2, 'sandbox', 'box');
-const tag = createHash('sha256').update(readFileSync(join(box, 'Dockerfile'))).digest('hex').slice(0, 16);
-const image = process.env.AVENSANDBOX_IMAGE ?? `ghcr.io/myavenceo/aven/sandbox:${tag}`;
+const boxes = 'ghcr.io/myavenceo/aven/sandbox';
+let image = process.env.AVENSANDBOX_IMAGE ?? `${boxes}:${boxTag()}`;
 const port = process.env.AVENSANDBOX_PORT ?? '5173';
 const proxyCa = '/root/.ccr/ca-bundle.crt';
 // What ships is the node, never the box: the peers learn the box only as configuration. Here the cast's test keys
@@ -40,6 +41,15 @@ async function ensureDocker() {
 	// It runs in a session of its own (setsid), so it outlives the command that started it.
 	if (process.env.CLAUDE_CODE_REMOTE === 'true' && Bun.which('dockerd') && Bun.which('setsid')) {
 		say('starting dockerd');
+		// The session's disk snapshot keeps the last dockerd's pid files, and a new session reuses those pids for its own
+		// processes: dockerd then refuses to start ("process with PID 154 is still running", 30 Oct 2026). A pid file
+		// whose process isn't dockerd or containerd is stale.
+		for (const pidFile of ['/var/run/docker.pid', '/var/run/docker/containerd/containerd.pid']) {
+			if (!existsSync(pidFile)) continue;
+			const pid = readFileSync(pidFile, 'utf8').trim();
+			const comm = existsSync(`/proc/${pid}/comm`) ? readFileSync(`/proc/${pid}/comm`, 'utf8').trim() : '';
+			if (comm !== 'dockerd' && comm !== 'containerd') rmSync(pidFile, { force: true });
+		}
 		// Spawned directly, not through bun's shell, whose parser refuses the input redirect this needs (bun 1.4.4)
 		const daemon = ['sh', '-c', 'exec dockerd --allow-direct-routing > /tmp/avensandbox-dockerd.log 2>&1'];
 		await Bun.spawn(['setsid', '-f', ...daemon], { stdin: 'ignore', stdout: 'ignore', stderr: 'ignore' }).exited;
@@ -51,7 +61,7 @@ async function ensureDocker() {
 	throw new Error("Docker isn't running: start OrbStack on a Mac, or dockerd here");
 }
 
-// Only GitHub builds the box (.github/workflows/avensandbox-image.yml), after every push that changes its Dockerfile;
+// Only GitHub builds the box (.github/workflows/avensandbox-image.yml), after every push that changes one of its inputs;
 // nothing builds it here. Every service's image comes in one `docker compose pull`, in parallel, whenever any is
 // missing; a pull that fails says why.
 async function ensureImages() {
@@ -67,9 +77,39 @@ async function ensureImages() {
 		throw new Error(
 			"this environment's network refuses pkg-containers.githubusercontent.com, where GitHub's registry keeps the image's layers: allow it (SANDBOX.md, \"Where it runs\")",
 		);
-	if (/manifest unknown|not found/i.test(why))
-		throw new Error(`${missing.join(', ')} isn't published yet: GitHub builds the box after the push that changes the Dockerfile, in about 4 minutes`);
+	if (/manifest unknown|not found/i.test(why)) {
+		if (!process.env.AVENSANDBOX_IMAGE && (await sameTools())) return;
+		throw new Error(`${missing.join(', ')} isn't published yet, and no box with the same tools is here or on main: GitHub builds it after the push that changes one of its inputs, in 10 to 12 minutes`);
+	}
 	throw new Error(`can't pull ${missing.join(', ')}: ${why.trim().split('\n').at(-1)}`);
+}
+
+// The checkout's own box isn't published yet: its crates changed (a new dependency) and GitHub hasn't built it. A box
+// with the same tools serves meanwhile, one on disk or main's `latest`, whose label names its Dockerfile's hash; the
+// build folder compiles the crates that changed.
+async function sameTools() {
+	const tools = toolsTag();
+	const label = async (name) => (await $`docker image inspect --format ${'{{index .Config.Labels "avensandbox.tools"}}'} ${name}`.nothrow().quiet().text()).trim();
+	const here = (await $`docker images ${boxes} --format ${'{{.Repository}}:{{.Tag}}'}`.nothrow().quiet().text()).trim().split('\n').filter(Boolean);
+	let found = '';
+	for (const name of here) if (!found && (await label(name)) === tools) found = name;
+	if (!found && (await ok($`docker pull --quiet ${boxes}:latest`)) && (await label(`${boxes}:latest`)) === tools) found = `${boxes}:latest`;
+	if (!found) return false;
+	say(`${image} isn't published yet: running ${found}, the same tools, until GitHub builds it; the build folder compiles the crates that changed`);
+	image = found;
+	env.AVENSANDBOX_IMAGE = found;
+	return true;
+}
+
+// Every box but the one this checkout runs goes, once the containers run on it: each holds the tools and the compiled
+// crates, about 10 GB, and a cloud session's disk is 30 GB. A box a container still uses stays.
+async function pruneBoxes() {
+	const here = (await $`docker images ${boxes} --format ${'{{.Repository}}:{{.Tag}}'}`.nothrow().quiet().text()).trim().split('\n');
+	const id = (await $`docker image inspect --format ${'{{.Id}}'} ${image}`.nothrow().quiet().text()).trim();
+	for (const name of here.filter(Boolean)) {
+		if (name === image || (await $`docker image inspect --format ${'{{.Id}}'} ${name}`.nothrow().quiet().text()).trim() === id) continue;
+		if (await ok($`docker image rm ${name}`)) say(`removed the older box ${name}`);
+	}
 }
 
 // What a container needs to reach the internet: through a cloud session's proxy, which it must trust, or directly.
@@ -219,6 +259,7 @@ async function up(args) {
 	}
 	await $`mkdir -p ${join(db2, 'runs')}`;
 	await Bun.write(stamp, `${binary}\n`);
+	await pruneBoxes();
 	await waitForPage();
 	say(`up in ${((Date.now() - started) / 1000).toFixed(1)} s · avenOS: http://localhost:${port}`);
 	if (args.includes('--check')) process.exit(await check());
