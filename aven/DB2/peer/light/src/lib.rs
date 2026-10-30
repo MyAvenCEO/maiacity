@@ -312,7 +312,11 @@ fn door(endpoint: &Endpoint, bound: u32, name: String, notes: Notes) {
                 serde_json::json!({ "admitted": admitted, "why": denied }),
             ));
             if admitted == Some(false) && PENDING.replace(false) {
-                let why = "the network did not take this browser's statement: invite only";
+                // the relay names why it refused a statement; a bare "not a member" says nothing more
+                let why = match denied.as_deref() {
+                    Some(why) if why != "not a member" => why,
+                    _ => "the network did not take this browser's statement: invite only",
+                };
                 notes(timeline::line(
                     now(),
                     &name,
@@ -481,7 +485,12 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
     let (store, kind) = store().await?;
     // this origin held what an older avenOS left: it was cleared, so this browser is a new device, which signs in again
     if let Some(why) = RESET.with(|r| r.borrow_mut().take()) {
-        notes(timeline::line(now(), &name, "reset", serde_json::json!({ "why": why })));
+        notes(timeline::line(
+            now(),
+            &name,
+            "reset",
+            serde_json::json!({ "why": why }),
+        ));
     }
     let kept = record::first_start(&*store, &name, now())
         .await
@@ -586,19 +595,33 @@ async fn open(f: &Files, file: &Hash, from: Option<String>) -> Result<(files::Fi
     if let Some(found) = files::open(&*f.store, file).await.map_err(js)? {
         return Ok((found, 0));
     }
-    let fetched = fetching(f, from, async |conn| f.held.fetch_chunks(&conn, *file, 0..0).await).await?;
-    let found = files::open(&*f.store, file).await.map_err(js)?.ok_or_else(|| JsError::new("no such file"))?;
+    let fetched = fetching(f, from, async |conn| {
+        f.held.fetch_chunks(&conn, *file, 0..0).await
+    })
+    .await?;
+    let found = files::open(&*f.store, file)
+        .await
+        .map_err(js)?
+        .ok_or_else(|| JsError::new("no such file"))?;
     Ok((found, fetched.bytes))
 }
 
 /// The chunks of `range` this Peer-Light lacks, fetched; the bytes that crossed.
-async fn chunks(f: &Files, file: &files::File, range: Range<u64>, from: Option<String>) -> Result<u64, JsValue> {
+async fn chunks(
+    f: &Files,
+    file: &files::File,
+    range: Range<u64>,
+    from: Option<String>,
+) -> Result<u64, JsValue> {
     let missing = file.missing(&*f.store, range).await.map_err(js)?;
     let (Some(first), Some(last)) = (missing.first(), missing.last()) else {
         return Ok(0);
     };
     let wanted = *first..*last + 1;
-    let fetched = fetching(f, from, async |conn| f.held.fetch_chunks(&conn, file.name, wanted.clone()).await).await?;
+    let fetched = fetching(f, from, async |conn| {
+        f.held.fetch_chunks(&conn, file.name, wanted.clone()).await
+    })
+    .await?;
     Ok(fetched.bytes)
 }
 
@@ -641,7 +664,12 @@ pub async fn file_len(file: String, from: Option<String>) -> Result<f64, JsValue
 /// bytes that crossed for this call. A seek is a range: a movie played from its middle fetches only the chunks it
 /// plays.
 #[wasm_bindgen]
-pub async fn file_range(file: String, start: f64, end: f64, from: Option<String>) -> Result<JsValue, JsValue> {
+pub async fn file_range(
+    file: String,
+    start: f64,
+    end: f64,
+    from: Option<String>,
+) -> Result<JsValue, JsValue> {
     let f = running_files()?;
     let (found, mut fetched) = open(&f, &hash(&file)?, from.clone()).await?;
     let range = start as u64..(end as u64).min(found.len);

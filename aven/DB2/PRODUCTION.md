@@ -14,7 +14,8 @@ On a host whose Aven Peer nobody has claimed yet, avenOS shows one screen: **Sig
 passkey. The claim is just the first signup (Samuel, 30 Oct 2026): no code. Once claimed:
 
 - the admin's browser is a Peer-Light of the admin's vault, and avenOS opens on its dashboard as in the box;
-- on another browser, **Sign in with your passkey** makes that browser a new device of the admin's vault;
+- on another browser, **Sign in with your passkey** makes that browser a new device of the admin's vault (from
+  milestone 2, of any member's vault too, with the member's passkey: [`MILESTONE2.md`](MILESTONE2.md));
 - everyone else sees "avenOS · invite only, coming soon". Nobody else can sign up.
 
 ### The tree becomes data

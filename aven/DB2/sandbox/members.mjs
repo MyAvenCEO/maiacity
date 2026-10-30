@@ -11,6 +11,11 @@
 //                                              invite is kept out by the relay (3); the admin and the member chat, the
 //                                              Aven Peer says who joined, and a message signed by a key that is no
 //                                              member's is dropped by every peer (5)
+//                                              (5); the member signs in with the same passkey on a second browser
+//                                              profile and is a second device of their vault, which catches up on the
+//                                              chat and shows their own lines as theirs; an assertion replayed for
+//                                              another browser and a passkey that owns no vault are refused; the
+//                                              second browser signs out and in again (7, Aven.ID.SignIn)
 //   node sandbox/members.mjs restarted <run>   after the Aven Peer restarted: the same member, let in again, and the
 //                                              chat kept: the Aven Peer's store holds every line (6; store/README.md)
 //
@@ -23,7 +28,12 @@ import { lines } from './records.mjs';
 
 const [phase, run = 'runs/latest'] = process.argv.slice(2);
 const origin = 'http://localhost:5174';
-const profiles = { admin: '/tmp/avensandbox-members-admin', member: '/tmp/avensandbox-members-member', stranger: '/tmp/avensandbox-members-stranger' };
+const profiles = {
+	admin: '/tmp/avensandbox-members-admin',
+	member: '/tmp/avensandbox-members-member',
+	stranger: '/tmp/avensandbox-members-stranger',
+	again: '/tmp/avensandbox-members-again',
+};
 const state = `${run}/members.json`;
 mkdirSync(run, { recursive: true });
 
@@ -49,10 +59,10 @@ async function open(name) {
 	const page = context.pages()[0] ?? (await context.newPage());
 	const cdp = await context.newCDPSession(page);
 	await cdp.send('WebAuthn.enable');
-	await cdp.send('WebAuthn.addVirtualAuthenticator', {
+	const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', {
 		options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true },
 	});
-	const b = { context, page };
+	const b = { context, page, cdp, authenticatorId };
 	b.key = await attach(page);
 	return b;
 }
@@ -176,6 +186,42 @@ const view = (b, want, timeout = 30_000) =>
 
 const device = (key) => `device-${key.slice(0, 16)}`;
 
+// A browser's passkeys: what its authenticator holds, put in place of what it held, as a synced passkey would be
+const passkeysOf = async (b) => (await b.cdp.send('WebAuthn.getCredentials', { authenticatorId: b.authenticatorId })).credentials;
+async function holding(b, credentials) {
+	await b.cdp.send('WebAuthn.clearCredentials', { authenticatorId: b.authenticatorId });
+	for (const credential of credentials) await b.cdp.send('WebAuthn.addCredential', { authenticatorId: b.authenticatorId, credential });
+}
+
+// A refusal shown on the page, and the Aven Peer added no device since `at`
+async function refusedSignIn(b, what, at) {
+	const shown = (await b.page.getByTestId('refused').textContent({ timeout: 15_000 }).catch(() => null))?.trim();
+	if (!shown) problems.push(`${what}: no refusal shown`);
+	if (await line((l) => prod('signed-in')(l), at, 2_000)) problems.push(`${what} was taken`);
+	return shown;
+}
+
+// The model's trace for the member's sign-in (invites.json, "the box's check"), its tree after a step with the box's
+// ids and public halves put in, as sandbox/claim.mjs holds the admin's: Ada claims, Bea joins on device 4 and signs in
+// on device 5
+const model = JSON.parse(readFileSync(new URL('../id/spec/vectors/invites.json', import.meta.url), 'utf8'));
+const trace = model.find((v) => v.name.startsWith("the box's check"));
+function sameTree(what, json, step, ids) {
+	const real = JSON.parse(json ?? '{"keys":{},"vaults":{}}');
+	const got = {
+		keys: Object.entries(real.keys),
+		vaults: Object.entries(real.vaults).map(([id, v]) => ({ id, name: v.name, kind: v.kind, owners: v.owners })),
+	};
+	const id = (x) => ids[x] ?? x;
+	const owner = (o) => o.replace(/^(key|vault):(.*)$/, (_, kind, x) => `${kind}:${id(x)}`);
+	const { keys, vaults } = trace.expected[step].tree;
+	const want = {
+		keys: keys.map(([k, public_]) => [id(k), ids[k] ? real.keys[ids[k]] : public_]),
+		vaults: vaults.map((v) => ({ id: id(v.id), name: v.name, kind: v.kind, owners: v.owners.map(owner) })),
+	};
+	if (JSON.stringify(got) !== JSON.stringify(want)) problems.push(`${what}, the tree is ${JSON.stringify(got)}, not the model's ${JSON.stringify(want)}`);
+}
+
 if (phase === 'members') {
 	for (const dir of Object.values(profiles)) rmSync(dir, { recursive: true, force: true });
 	const since = Date.now();
@@ -257,7 +303,92 @@ if (phase === 'members') {
 	if (lines().some((l) => l.t >= forgedAt && l.event === 'chat' && l.text === 'let me in')) problems.push('a peer showed the forged message');
 	await admin.page.screenshot({ path: `${run}/members-admin.png` });
 	report.member = member.key;
-	for (const b of [admin, member, stranger]) await b.context.close();
+
+	// 7. the member on a second browser: no new invite, the same passkey (Aven.ID.SignIn)
+	const memberPasskeys = await passkeysOf(member);
+	if (memberPasskeys.length !== 1) problems.push(`the member's browser holds ${memberPasskeys.length} passkeys, not the join's 1`);
+	const again = await open('again');
+	await holding(again, memberPasskeys);
+	await again.page.goto(`${origin}/`);
+	if (!(await view(again, 'invite-only'))) problems.push("the member's second browser sees no \"invite only\"");
+	if (!(await again.page.getByTestId('sign-in').count())) problems.push("the member's second browser is offered no sign-in");
+	const signedAt = Date.now();
+	await again.page.getByTestId('sign-in').click();
+	const signedIn = await line((l) => prod('signed-in')(l) && l.device === device(again.key), signedAt);
+	if (!signedIn) problems.push("the member's sign-in was not taken");
+	if (!(await view(again, 'dashboard'))) problems.push("the member's sign-in opened no dashboard");
+	report.memberSignInMs = Date.now() - signedAt;
+	const acting = await again.page.locator('[data-view="dashboard"]').first().getAttribute('data-account').catch(() => null);
+	if (acting !== report.person) problems.push(`the member's second browser acts as ${acting}, not ${report.person}`);
+	const afterSignIn = await line((l) => prod('network')(l) && l.tree?.includes(device(again.key)), signedAt);
+	const tree = JSON.parse(afterSignIn?.tree ?? '{"keys":{},"vaults":{}}');
+	const memberPasskey = tree.vaults[report.person]?.owners?.[0]?.replace(/^key:/, '');
+	const adminVault = Object.entries(tree.vaults).find(([, v]) => v.kind === 'person' && v.name === 'Ada\'s vault')?.[0];
+	sameTree('after the member signed in', afterSignIn?.tree, 3, {
+		'person-a': adminVault, 'passkey-a': passkey, 'device-1': adminDevice,
+		'person-b': report.person, 'passkey-b': memberPasskey, 'device-4': memberDevice, 'device-5': device(again.key),
+	});
+	// the chat's history by catch-up, the member's own line shown as theirs though another browser said it
+	await again.page.goto(`${origin}/#/${report.person}/chat`);
+	const bubble = (text) => again.page.getByTestId('lines').locator('li[data-from]', { hasText: text }).first();
+	for (const text of ['hello from the admin', 'hello from the member'])
+		if (!(await bubble(text).waitFor({ timeout: 20_000 }).then(() => true, () => false))) problems.push(`the member's second browser did not catch up on "${text}"`);
+	const mine = async (text) => (await bubble(text).getAttribute('class').catch(() => '')).split(/\s+/).includes('mine');
+	if (!(await mine('hello from the member'))) problems.push("the member's own line from their first browser isn't shown as theirs");
+	if (await mine('hello from the admin')) problems.push("the admin's line is shown as the member's");
+	await again.page.screenshot({ path: `${run}/members-signed-in-again.png` });
+
+	// an assertion replayed for another browser fails its challenge; a passkey that owns no vault is told to ask for an
+	// invite. The stranger's browser, with the member's passkey for the first, then a passkey of its own
+	await holding(stranger, memberPasskeys);
+	await attach(stranger.page);
+	const replayAt = Date.now();
+	await stranger.page.evaluate(async (other) => {
+		const { id, assertion, send, key } = window.peer;
+		const otherId = await id.deviceId(other);
+		// the member's passkey signed a sign-in for another browser; this one sends it as its own
+		const a = await assertion(await id.signInText('aven', otherId, other));
+		send('sign_in', { network: 'aven', device: { id: await id.deviceId(key), key }, assertion: a });
+	}, member.key);
+	report.replayed = await refusedSignIn(stranger, 'a sign-in replayed for another browser', replayAt);
+	await holding(stranger, []);
+	await attach(stranger.page);
+	await stranger.page.evaluate(() =>
+		navigator.credentials.create({
+			publicKey: {
+				rp: { id: 'localhost', name: 'Aven' },
+				user: { id: crypto.getRandomValues(new Uint8Array(16)), name: 'eve', displayName: 'Eve' },
+				challenge: crypto.getRandomValues(new Uint8Array(32)),
+				pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+				authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
+				attestation: 'none',
+			},
+		}),
+	);
+	await view(stranger, 'invite-only');
+	const strangerAt = Date.now();
+	await stranger.page.getByTestId('sign-in').click();
+	report.strangerSignIn = await refusedSignIn(stranger, "a passkey that owns no vault", strangerAt);
+	const plain = "This passkey isn't a member of Maia City. Ask the admin for an invite.";
+	if (report.strangerSignIn !== plain) problems.push(`a passkey that owns no vault is told "${report.strangerSignIn}", not "${plain}"`);
+	await stranger.page.screenshot({ path: `${run}/members-stranger-sign-in.png` });
+
+	// the second browser signs out: its key is gone, it offers the sign-in again, and the passkey makes it a device again
+	await again.page.getByTestId('account').click();
+	await again.page.getByTestId('sign-out').click();
+	await again.page.waitForURL(`${origin}/`, { timeout: 20_000 }).catch(() => {});
+	const out = await attach(again.page);
+	if (!(await view(again, 'invite-only'))) problems.push('a signed-out browser is still a device');
+	if (!out || out === again.key) problems.push('signing out kept the browser\'s device key');
+	const backAt = Date.now();
+	await again.page.getByTestId('sign-in').click();
+	if (!(await view(again, 'dashboard'))) problems.push('after signing out, the sign-in opened no dashboard');
+	const back = await line((l) => prod('network')(l) && l.tree?.includes(device(out ?? '')), backAt);
+	const backName = JSON.parse(back?.tree ?? '{"vaults":{}}').vaults[device(out ?? '')]?.name;
+	if (backName !== "Bea's browser 3") problems.push(`after signing out and in, the browser is "${backName}", not "Bea's browser 3"`);
+	again.key = out;
+	report.again = out;
+	for (const b of [admin, member, stranger, again]) await b.context.close();
 }
 
 if (phase === 'restarted') {
@@ -278,6 +409,11 @@ if (phase === 'restarted') {
 	if (!(await line((l) => l.peer === 'prod-peer' && l.event === 'chat' && l.text === 'hello again', at))) problems.push("after a restart the member's line did not arrive");
 	await member.page.screenshot({ path: `${run}/members-restarted.png` });
 	await member.context.close();
+	// the member's second browser, a device of their vault since its sign-in, is one still
+	const again = await open('again');
+	if (again.key !== report.again) problems.push("after a restart the member's second browser has another key");
+	if (!(await view(again, 'dashboard'))) problems.push("after a restart the member's second browser is no device");
+	await again.context.close();
 }
 
 report[phase] = { ok: problems.length === 0, problems, ms: Date.now() - started };

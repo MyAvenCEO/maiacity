@@ -307,7 +307,7 @@ async fn the_door_reads_what_production_stored_before_the_agent() {
     // nothing stored changes: every statement reads back as the bytes it was kept as
     let mut kept = serde_json::Map::new();
     kept.insert("claim".into(), m.network().claim().unwrap().to_json());
-    for (n, i) in m.network().sign_ins().iter().enumerate() {
+    for (n, i) in m.all_sign_ins().iter().enumerate() {
         kept.insert(format!("signin-{:06}", n + 1), i.to_json());
     }
     for i in m.invites() {

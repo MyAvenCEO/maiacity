@@ -1,8 +1,10 @@
 //! The Aven Peer's relay admits only the door's keys (MILESTONE2.md, "the door is checked twice"): the members' devices,
 //! the Aven Peer and the devices of the admin's people. Where the Aven Peer keeps its tree, two more: anyone while the
 //! network is unclaimed, so the first signup reaches it; and a newcomer whose relay token is a statement the network
-//! would take from it now (a sign-in by the admin's passkey, a join with an open invite: `aven_id::Members::newcomer`).
-//! No secret travels in the token, and the relay's handshake proves the key it is for. The hook then lets that
+//! would take from it now (a sign-in by the passkey of a person whose vault the tree holds, the admin's or a member's,
+//! a join with an open invite: `aven_id::Members::newcomer`). No secret travels in the token, and the relay's handshake
+//! proves the key it is for. A statement it refuses is refused with its reason, which the browser shows: it is about
+//! the browser's own statement ("This passkey isn't a member of Maia City. Ask the admin for an invite."). The hook then lets that
 //! newcomer bring its statement on `aven/db/1`, and nothing else.
 
 use std::sync::Arc;
@@ -51,6 +53,7 @@ impl AccessControl for Allow {
             return Access::Allow;
         }
         let mut why = "not a member".to_string();
+        let mut told = None;
         if let Some(door) = &self.door {
             let m = door.members();
             if m.network().claim().is_none() {
@@ -66,14 +69,17 @@ impl AccessControl for Allow {
                         self.gate.expect(key);
                         return Access::Allow;
                     }
-                    Err(e) => why = e.to_string(),
+                    Err(e) => {
+                        why = m.say(&e);
+                        told = Some(why.clone());
+                    }
                 },
             }
         }
         let line = json!({ "key": key.to_string(), "by": "relay", "why": why });
         (self.notes)(timeline::line(now(), &self.me, "kept-out", line));
         Access::Deny {
-            reason: Some("not a member".into()),
+            reason: Some(told.unwrap_or_else(|| "not a member".into())),
         }
     }
 }

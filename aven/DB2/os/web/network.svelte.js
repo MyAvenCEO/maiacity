@@ -67,6 +67,7 @@ export function runNetwork(config) {
 		if (line.event === 'start?' && starting) port.postMessage({ start: starting });
 		if (line.event === 'refused') net.refused = line.why;
 		if (line.event === 'reset') net.reset = true;
+		if (line.event === 'signed-out' && !signingOut) setTimeout(() => location.reload(), 2000);
 		if (line.event === 'door') net.door = line.admitted;
 		if (line.event === 'status' || line.event === 'failed') live.own = line.event === 'failed' ? { ...line, phase: 'offline', peers: 0 } : line;
 		if (line.event === 'stored') live.ownStored = line;
@@ -133,11 +134,38 @@ export async function claim(config, { name, deliberate = false }) {
 	send({ frame: 'claim', statement: JSON.stringify(statement) });
 }
 
-// Sign in with the passkey that claimed the network: this browser becomes one more of its devices
+// Sign in with your passkey, the admin's or a member's: this browser becomes one more device of the vault it owns. The
+// page asks for any passkey of this RP ID and needn't know whose: the Aven Peer finds the vault by the assertion
+// (Aven.ID.SignIn), and a passkey that owns none is refused with a word to ask for an invite.
 export async function signIn(config) {
 	const statement = { network: config.network, device: { id: await deviceId(net.key), key: net.key } };
 	statement.assertion = await assertion(config, await signInText(config.network, statement.device.id, net.key));
 	send({ frame: 'sign_in', statement: JSON.stringify(statement) });
+}
+
+// Sign out of this browser: the Peer-Light's worker ends, then this origin's storage, where its device key lives, is
+// cleared, so this browser acts for nobody and offers "Sign in with your passkey" again. The device stays in the tree
+// until devices can be revoked (milestone 3), but nobody holds its key any more. Every other tab of avenOS here
+// reloads once the worker has ended (`signed-out`).
+let signingOut = false;
+export async function signOut() {
+	signingOut = true;
+	port.postMessage({ start: starting, end: true });
+	const root = await navigator.storage.getDirectory();
+	// the worker's handles go with it, a moment after it ends
+	for (let tries = 0; ; tries++) {
+		try {
+			const names = [];
+			for await (const name of root.keys()) names.push(name);
+			for (const name of names) await root.removeEntry(name, { recursive: true });
+			break;
+		} catch (error) {
+			if (tries >= 40)
+				throw new Error(`this browser's data couldn't be cleared (${error?.message ?? error}): close avenOS's other tabs and try again`);
+			await new Promise((done) => setTimeout(done, 250));
+		}
+	}
+	location.replace('/');
 }
 
 // The network's devices as avenOS's apps read a cast's peers, this one by name, from the views the Peer-Light pushed
