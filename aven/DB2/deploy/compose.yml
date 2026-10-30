@@ -1,0 +1,42 @@
+# The Aven Peer at aven.maia.city (PRODUCTION.md, Part B): its own compose project in /opt/aven on v1's server,
+# beside v1 and touching none of its containers. .github/workflows/avendeploy.yml copies this file there and writes
+# the two files it reads:
+#   .env       the image (by digest), MaiaCityGuardian's public half, and the network of v1's Caddy
+#   peer.env   the peer's secret seed and the bucket's credentials, mode 600, made and kept on the server
+# Every setting is a flag of the Peer given by environment (AVEN_PEER_<FLAG>, SANDBOX.md, "The Peer's flags"), as in
+# the box. UDP 7501 is open to the world; the relay's HTTP port only to Caddy, on its network, behind aven.maia.city.
+name: aven
+
+services:
+  peer:
+    image: ${AVEN_PEER_IMAGE:?the deploy sets it}
+    container_name: aven-peer
+    init: true
+    restart: unless-stopped
+    env_file: [peer.env]
+    environment:
+      AVEN_PEER_NAME: aven-peer
+      AVEN_PEER_LISTEN: 0.0.0.0:7501
+      AVEN_PEER_RELAY: "true"
+      AVEN_PEER_RELAY_LISTEN: 0.0.0.0:3340
+      AVEN_PEER_RELAY_URL: https://aven.maia.city
+      AVEN_PEER_STORE: s3
+      AVEN_PEER_S3_ENDPOINT: https://hel1.your-objectstorage.com
+      AVEN_PEER_S3_REGION: hel1
+      AVEN_PEER_S3_BUCKET: city-maia-aven
+      # Part A's flags (PRODUCTION.md, "The code"): the passkeys' RP ID and origin, and MaiaCityGuardian's public
+      # half. A peer without them ignores them; empty, the guardian is unset
+      AVEN_PEER_RP_ID: maia.city
+      AVEN_PEER_ORIGIN: https://aven.maia.city
+      AVEN_PEER_GUARDIAN: ${AVEN_PEER_GUARDIAN:-}
+    ports:
+      - "7501:7501/udp"
+    expose:
+      - "3340"
+    networks: [caddy]
+
+networks:
+  # v1's Caddy's own network (project maia-city), joined from outside so Caddy reaches aven-peer:3340
+  caddy:
+    external: true
+    name: ${CADDY_NETWORK:?the deploy sets it}
