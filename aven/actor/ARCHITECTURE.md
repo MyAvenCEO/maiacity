@@ -388,7 +388,9 @@ Each later step replaces a layer's implementation, not its interface:
 
 ## 13. The package
 
-`aven/actor`, its own package, Rust only, its crates members of the repository's one Cargo workspace:
+`aven/actor`, its own package, Rust only, with its own Cargo workspace, lockfile, Lean project and check. The actor is
+universal: it depends on no storage backend, so it does not live inside avenDB's workspace (`aven/DB2`). avenDB is one
+backend behind the Doc interface (section 11), and the root workspace excludes `aven/actor` as it excludes `aven/DB2`:
 
 ```
 aven/actor/
@@ -423,7 +425,8 @@ What version 1 is not: no network, no avenDB, no capabilities, no encryption, no
 
 Decided (Samuel, 30 Oct 2026):
 
-- Its own package, `aven/actor`, in Rust only, compiled to WebAssembly.
+- Its own package, `aven/actor`, in Rust only, compiled to WebAssembly, with its own Cargo workspace: the actor is
+  universal and depends on no storage backend, avenDB included (section 13).
 - Actors are mostly JSON, with JavaScript where code is needed, run by on-demand runtimes such as QuickJS.
 - The runtimes are rewritten from scratch and named `<format>-runtime`. They run untrusted parts securely and never
   reach the host.
