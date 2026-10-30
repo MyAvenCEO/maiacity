@@ -186,7 +186,7 @@ def restoreCases : List Case :=
     (List.range 10).map fun n => (s!"generated member trace, seed {n}", randomMemberTrace n)
   traces.filterMap fun (name, ops) =>
     let m := membersAfter ops
-    match m.server.claim, m.restore with
+    match m.founding.claim, m.restore with
     | some _, .ok r =>
       some { name := s!"migrated: {name}", statements := migrate r boxGuardianKeys, pinned := 1 }
     | _, _ => none

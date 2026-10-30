@@ -7,7 +7,8 @@ defaultTargets = ["AvenID", "aven-id-model", "vectors"]
 
 [[lean_lib]]
 name = "AvenID"
-# Only Aven.ID is this package's: Aven.Core and Aven.DB come from their own packages.
+# Only Aven.ID is this package's: Aven.Core comes from its own package. avenID sits below the docs layer, whose checks
+# use caps, so it never requires aven-db-spec: what joins the two is Aven.Architecture's.
 roots = ["Aven.ID"]
 
 [[lean_exe]]
@@ -22,8 +23,3 @@ root = "Vectors"
 [[require]]
 name = "aven-core-spec"
 path = "../../core/spec"
-
-# The docs model, for what caps says of its sealed indexes (A26, Aven.DB.Docs.Index).
-[[require]]
-name = "aven-db-spec"
-path = "../../db/spec"

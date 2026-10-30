@@ -32,7 +32,7 @@ inductive Old where
 /-- The old statements after the claim, in the order `Members.restore` reads them: the claimant's sign-ins, then the
 invites, withdrawals and joins by their invite's id, then the members' sign-ins. -/
 def refOrder (m : Members) : List Old :=
-  m.server.signIns.map .signIn ++
+  m.founding.signIns.map .signIn ++
     (m.invites.mergeSort fun a b => Members.byId a.key b.key).map .invite ++
     (m.withdrawn.mergeSort fun a b => Members.byId a.key b.key).map .withdrawal ++
     (m.joins.mergeSort fun a b => Members.byId a.invite b.invite).map .join ++
@@ -54,7 +54,7 @@ def ticketName (olds : List Old) (key : String) : Nat :=
 
 /-- The genesis the claimant signs for production's claim: its relying party, the claimant's vault, passkey and
 claiming browser, the admin coop, the agent and the Aven Peer's key, and the guardian's hybrid keys (A13). -/
-def genesisOf (s : Server) (c : Claim) (g : GuardianKeys) : Genesis :=
+def genesisOf (s : Founding) (c : Claim) (g : GuardianKeys) : Genesis :=
   { rpId := s.rp.rpId, origins := s.rp.origins, claimant := c.person, passkey := c.passkey, devices := [c.deviceKey],
     coop := s.coop, agent := s.network, avenPeer := s.peerKey, guardian := g,
     signedBy := [c.passkey, g.ed25519, g.mlDsa] }
@@ -69,7 +69,7 @@ def Old.says (olds : List Old) (c : Claim) (g : GuardianKeys) : Old → String �
 
 /-- The genesis statement production's claim becomes, named 1. -/
 def genesisStatement (m : Members) (c : Claim) (g : GuardianKeys) : TreeStatement :=
-  ⟨1, c.passkey, [], .genesis (genesisOf m.server c g)⟩
+  ⟨1, c.passkey, [], .genesis (genesisOf m.founding c g)⟩
 
 /-- The `k`-th old statement as a tree statement: named `nameAt k`, naming the one before it. -/
 def step (m : Members) (c : Claim) (g : GuardianKeys) (k : Nat) (o : Old) : TreeStatement :=
@@ -79,7 +79,7 @@ def step (m : Members) (c : Claim) (g : GuardianKeys) (k : Nat) (o : Old) : Tree
 /-- Production's store as tree statements: the genesis, then every old statement in ref order, each naming the one
 before it. An unclaimed store has none. -/
 def migrate (m : Members) (g : GuardianKeys) : List TreeStatement :=
-  match m.server.claim with
+  match m.founding.claim with
   | none => []
   | some c => genesisStatement m c g :: (refOrder m).mapIdx (step m c g)
 
@@ -93,7 +93,7 @@ theorem step_name (m : Members) (c : Claim) (g : GuardianKeys) (k : Nat) (o : Ol
   simp [step]
 
 /-- Each migrated old statement has the genesis in its past: its tip is the one before it, down to the genesis. -/
-theorem migrate_past (m : Members) (g : GuardianKeys) (c : Claim) (hc : m.server.claim = some c) :
+theorem migrate_past (m : Members) (g : GuardianKeys) (c : Claim) (hc : m.founding.claim = some c) :
     ∀ k (hk : k < ((refOrder m).mapIdx (step m c g)).length),
       Settle.InPast (migrate m g) (((refOrder m).mapIdx (step m c g))[k]) (genesisStatement m c g) := by
   have mem : ∀ k (hk : k < ((refOrder m).mapIdx (step m c g)).length),
@@ -114,8 +114,8 @@ theorem migrate_past (m : Members) (g : GuardianKeys) (c : Claim) (hc : m.server
 
 /-- **`settle_restore`**, its general half: given a genesis both its signers signed, every statement production holds
 counts in the settled tree. The change of rule loses nothing. -/
-theorem settle_restore (m : Members) (g : GuardianKeys) (c : Claim) (hc : m.server.claim = some c)
-    (signed : (genesisOf m.server c g).consented = true) :
+theorem settle_restore (m : Members) (g : GuardianKeys) (c : Claim) (hc : m.founding.claim = some c)
+    (signed : (genesisOf m.founding c g).consented = true) :
     ∀ s ∈ migrate m g, (settle restored 1 (migrate m g)).counted s.name = true := by
   intro s ms
   have hg : Settle.pinnedGenesis restored 1 (genesisStatement m c g) = true := by
@@ -143,12 +143,12 @@ def askedKeys (m : Members) : List String := doorKeys ++ m.publics.map (·.2)
 
 /-- The vaults a store names. -/
 def namedVaults (m : Members) : List String :=
-  m.server.network :: m.server.coop :: m.tree.vaults.map (·.id) ++ m.joins.map (·.person)
+  m.founding.network :: m.founding.coop :: m.tree.vaults.map (·.id) ++ m.joins.map (·.person)
 
 /-- A claimed store and its settled migration agree: the same keys at the door, and the same member vaults (the
 claimant's, the coop, the agent and every vault a join founded). -/
 def agrees (m : Members) : Bool :=
-  match m.server.claim, m.restore with
+  match m.founding.claim, m.restore with
   | none, _ => true
   | some c, .ok r =>
     let t := settle restored 1 (migrate r boxGuardianKeys)

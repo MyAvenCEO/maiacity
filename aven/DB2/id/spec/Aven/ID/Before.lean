@@ -41,7 +41,7 @@ def Tree.jsonBefore (t : Tree) : Json :=
 def Tree.readsBefore (t : Tree) : Bool := ((parseTree t.jsonBefore).toOption.map Tree.json) == some t.json
 
 -- every tree the claim and member examples make, after every step, written the old way, reads back as itself
-#guard claimExamples.all fun (_, server, ops, _) => (server.run ops).all fun (_, s) => s.tree.readsBefore
+#guard claimExamples.all fun (_, founding, ops, _) => (founding.run ops).all fun (_, s) => s.tree.readsBefore
 #guard memberExamples.all fun (_, ops, _) => (boxMembers.run ops).all fun (_, m) => m.tree.readsBefore
 #guard cast.readsBefore
 

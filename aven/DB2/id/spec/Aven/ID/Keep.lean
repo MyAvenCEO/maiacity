@@ -17,10 +17,13 @@ Hashes and keys are numbers, as `Network`'s ticket hashes are: `Aven.Core`'s 32-
 links with one epoch hash and different keys can only be forged, and the smaller key goes first. A link's `n` is its
 key blob's `n`, the epoch's depth from the genesis.
 
-**What a keeper can't tell** (`grind_example`). A reader of an earlier epoch still holds that epoch's fetch key, so it
-can fork the chain there and grind its epoch hash below the writers'. Writers check the rotation's cap and don't take
-its epoch. A keeper can't, so it takes the fork as current and flags it. How such a fork settles is the caps spec's
-open question 1.
+**How a ground fork settles** (A22, the architect's answer, 30 Oct 2026). A reader of an earlier epoch still holds that
+epoch's fetch key, so it can fork the chain there and grind its epoch hash below the writers' (`grind_example`).
+Writers check the rotation's cap and don't take its epoch. A keeper can't, so it flags the fork and, while it is
+unsettled, serves proofs by any branch's newest key, so honest readers are never refused (`fork_served`). A device of
+the vault that issued the keep cap, which can check caps, signs which branch to follow; the keeper checks the signer
+against the tree, follows that branch, and later forks from that point change nothing (`grind_settled`,
+`settled_example`).
 
 Examples are checked by `decide` and exported as vectors (`keep.json`). -/
 
@@ -37,13 +40,84 @@ structure FetchLink where
   signer : Nat
   deriving DecidableEq, Repr
 
-/-- What a keeper holds for one Doc: the Doc, its first fetch key from the genesis, and every link that came, in the
-order it came. -/
+/-- The keep cap's issuer settling a fork: the depth and key the fork is from, the key of the branch to follow, and the
+device that signed it. -/
+structure Choice where
+  depth : Nat
+  fork : Nat
+  branch : Nat
+  signer : String
+  deriving DecidableEq, Repr
+
+/-- What a keeper holds for one Doc: the Doc, its first fetch key from the genesis, every link that came, in the order
+it came, the devices of the vault that issued its keep cap (as the tree says), and that vault's choices at forks. -/
 structure Keep where
   doc : String
   genesis : Nat
   links : List FetchLink
+  issuer : List String := []
+  choices : List Choice := []
   deriving Repr
+
+/-- The smallest of some numbers. -/
+def smallest : List Nat → Option Nat
+  | [] => none
+  | x :: xs =>
+    match smallest xs with
+    | none => some x
+    | some m => some (min x m)
+
+theorem smallest_spec : ∀ {l : List Nat} {m : Nat}, smallest l = some m → m ∈ l ∧ ∀ x ∈ l, m ≤ x
+  | [], _, h => nomatch h
+  | x :: xs, m, h => by
+    simp only [smallest] at h
+    split at h
+    · rename_i n
+      cases h
+      have : xs = [] := by
+        cases xs with
+        | nil => rfl
+        | cons y ys =>
+          simp only [smallest] at n
+          split at n <;> cases n
+      subst this
+      exact ⟨List.mem_singleton.mpr rfl, fun y m => by simp at m; omega⟩
+    · rename_i m' e
+      cases h
+      have ⟨mm, mmin⟩ := smallest_spec e
+      refine ⟨?_, fun y my => ?_⟩
+      · rcases Nat.le_total x m' with le | le
+        · rw [Nat.min_eq_left le]; exact List.mem_cons_self
+        · rw [Nat.min_eq_right le]; exact List.mem_cons_of_mem _ mm
+      · rcases List.mem_cons.mp my with rfl | my
+        · exact Nat.min_le_left _ _
+        · exact Nat.le_trans (Nat.min_le_right _ _) (mmin y my)
+
+theorem smallest_none : ∀ {l : List Nat}, smallest l = none → l = []
+  | [], _ => rfl
+  | x :: xs, h => by
+    simp only [smallest] at h
+    split at h <;> cases h
+
+/-- Lists with the same numbers have the same smallest. -/
+theorem smallest_set {l l' : List Nat} (h : ∀ x, x ∈ l ↔ x ∈ l') : smallest l = smallest l' := by
+  cases hl : smallest l with
+  | none =>
+    have e := smallest_none hl
+    subst e
+    cases hl' : smallest l' with
+    | none => rfl
+    | some m => exact absurd ((h m).mpr (smallest_spec hl').1) (by simp)
+  | some m =>
+    cases hl' : smallest l' with
+    | none =>
+      have e := smallest_none hl'
+      subst e
+      exact absurd ((h m).mp (smallest_spec hl).1) (by simp)
+    | some m' =>
+      have a := (smallest_spec hl).2 m' ((h m').mpr (smallest_spec hl').1)
+      have b := (smallest_spec hl').2 m ((h m).mp (smallest_spec hl).1)
+      rw [Nat.le_antisymm a b]
 
 /-- `a` goes before `b`: a smaller epoch hash, or the same hash and a key no larger. -/
 def FetchLink.before (a b : FetchLink) : Bool :=
@@ -166,18 +240,31 @@ theorem kept_every {s : Keep} : ∀ {i k : Nat}, Chained s i k → k ∈ s.level
     simp only [level, List.mem_flatMap, List.mem_map]
     exact ⟨l.prev, kept_every c, l, mem_successors.mpr ⟨m, d, n, rfl, sg⟩, rfl⟩
 
-/-- From key `k` at depth `i`, `fuel` steps on: at each fork, the link that goes first. -/
+/-- The branch the keep cap's issuer chose at the fork from `k` at depth `i`: by a device of the issuing vault, which
+the keeper checks against the tree, naming a key the keeper keeps there. Its devices choose alike; were two choices
+different, the smaller key. -/
+def chosen (s : Keep) (i k : Nat) : Option Nat :=
+  smallest ((s.choices.filter fun ch => ch.depth == i && ch.fork == k && s.issuer.contains ch.signer &&
+    (s.successors i k).any (·.key == ch.branch)).map (·.branch))
+
+/-- Where a keeper goes from `k` at depth `i`: the issuer's choice if it made one, else the smaller epoch hash. -/
+def next (s : Keep) (i k : Nat) : Option Nat :=
+  match s.chosen i k with
+  | some c => some c
+  | none => (least (s.successors i k)).map (·.key)
+
+/-- From key `k` at depth `i`, `fuel` steps on. -/
 def walk (s : Keep) : Nat → Nat → Nat → Nat
   | 0, _, k => k
   | f + 1, i, k =>
-    match least (s.successors i k) with
+    match s.next i k with
     | none => k
-    | some l => s.walk f (i + 1) l.key
+    | some c => s.walk f (i + 1) c
 
 /-- The deepest any link goes, so no walk needs more steps. -/
 def depth (s : Keep) : Nat := s.links.foldr (fun l d => max l.n d) 0
 
-/-- The current fetch key: from the genesis, at each fork the smaller epoch hash, to the end. -/
+/-- The current fetch key: from the genesis, at each fork the issuer's choice or the smaller epoch hash, to the end. -/
 def current (s : Keep) : Nat := s.walk s.depth 0 s.genesis
 
 theorem depth_ge {s : Keep} {l : FetchLink} (m : l ∈ s.links) : l.n ≤ s.depth := by
@@ -206,6 +293,22 @@ theorem depth_mem {s : Keep} : s.depth = 0 ∨ ∃ l ∈ s.links, l.n = s.depth 
     · rw [Nat.max_eq_left le]
       exact .inr ⟨x, .inl rfl, rfl⟩
 
+/-- Where a keeper goes next is a key it keeps there. -/
+theorem next_kept {s : Keep} {i k c : Nat} (h : s.next i k = some c) : ∃ l ∈ s.successors i k, l.key = c := by
+  unfold next at h
+  split at h
+  · rename_i c' e
+    cases h
+    obtain ⟨m, _⟩ := smallest_spec e
+    simp only [List.mem_map, List.mem_filter, Bool.and_eq_true, List.any_eq_true, beq_iff_eq] at m
+    obtain ⟨ch, ⟨_, _, l, hl, kl⟩, rfl⟩ := m
+    exact ⟨l, hl, kl⟩
+  · cases e : least (s.successors i k) with
+    | none => simp [e] at h
+    | some l =>
+      simp only [e, Option.map_some, Option.some.injEq] at h
+      exact ⟨l, (least_min e).1, h⟩
+
 /-- The current fetch key chains back to the genesis. -/
 theorem current_chained (s : Keep) : ∃ i, Chained s i s.current := by
   suffices h : ∀ f i k, Chained s i k → ∃ j, Chained s j (s.walk f i k) from h _ _ _ .genesis
@@ -217,30 +320,46 @@ theorem current_chained (s : Keep) : ∃ i, Chained s i s.current := by
     simp only [walk]
     split
     · exact ⟨i, c⟩
-    · rename_i l hl
-      have ⟨m, d, n, p, sg⟩ := mem_successors.mp (least_min hl).1
+    · rename_i n hn
+      obtain ⟨l, hl, e⟩ := next_kept hn
+      have ⟨m, d, nn, p, sg⟩ := mem_successors.mp hl
       have c' : Chained s i l.prev := p ▸ c
-      exact ih _ _ (Chained.link c' m d n (sg.trans p.symm))
+      exact e ▸ ih _ _ (Chained.link c' m d nn (sg.trans p.symm))
 
-/-- Keepers of one Doc holding the same links, in whatever order they came, take the same current fetch key. -/
+/-- Keepers of one Doc holding the same links and the same choices, in whatever order they came, take the same current
+fetch key. -/
 theorem current_agrees {s t : Keep} (doc : s.doc = t.doc) (genesis : s.genesis = t.genesis)
-    (same : ∀ l, l ∈ s.links ↔ l ∈ t.links) : s.current = t.current := by
+    (same : ∀ l, l ∈ s.links ↔ l ∈ t.links) (issuer : ∀ d, d ∈ s.issuer ↔ d ∈ t.issuer)
+    (choices : ∀ c, c ∈ s.choices ↔ c ∈ t.choices) : s.current = t.current := by
   have succ : ∀ i k l, l ∈ s.successors i k ↔ l ∈ t.successors i k := by
     intro i k l
     simp only [mem_successors, same l, doc]
+  have nexts : ∀ i k, s.next i k = t.next i k := by
+    intro i k
+    have ch : s.chosen i k = t.chosen i k := by
+      apply smallest_set
+      intro x
+      simp only [List.mem_map, List.mem_filter, Bool.and_eq_true, List.any_eq_true, beq_iff_eq,
+        List.contains_iff_mem, choices, issuer, succ]
+    have a := least_agrees (succ i k)
+    unfold next
+    rw [ch]
+    cases t.chosen i k with
+    | some c => rfl
+    | none =>
+      cases hs : least (s.successors i k) <;> cases ht : least (t.successors i k) <;>
+        simp only [hs, ht, Option.map, reduceCtorEq, Option.some.injEq, Prod.mk.injEq] at a ⊢
+      exact a.2
   have walks : ∀ f i k, s.walk f i k = t.walk f i k := by
     intro f
     induction f with
     | zero => intro i k; rfl
     | succ f ih =>
       intro i k
-      have a := least_agrees (succ i k)
-      simp only [walk]
-      cases hs : least (s.successors i k) <;> cases ht : least (t.successors i k) <;>
-        simp only [hs, ht, Option.map, reduceCtorEq, Option.some.injEq, Prod.mk.injEq] at a ⊢
-      · rename_i l m
-        rw [a.2]
-        exact ih _ _
+      simp only [walk, nexts i k]
+      split
+      · rfl
+      · exact ih _ _
   have deep : s.depth = t.depth := by
     have st : ∀ {a b : Keep}, (∀ l, l ∈ a.links → l ∈ b.links) → a.depth ≤ b.depth := by
       intro a b sub
@@ -281,16 +400,68 @@ structure Proof where
   exporter : String
   deriving DecidableEq, Repr
 
-/-- The keeper serves a fetch, or takes an upload, on the connection with `exporter` only for a proof over that
-exporter by the current fetch key. -/
-def serves (s : Keep) (exporter : String) (p : Proof) : Bool := p.key == s.current && p.exporter == exporter
+/-- A flagged fork the keep cap's issuer hasn't settled yet. -/
+def unsettled (s : Keep) : Bool := s.flags.any fun (i, k) => (s.chosen i k).isNone
 
-/-- A device served holds the current fetch key, which chains back to the genesis, and proved it on this connection:
-a proof made for another connection is refused. -/
+/-- A branch's newest key: one the keeper keeps that nothing follows. -/
+def newest (s : Keep) (k : Nat) : Bool :=
+  (List.range (s.depth + 1)).any fun i => (s.level i).contains k && (s.successors i k).isEmpty
+
+/-- The keeper serves a fetch, or takes an upload, on the connection with `exporter` only for a proof over that
+exporter by the current fetch key, or, while a fork is unsettled, by any branch's newest key (A22, 30 Oct 2026). -/
+def serves (s : Keep) (exporter : String) (p : Proof) : Bool :=
+  p.exporter == exporter && (p.key == s.current || (s.unsettled && s.newest p.key))
+
+/-- A device served proved, on this connection, a fetch key that chains back to the genesis: the current one, or a
+branch's newest while a fork is unsettled. A proof made for another connection is refused. -/
 theorem served_current {s : Keep} {e : String} {p : Proof} (h : s.serves e p = true) :
-    p.key = s.current ∧ p.exporter = e ∧ ∃ i, Chained s i p.key := by
-  simp only [serves, Bool.and_eq_true, beq_iff_eq] at h
-  exact ⟨h.1, h.2, h.1 ▸ current_chained s⟩
+    p.exporter = e ∧ (p.key = s.current ∨ (s.unsettled = true ∧ s.newest p.key = true)) ∧ ∃ i, Chained s i p.key := by
+  simp only [serves, Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true] at h
+  refine ⟨h.1, h.2, ?_⟩
+  rcases h.2 with c | ⟨_, n⟩
+  · exact c ▸ current_chained s
+  · simp only [newest, List.any_eq_true, Bool.and_eq_true, List.contains_iff_mem] at n
+    obtain ⟨i, _, m, _⟩ := n
+    exact ⟨i, fetch_chain m⟩
+
+/-- While a fork is unsettled, a branch's newest key is served, so honest readers are never refused. -/
+theorem fork_served {s : Keep} {e : String} {p : Proof} (u : s.unsettled = true) (n : s.newest p.key = true)
+    (x : p.exporter = e) : s.serves e p = true := by
+  simp [serves, u, n, x]
+
+/-- Once the keep cap's issuer has chosen a branch at a fork, a keeper follows it whatever links arrive after: later
+forks from that point, ground or not, change nothing there. -/
+theorem grind_settled {s : Keep} {i k c : Nat} {X : List FetchLink}
+    (only : ∀ ch ∈ s.choices, ch.depth = i → ch.fork = k → ch.signer ∈ s.issuer → ch.branch = c)
+    (h : s.chosen i k = some c) : ({ s with links := s.links ++ X } : Keep).next i k = some c := by
+  have sub : ∀ l, l ∈ s.successors i k → l ∈ ({ s with links := s.links ++ X } : Keep).successors i k := by
+    intro l m
+    have ⟨ml, d, n, p, sg⟩ := mem_successors.mp m
+    exact mem_successors.mpr ⟨List.mem_append_left _ ml, d, n, p, sg⟩
+  have ch : ({ s with links := s.links ++ X } : Keep).chosen i k = some c := by
+    obtain ⟨mc, _⟩ := smallest_spec h
+    have all : ∀ x ∈ ((({ s with links := s.links ++ X } : Keep).choices.filter fun ch => ch.depth == i &&
+        ch.fork == k && ({ s with links := s.links ++ X } : Keep).issuer.contains ch.signer &&
+        (({ s with links := s.links ++ X } : Keep).successors i k).any (·.key == ch.branch)).map (·.branch)), x = c := by
+      intro x m
+      simp only [List.mem_map, List.mem_filter, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem] at m
+      obtain ⟨ch, ⟨mch, ⟨⟨d, f⟩, sg⟩, _⟩, rfl⟩ := m
+      exact only ch mch d f sg
+    have mem : c ∈ ((({ s with links := s.links ++ X } : Keep).choices.filter fun ch => ch.depth == i &&
+        ch.fork == k && ({ s with links := s.links ++ X } : Keep).issuer.contains ch.signer &&
+        (({ s with links := s.links ++ X } : Keep).successors i k).any (·.key == ch.branch)).map (·.branch)) := by
+      simp only [List.mem_map, List.mem_filter, Bool.and_eq_true, List.any_eq_true, beq_iff_eq] at mc ⊢
+      obtain ⟨ch, ⟨mch, ⟨⟨d, f⟩, sg⟩, l, ml, kl⟩, e⟩ := mc
+      exact ⟨ch, ⟨mch, ⟨⟨d, f⟩, sg⟩, l, sub l ml, kl⟩, e⟩
+    cases e : smallest ((({ s with links := s.links ++ X } : Keep).choices.filter fun ch => ch.depth == i &&
+        ch.fork == k && ({ s with links := s.links ++ X } : Keep).issuer.contains ch.signer &&
+        (({ s with links := s.links ++ X } : Keep).successors i k).any (·.key == ch.branch)).map (·.branch)) with
+    | none => exact absurd (smallest_none e ▸ mem) (by simp)
+    | some m =>
+      unfold chosen
+      rw [e, all m (smallest_spec e).1]
+  unfold next
+  rw [ch]
 
 /-- An upload: its proof, the connection's exporter, and its padded size. -/
 structure Upload where
@@ -337,17 +508,31 @@ def wrongDepth : FetchLink := ⟨"d1", 2, 1, 669, 100, 100⟩
 def bobsFork : FetchLink := ⟨"d1", 1, 3, 401, 100, 100⟩
 
 def keepD1 : Keep :=
-  ⟨"d1", 100, [rotation, concurrent, onConcurrent, again, carolsLink, otherDoc, offChain, wrongDepth]⟩
+  { doc := "d1", genesis := 100,
+    links := [rotation, concurrent, onConcurrent, again, carolsLink, otherDoc, offChain, wrongDepth] }
 def keepD1Reversed : Keep := { keepD1 with links := keepD1.links.reverse }
-def keepNothing : Keep := ⟨"d1", 100, [carolsLink, otherDoc, offChain, wrongDepth]⟩
-def keepGround : Keep := ⟨"d1", 100, [rotation, bobsFork]⟩
+def keepNothing : Keep := { doc := "d1", genesis := 100, links := [carolsLink, otherDoc, offChain, wrongDepth] }
+def keepGround : Keep := { doc := "d1", genesis := 100, links := [rotation, bobsFork] }
+
+/-- Alice's devices see the fork, check the rotations' caps, and choose her branch: a device of the vault that issued
+the keep cap signs it. Bob then grinds again from the same point, to an even smaller hash. -/
+def alicesChoice : Choice := ⟨0, 100, 201, "alice-peer"⟩
+def keepSettled : Keep := { keepGround with issuer := ["alice-peer", "alice-peer-light"], choices := [alicesChoice] }
+def bobsSecondFork : FetchLink := ⟨"d1", 1, 1, 402, 100, 100⟩
+def keepSettledAgain : Keep := { keepSettled with links := keepSettled.links ++ [bobsSecondFork] }
+/-- Bob signs a choice of his own branch: no device of the issuing vault, so the keeper ignores it. -/
+def keepBobsChoice : Keep :=
+  { keepGround with issuer := ["alice-peer", "alice-peer-light"], choices := [⟨0, 100, 401, "bob-peer-light"⟩] }
 
 /-- Each keeper's current fetch key and flags. -/
 def keepCases : List (String × Keep × Nat × List (Nat × Nat)) :=
   [("two rotations at once, then one more", keepD1, 301, [(0, 100)]),
    ("the same links in the reverse order", keepD1Reversed, 301, [(0, 100)]),
    ("no link chains", keepNothing, 100, []),
-   ("a removed reader's ground fork", keepGround, 401, [(0, 100)])]
+   ("a removed reader's ground fork", keepGround, 401, [(0, 100)]),
+   ("the issuer's choice settles it", keepSettled, 201, [(0, 100)]),
+   ("a later grind from the same point changes nothing", keepSettledAgain, 201, [(0, 100)]),
+   ("a choice by the forker's own device is ignored", keepBobsChoice, 401, [(0, 100)])]
 
 def alicesPhone : Proof := ⟨"alice-peer-light", "alice", 301, "x-1"⟩
 def alicesStale : Proof := ⟨"alice-peer-light", "alice", 201, "x-1"⟩
@@ -361,8 +546,12 @@ def proofCases : List (String × Keep × String × Proof × Bool) :=
    ("an older fetch key", keepD1, "x-1", alicesStale, false),
    ("a proof made for another connection", keepD1, "x-2", alicesPhone, false),
    ("a key that doesn't chain", keepD1, "x-6", carolsProof, false),
-   ("after a ground fork, the writers' key", keepGround, "x-3", alicesAfterFork, false),
-   ("after a ground fork, the forker's key", keepGround, "x-4", bobsAfterFork, true)]
+   ("while the ground fork is unsettled, the writers' key", keepGround, "x-3", alicesAfterFork, true),
+   ("while the ground fork is unsettled, the forker's key", keepGround, "x-4", bobsAfterFork, true),
+   ("after the issuer's choice, the writers' key", keepSettled, "x-3", alicesAfterFork, true),
+   ("after the issuer's choice, the forker's key", keepSettled, "x-4", bobsAfterFork, false),
+   ("a second grind after the choice, the forker's new key", keepSettledAgain, "x-5",
+     ⟨"bob-peer-light", "bob", 402, "x-5"⟩, false)]
 
 /-- Uploads at the keeper of `d1`: Alice's taken, Bob's under an older key and Alice's replayed proof refused. -/
 def uploads : List Upload :=
@@ -377,9 +566,15 @@ theorem keep_examples :
     (billCases.all fun (v, b) => keepD1.bill uploads v == b) = true := by decide
 
 /-- What a keeper can't tell: Bob, removed, forks from the key he still holds, and his smaller hash becomes current.
-The keeper flags the fork; Alice's writers never take his epoch. -/
+The keeper flags the fork, and while it is unsettled still serves Alice's readers by their branch's newest key. -/
 theorem grind_example : keepGround.current = bobsFork.key ∧ (0, 100) ∈ keepGround.flags ∧
-    keepGround.serves "x-3" alicesAfterFork = false := by decide
+    keepGround.serves "x-3" alicesAfterFork = true := by decide
+
+/-- Alice's devices choose her branch; Bob grinds again from the same point, and the keeper keeps to her branch and
+refuses his keys. -/
+theorem settled_example : keepSettledAgain.current = rotation.key ∧
+    keepSettledAgain.serves "x-3" alicesAfterFork = true ∧ keepSettledAgain.serves "x-4" bobsAfterFork = false ∧
+    keepSettledAgain.serves "x-5" ⟨"bob-peer-light", "bob", 402, "x-5"⟩ = false := by decide
 
 end KeepExamples
 

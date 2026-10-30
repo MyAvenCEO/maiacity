@@ -127,8 +127,12 @@ def FetchLink.json (l : FetchLink) : Json :=
   Json.mkObj [("doc", l.doc), ("n", toJson l.n), ("epoch", toJson l.epoch), ("key", toJson l.key),
     ("prev", toJson l.prev), ("signer", toJson l.signer)]
 
+def Choice.json (c : Choice) : Json :=
+  Json.mkObj [("depth", toJson c.depth), ("fork", toJson c.fork), ("branch", toJson c.branch), ("signer", c.signer)]
+
 def Keep.json (s : Keep) : Json :=
-  Json.mkObj [("doc", s.doc), ("genesis", toJson s.genesis), ("links", Json.arr (s.links.map FetchLink.json).toArray)]
+  Json.mkObj [("doc", s.doc), ("genesis", toJson s.genesis), ("links", Json.arr (s.links.map FetchLink.json).toArray),
+    ("issuer", toJson s.issuer), ("choices", Json.arr (s.choices.map Choice.json).toArray)]
 
 def Keep.Proof.json (p : Keep.Proof) : Json :=
   Json.mkObj [("device", p.device), ("vault", p.vault), ("key", toJson p.key), ("exporter", p.exporter)]
@@ -142,7 +146,7 @@ def keepResult (s : Keep) : Json :=
   let kept := (List.range (s.depth + 1)).flatMap fun i => ((s.level i).eraseDups.mergeSort (· ≤ ·)).map (i, ·)
   let flags := s.flags.eraseDups.mergeSort fun a b => a.1 < b.1 || (a.1 == b.1 && a.2 ≤ b.2)
   Json.mkObj [("kept", Json.arr (kept.map fun (i, k) => pair i k).toArray), ("current", toJson s.current),
-    ("flags", Json.arr (flags.map fun (i, k) => pair i k).toArray)]
+    ("flags", Json.arr (flags.map fun (i, k) => pair i k).toArray), ("unsettled", toJson s.unsettled)]
 
 /-! ## Generated cases -/
 
@@ -261,7 +265,7 @@ def genKeep (seed : Nat) : Keep := Id.run do
       else ⟨"d1", d + 1, e, key, k, k⟩
     links := links ++ [link]
     if fault ≥ 4 then keys := keys ++ [(d + 1, key)]
-  pure ⟨"d1", 100, links⟩
+  pure { doc := "d1", genesis := 100, links }
 
 def generatedChains : Nat := 40
 def generatedDocs : Nat := 30
