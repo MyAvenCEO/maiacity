@@ -166,7 +166,8 @@ def refs : List Json :=
   (Store.refExamples.map fun (s, r) =>
     vector s!"stored {s.quote}" (Json.mkObj [("stored", s)]) (Json.mkObj [("reads", toJson r)])) ++
   [vector "written" (Json.mkObj [("hash", Store.nm (Store.bytes "a ref"))])
-    (Json.mkObj [("stored", Store.refText (Store.nm (Store.bytes "a ref")))])]
+    (Json.mkObj [("stored", Store.refText (Store.nm (Store.bytes "a ref")))]),
+   vector "a browser store's version" (Json.mkObj []) (Json.mkObj [("version", Store.version)])]
 
 /-! ## The chat -/
 

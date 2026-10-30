@@ -31,7 +31,10 @@ touched. The model is parametric in the hash `H`; `Blake3.hash` is the store's. 
 - **Refs and blobs stay apart** (`refs_apart`, `blobs_apart`).
 - **A size is the blob's length** (`size_get`): `size` says what `get` would hold, without the bytes.
 - **A ref at rest is its hash and a newline** (`refText`), in every driver, and reads back as its hash
-  (`readRef_refText`); nothing else reads as a ref, the bare hash included (`readRef_bare_refused`).
+  (`readRef_refText`); nothing else reads as a ref (`readRef_only_refText`), the bare hash included
+  (`readRef_bare_refused`).
+- **A browser's store says its version** (`Kept`, `version`): one without exactly this version's marker opens as the
+  empty store, its origin cleared (`open_unmarked`); one with it opens as it is (`open_marked`).
 
 `lake exe vectors` exports the examples below and generated traces (`vectors/store.json`), and the conformance suite
 (`store/src/conformance.rs`) replays them on every backend: memory, a folder, S3 and OPFS.
@@ -359,6 +362,40 @@ theorem readRef_bare_refused {h : Hash} (v : validHash h = true) : readRef h = n
     have := v.2 '\n' m
     simp at this
   simp [readRef, last]
+
+/-- Whatever reads as a ref was written as one: exactly a hash and a newline. -/
+theorem readRef_only_refText {s : String} {h : Hash} (r : readRef s = some h) : s = refText h ∧ validHash h = true := by
+  unfold readRef at r
+  split at r
+  · next last =>
+    simp only at r
+    split at r
+    · next v =>
+      cases r
+      refine ⟨?_, v⟩
+      apply String.toList_injective
+      obtain ⟨ys, e⟩ := List.getLast?_eq_some_iff.mp last
+      simp [refText, String.toList_append, e]
+    · cases r
+  · cases r
+
+/-! ## A browser's store and its version -/
+
+/-- What `meta/version` holds in a store this avenDB laid out. -/
+def version : String := "avenDB store 1\n"
+
+/-- A browser's store as its origin keeps it: the marker it was laid out with, if any, and what it holds. -/
+structure Kept where
+  marker : Option String
+  store : Store
+
+/-- Opening a browser's store: as it is with this version's marker, else the empty store, its origin cleared. An
+older avenOS's store is never read (Samuel, 30 Oct 2026: browsers may be reset; no migration). -/
+def Kept.open (d : Kept) : Store := if d.marker = some version then d.store else {}
+
+theorem open_marked {d : Kept} (m : d.marker = some version) : d.open = d.store := by simp [Kept.open, m]
+
+theorem open_unmarked {d : Kept} (m : d.marker ≠ some version) : d.open = {} := by simp [Kept.open, m]
 
 end Store
 end Aven.DB

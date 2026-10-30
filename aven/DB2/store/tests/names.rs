@@ -34,7 +34,9 @@ fn a_ref_at_rest_reads_as_the_model_says() {
     let vectors: Vec<Value> = serde_json::from_str(include_str!("../../db/spec/vectors/refs.json")).unwrap();
     assert!(vectors.len() >= 10);
     for v in vectors {
-        if let Some(stored) = v["input"]["stored"].as_str() {
+        if let Some(version) = v["expected"]["version"].as_str() {
+            assert_eq!(aven_db_store::opfs::VERSION, version.as_bytes(), "the opfs driver's marker is Lean's");
+        } else if let Some(stored) = v["input"]["stored"].as_str() {
             let reads = Hash::from_ref(stored.as_bytes()).ok().map(|h| Value::String(h.to_hex()));
             assert_eq!(reads.unwrap_or(Value::Null), v["expected"]["reads"], "{}", v["name"]);
         } else {
