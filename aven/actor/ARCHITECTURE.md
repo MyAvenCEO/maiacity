@@ -146,7 +146,7 @@ random bytes), the kernel answers them with a deterministic shim: the turn's fro
 else. Everything a runtime needs comes in `input`; everything it does goes out as `output`. Sandboxing is the runtime's job and
 the WebAssembly boundary's, not the part's.
 
-- **Where runtimes come from.** Only the repository. Each is built from source in `aven/actor/runtimes`, reviewed,
+- **Where runtimes come from.** Only the repository. Each is built from source in `aven/runtimes/actor` (section 13), reviewed,
   frozen, named by its hash and never changed. A new capability is a new version beside the old ones. A part names the
   version it was made for. A version that closes a hole raises the runtime's **floor**, and a part naming an older
   version runs on the floor.
@@ -407,7 +407,8 @@ Each later step replaces a layer's implementation, not its interface:
 
 ## 13. The package
 
-`aven/actor`, its own package, Rust only, with its own Cargo workspace, lockfile, Lean project and check. The actor is
+`aven/actor`, its own package, Rust only, with its own Cargo workspace, lockfile, Lean project and check. Lean and the
+Rust tests run in avenSANDBOX's box, whose image already holds the Lean toolchain. The actor is
 universal: it depends on no storage backend, so it does not live inside avenDB's workspace (`aven/DB2`). avenDB is one
 backend behind the Doc interface (section 11), and the root workspace excludes `aven/actor` as it excludes `aven/DB2`:
 
@@ -417,12 +418,14 @@ aven/actor/
   ARCHITECTURE.md    this file
   spec/              the Lean model, Aven.Actor, and the vectors it exports
   core/              the kernel: Values, Docs, messages, router, scheduler, clock, the runtime host
-  runtimes/
-    state/  js/  prolog/  view/  style/     one crate each, built to WebAssembly, frozen by hash
   host/              the page's side: the worker that runs the kernel, and the applier
   components/        the component library: definitions with faces, after aven-brands
   app/todo/          the version 1 app: its definitions and parts
 ```
+
+The runtimes are built in `aven/runtimes`, the one home of every runtime (Samuel, 30 Oct 2026): state, js, prolog,
+view and style in `aven/runtimes/actor/*`, one crate each, built to WebAssembly and frozen by hash. This file still
+says what they do: their parts, the turn's contract, determinism and fuel.
 
 ## 14. Version 1, step by step
 
@@ -481,7 +484,10 @@ Decided here, on those grounds:
   and error is journaled; a journal entry pins the definition, the runtime that ran and the fuel schedule (sections 4,
   6 and 7). From the first-principles audit (`aven/DB2/ARCHITECTURE.md`).
 
-Open, none of it blocking version 1 (the audit's findings, mostly avenDB's proposals A16 and A17, awaiting Samuel):
+- Hosting an actor on the Aven Peer is an explicit read cap per actor, shown to its owner; a member's own Peer is the
+  default home (avenDB A16). Every runtime lives in `aven/runtimes` (section 13). (Samuel, 30 Oct 2026.)
+
+Open, none of it blocking version 1 (the audit's findings, mostly avenDB's proposal A17, awaiting Samuel):
 
 - **Identity and Docs (A17).** An address names a vault-scoped id, with the home as routing only; the journal becomes
   the actor Doc's log; a message is stored once and referenced by hash; one inbox per pair of vaults, none within one
@@ -491,8 +497,6 @@ Open, none of it blocking version 1 (the audit's findings, mostly avenDB's propo
   the outbox.
 - **The kernel's authority:** a narrow device vault for the actor host; click caps scoped to what the placer wired;
   who may spawn, and a bound on placement depth; a budget per run, and backpressure.
-- **Hosting on the Aven Peer** is an explicit read cap shown to the owner (A16).
 - **Approvals longer than 10 minutes,** and a `timeout` that does not mean "not done".
 - **Performance gates** for wasm inside wasm, fuel across engines, and a shadow root per face.
-- **Runtimes:** whether a fact table needs a Prolog runtime; state-runtime's grammar; and whether every runtime moves
-  to one package, `aven/runtimes` (Samuel considering).
+- **Runtimes:** whether a fact table needs a Prolog runtime; state-runtime's grammar.
