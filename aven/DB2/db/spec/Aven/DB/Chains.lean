@@ -810,9 +810,13 @@ def take (k : Keeper) (network : String) (members : List String) (vaults : Vault
     let (dropped, k'') := k'.settle vaults
     (a, dropped, k'')
 
-/-- What a peer sends in place of a line it holds only as a stub: a retraction that counts for it. -/
+/-- What a peer sends in place of a line it holds without its text: a retraction that counts for it, the first by its
+device and number, the same on every peer. -/
 def standIn (k : Keeper) (vaults : Vaults) (l : Line) : Option Line :=
-  if l.body == .redacted then k.live.find? (retracts vaults · l) else some l
+  if l.body == .redacted then
+    ((k.live.filter (retracts vaults · l)).mergeSort fun a b =>
+      decide (a.device < b.device) || (a.device == b.device && decide (a.seq ≤ b.seq))).head?
+  else some l
 
 end Keeper
 

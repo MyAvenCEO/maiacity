@@ -399,9 +399,11 @@ def randomChains (seed : Nat) : List Step := Id.run do
     if k < 2 then steps := steps.push (.catchUp peer peers[q]!)
     else if k = 2 then steps := steps.push (.hear peer (fork dev (s + 1)))
     else if k = 9 then
-      let tdev := devices[q]!
-      let t := main tdev (s + 1)
-      steps := steps.push (.hear peer (Line.make' s!"r{i}" dev (s + 1) (if s = 0 then none else some s!"{dev}{s}")
+      -- half the time its own line, which counts; else any device's, which counts only for its own
+      let tdev := if p % 2 = 0 then dev else devices[q]!
+      -- the line before the retraction's own place, so a device retracting its own isn't a fork of it
+      let t := main tdev (max s 1)
+      steps := steps.push (.hear peer (Line.make' s!"r{dev}{s + 1}-{t.id}" dev (s + 1) (if s = 0 then none else some s!"{dev}{s}")
         (s * 100 + 30) (.retract t.id t.device t.seq t.prev t.time)))
     else if k = 3 then
       steps := steps.push (.hear peer (Line.make s!"t{i}" dev (s + 1) (if s = 0 then none else some s!"{dev}{s}")
