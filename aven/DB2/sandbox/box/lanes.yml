@@ -37,6 +37,11 @@ x-router: &router
       iptables -t nat -A POSTROUTING -o "$$wan" -j MASQUERADE $$NAT_FLAGS
       iptables -A FORWARD -i "$$wan" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
       iptables -A FORWARD -i "$$wan" -j DROP
+      # a home router's firewall: unsolicited UDP to the router itself is dropped, so conntrack never keeps its
+      # flow. Accepted, a peer's punch that arrives first holds the 4-tuple, and the router must map the peer behind it
+      # to another port when it punches back (MILESTONE2.md: "home NAT" keeps ports)
+      iptables -A INPUT -i "$$wan" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+      iptables -A INPUT -i "$$wan" -p udp -j DROP
       if [ "$$DROP_UDP" = 1 ]; then iptables -I FORWARD -i "$$home" -p udp -j DROP; fi
       echo "router up: home $$home, wan $$wan, masquerade $$NAT_FLAGS, udp dropped: $${DROP_UDP:-0}"
       touch /tmp/ready
@@ -68,6 +73,8 @@ x-alice-env: &alice-env
   AVEN_PEER_AVEN: 10.78.0.10:4433
   AVEN_PEER_AVEN_KEY: ${LANES_AVEN_KEY:?bun run lanes sets it}
   AVEN_PEER_MEMBERS: ${LANES_MEMBERS:?bun run lanes sets it}
+  # the box's test CA, so the Peer trusts its relay's QUIC address discovery (sandbox/box/qad.sh)
+  AVEN_PEER_RELAY_CA: /target/qad-1/ca.pem
 
 services:
   # the lanes' Aven Peer, its relay on, on the WAN: what a member's Peer at home reaches in production
@@ -82,6 +89,10 @@ services:
       AVEN_PEER_SECRET: ${LANES_AVEN_SECRET:?bun run lanes sets it}
       AVEN_PEER_RELAY: "true"
       AVEN_PEER_RELAY_URL: http://10.78.0.10:3340
+      # the relay's QUIC address discovery, with the box's test certificate (sandbox/box/qad.sh)
+      AVEN_PEER_RELAY_CERT: /target/qad-1/cert.pem
+      AVEN_PEER_RELAY_KEY: /target/qad-1/key.pem
+      AVEN_PEER_RELAY_CA: /target/qad-1/ca.pem
       AVEN_PEER_MEMBERS: ${LANES_MEMBERS:?bun run lanes sets it}
     networks:
       wan: { ipv4_address: 10.78.0.10 }
@@ -185,6 +196,7 @@ services:
       AVEN_PEER_SECRET: ${LANES_TWOHOME_BOB_SECRET:?bun run lanes sets it}
       AVEN_PEER_RELAY: "true"
       AVEN_PEER_RELAY_URL: http://10.78.0.10:3340
+      AVEN_PEER_RELAY_CA: /target/qad-1/ca.pem
       AVEN_PEER_MEMBERS: ${LANES_MEMBERS:?bun run lanes sets it}
     depends_on: { twohome-b-nic: { condition: service_healthy }, aven: { condition: service_started } }
   # Alice knows Bob's key and his router's public address, which drops her packets until Bob has sent to hers
