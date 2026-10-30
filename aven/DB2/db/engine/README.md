@@ -582,8 +582,10 @@ compares. Values compare by their one encoding, which is Value equality on canon
 A8, A9, A18, A19 and A20 were decided as recommended (Samuel, 30 Oct 2026), so these theorems are the decided design.
 The sealed index's tree is the docs layer's Prolly tree (`Aven.DB.Docs.Index`); the proofs take any tree whose root
 depends only on its set of entries, and `docsTree` is the docs layer's own, joined by `root_set` (`same_root_docs`,
-`fold_steps_docs`). `lookup_exact` assumes two facts of the directory, which are the docs layer's obligations: every Doc
-listed now was listed at V or is unfolded, and a Doc not unfolded holds the Records it held at V.
+`fold_steps_docs`). `lookup_exact` and `fold_eq_build` rest on two facts of the directory, proven by the docs layer
+(`Aven.DB.Docs.Directory`): every Doc listed now was listed at V or is unfolded (`listed_now`), and a Doc not unfolded
+has the entries it had at V (`same_entries`). They are stated on entries, not on all Records, so only a change to what
+an index reads needs a mark.
 
 **What the proofs exposed,** for the cross-spec step:
 

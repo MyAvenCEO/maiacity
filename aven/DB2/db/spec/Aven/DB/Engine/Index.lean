@@ -112,6 +112,21 @@ def build (sh : Shape) (db : List (Rec Val)) (docs : List DocId) : List (Entry V
   (db.filter fun r => docs.contains r.doc && r.type == sh.type).filterMap fun r =>
     (keyOf sh r).map fun k => ⟨k, r.doc⟩
 
+/-- A Doc's entries under a shape: what the index reads from it. The directory keeps these per Doc, and marks a Doc
+unfolded whenever they change (`Aven.DB.Docs.Directory`). -/
+def docEntries (sh : Shape) (db : List (Rec Val)) (d : DocId) : List (Entry Val) := build sh db [d]
+
+/-- An index holds an entry exactly when its Doc is listed and the entry is one of that Doc's. -/
+theorem mem_build (sh : Shape) (db : List (Rec Val)) (docs : List DocId) (e : Entry Val) :
+    e ∈ build sh db docs ↔ e.doc ∈ docs ∧ e ∈ docEntries sh db e.doc := by
+  simp only [docEntries, build, List.mem_filterMap, List.mem_filter, Bool.and_eq_true, List.contains_iff_mem,
+    Option.map_eq_some_iff, List.mem_singleton]
+  constructor
+  · rintro ⟨r, ⟨hr, hd, hty⟩, k, hk, rfl⟩
+    exact ⟨hd, r, ⟨hr, rfl, hty⟩, k, hk, rfl⟩
+  · rintro ⟨hd, r, ⟨hr, he, hty⟩, k, hk, rfl⟩
+    exact ⟨r, ⟨hr, he ▸ hd, hty⟩, k, hk, rfl⟩
+
 /-- The Docs an index names for a probe. -/
 def hits (V : Vals Val) (sh : Shape) (p : Probe Val) (idx : List (Entry Val)) : List DocId :=
   (idx.filter fun e => keyMatch V sh p e.key).map (·.doc)
@@ -122,12 +137,13 @@ def candidates (V : Vals Val) (sh : Shape) (p : Probe Val) (idx : List (Entry Va
   (hits V sh p idx ++ unfolded).filter now.contains
 
 /-- **The lookup is exact.** An index built at version V from `dbV` over `docsV`; since then the Docs `unfolded` moved.
-Every Doc the directory lists now was listed at V or is unfolded, and every Doc not unfolded holds what it held at V.
-Then the query over the candidates returns exactly what it returns over every Doc listed now. -/
+Every Doc the directory lists now was listed at V or is unfolded (`Aven.DB.Docs.Directory.listed_now`), and every Doc
+not unfolded has the entries it had at V (`Aven.DB.Docs.Directory.same_entries`): only a change to what the index
+reads needs a mark. Then the query over the candidates returns exactly what it returns over every Doc listed now. -/
 theorem lookup_exact (V : Vals Val) (sh : Shape) (p : Probe Val) (db dbV : List (Rec Val))
     (docsV unfolded now : List DocId)
     (hnow : ∀ d ∈ now, d ∉ unfolded → d ∈ docsV)
-    (hsame : ∀ r, r.doc ∉ unfolded → (r ∈ db → r ∈ dbV)) :
+    (hsame : ∀ d, d ∉ unfolded → ∀ e, e ∈ docEntries sh db d ↔ e ∈ docEntries sh dbV d) :
     select V sh p db (candidates V sh p (build sh dbV docsV) unfolded now) = select V sh p db now := by
   unfold select
   apply List.filter_congr
@@ -144,7 +160,6 @@ theorem lookup_exact (V : Vals Val) (sh : Shape) (p : Probe Val) (db dbV : List 
       by_cases hu : r.doc ∈ unfolded
       · exact .inr hu
       · refine .inl ?_
-        have hrV := hsame r hu hr
         have hdV := hnow r.doc hn hu
         simp only [matches', Bool.and_eq_true, beq_iff_eq] at hm
         obtain ⟨hty, hk⟩ := hm
@@ -152,16 +167,21 @@ theorem lookup_exact (V : Vals Val) (sh : Shape) (p : Probe Val) (db dbV : List 
         | none => rw [hkey] at hk; cases hk
         | some k =>
           rw [hkey] at hk
-          simp only [hits, build, List.mem_map, List.mem_filter, List.mem_filterMap]
-          refine ⟨⟨k, r.doc⟩, ⟨⟨r, ⟨hrV, ?_⟩, by simp [hkey]⟩, hk⟩, rfl⟩
-          simp [hdV, hty]
+          have hnowE : (⟨k, r.doc⟩ : Entry Val) ∈ docEntries sh db r.doc := by
+            simp only [docEntries, build, List.mem_filterMap, List.mem_filter, Bool.and_eq_true,
+              List.contains_iff_mem, List.mem_singleton, Option.map_eq_some_iff]
+            exact ⟨r, ⟨hr, rfl, by simp [hty]⟩, k, hkey, rfl⟩
+          have hV : (⟨k, r.doc⟩ : Entry Val) ∈ build sh dbV docsV :=
+            (mem_build sh dbV docsV _).mpr ⟨hdV, (hsame r.doc hu _).mp hnowE⟩
+          simp only [hits, List.mem_map, List.mem_filter]
+          exact ⟨⟨k, r.doc⟩, ⟨hV, hk⟩, rfl⟩
 
 /-- **`complete` with an index:** when every candidate is held, the query over the held candidates returns exactly
 what it returns over every Doc the directory lists. -/
 theorem complete_with_index (V : Vals Val) (sh : Shape) (p : Probe Val) (db dbV : List (Rec Val))
     (docsV unfolded now : List DocId) (held : DocId → Bool)
     (hnow : ∀ d ∈ now, d ∉ unfolded → d ∈ docsV)
-    (hsame : ∀ r, r.doc ∉ unfolded → (r ∈ db → r ∈ dbV))
+    (hsame : ∀ d, d ∉ unfolded → ∀ e, e ∈ docEntries sh db d ↔ e ∈ docEntries sh dbV d)
     (hheld : ∀ d ∈ candidates V sh p (build sh dbV docsV) unfolded now, held d = true) :
     select V sh p db ((candidates V sh p (build sh dbV docsV) unfolded now).filter held) = select V sh p db now := by
   rw [← lookup_exact V sh p db dbV docsV unfolded now hnow hsame]
@@ -193,20 +213,21 @@ def fold (sh : Shape) (idx : List (Entry Val)) (db : List (Rec Val)) (unfolded n
 index built now from scratch has. -/
 theorem fold_eq_build (sh : Shape) (db dbV : List (Rec Val)) (docsV unfolded now : List DocId)
     (hnow : ∀ d, d ∉ unfolded → (d ∈ now ↔ d ∈ docsV))
-    (hsame : ∀ r, r.doc ∉ unfolded → (r ∈ db ↔ r ∈ dbV)) :
+    (hsame : ∀ d, d ∉ unfolded → ∀ e, e ∈ docEntries sh db d ↔ e ∈ docEntries sh dbV d) :
     ∀ e, e ∈ fold sh (build sh dbV docsV) db unfolded now ↔ e ∈ build sh db now := by
   intro e
-  simp only [fold, build, List.mem_append, List.mem_filter, List.mem_filterMap, List.contains_iff_mem,
-    Bool.and_eq_true, Bool.not_eq_true', Option.map_eq_some_iff]
+  simp only [fold, List.mem_append, List.mem_filter, Bool.not_eq_true']
+  rw [mem_build sh dbV docsV, mem_build sh db (unfolded.filter now.contains), mem_build sh db now]
+  simp only [List.mem_filter, List.contains_iff_mem]
   constructor
-  · rintro (⟨⟨r, ⟨hr, hd, hty⟩, k, hk, rfl⟩, hu⟩ | ⟨r, ⟨hr, ⟨hu, hn⟩, hty⟩, k, hk, rfl⟩)
-    · have hu' : r.doc ∉ unfolded := by simpa using hu
-      exact ⟨r, ⟨(hsame r hu').mpr hr, (hnow r.doc hu').mpr hd, hty⟩, k, hk, rfl⟩
-    · exact ⟨r, ⟨hr, hn, hty⟩, k, hk, rfl⟩
-  · rintro ⟨r, ⟨hr, hn, hty⟩, k, hk, rfl⟩
-    by_cases hu : r.doc ∈ unfolded
-    · exact .inr ⟨r, ⟨hr, ⟨by simpa using hu, hn⟩, hty⟩, k, hk, rfl⟩
-    · exact .inl ⟨⟨r, ⟨(hsame r hu).mp hr, (hnow r.doc hu).mp hn, hty⟩, k, hk, rfl⟩, by simpa using hu⟩
+  · rintro (⟨⟨hd, he⟩, hu⟩ | ⟨⟨_, hn⟩, he⟩)
+    · have hu' : e.doc ∉ unfolded := by simpa using hu
+      exact ⟨(hnow e.doc hu').mpr hd, (hsame e.doc hu' e).mpr he⟩
+    · exact ⟨hn, he⟩
+  · rintro ⟨hn, he⟩
+    by_cases hu : e.doc ∈ unfolded
+    · exact .inr ⟨⟨hu, hn⟩, he⟩
+    · exact .inl ⟨⟨(hnow e.doc hu).mp hn, (hsame e.doc hu e).mp he⟩, by simpa using hu⟩
 
 /-- Folding depends only on which entries the index holds. -/
 theorem fold_congr (sh : Shape) (a b : List (Entry Val)) (db : List (Rec Val)) (unfolded now : List DocId)
@@ -217,15 +238,15 @@ theorem fold_congr (sh : Shape) (a b : List (Entry Val)) (db : List (Rec Val)) (
 /-- So the folded index has the root a fresh build has. -/
 theorem fold_root (T : Tree Val) (sh : Shape) (db dbV : List (Rec Val)) (docsV unfolded now : List DocId)
     (hnow : ∀ d, d ∉ unfolded → (d ∈ now ↔ d ∈ docsV))
-    (hsame : ∀ r, r.doc ∉ unfolded → (r ∈ db ↔ r ∈ dbV)) :
+    (hsame : ∀ d, d ∉ unfolded → ∀ e, e ∈ docEntries sh db d ↔ e ∈ docEntries sh dbV d) :
     T.root (fold sh (build sh dbV docsV) db unfolded now) = T.root (build sh db now) :=
   T.independent _ _ (fold_eq_build sh db dbV docsV unfolded now hnow hsame)
 
 /-- **Folding in steps equals building at once:** fold what moved from V to V₁, then what moved from V₁ to V₂, and the
 root is a fresh build's at V₂. -/
 theorem fold_steps (T : Tree Val) (sh : Shape) (db₀ db₁ db₂ : List (Rec Val)) (docs₀ docs₁ docs₂ u₁ u₂ : List DocId)
-    (h₁ : ∀ d, d ∉ u₁ → (d ∈ docs₁ ↔ d ∈ docs₀)) (s₁ : ∀ r, r.doc ∉ u₁ → (r ∈ db₁ ↔ r ∈ db₀))
-    (h₂ : ∀ d, d ∉ u₂ → (d ∈ docs₂ ↔ d ∈ docs₁)) (s₂ : ∀ r, r.doc ∉ u₂ → (r ∈ db₂ ↔ r ∈ db₁)) :
+    (h₁ : ∀ d, d ∉ u₁ → (d ∈ docs₁ ↔ d ∈ docs₀)) (s₁ : ∀ d, d ∉ u₁ → ∀ e, e ∈ docEntries sh db₁ d ↔ e ∈ docEntries sh db₀ d)
+    (h₂ : ∀ d, d ∉ u₂ → (d ∈ docs₂ ↔ d ∈ docs₁)) (s₂ : ∀ d, d ∉ u₂ → ∀ e, e ∈ docEntries sh db₂ d ↔ e ∈ docEntries sh db₁ d) :
     T.root (fold sh (fold sh (build sh db₀ docs₀) db₁ u₁ docs₁) db₂ u₂ docs₂) = T.root (build sh db₂ docs₂) := by
   apply T.independent
   intro e
@@ -255,8 +276,8 @@ theorem same_root_docs (boundary : Bytes → Bool) (size : Bytes → Nat) (limit
 /-- Folding in steps gives the docs layer's tree the root a fresh build has. -/
 theorem fold_steps_docs (boundary : Bytes → Bool) (size : Bytes → Nat) (limit : Nat) (H : Bytes → Hash) (sh : Shape)
     (db₀ db₁ db₂ : List (Rec Value)) (docs₀ docs₁ docs₂ u₁ u₂ : List DocId)
-    (h₁ : ∀ d, d ∉ u₁ → (d ∈ docs₁ ↔ d ∈ docs₀)) (s₁ : ∀ r, r.doc ∉ u₁ → (r ∈ db₁ ↔ r ∈ db₀))
-    (h₂ : ∀ d, d ∉ u₂ → (d ∈ docs₂ ↔ d ∈ docs₁)) (s₂ : ∀ r, r.doc ∉ u₂ → (r ∈ db₂ ↔ r ∈ db₁)) :
+    (h₁ : ∀ d, d ∉ u₁ → (d ∈ docs₁ ↔ d ∈ docs₀)) (s₁ : ∀ d, d ∉ u₁ → ∀ e, e ∈ docEntries sh db₁ d ↔ e ∈ docEntries sh db₀ d)
+    (h₂ : ∀ d, d ∉ u₂ → (d ∈ docs₂ ↔ d ∈ docs₁)) (s₂ : ∀ d, d ∉ u₂ → ∀ e, e ∈ docEntries sh db₂ d ↔ e ∈ docEntries sh db₁ d) :
     (docsTree boundary size limit H).root (fold sh (fold sh (build sh db₀ docs₀) db₁ u₁ docs₁) db₂ u₂ docs₂) =
       (docsTree boundary size limit H).root (build sh db₂ docs₂) :=
   fold_steps _ sh db₀ db₁ db₂ docs₀ docs₁ docs₂ u₁ u₂ h₁ s₁ h₂ s₂
