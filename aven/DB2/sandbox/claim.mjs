@@ -97,20 +97,27 @@ if (phase === 'claim') {
 	if (report.owners?.[1] !== 'key:maia-city-guardian' || tree.keys['maia-city-guardian'] !== guardian)
 		problems.push(`the admin's vault's second owner is ${report.owners?.[1]}, not the box's MaiaCityGuardian`);
 
-	// the second browser: invite only; a second signup, with another passkey, refused
+	// the second browser: invite only, and no signup offered, so no passkey made; a deliberate second signup at #/claim,
+	// with another passkey, refused by the Aven Peer
 	const second = await open('second');
 	if (!(await view(second.page, 'invite-only'))) problems.push('a claimed network shows another browser no "invite only"');
 	report.inviteOnly = (await second.page.getByTestId('invite-only').textContent().catch(() => '')).trim();
+	if (await second.page.getByTestId('claim').count()) problems.push('a claimed network offers another browser a signup');
 	if (report.inviteOnly !== 'avenOS · invite only, coming soon') problems.push(`another browser sees "${report.inviteOnly}"`);
 	await second.page.screenshot({ path: `${run}/claim-invite-only.png` });
 	await second.page.goto(`${origin}/#/claim`);
 	await view(second.page, 'claim');
 	await signUp(second.page);
 	report.secondSignup = await refused(second.page, 'a second signup with another passkey', claimed);
+	// the refused signup's passkey stays: the Aven Peer's word never deletes one
+	const strays = (await second.cdp.send('WebAuthn.getCredentials', { authenticatorId: second.authenticatorId })).credentials;
+	if (strays.length !== 1) problems.push(`the refused signup left ${strays.length} passkeys, not its 1`);
 	await second.page.screenshot({ path: `${run}/claim-refused.png` });
 
 	// the same passkey on the second profile, as a synced one: it signs in and becomes a second device
 	const { credentials } = await first.cdp.send('WebAuthn.getCredentials', { authenticatorId: first.authenticatorId });
+	// the first signup made one passkey and nothing deleted it
+	if (credentials.length !== 1) problems.push(`the first browser holds ${credentials.length} passkeys, not 1`);
 	// the claim's passkey is the one the tree names: `passkey-` and the start of its public key's SHA-256 (aven-id's
 	// passkey_id)
 	const named = (credential) => {
