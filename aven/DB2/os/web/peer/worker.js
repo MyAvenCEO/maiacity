@@ -28,7 +28,11 @@ function tell(line) {
 	const event = JSON.parse(line);
 	if (event.event === 'chat' && event.id) {
 		chat.set(event.id, line);
-		if (event.file) files.set(event.file.file, { type: event.file.type, key: event.key });
+		if (event.file) {
+			files.set(event.file.file, { type: event.file.type, key: event.key });
+			for (const done of awaited.get(event.file.file) ?? []) done();
+			awaited.delete(event.file.file);
+		}
 		for (const port of pages) port.postMessage(line);
 		fetch(`/events/${event.peer}`, { method: 'POST', body: line }).catch(() => {});
 		return;
@@ -165,28 +169,53 @@ channel.postMessage({ leader: true });
 // Peer-Light's `file_range`, which fetches the chunks it lacks: from the Aven Peer, which keeps every file, or else from
 // the device that shared it. A read asked again while this one is at it is the same read.
 const MiB = 1 << 20;
+// how much of each file this browser holds, told to every page when it grew: its card says "fetching 12 of 85 MB"
+const held = new Map();
+async function holding(file) {
+	try {
+		const got = await light.file_held(file);
+		const was = held.get(file);
+		if (was && was.held === got.held && was.len === got.len) return;
+		held.set(file, { held: got.held, len: got.len });
+		const line = JSON.stringify({ t: Date.now(), peer: 'page', event: 'held', file, held: got.held, len: got.len });
+		for (const port of pages) port.postMessage(line);
+	} catch {}
+}
 const files = new Map();
+// reads that came before their file's chat line (a reload, a new leader): they wait a moment for it, since without its
+// type the Service Worker can only serve the bytes as a download, which no player plays
+const awaited = new Map();
+const lineOf = (file, ms) =>
+	files.get(file) ??
+	new Promise((done) => {
+		const told = () => done(files.get(file));
+		awaited.set(file, [...(awaited.get(file) ?? []), told]);
+		setTimeout(told, ms);
+	});
 const reading = new Set();
 async function read({ id, read: { file, start = 0, end } }) {
 	if (reading.has(id)) return;
 	reading.add(id);
 	setTimeout(() => reading.delete(id), 60_000);
-	const known = files.get(file);
 	try {
 		await started;
+		const known = await lineOf(file, 5_000);
 		if (!light) throw new Error(`the Peer-Light isn't running: ${down ?? 'nothing started it'}`);
 		const from = Math.max(0, Number(start) || 0);
 		const to = Math.min(Number.isFinite(Number(end)) ? Number(end) : from + MiB, from + MiB);
+		// the Aven Peer, which keeps every file, then the device that shared it
+		const holders = known?.key ? [undefined, known.key] : [undefined];
 		let got;
-		for (const holder of [undefined, known?.key]) {
+		for (const [i, holder] of holders.entries()) {
 			try {
 				got = await light.file_range(file, from, to, holder);
 				break;
 			} catch (error) {
-				if (holder === known?.key) throw error;
+				if (i === holders.length - 1) throw error;
 			}
 		}
 		channel.postMessage({ id, size: got.len, type: known?.type ?? null, bytes: got.bytes });
+		holding(file);
 	} catch (error) {
 		channel.postMessage({ id, error: error?.name === 'NotFoundError' ? 'not found' : String(error?.message ?? error) });
 	}

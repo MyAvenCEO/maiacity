@@ -33,10 +33,11 @@ const INDEX_MAX: usize = 256 << 10;
 /// iroh-blobs' store, answered from ours by an actor of its own. iroh-blobs has no public constructor for a store of
 /// someone else's (`from_sender` is crate-private); its `api::Store` derives `RefCast` over the `irpc::Client` it wraps,
 /// which builds one. The store's test `iroh_blobs_runs_on_our_store` fails at once if that ever stops working.
-pub(super) fn spawn(store: Shared) -> api::Store {
+pub(super) fn spawn(store: Shared, served: Arc<std::sync::OnceLock<super::Served>>) -> api::Store {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<Command>(32);
     let actor = Arc::new(Actor {
         store,
+        served,
         indexes: Mutex::default(),
         ahead: Mutex::default(),
         last: Mutex::default(),
@@ -82,6 +83,8 @@ struct Actor {
     ahead: Mutex<Option<(Hash, oneshot::Receiver<Option<Bytes>>)>>,
     /// The chunk that went out last: a file is read ahead once its chunks go out in order, not for a seek.
     last: Mutex<Option<Hash>>,
+    /// told each blob served, and its size
+    served: Arc<std::sync::OnceLock<super::Served>>,
 }
 
 impl Actor {
@@ -174,6 +177,9 @@ impl Actor {
             }
             Command::ExportBao(mut cmd) => match self.serve(ours(cmd.inner.hash)).await {
                 Ok(data) => {
+                    if let Some(told) = self.served.get() {
+                        told(ours(cmd.inner.hash), data.len() as u64);
+                    }
                     // the outboard is made, not kept: about 4 KiB of tree for a 1 MiB chunk. The bytes were checked
                     // against their name, so its root is the hash asked for
                     let outboard = PreOrderMemOutboard::create(&data, IROH_BLOCK_SIZE);

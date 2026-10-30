@@ -168,6 +168,42 @@ thread_local! {
     static WAKE: RefCell<Option<futures_channel::mpsc::UnboundedSender<()>>> = const { RefCell::new(None) };
 }
 
+/// Files this device shared since it started, for its "sending to the network": each chunk's file, and per file its
+/// size, the chunks its provider has served and their bytes (README rule 8: pushed as `sending` lines).
+#[derive(Default)]
+struct Sending {
+    chunk: HashMap<Hash, Hash>,
+    files: HashMap<Hash, (u64, std::collections::HashSet<Hash>, u64)>,
+}
+
+static SENDING: std::sync::LazyLock<std::sync::Mutex<Sending>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// A chunk this device served: when it is a chunk of a file it shared, how much of that file has gone out.
+fn served(me: &str, notes: &Notes, chunk: Hash, len: u64) {
+    let told = {
+        let mut sending = SENDING.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(file) = sending.chunk.get(&chunk).copied() else {
+            return;
+        };
+        let Some((size, chunks, sent)) = sending.files.get_mut(&file) else {
+            return;
+        };
+        if !chunks.insert(chunk) {
+            return;
+        }
+        *sent += len;
+        (file, *sent, *size)
+    };
+    let (file, sent, size) = told;
+    notes(timeline::line(
+        now(),
+        me,
+        "sending",
+        serde_json::json!({ "file": file.to_hex(), "sent": sent, "size": size }),
+    ));
+}
+
 /// The ref a newcomer's statement waits under, as the frame's JSON, until the network takes it or refuses it.
 const PENDING_REF: &str = "statement";
 
@@ -374,6 +410,16 @@ pub async fn share(
         index.extend_from_slice(h.as_bytes());
     }
     let file = store.put(index.into()).await.map_err(js)?;
+    {
+        let mut sending = SENDING.lock().unwrap_or_else(|e| e.into_inner());
+        for c in &chunks {
+            sending.chunk.insert(hash(c)?, file);
+        }
+        sending
+            .files
+            .entry(file)
+            .or_insert((size as u64, Default::default(), 0));
+    }
     let len = files::open(&*store, &file)
         .await
         .map_err(js)?
@@ -676,6 +722,10 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
         store.clone(),
         chats.withheld(),
     ));
+    {
+        let (me, notes) = (name.clone(), notes.clone());
+        held.on_served(Arc::new(move |chunk, len| served(&me, &notes, chunk, len)));
+    }
     let gossip = Gossip::builder().spawn(endpoint.clone());
     let router = Router::builder(endpoint.clone())
         .accept(iroh_gossip::ALPN, gossip.clone())
@@ -760,24 +810,45 @@ async fn fetching(
     result.map_err(fetch_error)
 }
 
-/// The file's index, fetched if this Peer-Light hasn't it; and the bytes that crossed for it.
+/// The file's index, fetched if this Peer-Light hasn't it, and its last chunk: until that is here the file's length
+/// is only a guess (`files::open`), and a player told a wrong length asks past the end and never finds a movie's index
+/// there (30 Oct 2026). The bytes that crossed for both.
 async fn open(f: &Files, file: &Hash, from: Option<String>) -> Result<(files::File, u64), JsValue> {
     // deleted: gone, whatever bytes are left, and never fetched again
     if f.withheld.read().unwrap().contains(file) {
         return Err(fetch_error(FetchError::NotFound(*file)));
     }
-    if let Some(found) = files::open(&*f.store, file).await.map_err(js)? {
-        return Ok((found, 0));
+    let mut fetched = 0;
+    let found = match files::open(&*f.store, file).await.map_err(js)? {
+        Some(found) => found,
+        None => {
+            let got = fetching(f, from.clone(), async |conn| {
+                f.held.fetch_chunks(&conn, *file, 0..0).await
+            })
+            .await?;
+            fetched += got.bytes;
+            files::open(&*f.store, file)
+                .await
+                .map_err(js)?
+                .ok_or_else(|| JsError::new("no such file"))?
+        }
+    };
+    let n = found.chunks.len() as u64;
+    let Some(last) = found.chunks.last() else {
+        return Ok((found, fetched));
+    };
+    if f.store.has(last).await.map_err(js)? {
+        return Ok((found, fetched));
     }
-    let fetched = fetching(f, from, async |conn| {
-        f.held.fetch_chunks(&conn, *file, 0..0).await
+    let got = fetching(f, from, async |conn| {
+        f.held.fetch_chunks(&conn, *file, n - 1..n).await
     })
     .await?;
     let found = files::open(&*f.store, file)
         .await
         .map_err(js)?
         .ok_or_else(|| JsError::new("no such file"))?;
-    Ok((found, fetched.bytes))
+    Ok((found, fetched + got.bytes))
 }
 
 /// The chunks of `range` this Peer-Light lacks, fetched; the bytes that crossed.
@@ -846,7 +917,8 @@ pub async fn file_range(
 ) -> Result<JsValue, JsValue> {
     let f = running_files()?;
     let (found, mut fetched) = open(&f, &hash(&file)?, from.clone()).await?;
-    let range = start as u64..(end as u64).min(found.len);
+    // a range past the end is empty: the Service Worker answers it 416
+    let range = (start as u64).min(found.len)..(end as u64).min(found.len);
     fetched += chunks(&f, &found, range.clone(), from).await?;
     let bytes = found
         .read(&*f.store, range)
@@ -857,6 +929,34 @@ pub async fn file_range(
         ("bytes", js_sys::Uint8Array::from(&bytes[..]).into()),
         ("len", (found.len as f64).into()),
         ("fetched", (fetched as f64).into()),
+    ]))
+}
+
+/// How much of a file this Peer-Light holds: `{len, held}` in bytes, `len` 0 while it hasn't the file's index. A
+/// viewer's card says "fetching 12 of 85 MB" from it while the chunks come.
+#[wasm_bindgen]
+pub async fn file_held(file: String) -> Result<JsValue, JsValue> {
+    let f = running_files()?;
+    let Some(found) = files::open(&*f.store, &hash(&file)?).await.map_err(js)? else {
+        return Ok(object(&[("len", 0f64.into()), ("held", 0f64.into())]));
+    };
+    let n = found.chunks.len() as u64;
+    let lacking: u64 = found
+        .missing(&*f.store, 0..found.len)
+        .await
+        .map_err(js)?
+        .iter()
+        .map(|&i| {
+            if i + 1 == n {
+                found.len - i * files::CHUNK
+            } else {
+                files::CHUNK
+            }
+        })
+        .sum();
+    Ok(object(&[
+        ("len", (found.len as f64).into()),
+        ("held", ((found.len - lacking) as f64).into()),
     ]))
 }
 
