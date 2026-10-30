@@ -228,8 +228,9 @@ means something else in another part, and that part's meaning is named.
 - **Value**: JSON only: null, bool, finite number, string, array, map. **= Value**.
 - **part**: code or data in one format, for one runtime. ⚠ A want has a **depth**.
 - **runtime**: shared primitive. Actors' runtimes are named after their job (Samuel, 30 Oct 2026): **state-runtime**
-  (not json-runtime), **js-runtime**, **prolog-runtime**, **markup-runtime** (not view-runtime: "view" is the
-  engine's) and **style-runtime** (not css-runtime). Their home is [`aven/runtimes`](../runtimes/README.md).
+  (not json-runtime), **js-runtime**, **markup-runtime** (not view-runtime: "view" is the engine's) and
+  **style-runtime** (not css-runtime). There is no prolog-runtime (Samuel, 30 Oct 2026). Their home is
+  [`aven/runtimes`](../runtimes/README.md).
 - **floor, fuel, shim, hostile parts**: the oldest runtime still run; work counted per instruction; the deterministic
   answer to clock and random calls; test parts that try to escape.
 - **definition**: the class: `interface`, `machine`, `turn`, `faces`, `init`, `lifetime`, `replaces`, `loads`.
@@ -255,8 +256,9 @@ means something else in another part, and that part's meaning is named.
 - **turn, given, effects**: handling one message, a mutation of the actor's Doc; the inputs the kernel hands it; the
   messages it sends.
 - **journal, journal entry**: **= the actor Doc's log; an entry is a turn's envelope** (K9).
-- **state, phase, machine, transition**: the actor's data; the machine's current state; fact-only Prolog
-  `state/1`, `initial/1`, `transition/3`.
+- **state, phase, machine, transition**: the actor's data; the machine's current phase; a machine is data, a table of
+  phases and transitions in the interface, checked by the kernel's admission checker, proven in Lean (Samuel, 30 Oct
+  2026: no Prolog).
 - **present, view model, node tree**: state to a view model to an allowlisted tree.
 - **kernel, router, scheduler, clock** (`tick`, `at`): routing, laws, one turn per actor at a time, time. ⚠
   "scheduler" in the engine is the want queue.
