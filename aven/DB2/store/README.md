@@ -107,7 +107,10 @@ proposal kept the contract and split big files. **We split** (the architect, 30 
 ## Files in the city-dome
 
 - **The announcement** is a gossip message on the city-dome: `{file, size, name, type}`, where `file` is the index's
-  hash, signed by the sender's device.
+  hash, signed by the sender's device. Built (the iroh-blobs thread): a chat message of kind `file` in `Aven.DB.Chat`,
+  checked like every message and dropped unless its sender is a member's device; its hash is in the store's spelling,
+  its name and type one line of 1 to 255 bytes each (`files_members`, vectors in `chat.json`). A Peer heard with one
+  writes a `file` line.
 - **The same file sent twice is stored once,** by its hash, across the network.
 
 ## How a file travels
@@ -117,10 +120,15 @@ proposal kept the contract and split big files. **We split** (the architect, 30 
 2. **Keep.** The Aven Peer hears the announcement, fetches the index and every chunk into S3, and sets `file-<index>`.
    The file stays reachable when Alice closes her laptop. Until the engine's sync rules exist, this is the one rule:
    **the Aven Peer keeps every city-dome file and line.** A peer keeps its own uploads until the Aven Peer has them.
+   Built for files (`peer/native/src/files.rs`): the Aven Peer fetches the whole hash sequence from the sender, checks
+   its length against the announcement and writes `kept`. A native Peer shares a folder (`--files DIR`) the same way:
+   each file in it is put, `file-<index>` set, and announced.
 3. **Show.** Bob's chat renders `<video src="/files/<index>">`. The browser asks for ranges; the Service Worker passes
    each to the Peer-Light, which reads the chunks it holds and fetches the rest from the Aven Peer or Alice through
    iroh-blobs, and answers `206`. Images and PDFs take the same path. The Service Worker reaches the leader over the
-   BroadcastChannel `aven-peer-light:<network>`, as the tabs do.
+   BroadcastChannel `aven-peer-light:<network>`, as the tabs do. The Peer-Light's file API is three exports, its
+   stable API for files: `file_len`, `file_range` (a seek: the chunks a range touches, only those it lacks) and
+   `file_fetch` (the whole file).
 4. **More holders, faster:** a native Peer fetches chunks from several holders at once. A Peer-Light's bytes all cross
    the relay, so the relay's bandwidth is its limit, however many members hold the file.
 
@@ -241,7 +249,10 @@ A 0.x release may take that away: iroh-blobs stays pinned at exactly 0.104.0, an
 
 ## How it is checked
 
-`bun run up --check` grows:
+`bun run up --check` grows. Its `files` step runs now (`sandbox/files.mjs`): Alice Peer shares a 200 MiB file from its
+folder; Bob's Peer-Light, in a page of its own after the main check, seeks to the middle from Alice (64 KiB, checked,
+having fetched one chunk and the index: 1.05 MB in 0.6 s), the Aven Peer keeps the file (2.3 s), Alice Peer stops,
+and Bob's Peer-Light fetches the rest from the Aven Peer (199 MiB from S3 into OPFS through the relay: 17 s). Then:
 
 1. Alice sends a line, an image, a PDF and a 200 MB movie into the city-dome; Bob's Peer-Light shows the line and the
    image, opens the PDF, and plays the movie from its middle having fetched less than a quarter of it;
@@ -258,8 +269,9 @@ A 0.x release may take that away: iroh-blobs stays pinned at exactly 0.104.0, an
 
 1. **opfs-sync** (session_01E9zxn44sLhsYn1LTSeusWt, the store's `opfs` driver, `os/web/peer`): the folder move (landed,
    #1462), then the driver, the leader, the Service Worker's bridge and the check's takeover step, as answered above.
-2. **iroh-blobs:** the spike, then the adapter and hash sequences in the store, the provider gate in `peer/native`.
-   Starts now; reports the spike's numbers before the adapter.
+2. **iroh-blobs:** the spike (decided: iroh-blobs), the adapter and hash sequences in the store, `size` in the
+   contract, the provider gate in `peer/native`, the file announcement and the Aven Peer's keep rule, the Peer-Light's
+   file API and the check's `files` step.
 3. **city-dome:** Lean (files, chains), the chains and catch-up, files and history in avenOS's Chat, and the Service
    Worker answering `/files/<hash>`. Starts once the spike has decided, on the
    transport it chose; its Lean starts at once.
