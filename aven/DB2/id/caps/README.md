@@ -583,7 +583,7 @@ An envelope counts when all three hold and everything it builds on counts.
 A Doc is sealed to its type's group, the type group to the all group, and the all group to the vault itself and to
 everyone who reads all its Docs. Granting read on a vault's Docs is joining one group: one seal, and no Doc is touched.
 `below` uses a group per vault that reads the all group of every vault it governs. Its keys are sealed downward, so
-holding it reads a vault's Docs and those below it, never those above.
+holding it reads a vault's Docs and those below it, never those above (`authority_down`, `never_above`).
 
 A Doc shared with more than 64 vaults one by one is shared with a group instead.
 
@@ -1185,6 +1185,7 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `heal_evicts` | After a heal, a removed device learns none of the new keys: vault key, tag seeds, letterbox keys and next epochs |
 | | `keeper_blind`, `outside_blind` | The keeper knows only its own keys, and sees of a segment only its Doc, epoch and padded length (D13). A segment is Core's `DocId`, its epoch's `Hash`, and the Core envelopes inside its seal (R5) |
 | | `stale_refused` | A Core envelope under an epoch older than one it builds on doesn't pass (rule 16) |
+| | `authority_down`, `never_above` | Where every seal opens a key of the vault it is sealed under or of one below it, as `below` groups seal, a party learns keys only of the vaults whose keys it holds and those below them, and in a well-formed tree none of a vault above them all: a `below` grant on Maia City never reads Alice's vault |
 | `Expiry` | `time_acked`, `claimed_late` | Time is a claim: once a writer whose clock had passed a cap's expiry acks it, a write the ack hadn't seen doesn't count, whatever time it claims; nor does one claiming a time past it (rule 12, R12) |
 | | `before_ack` | The limit rule 12 accepts: until the first ack, a write is judged by the time it claims |
 | `Recover` | `guardian_exit` | After MaiaCityGuardian's exit, no keyring epoch is sealed to it (D12) |
@@ -1216,7 +1217,6 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 **After Core, or with another thread:**
 - `merge_covered` and `footprints.json` (Core's footprints, with the engine);
 - `want_grants_nothing` and `one_grammar` (Core's target grammar);
-- `authority_down` (`below` groups);
 - `group_holds` (a group cap's writes in `Revoke`);
 - `device_within_cap`;
 - `upgrade_no_wider` and `no_confused_deputy`, in the cross-spec model `Aven.Architecture`: they need `Aven.Actor`,
@@ -1232,7 +1232,7 @@ One smaller gap:
 |---|---|
 | `caps.json` | Chains on the cast, their lines in Core's form, each cap with its CBOR bytes, its id and the bytes its device signs, and each chain with the first rule it breaks or none; how avenOS shows a cap; 40 generated chains |
 | `revocations.json` | Docs of Core envelopes, each with its name and what caps reads of it, the revocations held, and verdicts: hand-written, and 30 generated Docs with every envelope's verdict |
-| `epochs.json` | Who learns which key after Bob's removal and after Alice's heal |
+| `epochs.json` | Who learns which key after Bob's removal and after Alice's heal, and what Bob learns holding Maia City's `below` group |
 | `safe.json` | Requests to Alice's safe from her agent and from Mallory, on her Mac and on a host that keeps Doc keys inside, with what each gives back |
 | `approvals.json` | Signatures, thresholds and digests on the cast, and whether each approval holds; approvals where an owner is a vault, with a coop of two vaults added |
 | `expiry.json` | Writes under a cap that expires, with each envelope's signed time, and whether each counts for the clock |

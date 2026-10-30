@@ -140,10 +140,15 @@ touches.
 parts' own models, on the shared core `Aven.Core`. Where each rule stands, what is still open and who closes it is
 kept in one place, beside the proofs: [`architecture/README.md`](architecture/README.md), "Where the rules stand".
 
-On 30 Oct 2026, 13 of the 14 rules were proven whole, each composed from the parts' own theorems with no gap left
-(the last four, 4, 10, 12 and 13, in #1593). Rule 4 is one verdict: an envelope counts exactly when everything in its
-past is signed, in a fresh epoch, authorized by its cap chain, not revoked, within its footprint and fit, and none of
-it is half of a split; readers holding the same past agree.
+On 30 Oct 2026, 13 of the 14 rules were composed from the parts' own theorems (the last four, 4, 10, 12 and 13, in
+#1593). Rule 4 is one verdict: an envelope counts exactly when everything in its past is signed, in a fresh epoch,
+authorized by its cap chain, not revoked, within its footprint and fit, and none of it is half of a split; readers
+holding the same past agree.
+
+One piece of rule 4 is open again, found by caps the same day: a merge into main counts only when the merger's grant
+covers the whole merge (caps README, "Checking"), but the content check reads a merge against the version its prev and
+deps name, which already holds the proposal. The engine (`merge_granted`) and caps (`merge_covered`) model it, and
+`Aven.Architecture` joins them by judging a merge into main against main before it.
 
 Rule 14 is a property of the node, held by the format vectors and the box's check; no theorem is planned for it.
 

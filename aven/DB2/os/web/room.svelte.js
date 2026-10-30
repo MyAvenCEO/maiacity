@@ -42,6 +42,8 @@ export function hear(line) {
 	if (line.event === 'sent') for (const id of line.ids ?? []) room.sent[id] = true;
 	if (line.event === 'sending') room.files[line.file] = { ...room.files[line.file], sent: line.sent, size: line.size };
 	if (line.event === 'held') room.files[line.file] = { ...room.files[line.file], held: line.held, len: line.len };
+	if (line.event === 'kept' && line.peer !== 'aven-peer')
+		for (const file of line.files ?? []) room.files[file] = { ...room.files[file], kept: true };
 	if (line.event === 'room') room.present = line.present;
 	if (line.event === 'network' && 'invites' in line) room.invites = line.invites ?? null;
 	if (line.event === 'refused') room.refused = line.why;
