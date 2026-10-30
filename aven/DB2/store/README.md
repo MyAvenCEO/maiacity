@@ -45,7 +45,7 @@ networking (the protocol on the `Router`, the provider gate); the store answers 
 
 | | The one source of truth |
 |---|---|
-| A blob's name | BLAKE3 of its bytes: one `Hash` type for the store, the docs and iroh-blobs |
+| A blob's name | BLAKE3 of its bytes: one `Hash` type for the store, the docs and iroh-blobs. A blob is a Value at rest ([`db/docs`](../db/docs/README.md)) |
 | Where bytes rest | our `Store`, one per peer. iroh-blobs' own store (redb and files) is not used |
 | Named pointers | refs, compare-and-set, proven in Lean (`Aven.DB.Store`). iroh-blobs' tags and its garbage collector are not used |
 | What keeps a blob | a ref reaching it. Cleanup by reachability is milestone 4's; until then nothing is deleted |
