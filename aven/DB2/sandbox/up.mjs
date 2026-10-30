@@ -140,6 +140,8 @@ async function install() {
 	const frozen = lock === 'none' ? '' : '--frozen-lockfile';
 	const script = `bun install ${frozen} && sha256sum bun.lock | cut -d' ' -f1 > node_modules/.avensandbox-lock`;
 	await $`docker run --rm ${network()} ${volumes} -w /work ${image} sh -c ${script}`.env(env);
+	// a running Vite keeps an import it couldn't resolve before the install: it starts again on the new dependencies
+	if ((await $`${compose} ps -q browsers`.env(env).nothrow().quiet().text()).trim()) await $`${compose} restart browsers`.env(env).quiet();
 }
 
 // The builder (SANDBOX.md, "The box"): compiles the Peer, the Peer-Light's wasm and aven-id's wasm for avenOS once, into
@@ -147,14 +149,16 @@ async function install() {
 // when the wasm does.
 const peerBinary = '/work/target/debug/aven-peer';
 const lightWasm = 'target/wasm32-unknown-unknown/debug/aven_peer_light.wasm';
-const buildLight = [
+const buildPeers = [
+	'set -e',
+	'cargo build -q -p aven-peer',
 	'cargo build -q -p aven-peer-light --lib --target wasm32-unknown-unknown',
 	// wasm-bindgen takes 3 s even for nothing, so it runs only for a new wasm; one swap, so Vite never serves half a build
 	`src=$(sha256sum ${lightWasm} | cut -c1-64)`,
 	`if [ "$src" != "$(cat target/light/.source 2>/dev/null)" ]; then rm -rf target/light.next && wasm-bindgen --target web --no-typescript --out-dir target/light.next ${lightWasm} && echo "$src" > target/light.next/.source && rm -rf target/light && mv target/light.next target/light; fi`,
 	'sh id/core/wasm/build.sh',
-];
-const buildPeers = ['set -e', 'cargo build -q -p aven-peer', ...buildLight, `sha256sum ${peerBinary} | cut -c1-16`].join(' && ');
+	`sha256sum ${peerBinary} | cut -c1-16`,
+].join(' && ');
 
 export async function build() {
 	await $`docker volume create avensandbox_target`.quiet();
@@ -188,7 +192,14 @@ async function check() {
 	const run = `runs/${new Date().toISOString().replace(/[:.]/g, '-')}`;
 	const result = await $`${compose} exec -T browsers node sandbox/check.mjs ${run}`.env(env).nothrow();
 	const passed =
-		fenced.length === 0 && fresh && result.exitCode === 0 && (await keeps(run)) && (await inWebKit(run)) && (await claims(run)) && (await members(run));
+		fenced.length === 0 &&
+		fresh &&
+		result.exitCode === 0 &&
+		(await keeps(run)) &&
+		(await inWebKit(run)) &&
+		(await claims(run)) &&
+		(await members(run)) &&
+		(await chats(run));
 	say(`${passed ? 'check passed' : 'check FAILED'}; screenshots and report in aven/DB2/${run}/`);
 	return passed ? 0 : 1;
 }
@@ -305,6 +316,10 @@ async function members(run) {
 	return ok;
 }
 
+// avenOS's Invite, Join and Chat (MILESTONE2.md, steps 1, 2 and 4), on production's stand-in after the members' step
+// leaves its store empty: sandbox/chat.mjs
+const chats = async (run) => (await $`${compose} exec -T browsers node sandbox/chat.mjs ${run}`.env(env).nothrow()).exitCode === 0;
+
 async function up(args) {
 	const started = Date.now();
 	await ensureDocker();
@@ -329,17 +344,24 @@ async function up(args) {
 }
 
 // Every release's deliverables (SANDBOX.md, "Production"): for now avenOS for the browser, built in the box, with
-// aven-id's wasm and the Peer-Light at /peer-light/, the same build the check runs: the dev server serves it there
-// (sandbox/peers.mjs), and a build without it never went live (aven.maia.city, 30 Oct 2026).
+// aven-id's wasm and the Peer-Light in release at /peer-light/, where the dev server serves the loop's debug build
+// (sandbox/peers.mjs); a build without it never went live (aven.maia.city, 30 Oct 2026). The check builds and runs
+// this same build (sandbox/webkit.mjs).
 async function buildPage() {
 	await $`docker volume create avensandbox_target`.quiet();
 	const volumes = ['-v', `${db2}:/work`, '-v', 'avensandbox_node_modules:/work/node_modules', ...rustVolumes];
+	// the Peer-Light in release, for phones, in a build folder of its own: beside aven-id's wasm, which resolves
+	// wasm-bindgen's features differently, each build would rebuild the other's (8 s every time). The loop's debug build
+	// stays as it is
+	const wasm = 'target/release-light/wasm32-unknown-unknown/release/aven_peer_light.wasm';
 	const script = [
 		'set -e',
-		...buildLight,
+		'sh id/core/wasm/build.sh',
+		'cargo build -q --release -p aven-peer-light --lib --target wasm32-unknown-unknown --target-dir target/release-light',
+		`rm -rf target/light-release && wasm-bindgen --target web --no-typescript --out-dir target/light-release ${wasm}`,
 		'node_modules/.bin/vite build --config vite.config.js --logLevel warn',
 		'mkdir -p dist/peer-light',
-		'cp target/light/aven_peer_light.js target/light/aven_peer_light_bg.wasm dist/peer-light/',
+		'cp target/light-release/aven_peer_light.js target/light-release/aven_peer_light_bg.wasm dist/peer-light/',
 	].join(' && ');
 	await $`docker run --rm ${network()} ${volumes} -w /work ${image} sh -c ${script}`.env(env);
 }

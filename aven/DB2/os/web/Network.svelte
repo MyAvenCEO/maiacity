@@ -5,8 +5,10 @@
 	// signs in there with the passkey, which makes it a device too. `#/claim` shows the signup screen whatever the
 	// network says: a second signup is the Aven Peer's to refuse, and it does.
 	import App from './App.svelte';
+	import Join from './Join.svelte';
 	import Phase from './Phase.svelte';
 	import { useTree } from './id.js';
+	import { readLink } from './invites.js';
 	import { castOf, claim, net, signIn } from './network.svelte.js';
 	import { describe, live } from './peers.svelte.js';
 
@@ -14,8 +16,10 @@
 
 	const read = () => location.hash.replace(/^#\/?/, '').split('/')[0];
 	let route = $state(read());
+	// an invite's link, `#/join/<invite>.<secret>` (Join.svelte)
+	let link = $state(readLink(location.hash));
 	$effect(() => {
-		const follow = () => (route = read());
+		const follow = () => ((route = read()), (link = readLink(location.hash)));
 		addEventListener('hashchange', follow);
 		return () => removeEventListener('hashchange', follow);
 	});
@@ -52,8 +56,10 @@
 
 {#if member && route !== 'claim'}
 	{#key cast}
-		<App {cast} device={net.me} />
+		<App {cast} device={net.me} {config} />
 	{/key}
+{:else if link && claimed}
+	<Join {config} {link} />
 {:else}
 	<main data-view={claimed === null ? 'connecting' : !claimed || route === 'claim' ? 'claim' : 'invite-only'}>
 		<h1>avenOS</h1>
