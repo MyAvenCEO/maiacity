@@ -14,7 +14,7 @@ import { hear, speakThrough } from './room.svelte.js';
 // under the status line so a screenshot names the cause; `door`: whether the relay lets this browser in, null until it
 // has said (MILESTONE2.md: after the claim, only members get in); `storage`: why this browser keeps no storage for the
 // host, when it doesn't, and then no Peer-Light starts
-export const net = $state({ me: null, key: null, claimed: null, tree: null, refused: null, trouble: null, door: null, storage: null });
+export const net = $state({ me: null, key: null, claimed: null, tree: null, refused: null, trouble: null, door: null, storage: null, reset: false });
 
 let port;
 // the start this page gives its Peer-Light, sent again with every statement (peer/worker.js)
@@ -66,6 +66,7 @@ export function runNetwork(config) {
 		if (line.event === 'network') Object.assign(net, { claimed: line.claimed, tree: line.tree });
 		if (line.event === 'start?' && starting) port.postMessage({ start: starting });
 		if (line.event === 'refused') net.refused = line.why;
+		if (line.event === 'reset') net.reset = true;
 		if (line.event === 'door') net.door = line.admitted;
 		if (line.event === 'status' || line.event === 'failed') live.own = line.event === 'failed' ? { ...line, phase: 'offline', peers: 0 } : line;
 		if (line.event === 'stored') live.ownStored = line;

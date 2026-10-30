@@ -27,8 +27,8 @@ fn a_hash_reads_back_from_hex() {
     }
 }
 
-/// A ref at rest is its hash and a newline, and reads back with the newline or without (`db/spec/vectors/refs.json`,
-/// Lean `Store.refText`, `Store.readRef`).
+/// A ref at rest is exactly its hash and a newline, and nothing else reads as one (`db/spec/vectors/refs.json`, Lean
+/// `Store.refText`, `Store.readRef`).
 #[test]
 fn a_ref_at_rest_reads_as_the_model_says() {
     let vectors: Vec<Value> = serde_json::from_str(include_str!("../../db/spec/vectors/refs.json")).unwrap();

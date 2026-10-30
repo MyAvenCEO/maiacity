@@ -1,6 +1,6 @@
 [
 {"expected":{"reads":"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a"},"input":{"stored":"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a\n"},"name":"stored \"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a\\n\""},
-{"expected":{"reads":"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a"},"input":{"stored":"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a"},"name":"stored \"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a\""},
+{"expected":{"reads":null},"input":{"stored":"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a"},"name":"stored \"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a\""},
 {"expected":{"reads":null},"input":{"stored":"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a\n\n"},"name":"stored \"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a\\n\\n\""},
 {"expected":{"reads":null},"input":{"stored":"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a\r\n"},"name":"stored \"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a\\x0d\\n\""},
 {"expected":{"reads":null},"input":{"stored":"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a "},"name":"stored \"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a \""},

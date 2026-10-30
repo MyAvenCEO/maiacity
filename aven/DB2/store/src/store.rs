@@ -22,6 +22,10 @@ pub enum Error {
     /// Bytes at rest that don't match their name, or a ref that doesn't hold a hash.
     #[error("corrupt: {0}")]
     Corrupt(String),
+    /// A store an older avenDB wrote: on a device, it holds what a version before this one laid out, and is cleared
+    /// (the opfs driver's `meta/version`).
+    #[error("a store from an older avenOS: {0}")]
+    Outdated(String),
     /// Anything the backend reports, as text: no backend's error types cross the contract.
     #[error("backend: {0}")]
     Backend(String),

@@ -33,11 +33,11 @@ impl Hash {
         format!("{self}\n")
     }
 
-    /// A ref's bytes at rest, read back: the hash's hex with one trailing newline or none (Lean `Store.readRef`). The
-    /// OpenDAL drivers wrote the newline, the opfs driver of 30 Oct 2026 left it out; a browser keeps what either wrote.
+    /// A ref's bytes at rest, read back: exactly the hash's hex and a newline (Lean `Store.readRef`), nothing else.
     pub fn from_ref(bytes: &[u8]) -> Result<Self, Error> {
-        let text = std::str::from_utf8(bytes).map_err(|_| Error::Corrupt("a ref that isn't text".into()))?;
-        text.strip_suffix('\n').unwrap_or(text).parse()
+        let bad = || Error::Corrupt(format!("a ref isn't a hash and a newline: {:?}", String::from_utf8_lossy(bytes)));
+        let text = std::str::from_utf8(bytes).map_err(|_| bad())?;
+        text.strip_suffix('\n').ok_or_else(bad)?.parse().map_err(|_| bad())
     }
 }
 

@@ -3,6 +3,10 @@
 //! (`tmp/blob-<hash>`, `tmp/ref-<name>`), then moves into place, or is copied where the folder can't move. Opening
 //! recovers what a crash left: a whole temporary file rolls forward, every other one goes (Lean: `Aven.DB.StoreCrash`,
 //! `crash_atomic`).
+//!
+//! A store says which avenDB laid it out: `meta/version` holds [`VERSION`], written when the store is made. A store with
+//! anything in it and not exactly that marker is from an older avenOS, and opening it is [`Error::Outdated`]: the
+//! Peer-Light clears its origin and starts fresh (no migration of a browser's store, Samuel 30 Oct 2026).
 
 use std::ops::Range;
 
@@ -19,6 +23,10 @@ pub struct OpfsStore<F> {
     writes: Mutex<()>,
 }
 
+/// What `meta/version` holds in a store this avenDB laid out.
+pub const VERSION: &[u8] = b"avenDB store 1\n";
+const VERSION_PATH: &str = "meta/version";
+
 fn blob_path(h: &Hash) -> String {
     format!("blobs/{h}")
 }
@@ -28,9 +36,22 @@ fn ref_path(n: &RefName) -> String {
 }
 
 impl<F: Folder> OpfsStore<F> {
-    /// Opens the store on `folder`, recovering what a crash left there.
+    /// Opens the store on `folder`, recovering what a crash left there; an empty folder becomes a store of this
+    /// version. [`Error::Outdated`] for a folder an older avenDB laid out.
     pub async fn open(folder: F) -> Result<Self> {
         let store = Self { folder, writes: Mutex::new(()) };
+        match store.folder.read(VERSION_PATH, None).await? {
+            Some(v) if v.as_ref() == VERSION => {}
+            Some(v) => return Err(Error::Outdated(format!("its version is {:?}", String::from_utf8_lossy(&v)))),
+            None => {
+                for dir in ["blobs", "refs", "tmp"] {
+                    if !store.folder.list(dir).await?.is_empty() {
+                        return Err(Error::Outdated(format!("it has {dir} and no version")));
+                    }
+                }
+                store.folder.write(VERSION_PATH, VERSION).await?;
+            }
+        }
         store.recover().await?;
         Ok(store)
     }
@@ -53,7 +74,7 @@ impl<F: Folder> OpfsStore<F> {
     }
 
     /// Where the temporary file `name` goes, if it is whole: a blob's bytes that hash to its name, a ref's value that
-    /// reads as a hash (with its newline or without, `Hash::from_ref`).
+    /// is a hash and a newline (`Hash::from_ref`).
     async fn whole(&self, name: &str, tmp: &str) -> Result<Option<String>> {
         let Some(bytes) = self.folder.read(tmp, None).await? else {
             return Ok(None);

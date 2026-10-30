@@ -131,7 +131,10 @@ async fn a_crash_leaves_every_call_undone_or_done() {
     for moves in [true, false] {
         for trace in &traces {
             let ops = trace["input"]["ops"].as_array().unwrap();
-            let mut before = BTreeMap::new();
+            // a store is made once, its marker written, before any call
+            let made = MemFolder::new(moves);
+            OpfsStore::open(made.clone()).await.unwrap();
+            let mut before: BTreeMap<String, Vec<u8>> = made.files();
             for (i, op) in ops.iter().enumerate() {
                 let done = after(&before, moves, std::slice::from_ref(op)).await;
                 for tear in [Tear::Nothing, Tear::Half, Tear::Whole] {
@@ -214,38 +217,35 @@ async fn a_full_folder_fails_cleanly() {
     assert_eq!(inner.files(), before);
 }
 
-/// A Peer-Light's store as the OpenDAL OPFS driver laid it out before 30 Oct 2026 opens with the opfs driver and reads
-/// whole: the same folders (`blobs/<hash>`, `refs/<name>` under the store's root), every blob where it put it, every
-/// ref its hash and a newline. Production keeps its browsers' stores: nothing is wiped.
+/// A store says which avenDB laid it out (`meta/version`): an empty folder becomes a store of this version, and opens
+/// again; a folder with anything in it but not exactly this marker is from an older avenOS (`Error::Outdated`), so the
+/// Peer-Light clears its origin and starts fresh. No store is migrated.
 #[tokio::test]
-async fn a_store_the_opendal_driver_left_opens_whole() {
+async fn a_store_without_this_version_is_outdated() {
+    use aven_db_store::opfs::VERSION;
     use aven_db_store::{Hash, RefName, Store};
+    let fresh = MemFolder::new(true);
+    let store = OpfsStore::open(fresh.clone()).await.unwrap();
+    assert_eq!(fresh.files()["meta/version"], VERSION.to_vec());
+    let h = store.put(Bytes::from_static(b"kept")).await.unwrap();
+    store.set_ref(&RefName::new("head").unwrap(), None, h).await.unwrap();
+    drop(store);
+    let again = OpfsStore::open(fresh.clone()).await.unwrap();
+    assert_eq!(again.get(&h).await.unwrap().unwrap(), Bytes::from_static(b"kept"));
+
+    // as the OpenDAL OPFS driver left a store: blobs and refs, no marker
     let old = MemFolder::new(true);
-    let record = Bytes::from_static(b"{\"first\":1793376322459}");
-    let chunk = conformance::noise(3 << 20, 7);
-    let (r, c) = (Hash::of(&record), Hash::of(&chunk));
-    old.write(&format!("blobs/{r}"), &record).await.unwrap();
-    old.write(&format!("blobs/{c}"), &chunk).await.unwrap();
-    old.write("refs/first-start", format!("{r}\n").as_bytes()).await.unwrap();
-    old.write("refs/device-key", format!("{c}\n").as_bytes()).await.unwrap();
+    let record = Bytes::from_static(b"a record");
+    old.write(&format!("blobs/{}", Hash::of(&record)), &record).await.unwrap();
+    old.write("refs/first-start", Hash::of(&record).ref_text().as_bytes()).await.unwrap();
+    assert!(matches!(OpfsStore::open(old.clone()).await, Err(Error::Outdated(_))));
+    assert!(!old.files().contains_key("meta/version"), "an outdated store is left as it is, for the Peer-Light to clear");
 
-    let store = OpfsStore::open(old.clone()).await.unwrap();
-    let first = RefName::new("first-start").unwrap();
-    assert_eq!(store.get_ref(&first).await.unwrap(), Some(r));
-    assert_eq!(store.get_ref(&RefName::new("device-key").unwrap()).await.unwrap(), Some(c));
-    assert_eq!(store.get(&r).await.unwrap(), Some(record));
-    assert_eq!(store.get_range(&c, 1 << 20..(1 << 20) + 9).await.unwrap().unwrap(), chunk.slice(1 << 20..(1 << 20) + 9));
-    assert_eq!(store.size(&c).await.unwrap(), Some(3 << 20));
-    let mut blobs = vec![r, c];
-    blobs.sort();
-    assert_eq!(store.list().await.unwrap(), blobs);
-    assert_eq!(store.list_refs().await.unwrap().len(), 2);
-
-    // and goes on from there: a compare-and-set over an old ref, which then rests as every driver writes it
-    let next = store.put(Bytes::from_static(b"the next record")).await.unwrap();
-    store.set_ref(&first, Some(r), next).await.unwrap();
-    assert_eq!(old.files()["refs/first-start"], next.ref_text().into_bytes());
-    // opened again, nothing moved
-    let again = OpfsStore::open(old.clone()).await.unwrap();
-    assert_eq!(again.get_ref(&first).await.unwrap(), Some(next));
+    // a marker that isn't this version's, and a store with only a crash's leftovers
+    let other = MemFolder::new(true);
+    other.write("meta/version", b"avenDB store 0\n").await.unwrap();
+    assert!(matches!(OpfsStore::open(other).await, Err(Error::Outdated(_))));
+    let leftovers = MemFolder::new(true);
+    leftovers.write("tmp/ref-head", b"x").await.unwrap();
+    assert!(matches!(OpfsStore::open(leftovers).await, Err(Error::Outdated(_))));
 }
