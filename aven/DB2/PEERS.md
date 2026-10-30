@@ -359,7 +359,8 @@ peer served the catch-up.
 - **A member's relay sees other members' IPs:** the relay list is the admin's choice for that reason. Mixing traffic
   over several relays is not in this plan.
 - **`settle_restore` for every store:** the agreement of the settled door with `Members.admits` is checked on every
-  trace, not yet proved in general: that needs `settle` related to `Members.tree`'s owners and `Tree.actsFor`.
+  trace, not yet proved in general: that needs `settle` related to `Members.tree`'s owners and `Tree.actsFor`. Thread B
+  starts on the checks; the proof comes before production's tree is migrated for real (the architect, 30 Oct 2026).
 - **Presence at scale:** a beat per device per step on one topic is fine for the chat's network, but not for millions
   (caps, "Scale").
 
