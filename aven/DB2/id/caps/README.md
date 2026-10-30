@@ -14,7 +14,7 @@ document (moved there whole), and Signal, Matrix, MLS, Biscuit, Keyhive and Mead
 
 **Status.** Decided by Samuel on 30 Oct 2026:
 - this folder is the one caps spec (D1);
-- vaults issue and hold caps (D2), in our own grammar (D3);
+- vaults issue caps, and one vault or a group of vaults holds each (D2), in our own grammar (D3);
 - caps grant the engine's operations on the engine's targets (D4, D5), and roles are pinned by hash (D6);
 - keys come in layers that scale without a dead end (D7);
 - a revocation keeps what it names and wins over the rest (D8);
@@ -24,11 +24,11 @@ document (moved there whole), and Signal, Matrix, MLS, Biscuit, Keyhive and Mead
 - MaiaCityGuardian stays a full owner through the evaluation phase (D12);
 - the keeper sees as little as possible: a segment's Doc, epoch and padded length (D13);
 - every grant needs its vault's owners' approval, for now (D14);
-- the public can hold a cap: everyone in the network, or anyone (D15).
+- the public can hold a cap: everyone in the network, or anyone (D15);
+- actors act under caps as agreed with avenACTOR (D16).
 
 The engine thread agreed the footprints caps check (E1–E3). The docs and avenACTOR threads answered their seams on the
-same day, and what they agreed is marked where it applies. One thing is still a proposal of this document, marked
-where it appears: groups holding caps (an extension of D2).
+same day, and what they agreed is marked where it applies. Nothing in this spec is still a proposal.
 
 ## Contents
 
@@ -379,12 +379,12 @@ messages and queries. For people with keys, reading is whole Docs; for actors an
 - **Devices** act for their vault within a **device cap**, a cap from the vault to its device vault. A device added by a
   passkey sign-in holds everything its vault may do except govern, as avenID has it today. A grant it prepares counts
   only with an owner's approval (D14). An agent's devices and the Aven Peer hold narrower ones.
-- **Groups** (an extension of D2, proposed here). A group is a Doc whose readers are its members. It holds caps for
-  them: a team editing the team's Docs, a family reading the family's photos. A write under a group's cap carries,
-  inside the seal, the writer's read cap on the group. Groups aren't vaults, so they aren't in the tree the keeper sees,
-  and making one needs no governance.
-- **Actors** hold no keys (`aven/actor/ARCHITECTURE.md`, section 11). Agreed with avenACTOR on 30 Oct 2026, for
-  Samuel to confirm:
+- **Groups** (Samuel, 30 Oct 2026: a cap goes to one vault or a group of vaults). A group is a Doc whose readers are
+  its members. It holds caps for them: a team editing the team's Docs, a family reading the family's photos. A write
+  under a group's cap carries, inside the seal, the writer's read cap on the group. Groups aren't vaults, so they
+  aren't in the tree the keeper sees, and making one needs no governance.
+- **Actors** hold no keys (`aven/actor/ARCHITECTURE.md`, section 11). Agreed with avenACTOR and confirmed by Samuel on
+  30 Oct 2026 (D16); the architect's avenACTORS thread carries them on:
   - **Every message carries a `cap` beside its `run`.** The run is the causal chain and stays the same; the cap narrows
     at every hop. It starts from the person whose click began the run. When an actor acts on its own (a timer, or a duty
     its definition declares), it starts a new run under the actor's standing cap.
@@ -882,7 +882,7 @@ to and leave all the time. Scale need not be built from day one, but no choice m
 | engine (`db/engine`) | Operations by hash, footprints, wants, the dry run | E1–E3; served is wants intersected with caps; `query` checked by the kernel or serving peer |
 | store (`store`) | Blobs and refs | Sealed blobs; key blobs and letters are blobs; the sealing parked in its "Later: sealing" comes here |
 | avenPEER | The door, the relay, the keeper | Keep caps, fetch proofs, quota per network member, letterboxes, topics per group |
-| actors (`aven/actor`) | Runs, routers, inbox Docs | **Agreed with avenACTOR (30 Oct 2026), for Samuel to confirm:** a `cap` beside `run` on every message; no confused deputy; `tell` caps by name, pinned by the definition's hash; actor targets by address, by spawn and by definition; an inbox Doc belongs to the sender's vault and is born with the tell cap; actors at home on the Aven Peer are readable there |
+| actors (`aven/actor`) | Runs, routers, inbox Docs | **Agreed with avenACTOR and confirmed by Samuel (30 Oct 2026, D16):** a `cap` beside `run` on every message; no confused deputy; `tell` caps by name, pinned by the definition's hash; actor targets by address, by spawn and by definition; an inbox Doc belongs to the sender's vault and is born with the tell cap; actors at home on the Aven Peer are readable there |
 | avenOS | The UI | The dry run, raw grants, vault fingerprints, PRF sign-in and pairing |
 
 **Proposals for other documents**, to be agreed with their threads, not edited by this one:
@@ -901,8 +901,9 @@ to and leave all the time. Scale need not be built from day one, but no choice m
    survey moved whole to [`research.md`](research.md). Its old path becomes a pointer on its branch.
 2. **Vaults issue and hold caps** (Samuel, 30 Oct 2026). A device is a vault, so "a narrower cap for one device" is a
    cap its device vault holds. A ticket holds one until a vault claims it. Actors hold no keys.
-   **Proposed extension: a group can hold a cap** for everyone in it (rule 13). Without it, a team's caps would be
-   issued once per member, and a group would have to be a vault in the tree the keeper sees.
+   **A group of vaults can hold a cap too** (Samuel, 30 Oct 2026): a cap goes to one vault or a group of vaults
+   (rule 13). Otherwise a team's caps would be issued once per member, and a group would have to be a vault in the tree
+   the keeper sees.
 3. **Our own grammar, not Biscuit's Datalog** (Samuel, 30 Oct 2026). Attenuation is a subset check proven in Lean. We
    keep Biscuit's offline attenuation and turn its third-party blocks into approvals. Datalog is hard to prove, needed a
    100 ms budget in avenOS, and its unchecked blocks added facts. It would also be a second grammar beside the wants'.
@@ -934,9 +935,6 @@ to and leave all the time. Scale need not be built from day one, but no choice m
     proposed showing each writer's pseudonym, counters and previous segment, so a keeper could serve by version and
     catch splits. Arrival order serves catch-up as well, and readers already catch splits. What the Aven Peer still
     sees (each Doc, sizes, times, key changes, which device connects) is good enough for now; mixing comes later.
-15. **The public can hold a cap** (Samuel, 30 Oct 2026). `public:network` covers everyone in the network: sealed to its
-    members, and it may write where the cap says, as in the city-dome. `public:world` covers anyone: published plain
-    and signed, read only. Neither shares, and both are grants (D14).
 14. **Every grant needs its vault's owners' approval, for now** (Samuel, 30 Oct 2026). Today that is one passkey tap.
     Three things aren't grants and need none:
     - a new device's rights, approved by its sign-in;
@@ -944,6 +942,17 @@ to and leave all the time. Scale need not be built from day one, but no choice m
     - a revocation.
 
     One-Doc read shares from a trusted device may be relaxed later, once there is a case.
+15. **The public can hold a cap** (Samuel, 30 Oct 2026). `public:network` covers everyone in the network: sealed to its
+    members, and it may write where the cap says, as in the city-dome. `public:world` covers anyone: published plain
+    and signed, read only. Neither shares, and both are grants (D14).
+16. **Actors act under caps** (Samuel, 30 Oct 2026), as agreed with avenACTOR.
+    - Actors hold no keys.
+    - Every message carries a cap beside its run, narrowing at each hop, and no confused deputy.
+    - Tell caps name messages. Actor targets go by address, by spawn or by definition.
+    - An inbox Doc belongs to its sender and is born with the tell cap.
+    - Where an actor lives decides who can read it.
+
+    The architect's avenACTORS thread carries them on.
 
 Agreed with the engine thread (30 Oct 2026):
 
@@ -1015,19 +1024,17 @@ A proposal for milestone 3's plan, for the architect:
 
 ## Open questions
 
-1. **Groups holding caps** (D2's extension): yes?
-2. **Write without read:** a drop-box Doc whose epoch also has an X-Wing key, so a holder can append without reading
+1. **Write without read:** a drop-box Doc whose epoch also has an X-Wing key, so a holder can append without reading
    (forms, tips, submissions). Later?
-3. **Device secrets at rest in a browser:** OPFS is readable by the page's own scripts. Wrap them under a
+2. **Device secrets at rest in a browser:** OPFS is readable by the page's own scripts. Wrap them under a
    non-extractable WebCrypto key, at least?
-4. **The heal on a schedule:** monthly, or only on suspicion?
-5. **When MaiaCityGuardian exits,** and whether the guardian vaults chosen later may hold a keyring seal when a person
+3. **The heal on a schedule:** monthly, or only on suspicion?
+4. **When MaiaCityGuardian exits,** and whether the guardian vaults chosen later may hold a keyring seal when a person
    opts in.
-6. **Caps across an actor's upgrade,** now with the architect's avenACTORS thread. A cap by definition hash doesn't
+5. **Caps across an actor's upgrade,** now with the architect's avenACTORS thread. A cap by definition hash doesn't
    carry over to a new version. avenACTOR's view: a definition names the one it `replaces`, and a tell cap follows the
    upgrade while every message it names keeps its schema; a new message isn't covered until granted.
-7. **Padding:** Padmé on every envelope, or only on segments and files?
-8. **The actor agreements** (Holders, Actors): Samuel's yes, carried on by the avenACTORS thread.
+6. **Padding:** Padmé on every envelope, or only on segments and files?
 
 ## Not in this spec
 
