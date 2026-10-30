@@ -38,8 +38,9 @@ avenDB has two primitives (Samuel, 30 Oct 2026):
   an IPFS CID: what a name names never changes. In the store it is a blob. Schema versions, lenses, predicates' and
   kinds' versions, operations, actor definitions, segments, snapshots and a file's chunks and index are Values.
 - **Doc** (document): mutable, one Loro document, named by a stable id; its head is a ref pointing at Values (its
-  snapshot and segments). Like IPNS: the name stays, what it points at moves. The unit of sharing, sealing and caps.
-  Types, predicates, kinds, catalogues, vocabularies and actors are Docs.
+  snapshot and segments). Like IPNS: the name stays, what it points at moves. The unit of sharing, sealing, caps, sync
+  and atomic change. A Doc is a **root record** (rule 16). Types, predicates, kinds, catalogues, vocabularies and actors
+  are Docs.
 
 Reference a Value's hash to pin something exactly; reference a Doc's id to follow it as it changes. Both are written with
 a capital; a lowercase value is just a field's data.
@@ -48,7 +49,7 @@ a capital; a lowercase value is just a field's data.
   always under a schema (rule 15); where it sits in the Doc can change, its address can't. Each field in a
   **container**: text, list, movable list, map, tree, counter, or a single value.
 - **type:** a named schema: a Doc whose versions are schema Values. A record of a type carries its `kind` constant; a
-  Doc holds one such record or many.
+  Doc holds one such record or many. A type says whether its records are roots.
 - **envelope:** one or more Loro changes, signed by a device and sealed with the document's key.
 - **segment:** a sealed batch of envelopes, a Value.
 - **snapshot:** a document's whole state and history at a version, a Value.
@@ -101,6 +102,10 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
 15. **Every record is under a schema** (Samuel, 30 Oct 2026). A Doc's root has one, and every record inside it is typed
     by its place in it. There are no schemaless entries, so the [engine](../engine/README.md#one-primitive-the-record)
     queries records by type and nothing else.
+16. **A type says which of its records are roots** (Samuel, 30 Oct 2026). A root record is a Doc of its own: an invoice,
+    a page, a project, a chat room, an actor. Any other record lives inside the Doc it belongs to and changes atomically
+    with it: an invoice's lines, a chat's lines, a task's facts. Every record is a Loro container either way; only a
+    root pays for a head, a key, caps and a catch-up of its own.
 
 ## Architecture
 

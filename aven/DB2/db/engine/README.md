@@ -19,8 +19,8 @@ older engines as code ([README](../../README.md), rule 12).
 caps' target grammar (D4), actors declare and devices decide how deep (D5), operations are named by their avenDB hash
 (D7), kinds stay inside one plugin (D8), the docs layer checks envelopes and the engine checks operations (D9),
 indexes come in a later iteration (D10), and avenACTORS' engine notes are folded in here. **Proposed, waiting for
-Samuel:** the record as the engine's primitive, named by its own id with no paths, and plugins that lower to one core
-(D2, D6). Values and Docs underneath are Samuel's.
+Samuel:** plugins that lower to one core evaluator (D6). Values and Docs underneath, the record as the engine's
+primitive, and the type deciding which records are roots are Samuel's (D2).
 
 ## Contents
 
@@ -181,6 +181,13 @@ records already do; its address is `<doc>/<id>`, and the Doc's root record is `<
 Doc (which list, which place in a tree, which order) is its schema's business and can change; its address never does.
 A ref is always an address, so a fact pointing at a page and a page pointing at a file join the same way, and caps and
 footprints narrower than a Doc name types, never paths.
+
+**A Doc is a root record** (Samuel, 30 Oct 2026; docs rule 16). Every record is a Loro container, so every record
+merges as a CRDT. A type says whether its records are roots: an invoice, a page, a chat room or an actor is a Doc of its
+own; an invoice's lines, a chat's lines and a task's facts live inside the Doc they belong to and change atomically
+with it. Only roots pay for a head, a key, caps and a catch-up of their own. A ref works like a foreign key, across Docs
+too, except that nothing guarantees its target is held or readable: an answer that can't follow one says `partial` or
+`denied`.
 
 **Tables are types.** A type is a named schema, itself a Doc whose versions are Values. Every record of one type forms
 one table for queries: columns `id` (its address), `doc` and the type's fields. For a fact, the fields are `x1`…`x5`,
@@ -504,9 +511,9 @@ Notes for that iteration, from this one's discussion:
 
 1. **Plugins are built-in Rust,** versioned with the engine (Samuel, 30 Oct 2026). Untrusted code stays in actors, which
    write operations. Run-time plugins can come later behind the same interface.
-2. **Values and Docs underneath (Samuel, 30 Oct 2026); the record is the engine's one primitive** (proposed). Values are
+2. **Values and Docs underneath; the record is the engine's one primitive** (Samuel, 30 Oct 2026). Values are
    immutable and named by hash, Docs mutable and named by id; a Doc holds records, every one under a schema and named by
-   its own id, with no paths. Facts, lines, pages and files' entries are records of different types: one model of data
+   its own id, with no paths. A Doc is a root record, and a type says which of its records are roots. Facts, lines, pages and files' entries are records of different types: one model of data
    in avenDB, not one per layer or plugin.
 3. **Sync and load are one want** (Samuel, 30 Oct 2026): durable keeps, mounted opens, one scheduler orders both.
    avenDB-old had wants, keep shares, copy settings and follow lists for one job.
