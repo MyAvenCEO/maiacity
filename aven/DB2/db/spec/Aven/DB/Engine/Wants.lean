@@ -1,3 +1,5 @@
+import Aven.Core
+
 /-!
 # The want queue (db/engine, "Wants"; ARCHITECTURE.md, "Massive data: wants decide what moves", A9)
 
@@ -13,11 +15,34 @@ queue turns them into the order in which a device fetches and opens, and holds t
   down, finds nothing left, or raises the stall alarm;
 - **`now` is never evicted:** over budget, only entries below `now` go, lowest tier first.
 
-A key is (Doc, branch, depth, window) in A9; here it is any type with equality, so `Aven.Core` can supply its own. Caps
-are a predicate on keys, which caps' target grammar decides. A9 waits for Samuel; this models its recommendation, and
-every theorem below depends on it. -/
+A key is (Doc, branch, depth, window), `WantKey`; the laws hold for any key with equality. Caps are a predicate on keys,
+which caps' target grammar decides. A9 was decided as recommended (Samuel, 30 Oct 2026). -/
 
 namespace Aven.DB.Engine
+
+open Aven.Core
+
+/-- How much of a Doc: that it exists and its version, its Records too, or its files' bytes too. -/
+inductive Depth where
+  | head | records | files
+  deriving DecidableEq, Repr
+
+/-- Which part of a Doc's history or a file: the newest `n` Records, everything since a version, everything, or a byte
+range of a file (the playhead). -/
+inductive Window where
+  | newest (n : Nat)
+  | since (v : Version)
+  | all
+  | bytes (lo hi : Nat)
+  deriving DecidableEq, Repr
+
+/-- The unit the queue orders (A9). -/
+structure WantKey where
+  doc : DocId
+  branch : Bytes
+  depth : Depth
+  window : Window
+  deriving DecidableEq, Repr
 
 /-- `screen` and `turn` are the two kinds of `now`: the screen's comes before a background turn's. -/
 inductive Tier where

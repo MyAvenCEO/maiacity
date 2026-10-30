@@ -24,12 +24,15 @@ import Aven.DB.Engine
   lines, forks and what its chat shows (`Aven.DB.Chains`); what a line's device signs; and blobs read as lines or
   refused as not canonical (`Aven.DB.Chains.read`). Lines are named by labels,
   which aven-db-core's tests replace with the hashes of real signed blobs.
-- `queries.json`: Records, the Docs held, a target and what it resolves to, a stored query; the answer (refused,
+- `queries.json`: a directory's genesis facts, Records, the Docs held, a target, a stored query; the answer (refused,
   complete, or short with the Docs missing), the query's bound and cost, and the work it did (`Aven.DB.Engine.Query`).
 - `wants.json`: wants, the keys caps allow and each key's prerequisites; the queue, one round over the pages left with
   the device's uploads first, and what eviction to a budget keeps (`Aven.DB.Engine.Wants`).
-- `mutations.json`: a writer, its counter, a Doc's Records and core operations; the Records after the commit, or why it
-  was refused (`Aven.DB.Engine.Mutate`).
+- `mutations.json`: a writer id, its counter, its grants, a Doc's Records and core operations; the footprint and
+  whether the grants cover it, the Records after the commit or why it was refused, and every reader's check of the
+  diff (`Aven.DB.Engine.Mutate`, `Aven.DB.Engine.Footprint`).
+- `lookups.json`: a shape, the Records and Docs at version V, the Records now, the Docs unfolded since and listed now, a
+  probe; the index at V, its hits, the candidates, the query over them and the folded index (`Aven.DB.Engine.Index`).
 - `merges.json`: one place's base, the target's and the other branch's values and the merger's choice; the merged value,
   and backing out a commit (`Aven.DB.Docs.Merge`).
 - `lenses.json`: writes of a todo's done-ness by v0 and v1 apps; what a v0 reader reads (`Aven.DB.Docs.Lens`).
@@ -473,7 +476,7 @@ def lenses : List Json :=
 /-! ## The engine -/
 
 section Engine
-open Aven.DB.Engine Aven.DB.Engine.Examples
+open Aven.Core Aven.DB.Engine Aven.DB.Engine.Examples
 
 def pick {α : Type} (r : Rng) (xs : List α) (d : α) : α × Rng :=
   let (i, r) := r.below (max 1 xs.length)
@@ -489,28 +492,36 @@ def subset {α : Type} (r : Rng) (xs : List α) : List α × Rng := Id.run do
     if b = 1 then out := out.push x
   return (out.toList, r)
 
-def randomRecord (r : Rng) (i : Nat) : Rec String String V × Rng :=
-  let (doc, r) := pick r ["d1", "d2", "d3"] "d1"
-  let (ty, r) := pick r ["a", "b"] "a"
-  let (k, r) := r.below 4
-  (⟨doc, ty, [("id", .s s!"r{i}"), ("k", .n k)]⟩, r)
+def gDocs : List DocId := ["d1", "d2", "d3"].map doc
+def gTypes : List DocId := ["type:a", "type:b"].map doc
+def gDir : List Facts := [⟨doc "d1", vault "v1", doc "type:list"⟩, ⟨doc "d2", vault "v1", doc "type:list"⟩,
+  ⟨doc "d3", vault "v2", doc "type:list"⟩]
+def gTargets : List Target := [.doc (doc "d1"), .vault (vault "v1") false, .vault (vault "v2") false,
+  .vaultType (vault "v1") (doc "type:list") false]
 
-def randomQuery (r : Rng) : Nat → Query String V × Rng
-  | 0 => let (ty, r) := pick r ["a", "b"] "a"; (.scan ty, r)
+def randomRecord (r : Rng) (i : Nat) : Rec Value × Rng :=
+  let (d, r) := pick r gDocs (doc "d1")
+  let (ty, r) := pick r gTypes (doc "type:a")
+  let (k, r) := r.below 4
+  (⟨d, ty, rows [("id", text s!"r{i}"), ("k", .uint k)]⟩, r)
+
+def randomQuery (r : Rng) : Nat → Query Value × Rng
+  | 0 => let (ty, r) := pick r gTypes (doc "type:a"); (.scan ty, r)
   | d + 1 =>
     let (op, r) := r.below 9
     let (q, r) := randomQuery r d
     let (q2, r) := randomQuery r d
     let (k, r) := r.below 4
     let (cmp, r) := pick r [Cmp.eq, .ne, .lt, .le] .eq
+    let col := utf8 "k"
     match op with
-    | 0 => (.filter "k" cmp (.n k) q, r)
-    | 1 => (.project ["k"] q, r)
-    | 2 => (.join q q2 "k" "k", r)
-    | 3 => (.leftJoin q q2 "k" "k", r)
-    | 4 => (.anti q q2 "k" "k", r)
-    | 5 => (.order "k" q, r)
-    | 6 => (.group "k" q, r)
+    | 0 => (.filter col cmp (.uint k) q, r)
+    | 1 => (.project [col] q, r)
+    | 2 => (.join q q2 col col, r)
+    | 3 => (.leftJoin q q2 col col, r)
+    | 4 => (.anti q q2 col col, r)
+    | 5 => (.order col q, r)
+    | 6 => (.group col q, r)
     | 7 => (.limit k q, r)
     | _ => (q, r)
 
@@ -523,36 +534,34 @@ def randomQueryVector (seed : Nat) : Json := Id.run do
     let (rec, r') := randomRecord r i
     db := db.push rec
     r := r'
-  let (held, r1) := subset r ["d1", "d2", "d3"]
-  let (resolves, r2) := subset r1 ["d1", "d2", "d3"]
-  let (t, r3) := r2.below 8
-  let (q, _) := randomQuery r3 2
-  return queryVector s!"seed {seed}" db.toList held (if t = 0 then none else some "t") resolves q
+  let (held, r1) := subset r gDocs
+  let (t, r2) := r1.below 9
+  let (q, _) := randomQuery r2 2
+  return queryVector s!"seed {seed}" gDir db.toList held ⟨gTargets[t]?, q⟩
 
 def queries : List Json := queryExamples ++ (List.range generated).map fun i => randomQueryVector (i + 1)
 
-def keyNames : List String := ["k0", "k1", "k2", "k3", "k4", "k5"]
+def gKeys : List WantKey := ["k0", "k1", "k2", "k3", "k4", "k5"].map fun l => key l .records
 
 /-- Each key's prerequisites among the keys before it, closed: what a prerequisite needs is a prerequisite too. -/
-def randomPre (r : Rng) : List (String × List String) × Rng := Id.run do
+def randomPre (r : Rng) : List (WantKey × List WantKey) × Rng := Id.run do
   let mut r := r
-  let mut pre : List (String × List String) := []
-  for i in [0:keyNames.length] do
-    let (direct, r') := subset r (keyNames.take i)
+  let mut pre : List (WantKey × List WantKey) := []
+  for i in [0:gKeys.length] do
+    let (direct, r') := subset r (gKeys.take i)
     r := r'
     let closed := direct.foldl (fun acc k => acc ++ (pre.lookup k).getD [] ++ [k]) []
-    let once := keyNames.filter (· ∈ closed)
-    pre := pre ++ [(keyNames.getD i "k0", once)]
+    pre := pre ++ [(gKeys.getD i (key "k0" .records), gKeys.filter (closed.contains ·))]
   return (pre.filter (!·.2.isEmpty), r)
 
 def randomWantVector (seed : Nat) : Json := Id.run do
   let r := Rng.seed (seed + 8000)
   let (n, r) := r.below 7
   let mut r := r
-  let mut ws : Array (Want String) := #[]
-  let mut kept : Array (Kept String) := #[]
+  let mut ws : Array (Want WantKey) := #[]
+  let mut kept : Array (Kept WantKey) := #[]
   for _ in [0:n] do
-    let (k, r1) := pick r keyNames "k0"
+    let (k, r1) := pick r gKeys (key "k0" .records)
     let (t, r2) := pick r1 [Tier.screen, .turn, .next, .later, .idle] .idle
     let (sg, r3) := r2.below 5
     let (b, r4) := r3.below 200
@@ -560,33 +569,37 @@ def randomWantVector (seed : Nat) : Json := Id.run do
     ws := ws.push ⟨k, t, sg⟩
     kept := kept.push ⟨k, t, b, u⟩
     r := r5
-  let (caps, r1) := subset r keyNames
+  let up := key "up" .records
+  let (caps, r1) := subset r gKeys
   let (pre, r2) := randomPre r1
-  let (lk, r3) := subset r2 ("up" :: keyNames)
-  let mut left : Array (String × Nat) := #[]
+  let (lk, r3) := subset r2 (up :: gKeys)
+  let mut left : Array (WantKey × Nat) := #[]
   let mut r4 := r3
   for k in lk do
     let (m, r') := r4.below 4
     left := left.push (k, m)
     r4 := r'
-  let (got, r5) := subset r4 ("up" :: keyNames)
+  let (got, r5) := subset r4 (up :: gKeys)
   let (budget, _) := r5.below 600
-  return wantVector s!"seed {seed}" ws.toList caps pre left.toList ["up"] got budget kept.toList
+  return wantVector s!"seed {seed}" ws.toList caps pre left.toList [up] got budget kept.toList
 
 def wants : List Json := wantExamples ++ (List.range generated).map fun i => randomWantVector (i + 1)
 
-def randomOp (r : Rng) : Op String String V × Rng :=
+def randomOp (r : Rng) : Op Value × Rng :=
   let (op, r) := r.below 4
-  let (ty, r) := pick r ["task", "note"] "task"
+  let (ty, r) := pick r [task, note] task
   let (k, r) := r.below 3
   let (n, r) := r.below 4
   match op with
   | 0 => let (isRef, r) := r.below 2
-         (.put ty [("x1", if isRef = 0 then .lit (.n k) else .ref n)], r)
-  | 1 => (.patch ty [("x1", .n k)] [("done", .n 1)], r)
-  | 2 => (.remove ty [("done", .n 1)], r)
-  | _ => let (w, r) := pick r ["dev1", "dev2", "dev3"] "dev1"
-         (.edit ⟨w, 4, 0⟩ "x1" (.n k), r)
+         (.put ty [(utf8 "x1", if isRef = 0 then .lit (.uint k) else .ref n)], r)
+  | 1 => (.patch ty (rows [("x1", .uint k)]) (rows [("done", .uint 1)]), r)
+  | 2 => (.remove ty (rows [("done", .uint 1)]), r)
+  | _ => let (w, r) := pick r [1, 2, 3] 1
+         (.edit ty ⟨w, 4, 0⟩ (utf8 "x1") (.uint k), r)
+
+def gGrants : List (List Grant) := [everything [task, note], everything [task],
+  [⟨task, .patch, some [utf8 "done"]⟩, ⟨task, .putNew, none⟩], []]
 
 def randomMutationVector (seed : Nat) : Json := Id.run do
   let r := Rng.seed (seed + 9000)
@@ -597,10 +610,42 @@ def randomMutationVector (seed : Nat) : Json := Id.run do
     let (op, r') := randomOp r
     ops := ops.push op
     r := r'
-  let (c, _) := r.below 9
-  return mutationVector s!"seed {seed}" "dev1" c todo ops.toList
+  let (c, r1) := r.below 9
+  let (g, _) := pick r1 gGrants []
+  return mutationVector s!"seed {seed}" 1 c g todo ops.toList
 
 def mutations : List Json := mutationExamples ++ (List.range generated).map fun i => randomMutationVector (i + 1)
+
+def gInvoices (r : Rng) (docs : List DocId) : List (Rec Value) × Rng := Id.run do
+  let mut r := r
+  let mut out := #[]
+  for d in docs do
+    let (c, r1) := pick r ["ana", "ben", "cai"] "ana"
+    let (t, r2) := r1.below 5
+    let (twice, r3) := r2.below 4
+    out := out.push (⟨d, invoice, rows [("customer", text c), ("total", .uint (100 * t))]⟩ : Rec Value)
+    if twice = 0 then out := out.push ⟨d, invoice, rows [("customer", text c), ("total", .uint (100 * t + 50))]⟩
+    r := r3
+  return (out.toList, r)
+
+def randomIndexVector (seed : Nat) : Json := Id.run do
+  let r := Rng.seed (seed + 9500)
+  let all := (List.range 6).map inv
+  let (docsV, r1) := subset r all
+  let (dbV, r2) := gInvoices r1 docsV
+  let (unfolded, r3) := subset r2 all
+  -- what the directory lists now: everything listed at V or unfolded, minus unfolded Docs that went
+  let (gone, r4) := subset r3 unfolded
+  let now := all.filter fun d => (docsV.contains d || unfolded.contains d) && !gone.contains d
+  let (fresh, r5) := gInvoices r4 (unfolded.filter now.contains)
+  let db := dbV.filter (fun x => !unfolded.contains x.doc) ++ fresh
+  let (c, r6) := pick r5 ["ana", "ben", "cai"] "ana"
+  let (lo, r7) := r6.below 5
+  let (ranged, _) := r7.below 2
+  let p : Probe Value := ⟨[text c], if ranged = 0 then none else some (.uint (100 * lo), .uint 10000)⟩
+  return indexVector s!"seed {seed}" byCustomer dbV db docsV unfolded now p
+
+def lookups : List Json := indexExamples ++ (List.range generated).map fun i => randomIndexVector (i + 1)
 
 end Engine
 
@@ -637,5 +682,5 @@ def main (args : List String) : IO Unit := do
       ("wire.json", wire), ("store.json", store), ("hashes.json", hashes), ("refs.json", refs),
       ("chat.json", chat), ("files.json", files), ("chats.json", chats), ("queries.json", queries),
       ("wants.json", wants), ("mutations.json", mutations), ("merges.json", merges), ("lenses.json", lenses),
-      ("indexes.json", indexes)] do
+      ("indexes.json", indexes), ("lookups.json", lookups)] do
     IO.FS.writeFile (dir / file) (render vs)
