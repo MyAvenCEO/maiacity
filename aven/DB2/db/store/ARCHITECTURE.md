@@ -57,8 +57,9 @@ Above the contract, everything is the same. Below it, each place gets the driver
  iroh-blobs ─► adapter ─► Store ─► opfs-sync ─► OPFS sync access handles (Peer-Lights)
 ```
 
-- **"The store" is the whole package** (`db/store`, `aven-db-store`): the adapter, the contract and the backends,
-  OpenDAL included. iroh-blobs is avenPEER's; the storage itself (a bucket, a folder, OPFS) is outside.
+- **"The store" is the whole package:** the adapter, the contract and the backends, OpenDAL included. It moves to
+  `aven/DB2/store` (Samuel, 30 Oct 2026: the refactor reshapes everything anyway), as the first step of opfs-sync's
+  work. iroh-blobs is avenPEER's; the storage itself (a bucket, a folder, OPFS) is outside.
 - **OpenDAL is only a driver under the store.** It never sits above the contract, and nothing outside `db/store`
   sees its types.
 - **opfs-sync replaces OpenDAL on OPFS.** It implements `Store` directly, so the `opendal-opfs` fork, its
