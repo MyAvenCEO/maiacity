@@ -3,19 +3,13 @@
 # beside them, outside the workspace. The repository's root workspace, v1's, excludes this folder.
 [workspace]
 resolver = "3"
-members = ["db/core", "db/store", "id/core", "peer/native", "peer/light"]
-# OpenDAL's OPFS service, forked so it runs in a worker too (db/store/opendal-opfs/FORK.md): not ours to lint or test,
-# only patched in
-exclude = ["db/store/opendal-opfs"]
+members = ["db/core", "store", "id/core", "peer/native", "peer/light"]
 
 [workspace.package]
 edition = "2024"
 rust-version = "1.99"
 license = "UNLICENSED"
 publish = false
-
-[patch.crates-io]
-opendal-service-opfs = { path = "db/store/opendal-opfs" }
 
 # Third-party crates build optimised, with line tables only (SANDBOX.md, "Open questions", 2): they come precompiled
 # in the box's image, so it costs nothing in the loop, and the Peer-Light's wasm shrinks from 21.5 MB to 8 MB,

@@ -8,7 +8,10 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use aven_db_core::chain::{Body, Line};
 use aven_db_core::chat::{Kind, Message};
+use aven_db_store::{RefName, backend};
+use aven_peer::chats::{self, Chats};
 use aven_peer::members::{Gate, Hook};
 use aven_peer::relay::Allow;
 use aven_peer::room::Room;
@@ -52,6 +55,7 @@ fn key(seed: u8) -> SecretKey {
 
 struct Peer {
     room: Room,
+    store: chats::Shared,
     lines: Lines,
     _router: Router,
     endpoint: Endpoint,
@@ -97,6 +101,19 @@ async fn peer(
     let router = Router::builder(endpoint.clone())
         .accept(iroh_gossip::ALPN, gossip.clone())
         .spawn();
+    let store: chats::Shared = Arc::new(backend::memory().unwrap());
+    let chats = Chats::open(
+        name.into(),
+        "aven",
+        secret.clone(),
+        gate.clone(),
+        lines.notes(),
+        store.clone(),
+    )
+    .await
+    .unwrap();
+    // no link to the Aven Peer here: each peer knows its own head, which is none
+    chats.learn().await;
     let room = Room::join(
         &gossip,
         name.into(),
@@ -105,11 +122,13 @@ async fn peer(
         gate,
         bootstrap,
         lines.notes(),
+        Some(chats),
     )
     .await
     .unwrap();
     Peer {
         room,
+        store,
         lines,
         _router: router,
         endpoint,
@@ -168,6 +187,58 @@ async fn members_chat_through_the_relay_and_a_stranger_is_dropped() {
     let heard = |l: &Value| l["event"] == "chat" && l["text"] == "hello" && l["from"] == "alice";
     assert!(b.lines.wait(heard).await.is_some());
     assert!(hub.lines.wait(heard).await.is_some());
+
+    // the line is a blob in every store, and the Aven Peer's chat-<alice> points at it
+    let alice_ref = RefName::new(format!("chat-{}", key(2).public())).unwrap();
+    let head = hub
+        .store
+        .get_ref(&alice_ref)
+        .await
+        .unwrap()
+        .expect("chat-<alice>");
+    let line = Line::parse(&hub.store.get(&head).await.unwrap().unwrap()).unwrap();
+    assert_eq!(
+        (line.body, line.seq, line.prev),
+        (Body::Text("hello".into()), 1, None)
+    );
+    assert_eq!(b.store.get_ref(&alice_ref).await.unwrap(), Some(head));
+
+    // a line of a device that is no member's, sent through a member: dropped, and never stored
+    let mut stranger = Line {
+        network: "aven".into(),
+        device: eve.public().to_string(),
+        seq: 1,
+        prev: None,
+        at: 1,
+        sig: String::new(),
+        body: Body::Text("a line from outside".into()),
+    };
+    stranger.sig = eve
+        .sign(stranger.signs().as_bytes())
+        .to_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    a.room.gossip_line(&stranger.blob()).await;
+    // the first stranger the Aven Peer drops: the forged message below is the second
+    let dropped = || {
+        hub.lines
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|l| l["event"] == "dropped" && l["why"] == "notMember")
+            .count()
+    };
+    for _ in 0..100 {
+        if dropped() >= 1 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(dropped(), 1);
+    let eve_ref = RefName::new(format!("chat-{}", eve.public())).unwrap();
+    assert_eq!(hub.store.get_ref(&eve_ref).await.unwrap(), None);
 
     // a line signed by a key that is no member's, sent through a member: every other peer drops it
     let mut forged = Message {
@@ -248,6 +319,84 @@ async fn a_member_admitted_later_gets_into_the_room() {
     // the door admits her, as both learn once her join is taken
     hub_gate.set(both_keys.clone());
     mine.set(both_keys);
+    let both =
+        |l: &Value| l["event"] == "room" && l["present"].as_array().is_some_and(|p| p.len() == 2);
+    assert!(
+        hub.lines.wait(both).await.is_some(),
+        "{:?}",
+        hub.lines.0.lock().unwrap()
+    );
+    assert!(
+        a.lines.wait(both).await.is_some(),
+        "{:?}",
+        a.lines.0.lock().unwrap()
+    );
+}
+
+/// A Peer that starts before the Aven Peer's name resolves (the box's `up`, a restart of both) waits for it, then joins
+/// the room: it never dials a bootstrap it can't reach, which iroh-gossip 0.101 would never dial again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_peer_waits_for_the_aven_peers_name_then_joins_the_room() {
+    let (aven, alice) = (key(21), key(22));
+    let keys = [
+        (aven.public(), "aven-peer".to_string(), None),
+        (alice.public(), "alice".to_string(), None),
+    ];
+    let gate = || {
+        let gate = Gate::default();
+        gate.set(keys.clone());
+        gate
+    };
+    let mut relay = iroh_relay::server::RelayConfig::new(([127, 0, 0, 1], 0));
+    relay.access = Arc::new(Allow {
+        me: "aven-peer".into(),
+        gate: gate(),
+        door: None,
+        notes: Lines::default().notes(),
+    });
+    let mut server = iroh_relay::server::ServerConfig::default();
+    server.relay = Some(relay);
+    let server = iroh_relay::server::Server::spawn(server).await.unwrap();
+    let url: RelayUrl = format!("http://{}", server.http_addr().unwrap())
+        .parse()
+        .unwrap();
+    let hub = peer("aven-peer", aven.clone(), &url, gate(), None).await;
+    let addr = EndpointAddr::new(aven.public()).with_relay_url(url.clone());
+
+    // the Aven Peer's name resolves only on the fourth try, as a container's does while it starts
+    let tries = Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let resolve: aven_peer::link::Resolve = {
+        let (tries, addr) = (tries.clone(), addr.clone());
+        Arc::new(move || {
+            let (n, addr) = (
+                tries.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+                addr.clone(),
+            );
+            Box::pin(async move {
+                if n < 3 {
+                    Err("Name or service not known".to_string())
+                } else {
+                    Ok(addr)
+                }
+            })
+        })
+    };
+    let lines = Lines::default();
+    let found = aven_peer::link::resolved(&resolve, "alice", &lines.notes()).await;
+    assert_eq!(found, addr);
+    assert_eq!(tries.load(std::sync::atomic::Ordering::SeqCst), 4);
+    let waited: Vec<_> = lines
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|l| l["event"] == "waiting")
+        .cloned()
+        .collect();
+    assert_eq!(waited.len(), 1, "one waiting line: {waited:?}");
+
+    // then the room, its bootstrap known
+    let a = peer("alice", alice, &url, gate(), Some(found)).await;
     let both =
         |l: &Value| l["event"] == "room" && l["present"].as_array().is_some_and(|p| p.len() == 2);
     assert!(

@@ -1,8 +1,7 @@
 // The box's tag (SANDBOX.md, "The box"): the first 16 hex digits of a SHA-256 over every file the image's build reads,
 // so every checkout runs exactly its own box. The same files make the build's context: the Dockerfile, deps.sh and
-// .dockerignore, avenDB's Cargo.toml and Cargo.lock, every crate's Cargo.toml, and the patched fork of OpenDAL's OPFS
-// service (db/store/opendal-opfs), whole. aven/DB2/.dockerignore admits the same files, and the image workflow
-// (.github/workflows/avensandbox-image.yml) runs when any of them changes.
+// .dockerignore, avenDB's Cargo.toml and Cargo.lock, and every crate's Cargo.toml. aven/DB2/.dockerignore admits the
+// same files, and the image workflow (.github/workflows/avensandbox-image.yml) runs when any of them changes.
 //
 // `up.mjs` imports it; the workflows run it with node: `node aven/DB2/sandbox/box/tag.mjs` prints the tag, `--files`
 // the files. Node's and bun's own modules only, so it runs on a bare runner.
@@ -13,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 const db2 = resolve(fileURLToPath(new URL('.', import.meta.url)), '../..');
 const fixed = ['sandbox/box/Dockerfile', 'sandbox/box/deps.sh', 'sandbox/box/tag.mjs', '.dockerignore', 'Cargo.toml', 'Cargo.lock'];
-const whole = ['db/store/opendal-opfs'];
+const whole = [];
 // what .dockerignore leaves out wherever it is
 const skipped = new Set(['target', 'node_modules', '.git', '.lake', 'runs', 'dist', 'deliverables']);
 

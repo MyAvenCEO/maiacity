@@ -8,8 +8,8 @@ set -e
 cd /work
 
 # A stub for every target a manifest names: the library, and each [[bin]], [[example]], [[test]] and [[bench]] at its
-# `path` or cargo's default for its name. A crate that came with its source is third-party code: the patched fork of
-# OpenDAL's OPFS service (db/store/opendal-opfs), which opendal itself calls, so it can't be a stub.
+# `path` or cargo's default for its name. A crate that came with its source is third-party code, kept whole (none
+# today).
 for manifest in $(find . -name Cargo.toml -not -path ./Cargo.toml); do
 	dir=$(dirname "$manifest")
 	[ -e "$dir/src/lib.rs" ] && continue
@@ -50,5 +50,5 @@ for target in "" "--target wasm32-unknown-unknown"; do
 	done
 done
 rm -rf target/debug/incremental target/wasm32-unknown-unknown/*/incremental
-left=$(find target -name '*aven*' -o -name '*opendal_service_opfs*' -o -name 'opendal-service-opfs-*' | head -5)
+left=$(find target -name '*aven*' | head -5)
 if [ -n "$left" ]; then echo "stub artifacts left: $left"; exit 1; fi

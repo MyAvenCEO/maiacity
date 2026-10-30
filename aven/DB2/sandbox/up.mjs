@@ -200,7 +200,9 @@ async function check() {
 		(await inEngines(run)) &&
 		(await claims(run)) &&
 		(await members(run)) &&
-		(await chats(run));
+		(await chats(run)) &&
+		(await domes(run)) &&
+		(await shares(run));
 	say(`${passed ? 'check passed' : 'check FAILED'}; screenshots and report in aven/DB2/${run}/`);
 	return passed ? 0 : 1;
 }
@@ -245,6 +247,33 @@ async function keeps(run) {
 	for (const problem of problems) say(`record: ${problem}`);
 	if (report.ok) say(`a restart kept all four records, and a wipe emptied them (${(report.ms / 1000).toFixed(1)} s)`);
 	return report.ok;
+}
+
+// A file's way (store/README.md, "How it is checked"), by sandbox/files.mjs: Alice Peer shares a 200 MiB file from its
+// folder, written beside it and moved in; Bob's Peer-Light seeks to its middle, fetching less than a quarter of it, and
+// the Aven Peer keeps it; then Alice Peer stops, Bob's Peer-Light fetches the whole file from the Aven Peer, and Alice
+// Peer starts again. Only the host stops a peer, so the step's phases run around it. The file is announced as a `file`
+// line on Alice Peer's chain (`--files` says it through `Room::share`), and the Aven Peer runs `keep::keep` on each
+// file line it chains. It runs after the dome's step, which leaves Bob's tab closed (one key, one Peer-Light).
+async function shares(run) {
+	const timed = Date.now();
+	const share = [
+		'mkdir -p /data/files',
+		'head -c 209715200 /dev/urandom > /data/files/.movie.mp4',
+		'mv /data/files/.movie.mp4 /data/files/movie.mp4',
+		'dd if=/data/files/movie.mp4 bs=65536 skip=1600 count=1 2>/dev/null | sha256sum',
+	].join(' && ');
+	const sha = (await $`${compose} exec -T alice sh -c ${share}`.env(env).quiet().text()).trim().split(' ')[0];
+	const step = async (phase) =>
+		(await $`${compose} exec -T browsers node sandbox/files.mjs ${phase} ${run} ${timed} ${sha}`.env(env).nothrow()).exitCode === 0;
+	let ok = await step('seek');
+	if (ok) {
+		await $`${compose} stop alice`.env(env).quiet();
+		ok = await step('whole');
+		await $`${compose} start alice`.env(env).quiet();
+	}
+	say(`${ok ? "a 200 MiB file: a seek fetched less than a quarter, and the Aven Peer served it once Alice was gone" : 'the files step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s)`);
+	return ok;
 }
 
 // avenOS in all three engines (sandbox/engines.mjs): the cast's two Peer-Lights in WebKit and Firefox, live on their own
@@ -320,6 +349,8 @@ async function members(run) {
 
 // avenOS's Invite, Join and Chat (MILESTONE2.md, steps 1, 2 and 4), on production's stand-in after the members' step
 // leaves its store empty: sandbox/chat.mjs
+// the city-dome's history and files in the cast's box: sandbox/dome.mjs
+const domes = async (run) => (await $`${compose} exec -T browsers node sandbox/dome.mjs ${run}`.env(env).nothrow()).exitCode === 0;
 const chats = async (run) => (await $`${compose} exec -T browsers node sandbox/chat.mjs ${run}`.env(env).nothrow()).exitCode === 0;
 
 async function up(args) {
@@ -411,6 +442,10 @@ if (import.meta.main) {
 		else if (command === 'box') process.exit(await inBox(args.length ? args : ['bash']));
 		// the members' step alone, on a box that is up (the check runs it after the others)
 		else if (command === 'members') process.exit((await members(`runs/members-${Date.now()}`)) ? 0 : 1);
+		// the city-dome's step alone, on a box that is up
+		else if (command === 'dome') process.exit((await domes(`runs/dome-${Date.now()}`)) ? 0 : 1);
+		// the files' step alone
+		else if (command === 'files') process.exit((await shares(`runs/files-${Date.now()}`)) ? 0 : 1);
 		else throw new Error(`unknown command ${command}: up [--check], down [--wipe], logs, shot, build, doctor, box <command>`);
 	} catch (error) {
 		console.error(`avenSANDBOX: ${error.message}`);

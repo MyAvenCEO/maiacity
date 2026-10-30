@@ -11,8 +11,8 @@
 //                                              invite is kept out by the relay (3); the admin and the member chat, the
 //                                              Aven Peer says who joined, and a message signed by a key that is no
 //                                              member's is dropped by every peer (5)
-//   node sandbox/members.mjs restarted <run>   after the Aven Peer restarted: the same member, let in again, and an
-//                                              empty chat (6)
+//   node sandbox/members.mjs restarted <run>   after the Aven Peer restarted: the same member, let in again, and the
+//                                              chat kept: the Aven Peer's store holds every line (6; store/README.md)
 //
 // `bun run up --check` runs the phases, restarts the Aven Peer between them, and checks its hook from a stranger Peer
 // dialling it directly (3). What the door admits and what a join may do is the model's (`Aven.ID.Invite`, its traces
@@ -63,14 +63,13 @@ async function attach(page) {
 	await page.goto(`${origin}/`);
 	await page.locator('main[data-view]').first().waitFor({ timeout: 30_000 });
 	return page.evaluate(async () => {
-		// the page's own worker, opened as the page opens it: Vite names the worker's URL, and a shared worker is its URL
-		// and name
-		const { worker } = (await import('/peer/open.js')).openWorker('network');
+		// the page's Peer-Light, reached as the page reaches it: over its BroadcastChannel, from a tab of its own
+		const { port } = (await import('/peer/open.js')).openWorker('network');
 		const heard = [];
 		// what a statement needs computed, asked of the Peer-Light and answered to this port alone
 		const waiting = new Map();
 		let asked = 0;
-		worker.port.onmessage = ({ data }) => {
+		port.onmessage = ({ data }) => {
 			const line = JSON.parse(data);
 			if (line.event !== 'answer') return heard.push(line);
 			const { resolve, reject } = waiting.get(line.id) ?? {};
@@ -78,7 +77,7 @@ async function attach(page) {
 			if (line.error === undefined) resolve?.(line.value);
 			else reject?.(new Error(line.error));
 		};
-		worker.port.start();
+		port.start();
 		const id = new Proxy(
 			{},
 			{
@@ -86,7 +85,7 @@ async function attach(page) {
 					(...args) =>
 						new Promise((resolve, reject) => {
 							waiting.set(++asked, { resolve, reject });
-							worker.port.postMessage({ ask: { id: asked, fn, args } });
+							port.postMessage({ ask: { id: asked, fn, args } });
 						}),
 			},
 		);
@@ -100,10 +99,10 @@ async function attach(page) {
 			const r = got.response;
 			return { clientData: new TextDecoder().decode(r.clientDataJSON), authData: hex(r.authenticatorData), signature: hex(r.signature) };
 		};
-		const send = (frame, statement) => worker.port.postMessage({ send: JSON.stringify({ frame, statement: JSON.stringify(statement) }) });
+		const send = (frame, statement) => port.postMessage({ send: JSON.stringify({ frame, statement: JSON.stringify(statement) }) });
 		for (let i = 0; i < 300 && !heard.some((l) => l.event === 'started'); i++) await new Promise((done) => setTimeout(done, 50));
 		const me = heard.find((l) => l.event === 'started');
-		window.peer = { worker, heard, id, hex, assertion, send, key: me?.key };
+		window.peer = { port, heard, id, hex, assertion, send, key: me?.key };
 		return me?.key;
 	});
 }
@@ -152,18 +151,18 @@ const join = (b, secret, name) =>
 		return s.person;
 	}, { secret, name });
 
-const say = (b, text) => b.page.evaluate((text) => window.peer.worker.port.postMessage({ say: text }), text);
+const say = (b, text) => b.page.evaluate((text) => window.peer.port.postMessage({ say: text }), text);
 
 // A message signed by a key that is no member's, sent through a member's Peer-Light as it is: every peer must drop it
 const forge = (b, text) =>
 	b.page.evaluate(async (text) => {
-		const { hex, worker } = window.peer;
+		const { hex, port } = window.peer;
 		const pair = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
 		const from = hex(await crypto.subtle.exportKey('raw', pair.publicKey));
 		const at = Date.now();
 		const body = `avenDB chat 1\nnetwork aven\nfrom ${from}\nat ${at}\nkind say\n${text}`;
 		const sig = hex(await crypto.subtle.sign('Ed25519', pair.privateKey, new TextEncoder().encode(body)));
-		worker.port.postMessage({ post: JSON.stringify({ network: 'aven', from, at, kind: 'say', text, sig }) });
+		port.postMessage({ post: JSON.stringify({ network: 'aven', from, at, kind: 'say', text, sig }) });
 		return from;
 	}, text);
 
@@ -262,7 +261,7 @@ if (phase === 'members') {
 }
 
 if (phase === 'restarted') {
-	// 6. a restart keeps the members and empties the chat
+	// 6. a restart keeps the members and the chat: the Aven Peer loads every chain from its store
 	const since = report.restartedAt ?? 0;
 	const network = await line((l) => prod('network')(l) && l.claimed, since);
 	if (JSON.stringify(network?.members) !== JSON.stringify(report.memberIds)) problems.push(`after a restart the members are ${JSON.stringify(network?.members)}`);
@@ -272,7 +271,8 @@ if (phase === 'restarted') {
 	const memberDevice = device(member.key);
 	if (!(await line((l) => l.peer === memberDevice && l.event === 'status' && l.phase === 'live', opened))) problems.push("after a restart the member's browser isn't live");
 	await wait(1000);
-	if (lines().some((l) => l.t >= since && l.event === 'chat' && l.text?.startsWith('hello from'))) problems.push('after a restart the chat still holds the lines before');
+	for (const text of ['hello from the admin', 'hello from the member'])
+		if (!lines().some((l) => l.t >= since && l.peer === 'prod-peer' && l.event === 'chat' && l.text === text)) problems.push(`after a restart the Aven Peer lost "${text}"`);
 	const at = Date.now();
 	await say(member, 'hello again');
 	if (!(await line((l) => l.peer === 'prod-peer' && l.event === 'chat' && l.text === 'hello again', at))) problems.push("after a restart the member's line did not arrive");

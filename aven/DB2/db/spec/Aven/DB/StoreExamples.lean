@@ -4,7 +4,7 @@ import Aven.DB.Store
 # The store's examples
 
 Traces with the result of every call written out by hand: what the conformance suite checked case by case before
-(`db/store/src/conformance.rs`), now written once, here. `lake build` replays each through the model with BLAKE3 as
+(`store/src/conformance.rs`), now written once, here. `lake build` replays each through the model with BLAKE3 as
 its hash, and `lake exe vectors` exports them for every backend to replay. A blob's name is written `(nm b)`: the hash of
 its bytes, as `Blake3.hash` computes it, whose own answers `Aven.DB.Blake3` checks.
 -/
@@ -42,24 +42,27 @@ def y7 := noise 7000 4
 
 /-- A trace, the results it must give, and its name. -/
 def storeExamples : List (String × List Op × List Res) := [
-  ("a blob round trip", [.put a, .get (nm a), .has (nm a)],
-    [.hash (nm a), .bytes (some a), .yes true]),
+  ("a blob round trip", [.put a, .get (nm a), .has (nm a), .size (nm a)],
+    [.hash (nm a), .bytes (some a), .yes true, .size (some a.length)]),
   ("the same bytes twice are one blob", [.put big, .put big, .list],
     [.hash (nm big), .hash (nm big), .hashes [(nm big)]]),
-  ("the empty blob", [.put [], .get (nm []), .getRange (nm []) 0 0, .has (nm [])],
-    [.hash (nm []), .bytes (some []), .bytes (some []), .yes true]),
+  ("the empty blob", [.put [], .get (nm []), .getRange (nm []) 0 0, .has (nm []), .size (nm [])],
+    [.hash (nm []), .bytes (some []), .bytes (some []), .yes true, .size (some 0)]),
   ("a blob never put", [.get (nm (bytes "never put")), .getRange (nm (bytes "never put")) 0 1, .has (nm (bytes "never put")),
-      .delete (nm (bytes "never put")), .list],
-    [.bytes none, .bytes none, .yes false, .done, .hashes []]),
+      .size (nm (bytes "never put")), .delete (nm (bytes "never put")), .list],
+    [.bytes none, .bytes none, .yes false, .size none, .done, .hashes []]),
   ("ranges of a blob", [.put r, .getRange (nm r) 0 10, .getRange (nm r) 90 100, .getRange (nm r) 0 100, .getRange (nm r) 7 7,
       .getRange (nm r) 100 100, .getRange (nm r) 0 101, .getRange (nm r) 101 102, .getRange (nm r) 5 3],
     [.hash (nm r), .bytes (some (r.take 10)), .bytes (some (r.drop 90)), .bytes (some r), .bytes (some []),
       .bytes (some []), .range 0 101 100, .range 101 102 100, .range 5 3 100]),
-  ("blobs over a chunk", [.put x5, .put y7, .get (nm x5), .getRange (nm x5) 1000 1100, .getRange (nm y7) 4090 4100],
+  ("blobs over a chunk", [.put x5, .put y7, .get (nm x5), .getRange (nm x5) 1000 1100, .getRange (nm y7) 4090 4100,
+      .size (nm x5), .size (nm y7)],
     [.hash (nm x5), .hash (nm y7), .bytes (some x5), .bytes (some ((x5.drop 1000).take 100)),
-      .bytes (some ((y7.drop 4090).take 10))]),
-  ("list and delete", [.put h1, .put h2, .put h3, .delete (nm h2), .get (nm h2), .has (nm h2), .delete (nm h2), .list],
-    [.hash (nm h1), .hash (nm h2), .hash (nm h3), .done, .bytes none, .yes false, .done, .hashes (sort [(nm h1), (nm h3)])]),
+      .bytes (some ((y7.drop 4090).take 10)), .size (some 5000), .size (some 7000)]),
+  ("list and delete", [.put h1, .put h2, .put h3, .delete (nm h2), .get (nm h2), .has (nm h2), .size (nm h2), .delete (nm h2),
+      .list],
+    [.hash (nm h1), .hash (nm h2), .hash (nm h3), .done, .bytes none, .yes false, .size none, .done,
+      .hashes (sort [(nm h1), (nm h3)])]),
   ("a blob never changes, whatever is put after it", [.put x5, .put y7, .put x5, .get (nm x5), .list],
     [.hash (nm x5), .hash (nm y7), .hash (nm x5), .bytes (some x5), .hashes (sort [(nm x5), (nm y7)])]),
   ("a ref round trip", [.getRef "doc.3f9a.head", .setRef "doc.3f9a.head" none (nm (bytes "a")),
@@ -102,5 +105,14 @@ def hashExamples : List (String × Bool) :=
    ((h.take 63).toString ++ "g", false), ((nm []), true)]
 
 #guard hashExamples.all fun (s, ok) => validHash s == ok
+
+/-- A ref's text at rest and what it reads back as: the hash and a newline, as every driver writes it, and nothing
+else: the bare hash and every other text are no ref. -/
+def refExamples : List (String × Option Hash) :=
+  let h := nm (bytes "a ref")
+  [(refText h, some h), (h, none), (h ++ "\n\n", none), (h ++ "\r\n", none), (h ++ " ", none), ("\n", none),
+   ("", none), ((h.take 63).toString ++ "\n", none), (h.toUpper ++ "\n", none)]
+
+#guard refExamples.all fun (s, r) => readRef s == r
 
 end Aven.DB.Store

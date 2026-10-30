@@ -12,10 +12,8 @@ const dockerfile = 'sandbox/box/Dockerfile';
 // avenDB's own workflows, relative to aven/DB2
 const workflows = ['../../.github/workflows/avensandbox.yml', '../../.github/workflows/avensandbox-image.yml'];
 const leanToolchains = ['id/spec/lean-toolchain', 'db/spec/lean-toolchain'];
-// The fork of OpenDAL's OPFS service (db/store/opendal-opfs/FORK.md) is OpenDAL at one release: OpenDAL moves only with
-// a new fork, by hand.
-const held = { opendal: 'the fork db/store/opendal-opfs is this release: moving it means a new fork (FORK.md)' };
-held['opendal-core'] = held.opendal;
+// Pins held back by hand, each with its reason; none since the store's own opfs driver replaced OpenDAL's forked one.
+const held = {};
 // What ships together: the wasm-bindgen CLI follows the crate; Playwright's image follows the npm package
 const wasmBindgen = 'wasm-bindgen';
 
