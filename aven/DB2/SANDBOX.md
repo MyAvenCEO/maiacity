@@ -256,11 +256,11 @@ One image holds every tool; every command runs in it.
   - bun;
   - Lean, through elan;
   - the third-party crates (iroh, Loro, OpenDAL and the rest), already compiled, so a fresh box builds only our own
-    code.
+    code ([below](#the-third-party-crates-precompiled)).
 
   It's built for amd64 (cloud, CI) and arm64 (OrbStack on Apple Silicon, natively). A GitHub workflow builds it when
-  the box's files change and with every daily version bump. The repository is public, so the image is too, and it
-  pulls without a token. Each image is tagged with the hash of the box's inputs, so every checkout runs exactly its
+  any file its build reads changes, and with every daily version bump. The repository is public, so the image is too,
+  and it pulls without a token. Each image is tagged with a hash of those files, so every checkout runs exactly its
   own box; `latest` is main's.
 - **Containers** (`sandbox/box/compose.yml`):
   - `aven`: the Aven Peer, the Peer binary with `--relay`;
@@ -289,7 +289,7 @@ The image never holds our code. It holds the tools; our crates and pages come fr
 | Layer | Where it lives | Changes when |
 |---|---|---|
 | Tools: Rust, wasm-bindgen, bun, Lean, Chromium | the image | a version bump, at most daily |
-| Third-party crates, compiled | the image, keyed by `Cargo.lock` | a dependency changes |
+| Third-party crates, compiled | the image, keyed by its tag (`Cargo.lock`, the manifests, the fork) | a dependency changes |
 | Our code: crates, pages, spec | the checkout, mounted into the containers | every edit |
 | Our builds | one build folder in a Docker volume, kept across `up` and `down` | every build, incrementally |
 | Each peer's data | a volume per peer, the S3 server's included; `wipe` empties one | the peers write |
@@ -297,6 +297,39 @@ The image never holds our code. It holds the tools; our crates and pages come fr
 So a Rust edit costs one incremental build in `builder` and a restart of the peers that run it, about a second; a page
 edit is a hot reload; and nothing is ever re-imaged for our own changes. The Peers run the binary straight from the
 build folder, and Vite serves the Peer-Light's wasm from it, reloading the pages when it changes.
+
+### The third-party crates, precompiled
+
+The image's last layer compiles the workspace's dependencies, cargo-chef style
+([`sandbox/box/deps.sh`](sandbox/box/deps.sh)):
+
+- **The build context is `aven/DB2`,** cut down by its [`.dockerignore`](.dockerignore) to `Cargo.toml`, `Cargo.lock`,
+  every crate's `Cargo.toml`, the patched fork `db/store/opendal-opfs` whole (opendal calls into it, so it can't be a
+  stub), and `deps.sh`. Never our code.
+- **Each of our crates gets a stub:** an empty library, and `fn main() {}` for every bin, example, test and bench its
+  manifest names.
+- **The stubs build exactly as the loop builds them:** `cargo build -p aven-peer`, the Peer-Light's wasm
+  (`-p aven-peer-light --lib --target wasm32-unknown-unknown`), aven-id's wasm in release, and
+  `cargo test --workspace --no-run`. Same profiles, targets and features; no RUSTFLAGS anywhere. Then the stubs' own
+  artifacts go (`cargo clean -p`, each profile and target), and the fork's too, since the checkout brings its source
+  again with newer times. The downloaded `.crate` files go; cargo builds from the unpacked sources.
+- **Docker fills an empty named volume from the image's content at its mount path.** So the compiled crates sit at
+  `/work/target`, where `avensandbox_target` mounts, and their sources at `/opt/cargo/registry`, where
+  `avensandbox_cargo_registry` mounts: a new session's first build finds all 342 dependencies `Fresh` (`cargo build
+  -v`) and compiles only our five crates, plus the fork and opendal's thin facade for wasm. A volume that already holds
+  a build keeps it.
+- **The layers run tools first, crates last,** so a dependency change rebuilds only the crates' layer. GitHub keeps the
+  layers' cache in the registry, beside the image (`:cache-amd64`, `:cache-arm64`): the crates' layer is too big for
+  its 10 GB Actions cache.
+- **The tag** is the first 16 hex digits of a SHA-256 over one line per input, its path and its content's SHA-256:
+  `Dockerfile`, `deps.sh`, `tag.mjs`, `.dockerignore`, `Cargo.toml`, `Cargo.lock`, every `Cargo.toml` and the fork's
+  files. [`sandbox/box/tag.mjs`](sandbox/box/tag.mjs) is the one definition: `up.mjs` imports it, and both workflows run
+  `node aven/DB2/sandbox/box/tag.mjs` (`--files` lists the inputs). The image workflow's paths are the same files.
+- **A new dependency doesn't stop the loop.** Until GitHub has built the checkout's own box, `bun run up` runs one with
+  the same tools: one on disk, or main's `latest`, whose label `avensandbox.tools` holds its Dockerfile's hash. The
+  build folder compiles the crates that changed.
+- **One box on disk:** once the containers run on the checkout's box, `up` removes the older ones. Each is about
+  MEASURE_SIZE, and a cloud session has 30 GB.
 
 The box is never deployed. What ships is avenPEER's own image, `ghcr.io/myavenceo/aven/peer`, built in two stages:
 the binary is compiled in the box's image, then copied onto a minimal base, tens of MB rather than the box's 5 GB.
@@ -375,8 +408,8 @@ didn't change gets no new version; a push that changes none releases nothing.
 - **avenPEER's builds** join as a package of its own once they exist: the native Peer for each platform, the
   Peer-Light's wasm, and the node's image, `ghcr.io/myavenceo/aven/peer:<version>`. On any host but the box's, the released avenOS shows only "avenOS · coming soon".
 
-[`avensandbox-image.yml`](../../.github/workflows/avensandbox-image.yml) builds the box's image whenever its
-Dockerfile changes, on any branch, and tags main's as `latest`.
+[`avensandbox-image.yml`](../../.github/workflows/avensandbox-image.yml) builds the box's image whenever a file its
+build reads changes, on any branch, and tags main's as `latest`.
 
 **v1's three workflows are parked** in [`.github/workflows-v1/`](../../.github/workflows-v1/README.md) (Samuel, 29
 Oct 2026): moved, not deleted, so `main` runs no CI and deploys nothing. v1's site, API and peer keep running as they
