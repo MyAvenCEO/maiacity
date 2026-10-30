@@ -256,8 +256,10 @@ draw the kernel spawns a face actor at an address derived from its placer and it
 key); a later draw with new props sends it a `props` tell; a draw without it retires it, which ends that incarnation. `$use: { actor, face }`
 instead shows an existing actor's face, such as a durable task's row, without spawning anything.
 
-**Types, not words.** A message's payload is typed by a **type id**: in version 1 the name of its schema (a Value,
-named by hash); with avenDB, a type Doc and its version (K5), where versions joined by a lens are compatible. A
+**Types, not words.** A message's payload is typed by a **type id**, `<type Doc>/<schema hash>`: the address of one
+version in a type Doc, whose Record's id is its schema's hash (K5, avenDB's docs spec). It is the same from version 1
+on, where type Docs live in memory like every Doc. Equal schemas in two type Docs are two types; versions of one type
+Doc joined by a lens path are compatible. A
 message's `name` is a label in one interface, and its `description` is prose for people and models. Neither is ever
 matched: whatever links two actors links them by type id.
 
