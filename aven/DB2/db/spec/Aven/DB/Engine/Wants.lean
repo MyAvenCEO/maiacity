@@ -391,6 +391,138 @@ theorem uploads_first (left : Key → Nat) (uploads keys : List Key)
       | inl e => subst e; exact absurd hl ha
       | inr e => obtain ⟨k, hk, h⟩ := ih e; exact ⟨k, List.mem_cons_of_mem _ hk, h⟩
 
+/-! ### Waits: a wait never stops other keys, and a round that moves nothing says why -/
+
+/-- What a key waits for before it can move: an envelope it builds on (a dependency), a cap, a revocation to settle, or
+a key to open it. -/
+inductive Wait where
+  | dep | cap | revocation | key
+  deriving DecidableEq, Repr
+
+/-- What a round did, waits included. -/
+inductive Outcome (Key : Type) where
+  /-- one page or chunk of this key came -/
+  | moved (k : Key)
+  /-- nothing is left anywhere -/
+  | done
+  /-- the first key that could move got nothing from any source: the stall alarm -/
+  | stalled (k : Key)
+  /-- nothing could move: every key with work left waits, and these are the keys and what each waits for -/
+  | waiting (ks : List (Key × Wait))
+  deriving DecidableEq, Repr
+
+/-- Keys that wait on nothing. -/
+def ready (waits : Key → Option Wait) (ks : List Key) : List Key := ks.filter fun k => (waits k).isNone
+
+/-- The keys with work left that wait, and what each waits for. -/
+def blocked (left : Key → Nat) (waits : Key → Option Wait) (ks : List Key) : List (Key × Wait) :=
+  ks.filterMap fun k => if 0 < left k then (waits k).map (k, ·) else none
+
+/-- One round, waits included: the first key in order, uploads first, with work left and nothing to wait for is served.
+If no key can move, the round names every key that waits. -/
+def roundW (left : Key → Nat) (waits : Key → Option Wait) (uploads keys : List Key) (got : Key → Bool) :
+    Outcome Key × (Key → Nat) :=
+  match firstLeft left (ready waits (uploads ++ keys)) with
+  | some k => if got k then (.moved k, fun x => if x = k then left x - 1 else left x) else (.stalled k, left)
+  | none =>
+    match blocked left waits (uploads ++ keys) with
+    | [] => (.done, left)
+    | ks => (.waiting ks, left)
+
+omit [DecidableEq Key] in
+theorem firstLeft_some_of (left : Key → Nat) : ∀ (ks : List Key) (k : Key), k ∈ ks → 0 < left k →
+    ∃ k', firstLeft left ks = some k'
+  | [], _, h, _ => by simp at h
+  | a :: ks, k, h, hl => by
+    simp only [firstLeft]
+    split
+    · exact ⟨a, rfl⟩
+    · rename_i ha
+      cases List.mem_cons.mp h with
+      | inl e => subst e; exact absurd hl ha
+      | inr e => exact firstLeft_some_of left ks k e hl
+
+/-- **A wait never stops other keys** (`waits_isolated`): while any key with work left waits on nothing, the round
+serves a key that waits on nothing, and either moves it, lowering the measure, or raises the stall alarm on it. Keys
+that wait are passed over, whatever they wait for. -/
+theorem waits_isolated (left : Key → Nat) (waits : Key → Option Wait) (uploads keys : List Key) (got : Key → Bool)
+    (hn : (uploads ++ keys).Nodup) (k : Key) (hk : k ∈ uploads ++ keys) (hw : waits k = none) (hl : 0 < left k) :
+    ∃ k', (waits k' = none ∧ k' ∈ uploads ++ keys ∧ 0 < left k') ∧
+      ((roundW left waits uploads keys got).1 = .moved k' ∧
+          measure (roundW left waits uploads keys got).2 (uploads ++ keys) < measure left (uploads ++ keys) ∨
+        (roundW left waits uploads keys got).1 = .stalled k') := by
+  have hr : k ∈ ready waits (uploads ++ keys) := List.mem_filter.mpr ⟨hk, by simp [hw]⟩
+  obtain ⟨k', hk'⟩ := firstLeft_some_of left _ k hr hl
+  obtain ⟨hm, hl'⟩ := firstLeft_spec left _ k' hk'
+  obtain ⟨hm', hw'⟩ := List.mem_filter.mp hm
+  refine ⟨k', ⟨by simpa using hw', hm', hl'⟩, ?_⟩
+  unfold roundW
+  rw [hk']
+  simp only
+  split
+  · exact .inl ⟨rfl, measure_drop left k' hl' _ hm' hn⟩
+  · exact .inr rfl
+
+/-- **Every round that moves nothing raises the alarm** (`stall_raised`): it found nothing left anywhere, or it names
+the key a source gave nothing for, or it names every key that has work left and what each waits for. A round never
+moves nothing in silence. -/
+theorem stall_raised (left : Key → Nat) (waits : Key → Option Wait) (uploads keys : List Key) (got : Key → Bool) :
+    (∀ left', roundW left waits uploads keys got = (.done, left') → ∀ k ∈ uploads ++ keys, left k = 0) ∧
+    (∀ k left', roundW left waits uploads keys got = (.stalled k, left') →
+        left' = left ∧ k ∈ uploads ++ keys ∧ 0 < left k ∧ waits k = none) ∧
+    (∀ ks left', roundW left waits uploads keys got = (.waiting ks, left') →
+        left' = left ∧ ks ≠ [] ∧
+        ∀ k ∈ uploads ++ keys, 0 < left k → ∃ w, waits k = some w ∧ (k, w) ∈ ks) := by
+  unfold roundW
+  cases hf : firstLeft left (ready waits (uploads ++ keys)) with
+  | some k =>
+    obtain ⟨hm, hl⟩ := firstLeft_spec left _ k hf
+    obtain ⟨hm', hw⟩ := List.mem_filter.mp hm
+    simp only
+    refine ⟨?_, ?_, ?_⟩
+    · intro l' h; split at h <;> simp at h
+    · intro k' l' h
+      split at h
+      · simp at h
+      · simp only [Prod.mk.injEq, Outcome.stalled.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        exact ⟨rfl, hm', hl, by simpa using hw⟩
+    · intro ks l' h; split at h <;> simp at h
+  | none =>
+    have hready := firstLeft_none left _ hf
+    -- every key with work left waits
+    have hwait : ∀ k ∈ uploads ++ keys, 0 < left k → ∃ w, waits k = some w := by
+      intro k hk hl
+      cases hw : waits k with
+      | none =>
+        have := hready k (List.mem_filter.mpr ⟨hk, by simp [hw]⟩)
+        omega
+      | some w => exact ⟨w, rfl⟩
+    have hmem : ∀ k ∈ uploads ++ keys, 0 < left k → ∃ w, waits k = some w ∧ (k, w) ∈ blocked left waits (uploads ++ keys) := by
+      intro k hk hl
+      obtain ⟨w, hw⟩ := hwait k hk hl
+      refine ⟨w, hw, List.mem_filterMap.mpr ⟨k, hk, ?_⟩⟩
+      simp [hl, hw]
+    simp only
+    refine ⟨?_, ?_, ?_⟩
+    · intro l' h k hk
+      split at h
+      · rename_i hb
+        cases Nat.eq_zero_or_pos (left k) with
+        | inl h0 => exact h0
+        | inr hpos =>
+          obtain ⟨w, _, hkw⟩ := hmem k hk hpos
+          rw [hb] at hkw; cases hkw
+      · simp at h
+    · intro k l' h; split at h <;> simp at h
+    · intro ks l' h
+      split at h
+      · simp at h
+      · rename_i hb
+        simp only [Prod.mk.injEq, Outcome.waiting.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        exact ⟨rfl, hb, hmem⟩
+
 /-! ### Budgets and eviction: `now` is never evicted -/
 
 /-- What a device keeps of a key: its tier, its bytes, when it was last used. -/
