@@ -23,11 +23,12 @@ document (moved there whole), and Signal, Matrix, MLS, Biscuit, Keyhive and Mead
 - passkeys use the PRF step (D11);
 - MaiaCityGuardian stays a full owner through the evaluation phase (D12);
 - the keeper sees as little as possible: a segment's Doc, epoch and padded length (D13);
-- every grant needs its vault's owners' approval, for now (D14).
+- every grant needs its vault's owners' approval, for now (D14);
+- the public can hold a cap: everyone in the network, or anyone (D15).
 
 The engine thread agreed the footprints caps check (E1–E3). The docs and avenACTOR threads answered their seams on the
-same day, and what they agreed is marked where it applies. Two things are proposals of this document, marked where they
-appear: groups holding caps (an extension of D2) and the exact layers of D7.
+same day, and what they agreed is marked where it applies. One thing is still a proposal of this document, marked
+where it appears: groups holding caps (an extension of D2).
 
 ## Contents
 
@@ -100,6 +101,8 @@ appear: groups holding caps (an extension of D2) and the exact layers of D7.
 - **role:** a named bundle of grants, a Value, named by its hash.
 - **approval:** k owners' signatures over one digest.
 - **ticket:** a one-time key that holds a cap until a vault claims it. An invite is one.
+- **public:** a holder meaning everyone: everyone in the network (`public:network`), or anyone at all
+  (`public:world`).
 - **revocation:** a signed Record that ends a cap and everything resting on it.
 - **ack:** a writer's mark inside an envelope that it has seen a revocation. From the first ack in a Doc on, the revoked
   holder's writes there count only if an ack had seen them.
@@ -123,8 +126,8 @@ appear: groups holding caps (an extension of D2) and the exact layers of D7.
 
 Each rule is held by a Lean theorem or a check once there is code to hold.
 
-1. **Keys sign; vaults hold.** Only a key signs, and only a vault, a group of vaults (rule 13) or a ticket holds a cap.
-   A device signs for the vault it serves, within its device cap.
+1. **Keys sign; vaults hold.** Only a key signs, and only a vault, a group of vaults (rule 13), a ticket or the public
+   (rule 33) holds a cap. A device signs for the vault it serves, within its device cap.
 2. **Governing is ownership, never a cap.** A vault's owners change its owners, devices, thresholds and recovery, k of
    n. No cap governs, and no device governs (`Aven.ID.Governs`).
 3. **Every cap narrows what it rests on.** A root cap rests on its issuer's authority over the target's vault. Every
@@ -194,6 +197,11 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
     [below](#recovery).
 31. **The UI holds no rule.** avenOS asks the engine's dry run, and shows each grant as it is, never only a role's name.
 32. **Lean first.** Every rule here is a theorem or a check before it is code (README, rule 10).
+33. **The public can hold a cap** (Samuel, 30 Oct 2026).
+    - `public:network` is everyone in the network. A Doc it reads is sealed to the network's members, and it may write
+      and tell where the cap says.
+    - `public:world` is anyone. A Doc it reads is published unsealed and signed, and the world only reads.
+    - The public never shares, and what went to the world stays out there.
 
 ## The model
 
@@ -204,7 +212,7 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
                                                                   ▼
              cap { issuer, holder, grants: [ target × operations × lines ], conditions, parent }
                                                                   │
-                                       holder: a vault, a group, or a ticket until it is claimed
+                         holder: a vault, a group, the public, or a ticket until it is claimed
 ```
 
 Four things remain when every concept is reduced to its job (avenACTOR's discovery document, §9):
@@ -257,7 +265,7 @@ A cap is a Value: canonical JSON, named by its BLAKE3 hash, which is its id.
 | Field | Meaning |
 |---|---|
 | `issuer` | The vault that grants |
-| `holder` | A vault (devices are vaults), a group (`g:<doc>`), or a ticket's public key |
+| `holder` | A vault (devices are vaults), a group (`g:<doc>`), a ticket's public key, or the public: `public:network` or `public:world` |
 | `parent` | The cap it narrows, by id, or `null` for a root cap |
 | `grants` | Each a target, the operations on it and the lines it may write; or `role` and `target` instead |
 | `conditions` | [Below](#conditions); they apply to every grant |
@@ -394,6 +402,17 @@ messages and queries. For people with keys, reading is whole Docs; for actors an
 - **Tickets** hold a cap until a vault claims it, with a statement signed by the ticket key and by a device of the
   claiming vault. Milestone 2's invites are tickets for the network's door. A ticket never holds `share` beyond its own
   depth, and never governs.
+- **The public** (Samuel, 30 Oct 2026):
+  - **`public:network`** is every member of the network, as the door admits them (`memberOf` the admin coop). A Doc it
+    reads is sealed to the network's members group, which a member joins at their join and leaves at their removal. It
+    may write, mutate and tell where the cap says, so the city-dome is a Doc whose lines every member reads and writes.
+    Readers check a writer's membership in the tree.
+  - **`public:world`** is anyone, member or not. A Doc it reads is published: its epochs from then on are plain and
+    signed (scheme `public 1`, no key), and its files dedup with everyone, like IPFS (README). It only reads and
+    queries.
+  - **Neither shares,** since nobody can delegate for everyone. Granting either is a grant (D14).
+  - **Publishing to the world can't be taken back.** Revoking it seals the next epoch again, but what was public may
+    already be copied.
 
 ## Issuing, delegating and delivering
 
@@ -402,7 +421,7 @@ messages and queries. For people with keys, reading is whole Docs; for actors an
 | Act | Signed by |
 |---|---|
 | Every grant: a root cap, a child cap, a ticket, a group's new reader | The granting vault's owners, k of n (an approval). Today that is one passkey tap, since any one owner suffices (Samuel, 30 Oct 2026, for now) |
-| Publishing a Doc unsealed | Its vault's owners, k of n |
+| A public cap, to the network or the world | The granting vault's owners, k of n. avenOS warns that what goes to the world can't be taken back |
 | Governance | Owners, k of n (avenID) |
 | A new device's device cap | The passkey sign-in that adds the device, which is already an owner's act |
 | An actor's narrower cap, message by message | The kernel, inside a cap someone approved. Not a new grant |
@@ -522,7 +541,12 @@ An epoch is named by the BLAKE3 hash of its key blob:
   once (avenDB-old never checked what its boxes held).
 - **`back`:** the previous epoch's key, sealed under this one. With it, the newest key opens all of history, for a
   reader granted `history: all`. A `from-now` grant rotates without it. Old readers keep the old keys in their keyrings.
-- **`scheme`:** `flat 1` now; `tree 1` later for big groups (rule 29). Caps, envelopes and checks never see which.
+- **`scheme`:**
+  - `flat 1` now;
+  - `tree 1` later, for big groups;
+  - `public 1` for a world-public epoch, which has no key, so its segments are plain and signed.
+
+  Caps, envelopes and checks never see which (rule 29).
 
 **Rotation:**
 - Before writing, a writer rotates when its Doc's epoch isn't sealed to the current key of every reader, or still
@@ -632,6 +656,7 @@ and a device writing two histories at once (a split), are checked by readers, wh
 | An owner | The owners, k of n, or recovery | Governance: avenID | Keyring at once, if it held keys | The owners |
 | A network member | The admin coop | The door closes at the relay and every peer | Its caps stand until their issuers revoke them | An admin |
 | A ticket | Its issuer (a withdrawal) | Nothing to stop before the claim | | The issuer |
+| A public cap | As any cap | From its first ack in each Doc | Network: at each Doc's next write. World: the next epoch is sealed again, and what was published stays public | The revoker |
 
 **The race.** A revocation and a write can cross: the holder writes while the revocation travels. Every reader decides
 it the same way, through acks.
@@ -789,6 +814,9 @@ with ML-DSA, which COSE is standardising and no authenticator we know of ships.
 - **Access patterns** (who fetches what, when) are the largest leak left. Batched fetches through other members and
   mixing can come later without changing a format, because an envelope's outside is only its Doc, its epoch and its
   length.
+- **Good enough for now** (Samuel, 30 Oct 2026). The Aven Peer still sees each Doc, its sizes and times, how many key
+  changes, and which device connects to upload or fetch. Hiding that last one needs mixing, which comes later.
+- **World-public Docs** are plain, so the keeper reads them like anyone.
 - **Verifying who's who.** The keeper serves the tree, but it can't change a key a vault signed. It could invent a vault
   that looks like Bob. So avenOS shows a **vault fingerprint** to compare once, as Signal's safety numbers. Members
   gossip the tree's head, so a keeper showing different trees to different members is caught.
@@ -887,8 +915,8 @@ to and leave all the time. Scale need not be built from day one, but no choice m
 7. **Keys in layers that scale without a dead end** (Samuel, 30 Oct 2026: "battle proof it against those targets; we
    needn't scale from day one, but mustn't end in a dead end").
    - Docs are sealed to readers, readers are vaults or groups, and only a keyring is sealed to devices.
-   - Flat now. A BeeKEM-style tree for big groups behind the `scheme` byte. Nested groups and batched rotation past
-     that.
+   - Flat now. A BeeKEM-style tree for big groups behind the `scheme` byte, which drops in later (Samuel, 30 Oct 2026).
+     Work on it starts when Maia City passes about 150 members. Nested groups and batched rotation past that.
    - Not MLS: it needs a sequencer, deletes history, and treats every device as a member.
 8. **A revocation keeps what it names and wins over the rest** (Samuel, 30 Oct 2026). Acks carry it to Docs the revoker
    doesn't hold. Writes stop counting from the first ack; reading ends at the next epoch; only the revoker must be
@@ -904,7 +932,11 @@ to and leave all the time. Scale need not be built from day one, but no choice m
 13. **The keeper sees as little as possible** (Samuel, 30 Oct 2026). Outside a segment are only its Doc, its key epoch
     and its padded length. Keepers serve catch-up by arrival order, and readers check writers. The docs thread had
     proposed showing each writer's pseudonym, counters and previous segment, so a keeper could serve by version and
-    catch splits. Arrival order serves catch-up as well, and readers already catch splits.
+    catch splits. Arrival order serves catch-up as well, and readers already catch splits. What the Aven Peer still
+    sees (each Doc, sizes, times, key changes, which device connects) is good enough for now; mixing comes later.
+15. **The public can hold a cap** (Samuel, 30 Oct 2026). `public:network` covers everyone in the network: sealed to its
+    members, and it may write where the cap says, as in the city-dome. `public:world` covers anyone: published plain
+    and signed, read only. Neither shares, and both are grants (D14).
 14. **Every grant needs its vault's owners' approval, for now** (Samuel, 30 Oct 2026). Today that is one passkey tap.
     Three things aren't grants and need none:
     - a new device's rights, approved by its sign-in;
@@ -941,6 +973,7 @@ export traces.
 | `want_grants_nothing`, `one_grammar` | What is served lies within the caps; wants and caps share one `Target`, and served is their intersection |
 | `approval_exact` | An act that needs k approvals counts only with k distinct owners' signatures over exactly its digest |
 | `grant_approved` | A cap counts only with its granting vault's owners' approval (D14), and a revocation needs none |
+| `public_bounded` | A `public:world` cap grants only `read` and `query`; no public cap grants `share`; a `public:network` write counts only from a member of the network |
 | `group_holds` | A write under a group's cap counts only with the writer's live read on the group |
 | `merge_covered` | A merge into main counts only when the merger's grant covers every type and field the merge changes from its base |
 | `no_confused_deputy` | A turn's effects carry the handled message's cap or a narrower one, never the actor's standing cap |
@@ -969,13 +1002,13 @@ A proposal for milestone 3's plan, for the architect:
    - devices' X-Wing and ML-DSA-65 keys in their statements;
    - vault keys.
 3. **Keys:** keyrings, groups (flat), Doc epochs, key blobs and letters. The first sealed Doc is the city-dome, which
-   takes up the store's parked sealing.
+   takes up the store's parked sealing: `public:network` reads and writes its lines.
 4. **Passkey PRF:** the keyring's seal, sign-in on a new browser, and pairing as the fallback.
 5. **The blind keeper:** keep caps, fetch and upload proofs, quota, and catch-up by arrival order.
 6. **Caps on writes,** with the docs layer's envelopes (milestone 4). Until then, the chat's lines keep checking their
    signer's membership, and the room's key keeps them sealed.
 7. **Later:**
-   - the `tree 1` scheme, before any group passes about 256 vaults;
+   - the `tree 1` scheme, started when Maia City passes about 150 members (D7);
    - recovery owners with a delay;
    - nested groups and batched rotation for communities;
    - MaiaCityGuardian's exit.
@@ -983,20 +1016,18 @@ A proposal for milestone 3's plan, for the architect:
 ## Open questions
 
 1. **Groups holding caps** (D2's extension): yes?
-2. **When the tree scheme comes.** Recommended: by trigger, starting when Maia City passes about 150 members, so it is
-   ready before any group reaches 256. Or in milestone 3, if hundreds will join at once.
-3. **Write without read:** a drop-box Doc whose epoch also has an X-Wing key, so a holder can append without reading
+2. **Write without read:** a drop-box Doc whose epoch also has an X-Wing key, so a holder can append without reading
    (forms, tips, submissions). Later?
-4. **Device secrets at rest in a browser:** OPFS is readable by the page's own scripts. Wrap them under a
+3. **Device secrets at rest in a browser:** OPFS is readable by the page's own scripts. Wrap them under a
    non-extractable WebCrypto key, at least?
-5. **The heal on a schedule:** monthly, or only on suspicion?
-6. **When MaiaCityGuardian exits,** and whether the guardian vaults chosen later may hold a keyring seal when a person
+4. **The heal on a schedule:** monthly, or only on suspicion?
+5. **When MaiaCityGuardian exits,** and whether the guardian vaults chosen later may hold a keyring seal when a person
    opts in.
-7. **Caps across an actor's upgrade,** now with the architect's avenACTORS thread. A cap by definition hash doesn't
+6. **Caps across an actor's upgrade,** now with the architect's avenACTORS thread. A cap by definition hash doesn't
    carry over to a new version. avenACTOR's view: a definition names the one it `replaces`, and a tell cap follows the
    upgrade while every message it names keeps its schema; a new message isn't covered until granted.
-8. **Padding:** Padmé on every envelope, or only on segments and files?
-9. **The actor agreements** (Holders, Actors): Samuel's yes, carried on by the avenACTORS thread.
+7. **Padding:** Padmé on every envelope, or only on segments and files?
+8. **The actor agreements** (Holders, Actors): Samuel's yes, carried on by the avenACTORS thread.
 
 ## Not in this spec
 
