@@ -29,7 +29,7 @@ layers above.
 
 ```
  7  App         the version 1 todo app: definitions and their parts
- 6  Faces       markup-runtime and style-runtime draw a node tree; the host's applier shows it; events come back as tells
+ 6  Faces       face-runtime draws a node tree and its CSS; the host's applier shows it; events come back as tells
  5  Kernel      router, scheduler, turns, clock: pure Rust with no I/O, compiled to WebAssembly
  4  Actors      a definition (a Value), its Doc, and its turns
  3  Runtimes    pure functions over values: frozen WebAssembly modules named by hash, run with fuel
@@ -188,13 +188,12 @@ the WebAssembly boundary's, not the part's.
 | --- | --- | --- | --- |
 | `state-runtime` | A declarative turn: for each message, updates to state (set, merge, append, remove by path) and messages to send. No code, so it always ends | A turn's output | avenVIBES's declarative inbox, where a payload merges into state with no code at all |
 | `js-runtime` | JavaScript: `init`, `turn`, `present` | A turn's output, or a face data | QuickJS compiled to WebAssembly. maiaCITY's logic core: a seeded random, a frozen clock, no binary buffers |
-| `markup-runtime` | Markup: an allowlisted tag tree with `$`, `$$`, `$each`, `$on` and components | A safe node tree for one viewer. It also checks the face's `a11y`: every interactive node has an accessible name and role | avenVIBES's view grammar; aven-brands' component library; maiaCITY's view engine and Markdown engine, which write every tag themselves |
-| `style-runtime` | A style: tokens, component styles, variants and states as data | Scoped CSS text, from allowlisted properties and values only | avenVIBES's style engine and its eight states; aven-brands' brands as data. Raw CSS is never accepted |
+| `face-runtime` | A face's `markup` part (an allowlisted tag tree with `$`, `$$`, `$each`, `$on` and components) and its `style` part (tokens, component styles, variants and states as data), with the face data. Two entry points: the style once per definition, shared by every instance, and the tree whenever the data changes | A safe node tree for one viewer, and scoped CSS from allowlisted properties and values only. It checks the face's `a11y` across both: every interactive node has an accessible name and role, and text has enough contrast | avenVIBES's view grammar, style engine and eight states; aven-brands' component library and brands as data; maiaCITY's view engine and Markdown engine, which write every tag themselves. Raw CSS is never accepted |
 
 Later: `markdown-runtime`, `math-runtime`, `three-runtime`, `lean-runtime` (turns written in Lean, with proofs), a logic
 runtime if machines ever need rules, and actors written in Rust as WebAssembly.
 
-**The rules of faces**, which markup-runtime and style-runtime enforce, after avenVIBES and the component library of
+**The rules of faces**, which face-runtime enforces, after avenVIBES and the component library of
 aven-brands (`brands/CEO/design-system/src/brand/actors`: 53 components, each a JSON Value). Components themselves are
 definitions, and every placed one is an actor (section 6).
 
@@ -208,7 +207,7 @@ definitions, and every placed one is an actor (section 6).
   hover, focus, active and disabled, and the library fails to load without them.
 - **Styles stay inside their face.** A component's custom properties are declared on itself, never globally. It sizes
   by container queries, never by the viewport; the only media query is `prefers-reduced-motion`.
-- **The brand is data**: tones, roles, scales and tokens. The style-runtime generates every rule from it and from the
+- **The brand is data**: tones, roles, scales and tokens. The face-runtime generates every rule from it and from the
   components' styling. It never takes CSS text.
 
 ## 6. Layer 4: actors
@@ -220,7 +219,7 @@ definitions, and every placed one is an actor (section 6).
 | `interface` | The messages it accepts, each with a JSON schema for its payload; an ask also names its reply's schema |
 | `machine` | Optional: the interface's second part, a table of phases. If present, the kernel refuses any message the machine does not allow in the current `phase` |
 | `turn` | Required: `{ runtime, v, part }` on `state-runtime` or `js-runtime` |
-| `faces` | Optional: named faces, each `{ present, markup, style, a11y }`. `present` (optional; without it the markup sees the state) is a part on state- or js-runtime that gives the face data; `markup` is a markup-runtime part, `style` a style-runtime part, `a11y` the accessible names and roles markup-runtime checks |
+| `faces` | Optional: named faces, each `{ present, markup, style, a11y }`. `present` (optional; without it the markup sees the state) is a part on state- or js-runtime that gives the face data; `markup` and `style` are the parts face-runtime draws, `a11y` the accessible names and roles it checks. Only the runtimes are one; the parts stay apart |
 | `init` | The first state |
 | `lifetime` | `durable` (the default): the actor lasts until it is retired, and later persists in avenDB. `mounted`: it lives while the face that placed it shows it, and goes when it is unplaced |
 | `replaces` | Optional: the name of the definition this one upgrades. Its actors move to the new definition, a lens carrying their state into its shape (section 15), and a cap follows the upgrade only as far as the old interface reached, and only in a vault that has itself adopted the new definition (section 11) |
@@ -374,12 +373,12 @@ The host is the page. It runs the kernel in a worker, and holds one small piece 
 
 ```
  actor state ─▶ present (state- or js-runtime) ─▶ face data
-                                                       │
-          markup part + face data ─▶ markup-runtime ─▶ node tree  ─┐
-          style part              ─▶ style-runtime  ─▶ scoped CSS ─┤
-                                                                   ▼
+                                                      │
+     markup part + style part + face data ─▶ face-runtime ─▶ node tree    (whenever the data changes)
+                                                         ─▶ scoped CSS   (once per definition)
+                                                                 │
                          applier: checks the tree again, writes it into the face's shadow root
-                                                                   │
+                                                                 │
          a click on a node with $on ─▶ event by name ─▶ tell from the person ─▶ that face actor's inbox
 ```
 
@@ -387,7 +386,7 @@ A screen is a tree of face actors. Each one's face renders into its own shadow r
 the applier fits each child's root into the place its placer left for it. A click goes to the face actor whose node
 was clicked; its turn may send one of its `events` on, to the address its placer wired.
 
-- **Runtimes never touch the DOM.** markup-runtime and style-runtime compute a node tree and CSS text from values. Only
+- **Runtimes never touch the DOM.** face-runtime computes a node tree and CSS text from values. Only
   the applier writes the DOM.
 - **The applier trusts nothing.** It checks every node and attribute against the same allowlist again, checks every
   URL's scheme, and adds no script. It writes into a shadow root of its own, so a face cannot style or read the page.
@@ -395,7 +394,7 @@ was clicked; its turn may send one of its `events` on, to the address its placer
   actor to the face actor that owns the node, through the router into its inbox, like every other message. The face shows the change as pending at once
   and drops it if the turn refuses.
 - **Nothing leaves through a URL.** The page's CSP limits `img-src`, `font-src` and `media-src` to `'self'` and
-  `blob:`, and allows no script but the host's. style-runtime refuses `url()` except a content hash. A link opens only
+  `blob:`, and allows no script but the host's. face-runtime refuses `url()` except a content hash. A link opens only
   through a confirmation the host draws, outside every face.
 - **Updates are deltas.** After each turn the applier receives only the nodes that changed.
 
@@ -486,8 +485,8 @@ aven/actor/
   app/todo/          the version 1 app: its definitions and parts
 ```
 
-The runtimes are built in `aven/runtimes`, the one home of every runtime (Samuel, 30 Oct 2026): state, js,
-markup and style in `aven/runtimes/actor/*`, one crate each, built to WebAssembly and frozen by hash. This file still
+The runtimes are built in `aven/runtimes`, the one home of every runtime (Samuel, 30 Oct 2026): state, js and
+face in `aven/runtimes/actor/{state,js,face}`, one crate each, built to WebAssembly and frozen by hash. This file still
 says what they do: their parts, the turn's contract, determinism and fuel.
 
 ## 14. Version 1, step by step
@@ -506,7 +505,7 @@ Test-first, as avenDB works: the Lean model and its theorems, then Rust tests th
 3. **Runtimes**: `state-runtime` first, then `js-runtime`; each with hostile parts that try to get
    out, run too long or blow up, which must fail.
 4. **The kernel** (`core`): router, scheduler, turns, clock, spawning; native tests replay the vectors.
-5. **Faces**: `markup-runtime`, `style-runtime`, the applier, events as tells.
+5. **Faces**: `face-runtime`, the applier, events as tells.
 6. **The app**: the todo app in a page, the kernel in a worker.
 
 What version 1 is not: no network, no avenDB, no capabilities, no encryption, no composites, no Studio, no planner.
@@ -518,8 +517,8 @@ Decided (Samuel, 30 Oct 2026):
 - Its own package, `aven/actor`, in Rust only, compiled to WebAssembly, with its own Cargo workspace: the actor is
   universal and depends on no storage backend, avenDB included (section 13).
 - Actors are mostly JSON, with JavaScript where code is needed, run by on-demand runtimes such as QuickJS.
-- The runtimes are rewritten from scratch and named `<job>-runtime` after what their part does (every part is JSON, so `json-runtime` named nothing; the declarative turn runs on `state-runtime`, styles on `style-runtime`, which never takes CSS and only gives it, and a face's markup on `markup-runtime`; "view"
-  keeps the engine's sense). They run untrusted parts securely and never
+- The runtimes are rewritten from scratch and named `<job>-runtime` after what their part does (every part is JSON, so `json-runtime` named nothing; the declarative turn runs on `state-runtime`, code on `js-runtime`, and a face, its markup and its style, on
+  one `face-runtime`, which never takes CSS and only gives it; "view" keeps the engine's sense). They run untrusted parts securely and never
   reach the host.
 - Version 1 is a standalone, in-memory todo app: no network, no avenDB, no capabilities.
 - Frames as JSON lines when the network comes; ids derived from definition, spawner and count; only definitions from
