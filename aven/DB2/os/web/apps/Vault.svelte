@@ -12,6 +12,11 @@
 	const vault = $derived({ name: vaultName(shown), kind: tree.kind(shown) });
 	const above = $derived(tree.chain(shown));
 	const below = $derived(tree.governs(shown).length);
+	// a vault with no vault above it is governed by its owner keys alone: a person's passkey and MaiaCityGuardian
+	const keys = $derived(owners(shown).filter((owner) => owner.kind === 'key').length);
+	const top = $derived(
+		keys === 1 ? 'its owner key: nothing is above it' : keys ? `its ${keys} owner keys: nothing is above it` : 'no owner yet'
+	);
 </script>
 
 <main data-view="vault" data-account={account} data-shown={shown}>
@@ -28,7 +33,7 @@
 			<dd>{owners(shown).map((owner) => ownerName(owner)).join(', ')}</dd>
 			<dt>governed by</dt>
 			<dd>
-				{above.length ? above.map((id) => vaultName(id)).join(' → ') : 'its owner key alone: nothing is above it'}
+				{above.length ? above.map((id) => vaultName(id)).join(' → ') : top}
 			</dd>
 			<dt>governs</dt>
 			<dd>{below === 1 ? 'one vault' : below ? `${below} vaults` : 'nothing'}{below ? ', in the tree below' : ''}</dd>

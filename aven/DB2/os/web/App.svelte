@@ -18,7 +18,7 @@
 	// whom this host may act as, as its Peer-Light's views say; a visitor's host has none and may act as no one
 	const viewed = $derived(Boolean(device) || location.hostname === 'localhost');
 	const mine = $derived(viewed ? tree.accounts() : []);
-	// Invite is for the admin's owners only: a person whose passkey governs the network
+	// Invite is for the admin coop's people only: a person whose passkey governs the coop that owns Aven
 	const apps = $derived([
 		{ id: 'vault', name: 'Vault', what: 'Who owns it and all it governs', component: Vault },
 		{ id: 'control-room', name: 'Control Room', what: 'Every peer it governs, side by side', component: ControlRoom },

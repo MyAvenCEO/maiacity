@@ -29,9 +29,16 @@ export function readLink(hash) {
 // the passkey of the person `account` acts as, which signs its owner's acts
 const passkeyOf = (account) => owners(account).find((owner) => owner.kind === 'key' && owner.id.startsWith('passkey-'))?.id;
 
-// Whether `account` may invite into `network`: a passkey of its own, and the network among what it governs. This is
+// The admin coop of the agent `network` (Aven): the vault that owns it, Maia City. Members are the coop's, and so are
+// invites (Samuel, 30 Oct 2026).
+const coopOf = (network) => (network ? owners(network).find((owner) => owner.kind === 'vault')?.id : undefined);
+
+// Whether `account` may invite into the admin coop: a passkey of its own, and the coop among what it governs. This is
 // aven-id's rule for the admin's key (Members::admin_key), read through the tree's own queries.
-export const mayInvite = (account, network) => Boolean(network && passkeyOf(account) && tree.governs(account).includes(network));
+export const mayInvite = (account, network) => {
+	const coop = coopOf(network);
+	return Boolean(coop && passkeyOf(account) && tree.governs(account).includes(coop));
+};
 
 // Makes an invite, signed by the passkey of `account`, an owner of the admin, on this browser; returns its link,
 // shown once
