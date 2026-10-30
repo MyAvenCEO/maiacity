@@ -47,6 +47,18 @@
 
 	const kind = (type) =>
 		type.startsWith('image/') ? 'image' : type.startsWith('video/') ? 'video' : type === 'application/pdf' ? 'pdf' : 'file';
+	// a file still on its way (the Aven Peer not yet keeping it, its sender's peer not reachable): asked for again, a
+	// little later each time, until it comes
+	function retrying(node) {
+		const base = node.getAttribute('src');
+		let tries = 0;
+		const again = () => {
+			if (++tries > 8) return;
+			setTimeout(() => node.setAttribute('src', `${base}?try=${tries}`), 500 * 2 ** Math.min(tries, 4));
+		};
+		node.addEventListener('error', again);
+		return { destroy: () => node.removeEventListener('error', again) };
+	}
 	const size = (n) => (n < 1 << 20 ? `${Math.ceil(n / 1024)} KB` : `${(n / (1 << 20)).toFixed(1)} MB`);
 </script>
 
@@ -82,10 +94,10 @@
 						<strong>{who(vault ?? line.from)}</strong>
 						<figure data-testid="file" data-file={f.file} data-kind={kind(f.type)}>
 							{#if kind(f.type) === 'image'}
-								<img src="/files/{f.file}" alt={f.name} />
+								<img src="/files/{f.file}" alt={f.name} use:retrying />
 							{:else if kind(f.type) === 'video'}
 								<!-- svelte-ignore a11y_media_has_caption -->
-								<video src="/files/{f.file}" controls preload="metadata"></video>
+								<video src="/files/{f.file}" controls preload="metadata" use:retrying></video>
 							{:else if kind(f.type) === 'pdf'}
 								<iframe src="/files/{f.file}" title={f.name}></iframe>
 							{/if}

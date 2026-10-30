@@ -158,12 +158,18 @@ async fn history_is_kept_and_caught_up() {
     // her chain, never a fork of it (Aven.DB.Chains.learned_never_forks)
     let fresh_store = memory();
     let (fresh, told) = open("alice", &alice, &gate, &fresh_store).await;
-    assert_eq!(fresh.write(Body::Text("from a fresh profile".into())).await, Ok(None));
+    assert_eq!(
+        fresh.write(Body::Text("from a fresh profile".into())).await,
+        Ok(None)
+    );
     assert_eq!(told.texts(), ["from a fresh profile"]);
     catch_up(&fresh, &hub).await;
     let lines = fresh.learn().await;
     assert_eq!(lines.len(), 1);
-    assert_eq!((lines[0].seq, lines[0].prev.as_deref()), (4, Some(head.to_hex().as_str())));
+    assert_eq!(
+        (lines[0].seq, lines[0].prev.as_deref()),
+        (4, Some(head.to_hex().as_str()))
+    );
     assert!(matches!(hub.take(&lines[0].blob()).await, Answer::Moved(_)));
     let head = Hash::of(&lines[0].blob());
 

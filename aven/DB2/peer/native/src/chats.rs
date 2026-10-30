@@ -11,11 +11,11 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use aven_db_core::chain::{self, Answer, Body, Held, Keeper, Line};
+use aven_db_core::files::Announcement;
 use aven_db_core::timeline;
 use aven_db_core::wire::{Frame, Have, Head, MAX_FRAME};
-use aven_db_store::{Hash, RefName, Store};
+use aven_db_store::{Hash, RefName};
 use bytes::Bytes;
-use aven_db_core::files::Announcement;
 use iroh::{PublicKey, SecretKey};
 use serde_json::json;
 
@@ -357,7 +357,10 @@ impl Chats {
     /// `heads` named its head and it caught up to it. What it queued is chained on top, in order, and shown in place
     /// of its queued line. The lines to send.
     pub async fn learn(&self) -> Vec<Line> {
-        if self.learned.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        if self
+            .learned
+            .swap(true, std::sync::atomic::Ordering::Relaxed)
+        {
             return vec![];
         }
         let queued = std::mem::take(&mut *self.queued.lock().unwrap());
@@ -467,9 +470,11 @@ impl Chats {
                 };
                 for h in &held {
                     self.show(h);
-                    if let (Body::File(file), Some(f), Ok(from)) =
-                        (&h.line.body, self.on_file.get(), crate::keys::public(&h.line.device))
-                    {
+                    if let (Body::File(file), Some(f), Ok(from)) = (
+                        &h.line.body,
+                        self.on_file.get(),
+                        crate::keys::public(&h.line.device),
+                    ) {
                         f(from, file.clone());
                     }
                 }

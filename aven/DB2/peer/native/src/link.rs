@@ -49,7 +49,12 @@ pub async fn resolved(aven: &Resolve, me: &str, notes: &Notes) -> EndpointAddr {
             Ok(addr) => return addr,
             Err(why) if !told => {
                 told = true;
-                notes(timeline::line(now(), me, "waiting", json!({ "for": "aven", "why": why })));
+                notes(timeline::line(
+                    now(),
+                    me,
+                    "waiting",
+                    json!({ "for": "aven", "why": why }),
+                ));
             }
             Err(_) => {}
         }
@@ -131,7 +136,10 @@ impl Link {
     async fn learn(&mut self) {
         let Some(chats) = &self.chats else { return };
         let me = chats.device();
-        if !chats.learned() && self.caught && chats.have(&me) >= self.there.get(&me).copied().unwrap_or(0) {
+        if !chats.learned()
+            && self.caught
+            && chats.have(&me) >= self.there.get(&me).copied().unwrap_or(0)
+        {
             chats.learn().await;
         }
     }

@@ -368,21 +368,45 @@ async fn a_peer_waits_for_the_aven_peers_name_then_joins_the_room() {
     let resolve: aven_peer::link::Resolve = {
         let (tries, addr) = (tries.clone(), addr.clone());
         Arc::new(move || {
-            let (n, addr) = (tries.fetch_add(1, std::sync::atomic::Ordering::SeqCst), addr.clone());
-            Box::pin(async move { if n < 3 { Err("Name or service not known".to_string()) } else { Ok(addr) } })
+            let (n, addr) = (
+                tries.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+                addr.clone(),
+            );
+            Box::pin(async move {
+                if n < 3 {
+                    Err("Name or service not known".to_string())
+                } else {
+                    Ok(addr)
+                }
+            })
         })
     };
     let lines = Lines::default();
     let found = aven_peer::link::resolved(&resolve, "alice", &lines.notes()).await;
     assert_eq!(found, addr);
     assert_eq!(tries.load(std::sync::atomic::Ordering::SeqCst), 4);
-    let waited: Vec<_> = lines.0.lock().unwrap().iter().filter(|l| l["event"] == "waiting").cloned().collect();
+    let waited: Vec<_> = lines
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|l| l["event"] == "waiting")
+        .cloned()
+        .collect();
     assert_eq!(waited.len(), 1, "one waiting line: {waited:?}");
 
     // then the room, its bootstrap known
     let a = peer("alice", alice, &url, gate(), Some(found)).await;
     let both =
         |l: &Value| l["event"] == "room" && l["present"].as_array().is_some_and(|p| p.len() == 2);
-    assert!(hub.lines.wait(both).await.is_some(), "{:?}", hub.lines.0.lock().unwrap());
-    assert!(a.lines.wait(both).await.is_some(), "{:?}", a.lines.0.lock().unwrap());
+    assert!(
+        hub.lines.wait(both).await.is_some(),
+        "{:?}",
+        hub.lines.0.lock().unwrap()
+    );
+    assert!(
+        a.lines.wait(both).await.is_some(),
+        "{:?}",
+        a.lines.0.lock().unwrap()
+    );
 }

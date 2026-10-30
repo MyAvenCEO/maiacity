@@ -217,7 +217,12 @@ pub async fn put_chunk(bytes: Vec<u8>) -> Result<String, JsError> {
 /// Shares a file whose chunks are in the store (their names, in order, as JSON): puts its index, keeps it under
 /// `file-<index>`, and says it as a `file` line of this device's chain, shown at once. Returns the index's name.
 #[wasm_bindgen]
-pub async fn share(name: String, kind: String, size: f64, chunks: String) -> Result<String, JsError> {
+pub async fn share(
+    name: String,
+    kind: String,
+    size: f64,
+    chunks: String,
+) -> Result<String, JsError> {
     let (store, room) = running(|r| Ok((r.files.store.clone(), r.room.clone())))?;
     let chunks: Vec<String> = serde_json::from_str(&chunks).map_err(js)?;
     let mut index = Vec::with_capacity(chunks.len() * 32);
@@ -229,12 +234,29 @@ pub async fn share(name: String, kind: String, size: f64, chunks: String) -> Res
         index.extend_from_slice(h.as_bytes());
     }
     let file = store.put(index.into()).await.map_err(js)?;
-    let len = files::open(&*store, &file).await.map_err(js)?.map(|f| f.len);
+    let len = files::open(&*store, &file)
+        .await
+        .map_err(js)?
+        .map(|f| f.len);
     if len != Some(size as u64) {
-        return Err(JsError::new(&format!("the chunks hold {len:?} bytes, not {size}")));
+        return Err(JsError::new(&format!(
+            "the chunks hold {len:?} bytes, not {size}"
+        )));
     }
-    let _ = store.set_ref(&aven_db_store::RefName::new(format!("file-{file}")).map_err(js)?, None, file).await;
-    room.share(aven_db_core::files::Announcement { file: file.to_hex(), size: size as u64, name, kind }).await;
+    let _ = store
+        .set_ref(
+            &aven_db_store::RefName::new(format!("file-{file}")).map_err(js)?,
+            None,
+            file,
+        )
+        .await;
+    room.share(aven_db_core::files::Announcement {
+        file: file.to_hex(),
+        size: size as u64,
+        name,
+        kind,
+    })
+    .await;
     Ok(file.to_hex())
 }
 
@@ -374,7 +396,11 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
     let endpoint = Endpoint::builder(presets::Minimal)
         .secret_key(secret.clone())
         .relay_mode(RelayMode::Custom(relays))
-        .alpns(vec![ALPN.to_vec(), iroh_gossip::ALPN.to_vec(), blobs::ALPN.to_vec()])
+        .alpns(vec![
+            ALPN.to_vec(),
+            iroh_gossip::ALPN.to_vec(),
+            blobs::ALPN.to_vec(),
+        ])
         .hooks(Hook {
             me: name.clone(),
             gate: gate.clone(),
@@ -418,9 +444,18 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
     let gossip = Gossip::builder().spawn(endpoint.clone());
     let router = Router::builder(endpoint.clone())
         .accept(iroh_gossip::ALPN, gossip.clone())
-        .accept(blobs::ALPN, blobs::provider(&held, name.clone(), gate.clone(), notes.clone()))
+        .accept(
+            blobs::ALPN,
+            blobs::provider(&held, name.clone(), gate.clone(), notes.clone()),
+        )
         .spawn();
-    let files = Files { endpoint: endpoint.clone(), store, held, aven: aven.clone(), relay: relay.clone() };
+    let files = Files {
+        endpoint: endpoint.clone(),
+        store,
+        held,
+        aven: aven.clone(),
+        relay: relay.clone(),
+    };
     let room = Room::join(
         &gossip,
         name.clone(),
@@ -460,14 +495,25 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
 /// A connection on iroh-blobs' protocol to `from` (a member's key, hex), or to the Aven Peer: one kept while it is open.
 async fn connection(f: &Files, from: Option<String>) -> Result<Connection, JsError> {
     let at = match from {
-        Some(key) => EndpointAddr::new(keys::public(&key).map_err(js)?).with_relay_url(f.relay.clone()),
+        Some(key) => {
+            EndpointAddr::new(keys::public(&key).map_err(js)?).with_relay_url(f.relay.clone())
+        }
         None => f.aven.clone(),
     };
-    let open = CONNECTIONS.with(|c| c.borrow().get(&at.id).filter(|c| c.close_reason().is_none()).cloned());
+    let open = CONNECTIONS.with(|c| {
+        c.borrow()
+            .get(&at.id)
+            .filter(|c| c.close_reason().is_none())
+            .cloned()
+    });
     if let Some(conn) = open {
         return Ok(conn);
     }
-    let conn = f.endpoint.connect(at.clone(), blobs::ALPN).await.map_err(js)?;
+    let conn = f
+        .endpoint
+        .connect(at.clone(), blobs::ALPN)
+        .await
+        .map_err(js)?;
     CONNECTIONS.with(|c| c.borrow_mut().insert(at.id, conn.clone()));
     Ok(conn)
 }
@@ -479,18 +525,30 @@ async fn open(f: &Files, file: &Hash, from: Option<String>) -> Result<(files::Fi
     }
     let conn = connection(f, from).await?;
     let fetched = f.held.fetch_chunks(&conn, *file, 0..0).await.map_err(js)?;
-    let found = files::open(&*f.store, file).await.map_err(js)?.ok_or_else(|| JsError::new("no such file"))?;
+    let found = files::open(&*f.store, file)
+        .await
+        .map_err(js)?
+        .ok_or_else(|| JsError::new("no such file"))?;
     Ok((found, fetched.bytes))
 }
 
 /// The chunks of `range` this Peer-Light lacks, fetched; the bytes that crossed.
-async fn chunks(f: &Files, file: &files::File, range: Range<u64>, from: Option<String>) -> Result<u64, JsError> {
+async fn chunks(
+    f: &Files,
+    file: &files::File,
+    range: Range<u64>,
+    from: Option<String>,
+) -> Result<u64, JsError> {
     let missing = file.missing(&*f.store, range).await.map_err(js)?;
     let (Some(first), Some(last)) = (missing.first(), missing.last()) else {
         return Ok(0);
     };
     let conn = connection(f, from).await?;
-    Ok(f.held.fetch_chunks(&conn, file.name, *first..*last + 1).await.map_err(js)?.bytes)
+    Ok(f.held
+        .fetch_chunks(&conn, file.name, *first..*last + 1)
+        .await
+        .map_err(js)?
+        .bytes)
 }
 
 fn running_files() -> Result<Files, JsError> {
@@ -522,12 +580,21 @@ pub async fn file_len(file: String, from: Option<String>) -> Result<f64, JsError
 /// bytes that crossed for this call. A seek is a range: a movie played from its middle fetches only the chunks it
 /// plays.
 #[wasm_bindgen]
-pub async fn file_range(file: String, start: f64, end: f64, from: Option<String>) -> Result<JsValue, JsError> {
+pub async fn file_range(
+    file: String,
+    start: f64,
+    end: f64,
+    from: Option<String>,
+) -> Result<JsValue, JsError> {
     let f = running_files()?;
     let (found, mut fetched) = open(&f, &hash(&file)?, from.clone()).await?;
     let range = start as u64..(end as u64).min(found.len);
     fetched += chunks(&f, &found, range.clone(), from).await?;
-    let bytes = found.read(&*f.store, range).await.map_err(js)?.ok_or_else(|| JsError::new("a chunk went missing"))?;
+    let bytes = found
+        .read(&*f.store, range)
+        .await
+        .map_err(js)?
+        .ok_or_else(|| JsError::new("a chunk went missing"))?;
     Ok(object(&[
         ("bytes", js_sys::Uint8Array::from(&bytes[..]).into()),
         ("len", (found.len as f64).into()),
@@ -544,7 +611,10 @@ pub async fn file_fetch(file: String, from: Option<String>) -> Result<JsValue, J
     fetched += chunks(&f, &found, 0..found.len, from).await?;
     let missing = found.missing(&*f.store, 0..found.len).await.map_err(js)?;
     if !missing.is_empty() {
-        return Err(JsError::new(&format!("{} chunks still missing", missing.len())));
+        return Err(JsError::new(&format!(
+            "{} chunks still missing",
+            missing.len()
+        )));
     }
     Ok(object(&[
         ("len", (found.len as f64).into()),

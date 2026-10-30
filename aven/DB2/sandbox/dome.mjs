@@ -9,7 +9,8 @@
 // - Alice shares an image and a PDF: each is a file line of her chain, shown in her chat at once (local first) and
 //   loaded from her own store through the Service Worker's /files/<hash>, a range of it a 206; Bob's chat loads them
 //   too, their chunks fetched from the Aven Peer, which keeps every file, or from Alice;
-// - last, a third browser on Bob's origin, with an empty OPFS, joins later and catches up on the whole chat (3).
+// - last, a third browser on Bob's origin, with an empty OPFS, joins later and catches up on the whole chat (3); it
+//   writes at once, before it knows its own head, and the line continues Bob's chain: never a fork of it.
 //
 // The fork and the stranger's line are signed here with the cast's test keys (public on purpose, valid only inside
 // the box), as a cloned device or an outsider would, and sent through Alice's Peer-Light as they are. What a line's
@@ -74,8 +75,9 @@ const postLine = (page, name, blob) =>
 		{ name, blob },
 	);
 
-// a 16 × 16 image, a PNG made here: its chunks, each with its CRC
-function makePng() {
+// a 16 × 16 image, a PNG made here, its colour the run's own so each run shares a new file: its chunks, each with
+// its CRC
+function makePng(shade) {
 	const chunk = (type, data) => {
 		const head = Buffer.alloc(4);
 		head.writeUInt32BE(data.length);
@@ -88,7 +90,7 @@ function makePng() {
 	ihdr.writeUInt32BE(16, 0);
 	ihdr.writeUInt32BE(16, 4);
 	ihdr.set([8, 6, 0, 0, 0], 8);
-	const row = Buffer.concat([Buffer.from([0]), Buffer.alloc(16 * 4, 0xc0)]);
+	const row = Buffer.concat([Buffer.from([0]), Buffer.alloc(16 * 4, shade)]);
 	const pixels = deflateSync(Buffer.concat(Array.from({ length: 16 }, () => row)));
 	return Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR', ihdr), chunk('IDAT', pixels), chunk('IEND', Buffer.alloc(0))]);
 }
@@ -174,7 +176,7 @@ for (const text of [`a fork, ${stamp}`, `a stranger, ${stamp}`])
 	if (await bob.getByTestId('lines').locator('li', { hasText: text }).count()) problems.push(`Bob's chat shows "${text}"`);
 
 // files: Alice shares an image and a PDF; her chat shows them at once, from her own store
-const png = makePng();
+const png = makePng(started % 256);
 const pdf = Buffer.from(
 	'%PDF-1.1\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 100]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n',
 );
@@ -207,8 +209,16 @@ if (range?.status !== 206 || range.range !== `bytes 1-3/${png.length}` || JSON.s
 	problems.push(`a range of Alice's image is ${JSON.stringify(range)}`);
 await alice.screenshot({ path: `${run}/dome-alice-files.png` });
 // Bob's copy: his Peer-Light fetches the chunks from the Aven Peer, which kept the file, or from Alice
-const bobImage = bob.locator(`[data-testid="file"][data-file="${file}"] img`);
-if (!(await seen(bobImage)) || !(await until(() => loaded(bobImage)))) problems.push("Bob's chat did not load Alice's image");
+const bobImage = bob.locator(`[data-testid="file"][data-file="${file}"] img`).last();
+if (!(await seen(bobImage)) || !(await until(() => loaded(bobImage)))) {
+	problems.push("Bob's chat did not load Alice's image");
+	report.bobImage = await bobImage
+		.evaluate(async (i) => {
+			const r = await fetch(i.src).catch((e) => ({ status: String(e) }));
+			return { src: i.src, complete: i.complete, width: i.naturalWidth, status: r.status, type: r.headers?.get('content-type'), controlled: !!navigator.serviceWorker.controller };
+		})
+		.catch((e) => String(e));
+}
 report.bobImageMs = Date.now() - sharedAt;
 const bobPdf = await bob.evaluate(async (name) => {
 	const a = [...document.querySelectorAll('a[download]')].find((a) => a.getAttribute('download') === name);
@@ -225,6 +235,13 @@ const whole = await texts(alice);
 await profiles.bob.close();
 const late = await open('bob', 'late');
 const lateAt = Date.now();
+// it writes at once, before it can know its own head: the line waits, then continues Bob's chain. Never a fork
+// (Aven.DB.Chains.learned_never_forks)
+const fresh = `from a fresh profile, ${stamp}`;
+await say(late, fresh);
+if (!(await seen(alice.getByTestId('lines').locator('li', { hasText: fresh }), 30_000))) problems.push("the fresh profile's line did not reach Alice");
+if (lines().some((l) => l.t >= lateAt && l.event === 'fork' && l.key === bobDevice)) problems.push('the fresh profile forked its own chain');
+whole.splice(0, whole.length, ...(await texts(alice)));
 const caughtUp = async () => (await texts(late)).join('\n') === whole.join('\n');
 for (let i = 0; i < 80 && !(await caughtUp()); i++) await wait(250);
 report.lateJoinerMs = Date.now() - lateAt;

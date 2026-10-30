@@ -10,9 +10,9 @@ pub mod chats;
 #[cfg(feature = "native")]
 pub mod door;
 #[cfg(feature = "native")]
-pub mod keep;
-#[cfg(feature = "native")]
 pub mod hub;
+#[cfg(feature = "native")]
+pub mod keep;
 /// iroh-gossip, as every peer runs it: the Peer-Light takes it from here.
 pub use iroh_gossip;
 pub use n0_future;
