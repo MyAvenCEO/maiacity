@@ -112,9 +112,9 @@ avenSANDBOX   the box all of it is built and tested in
   30 Oct 2026).
 - **ref:** a name pointing at a Value, changed atomically: a Doc's head.
 - **store:** where a peer's blobs and refs rest, behind one contract.
-- **cap:** a signed grant: which vault may read or write which Doc.
-- **member, invite:** a person's vault let into the network, owned in the tree by the admin coop, and the ticket that
-  lets it in (milestone 2).
+- **cap:** a signed grant: which operations a vault may run on which Docs ([`id/caps`](id/caps/README.md)).
+- **member, invite:** a person's vault let into the network, a member of the admin coop, which neither owns nor governs
+  it (`Aven.ID.Invite`, `memberOf`); and the ticket that lets it in (milestone 2).
 
 **Running (avenPEER)**
 
