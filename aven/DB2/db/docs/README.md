@@ -713,7 +713,9 @@ same Docs by a query's fields. Both are a **Prolly tree**: a search tree whose n
 
   Text compares by code point, UTF-8's byte order; collation by locale comes later through a pinned sort-key runtime.
   A key is never named or signed, only sorted, and sits in a node as a CBOR byte string, so rule 1 holds. A range is
-  two keys; a prefix `p` is the range from `p` to `p FF`, since no field starts with `FF`. Every entry is distinct.
+  two keys; a prefix `p` is the range from `p` to `p FF`: every extension of `p` lies in it, since no field starts with
+  `FF` (`extension_in_range`). A byte prefix alone isn't an extension (text `a` is a byte prefix of text `a 00`), so
+  the engine keeps only the entries whose tuple extends `p` (`key_prefix`). Every entry is distinct.
 - **Nodes:** a leaf is a CBOR array of entries; an inner node is an array of `[first entry, last entry, child]` per
   child. A node ends after an entry whose BLAKE3's low 6 bits are zero (about 64 entries a node) or before an entry
   that would take it past 64 KiB, the size limit (architecture, rule 10). The same rule cuts every level.
@@ -868,7 +870,9 @@ against the Rust's Loro on random ops, so it can never be simpler than the code.
   removals included, gives what folding at once gives; a lookup finds every entry in its range, and only those.
   Vectors `indexes.json`.
 - **Keys** (`Aven.DB.Docs.Key`): comparing two keys bytewise is comparing their tuples, field by field, a prefix first
-  (`key_order`); two tuples with one key are one tuple (`key_inj`). Vectors `keys.json`.
+  (`key_order`); two tuples with one key are one tuple (`key_inj`); a key extends another's, at a field's edge, exactly
+  when its tuple extends the other (`key_prefix`), and every extension lies in the prefix's range
+  (`extension_in_range`). Vectors `keys.json`.
 - **The directory** (`Aven.DB.Docs.Directory`): every Doc listed now was listed at the last fold or is unfolded; a Doc
   that isn't unfolded has the entries it had then.
 
