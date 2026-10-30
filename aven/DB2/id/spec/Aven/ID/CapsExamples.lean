@@ -149,6 +149,15 @@ def chainExamples : List (String × List Cap × Option ChainError) := [
 -- Vault ids are UTF-8 bytes, which the kernel doesn't compute, so the chains are checked as the module builds.
 #guard chainExamples.all fun (_, cs, e) => chainError castCtx cs == e
 
+/-- Which branches a cap writes on, each answer written out by hand: main only on main, proposals on every branch but
+main, one branch only on it. -/
+def branchExamples : List (Branches × String × Bool) := [
+  (.any, "main", true), (.main, "main", true), (.main, "fix-title", false), (.proposals, "main", false),
+  (.proposals, "fix-title", true), (.one "fix-title", "fix-title", true), (.one "fix-title", "other", false),
+  (.one "main", "main", false)]
+
+#guard branchExamples.all fun (b, br, a) => b.allows br.toUTF8.toList == a
+
 /-- Approvals on the cast: signatures, how many owners are needed, the vault, the digest, and whether it holds. -/
 def approvalExamples : List (String × List Sig × Nat × String × String × Bool) := [
   ("Alice's owner signs the digest", [⟨"alice-owner", "d"⟩], 1, "alice", "d", true),

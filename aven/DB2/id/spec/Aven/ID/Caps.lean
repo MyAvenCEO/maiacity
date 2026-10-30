@@ -120,6 +120,22 @@ theorem Branches.within_trans {a b c : Branches} (h : a.within b = true) (k : b.
     a.within c = true := by
   cases a <;> cases b <;> cases c <;> simp_all [Branches.within]
 
+/-- Main, as an envelope names its branch. -/
+def mainBranch : Core.Bytes := "main".toUTF8.toList
+
+/-- Whether a cap with these branches writes on `branch`: main only on main, proposals on every branch but main, one
+branch only on it. -/
+def Branches.allows : Branches → Core.Bytes → Bool
+  | .any, _ => true
+  | .main, b => b == mainBranch
+  | .proposals, b => b != mainBranch
+  | .one c, b => b == c.toUTF8.toList && b != mainBranch
+
+/-- A narrower cap's branches allow no branch the wider one's don't. -/
+theorem Branches.allows_within {a b : Branches} {br : Core.Bytes} (w : a.within b = true) (al : a.allows br = true) :
+    b.allows br = true := by
+  cases a <;> cases b <;> simp_all [Branches.within, Branches.allows] <;> exact al.1 ▸ al.2
+
 /-- How much history a reader opens: all of it, or only from the grant on. -/
 inductive History where
   | all
@@ -161,6 +177,11 @@ structure Conditions where
 def Conditions.narrows (c p : Conditions) : Bool :=
   decide (p.notBefore ≤ c.notBefore) && atMost c.expires p.expires && decide (p.approve ≤ c.approve) &&
     atMost c.uses p.uses && (!p.own || c.own) && c.branches.within p.branches && c.history.within p.history
+
+theorem Conditions.narrows_branches {c p : Conditions} (h : c.narrows p = true) :
+    c.branches.within p.branches = true := by
+  simp only [Conditions.narrows, Bool.and_eq_true] at h
+  exact h.1.2
 
 theorem Conditions.narrows_trans {a b c : Conditions} (h : a.narrows b = true) (k : b.narrows c = true) :
     a.narrows c = true := by
@@ -451,6 +472,23 @@ theorem links_caps : ∀ {p : Cap} {cs : List Cap}, (linksRules x p cs).all (·.
     rcases List.mem_cons.mp m with e | m
     · exact e ▸ (linkRules_ok l).2.2.2.2.2
     · exact links_caps rest d m
+
+/-- A branch the last cap of valid links allows, every cap above it allows: conditions narrow down a chain. -/
+theorem links_branch {br : Core.Bytes} : ∀ {p : Cap} {cs : List Cap} {last : Cap},
+    (linksRules x p cs).all (·.1) = true → (p :: cs).getLast? = some last → last.conditions.branches.allows br = true →
+      ∀ c ∈ p :: cs, c.conditions.branches.allows br = true
+  | p, [], last, _, hl, al, c, m => by
+    simp only [List.getLast?_singleton, Option.some.injEq] at hl
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at m
+    subst hl m
+    exact al
+  | p, c' :: cs, last, h, hl, al, c, m => by
+    obtain ⟨lk, rest⟩ := linksRules_cons.mp h
+    have ih := links_branch rest (by simpa only [List.getLast?_cons_cons] using hl) al
+    rcases List.mem_cons.mp m with e | m
+    · exact e ▸ Branches.allows_within (Conditions.narrows_branches (linkRules_ok lk).2.2.2.2.1)
+        (ih c' (List.mem_cons_self ..))
+    · exact ih c m
 
 /-- Every grant carries its issuer's owners' approval, an owner vault's by its own quorum, and a device of its issuer
 signed it (D14). -/
