@@ -51,7 +51,7 @@ settles it as drawn here.
 | avenID | Who may do what: keys, vaults that own vaults, groups, caps, seals, the safe | key, vault, group, cap, ticket, keyring, epoch | [`id/caps`](id/caps/README.md), Lean `Aven.ID` | caps (#1492) |
 | store | Bytes at rest and in flight | Value (a blob at rest), ref, file | [`store`](store/README.md) | done; security fixes in flight |
 | docs | Mutable data and its history | Doc, Record, envelope, log, segment, type, lens, branch, checkpoint | [`db/docs`](db/docs/README.md) | docs |
-| engine | Operations and demand | operation, want, target, view, runtime, catalogue | [`db/engine`](db/engine/README.md) | engine |
+| engine | Operations and demand | operation, want, target, view, runtime, vocabulary | [`db/engine`](db/engine/README.md) | engine |
 | ontology | Meaning: facts over predicates | fact, predicate, trait | [`db/ontology`](db/ontology/README.md) | engine |
 | actors | Behaviour | actor, definition, message, turn, face | [`aven/actor`](../actor/ARCHITECTURE.md) (#1488) | avenACTORS |
 | avenPEER | The node and the network | Peer, Peer-Light, relay, door, keeper | [`README`](README.md), [`MILESTONE2.md`](MILESTONE2.md), [`PRODUCTION.md`](PRODUCTION.md), [`SANDBOX.md`](SANDBOX.md) | PEERS planning |
@@ -64,7 +64,7 @@ today; these 27 carry the whole design. [`GLOSSARY.md`](GLOSSARY.md) maps every 
 
 | Primitive | Its one meaning | Owned by | Replaces |
 |---|---|---|---|
-| **Value** | Immutable bytes named by their BLAKE3 hash, written `b3:<hex>` in text. At rest in a store it is a **blob** | store, docs | — |
+| **Value** | Immutable bytes named by their BLAKE3 hash, written `b3:<hex>` in text. At rest in a store it is a **blob**. A sealed Value is named by the hash of its sealed bytes; its plaintext hash is an id only inside a seal | store, docs | — |
 | **ref** | A peer's own name for a Value, changed by compare-and-set. Refs never leave their peer | store | the README's "shared head, like IPNS" |
 | **envelope** | The one signed unit of change. Its bytes are canonical, its signature covers exactly them, and it is named by their hash. It names its writer, its place in its log and, by hash, what it builds on. Always sealed to its readers; a public one to the network's members (caps D15) | docs, avenID | avenID statements, the chat's lines and docs envelopes. Actor messages and caps letters travel inside envelopes |
 | **log** | One writer's envelopes in one Doc and branch, each naming the one before it by hash | docs | the store's chain, a device's run of segments, an actor's journal, an inbox's entries, a vault's statements |
@@ -156,12 +156,12 @@ full list, part by part, is in [`GLOSSARY.md`](GLOSSARY.md) (**A1**).
 | view | cached rows (engine); an app's schema and lenses (docs); a face's markup (actors); a kind's flat object (ontology) | **view**: a query's rows read through lenses at one schema version, stamped with a version. Actors' view part becomes **markup** |
 | kind | a vault's kind; a composition of traits (ontology); a schema family (docs); a join's kind (engine) | **kind** only for vaults; the ontology's kinds and docs' families are **types**; a join says `join` |
 | type, schema, predicate, definition, table | five words for "a shape with versions" | one **type** Doc with versions and lenses (**A17**) |
-| catalogue, lane, vocabulary | a vault's names for Values (engine); the schemas a vault counts (docs); the ontology's lanes | one **catalogue** per vault: vault, then network, then built in |
+| catalogue, lane, vocabulary | a vault's names for Values (engine); the schemas a vault counts (docs); the ontology's lanes | one **vocabulary** per vault, Samuel's word: its named types, operations, runtimes and definitions; vault, then network, then built in |
 | member | an invited person vault (avenID); a reader of a group (caps); an ontology predicate | a **member** is in the network's group (**A10**); `member_of` stays a predicate |
 | network | the old agent kind; a statement field; the community; the Rust claim and config | the **network** is the members group under one genesis; the field names the genesis |
 | claim | the first signup takes the network; a vault claims a ticket | the network starts with a **genesis**; **claim** is for tickets |
 | peer, writer | a node; a Loro peer; the task that commits; a log's author | **Peer** is the node; a Loro peer is a **writer id**; a **writer** is a log's author; the task that applies changes is **the committer** |
-| epoch | a Doc key between rotations (caps); a device's next Loro peer (docs proposal) | **epoch** only for keys |
+| epoch | a Doc key between rotations (caps); a device's next Loro peer (docs proposal) | **epoch** only for keys; a device's fresh start after a split is a **generation** (Samuel) |
 | partial | not everything is held (engine); not yet checked (milestone-4 notes) | **partial** means not everything is held; the other is **unchecked** |
 | `$actor` | a person, the signing device, or an actor | `$actor` is the actor running the operation, `$vault` the vault it acts for and `$device` the signer. Caps compare `$vault` and `$device` with the signer, never `$actor` |
 | index, gate, record | a file's chunk list, a pack's map, a query index; a time limit, an access check; a pack entry, a status, a log entry | **index** only for queries (a file has a **chunk list**); **gate** only for time limits (access is the **door**); "record" only as **Record** |
@@ -203,7 +203,7 @@ Each scenario says what must hold, what runs in production today, what the specs
 | 9 | Script runs on avenOS's origin | Keys stay safe | Device keys sit in OPFS on that origin | The safe on the Peer-Light's own origin (D17) | Three origins: the app, the safe and files (**A15**) |
 | 10 | 10,000 members and 100,000 Docs | Sync and rotations stay cheap | — | Flat keys up to about 150 (D7); a topic and a catch-up per Doc | The key tree; topics per group; set reconciliation across Docs; checkpoints (**A9**) |
 | 11 | A Doc with ten years of history | A new device starts in seconds | — | Snapshots stay local, so a new device replays from the genesis | Checkpoints that travel (**A5**); period Docs (**A6**) |
-| 12 | The guardian key leaks | The damage is bounded and visible | It owns every person vault | It owns every vault, and every keyring is sealed to it | Named in what people sign; its exit (Samuel, later); recovery with a delay |
+| 12 | The guardian key leaks | The damage is bounded and visible | It owns every person vault | It owns every vault, and every keyring is sealed to it | Named in what people sign; it leaves before the network opens beyond the founding circle (caps D12); recovery with a delay |
 | 13 | Two people use one invite offline | One winner, the same everywhere | The Aven Peer's compare-and-set picks | Undefined without a sequencer | The smallest claim hash wins, everywhere (**A12**) |
 | 14 | The network splits for a day | Both halves work and merge after | Browsers only on the Aven Peer's side | Docs merge; acks settle revocations; statements are concurrent | The tree as a Doc; deterministic rules (**A12**) |
 | 15 | A keeper shows two readers different histories | Readers notice at first contact | The first line to arrive wins | Deps name op ids, so it goes unnoticed | Deps by hash (rule 2, **A3**) |
@@ -220,28 +220,28 @@ the edges: configuration, web origins, keepers, freshness. The table is the caps
 | 1 | Swap the guardian by configuration | It comes from `--guardian`; no person signs it | open | Its hybrid and X-Wing keys in the genesis and in every claim and join text; shown in fingerprints (**A13**) | `guardian_consented` |
 | 2 | Ask for a passkey's PRF from another origin of `maia.city` | Any origin of the domain can ask, at a predictable input | open | A dedicated RP ID for avenOS before more passkeys exist; a secret the vault holds mixed into the input (**A14**) | — |
 | 3 | Serve changed code from the origin | Outside the model; D17's safe helps | partial | Signed releases; the safe's origin serves only the safe (**A15**) | — |
-| 4 | Mint caps with a stolen device | Every grant needs an owner's approval (D14) | covered | The heal also replaces the vault key, tag seeds and letterbox keys (D19) | `heal_evicts` |
-| 5 | Launder a revoked holder's writes through another writer's late ack | "had seen" counts what the acking writer imported | open | A revoked holder's envelope never counts if the revocation is in its past; under a Doc cap, only the revocation's own past counts (**A23**) | `revocation_wins`, restated |
+| 4 | Mint caps with a stolen device | Every grant needs an owner's approval (D14) | covered | The heal also replaces the vault key, tag seeds and letterbox keys (D19, #1499) | `heal_evicts` |
+| 5 | Launder a revoked holder's writes through another writer's late ack | "had seen" counts what the acking writer imported | covered (#1499) | An envelope with the revocation in its own past never counts; under a Doc cap only the revocation's own past is kept; another writer's ack may vouch for revocations kept elsewhere (**A23**) | `revocation_wins`, restated |
 | 6 | Read the signer off a segment | Outside a segment is only its Doc, epoch and padded length (D13) | covered | — | `keeper_blind` over the outside |
 | 7 | Learn who reads a Doc | Fetch proofs come over connections that name the device | accepted for now (D13) | Mixing, unlinkable proofs, later | — |
-| 8 | Spoof a fetch-key change or upload junk | The new fetch key comes by letter, unauthenticated | open | Fetch keys chain from the Doc's genesis, each signed by the one before; uploads charged to the uploading vault (**A22**) | `fetch_chain` |
-| 9 | A reader given one Doc can't check vault-wide caps | They live in a group Doc it can't open | open | Envelopes carry, inside the seal, the caps they rest on | — |
-| 10 | `below` read upward | The text runs backwards | open | `below` grants to the vaults beneath; a group per vault sealed downward | `authority_down` |
+| 8 | Spoof a fetch-key change or upload junk | The new fetch key comes by letter, unauthenticated | open | Fetch keys chain from the Doc's genesis, each signed by the one before; the keeper keeps every successor, takes the smaller epoch hash as current, as writers do, and flags the fork; the uploading vault pays (**A22**) | `fetch_chain` |
+| 9 | A reader given one Doc can't check vault-wide caps | They live in a group Doc it can't open | covered (#1499) | Envelopes carry, inside the seal, the caps they rest on; acks carry their revocation | — |
+| 10 | `below` read upward | The text runs backwards | covered (#1499) | `below` is sealed downward | `authority_down` |
 | 11 | Keep a writer from hearing of a removal | Browsers have one keeper and one relay | open | Several sources; signed tips; a writer never writes on an epoch older than a tip it has seen | — |
 | 12 | Hold the door and the tree | The Aven Peer's, by position | open | The genesis, the tree as a Doc, the network's group (**A10** to **A12**) | `door_from_tree` |
-| 13 | Pass on a read key without approval | Anyone holding a key can seal it to another | accepted | Say it: approvals bind writes, `share` and `tell`; reading is holding a key | — |
+| 13 | Pass on a read key without approval | Anyone holding a key can seal it to another | accepted, stated (#1499) | Say it: approvals bind writes, `share` and `tell`; reading is holding a key | — |
 | 14 | Limit what one device reads | The keyring opens to every device | accepted | A limited device is a vault of its own, without the keyring (the Aven Peer is one) | — |
-| 15 | Keep a group cap's children alive after their issuer leaves | Liveness checks only the writer | open | Children live only while their issuer is in the group | `child_live` |
-| 16 | Keep network caps after removal | They stand | open | Network caps end at removal (**A10**) | `public_bounded` |
-| 17 | Read history with a `from-now` grant through a group | `back` opens all history | accepted | Say it; per-Doc keys where `from-now` matters | — |
+| 15 | Keep a group cap's children alive after their issuer leaves | Liveness checks only the writer | covered (#1499) | Children live only while their issuer is in the group | `child_live` |
+| 16 | Keep network caps after removal | They stand | covered (#1499) | Removal ends public caps and rotates the members group at once (D15) | `public_bounded` |
+| 17 | Read history with a `from-now` grant through a group | `back` opens all history | accepted, stated (#1499) | Say it; per-Doc keys where `from-now` matters | — |
 | 18 | Play with clocks around expiry | A write carries its writer's time | partial | Readers judge expiry by acks; `not_before` holds only for reads | `time_acked` |
-| 19 | Name a revocation or key that never comes | Its builders wait forever | open | A named revocation must be in the causal past; every wait raises the stall alarm (rule 11) | `waits_end` |
+| 19 | Name a revocation or key that never comes | Its builders wait forever | covered (#1499) | Waits only for what is named by hash; every wait raises the stall alarm (rule 11) | `waits_end` |
 | 20 | Claim one ticket twice | Only the Aven Peer's compare-and-set orders it | open | The smallest claim hash wins (**A12**) | `ticket_once` |
 | 21 | Replay an old statement | No nonce, no expiry | open | Statements are envelopes in logs with a sequence and the hash before (K1, K2) | — |
 | 22 | Make an actor act as a confused deputy | Inside the kernel (D16) | accepted | Hosting is the owner's explicit choice (**A16**) | `no_confused_deputy` |
 | 23 | Show readers different sides of a split | Deps name op ids | open | Deps by hash (**A3**) | `split_found` |
 | 24 | Forge later with a quantum computer | The guardian is Ed25519; the transport is classical | partial | A hybrid guardian; hybrid TLS | — |
-| 25 | Flood a letterbox | Unspecified | open | The signature inside the seal, bound to the recipient; rate limits | — |
+| 25 | Flood a letterbox | Unspecified | covered (#1499) | The signature inside the seal, bound to the recipient; rate limits | — |
 
 ## Server peers hold only what owners grant
 
@@ -461,14 +461,15 @@ Some tokens already work as an index today, and each gets a fix:
   - content-addressed definitions;
   - loads are wants.
 - *Weak:*
-  - a re-placed face reuses its address, which breaks replay or drops messages (version 1);
+  - a re-placed face reused its address, breaking replay (fixed in #1488: an incarnation in the address);
   - location is part of identity;
-  - replay doesn't pin the runtime, definition, fuel schedule or load versions;
+  - replay didn't pin the runtime, definition or fuel schedule (fixed in #1488); load versions wait for A17;
   - every entity is a root Doc;
   - an inbox per actor pair;
   - state replaced whole grows history quadratically;
   - no effect writes data;
-  - views can carry data out through URLs;
+  - views could carry data out through URLs (fixed in #1488: a CSP for faces, `url()` only by hash, links through an
+    interstitial);
   - the kernel acts with the whole device cap.
 - *Verdict:* version 1 is sound and small. Its later layers should fold into docs and caps (K5, K9, **A16**, **A17**).
 
@@ -504,16 +505,18 @@ the spec that owns it.
   cross-part rules, and every spec uses them in this sense. *Yes.*
 - **A2. One codec and signing rule** for everything signed (K1, rule 1). It starts with the chat's lines in the
   security fixes. *Yes.*
-- **A3. Envelopes name what they build on by hash** (rule 2). *Yes.*
+- **A3. Envelopes name what they build on by hash** (rule 2). *Yes; the docs thread agrees.*
 - **A4. Splits are final,** with no settlement that revives a side, and "fork" means only a copy into a new Doc. The
-  store's and Lean's fork becomes split. *Yes.*
+  store's and Lean's fork becomes split. *Yes; the docs thread agrees.*
 - **A5. Checkpoints travel:** sealed and hybrid-signed, naming the segments they cover. A new device starts from one
-  and checks it in the background, from milestone 4, whose catch-up target needs it. *Yes.*
-- **A6. Collections that grow without end are chains of period Docs.** *Yes.*
+  and checks it in the background, from milestone 4, whose catch-up target needs it. *Yes; the docs thread agrees.*
+- **A6. Collections that grow without end are chains of period Docs.** *Yes, rather than shallow snapshots, which
+  refuse older branches; the docs thread agrees.*
 - **A7. A Doc pins the type versions it accepts,** at birth or by its owners' act, and a listing can be withdrawn.
-  *Yes.*
-- **A8. One target grammar** for caps, wants and query scope; `complete` means every Doc of the target is held.
-  *Yes.*
+  *Yes; the docs thread agrees.*
+- **A8. One target grammar** for caps, wants and query scope. A query without a target is refused; `complete` means
+  every Doc of the target is held, checked against its directory; the implicit want takes the query's tier and lasts
+  while the query is live. *Yes; the engine thread agrees.*
 
 **The network and trust**
 - **A10. The network is a group:**
@@ -532,20 +535,33 @@ the spec that owns it.
 - **A12. The tree is a Doc of signed statements:**
   - ordered by what each statement names, not by ref names;
   - a ticket claimed once, by the smallest hash;
+  - a withdrawal wins over every join not in its past, and a join is final once an admin device has acked it, as a
+    revocation wins over what it hadn't seen (refined with the PEERS thread);
   - members gossip signed tips.
 
   *Yes.*
-- **A13. The guardian is named, with hybrid keys, in every claim and join text** people sign. Its exit stays Samuel's
-  later decision. *Yes.*
+- **A13. The guardian is named, with hybrid keys, in every claim and join text** people sign, until it leaves before
+  the network opens beyond the founding circle (caps D12). *Yes.*
 - **A14. A dedicated passkey RP ID for avenOS,** for example `aven.maia.city`, before more passkeys exist; today's few
-  members register once more. *Yes, now.*
+  members register once more. A salt the keeper serves per credential goes into the PRF input: secret from other
+  origins, not from the keeper. *Yes, now; the caps thread agrees.*
 - **A15. Three origins:** avenOS (the app), the safe (D17: keys, the Peer-Light) and files (no keys, sandboxed).
-  Releases are signed. *Yes.*
+  Releases are signed:
+  - in the browser, a Service Worker on the safe's origin checks a release's signature before new code activates,
+    and release hashes go into an append-only signed list that members' other devices check. A browser always
+    re-checks a worker's script against the server, so this raises the bar without making the deploy unable to
+    replace it;
+  - the trusted path is the Mac app (Tauri), which checks signatures before it runs new code.
+
+  *Yes.*
 - **A16. Hosting an actor on the Aven Peer is an explicit read cap** per actor and per load target, shown to its
   owner; a member's own Peer is the default home. *Yes.*
 
 **The engine and actors**
-- **A9. The want queue** as in [Massive data](#massive-data-wants-decide-what-moves). *Yes.*
+- **A9. The want queue** as in [Massive data](#massive-data-wants-decide-what-moves). Its laws go into Lean before
+  any code: tiers only order, each key once at its highest tier, prerequisites inherit priority, every round moves,
+  `now` is never evicted. Older periods are reached by a bounded `follow` of the link to the period before. *Yes; the
+  engine thread agrees.*
 - **A17. Actors fold into docs:**
   - an address names a vault-scoped id with an incarnation counter, never a device;
   - the journal is the actor Doc's log;
@@ -556,15 +572,18 @@ the spec that owns it.
 
   *Yes.*
 - **A18. Plugins are runtimes.** A lowering is pinned by its runtime's hash, and an envelope carries the lowered hash.
-  *Yes.*
+  *Yes; the engine thread agrees.*
 - **A19. One update grammar:** put, patch, remove and a new `edit` for text, lists and trees, each with a verb and a
-  footprint. *Yes.*
-- **A20. Facts for relations, Records for documents.** *Yes.*
+  footprint. *Yes; the engine thread agrees.*
+- **A20. Facts for relations, Records for documents.** *Yes; the engine thread agrees.*
 - **A21. Private search in four tiers,** as above. *Yes.*
 
 **Caps**
-- **A22. Fetch keys chain from a Doc's genesis,** and uploads are charged to the uploading vault. *Yes.*
-- **A23. Acks can't launder:** a revoked holder's envelope never counts if the revocation is in its past. *Yes.*
+- **A22. Fetch keys chain from a Doc's genesis,** each signed by the one before. The keeper keeps every successor,
+  takes the smaller epoch hash as current as writers do, and flags the fork; uploads are charged to the uploading
+  vault. *Yes; the caps thread agrees.*
+- **A23. Acks can't launder:** a revoked holder's envelope never counts if the revocation is in its past. *Done in
+  caps (#1499), as what D8 meant.*
 
 **Housekeeping**
 - **A24. The layers** as drawn [above](#the-whole-on-one-page). *Yes.*
