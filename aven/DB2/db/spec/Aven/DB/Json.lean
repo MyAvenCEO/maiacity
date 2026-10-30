@@ -8,7 +8,7 @@ The one JSON form of `aven-db-model` (`Main.lean`) and of the vectors (`Vectors.
 
 - A status event is `"dial"`, `"frame"`, `"tick"` or `"lost"`; a state `{"phase", "moved", "idle"}`.
 - A presence change is `["join", p]` or `["leave", p]`; what every peer is told, a sorted list of peers.
-- A store call is `["put", hex]`, `["get", h]`, `["getRange", h, a, b]`, `["has", h]`, `["list"]`, `["delete", h]`,
+- A store call is `["put", hex]`, `["get", h]`, `["getRange", h, a, b]`, `["has", h]`, `["size", h]`, `["list"]`, `["delete", h]`,
   `["getRef", n]`, `["setRef", n, expected or null, new]`, `["deleteRef", n, expected]` or `["listRefs"]`; bytes in
   hex, hashes as the store writes them. A result is `{"ok": value}`, or `{"error": "stale", "current"}`,
   `{"error": "range", "start", "end", "len"}`, `{"error": "invalidName", "name"}`.
@@ -72,6 +72,7 @@ def Op.json : Op → Json
   | .get h => toJson ["get", h]
   | .getRange h a e => Json.arr #["getRange", h, toJson a, toJson e]
   | .has h => toJson ["has", h]
+  | .size h => toJson ["size", h]
   | .list => toJson ["list"]
   | .delete h => toJson ["delete", h]
   | .getRef n => toJson ["getRef", n]
@@ -90,6 +91,7 @@ def parseOp (j : Json) : Except String Op := do
   | "get" => pure (.get (← str 1))
   | "getRange" => pure (.getRange (← str 1) (← (arg 2).getNat?) (← (arg 3).getNat?))
   | "has" => pure (.has (← str 1))
+  | "size" => pure (.size (← str 1))
   | "list" => pure .list
   | "delete" => pure (.delete (← str 1))
   | "getRef" => pure (.getRef (← str 1))
@@ -103,6 +105,7 @@ def Res.json : Res → Json
   | .bytes b => Json.mkObj [("ok", toJson (b.map Blake3.hex))]
   | .yes b => Json.mkObj [("ok", toJson b)]
   | .hashes l => Json.mkObj [("ok", toJson l)]
+  | .size n => Json.mkObj [("ok", toJson n)]
   | .done => Json.mkObj [("ok", Json.null)]
   | .ref h => Json.mkObj [("ok", toJson h)]
   | .names l => Json.mkObj [("ok", toJson l)]

@@ -147,6 +147,10 @@ impl<F: Folder> Store for OpfsStore<F> {
         Ok(self.folder.size(&blob_path(h)).await?.is_some())
     }
 
+    async fn size(&self, h: &Hash) -> Result<Option<u64>> {
+        self.folder.size(&blob_path(h)).await
+    }
+
     async fn list(&self) -> Result<Vec<Hash>> {
         let mut out = self
             .folder

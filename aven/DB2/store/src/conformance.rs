@@ -140,6 +140,10 @@ pub async fn call(s: &impl Store, op: &Value) -> Value {
             Ok(h) => ok(s.get_range(&h, num(2)..num(3)).await, bytes),
             Err(e) => error(e),
         },
+        "size" => match hash(1) {
+            Ok(h) => ok(s.size(&h).await, |n| json!(n)),
+            Err(e) => error(e),
+        },
         "has" => match hash(1) {
             Ok(h) => ok(s.has(&h).await, |b| json!(b)),
             Err(e) => error(e),
