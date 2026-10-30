@@ -366,10 +366,13 @@ async fn main() -> Result<(), Error> {
     let held = Blobs::new(store.clone());
     // the Aven Peer keeps every file a member says in the city-dome: each `file` line it chains, fetched whole from
     // the device whose chain it is on (store/README.md, "How a file travels", 2). A file it couldn't keep, its sender
-    // gone, waits until that device next connects; on start, it tries every file line it holds again
+    // gone, waits until that device next connects; on start, it tries every file line it holds again. At most
+    // `KEEPING` keeps run at once, however many file lines there are
+    const KEEPING: usize = 4;
     let waiting: Arc<Mutex<BTreeMap<PublicKey, Vec<Announcement>>>> = Arc::default();
+    let keeping = Arc::new(tokio::sync::Semaphore::new(KEEPING));
     let keeps: chats::OnFile = {
-        let (endpoint, at, held, store, me, notes, waiting) = (
+        let (endpoint, at, held, store, me, notes, waiting, keeping) = (
             endpoint.clone(),
             relay_url.clone(),
             held.clone(),
@@ -377,9 +380,10 @@ async fn main() -> Result<(), Error> {
             me.clone(),
             notes.clone(),
             waiting.clone(),
+            keeping.clone(),
         );
         Arc::new(move |from, file: Announcement| {
-            let (endpoint, at, held, store, me, notes, waiting) = (
+            let (endpoint, at, held, store, me, notes, waiting, keeping) = (
                 endpoint.clone(),
                 at.clone(),
                 held.clone(),
@@ -387,14 +391,20 @@ async fn main() -> Result<(), Error> {
                 me.clone(),
                 notes.clone(),
                 waiting.clone(),
+                keeping.clone(),
             );
             tokio::spawn(async move {
                 let Ok(index) = file.file.parse() else { return };
+                let Ok(_turn) = keeping.acquire_owned().await else { return };
                 let kept = keep::keep(
                     &endpoint, &at, &held, &*store, from, index, file.size, &me, &notes,
                 )
                 .await;
-                if kept.is_err() {
+                // only a sender that couldn't be reached is asked again (`KeepError::retry`): one that hasn't the
+                // file, or whose file isn't the size its line says, never will have it
+                if let Err(why) = kept
+                    && why.retry()
+                {
                     waiting.lock().unwrap().entry(from).or_default().push(file);
                 }
             });
