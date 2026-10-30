@@ -46,8 +46,14 @@
 		picker.value = '';
 	}
 
-	const kind = (type) =>
-		type.startsWith('image/') ? 'image' : type.startsWith('video/') ? 'video' : type === 'application/pdf' ? 'pdf' : 'file';
+	// how a file shows: only through <img>, <video> or a PDF's frame, and only for the passive types the Service Worker
+	// serves inline (public/files-sw.js keeps the same list). Anything else, SVG and HTML included, is a download link
+	const kind = (type) => {
+		const t = String(type ?? '').split(';')[0].trim().toLowerCase();
+		if (/^image\/(png|jpeg|gif|webp|avif|bmp)$/.test(t)) return 'image';
+		if (/^video\/[a-z0-9.+-]+$/.test(t)) return 'video';
+		return t === 'application/pdf' ? 'pdf' : 'file';
+	};
 	// a file still on its way (the Aven Peer not yet keeping it, its sender's peer not reachable): asked for again, a
 	// little later each time, until it comes
 	function retrying(node) {
