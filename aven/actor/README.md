@@ -1,4 +1,4 @@
-# aven/actors
+# aven/actor
 
 What three systems that built an actor architecture taught us, reduced to first principles. Status: **discovery**.
 There is no code here yet. The design itself is [`ARCHITECTURE.md`](ARCHITECTURE.md), the single source of truth for
@@ -240,7 +240,8 @@ model's judgment; avenDB's identity, shares and proofs instead of per-peer keys 
     back as plain data (`maia/content/assets/box/engine.js`).
 
   Beside them, the Markdown engine (`maia/site/lib/markdown/index.js`) writes every tag itself from an allowlist, so
-  nothing in Markdown can run, load or lead anywhere. [`ARCHITECTURE.md`](ARCHITECTURE.md) (section 11) makes these the runtimes of the actor model.
+  nothing in Markdown can run, load or lead anywhere. [`ARCHITECTURE.md`](ARCHITECTURE.md) (section 5) rewrites these
+  as the runtimes of the actor model.
 - **avenDB's rules** (`aven/DB2/README.md`): pure protocol cores as state machines without I/O; no step without
   progress; react to changes, never to states; derived state is a cache keyed by its inputs and code version; only a
   person's or an agent's act writes; Lean is the source of truth and the tests derive from it.
@@ -371,9 +372,9 @@ Everything else in the sources is one of these four, or a role an actor plays:
 | Supervision retry | A policy keyed on the interface's declared idempotency |
 | Merge law, members | Not needed: a composite is an actor whose turn tells other actors |
 | Manifest, `loads`, keep share, query held by a view | The actor's declared wants: its dependencies, which the sync engine brings. A want grants nothing |
-| `logic`, `view`, `style`, face, vibe, draw script, Markdown, LaTeX, recipe, chart | Parts: content in a format, for the runtime of that kind ([`ARCHITECTURE.md`](ARCHITECTURE.md), section 11) |
+| `logic`, `view`, `style`, face, vibe, draw script, Markdown, LaTeX, recipe, chart | Parts: content in a format, for the runtime of that kind ([`ARCHITECTURE.md`](ARCHITECTURE.md), section 5) |
 | Sandbox, logic core, view engine, math host, asset box, Markdown engine | Runtimes: frozen engines that run any part without trusting it |
-| Skill (the composite) vs actor (the leaf) | No second kind. A composite is an actor that tells other actors; "skill" is a product word for one ([`ARCHITECTURE.md`](ARCHITECTURE.md), section 13) |
+| Skill (the composite) vs actor (the leaf) | No second kind. A composite is an actor that tells other actors; "skill" is a product word for one ([`ARCHITECTURE.md`](ARCHITECTURE.md), section 12) |
 
 ## 9. What runtimes taught us
 
@@ -411,6 +412,6 @@ read the clock).
 ## 10. The design
 
 The design that follows from all of this is [`ARCHITECTURE.md`](ARCHITECTURE.md), the single source of truth for the
-next implementation. It keeps only what the first principles above require for version 1: actors, messages, turns,
-journals and runtimes on peers with no bus in the middle. Capabilities and encryption, persistence, composites, Studio
+next implementation. It builds the engine bottom-up from what the first principles above require: values, documents,
+messages, runtimes, actors, the kernel and faces, with version 1 as a standalone todo app in memory. Capabilities and encryption, persistence, composites, Studio
 and planning are left to their own packages or to later actors.

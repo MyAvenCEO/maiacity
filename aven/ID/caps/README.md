@@ -5,7 +5,7 @@ first principles, for the model avenID's signing and vault infrastructure will c
 no code here.
 
 avenID's code lives in `aven/DB2/id` today; this folder holds its authority design until avenID moves. How actors get
-and use authority is in [`../../actors/ARCHITECTURE.md`](../../actors/ARCHITECTURE.md), which leaves capabilities to
+and use authority is in [`../../actor/ARCHITECTURE.md`](../../actor/ARCHITECTURE.md), which leaves capabilities to
 this package and keeps the router's place for the check.
 
 1. [The question](#1-the-question)
@@ -314,7 +314,7 @@ An actor is not a vault and owns nothing. It holds capabilities delegated by who
 the spawner's, rooted in a person's vault. Every envelope carries its run, and the run's owner bounds what can happen.
 The kernel's router checks the capability on every message; the door actor that performs an effect checks it again
 against the run's owner; a capability with an approval condition waits at the gate for the quorum's signed press over
-that exact call. See [`../../actors/ARCHITECTURE.md`](../../actors/ARCHITECTURE.md).
+that exact call. See [`../../actor/ARCHITECTURE.md`](../../actor/ARCHITECTURE.md).
 
 ## 11. What a capability carries
 
