@@ -44,10 +44,14 @@ pub struct S3 {
     pub root: String,
     pub access_key_id: String,
     pub secret_access_key: String,
+    /// Whether refs use the server's conditional writes. Hetzner's Object Storage refuses a correct `If-Match` and
+    /// ignores it on DELETE (the deploy's probe, 30 Oct 2026): there it is off, and the store leans on its own lock and
+    /// the one writer, as a folder does.
+    pub conditions: bool,
 }
 
 /// Object storage over the S3 API. Each write is one PUT, so an object is whole or absent; refs use conditional
-/// writes (`If-Match`, `If-None-Match: *`) and conditional deletes.
+/// writes (`If-Match`, `If-None-Match: *`) and conditional deletes, unless `conditions` is off.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn s3(at: &S3) -> Result<DalStore> {
     // OpenDAL's HTTP client (reqwest), process-wide; installing it again changes nothing
@@ -61,7 +65,12 @@ pub fn s3(at: &S3) -> Result<DalStore> {
         .secret_access_key(&at.secret_access_key)
         .disable_config_load()
         .disable_ec2_metadata();
-    build(Operator::new(builder))
+    let store = build(Operator::new(builder))?;
+    Ok(if at.conditions {
+        store
+    } else {
+        store.unconditional()
+    })
 }
 
 /// The origin's private file system, in a browser. A write goes through `createWritable`, which the browser

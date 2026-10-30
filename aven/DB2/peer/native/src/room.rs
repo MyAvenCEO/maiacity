@@ -58,6 +58,8 @@ struct State {
     room: chat::Room,
     present: Vec<String>,
     last: u64,
+    /// the room's direct neighbours over gossip: none, and it joins again through its bootstrap
+    neighbours: usize,
 }
 
 /// A peer's place in the room: it says lines, and hears everyone's.
@@ -85,7 +87,7 @@ impl Room {
         notes: Notes,
     ) -> Result<Room, String> {
         let topic = gossip
-            .subscribe(topic(network), bootstrap)
+            .subscribe(topic(network), vec![])
             .await
             .map_err(|e| e.to_string())?;
         let (sender, mut receiver) = topic.split();
@@ -100,6 +102,7 @@ impl Room {
                 room: chat::Room::default(),
                 present: vec![],
                 last: 0,
+                neighbours: 0,
             })),
         };
         let hears = room.clone();
@@ -107,6 +110,15 @@ impl Room {
             while let Some(event) = receiver.next().await {
                 match event {
                     Ok(Event::Received(m)) => hears.hear(&m.content, m.delivered_from),
+                    Ok(Event::NeighborUp(k)) => {
+                        hears.state.lock().unwrap().neighbours += 1;
+                        hears.note("neighbour", json!({ "up": hears.gate.name(&k).0 }));
+                    }
+                    Ok(Event::NeighborDown(k)) => {
+                        let mut state = hears.state.lock().unwrap();
+                        state.neighbours = state.neighbours.saturating_sub(1);
+                        hears.note("neighbour", json!({ "down": hears.gate.name(&k).0 }));
+                    }
                     Ok(_) => {}
                     Err(e) => {
                         hears.note("dropped", json!({ "why": format!("the room: {e}") }));
@@ -117,9 +129,27 @@ impl Room {
         });
         let beats = room.clone();
         n0_future::task::spawn(async move {
-            loop {
-                beats.send(Kind::Here, String::new()).await;
-                sleep(Duration::from_millis(EVERY_MS)).await;
+            // A peer joins through its bootstrap only once the door admits it, and again every second while it has no
+            // neighbour (its first try may come before its relay is up). Never before: iroh-gossip 0.101 keeps a peer
+            // whose connection was closed before it became a neighbour, as the hook closes a stranger's, as active
+            // with a dead sender, and never dials it again. It says it is here when the door changes, and every
+            // EVERY_MS, until its gossip stopped with its endpoint.
+            let (mut door, mut quiet) = (beats.gate.version(), 0);
+            while beats.send(Kind::Here, String::new()).await {
+                loop {
+                    sleep(Duration::from_secs(1)).await;
+                    quiet += 1000;
+                    let alone = beats.state.lock().unwrap().neighbours == 0;
+                    let admitted = beats.gate.admits(&beats.secret.public());
+                    if alone && admitted && !bootstrap.is_empty() {
+                        let _ = beats.sender.join_peers(bootstrap.clone()).await;
+                    }
+                    if beats.gate.version() != door || quiet >= EVERY_MS {
+                        door = beats.gate.version();
+                        break;
+                    }
+                }
+                quiet = 0;
             }
         });
         Ok(room)
@@ -188,8 +218,9 @@ impl Room {
         }
     }
 
-    /// Signs and sends a message of this peer's own, and takes it into its own room: gossip never echoes one.
-    async fn send(&self, kind: Kind, text: String) {
+    /// Signs and sends a message of this peer's own, and takes it into its own room: gossip never echoes one. Whether
+    /// it went out.
+    async fn send(&self, kind: Kind, text: String) -> bool {
         let m = {
             let mut state = self.state.lock().unwrap();
             let at = now().max(state.last + 1);
@@ -205,8 +236,11 @@ impl Room {
             m.sig = hex(&self.secret.sign(m.body().as_bytes()).to_bytes());
             m
         };
-        self.take(&m);
-        self.post(&m).await;
+        // its own room shows it only while the door admits this peer
+        if self.gate.admits(&self.secret.public()) {
+            self.take(&m);
+        }
+        self.post(&m).await
     }
 
     /// Says a line in the room.
@@ -221,10 +255,14 @@ impl Room {
 
     /// Sends a message as it is, unchecked: every other peer checks it. The box's check sends one signed by a key that
     /// is no member's this way (MILESTONE2.md, "How it is checked", 5).
-    pub async fn post(&self, m: &Message) {
+    pub async fn post(&self, m: &Message) -> bool {
         let bytes = Bytes::from(serde_json::to_vec(m).expect("a message encodes"));
-        if let Err(e) = self.sender.broadcast(bytes).await {
-            self.note("dropped", json!({ "why": format!("not sent: {e}") }));
+        match self.sender.broadcast(bytes).await {
+            Ok(()) => true,
+            Err(e) => {
+                self.note("dropped", json!({ "why": format!("not sent: {e}") }));
+                false
+            }
         }
     }
 }

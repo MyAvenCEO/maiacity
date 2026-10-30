@@ -15,6 +15,11 @@ export function peers({ light = 'target/light', events = process.env.AVENSANDBOX
 	const clients = new Set();
 	const offsets = new Map();
 	const recent = [];
+	// each peer's newest record, which the views show however long ago it was told: kept beside the backlog's tail
+	const stored = new Map();
+	const keepStored = (lines) => {
+		for (const line of lines) if (line.event === 'stored') stored.set(line.peer, line);
+	};
 
 	// every file's new whole lines since the last look
 	function read() {
@@ -35,7 +40,9 @@ export function peers({ light = 'target/light', events = process.env.AVENSANDBOX
 		}
 		return fresh.sort((a, b) => a.t - b.t);
 	}
-	recent.push(...read().slice(-backlog));
+	const first = read();
+	keepStored(first);
+	recent.push(...first.slice(-backlog));
 
 	return {
 		name: 'aven-peers',
@@ -43,6 +50,7 @@ export function peers({ light = 'target/light', events = process.env.AVENSANDBOX
 			setInterval(() => {
 				const fresh = read();
 				if (!fresh.length) return;
+				keepStored(fresh);
 				recent.push(...fresh);
 				recent.splice(0, Math.max(0, recent.length - backlog));
 				for (const res of clients) for (const line of fresh) res.write(`data: ${JSON.stringify(line)}\n\n`);
@@ -60,7 +68,8 @@ export function peers({ light = 'target/light', events = process.env.AVENSANDBOX
 				const url = new URL(req.url, 'http://box');
 				if (req.method === 'GET' && url.pathname === '/events') {
 					res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
-					for (const line of recent) res.write(`data: ${JSON.stringify(line)}\n\n`);
+					const told = [...stored.values()].filter((line) => !recent.includes(line)).sort((a, b) => a.t - b.t);
+					for (const line of [...told, ...recent]) res.write(`data: ${JSON.stringify(line)}\n\n`);
 					clients.add(res);
 					req.on('close', () => clients.delete(res));
 					return;

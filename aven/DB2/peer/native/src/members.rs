@@ -26,6 +26,8 @@ struct Inner {
     vaults: BTreeMap<PublicKey, String>,
     open: bool,
     expected: BTreeSet<PublicKey>,
+    /// how many times the admitted keys were set: the room joins again when it moves
+    version: u64,
 }
 
 #[derive(Clone, Default)]
@@ -43,6 +45,7 @@ impl Gate {
     /// The keys the door admits now, each with its name and, when known, the vault its device serves.
     pub fn set(&self, keys: impl IntoIterator<Item = (PublicKey, String, Option<String>)>) {
         let mut inner = self.0.write().unwrap();
+        inner.version += 1;
         inner.keys.clear();
         inner.vaults.clear();
         for (key, name, vault) in keys {
@@ -71,6 +74,11 @@ impl Gate {
             });
         self.set(keys.collect::<Vec<_>>());
         self.open(m.network().claim().is_none());
+    }
+
+    /// How many times the admitted keys were set.
+    pub fn version(&self) -> u64 {
+        self.0.read().unwrap().version
     }
 
     /// Whether anyone may bring a statement: an unclaimed network.

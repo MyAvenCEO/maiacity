@@ -52,10 +52,17 @@ async function open(name) {
 	await cdp.send('WebAuthn.addVirtualAuthenticator', {
 		options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true },
 	});
+	const b = { context, page };
+	b.key = await attach(page);
+	return b;
+}
+
+// The page's Peer-Light, through its worker as the page reaches it, and what a page needs to make statements; again
+// after every load
+async function attach(page) {
 	await page.goto(`${origin}/`);
 	await page.locator('main[data-view]').first().waitFor({ timeout: 30_000 });
-	// the page's Peer-Light, through its worker as the page reaches it, and what a page needs to make statements
-	const key = await page.evaluate(async () => {
+	return page.evaluate(async () => {
 		const worker = new SharedWorker('/peer/worker.js', { type: 'module', name: 'network' });
 		const heard = [];
 		worker.port.onmessage = ({ data }) => heard.push(JSON.parse(data));
@@ -77,7 +84,6 @@ async function open(name) {
 		window.peer = { worker, heard, id, hex, assertion, send, key: me?.key };
 		return me?.key;
 	});
-	return { context, page, key };
 }
 
 // The admin invites: a one-time key made here, its secret for the link, the invite signed by the admin's passkey
@@ -179,7 +185,7 @@ if (phase === 'members') {
 	if (!(await view(member, 'dashboard'))) problems.push('the member\'s browser opened no dashboard');
 	report.joinMs = Date.now() - joinedAt;
 	const network = await line((l) => prod('network')(l) && l.members?.length === 1, joinedAt);
-	report.members = network?.members;
+	report.memberIds = network?.members;
 	if (JSON.stringify(network?.members) !== JSON.stringify([report.person])) problems.push(`the members are ${JSON.stringify(network?.members)}`);
 	const states = Object.fromEntries((network?.invites ?? []).map((i) => [i.key, i.state]));
 	if (states[first.key] !== 'used' || states[second.key] !== 'withdrawn') problems.push(`the invites are ${JSON.stringify(states)}`);
@@ -196,7 +202,7 @@ if (phase === 'members') {
 		const refused = await stranger.page.getByTestId('refused').textContent({ timeout: 15_000 }).catch(() => null);
 		if (!refused) problems.push(`${what}: no refusal shown`);
 		if (await line((l) => prod('joined')(l), at, 3_000)) problems.push(`${what} was taken`);
-		await stranger.page.goto(`${origin}/`);
+		await attach(stranger.page);
 	}
 	// 3. a browser without an invite is kept out by the relay
 	if (!(await line((l) => prod('kept-out')(l) && l.key === stranger.key && l.by === 'relay', since))) problems.push('the relay did not keep the stranger out');
@@ -236,7 +242,7 @@ if (phase === 'restarted') {
 	// 6. a restart keeps the members and empties the chat
 	const since = report.restartedAt ?? 0;
 	const network = await line((l) => prod('network')(l) && l.claimed, since);
-	if (JSON.stringify(network?.members) !== JSON.stringify(report.members)) problems.push(`after a restart the members are ${JSON.stringify(network?.members)}`);
+	if (JSON.stringify(network?.members) !== JSON.stringify(report.memberIds)) problems.push(`after a restart the members are ${JSON.stringify(network?.members)}`);
 	const opened = Date.now();
 	const member = await open('member');
 	if (!(await view(member, 'dashboard'))) problems.push("after a restart the member's browser is no member");
