@@ -100,6 +100,13 @@ theorem rule4_lowered_alike {Src Val : Type} (rt rt' : DB.Engine.Runtimes Src Va
       (DB.Engine.lower rt' h src).map (DB.Engine.commit eq ofId w c s) :=
   DB.Engine.readers_agree rt rt' h same eq ofId w c s src
 
+/-- Readers judge fit per envelope, from the schema it names; a merge then keeps every field's value fitting the
+schema of the envelope that wrote it. -/
+theorem rule4_fit_merges {S K V : Type} [DecidableEq K] (rule : S → K → V → Prop) {es : List (DB.Docs.Changes S K V)}
+    (h : ∀ e ∈ es, e.fits rule) (k : K) {w : DB.Docs.Write (S × V)} (hw : DB.Docs.latest (DB.Docs.writesOf k es) = some w) :
+    rule w.value.1 k w.value.2 :=
+  DB.Docs.fit_envelopes rule h k hw
+
 /-! ## Rule 5: reading is holding the key -/
 
 /-- A party nothing is sealed to, a keeper, learns only its own keys; and of a segment it sees only its Doc, its epoch

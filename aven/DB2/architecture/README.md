@@ -18,7 +18,7 @@ part requires another sideways: avenID, below docs, never requires docs (the arc
 | 1. One codec | yes | — |
 | 2. History by hash | yes, on Core's envelopes | docs: Loro's dependencies equal to what an envelope names by hash; Loro is modelled without op ids |
 | 3. One writer per log | splits final; a chain holds none | the writer's log never waiting; a split's proof reaching every reader (PEERS) |
-| 4. Readers judge | order-free verdicts; operations lowered alike; caps' verdict over Core envelopes | one verdict joining signature, cap chain, footprint and fit; fit over an envelope's changes |
+| 4. Readers judge | order-free verdicts; operations lowered alike; fit per envelope surviving merges; caps' verdict over Core envelopes | one verdict joining signature, cap chain, footprint and fit |
 | 5. Reading is the key | on caps' model | a link from Core's envelopes and docs' segments to their sealing |
 | 6. Demand never grants | yes: served = wants ∩ read grants; keepers serve on fetch proofs | — |
 | 7. No privilege by position | keepers blind; index roots only from writers | hosting caps (A16); no peer the only source (PEERS) |
