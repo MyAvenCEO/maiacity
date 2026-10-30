@@ -89,6 +89,9 @@ avenSANDBOX   the box all of it is built and tested in
 
 ### Terms
 
+The words below are the ones every page here needs. Every term of every part, with the words that should merge, is in
+[`GLOSSARY.md`](GLOSSARY.md).
+
 **Who (avenID)**
 
 - **key:** a signing key. An **owner key** governs a person's vault; a **device key** signs for the vault its device
@@ -167,7 +170,8 @@ organization `aven` reserves the scope before anything is published.
   Aven Peer, a folder for a Peer, OPFS for a Peer-Light, memory for tests. Apache OpenDAL provides the first backends;
   our own OPFS backend comes where speed needs it ([`SANDBOX.md`](SANDBOX.md#storage-one-contract-pluggable-backends)).
 - **One primitive underneath: the sealed blob.** Everything at rest and on the wire is an immutable object named by
-  the BLAKE3 hash of its bytes, sealed unless it is published. A file is one blob. A Loro document is a small head (its id, its version and
+  the BLAKE3 hash of its bytes, sealed unless it is published. A file is a hash sequence of chunks of at most 1 MiB
+  ([`store`](store/README.md)). A Loro document is a small head (its id, its version and
   the hashes of its pieces) over blobs: sealed segments of edits and, now and then, a snapshot. Both live in the same
   `Store` and travel by the same blob transfer. Only the edits being made right now travel live over our sync protocol,
   until they are sealed into the next segment. The Aven Peer can store, verify and serve every sealed byte without
@@ -195,7 +199,8 @@ organization `aven` reserves the scope before anything is published.
 - **Encryption, in avenID:** X-Wing (ML-KEM-768 with X25519) is the only key encapsulation. Every sealed box carries a suite byte,
   so a second scheme can join if lattices ever look weak: HQC, NIST's 2025 code-based backup, with keys of a few KB.
   No Classic McEliece: v1 derived a pair for every key, each with a 1 MB public half that took most of a second to
-  make. Signatures: Ed25519 and passkeys now, ML-DSA later through the same suite byte.
+  make. Signatures: Ed25519 and passkeys, with Ed25519 and ML-DSA-65 together wherever authority lasts
+  ([`id/caps`](id/caps/README.md), decision 10).
 - **The Aven Peer only ever sees ciphertext,** except what is published.
 - **What ships is the node, never the box.** avenSANDBOX's image is a development machine (browsers, compilers,
   Lean) and is never deployed. avenPEER ships one binary whose modes are flags (`--relay`, `--store memory|fs|s3`), in
@@ -221,6 +226,9 @@ the `ProtocolHandler` registered for its ALPN. avenDB's own protocol plugs in th
 | `unstable-custom-transports` | outside iroh's semver | Later: a direct WebRTC path between browsers |
 
 ## The specs
+
+The whole, with its shared primitives, its cross-part rules and how it stands up to end-to-end encryption, local first
+and peer to peer: [`ARCHITECTURE.md`](ARCHITECTURE.md). Every term of every part: [`GLOSSARY.md`](GLOSSARY.md).
 
 Each plan is its own document; there is no numbered roadmap here (Samuel, 30 Oct 2026). The box:
 [`SANDBOX.md`](SANDBOX.md). Production: [`PRODUCTION.md`](PRODUCTION.md). The members' network:
