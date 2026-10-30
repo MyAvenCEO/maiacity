@@ -1,0 +1,8 @@
+{"expected":true,"input":[{"below":false,"vault":"v:alice"},{"below":true,"vault":"v:alice"}],"name":"a vault without below, in one with it"}
+{"expected":false,"input":[{"below":true,"vault":"v:alice"},{"below":false,"vault":"v:alice"}],"name":"a vault with below, in one without it"}
+{"expected":true,"input":[{"below":false,"type":"d:e014082b51f3da6d6ad9965c7e70e86d8501095db316817b7ae4144316ba3376","vault":"v:alice"},{"below":false,"vault":"v:alice"}],"name":"a type of a vault, in the vault"}
+{"expected":false,"input":[{"below":true,"type":"d:e014082b51f3da6d6ad9965c7e70e86d8501095db316817b7ae4144316ba3376","vault":"v:alice"},{"below":false,"vault":"v:alice"}],"name":"a type, below, in the vault without below"}
+{"expected":true,"input":[{"def":"d:5315921885d912766435559be0dc46d23d4ee0b6929f9a49aad2935e09f1c5c9","vault":"v:alice"},{"below":true,"type":"d:5315921885d912766435559be0dc46d23d4ee0b6929f9a49aad2935e09f1c5c9","vault":"v:alice"}],"name":"a definition in a vault, in that vault's type"}
+{"expected":false,"input":[{"below":false,"vault":"v:maia-city"},{"below":true,"vault":"v:alice"}],"name":"another vault"}
+{"expected":true,"input":[{"doc":"d:5315921885d912766435559be0dc46d23d4ee0b6929f9a49aad2935e09f1c5c9"},{"actor":"d:5315921885d912766435559be0dc46d23d4ee0b6929f9a49aad2935e09f1c5c9","below":false}],"name":"a Doc, in itself as an actor"}
+{"expected":true,"input":[{"actor":"d:5315921885d912766435559be0dc46d23d4ee0b6929f9a49aad2935e09f1c5c9","below":false},{"actor":"d:5315921885d912766435559be0dc46d23d4ee0b6929f9a49aad2935e09f1c5c9","below":true}],"name":"an actor, in it with what it spawned"}

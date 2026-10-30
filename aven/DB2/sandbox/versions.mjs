@@ -11,7 +11,7 @@ const repo = resolve(db2, '../..');
 const dockerfile = 'sandbox/box/Dockerfile';
 // avenDB's own workflows, relative to aven/DB2
 const workflows = ['../../.github/workflows/avensandbox.yml', '../../.github/workflows/avensandbox-image.yml'];
-const leanToolchains = ['id/spec/lean-toolchain', 'db/spec/lean-toolchain'];
+const leanToolchains = ['core/spec/lean-toolchain', 'id/spec/lean-toolchain', 'db/spec/lean-toolchain'];
 // Pins held back by hand, each with its reason; none since the store's own opfs driver replaced OpenDAL's forked one.
 const held = {};
 // What ships together: the wasm-bindgen CLI follows the crate; Playwright's image follows the npm package

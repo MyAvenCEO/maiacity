@@ -1,0 +1,14 @@
+# Aven.Core: what every part of avenDB shares (ARCHITECTURE.md, "The primitives everything shares", rules 1 to 3), as
+# one Lean package that Aven.DB, Aven.ID, Aven.Actor and Aven.Runtime require by path. Core Lean only: the box has no
+# network for Lean packages. `lake build` proves every theorem and checks every example; `vectors` exports them.
+name = "aven-core-spec"
+version = "0.1.0"
+defaultTargets = ["AvenCore", "vectors"]
+
+[[lean_lib]]
+name = "AvenCore"
+roots = ["Aven.Core"]
+
+[[lean_exe]]
+name = "vectors"
+root = "Vectors"
