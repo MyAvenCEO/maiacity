@@ -224,7 +224,7 @@ definitions, and every placed one is an actor (section 6).
 | `init` | The first state |
 | `lifetime` | `durable` (the default): the actor lasts until it is retired, and later persists in avenDB. `mounted`: it lives while the face that placed it shows it, and goes when it is unplaced |
 | `replaces` | Optional: the name of the definition this one upgrades. Its actors move to the new definition, a lens carrying their state into its shape (section 15), and a cap follows the upgrade only as far as the old interface reached, and only in a vault that has itself adopted the new definition (section 11) |
-| `loads` | Later, with avenDB's engine: what the actor needs, in tiers. Devices decide how deep they keep it, and the `now` tier is handed into each turn as part of `given`, so an actor never fetches (section 11) |
+| `loads` | Later, with avenDB's engine: what the actor needs, in tiers. Devices decide how deep they keep it, and the `now` tier is handed into each turn as part of `given`, so an actor never fetches (section 11). An entry may name a query; installing the actor registers in its vault the sealed index that query needs, by the owners' act (avenDB A26) |
 
 An actor's code and faces are **parts**: values in a format, for the runtime of that format. Actors are mostly JSON;
 `js-runtime` is for the turns that need code.
@@ -273,20 +273,31 @@ plain-language `explain`, a model reading the definition and answering in words,
 
 **Lenses.** A lens is a two-way mapping between two type versions, a Value, with laws: a round trip keeps what both
 sides can hold, and a lossy step states its loss. It joins a version to its parent inside one type Doc, and versions
-of two different type Docs alike: one concept, everywhere in the stack (Samuel, 30 Oct 2026). Lenses across the whole stack form a forest: a lens that would make a second path between
-two versions is refused, so every path is unique and the laws hold along it.
+of two different type Docs alike: one concept, everywhere in the stack (Samuel, 30 Oct 2026).
+
+Who publishes and who uses a lens (avenDB A7, extended):
+
+- A lens inside one type Doc is published by whoever may write that type Doc (K5).
+- A lens between two type Docs is a Value anyone may write. It takes effect for a Doc or a vault only when its owners
+  pin it, as they pin type versions, and only after the checker has held it to its laws.
+- A reader uses only the lenses pinned where it reads. For a message, the receiving vault's pins decide: the receiver
+  judges.
+- The pinned lenses of one place form a forest: a pin that would make a second path between two versions there is
+  refused, so every path is unique and the laws hold along it. No peer sees every lens in the world, so there is no
+  global forest, only each place's.
 
 Between actors, a message whose type differs from the one the receiver accepts is delivered when a path of lenses
-joins them: the router reads the payload through the path into the receiver's type, and a reply comes back through
+joins them among the lenses the receiver's vault has pinned: the router reads the payload through the path into the
+receiver's type, and a reply comes back through
 it the other way. The journal entry pins the lenses used, by hash, so a replay reads the same. With no path the
 message is refused, as an undeclared one is. Nothing is translated by guessing: no names, no prose.
 
 This replaces Abject's negotiator and self-healing adapters. Where Abject had a model write a proxy at run time, per
-pair, as code, a lens is written once, as data: a model may propose one, a person approves it (a tell), the checker
-holds it to the laws, and it is frozen by hash and reused by every actor and every reader of those types.
+pair, as code, a lens is written once, as data: a model may propose one, the checker holds it to the laws, it is frozen by
+hash, and a vault's owners pin it (their approval is a tell), after which every actor and reader there reuses it.
 
 **Derived edges.** There is an edge from A to B wherever a type in A's `sends` is a type B's interface accepts, or one
-joined to it by lenses. The graph is a query over definitions, computed and never stored, so the drawn graph, a planner's input and what the
+joined to it by lenses pinned in B's vault. The graph is a query over definitions, computed and never stored, so the drawn graph, a planner's input and what the
 kernel allows are one rule. Where a placer wires a face actor's `events`, the wire must follow such an edge. This is
 Abject's requires and produces, by type id instead of by predicate.
 
