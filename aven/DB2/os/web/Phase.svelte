@@ -23,10 +23,11 @@
 
 	.live {
 		background: var(--live);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--live) 22%, transparent);
 	}
 
 	.offline,
 	.stalled {
-		background: #e03131;
+		background: var(--down);
 	}
 </style>

@@ -40,8 +40,9 @@
 <div data-view="control-room" data-account={account}>
 	<p class="lead">
 		<span>{vaultName(account)} governs {[`no peers yet`, 'one peer'][peers.length] ?? `${peers.length} peers`}</span>
-		<span data-testid="live-count">{liveCount} live</span>
+		<span class="chip" class:on={peers.length && liveCount === peers.length} data-testid="live-count">{liveCount} live</span>
 	</p>
+	<div class="bar" aria-hidden="true"><span style:width={`${peers.length ? (100 * liveCount) / peers.length : 0}%`}></span></div>
 
 	<section>
 		{#each peers as id (id)}
@@ -77,32 +78,47 @@
 <style>
 	.lead {
 		display: flex;
+		align-items: center;
 		justify-content: space-between;
+		gap: 12px;
 		margin: 0;
-		padding: 14px 16px 0;
-		color: var(--muted);
-		font-size: 14px;
+		padding: 24px 16px 10px;
+		font-family: var(--font-display);
+		font-size: 22px;
+	}
+
+	.lead .chip {
+		font-family: var(--font-body);
+	}
+
+	.bar {
+		margin: 0 16px;
 	}
 
 	section {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
-		gap: 12px;
-		padding: 12px 16px;
+		gap: 16px;
+		padding: 20px 16px;
 	}
 
 	article {
 		display: grid;
 		grid-template-rows: auto auto auto 1fr;
-		padding: 12px;
+		padding: 20px;
 		background: var(--surface);
 		border: 1px solid var(--line);
-		border-radius: 8px;
+		border-radius: var(--radius-card);
+		box-shadow: var(--shadow-soft);
 	}
 
 	h2 {
-		margin: 0;
-		font-size: 15px;
+		margin: 0 0 4px;
+		font-size: 20px;
+	}
+
+	h2 small {
+		font-family: var(--font-body);
 	}
 
 	small,
@@ -122,7 +138,7 @@
 		height: 100%;
 		min-height: 500px;
 		border: 1px solid var(--line);
-		border-radius: 6px;
+		border-radius: var(--radius-inner);
 		background: var(--bg);
 	}
 
@@ -134,8 +150,11 @@
 	}
 
 	footer {
-		padding: 10px 16px 16px;
-		border-top: 1px solid var(--line);
+		margin: 0 16px 32px;
+		padding: 20px;
+		background: var(--surface);
+		border: 1px solid var(--line);
+		border-radius: var(--radius-card);
 	}
 
 	h3 {
@@ -149,7 +168,7 @@
 		grid-template-columns: 7.5em minmax(10em, max-content) 1fr;
 		gap: 12px;
 		margin: 0;
-		font-family: ui-monospace, monospace;
+		font-family: var(--font-mono);
 		font-size: 12px;
 		line-height: 1.6;
 	}

@@ -2,10 +2,10 @@
 
 avenDB's engine (30 Oct 2026). Everything an app, an agent or a device asks of its data is an **operation**: a piece
 of JSON checked against a fixed grammar, then run by the engine over document snapshots. The engine works on one
-primitive, the **record**: one piece of a Doc, named by its own id, always under a schema. A fact, a chat line, a page
-and a file's entry are all records. avenDB's two primitives sit under it: **Values** (immutable, named by hash) and
+primitive, the **Record**: one piece of a Doc, named by its own id, always under a schema. A fact, a chat line, a page
+and a file's entry are all Records. avenDB's two primitives sit under it: **Values** (immutable, named by hash) and
 **Docs** (mutable, named by id), [docs](../docs/README.md#terms). The core is small and fixed: the one writer, the
-operation envelope, one query and mutation evaluator over records, **wants** (what is synced and what is loaded, one
+operation envelope, one query and mutation evaluator over Records, **wants** (what is synced and what is loaded, one
 concept), live answers and the checks. **Plugins** add
 grammars on top that lower to the core's operations. The [ontology](../ontology/README.md)'s x1–x5 grammar is the
 first.
@@ -19,7 +19,7 @@ older engines as code ([README](../../README.md), rule 12).
 caps' target grammar (D4), actors declare and devices decide how deep (D5), operations are named by their avenDB hash
 (D7), kinds stay inside one plugin (D8), the docs layer checks envelopes and the engine checks operations (D9),
 indexes come in a later iteration (D10), and avenACTORS' engine notes are folded in here. Values and Docs underneath,
-the record as the engine's primitive with the type deciding which records are roots (D2), and one core evaluator that
+the Record as the engine's primitive with the type deciding which Records are roots (D2), and one core evaluator that
 plugins lower to (D6) are Samuel's too. Nothing here is still a proposal.
 
 ## Contents
@@ -28,7 +28,7 @@ plugins lower to (D6) are Samuel's too. Nothing here is still a proposal.
 2. [Terms](#terms)
 3. [The rules](#the-rules)
 4. [The layers](#the-layers)
-5. [One primitive: the record](#one-primitive-the-record)
+5. [One primitive: the Record](#one-primitive-the-record)
 6. [The core and its plugins](#the-core-and-its-plugins)
 7. [Operations](#operations)
 8. [Wants: sync and load as one](#wants-sync-and-load-as-one)
@@ -71,12 +71,12 @@ place to go.
 
 - **Value, Doc:** avenDB's two primitives ([docs](../docs/README.md#terms)). A Value is immutable and named by its
   hash, like an IPFS CID; a Doc is mutable and named by its id, its head pointing at Values, like IPNS.
-- **record:** one piece of a Doc, addressed `<doc>/<id>` by its own id, always under a schema. The Doc's root record is
+- **Record:** one piece of a Doc, addressed `<doc>/<id>` by its own id, always under a schema. The Doc's root Record is
   the Doc itself, `<doc>`. The one thing the engine queries and changes.
 - **type:** a named schema, itself a Doc whose versions are Values. Records of one type form a **table**.
-- **fact:** a record whose type is a predicate, in a document's facts map, `predicate(x1…x5)`
+- **fact:** a Record whose type is a predicate, in a document's facts map, `predicate(x1…x5)`
   ([ontology](../ontology/README.md#where-facts-live)).
-- **file:** a record of type `file`: the hash of the file's index, its size, name and media type. Its bytes rest
+- **file:** a Record of type `file`: the hash of the file's index, its size, name and media type. Its bytes rest
   in the store as a hash sequence ([store](../../store/README.md#big-files-are-hash-sequences-decided)).
 - **operation:** a JSON spec of work: a query, a mutation or a want. Data that people and agents write.
 - **core operation:** one the engine runs directly. **Plugin operation:** one written in a plugin's grammar, which the
@@ -103,7 +103,7 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
 
 1. **The one writer applies every change:** local mutations and imported envelopes, in turn. Pages, actors, peers and
    status read immutable snapshots stamped with the heads they are correct at, and never wait on it.
-2. **One primitive.** The engine queries and changes records, nothing else. Every record has its own id and a schema. A
+2. **One primitive.** The engine queries and changes Records, nothing else. Every Record has its own id and a schema. A
    fact, a line, a page and a file differ only by their type.
 3. **One evaluator.** The core runs core operations only. A plugin operation is lowered to core operations, and what it
    means is what its lowering does.
@@ -146,11 +146,11 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
  ── db/engine ────────────────────────────────────────────────────────────────────────────────────────
  plugins   ontology (x1–x5: assert, set, retract, walk, kinds)   … more later, built in
         │  lowered to core operations
- core      the one writer · envelope and checks · one evaluator over records · wants and their scheduler
+ core      the one writer · envelope and checks · one evaluator over Records · wants and their scheduler
            sync · views and deltas · status
         │  snapshots, diffs, commits, envelopes
  ── db/docs ──────────────────────────────────────────────────────────────────────────────────────────
-           Loro Docs · every record under a schema · envelopes signed and checked · versions, lines, merges · lenses
+           Loro Docs · every Record under a schema · envelopes signed and checked · versions, lines, merges · lenses
         │  blobs and refs
  ── store (aven/DB2/store) ───────────────────────────────────────────────────────────────────────────
            Store: blobs by BLAKE3, refs by compare-and-set · iroh-blobs through our adapter · S3, folder, opfs
@@ -158,15 +158,15 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
            iroh endpoint, relay, the door · /iroh-bytes/4 · iroh-gossip · aven/db/1 over irpc
 ```
 
-Each layer knows only the one below it. The store knows bytes, not documents. The docs layer knows Docs, records
-and schemas, not queries or what a predicate means. The engine's core knows operations and records; its plugins know
+Each layer knows only the one below it. The store knows bytes, not documents. The docs layer knows Docs, Records
+and schemas, not queries or what a predicate means. The engine's core knows operations and Records; its plugins know
 meaning. Actors know operations and answers, not Loro.
 
-## One primitive: the record
+## One primitive: the Record
 
 avenDB stores two things (Samuel, 30 Oct 2026): **Values**, immutable and named by their hash, and **Docs**, mutable and
-named by their id ([docs](../docs/README.md#terms)). A Doc holds **records**, and the docs layer enforces a schema on
-every one: there are no schemaless entries (docs rule 15). The engine queries and changes records only.
+named by their id ([docs](../docs/README.md#terms)). A Doc holds **Records**, and the docs layer enforces a schema on
+every one: there are no schemaless entries (docs rule 15). The engine queries and changes Records only.
 
 | What | Its type | Example |
 |---|---|---|
@@ -176,37 +176,37 @@ every one: there are no schemaless entries (docs rule 15). The engine queries an
 | A file's entry | `file` | `{ file: "b3:…", size, name, type }`; the file's bytes are Values |
 | A setting | the app's settings | `{ theme: "dark" }` |
 
-**Records are named by id, not by path.** Every record carries its own id, as facts and the docs layer's lists of
-records already do; its address is `<doc>/<id>`, and the Doc's root record is `<doc>` itself. Where a record sits in its
+**Records are named by id, not by path.** Every Record carries its own id, as facts and the docs layer's lists of
+Records already do; its address is `<doc>/<id>`, and the Doc's root Record is `<doc>` itself. Where a Record sits in its
 Doc (which list, which place in a tree, which order) is its schema's business and can change; its address never does.
 A ref is always an address, so a fact pointing at a page and a page pointing at a file join the same way, and caps and
 footprints narrower than a Doc name types, never paths.
 
-**A Doc is a root record** (Samuel, 30 Oct 2026; docs rule 16). Every record is a Loro container, so every record
-merges as a CRDT. A type says whether its records are roots: an invoice, a page, a chat room or an actor is a Doc of its
+**A Doc is a root Record** (Samuel, 30 Oct 2026; docs rule 16). Every Record is a Loro container, so every Record
+merges as a CRDT. A type says whether its Records are roots: an invoice, a page, a chat room or an actor is a Doc of its
 own; an invoice's lines, a chat's lines and a task's facts live inside the Doc they belong to and change atomically
 with it. Only roots pay for a head, a key, caps and a catch-up of their own. A ref works like a foreign key, across Docs
 too, except that nothing guarantees its target is held or readable: an answer that can't follow one says `partial` or
 `denied`.
 
-**Tables are types.** A type is a named schema, itself a Doc whose versions are Values. Every record of one type forms
+**Tables are types.** A type is a named schema, itself a Doc whose versions are Values. Every Record of one type forms
 one table for queries: columns `id` (its address), `doc` and the type's fields. For a fact, the fields are `x1`…`x5`,
-typed by the predicate's places. A field that is not a record of its own, such as `theme` above or a page's body, is a
-column of the record it sits in.
+typed by the predicate's places. A field that is not a Record of its own, such as `theme` above or a page's body, is a
+column of the Record it sits in.
 
-**Columns are read through lenses.** A record written under an older version of its type is read through the app's
+**Columns are read through lenses.** A Record written under an older version of its type is read through the app's
 view ([lenses](../docs/README.md#lenses)), so a table's columns are always the reader's version.
 
 ## The core and its plugins
 
 | The core owns | A plugin brings |
 |---|---|
-| Records: tables by type, columns from the schema | Nothing new: its data are records of its types |
+| Records: tables by type, columns from the schema | Nothing new: its data are Records of its types |
 | Core operations: `query`, `put`, `patch`, `remove`, `want`, and their grammar | Its own operations and their meta-grammar (JSON Schema, `additionalProperties: false`) |
 | One evaluator, its bound and its footprint | A **lowering**: a pure function from its operation to core operations |
 | The one writer and the commit | Its checks beyond the schema (the ontology's: gismu places, typed refs, slot ids) |
 | Views, deltas, status, wants, sync | Nothing: plugins never decide what moves or how answers flow |
-| Lean: records, the evaluator, the writer, sync | Its Lean model, and the theorem that its lowering means what its model says (README, rule 10) |
+| Lean: Records, the evaluator, the writer, sync | Its Lean model, and the theorem that its lowering means what its model says (README, rule 10) |
 
 So a plugin is a translator with checks, and the core is proven once. Bounds, footprints, caps and deltas are worked out
 on core operations only, so a plugin can't get any of them wrong.
@@ -216,7 +216,7 @@ plugins at run time (WebAssembly) or writing them as actors would put untrusted 
 later behind the same interface, once there is a case.
 
 **The ontology plugin** ([ontology](../ontology/README.md)): `assert`, `set`, `retract` lower to `put`, `patch` and
-`remove` of fact records, with slot ids for traits that hold at most one fact
+`remove` of fact Records, with slot ids for traits that hold at most one fact
 ([ontology](../ontology/README.md#the-rules), rule 9); its checks are the meta-grammar, the gismu table and typed
 places; `walk` over a category tree lowers to the core's bounded walk; it compiles kinds.
 
@@ -273,7 +273,7 @@ catalogue. Lookup follows the vocabularies' lanes: the vault's own, the network'
 
 - `want`: the target, in the **caps' target grammar** (D4, Samuel): a document, a vault's subtree, a kind of document in
   a vault, or a stored query whose rows name documents (`{ "query": "b3:…", "column": "x2" }`).
-- `part`: `head` (that it exists and its version), `records` (what it holds), or `files` (the bytes of its file records,
+- `part`: `head` (that it exists and its version), `records` (what it holds), or `files` (the bytes of its file Records,
   by schema field or media type).
 - `window`: the newest `n`, or everything, for documents with long histories or long lists.
 - `follow`: how many hops of refs to bring with it, at most three.
@@ -381,7 +381,7 @@ file store (the store keeps refs and backends of its own).
 
 ## Queries
 
-A query reads tables of records, by type. Open tasks by due date, written directly in the core's grammar:
+A query reads tables of Records, by type. Open tasks by due date, written directly in the core's grammar:
 
 ```json
 { "plugin": "core/1", "op": "query",
@@ -414,16 +414,16 @@ page, with the page's title:
   "project": [ "id", { "column": "x2", "as": "task" }, { "join": 0, "column": "title", "as": "page" } ] }
 ```
 
-**The bound** is the product of the records each step can read, capped by `limit` and by the walks' depths. A query
+**The bound** is the product of the Records each step can read, capped by `limit` and by the walks' depths. A query
 whose bound exceeds the device's limit is refused before it runs, with the bound in the answer. A query runs over the
 documents the device holds and the run's caps let it open, nothing else. Until indexes come (below), each step scans
-the records of its table in the documents it ranges over; the bound keeps that honest.
+the Records of its table in the documents it ranges over; the bound keeps that honest.
 
 ## Mutations
 
 A mutation is core operations applied as one commit to one document, all or nothing: a step that fails undoes the steps
-before it. The core's are `put` (a new record, or a whole record by id), `patch` (fields of records found by `where`)
-and `remove` (records found by `where`); text, list and tree edits go through the docs layer's containers. The ontology plugin's
+before it. The core's are `put` (a new Record, or a whole Record by id), `patch` (fields of Records found by `where`)
+and `remove` (Records found by `where`); text, list and tree edits go through the docs layer's containers. The ontology plugin's
 grammar is what people and agents usually write:
 
 ```json
@@ -434,7 +434,7 @@ grammar is what people and agents usually write:
     { "op": "assert", "predicate": "eat",      "cells": { "x1": { "bind": "$actor" }, "x2": { "ref": 0 } } } ] } }
 ```
 
-It lowers to three `put`s of fact records with new ids.
+It lowers to three `put`s of fact Records with new ids.
 
 - `assert` adds a fact; `set` changes places of facts found by `where`; `retract` removes facts found by `where`.
 - A cell is a literal, `{ "param": … }`, `{ "bind": … }`, or `{ "ref": n }`: the id op `n` created, where `n` is an
@@ -461,8 +461,8 @@ Every answer, whether to a query, a want or a load, carries:
 - **its status:** `complete`, `partial` (with what is held, known and waited for) or `denied`, and the phase
   (connecting, catching up with what is left, live, offline, stalled), from one status snapshot and one clock (README, rule 7).
 
-**Live answers** are subscriptions. When heads change, the engine takes the docs layer's diff (which records changed),
-recomputes the rows those records can touch, and pushes the difference: rows added, changed, removed. A page or an actor
+**Live answers** are subscriptions. When heads change, the engine takes the docs layer's diff (which Records changed),
+recomputes the rows those Records can touch, and pushes the difference: rows added, changed, removed. A page or an actor
 holds the rows it was given and applies each delta.
 
 **Pending writes.** A mutation from a page is shown at once: the engine lays its rows over the answers it touches until
@@ -485,12 +485,12 @@ an operation enters, once where its envelope is imported by every reader.
 | What a device is served | engine's sync: wants intersected with caps | Every request |
 | What an actor is handed | engine: loads intersected with the run's caps | Every turn |
 
-With records as the one primitive, a cap narrower than a document is a set of types: "may write `due` and
+With Records as the one primitive, a cap narrower than a document is a set of types: "may write `due` and
 `done` facts" is the schemas `due` and `done`, so caps reach facts without a rule of their own.
 
 ## Later: indexes
 
-Decided (D10, Samuel): indexes come in a later iteration. The first queries scan the records of their tables within
+Decided (D10, Samuel): indexes come in a later iteration. The first queries scan the Records of their tables within
 their bound, over the documents a device holds; for the chat and the first apps that is small. An index may only make a
 query faster, never change its answer (Lean: an index's answers equal a scan), so adding one later changes no
 operation, no want and no answer.
@@ -511,9 +511,9 @@ Notes for that iteration, from this one's discussion:
 
 1. **Plugins are built-in Rust,** versioned with the engine (Samuel, 30 Oct 2026). Untrusted code stays in actors, which
    write operations. Run-time plugins can come later behind the same interface.
-2. **Values and Docs underneath; the record is the engine's one primitive** (Samuel, 30 Oct 2026). Values are
-   immutable and named by hash, Docs mutable and named by id; a Doc holds records, every one under a schema and named by
-   its own id, with no paths. A Doc is a root record, and a type says which of its records are roots. Facts, lines, pages and files' entries are records of different types: one model of data
+2. **Values and Docs underneath; the Record is the engine's one primitive** (Samuel, 30 Oct 2026). Values are
+   immutable and named by hash, Docs mutable and named by id; a Doc holds Records, every one under a schema and named by
+   its own id, with no paths. A Doc is a root Record, and a type says which of its Records are roots. Facts, lines, pages and files' entries are Records of different types: one model of data
    in avenDB, not one per layer or plugin.
 3. **Sync and load are one want** (Samuel, 30 Oct 2026): durable keeps, mounted opens, one scheduler orders both.
    avenDB-old had wants, keep shares, copy settings and follow lists for one job.
@@ -522,7 +522,7 @@ Notes for that iteration, from this one's discussion:
 5. **Actors declare, devices decide how deep** (Samuel, 30 Oct 2026). One actor definition everywhere; the device's
    profile picks which tiers it keeps.
 6. **One evaluator; plugins lower to it** (Samuel, 30 Oct 2026). avenOS's grammar already was an algebra over x1–x5 rows. With
-   records as the primitive, the algebra belongs to the core, a plugin is a grammar with checks and a lowering, and
+   Records as the primitive, the algebra belongs to the core, a plugin is a grammar with checks and a lowering, and
    bounds, footprints, caps and deltas are worked out and proven once.
 7. **Operations are named by their hash,** avenDB's native id (Samuel, 30 Oct 2026); catalogues name them for people.
 8. **A kind stays inside one plugin** for now (Samuel, 30 Oct 2026).
