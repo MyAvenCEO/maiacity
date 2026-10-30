@@ -142,7 +142,7 @@ async function install() {
 	await $`docker run --rm ${network()} ${volumes} -w /work ${image} sh -c ${script}`.env(env);
 }
 
-// The builder (SANDBOX.md, "The box"): compiles the Peer, the Peer-Light's wasm and aven-id's wasm for avenOS once, into
+// The builder (SANDBOX.md, "The box"): compiles the Peer and the Peer-Light's wasm, avenOS's one module, once, into
 // the shared build folder, incrementally. The Peers run that binary and restart when it changes; Vite reloads the pages
 // when the wasm does.
 const peerBinary = '/work/target/debug/aven-peer';
@@ -154,7 +154,6 @@ const buildPeers = [
 	// wasm-bindgen takes 3 s even for nothing, so it runs only for a new wasm; one swap, so Vite never serves half a build
 	`src=$(sha256sum ${lightWasm} | cut -c1-64)`,
 	`if [ "$src" != "$(cat target/light/.source 2>/dev/null)" ]; then rm -rf target/light.next && wasm-bindgen --target web --no-typescript --out-dir target/light.next ${lightWasm} && echo "$src" > target/light.next/.source && rm -rf target/light && mv target/light.next target/light; fi`,
-	'sh id/core/wasm/build.sh',
 	`sha256sum ${peerBinary} | cut -c1-16`,
 ].join(' && ');
 
@@ -322,15 +321,14 @@ async function up(args) {
 	if (args.includes('--check')) process.exit(await check());
 }
 
-// Every release's deliverables (SANDBOX.md, "Production"): for now avenOS for the browser, with aven-id's wasm, built in
-// the box.
+// Every release's deliverables (SANDBOX.md, "Production"): for now avenOS for the browser, built in the box.
 async function deliverables() {
 	await ensureDocker();
 	await ensureImages();
 	await install();
 	await $`docker volume create avensandbox_target`.quiet();
 	const volumes = ['-v', `${db2}:/work`, '-v', 'avensandbox_node_modules:/work/node_modules', ...rustVolumes];
-	const script = 'sh id/core/wasm/build.sh && node_modules/.bin/vite build --config vite.config.js';
+	const script = 'node_modules/.bin/vite build --config vite.config.js';
 	await $`docker run --rm ${network()} ${volumes} -w /work ${image} sh -c ${script}`.env(env);
 	const out = join(db2, 'deliverables');
 	rmSync(out, { recursive: true, force: true });

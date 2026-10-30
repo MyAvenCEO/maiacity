@@ -21,8 +21,6 @@ mod query;
 mod sign;
 mod statements;
 mod tree;
-#[cfg(target_arch = "wasm32")]
-mod wasm;
 
 pub use cast::CastError;
 pub use claim::{Claim, SignIn, claim_text, device_id, passkey_id, person_id, sign_in_text};

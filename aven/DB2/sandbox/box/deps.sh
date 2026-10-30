@@ -32,10 +32,9 @@ for manifest in $(find . -name Cargo.toml -not -path ./Cargo.toml); do
 	done
 done
 
-# What `bun run up` builds (sandbox/up.mjs, id/core/wasm/build.sh), then what `cargo test --workspace` builds
+# What `bun run up` builds (sandbox/up.mjs), then what `cargo test --workspace` builds
 cargo build --locked -p aven-peer
 cargo build --locked -p aven-peer-light --lib --target wasm32-unknown-unknown
-cargo build --locked -p aven-id --lib --target wasm32-unknown-unknown --release
 cargo test --locked --workspace --no-run
 
 # The stubs' own artifacts go, and the fork's, whose source the checkout brings again with newer times: our crates and
