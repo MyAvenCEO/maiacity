@@ -5,7 +5,8 @@
 //! also hands it frames to send, its statements (`Outbox`), and hears back from an Aven Peer that keeps its tree whether
 //! the network is claimed and, once the door admits it, the tree and every statement, which it checks itself
 //! (`aven_id::Members::from_statements`) before it believes who the members are (`network` lines, and the `Gate`); or
-//! why a statement was refused (`refused`). The Aven Peer's address is resolved again before every dial, so a Peer
+//! why a statement was refused (`refused`). Once linked, its chats catch up from the Aven Peer's chains (`heads`,
+//! `catch_up`, `lines`), and send it the lines this device wrote offline. The Aven Peer's address is resolved again before every dial, so a Peer
 //! follows it when it moves (30 Oct 2026: Alice Peer kept a stale address after the Aven Peer's container restarted).
 
 use aven_db_core::status::{Event, Phase, STALL_AFTER, Status, TICK_MS};
@@ -21,6 +22,7 @@ use std::sync::Arc;
 
 use n0_future::boxed::BoxFuture;
 
+use crate::chats::Chats;
 use crate::members::Gate;
 use crate::{Notes, now};
 
@@ -66,6 +68,8 @@ struct Link {
     outbox: Option<Outbox>,
     /// the door as the statements say, for a link to an Aven Peer that keeps its tree
     gate: Option<Gate>,
+    /// the chat's chains, which catch up from the Aven Peer's on every link
+    chats: Option<Chats>,
 }
 
 impl Link {
@@ -149,6 +153,7 @@ pub async fn run(
     notes: Notes,
     outbox: Option<Outbox>,
     gate: Option<Gate>,
+    chats: Option<Chats>,
 ) {
     let mut link = Link {
         me,
@@ -162,6 +167,7 @@ pub async fn run(
         told: None,
         outbox,
         gate,
+        chats,
     };
     link.tell();
     // until its endpoint closes: a Peer-Light rebinds with a newcomer's relay token
@@ -249,6 +255,25 @@ async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Re
                             statements,
                         } => link.network(claimed, tree, statements),
                         Frame::Refused { why } => link.note("refused", json!({ "why": why })),
+                        // catching up: what it holds of each chain, and its own lines written offline
+                        Frame::Heads { heads } => {
+                            if let Some(chats) = &link.chats {
+                                let mut frames = vec![chats.catch_up_frame(&heads)];
+                                frames.extend(chats.unsent(&heads).await);
+                                for frame in frames {
+                                    send.write_all(&encode(&frame))
+                                        .await
+                                        .map_err(|e| e.to_string())?;
+                                }
+                            }
+                        }
+                        Frame::Lines { lines } => {
+                            if let Some(chats) = &link.chats {
+                                for line in lines {
+                                    chats.take(line.as_bytes()).await;
+                                }
+                            }
+                        }
                         _ => {}
                     }
                 }

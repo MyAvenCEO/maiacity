@@ -186,6 +186,28 @@ pub struct Keeper {
 }
 
 impl Keeper {
+    /// What a peer kept before it restarted: each device's chain, oldest first, as its store holds it under
+    /// `chat-<device>`. Its lines were checked when they arrived.
+    pub fn load(chains: impl IntoIterator<Item = (String, Vec<Held>)>) -> Keeper {
+        Keeper {
+            chains: chains.into_iter().filter(|(_, c)| !c.is_empty()).collect(),
+            ..Keeper::default()
+        }
+    }
+
+    /// The line that would come next on top of `device`'s chain: its number and previous line.
+    pub fn next(&self, device: &str) -> (u64, Option<String>) {
+        match self.chain(device).last() {
+            Some(h) => (h.line.seq + 1, Some(h.id.clone())),
+            None => (1, None),
+        }
+    }
+
+    /// Whether the peer holds the line named `id` of `device`.
+    pub fn holds(&self, device: &str, id: &str) -> bool {
+        self.held(device).any(|h| h.id == id)
+    }
+
     /// A device's chain, oldest first.
     pub fn chain(&self, device: &str) -> &[Held] {
         self.chains.get(device).map(Vec::as_slice).unwrap_or(&[])

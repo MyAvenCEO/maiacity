@@ -27,6 +27,7 @@ use aven_db_core::wire::{ALPN, Frame};
 use aven_db_store::backend;
 use aven_peer::iroh_gossip::{self, Gossip};
 use aven_peer::members::{Gate, Hook};
+use aven_peer::chats::{self, Chats};
 use aven_peer::room::Room;
 use aven_peer::{Notes, keys, link, now, record};
 use iroh::endpoint::presets;
@@ -330,6 +331,17 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
         .await
         .map_err(js)?;
     notes(record::line(now(), &name, kind, &kept));
+    // the chat's history, from the same store: shown before any peer answers (store/README.md, "Local first")
+    let chats = Chats::open(
+        name.clone(),
+        "aven",
+        secret.clone(),
+        gate.clone(),
+        notes.clone(),
+        Arc::new(store) as chats::Shared,
+    )
+    .await
+    .map_err(js)?;
     let aven = EndpointAddr::new(aven_key).with_relay_url(relay.clone());
     aven_peer::know(&endpoint, aven.clone());
     let gossip = Gossip::builder().spawn(endpoint.clone());
@@ -344,6 +356,7 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
         gate.clone(),
         vec![aven_key],
         notes.clone(),
+        Some(chats.clone()),
     )
     .await
     .map_err(js)?;
@@ -365,6 +378,7 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
         notes,
         Some(frames),
         learns,
+        Some(chats),
     ));
     Ok(())
 }

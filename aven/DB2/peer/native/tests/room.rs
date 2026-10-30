@@ -8,7 +8,10 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use aven_db_core::chain::Line;
 use aven_db_core::chat::{Kind, Message};
+use aven_db_store::{RefName, Store, backend};
+use aven_peer::chats::{self, Chats};
 use aven_peer::members::{Gate, Hook};
 use aven_peer::relay::Allow;
 use aven_peer::room::Room;
@@ -52,6 +55,7 @@ fn key(seed: u8) -> SecretKey {
 
 struct Peer {
     room: Room,
+    store: chats::Shared,
     lines: Lines,
     _router: Router,
     endpoint: Endpoint,
@@ -97,6 +101,17 @@ async fn peer(
     let router = Router::builder(endpoint.clone())
         .accept(iroh_gossip::ALPN, gossip.clone())
         .spawn();
+    let store: chats::Shared = Arc::new(backend::memory().unwrap());
+    let chats = Chats::open(
+        name.into(),
+        "aven",
+        secret.clone(),
+        gate.clone(),
+        lines.notes(),
+        store.clone(),
+    )
+    .await
+    .unwrap();
     let room = Room::join(
         &gossip,
         name.into(),
@@ -105,11 +120,13 @@ async fn peer(
         gate,
         bootstrap,
         lines.notes(),
+        Some(chats),
     )
     .await
     .unwrap();
     Peer {
         room,
+        store,
         lines,
         _router: router,
         endpoint,
@@ -168,6 +185,44 @@ async fn members_chat_through_the_relay_and_a_stranger_is_dropped() {
     let heard = |l: &Value| l["event"] == "chat" && l["text"] == "hello" && l["from"] == "alice";
     assert!(b.lines.wait(heard).await.is_some());
     assert!(hub.lines.wait(heard).await.is_some());
+
+    // the line is a blob in every store, and the Aven Peer's chat-<alice> points at it
+    let alice_ref = RefName::new(format!("chat-{}", key(2).public())).unwrap();
+    let head = hub.store.get_ref(&alice_ref).await.unwrap().expect("chat-<alice>");
+    let line = Line::parse(&hub.store.get(&head).await.unwrap().unwrap()).unwrap();
+    assert_eq!((line.text.as_str(), line.seq, line.prev), ("hello", 1, None));
+    assert_eq!(b.store.get_ref(&alice_ref).await.unwrap(), Some(head));
+
+    // a line of a device that is no member's, sent through a member: dropped, and never stored
+    let mut stranger = Line {
+        network: "aven".into(),
+        device: eve.public().to_string(),
+        seq: 1,
+        prev: None,
+        at: 1,
+        sig: String::new(),
+        text: "a line from outside".into(),
+    };
+    stranger.sig = eve
+        .sign(stranger.body().as_bytes())
+        .to_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    a.room.gossip_line(&stranger.blob()).await;
+    // the forged message above was the first stranger dropped; the line is the second
+    let dropped = || {
+        hub.lines.0.lock().unwrap().iter().filter(|l| l["event"] == "dropped" && l["why"] == "notMember").count()
+    };
+    for _ in 0..100 {
+        if dropped() >= 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(dropped(), 2);
+    let eve_ref = RefName::new(format!("chat-{}", eve.public())).unwrap();
+    assert_eq!(hub.store.get_ref(&eve_ref).await.unwrap(), None);
 
     // a line signed by a key that is no member's, sent through a member: every other peer drops it
     let mut forged = Message {

@@ -3,9 +3,11 @@
 //! The Aven Peer beats once per clock step on every link, so a quiet link still moves. An Aven Peer that keeps its tree
 //! (`door`) also tells every link whether its network is claimed and, to the devices its door admits, its tree and
 //! every statement, on every change; it takes claims, sign-ins, invites, withdrawals and joins on the same stream, and
-//! answers a refused one with why. Who may connect at all is the hook's (`members`), not the hub's.
+//! answers a refused one with why. With the chat's chains (`chats`), it tells each link the heads of every chain it
+//! keeps, answers a `catch_up` with the lines the peer misses, and keeps the lines a peer sends it (written offline),
+//! passing on gossip each it chains. Who may connect at all is the hook's (`members`), not the hub's.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use aven_db_core::presence::Presence;
 use aven_db_core::status::TICK_MS;
@@ -17,7 +19,11 @@ use serde_json::json;
 use tokio::sync::watch;
 use tokio::time::{Duration, interval};
 
+use aven_db_core::chain::Answer;
+
+use crate::chats::Chats;
 use crate::door::{Door, Statement};
+use crate::room::Room;
 use crate::keys::Members;
 use crate::{Notes, link, now};
 
@@ -29,6 +35,9 @@ pub struct Hub {
     told: watch::Sender<Vec<String>>,
     notes: Notes,
     door: Option<Arc<Door>>,
+    chats: Option<Chats>,
+    /// the room, once joined: lines a peer sends here go on to gossip
+    room: Arc<OnceLock<Room>>,
 }
 
 impl std::fmt::Debug for Hub {
@@ -54,9 +63,38 @@ impl Hub {
             told,
             notes,
             door,
+            chats: None,
+            room: Arc::new(OnceLock::new()),
         };
         hub.tell();
         hub
+    }
+
+    /// The hub with the chat's chains: lines sent here go on through the room, once it is set.
+    pub fn with_chats(mut self, chats: Chats, room: Arc<OnceLock<Room>>) -> Self {
+        self.chats = Some(chats);
+        self.room = room;
+        self
+    }
+
+    /// What it answers a frame about the chains with: the lines a `catch_up` misses; a peer's lines are kept and
+    /// passed on. `None` for any other frame.
+    async fn chat(&self, frame: &Frame) -> Option<Vec<Frame>> {
+        let chats = self.chats.as_ref()?;
+        match frame {
+            Frame::CatchUp { holds } => Some(chats.answer(holds).await),
+            Frame::Lines { lines } => {
+                for line in lines {
+                    if let Answer::Moved(_) = chats.take(line.as_bytes()).await
+                        && let Some(room) = self.room.get()
+                    {
+                        room.gossip_line(line.as_bytes()).await;
+                    }
+                }
+                Some(vec![])
+            }
+            _ => None,
+        }
     }
 
     fn note(&self, event: &str, fields: serde_json::Value) {
@@ -120,6 +158,11 @@ impl Hub {
         }))
         .await
         .map_err(fail)?;
+        if let Some(chats) = &self.chats {
+            send.write_all(&encode(&chats.heads_frame()))
+                .await
+                .map_err(fail)?;
+        }
         let mut told = self.told.subscribe();
         told.mark_changed();
         let mut beat = interval(Duration::from_millis(TICK_MS));
@@ -159,6 +202,12 @@ impl Hub {
                 read = recv.read(&mut buf) => match read.map_err(fail)? {
                     Some(m) => {
                         for frame in decoder.push(&buf[..m]).map_err(|e| fail(format!("{e:?}")))? {
+                            if let Some(answer) = self.chat(&frame).await {
+                                for frame in answer {
+                                    send.write_all(&encode(&frame)).await.map_err(fail)?;
+                                }
+                                continue;
+                            }
                             if let Some(why) = self.take(&key, frame).await {
                                 send.write_all(&encode(&Frame::Refused { why })).await.map_err(fail)?;
                             }

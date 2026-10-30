@@ -50,7 +50,7 @@ use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use aven_db_core::timeline;
 use aven_db_core::wire::ALPN;
@@ -60,6 +60,7 @@ use aven_peer::keys::{self, Members};
 use aven_peer::members::{Gate, Hook};
 use aven_peer::relay::Allow;
 use aven_peer::room::Room;
+use aven_peer::chats::{self, Chats};
 use aven_peer::{Notes, door, door::Door, hub::Hub, link, now, record, tls};
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
@@ -335,6 +336,18 @@ async fn main() -> Result<(), Error> {
         });
     }
 
+    // the chat's history: every chain this peer keeps, loaded from its store (store/README.md)
+    let chats = Chats::open(
+        me.clone(),
+        door::NETWORK,
+        secret.clone(),
+        gate.clone(),
+        notes.clone(),
+        store.clone() as chats::Shared,
+    )
+    .await?;
+    let joined = Arc::new(OnceLock::new());
+
     // gossip on the same Router as aven/db/1 (README, rule 9): the chat's room, joined through the Aven Peer
     let gossip = Gossip::builder().spawn(endpoint.clone());
     let router = Router::builder(endpoint.clone()).accept(iroh_gossip::ALPN, gossip.clone());
@@ -343,7 +356,8 @@ async fn main() -> Result<(), Error> {
             router
                 .accept(
                     ALPN,
-                    Hub::new(me.clone(), members, notes.clone(), door.clone()),
+                    Hub::new(me.clone(), members, notes.clone(), door.clone())
+                        .with_chats(chats.clone(), joined.clone()),
                 )
                 .spawn(),
             vec![],
@@ -376,6 +390,7 @@ async fn main() -> Result<(), Error> {
             notes.clone(),
             None,
             None,
+            Some(chats.clone()),
         ));
         (router.spawn(), vec![aven_key])
     };
@@ -387,8 +402,10 @@ async fn main() -> Result<(), Error> {
         gate.clone(),
         bootstrap,
         notes.clone(),
+        Some(chats),
     )
     .await?;
+    let _ = joined.set(room.clone());
     // the Aven Peer says once who joined
     if let Some(door) = &door {
         let (room, mut changed) = (room.clone(), door.subscribe());
