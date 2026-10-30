@@ -303,34 +303,69 @@ failure. A fuzz target per runtime runs in the box on demand and in the goal's C
 
 ## What Lean states
 
-`Aven.Runtime`, in `spec/`, before any Rust (DB2 rule 10). It models the contract and the decisions, not the parsers.
+`Aven.Runtime`, in [`spec/`](spec), is written: core Lean 4.35.0, no packages and no `sorry`, built in the box's image
+(`lake build`, then `lake exe vectors`). It models the contract and the decisions, not the parsers. Values, the codec
+and hashes are `Aven.Core`'s, which the docs thread builds; until it lands, the contract is stated for any part, input
+and output type and any hash, and nothing here defines its own.
 
-- **The contract.** A runtime is `Part → Input → Fuel → Result`, a function, so determinism is its type. Theorems:
-  - more fuel never changes an answer: `run p i f = ok o → f ≤ f' → run p i f' = ok o`;
-  - every `ok` output fits its schema and its limits;
-  - the floor: the version a part runs on is `max named floor`, and never one below the floor.
-- **The registry as a function.** `decide : Registry → Head → Size → Claim → Decision`, total. Theorems:
-  - **the claim never adds:** `decide r h s c` shows no more than `decide r h s none`, for every claim;
-  - **unknown is a download:** bytes no entry matches give `download`;
-  - **native only by bytes:** `native` only for an entry with a binary signature, matched, and within its limits;
-  - **no script is ever native or framed:** the HTML, XHTML, XML and SVG entries give `runtime` or `download`, never
-    `native` or `frame`;
-  - **over a limit is a download;**
-  - **signatures don't overlap:** no head matches two entries with different types (a decidable check over the table).
+- **The contract** (`Contract`). A runtime's meaning is its answer for a part and an input, with what it costs in fuel
+  and memory; the host's `run` checks the input's schema, the limits, and the output's size and schema. `run` takes
+  nothing else, so a device's clock and randomness never reach it (`deterministic`). Theorems:
+  - `run_ok_fits`: every answer fits its schema and its output limit;
+  - `run_more_room`: more fuel, memory or output room never changes an answer;
+  - `resolve_ge_floor`, `resolve_named`: a part runs on the version it names, or on the floor;
+  - `admit_imports_nothing`, `admit_memory`: a module is admitted only when it imports nothing at all and declares a
+    maximum memory within the limit;
+  - `frozen`: the manifest only appends, so a frozen entry never changes; `loads_listed`: a host loads only bytes
+    whose hash the manifest lists.
+- **The registry as a function** (`Registry`, its examples in `RegistryExamples`). `decideFile st head size claim`
+  gives the type, the mode (`native`, `frame`, `runtime` or `download`, with the runtime's limits), how the Service
+  Worker serves it, and its headers. Theorems:
+  - `signatures_apart` (checked by the kernel over the whole table) and `sniffBinary_unique`: no bytes match two types'
+    signatures, so the table's order doesn't matter;
+  - `decide_binary_ignores_claim` and **`claim_never_adds`**: a file the browser shows (natively or framed) shows so
+    whatever its sender claims;
+  - `scriptable_never_inline`: HTML, XML and SVG are never served inline, whatever their bytes or claim;
+  - `unknown_downloads`, `over_limit_downloads`;
+  - `native_img_dims`: a native image's own header declares dimensions within its pixel limit;
+  - `no_runtime_before_origin`: before the files origin, nothing runs (decision 3);
+  - `serve_inline`: inline only for what the browser shows, and then as the sniffed type.
 
-  Its examples are real heads (a PNG, a JPEG, an SVG, an HTML page claimed as PNG, a polyglot), exported as vectors
-  that the registry crate, its wasm, the Service Worker and the chat all replay.
-- **The node-tree allowlist.** `allowed : Node → Bool`, with the theorems that an allowed tree has no script
-  element, no event attribute, no `style` attribute, no URL outside the allowed schemes, and no more than its limits
-  of depth and nodes. Shared with actors' faces: one allowlist, one model.
+  Its 47 examples are real heads and hostile ones: a PNG claimed as HTML, HTML and an SVG claimed as PNGs, a
+  PNG with HTML after its header, a PDF claimed as an image, XHTML behind a prolog, a 100,000 × 100,000 PNG, cut
+  headers, NUL bytes, broken UTF-8, UTF-16, an ELF binary. The vectors add 200 heads cut and changed at random from
+  them, under random claims.
+- **The node-tree allowlist** (`Tree`). `check` is the applier's check: every node against the allowlist, and the
+  tree within depth, node and text limits. Theorems: `check_no_forbidden` and `no_script` (no script, style, frame,
+  object, form or SVG element), `check_no_handlers` (no `on…` attribute in any case, no `style`), `check_urls` (every
+  `src` is a file of the network by its hash, every `href` is `https:`, `mailto:` or a fragment), `check_bounded`.
+  27 examples, a `javascript:` link, a remote pixel, a `data:` image, an `ONLOAD` and a style attribute's `url()` among
+  them.
+- **The face-runtime's output** (`Face`). Markup and style together: the tree, and a style that is data (a class name
+  and typed colours, size and weight per rule), from which the CSS text is generated. `faceOk` accepts it when the tree
+  passes `check`, and a11y holds across both: `face_passes_check`, `face_named` (every interactive node has an
+  accessible name), `face_roles` (a clickable non-control has a role and a tab stop), `face_alt`, `face_contrast` (every
+  text has 4.5:1 against the background the style resolves under it, 3:1 when large) and `face_classes`. Contrast is
+  exact integer arithmetic over one table, `linear` (sRGB to linear light, × 10⁷), which the vectors export: #767676
+  on white passes and #777777 fails, as WCAG has it.
 - **Determinism, practically.** Lean can't see a wasm module, so the vectors carry it: each runtime's examples are
   exported with their outputs' hashes, and the check runs every vector in the native host and in all three browser
   engines and compares hashes. A float result must be bit-identical, so the host canonicalizes NaNs as it reads an
-  output, and a runtime whose vectors differ between engines fails the check.
+  output, and a runtime whose vectors differ between engines fails the check. This comes with the first runtime.
 - **The cache key.** A render's key is `(runtime hash, file hash, params hash)`, and a cache entry is dropped when its
-  runtime falls below the floor.
+  runtime falls below the floor. It comes with `Aven.Core`'s hashes.
 
-The parsers themselves stay outside Lean, as mechanics (rule 10): their hostile corpora and fuzzing hold them.
+**The vectors** (`spec/vectors/`, one vector per line): `table.json` (the registry and its signatures, the data the
+registry crate compiles in), `registry.json`, `tree.json`, `face.json` (with each rule's CSS text) and `contrast.json`
+(`linear`, then pairs of colours). The parsers themselves stay outside Lean, as mechanics (rule 10): their hostile
+corpora and fuzzing hold them.
+
+**Choices the model made,** for review:
+- The head is the first 64 KiB. A JPEG whose start of frame lies past it (a large EXIF block) downloads.
+- An `ftyp` box's first byte must be 0 (it is always small), so MP4 and AVIF can't overlap a signature at offset 0.
+- A text file is HTML only when its root is an HTML tag, as WHATWG's sniffing reads it; a Markdown note that mentions
+  `<script>` further down stays Markdown, and its runtime draws it as text.
+- UTF-16 text downloads; only UTF-8 is text.
 
 ## Performance gates
 
