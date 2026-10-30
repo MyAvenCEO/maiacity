@@ -6,6 +6,7 @@
 	import Avatar from './Avatar.svelte';
 	import Phase from './Phase.svelte';
 	import { tree, vaultName } from './id.svelte.js';
+	import Offline from './Offline.svelte';
 	import { describe, live, record } from './peers.svelte.js';
 	import { room } from './room.svelte.js';
 
@@ -69,6 +70,7 @@
 			</div>
 			{#if device}
 				<p class="status"><Phase phase={live.own?.phase} text={describe(live.own)} testid="status" /></p>
+				<Offline />
 				<div class="members">
 					<span class="faces" aria-hidden="true">
 						{#each present.slice(0, 5) as id (id)}{#if tree.kind(id)}<Avatar {id} size={28} />{/if}{/each}

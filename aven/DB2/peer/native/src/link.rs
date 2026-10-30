@@ -8,6 +8,11 @@
 //! why a statement was refused (`refused`). Once linked, its chats catch up from the Aven Peer's chains (`heads`,
 //! `catch_up`, `lines`), and send it the lines this device wrote offline. The Aven Peer's address is resolved again before every dial, so a Peer
 //! follows it when it moves (30 Oct 2026: Alice Peer kept a stale address after the Aven Peer's container restarted).
+//!
+//! Offline first (README rule 3): a peer that learns its members from statements keeps the network it was told in its
+//! store (the ref `network`), and [`recall`] reads it back at start, every statement checked again, so a returning
+//! browser knows its tree and opens before any link is up. A [`Wake`] (the page's `online` and `visibilitychange`)
+//! makes a link that isn't live dial again at once rather than at its next try.
 
 use aven_db_core::status::{Event, Phase, STALL_AFTER, Status, TICK_MS};
 use aven_db_core::timeline;
@@ -23,7 +28,7 @@ use std::sync::Arc;
 
 use n0_future::boxed::BoxFuture;
 
-use crate::chats::Chats;
+use crate::chats::{Chats, Shared};
 use crate::members::Gate;
 use crate::{Notes, now};
 
@@ -69,10 +74,107 @@ const REDIAL_AFTER: u32 = 2 * STALL_AFTER;
 /// The frames a page hands the link to send to the Aven Peer.
 pub type Outbox = futures_channel::mpsc::UnboundedReceiver<Frame>;
 
+/// What tells a link the device may be back: the network changed, or the page came back into view.
+pub type Wake = futures_channel::mpsc::UnboundedReceiver<()>;
+
+/// The ref under which a peer keeps the network it was told: whether it is claimed and, once the door admitted it,
+/// every statement (the Aven Peer's `network` frame).
+pub const NETWORK_REF: &str = "network";
+
+/// Keeps what the Aven Peer told of its network in `store`, as the newest word: checked already by the caller.
+pub async fn remember(
+    store: &Shared,
+    claimed: bool,
+    statements: Option<&str>,
+) -> Result<(), String> {
+    let name = aven_db_store::RefName::new(NETWORK_REF).map_err(|e| e.to_string())?;
+    let blob = serde_json::to_vec(&json!({ "claimed": claimed, "statements": statements }))
+        .map_err(|e| e.to_string())?;
+    let blob = store.put(blob.into()).await.map_err(|e| e.to_string())?;
+    let mut expected = store.get_ref(&name).await.map_err(|e| e.to_string())?;
+    for _ in 0..4 {
+        if expected == Some(blob) {
+            return Ok(());
+        }
+        match store.set_ref(&name, expected, blob).await {
+            Ok(()) => return Ok(()),
+            Err(aven_db_store::Error::Stale { current }) => expected = current,
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    Err("the ref network kept moving".into())
+}
+
+/// The members, and the tree they make, read back from statements as the Aven Peer told them: checked here, never
+/// taken on its word. The tree only once the network is claimed.
+pub fn checked(statements: &str) -> Result<(aven_id::Members, Option<String>), String> {
+    let v = serde_json::from_str(statements).map_err(|e| e.to_string())?;
+    let m = aven_id::Members::from_statements(&v)?;
+    let tree = m
+        .network()
+        .claim()
+        .and_then(|_| m.tree().ok())
+        .map(|t| t.to_cast());
+    Ok((m, tree))
+}
+
+/// The `network` line's fields for checked members: who the members are and the invites, beside `claimed` and `tree`.
+fn told(m: &aven_id::Members, claimed: bool, tree: Option<String>) -> serde_json::Value {
+    let invites: Vec<serde_json::Value> = m
+        .invites()
+        .iter()
+        .map(
+            |i| json!({ "id": aven_id::invite_id(&i.key), "key": i.key, "state": m.state(&i.key) }),
+        )
+        .collect();
+    json!({ "claimed": claimed, "tree": tree, "members": m.members(), "invites": invites })
+}
+
+/// What the store kept of the network, read back at start before any link (offline first): each statement checked
+/// again, the gate told its members, and a `network` line with `kept: true`, so the page opens on its tree at once and
+/// a browser that isn't a device yet knows whether the network is claimed. Nothing kept, or nothing that still holds,
+/// tells nothing. Whether it told the page a tree.
+pub async fn recall(store: &Shared, me: &str, gate: &Gate, notes: &Notes) -> bool {
+    let Ok(name) = aven_db_store::RefName::new(NETWORK_REF) else {
+        return false;
+    };
+    let Some(kept) = (match store.get_ref(&name).await {
+        Ok(Some(blob)) => store.get(&blob).await.ok().flatten(),
+        _ => None,
+    }) else {
+        return false;
+    };
+    let Ok(kept) = serde_json::from_slice::<serde_json::Value>(&kept) else {
+        return false;
+    };
+    let claimed = kept["claimed"].as_bool().unwrap_or(false);
+    let mut fields = match kept["statements"].as_str().map(checked) {
+        Some(Ok((m, tree))) => {
+            gate.set_members(&m);
+            told(&m, claimed, tree)
+        }
+        Some(Err(why)) => {
+            notes(timeline::line(
+                now(),
+                me,
+                "dropped",
+                json!({ "why": format!("the kept network doesn't hold: {why}") }),
+            ));
+            json!({ "claimed": claimed, "tree": null })
+        }
+        None => json!({ "claimed": claimed, "tree": null }),
+    };
+    fields["kept"] = json!(true);
+    let has_tree = !fields["tree"].is_null();
+    notes(timeline::line(now(), me, "network", fields));
+    has_tree
+}
+
 /// What a link waits for: bytes from the Aven Peer, or a frame to send it.
 enum Next<R> {
     Read(R),
     Send(Option<Frame>),
+    Woken,
 }
 
 /// What a link shows: its status, the peers the Aven Peer says are connected, and the path it is on.
@@ -93,6 +195,8 @@ struct Link {
     outbox: Option<Outbox>,
     /// the door as the statements say, for a link to an Aven Peer that keeps its tree
     gate: Option<Gate>,
+    /// what wakes it to dial again at once
+    wake: Option<Wake>,
     /// the chat's chains, which catch up from the Aven Peer's on every link
     chats: Option<Chats>,
     /// whether this link caught up once, on the Aven Peer's first `heads`
@@ -170,27 +274,21 @@ impl Link {
         }
     }
 
-    /// What the Aven Peer says of its network: the statements checked here before the gate believes them.
-    fn network(&self, claimed: bool, tree: Option<String>, statements: Option<String>) {
-        let checked = statements.map(|s| {
-            serde_json::from_str(&s)
+    /// What the Aven Peer says of its network: the statements checked here before the gate believes them, and kept in
+    /// the store, so the next start opens on them before any link (`recall`).
+    async fn network(&self, claimed: bool, tree: Option<String>, statements: Option<String>) {
+        let checked = statements.as_deref().map(|s| {
+            serde_json::from_str(s)
                 .map_err(|e| e.to_string())
                 .and_then(|v| aven_id::Members::from_statements(&v))
         });
+        let kept = checked.as_ref().map(|c| c.is_ok());
         match checked {
             Some(Ok(m)) => {
                 if let Some(gate) = &self.gate {
                     gate.set_members(&m);
                 }
-                let invites: Vec<serde_json::Value> = m
-                    .invites()
-                    .iter()
-                    .map(|i| json!({ "id": aven_id::invite_id(&i.key), "key": i.key, "state": m.state(&i.key) }))
-                    .collect();
-                self.note(
-                    "network",
-                    json!({ "claimed": claimed, "tree": tree, "members": m.members(), "invites": invites }),
-                );
+                self.note("network", told(&m, claimed, tree));
             }
             Some(Err(why)) => {
                 self.note("network", json!({ "claimed": claimed, "tree": null }));
@@ -200,6 +298,19 @@ impl Link {
                 );
             }
             None => self.note("network", json!({ "claimed": claimed, "tree": tree })),
+        }
+        // what a peer that learns its members from statements was told and could check: kept, once the page has it
+        let keep = match (&self.gate, &self.chats, &kept) {
+            (Some(_), Some(chats), Some(true) | None) => Some(chats.store()),
+            _ => None,
+        };
+        if let Some(store) = keep
+            && let Err(why) = remember(&store, claimed, statements.as_deref()).await
+        {
+            self.note(
+                "dropped",
+                json!({ "why": format!("the network not kept: {why}") }),
+            );
         }
     }
 
@@ -242,6 +353,7 @@ pub async fn run(
     outbox: Option<Outbox>,
     gate: Option<Gate>,
     chats: Option<Chats>,
+    wake: Option<Wake>,
 ) {
     let mut link = Link {
         me,
@@ -255,6 +367,7 @@ pub async fn run(
         told: None,
         outbox,
         gate,
+        wake,
         chats,
         caught: false,
         there: BTreeMap::new(),
@@ -276,7 +389,22 @@ pub async fn run(
         link.step(Event::Lost);
         link.tell();
         link.note("lost", json!({ "to": link.aven, "why": why }));
-        sleep(TICK).await;
+        // the next try after a step, or at once when woken
+        sleep(TICK).or(woken(&mut link.wake)).await;
+    }
+}
+
+/// Waits until the link is woken; never, without a wake. Wakes that came together count once.
+async fn woken(wake: &mut Option<Wake>) {
+    match wake.as_mut() {
+        Some(w) => {
+            // a wake whose sender is gone never wakes again
+            if w.next().await.is_none() {
+                std::future::pending::<()>().await;
+            }
+            while w.try_recv().is_ok() {}
+        }
+        None => std::future::pending().await,
     }
 }
 
@@ -284,13 +412,23 @@ async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Re
     // every link catches up afresh: the Aven Peer may have restarted, or lost what it was sent
     (link.caught, link.uploaded, link.told_sent) = (false, 0, 0);
     link.there.clear();
-    let conn = timeout(
-        Duration::from_secs(10),
-        endpoint.connect(aven.clone(), ALPN),
-    )
-    .await
-    .map_err(|_| "no answer in 10 s".to_string())?
-    .map_err(|e| e.to_string())?;
+    let dial = async {
+        timeout(
+            Duration::from_secs(10),
+            endpoint.connect(aven.clone(), ALPN),
+        )
+        .await
+        .map_err(|_| "no answer in 10 s".to_string())?
+        .map_err(|e| e.to_string())
+    };
+    // woken while it dials: the network may have changed under the dial, so it starts over
+    let wake = &mut link.wake;
+    let conn = dial
+        .or(async {
+            woken(wake).await;
+            Err("woken: dialing again".to_string())
+        })
+        .await?;
     let (mut send, mut recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
     send.write_all(&encode(&Frame::Hello {
         peer: link.me.clone(),
@@ -314,12 +452,20 @@ async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Re
                 None => std::future::pending().await,
             }
         };
+        let wake = &mut link.wake;
+        let woken_next = async {
+            woken(wake).await;
+            Next::Woken
+        };
         let got = timeout(
             next.saturating_duration_since(Instant::now()),
-            read.or(send_next),
+            read.or(send_next).or(woken_next),
         )
         .await;
         match got {
+            // a live link carries on (iroh moves its paths itself); any other dials again at once
+            Ok(Next::Woken) if link.view.status.phase == Phase::Live => continue,
+            Ok(Next::Woken) => return Err("woken: dialing again".into()),
             Ok(Next::Send(Some(frame))) => {
                 send.write_all(&encode(&frame))
                     .await
@@ -359,7 +505,7 @@ async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Re
                             claimed,
                             tree,
                             statements,
-                        } => link.network(claimed, tree, statements),
+                        } => link.network(claimed, tree, statements).await,
                         Frame::Refused { why } => link.note("refused", json!({ "why": why })),
                         // catching up: told every head on each link, then whenever one moves there. It catches up
                         // when behind; its own lines the Aven Peer doesn't hold go on the next step (`upload`). The

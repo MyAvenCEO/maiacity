@@ -32,7 +32,8 @@ lines it holds (`missing`), and takes the missing lines oldest first. When its o
 the other's, it ends with exactly the other's chain (`catchUp_chain`); and when two peers catch up from each other,
 both end with every line either could see (`both_see`). The lines come in bounded pages, each moving the receiver on
 from where the last left it (`receiveAll_pages`). A device writes on its own chain only once it has learned its head
-from the Aven Peer, so it never forks itself (`learned_never_forks`).
+from the Aven Peer, so it never forks itself (`learned_never_forks`), unless its own store holds its key: then its
+store is its truth, and it writes at once, offline too (`own_store_never_forks`).
 
 The model names a line by its `id`, the hash of its blob, and takes the signature as sound, as `Aven.DB.Chat` does.
 aven-db-core's `chain` module implements it; its tests replay the traces in `vectors/chats.json` with real signed
@@ -483,6 +484,38 @@ theorem catchUp_then_write {aven : Keeper} {d : String} (v : Valid (aven.chain d
     (qok : ∀ x ∈ q, check network members x = .ok () ∧ x.device = d) :
     (aven.receiveAll network members q).chain d = q.reverse ++ aven.chain d :=
   learned_never_forks (catchUp_chain v behind kl ok) al q written qok
+
+/-! ## A device's own store is its truth
+
+Since a device's key lives in its store (a Peer-Light's `device-key`; a native Peer's store says once it is its key's,
+`chain-key`), a lost store means a new device, never an old device with nothing: the store that holds the key holds every
+line that key signed, since a line is kept before it is sent (README's rule 3, "a device's own log is its truth and
+never waits for another peer"). Whatever the Aven Peer holds of the device's chain is then the start of the store's:
+the store's chain is some lines `p` on top of the Aven Peer's. So such a device writes on its own chain at once, offline
+from the very start, and keeps each line in its store as it writes it; on reconnect the Aven Peer takes the lines it
+missed (`p`, oldest first) and then the new ones, and ends with exactly the device's chain: never a fork. A device
+whose store doesn't hold its key (a key given apart from the store: the box's cast, a native Peer's `--secret` with an
+empty `--store`) can't tell a new store from a lost one, so it still learns its head first (`learned_never_forks`). -/
+
+/-- **A device whose store holds its key never forks itself:** the Aven Peer's chain of it is the start of the
+store's (`own`), so the lines the Aven Peer misses, then those written on top, offline or not, leave the Aven Peer with
+exactly the device's chain. -/
+theorem own_store_never_forks {aven : Keeper} {d : String} {p : List Line} (own : k.chain d = p ++ aven.chain d)
+    (al : ∀ m ∈ aven.loose, m.device ≠ d) (q : List Line) (written : Valid (q.reverse ++ k.chain d))
+    (ok : ∀ x ∈ p.reverse ++ q, check network members x = .ok () ∧ x.device = d) :
+    (aven.receiveAll network members (p.reverse ++ q)).chain d = q.reverse ++ k.chain d := by
+  rw [own] at written ⊢
+  have r := receiveAll_chain (p.reverse ++ q) aven
+    (by simpa [List.reverse_append, List.append_assoc] using written) al ok
+  simpa [List.reverse_append, List.append_assoc] using r
+
+/-- **Nothing to send:** a device whose store holds its key and that the Aven Peer has fully seen writes on top of
+the Aven Peer's chain of it, as one that learned its head does. -/
+theorem own_store_caught_up {aven : Keeper} {d : String} (own : k.chain d = aven.chain d)
+    (al : ∀ m ∈ aven.loose, m.device ≠ d) (q : List Line) (written : Valid (q.reverse ++ k.chain d))
+    (ok : ∀ x ∈ q, check network members x = .ok () ∧ x.device = d) :
+    (aven.receiveAll network members q).chain d = q.reverse ++ k.chain d :=
+  own_store_never_forks (p := []) (by simpa using own) al q written (by simpa using ok)
 
 end Keeper
 

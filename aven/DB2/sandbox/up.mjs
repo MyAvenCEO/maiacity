@@ -203,7 +203,8 @@ async function check() {
 		(await members(run)) &&
 		(await chats(run)) &&
 		(await domes(run)) &&
-		(await shares(run));
+		(await shares(run)) &&
+		(await offlines(run));
 	say(`${passed ? 'check passed' : 'check FAILED'}; screenshots and report in aven/DB2/${run}/`);
 	return passed ? 0 : 1;
 }
@@ -361,6 +362,41 @@ async function members(run) {
 // leaves its store empty: sandbox/chat.mjs
 // the city-dome's history and files in the cast's box: sandbox/dome.mjs
 const domes = async (run) => (await $`${compose} exec -T browsers node sandbox/dome.mjs ${run}`.env(env).nothrow()).exitCode === 0;
+// Offline first (README rule 3), by sandbox/offline.mjs on production's stand-in, from an empty store, which it leaves
+// empty: it asks for the Aven Peer to stop and to start again by writing `offline-stop` and `offline-start` into the
+// run's folder (`-<n>`, once per stop), and the host answers `offline-stopped-<n>` and `offline-started-<n>` once it
+// has, so the pages stay open
+export async function offlines(run) {
+	const timed = Date.now();
+	const inBrowsers = (...args) => $`${compose} exec -T browsers ${args}`.env(env).nothrow().quiet();
+	const wipe = async () => {
+		await $`${compose} exec -T s3 rm -rf /data/aven/prod`.env(env).quiet();
+		await $`${compose} restart prod`.env(env).quiet();
+	};
+	await wipe();
+	const script = $`${compose} exec -T browsers node sandbox/offline.mjs ${run}`.env(env).nothrow();
+	let done = false;
+	const answering = (async () => {
+		for (let n = 1; ; n++) {
+			for (const [asked, answer] of [
+				['stop', 'stopped'],
+				['start', 'started'],
+			]) {
+				while (!done && (await inBrowsers('test', '-f', `${run}/offline-${asked}-${n}`)).exitCode !== 0) await Bun.sleep(500);
+				if (done) return;
+				await $`${compose} ${asked} prod`.env(env).quiet();
+				await inBrowsers('touch', `${run}/offline-${answer}-${n}`);
+			}
+		}
+	})();
+	const ok = (await script).exitCode === 0;
+	done = true;
+	await answering;
+	await $`${compose} start prod`.env(env).quiet();
+	await wipe();
+	say(`${ok ? 'opening, writing and signing in without the Aven Peer hold' : 'the offline step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s)`);
+	return ok;
+}
 const chats = async (run) => (await $`${compose} exec -T browsers node sandbox/chat.mjs ${run}`.env(env).nothrow()).exitCode === 0;
 
 async function up(args) {
