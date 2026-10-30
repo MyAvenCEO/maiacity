@@ -34,7 +34,8 @@ import Aven.ID.Expiry
 - `revocations.json`: Docs of envelopes, the revocations a reader holds, and each envelope's verdict (`Aven.ID.Revoke`),
   hand-written and generated.
 - `epochs.json`: who learns which key after a removal and after a heal (`Aven.ID.Epochs`).
-- `approvals.json`: signatures, thresholds and digests on the cast, and whether each approval holds (`Aven.ID.Approve`).
+- `approvals.json`: signatures, thresholds and digests on the cast, and whether each approval holds; then approvals
+  where an owner is a vault, which approves by its own quorum, with a coop of two vaults added (`Aven.ID.Approve`).
 - `expiry.json`: writes under a cap that expires, with each envelope's signed time, and whether each counts for the
   clock (`Aven.ID.Expiry`, R12).
 - `network.json`: tickets claimed in two orders (A12), removals that clash and MaiaCityGuardian's exit
@@ -169,10 +170,15 @@ def epochVectors : List Json :=
   (healExamples.map fun (p, k, _) => ask healWorld ["alice-peer", "alice-peer-light"] "after Alice's heal" p k)
 
 def approvalVectors : List Json :=
-  approvalExamples.map fun (name, sigs, k, v, d, _) =>
+  (approvalExamples.map fun (name, sigs, k, v, d, _) =>
     vector name (Json.mkObj [("tree", "cast"), ("sigs", Json.arr (sigs.map Sig.json).toArray), ("threshold", toJson k),
         ("vault", v), ("digest", d)])
-      (Json.mkObj [("approved", cast.approved k v d sigs)])
+      (Json.mkObj [("approved", cast.approved k v d sigs)])) ++
+  quorumExamples.map fun (name, sigs, v, d, _) =>
+    vector name (Json.mkObj [("tree", "cast"), ("plus", Json.arr #[garden.json]),
+        ("thresholds", Json.mkObj [("garden", toJson (2 : Nat))]), ("sigs", Json.arr (sigs.map Sig.json).toArray),
+        ("vault", v), ("digest", d)])
+      (Json.mkObj [("approves", gardenCast.approves gardenThreshold v d sigs)])
 
 /-- A write under a cap that expires: the Doc with each envelope's signed time, the cap, its expiry and the write,
 and whether it counts for the clock (`Aven.ID.Expiry`, R12). -/

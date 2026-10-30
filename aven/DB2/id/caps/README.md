@@ -792,7 +792,7 @@ Until the first ack, a write is judged by the time it claims (`before_ack`).
 - A vault's owners are keys (passkeys, a recovery kit, MaiaCityGuardian) or vaults.
 - An act that needs the owners carries k approvals over its digest: a list of signatures, not an aggregate, so each
   stays post-quantum on its own.
-- An owner that is a vault approves by its own quorum, recursively.
+- An owner that is a vault approves by its own quorum, recursively (`Aven.ID.Approve`, `approves`).
 
 | Lost | Back in by | Data |
 |---|---|---|
@@ -1163,13 +1163,15 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | `Caps` | `narrow_chain`, `narrow_steps` | No cap in a chain lets a verb reach a Doc, or allows a write step, that its root doesn't |
 | | `root_authority` | Every line a chain grants lies in its root issuer's authority: its own vault, one it governs, or a Doc of one |
 | | `chain_short` | A chain is no longer than its root may be shared |
-| | `grant_approved` | Every cap in a chain was signed by a device of its issuer and approved by its issuer's owners (D14) |
+| | `grant_approved` | Every cap in a chain was signed by a device of its issuer and approved by its issuer's owners, an owner vault by its own quorum (D14) |
 | | `child_live` | A cap issued from a group's cap holds only while its issuer is in the group |
 | | `public_bounded`, `public_no_share` | The public passes nothing on and never shares (D15) |
 | | `role_pinned` | A new version of a role changes nothing a cap naming the old one grants (D6) |
 | | `chainError_none` | The first rule a chain breaks is none exactly when it keeps them all |
 | `Approve` | `approval_exact` | An approval holds only with k distinct owners, each having signed exactly its digest |
 | | `shown_is_signed` | What avenOS shows for a passkey tap is decoded from the exact bytes signed (A2, rule 25) |
+| | `approvesF_exact`, `approves_signed` | An owner that is a vault approves by its own quorum, recursively: a vault approves only with its threshold of distinct owners, each a key that signed exactly the digest or a vault that approves it, and with every threshold at least one, an approval rests on such a signature by a key above the vault |
+| | `approves_iff` | In a well-formed tree, looking as many levels up as the tree has vaults finds every approval: a vault's owners stand lower than it |
 | `Revoke` | `seen_never_counts` | A revoked holder's envelope with the revocation in its own past never counts: no laundering |
 | | `doc_cap_kept` | Under a Doc cap, only the revocation's own past is kept |
 | | `elsewhere_kept` | Elsewhere, once the revocation reaches the Doc, only what its kept list or another writer's ack had seen counts |
@@ -1218,9 +1220,7 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 - `upgrade_no_wider` and `no_confused_deputy`, in the cross-spec model `Aven.Architecture`: they need `Aven.Actor`,
   and id/spec never requires the actor spec (the architect, 30 Oct 2026);
 
-Two smaller gaps:
-- An owner that is a vault approves by its own quorum, recursively. `Approve` counts owner keys only, so the cast's coop
-  can't yet approve a grant.
+One smaller gap:
 - The Revoke model's reader holds one Doc; the order in which envelopes arrive changes nothing, because a verdict is
   computed from the Doc and the revocations alone.
 
@@ -1232,7 +1232,7 @@ Two smaller gaps:
 | `revocations.json` | Docs, the revocations held, and verdicts: hand-written, and 30 generated Docs with every envelope's verdict |
 | `epochs.json` | Who learns which key after Bob's removal and after Alice's heal |
 | `safe.json` | Requests to Alice's safe from her agent and from Mallory, on her Mac and on a host that keeps Doc keys inside, with what each gives back |
-| `approvals.json` | Signatures, thresholds and digests on the cast, and whether each approval holds |
+| `approvals.json` | Signatures, thresholds and digests on the cast, and whether each approval holds; approvals where an owner is a vault, with a coop of two vaults added |
 | `expiry.json` | Writes under a cap that expires, with each envelope's signed time, and whether each counts for the clock |
 | `network.json` | A ticket's claims in two orders (A12), removals that clash, MaiaCityGuardian's exit |
 | `keep.json` | Fetch-key links in the order they came, with the keys a keeper takes, its current key and its flags; proofs and whether they're served; what each vault pays; 30 generated keepers |
