@@ -1,0 +1,12 @@
+# Aven.DB: avenDB's model in Lean (README, "How we work"). Core Lean only: the box has no network for Lean packages.
+name = "aven-db-spec"
+version = "0.1.0"
+defaultTargets = ["Aven", "aven-db-model"]
+
+[[lean_lib]]
+name = "Aven"
+
+# The model runs (README, rule 10): replays traces given as JSON, so Rust's tests compare against it.
+[[lean_exe]]
+name = "aven-db-model"
+root = "Main"

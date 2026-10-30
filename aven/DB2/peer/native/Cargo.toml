@@ -5,3 +5,30 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
+
+# One core in two builds (README, "Two kinds of peer, one core"): the library is what every peer runs, the Peer-Light
+# included (peer/light builds it without `native`); the binary is the Peer, and `--relay` makes it the Aven Peer.
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "aven-peer"
+path = "src/main.rs"
+required-features = ["native"]
+
+[features]
+default = ["native"]
+native = ["dep:iroh-relay", "dep:tokio"]
+
+[dependencies]
+aven-db-core = { path = "../../db/core" }
+aven-db-store = { path = "../../db/store" }
+bytes = "=1.12.1"
+iroh = { version = "=1.4.1", default-features = false, features = ["tls-ring"] }
+n0-future = "=0.3.2"
+serde_json = "=1.0.154"
+iroh-relay = { version = "=1.4.1", features = ["server"], optional = true }
+tokio = { version = "=1.54.1", features = ["rt-multi-thread", "macros", "net", "fs", "io-util", "sync", "signal"], optional = true }
+
+[dev-dependencies]
+sha2 = "=0.11.1"

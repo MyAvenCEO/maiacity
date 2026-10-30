@@ -8,9 +8,10 @@ this folder: its crates, its Lean spec, its pages and avenSANDBOX, the local net
 v1 stays as the testing and learning battleground until the new avenDB is ready. Then v1 is deprecated, and the new
 avenDB moves into `aven/db`.
 
-**Status (29 Oct 2026): milestone 1 has started.** avenSANDBOX's box runs: its image, `bun run up --check`, and
-avenOS on two Peer-Lights' origins, with its account switcher and its first two apps, Vault and Control Room, on the
-cast's vaults. The peers themselves and avenID come next. The plan: [`SANDBOX.md`](SANDBOX.md).
+**Status (30 Oct 2026): milestone 1 is integrated.** avenSANDBOX's box runs all four peers live: the Aven Peer with
+its relay, Alice Peer direct over UDP, and two Peer-Lights in one Chromium. avenOS reads the cast's tree of vaults
+through avenID's wasm, and each peer keeps its record through avenDB's store: in S3, a folder or OPFS. Lean proves
+`Aven.ID` and `Aven.DB` without `sorry`. The plan: [`SANDBOX.md`](SANDBOX.md).
 
 ## Why a rebuild
 
@@ -40,7 +41,13 @@ Each rule is held by a test or a check once there is code to hold.
 8. **The UI is pushed deltas.** It never re-queries.
 9. **One protocol of our own,** behind one ALPN, with no fallbacks for older peers. iroh's protocols (gossip, later
    blobs) sit beside it on the same `Router`.
-10. **The Lean model runs.** It checks the Rust on random traces, so the model can never be simpler than the code.
+10. **Lean is the source of truth, and the tests derive from it.** Every answer a test checks comes from the Lean
+    model. Examples are written once, in Lean, beside the definitions they show, and `lake build` checks them. A Lean
+    program exports them, with generated cases, as test vectors (JSON) that the Rust tests, the wasm and JS build and
+    avenOS's check all load. Models with state, such as the store and presence, export traces that every
+    implementation replays. And the model runs: it checks the Rust on random inputs, so it can never be simpler than
+    the code. No test elsewhere writes its own expected values. `bun run up --check` regenerates the vectors and fails
+    when they differ from what's committed. Only mechanics stay outside Lean: crash safety, rendering, timing.
 11. **Small packages in strict layers,** with a size limit per file.
 12. **Zero legacy.** Nothing here imports, copies or vendors code from `aven/db/` or its crates. Learnings come in as
     rules and tests, never as code. A check will fail on any such import.
@@ -180,10 +187,10 @@ organization `aven` reserves the scope before anything is published.
   make. Signatures: Ed25519 and passkeys now, ML-DSA later through the same suite byte.
 - **The Aven Peer only ever sees ciphertext,** except what is published.
 - **What ships is the node, never the box.** avenSANDBOX's image is a development machine (browsers, compilers,
-  Lean) and is never deployed. avenPEER ships one binary whose modes are flags (`--relay`, `--store fs|s3`), in one
-  slim image: the binary on a minimal base. Sandbox or live is only configuration: which relay, which S3. The box runs
-  that same image for its peers, so what is tested is what ships; for the fast loop it runs the binary straight from
-  its build folder.
+  Lean) and is never deployed. avenPEER ships one binary whose modes are flags (`--relay`, `--store memory|fs|s3`), in
+  one slim image: the binary on a minimal base. Sandbox or live is only configuration: which relay, which S3. The box
+  runs that same image for its peers, so what is tested is what ships; for the fast loop it runs the binary straight
+  from its build folder.
 
 ## What we take from iroh
 
