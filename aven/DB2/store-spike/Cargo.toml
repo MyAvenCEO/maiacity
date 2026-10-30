@@ -18,7 +18,7 @@ wasm-a = []
 wasm-b = []
 
 [dependencies]
-aven-db-store = { path = "../db/store" }
+aven-db-store = { path = "../store" }
 async-trait = "=0.1.92"
 bao-tree = { version = "=0.17.0", default-features = false, features = ["experimental-mixed", "validate"] }
 blake3 = "=1.8.7"

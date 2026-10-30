@@ -5,7 +5,7 @@
 !Cargo.toml
 !Cargo.lock
 !**/Cargo.toml
-!db/store/opendal-opfs
+!store/opendal-opfs
 !sandbox/box/deps.sh
 # what the tag (sandbox/box/tag.mjs) leaves out too, wherever it is
 **/target

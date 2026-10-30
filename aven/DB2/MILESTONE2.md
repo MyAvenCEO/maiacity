@@ -36,7 +36,7 @@ Only what this plan names gets built. Three task threads, in parallel, each in i
 - **Members-only gossip:** one iroh-gossip topic per network, derived from the network's id. Peers join it only
   through members, and drop any message whose sender is not a member's device. Each message is signed by its device.
 - **The chat is in memory:** messages live in each peer's memory and nowhere else. No store, no Loro, no history.
-  The store upgrade that follows gives it its history and files ([`db/store`](db/store/README.md)).
+  The store upgrade that follows gives it its history and files ([`store`](store/README.md)).
 - **The Aven Peer is in the room:** it joins the topic, keeps it alive for the Peer-Lights, and says once who joined.
 - **No new protocol of our own:** invites, joins and the tree travel on `aven/db/1`; the chat is iroh-gossip beside it
   on the same `Router` (README rule 9).

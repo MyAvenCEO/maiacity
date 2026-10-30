@@ -22,7 +22,7 @@ native = ["dep:iroh-relay", "dep:rustls", "dep:tokio"]
 
 [dependencies]
 aven-db-core = { path = "../../db/core" }
-aven-db-store = { path = "../../db/store" }
+aven-db-store = { path = "../../store" }
 aven-id = { path = "../../id/core" }
 bytes = "=1.12.1"
 futures-channel = "=0.3.34"
