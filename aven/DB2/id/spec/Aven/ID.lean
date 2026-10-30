@@ -13,6 +13,8 @@ import Aven.ID.Keys
 import Aven.ID.P256
 import Aven.ID.Passkey
 import Aven.ID.Claim
+import Aven.ID.ClaimTrace
+import Aven.ID.ClaimJson
 
 /-! # Aven.ID
 
