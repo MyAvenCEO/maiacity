@@ -109,6 +109,17 @@
 		min-width: 0;
 	}
 
+	nav {
+		flex: none;
+	}
+
+	/* a phone has room for the brand, the crumb and the switcher, not for where too */
+	@media (max-width: 560px) {
+		.where {
+			display: none;
+		}
+	}
+
 	.home {
 		color: var(--accent);
 		font-family: var(--font-display);
