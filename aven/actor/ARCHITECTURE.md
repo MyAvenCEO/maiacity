@@ -6,7 +6,7 @@ the bottom up: each layer uses only the layers below it. The learnings behind ea
 
 Version 1 is a standalone app, in memory: a minimal todo app on one device, with no network, no avenDB and no
 capabilities. Every layer is shaped so that later the same actors run peer to peer, persist everything in avenDB Docs,
-and are guarded by capabilities from [`../ID/caps`](../ID/caps/README.md), without changing the
+and are guarded by capabilities from [avenID's caps spec](../DB2/id/caps/README.md), without changing the
 layers above.
 
 1. [The layers](#1-the-layers)
@@ -36,7 +36,7 @@ layers above.
  2  Messages    tell, ask, reply, fail: Values appended to an inbox Doc, one per sender and receiver
  1  Docs        one writer each; their records named (writer, seq): Loro-shaped, in memory in version 1
  0  Values      immutable JSON, named by the BLAKE3 hash of its canonical bytes
- ── later ──    links between peers (frames on aven/db/1), Docs in avenDB, capabilities (aven/ID/caps)
+ ── later ──    links between peers (frames on aven/db/1), Docs in avenDB, capabilities (aven/DB2/id/caps)
 ```
 
 Each layer has one job. Nothing reaches past the layer directly below it.
@@ -378,7 +378,7 @@ Each later step replaces a layer's implementation, not its interface:
 
 | Left out | Why |
 | --- | --- |
-| Capabilities, signatures, encryption | Their own package (`aven/ID/caps`), designed next |
+| Capabilities, signatures, encryption | avenID's caps spec (`aven/DB2/id/caps`), designed in its own thread |
 | Network and avenDB | Later (section 11); the Doc interface is the seam |
 | Composites and skills | A composite is an actor whose turn tells other actors. No kernel concept, no members field, no merge law. "Skill" is a product word for such an actor |
 | Studio, planner, `requires` / `produces` contracts, registry | Apps or actors that read definitions, later |

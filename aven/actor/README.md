@@ -5,7 +5,7 @@ There is no code here yet. The design itself is [`ARCHITECTURE.md`](ARCHITECTURE
 the next implementation; where the two disagree, it wins.
 
 Authority (accounts, signers, owners, capabilities, access control) has its own document,
-[`../ID/caps/README.md`](../ID/caps/README.md), because it will live with avenID's signing and vault infrastructure.
+[`../DB2/id/caps/README.md`](../DB2/id/caps/README.md), because it will live with avenID's signing and vault infrastructure.
 This document links to it wherever authority comes up.
 
 "Actor" here means a software actor: an addressable unit with a mailbox. The people and animals of the worlds
@@ -343,7 +343,7 @@ Strip each concept to the job it does; where two concepts do the same job, keep 
 | --- | --- |
 | **Actor** | Holds state and changes it only by handling one message at a time. A definition (immutable, named by hash) is its class; an instance is a live one |
 | **Message** | The only way anything happens. There is one verb, `tell`. An `ask` is a tell with a reply address and a deadline; a `reply` or `fail` is a tell to that address |
-| **Capability** | The right to send a kind of message to an actor. The only authority there is ([caps](../ID/caps/README.md)) |
+| **Capability** | The right to send a kind of message to an actor. The only authority there is ([caps](../DB2/id/caps/README.md)) |
 | **Journal** | The ordered record of messages and turns. The truth; everything else is a cache or a view of it |
 
 Everything else in the sources is one of these four, or a role an actor plays:
@@ -359,7 +359,7 @@ Everything else in the sources is one of these four, or a role an actor plays:
 | Registry, factory, supervisor | The kernel's own duties; a registry is later a query over avenDB |
 | Model, store, clock, HTTP, files, push | Door actors: the only holders of effects in the real world |
 | `emit` routing, `dispatch`, UI events, releasing a held call | One verb, `tell` to an address. Matching contracts is a registry query that picks addresses, not a router |
-| Human gate, permission prompt, access request, approving a new goal | An `ask` addressed to a person. For authority it is a co-signature ([caps](../ID/caps/README.md)) |
+| Human gate, permission prompt, access request, approving a new goal | An `ask` addressed to a person. For authority it is a co-signature ([caps](../DB2/id/caps/README.md)) |
 | `shape()` (parsing model text) | Handling the model's `reply` in an ordinary turn |
 | `cap()` host calls inside logic | Effects returned by the turn, or reads handed in with the message |
 | `requires`/`produces`, input and output slots, Studio ports | Typed messages on the interface. Contracts for discovery and planning are later actors, not the kernel |
