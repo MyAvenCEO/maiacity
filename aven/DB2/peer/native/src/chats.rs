@@ -373,12 +373,6 @@ impl Chats {
         };
         let mut fields = json!({ "from": name, "vault": vault, "key": h.line.device, "at": h.line.at,
             "seq": h.line.seq, "id": h.id });
-        let deleted = h.line.body == Body::Redacted
-            || self
-                .keeper
-                .lock()
-                .unwrap()
-                .deleted(&self.author(), h);
         // a line written before this device knew its head, chained now: the page shows it in place of its queued one
         if h.line.device == self.device()
             && let Some(queued) = self.replacing.lock().unwrap().as_ref()
@@ -386,9 +380,8 @@ impl Chats {
             fields["replaces"] = json!(queued);
         }
         match &h.line.body {
-            // a retraction isn't shown: the line it deletes is, as deleted
+            // a retraction isn't shown: the line it deletes is, as deleted once settling took its text
             Body::Retract(_) => return,
-            _ if deleted => fields["deleted"] = json!(true),
             Body::Text(text) => fields["text"] = json!(text),
             // a file: the page shows it by its index, its name as its text
             Body::File(file) => {
