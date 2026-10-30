@@ -1,7 +1,10 @@
 // Serves the suite's wasm on localhost (OPFS needs a secure context), opens it in Playwright's Chromium, WebKit
-// (Safari's engine) and Firefox, and prints the report. In each it runs three times: on the page, in a worker, which
-// has no `window`, and in a shared worker, where the Peer-Light runs. WebKit has OPFS only with a profile directory
-// (`launchPersistentContext`). Exits non-zero unless every case passed everywhere.
+// (Safari's engine) and Firefox, and prints the report. In each it runs in a dedicated worker, the only place every
+// engine has sync access handles and where the Peer-Light's leader runs them. WebKit has OPFS only with a profile
+// directory (`launchPersistentContext`). Exits non-zero unless every case passed and the workload met its engine's
+// gates (store/README.md, "What the store asks of the opfs driver", 4): medians of a chat line and a 1 MiB chunk put,
+// and catching up 500 lines, in ms. Firefox's are its own: each sync access handle costs it ~23 ms (30 Oct 2026), the
+// cost pack files remove ("Next: pack files").
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -10,30 +13,37 @@ import { chromium, firefox, webkit } from 'playwright';
 
 const dir = process.argv[2];
 const page = `<!doctype html><script type="module">
-import init, { conformance } from './opfs_conformance.js';
-await init();
-const page = await conformance('aven-db-store-page-' + Date.now());
 const worker = new Worker('./worker.js', { type: 'module' });
 const inWorker = await new Promise((done) => {
 	worker.onmessage = ({ data }) => done(data);
 	worker.onerror = (e) => done('FAILED: the worker threw ' + e.message);
 });
-const shared = new SharedWorker('./worker.js?shared', { type: 'module' });
-const inShared = await new Promise((done) => {
-	shared.port.onmessage = ({ data }) => done(data);
-	shared.onerror = (e) => done('FAILED: the shared worker threw ' + e.message);
-});
-window.report = { page, worker: inWorker, 'shared worker': inShared };
+window.report = { worker: inWorker };
 </script>`;
-// a shared worker answers its first page's port; a worker, its page
 const worker = `import init, { conformance } from './opfs_conformance.js';
-const port = await new Promise((done) => ('onconnect' in self ? (self.onconnect = (e) => done(e.ports[0])) : done(self)));
 try {
 	await init();
-	port.postMessage(await conformance('aven-db-store-' + ('onconnect' in self ? 'shared' : 'worker') + '-' + Date.now()));
+	self.postMessage(await conformance('aven-db-store-worker-' + Date.now()));
 } catch (e) {
-	port.postMessage('FAILED: ' + (e?.message ?? e));
+	self.postMessage('FAILED: ' + (e?.message ?? e));
 }`;
+const gates = {
+	chromium: { line: 60, chunk: 30, 'catch-up': 10_000 },
+	webkit: { line: 60, chunk: 30, 'catch-up': 10_000 },
+	firefox: { line: 150, chunk: 100, 'catch-up': 30_000 },
+};
+// the report's workload lines held to the engine's gates, each a line of its own after them
+function gated(engine, text) {
+	let held = true;
+	const lines = [];
+	for (const [what, gate] of Object.entries(gates[engine])) {
+		const ms = Number(text.match(new RegExp(`^workload ${what}: ([0-9.]+) ms$`, 'm'))?.[1]);
+		const ok = Number.isFinite(ms) && ms <= gate;
+		held &&= ok;
+		lines.push(`gate ${what}: ${Number.isFinite(ms) ? ms : 'missing'} ms, ${ok ? 'within' : 'OVER'} ${gate} ms`);
+	}
+	return { held, text: `${text}\n${lines.join('\n')}` };
+}
 const types = { '.js': 'text/javascript', '.wasm': 'application/wasm' };
 const server = createServer(async (req, res) => {
 	if (req.url === '/') return res.writeHead(200, { 'content-type': 'text/html' }).end(page);
@@ -57,8 +67,9 @@ async function run(engine) {
 		tab.on('console', (m) => m.type() === 'error' && console.error(`${engine.name()} console: ${m.text()}`));
 		await tab.goto(`http://localhost:${server.address().port}/`);
 		const report = await (await tab.waitForFunction(() => window.report, null, { timeout: 240_000 })).jsonValue();
-		console.log(Object.entries(report).map(([where, text]) => `opfs, ${where}, ${engine.name()} ${version}:\n${text}`).join('\n'));
-		return Object.values(report).every((text) => text.startsWith('passed'));
+		const { held, text } = gated(engine.name(), report.worker);
+		console.log(`opfs, worker, ${engine.name()} ${version}:\n${text}`);
+		return report.worker.startsWith('passed') && held;
 	} finally {
 		await context.close();
 		await rm(profile, { recursive: true, force: true });

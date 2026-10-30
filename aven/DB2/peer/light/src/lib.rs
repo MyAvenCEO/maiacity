@@ -17,19 +17,27 @@
 //! page every view of the tree as a `views` line, a snapshot stamped with the head it is correct at ([`views`]), on
 //! start and whenever the tree changes. The box's own view (`localhost`), which serves no vault, loads it only for that
 //! ([`views()`]). What a person's acts need computed (a passkey's texts, an invite's key) is in [`acts`].
+//!
+//! Files (store/README.md, "How a file travels"): it serves its store's blobs to members over iroh-blobs, and fetches
+//! files by their index's hash, from the Aven Peer or another member: [`file_len`], [`file_range`] and [`file_fetch`].
+//! These three are the Peer-Light's stable API for files: the chat's Service Worker calls them through the leader to
+//! answer `/files/<hash>` with ranges, and the box's check calls them directly.
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
+use std::ops::Range;
 use std::sync::Arc;
 
 use aven_db_core::chat::Message;
 use aven_db_core::timeline;
 use aven_db_core::wire::{ALPN, Frame};
-use aven_db_store::backend;
+use aven_db_store::blobs::{Blobs, Shared};
+use aven_db_store::{Hash, backend, files};
 use aven_peer::iroh_gossip::{self, Gossip};
 use aven_peer::members::{Gate, Hook};
 use aven_peer::room::Room;
-use aven_peer::{Notes, keys, link, now, record};
-use iroh::endpoint::presets;
+use aven_peer::{Notes, blobs, keys, link, now, record};
+use iroh::endpoint::{Connection, presets};
 use iroh::protocol::Router;
 use iroh::{
     Endpoint, EndpointAddr, PublicKey, RelayConfig, RelayMap, RelayMode, RelayUrl, SecretKey,
@@ -106,6 +114,17 @@ struct Running {
     outbox: futures_channel::mpsc::UnboundedSender<Frame>,
     room: Room,
     router: Router,
+    files: Files,
+}
+
+/// What fetching a file takes: the endpoint, the store and iroh-blobs on it, and where the Aven Peer is.
+#[derive(Clone)]
+struct Files {
+    endpoint: Endpoint,
+    store: Shared,
+    held: Blobs,
+    aven: EndpointAddr,
+    relay: RelayUrl,
 }
 
 thread_local! {
@@ -117,6 +136,8 @@ thread_local! {
     static ADMITTED: Cell<Option<bool>> = const { Cell::new(None) };
     /// Whether a newcomer's statement waits on the relay: a refusal of this browser is then that statement's.
     static PENDING: Cell<bool> = const { Cell::new(false) };
+    /// A connection on iroh-blobs' protocol to each peer files came from, kept while it is open.
+    static CONNECTIONS: RefCell<HashMap<PublicKey, Connection>> = RefCell::new(HashMap::new());
 }
 
 fn running<T>(f: impl FnOnce(&Running) -> Result<T, JsError>) -> Result<T, JsError> {
@@ -229,6 +250,56 @@ fn door(endpoint: &Endpoint, bound: u32, name: String, notes: Notes) {
     });
 }
 
+// This worker's store, in this origin's OPFS under `/store/`, opened once: the one writer holds its handles until the
+// worker ends (store/README.md, the opfs driver). The crate also builds natively, for the workspace's tests; there it
+// has no OPFS, and keeps its store in memory.
+thread_local! {
+    static STORE: RefCell<Option<Shared>> = const { RefCell::new(None) };
+}
+
+async fn store() -> Result<(Shared, &'static str), JsError> {
+    if let Some(s) = STORE.with(|s| s.borrow().clone()) {
+        return Ok((s, KIND));
+    }
+    #[cfg(target_arch = "wasm32")]
+    #[allow(clippy::arc_with_non_send_sync)]
+    let s: Shared = Arc::new(backend::opfs("/store/").await.map_err(js)?);
+    #[cfg(not(target_arch = "wasm32"))]
+    let s: Shared = Arc::new(backend::memory().map_err(js)?);
+    STORE.with(|kept| *kept.borrow_mut() = Some(s.clone()));
+    Ok((s, KIND))
+}
+
+#[cfg(target_arch = "wasm32")]
+const KIND: &str = "opfs";
+#[cfg(not(target_arch = "wasm32"))]
+const KIND: &str = "memory";
+
+/// This browser's device secret (PRODUCTION.md, Part A), kept in its store under the ref `device-key`: the one there,
+/// or else `candidate` (the page's: an older Peer-Light's file in OPFS, or new random bytes), stored now. Returns the
+/// secret the Peer-Light goes by.
+#[wasm_bindgen(js_name = deviceSecret)]
+pub async fn device_secret(candidate: String) -> Result<String, JsError> {
+    use aven_db_store::RefName;
+    let (store, _) = store().await?;
+    let name = RefName::new("device-key").map_err(js)?;
+    if let Some(blob) = store.get_ref(&name).await.map_err(js)? {
+        let bytes = store
+            .get(&blob)
+            .await
+            .map_err(js)?
+            .ok_or_else(|| JsError::new("device-key points at a missing blob"))?;
+        return String::from_utf8(bytes.to_vec()).map_err(js);
+    }
+    keys::secret(&candidate).map_err(js)?;
+    let blob = store
+        .put(candidate.clone().into_bytes().into())
+        .await
+        .map_err(js)?;
+    store.set_ref(&name, None, blob).await.map_err(js)?;
+    Ok(candidate)
+}
+
 /// Starts the Peer-Light `name` with its secret seed (hex), linking through `relay` to the Aven Peer (`aven_key`,
 /// called `aven_name` in the timeline), and tells `notes` every event. Without a name it goes by its key's device id.
 /// In the box's cast, `members` lists the cast's members (`name=key,…`); without them it learns the members from the
@@ -304,7 +375,7 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
     let endpoint = Endpoint::builder(presets::Minimal)
         .secret_key(secret.clone())
         .relay_mode(RelayMode::Custom(relays))
-        .alpns(vec![ALPN.to_vec(), iroh_gossip::ALPN.to_vec()])
+        .alpns(vec![ALPN.to_vec(), iroh_gossip::ALPN.to_vec(), blobs::ALPN.to_vec()])
         .hooks(Hook {
             me: name.clone(),
             gate: gate.clone(),
@@ -321,21 +392,20 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
         serde_json::json!({ "key": endpoint.id().to_string(), "relay": relay.to_string(), "newcomer": token.is_some() }),
     ));
     // the one record it keeps, in this origin's OPFS: its first start, found again after a reload
-    #[cfg(target_arch = "wasm32")]
-    let (store, kind) = (backend::opfs("/store/").map_err(js)?, "opfs");
-    // the crate also builds natively, for the workspace's tests; there it has no OPFS
-    #[cfg(not(target_arch = "wasm32"))]
-    let (store, kind) = (backend::memory().map_err(js)?, "memory");
-    let kept = record::first_start(&store, &name, now())
+    let (store, kind) = store().await?;
+    let kept = record::first_start(&*store, &name, now())
         .await
         .map_err(js)?;
     notes(record::line(now(), &name, kind, &kept));
     let aven = EndpointAddr::new(aven_key).with_relay_url(relay.clone());
     aven_peer::know(&endpoint, aven.clone());
+    let held = Blobs::new(store.clone());
     let gossip = Gossip::builder().spawn(endpoint.clone());
     let router = Router::builder(endpoint.clone())
         .accept(iroh_gossip::ALPN, gossip.clone())
+        .accept(blobs::ALPN, blobs::provider(&held, name.clone(), gate.clone(), notes.clone()))
         .spawn();
+    let files = Files { endpoint: endpoint.clone(), store, held, aven: aven.clone(), relay: relay.clone() };
     let room = Room::join(
         &gossip,
         name.clone(),
@@ -355,6 +425,7 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
             outbox,
             room,
             router,
+            files,
         })
     });
     wasm_bindgen_futures::spawn_local(link::run(
@@ -367,4 +438,100 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
         learns,
     ));
     Ok(())
+}
+
+/// A connection on iroh-blobs' protocol to `from` (a member's key, hex), or to the Aven Peer: one kept while it is open.
+async fn connection(f: &Files, from: Option<String>) -> Result<Connection, JsError> {
+    let at = match from {
+        Some(key) => EndpointAddr::new(keys::public(&key).map_err(js)?).with_relay_url(f.relay.clone()),
+        None => f.aven.clone(),
+    };
+    let open = CONNECTIONS.with(|c| c.borrow().get(&at.id).filter(|c| c.close_reason().is_none()).cloned());
+    if let Some(conn) = open {
+        return Ok(conn);
+    }
+    let conn = f.endpoint.connect(at.clone(), blobs::ALPN).await.map_err(js)?;
+    CONNECTIONS.with(|c| c.borrow_mut().insert(at.id, conn.clone()));
+    Ok(conn)
+}
+
+/// The file's index, fetched if this Peer-Light hasn't it; and the bytes that crossed for it.
+async fn open(f: &Files, file: &Hash, from: Option<String>) -> Result<(files::File, u64), JsError> {
+    if let Some(found) = files::open(&*f.store, file).await.map_err(js)? {
+        return Ok((found, 0));
+    }
+    let conn = connection(f, from).await?;
+    let fetched = f.held.fetch_chunks(&conn, *file, 0..0).await.map_err(js)?;
+    let found = files::open(&*f.store, file).await.map_err(js)?.ok_or_else(|| JsError::new("no such file"))?;
+    Ok((found, fetched.bytes))
+}
+
+/// The chunks of `range` this Peer-Light lacks, fetched; the bytes that crossed.
+async fn chunks(f: &Files, file: &files::File, range: Range<u64>, from: Option<String>) -> Result<u64, JsError> {
+    let missing = file.missing(&*f.store, range).await.map_err(js)?;
+    let (Some(first), Some(last)) = (missing.first(), missing.last()) else {
+        return Ok(0);
+    };
+    let conn = connection(f, from).await?;
+    Ok(f.held.fetch_chunks(&conn, file.name, *first..*last + 1).await.map_err(js)?.bytes)
+}
+
+fn running_files() -> Result<Files, JsError> {
+    running(|r| Ok(r.files.clone()))
+}
+
+fn object(fields: &[(&str, JsValue)]) -> JsValue {
+    let o = js_sys::Object::new();
+    for (k, v) in fields {
+        let _ = js_sys::Reflect::set(&o, &JsValue::from_str(k), v);
+    }
+    o.into()
+}
+
+fn hash(file: &str) -> Result<Hash, JsError> {
+    file.parse().map_err(js)
+}
+
+/// A file's length in bytes, by its name (its index's hash, hex): its index is fetched from `from` (a member's key,
+/// hex) or the Aven Peer if this Peer-Light hasn't it.
+#[wasm_bindgen]
+pub async fn file_len(file: String, from: Option<String>) -> Result<f64, JsError> {
+    let f = running_files()?;
+    Ok(open(&f, &hash(&file)?, from).await?.0.len as f64)
+}
+
+/// A file's bytes `start..end`, read from this Peer-Light's store: the chunks they lie in that it lacks are fetched
+/// first, from `from` or the Aven Peer, each checked whole. `{bytes: Uint8Array, len, fetched}`, where `fetched` is the
+/// bytes that crossed for this call. A seek is a range: a movie played from its middle fetches only the chunks it
+/// plays.
+#[wasm_bindgen]
+pub async fn file_range(file: String, start: f64, end: f64, from: Option<String>) -> Result<JsValue, JsError> {
+    let f = running_files()?;
+    let (found, mut fetched) = open(&f, &hash(&file)?, from.clone()).await?;
+    let range = start as u64..(end as u64).min(found.len);
+    fetched += chunks(&f, &found, range.clone(), from).await?;
+    let bytes = found.read(&*f.store, range).await.map_err(js)?.ok_or_else(|| JsError::new("a chunk went missing"))?;
+    Ok(object(&[
+        ("bytes", js_sys::Uint8Array::from(&bytes[..]).into()),
+        ("len", (found.len as f64).into()),
+        ("fetched", (fetched as f64).into()),
+    ]))
+}
+
+/// The whole file into this Peer-Light's store, from `from` or the Aven Peer: only what it lacks crosses.
+/// `{len, fetched, chunks}`.
+#[wasm_bindgen]
+pub async fn file_fetch(file: String, from: Option<String>) -> Result<JsValue, JsError> {
+    let f = running_files()?;
+    let (found, mut fetched) = open(&f, &hash(&file)?, from.clone()).await?;
+    fetched += chunks(&f, &found, 0..found.len, from).await?;
+    let missing = found.missing(&*f.store, 0..found.len).await.map_err(js)?;
+    if !missing.is_empty() {
+        return Err(JsError::new(&format!("{} chunks still missing", missing.len())));
+    }
+    Ok(object(&[
+        ("len", (found.len as f64).into()),
+        ("fetched", (fetched as f64).into()),
+        ("chunks", (found.chunks.len() as f64).into()),
+    ]))
 }

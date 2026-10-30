@@ -11,6 +11,7 @@ result as the contract gives it:
 |---|---|
 | `put bytes` | its hash; the same bytes twice keep one blob |
 | `get h`, `has h` | the blob or none; whether it is there |
+| `size h` | the blob's length in bytes, or none, without reading it |
 | `getRange h a b` | none for a missing blob; bytes `a..b`; `range` when `a > b` or `b` is past its end |
 | `list`, `listRefs` | every blob's hash, every ref's name, sorted |
 | `delete h` | done, also for a blob that isn't there |
@@ -28,6 +29,7 @@ touched. The model is parametric in the hash `H`; `Blake3.hash` is the store's. 
 - **A ref is never torn** (`ref_written`): whatever a ref reads is what some write of the trace set it to. Of racing
   writers that all expect the same value, exactly the first is done (`one_wins`).
 - **Refs and blobs stay apart** (`refs_apart`, `blobs_apart`).
+- **A size is the blob's length** (`size_get`): `size` says what `get` would hold, without the bytes.
 
 `lake exe vectors` exports the examples below and generated traces (`vectors/store.json`), and the conformance suite
 (`store/src/conformance.rs`) replays them on every backend: memory, a folder, S3 and OPFS.
@@ -102,6 +104,7 @@ inductive Op where
   | get (h : Hash)
   | getRange (h : Hash) (start stop : Nat)
   | has (h : Hash)
+  | size (h : Hash)
   | list
   | delete (h : Hash)
   | getRef (n : Name)
@@ -115,6 +118,7 @@ inductive Res where
   | bytes (b : Option Bytes)
   | yes (b : Bool)
   | hashes (l : List Hash)
+  | size (n : Option Nat)
   | done
   | ref (h : Option Hash)
   | names (l : List Name)
@@ -147,6 +151,7 @@ def step (s : Store) : Op → Store × Res
     | none => (s, .bytes none)
     | some b => if a > e ∨ e > b.length then (s, .range a e b.length) else (s, .bytes ((b.drop a).take (e - a)))
   | .has h => (s, .yes (get s.blobs h).isSome)
+  | .size h => (s, .size ((get s.blobs h).map List.length))
   | .list => (s, .hashes (sort (s.blobs.map (·.1))))
   | .delete h => ({ s with blobs := erase s.blobs h }, .done)
   | .getRef n => if validName n then (s, .ref (get s.refs n)) else (s, .invalidName n)
@@ -319,6 +324,13 @@ theorem refs_apart {s : Store} (op : Op) (r : op.isRef = false) : (step H s op).
 
 theorem blobs_apart {s : Store} (op : Op) (r : op.isRef = true) : (step H s op).1.blobs = s.blobs := by
   cases op <;> simp [Op.isRef] at r <;> simp only [step] <;> split <;> (try split) <;> rfl
+
+/-! ## A size is the blob's length -/
+
+/-- `size` changes nothing, and is the length of exactly what `get` holds: none for a blob that isn't there. -/
+theorem size_get (s : Store) (h : Hash) :
+    ∃ b, step H s (.get h) = (s, .bytes b) ∧ step H s (.size h) = (s, .size (b.map List.length)) :=
+  ⟨_, rfl, rfl⟩
 
 end Store
 end Aven.DB
