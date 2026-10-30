@@ -104,6 +104,12 @@ function connect(port) {
 		if (data?.start) started ??= start(data.start);
 		if (data?.box) started ??= showBox(data.box);
 		if (data?.ask) answer(port, data.ask);
+		// signing out (network.svelte.js): every page hears it, and the worker ends, so its store's handles are free
+		if (data?.end) {
+			tell(JSON.stringify({ t: Date.now(), peer: 'page', event: 'signed-out' }));
+			self.close();
+			return;
+		}
 		// a statement for the Aven Peer, a line for the chat's room, or a message as it is (the box's check), from the page.
 		// The page sends its start with each, which only the first one here uses: a worker no page has started yet (Safari
 		// can hand a page one) starts then, rather than failing on a Peer-Light it never loaded (aven.maia.city, 30 Oct)

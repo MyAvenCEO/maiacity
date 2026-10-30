@@ -14,7 +14,12 @@ Only what this plan names gets built. Three task threads, in parallel, each in i
   passkey and MaiaCityGuardian, with this browser as its device. The link works once.
 - **Every member** opens **Chat**: one room for the network, the messages of everyone in it, live, with who is present.
   A reload empties it. The chat has no history in milestone 2: it is there to test the members' network.
-- **Anyone else** gets nothing: the relay doesn't let them in, no peer answers them, and avenOS shows "invite only".
+- **Every member signs in again** on another browser, or after their browser's data was reset, with **Sign in with
+  your passkey**: the browser becomes one more device of their own vault, without a new invite, which would found a
+  second vault (Samuel, 30 Oct 2026; `Aven.ID.SignIn`). **Sign out of this browser**, in the account menu, forgets
+  this browser's device key; removing the device from the vault is revocation, milestone 3.
+- **Anyone else** gets nothing: the relay doesn't let them in, no peer answers them, and avenOS shows "invite only". A
+  passkey that owns no vault is told "This passkey isn't a member of Maia City. Ask the admin for an invite."
 
 ## Decisions
 
@@ -92,6 +97,9 @@ until a chat line arrived.
 5. a message signed by a key that is no member's is dropped by every peer;
 6. a restart keeps the members and empties the chat (until the store upgrade, which keeps the chat:
    [`store`](store/README.md#how-it-is-checked)).
+7. the member's passkey on another profile signs in and becomes a second device of their vault, which catches up on
+   the chat; an assertion replayed for another browser, and a passkey that owns no vault, are refused; that browser
+   signs out and in again.
 
 In the cast's box, Alice, Bob and Aven are members by the cast, and their four peers chat the same way.
 
