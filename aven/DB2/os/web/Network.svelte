@@ -81,6 +81,7 @@
 		{/if}
 		{#if why}<p class="refused" data-testid="refused">{why}</p>{/if}
 		<p class="status"><Phase phase={live.own?.phase} text={describe(live.own)} testid="status" /></p>
+		{#if net.trouble && live.own?.phase !== 'live'}<p class="refused" data-testid="trouble">{net.trouble}</p>{/if}
 	</main>
 {/if}
 
