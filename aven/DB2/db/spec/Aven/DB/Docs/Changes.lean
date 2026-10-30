@@ -43,7 +43,9 @@ structure RecordChange where
 /-- The fields a change writes, without their values: what a footprint reads. -/
 def RecordChange.names (c : RecordChange) : List Bytes := c.fields.map Prod.fst
 
-/-- How a reader decodes an envelope against a base version, `none` when it doesn't decode. -/
+/-- How a reader decodes an envelope against a base version, `none` when it doesn't decode. It lists only the Records
+the envelope touches: a Record it leaves alone has no change, not an `edited` one with no fields, as the engine's
+`changesFrom` leaves it out. -/
 structure Reading (Base : Type) where
   changesOf : Base → Envelope → Option (List RecordChange)
 
