@@ -4,8 +4,8 @@
 [`ARCHITECTURE.md`](../DB2/ARCHITECTURE.md#the-primitives-everything-shares): a pure function named by its hash, from
 this repository, `run(part, input) → output`. Three kinds of users need runtimes, and today their plans live apart:
 
-1. **Actors** run their parts on `state-runtime`, `js-runtime` (QuickJS inside wasmi), `markup-runtime` and
-   `style-runtime`, specified in [`aven/actor/ARCHITECTURE.md`](../actor/ARCHITECTURE.md)
+1. **Actors** run their parts on `state-runtime`, `js-runtime` (QuickJS inside wasmi) and `face-runtime`, specified
+   in [`aven/actor/ARCHITECTURE.md`](../actor/ARCHITECTURE.md)
    (section 5) and built here, in `aven/runtimes/actor/*`.
 2. **The engine's plugins** lower a grammar to core operations
    ([`db/engine`](../DB2/db/engine/README.md#the-core-and-its-plugins)). **A18** proposes that a plugin is a runtime
@@ -96,12 +96,14 @@ run(part, input) → output | failure        part, input and output are Values; 
 
 ## Names, versions, hashes and floors
 
-- **Names** (decision 2). Actors' runtimes are named after their job: `state-runtime`, `js-runtime`, `markup-runtime`
-  and `style-runtime`. There is no Prolog runtime: a machine is data, a table of phases checked by the kernel's
-  admission checker (Samuel, 30 Oct 2026). File runtimes are named after their format: `svg-runtime`,
-  `markdown-runtime`, `text-runtime`, `csv-runtime`, `json-runtime` and `pdf-runtime`. A plugin's runtime is named
-  after its plugin: `ontology-runtime`. All share one namespace, so no two runtimes ever have one name.
-  `json-runtime` is free since the actors' declarative turn became `state-runtime`.
+- **Names** (decision 2). Actors' runtimes are named after their job: `state-runtime`, `js-runtime` and
+  `face-runtime`. One face-runtime draws a whole face: its data, `markup` and `style` in, a checked node tree and
+  scoped CSS out, with a11y, contrast included, checked across both (Samuel, 30 Oct 2026). There is no Prolog
+  runtime: a machine is data, a table of phases checked by the kernel's admission checker (Samuel, 30 Oct 2026).
+  File runtimes are named after their format: `svg-runtime`, `markdown-runtime`, `text-runtime`, `csv-runtime`,
+  `json-runtime` and `pdf-runtime`. A plugin's runtime is named after its plugin: `ontology-runtime`. All share one
+  namespace, so no two runtimes ever have one name. `json-runtime` is free since the actors' declarative turn became
+  `state-runtime`.
 - **Versions.** `svg-runtime@3` is the third frozen module of `svg-runtime`. A version is never rebuilt or changed. A
   new capability or a fix is the next version, beside the old ones.
 - **Hashes.** What names the code is the hash. A part, a journal entry, a lowered operation and a cached render all
@@ -146,7 +148,7 @@ aven/runtimes/
   registry/          aven-runtimes-registry: the file registry, the sniffer, decide(); built native and to wasm
   tree/              the node-tree allowlist, shared with actors' faces
   formats/           file runtimes, one crate each, wasm32: text/ json/ csv/ markdown/ svg/ pdf/
-  actor/             actors' runtimes when they move in: state/ js/ markup/ style/
+  actor/             actors' runtimes when they move in: state/ js/ face/
   plugins/           plugin runtimes when they move in: ontology/
   drawers/           the trusted host code that draws checked output: tree (the applier), pixels, table
   hostile/           hostile parts and files per runtime, and the fuzz targets
@@ -379,7 +381,7 @@ questions 1 and 8): they are built here from their first line, in `aven/runtimes
 the kernel's runtime host, and the actor spec's section 13 points here instead of to `aven/actor/runtimes`. avenACTORS
 keeps owning what each actor runtime does, its parts and its schemas; this package owns the contract, the host, the
 import check, the manifest and the node-tree allowlist they share with file runtimes. avenACTORS agrees, and the order
-of its version 1 (state first, then js, then markup and style) stays its own.
+of its version 1 (state first, then js, then face) stays its own.
 
 **The plugins** are built-in Rust, versioned with the engine (engine D1), and A18 makes each a runtime. Both hold:
 - a plugin's lowering is a pure Rust function in `aven/runtimes/plugins/<name>`, with no I/O;
@@ -422,7 +424,7 @@ the safer one, and it is marked so.
 1. **One home.** Every runtime (actors', plugins', files') lives in `aven/runtimes`, its own workspace, with one
    contract, one host and one manifest. *Yes.*
 2. **Names.** File runtimes are named after their format (`svg-runtime`), actors' after their job (`state-runtime`,
-   `js-runtime`, `markup-runtime`, `style-runtime`), plugins' after their plugin, all in one
+   `js-runtime`, `face-runtime`), plugins' after their plugin, all in one
    namespace. *Yes;* the glossary and the actor spec use these names.
 3. **No file runtime before the files origin** (A15). The registry ships first, with `native`, `frame` and `download`
    only. *Yes.*

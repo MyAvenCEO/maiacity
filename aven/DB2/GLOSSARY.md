@@ -228,8 +228,9 @@ means something else in another part, and that part's meaning is named.
 - **Value**: JSON only: null, bool, finite number, string, array, map. **= Value**.
 - **part**: code or data in one format, for one runtime. ⚠ A want has a **depth**.
 - **runtime**: shared primitive. Actors' runtimes are named after their job (Samuel, 30 Oct 2026): **state-runtime**
-  (not json-runtime), **js-runtime**, **markup-runtime** (not view-runtime: "view" is the engine's) and
-  **style-runtime** (not css-runtime). There is no prolog-runtime (Samuel, 30 Oct 2026). Their home is
+  (not json-runtime), **js-runtime** and **face-runtime**: one runtime draws a face from its data, `markup` and
+  `style`, checking a11y across both (Samuel, 30 Oct 2026; it replaces view-, markup-, css- and style-runtime). There
+  is no prolog-runtime. Their home is
   [`aven/runtimes`](../runtimes/README.md).
 - **floor, fuel, shim, hostile parts**: the oldest runtime still run; work counted per instruction; the deterministic
   answer to clock and random calls; test parts that try to escape.
@@ -267,6 +268,16 @@ means something else in another part, and that part's meaning is named.
 - **spawn, retire**: create an actor by asking the kernel; end it.
 - **door actors**: the model, store, HTTP, files and push. ⚠ The door is admission.
 - **composite, skill**: an actor whose turn tells others; a product word for one.
+- **describe**: the ask every actor answers, from its definition, its current phase and the asker's caps: its tool
+  specs (Samuel, 30 Oct 2026).
+- **tool**: a message from `describe` that the caller's caps allow. A model's tool list is a projection of `describe`
+  and is never configured apart.
+- **sends**: the messages a definition declares it may send; the kernel enforces them.
+- **contracts** (requires, produces) **= interface types and `sends`**.
+- **type id**: `<type Doc>/<schema hash>`, the address of a version Record in a type Doc, from version 1 on (Samuel,
+  30 Oct 2026). It names a version everywhere: an envelope's `records`, a fact's `p`, an actor message's payload.
+  Equal schema bytes in two type Docs are two type ids; versions a lens path joins in one type Doc are compatible.
+  Edges between actors are derived by type id, never by name or prose.
 - **keeper, live delivery, `ack` frame, compaction**: a keeper holds an absent home's inboxes; point-to-point
   appends; a delivery mark (⚠ caps' ack); later.
 - **trace, outcome, preview**: used but undefined. To define.
