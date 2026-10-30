@@ -216,9 +216,11 @@ the `ProtocolHandler` registered for its ALPN. avenDB's own protocol plugs in th
 
 1. **avenSANDBOX** with avenOS's first screens: its dashboard, the account switcher, Vault and Control Room
    ([`SANDBOX.md`](SANDBOX.md)). avenID starts with the box's tree of vaults.
+   Then **production** ([`PRODUCTION.md`](PRODUCTION.md)): its first admin signs up with a passkey and claims Aven,
+   and the Aven Peer goes live at `aven.maia.city`. Everyone else waits for milestone 2's invites.
 2. **Network:** the invite-only door (invites, the relay's allow-list, the device handshake) and members-only gossip,
    with the first example app: a live chat.
-3. **avenID and caps:** owner keys (passkeys), owners k of n, recovery, rotation, devices and their revocation; caps,
+3. **avenID and caps:** more passkeys per vault, owners k of n, recovery, rotation, devices and their revocation; caps,
    roles, delegation.
 4. **Docs:** Loro documents in signed, sealed envelopes; the one writer and its snapshots; the store; one document
    synced. The chat gets its history.
