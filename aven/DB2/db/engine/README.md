@@ -18,9 +18,9 @@ older engines as code ([README](../../README.md), rule 12).
 **Status.** Decided by Samuel on 30 Oct 2026: plugins are built in (D1), sync and load are one want (D3), wants use the
 caps' target grammar (D4), actors declare and devices decide how deep (D5), operations are named by their avenDB hash
 (D7), kinds stay inside one plugin (D8), the docs layer checks envelopes and the engine checks operations (D9),
-indexes come in a later iteration (D10), and avenACTORS' engine notes are folded in here. **Proposed, waiting for
-Samuel:** plugins that lower to one core evaluator (D6). Values and Docs underneath, the record as the engine's
-primitive, and the type deciding which records are roots are Samuel's (D2).
+indexes come in a later iteration (D10), and avenACTORS' engine notes are folded in here. Values and Docs underneath,
+the record as the engine's primitive with the type deciding which records are roots (D2), and one core evaluator that
+plugins lower to (D6) are Samuel's too. Nothing here is still a proposal.
 
 ## Contents
 
@@ -521,7 +521,7 @@ Notes for that iteration, from this one's discussion:
    intersected with caps; authority is never demand.
 5. **Actors declare, devices decide how deep** (Samuel, 30 Oct 2026). One actor definition everywhere; the device's
    profile picks which tiers it keeps.
-6. **One evaluator; plugins lower to it** (proposed). avenOS's grammar already was an algebra over x1–x5 rows. With
+6. **One evaluator; plugins lower to it** (Samuel, 30 Oct 2026). avenOS's grammar already was an algebra over x1–x5 rows. With
    records as the primitive, the algebra belongs to the core, a plugin is a grammar with checks and a lowering, and
    bounds, footprints, caps and deltas are worked out and proven once.
 7. **Operations are named by their hash,** avenDB's native id (Samuel, 30 Oct 2026); catalogues name them for people.
