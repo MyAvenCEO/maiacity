@@ -12,10 +12,10 @@
 //      build; a build that left its Peer-Light behind showed "Connecting to the network…" on aven.maia.city (30 Oct).
 //   3. The passkeys on that build, in WebKit and Firefox, through Playwright's `context.credentials`: a stand-in for
 //      `navigator.credentials` that signs ES256 in Node, so it checks our ceremony, not the engine's own WebAuthn.
-//      WebKit signs up first, so claims the network, and opens its dashboard; Firefox's deliberate second signup
-//      (`#/claim`) is refused; Firefox signs in with WebKit's passkey, as a synced one, and opens the same vault's
-//      dashboard. Chromium's virtual authenticator (CDP) runs the whole claim step after this one
-//      (sandbox/claim.mjs), which starts by wiping the prod peer's store.
+//      WebKit signs up first, so claims the network, opens its dashboard and sees its own chat line shown; Firefox's
+//      deliberate second signup (`#/claim`) is refused; Firefox signs in with WebKit's passkey, as a synced one, and
+//      opens the same vault's dashboard. Chromium's virtual authenticator (CDP) runs the whole claim step after this
+//      one (sandbox/claim.mjs), which starts by wiping the prod peer's store.
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { chromium, firefox, webkit } from 'playwright';
 import { served } from './prod.mjs';
@@ -134,6 +134,17 @@ async function passkeys() {
 	const admin = await first.page.locator('[data-view="dashboard"]').first().getAttribute('data-account').catch(() => null);
 	if (!admin?.startsWith('person-')) problems.push(`WebKit's dashboard acts as ${admin}, not the admin's vault`);
 	await first.page.screenshot({ path: `${run}/webkit-signed-up.png` });
+	// the admin's line in the network's room comes back and is shown
+	await first.page.goto(`${origin}/#/${admin}/chat`);
+	await first.page.getByTestId('line').fill('hello from WebKit');
+	await first.page.getByTestId('say').click();
+	const said = await first.page
+		.getByTestId('lines')
+		.getByText('hello from WebKit')
+		.waitFor({ timeout: 10_000 })
+		.then(() => true, () => false);
+	if (!said) problems.push(`WebKit's chat line was not shown: "${await text(first.page.getByTestId('refused'))}"`);
+	await first.page.screenshot({ path: `${run}/webkit-chat.png` });
 	const [passkey] = await first.context.credentials.get({ rpId: 'localhost' });
 	await first.context.close();
 
