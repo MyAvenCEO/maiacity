@@ -110,11 +110,24 @@ def Machine.allows (mc : Machine) (name phase to : String) : Bool := (mc.targets
 
 def Machine.declared (mc : Machine) : List String := mc.phases.map (·.1)
 
+/-- One message of an interface (section 6): a label in this interface, prose for people and models, and its types
+by id, `<type Doc>/<schema hash>`. Names and prose are never matched; types are. -/
+structure MsgSpec where
+  name : String
+  description : String
+  type : String
+  reply : Option String
+  deriving DecidableEq, Repr, Inhabited
+
 /-- A definition (section 6). The interface's schemas are a check on a message's name and payload; the turn is
 whatever its runtime computes, a pure function. -/
 structure Def where
-  /-- The interface's message names. -/
-  messages : List String
+  name : String
+  description : String
+  /-- The interface: the messages it accepts. -/
+  interface : List MsgSpec
+  /-- The types its turns may send. -/
+  sends : List String
   accepts : String → Value → Bool
   machine : Option Machine
   turn : Value → Message → Given → Option Output
@@ -122,9 +135,23 @@ structure Def where
 
 def Def.initialPhase (d : Def) : String := (d.machine.map (·.initial)).getD ""
 
+def Def.messages (d : Def) : List String := d.interface.map (·.name)
+
+/-- The type of the message `name` in this interface. -/
+def Def.typeOf (d : Def) (name : String) : Option String := (d.interface.find? (·.name == name)).map (·.type)
+
+/-- The built-in ask every actor accepts, answered by the kernel (section 6). -/
+def describeName : String := "describe"
+
+def Kind.isAsk : Kind → Bool
+  | .ask _ => true
+  | _ => false
+
 /-- How a handled message ended (section 7). -/
 inductive Outcome where
   | done
+  /-- A `describe` ask, answered by the kernel from the definition; not a turn. -/
+  | described
   | refused
   | error
   deriving DecidableEq, Repr, Inhabited

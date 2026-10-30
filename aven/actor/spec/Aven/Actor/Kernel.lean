@@ -46,6 +46,21 @@ def runTurn (d : Def) (st : Value) (m : Message) (g : Given) (ph : String) :
       | some p => if mc.allows m.name ph p then some (out.state, p, out.effects) else none
       | none => none
 
+/-- The tool specs `describe` answers with: every message of the interface the current phase allows. Caps are not
+in version 1, so every asker may send them all. -/
+def Def.describe (d : Def) (ph : String) : List MsgSpec :=
+  d.interface.filter fun sp => match d.machine with
+    | none => true
+    | some mc => mc.opens sp.name ph
+
+def MsgSpec.toValue (sp : MsgSpec) : Value :=
+  .obj [("name", .str sp.name), ("description", .str sp.description), ("type", .str sp.type),
+    ("reply", match sp.reply with | some t => .str t | none => .null)]
+
+def Def.describeValue (d : Def) (ph : String) : Value :=
+  .obj [("name", .str d.name), ("description", .str d.description),
+    ("messages", .arr ((d.describe ph).map MsgSpec.toValue))]
+
 /-- What handling `m` comes to, from what the journal entry pins: the definition in force, the state and phase
 before, the message and `given`. The kernel uses this, and so does replay. -/
 def judge (lib : Library) (dn : Option String) (st : Value) (m : Message) (g : Given) (ph : String) :
@@ -53,7 +68,8 @@ def judge (lib : Library) (dn : Option String) (st : Value) (m : Message) (g : G
   match dn.bind lib with
   | none => (st, ph, .refused, [])
   | some d =>
-    if gate d m ph then
+    if m.name == describeName && m.kind.isAsk then (st, ph, .described, [.reply m.id (d.describeValue ph)])
+    else if gate d m ph then
       match runTurn d st m g ph with
       | some (st', ph', fx) => (st', ph', .done, fx)
       | none => (st, ph, .error, [])
@@ -100,21 +116,31 @@ def Kernel.answer (k : Kernel) (me : Addr) (re : MsgId) (payload : Value) (reaso
     | some why => k.append me re.sender "fail" payload (.fail re why)
   else k
 
-/-- One effect of `s`'s turn, through the router. Only a live actor is sent to. A tell to no live actor is dropped;
+/-- Whether the router lets `s` send `name` to `r`: the type of `name` in `r`'s interface must be one `s` declared in
+its `sends` (section 6). The person and the kernel are built in and declare none. -/
+def Kernel.declares (lib : Library) (k : Kernel) (s r : Addr) (name : String) : Bool :=
+  match (k.defs s).bind lib with
+  | none => true
+  | some ds =>
+    match ((k.defs r).bind lib).bind (·.typeOf name) with
+    | some t => ds.sends.contains t
+    | none => false
+
+/-- One effect of `s`'s turn, through the router. Only a live actor is sent to, and only a type `s` declared. A tell to no live actor is dropped;
 an ask to none is never sent, and the kernel fails it at once with `refused`: its `re` has seq 0, which no message
 ever has, so it can never be taken for the answer to a real ask. -/
-def Kernel.send (k : Kernel) (s : Addr) : Effect → Kernel
-  | .tell r name p => if (k.defs r).isSome then k.append s r name p .tell else k
+def Kernel.send (lib : Library) (k : Kernel) (s : Addr) : Effect → Kernel
+  | .tell r name p => if (k.defs r).isSome ∧ k.declares lib s r name then k.append s r name p .tell else k
   | .ask r name p within =>
     let id : MsgId := ⟨s, r, (k.inbox s r).length + 1⟩
-    if (k.defs r).isSome then
+    if (k.defs r).isSome ∧ (name == describeName || k.declares lib s r name) then
       let dl := k.now + min within askMax
       { k.append s r name p (.ask dl) with pending := k.pending ++ [(id, dl)] }
     else k.append kernelAddr s "fail" .null (.fail { id with seq := 0 } .refused)
   | .reply re p => k.answer s re p none
 
-def Kernel.sendAll (k : Kernel) (s : Addr) (fx : List Effect) : Kernel :=
-  fx.foldl (fun k e => k.send s e) k
+def Kernel.sendAll (lib : Library) (k : Kernel) (s : Addr) (fx : List Effect) : Kernel :=
+  fx.foldl (fun k e => k.send lib s e) k
 
 /-- `r` handles its next message from `s` (section 7): judge it, journal it whole with the state it leaves, then
 send. Commit, then send (law 11). A refused or failed ask is answered with `fail`; a tell is not. -/
@@ -131,7 +157,8 @@ def Kernel.handle (lib : Library) (k : Kernel) (r s : Addr) : Kernel :=
       state := upd k.state r j.1
       phase := upd k.phase r j.2.1 }
     match j.2.2.1, m.kind with
-    | .done, _ => k'.sendAll r j.2.2.2
+    | .done, _ => k'.sendAll lib r j.2.2.2
+    | .described, _ => k'.sendAll lib r j.2.2.2
     | .refused, .ask _ => k'.answer r m.id .null (some .refused)
     | .error, .ask _ => k'.answer r m.id .null (some .error)
     | _, _ => k'
@@ -193,7 +220,7 @@ def Kernel.step (lib : Library) (k : Kernel) : Event → Kernel
   | .tick t => k.tick t
   | .spawn id dn => k.spawn lib id dn
   | .retire a => k.retire a
-  | .send e => k.send person e
+  | .send e => k.send lib person e
 
 def Kernel.run (lib : Library) (k : Kernel) (es : List Event) : Kernel := es.foldl (Kernel.step lib) k
 

@@ -93,7 +93,7 @@ theorem Inv.answer {lib : Library} {k : Kernel} (hk : Inv lib k) (me : Addr) (re
   · exact hk
 
 theorem Inv.send {lib : Library} {k : Kernel} (hk : Inv lib k) (s : Addr) (hs : ¬ k.Fresh s) (e : Effect) :
-    Inv lib (k.send s e) := by
+    Inv lib (k.send lib s e) := by
   cases e with
   | tell r name p =>
     simp only [Kernel.send]
@@ -117,11 +117,12 @@ theorem Inv.send {lib : Library} {k : Kernel} (hk : Inv lib k) (s : Addr) (hs : 
     · exact hk.append _ _ _ _ _ hs
   | reply re p => simp only [Kernel.send]; exact hk.answer _ _ _ _
 
-theorem Kernel.send_spawned (k : Kernel) (s : Addr) (e : Effect) : (k.send s e).spawned = k.spawned := by
+theorem Kernel.send_spawned (lib : Library) (k : Kernel) (s : Addr) (e : Effect) :
+    (k.send lib s e).spawned = k.spawned := by
   cases e <;> simp only [Kernel.send, Kernel.answer, Kernel.append] <;> (try split) <;> (try split) <;> rfl
 
 theorem Inv.sendAll {lib : Library} {k : Kernel} (hk : Inv lib k) (s : Addr) (hs : ¬ k.Fresh s)
-    (fx : List Effect) : Inv lib (k.sendAll s fx) := by
+    (fx : List Effect) : Inv lib (k.sendAll lib s fx) := by
   induction fx generalizing k with
   | nil => exact hk
   | cons e fx ih =>
@@ -260,6 +261,7 @@ theorem Inv.handle {lib : Library} {k : Kernel} (hk : Inv lib k) (r s : Addr) : 
     rw [hj]
     split
     · exact hk'.sendAll r hr' _
+    · exact hk'.sendAll r hr' _
     · exact hk'.answer _ _ _ _
     · exact hk'.answer _ _ _ _
     · exact hk'
@@ -300,6 +302,9 @@ theorem judge_machine {lib : Library} {dn : String} {d : Def} {mc : Machine} {st
     (hdone : (judge lib (some dn) st m g ph).2.2.1 = .done) :
     mc.allows m.name ph (judge lib (some dn) st m g ph).2.1 = true := by
   simp only [judge, Option.bind_some, hd] at hdone ⊢
+  by_cases hdesc : (m.name == describeName && m.kind.isAsk) = true
+  · simp [hdesc] at hdone
+  simp only [hdesc, Bool.false_eq_true, ite_false] at hdone ⊢
   split at hdone
   · split at hdone
     · next st' ph' fx hrun =>

@@ -217,7 +217,7 @@ definitions, and every placed one is an actor (section 6).
 | Field | Meaning |
 | --- | --- |
 | `interface` | The messages it accepts: each a `name`, a `description`, and its payload's type by id; an ask also names its reply's type. Its second part is the machine |
-| `sends` | The messages its turns may send, by type id. The kernel enforces it: a turn whose effect sends a type it did not declare is an error, as a step its machine does not allow is |
+| `sends` | The messages its turns may send, by type id. The router enforces it: an effect whose type, in the receiver's interface, the sender did not declare is refused, as one to no live actor is (section 7); `describe` needs no declaring |
 | `machine` | Optional: the interface's second part, a table of phases. If present, the kernel refuses any message the machine does not allow in the current `phase` |
 | `turn` | Required: `{ runtime, v, part }` on `state-runtime` or `js-runtime` |
 | `faces` | Optional: named faces, each `{ present, markup, style, a11y }`. `present` (optional; without it the markup sees the state) is a part on state- or js-runtime that gives the face data; `markup` and `style` are the parts face-runtime draws, `a11y` the accessible names and roles it checks. Only the runtimes are one; the parts stay apart |
@@ -521,8 +521,8 @@ Test-first, as avenDB works: the Lean model and its theorems, then Rust tests th
    incarnation, whose messages are never taken for the old one's.
    Proven so far, for every trace and every schedule: `handled_in_order`, `replays`, `machine_sound`, `spawn_fresh`,
    `answers_at_most_once`, `ask_answered_or_waiting`, `ask_not_overdue`, `wellFormed_sound` (the admission check)
-   and `phase_reachable` (a live actor is always in a reachable, declared phase). Next: message types, `sends`
-   enforced and `describe`; the vectors it exports; and tying each waiting ask to its message's deadline.
+   and `phase_reachable` (a live actor is always in a reachable, declared phase). Also: `describe_exact` and
+   `send_declared_tell`/`send_declared_ask` (types, `sends` and `describe`). Next: the vectors it exports; and tying each waiting ask to its message's deadline.
 2. **Layers 0 to 2** (`core`): Values and names, the in-memory Doc, messages, with the vectors.
 3. **Runtimes**: `state-runtime` first, then `js-runtime`; each with hostile parts that try to get
    out, run too long or blow up, which must fail.

@@ -309,7 +309,8 @@ theorem AskInv.ask {k : Kernel} (hk : AskInv k) (s r : Addr) (name : String) (p 
       · exact .inl ⟨_, List.mem_append_right _ (List.mem_singleton_self _), rfl⟩
     · exact old hm'
 
-theorem AskInv.send {k : Kernel} (hk : AskInv k) (s : Addr) (e : Effect) : AskInv (k.send s e) := by
+theorem AskInv.send {k : Kernel} (hk : AskInv k) (lib : Library) (s : Addr) (e : Effect) :
+    AskInv (k.send lib s e) := by
   cases e with
   | tell r name p =>
     simp only [Kernel.send]
@@ -323,10 +324,11 @@ theorem AskInv.send {k : Kernel} (hk : AskInv k) (s : Addr) (e : Effect) : AskIn
     · exact hk.append _ _ _ _ _ (.inr (.inl ⟨_, rfl, rfl⟩)) (by intro _ h; cases h)
   | reply re p => simp only [Kernel.send]; exact hk.answer _ _ _ _
 
-theorem AskInv.sendAll {k : Kernel} (hk : AskInv k) (s : Addr) (fx : List Effect) : AskInv (k.sendAll s fx) := by
+theorem AskInv.sendAll {k : Kernel} (hk : AskInv k) (lib : Library) (s : Addr) (fx : List Effect) :
+    AskInv (k.sendAll lib s fx) := by
   induction fx generalizing k with
   | nil => exact hk
-  | cons e fx ih => exact ih (hk.send s e)
+  | cons e fx ih => exact ih (hk.send lib s e)
 
 theorem AskInv.handle {k : Kernel} (hk : AskInv k) (lib : Library) (r s : Addr) : AskInv (k.handle lib r s) := by
   unfold Kernel.handle
@@ -334,7 +336,8 @@ theorem AskInv.handle {k : Kernel} (hk : AskInv k) (lib : Library) (r s : Addr) 
   · exact hk
   · dsimp only
     split
-    · refine AskInv.sendAll ?_ _ _; exact AskInv.frame hk rfl rfl
+    · refine AskInv.sendAll ?_ _ _ _; exact AskInv.frame hk rfl rfl
+    · refine AskInv.sendAll ?_ _ _ _; exact AskInv.frame hk rfl rfl
     · refine AskInv.answer ?_ _ _ _ _; exact AskInv.frame hk rfl rfl
     · refine AskInv.answer ?_ _ _ _ _; exact AskInv.frame hk rfl rfl
     · exact AskInv.frame hk rfl rfl
@@ -353,7 +356,7 @@ theorem AskInv.step {k : Kernel} (hk : AskInv k) (lib : Library) : ∀ e, AskInv
     · exact hk
     · exact AskInv.frame hk rfl rfl
   | .retire a => AskInv.frame hk rfl rfl
-  | .send e => hk.send person e
+  | .send e => hk.send lib person e
 
 theorem AskInv.run (lib : Library) (es : List Event) : AskInv (Kernel.empty.run lib es) := by
   suffices ∀ k, AskInv k → AskInv (k.run lib es) from this _ AskInv.empty

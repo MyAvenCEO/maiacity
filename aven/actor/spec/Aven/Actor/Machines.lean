@@ -82,18 +82,18 @@ theorem Kernel.answer_frame (k : Kernel) (me : Addr) (re : MsgId) (p : Value) (w
   · cases w <;> exact ⟨rfl, rfl⟩
   · exact ⟨rfl, rfl⟩
 
-theorem Kernel.send_frame (k : Kernel) (s : Addr) (e : Effect) :
-    (k.send s e).defs = k.defs ∧ (k.send s e).phase = k.phase := by
+theorem Kernel.send_frame (lib : Library) (k : Kernel) (s : Addr) (e : Effect) :
+    (k.send lib s e).defs = k.defs ∧ (k.send lib s e).phase = k.phase := by
   cases e with
   | tell => simp only [Kernel.send]; split <;> exact ⟨rfl, rfl⟩
   | ask => simp only [Kernel.send]; split <;> exact ⟨rfl, rfl⟩
   | reply re p => exact Kernel.answer_frame ..
 
 theorem PhaseInv.sendAll {lib : Library} {k : Kernel} (hk : PhaseInv lib k) (s : Addr) (fx : List Effect) :
-    PhaseInv lib (k.sendAll s fx) := by
+    PhaseInv lib (k.sendAll lib s fx) := by
   induction fx generalizing k with
   | nil => exact hk
-  | cons e fx ih => exact ih (hk.frame (Kernel.send_frame k s e).1 (Kernel.send_frame k s e).2)
+  | cons e fx ih => exact ih (hk.frame (Kernel.send_frame lib k s e).1 (Kernel.send_frame lib k s e).2)
 
 theorem PhaseInv.answer {lib : Library} {k : Kernel} (hk : PhaseInv lib k) (me : Addr) (re : MsgId) (p : Value)
     (w : Option Reason) : PhaseInv lib (k.answer me re p w) :=
@@ -107,6 +107,9 @@ theorem judge_phase {lib : Library} {dn : String} {d : Def} {mc : Machine} (hd :
   · exact .inr (judge_machine hd hm hdone)
   · left
     simp only [judge, Option.bind_some, hd] at hdone ⊢
+    by_cases hdesc : (m.name == describeName && m.kind.isAsk) = true
+    · simp [hdesc]
+    simp only [hdesc, Bool.false_eq_true, ite_false] at hdone ⊢
     by_cases hg : gate d m ph = true
     · simp only [hg, ite_true] at hdone ⊢
       cases hr : runTurn d st m g ph with
@@ -145,6 +148,7 @@ theorem PhaseInv.handle {lib : Library} {k : Kernel} (hk : PhaseInv lib k) (r s 
       · exact hreach
     dsimp only
     split
+    · exact hk'.sendAll _ _
     · exact hk'.sendAll _ _
     · exact hk'.answer _ _ _ _
     · exact hk'.answer _ _ _ _
