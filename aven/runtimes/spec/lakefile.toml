@@ -14,6 +14,11 @@ roots = ["Aven.Runtime"]
 name = "vectors"
 root = "Vectors"
 
+# The actors' model, whose machines, messages and kernel state-runtime joins (aven/actor/spec).
+[[require]]
+name = "aven-actor-spec"
+path = "../../actor/spec"
+
 # The shared core: Values, the codec and hashes (aven/DB2/core/spec).
 [[require]]
 name = "aven-core-spec"
