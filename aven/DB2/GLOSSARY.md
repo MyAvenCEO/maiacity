@@ -133,6 +133,8 @@ means something else in another part, and that part's meaning is named.
 - **type, schema**: shared primitive; one version of a Record's shape.
 - **`x-loro`, `x-link`**: the container a field uses; **`x-link` = link**.
 - **lens**: two-way steps between two schema versions: add, rename, convert, in, wrap, unwrap, move, container.
+  Universal (Samuel, 30 Oct 2026): a lens joins versions inside one type Doc or of two type Docs. A reader uses only
+  the lenses pinned where it reads, and those form a forest ([A7](ARCHITECTURE.md#proposals-for-samuel)).
 - **kept, unseen**: where a dropped field's data goes.
 - **lane → vocabulary** (Samuel); largely retired by D8 and type Docs.
 - **view**: an app's schema and lenses. **= the input of a view** (one meaning, shared with the engine).
@@ -199,9 +201,12 @@ means something else in another part, and that part's meaning is named.
 - **live message → live envelope**. ⚠ A message is actors'.
 - **line** (chat) **→ post**. **chain** (chat) **→ log**. **fork** (chat) **→ split**.
 - **stall alarm**: raised when a step moves no version.
-- **directory**: a Doc per vault and root type listing its Docs.
-- **index**: a derived map that must equal a scan; a device's own cache. **blind index**: tokens another peer could
-  match; not used, since search is local ([A21](ARCHITECTURE.md#search-local-first)).
+- **directory**: the index of a vault's Docs of one root type, by Doc id: sealed Values, with recent entries in a small
+  Doc ([A26](ARCHITECTURE.md#a-handful-among-millions-sealed-indexes)).
+- **index**: a derived map that must equal a scan: a device's own cache, or a **sealed index** its readers share, a
+  search tree of sealed Values derived from a query's shape, kept current by folds, which are checkpoints (A26).
+  **blind index**: tokens another peer could match; not used, since search is local
+  ([A21](ARCHITECTURE.md#search-local-first)).
 - **door, provider events, RBSR**: admission; iroh-blobs' hooks; range-based set reconciliation.
 - **run, journal**: as in actors.
 
@@ -220,8 +225,8 @@ means something else in another part, and that part's meaning is named.
 - **minting agent**: makes predicates. **= an agent vault** with devices of its own, never a device of a person's
   vault.
 - **definition** (of a predicate) **→ gloss**. ⚠ A definition is an actor's.
-- **shortlist, alignment lens**: candidate gismu chosen by a model; a lens across vocabularies. ⚠ docs D9 has a tree
-  of lenses per type.
+- **shortlist, alignment lens**: candidate gismu chosen by a model; a lens across vocabularies. **= a lens** between
+  two type Docs, now that lenses are universal (Samuel, 30 Oct 2026).
 
 ## actors
 
@@ -276,7 +281,8 @@ means something else in another part, and that part's meaning is named.
 - **contracts** (requires, produces) **= interface types and `sends`**.
 - **type id**: `<type Doc>/<schema hash>`, the address of a version Record in a type Doc, from version 1 on (Samuel,
   30 Oct 2026). It names a version everywhere: an envelope's `records`, a fact's `p`, an actor message's payload.
-  Equal schema bytes in two type Docs are two type ids; versions a lens path joins in one type Doc are compatible.
+  Equal schema bytes in two type Docs are two type ids; type ids a lens path joins are compatible, in one type Doc or
+  across two.
   Edges between actors are derived by type id, never by name or prose.
 - **keeper, live delivery, `ack` frame, compaction**: a keeper holds an absent home's inboxes; point-to-point
   appends; a delivery mark (⚠ caps' ack); later.

@@ -1,0 +1,14 @@
+{"version": "1.3.0",
+ "packagesDir": ".lake/packages",
+ "packages":
+ [{"type": "path",
+   "scope": "",
+   "name": "«aven-core-spec»",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../DB2/core/spec",
+   "copy": false,
+   "configFile": "lakefile.toml"}],
+ "name": "«aven-actor-spec»",
+ "lakeDir": ".lake",
+ "fixedToolchain": false}

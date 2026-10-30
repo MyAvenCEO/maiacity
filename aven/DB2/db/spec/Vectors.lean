@@ -31,8 +31,13 @@ import Aven.DB.Engine
 - `mutations.json`: a writer id, its counter, its grants, a Doc's Records and core operations; the footprint and
   whether the grants cover it, the Records after the commit or why it was refused, and every reader's check of the
   diff (`Aven.DB.Engine.Mutate`, `Aven.DB.Engine.Footprint`).
-- `indexes.json`: a shape, the Records and Docs at version V, the Records now, the Docs unfolded since and listed now, a
+- `lookups.json`: a shape, the Records and Docs at version V, the Records now, the Docs unfolded since and listed now, a
   probe; the index at V, its hits, the candidates, the query over them and the folded index (`Aven.DB.Engine.Index`).
+- `merges.json`: one place's base, the target's and the other branch's values and the merger's choice; the merged value,
+  and backing out a commit (`Aven.DB.Docs.Merge`).
+- `lenses.json`: writes of a todo's done-ness by v0 and v1 apps; what a v0 reader reads (`Aven.DB.Docs.Lens`).
+- `indexes.json`: entries in any order, a size limit and a range; the nodes they make and what a lookup finds
+  (`Aven.DB.Docs.Index`).
 
 `aven-db-core`'s and `aven-db-store`'s tests load them. `bun run up --check` runs this again and fails when the files
 differ from what is committed. -/
@@ -426,6 +431,48 @@ def chats : List Json :=
   bodies ++ reads ++ Chains.chainExamples.map (fun (name, steps, _) => chainVector name steps) ++
   (List.range generated).map fun i => chainVector s!"seed {i + 1}" (randomChains (i + 1))
 
+/-! ## Docs: merges and lenses (`Aven.DB.Docs`) -/
+
+open Docs in
+def mergeCases : List (String × String × String × String × Bool) := [
+  ("only the target changed", "Order seeds", "Order seeds today", "Order seeds", false),
+  ("only the other branch changed", "Order seeds", "Order seeds", "Order seeds by Friday", false),
+  ("both changed, the target keeps its own", "Order seeds", "Order seeds today", "Order seeds by Friday", false),
+  ("both changed, the merger takes the other's", "Order seeds", "Order seeds today", "Order seeds by Friday", true),
+  ("both changed alike", "Order seeds", "Order beans", "Order beans", false)]
+
+open Docs in
+def merges : List Json :=
+  mergeCases.map (fun (name, base, target, other, take) =>
+    vector name (Json.mkObj [("base", base), ("target", target), ("other", other), ("takeOther", toJson take)])
+      (toJson (merge3 base target other take))) ++
+  -- backing out the commit that set "by Friday", where nothing since touched the title, and where something did
+  [vector "back out, untouched since" (Json.mkObj [("after", "by Friday"), ("now", "by Friday"), ("before", "")])
+      (toJson (merge3 "by Friday" "by Friday" "" false)),
+    vector "back out, changed since" (Json.mkObj [("after", "by Friday"), ("now", "by Monday"), ("before", "")])
+      (toJson (merge3 "by Friday" "by Monday" "" false))]
+
+open Docs in
+def TodoWrite.json : TodoWrite → Json
+  | .done b => Json.mkObj [("done", toJson b)]
+  | .status s => Json.mkObj [("status", s)]
+
+open Docs in
+def lensCases : List (String × List (Write TodoWrite)) := [
+  ("a v0 tick after a v1 status", [⟨1, .status "doing"⟩, ⟨2, .done true⟩]),
+  ("a v1 status after a v0 tick", [⟨1, .done true⟩, ⟨2, .status "doing"⟩]),
+  ("only v1 writes", [⟨3, .status "done"⟩, ⟨1, .status "open"⟩]),
+  ("nothing written", [])]
+
+open Docs in
+def lenses : List Json :=
+  lensCases.map fun (name, ws) =>
+    let input := ws.map fun w => Json.mkObj [("stamp", toJson w.stamp), ("write", TodoWrite.json w.value)]
+    vector name (Json.arr input.toArray)
+      (match readThrough asDone ws with
+       | some w => Json.mkObj [("stamp", toJson w.stamp), ("done", toJson w.value)]
+       | none => Json.null)
+
 /-! ## The engine -/
 
 section Engine
@@ -598,9 +645,31 @@ def randomIndexVector (seed : Nat) : Json := Id.run do
   let p : Probe Value := ⟨[text c], if ranged = 0 then none else some (.uint (100 * lo), .uint 10000)⟩
   return indexVector s!"seed {seed}" byCustomer dbV db docsV unfolded now p
 
-def indexes : List Json := indexExamples ++ (List.range generated).map fun i => randomIndexVector (i + 1)
+def lookups : List Json := indexExamples ++ (List.range generated).map fun i => randomIndexVector (i + 1)
 
 end Engine
+
+/-! ## Docs: sealed indexes (`Aven.DB.Docs.Index`) -/
+
+/-- The vectors' boundary: an entry whose last byte is a multiple of four ends its node. The Rust uses its BLAKE3's
+low bits; any rule on the entry alone keeps the theorems. -/
+def indexBoundary (e : List UInt8) : Bool := (e.getLastD 0).toNat % 4 == 0
+
+def indexCases : List (String × List String × Nat × String × String) := [
+  ("a directory in four nodes", ["d:01", "d:07", "d:04", "d:0a", "d:02", "d:09"], 8, "d:02", "d:07"),
+  ("the same entries, another order", ["d:09", "d:02", "d:0a", "d:04", "d:07", "d:01"], 8, "d:02", "d:07"),
+  ("a duplicate, folded once", ["d:01", "d:01", "d:05"], 8, "d:00", "d:ff"),
+  ("cut by size", ["aaaa", "bbbb", "cccc", "dddd"], 9, "b", "c~")]
+
+def indexes : List Json :=
+  indexCases.map fun (name, es, limit, lo, hi) =>
+    let bs := es.map fun e => e.toUTF8.toList
+    let text (b : List UInt8) : Json := String.fromUTF8! ⟨b.toArray⟩
+    let nodes := Docs.Index.chunks indexBoundary List.length limit (Docs.Index.entries bs)
+    let found := Docs.Index.lookup indexBoundary List.length limit lo.toUTF8.toList hi.toUTF8.toList bs
+    vector name (Json.mkObj [("entries", toJson es), ("limit", toJson limit), ("lo", lo), ("hi", hi)])
+      (Json.mkObj [("nodes", Json.arr (nodes.map fun n => Json.arr (n.map text).toArray).toArray),
+        ("found", Json.arr (found.map text).toArray)])
 
 /-- One vector per line, so a change reads as a diff of lines. -/
 def render (vs : List Json) : String :=
@@ -612,6 +681,6 @@ def main (args : List String) : IO Unit := do
   for (file, vs) in [("status.json", status), ("presence.json", presence), ("timeline.json", timeline),
       ("wire.json", wire), ("store.json", store), ("hashes.json", hashes), ("refs.json", refs),
       ("chat.json", chat), ("files.json", files), ("chats.json", chats), ("queries.json", queries),
-      ("wants.json", wants), ("mutations.json", mutations),
-      ("indexes.json", indexes)] do
+      ("wants.json", wants), ("mutations.json", mutations), ("merges.json", merges), ("lenses.json", lenses),
+      ("indexes.json", indexes), ("lookups.json", lookups)] do
     IO.FS.writeFile (dir / file) (render vs)

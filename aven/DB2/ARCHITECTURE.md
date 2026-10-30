@@ -118,8 +118,9 @@ touches.
    - relaying, which moves sealed bytes.
 
    No peer is a sequencer, an arbiter, a custodian or the only source (Samuel, 30 Oct 2026).
-8. **Derived state is a cache or a checkpoint.** Snapshots, views and indexes are a peer's own caches (README rule 5).
-   What travels is a checkpoint: signed, naming its version and the runtime that made it.
+8. **Derived state is a cache or a checkpoint.** Snapshots, views and the indexes a device builds for itself are its
+   own caches (README rule 5). What travels is a checkpoint: signed, naming its version and the runtime that made it,
+   as a sealed index's root does (**A26**).
 9. **Sealed beyond the device.** No plain byte leaves a device except to a reader of it. The city-dome's plain history
    from before sealing is the one exception, and it stays readable.
 10. **Every input has a limit** before it costs memory or time: envelopes, blobs, chunks, frames, pages, fan-out,
@@ -178,14 +179,15 @@ instead of about 90, and every rule is stated and proven once.
 | K2 | **One log** with the hash of the one before, a sequence number and deps by hash (rule 2). A segment is a closed run of it | the store's chains, docs' segment runs, actor journals and inboxes as separate structures; four gap and split detectors | docs (**A3**, **A4**) |
 | K3 | **One target grammar** for caps, wants and query scope | the engine's four forms beside caps' seven; queries over "whatever this device holds" | engine, caps (**A8**) |
 | K4 | **One want.** Loads, mounts, keeps and the device profile are wants. A keep cap is a keep placed at a keeper, with the right to hold the bytes | durable/mounted lifetimes, profile tiers and keep caps as three places deciding durability | engine (**A9**) |
-| K5 | **One way to version a shape:** a type Doc with versions and lenses. Schemas, predicates, the ontology's kinds, actor definitions and runtime grammars are all versions. `replaces` is the previous version, an actor's state moves through lenses, and who may publish a version is whoever may write the type Doc | `replaces` with no state migration and no publisher; lanes beside type Docs; definitions outside caps | docs, actors (**A7**, **A17**) |
+| K5 | **One way to version a shape:** a type Doc with versions and lenses. Schemas, predicates, the ontology's kinds, actor definitions and runtime grammars are all versions. `replaces` is the previous version, an actor's state moves through lenses, and who may publish a version is whoever may write the type Doc. Lenses are universal (Samuel, 30 Oct 2026): one joins versions inside a type Doc or of two type Docs, two type ids a lens path joins are compatible, and actors' messages cross types through lens paths. A reader uses only the lenses pinned where it reads (**A7**), and those form a forest | `replaces` with no state migration and no publisher; lanes beside type Docs; definitions outside caps; Abject's negotiator and self-healing adapters | docs, actors (**A7**, **A17**) |
 | K6 | **One answer to "who is in":** groups. The network is the members group (caps D15, #1492), an invite is a ticket for it, and the door admits its members' devices. The tree is a Doc of signed statements under one genesis | `memberOf` beside groups; the Aven Peer's custody of the tree; ordering by ref names | caps, PEERS (**A10** to **A12**) |
 | K7 | **One kind of code:** the runtime. A plugin is a runtime that lowers to core operations, so a lowering is pinned by its hash and every reader re-lowers alike | plugins versus runtimes; lowered hashes that drift when a plugin upgrades | engine, actors (**A18**) |
 | K8 | **One way to change data:** core mutations put, patch, remove, and a new `edit` for text, lists and trees, each with a verb and a footprint. The ontology's assert, set and retract and json-runtime's path updates lower to them | three update grammars; container edits outside caps and bounds | engine (**A19**) |
 | K9 | **An actor's history is its Doc's log.** A turn is one envelope on the actor's Doc. A message is stored once and referenced by hash. Loads are journaled as (Doc, version, query hash), not as data. Inboxes go one per pair of vaults, not per pair of actors | each payload stored three times; a journal beside the Doc's history; O(pairs) inbox Docs; loaded data copied into journals | actors (**A17**) |
-| K10 | **One checkpoint** for all signed derived state: a Doc's state for new devices, the tree's head, a compacted access map, an actor's state. Each names its version, the runtime that made it and what it covers | four separate trust stories for derived state that travels | docs, caps (**A5**, **A21**) |
+| K10 | **One checkpoint** for all signed derived state: a Doc's state for new devices, the tree's head, a compacted access map, an actor's state, a sealed index's root. Each names its version, the runtime that made it and what it covers | five separate trust stories for derived state that travels | docs, caps (**A5**, **A26**) |
 | K11 | **One transport per job:** live envelopes on one gossip topic per group; catch-up by set reconciliation and iroh-blobs; `aven/db/1` for the rest | three transports for chat lines; JSON-line frames beside irpc; a topic per Doc | engine, PEERS (**A9**) |
 | K12 | **One door:** a device is let in if its vault is in the network's group. The relay, the handshake and the blob provider check that; keepers check per-Doc fetch proofs | an allow-list kept apart from membership; any member fetching any blob | PEERS, caps (**A10**, **A22**) |
+| K13 | **One index:** a directory is the index of a vault's Docs of one root type by Doc id, and every other index is the same structure sorted by a query's fields. Its nodes are sealed Values; recent entries stay in the directory Doc until a checkpoint folds them in | directories that one Loro Doc can't hold at millions; indexes only as private caches; a second structure for search | docs, engine (**A26**) |
 
 ## Stress test: end to end, local first, peer to peer
 
@@ -218,18 +220,18 @@ the edges: configuration, web origins, keepers, freshness. The table is the caps
 
 | # | Attack | The spec today | Status | Fix | Lean |
 |---|---|---|---|---|---|
-| 1 | Swap the guardian by configuration | It comes from `--guardian`; no person signs it | open | Its hybrid and X-Wing keys in the genesis and in every claim and join text; shown in fingerprints (**A13**) | `guardian_consented` |
+| 1 | Swap the guardian by configuration | It comes from `--guardian`; no person signs it | decided | Its hybrid and X-Wing keys in the genesis and in every claim and join text; shown in fingerprints (**A13**) | `guardian_consented` |
 | 2 | Ask for a passkey's PRF from another origin of `maia.city` | Any origin of the domain can ask, at a predictable input | open | A dedicated RP ID for avenOS before more passkeys exist; a secret the vault holds mixed into the input (**A14**) | — |
 | 3 | Serve changed code from the origin | Outside the model; D17's safe helps | partial | Signed releases; the safe's origin serves only the safe (**A15**) | — |
 | 4 | Mint caps with a stolen device | Every grant needs an owner's approval (D14) | covered | The heal also replaces the vault key, tag seeds and letterbox keys (D19, #1499) | `heal_evicts` |
 | 5 | Launder a revoked holder's writes through another writer's late ack | "had seen" counts what the acking writer imported | covered (#1499) | An envelope with the revocation in its own past never counts; under a Doc cap only the revocation's own past is kept; another writer's ack may vouch for revocations kept elsewhere (**A23**) | `revocation_wins`, restated |
 | 6 | Read the signer off a segment | Outside a segment is only its Doc, epoch and padded length (D13) | covered | — | `keeper_blind` over the outside |
 | 7 | Learn who reads a Doc | Fetch proofs come over connections that name the device | accepted for now (D13) | Mixing, unlinkable proofs, later | — |
-| 8 | Spoof a fetch-key change or upload junk | The new fetch key comes by letter, unauthenticated | open | Fetch keys chain from the Doc's genesis, each signed by the one before; the keeper keeps every successor, takes the smaller epoch hash as current, as writers do, and flags the fork; the uploading vault pays (**A22**) | `fetch_chain` |
+| 8 | Spoof a fetch-key change or upload junk | The new fetch key comes by letter, unauthenticated | decided | Fetch keys chain from the Doc's genesis, each signed by the one before; the keeper keeps every successor, takes the smaller epoch hash as current, as writers do, and flags the fork; the uploading vault pays (**A22**) | `fetch_chain` |
 | 9 | A reader given one Doc can't check vault-wide caps | They live in a group Doc it can't open | covered (#1499) | Envelopes carry, inside the seal, the caps they rest on; acks carry their revocation | — |
 | 10 | `below` read upward | The text runs backwards | covered (#1499) | `below` is sealed downward | `authority_down` |
-| 11 | Keep a writer from hearing of a removal | Browsers have one keeper and one relay | open | Several sources; signed tips; a writer never writes on an epoch older than a tip it has seen | — |
-| 12 | Hold the door and the tree | The Aven Peer's, by position | open | The genesis, the tree as a Doc, the network's group (**A10** to **A12**) | `door_from_tree` |
+| 11 | Keep a writer from hearing of a removal | Browsers have one keeper and one relay | decided | Several sources; signed tips; a writer never writes on an epoch older than a tip it has seen | — |
+| 12 | Hold the door and the tree | The Aven Peer's, by position | decided | The genesis, the tree as a Doc, the network's group (**A10** to **A12**) | `door_from_tree` |
 | 13 | Pass on a read key without approval | Anyone holding a key can seal it to another | accepted, stated (#1499) | Say it: approvals bind writes, `share` and `tell`; reading is holding a key | — |
 | 14 | Limit what one device reads | The keyring opens to every device | accepted | A limited device is a vault of its own, without the keyring (the Aven Peer is one) | — |
 | 15 | Keep a group cap's children alive after their issuer leaves | Liveness checks only the writer | covered (#1499) | Children live only while their issuer is in the group | `child_live` |
@@ -237,10 +239,10 @@ the edges: configuration, web origins, keepers, freshness. The table is the caps
 | 17 | Read history with a `from-now` grant through a group | `back` opens all history | accepted, stated (#1499) | Say it; per-Doc keys where `from-now` matters | — |
 | 18 | Play with clocks around expiry | A write carries its writer's time | partial | Readers judge expiry by acks; `not_before` holds only for reads | `time_acked` |
 | 19 | Name a revocation or key that never comes | Its builders wait forever | covered (#1499) | Waits only for what is named by hash; every wait raises the stall alarm (rule 11) | `waits_end` |
-| 20 | Claim one ticket twice | Only the Aven Peer's compare-and-set orders it | open | The smallest claim hash wins (**A12**) | `ticket_once` |
-| 21 | Replay an old statement | No nonce, no expiry | open | Statements are envelopes in logs with a sequence and the hash before (K1, K2) | — |
+| 20 | Claim one ticket twice | Only the Aven Peer's compare-and-set orders it | decided; proven (#1531) | The smallest claim hash wins (**A12**) | `ticket_once` |
+| 21 | Replay an old statement | No nonce, no expiry | decided | Statements are envelopes in logs with a sequence and the hash before (K1, K2) | — |
 | 22 | Make an actor act as a confused deputy | Inside the kernel (D16) | accepted | Hosting is the owner's explicit choice (**A16**) | `no_confused_deputy` |
-| 23 | Show readers different sides of a split | Deps name op ids | open | Deps by hash (**A3**) | `split_found` |
+| 23 | Show readers different sides of a split | Deps name op ids | decided | Deps by hash (**A3**) | `split_found` |
 | 24 | Forge later with a quantum computer | The guardian is Ed25519; the transport is classical | partial | A hybrid guardian; hybrid TLS | — |
 | 25 | Flood a letterbox | Unspecified | covered (#1499) | The signature inside the seal, bound to the recipient; rate limits | — |
 
@@ -307,7 +309,8 @@ can't express. What follows is the scheduler that's missing, proposed as **A9** 
    fetch.
 5. **Resolving targets.** A Doc target is direct. A vault target or a type target resolves through a directory Doc,
    one per vault and root type, sealed to that type's group. The genesis of every Doc names its vault and root type,
-   so a directory can always be rebuilt from the geneses a device holds.
+   so a directory can always be rebuilt from the geneses a device holds. A directory is a sealed index of Docs by id,
+   so it holds millions of them (**A26**).
 6. **Batches.** Each round with a source starts with range-based set reconciliation over (Doc, tip hashes) for every
    key in a tier. Then many Docs' segments come as one hash sequence per page, stored in one write.
 7. **Sources.** Own devices on the LAN come first, then other readers of the Doc, then keepers. Several sources serve
@@ -336,10 +339,12 @@ Two actor rules make it hold:
 
 ## Search: local first
 
-**Decided (Samuel, 30 Oct 2026, A21): search is local.** A device searches only the data it holds, with its own index
-as a cache (README rule 5). To search more, it wants more: an actor's `loads`, or the target of the search itself
-(A8), makes the want queue sync those Docs from other peers first, the urgent ones first (A9). Then the device searches
-them locally. No other peer ever indexes, matches or searches anyone's data.
+**Decided (Samuel, 30 Oct 2026, A21): search is local.** A device searches only the data it holds. To search more, it
+wants more: an actor's `loads`, or the target of the search itself (A8), makes the want queue sync those Docs from
+other peers first, the urgent ones first (A9). Then the device searches them locally. To find a handful of Docs among
+millions it doesn't hold, it first syncs a few Values of its fellow readers' sealed index, then only the Docs they
+point to ([A26](#a-handful-among-millions-sealed-indexes)). No peer without the key ever indexes, matches or searches
+anyone's data.
 
 Why not an index another peer can match (a **blind index**): it always leaks something, and published attacks recover
 content from exactly these leaks (Islam, Kuzu and Kantarcioglu, 2012; Cash, Grubbs, Perry and Ristenpart, 2015;
@@ -360,6 +365,58 @@ What stays to do, all of it for the data at rest, none of it for search:
 | Letterbox tags | Ratchet per letter |
 | Files | Padmé on every file (D18) |
 | Doc ids and epoch hashes | Storage ids per epoch, later |
+
+### A handful among millions: sealed indexes
+
+Samuel asked whether a type with millions of Records, of which an actor wants a handful, makes a device replay or
+sync them all, as avenDB-old did. It doesn't:
+- **No replay.** A new device starts from the newest checkpoint and the segments after it (A5). A chat's or a
+  journal's older months are other Docs, fetched when someone scrolls back to them (A6).
+- **No sync of the whole.** The unit of sync is the Doc, and a Doc holds what is read together: one invoice, one
+  month of a chat, one project, never millions of Records (docs audit W8). A handful of Records is a handful of Docs,
+  and the want queue fetches only those (A9).
+
+What was missing is *finding* the handful by value, such as "invoices from vendor X", without holding the rest. The
+large peer-to-peer systems share five answers:
+
+| Answer | Where it comes from | Ours |
+|---|---|---|
+| Start from a snapshot, never from the first change | Urbit's snapshots, Autobase's checkpointed views, Ink & Switch's sedimentree | checkpoints travel (A5) |
+| Fetch any piece with a proof, never the whole | Hypercore's sparse replication under signed tree heads, the AT Protocol's Merkle search trees | Values and segments by hash |
+| Sync what you're interested in | Willow's areas of interest, GunDB's subscriptions, Matrix's lazy loading | wants (A9) |
+| Split what grows without end | Scuttlebutt's lesson: replicating whole feeds made new members wait | period Docs (A6) |
+| Readers keep an index that others fetch piece by piece | Hyperbee's B-tree on a Hypercore, Scuttlebutt's index feeds, Dolt's Prolly trees | sealed indexes (**A26**) |
+
+The fifth is new here. It is sealed, never blind, because a blind index leaks (above):
+1. **One structure for directories and indexes.** A directory lists a vault's Docs of one root type by Doc id; an
+   index lists the same Docs by a query's fields. Both are search trees whose nodes are sealed Values named by hash,
+   each under a size limit (rule 10). The same entries always make the same Values (a Prolly tree or a Merkle search
+   tree), so readers who build from the same version get the same root. A directory then holds millions of Docs,
+   which one Loro Doc can't (engine audit W5).
+2. **Recent entries stay in the directory Doc,** where Loro merges writers who write at once. Whoever creates a Doc,
+   or changes a field an index sorts by, adds its entry there in the same commit. From time to time a fold, a
+   checkpoint naming the directory version it covers, moves those entries into new Values, as an LSM tree compacts.
+   Any device that holds the Docs an index covers and may write the directory can fold, and two folds of one version
+   give one root.
+3. **Automatic per query.** The engine derives an index from a query's shape: its filters and its order. Equal shapes
+   share one index. Installing an actor registers the indexes its `loads` need, by the vault owners' act, up to a
+   limit per directory.
+4. **A lookup runs on the device.** It reads the directory Doc, walks three or four Values down to the entries it
+   needs (enough for millions), reads the entries not yet folded, wants the Docs it found, and runs the query on them
+   itself (A21). An answer is `complete` when every Doc that could match is held: the hits and the unfolded entries.
+5. **Readers judge.** A hit is only a hint: a wrong entry costs a fetch, never a wrong row. A missing entry is the only
+   harm, and only someone who may write the directory could cause it, as they could leave a Doc out of the directory
+   today. A device that holds the covered Docs rebuilds the root in the background and compares, as it checks any
+   checkpoint (A5).
+6. **Caps.** An index is sealed under its directory's key and holds fields only from Docs that the directory's
+   readers can read, so a Doc with fewer readers never enters it. Equal Values under one key get equal names, and
+   every Value is padded (D18).
+7. **Privacy.** A keeper sees which sealed Values are fetched, as for any fetch (the want queue's item 15), and never
+   what is inside them. Values come from own devices and other readers first.
+
+In Lean, before any code: a lookup plus the local query returns exactly what the query returns over every Doc the
+directory lists at that version; a fold depends only on its entries, and folding in steps equals building at once; no
+index holds an entry from outside its key.
 
 ## Strengths and weaknesses, part by part
 
@@ -425,7 +482,7 @@ What stays to do, all of it for the data at rest, none of it for search:
   - samples that must round-trip;
   - avenOS's failures turned into rules.
 - *Weak:*
-  - kind queries can't run without indexes at modest scale;
+  - kind queries can't run without indexes at modest scale (**A26** answers it);
   - slot ids undefined across predicate versions;
   - the gismu layer is heavy;
   - every kind edit re-issues caps.
@@ -530,10 +587,15 @@ the spec that owns it.
 - **A6. Collections that grow without end are chains of period Docs.** *Decided: yes (Samuel, 30 Oct 2026), rather
   than shallow snapshots, which refuse older branches.*
 - **A7. A Doc pins the type versions it accepts,** at birth or by its owners' act, and a listing can be withdrawn.
-  *Decided: yes (Samuel, 30 Oct 2026).*
+  *Decided: yes (Samuel, 30 Oct 2026).* Since lenses became universal (K5), pins cover them too. A lens inside one type
+  Doc comes from whoever may write that Doc. A lens between two type Docs is a Value anyone may write, and it counts
+  for a Doc or vault only once its owners pin it, after the checker has held it to the lens laws. A reader uses only
+  the lenses pinned where it reads (for a message, the receiving vault's), and a pin that would make a second path
+  between two versions is refused there. No peer sees every lens, so there is no global forest. *The architect's
+  answer to the actors thread (30 Oct 2026).*
 - **A8. One target grammar** for caps, wants and query scope. A query without a target is refused; `complete` means
   every Doc of the target is held, checked against its directory; the implicit want takes the query's tier and lasts
-  while the query is live. *Yes; the engine thread agrees.*
+  while the query is live. *Decided: yes (Samuel, 30 Oct 2026: "do as you believe"); the engine thread agrees.*
 
 **The network and trust**
 - **A10. The network is a group:**
@@ -542,13 +604,13 @@ the spec that owns it.
   - invites are tickets;
   - removal ends network caps.
 
-  *Yes.*
+  *Decided: yes (Samuel, 30 Oct 2026: "do as you believe").*
 - **A11. A signed genesis:**
   - the claimant's passkey and MaiaCityGuardian sign the network's first statement;
   - it names the RP ID, origins, coop, agent, the Aven Peer's key and the guardian's hybrid keys;
   - every member pins its hash.
 
-  *Yes, before sealing.*
+  *Decided: yes (Samuel, 30 Oct 2026: "do as you believe"), before sealing.*
 - **A12. The tree is a Doc of signed statements:**
   - ordered by what each statement names, not by ref names;
   - a ticket claimed once, by the smallest hash;
@@ -556,9 +618,9 @@ the spec that owns it.
     revocation wins over what it hadn't seen (refined with the PEERS thread);
   - members gossip signed tips.
 
-  *Yes.*
+  *Decided: yes (Samuel, 30 Oct 2026: "do as you believe").*
 - **A13. The guardian is named, with hybrid keys, in every claim and join text** people sign, until it leaves before
-  the network opens beyond the founding circle (caps D12). *Yes.*
+  the network opens beyond the founding circle (caps D12). *Decided: yes (Samuel, 30 Oct 2026: "do as you believe").*
 - **A14. A dedicated passkey RP ID for avenOS,** for example `aven.maia.city`, before more passkeys exist; today's few
   members register once more. A salt the keeper serves per credential goes into the PRF input: secret from other
   origins, not from the keeper. *Not yet (Samuel, 30 Oct 2026): it waits until he takes it up.*
@@ -577,8 +639,8 @@ the spec that owns it.
 **The engine and actors**
 - **A9. The want queue** as in [Massive data](#massive-data-wants-decide-what-moves). Its laws go into Lean before
   any code: tiers only order, each key once at its highest tier, prerequisites inherit priority, every round moves,
-  `now` is never evicted. Older periods are reached by a bounded `follow` of the link to the period before. *Yes; the
-  engine thread agrees.*
+  `now` is never evicted. Older periods are reached by a bounded `follow` of the link to the period before. *Decided:
+  yes (Samuel, 30 Oct 2026: "do as you believe"); its laws are proven in Lean (#1530).*
 - **A17. Actors fold into docs.** Samuel, 30 Oct 2026:
   - an address names a vault-scoped id with an incarnation counter, never a device, and the home only routes:
     *decided, yes*;
@@ -587,16 +649,20 @@ the spec that owns it.
     *decided, yes*;
   - every actor keeps its own inbox (queue, read position, order of handling). Between devices one carrier Doc per
     pair of vaults, written by the sending vault's home device; none within one home: *decided, yes*;
-  - loads are journaled as versions, not as data: *recommend yes*;
+  - loads are journaled as versions, not as data: *decided, yes* ("do as you believe");
   - a definition is a version of an actor type, `replaces` names the version before, and a lens carries the state:
     *decided, yes*.
 - **A18. Plugins are runtimes.** A lowering is pinned by its runtime's hash, and an envelope carries the lowered hash.
-  *Yes; the engine thread agrees.*
+  *Decided: yes (Samuel, 30 Oct 2026: "do as you believe").*
 - **A19. One update grammar:** put, patch, remove and a new `edit` for text, lists and trees, each with a verb and a
-  footprint. *Yes; the engine thread agrees.*
-- **A20. Facts for relations, Records for documents.** *Yes; the engine thread agrees.*
+  footprint. *Decided: yes (Samuel, 30 Oct 2026: "do as you believe").*
+- **A20. Facts for relations, Records for documents.** *Decided: yes (Samuel, 30 Oct 2026: "do as you believe").*
 - **A21. Search is local first,** as [above](#search-local-first): a device searches what it holds, and its wants sync
   what it wants to search. *Decided (Samuel, 30 Oct 2026).*
+- **A26. Sealed indexes,** as [above](#a-handful-among-millions-sealed-indexes): directories and indexes are one
+  structure of sealed Values; the engine derives an index from each query's shape; a lookup reads a few Values, then
+  only the Docs they point to, and the query runs on the device. *Decided: yes (Samuel, 30 Oct 2026: "do as you
+  believe").*
 
 **Caps**
 - **A22. A peer that keeps sealed data for others checks who may add or fetch it, without reading it.** Phones and
@@ -615,14 +681,20 @@ the spec that owns it.
 
 ## Who does what next
 
+Every spec is written in Lean first, on the shared core `Aven.Core` ([`core/`](core/README.md), #1532): Values and the
+codec, names, envelopes, logs and the target grammar, defined once.
+
 | Thread | Takes |
 |---|---|
-| security | the live store bugs; rule 1's codec for the chat's lines (**A2**) |
-| caps (#1492) | attacks 1 to 25; **A10** to **A14**, **A22**, **A23**; the text fixes its audit lists |
-| docs | rules 1 to 3 and 8; **A3** to **A7**; loose envelopes at keepers; limits before Loro import; fit per Record |
-| engine | **A8**, **A9**, **A18** to **A21**; a query's scope; a bound per operator; the snapshot contradiction |
-| avenACTORS | **A16**, **A17**; the address reuse of version 1; a strict CSP for faces; what `seq` counts |
-| PEERS planning | the privileges table; several relays and keepers; **A11**, **A12** |
+| docs | `Aven.DB.Docs`: rules 1 to 3 and 8, **A3** to **A7**, universal lenses and their pins; the sealed index's format and its fold (**A26**) |
+| engine | `Aven.DB.Engine` (#1530) onto the core: footprints and the diff check; deriving indexes from query shapes, lookups and `complete` with an index (**A26**) |
+| caps | `Aven.ID` (#1531) onto the core: **A10** to **A13**, **A22**; sealing indexes and who may fold (**A26**) |
+| avenACTORS | `Aven.Actor` (#1504) onto the core: **A16**, **A17**, messages across types through lens paths |
+| runtimes | `Aven.Runtime` (#1533) onto the core; the box checks the vectors of `aven/runtimes` and `aven/actor` too |
+| PEERS planning | `PEERS.md`: relays, address records, catch-up and keepers peer to peer, upgrades by wire version; the tree's Lean with caps (**A10** to **A13**) |
+
+Then one model across them all, `Aven.Architecture`, proves the rules above across parts, and whatever its proofs
+expose comes back into this document.
 
 Text fixes that need no decision (broken links to `aven/ID/caps` and `aven/actor`, wrong rule numbers, stale
 milestone numbers) go to each spec's own thread.

@@ -1,6 +1,7 @@
 # avenSANDBOX's containers (aven/DB2/SANDBOX.md, "The box"). Only aven/DB2 is mounted, so nothing else of the
-# repository is reachable inside the box. `bun run up` first builds the Peer and the Peer-Light's wasm once, into the
-# shared build folder (the avensandbox_target volume); `aven` and `alice` run that binary, `browsers` serves avenOS and
+# repository is reachable inside the box; `bun run box` adds only the Lean specs of aven/runtimes and aven/actor
+# (sandbox/up.mjs, `specVolumes`). `bun run up` first builds the Peer and the Peer-Light's wasm once, into the shared
+# build folder (the avensandbox_target volume); `aven` and `alice` run that binary, `browsers` serves avenOS and
 # that wasm, and `s3` is the box's S3. Each peer keeps its data through avenDB's store: the Aven Peer in `s3`, Alice
 # Peer in its volume `alice`, the Peer-Lights in their origins' OPFS, in the volume `chromium`. `down --wipe` empties
 # them all.

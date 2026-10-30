@@ -1,0 +1,18 @@
+# Aven.Actor: avenACTOR's model in Lean (ARCHITECTURE.md, section 14). Core Lean only, no packages but the shared core.
+name = "aven-actor-spec"
+version = "0.1.0"
+defaultTargets = ["AvenActor", "vectors"]
+
+# The shared core: Values, the codec, hashes and type ids (aven/DB2/core/spec).
+[[require]]
+name = "aven-core-spec"
+path = "../../DB2/core/spec"
+
+[[lean_lib]]
+name = "AvenActor"
+roots = ["Aven.Actor"]
+
+# The kernel's traces as test vectors, committed in vectors/ (ARCHITECTURE.md, section 14).
+[[lean_exe]]
+name = "vectors"
+root = "Vectors"

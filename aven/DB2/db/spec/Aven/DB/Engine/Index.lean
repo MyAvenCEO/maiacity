@@ -1,4 +1,5 @@
 import Aven.DB.Engine.Query
+import Aven.DB.Docs.Index
 
 /-!
 # Sealed indexes (ARCHITECTURE.md, A26; decided 30 Oct 2026)
@@ -11,8 +12,9 @@ without holding them all, and no one without the key can read it.
   that vault, by the owners' act, up to a limit per directory (`register`).
 - **Its entries** are, for every Record of the type in a Doc the directory lists at version V, the values of the
   shape's fields and the Doc (`build`). The docs layer keeps them as a few Values in a history-independent tree (a
-  Prolly tree or a Merkle search tree): its root depends only on the set of entries (`Tree.root`, a parameter here with
-  that law). The directory holds the entries since V, not yet folded in.
+  Prolly tree, `Aven.DB.Docs.Index`): its root depends only on the set of entries. The proofs below take any tree with
+  that law (`Tree`), and `docsTree` is the docs layer's own, so they hold of it (`same_root_docs`, `fold_steps_docs`).
+  The directory holds the entries since V, not yet folded in.
 - **The lookup:** walk the index to the entries that match the probe, add the Docs of the directory's unfolded entries,
   want those Docs, and run the query on the device. A hit is only a hint: the query re-checks every Doc.
 
@@ -229,5 +231,34 @@ theorem fold_steps (T : Tree Val) (sh : Shape) (db₀ db₁ db₂ : List (Rec Va
   intro e
   rw [← fold_eq_build sh db₂ db₁ docs₁ u₂ docs₂ h₂ s₂ e]
   exact fold_congr sh _ _ db₂ u₂ docs₂ (fold_eq_build sh db₁ db₀ docs₀ u₁ docs₁ h₁ s₁) e
+
+/-! ## The docs layer's tree -/
+
+/-- An entry as the docs layer's tree holds it: the encoding of its key Values and its Doc, which sorts in key order. -/
+def entryBytes (e : Entry Value) : Bytes := encode (.array (e.key ++ [.bytes e.doc.hash.bytes]))
+
+/-- The docs layer's Prolly tree (`Aven.DB.Docs.Index`), with its node-cutting rule, as a `Tree`: its `root_set` is
+the one law the proofs above need. -/
+def docsTree (boundary : Bytes → Bool) (size : Bytes → Nat) (limit : Nat) (H : Bytes → Hash) : Tree Value where
+  root es := Aven.DB.Docs.Index.root boundary size limit H (es.map entryBytes)
+  independent a b h := Aven.DB.Docs.Index.root_set boundary size limit H fun x => by
+    simp only [List.mem_map]
+    exact ⟨fun ⟨e, he, hx⟩ => ⟨e, (h e).mp he, hx⟩, fun ⟨e, he, hx⟩ => ⟨e, (h e).mpr he, hx⟩⟩
+
+/-- Two readers who build from the same version get the same root in the docs layer's tree. -/
+theorem same_root_docs (boundary : Bytes → Bool) (size : Bytes → Nat) (limit : Nat) (H : Bytes → Hash) (sh : Shape)
+    (db db' : List (Rec Value)) (docs docs' : List DocId)
+    (hdb : ∀ r, r ∈ db ↔ r ∈ db') (hdocs : ∀ d, d ∈ docs ↔ d ∈ docs') :
+    (docsTree boundary size limit H).root (build sh db docs) = (docsTree boundary size limit H).root (build sh db' docs') :=
+  same_root _ sh db db' docs docs' hdb hdocs
+
+/-- Folding in steps gives the docs layer's tree the root a fresh build has. -/
+theorem fold_steps_docs (boundary : Bytes → Bool) (size : Bytes → Nat) (limit : Nat) (H : Bytes → Hash) (sh : Shape)
+    (db₀ db₁ db₂ : List (Rec Value)) (docs₀ docs₁ docs₂ u₁ u₂ : List DocId)
+    (h₁ : ∀ d, d ∉ u₁ → (d ∈ docs₁ ↔ d ∈ docs₀)) (s₁ : ∀ r, r.doc ∉ u₁ → (r ∈ db₁ ↔ r ∈ db₀))
+    (h₂ : ∀ d, d ∉ u₂ → (d ∈ docs₂ ↔ d ∈ docs₁)) (s₂ : ∀ r, r.doc ∉ u₂ → (r ∈ db₂ ↔ r ∈ db₁)) :
+    (docsTree boundary size limit H).root (fold sh (fold sh (build sh db₀ docs₀) db₁ u₁ docs₁) db₂ u₂ docs₂) =
+      (docsTree boundary size limit H).root (build sh db₂ docs₂) :=
+  fold_steps _ sh db₀ db₁ db₂ docs₀ docs₁ docs₂ u₁ u₂ h₁ s₁ h₂ s₂
 
 end Aven.DB.Engine

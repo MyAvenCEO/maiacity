@@ -577,11 +577,23 @@ compares. Values compare by their one encoding, which is Value equality on canon
 | `Wants` | served = wants ∩ caps (`served_eq_wants_caps`); each key once (`keys_once`), at its highest tier (`queued_highest`); tiers only order (`tiers_only_order`); prerequisites inherit priority (`prerequisites_inherit`); every round moves the measure down, finds nothing left or raises the stall alarm (`round_moves`), uploads first (`uploads_first`); `now` is never evicted (`now_never_evicted`), and what eviction keeps fits the budget (`evict_fits`). Keys are (Doc, branch, depth, window) | `wants.json` |
 | `Mutate` | a refused commit changes nothing (`refused_changes_nothing`); references point back at a `put` (`refs_point_backward`); ids from (writer id, counter, op index) never collide (`created_distinct`, `ids_differ_across`); readers that agree on a runtime hash lower and commit alike (`readers_agree`) | `mutations.json` |
 | `Footprint` | every op's footprint step (type, verb, fields) is known before it runs; a commit that ran as its ops say passes every reader's check of its diff: new Records only of `put-new` types and footprint fields, changed fields only footprint fields, gone Records only of `remove` types (`commit_within`); an honest writer whose grants cover its footprint is accepted by every reader (`honest_passes`); what passes is granted (`check_sound`) | `mutations.json` |
-| `Index` | the lookup plus the local query returns exactly the query over every Doc the directory lists (`lookup_exact`); `complete` with an index means every candidate is held (`complete_with_index`); same entries, same root, whatever the order (`same_root`); folding in equals building at once (`fold_eq_build`, `fold_root`), in any number of steps (`fold_steps`); equal shapes register once, up to a limit (`register_once`, `register_limit`) | `indexes.json` |
+| `Index` | the lookup plus the local query returns exactly the query over every Doc the directory lists (`lookup_exact`); `complete` with an index means every candidate is held (`complete_with_index`); same entries, same root, whatever the order (`same_root`); folding in equals building at once (`fold_eq_build`, `fold_root`), in any number of steps (`fold_steps`); equal shapes register once, up to a limit (`register_once`, `register_limit`) | `lookups.json` |
 
 A8, A9, A18, A19 and A20 were decided as recommended (Samuel, 30 Oct 2026), so these theorems are the decided design.
-The sealed index's tree is the docs layer's; the model takes its root as a parameter whose only law is that it depends
-on the set of entries. Still to come: live deltas equal a fresh run; sync; the ontology's lowering; kinds; constraints
+The sealed index's tree is the docs layer's Prolly tree (`Aven.DB.Docs.Index`); the proofs take any tree whose root
+depends only on its set of entries, and `docsTree` is the docs layer's own, joined by `root_set` (`same_root_docs`,
+`fold_steps_docs`). `lookup_exact` assumes two facts of the directory, which are the docs layer's obligations: every Doc
+listed now was listed at V or is unfolded, and a Doc not unfolded holds the Records it held at V.
+
+**What the proofs exposed,** for the cross-spec step:
+
+- **Equality on Values is by encoding.** `Aven.Core.Value` can't derive an equality (its maps nest), so the engine
+  compares Values by their one encoding, which is Value equality on canonical Values (`encode_inj`).
+- **An `edit` names its type,** or its footprint isn't known before it runs.
+- **The diff check counts only fields whose value differs** from before the commit, so a field that changes and
+  changes back within one commit needs no grant.
+- **Index ranges are numeric.** The docs layer's tree orders entries by their encoding, which sorts unsigned integers
+  numerically but text by length first; a shape's range field is a number, and text goes in its equality fields. Still to come: live deltas equal a fresh run; sync; the ontology's lowering; kinds; constraints
 on field values in footprints, which stay caps' own.
 
 ## Open questions
