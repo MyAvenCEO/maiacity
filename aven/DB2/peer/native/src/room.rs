@@ -4,12 +4,14 @@
 //! the door as this peer knows it (`Gate`), so a message whose sender is no member's device is dropped. Each peer says
 //! `here` every `EVERY_MS`, and `bye` when it stops. The room is in memory only: a restart or a reload empties it.
 //!
-//! What the page hears, as timeline lines: `chat` (a line said: who, the vault it serves, the text, when), `room` (who
-//! is present, on every change) and `dropped` (a message refused, and why).
+//! What the page hears, as timeline lines: `chat` (a line said: who, the vault it serves, the text, when), `file` (a
+//! file announced: who, its index's hash, size, name and type), `room` (who is present, on every change) and `dropped`
+//! (a message refused, and why). A peer that keeps files (the Aven Peer) also takes each announcement from
+//! [`Room::announced`].
 
 use std::sync::{Arc, Mutex};
 
-use aven_db_core::chat::{self, EVERY_MS, Kind, Message};
+use aven_db_core::chat::{self, Announce, EVERY_MS, Kind, Message};
 use aven_db_core::timeline;
 use aven_db_store::Hash;
 use bytes::Bytes;
@@ -72,6 +74,8 @@ pub struct Room {
     notes: Notes,
     sender: GossipSender,
     state: Arc<Mutex<State>>,
+    /// where each file announced goes, with its sender's key, once something listens
+    files: Arc<Mutex<Option<futures_channel::mpsc::UnboundedSender<(PublicKey, Announce)>>>>,
 }
 
 impl Room {
@@ -104,6 +108,7 @@ impl Room {
                 last: 0,
                 neighbours: 0,
             })),
+            files: Arc::default(),
         };
         let hears = room.clone();
         n0_future::task::spawn(async move {
@@ -188,6 +193,18 @@ impl Room {
                 let (name, vault) = self.who(&m.from);
                 self.note("chat", json!({ "from": name, "vault": vault, "key": m.from, "text": m.text, "at": m.at }));
             }
+            Ok(()) if m.kind == Kind::File => {
+                let (name, vault) = self.who(&m.from);
+                let a = m.file.clone().expect("a file's announcement, checked");
+                self.note(
+                    "file",
+                    json!({ "from": name, "vault": vault, "key": m.from, "file": a.file, "size": a.size,
+                        "name": a.name, "type": a.mime, "at": m.at }),
+                );
+                if let (Some(tx), Ok(key)) = (self.files.lock().unwrap().as_ref(), crate::keys::public(&m.from)) {
+                    let _ = tx.unbounded_send((key, a));
+                }
+            }
             Ok(()) => {}
             Err(why) => {
                 let from = m.from.chars().take(10).collect::<String>();
@@ -218,9 +235,30 @@ impl Room {
         }
     }
 
+    /// Every file announced in the room from now on, its own included, with its sender's key: one listener.
+    pub fn announced(&self) -> futures_channel::mpsc::UnboundedReceiver<(PublicKey, Announce)> {
+        let (tx, rx) = futures_channel::mpsc::unbounded();
+        *self.files.lock().unwrap() = Some(tx);
+        rx
+    }
+
+    /// Announces a file this peer holds: its index's hash, its size, the name and type it claims. Whether it went out.
+    pub async fn announce(&self, file: Announce) -> bool {
+        self.send_with(Kind::File, String::new(), Some(file)).await
+    }
+
+    /// Whether the room has a neighbour to pass a message on to.
+    pub fn connected(&self) -> bool {
+        self.state.lock().unwrap().neighbours > 0
+    }
+
     /// Signs and sends a message of this peer's own, and takes it into its own room: gossip never echoes one. Whether
     /// it went out.
     async fn send(&self, kind: Kind, text: String) -> bool {
+        self.send_with(kind, text, None).await
+    }
+
+    async fn send_with(&self, kind: Kind, text: String, file: Option<Announce>) -> bool {
         let m = {
             let mut state = self.state.lock().unwrap();
             let at = now().max(state.last + 1);
@@ -231,7 +269,7 @@ impl Room {
                 at,
                 kind,
                 text,
-                file: None,
+                file,
                 sig: String::new(),
             };
             m.sig = hex(&self.secret.sign(m.body().as_bytes()).to_bytes());

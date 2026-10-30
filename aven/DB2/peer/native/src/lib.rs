@@ -9,6 +9,8 @@ pub mod blobs;
 #[cfg(feature = "native")]
 pub mod door;
 #[cfg(feature = "native")]
+pub mod files;
+#[cfg(feature = "native")]
 pub mod hub;
 /// iroh-gossip, as every peer runs it: the Peer-Light takes it from here.
 pub use iroh_gossip;

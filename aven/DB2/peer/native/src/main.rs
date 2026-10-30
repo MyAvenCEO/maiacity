@@ -21,6 +21,7 @@
 //!     --aven HOST:PORT       the Aven Peer's UDP address, without --relay
 //!     --aven-key HEX         the Aven Peer's key, without --relay
 //!     --events DIR           also write the timeline's lines to DIR/NAME.jsonl
+//!     --files DIR            share this folder: each file in it is put as a hash sequence and announced in the room
 //!     --store KIND           where it keeps its data: memory (the default), fs or s3
 //!     --store-path DIR       the folder, with --store fs
 //!     --s3-endpoint URL      the S3 server, with --store s3
@@ -44,7 +45,9 @@
 //! The door is members only (MILESTONE2.md): the relay and every connection's `after_handshake` admit the cast's
 //! members, or the devices of the admin coop's members and people, and the Aven Peer, the device of Aven, the agent
 //! that runs the network for the coop. Every peer is in the network's chat
-//! room, over iroh-gossip on the same Router; the Aven Peer joins it first and says once who joined.
+//! room, over iroh-gossip on the same Router; the Aven Peer joins it first and says once who joined. Every Peer serves its
+//! store's blobs over iroh-blobs (`/iroh-bytes/4`) to members only, and the Aven Peer keeps every file announced in the
+//! room (store/README.md, "How a file travels").
 
 use std::collections::HashMap;
 use std::fs::OpenOptions;
@@ -61,7 +64,7 @@ use aven_peer::keys::{self, Members};
 use aven_peer::members::{Gate, Hook};
 use aven_peer::relay::Allow;
 use aven_peer::room::Room;
-use aven_peer::{Notes, blobs, door, door::Door, hub::Hub, link, now, record, tls};
+use aven_peer::{Notes, blobs, door, door::Door, files, hub::Hub, link, now, record, tls};
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
 use iroh::{Endpoint, EndpointAddr, RelayMap, RelayMode, RelayUrl};
@@ -339,10 +342,10 @@ async fn main() -> Result<(), Error> {
     // gossip on the same Router as aven/db/1 (README, rule 9): the chat's room, joined through the Aven Peer
     let gossip = Gossip::builder().spawn(endpoint.clone());
     // and iroh-blobs' protocol, the files' bytes from this peer's store, to members only (store/README.md)
-    let files = Blobs::new(store.clone());
+    let held = Blobs::new(store.clone());
     let router = Router::builder(endpoint.clone())
         .accept(iroh_gossip::ALPN, gossip.clone())
-        .accept(blobs::ALPN, blobs::provider(&files, me.clone(), gate.clone(), notes.clone()));
+        .accept(blobs::ALPN, blobs::provider(&held, me.clone(), gate.clone(), notes.clone()));
     let (router, bootstrap) = if relay {
         (
             router
@@ -394,6 +397,17 @@ async fn main() -> Result<(), Error> {
         notes.clone(),
     )
     .await?;
+    // files: the folder this Peer shares, and the Aven Peer's rule, which keeps every file announced
+    if let Some(dir) = config.get("files") {
+        std::fs::create_dir_all(&dir)?;
+        tokio::spawn(files::share(dir.into(), store.clone(), room.clone(), me.clone(), notes.clone()));
+    }
+    if relay {
+        let announced = room.announced();
+        let (endpoint, relay_url) = (endpoint.clone(), relay_url.clone());
+        tokio::spawn(files::keep(endpoint, relay_url, held, store.clone(), announced, me.clone(), notes.clone()));
+    }
+
     // the Aven Peer says once who joined
     if let Some(door) = &door {
         let (room, mut changed) = (room.clone(), door.subscribe());
