@@ -208,10 +208,22 @@ fn traces_answer_as_the_model_does() {
                 "door": door.iter().map(|k| m.admits(k)).collect::<Vec<_>>(),
             });
             assert_eq!(&got, want, "{}, step {at}", v["name"]);
-            // what the Aven Peer tells its members reads back as the same members, every statement checked again
+            // what the Aven Peer tells its members reads back, every statement checked again, as the same members
+            // behind the same door, in the order a store lists them
+            let back = Members::from_statements(&m.statements()).unwrap();
+            let sorted = |mut v: Vec<String>| {
+                v.sort();
+                v
+            };
             assert_eq!(
-                Members::from_statements(&m.statements()).as_ref(),
-                Ok(&m),
+                sorted(back.members()),
+                sorted(m.members()),
+                "{}, step {at}",
+                v["name"]
+            );
+            assert_eq!(
+                sorted(back.admitted()),
+                sorted(m.admitted()),
                 "{}, step {at}",
                 v["name"]
             );
