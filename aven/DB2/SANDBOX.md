@@ -605,7 +605,9 @@ Made in milestone 1's threads and its integration (29–30 Oct 2026).
 - **A timeline field never takes the place of `t`, `peer` or `event`** (the model's rule; the Rust used to let it).
 - **The vectors are JSON, one vector per line,** keys sorted as Lean writes them, compared as values.
   `sandbox/vectors.sh` writes them; with `--check`, which `up --check` runs, it writes them elsewhere and fails on a
-  difference.
+  difference. It builds and checks the specs outside aven/DB2 too, `aven/runtimes/spec` and `aven/actor/spec`, which
+  `bun run box` mounts at `/aven/<name>/spec` beside aven/DB2 at `/aven/DB2`, so their path to `Aven.Core` resolves;
+  nothing else of the repository enters the box.
 
 **The integration**
 - **The peers keep their record through the store** as configuration: `--store s3` for the Aven Peer, `--store fs`

@@ -1,0 +1,6 @@
+[
+{"expected":{"found":["d:02","d:04","d:07"],"nodes":[["d:01","d:02"],["d:04"],["d:07","d:09"],["d:0a"]]},"input":{"entries":["d:01","d:07","d:04","d:0a","d:02","d:09"],"hi":"d:07","limit":8,"lo":"d:02"},"name":"a directory in four nodes"},
+{"expected":{"found":["d:02","d:04","d:07"],"nodes":[["d:01","d:02"],["d:04"],["d:07","d:09"],["d:0a"]]},"input":{"entries":["d:09","d:02","d:0a","d:04","d:07","d:01"],"hi":"d:07","limit":8,"lo":"d:02"},"name":"the same entries, another order"},
+{"expected":{"found":["d:01","d:05"],"nodes":[["d:01","d:05"]]},"input":{"entries":["d:01","d:01","d:05"],"hi":"d:ff","limit":8,"lo":"d:00"},"name":"a duplicate, folded once"},
+{"expected":{"found":["bbbb","cccc"],"nodes":[["aaaa","bbbb"],["cccc","dddd"]]},"input":{"entries":["aaaa","bbbb","cccc","dddd"],"hi":"c~","limit":9,"lo":"b"},"name":"cut by size"}
+]

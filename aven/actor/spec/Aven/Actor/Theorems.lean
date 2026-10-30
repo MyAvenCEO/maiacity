@@ -15,6 +15,8 @@ One invariant, `Inv`, holds from the empty kernel through every event of every t
 
 namespace Aven.Actor
 
+open Aven.Core (Value TypeId Bytes)
+
 /-- An address no spawn has reached yet. -/
 def Kernel.Fresh (k : Kernel) (a : Addr) : Prop := k.spawned a.id < a.n
 

@@ -15,6 +15,8 @@ proven sound here. From them:
 
 namespace Aven.Actor
 
+open Aven.Core (Value TypeId Bytes)
+
 /-- The phases a machine can reach from its initial phase, by steps its table allows. -/
 inductive Machine.Reachable (mc : Machine) : String → Prop
   | initial : Machine.Reachable mc mc.initial

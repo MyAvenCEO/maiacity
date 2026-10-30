@@ -1,22 +1,15 @@
+import Aven.Core
+
 /-!
 # The things an actor is made of (ARCHITECTURE.md, sections 2, 4 and 6)
 
-Values, addresses, messages, definitions and journal entries. Version 1's numbers are integers. A Value's name (the
-BLAKE3 hash of its canonical bytes) is not modelled here: the kernel never looks inside a name, so its theorems hold
-for any.
+Addresses, messages, definitions and journal entries. Values, their codec, hashes and type ids are `Aven.Core`'s:
+one definition each, everywhere.
 -/
 
 namespace Aven.Actor
 
-/-- A Value: JSON with no surprises (section 2). Version 1's numbers are integers. -/
-inductive Value where
-  | null
-  | bool (b : Bool)
-  | int (i : Int)
-  | str (s : String)
-  | arr (xs : List Value)
-  | obj (kvs : List (String × Value))
-  deriving Repr, Inhabited
+open Aven.Core (Value TypeId Bytes)
 
 /-- An address `<scope>/<id>/<n>` (section 6). `n` is the incarnation: how often `id` had been spawned when this one
 was. The scope is `local` in version 1. -/
@@ -115,8 +108,8 @@ by id, `<type Doc>/<schema hash>`. Names and prose are never matched; types are.
 structure MsgSpec where
   name : String
   description : String
-  type : String
-  reply : Option String
+  type : TypeId
+  reply : Option TypeId
   deriving DecidableEq, Repr, Inhabited
 
 /-- A definition (section 6). The interface's schemas are a check on a message's name and payload; the turn is
@@ -127,7 +120,7 @@ structure Def where
   /-- The interface: the messages it accepts. -/
   interface : List MsgSpec
   /-- The types its turns may send. -/
-  sends : List String
+  sends : List TypeId
   accepts : String → Value → Bool
   machine : Option Machine
   turn : Value → Message → Given → Option Output
@@ -138,7 +131,7 @@ def Def.initialPhase (d : Def) : String := (d.machine.map (·.initial)).getD ""
 def Def.messages (d : Def) : List String := d.interface.map (·.name)
 
 /-- The type of the message `name` in this interface. -/
-def Def.typeOf (d : Def) (name : String) : Option String := (d.interface.find? (·.name == name)).map (·.type)
+def Def.typeOf (d : Def) (name : String) : Option TypeId := (d.interface.find? (·.name == name)).map (·.type)
 
 /-- The built-in ask every actor accepts, answered by the kernel (section 6). -/
 def describeName : String := "describe"
