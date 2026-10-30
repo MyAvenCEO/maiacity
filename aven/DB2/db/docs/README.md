@@ -883,6 +883,10 @@ against the Rust's Loro on random ops, so it can never be simpler than the code.
   (`key_order`); two tuples with one key are one tuple (`key_inj`); a key extends another's, at a field's edge, exactly
   when its tuple extends the other (`key_prefix`), and every extension lies in the prefix's range
   (`extension_in_range`). Vectors `keys.json`.
+- **Limits** (`Aven.DB.Docs.Limits`, rule 24): a capped read of the sealed bytes holds at most the limit plus one
+  chunk and gives only bytes within it (`capped_holds`, `capped_within`); an admitted envelope is within depth,
+  fan-out, Records and ops (`admitted_bounded`); a segment hands Loro at most its envelopes times the Records limit
+  (`segment_records`); a blob stops at its limit whatever it declared (`blob_bounded`).
 - **The directory** (`Aven.DB.Docs.Directory`): every Doc listed now was listed at the last fold or is unfolded; a Doc
   that isn't unfolded has the entries it had then.
 

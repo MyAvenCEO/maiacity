@@ -24,7 +24,7 @@ part requires another sideways: avenID, below docs, never requires docs (the arc
 | 7. No privilege by position | keepers blind; index roots only from writers; no peer the only relay or holder; hosting an explicit read cap | — | — |
 | 8. Cache or checkpoint | snapshots, checkpoints naming their tips and runtime and taken only from writers (A5), runtimes' determinism, index roots | — | — |
 | 9. Sealed beyond the device | keepers blind; plain bytes only to readers, relays see ciphertext | — | — |
-| 10. Every input has a limit | queries, runtimes, index nodes, wire frames | envelopes, blobs, pages, fan-out (docs rule 24); a quota per vault | docs: envelope, blob and page limits; caps: the quota; docs: composing |
+| 10. Every input has a limit | queries, runtimes, index nodes, wire frames; sealed bytes read capped, envelopes admitted within depth, fan-out, Records and ops, segments, blobs (docs rule 24) | a want page's size; a quota per vault | engine: the page; caps: the quota; docs: composing |
 | 11. Every wait ends | a wait names what ends it, by hash; waits never block unrelated work; every round moves, waits naming each key, or raises the stall alarm | — | — |
 | 12. Order causal, time a claim | the past is what is named | caps' time conditions judged by acks (`time_acked`) | caps; docs: composing |
 | 13. Keys in the safe | — | the safe (caps D17) has no model | caps; docs: composing |

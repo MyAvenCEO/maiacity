@@ -265,6 +265,21 @@ theorem rule10_limits {Val : Type} (V : DB.Engine.Vals Val) (src : DocId → Lis
   ⟨DB.Engine.length_le_bound V src n hn q, DB.Engine.work_le_cost V src n hn q, (Runtime.run_ok_fits hr).2.1,
     DB.Docs.Index.chunks_size boundary size limit hx es⟩
 
+/-- An envelope is bounded before Loro sees it: its sealed bytes are read capped, holding at most the limit plus one
+chunk; once decoded it is admitted only within depth, fan-out, Records and ops; a segment within its envelope and byte
+limits hands Loro at most their product of Record changes; a blob stops at its limit whatever size it declared. -/
+theorem rule10_inputs (L : DB.Docs.Limits) {chunks : List Bytes} {b out : Bytes}
+    (hb : b ∈ DB.Docs.held L.sealed [] chunks) (ho : DB.Docs.capped L.sealed [] chunks = some out) {ops : Nat}
+    {e : Envelope} {cs : List DB.Docs.RecordChange} (ha : DB.Docs.admits L ops e cs = true)
+    {es : List (List DB.Docs.RecordChange)} (hn : es.length ≤ L.segmentEnvelopes)
+    (hr : ∀ cs ∈ es, cs.length ≤ L.records) {declared : Nat} {blobChunks : List Bytes} {blob : Bytes}
+    (hbl : DB.Docs.capped (if DB.Docs.fetchBlob L declared then L.blob else 0) [] blobChunks = some blob) :
+    (∃ c ∈ chunks, b.length ≤ L.sealed + c.length) ∧ out.length ≤ L.sealed ∧
+      (DB.Docs.depth e.body ≤ L.depth ∧ e.deps.length ≤ L.fanout ∧ cs.length ≤ L.records ∧ ops ≤ L.ops) ∧
+      (es.map List.length).sum ≤ L.segmentEnvelopes * L.records ∧ blob.length ≤ L.blob :=
+  ⟨DB.Docs.capped_holds (by simp) hb, DB.Docs.capped_within (by simp) ho, DB.Docs.admitted_bounded ha,
+    DB.Docs.segment_records es hn hr, DB.Docs.blob_bounded hbl⟩
+
 /-! ## Rule 11: every wait ends -/
 
 /-- An envelope waits only for what it names by hash and the reader lacks: so each wait names what ends it. -/
