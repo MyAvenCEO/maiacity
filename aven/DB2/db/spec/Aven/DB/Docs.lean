@@ -8,6 +8,7 @@ import Aven.DB.Docs.Limits
 import Aven.DB.Docs.Lens
 import Aven.DB.Docs.Merge
 import Aven.DB.Docs.Index
+import Aven.DB.Docs.Walk
 import Aven.DB.Docs.Key
 import Aven.DB.Docs.Directory
 
@@ -28,6 +29,8 @@ On top of the shared core (`Aven.Core`: Values, the codec, envelopes, logs, spli
 - `Merge`: three-way merges place by place, and backing out a commit;
 - `Index`: directories and indexes as Prolly trees: the same entries make the same nodes, folds in steps equal folds
   at once, and a lookup finds every entry in its range;
+- `Walk`: a lookup walks down from the root through the store, opening only the children whose span meets the range,
+  and finds exactly the fold's entries in the range; a fold is a checkpoint;
 - `Key`: index keys in an order-preserving encoding: comparing keys bytewise is comparing their tuples;
 - `Directory`: every Doc listed now was listed at the last fold or is unfolded, and one that isn't unfolded has the
   entries it had then.

@@ -38,6 +38,9 @@ import Aven.DB.Engine
 - `lenses.json`: writes of a todo's done-ness by v0 and v1 apps; what a v0 reader reads (`Aven.DB.Docs.Lens`).
 - `indexes.json`: invoices' entries (vendor, total, Doc) in any order, a size limit and a vendor; the nodes they make
   and what a lookup of that vendor finds, by total (`Aven.DB.Docs.Index`, `Aven.DB.Docs.Key`).
+- `trees.json`: a fold's entries in hex, a size limit and a range; every level's nodes as their CBOR in hex, leaves
+  first (a leaf an array of entries, an inner node an array of `[first, last, child]`), the root, and what a walk from
+  the root through those nodes finds (`Aven.DB.Docs.Walk`).
 - `keys.json`: tuples and their keys in hex; pairs of tuples and whether the first key sorts before the second
   (`Aven.DB.Docs.Key`).
 
@@ -737,6 +740,52 @@ def indexes : List Json :=
       (Json.mkObj [("nodes", Json.arr (nodes.map fun n => Json.arr (n.map shown).toArray).toArray),
         ("found", Json.arr (found.map shown).toArray)])
 
+/-- Forty invoices, enough for a tree of several levels: vendor `v<i mod 5>`, total `i × 37`, Doc `d:<i>`. -/
+def manyInvoices : List (List Docs.Key.Field × String) :=
+  (List.range 40).map fun i =>
+    ([.text s!"v{i % 5}".toUTF8.toList, .uint (i * 37)], s!"d:{if i < 10 then "0" else ""}{i}")
+
+open Docs.Key in
+def treeCases : List (String × List (List Field × String) × Nat × List Field) := [
+  ("forty invoices, one vendor's", manyInvoices, 4096, [.text "v3".toUTF8.toList]),
+  ("the same, another order", manyInvoices.reverse, 4096, [.text "v3".toUTF8.toList]),
+  ("six invoices, two leaves", invoices, 4096, [.text "Acme".toUTF8.toList])]
+
+/-- The store a reader holds after fetching every node of a fold, by name. -/
+def storeOf (lvls : List (List (List Aven.Core.Value))) (h : Aven.Core.Hash) : Option Aven.Core.Value :=
+  (lvls.flatten.map Aven.Core.Value.array).find? fun v => decide (Aven.Core.nameOf Aven.Core.blake3 v = h)
+
+def hexJson (b : List UInt8) : Json := Json.str (Aven.Core.hex b)
+
+open Docs.Key Docs.Index in
+def trees : List Json :=
+  treeCases.map fun (name, es, limit, pre) =>
+    let bs := es.map fun (fs, d) => invoiceEntry fs d
+    let lo := keyBytes pre
+    let hi := lo ++ [0xFF]
+    let lvls := levels indexBoundary List.length limit Aven.Core.blake3 bs
+    let r := root indexBoundary List.length limit Aven.Core.blake3 bs
+    let top := (lvls.getLast?.bind List.head?).getD []
+    let walked := top.flatMap (walk (storeOf lvls) lo hi (lvls.length - 1))
+    vector name (Json.mkObj [("entries", Json.arr (bs.map hexJson).toArray), ("limit", toJson limit),
+        ("range", Json.arr #[hexJson lo, hexJson hi])])
+      (Json.mkObj [("levels", Json.arr (lvls.map fun lv =>
+          Json.arr (lv.map fun n => hexJson (Aven.Core.encode (.array n))).toArray).toArray),
+        ("root", hexJson r.bytes), ("walked", Json.arr (walked.map hexJson).toArray)])
+
+open Docs.Key Docs.Index in
+/-- A walk from the root through the fetched nodes finds what the flat lookup finds, in every tree vector. -/
+def treesAgree : Bool :=
+  treeCases.all fun (_, es, limit, pre) =>
+    let bs := es.map fun (fs, d) => invoiceEntry fs d
+    let lo := keyBytes pre
+    let lvls := levels indexBoundary List.length limit Aven.Core.blake3 bs
+    let top := (lvls.getLast?.bind List.head?).getD []
+    top.flatMap (walk (storeOf lvls) lo (lo ++ [0xFF]) (lvls.length - 1)) ==
+      lookup indexBoundary List.length limit lo (lo ++ [0xFF]) bs
+
+#guard treesAgree
+
 /-- One vector per line, so a change reads as a diff of lines. -/
 def render (vs : List Json) : String :=
   "[\n" ++ ",\n".intercalate (vs.map Json.compress) ++ "\n]\n"
@@ -748,5 +797,5 @@ def main (args : List String) : IO Unit := do
       ("wire.json", wire), ("store.json", store), ("hashes.json", hashes), ("refs.json", refs),
       ("chat.json", chat), ("files.json", files), ("chats.json", chats), ("queries.json", queries),
       ("wants.json", wants), ("mutations.json", mutations), ("merges.json", merges), ("lenses.json", lenses),
-      ("indexes.json", indexes), ("lookups.json", lookups), ("keys.json", keys)] do
+      ("indexes.json", indexes), ("trees.json", trees), ("lookups.json", lookups), ("keys.json", keys)] do
     IO.FS.writeFile (dir / file) (render vs)
