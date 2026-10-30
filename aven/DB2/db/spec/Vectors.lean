@@ -331,6 +331,9 @@ open Chains in
 def Aven.DB.Chains.Body.json : Body → Json
   | .text t => Json.mkObj [("text", t)]
   | .file f n name type => Json.mkObj [("file", f), ("size", toJson n), ("name", name), ("type", type)]
+  | .retract t d s p time =>
+    Json.mkObj [("retract", t), ("device", d), ("seq", toJson s), ("prev", toJson p), ("at", toJson time)]
+  | .redacted => Json.mkObj [("redacted", true)]
 
 open Chains in
 def Aven.DB.Chains.Line.json (l : Line) : Json :=
@@ -348,6 +351,7 @@ def Aven.DB.Chains.Refusal.name : Refusal → String
   | .badSeq => "badSeq"
   | .badFile => "badFile"
   | .notCanonical => "notCanonical"
+  | .badRetract => "badRetract"
 
 open Chains in
 def Aven.DB.Chains.Answer.json : Answer → Json
@@ -360,17 +364,20 @@ def Aven.DB.Chains.Answer.json : Answer → Json
 open Chains in
 def chainVector (name : String) (steps : List Step) : Json :=
   let input := Json.mkObj [("network", "aven"), ("members", toJson Chains.members),
+    ("vaults", Json.mkObj (Chains.vaults.map fun (d, v) => (d, toJson v))),
     ("steps", Json.arr (steps.map fun
       | .hear p l => Json.mkObj [("peer", p), ("hear", l.json)]
       | .catchUp p src => Json.mkObj [("peer", p), ("catchUp", src)]).toArray)]
-  let expected := (World.run [] steps).map fun (p, as, k) =>
+  let expected := (World.run [] steps).map fun (p, as, dropped, k) =>
     Json.mkObj [("peer", p), ("answers", Json.arr (as.map Answer.json).toArray),
       ("heads", Json.arr (k.heads.map fun (d, i) => toJson [d, i]).toArray),
-      ("loose", toJson (k.loose.map (·.id))), ("forks", toJson k.forks), ("shown", toJson (k.shown.map (·.id)))]
+      ("loose", toJson (k.loose.map (·.id))), ("forks", toJson k.forks), ("shown", toJson (k.shown.map (·.id))),
+      ("deleted", toJson ((k.shown.filter (k.deleted Chains.vaults)).map (·.id))), ("dropped", toJson dropped)]
   vector name input (Json.arr expected.toArray)
 
 open Chains in
-/-- Every device's chain of four lines, a fork at each place, and now and then a line tampered with. -/
+/-- Every device's chain of four lines, a fork at each place, now and then a line tampered with, and retractions of
+lines of any device, by any device, so some count (the same vault) and some don't. -/
 def randomChains (seed : Nat) : List Step := Id.run do
   let devices := ["alice", "bob", "carol", "eve"]
   let main (d : String) (s : Nat) : Line :=
@@ -391,6 +398,11 @@ def randomChains (seed : Nat) : List Step := Id.run do
     let dev := devices[d]!
     if k < 2 then steps := steps.push (.catchUp peer peers[q]!)
     else if k = 2 then steps := steps.push (.hear peer (fork dev (s + 1)))
+    else if k = 9 then
+      let tdev := devices[q]!
+      let t := main tdev (s + 1)
+      steps := steps.push (.hear peer (Line.make' s!"r{i}" dev (s + 1) (if s = 0 then none else some s!"{dev}{s}")
+        (s * 100 + 30) (.retract t.id t.device t.seq t.prev t.time)))
     else if k = 3 then
       steps := steps.push (.hear peer (Line.make s!"t{i}" dev (s + 1) (if s = 0 then none else some s!"{dev}{s}")
         (s * 100) "tampered" (if q % 2 = 0 then .signer "eve" else .text "changed")))
@@ -404,7 +416,8 @@ def bodies : List Json :=
   [Line.make "first" "alice" 1 none 1730000000000 "hi", Line.make "second" "alice" 2 (some prev) 1730000000001 "two\nlines",
    Line.make "unicode" "bob" 7 (some prev) 5 "grüß dich 👋",
    Line.make' "a file" "alice" 3 (some prev) 9 (.file prev 200000000 "the dome\nat night.mp4" "video/mp4"),
-   Line.make "a text that reads like a file" "alice" 4 (some prev) 10 s!"file {prev}\nsize 1\ntype x\nname"].map fun l =>
+   Line.make "a text that reads like a file" "alice" 4 (some prev) 10 s!"file {prev}\nsize 1\ntype x\nname",
+   Line.make' "a retraction" "alice" 5 (some prev) 11 (.retract prev "alice" 4 (some prev) 10)].map fun l =>
     vector s!"what {l.id} signs" (Json.mkObj [("line", l.json)]) (Json.mkObj [("signs", l.signs)])
 
 open Chains in
@@ -420,10 +433,12 @@ def reads : List Json :=
     vector s!"read: {name}" (Json.mkObj [("read", blob)]) (match read blob with
       | .ok f => Json.mkObj [("line", f.json)]
       | .error why => Json.mkObj [("refused", why.name)])
-  [one "a text line" sample.blob, one "a first line, a file" sampleFile.blob] ++ variants.map fun (n, b) => one n b
+  [one "a text line" sample.blob, one "a first line, a file" sampleFile.blob, one "a retraction" sampleRetract.blob] ++
+    variants.map fun (n, b) => one n b
 
 def chats : List Json :=
   bodies ++ reads ++ Chains.chainExamples.map (fun (name, steps, _) => chainVector name steps) ++
+  Chains.retractExamples.map (fun (name, steps, _) => chainVector name steps) ++
   (List.range generated).map fun i => chainVector s!"seed {i + 1}" (randomChains (i + 1))
 
 /-! ## Docs: merges and lenses (`Aven.DB.Docs`) -/
