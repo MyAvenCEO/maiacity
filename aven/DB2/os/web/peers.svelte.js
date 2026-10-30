@@ -43,15 +43,18 @@ async function configure(cast, me) {
 // Runs this origin's Peer-Light: one shared worker per origin, whatever the tabs and frames.
 export async function runLight(cast, me) {
 	const { port } = openWorker(me);
+	let start;
 	port.onmessage = ({ data }) => {
 		const line = JSON.parse(data);
+		if (line.event === 'start?' && start) port.postMessage({ start });
 		if (line.event === 'status' || line.event === 'failed') live.own = line.event === 'failed' ? { ...line, phase: 'offline', peers: 0 } : line;
 		if (line.event === 'stored') live.ownStored = line;
 		hear(line);
 	};
-	speakThrough(port);
+	start = await configure(cast, me);
+	speakThrough(port, start);
 	port.start?.();
-	port.postMessage({ start: await configure(cast, me) });
+	port.postMessage({ start });
 }
 
 // "first started 20:14:03 · kept": a record's line, as a person reads it

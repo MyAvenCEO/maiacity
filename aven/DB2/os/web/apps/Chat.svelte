@@ -63,6 +63,7 @@
 			<input bind:value={text} placeholder="Write to everyone here" aria-label="Line" data-testid="line" />
 			<button disabled={!text.trim()} data-testid="say">Send</button>
 		</form>
+		{#if room.refused}<p class="refused" data-testid="refused">{room.refused}</p>{/if}
 	</section>
 </div>
 
@@ -178,5 +179,9 @@
 	button:disabled {
 		opacity: 0.5;
 		cursor: default;
+	}
+	.refused {
+		margin: 0;
+		color: var(--pending);
 	}
 </style>
