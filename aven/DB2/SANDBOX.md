@@ -534,6 +534,7 @@ what a live box shows (its status lines and paths).
 aven/DB2/
   README.md        the rules
   SANDBOX.md       this plan
+  PRODUCTION.md    the plan for production: the first admin, then aven.maia.city
   CLAUDE.md        the rules agents load here
   package.json     @aven/os, its own JS, with bun.lock
   Cargo.toml       its own Cargo workspace, with Cargo.lock and target/ (with the first crate)
