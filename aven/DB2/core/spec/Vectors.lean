@@ -94,7 +94,10 @@ def Rng.value : Nat → Rng → Value × Rng
     match k with
     | 0 => let (n, r) := r.number; (.uint n, r)
     | 1 => let (n, r) := r.number; (.nint n, r)
-    | 2 => let (n, r) := r.below 40; let (bs, r) := r.many n (fun r => let (b, r) := r.below 256; (b.toUInt8, r)); (.bytes bs, r)
+    | 2 =>
+      let (n, r) := r.below 40
+      let (bs, r) := r.many n fun r => let (b, r) := r.below 256; (b.toUInt8, r)
+      (.bytes bs, r)
     | 3 => let (t, r) := r.text; (.text t, r)
     | 4 => let (n, r) := r.below 4; let (xs, r) := r.many n (Rng.value d); (.array xs, r)
     | 5 =>
@@ -147,7 +150,8 @@ def widen (bs : Bytes) : Option Bytes :=
   | b :: _ =>
     let major := b.toNat / 32
     match readHead bs with
-    | some (m, n, rest) => if n < 4294967296 ∧ m ≠ 7 then some (UInt8.ofNat (major * 32 + 27) :: be 8 n ++ rest) else none
+    | some (m, n, rest) =>
+      if n < 4294967296 ∧ m ≠ 7 then some (UInt8.ofNat (major * 32 + 27) :: be 8 n ++ rest) else none
     | none => none
   | [] => none
 
@@ -202,7 +206,8 @@ def Aven.Core.Envelope.json (e : Envelope) : Json :=
 
 def envelopes : List Json :=
   [("the first", e1), ("the second", e2)].map fun (name, e) =>
-    vector name e.json (Json.mkObj [("signs", hex e.signing), ("cbor", encodes e.value), ("name", (e.name blake3).text)])
+    vector name e.json
+      (Json.mkObj [("signs", hex e.signing), ("cbor", encodes e.value), ("name", (e.name blake3).text)])
 
 def splitB (a b : Envelope) : Bool :=
   a.doc == b.doc && a.branch == b.branch && a.writer == b.writer && a.seq == b.seq && a.name blake3 != b.name blake3
@@ -256,7 +261,8 @@ def footprintCases : List (String × List Grant × List Step) := [
 
 def footprints : List Json :=
   footprintCases.map fun (name, g, fp) =>
-    vector name (Json.mkObj [("grants", Json.arr (g.map Grant.json).toArray), ("footprint", Json.arr (fp.map Step.json).toArray)])
+    vector name (Json.mkObj [("grants", Json.arr (g.map Grant.json).toArray),
+        ("footprint", Json.arr (fp.map Step.json).toArray)])
       (toJson (covers g fp))
 
 /-! ## Checks before writing -/
