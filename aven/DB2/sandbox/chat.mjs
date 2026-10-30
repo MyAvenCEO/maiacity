@@ -182,7 +182,8 @@ await follower.evaluate(() => (location.hash = '#/alice/chat'));
 await seen(follower.locator('[data-view="chat"]'));
 // the new Peer-Light joins the room again before a line reaches anyone: the old one's connection, under the same key,
 // lingers at the Aven Peer for about 2 s (measured 2.2 to 2.3 s, 30 Oct 2026), and gossip keeps nothing for a peer not
-// in it yet (the chains' catch-up will). So Alice says a line each second until Bob hears one, within 10 s
+// in it yet. So Alice says a line each second until Bob hears one, within 10 s. A line said in that gap is lost until
+// the city-dome's chains land: they upload a device's own lines the Aven Peer lacks, which covers it
 let through = false;
 for (let i = 0; i < 10 && !through; i++) {
 	const text = `alice after the takeover ${i}, ${started}`;
