@@ -35,8 +35,8 @@
 		<h2>You're invited</h2>
 		<p class="muted">Join the network with your name and a passkey on this device. The invite works once.</p>
 		<label>
-			<span>Your name</span>
-			<input bind:value={name} required maxlength="64" autocomplete="name" data-testid="join-name" />
+			Your name
+			<input data-testid="name" bind:value={name} required maxlength="48" autocomplete="name" placeholder="Ada" />
 		</label>
 		<button data-testid="join" disabled={busy || !net.key || !name.trim()}>Join with a passkey</button>
 	</form>
@@ -74,12 +74,12 @@
 
 	label {
 		display: grid;
-		gap: 4px;
-		font-size: 14px;
+		gap: 6px;
+		color: var(--muted);
 	}
 
 	input {
-		padding: 8px 12px;
+		padding: 8px 10px;
 		color: var(--text);
 		font: inherit;
 		background: var(--bg);

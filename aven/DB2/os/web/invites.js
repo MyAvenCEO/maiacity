@@ -6,7 +6,7 @@
 // Aven Peer decides what it takes, and tells the invites back to the admin's owners' devices (room.svelte.js). The
 // one-time key is made here with WebCrypto and its secret lives only in the link.
 import * as aven from 'aven-id';
-import { deviceId, owners, passkeyId, personId } from './id.js';
+import { deviceId, owners, passkeyId, personId, validPersonName } from './id.js';
 import { assertion, net, send } from './network.svelte.js';
 
 // STAND-IN until aven-id's wasm has them (thread A): the texts as #1431 states them
@@ -73,6 +73,7 @@ export async function withdraw(config, account, key) {
 // Joins with an invite's link: a name, a new passkey (ES256, attestation none, as the claim's), and the statement
 // that founds the person's vault with this browser as its device, signed by that passkey and by the one-time key.
 export async function join(config, { secret }, name) {
+	if (!validPersonName(name)) throw new Error('a name is 1 to 48 characters, without control characters');
 	const key = await publicOf(secret);
 	const created = await navigator.credentials.create({
 		publicKey: {

@@ -44,8 +44,7 @@ const lines = (page) => page.getByTestId('lines').locator('li[data-from]');
 // 1. the admin signs up, so claims the network, and makes an invite
 const admin = await open('admin');
 if (!(await seen(admin.page.locator('[data-view="claim"]')))) problems.push('an empty store shows the admin no signup');
-const name = admin.page.getByTestId('signup-name');
-if (await name.count()) await name.fill('Alice');
+await admin.page.getByTestId('name').fill('Alice');
 await admin.page.getByTestId('claim').click();
 if (!(await seen(admin.page.locator('[data-view="dashboard"]')))) problems.push('the claim did not open the dashboard');
 report.admin = await admin.page.locator('[data-view="dashboard"]').getAttribute('data-account').catch(() => null);
@@ -68,7 +67,7 @@ await shot(admin.page, 'invite-made');
 const member = await open('member', link.slice(link.indexOf('#')));
 if (!(await seen(member.page.locator('[data-view="join"]')))) problems.push("the invite's link shows no join screen");
 await shot(member.page, 'join');
-await member.page.getByTestId('join-name').fill('Bob');
+await member.page.getByTestId('name').fill('Bob');
 const joinedAt = Date.now();
 await member.page.getByTestId('join').click();
 if (!(await seen(member.page.locator('[data-view="dashboard"]')))) problems.push('the join did not open the dashboard');
@@ -83,7 +82,7 @@ if (!(await seen(admin.page.locator('[data-testid="open-count"]', { hasText: /^0
 const stranger = await open('stranger', link.slice(link.indexOf('#')));
 const refusedJoin = async (what) => {
 	await seen(stranger.page.locator('[data-view="join"]'));
-	await stranger.page.getByTestId('join-name').fill('Mallory');
+	await stranger.page.getByTestId('name').fill('Mallory');
 	await stranger.page.getByTestId('join').click();
 	if (!(await seen(stranger.page.getByTestId('refused')))) problems.push(`${what}: no refusal shown`);
 	if (await stranger.page.locator('[data-view="dashboard"]').count()) problems.push(`${what} let a stranger in`);

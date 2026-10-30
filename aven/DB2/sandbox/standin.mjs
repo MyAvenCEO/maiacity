@@ -22,7 +22,7 @@ export function standin() {
 			t.keys[m.passkey.id] = `es256:${m.passkey.spki}`;
 			t.keys[m.device.id] = m.device.key;
 			const guardian = Object.values(t.vaults).find((v) => v.kind === 'person')?.owners.filter((o) => !o.startsWith('key:passkey-')) ?? [];
-			t.vaults[m.person] = { name: m.name, kind: 'person', owners: [`key:${m.passkey.id}`, ...guardian] };
+			t.vaults[m.person] = { name: `${m.name}'s vault`, kind: 'person', owners: [`key:${m.passkey.id}`, ...guardian] };
 			t.vaults[m.device.id] = { name: `${m.name}'s browser`, kind: 'device', owners: [`vault:${m.person}`] };
 		}
 		return t;
