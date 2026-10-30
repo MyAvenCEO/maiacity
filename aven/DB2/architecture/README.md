@@ -22,7 +22,7 @@ part requires another sideways: avenID, below docs, never requires docs (the arc
 | 5. Reading is the key | on caps' model | a link from Core's envelopes and docs' segments to their sealing |
 | 6. Demand never grants | yes: served = wants ∩ read grants; keepers serve on fetch proofs | — |
 | 7. No privilege by position | keepers blind; index roots only from writers | hosting caps (A16); no peer the only source (PEERS) |
-| 8. Cache or checkpoint | snapshots, checkpoints, runtimes' determinism, index roots | a checkpoint naming its version's tips and its runtime |
+| 8. Cache or checkpoint | snapshots, checkpoints naming their tips and runtime, runtimes' determinism, index roots | who may sign a checkpoint a reader takes (docs open question 6) |
 | 9. Sealed beyond the device | keepers blind | a model of what leaves a device (PEERS) |
 | 10. Every input has a limit | queries, runtimes, index nodes, wire frames | envelopes, blobs, pages, fan-out (docs rule 24); a quota per vault |
 | 11. Every wait ends | a wait names what ends it, by hash | the stall alarm; waits never blocking unrelated work |

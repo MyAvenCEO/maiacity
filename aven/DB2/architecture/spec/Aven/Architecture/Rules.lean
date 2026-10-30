@@ -154,11 +154,14 @@ theorem rule7_granted {w : ID.World} {keeper : String} (nothing : ∀ s ∈ w.se
 of what it covers. A runtime's output, which derives the rest, doesn't depend on the device that ran it. -/
 theorem rule8_cache_or_checkpoint {St : Type} (L : DB.Docs.Loro St) (covered after : List Envelope)
     {enc : St → Value} {H : Bytes → Hash} (hH : Injective H) (hc : ∀ s, Canon (enc s) = true)
-    (he : ∀ a b, enc a = enc b → a = b) {cp : DB.Docs.Checkpoint} {s : St} (hs : nameOf H (enc s) = cp.state)
-    (hck : cp.check L enc H = true) (d d' : Runtime.Device) (r : Runtime.Runtime) (l : Runtime.Limits) (p i : Value) :
+    (he : ∀ a b, enc a = enc b → a = b) {runtime : Hash} {cp : DB.Docs.Checkpoint} {s : St}
+    (hs : nameOf H (enc s) = cp.state) (hck : cp.check L enc H runtime = true) (d d' : Runtime.Device)
+    (r : Runtime.Runtime) (l : Runtime.Limits) (p i : Value) :
     after.foldl L.apply (L.replay covered) = L.replay (covered ++ after) ∧ s = L.replay cp.covers ∧
+      cp.runtime = runtime ∧ (∀ t ∈ cp.version, ∃ e ∈ cp.covers, e.name H = t) ∧
       Runtime.runOn d r l p i = Runtime.runOn d' r l p i :=
-  ⟨L.snapshot_load covered after, DB.Docs.checked_is_replay hH hc he hs hck, Runtime.deterministic d d' r l p i⟩
+  ⟨L.snapshot_load covered after, DB.Docs.checked_is_replay hH hc he hs hck, (DB.Docs.checked_names hck).1,
+    (DB.Docs.checked_names hck).2, Runtime.deterministic d d' r l p i⟩
 
 /-- A sealed index's root is a checkpoint any reader holding its entries can rebuild and compare. -/
 theorem rule8_index_root (boundary : Bytes → Bool) (size : Bytes → Nat) (limit : Nat) (H : Bytes → Hash)
