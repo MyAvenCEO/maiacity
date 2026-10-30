@@ -5,7 +5,7 @@
 //! answers for a tree the model's theorems hold for.
 //!
 //! In production the tree is data (PRODUCTION.md, Parts A and C): a [`Network`] is claimed once by a passkey's signed
-//! [`Claim`], which founds the claimant's vault and the admin coop that owns the network, and grows by [`SignIn`]s,
+//! [`Claim`], which founds the claimant's vault and the admin coop that owns Aven, the agent, and grows by [`SignIn`]s,
 //! each a WebAuthn [`Assertion`] checked as `Aven.ID.Passkey` says. From milestone 2 its [`Members`] join by the
 //! admin's [`Invite`]s (`Aven.ID.Invite`), and the door admits only them.
 

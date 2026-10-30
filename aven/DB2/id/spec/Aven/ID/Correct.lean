@@ -3,7 +3,7 @@ import Aven.ID.Query
 /-! # The queries are right
 
 Each query against the relations of `Governs`, for well-formed trees: `governs` lists exactly what a vault governs and
-`chain` exactly what governs it; no network or device vault is ever an account; whatever a vault sees, it governs; and
+`chain` exactly what governs it; no agent, coop or device vault is ever an account; whatever a vault sees, it governs; and
 a device acts on what its vault governs and never on a vault above or beside it. -/
 
 namespace Aven.ID
@@ -154,9 +154,9 @@ theorem mem_accounts {d : Option String} {x : String} (h : x ∈ t.accounts d) :
       · simp at h
     · simp at h
 
-/-- No network, coop or device vault is ever an account. -/
+/-- No agent, coop or device vault is ever an account. -/
 theorem not_account {d : Option String} {x : String}
-    (h : t.kind? x = some .network ∨ t.kind? x = some .coop ∨ t.kind? x = some .device) : x ∉ t.accounts d := by
+    (h : t.kind? x = some .agent ∨ t.kind? x = some .coop ∨ t.kind? x = some .device) : x ∉ t.accounts d := by
   intro m
   have := mem_accounts m
   rcases h with h | h | h <;> simp_all

@@ -6,9 +6,12 @@ its people act for it through their own (PRODUCTION.md, Part C). Every lookup is
 
 namespace Aven.ID
 
+/-- The kinds of vault. An **agent's** vault (Aven) is usually an LLM agent's: owned by the vault that runs it, it acts
+through its own devices within the rights its owner gives it, and no person ever switches into it. It was called a
+network's vault until 30 Oct 2026 (Samuel), with the same rules. -/
 inductive Kind where
   | person
-  | network
+  | agent
   | coop
   | device
   deriving DecidableEq, Repr

@@ -1,5 +1,5 @@
 <script>
-	// A vault's mark: its initial on a colour of its own. A network's is square, a coop's a hexagon, a device's outlined.
+	// A vault's mark: its initial on a colour of its own. An agent's is square, a coop's a hexagon, a device's outlined.
 	import { tree, vaultName } from './id.svelte.js';
 	let { id, size = 24 } = $props();
 
@@ -29,7 +29,7 @@
 		line-height: 1;
 	}
 
-	.network {
+	.agent {
 		border-radius: 28%;
 	}
 
