@@ -49,26 +49,84 @@
 		picker.value = '';
 	}
 
-	// how a file shows: only through <img>, <video> or a PDF's frame, and only for the passive types the Service Worker
-	// serves inline (public/files-sw.js keeps the same list). Anything else, SVG and HTML included, is a download link
+	// how a file shows, inline in its bubble (Samuel, 30 Oct 2026: every kind shows and plays in the chat): only through
+	// <img>, <audio>, <video> or a PDF's frame, and only for the passive types the Service Worker serves inline
+	// (public/files-sw.js keeps the same list). Anything else, SVG and HTML included, is a download link
 	const kind = (type) => {
 		const t = String(type ?? '').split(';')[0].trim().toLowerCase();
 		if (/^image\/(png|jpeg|gif|webp|avif|bmp)$/.test(t)) return 'image';
+		if (/^audio\/[a-z0-9.+-]+$/.test(t)) return 'audio';
 		if (/^video\/[a-z0-9.+-]+$/.test(t)) return 'video';
 		return t === 'application/pdf' ? 'pdf' : 'file';
 	};
-	// a file still on its way (the Aven Peer not yet keeping it, its sender's peer not reachable): asked for again, a
-	// little later each time, until it comes
-	function retrying(node) {
+	// What became of a file that didn't load, by its name: `waiting` while it is still on its way, with why; `failed`
+	// once it stopped asking; `unplayable` when its bytes are here and this browser can't show or play them (an
+	// iPhone's HEVC movie in a browser without the codec). A card never shows a dead player (Samuel, 30 Oct 2026)
+	let cards = $state({});
+	// how many times a person asked for a file again, by its name: its player is made anew each time
+	let asked = $state({});
+	const whyNot = (status, text) =>
+		!navigator.onLine
+			? "You're offline: it loads when you're back."
+			: status === 404
+				? "Its sender isn't reachable, and the network doesn't have it yet."
+				: `It couldn't be fetched: ${text || `answer ${status}`}.`;
+	// a file still on its way (the Aven Peer not yet keeping it, its sender's peer not reachable): a placeholder of its
+	// kind until it has loaded (`data-ready`), asked for again, a little later each time, until it comes
+	function retrying(node, file) {
 		const base = node.getAttribute('src');
 		let tries = 0;
-		const again = () => {
-			if (++tries > 8) return;
-			setTimeout(() => node.setAttribute('src', `${base}?try=${tries}`), 500 * 2 ** Math.min(tries, 4));
+		// one try waits at a time, and none once the file has loaded: a late one would load a playing movie again from
+		// its start (WebKit, 30 Oct 2026). A player asked again goes on from where it was
+		let at = 0;
+		let waiting = null;
+		let gone = false;
+		let refused = 0;
+		const again = async () => {
+			if (waiting || gone) return;
+			at = node.currentTime || at;
+			// why: its first byte answered means the bytes are here and this browser can't decode them
+			const probe = await fetch(base, { headers: { range: 'bytes=0-0' } }).then(
+				async (r) => ({ status: r.status, text: (await r.text()).slice(0, 120) }),
+				(e) => ({ status: 0, text: String(e?.message ?? e) }),
+			);
+			if (gone) return;
+			// the bytes are here: once may be a hiccup (a stream cut off), so it loads once more; twice, this browser can't
+			const here = probe.status === 206 || probe.status === 200;
+			if (here && refused++) return void (cards[file] = { state: 'unplayable' });
+			if (here) tries = 0;
+			if (!here && ++tries > 8) return void (cards[file] = { state: 'failed', why: whyNot(probe.status, probe.text) });
+			if (!here) cards[file] = { state: 'waiting', why: whyNot(probe.status, probe.text) };
+			waiting = setTimeout(() => {
+				waiting = null;
+				node.setAttribute('src', `${base}?try=${tries}`);
+			}, 500 * 2 ** Math.min(tries, 4));
 		};
+		const ready = () => {
+			clearTimeout(waiting);
+			waiting = null;
+			node.setAttribute('data-ready', '');
+			delete cards[file];
+			if (at && node.currentTime < at) node.currentTime = at;
+		};
+		const loaded = node.tagName === 'IMG' ? 'load' : 'loadedmetadata';
 		node.addEventListener('error', again);
-		return { destroy: () => node.removeEventListener('error', again) };
+		node.addEventListener(loaded, ready);
+		if (node.complete && node.naturalWidth) ready();
+		return {
+			destroy: () => {
+				gone = true;
+				clearTimeout(waiting);
+				node.removeEventListener('error', again);
+				node.removeEventListener(loaded, ready);
+			},
+		};
 	}
+	function retry(file) {
+		delete cards[file];
+		asked[file] = (asked[file] ?? 0) + 1;
+	}
+	const percent = (part, whole) => `${Math.floor((100 * part) / Math.max(1, whole))}%`;
 	// deleting: the line asked about, and the dialog that asks
 	let asking = $state(null);
 	let confirming = $state();
@@ -124,7 +182,9 @@
 		ondrop={drop}
 	>
 		<ol bind:this={list} data-testid="lines">
-			{#each room.lines as line, i (i)}
+			<!-- keyed by the line, never by its place: a line caught up later lands before others, and a place's bubble
+			     would take another file's player, which loads again from nothing (30 Oct 2026) -->
+			{#each room.lines as line (line.id ?? line)}
 				{@const vault = vaultOf(line)}
 				{@const said = known(vault) && tree.kind(vault) === 'agent'}
 				{@const mine = line.from === device || (vault !== null && vault === account)}
@@ -138,21 +198,64 @@
 					{:else if line.file}
 						{@const f = line.file}
 						<strong>{who(vault ?? line.from)}</strong>
-						<figure class="file card" data-testid="file" data-file={f.file} data-kind={kind(f.type)}>
-							{#if kind(f.type) === 'image'}
-								<img src="/files/{f.file}" alt={f.name} use:retrying />
+						{@const card = cards[f.file]}
+						{@const going = room.files[f.file]}
+						<figure class="file card" data-testid="file" data-file={f.file} data-kind={kind(f.type)} data-state={card?.state ?? 'ok'}>
+							{#key asked[f.file]}
+							{#if card?.state === 'unplayable'}
+								<p class="note" data-testid="unplayable">
+									This browser can't {kind(f.type) === 'image' ? 'show this image' : `play this ${kind(f.type)}`}. Download it to
+									open it on this device.
+								</p>
+							{:else if card?.state === 'failed'}
+								<p class="note" data-testid="file-failed">{card.why}</p>
+							{:else if kind(f.type) === 'image'}
+
+								<!-- opened large in a tab of its own on a tap -->
+								<a class="media" href="/files/{f.file}" target="_blank" rel="noopener" aria-label="Open {f.name}"
+									><img src="/files/{f.file}" alt={f.name} use:retrying={f.file} /></a
+								>
+							{:else if kind(f.type) === 'audio'}
+								<audio src="/files/{f.file}" controls preload="metadata" use:retrying={f.file}></audio>
 							{:else if kind(f.type) === 'video'}
+								<!-- playsinline: iOS plays it in the bubble, not full-screen; it seeks by ranges (files-sw.js answers 206) -->
 								<!-- svelte-ignore a11y_media_has_caption -->
-								<video src="/files/{f.file}" controls preload="metadata" use:retrying></video>
+								<video src="/files/{f.file}" controls playsinline preload="metadata" use:retrying={f.file}></video>
 							{:else if kind(f.type) === 'pdf'}
+								<!-- previewed where the browser shows a PDF in a sandboxed frame; the link opens it in any case -->
 								<iframe src="/files/{f.file}" title={f.name}></iframe>
 							{/if}
+							{/key}
+							{#if card?.state === 'waiting'}<p class="note" data-testid="file-waiting">{card.why}</p>{/if}
+							{#if card?.state === 'failed' || card?.state === 'waiting'}<button type="button" class="quiet retry" onclick={() => retry(f.file)} data-testid="retry"
+									>Try again</button
+								>{/if}
+							<!-- how far it is on its way: from this device to the network, or from the network here -->
+							{#if going?.size && going.sent < going.size}
+								<p class="going" data-testid="file-sending">
+									Sending to the network, {percent(going.sent, going.size)}<span class="bar"
+										><span style:width={percent(going.sent, going.size)}></span></span
+									>
+								</p>
+							{:else if going?.size}
+								<p class="going" data-testid="file-sent">Sent to the network</p>
+							{:else if going?.len && going.held < going.len}
+								<p class="going" data-testid="file-fetching">
+									Fetching {size(going.held)} of {size(going.len)}<span class="bar"
+										><span style:width={percent(going.held, going.len)}></span></span
+									>
+								</p>
+							{/if}
 							<figcaption>
+
 								<svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"
 									><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></svg
 								>
 								<a href="/files/{f.file}" download={f.name}>{f.name}</a>
 								<small>{size(f.size)}</small>
+								{#if kind(f.type) === 'pdf'}<a class="open" href="/files/{f.file}" target="_blank" rel="noopener" data-testid="open"
+										>Open</a
+									>{/if}
 							</figcaption>
 						</figure>
 					{:else}
@@ -176,7 +279,7 @@
 				<li class="mine" data-testid="sharing">
 					<span class="text">{s.name}</span>
 					<span class="bar"><span style:width="{(100 * s.done) / Math.max(1, s.size)}%"></span></span>
-					<time>into the store, {size(s.done)} of {size(s.size)}</time>
+					<time data-testid="file-adding">Adding to this device, {percent(s.done, s.size)}</time>
 				</li>
 			{/each}
 		</ol>
@@ -442,6 +545,25 @@
 		border-radius: var(--radius-inner);
 	}
 
+	figure.file .media {
+		display: block;
+		min-width: 0;
+	}
+
+	figure.file audio {
+		display: block;
+		width: 300px;
+		max-width: 100%;
+	}
+
+	/* a file still arriving: a quiet box of its kind's shape, then the image or the player */
+	figure.file img:not([data-ready]),
+	figure.file video:not([data-ready]) {
+		width: 240px;
+		aspect-ratio: 16 / 9;
+		background: var(--sage);
+	}
+
 	figure.file iframe {
 		width: min(420px, 100%);
 		height: 320px;
@@ -458,8 +580,15 @@
 	}
 
 	figcaption svg,
-	figcaption small {
+	figcaption small,
+	figcaption .open {
 		flex: none;
+	}
+
+	figcaption .open {
+		margin-left: auto;
+		color: inherit;
+		font-weight: 600;
 	}
 
 	figcaption a {
@@ -483,6 +612,34 @@
 	li .bar {
 		width: min(220px, 100%);
 	}
+
+	/* a file's state and how far it is on its way: a line of text over a slim bar */
+	figure.file .note,
+	figure.file .going {
+		display: grid;
+		gap: 4px;
+		margin: 0;
+		padding: 0 4px;
+		font-size: 13px;
+		overflow-wrap: anywhere;
+	}
+
+	figure.file .going {
+		color: var(--muted);
+		font-size: 12px;
+	}
+
+	figure.file .going .bar {
+		width: 100%;
+		height: 4px;
+	}
+
+	figure.file .retry {
+		justify-self: start;
+		min-height: 44px;
+		padding: 8px 14px;
+	}
+
 
 	/* a deleted line: a quiet note in its place, its bubble without colour */
 	ol li.deleted,

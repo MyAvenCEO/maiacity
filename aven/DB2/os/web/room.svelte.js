@@ -8,7 +8,9 @@
 // `refused`: why the Peer-Light refused the last line written here; `sharing`: files on their way into the store
 import { putChunk, shareFile } from './id.svelte.js';
 
-export const room = $state({ lines: [], present: [], invites: null, refused: null, sent: {}, sharing: [] });
+// `files`: per file, how far it is on its way: `sent` of `size` bytes gone out from this device (its sender's), `held` of
+// `len` here (a viewer's)
+export const room = $state({ lines: [], present: [], invites: null, refused: null, sent: {}, sharing: [], files: {} });
 
 const chunk = 1 << 20;
 const before = (a, b) => a.at - b.at || (a.key < b.key ? -1 : a.key > b.key ? 1 : a.seq - b.seq);
@@ -38,6 +40,8 @@ export function hear(line) {
 		room.lines.splice(at, 0, said);
 	}
 	if (line.event === 'sent') for (const id of line.ids ?? []) room.sent[id] = true;
+	if (line.event === 'sending') room.files[line.file] = { ...room.files[line.file], sent: line.sent, size: line.size };
+	if (line.event === 'held') room.files[line.file] = { ...room.files[line.file], held: line.held, len: line.len };
 	if (line.event === 'room') room.present = line.present;
 	if (line.event === 'network' && 'invites' in line) room.invites = line.invites ?? null;
 	if (line.event === 'refused') room.refused = line.why;
