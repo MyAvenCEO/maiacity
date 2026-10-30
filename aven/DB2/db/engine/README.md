@@ -595,9 +595,14 @@ an index reads needs a mark.
 - **An `edit` names its type,** or its footprint isn't known before it runs.
 - **The diff check counts only fields whose value differs** from before the commit, so a field that changes and
   changes back within one commit needs no grant.
-- **Index ranges are numeric.** The docs layer's tree orders entries by their encoding, which sorts unsigned integers
-  numerically but text by length first; a shape's range field is a number, and text goes in its equality fields. Still to come: live deltas equal a fresh run; sync; the ontology's lowering; kinds; constraints
-on field values in footprints, which stay caps' own.
+- **Index keys need an order-preserving encoding.** Canonical CBOR sorts unsigned integers numerically but text by
+  length first and negative integers after positives. Decided (the architect, 30 Oct 2026): index entries use an
+  order-preserving key encoding in the style of FoundationDB's tuple layer (integers by sign and magnitude, text as NFC
+  UTF-8 by code point, bytes alike, the Doc id last), whose bytewise order is the fields' order (`key_order`, the docs
+  layer's). Shapes keep text ranges and orders; the engine's value order is the keys' order.
+
+Still to come: index entries in the docs layer's key encoding, once it lands; live deltas equal a fresh run; sync; the
+ontology's lowering; kinds; constraints on field values in footprints, which stay caps' own.
 
 ## Open questions
 
