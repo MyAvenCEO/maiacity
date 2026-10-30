@@ -702,8 +702,18 @@ A type with millions of Records is millions of Docs, of which a device wants a h
 
 **One structure for both.** A **directory** lists a vault's Docs of one root type by Doc id; an **index** lists the
 same Docs by a query's fields. Both are a **Prolly tree**: a search tree whose nodes are sealed Values named by hash.
-- **Entries:** each a CBOR array, the key first: `[field values…, Doc id]` for an index, `[Doc id]` for a directory.
-  Entries sort bytewise by their encodings, so they sort by key, and every entry is distinct.
+- **Entries:** each a **key**, `(field values…, Doc id)` for an index and `(Doc id)` for a directory, in an
+  order-preserving encoding, not CBOR (the architect and the engine, 30 Oct 2026; FoundationDB's tuple layer as the
+  pattern). Canonical CBOR sorts text by length first and negative integers after positive ones; a key's bytes sort
+  exactly as its tuple does. Each field is a tag, then:
+  - an unsigned integer: its 8 bytes, big-endian (tag `15`);
+  - a negative integer `-1 - n`: the 8 bytes of `2⁶⁴ - 1 - n` (tag `13`), so negatives sort first;
+  - text: its UTF-8, normalised to NFC, with each `00` written `00 FF` and a `00` to end it (tag `02`);
+  - bytes, the Doc id among them: the same escaping (tag `01`).
+
+  Text compares by code point, UTF-8's byte order; collation by locale comes later through a pinned sort-key runtime.
+  A key is never named or signed, only sorted, and sits in a node as a CBOR byte string, so rule 1 holds. A range is
+  two keys; a prefix `p` is the range from `p` to `p FF`, since no field starts with `FF`. Every entry is distinct.
 - **Nodes:** a leaf is a CBOR array of entries; an inner node is an array of `[first entry, last entry, child]` per
   child. A node ends after an entry whose BLAKE3's low 6 bits are zero (about 64 entries a node) or before an entry
   that would take it past 64 KiB, the size limit (architecture, rule 10). The same rule cuts every level.
@@ -857,6 +867,8 @@ against the Rust's Loro on random ops, so it can never be simpler than the code.
   its nodes hold exactly those entries, each node within the size limit, and depend only on the set; folding in steps,
   removals included, gives what folding at once gives; a lookup finds every entry in its range, and only those.
   Vectors `indexes.json`.
+- **Keys** (`Aven.DB.Docs.Key`): comparing two keys bytewise is comparing their tuples, field by field, a prefix first
+  (`key_order`); two tuples with one key are one tuple (`key_inj`). Vectors `keys.json`.
 - **The directory** (`Aven.DB.Docs.Directory`): every Doc listed now was listed at the last fold or is unfolded; a Doc
   that isn't unfolded has the entries it had then.
 
