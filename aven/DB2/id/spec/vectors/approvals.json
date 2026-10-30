@@ -1,0 +1,8 @@
+[
+{"expected":{"approved":true},"input":{"digest":"d","sigs":[{"digest":"d","key":"alice-owner"}],"threshold":1,"tree":"cast","vault":"alice"},"name":"Alice's owner signs the digest"},
+{"expected":{"approved":false},"input":{"digest":"d","sigs":[{"digest":"e","key":"alice-owner"}],"threshold":1,"tree":"cast","vault":"alice"},"name":"over another digest"},
+{"expected":{"approved":false},"input":{"digest":"d","sigs":[{"digest":"d","key":"alice-peer"}],"threshold":1,"tree":"cast","vault":"alice"},"name":"a device's key is no owner"},
+{"expected":{"approved":false},"input":{"digest":"d","sigs":[{"digest":"d","key":"bob-owner"}],"threshold":1,"tree":"cast","vault":"alice"},"name":"Bob's owner for Alice's vault"},
+{"expected":{"approved":false},"input":{"digest":"d","sigs":[{"digest":"d","key":"alice-owner"},{"digest":"d","key":"alice-owner"}],"threshold":2,"tree":"cast","vault":"alice"},"name":"one owner twice is one approval"},
+{"expected":{"approved":false},"input":{"digest":"d","sigs":[],"threshold":1,"tree":"cast","vault":"alice"},"name":"no signature"}
+]
