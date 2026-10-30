@@ -356,14 +356,21 @@ and the decisions, not the parsers.
   on white passes and #777777 fails, as WCAG has it.
 - **state-runtime** (`State`, its examples in `StateExamples`). The grammar of a state part: a statechart and a
   reducer as data, one handler per message with its moves (`from → to`), its updates (`set`, `merge`, `append`,
-  `remove` at a path) and its sends (`tell`, `ask`, `reply`). `step` is total and deterministic; under the contract
-  (`stateRuntime`) the part and the input are Values, the fuel a count of the part's work. Theorems: `step_moves`
-  (a step that answers took one of the part's moves for that message and phase; otherwise it refuses), `step_allowed`
-  (under a machine the part `fits`, the move is a transition the machine allows), `runTurn_state` (so
-  `Aven.Actor.runTurn` accepts it and `machine_sound` covers it), `state_output_fits` and `state_never_badOutput`,
-  `state_more_room`, `state_run_moves`. A state part's statechart is also an actors' `Machine` (`StatePart.machine`),
-  which the examples check passes the actors' admission. 23 examples: the todo app's task and list, refusals in the
-  wrong phase, paths that don't fit, fuel, memory and output limits, and inputs and parts that aren't ones.
+  `remove` at a path of fields and indexes) and its sends (`tell`, `ask`, `reply`). A runtime is a pure
+  `run(part, input)` the kernel calls, so it names nothing of the actors': a message is a sender's address, a name, a
+  payload and an ask's id, all Values, and a step gives back the new state, its sends as data and the phase it moved
+  to. `Aven.Actor` maps them to its effects and joins the step to its kernel and its machines; actors build on
+  runtimes, never the reverse. `step` is total and deterministic; under the contract (`stateRuntime`) the part and
+  the input are Values, the fuel a count of the part's work. Theorems:
+  - `step_moves`: a step that answers took one of the part's moves for that message and phase; otherwise it refuses;
+  - `step_allowed`: under a machine's transitions the part `fits`, the move is one they allow;
+  - **an update touches only its path:** `get_set`, `get_set_other`, `get_remove` (for a path that ends at a field:
+    removing an array's item moves the later ones up), and per update `set_get`, `merge_get`, `append_get`,
+    `remove_get` and `update_other`; maps stay in the codec's order, so every state is an allowed Value;
+  - `state_output_fits`, `state_never_badOutput`, `state_more_room`, `state_run_moves`.
+
+  24 examples: the todo app's task and list, refusals in the wrong phase, paths that don't fit, a tell to something
+  that isn't an address, fuel, memory and output limits, and inputs and parts that aren't ones.
 - **Determinism, practically.** Lean can't see a wasm module, so the vectors carry it: each runtime's examples are
   exported with their outputs' hashes, and the check runs every vector in the native host and in all three browser
   engines and compares hashes. A float result must be bit-identical, so the host canonicalizes NaNs as it reads an
