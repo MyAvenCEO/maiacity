@@ -18,14 +18,17 @@ Only what this plan names gets built. Three task threads, in parallel, each in i
 
 ## Decisions
 
-- **Only the admin's vault invites** (Samuel, 30 Oct 2026). An invite is an owner's act on Aven, so it is signed as the
-  claim is: by the admin's passkey, a WebAuthn assertion over the invite's statement. No member invites anyone.
+- **Only the admin invites** (Samuel, 30 Oct 2026): the admin coop, Maia City by default
+  ([`PRODUCTION.md`](PRODUCTION.md#part-c-maia-city-the-admin-coop)). An invite is an owner's act on Aven, so it is
+  signed as the claim is: by the passkey of a person whose vault owns the admin coop, a WebAuthn assertion over the
+  invite's statement. No member invites anyone. Lean and the code define the admin as the owner of the network's
+  vault, whatever its kind, so the rule holds before and after the coop lands.
 - **An invite is used at most once.** It names a one-time key; its link carries that key's secret. Joining is a
   statement signed by the one-time key and by the joiner's new passkey. The Aven Peer stores it under the ref
   `joined-<invite>`, set from nothing by compare-and-set, as the claim is. An invite can be withdrawn by the admin
   until it is used.
 - **Members are vaults, the door checks devices.** A member is a person's vault admitted by an invite. The door lets in
-  the devices of member vaults, the Aven Peer and the admin's devices: nothing else.
+  the devices of member vaults, the Aven Peer and the devices of the people who own the admin: nothing else.
 - **The door is checked twice** (README, "Invite-only, end to end"): the relay admits only members' device keys, and
   every peer's `after_handshake` refuses any other. Each peer learns who is a member from the network's tree, which the
   Aven Peer tells its members, signed statements and all, so each peer checks them itself.
@@ -41,10 +44,10 @@ Only what this plan names gets built. Three task threads, in parallel, each in i
 
 `id/spec`, `id/core`, `db/spec`, `db/core`, `peer/native`, `peer/light`.
 
-- **Lean (`Aven.ID`):** invites, withdrawal, joins and membership. Theorems: only the admin's vault invites; an invite
+- **Lean (`Aven.ID`):** invites, withdrawal, joins and membership. Theorems: only the admin invites; an invite
   is used at most once, and not after it is withdrawn; a join founds a person's vault owned by its passkey (and the
   guardian, if configured) with one device; the door admits exactly the devices of member vaults, the Aven Peer and the
-  admin's devices. Vectors `invites.json` and traces of invites, joins and withdrawals.
+  devices of the admin's owners. Vectors `invites.json` and traces of invites, joins and withdrawals.
 - **Lean (`Aven.DB`):** a chat message and its checks (a member's device signed it; its text has a size limit), and
   presence in the room. Vectors for both.
 - **Rust:** the statements in `aven-id`; the Aven Peer storing invites and joins; the relay's allow-list and the
