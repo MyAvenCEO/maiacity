@@ -117,8 +117,10 @@ async function bump(list) {
 		console.log(`\nThe box's tools moved (${tagBefore} → ${boxTag()}): \`bun run up --check\` needs the new box, which GitHub builds 10 to 12 minutes after this is pushed to a branch. The checks above ran with the current tools.`);
 	else if (boxTag() !== tagBefore)
 		console.log(`\nThe box's tag changed (${tagBefore} → ${boxTag()}): until GitHub builds it after the push, \`bun run up\` runs a box with the same tools and compiles the crates that moved.`);
-	const next = toolsTag() !== toolsBefore ? 'push it to a branch, run `bun run up --check` once GitHub built its box' : 'run `bun run up --check`';
-	console.log(ok ? `\nEverything builds. Review the change, ${next}, and commit it.` : '\nThe build is red: see above. Nothing was committed.');
+	const next = toolsTag() !== toolsBefore
+		? 'commit it to a branch and push it, then run `bun run up --check` once GitHub built its box'
+		: 'run `bun run up --check`, and commit it';
+	console.log(ok ? `\nEverything builds. Review the change, ${next}.` : '\nThe build is red: see above. Nothing was committed.');
 	return ok ? 0 : 1;
 }
 
