@@ -407,7 +407,7 @@ didn't change gets no new version; a push that changes none releases nothing.
 
 | Package | Changes when | Its release |
 |---|---|---|
-| avenOS | its sources change: `os/`, `vite.config.js`, `package.json`, `bun.lock`, the cast | `@aven/os@<version>`, "avenOS &lt;version&gt;": `aven-os-web-<version>.tar.gz`, built by `bun run build`, with `SHA256SUMS` |
+| avenOS | its sources change: `os/`, `vite.config.js`, `package.json`, `bun.lock`, the cast, and avenID's wasm it carries (`id/core`'s sources, manifest and build script) | `@aven/os@<version>`, "avenOS &lt;version&gt;": `aven-os-web-<version>.tar.gz`, built by `bun run build`, with `SHA256SUMS` |
 | avenSANDBOX | the box's image changes (its digest, so a new platform counts too) | `@aven/sandbox@<version>`, "avenSANDBOX &lt;version&gt;": `ghcr.io/myavenceo/aven/sandbox:<version>`, amd64 and arm64, named with its digest |
 
 - **A package's versions are its own:** the date in Berlin for its first release that day (`26.10.29`), then
