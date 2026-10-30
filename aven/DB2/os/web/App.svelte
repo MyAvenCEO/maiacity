@@ -57,7 +57,7 @@
 			<button class="pill" popovertarget="accounts" data-testid="account" aria-label="Switch vault">
 				<Avatar id={account} size={22} />
 				<span class="name">{vaultName(account)}</span>
-				<svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" /></svg>
+				<svg class="icon" viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" /></svg>
 			</button>
 			<div id="accounts" popover bind:this={menu}>
 				<p class="hint">
@@ -72,7 +72,7 @@
 					>
 						<Avatar {id} size={28} />
 						<span><strong>{vaultName(id)}</strong><small>{describe(id)}</small></span>
-						{#if id === account}<span class="tick" aria-hidden="true">✓</span>{/if}
+						{#if id === account}<svg class="tick icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>{/if}
 					</a>
 				{/each}
 			</div>
@@ -95,8 +95,9 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 12px;
-		min-height: 56px;
-		padding: 8px 16px;
+		min-height: 64px;
+		padding: 10px 16px;
+		background: var(--bg);
 		border-bottom: 1px solid var(--line);
 	}
 
@@ -108,10 +109,23 @@
 		min-width: 0;
 	}
 
+	nav {
+		flex: none;
+	}
+
+	/* a phone has room for the brand, the crumb and the switcher, not for where too */
+	@media (max-width: 560px) {
+		.where {
+			display: none;
+		}
+	}
+
 	.home {
-		color: var(--text);
-		font-size: 18px;
-		font-weight: 600;
+		color: var(--accent);
+		font-family: var(--font-display);
+		font-size: 21px;
+		font-weight: 500;
+		letter-spacing: -0.01em;
 		text-decoration: none;
 	}
 
@@ -139,18 +153,17 @@
 		align-items: center;
 		gap: 8px;
 		min-width: 0;
-		padding: 4px 10px 4px 4px;
+		padding: 4px 12px 4px 4px;
 		color: var(--text);
-		font: inherit;
 		font-size: 14px;
+		font-weight: 400;
 		background: var(--surface);
 		border: 1px solid var(--line);
-		border-radius: 999px;
-		cursor: pointer;
+		box-shadow: var(--shadow-soft);
 	}
 
-	.pill:hover {
-		border-color: var(--muted);
+	.pill:hover:not(:disabled) {
+		background: var(--raised);
 	}
 
 	.name {
@@ -159,23 +172,17 @@
 		white-space: nowrap;
 	}
 
-	.pill svg {
-		flex: none;
-		fill: none;
-		stroke: currentColor;
-		stroke-width: 1.6;
-	}
 
 	[popover] {
 		inset: 60px 16px auto auto;
-		width: min(320px, calc(100vw - 32px));
+		width: min(340px, calc(100vw - 32px));
 		margin: 0;
-		padding: 6px;
+		padding: 8px;
 		color: var(--text);
 		background: var(--surface);
 		border: 1px solid var(--line);
-		border-radius: 12px;
-		box-shadow: 0 8px 28px rgb(0 0 0 / 0.16);
+		border-radius: var(--radius-card);
+		box-shadow: var(--shadow-lift);
 	}
 
 	.hint {
@@ -185,16 +192,19 @@
 	[popover] a {
 		display: flex;
 		align-items: center;
-		gap: 10px;
-		padding: 8px;
+		gap: 12px;
+		padding: 10px;
 		color: inherit;
 		text-decoration: none;
-		border-radius: 8px;
+		border-radius: var(--radius-inner);
 	}
 
-	[popover] a:hover,
+	[popover] a:hover {
+		background: var(--sage);
+	}
+
 	[popover] a[aria-current] {
-		background: var(--bg);
+		background: var(--accent-soft);
 	}
 
 	[popover] a > span:not(.tick) {
@@ -203,7 +213,13 @@
 		min-width: 0;
 	}
 
+	[data-view='starting'] {
+		padding: 64px 16px;
+		text-align: center;
+	}
+
 	.tick {
-		color: var(--live);
+		color: var(--accent);
+		stroke-width: 2;
 	}
 </style>
