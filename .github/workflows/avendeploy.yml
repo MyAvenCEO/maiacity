@@ -28,10 +28,6 @@ on:
         description: The avenOS release to serve (26.10.30, …); empty for the newest
         type: string
         default: ''
-      wipe:
-        description: Empties the peer's store first, so the network is unclaimed again; type the bucket's name to do it
-        type: string
-        default: ''
 
 permissions: {}
 
@@ -262,23 +258,6 @@ jobs:
           known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
 
       # Its secrets go to the server on stdin, never in an argument; it prints only its public half and its record
-      # The peer's store emptied, by hand only: the peer stops first so nothing writes meanwhile, then every object in
-      # the bucket goes. The next start finds the network unclaimed, and the first signup claims it again.
-      - name: Wipe the store
-        if: inputs.wipe != ''
-        env:
-          WIPE: ${{ inputs.wipe }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
-        run: |
-          [ "$WIPE" = "$BUCKET" ] || { echo "::error::wipe needs the bucket's name, $BUCKET, typed exactly"; exit 1; }
-          ssh prod 'cd /opt/aven 2>/dev/null && docker compose down || true'
-          aws s3 rm "s3://$BUCKET" --recursive --endpoint-url "$S3_ENDPOINT" --only-show-errors
-          # shellcheck disable=SC2016  # the backticks are JMESPath's literal, not a shell expansion
-          left=$(aws s3api list-objects-v2 --bucket "$BUCKET" --endpoint-url "$S3_ENDPOINT" --query 'length(Contents || `[]`)' --output text)
-          [ "$left" = 0 ] || { echo "::error::$left objects are left in $BUCKET"; exit 1; }
-          echo "The store in $BUCKET is empty: the network is unclaimed" | tee -a "$GITHUB_STEP_SUMMARY"
-
       - name: The peer
         env:
           S3_KEY: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
