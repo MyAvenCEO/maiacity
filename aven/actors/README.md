@@ -235,8 +235,20 @@ model's judgment; avenDB's identity, shares and proofs instead of per-peer keys 
   progress; react to changes, never to states; derived state is a cache keyed by its inputs and code version; only a
   person's or an agent's act writes; Lean is the source of truth and the tests derive from it.
 
-What we lack is the layer above: mailboxes, messages between actors, capabilities per message, a journal, and the
-lifecycle of actors made on demand.
+- **Actors that declare what they load** (avenDB-old: `aven/db/page/actors.js`,
+  `maia/content/game/code/sources/actors.js`, `aven/db/spec/AvenDB/Interest.lean`). An app is an actor: an entry of the
+  Maia City vault ("Actor, v3", evolved from "Manifest, v2"), changed only by proposal. Its `loads` is a tree of
+  Interests in four tiers: what the screen shows `now`, what the person opens `next`, the `later` rest of the screen's
+  data, and the `idle` rest kept offline. An Interest uses the selector grammar of capabilities ("so caps and wants stay
+  one concept"), with slots bound by the route or the selection (`$room`, `$timeline`), a window on long logs, a
+  `follow` depth, and a signal that orders it (viewport, playhead, camera). An actor's `loads` may hold another actor,
+  which never pulls its parts above the tier it sits in. Proven: tiers and signals only order and never add or withhold
+  an entry, a slot nobody bound wants nothing, and an Interest grants nothing. The query and sync learnings are in
+  [`../DB2/engine/README.md`](../DB2/engine/README.md).
+
+What we lack is the layer beside it: mailboxes, messages between actors, capabilities per message, a journal, and the
+lifecycle of actors made on demand. Those avenDB-old actors only load; their `interface`, `needs` and `code` are still
+empty.
 
 ## 7. Weak spots we must not repeat
 
@@ -347,6 +359,8 @@ Everything else in the sources is one of these four, or a role an actor plays:
 | Cases, lessons, patterns | Knowledge facts with evidence |
 | Supervision retry | A policy keyed on the interface's declared idempotency |
 | Merge law, members | The derived interface of a composite actor; no new concept |
+| Manifest, `loads`, keep share, query held by a view | The actor's declared wants: its dependencies, which the sync engine brings. A want grants nothing |
+| Skill (the composite) vs actor (the leaf) | Structure, not kind: an actor with members is a composite, one without is a leaf (section 9.8) |
 
 ## 9. The architecture
 
@@ -365,6 +379,9 @@ Everything else in the sources is one of these four, or a role an actor plays:
 7. **Laws in code, cases in data.** What an actor may be is checked by the kernel at admission and at the door, not
    by reading its source text and not by prompts.
 8. **No step without progress.** Every run and goal has a progress measure; one that stops moving fails loudly.
+9. **An actor declares what it needs; the engine brings it.** Its definition lists its wants in tiers. The sync engine
+   brings them before and while it runs and hands them in with each message. A want grants nothing: what arrives is
+   only what the run's capabilities let it read.
 
 ### 9.2 Taxonomy
 
@@ -372,7 +389,7 @@ Everything else in the sources is one of these four, or a role an actor plays:
 
 | Part | What it is | Role |
 | --- | --- | --- |
-| Definition | An immutable bundle named by its BLAKE3 hash: interface, contract, machine, logic, optional face, requested capabilities, budget | The class. A new version is a new hash |
+| Definition | An immutable bundle named by its BLAKE3 hash: interface, contract, machine, logic, `loads` (its wants, in tiers), members (for a composite), optional face, requested capabilities, budget | The class. A new version is a new hash |
 | Interface | The messages it accepts and emits, each with a JSON schema; an ask also declares its reply schema | The only thing others may rely on |
 | Contract | `requires` / `produces` as typed ports | Discovery and planning, not routing |
 | Machine | The statechart (`.pl`) | Enforced by the kernel: a message illegal in the current state is refused |
@@ -439,8 +456,11 @@ turn(state, message, given) → { state', effects: [ tell | ask | reply ... ] }
   A turn that throws or runs out of fuel commits nothing, and its message gets a `fail` reply.
 - An `ask` gets exactly one answer by its deadline: a `reply`, or a `fail` (refused, error, timeout). The asker's
   machine waits in a named state.
-- **Reads** are either an ask to the store (the answer comes next turn) or a query declared in the definition, run by
-  the kernel and handed in as `given`.
+- **Reads** are either an ask to the store (the answer comes next turn) or the definition's `loads`, which the sync
+  engine keeps current and the kernel hands in as `given`. This is how an actor collects its own dependencies: it
+  says what it needs, in tiers, and never fetches. Its `now` tier must be present before a turn runs; later tiers
+  arrive as they come, each arrival a message. An actor held by a composite brings its own `loads` with it, never above
+  the tier the composite holds it at.
 - **The model** is asked like any actor. Its text arrives as a reply, which the asker parses in a normal turn. Because
   it is in the journal, a replay sees the same text.
 - **Ordering**: each actor's messages are handled in order. There is no global order; a run gives causality.
@@ -478,6 +498,27 @@ A goal is an actor holding a metric and a target. It asks a planner for the next
 through the gate, and measures. It fails when its progress measure stops moving. After a goal, a reviewer compares
 what each step predicted with what happened and keeps the lessons as facts with evidence, which the next plan starts
 from.
+
+### 9.8 Leaf and composite
+
+Actors compose: a composite actor holds member actors, and members may be composites themselves, to any depth. Every
+source found this, in its own words. avenVIBES has one type, where a leaf is "not a kind, it is the absence of slots".
+avenDB-old's actors hold actors in their `loads` (the composite pattern of 21 Oct). avenOS draws Skill → Workflow → Node
+with nodes as leaf actors, and its merge law derives a composite's interface from its members.
+
+The kernel needs no second kind. A composite is an actor whose definition lists members:
+
+- **Its interface is derived** by the merge law: it requires what its members require and do not produce themselves,
+  and produces what they produce. Nothing about it is stored twice.
+- **Its members are private.** Outside actors address the composite; it forwards to its members. Their capabilities
+  are narrowed from the composite's.
+- **Its wants are the union** of its members' `loads`, each held no higher than the tier the composite gives it.
+- **Its journal holds its members' turns** under its run, so a composite replays as one.
+
+"Leaf" and "composite" are structure, not kinds, because a skill can contain a skill (Studio's nested `skill` step):
+two kinds named Skill and Actor break at the second level. **Skill** stays useful as the product word for a composite
+that reaches an outcome and is published for reuse, as long as it means only that. avenOS used it for six things
+(section 7).
 
 ## 10. Open questions
 
