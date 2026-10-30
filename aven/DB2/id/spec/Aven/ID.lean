@@ -25,6 +25,7 @@ import Aven.ID.Approve
 import Aven.ID.Caps
 import Aven.ID.CapsCbor
 import Aven.ID.Revoke
+import Aven.ID.Expiry
 import Aven.ID.Epochs
 import Aven.ID.Recover
 import Aven.ID.Network
