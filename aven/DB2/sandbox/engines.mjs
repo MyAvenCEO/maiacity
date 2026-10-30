@@ -123,20 +123,22 @@ async function build(engine) {
 	const got = { live, unclaimed, status: await text(page.getByTestId('status')), trouble: await text(page.getByTestId('trouble')), ms: timed(since) };
 	report.build[name] = got;
 	if (!got.live || !got.unclaimed) problems.push(`the release build in ${name} isn't live and unclaimed: ${JSON.stringify(got)}`);
-	// a worker nobody has started, as Safari can bring up behind a page that started an earlier one: it asks for its
+	// a worker nobody has started, as a new leader is until its tabs say hello: it asks for its
 	// start, refuses a line with why, and starts with the start a line carries. Before, it called the Peer-Light it had
 	// never loaded: "undefined is not an object (evaluating 'r[t]')" under Make an invite, and a chat line lost
 	got.unstarted = await page.evaluate(async (url) => {
 		const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
-		const worker = new SharedWorker(url, { type: 'module', name: `unstarted-${Date.now()}` });
+		// a worker of its own name, reached as every tab reaches its leader's: over the BroadcastChannel it is named by
+		const name = `aven-peer-light:unstarted-${Date.now()}`;
+		const channel = new BroadcastChannel(name);
 		const heard = [];
-		worker.port.onmessage = ({ data }) => heard.push(JSON.parse(data));
-		worker.port.start();
+		channel.onmessage = ({ data }) => data?.to === 'check' && heard.push(JSON.parse(data.line));
+		new Worker(url, { type: 'module', name });
 		await sleep(500);
-		worker.port.postMessage({ say: 'nobody started me' });
+		channel.postMessage({ tab: 'check', data: { say: 'nobody started me' } });
 		for (let i = 0; i < 40 && !heard.some((l) => l.event === 'refused'); i++) await sleep(50);
 		const start = { name: '', secret: 'opfs', avenKey: (await (await fetch('/aven.json')).json()).peer, avenName: 'aven-peer' };
-		worker.port.postMessage({ start, say: 'now I am' });
+		channel.postMessage({ tab: 'check', data: { start, say: 'now I am' } });
 		for (let i = 0; i < 100 && !heard.some((l) => l.event === 'started'); i++) await sleep(50);
 		return {
 			asked: heard.some((l) => l.event === 'start?'),

@@ -154,9 +154,9 @@ its key. Each place gets a backend:
 - **OPFS refuses a read that races a commit** (`NotReadableError`, sometimes `NotFoundError`); it never tears one. A ref
   read that fails checks whether the file exists and reads again, at most 8 times.
 - **OpenDAL's OPFS reads through `getFile()` and `Blob.slice`,** so every read, a range included, costs a fresh `File`.
-- **OpenDAL's OPFS found OPFS through `window`,** which a worker lacks, and panicked there. We fork its service
-  (`store/opendal-opfs`, [below](#decisions)) to take `navigator.storage` from a window or a worker; the suite
-  runs on OPFS twice, on a page and in a worker.
+- **OpenDAL's OPFS found OPFS through `window`,** which a worker lacks, and panicked there. We forked its service to
+  take `navigator.storage` from a window or a worker. Our own opfs driver ([`store/README.md`](store/README.md))
+  replaced both on 30 Oct 2026, and the fork is gone.
 
 Measured (`conformance::bench`; native in release, OPFS in Chromium 156 on the main thread):
 
@@ -316,8 +316,7 @@ The image's last layer compiles the workspace's dependencies, cargo-chef style
 ([`sandbox/box/deps.sh`](sandbox/box/deps.sh)):
 
 - **The build context is `aven/DB2`,** cut down by its [`.dockerignore`](.dockerignore) to `Cargo.toml`, `Cargo.lock`,
-  every crate's `Cargo.toml`, the patched fork `store/opendal-opfs` whole (opendal calls into it, so it can't be a
-  stub), and `deps.sh`. Never our code.
+  every crate's `Cargo.toml`, and `deps.sh`. Never our code.
 - **Each of our crates gets a stub:** an empty library, and `fn main() {}` for every bin, example, test and bench its
   manifest names.
 - **The stubs build exactly as the loop builds them:** `cargo build -p aven-peer`, the Peer-Light's wasm
@@ -490,8 +489,6 @@ Oct 2026): a person runs `bun run bump` when they choose. No scheduled workflow 
 | versitygw | the Dockerfile's `FROM`, by tag and digest | GitHub's registry |
 | GitHub Actions | avenDB's workflows | their GitHub tags, over git |
 
-- **OpenDAL is held** at the release `store/opendal-opfs` forks: moving it means a new fork
-  ([`FORK.md`](store/opendal-opfs/FORK.md)). The table names a newer release when there is one.
 - **A source the network refuses** is named in the table with its reason, and its pin stays where it is; the bump moves
   the rest. A cloud session refuses GitHub's API and `release.lean-lang.org`, so tags come over git, which the
   session's proxy lets through. Where GitHub's release storage is refused, elan's and Lean's downloads go unchecked,
@@ -574,12 +571,10 @@ Made in milestone 1's threads and its integration (29–30 Oct 2026).
 **The store**
 - **Ref names are flat,** so every backend lays them out the same.
 - **The suite is a public module,** so later backends and the peers can run it.
-- **The OPFS suite runs in Playwright's Chromium,** served by a small node server: the box has no chromedriver for
-  `wasm-bindgen-test-runner`. It runs twice, on a page and in a worker, where the Peer-Light runs.
-- **OpenDAL's OPFS service is forked** (`store/opendal-opfs`, `opendal-service-opfs` 0.59.5, Apache-2.0, with its
-  `LICENSE` and `NOTICE`), so it runs in a worker: upstream took `window()` and panicked there. One function changes;
-  `[patch.crates-io]` swaps it in, so the store still uses OpenDAL's `services::Opfs` and its conventions. The fix
-  belongs upstream; once a release has it, the fork goes (`FORK.md`).
+- **The OPFS suite runs in Playwright's Chromium, WebKit and Firefox,** served by a small node server: the box has
+  no chromedriver for `wasm-bindgen-test-runner`. It runs in a dedicated worker, where the Peer-Light's leader runs.
+- **OpenDAL's OPFS service was forked** so it ran in a worker; our own opfs driver replaced it (30 Oct 2026), and the
+  fork and its `[patch.crates-io]` are gone.
 - **versitygw is the box's S3:** its conditional writes are atomic. s3s-fs passed the suite only because our lock
   serialises compare-and-set; it checks `If-Match` before writing, not with it, and ignores it on DELETE.
 
