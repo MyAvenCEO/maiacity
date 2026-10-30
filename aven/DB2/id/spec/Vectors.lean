@@ -33,7 +33,7 @@ import Aven.ID.Expiry
   for a passkey tap, and generated chains (`Aven.ID.CapsJson`).
 - `revocations.json`: Docs of Core envelopes, each with its name and what caps reads of it, the revocations a reader
   holds, and each envelope's verdict (`Aven.ID.Revoke`), hand-written and generated.
-- `epochs.json`: who learns which key after a removal and after a heal (`Aven.ID.Epochs`).
+- `epochs.json`: who learns which key after a removal, after a heal, and holding a `below` group (`Aven.ID.Epochs`).
 - `approvals.json`: signatures, thresholds and digests on the cast, and whether each approval holds; then approvals
   where an owner is a vault, which approves by its own quorum, with a coop of two vaults added (`Aven.ID.Approve`).
 - `expiry.json`: writes under a cap that expires, with each envelope's signed time, and whether each counts for the
@@ -168,7 +168,13 @@ def epochVectors : List Json :=
     vector s!"{story}: does {p} learn {k}?" (Json.mkObj [("world", worldJson w parties), ("party", p), ("key", k)])
       (Json.mkObj [("learns", w.learns p k)])
   (removalExamples.map fun (p, k, _) => ask removalWorld ["alice-peer", "bob-peer-light"] "after Bob's removal" p k) ++
-  (healExamples.map fun (p, k, _) => ask healWorld ["alice-peer", "alice-peer-light"] "after Alice's heal" p k)
+  (healExamples.map fun (p, k, _) => ask healWorld ["alice-peer", "alice-peer-light"] "after Alice's heal" p k) ++
+  belowExamples.map fun ((kind, v), _) =>
+    let key := kind ++ ":" ++ v
+    vector s!"holding Maia City's below group: does bob learn {key}?"
+      (Json.mkObj [("world", worldJson (belowWorld.map fun k => k.1 ++ ":" ++ k.2) ["bob"]), ("party", "bob"),
+        ("key", key)])
+      (Json.mkObj [("learns", belowWorld.learns "bob" (kind, v))])
 
 def approvalVectors : List Json :=
   (approvalExamples.map fun (name, sigs, k, v, d, _) =>
