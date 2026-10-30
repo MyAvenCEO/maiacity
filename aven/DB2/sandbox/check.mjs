@@ -2,8 +2,10 @@
 // avenOS: the vaults each host may act as, what each vault's Control Room and Vault show, and each Peer-Light on its
 // own origin with its own OPFS, whose mark survives a reload and differs from every other origin's. The expected
 // values are written out by hand from the cast's tree ("Vaults own vaults"), not computed by the code under test.
-// Photographs every screen as it goes.
-import { mkdirSync, writeFileSync } from 'node:fs';
+// Photographs every screen as it goes. First it waits until all four peers are live: Alice Peer direct to the Aven
+// Peer over UDP, both Peer-Lights through the relay, each showing "4 peers"; it writes the run's timeline beside the
+// screenshots.
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 
 const expected = {
@@ -28,18 +30,81 @@ const expected = {
 	actsThrough: { alice: 'Alice Peer, Alice Peer-Light', 'alice/aven': 'Aven Peer', bob: "Bob's Peer-Light" },
 	// the vault each Peer-Light serves
 	serves: { 'alice-peer-light': "Alice's vault", 'bob-peer-light': "Bob's vault" },
+	// presence, as the Aven Peer counts it: all four peers, each once
+	present: ['alice-peer', 'alice-peer-light', 'aven-peer', 'bob-peer-light'],
+	// each Peer-Light's own status line
+	light: 'live · 4 peers',
+	// how Alice Peer reaches the Aven Peer, and how each Peer-Light does
+	paths: { 'alice-peer': 'direct', 'alice-peer-light': 'relay', 'bob-peer-light': 'relay' },
+	// each pane's status line in the Control Room
+	panes: {
+		'aven-peer': 'live · 4 connected',
+		'alice-peer': 'live · direct to Aven Peer',
+		'alice-peer-light': 'live · 4 peers',
+		'bob-peer-light': 'live · 4 peers',
+	},
 };
 
 const out = process.argv[2] ?? 'runs/latest';
 mkdirSync(out, { recursive: true });
 const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 1280, height: 960 } });
+// one context, as one browser: each Peer-Light origin runs one shared worker, whatever its tabs and frames
+const context = await browser.newContext({ viewport: { width: 1280, height: 960 } });
+const page = await context.newPage();
 const problems = [];
 const differ = (what, got, want) => {
 	if (JSON.stringify(got) !== JSON.stringify(want)) problems.push(`${what}: ${JSON.stringify(got)}, not ${JSON.stringify(want)}`);
 };
 const ids = (selector, name) => page.locator(selector).evaluateAll((els, name) => els.map((el) => el.dataset[name]), name);
 const started = Date.now();
+
+// The peers: both Peer-Lights in tabs of their own, kept open through the whole check, and the Peers' own lines
+const events = process.env.AVENSANDBOX_EVENTS ?? '/events';
+function newest() {
+	const status = {};
+	const paths = {};
+	const files = existsSync(events) ? readdirSync(events).filter((name) => name.endsWith('.jsonl')) : [];
+	const lines = files
+		.flatMap((name) => readFileSync(`${events}/${name}`, 'utf8').split('\n'))
+		.filter(Boolean)
+		.map((line) => JSON.parse(line))
+		.sort((a, b) => a.t - b.t);
+	for (const line of lines) {
+		if (line.event === 'status') status[line.peer] = line;
+		if (line.event === 'joined' && line.peer === 'aven-peer') paths[line.from] = line.path;
+	}
+	return { status, paths, lines };
+}
+const tabs = {};
+for (const id of Object.keys(expected.serves)) {
+	tabs[id] = await context.newPage();
+	await tabs[id].goto(`http://${id.replace('-peer-light', '')}.localhost:5173/`);
+}
+const peers = { ok: false };
+const deadline = Date.now() + 60_000;
+while (Date.now() < deadline) {
+	const { status, paths } = newest();
+	peers.lights = {};
+	for (const [id, tab] of Object.entries(tabs))
+		peers.lights[id] = (await tab.getByTestId('status').textContent().catch(() => '')).trim();
+	peers.present = status['aven-peer']?.present ?? [];
+	peers.alice = status['alice-peer'] && { phase: status['alice-peer'].phase, path: status['alice-peer'].path };
+	peers.paths = Object.fromEntries(Object.keys(expected.paths).map((id) => [id, paths[id]]));
+	if (
+		Object.values(peers.lights).every((line) => line === expected.light) &&
+		JSON.stringify(peers.present) === JSON.stringify(expected.present) &&
+		peers.alice?.phase === 'live' &&
+		peers.alice?.path === 'direct' &&
+		JSON.stringify(peers.paths) === JSON.stringify(expected.paths)
+	) {
+		peers.ok = true;
+		break;
+	}
+	await new Promise((done) => setTimeout(done, 250));
+}
+peers.ms = Date.now() - started;
+if (!peers.ok) problems.push(`the four peers aren't all live after 60 s: ${JSON.stringify(peers)}`);
+for (const [id, tab] of Object.entries(tabs)) await tab.screenshot({ path: `${out}/peer-light-${id.split('-')[0]}.png` });
 
 // The dashboard on every host, and the vaults its switcher offers
 const accounts = {};
@@ -61,6 +126,16 @@ async function controlRoom(vault, shot) {
 	await page.goto(`http://localhost:5173/#/${vault}/control-room`);
 	await page.locator(`[data-view="control-room"][data-account="${vault}"]`).waitFor({ timeout: 20_000 });
 	const peers = await ids('[data-peer]', 'peer');
+	for (const id of peers)
+		await page
+			.locator(`[data-peer="${id}"] [data-testid="peer-status"]`)
+			.filter({ hasText: expected.panes[id] })
+			.waitFor({ timeout: 10_000 })
+			.catch(async () => {
+				const got = await page.locator(`[data-peer="${id}"] [data-testid="peer-status"]`).textContent();
+				problems.push(`${vault}'s Control Room shows ${id} as "${got.trim()}", not "${expected.panes[id]}"`);
+			});
+	if (!(await page.getByTestId('timeline').locator('[data-event]').count())) problems.push(`${vault}'s Control Room has no timeline`);
 	const lights = {};
 	for (const id of peers) {
 		const frame = page.locator(`[data-peer="${id}"] iframe`);
@@ -109,7 +184,12 @@ const marks = Object.values(lights).map((light) => light.mark);
 if (new Set(marks).size !== marks.length) problems.push('two Peer-Lights share one OPFS mark');
 await browser.close();
 
-const report = { ok: problems.length === 0, problems, accounts, views, ms: Date.now() - started };
+// the run's timeline: every peer's lines since the Aven Peer last started, in one file
+const { lines } = newest();
+const since = lines.findLast((line) => line.peer === 'aven-peer' && line.event === 'started')?.t ?? 0;
+writeFileSync(`${out}/timeline.jsonl`, lines.filter((line) => line.t >= since).map((line) => `${JSON.stringify(line)}\n`).join(''));
+
+const report = { ok: problems.length === 0, problems, peers, accounts, views, ms: Date.now() - started };
 writeFileSync(`${out}/check.json`, `${JSON.stringify(report, null, 2)}\n`);
 console.log(JSON.stringify(report, null, 2));
 process.exit(report.ok ? 0 : 1);
