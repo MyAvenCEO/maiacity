@@ -271,10 +271,9 @@ apart. One answer serves a model asking "what do you do, and how can I use you?"
 plain-language `explain`, a model reading the definition and answering in words, is an ordinary actor built on
 `describe`, later.
 
-**Bridges.** A bridge is a two-way mapping between two type versions, a Value, with the laws a lens has (a round trip
-keeps what both sides can hold, and a lossy step states its loss). It joins a version to its parent inside one type
-Doc, and versions of two different type Docs alike: one concept, called a lens until now (Samuel, 30 Oct 2026; for
-the docs spec to adopt). Bridges across the whole stack form a forest: a bridge that would make a second path between
+**Bridges.** A bridge is a two-way mapping between two type versions, a Value, with laws: a round trip keeps what both
+sides can hold, and a lossy step states its loss. It joins a version to its parent inside one type Doc, and versions
+of two different type Docs alike: one concept, everywhere in the stack (Samuel, 30 Oct 2026). Bridges across the whole stack form a forest: a bridge that would make a second path between
 two versions is refused, so every path is unique and the laws hold along it.
 
 Between actors, a message whose type differs from the one the receiver accepts is delivered when a path of bridges
@@ -606,9 +605,9 @@ Decided here, on those grounds:
   properties of a definition proven in Lean in the repository (section 6).
 - Every actor answers a built-in `describe` ask with its tool specs; definitions declare `sends`, enforced by the
   kernel; edges between actors are derived by type id, never by name or prose (section 6; Samuel, 30 Oct 2026).
-- Lenses are called bridges everywhere, and join versions of different type Docs as well as one type's versions,
-  kept a forest so paths stay unique; actors' messages cross types through them, and they replace Abject's
-  negotiator and self-healing adapters (section 6; Samuel, 30 Oct 2026, for the docs spec and glossary to adopt).
+- Bridges, universally: one concept joining versions of one type and of different type Docs, kept a forest so paths
+  stay unique; actors' messages cross types through them, and they replace Abject's negotiator and self-healing
+  adapters (section 6; Samuel, 30 Oct 2026).
 - Values are integers only in version 1, in avenDB's one codec (section 2): deterministic CBOR (Samuel, 30 Oct 2026).
 
 Open, none of it blocking version 1 (the audit's findings, mostly avenDB's proposal A17, awaiting Samuel):
