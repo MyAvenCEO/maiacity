@@ -171,45 +171,40 @@ theorem rule4_content {ver : DocId → TypeId} {grants : Envelope → List Grant
 
 /-- **A merge into main is judged on the whole merge** (caps, "Checking"). A reader whose footprint is the engine's
 lowered steps, and whose `before` for an envelope on main is main's Records at its `prev`, judges every merge into main
-whole (`WholeMerges` holds by construction). Then an authorized merge on main that passes the content check has a last
-cap that writes on main, and every Record of main the merge changes, brings or removes is written, created or removed
-by a step that cap allows on the Doc: a narrow merger can't land a proposal's wider changes. -/
+whole (`WholeMerges` holds by construction). Then, for an authorized merge on main that passes the content check:
+every Record of main it changes, brings or removes is written, created or removed by a step of the whole merge; the
+signing device's cap writes on main and allows every such step; and the authority is either the signer's vault, which
+owns or governs the Doc, or a chain whose last cap writes on main and allows every such step. A narrow merger can't
+land a proposal's wider changes. -/
 theorem rule4_merge_whole (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spawned : DocId → DocId → Prop)
     {ver : DocId → TypeId} (hver : ∀ t, (ver t).type = t) {grants : Envelope → List Grant} {fp : Envelope → List Step}
     (hfp : r.footprint = fp) {rule : TypeId → Bytes → Value → Prop} {before : Envelope → List (DB.Engine.Record Value)}
     {step : List (DB.Engine.Record Value) → Envelope → List (DB.Engine.Record Value)} {e : Envelope}
     (main : e.branch = ID.mainBranch) (hn : ((before e).map (·.id)).Nodup) (h : r.Authorized gov spawned e)
     (hc : contentOk ver grants fp rule before step e) :
-    ∃ last, (r.chain e).getLast? = some last ∧ last.conditions.branches.allows ID.mainBranch = true ∧
-      ∃ f, r.facts e.doc = some f ∧
-        let allowed := fun st => st ∈ fp e ∧ (last.grants r.ctx.roles).allows gov spawned f st
-        -- a Record main had, changed: every field whose value differs is written by an allowed step of its type
-        (∀ r' ∈ step (before e) e, ∀ r0 ∈ before e, r0.id = r'.id → ∀ fl v, (fl, v) ∈ r'.fields →
-          DB.Engine.optEq DB.Engine.valEq (DB.Engine.get r0.fields fl) (DB.Engine.get r'.fields fl) = false →
-            ∃ st, allowed st ∧ st.type = r'.type ∧ fl ∈ st.fields) ∧
-        -- a Record the merge brings: its type is created, and every field it carries written, by allowed steps
-        (∀ r' ∈ step (before e) e, (∀ r0 ∈ before e, r0.id ≠ r'.id) →
-          (∃ st, allowed st ∧ st.type = r'.type ∧ st.verb = .putNew) ∧
-          ∀ fl ∈ r'.fields.map Prod.fst, ∃ st, allowed st ∧ st.type = r'.type ∧ fl ∈ st.fields) ∧
-        -- a Record of main the merge removes: its type is removed by an allowed step
-        (∀ r0 ∈ before e, (∀ r' ∈ step (before e) e, r'.id ≠ r0.id) →
-          ∃ st, allowed st ∧ st.type = r0.type ∧ st.verb = .remove) := by
+    -- every Record of main the merge touches is handled by a step of the whole merge
+    ((∀ r' ∈ step (before e) e, ∀ r0 ∈ before e, r0.id = r'.id → ∀ fl v, (fl, v) ∈ r'.fields →
+        DB.Engine.optEq DB.Engine.valEq (DB.Engine.get r0.fields fl) (DB.Engine.get r'.fields fl) = false →
+          ∃ st ∈ fp e, st.type = r'.type ∧ fl ∈ st.fields) ∧
+      (∀ r' ∈ step (before e) e, (∀ r0 ∈ before e, r0.id ≠ r'.id) →
+        (∃ st ∈ fp e, st.type = r'.type ∧ st.verb = .putNew) ∧
+        ∀ fl ∈ r'.fields.map Prod.fst, ∃ st ∈ fp e, st.type = r'.type ∧ fl ∈ st.fields) ∧
+      (∀ r0 ∈ before e, (∀ r' ∈ step (before e) e, r'.id ≠ r0.id) →
+        ∃ st ∈ fp e, st.type = r0.type ∧ st.verb = .remove)) ∧
+    -- the signing device's cap writes on main and allows every step of the whole merge
+    (∃ dc f, r.deviceCap e.signer = some dc ∧ dc.branches.allows ID.mainBranch = true ∧ r.facts e.doc = some f ∧
+      ∀ s ∈ fp e, dc.allows gov spawned f s) ∧
+    -- on the signer's vault's own authority, or by a chain whose last cap writes on main and allows every step
+    (r.Own gov e ∨
+      ∃ last, (r.chain e).getLast? = some last ∧ last.conditions.branches.allows ID.mainBranch = true ∧
+        ∃ f, r.facts e.doc = some f ∧ ∀ s ∈ fp e, (last.grants r.ctx.roles).allows gov spawned f s) := by
   have wm : r.WholeMerges fp := fun x _ s hs => hfp ▸ hs
-  obtain ⟨last, hl, br, f, hf, steps⟩ := ID.merge_covered r gov spawned wm main h
   obtain ⟨_, hchg, hnew, hgone⟩ :=
     DB.Engine.merge_granted ver hver (grants e) (fp e) (before e) (step (before e) e) hn hc.1
-  refine ⟨last, hl, br, f, hf, ?_, ?_, ?_⟩
-  · intro r' hr r0 h0 hid fl v hv hd
-    obtain ⟨st, hst, ht, hm⟩ := hchg r' hr r0 h0 hid fl v hv hd
-    exact ⟨st, ⟨hst, steps st hst⟩, ht, hm⟩
-  · intro r' hr hnot
-    obtain ⟨⟨st, hst, ht, hv⟩, hfs⟩ := hnew r' hr hnot
-    refine ⟨⟨st, ⟨hst, steps st hst⟩, ht, hv⟩, fun fl hfl => ?_⟩
-    obtain ⟨st', hst', ht', hm'⟩ := hfs fl hfl
-    exact ⟨st', ⟨hst', steps st' hst'⟩, ht', hm'⟩
-  · intro r0 h0 hnot
-    obtain ⟨st, hst, ht, hv⟩ := hgone r0 h0 hnot
-    exact ⟨st, ⟨hst, steps st hst⟩, ht, hv⟩
+  refine ⟨⟨hchg, hnew, hgone⟩, ID.merge_within_device r gov spawned wm main h, ?_⟩
+  rcases h.2 with own | chain
+  · exact .inl own
+  · exact .inr (ID.merge_covered r gov spawned wm main chain)
 
 /-! ## Rule 5: reading is holding the key -/
 

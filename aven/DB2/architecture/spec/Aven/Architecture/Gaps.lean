@@ -37,7 +37,7 @@ def rules : List RuleStatus := [
     restsOn := ["Aven.Core.reaches_mono", "Aven.DB.Engine.readers_agree", "Aven.DB.Docs.fit_envelopes", "Aven.ID.verdict",
       "Aven.ID.counts_iff", "Aven.ID.readers_agree", "Aven.ID.freshEpoch", "Aven.DB.Engine.footprint_granted",
       "Aven.DB.Engine.diff_footprint", "Aven.DB.Docs.fit_diff", "Aven.ID.merge_covered",
-      "Aven.DB.Engine.merge_granted"],
+      "Aven.ID.merge_within_device", "Aven.DB.Engine.merge_granted"],
     missing := [] },
   { rule := 5, title := "Reading is holding the key",
     theorems := ["rule5_keeper_blind", "rule5_read_is_key", "rule5_epoch_fresh"],
