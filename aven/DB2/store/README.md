@@ -47,6 +47,10 @@ A rule for every part of the upgrade (Samuel, 30 Oct 2026):
     once the link is up, after a reload too. A brand-new browser can't know its vault before then, so it says it
     joins as soon as it reaches the network.
   - **The link dials again at once** when the page comes back online or into view (`wake`).
+  - **The shell opens without its host:** the Service Worker (`os/web/public/files-sw.js`) keeps avenOS's release
+    build: the page network first, the cached copy when the host doesn't answer, replaced as soon as it does; the
+    build's hashed files cache first; the Peer-Light's JS and wasm network first. With what the Peer-Light keeps, a
+    returning browser opens its dashboard and its chat when aven.maia.city itself can't be reached.
 
 ## The package
 
