@@ -2,7 +2,7 @@ import Aven.Core
 import Aven.ID
 import Aven.DB
 import Aven.Runtime.Contract
-import Aven.Architecture.SealedIndex
+import Aven.Architecture.Sealed
 
 /-!
 # The rules across all parts, as theorems
@@ -148,10 +148,11 @@ theorem rule6_wants_caps (gov : Bytes → Bytes → Prop) (spawned : DocId → D
   rw [DB.Engine.served_eq_wants_caps]
   simp
 
-/-- What leaves a keeper is wants ∩ fetch proofs: it serves only a proof by the current fetch key, made on this
-connection, chained to the genesis. -/
+/-- What leaves a keeper is wants ∩ fetch proofs: it serves only a proof made on this connection, by the current fetch
+key or, while a rotation settles, the newest one, chained to the genesis. -/
 theorem rule6_keeper {s : ID.Keep} {e : String} {p : ID.Keep.Proof} (h : s.serves e p = true) :
-    p.key = s.current ∧ p.exporter = e ∧ ∃ i, ID.Keep.Chained s i p.key :=
+    p.exporter = e ∧ (p.key = s.current ∨ s.unsettled = true ∧ s.newest p.key = true) ∧
+      ∃ i, ID.Keep.Chained s i p.key :=
   ID.Keep.served_current h
 
 /-! ## Rule 7: no privilege by position -/
@@ -159,9 +160,10 @@ theorem rule6_keeper {s : ID.Keep} {e : String} {p : ID.Keep.Proof} (h : s.serve
 /-- A keeper holds bytes it can't read, serves them only on fetch proofs, and a sealed index takes a root only from a
 vault that may write its directory: none of the three is a privilege of where a peer sits. -/
 theorem rule7_granted {w : ID.World} {keeper : String} (nothing : ∀ s ∈ w.seals, s.2 ∉ w.own keeper)
-    {dir : Sealed.Directory} {pubs : List Sealed.Publish} {p : Sealed.Publish} (hp : p ∈ Sealed.taken dir pubs) :
-    (∀ n, ∀ k ∈ w.knownAfter keeper n, k ∈ w.own keeper) ∧ p.vault ∈ dir.writers :=
-  ⟨ID.World.keeper_blind nothing, (Sealed.root_by_writer hp).2⟩
+    {writers : List String} {pubs : List ID.Sealed.Publish} {p : ID.Sealed.Publish}
+    (hp : p ∈ ID.Sealed.taken writers pubs) :
+    (∀ n, ∀ k ∈ w.knownAfter keeper n, k ∈ w.own keeper) ∧ p.vault ∈ writers :=
+  ⟨ID.World.keeper_blind nothing, (ID.Sealed.root_by_writer hp).2⟩
 
 /-! ## Rule 8: derived state is a cache or a checkpoint -/
 
@@ -180,10 +182,11 @@ theorem rule8_cache_or_checkpoint {St : Type} (L : DB.Docs.Loro St) (covered aft
 
 /-- A sealed index's root is a checkpoint any reader holding its entries can rebuild and compare. -/
 theorem rule8_index_root (boundary : Bytes → Bool) (size : Bytes → Nat) (limit : Nat) (H : Bytes → Hash)
-    (sealer : Bytes → Bytes → Bytes) (key : Bytes) {dir : Sealed.Directory} {s₁ s₂ : List Sealed.Source}
-    (h : ∀ x, x ∈ Sealed.admitted dir s₁ ↔ x ∈ Sealed.admitted dir s₂) :
-    Sealed.sealedRoot boundary size limit H sealer key dir s₁ = Sealed.sealedRoot boundary size limit H sealer key dir s₂ :=
-  Sealed.sealed_roots_agree boundary size limit H sealer key h
+    (sealer : Bytes → Bytes → Bytes) {holders : ID.Sealed.Holders} {key : String} {e₁ e₂ : List ID.Sealed.Entry}
+    (h : ∀ x, x ∈ ID.Sealed.contents holders key e₁ ↔ x ∈ ID.Sealed.contents holders key e₂) :
+    ID.Sealed.sealedRoot (Sealed.docsRoot boundary size limit) H sealer holders key e₁ =
+      ID.Sealed.sealedRoot (Sealed.docsRoot boundary size limit) H sealer holders key e₂ :=
+  ID.Sealed.sealed_roots_agree (Sealed.docsRoot_set boundary size limit) H sealer h
 
 /-! ## Rule 9: sealed beyond the device -/
 
