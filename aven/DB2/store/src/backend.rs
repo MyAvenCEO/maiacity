@@ -1,5 +1,6 @@
 //! The backends, one per place a peer stores (SANDBOX.md, "Storage"): memory for tests, a folder for a Peer, S3 for
-//! the Aven Peer, OPFS for a Peer-Light. Each is a [`DalStore`], so each passes the same suite.
+//! the Aven Peer, OPFS for a Peer-Light. Memory, the folder and S3 are OpenDAL's [`DalStore`]; OPFS is our own driver
+//! ([`crate::opfs`]). Each passes the same suite.
 
 use opendal::Operator;
 use opendal::services;
@@ -70,9 +71,9 @@ pub fn s3(at: &S3) -> Result<DalStore> {
     Ok(store.with_conditions(at.conditions))
 }
 
-/// The origin's private file system, in a browser. A write goes through `createWritable`, which the browser
-/// commits whole when it closes.
+/// The origin's private file system, in the Peer-Light's dedicated worker: our own driver on sync access handles
+/// (store/README.md, "What the store asks of the opfs driver"). Opening recovers what a crash left under `root`.
 #[cfg(target_arch = "wasm32")]
-pub fn opfs(root: &str) -> Result<DalStore> {
-    build(Operator::new(services::Opfs::default().root(root)))
+pub async fn opfs(root: &str) -> Result<crate::opfs::OpfsStore<crate::opfs_folder::OpfsFolder>> {
+    crate::opfs::OpfsStore::open(crate::opfs_folder::OpfsFolder::open(root).await?).await
 }

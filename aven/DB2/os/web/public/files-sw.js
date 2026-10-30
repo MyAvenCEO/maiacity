@@ -2,41 +2,41 @@
 // <video> and <iframe> point at /files/<hash>, the file's index, and the browser asks for ranges. This Service Worker
 // answers each with 206 Partial Content, its bytes read by this origin's Peer-Light from the chunks the range touches,
 // fetched first if it lacks them, so a movie plays from any point without being fully downloaded. It asks the
-// Peer-Light's leader over the BroadcastChannel `aven-peer-light:<network>`, as the tabs do: {id, read: {file, start,
-// end}}, `end` exclusive and at most 1 MiB after `start`, answered {id, size, type, bytes} or {id, error}. Only the
-// leader answers; a read unanswered after 2 s is asked again, as a new leader may have taken over. A request without a
-// range gets the whole file (200). Nothing is cached here: the store is the cache.
-const bridge = new BroadcastChannel('aven-peer-light:aven');
-const waiting = new Map();
-const me = `sw-${crypto.randomUUID()}`;
+// Peer-Light's leader over its BroadcastChannel, as the tabs do (peer/bridge.js): {id, read: {file, start, end}}, `end`
+// exclusive and at most 1 MiB after `start`, answered {id, size, type, bytes} or {id, error}: "not found" is a 404,
+// anything else a 502. A request without a range gets the whole file (200). Nothing is cached here: the store is the
+// cache.
+// the Peer-Light's channel, `aven-peer-light:<name>`, its name given where the page registered this
+// (`/files-sw.js?name=<name>`): the protocol peer/bridge.js speaks, here as a classic script, which a root Service
+// Worker must be to serve /files/ in the release build too
+const channel = new BroadcastChannel(`aven-peer-light:${new URL(self.location.href).searchParams.get('name') ?? 'network'}`);
+const me = `sw-${crypto.randomUUID()}-`;
 let asked = 0;
 // the most one read asks for: a chunk. A browser's open-ended range gets the first MiB, and asks again
 const most = 1 << 20;
-// when an unanswered read is asked again, and when it is given up
-const again = 2000;
-const patience = 60000;
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
 
-bridge.onmessage = ({ data }) => {
-	const answer = waiting.get(data?.id);
-	if (!answer || data.read) return;
-	waiting.delete(data.id);
-	answer(data);
-};
-
+// at most 1 MiB of a file from the leader: {size, type, bytes} or {error}. Asked again every 2 s while unanswered, as a
+// new leader may have taken over; given up after 20 s
 function read(file, start, end) {
+	const id = `${me}${asked++}`;
 	return new Promise((resolve) => {
-		const id = `${me}-${++asked}`;
-		const ask = () => bridge.postMessage({ id, read: { file, start, end } });
-		waiting.set(id, resolve);
+		const ask = () => channel.postMessage({ id, read: { file, start, end } });
+		const again = setInterval(ask, 2_000);
+		const gaveUp = setTimeout(() => done({ error: 'the Peer-Light did not answer in 20 s' }), 20_000);
+		const done = (answer) => {
+			clearInterval(again);
+			clearTimeout(gaveUp);
+			channel.removeEventListener('message', hear);
+			resolve(answer);
+		};
+		const hear = ({ data }) => {
+			if (data?.id === id && !data.read) done({ ...data, type: data.type ?? 'application/octet-stream' });
+		};
+		channel.addEventListener('message', hear);
 		ask();
-		const repeat = setInterval(() => (waiting.has(id) ? ask() : clearInterval(repeat)), again);
-		setTimeout(() => {
-			clearInterval(repeat);
-			if (waiting.delete(id)) resolve({ error: 'no Peer-Light answered' });
-		}, patience);
 	});
 }
 

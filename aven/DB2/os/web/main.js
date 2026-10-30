@@ -13,11 +13,14 @@ import './style.css';
 const device = Object.keys(cast.peers).find((id) => cast.peers[id].origin === location.hostname);
 const target = document.getElementById('app');
 
-// a Peer-Light's origin runs that Peer-Light, in a worker of its own, and the Service Worker that answers the chat's
-// /files/<hash> from it (public/files-sw.js)
+// a Peer-Light's origin runs that Peer-Light, in a worker of its own
 if (device) runLight(cast, device);
-navigator.serviceWorker?.register('/files-sw.js').catch(() => {});
 const config = device ? null : await hostNetwork();
+
+// the Service Worker that answers the chat's /files/<hash> from this origin's Peer-Light, named as its worker is
+// (public/files-sw.js)
+const files = (name) => navigator.serviceWorker?.register(`/files-sw.js?name=${encodeURIComponent(name)}`).catch(() => {});
+if (device) files(device);
 
 // the box's own view gets its views from a Peer-Light's core too; a visitor's host runs none and may act as no one
 if (!device && !config && location.hostname === 'localhost') runBox(cast);
@@ -27,5 +30,6 @@ if (config) {
 	// a browser that keeps no storage for this host (site data blocked, always private) gets no Peer-Light, and is told why
 	net.storage = await storageBlocked();
 	if (!net.storage) runNetwork(config);
+	if (!net.storage) files('network');
 	mount(Network, { target, props: { config } });
 } else mount(App, { target, props: { cast, device } });

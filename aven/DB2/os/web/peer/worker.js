@@ -1,7 +1,7 @@
-// The Peer-Light's worker (SANDBOX.md, "avenOS in the browser"): one per origin, shared by every tab and frame that
-// shows it, since two Peer-Lights with one key would take the relay from each other. It runs the wasm core, the page's
-// one WebAssembly module, posts every timeline line to the box, and tells every page that connects the lines so far and
-// each new one. The views of the tree (id.svelte.js) are a snapshot, not a timeline line: each page gets the newest, on
+// The Peer-Light's worker (SANDBOX.md, "avenOS in the browser"): one per origin and name, run by the tab that holds the
+// Web Lock (peer/open.js) and shared by every tab and frame over its BroadcastChannel, since two Peer-Lights with one key
+// would take the relay from each other. It runs the wasm core, the page's one WebAssembly module, posts every timeline
+// line to the box, and tells every page that connects the lines so far and each new one. The views of the tree (id.svelte.js) are a snapshot, not a timeline line: each page gets the newest, on
 // connecting and whenever it changes. The box's own view (localhost) runs no peer: it loads the core for the views alone.
 const pages = new Set();
 const lines = [];
@@ -44,18 +44,19 @@ function tell(line) {
 	fetch(`/events/${JSON.parse(line).peer}`, { method: 'POST', body: line }).catch(() => {});
 }
 
-// A browser's own device key, on an Aven Peer's host without a cast (PRODUCTION.md, Part A): made here, in the
-// browser, the first time, and kept in this origin's OPFS. It never leaves the browser.
+// A browser's own device key, on an Aven Peer's host without a cast (PRODUCTION.md, Part A): kept in the Peer-Light's
+// store (the ref `device-key`), made here the first time. An older Peer-Light kept it in the file `device-key` at
+// OPFS's root: the store adopts it, and the file goes, so a browser keeps the key its vault knows. It never leaves the
+// browser.
 async function deviceSecret() {
 	const root = await navigator.storage.getDirectory();
-	const handle = await root.getFileHandle('device-key', { create: true });
-	let secret = (await (await handle.getFile()).text()).trim();
-	if (!/^[0-9a-f]{64}$/.test(secret)) {
-		secret = [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, '0')).join('');
-		const writable = await handle.createWritable();
-		await writable.write(secret);
-		await writable.close();
-	}
+	let older = null;
+	try {
+		older = (await (await (await root.getFileHandle('device-key')).getFile()).text()).trim();
+	} catch {}
+	const fresh = () => [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, '0')).join('');
+	const secret = await light.deviceSecret(/^[0-9a-f]{64}$/.test(older ?? '') ? older : fresh());
+	if (older !== null) await root.removeEntry('device-key').catch(() => {});
 	return secret;
 }
 
@@ -135,40 +136,59 @@ function connect(port) {
 	port.start?.();
 }
 
-// The Service Worker's /files/<hash> (public/files-sw.js) asks the leader, this worker today, for a range of a file
-// on the BroadcastChannel `aven-peer-light:<network>`: {id, read: {file, start, end}}, `end` exclusive, at most 1 MiB,
-// answered {id, size, type, bytes} or {id, error}. The leader clamps `end` to the file's size. Its type, and the device
-// that shared it, are its `file` line's; the bytes come through the Peer-Light's `file_range`, which fetches the chunks
-// it lacks: from the Aven Peer, which keeps every file, or else from the device that shared it.
+// Every tab reaches this worker over the BroadcastChannel named as the worker is, `aven-peer-light:<name>`
+// (peer/open.js): each tab is a port of its own here, made the first time it speaks, gone when it says bye. A worker
+// started by a new leader says so, and every tab says hello again.
+const channel = new BroadcastChannel(self.name);
+const tabs = new Map();
+channel.onmessage = ({ data }) => {
+	if (data?.read && data.id !== undefined) return read(data);
+	if (!data?.tab) return;
+	if (data.bye) {
+		pages.delete(tabs.get(data.tab));
+		tabs.delete(data.tab);
+		return;
+	}
+	let port = tabs.get(data.tab);
+	if (!port) {
+		port = { postMessage: (line) => channel.postMessage({ to: data.tab, line }) };
+		tabs.set(data.tab, port);
+		connect(port);
+	}
+	if (data.data !== undefined) port.onmessage({ data: data.data });
+};
+channel.postMessage({ leader: true });
+
+// A file's bytes for the Service Worker (public/files-sw.js, peer/bridge.js): `{id, read: {file, start, end}}`, `end`
+// exclusive, answered `{id, size, type, bytes}` with at most 1 MiB, clamped to the file's length (`size`, for
+// Content-Range), or `{id, error}`: "not found", or why not. Only the leader runs this worker, so only the leader
+// answers. The type, and the device that shared the file, are its `file` line's; the bytes come through the
+// Peer-Light's `file_range`, which fetches the chunks it lacks: from the Aven Peer, which keeps every file, or else from
+// the device that shared it. A read asked again while this one is at it is the same read.
+const MiB = 1 << 20;
 const files = new Map();
 const reading = new Set();
-const bridge = new BroadcastChannel('aven-peer-light:aven');
-bridge.onmessage = async ({ data }) => {
-	// a read asked again while this one is still at it is the same read
-	if (!data?.read || data.id === undefined || reading.has(data.id)) return;
-	reading.add(data.id);
-	setTimeout(() => reading.delete(data.id), 60000);
-	const { file, start = 0, end } = data.read;
+async function read({ id, read: { file, start = 0, end } }) {
+	if (reading.has(id)) return;
+	reading.add(id);
+	setTimeout(() => reading.delete(id), 60_000);
 	const known = files.get(file);
 	try {
 		await started;
 		if (!light) throw new Error(`the Peer-Light isn't running: ${down ?? 'nothing started it'}`);
+		const from = Math.max(0, Number(start) || 0);
+		const to = Math.min(Number.isFinite(Number(end)) ? Number(end) : from + MiB, from + MiB);
 		let got;
-		for (const from of [undefined, known?.key]) {
+		for (const holder of [undefined, known?.key]) {
 			try {
-				got = await light.file_range(file, start, end ?? start + (1 << 20), from);
+				got = await light.file_range(file, from, to, holder);
 				break;
 			} catch (error) {
-				if (from === known?.key) throw error;
+				if (holder === known?.key) throw error;
 			}
 		}
-		bridge.postMessage({ id: data.id, size: got.len, type: known?.type ?? 'application/octet-stream', bytes: got.bytes });
+		channel.postMessage({ id, size: got.len, type: known?.type ?? null, bytes: got.bytes });
 	} catch (error) {
-		const why = String(error?.message ?? error);
-		bridge.postMessage({ id: data.id, error: /no such file/.test(why) ? 'not found' : why });
+		channel.postMessage({ id, error: error?.name === 'NotFoundError' ? 'not found' : String(error?.message ?? error) });
 	}
-};
-
-// a SharedWorker hears each page as a port; a plain Worker, where SharedWorker is missing, is its own one port
-if ('onconnect' in self) self.onconnect = (event) => connect(event.ports[0]);
-else connect(self);
+}

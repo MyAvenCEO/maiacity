@@ -1,11 +1,10 @@
 # The box's build context (sandbox/box/Dockerfile): only what the image's build reads, the same files as its tag
 # (sandbox/box/tag.mjs). The tools come from the internet; from here only the manifests the third-party crates are
-# compiled from, the patched fork of OpenDAL's OPFS service, and the script that compiles them. Never our code.
+# compiled from, and the script that compiles them. Never our code.
 *
 !Cargo.toml
 !Cargo.lock
 !**/Cargo.toml
-!store/opendal-opfs
 !sandbox/box/deps.sh
 # what the tag (sandbox/box/tag.mjs) leaves out too, wherever it is
 **/target

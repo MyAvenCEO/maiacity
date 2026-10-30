@@ -63,14 +63,13 @@ async function attach(page) {
 	await page.goto(`${origin}/`);
 	await page.locator('main[data-view]').first().waitFor({ timeout: 30_000 });
 	return page.evaluate(async () => {
-		// the page's own worker, opened as the page opens it: Vite names the worker's URL, and a shared worker is its URL
-		// and name
-		const { worker } = (await import('/peer/open.js')).openWorker('network');
+		// the page's Peer-Light, reached as the page reaches it: over its BroadcastChannel, from a tab of its own
+		const { port } = (await import('/peer/open.js')).openWorker('network');
 		const heard = [];
 		// what a statement needs computed, asked of the Peer-Light and answered to this port alone
 		const waiting = new Map();
 		let asked = 0;
-		worker.port.onmessage = ({ data }) => {
+		port.onmessage = ({ data }) => {
 			const line = JSON.parse(data);
 			if (line.event !== 'answer') return heard.push(line);
 			const { resolve, reject } = waiting.get(line.id) ?? {};
@@ -78,7 +77,7 @@ async function attach(page) {
 			if (line.error === undefined) resolve?.(line.value);
 			else reject?.(new Error(line.error));
 		};
-		worker.port.start();
+		port.start();
 		const id = new Proxy(
 			{},
 			{
@@ -86,7 +85,7 @@ async function attach(page) {
 					(...args) =>
 						new Promise((resolve, reject) => {
 							waiting.set(++asked, { resolve, reject });
-							worker.port.postMessage({ ask: { id: asked, fn, args } });
+							port.postMessage({ ask: { id: asked, fn, args } });
 						}),
 			},
 		);
@@ -100,10 +99,10 @@ async function attach(page) {
 			const r = got.response;
 			return { clientData: new TextDecoder().decode(r.clientDataJSON), authData: hex(r.authenticatorData), signature: hex(r.signature) };
 		};
-		const send = (frame, statement) => worker.port.postMessage({ send: JSON.stringify({ frame, statement: JSON.stringify(statement) }) });
+		const send = (frame, statement) => port.postMessage({ send: JSON.stringify({ frame, statement: JSON.stringify(statement) }) });
 		for (let i = 0; i < 300 && !heard.some((l) => l.event === 'started'); i++) await new Promise((done) => setTimeout(done, 50));
 		const me = heard.find((l) => l.event === 'started');
-		window.peer = { worker, heard, id, hex, assertion, send, key: me?.key };
+		window.peer = { port, heard, id, hex, assertion, send, key: me?.key };
 		return me?.key;
 	});
 }
@@ -152,18 +151,18 @@ const join = (b, secret, name) =>
 		return s.person;
 	}, { secret, name });
 
-const say = (b, text) => b.page.evaluate((text) => window.peer.worker.port.postMessage({ say: text }), text);
+const say = (b, text) => b.page.evaluate((text) => window.peer.port.postMessage({ say: text }), text);
 
 // A message signed by a key that is no member's, sent through a member's Peer-Light as it is: every peer must drop it
 const forge = (b, text) =>
 	b.page.evaluate(async (text) => {
-		const { hex, worker } = window.peer;
+		const { hex, port } = window.peer;
 		const pair = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
 		const from = hex(await crypto.subtle.exportKey('raw', pair.publicKey));
 		const at = Date.now();
 		const body = `avenDB chat 1\nnetwork aven\nfrom ${from}\nat ${at}\nkind say\n${text}`;
 		const sig = hex(await crypto.subtle.sign('Ed25519', pair.privateKey, new TextEncoder().encode(body)));
-		worker.port.postMessage({ post: JSON.stringify({ network: 'aven', from, at, kind: 'say', text, sig }) });
+		port.postMessage({ post: JSON.stringify({ network: 'aven', from, at, kind: 'say', text, sig }) });
 		return from;
 	}, text);
 

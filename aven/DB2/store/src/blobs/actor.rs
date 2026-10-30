@@ -150,7 +150,12 @@ impl Actor {
                     Ok(Some(n)) => Bitfield::complete(n),
                     _ => Bitfield::empty(),
                 };
-                cmd.tx.send(bits).await.ok();
+                // a blob here is whole or absent and never changes, so there is nothing more to tell; but the channel
+                // stays open until the asker goes, as iroh-blobs' own stores keep it: its provider resets the stream
+                // when the channel ends, and a reset may drop the answer before the asker has read it
+                if cmd.tx.send(bits).await.is_ok() {
+                    cmd.tx.closed().await;
+                }
             }
             Command::BlobStatus(cmd) => {
                 let status = match self.store.size(&ours(cmd.inner.hash)).await {
