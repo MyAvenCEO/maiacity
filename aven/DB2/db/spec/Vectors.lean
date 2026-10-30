@@ -30,6 +30,9 @@ import Aven.DB.Engine
   the device's uploads first, and what eviction to a budget keeps (`Aven.DB.Engine.Wants`).
 - `mutations.json`: a writer, its counter, a Doc's Records and core operations; the Records after the commit, or why it
   was refused (`Aven.DB.Engine.Mutate`).
+- `merges.json`: one place's base, the target's and the other branch's values and the merger's choice; the merged value,
+  and backing out a commit (`Aven.DB.Docs.Merge`).
+- `lenses.json`: writes of a todo's done-ness by v0 and v1 apps; what a v0 reader reads (`Aven.DB.Docs.Lens`).
 
 `aven-db-core`'s and `aven-db-store`'s tests load them. `bun run up --check` runs this again and fails when the files
 differ from what is committed. -/
@@ -423,6 +426,48 @@ def chats : List Json :=
   bodies ++ reads ++ Chains.chainExamples.map (fun (name, steps, _) => chainVector name steps) ++
   (List.range generated).map fun i => chainVector s!"seed {i + 1}" (randomChains (i + 1))
 
+/-! ## Docs: merges and lenses (`Aven.DB.Docs`) -/
+
+open Docs in
+def mergeCases : List (String × String × String × String × Bool) := [
+  ("only the target changed", "Order seeds", "Order seeds today", "Order seeds", false),
+  ("only the other branch changed", "Order seeds", "Order seeds", "Order seeds by Friday", false),
+  ("both changed, the target keeps its own", "Order seeds", "Order seeds today", "Order seeds by Friday", false),
+  ("both changed, the merger takes the other's", "Order seeds", "Order seeds today", "Order seeds by Friday", true),
+  ("both changed alike", "Order seeds", "Order beans", "Order beans", false)]
+
+open Docs in
+def merges : List Json :=
+  mergeCases.map (fun (name, base, target, other, take) =>
+    vector name (Json.mkObj [("base", base), ("target", target), ("other", other), ("takeOther", toJson take)])
+      (toJson (merge3 base target other take))) ++
+  -- backing out the commit that set "by Friday", where nothing since touched the title, and where something did
+  [vector "back out, untouched since" (Json.mkObj [("after", "by Friday"), ("now", "by Friday"), ("before", "")])
+      (toJson (merge3 "by Friday" "by Friday" "" false)),
+    vector "back out, changed since" (Json.mkObj [("after", "by Friday"), ("now", "by Monday"), ("before", "")])
+      (toJson (merge3 "by Friday" "by Monday" "" false))]
+
+open Docs in
+def TodoWrite.json : TodoWrite → Json
+  | .done b => Json.mkObj [("done", toJson b)]
+  | .status s => Json.mkObj [("status", s)]
+
+open Docs in
+def lensCases : List (String × List (Write TodoWrite)) := [
+  ("a v0 tick after a v1 status", [⟨1, .status "doing"⟩, ⟨2, .done true⟩]),
+  ("a v1 status after a v0 tick", [⟨1, .done true⟩, ⟨2, .status "doing"⟩]),
+  ("only v1 writes", [⟨3, .status "done"⟩, ⟨1, .status "open"⟩]),
+  ("nothing written", [])]
+
+open Docs in
+def lenses : List Json :=
+  lensCases.map fun (name, ws) =>
+    let input := ws.map fun w => Json.mkObj [("stamp", toJson w.stamp), ("write", TodoWrite.json w.value)]
+    vector name (Json.arr input.toArray)
+      (match readThrough asDone ws with
+       | some w => Json.mkObj [("stamp", toJson w.stamp), ("done", toJson w.value)]
+       | none => Json.null)
+
 /-! ## The engine -/
 
 section Engine
@@ -567,5 +612,5 @@ def main (args : List String) : IO Unit := do
   for (file, vs) in [("status.json", status), ("presence.json", presence), ("timeline.json", timeline),
       ("wire.json", wire), ("store.json", store), ("hashes.json", hashes), ("refs.json", refs),
       ("chat.json", chat), ("files.json", files), ("chats.json", chats), ("queries.json", queries),
-      ("wants.json", wants), ("mutations.json", mutations)] do
+      ("wants.json", wants), ("mutations.json", mutations), ("merges.json", merges), ("lenses.json", lenses)] do
     IO.FS.writeFile (dir / file) (render vs)
