@@ -15,6 +15,9 @@ import Aven.ID.Passkey
 import Aven.ID.Claim
 import Aven.ID.ClaimTrace
 import Aven.ID.ClaimJson
+import Aven.ID.Invite
+import Aven.ID.InviteTrace
+import Aven.ID.InviteJson
 
 /-! # Aven.ID
 
