@@ -56,9 +56,9 @@ peers.
 ## 3. Layer 1: Docs
 
 **One actor is one Doc**, and every Doc has exactly one writer. avenDB calls it a Doc: mutable, named by its id, a
-head over Values. An actor's Doc holds everything
-about it: its definition, its state, and every turn it took, each with the message it handled, whole. Messages travel
-in **inbox Docs**, one for each sender and receiver, written only by the sender.
+head over Values. An actor's Doc holds everything about it: its definition, its state, and every turn it took, each
+with the message it handled, whole. Messages travel in **inbox Docs**, one for each sender and receiver, written only
+by the sender.
 
 ```
  actor Doc   <home>/<id>                written only by the actor's home kernel
