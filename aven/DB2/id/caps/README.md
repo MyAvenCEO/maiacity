@@ -195,12 +195,11 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
     intersected with its run's caps (engine, rule 7).
 25. **Approval is a co-signature over one digest:** k of the named owners, for one act, used once.
 26. **Conditions only narrow.** Uses and budgets hold only where one checker counts them: a kernel or a router.
-27. **It fails closed.** An envelope counts, doesn't count, or waits for a key, a cap or what it builds on. What it names
-    is in its own past or inside it, so a wait is always for something known by hash, and every wait raises the stall
-    alarm (README, rule 3). It counts when it fits, is authorized and isn't a split (the docs layer's three verdicts),
-    and everything it builds on counts.
-    Fit never changes. A revocation can later turn "authorized" into "doesn't count", and the Doc's state is then
-    rebuilt from its envelopes.
+27. **It fails closed.** An envelope counts, doesn't count, or waits for a key, a cap or what it builds on. What it
+    names is in its own past or inside it, so a wait is always for something known by hash, and every wait raises the
+    stall alarm (README, rule 3). It counts when it fits, is authorized and isn't a split (the docs layer's three
+    verdicts), and everything it builds on counts. Fit never changes. A revocation can later turn "authorized" into
+    "doesn't count", and the Doc's state is then rebuilt from its envelopes.
 28. **No global state.** No check needs the whole tree, a sequencer, a list of every cap or a scan of everyone's
     letters. Proofs travel with the acts, and each check reads only the Docs it concerns.
 29. **Every format names its scheme.** A key blob says flat or tree, and seals and signatures say their suite. Scale and
