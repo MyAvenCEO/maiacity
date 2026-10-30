@@ -47,8 +47,7 @@ def challengeOf (text : String) : String := base64url (Keys.sha256.digest text.t
 /-! ## The checks -/
 
 /-- Whom an assertion must be for: the RP ID its passkey was made for, and the origins avenOS is served from. A list,
-so avenOS can move (from `aven.maia.city` to `maia.city`) by adding an origin, and what was signed on the old one
-still holds. -/
+so an assertion stored when it came holds while its origin stays listed. -/
 structure Relying where
   rpId : String
   origins : List String
@@ -180,13 +179,13 @@ def Making.make (m : Making) : Assertion :=
 /-! ## Examples
 
 Each check broken once, written out by hand. The Aven Peer in the box expects `localhost` and
-`http://localhost:5174`, the challenge of "a statement" and the passkey `passkey-a`; once avenOS moved, a second
-origin is listed beside it (`movedRelying`). -/
+`http://localhost:5174`, the challenge of "a statement" and the passkey `passkey-a`; `twoOrigins` lists a second
+origin beside it. -/
 
 def boxRelying : Relying := ⟨"localhost", ["http://localhost:5174"]⟩
-def movedRelying : Relying := ⟨"localhost", ["http://localhost:5174", "http://localhost:5175"]⟩
+def twoOrigins : Relying := ⟨"localhost", ["http://localhost:5174", "http://localhost:5175"]⟩
 
-/-- The examples on the box's relying party; `movedExamples` on the moved one. -/
+/-- The examples on the box's relying party; `twoOriginExamples` on one with two origins. -/
 def passkeyExamples : List (String × Making × Except AssertionError Unit) := [
   ("an assertion that holds", {}, .ok ()),
   ("a synced passkey's flags, backed up too", { flags := 0x1d }, .ok ()),
@@ -207,10 +206,10 @@ def passkeyExamples : List (String × Making × Except AssertionError Unit) := [
   ("authenticator data cut short", { retouch := [.cut 36] }, .error .authData),
   ("made on an origin not listed yet", { origin := "http://localhost:5175" }, .error .origin)]
 
-def movedExamples : List (String × Making × Except AssertionError Unit) := [
-  ("once moved, made on the new origin", { origin := "http://localhost:5175" }, .ok ()),
-  ("once moved, made on the old origin still", {}, .ok ()),
-  ("once moved, made on neither", { origin := "http://localhost:5173" }, .error .origin)]
+def twoOriginExamples : List (String × Making × Except AssertionError Unit) := [
+  ("with two origins, made on the second", { origin := "http://localhost:5175" }, .ok ()),
+  ("with two origins, made on the first", {}, .ok ()),
+  ("with two origins, made on neither", { origin := "http://localhost:5173" }, .error .origin)]
 
 def failure : Except AssertionError Unit → Option AssertionError
   | .ok () => none
@@ -218,7 +217,7 @@ def failure : Except AssertionError Unit → Option AssertionError
 
 #guard passkeyExamples.all fun (_, m, want) =>
   failure (m.make.check boxRelying (challengeOf "a statement") "passkey-a") == failure want
-#guard movedExamples.all fun (_, m, want) =>
-  failure (m.make.check movedRelying (challengeOf "a statement") "passkey-a") == failure want
+#guard twoOriginExamples.all fun (_, m, want) =>
+  failure (m.make.check twoOrigins (challengeOf "a statement") "passkey-a") == failure want
 
 end Aven.ID

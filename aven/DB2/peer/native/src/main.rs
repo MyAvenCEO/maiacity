@@ -27,7 +27,7 @@
 //!     --rp-id ID             with --relay: keep the tree in the store, claimed by the first passkey to sign up;
 //!                            the passkeys' RP ID: maia.city in production, localhost in the box
 //!     --origin URLS          with --rp-id: avenOS's origins, comma-separated; an assertion must come from one, and a
-//!                            stored one holds while its origin is listed, so avenOS moves by adding one
+//!                            stored one holds while its origin stays listed
 //!     --guardian HEX         with --rp-id: MaiaCityGuardian's public half, an owner of every person's vault founded
 
 use std::collections::HashMap;

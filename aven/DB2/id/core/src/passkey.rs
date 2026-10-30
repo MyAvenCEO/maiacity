@@ -11,7 +11,7 @@ use p256::pkcs8::DecodePublicKey;
 use sha2::{Digest, Sha256};
 
 /// Whom an assertion must be for: the RP ID its passkey was made for, and the origins avenOS is served from. A list,
-/// so avenOS can move by adding an origin, and what was signed on the old one still holds.
+/// so an assertion stored when it came holds while its origin stays listed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Relying {
     pub rp_id: String,
