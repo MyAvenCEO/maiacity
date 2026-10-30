@@ -134,14 +134,15 @@ means something else in another part, and that part's meaning is named.
 - **`x-loro`, `x-link`**: the container a field uses; **`x-link` = link**.
 - **lens**: two-way steps between two schema versions: add, rename, convert, in, wrap, unwrap, move, container.
 - **kept, unseen**: where a dropped field's data goes.
-- **lane → catalogue**; largely retired by D8 and type Docs.
+- **lane → vocabulary** (Samuel); largely retired by D8 and type Docs.
 - **view**: an app's schema and lenses. **= the input of a view** (one meaning, shared with the engine).
 - **fit, kin**: whether an envelope's changes fit the schemas it names; one kind or kinds a lens joins.
 - **envelope, segment, genesis envelope**: shared primitives; a Doc's first envelope, whose hash is its id.
 - **snapshot, checkpoint, head**: shared primitives.
 - **peer** (Loro) **→ writer id**. ⚠ A Peer is a node.
 - **counter range**: a writer's op counters in a segment; inside the seal (D13).
-- **epoch** (a device's next peer) **→ a new writer id**. ⚠ Epochs are keys.
+- **epoch** (a device's next peer) **→ generation** (Samuel): a device's fresh start after a split. ⚠ Epochs are
+  keys.
 - **line → branch**: **main**, **proposal**, **variant**; **draft** dropped. ⚠ The face's variant is an axis of
   a face.
 - **version, frontier, version vector**: **= version**.
@@ -149,7 +150,8 @@ means something else in another part, and that part's meaning is named.
 - **merge, merge footprint**: a change building on both heads, plus the three-way fix-up; every type and field it
   changes.
 - **restore → revert to; undo of an older change → back out**.
-- **fork**: a copy of a Record into a new Doc, without its history (D6). Only this meaning.
+- **fork**: a new Doc started from a version, with its state and a link to its origin, without its history (D6).
+  Only this meaning.
 - **split**: shared primitive. **settle**: **retires** (**A4**: splits are final).
 - **counts, verdicts** (fit, authorized, not split), **stuck peer**: an envelope counts when all three hold and its
   past counts; a writer id whose next ops would build on one that doesn't.
@@ -173,8 +175,8 @@ means something else in another part, and that part's meaning is named.
   writer's time.
 - **walk**: a bounded step over a link column, at most N hops.
 - **slot id**: the id of an at-most-one trait, so concurrent writes meet on one key.
-- **catalogue**: a vault's names for Values (types, operations, runtimes, definitions); vault, then network, then
-  built in.
+- **catalogue = vocabulary** (Samuel's word): a vault's names for Values (types, operations, runtimes, definitions);
+  vault, then network, then built in.
 - **want, target, window, follow, tier, signal, lifetime**: shared primitive and its parts. **part → depth** (`head`,
   `records`, `files`). Tiers are `now`, `next`, `later`, `idle`. A lifetime is `mounted` or `durable`, with the same
   meaning as an actor's.
@@ -209,11 +211,12 @@ means something else in another part, and that part's meaning is named.
 - **predicate**: **= a type** of facts, with an English name, a gismu, a gloss and typed places.
 - **place** (x1 to x5): a **value place** (closed types) or a **ref place → link place**.
 - **gismu, gismu table, coined**: Lojban roots with place structures; 1341 typed; a predicate without one.
-- **vocabulary → catalogue**. **category**: an entity standing for a kind of thing.
+- **vocabulary**: a vault's named types, operations, runtimes and definitions (Samuel's word for lanes and the
+  engine's catalogue). **category**: an entity standing for a kind of thing.
 - **kind → type** (a type composed of traits). ⚠ "kind" stays only for vaults.
 - **trait**: one predicate around an entity, at most one or many.
 - **proposal**: a change to the network's vocabulary that the admin accepts. **= a proposal branch** of the
-  catalogue.
+  vocabulary.
 - **minting agent**: makes predicates. **= an agent vault** with devices of its own, never a device of a person's
   vault.
 - **definition** (of a predicate) **→ gloss**. ⚠ A definition is an actor's.
@@ -224,8 +227,9 @@ means something else in another part, and that part's meaning is named.
 
 - **Value**: JSON only: null, bool, finite number, string, array, map. **= Value**.
 - **part**: code or data in one format, for one runtime. ⚠ A want has a **depth**.
-- **runtime**: shared primitive; **json-runtime, js-runtime, prolog-runtime, css-runtime**, and **view-runtime →
-  markup-runtime**.
+- **runtime**: shared primitive. #1488 names them after their job: **state-runtime** (was json-runtime),
+  **js-runtime**, **prolog-runtime**, **style-runtime** (was css-runtime), and **view-runtime → markup-runtime**,
+  since Samuel keeps "view" for the engine's sense. Their future home is [`aven/runtimes`](../runtimes/README.md).
 - **floor, fuel, shim, hostile parts**: the oldest runtime still run; work counted per instruction; the deterministic
   answer to clock and random calls; test parts that try to escape.
 - **definition**: the class: `interface`, `machine`, `turn`, `faces`, `init`, `lifetime`, `replaces`, `loads`.
@@ -305,7 +309,7 @@ Which part keeps each word.
 | record | docs and engine (`Record`) | entry (actors), pack entry, status |
 | peer | avenPEER (`Peer`) | writer id (Loro) |
 | writer | a log's author | the committer (the task) |
-| epoch | caps | a new writer id (docs) |
+| epoch | caps | generation (docs) |
 | partial | engine | unchecked (milestone-4 notes) |
 | index | engine | chunk list (files), pack table |
 | gate | the box's time limits | door (access); `Door` (code) |
@@ -316,7 +320,7 @@ Which part keeps each word.
 | scheduler | actors (turns) | the want queue (engine) |
 | ack | caps | delivery mark (actors' frames) |
 | router | caps (`tell` check) | iroh's `Router` keeps its name in code |
-| lane | nobody | catalogue (docs, ontology); topology (box) |
+| lane | nobody | vocabulary (docs, ontology); topology (box) |
 | commit | docs and engine | key commitment (caps) |
 | definition | actors | gloss (ontology) |
 | variant | docs (a branch) and actors (an axis of a face) | both stay, each in its own part |
@@ -333,7 +337,7 @@ Which part keeps each word.
 | loads, manifest, durable want, keep, mounted want, interest | want (keep = durable) |
 | keeper, holder, the Aven Peer's keep rule | keeper (holder for a file's chunks) |
 | type, schema family, table, predicate, kind, definition | type, with versions |
-| catalogue, lane, vocabulary | catalogue |
+| catalogue, lane, vocabulary | vocabulary |
 | plugin, runtime | runtime |
 | invite, ticket; join, claiming a ticket | ticket; claim |
 | member, `memberOf`, in the network's group | member of the network's group |

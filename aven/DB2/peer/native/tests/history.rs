@@ -8,7 +8,7 @@
 use std::sync::{Arc, Mutex};
 
 use aven_db_core::chain::{Answer, Body, Line};
-use aven_db_core::wire::Frame;
+use aven_db_core::wire::{Frame, Head, MAX_FRAME, encode};
 use aven_db_store::{Hash, RefName, backend};
 use aven_peer::Notes;
 use aven_peer::chats::{self, Chats};
@@ -81,20 +81,50 @@ fn memory() -> chats::Shared {
     Arc::new(backend::memory().unwrap())
 }
 
-/// What `from` answers what `to` holds, taken by `to`: one catch-up through the frames.
-async fn catch_up(to: &Chats, from: &Chats) {
-    let Frame::Heads { heads } = from.heads_frame() else {
-        panic!()
-    };
-    let Frame::CatchUp { holds } = to.catch_up_frame(&heads) else {
-        panic!()
-    };
-    for frame in from.answer(&holds).await {
-        let Frame::Lines { lines } = frame else {
+/// Every head `from` holds, through the pages of one telling, each a frame under the wire's limit.
+fn heads(from: &Chats) -> Vec<Head> {
+    let pages = from.heads_frames();
+    let mut out = vec![];
+    for (i, page) in pages.iter().enumerate() {
+        assert!(
+            encode(page).len() <= MAX_FRAME,
+            "a heads page of {} bytes",
+            encode(page).len()
+        );
+        let Frame::Heads { heads, more } = page else {
             panic!()
         };
-        for line in lines {
-            to.take(line.as_bytes()).await;
+        assert_eq!(
+            *more,
+            i + 1 < pages.len(),
+            "only the last page ends the telling"
+        );
+        out.extend(heads.iter().cloned());
+    }
+    out
+}
+
+/// What `from` answers what `to` holds, taken by `to`: one catch-up through the frames, every one of them, the pages
+/// of `catch_up` and the `lines` of the answer, under the wire's limit.
+async fn catch_up(to: &Chats, from: &Chats) {
+    let heads = heads(from);
+    for page in to.catch_up_frames(heads.into_iter().map(|h| h.device)) {
+        assert!(
+            encode(&page).len() <= MAX_FRAME,
+            "a catch_up page of {} bytes",
+            encode(&page).len()
+        );
+        let Frame::CatchUp { holds, only } = page else {
+            panic!()
+        };
+        for frame in from.answer(&holds, only).await {
+            assert!(encode(&frame).len() <= MAX_FRAME);
+            let Frame::Lines { lines } = frame else {
+                panic!()
+            };
+            for line in lines {
+                to.take(line.as_bytes()).await;
+            }
         }
     }
 }
@@ -138,10 +168,7 @@ async fn history_is_kept_and_caught_up() {
 
     // Bob writes offline; on reconnect the Aven Peer's heads show what it misses, and Bob sends it
     b.write(Body::Text("written offline".into())).await.unwrap();
-    let Frame::Heads { heads } = hub.heads_frame() else {
-        panic!()
-    };
-    let unsent = b.unsent(&heads).await;
+    let unsent = b.unsent(&heads(&hub)).await;
     assert_eq!(unsent.len(), 1);
     for frame in unsent {
         let Frame::Lines { lines } = frame else {
@@ -193,4 +220,56 @@ async fn history_is_kept_and_caught_up() {
     assert!(matches!(hub.take(&fork.blob()).await, Answer::Fork));
     assert_eq!(told.events("fork"), 1);
     assert_eq!(hub_store.get_ref(&alice_ref).await.unwrap(), Some(head));
+}
+
+/// A device's first line, signed by its key, as its own peer would write it.
+fn first_line(secret: &SecretKey, text: &str) -> Vec<u8> {
+    let mut line = Line {
+        network: "aven".into(),
+        device: secret.public().to_string(),
+        seq: 1,
+        prev: None,
+        at: 1,
+        sig: String::new(),
+        body: Body::Text(text.into()),
+    };
+    line.sig = secret
+        .sign(line.signs().as_bytes())
+        .to_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    line.blob()
+}
+
+#[tokio::test]
+async fn catching_up_on_many_devices_stays_under_the_frame_limit() {
+    // every browser reset adds a device: in one frame each, `heads` and `catch_up` passed the wire's 64 KiB at about
+    // 400 of them, and catching up broke for everyone. In pages (`Aven.DB.Wire.headsPages`, `catchUpPages`) it holds
+    // at any number
+    let devices: Vec<SecretKey> = (0..600u16)
+        .map(|i| {
+            let mut seed = [7u8; 32];
+            seed[..2].copy_from_slice(&i.to_le_bytes());
+            SecretKey::from_bytes(&seed)
+        })
+        .collect();
+    let (aven, bob) = (key(1), key(3));
+    let mut all: Vec<&SecretKey> = devices.iter().collect();
+    all.extend([&aven, &bob]);
+    let gate = gate(&all);
+    let (hub, _) = open("aven", &aven, &gate, &memory()).await;
+    hub.learn().await;
+    for (i, d) in devices.iter().enumerate() {
+        let blob = first_line(d, &format!("line {i}"));
+        assert!(matches!(hub.take(&blob).await, Answer::Moved(_)));
+    }
+    assert!(hub.heads_frames().len() >= 5, "600 heads are several pages");
+
+    let (b, told) = open("bob", &bob, &gate, &memory()).await;
+    catch_up(&b, &hub).await;
+    assert_eq!(told.texts().len(), 600);
+    // and the Aven Peer's answer to a page names only that page's chains
+    catch_up(&b, &hub).await;
+    assert_eq!(told.texts().len(), 600);
 }

@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use aven_db_core::presence::Presence;
 use aven_db_core::status::TICK_MS;
 use aven_db_core::timeline;
-use aven_db_core::wire::{Decoder, Frame, encode};
+use aven_db_core::wire::{Decoder, Frame, encode, heads_pages};
 use iroh::PublicKey;
 use iroh::endpoint::Connection;
 use iroh::protocol::{AcceptError, ProtocolHandler};
@@ -92,7 +92,7 @@ impl Hub {
     async fn chat(&self, frame: &Frame) -> Option<Vec<Frame>> {
         let chats = self.chats.as_ref()?;
         match frame {
-            Frame::CatchUp { holds } => Some(chats.answer(holds).await),
+            Frame::CatchUp { holds, only } => Some(chats.answer(holds, *only).await),
             Frame::Lines { lines } => {
                 for line in lines {
                     if let Answer::Moved(_) = chats.take(line.as_bytes()).await
@@ -169,15 +169,15 @@ impl Hub {
         .await
         .map_err(fail)?;
         if let Some(chats) = &self.chats {
-            send.write_all(&encode(&chats.heads_frame()))
-                .await
-                .map_err(fail)?;
+            for page in chats.heads_frames() {
+                send.write_all(&encode(&page)).await.map_err(fail)?;
+            }
         }
         let mut told = self.told.subscribe();
         told.mark_changed();
         let mut beat = interval(Duration::from_millis(TICK_MS));
         // the heads this link was told, and the moves since: each beat tells it the heads that moved
-        let mut told_heads = self.chats.as_ref().map(|c| (c.moved(), c.heads_frame()));
+        let mut told_heads = self.chats.as_ref().map(|c| (c.moved(), c.heads_told()));
         let mut n = 0;
         let key = conn.remote_id().to_string();
         let mut network = self.door.as_ref().map(|door| {
@@ -212,11 +212,11 @@ impl Hub {
                         && chats.moved() != *moved
                     {
                         *moved = chats.moved();
-                        let now = chats.heads_frame();
-                        if let (Frame::Heads { heads }, Frame::Heads { heads: before }) = (&now, &*told) {
-                            let changed: Vec<_> = heads.iter().filter(|h| !before.contains(h)).cloned().collect();
-                            if !changed.is_empty() {
-                                send.write_all(&encode(&Frame::Heads { heads: changed })).await.map_err(fail)?;
+                        let now = chats.heads_told();
+                        let changed: Vec<_> = now.iter().filter(|h| !told.contains(h)).cloned().collect();
+                        if !changed.is_empty() {
+                            for page in heads_pages(changed) {
+                                send.write_all(&encode(&page)).await.map_err(fail)?;
                             }
                         }
                         *told = now;

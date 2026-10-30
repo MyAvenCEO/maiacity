@@ -146,7 +146,9 @@ pub enum KeepError {
     NotFound(String),
     /// The file it holds is `held` bytes; its line says `announced`.
     Mismatch { held: u64, announced: u64 },
-    /// The index it announced is no list of hashes: its bytes are checked against its name, so it never will be.
+    /// The index it announced is no list of hashes, lists more or fewer chunks than its size needs, or a chunk isn't
+    /// cut as a file's must be (every one but the last exactly 1 MiB), or the file is past the largest: its bytes are
+    /// checked against their names, so it never will be otherwise.
     Malformed(String),
     /// The device couldn't be reached, or the fetch or the store failed on the way: worth asking again.
     Unreachable(String),
@@ -199,18 +201,43 @@ pub async fn keep<S: Store + ?Sized>(
             .connect(at, crate::blobs::ALPN)
             .await
             .map_err(|e| unreachable(&e))?;
-        let fetched = blobs.fetch_file(&conn, index).await.map_err(|e| match e {
+        let fetch_error = |e: FetchError| match e {
             FetchError::NotFound(_) => KeepError::NotFound(e.to_string()),
             FetchError::NotAFile(_) => KeepError::Malformed(e.to_string()),
             FetchError::Failed(_) => unreachable(&e),
-        })?;
+        };
+        let corrupt = |e: aven_db_store::Error| match e {
+            aven_db_store::Error::Corrupt(_) => KeepError::Malformed(e.to_string()),
+            _ => unreachable(&e),
+        };
+        // the index first: a file whose index lists more or fewer chunks than its line's size needs, or one past the
+        // largest file, is refused before any chunk is fetched
+        if size > files::MAX_FILE {
+            return Err(KeepError::Malformed(format!(
+                "{size} bytes, past the largest file"
+            )));
+        }
+        blobs
+            .fetch_chunks(&conn, index, 0..0)
+            .await
+            .map_err(fetch_error)?;
+        let listed = files::open(store, &index)
+            .await
+            .map_err(corrupt)?
+            .ok_or_else(|| KeepError::NotFound("no index".into()))?;
+        if listed.chunks.len() as u64 != size.div_ceil(files::CHUNK) {
+            return Err(KeepError::Malformed(format!(
+                "an index of {} chunks for {size} bytes",
+                listed.chunks.len()
+            )));
+        }
+        let fetched = blobs.fetch_file(&conn, index).await.map_err(fetch_error)?;
         let file = files::open(store, &index)
             .await
-            .map_err(|e| match e {
-                aven_db_store::Error::Corrupt(_) => KeepError::Malformed(e.to_string()),
-                _ => unreachable(&e),
-            })?
+            .map_err(corrupt)?
             .ok_or_else(|| KeepError::NotFound("no index".into()))?;
+        // every chunk but the last exactly 1 MiB: a malformed file is never kept, and never read into a panic
+        file.check(store).await.map_err(corrupt)?;
         if file.len != size {
             return Err(KeepError::Mismatch {
                 held: file.len,

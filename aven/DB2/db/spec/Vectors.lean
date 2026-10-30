@@ -282,6 +282,23 @@ def randomFile (seed : Nat) : Nat × List UInt8 × List (Nat × Nat) := Id.run d
     ((min a e, max a e), r)
   return (c + 1, Store.noise len seed, rs)
 
+open Files in
+/-- Whether chunk `i` of a file of `n` bytes, `len` long, is cut as it must be; and the limits. -/
+def fitsVectors : List Json :=
+  let mib := chunkSize
+  let one (name : String) (c n i len : Nat) :=
+    vector s!"fits: {name}" (Json.mkObj [("fits", Json.mkObj [("chunk", toJson c), ("size", toJson n), ("i", toJson i),
+      ("len", toJson len)])]) (Json.mkObj [("fits", toJson (fits c n i len))])
+  [vector "limits" (Json.mkObj [("limits", Json.null)])
+    (Json.mkObj [("chunk", toJson chunkSize), ("maxBlob", toJson maxBlob), ("maxFile", toJson maxFile)]),
+   one "a whole middle chunk" 4 10 1 4, one "the short last chunk" 4 10 2 2, one "a short middle chunk" 4 10 1 2,
+   one "a whole last chunk where a short one belongs" 4 10 2 4, one "a chunk past the end" 4 10 3 1,
+   one "an empty last chunk" 4 8 2 0, one "a chunk too long" 4 10 0 5,
+   one "a movie's middle chunk, whole" mib 200000000 95 mib,
+   one "a movie's middle chunk, one byte short" mib 200000000 95 (mib - 1),
+   one "a movie's last chunk" mib 200000000 190 (200000000 - 190 * mib),
+   one "a movie's last chunk, whole" mib 200000000 190 mib]
+
 def files : List Json :=
   let mib := Files.chunkSize
   [fileVector "ten bytes in chunks of 4" 4 Files.abc [(0, 10), (3, 9), (4, 8), (9, 10), (5, 5), (0, 11), (6, 3)],
@@ -293,7 +310,7 @@ def files : List Json :=
      [(100000000, 100500000), (100500000, 101000000), (0, 1), (199999999, 200000000), (0, 200000000)],
    sizeVector "exactly one chunk" mib mib [(0, mib), (mib - 1, mib), (0, mib + 1)],
    sizeVector "one byte more than a chunk" mib (mib + 1) [(mib, mib + 1), (mib - 1, mib + 1)],
-   sizeVector "one byte" mib 1 [(0, 1), (1, 1)]] ++
+   sizeVector "one byte" mib 1 [(0, 1), (1, 1)]] ++ fitsVectors ++
   (List.range generated).map fun i =>
     let (c, b, rs) := randomFile (i + 1)
     fileVector s!"seed {i + 1}" c b rs

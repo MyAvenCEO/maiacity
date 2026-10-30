@@ -9,7 +9,7 @@ Learnings come in as rules and tests, never as code (README rule 12).
 The engine's input from apps is what actors declare they need: their `loads`
 ([`aven/actor/ARCHITECTURE.md`](../../../actor/ARCHITECTURE.md), sections 3, 6 and 11; avenDB-old's actors as Interests:
 [`aven/actor/README.md`](../../../actor/README.md), section 6). What it may serve is decided by
-capabilities ([`aven/ID/caps/README.md`](../../../ID/caps/README.md)).
+capabilities ([`aven/DB2/id/caps/README.md`](../../id/caps/README.md)).
 
 1. [What the engine does](#1-what-the-engine-does)
 2. [Where we looked](#2-where-we-looked)

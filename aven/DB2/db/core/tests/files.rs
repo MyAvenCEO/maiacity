@@ -3,7 +3,9 @@
 
 use std::path::PathBuf;
 
-use aven_db_core::files::{self, bounds, count, read, split, touches};
+use aven_db_core::files::{
+    self, CHUNK, MAX_BLOB, MAX_FILE, bounds, count, fits, read, split, touches,
+};
 use serde_json::{Value, json};
 
 fn vectors(file: &str) -> Vec<Value> {
@@ -26,7 +28,10 @@ fn unhex(s: &str) -> Vec<u8> {
 
 #[test]
 fn files_follow_the_vectors() {
-    let all = vectors("files.json");
+    let all: Vec<Value> = vectors("files.json")
+        .into_iter()
+        .filter(|v| v["input"].get("chunk").is_some())
+        .collect();
     assert!(all.len() >= 60, "{} files", all.len());
     for v in all {
         let input = &v["input"];
@@ -72,5 +77,34 @@ fn files_follow_the_vectors() {
             got["file"] = json!(blake3::hash(&index).to_hex().to_string());
         }
         assert_eq!(got, v["expected"], "{}", v["name"]);
+    }
+}
+
+/// A chunk cut as it must be, and the limits, as Lean says (`Aven.DB.Files.fits`, `maxBlob`, `maxFile`).
+#[test]
+fn chunks_fit_as_the_vectors_say() {
+    let all = vectors("files.json");
+    let limits = all
+        .iter()
+        .find(|v| v["name"] == "limits")
+        .expect("the limits");
+    assert_eq!(
+        json!({ "chunk": CHUNK, "maxBlob": MAX_BLOB, "maxFile": MAX_FILE }),
+        limits["expected"]
+    );
+    let fitting: Vec<&Value> = all
+        .iter()
+        .filter(|v| v["input"].get("fits").is_some())
+        .collect();
+    assert!(fitting.len() >= 10);
+    for v in fitting {
+        let f = &v["input"]["fits"];
+        let n = |k: &str| f[k].as_u64().unwrap();
+        assert_eq!(
+            json!({ "fits": fits(n("chunk"), n("size"), n("i"), n("len")) }),
+            v["expected"],
+            "{}",
+            v["name"]
+        );
     }
 }

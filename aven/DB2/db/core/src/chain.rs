@@ -76,6 +76,9 @@ impl Body {
                 if !hash || f.kind.is_empty() || f.kind.len() > MAX_TYPE || f.kind.contains('\n') {
                     return Err(Refusal::BadFile);
                 }
+                if f.size > crate::files::MAX_FILE {
+                    return Err(Refusal::BadFile);
+                }
                 &f.name
             }
         };
@@ -219,7 +222,8 @@ pub enum Refusal {
     TooLong,
     /// Not 1 for a first line, or 1 for a line with a previous one.
     BadSeq,
-    /// A file line whose hash isn't one, or whose type is empty, too long or breaks the line.
+    /// A file line whose hash isn't one, whose type is empty, too long or breaks the line, or whose size is past
+    /// [`crate::files::MAX_FILE`].
     BadFile,
     /// A blob that isn't exactly the bytes its line renders to ([`Line::parse`]).
     NotCanonical,
