@@ -237,7 +237,7 @@ and peer to peer: [`ARCHITECTURE.md`](ARCHITECTURE.md). Every term of every part
 
 Each plan is its own document; there is no numbered roadmap here (Samuel, 30 Oct 2026). The box:
 [`SANDBOX.md`](SANDBOX.md). Production: [`PRODUCTION.md`](PRODUCTION.md). The members' network:
-[`MILESTONE2.md`](MILESTONE2.md). The store: [`store`](store/README.md). Caps: [`id/caps`](id/caps/README.md). The data
+[`MILESTONE2.md`](MILESTONE2.md). Every Peer can do the Aven Peer's jobs: [`PEERS.md`](PEERS.md). The store: [`store`](store/README.md). Caps: [`id/caps`](id/caps/README.md). The data
 design: [`db/docs`](db/docs/README.md), [`db/engine`](db/engine/README.md) and [`db/ontology`](db/ontology/README.md).
 
 ## How we work
