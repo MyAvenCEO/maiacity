@@ -186,19 +186,54 @@ The opfs-sync thread's five questions, answered:
 4. **Lean and the suite.** `Aven.DB.Store` keeps its state (blobs whole or absent, refs compare-and-set) and gains a
    crash between the temporary file and the move: what was moved is whole, the rest is swept. A change of leader is
    a change of the one writer, under the lock: modelled as one writer at a time. The suite runs in a dedicated worker
-   only (the page run goes), in all three engines, and the bench becomes a gate: 200 writes of 4 KiB under 250 ms in
-   each engine was the first gate, from in-place writes; one file per blob can't meet it (opening a sync access handle
-   costs 1.7 to 23 ms). **Decided (the architect, 30 Oct 2026): one file per blob stays**, and the gate is the real
-   workload: a chat line (one blob and one ref) under 60 ms p50 and a 1 MiB chunk under 30 ms p50 in every engine, and
-   catch-up of 500 lines under 10 s in Firefox. If catch-up misses, pack files (blobs appended to a few open files, a
-   refs log, rebuilt on open) come as their own step, Lean first. Refs are read through `getFile()`, retried when a
-   move replaces the file, since a reader's sync handle would block that move.
+   only (the page run goes), in all three engines. The first gate, 200 writes of 4 KiB under 250 ms, came from
+   in-place writes; one file per blob can't meet it (opening a sync access handle costs 1.7 to 23 ms). **Decided (the
+   architect, 30 Oct 2026): this upgrade ships one file per blob**, and the gate is the real workload, per engine
+   (`store/opfs/run.mjs`): a chat line (one blob and one ref) and a 1 MiB chunk put, medians of 50, and catch-up of
+   500 lines. Writes run in the background (local first), and catch-up shows lines as they land.
+
+   | | chat line | 1 MiB chunk | catch-up of 500 lines |
+   |---|---|---|---|
+   | gate: Chromium and WebKit | 60 ms | 30 ms | 10 s |
+   | gate: Firefox | 150 ms | 100 ms | 30 s |
+   | measured, Chromium 156 | 20 ms | 21 ms | 4.2 s |
+   | measured, WebKit 27.2 | 13 ms | 24 ms | 2.2 s |
+   | measured, Firefox 157 | 78 ms | 42 ms | 14.7 s |
+
+   Refs and temporary files are read through `getFile()`, retried when a move replaces the file, since a reader's sync
+   handle would block that move. Lines stay one blob each until Loro's segments (milestone 4): a line's hash is its
+   name and is what's signed.
 5. **Scope.** In: the Service Worker's bridge to the leader (the BroadcastChannel, `os/web/peer`); the fork,
    `[patch.crates-io]` and `services-opfs` removed; the device's secret moved into the store;
    the leader and its takeover in `up --check` (close the leader's tab, a follower takes over within 5 s, and a chat
    line still arrives). OPFS quota: the Peer-Light asks `navigator.storage.persist()`, and a write over quota fails
-   cleanly with its temporary file removed. Out: real iOS. The box's WebKit on Linux has no OPFS at all, so Safari is
-   confirmed on Samuel's iPhone until the macOS runner's smoke test exists.
+   cleanly with its temporary file removed. Out: real iOS. The box's WebKit has OPFS with a profile directory
+   (`launchPersistentContext`), and the suite passes there; Safari itself, and iOS 15.2–25, are confirmed on Samuel's
+   iPhone until the macOS runner's smoke test exists.
+
+## Next: pack files
+
+The next store step, on this upgrade's evidence (the architect, 30 Oct 2026): Firefox pays about 23 ms for every
+`createSyncAccessHandle()`, twice per chat line, and the same engines write 200 × 4 KiB into one open file in 10 to
+102 ms. Packs keep a few files open and append to them, so a write costs a write, not a file. Not built in this
+upgrade; the contract, the suite and the gates stay, and the opfs driver changes underneath.
+
+- **Blobs in packs.** A blob is appended to the open pack as one record: a header (its hash, its length, a checksum of
+  the header) and its bytes. A pack closes at a size (64 MiB, to measure) and a new one opens. Big chunks may stay one
+  file each: a 1 MiB chunk already costs one handle per MiB, which is cheap; the line is measured, not guessed.
+- **Refs in a log.** Every `set_ref` and `delete_ref` appends a record (name, old, new or none, checksum) to the refs
+  log; the newest record of a name is its value. Compare-and-set still runs under the one writer's lock.
+- **The index is rebuilt on open,** by reading every pack's headers and the refs log, and kept in memory: hash →
+  (pack, offset, length), name → hash. Reads are ranges of an open pack's handle.
+- **A torn tail is cut by checksum:** a crash leaves at most the last record of a pack or of the log partly written;
+  opening finds the first record whose header or checksum fails and truncates there. A blob's bytes are also checked
+  against its hash on read, as now.
+- **Deletes are tombstones** (a record naming the hash); `list` and `has` skip them. **Compaction comes later:** a pack
+  mostly tombstoned is rewritten to a new one, then the old one removed, the index switched under the lock.
+- **Lean first:** a model of the log (records appended, a torn tail) beside `Aven.DB.Store`, with the theorem that
+  replaying any prefix of the bytes written, cut at its first bad record, gives the store before or after the last
+  call, the same shape as `crash_atomic`; then Rust's crash tests (every byte offset a crash point), then the driver.
+- **Gates:** the same workload, every engine held to 60 ms, 30 ms and 10 s, Firefox included.
 
 ## The iroh it uses
 

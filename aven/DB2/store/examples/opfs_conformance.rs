@@ -1,7 +1,7 @@
 //! The conformance suite on OPFS, in a browser: `opfs/run.sh` builds this to wasm and `opfs/run.mjs` calls
 //! `conformance(root)` in a dedicated worker (the only place every engine has sync access handles) in Chromium, WebKit
 //! and Firefox, each case and each of the model's traces on a fresh folder under `root` in the origin's private file
-//! system. The bench's times are printed, and the real workload is the gate (`conformance::workload`).
+//! system. The bench's and the workload's times are printed; `opfs/run.mjs` holds the workload to its engine's gates.
 
 #[cfg(target_arch = "wasm32")]
 mod browser {
@@ -39,14 +39,9 @@ mod browser {
                     Err(e) => out.push_str(&format!("bench failed: {e}\n")),
                 }
                 match conformance::workload(&store, now).await {
-                    Ok(gates) => {
-                        for (what, ms, gate) in gates {
-                            let under = ms < gate;
-                            passed &= under;
-                            out.push_str(&format!(
-                                "gate {what}: {ms:.1} ms, {} {gate:.0} ms\n",
-                                if under { "under" } else { "OVER" }
-                            ));
+                    Ok(times) => {
+                        for (what, ms) in times {
+                            out.push_str(&format!("workload {what}: {ms:.1} ms\n"));
                         }
                     }
                     Err(e) => {

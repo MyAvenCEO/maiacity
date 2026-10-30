@@ -344,13 +344,13 @@ pub async fn bench(
     Ok(times)
 }
 
-/// The real workload, timed by `now` (milliseconds), with its gates (store/README.md): a chat line (one small blob and
-/// its device's head moved) under 60 ms at the median, a 1 MiB chunk put under 30 ms at the median, and catching up
-/// 500 lines (each a blob, the head moved once at the end) under 10 s. Each entry is (what, ms, gate in ms).
+/// The real workload, timed by `now` (milliseconds): a chat line (one small blob and its device's head moved, median of
+/// 50), a 1 MiB chunk put (median of 50), and catching up 500 lines (each a blob, the head moved once at the end). Each
+/// entry is (what, ms); the gates are per engine (`opfs/run.mjs`, store/README.md).
 pub async fn workload(
     s: &impl Store,
     now: impl Fn() -> f64,
-) -> Result<Vec<(&'static str, f64, f64)>, Error> {
+) -> Result<Vec<(&'static str, f64)>, Error> {
     fn median(mut v: Vec<f64>) -> f64 {
         v.sort_by(f64::total_cmp);
         v[v.len() / 2]
@@ -366,7 +366,7 @@ pub async fn workload(
         lines.push(now() - t);
     }
     let mut chunks = Vec::new();
-    for i in 0..20 {
+    for i in 0..50 {
         let bytes = noise(1 << 20, 6000 + i);
         let t = now();
         s.put(bytes).await?;
@@ -383,8 +383,8 @@ pub async fn workload(
     }
     let catch_up = now() - t;
     Ok(vec![
-        ("a chat line (blob and head), median of 50", median(lines), 60.0),
-        ("a 1 MiB chunk put, median of 20", median(chunks), 30.0),
-        ("catch-up of 500 lines", catch_up, 10_000.0),
+        ("line", median(lines)),
+        ("chunk", median(chunks)),
+        ("catch-up", catch_up),
     ])
 }
