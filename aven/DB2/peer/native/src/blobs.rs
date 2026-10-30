@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use aven_db_core::timeline;
-use aven_db_store::blobs::{Blobs, Provider};
+use aven_db_store::blobs::{Blobs, FetchError, Provider};
 use serde_json::json;
 
 use crate::members::Gate;
@@ -24,4 +24,28 @@ pub fn provider(blobs: &Blobs, me: String, gate: Gate, notes: Notes) -> Provider
         }
         ok
     }))
+}
+
+/// A fetch over a connection kept from before, `cached`, and when it fails but for [`FetchError::NotFound`], once more
+/// over a `fresh` one: a kept connection can be dead unseen (its holder's worker ended, or a takeover rebound its
+/// endpoint) and still read as open. The result, and the connection to keep: the one that answered, or none.
+pub async fn once_more<C: Clone, T, E: std::fmt::Display>(
+    cached: Option<C>,
+    fresh: impl AsyncFn() -> Result<C, E>,
+    fetch: impl AsyncFn(C) -> Result<T, FetchError>,
+) -> (Result<T, FetchError>, Option<C>) {
+    if let Some(conn) = cached {
+        match fetch(conn.clone()).await {
+            Err(FetchError::Failed(_)) => {}
+            answered => return (answered, Some(conn)),
+        }
+    }
+    match fresh().await {
+        Ok(conn) => {
+            let result = fetch(conn.clone()).await;
+            let keep = (!matches!(result, Err(FetchError::Failed(_)))).then_some(conn);
+            (result, keep)
+        }
+        Err(e) => (Err(FetchError::Failed(format!("no connection: {e}"))), None),
+    }
 }

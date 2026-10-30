@@ -1,8 +1,9 @@
 <script>
 	// avenOS on an Aven Peer's host without a cast (PRODUCTION.md, "What a person sees"). Unclaimed, one screen: Sign
 	// up, which asks for the person's name, then makes a passkey (Part C); the first signup claims the network. Claimed, this browser opens avenOS's dashboard as the admin's
-	// vault once it is one of the network's devices; any other browser sees "invite only, coming soon", and the admin
-	// signs in there with the passkey, which makes it a device too. `#/claim` shows the signup screen whatever the
+	// vault once it is one of the network's devices; any other browser sees "invite only, coming soon", and anyone whose
+	// vault the network holds, the admin or a member, signs in there with their passkey, which makes it a device of
+	// their vault too (Aven.ID.SignIn). A passkey that owns no vault here is refused with a word to ask for an invite. `#/claim` shows the signup screen whatever the
 	// network says: a second signup is the Aven Peer's to refuse, and it does.
 	import App from './App.svelte';
 	import Join from './Join.svelte';

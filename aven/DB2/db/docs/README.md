@@ -1,7 +1,7 @@
 # Docs: Loro documents, their versions, schemas and lenses
 
-This folder is avenDB's document layer (milestone 4, "Docs", in the [README](../../README.md#milestones)), not
-documentation. A proposal (30 Oct 2026) for milestones 4 (docs), 5 (version control) and 6 (schemas and lenses).
+This folder is avenDB's document layer, not documentation. A proposal (30 Oct 2026) for documents, version control,
+and schemas and lenses.
 
 Everything a document is lives here: its values and the Loro containers that hold them; its envelopes, segments,
 snapshots and head; its history, versions, lines and merges; the schemas that shape its values and the lenses that carry

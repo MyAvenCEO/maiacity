@@ -170,10 +170,34 @@ def memberExamples : List (String × List MemberOp × List (Option MemberError �
     [(mok, 2, 0), (mok, 2, 0), (mno .name, 2, 0), (mno .name, 2, 0), (mok, 3, 1)]),
   ("a join for another network", [.claim "a" "1" {}, .invite "a" "1" {}, .join "1" "b" "4" { network := "other" }],
     [(mok, 2, 0), (mok, 2, 0), (mno .wrongNetwork, 2, 0)]),
-  ("two people join, the admin signs in again, a member can't sign in as the admin",
+  ("two people join, the admin signs in again, and so does a member, each as themselves",
     [.claim "a" "1" {}, .invite "a" "1" {}, .invite "a" "2" {}, .join "1" "b" "4" {}, .join "2" "c" "5" {},
       .signIn "a" "2" {}, .signIn "b" "3" {}],
-    [(mok, 2, 0), (mok, 2, 0), (mok, 2, 0), (mok, 3, 1), (mok, 4, 2), (mok, 5, 2), (mno (.claim (.assertion .badSignature)), 5, 2)]),
+    [(mok, 2, 0), (mok, 2, 0), (mok, 2, 0), (mok, 3, 1), (mok, 4, 2), (mok, 5, 2), (mok, 6, 2)]),
+  -- `sandbox/members.mjs` holds the box's member to this trace: its browser reset, the passkey signs in again
+  ("the box's check: a member signs in on a second browser, a restart keeps it, the same browser again is known",
+    [.claim "a" "1" {}, .invite "a" "1" {}, .join "1" "b" "4" {}, .signIn "b" "5" {}, .restart, .signIn "b" "5" {}],
+    [(mok, 2, 0), (mok, 2, 0), (mok, 3, 1), (mok, 4, 1), (mok, 4, 1), (mno .known, 4, 1)]),
+  ("a member's sign-in replayed for another browser fails its challenge",
+    [.claim "a" "1" {}, .invite "a" "1" {}, .join "1" "b" "4" {}, .signIn "b" "5" { swap := some "3" }],
+    [(mok, 2, 0), (mok, 2, 0), (mok, 3, 1), (mno (.assertion .challenge), 3, 1)]),
+  ("a member's sign-in sent by another browser than it names",
+    [.claim "a" "1" {}, .invite "a" "1" {}, .join "1" "b" "4" {}, .signIn "b" "5" { sender := some "3" }],
+    [(mok, 2, 0), (mok, 2, 0), (mok, 3, 1), (mno .notFromDevice, 3, 1)]),
+  ("a passkey that owns no vault here can't sign in, before or after it is a member's",
+    [.claim "a" "1" {}, .signIn "b" "2" {}, .invite "a" "1" {}, .signIn "b" "2" {}, .join "1" "b" "4" {},
+      .signIn "b" "2" {}],
+    [(mok, 2, 0), (mno .stranger, 2, 0), (mok, 2, 0), (mno .stranger, 2, 0), (mok, 3, 1), (mok, 4, 1)]),
+  ("a member's sign-in made on another origin fails for every passkey alike",
+    [.claim "a" "1" {}, .invite "a" "1" {}, .join "1" "b" "4" {},
+      .signIn "b" "5" { origin := "http://localhost:5173" }, .signIn "c" "5" { flags := 1 }],
+    [(mok, 2, 0), (mok, 2, 0), (mok, 3, 1), (mno (.assertion .origin), 3, 1), (mno (.assertion .notVerified), 3, 1)]),
+  ("counters are kept per passkey: a replayed counter is refused, another passkey's doesn't count",
+    [.claim "a" "1" { counter := 5 }, .invite "a" "1" {}, .join "1" "b" "4" {}, .signIn "b" "5" { counter := 2 },
+      .signIn "b" "3" { counter := 2 }, .signIn "a" "3" { counter := 4 }, .signIn "a" "3" { counter := 6 },
+      .restart, .signIn "b" "2" { counter := 1 }, .signIn "b" "2" { counter := 3 }],
+    [(mok, 2, 0), (mok, 2, 0), (mok, 3, 1), (mok, 4, 1), (mno .counter, 4, 1), (mno .counter, 4, 1), (mok, 5, 1),
+      (mok, 5, 1), (mno .counter, 5, 1), (mok, 6, 1)]),
   ("a restart keeps the members, the invites and the withdrawals; a wipe empties them",
     [.claim "a" "1" {}, .invite "a" "1" {}, .invite "a" "2" {}, .withdraw "a" "2" {}, .join "1" "b" "4" {},
       .restart, .join "2" "c" "5" {}, .wipe, .invite "a" "1" {}],
@@ -209,6 +233,13 @@ def membersAfter (ops : List MemberOp) : Members := ((boxMembers.run ops).getLas
   let (j, sender) := MemberOp.joinOf "1" "b" "4" {}
   m.newcomer sender (.join j) && !m.admits sender &&
     (m.take sender (.join j)).toOption.all fun m' => m'.admits sender && !m'.newcomer (browserKey "5") (.join j)
+
+-- a member's second browser is a device of the member's vault, named after them, and the door lets it in
+#guard
+  let m := membersAfter [.claim "a" "1" {}, .invite "a" "1" {}, .join "1" "b" "4" {}, .signIn "b" "5" {}]
+  m.tree.get? (deviceId "5") == some ⟨deviceId "5", "Bea's browser 2", .device, [.vault (personId "b")]⟩ &&
+    m.admits (browserKey "5") && m.tree.get? (personId "b") ==
+      (membersAfter [.claim "a" "1" {}, .invite "a" "1" {}, .join "1" "b" "4" {}]).tree.get? (personId "b")
 
 /-! ## Generated traces
 

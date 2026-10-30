@@ -23,7 +23,9 @@ The person's name is the one asked at signup, which the passkey signs (`validPer
 the Aven Peer's configuration (`--admin-coop`, `Maia City` by default): read at every start, never signed, so the coop
 is renamed by a restart with another name. The stored claims of the days the agent was called a network's vault read
 the same: their tree is the one they made then but for that one kind (`Aven.ID.Before`). Each later sign-in is a statement signed by the same passkey that adds one
-more browser, `<name>'s browser 2`, `3`, … in the order they came. The Aven Peer keeps each statement as a blob, the
+more browser, `<name>'s browser 2`, `3`, … in the order they came. A member signs in with the same statement, signed
+by their own passkey, which the network keeps beside its members (`Aven.ID.Invite`, "Sign-ins"; `Aven.ID.SignIn`):
+the claimant's sign-ins are the ones kept here. The Aven Peer keeps each statement as a blob, the
 claim under the ref `claim`, set from nothing by compare-and-set, so a second claim is refused even racing the first.
 
 A statement's passkey signs its text, through the challenge (`challengeOf`): so it binds the network, the vaults it
@@ -32,7 +34,7 @@ its challenge. The browser sending a statement must be the device it names: the 
 key with it (`sender`).
 
 A passkey that counts its signatures must count up: a sign-in whose counter isn't above the last one the network
-kept, while either is not 0, is refused, as WebAuthn advises against a cloned authenticator. Synced passkeys keep the
+kept for that passkey, while either is not 0, is refused, as WebAuthn advises against a cloned authenticator. Synced passkeys keep the
 counter at 0, and pass.
 
 A restart reads the tree back (`restore`): every stored statement is checked again, as when it came. A wipe empties
@@ -76,8 +78,11 @@ def Claim.text (c : Claim) : String :=
 /-- The vaults named after the claimant: their vault, and their browsers, the claiming one first. -/
 def Claim.vaultName (c : Claim) : String := c.name ++ "'s vault"
 
-def Claim.browser (c : Claim) (n : Nat) : String :=
-  if n = 1 then c.name ++ "'s browser" else c.name ++ "'s browser " ++ toString n
+/-- A person's browsers, named after them: the first `<name>'s browser`, then `<name>'s browser 2`, `3`, … -/
+def browserName (name : String) (n : Nat) : String :=
+  if n = 1 then name ++ "'s browser" else name ++ "'s browser " ++ toString n
+
+def Claim.browser (c : Claim) (n : Nat) : String := browserName c.name n
 
 def SignIn.text (i : SignIn) : String :=
   "avenID sign-in 1\nnetwork " ++ i.network ++ "\ndevice " ++ i.device ++ " " ++ i.deviceKey ++ "\n"

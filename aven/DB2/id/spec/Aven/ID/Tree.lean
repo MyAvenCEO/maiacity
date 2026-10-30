@@ -85,5 +85,30 @@ theorem Owns.mem_ids {t : Tree} {a b : String} (h : t.Owns a b) : b ∈ t.ids :=
   obtain ⟨m, e⟩ := get?_some g
   exact List.mem_map.mpr ⟨v, m, e⟩
 
+/-- In a tree with each id once, a vault it holds is the one found by its id. -/
+theorem find?_id_of_mem : ∀ {l : List Vault} {v : Vault}, (l.map (·.id)).Nodup → v ∈ l →
+    l.find? (·.id == v.id) = some v
+  | [], _, _, h => by simp at h
+  | u :: l, v, n, h => by
+    simp only [List.map_cons, List.nodup_cons] at n
+    rcases List.mem_cons.mp h with rfl | h
+    · simp
+    · have ne : u.id ≠ v.id := fun e => n.1 (e ▸ List.mem_map.mpr ⟨v, h, rfl⟩)
+      simp [ne, find?_id_of_mem n.2 h]
+
+/-- In a tree with each id once, a vault it holds is the one found by its id. -/
+theorem get?_of_mem {t : Tree} {v : Vault} (n : t.ids.Nodup) (h : v ∈ t.vaults) : t.get? v.id = some v :=
+  find?_id_of_mem n h
+
+/-- Vaults put in among a tree's, none with an id it has, change no vault it had. -/
+theorem get?_insert {t t' : Tree} {pre post new : List Vault} (e : t.vaults = pre ++ post)
+    (e' : t'.vaults = pre ++ new ++ post) (fresh : ∀ v ∈ new, v.id ∉ t.ids) : ∀ x ∈ t.ids, t'.get? x = t.get? x := by
+  intro x mx
+  have none_ : new.find? (·.id == x) = none :=
+    List.find?_eq_none.mpr fun v mv h => fresh v mv (by simpa using (beq_iff_eq.mp h) ▸ mx)
+  unfold get?
+  rw [e', e, List.find?_append, List.find?_append, List.find?_append, none_]
+  simp
+
 end Tree
 end Aven.ID

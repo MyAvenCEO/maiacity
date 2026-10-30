@@ -11,6 +11,7 @@
 	import Vault from './apps/Vault.svelte';
 	import { ownerName, owners, ready, tree, vaultName } from './id.svelte.js';
 	import { mayInvite } from './invites.js';
+	import { signOut } from './network.svelte.js';
 
 	// `config`: the host's network (network.svelte.js), on an Aven Peer's host without a cast
 	let { cast, device, config = null } = $props();
@@ -40,6 +41,17 @@
 	const where = $derived(device ? `on ${cast.peers[device].name}` : account ? 'avenSANDBOX' : '');
 
 	let menu = $state();
+	let leaving = $state(false);
+	let stuck = $state('');
+	async function leave() {
+		leaving = true;
+		try {
+			await signOut();
+		} catch (error) {
+			stuck = error?.message ?? String(error);
+			leaving = false;
+		}
+	}
 	const describe = (id) =>
 		`${tree.kind(id)} · owned by ${owners(id)
 			.map((owner) => ownerName(owner))
@@ -75,6 +87,13 @@
 						{#if id === account}<svg class="tick icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>{/if}
 					</a>
 				{/each}
+				{#if config}
+					<!-- on an Aven Peer's host this browser is a device it signed in as: signing out forgets its key here -->
+					<button class="leave" data-testid="sign-out" disabled={leaving} onclick={leave}>
+						{leaving ? 'Signing out…' : 'Sign out of this browser'}
+					</button>
+					{#if stuck}<p class="hint" data-testid="sign-out-stuck">{stuck}</p>{/if}
+				{/if}
 			</div>
 		{/if}
 	</div>
@@ -211,6 +230,26 @@
 		display: grid;
 		flex: 1;
 		min-width: 0;
+	}
+
+	/* below the vaults, apart from them: it acts on this browser, not on a vault */
+	.leave {
+		width: 100%;
+		margin-top: 6px;
+		color: var(--muted);
+		background: none;
+		border: 0;
+		border-top: 1px solid var(--line);
+		border-radius: 0;
+		box-shadow: none;
+		font-size: 14px;
+		text-align: left;
+		padding: 12px 10px 6px;
+	}
+
+	.leave:hover:not(:disabled) {
+		color: var(--text);
+		background: var(--sage);
 	}
 
 	[data-view='starting'] {

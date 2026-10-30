@@ -122,7 +122,24 @@ async fn a_shared_file_is_kept_by_the_aven_peer_and_served_once_its_sender_is_go
     // the Aven Peer's rule, as it runs for a file line on Alice's chain: a size that isn't the file's is dropped
     let hub_notes = hub.lines.notes();
     let rule = |size| keep::keep(&hub.endpoint, &url, &hub.held, &*hub.store, alice.public(), put.index, size, "aven-peer", &hub_notes);
-    assert!(rule(put.size + 1).await.is_err());
+    // dropped, and never asked again: Alice's file isn't the size the line says
+    let refused = rule(put.size + 1).await.unwrap_err();
+    assert_eq!(refused, keep::KeepError::Mismatch { held: put.size, announced: put.size + 1 });
+    assert!(!refused.retry());
+    // a file Alice never had: not found, never asked again either
+    let never = aven_db_store::Hash::of(b"a file nobody shared");
+    let missing = keep::keep(&hub.endpoint, &url, &hub.held, &*hub.store, alice.public(), never, 1, "aven-peer", &hub_notes)
+        .await
+        .unwrap_err();
+    assert!(matches!(missing, keep::KeepError::NotFound(_)), "{missing:?}");
+    assert!(!missing.retry());
+    // an index that is no list of hashes: refused, never asked again
+    let odd = a.store.put(bytes::Bytes::from(vec![7u8; 33])).await.unwrap();
+    let malformed = keep::keep(&hub.endpoint, &url, &hub.held, &*hub.store, alice.public(), odd, 33, "aven-peer", &hub_notes)
+        .await
+        .unwrap_err();
+    assert!(matches!(malformed, keep::KeepError::Malformed(_)), "{malformed:?}");
+    assert!(!malformed.retry());
     assert!(hub.lines.wait(|l| l["event"] == "dropped").await.is_some());
     assert_eq!(hub.store.get_ref(&keep::file_ref(&put.index)).await.unwrap(), None);
     let crossed = rule(put.size).await.unwrap();

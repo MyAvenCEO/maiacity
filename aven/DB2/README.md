@@ -112,9 +112,9 @@ avenSANDBOX   the box all of it is built and tested in
   30 Oct 2026).
 - **ref:** a name pointing at a Value, changed atomically: a Doc's head.
 - **store:** where a peer's blobs and refs rest, behind one contract.
-- **cap:** a signed grant: which vault may read or write which Doc.
-- **member, invite:** a person's vault let into the network, owned in the tree by the admin coop, and the ticket that
-  lets it in (milestone 2).
+- **cap:** a signed grant: which operations a vault may run on which Docs ([`id/caps`](id/caps/README.md)).
+- **member, invite:** a person's vault let into the network, a member of the admin coop, which neither owns nor governs
+  it (`Aven.ID.Invite`, `memberOf`); and the ticket that lets it in (milestone 2).
 
 **Running (avenPEER)**
 
@@ -220,30 +220,12 @@ the `ProtocolHandler` registered for its ALPN. avenDB's own protocol plugs in th
 | iroh-willow | 0.0.1, February 2025 | Not the crate. Meadowcap's caps and areas of interest as a reference. |
 | `unstable-custom-transports` | outside iroh's semver | Later: a direct WebRTC path between browsers |
 
-## Milestones
+## The specs
 
-1. **avenSANDBOX** with avenOS's first screens: its dashboard, the account switcher, Vault and Control Room
-   ([`SANDBOX.md`](SANDBOX.md)). avenID starts with the box's tree of vaults.
-   Then **production** ([`PRODUCTION.md`](PRODUCTION.md)): its first admin signs up with a passkey and claims Aven,
-   and the Aven Peer goes live at `aven.maia.city`. Everyone else waits for milestone 2's invites.
-2. **Network:** the invite-only door (invites, the relay's allow-list, the device handshake) and members-only gossip,
-   with the first example app: a live chat ([`MILESTONE2.md`](MILESTONE2.md)).
-   Then **the store upgrade** ([`store`](store/README.md)): files in the chat (images, PDFs, movies that play
-   from any point), the chat's history, the city-dome's shared secret, and our own OPFS driver.
-3. **avenID and caps:** more passkeys per vault, owners k of n, recovery, rotation, devices and their revocation; caps,
-   roles, delegation.
-4. **Docs:** Loro documents in signed, sealed envelopes; the one writer and its snapshots; the store; one document
-   synced. The chat's history becomes Loro's.
-5. **Version control:** history, versions, variants, proposals.
-6. **Schemas and lenses.**
-7. **Sync manifest and queries.**
-
-The design of avenDB's data, proposals for 4 to 7: [`db/docs`](db/docs/README.md) (documents, versions, schemas,
-lenses), [`db/engine`](db/engine/README.md) (sync, queries, mutations) and [`db/ontology`](db/ontology/README.md) (what
-facts mean).
-
-The chat is the first example app and grows with each milestone. The Google-Docs-like editor, with history, variants
-and proposals, follows it.
+Each plan is its own document; there is no numbered roadmap here (Samuel, 30 Oct 2026). The box:
+[`SANDBOX.md`](SANDBOX.md). Production: [`PRODUCTION.md`](PRODUCTION.md). The members' network:
+[`MILESTONE2.md`](MILESTONE2.md). The store: [`store`](store/README.md). Caps: [`id/caps`](id/caps/README.md). The data
+design: [`db/docs`](db/docs/README.md), [`db/engine`](db/engine/README.md) and [`db/ontology`](db/ontology/README.md).
 
 ## How we work
 
