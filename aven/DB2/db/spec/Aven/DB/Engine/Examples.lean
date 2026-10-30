@@ -3,7 +3,9 @@ import Aven.DB.Engine.Query
 import Aven.DB.Engine.Wants
 import Aven.DB.Engine.Mutate
 import Aven.DB.Engine.Footprint
+import Aven.DB.Engine.Changes
 import Aven.DB.Engine.Index
+import Aven.DB.Engine.Probe
 
 /-!
 # The engine's examples, and how its vectors are written (README, rule 10)
@@ -29,22 +31,6 @@ def doc (label : String) : DocId := ⟨blake3 (utf8 ("doc:" ++ label))⟩
 def vault (label : String) : Bytes := utf8 ("vault:" ++ label)
 
 def text (s : String) : Value := .text (utf8 s)
-
-/-- Values are equal by `Aven.Core`'s lawful equality, and ordered as the index keys are (`Aven.DB.Docs.Key.Field.lt`):
-by kind (bytes, text, negative, then non-negative integers), then integers by sign and magnitude (`nint n` is
-`-1 - n`), text and bytes bytewise, which for UTF-8 is code-point order. Other Values, which no key holds, order by
-their encoding. -/
-def vals : Vals Value where
-  eq a b := decide (a = b)
-  lt a b := match toField a, toField b with
-    | some x, some y => x.lt y
-    | _, _ => lexLt (encode a) (encode b)
-  count := .uint
-
-/-- **The engine orders keyable Values as the index keys do,** field by field. -/
-theorem vals_lt_key (a b : Value) (x y : Aven.DB.Docs.Key.Field) (ha : toField a = some x) (hb : toField b = some y) :
-    vals.lt a b = x.lt y := by
-  simp [vals, ha, hb]
 
 theorem vals_refl : ∀ x, vals.eq x x = true := by intro x; simp [vals]
 
@@ -268,6 +254,24 @@ def chatKept : List (Kept WantKey) := [
 -- Over a budget of 250 bytes: the screen's room stays, then the later projects; the idle Docs go.
 #guard (evict 250 chatKept).map (·.key) == [room, projectsKey]
 
+-- The room's key waits for a cap; the outbox's upload waits on nothing: the round sends the upload, the room's wait
+-- stops nothing else.
+#guard (roundW (fun k => if k == roomKey then 1 else if k == outbox then 2 else 0)
+    (fun k => if k == roomKey then some Wait.cap else none) [outbox] [roomKey, room] (fun _ => true)).1 ==
+  .moved outbox
+
+-- When every key with work left waits, the round names each and what it waits for.
+#guard (roundW (fun k => if k == roomKey then 1 else if k == room then 3 else 0)
+    (fun k => if k == roomKey then some Wait.cap else if k == room then some Wait.key else none) [] [roomKey, room]
+    (fun _ => true)).1 ==
+  .waiting [(roomKey, .cap), (room, .key)]
+
+-- A page holds at most 3 entries and 1000 bytes: of the room's pending chunks of 400, 400, 400 and 100 bytes, a round
+-- moves the first two (800 bytes; a third would make 1200) and leaves the rest pending.
+#guard (match roundP id ⟨1000, 3⟩ (fun k => if k == room then [400, 400, 400, 100] else []) [] [room] (fun _ => true) with
+  | (.moved _, p, pending') => (p, pending' room)
+  | _ => ([], [])) == ([400, 400], [400, 100])
+
 def wantExamples : List Json := [
   wantVector "a chat room on screen, the outbox first" chatWants chatCaps chatPre
     [(room, 3), (roomKey, 1), (outbox, 2)] [outbox] [outbox] 250 chatKept,
@@ -365,6 +369,17 @@ def tick : List (Op Value) := [.patch task (rows [("x2", text "Order seeds")]) (
 #guard covers [⟨task, .patch, some [utf8 "done"]⟩]
   (footprint [.patch task (rows [("x2", text "Order seeds")]) (rows [("x2", text "Order bean seeds")])]) == false
 
+/-- Every type Doc written under one schema version in these examples. -/
+def ver (t : DocId) : TypeId := ⟨t, blake3 (utf8 "schema:v1")⟩
+
+-- Ticking a task done is one edited Record whose one field is `done`, and the untouched task is no change; the grant to patch `done` passes the verdict's
+-- footprint part on it.
+#guard (match commit valEq ofId 1 8 todo tick with
+  | .ok s' => ((changesFrom ver todo s').map fun c => (c.kind, c.names.map utf8Text),
+      verdictFootprint [⟨task, .patch, some [utf8 "done"]⟩] (footprint tick) (changesFrom ver todo s'))
+  | .error _ => ([], false)) ==
+  ([(Aven.DB.Docs.ChangeKind.edited, ["done"])], true)
+
 def mutationExamples : List Json := [
   mutationVector "I ate 2 bananas" 1 7 (everything [banana, quantity, eat]) [] bananas,
   mutationVector "a reference forward: refused" 1 7 (everything [banana, eat]) []
@@ -442,6 +457,14 @@ def docsNow : List DocId := (List.range 7).map inv
 
 -- The same as running the query over every invoice the directory lists now.
 #guard (select vals byCustomer anaFrom200 invoicesNow docsNow).map (·.doc) == [inv 2, inv 4, inv 6]
+
+-- The docs layer's tree, nodes cut by the last byte and 64 bytes, finds the same hits through the probe's byte range.
+#guard treeHits (fun e => (e.getLastD 0).toNat % 4 == 0) List.length 64 anaFrom200 (build byCustomer invoicesV docsV) ==
+  hits vals byCustomer anaFrom200 (build byCustomer invoicesV docsV)
+
+-- It is Ana's invoices 2 and 4 from 200 at V.
+#guard treeHits (fun e => (e.getLastD 0).toNat % 4 == 0) List.length 64 anaFrom200 (build byCustomer invoicesV docsV) ==
+  [inv 2, inv 4]
 
 def indexExamples : List Json := [
   indexVector "Ana's invoices from 200, two unfolded" byCustomer invoicesV invoicesNow docsV [inv 1, inv 6] docsNow

@@ -19,16 +19,16 @@ namespace Members
 /-- The people whose vaults the tree holds, each by their passkey, their vault and their name: the claimant, then
 every member. -/
 def holders (m : Members) : List (String × String × String) :=
-  (m.server.claim.map fun c => (c.passkey, c.person, c.name)).toList ++ m.joins.map fun j => (j.passkey, j.person, j.name)
+  (m.founding.claim.map fun c => (c.passkey, c.person, c.name)).toList ++ m.joins.map fun j => (j.passkey, j.person, j.name)
 
 /-- The passkeys that own a person's vault here. -/
 def passkeys (m : Members) : List String := m.holders.map (·.1)
 
 variable {m m' : Members}
 
-theorem withServer_ok {r : Except ClaimError Server} (h : m.withServer r = .ok m') :
-    ∃ s, r = .ok s ∧ m' = { m with server := s } ∧ m'.tree.WF := by
-  unfold withServer at h
+theorem withFounding_ok {r : Except ClaimError Founding} (h : m.withFounding r = .ok m') :
+    ∃ s, r = .ok s ∧ m' = { m with founding := s } ∧ m'.tree.WF := by
+  unfold withFounding at h
   split at h
   · cases h
   next s =>
@@ -47,7 +47,7 @@ theorem check_of_toBool {rp : Relying} {ch key : String} {a : Assertion} (h : (a
 /-- The passkey `signerOf` finds made the assertion: the claimant's (`none`), or a member's join's, when the
 claimant's didn't. -/
 theorem signerOf_none {c : Claim} {i : SignIn} (h : m.signerOf c i = .ok none) :
-    i.assertion.check m.server.rp (challengeOf i.text) c.passkey = .ok () := by
+    i.assertion.check m.founding.rp (challengeOf i.text) c.passkey = .ok () := by
   unfold signerOf at h
   split at h
   · next e => exact e
@@ -55,8 +55,8 @@ theorem signerOf_none {c : Claim} {i : SignIn} (h : m.signerOf c i = .ok none) :
   · cases h
 
 theorem signerOf_some {c : Claim} {i : SignIn} {j : Join} (h : m.signerOf c i = .ok (some j)) :
-    j ∈ m.joins ∧ i.assertion.check m.server.rp (challengeOf i.text) j.passkey = .ok () ∧
-      i.assertion.check m.server.rp (challengeOf i.text) c.passkey = .error .badSignature := by
+    j ∈ m.joins ∧ i.assertion.check m.founding.rp (challengeOf i.text) j.passkey = .ok () ∧
+      i.assertion.check m.founding.rp (challengeOf i.text) c.passkey = .error .badSignature := by
   unfold signerOf at h
   split at h
   · cases h
@@ -88,12 +88,12 @@ theorem signedInVaults_append (x : MemberSignIn) : ∀ (seen l : List MemberSign
 /-- What a sign-in taken did, case by case: the claimant's goes to `Aven.ID.Claim`, a member's is kept here; either way
 its browser is new, its passkey made the assertion, and that passkey's counter counted up. -/
 theorem acceptSignIn_cases {i : SignIn} (h : m.acceptSignIn i = .ok m') :
-    ∃ c, m.server.claim = some c ∧ m.knows [i.device] [i.deviceKey] = false ∧ m'.tree.WF ∧
-      ((i.assertion.check m.server.rp (challengeOf i.text) c.passkey = .ok () ∧
+    ∃ c, m.founding.claim = some c ∧ m.knows [i.device] [i.deviceKey] = false ∧ m'.tree.WF ∧
+      ((i.assertion.check m.founding.rp (challengeOf i.text) c.passkey = .ok () ∧
           ((i.assertion.counter = 0 ∧ m.lastCounter c.passkey = 0) ∨ m.lastCounter c.passkey < i.assertion.counter) ∧
-          m' = { m with server := { m.server with signIns := m.server.signIns ++ [i] } }) ∨
-        ∃ j ∈ m.joins, i.assertion.check m.server.rp (challengeOf i.text) j.passkey = .ok () ∧
-          i.assertion.check m.server.rp (challengeOf i.text) c.passkey = .error .badSignature ∧
+          m' = { m with founding := { m.founding with signIns := m.founding.signIns ++ [i] } }) ∨
+        ∃ j ∈ m.joins, i.assertion.check m.founding.rp (challengeOf i.text) j.passkey = .ok () ∧
+          i.assertion.check m.founding.rp (challengeOf i.text) c.passkey = .error .badSignature ∧
           ((i.assertion.counter = 0 ∧ m.lastCounter j.passkey = 0) ∨ m.lastCounter j.passkey < i.assertion.counter) ∧
           m' = { m with signIns := m.signIns ++ [⟨j, i⟩] }) := by
   unfold acceptSignIn at h
@@ -108,8 +108,8 @@ theorem acceptSignIn_cases {i : SignIn} (h : m.acceptSignIn i = .ok m') :
   · next sj =>
     split at h; · cases h
     next nc =>
-    obtain ⟨s, e, rfl, w⟩ := withServer_ok h
-    obtain ⟨c', hc', rfl, _, _⟩ := Server.acceptSignIn_ok e
+    obtain ⟨s, e, rfl, w⟩ := withFounding_ok h
+    obtain ⟨c', hc', rfl, _, _⟩ := Founding.acceptSignIn_ok e
     exact ⟨c, hc, by simpa using nk, w, .inl ⟨signerOf_none sj, counts_up nc, rfl⟩⟩
   · next j sj =>
     split at h; · cases h
@@ -129,13 +129,13 @@ theorem submitSignIn_accept {sender : String} {i : SignIn} (h : m.submitSignIn s
   exact h
 
 /-- The claimant's vault is the tree's first, and the coop's owner. -/
-theorem server_vaults (c : Claim) (hc : m.server.claim = some c) :
-    m.server.vaults = ⟨c.person, c.vaultName, .person, m.server.founders c.passkey⟩ ::
-      ⟨m.server.coop, m.server.coopName, .coop, [.vault c.person]⟩ :: ⟨m.server.network, networkName, .agent,
-      [.vault m.server.coop]⟩ :: ⟨m.server.peer, peerName, .device, [.vault m.server.network]⟩ ::
+theorem founding_vaults (c : Claim) (hc : m.founding.claim = some c) :
+    m.founding.vaults = ⟨c.person, c.vaultName, .person, m.founding.founders c.passkey⟩ ::
+      ⟨m.founding.coop, m.founding.coopName, .coop, [.vault c.person]⟩ :: ⟨m.founding.network, networkName, .agent,
+      [.vault m.founding.coop]⟩ :: ⟨m.founding.peer, peerName, .device, [.vault m.founding.network]⟩ ::
       ⟨c.device, c.browser 1, .device, [.vault c.person]⟩ ::
-      m.server.signIns.mapIdx fun k i => ⟨i.device, c.browser (k + 2), .device, [.vault c.person]⟩ := by
-  simp [Server.vaults, hc]
+      m.founding.signIns.mapIdx fun k i => ⟨i.device, c.browser (k + 2), .device, [.vault c.person]⟩ := by
+  simp [Founding.vaults, hc]
 
 /-- A sign-in adds one device to the signing passkey's own vault, named after its person, and nothing else: its
 passkey owns a person's vault here, the claimant's or a member's, and made the assertion; the new browser goes in
@@ -151,8 +151,8 @@ theorem signIn_adds {sender : String} {i : SignIn} (h : m.submitSignIn sender i 
   have nd : i.device ∉ m.tree.ids := fun mp => nk.1 i.device mp (by simp)
   -- the browser, the person's vault and the shape of the tree, from either case
   suffices key : ∃ p person name n, (p, person, name) ∈ m.holders ∧
-      i.assertion.check m.server.rp (challengeOf i.text) p = .ok () ∧
-      (⟨person, name ++ "'s vault", .person, m.server.founders p⟩ : Vault) ∈ m'.tree.vaults ∧
+      i.assertion.check m.founding.rp (challengeOf i.text) p = .ok () ∧
+      (⟨person, name ++ "'s vault", .person, m.founding.founders p⟩ : Vault) ∈ m'.tree.vaults ∧
       ∃ pre post, m.tree.vaults = pre ++ post ∧
         m'.tree.vaults = pre ++ [⟨i.device, browserName name n, .device, [.vault person]⟩] ++ post by
     obtain ⟨p, person, name, n, mh, ok, mp, pre, post, e, e'⟩ := key
@@ -161,14 +161,14 @@ theorem signIn_adds {sender : String} {i : SignIn} (h : m.submitSignIn sender i 
       (by rw [e']; simp)
     have gp := Tree.get?_of_mem w.nodup mp
     refine ⟨p, person, name, n, mh, (check_ok ok).2.2.2.2.1, ⟨pre, post, e, e'⟩, w,
-      ⟨_, gp, by simp [Server.founders, Vault.ownerKeys, Owner.key?]⟩, ?_, old⟩
+      ⟨_, gp, by simp [Founding.founders, Vault.ownerKeys, Owner.key?]⟩, ?_, old⟩
     simp [Tree.actsFor, gd, Vault.ownerVaults, Owner.vault?]
   rcases cases with ⟨ok, _, rfl⟩ | ⟨j, mj, ok, _, _, rfl⟩
-  · refine ⟨c.passkey, c.person, c.name, m.server.signIns.length + 2, by simp [holders, hc], ok, ?_,
-      m.server.vaults, m.joins.flatMap (joinedVaults m.server) ++ signedInVaults [] m.signIns, by simp [tree, vaults],
+  · refine ⟨c.passkey, c.person, c.name, m.founding.signIns.length + 2, by simp [holders, hc], ok, ?_,
+      m.founding.vaults, m.joins.flatMap (joinedVaults m.founding) ++ signedInVaults [] m.signIns, by simp [tree, vaults],
       ?_⟩
-    · simp [tree, vaults, Server.vaults, Server.founders, hc, Claim.vaultName]
-    · simp [tree, vaults, Server.vaults, Server.founders, hc, List.mapIdx_append, Claim.browser] <;> rfl
+    · simp [tree, vaults, Founding.vaults, Founding.founders, hc, Claim.vaultName]
+    · simp [tree, vaults, Founding.vaults, Founding.founders, hc, List.mapIdx_append, Claim.browser] <;> rfl
   · refine ⟨j.passkey, j.person, j.name, (m.signIns.filter (·.member.person == j.person)).length + 2,
       by simp [holders]; exact .inr ⟨j, mj, rfl, rfl, rfl⟩, ok, ?_, m.tree.vaults, [], by simp, ?_⟩
     · simp only [tree, vaults, List.mem_append, List.mem_flatMap]
@@ -194,7 +194,7 @@ theorem signIn_counts {sender : String} {i : SignIn} (h : m.submitSignIn sender 
   · have s := (check_ok ok).2.2.2.2.1
     rw [s]
     refine ⟨up, ?_, fun q nq => ?_⟩
-    · simp [lastCounter, hc, Server.lastCounter, getLastD_snoc]
+    · simp [lastCounter, hc, Founding.lastCounter, getLastD_snoc]
     · simp [lastCounter, hc, Ne.symm nq]
   · have s := (check_ok ok).2.2.2.2.1
     rw [s]
@@ -213,19 +213,19 @@ theorem signIn_admits {sender : String} {i : SignIn} (h : m.submitSignIn sender 
   obtain ⟨p, person, name, n, mh, _, _, _, _, acts, _⟩ := signIn_adds h
   refine (admits_iff w).mpr ⟨i.device, person, ?_, acts, ?_⟩
   · rcases cases with ⟨_, _, rfl⟩ | ⟨j, _, _, _, _, rfl⟩
-    · simp [publics, Server.publics, hc]
+    · simp [publics, Founding.publics, hc]
     · simp [publics]
   · simp only [holders, hc, Option.map_some, Option.toList_some, List.mem_append, List.mem_singleton,
       Prod.mk.injEq, List.mem_map] at mh
     rcases mh with ⟨_, rfl, _⟩ | ⟨j, mj, _, rfl, _⟩
     · -- the claimant's vault owns the admin coop
       refine .inr (.inr (.owns ?_))
-      have mc : (⟨m'.server.coop, m'.server.coopName, .coop, [.vault c.person]⟩ : Vault) ∈ m'.tree.vaults := by
-        have hc' : m'.server.claim = some c := by
+      have mc : (⟨m'.founding.coop, m'.founding.coopName, .coop, [.vault c.person]⟩ : Vault) ∈ m'.tree.vaults := by
+        have hc' : m'.founding.claim = some c := by
           rcases cases with ⟨_, _, rfl⟩ | ⟨_, _, _, _, _, rfl⟩ <;> simpa using hc
-        simp [tree, vaults, Server.vaults, hc']
+        simp [tree, vaults, Founding.vaults, hc']
       have g := Tree.get?_of_mem w.nodup mc
-      have cc : m'.coop = m'.server.coop := rfl
+      have cc : m'.coop = m'.founding.coop := rfl
       rw [cc]
       simp [Tree.Owns, Tree.ownersOf, g, Vault.ownerVaults, Owner.vault?]
     · exact .inr (.inl (by

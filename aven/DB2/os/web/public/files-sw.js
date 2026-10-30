@@ -39,13 +39,14 @@ self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
 
 // at most 1 MiB of a file from the leader: {size, type, bytes} or {error}. Asked again every 2 s while unanswered, as a
-// new leader may have taken over; given up after 20 s
+// new leader may have taken over; given up after 60 s: a chunk the leader fetches first, from the Aven Peer or the
+// sharer through the relay, can take longer than the 20 s this waited before on a phone's network
 function read(file, start, end) {
 	const id = `${me}${asked++}`;
 	return new Promise((resolve) => {
 		const ask = () => channel.postMessage({ id, read: { file, start, end } });
 		const again = setInterval(ask, 2_000);
-		const gaveUp = setTimeout(() => done({ error: 'the Peer-Light did not answer in 20 s' }), 20_000);
+		const gaveUp = setTimeout(() => done({ error: 'the Peer-Light did not answer in 60 s' }), 60_000);
 		const done = (answer) => {
 			clearInterval(again);
 			clearTimeout(gaveUp);
@@ -70,22 +71,36 @@ function parse(header) {
 
 const failed = (got) => new Response(got.error, { status: got.error === 'not found' ? 404 : 502, headers: headers(null) });
 
+// `start..end` of a file (`end` exclusive) as a stream, a chunk at a time as the reader takes it, never gathered first,
+// beginning with `first`, the read already made at `start`. WebKit's and Firefox's players ask without a range, or
+// from a place to the end; a 90 MB movie gathered whole kept them waiting minutes, and a 206 cut at 1 MiB made WebKit's
+// player stop as if the movie ended there (30 Oct 2026)
+function streamed(file, first, start, end) {
+	let at = start + first.bytes.length;
+	return new ReadableStream({
+		start(stream) {
+			if (first.bytes.length) stream.enqueue(first.bytes);
+			if (at >= end) stream.close();
+		},
+		async pull(stream) {
+			// an engine may ask once more after the end (WebKit)
+			if (at >= end) return stream.close();
+			const got = await read(file, at, Math.min(at + most, end));
+			if (got.error || !got.bytes.length) return stream.error(new Error(got.error ?? `no bytes at ${at}`));
+			stream.enqueue(got.bytes);
+			at += got.bytes.length;
+			if (at >= end) stream.close();
+		},
+	});
+}
+
 async function serve(file, header) {
 	const range = parse(header);
 	if (!range) {
-		// the whole file, a chunk at a time
 		const first = await read(file, 0, most);
 		if (first.error) return failed(first);
-		const parts = [first.bytes];
-		for (let at = first.bytes.length; at < first.size; ) {
-			const got = await read(file, at, Math.min(at + most, first.size));
-			if (got.error) return failed(got);
-			parts.push(got.bytes);
-			at += got.bytes.length;
-			if (!got.bytes.length) break;
-		}
-		const head = headers(first.type, { 'Content-Length': String(first.size) });
-		return new Response(new Blob(parts, { type: head['Content-Type'] }), { status: 200, headers: head });
+		const body = streamed(file, first, 0, first.size);
+		return new Response(body, { status: 200, headers: headers(first.type, { 'Content-Length': String(first.size) }) });
 	}
 	let { start, end } = range;
 	if (range.suffix !== undefined) {
@@ -97,10 +112,11 @@ async function serve(file, header) {
 	if (got.error) return failed(got);
 	if (start >= got.size && got.size > 0)
 		return new Response(null, { status: 416, headers: headers(null, { 'Content-Range': `bytes */${got.size}` }) });
-	const last = start + got.bytes.length - 1;
-	return new Response(got.bytes, {
+	// an explicit range (Safari's `bytes=0-1` probe) exactly; an open one, or a suffix, to the end of the file
+	const to = Math.min(end ?? got.size, got.size);
+	return new Response(streamed(file, got, start, to), {
 		status: 206,
-		headers: headers(got.type, { 'Content-Length': String(got.bytes.length), 'Content-Range': `bytes ${start}-${last}/${got.size}` }),
+		headers: headers(got.type, { 'Content-Length': String(to - start), 'Content-Range': `bytes ${start}-${to - 1}/${got.size}` }),
 	});
 }
 

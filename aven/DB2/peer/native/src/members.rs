@@ -91,6 +91,11 @@ impl Gate {
         self.0.write().unwrap().expected.insert(key);
     }
 
+    /// Every key the door admits now.
+    pub fn admitted(&self) -> std::collections::BTreeSet<PublicKey> {
+        self.0.read().unwrap().keys.keys().copied().collect()
+    }
+
     pub fn admits(&self, key: &PublicKey) -> bool {
         self.0.read().unwrap().keys.contains_key(key)
     }

@@ -38,8 +38,7 @@ document (moved there whole), and Signal, Matrix, MLS, Biscuit, Keyhive and Mead
   (A26, rule 36).
 
 The engine thread agreed the footprints caps check (E1–E3). The docs and avenACTOR threads answered their seams on the
-same day, and what they agreed is marked where it applies. Nothing in this spec is still a proposal except how a
-flagged fork of fetch keys settles, which the Lean model turned up ([open questions](#open-questions)).
+same day, and what they agreed is marked where it applies. Nothing in this spec is still a proposal.
 
 ## Contents
 
@@ -727,11 +726,16 @@ key's public half. A keeper takes a link on that signature alone, since it reads
 Key blobs and letters are served to any member, since they are useless without the keys they're sealed to. A device
 whose proof is refused because a newer epoch came fetches that epoch's key blob, opens its stanza and proves again.
 
-**What a keeper can't tell** (`grind_example`). A reader of an earlier epoch still holds that epoch's fetch key. Once
-removed, it can fork the chain from there and grind its epoch hash below the writers'. Writers check the rotation's
-cap and never take that epoch. A keeper can't, so it takes the fork as current and refuses the readers, who don't hold
-it, until the fork settles. It flags the fork, and it knows which device uploaded the link. How the fork settles is
-[open](#open-questions).
+**How a ground fork settles** (A22, the architect's answer to this spec's open question, 30 Oct 2026). A reader of an
+earlier epoch still holds that epoch's fetch key. Once removed, it can fork the chain from there and grind its epoch
+hash below the writers' (`grind_example`). Writers check the rotation's cap and never take that epoch. A keeper can't,
+so:
+1. while a fork is flagged, it serves proofs by either branch's newest key, so honest readers are never refused
+   (`fork_served`);
+2. a device of the vault that issued the keep cap, which can check caps, signs which branch to follow, naming the fork
+   point. Its devices do this on their own;
+3. the keeper checks that signature against the tree, follows that branch, and later forks from that point change
+   nothing (`grind_settled`, `settled_example`).
 
 **Catching up from a keeper** knows nothing about writers (rule 23):
 1. The keeper numbers each Doc's segments in the order they arrive.
@@ -1138,18 +1142,19 @@ Agreed with the engine thread (30 Oct 2026):
 ## What Lean proves
 
 `Aven.ID` holds caps' model beside `Governs`, in `id/spec` (Lean 4.35.0, core only, no `sorry`; `lake build` in the box
-proves it). Its examples on the cast carry their answers, written by hand and checked by `decide`. `lake exe vectors`
-exports them with generated cases (README, rule 10).
+proves it). Its examples on the cast carry their answers, written by hand and checked as it builds: by `decide`, or by
+`#guard` where they go through UTF-8. `lake exe vectors` exports them with generated cases (README, rule 10).
 
-What a grant reaches is `Aven.Core`'s once it lands: Values and the CBOR codec, hashes, envelopes and logs, the target
-grammar, verbs and footprints. Until then an **atom** names the vault whose Docs it concerns and an opaque permission,
-and a grant is a set of atoms checked by subset. A theorem marked *after Core* states its rule over Core's grammar
-when Core lands.
+What a grant reaches is `Aven.Core`'s (`core/spec`), which `id/spec` requires. A **line** of a grant is a target in
+Core's grammar, a verb, and for a write the footprint grants each step must keep. A line lies within another when its
+target is narrower (`Target.le`), its verb the same and its footprint grants no wider, so a chain narrows by Core's
+`Target.le_sound`. Caps defines no Values, hashes or targets of its own.
 
 | Module | Theorem | Says |
 |---|---|---|
-| `Caps` | `narrow_chain` | Every cap in a chain grants within its root: the subset check at every link |
-| | `root_authority` | Every atom a chain grants lies in its root issuer's authority, its own vault or one it governs |
+| `CapsCbor` | `Cap.digest_inj` | Two allowed caps with one id say the same thing: the bytes approved and signed name the cap exactly |
+| `Caps` | `narrow_chain`, `narrow_steps` | No cap in a chain lets a verb reach a Doc, or allows a write step, that its root doesn't |
+| | `root_authority` | Every line a chain grants lies in its root issuer's authority: its own vault, one it governs, or a Doc of one |
 | | `chain_short` | A chain is no longer than its root may be shared |
 | | `grant_approved` | Every cap in a chain was signed by a device of its issuer and approved by its issuer's owners (D14) |
 | | `child_live` | A cap issued from a group's cap holds only while its issuer is in the group |
@@ -1163,12 +1168,12 @@ when Core lands.
 | | `elsewhere_kept` | Elsewhere, once the revocation reaches the Doc, only what its kept list or another writer's ack had seen counts |
 | | `revocation_wins` | The three together (rule 14). An envelope lists its whole chain, so revoking any link reaches it: the cascade |
 | | `waits_named` | A wait names only what the envelope builds on and the reader lacks, by hash |
-| `Epochs` | `confidential` | A key is learned only as one's own or by opening a seal with a key already known |
+| `Epochs` | `confidential` | A key is learned only as one's own or by opening a seal with a key already known. Keys are any type with an equality (`WorldOf κ`): names in the examples (`World`), Core's bytes in `Aven.Architecture` (R5) |
 | | `unknowable` | Keys of a closed set a party owns none of stay unknown to it; the next three are its instances |
 | | `removal_next_epoch` | A new epoch sealed only to the remaining readers stays closed to a removed one |
 | | `heal_evicts` | After a heal, a removed device learns none of the new keys: vault key, tag seeds, letterbox keys and next epochs |
-| | `keeper_blind`, `outside_blind` | The keeper knows only its own keys, and sees of a segment only its Doc, epoch and padded length (D13) |
-| | `stale_refused` | An envelope under an epoch older than one it builds on doesn't pass (rule 16) |
+| | `keeper_blind`, `outside_blind` | The keeper knows only its own keys, and sees of a segment only its Doc, epoch and padded length (D13). A segment is Core's `DocId`, its epoch's `Hash`, and the Core envelopes inside its seal (R5) |
+| | `stale_refused` | A Core envelope under an epoch older than one it builds on doesn't pass (rule 16) |
 | `Recover` | `guardian_exit` | After MaiaCityGuardian's exit, no keyring epoch is sealed to it (D12) |
 | | `never_ownerless`, `removals_win` | Removals that clash all stand, unless they'd leave no owner; then none does |
 | `Network` | `public_member`, `removal_rotates` | A public write counts only from a member, and a removed member is in no later members epoch |
@@ -1176,27 +1181,30 @@ when Core lands.
 | | `settle_perm`, `settle_genesis` | Peers holding the same statements settle the same tree, and nothing outside the pinned genesis's descendants changes it |
 | | `settle_ticket_once`, `settle_withdrawn`, `settle_final` | A ticket founds at most one vault; a withdrawal beats every claim of it outside its past that isn't final; a final claim stays final, and stands unless an ack that never saw its ack makes a smaller one final |
 | | `settle_door`, `settle_listed` | The door admits exactly the member vaults' devices; a list's entry stands only through an add that saw every remove of it |
-| | `genesis_pinned`, `guardian_consented` | Everything in the tree descends from the pinned genesis, which the claimant's passkey and MaiaCityGuardian signed (A11); a claim counts only if it names that guardian (A13) |
+| `Restore`, `Records` (avenPEER) | `settle_restore` | Production's stored statements, migrated in their ref order onto a genesis both its signers signed, all count in the settled tree; vectors in `settled.json` |
+| `Network` | `genesis_pinned`, `guardian_consented` | Everything in the tree descends from the pinned genesis, which the claimant's passkey and MaiaCityGuardian signed (A11); a claim counts only if it names that guardian (A13) |
 | `Keep` | `fetch_chain`, `kept_every` | A keeper takes exactly the fetch keys that chain back to the Doc's genesis, each signed by the key before it (A22) |
 | | `current_agrees`, `current_chained` | Keepers holding the same links take the same current fetch key, whatever order they came in, and it chains |
 | | `fork_flagged` | Every fork a keeper takes is flagged |
-| | `served_current` | A keeper serves a fetch or takes an upload only from a device proving the current fetch key on that connection |
+| | `served_current`, `fork_served` | A keeper serves a fetch or takes an upload only for a proof on that connection by the current fetch key, or, while a fork is unsettled, by a branch's newest key, so honest readers are never refused |
+| | `grind_settled`, `settled_example` | Once the keep cap's issuer chooses a branch at a fork, every keeper follows it whatever forks arrive after |
 | | `uploader_pays` | The uploading vault pays, and only for what the keeper took from it |
-| | `grind_example` | The limit: a removed reader's fork with a ground hash becomes current at a keeper, flagged |
+| | `grind_example` | A removed reader's fork with a ground hash becomes current at a keeper until the issuer chooses; it is flagged, and honest readers are still served |
+| `SealedIndex`, moving to `Aven.Architecture.Sealed` (the docs thread) | `index_within_key`, `index_skips` | An index holds only entries read under keys every holder of its key holds; one some holder can't read changes nothing in it (rule 36) |
+| | `sealed_roots_agree` | Two readers holding the same admissible entries rebuild the same sealed root under one key, so each can check a published one. The root is a parameter here; `Aven.Architecture` joins it with the docs model's `root_set` |
+| | `sealed_padded`, `root_by_writer` | Sealed nodes are padded (D18); only a vault that may write the directory publishes a root a reader takes |
 
 **After Core, or with another thread:**
 - `counts_iff`: an envelope counts exactly when its signer, its epoch, its chain, its liveness and its footprint hold;
 - `readers_agree`: a verdict depends only on the envelope, its causal past and the revocations known;
-- `index_within_key`, `sealed_roots_agree` and `root_by_writer` (rule 36, over `Aven.DB.Docs.Index`'s entries);
 - `merge_covered` and `footprints.json` (Core's footprints, with the engine);
 - `want_grants_nothing` and `one_grammar` (Core's target grammar);
 - `authority_down` (`below` groups);
 - `group_holds` (a group cap's writes in `Revoke`);
 - `device_within_cap`;
 - `safe_holds` (the safe's interface);
-- `upgrade_no_wider` and `no_confused_deputy` (`Aven.Actor`, avenACTORS);
-- `settle_restore`, production's ref order, and `trees.json` (avenPEER, PEERS.md Thread A);
-- how a flagged fork of fetch keys settles, once [decided](#open-questions).
+- `upgrade_no_wider` and `no_confused_deputy`, in the cross-spec model `Aven.Architecture`: they need `Aven.Actor`,
+  and id/spec never requires the actor spec (the architect, 30 Oct 2026);
 
 Two smaller gaps:
 - An owner that is a vault approves by its own quorum, recursively. `Approve` counts owner keys only, so the cast's coop
@@ -1208,16 +1216,18 @@ Two smaller gaps:
 
 | File | What |
 |---|---|
-| `caps.json` | Chains on the cast, each with the first rule it breaks or none; how avenOS shows a cap; 40 generated chains |
+| `caps.json` | Chains on the cast, their lines in Core's form, each cap with its CBOR bytes, its id and the bytes its device signs, and each chain with the first rule it breaks or none; how avenOS shows a cap; 40 generated chains |
 | `revocations.json` | Docs, the revocations held, and verdicts: hand-written, and 30 generated Docs with every envelope's verdict |
 | `epochs.json` | Who learns which key after Bob's removal and after Alice's heal |
 | `approvals.json` | Signatures, thresholds and digests on the cast, and whether each approval holds |
 | `network.json` | A ticket's claims in two orders (A12), removals that clash, MaiaCityGuardian's exit |
 | `keep.json` | Fetch-key links in the order they came, with the keys a keeper takes, its current key and its flags; proofs and whether they're served; what each vault pays; 30 generated keepers |
 
-When Core lands, `caps.json` adds each cap's CBOR bytes and hash, and `derivations.json` follows once `Aven.DB.Blake3`
-gains BLAKE3's keyed and key-derivation modes. The primitives themselves (X-Wing, ML-DSA, Ed25519, the AEAD) stay
-outside Lean, as Ed25519 does today. They are tested against their standards' known answers and Wycheproof.
+A cap's bytes are its body in Core's deterministic CBOR, its targets as `Aven.Core.TargetCbor` writes them; its id is
+their BLAKE3 hash, and its device signs them under the label `avenID cap 1` (`Aven.ID.CapsCbor`). The cast's caps go by
+readable names, so a parent and a role are text until R5 makes them hashes. `derivations.json` follows once Core's
+BLAKE3 gains its keyed and key-derivation modes. The primitives themselves (X-Wing, ML-DSA, Ed25519, the AEAD)
+stay outside Lean, as Ed25519 does today. They are tested against their standards' known answers and Wycheproof.
 
 ## Order of work
 
@@ -1249,15 +1259,9 @@ A proposal for milestone 3's plan, for the architect:
 
 ## Open questions
 
-1. **How a flagged fork of fetch keys settles** (for the architect, 30 Oct 2026). The Lean model shows that a removed
-   reader can fork the chain from a key it held and grind the smaller hash, and a keeper can't tell
-   (`grind_example`). Recommended:
-   - while a fork is flagged, the keeper serves a proof by the newest key of either branch, so a fork can't lock
-     readers out;
-   - a device of the vault that issued the keep cap, which reads the Doc and checks the rotations' caps, signs the
-     branch to follow. The keeper checks that signature against the tree and follows that branch from then on.
-
-What comes later is scheduled in [order of work](#order-of-work).
+None at the moment. How a flagged fork of fetch keys settles, which the Lean model turned up, was answered on
+30 Oct 2026 ([how a ground fork settles](#blind-keepers)). What comes later is scheduled in
+[order of work](#order-of-work).
 
 ## Not in this spec
 

@@ -37,12 +37,17 @@ pub type Admit = Arc<dyn Fn(&EndpointId) -> bool + Send + Sync>;
 /// How long a holder is given to say what it holds, after a fetch from it failed.
 const ASK_FOR: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// What a peer is told of each blob its provider serves: its name and its size. A sender counts its file's chunks
+/// going out with it (avenOS's "sending to the network").
+pub type Served = Arc<dyn Fn(Hash, u64) + Send + Sync>;
+
 /// One peer's blobs, as iroh-blobs moves them.
 #[derive(Clone)]
 pub struct Blobs {
     api: iroh_blobs::api::Store,
     /// the store itself, to read an index fetched before a failure
     store: Shared,
+    served: Arc<std::sync::OnceLock<Served>>,
 }
 
 impl std::fmt::Debug for Blobs {
@@ -78,10 +83,17 @@ fn failed(e: impl std::fmt::Display) -> FetchError {
 
 impl Blobs {
     pub fn new(store: Shared) -> Self {
+        let served = Arc::default();
         Self {
-            api: actor::spawn(store.clone()),
+            api: actor::spawn(store.clone(), Arc::clone(&served)),
             store,
+            served,
         }
+    }
+
+    /// What to tell of each blob served from now on; set once.
+    pub fn on_served(&self, told: Served) {
+        let _ = self.served.set(told);
     }
 
     /// The provider of `/iroh-bytes/4`: serves the connections `admit` lets in, each refused at once otherwise. Push,

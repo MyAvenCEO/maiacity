@@ -128,10 +128,10 @@ structure MemberSignIn where
   signIn : SignIn
   deriving DecidableEq, Repr
 
-/-- An Aven Peer that keeps its members: its claim and the claimant's sign-ins (`server`), then its invites,
+/-- An Aven Peer that keeps its members: its claim and the claimant's sign-ins (`founding`), then its invites,
 withdrawals, joins and the members' sign-ins, each in the order it came. -/
 structure Members where
-  server : Server
+  founding : Founding
   invites : List Invite := []
   withdrawn : List Withdrawal := []
   joins : List Join := []
@@ -140,16 +140,16 @@ structure Members where
 
 namespace Members
 
-def network (m : Members) : String := m.server.network
+def network (m : Members) : String := m.founding.network
 
 /-- The admin coop, whose members the members are. -/
-def coop (m : Members) : String := m.server.coop
+def coop (m : Members) : String := m.founding.coop
 
 def joinedPublics (j : Join) : List (String × String) := [(j.passkey, "es256:" ++ j.passkeyKey), (j.device, j.deviceKey)]
 
 /-- The vaults a join founds, named after the person: theirs, owned by its passkey (and the guardian), and its
 browser. -/
-def joinedVaults (s : Server) (j : Join) : List Vault :=
+def joinedVaults (s : Founding) (j : Join) : List Vault :=
   [⟨j.person, j.name ++ "'s vault", .person, s.founders j.passkey⟩,
     ⟨j.device, j.name ++ "'s browser", .device, [.vault j.person]⟩]
 
@@ -164,10 +164,10 @@ def signedInVaults (seen : List MemberSignIn) : List MemberSignIn → List Vault
   | s :: l => signedInVault seen s :: signedInVaults (seen ++ [s]) l
 
 def publics (m : Members) : List (String × String) :=
-  m.server.publics ++ m.joins.flatMap joinedPublics ++ m.signIns.map fun s => (s.signIn.device, s.signIn.deviceKey)
+  m.founding.publics ++ m.joins.flatMap joinedPublics ++ m.signIns.map fun s => (s.signIn.device, s.signIn.deviceKey)
 
 def vaults (m : Members) : List Vault :=
-  m.server.vaults ++ m.joins.flatMap (joinedVaults m.server) ++ signedInVaults [] m.signIns
+  m.founding.vaults ++ m.joins.flatMap (joinedVaults m.founding) ++ signedInVaults [] m.signIns
 
 def tree (m : Members) : Tree := ⟨m.publics.map (·.1), m.vaults⟩
 
@@ -200,10 +200,10 @@ def knows (m : Members) (ids keys : List String) : Bool :=
 
 /-- The admin's act, checked: a claimed network, an admin's passkey, and its assertion over `text`. -/
 def adminAct (m : Members) (network passkey text : String) (a : Assertion) : Except MemberError Unit :=
-  if m.server.claim.isNone then .error .unclaimed
+  if m.founding.claim.isNone then .error .unclaimed
   else if network ≠ m.network then .error .wrongNetwork
   else if !m.adminKey passkey then .error .notAdmin
-  else match a.check m.server.rp (challengeOf text) passkey with
+  else match a.check m.founding.rp (challengeOf text) passkey with
     | .error why => .error (.assertion why)
     | .ok () => .ok ()
 
@@ -222,14 +222,14 @@ def acceptWithdrawal (m : Members) (w : Withdrawal) : Except MemberError Members
 /-- A join's statement, checked: an open invite, its one-time key's signature, the passkey's assertion, nothing the
 tree has, and the tree it makes. -/
 def acceptJoin (m : Members) (j : Join) : Except MemberError Members :=
-  if m.server.claim.isNone then .error .unclaimed
+  if m.founding.claim.isNone then .error .unclaimed
   else if j.network ≠ m.network then .error .wrongNetwork
   else if (m.invite? j.invite).isNone then .error .noInvite
   else if m.used j.invite then .error .used
   else if m.isWithdrawn j.invite then .error .withdrawn
   else if j.signature ≠ (j.invite, j.text) then .error .badInviteSignature
   else if validPersonName j.name = false then .error .name
-  else match j.assertion.check m.server.rp (challengeOf j.text) j.passkey with
+  else match j.assertion.check m.founding.rp (challengeOf j.text) j.passkey with
     | .error why => .error (.assertion why)
     | .ok () =>
       if m.knows [j.person, j.passkey, j.device] [j.deviceKey, "es256:" ++ j.passkeyKey] then .error .known
@@ -239,20 +239,20 @@ def acceptJoin (m : Members) (j : Join) : Except MemberError Members :=
 
 /-- A join as a browser sends it, from the browser whose key is `sender`, or for it on the invite's one-time key. -/
 def submitJoin (m : Members) (sender : String) (j : Join) : Except MemberError Members :=
-  if m.server.claim.isNone then .error .unclaimed
+  if m.founding.claim.isNone then .error .unclaimed
   else if sender ≠ j.deviceKey ∧ sender ≠ j.invite then .error .notFromDevice
   else m.acceptJoin j
 
 /-- The claim and sign-ins, as `Aven.ID.Claim` takes them, in a tree that holds with the members. -/
-def withServer (m : Members) (r : Except ClaimError Server) : Except MemberError Members :=
+def withFounding (m : Members) (r : Except ClaimError Founding) : Except MemberError Members :=
   match r with
   | .error why => .error (.claim why)
-  | .ok s => match ({ m with server := s } : Members).tree.check with
+  | .ok s => match ({ m with founding := s } : Members).tree.check with
     | some why => .error (.invalid why)
-    | none => .ok { m with server := s }
+    | none => .ok { m with founding := s }
 
 def submitClaim (m : Members) (sender : String) (c : Claim) : Except MemberError Members :=
-  m.withServer (m.server.submitClaim sender c)
+  m.withFounding (m.founding.submitClaim sender c)
 
 /-! ## Sign-ins
 
@@ -268,10 +268,10 @@ Counters are kept per passkey (`lastCounter`): its claim's or its join's, then i
 /-- A sign-in's passkey, found by its assertion: the claimant's (`none`), or the member whose join's passkey made it.
 An assertion that fails before its signature fails for every passkey alike. -/
 def signerOf (m : Members) (c : Claim) (i : SignIn) : Except MemberError (Option Join) :=
-  match i.assertion.check m.server.rp (challengeOf i.text) c.passkey with
+  match i.assertion.check m.founding.rp (challengeOf i.text) c.passkey with
   | .ok () => .ok none
   | .error .badSignature =>
-    match m.joins.find? fun j => (i.assertion.check m.server.rp (challengeOf i.text) j.passkey).toBool with
+    match m.joins.find? fun j => (i.assertion.check m.founding.rp (challengeOf i.text) j.passkey).toBool with
     | some j => .ok (some j)
     | none => .error .stranger
   | .error why => .error (.assertion why)
@@ -279,7 +279,7 @@ def signerOf (m : Members) (c : Claim) (i : SignIn) : Except MemberError (Option
 /-- The last signature counter the network kept for the passkey `p`: its claim's or its join's, then each of its
 sign-ins'. -/
 def lastCounter (m : Members) (p : String) : Nat :=
-  if m.server.claim.map (·.passkey) = some p then m.server.lastCounter
+  if m.founding.claim.map (·.passkey) = some p then m.founding.lastCounter
   else ((m.joins.filter (·.passkey == p)).map (·.assertion.counter) ++
     (m.signIns.filter (·.member.passkey == p)).map (·.signIn.assertion.counter)).getLastD 0
 
@@ -291,7 +291,7 @@ def countsBack (m : Members) (p : String) (i : SignIn) : Bool :=
 /-- A sign-in's statement, checked: its network, a browser the tree hasn't, the passkey that signed it, which owns a
 vault here, and that passkey's counter. The claimant's goes to `Aven.ID.Claim`, a member's is kept here. -/
 def acceptSignIn (m : Members) (i : SignIn) : Except MemberError Members :=
-  match m.server.claim with
+  match m.founding.claim with
   | none => .error .unclaimed
   | some c =>
     if i.network ≠ m.network then .error .wrongNetwork
@@ -300,7 +300,7 @@ def acceptSignIn (m : Members) (i : SignIn) : Except MemberError Members :=
     | .error why => .error why
     | .ok none =>
       if m.countsBack c.passkey i then .error .counter
-      else m.withServer (m.server.acceptSignIn i)
+      else m.withFounding (m.founding.acceptSignIn i)
     | .ok (some j) =>
       if m.countsBack j.passkey i then .error .counter
       else match ({ m with signIns := m.signIns ++ [⟨j, i⟩] } : Members).tree.check with
@@ -309,12 +309,12 @@ def acceptSignIn (m : Members) (i : SignIn) : Except MemberError Members :=
 
 /-- A sign-in as a browser sends it: from the browser it names. -/
 def submitSignIn (m : Members) (sender : String) (i : SignIn) : Except MemberError Members :=
-  if m.server.claim.isNone then .error .unclaimed
+  if m.founding.claim.isNone then .error .unclaimed
   else if sender ≠ i.deviceKey then .error .notFromDevice
   else m.acceptSignIn i
 
 /-- An empty store: the network unclaimed again, without invites or members. -/
-def wipe (m : Members) : Members := { server := m.server.wipe }
+def wipe (m : Members) : Members := { founding := m.founding.wipe }
 
 /-- The order a store lists refs in: invites, withdrawals and joins come back by their invite's id. -/
 def byId (a b : String) : Bool := decide (inviteId a ≤ inviteId b)
@@ -324,13 +324,13 @@ them: by their invite's id; then every sign-in, so a member's finds the member. 
 order they came, the claimant's and the members' mixed; each passkey's come back in their order, which is all a
 counter and a browser's name depend on, so the claimant's first and then the members' make the same tree. -/
 def restore (m : Members) : Except MemberError Members := do
-  let s ← match ({ m.server with signIns := [] } : Server).restore with
+  let s ← match ({ m.founding with signIns := [] } : Founding).restore with
     | .ok s => pure s
     | .error why => .error (.claim why)
-  let r ← (m.invites.mergeSort fun a b => byId a.key b.key).foldlM acceptInvite { server := s }
+  let r ← (m.invites.mergeSort fun a b => byId a.key b.key).foldlM acceptInvite { founding := s }
   let r ← (m.withdrawn.mergeSort fun a b => byId a.key b.key).foldlM acceptWithdrawal r
   let r ← (m.joins.mergeSort fun a b => byId a.invite b.invite).foldlM acceptJoin r
-  (m.server.signIns ++ m.signIns.map (·.signIn)).foldlM acceptSignIn r
+  (m.founding.signIns ++ m.signIns.map (·.signIn)).foldlM acceptSignIn r
 
 /-! ## The door -/
 
@@ -367,8 +367,8 @@ def newcomer (m : Members) (key : String) (p : Pending) : Bool := m.admits key |
 variable {m m' : Members}
 
 theorem adminAct_ok {network passkey text : String} {a : Assertion} (h : m.adminAct network passkey text a = .ok ()) :
-    m.server.claim.isSome ∧ network = m.network ∧ m.adminKey passkey = true ∧
-      a.check m.server.rp (challengeOf text) passkey = .ok () := by
+    m.founding.claim.isSome ∧ network = m.network ∧ m.adminKey passkey = true ∧
+      a.check m.founding.rp (challengeOf text) passkey = .ok () := by
   unfold adminAct at h
   split at h; · cases h
   next c =>
@@ -394,8 +394,8 @@ theorem adminKey_governs {k : String} (h : m.adminKey k = true) :
 /-- Only the admin coop invites: an invite taken was signed by a passkey that owns a vault governing the coop, over
 exactly the invite's text, on a claimed network; it adds that invite and nothing else. -/
 theorem invite_admin {i : Invite} (h : m.acceptInvite i = .ok m') :
-    m.server.claim.isSome ∧ (∃ v, m.tree.KeyOwns i.passkey v ∧ m.tree.Governs v m.coop) ∧
-      i.assertion.check m.server.rp (challengeOf i.text) i.passkey = .ok () ∧
+    m.founding.claim.isSome ∧ (∃ v, m.tree.KeyOwns i.passkey v ∧ m.tree.Governs v m.coop) ∧
+      i.assertion.check m.founding.rp (challengeOf i.text) i.passkey = .ok () ∧
       m' = { m with invites := m.invites ++ [i] } := by
   unfold acceptInvite at h
   cases e : m.adminAct i.network i.passkey i.text i.assertion with
@@ -410,7 +410,7 @@ theorem invite_admin {i : Invite} (h : m.acceptInvite i = .ok m') :
 
 theorem acceptJoin_ok {j : Join} (h : m.acceptJoin j = .ok m') :
     (m.invite? j.invite).isSome ∧ m.used j.invite = false ∧ m.isWithdrawn j.invite = false ∧
-      j.signature = (j.invite, j.text) ∧ j.assertion.check m.server.rp (challengeOf j.text) j.passkey = .ok () ∧
+      j.signature = (j.invite, j.text) ∧ j.assertion.check m.founding.rp (challengeOf j.text) j.passkey = .ok () ∧
       m.knows [j.person, j.passkey, j.device] [j.deviceKey, "es256:" ++ j.passkeyKey] = false ∧
       m' = { m with joins := m.joins ++ [j] } ∧ m'.tree.WF := by
   unfold acceptJoin at h
@@ -489,20 +489,20 @@ joining browser as its device, a member of the admin coop; the tree holds, and n
 vaults go in after the joins before it, ahead of the members' browsers that signed in. -/
 theorem join_founds {j : Join} (h : m.acceptJoin j = .ok m') :
     (∃ pre post, m.tree.vaults = pre ++ post ∧
-      m'.tree.vaults = pre ++ [⟨j.person, j.name ++ "'s vault", .person, m.server.founders j.passkey⟩,
+      m'.tree.vaults = pre ++ [⟨j.person, j.name ++ "'s vault", .person, m.founding.founders j.passkey⟩,
         ⟨j.device, j.name ++ "'s browser", .device, [.vault j.person]⟩] ++ post) ∧ m'.tree.WF ∧
     m'.tree.KeyOwns j.passkey j.person ∧
-    (∀ g, m.server.guardian = some g → Owner.key guardianId ∈ m.server.founders j.passkey) ∧
+    (∀ g, m.founding.guardian = some g → Owner.key guardianId ∈ m.founding.founders j.passkey) ∧
     m'.tree.actsFor j.device = some j.person ∧ m'.memberOf j.person m.coop = true ∧
     ∀ x ∈ m.tree.ids, m'.tree.get? x = m.tree.get? x := by
   obtain ⟨_, _, _, _, _, nk, e, w⟩ := acceptJoin_ok h
   subst e
-  let pv : Vault := ⟨j.person, j.name ++ "'s vault", .person, m.server.founders j.passkey⟩
+  let pv : Vault := ⟨j.person, j.name ++ "'s vault", .person, m.founding.founders j.passkey⟩
   let dv : Vault := ⟨j.device, j.name ++ "'s browser", .device, [.vault j.person]⟩
-  have v0 : m.tree.vaults = (m.server.vaults ++ m.joins.flatMap (joinedVaults m.server)) ++
+  have v0 : m.tree.vaults = (m.founding.vaults ++ m.joins.flatMap (joinedVaults m.founding)) ++
       signedInVaults [] m.signIns := by simp [tree, vaults]
   have v : ({ m with joins := m.joins ++ [j] } : Members).tree.vaults =
-      (m.server.vaults ++ m.joins.flatMap (joinedVaults m.server)) ++ [pv, dv] ++ signedInVaults [] m.signIns := by
+      (m.founding.vaults ++ m.joins.flatMap (joinedVaults m.founding)) ++ [pv, dv] ++ signedInVaults [] m.signIns := by
     simp [pv, dv, tree, vaults, joinedVaults]
   simp only [knows, Bool.or_eq_false_iff, List.any_eq_false] at nk
   have np : j.person ∉ m.tree.ids := fun mp => nk.1 j.person mp (by simp)
@@ -515,10 +515,10 @@ theorem join_founds {j : Join} (h : m.acceptJoin j = .ok m') :
     · exact nd)
   have gp := Tree.get?_of_mem w.nodup (v := pv) (by rw [v]; simp)
   have gd := Tree.get?_of_mem w.nodup (v := dv) (by rw [v]; simp)
-  refine ⟨⟨_, _, v0, v⟩, w, ⟨_, gp, by simp [pv, Server.founders, Vault.ownerKeys, Owner.key?]⟩, ?_, ?_,
+  refine ⟨⟨_, _, v0, v⟩, w, ⟨_, gp, by simp [pv, Founding.founders, Vault.ownerKeys, Owner.key?]⟩, ?_, ?_,
     by simp [memberOf, members, coop], old⟩
   · intro g hg
-    simp [Server.founders, hg]
+    simp [Founding.founders, hg]
   · simp [Tree.actsFor, dv, gd, Vault.ownerVaults, Owner.vault?]
 
 /-- The door hangs on the admin coop's membership: it admits exactly the keys of devices whose vault is the agent's
@@ -559,7 +559,7 @@ theorem admits_device {key : String} (h : m.admits key = true) :
   · cases a
 
 /-- A wipe makes the network unclaimed, without invites or members. -/
-theorem wipe_empty : m.wipe.server.claim = none ∧ m.wipe.invites = [] ∧ m.wipe.joins = [] := ⟨rfl, rfl, rfl⟩
+theorem wipe_empty : m.wipe.founding.claim = none ∧ m.wipe.invites = [] ∧ m.wipe.joins = [] := ⟨rfl, rfl, rfl⟩
 
 end Members
 end Aven.ID

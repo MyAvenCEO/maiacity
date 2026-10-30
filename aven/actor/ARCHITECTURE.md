@@ -558,8 +558,10 @@ Test-first, as avenDB works: the Lean model and its theorems, then Rust tests th
    drawn node passes the applier's allowlist, for any markup and data), `draw_events` (a face can send only the
    events its markup names; `data-on` and `data-place` are the runtime's own) and `faceRun_ok`; vectors
    `markup.json`. `Aven.Actor.Runtimes` joins them to actors: `face_actor_checked` (a face actor's face passes the
-   applier's check before it is drawn), and, once #1550 is on main, a state part as a turn whose phase the kernel
-   takes only where the machine allows. The kernel hands the current phase to every turn.
+   applier's check before it is drawn); `stateTurn`, a state part as a turn, whose sends become effects or refuse
+   the turn; `stateTurn_phase` and `runTurn_state` (it moves only where its machine allows, and the kernel takes
+   every answer, so `machine_sound` covers it); and `partMachine` with `fits_machine` (the machine a statechart
+   draws, which it always fits). The kernel hands the current phase to every turn.
 2. **Layers 0 to 2** (`core`): Values and names, the in-memory Doc, messages, with the vectors.
 3. **Runtimes**: `state-runtime` first, then `js-runtime`; each with hostile parts that try to get
    out, run too long or blow up, which must fail.
@@ -611,7 +613,10 @@ Decided here, on those grounds:
   6 and 7). From the first-principles audit (`aven/DB2/ARCHITECTURE.md`).
 
 - Hosting an actor on the Aven Peer is an explicit read cap per actor, shown to its owner; a member's own Peer is the
-  default home (avenDB A16). Every runtime lives in `aven/runtimes` (section 13). (Samuel, 30 Oct 2026.)
+  default home (avenDB A16). Modelled in `Aven.Actor.Hosting`, a hosting cap being one of avenID's caps
+  (issuer the owner, holder the host, `read` on the actor or its loads): a host reads exactly what its hosting caps,
+  shown to the actor's owner, reach (`hosting_explicit`), nothing without one (`no_hosting_without_cap`), and one
+  load's cap reads only that load (`per_target`). Every runtime lives in `aven/runtimes` (section 13). (Samuel, 30 Oct 2026.)
 
 - avenDB's A17, parts 1, 2 and 4 (Samuel, 30 Oct 2026): an address names a vault-scoped id and an incarnation, never
   a device, and the home is only where to route; a message is stored once and referenced by its hash; an actor's

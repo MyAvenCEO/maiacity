@@ -3,30 +3,58 @@ import Aven.ID.Revoke
 import Aven.ID.Epochs
 import Aven.ID.Recover
 import Aven.ID.Network
+import Aven.ID.CapsCbor
 
 /-! # Caps on the cast
 
 Examples written once, beside the rules they show, each with its answer written out by hand and checked by `lake build`
-(README, rule 10). They run on the cast's tree: Alice's vault owns Maia City, which owns Aven; Bob's vault is a
-person's; Alice and Bob are in the group `g-garden`. `Aven.ID.CapsJson` exports them as vectors. -/
+(README, rule 10): by `decide` where the kernel computes them, and by `#guard` where they go through UTF-8. They run on
+the cast's tree: Alice's vault owns Maia City, which owns Aven; Bob's vault is a person's; Alice and Bob are in the
+group `g-garden`. `Aven.ID.CapsJson` exports them as vectors. -/
 
 namespace Aven.ID
 
-/-- What a reader of the cast knows: the tree, one owner per approval, who is in `g-garden`, and one role. -/
+/-- The cast's Docs, named by short bytes rather than 32-byte hashes so that `decide` stays quick. `tasks` is a type
+Doc. -/
+def docOf (s : String) : Core.DocId := ⟨⟨s.toUTF8.toList⟩⟩
+
+def d1 : Core.DocId := docOf "d1"
+def d2 : Core.DocId := docOf "d2"
+def b1 : Core.DocId := docOf "b1"
+def cityNotes : Core.DocId := docOf "city-notes"
+def cityDome : Core.DocId := docOf "city-dome"
+def tasks : Core.DocId := docOf "tasks"
+
+/-- Reading a Doc. -/
+def readOn (d : Core.DocId) : Line := ⟨.doc d, .read, []⟩
+
+/-- Writing tasks into a Doc: new ones, and patches to any field. -/
+def tasksOn (d : Core.DocId) : Line := ⟨.doc d, .put, [⟨tasks, .putNew, none⟩, ⟨tasks, .patch, none⟩]⟩
+
+/-- Which vault each of the cast's Docs belongs to, as its genesis fixes it. -/
+def castDocVault (d : Core.DocId) : Option String :=
+  if d == d1 || d == d2 || d == cityNotes then some "alice"
+  else if d == b1 then some "bob"
+  else if d == cityDome then some "maia-city"
+  else none
+
+/-- What a reader of the cast knows: the tree, one owner per approval, who is in `g-garden`, one role, and which vault
+each Doc belongs to. -/
 def castCtx : Ctx where
   tree := cast
   inGroup := fun g v => g == "g-garden" && (v == "alice" || v == "bob")
-  roles := [⟨"role-editor-1", "Editor", [⟨"alice", "read d1"⟩, ⟨"alice", "write d1 tasks"⟩]⟩]
+  roles := [⟨"role-editor-1", "Editor", [readOn d1, tasksOn d1]⟩]
+  docVault := castDocVault
 
 /-- Alice gives Bob read and task writing on her Doc `d1`, which he may share one hop further. -/
 def capA : Cap :=
   { id := "cap-a", issuer := "alice", holder := .vault "bob", share := 1, signer := "alice-peer",
-    grant := [⟨"alice", "read d1"⟩, ⟨"alice", "write d1 tasks"⟩], approvals := [⟨"alice-owner", "cap-a"⟩] }
+    grant := [readOn d1, tasksOn d1], approvals := [⟨"alice-owner", "cap-a"⟩] }
 
 /-- Bob passes reading on to everyone in `g-garden`. -/
 def capB : Cap :=
   { id := "cap-b", issuer := "bob", holder := .group "g-garden", parent := "cap-a", signer := "bob-peer-light",
-    grant := [⟨"alice", "read d1"⟩], approvals := [⟨"bob-owner", "cap-b"⟩] }
+    grant := [readOn d1], approvals := [⟨"bob-owner", "cap-b"⟩] }
 
 /-- A cap with `cap`'s fields changed by `f`, approved again by `owner` under its new id. -/
 def recap (c : Cap) (newId owner : String) (f : Cap → Cap := fun c => c) : Cap :=
@@ -41,7 +69,7 @@ def capG : Cap := recap capB "cap-g" "bob-owner" fun c => { c with parent := "ca
 
 def capPublic : Cap :=
   { id := "cap-public", issuer := "alice", holder := .«public», signer := "alice-peer",
-    grant := [⟨"alice", "read city-notes"⟩], approvals := [⟨"alice-owner", "cap-public"⟩] }
+    grant := [readOn cityNotes], approvals := [⟨"alice-owner", "cap-public"⟩] }
 
 /-- Chains, each with the first rule it breaks, or none. -/
 def chainExamples : List (String × List Cap × Option ChainError) := [
@@ -49,7 +77,7 @@ def chainExamples : List (String × List Cap × Option ChainError) := [
   ("Bob passes reading on to g-garden", [capA, capB], none),
   ("Alice grants on Maia City, which she governs",
     [{ id := "cap-gov", issuer := "alice", holder := .vault "bob", signer := "alice-peer-light",
-       grant := [⟨"maia-city", "read city-dome"⟩], approvals := [⟨"alice-owner", "cap-gov"⟩] }], none),
+       grant := [readOn cityDome], approvals := [⟨"alice-owner", "cap-gov"⟩] }], none),
   ("a role, pinned by its id",
     [{ id := "cap-role", issuer := "alice", holder := .vault "bob", signer := "alice-peer", role := "role-editor-1",
        approvals := [⟨"alice-owner", "cap-role"⟩] }], none),
@@ -57,8 +85,20 @@ def chainExamples : List (String × List Cap × Option ChainError) := [
   ("no chain", [], some .empty),
   ("a root that names a parent", [capB], some (.notRoot "cap-b")),
   ("Alice grants on Bob's vault, which she doesn't govern",
-    [{ capA with id := "cap-x", grant := [⟨"bob", "read b1"⟩], approvals := [⟨"alice-owner", "cap-x"⟩] }],
-    some (.authority "cap-x" ⟨"bob", "read b1"⟩)),
+    [{ capA with id := "cap-x", grant := [readOn b1], approvals := [⟨"alice-owner", "cap-x"⟩] }],
+    some (.authority "cap-x" (readOn b1))),
+  ("a Doc the reader doesn't know: no authority",
+    [{ capA with id := "cap-u", grant := [readOn (docOf "u1")], approvals := [⟨"alice-owner", "cap-u"⟩] }],
+    some (.authority "cap-u" (readOn (docOf "u1")))),
+  ("a child that reads where its parent writes: another verb",
+    [capA, recap capB "cap-v" "bob-owner" fun c => { c with grant := [⟨.doc d1, .patch, []⟩] }],
+    some (.wider "cap-v")),
+  ("a child whose footprint names fields within its parent's",
+    [capA, recap capB "cap-f" "bob-owner" fun c => { c with grant := [⟨.doc d1, .put, [⟨tasks, .patch, some []⟩]⟩] }],
+    none),
+  ("a child whose footprint is another type",
+    [capA, recap capB "cap-t" "bob-owner" fun c => { c with grant := [⟨.doc d1, .put, [⟨d2, .patch, none⟩]⟩] }],
+    some (.wider "cap-t")),
   ("signed by a device of another vault", [{ capA with signer := "bob-peer-light" }], some (.signer "cap-a")),
   ("no owner approved it (D14)", [{ capA with approvals := [] }], some (.approval "cap-a")),
   ("approved over another digest", [{ capA with approvals := [⟨"alice-owner", "cap-b"⟩] }], some (.approval "cap-a")),
@@ -73,7 +113,7 @@ def chainExamples : List (String × List Cap × Option ChainError) := [
     [capA, recap capB "cap-m" "alice-owner" fun c => { c with issuer := "alice", signer := "alice-peer" }],
     some (.issuer "cap-m")),
   ("a child wider than its parent",
-    [capA, recap capB "cap-w" "bob-owner" fun c => { c with grant := [⟨"alice", "read d1"⟩, ⟨"alice", "read d2"⟩] }],
+    [capA, recap capB "cap-w" "bob-owner" fun c => { c with grant := [readOn d1, readOn d2] }],
     some (.wider "cap-w")),
   ("a root that may not be shared on", [{ capA with share := 0 }], none),
   ("shared further than the parent allows",
@@ -83,11 +123,11 @@ def chainExamples : List (String × List Cap × Option ChainError) := [
   ("a child of a group's cap, issued by someone in the group",
     [capA2, capG,
      { id := "cap-g2", issuer := "alice", holder := .vault "bob", parent := "cap-g", signer := "alice-peer",
-       grant := [⟨"alice", "read d1"⟩], approvals := [⟨"alice-owner", "cap-g2"⟩] }], none),
+       grant := [readOn d1], approvals := [⟨"alice-owner", "cap-g2"⟩] }], none),
   ("a child of a group's cap, issued by a vault not in the group",
     [capA2, capG,
      { id := "cap-g3", issuer := "maia-city", holder := .vault "bob", parent := "cap-g", signer := "alice-peer",
-       grant := [⟨"alice", "read d1"⟩], approvals := [⟨"alice-owner", "cap-g3"⟩] }],
+       grant := [readOn d1], approvals := [⟨"alice-owner", "cap-g3"⟩] }],
     some (.issuer "cap-g3")),
   ("a child that drops its parent's expiry",
     [capAExpiring, recap capB "cap-e" "bob-owner" fun c => { c with parent := "cap-a-100" }],
@@ -97,7 +137,8 @@ def chainExamples : List (String × List Cap × Option ChainError) := [
      recap capB "cap-e2" "bob-owner" fun c => { c with parent := "cap-a-100", conditions := { expires := some 50 } }],
     none)]
 
-theorem chain_examples : chainExamples.all (fun (_, cs, e) => chainError castCtx cs == e) = true := by decide
+-- Vault ids are UTF-8 bytes, which the kernel doesn't compute, so the chains are checked as the module builds.
+#guard chainExamples.all fun (_, cs, e) => chainError castCtx cs == e
 
 /-- A Doc cap revoked inside the Doc: `r0` is Alice's revocation of `cap-a`, after `b1`. -/
 def docCapDoc : List Envelope := [
@@ -171,14 +212,39 @@ def Holder.text : Holder → String
   | .«public» => "every member of the network"
   | .ticket k => s!"whoever claims the ticket {k}"
 
+/-- A target as avenOS shows it, the Docs and vaults by the names `name` gives them. -/
+def targetText (name : Core.DocId → String) (vault : Core.Bytes → String) : Core.Target → String
+  | .doc d => name d
+  | .vault v b => s!"every Doc of {vault v}" ++ if b then " and below" else ""
+  | .vaultType v t b => s!"every {name t} of {vault v}" ++ if b then " and below" else ""
+  | .actor a b => s!"the actor {name a}" ++ if b then " and what it spawned" else ""
+  | .vaultDef v d => s!"every actor {name d} of {vault v}"
+
+/-- A line as avenOS shows it: its verb, its target, and for a write what each step may do. -/
+def Line.text (name : Core.DocId → String) (vault : Core.Bytes → String) (l : Line) : String :=
+  s!"{verbName l.verb} {targetText name vault l.target}" ++
+    if l.footprint.isEmpty then "" else
+      " (" ++ ", ".intercalate (l.footprint.map fun g => s!"{g.verb.name} {name g.type}" ++
+        match g.fields with | none => "" | some _ => " (some fields)") ++ ")"
+
+/-- The cast's names for its Docs and vaults. -/
+def castName (d : Core.DocId) : String :=
+  ((([d1, d2, b1, cityNotes, cityDome, tasks].zip ["d1", "d2", "b1", "city-notes", "city-dome", "tasks"]).find?
+    (·.1 == d)).map (·.2)).getD "a Doc"
+
+def castVault (v : Core.Bytes) : String :=
+  ((["alice", "bob", "maia-city", "aven"].find? (vaultId · == v))).getD "a vault"
+
 def Cap.text (c : Cap) (roles : List Role) : String :=
   s!"{c.issuer} grants {c.holder.text}: " ++
-    ", ".intercalate ((c.grants roles).map fun a => s!"{a.what} in {a.vault}") ++
+    ", ".intercalate ((c.grants roles).map (Line.text castName castVault)) ++
     (if c.share = 0 then "; no sharing on" else s!"; may share on {c.share} more hop(s)") ++
     (match c.conditions.expires with | some t => s!"; until {t}" | none => "")
 
-theorem shown_examples :
-    capA.text [] = "alice grants bob: read d1 in alice, write d1 tasks in alice; may share on 1 more hop(s)" ∧
-      capB.text [] = "bob grants everyone in g-garden: read d1 in alice; no sharing on" := by decide
+#guard capA.text [] == "alice grants bob: read d1, put d1 (put-new tasks, patch tasks); may share on 1 more hop(s)"
+#guard capB.text [] == "bob grants everyone in g-garden: read d1; no sharing on"
+
+-- Every cap of the examples is a Value the codec allows, so its bytes and its id name it exactly.
+#guard (chainExamples.flatMap (·.2.1)).all fun c => Core.Canon c.body
 
 end Aven.ID

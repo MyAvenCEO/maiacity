@@ -134,6 +134,21 @@ touches.
 14. **One protocol of ours.** `aven/db/1`, with iroh's gossip and blobs beside it on one `Router`. Every format is
     named and versioned, and Lean comes first, with vectors for every format.
 
+### The rules in Lean
+
+`Aven.Architecture` ([`architecture/`](architecture/README.md)) states these rules as theorems composed from the
+parts' own models, on the shared core `Aven.Core`. Where each rule stands, what is still open and who closes it is
+kept in one place, beside the proofs: [`architecture/README.md`](architecture/README.md), "Where the rules stand".
+
+On 30 Oct 2026, seven rules were proven whole: 1, 2, 3, 6, 7, 8 and 9. Still open:
+- **4:** one verdict joining signature, cap chain, footprint and fit;
+- **5 and 11:** proven in the parts, to be composed;
+- **10:** limits on envelopes, blobs and pages, and a quota per vault;
+- **12:** time judged by acks;
+- **13:** a model of the safe.
+
+Rule 14 is a property of the node, held by the format vectors and the box's check.
+
 ## One vocabulary
 
 Of about 300 terms, about 40 mean two or more things across the specs, and about 30 pairs name one thing twice. Every
@@ -583,6 +598,9 @@ the spec that owns it.
   store's and Lean's fork becomes split. *Decided: yes (Samuel, 30 Oct 2026).*
 - **A5. Checkpoints travel:** sealed and hybrid-signed, naming the segments they cover. A new device starts from one
   and checks it in the background, from milestone 4, whose catch-up target needs it. *Decided: yes (Samuel, 30 Oct
+  2026).* Who may sign one a reader takes: a device whose vault may write the Doc at the version the checkpoint names,
+  as only writers publish a sealed index's root (A26). A reader still checks it by replay in the background, and
+  ignores a checkpoint from anyone else. *The architect's answer to docs' open question 6, which Lean exposed (30 Oct
   2026).*
 - **A6. Collections that grow without end are chains of period Docs.** *Decided: yes (Samuel, 30 Oct 2026), rather
   than shallow snapshots, which refuse older branches.*

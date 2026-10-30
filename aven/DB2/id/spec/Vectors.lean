@@ -5,6 +5,7 @@ import Aven.ID.ClaimJson
 import Aven.ID.InviteJson
 import Aven.ID.Before
 import Aven.ID.CapsJson
+import Aven.ID.SettleJson
 
 /-! # The test vectors (README, rule 10)
 
@@ -36,6 +37,11 @@ import Aven.ID.CapsJson
   (`Aven.ID.Network`, `Aven.ID.Recover`).
 - `keep.json`: a keeper's fetch-key links in the order they came, with the keys it takes, its current fetch key and
   its flags; the proofs it serves; what each vault pays (`Aven.ID.Keep`, A22). Hand-written and generated.
+- `settled.json`: sets of tree statements, each in several orders, and the tree `settle` gives (`Aven.ID.Network`,
+  PEERS.md §5): `TreeExamples`, the races one by one, generated sets, and production's store migrated from every
+  invite trace (`Aven.ID.Restore`). `records.json`: signed records and the newest of each (`Aven.ID.Records`, §6).
+  `node.json`: networks losing each peer in turn, with every home relay, who reaches whom and who can fetch the chat
+  (`Aven.ID.Node`, R7).
 
 `bun run up --check` runs it again and fails when the files differ from what is committed. -/
 
@@ -118,9 +124,9 @@ def passkeys : List Json :=
 def generatedTraces : Nat := 40
 
 def claims : List Json :=
-  (claimExamples.map fun (name, server, ops, _) => let (i, e) := traceVector server ops; vector name i e) ++
+  (claimExamples.map fun (name, founding, ops, _) => let (i, e) := traceVector founding ops; vector name i e) ++
   (List.range generatedTraces).map fun n =>
-    let (i, e) := traceVector boxServer (randomTrace n)
+    let (i, e) := traceVector boxFounding (randomTrace n)
     vector s!"generated trace, seed {n}" i e
 
 def generatedMemberTraces : Nat := 40
@@ -211,3 +217,6 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "approvals.json") (render approvalVectors)
   IO.FS.writeFile (dir / "network.json") (render networkVectors)
   IO.FS.writeFile (dir / "keep.json") (render keepVectors)
+  IO.FS.writeFile (dir / "settled.json") (render SettleJson.settledVectors)
+  IO.FS.writeFile (dir / "records.json") (render SettleJson.recordVectors)
+  IO.FS.writeFile (dir / "node.json") (render SettleJson.nodeVectors)

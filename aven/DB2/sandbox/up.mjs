@@ -212,6 +212,7 @@ async function check() {
 		(await members(run)) &&
 		(await chats(run)) &&
 		(await domes(run)) &&
+		(await videos(run)) &&
 		(await shares(run)) &&
 		(await offlines(run));
 	say(`${passed ? 'check passed' : 'check FAILED'}; screenshots and report in aven/DB2/${run}/`);
@@ -370,6 +371,8 @@ async function members(run) {
 // avenOS's Invite, Join and Chat (MILESTONE2.md, steps 1, 2 and 4), on production's stand-in after the members' step
 // leaves its store empty: sandbox/chat.mjs
 // the city-dome's history and files in the cast's box: sandbox/dome.mjs
+// a phone's video from one browser to another, its first frame and a seek, in three engines: sandbox/video.mjs
+const videos = async (run) => (await $`${compose} exec -T browsers node sandbox/video.mjs ${run}`.env(env).nothrow()).exitCode === 0;
 const domes = async (run) => (await $`${compose} exec -T browsers node sandbox/dome.mjs ${run}`.env(env).nothrow()).exitCode === 0;
 // Offline first (README rule 3), by sandbox/offline.mjs on production's stand-in, from an empty store, which it leaves
 // empty: it asks for the Aven Peer to stop and to start again by writing `offline-stop` and `offline-start` into the

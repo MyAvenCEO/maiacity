@@ -40,7 +40,7 @@ counter at 0, and pass.
 A restart reads the tree back (`restore`): every stored statement is checked again, as when it came. A wipe empties
 the store, and the network is unclaimed again.
 
-Theorems: a server is claimed at most once (`claim_once`); after its claim the claimant's vault, which its passkey
+Theorems: a network is claimed at most once (`claim_once`); after its claim the claimant's vault, which its passkey
 owns, is the admin coop's one owner, the coop the agent's, the tree is well formed, no device governs anything and
 the coop holds no devices (`claim_admin`); a sign-in adds
 one device and changes no vault that was there (`signIn_adds`); the agent's vault lacks an owner only before its claim
@@ -94,10 +94,11 @@ def guardianId : String := "maia-city-guardian"
 def networkName : String := "Aven"
 def peerName : String := "Aven Peer"
 
-/-- An Aven Peer that keeps its tree: its agent's vault (`network`, the id the network goes by), its own device and
-key, the relying party its passkeys are for, MaiaCityGuardian's public half if it is given one, the admin coop's id and name, and the statements its
-store holds. -/
-structure Server where
+/-- A network's founding, as the Aven Peer keeps it today: its agent's vault (`network`, the id the network goes by),
+its own device and key, the relying party its passkeys are for, MaiaCityGuardian's public half if it is given one, the
+admin coop's id and name, and the statements its store holds. The network's signed genesis replaces it (A11, PEERS.md
+§5): the genesis names this configuration, signed by the claimant's passkey and MaiaCityGuardian. -/
+structure Founding where
   network : String
   peer : String
   peerKey : String
@@ -128,21 +129,21 @@ inductive ClaimError where
   | counter
   deriving DecidableEq, Repr
 
-namespace Server
+namespace Founding
 
 /-- The tree's keys with their public halves: a passkey's written `es256:<SPKI>`, a device's and the guardian's as
 Ed25519 hex. -/
-def publics (s : Server) : List (String × String) :=
+def publics (s : Founding) : List (String × String) :=
   match s.claim with
   | none => [(s.peer, s.peerKey)]
   | some c => [(c.passkey, "es256:" ++ c.passkeyKey)] ++ s.guardian.toList.map (guardianId, ·) ++
     [(s.peer, s.peerKey), (c.device, c.deviceKey)] ++ s.signIns.map fun i => (i.device, i.deviceKey)
 
 /-- A person's vault's owners when it is founded: its passkey, and the guardian if there is one. -/
-def founders (s : Server) (passkey : String) : List Owner :=
+def founders (s : Founding) (passkey : String) : List Owner :=
   .key passkey :: s.guardian.toList.map fun _ => .key guardianId
 
-def vaults (s : Server) : List Vault :=
+def vaults (s : Founding) : List Vault :=
   match s.claim with
   | none => [⟨s.network, networkName, .agent, []⟩, ⟨s.peer, peerName, .device, [.vault s.network]⟩]
   | some c => [⟨c.person, c.vaultName, .person, s.founders c.passkey⟩,
@@ -150,34 +151,34 @@ def vaults (s : Server) : List Vault :=
       ⟨s.peer, peerName, .device, [.vault s.network]⟩, ⟨c.device, c.browser 1, .device, [.vault c.person]⟩] ++
     s.signIns.mapIdx fun k i => ⟨i.device, c.browser (k + 2), .device, [.vault c.person]⟩
 
-def tree (s : Server) : Tree := ⟨s.publics.map (·.1), s.vaults⟩
+def tree (s : Founding) : Tree := ⟨s.publics.map (·.1), s.vaults⟩
 
 /-- A claim's statement, checked: its network, the person's name, its passkey's assertion over its text, and the
 tree it makes. -/
-def acceptClaim (s : Server) (c : Claim) : Except ClaimError Server :=
+def acceptClaim (s : Founding) (c : Claim) : Except ClaimError Founding :=
   if c.network ≠ s.network then .error .wrongNetwork
   else if validPersonName c.name = false then .error .name
   else match c.assertion.check s.rp (challengeOf c.text) c.passkey with
     | .error why => .error (.assertion why)
-    | .ok () => match ({ s with claim := some c } : Server).tree.check with
+    | .ok () => match ({ s with claim := some c } : Founding).tree.check with
       | some why => .error (.invalid why)
       | none => .ok { s with claim := some c }
 
 /-- A claim, the first signup, as a browser sends it: refused once claimed, then from another browser. -/
-def submitClaim (s : Server) (sender : String) (c : Claim) : Except ClaimError Server :=
+def submitClaim (s : Founding) (sender : String) (c : Claim) : Except ClaimError Founding :=
   if s.claim.isSome then .error .taken
   else if sender ≠ c.deviceKey then .error .notFromDevice
   else s.acceptClaim c
 
 /-- Whether the tree has this device already, by its id or its key. -/
-def knows (s : Server) (device key : String) : Bool :=
+def knows (s : Founding) (device key : String) : Bool :=
   s.tree.ids.contains device || s.publics.any fun (id, k) => id == device || k == key
 
 /-- The last signature counter the network kept for its passkey: its claim's, then each sign-in's. -/
-def lastCounter (s : Server) : Nat :=
+def lastCounter (s : Founding) : Nat :=
   ((s.claim.map (·.assertion.counter)).toList ++ s.signIns.map (·.assertion.counter)).getLastD 0
 
-def acceptSignIn (s : Server) (i : SignIn) : Except ClaimError Server :=
+def acceptSignIn (s : Founding) (i : SignIn) : Except ClaimError Founding :=
   match s.claim with
   | none => .error .unclaimed
   | some c =>
@@ -187,20 +188,20 @@ def acceptSignIn (s : Server) (i : SignIn) : Except ClaimError Server :=
       | .error why => .error (.assertion why)
       | .ok () =>
         if (i.assertion.counter ≠ 0 ∨ s.lastCounter ≠ 0) ∧ i.assertion.counter ≤ s.lastCounter then .error .counter
-        else match ({ s with signIns := s.signIns ++ [i] } : Server).tree.check with
+        else match ({ s with signIns := s.signIns ++ [i] } : Founding).tree.check with
         | some why => .error (.invalid why)
         | none => .ok { s with signIns := s.signIns ++ [i] }
 
-def submitSignIn (s : Server) (sender : String) (i : SignIn) : Except ClaimError Server :=
+def submitSignIn (s : Founding) (sender : String) (i : SignIn) : Except ClaimError Founding :=
   if s.claim.isNone then .error .unclaimed
   else if sender ≠ i.deviceKey then .error .notFromDevice
   else s.acceptSignIn i
 
 /-- An empty store: the network unclaimed again. -/
-def wipe (s : Server) : Server := { s with claim := none, signIns := [] }
+def wipe (s : Founding) : Founding := { s with claim := none, signIns := [] }
 
 /-- A restart: the tree read back sender the stored statements, each checked again as when it came. -/
-def restore (s : Server) : Except ClaimError Server := do
+def restore (s : Founding) : Except ClaimError Founding := do
   let r ← match s.claim with
     | some c => s.wipe.acceptClaim c
     | none => pure s.wipe
@@ -208,7 +209,7 @@ def restore (s : Server) : Except ClaimError Server := do
 
 /-! ## Theorems -/
 
-variable {s s' : Server}
+variable {s s' : Founding}
 
 theorem acceptClaim_ok {c : Claim} (h : s.acceptClaim c = .ok s') :
     s' = { s with claim := some c } ∧ s'.tree.WF ∧ c.assertion.check s.rp (challengeOf c.text) c.passkey = .ok () := by
@@ -226,11 +227,11 @@ theorem acceptClaim_ok {c : Claim} (h : s.acceptClaim c = .ok s') :
   cases h
   exact ⟨rfl, (Tree.check_iff _).mp hc, e⟩
 
-/-- A server is claimed at most once: once it has a claim, every claim is refused. -/
+/-- A network is claimed at most once: once it has a claim, every claim is refused. -/
 theorem claim_once {sender : String} {c : Claim} (h : s.claim.isSome) : s.submitClaim sender c = .error .taken :=
   by simp [submitClaim, h]
 
-/-- A claim that is accepted is the server's claim, and the next is refused. -/
+/-- A claim that is accepted is the founding's claim, and the next is refused. -/
 theorem claim_then_taken {sender sender' : String} {c c' : Claim} (h : s.submitClaim sender c = .ok s') :
     s'.claim = some c ∧ s'.submitClaim sender' c' = .error .taken := by
   unfold submitClaim at h
@@ -252,7 +253,7 @@ theorem claim_admin {sender : String} {c : Claim} (h : s.submitClaim sender c = 
   split at h; · cases h
   obtain ⟨e, w, _⟩ := acceptClaim_ok h
   subst e
-  have v : ({ s with claim := some c } : Server).tree.vaults = ⟨c.person, c.vaultName, .person, s.founders c.passkey⟩ ::
+  have v : ({ s with claim := some c } : Founding).tree.vaults = ⟨c.person, c.vaultName, .person, s.founders c.passkey⟩ ::
       ⟨s.coop, s.coopName, .coop, [.vault c.person]⟩ :: ⟨s.network, networkName, .agent, [.vault s.coop]⟩ ::
       (⟨s.peer, peerName, .device, [.vault s.network]⟩ :: ⟨c.device, c.browser 1, .device, [.vault c.person]⟩ ::
       s.signIns.mapIdx fun k i => ⟨i.device, c.browser (k + 2), .device, [.vault c.person]⟩) := by
@@ -264,7 +265,7 @@ theorem claim_admin {sender : String} {c : Claim} (h : s.submitClaim sender c = 
   have pc : c.person ≠ s.coop := fun e => n.1 (.inl e)
   have pn : c.person ≠ s.network := fun e => n.1 (.inr (.inl e))
   have cn : s.coop ≠ s.network := fun e => n.2.1 (.inl e)
-  have kc : ({ s with claim := some c } : Server).tree.kind? s.coop = some .coop := by
+  have kc : ({ s with claim := some c } : Founding).tree.kind? s.coop = some .coop := by
     simp [Tree.kind?, Tree.get?, v, pc]
   refine ⟨w, kc, ?_, ?_, ?_, fun d x k => Tree.device_governs_nothing w k, fun d k o => w.coop_no_device o k kc⟩
   · simp [Tree.ownersOf, Tree.get?, v, pc, Vault.ownerVaults, Owner.vault?]
@@ -303,7 +304,7 @@ theorem signIn_adds {sender : String} {i : SignIn} (h : s.submitSignIn sender i 
   split at h; · cases h
   obtain ⟨c, hc, e, w, _⟩ := acceptSignIn_ok h
   subst e
-  have v : ({ s with signIns := s.signIns ++ [i] } : Server).tree.vaults =
+  have v : ({ s with signIns := s.signIns ++ [i] } : Founding).tree.vaults =
       s.tree.vaults ++ [⟨i.device, c.browser (s.signIns.length + 2), .device, [.vault c.person]⟩] := by
     simp [tree, vaults, founders, hc, List.mapIdx_append]
   refine ⟨c, hc, rfl, v, w, fun x m => ?_⟩
@@ -326,7 +327,7 @@ theorem claimed_owned {sender : String} {c : Claim} (h : s.submitClaim sender c 
     ∀ v ∈ s'.tree.vaults, v.owners ≠ [] :=
   (claim_admin h).1.owned
 
-/-- With a guardian configured, every person's vault founded has it among its owners: in every tree the server
+/-- With a guardian configured, every person's vault founded has it among its owners: in every tree the founding
 keeps, before and after its claim and every sign-in. -/
 theorem guardian_owns {g : String} (h : s.guardian = some g) :
     ∀ v ∈ s.tree.vaults, v.kind = .person → Owner.key guardianId ∈ v.owners := by
@@ -349,5 +350,5 @@ theorem guardian_owns {g : String} (h : s.guardian = some g) :
 /-- A wipe makes the network unclaimed: the next claim is not refused as taken. -/
 theorem wipe_unclaimed : s.wipe.claim = none := rfl
 
-end Server
+end Founding
 end Aven.ID

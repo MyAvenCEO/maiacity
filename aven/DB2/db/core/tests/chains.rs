@@ -252,15 +252,19 @@ fn chains_follow_the_vectors() {
                     .unwrap_or_default();
                 let k = peers.entry(peer.clone()).or_default();
                 let before = files(k);
-                for (device, _) in src.heads() {
-                    // a line held without its text goes as the retraction that counts for it
-                    for h in missing(src.chain(&device), k.chain(&device))
-                        .into_iter()
-                        .filter_map(|h| src.stand_in(&author, h))
-                        .collect::<Vec<_>>()
-                    {
-                        answers.push(k.take(network, member, verify, &author, h.id, h.line).0);
-                    }
+                // a line held without its text goes as the retraction that counts for it
+                let all: Vec<_> = src
+                    .heads()
+                    .iter()
+                    .flat_map(|(device, _)| missing(src.chain(device), k.chain(device)))
+                    .filter_map(|h| src.stand_in(&author, h))
+                    .collect();
+                // the retractions first (`Aven.DB.Chains.Keeper.catchUpAll`)
+                let (first, rest): (Vec<_>, Vec<_>) = all
+                    .into_iter()
+                    .partition(|h| matches!(h.line.body, Body::Retract(_)));
+                for h in first.into_iter().chain(rest) {
+                    answers.push(k.take(network, member, verify, &author, h.id, h.line).0);
                 }
                 dropped = before.difference(&files(k)).cloned().collect();
             }

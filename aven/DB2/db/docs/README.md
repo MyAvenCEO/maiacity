@@ -212,8 +212,8 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
 10. **A container made after a Record is born is made mergeable,** so two writers creating it at once share it.
 11. **Each writer closes its own segments.** A segment is one log's run in one epoch, sealed and hybrid-signed by its
     writer. Outside it are only the Doc, the epoch and the padded length (caps D13).
-12. **Snapshots never travel; checkpoints do.** A checkpoint is signed, names its version and what it covers, and is
-    checked in the background. A state taken from it is unchecked until then. Snapshots are always full: history goes
+12. **Snapshots never travel; checkpoints do.** A checkpoint is signed by a device whose vault may write the Doc at
+    its version, names its version and what it covers, and is checked in the background. A state taken from it is unchecked until then. Snapshots are always full: history goes
     only by a period Doc's end, never by a shallow snapshot.
 13. **An envelope counts only when it is fit, authorized and not a split, and everything it builds on counts.** One
     that doesn't count never enters a branch's live state. A verdict that turns after import (a revocation, a split
@@ -432,8 +432,9 @@ separate step for devices that hold many Docs ([store](../../store/README.md#nex
     "runtime": "b3:<the code that made it>", "by": "device:…", "sig": "<hybrid>" }
   ```
 
-- **Who may sign one** a reader trusts: a device of the Doc's vault, or of a vault the Doc's caps grant `keep` with
-  checkpoints. A keeper with only a keep cap can't make one: it can't read.
+- **Who may sign one** a reader takes: a device whose vault may write the Doc at the version the checkpoint names, as
+  with index roots (architect, A5, 30 Oct 2026). A reader ignores one from anyone else, and still checks the one it
+  takes by replay. A keeper with only a keep cap can't make one: it can't read, nor write.
 - **A new device** starts from the newest checkpoint and the segments after it, and shows the Doc at once, marked
   **unchecked**.
 - **In the background** it fetches what the checkpoint covers, replays it, and compares the state's hash. Then the
@@ -715,7 +716,9 @@ same Docs by a query's fields. Both are a **Prolly tree**: a search tree whose n
   A key is never named or signed, only sorted, and sits in a node as a CBOR byte string, so rule 1 holds. A range is
   two keys; a prefix `p` is the range from `p` to `p FF`: every extension of `p` lies in it, since no field starts with
   `FF` (`extension_in_range`). A byte prefix alone isn't an extension (text `a` is a byte prefix of text `a 00`), so
-  the engine keeps only the entries whose tuple extends `p` (`key_prefix`). Every entry is distinct.
+  a lookup over it keeps only the entries whose tuple extends `p` (`key_prefix`). A query needs neither: its shape
+  fixes every entry's arity, so the engine bounds a range by whole keys, `(e…, a)` to `(e…, b, 0)`, where the `0` sorts
+  after every Doc id, and `key_order` alone makes the lookup exact. Every entry is distinct.
 - **Nodes:** a leaf is a CBOR array of entries; an inner node is an array of `[first entry, last entry, child]` per
   child. A node ends after an entry whose BLAKE3's low 6 bits are zero (about 64 entries a node) or before an entry
   that would take it past 64 KiB, the size limit (architecture, rule 10). The same rule cuts every level.
@@ -848,16 +851,23 @@ against the Rust's Loro on random ops, so it can never be simpler than the code.
 - **Writer ids:** distinct (device, Doc, branch, generation) give distinct writer ids under the hash assumption; an
   envelope holding another writer id's op is refused. Vectors `writers.json`.
 - **Envelopes:** decoding and encoding are inverse on everything accepted; hashes and op ids agree or the envelope is
-  refused. Vectors `envelopes.json`.
+  refused, and among envelopes that pass, the same hashes name the same past exactly when the same op ids do
+  (`Aven.DB.Docs.OpIds`: `same_past`, from injective names and `UsedOpID`). Vectors `envelopes.json`.
 - **Logs and splits:** a split is found by any reader holding both sides; once found, neither side counts for any
   reader; a stuck log's next envelopes never count. Traces `logs.json`.
 - **Counts:** an envelope counts only if all three verdicts hold and its past counts; rebuilding from the envelopes
   that count equals the live state. Traces `counts.json`.
 - **Convergence:** the same counted envelopes in any order give the same Records and export the same bytes.
-- **Checkpoints:** a checkpoint whose covered segments replay to its state hash is accepted; any other is refused.
+- **Checkpoints:** a checkpoint whose covered segments replay to its state hash, whose version's tips are among what
+  it covers, and which names the reader's runtime is accepted; any other is refused (`checked_is_replay`,
+  `checked_names`); a reader takes one only from a vault that may write the Doc at its version (`checkpoint_by_writer`).
   Vectors `checkpoints.json`.
 - **Fit:** the verdict depends only on the envelope and the Values it names; fit judged on the ops equals fit judged on
-  the state; any merge of fit envelopes fits (`fit_merge`). Vectors `fit.json`.
+  the state; any merge of fit envelopes fits (`fit_merge`), each field's value fitting the schema of the envelope that wrote it
+  (`fit_envelopes`). Fit and the engine's footprint read one view of an envelope, its `RecordChange`s (a Record's id
+  as bytes, its type id, new / edited / gone, and each field it writes with its new value); a field's merged value fits
+  the schema of the type that wrote it (`fit_records`), and where what an envelope says it does is the diff a reader
+  sees (`ChangesAreDiff`, carried by `Aven.Architecture`), fit on one is fit on the other (`fit_diff`). Vectors `fit.json`.
 - **Lenses:** GetPut, PutGet, an older version keeps what it can't see, composition along the tree keeps all three, a
   read through lenses commutes with a merge, a lossy step states its loss. Vectors `lenses.json`.
 - **Merges:** nothing the target changed is lost, everything the other branch changed alone lands, a conflict changes
@@ -873,6 +883,10 @@ against the Rust's Loro on random ops, so it can never be simpler than the code.
   (`key_order`); two tuples with one key are one tuple (`key_inj`); a key extends another's, at a field's edge, exactly
   when its tuple extends the other (`key_prefix`), and every extension lies in the prefix's range
   (`extension_in_range`). Vectors `keys.json`.
+- **Limits** (`Aven.DB.Docs.Limits`, rule 24): a capped read of the sealed bytes holds at most the limit plus one
+  chunk and gives only bytes within it (`capped_holds`, `capped_within`); an admitted envelope is within depth,
+  fan-out, Records and ops (`admitted_bounded`); a segment hands Loro at most its envelopes times the Records limit
+  (`segment_records`); a blob stops at its limit whatever it declared (`blob_bounded`).
 - **The directory** (`Aven.DB.Docs.Directory`): every Doc listed now was listed at the last fold or is unfolded; a Doc
   that isn't unfolded has the entries it had then.
 
@@ -912,8 +926,9 @@ Each step starts with its Lean, then Rust tests against the vectors, then the co
 4. **Overlapping text edits** in a merge: shown only, or offered as a choice?
 5. **The vocabulary as one Doc per vault** for types and operations (the glossary's "catalogue = vocabulary"), to
    settle with the engine.
-6. **Checkpointers:** is "a device of the Doc's vault, or a vault granted `keep` with checkpoints" enough, or does a
-   checkpoint need k of n for Docs with many readers?
+6. ~~**Checkpointers**~~: answered (architect, A5, 30 Oct 2026). A checkpoint a reader takes is signed by a device
+   whose vault may write the Doc at the version it names, as with index roots; readers still check it by replay, and
+   ignore one from anyone else (Lean: `checkpoint_by_writer`).
 7. **The index interface** with the engine: the four calls above, and how a query's shape names its index.
 
 ## Not in this spec

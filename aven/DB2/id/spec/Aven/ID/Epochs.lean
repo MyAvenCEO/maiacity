@@ -2,7 +2,8 @@ import Aven.ID.Caps
 
 /-! # Epochs and what each party can know
 
-Keys as the model knows them: names, with the cryptography taken as sound (`id/caps/README.md`, "Keys"). A party holds
+Keys as the model knows them: anything with an equality, names in the examples and Core's bytes where
+`Aven.Architecture` joins this to the docs layer, with the cryptography taken as sound (`id/caps/README.md`, "Keys"). A party holds
 its own keys: a device its device keys, the keeper only its own. A **seal** `(k, under)` means whoever knows `under`
 learns `k`: a key blob's stanza seals a Doc's epoch key to a reader's vault or group key, a keyring is sealed to a
 device's key, a vault key lives inside its keyring, and an epoch's `back` seals the epoch before under it. What a party
@@ -23,36 +24,39 @@ Examples on Alice's and Bob's keys are checked by `decide` and exported as vecto
 
 namespace Aven.ID
 
-/-- Who holds which keys, and which keys are sealed under which: `(k, under)`. -/
-structure World where
-  own : String → List String
-  seals : List (String × String)
+/-- Who holds which keys, and which keys are sealed under which: `(k, under)`. A key is anything with an equality:
+readable names in the examples, Core's bytes where `Aven.Architecture` joins this to the docs layer (R5). -/
+structure WorldOf (κ : Type) where
+  own : String → List κ
+  seals : List (κ × κ)
 
-namespace World
+namespace WorldOf
+
+variable {κ : Type} [DecidableEq κ]
 
 /-- One more step of opening: every key sealed under one already known. -/
-def step (w : World) (known : List String) : List String :=
+def step (w : WorldOf κ) (known : List κ) : List κ :=
   known ++ ((w.seals.filter fun s => decide (s.2 ∈ known) && decide (s.1 ∉ known)).map (·.1))
 
 /-- What `p` knows after `n` steps of opening. -/
-def knownAfter (w : World) (p : String) : Nat → List String
+def knownAfter (w : WorldOf κ) (p : String) : Nat → List κ
   | 0 => w.own p
   | n + 1 => w.step (w.knownAfter p n)
 
-def knows (w : World) (n : Nat) (p k : String) : Bool := decide (k ∈ w.knownAfter p n)
+def knows (w : WorldOf κ) (n : Nat) (p : String) (k : κ) : Bool := decide (k ∈ w.knownAfter p n)
 
 /-- What `p` learns at all: as many steps as there are seals, each opening at least one new key or none. -/
-def learns (w : World) (p k : String) : Bool := w.knows w.seals.length p k
+def learns (w : WorldOf κ) (p : String) (k : κ) : Bool := w.knows w.seals.length p k
 
 /-- `S` is closed: every key in it is sealed only under keys in it. -/
-def Closed (w : World) (S : List String) : Prop := ∀ s ∈ w.seals, s.1 ∈ S → s.2 ∈ S
+def Closed (w : WorldOf κ) (S : List κ) : Prop := ∀ s ∈ w.seals, s.1 ∈ S → s.2 ∈ S
 
-theorem mem_step {w : World} {known : List String} {k : String} :
+theorem mem_step {w : WorldOf κ} {known : List κ} {k : κ} :
     k ∈ w.step known ↔ k ∈ known ∨ ∃ s ∈ w.seals, s.2 ∈ known ∧ s.1 ∉ known ∧ s.1 = k := by
   simp [step, List.mem_filter, and_assoc]
 
 /-- A key is learned only as one's own or by opening a seal with a key already known. -/
-theorem confidential {w : World} {n : Nat} {p k : String} (h : w.knows (n + 1) p k = true) :
+theorem confidential {w : WorldOf κ} {n : Nat} {p : String} {k : κ} (h : w.knows (n + 1) p k = true) :
     w.knows n p k = true ∨ ∃ s ∈ w.seals, s.1 = k ∧ w.knows n p s.2 = true := by
   have h' : k ∈ w.step (w.knownAfter p n) := of_decide_eq_true h
   rcases mem_step.mp h' with h | ⟨s, m, known, _, e⟩
@@ -60,7 +64,7 @@ theorem confidential {w : World} {n : Nat} {p k : String} (h : w.knows (n + 1) p
   · exact .inr ⟨s, m, e, decide_eq_true known⟩
 
 /-- Keys of a closed set none of which `p` owns stay unknown to it. -/
-theorem unknowable {w : World} {p : String} {S : List String} (own : ∀ k ∈ S, k ∉ w.own p) (c : w.Closed S) :
+theorem unknowable {w : WorldOf κ} {p : String} {S : List κ} (own : ∀ k ∈ S, k ∉ w.own p) (c : w.Closed S) :
     ∀ n, ∀ k ∈ w.knownAfter p n, k ∉ S := by
   intro n
   induction n with
@@ -72,7 +76,7 @@ theorem unknowable {w : World} {p : String} {S : List String} (own : ∀ k ∈ S
     · exact ih x.2 known (c x xm (e ▸ s))
 
 /-- A new epoch, sealed only to keys of a closed set the removed reader owns nothing of, stays closed to it. -/
-theorem removal_next_epoch {w : World} {removed epoch : String} {S : List String} (mem : epoch ∈ S)
+theorem removal_next_epoch {w : WorldOf κ} {removed : String} {epoch : κ} {S : List κ} (mem : epoch ∈ S)
     (c : w.Closed S) (own : ∀ k ∈ S, k ∉ w.own removed) : ∀ n, w.knows n removed epoch = false := by
   intro n
   simpa [knows] using fun m => unknowable own c n epoch m mem
@@ -80,7 +84,7 @@ theorem removal_next_epoch {w : World} {removed epoch : String} {S : List String
 /-- After a heal the removed device learns none of the fresh keys, provided every fresh key is sealed only under fresh
 keys or the remaining devices' new keys, those device keys are sealed under nothing, and the removed device owns none
 of them. Old seals may stay: they open old keys only. -/
-theorem heal_evicts {w : World} {d : String} {fresh devices : List String}
+theorem heal_evicts {w : WorldOf κ} {d : String} {fresh devices : List κ}
     (sealed : ∀ s ∈ w.seals, s.1 ∈ fresh → s.2 ∈ fresh ∨ s.2 ∈ devices)
     (unsealed : ∀ s ∈ w.seals, s.1 ∉ devices)
     (notOwn : ∀ k ∈ fresh ++ devices, k ∉ w.own d) :
@@ -93,7 +97,7 @@ theorem heal_evicts {w : World} {d : String} {fresh devices : List String}
   simpa [knows] using fun m => unknowable notOwn c n k m (List.mem_append.mpr (.inl f))
 
 /-- A party nothing is sealed to knows only its own keys: the keeper, which keep caps give no key, learns none. -/
-theorem keeper_blind {w : World} {keeper : String} (nothing : ∀ s ∈ w.seals, s.2 ∉ w.own keeper) :
+theorem keeper_blind {w : WorldOf κ} {keeper : String} (nothing : ∀ s ∈ w.seals, s.2 ∉ w.own keeper) :
     ∀ n, ∀ k ∈ w.knownAfter keeper n, k ∈ w.own keeper := by
   intro n
   induction n with
@@ -104,45 +108,57 @@ theorem keeper_blind {w : World} {keeper : String} (nothing : ∀ s ∈ w.seals,
     · exact ih k m
     · exact absurd (ih x.2 known) (nothing x xm)
 
+end WorldOf
+
+/-- A world whose keys are names, as the examples and the cross-spec model's rules read it. -/
+abbrev World := WorldOf String
+
+namespace World
+
+theorem confidential {w : World} {n : Nat} {p k : String} (h : w.knows (n + 1) p k = true) :
+    w.knows n p k = true ∨ ∃ s ∈ w.seals, s.1 = k ∧ w.knows n p s.2 = true :=
+  WorldOf.confidential h
+
+theorem keeper_blind {w : World} {keeper : String} (nothing : ∀ s ∈ w.seals, s.2 ∉ w.own keeper) :
+    ∀ n, ∀ k ∈ w.knownAfter keeper n, k ∈ w.own keeper :=
+  WorldOf.keeper_blind nothing
+
 end World
 
-/-- A segment as the keeper holds it: its Doc, its key epoch, and what the seal hides: the writer, the signer, the
-bytes. -/
+/-- A segment as a keeper holds it, on Core's objects (R5): its Doc, its key epoch (named by the hash of its key blob),
+and, inside the seal, its envelopes, with their writers and signers, and the sealed bytes. -/
 structure Segment where
-  doc : String
-  epoch : String
-  writer : String
-  signer : String
-  body : List UInt8
-  deriving DecidableEq, Repr
+  doc : Core.DocId
+  epoch : Core.Hash
+  inside : List Core.Envelope
+  body : Core.Bytes
 
 /-- What a keeper sees of a segment (D13): its Doc, its key epoch and its padded length. -/
-def Segment.outside (pad : Nat → Nat) (s : Segment) : String × String × Nat := (s.doc, s.epoch, pad s.body.length)
+def Segment.outside (pad : Nat → Nat) (s : Segment) : Core.DocId × Core.Hash × Nat :=
+  (s.doc, s.epoch, pad s.body.length)
 
 /-- The keeper is blind to who wrote a segment and what it holds: two segments of one Doc and epoch whose lengths pad
-alike look the same from outside, whatever their writers, signers and bytes. -/
+alike look the same from outside, whatever envelopes, writers and signers they hold. -/
 theorem outside_blind (pad : Nat → Nat) {s t : Segment} (d : s.doc = t.doc) (e : s.epoch = t.epoch)
     (l : pad s.body.length = pad t.body.length) : s.outside pad = t.outside pad := by
   simp [Segment.outside, d, e, l]
 
-/-- An envelope as rule 16 sees it: its id, the number of its key epoch, and what it builds on. -/
-structure Keyed where
-  id : String
-  epoch : Nat
-  deps : List String
-  deriving DecidableEq, Repr
-
-/-- The epochs of what `e` builds on that the reader holds. -/
-def builtOn (doc : List Keyed) (e : Keyed) : List Nat :=
-  e.deps.filterMap fun d => (doc.find? (·.id == d)).map (·.epoch)
+/-- The epochs of what `e` builds on that the reader holds: Core envelopes, named by `nm`, each under its key epoch's
+number (`epochOf`). -/
+def builtOn (nm : Core.Envelope → Core.Hash) (epochOf : Core.Envelope → Nat) (doc : List Core.Envelope)
+    (e : Core.Envelope) : List Nat :=
+  e.deps.filterMap fun d => (doc.find? (nm · == d)).map epochOf
 
 /-- Rule 16: an envelope uses an epoch no older than any in what it builds on. -/
-def freshEpoch (doc : List Keyed) (e : Keyed) : Bool := (builtOn doc e).all (· ≤ e.epoch)
+def freshEpoch (nm : Core.Envelope → Core.Hash) (epochOf : Core.Envelope → Nat) (doc : List Core.Envelope)
+    (e : Core.Envelope) : Bool :=
+  (builtOn nm epochOf doc e).all (· ≤ epochOf e)
 
 /-- An envelope under an epoch older than one it builds on doesn't pass. -/
-theorem stale_refused {doc : List Keyed} {e x : Keyed} {d : String} (ok : freshEpoch doc e = true)
-    (dm : d ∈ e.deps) (found : doc.find? (·.id == d) = some x) : x.epoch ≤ e.epoch := by
-  have m : x.epoch ∈ builtOn doc e := List.mem_filterMap.mpr ⟨d, dm, by simp [found]⟩
+theorem stale_refused {nm : Core.Envelope → Core.Hash} {epochOf : Core.Envelope → Nat} {doc : List Core.Envelope}
+    {e x : Core.Envelope} {d : Core.Hash} (ok : freshEpoch nm epochOf doc e = true) (dm : d ∈ e.deps)
+    (found : doc.find? (nm · == d) = some x) : epochOf x ≤ epochOf e := by
+  have m : epochOf x ∈ builtOn nm epochOf doc e := List.mem_filterMap.mpr ⟨d, dm, by simp [found]⟩
   simpa using (List.all_eq_true.mp ok) _ m
 
 /-- Alice's and Bob's keys, read on one Doc (`d1`) from epoch 1. Bob is removed, and Alice's next write makes epoch 2,
@@ -185,6 +201,6 @@ theorem heal_examples : healExamples.all (fun (p, k, b) => healWorld.learns p k 
 /-- The heal's own hypotheses hold for Alice's, so `heal_evicts` covers every number of steps, not only the
 example's. -/
 theorem heal_world_evicts : ∀ n k, k ∈ healFresh → healWorld.knows n "alice-peer-light" k = false :=
-  World.heal_evicts (devices := ["alice-peer-kem-2"]) (by decide) (by decide) (by decide)
+  WorldOf.heal_evicts (devices := ["alice-peer-kem-2"]) (by decide) (by decide) (by decide)
 
 end Aven.ID
