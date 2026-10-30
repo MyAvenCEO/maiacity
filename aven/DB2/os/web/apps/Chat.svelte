@@ -12,7 +12,9 @@
 	let text = $state('');
 	let list = $state();
 	// a vault the tree may not know yet (a member who joined after it was told): its id stands for its name
-	const known = (id) => Boolean(tree.kind(id));
+	const known = (id) => Boolean(id && tree.kind(id));
+	// the vault a line is said for: as the line names it, or, in the cast, whom its device acts for
+	const vaultOf = (line) => line.vault ?? (known(line.from) ? tree.actsFor(line.from) : null);
 	const who = (id) => (known(id) ? vaultName(id) : id);
 	const present = $derived([...new Set(room.present.map((id) => (known(id) ? (tree.actsFor(id) ?? id) : id)))]);
 	const time = (ms) => new Date(ms).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
@@ -42,12 +44,13 @@
 	<section aria-label="Room">
 		<ol bind:this={list} data-testid="lines">
 			{#each room.lines as line, i (i)}
-				{@const said = tree.kind(line.vault) === 'network'}
-				<li class:mine={line.from === device} class:said data-from={line.from} data-vault={line.vault}>
+				{@const vault = vaultOf(line)}
+				{@const said = known(vault) && tree.kind(vault) === 'network'}
+				<li class:mine={line.from === device} class:said data-from={line.from} data-vault={vault}>
 					{#if said}
 						<span class="text" data-testid="network-line">{line.text}</span>
 					{:else}
-						<strong>{who(line.vault)}</strong>
+						<strong>{who(vault ?? line.from)}</strong>
 						<span class="text">{line.text}</span>
 					{/if}
 					<time>{time(line.at)}</time>

@@ -3,8 +3,9 @@
 // an empty store: the admin signs up and makes an invite (its link and QR code); a second profile opens the link,
 // joins with a name and a passkey, and lands on its dashboard; the link used again by a third profile is refused, and
 // so is an invite the admin withdrew; then the admin and the member chat both ways, the Aven Peer's join line arrives,
-// and a reload empties the room. Every screen is photographed into the run's folder. Nothing here writes what a peer
-// should answer: a line must arrive as it was written, and a refusal must be shown and change nothing.
+// and a reload empties the room. In the cast's box, Alice's and Bob's Peer-Lights chat both ways too. Every screen is
+// photographed into the run's folder. What a line or a refusal should say comes from Lean's chat vectors or from the
+// page that wrote it, never from this file.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 
@@ -144,6 +145,22 @@ report.afterReload = await lines(admin.page).count();
 if (report.afterReload) problems.push(`after a reload the room holds ${report.afterReload} lines`);
 await shot(admin.page, 'room-reloaded');
 for (const b of [admin, member]) await b.context.close();
+
+// in the cast's box, Alice's and Bob's Peer-Lights chat the same way (MILESTONE2.md, "How it is checked")
+const cast = await chromium.launch();
+const castPage = async (who) => {
+	const page = await cast.newPage({ viewport: { width: 1100, height: 600 } });
+	await page.goto(`http://${who}.localhost:5173/#/${who}/chat`);
+	await seen(page.locator('[data-view="chat"]'));
+	return page;
+};
+const alice = await castPage('alice');
+const bob = await castPage('bob');
+await seen(bob.locator('[data-testid="present"] li[data-vault="alice"]'));
+report.castAliceToBobMs = await sayAndHear(alice, bob, `alice to bob, ${started}`);
+report.castBobToAliceMs = await sayAndHear(bob, alice, `bob to alice, ${started}`);
+await shot(bob, 'cast-bob');
+await cast.close();
 
 report.ok = problems.length === 0;
 report.problems = problems;
