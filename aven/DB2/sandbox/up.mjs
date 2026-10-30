@@ -189,7 +189,8 @@ async function check() {
 	say(`vectors ${fresh ? 'fresh' : 'STALE'} (${((Date.now() - vectorsStarted) / 1000).toFixed(1)} s)`);
 	const run = `runs/${new Date().toISOString().replace(/[:.]/g, '-')}`;
 	const result = await $`${compose} exec -T browsers node sandbox/check.mjs ${run}`.env(env).nothrow();
-	const passed = fenced.length === 0 && fresh && result.exitCode === 0 && (await keeps(run)) && (await claims(run)) && (await members(run));
+	const passed =
+		fenced.length === 0 && fresh && result.exitCode === 0 && (await keeps(run)) && (await claims(run)) && (await members(run)) && (await chats(run));
 	say(`${passed ? 'check passed' : 'check FAILED'}; screenshots and report in aven/DB2/${run}/`);
 	return passed ? 0 : 1;
 }
@@ -293,6 +294,10 @@ async function members(run) {
 	say(`${ok ? 'invites, joins, the door, the chat and the restart hold' : 'the members step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s)`);
 	return ok;
 }
+
+// avenOS's Invite, Join and Chat (MILESTONE2.md, steps 1, 2 and 4), on production's stand-in after the members' step
+// leaves its store empty: sandbox/chat.mjs
+const chats = async (run) => (await $`${compose} exec -T browsers node sandbox/chat.mjs ${run}`.env(env).nothrow()).exitCode === 0;
 
 async function up(args) {
 	const started = Date.now();

@@ -2,6 +2,8 @@
 // server-sent events, a backlog and then each new line; a Peer-Light's own lines come straight from its worker. Each
 // peer's status is its newest status line, and its record (the first start it keeps through its store) its newest
 // stored line.
+import { hear, speakThrough } from './room.svelte.js';
+
 export const live = $state({ timeline: [], status: {}, paths: {}, stored: {}, own: null, ownStored: null });
 
 const keep = 300;
@@ -47,7 +49,9 @@ export async function runLight(cast, me) {
 		const line = JSON.parse(data);
 		if (line.event === 'status' || line.event === 'failed') live.own = line.event === 'failed' ? { ...line, phase: 'offline', peers: 0 } : line;
 		if (line.event === 'stored') live.ownStored = line;
+		hear(line);
 	};
+	speakThrough(port);
 	port.start?.();
 	port.postMessage({ start: await configure(cast, me) });
 }
