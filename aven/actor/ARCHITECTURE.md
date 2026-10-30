@@ -48,7 +48,8 @@ Each layer has one job. Nothing reaches past the layer directly below it.
   them, with the same encoding as avenDB's. No functions, no references, no cycles, no `undefined`. avenDB calls it a Value
   too; a lowercase value in this file is just a field's data.
 - **Canonical bytes**: keys sorted, numbers in one spelling, UTF-8. The same value always has the same bytes. The
-  encoding is avenDB's one codec (its architecture, rule 1 and K1), shared byte for byte, so a Value has one name in
+  encoding is avenDB's one codec (its architecture, rule 1 and K1): deterministic CBOR (RFC 8949, core deterministic
+  encoding) in a strict profile, with JSON as the readable form (Samuel, 30 Oct 2026). It is shared byte for byte, so a Value has one name in
   the actor engine and in avenDB: bytes that don't encode back to themselves are refused, and Lean proves decoding and
   encoding inverse.
 - **A name** is the BLAKE3 hash of a Value's canonical bytes, 64 lowercase hex characters. Definitions, parts and
@@ -509,12 +510,12 @@ Decided here, on those grounds:
   vault's home device, holding the messages of all its actors, each addressed to one actor; within one home, none.
   The order from one actor to another stays the order sent (section 4). In version 1, in memory, the carrier is not
   modelled: each pair of actors is one inbox log.
-- Values are integers only in version 1, in avenDB's one codec (section 2).
+- avenDB's A17, part 5 (Samuel, 30 Oct 2026): a definition is a version of an actor type; `replaces` names the
+  version before it, and a lens carries the actor's state from the old version's shape into the new one's (K5).
+- Values are integers only in version 1, in avenDB's one codec (section 2): deterministic CBOR (Samuel, 30 Oct 2026).
 
 Open, none of it blocking version 1 (the audit's findings, mostly avenDB's proposal A17, awaiting Samuel):
 
-- **Upgrades (A17, part 5):** a definition is a version of an actor type, and lenses carry state across `replaces`
-  (K5).
 - **Effects that write data:** a `mutate` effect with its signer, Doc and footprint, atomic with the journal or through
   the outbox.
 - **The kernel's authority:** a narrow device vault for the actor host; click caps scoped to what the placer wired;
