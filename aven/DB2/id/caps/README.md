@@ -773,7 +773,8 @@ still holding a cap can apply it again.
 whole chain from genesis for every removal.
 
 **Expiry** is a revocation made by the clock. It is acked by the first writer whose clock has passed it, and from that
-ack on it is final like any other.
+ack on it is final like any other: a write the ack hadn't seen doesn't count, whatever time it claims (`time_acked`).
+Until the first ack, a write is judged by the time it claims (`before_ack`).
 
 **Lost and stolen devices.** Owners remove the device. A device that may have been copied gets the heal.
 
@@ -1176,6 +1177,8 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `heal_evicts` | After a heal, a removed device learns none of the new keys: vault key, tag seeds, letterbox keys and next epochs |
 | | `keeper_blind`, `outside_blind` | The keeper knows only its own keys, and sees of a segment only its Doc, epoch and padded length (D13). A segment is Core's `DocId`, its epoch's `Hash`, and the Core envelopes inside its seal (R5) |
 | | `stale_refused` | A Core envelope under an epoch older than one it builds on doesn't pass (rule 16) |
+| `Expiry` | `time_acked`, `claimed_late` | Time is a claim: once a writer whose clock had passed a cap's expiry acks it, a write the ack hadn't seen doesn't count, whatever time it claims; nor does one claiming a time past it (rule 12, R12) |
+| | `before_ack` | The limit rule 12 accepts: until the first ack, a write is judged by the time it claims |
 | `Recover` | `guardian_exit` | After MaiaCityGuardian's exit, no keyring epoch is sealed to it (D12) |
 | | `never_ownerless`, `removals_win` | Removals that clash all stand, unless they'd leave no owner; then none does |
 | `Network` | `public_member`, `removal_rotates` | A public write counts only from a member, and a removed member is in no later members epoch |
@@ -1222,6 +1225,7 @@ Two smaller gaps:
 | `revocations.json` | Docs of Core envelopes, each with its name and what caps reads of it, the revocations held, and verdicts: hand-written, and 30 generated Docs with every envelope's verdict |
 | `epochs.json` | Who learns which key after Bob's removal and after Alice's heal |
 | `approvals.json` | Signatures, thresholds and digests on the cast, and whether each approval holds |
+| `expiry.json` | Writes under a cap that expires, with each envelope's signed time, and whether each counts for the clock |
 | `network.json` | A ticket's claims in two orders (A12), removals that clash, MaiaCityGuardian's exit |
 | `keep.json` | Fetch-key links in the order they came, with the keys a keeper takes, its current key and its flags; proofs and whether they're served; what each vault pays; 30 generated keepers |
 
