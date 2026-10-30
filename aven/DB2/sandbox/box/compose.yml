@@ -1,7 +1,7 @@
 # avenSANDBOX's containers (aven/DB2/SANDBOX.md, "The box"). Only aven/DB2 is mounted, so nothing else of the
 # repository is reachable inside the box. `bun run up` first builds the Peer and the Peer-Light's wasm once, into the
-# shared build folder (the avensandbox_target volume); the Peers run that binary, and Vite serves that wasm. The S3
-# server comes with the store.
+# shared build folder (the avensandbox_target volume); `aven` and `alice` run that binary, `browsers` serves avenOS and
+# that wasm, and `s3` is the box's S3.
 name: avensandbox
 
 x-peer: &peer
@@ -60,10 +60,32 @@ services:
       - "${AVENSANDBOX_PORT:-5173}:5173"
     networks: [wan]
 
+  # The box's S3 (SANDBOX.md, "Storage"): versitygw, shipped in the box's own image, over a folder in its own volume,
+  # never a real cloud bucket. At http://s3:7070 on `wan`, and at 127.0.0.1:7070 for the box's commands, which run on
+  # the host's network in a cloud session. Test credentials, valid only in the box; the store's tests use the bucket
+  # aven-db-store, the Aven Peer will use aven. `down --wipe` empties it.
+  s3:
+    image: ${AVENSANDBOX_IMAGE:?bun run up sets it}
+    entrypoint: ["sh", "-c", "mkdir -p /data/aven /data/aven-db-store && exec versitygw --port :7070 posix /data"]
+    environment:
+      ROOT_ACCESS_KEY: avensandbox
+      ROOT_SECRET_KEY: avensandbox-test-secret
+    init: true
+    volumes:
+      - s3:/data
+    ports:
+      - "127.0.0.1:7070:7070"
+    networks: [wan]
+    healthcheck:
+      test: ["CMD", "curl", "-s", "-o", "/dev/null", "http://localhost:7070/"]
+      interval: 2s
+      retries: 15
+
 networks:
   wan: {}
 
 volumes:
+  s3: {}
   # made by `bun run up`, which installs into it before the containers start
   node_modules:
     name: avensandbox_node_modules

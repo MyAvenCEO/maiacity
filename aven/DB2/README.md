@@ -56,7 +56,8 @@ The products, top to bottom. Each depends only on those below it:
 avenOS        the client app: one UI, several targets. The browser now, the Mac app (Tauri) later
   avenPEER    the node: everything about the network (iroh, the relay, the members-only door), installing and running
               a node, and its one writer. Two builds: the Peer (native) and the Peer-Light (wasm, in a browser).
-              The Aven Peer on the server is a Peer, headless, with its relay on
+              The Aven Peer on the server is a Peer, headless, with its relay on. It ships as one slim image,
+              the same in production and in the box
     avenDB    the database every peer runs: documents, caps and sync (its pure core) and the store its bytes rest in
       avenID  identity: keys, vaults that own vaults, signatures, multisig, recovery
 avenSANDBOX   the box all of it is built and tested in
@@ -123,10 +124,10 @@ repository: an id names a product, not a separate repository.
 |---|---|---|---|---|---|
 | JS packages (npm scope `@aven`) | `@aven/os` (`aven/DB2/package.json`) | `@aven/peer`, the Peer-Light for pages (later) | | none: it runs inside the Peer-Light | none: tooling of this repository |
 | Rust crates | | `aven-peer` (native), `aven-peer-light` (wasm) | `aven-db-core`, `aven-db-store` | `aven-id` | |
-| Container images | | `ghcr.io/myavenceo/aven/peer`, the Aven Peer's (later) | | | `ghcr.io/myavenceo/aven/sandbox`, the box built from this repository's Dockerfile so machines can download it |
+| Container images | | `ghcr.io/myavenceo/aven/peer` (later): the node, the `aven-peer` binary on a minimal base, run in production and by the box's peers alike | | | `ghcr.io/myavenceo/aven/sandbox`, the box built from this repository's Dockerfile so machines can download it |
 | Lean | | | `Aven.DB` | `Aven.ID` | |
 | Protocol (ALPN) | | | `aven/db/1`, which avenPEER carries | | |
-| Releases (one per package, only when it changed) | `@aven/os@<version>`: `aven-os-web-<version>.tar.gz` (the browser client), later `aven-os-mac-…` | later `@aven/peer@<version>`: `aven-peer-<version>-<platform>.tar.gz` | | | `@aven/sandbox@<version>`: the image, tagged `<version>` |
+| Releases (one per package, only when it changed) | `@aven/os@<version>`: `aven-os-web-<version>.tar.gz` (the browser client), later `aven-os-mac-…` | later `@aven/peer@<version>`: `aven-peer-<version>-<platform>.tar.gz` and the image, tagged `<version>` | | | `@aven/sandbox@<version>`: the image, tagged `<version>` |
 
 `@aven/maia` comes later. None of these names had public packages on npm on 29 Oct 2026; creating the npm
 organization `aven` reserves the scope before anything is published.
@@ -178,6 +179,11 @@ organization `aven` reserves the scope before anything is published.
   No Classic McEliece: v1 derived a pair for every key, each with a 1 MB public half that took most of a second to
   make. Signatures: Ed25519 and passkeys now, ML-DSA later through the same suite byte.
 - **The Aven Peer only ever sees ciphertext,** except what is published.
+- **What ships is the node, never the box.** avenSANDBOX's image is a development machine (browsers, compilers,
+  Lean) and is never deployed. avenPEER ships one binary whose modes are flags (`--relay`, `--store fs|s3`), in one
+  slim image: the binary on a minimal base. Sandbox or live is only configuration: which relay, which S3. The box runs
+  that same image for its peers, so what is tested is what ships; for the fast loop it runs the binary straight from
+  its build folder.
 
 ## What we take from iroh
 
