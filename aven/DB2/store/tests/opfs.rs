@@ -162,3 +162,54 @@ async fn a_crash_leaves_every_call_undone_or_done() {
     println!("{crashes} crashes, each recovered to before or after its call");
     assert!(crashes > 1000);
 }
+
+/// A folder that refuses writes past `room` bytes, as OPFS does over its quota, after writing what fit.
+struct Full {
+    inner: MemFolder,
+    room: usize,
+}
+
+#[async_trait::async_trait]
+impl Folder for Full {
+    async fn read(&self, path: &str, range: Option<Range<u64>>) -> Result<Option<Bytes>> {
+        self.inner.read(path, range).await
+    }
+
+    async fn size(&self, path: &str) -> Result<Option<u64>> {
+        self.inner.size(path).await
+    }
+
+    async fn write(&self, path: &str, bytes: &[u8]) -> Result<()> {
+        let used: usize = self.inner.files().values().map(Vec::len).sum();
+        if used + bytes.len() > self.room {
+            self.inner.set(path, &bytes[..self.room.saturating_sub(used).min(bytes.len())]);
+            return Err(Error::Backend("OPFS is full: QuotaExceededError".into()));
+        }
+        self.inner.write(path, bytes).await
+    }
+
+    async fn rename(&self, from: &str, to: &str) -> Result<bool> {
+        self.inner.rename(from, to).await
+    }
+
+    async fn remove(&self, path: &str) -> Result<()> {
+        self.inner.remove(path).await
+    }
+
+    async fn list(&self, dir: &str) -> Result<Vec<String>> {
+        self.inner.list(dir).await
+    }
+}
+
+/// Over its quota, a put fails with the reason and leaves the folder as it was: no temporary file, no blob.
+#[tokio::test]
+async fn a_full_folder_fails_cleanly() {
+    use aven_db_store::Store;
+    let inner = MemFolder::new(true);
+    let store = OpfsStore::open(Full { inner: inner.clone(), room: 1000 }).await.unwrap();
+    store.put(conformance::noise(600, 1)).await.unwrap();
+    let before = inner.files();
+    let refused = store.put(conformance::noise(600, 2)).await;
+    assert!(matches!(&refused, Err(Error::Backend(why)) if why.contains("full")), "{refused:?}");
+    assert_eq!(inner.files(), before);
+}

@@ -1,7 +1,7 @@
-// The Peer-Light's worker (SANDBOX.md, "avenOS in the browser"): one per origin, shared by every tab and frame that
-// shows it, since two Peer-Lights with one key would take the relay from each other. It runs the wasm core, the page's
-// one WebAssembly module, posts every timeline line to the box, and tells every page that connects the lines so far and
-// each new one. The views of the tree (id.svelte.js) are a snapshot, not a timeline line: each page gets the newest, on
+// The Peer-Light's worker (SANDBOX.md, "avenOS in the browser"): one per origin and name, run by the tab that holds the
+// Web Lock (peer/open.js) and shared by every tab and frame over its BroadcastChannel, since two Peer-Lights with one key
+// would take the relay from each other. It runs the wasm core, the page's one WebAssembly module, posts every timeline
+// line to the box, and tells every page that connects the lines so far and each new one. The views of the tree (id.svelte.js) are a snapshot, not a timeline line: each page gets the newest, on
 // connecting and whenever it changes. The box's own view (localhost) runs no peer: it loads the core for the views alone.
 const pages = new Set();
 const lines = [];
@@ -33,18 +33,19 @@ function tell(line) {
 	fetch(`/events/${JSON.parse(line).peer}`, { method: 'POST', body: line }).catch(() => {});
 }
 
-// A browser's own device key, on an Aven Peer's host without a cast (PRODUCTION.md, Part A): made here, in the
-// browser, the first time, and kept in this origin's OPFS. It never leaves the browser.
+// A browser's own device key, on an Aven Peer's host without a cast (PRODUCTION.md, Part A): kept in the Peer-Light's
+// store (the ref `device-key`), made here the first time. An older Peer-Light kept it in the file `device-key` at
+// OPFS's root: the store adopts it, and the file goes, so a browser keeps the key its vault knows. It never leaves the
+// browser.
 async function deviceSecret() {
 	const root = await navigator.storage.getDirectory();
-	const handle = await root.getFileHandle('device-key', { create: true });
-	let secret = (await (await handle.getFile()).text()).trim();
-	if (!/^[0-9a-f]{64}$/.test(secret)) {
-		secret = [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, '0')).join('');
-		const writable = await handle.createWritable();
-		await writable.write(secret);
-		await writable.close();
-	}
+	let older = null;
+	try {
+		older = (await (await (await root.getFileHandle('device-key')).getFile()).text()).trim();
+	} catch {}
+	const fresh = () => [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, '0')).join('');
+	const secret = await light.deviceSecret(/^[0-9a-f]{64}$/.test(older ?? '') ? older : fresh());
+	if (older !== null) await root.removeEntry('device-key').catch(() => {});
 	return secret;
 }
 
@@ -119,6 +120,24 @@ function connect(port) {
 	port.start?.();
 }
 
-// a SharedWorker hears each page as a port; a plain Worker, where SharedWorker is missing, is its own one port
-if ('onconnect' in self) self.onconnect = (event) => connect(event.ports[0]);
-else connect(self);
+// Every tab reaches this worker over the BroadcastChannel named as the worker is, `aven-peer-light:<name>`
+// (peer/open.js): each tab is a port of its own here, made the first time it speaks, gone when it says bye. A worker
+// started by a new leader says so, and every tab says hello again.
+const channel = new BroadcastChannel(self.name);
+const tabs = new Map();
+channel.onmessage = ({ data }) => {
+	if (!data?.tab) return;
+	if (data.bye) {
+		pages.delete(tabs.get(data.tab));
+		tabs.delete(data.tab);
+		return;
+	}
+	let port = tabs.get(data.tab);
+	if (!port) {
+		port = { postMessage: (line) => channel.postMessage({ to: data.tab, line }) };
+		tabs.set(data.tab, port);
+		connect(port);
+	}
+	if (data.data !== undefined) port.onmessage({ data: data.data });
+};
+channel.postMessage({ leader: true });

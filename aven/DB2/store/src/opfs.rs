@@ -87,10 +87,14 @@ impl<F: Folder> OpfsStore<F> {
         self.folder.remove(tmp).await
     }
 
-    /// Writes `bytes` to the temporary file `tmp/<name>`, then into place at `to`.
+    /// Writes `bytes` to the temporary file `tmp/<name>`, then into place at `to`. A write that fails (OPFS full, say)
+    /// removes its temporary file and says why: the store is as before.
     async fn write(&self, name: &str, to: &str, bytes: &[u8]) -> Result<()> {
         let tmp = format!("tmp/{name}");
-        self.folder.write(&tmp, bytes).await?;
+        if let Err(e) = self.folder.write(&tmp, bytes).await {
+            let _ = self.folder.remove(&tmp).await;
+            return Err(e);
+        }
         self.place(&tmp, to).await
     }
 

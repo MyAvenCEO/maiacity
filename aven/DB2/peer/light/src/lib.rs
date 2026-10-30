@@ -229,6 +229,61 @@ fn door(endpoint: &Endpoint, bound: u32, name: String, notes: Notes) {
     });
 }
 
+/// This worker's store, in this origin's OPFS under `/store/`, opened once: the one writer holds its handles until the
+/// worker ends (store/README.md, the opfs driver).
+#[cfg(target_arch = "wasm32")]
+type Kept = aven_db_store::opfs::OpfsStore<aven_db_store::opfs_folder::OpfsFolder>;
+// the crate also builds natively, for the workspace's tests; there it has no OPFS
+#[cfg(not(target_arch = "wasm32"))]
+type Kept = aven_db_store::backend::DalStore;
+
+thread_local! {
+    static STORE: RefCell<Option<std::rc::Rc<Kept>>> = const { RefCell::new(None) };
+}
+
+async fn store() -> Result<(std::rc::Rc<Kept>, &'static str), JsError> {
+    if let Some(s) = STORE.with(|s| s.borrow().clone()) {
+        return Ok((s, KIND));
+    }
+    #[cfg(target_arch = "wasm32")]
+    let opened = backend::opfs("/store/").await.map_err(js)?;
+    #[cfg(not(target_arch = "wasm32"))]
+    let opened = backend::memory().map_err(js)?;
+    let s = std::rc::Rc::new(opened);
+    STORE.with(|kept| *kept.borrow_mut() = Some(s.clone()));
+    Ok((s, KIND))
+}
+
+#[cfg(target_arch = "wasm32")]
+const KIND: &str = "opfs";
+#[cfg(not(target_arch = "wasm32"))]
+const KIND: &str = "memory";
+
+/// This browser's device secret (PRODUCTION.md, Part A), kept in its store under the ref `device-key`: the one there,
+/// or else `candidate` (the page's: an older Peer-Light's file in OPFS, or new random bytes), stored now. Returns the
+/// secret the Peer-Light goes by.
+#[wasm_bindgen(js_name = deviceSecret)]
+pub async fn device_secret(candidate: String) -> Result<String, JsError> {
+    use aven_db_store::{RefName, Store};
+    let (store, _) = store().await?;
+    let name = RefName::new("device-key").map_err(js)?;
+    if let Some(blob) = store.get_ref(&name).await.map_err(js)? {
+        let bytes = store
+            .get(&blob)
+            .await
+            .map_err(js)?
+            .ok_or_else(|| JsError::new("device-key points at a missing blob"))?;
+        return String::from_utf8(bytes.to_vec()).map_err(js);
+    }
+    keys::secret(&candidate).map_err(js)?;
+    let blob = store
+        .put(candidate.clone().into_bytes().into())
+        .await
+        .map_err(js)?;
+    store.set_ref(&name, None, blob).await.map_err(js)?;
+    Ok(candidate)
+}
+
 /// Starts the Peer-Light `name` with its secret seed (hex), linking through `relay` to the Aven Peer (`aven_key`,
 /// called `aven_name` in the timeline), and tells `notes` every event. Without a name it goes by its key's device id.
 /// In the box's cast, `members` lists the cast's members (`name=key,…`); without them it learns the members from the
@@ -321,12 +376,8 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
         serde_json::json!({ "key": endpoint.id().to_string(), "relay": relay.to_string(), "newcomer": token.is_some() }),
     ));
     // the one record it keeps, in this origin's OPFS: its first start, found again after a reload
-    #[cfg(target_arch = "wasm32")]
-    let (store, kind) = (backend::opfs("/store/").await.map_err(js)?, "opfs");
-    // the crate also builds natively, for the workspace's tests; there it has no OPFS
-    #[cfg(not(target_arch = "wasm32"))]
-    let (store, kind) = (backend::memory().map_err(js)?, "memory");
-    let kept = record::first_start(&store, &name, now())
+    let (store, kind) = store().await?;
+    let kept = record::first_start(&*store, &name, now())
         .await
         .map_err(js)?;
     notes(record::line(now(), &name, kind, &kept));

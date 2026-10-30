@@ -172,6 +172,13 @@ impl OpfsFolder {
     }
 }
 
+impl Drop for OpfsFolder {
+    /// A folder let go closes its handles, so a store opened after it finds its files free.
+    fn drop(&mut self) {
+        self.close();
+    }
+}
+
 fn read_at(h: &FileSystemSyncAccessHandle, range: Option<Range<u64>>) -> Result<Bytes> {
     let len = h.get_size().map_err(backend)? as u64;
     let range = range.unwrap_or(0..len);
