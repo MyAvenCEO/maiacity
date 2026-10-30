@@ -145,6 +145,8 @@ struct Files {
     endpoint: Endpoint,
     store: Shared,
     held: Blobs,
+    /// files a retraction took: /files/<hash> answers them as gone, and no one is asked for them
+    withheld: aven_db_store::withhold::Withheld,
     aven: EndpointAddr,
     relay: RelayUrl,
 }
@@ -669,7 +671,11 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
     .map_err(js)?;
     let aven = EndpointAddr::new(aven_key).with_relay_url(relay.clone());
     aven_peer::know(&endpoint, aven.clone());
-    let held = Blobs::new(store.clone());
+    // a file a retraction took is served no more, even while its bytes are being deleted
+    let held = Blobs::new(aven_db_store::withhold::Withholding::serving(
+        store.clone(),
+        chats.withheld(),
+    ));
     let gossip = Gossip::builder().spawn(endpoint.clone());
     let router = Router::builder(endpoint.clone())
         .accept(iroh_gossip::ALPN, gossip.clone())
@@ -682,6 +688,7 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
         endpoint: endpoint.clone(),
         store,
         held,
+        withheld: chats.withheld(),
         aven: aven.clone(),
         relay: relay.clone(),
     };
@@ -755,6 +762,10 @@ async fn fetching(
 
 /// The file's index, fetched if this Peer-Light hasn't it; and the bytes that crossed for it.
 async fn open(f: &Files, file: &Hash, from: Option<String>) -> Result<(files::File, u64), JsValue> {
+    // deleted: gone, whatever bytes are left, and never fetched again
+    if f.withheld.read().unwrap().contains(file) {
+        return Err(fetch_error(FetchError::NotFound(*file)));
+    }
     if let Some(found) = files::open(&*f.store, file).await.map_err(js)? {
         return Ok((found, 0));
     }

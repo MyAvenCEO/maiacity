@@ -216,11 +216,18 @@ avenDB-old kept each device's changes; this stays when sealing comes:
   (`retracts_author`); any other is kept and ignored. A peer that holds the line drops its text: the blob is deleted,
   and the ref `gone-<id>` names the retraction, so a reload walks the chain past it and catching up sends the
   retraction in its place. A peer that doesn't hold it yet keeps its place as a stub, so the line never shows, whatever
-  the order things arrive in. A file goes once no line names it any more, from every store that honours the delete:
-  the Peer-Light's OPFS, a Peer's folder and the Aven Peer's bucket, which then serves it no more. Every chat shows
-  "Message deleted" in the line's place. The chain still verifies by its links (`redact_valid`), but the deleted line's
+  the order things arrive in. Deletes are enforced the moment two peers meet (Samuel, 30 Oct 2026): catching up sends
+  every retraction before any other line, a peer settles every retraction it holds before it shows or serves
+  anything, and once it takes one it keeps it for good (`retraction_spreads`, `retraction_stays`), so a device that
+  comes back with the old line can't bring it back. A file goes once no line names it any more, from every store
+  that honours the delete, as soon as the retraction arrives: the Peer-Light's OPFS, a Peer's folder and the Aven
+  Peer's bucket. It is withheld first (`aven_db_store::withhold`): iroh-blobs' provider and /files/<hash> answer it
+  as gone even while its bytes are being deleted, and `dropped-<index>` stays until they are, so a restart finishes
+  the job. Every chat shows "Message deleted" in the line's place. The chain still verifies by its links (`redact_valid`), but the deleted line's
   own signature can't be checked again, since it signed the text; lines that sign their body's hash, a later line
   version, would keep that too. A delete binds honest peers only: no peer can be forced to forget what it was sent.
+  Next, once the chat is sealed: each file gets its own content key, carried inside its line, and a delete removes
+  the key everywhere, so whatever ciphertext a keeper still holds is unreadable.
 - **Later:** milestone 4 replaces the line format with Loro segments. The shape, a head over blobs, is the
   README's document, so nothing is thrown away, and the old lines stay readable (production keeps its store).
 
