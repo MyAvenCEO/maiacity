@@ -35,7 +35,10 @@ pub fn file_ref(index: &Hash) -> RefName {
 
 /// The MIME type a file's name claims, by its extension.
 pub fn mime(name: &str) -> &'static str {
-    let ext = name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
+    let ext = name
+        .rsplit_once('.')
+        .map(|(_, e)| e.to_ascii_lowercase())
+        .unwrap_or_default();
     match ext.as_str() {
         "mp4" | "m4v" => "video/mp4",
         "mov" => "video/quicktime",
@@ -89,7 +92,14 @@ where
                 let name = entry.file_name().to_string_lossy().to_string();
                 let Ok(meta) = entry.metadata() else { continue };
                 if meta.is_file() && !name.starts_with('.') && !name.ends_with(".part") {
-                    found.push((entry.path(), name, (meta.len(), meta.modified().unwrap_or(SystemTime::UNIX_EPOCH))));
+                    found.push((
+                        entry.path(),
+                        name,
+                        (
+                            meta.len(),
+                            meta.modified().unwrap_or(SystemTime::UNIX_EPOCH),
+                        ),
+                    ));
                 }
             }
         }
@@ -116,7 +126,13 @@ where
                 "shared",
                 json!({ "file": index.to_string(), "name": name, "size": stamp.0, "ms": started.elapsed().as_millis() as u64 }),
             );
-            announce(Shared { index, size: stamp.0, mime: mime(&name).into(), name }).await;
+            announce(Shared {
+                index,
+                size: stamp.0,
+                mime: mime(&name).into(),
+                name,
+            })
+            .await;
         }
         sleep(Duration::from_secs(1)).await;
     }
@@ -146,8 +162,12 @@ impl KeepError {
 impl std::fmt::Display for KeepError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            KeepError::NotFound(why) | KeepError::Malformed(why) | KeepError::Unreachable(why) => f.write_str(why),
-            KeepError::Mismatch { held, announced } => write!(f, "{held} bytes, announced as {announced}"),
+            KeepError::NotFound(why) | KeepError::Malformed(why) | KeepError::Unreachable(why) => {
+                f.write_str(why)
+            }
+            KeepError::Mismatch { held, announced } => {
+                write!(f, "{held} bytes, announced as {announced}")
+            }
         }
     }
 }
@@ -175,7 +195,10 @@ pub async fn keep<S: Store + ?Sized>(
     let kept = async {
         let at = EndpointAddr::new(from).with_relay_url(relay.clone());
         let unreachable = |e: &dyn std::fmt::Display| KeepError::Unreachable(e.to_string());
-        let conn = endpoint.connect(at, crate::blobs::ALPN).await.map_err(|e| unreachable(&e))?;
+        let conn = endpoint
+            .connect(at, crate::blobs::ALPN)
+            .await
+            .map_err(|e| unreachable(&e))?;
         let fetched = blobs.fetch_file(&conn, index).await.map_err(|e| match e {
             FetchError::NotFound(_) => KeepError::NotFound(e.to_string()),
             FetchError::NotAFile(_) => KeepError::Malformed(e.to_string()),
@@ -189,7 +212,10 @@ pub async fn keep<S: Store + ?Sized>(
             })?
             .ok_or_else(|| KeepError::NotFound("no index".into()))?;
         if file.len != size {
-            return Err(KeepError::Mismatch { held: file.len, announced: size });
+            return Err(KeepError::Mismatch {
+                held: file.len,
+                announced: size,
+            });
         }
         match store.set_ref(&name, None, index).await {
             Ok(()) | Err(aven_db_store::Error::Stale { .. }) => Ok(fetched.bytes),
@@ -198,9 +224,15 @@ pub async fn keep<S: Store + ?Sized>(
     };
     let result = kept.await;
     let line = match &result {
-        Ok(bytes) => ("kept", json!({ "file": index.to_string(), "size": size, "bytes": bytes,
-            "ms": started.elapsed().as_millis() as u64 })),
-        Err(why) => ("dropped", json!({ "file": index.to_string(), "why": why.to_string(), "retry": why.retry() })),
+        Ok(bytes) => (
+            "kept",
+            json!({ "file": index.to_string(), "size": size, "bytes": bytes,
+            "ms": started.elapsed().as_millis() as u64 }),
+        ),
+        Err(why) => (
+            "dropped",
+            json!({ "file": index.to_string(), "why": why.to_string(), "retry": why.retry() }),
+        ),
     };
     notes(timeline::line(now(), me, line.0, line.1));
     result

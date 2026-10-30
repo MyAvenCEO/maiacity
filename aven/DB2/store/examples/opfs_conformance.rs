@@ -12,7 +12,13 @@ mod browser {
         js_sys::Reflect::get(&js_sys::global(), &"performance".into())
             .ok()
             .and_then(|p| js_sys::Reflect::get(&p, &"now".into()).ok().map(|f| (p, f)))
-            .and_then(|(p, f)| f.dyn_into::<js_sys::Function>().ok()?.call0(&p).ok()?.as_f64())
+            .and_then(|(p, f)| {
+                f.dyn_into::<js_sys::Function>()
+                    .ok()?
+                    .call0(&p)
+                    .ok()?
+                    .as_f64()
+            })
             .unwrap_or_else(js_sys::Date::now)
     }
 
@@ -23,7 +29,9 @@ mod browser {
         let report = conformance::run(
             async || {
                 n += 1;
-                backend::opfs(&format!("{root}/case-{n}/")).await.expect("opfs")
+                backend::opfs(&format!("{root}/case-{n}/"))
+                    .await
+                    .expect("opfs")
             },
             include_str!("../../db/spec/vectors/store.json"),
         )
@@ -33,9 +41,9 @@ mod browser {
         match backend::opfs(&format!("{root}/bench/")).await {
             Ok(store) => {
                 match conformance::bench(&store, now).await {
-                    Ok(times) => times
-                        .iter()
-                        .for_each(|(what, ms)| out.push_str(&format!("bench {what}: {ms:.0} ms\n"))),
+                    Ok(times) => times.iter().for_each(|(what, ms)| {
+                        out.push_str(&format!("bench {what}: {ms:.0} ms\n"))
+                    }),
                     Err(e) => out.push_str(&format!("bench failed: {e}\n")),
                 }
                 match conformance::workload(&store, now).await {

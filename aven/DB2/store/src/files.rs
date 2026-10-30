@@ -14,12 +14,17 @@ pub const CHUNK: u64 = 1 << 20;
 
 /// Puts a file's chunks, then its index, and returns the file's name, its index's hash. The chunks come one at a time,
 /// so a file of several GB never sits in memory; each must be `CHUNK` long but the last.
-pub async fn put<S: Store + ?Sized>(store: &S, chunks: impl IntoIterator<Item = Bytes>) -> Result<Hash> {
+pub async fn put<S: Store + ?Sized>(
+    store: &S,
+    chunks: impl IntoIterator<Item = Bytes>,
+) -> Result<Hash> {
     let mut index = BytesMut::new();
     let mut short = false;
     for chunk in chunks {
         if short || chunk.is_empty() || chunk.len() as u64 > CHUNK {
-            return Err(Error::Backend("a file's chunks are 1 MiB, the last 1 byte to 1 MiB".into()));
+            return Err(Error::Backend(
+                "a file's chunks are 1 MiB, the last 1 byte to 1 MiB".into(),
+            ));
         }
         short = (chunk.len() as u64) < CHUNK;
         index.extend_from_slice(store.put(chunk).await?.as_bytes());
@@ -30,15 +35,22 @@ pub async fn put<S: Store + ?Sized>(store: &S, chunks: impl IntoIterator<Item = 
 /// `bytes` as a file's chunks.
 pub fn split(bytes: Bytes) -> impl Iterator<Item = Bytes> {
     let n = (bytes.len() as u64).div_ceil(CHUNK);
-    (0..n).map(move |i| bytes.slice((i * CHUNK) as usize..((i + 1) * CHUNK).min(bytes.len() as u64) as usize))
+    (0..n).map(move |i| {
+        bytes.slice((i * CHUNK) as usize..((i + 1) * CHUNK).min(bytes.len() as u64) as usize)
+    })
 }
 
 /// The chunks an index lists, or `Corrupt` for bytes that are no index.
 pub fn chunks(index: &[u8]) -> Result<Vec<Hash>> {
     if index.len() % 32 != 0 {
-        return Err(Error::Corrupt("an index is a list of 32-byte hashes".into()));
+        return Err(Error::Corrupt(
+            "an index is a list of 32-byte hashes".into(),
+        ));
     }
-    Ok(index.chunks_exact(32).map(|h| Hash::from_bytes(h.try_into().expect("32 bytes"))).collect())
+    Ok(index
+        .chunks_exact(32)
+        .map(|h| Hash::from_bytes(h.try_into().expect("32 bytes")))
+        .collect())
 }
 
 /// The chunks a file's byte range lies in.
@@ -68,12 +80,20 @@ pub async fn open<S: Store + ?Sized>(store: &S, name: &Hash) -> Result<Option<Fi
         None => 0,
         Some(last) => (chunks.len() as u64 - 1) * CHUNK + store.size(last).await?.unwrap_or(CHUNK),
     };
-    Ok(Some(File { name: *name, chunks, len }))
+    Ok(Some(File {
+        name: *name,
+        chunks,
+        len,
+    }))
 }
 
 impl File {
     /// Which of the chunks `range` touches this store lacks, by their place in the file.
-    pub async fn missing<S: Store + ?Sized>(&self, store: &S, range: Range<u64>) -> Result<Vec<u64>> {
+    pub async fn missing<S: Store + ?Sized>(
+        &self,
+        store: &S,
+        range: Range<u64>,
+    ) -> Result<Vec<u64>> {
         let mut out = Vec::new();
         for i in touched(&(range.start..range.end.min(self.len))) {
             if !store.has(&self.chunks[i as usize]).await? {
@@ -85,10 +105,18 @@ impl File {
 
     /// The file's bytes `range`, read from the chunks it touches, each checked whole against its hash; `None` while
     /// one of them isn't here. A range not inside the file is [`Error::Range`].
-    pub async fn read<S: Store + ?Sized>(&self, store: &S, range: Range<u64>) -> Result<Option<Bytes>> {
+    pub async fn read<S: Store + ?Sized>(
+        &self,
+        store: &S,
+        range: Range<u64>,
+    ) -> Result<Option<Bytes>> {
         let Range { start, end } = range;
         if start > end || end > self.len {
-            return Err(Error::Range { start, end, len: self.len });
+            return Err(Error::Range {
+                start,
+                end,
+                len: self.len,
+            });
         }
         let mut out = BytesMut::with_capacity((end - start) as usize);
         for i in touched(&range) {
