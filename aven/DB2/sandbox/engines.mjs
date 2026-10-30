@@ -112,8 +112,10 @@ async function phone(engine) {
 	const since = Date.now();
 	const context = await launch(engine, 'narrow');
 	const page = context.pages()[0] ?? (await context.newPage());
-	problems.push(...(await narrow(page, engine.name(), run)));
-	report.narrow[engine.name()] = { ms: timed(since) };
+	const got = await narrow(page, engine.name(), run);
+	problems.push(...got.problems);
+	for (const warning of got.warnings) console.log(`avenSANDBOX: engines: warning: ${warning}`);
+	report.narrow[engine.name()] = { warnings: got.warnings, ms: timed(since) };
 	await context.close();
 }
 

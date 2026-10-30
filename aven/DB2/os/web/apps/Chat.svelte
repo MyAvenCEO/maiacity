@@ -46,25 +46,50 @@
 		picker.value = '';
 	}
 
-	// how a file shows: only through <img>, <video> or a PDF's frame, and only for the passive types the Service Worker
-	// serves inline (public/files-sw.js keeps the same list). Anything else, SVG and HTML included, is a download link
+	// how a file shows, inline in its bubble (Samuel, 30 Oct 2026: every kind shows and plays in the chat): only through
+	// <img>, <audio>, <video> or a PDF's frame, and only for the passive types the Service Worker serves inline
+	// (public/files-sw.js keeps the same list). Anything else, SVG and HTML included, is a download link
 	const kind = (type) => {
 		const t = String(type ?? '').split(';')[0].trim().toLowerCase();
 		if (/^image\/(png|jpeg|gif|webp|avif|bmp)$/.test(t)) return 'image';
+		if (/^audio\/[a-z0-9.+-]+$/.test(t)) return 'audio';
 		if (/^video\/[a-z0-9.+-]+$/.test(t)) return 'video';
 		return t === 'application/pdf' ? 'pdf' : 'file';
 	};
-	// a file still on its way (the Aven Peer not yet keeping it, its sender's peer not reachable): asked for again, a
-	// little later each time, until it comes
+	// a file still on its way (the Aven Peer not yet keeping it, its sender's peer not reachable): a placeholder of its
+	// kind until it has loaded (`data-ready`), asked for again, a little later each time, until it comes
 	function retrying(node) {
 		const base = node.getAttribute('src');
 		let tries = 0;
+		// one try waits at a time, and none once the file has loaded: a late one would load a playing movie again from
+		// its start (WebKit, 30 Oct 2026). A player asked again goes on from where it was
+		let at = 0;
+		let waiting = null;
 		const again = () => {
-			if (++tries > 8) return;
-			setTimeout(() => node.setAttribute('src', `${base}?try=${tries}`), 500 * 2 ** Math.min(tries, 4));
+			if (waiting || ++tries > 8) return;
+			at = node.currentTime || at;
+			waiting = setTimeout(() => {
+				waiting = null;
+				node.setAttribute('src', `${base}?try=${tries}`);
+			}, 500 * 2 ** Math.min(tries, 4));
 		};
+		const ready = () => {
+			clearTimeout(waiting);
+			waiting = null;
+			node.setAttribute('data-ready', '');
+			if (at && node.currentTime < at) node.currentTime = at;
+		};
+		const loaded = node.tagName === 'IMG' ? 'load' : 'loadedmetadata';
 		node.addEventListener('error', again);
-		return { destroy: () => node.removeEventListener('error', again) };
+		node.addEventListener(loaded, ready);
+		if (node.complete && node.naturalWidth) ready();
+		return {
+			destroy: () => {
+				clearTimeout(waiting);
+				node.removeEventListener('error', again);
+				node.removeEventListener(loaded, ready);
+			},
+		};
 	}
 	const size = (n) => (n < 1 << 20 ? `${Math.ceil(n / 1024)} KB` : `${(n / (1 << 20)).toFixed(1)} MB`);
 </script>
@@ -101,11 +126,18 @@
 						<strong>{who(vault ?? line.from)}</strong>
 						<figure class="file card" data-testid="file" data-file={f.file} data-kind={kind(f.type)}>
 							{#if kind(f.type) === 'image'}
-								<img src="/files/{f.file}" alt={f.name} use:retrying />
+								<!-- opened large in a tab of its own on a tap -->
+								<a class="media" href="/files/{f.file}" target="_blank" rel="noopener" aria-label="Open {f.name}"
+									><img src="/files/{f.file}" alt={f.name} use:retrying /></a
+								>
+							{:else if kind(f.type) === 'audio'}
+								<audio src="/files/{f.file}" controls preload="metadata" use:retrying></audio>
 							{:else if kind(f.type) === 'video'}
+								<!-- playsinline: iOS plays it in the bubble, not full-screen; it seeks by ranges (files-sw.js answers 206) -->
 								<!-- svelte-ignore a11y_media_has_caption -->
-								<video src="/files/{f.file}" controls preload="metadata" use:retrying></video>
+								<video src="/files/{f.file}" controls playsinline preload="metadata" use:retrying></video>
 							{:else if kind(f.type) === 'pdf'}
+								<!-- previewed where the browser shows a PDF in a sandboxed frame; the link opens it in any case -->
 								<iframe src="/files/{f.file}" title={f.name}></iframe>
 							{/if}
 							<figcaption>
@@ -114,6 +146,9 @@
 								>
 								<a href="/files/{f.file}" download={f.name}>{f.name}</a>
 								<small>{size(f.size)}</small>
+								{#if kind(f.type) === 'pdf'}<a class="open" href="/files/{f.file}" target="_blank" rel="noopener" data-testid="open"
+										>Open</a
+									>{/if}
 							</figcaption>
 						</figure>
 					{:else}
@@ -390,6 +425,25 @@
 		border-radius: var(--radius-inner);
 	}
 
+	figure.file .media {
+		display: block;
+		min-width: 0;
+	}
+
+	figure.file audio {
+		display: block;
+		width: 300px;
+		max-width: 100%;
+	}
+
+	/* a file still arriving: a quiet box of its kind's shape, then the image or the player */
+	figure.file img:not([data-ready]),
+	figure.file video:not([data-ready]) {
+		width: 240px;
+		aspect-ratio: 16 / 9;
+		background: var(--sage);
+	}
+
 	figure.file iframe {
 		width: min(420px, 100%);
 		height: 320px;
@@ -406,8 +460,15 @@
 	}
 
 	figcaption svg,
-	figcaption small {
+	figcaption small,
+	figcaption .open {
 		flex: none;
+	}
+
+	figcaption .open {
+		margin-left: auto;
+		color: inherit;
+		font-weight: 600;
 	}
 
 	figcaption a {
