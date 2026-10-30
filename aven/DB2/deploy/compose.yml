@@ -2,7 +2,9 @@
 # beside v1 and touching none of its containers. .github/workflows/avendeploy.yml copies this file there and writes
 # the two files it reads:
 #   .env       the image (by digest), MaiaCityGuardian's public half, and the network of v1's Caddy
-#   peer.env   the peer's secret seed and the bucket's credentials, mode 600, made and kept on the server
+#   peer.env   the bucket's credentials, mode 600
+#   secret     the peer's secret seed, made and kept on the server, readable only by the peer's user, given by
+#              --secret-file so no `docker inspect` shows it
 # Every setting is a flag of the Peer given by environment (AVEN_PEER_<FLAG>, SANDBOX.md, "The Peer's flags"), as in
 # the box. UDP 7501 is open to the world; the relay's HTTP port only to Caddy, on its network, behind aven.maia.city.
 name: aven
@@ -14,7 +16,10 @@ services:
     init: true
     restart: unless-stopped
     env_file: [peer.env]
+    volumes:
+      - ./secret:/run/secrets/aven-peer:ro
     environment:
+      AVEN_PEER_SECRET_FILE: /run/secrets/aven-peer
       AVEN_PEER_NAME: aven-peer
       AVEN_PEER_LISTEN: 0.0.0.0:7501
       AVEN_PEER_RELAY: "true"

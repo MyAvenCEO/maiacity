@@ -145,6 +145,8 @@ www.{$SITE_ADDRESS:maia.city} {
 # reachable only there:
 #   /relay /ping /healthz /generate_204   iroh's relay (iroh-relay 1.4.1: the WebSocket, its latency probe, health,
 #                                         the captive-portal check)
+#   /aven.json                            which Aven Peer this host is in front of, for avenOS: its key and the
+#                                         passkeys' RP ID, written by the deploy beside the builds
 #   everything else                       avenOS's released build (@aven/os, aven-os-web-<version>.tar.gz), in
 #                                         site/aven/current, unpacked by the deploy
 {$AVEN_ADDRESS:aven.maia.city} {
@@ -152,6 +154,12 @@ www.{$SITE_ADDRESS:maia.city} {
 	@relay path /relay /ping /healthz /generate_204
 	handle @relay {
 		reverse_proxy aven-peer:3340
+	}
+	handle /aven.json {
+		root * /srv/site/aven
+		header Content-Type application/json
+		header Cache-Control no-store
+		file_server
 	}
 	handle {
 		root * /srv/site/aven/current
