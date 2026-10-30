@@ -220,28 +220,28 @@ the edges: configuration, web origins, keepers, freshness. The table is the caps
 | 1 | Swap the guardian by configuration | It comes from `--guardian`; no person signs it | open | Its hybrid and X-Wing keys in the genesis and in every claim and join text; shown in fingerprints (**A13**) | `guardian_consented` |
 | 2 | Ask for a passkey's PRF from another origin of `maia.city` | Any origin of the domain can ask, at a predictable input | open | A dedicated RP ID for avenOS before more passkeys exist; a secret the vault holds mixed into the input (**A14**) | — |
 | 3 | Serve changed code from the origin | Outside the model; D17's safe helps | partial | Signed releases; the safe's origin serves only the safe (**A15**) | — |
-| 4 | Mint caps with a stolen device | Every grant needs an owner's approval (D14) | covered | The heal also replaces the vault key, tag seeds and letterbox keys (D19) | `heal_evicts` |
-| 5 | Launder a revoked holder's writes through another writer's late ack | "had seen" counts what the acking writer imported | open | A revoked holder's envelope never counts if the revocation is in its past; under a Doc cap, only the revocation's own past counts (**A23**) | `revocation_wins`, restated |
+| 4 | Mint caps with a stolen device | Every grant needs an owner's approval (D14) | covered | The heal also replaces the vault key, tag seeds and letterbox keys (D19, #1499) | `heal_evicts` |
+| 5 | Launder a revoked holder's writes through another writer's late ack | "had seen" counts what the acking writer imported | covered (#1499) | An envelope with the revocation in its own past never counts; under a Doc cap only the revocation's own past is kept; another writer's ack may vouch for revocations kept elsewhere (**A23**) | `revocation_wins`, restated |
 | 6 | Read the signer off a segment | Outside a segment is only its Doc, epoch and padded length (D13) | covered | — | `keeper_blind` over the outside |
 | 7 | Learn who reads a Doc | Fetch proofs come over connections that name the device | accepted for now (D13) | Mixing, unlinkable proofs, later | — |
-| 8 | Spoof a fetch-key change or upload junk | The new fetch key comes by letter, unauthenticated | open | Fetch keys chain from the Doc's genesis, each signed by the one before; uploads charged to the uploading vault (**A22**) | `fetch_chain` |
-| 9 | A reader given one Doc can't check vault-wide caps | They live in a group Doc it can't open | open | Envelopes carry, inside the seal, the caps they rest on | — |
-| 10 | `below` read upward | The text runs backwards | open | `below` grants to the vaults beneath; a group per vault sealed downward | `authority_down` |
+| 8 | Spoof a fetch-key change or upload junk | The new fetch key comes by letter, unauthenticated | open | Fetch keys chain from the Doc's genesis, each signed by the one before; the keeper keeps every successor, takes the smaller epoch hash as current, as writers do, and flags the fork; the uploading vault pays (**A22**) | `fetch_chain` |
+| 9 | A reader given one Doc can't check vault-wide caps | They live in a group Doc it can't open | covered (#1499) | Envelopes carry, inside the seal, the caps they rest on; acks carry their revocation | — |
+| 10 | `below` read upward | The text runs backwards | covered (#1499) | `below` is sealed downward | `authority_down` |
 | 11 | Keep a writer from hearing of a removal | Browsers have one keeper and one relay | open | Several sources; signed tips; a writer never writes on an epoch older than a tip it has seen | — |
 | 12 | Hold the door and the tree | The Aven Peer's, by position | open | The genesis, the tree as a Doc, the network's group (**A10** to **A12**) | `door_from_tree` |
-| 13 | Pass on a read key without approval | Anyone holding a key can seal it to another | accepted | Say it: approvals bind writes, `share` and `tell`; reading is holding a key | — |
+| 13 | Pass on a read key without approval | Anyone holding a key can seal it to another | accepted, stated (#1499) | Say it: approvals bind writes, `share` and `tell`; reading is holding a key | — |
 | 14 | Limit what one device reads | The keyring opens to every device | accepted | A limited device is a vault of its own, without the keyring (the Aven Peer is one) | — |
-| 15 | Keep a group cap's children alive after their issuer leaves | Liveness checks only the writer | open | Children live only while their issuer is in the group | `child_live` |
-| 16 | Keep network caps after removal | They stand | open | Network caps end at removal (**A10**) | `public_bounded` |
-| 17 | Read history with a `from-now` grant through a group | `back` opens all history | accepted | Say it; per-Doc keys where `from-now` matters | — |
+| 15 | Keep a group cap's children alive after their issuer leaves | Liveness checks only the writer | covered (#1499) | Children live only while their issuer is in the group | `child_live` |
+| 16 | Keep network caps after removal | They stand | covered (#1499) | Removal ends public caps and rotates the members group at once (D15) | `public_bounded` |
+| 17 | Read history with a `from-now` grant through a group | `back` opens all history | accepted, stated (#1499) | Say it; per-Doc keys where `from-now` matters | — |
 | 18 | Play with clocks around expiry | A write carries its writer's time | partial | Readers judge expiry by acks; `not_before` holds only for reads | `time_acked` |
-| 19 | Name a revocation or key that never comes | Its builders wait forever | open | A named revocation must be in the causal past; every wait raises the stall alarm (rule 11) | `waits_end` |
+| 19 | Name a revocation or key that never comes | Its builders wait forever | covered (#1499) | Waits only for what is named by hash; every wait raises the stall alarm (rule 11) | `waits_end` |
 | 20 | Claim one ticket twice | Only the Aven Peer's compare-and-set orders it | open | The smallest claim hash wins (**A12**) | `ticket_once` |
 | 21 | Replay an old statement | No nonce, no expiry | open | Statements are envelopes in logs with a sequence and the hash before (K1, K2) | — |
 | 22 | Make an actor act as a confused deputy | Inside the kernel (D16) | accepted | Hosting is the owner's explicit choice (**A16**) | `no_confused_deputy` |
 | 23 | Show readers different sides of a split | Deps name op ids | open | Deps by hash (**A3**) | `split_found` |
 | 24 | Forge later with a quantum computer | The guardian is Ed25519; the transport is classical | partial | A hybrid guardian; hybrid TLS | — |
-| 25 | Flood a letterbox | Unspecified | open | The signature inside the seal, bound to the recipient; rate limits | — |
+| 25 | Flood a letterbox | Unspecified | covered (#1499) | The signature inside the seal, bound to the recipient; rate limits | — |
 
 ## Server peers hold only what owners grant
 
@@ -461,14 +461,15 @@ Some tokens already work as an index today, and each gets a fix:
   - content-addressed definitions;
   - loads are wants.
 - *Weak:*
-  - a re-placed face reuses its address, which breaks replay or drops messages (version 1);
+  - a re-placed face reused its address, breaking replay (fixed in #1488: an incarnation in the address);
   - location is part of identity;
-  - replay doesn't pin the runtime, definition, fuel schedule or load versions;
+  - replay didn't pin the runtime, definition or fuel schedule (fixed in #1488); load versions wait for A17;
   - every entity is a root Doc;
   - an inbox per actor pair;
   - state replaced whole grows history quadratically;
   - no effect writes data;
-  - views can carry data out through URLs;
+  - views could carry data out through URLs (fixed in #1488: a CSP for faces, `url()` only by hash, links through an
+    interstitial);
   - the kernel acts with the whole device cap.
 - *Verdict:* version 1 is sound and small. Its later layers should fold into docs and caps (K5, K9, **A16**, **A17**).
 
@@ -542,9 +543,17 @@ the spec that owns it.
 - **A13. The guardian is named, with hybrid keys, in every claim and join text** people sign, until it leaves before
   the network opens beyond the founding circle (caps D12). *Yes.*
 - **A14. A dedicated passkey RP ID for avenOS,** for example `aven.maia.city`, before more passkeys exist; today's few
-  members register once more. *Yes, now.*
+  members register once more. A salt the keeper serves per credential goes into the PRF input: secret from other
+  origins, not from the keeper. *Yes, now; the caps thread agrees.*
 - **A15. Three origins:** avenOS (the app), the safe (D17: keys, the Peer-Light) and files (no keys, sandboxed).
-  Releases are signed. *Yes.*
+  Releases are signed:
+  - in the browser, a Service Worker on the safe's origin checks a release's signature before new code activates,
+    and release hashes go into an append-only signed list that members' other devices check. A browser always
+    re-checks a worker's script against the server, so this raises the bar without making the deploy unable to
+    replace it;
+  - the trusted path is the Mac app (Tauri), which checks signatures before it runs new code.
+
+  *Yes.*
 - **A16. Hosting an actor on the Aven Peer is an explicit read cap** per actor and per load target, shown to its
   owner; a member's own Peer is the default home. *Yes.*
 
@@ -570,8 +579,11 @@ the spec that owns it.
 - **A21. Private search in four tiers,** as above. *Yes.*
 
 **Caps**
-- **A22. Fetch keys chain from a Doc's genesis,** and uploads are charged to the uploading vault. *Yes.*
-- **A23. Acks can't launder:** a revoked holder's envelope never counts if the revocation is in its past. *Yes.*
+- **A22. Fetch keys chain from a Doc's genesis,** each signed by the one before. The keeper keeps every successor,
+  takes the smaller epoch hash as current as writers do, and flags the fork; uploads are charged to the uploading
+  vault. *Yes; the caps thread agrees.*
+- **A23. Acks can't launder:** a revoked holder's envelope never counts if the revocation is in its past. *Done in
+  caps (#1499), as what D8 meant.*
 
 **Housekeeping**
 - **A24. The layers** as drawn [above](#the-whole-on-one-page). *Yes.*
