@@ -16,28 +16,13 @@ import Lean.Data.Json
 - `targets.json`: pairs of targets; whether the first narrows the second, and which Docs each covers.
 - `footprints.json`: grants and footprints; whether the grants cover them.
 
-The readable form of a Value: integers as numbers, text as strings, arrays as arrays, maps as objects, `true`, `false`
-and `null` as themselves, and a byte string as `{"bytes": hex}`.
+Values are shown in their readable form (`Aven.Core.Json`).
 -/
 
 open Lean Aven.Core
 
 def vector (name : String) (input expected : Json) : Json :=
   Json.mkObj [("name", name), ("input", input), ("expected", expected)]
-
-/-! ## The readable form -/
-
-def utf8Text (b : Bytes) : String := String.fromUTF8! ⟨b.toArray⟩
-
-partial def Aven.Core.Value.json : Value → Json
-  | .uint n => toJson n
-  | .nint n => toJson (-(n : Int) - 1)
-  | .bytes b => Json.mkObj [("bytes", hex b)]
-  | .text b => utf8Text b
-  | .array xs => Json.arr (xs.map Value.json).toArray
-  | .map kvs => Json.mkObj (kvs.map fun (k, v) => (utf8Text k, v.json))
-  | .bool b => toJson b
-  | .null => Json.null
 
 /-! ## Draws -/
 
