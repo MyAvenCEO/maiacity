@@ -102,17 +102,25 @@ jobs:
           KEY="probe/$GITHUB_RUN_ID/conditional"
           printf 'avenDB conditional-write probe %s\n' "$GITHUB_RUN_ID" > body
           stale='"00000000000000000000000000000000"'
-          # each try: what S3 said, in one word
-          word() { grep -o 'PreconditionFailed\|ConditionalRequestConflict\|NotImplemented\|InvalidArgument\|AccessDenied\|Unknown options\|[0-9][0-9][0-9]' | head -n 1 | grep . || echo failed; }
-          put() { if out=$(s3 put-object --bucket "$BUCKET" --key "$KEY" --body body "$@" 2>&1); then echo written; else word <<< "$out"; fi; }
-          del() { if out=$(s3 delete-object --bucket "$BUCKET" --key "$KEY" "$@" 2>&1); then echo deleted; else word <<< "$out"; fi; }
+          # each try: what S3 said, in one word; and, into raw, its HTTP status and S3 error code as they came. --debug
+          # logs the request too, signature included, so only the response's status line and the error code are kept
+          word() { grep 'An error occurred\|Unknown options' | grep -o 'PreconditionFailed\|ConditionalRequestConflict\|NotImplemented\|InvalidArgument\|AccessDenied\|Unknown options\|[0-9][0-9][0-9]' | head -n 1 | grep . || echo failed; }
+          raw() {
+            local status code
+            status=$(grep -o 'HTTP/1.1" [0-9][0-9][0-9]' <<< "$2" | tail -n 1 | grep -o '[0-9][0-9][0-9]$')
+            code=$(grep -o 'An error occurred ([A-Za-z]*)' <<< "$2" | tail -n 1 | sed 's/.*(\(.*\))/\1/')
+            echo "| $1 | ${status:-?} | ${code:-none} |" >> raw
+          }
+          put() { local try=$1; shift; if out=$(s3 put-object --bucket "$BUCKET" --key "$KEY" --body body "$@" --debug 2>&1); then raw "$try" "$out"; echo written; else raw "$try" "$out"; word <<< "$out"; fi; }
+          del() { local try=$1; shift; if out=$(s3 delete-object --bucket "$BUCKET" --key "$KEY" "$@" --debug 2>&1); then raw "$try" "$out"; echo deleted; else raw "$try" "$out"; word <<< "$out"; fi; }
+          : > raw
           etag() { s3 head-object --bucket "$BUCKET" --key "$KEY" --query ETag --output text 2> /dev/null || true; }
-          first=$(put --if-none-match '*')
-          again=$(put --if-none-match '*')
-          stale_put=$(put --if-match "$stale")
-          right_put=$(put --if-match "$(etag)")
-          stale_del=$(del --if-match "$stale")
-          right_del=$(del --if-match "$(etag)")
+          first=$(put "PUT, If-None-Match: * on a new key" --if-none-match '*')
+          again=$(put "PUT, If-None-Match: * on the same key" --if-none-match '*')
+          stale_put=$(put "PUT, a stale If-Match" --if-match "$stale")
+          right_put=$(put "PUT, the current If-Match" --if-match "$(etag)")
+          stale_del=$(del "DELETE, a stale If-Match" --if-match "$stale")
+          right_del=$(del "DELETE, the current If-Match" --if-match "$(etag)")
           gone=$([ -z "$(etag)" ] && echo yes || echo no)
           [ "$gone" = yes ] || s3 delete-object --bucket "$BUCKET" --key "$KEY" > /dev/null || true
           {
@@ -126,6 +134,13 @@ jobs:
             echo "| PUT, the current If-Match | written | $right_put |"
             echo "| DELETE, a stale If-Match | 412 PreconditionFailed | $stale_del |"
             echo "| DELETE, the current If-Match | deleted | $right_del (gone: $gone) |"
+            echo
+            echo "As they came: the HTTP status and S3's error code of each try (the store's --s3-conditions create maps a"
+            echo "refused create to stale by them)"
+            echo
+            echo "| try | HTTP status | S3 error code |"
+            echo "| --- | --- | --- |"
+            cat raw
             echo
           } | tee -a "$GITHUB_STEP_SUMMARY"
           if [ "$first $again $stale_put $right_put $stale_del $right_del" = "written PreconditionFailed PreconditionFailed written PreconditionFailed deleted" ]; then

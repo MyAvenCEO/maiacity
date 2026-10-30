@@ -29,8 +29,9 @@
 //!     --s3-region NAME       its region (us-east-1)
 //!     --s3-key ID            its access key id (better by environment: AVEN_PEER_S3_KEY)
 //!     --s3-secret SECRET     its secret access key (better by environment: AVEN_PEER_S3_SECRET)
-//!     --s3-conditions on|off whether refs use the server's If-Match and If-None-Match (on); off leans on the store's
-//!                            lock and the one writer alone, for a server that gets them wrong (Hetzner, 30 Oct 2026)
+//!     --s3-conditions MODE   which of the server's conditional writes refs use: on (If-None-Match: * to create a ref,
+//!                            If-Match to change or delete one), create (If-None-Match: * only, as on Hetzner, which
+//!                            refuses a correct If-Match: 30 Oct 2026) or off (the store's lock and the one writer)
 //!     --rp-id ID             with --relay: keep the tree in the store, claimed by the first passkey to sign up;
 //!                            the passkeys' RP ID: maia.city in production, localhost in the box
 //!     --origin URLS          with --rp-id: avenOS's origins, comma-separated; an assertion must come from one, and a
@@ -150,9 +151,10 @@ fn store(config: &Config) -> Result<(DalStore, String), Error> {
             access_key_id: config.need("s3-key")?,
             secret_access_key: config.need("s3-secret")?,
             conditions: match config.or("s3-conditions", "on").as_str() {
-                "on" => true,
-                "off" => false,
-                other => return Err(format!("--s3-conditions {other}: on or off").into()),
+                "on" => backend::Conditions::On,
+                "create" => backend::Conditions::Create,
+                "off" => backend::Conditions::Off,
+                other => return Err(format!("--s3-conditions {other}: on, create or off").into()),
             },
         })?,
         other => return Err(format!("--store {other}: memory, fs or s3").into()),
@@ -299,7 +301,7 @@ async fn main() -> Result<(), Error> {
     note(
         "started",
         json!({ "key": endpoint.id().to_string(), "listen": listen, "relay": relay,
-            "s3Conditions": (kind == "s3").then(|| store.conditional_writes()) }),
+            "s3Conditions": (kind == "s3").then(|| store.conditions().name()) }),
     );
 
     // the addresses others may reach it at, on every change: its own sockets and, once its relay's QAD has answered,
