@@ -556,6 +556,20 @@ Notes for that iteration, from this one's discussion:
   model of facts. Vectors `ontology.json`.
 - **Kinds:** the compiled operations of every kind equal the ontology's model of it. Vectors `kinds.json`.
 
+**Proven so far** (30 Oct 2026), in `db/spec/Aven/DB/Engine`, without `sorry`, with vectors that `lake exe vectors`
+writes and `bun run up --check` compares. It is generic over `Aven.Core`'s Docs, types, targets, keys and values,
+which the docs thread is writing, and runs on string stand-ins for the vectors:
+
+| Module | Theorems | Vectors |
+|---|---|---|
+| `Query` | a query without a target is refused (`run_refused_without_target`); `complete` means every Doc of the target is held (`complete_iff`); rows come from the scope alone (`scoped_only`); what a query yields stays within its bound and the work it does within its cost, operator by operator: scan, filter, project, join, left join, anti join, order, group, limit (`length_le_bound`, `work_le_cost`) | `queries.json` |
+| `Wants` | served = wants ∩ caps (`served_eq_wants_caps`); each key once (`keys_once`), at its highest tier (`queued_highest`); tiers only order (`tiers_only_order`); prerequisites inherit priority (`prerequisites_inherit`); every round moves the measure down, finds nothing left or raises the stall alarm (`round_moves`), uploads first (`uploads_first`); `now` is never evicted (`now_never_evicted`), and what eviction keeps fits the budget (`evict_fits`) | `wants.json` |
+| `Mutate` | a refused commit changes nothing (`refused_changes_nothing`); references point back at a `put` (`refs_point_backward`); ids from (writer, counter, op index) never collide (`created_distinct`, `ids_differ_across`); readers that agree on a runtime hash lower and commit alike (`readers_agree`) | `mutations.json` |
+
+`Query` models A8, `Wants` A9 and `Mutate` A18 and A19 as recommended; those theorems change if Samuel decides
+otherwise. Still to come: footprints with verbs, fields and constraints and the check of a diff against them, once
+`Aven.Core` has verbs and footprints; live deltas equal a fresh run; sync; the ontology's lowering; kinds.
+
 ## Open questions
 
 1. Which peer serves a catch-up: any member that holds the document, or the Aven Peer first?
