@@ -18,7 +18,9 @@ Text compares by code point, which is UTF-8's byte order; collation by locale co
 runtime.
 
 What it proves: `key_order`: comparing two keys bytewise is comparing their tuples, field by field, a shorter tuple
-first when it is the other's prefix; `key_inj`: two tuples with one key are one tuple.
+first when it is the other's prefix; `key_inj`: two tuples with one key are one tuple; `key_prefix`: a key extends
+another's, at a field's edge, exactly when its tuple extends the other; `extension_in_range`: every extension of a
+prefix lies between the prefix's key and that key then `FF`.
 -/
 
 namespace Aven.DB.Docs.Key
@@ -289,5 +291,81 @@ theorem key_inj {a b : List Field} (ha : a.all Field.ok = true) (hb : b.all Fiel
   rw [h, lexLt_irrefl] at h1
   rw [h, lexLt_irrefl] at h2
   rcases tuple_lt_total hne with e | e <;> simp_all
+
+/-! ## Prefix ranges -/
+
+theorem keyBytes_append (a b : List Field) : keyBytes (a ++ b) = keyBytes a ++ keyBytes b := by
+  simp [keyBytes, List.flatten_append]
+
+/-- A field's bytes, followed by what may follow a field, name the field: two such with one byte string are one. -/
+theorem field_inj {x y : Field} (hx : x.ok = true) (hy : y.ok = true) {r s : Bytes} (hr : Rest r) (hs : Rest s)
+    (h : x.bytesOf ++ r = y.bytesOf ++ s) : x = y ∧ r = s := by
+  by_cases hxy : x = y
+  · subst hxy; exact ⟨rfl, List.append_cancel_left h⟩
+  · exfalso
+    have h1 := field_order x y hx hy r s hr hs
+    have h2 := field_order y x hy hx s r hs hr
+    rw [h, lexLt_irrefl] at h1
+    rw [← h, lexLt_irrefl] at h2
+    have hyx : y ≠ x := fun e => hxy e.symm
+    simp only [hxy, hyx, ite_false] at h1 h2
+    rcases field_lt_total hxy with e | e <;> simp_all
+
+/-- A tuple's key starts with another's, followed by what may follow a field, exactly when the tuple extends it. A
+byte prefix alone isn't enough: text `a` is a byte prefix of text `a 00`, whose next byte is `FF`. -/
+theorem key_prefix : ∀ (p t : List Field), p.all Field.ok = true → t.all Field.ok = true →
+    ((∃ q, keyBytes t = keyBytes p ++ q ∧ Rest q) ↔ p <+: t)
+  | [], t, _, _ => by
+    simp only [keyBytes, List.map_nil, List.flatten_nil, List.nil_append, List.nil_prefix, iff_true]
+    exact ⟨keyBytes t, rfl, keyBytes_rest t⟩
+  | x :: p, [], hp, _ => by
+    simp only [List.prefix_nil, reduceCtorEq, iff_false, not_exists, not_and]
+    intro q h _
+    cases x <;> simp [keyBytes, Field.bytesOf] at h
+  | x :: p, y :: t, hp, ht => by
+    simp only [List.all_cons, Bool.and_eq_true] at hp ht
+    constructor
+    · rintro ⟨q, hq, hrest⟩
+      simp only [keyBytes, List.map_cons, List.flatten_cons, List.append_assoc] at hq
+      have hr : Rest ((p.map Field.bytesOf).flatten ++ q) := by
+        cases p with
+        | nil => simpa using hrest
+        | cons z p => simpa [List.append_assoc] using bytesOf_rest z ((p.map Field.bytesOf).flatten ++ q)
+      obtain ⟨rfl, ht'⟩ := field_inj ht.1 hp.1 (keyBytes_rest t) hr hq
+      have := (key_prefix p t hp.2 ht.2).mp ⟨q, ht', hrest⟩
+      exact List.cons_prefix_cons.mpr ⟨rfl, this⟩
+    · intro h
+      obtain ⟨hxy, hpt⟩ := List.cons_prefix_cons.mp h
+      subst hxy
+      obtain ⟨q, hq, hrest⟩ := (key_prefix p t hp.2 ht.2).mpr hpt
+      refine ⟨q, ?_, hrest⟩
+      simp only [keyBytes, List.map_cons, List.flatten_cons, List.append_assoc] at hq ⊢
+      rw [hq]
+
+/-- An extension of `p`'s key, followed by what may follow a field, lies between `p`'s key and `p`'s key then `FF`:
+a lookup over that range opens every node that may hold one. -/
+theorem prefix_in_range (kp q : Bytes) (hq : Rest q) : Index.inRange kp (kp ++ [0xFF]) (kp ++ q) = true := by
+  have h1 : lexLt (kp ++ q) kp = false := by
+    have := lexLt_append_same kp q []
+    simp only [List.append_nil] at this
+    rw [this]; cases q <;> rfl
+  have h2 : lexLt (kp ++ [0xFF]) (kp ++ q) = false := by
+    rw [lexLt_append_same]
+    cases q with
+    | nil => rfl
+    | cons z q =>
+      have hz : z < 0xFF := hq z rfl
+      unfold lexLt
+      have a : ¬ ((0xFF : UInt8) < z) := by rw [UInt8.lt_iff_toNat_lt] at hz ⊢; simp at hz ⊢; omega
+      have b : ((0xFF : UInt8) == z) = false := by
+        simp only [beq_eq_false_iff_ne]; intro e; subst e; simp at hz
+      simp [a, b]
+  simp [Index.inRange, h1, h2]
+
+/-- Every extension of `p`, as an entry, lies in the range from `p`'s key to `p`'s key then `FF`. -/
+theorem extension_in_range (p t : List Field) (hp : p.all Field.ok = true) (ht : t.all Field.ok = true)
+    (h : p <+: t) : Index.inRange (keyBytes p) (keyBytes p ++ [0xFF]) (keyBytes t) = true := by
+  obtain ⟨q, hq, hr⟩ := (key_prefix p t hp ht).mpr h
+  rw [hq]; exact prefix_in_range _ q hr
 
 end Aven.DB.Docs.Key
