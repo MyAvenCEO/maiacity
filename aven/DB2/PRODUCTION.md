@@ -125,7 +125,6 @@ required reviewer for now (Samuel, 30 Oct 2026): starting the run is the decisio
 3. **Firewall:** the UDP rule.
 4. **The peer:** pulls the released image, makes its key if there is none, starts it. The claim is the first
    signup, so Samuel signs up right after the first deploy; the job ends by saying whether the network is claimed.
-   Claimed by anyone else, its store is wiped and the deploy runs again.
 5. **Caddy:** the site block, validated, then reloaded.
 6. **Health:** the relay answers over HTTPS, UDP 7501 answers, and the Aven Peer's record is in the bucket.
 
@@ -166,7 +165,18 @@ not a person's vault. The first signup founds this tree:
 - **Lean first:** the kind `coop` and its rules in `WF`; names required; the claim's tree with the coop; theorems that
   the claimant's vault owns the admin coop, the coop owns the network, and a coop holds no devices. Then aven-id, the
   peer, avenOS's signup (the name field) and the check, all from the vectors.
-- **Production's store is wiped** once it lands, and the admin signs up again.
+- **Production's store was wiped** once it landed (30 Oct 2026), before anyone had signed up, and the admin signed
+  up then. That was the last wipe: see [No wiping in production](#no-wiping-in-production).
+
+## No wiping in production
+
+Samuel, 30 Oct 2026, before the admin's signup: production has no way to empty its store. The deploy has no `wipe`
+input, and nothing else deletes the bucket's objects. From the first signup on, what the store holds is kept:
+
+- **A change to a stored format** (a statement's text, a ref's layout) reads the old one too, or migrates it, in the
+  peer, tested against the old format's vectors. It never asks for a reset.
+- **The box keeps its own wipe** (`bun run down --wipe`, the check's restart and wipe): its data is test data, made
+  from the cast's public keys.
 
 ## Done when
 
