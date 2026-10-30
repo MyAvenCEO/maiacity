@@ -94,7 +94,7 @@ place to go.
 - **catalogue:** a vault's document mapping names to operation hashes.
 - **footprint:** what an operation reads and writes: documents, and inside them types.
 - **bound:** the most work an operation may do, computed before it runs.
-- **view:** a query's current rows, stamped with the heads they were computed from. A cache.
+- **view:** a query's current rows, stamped with the versions they were computed from. A cache.
 - **the one writer:** the single task in each peer that changes its data (README, rule 1).
 
 ## The rules
@@ -102,7 +102,7 @@ place to go.
 Each rule is held by a Lean theorem or a check once there is code to hold.
 
 1. **The one writer applies every change:** local mutations and imported envelopes, in turn. Pages, actors, peers and
-   status read immutable snapshots stamped with the heads they are correct at, and never wait on it.
+   status read immutable snapshots stamped with the versions they are correct at, and never wait on it.
 2. **One primitive.** The engine queries and changes Records, nothing else. Every Record has its own id and a schema. A
    fact, a line, a page and a file differ only by their type.
 3. **One evaluator.** The core runs core operations only. A plugin operation is lowered to core operations, and what it
@@ -130,8 +130,8 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
 15. **An envelope waits for what it builds on. A fork is raised, not merged quietly.**
 16. **Catching up only reads and always progresses** (README, rules 3 and 6): every step moves a version forward, or it
     stops and raises the stall alarm.
-17. **Views are caches** keyed by the heads they were built from and the code version (README, rule 5). They never sync.
-    A rebuild never blanks a screen.
+17. **Views are caches** keyed by the versions they were built from and the code version (README, rule 5). They never
+    sync. A rebuild never blanks a screen.
 18. **Answers say how complete they are:** complete, partial (with what is waited for) or denied, and the phase.
 19. **Live answers are pushed deltas** (README, rule 8). Nothing re-queries.
 20. **Writes go first.** A local write is shown at once and laid over answers until the writer commits it; a refused
@@ -326,7 +326,7 @@ revisions with tombstones, so a late update can't revive a view that was cleared
 
 ```
 local mutations ──┐
-                  ├─▶ the one writer ─▶ heads ─▶ snapshots stamped with heads ─▶ views ─▶ deltas ─▶ pages, actors
+                  ├─▶ the one writer ─▶ heads ─▶ snapshots stamped with versions ─▶ views ─▶ deltas ─▶ pages, actors
 imported envelopes┘                                                            ─▶ status
 ```
 
@@ -334,7 +334,7 @@ The writer takes one item at a time. A mutation is lowered to core operations if
 checked (grammar, bound, footprint against caps), committed through the docs layer as one commit through the app's view
 ([lenses](../docs/README.md#lenses)), signed into an envelope and handed to sync. An imported envelope is checked by the
 docs layer ([envelopes](../docs/README.md#envelopes-and-peers)) and, where caps narrow below the document, by the
-footprint of its diff, then imported. Either way the heads move, and everything downstream reacts to the new heads
+footprint of its diff, then imported. Either way the heads move, and everything downstream reacts to the new versions
 (README, rule 4).
 
 ## Sync
@@ -457,13 +457,13 @@ that mixes plugins waits for a real case.
 Every answer, whether to a query, a want or a load, carries:
 
 - **its rows**, keyed by their row id;
-- **the heads** they were computed from;
+- **the versions** they were computed from;
 - **its status:** `complete`, `partial` (with what is held, known and waited for) or `denied`, and the phase
   (connecting, catching up with what is left, live, offline, stalled), from one status snapshot and one clock (README, rule 7).
 
-**Live answers** are subscriptions. When heads change, the engine takes the docs layer's diff (which Records changed),
-recomputes the rows those Records can touch, and pushes the difference: rows added, changed, removed. A page or an actor
-holds the rows it was given and applies each delta.
+**Live answers** are subscriptions. When a Doc's version changes, the engine takes the docs layer's diff (which Records
+changed), recomputes the rows those Records can touch, and pushes the difference: rows added, changed, removed. A page or
+an actor holds the rows it was given and applies each delta.
 
 **Pending writes.** A mutation from a page is shown at once: the engine lays its rows over the answers it touches until
 the writer commits it (the overlay drops, the delta arrives) or refuses it (the overlay drops, nothing else changes).
@@ -497,8 +497,9 @@ operation, no want and no answer.
 
 Notes for that iteration, from this one's discussion:
 
-- **Who builds them:** the docs layer's diff per head is the generic feed; the engine keeps the maps, keyed by heads and
-  code version (rule 17); what is indexed follows the schemas and the stored queries. Nobody writes an index by hand.
+- **Who builds them:** the docs layer's diff per new version is the generic feed; the engine keeps the maps, keyed by
+  versions and code version (rule 17); what is indexed follows the schemas and the stored queries. Nobody writes an
+  index by hand.
 - **No synced indexes:** an index synced between devices is derived state someone wrote, which a reader must trust or
   recompute. What must be shared, such as a phone's list of 10,000 invoices without the invoices, is a document kept by
   an act: a vault's **directory**, updated by the mutation that creates each one.
