@@ -122,6 +122,53 @@ theorem rule4_fit_merges {S K V : Type} [DecidableEq K] (rule : S → K → V �
     rule w.value.1 k w.value.2 :=
   DB.Docs.fit_envelopes rule h k hw
 
+/-- The content of an envelope, as every reader judges it from the changes it sees: the engine's footprint check (its
+grants cover the lowered steps, and the changes stay within them) and docs' fit, both over the one change view, from
+the version the envelope builds on (`before`) to the one it makes (`step`). -/
+def contentOk (ver : DocId → TypeId) (grants : Envelope → List Grant) (fp : Envelope → List Step)
+    (rule : TypeId → Bytes → Value → Prop) (before : Envelope → List (DB.Engine.Record Value))
+    (step : List (DB.Engine.Record Value) → Envelope → List (DB.Engine.Record Value)) (e : Envelope) : Prop :=
+  DB.Engine.verdictFootprint (grants e) (fp e) (DB.Engine.changesFrom ver (before e) (step (before e) e)) = true ∧
+    DB.Docs.FitsAll rule (DB.Engine.changesFrom ver (before e) (step (before e) e))
+
+/-- One reader verdict (rule 4): caps' `Verdict`, with fresh the epoch check, live the revocation verdict, and fit
+the content check. An envelope counts exactly when everything in its past is signed, in a fresh epoch, authorized by
+its cap chain, not revoked, within its footprint and fit, and none of it is half of a split. -/
+theorem rule4_one_verdict (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spawned : DocId → DocId → Prop)
+    (signed : Envelope → Prop) (H : Bytes → Hash) (epochOf : Envelope → Nat) (rd : ID.Reads)
+    (rs : List ID.Revocation) (ver : DocId → TypeId) (grants : Envelope → List Grant) (fp : Envelope → List Step)
+    (rule : TypeId → Bytes → Value → Prop) (before : Envelope → List (DB.Engine.Record Value))
+    (step : List (DB.Engine.Record Value) → Envelope → List (DB.Engine.Record Value)) (S : List Envelope)
+    (e : Envelope) :
+    Counts (Envelope.name H)
+        (r.Verdict gov spawned signed (fun x => ID.freshEpoch (Envelope.name H) epochOf S x = true)
+          (fun x => ID.verdict (Envelope.name H) rd S rs x = .counts) (contentOk ver grants fp rule before step)) S e ↔
+      ∀ x, Reaches (Envelope.name H) S e x →
+        (signed x ∧ ID.freshEpoch (Envelope.name H) epochOf S x = true ∧ r.Authorized gov spawned x ∧
+          ID.verdict (Envelope.name H) rd S rs x = .counts ∧ contentOk ver grants fp rule before step x) ∧
+        ∀ y ∈ S, ¬ Split (Envelope.name H) x y :=
+  ID.counts_iff r gov spawned (Envelope.name H) _ _ _ _ S e
+
+/-- Two readers that hold the same past of an envelope, and the same splits in it, give it the same verdict, whatever
+else each holds. -/
+theorem rule4_readers_agree (nm : Envelope → Hash) (ok : Envelope → Prop) {S S' : List Envelope} {e : Envelope}
+    (past : ∀ x, Reaches nm S e x ↔ Reaches nm S' e x)
+    (splits : ∀ x, Reaches nm S e x → ((∃ y ∈ S, Split nm x y) ↔ (∃ y ∈ S', Split nm x y))) :
+    Counts nm ok S e ↔ Counts nm ok S' e :=
+  ID.readers_agree nm ok past splits
+
+/-- What the content check gives: every lowered step is granted, every change is one the footprint makes, and the
+changes fit; and where what an envelope says it does is the diff a reader sees (`ChangesAreDiff`, with distinct Record
+ids in the engine's `diff_footprint`), fit holds of what it says too. -/
+theorem rule4_content {ver : DocId → TypeId} {grants : Envelope → List Grant} {fp : Envelope → List Step}
+    {rule : TypeId → Bytes → Value → Prop} {before : Envelope → List (DB.Engine.Record Value)}
+    {step : List (DB.Engine.Record Value) → Envelope → List (DB.Engine.Record Value)} {e : Envelope}
+    (h : contentOk ver grants fp rule before step e) {R : DB.Docs.Reading (List (DB.Engine.Record Value))}
+    (link : DB.Docs.ChangesAreDiff R (DB.Engine.changesFrom ver) step) {cs : List DB.Docs.RecordChange}
+    (said : R.changesOf (before e) e = some cs) :
+    (∀ st ∈ fp e, ∃ g ∈ grants e, g.allows st = true) ∧ DB.Docs.FitsAll rule cs :=
+  ⟨(DB.Engine.footprint_granted _ _ _ h.1).1, (DB.Docs.fit_diff link rule said).mpr h.2⟩
+
 /-! ## Rule 5: reading is holding the key -/
 
 /-- A party nothing is sealed to, a keeper, learns only its own keys; and of a segment it sees only its Doc, its epoch
@@ -280,6 +327,14 @@ theorem rule10_pages {Key α : Type} [DecidableEq Key] (size : α → Nat) (lim 
       ((∀ x ∈ pending k, size x ≤ lim.bytes) → 0 < lim.entries → p ≠ []) :=
   DB.Engine.page_bounded size lim pending uploads keys got k p pending' h
 
+/-- A vault's quota at the keeper: what the keeper takes leaves every vault within its quota, and it takes only uploads
+it serves. -/
+theorem rule10_quota (k : ID.Keep) (quota : String → Nat) (us taken : List ID.Keep.Upload)
+    (within : ∀ v, ID.Keep.spent taken v ≤ quota v) (served : ∀ u ∈ taken, k.serves u.exporter u.proof = true) :
+    (∀ v, ID.Keep.spent (k.admit quota taken us) v ≤ quota v) ∧
+      ∀ u ∈ k.admit quota taken us, k.serves u.exporter u.proof = true :=
+  ⟨ID.Keep.quota_holds k quota us taken within, ID.Keep.admitted_served k quota us taken served⟩
+
 /-! ## Rule 11: every wait ends -/
 
 /-- An envelope waits only for what it names by hash and the reader lacks: so each wait names what ends it. -/
@@ -322,5 +377,22 @@ theorem rule12_causal {nm : Envelope → Hash} {S : List Envelope} {a b : Envelo
   cases h with
   | refl => exact .inr rfl
   | step hb hab hr => exact .inl (.step hb hab hr)
+
+/-- Time is a claim, judged by acks: once a writer whose clock had passed an expiry acks it, a write the ack hadn't
+seen doesn't count whatever time it claims, and a write claiming a time past the expiry never counts. -/
+theorem rule12_time_acked (nm : Envelope → Hash) (rd : ID.Reads) (time : Envelope → Nat) {doc : List Envelope}
+    {x : Hash} {t : Nat} {e a : Envelope} (ha : a ∈ doc) (acks : x ∈ rd.acks a) (late : t ≤ time a) (he : e ∈ doc)
+    (unseen : ¬ ID.Past.Before nm doc a e) :
+    ID.inTime nm rd time doc x t e = false ∧ (t ≤ time e → ID.inTime nm rd time doc x t e = false) :=
+  ⟨ID.time_acked ha acks late he unseen, fun l => ID.claimed_late l⟩
+
+/-! ## Rule 13: keys live only in the safe -/
+
+/-- Whatever the safe answers, it shows only what may be lent, and carries out none of the keys and credentials it
+keeps, not even sealed. -/
+theorem rule13_safe {r : ID.Safe.Runtime} {s : ID.Safe.Safe} {as : List ID.Safe.Ask} {o : ID.Safe.Out}
+    (m : o ∈ ID.Safe.run r s as) :
+    (∀ x ∈ o.shows, x.lendable = true) ∧ ∀ x ∈ o.carries, x.kept = false :=
+  ⟨ID.Safe.safe_holds m, ID.Safe.stays_inside m⟩
 
 end Aven.Architecture
