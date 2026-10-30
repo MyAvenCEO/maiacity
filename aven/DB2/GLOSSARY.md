@@ -200,8 +200,8 @@ means something else in another part, and that part's meaning is named.
 - **line** (chat) **→ post**. **chain** (chat) **→ log**. **fork** (chat) **→ split**.
 - **stall alarm**: raised when a step moves no version.
 - **directory**: a Doc per vault and root type listing its Docs.
-- **index, blind index**: derived maps that must equal a scan; tokens a host can match
-  ([private search](ARCHITECTURE.md#private-search-indexes-without-a-seeing-server)).
+- **index**: a derived map that must equal a scan; a device's own cache. **blind index**: tokens another peer could
+  match; not used, since search is local ([A21](ARCHITECTURE.md#search-local-first)).
 - **door, provider events, RBSR**: admission; iroh-blobs' hooks; range-based set reconciliation.
 - **run, journal**: as in actors.
 

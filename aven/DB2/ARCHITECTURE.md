@@ -183,7 +183,7 @@ instead of about 90, and every rule is stated and proven once.
 | K7 | **One kind of code:** the runtime. A plugin is a runtime that lowers to core operations, so a lowering is pinned by its hash and every reader re-lowers alike | plugins versus runtimes; lowered hashes that drift when a plugin upgrades | engine, actors (**A18**) |
 | K8 | **One way to change data:** core mutations put, patch, remove, and a new `edit` for text, lists and trees, each with a verb and a footprint. The ontology's assert, set and retract and json-runtime's path updates lower to them | three update grammars; container edits outside caps and bounds | engine (**A19**) |
 | K9 | **An actor's history is its Doc's log.** A turn is one envelope on the actor's Doc. A message is stored once and referenced by hash. Loads are journaled as (Doc, version, query hash), not as data. Inboxes go one per pair of vaults, not per pair of actors | each payload stored three times; a journal beside the Doc's history; O(pairs) inbox Docs; loaded data copied into journals | actors (**A17**) |
-| K10 | **One checkpoint** for all signed derived state: a Doc's state for new devices, the tree's head, a compacted access map, an actor's state, a shared index. Each names its version, the runtime that made it and what it covers | four separate trust stories for derived state that travels | docs, caps (**A5**, **A21**) |
+| K10 | **One checkpoint** for all signed derived state: a Doc's state for new devices, the tree's head, a compacted access map, an actor's state. Each names its version, the runtime that made it and what it covers | four separate trust stories for derived state that travels | docs, caps (**A5**, **A21**) |
 | K11 | **One transport per job:** live envelopes on one gossip topic per group; catch-up by set reconciliation and iroh-blobs; `aven/db/1` for the rest | three transports for chat lines; JSON-line frames beside irpc; a topic per Doc | engine, PEERS (**A9**) |
 | K12 | **One door:** a device is let in if its vault is in the network's group. The relay, the handshake and the blob provider check that; keepers check per-Doc fetch proofs | an allow-list kept apart from membership; any member fetching any blob | PEERS, caps (**A10**, **A22**) |
 
@@ -334,31 +334,29 @@ Two actor rules make it hold:
 - a turn whose `now` loads aren't held runs offline with a `partial` answer rather than never;
 - a journal keeps (Doc, version, query hash), not the loaded data (**A17**).
 
-## Private search: indexes without a seeing server
+## Search: local first
 
-A **blind index** lets a host match search tokens without reading content. It always leaks something:
-- which entries share a value (equality);
+**Decided (Samuel, 30 Oct 2026, A21): search is local.** A device searches only the data it holds, with its own index
+as a cache (README rule 5). To search more, it wants more: an actor's `loads`, or the target of the search itself
+(A8), makes the want queue sync those Docs from other peers first, the urgent ones first (A9). Then the device searches
+them locally. No other peer ever indexes, matches or searches anyone's data.
+
+Why not an index another peer can match (a **blind index**): it always leaks something, and published attacks recover
+content from exactly these leaks (Islam, Kuzu and Kantarcioglu, 2012; Cash, Grubbs, Perry and Ristenpart, 2015;
+Kellaris and others, 2016). The leaks are:
+- which entries share a value;
 - how often each value occurs;
 - what occurs together;
 - result sizes;
 - what is fetched after a match.
 
-Published attacks recover content from exactly these leaks, among them Islam, Kuzu and Kantarcioglu (2012), Cash,
-Grubbs, Perry and Ristenpart (2015), and Kellaris and others (2016). avenDB-old had one, and it leaked who shares what
-and in which order. The engine refuses one by default. Private search comes in four tiers (**A21**):
+avenDB-old had one, and it leaked who shares what and in which order.
 
-| Tier | What | The host learns | When |
-|---|---|---|---|
-| 0. Local | Each device indexes what it holds, as a cache | Nothing | Always; the default |
-| 1. Shared, sealed | A reader builds an index over the Docs it reads and seals it to the same readers, per epoch. It is a checkpoint: signed, naming the source versions and the runtime that built it. Others fetch the index instead of the data, and any reader holding the data can rebuild it and compare | A sealed Doc of padded size, and which Docs a searcher fetches afterwards, which batched fetches blur | When devices can't hold everything they search |
-| 2. Matched by the host | Tokens a keeper can match, only under an owner's cap with the verb `match` that names the fields. Tokens are keyed per group, epoch and field. They allow exact match only, on values with high entropy (ids, hashes of addresses), never free text or values with few possibilities (a status, a flag, a date). Lists are padded, and the leak is written on the cap and shown when it is granted | Equality and frequency within one epoch | Only when a case needs it and its owner accepts the leak |
-| 3. Hidden fetches | Private information retrieval for directories; mixing for fetches | Less than today | Later, as research |
-
-Some tokens already work as an index today, and each gets a fix:
+What stays to do, all of it for the data at rest, none of it for search:
 
 | Token | Fix |
 |---|---|
-| Stanza tags | Include the Doc in what a stanza tag is derived from |
+| Stanza tags | Include the Doc in what a stanza tag is derived from (done in caps, #1499) |
 | Letterbox tags | Ratchet per letter |
 | Files | Padmé on every file (D18) |
 | Doc ids and epoch hashes | Storage ids per epoch, later |
@@ -496,8 +494,9 @@ Some tokens already work as an index today, and each gets a fix:
 
 ## Security findings in live code
 
-The store audit found five bugs in code that runs at aven.maia.city. A thread of their own fixes them first. Details
-stay out of this file until the fixes have shipped.
+The store audit found five bugs in code that ran at aven.maia.city. All five are fixed and live (#1493, #1509): shared
+files never run on avenOS's origin, a chat line's bytes are canonical, catch-up is paged, sizes are checked before
+anything is allocated, and chunks are checked. The details are in [`audits/store.md`](audits/store.md).
 
 ## Proposals for Samuel
 
@@ -506,7 +505,7 @@ the spec that owns it.
 
 **Before any docs or engine code**
 - **A1. One vocabulary:** this document and [`GLOSSARY.md`](GLOSSARY.md) are the single source for shared words and
-  cross-part rules, and every spec uses them in this sense. *Yes.*
+  cross-part rules, and every spec uses them in this sense. *Decided: yes (Samuel, 30 Oct 2026).*
 - **A2. One codec and signing rule** for everything signed (K1, rule 1). It started with the chat's lines in the
   security fixes (#1493). Samuel asked for "the best-practice encoding possible", shared by avenDB and the actors
   (30 Oct 2026). The recommendation is **deterministic CBOR**, RFC 8949's core deterministic encoding, in a strict
@@ -562,7 +561,7 @@ the spec that owns it.
   the network opens beyond the founding circle (caps D12). *Yes.*
 - **A14. A dedicated passkey RP ID for avenOS,** for example `aven.maia.city`, before more passkeys exist; today's few
   members register once more. A salt the keeper serves per credential goes into the PRF input: secret from other
-  origins, not from the keeper. *Yes, now; the caps thread agrees.*
+  origins, not from the keeper. *Not yet (Samuel, 30 Oct 2026): it waits until he takes it up.*
 - **A15. Three origins:** avenOS (the app), the safe (D17: keys, the Peer-Light) and files (no keys, sandboxed).
   Releases are signed:
   - in the browser, a Service Worker on the safe's origin checks a release's signature before new code activates,
@@ -571,7 +570,7 @@ the spec that owns it.
     replace it;
   - the trusted path is the Mac app (Tauri), which checks signatures before it runs new code.
 
-  *Yes.*
+  *Decided: yes, as the architect recommends (Samuel, 30 Oct 2026: "do as you believe").*
 - **A16. Hosting an actor on the Aven Peer is an explicit read cap** per actor and per load target, shown to its
   owner; a member's own Peer is the default home. *Decided: yes (Samuel, 30 Oct 2026).*
 
@@ -596,18 +595,23 @@ the spec that owns it.
 - **A19. One update grammar:** put, patch, remove and a new `edit` for text, lists and trees, each with a verb and a
   footprint. *Yes; the engine thread agrees.*
 - **A20. Facts for relations, Records for documents.** *Yes; the engine thread agrees.*
-- **A21. Private search in four tiers,** as above. *Yes.*
+- **A21. Search is local first,** as [above](#search-local-first): a device searches what it holds, and its wants sync
+  what it wants to search. *Decided (Samuel, 30 Oct 2026).*
 
 **Caps**
-- **A22. Fetch keys chain from a Doc's genesis,** each signed by the one before. The keeper keeps every successor,
-  takes the smaller epoch hash as current as writers do, and flags the fork; uploads are charged to the uploading
-  vault. *Yes; the caps thread agrees.*
+- **A22. A peer that keeps sealed data for others checks who may add or fetch it, without reading it.** Phones and
+  browsers are rarely online at the same time, so some peers keep a Doc's sealed bytes for its readers: any member's
+  own Peer, or the Aven Peer, under a keep cap. Such a peer can't read caps, so it checks key proofs instead. Fetch keys
+  chain from the Doc's genesis, each signed by the one before; it keeps every successor, takes the smaller epoch hash
+  as current as writers do, and flags a fork; the uploading vault pays. Peer to peer: any peer may keep, and none is
+  special. *Recommended; Samuel asked what it means (30 Oct 2026).*
 - **A23. Acks can't launder:** a revoked holder's envelope never counts if the revocation is in its past. *Done in
   caps (#1499), as what D8 meant.*
 
 **Housekeeping**
-- **A24. The layers** as drawn [above](#the-whole-on-one-page). *Yes.*
-- **A25. Publish the six audits** under `aven/DB2/audits/` once the security fixes have shipped. *Yes.*
+- **A24. The layers** as drawn [above](#the-whole-on-one-page). *Decided: yes (Samuel, 30 Oct 2026).*
+- **A25. Publish the six audits** under [`audits/`](audits/README.md) now that the security fixes are live. *Decided:
+  yes (Samuel, 30 Oct 2026), done.*
 
 ## Who does what next
 
@@ -626,5 +630,5 @@ milestone numbers) go to each spec's own thread.
 ## Sources
 
 Six audits of 30 Oct 2026, one per part: foundation (README, production, milestone 2, the sandbox), store, docs,
-engine, caps and actors. They cite every claim to a line of the specs at `2c1a9890`. The architect keeps them until the
-security fixes have shipped (**A25**).
+engine, caps and actors, published in [`audits/`](audits/README.md) (**A25**). They cite every claim to a line of
+the specs at `2c1a9890`.
