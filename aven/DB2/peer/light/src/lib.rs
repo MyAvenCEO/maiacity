@@ -322,7 +322,7 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
     ));
     // the one record it keeps, in this origin's OPFS: its first start, found again after a reload
     #[cfg(target_arch = "wasm32")]
-    let (store, kind) = (backend::opfs("/store/").map_err(js)?, "opfs");
+    let (store, kind) = (backend::opfs("/store/").await.map_err(js)?, "opfs");
     // the crate also builds natively, for the workspace's tests; there it has no OPFS
     #[cfg(not(target_arch = "wasm32"))]
     let (store, kind) = (backend::memory().map_err(js)?, "memory");

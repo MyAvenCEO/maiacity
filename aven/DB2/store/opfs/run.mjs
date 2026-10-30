@@ -1,7 +1,7 @@
 // Serves the suite's wasm on localhost (OPFS needs a secure context), opens it in Playwright's Chromium, WebKit
-// (Safari's engine) and Firefox, and prints the report. In each it runs three times: on the page, in a worker, which
-// has no `window`, and in a shared worker, where the Peer-Light runs. WebKit has OPFS only with a profile directory
-// (`launchPersistentContext`). Exits non-zero unless every case passed everywhere.
+// (Safari's engine) and Firefox, and prints the report. In each it runs in a dedicated worker, the only place every
+// engine has sync access handles and where the Peer-Light's leader runs them. WebKit has OPFS only with a profile
+// directory (`launchPersistentContext`). Exits non-zero unless every case passed and the bench's gate held everywhere.
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -10,29 +10,19 @@ import { chromium, firefox, webkit } from 'playwright';
 
 const dir = process.argv[2];
 const page = `<!doctype html><script type="module">
-import init, { conformance } from './opfs_conformance.js';
-await init();
-const page = await conformance('aven-db-store-page-' + Date.now());
 const worker = new Worker('./worker.js', { type: 'module' });
 const inWorker = await new Promise((done) => {
 	worker.onmessage = ({ data }) => done(data);
 	worker.onerror = (e) => done('FAILED: the worker threw ' + e.message);
 });
-const shared = new SharedWorker('./worker.js?shared', { type: 'module' });
-const inShared = await new Promise((done) => {
-	shared.port.onmessage = ({ data }) => done(data);
-	shared.onerror = (e) => done('FAILED: the shared worker threw ' + e.message);
-});
-window.report = { page, worker: inWorker, 'shared worker': inShared };
+window.report = { worker: inWorker };
 </script>`;
-// a shared worker answers its first page's port; a worker, its page
 const worker = `import init, { conformance } from './opfs_conformance.js';
-const port = await new Promise((done) => ('onconnect' in self ? (self.onconnect = (e) => done(e.ports[0])) : done(self)));
 try {
 	await init();
-	port.postMessage(await conformance('aven-db-store-' + ('onconnect' in self ? 'shared' : 'worker') + '-' + Date.now()));
+	self.postMessage(await conformance('aven-db-store-worker-' + Date.now()));
 } catch (e) {
-	port.postMessage('FAILED: ' + (e?.message ?? e));
+	self.postMessage('FAILED: ' + (e?.message ?? e));
 }`;
 const types = { '.js': 'text/javascript', '.wasm': 'application/wasm' };
 const server = createServer(async (req, res) => {
