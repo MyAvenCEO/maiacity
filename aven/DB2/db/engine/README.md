@@ -45,8 +45,9 @@ Samuel:** values as the one primitive, with plugins that lower to the core (D2, 
 
 The research is in [`../research`](../research/README.md): avenOS's x1–x5 engine ([C1](../research/C1-avenos-x1-x5-core.md),
 [C2](../research/C2-avenos-invoice.md)) and avenDB-old's query and sync engine ([E1](../research/E1-avendb-old-engine.md),
-by avenACTORS). The actor and caps designs this builds on are avenACTORS' `aven/actors/ARCHITECTURE.md` (sections 9 and 12:
-a definition's `loads`, and what goes into avenDB) and `aven/ID/caps/README.md`.
+by avenACTORS). The actor and caps designs this builds on are avenACTOR's `aven/actor/ARCHITECTURE.md` (sections 3, 6 and 11:
+one document per actor, its definition, and what goes into avenDB), `aven/actor/README.md` (section 8: an actor's
+`loads` are its wants) and `aven/ID/caps/README.md`.
 
 | From | What held | Here |
 |---|---|---|
@@ -136,7 +137,7 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
 ## The layers
 
 ```
- actors (aven/actors)     declare loads, hold caps, run turns; operations come from them and from pages
+ actors (aven/actor)      declare loads, hold caps, run turns; operations come from them and from pages
         │  operations                       ▲ answers, deltas, `given`
  ── db/engine ────────────────────────────────────────────────────────────────────────────────────────
  plugins   ontology (x1–x5: assert, set, retract, walk, kinds)   … more later, built in
@@ -297,7 +298,7 @@ when its `now` loads are present.
 - A mounted want lives while its page is shown or its actor runs; then it is dropped.
 - A composite actor's loads are the union of its members', each no higher than the tier the composite holds it at.
 - The `now` tier is handed into each turn as `given`; later tiers arrive as messages as they come
-  (`aven/actors/ARCHITECTURE.md`, sections 6, 9 and 12).
+  (`aven/actor/ARCHITECTURE.md`, sections 6 and 11).
 
 ### Sync and load, one scheduler
 
@@ -552,5 +553,5 @@ Notes for that iteration, from this one's discussion:
 
 Documents, versions, schemas and lenses ([docs](../docs/README.md)); what facts and kinds mean
 ([ontology](../ontology/README.md)); blobs and refs ([store](../../store/README.md)); caps themselves
-(`aven/ID/caps/README.md`); actors, their kernel and journal (`aven/actors/ARCHITECTURE.md`); the network's door
+(`aven/ID/caps/README.md`); actors, their kernel and journal (`aven/actor/ARCHITECTURE.md`); the network's door
 (milestone 2); indexes (a later iteration); full-text search.
