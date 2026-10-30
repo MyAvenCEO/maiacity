@@ -42,7 +42,7 @@ Everything rests on one primitive and moves the same way:
         │                                                   ▲
  aven/DB/store  ◄── iroh-blobs' store API (our adapter) ────┤ fetches missing ranges, verified by bao
    Store contract: blobs, refs, outboards                    │
-   backends: S3 · folder (OpenDAL) · OPFS (opfs-sync) · memory
+   backends: S3 · folder (OpenDAL) · OPFS (ours) · memory
         │
  aven/PEER              iroh endpoint · relay · the door · Router:
                           /iroh-bytes/4 (iroh-blobs)   iroh-gossip (city-dome)   aven/db/1 (ours)
@@ -54,15 +54,15 @@ Above the contract, everything is the same. Below it, each place gets the driver
 
 ```
  iroh-blobs ─► adapter ─► Store ─► OpenDAL ─► S3 (Aven Peer) · folder (Alice Peer) · memory (tests)
- iroh-blobs ─► adapter ─► Store ─► opfs-sync ─► OPFS sync access handles (Peer-Lights)
+ iroh-blobs ─► adapter ─► Store ─► opfs ─► OPFS, through sync access handles (Peer-Lights)
 ```
 
 - **"The store" is the whole package:** the adapter, the contract and the backends, OpenDAL included. It moves to
-  `aven/DB2/store` (Samuel, 30 Oct 2026: the refactor reshapes everything anyway), as the first step of opfs-sync's
+  `aven/DB2/store` (Samuel, 30 Oct 2026: the refactor reshapes everything anyway), as the first step of the opfs backend's
   work. iroh-blobs is avenPEER's; the storage itself (a bucket, a folder, OPFS) is outside.
 - **OpenDAL is only a driver under the store.** It never sits above the contract, and nothing outside `db/store`
   sees its types.
-- **opfs-sync replaces OpenDAL on OPFS.** It implements `Store` directly, so the `opendal-opfs` fork, its
+- **The opfs backend is our own, replacing OpenDAL's.** Its one difference: sync access handles, not `createWritable`. It implements `Store` directly, so the `opendal-opfs` fork, its
   `[patch.crates-io]` and OpenDAL's `services-opfs` feature all go. This also removes OpenDAL's OPFS problems:
   slow small writes, a fresh `File` on every range, and refused reads while a commit races.
 - **The outboard and writing in parts** (below) are written once, in the shared layer above the drivers. A driver
@@ -161,7 +161,7 @@ chat is in memory" ([`MILESTONE2.md`](../../MILESTONE2.md#decisions)). A reload 
 
 Text, images, PDFs and movies thus rest in one store and travel one way.
 
-## What this asks of opfs-sync
+## What this asks of the opfs backend
 
 The OPFS backend ([open question 7](../../SANDBOX.md#open-questions)) is where Peer-Lights keep files, so this design
 sets its requirements:
