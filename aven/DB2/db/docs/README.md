@@ -119,7 +119,9 @@ What Loro 1.17.1 changes in the design, read in its source:
 
 **Primitives**
 
-- **Value:** immutable bytes named by their BLAKE3 hash, written `b3:<hex>`. At rest it is a blob.
+- **Value:** immutable bytes named by their BLAKE3 hash, written `b3:<hex>`. At rest it is a blob. A structured Value
+  is deterministic CBOR in the strict profile, avenDB's one codec ([architecture](../../ARCHITECTURE.md), rule 1,
+  A2); JSON is its readable form, and every example in this spec is shown in it.
 - **Doc:** mutable data named by the hash of its signed genesis, written `d:<hex>`. Its state is the merge of its logs.
   The unit of keys, caps, sync and atomic change. A Doc is a **root Record**.
 - **Record:** one typed piece of a Doc, a Loro map container named by its own id, addressed `<doc>/<id>`, always under
@@ -239,7 +241,7 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
 
 ### Its genesis and its id
 
-A Doc is born with a **genesis**, a canonical Value signed by the creating device:
+A Doc is born with a **genesis**, a CBOR Value signed by the creating device (shown as JSON):
 
 ```json
 { "genesis": 1, "vault": "v:alice…", "type": "d:invoice…",
@@ -296,14 +298,14 @@ The ontology's facts are Records of predicate types, flat by fact id like every 
 
 ### What one holds
 
-Inside the seal, in one canonical encoding (architecture, rule 1):
+Inside the seal, as deterministic CBOR (architecture, rule 1; shown as JSON):
 
 ```json
 { "envelope": 1, "doc": "d:7Hq…", "branch": "main", "generation": 0,
   "writer": "9f2c…", "seq": 42, "prev": "b3:11f2…", "deps": [ "b3:a4d7…" ],
   "ops": { "from": 1180, "to": 1193 },
   "records": { "l3": { "schema": "b3:51aa…" }, "d:7Hq…": { "schema": "b3:0d78…" } },
-  "changes": "<Loro update bytes>",
+  "changes": h'<Loro update bytes, a CBOR byte string>',
   "at": "2026-10-30T17:02:11Z",
   "signer": "device:…", "cap": "b3:…", "acks": [ … ], "call": "b3:…", "params": { … },
   "sig": "…" }
@@ -320,8 +322,9 @@ Inside the seal, in one canonical encoding (architecture, rule 1):
 - **`at`:** the writer's claimed time (rule 9).
 - **`signer`, `cap`, `acks`, `call`, `params`:** the device, the cap it writes under, the revocations it acknowledges,
   the engine's operation and its params ([caps](../../id/caps/README.md#checking)).
-- **`sig`:** Ed25519 by the device over exactly the bytes before it. The segment that later covers it adds the
-  hybrid signature.
+- **`sig`:** Ed25519 by the device over exactly the CBOR encoding of the envelope without `sig`, under the label
+  `avenDB envelope 1`. The segment that later covers it adds the hybrid signature.
+- In CBOR every hash is its 32 bytes and every id its bytes; `b3:<hex>` and `d:<hex>` are only the readable form.
 
 An envelope is named by the hash of its signed bytes. Sealed, it travels live as a **loose envelope** with the
 `avenDB envelope 1` subkey on the Doc's gossip topic, and is put in the writer's own store at once: a write is local
@@ -417,7 +420,7 @@ separate step for devices that hold many Docs ([store](../../store/README.md#nex
   ```json
   { "checkpoint": 1, "doc": "d:7Hq…", "branch": "main",
     "version": [ "b3:<tip envelope>", … ], "covers": [ "b3:<segment>", … ],
-    "snapshot": "b3:<sealed Loro snapshot>", "state": "b3:<hash of the Records' canonical encoding>",
+    "snapshot": "b3:<sealed Loro snapshot>", "state": "b3:<hash of the Records' CBOR>",
     "runtime": "b3:<the code that made it>", "by": "device:…", "sig": "<hybrid>" }
   ```
 
@@ -436,7 +439,7 @@ An imported envelope, in order (caps' [checking](../../id/caps/README.md#checkin
 
 1. **Limits** on the sealed bytes, before anything is decoded (rule 24).
 2. **Open** it with its epoch's key (caps).
-3. **Decode** it canonically: bytes that don't encode back to themselves are refused. Check the device's signature.
+3. **Decode** its CBOR strictly: bytes that don't encode back to themselves are refused. Check the device's signature.
 4. **Signer:** the device served the signer's vault in the tree as the reader holds it (caps).
 5. **Log:** the writer id is `writer(signer, doc, branch, generation)`; `seq` and `prev` continue its log. A second
    envelope after the same one is a **split**.
