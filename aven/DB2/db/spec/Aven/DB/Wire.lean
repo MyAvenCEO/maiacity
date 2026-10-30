@@ -57,9 +57,9 @@ inductive Frame where
   /-- lines as their blobs, oldest first per chain: the Aven Peer's answer to `catchUp`, or a peer's own lines the
   Aven Peer is missing -/
   | lines (lines : List String)
-  /-- the Aven Peer tells a peer files it holds whole, by their names (an index's hash): each file as it keeps it, to
-  every link; and on each link the files of that peer's own chain it has kept, in pages (`keptPages`). A sender says
-  "Kept by the network" only then -/
+  /-- the Aven Peer tells a peer files of its own chain it holds whole, by their names (an index's hash): each file as
+  it keeps it, to the links of the device that shared it; and on each link the files of that peer's own chain it has
+  kept, in pages (`keptPages`). A sender says "Kept by the network" only then -/
   | kept (files : List String)
   deriving DecidableEq, Repr
 

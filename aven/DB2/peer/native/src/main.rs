@@ -375,8 +375,9 @@ async fn main() -> Result<(), Error> {
     const KEEPING: usize = 4;
     let waiting: Arc<Mutex<BTreeMap<PublicKey, Vec<Announcement>>>> = Arc::default();
     let keeping = Arc::new(tokio::sync::Semaphore::new(KEEPING));
-    // each file kept whole, by its name: every link is told (`kept`), so its sender says "Kept by the network"
-    let (kept, _) = tokio::sync::broadcast::channel::<String>(64);
+    // each file kept whole, by its name, with the key of the device that shared it: that device's links are told
+    // (`kept`), so its sender says "Kept by the network"
+    let (kept, _) = tokio::sync::broadcast::channel::<(PublicKey, String)>(64);
     let keeps: chats::OnFile = {
         let kept = kept.clone();
         let (endpoint, at, held, store, me, notes, waiting, keeping, chats) = (
@@ -418,7 +419,7 @@ async fn main() -> Result<(), Error> {
                     return;
                 }
                 if result.is_ok() {
-                    let _ = kept.send(file.file.clone());
+                    let _ = kept.send((from, file.file.clone()));
                 }
                 // only a sender that couldn't be reached is asked again (`KeepError::retry`): one that hasn't the
                 // file, or whose file isn't the size its line says, never will have it
