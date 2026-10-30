@@ -5,6 +5,8 @@
 #   peer.env   the bucket's credentials, mode 600
 #   secret     the peer's secret seed, made and kept on the server, readable only by the peer's user, given by
 #              --secret-file so no `docker inspect` shows it
+#   qad/       Caddy's certificate and key for aven.maia.city, for the relay's QUIC address discovery on UDP 7842,
+#              copied by server/qad.sh at every deploy and daily (peer.env names them once they're there)
 # Every setting is a flag of the Peer given by environment (AVEN_PEER_<FLAG>, SANDBOX.md, "The Peer's flags"), as in
 # the box. UDP 7501 is open to the world; the relay's HTTP port only to Caddy, on its network, behind aven.maia.city.
 name: aven
@@ -18,6 +20,7 @@ services:
     env_file: [peer.env]
     volumes:
       - ./secret:/run/secrets/aven-peer:ro
+      - ./qad:/run/qad:ro
     environment:
       AVEN_PEER_SECRET_FILE: /run/secrets/aven-peer
       AVEN_PEER_NAME: aven-peer
@@ -40,6 +43,8 @@ services:
       AVEN_PEER_GUARDIAN: ${AVEN_PEER_GUARDIAN:-}
     ports:
       - "7501:7501/udp"
+      # the relay's QUIC address discovery: members behind NAT learn the address the internet sees them at
+      - "7842:7842/udp"
     expose:
       - "3340"
     networks: [caddy]

@@ -31,7 +31,19 @@ sudo chown 65532:65532 secret.next
 sudo chmod 400 secret.next
 sudo mv -f secret.next secret
 printf 'AVEN_PEER_S3_KEY=%s\nAVEN_PEER_S3_SECRET=%s\n' "$s3_key" "$s3_secret" > peer.env.next
+# QAD (the relay's QUIC address discovery, UDP 7842) on Caddy's certificate for aven.maia.city, copied by qad.sh;
+# without one yet, the relay serves no QAD and every other part runs as before
+mkdir -p qad
+qad=$(bash qad.sh)
+echo "$qad"
+if [[ "$qad" == qad=on* ]]; then
+  printf 'AVEN_PEER_RELAY_CERT=/run/qad/aven.crt\nAVEN_PEER_RELAY_KEY=/run/qad/aven.key\nAVEN_PEER_RELAY_QUIC=0.0.0.0:7842\n' >> peer.env.next
+fi
 mv -f peer.env.next peer.env
+# Caddy renews by itself; once a day the copy is made again, and the peer restarts when it changed
+printf '#!/bin/sh\nsu deploy -s /bin/bash -c "bash /opt/aven/qad.sh --restart" >> /opt/aven/qad.log 2>&1\n' \
+  | sudo tee /etc/cron.daily/aven-qad > /dev/null
+sudo chmod 755 /etc/cron.daily/aven-qad
 # Ed25519's public half of the seed, through openssl: the seed wrapped as PKCS#8 DER, the last 32 bytes of the SPKI
 public=$(printf '302e020100300506032b657004220420%s' "$secret" \
   | python3 -c 'import sys; sys.stdout.buffer.write(bytes.fromhex(sys.stdin.read()))' \
