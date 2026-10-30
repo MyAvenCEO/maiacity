@@ -161,8 +161,12 @@ The opfs-sync thread's five questions, answered:
 
 1. **Atomic writes.** Blobs and refs alike: write `tmp/<random>`, flush, then `move()` it into place. Where `move()`
    fails in an engine, copy and delete instead: a blob is checked against its name on every read, so a torn copy is
-   found and removed; a ref is 64 bytes, read whole and refused unless it is a valid hash. The store sweeps `tmp/` when
-   it opens.
+   found and removed; a ref is 64 bytes, read whole and refused unless it is a valid hash. A ref's temporary file has a
+   fixed name, `tmp/ref-<name>`, so a copy torn mid-way loses nothing: opening the store rolls a whole `tmp/ref-<name>`
+   (one that reads as a valid hash) forward into place and sweeps every other temporary file (`Aven.DB.StoreCrash`:
+   after a crash in any call, in either mode, the store reads as before the call or after it). Measured: `move()`
+   replaces an existing file in Chromium 156 and Firefox 157, from a dedicated worker too; WebKit is unknown until
+   Samuel's iPhone tries it.
 2. **Handles.** Writes open, write, flush and close. Reads keep an LRU of at most 16 open read handles (a movie seeks
    in one chunk many times), all closed when the leader gives up its lock. A takeover waits for the lock, so the old
    worker's handles are gone; a `NoModificationAllowedError` is retried for up to 2 s, then fails with the reason
