@@ -534,6 +534,7 @@ aven/DB2/
   README.md        the rules
   SANDBOX.md       this plan
   PRODUCTION.md    the plan for production: the first admin, then aven.maia.city
+  MILESTONE2.md    the plan for milestone 2: invites, the members-only door and gossip, the chat
   CLAUDE.md        the rules agents load here
   package.json     @aven/os, its own JS, with bun.lock
   Cargo.toml       its own Cargo workspace, with Cargo.lock and target/ (with the first crate)
