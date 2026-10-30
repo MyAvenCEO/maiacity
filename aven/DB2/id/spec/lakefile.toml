@@ -7,7 +7,8 @@ defaultTargets = ["AvenID", "aven-id-model", "vectors"]
 
 [[lean_lib]]
 name = "AvenID"
-# Only Aven.ID is this package's: Aven.Core comes from its own package. avenID sits below docs and never requires it.
+# Only Aven.ID is this package's: Aven.Core comes from its own package. avenID sits below the docs layer, whose checks
+# use caps, so it never requires aven-db-spec: what joins the two is Aven.Architecture's.
 roots = ["Aven.ID"]
 
 [[lean_exe]]

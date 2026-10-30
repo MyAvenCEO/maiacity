@@ -2,6 +2,7 @@ import Lean.Data.Json
 import Aven.ID.Gen
 import Aven.ID.Restore
 import Aven.ID.Records
+import Aven.ID.Node
 
 /-! # The settled tree's vectors (PEERS.md §5 and §6)
 
@@ -185,7 +186,7 @@ def restoreCases : List Case :=
     (List.range 10).map fun n => (s!"generated member trace, seed {n}", randomMemberTrace n)
   traces.filterMap fun (name, ops) =>
     let m := membersAfter ops
-    match m.server.claim, m.restore with
+    match m.founding.claim, m.restore with
     | some _, .ok r =>
       some { name := s!"migrated: {name}", statements := migrate r boxGuardianKeys, pinned := 1 }
     | _, _ => none
@@ -229,6 +230,30 @@ def recordVectors : List Json :=
         (newest admitted releaseSigners k a rs).elim Json.null PeerRecord.json).toArray)]
   [one "as written" records, one "reversed" records.reverse] ++
     (List.range shuffles).map fun i => one s!"shuffle {i + 1}" ((Rng.seed (i + 900)).shuffle records).1
+
+/-! ## Node properties (`Aven.ID.Node`) -/
+
+open Node in
+/-- A network, every peer it can lose, and for each: every member's home relay, who reaches whom, and who can fetch
+the chat. A browser uses only relays with a public HTTPS name. -/
+def nodeVectors : List Json :=
+  let members := ["aven-peer", "alice-peer", "bob-peer", "bob-light", "carol-light"]
+  let https := ["aven-peer", "alice-peer"]
+  let usable (d r : String) : Bool := !d.endsWith "-light" || https.contains r
+  let holders (doc : String) : List String := if doc == "chat" then ["aven-peer", "bob-peer"] else []
+  let nets : List (String × List String) :=
+    [("two relays", ["aven-peer", "alice-peer"]), ("the Aven Peer's relay alone", ["aven-peer"]),
+     ("two relays, one only native peers can use", ["aven-peer", "bob-peer"])]
+  nets.flatMap fun (label, relays) =>
+    let n : Net := { members, relays, usable, holders }
+    (members ++ ["nobody"]).map fun (gone : String) =>
+      Json.mkObj [("name", s!"node: {label}, {gone} lost"),
+        ("input", Json.mkObj [("members", toJson members), ("relays", toJson relays), ("https", toJson https),
+          ("holders", Json.mkObj [("chat", toJson (holders "chat"))]), ("gone", gone)]),
+        ("expected", Json.mkObj [
+          ("home", Json.mkObj (members.map fun d => (d, (home n gone d).elim Json.null toJson))),
+          ("reaches", Json.mkObj (members.map fun a => (a, toJson (members.filter (reaches n gone a))))),
+          ("fetchesChat", toJson (members.filter fun a => a != gone && fetchable n gone a "chat"))])]
 
 end SettleJson
 end Aven.ID

@@ -38,8 +38,7 @@ document (moved there whole), and Signal, Matrix, MLS, Biscuit, Keyhive and Mead
   (A26, rule 36).
 
 The engine thread agreed the footprints caps check (E1–E3). The docs and avenACTOR threads answered their seams on the
-same day, and what they agreed is marked where it applies. Nothing in this spec is still a proposal except how a
-flagged fork of fetch keys settles, which the Lean model turned up ([open questions](#open-questions)).
+same day, and what they agreed is marked where it applies. Nothing in this spec is still a proposal.
 
 ## Contents
 
@@ -727,11 +726,16 @@ key's public half. A keeper takes a link on that signature alone, since it reads
 Key blobs and letters are served to any member, since they are useless without the keys they're sealed to. A device
 whose proof is refused because a newer epoch came fetches that epoch's key blob, opens its stanza and proves again.
 
-**What a keeper can't tell** (`grind_example`). A reader of an earlier epoch still holds that epoch's fetch key. Once
-removed, it can fork the chain from there and grind its epoch hash below the writers'. Writers check the rotation's
-cap and never take that epoch. A keeper can't, so it takes the fork as current and refuses the readers, who don't hold
-it, until the fork settles. It flags the fork, and it knows which device uploaded the link. How the fork settles is
-[open](#open-questions).
+**How a ground fork settles** (A22, the architect's answer to this spec's open question, 30 Oct 2026). A reader of an
+earlier epoch still holds that epoch's fetch key. Once removed, it can fork the chain from there and grind its epoch
+hash below the writers' (`grind_example`). Writers check the rotation's cap and never take that epoch. A keeper can't,
+so:
+1. while a fork is flagged, it serves proofs by either branch's newest key, so honest readers are never refused
+   (`fork_served`);
+2. a device of the vault that issued the keep cap, which can check caps, signs which branch to follow, naming the fork
+   point. Its devices do this on their own;
+3. the keeper checks that signature against the tree, follows that branch, and later forks from that point change
+   nothing (`grind_settled`, `settled_example`).
 
 **Catching up from a keeper** knows nothing about writers (rule 23):
 1. The keeper numbers each Doc's segments in the order they arrive.
@@ -1180,11 +1184,12 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | `Keep` | `fetch_chain`, `kept_every` | A keeper takes exactly the fetch keys that chain back to the Doc's genesis, each signed by the key before it (A22) |
 | | `current_agrees`, `current_chained` | Keepers holding the same links take the same current fetch key, whatever order they came in, and it chains |
 | | `fork_flagged` | Every fork a keeper takes is flagged |
-| | `served_current` | A keeper serves a fetch or takes an upload only from a device proving the current fetch key on that connection |
+| | `served_current`, `fork_served` | A keeper serves a fetch or takes an upload only for a proof on that connection by the current fetch key, or, while a fork is unsettled, by a branch's newest key, so honest readers are never refused |
+| | `grind_settled`, `settled_example` | Once the keep cap's issuer chooses a branch at a fork, every keeper follows it whatever forks arrive after |
 | | `uploader_pays` | The uploading vault pays, and only for what the keeper took from it |
-| | `grind_example` | The limit: a removed reader's fork with a ground hash becomes current at a keeper, flagged |
-| `SealedIndex` | `index_within_key`, `index_skips` | An index holds entries only from Docs every reader of its directory can read; a Doc with fewer readers changes nothing in it (rule 36) |
-| | `sealed_roots_agree` | Two readers holding the same admissible entries rebuild the same sealed root under one key, so each can check a published one |
+| | `grind_example` | A removed reader's fork with a ground hash becomes current at a keeper until the issuer chooses; it is flagged, and honest readers are still served |
+| `SealedIndex` | `index_within_key`, `index_skips` | An index holds only entries read under keys every holder of its key holds; one some holder can't read changes nothing in it (rule 36) |
+| | `sealed_roots_agree` | Two readers holding the same admissible entries rebuild the same sealed root under one key, so each can check a published one. The root is a parameter here; `Aven.Architecture` joins it with the docs model's `root_set` |
 | | `sealed_padded`, `root_by_writer` | Sealed nodes are padded (D18); only a vault that may write the directory publishes a root a reader takes |
 
 **After Core, or with another thread:**
@@ -1198,7 +1203,6 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 - `safe_holds` (the safe's interface);
 - `upgrade_no_wider` and `no_confused_deputy` (`Aven.Actor`, avenACTORS);
 - `settle_restore`, production's ref order, and `trees.json` (avenPEER, PEERS.md Thread A);
-- how a flagged fork of fetch keys settles, once [decided](#open-questions).
 
 Two smaller gaps:
 - An owner that is a vault approves by its own quorum, recursively. `Approve` counts owner keys only, so the cast's coop
@@ -1251,15 +1255,9 @@ A proposal for milestone 3's plan, for the architect:
 
 ## Open questions
 
-1. **How a flagged fork of fetch keys settles** (for the architect, 30 Oct 2026). The Lean model shows that a removed
-   reader can fork the chain from a key it held and grind the smaller hash, and a keeper can't tell
-   (`grind_example`). Recommended:
-   - while a fork is flagged, the keeper serves a proof by the newest key of either branch, so a fork can't lock
-     readers out;
-   - a device of the vault that issued the keep cap, which reads the Doc and checks the rotations' caps, signs the
-     branch to follow. The keeper checks that signature against the tree and follows that branch from then on.
-
-What comes later is scheduled in [order of work](#order-of-work).
+None at the moment. How a flagged fork of fetch keys settles, which the Lean model turned up, was answered on
+30 Oct 2026 ([how a ground fork settles](#blind-keepers)). What comes later is scheduled in
+[order of work](#order-of-work).
 
 ## Not in this spec
 
