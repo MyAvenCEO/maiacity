@@ -46,6 +46,7 @@ export function runNetwork(config) {
 		if (line.event === 'status' && line.phase === 'live') net.trouble = null;
 		if (line.event === 'started') Object.assign(net, { me: line.peer, key: line.key });
 		if (line.event === 'network') Object.assign(net, { claimed: line.claimed, tree: line.tree });
+		if (line.event === 'start?' && starting) port.postMessage({ start: starting });
 		if (line.event === 'refused') net.refused = line.why;
 		if (line.event === 'door') net.door = line.admitted;
 		if (line.event === 'status' || line.event === 'failed') live.own = line.event === 'failed' ? { ...line, phase: 'offline', peers: 0 } : line;

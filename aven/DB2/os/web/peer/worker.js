@@ -66,6 +66,9 @@ function connect(port) {
 		}
 	};
 	for (const line of lines) port.postMessage(line);
+	// a worker nobody has started asks its page for the start: Safari can bring one up behind a page that started an
+	// earlier one, which then talks to it as if it ran
+	if (!started) port.postMessage(JSON.stringify({ t: Date.now(), peer: 'page', event: 'start?' }));
 	port.start?.();
 }
 
