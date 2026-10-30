@@ -1,0 +1,162 @@
+# avenSANDBOX's lanes (SANDBOX.md, "Real-world iroh inside the box"; MILESTONE2.md, thread C): `bun run lanes`
+# (sandbox/lanes.mjs) starts this project beside the box, never inside `bun run up`, whose flat lane stays as it is.
+# A WAN of its own with an Aven Peer on it, and three homes, each a network of its own behind a router that joins it
+# to the WAN with the lane's NAT:
+#
+#   home   masquerade, ports kept: endpoint-independent mapping, the NAT hole punching needs
+#   hard   masquerade --random-fully: a new random port per destination
+#   udp    masquerade, every UDP packet from the home dropped: only TCP leaves it
+#
+# In each home, Alice Peer runs the box's own binary in the network namespace of a small `nic` container, whose only
+# job is to send everything through the home's router: the box's image has no `ip` to do it itself. Every router
+# drops what arrives from the WAN unasked, as a home router does. The keys are the box's test keys, by the cast's rule
+# (`avenSANDBOX test signer: <id>`), derived in lanes.mjs; the lane's Aven Peer admits only the lanes' Alices.
+name: avensandbox-lanes
+
+x-router: &router
+  # netshoot: iptables, iproute2 and conntrack in one public image, from GitHub's registry (Docker Hub refuses a cloud
+  # session's pulls), pinned by tag and digest
+  image: ghcr.io/nicolaka/netshoot:v0.16@sha256:b09d9b21381f47a79b3cbcb30da25266dc17186ea00ae65e99fdc51396f48e70
+  init: true
+  cap_add: [NET_ADMIN]
+  sysctls:
+    net.ipv4.ip_forward: 1
+  # the home's interface is the one on 10.77.*; the WAN's the other
+  entrypoint:
+    - bash
+    - -ec
+    - |
+      home=$$(ip -o -4 addr show | awk '$$4 ~ /^10\.77\./ { print $$2 }')
+      wan=$$(ip -o -4 addr show | awk '$$2 != "lo" && $$4 !~ /^10\.77\./ { print $$2 }')
+      iptables -t nat -A POSTROUTING -o "$$wan" -j MASQUERADE $$NAT_FLAGS
+      iptables -A FORWARD -i "$$wan" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+      iptables -A FORWARD -i "$$wan" -j DROP
+      if [ "$$DROP_UDP" = 1 ]; then iptables -I FORWARD -i "$$home" -p udp -j DROP; fi
+      echo "router up: home $$home, wan $$wan, masquerade $$NAT_FLAGS, udp dropped: $${DROP_UDP:-0}"
+      touch /tmp/ready
+      exec sleep infinity
+  healthcheck:
+    test: ["CMD", "test", "-f", "/tmp/ready"]
+    interval: 1s
+    retries: 30
+
+x-nic: &nic
+  image: ghcr.io/nicolaka/netshoot:v0.16@sha256:b09d9b21381f47a79b3cbcb30da25266dc17186ea00ae65e99fdc51396f48e70
+  init: true
+  cap_add: [NET_ADMIN]
+  entrypoint: ["bash", "-ec", "ip route replace default via $$ROUTER && touch /tmp/ready && exec sleep infinity"]
+  healthcheck:
+    test: ["CMD", "test", "-f", "/tmp/ready"]
+    interval: 1s
+    retries: 30
+
+x-alice: &alice
+  image: ${AVENSANDBOX_IMAGE:?bun run lanes sets it}
+  init: true
+  command: ["/target/debug/aven-peer"]
+  volumes:
+    - target:/target:ro
+
+x-alice-env: &alice-env
+  AVEN_PEER_RELAY_URL: http://10.78.0.10:3340
+  AVEN_PEER_AVEN: 10.78.0.10:4433
+  AVEN_PEER_AVEN_KEY: ${LANES_AVEN_KEY:?bun run lanes sets it}
+  AVEN_PEER_MEMBERS: ${LANES_MEMBERS:?bun run lanes sets it}
+
+services:
+  # the lanes' Aven Peer, its relay on, on the WAN: what a member's Peer at home reaches in production
+  aven:
+    image: ${AVENSANDBOX_IMAGE:?bun run lanes sets it}
+    init: true
+    command: ["/target/debug/aven-peer"]
+    volumes:
+      - target:/target:ro
+    environment:
+      AVEN_PEER_NAME: lanes-aven
+      AVEN_PEER_SECRET: ${LANES_AVEN_SECRET:?bun run lanes sets it}
+      AVEN_PEER_RELAY: "true"
+      AVEN_PEER_RELAY_URL: http://10.78.0.10:3340
+      AVEN_PEER_MEMBERS: ${LANES_MEMBERS:?bun run lanes sets it}
+    networks:
+      wan: { ipv4_address: 10.78.0.10 }
+
+  home-router:
+    <<: *router
+    environment: { NAT_FLAGS: "" }
+    networks:
+      wan: { ipv4_address: 10.78.0.21 }
+      home: { ipv4_address: 10.77.1.2 }
+  home-nic:
+    <<: *nic
+    environment: { ROUTER: 10.77.1.2 }
+    networks:
+      home: { ipv4_address: 10.77.1.3 }
+    depends_on: { home-router: { condition: service_healthy } }
+  home-alice:
+    <<: *alice
+    network_mode: service:home-nic
+    environment:
+      <<: *alice-env
+      AVEN_PEER_NAME: alice-home
+      AVEN_PEER_SECRET: ${LANES_HOME_SECRET:?bun run lanes sets it}
+    depends_on: { home-nic: { condition: service_healthy }, aven: { condition: service_started } }
+
+  hard-router:
+    <<: *router
+    environment: { NAT_FLAGS: "--random-fully" }
+    networks:
+      wan: { ipv4_address: 10.78.0.22 }
+      hard: { ipv4_address: 10.77.2.2 }
+  hard-nic:
+    <<: *nic
+    environment: { ROUTER: 10.77.2.2 }
+    networks:
+      hard: { ipv4_address: 10.77.2.3 }
+    depends_on: { hard-router: { condition: service_healthy } }
+  hard-alice:
+    <<: *alice
+    network_mode: service:hard-nic
+    environment:
+      <<: *alice-env
+      AVEN_PEER_NAME: alice-hard
+      AVEN_PEER_SECRET: ${LANES_HARD_SECRET:?bun run lanes sets it}
+    depends_on: { hard-nic: { condition: service_healthy }, aven: { condition: service_started } }
+
+  udp-router:
+    <<: *router
+    environment: { NAT_FLAGS: "", DROP_UDP: "1" }
+    networks:
+      wan: { ipv4_address: 10.78.0.23 }
+      udp: { ipv4_address: 10.77.3.2 }
+  udp-nic:
+    <<: *nic
+    environment: { ROUTER: 10.77.3.2 }
+    networks:
+      udp: { ipv4_address: 10.77.3.3 }
+    depends_on: { udp-router: { condition: service_healthy } }
+  udp-alice:
+    <<: *alice
+    network_mode: service:udp-nic
+    environment:
+      <<: *alice-env
+      AVEN_PEER_NAME: alice-udp
+      AVEN_PEER_SECRET: ${LANES_UDP_SECRET:?bun run lanes sets it}
+    depends_on: { udp-nic: { condition: service_healthy }, aven: { condition: service_started } }
+
+# A home's only way out is its router: its nic routes everything there. Not `internal`: Docker's rules for an internal
+# network drop, on its bridge, every frame bound outside its subnet, the router's too
+networks:
+  wan:
+    ipam: { config: [{ subnet: 10.78.0.0/24 }] }
+  home:
+    ipam: { config: [{ subnet: 10.77.1.0/24 }] }
+  hard:
+    ipam: { config: [{ subnet: 10.77.2.0/24 }] }
+  udp:
+    ipam: { config: [{ subnet: 10.77.3.0/24 }] }
+
+volumes:
+  # Rust's build folder, which `bun run up` builds the Peer into
+  target:
+    name: avensandbox_target
+    external: true

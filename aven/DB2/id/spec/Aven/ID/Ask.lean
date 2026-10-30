@@ -10,6 +10,7 @@ namespace Aven.ID
 
 inductive Query where
   | kind (id : String)
+  | name (id : String)
   | owners (id : String)
   | owned (a : String)
   | governs (a : String)
@@ -30,6 +31,7 @@ inductive Answer where
 def Kind.name : Kind → String
   | .person => "person"
   | .network => "network"
+  | .coop => "coop"
   | .device => "device"
 
 /-- An owner as the cast writes it. -/
@@ -40,6 +42,7 @@ def Owner.name : Owner → String
 def Kind.parse : String → Option Kind
   | "person" => some .person
   | "network" => some .network
+  | "coop" => some .coop
   | "device" => some .device
   | _ => none
 
@@ -61,6 +64,7 @@ namespace Tree
 
 def ask (t : Tree) : Query → Answer
   | .kind id => .id ((t.kind? id).map Kind.name)
+  | .name id => .id ((t.get? id).map (·.name))
   | .owners id => .ids (((t.get? id).map fun v => v.owners.map Owner.name).getD [])
   | .owned a => .ids (t.owned a)
   | .governs a => .ids (t.governs a)
@@ -75,7 +79,7 @@ def ask (t : Tree) : Query → Answer
 def everyQuery (t : Tree) : List Query :=
   let ids := t.ids ++ ["nobody"]
   .accounts none :: ids.flatMap fun x =>
-    [.kind x, .owners x, .owned x, .governs x, .chain x, .actsFor x, .actsThrough x, .accounts (some x), .sees x] ++
+    [.kind x, .name x, .owners x, .owned x, .governs x, .chain x, .actsFor x, .actsThrough x, .accounts (some x), .sees x] ++
       ids.map (.mayActOn x)
 
 end Tree
