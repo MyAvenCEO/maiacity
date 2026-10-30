@@ -171,7 +171,8 @@ What Loro 1.17.1 changes in the design, read in its source:
   counts.
 - **stuck:** a log whose next envelope would build on one that doesn't count.
 - **type:** a Doc whose versions are schemas, joined by lenses. **schema:** one version of a Record's shape, a Value.
-  **pin:** a schema version a Doc accepts for a type.
+  **pin:** a schema version a Doc accepts for a type. **type id:** a version's address in its type Doc,
+  `<type Doc>/<schema hash>`, the one way a version is named anywhere.
 - **fit:** whether an envelope's changes are allowed by the schemas it names.
 - **lens:** a two-way mapping between a schema version and its parent, a Value.
 - **vocabulary:** a vault's named types, operations, runtimes and definitions (Samuel's word; the engine's catalogue).
@@ -269,8 +270,8 @@ root map
 root Record's field "lines": a movable list of ids  ["l1", "l2"]
 ```
 
-- Every Record is a map container under the root map, keyed by its id, holding `t` (its schema's hash, fixed at birth)
-  and its fields.
+- Every Record is a map container under the root map, keyed by its id, holding `t` (its type Doc's id, fixed at
+  birth) and its fields.
 - Where a Record sits (which list, which place in a tree) is a field of its parent: ids in a movable list or a tree.
   Moving a Record never changes its address.
 - A change to a container maps straight to the Record it lies in, which gives the engine its change feed and every
@@ -304,7 +305,7 @@ Inside the seal, as deterministic CBOR (architecture, rule 1; shown as JSON):
 { "envelope": 1, "doc": "d:7Hq…", "branch": "main", "generation": 0,
   "writer": "9f2c…", "seq": 42, "prev": "b3:11f2…", "deps": [ "b3:a4d7…" ],
   "ops": { "from": 1180, "to": 1193 },
-  "records": { "l3": { "schema": "b3:51aa…" }, "d:7Hq…": { "schema": "b3:0d78…" } },
+  "records": { "l3": { "version": "d:line…/b3:51aa…" }, "d:7Hq…": { "version": "d:invoice…/b3:0d78…" } },
   "changes": h'<Loro update bytes, a CBOR byte string>',
   "at": "2026-10-30T17:02:11Z",
   "signer": "device:…", "cap": "b3:…", "acks": [ … ], "call": "b3:…", "params": { … },
@@ -316,9 +317,9 @@ Inside the seal, as deterministic CBOR (architecture, rule 1; shown as JSON):
 - **`deps`:** the hashes of the tip envelopes of other logs it builds on (rule 7). The reader checks that the commit's
   Loro dependencies are exactly the op ids those envelopes hold.
 - **`ops`:** the commit's counter range for its writer id.
-- **`records`:** every Record the commit creates, changes or removes, with the schema it was written under. Merges,
-  reverts and back-outs name them too. The reader works out the touched Records from the ops itself and refuses an
-  envelope whose list differs. The commit's Loro message is the hash of this map.
+- **`records`:** every Record the commit creates, changes or removes, with the type id of the version it was written
+  under. Merges, reverts and back-outs name them too. The reader works out the touched Records from the ops itself
+  and refuses an envelope whose list differs. The commit's Loro message is the hash of this map.
 - **`at`:** the writer's claimed time (rule 9).
 - **`signer`, `cap`, `acks`, `call`, `params`:** the device, the cap it writes under, the revocations it acknowledges,
   the engine's operation and its params ([caps](../../id/caps/README.md#checking)).
@@ -573,8 +574,12 @@ A **type** is a Doc whose Records are its versions:
 - Each version names its **parent** and the one **lens** to it, so a type's versions form a tree (Samuel,
   30 Oct 2026). The newest on a line of versions is a leaf.
 - A type Doc is written by whoever its caps let publish versions. The ontology's predicates and kinds, actor
-  definitions and runtime grammars are types the same way (architecture, K5). A fact's `p` names the schema's hash.
-- A Record's type is its schema's type Doc, so Records carry no `kind` field.
+  definitions and runtime grammars are types the same way (architecture, K5).
+- **A version is named by its type id,** `<type Doc>/<schema hash>`: the version Record's id is its schema's hash
+  (Samuel, 30 Oct 2026). It names a version everywhere: a Record's writes in an envelope's `records`, a fact's `p`, an
+  actor message's payload. Two type Docs may hold the same schema bytes, and their type ids still differ. Versions a
+  lens path joins, in one type Doc, are compatible.
+- A Record's type is its `t`, a type Doc's id, so Records carry no `kind` field.
 - **Every Record's creator is known:** the device and vault that signed the envelope creating it, read from history
   and never stored as a field anyone could change. Caps' `own` condition reads it.
 - **Built-in types** every Doc pins without asking: caps' access map (`cap`, `revoke`, `epoch`), `branch`, `closed`,
@@ -625,7 +630,7 @@ one as a conflict to settle.
 
 It checks:
 1. the Records the ops touch are exactly those the envelope names;
-2. every named schema is pinned for that Record's type;
+2. every named version is in the Record's type Doc (its `t`) and pinned by the Doc;
 3. every value the ops set, and every element they insert, is allowed by its field's schema;
 4. a new Record's type is allowed where its parent's schema puts it, and its required fields are set;
 5. no op removes a required field;
@@ -704,7 +709,7 @@ device's chain of line blobs in S3 (from release #1476 on), each line signed by 
 | 4. Records by type, at the reader's schema version, with the version's hash | **Reads through lenses,** each row carrying the schema version it was read at and the one it was written under |
 | 5. The footprint of an envelope's diff | **Per envelope:** each Record touched, its type, the fields changed and whether it was created, changed or removed |
 | 6. `head`, `records`, `files` and a window in a long history | `head` is the genesis and the tips; `records` is the newest checkpoint and the segments after it; older history comes by keeper number, and period Docs bound it |
-| 7. Type and predicate Docs | **Types are Docs** whose Records are versions; a fact's `p` is the schema's hash |
+| 7. Type and predicate Docs | **Types are Docs** whose Records are versions; a version's type id is `<type Doc>/<schema hash>`, and a fact's `p` is one |
 | 8. Who checks what | **Docs checks every envelope** (signer, writer id, log, dependencies, split, fit, with caps' authority); the engine checks operations and re-lowers a named one |
 | 9. The chat's chains replaced by segments of the same shape | **A log per writer,** each envelope naming the one before by hash, closed into segments; old chains read as they are |
 | 10. Actor Docs and inbox Docs | **Ordinary Docs.** One writer's commit is one envelope, so "commit, then send" holds: a turn's state and journal entry are one commit, its sends are envelopes on inbox Docs recorded in it, and a resent envelope is dropped by its hash |
