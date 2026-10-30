@@ -162,31 +162,20 @@ the WebAssembly boundary's, not the part's.
 
 Later: `markdown-runtime`, `math-runtime`, `three-runtime`, `lean-runtime`, and actors written in Rust as WebAssembly.
 
-**Components** are what faces are built from, after avenVIBES and the component library of aven-brands
-(`brands/CEO/design-system/src/brand/actors`: 53 components, each one JSON Value). aven-brands calls them actors;
-here they are **components**, because they hold no state and have no mailbox, and "actor" means one thing. A
-component is a Value with:
+**The rules of faces**, which view-runtime and css-runtime enforce, after avenVIBES and the component library of
+aven-brands (`brands/CEO/design-system/src/brand/actors`: 53 components, each a JSON Value). Components themselves are
+definitions, and every placed one is an actor (section 6).
 
-| Field | Meaning |
-| --- | --- |
-| `name`, `description` | Its name, and why it is the way it is. A `$description` key is documentation at any depth |
-| `interface` | `props` in, `events` out, `slots` for children. A leaf is a component with no slots |
-| `view` | Its tag tree, in the view-runtime's grammar |
-| `styling` | `base`; `variants` as separate axes; `states`; `parts`; `reducedMotion` |
-| `a11y` | What its accessible name and roles must be |
-
-The rules the runtimes enforce:
-
-- **A placement is checked.** An unknown prop, slot or variant is an error, never silently ignored. A component sees
-  only its own props, never its placer's state.
+- **A placement is checked.** An unknown prop, slot or variant is an error, never silently ignored. A face sees only
+  its own state and props, never its placer's.
 - **Variants are axes that answer different questions**: what the thing means, what shape it has, how big it is.
   A danger icon button is `variant: danger` and `shape: icon`, never a variant of its own.
 - **Anything true only for a moment is a state, not a variant.** There are eight: default, hover, focus, active,
   disabled, loading, error, selected. The runtime fixes their selectors (focus is `:focus-visible`, loading is
   `aria-busy`, selected is `aria-selected`, `aria-pressed` or `aria-current`). An interactive component must declare
   hover, focus, active and disabled, and the library fails to load without them.
-- **Styles stay inside their component.** A component's custom properties are declared on itself, never globally. It
-  sizes by container queries, never by the viewport; the only media query is `prefers-reduced-motion`.
+- **Styles stay inside their face.** A component's custom properties are declared on itself, never globally. It sizes
+  by container queries, never by the viewport; the only media query is `prefers-reduced-motion`.
 - **The brand is data**: tones, roles, scales and tokens. The css-runtime generates every rule from it and from the
   components' styling. It never takes CSS text.
 
@@ -201,6 +190,7 @@ The rules the runtimes enforce:
 | `turn` | Required: `{ runtime, v, part }` on `json-runtime` or `js-runtime` |
 | `faces` | Optional: named faces, each a `present` function plus a `view-runtime` part and a `css-runtime` part |
 | `init` | The first state |
+| `lifetime` | `durable` (the default): the actor lasts until it is retired, and later persists in avenDB. `mounted`: it lives while the face that placed it shows it, and goes when it is unplaced |
 | `loads` | Later, with avenDB's engine: what the actor needs, in tiers. Devices decide how deep they keep it, and the `now` tier is handed into each turn as part of `given`, so an actor never fetches (section 11) |
 
 An actor's code and faces are **parts**: values in a format, for the runtime of that format. Actors are mostly JSON;
@@ -208,6 +198,30 @@ An actor's code and faces are **parts**: values in a format, for the runtime of 
 
 **An actor** is a live instance of a definition: an address `<home>/<id>` and its Doc. Its id is the hash of its
 definition's name, its spawner's address and the spawner's count, so a replay names the same actors.
+
+**A component is a definition, and every placed component is an actor.** A definition is the class: a Value, named by
+hash, under one schema. A component is a definition whose main part is its face, like the 53 in aven-brands' library.
+Every instance of one that a face places on a screen is a **face actor**: an address, a state and an inbox, like every
+actor, with a `mounted` lifetime. A badge with nothing to remember is a face actor whose state is empty; a menu that
+opens, a tab that is selected or a field being typed into keeps that in its state. There is one primitive.
+
+A component's definition adds to the fields above:
+
+| Field | Meaning |
+| --- | --- |
+| `props` | What its placer passes in: its first state, and later a `props` tell whenever they change |
+| `events` | The messages it sends out, to whatever address its placer wires them to (by default the placer) |
+| `slots` | The children its placer passes: faces of other actors. A leaf has no slots |
+| `view`, `styling`, `a11y` | Its face's parts: its tag tree for view-runtime, its styling for css-runtime, its accessible names and roles |
+| `name`, `description` | Its name, and why it is the way it is. A `$description` key is documentation at any depth |
+
+**Placing** is spawning. In a face's view, `$use: { component, props, slots, on }` places a component: on the first
+draw the kernel spawns a face actor at an address derived from its placer and its place (and, in `$each`, the item's
+key); a later draw with new props sends it a `props` tell; a draw without it retires it. `$use: { actor, face }`
+instead shows an existing actor's face, such as a durable task's row, without spawning anything.
+
+**What is not a message.** Hover, focus and the other states that change only how something looks are CSS, selected
+by the browser. Anything the app should know of (a press, an input, a toggle) is an event, and so a message.
 
 **A turn** handles one message:
 
@@ -288,15 +302,19 @@ The host is the page. It runs the kernel in a worker, and holds one small piece 
                                                                ▼
                          applier: checks the tree again, writes it into the face's shadow root
                                                                │
-         a click on a node with $on ─▶ event by name ─▶ tell from the person ─▶ the actor's inbox
+         a click on a node with $on ─▶ event by name ─▶ tell from the person ─▶ that face actor's inbox
 ```
+
+A screen is a tree of face actors. Each one's face renders into its own shadow root, so its styles stay its own, and
+the applier fits each child's root into the place its placer left for it. A click goes to the face actor whose node
+was clicked; its turn may send one of its `events` on, to the address its placer wired.
 
 - **Runtimes never touch the DOM.** view-runtime and css-runtime compute a node tree and CSS text from values. Only
   the applier writes the DOM.
 - **The applier trusts nothing.** It checks every node and attribute against the same allowlist again, checks every
   URL's scheme, and adds no script. It writes into a shadow root of its own, so a face cannot style or read the page.
 - **A click is a message.** The applier turns an event on a node with `$on` into a `tell` from the device's person
-  actor, through the router into the inbox, like every other message. The face shows the change as pending at once
+  actor to the face actor that owns the node, through the router into its inbox, like every other message. The face shows the change as pending at once
   and drops it if the turn refuses.
 - **Updates are deltas.** After each turn the applier receives only the nodes that changed.
 
@@ -311,12 +329,13 @@ app spawns one `list`; each task is one more actor instance, spawned on demand. 
 | `person` | The device's person: clicks come from it | built in |
 | `kernel` | Spawns actors; is asked like any other | built in |
 | `clock` | Ticks and deadlines | built in |
-| `list` | Holds the tasks' addresses and a copy of each one's title and phase; has the face | `json-runtime` |
-| `task` | One task: a title and a machine (open, doing, done) | `js-runtime`, `prolog-runtime` |
+| `list` | Durable. Holds the tasks' addresses. Its face places a field, a button, and each task's row | `json-runtime` |
+| `task` | Durable. A title and a machine (open, doing, done); its face, `row`, places a checkbox | `js-runtime`, `prolog-runtime` |
+| `field`, `button`, `checkbox` | Components from the library: face actors, mounted while their placer shows them | `json-runtime` |
 
-A person adds a task: the face sends `add {title}` to `list`, which asks `kernel` to spawn a `task`. Starting or
-finishing a task is a tell to that task, legal only as its machine allows. Each task tells `list` when it changes, and
-the face redraws. Every message, turn and trace stays in the actors' Docs, in memory.
+A person types into the field and presses the button. The press goes to the button's face actor, which sends its
+`press` event to `list` as `add {title}`, as the list's face wired it; `list` asks `kernel` to spawn a `task`. Ticking a
+task's checkbox sends `toggle` to that task, legal only as its machine allows, and its row redraws. Every message, turn and trace stays in the actors' Docs, in memory.
 
 ## 10. Laws
 
@@ -338,6 +357,8 @@ the face redraws. Every message, turn and trace stays in the actors' Docs, in me
 11. **Commit, then send.** A turn's state and journal entry commit together, in one write to the actor's Doc.
     Its effects are recorded in that entry and sent from it. A send lost in a crash is sent again from the journal,
     and the receiver drops it if it already has it, by `(from, seq)`.
+12. **One primitive.** A component is a definition, its class; every placed component is a face actor. An actor's
+    lifetime, durable or mounted, decides whether it persists.
 
 ## 11. Later: peers, avenDB, capabilities
 
@@ -346,6 +367,7 @@ Each later step replaces a layer's implementation, not its interface:
 | Later | What changes |
 | --- | --- |
 | **Persistence** | Each actor's Doc becomes one avenDB Doc under one schema (`def`, `state`, `journal`), its journal a Loro list whose entries keep their names `(writer, seq)`. Each inbox Doc becomes one avenDB Doc, written only by the sender's home device and readable by the receiver's home, like the chat's chain per device. Each Doc has one key and one writer, and commits atomically; law 11 covers the sends that cross Docs |
+| **Lifetimes** | Durable actors persist; mounted face actors stay in memory and go with their face. Whether their journals are kept after that is decided with compaction |
 | **Wants** | The definition's `loads` (section 6): avenDB's engine keeps them current and hands the `now` tier into each turn |
 | **Peers** | An actor lives on one peer, its home; its address names that peer's iroh `EndpointId`. Sending stays "append to the receiver's inbox log", now carried between peers by avenDB's sync. When the home is away, a keeper peer holds the inbox. There is no bus in the middle, and no gossip for messages |
 | **Live delivery** | For speed, `message` and `ack` frames on `aven/db/1` deliver an append directly, point to point, ahead of sync. The receiver drops duplicates by `(from, seq)` |
@@ -376,6 +398,7 @@ aven/actor/
   runtimes/
     json/  js/  prolog/  view/  css/     one crate each, built to WebAssembly, frozen by hash
   host/              the page's side: the worker that runs the kernel, and the applier
+  components/        the component library: definitions with faces, after aven-brands
   app/todo/          the version 1 app: its definitions and parts
 ```
 
@@ -423,7 +446,7 @@ Decided here, on those grounds:
 - Faces render into shadow roots through the applier. Opaque frames are for runtimes that run scripts in the page,
   which version 1 has none of.
 
-- Components follow aven-brands' component library and avenVIBES (section 5), named components because they hold no
-  state.
+- A component is a definition, its class; every placed component is a face actor, with a mounted lifetime
+  (Samuel, 30 Oct 2026). Faces follow the rules of aven-brands' component library and avenVIBES (section 5).
 
 Open: nothing for version 1.

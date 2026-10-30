@@ -354,7 +354,7 @@ Everything else in the sources is one of these four, or a role an actor plays:
 | Tool | A message in an actor's interface that the run's capabilities allow. The tool list is a projection, not a concept |
 | Intent, goal | An actor whose state is a target and its progress. "Done" is a measurement |
 | Chat, conversation | An actor that turns a person's words into messages |
-| Window, face, vibe | An actor with no capabilities that projects another actor's state for one viewer |
+| Window, face, vibe, component | A component is a definition whose main part is its face; every placed one is a face actor, mounted while it is shown ([`ARCHITECTURE.md`](ARCHITECTURE.md), section 6) |
 | Planner, solver | A pure function from contracts to a plan, which is data. It is an actor only so it can be addressed |
 | Registry, factory, supervisor | The kernel's own duties; a registry is later a query over avenDB |
 | Model, store, clock, HTTP, files, push | Door actors: the only holders of effects in the real world |
@@ -413,8 +413,9 @@ read the clock).
 From aven-brands' component library (`brands/CEO/design-system/src/brand/actors`, `actors.ts`) and avenVIBES's
 `states.ts`:
 
-1. **One component type,** with `props`, `events` and `slots`; a leaf has no slots. aven-brands calls components
-   actors, after avenVIBES's `ActorDef`, which made one word mean two things.
+1. **One component type,** with `props`, `events` and `slots`; a leaf has no slots. avenVIBES calls the definition an
+   `ActorDef` and each placement an actor instance with its own address. That is kept: a component is a definition,
+   and every placed component is a face actor.
 2. **Variants are axes** that answer different questions: what a button means, its shape, its size. Before the split,
    a destructive icon button could not be expressed.
 3. **A moment is a state, not a variant.** `unavailable` and `success` were variants that meant states; eight states
