@@ -15,13 +15,13 @@ readme = "README.md"
 publish = false
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-js-sys = "=0.3.106"
+js-sys = "=0.3.107"
 opendal-core = { version = "=0.59.5", default-features = false }
 send_wrapper = "=0.6.0"
 serde = { version = "=1.0.229", default-features = false, features = ["derive"] }
-wasm-bindgen = "=0.2.129"
-wasm-bindgen-futures = "=0.4.79"
-web-sys = { version = "=0.3.106", features = [
+wasm-bindgen = "=0.2.130"
+wasm-bindgen-futures = "=0.4.80"
+web-sys = { version = "=0.3.107", features = [
   "Blob",
   "console",
   "DomException",
