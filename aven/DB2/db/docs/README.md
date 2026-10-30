@@ -39,17 +39,17 @@ avenDB has two primitives (Samuel, 30 Oct 2026):
   kinds' versions, operations, actor definitions, segments, snapshots and a file's chunks and index are Values.
 - **Doc** (document): mutable, one Loro document, named by a stable id; its head is a ref pointing at Values (its
   snapshot and segments). Like IPNS: the name stays, what it points at moves. The unit of sharing, sealing, caps, sync
-  and atomic change. A Doc is a **root record** (rule 16). Types, predicates, kinds, catalogues, vocabularies and actors
+  and atomic change. A Doc is a **root Record** (rule 16). Types, predicates, kinds, catalogues, vocabularies and actors
   are Docs.
 
-Reference a Value's hash to pin something exactly; reference a Doc's id to follow it as it changes. Both are written with
-a capital; a lowercase value is just a field's data.
+Reference a Value's hash to pin something exactly; reference a Doc's id to follow it as it changes. Value, Doc and
+Record are written with a capital; a lowercase value is just a field's data.
 
-- **record:** one piece of a Doc, named by its own id and addressed `<doc>/<id>` (the Doc's root record is `<doc>`),
+- **Record:** one piece of a Doc, named by its own id and addressed `<doc>/<id>` (the Doc's root Record is `<doc>`),
   always under a schema (rule 15); where it sits in the Doc can change, its address can't. Each field in a
   **container**: text, list, movable list, map, tree, counter, or a single value.
-- **type:** a named schema: a Doc whose versions are schema Values. A record of a type carries its `kind` constant; a
-  Doc holds one such record or many. A type says whether its records are roots.
+- **type:** a named schema: a Doc whose versions are schema Values. A Record of a type carries its `kind` constant; a
+  Doc holds one such Record or many. A type says whether its Records are roots.
 - **envelope:** one or more Loro changes, signed by a device and sealed with the document's key.
 - **segment:** a sealed batch of envelopes, a Value.
 - **snapshot:** a document's whole state and history at a version, a Value.
@@ -58,10 +58,10 @@ a capital; a lowercase value is just a field's data.
 - **line:** a run of history: **main**, a **proposal**, a **variant** (a proposal that stays open), or a **draft** (a
   new document's own line until its vault takes it in).
 - **version:** any set of a document's changes, with what they build on; a frontier.
-- **schema:** one version of a record's shape, a Value.
+- **schema:** one version of a Record's shape, a Value.
 - **lane:** the schemas and lenses a vault or a network counts.
 - **lens:** a two-way mapping between two schema versions, a Value.
-- **view:** an app's schema, plus the lenses that reach the versions a record was written under.
+- **view:** an app's schema, plus the lenses that reach the versions a Record was written under.
 - **fit:** whether an envelope's changes are allowed by the schemas it names.
 
 ## The rules
@@ -79,13 +79,13 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
 5. **The envelopes are the truth.** Segments carry them; snapshots and heads are derived from them, and loading from a
    snapshot gives what replaying every envelope gives. A snapshot keeps full history while any line starts before it.
 6. **Every change names its schema.** Its commit message is the hash of the schema of the view it was written through,
-   so a reader knows which versions wrote a record. A merge, restore or undo names none.
-7. **Nothing is migrated.** A record is read through lenses into the app's schema and written back as the difference:
-   only what changed, in the representation the record already uses. A default is never written, and what an older app
+   so a reader knows which versions wrote a Record. A merge, restore or undo names none.
+7. **Nothing is migrated.** A Record is read through lenses into the app's schema and written back as the difference:
+   only what changed, in the representation the Record already uses. A default is never written, and what an older app
    can't see survives its edits.
 8. **Lenses compose.** A view reaches any version a path of lenses in the lane joins to it, and the laws hold along the
-   path. With no path, or two that disagree, the record opens read-only and says why.
-9. **A version that drops a field says where its data goes:** a lens into another field or record, or "kept, unseen".
+   path. With no path, or two that disagree, the Record opens read-only and says why.
+9. **A version that drops a field says where its data goes:** a lens into another field or Record, or "kept, unseen".
    Data is never silently orphaned.
 10. **Fit is judged once per envelope.** Every reader checks each envelope it imports against the schemas it names, and
     keeps the verdict as a cache keyed by the envelope, the lane and the code version (README, rule 5). An unfit
@@ -95,16 +95,16 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
 12. **Merges are three-way, place by place.** Nothing the target line changed since the base is lost; everything the
     other line changed alone lands; where both changed one place differently, the target keeps its own unless the
     person merging takes the other's.
-13. **Catching up never rewrites** (README, rule 6). Moving records into a newer schema's representation is an act: an
+13. **Catching up never rewrites** (README, rule 6). Moving Records into a newer schema's representation is an act: an
     ordinary edit a person or an agent makes through lenses, signed like any other.
 14. **Schemas and lenses are Values, each version's type a Doc.** One counts in a vault's lane only when a device
     acting for that vault created it on main.
-15. **Every record is under a schema** (Samuel, 30 Oct 2026). A Doc's root has one, and every record inside it is typed
+15. **Every Record is under a schema** (Samuel, 30 Oct 2026). A Doc's root has one, and every Record inside it is typed
     by its place in it. There are no schemaless entries, so the [engine](../engine/README.md#one-primitive-the-record)
-    queries records by type and nothing else.
-16. **A type says which of its records are roots** (Samuel, 30 Oct 2026). A root record is a Doc of its own: an invoice,
-    a page, a project, a chat room, an actor. Any other record lives inside the Doc it belongs to and changes atomically
-    with it: an invoice's lines, a chat's lines, a task's facts. Every record is a Loro container either way; only a
+    queries Records by type and nothing else.
+16. **A type says which of its Records are roots** (Samuel, 30 Oct 2026). A root Record is a Doc of its own: an invoice,
+    a page, a project, a chat room, an actor. Any other Record lives inside the Doc it belongs to and changes atomically
+    with it: an invoice's lines, a chat's lines, a task's facts. Every Record is a Loro container either way; only a
     root pays for a head, a key, caps and a catch-up of its own.
 
 ## Architecture
@@ -129,13 +129,13 @@ the next segment (the [engine](../engine/README.md#sync) moves all three).
 | a string with `"x-loro": "text"` | Text | merges character by character |
 | rich text, for the editor | Text with marks | merges character by character; marks by Loro's rules |
 | a list of values | List | both inserts kept |
-| a list of records, each with an `id` | MovableList of Maps, rows matched by `id` | rows added, moved or edited apart all land |
+| a list of Records, each with an `id` | MovableList of Maps, rows matched by `id` | rows added, moved or edited apart all land |
 | an outline or folders | Tree | moves merge; a move that would make a cycle is dropped |
 | a counter | Counter | adds sum |
 | a map of entries (`additionalProperties`) | Map | one value per key, the last writer's |
 | anything else | one value in its parent map | the last writer's |
 
-The ontology's facts are the "map of entries" row: a map from fact id to fact record, each record read through its
+The ontology's facts are the "map of entries" row: a map from fact id to fact Record, each Record read through its
 predicate's schema ([ontology](../ontology/README.md#where-facts-live)).
 
 ### Envelopes and peers
@@ -158,13 +158,13 @@ Then the one writer imports it ([engine](../engine/README.md#the-one-writer)).
 - **A variant** is a proposal that stays open beside main and follows it by merges of main into it, keeping its own
   value wherever both changed one place.
 - **A draft** is a new document's own line; its main holds nothing until its vault lands it with a merge.
-- **A version** can be named by a small record in the document: `{ "name": "sent to Bob", "at": <frontier> }`.
+- **A version** can be named by a small Record in the document: `{ "name": "sent to Bob", "at": <frontier> }`.
 
 A merge is a change on the target line that builds on both lines' heads, so its history is the union of both, which Loro
 merges. Loro's union alone silently keeps one value where both lines changed a place. So the merge also carries the
-change that brings the merged state to the three-way merge of the two lines' records from their base, place by place: a
-field, a row of a list of records with all its fields, the order of a list's rows. Restoring puts a line back to a
-version's record; undoing an older change is a three-way merge that takes out just that change; a fork copies a record
+change that brings the merged state to the three-way merge of the two lines' Records from their base, place by place: a
+field, a row of a list of Records with all its fields, the order of a list's rows. Restoring puts a line back to a
+version's Record; undoing an older change is a three-way merge that takes out just that change; a fork copies a Record
 into a new document without its history.
 
 An example: Bob, who may suggest but not edit, proposes "Order seeds by Friday" on Alice's todo, which says "Order
@@ -175,7 +175,7 @@ Bob's.
 ### Schemas
 
 A schema is a JSON Schema (2020-12) subset, plus `x-loro` for the container and `x-link` for a link to a document or a
-row. The record's `kind` constant finds its family.
+row. The Record's `kind` constant finds its family.
 
 ```json
 { "title": "Todo, v1", "type": "object",
@@ -193,7 +193,7 @@ row. The record's `kind` constant finds its family.
   avenDB ships, the same bytes everywhere. A lane is a cache rebuilt when its documents change.
 - **Fit** checks only what an envelope changed: the values are ones the schemas allow; changed rows read under a schema
   of the lane; every schema it names is in the lane and of one kin (one kind, or kinds a lens joins), so no write can tag
-  a record with another kind's schema to slip fields in. Depth is capped.
+  a Record with another kind's schema to slip fields in. Depth is capped.
 
 ### Lenses
 
@@ -209,7 +209,7 @@ A lens is a short list of steps:
 
 - **Steps:** `add` (a field only the newer version has), `rename`, `convert` (a table of rows forward and backward, or
   a pair of named functions Lean defines, such as text to money), `in` (steps for each row of a list), `wrap` and
-  `unwrap` (a field to a nested record and back), `move` (a field to another record of the same document), and
+  `unwrap` (a field to a nested Record and back), `move` (a field to another Record of the same document), and
   `container` (a single value to a text and back).
 - **Reading:** where both versions stored the same thing, the newer field wins; what neither stored shows the schema's
   default, which is never written.
@@ -222,7 +222,7 @@ A lens is a short list of steps:
 
 - **The engine** moves envelopes, segments, snapshots and heads; commits each mutation through a view; reads current
   values, and versions on scratch copies.
-- **The ontology** keeps facts in a map of entries; a predicate is the schema of a fact record, so predicates have
+- **The ontology** keeps facts in a map of entries; a predicate is the schema of a fact Record, so predicates have
   versions, lanes and lenses like any schema; a slot id is just a key of that map, so two devices writing one slot write
   one key.
 
