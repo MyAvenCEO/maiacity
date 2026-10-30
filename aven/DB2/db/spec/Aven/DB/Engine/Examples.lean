@@ -9,9 +9,9 @@ import Aven.DB.Engine.Index
 # The engine's examples, and how its vectors are written (README, rule 10)
 
 The models run here on `Aven.Core`'s own types: Values, Doc ids and type Docs named by BLAKE3 hashes, targets, steps
-and grants. Two Values are equal when their encodings are; numbers order as numbers and text bytewise. Every example is
+and grants. Values are equal by Core's lawful equality; integers order by sign and magnitude, text by code point. Every example is
 checked by `lake build` (`#guard`), and `Vectors` writes them, with generated cases, to `queries.json`, `wants.json`,
-`mutations.json` and `indexes.json`. JSON is only the readable form: a Value as `Aven.Core`'s vectors write it, a Doc
+`mutations.json` and `lookups.json`. JSON is only the readable form: a Value as `Aven.Core`'s vectors write it, a Doc
 id as `d:<hex>`. -/
 
 open Lean
@@ -22,8 +22,6 @@ open Aven.Core Aven.DB.Engine
 
 def utf8 (s : String) : Bytes := s.toUTF8.toList
 
-def utf8Text (b : Bytes) : String := String.fromUTF8! ⟨b.toArray⟩
-
 /-- A Doc named in an example: the hash of its label. -/
 def doc (label : String) : DocId := ⟨blake3 (utf8 ("doc:" ++ label))⟩
 
@@ -32,30 +30,25 @@ def vault (label : String) : Bytes := utf8 ("vault:" ++ label)
 
 def text (s : String) : Value := .text (utf8 s)
 
-/-- Values compare by their one encoding (`Aven.Core.encode_inj`); numbers order as numbers, text bytewise. -/
+/-- Values are equal by `Aven.Core`'s lawful equality. Integers order by sign and magnitude (`nint n` is `-1 - n`), text
+and bytes bytewise, which for UTF-8 is code-point order: the order of the index keys. -/
 def vals : Vals Value where
-  eq a b := encode a == encode b
+  eq a b := decide (a = b)
   lt
+    | .nint a, .nint b => b < a
+    | .nint _, .uint _ => true
+    | .uint _, .nint _ => false
     | .uint a, .uint b => a < b
     | .text a, .text b => decide (a < b)
+    | .bytes a, .bytes b => decide (a < b)
     | a, b => decide (encode a < encode b)
   count := .uint
 
 theorem vals_refl : ∀ x, vals.eq x x = true := by intro x; simp [vals]
 
-partial def valueJson : Value → Json
-  | .uint n => toJson n
-  | .nint n => toJson (-(n : Int) - 1)
-  | .bytes b => Json.mkObj [("bytes", toJson (hex b))]
-  | .text b => toJson (utf8Text b)
-  | .array xs => Json.arr (xs.map valueJson).toArray
-  | .map kvs => Json.mkObj (kvs.map fun (k, v) => (utf8Text k, valueJson v))
-  | .bool b => toJson b
-  | .null => Json.null
-
 def docJson (d : DocId) : Json := toJson d.text
 
-def tupleJson (t : Tuple Value) : Json := Json.mkObj (t.map fun (c, v) => (utf8Text c, valueJson v))
+def tupleJson (t : Tuple Value) : Json := Json.mkObj (t.map fun (c, v) => (utf8Text c, v.json))
 
 def rows (fs : List (String × Value)) : Tuple Value := fs.map fun (c, v) => (utf8 c, v)
 
@@ -70,7 +63,7 @@ def pairJson (l r : Json) (lc rc : Bytes) : Json :=
 def queryJson : Query Value → Json
   | .scan ty => Json.mkObj [("scan", docJson ty)]
   | .filter col cmp v q => Json.mkObj [("filter", Json.mkObj
-      [("column", toJson (utf8Text col)), ("cmp", toJson (cmpName cmp)), ("value", valueJson v),
+      [("column", toJson (utf8Text col)), ("cmp", toJson (cmpName cmp)), ("value", v.json),
        ("query", queryJson q)])]
   | .project cols q => Json.mkObj [("project", Json.mkObj
       [("columns", toJson (cols.map utf8Text)), ("query", queryJson q)])]
@@ -286,7 +279,7 @@ def wantExamples : List Json := [
 def ofId (i : NewId) : Value := .array [.uint i.writer, .uint i.counter, .uint i.index]
 
 def cellJson : Cell Value → Json
-  | .lit v => valueJson v
+  | .lit v => v.json
   | .ref n => Json.mkObj [("ref", toJson n)]
 
 def idJson (i : NewId) : Json :=
@@ -299,7 +292,7 @@ def opJson : Op Value → Json
       ("set", tupleJson set)])]
   | .remove ty wh => Json.mkObj [("remove", Json.mkObj [("type", docJson ty), ("where", tupleJson wh)])]
   | .edit ty id f v => Json.mkObj [("edit", Json.mkObj [("type", docJson ty), ("id", idJson id),
-      ("field", toJson (utf8Text f)), ("value", valueJson v)])]
+      ("field", toJson (utf8Text f)), ("value", v.json)])]
 
 def recordJson (r : Record Value) : Json :=
   Json.mkObj [("id", idJson r.id), ("type", docJson r.type), ("fields", tupleJson r.fields)]
@@ -395,11 +388,11 @@ def shapeJson (sh : Shape) : Json :=
     ("name", toJson (sh.name blake3).text)]
 
 def probeJson (p : Probe Value) : Json :=
-  Json.mkObj [("eqs", Json.arr (p.eqs.map valueJson).toArray),
-    ("range", match p.range with | some (lo, hi) => Json.arr #[valueJson lo, valueJson hi] | none => Json.null)]
+  Json.mkObj [("eqs", Json.arr (p.eqs.map Value.json).toArray),
+    ("range", match p.range with | some (lo, hi) => Json.arr #[lo.json, hi.json] | none => Json.null)]
 
 def entryJson (e : Entry Value) : Json :=
-  Json.mkObj [("key", Json.arr (e.key.map valueJson).toArray), ("doc", docJson e.doc)]
+  Json.mkObj [("key", Json.arr (e.key.map Value.json).toArray), ("doc", docJson e.doc)]
 
 /-- An index vector: a shape, the Records at version V and the Docs the directory listed then, the Records now, the
 Docs unfolded since and the Docs listed now, a probe; the index at V, its hits, the candidates, the query over them,
