@@ -3,7 +3,7 @@ import Aven.DB.Blake3
 /-!
 # The store
 
-`db/store`'s contract (SANDBOX.md, "The contract"): blobs named by their hash, and refs, names pointing at a hash,
+`store`'s contract (SANDBOX.md, "The contract"): blobs named by their hash, and refs, names pointing at a hash,
 changed by compare-and-set. One writer per store (README, rule 1), so the model is a sequence of calls, each with its
 result as the contract gives it:
 
@@ -30,7 +30,7 @@ touched. The model is parametric in the hash `H`; `Blake3.hash` is the store's. 
 - **Refs and blobs stay apart** (`refs_apart`, `blobs_apart`).
 
 `lake exe vectors` exports the examples below and generated traces (`vectors/store.json`), and the conformance suite
-(`db/store/src/conformance.rs`) replays them on every backend: memory, a folder, S3 and OPFS.
+(`store/src/conformance.rs`) replays them on every backend: memory, a folder, S3 and OPFS.
 -/
 
 namespace Aven.DB.Store

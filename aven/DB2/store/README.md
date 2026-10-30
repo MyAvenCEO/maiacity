@@ -2,7 +2,7 @@
 
 The one spec for avenDB's store and the bytes it moves (the architect, 30 Oct 2026). It merges the opfs-sync thread's
 draft (`ARCHITECTURE.md` on `claude/opfs-sync`, scope decided with Samuel that day) with avenONTOLOGY's engine proposal
-([`db/engine`](../engine/README.md), "What we take from iroh"), and settles where they differed. Where this file and
+([`db/engine`](../db/engine/README.md), "What we take from iroh"), and settles where they differed. Where this file and
 either draft disagree, this file holds; the engine proposal keeps sync, queries and mutations, and points here for bytes.
 
 **The goal:** files in the chat, and a chat that keeps its history. A member drops an image, a PDF or a movie into the
@@ -10,8 +10,8 @@ chat, and every other member sees it at once: the image appears, the PDF opens, 
 being fully downloaded. A reload keeps the chat. Every kind of file takes the same path, and nothing in the store or on
 the wire knows what kind of file it carries.
 
-It comes after milestone 2 and before milestone 3 ([README](../../README.md#milestones)), and replaces milestone 2's
-"the chat is in memory" ([`MILESTONE2.md`](../../MILESTONE2.md#decisions)).
+It comes after milestone 2 and before milestone 3 ([README](../README.md#milestones)), and replaces milestone 2's
+"the chat is in memory" ([`MILESTONE2.md`](../MILESTONE2.md#decisions)).
 
 **Left out on purpose:**
 - **Types, schemas and validation** wait for `db/docs` (milestones 4 and 6). A file is bytes plus a name and a MIME type
