@@ -29,7 +29,9 @@ async function ensureDocker() {
 	// It runs in a session of its own (setsid), so it outlives the command that started it.
 	if (process.env.CLAUDE_CODE_REMOTE === 'true' && Bun.which('dockerd') && Bun.which('setsid')) {
 		say('starting dockerd');
-		await $`setsid -f sh -c ${'exec dockerd --allow-direct-routing > /tmp/avensandbox-dockerd.log 2>&1'} < /dev/null > /dev/null 2>&1`;
+		// Spawned directly, not through bun's shell, whose parser refuses the input redirect this needs (bun 1.4.4)
+		const daemon = ['sh', '-c', 'exec dockerd --allow-direct-routing > /tmp/avensandbox-dockerd.log 2>&1'];
+		await Bun.spawn(['setsid', '-f', ...daemon], { stdin: 'ignore', stdout: 'ignore', stderr: 'ignore' }).exited;
 		for (let i = 0; i < 60; i++) {
 			if (await ok($`docker info`)) return;
 			await Bun.sleep(500);
