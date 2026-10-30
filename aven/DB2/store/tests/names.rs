@@ -7,7 +7,7 @@ use serde_json::Value;
 #[test]
 fn only_the_stores_own_spelling_reads_as_a_hash() {
     let vectors: Vec<Value> =
-        serde_json::from_str(include_str!("../../spec/vectors/hashes.json")).unwrap();
+        serde_json::from_str(include_str!("../../db/spec/vectors/hashes.json")).unwrap();
     for v in vectors {
         let s = v["input"]["hash"].as_str().unwrap();
         assert_eq!(

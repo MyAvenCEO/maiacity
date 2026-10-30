@@ -20,7 +20,7 @@ mod browser {
                 n += 1;
                 backend::opfs(&format!("{root}/case-{n}/")).expect("opfs")
             },
-            include_str!("../../spec/vectors/store.json"),
+            include_str!("../../db/spec/vectors/store.json"),
         )
         .await;
         let mut out = format!(

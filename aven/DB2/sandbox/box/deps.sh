@@ -9,7 +9,7 @@ cd /work
 
 # A stub for every target a manifest names: the library, and each [[bin]], [[example]], [[test]] and [[bench]] at its
 # `path` or cargo's default for its name. A crate that came with its source is third-party code: the patched fork of
-# OpenDAL's OPFS service (db/store/opendal-opfs), which opendal itself calls, so it can't be a stub.
+# OpenDAL's OPFS service (store/opendal-opfs), which opendal itself calls, so it can't be a stub.
 for manifest in $(find . -name Cargo.toml -not -path ./Cargo.toml); do
 	dir=$(dirname "$manifest")
 	[ -e "$dir/src/lib.rs" ] && continue

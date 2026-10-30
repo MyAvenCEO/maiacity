@@ -4,7 +4,7 @@ import Aven.DB.Store
 # The store's examples
 
 Traces with the result of every call written out by hand: what the conformance suite checked case by case before
-(`db/store/src/conformance.rs`), now written once, here. `lake build` replays each through the model with BLAKE3 as
+(`store/src/conformance.rs`), now written once, here. `lake build` replays each through the model with BLAKE3 as
 its hash, and `lake exe vectors` exports them for every backend to replay. A blob's name is written `(nm b)`: the hash of
 its bytes, as `Blake3.hash` computes it, whose own answers `Aven.DB.Blake3` checks.
 -/

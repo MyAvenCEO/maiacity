@@ -14,7 +14,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 aven-peer = { path = "../native", default-features = false }
 aven-db-core = { path = "../../db/core" }
-aven-db-store = { path = "../../db/store" }
+aven-db-store = { path = "../../store" }
 aven-id = { path = "../../id/core" }
 futures-channel = "=0.3.34"
 iroh = { version = "=1.4.1", default-features = false, features = ["tls-ring"] }

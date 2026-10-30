@@ -20,7 +20,7 @@ at the versions avenDB's lock holds, and `publish = false`.
 
 ## Proven by
 
-`db/store/opfs/run.sh` runs the store's conformance suite on OPFS twice in Chromium: on a page and in a worker. Before
+`store/opfs/run.sh` runs the store's conformance suite on OPFS twice in Chromium: on a page and in a worker. Before
 the fix the worker hit `unreachable`; now both pass all 12 cases. `bun run up --check` proves it again: each
 Peer-Light keeps its record in OPFS from its SharedWorker.
 
