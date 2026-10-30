@@ -141,6 +141,23 @@ through the relay, seeking to the middle. iroh-blobs is the default if its adapt
    Images and PDFs take the same path. They're just smaller.
 4. **Seek.** Jumping to minute 40 fetches minute 40's chunks, not minutes 1 to 39.
 
+## The chat's history
+
+Part of the same store upgrade (Samuel, 30 Oct 2026): the chat keeps its text too. This replaces milestone 2's "the
+chat is in memory" ([`MILESTONE2.md`](../../MILESTONE2.md#decisions)). A reload keeps the city-dome's history.
+
+- **Live:** a line arrives over gossip in the city-dome, as today.
+- **Kept:** each peer collects lines into small sealed **segments**. A segment is a blob that lists its lines and
+  names the segment before it. The ref `chat-city-dome` points at the newest segment, so the history is a chain of
+  blobs. Each peer writes only its own store (rule 1).
+- **Catching up:** a peer that comes back reads the Aven Peer's `chat-city-dome` head and fetches the segments it
+  lacks over iroh-blobs, the same path a file takes. Lines are ordered by time, then sender. A line received twice is
+  kept once, by its hash.
+- **Later:** the docs layer makes a segment Loro's. The shape (a head over sealed segments) stays the README's
+  document, so nothing is thrown away.
+
+Text, images, PDFs and movies thus rest in one store and travel one way.
+
 ## What this asks of opfs-sync
 
 The OPFS backend ([open question 7](../../SANDBOX.md#open-questions)) is where Peer-Lights keep files, so this design
