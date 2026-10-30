@@ -225,12 +225,22 @@ model's judgment; avenDB's identity, shares and proofs instead of per-peer keys 
 
 ## 6. What maiaCITY already has
 
-- **A deterministic logic core** (`aven/kernel/sandbox/logic.js`): QuickJS with limits counted in work ("ticks"), not
-  time; `Math.random` seeded by the caller; `Date` frozen at the caller's `now`; binary buffers removed. The same code
-  with the same input gives the same answer on every device. It runs in a worker inside a frame with no origin
-  (`logic-host.js`), on engines frozen and named by their BLAKE3 hash (`aven/kernel/sandbox/engines.json`).
-- **A view host** (`aven/kernel/sandbox/ViewHost.svelte`): views from anyone shown in a frame with no origin, no
-  connection and a frozen engine; a view's logic runs in the logic core.
+- **Frozen runtimes, one list** (`aven/kernel/sandbox/engines.json`, `engines.js`): every engine a host of ours runs
+  untrusted code on, by kind, each version named by the BLAKE3 hash of its file and never changed or removed:
+  - `logic`: QuickJS with limits counted in work ("ticks"), not time; `Math.random` seeded by the caller; `Date` frozen
+    at the caller's `now`; binary buffers removed. The same code with the same input gives the same answer on every
+    device (`logic.js`);
+  - `view` and `view-worker`: views from anyone (HTML, our components, template marks, an optional draw script and
+    optional logic) in a frame with no origin; the draw script runs in a worker on a copy of the DOM
+    (`ViewHost.svelte`, `view-host.js`);
+  - `lib-three`, `lib-d3`, `lib-mcp-apps`: the only libraries a draw script may import, frozen too, with no CDN;
+  - `math`: KaTeX, whose MathML passes a checker element by element before anything is drawn (`math-host.js`,
+    `mathml.js`);
+  - `box`: the asset box, where a three.js recipe named by its hash is built with its declared parameters and handed
+    back as plain data (`maia/content/assets/box/engine.js`).
+
+  Beside them, the Markdown engine (`maia/site/lib/markdown/index.js`) writes every tag itself from an allowlist, so
+  nothing in Markdown can run, load or lead anywhere. Section 9.9 makes these the actor model's runtimes.
 - **avenDB's rules** (`aven/DB2/README.md`): pure protocol cores as state machines without I/O; no step without
   progress; react to changes, never to states; derived state is a cache keyed by its inputs and code version; only a
   person's or an agent's act writes; Lean is the source of truth and the tests derive from it.
@@ -360,6 +370,8 @@ Everything else in the sources is one of these four, or a role an actor plays:
 | Supervision retry | A policy keyed on the interface's declared idempotency |
 | Merge law, members | The derived interface of a composite actor; no new concept |
 | Manifest, `loads`, keep share, query held by a view | The actor's declared wants: its dependencies, which the sync engine brings. A want grants nothing |
+| `logic`, `view`, `style`, face, vibe, draw script, Markdown, LaTeX, recipe, chart | Parts: content in a format, for the runtime of that kind (section 9.9) |
+| Sandbox, logic core, view engine, math host, asset box, Markdown engine | Runtimes: frozen engines that run any part without trusting it |
 | Skill (the composite) vs actor (the leaf) | Structure, not kind: an actor with members is a composite, one without is a leaf (section 9.8) |
 
 ## 9. The architecture
@@ -382,6 +394,9 @@ Everything else in the sources is one of these four, or a role an actor plays:
 9. **An actor declares what it needs; the engine brings it.** Its definition lists its wants in tiers. The sync engine
    brings them before and while it runs and hands them in with each message. A want grants nothing: what arrives is
    only what the run's capabilities let it read.
+10. **Code is content; runtimes run it.** An actor's behaviour, faces, docs and builds are parts for runtimes. Only
+    a runtime runs a part, and sandboxing is the runtime's job. Runtimes come only from the repository, frozen and
+    named by hash (section 9.9).
 
 ### 9.2 Taxonomy
 
@@ -389,11 +404,12 @@ Everything else in the sources is one of these four, or a role an actor plays:
 
 | Part | What it is | Role |
 | --- | --- | --- |
-| Definition | An immutable bundle named by its BLAKE3 hash: interface, contract, machine, logic, `loads` (its wants, in tiers), members (for a composite), optional face, requested capabilities, budget | The class. A new version is a new hash |
+| Definition | An immutable bundle named by its BLAKE3 hash: interface, contract, machine, parts (its turn, faces, docs and builds, each for a runtime), `loads` (its wants, in tiers), members (for a composite), requested capabilities, budget | The class. A new version is a new hash |
 | Interface | The messages it accepts and emits, each with a JSON schema; an ask also declares its reply schema | The only thing others may rely on |
 | Contract | `requires` / `produces` as typed ports | Discovery and planning, not routing |
 | Machine | The statechart (`.pl`) | Enforced by the kernel: a message illegal in the current state is refused |
-| Logic | A pure program: `init`, `turn`, and optionally `preview` (what a held card shows), `present` (what a window draws), `measure` (a metric) | The behaviour |
+| Part | Content in one format for one runtime, named by hash and by the runtime version it was made for. The `turn` part is a pure program (`init`, `turn`, and optionally `preview` for what a held card shows, `present` for what a window draws, `measure` for a metric) | Behaviour, faces, docs and builds, all one kind of thing |
+| Runtime | A frozen engine of one kind, named by hash, that runs parts without trusting them | Gives content its meaning, inside walls |
 | Instance | Address, definition hash, state, mailbox, held capabilities, budget | The live actor |
 | Envelope | `tell` / `ask` / `reply` / `fail`, with sender, receiver, method, payload, reply address, deadline, run and proof | The only way anything happens |
 | Capability | An unforgeable grant to send a kind of message to an actor, narrowed when passed on, revocable | Authority |
@@ -409,7 +425,7 @@ Everything else in the sources is one of these four, or a role an actor plays:
 | --- | --- | --- |
 | Router | Delivers envelopes. Checks the capability proof at the door. Stamps sender and run from the signature or the transport. Turns an expired ask into a `fail` | Read what a payload means, or believe a sender named inside it |
 | Scheduler | Runs one turn per actor at a time and many actors in parallel on a worker pool. Commits state and effects to the journal atomically, then sends the effects | Let a turn wait on anything |
-| Engine | The frozen, hash-named deterministic sandbox: maiaCITY's logic core | Give logic a door of any kind |
+| Runtimes | The frozen, hash-named engines that run parts: deciding runtimes (deterministic, such as the logic core) for turns and builds, showing runtimes for faces and docs (section 9.9) | Give a part a door of any kind, or change without a new version |
 | Journal | Appends, snapshots, replays | Lose an envelope or reorder an actor's messages |
 
 **System actors: built in, reviewed, holding the real-world doors**
@@ -488,9 +504,9 @@ learned about it are in [`../ID/caps/README.md`](../ID/caps/README.md).
 
 ### 9.6 Faces
 
-A window is an actor with no capabilities. It projects its subject's state for one viewer and draws it as avenVIBES
-view data. Hosts render it in a shadow root, in maiaCITY's view host frame, or to a string at build time. Events from a
-view are tells, checked like any other.
+A window is an actor with no capabilities. It projects its subject's state for one viewer, and its face is a part
+for a showing runtime: avenVIBES view data, an HTML view with a draw script, Markdown, a chart, a 3D scene. Events from
+a face are tells by name, checked like any other message.
 
 ### 9.7 Goals and learning
 
@@ -520,6 +536,107 @@ two kinds named Skill and Actor break at the second level. **Skill** stays usefu
 that reaches an outcome and is published for reuse, as long as it means only that. avenOS used it for six things
 (section 7).
 
+### 9.9 Runtimes
+
+An actor's behaviour and its faces are content, and content means nothing until a runtime runs it. So `logic`,
+`view` and `style` are not three concerns of the actor model. They are **parts** in different formats, for different
+**runtimes**. The same holds for a doc's Markdown and LaTeX, an asset's three.js recipe, a chart, and later a Lean
+proof or a WebAssembly module. Runtimes are pluggable: a new format is a new runtime kind, and nothing else in the
+model changes.
+
+**The hard rule.** A runtime runs any part, written by anyone (a person, a model, a peer), without trusting it.
+Sandboxing is the runtime's job, not the part's and not the actor's. Runtimes come only from the repository: reviewed,
+frozen, named by hash, served by our hosts and checked against that hash before they start. A part never brings a
+runtime with it, and no model or actor can change one.
+
+**What a part is for, and which runtimes run it**
+
+| Part | Job | Runtime kinds |
+| --- | --- | --- |
+| `turn` | Decides the next state and effects | `logic` (QuickJS); later `wasm` |
+| `preview`, `present`, `measure` | Pure functions of state: what a held card shows, what a window draws, a metric | `logic` |
+| `face` | Draws for one viewer and emits events by name | `vibe` (avenVIBES data, no script), `view` (HTML with an optional draw script) with the frozen libraries `three`, `d3` and MCP Apps |
+| `doc` | Text a person reads | `markdown`, `math` |
+| `build` | Makes an artifact from declared parameters | `box` (three.js recipes, handed back as plain data) |
+| `check` (later) | Checks a proof or evaluates a definition | `lean` |
+
+**Two classes of runtime**
+
+| Class | What it gives back | It must be | Kinds |
+| --- | --- | --- | --- |
+| **Deciding** | State, effects and artifacts that the journal or the store keeps | Deterministic: work counted in ticks, a seeded random, a frozen clock, so the same part and input give the same output on every device and in every replay | `logic`, `box`; later `wasm`, `lean` |
+| **Showing** | What a viewer sees, and events by name | Contained: it can show and emit, nothing more. It need not be deterministic | `view`, `vibe`, `markdown`, `math`, the libraries |
+
+Only deciding runtimes produce anything the journal or the store keeps. A showing runtime's events are tells, checked
+like any other message.
+
+**What every runtime kind declares**
+
+| Field | Why |
+| --- | --- |
+| Kind, version, BLAKE3 hash, the commit it is kept at | Identity; a frozen runtime never changes or goes |
+| Floor | The oldest version parts may still run on. A version that closes a hole raises it, so a part cannot step around a wall by naming an older runtime |
+| Input format and schema | What a part of this kind is, checked before it runs |
+| Output schema and its checker | What may come out. The host checks it before using it, as the math host checks MathML element by element |
+| Limits | Work, memory, size, and a clock only as a backstop |
+| Determinism | Whether its output may enter the journal or the store |
+| Walls | Where it runs and what is taken away |
+| Probes | Hostile parts that try every way out, run in every browser engine we ship |
+
+A part names its runtime: `{ runtime: 'logic', v: 2, part: <hash> }`. The host runs that version, or the floor where
+the part names an older one or none; a version that is not frozen runs nothing. A new capability is a new version
+beside the old ones, so a part made for version 1 behaves the same for good.
+
+**What maiaCITY's runtimes taught us** (`aven/kernel/sandbox`)
+
+1. **Two walls.** A worker inside a frame with no origin (`sandbox="allow-scripts"` without `allow-same-origin`):
+   no cookie, storage, passkey or page of ours; a policy that allows no connection; every device feature off from one
+   deny list (`policy.js`). Then a second lock removes every way out a worker has (`lockdown.js`), because browsers
+   differ in what the first wall covers.
+2. **Never on the page's thread.** Code that never stops cannot freeze the page, not even in Safari.
+3. **Checked before it starts.** The runtime's bytes are checked against their hash and handed in whole; the shell
+   can load nothing else.
+4. **Rooms.** One worker per piece of code, so one part can neither see nor answer another's jobs, and a crash or an
+   overrun ends only its room.
+5. **Out comes plain data,** checked on the host's side: MathML element by element, Markdown's tags against an
+   allowlist, a view's HTML cleaned, an asset's card against its schema.
+6. **Work, not time.** Limits count work, so every device agrees; the clock is a backstop for built-in calls that do
+   much work between checks.
+7. **Degrade to the safe thing.** LaTeX that cannot be typeset shows as its source; raw HTML in Markdown shows as
+   text.
+8. **Isolate the bad one.** A math batch that overruns is asked again in halves, until the formula that overran is
+   alone and given up.
+9. **No CDN.** The libraries a draw script may import are frozen runtimes too.
+10. **Probes in real browsers.** Hostile parts aim at a canary in Chromium and WebKit (`aven/kernel/probes.mjs`;
+    Firefox is not probed yet). WebKit compiled WebAssembly despite the frame's policy, and Safari let a frame with
+    no origin open its cache storage: a wall that holds in one engine is not taken to hold in another.
+
+From the other sources: avenOS ran QuickJS on the page's thread with a wall-clock limit, and rendered avenVIBES views
+in the page's own shadow root, trusting a validator. That is acceptable only for a showing runtime with no script
+whose renderer writes every tag itself from an allowlist, as maiaCITY's Markdown engine does. avenVIBES renders the
+same view to a string at build time and to the DOM at run time; two runtimes for one format must give the same result,
+and a test holds them to it. Abject runs other languages as WebAssembly with only three imports (send a message, log,
+read the clock).
+
+**Where runtimes run**
+
+- **In a page:** in the shell above. A showing runtime with no script may render in the page itself only through a
+  renderer that writes every tag from an allowlist.
+- **On a host** (a Peer or the Aven Peer): the same engines, QuickJS and WebAssembly, inside the peer with no doors.
+  A general-purpose runtime such as Bun or Node never runs untrusted code; it implements trusted door actors, from
+  the repository. Untrusted native code would need a wall at the operating-system level (a micro-VM), as a runtime
+  kind of its own with its own probes.
+
+**Runtimes to come**
+
+- `wasm`: any language compiled to WebAssembly (Rust first), with no imports at all. It gets its input in and hands
+  its state and effects out, the same turn interface as `logic`.
+- `lean`: checks a proof or evaluates a definition. It is deterministic, so a goal's measure can be a theorem.
+- Others, such as a shader or an audio graph, on the same terms.
+
+A new runtime kind is code in the repository: its walls, its output checker, its limits and its probes in every
+browser engine we ship. It is then frozen like any other.
+
 ## 10. Open questions
 
 1. **Where the kernel runs.** On the device (a Peer or a Peer-Light), on the Aven Peer, or both with one journal
@@ -528,15 +645,15 @@ that reaches an outcome and is published for reuse, as long as it means only tha
    to the store?
 3. **How much Prolog.** Unification for discovery and planning only, with a structured term parser instead of comma
    splitting?
-4. **Logic languages.** JavaScript in QuickJS now; WebAssembly (Abject's three-import ABI) behind the same turn
-   interface later?
+4. **Runtimes on hosts.** Which runtime kinds a Peer runs, and whether a host's deciding runtimes are the very same
+   frozen bytes as the page's, so a replay gives the same state anywhere.
 5. **Journal privacy.** A journal holds payloads. Is it sealed per vault like avenDB entries?
 6. **Signatures.** Does every turn carry a signature, or only the journal's head?
 7. **Cost of `explain`.** Answers cached by definition hash and state version?
 
 ## 11. Next steps
 
-1. The turn interface and the envelope wire format.
+1. The turn interface, the envelope wire format, and the runtime contract (section 9.9) as one list of kinds.
 2. A Lean model of router and scheduler, with its theorems: no message is delivered without a capability; a replay
    gives the same state; no turn waits; every ask gets one answer by its deadline.
 3. The admission laws, written as code.
