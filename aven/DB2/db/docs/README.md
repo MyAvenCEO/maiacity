@@ -42,8 +42,8 @@ avenDB has two primitives (Samuel, 30 Oct 2026):
   and atomic change. A Doc is a **root Record** (rule 16). Types, predicates, kinds, catalogues, vocabularies and actors
   are Docs.
 
-Reference a Value's hash to pin something exactly; reference a Doc's id to follow it as it changes. Both are written with
-a capital; a lowercase value is just a field's data.
+Reference a Value's hash to pin something exactly; reference a Doc's id to follow it as it changes. Value, Doc and
+Record are written with a capital; a lowercase value is just a field's data.
 
 - **Record:** one piece of a Doc, named by its own id and addressed `<doc>/<id>` (the Doc's root Record is `<doc>`),
   always under a schema (rule 15); where it sits in the Doc can change, its address can't. Each field in a
