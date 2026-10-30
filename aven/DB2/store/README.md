@@ -194,13 +194,41 @@ Pinned exactly (rule 13), checked on crates.io on 30 Oct 2026:
 | iroh, iroh-relay | 1.4.1 | the endpoint, the `Router`, the door, the relay every Peer-Light's bytes cross. In use |
 | iroh-gossip | 0.101.0 | the city-dome's topic. In use |
 | iroh-blobs | 0.104.0, pre-production by its own README | `/iroh-bytes/4`, hash sequences, the downloader; on our store through the adapter. Its provider events (`connected`, `get`, `push`) are a second gate after the door: members only, push off |
-| bao-tree | 0.17.0 | under iroh-blobs; the fallback below |
+| bao-tree | 0.17.0 | under iroh-blobs; the adapter makes outboards with it |
 | irpc | 0.17.0 | under iroh-blobs' store API, which the adapter answers |
 
-**The spike decides first:** iroh-blobs on our store (its store API is an actor of 23 requests; `readonly_mem.rs`, 424
-lines, is its starting point for a custom store, and transfer needs only import, export, status and observe), or
-`bao-tree` directly with our own range requests on `aven/db/1`. Both are measured on one task: a 1 GB movie from Alice
-Peer to a Peer-Light through the relay, seeking to the middle, in the box. iroh-blobs wins if its adapter stays small.
+## iroh-blobs on the store (decided)
+
+**The spike decided** (the architect, 30 Oct 2026): iroh-blobs on our store, through one adapter
+([`src/blobs`](src/blobs)), over `bao-tree` directly with our own range requests. Both were measured in the box on one
+task: a 1 GiB file of 1024 chunks moving from Alice Peer's endpoint to a relay-only endpoint with Bob's Peer-Light's
+key, through the Aven Peer's relay and nothing else, then a seek to its middle. Our crates at the box's dev profile.
+
+| | (a) iroh-blobs + adapter | (b) bao-tree directly |
+|---|---|---|
+| 1 GiB through the relay, Alice on a folder | **201 MB/s** | 188 MB/s, 4 requests in flight |
+| 1 GiB through the relay, from the box's S3 | 139 MB/s | 152 MB/s |
+| Seek to the middle, cold (index and chunk), folder / S3 | **10.6 / 11.5 ms**, one request | 14.0 / 18.4 ms, two requests |
+| Seek, warm (index held), folder / S3 | 8.3 / 12.9 ms | 6.6 / 10.3 ms |
+| S3 GETs: the whole file / a cold seek / a warm one | 1058 / 3 / 2 | 1025 / 2 / 1 |
+| Lines, without comments | 215 | 113 |
+| wasm added, release after wasm-bindgen (gzip) | +1.09 MB (+314 KB) | +0.40 MB (+134 KB) |
+
+(b) would have had to grow what (a) has: resume and fetching only what is missing, several holders at once, the
+downloader, provider events for the gate, and one request for an index and any of its chunks, which saves a round trip
+on every cold seek. Since the spike, the adapter keeps the last indexes it read and reads a file's next chunk ahead
+while its chunks go out in order: 1025 / 2 / 1 GETs, as (b) (`tests/blobs.rs` holds it).
+
+**How the adapter works:** an actor answering 6 of the 23 requests of iroh-blobs' store API (observe and status by
+`size`, the exports of bao and of plain ranges, the import of bao, listing); tags, temp tags' protection and deletes
+answer "unsupported" or nothing, since refs and reachability keep blobs. A fetched blob is buffered until every byte has
+arrived, checked by iroh-blobs, then put once: whole or absent. In a browser the store is neither `Send` nor `Sync` and
+iroh's protocol handlers must be, so the store lives in the actor's own task and only channels cross.
+
+**The risk we take:** iroh-blobs has no public constructor for a store of someone else's (`api::Store::from_sender` is
+crate-private). The adapter builds one with `RefCast` from the `irpc::Client` the type wraps, which it derives publicly.
+A 0.x release may take that away: iroh-blobs stays pinned at exactly 0.104.0, and `tests/blobs.rs`'s
+`iroh_blobs_runs_on_our_store` fails at once if it stops working.
 
 ## Lean first
 
