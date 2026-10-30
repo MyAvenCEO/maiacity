@@ -8,7 +8,9 @@ import { live, take, timeline } from './peers.svelte.js';
 
 // `me` and `key`: this browser's device and its key; `claimed`: null until the Aven Peer has said; `tree`: the
 // network's tree as cast JSON, told to its devices only; `refused`: why the last claim or sign-in was refused
-export const net = $state({ me: null, key: null, claimed: null, tree: null, refused: null });
+// `trouble`: why the Peer-Light is not live, as it last said (its start failed, the Aven Peer didn't answer), shown
+// under the status line so a screenshot names the cause
+export const net = $state({ me: null, key: null, claimed: null, tree: null, refused: null, trouble: null });
 
 let port;
 
@@ -30,8 +32,14 @@ export function runNetwork(config) {
 	const shared = typeof SharedWorker === 'function';
 	const worker = shared ? new SharedWorker(url, { type: 'module', name: 'network' }) : new Worker(url, { type: 'module' });
 	port = shared ? worker.port : worker;
+	worker.onerror = (event) => (net.trouble = `the Peer-Light's worker didn't load: ${event?.message || 'no reason given'}`);
+	// a worker that says nothing at all is a cause too
+	const silent = setTimeout(() => (net.trouble ??= 'the Peer-Light has said nothing for 15 s'), 15000);
 	port.onmessage = ({ data }) => {
+		clearTimeout(silent);
 		const line = JSON.parse(data);
+		if (line.event === 'failed' || line.event === 'lost') net.trouble = line.why ?? line.event;
+		if (line.event === 'status' && line.phase === 'live') net.trouble = null;
 		if (line.event === 'started') Object.assign(net, { me: line.peer, key: line.key });
 		if (line.event === 'network') Object.assign(net, { claimed: line.claimed, tree: line.tree });
 		if (line.event === 'refused') net.refused = line.why;
