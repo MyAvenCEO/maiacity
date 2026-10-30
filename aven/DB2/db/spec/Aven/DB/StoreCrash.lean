@@ -8,27 +8,28 @@ of one leaves. A write goes to a temporary file first, then into place:
 
 | call | on disk, in order |
 |---|---|
-| `put b` (a blob not there yet) | the temporary file `tmp/…` gets `b`; it moves to `blobs/<H b>` |
+| `put b` (a blob not there yet) | the temporary file `tmp/blob-<H b>` gets `b`; it moves to `blobs/<H b>` |
 | `setRef n e new` (done) | the temporary file `tmp/ref-<n>` gets `new`'s 64 characters; it moves to `refs/<n>` |
 | `delete h`, `deleteRef n e` | one remove |
 
-**Move** is one step, the file whole in its place or still in `tmp/` (Chromium 156 and Firefox 157 replace an existing
+**Move** is one step: the file whole in its place, or still in `tmp/` (Chromium 156 and Firefox 157 replace an existing
 file, measured 30 Oct 2026). **Copy** is the fallback where `move()` fails: the place is truncated and written, then the
 temporary file is removed, so a crash can leave the place torn. A write's bytes reach the disk in order, so a torn file
 is a part of the whole:
 
-- a torn blob's bytes don't hash to its name (BLAKE3 has no known collision): every read checks a blob against its
-  name and refuses it, so a torn blob reads as missing;
+- a torn blob's bytes don't hash to its name (BLAKE3 has no known collision);
 - a torn ref is shorter than 64 characters, so it never reads as a hash (`torn_ref`).
 
-**Opening the store recovers** (`recover`): a whole `tmp/ref-<n>` is moved into place, whatever `refs/<n>` holds; every
-other temporary file is removed. Without that roll forward, a copy that tore `refs/<n>` would lose the ref, its old
-value and its new one alike.
+**Opening the store recovers** (`recover`): a temporary file that is whole (a blob's bytes that hash to its name, a
+ref's value that is a hash) rolls forward into place, whatever the place holds; every other temporary file is removed.
+The temporary files are named by their place, so the roll forward knows where each goes. Without it, a copy that tore
+`refs/<n>` would lose the ref, its old value and its new one alike, and a torn blob would stay under its name.
 
-What it proves (`crash_atomic`, `crash_trace`): whatever a crash leaves while one call runs, the store recovered reads
-as before the call or as after it, never anything else. A crash anywhere in a trace from an empty store reads as the
-trace up to the call that ran, without it or with it. A change of leader is a change of the one writer, under the Web
-Lock: the old writer has stopped, as after a crash, so the new one opens, and recovers, the same way.
+What it proves (`crash_atomic`, `crash_trace`): whatever a crash leaves while one call runs, the store recovered is the
+store before the call or after it, file for file, with no temporary file left. A crash anywhere in a trace from an empty
+store recovers to the trace up to the call that ran, without it or with it. A change of leader is a change of the one
+writer, under the Web Lock: the old writer has stopped, as after a crash, so the new one opens, and recovers, the same
+way.
 -/
 
 namespace Aven.DB.Store
@@ -81,16 +82,14 @@ inductive Crash (s : Store) : Mode → Op → Disk → Prop
       (torn : t = new ∨ validHash t = false) :
       Crash s .copy (.setRef n e new) ⟨s.blobs, set s.refs n t, [.ref n new]⟩
 
-/-- Opening: a whole ref's temporary file rolls forward into place; then every temporary file is gone. -/
-def roll : List (Name × Hash) → List Tmp → List (Name × Hash)
-  | refs, [] => refs
-  | refs, .ref n v :: ts => roll (if validHash v then set refs n v else refs) ts
-  | refs, .blob _ _ :: ts => roll refs ts
+/-- Opening: a whole temporary file rolls forward into place (a blob's bytes that hash to its name, a ref's value that
+is a hash), whatever the place holds; every other temporary file is removed. -/
+def roll : List (Hash × Bytes) → List (Name × Hash) → List Tmp → Disk
+  | bs, rs, [] => ⟨bs, rs, []⟩
+  | bs, rs, .blob h b :: ts => roll (if H b == h then set bs h b else bs) rs ts
+  | bs, rs, .ref n v :: ts => roll bs (if validHash v then set rs n v else rs) ts
 
-def recover (d : Disk) : Disk := ⟨d.blobs, roll d.refs d.tmps, []⟩
-
-/-- What the store reads from a folder: every blob that matches its name (a read refuses the others), every ref. -/
-def view (d : Disk) : Store := ⟨d.blobs.filter (fun p => H p.2 == p.1), d.refs⟩
+def recover (d : Disk) : Disk := roll H d.blobs d.refs d.tmps
 
 /-- A call the store can be given: `Hash` is always a hash in Rust, so a ref is only ever set to one. -/
 def Op.ok : Op → Prop
@@ -111,49 +110,6 @@ theorem torn_ref {t : Hash} (short : t.length < 64) : validHash t = false := by
   · rfl
   · exact absurd (validHash_length v) (Nat.ne_of_lt short)
 
-/-! ## Every blob on disk is named by its hash -/
-
-/-- Every blob the store holds, not just the first under each name, is named by its hash. -/
-def AllNamed (H : Bytes → Hash) (s : Store) : Prop := ∀ p ∈ s.blobs, H p.2 = p.1
-
-theorem mem_erase {β : Type} {l : List (String × β)} {x : String} {p : String × β} (m : p ∈ erase l x) : p ∈ l := by
-  induction l with
-  | nil => simp [erase] at m
-  | cons q l ih =>
-    obtain ⟨k, v⟩ := q
-    simp only [erase] at m
-    split at m
-    · exact List.mem_cons_of_mem _ (ih m)
-    · rcases List.mem_cons.mp m with e | m
-      · exact e ▸ List.mem_cons_self
-      · exact List.mem_cons_of_mem _ (ih m)
-
-theorem allNamed_step {s : Store} (a : AllNamed H s) (op : Op) : AllNamed H (step H s op).1 := by
-  cases op with
-  | put b =>
-    simp only [step]
-    split
-    · exact a
-    · intro p m
-      rcases List.mem_cons.mp m with e | m
-      · subst e; rfl
-      · exact a p m
-  | delete h => intro p m; exact a p (mem_erase m)
-  | getRef _ | setRef _ _ _ | deleteRef _ _ | listRefs => rw [AllNamed, blobs_apart _ rfl]; exact a
-  | _ => first | exact a | (simp only [step]; repeat (first | split | exact a))
-
-theorem allNamed_run : ∀ {s : Store} (ops : List Op), AllNamed H s → AllNamed H (run H s ops)
-  | _, [], a => a
-  | _, o :: os, a => allNamed_run os (allNamed_step a o)
-
-theorem allNamed_empty (ops : List Op) : AllNamed H (run H {} ops) :=
-  allNamed_run ops fun _ m => by simp at m
-
-/-- A store at rest reads as itself. -/
-theorem view_of {s : Store} (a : AllNamed H s) : view H (.of s) = s := by
-  simp only [view, Disk.of]
-  rw [List.filter_eq_self.mpr fun p m => by simp [a p m]]
-
 /-! ## A crash leaves the call undone or done -/
 
 theorem erase_erase {β : Type} (l : List (String × β)) (n : String) : erase (erase l n) n = erase l n := by
@@ -170,57 +126,59 @@ theorem set_set {β : Type} (l : List (String × β)) (n : String) (v w : β) : 
   simp only [set]
   rw [show erase ((n, v) :: erase l n) n = erase l n from erase_set l n v]
 
-/-- Whatever a crash leaves while one call runs, the store recovered reads as before the call or as after it. -/
-theorem crash_atomic {m : Mode} {s : Store} {op : Op} {d : Disk} (a : AllNamed H s) (ok : op.ok)
-    (c : Crash H s m op d) : view H (recover d) = s ∨ view H (recover d) = (step H s op).1 := by
+theorem erase_absent {β : Type} {l : List (String × β)} {x : String} (g : get l x = none) : erase l x = l := by
+  induction l with
+  | nil => rfl
+  | cons p l ih =>
+    obtain ⟨k, v⟩ := p
+    by_cases e : k = x
+    · simp [get, e] at g
+    · simp only [get, e, ite_false] at g
+      simp [erase, e, ih g]
+
+/-- Whatever a crash leaves while one call runs, the store recovered is the store before the call or after it: the
+same files, and no temporary one. -/
+theorem crash_atomic {m : Mode} {s : Store} {op : Op} {d : Disk} (ok : op.ok) (c : Crash H s m op d) :
+    recover H d = .of s ∨ recover H d = .of (step H s op).1 := by
   cases c with
-  | before _ _ => exact .inl (view_of a)
-  | after _ _ => exact .inr (view_of (allNamed_step a op))
-  | blobTmp _ b t fresh torn => exact .inl (view_of a)
-  | blobCopy b t fresh torn =>
+  | before _ _ => exact .inl rfl
+  | after _ _ => exact .inr rfl
+  | blobTmp _ b t fresh torn =>
     have after : (step H s (.put b)).1 = { s with blobs := (H b, b) :: s.blobs } := by simp [step, fresh]
     rcases torn with e | ne
     · subst e
       refine .inr ?_
       rw [after]
-      simp only [view, recover, roll, List.filter_cons, beq_self_eq_true, ite_true]
-      rw [List.filter_eq_self.mpr fun p m => by simp [a p m]]
+      simp [recover, roll, Disk.of, set, erase_absent fresh]
     · refine .inl ?_
-      simp only [view, recover, roll, List.filter_cons]
-      rw [show (H t == H b) = false from by simpa using ne]
-      simp only [Bool.false_eq_true, ite_false]
-      rw [List.filter_eq_self.mpr fun p m => by simp [a p m]]
-  | refTmp _ n e new t v ce torn =>
-    have after : (step H s (.setRef n e new)).1 = { s with refs := set s.refs n new } := by simp [step, v, ce]
-    rcases torn with x | bad
-    · subst x
-      refine .inr ?_
-      rw [after]
-      simp only [Op.ok] at ok
-      simp only [view, recover, roll, ok, ite_true]
-      rw [List.filter_eq_self.mpr fun p m => by simp [a p m]]
-    · refine .inl ?_
-      simp only [view, recover, roll, bad]
-      simp only [Bool.false_eq_true, ite_false]
-      rw [List.filter_eq_self.mpr fun p m => by simp [a p m]]
-  | refCopy n e new t v ce torn =>
-    have after : (step H s (.setRef n e new)).1 = { s with refs := set s.refs n new } := by simp [step, v, ce]
+      simp [recover, roll, Disk.of, ne]
+  | blobCopy b t fresh _ =>
+    have after : (step H s (.put b)).1 = { s with blobs := (H b, b) :: s.blobs } := by simp [step, fresh]
     refine .inr ?_
     rw [after]
+    simp [recover, roll, Disk.of, set, erase, erase_absent fresh]
+  | refTmp _ n e new t v ce torn =>
+    have after : (step H s (.setRef n e new)).1 = { s with refs := set s.refs n new } := by simp [step, v, ce]
     simp only [Op.ok] at ok
-    simp only [view, recover, roll, ok, ite_true, set_set]
-    rw [List.filter_eq_self.mpr fun p m => by simp [a p m]]
+    rcases torn with x | bad
+    · subst x
+      exact .inr (by rw [after]; simp [recover, roll, Disk.of, ok])
+    · exact .inl (by simp [recover, roll, Disk.of, bad])
+  | refCopy n e new t v ce _ =>
+    have after : (step H s (.setRef n e new)).1 = { s with refs := set s.refs n new } := by simp [step, v, ce]
+    simp only [Op.ok] at ok
+    exact .inr (by rw [after]; simp [recover, roll, Disk.of, ok, set_set])
 
 theorem run_append (s : Store) (pre : List Op) (op : Op) : run H s (pre ++ [op]) = (step H (run H s pre) op).1 := by
   induction pre generalizing s with
   | nil => rfl
   | cons o os ih => exact ih _
 
-/-- A crash anywhere in a trace from an empty store, recovered, reads as the trace up to the call that ran: without it
-or with it. -/
+/-- A crash anywhere in a trace from an empty store, recovered, is the store of the trace up to the call that ran:
+without it or with it. -/
 theorem crash_trace {m : Mode} (pre : List Op) {op : Op} {d : Disk} (ok : op.ok) (c : Crash H (run H {} pre) m op d) :
-    view H (recover d) = run H {} pre ∨ view H (recover d) = run H {} (pre ++ [op]) := by
+    recover H d = .of (run H {} pre) ∨ recover H d = .of (run H {} (pre ++ [op])) := by
   rw [run_append]
-  exact crash_atomic (allNamed_empty pre) ok c
+  exact crash_atomic ok c
 
 end Aven.DB.Store
