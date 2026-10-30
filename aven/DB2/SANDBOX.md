@@ -145,8 +145,9 @@ its key. Each place gets a backend:
 - **OPFS refuses a read that races a commit** (`NotReadableError`, sometimes `NotFoundError`); it never tears one. A ref
   read that fails checks whether the file exists and reads again, at most 8 times.
 - **OpenDAL's OPFS reads through `getFile()` and `Blob.slice`,** so every read, a range included, costs a fresh `File`.
-- **OpenDAL's OPFS finds OPFS through `window`,** which a worker lacks. The Peer-Light's worker answers as the window
-  (`os/web/peer/worker.js`) until our own backend replaces it.
+- **OpenDAL's OPFS found OPFS through `window`,** which a worker lacks, and panicked there. We fork its service
+  (`db/store/opendal-opfs`, [below](#decisions)) to take `navigator.storage` from a window or a worker; the suite
+  runs on OPFS twice, on a page and in a worker.
 
 Measured (`conformance::bench`; native in release, OPFS in Chromium 156 on the main thread):
 
@@ -493,7 +494,11 @@ Made in milestone 1's threads and its integration (29–30 Oct 2026).
 - **Ref names are flat,** so every backend lays them out the same.
 - **The suite is a public module,** so later backends and the peers can run it.
 - **The OPFS suite runs in Playwright's Chromium,** served by a small node server: the box has no chromedriver for
-  `wasm-bindgen-test-runner`.
+  `wasm-bindgen-test-runner`. It runs twice, on a page and in a worker, where the Peer-Light runs.
+- **OpenDAL's OPFS service is forked** (`db/store/opendal-opfs`, `opendal-service-opfs` 0.59.5, Apache-2.0, with its
+  `LICENSE` and `NOTICE`), so it runs in a worker: upstream took `window()` and panicked there. One function changes;
+  `[patch.crates-io]` swaps it in, so the store still uses OpenDAL's `services::Opfs` and its conventions. The fix
+  belongs upstream; once a release has it, the fork goes (`FORK.md`).
 - **versitygw is the box's S3:** its conditional writes are atomic. s3s-fs passed the suite only because our lock
   serialises compare-and-set; it checks `If-Match` before writing, not with it, and ignores it on DELETE.
 
@@ -539,8 +544,9 @@ Raised by the threads, not settled in milestone 1:
    write, never tear it.
 6. **A Lean model of the store's contract** (rule 10's follow-up): blobs and refs with compare-and-set, in `Aven.DB`,
    exporting traces that every backend replays. The store has no Lean model yet.
-7. **Our own OPFS backend.** OpenDAL's is slow for small writes and ranges, refuses reads that race a commit, and needs
-   the worker to answer as the window. Sync access handles in the Peer-Light's worker fix all three.
+7. **Our own OPFS backend, or OpenDAL's with sync access handles.** OpenDAL's is slow for small writes and ranges and
+   refuses reads that race a commit. Sync access handles in the Peer-Light's worker fix both; they exist only in
+   workers, which the fork now reaches. Also: offer the fork's fix upstream, so the fork can go.
 8. **Rule 10's vectors** (README; Samuel, 30 Oct): `Aven.ID` and `Aven.DB` export their examples and generated cases
    as JSON test vectors, and traces for presence and status; the Rust tests, the wasm check and avenOS's check load
    them; `up --check` regenerates them and fails on a difference. Not built yet.
