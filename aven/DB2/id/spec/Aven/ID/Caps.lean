@@ -1,17 +1,19 @@
 import Aven.ID.Approve
+import Aven.Core
 
 /-! # Caps
 
 A cap is a signed grant from one vault to another: operations on targets, under conditions, resting on a parent or on
-its issuer's own authority (`id/caps/README.md`). This module is caps' own part: grants as sets, conditions, holders,
-roles and chains. What a grant reaches is `Aven.Core`'s, once it lands: the target grammar, the verbs and the
-footprints. Until then an **atom** names the vault whose Docs it concerns and an opaque permission inside it, and a
-grant is a list of atoms. One grant lies within another when each of its atoms is one of the other's: the subset check
-every link of a chain must pass (rule 3).
+its issuer's own authority (`id/caps/README.md`). What a grant reaches is `Aven.Core`'s: a **line** names a target in
+Core's one grammar (A8), a verb on it, and for a write the footprint grants (Core's `Grant`) every step of it must keep.
+A grant is a list of lines. One grant lies within another when each of its lines lies within one of the other's: a
+narrower target (`Target.le`), the same verb, and footprint grants no wider. That is the check every link of a chain
+must pass (rule 3).
 
 A chain is written root first. `chainRules` lists every rule each cap of it must keep, in the order a reader checks
 them, so `chainError` names the first one a bad chain breaks, and `chainOk` holds exactly when none is broken. The
-theorems: a chain only narrows (`narrow_chain`); every atom it grants lies in its root issuer's authority
+theorems: a chain only narrows, so no cap in it reaches a Doc or allows a step its root doesn't (`narrow_chain`,
+`narrow_steps`, through Core's `Target.le_sound`); every line it grants lies in its root issuer's authority
 (`root_authority`); it is no longer than its root may be shared (`chain_short`); every cap in it carries its issuer's
 owners' approval (`grant_approved`, D14); a cap issued from a group's cap lives only while its issuer is in the group
 (`child_live`); the public never passes a cap on and may not share (`public_bounded`, D15); and a role is pinned by its
@@ -19,25 +21,79 @@ id (`role_pinned`, D6). -/
 
 namespace Aven.ID
 
-/-- What a grant reaches, until `Aven.Core`'s targets, verbs and footprints: the vault whose Docs it concerns, and an
-opaque permission inside it. -/
-structure Atom where
-  vault : String
-  what : String
+/-- A vault's id as Core's targets name it: the bytes of `v:` and its name, as Core's vectors write them. -/
+def vaultId (v : String) : Core.Bytes := ("v:" ++ v).toUTF8.toList
+
+/-- One line of a grant: a verb on a target, and for a write the footprint grants each of its steps must keep. -/
+structure Line where
+  target : Core.Target
+  verb : Core.Verb
+  footprint : List Core.Grant := []
   deriving DecidableEq, Repr
 
-abbrev Grant := List Atom
+abbrev Grant := List Line
 
-/-- `g` lies within `h`: each atom of `g` is one of `h`'s. -/
-def Grant.within (g h : Grant) : Bool := g.all fun a => decide (a ∈ h)
+/-- A footprint grant within another: one type and step verb, and no field the other doesn't allow. -/
+def fpWithin (g h : Core.Grant) : Bool :=
+  g.type == h.type && g.verb == h.verb &&
+    match g.fields, h.fields with
+    | _, none => true
+    | some gs, some hs => gs.all (hs.contains ·)
+    | none, some _ => false
 
-theorem Grant.within_iff {g h : Grant} : g.within h = true ↔ ∀ a ∈ g, a ∈ h := by
-  simp [Grant.within]
+/-- A line within another: a narrower target, the same verb, and every footprint grant within one of the other's. -/
+def Line.within (l m : Line) : Bool :=
+  l.target.le m.target && l.verb == m.verb && l.footprint.all fun g => m.footprint.any (fpWithin g)
 
-theorem Grant.within_refl (g : Grant) : g.within g = true := Grant.within_iff.mpr fun _ m => m
+/-- `g` lies within `h`: each of its lines within one of `h`'s. -/
+def Grant.within (g h : Grant) : Bool := g.all fun l => h.any l.within
 
-theorem Grant.within_trans {g h k : Grant} (a : g.within h = true) (b : h.within k = true) : g.within k = true :=
-  Grant.within_iff.mpr fun x m => Grant.within_iff.mp b x (Grant.within_iff.mp a x m)
+/-- A grant lets verb `v` reach the Doc whose genesis fixed `f`: one of its lines with that verb covers it. Who governs
+whom and which actor spawned which are avenID's and the actors', so they are parameters, as in Core. -/
+def Grant.reaches (gov : Core.Bytes → Core.Bytes → Prop) (spawned : Core.DocId → Core.DocId → Prop) (g : Grant)
+    (f : Core.Facts) (v : Core.Verb) : Prop :=
+  ∃ l ∈ g, l.verb = v ∧ l.target.covers gov spawned f
+
+/-- A grant allows write step `s` on the Doc `f`: one of its lines covers the Doc, with a footprint grant for it. -/
+def Grant.allows (gov : Core.Bytes → Core.Bytes → Prop) (spawned : Core.DocId → Core.DocId → Prop) (g : Grant)
+    (f : Core.Facts) (s : Core.Step) : Prop :=
+  ∃ l ∈ g, l.target.covers gov spawned f ∧ ∃ fg ∈ l.footprint, fg.allows s = true
+
+theorem fpWithin_allows {g h : Core.Grant} {s : Core.Step} (w : fpWithin g h = true) (a : g.allows s = true) :
+    h.allows s = true := by
+  unfold fpWithin at w
+  unfold Core.Grant.allows at a ⊢
+  simp only [Bool.and_eq_true, beq_iff_eq] at w a ⊢
+  obtain ⟨⟨t, v⟩, f⟩ := w
+  obtain ⟨⟨ts, vs⟩, fs⟩ := a
+  refine ⟨⟨t ▸ ts, v ▸ vs⟩, ?_⟩
+  cases hh : h.fields with
+  | none => rfl
+  | some hs =>
+    cases hg : g.fields with
+    | none => simp [hg, hh] at f
+    | some gs =>
+      simp only [hg, hh, List.all_eq_true, List.contains_iff_mem] at f fs ⊢
+      exact fun x m => f x (fs x m)
+
+theorem Grant.within_reaches {gov : Core.Bytes → Core.Bytes → Prop} {spawned : Core.DocId → Core.DocId → Prop}
+    {g h : Grant} {f : Core.Facts} {v : Core.Verb} (w : g.within h = true) (r : g.reaches gov spawned f v) :
+    h.reaches gov spawned f v := by
+  obtain ⟨l, ml, lv, lc⟩ := r
+  simp only [Grant.within, List.all_eq_true, List.any_eq_true] at w
+  obtain ⟨m, mm, lm⟩ := w l ml
+  simp only [Line.within, Bool.and_eq_true, beq_iff_eq] at lm
+  exact ⟨m, mm, lm.1.2 ▸ lv, Core.Target.le_sound lm.1.1 lc⟩
+
+theorem Grant.within_allows {gov : Core.Bytes → Core.Bytes → Prop} {spawned : Core.DocId → Core.DocId → Prop}
+    {g h : Grant} {f : Core.Facts} {s : Core.Step} (w : g.within h = true) (a : g.allows gov spawned f s) :
+    h.allows gov spawned f s := by
+  obtain ⟨l, ml, lc, fg, mf, fa⟩ := a
+  simp only [Grant.within, List.all_eq_true, List.any_eq_true] at w
+  obtain ⟨m, mm, lm⟩ := w l ml
+  simp only [Line.within, Bool.and_eq_true, List.all_eq_true, List.any_eq_true] at lm
+  obtain ⟨fg', mf', fw⟩ := lm.2 fg mf
+  exact ⟨m, mm, Core.Target.le_sound lm.1.1 lc, fg', mf', fpWithin_allows fw fa⟩
 
 /-- Which branches a cap may write: any, main only, proposals only, or one branch by its hash (never main). -/
 inductive Branches where
@@ -163,12 +219,14 @@ structure Ctx where
   threshold : String → Nat := fun _ => 1
   inGroup : String → String → Bool := fun _ _ => false
   roles : List Role := []
+  /-- The vault each Doc it knows belongs to, as the Doc's genesis fixes it. -/
+  docVault : Core.DocId → Option String := fun _ => none
 
 /-- The first rule a chain breaks. -/
 inductive ChainError where
   | empty
   | notRoot (cap : String)
-  | authority (cap : String) (atom : Atom)
+  | authority (cap : String) (line : Line)
   | signer (cap : String)
   | approval (cap : String)
   | publicShares (cap : String)
@@ -179,9 +237,35 @@ inductive ChainError where
   | conditions (cap : String)
   deriving DecidableEq, Repr
 
-/-- `issuer` has authority over `a`: it is `a`'s vault, or governs it. Authority runs down the tree. -/
-def authorityOver (t : Tree) (issuer : String) (a : Atom) : Bool :=
-  a.vault == issuer || (t.governs issuer).contains a.vault
+/-- `issuer` has authority over vault `v`'s Docs: `v` is its own, or one it governs. Authority runs down the tree. -/
+def authorityOverVault (t : Tree) (issuer : String) (v : Core.Bytes) : Bool :=
+  v == vaultId issuer || (t.governs issuer).any (vaultId · == v)
+
+/-- What a target is anchored to: the vault it names, or the Doc (an actor is a Doc). -/
+def anchor : Core.Target → Core.Bytes ⊕ Core.DocId
+  | .vault v _ | .vaultType v _ _ | .vaultDef v _ => .inl v
+  | .doc d | .actor d _ => .inr d
+
+/-- A narrower target is anchored where the wider one is. -/
+theorem anchor_le {a b : Core.Target} (h : a.le b = true) : anchor a = anchor b := by
+  cases a <;> cases b <;> simp_all [Core.Target.le, anchor]
+
+/-- `issuer` has authority over a line: over the vault its target names, or over the vault the Doc or actor it names
+belongs to. A Doc the reader doesn't know gives none. -/
+def authorityOver (x : Ctx) (issuer : String) (l : Line) : Bool :=
+  match anchor l.target with
+  | .inl v => authorityOverVault x.tree issuer v
+  | .inr d =>
+    match x.docVault d with
+    | some w => authorityOverVault x.tree issuer (vaultId w)
+    | none => false
+
+/-- Authority over the wider line is authority over the narrower one. -/
+theorem authority_le {x : Ctx} {i : String} {l m : Line} (le : l.target.le m.target = true)
+    (h : authorityOver x i m = true) : authorityOver x i l = true := by
+  unfold authorityOver at h ⊢
+  rw [anchor_le le]
+  exact h
 
 /-- `issuer` holds `p`: it is `p`'s vault, or in `p`'s group now. The public and tickets pass nothing on. -/
 def holds (x : Ctx) (p : Cap) (issuer : String) : Bool :=
@@ -201,7 +285,7 @@ def capRules (x : Ctx) (c : Cap) : List (Bool × ChainError) :=
 /-- A root names no parent, and every atom it grants lies in its issuer's authority. -/
 def rootRules (x : Ctx) (r : Cap) : List (Bool × ChainError) :=
   [(r.parent.isNone, .notRoot r.id)] ++
-    ((r.grants x.roles).map fun a => (authorityOver x.tree r.issuer a, .authority r.id a)) ++ capRules x r
+    ((r.grants x.roles).map fun l => (authorityOver x r.issuer l, .authority r.id l)) ++ capRules x r
 
 /-- A link names its parent, is issued by its parent's holder, and narrows it: its grant within, its share depth lower,
 its conditions at least as strict. -/
@@ -252,7 +336,7 @@ theorem linkRules_ok {p c : Cap} (h : (linkRules x p c).all (·.1) = true) :
   exact ⟨a, b, c', d, e, k⟩
 
 theorem rootRules_ok {r : Cap} (h : (rootRules x r).all (·.1) = true) :
-    r.parent = none ∧ (∀ a ∈ r.grants x.roles, authorityOver x.tree r.issuer a = true) ∧
+    r.parent = none ∧ (∀ l ∈ r.grants x.roles, authorityOver x r.issuer l = true) ∧
       (capRules x r).all (·.1) = true := by
   rw [rootRules, rules_all, rules_all] at h
   obtain ⟨⟨h, m⟩, k⟩ := h
@@ -266,33 +350,79 @@ theorem linksRules_cons {p c : Cap} {cs : List Cap} :
       (linkRules x p c).all (·.1) = true ∧ (linksRules x c cs).all (·.1) = true := by
   rw [linksRules, rules_all]
 
-/-- Every cap after `p` in a chain lies within `p`. -/
-theorem links_narrow : ∀ {p : Cap} {cs : List Cap}, (linksRules x p cs).all (·.1) = true →
-    ∀ c ∈ cs, (c.grants x.roles).within (p.grants x.roles) = true
+/-- Every cap after `p` in a chain reaches nothing `p` doesn't. -/
+theorem links_reach (gov : Core.Bytes → Core.Bytes → Prop) (spawned : Core.DocId → Core.DocId → Prop) :
+    ∀ {p : Cap} {cs : List Cap}, (linksRules x p cs).all (·.1) = true → ∀ c ∈ cs, ∀ f v,
+      (c.grants x.roles).reaches gov spawned f v → (p.grants x.roles).reaches gov spawned f v
   | _, [], _, _, m => nomatch m
   | p, c :: cs, h, d, m => by
     obtain ⟨l, rest⟩ := linksRules_cons.mp h
     have w := (linkRules_ok l).2.2.1
+    intro f v r
     rcases List.mem_cons.mp m with e | m
-    · exact e ▸ w
-    · exact Grant.within_trans (links_narrow rest d m) w
+    · exact Grant.within_reaches w (e ▸ r)
+    · exact Grant.within_reaches w (links_reach gov spawned rest d m f v r)
 
-/-- A chain only narrows: every cap in it grants within its root. -/
-theorem narrow_chain {r : Cap} {cs : List Cap} (h : chainOk x (r :: cs) = true) :
-    ∀ c ∈ r :: cs, (c.grants x.roles).within (r.grants x.roles) = true := by
+/-- Every cap after `p` in a chain allows no write step `p` doesn't. -/
+theorem links_allow (gov : Core.Bytes → Core.Bytes → Prop) (spawned : Core.DocId → Core.DocId → Prop) :
+    ∀ {p : Cap} {cs : List Cap}, (linksRules x p cs).all (·.1) = true → ∀ c ∈ cs, ∀ f s,
+      (c.grants x.roles).allows gov spawned f s → (p.grants x.roles).allows gov spawned f s
+  | _, [], _, _, m => nomatch m
+  | p, c :: cs, h, d, m => by
+    obtain ⟨l, rest⟩ := linksRules_cons.mp h
+    have w := (linkRules_ok l).2.2.1
+    intro f s a
+    rcases List.mem_cons.mp m with e | m
+    · exact Grant.within_allows w (e ▸ a)
+    · exact Grant.within_allows w (links_allow gov spawned rest d m f s a)
+
+/-- A chain only narrows: no cap in it lets a verb reach a Doc its root doesn't. -/
+theorem narrow_chain (gov : Core.Bytes → Core.Bytes → Prop) (spawned : Core.DocId → Core.DocId → Prop) {r : Cap}
+    {cs : List Cap} (h : chainOk x (r :: cs) = true) : ∀ c ∈ r :: cs, ∀ f v,
+      (c.grants x.roles).reaches gov spawned f v → (r.grants x.roles).reaches gov spawned f v := by
   rw [chainOk, chainRules, rules_all] at h
-  intro c m
+  intro c m f v rc
   rcases List.mem_cons.mp m with e | m
-  · exact e ▸ Grant.within_refl _
-  · exact links_narrow h.2 c m
+  · exact e ▸ rc
+  · exact links_reach gov spawned h.2 c m f v rc
 
-/-- No authority from nowhere: every atom a chain grants lies in its root issuer's authority, its own vault or one it
+/-- And no cap in it allows a write step its root doesn't: footprints narrow too. -/
+theorem narrow_steps (gov : Core.Bytes → Core.Bytes → Prop) (spawned : Core.DocId → Core.DocId → Prop) {r : Cap}
+    {cs : List Cap} (h : chainOk x (r :: cs) = true) : ∀ c ∈ r :: cs, ∀ f s,
+      (c.grants x.roles).allows gov spawned f s → (r.grants x.roles).allows gov spawned f s := by
+  rw [chainOk, chainRules, rules_all] at h
+  intro c m f s a
+  rcases List.mem_cons.mp m with e | m
+  · exact e ▸ a
+  · exact links_allow gov spawned h.2 c m f s a
+
+theorem links_authority {i : String} : ∀ {p : Cap} {cs : List Cap},
+    (∀ l ∈ p.grants x.roles, authorityOver x i l = true) → (linksRules x p cs).all (·.1) = true →
+      ∀ c ∈ cs, ∀ l ∈ c.grants x.roles, authorityOver x i l = true
+  | _, [], _, _, _, m => nomatch m
+  | p, c :: cs, hp, h, d, m => by
+    obtain ⟨lk, rest⟩ := linksRules_cons.mp h
+    have w := (linkRules_ok lk).2.2.1
+    have hc : ∀ l ∈ c.grants x.roles, authorityOver x i l = true := by
+      intro l ml
+      simp only [Grant.within, List.all_eq_true, List.any_eq_true] at w
+      obtain ⟨n, mn, ln⟩ := w l ml
+      simp only [Line.within, Bool.and_eq_true] at ln
+      exact authority_le ln.1.1 (hp n mn)
+    rcases List.mem_cons.mp m with e | m
+    · exact e ▸ hc
+    · exact links_authority hc rest d m
+
+/-- No authority from nowhere: every line a chain grants lies in its root issuer's authority, its own vault or one it
 governs. -/
 theorem root_authority {r : Cap} {cs : List Cap} (h : chainOk x (r :: cs) = true) :
-    ∀ c ∈ r :: cs, ∀ a ∈ c.grants x.roles, authorityOver x.tree r.issuer a = true := by
-  intro c m a ma
-  have root := rootRules_ok (rules_all.mp (by simpa [chainOk, chainRules] using h)).1
-  exact root.2.1 a (Grant.within_iff.mp (narrow_chain h c m) a ma)
+    ∀ c ∈ r :: cs, ∀ l ∈ c.grants x.roles, authorityOver x r.issuer l = true := by
+  rw [chainOk, chainRules, rules_all] at h
+  have root := (rootRules_ok h.1).2.1
+  intro c m
+  rcases List.mem_cons.mp m with e | m
+  · exact e ▸ root
+  · exact links_authority root h.2 c m
 
 /-- A chain is no longer than its root may be shared: every link lowers the share depth. -/
 theorem links_short : ∀ {p : Cap} {cs : List Cap}, (linksRules x p cs).all (·.1) = true → cs.length ≤ p.share
