@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
 use aven_db_core::timeline;
-use aven_db_store::blobs::Blobs;
+use aven_db_store::blobs::{Blobs, FetchError};
 use aven_db_store::{Hash, RefName, Store, files};
 use bytes::Bytes;
 use iroh::{Endpoint, EndpointAddr, PublicKey, RelayUrl};
@@ -122,6 +122,34 @@ where
     }
 }
 
+/// Why a file wasn't kept. Only a sender that couldn't be reached may have it later: one that said it hasn't the file,
+/// or whose file isn't the size its line says, never will, so the Aven Peer doesn't ask it again.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum KeepError {
+    /// The device said it hasn't the file's index or a chunk of it.
+    NotFound(String),
+    /// The file it holds is `held` bytes; its line says `announced`.
+    Mismatch { held: u64, announced: u64 },
+    /// The device couldn't be reached, or the fetch or the store failed on the way: worth asking again.
+    Unreachable(String),
+}
+
+impl KeepError {
+    /// Whether asking the device again may keep the file.
+    pub fn retry(&self) -> bool {
+        matches!(self, KeepError::Unreachable(_))
+    }
+}
+
+impl std::fmt::Display for KeepError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KeepError::NotFound(why) | KeepError::Unreachable(why) => f.write_str(why),
+            KeepError::Mismatch { held, announced } => write!(f, "{held} bytes, announced as {announced}"),
+        }
+    }
+}
+
 /// The Aven Peer's rule for one file line: the whole hash sequence `index` fetched from the device `from`, its length
 /// checked against `size`, and kept under `file-<index>`; a file kept already is left as it is. The bytes that
 /// crossed, and a `kept` or `dropped` line.
@@ -136,7 +164,7 @@ pub async fn keep<S: Store + ?Sized>(
     size: u64,
     me: &str,
     notes: &Notes,
-) -> Result<u64, String> {
+) -> Result<u64, KeepError> {
     let name = file_ref(&index);
     if matches!(store.get_ref(&name).await, Ok(Some(_))) {
         return Ok(0);
@@ -144,22 +172,29 @@ pub async fn keep<S: Store + ?Sized>(
     let started = Instant::now();
     let kept = async {
         let at = EndpointAddr::new(from).with_relay_url(relay.clone());
-        let conn = endpoint.connect(at, crate::blobs::ALPN).await.map_err(|e| e.to_string())?;
-        let fetched = blobs.fetch_file(&conn, index).await.map_err(|e| e.to_string())?;
-        let file = files::open(store, &index).await.map_err(|e| e.to_string())?.ok_or("no index")?;
+        let unreachable = |e: &dyn std::fmt::Display| KeepError::Unreachable(e.to_string());
+        let conn = endpoint.connect(at, crate::blobs::ALPN).await.map_err(|e| unreachable(&e))?;
+        let fetched = blobs.fetch_file(&conn, index).await.map_err(|e| match e {
+            FetchError::NotFound(_) => KeepError::NotFound(e.to_string()),
+            FetchError::Failed(_) => unreachable(&e),
+        })?;
+        let file = files::open(store, &index)
+            .await
+            .map_err(|e| unreachable(&e))?
+            .ok_or_else(|| KeepError::NotFound("no index".into()))?;
         if file.len != size {
-            return Err(format!("{} bytes, announced as {size}", file.len));
+            return Err(KeepError::Mismatch { held: file.len, announced: size });
         }
         match store.set_ref(&name, None, index).await {
             Ok(()) | Err(aven_db_store::Error::Stale { .. }) => Ok(fetched.bytes),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(unreachable(&e)),
         }
     };
     let result = kept.await;
     let line = match &result {
         Ok(bytes) => ("kept", json!({ "file": index.to_string(), "size": size, "bytes": bytes,
             "ms": started.elapsed().as_millis() as u64 })),
-        Err(why) => ("dropped", json!({ "file": index.to_string(), "why": why })),
+        Err(why) => ("dropped", json!({ "file": index.to_string(), "why": why.to_string(), "retry": why.retry() })),
     };
     notes(timeline::line(now(), me, line.0, line.1));
     result
