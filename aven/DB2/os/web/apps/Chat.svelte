@@ -153,12 +153,16 @@
 </div>
 
 <style>
-	/* the room: presence as chips on top, the thread on the cream ground, the input bar at the bottom. Lines are
+	/* Every grid here has one column of minmax(0, 1fr), and every grid or flex child that holds text or a file has
+	   min-width 0: an implicit column is auto, so one long file name or progress bar would widen the whole chat past a
+	   phone's screen, and the right-hand bubbles and the Send button with it (Samuel's iPhone, 30 Oct 2026).
+	   The room: presence as chips on top, the thread on the cream ground, the input bar at the bottom. Lines are
 	   bubbles (`li`): your vault's own (.mine) green, others' white with a hairline, the network's (.said) a muted note.
 	   A line's parts: `strong` its sender, `.text` what it says, `time` when */
 	[data-view='chat'] {
 		display: grid;
 		grid-template-rows: auto 1fr;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 12px;
 		max-width: 880px;
 		height: calc(100dvh - 64px);
@@ -222,12 +226,15 @@
 	section {
 		display: grid;
 		grid-template-rows: 1fr auto;
+		grid-template-columns: minmax(0, 1fr);
+		min-width: 0;
 		gap: 12px;
 		min-height: 0;
 	}
 
 	ol {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		align-content: start;
 		gap: 10px;
 		overflow-y: auto;
@@ -236,7 +243,9 @@
 
 	ol li {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 2px;
+		min-width: 0;
 		justify-self: start;
 		max-width: min(78%, 560px);
 		padding: 10px 16px 8px;
@@ -247,6 +256,7 @@
 	}
 
 	ol li strong {
+		overflow-wrap: anywhere;
 		color: var(--muted);
 		font-size: 12px;
 		font-weight: 600;
@@ -325,9 +335,33 @@
 
 	button {
 		display: inline-flex;
+		flex: none;
 		align-items: center;
+		justify-content: center;
 		gap: 6px;
+		min-width: 44px;
+		min-height: 44px;
 		padding: 10px 18px;
+	}
+
+	/* on a phone, Send is its arrow alone, still 44 px to touch */
+	@media (max-width: 480px) {
+		[data-view='chat'] {
+			padding: 12px 12px 16px;
+		}
+
+		button {
+			padding: 10px;
+		}
+
+		button span {
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			overflow: hidden;
+			clip-path: inset(50%);
+			white-space: nowrap;
+		}
 	}
 
 	/* a file is a card inside its bubble: the image, movie or PDF, and below it its name and size */
@@ -339,6 +373,8 @@
 
 	figure.file {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		min-width: 0;
 		gap: 6px;
 		margin: 2px 0 0;
 		padding: 6px;
@@ -355,20 +391,28 @@
 	}
 
 	figure.file iframe {
-		width: min(420px, 70vw);
+		width: min(420px, 100%);
 		height: 320px;
 		border: 1px solid var(--line);
 	}
 
 	figcaption {
 		display: flex;
+		min-width: 0;
 		align-items: center;
 		gap: 6px;
 		padding: 0 4px;
 		font-size: 13px;
 	}
 
+	figcaption svg,
+	figcaption small {
+		flex: none;
+	}
+
 	figcaption a {
+		flex: 0 1 auto;
+		min-width: 0;
 		overflow: hidden;
 		color: inherit;
 		text-overflow: ellipsis;
@@ -385,7 +429,7 @@
 	}
 
 	li .bar {
-		width: 220px;
+		width: min(220px, 100%);
 	}
 
 	.refused {
