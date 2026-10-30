@@ -260,8 +260,10 @@ the turn's new `phase` must be that `To`. So the drawn machine and the behaviour
 The kernel is pure Rust with no I/O (avenDB's rule 2), compiled to WebAssembly for the browser and natively for tests.
 Its host feeds it time and events and takes back what it draws. It has four parts:
 
-- **Router.** Appends the message to the inbox Doc from its sender to its receiver. A message to an unknown receiver
-  is refused: the sending turn's journal entry records that effect as `refused`, and an ask gets `fail(refused)`.
+- **Router.** Appends the message to the inbox Doc from its sender to its receiver. A message to an actor that is not
+  live is refused and never appended, so an address not yet spawned never holds messages from before its birth: the
+  sending turn's journal entry records that effect as `refused`, and an ask gets `fail(refused)` from the kernel. Its
+  `re` names the ask with seq 0, which no sent message has, so it can never be taken for the answer to a real ask.
 - **Scheduler.** Picks an actor with unread inbox entries and runs one turn. One actor never runs two turns at once;
   different actors may run in parallel. Across senders, the oldest arrival goes first.
 - **Turns.** Each turn runs as shown below.
