@@ -1,31 +1,38 @@
+import Aven.Core
+
 /-!
 # The engine's queries: scope, operators, bounds (db/engine, "Queries"; ARCHITECTURE.md, A8)
 
-A query reads tables of Records by type and nothing else. Every query names a **target**: what it ranges over, in the
-grammar caps and wants share. A query without one is refused before anything runs, and its answer is `complete` only
-when every Doc its target resolves to is held. Rows come only from the Records of held Docs inside the target. An answer that is not complete is `short`, naming the Docs still missing.
+A query reads tables of Records by type and nothing else. Every query names a **target** in `Aven.Core`'s one grammar,
+the same that caps and wants use (A8, decided 30 Oct 2026). A query without one is refused before anything runs. The
+target is resolved over a directory: the genesis facts of the Docs it lists (`Aven.Core.Facts`). The answer is
+`complete` exactly when every Doc the target resolves to is held, and `short` otherwise, naming the Docs still missing.
+Rows come only from the Records of held Docs inside the target.
 
-Each operator has a **bound** on the rows it can yield and a **cost** on the rows it can touch, both computed from the
-counts a device knows before it runs (a directory's counts per type, later). The theorems: what a query yields never
-exceeds its bound, and the work it does never exceeds its cost, operator by operator.
+Each operator has a **bound** on the rows it can yield and a **cost** on the rows it can touch, both computed from
+counts a device knows before it runs: any upper bound per type will do, such as a directory's counts. What a query
+yields never exceeds its bound, and the work it does never exceeds its cost, operator by operator.
 
-The target grammar, type ids and values are `Aven.Core`'s (the docs thread). Until it lands this model is generic over
-them: `Doc`, `Ty`, `Target` and `Val` are parameters, and resolving a target is a function the caller passes in. -/
+Values are `Aven.Core.Value`s in the examples. The evaluator needs only an equality and an order on them (`Vals`);
+the engine compares Values by their one encoding, which is Value equality on canonical Values (`Aven.Core.encode_inj`).
+Columns are field names, as UTF-8 bytes. -/
 
 namespace Aven.DB.Engine
 
+open Aven.Core
+
 /-- A row as queries see it: columns by name. A Record's fields, or joined Records' fields side by side. -/
-abbrev Tuple (Val : Type) := List (String × Val)
+abbrev Tuple (Val : Type) := List (Bytes × Val)
 
-/-- A Record as the engine reads it from a Doc: where it lives, its type, its fields. -/
-structure Rec (Doc Ty Val : Type) where
-  doc : Doc
-  ty : Ty
+/-- A Record as the engine reads it from a Doc: where it lives, its type (a type Doc), its fields. -/
+structure Rec (Val : Type) where
+  doc : DocId
+  type : DocId
   fields : Tuple Val
-  deriving Repr
 
-/-- What the evaluator needs of values: an order, and a way to write a count. -/
+/-- What the evaluator needs of values: equality, an order, and a way to write a count. -/
 structure Vals (Val : Type) where
+  eq : Val → Val → Bool
   lt : Val → Val → Bool
   count : Nat → Val
 
@@ -33,66 +40,65 @@ inductive Cmp where
   | eq | ne | lt | le
   deriving DecidableEq, Repr
 
-inductive Query (Ty Val : Type) where
+inductive Query (Val : Type) where
   /-- every Record of a type, in the query's scope -/
-  | scan (ty : Ty)
+  | scan (type : DocId)
   /-- the rows whose column compares to a value -/
-  | filter (col : String) (cmp : Cmp) (v : Val) (q : Query Ty Val)
+  | filter (col : Bytes) (cmp : Cmp) (v : Val) (q : Query Val)
   /-- only these columns, in this order; where a joined row has a column twice, the left one -/
-  | project (cols : List String) (q : Query Ty Val)
+  | project (cols : List Bytes) (q : Query Val)
   /-- rows of both sides whose columns are equal, side by side -/
-  | join (l r : Query Ty Val) (lcol rcol : String)
+  | join (l r : Query Val) (lcol rcol : Bytes)
   /-- the same, keeping a left row without a match on its own -/
-  | leftJoin (l r : Query Ty Val) (lcol rcol : String)
+  | leftJoin (l r : Query Val) (lcol rcol : Bytes)
   /-- the left rows without a match: "open tasks" are tasks with no `done` -/
-  | anti (l r : Query Ty Val) (lcol rcol : String)
+  | anti (l r : Query Val) (lcol rcol : Bytes)
   /-- sorted by a column -/
-  | order (col : String) (q : Query Ty Val)
+  | order (col : Bytes) (q : Query Val)
   /-- one row per value of a column, with its count -/
-  | group (col : String) (q : Query Ty Val)
+  | group (col : Bytes) (q : Query Val)
   /-- at most `n` rows -/
-  | limit (n : Nat) (q : Query Ty Val)
-  deriving Repr
+  | limit (n : Nat) (q : Query Val)
 
 /-- A query as stored and run: its target, and its body. -/
-structure Spec (Target Ty Val : Type) where
+structure Spec (Val : Type) where
   target : Option Target
-  body : Query Ty Val
+  body : Query Val
 
-variable {Doc Ty Target Val : Type} [DecidableEq Doc] [DecidableEq Ty] [DecidableEq Val]
+variable {Val : Type}
 
-def get (t : Tuple Val) (col : String) : Option Val := t.lookup col
+def get (t : Tuple Val) (col : Bytes) : Option Val := t.lookup col
 
 def Cmp.holds (V : Vals Val) : Cmp → Val → Val → Bool
-  | .eq, a, b => decide (a = b)
-  | .ne, a, b => !decide (a = b)
+  | .eq, a, b => V.eq a b
+  | .ne, a, b => !V.eq a b
   | .lt, a, b => V.lt a b
-  | .le, a, b => decide (a = b) || V.lt a b
+  | .le, a, b => V.eq a b || V.lt a b
 
-/-- Two rows match when both columns are there and equal. A missing column pairs nothing. -/
-def pairs (lcol rcol : String) (a b : Tuple Val) : Bool :=
+/-- Two rows match when both columns are there and equal. A missing column matches nothing. -/
+def pairs (V : Vals Val) (lcol rcol : Bytes) (a b : Tuple Val) : Bool :=
   match get a lcol, get b rcol with
-  | some x, some y => decide (x = y)
+  | some x, some y => V.eq x y
   | _, _ => false
 
-/-- Each value once, in first-seen order from the end. -/
-def dedup : List Val → List Val
+/-- Each value once. -/
+def dedup (V : Vals Val) : List Val → List Val
   | [] => []
-  | a :: l => if a ∈ dedup l then dedup l else a :: dedup l
+  | a :: l => if (dedup V l).any (V.eq a) then dedup V l else a :: dedup V l
 
 /-- Rows sorted by a column; rows without it go first. -/
-def sortBy (V : Vals Val) (col : String) (rs : List (Tuple Val)) : List (Tuple Val) :=
+def sortBy (V : Vals Val) (col : Bytes) (rs : List (Tuple Val)) : List (Tuple Val) :=
   rs.mergeSort fun a b =>
     match get a col, get b col with
     | none, _ => true
     | some _, none => false
     | some x, some y => !V.lt y x
 
-def countRows (col : String) (rs : List (Tuple Val)) (k : Val) : Nat :=
-  (rs.filter fun t => get t col == some k).length
+def countRows (V : Vals Val) (col : Bytes) (rs : List (Tuple Val)) (k : Val) : Nat :=
+  (rs.filter fun t => match get t col with | some x => V.eq x k | none => false).length
 
 /-- The rows a query yields, given the rows of each type in its scope. -/
-def eval (V : Vals Val) (src : Ty → List (Tuple Val)) : Query Ty Val → List (Tuple Val)
+def eval (V : Vals Val) (src : DocId → List (Tuple Val)) : Query Val → List (Tuple Val)
   | .scan ty => src ty
   | .filter col cmp v q => (eval V src q).filter fun t =>
       match get t col with
@@ -101,83 +107,120 @@ def eval (V : Vals Val) (src : Ty → List (Tuple Val)) : Query Ty Val → List 
   | .project cols q => (eval V src q).map fun t => cols.filterMap fun c => (get t c).map (c, ·)
   | .join l r lcol rcol =>
       let rs := eval V src r
-      (eval V src l).flatMap fun a => (rs.filter (pairs lcol rcol a)).map (a ++ ·)
+      (eval V src l).flatMap fun a => (rs.filter (pairs V lcol rcol a)).map (a ++ ·)
   | .leftJoin l r lcol rcol =>
       let rs := eval V src r
       (eval V src l).flatMap fun a =>
-        match rs.filter (pairs lcol rcol a) with
+        match rs.filter (pairs V lcol rcol a) with
         | [] => [a]
         | ms => ms.map (a ++ ·)
   | .anti l r lcol rcol =>
       let rs := eval V src r
-      (eval V src l).filter fun a => (rs.filter (pairs lcol rcol a)).isEmpty
+      (eval V src l).filter fun a => (rs.filter (pairs V lcol rcol a)).isEmpty
   | .order col q => sortBy V col (eval V src q)
   | .group col q =>
       let rs := eval V src q
-      (dedup (rs.filterMap (get · col))).map fun k => [(col, k), ("count", V.count (countRows col rs k))]
+      (dedup V (rs.filterMap (get · col))).map fun k => [(col, k), ("count".toUTF8.toList, V.count (countRows V col rs k))]
   | .limit n q => (eval V src q).take n
 
 /-! ## Scope (A8) -/
 
+/-- `Aven.Core.Target.covers`, decided: who governs whom and which actor spawned which are given as tests. -/
+def inTarget (gov : Bytes → Bytes → Bool) (spawned : DocId → DocId → Bool) : Target → Facts → Bool
+  | .doc d, f => f.id == d
+  | .vault v b, f => f.vault == v || (b && gov v f.vault)
+  | .vaultType v t b, f => f.type == t && (f.vault == v || (b && gov v f.vault))
+  | .actor a b, f => f.id == a || (b && spawned a f.id)
+  | .vaultDef v d, f => f.vault == v && f.type == d
+
+theorem inTarget_iff (gov : Bytes → Bytes → Bool) (spawned : DocId → DocId → Bool) (t : Target) (f : Facts) :
+    inTarget gov spawned t f = true ↔ t.covers (gov · · = true) (spawned · · = true) f := by
+  cases t <;> simp [inTarget, Target.covers]
+
+/-- The Docs a target resolves to, among those a directory lists. -/
+def resolve (gov : Bytes → Bytes → Bool) (spawned : DocId → DocId → Bool) (dir : List Facts) (t : Target) :
+    List DocId :=
+  (dir.filter (inTarget gov spawned t)).map (·.id)
+
 /-- How complete an answer is: every Doc of the target held, or the ones still missing. -/
-inductive Completeness (Doc : Type) where
+inductive Completeness where
   | complete
-  | short (missing : List Doc)
+  | short (missing : List DocId)
   deriving DecidableEq, Repr
 
-inductive Answer (Doc Val : Type) where
+inductive Answer (Val : Type) where
   /-- no target: refused before anything runs -/
   | refused
-  | rows (status : Completeness Doc) (rows : List (Tuple Val))
-  deriving Repr
+  | rows (status : Completeness) (rows : List (Tuple Val))
 
-/-- The rows of a type inside a scope: Records of that type in held Docs the target resolves to. -/
-def inScope (db : List (Rec Doc Ty Val)) (docs : List Doc) (held : Doc → Bool) (ty : Ty) : List (Tuple Val) :=
-  (db.filter fun r => r.ty = ty ∧ r.doc ∈ docs ∧ held r.doc).map (·.fields)
+/-- The rows of a type among some Docs: Records of that type in those Docs that this device holds. -/
+def inScope (db : List (Rec Val)) (docs : List DocId) (held : DocId → Bool) (ty : DocId) : List (Tuple Val) :=
+  (db.filter fun r => r.type == ty && docs.contains r.doc && held r.doc).map (·.fields)
 
-/-- Run a stored query. `resolve` gives the Docs a target names (through its directory); `held` says which this device
-holds. -/
-def run (V : Vals Val) (resolve : Target → List Doc) (held : Doc → Bool) (db : List (Rec Doc Ty Val))
-    (s : Spec Target Ty Val) : Answer Doc Val :=
+/-- The answer over some Docs: `complete` when all are held, else `short` with the missing ones. -/
+def answerOver (V : Vals Val) (docs : List DocId) (held : DocId → Bool) (db : List (Rec Val)) (q : Query Val) :
+    Answer Val :=
+  let missing := docs.filter (! held ·)
+  .rows (if missing = [] then .complete else .short missing) (eval V (inScope db docs held) q)
+
+/-- Run a stored query over the Docs its target resolves to in a directory. -/
+def run (V : Vals Val) (gov : Bytes → Bytes → Bool) (spawned : DocId → DocId → Bool) (dir : List Facts)
+    (held : DocId → Bool) (db : List (Rec Val)) (s : Spec Val) : Answer Val :=
   match s.target with
   | none => .refused
-  | some t =>
-    let docs := resolve t
-    let missing := docs.filter (! held ·)
-    .rows (if missing = [] then .complete else .short missing) (eval V (inScope db docs held) s.body)
+  | some t => answerOver V (resolve gov spawned dir t) held db s.body
 
-theorem run_refused_without_target (V : Vals Val) (resolve : Target → List Doc) (held : Doc → Bool)
-    (db : List (Rec Doc Ty Val)) (q : Query Ty Val) :
-    run V resolve held db ⟨none, q⟩ = .refused := rfl
+theorem run_refused_without_target (V : Vals Val) (gov : Bytes → Bytes → Bool) (spawned : DocId → DocId → Bool)
+    (dir : List Facts) (held : DocId → Bool) (db : List (Rec Val)) (q : Query Val) :
+    run V gov spawned dir held db ⟨none, q⟩ = .refused := rfl
 
-/-- `complete` means exactly: every Doc the target resolves to is held. -/
-theorem complete_iff (V : Vals Val) (resolve : Target → List Doc) (held : Doc → Bool) (db : List (Rec Doc Ty Val))
-    (t : Target) (q : Query Ty Val) (rs : List (Tuple Val)) :
-    (run V resolve held db ⟨some t, q⟩ = .rows .complete rs) →
-      ∀ d ∈ resolve t, held d = true := by
-  intro h d hd
-  simp only [run] at h
-  split at h
-  · rename_i hm
-    have : d ∉ (resolve t).filter (! held ·) := by rw [hm]; simp
-    simp [List.mem_filter, hd] at this
-    exact this
-  · cases h
+/-- An answer over some Docs is `complete` exactly when every one of them is held. -/
+theorem answerOver_complete_iff (V : Vals Val) (docs : List DocId) (held : DocId → Bool) (db : List (Rec Val))
+    (q : Query Val) :
+    (∃ rs, answerOver V docs held db q = .rows .complete rs) ↔ ∀ d ∈ docs, held d = true := by
+  simp only [answerOver]
+  constructor
+  · rintro ⟨rs, h⟩ d hd
+    split at h
+    · rename_i hm
+      have : d ∉ docs.filter (! held ·) := by rw [hm]; simp
+      simpa [List.mem_filter, hd] using this
+    · cases h
+  · intro h
+    refine ⟨eval V (inScope db docs held) q, ?_⟩
+    have : docs.filter (! held ·) = [] := by
+      rw [List.filter_eq_nil_iff]
+      intro d hd
+      simp [h d hd]
+    simp [this]
 
-omit [DecidableEq Val] in
+/-- **`complete` means exactly that every Doc the target resolves to is held** (A8). -/
+theorem complete_iff (V : Vals Val) (gov : Bytes → Bytes → Bool) (spawned : DocId → DocId → Bool)
+    (dir : List Facts) (held : DocId → Bool) (db : List (Rec Val)) (t : Target) (q : Query Val) :
+    (∃ rs, run V gov spawned dir held db ⟨some t, q⟩ = .rows .complete rs) ↔
+      ∀ f ∈ dir, t.covers (gov · · = true) (spawned · · = true) f → held f.id = true := by
+  simp only [run]
+  rw [answerOver_complete_iff]
+  simp only [resolve, List.mem_map, List.mem_filter]
+  constructor
+  · intro h f hf hc
+    exact h f.id ⟨f, ⟨hf, (inTarget_iff gov spawned t f).mpr hc⟩, rfl⟩
+  · rintro h d ⟨f, ⟨hf, hc⟩, rfl⟩
+    exact h f hf ((inTarget_iff gov spawned t f).mp hc)
+
 /-- A Record outside the scope, or in a Doc not held, changes no answer: rows come from the scope alone. -/
-theorem scoped_only (db : List (Rec Doc Ty Val)) (docs : List Doc) (held : Doc → Bool) (ty : Ty) :
-    inScope db docs held ty = inScope (db.filter fun r => r.doc ∈ docs ∧ held r.doc) docs held ty := by
+theorem scoped_only (db : List (Rec Val)) (docs : List DocId) (held : DocId → Bool) (ty : DocId) :
+    inScope db docs held ty = inScope (db.filter fun r => docs.contains r.doc && held r.doc) docs held ty := by
   simp only [inScope, List.filter_filter]
   congr 1
   apply List.filter_congr
   intro r _
-  by_cases h1 : r.ty = ty <;> by_cases h2 : r.doc ∈ docs <;> by_cases h3 : held r.doc = true <;> simp [h1, h2, h3]
+  cases r.type == ty <;> cases docs.contains r.doc <;> cases held r.doc <;> rfl
 
 /-! ## Bounds and costs, per operator -/
 
 /-- The most rows a query can yield, from the most rows each type can have. -/
-def bound (n : Ty → Nat) : Query Ty Val → Nat
+def bound (n : DocId → Nat) : Query Val → Nat
   | .scan ty => n ty
   | .filter _ _ _ q | .project _ q | .order _ q | .group _ q => bound n q
   | .limit k q => min k (bound n q)
@@ -186,7 +229,7 @@ def bound (n : Ty → Nat) : Query Ty Val → Nat
   | .anti l _ _ _ => bound n l
 
 /-- The work a query does as it runs: rows read, pairs compared, comparisons while sorting (counted as n²). -/
-def work (V : Vals Val) (src : Ty → List (Tuple Val)) : Query Ty Val → Nat
+def work (V : Vals Val) (src : DocId → List (Tuple Val)) : Query Val → Nat
   | .scan ty => (src ty).length
   | .filter _ _ _ q | .project _ q | .group _ q => work V src q + (eval V src q).length
   | .order _ q => work V src q + (eval V src q).length * (eval V src q).length
@@ -196,17 +239,17 @@ def work (V : Vals Val) (src : Ty → List (Tuple Val)) : Query Ty Val → Nat
 
 /-- The most work a query may do, known before it runs. A query whose cost exceeds the device's limit is refused with
 its cost in the answer. -/
-def cost (n : Ty → Nat) : Query Ty Val → Nat
+def cost (n : DocId → Nat) : Query Val → Nat
   | .scan ty => n ty
   | .filter _ _ _ q | .project _ q | .group _ q => cost n q + bound n q
   | .order _ q => cost n q + bound n q * bound n q
   | .limit _ q => cost n q
   | .join l r _ _ | .leftJoin l r _ _ | .anti l r _ _ => cost n l + cost n r + bound n l * bound n r
 
-theorem length_dedup_le : ∀ l : List Val, (dedup l).length ≤ l.length
+theorem length_dedup_le (V : Vals Val) : ∀ l : List Val, (dedup V l).length ≤ l.length
   | [] => by simp [dedup]
   | a :: l => by
-    have ih := length_dedup_le l
+    have ih := length_dedup_le V l
     simp only [dedup]
     split <;> simp <;> omega
 
@@ -228,10 +271,9 @@ theorem sum_le_mul {α : Type} (f : α → Nat) (c : Nat) :
     simp [List.sum_cons, Nat.succ_mul]
     omega
 
-omit [DecidableEq Ty] in
 /-- What a query yields never exceeds its bound, when the counts it was given hold. -/
-theorem length_le_bound (V : Vals Val) (src : Ty → List (Tuple Val)) (n : Ty → Nat)
-    (hn : ∀ ty, (src ty).length ≤ n ty) : ∀ q : Query Ty Val, (eval V src q).length ≤ bound n q
+theorem length_le_bound (V : Vals Val) (src : DocId → List (Tuple Val)) (n : DocId → Nat)
+    (hn : ∀ ty, (src ty).length ≤ n ty) : ∀ q : Query Val, (eval V src q).length ≤ bound n q
   | .scan ty => hn ty
   | .filter _ _ _ q => by
     simp only [eval, bound]
@@ -244,7 +286,7 @@ theorem length_le_bound (V : Vals Val) (src : Ty → List (Tuple Val)) (n : Ty �
     exact length_le_bound V src n hn q
   | .group _ q => by
     simp only [eval, bound, List.length_map]
-    exact Nat.le_trans (length_dedup_le _)
+    exact Nat.le_trans (length_dedup_le V _)
       (Nat.le_trans (length_filterMap_le _ _) (length_le_bound V src n hn q))
   | .limit k q => by
     simp only [eval, bound, List.length_take]
@@ -264,18 +306,17 @@ theorem length_le_bound (V : Vals Val) (src : Ty → List (Tuple Val)) (n : Ty �
     refine Nat.le_trans (sum_le_mul _ (max 1 (eval V src r).length) _ ?_)
       (Nat.mul_le_mul hl (by omega))
     intro a _
-    have hf := List.length_filter_le (pairs lcol rcol a) (eval V src r)
-    cases h : List.filter (pairs lcol rcol a) (eval V src r) with
+    have hf := List.length_filter_le (pairs V lcol rcol a) (eval V src r)
+    cases h : List.filter (pairs V lcol rcol a) (eval V src r) with
     | nil => simp; exact Nat.le_max_left 1 _
     | cons m ms => rw [h] at hf; simp only [List.length_map]; omega
   | .anti l _ _ _ => by
     simp only [eval, bound]
     exact Nat.le_trans (List.length_filter_le _ _) (length_le_bound V src n hn l)
 
-omit [DecidableEq Ty] in
 /-- The work a query does never exceeds its cost, operator by operator. -/
-theorem work_le_cost (V : Vals Val) (src : Ty → List (Tuple Val)) (n : Ty → Nat)
-    (hn : ∀ ty, (src ty).length ≤ n ty) : ∀ q : Query Ty Val, work V src q ≤ cost n q
+theorem work_le_cost (V : Vals Val) (src : DocId → List (Tuple Val)) (n : DocId → Nat)
+    (hn : ∀ ty, (src ty).length ≤ n ty) : ∀ q : Query Val, work V src q ≤ cost n q
   | .scan ty => hn ty
   | .filter _ _ _ q | .project _ q | .group _ q => by
     simp only [work, cost]

@@ -39,7 +39,7 @@ plugins lower to (D6) are Samuel's too. Nothing here is still a proposal.
 13. [Kinds compile to operations](#kinds-compile-to-operations)
 14. [Answers](#answers)
 15. [Who checks what](#who-checks-what)
-16. [Later: indexes](#later-indexes)
+16. [Indexes: local caches, and sealed indexes](#indexes-local-caches-and-sealed-indexes)
 17. [Decisions](#decisions)
 18. [What Lean proves](#what-lean-proves)
 19. [Open questions](#open-questions)
@@ -487,26 +487,36 @@ table of checks): once where an operation enters, once where its envelope is imp
 With Records as the one primitive, a cap narrower than a document is a set of types: "may write `due` and
 `done` facts" is the schemas `due` and `done`, so caps reach facts without a rule of their own.
 
-## Later: indexes
+## Indexes: local caches, and sealed indexes
 
-Decided (D10, Samuel): indexes come in a later iteration. The first queries scan the Records of their tables within
-their bound, over the documents a device holds; for the chat and the first apps that is small. An index may only make a
-query faster, never change its answer (Lean: an index's answers equal a scan), so adding one later changes no
-operation, no want and no answer.
+Local indexes are caches a device builds for itself, keyed by versions and code version (rule 17); an index may only
+make a query faster, never change its answer. The docs layer's diff per new version is their generic feed, and what is
+indexed follows the schemas and the stored queries. Nobody writes an index by hand.
 
-Notes for that iteration, from this one's discussion:
+**Search is local first** (Samuel, 30 Oct 2026; ARCHITECTURE.md, A21): a device searches what it holds, and its wants
+sync what it wants to search: actors' `loads`, and a query's target as an implicit want (A8). No other peer indexes or
+matches anyone's data: no blind index, and no `match` verb. avenDB-old's blind index let the server answer "which
+entries carry this tag" over keyed hashes of labels; it cost re-hashing per audience, leaked who shares what, and was a
+second query engine.
 
-- **Who builds them:** the docs layer's diff per new version is the generic feed; the engine keeps the maps, keyed by
-  versions and code version (rule 17); what is indexed follows the schemas and the stored queries. Nobody writes an
-  index by hand.
-- **No synced indexes:** an index synced between devices is derived state someone wrote, which a reader must trust or
-  recompute. What must be shared, such as a phone's list of 10,000 invoices without the invoices, is a document kept by
-  an act: a vault's **directory**, updated by the mutation that creates each one.
-- **Search is local first** (Samuel, 30 Oct 2026; ARCHITECTURE.md, A21): a device searches what it holds, and its
-  wants sync what it wants to search: actors' `loads`, and a query's target as an implicit want (A8). No other peer
-  indexes or matches anyone's data: no blind index, and no `match` verb. avenDB-old's blind index let the server answer
-  "which entries carry this tag" over keyed hashes of labels; it cost re-hashing per audience, leaked who shares what,
-  and was a second query engine.
+**Sealed indexes** (Samuel, 30 Oct 2026; A26) let a device know which Docs to hold without holding them all. No index
+is one anyone without the key can read: a sealed index is kept by acts, like the directory, and checked like a
+checkpoint.
+
+- **An index comes from a query's shape:** its equality fields, its range field and its order, over one type in one
+  vault. Equal shapes share one index, named by the shape's hash. Installing an actor registers in that vault the
+  indexes its `loads` need, by the owners' act, up to a limit per directory.
+- **Its entries** are, for every Record of the type in a Doc the directory lists at version V, the values of the
+  shape's fields and the Doc. The docs layer keeps them as a few Values in a history-independent tree (a Prolly tree or
+  a Merkle search tree), whose root depends only on the set of entries; the directory holds the entries since V, not
+  yet folded in, and the fold is a checkpoint.
+- **The lookup:** walk the index's Values to the entries that match, add the Docs of the directory's unfolded entries,
+  want the Docs found, and run the query on the device. A hit is only a hint: the query re-checks every Doc.
+- **`complete` with an index** means every Doc that could match is held: the index's hits plus the unfolded Docs.
+  Without an index it is every Doc of the target, as before.
+
+`Aven.DB.Engine.Index` proves the lookup exact, `complete` with an index, that an index depends only on its entries,
+and that folding in steps equals building at once (below).
 
 ## Decisions
 
@@ -529,7 +539,9 @@ Notes for that iteration, from this one's discussion:
 8. **A kind stays inside one plugin** for now (Samuel, 30 Oct 2026).
 9. **The docs layer checks envelopes; the engine checks operations** (Samuel, 30 Oct 2026). Each checks what it can
    understand.
-10. **Indexes in a later iteration** (Samuel, 30 Oct 2026). Queries scan within their bound until then.
+10. **Indexes in a later iteration** (Samuel, 30 Oct 2026), then **sealed indexes** (A26, Samuel, 30 Oct 2026): an
+    index from a query's shape, kept by acts and readable only with the key, and search local first (A21). Queries scan
+    within their bound where no index serves them.
 11. **Mutations atomic per document.** A promise across documents would need coordination the network doesn't have.
 12. **Sync by version, not by budget,** and **iroh before our own:** gossip for live changes and heads, iroh-blobs for
     bytes, irpc for our messages.
@@ -555,23 +567,51 @@ Notes for that iteration, from this one's discussion:
   model of facts. Vectors `ontology.json`.
 - **Kinds:** the compiled operations of every kind equal the ontology's model of it. Vectors `kinds.json`.
 
-**Proven so far** (30 Oct 2026), in `db/spec/Aven/DB/Engine`, without `sorry`, with vectors that `lake exe vectors`
-writes and `bun run up --check` compares. It is generic over `Aven.Core`'s Docs, types, targets, keys and values,
-which the docs thread is writing, and runs on string stand-ins for the vectors:
+**Proven so far** (30 Oct 2026), in `db/spec/Aven/DB/Engine`, on `Aven.Core`'s own types (Doc ids, type Docs, Values,
+targets, steps and grants), without `sorry`, with vectors that `lake exe vectors` writes and `bun run up --check`
+compares. Values are equal by `Aven.Core`'s lawful equality (`Aven.Core.ValueEq`), and keyable Values (bytes, text,
+integers) order exactly as the index keys do (`vals_lt_key`, against `Aven.DB.Docs.Key.Field.lt`): by kind, integers by
+sign and magnitude, text and bytes bytewise, which for UTF-8 is code-point order.
 
 | Module | Theorems | Vectors |
 |---|---|---|
-| `Query` | a query without a target is refused (`run_refused_without_target`); `complete` means every Doc of the target is held (`complete_iff`); rows come from the scope alone (`scoped_only`); what a query yields stays within its bound and the work it does within its cost, operator by operator: scan, filter, project, join, left join, anti join, order, group, limit (`length_le_bound`, `work_le_cost`) | `queries.json` |
-| `Wants` | served = wants ∩ caps (`served_eq_wants_caps`); each key once (`keys_once`), at its highest tier (`queued_highest`); tiers only order (`tiers_only_order`); prerequisites inherit priority (`prerequisites_inherit`); every round moves the measure down, finds nothing left or raises the stall alarm (`round_moves`), uploads first (`uploads_first`); `now` is never evicted (`now_never_evicted`), and what eviction keeps fits the budget (`evict_fits`) | `wants.json` |
-| `Mutate` | a refused commit changes nothing (`refused_changes_nothing`); references point back at a `put` (`refs_point_backward`); ids from (writer, counter, op index) never collide (`created_distinct`, `ids_differ_across`); readers that agree on a runtime hash lower and commit alike (`readers_agree`) | `mutations.json` |
+| `Query` | a query without a target is refused (`run_refused_without_target`); `complete` holds exactly when every Doc the target resolves to in the directory is held (`complete_iff`, both ways); `Aven.Core`'s target grammar decided (`inTarget_iff`); rows come from the scope alone (`scoped_only`); what a query yields stays within its bound and the work it does within its cost, operator by operator: scan, filter, project, join, left join, anti join, order, group, limit (`length_le_bound`, `work_le_cost`) | `queries.json` |
+| `Wants` | served = wants ∩ caps (`served_eq_wants_caps`); each key once (`keys_once`), at its highest tier (`queued_highest`); tiers only order (`tiers_only_order`); prerequisites inherit priority (`prerequisites_inherit`); every round moves the measure down, finds nothing left or raises the stall alarm (`round_moves`), uploads first (`uploads_first`); `now` is never evicted (`now_never_evicted`), and what eviction keeps fits the budget (`evict_fits`). Keys are (Doc, branch, depth, window) | `wants.json` |
+| `Mutate` | a refused commit changes nothing (`refused_changes_nothing`); references point back at a `put` (`refs_point_backward`); ids from (writer id, counter, op index) never collide (`created_distinct`, `ids_differ_across`); readers that agree on a runtime hash lower and commit alike (`readers_agree`) | `mutations.json` |
+| `Footprint` | every op's footprint step (type, verb, fields) is known before it runs; a commit that ran as its ops say passes every reader's check of its diff: new Records only of `put-new` types and footprint fields, changed fields only footprint fields, gone Records only of `remove` types (`commit_within`); an honest writer whose grants cover its footprint is accepted by every reader (`honest_passes`); what passes is granted (`check_sound`) | `mutations.json` |
+| `Index` | the lookup plus the local query returns exactly the query over every Doc the directory lists (`lookup_exact`); `complete` with an index means every candidate is held (`complete_with_index`); same entries, same root, whatever the order (`same_root`); folding in equals building at once (`fold_eq_build`, `fold_root`), in any number of steps (`fold_steps`); equal shapes register once, up to a limit (`register_once`, `register_limit`); over the docs layer's directory `Dir`, the lookup is exact and folding equals building with the directory's facts proven, not assumed (`directory_facts`, `lookup_exact_dir`, `fold_eq_build_dir`) | `lookups.json` |
 
-`Query` models A8, `Wants` A9 and `Mutate` A18 and A19 as recommended; those theorems change if Samuel decides
-otherwise. Still to come: footprints with verbs, fields and constraints and the check of a diff against them, once
-`Aven.Core` has verbs and footprints; live deltas equal a fresh run; sync; the ontology's lowering; kinds.
+A8, A9, A18, A19 and A20 were decided as recommended (Samuel, 30 Oct 2026), so these theorems are the decided design.
+The sealed index's tree is the docs layer's Prolly tree (`Aven.DB.Docs.Index`); the proofs take any tree whose root
+depends only on its set of entries, and `docsTree` is the docs layer's own, joined by `root_set` (`same_root_docs`,
+`fold_steps_docs`). `lookup_exact` and `fold_eq_build` rest on two facts of the directory, proven by the docs layer
+(`Aven.DB.Docs.Directory`): every Doc listed now was listed at V or is unfolded (`listed_now`), and a Doc not unfolded
+has the entries it had at V (`same_entries`). They are stated on entries, not on all Records, so only a change to what
+an index reads needs a mark.
+
+**What the proofs exposed,** for the cross-spec step:
+
+- **Equality on Values** was missing from `Aven.Core` (its maps nest, so it can't be derived); the docs thread added a
+  lawful one (`Aven.Core.ValueEq`, #1546), which the engine now uses.
+- **An `edit` names its type,** or its footprint isn't known before it runs.
+- **The diff check counts only fields whose value differs** from before the commit, so a field that changes and
+  changes back within one commit needs no grant.
+- **Index keys need an order-preserving encoding.** Canonical CBOR sorts unsigned integers numerically but text by
+  length first and negative integers after positives. Decided (the architect, 30 Oct 2026) and built by the docs layer
+  (`Aven.DB.Docs.Key`, #1551): a tag and order-preserving bytes per field, the Doc id last, whose bytewise order is the
+  fields' order (`key_order`). The engine's entries are in it (`entryBytes`), shapes keep text ranges and orders, and the
+  engine's value order is the keys' (`vals_lt_key`).
+
+Still to come: the lookup's probe as a byte range over the keys, proven equal to `keyMatch` from `key_order` and
+`key_inj`, so `hits` is the tree's `lookup`; live deltas equal a fresh run; sync; the
+ontology's lowering; kinds; constraints on field values in footprints, which stay caps' own.
 
 ## Open questions
 
-1. Which peer serves a catch-up: any member that holds the document, or the Aven Peer first?
+1. Which peer serves a catch-up: answered for the chat in [`PEERS.md`](../../PEERS.md) (#1537). Every native Peer
+   answers from its own store; a peer links to up to three members and asks whichever announced the newest signed tip,
+   then the next, in the want queue's order of sources: own devices, other readers, keepers. Signed log tips show what
+   a peer withheld.
 2. What is a device's default query bound?
 3. How many documents share a gossip topic, when a device holds thousands?
 4. Delta granularity: rows (proposed), fields, or Loro updates?

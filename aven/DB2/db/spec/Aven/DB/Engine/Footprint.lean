@@ -1,0 +1,304 @@
+import Aven.DB.Engine.Mutate
+
+/-!
+# Footprints, and every reader's check of a diff (caps, "Footprints"; ARCHITECTURE.md, A18 and A19)
+
+Every lowered op has a **footprint** step (`Aven.Core.Step`): the type it writes, its verb and its fields. A writer's
+caps must cover its commit's footprint (`Aven.Core.covers`). An envelope carries its lowered operation, so every reader
+can work out the same footprint, and then checks what the envelope actually changed against it:
+
+- a Record that is new: a `put-new` of its type is in the footprint, and every field it carries is a field the
+  footprint writes for its type;
+- a Record that changed: it keeps its id and type, and every field whose value changed is a field the footprint writes
+  for its type;
+- a Record that is gone: a `remove` of its type is in the footprint.
+
+What it proves: a commit that ran as its ops say always passes that check (`commit_within`), so an honest writer whose
+caps cover its footprint is accepted by every reader (`honest_passes`); and a diff that passes is one whose every
+change is a step some grant allows (`check_sound`). -/
+
+namespace Aven.DB.Engine
+
+open Aven.Core
+
+variable {Val : Type}
+
+/-- One op's footprint step. -/
+def Op.step : Op Val → Step
+  | .put ty fs => ⟨ty, .putNew, fs.map (·.1)⟩
+  | .patch ty _ set => ⟨ty, .patch, set.map (·.1)⟩
+  | .remove ty _ => ⟨ty, .remove, []⟩
+  | .edit ty _ f _ => ⟨ty, .edit, [f]⟩
+
+/-- A commit's footprint, known from its ops before it runs. -/
+def footprint (ops : List (Op Val)) : List Step := ops.map Op.step
+
+/-- The fields a footprint writes for a type. -/
+def fieldsOf (fp : List Step) (ty : DocId) : List Bytes := (fp.filter (·.type == ty)).flatMap (·.fields)
+
+def hasVerb (fp : List Step) (ty : DocId) (v : StepVerb) : Bool := fp.any fun st => st.type == ty && st.verb == v
+
+def optEq (eq : Val → Val → Bool) : Option Val → Option Val → Bool
+  | some a, some b => eq a b
+  | none, none => true
+  | _, _ => false
+
+/-- A Record that kept its id and type, and changed only fields the footprint writes for its type. -/
+def changedOk (eq : Val → Val → Bool) (fp : List Step) (r0 r : Record Val) : Bool :=
+  r0.id == r.id && r0.type == r.type &&
+    (r0.fields.map (·.1) ++ r.fields.map (·.1)).all fun f =>
+      optEq eq (get r0.fields f) (get r.fields f) || (fieldsOf fp r.type).contains f
+
+/-- A new Record: its type is created, with only fields the footprint writes. -/
+def newOk (fp : List Step) (r : Record Val) : Bool :=
+  hasVerb fp r.type .putNew && r.fields.all fun (f, _) => (fieldsOf fp r.type).contains f
+
+/-- What every reader checks: the Doc before, the Doc after, and the footprint. -/
+def diffWithin (eq : Val → Val → Bool) (fp : List Step) (s s' : List (Record Val)) : Bool :=
+  s'.all (fun r => s.any (changedOk eq fp · r) || newOk fp r) &&
+    s.all fun r0 => s'.any (fun r => r.id == r0.id && r.type == r0.type) || hasVerb fp r0.type .remove
+
+/-- A reader accepts a commit when the writer's grants cover its footprint and the diff stays within it. -/
+def check (eq : Val → Val → Bool) (grants : List Grant) (ops : List (Op Val)) (s s' : List (Record Val)) : Bool :=
+  covers grants (footprint ops) && diffWithin eq (footprint ops) s s'
+
+/-! ## Lemmas on fields -/
+
+theorem lookup_isSome_mem : ∀ (t : Tuple Val) (f : Bytes), (t.lookup f).isSome = true → f ∈ t.map (·.1)
+  | [], _, h => by simp at h
+  | (k, v) :: t, f, h => by
+    simp only [List.lookup_cons] at h
+    by_cases hk : f = k
+    · subst hk; simp
+    · have : (f == k) = false := by simp [hk]
+      rw [this] at h
+      simp only at h
+      exact List.mem_cons_of_mem _ (lookup_isSome_mem t f h)
+
+theorem lookup_of_mem : ∀ (t : Tuple Val) (f : Bytes) (v : Val), (f, v) ∈ t → (t.lookup f).isSome = true
+  | [], _, _, h => by simp at h
+  | (k, w) :: t, f, v, h => by
+    simp only [List.lookup_cons]
+    by_cases hk : f = k
+    · subst hk; simp
+    · have : (f == k) = false := by simp [hk]
+      rw [this]
+      simp only
+      cases List.mem_cons.mp h with
+      | inl e => cases e; exact absurd rfl hk
+      | inr e => exact lookup_of_mem t f v e
+
+theorem lookup_filter_ne (t : Tuple Val) (f c : Bytes) (h : f ≠ c) :
+    (t.filter (·.1 != c)).lookup f = t.lookup f := by
+  induction t with
+  | nil => rfl
+  | cons a t ih =>
+    obtain ⟨k, v⟩ := a
+    simp only [List.filter_cons, List.lookup_cons]
+    by_cases hk : k = c
+    · subst hk
+      have : (f == k) = false := by simp [h]
+      simp [this, ih]
+    · have hkc : (k != c) = true := by simp [hk]
+      simp only [hkc, ite_true, List.lookup_cons]
+      by_cases hf : f = k
+      · subst hf; simp
+      · have : (f == k) = false := by simp [hf]
+        simp [this, ih]
+
+theorem get_setFields_of_not_mem (f : Bytes) : ∀ (t : Tuple Val) (set : List (Bytes × Val)),
+    f ∉ set.map (·.1) → get (setFields t set) f = get t f
+  | t, [], _ => rfl
+  | t, (c, v) :: rest, h => by
+    simp only [List.map_cons, List.mem_cons, not_or] at h
+    simp only [setFields]
+    rw [get_setFields_of_not_mem f _ rest h.2]
+    simp only [get, List.lookup_cons]
+    have : (f == c) = false := by simp [h.1]
+    rw [this]
+    exact lookup_filter_ne t f c h.1
+
+theorem optEq_refl (eq : Val → Val → Bool) (heq : ∀ x, eq x x = true) : ∀ o : Option Val, optEq eq o o = true
+  | some a => heq a
+  | none => rfl
+
+/-! ## The invariant a commit keeps -/
+
+/-- The footprint writes field `f` for type `ty`. -/
+def Writes (fp : List Step) (ty : DocId) (f : Bytes) : Prop := ∃ st ∈ fp, st.type = ty ∧ f ∈ st.fields
+
+/-- What every Record after holds against the Records before, as the reader's check asks it. -/
+structure Within (eq : Val → Val → Bool) (fp : List Step) (s0 s : List (Record Val)) : Prop where
+  now : ∀ r ∈ s,
+    (∃ r0 ∈ s0, r0.id = r.id ∧ r0.type = r.type ∧
+      ∀ f, optEq eq (get r0.fields f) (get r.fields f) = false → Writes fp r.type f) ∨
+    ((∃ st ∈ fp, st.type = r.type ∧ st.verb = .putNew) ∧ ∀ f, (get r.fields f).isSome = true → Writes fp r.type f)
+  before : ∀ r0 ∈ s0,
+    (∃ r ∈ s, r.id = r0.id ∧ r.type = r0.type) ∨ (∃ st ∈ fp, st.type = r0.type ∧ st.verb = .remove)
+
+theorem within_refl (eq : Val → Val → Bool) (heq : ∀ x, eq x x = true) (fp : List Step) (s : List (Record Val)) :
+    Within eq fp s s :=
+  ⟨fun r hr => .inl ⟨r, hr, rfl, rfl, fun f h => by rw [optEq_refl eq heq] at h; cases h⟩,
+   fun r hr => .inl ⟨r, hr, rfl, rfl⟩⟩
+
+theorem found_type {eq : Val → Val → Bool} {ty : DocId} {wh : List (Bytes × Val)} {r : Record Val}
+    (h : found eq ty wh r = true) : r.type = ty := by
+  simp only [found, Bool.and_eq_true, beq_iff_eq] at h
+  exact h.1
+
+theorem edits_type {ty : DocId} {id : NewId} {r : Record Val} (h : edits ty id r = true) : r.type = ty := by
+  simp only [edits, Bool.and_eq_true, beq_iff_eq] at h
+  exact h.2
+
+/-- Changing the fields of the Records `p` picks, in a way that touches only fields the footprint writes for type `ty`,
+which every picked Record has, keeps the invariant. -/
+theorem within_map (eq : Val → Val → Bool) (fp : List Step) (s0 s : List (Record Val)) (h : Within eq fp s0 s)
+    (p : Record Val → Bool) (ty : DocId) (hp : ∀ r, p r = true → r.type = ty) (set : List (Bytes × Val))
+    (hset : ∀ f ∈ set.map (·.1), Writes fp ty f) :
+    Within eq fp s0 (s.map fun r => if p r then { r with fields := setFields r.fields set } else r) := by
+  constructor
+  · intro r1 hr1
+    obtain ⟨r, hr, rfl⟩ := List.mem_map.mp hr1
+    by_cases hpr : p r = true
+    · simp only [hpr, ite_true]
+      have hty := hp r hpr
+      rcases h.now r hr with ⟨r0, hr0, hid, hty0, hf⟩ | ⟨hc, hf⟩
+      · refine .inl ⟨r0, hr0, hid, hty0, fun f hne => ?_⟩
+        by_cases hs : f ∈ set.map (·.1)
+        · simpa [hty] using hset f hs
+        · rw [get_setFields_of_not_mem f _ _ hs] at hne
+          exact hf f hne
+      · refine .inr ⟨hc, fun f hsome => ?_⟩
+        by_cases hs : f ∈ set.map (·.1)
+        · simpa [hty] using hset f hs
+        · rw [get_setFields_of_not_mem f _ _ hs] at hsome
+          exact hf f hsome
+    · have : p r = false := by simpa using hpr
+      simp only [this]
+      exact h.now r hr
+  · intro r0 hr0
+    rcases h.before r0 hr0 with ⟨r, hr, hid, hty⟩ | hrm
+    · refine .inl ⟨_, List.mem_map.mpr ⟨r, hr, rfl⟩, ?_⟩
+      by_cases hpr : p r = true <;> simp [hpr, hid, hty]
+    · exact .inr hrm
+
+theorem within_step (eq : Val → Val → Bool) (ofId : NewId → Val) (w c i : Nat) (fp : List Step)
+    (s0 s s1 : List (Record Val)) (op : Op Val) (hop : op.step ∈ fp) (h : Within eq fp s0 s)
+    (hs : step eq ofId w c i s op = .ok s1) : Within eq fp s0 s1 := by
+  cases op with
+  | put ty fs =>
+    simp only [step, Except.ok.injEq] at hs
+    subst hs
+    constructor
+    · intro r hr
+      rcases List.mem_append.mp hr with hr | hr
+      · exact h.now r hr
+      · simp only [List.mem_singleton] at hr
+        subst hr
+        refine .inr ⟨⟨_, hop, rfl, rfl⟩, fun f hsome => ⟨_, hop, rfl, ?_⟩⟩
+        have := lookup_isSome_mem _ f hsome
+        simpa [Op.step, List.map_map, Function.comp_def] using this
+    · intro r0 hr0
+      rcases h.before r0 hr0 with ⟨r, hr, hid⟩ | hrm
+      · exact .inl ⟨r, List.mem_append_left _ hr, hid⟩
+      · exact .inr hrm
+  | patch ty wh set =>
+    simp only [step, Except.ok.injEq] at hs
+    subst hs
+    exact within_map eq fp s0 s h _ ty (fun r hr => found_type hr) set
+      (fun f hf => ⟨_, hop, rfl, by simpa [Op.step] using hf⟩)
+  | remove ty wh =>
+    simp only [step, Except.ok.injEq] at hs
+    subst hs
+    constructor
+    · intro r hr
+      exact h.now r (List.mem_filter.mp hr).1
+    · intro r0 hr0
+      rcases h.before r0 hr0 with ⟨r, hr, hid, hty⟩ | hrm
+      · by_cases hf : found eq ty wh r = true
+        · refine .inr ⟨_, hop, ?_, rfl⟩
+          simp only [Op.step]
+          rw [← hty, found_type hf]
+        · exact .inl ⟨r, List.mem_filter.mpr ⟨hr, by simpa using hf⟩, hid, hty⟩
+      · exact .inr hrm
+  | edit ty id f v =>
+    simp only [step] at hs
+    split at hs
+    · simp only [Except.ok.injEq] at hs
+      subst hs
+      exact within_map eq fp s0 s h _ ty (fun r hr => edits_type hr) [(f, v)]
+        (fun g hg => ⟨_, hop, rfl, by simpa [Op.step] using hg⟩)
+    · cases hs
+
+theorem within_steps (eq : Val → Val → Bool) (ofId : NewId → Val) (w c : Nat) (fp : List Step)
+    (s0 : List (Record Val)) :
+    ∀ (ops : List (Op Val)) (i : Nat) (s s' : List (Record Val)), (∀ op ∈ ops, op.step ∈ fp) → Within eq fp s0 s →
+      stepsFrom eq ofId w c i s ops = .ok s' → Within eq fp s0 s'
+  | [], _, s, s', _, h, hs => by
+    simp only [stepsFrom, Except.ok.injEq] at hs
+    subst hs; exact h
+  | op :: ops, i, s, s', hfp, h, hs => by
+    simp only [stepsFrom] at hs
+    cases h1 : step eq ofId w c i s op with
+    | error e => rw [h1] at hs; cases hs
+    | ok s1 =>
+      rw [h1] at hs
+      exact within_steps eq ofId w c fp s0 ops (i + 1) s1 s'
+        (fun o ho => hfp o (List.mem_cons_of_mem _ ho))
+        (within_step eq ofId w c i fp s0 s s1 op (hfp op List.mem_cons_self) h h1) hs
+
+theorem within_check (eq : Val → Val → Bool) (fp : List Step) (s s' : List (Record Val)) (h : Within eq fp s s') :
+    diffWithin eq fp s s' = true := by
+  have wr : ∀ ty f, Writes fp ty f → (fieldsOf fp ty).contains f = true := by
+    rintro ty f ⟨st, hst, hty, hf⟩
+    simp only [fieldsOf, List.contains_iff_mem, List.mem_flatMap, List.mem_filter, beq_iff_eq]
+    exact ⟨st, ⟨hst, hty⟩, hf⟩
+  simp only [diffWithin, Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true, List.any_eq_true]
+  constructor
+  · intro r hr
+    rcases h.now r hr with ⟨r0, hr0, hid, hty, hf⟩ | ⟨⟨st, hst, hty, hv⟩, hf⟩
+    · refine .inl ⟨r0, hr0, ?_⟩
+      simp only [changedOk, Bool.and_eq_true, beq_iff_eq, List.all_eq_true, Bool.or_eq_true]
+      refine ⟨⟨hid, hty⟩, fun f _ => ?_⟩
+      cases ho : optEq eq (get r0.fields f) (get r.fields f)
+      · exact .inr (wr _ _ (hf f ho))
+      · exact .inl rfl
+    · refine .inr ?_
+      simp only [newOk, hasVerb, Bool.and_eq_true, List.any_eq_true, beq_iff_eq, List.all_eq_true]
+      refine ⟨⟨st, hst, hty, hv⟩, fun ⟨f, x⟩ hx => wr _ _ (hf f (lookup_of_mem _ f x hx))⟩
+  · intro r0 hr0
+    rcases h.before r0 hr0 with ⟨r, hr, hid, hty⟩ | ⟨st, hst, hty, hv⟩
+    · exact .inl ⟨r, hr, by simp [hid, hty]⟩
+    · refine .inr ?_
+      simp only [hasVerb, List.any_eq_true, Bool.and_eq_true, beq_iff_eq]
+      exact ⟨st, hst, hty, hv⟩
+
+/-- **A commit that ran as its ops say passes every reader's check of its diff.** -/
+theorem commit_within (eq : Val → Val → Bool) (heq : ∀ x, eq x x = true) (ofId : NewId → Val) (w c : Nat)
+    (s s' : List (Record Val)) (ops : List (Op Val)) (h : commit eq ofId w c s ops = .ok s') :
+    diffWithin eq (footprint ops) s s' = true := by
+  simp only [commit] at h
+  split at h
+  · exact within_check eq _ s s' (within_steps eq ofId w c (footprint ops) s ops 0 s s'
+      (fun op hop => List.mem_map.mpr ⟨op, hop, rfl⟩) (within_refl eq heq _ s) h)
+  · cases h
+
+/-- **An honest writer is accepted by every reader:** its caps cover its footprint and its commit ran as its ops say. -/
+theorem honest_passes (eq : Val → Val → Bool) (heq : ∀ x, eq x x = true) (ofId : NewId → Val) (w c : Nat)
+    (grants : List Grant) (s s' : List (Record Val)) (ops : List (Op Val))
+    (hg : covers grants (footprint ops) = true) (h : commit eq ofId w c s ops = .ok s') :
+    check eq grants ops s s' = true := by
+  simp [check, hg, commit_within eq heq ofId w c s s' ops h]
+
+/-- **What passes is granted:** every step of the footprint is one some grant allows, and the diff stays within the
+footprint, Record by Record. -/
+theorem check_sound (eq : Val → Val → Bool) (grants : List Grant) (ops : List (Op Val)) (s s' : List (Record Val))
+    (h : check eq grants ops s s' = true) :
+    (∀ st ∈ footprint ops, ∃ g ∈ grants, g.allows st = true) ∧ diffWithin eq (footprint ops) s s' = true := by
+  simp only [check, Bool.and_eq_true] at h
+  refine ⟨fun st hst => ?_, h.2⟩
+  have := h.1
+  simp only [covers, List.all_eq_true, List.any_eq_true] at this
+  exact this st hst
+
+end Aven.DB.Engine

@@ -702,8 +702,20 @@ A type with millions of Records is millions of Docs, of which a device wants a h
 
 **One structure for both.** A **directory** lists a vault's Docs of one root type by Doc id; an **index** lists the
 same Docs by a query's fields. Both are a **Prolly tree**: a search tree whose nodes are sealed Values named by hash.
-- **Entries:** each a CBOR array, the key first: `[field values…, Doc id]` for an index, `[Doc id]` for a directory.
-  Entries sort bytewise by their encodings, so they sort by key, and every entry is distinct.
+- **Entries:** each a **key**, `(field values…, Doc id)` for an index and `(Doc id)` for a directory, in an
+  order-preserving encoding, not CBOR (the architect and the engine, 30 Oct 2026; FoundationDB's tuple layer as the
+  pattern). Canonical CBOR sorts text by length first and negative integers after positive ones; a key's bytes sort
+  exactly as its tuple does. Each field is a tag, then:
+  - an unsigned integer: its 8 bytes, big-endian (tag `15`);
+  - a negative integer `-1 - n`: the 8 bytes of `2⁶⁴ - 1 - n` (tag `13`), so negatives sort first;
+  - text: its UTF-8, normalised to NFC, with each `00` written `00 FF` and a `00` to end it (tag `02`);
+  - bytes, the Doc id among them: the same escaping (tag `01`).
+
+  Text compares by code point, UTF-8's byte order; collation by locale comes later through a pinned sort-key runtime.
+  A key is never named or signed, only sorted, and sits in a node as a CBOR byte string, so rule 1 holds. A range is
+  two keys; a prefix `p` is the range from `p` to `p FF`: every extension of `p` lies in it, since no field starts with
+  `FF` (`extension_in_range`). A byte prefix alone isn't an extension (text `a` is a byte prefix of text `a 00`), so
+  the engine keeps only the entries whose tuple extends `p` (`key_prefix`). Every entry is distinct.
 - **Nodes:** a leaf is a CBOR array of entries; an inner node is an array of `[first entry, last entry, child]` per
   child. A node ends after an entry whose BLAKE3's low 6 bits are zero (about 64 entries a node) or before an entry
   that would take it past 64 KiB, the size limit (architecture, rule 10). The same rule cuts every level.
@@ -716,6 +728,12 @@ same Docs by a query's fields. Both are a **Prolly tree**: a search tree whose n
 readers. Whoever creates a Doc of the type, or changes a field an index sorts by, adds its entry there in the same
 commit, as an `entry` Record; a Doc that leaves (removed, or its field changed) leaves a `gone` Record. Loro merges
 writers who write at once.
+
+**The directory's two guarantees,** which make a lookup exact (Lean: `Aven.DB.Docs.Directory`; the engine's
+`lookup_exact` rests on them): every Doc listed now was listed at the last fold or is unfolded (`listed_now`), and a Doc
+that isn't unfolded has the entries it had at the last fold (`same_entries`). They hold because a commit that changes
+a Doc's entries (its birth, a field an index sorts by, its leaving) marks it unfolded in the same commit; a change to
+any other field needs no mark.
 
 **A fold** moves them into Values, as an LSM tree compacts. It is a checkpoint (rule 12): the directory's version it
 covers, the root it makes, the runtime that made it, hybrid-signed. Any device that holds the Docs an index covers and
@@ -851,6 +869,12 @@ against the Rust's Loro on random ops, so it can never be simpler than the code.
   its nodes hold exactly those entries, each node within the size limit, and depend only on the set; folding in steps,
   removals included, gives what folding at once gives; a lookup finds every entry in its range, and only those.
   Vectors `indexes.json`.
+- **Keys** (`Aven.DB.Docs.Key`): comparing two keys bytewise is comparing their tuples, field by field, a prefix first
+  (`key_order`); two tuples with one key are one tuple (`key_inj`); a key extends another's, at a field's edge, exactly
+  when its tuple extends the other (`key_prefix`), and every extension lies in the prefix's range
+  (`extension_in_range`). Vectors `keys.json`.
+- **The directory** (`Aven.DB.Docs.Directory`): every Doc listed now was listed at the last fold or is unfolded; a Doc
+  that isn't unfolded has the entries it had then.
 
 **What the proofs exposed** (the docs thread, 30 Oct 2026, for the cross-spec step):
 - **Loro's convergence is a stated property.** The model takes it in any order; Loro states it for causal orders, so

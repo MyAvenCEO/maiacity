@@ -34,6 +34,8 @@ import Aven.ID.CapsJson
 - `approvals.json`: signatures, thresholds and digests on the cast, and whether each approval holds (`Aven.ID.Approve`).
 - `network.json`: tickets claimed in two orders (A12), removals that clash and MaiaCityGuardian's exit
   (`Aven.ID.Network`, `Aven.ID.Recover`).
+- `keep.json`: a keeper's fetch-key links in the order they came, with the keys it takes, its current fetch key and
+  its flags; the proofs it serves; what each vault pays (`Aven.ID.Keep`, A22). Hand-written and generated.
 
 `bun run up --check` runs it again and fails when the files differ from what is committed. -/
 
@@ -175,6 +177,20 @@ def networkVectors : List Json :=
      (Json.mkObj [("devices", toJson keyring.devices), ("sealers", toJson keyring.sealers), ("guardian", "guardian")])
      (Json.mkObj [("rotate", toJson (keyring.exit "guardian").rotate)])]
 
+open KeepExamples in
+def keepVectors : List Json :=
+  (keepCases.map fun (name, s, _, _) => vector name (Json.mkObj [("keep", s.json)]) (keepResult s)) ++
+  (proofCases.map fun (name, s, e, p, _) =>
+    vector s!"proof: {name}" (Json.mkObj [("keep", s.json), ("exporter", e), ("proof", p.json)])
+      (Json.mkObj [("served", s.serves e p)])) ++
+  (billCases.map fun (v, _) =>
+    vector s!"what {v} pays" (Json.mkObj [("keep", keepD1.json), ("uploads", Json.arr (uploads.map (·.json)).toArray),
+        ("vault", v)])
+      (Json.mkObj [("bill", toJson (keepD1.bill uploads v))])) ++
+  (List.range generatedKeeps).map fun i =>
+    let s := genKeep (i + 1)
+    vector s!"generated keeper, seed {i + 1}" (Json.mkObj [("keep", s.json)]) (keepResult s)
+
 /-- One vector per line, so a change reads as a diff of lines. -/
 def render (vs : List Json) : String :=
   "[\n" ++ ",\n".intercalate (vs.map Json.compress) ++ "\n]\n"
@@ -194,3 +210,4 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "epochs.json") (render epochVectors)
   IO.FS.writeFile (dir / "approvals.json") (render approvalVectors)
   IO.FS.writeFile (dir / "network.json") (render networkVectors)
+  IO.FS.writeFile (dir / "keep.json") (render keepVectors)
