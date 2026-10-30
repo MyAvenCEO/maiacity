@@ -94,14 +94,15 @@ avenSANDBOX   the box all of it is built and tested in
 - **key:** a signing key. An **owner key** governs a person's vault; a **device key** signs for the vault its device
   serves.
 - **vault:** an identity that can own things, with a name. A **person's vault** is owned by keys; a **coop's vault**
-  (Maia City) by person or coop vaults, and holds no devices; a **network's vault** (Aven) by its admin; a **device's
-  vault** by the vault it serves.
+  (Maia City) by person or coop vaults, and holds no devices; an **agent's vault** (Aven, which runs the network) by
+  its admin; a **device's vault** by the vault it serves. Agents are usually LLM agents (Samuel, 30 Oct 2026); the kind
+  was called `network` until then, and the old name still reads as `agent` (`Aven.ID.Before`).
 - **owns, governs:** a vault owns what is directly below it and governs everything below it. Authority runs only down.
-- **admin:** the vault that owns a network's vault: the coop Maia City is Aven's, and the people whose vaults own Maia
+- **admin:** the vault that owns the network's agent: the coop Maia City is Aven's, and the people whose vaults own Maia
   City act for it ([`PRODUCTION.md`](PRODUCTION.md#part-c-maia-city-the-admin-coop)).
 - **acts through:** a vault acts through its own devices, within the rights its owner gives it: Aven through the Aven
   Peer.
-- **account:** a person's vault, which one acts as in avenOS. Never a network's or a device's.
+- **account:** a person's vault, which one acts as in avenOS. Never an agent's or a device's.
 
 **Data (avenDB)**
 
@@ -110,7 +111,8 @@ avenSANDBOX   the box all of it is built and tested in
 - **document:** a Loro document: a head over sealed segments and snapshots.
 - **store:** where a peer's blobs and refs rest, behind one contract.
 - **cap:** a signed grant: which vault may read or write which document.
-- **member, invite:** a vault let into a network, and the ticket that lets it in (milestone 2).
+- **member, invite:** a person's vault let into the network, owned in the tree by the admin coop, and the ticket that
+  lets it in (milestone 2).
 
 **Running (avenPEER)**
 
