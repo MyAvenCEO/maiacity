@@ -319,7 +319,8 @@ The image's last layer compiles the workspace's dependencies, cargo-chef style
   (`-p aven-peer-light --lib --target wasm32-unknown-unknown`), aven-id's wasm in release, and
   `cargo test --workspace --no-run`. Same profiles, targets and features; no RUSTFLAGS anywhere. Then the stubs' own
   artifacts go (`cargo clean -p`, each profile and target), and the fork's too, since the checkout brings its source
-  again with newer times. The downloaded `.crate` files go; cargo builds from the unpacked sources.
+  again with newer times. The registry keeps the downloaded `.crate` files: without them cargo downloads all 385
+  crates again, though it compiles none.
 - **Docker fills an empty named volume from the image's content at its mount path.** So the compiled crates sit at
   `/work/target`, where `avensandbox_target` mounts, and their sources at `/opt/cargo/registry`, where
   `avensandbox_cargo_registry` mounts: a new session's first build finds all 342 dependencies `Fresh` (`cargo build

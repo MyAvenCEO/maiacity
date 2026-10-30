@@ -63,10 +63,9 @@ WORKDIR /work
 # The third-party crates, compiled, cargo-chef style, last, so a dependency change rebuilds only this layer. The context
 # brings only the manifests, the patched fork and deps.sh, which stubs our crates, builds them as `bun run up` and
 # `cargo test --workspace` do, and keeps only the dependencies in /work/target. Docker fills a new, empty volume from
-# the image's content at its mount path, so a new session's build folder (/work/target) and crate sources
-# (/opt/cargo/registry) start warm, and its first build compiles only our code. The downloaded .crate files go: cargo
-# builds from the unpacked sources.
+# the image's content at its mount path, so a new session's build folder (/work/target) and crates (/opt/cargo/registry)
+# start warm, and its first build compiles only our code and downloads nothing. The registry keeps the .crate files:
+# without them cargo downloads every crate again, though it compiles none.
 COPY . /work/
 RUN sh sandbox/box/deps.sh \
-    && find /work -mindepth 1 -maxdepth 1 ! -name target -exec rm -rf {} + \
-    && rm -rf /opt/cargo/registry/cache
+    && find /work -mindepth 1 -maxdepth 1 ! -name target -exec rm -rf {} +
