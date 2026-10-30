@@ -882,6 +882,16 @@ against the Rust's Loro on random ops, so it can never be simpler than the code.
 - **A field merged by its later write needs a total order on stamps:** Lamport, then writer id. The lens law rests on
   it.
 - **Size rules can't be in schemas:** a counterexample shows two fit writes merging into an unfit state.
+- **CBOR's order isn't a query's order:** canonical CBOR sorts text by length first and negative integers after
+  positive ones, so index entries became keys in an order-preserving encoding (`key_order`); CBOR stays the codec for
+  everything named or signed.
+- **A byte prefix isn't a tuple prefix:** text `a` is a byte prefix of text `a 00`. Prefix lookups cover the range from
+  `p` to `p FF`, which holds every extension (`extension_in_range`), and keep only the entries whose tuple extends `p`
+  (`key_prefix`).
+- **The directory's mark covers entries, not Records:** a lookup is exact when a Doc whose index entries changed is
+  marked unfolded in the same commit (`same_entries`); a change no index reads needs no mark.
+- **Values need an equality of their own:** `Value` can't derive one, and comparing encodings is sound only on canonical
+  Values, so `Aven.Core.ValueEq` gives every spec one lawful equality.
 
 ## Order of work
 
