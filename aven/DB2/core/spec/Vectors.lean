@@ -14,6 +14,7 @@ import Lean.Data.Json
 - `envelopes.json`: envelopes; what their writer signs, their whole encoding and their name.
 - `logs.json`: pairs of envelopes; whether they are a split.
 - `targets.json`: pairs of targets; whether the first narrows the second, and which Docs each covers.
+- `target-bytes.json`: each target form, readable, and its CBOR in hex (`Aven.Core.TargetCbor`).
 - `footprints.json`: grants and footprints; whether the grants cover them.
 
 Values are shown in their readable form (`Aven.Core.Json`).
@@ -226,6 +227,17 @@ def targetPairs : List (String × Target × Target) := [
   ("a Doc, in itself as an actor", .doc actorA, .actor actorA false),
   ("an actor, in it with what it spawned", .actor actorA false, .actor actorA true)]
 
+/-- Each target form, its readable form and its CBOR: what a cap's bytes hold (`Aven.Core.TargetCbor`). -/
+def targetForms : List (String × Target) := [
+  ("one Doc", .doc invoice), ("a vault's Docs", .vault alice false), ("and below", .vault alice true),
+  ("a vault's Docs of one type", .vaultType alice invoice false), ("one actor and what it spawned", .actor actorA true),
+  ("a vault's actors of one definition", .vaultDef alice actorA)]
+
+def targetBytes : List Json :=
+  targetForms.map fun (name, t) => vector name t.json (encodes t.value)
+
+#guard targetForms.all fun (_, t) => Canon t.value && Target.ofValue? t.value == some t
+
 def targets : List Json :=
   targetPairs.map fun (name, a, b) => vector name (Json.arr #[a.json, b.json]) (toJson (a.le b))
 
@@ -270,4 +282,5 @@ def main (args : List String) : IO Unit := do
   write dir "envelopes.json" envelopes
   write dir "logs.json" logs
   write dir "targets.json" targets
+  write dir "target-bytes.json" targetBytes
   write dir "footprints.json" footprints
