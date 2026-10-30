@@ -22,7 +22,7 @@ mod wasm;
 pub use cast::CastError;
 pub use claim::{Claim, SignIn, claim_text, device_id, passkey_id, person_id, sign_in_text};
 pub use keys::{public_hex, test_signer};
-pub use network::{ClaimError, Network};
+pub use network::{ClaimError, GUARDIAN, Network};
 pub use passkey::{Assertion, AssertionError, Passkey, Relying, base64url, challenge};
 pub use sign::{SignError, Statement};
 pub use tree::{Invalid, Kind, Owner, Tree, Vault};

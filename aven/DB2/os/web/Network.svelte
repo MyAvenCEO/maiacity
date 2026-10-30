@@ -1,9 +1,9 @@
 <script>
-	// avenOS on an Aven Peer's host without a cast (PRODUCTION.md, "What a person sees"). Unclaimed, one screen: Claim
-	// this network, with the claim code and a passkey. Claimed, this browser opens avenOS's dashboard as the admin's
+	// avenOS on an Aven Peer's host without a cast (PRODUCTION.md, "What a person sees"). Unclaimed, one screen: Sign
+	// up, one button that makes a passkey; the first signup claims the network. Claimed, this browser opens avenOS's dashboard as the admin's
 	// vault once it is one of the network's devices; any other browser sees "invite only, coming soon", and the admin
-	// signs in there with the passkey, which makes it a device too. `#/claim` shows the claim screen whatever the
-	// network says: a second claim is the Aven Peer's to refuse, and it does.
+	// signs in there with the passkey, which makes it a device too. `#/claim` shows the signup screen whatever the
+	// network says: a second signup is the Aven Peer's to refuse, and it does.
 	import App from './App.svelte';
 	import Phase from './Phase.svelte';
 	import { useTree } from './id.js';
@@ -21,7 +21,6 @@
 	});
 
 	const member = $derived(Boolean(net.tree && net.me && JSON.parse(net.tree).vaults[net.me]));
-	let code = $state('');
 	let busy = $state(false);
 	let failed = $state('');
 	const why = $derived(failed || net.refused);
@@ -57,14 +56,10 @@
 		{#if net.claimed === null}
 			<p class="muted">Connecting to the network…</p>
 		{:else if !net.claimed || route === 'claim'}
-			<form onsubmit={(event) => (event.preventDefault(), run(() => claim(config, code)))}>
-				<h2>Claim this network</h2>
-				<p class="muted">Whoever claims it is its admin. Enter the claim code, then make a passkey on this device.</p>
-				<label>
-					Claim code
-					<input data-testid="claim-code" type="password" autocomplete="off" bind:value={code} />
-				</label>
-				<button data-testid="claim" disabled={busy || !net.key}>Make a passkey and claim</button>
+			<form onsubmit={(event) => (event.preventDefault(), run(() => claim(config)))}>
+				<h2>Sign up</h2>
+				<p class="muted">The first to sign up is this network's admin. It makes a passkey on this device.</p>
+				<button data-testid="claim" disabled={busy || !net.key}>Sign up with a passkey</button>
 			</form>
 		{:else}
 			<p class="soon" data-testid="invite-only">avenOS · invite only, coming soon</p>
@@ -103,22 +98,6 @@
 		background: var(--surface);
 		border: 1px solid var(--line);
 		border-radius: 12px;
-	}
-
-	label {
-		display: grid;
-		gap: 4px;
-		font-size: 13px;
-		color: var(--muted);
-	}
-
-	input {
-		padding: 8px 10px;
-		color: var(--text);
-		font: inherit;
-		background: var(--bg);
-		border: 1px solid var(--line);
-		border-radius: 8px;
 	}
 
 	button {

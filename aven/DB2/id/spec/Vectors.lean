@@ -82,19 +82,19 @@ def passkeys : List Json :=
   (([("nothing", ""), ("a statement", "a statement"), ("passkey-a's claim from device-1", (Op.claimOf "a" "1" {}).1.text),
       ("device-2's sign-in", (Op.signInOf "a" "2" {}).1.text)] : List (String × String)).map fun (name, text) =>
     vector s!"the challenge of {name}" (Json.mkObj [("text", text)]) (toJson (challengeOf text))) ++
-  passkeyExamples.map fun (name, m, _) =>
+  ((passkeyExamples.map (boxRelying, ·)) ++ (movedExamples.map (movedRelying, ·))).map fun (rp, name, m, _) =>
     let a := m.make
     let challenge := challengeOf "a statement"
-    vector name (Json.mkObj [("rpId", boxRelying.rpId), ("origin", boxRelying.origin), ("challenge", challenge),
+    vector name (Json.mkObj [("rpId", rp.rpId), ("origins", toJson rp.origins), ("challenge", challenge),
         ("key", "passkey-a"), ("assertion", a.json)])
-      (match a.check boxRelying challenge "passkey-a" with
+      (match a.check rp challenge "passkey-a" with
         | .ok () => Json.mkObj [("holds", true)]
         | .error why => Json.mkObj [("error", why.name)])
 
 def generatedTraces : Nat := 40
 
 def claims : List Json :=
-  (claimExamples.map fun (name, ops, _) => let (i, e) := traceVector boxServer ops; vector name i e) ++
+  (claimExamples.map fun (name, server, ops, _) => let (i, e) := traceVector server ops; vector name i e) ++
   (List.range generatedTraces).map fun n =>
     let (i, e) := traceVector boxServer (randomTrace n)
     vector s!"generated trace, seed {n}" i e

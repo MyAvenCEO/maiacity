@@ -10,11 +10,12 @@ use p256::ecdsa::{Signature, VerifyingKey};
 use p256::pkcs8::DecodePublicKey;
 use sha2::{Digest, Sha256};
 
-/// Whom an assertion must be for: the RP ID its passkey was made for, and the page's origin.
+/// Whom an assertion must be for: the RP ID its passkey was made for, and the origins avenOS is served from. A list,
+/// so avenOS can move by adding an origin, and what was signed on the old one still holds.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Relying {
     pub rp_id: String,
-    pub origin: String,
+    pub origins: Vec<String>,
 }
 
 /// An assertion as the browser gives it: `clientDataJSON`, `authenticatorData` and the DER signature.
@@ -122,7 +123,7 @@ impl Assertion {
         if given != challenge {
             return Err(AssertionError::Challenge);
         }
-        if origin != rp.origin {
+        if !rp.origins.iter().any(|o| o == origin) {
             return Err(AssertionError::Origin);
         }
         let auth = &self.authenticator_data;

@@ -11,7 +11,6 @@ use serde_json::{Value, json};
 fn error(e: &ClaimError) -> Value {
     match e {
         ClaimError::Taken => json!({ "error": "taken" }),
-        ClaimError::WrongCode => json!({ "error": "wrongCode" }),
         ClaimError::NotFromDevice => json!({ "error": "notFromDevice" }),
         ClaimError::WrongNetwork => json!({ "error": "wrongNetwork" }),
         ClaimError::Assertion(why) => json!({ "error": "assertion", "why": why.name() }),
@@ -59,15 +58,14 @@ fn traces_answer_as_the_model_does() {
         let text = |k: &str| s[k].as_str().unwrap();
         let rp = Relying {
             rp_id: text("rpId").into(),
-            origin: text("origin").into(),
+            origins: common::origins(&s["origins"]),
         };
-        let mut n = Network::new(
-            text("network"),
-            text("peer"),
-            text("peerKey"),
-            rp,
-            text("code"),
-        );
+        let guardian = s["guardian"].as_str().map(str::to_string);
+        // the box's MaiaCityGuardian is a test key from the cast's rule; the model derived its public half too
+        if let Some(g) = &guardian {
+            assert_eq!(*g, aven_id::public_hex(&aven_id::test_signer(aven_id::GUARDIAN).verifying_key()));
+        }
+        let mut n = Network::new(text("network"), text("peer"), text("peerKey"), rp, guardian);
         let ops = v["input"]["ops"].as_array().unwrap();
         for (at, (op, want)) in ops
             .iter()
@@ -79,7 +77,7 @@ fn traces_answer_as_the_model_does() {
                 "claim" => {
                     let c = Claim::from_json(&statement(&op["claim"])).unwrap();
                     let asked = json!(challenge(&c.text()));
-                    (n.submit_claim(op["code"].as_str().unwrap(), from, c), asked)
+                    (n.submit_claim(from, c), asked)
                 }
                 "signIn" => {
                     let i = SignIn::from_json(&statement(&op["signIn"])).unwrap();

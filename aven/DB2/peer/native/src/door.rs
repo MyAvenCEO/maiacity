@@ -1,12 +1,13 @@
-//! The door of an Aven Peer that keeps its tree (PRODUCTION.md, Part A): with `--claim-code`, `--rp-id` and
-//! `--origin`, and no cast, its tree is data in its store. The claim is one statement, stored as a blob, with the ref
-//! `claim` set to it from nothing by compare-and-set, so a second claim finds it taken, even racing the first; each
-//! sign-in is stored the same way under `signin-000001`, `signin-000002`, … in the order they came. A start reads the
-//! tree back and checks every statement again (`Network::restore`); one that fails stops the peer rather than leave
-//! the network open to a claim. A wiped store is an unclaimed network.
+//! The door of an Aven Peer that keeps its tree (PRODUCTION.md, Part A): with `--rp-id` and `--origin`, and no cast,
+//! its tree is data in its store. The claim is the first signup: one statement, stored as a blob, with the ref `claim`
+//! set to it from nothing by compare-and-set, so a second signup finds it taken, even racing the first; each sign-in
+//! is stored the same way under `signin-000001`, `signin-000002`, … in the order they came. The deploy's health step
+//! reads `refs/claim` to tell whether the network is claimed, so the name stays. A start reads the tree back and checks
+//! every statement again (`Network::restore`); one that fails stops the peer rather than leave the network open to a
+//! new claim. A wiped store is an unclaimed network. Given `--guardian`, the vault a claim founds is owned by
+//! MaiaCityGuardian too.
 //!
-//! Claims and sign-ins take turns, under one lock: the one writer (README, rule 1). The claim code is compared in
-//! constant time (aven-id), and no line here, nor any error, ever carries it.
+//! Claims and sign-ins take turns, under one lock: the one writer (README, rule 1).
 
 use std::sync::Arc;
 
@@ -64,10 +65,10 @@ impl Door {
         store: Arc<DalStore>,
         peer_key: &str,
         rp: Relying,
-        code: &str,
+        guardian: Option<String>,
         notes: Notes,
     ) -> Result<Door, String> {
-        let base = Network::new(NETWORK, PEER, peer_key, rp, code);
+        let base = Network::new(NETWORK, PEER, peer_key, rp, guardian);
         let refs = store.list_refs().await.map_err(store_error)?;
         let mut claim = None;
         let mut sign_ins = Vec::new();
@@ -141,14 +142,14 @@ impl Door {
     }
 
     /// A claim from the browser whose key is `from`. Stored first; the network changes only once `claim` is set.
-    pub async fn claim(&self, from: &str, code: &str, statement: &str) -> Result<(), String> {
+    pub async fn claim(&self, from: &str, statement: &str) -> Result<(), String> {
         let c = serde_json::from_str(statement)
             .map_err(|e| e.to_string())
             .and_then(|v| Claim::from_json(&v));
         let c = c.map_err(|why| self.refused(from, format!("not a claim: {why}")))?;
         let mut network = self.network.lock().await;
         let next = network
-            .submit_claim(code, from, c.clone())
+            .submit_claim(from, c.clone())
             .map_err(|e| self.refused(from, e.to_string()))?;
         self.keep(&RefName::new(CLAIM).map_err(store_error)?, c.to_json())
             .await

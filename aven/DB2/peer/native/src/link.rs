@@ -4,7 +4,7 @@
 //! lines whenever the phase, the presence or the path changes, so a page is pushed deltas (README, rule 8). A Peer-Light
 //! also hands it frames to send, its claims and sign-ins (`Outbox`), and hears back from an Aven Peer that keeps its
 //! tree whether the network is claimed and, once it is a device, the tree (`network` lines), or why a claim or sign-in
-//! was refused (`refused`). What it sends is never written to the timeline: a claim carries its code.
+//! was refused (`refused`).
 
 use aven_db_core::status::{Event, Phase, STALL_AFTER, Status, TICK_MS};
 use aven_db_core::timeline;

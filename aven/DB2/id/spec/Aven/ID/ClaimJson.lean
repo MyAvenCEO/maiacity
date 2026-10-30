@@ -37,7 +37,6 @@ def AssertionError.name : AssertionError → String
 
 def ClaimError.json : ClaimError → Json
   | .taken => Json.mkObj [("error", "taken")]
-  | .wrongCode => Json.mkObj [("error", "wrongCode")]
   | .notFromDevice => Json.mkObj [("error", "notFromDevice")]
   | .wrongNetwork => Json.mkObj [("error", "wrongNetwork")]
   | .assertion why => Json.mkObj [("error", "assertion"), ("why", why.name)]
@@ -60,13 +59,13 @@ def Server.treeJson (s : Server) : Json :=
 
 def Server.json (s : Server) : Json :=
   Json.mkObj [("network", s.network), ("peer", s.peer), ("peerKey", s.peerKey), ("rpId", s.rp.rpId),
-    ("origin", s.rp.origin), ("code", s.code)]
+    ("origins", toJson s.rp.origins), ("guardian", toJson s.guardian)]
 
-/-- A step as a browser sends it: the statement, the key of the browser that sends it, and the code. -/
+/-- A step as a browser sends it: the statement, and the key of the browser that sends it. -/
 def Op.json : Op → Json
-  | .claim code p d t =>
+  | .claim p d t =>
     let (c, sender) := Op.claimOf p d t
-    Json.mkObj [("op", "claim"), ("code", code), ("from", sender), ("claim", c.json)]
+    Json.mkObj [("op", "claim"), ("from", sender), ("claim", c.json)]
   | .signIn p d t =>
     let (i, sender) := Op.signInOf p d t
     Json.mkObj [("op", "signIn"), ("from", sender), ("signIn", i.json)]
@@ -75,7 +74,7 @@ def Op.json : Op → Json
 
 /-- The challenge the step's passkey was asked to sign, as the page computes it. -/
 def Op.challenge : Op → Json
-  | .claim _ p d t => challengeOf (Op.claimOf p d t).1.text
+  | .claim p d t => challengeOf (Op.claimOf p d t).1.text
   | .signIn p d t => challengeOf (Op.signInOf p d t).1.text
   | _ => Json.null
 

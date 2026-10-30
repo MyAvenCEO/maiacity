@@ -8,7 +8,7 @@ pub const ALPN: &[u8] = b"aven/db/1";
 /// A frame longer than this is refused: no peer needs one.
 pub const MAX_FRAME: usize = 64 * 1024;
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "frame", rename_all = "snake_case")]
 pub enum Frame {
     /// The first frame each side sends: the cast's id of the peer it is.
@@ -17,41 +17,14 @@ pub enum Frame {
     Presence { peers: Vec<String> },
     /// The Aven Peer's clock, once per step.
     Beat { n: u64 },
-    /// A browser claims an unclaimed network: the claim code and the claim's statement as JSON text. The code is
-    /// never written anywhere.
-    Claim { code: String, statement: String },
+    /// A browser signs up first, so claims an unclaimed network: the claim's statement as JSON text.
+    Claim { statement: String },
     /// A browser signs in with the passkey that claimed the network: the sign-in's statement as JSON text.
     SignIn { statement: String },
     /// An Aven Peer that keeps its tree tells each peer whether it is claimed and, to a device of its tree, the tree.
     Network { claimed: bool, tree: Option<String> },
     /// A claim or sign-in the Aven Peer refused, and why.
     Refused { why: String },
-}
-
-/// Every frame as itself, but a claim's code, which no log or error may carry.
-impl std::fmt::Debug for Frame {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Frame::Hello { peer } => f.debug_struct("Hello").field("peer", peer).finish(),
-            Frame::Presence { peers } => f.debug_struct("Presence").field("peers", peers).finish(),
-            Frame::Beat { n } => f.debug_struct("Beat").field("n", n).finish(),
-            Frame::Claim { statement, .. } => f
-                .debug_struct("Claim")
-                .field("code", &"(hidden)")
-                .field("statement", statement)
-                .finish(),
-            Frame::SignIn { statement } => f
-                .debug_struct("SignIn")
-                .field("statement", statement)
-                .finish(),
-            Frame::Network { claimed, tree } => f
-                .debug_struct("Network")
-                .field("claimed", claimed)
-                .field("tree", tree)
-                .finish(),
-            Frame::Refused { why } => f.debug_struct("Refused").field("why", why).finish(),
-        }
-    }
 }
 
 pub fn encode(frame: &Frame) -> Vec<u8> {

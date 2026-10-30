@@ -28,12 +28,12 @@ const publicOf = (hex) => {
 	const spki = createPublicKey(createPrivateKey({ key: pkcs8, format: 'der', type: 'pkcs8' })).export({ format: 'der', type: 'spki' });
 	return spki.subarray(-32).toString('hex');
 };
-// Production's stand-in (sandbox/prod.mjs) is no peer of the cast: its key is a test key too, and its claim code the
-// one the model's traces use (id/spec, Aven.ID.ClaimTrace), valid only in the box
+// Production's stand-in (sandbox/prod.mjs) is no peer of the cast: its key is a test key too, and so is the box's
+// MaiaCityGuardian, by the cast's rule, as the model's traces derive it (id/spec, Aven.ID.ClaimTrace)
 const peerConfig = {
 	AVENSANDBOX_PROD_SECRET: seed('prod-peer'),
 	AVENSANDBOX_PROD_KEY: publicOf(seed('prod-peer')),
-	AVENSANDBOX_CLAIM_CODE: 'box-claim-code',
+	AVENSANDBOX_GUARDIAN: publicOf(seed('maia-city-guardian')),
 	AVENSANDBOX_MEMBERS: Object.keys(cast.peers).map((id) => `${id}=${cast.keys[id]}`).join(','),
 	AVENSANDBOX_AVEN_KEY: cast.keys['aven-peer'],
 	AVENSANDBOX_AVEN_SECRET: seed('aven-peer'),
@@ -256,7 +256,8 @@ async function keeps(run) {
 
 // The admin's passkey (PRODUCTION.md, "How it is checked"), on production's stand-in: an Aven Peer in production's
 // configuration and avenOS at localhost:5174, driven by sandbox/claim.mjs in the browsers' container with Chromium's
-// virtual authenticator. It claims the network with the code, is refused a second claim with and without it, signs in
+// virtual authenticator. It signs up first, so claims the network, and the admin's vault is owned by the passkey and
+// the guardian; a second signup with another passkey is refused; it signs in
 // from a second browser profile with the same passkey, which becomes a second device; then the Aven Peer restarts and
 // both find the same tree, and its store is wiped and the network is unclaimed again. The step starts from an empty
 // store and leaves one.
@@ -277,7 +278,7 @@ async function claims(run) {
 		await wipe();
 		ok = await step('wiped');
 	}
-	say(`${ok ? 'the claim, the refusals, the sign-in, the restart and the wipe hold' : 'the claim step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s)`);
+	say(`${ok ? 'the signup, the refusal, the sign-in, the restart and the wipe hold' : 'the claim step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s)`);
 	return ok;
 }
 

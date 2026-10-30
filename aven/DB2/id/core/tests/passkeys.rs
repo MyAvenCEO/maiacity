@@ -24,7 +24,7 @@ fn passkeys_answer_as_the_model_does() {
         } else {
             let rp = Relying {
                 rp_id: i["rpId"].as_str().unwrap().into(),
-                origin: i["origin"].as_str().unwrap().into(),
+                origins: common::origins(&i["origins"]),
             };
             let key = test_passkey(i["key"].as_str().unwrap());
             let spki = hex(key.verifying_key().to_public_key_der().unwrap().as_bytes());

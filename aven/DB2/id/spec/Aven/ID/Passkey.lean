@@ -7,7 +7,7 @@ A passkey signs for its person's vault through a WebAuthn assertion (PRODUCTION.
 `clientDataJSON` (its type, the challenge it was given and the page's origin), the authenticator writes
 `authenticatorData` (the SHA-256 of the RP ID it was made for, then its flags, then a counter), and the passkey signs
 both. The checks are pure and run in WebAuthn's order (Level 3, 7.2): the client data is JSON with the three fields,
-its type is `webauthn.get`, its challenge and origin are the ones expected; the authenticator data is long enough,
+its type is `webauthn.get`, its challenge is the one expected and its origin one of the origins expected; the authenticator data is long enough,
 names the expected RP ID and has the user-present (UP, bit 0) and user-verified (UV, bit 2) flags; last, the passkey's
 key signed exactly these bytes. Like Ed25519's, ECDSA's signature is taken as sound: it verifies for exactly what its
 key signed (`signer`, `signed`), and with no other key. `check_ok` proves what an assertion that holds says.
@@ -46,10 +46,12 @@ def challengeOf (text : String) : String := base64url (Keys.sha256.digest text.t
 
 /-! ## The checks -/
 
-/-- Whom an assertion must be for: the RP ID its passkey was made for, and the page's origin. -/
+/-- Whom an assertion must be for: the RP ID its passkey was made for, and the origins avenOS is served from. A list,
+so avenOS can move (from `aven.maia.city` to `maia.city`) by adding an origin, and what was signed on the old one
+still holds. -/
 structure Relying where
   rpId : String
-  origin : String
+  origins : List String
   deriving DecidableEq, Repr
 
 /-- `clientDataJSON`'s three fields. -/
@@ -99,7 +101,7 @@ def Assertion.check (rp : Relying) (challenge key : String) (a : Assertion) : Ex
   | some cd =>
     if cd.type ≠ "webauthn.get" then .error .type
     else if cd.challenge ≠ challenge then .error .challenge
-    else if cd.origin ≠ rp.origin then .error .origin
+    else if cd.origin ∉ rp.origins then .error .origin
     else if a.authData.length < 37 then .error .authData
     else if a.authData.take 32 ≠ rpIdHash rp.rpId then .error .rpId
     else if a.flags &&& 1 ≠ 1 then .error .notPresent
@@ -107,10 +109,10 @@ def Assertion.check (rp : Relying) (challenge key : String) (a : Assertion) : Ex
     else if !a.signedBy key then .error .badSignature
     else .ok ()
 
-/-- What an assertion that holds says: a `webauthn.get` for this challenge on this origin, made for this RP ID with
-the user present and verified, signed by `key` over exactly these bytes. -/
+/-- What an assertion that holds says: a `webauthn.get` for this challenge on one of these origins, made for this RP
+ID with the user present and verified, signed by `key` over exactly these bytes. -/
 theorem check_ok {rp : Relying} {challenge key : String} {a : Assertion} (h : a.check rp challenge key = .ok ()) :
-    ClientData.parse a.clientData = some ⟨"webauthn.get", challenge, rp.origin⟩ ∧
+    (∃ origin ∈ rp.origins, ClientData.parse a.clientData = some ⟨"webauthn.get", challenge, origin⟩) ∧
     a.authData.take 32 = rpIdHash rp.rpId ∧ a.flags &&& 1 = 1 ∧ a.flags &&& 4 = 4 ∧
     a.signer = key ∧ a.signed = (a.clientData, a.authData) := by
   unfold Assertion.check at h
@@ -128,7 +130,8 @@ theorem check_ok {rp : Relying} {challenge key : String} {a : Assertion} (h : a.
     next t c o _ r up uv s =>
     simp only [Assertion.signedBy, Bool.not_eq_true', Bool.and_eq_false_iff, beq_eq_false_iff_ne, ne_eq,
       not_or, Decidable.not_not] at s
-    refine ⟨?_, Decidable.not_not.mp r, Decidable.not_not.mp up, Decidable.not_not.mp uv, s.1, s.2⟩
+    refine ⟨⟨cd.origin, Decidable.not_not.mp o, ?_⟩, Decidable.not_not.mp r, Decidable.not_not.mp up,
+      Decidable.not_not.mp uv, s.1, s.2⟩
     rw [e]
     cases cd
     simp_all
@@ -177,10 +180,13 @@ def Making.make (m : Making) : Assertion :=
 /-! ## Examples
 
 Each check broken once, written out by hand. The Aven Peer in the box expects `localhost` and
-`http://localhost:5174`, the challenge of "a statement" and the passkey `passkey-a`. -/
+`http://localhost:5174`, the challenge of "a statement" and the passkey `passkey-a`; once avenOS moved, a second
+origin is listed beside it (`movedRelying`). -/
 
-def boxRelying : Relying := ⟨"localhost", "http://localhost:5174"⟩
+def boxRelying : Relying := ⟨"localhost", ["http://localhost:5174"]⟩
+def movedRelying : Relying := ⟨"localhost", ["http://localhost:5174", "http://localhost:5175"]⟩
 
+/-- The examples on the box's relying party; `movedExamples` on the moved one. -/
 def passkeyExamples : List (String × Making × Except AssertionError Unit) := [
   ("an assertion that holds", {}, .ok ()),
   ("a synced passkey's flags, backed up too", { flags := 0x1d }, .ok ()),
@@ -198,7 +204,13 @@ def passkeyExamples : List (String × Making × Except AssertionError Unit) := [
   ("client data that isn't JSON", { retouch := [.clientData "nope"] }, .error .clientData),
   ("client data without an origin", { retouch := [.clientData "{\"type\":\"webauthn.get\",\"challenge\":\"x\"}"] },
     .error .clientData),
-  ("authenticator data cut short", { retouch := [.cut 36] }, .error .authData)]
+  ("authenticator data cut short", { retouch := [.cut 36] }, .error .authData),
+  ("made on an origin not listed yet", { origin := "http://localhost:5175" }, .error .origin)]
+
+def movedExamples : List (String × Making × Except AssertionError Unit) := [
+  ("once moved, made on the new origin", { origin := "http://localhost:5175" }, .ok ()),
+  ("once moved, made on the old origin still", {}, .ok ()),
+  ("once moved, made on neither", { origin := "http://localhost:5173" }, .error .origin)]
 
 def failure : Except AssertionError Unit → Option AssertionError
   | .ok () => none
@@ -206,5 +218,7 @@ def failure : Except AssertionError Unit → Option AssertionError
 
 #guard passkeyExamples.all fun (_, m, want) =>
   failure (m.make.check boxRelying (challengeOf "a statement") "passkey-a") == failure want
+#guard movedExamples.all fun (_, m, want) =>
+  failure (m.make.check movedRelying (challengeOf "a statement") "passkey-a") == failure want
 
 end Aven.ID

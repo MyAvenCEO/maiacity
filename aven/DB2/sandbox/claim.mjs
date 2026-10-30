@@ -3,15 +3,16 @@
 // virtual authenticator over CDP, a passkey on one browser profile copied to another as a synced passkey would be.
 // `bun run up --check` runs it in three phases around what only the host can do, restarting and wiping that peer:
 //
-//   node sandbox/claim.mjs claim <run>      on an empty store: a wrong code refused, the claim with the code and the
-//                                           dashboard; a second claim refused with and without the code; a sign-in
-//                                           from a second profile with the same passkey, which becomes a second device
+//   node sandbox/claim.mjs claim <run>      on an empty store: the first signup claims the network and opens the
+//                                           dashboard, the admin's vault owned by the passkey and the guardian; a
+//                                           second signup with another passkey refused; a sign-in from a second
+//                                           profile with the same passkey, which becomes a second device
 //   node sandbox/claim.mjs restarted <run>  after the Aven Peer restarted: both browsers on the same tree
 //   node sandbox/claim.mjs wiped <run>      after its store was wiped: the network unclaimed again
 //
 // What a claim and a sign-in may do is the model's (`Aven.ID.Claim`, its traces replayed by aven-id's and the Peer's
 // tests); here only the box's mechanics are new: real passkeys, a real store, the page. The tree the Aven Peer keeps
-// is read from its `network` lines; the claim code from the box's configuration, and it is never written down.
+// is read from its `network` lines; the box's MaiaCityGuardian from its configuration.
 import { createHash, createPrivateKey, createPublicKey } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
@@ -19,7 +20,7 @@ import { lines } from './records.mjs';
 
 const [phase, run = 'runs/latest'] = process.argv.slice(2);
 const origin = 'http://localhost:5174';
-const code = process.env.AVENSANDBOX_CLAIM_CODE;
+const guardian = process.env.AVENSANDBOX_GUARDIAN;
 const profiles = { first: '/tmp/avensandbox-claim-first', second: '/tmp/avensandbox-claim-second' };
 const state = `${run}/claim.json`;
 mkdirSync(run, { recursive: true });
@@ -56,10 +57,7 @@ async function view(page, want, timeout = 30_000) {
 		.catch(() => false);
 }
 
-async function claimWith(page, value) {
-	await page.getByTestId('claim-code').fill(value);
-	await page.getByTestId('claim').click();
-}
+const signUp = (page) => page.getByTestId('claim').click();
 
 // a refusal shown, and the network's tree unchanged since `before`
 async function refused(page, what, before) {
@@ -80,15 +78,8 @@ if (phase === 'claim') {
 	if (!(await view(first.page, 'claim'))) problems.push('an unclaimed network shows no claim screen');
 	await first.page.screenshot({ path: `${run}/claim-unclaimed.png` });
 
-	// a wrong code is refused while the network is unclaimed
-	await claimWith(first.page, 'not-the-code');
-	report.wrongCode = await refused(first.page, 'a claim with the wrong code', network());
-	if (network()?.claimed) problems.push('a wrong code claimed the network');
-
-	// the claim, with the code: the dashboard, as the admin's vault
-	await first.page.reload();
-	await view(first.page, 'claim');
-	await claimWith(first.page, code);
+	// the first signup claims: the dashboard, as the admin's vault
+	await signUp(first.page);
 	const claimedAt = Date.now();
 	if (!(await view(first.page, 'dashboard'))) problems.push('the claim did not open the dashboard');
 	report.claimMs = Date.now() - claimedAt;
@@ -97,8 +88,16 @@ if (phase === 'claim') {
 	await first.page.screenshot({ path: `${run}/claim-dashboard.png` });
 	const claimed = network(since);
 	if (!claimed?.claimed || devices(claimed) !== 2) problems.push(`after the claim the tree has ${devices(claimed)} devices, not 2`);
+	// the admin's vault is owned by its passkey and by MaiaCityGuardian, the box's test one
+	const tree = claimed?.tree ? JSON.parse(claimed.tree) : { keys: {}, vaults: {} };
+	report.owners = tree.vaults[report.admin]?.owners;
+	const passkeyOwner = report.owners?.[0]?.replace(/^key:/, '');
+	if (report.owners?.length !== 2 || !passkeyOwner?.startsWith('passkey-') || !tree.keys[passkeyOwner]?.startsWith('es256:'))
+		problems.push(`the admin's vault is owned by ${JSON.stringify(report.owners)}, not its passkey and the guardian`);
+	if (report.owners?.[1] !== 'key:maia-city-guardian' || tree.keys['maia-city-guardian'] !== guardian)
+		problems.push(`the admin's vault's second owner is ${report.owners?.[1]}, not the box's MaiaCityGuardian`);
 
-	// the second browser: invite only; a second claim refused, with the code and without
+	// the second browser: invite only; a second signup, with another passkey, refused
 	const second = await open('second');
 	if (!(await view(second.page, 'invite-only'))) problems.push('a claimed network shows another browser no "invite only"');
 	report.inviteOnly = (await second.page.getByTestId('invite-only').textContent().catch(() => '')).trim();
@@ -106,18 +105,14 @@ if (phase === 'claim') {
 	await second.page.screenshot({ path: `${run}/claim-invite-only.png` });
 	await second.page.goto(`${origin}/#/claim`);
 	await view(second.page, 'claim');
-	await claimWith(second.page, code);
-	report.secondWithCode = await refused(second.page, 'a second claim with the code', claimed);
-	await second.page.reload();
-	await view(second.page, 'claim');
-	await claimWith(second.page, '');
-	report.secondWithout = await refused(second.page, 'a second claim without the code', claimed);
+	await signUp(second.page);
+	report.secondSignup = await refused(second.page, 'a second signup with another passkey', claimed);
 	await second.page.screenshot({ path: `${run}/claim-refused.png` });
 
 	// the same passkey on the second profile, as a synced one: it signs in and becomes a second device
 	const { credentials } = await first.cdp.send('WebAuthn.getCredentials', { authenticatorId: first.authenticatorId });
-	// the wrong code's attempt made a passkey too, before the Aven Peer refused it: the claim's is the one the tree
-	// names, `passkey-` and the start of its public key's SHA-256 (aven-id's passkey_id)
+	// the claim's passkey is the one the tree names: `passkey-` and the start of its public key's SHA-256 (aven-id's
+	// passkey_id)
 	const named = (credential) => {
 		const key = createPrivateKey({ key: Buffer.from(credential.privateKey, 'base64'), format: 'der', type: 'pkcs8' });
 		const spki = createPublicKey(key).export({ format: 'der', type: 'spki' });
@@ -125,7 +120,7 @@ if (phase === 'claim') {
 	};
 	const passkey = credentials.find((credential) => Object.keys(JSON.parse(claimed.tree).keys).includes(named(credential)));
 	if (!passkey) problems.push("the first browser holds no passkey the tree names");
-	// the refused claims made passkeys on the second profile too: a person's other browser holds only their own
+	// the refused signup made a passkey on the second profile: a person's other browser holds only their own
 	await second.cdp.send('WebAuthn.clearCredentials', { authenticatorId: second.authenticatorId });
 	await second.cdp.send('WebAuthn.addCredential', { authenticatorId: second.authenticatorId, credential: passkey });
 	await second.page.goto(`${origin}/`);

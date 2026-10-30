@@ -61,9 +61,9 @@ function send(frame) {
 	port.postMessage({ send: JSON.stringify(frame) });
 }
 
-// Claim this network: a new passkey (ES256, attestation none, its public key from getPublicKey(), so no CBOR), then
+// Sign up, so claim the network if nobody has: a new passkey (ES256, attestation none, its public key from getPublicKey(), so no CBOR), then
 // its assertion over the claim, which names it, its person vault and this browser
-export async function claim(config, code) {
+export async function claim(config) {
 	const created = await navigator.credentials.create({
 		publicKey: {
 			rp: { id: config.rpId, name: 'Aven' },
@@ -84,7 +84,7 @@ export async function claim(config, code) {
 	};
 	const text = claimText(statement.network, statement.person, statement.passkey.id, spki, statement.device.id, net.key);
 	statement.assertion = await assertion(config, text, created.rawId);
-	send({ frame: 'claim', code, statement: JSON.stringify(statement) });
+	send({ frame: 'claim', statement: JSON.stringify(statement) });
 }
 
 // Sign in with the passkey that claimed the network: this browser becomes one more of its devices

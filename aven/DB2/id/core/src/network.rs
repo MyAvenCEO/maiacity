@@ -1,10 +1,9 @@
 //! A network whose tree is data (`Aven.ID.Claim`'s `Server`): unclaimed, then claimed once, then grown by sign-ins.
 //! Every step returns the next network and leaves this one as it was, so the Aven Peer stores a statement first and
-//! takes the new network only once its ref is set. The claim code is compared in constant time and never printed.
+//! takes the new network only once its ref is set. The claim is the first signup: there is no code. When the Aven Peer
+//! is given MaiaCityGuardian's public half, the person's vault a claim founds has it among its owners.
 
 use std::fmt;
-
-use subtle::ConstantTimeEq;
 
 use crate::claim::{Claim, SignIn};
 use crate::passkey::{AssertionError, Passkey, Relying, challenge};
@@ -14,7 +13,6 @@ use crate::tree::{Invalid, Kind, Owner, Tree, Vault};
 pub enum ClaimError {
     /// The network is claimed already.
     Taken,
-    WrongCode,
     /// The statement names another device than the browser that sent it.
     NotFromDevice,
     WrongNetwork,
@@ -31,7 +29,6 @@ impl fmt::Display for ClaimError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ClaimError::Taken => write!(f, "this network is claimed already"),
-            ClaimError::WrongCode => write!(f, "that is not the claim code"),
             ClaimError::NotFromDevice => write!(f, "the statement is for another browser"),
             ClaimError::WrongNetwork => write!(f, "the statement is for another network"),
             ClaimError::Assertion(why) => write!(f, "{why}"),
@@ -44,15 +41,8 @@ impl fmt::Display for ClaimError {
 
 impl std::error::Error for ClaimError {}
 
-/// The claim code, which no `Debug` shows.
-#[derive(Clone, PartialEq, Eq)]
-struct Code(Vec<u8>);
-
-impl fmt::Debug for Code {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("(hidden)")
-    }
-}
+/// MaiaCityGuardian's key, by the id trees know it by.
+pub const GUARDIAN: &str = "maia-city-guardian";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Network {
@@ -60,20 +50,21 @@ pub struct Network {
     pub peer: String,
     pub peer_key: String,
     pub rp: Relying,
-    code: Code,
+    /// MaiaCityGuardian's public half, Ed25519 in hex
+    pub guardian: Option<String>,
     claim: Option<Claim>,
     sign_ins: Vec<SignIn>,
 }
 
 impl Network {
     /// An unclaimed network: its vault, without an owner yet, and the Aven Peer, its device with its key.
-    pub fn new(network: &str, peer: &str, peer_key: &str, rp: Relying, code: &str) -> Network {
+    pub fn new(network: &str, peer: &str, peer_key: &str, rp: Relying, guardian: Option<String>) -> Network {
         Network {
             network: network.into(),
             peer: peer.into(),
             peer_key: peer_key.into(),
             rp,
-            code: Code(code.as_bytes().to_vec()),
+            guardian,
             claim: None,
             sign_ins: Vec::new(),
         }
@@ -87,16 +78,15 @@ impl Network {
         &self.sign_ins
     }
 
-    /// The tree's keys with their public halves: a passkey's written `es256:<SPKI>`.
+    /// The tree's keys with their public halves: a passkey's written `es256:<SPKI>`, the guardian's after it.
     pub fn publics(&self) -> Vec<(String, String)> {
         let Some(c) = &self.claim else {
             return vec![(self.peer.clone(), self.peer_key.clone())];
         };
-        let mut out = vec![
-            (c.passkey.clone(), format!("es256:{}", c.passkey_key)),
-            (self.peer.clone(), self.peer_key.clone()),
-            (c.device.clone(), c.device_key.clone()),
-        ];
+        let mut out = vec![(c.passkey.clone(), format!("es256:{}", c.passkey_key))];
+        out.extend(self.guardian.iter().map(|g| (GUARDIAN.to_string(), g.clone())));
+        out.push((self.peer.clone(), self.peer_key.clone()));
+        out.push((c.device.clone(), c.device_key.clone()));
         out.extend(
             self.sign_ins
                 .iter()
@@ -128,12 +118,7 @@ impl Network {
             vault(id, name, Kind::Device, vec![Owner::Vault(c.person.clone())])
         };
         let mut out = vec![
-            vault(
-                &c.person,
-                "The admin's vault".into(),
-                Kind::Person,
-                vec![Owner::Key(c.passkey.clone())],
-            ),
+            vault(&c.person, "The admin's vault".into(), Kind::Person, self.founders(&c.passkey)),
             Vault {
                 owners: vec![Owner::Vault(c.person.clone())],
                 ..network
@@ -149,6 +134,13 @@ impl Network {
         out
     }
 
+    /// A person's vault's owners when it is founded: its passkey, and the guardian if there is one.
+    fn founders(&self, passkey: &str) -> Vec<Owner> {
+        let mut out = vec![Owner::Key(passkey.into())];
+        out.extend(self.guardian.iter().map(|_| Owner::Key(GUARDIAN.into())));
+        out
+    }
+
     /// The tree once claimed; before, the tree fails only for the network's missing owner.
     pub fn tree(&self) -> Result<Tree, Invalid> {
         Tree::new(self.publics(), self.vaults())
@@ -156,7 +148,8 @@ impl Network {
 
     /// Whether `key` is a device of this tree: only those are told the tree.
     pub fn has_device(&self, key: &str) -> bool {
-        self.claim.is_some() && self.publics().iter().skip(1).any(|(_, k)| k == key)
+        let devices: Vec<String> = self.vaults().into_iter().filter(|v| v.kind == Kind::Device).map(|v| v.id).collect();
+        self.claim.is_some() && self.publics().iter().any(|(id, k)| k == key && devices.contains(id))
     }
 
     fn knows(&self, device: &str, key: &str) -> bool {
@@ -185,14 +178,11 @@ impl Network {
         Ok(next)
     }
 
-    /// A claim as a browser sends it, from the browser whose key is `from`: refused once claimed, then with the
-    /// wrong code, then from another browser than it names.
-    pub fn submit_claim(&self, code: &str, from: &str, c: Claim) -> Result<Network, ClaimError> {
+    /// A claim, the first signup, as a browser sends it from the browser whose key is `from`: refused once claimed,
+    /// then from another browser than it names.
+    pub fn submit_claim(&self, from: &str, c: Claim) -> Result<Network, ClaimError> {
         if self.claim.is_some() {
             return Err(ClaimError::Taken);
-        }
-        if !bool::from(code.as_bytes().ct_eq(&self.code.0)) {
-            return Err(ClaimError::WrongCode);
         }
         if from != c.device_key {
             return Err(ClaimError::NotFromDevice);

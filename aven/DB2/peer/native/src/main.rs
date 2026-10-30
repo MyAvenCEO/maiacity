@@ -7,6 +7,7 @@
 //!
 //!     --name NAME            what this peer is called in presence and the timeline
 //!     --secret HEX           its Ed25519 secret seed (better by environment: AVEN_PEER_SECRET)
+//!     --secret-file PATH     or a file holding it, so it shows in no `docker inspect`; exactly one of the two
 //!     --listen ADDR          its UDP socket (0.0.0.0:4433)
 //!     --relay                run the relay here: this is the Aven Peer
 //!     --relay-listen ADDR    the relay's HTTP socket (0.0.0.0:3340), with --relay
@@ -23,10 +24,11 @@
 //!     --s3-region NAME       its region (us-east-1)
 //!     --s3-key ID            its access key id (better by environment: AVEN_PEER_S3_KEY)
 //!     --s3-secret SECRET     its secret access key (better by environment: AVEN_PEER_S3_SECRET)
-//!     --claim-code CODE      with --relay: keep the tree in the store, claimable once with this code (better by
-//!                            environment: AVEN_PEER_CLAIM_CODE); never written to a log or the timeline
-//!     --rp-id ID             the passkeys' RP ID, with --claim-code: maia.city in production, localhost in the box
-//!     --origin URL           avenOS's origin, with --claim-code: the page every assertion must come from
+//!     --rp-id ID             with --relay: keep the tree in the store, claimed by the first passkey to sign up;
+//!                            the passkeys' RP ID: maia.city in production, localhost in the box
+//!     --origin URLS          with --rp-id: avenOS's origins, comma-separated; an assertion must come from one, and a
+//!                            stored one holds while its origin is listed, so avenOS moves by adding one
+//!     --guardian HEX         with --rp-id: MaiaCityGuardian's public half, an owner of every person's vault founded
 
 use std::collections::HashMap;
 use std::fs::OpenOptions;
@@ -128,7 +130,11 @@ async fn resolve(host: &str) -> Result<SocketAddr, Error> {
 async fn main() -> Result<(), Error> {
     let config = Config::read()?;
     let me = config.need("name")?;
-    let secret = keys::secret(&config.need("secret")?)?;
+    let secret = keys::secret(&match (config.get("secret"), config.get("secret-file")) {
+        (Some(hex), None) => hex,
+        (None, Some(path)) => std::fs::read_to_string(&path).map_err(|e| format!("--secret-file {path}: {e}"))?,
+        _ => return Err("give exactly one of --secret and --secret-file".into()),
+    })?;
     let members = Members::parse(&config.or("members", ""))?;
     let notes = notes(&me, config.get("events"))?;
     let relay = config.get("relay").is_some_and(|v| v != "false");
@@ -165,13 +171,19 @@ async fn main() -> Result<(), Error> {
     notes(record::line(now(), &me, &kind, &record));
 
     // without a cast, an Aven Peer keeps its tree in its store, claimable once (PRODUCTION.md, Part A)
-    let door = match (config.get("claim-code"), config.get("rp-id"), config.get("origin")) {
+    let door = match (config.get("rp-id"), config.get("origin"), config.get("guardian")) {
         (None, None, None) => None,
-        (Some(code), Some(rp_id), Some(origin)) if relay => {
+        (Some(rp_id), Some(origins), guardian) if relay => {
+            let guardian = guardian.map(|g| g.trim().to_lowercase());
+            let origins = origins.split(',').map(|o| o.trim().to_string()).filter(|o| !o.is_empty()).collect();
+            if let Some(g) = &guardian {
+                keys::public(g).map_err(|e| format!("--guardian: {e}"))?;
+            }
             let key = endpoint.id().to_string();
-            Some(Arc::new(Door::open(me.clone(), store.clone(), &key, Relying { rp_id, origin }, &code, notes.clone()).await?))
+            let rp = Relying { rp_id, origins };
+            Some(Arc::new(Door::open(me.clone(), store.clone(), &key, rp, guardian, notes.clone()).await?))
         }
-        _ => return Err("--claim-code, --rp-id and --origin come together, on an Aven Peer (--relay)".into()),
+        _ => return Err("--rp-id and --origin come together, on an Aven Peer (--relay); --guardian only with them".into()),
     };
 
     let router = if relay {

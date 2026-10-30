@@ -20,9 +20,8 @@ inductive Frame where
   | presence (peers : List String)
   /-- the Aven Peer's clock, once per step -/
   | beat (n : Nat)
-  /-- a browser claims an unclaimed network: the claim code and the claim's statement (`Aven.ID.Claim`) as JSON text.
-  The code is never written anywhere -/
-  | claim (code statement : String)
+  /-- a browser signs up first, so claims an unclaimed network: the claim's statement (`Aven.ID.Claim`) as JSON text -/
+  | claim (statement : String)
   /-- a browser signs in with the passkey that claimed the network: the sign-in's statement as JSON text -/
   | signIn (statement : String)
   /-- an Aven Peer that keeps its tree tells each peer whether it is claimed and, to a device of its tree, the tree -/
@@ -38,7 +37,7 @@ def Frame.json : Frame → Json
   | .hello p => Json.mkObj [("frame", "hello"), ("peer", p)]
   | .presence ps => Json.mkObj [("frame", "presence"), ("peers", toJson ps)]
   | .beat n => Json.mkObj [("frame", "beat"), ("n", toJson n)]
-  | .claim c st => Json.mkObj [("frame", "claim"), ("code", c), ("statement", st)]
+  | .claim st => Json.mkObj [("frame", "claim"), ("statement", st)]
   | .signIn st => Json.mkObj [("frame", "sign_in"), ("statement", st)]
   | .network c t => Json.mkObj [("frame", "network"), ("claimed", toJson c), ("tree", toJson t)]
   | .refused w => Json.mkObj [("frame", "refused"), ("why", w)]
@@ -49,7 +48,7 @@ def Frame.parse (line : String) : Option Frame := do
   | "hello" => .hello <$> (j.getObjValAs? String "peer").toOption
   | "presence" => .presence <$> (j.getObjValAs? (List String) "peers").toOption
   | "beat" => .beat <$> (j.getObjValAs? Nat "n").toOption
-  | "claim" => .claim <$> (j.getObjValAs? String "code").toOption <*> (j.getObjValAs? String "statement").toOption
+  | "claim" => .claim <$> (j.getObjValAs? String "statement").toOption
   | "sign_in" => .signIn <$> (j.getObjValAs? String "statement").toOption
   | "network" => .network <$> (j.getObjValAs? Bool "claimed").toOption <*>
       (j.getObjValAs? (Option String) "tree").toOption
@@ -94,11 +93,11 @@ def wireExamples : List (String × List String × List (List Frame) × Option Wi
     [[.beat 1, .beat 2]], none),
   ("presence of nobody", ["{\"frame\":\"presence\",\"peers\":[]}\n"], [[.presence []]], none),
   ("a claim, a sign-in, then the network and a refusal",
-    ["{\"frame\":\"claim\",\"code\":\"c0de\",\"statement\":\"{}\"}\n{\"frame\":\"sign_in\",\"statement\":\"{}\"}\n",
+    ["{\"frame\":\"claim\",\"statement\":\"{}\"}\n{\"frame\":\"sign_in\",\"statement\":\"{}\"}\n",
       "{\"frame\":\"network\",\"claimed\":false,\"tree\":null}\n{\"frame\":\"network\",\"claimed\":true,\"tree\":\"{}\"}\n",
       "{\"frame\":\"refused\",\"why\":\"taken\"}\n"],
-    [[.claim "c0de" "{}", .signIn "{}"], [.network false none, .network true (some "{}")], [.refused "taken"]], none),
-  ("a claim without its code", ["{\"frame\":\"claim\",\"statement\":\"{}\"}\n"], [], some .bad),
+    [[.claim "{}", .signIn "{}"], [.network false none, .network true (some "{}")], [.refused "taken"]], none),
+  ("a claim without its statement", ["{\"frame\":\"claim\"}\n"], [], some .bad),
   ("a line that isn't JSON", ["nope\n"], [], some .bad),
   ("a frame no peer sends", ["{\"frame\":\"shout\"}\n"], [], some .bad),
   ("a beat without its count", ["{\"frame\":\"beat\"}\n"], [], some .bad),

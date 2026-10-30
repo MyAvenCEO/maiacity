@@ -1,8 +1,8 @@
 // Production's stand-in in the box (PRODUCTION.md, "How it is checked"): avenOS at http://localhost:5174, served by the
 // same Vite as every other view, in front of an Aven Peer in production's configuration (compose's `prod`: no cast,
-// its tree in the box's S3 under a root of its own, a test claim code). A passkey's RP ID is `localhost`, which
-// Chromium accepts only on `localhost` itself, not on `*.localhost`: so this view is a port of its own, with its own
-// origin and OPFS. On it, `/aven.json` tells avenOS which Aven Peer it is in front of, as production's host will, and
+// its tree in the box's S3 under a root of its own, the box's test MaiaCityGuardian). A passkey's RP ID is
+// `localhost`, which Chromium accepts only on `localhost` itself, not on `*.localhost`: so this view is a port of its
+// own, with its own origin and OPFS. On it, `/aven.json` tells avenOS which Aven Peer it is in front of, as production's host will, and
 // the relay's paths go to that peer's relay, as Caddy will send aven.maia.city's: iroh dials `/relay` at its URL's
 // root, so the route is by port, not by path.
 import { request } from 'node:http';

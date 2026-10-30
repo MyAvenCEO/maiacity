@@ -174,8 +174,8 @@ impl Hub {
                 .ok_or_else(|| "this peer keeps no tree".to_string())
         };
         let taken = match frame {
-            Frame::Claim { code, statement } => match door() {
-                Ok(door) => door.claim(key, &code, &statement).await,
+            Frame::Claim { statement } => match door() {
+                Ok(door) => door.claim(key, &statement).await,
                 Err(why) => Err(why),
             },
             Frame::SignIn { statement } => match door() {

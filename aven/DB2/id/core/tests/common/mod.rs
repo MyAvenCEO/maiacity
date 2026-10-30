@@ -130,6 +130,11 @@ pub fn test_passkey(id: &str) -> p256::ecdsa::SigningKey {
     p256::ecdsa::SigningKey::from_slice(&scalar).expect("a scalar below the group's order")
 }
 
+/// A relying party's origins, as the vectors list them.
+pub fn origins(v: &Value) -> Vec<String> {
+    v.as_array().unwrap().iter().map(|o| o.as_str().unwrap().to_string()).collect()
+}
+
 pub fn unhex(s: &str) -> Vec<u8> {
     (0..s.len() / 2)
         .map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap())

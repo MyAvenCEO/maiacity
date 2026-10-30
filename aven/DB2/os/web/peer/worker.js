@@ -47,7 +47,7 @@ function connect(port) {
 	pages.add(port);
 	port.onmessage = async ({ data }) => {
 		if (data?.start) started ??= start(data.start);
-		// a claim or a sign-in for the Aven Peer; it carries the claim code, so it is never told as a line
+		// a claim or a sign-in for the Aven Peer, from the page
 		if (data?.send) {
 			await started;
 			try {

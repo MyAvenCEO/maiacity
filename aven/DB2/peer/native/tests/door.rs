@@ -72,16 +72,14 @@ fn tree(n: &Network) -> Value {
 
 async fn open(store: &Arc<DalStore>, server: &Value) -> Door {
     let text = |k: &str| server[k].as_str().unwrap().to_string();
-    let rp = Relying {
-        rp_id: text("rpId"),
-        origin: text("origin"),
-    };
+    let origins = server["origins"].as_array().unwrap().iter().map(|o| o.as_str().unwrap().to_string()).collect();
+    let rp = Relying { rp_id: text("rpId"), origins };
     Door::open(
         "aven-peer".into(),
         store.clone(),
         &text("peerKey"),
         rp,
-        &text("code"),
+        server["guardian"].as_str().map(str::to_string),
         Arc::new(|_| {}),
     )
     .await
@@ -103,7 +101,7 @@ async fn the_door_keeps_the_models_tree() {
             let from = op["from"].as_str().unwrap_or_default();
             let ok = match op["op"].as_str().unwrap() {
                 "claim" => door
-                    .claim(from, op["code"].as_str().unwrap(), &statement(&op["claim"]))
+                    .claim(from, &statement(&op["claim"]))
                     .await
                     .is_ok(),
                 "signIn" => door.sign_in(from, &statement(&op["signIn"])).await.is_ok(),
@@ -135,18 +133,17 @@ async fn of_two_racing_claims_one_is_kept() {
     let all = vectors("claims.json");
     let trace = all
         .iter()
-        .find(|v| v["name"] == "a claim, then a second refused, with and without the code")
+        .find(|v| v["name"] == "the first signup claims, a second signup with another passkey is refused")
         .unwrap();
     let server = &trace["input"]["server"];
     let (first, second) = (&trace["input"]["ops"][0], &trace["input"]["ops"][1]);
     let store = Arc::new(backend::memory().unwrap());
     // two writers on one store, which the one writer never allows: the ref's compare-and-set still keeps one
     let (a, b) = (open(&store, server).await, open(&store, server).await);
-    let code = server["code"].as_str().unwrap();
     let (s1, s2) = (statement(&first["claim"]), statement(&second["claim"]));
     let (x, y) = tokio::join!(
-        a.claim(first["from"].as_str().unwrap(), code, &s1),
-        b.claim(second["from"].as_str().unwrap(), code, &s2),
+        a.claim(first["from"].as_str().unwrap(), &s1),
+        b.claim(second["from"].as_str().unwrap(), &s2),
     );
     assert_eq!(
         [x.is_ok(), y.is_ok()].iter().filter(|ok| **ok).count(),
