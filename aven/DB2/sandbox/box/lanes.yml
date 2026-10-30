@@ -7,6 +7,8 @@
 #   hard   masquerade --random-fully: a new random port per destination
 #   udp    masquerade, every UDP packet from the home dropped: only TCP leaves it
 #
+# and two lanes of two homes each (twohome, twohard), where Alice Peer links to Bob's Peer, both behind the lane's NAT.
+#
 # In each home, Alice Peer runs the box's own binary in the network namespace of a small `nic` container, whose only
 # job is to send everything through the home's router: the box's image has no `ip` to do it itself. Every router
 # drops what arrives from the WAN unasked, as a home router does. The keys are the box's test keys, by the cast's rule
@@ -28,6 +30,10 @@ x-router: &router
     - |
       home=$$(ip -o -4 addr show | awk '$$4 ~ /^10\.77\./ { print $$2 }')
       wan=$$(ip -o -4 addr show | awk '$$2 != "lo" && $$4 !~ /^10\.77\./ { print $$2 }')
+      # the internet routes no private address: from the home, only the WAN's own subnet is reachable. Docker's host
+      # routes between all its bridges, so without this a home reaches another home's private address directly
+      wan_net=$$(ip -o -4 route show dev "$$wan" scope link | awk '{ print $$1 }')
+      iptables -A FORWARD -i "$$home" ! -d "$$wan_net" -j DROP
       iptables -t nat -A POSTROUTING -o "$$wan" -j MASQUERADE $$NAT_FLAGS
       iptables -A FORWARD -i "$$wan" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
       iptables -A FORWARD -i "$$wan" -j DROP
@@ -143,6 +149,103 @@ services:
       AVEN_PEER_SECRET: ${LANES_UDP_SECRET:?bun run lanes sets it}
     depends_on: { udp-nic: { condition: service_healthy }, aven: { condition: service_started } }
 
+  # Two homes: Alice Peer and Bob's Peer, each behind a router of the lane's NAT, linked to each other. The plan's
+  # expectations hold here: home NAT starts on the relay, then hole-punches; hard NAT stays on the relay.
+
+  twohome-a-router:
+    <<: *router
+    environment: { NAT_FLAGS: "" }
+    networks:
+      wan: { ipv4_address: 10.78.0.24 }
+      twohome-a: { ipv4_address: 10.77.4.2 }
+  twohome-a-nic:
+    <<: *nic
+    environment: { ROUTER: 10.77.4.2 }
+    networks:
+      twohome-a: { ipv4_address: 10.77.4.3 }
+    depends_on: { twohome-a-router: { condition: service_healthy } }
+  twohome-b-router:
+    <<: *router
+    environment: { NAT_FLAGS: "" }
+    networks:
+      wan: { ipv4_address: 10.78.0.25 }
+      twohome-b: { ipv4_address: 10.77.5.2 }
+  twohome-b-nic:
+    <<: *nic
+    environment: { ROUTER: 10.77.5.2 }
+    networks:
+      twohome-b: { ipv4_address: 10.77.5.3 }
+    depends_on: { twohome-b-router: { condition: service_healthy } }
+  # the second member's Peer: its hub takes Alice's link on aven/db/1; its own relay is unused, both reach the WAN's
+  twohome-bob:
+    <<: *alice
+    network_mode: service:twohome-b-nic
+    environment:
+      AVEN_PEER_NAME: bob-twohome
+      AVEN_PEER_SECRET: ${LANES_TWOHOME_BOB_SECRET:?bun run lanes sets it}
+      AVEN_PEER_RELAY: "true"
+      AVEN_PEER_RELAY_URL: http://10.78.0.10:3340
+      AVEN_PEER_MEMBERS: ${LANES_MEMBERS:?bun run lanes sets it}
+    depends_on: { twohome-b-nic: { condition: service_healthy }, aven: { condition: service_started } }
+  # Alice knows Bob's key and his router's public address, which drops her packets until Bob has sent to hers
+  twohome-alice:
+    <<: *alice
+    network_mode: service:twohome-a-nic
+    environment:
+      <<: *alice-env
+      AVEN_PEER_NAME: alice-twohome
+      AVEN_PEER_SECRET: ${LANES_TWOHOME_SECRET:?bun run lanes sets it}
+      AVEN_PEER_AVEN: 10.78.0.25:4433
+      AVEN_PEER_AVEN_KEY: ${LANES_TWOHOME_BOB_KEY:?bun run lanes sets it}
+    depends_on: { twohome-a-nic: { condition: service_healthy }, twohome-bob: { condition: service_started } }
+
+  twohard-a-router:
+    <<: *router
+    environment: { NAT_FLAGS: "--random-fully" }
+    networks:
+      wan: { ipv4_address: 10.78.0.26 }
+      twohard-a: { ipv4_address: 10.77.6.2 }
+  twohard-a-nic:
+    <<: *nic
+    environment: { ROUTER: 10.77.6.2 }
+    networks:
+      twohard-a: { ipv4_address: 10.77.6.3 }
+    depends_on: { twohard-a-router: { condition: service_healthy } }
+  twohard-b-router:
+    <<: *router
+    environment: { NAT_FLAGS: "--random-fully" }
+    networks:
+      wan: { ipv4_address: 10.78.0.27 }
+      twohard-b: { ipv4_address: 10.77.7.2 }
+  twohard-b-nic:
+    <<: *nic
+    environment: { ROUTER: 10.77.7.2 }
+    networks:
+      twohard-b: { ipv4_address: 10.77.7.3 }
+    depends_on: { twohard-b-router: { condition: service_healthy } }
+  # the second member's Peer: its hub takes Alice's link on aven/db/1; its own relay is unused, both reach the WAN's
+  twohard-bob:
+    <<: *alice
+    network_mode: service:twohard-b-nic
+    environment:
+      AVEN_PEER_NAME: bob-twohard
+      AVEN_PEER_SECRET: ${LANES_TWOHARD_BOB_SECRET:?bun run lanes sets it}
+      AVEN_PEER_RELAY: "true"
+      AVEN_PEER_RELAY_URL: http://10.78.0.10:3340
+      AVEN_PEER_MEMBERS: ${LANES_MEMBERS:?bun run lanes sets it}
+    depends_on: { twohard-b-nic: { condition: service_healthy }, aven: { condition: service_started } }
+  # Alice knows Bob's key and his router's public address, which drops her packets until Bob has sent to hers
+  twohard-alice:
+    <<: *alice
+    network_mode: service:twohard-a-nic
+    environment:
+      <<: *alice-env
+      AVEN_PEER_NAME: alice-twohard
+      AVEN_PEER_SECRET: ${LANES_TWOHARD_SECRET:?bun run lanes sets it}
+      AVEN_PEER_AVEN: 10.78.0.27:4433
+      AVEN_PEER_AVEN_KEY: ${LANES_TWOHARD_BOB_KEY:?bun run lanes sets it}
+    depends_on: { twohard-a-nic: { condition: service_healthy }, twohard-bob: { condition: service_started } }
+
 # A home's only way out is its router: its nic routes everything there. Not `internal`: Docker's rules for an internal
 # network drop, on its bridge, every frame bound outside its subnet, the router's too
 networks:
@@ -154,6 +257,15 @@ networks:
     ipam: { config: [{ subnet: 10.77.2.0/24 }] }
   udp:
     ipam: { config: [{ subnet: 10.77.3.0/24 }] }
+
+  twohome-a:
+    ipam: { config: [{ subnet: 10.77.4.0/24 }] }
+  twohome-b:
+    ipam: { config: [{ subnet: 10.77.5.0/24 }] }
+  twohard-a:
+    ipam: { config: [{ subnet: 10.77.6.0/24 }] }
+  twohard-b:
+    ipam: { config: [{ subnet: 10.77.7.0/24 }] }
 
 volumes:
   # Rust's build folder, which `bun run up` builds the Peer into
