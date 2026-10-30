@@ -74,7 +74,7 @@
 			{#each room.lines as line, i (i)}
 				{@const vault = vaultOf(line)}
 				{@const said = known(vault) && tree.kind(vault) === 'agent'}
-				<li class:mine={line.from === device} class:said data-from={line.from} data-vault={vault}>
+				<li class:mine={line.from === device} class:said data-from={line.from} data-vault={vault} data-id={line.id}>
 					{#if said}
 						<span class="text" data-testid="network-line">{line.text}</span>
 					{:else if line.file}

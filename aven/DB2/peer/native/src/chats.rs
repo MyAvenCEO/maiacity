@@ -88,6 +88,8 @@ pub struct Chats {
     notes: Notes,
     store: Shared,
     keeper: Arc<Mutex<Keeper>>,
+    /// how many times a head moved here: the Aven Peer tells its links the heads that moved
+    moved: Arc<std::sync::atomic::AtomicU64>,
     /// each line kept in a gap: since when, until this peer caught up for it once (then `None`)
     gaps: Arc<Mutex<BTreeMap<String, Option<u64>>>>,
 }
@@ -133,6 +135,7 @@ impl Chats {
             store,
             keeper: Arc::new(Mutex::new(Keeper::load(chains))),
             gaps: Arc::default(),
+            moved: Arc::default(),
         };
         let shown: Vec<Held> = chats
             .keeper
@@ -146,6 +149,22 @@ impl Chats {
             chats.show(h);
         }
         Ok(chats)
+    }
+
+    /// Tells the page every line again, each with its sender as the door now names it: when the door changes, as a
+    /// Peer-Light's does once the Aven Peer tells it the members, the history it showed by keys gets its names.
+    pub fn retell(&self) {
+        let shown: Vec<Held> = self
+            .keeper
+            .lock()
+            .unwrap()
+            .shown()
+            .into_iter()
+            .cloned()
+            .collect();
+        for h in &shown {
+            self.show(h);
+        }
     }
 
     fn note(&self, event: &str, fields: serde_json::Value) {
@@ -216,6 +235,11 @@ impl Chats {
         out
     }
 
+    /// How many times a head moved here: a change to tell the links.
+    pub fn moved(&self) -> u64 {
+        self.moved.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// The `heads` frame: each device's head this peer holds.
     pub fn heads_frame(&self) -> Frame {
         let keeper = self.keeper.lock().unwrap();
@@ -228,6 +252,11 @@ impl Chats {
             })
             .collect();
         Frame::Heads { heads }
+    }
+
+    /// Whether the Aven Peer's `heads` name a line this peer doesn't hold: then it catches up.
+    pub fn behind(&self, heads: &[Head]) -> bool {
+        heads.iter().any(|h| h.seq > self.have(&h.device))
     }
 
     /// What it holds of every chain it keeps or the Aven Peer's `heads` name: the `catch_up` frame.
@@ -268,6 +297,23 @@ impl Chats {
             .find(|h| h.device == device)
             .map_or(0, |h| h.seq);
         batches(self.lines_after(&device, seq).await)
+    }
+
+    /// This device's own lines the Aven Peer's `heads` show it holds: they have gone out.
+    pub fn sent(&self, heads: &[Head]) -> Vec<String> {
+        let device = self.device();
+        let seq = heads
+            .iter()
+            .find(|h| h.device == device)
+            .map_or(0, |h| h.seq);
+        self.keeper
+            .lock()
+            .unwrap()
+            .chain(&device)
+            .iter()
+            .filter(|h| h.line.seq <= seq)
+            .map(|h| h.id.clone())
+            .collect()
     }
 
     /// A line's blob, by its name, if the store holds it.
@@ -336,6 +382,8 @@ impl Chats {
         );
         match &answer {
             Answer::Moved(ids) => {
+                self.moved
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 let held: Vec<Held> = {
                     let keeper = self.keeper.lock().unwrap();
                     keeper

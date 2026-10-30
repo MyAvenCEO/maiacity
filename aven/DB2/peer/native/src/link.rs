@@ -11,13 +11,14 @@
 
 use aven_db_core::status::{Event, Phase, STALL_AFTER, Status, TICK_MS};
 use aven_db_core::timeline;
-use aven_db_core::wire::{ALPN, Decoder, Frame, encode};
+use aven_db_core::wire::{ALPN, Decoder, Frame, Head, encode};
 use iroh::endpoint::Connection;
 use iroh::{Endpoint, EndpointAddr};
 use n0_future::time::{Duration, Instant, sleep, timeout};
 use n0_future::{FutureExt, StreamExt};
 use serde_json::json;
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use n0_future::boxed::BoxFuture;
@@ -70,9 +71,58 @@ struct Link {
     gate: Option<Gate>,
     /// the chat's chains, which catch up from the Aven Peer's on every link
     chats: Option<Chats>,
+    /// whether this link caught up once, on the Aven Peer's first `heads`
+    caught: bool,
+    /// how far the Aven Peer holds each chain, as its `heads` said
+    there: BTreeMap<String, u64>,
+    /// the newest line of its own this link sent the Aven Peer
+    uploaded: u64,
+    /// how many of its own lines it told the page the Aven Peer holds
+    told_sent: usize,
+}
+
+/// This device's own lines the Aven Peer doesn't hold, written offline or lost on gossip, sent once each on the link:
+/// it checks each as one heard on gossip, and its `heads` then say they arrived (`sent`).
+async fn upload(link: &mut Link, send: &mut iroh::endpoint::SendStream) -> Result<(), String> {
+    let Some(chats) = &link.chats else {
+        return Ok(());
+    };
+    let me = chats.device();
+    let (mine, there) = (chats.have(&me), link.there.get(&me).copied().unwrap_or(0));
+    if !link.caught || mine <= there.max(link.uploaded) {
+        return Ok(());
+    }
+    let from = Head {
+        device: me,
+        id: String::new(),
+        seq: there.max(link.uploaded),
+    };
+    for frame in chats.unsent(&[from]).await {
+        send.write_all(&encode(&frame))
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    link.uploaded = mine;
+    Ok(())
 }
 
 impl Link {
+    /// Tells the page which of this device's own lines the Aven Peer holds, as its heads have said, when that grew.
+    fn sent(&mut self) {
+        let Some(chats) = &self.chats else { return };
+        let me = chats.device();
+        let there = Head {
+            seq: self.there.get(&me).copied().unwrap_or(0),
+            device: me,
+            id: String::new(),
+        };
+        let sent = chats.sent(&[there]);
+        if sent.len() > self.told_sent {
+            self.told_sent = sent.len();
+            self.note("sent", json!({ "ids": sent }));
+        }
+    }
+
     fn step(&mut self, event: Event) {
         self.view.status = self.view.status.step(STALL_AFTER, event);
         if matches!(event, Event::Lost | Event::Dial) {
@@ -169,6 +219,10 @@ pub async fn run(
         outbox,
         gate,
         chats,
+        caught: false,
+        there: BTreeMap::new(),
+        uploaded: 0,
+        told_sent: 0,
     };
     link.tell();
     // until its endpoint closes: a Peer-Light rebinds with a newcomer's relay token
@@ -190,6 +244,9 @@ pub async fn run(
 }
 
 async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Result<(), String> {
+    // every link catches up afresh: the Aven Peer may have restarted, or lost what it was sent
+    (link.caught, link.uploaded, link.told_sent) = (false, 0, 0);
+    link.there.clear();
     let conn = timeout(
         Duration::from_secs(10),
         endpoint.connect(aven.clone(), ALPN),
@@ -247,6 +304,7 @@ async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Re
                         .await
                         .map_err(|e| e.to_string())?;
                 }
+                upload(link, &mut send).await?;
                 if link.view.status.phase == Phase::Stalled && link.view.status.idle >= REDIAL_AFTER
                 {
                     link.tell();
@@ -265,22 +323,22 @@ async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Re
                         } => link.network(claimed, tree, statements),
                         Frame::Refused { why } => link.note("refused", json!({ "why": why })),
                         // catching up: what it holds of each chain, and its own lines written offline
+                        // catching up: told every head on each link, then whenever one moves there. It catches up
+                        // when behind; its own lines the Aven Peer doesn't hold go on the next step (`upload`)
                         Frame::Heads { heads } => {
                             if let Some(chats) = &link.chats {
-                                let mut frames = vec![chats.catch_up_frame(&heads)];
-                                frames.extend(chats.unsent(&heads).await);
-                                for frame in frames {
-                                    send.write_all(&encode(&frame))
+                                let first = !link.caught;
+                                link.caught = true;
+                                for h in &heads {
+                                    link.there.insert(h.device.clone(), h.seq);
+                                }
+                                if first || chats.behind(&heads) {
+                                    send.write_all(&encode(&chats.catch_up_frame(&heads)))
                                         .await
                                         .map_err(|e| e.to_string())?;
-                                    if let Frame::Lines { lines } = &frame {
-                                        let ids: Vec<String> = lines
-                                            .iter()
-                                            .map(|l| aven_db_store::Hash::of(l.as_bytes()).to_hex())
-                                            .collect();
-                                        link.note("sent", json!({ "ids": ids }));
-                                    }
                                 }
+                                upload(link, &mut send).await?;
+                                link.sent();
                             }
                         }
                         Frame::Lines { lines } => {
@@ -288,6 +346,7 @@ async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Re
                                 for line in lines {
                                     chats.take(line.as_bytes()).await;
                                 }
+                                link.sent();
                             }
                         }
                         _ => {}

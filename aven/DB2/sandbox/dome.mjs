@@ -2,13 +2,14 @@
 // in the browsers' container, on Alice's and Bob's Peer-Lights at alice.localhost and bob.localhost:
 //
 // - Alice writes lines and Bob's chat shows them; Bob reloads and finds the whole chat, in order (3);
-// - a third browser on Bob's origin, with an empty OPFS, joins later and catches up on the whole chat (3);
-// - Bob, offline, writes a line: it shows at once, still on its way, and arrives on reconnect (4);
+// - Bob, offline, writes a line: it shows at once, still on its way, and arrives on reconnect; then the room is live
+//   for him again (4);
 // - a fork of Bob's chain is raised by the Aven Peer and never shown; a line of a device that is no member's is
 //   dropped by every peer and never shown (5);
 // - Alice shares an image and a PDF: each is a file line of her chain, shown in her chat at once (local first). Their
 //   bytes through the Service Worker's /files/<hash>, and Bob's copy, need the leader's bridge (opfs-sync) and the
-//   store's iroh-blobs adapter: reported as `pending` until they are in.
+//   store's iroh-blobs adapter: reported as `pending` until they are in;
+// - last, a third browser on Bob's origin, with an empty OPFS, joins later and catches up on the whole chat (3).
 //
 // The fork and the stranger's line are signed here with the cast's test keys (public on purpose, valid only inside
 // the box), as a cloned device or an outsider would, and sent through Alice's Peer-Light as they are. What a line's
@@ -45,7 +46,9 @@ const seen = (locator, timeout = 20_000) =>
 		.then(() => true)
 		.catch(() => false);
 const shown = (page) => page.getByTestId('lines').locator('li[data-from]');
-const texts = async (page) => (await shown(page).allTextContents()).map((t) => t.trim());
+// each line shown by its name, its sender and its words: not whether it is still on its way, which a reload may learn
+const texts = (page) =>
+	shown(page).evaluateAll((lis) => lis.map((li) => `${li.dataset.id} ${li.querySelector('strong')?.textContent ?? ''} ${li.querySelector('.text, figcaption')?.textContent ?? ''}`));
 
 // a cast's test key: its Ed25519 seed is sha256("avenSANDBOX test signer: <id>") (cast.json)
 const seed = (id) => createHash('sha256').update(`avenSANDBOX test signer: ${id}`).digest();
@@ -113,23 +116,23 @@ const written = [`one, ${stamp}`, `two, ${stamp}`, `three, ${stamp}`];
 for (const text of written) await say(alice, text);
 for (const text of written) if (!(await seen(bob.getByTestId('lines').locator('li', { hasText: text })))) problems.push(`"${text}" did not reach Bob`);
 
+// Bob's chat is the whole chat, Alice's, once both caught up from the Aven Peer
+const agree = async () => (await texts(bob)).join('\n') === (await texts(alice)).join('\n');
+const agreeAt = Date.now();
+for (let i = 0; i < 120 && !(await agree()); i++) await wait(250);
+report.caughtUpMs = Date.now() - agreeAt;
+if (!(await agree())) problems.push(`Bob's chat holds ${(await texts(bob)).length} lines, Alice's ${(await texts(alice)).length}, or not in the same order`);
+
 // 3. Bob reloads and finds the whole chat, in order
 const before = await texts(bob);
+const reloadAt = Date.now();
 await bob.reload();
 await seen(bob.locator('[data-view="chat"]'));
 const same = async (page) => (await texts(page)).join('\n') === before.join('\n');
-for (let i = 0; i < 40 && !(await same(bob)); i++) await wait(250);
+for (let i = 0; i < 120 && !(await same(bob)); i++) await wait(250);
+report.reloadMs = Date.now() - reloadAt;
 if (!(await same(bob))) problems.push(`after a reload Bob's chat holds ${(await texts(bob)).length} of ${before.length} lines, or not in order`);
 await bob.screenshot({ path: `${run}/dome-bob-reloaded.png` });
-
-// a third browser on Bob's origin, its OPFS empty, joins later and catches up from the Aven Peer
-const late = await open('bob', 'late');
-const lateAt = Date.now();
-for (let i = 0; i < 80 && !(await same(late)); i++) await wait(250);
-report.lateJoinerMs = Date.now() - lateAt;
-if (!(await same(late))) problems.push(`a late joiner holds ${(await texts(late)).length} of ${before.length} lines, or not in order`);
-await late.screenshot({ path: `${run}/dome-late-joiner.png` });
-await late.close();
 
 // 4. Bob, offline, writes a line: shown at once, still on its way; on reconnect it arrives
 await profiles.bob.setOffline(true);
@@ -143,6 +146,12 @@ await bob.screenshot({ path: `${run}/dome-bob-offline.png` });
 await profiles.bob.setOffline(false);
 if (!(await seen(alice.getByTestId('lines').locator('li', { hasText: offline }), 40_000))) problems.push('a line written offline did not arrive on reconnect');
 report.offlineArrivedMs = Date.now() - offlineAt;
+// and the room is live again for Bob: Alice's next line reaches him
+const again = `live again, ${stamp}`;
+const againAt = Date.now();
+await say(alice, again);
+if (!(await seen(bob.getByTestId('lines').locator('li', { hasText: again }), 40_000))) problems.push('after reconnecting, Bob did not hear the room live');
+report.liveAgainMs = Date.now() - againAt;
 
 // 5. a fork of Bob's chain: a second first line, as a cloned device would write it. Raised, never shown
 const bobKey = ed25519(seed('bob-peer-light'));
@@ -193,6 +202,19 @@ report.pending = {
 	bobSeesTheImage: (await seen(bob.locator(`a[download="dot-${stamp}.png"]`), 5000)) && (await loaded(bob.locator('[data-testid="file"][data-kind="image"] img').last())),
 };
 await bob.screenshot({ path: `${run}/dome-bob-files.png` });
+// last, a third browser on Bob's origin, its OPFS empty, joins later and catches up from the Aven Peer. It has Bob's
+// cast key, so Bob's own browser closes first: two Peer-Lights with one key would take the relay from each other
+const whole = await texts(alice);
+await profiles.bob.close();
+const late = await open('bob', 'late');
+const lateAt = Date.now();
+const caughtUp = async () => (await texts(late)).join('\n') === whole.join('\n');
+for (let i = 0; i < 80 && !(await caughtUp()); i++) await wait(250);
+report.lateJoinerMs = Date.now() - lateAt;
+if (!(await caughtUp())) problems.push(`a late joiner holds ${(await texts(late)).length} of ${whole.length} lines, or not in order`);
+await late.screenshot({ path: `${run}/dome-late-joiner.png` });
+await late.close();
+
 await browser.close();
 
 report.ok = problems.length === 0;

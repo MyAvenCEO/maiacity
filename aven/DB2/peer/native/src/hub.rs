@@ -166,6 +166,8 @@ impl Hub {
         let mut told = self.told.subscribe();
         told.mark_changed();
         let mut beat = interval(Duration::from_millis(TICK_MS));
+        // the heads this link was told, and the moves since: each beat tells it the heads that moved
+        let mut told_heads = self.chats.as_ref().map(|c| (c.moved(), c.heads_frame()));
         let mut n = 0;
         let key = conn.remote_id().to_string();
         let mut network = self.door.as_ref().map(|door| {
@@ -196,6 +198,19 @@ impl Hub {
                     send.write_all(&encode(&frame)).await.map_err(fail)?;
                 }
                 _ = beat.tick() => {
+                    if let (Some(chats), Some((moved, told))) = (&self.chats, told_heads.as_mut())
+                        && chats.moved() != *moved
+                    {
+                        *moved = chats.moved();
+                        let now = chats.heads_frame();
+                        if let (Frame::Heads { heads }, Frame::Heads { heads: before }) = (&now, &*told) {
+                            let changed: Vec<_> = heads.iter().filter(|h| !before.contains(h)).cloned().collect();
+                            if !changed.is_empty() {
+                                send.write_all(&encode(&Frame::Heads { heads: changed })).await.map_err(fail)?;
+                            }
+                        }
+                        *told = now;
+                    }
                     n += 1;
                     send.write_all(&encode(&Frame::Beat { n })).await.map_err(fail)?;
                 }

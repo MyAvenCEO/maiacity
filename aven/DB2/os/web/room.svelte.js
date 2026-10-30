@@ -25,8 +25,10 @@ export function speakThrough(worker, start) {
 export function hear(line) {
 	if (line.event === 'chat') {
 		const said = { id: line.id, from: line.from, vault: line.vault, key: line.key, seq: line.seq, text: line.text, at: line.at, file: line.file ?? null };
-		// a line is shown once, by its name; a line without one (milestone 2's `say`) every time
-		if (said.id && room.lines.some((l) => l.id === said.id)) return;
+		// a line is shown once, by its name; told again (its sender named now), it changes in place. A line without a name
+		// (milestone 2's `say`) shows every time
+		const shown = said.id ? room.lines.findIndex((l) => l.id === said.id) : -1;
+		if (shown >= 0) return void (room.lines[shown] = said);
 		let at = room.lines.length;
 		while (at > 0 && before(room.lines[at - 1], said) > 0) at--;
 		room.lines.splice(at, 0, said);

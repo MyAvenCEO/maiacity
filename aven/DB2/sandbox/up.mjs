@@ -414,6 +414,8 @@ if (import.meta.main) {
 		else if (command === 'box') process.exit(await inBox(args.length ? args : ['bash']));
 		// the members' step alone, on a box that is up (the check runs it after the others)
 		else if (command === 'members') process.exit((await members(`runs/members-${Date.now()}`)) ? 0 : 1);
+		// the city-dome's step alone, on a box that is up
+		else if (command === 'dome') process.exit((await domes(`runs/dome-${Date.now()}`)) ? 0 : 1);
 		else throw new Error(`unknown command ${command}: up [--check], down [--wipe], logs, shot, build, doctor, box <command>`);
 	} catch (error) {
 		console.error(`avenSANDBOX: ${error.message}`);

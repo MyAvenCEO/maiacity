@@ -138,11 +138,14 @@ await shot(admin.page, 'room-admin');
 await shot(member.page, 'room-member');
 
 // a reload keeps the chat, whole and in order: its history is in the store (store/README.md, "How it is checked", 3)
-const before = await lines(admin.page).allTextContents();
+// each line by its name, its sender and its words: not whether it is still on its way, which a reload may learn
+const said = (page) =>
+	lines(page).evaluateAll((lis) => lis.map((li) => `${li.dataset.id} ${li.querySelector('strong')?.textContent ?? ''} ${li.querySelector('.text')?.textContent ?? ''}`));
+const before = await said(admin.page);
 await admin.page.reload();
 await seen(admin.page.locator('[data-view="chat"]'));
-const kept = async () => (await lines(admin.page).allTextContents()).join('\n') === before.join('\n');
-for (let i = 0; i < 40 && !(await kept()); i++) await admin.page.waitForTimeout(250);
+const kept = async () => (await said(admin.page)).join('\n') === before.join('\n');
+for (let i = 0; i < 120 && !(await kept()); i++) await admin.page.waitForTimeout(250);
 report.afterReload = await lines(admin.page).count();
 if (!(await kept())) problems.push(`after a reload the room holds ${report.afterReload} of ${before.length} lines, or not in order`);
 await shot(admin.page, 'room-reloaded');

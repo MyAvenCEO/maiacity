@@ -156,6 +156,12 @@ impl Room {
                         let _ = beats.sender.join_peers(bootstrap.clone()).await;
                     }
                     if beats.gate.version() != door || quiet >= EVERY_MS {
+                        // the door changed: the history's senders by their names now
+                        if beats.gate.version() != door
+                            && let Some(chats) = &beats.chats
+                        {
+                            chats.retell();
+                        }
                         door = beats.gate.version();
                         break;
                     }
