@@ -216,7 +216,8 @@ definitions, and every placed one is an actor (section 6).
 
 | Field | Meaning |
 | --- | --- |
-| `interface` | The messages it accepts, each with a JSON schema for its payload; an ask also names its reply's schema |
+| `interface` | The messages it accepts: each a `name`, a `description`, and its payload's type by id; an ask also names its reply's type. Its second part is the machine |
+| `sends` | The messages its turns may send, by type id. The kernel enforces it: a turn whose effect sends a type it did not declare is an error, as a step its machine does not allow is |
 | `machine` | Optional: the interface's second part, a table of phases. If present, the kernel refuses any message the machine does not allow in the current `phase` |
 | `turn` | Required: `{ runtime, v, part }` on `state-runtime` or `js-runtime` |
 | `faces` | Optional: named faces, each `{ present, markup, style, a11y }`. `present` (optional; without it the markup sees the state) is a part on state- or js-runtime that gives the face data; `markup` and `style` are the parts face-runtime draws, `a11y` the accessible names and roles it checks. Only the runtimes are one; the parts stay apart |
@@ -246,7 +247,7 @@ A component's definition adds to the fields above:
 | Field | Meaning |
 | --- | --- |
 | `props` | What its placer passes in: its first state, and later a `props` tell whenever they change |
-| `events` | The messages it sends out, to whatever address its placer wires them to (by default the placer) |
+| `events` | Which of its `sends` go to whatever address its placer wires them to (by default the placer) |
 | `slots` | The children its placer passes: faces of other actors. A leaf has no slots |
 | `name`, `description` | Its name, and why it is the way it is. A `$description` key is documentation at any depth |
 
@@ -254,6 +255,25 @@ A component's definition adds to the fields above:
 draw the kernel spawns a face actor at an address derived from its placer and its place (and, in `$each`, the item's
 key); a later draw with new props sends it a `props` tell; a draw without it retires it, which ends that incarnation. `$use: { actor, face }`
 instead shows an existing actor's face, such as a durable task's row, without spawning anything.
+
+**Types, not words.** A message's payload is typed by a **type id**: in version 1 the name of its schema (a Value,
+named by hash); with avenDB, a type Doc and its version (K5), where versions joined by a lens are compatible. A
+message's `name` is a label in one interface, and its `description` is prose for people and models. Neither is ever
+matched: whatever links two actors links them by type id.
+
+**Self-description.** Every actor accepts a built-in ask, `describe`, which the kernel answers on its behalf from
+its definition, its current phase and the asker's caps (Samuel, 30 Oct 2026). The answer lists what the actor is
+(`name`, `description`) and every message the asker may send it now, each with its name, description, payload type
+and schema, and its reply's type for an ask. These are its **tool specs**: the same shape a model's tool list takes
+(a name, a description, an input schema), so a model's tools are a projection of `describe`, never configured
+apart. One answer serves a model asking "what do you do, and how can I use you?", Studio, and another actor. A
+plain-language `explain`, a model reading the definition and answering in words, is an ordinary actor built on
+`describe`, later.
+
+**Derived edges.** There is an edge from A to B wherever a type in A's `sends` is a type B's interface accepts. The
+graph is a query over definitions, computed and never stored, so the drawn graph, a planner's input and what the
+kernel allows are one rule. Where a placer wires a face actor's `events`, the wire must follow such an edge. This is
+Abject's requires and produces, by type id instead of by predicate.
 
 **What is not a message.** Hover, focus and the other states that change only how something looks are CSS, selected
 by the browser. Anything the app should know of (a press, an input, a toggle) is an event, and so a message.
@@ -465,7 +485,7 @@ Each later step replaces a layer's implementation, not its interface:
 | Composites and skills | A composite is an actor whose turn tells other actors. No kernel concept, no members field, no merge law. "Skill" is a product word for such an actor |
 | Studio, planner, `requires` / `produces` contracts, registry | Apps or actors that read definitions, later |
 | The model, HTTP, files and the engine | Doors: built-in actors, each added when something needs it (section 7). The store is avenDB's, below the engine |
-| `explain`, learning, self-healing adapters | Later |
+| A plain-language `explain`, learning, self-healing adapters | Later: actors built on `describe` and the journal |
 
 ## 13. The package
 
@@ -498,9 +518,9 @@ Test-first, as avenDB works: the Lean model and its theorems, then Rust tests th
    replaying a journal gives the same state; a machine refuses every illegal message; a face placed again is a new
    incarnation, whose messages are never taken for the old one's.
    Proven so far, for every trace and every schedule: `handled_in_order`, `replays`, `machine_sound`, `spawn_fresh`,
-   `answers_at_most_once`, `ask_answered_or_waiting` and `ask_not_overdue`. Next: the machine as a table of phases
-   and its admission checker, proven sound; retire as a tell to the kernel; the vectors it exports; and tying each
-   waiting ask to its message's deadline.
+   `answers_at_most_once`, `ask_answered_or_waiting`, `ask_not_overdue`, `wellFormed_sound` (the admission check)
+   and `phase_reachable` (a live actor is always in a reachable, declared phase). Next: message types, `sends`
+   enforced and `describe`; the vectors it exports; and tying each waiting ask to its message's deadline.
 2. **Layers 0 to 2** (`core`): Values and names, the in-memory Doc, messages, with the vectors.
 3. **Runtimes**: `state-runtime` first, then `js-runtime`; each with hostile parts that try to get
    out, run too long or blow up, which must fail.
@@ -568,6 +588,8 @@ Decided here, on those grounds:
   version before it, and a lens carries the actor's state from the old version's shape into the new one's (K5).
 - Machines are data, merged with the interface; no Prolog runtime; their checker proven in Lean, and deeper
   properties of a definition proven in Lean in the repository (section 6).
+- Every actor answers a built-in `describe` ask with its tool specs; definitions declare `sends`, enforced by the
+  kernel; edges between actors are derived by type id, never by name or prose (section 6; Samuel, 30 Oct 2026).
 - Values are integers only in version 1, in avenDB's one codec (section 2): deterministic CBOR (Samuel, 30 Oct 2026).
 
 Open, none of it blocking version 1 (the audit's findings, mostly avenDB's proposal A17, awaiting Samuel):
