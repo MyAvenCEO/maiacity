@@ -42,8 +42,8 @@ they appear.
 
 The research is in [`../research`](../research/README.md): avenOS's x1–x5 engine ([C1](../research/C1-avenos-x1-x5-core.md),
 [C2](../research/C2-avenos-invoice.md)) and avenDB-old's query and sync engine ([E1](../research/E1-avendb-old-engine.md),
-by avenACTORS). The actor and caps designs this builds on are avenACTORS' `aven/actors/README.md` and
-`aven/ID/caps/README.md`.
+by avenACTORS). The actor and caps designs this builds on are avenACTORS' `aven/actors/ARCHITECTURE.md` (sections 9 and 12:
+a definition's `loads`, and what goes into avenDB) and `aven/ID/caps/README.md`.
 
 | From | What held | Here |
 |---|---|---|
@@ -270,7 +270,7 @@ when its `now` loads are present.
 - A mounted want lives while its page is shown or its actor runs; then it is dropped.
 - A composite actor's loads are the union of its members', each no higher than the tier the composite holds it at.
 - The `now` tier is handed into each turn as `given`; later tiers arrive as messages as they come
-  (`aven/actors/README.md`, section 9.3).
+  (`aven/actors/ARCHITECTURE.md`, sections 6, 9 and 12).
 
 ### Sync and load, one scheduler
 
@@ -562,5 +562,5 @@ an operation or a diff means; everything about the envelope is the docs layer's 
 
 Documents, versions, schemas and lenses ([docs](../docs/README.md)); what facts and kinds mean
 ([ontology](../ontology/README.md)); blobs and refs ([store](../../store/README.md)); caps themselves
-(`aven/ID/caps/README.md`); actors, their kernel and journal (`aven/actors/README.md`); the network's door
+(`aven/ID/caps/README.md`); actors, their kernel and journal (`aven/actors/ARCHITECTURE.md`); the network's door
 (milestone 2); full-text search.
