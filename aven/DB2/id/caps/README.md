@@ -721,7 +721,9 @@ key's public half. A keeper takes a link on that signature alone, since it reads
 3. It takes and serves a Doc's sealed bytes only for a device that signs the connection's TLS exporter with the current
    fetch key (`served_current`). So "nothing leaves for a device that may not receive it" (engine, rule 13) holds at a
    keeper that can't read caps, and nobody outside a Doc can fill it with junk.
-4. The uploading vault pays, and only for what the keeper took from it (`uploader_pays`).
+4. The uploading vault pays, and only for what the keeper took from it (`uploader_pays`). Uploads are taken in the
+   order they come, each only while its vault's spending stays within the quota the keep cap gives it, so no vault ever
+   spends past it (`quota_holds`, R10).
 
 Key blobs and letters are served to any member, since they are useless without the keys they're sealed to. A device
 whose proof is refused because a newer epoch came fetches that epoch's key blob, opens its stanza and proves again.
@@ -913,7 +915,8 @@ It works like a password manager, except that the secrets are never handed out.
 - a Rust trait: `unlock`, `lock`, `sign`, `open`, `seal`, `derive`, `use` (a credential, for an operation) and `enroll`
   (seal the safe to a new device);
 - one backend per host;
-- a Lean model of what may ever leave the safe (`safe_holds`).
+- a Lean model of what may ever leave the safe, `Aven.ID.Safe` ([what Lean proves](#what-lean-proves)), with its
+  vectors in `safe.json`.
 
 | Host | Safe runtime | Strength |
 |---|---|---|
@@ -1154,6 +1157,9 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | Module | Theorem | Says |
 |---|---|---|
 | `CapsCbor` | `Cap.digest_inj` | Two allowed caps with one id say the same thing: the bytes approved and signed name the cap exactly |
+| `Authorized` | `authorized_signer`, `authorized_root` | Caps' verdict on a Core envelope: its chain keeps every rule, its last cap is held by the signer's vault, and every step of its footprint is one the chain's root allows on its Doc, on its root issuer's authority (R4) |
+| | `counts_iff` | An envelope counts exactly when everything in its past is signed, fresh, authorized, live and fit, and none of it is half of a split. `Aven.Architecture` composes the parts |
+| | `readers_agree` | Two readers that hold the same past of an envelope, and the same splits in it, give it the same verdict, whatever else each holds |
 | `Caps` | `narrow_chain`, `narrow_steps` | No cap in a chain lets a verb reach a Doc, or allows a write step, that its root doesn't |
 | | `root_authority` | Every line a chain grants lies in its root issuer's authority: its own vault, one it governs, or a Doc of one |
 | | `chain_short` | A chain is no longer than its root may be shared |
@@ -1192,22 +1198,25 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `current_agrees`, `current_chained` | Keepers holding the same links take the same current fetch key, whatever order they came in, and it chains |
 | | `fork_flagged` | Every fork a keeper takes is flagged |
 | | `served_current`, `fork_served` | A keeper serves a fetch or takes an upload only for a proof on that connection by the current fetch key, or, while a fork is unsettled, by a branch's newest key, so honest readers are never refused |
+| | `quota_holds`, `admitted_served` | A keeper takes uploads in the order they come, each only while its vault's spending stays within the quota its keep cap gives it, so no vault's spending ever passes its quota; and it takes only what it serves (R10) |
 | | `grind_settled`, `settled_example` | Once the keep cap's issuer chooses a branch at a fork, every keeper follows it whatever forks arrive after |
 | | `uploader_pays` | The uploading vault pays, and only for what the keeper took from it |
 | | `grind_example` | A removed reader's fork with a ground hash becomes current at a keeper until the issuer chooses; it is flagged, and honest readers are still served |
 | `SealedIndex`, moving to `Aven.Architecture.Sealed` (the docs thread) | `index_within_key`, `index_skips` | An index holds only entries read under keys every holder of its key holds; one some holder can't read changes nothing in it (rule 36) |
 | | `sealed_roots_agree` | Two readers holding the same admissible entries rebuild the same sealed root under one key, so each can check a published one. The root is a parameter here; `Aven.Architecture` joins it with the docs model's `root_set` |
 | | `sealed_padded`, `root_by_writer` | Sealed nodes are padded (D18); only a vault that may write the directory publishes a root a reader takes |
+| `Safe` | `safe_holds` | For any requests, from anyone, in any order, nothing leaves the safe but signatures, ciphertexts, public keys, answers and Doc keys lent to the engine (rule 34) |
+| | `stays_inside` | The device's keys, the vault's keys and credentials never leave it, not even sealed; it seals a Doc's key only to a reader or to the Doc's next key, and a group's key only to a member vault (rule 17) |
+| | `enroll_admitted` | The safe's own key leaves only sealed to the safe runtime of a device the vault admits |
+| | `kept_inside` | A host that keeps Doc keys inside its safe runtime gives no secret in plain |
+| | `acts_on_cap`, `locked_refuses` | It acts only when unlocked, and only on a `tell` cap that names the act (D16) |
 
 **After Core, or with another thread:**
-- `counts_iff`: an envelope counts exactly when its signer, its epoch, its chain, its liveness and its footprint hold;
-- `readers_agree`: a verdict depends only on the envelope, its causal past and the revocations known;
 - `merge_covered` and `footprints.json` (Core's footprints, with the engine);
 - `want_grants_nothing` and `one_grammar` (Core's target grammar);
 - `authority_down` (`below` groups);
 - `group_holds` (a group cap's writes in `Revoke`);
 - `device_within_cap`;
-- `safe_holds` (the safe's interface);
 - `upgrade_no_wider` and `no_confused_deputy`, in the cross-spec model `Aven.Architecture`: they need `Aven.Actor`,
   and id/spec never requires the actor spec (the architect, 30 Oct 2026);
 
@@ -1224,6 +1233,7 @@ Two smaller gaps:
 | `caps.json` | Chains on the cast, their lines in Core's form, each cap with its CBOR bytes, its id and the bytes its device signs, and each chain with the first rule it breaks or none; how avenOS shows a cap; 40 generated chains |
 | `revocations.json` | Docs of Core envelopes, each with its name and what caps reads of it, the revocations held, and verdicts: hand-written, and 30 generated Docs with every envelope's verdict |
 | `epochs.json` | Who learns which key after Bob's removal and after Alice's heal |
+| `safe.json` | Requests to Alice's safe from her agent and from Mallory, on her Mac and on a host that keeps Doc keys inside, with what each gives back |
 | `approvals.json` | Signatures, thresholds and digests on the cast, and whether each approval holds |
 | `expiry.json` | Writes under a cap that expires, with each envelope's signed time, and whether each counts for the clock |
 | `network.json` | A ticket's claims in two orders (A12), removals that clash, MaiaCityGuardian's exit |

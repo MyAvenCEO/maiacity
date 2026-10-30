@@ -482,6 +482,65 @@ theorem uploader_pays (s : Keep) (ups : List Upload) (u : Upload) (vault : Strin
   simp only [bill, List.foldr_cons]
   exact Nat.add_comm _ _
 
+/-- What a vault's taken uploads add up to. -/
+def spent (taken : List Upload) (vault : String) : Nat :=
+  taken.foldr (fun u b => (if u.proof.vault == vault then u.bytes else 0) + b) 0
+
+/-- The uploads a keeper takes, in the order they come (R10): each one it serves, while its vault's spending stays
+within the quota its keep cap gives that vault. One that would pass the quota is refused; what came before stays. -/
+def admit (s : Keep) (quota : String → Nat) : List Upload → List Upload → List Upload
+  | taken, [] => taken
+  | taken, u :: us =>
+    if s.serves u.exporter u.proof && decide (spent taken u.proof.vault + u.bytes ≤ quota u.proof.vault) then
+      s.admit quota (taken ++ [u]) us
+    else s.admit quota taken us
+
+theorem spent_append (taken : List Upload) (u : Upload) (v : String) :
+    spent (taken ++ [u]) v = spent taken v + if u.proof.vault == v then u.bytes else 0 := by
+  induction taken with
+  | nil => simp [spent]
+  | cons x xs ih =>
+    simp only [List.cons_append, spent, List.foldr_cons] at ih ⊢
+    rw [ih]
+    omega
+
+/-- No vault's spending ever passes its quota, whatever comes, in whatever order. -/
+theorem quota_holds (s : Keep) (quota : String → Nat) :
+    ∀ (us taken : List Upload), (∀ v, spent taken v ≤ quota v) → ∀ v, spent (s.admit quota taken us) v ≤ quota v
+  | [], _, h, v => h v
+  | u :: us, taken, h, v => by
+    simp only [admit]
+    split
+    · rename_i c
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+      refine quota_holds s quota us _ (fun w => ?_) v
+      rw [spent_append]
+      by_cases e : u.proof.vault = w
+      · subst e
+        simpa using c.2
+      · have : (u.proof.vault == w) = false := by simpa using e
+        simp only [this]
+        simpa using h w
+    · exact quota_holds s quota us taken h v
+
+/-- Everything a keeper takes it also serves: a proof by the current fetch key, or a branch's newest while a fork is
+unsettled, on that upload's connection. -/
+theorem admitted_served (s : Keep) (quota : String → Nat) :
+    ∀ (us taken : List Upload), (∀ u ∈ taken, s.serves u.exporter u.proof = true) →
+      ∀ u ∈ s.admit quota taken us, s.serves u.exporter u.proof = true
+  | [], _, h, u, m => h u m
+  | x :: us, taken, h, u, m => by
+    simp only [admit] at m
+    split at m
+    · rename_i c
+      simp only [Bool.and_eq_true] at c
+      refine admitted_served s quota us _ (fun y my => ?_) u m
+      rcases List.mem_append.mp my with my | my
+      · exact h y my
+      · simp only [List.mem_singleton] at my
+        exact my ▸ c.1
+    · exact admitted_served s quota us taken h u m
+
 end Keep
 
 /-! ## Examples
@@ -559,6 +618,17 @@ def uploads : List Upload :=
    ⟨alicesPhone, "x-2", 512⟩]
 
 def billCases : List (String × Nat) := [("alice", 4096), ("bob", 0)]
+
+/-- Alice's quota at the keeper of `d1` is 5000 bytes. Her 4096 bytes are taken, 1024 more would pass it and are
+refused, and 512 after that still fit. -/
+def quotaUploads : List Upload :=
+  [⟨alicesPhone, "x-1", 4096⟩, ⟨alicesPhone, "x-1", 1024⟩, ⟨alicesPhone, "x-1", 512⟩]
+
+def aliceQuota (v : String) : Nat := if v = "alice" then 5000 else 0
+
+theorem quota_example :
+    (keepD1.admit aliceQuota [] quotaUploads).map (·.bytes) = [4096, 512] ∧
+      Keep.spent (keepD1.admit aliceQuota [] quotaUploads) "alice" = 4608 := by decide
 
 theorem keep_examples :
     (keepCases.all fun (_, s, c, f) => s.current == c && s.flags == f) &&
