@@ -3,8 +3,8 @@ import Aven.Core.Names
 /-!
 # Targets, verbs and footprints
 
-**One target grammar** for what a cap covers, what a want asks for and what a query ranges over (A8, recommended by
-the architect; not yet decided by Samuel). Its forms are caps' (`id/caps`, "Targets"). Whether a Doc is in a target is
+**One target grammar** for what a cap covers, what a want asks for and what a query ranges over (A8, decided by
+Samuel, 30 Oct 2026; its CBOR is `Aven.Core.TargetCbor`). Its forms are caps' (`id/caps`, "Targets"). Whether a Doc is in a target is
 read from what its genesis fixes: its id, its vault and its root type (docs, "A Doc"). Who governs whom and which
 actor spawned which come from avenID and the actors, so the model takes them as parameters.
 

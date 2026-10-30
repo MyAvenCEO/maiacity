@@ -3,6 +3,8 @@ import Aven.Runtime.Registry
 import Aven.Runtime.RegistryExamples
 import Aven.Runtime.Tree
 import Aven.Runtime.Face
+import Aven.Runtime.State
+import Aven.Runtime.StateExamples
 import Aven.Runtime.Markup
 
 /-!

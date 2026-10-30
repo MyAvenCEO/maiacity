@@ -15,7 +15,7 @@ primitives everything shares" and rules 1 to 3). It is one Lean package, in [`sp
 | `Names` | hashes, Doc ids, type ids (`<type Doc>/<schema hash>`) | names of allowed Values don't collide under an injective hash |
 | `Signed` | a label plus a Value, signed over exactly its encoding | a signing input names its label and body |
 | `Log` | envelopes, logs, splits, versions | a chain holds no split; two readers' chains agree unless split; splits are final; what counts builds on what counts; versions only grow |
-| `Target` | the one target grammar (A8, recommended), verbs, footprints | a narrower target covers only what the wider one does; footprint coverage grows with grants and composes |
+| `Target`, `TargetCbor` | the one target grammar (A8), its CBOR, verbs, footprints | a narrower target covers only what the wider one does; a target reads back from its CBOR, which is canonical; footprint coverage grows with grants and composes |
 
 The hash and signatures are parameters: a theorem that needs the hash collision-free assumes it (`Injective`), and
 signatures are taken as sound, as in every Aven model. `Blake3` is the hash the examples and vectors use.
