@@ -239,13 +239,22 @@ async fn ref_at_rest_in_one_form(s: &(impl Store + RefsAtRest)) -> Outcome {
     let name = RefName::new("at-rest").expect("a name");
     ok!(s.set_ref(&name, None, h).await);
     let stored = ok!(s.ref_bytes(&name).await);
-    check!(stored.as_deref() == Some(h.ref_text().as_bytes()), "a new ref rests as {stored:?}, not its hash and a newline");
+    check!(
+        stored.as_deref() == Some(h.ref_text().as_bytes()),
+        "a new ref rests as {stored:?}, not its hash and a newline"
+    );
     ok!(s.set_ref(&name, Some(h), next).await);
     let stored = ok!(s.ref_bytes(&name).await);
-    check!(stored.as_deref() == Some(next.ref_text().as_bytes()), "a changed ref rests as {stored:?}");
+    check!(
+        stored.as_deref() == Some(next.ref_text().as_bytes()),
+        "a changed ref rests as {stored:?}"
+    );
     let bare = RefName::new("bare").expect("a name");
     ok!(s.put_ref_bytes(&bare, h.to_hex().as_bytes()).await);
-    check!(matches!(s.get_ref(&bare).await, Err(Error::Corrupt(_))), "a bare hash reads as a ref");
+    check!(
+        matches!(s.get_ref(&bare).await, Err(Error::Corrupt(_))),
+        "a bare hash reads as a ref"
+    );
     Ok(())
 }
 

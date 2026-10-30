@@ -12,6 +12,26 @@
 const channel = new BroadcastChannel(`aven-peer-light:${new URL(self.location.href).searchParams.get('name') ?? 'network'}`);
 const me = `sw-${crypto.randomUUID()}-`;
 let asked = 0;
+// What a file may be shown as, here on avenOS's own origin, which holds the device's secret: the type its sender
+// claims is a claim. Only passive types are served inline (images but SVG, audio, video, PDF; Chat.svelte's `inline`
+// keeps the same list); everything else, SVG and HTML included, is application/octet-stream and an attachment, so
+// opening it downloads it and nothing in it runs here. Every answer forbids sniffing and sandboxes the document:
+// no script, no form, its own opaque origin, whatever the bytes are.
+const passive = /^(image\/(png|jpeg|gif|webp|avif|bmp)|audio\/[a-z0-9.+-]+|video\/[a-z0-9.+-]+|application\/pdf)$/;
+const essence = (type) => String(type ?? '').split(';')[0].trim().toLowerCase();
+function headers(claimed, more) {
+	const type = essence(claimed);
+	const inline = passive.test(type);
+	return {
+		'Content-Type': inline ? type : 'application/octet-stream',
+		'Content-Disposition': inline ? 'inline' : 'attachment',
+		'X-Content-Type-Options': 'nosniff',
+		'Content-Security-Policy': "sandbox; default-src 'none'; img-src 'self'; media-src 'self'; object-src 'self'",
+		'Cross-Origin-Resource-Policy': 'same-origin',
+		'Accept-Ranges': 'bytes',
+		...more,
+	};
+}
 // the most one read asks for: a chunk. A browser's open-ended range gets the first MiB, and asks again
 const most = 1 << 20;
 
@@ -48,7 +68,7 @@ function parse(header) {
 	return { start: Number(r[1]), end: r[2] === '' ? undefined : Number(r[2]) + 1 };
 }
 
-const failed = (got) => new Response(got.error, { status: got.error === 'not found' ? 404 : 502 });
+const failed = (got) => new Response(got.error, { status: got.error === 'not found' ? 404 : 502, headers: headers(null) });
 
 async function serve(file, header) {
 	const range = parse(header);
@@ -64,10 +84,8 @@ async function serve(file, header) {
 			at += got.bytes.length;
 			if (!got.bytes.length) break;
 		}
-		return new Response(new Blob(parts, { type: first.type }), {
-			status: 200,
-			headers: { 'Content-Type': first.type, 'Content-Length': String(first.size), 'Accept-Ranges': 'bytes' },
-		});
+		const head = headers(first.type, { 'Content-Length': String(first.size) });
+		return new Response(new Blob(parts, { type: head['Content-Type'] }), { status: 200, headers: head });
 	}
 	let { start, end } = range;
 	if (range.suffix !== undefined) {
@@ -78,16 +96,11 @@ async function serve(file, header) {
 	const got = await read(file, start, Math.min(end ?? start + most, start + most));
 	if (got.error) return failed(got);
 	if (start >= got.size && got.size > 0)
-		return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${got.size}` } });
+		return new Response(null, { status: 416, headers: headers(null, { 'Content-Range': `bytes */${got.size}` }) });
 	const last = start + got.bytes.length - 1;
 	return new Response(got.bytes, {
 		status: 206,
-		headers: {
-			'Content-Type': got.type,
-			'Content-Length': String(got.bytes.length),
-			'Content-Range': `bytes ${start}-${last}/${got.size}`,
-			'Accept-Ranges': 'bytes',
-		},
+		headers: headers(got.type, { 'Content-Length': String(got.bytes.length), 'Content-Range': `bytes ${start}-${last}/${got.size}` }),
 	});
 }
 

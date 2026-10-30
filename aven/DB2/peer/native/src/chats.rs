@@ -116,6 +116,8 @@ impl Chats {
         store: Shared,
     ) -> Result<Chats, String> {
         let mut chains = vec![];
+        // lines kept before a line's bytes had to be canonical: still read, and counted (none, as our own code writes)
+        let mut not_canonical = 0;
         for name in store.list_refs().await.map_err(|e| e.to_string())? {
             let Some(device) = name.as_str().strip_prefix(chain::REF) else {
                 continue;
@@ -127,7 +129,9 @@ impl Chats {
                 let Some(bytes) = store.get(&hash).await.map_err(|e| e.to_string())? else {
                     break;
                 };
-                let line = Line::parse(&bytes)?;
+                let (line, canonical) = Line::read_kept(&bytes)
+                    .ok_or_else(|| format!("{name} reaches a blob that is no line"))?;
+                not_canonical += usize::from(!canonical);
                 at = line.prev.as_deref().and_then(|p| p.parse().ok());
                 lines.push(Held {
                     id: hash.to_hex(),
@@ -163,6 +167,7 @@ impl Chats {
         for h in &shown {
             chats.show(h);
         }
+        chats.note("chains", json!({ "notCanonical": not_canonical }));
         Ok(chats)
     }
 
@@ -443,8 +448,8 @@ impl Chats {
         let line = match Line::parse(blob) {
             Ok(line) => line,
             Err(why) => {
-                self.note("dropped", json!({ "why": why }));
-                return Answer::Refused(chain::Refusal::BadSignature);
+                self.note("dropped", json!({ "why": why.name() }));
+                return Answer::Refused(why);
             }
         };
         let id = Hash::of(blob);

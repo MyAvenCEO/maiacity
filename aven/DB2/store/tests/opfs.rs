@@ -113,7 +113,11 @@ impl Folder for Crashing {
 }
 
 /// The folder after `ops`, from `files`.
-async fn after(files: &BTreeMap<String, Vec<u8>>, moves: bool, ops: &[Value]) -> BTreeMap<String, Vec<u8>> {
+async fn after(
+    files: &BTreeMap<String, Vec<u8>>,
+    moves: bool,
+    ops: &[Value],
+) -> BTreeMap<String, Vec<u8>> {
     let folder = MemFolder::with_files(files.clone(), moves);
     let store = OpfsStore::open(folder.clone()).await.unwrap();
     for op in ops {
@@ -140,7 +144,12 @@ async fn a_crash_leaves_every_call_undone_or_done() {
                 for tear in [Tear::Nothing, Tear::Half, Tear::Whole] {
                     for at in 0.. {
                         let inner = MemFolder::with_files(before.clone(), moves);
-                        let folder = Crashing { inner: inner.clone(), at, tear, changes: AtomicUsize::new(0) };
+                        let folder = Crashing {
+                            inner: inner.clone(),
+                            at,
+                            tear,
+                            changes: AtomicUsize::new(0),
+                        };
                         let store = OpfsStore::open(folder).await.unwrap();
                         conformance::call(&store, op).await;
                         if !store.folder().crashed() {
@@ -185,7 +194,10 @@ impl Folder for Full {
     async fn write(&self, path: &str, bytes: &[u8]) -> Result<()> {
         let used: usize = self.inner.files().values().map(Vec::len).sum();
         if used + bytes.len() > self.room {
-            self.inner.set(path, &bytes[..self.room.saturating_sub(used).min(bytes.len())]);
+            self.inner.set(
+                path,
+                &bytes[..self.room.saturating_sub(used).min(bytes.len())],
+            );
             return Err(Error::Backend("OPFS is full: QuotaExceededError".into()));
         }
         self.inner.write(path, bytes).await
@@ -209,11 +221,19 @@ impl Folder for Full {
 async fn a_full_folder_fails_cleanly() {
     use aven_db_store::Store;
     let inner = MemFolder::new(true);
-    let store = OpfsStore::open(Full { inner: inner.clone(), room: 1000 }).await.unwrap();
+    let store = OpfsStore::open(Full {
+        inner: inner.clone(),
+        room: 1000,
+    })
+    .await
+    .unwrap();
     store.put(conformance::noise(600, 1)).await.unwrap();
     let before = inner.files();
     let refused = store.put(conformance::noise(600, 2)).await;
-    assert!(matches!(&refused, Err(Error::Backend(why)) if why.contains("full")), "{refused:?}");
+    assert!(
+        matches!(&refused, Err(Error::Backend(why)) if why.contains("full")),
+        "{refused:?}"
+    );
     assert_eq!(inner.files(), before);
 }
 
@@ -228,24 +248,49 @@ async fn a_store_without_this_version_is_outdated() {
     let store = OpfsStore::open(fresh.clone()).await.unwrap();
     assert_eq!(fresh.files()["meta/version"], VERSION.to_vec());
     let h = store.put(Bytes::from_static(b"kept")).await.unwrap();
-    store.set_ref(&RefName::new("head").unwrap(), None, h).await.unwrap();
+    store
+        .set_ref(&RefName::new("head").unwrap(), None, h)
+        .await
+        .unwrap();
     drop(store);
     let again = OpfsStore::open(fresh.clone()).await.unwrap();
-    assert_eq!(again.get(&h).await.unwrap().unwrap(), Bytes::from_static(b"kept"));
+    assert_eq!(
+        again.get(&h).await.unwrap().unwrap(),
+        Bytes::from_static(b"kept")
+    );
 
     // as the OpenDAL OPFS driver left a store: blobs and refs, no marker
     let old = MemFolder::new(true);
     let record = Bytes::from_static(b"a record");
-    old.write(&format!("blobs/{}", Hash::of(&record)), &record).await.unwrap();
-    old.write("refs/first-start", Hash::of(&record).ref_text().as_bytes()).await.unwrap();
-    assert!(matches!(OpfsStore::open(old.clone()).await, Err(Error::Outdated(_))));
-    assert!(!old.files().contains_key("meta/version"), "an outdated store is left as it is, for the Peer-Light to clear");
+    old.write(&format!("blobs/{}", Hash::of(&record)), &record)
+        .await
+        .unwrap();
+    old.write("refs/first-start", Hash::of(&record).ref_text().as_bytes())
+        .await
+        .unwrap();
+    assert!(matches!(
+        OpfsStore::open(old.clone()).await,
+        Err(Error::Outdated(_))
+    ));
+    assert!(
+        !old.files().contains_key("meta/version"),
+        "an outdated store is left as it is, for the Peer-Light to clear"
+    );
 
     // a marker that isn't this version's, and a store with only a crash's leftovers
     let other = MemFolder::new(true);
-    other.write("meta/version", b"avenDB store 0\n").await.unwrap();
-    assert!(matches!(OpfsStore::open(other).await, Err(Error::Outdated(_))));
+    other
+        .write("meta/version", b"avenDB store 0\n")
+        .await
+        .unwrap();
+    assert!(matches!(
+        OpfsStore::open(other).await,
+        Err(Error::Outdated(_))
+    ));
     let leftovers = MemFolder::new(true);
     leftovers.write("tmp/ref-head", b"x").await.unwrap();
-    assert!(matches!(OpfsStore::open(leftovers).await, Err(Error::Outdated(_))));
+    assert!(matches!(
+        OpfsStore::open(leftovers).await,
+        Err(Error::Outdated(_))
+    ));
 }

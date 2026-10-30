@@ -35,9 +35,17 @@ impl Hash {
 
     /// A ref's bytes at rest, read back: exactly the hash's hex and a newline (Lean `Store.readRef`), nothing else.
     pub fn from_ref(bytes: &[u8]) -> Result<Self, Error> {
-        let bad = || Error::Corrupt(format!("a ref isn't a hash and a newline: {:?}", String::from_utf8_lossy(bytes)));
+        let bad = || {
+            Error::Corrupt(format!(
+                "a ref isn't a hash and a newline: {:?}",
+                String::from_utf8_lossy(bytes)
+            ))
+        };
         let text = std::str::from_utf8(bytes).map_err(|_| bad())?;
-        text.strip_suffix('\n').ok_or_else(bad)?.parse().map_err(|_| bad())
+        text.strip_suffix('\n')
+            .ok_or_else(bad)?
+            .parse()
+            .map_err(|_| bad())
     }
 }
 

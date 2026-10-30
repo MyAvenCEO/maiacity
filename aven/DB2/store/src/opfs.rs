@@ -39,10 +39,18 @@ impl<F: Folder> OpfsStore<F> {
     /// Opens the store on `folder`, recovering what a crash left there; an empty folder becomes a store of this
     /// version. [`Error::Outdated`] for a folder an older avenDB laid out.
     pub async fn open(folder: F) -> Result<Self> {
-        let store = Self { folder, writes: Mutex::new(()) };
+        let store = Self {
+            folder,
+            writes: Mutex::new(()),
+        };
         match store.folder.read(VERSION_PATH, None).await? {
             Some(v) if v.as_ref() == VERSION => {}
-            Some(v) => return Err(Error::Outdated(format!("its version is {:?}", String::from_utf8_lossy(&v)))),
+            Some(v) => {
+                return Err(Error::Outdated(format!(
+                    "its version is {:?}",
+                    String::from_utf8_lossy(&v)
+                )));
+            }
             None => {
                 for dir in ["blobs", "refs", "tmp"] {
                     if !store.folder.list(dir).await?.is_empty() {
@@ -148,7 +156,8 @@ impl<F: Folder> Store for OpfsStore<F> {
         let h = Hash::of(&bytes);
         let _turn = self.writes.lock().await;
         if self.folder.size(&blob_path(&h)).await?.is_none() {
-            self.write(&format!("blob-{h}"), &blob_path(&h), &bytes).await?;
+            self.write(&format!("blob-{h}"), &blob_path(&h), &bytes)
+                .await?;
         }
         Ok(h)
     }
@@ -168,7 +177,11 @@ impl<F: Folder> Store for OpfsStore<F> {
             return Ok(None);
         };
         if range.start > range.end || range.end > len {
-            return Err(Error::Range { start: range.start, end: range.end, len });
+            return Err(Error::Range {
+                start: range.start,
+                end: range.end,
+                len,
+            });
         }
         if range.is_empty() {
             return Ok(Some(Bytes::new()));
@@ -211,7 +224,8 @@ impl<F: Folder> Store for OpfsStore<F> {
         if current != expected {
             return Err(Error::Stale { current });
         }
-        self.write(&format!("ref-{n}"), &ref_path(n), new.ref_text().as_bytes()).await
+        self.write(&format!("ref-{n}"), &ref_path(n), new.ref_text().as_bytes())
+            .await
     }
 
     async fn delete_ref(&self, n: &RefName, expected: Hash) -> Result<()> {
