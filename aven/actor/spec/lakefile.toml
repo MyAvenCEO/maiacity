@@ -13,6 +13,11 @@ path = "../../DB2/core/spec"
 name = "aven-runtimes-spec"
 path = "../../runtimes/spec"
 
+# avenID's caps: a hosting cap is a caps cap (A16; aven/DB2/id/spec). Actors build on caps, never the reverse.
+[[require]]
+name = "aven-id-spec"
+path = "../../DB2/id/spec"
+
 [[lean_lib]]
 name = "AvenActor"
 roots = ["Aven.Actor"]
