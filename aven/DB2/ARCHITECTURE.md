@@ -227,7 +227,7 @@ the edges: configuration, web origins, keepers, freshness. The table is the caps
 | 5 | Launder a revoked holder's writes through another writer's late ack | "had seen" counts what the acking writer imported | covered (#1499) | An envelope with the revocation in its own past never counts; under a Doc cap only the revocation's own past is kept; another writer's ack may vouch for revocations kept elsewhere (**A23**) | `revocation_wins`, restated |
 | 6 | Read the signer off a segment | Outside a segment is only its Doc, epoch and padded length (D13) | covered | — | `keeper_blind` over the outside |
 | 7 | Learn who reads a Doc | Fetch proofs come over connections that name the device | accepted for now (D13) | Mixing, unlinkable proofs, later | — |
-| 8 | Spoof a fetch-key change or upload junk | The new fetch key comes by letter, unauthenticated | decided | Fetch keys chain from the Doc's genesis, each signed by the one before; the keeper keeps every successor, takes the smaller epoch hash as current, as writers do, and flags the fork; the uploading vault pays (**A22**) | `fetch_chain` |
+| 8 | Spoof a fetch-key change or upload junk | The new fetch key comes by letter, unauthenticated | covered (#1543) | Fetch keys chain from the Doc's genesis, each signed by the one before; the keeper keeps every successor, takes the smaller epoch hash as current, as writers do, and flags the fork; the uploading vault pays (**A22**); a fork ground by a removed reader is settled by the keep cap's vault | `fetch_chain`, `grind_example` |
 | 9 | A reader given one Doc can't check vault-wide caps | They live in a group Doc it can't open | covered (#1499) | Envelopes carry, inside the seal, the caps they rest on; acks carry their revocation | — |
 | 10 | `below` read upward | The text runs backwards | covered (#1499) | `below` is sealed downward | `authority_down` |
 | 11 | Keep a writer from hearing of a removal | Browsers have one keeper and one relay | decided | Several sources; signed tips; a writer never writes on an epoch older than a tip it has seen | — |
@@ -661,8 +661,9 @@ the spec that owns it.
   what it wants to search. *Decided (Samuel, 30 Oct 2026).*
 - **A26. Sealed indexes,** as [above](#a-handful-among-millions-sealed-indexes): directories and indexes are one
   structure of sealed Values; the engine derives an index from each query's shape; a lookup reads a few Values, then
-  only the Docs they point to, and the query runs on the device. *Decided: yes (Samuel, 30 Oct 2026: "do as you
-  believe").*
+  only the Docs they point to, and the query runs on the device. *Decided: yes (Samuel, 30 Oct 2026: "A26 is what we
+  want").* The docs model has the tree (#1540, a Prolly tree: a lookup finds exactly the entries in range, and every
+  node stays within 64 KiB).
 
 **Caps**
 - **A22. A peer that keeps sealed data for others checks who may add or fetch it, without reading it.** Phones and
@@ -670,7 +671,13 @@ the spec that owns it.
   own Peer, or the Aven Peer, under a keep cap. Such a peer can't read caps, so it checks key proofs instead. Fetch keys
   chain from the Doc's genesis, each signed by the one before; it keeps every successor, takes the smaller epoch hash
   as current as writers do, and flags a fork; the uploading vault pays. Peer to peer: any peer may keep, and none is
-  special. *Decided: yes (Samuel, 30 Oct 2026).*
+  special. *Decided: yes (Samuel, 30 Oct 2026),* and proven in Lean (#1543). Its proof exposed a grind: a removed
+  reader still holds its last fetch key, so it can fork from it and grind its epoch hash below the writers', and a
+  keeper, which can't check caps, would refuse honest readers until the fork settles. Availability only: writers never
+  seal to the removed reader. So while a fork is flagged, the keeper serves proofs by either branch's newest key, and a
+  device of the vault that issued the keep cap signs which branch to follow, naming the fork point. The keeper checks
+  that signature against the tree and ignores later forks from that point. *The architect's answer to the caps
+  thread's open question 1 (30 Oct 2026).*
 - **A23. Acks can't launder:** a revoked holder's envelope never counts if the revocation is in its past. *Done in
   caps (#1499), as what D8 meant.*
 
