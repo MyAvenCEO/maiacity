@@ -196,7 +196,7 @@ async function check() {
 		fresh &&
 		result.exitCode === 0 &&
 		(await keeps(run)) &&
-		(await inWebKit(run)) &&
+		(await inEngines(run)) &&
 		(await claims(run)) &&
 		(await members(run)) &&
 		(await chats(run));
@@ -246,15 +246,16 @@ async function keeps(run) {
 	return report.ok;
 }
 
-// The Peer-Lights in WebKit, Safari's engine (sandbox/webkit.mjs): the cast's two, live on their own OPFS, and avenOS's
-// release build, served as aven.maia.city serves it, reaching the prod peer in WebKit and Chromium. The build is the one
-// `bun run build` releases; the rest of the check runs the dev server.
-async function inWebKit(run) {
+// avenOS in all three engines (sandbox/engines.mjs): the cast's two Peer-Lights in WebKit and Firefox, live on their own
+// OPFS; avenOS's release build, served as aven.maia.city serves it, reaching the prod peer in Chromium, WebKit and
+// Firefox; and the signup, a refused second signup and a sign-in in WebKit and Firefox, through Playwright's passkey
+// stand-in. The build is the one `bun run build` releases; the rest of the check runs the dev server.
+async function inEngines(run) {
 	const timed = Date.now();
 	await buildPage();
 	const built = Date.now() - timed;
-	const ok = (await $`${compose} exec -T browsers node sandbox/webkit.mjs ${run}`.env(env).nothrow()).exitCode === 0;
-	say(`${ok ? 'WebKit runs both Peer-Lights, and the release build goes live in WebKit and Chromium' : 'the WebKit step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s, the build ${(built / 1000).toFixed(1)} s)`);
+	const ok = (await $`${compose} exec -T browsers node sandbox/engines.mjs ${run}`.env(env).nothrow()).exitCode === 0;
+	say(`${ok ? 'Chromium, WebKit and Firefox run avenOS, its release build and its passkeys' : 'the engines step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s, the build ${(built / 1000).toFixed(1)} s)`);
 	return ok;
 }
 
@@ -346,7 +347,7 @@ async function up(args) {
 // Every release's deliverables (SANDBOX.md, "Production"): for now avenOS for the browser, built in the box, with
 // aven-id's wasm and the Peer-Light in release at /peer-light/, where the dev server serves the loop's debug build
 // (sandbox/peers.mjs); a build without it never went live (aven.maia.city, 30 Oct 2026). The check builds and runs
-// this same build (sandbox/webkit.mjs).
+// this same build (sandbox/engines.mjs).
 async function buildPage() {
 	await $`docker volume create avensandbox_target`.quiet();
 	const volumes = ['-v', `${db2}:/work`, '-v', 'avensandbox_node_modules:/work/node_modules', ...rustVolumes];
