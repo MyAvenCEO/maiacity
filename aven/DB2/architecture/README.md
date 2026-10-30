@@ -18,7 +18,7 @@ part requires another sideways: avenID, below docs, never requires docs (the arc
 | 1. One codec | yes | — | — |
 | 2. History by hash | yes, on Core's envelopes; Loro's op ids and the hashes name the same past | — | — |
 | 3. One writer per log | splits final; a chain holds none; a write fits from its own log alone; a split spreads to every reader that syncs | — | — |
-| 4. Readers judge | one verdict: signed, fresh epoch, cap chain authorized, not revoked, within its footprint and fit over one change view, nothing in its past a split; readers holding the same past agree | — | — |
+| 4. Readers judge | one verdict: signed, fresh epoch, cap chain authorized, not revoked, within its footprint and fit over one change view, nothing in its past a split; readers holding the same past agree; a merge into main judged on the whole merge, every Record it changes, brings or removes allowed by a cap that writes on main | — | — |
 | 5. Reading is the key | keys of any kind (Core's bytes); keepers blind to segments of Core envelopes; stale epochs refused | — | — |
 | 6. Demand never grants | yes: served = wants ∩ read grants; keepers serve on fetch proofs | — | — |
 | 7. No privilege by position | keepers blind; index roots only from writers; no peer the only relay or holder; hosting an explicit read cap | — | — |
