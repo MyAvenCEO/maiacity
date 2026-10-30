@@ -504,8 +504,19 @@ the spec that owns it.
 **Before any docs or engine code**
 - **A1. One vocabulary:** this document and [`GLOSSARY.md`](GLOSSARY.md) are the single source for shared words and
   cross-part rules, and every spec uses them in this sense. *Yes.*
-- **A2. One codec and signing rule** for everything signed (K1, rule 1). It starts with the chat's lines in the
-  security fixes. *Yes.*
+- **A2. One codec and signing rule** for everything signed (K1, rule 1). It started with the chat's lines in the
+  security fixes (#1493). Samuel asked for "the best-practice encoding possible", shared by avenDB and the actors
+  (30 Oct 2026). The recommendation is **deterministic CBOR**, RFC 8949's core deterministic encoding, in a strict
+  profile:
+  - native byte strings and integers; no floats (integers only, as decided for actors' version 1);
+  - text keys, sorted bytewise; shortest forms; definite lengths;
+  - no tags but those the profile names;
+  - a hash is its 32 bytes.
+
+  A decoder refuses anything that doesn't encode back to itself, and Lean proves it. JSON stays the readable form,
+  with bytes as `b3:` or base64url text. It is standard and widely implemented (COSE, WebAuthn, DAG-CBOR), and it
+  answers the runtimes plan's question 6, a bytes leaf. Canonical JSON (RFC 8785) can't tell bytes from text and is
+  weak on large integers. *Yes; Samuel to confirm.*
 - **A3. Envelopes name what they build on by hash** (rule 2). *Decided: yes (Samuel, 30 Oct 2026).*
 - **A4. Splits are final,** with no settlement that revives a side, and "fork" means only a copy into a new Doc. The
   store's and Lean's fork becomes split. *Decided: yes (Samuel, 30 Oct 2026).*
@@ -564,15 +575,16 @@ the spec that owns it.
   any code: tiers only order, each key once at its highest tier, prerequisites inherit priority, every round moves,
   `now` is never evicted. Older periods are reached by a bounded `follow` of the link to the period before. *Yes; the
   engine thread agrees.*
-- **A17. Actors fold into docs:**
-  - an address names a vault-scoped id with an incarnation counter, never a device;
-  - the journal is the actor Doc's log;
-  - a message is stored once;
-  - one inbox per pair of vaults;
-  - loads are journaled as versions;
-  - a definition is a version of an actor type, and lenses carry its state.
-
-  *Yes.*
+- **A17. Actors fold into docs.** Samuel, 30 Oct 2026:
+  - an address names a vault-scoped id with an incarnation counter, never a device, and the home only routes:
+    *decided, yes*;
+  - a message is stored once, by hash: *decided, yes*;
+  - an actor's history is its Doc's Loro history, a turn is one commit, and Loro snapshots are its checkpoints:
+    *decided, yes*;
+  - every actor keeps its own inbox. Whether the Doc that carries inboxes is one per pair of actors or one per pair of
+    vaults stays open: *recommend a pair of vaults*;
+  - loads are journaled as versions: *recommend yes*;
+  - a definition is a version of an actor type, and lenses carry its state: *open*.
 - **A18. Plugins are runtimes.** A lowering is pinned by its runtime's hash, and an envelope carries the lowered hash.
   *Yes; the engine thread agrees.*
 - **A19. One update grammar:** put, patch, remove and a new `edit` for text, lists and trees, each with a verb and a
