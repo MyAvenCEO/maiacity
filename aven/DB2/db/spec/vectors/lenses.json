@@ -1,0 +1,6 @@
+[
+{"expected":{"done":true,"stamp":2},"input":[{"stamp":1,"write":{"status":"doing"}},{"stamp":2,"write":{"done":true}}],"name":"a v0 tick after a v1 status"},
+{"expected":{"done":false,"stamp":2},"input":[{"stamp":1,"write":{"done":true}},{"stamp":2,"write":{"status":"doing"}}],"name":"a v1 status after a v0 tick"},
+{"expected":{"done":true,"stamp":3},"input":[{"stamp":3,"write":{"status":"done"}},{"stamp":1,"write":{"status":"open"}}],"name":"only v1 writes"},
+{"expected":null,"input":[],"name":"nothing written"}
+]

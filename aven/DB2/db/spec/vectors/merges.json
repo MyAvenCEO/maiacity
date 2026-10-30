@@ -1,0 +1,9 @@
+[
+{"expected":"Order seeds today","input":{"base":"Order seeds","other":"Order seeds","takeOther":false,"target":"Order seeds today"},"name":"only the target changed"},
+{"expected":"Order seeds by Friday","input":{"base":"Order seeds","other":"Order seeds by Friday","takeOther":false,"target":"Order seeds"},"name":"only the other branch changed"},
+{"expected":"Order seeds today","input":{"base":"Order seeds","other":"Order seeds by Friday","takeOther":false,"target":"Order seeds today"},"name":"both changed, the target keeps its own"},
+{"expected":"Order seeds by Friday","input":{"base":"Order seeds","other":"Order seeds by Friday","takeOther":true,"target":"Order seeds today"},"name":"both changed, the merger takes the other's"},
+{"expected":"Order beans","input":{"base":"Order seeds","other":"Order beans","takeOther":false,"target":"Order beans"},"name":"both changed alike"},
+{"expected":"","input":{"after":"by Friday","before":"","now":"by Friday"},"name":"back out, untouched since"},
+{"expected":"by Monday","input":{"after":"by Friday","before":"","now":"by Monday"},"name":"back out, changed since"}
+]
