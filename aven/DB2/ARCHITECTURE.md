@@ -145,10 +145,13 @@ On 30 Oct 2026, 13 of the 14 rules were composed from the parts' own theorems (t
 authorized by its cap chain, not revoked, within its footprint and fit, and none of it is half of a split; readers
 holding the same past agree.
 
-One piece of rule 4 is open again, found by caps the same day: a merge into main counts only when the merger's grant
-covers the whole merge (caps README, "Checking"), but the content check reads a merge against the version its prev and
-deps name, which already holds the proposal. The engine (`merge_granted`) and caps (`merge_covered`) model it, and
-`Aven.Architecture` joins them by judging a merge into main against main before it.
+Caps found a hole in rule 4 the same day, and it was closed the same day. A merge into main counts only when the
+merger's grant covers the whole merge (caps README, "Checking"). But the content check read a merge against the version
+its prev and deps name, which already holds the proposal, so a narrow merger could land a proposal's wider changes.
+`rule4_merge_whole` (#1608) judges a merge into main against main before it. Every Record it changes, brings or removes
+is handled by a step of the whole merge (the engine's `merge_granted`). The merging device's cap allows each step
+(`merge_within_device`). The authority is the signer's own vault, which owns or governs the Doc, or a chain whose last
+cap writes on main and allows each step (caps' `merge_covered`, #1601, #1604, #1607).
 
 Rule 14 is a property of the node, held by the format vectors and the box's check; no theorem is planned for it.
 
