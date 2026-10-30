@@ -915,7 +915,8 @@ It works like a password manager, except that the secrets are never handed out.
 - a Rust trait: `unlock`, `lock`, `sign`, `open`, `seal`, `derive`, `use` (a credential, for an operation) and `enroll`
   (seal the safe to a new device);
 - one backend per host;
-- a Lean model of what may ever leave the safe (`safe_holds`).
+- a Lean model of what may ever leave the safe, `Aven.ID.Safe` ([what Lean proves](#what-lean-proves)), with its
+  vectors in `safe.json`.
 
 | Host | Safe runtime | Strength |
 |---|---|---|
@@ -1202,6 +1203,11 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | `SealedIndex`, moving to `Aven.Architecture.Sealed` (the docs thread) | `index_within_key`, `index_skips` | An index holds only entries read under keys every holder of its key holds; one some holder can't read changes nothing in it (rule 36) |
 | | `sealed_roots_agree` | Two readers holding the same admissible entries rebuild the same sealed root under one key, so each can check a published one. The root is a parameter here; `Aven.Architecture` joins it with the docs model's `root_set` |
 | | `sealed_padded`, `root_by_writer` | Sealed nodes are padded (D18); only a vault that may write the directory publishes a root a reader takes |
+| `Safe` | `safe_holds` | For any requests, from anyone, in any order, nothing leaves the safe but signatures, ciphertexts, public keys, answers and Doc keys lent to the engine (rule 34) |
+| | `stays_inside` | The device's keys, the vault's keys and credentials never leave it, not even sealed; it seals a Doc's key only to a reader or to the Doc's next key, and a group's key only to a member vault (rule 17) |
+| | `enroll_admitted` | The safe's own key leaves only sealed to the safe runtime of a device the vault admits |
+| | `kept_inside` | A host that keeps Doc keys inside its safe runtime gives no secret in plain |
+| | `acts_on_cap`, `locked_refuses` | It acts only when unlocked, and only on a `tell` cap that names the act (D16) |
 
 **After Core, or with another thread:**
 - `merge_covered` and `footprints.json` (Core's footprints, with the engine);
@@ -1209,7 +1215,6 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 - `authority_down` (`below` groups);
 - `group_holds` (a group cap's writes in `Revoke`);
 - `device_within_cap`;
-- `safe_holds` (the safe's interface);
 - `upgrade_no_wider` and `no_confused_deputy`, in the cross-spec model `Aven.Architecture`: they need `Aven.Actor`,
   and id/spec never requires the actor spec (the architect, 30 Oct 2026);
 
@@ -1226,6 +1231,7 @@ Two smaller gaps:
 | `caps.json` | Chains on the cast, their lines in Core's form, each cap with its CBOR bytes, its id and the bytes its device signs, and each chain with the first rule it breaks or none; how avenOS shows a cap; 40 generated chains |
 | `revocations.json` | Docs, the revocations held, and verdicts: hand-written, and 30 generated Docs with every envelope's verdict |
 | `epochs.json` | Who learns which key after Bob's removal and after Alice's heal |
+| `safe.json` | Requests to Alice's safe from her agent and from Mallory, on her Mac and on a host that keeps Doc keys inside, with what each gives back |
 | `approvals.json` | Signatures, thresholds and digests on the cast, and whether each approval holds |
 | `expiry.json` | Writes under a cap that expires, with each envelope's signed time, and whether each counts for the clock |
 | `network.json` | A ticket's claims in two orders (A12), removals that clash, MaiaCityGuardian's exit |

@@ -34,6 +34,8 @@ import Aven.ID.Restore
 import Aven.ID.Records
 import Aven.ID.Node
 import Aven.ID.Keep
+import Aven.ID.Safe
+import Aven.ID.SafeJson
 import Aven.ID.SealedIndex
 import Aven.ID.CapsExamples
 import Aven.ID.CapsJson
