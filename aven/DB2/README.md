@@ -231,7 +231,9 @@ the `ProtocolHandler` registered for its ALPN. avenDB's own protocol plugs in th
 6. **Schemas and lenses.**
 7. **Sync manifest and queries.**
 
-How data says what it means, for 6 and 7: [`ontology/README.md`](ontology/README.md), a proposal.
+The design of avenDB's data, proposals for 4 to 7: [`db/docs`](db/docs/README.md) (documents, versions, schemas,
+lenses), [`db/engine`](db/engine/README.md) (sync, queries, mutations) and [`db/ontology`](db/ontology/README.md) (what
+facts mean).
 
 The chat is the first example app and grows with each milestone. The Google-Docs-like editor, with history, variants
 and proposals, follows it.
