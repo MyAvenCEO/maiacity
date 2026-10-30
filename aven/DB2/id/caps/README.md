@@ -100,7 +100,7 @@ same day, and what they agreed is marked where it applies. Nothing in this spec 
 - **operation:** what a cap allows: `read`, `query`, `write`, `mutate`, `tell`, `keep`, `share`.
 - **footprint:** what a write may touch: types, verbs, fields and their constraints
   ([engine](../../db/engine/README.md#terms)).
-- **condition:** not before, expiry, approval, uses, budget, own Records, lines, history.
+- **condition:** not before, expiry, approval, uses, budget, own Records, branches, history.
 - **chain:** a cap and its parents, up to a **root cap**, which a vault issues over Docs of its own or of vaults it
   governs.
 - **role:** a named bundle of grants, a Value, named by its hash.
@@ -150,8 +150,8 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
 8. **Write needs read.** A vault writes a Doc only with its key. A holder without `read` acts only through someone who
    holds the key (rule 10).
 9. **Every reader checks every write.** A change counts only when its signer's chain is valid, live and covers the
-   change's footprint. One that doesn't count is kept but shows on no line, and neither does anything built on it (docs
-   rule 10).
+   change's footprint. One that doesn't count is kept but shows on no branch, and neither does anything built on it
+   (docs rule 10).
 10. **Without the key, the key's holder checks.** A holder without `read` gets only what a kernel or a serving peer runs
     for it, and only the operations its cap names. For actors and agents, that holds query by query.
 11. **Hidden is not refused.** A peer refuses what no cap grants, whether or not an app showed it.
@@ -180,7 +180,7 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
 20. **Hybrid where authority lasts.**
     - X-Wing for every key sent.
     - Hybrid signatures on caps, revocations, governance, approvals, letters, segments and checkpoints.
-    - Ed25519 on single live envelopes, which their segment's hybrid signature covers once they are sealed into it.
+    - Ed25519 on single live envelopes, which their segment's hybrid signature covers once the segment closes.
     - Every seal and every signature names its suite.
 21. **A passkey's act needs both proofs:** the WebAuthn assertion, which proves the authenticator and the person
     (ES256), and the hybrid signature derived from its PRF (post-quantum).
@@ -189,8 +189,8 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
     type, signer, writer, cap or reader list, beyond what serving a device shows
     ([metadata](#metadata-what-hosts-still-see)).
 23. **As little as possible outside the seal** (Samuel, 30 Oct 2026). Outside a segment are only its Doc, its key epoch
-    and its padded length. The writer, its Loro peer and counters, the previous segment, the branch and everything else
-    are inside. A keeper serves catch-up by its own arrival order. Readers check a writer's order and catch splits.
+    and its padded length. The signer, its writer id and counters, the previous segment, the branch and everything
+    else are inside. A keeper serves catch-up by its own arrival order. Readers check a writer's order and catch splits.
 24. **A want grants nothing.** A device is served its wants intersected with its caps; an actor is handed its loads
     intersected with its run's caps (engine, rule 7).
 25. **Approval is a co-signature over one digest:** k of the named owners, for one act, used once.
@@ -221,7 +221,7 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
                                                                   │
                                     issues, on its own authority  │  or resting on a cap it holds
                                                                   ▼
-             cap { issuer, holder, grants: [ target × operations × lines ], conditions, parent }
+             cap { issuer, holder, grants: [ target × operations × branches ], conditions, parent }
                                                                   │
                          holder: a vault, a group, the public, or a ticket until it is claimed
 ```
@@ -268,7 +268,7 @@ A cap is a Value: canonical JSON, named by its BLAKE3 hash, which is its id.
                    "fields": { "x1": "free", "x2": { "is": "d:7Hq…/t1" } } } ],
       "mutate": [ "b3:4f1c…" ],
       "share": 0,
-      "lines": "main" } ],
+      "branches": "main" } ],
   "conditions": { "expires": "2026-12-31T00:00:00Z" },
   "nonce": "9a0e…" }
 ```
@@ -278,7 +278,7 @@ A cap is a Value: canonical JSON, named by its BLAKE3 hash, which is its id.
 | `issuer` | The vault that grants |
 | `holder` | A vault (devices are vaults), a group (`g:<doc>`), a ticket's public key, or `public`: every member of the network |
 | `parent` | The cap it narrows, by id, or `null` for a root cap |
-| `grants` | Each a target, the operations on it and the lines it may write; or `role` and `target` instead |
+| `grants` | Each a target, the operations on it and the branches it may write; or `role` and `target` instead |
 | `conditions` | [Below](#conditions); they apply to every grant |
 | `nonce` | Makes two caps with the same grants two caps, each revocable on its own |
 
@@ -356,7 +356,7 @@ its params inside the seal, so a reader re-lowers it and checks the change is ex
 | `approve` | `{ "k": 2, "of": [ owners ] }`: every act under the cap carries k approvals over its digest | Every reader, or the router |
 | `uses`, `budget` | How many acts, how much spend | Only where one router or kernel counts them |
 | `own` | `patch` and `remove` only on Records the holder created. The docs layer knows each Record's creator from its first envelope | Every reader |
-| `lines` | `main`, or `proposals`: writes only on proposal lines, and landing them on main is someone else's merge, which counts only when the merger's grant covers the whole merge. An agent's removals go this way (engine rule 12). The docs thread proposes calling lines **branches** | Every reader |
+| `branches` | `main`, a branch's hash, or `proposals` (every branch but main): writes only on proposals, and landing them on main is someone else's merge, which counts only when the merger's grant covers the whole merge. An agent's removals go this way (engine rule 12) | Every reader |
 | `history` | On `read`: `all` or `from-now` | Crypto: a `from-now` grant rotates without a link back |
 
 ### Roles
@@ -376,7 +376,7 @@ for people; authority never looks one up, and avenOS shows the grants a role exp
 | A field, a constant, own Records | Change only your own Records' `status` | Every reader | The same |
 | A predicate | Assert `member_of` | Every reader (a predicate is a type) | The same |
 | A kind | `invoice.create` | Every reader, through the kind's compiled mutation | The same |
-| A line | Propose, don't land | Every reader | The same |
+| A branch | Propose, don't land | Every reader | The same |
 | A query | Run `invoice.list` and nothing else | The kernel or serving peer holding the key | Everyone without the key. A vault holding the key could read the whole Doc with a changed client |
 | A message | `tell` a todo list `add` | The receiver's router | Any sender |
 | Keeping | The Aven Peer keeps Alice's Docs | The keeper keeps | Nothing to break: it holds no key |
@@ -465,23 +465,30 @@ day.
 
 ## Checking
 
-An imported envelope, in order. The docs layer and the engine run these checks
-([docs](../../db/docs/README.md#envelopes-and-peers), [engine](../../db/engine/README.md#who-checks-what)):
+An imported envelope runs through the docs layer's import, in its order
+([docs](../../db/docs/README.md#importing-three-verdicts)). The steps marked **caps** are this spec's, and the engine
+checks the footprint ([engine](../../db/engine/README.md#who-checks-what)):
 
-1. **Open** it with its epoch's key, from the keyring or from the key blob its header names, or wait for the blob.
-   Key-committing AEAD.
-2. **Signer.** The signature holds, and the device served the signer's vault in the tree as the reader holds it.
-3. **Epoch.** It is no older than any epoch in what the envelope builds on (rule 16).
-4. **Authority.** Either the signer's vault is the Doc's vault, or governs it, and the device acts within its device
-   cap. Or the envelope names a cap whose chain holds:
-   - **valid:** signatures, approvals, every link narrowing, conditions;
-   - **live:** kept by every revocation on the chain that the reader holds (rule 14);
-   - **covering:** its footprint covers the change; with `approve`, the approvals over this envelope's digest; and for
-     a group's cap, the writer's live read cap on the group, and the issuer of each child still in it.
+1. **Limits** on the sealed bytes, before anything is decoded (docs).
+2. **Open** it with its epoch's key, from the keyring or from the key blob its header names, or wait for the blob.
+   Key-committing AEAD (**caps**).
+3. **Decode** it canonically, and check the device's signature (docs).
+4. **Signer:** the device served the signer's vault in the tree as the reader holds it (**caps**).
+5. **Log:** the writer id, its sequence and the envelope before, and splits (docs).
+6. **Dependencies,** by hash. A wait raises the stall alarm (docs).
+7. **Epoch and authority** (**caps**):
+   - the epoch is no older than any epoch in what the envelope builds on (rule 16);
+   - either the signer's vault is the Doc's vault, or governs it, and the device acts within its device cap;
+   - or the envelope names a cap whose chain holds:
+     - **valid:** signatures, approvals, every link narrowing, conditions;
+     - **live:** kept by every revocation on the chain that the reader holds (rule 14);
+     - **covering:** its footprint covers the change; with `approve`, the approvals over this envelope's digest; and
+       for a group's cap, the writer's live read cap on the group, and the issuer of each child still in it.
 
    The chain comes from the Doc's access map or from inside the envelope.
-5. **The docs layer's own checks:** the signer's Loro peer, what it builds on, fit, and no split (docs rules 2 and 10).
-6. **The engine's:** a named operation is re-lowered, and the change must be what it produces.
+8. **Loro's own checks** (docs).
+9. **Fit,** and the footprint for the engine: a named operation is re-lowered, and the change must be what it produces.
+10. **Counts:** fit, authorized and not a split, and everything it builds on counts.
 
 **A merge into main** counts only when the merger's grant covers the footprint of the whole merge: every type and field
 that differs between the base and the merged state, not only the commit that fixes conflicts. Otherwise a merger with a
@@ -583,11 +590,11 @@ through.
 - **Subkeys** come from an epoch's key by BLAKE3's key derivation, one label per use:
   - `avenDB envelope 1`;
   - `avenDB segment 1`;
-  - `avenDB snapshot 1`;
+  - `avenDB snapshot 1`, for checkpoints;
   - `avenDB fetch 1`;
   - `avenDB topic 1`;
   - `avenDB converge 1`.
-- **Envelopes, segments and snapshots** use XChaCha20-Poly1305 with a key commitment. A segment holds one epoch, so a
+- **Envelopes, segments and checkpoints** use XChaCha20-Poly1305 with a key commitment. A segment holds one epoch, so a
   rotation closes the open segment (agreed with the docs thread).
 - **Each segment** carries its writer's hybrid signature, inside the seal (agreed with the docs thread). A device closes
   only its own segments, and one signature covers up to 256 envelopes.
@@ -614,7 +621,7 @@ through.
 ### Forward secrecy and healing, honestly
 
 **No forward secrecy for kept data.** A Doc's history must stay readable to its readers and to their new devices, so its
-old keys are kept, and the newest key opens the past through `back`. Live changes are sealed into segments under the
+old keys are kept, and the newest key opens the past through `back`. Live changes are closed into segments under the
 same key afterwards, so a ratchet on the live channel would add nothing. Forward secrecy exists only for what is never
 kept, such as presence, typing and calls (later).
 
@@ -859,8 +866,8 @@ The safe gets its own spec, `aven/DB2/id/safe`, when its milestone comes.
 | What | Suite | Why |
 |---|---|---|
 | Every key sent: stanzas, letters, the keyring | X-Wing | Harvest now, decrypt later. Hybrid holds while either ML-KEM or X25519 holds |
-| Caps, revocations, approvals, governance, letters, segments, checkpoints (milestone 7) | Ed25519 + ML-DSA-65 | Authority that lasts. One per segment covers up to 256 envelopes |
-| Single live envelopes | Ed25519 | Their segment's hybrid signature covers them once they are sealed into it; 64 bytes instead of about 3.4 KB each |
+| Caps, revocations, approvals, governance, letters, segments, checkpoints | Ed25519 + ML-DSA-65 | Authority that lasts. One per segment covers up to 256 envelopes |
+| Single live envelopes | Ed25519 | Their segment's hybrid signature covers them once it closes; 64 bytes instead of about 3.4 KB each |
 | Passkey owners | ES256 assertion + PRF-derived hybrid key, both required | PRF is HMAC-SHA-256 inside the authenticator, which a quantum computer only halves |
 | Content | XChaCha20-Poly1305, BLAKE3 | Symmetric, 256-bit keys |
 | iroh's connections | iroh's own handshake | Content is sealed above it; it protects transport metadata only |
@@ -958,7 +965,7 @@ to and leave all the time. Scale need not be built from day one, but no choice m
 | Package | What it gives caps | What caps give it |
 |---|---|---|
 | avenID (`id/spec`, `id/core`) | The tree, `Governs`, statements, passkeys, invites | `Aven.ID.Caps` beside `Governs`; owners k of n; approvals; device removal and its acks; device and vault keys in statements (X-Wing and ML-DSA-65 public halves); recovery |
-| docs (`db/docs`) | Envelopes, lines (branches), Records, fit | **Decided by Samuel (30 Oct 2026, D13):** outside a segment are only the Doc, the key epoch and the padded ciphertext. Keepers serve catch-up by arrival order. Inside are the branch, the writer's Loro peer and counters, the previous segment's hash, the signer, the cap, acks, the operation and params, the changes and the schema. The docs thread had proposed the peer, counters and previous hash outside. **Agreed with the docs thread:** Three verdicts (fit, authorized, not split), and a revocation rebuilds state. A segment holds one epoch, and a rotation closes it. Snapshots and heads are each device's own and never travel, so checkpoints (milestone 7) carry the hybrid signatures. A merge is checked against the merger's grant over the whole merge. Each segment carries its writer's hybrid signature. **Proposed:** a Doc's vault and root type fixed at birth; every Record's creator known; the access map's types `cap`, `revoke` and `epoch` |
+| docs (`db/docs`) | Envelopes, branches, Records, fit | **Decided by Samuel (30 Oct 2026, D13):** outside a segment are only the Doc, the key epoch and the padded ciphertext. Keepers serve catch-up by arrival order. Inside are the branch, the writer id and counters, the previous segment's hash, the signer, the cap, acks, the operation and params, the changes and the schema. The docs thread had proposed the peer, counters and previous hash outside. **Agreed with the docs thread:** Three verdicts (fit, authorized, not split), and a revocation rebuilds state. A segment holds one epoch, and a rotation closes it. Snapshots and heads are each device's own and never travel. Checkpoints travel from the Loro docs step on (A5), sealed with the `avenDB snapshot 1` subkey and hybrid-signed. A merge is checked against the merger's grant over the whole merge. Each segment carries its writer's hybrid signature. A Doc's genesis fixes its vault and root type (docs D11). **Proposed:** every Record's creator known; the access map's types `cap`, `revoke` and `epoch` |
 | engine (`db/engine`) | Operations by hash, footprints, wants, the dry run | E1–E3; served is wants intersected with caps; `query` checked by the kernel or serving peer |
 | store (`store`) | Blobs and refs | Sealed blobs; key blobs and letters are blobs; the sealing parked in its "Later: sealing" comes here |
 | avenPEER | The door, the relay, the keeper | Keep caps, fetch proofs, quota per network member, letterboxes, topics per group |
@@ -1131,7 +1138,7 @@ None at the moment. What comes later is scheduled in [order of work](#order-of-w
 
 - The door, invites and joins: milestone 2 and `Aven.ID.Invite`.
 - The exact text of avenID's statements: `id/core`, from this model.
-- Envelopes, lines and fit: the [docs](../../db/docs/README.md).
+- Envelopes, branches and fit: the [docs](../../db/docs/README.md).
 - Operations, footprints and wants: the [engine](../../db/engine/README.md).
 - Blobs and refs: the [store](../../store/README.md).
 - The kernel and its router: `aven/actor`.
