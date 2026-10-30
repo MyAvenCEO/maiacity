@@ -40,10 +40,15 @@ impl std::fmt::Debug for Frame {
                 .field("code", &"(hidden)")
                 .field("statement", statement)
                 .finish(),
-            Frame::SignIn { statement } => f.debug_struct("SignIn").field("statement", statement).finish(),
-            Frame::Network { claimed, tree } => {
-                f.debug_struct("Network").field("claimed", claimed).field("tree", tree).finish()
-            }
+            Frame::SignIn { statement } => f
+                .debug_struct("SignIn")
+                .field("statement", statement)
+                .finish(),
+            Frame::Network { claimed, tree } => f
+                .debug_struct("Network")
+                .field("claimed", claimed)
+                .field("tree", tree)
+                .finish(),
             Frame::Refused { why } => f.debug_struct("Refused").field("why", why).finish(),
         }
     }

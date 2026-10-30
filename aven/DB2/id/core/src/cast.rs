@@ -1,12 +1,13 @@
 //! The cast's format (`sandbox/cast.json`): `keys`, each id to its public half, and `vaults`, each id to its name,
 //! kind and owners, which read `"key:<id>"` or `"vault:<id>"`. The file's order is the tree's. Every key must be an
-//! Ed25519 public key; the model knows keys only by id, so that check is the cast's.
+//! Ed25519 public key in hex or a passkey's `es256:<SPKI in hex>`; the model knows keys only by id, so that check is
+//! the cast's. [`Tree::to_cast`] writes a tree back in the same form, for avenOS.
 
 use std::fmt;
 
 use serde_json::{Map, Value};
 
-use crate::keys::parse_public;
+use crate::keys::valid_public;
 use crate::tree::{Invalid, Kind, Owner, Tree, Vault};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -50,9 +51,9 @@ impl Tree {
         let mut keys = Vec::new();
         for (id, public) in object(cast.get("keys").unwrap_or(&empty), "keys")? {
             let public = text(public, &format!("key {id}"))?;
-            if parse_public(public).is_none() {
+            if !valid_public(public) {
                 return Err(CastError::Format(format!(
-                    "key {id} is not an Ed25519 public key in hex"
+                    "key {id} is neither an Ed25519 public key in hex nor es256:<SPKI in hex>"
                 )));
             }
             keys.push((id.clone(), public.to_string()));
@@ -88,5 +89,24 @@ impl Tree {
             });
         }
         Tree::new(keys, vaults).map_err(CastError::Invalid)
+    }
+}
+
+impl Tree {
+    /// The tree in the cast's form, in its order: what the Aven Peer tells its devices.
+    pub fn to_cast(&self) -> String {
+        let keys: Map<String, Value> = self
+            .keys()
+            .map(|(id, public)| (id.to_string(), Value::from(public)))
+            .collect();
+        let vaults: Map<String, Value> = self
+            .vaults()
+            .iter()
+            .map(|v| {
+                let owners: Vec<String> = v.owners.iter().map(ToString::to_string).collect();
+                (v.id.clone(), serde_json::json!({ "name": v.name, "kind": v.kind.as_str(), "owners": owners }))
+            })
+            .collect();
+        serde_json::json!({ "keys": keys, "vaults": vaults }).to_string()
     }
 }

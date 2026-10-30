@@ -25,3 +25,11 @@ pub(crate) fn parse_public(hex: &str) -> Option<VerifyingKey> {
     }
     VerifyingKey::from_bytes(&bytes).ok()
 }
+
+/// A key's public half as a tree writes it: Ed25519 in hex, or a passkey's `es256:<SPKI in hex>`.
+pub(crate) fn valid_public(public: &str) -> bool {
+    match public.strip_prefix("es256:") {
+        Some(spki) => crate::passkey::Passkey::from_spki_hex(spki).is_some(),
+        None => parse_public(public).is_some(),
+    }
+}
