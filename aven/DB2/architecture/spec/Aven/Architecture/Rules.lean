@@ -50,6 +50,14 @@ theorem rule2_dep_fixed {H : Bytes → Hash} (hH : Injective H) {b b' : Envelope
     (hb' : Canon b'.value = true) (h : b.name H = b'.name H) : b = b' :=
   Envelope.name_inj hH hb hb' h
 
+/-- An envelope's Loro dependencies and its hashes name the same past: among envelopes that pass docs rule 7, the same
+hashes exactly when the same op ids. -/
+theorem rule2_ops_are_hashes {nm : Envelope → Hash} {O : DB.Docs.Ops} {held : List Envelope}
+    (inj : ∀ a ∈ held, ∀ b ∈ held, nm a = nm b → a = b) (used : ∀ a ∈ held, ∀ b ∈ held, O.last a = O.last b → a = b)
+    {e e' : Envelope} {p p' : List Envelope} (h : DB.Docs.OpsAgree nm O held e p) (h' : DB.Docs.OpsAgree nm O held e' p') :
+    DB.Docs.namedPast e = DB.Docs.namedPast e' ↔ O.deps e = O.deps e' :=
+  DB.Docs.same_past inj used h h'
+
 /-! ## Rule 3: one writer per log; a split is final -/
 
 /-- A log read as a chain holds no split. -/
