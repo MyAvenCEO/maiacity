@@ -1168,12 +1168,12 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `elsewhere_kept` | Elsewhere, once the revocation reaches the Doc, only what its kept list or another writer's ack had seen counts |
 | | `revocation_wins` | The three together (rule 14). An envelope lists its whole chain, so revoking any link reaches it: the cascade |
 | | `waits_named` | A wait names only what the envelope builds on and the reader lacks, by hash |
-| `Epochs` | `confidential` | A key is learned only as one's own or by opening a seal with a key already known |
+| `Epochs` | `confidential` | A key is learned only as one's own or by opening a seal with a key already known. Keys are any type with an equality (`WorldOf κ`): names in the examples (`World`), Core's bytes in `Aven.Architecture` (R5) |
 | | `unknowable` | Keys of a closed set a party owns none of stay unknown to it; the next three are its instances |
 | | `removal_next_epoch` | A new epoch sealed only to the remaining readers stays closed to a removed one |
 | | `heal_evicts` | After a heal, a removed device learns none of the new keys: vault key, tag seeds, letterbox keys and next epochs |
-| | `keeper_blind`, `outside_blind` | The keeper knows only its own keys, and sees of a segment only its Doc, epoch and padded length (D13) |
-| | `stale_refused` | An envelope under an epoch older than one it builds on doesn't pass (rule 16) |
+| | `keeper_blind`, `outside_blind` | The keeper knows only its own keys, and sees of a segment only its Doc, epoch and padded length (D13). A segment is Core's `DocId`, its epoch's `Hash`, and the Core envelopes inside its seal (R5) |
+| | `stale_refused` | A Core envelope under an epoch older than one it builds on doesn't pass (rule 16) |
 | `Recover` | `guardian_exit` | After MaiaCityGuardian's exit, no keyring epoch is sealed to it (D12) |
 | | `never_ownerless`, `removals_win` | Removals that clash all stand, unless they'd leave no owner; then none does |
 | `Network` | `public_member`, `removal_rotates` | A public write counts only from a member, and a removed member is in no later members epoch |
