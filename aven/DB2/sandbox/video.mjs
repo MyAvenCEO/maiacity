@@ -11,6 +11,8 @@
 //   before answering, and to guess its length until its last chunk was there;
 // - a player loads once its bubble is in view, a few at a time: of six movies above the newest, a fresh viewer asks
 //   for no more than the few on its screen before it scrolls;
+// - a press on a player still waiting for its turn loads it at once, and it plays;
+// - only Alice's links are told her movie is kept (`kept`): Bob's Peer-Light never hears it;
 // - a movie this browser can't play (bytes no player decodes, as an HEVC movie is in a browser without the codec)
 //   says so with its download link, never a dead player.
 //
@@ -18,6 +20,7 @@
 // doesn't play on is reported, not failed.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { chromium, firefox, webkit } from 'playwright';
+import { lines } from './records.mjs';
 
 const run = process.argv[2] ?? 'runs/latest';
 mkdirSync(run, { recursive: true });
@@ -88,6 +91,7 @@ await alice.page.getByTestId('file-input').setInputFiles([
 	{ name: broken, mimeType: 'video/mp4', buffer: Buffer.from(`no player decodes this ${stamp} `.repeat(2000)) },
 ]);
 if (!(await shown(card(alice.page, movie)))) problems.push("Alice's movie never showed in her chat");
+report.movieFile = await card(alice.page, movie).getAttribute('data-file').catch(() => null);
 // "Kept by the network" only once the Aven Peer says it holds the file whole (its `kept` frame)
 report.sender = (await shown(card(alice.page, movie).getByTestId('file-kept'), 60_000)) ? 'kept' : 'not kept';
 if (report.sender !== 'kept') problems.push("Alice's card never said the network keeps her movie");
@@ -111,6 +115,26 @@ for (const engine of [chromium, webkit, firefox]) {
 	const crowdFiles = await Promise.all(crowd.map((c) => card(bob.page, c.name).getAttribute('data-file').catch(() => null)));
 	got.crowdAsked = crowdFiles.filter((f) => f && asked.has(f)).length;
 	if (got.crowdAsked > 3) problems.push(`${name}: a fresh viewer asked for ${got.crowdAsked} of the six movies above the newest before scrolling`);
+	// a press on a player nobody has loaded yet: it loads at once and plays
+	const waiting = crowd.findIndex((c, i) => crowdFiles[i] && !asked.has(crowdFiles[i]));
+	if (waiting >= 0) {
+		const player = card(bob.page, crowd[waiting].name).locator('video');
+		await player.evaluate((el) => (el.muted = true));
+		const pressed = Date.now();
+		// its Play button, there until the player has its src
+		got.click = await card(bob.page, crowd[waiting].name)
+			.getByTestId('tap')
+			.click({ timeout: 10_000 })
+			.then(() => 'ok', (e) => e.message.split('\n')[0]);
+		got.tapped = await player
+			.evaluate(async (el) => {
+				for (let i = 0; i < 100 && !(el.readyState >= 2 && !el.paused); i++) await new Promise((done) => setTimeout(done, 100));
+				return el.readyState >= 2 && !el.paused ? true : { readyState: el.readyState, paused: el.paused, src: Boolean(el.getAttribute('src')) };
+			})
+			.catch((e) => e.message.split('\n')[0]);
+		got.tapMs = Date.now() - pressed;
+		if (got.tapped !== true) problems.push(`${name}: a press on a player waiting for its turn didn't load and play it: ${JSON.stringify(got.tapped)}`);
+	}
 	if (!got.shown) problems.push(`${name}: Alice's movie never reached Bob's chat`);
 	else {
 		Object.assign(got, await plays(bob.page, movie).catch((e) => ({ first: false, why: e.message.split('\n')[0] })));
@@ -123,6 +147,13 @@ for (const engine of [chromium, webkit, firefox]) {
 	await bob.context.close();
 }
 await alice.context.close();
+
+// Alice's movie kept: told to her links only, never to Bob's
+const movieFile = report.movieFile;
+const told = lines().filter((l) => l.event === 'kept' && Array.isArray(l.files) && l.files.includes(movieFile));
+report.keptTold = [...new Set(told.map((l) => l.peer))];
+if (!report.keptTold.includes('alice-peer-light') || report.keptTold.some((peer) => peer !== 'alice-peer-light'))
+	problems.push(`the movie's kept was told to ${JSON.stringify(report.keptTold)}, not to Alice's Peer-Light alone`);
 
 report.ok = problems.length === 0;
 report.problems = problems;

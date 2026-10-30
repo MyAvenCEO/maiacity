@@ -41,8 +41,10 @@ pub struct Hub {
     room: Arc<OnceLock<Room>>,
     /// told each peer that connects, by its key: a file it shared that the Aven Peer couldn't keep is tried again
     joins: Option<Arc<dyn Fn(PublicKey) + Send + Sync>>,
-    /// each file the Aven Peer kept whole, by its name, as it keeps it: every link is told (`kept`)
-    kept: Option<tokio::sync::broadcast::Sender<String>>,
+    /// each file the Aven Peer kept whole, by its name, as it keeps it, with the key of the device that shared it: only
+    /// that device's links are told (`kept`). Every link learning every kept file, and when, would tell each member
+    /// what is shared in rooms it isn't in, once there are rooms
+    kept: Option<tokio::sync::broadcast::Sender<(PublicKey, String)>>,
 }
 
 impl std::fmt::Debug for Hub {
@@ -84,8 +86,8 @@ impl Hub {
         self
     }
 
-    /// The hub that tells every link each file kept whole, as `kept` says it.
-    pub fn with_kept(mut self, kept: tokio::sync::broadcast::Sender<String>) -> Self {
+    /// The hub that tells the sender's links each file kept whole, as `kept` says it.
+    pub fn with_kept(mut self, kept: tokio::sync::broadcast::Sender<(PublicKey, String)>) -> Self {
         self.kept = Some(kept);
         self
     }
@@ -250,7 +252,8 @@ impl Hub {
                     }
                 } => {
                     match file {
-                        Ok(file) => send.write_all(&encode(&Frame::Kept { files: vec![file] })).await.map_err(fail)?,
+                        Ok((from, file)) if from == conn.remote_id() => send.write_all(&encode(&Frame::Kept { files: vec![file] })).await.map_err(fail)?,
+                        Ok(_) => {}
                         // a link too slow to hear them all is told its own again on its next connect
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => kept = None,
