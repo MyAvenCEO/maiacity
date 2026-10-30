@@ -16,6 +16,8 @@ which actor handles its next message from which sender, so every theorem holds f
 
 namespace Aven.Actor
 
+open Aven.Core (Value TypeId Bytes)
+
 def upd {α β : Type} [DecidableEq α] (f : α → β) (a : α) (b : β) : α → β :=
   fun x => if x = a then b else f x
 
@@ -53,13 +55,18 @@ def Def.describe (d : Def) (ph : String) : List MsgSpec :=
     | none => true
     | some mc => mc.opens sp.name ph
 
+/-- Text as a Value: its UTF-8 bytes. -/
+def text (s : String) : Value := .text s.toUTF8.toList
+
+/-- A map's keys in the order deterministic CBOR sorts them: shorter encodings first, then bytewise. -/
 def MsgSpec.toValue (sp : MsgSpec) : Value :=
-  .obj [("name", .str sp.name), ("description", .str sp.description), ("type", .str sp.type),
-    ("reply", match sp.reply with | some t => .str t | none => .null)]
+  .map [("name".toUTF8.toList, text sp.name), ("type".toUTF8.toList, sp.type.value),
+    ("reply".toUTF8.toList, match sp.reply with | some t => t.value | none => .null),
+    ("description".toUTF8.toList, text sp.description)]
 
 def Def.describeValue (d : Def) (ph : String) : Value :=
-  .obj [("name", .str d.name), ("description", .str d.description),
-    ("messages", .arr ((d.describe ph).map MsgSpec.toValue))]
+  .map [("name".toUTF8.toList, text d.name), ("messages".toUTF8.toList, .array ((d.describe ph).map MsgSpec.toValue)),
+    ("description".toUTF8.toList, text d.description)]
 
 /-- What handling `m` comes to, from what the journal entry pins: the definition in force, the state and phase
 before, the message and `given`. The kernel uses this, and so does replay. -/

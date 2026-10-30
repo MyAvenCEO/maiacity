@@ -14,6 +14,8 @@ has; the theorems are about asks that were sent, whose seq is 1 or more.
 
 namespace Aven.Actor
 
+open Aven.Core (Value TypeId Bytes)
+
 /-- The answers to `id` in a list of messages. -/
 def answersTo (l : List Message) (id : MsgId) : List Message := l.filter (·.kind.answers == some id)
 

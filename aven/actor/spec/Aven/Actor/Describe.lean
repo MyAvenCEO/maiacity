@@ -11,6 +11,8 @@ import Aven.Actor.Machines
 
 namespace Aven.Actor
 
+open Aven.Core (Value TypeId Bytes)
+
 theorem describe_exact (d : Def) (ph : String) (sp : MsgSpec) :
     sp ∈ d.describe ph ↔ sp ∈ d.interface ∧ ∀ mc, d.machine = some mc → mc.opens sp.name ph = true := by
   unfold Def.describe
