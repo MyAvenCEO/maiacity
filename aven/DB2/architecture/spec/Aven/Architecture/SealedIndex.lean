@@ -2,6 +2,10 @@ import Aven.DB.Docs.Index
 
 /-! # Sealed indexes: caps' part (A26, caps rule 36)
 
+Moved here from `Aven.ID` (30 Oct 2026): it joins caps' keys and readers with the docs layer's index, so it is a
+cross-part theorem, and avenID, below docs, never requires docs.
+
+
 An index and its directory are one Prolly tree (`Aven.DB.Docs.Index`), sealed under the key of the directory. Caps says
 what may go in and who may change it:
 - an index holds fields only from Docs every reader of its directory can read, so a Doc with fewer readers never enters
@@ -15,7 +19,7 @@ what may go in and who may change it:
 
 The seal and the padding are parameters, taken as sound, as Core takes signatures. -/
 
-namespace Aven.ID.Sealed
+namespace Aven.Architecture.Sealed
 
 open Aven.Core Aven.DB.Docs.Index
 
@@ -90,4 +94,4 @@ theorem root_by_writer {dir : Directory} {pubs : List Publish} {p : Publish} (h 
   simp only [taken, List.mem_filter, List.contains_iff_mem] at h
   exact h
 
-end Aven.ID.Sealed
+end Aven.Architecture.Sealed

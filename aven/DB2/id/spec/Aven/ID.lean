@@ -28,7 +28,6 @@ import Aven.ID.Epochs
 import Aven.ID.Recover
 import Aven.ID.Network
 import Aven.ID.Keep
-import Aven.ID.SealedIndex
 import Aven.ID.CapsExamples
 import Aven.ID.CapsJson
 
