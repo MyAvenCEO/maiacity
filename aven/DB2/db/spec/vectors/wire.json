@@ -1,0 +1,12 @@
+[
+{"expected":{"error":null,"frames":[[{"frame":"hello","peer":"alice-peer"},{"frame":"presence","peers":["a"]},{"frame":"beat","n":7}]]},"input":{"chunks":["{\"frame\":\"hello\",\"peer\":\"alice-peer\"}\n{\"frame\":\"presence\",\"peers\":[\"a\"]}\n{\"frame\":\"beat\",\"n\":7}\n"]},"name":"three frames in one chunk"},
+{"expected":{"error":null,"frames":[[],[],[{"frame":"beat","n":1}]]},"input":{"chunks":["{\"frame\":\"be","at\",\"n\":1}","\n"]},"name":"a frame split across chunks"},
+{"expected":{"error":null,"frames":[[{"frame":"beat","n":1},{"frame":"beat","n":2}]]},"input":{"chunks":["{\"frame\":\"beat\",\"n\":1}\n{\"frame\":\"beat\",\"n\":2}\n{\"frame\":"]},"name":"two frames, then half a third"},
+{"expected":{"error":null,"frames":[[{"frame":"presence","peers":[]}]]},"input":{"chunks":["{\"frame\":\"presence\",\"peers\":[]}\n"]},"name":"presence of nobody"},
+{"expected":{"error":"bad","frames":[]},"input":{"chunks":["nope\n"]},"name":"a line that isn't JSON"},
+{"expected":{"error":"bad","frames":[]},"input":{"chunks":["{\"frame\":\"shout\"}\n"]},"name":"a frame no peer sends"},
+{"expected":{"error":"bad","frames":[]},"input":{"chunks":["{\"frame\":\"beat\"}\n"]},"name":"a beat without its count"},
+{"expected":{"error":"bad","frames":[[{"frame":"beat","n":3}]]},"input":{"chunks":["{\"frame\":\"beat\",\"n\":3}\n","{\"frame\":\n"]},"name":"refused after the frames before it"},
+{"expected":{"error":null,"frames":[[]]},"input":{"chunks":[{"fill":"x","len":65536}]},"name":"a line of exactly the limit waits"},
+{"expected":{"error":"tooLong","frames":[]},"input":{"chunks":[{"fill":"x","len":65537}]},"name":"an endless line is refused"}
+]

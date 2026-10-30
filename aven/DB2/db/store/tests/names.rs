@@ -1,37 +1,28 @@
-//! The contract's two names: a blob's hash and a ref's name.
+//! The contract's two names. Which spellings are a hash is Lean's (`db/spec/vectors/hashes.json`); which ref names are
+//! valid, and every hash the store computes, the model's traces check on every backend.
 
-use aven_db_store::{Hash, RefName};
-
-#[test]
-fn a_hash_is_blake3_and_reads_back_from_hex() {
-    let hash = Hash::of(b"abc");
-    assert_eq!(
-        hash.to_hex(),
-        "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85"
-    );
-    assert_eq!(hash.to_hex().parse::<Hash>().unwrap(), hash);
-}
+use aven_db_store::Hash;
+use serde_json::Value;
 
 #[test]
 fn only_the_stores_own_spelling_reads_as_a_hash() {
-    let hex = Hash::of(b"abc").to_hex();
-    for bad in [
-        &hex[..63],
-        &hex.to_uppercase(),
-        &format!("{hex}0"),
-        "",
-        &format!("{}g", &hex[..63]),
-    ] {
-        assert!(bad.parse::<Hash>().is_err(), "{bad:?} parsed");
+    let vectors: Vec<Value> =
+        serde_json::from_str(include_str!("../../spec/vectors/hashes.json")).unwrap();
+    for v in vectors {
+        let s = v["input"]["hash"].as_str().unwrap();
+        assert_eq!(
+            Value::Bool(s.parse::<Hash>().is_ok()),
+            v["expected"],
+            "{s:?}"
+        );
     }
 }
 
+/// A hash reads back from its own spelling: a property, not an expected value.
 #[test]
-fn ref_names_are_flat_and_short() {
-    for good in ["head", "doc.3f9a.head", "peer_key-1", &"a".repeat(128)] {
-        assert!(RefName::new(good).is_ok(), "{good:?} refused");
-    }
-    for bad in ["", ".tmp", "a/b", "..", "a b", "ä", &"a".repeat(129)] {
-        assert!(RefName::new(bad).is_err(), "{bad:?} accepted");
+fn a_hash_reads_back_from_hex() {
+    for len in [0, 1, 1000] {
+        let hash = Hash::of(&vec![7; len]);
+        assert_eq!(hash.to_hex().parse::<Hash>().unwrap(), hash);
     }
 }

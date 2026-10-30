@@ -180,4 +180,22 @@ theorem quiet_stalled (limit : Nat) (hl : 0 < limit) (s : Status) (hs : Fresh li
 
 end Status
 
+/-! ## Examples
+
+Traces and the phase they end in, written out by hand (`limit` 3). `lake exe vectors` exports them, with every state
+on the way, and `aven-db-core`'s tests replay them (README, rule 10). -/
+
+def statusExamples : List (String × List Event × Phase) := [
+  ("live while frames arrive", [.dial, .frame, .tick, .tick], .live),
+  -- `quiet_stalled`: `limit` steps without progress stall a peer with a link
+  ("a quiet link stalls", [.dial, .frame, .tick, .tick, .tick], .stalled),
+  ("a link that never moved stalls", [.dial, .tick, .tick, .tick], .stalled),
+  ("a frame revives a stalled link", [.dial, .tick, .tick, .tick, .frame], .live),
+  ("lost is offline until the next dial", [.dial, .frame, .lost, .frame, .tick], .offline),
+  ("a frame before any dial moves nothing", [.frame, .tick], .starting),
+  ("dialling again after a loss", [.dial, .frame, .lost, .dial], .connecting)]
+
+theorem status_examples :
+    statusExamples.all (fun (_, es, p) => decide ((Status.run 3 Status.start es).phase = p)) = true := by decide
+
 end Aven.DB

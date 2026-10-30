@@ -4,7 +4,12 @@ import Aven.ID.WF
 import Aven.ID.Governs
 import Aven.ID.Query
 import Aven.ID.Correct
+import Aven.ID.Check
+import Aven.ID.Ask
 import Aven.ID.Cast
+import Aven.ID.OS
+import Aven.ID.Sign
+import Aven.ID.Keys
 
 /-! # Aven.ID
 

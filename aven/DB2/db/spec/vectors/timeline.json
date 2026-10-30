@@ -1,0 +1,5 @@
+[
+{"expected":{"event":"phase","peer":"aven-peer","phase":"live","t":5},"input":{"event":"phase","fields":[["phase","live"]],"peer":"aven-peer","t":5},"name":"one shape"},
+{"expected":{"event":"started","peer":"alice-peer","t":0},"input":{"event":"started","fields":[],"peer":"alice-peer","t":0},"name":"no fields"},
+{"expected":{"blob":"af13","event":"stored","kept":true,"peer":"alice-peer","t":7},"input":{"event":"stored","fields":[["event","x"],["t",9],["kept",true],["blob","af13"]],"peer":"alice-peer","t":7},"name":"a field never takes the place of the three"}
+]

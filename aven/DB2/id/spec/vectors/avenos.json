@@ -1,0 +1,14 @@
+[
+{"expected":["alice","bob"],"input":{"accounts":"localhost"},"name":"localhost may act as"},
+{"expected":["alice"],"input":{"accounts":"alice.localhost"},"name":"alice.localhost may act as"},
+{"expected":["bob"],"input":{"accounts":"bob.localhost"},"name":"bob.localhost may act as"},
+{"expected":[],"input":{"accounts":"os.localhost"},"name":"os.localhost may act as"},
+{"expected":["aven-peer","alice-peer","alice-peer-light"],"input":{"sees":"alice"},"name":"alice's Control Room"},
+{"expected":["bob-peer-light"],"input":{"sees":"bob"},"name":"bob's Control Room"},
+{"expected":{"actsThrough":["alice-peer","alice-peer-light"],"opens":"alice","tree":["alice","aven","aven-peer","alice-peer","alice-peer-light"]},"input":{"target":null,"vault":"alice"},"name":"alice's Vault at alice"},
+{"expected":{"actsThrough":["aven-peer"],"opens":"aven","tree":["aven","aven-peer"]},"input":{"target":"aven","vault":"alice"},"name":"alice's Vault at aven"},
+{"expected":{"actsThrough":["bob-peer-light"],"opens":"bob","tree":["bob","bob-peer-light"]},"input":{"target":null,"vault":"bob"},"name":"bob's Vault at bob"},
+{"expected":{"actsThrough":["bob-peer-light"],"opens":"bob","tree":["bob","bob-peer-light"]},"input":{"target":"aven","vault":"bob"},"name":"bob's Vault at aven"},
+{"expected":"alice","input":{"serves":"alice-peer-light"},"name":"alice-peer-light serves"},
+{"expected":"bob","input":{"serves":"bob-peer-light"},"name":"bob-peer-light serves"}
+]

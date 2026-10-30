@@ -47,23 +47,3 @@ impl<P: Ord> Presence<P> {
         self.conns.contains_key(peer)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // `join_again`, `leave_last`, `leave_other`
-    #[test]
-    fn each_peer_once() {
-        let mut p = Presence::default();
-        p.join("alice");
-        p.join("alice");
-        p.join("bob");
-        assert_eq!(p.count(), 2);
-        p.leave(&"alice");
-        assert!(p.contains(&"alice"));
-        p.leave(&"carol");
-        p.leave(&"alice");
-        assert_eq!(p.present().collect::<Vec<_>>(), [&"bob"]);
-    }
-}

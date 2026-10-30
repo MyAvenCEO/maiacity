@@ -1,0 +1,9 @@
+[
+{"expected":true,"input":{"hash":"6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85"},"name":"64 characters"},
+{"expected":false,"input":{"hash":"6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d8"},"name":"63 characters"},
+{"expected":false,"input":{"hash":"6437B3AC38465133FFB63B75273A8DB548C558465D79DB03FD359C6CD5BD9D85"},"name":"64 characters"},
+{"expected":false,"input":{"hash":"6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d850"},"name":"65 characters"},
+{"expected":false,"input":{"hash":""},"name":"0 characters"},
+{"expected":false,"input":{"hash":"6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d8g"},"name":"64 characters"},
+{"expected":true,"input":{"hash":"af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"},"name":"64 characters"}
+]
