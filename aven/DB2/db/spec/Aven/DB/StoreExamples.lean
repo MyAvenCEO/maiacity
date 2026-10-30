@@ -106,4 +106,13 @@ def hashExamples : List (String × Bool) :=
 
 #guard hashExamples.all fun (s, ok) => validHash s == ok
 
+/-- A ref's text at rest and what it reads back as: the hash and a newline, as every driver writes it; the bare hash,
+as the opfs driver of 30 Oct 2026 wrote it; and texts that are no ref. -/
+def refExamples : List (String × Option Hash) :=
+  let h := nm (bytes "a ref")
+  [(refText h, some h), (h, some h), (h ++ "\n\n", none), (h ++ "\r\n", none), (h ++ " ", none), ("\n", none),
+   ("", none), ((h.take 63).toString ++ "\n", none), (h.toUpper ++ "\n", none)]
+
+#guard refExamples.all fun (s, r) => readRef s == r
+
 end Aven.DB.Store

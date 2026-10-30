@@ -213,3 +213,39 @@ async fn a_full_folder_fails_cleanly() {
     assert!(matches!(&refused, Err(Error::Backend(why)) if why.contains("full")), "{refused:?}");
     assert_eq!(inner.files(), before);
 }
+
+/// A Peer-Light's store as the OpenDAL OPFS driver laid it out before 30 Oct 2026 opens with the opfs driver and reads
+/// whole: the same folders (`blobs/<hash>`, `refs/<name>` under the store's root), every blob where it put it, every
+/// ref its hash and a newline. Production keeps its browsers' stores: nothing is wiped.
+#[tokio::test]
+async fn a_store_the_opendal_driver_left_opens_whole() {
+    use aven_db_store::{Hash, RefName, Store};
+    let old = MemFolder::new(true);
+    let record = Bytes::from_static(b"{\"first\":1793376322459}");
+    let chunk = conformance::noise(3 << 20, 7);
+    let (r, c) = (Hash::of(&record), Hash::of(&chunk));
+    old.write(&format!("blobs/{r}"), &record).await.unwrap();
+    old.write(&format!("blobs/{c}"), &chunk).await.unwrap();
+    old.write("refs/first-start", format!("{r}\n").as_bytes()).await.unwrap();
+    old.write("refs/device-key", format!("{c}\n").as_bytes()).await.unwrap();
+
+    let store = OpfsStore::open(old.clone()).await.unwrap();
+    let first = RefName::new("first-start").unwrap();
+    assert_eq!(store.get_ref(&first).await.unwrap(), Some(r));
+    assert_eq!(store.get_ref(&RefName::new("device-key").unwrap()).await.unwrap(), Some(c));
+    assert_eq!(store.get(&r).await.unwrap(), Some(record));
+    assert_eq!(store.get_range(&c, 1 << 20..(1 << 20) + 9).await.unwrap().unwrap(), chunk.slice(1 << 20..(1 << 20) + 9));
+    assert_eq!(store.size(&c).await.unwrap(), Some(3 << 20));
+    let mut blobs = vec![r, c];
+    blobs.sort();
+    assert_eq!(store.list().await.unwrap(), blobs);
+    assert_eq!(store.list_refs().await.unwrap().len(), 2);
+
+    // and goes on from there: a compare-and-set over an old ref, which then rests as every driver writes it
+    let next = store.put(Bytes::from_static(b"the next record")).await.unwrap();
+    store.set_ref(&first, Some(r), next).await.unwrap();
+    assert_eq!(old.files()["refs/first-start"], next.ref_text().into_bytes());
+    // opened again, nothing moved
+    let again = OpfsStore::open(old.clone()).await.unwrap();
+    assert_eq!(again.get_ref(&first).await.unwrap(), Some(next));
+}

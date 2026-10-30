@@ -30,6 +30,9 @@ touched. The model is parametric in the hash `H`; `Blake3.hash` is the store's. 
   writers that all expect the same value, exactly the first is done (`one_wins`).
 - **Refs and blobs stay apart** (`refs_apart`, `blobs_apart`).
 - **A size is the blob's length** (`size_get`): `size` says what `get` would hold, without the bytes.
+- **A ref at rest is its hash and a newline** (`refText`), in every driver, and reads back with that newline or
+  without it (`readRef_refText`, `readRef_bare`): the opfs driver of 30 Oct 2026 wrote refs bare, the OpenDAL one with
+  the newline, and a browser keeps what either wrote.
 
 `lake exe vectors` exports the examples below and generated traces (`vectors/store.json`), and the conformance suite
 (`store/src/conformance.rs`) replays them on every backend: memory, a folder, S3 and OPFS.
@@ -331,6 +334,30 @@ theorem blobs_apart {s : Store} (op : Op) (r : op.isRef = true) : (step H s op).
 theorem size_get (s : Store) (h : Hash) :
     ∃ b, step H s (.get h) = (s, .bytes b) ∧ step H s (.size h) = (s, .size (b.map List.length)) :=
   ⟨_, rfl, rfl⟩
+
+/-! ## A ref at rest -/
+
+/-- How a ref holds its hash at rest, in every driver: the hash and a newline. -/
+def refText (h : Hash) : String := h ++ "\n"
+
+/-- A ref's text read back: without one trailing newline, if it has one, a hash in the store's spelling, or nothing. -/
+def readRef (s : String) : Option Hash :=
+  let t := if s.toList.getLast? = some '\n' then String.ofList s.toList.dropLast else s
+  if validHash t then some t else none
+
+/-- What a ref is written as reads back as its hash. -/
+theorem readRef_refText {h : Hash} (v : validHash h = true) : readRef (refText h) = some h := by
+  simp [readRef, refText, String.toList_append, v]
+
+/-- A ref written bare, as the opfs driver of 30 Oct 2026 wrote it, reads back too: a hash never ends in a newline. -/
+theorem readRef_bare {h : Hash} (v : validHash h = true) : readRef h = some h := by
+  have last : h.toList.getLast? ≠ some '\n' := by
+    intro e
+    have m := List.mem_of_getLast? e
+    simp only [validHash, Bool.and_eq_true, String.all_bool_eq, List.all_eq_true] at v
+    have := v.2 '\n' m
+    simp at this
+  simp [readRef, last, v]
 
 end Store
 end Aven.DB

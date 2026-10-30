@@ -27,6 +27,18 @@ impl Hash {
     pub fn to_hex(&self) -> String {
         self.0.iter().map(|b| format!("{b:02x}")).collect()
     }
+
+    /// How a ref holds this hash at rest, in every driver: its hex and a newline (Lean `Store.refText`).
+    pub fn ref_text(&self) -> String {
+        format!("{self}\n")
+    }
+
+    /// A ref's bytes at rest, read back: the hash's hex with one trailing newline or none (Lean `Store.readRef`). The
+    /// OpenDAL drivers wrote the newline, the opfs driver of 30 Oct 2026 left it out; a browser keeps what either wrote.
+    pub fn from_ref(bytes: &[u8]) -> Result<Self, Error> {
+        let text = std::str::from_utf8(bytes).map_err(|_| Error::Corrupt("a ref that isn't text".into()))?;
+        text.strip_suffix('\n').unwrap_or(text).parse()
+    }
 }
 
 impl FromStr for Hash {

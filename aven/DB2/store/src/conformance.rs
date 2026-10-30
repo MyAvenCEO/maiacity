@@ -33,10 +33,22 @@ pub const CASES: &[&str] = &[
     "blob_range",
     "ref_one_of_racing_writers_wins",
     "ref_never_torn",
+    "ref_at_rest_in_either_form",
 ];
 
+/// A ref's bytes at rest, as a driver keeps them: what one case needs beyond the contract, to see the form a driver
+/// writes (Lean `Store.refText`) and to leave a ref in the form another driver wrote (`Store.readRef`).
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+pub trait RefsAtRest {
+    /// The ref's bytes as they rest, or `None`.
+    async fn ref_bytes(&self, name: &RefName) -> Result<Option<Bytes>, Error>;
+    /// Leaves `bytes` as the ref's, as they are.
+    async fn put_ref_bytes(&self, name: &RefName, bytes: &[u8]) -> Result<(), Error>;
+}
+
 /// Runs every case and every trace of `traces` (the model's `store.json`), each on a fresh store from `fresh`.
-pub async fn run<S: Store>(mut fresh: impl AsyncFnMut() -> S, traces: &str) -> Report {
+pub async fn run<S: Store + RefsAtRest>(mut fresh: impl AsyncFnMut() -> S, traces: &str) -> Report {
     let mut outcomes = Vec::new();
     for &case in CASES {
         let store = fresh().await;
@@ -55,8 +67,9 @@ pub async fn run<S: Store>(mut fresh: impl AsyncFnMut() -> S, traces: &str) -> R
     Report(outcomes)
 }
 
-async fn run_case(case: &str, s: &impl Store) -> Outcome {
+async fn run_case(case: &str, s: &(impl Store + RefsAtRest)) -> Outcome {
     match case {
+        "ref_at_rest_in_either_form" => ref_at_rest_in_either_form(s).await,
         "blob_range" => blob_range(s).await,
         "ref_one_of_racing_writers_wins" => ref_one_of_racing_writers_wins(s).await,
         "ref_never_torn" => ref_never_torn(s).await,
@@ -216,6 +229,31 @@ pub fn noise(len: usize, seed: u64) -> Bytes {
 
 fn name(s: &str) -> RefName {
     RefName::new(s).expect("a valid name")
+}
+
+/// A ref rests as its hash and a newline, and reads back, and is changed by compare-and-set, whether it rests so or
+/// bare, as the opfs driver of 30 Oct 2026 left it: a browser keeps what every driver wrote.
+async fn ref_at_rest_in_either_form(s: &(impl Store + RefsAtRest)) -> Outcome {
+    let h = ok!(s.put(Bytes::from_static(b"a ref at rest")).await);
+    let next = ok!(s.put(Bytes::from_static(b"the next one")).await);
+    let name = RefName::new("at-rest").expect("a name");
+    ok!(s.set_ref(&name, None, h).await);
+    let stored = ok!(s.ref_bytes(&name).await);
+    check!(
+        stored.as_deref() == Some(h.ref_text().as_bytes()),
+        "a ref rests as {stored:?}, not its hash and a newline"
+    );
+    for (form, text) in [("with its newline", h.ref_text()), ("bare", h.to_hex())] {
+        let name = RefName::new(format!("at-rest-{}", text.len())).expect("a name");
+        ok!(s.put_ref_bytes(&name, text.as_bytes()).await);
+        check!(ok!(s.get_ref(&name).await) == Some(h), "a ref resting {form} doesn't read back");
+        check!(ok!(s.list_refs().await).contains(&name), "a ref resting {form} isn't listed");
+        ok!(s.set_ref(&name, Some(h), next).await);
+        check!(ok!(s.get_ref(&name).await) == Some(next), "a ref resting {form} isn't changed by compare-and-set");
+        let stored = ok!(s.ref_bytes(&name).await);
+        check!(stored.as_deref() == Some(next.ref_text().as_bytes()), "rewritten, a ref rests as {stored:?}");
+    }
+    Ok(())
 }
 
 async fn blob_range(s: &impl Store) -> Outcome {

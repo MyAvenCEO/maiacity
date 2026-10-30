@@ -167,7 +167,9 @@ The opfs-sync thread's five questions, answered:
 
 1. **Atomic writes.** Blobs and refs alike: write `tmp/<random>`, flush, then `move()` it into place. Where `move()`
    fails in an engine, copy and delete instead: a blob is checked against its name on every read, so a torn copy is
-   found and removed; a ref is 64 bytes, read whole and refused unless it is a valid hash. Temporary files are named by
+   found and removed; a ref is its hash's 64 hex digits and a newline in every driver (`Store.refText`), read whole and
+   refused unless it is a valid hash with one trailing newline or none (`Store.readRef`): the opfs driver first wrote
+   refs bare, the OpenDAL drivers with the newline, and a browser keeps what either wrote. Temporary files are named by
    their place, `tmp/blob-<hash>` and `tmp/ref-<name>`, so a copy torn mid-way loses nothing: opening the store rolls
    every whole one (a blob matching its hash, a ref reading as a valid hash) forward into place and removes the rest (`Aven.DB.StoreCrash`:
    after a crash in any call, in either mode, the store reads as before the call or after it). Measured: `move()`
