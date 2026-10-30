@@ -133,6 +133,13 @@ async fn a_shared_file_is_kept_by_the_aven_peer_and_served_once_its_sender_is_go
         .unwrap_err();
     assert!(matches!(missing, keep::KeepError::NotFound(_)), "{missing:?}");
     assert!(!missing.retry());
+    // an index that is no list of hashes: refused, never asked again
+    let odd = a.store.put(bytes::Bytes::from(vec![7u8; 33])).await.unwrap();
+    let malformed = keep::keep(&hub.endpoint, &url, &hub.held, &*hub.store, alice.public(), odd, 33, "aven-peer", &hub_notes)
+        .await
+        .unwrap_err();
+    assert!(matches!(malformed, keep::KeepError::Malformed(_)), "{malformed:?}");
+    assert!(!malformed.retry());
     assert!(hub.lines.wait(|l| l["event"] == "dropped").await.is_some());
     assert_eq!(hub.store.get_ref(&keep::file_ref(&put.index)).await.unwrap(), None);
     let crossed = rule(put.size).await.unwrap();

@@ -178,6 +178,7 @@ pub async fn keep<S: Store + ?Sized>(
         let conn = endpoint.connect(at, crate::blobs::ALPN).await.map_err(|e| unreachable(&e))?;
         let fetched = blobs.fetch_file(&conn, index).await.map_err(|e| match e {
             FetchError::NotFound(_) => KeepError::NotFound(e.to_string()),
+            FetchError::NotAFile(_) => KeepError::Malformed(e.to_string()),
             FetchError::Failed(_) => unreachable(&e),
         })?;
         let file = files::open(store, &index)
