@@ -174,7 +174,8 @@ What Loro 1.17.1 changes in the design, read in its source:
   **pin:** a schema version a Doc accepts for a type. **type id:** a version's address in its type Doc,
   `<type Doc>/<schema hash>`, the one way a version is named anywhere.
 - **fit:** whether an envelope's changes are allowed by the schemas it names.
-- **lens:** a two-way mapping between a schema version and its parent, a Value.
+- **lens:** a two-way mapping between two versions, a Value: a version and its parent in one type Doc, or versions of
+  two type Docs.
 - **vocabulary:** a vault's named types, operations, runtimes and definitions (Samuel's word; the engine's catalogue).
 - **period Doc:** one period of a stream (a chat room's month), linking the period before.
 
@@ -227,8 +228,11 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
 18. **Nothing is migrated.** A Record is read through lenses into the reader's schema version and written back as the
     difference, in the representation the Record already uses. A default is never written, and what an older app
     can't see survives its edits.
-19. **Lenses follow the type's tree.** Each version names its parent and the one lens to it, so the path between two
-    versions is unique. The laws hold along the path, and a read through lenses commutes with a merge.
+19. **Lenses form a forest where they are pinned** (Samuel, 30 Oct 2026). Inside one type Doc, each version names its
+    parent and the one lens to it. Between two type Docs, a lens counts only where a Doc's or vault's owners pin it. A
+    reader uses only the lenses pinned where it reads, and a pin that would make a second path between two versions is
+    refused, so every path is unique. The laws hold along every path, and a read through lenses commutes with a
+    merge.
 20. **A version that drops a field says where its data goes:** a lens into another field or Record, or "kept, unseen".
 21. **Versions open on a scratch copy,** never by checking out the live Doc, which would stop it taking imports.
 22. **A branch's commits reach another branch only by a merge,** and merges are three-way, place by place. Nothing the
@@ -577,8 +581,8 @@ A **type** is a Doc whose Records are its versions:
   definitions and runtime grammars are types the same way (architecture, K5).
 - **A version is named by its type id,** `<type Doc>/<schema hash>`: the version Record's id is its schema's hash
   (Samuel, 30 Oct 2026). It names a version everywhere: a Record's writes in an envelope's `records`, a fact's `p`, an
-  actor message's payload. Two type Docs may hold the same schema bytes, and their type ids still differ. Versions a
-  lens path joins, in one type Doc, are compatible.
+  actor message's payload. Two type Docs may hold the same schema bytes, and their type ids still differ. Type ids a
+  lens path joins are compatible, in one type Doc or across two.
 - A Record's type is its `t`, a type Doc's id, so Records carry no `kind` field.
 - **Every Record's creator is known:** the device and vault that signed the envelope creating it, read from history
   and never stored as a field anyone could change. Caps' `own` condition reads it.
@@ -643,7 +647,7 @@ decides only what the reader can see through lenses (Samuel, 30 Oct 2026).
 
 ## Lenses
 
-A lens is a Value of steps between a version and its parent:
+A lens is a Value of steps between two versions (Samuel, 30 Oct 2026: "lens", not "bridge"):
 
 ```json
 { "lens": "Todo, v0 to v1", "from": "b3:40de…", "to": "b3:0d78…",
@@ -656,8 +660,14 @@ A lens is a Value of steps between a version and its parent:
   Lean defines, such as text to money), `in` (steps for each Record of a list), `wrap` and `unwrap` (a field to a
   nested Record and back), `move` (a field to another Record of the same Doc), `container` (a value to a text and back),
   and `drop` (with where its data goes, rule 20).
-- **Paths:** a reader at version A reads a Record written at version B along the unique path between them in the
-  type's tree, composing each lens forward or backward.
+- **Who publishes one:**
+  - **inside one type Doc,** whoever may write it (architecture, K5);
+  - **between two type Docs,** anyone may write the lens as a Value, but it takes effect only where a Doc's or a vault's
+    owners pin it, as they pin versions (the architect's extension of A7, 30 Oct 2026). That is how two vocabularies
+    that minted one meaning twice are aligned, and how actors' messages cross types.
+- **Paths:** a reader at version A reads a Record written at version B along the unique path between them through
+  the lenses pinned where it reads, composing each lens forward or backward. A pin that would make a second path is
+  refused, so the pinned lenses stay a forest and two paths can't disagree.
 - **Reading:** where the Record holds a field of both versions, the one written later by Loro's order (Lamport, then
   writer id) wins, exactly as if both had written one field. So a read through lenses commutes with a merge: an older
   app's tick is never lost to a newer app's earlier write. What neither stored shows the schema's default, never
@@ -743,7 +753,8 @@ The engine's "heads" on answers are versions (architect, 30 Oct 2026).
     into the name.
 14. **Branches inside one Doc; a fork is a new Doc** (Samuel, 30 Oct 2026). A fork carries state and a link to its
     origin, not its history, so its caps and key are its own.
-15. **A tree of lenses per type** (Samuel, 30 Oct 2026). Paths are unique, so two paths can't disagree.
+15. **A tree of lenses per type, and pinned lenses across types, as one forest** (Samuel, 30 Oct 2026). Paths are
+    unique, so two paths can't disagree; a lens between two types counts only where owners pin it.
 16. **Named versions are Records** (Samuel, 30 Oct 2026). A name is a person's act, and syncs.
 17. **Revert by Loro's `revert_to`; back out by a three-way merge** (Samuel, 30 Oct 2026). Loro 1.17.1 made both all
     or nothing, so avenDB-old's revert-by-merge goes.
