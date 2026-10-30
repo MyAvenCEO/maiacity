@@ -75,9 +75,11 @@ thread's recommendation. Samuel may overrule any.
 - **Any member's Peer can run a relay** with `--relay`, as the Aven Peer does today. The flag no longer means "this is
   the Aven Peer". A relay on the list admits exactly the door's devices (K12), built from the settled tree, plus a
   newcomer whose token is a statement the tree would take now (`newcomer`), as the Aven Peer's relay does today.
-- **A browser can only use a relay with a public HTTPS name and a certificate.** In practice, a browser relay is a
-  member's Peer on a server. A member's Mac behind NAT can still relay for native Peers over its address, but browsers
-  can't reach it.
+- **A browser can only use a relay with a public HTTPS name and a certificate,** so an admin adds to the list only a
+  relay that has both: every member, browsers included, can use every relay on it. That is what `no_only_relay`
+  assumes (`Aven.ID.Node`, R7); a relay only native Peers could reach would leave browsers cut off when the others go
+  (`node.json`'s third network; the architect, 30 Oct 2026). In practice, a listed relay is a member's Peer on a
+  server. A member's Mac behind NAT is not listed; native Peers still reach it directly.
 - **iroh does most of the work.** Every Peer and Peer-Light builds its `RelayMap` from the whole list. iroh picks the
   fastest relay as its home and dials a peer homed elsewhere through that peer's relay, which its address record names.
   When the home relay goes away, iroh picks another. A relay that was removed from the list leaves the map at the next
