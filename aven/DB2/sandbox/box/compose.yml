@@ -26,6 +26,10 @@ services:
       AVEN_PEER_SECRET: ${AVENSANDBOX_AVEN_SECRET:?bun run up sets it}
       AVEN_PEER_RELAY: "true"
       AVEN_PEER_RELAY_URL: http://aven:3340
+      # the relay's QUIC address discovery, with the box's test certificate (sandbox/box/qad.sh)
+      AVEN_PEER_RELAY_CERT: /target/qad-1/cert.pem
+      AVEN_PEER_RELAY_KEY: /target/qad-1/key.pem
+      AVEN_PEER_RELAY_CA: /target/qad-1/ca.pem
       AVEN_PEER_MEMBERS: ${AVENSANDBOX_MEMBERS:?bun run up sets it}
       AVEN_PEER_EVENTS: /events
       # it keeps its data in the box's S3, bucket aven, with the box's test credentials
@@ -45,6 +49,7 @@ services:
       AVEN_PEER_NAME: alice-peer
       AVEN_PEER_SECRET: ${AVENSANDBOX_ALICE_SECRET:?bun run up sets it}
       AVEN_PEER_RELAY_URL: http://aven:3340
+      AVEN_PEER_RELAY_CA: /target/qad-1/ca.pem
       AVEN_PEER_AVEN: aven:4433
       AVEN_PEER_AVEN_KEY: ${AVENSANDBOX_AVEN_KEY:?bun run up sets it}
       AVEN_PEER_MEMBERS: ${AVENSANDBOX_MEMBERS:?bun run up sets it}
@@ -70,6 +75,10 @@ services:
       AVEN_PEER_SECRET: ${AVENSANDBOX_PROD_SECRET:?bun run up sets it}
       AVEN_PEER_RELAY: "true"
       AVEN_PEER_RELAY_URL: http://prod:3340
+      # the relay's QUIC address discovery, with the box's test certificate (sandbox/box/qad.sh)
+      AVEN_PEER_RELAY_CERT: /target/qad-1/cert.pem
+      AVEN_PEER_RELAY_KEY: /target/qad-1/key.pem
+      AVEN_PEER_RELAY_CA: /target/qad-1/ca.pem
       AVEN_PEER_EVENTS: /events
       AVEN_PEER_STORE: s3
       AVEN_PEER_S3_ENDPOINT: http://s3:7070

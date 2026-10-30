@@ -157,6 +157,8 @@ const buildPeers = [
 	`src=$(sha256sum ${lightWasm} | cut -c1-64)`,
 	`if [ "$src" != "$(cat target/light/.source 2>/dev/null)" ]; then rm -rf target/light.next && wasm-bindgen --target web --no-typescript --out-dir target/light.next ${lightWasm} && echo "$src" > target/light.next/.source && rm -rf target/light && mv target/light.next target/light; fi`,
 	'sh id/core/wasm/build.sh',
+	// the box's test certificate for the relay's QUIC address discovery, made once (box/qad.sh)
+	'sh sandbox/box/qad.sh',
 	`sha256sum ${peerBinary} | cut -c1-16`,
 ].join(' && ');
 
@@ -357,6 +359,10 @@ async function buildPage() {
 	const script = [
 		'set -e',
 		'sh id/core/wasm/build.sh',
+		// sized for a phone, by environment so the workspace's Cargo.toml and the box's tag stay as they are: 3.9 MB, 1.4 MB
+		// gzipped, where release as it is gives 7.5 MB and the loop's debug build 8.8 MB (11.25 MB as first shipped). The
+		// box has no wasm-opt
+		'export CARGO_PROFILE_RELEASE_OPT_LEVEL=s CARGO_PROFILE_RELEASE_LTO=true CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 CARGO_PROFILE_RELEASE_STRIP=symbols',
 		'cargo build -q --release -p aven-peer-light --lib --target wasm32-unknown-unknown --target-dir target/release-light',
 		`rm -rf target/light-release && wasm-bindgen --target web --no-typescript --out-dir target/light-release ${wasm}`,
 		'node_modules/.bin/vite build --config vite.config.js --logLevel warn',

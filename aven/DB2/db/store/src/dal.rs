@@ -9,13 +9,34 @@ use opendal::{ErrorKind, Operator};
 
 use crate::{Error, Hash, RefName, Result, Store};
 
+/// Which of S3's conditional writes a store sends with its refs: beside its own lock and the one writer, they make the
+/// server refuse a stale write itself, so even a second writer, which rule 1 rules out, can't overwrite a ref unseen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Conditions {
+    /// `If-None-Match: *` to set a ref that must not exist, `If-Match` to change or delete one.
+    On,
+    /// `If-None-Match: *` only: every write-once ref (the claim, `joined-<invite>`) is refused on the server, a ref
+    /// that changes leans on the lock. Hetzner refuses a correct `If-Match` (the deploy's probe, 30 Oct 2026).
+    Create,
+    /// None: the lock and the one writer alone, as on a folder.
+    Off,
+}
+
+impl Conditions {
+    pub fn name(self) -> &'static str {
+        match self {
+            Conditions::On => "on",
+            Conditions::Create => "create",
+            Conditions::Off => "off",
+        }
+    }
+}
+
 pub struct DalStore {
     op: Operator,
     /// Compare-and-set reads, compares and writes under this lock: the one writer's tasks take turns.
     writes: Mutex<()>,
-    /// The backend refuses a stale write itself (S3's `If-Match` and `If-None-Match`), so even a second writer,
-    /// which rule 1 rules out, can't overwrite a ref it didn't read.
-    conditional: bool,
+    conditions: Conditions,
 }
 
 impl DalStore {
@@ -26,27 +47,37 @@ impl DalStore {
         Self {
             op,
             writes: Mutex::new(()),
-            conditional,
+            conditions: if conditional {
+                Conditions::On
+            } else {
+                Conditions::Off
+            },
         }
     }
 
-    /// The same store without the backend's conditional writes: its own lock and the one writer refuse a stale write.
-    pub(crate) fn unconditional(self) -> Self {
-        Self {
-            conditional: false,
-            ..self
-        }
+    /// The same store sending fewer of the backend's conditional writes: never more than it takes.
+    pub(crate) fn with_conditions(self, conditions: Conditions) -> Self {
+        let conditions = match (self.conditions, conditions) {
+            (Conditions::Off, _) => Conditions::Off,
+            (_, c) => c,
+        };
+        Self { conditions, ..self }
     }
 
-    /// Whether the backend itself refuses stale ref writes.
+    /// Which conditional writes the store sends.
+    pub fn conditions(&self) -> Conditions {
+        self.conditions
+    }
+
+    /// Whether the backend itself refuses every stale ref write.
     pub fn conditional_writes(&self) -> bool {
-        self.conditional
+        self.conditions == Conditions::On
     }
 
     /// The ref's hash and, on a conditional backend, the tag of the version it was read from.
     async fn read_ref(&self, name: &RefName) -> Result<(Option<Hash>, Option<String>)> {
         let path = ref_path(name);
-        if !self.conditional {
+        if self.conditions != Conditions::On {
             // A read racing a write sees the old value or the new one, but OPFS can also refuse it: the `File` it
             // read from went stale when the write committed, which it reports as `NotReadableError` or even
             // `NotFoundError`. So a ref is missing only if its file is; otherwise reading again sees the new value.
@@ -196,16 +227,19 @@ impl Store for DalStore {
         }
         let path = ref_path(name);
         let content = format!("{new}\n");
-        let written = if !self.conditional {
-            self.op.write(&path, content).await
+        let create = expected.is_none() && self.conditions != Conditions::Off;
+        let written = if create {
+            self.op.write_with(&path, content).if_not_exists(true).await
         } else if let Some(tag) = tag {
             self.op.write_with(&path, content).if_match(&tag).await
         } else {
-            self.op.write_with(&path, content).if_not_exists(true).await
+            self.op.write(&path, content).await
         };
         match written {
             Ok(_) => Ok(()),
-            Err(e) if is_refused(&e) => Err(self.stale(name).await),
+            Err(e) if is_refused(&e) || (create && is_create_refused(&e)) => {
+                Err(self.stale(name).await)
+            }
             Err(e) => Err(backend(e)),
         }
     }
@@ -274,6 +308,20 @@ fn is_refused(e: &opendal::Error) -> bool {
         e.kind(),
         ErrorKind::ConditionNotMatch | ErrorKind::AlreadyExists
     )
+}
+
+/// A create over an existing key, as a server refuses it other than with 412: Hetzner's answer is not 412 (the deploy's
+/// probe prints its status and code); 409 `ConditionalRequestConflict` is S3's for a race with another create.
+fn is_create_refused(e: &opendal::Error) -> bool {
+    let said = e.to_string();
+    [
+        "409",
+        "412",
+        "ConditionalRequestConflict",
+        "PreconditionFailed",
+    ]
+    .iter()
+    .any(|c| said.contains(c))
 }
 
 fn backend(e: opendal::Error) -> Error {

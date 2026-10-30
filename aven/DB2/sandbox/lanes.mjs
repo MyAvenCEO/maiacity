@@ -16,15 +16,15 @@ const aven = '10.78.0.10';
 // What iroh should do. From a home to an Aven Peer on a public address, the NATed side opens its own mapping by sending
 // first, so any NAT that lets UDP out goes direct. Between two homes (Alice's and Bob's, each behind the lane's NAT),
 // the plan's expectations hold: relay first, then a hole-punched direct path where ports are kept (`punch`), and the
-// relay only where they are random. Hole punching needs each side's public address, which iroh learns only from QAD
-// probes to its relay (UDP 7842); the box's relay serves none, so the two-homes home NAT lane is expected to fail until
-// it does, and says why rather than failing the run.
-const noQad = 'no reflexive address: the relay serves no QAD, so each side offers only its private address';
+// relay only where they are random. Hole punching needs each side's public address, which iroh learns from QAD probes
+// to its relay (UDP 7842, with the box's test certificate, sandbox/box/qad.sh); and routers that, like a home router's
+// firewall, drop unsolicited UDP to themselves, so a punch that arrives first doesn't hold the 4-tuple the other side's
+// router needs to keep its port.
 const lanes = [
 	{ id: 'home', name: 'home NAT', home: '10.77.1.3', far: aven, expect: 'direct', nat: 'kept' },
 	{ id: 'hard', name: 'hard NAT', home: '10.77.2.3', far: aven, expect: 'direct', nat: 'random' },
 	{ id: 'udp', name: 'UDP blocked', home: '10.77.3.3', far: aven, expect: 'relay', nat: 'udp' },
-	{ id: 'twohome', name: 'two homes, home NAT', home: '10.77.4.3', far: '10.78.0.25', bob: true, expect: 'punch', nat: 'kept', xfail: noQad },
+	{ id: 'twohome', name: 'two homes, home NAT', home: '10.77.4.3', far: '10.78.0.25', bob: true, expect: 'punch', nat: 'kept' },
 	{ id: 'twohard', name: 'two homes, hard NAT', home: '10.77.6.3', far: '10.78.0.27', bob: true, expect: 'relay', nat: 'random' },
 ];
 // a direct path must come this soon after the Peer starts; a relay-only lane must hold this long without one,
