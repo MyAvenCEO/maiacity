@@ -149,6 +149,10 @@ def capsVectors : List Json :=
   (chainExamples.map fun (name, cs, _) => vector name (chain cs) (chainResult cs)) ++
   ([capA, capB, capPublic].map fun c =>
     vector s!"how avenOS shows {c.id}" (Json.mkObj [("show", c.json)]) (Json.mkObj [("text", c.text castCtx.roles)])) ++
+  (branchExamples.map fun (b, br, _) =>
+    vector s!"does a cap for branches {b.json.compress} write on {br}?"
+      (Json.mkObj [("branches", b.json), ("branch", br)])
+      (Json.mkObj [("allows", b.allows br.toUTF8.toList)])) ++
   (List.range generatedChains).map fun i =>
     let cs := genChain (i + 1)
     vector s!"generated chain, seed {i + 1}" (chain cs) (chainResult cs)

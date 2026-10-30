@@ -381,7 +381,7 @@ its params inside the seal, so a reader re-lowers it and checks the change is ex
 | `approve` | `{ "k": 2, "of": [ owners ] }`: every act under the cap carries k approvals over its digest | Every reader, or the router |
 | `uses`, `budget` | How many acts, how much spend | Only where one router or kernel counts them |
 | `own` | `patch` and `remove` only on Records the holder created: the signer of the envelope that made the Record, read from history, never from a field | Every reader |
-| `branches` | `main`, a branch's hash, or `proposals` (every branch but main): writes only on proposals, and landing them on main is someone else's merge, which counts only when the merger's grant covers the whole merge. An agent's removals go this way (engine rule 12) | Every reader |
+| `branches` | `main`, a branch's hash, or `proposals` (every branch but main): writes only on proposals, and landing them on main is someone else's merge, which counts only when the merger's grant covers the whole merge. An agent's removals go this way (engine rule 12) | Every reader (`branch_allowed`, `proposals_never_main`) |
 | `history` | On `read`: `all` or `from-now` | Crypto: a `from-now` grant rotates without a link back |
 
 ### Roles
@@ -531,7 +531,9 @@ checks the footprint ([engine](../../db/engine/README.md#who-checks-what)):
 
 **A merge into main** counts only when the merger's grant covers the footprint of the whole merge: every type and field
 that differs between the base and the merged state, not only the commit that fixes conflicts. Otherwise a merger with a
-narrow cap could land a proposal's wider changes (agreed with the docs thread, 30 Oct 2026).
+narrow cap could land a proposal's wider changes (agreed with the docs thread, 30 Oct 2026). The engine computes that
+diff from main's version at the merge's `prev` (`merge_granted`), and caps' verdict judges a merge into main on it
+(`merge_covered`).
 
 **Three verdicts per envelope** (the docs layer's):
 - **fit**, which depends only on the envelope and never changes;
@@ -1160,6 +1162,8 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | `Authorized` | `authorized_signer`, `authorized_root` | Caps' verdict on a Core envelope: its chain keeps every rule, its last cap is held by the signer's vault, and every step of its footprint is one the chain's root allows on its Doc, on its root issuer's authority (R4) |
 | | `counts_iff` | An envelope counts exactly when everything in its past is signed, fresh, authorized, live and fit, and none of it is half of a split. `Aven.Architecture` composes the parts |
 | | `readers_agree` | Two readers that hold the same past of an envelope, and the same splits in it, give it the same verdict, whatever else each holds |
+| | `branch_allowed`, `proposals_never_main` | Every cap of an authorized chain lets its holder write on the envelope's branch, so a cap for proposals, or for one branch, never writes on main: landing a proposal on main is someone else's merge |
+| | `merge_covered` | A merge into main counts only when the merger's grant covers the whole merge: for a reader that judges merges whole (the engine's `changesFrom` from main's version at the merge's `prev`, `merge_granted`), an authorized merge's last cap writes on main and allows every step of the whole merge |
 | `Caps` | `narrow_chain`, `narrow_steps` | No cap in a chain lets a verb reach a Doc, or allows a write step, that its root doesn't |
 | | `root_authority` | Every line a chain grants lies in its root issuer's authority: its own vault, one it governs, or a Doc of one |
 | | `chain_short` | A chain is no longer than its root may be shared |
@@ -1215,7 +1219,7 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `acts_on_cap`, `locked_refuses` | It acts only when unlocked, and only on a `tell` cap that names the act (D16) |
 
 **After Core, or with another thread:**
-- `merge_covered` and `footprints.json` (Core's footprints, with the engine);
+- `footprints.json` (Core's footprints, with the engine);
 - `want_grants_nothing` and `one_grammar` (Core's target grammar);
 - `group_holds` (a group cap's writes in `Revoke`);
 - `device_within_cap`;
