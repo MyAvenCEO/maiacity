@@ -1,10 +1,11 @@
 import Aven.ID.CapsExamples
+import Aven.ID.Keep
 import Aven.ID.Gen
 import Lean.Data.Json
 
 /-! # Caps as JSON, and generated cases
 
-The form of `vectors/caps.json`, `revocations.json`, `epochs.json`, `approvals.json` and `network.json`
+The form of `vectors/caps.json`, `revocations.json`, `epochs.json`, `approvals.json`, `network.json` and `keep.json`
 (`Vectors.lean`). Caps' readable form is JSON until `Aven.Core`'s deterministic CBOR lands (A2); then the vectors add
 each cap's bytes and hash. A context names the cast's tree, which `trees.json` carries, and lists who is in each group.
 
@@ -15,6 +16,8 @@ cap:      {"id":"cap-a","issuer":"alice","holder":{"vault":"bob"},"parent":null,
 error:    {"rule":"wider","cap":"cap-w"}   {"rule":"authority","cap":"cap-x","atom":{…}}   {"rule":"empty"}
 envelope: {"id":"b1","writer":"bob","caps":["cap-a"],"deps":[],"acks":[]}
 verdict:  "counts"   {"revoked":"rev-a"}   {"waits":["zz"]}
+link:     {"doc":"d1","n":1,"epoch":7,"key":201,"prev":100,"signer":100}
+proof:    {"device":"alice-peer-light","vault":"alice","key":301,"exporter":"x-1"}
 ```
 
 Generated chains and Docs come from a seeded xorshift (`Aven.ID.Gen`), so `lake exe vectors` writes the same files on
@@ -101,6 +104,27 @@ def worldJson (w : World) (parties : List String) : Json :=
 
 def TicketClaim.json (c : TicketClaim) : Json := Json.mkObj [("claimant", c.claimant), ("hash", toJson c.hash)]
 
+def FetchLink.json (l : FetchLink) : Json :=
+  Json.mkObj [("doc", l.doc), ("n", toJson l.n), ("epoch", toJson l.epoch), ("key", toJson l.key),
+    ("prev", toJson l.prev), ("signer", toJson l.signer)]
+
+def Keep.json (s : Keep) : Json :=
+  Json.mkObj [("doc", s.doc), ("genesis", toJson s.genesis), ("links", Json.arr (s.links.map FetchLink.json).toArray)]
+
+def Keep.Proof.json (p : Keep.Proof) : Json :=
+  Json.mkObj [("device", p.device), ("vault", p.vault), ("key", toJson p.key), ("exporter", p.exporter)]
+
+def Keep.Upload.json (u : Keep.Upload) : Json :=
+  Json.mkObj [("proof", u.proof.json), ("exporter", u.exporter), ("bytes", toJson u.bytes)]
+
+/-- What a keeper takes, by depth, its current fetch key, and its flags, each in order of depth and key. -/
+def keepResult (s : Keep) : Json :=
+  let pair (i k : Nat) := Json.mkObj [("depth", toJson i), ("key", toJson k)]
+  let kept := (List.range (s.depth + 1)).flatMap fun i => ((s.level i).eraseDups.mergeSort (· ≤ ·)).map (i, ·)
+  let flags := s.flags.eraseDups.mergeSort fun a b => a.1 < b.1 || (a.1 == b.1 && a.2 ≤ b.2)
+  Json.mkObj [("kept", Json.arr (kept.map fun (i, k) => pair i k).toArray), ("current", toJson s.current),
+    ("flags", Json.arr (flags.map fun (i, k) => pair i k).toArray)]
+
 /-! ## Generated cases -/
 
 def pick (r : Rng) (l : List String) : String × Rng :=
@@ -146,7 +170,8 @@ def genCap (r : Rng) (id : String) (parent : Option Cap) : Cap × Rng := Id.run 
     | none => sh + 1
   let (dev, r9) := pick r (genDevices issuer ++ (if k == 11 then ["aven-peer"] else [])); r := r9
   let signer := if k == 13 || dev = "" then "bob-peer-light" else dev
-  let approvals := if k == 2 then [] else if k == 9 then [⟨genOwner issuer, "other"⟩] else [⟨genOwner issuer, id⟩]
+  let approvals :=
+    if k == 2 then [] else if k == 9 then [⟨genOwner issuer, "other"⟩] else [⟨genOwner issuer, id⟩]
   let expires := match parent with
     | some p => if k == 6 then none else p.conditions.expires
     | none => if k == 0 then some 100 else none
@@ -191,7 +216,32 @@ def genDoc (seed : Nat) : List Envelope × List Revocation := Id.run do
   let _ := r
   pure (doc, [rev])
 
+/-- A random keeper's links for `d1`, each after a key made before it: mostly rotations, so forks come when two pick
+one key, and now and then a link signed by another key, for `d2`, after a key that doesn't chain, or one epoch too
+deep. -/
+def genKeep (seed : Nat) : Keep := Id.run do
+  let mut r := Rng.seed (seed + 2000)
+  let (m, r1) := r.below 7; r := r1
+  let mut keys : List (Nat × Nat) := [(0, 100)]
+  let mut links : List FetchLink := []
+  for i in [0:m + 3] do
+    let (p, r2) := r.below keys.length; r := r2
+    let (d, k) := keys[p]?.getD (0, 100)
+    let (e, r3) := r.below 40; r := r3
+    let (fault, r4) := r.below 12; r := r4
+    let key := 1000 + i
+    let link : FetchLink :=
+      if fault == 0 then ⟨"d1", d + 1, e, key, k, 999⟩
+      else if fault == 1 then ⟨"d2", d + 1, e, key, k, k⟩
+      else if fault == 2 then ⟨"d1", d + 1, e, key, 555, 555⟩
+      else if fault == 3 then ⟨"d1", d + 2, e, key, k, k⟩
+      else ⟨"d1", d + 1, e, key, k, k⟩
+    links := links ++ [link]
+    if fault ≥ 4 then keys := keys ++ [(d + 1, key)]
+  pure ⟨"d1", 100, links⟩
+
 def generatedChains : Nat := 40
 def generatedDocs : Nat := 30
+def generatedKeeps : Nat := 30
 
 end Aven.ID
