@@ -56,11 +56,11 @@ def SignIn.json (i : SignIn) : Json :=
   Json.mkObj [("network", i.network), ("device", Json.mkObj [("id", i.device), ("key", i.deviceKey)]),
     ("assertion", i.assertion.json)]
 
-def Server.treeJson (s : Server) : Json :=
+def Founding.treeJson (s : Founding) : Json :=
   Json.mkObj [("keys", Json.arr (s.publics.map fun (id, k) => toJson [id, k]).toArray),
     ("vaults", Json.arr (s.vaults.map Vault.json).toArray)]
 
-def Server.json (s : Server) : Json :=
+def Founding.json (s : Founding) : Json :=
   Json.mkObj [("network", s.network), ("peer", s.peer), ("peerKey", s.peerKey), ("rpId", s.rp.rpId),
     ("origins", toJson s.rp.origins), ("guardian", toJson s.guardian), ("coop", s.coop), ("coopName", s.coopName)]
 
@@ -81,8 +81,8 @@ def Op.challenge : Op → Json
   | .signIn p d t => challengeOf (Op.signInOf p d t).1.text
   | _ => Json.null
 
-/-- A trace's vector: the server and its steps; for each step the challenge, the answer and the tree after it. -/
-def traceVector (s : Server) (ops : List Op) : Json × Json :=
+/-- A trace's vector: the founding (under the key `server`) and its steps; for each step the challenge, the answer and the tree after it. -/
+def traceVector (s : Founding) (ops : List Op) : Json × Json :=
   let input := Json.mkObj [("server", s.json), ("ops", Json.arr (ops.map Op.json).toArray)]
   let steps := (ops.zip (s.run ops)).map fun (op, answer, s') =>
     Json.mkObj [("challenge", op.challenge), ("claimed", toJson s'.claim.isSome),

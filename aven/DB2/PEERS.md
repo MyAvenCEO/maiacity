@@ -75,9 +75,11 @@ thread's recommendation. Samuel may overrule any.
 - **Any member's Peer can run a relay** with `--relay`, as the Aven Peer does today. The flag no longer means "this is
   the Aven Peer". A relay on the list admits exactly the door's devices (K12), built from the settled tree, plus a
   newcomer whose token is a statement the tree would take now (`newcomer`), as the Aven Peer's relay does today.
-- **A browser can only use a relay with a public HTTPS name and a certificate.** In practice, a browser relay is a
-  member's Peer on a server. A member's Mac behind NAT can still relay for native Peers over its address, but browsers
-  can't reach it.
+- **A browser can only use a relay with a public HTTPS name and a certificate,** so an admin adds to the list only a
+  relay that has both: every member, browsers included, can use every relay on it. That is what `no_only_relay`
+  assumes (`Aven.ID.Node`, R7); a relay only native Peers could reach would leave browsers cut off when the others go
+  (`node.json`'s third network; the architect, 30 Oct 2026). In practice, a listed relay is a member's Peer on a
+  server. A member's Mac behind NAT is not listed; native Peers still reach it directly.
 - **iroh does most of the work.** Every Peer and Peer-Light builds its `RelayMap` from the whole list. iroh picks the
   fastest relay as its home and dials a peer homed elsewhere through that peer's relay, which its address record names.
   When the home relay goes away, iroh picks another. A relay that was removed from the list leaves the map at the next
@@ -203,6 +205,13 @@ In `Aven.ID.Network`, with the caps thread (`ticket_once` is there since #1531),
   label, and which is newest: `newest_set` (no order is an input), `newest_signed` (only the device it is about, or a
   release signer), `newest_agree` (two newest say the same; a split takes the smaller body), `newest_grows`, and
   `speaks_same` for the wire version ([7](#7-upgrades)).
+- **Node** (`Aven.ID.Node`, the architecture's R3, R7 and R9; the architect, 30 Oct 2026): a write fits on the
+  device's own log alone (`write_fits`, `write_chain`), and a split's proof reaches every reader that syncs with a peer
+  holding it (`split_spreads`); with two relays every member can use, losing any one peer leaves every member reachable
+  and every Doc held by two members fetchable (`no_only_relay`, `no_only_holder`, `keepers_two`), a re-homed device's
+  new address record is the newest (`rehome_newest`), and one relay alone is an only source (`one_relay_only_source`);
+  plain bytes go only to a reader, and relays and keepers that aren't readers see sealed bytes only
+  (`no_plain_to_nonreader`, `relay_blind`, `keeper_blind`). Vectors `node.json`: networks losing each peer in turn.
 - **Vectors:** `settled.json`. The same statement sets in six orders each, with their settled tree: `TreeExamples`,
   the races one by one (two claims, a claim against a withdrawal, a claim after its ack, two admin devices acking two
   claims, a list's add against its remove, a statement outside the genesis, a bad one), 40 generated sets, and
@@ -298,8 +307,9 @@ Six task threads, the Lean first, each in its own folders. Rust threads run in s
 ### Thread A: the tree's Lean (`id/spec`, with the caps thread)
 
 `Aven.ID.Network` (the caps thread, #1555): statements naming their tips, the genesis, `settle` and its theorems.
-`Aven.ID.Restore` and `Aven.ID.Records` (this thread): `settle_restore`, the record kinds and their checks;
-`settled.json` and `records.json`. Comes first; threads B to E build against its vectors.
+`Aven.ID.Restore`, `Aven.ID.Records` and `Aven.ID.Node` (this thread): `settle_restore`, the record kinds and
+their checks, the node properties; `settled.json`, `records.json` and `node.json`. Comes first; threads B to E build
+against its vectors.
 
 ### Thread B: the tree as a Doc (`id/core`, `peer/native/src/door.rs`, `members.rs`)
 

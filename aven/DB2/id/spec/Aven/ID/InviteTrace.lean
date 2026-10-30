@@ -108,7 +108,7 @@ def run (m : Members) : List MemberOp → List (Option MemberError × Members)
 
 end Members
 
-def boxMembers : Members := { server := boxServer }
+def boxMembers : Members := { founding := boxFounding }
 
 /-- The keys every trace asks the door about: the five browsers, the Aven Peer, both one-time keys. -/
 def doorKeys : List String :=
