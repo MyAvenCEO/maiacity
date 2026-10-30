@@ -4,6 +4,7 @@
 // one of its devices, its tree. The claim and the sign-in are WebAuthn ceremonies here, on the page, since a worker
 // has no `navigator.credentials`; their statements go to the Aven Peer through the worker.
 import { challenge, claimText, deviceId, passkeyId, personId, signInText, validPersonName } from './id.js';
+import { openWorker } from './peer/open.js';
 import { live, take, timeline } from './peers.svelte.js';
 import { hear, speakThrough } from './room.svelte.js';
 
@@ -30,10 +31,9 @@ export async function hostNetwork() {
 
 export function runNetwork(config) {
 	timeline.box = false;
-	const url = new URL('./peer/worker.js', import.meta.url);
-	const shared = typeof SharedWorker === 'function';
-	const worker = shared ? new SharedWorker(url, { type: 'module', name: 'network' }) : new Worker(url, { type: 'module' });
-	port = shared ? worker.port : worker;
+	const opened = openWorker('network');
+	port = opened.port;
+	const worker = opened.worker;
 	worker.onerror = (event) => (net.trouble = `the Peer-Light's worker didn't load: ${event?.message || 'no reason given'}`);
 	// a worker that says nothing at all is a cause too
 	const silent = setTimeout(() => (net.trouble ??= 'the Peer-Light has said nothing for 15 s'), 15000);
