@@ -193,6 +193,11 @@ def keepVectors : List Json :=
     vector s!"what {v} pays" (Json.mkObj [("keep", keepD1.json), ("uploads", Json.arr (uploads.map (·.json)).toArray),
         ("vault", v)])
       (Json.mkObj [("bill", toJson (keepD1.bill uploads v))])) ++
+  [vector "a vault's quota: what the keeper takes, in the order the uploads came"
+    (Json.mkObj [("keep", keepD1.json), ("quota", Json.arr #[Json.mkObj [("vault", "alice"),
+        ("bytes", toJson (aliceQuota "alice"))]]), ("uploads", Json.arr (quotaUploads.map (·.json)).toArray)])
+    (Json.mkObj [("taken", Json.arr ((keepD1.admit aliceQuota [] quotaUploads).map (·.json)).toArray),
+      ("spent", Json.mkObj [("alice", toJson (Keep.spent (keepD1.admit aliceQuota [] quotaUploads) "alice"))])])] ++
   (List.range generatedKeeps).map fun i =>
     let s := genKeep (i + 1)
     vector s!"generated keeper, seed {i + 1}" (Json.mkObj [("keep", s.json)]) (keepResult s)
