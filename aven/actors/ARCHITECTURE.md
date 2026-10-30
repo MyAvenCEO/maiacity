@@ -21,7 +21,7 @@ Two concerns are deliberately left to their own packages and threads: **capabili
 12. [Persistence, later](#12-persistence-later)
 13. [Not in the kernel](#13-not-in-the-kernel)
 14. [Version 1](#14-version-1)
-15. [Open decisions](#15-open-decisions)
+15. [Decisions](#15-decisions)
 
 ## 1. The model in one picture
 
@@ -55,7 +55,7 @@ an actor does, it does by returning messages for the kernel to send. Everything 
 | **Runtime** | A frozen, sandboxed engine of one kind that runs parts without trusting them |
 | **Face** | A part that shows an actor's state to a person and emits events by name |
 | **Peer** | A device, a Peer-Light in a browser, or the Aven Peer. Each runs the kernel |
-| **Kernel** | Per peer: the router, the mailboxes, the runtimes, the journals and the link. The only trusted code |
+| **Kernel** | Per peer: the router, the mailboxes, the deciding runtimes, the journals and the link. The only trusted code. Rust only: one crate, built into the native Peer and the Peer-Light |
 
 That is the whole vocabulary of version 1. Section 13 lists what is deliberately not in it.
 
@@ -92,6 +92,9 @@ That is the whole vocabulary of version 1. Section 13 lists what is deliberately
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+- **Rust only.** The kernel is one Rust crate with a pure core and no I/O (avenDB rule 2), built into the native
+  Peer and, as WebAssembly, into the Peer-Light. The page keeps only what draws: faces on showing runtimes, which
+  talk to the kernel by messages.
 - **Router.** Delivers a message to a local mailbox, or hands it to the link for the actor's peer. It refuses a
   message for an unknown actor, or one the actor's machine does not allow now, with a `fail` to the sender. Later it
   is also where capabilities are checked.
@@ -246,7 +249,7 @@ before they start. A part never brings its own runtime, and no actor or model ca
 
 | Class | What it gives back | It must be | Kinds |
 | --- | --- | --- | --- |
-| **Deciding** | State and effects (and later, artifacts) | Deterministic: work counted in ticks, a seeded random, a frozen clock | `logic` (QuickJS, `aven/kernel/sandbox/logic.js`); later `wasm`, `lean` |
+| **Deciding** | State and effects (and later, artifacts) | Deterministic: work counted in ticks, a seeded random, a frozen clock | Hosted by the Rust kernel, the same in the Peer and the Peer-Light (which engine: section 15, question 2); later `lean` |
 | **Showing** | What a person sees, and events by name | Contained: it shows and emits, nothing more | `view`, `vibe`, `markdown`, `math`, the frozen libraries (three, d3, MCP Apps) |
 
 Only deciding runtimes produce what a journal keeps. A showing runtime's events become messages through the one door.
@@ -257,8 +260,9 @@ checker for it; its limits in work, memory and size; whether it is deterministic
 it passes in every browser engine we ship. A part names the runtime it was made for, `{ runtime: 'logic', v: 2 }`,
 and runs on that version or on the floor.
 
-In a page, runtimes run as `aven/kernel/sandbox` runs them: a worker in a frame with no origin, a second lock on the
-worker, never on the page's thread. On a host, in the same engines with no doors. A general-purpose process such as
+Deciding runtimes run inside the Rust kernel, with no doors, so the native Peer and the Peer-Light run the very same
+engine and a journal replays the same on both. Showing runtimes run in the page as `aven/kernel/sandbox` runs them: a
+worker in a frame with no origin, a second lock on the worker, never on the page's thread. A general-purpose process such as
 Bun or Node never runs untrusted code; untrusted native code would need a wall at the operating-system level, as a
 runtime kind of its own. The lessons behind these rules are in [`README.md`](README.md), section 9.
 
@@ -300,20 +304,42 @@ What it is: the kernel on one peer, then on two, in memory, test-first.
 
 1. **A Lean model** of router, mailbox, turn, ask and journal. Its theorems: messages between two actors arrive in
    order; every ask gets exactly one answer by its deadline; a duplicate is handled once; a turn never waits;
-   replaying a journal gives the same state. Its examples go out as vectors that every implementation replays.
-2. **One peer, in memory:** router, mailboxes, scheduler, the `logic` runtime from `aven/kernel/sandbox`, an in-memory
-   journal, the clock, tell, ask, reply and fail, and machines.
+   replaying a journal gives the same state. Its examples go out as vectors the Rust tests replay (avenDB rule 10).
+2. **One peer, in memory, in Rust:** router, mailboxes, scheduler, the deciding runtime, an in-memory journal, the
+   clock, tell, ask, reply and fail, and machines.
 3. **Faces:** an actor's face on the view runtime, with clicks as tells through the mailbox and pending paint.
 4. **Two peers** in avenSANDBOX: `message` and `ack` frames on `aven/db/1`, direct and through the relay, with reconnect
    and duplicates dropped.
 
 What it is not: no capabilities, no encryption, no persistence, no composites, no Studio, no planner.
 
-## 15. Open decisions
+## 15. Decisions
 
-1. **Language of the kernel.** JavaScript first (it reuses the logic core and tests quickly in Bun and the page), or
-   Rust inside the Peer from the start (one kernel for the Peer and the Peer-Light)?
-2. **Frame encoding.** JSON lines like today's `aven/db/1` frames (at most 64 KB), or binary?
-3. **Actor ids.** Random, or derived from the definition hash, the spawner and its count?
-4. **Spawning.** Who may spawn what in version 1, before capabilities exist: only the peer's own code?
-5. **Moving an actor** to another peer: hand over the journal head and the address, once persistence exists.
+**Decided**
+
+- **Rust only** for the kernel (Samuel, 30 Oct 2026).
+- **In memory** in version 1; everything persists in avenDB later (section 12).
+- **No capabilities or encryption** in this design; they are their own package and thread.
+- **No composites, Studio or planner** in the kernel (section 13).
+
+**Open**, each with the answer this design would take if no one decides otherwise:
+
+| # | Question | Default |
+| --- | --- | --- |
+| 1 | Where the crate lives: in avenDB's workspace beside `db/core` and `id/core` (as `aven/DB2/actor/core`), or as its own package outside `aven/DB2`? And is it a milestone of avenDB's plan, or its own plan? | `aven/DB2/actor/core`, as its own milestone in avenDB's plan |
+| 2 | The deciding runtime in Rust: a pure-Rust WebAssembly interpreter with fuel (such as wasmi), the same in native and in the Peer-Light; or QuickJS embedded through C bindings; or both, QuickJS compiled to WebAssembly and run by the interpreter | The WebAssembly interpreter with fuel |
+| 3 | Are actors' parts written in Rust too (compiled to WebAssembly), or may they be JavaScript, which is what a model or a person most often writes? | Rust first; JavaScript as a second frozen runtime (QuickJS compiled to WebAssembly) |
+| 4 | Faces: avenVIBES data, maiaCITY's view runtime (HTML, already probed), or both? And how the page reaches its Peer-Light's kernel | maiaCITY's view runtime; the page reaches the kernel through the Peer-Light's worker, by messages |
+| 5 | Frame encoding on `aven/db/1`: JSON lines as today (at most 64 KB), or binary | JSON lines |
+| 6 | Actor ids: random, or derived from the definition hash, the spawner and its count | Derived, so a replay names the same actors |
+| 7 | Spawning before capabilities exist: who may spawn what | Only the peer's own code, from definitions in the repository |
+| 8 | Order: per pair of actors, or per pair of peers | Per pair of actors |
+| 9 | Ask deadlines: the default and the longest | 30 s by default, at most 10 min |
+| 10 | Tells to an absent peer: how many wait in the outbox, and what happens past that | 1,000 per peer; past that the sender's tell fails |
+| 11 | Interface schemas: which subset of JSON Schema the kernel checks | `type`, `properties`, `required`, `enum`, `items`, `minimum` / `maximum`, `maxLength`, `maxItems` |
+| 12 | Machines in version 1, or only once an actor needs one | In version 1; they are small |
+| 13 | Who a click is from before accounts exist: one person actor per device | One per device |
+| 14 | The first actors: a todo list (a machine and a face) on one peer, then a chat between two peers? | Yes |
+| 15 | The Lean model's home: a namespace `Aven.Actor` in avenDB's Lean project, or a project of its own | `Aven.Actor` beside `Aven.DB` and `Aven.ID` |
+| 16 | A name for the package, since `maia/content/actors` already means people and animals | avenACTORS, in `aven/DB2/actor` |
+| 17 | Moving an actor to another peer | Not in version 1; later by handing over the journal head and the address |
