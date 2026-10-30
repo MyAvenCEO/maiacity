@@ -5,3 +5,4 @@ import Aven.DB.Wire
 import Aven.DB.Blake3
 import Aven.DB.Store
 import Aven.DB.StoreExamples
+import Aven.DB.Chat
