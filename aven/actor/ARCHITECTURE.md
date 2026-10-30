@@ -549,7 +549,8 @@ Test-first, as avenDB works: the Lean model and its theorems, then Rust tests th
    `send_declared_tell`/`send_declared_ask` (types, `sends` and `describe`). It builds on `Aven.Core` (Values, the codec,
    hashes, type ids: one definition each). Its vectors, `spec/vectors/kernel.json` (`lake exe vectors`), are traces
    from the empty kernel and the kernel after them, over four test definitions the Rust tests implement natively.
-   Next: tying each waiting ask to its message's deadline, and generated traces.
+   And `answered_by_deadline`: once the clock passes an ask's own deadline, it has its answer. Next: generated
+   traces.
 2. **Layers 0 to 2** (`core`): Values and names, the in-memory Doc, messages, with the vectors.
 3. **Runtimes**: `state-runtime` first, then `js-runtime`; each with hostile parts that try to get
    out, run too long or blow up, which must fail.
