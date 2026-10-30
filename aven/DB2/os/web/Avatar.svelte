@@ -1,6 +1,6 @@
 <script>
 	// A vault's mark: its initial on a colour of its own. A network's is square, a coop's a hexagon, a device's outlined.
-	import { tree, vaultName } from './id.js';
+	import { tree, vaultName } from './id.svelte.js';
 	let { id, size = 24 } = $props();
 
 	const vault = $derived({ name: vaultName(id), kind: tree.kind(id) });

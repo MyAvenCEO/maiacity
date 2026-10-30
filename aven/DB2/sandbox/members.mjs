@@ -1,7 +1,7 @@
 // The members' network, checked at the Peer level (MILESTONE2.md, "How it is checked": steps 1–3, 5 and 6), in the
 // browsers' container: avenOS at http://localhost:5174 in front of compose's `prod`, an Aven Peer in production's
 // configuration, with Chromium's virtual authenticator. Each browser profile's Peer-Light is driven through its worker,
-// as the page drives it: statements made with aven-id's wasm (os/web/id.js) and signed by the profile's passkey. What
+// as the page drives it: statements made with what the Peer-Light computes, asked of its worker as the page asks (os/web/id.svelte.js), and signed by the profile's passkey. What
 // the peers did is read from their own timeline lines. avenOS's Invite, Join and Chat screens are thread B's, and add
 // their own steps.
 //
@@ -65,15 +65,35 @@ async function attach(page) {
 	return page.evaluate(async () => {
 		const worker = new SharedWorker('/peer/worker.js', { type: 'module', name: 'network' });
 		const heard = [];
-		worker.port.onmessage = ({ data }) => heard.push(JSON.parse(data));
+		// what a statement needs computed, asked of the Peer-Light and answered to this port alone
+		const waiting = new Map();
+		let asked = 0;
+		worker.port.onmessage = ({ data }) => {
+			const line = JSON.parse(data);
+			if (line.event !== 'answer') return heard.push(line);
+			const { resolve, reject } = waiting.get(line.id) ?? {};
+			waiting.delete(line.id);
+			if (line.error === undefined) resolve?.(line.value);
+			else reject?.(new Error(line.error));
+		};
 		worker.port.start();
-		const id = await import('/id.js');
+		const id = new Proxy(
+			{},
+			{
+				get: (_, fn) =>
+					(...args) =>
+						new Promise((resolve, reject) => {
+							waiting.set(++asked, { resolve, reject });
+							worker.port.postMessage({ ask: { id: asked, fn, args } });
+						}),
+			},
+		);
 		const hex = (buffer) => [...new Uint8Array(buffer)].map((b) => b.toString(16).padStart(2, '0')).join('');
 		const unbase64url = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
 		const assertion = async (text, credential) => {
 			const allowCredentials = credential ? [{ type: 'public-key', id: credential }] : [];
 			const got = await navigator.credentials.get({
-				publicKey: { challenge: unbase64url(id.challenge(text)), rpId: 'localhost', userVerification: 'required', allowCredentials },
+				publicKey: { challenge: unbase64url(await id.challenge(text)), rpId: 'localhost', userVerification: 'required', allowCredentials },
 			});
 			const r = got.response;
 			return { clientData: new TextDecoder().decode(r.clientDataJSON), authData: hex(r.authenticatorData), signature: hex(r.signature) };
@@ -91,8 +111,8 @@ const invite = (b, passkey) =>
 	b.page.evaluate(async (passkey) => {
 		const { id, hex, assertion, send } = window.peer;
 		const secret = hex(crypto.getRandomValues(new Uint8Array(32)));
-		const key = id.oneTimePublic(secret);
-		send('invite', { network: 'aven', invite: key, passkey, assertion: await assertion(id.inviteText('aven', key)) });
+		const key = await id.oneTimePublic(secret);
+		send('invite', { network: 'aven', invite: key, passkey, assertion: await assertion(await id.inviteText('aven', key)) });
 		return { secret, key };
 	}, passkey);
 
@@ -100,7 +120,7 @@ const withdraw = (b, passkey, key) =>
 	b.page.evaluate(
 		async ({ passkey, key }) => {
 			const { id, assertion, send } = window.peer;
-			send('withdraw', { network: 'aven', invite: key, passkey, assertion: await assertion(id.withdrawText('aven', key)) });
+			send('withdraw', { network: 'aven', invite: key, passkey, assertion: await assertion(await id.withdrawText('aven', key)) });
 		},
 		{ passkey, key },
 	);
@@ -120,10 +140,11 @@ const join = (b, secret, name) =>
 			},
 		});
 		const spki = hex(created.response.getPublicKey());
-		const key = id.oneTimePublic(secret);
-		const s = { network: 'aven', invite: key, person: id.personId(spki), name, passkey: { id: id.passkeyId(spki), spki }, device: { id: id.deviceId(device), key: device } };
-		const text = id.joinText('aven', key, s.person, name, s.passkey.id, spki, s.device.id, device);
-		s.signature = id.signJoin(secret, text);
+		const key = await id.oneTimePublic(secret);
+		const [person, passkey, deviceId] = await Promise.all([id.personId(spki), id.passkeyId(spki), id.deviceId(device)]);
+		const s = { network: 'aven', invite: key, person, name, passkey: { id: passkey, spki }, device: { id: deviceId, key: device } };
+		const text = await id.joinText('aven', key, s.person, name, s.passkey.id, spki, s.device.id, device);
+		s.signature = await id.signJoin(secret, text);
 		s.assertion = await assertion(text, created.rawId);
 		send('join', s);
 		return s.person;

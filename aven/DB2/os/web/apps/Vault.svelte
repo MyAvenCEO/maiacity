@@ -4,7 +4,7 @@
 	// (#/alice/vault/aven): Alice manages Aven as herself, never as Aven. A vault outside the tree doesn't open. A coop
 	// (Maia City) holds no devices: its people act for it through their own, as themselves (PRODUCTION.md, Part C).
 	import Avatar from '../Avatar.svelte';
-	import { ownerName, owners, tree, vaultName } from '../id.js';
+	import { ownerName, owners, tree, vaultName } from '../id.svelte.js';
 
 	let { account, target } = $props();
 

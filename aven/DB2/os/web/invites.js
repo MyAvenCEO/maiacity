@@ -2,11 +2,11 @@
 // only the admin invites, an invite is a one-time Ed25519 key, and its link, `#/join/<secret>`, carries that key's
 // secret. Making and withdrawing one is an owner's act on the network, signed with the passkey of a person whose vault
 // owns the admin, which the statement names; joining is a statement signed by the one-time key and by the joiner's
-// new passkey. What each statement's text says is aven-id's (its wasm's inviteText, withdrawText, joinText); the
+// new passkey. What each statement's text says is aven-id's (inviteText, withdrawText, joinText, computed in the Peer-Light); the
 // Aven Peer decides what it takes, and the Peer-Light tells the invites and their states (room.svelte.js). The
 // one-time key is made here with WebCrypto and its secret lives only in the link. A join is sent as the claim is; the
 // Peer-Light also hands it to the relay, so the door lets a newcomer in to deliver it (#1431).
-import { deviceId, inviteText, joinText, oneTimePublic, owners, passkeyId, personId, signJoin, tree, validPersonName, withdrawText } from './id.js';
+import { deviceId, inviteText, joinText, oneTimePublic, owners, passkeyId, personId, signJoin, tree, validPersonName, withdrawText } from './id.svelte.js';
 import { assertion, net, send } from './network.svelte.js';
 
 const hex = (bytes) => [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -38,7 +38,7 @@ export const mayInvite = (account, network) => Boolean(network && passkeyOf(acco
 export async function invite(config, account) {
 	const { secret, key } = await oneTimeKey();
 	const statement = { network: config.network, invite: key, passkey: passkeyOf(account) };
-	statement.assertion = await assertion(config, inviteText(config.network, key));
+	statement.assertion = await assertion(config, await inviteText(config.network, key));
 	send({ frame: 'invite', statement: JSON.stringify(statement) });
 	return linkOf(secret);
 }
@@ -46,15 +46,15 @@ export async function invite(config, account) {
 // Withdraws an open invite, named by its key: the same owner's act
 export async function withdraw(config, account, key) {
 	const statement = { network: config.network, invite: key, passkey: passkeyOf(account) };
-	statement.assertion = await assertion(config, withdrawText(config.network, key));
+	statement.assertion = await assertion(config, await withdrawText(config.network, key));
 	send({ frame: 'withdraw', statement: JSON.stringify(statement) });
 }
 
 // Joins with an invite's link: a name, a new passkey (ES256, attestation none, as the claim's), and the statement
 // that founds the person's vault with this browser as its device, signed by that passkey and by the one-time key.
 export async function join(config, { secret }, name) {
-	if (!validPersonName(name)) throw new Error('a name is 1 to 48 characters, without control characters');
-	const key = oneTimePublic(secret);
+	if (!(await validPersonName(name))) throw new Error('a name is 1 to 48 characters, without control characters');
+	const key = await oneTimePublic(secret);
 	const created = await navigator.credentials.create({
 		publicKey: {
 			rp: { id: config.rpId, name: 'Aven' },
@@ -70,13 +70,13 @@ export async function join(config, { secret }, name) {
 	const statement = {
 		network: config.network,
 		invite: key,
-		person: personId(spki),
+		person: await personId(spki),
 		name,
-		passkey: { id: passkeyId(spki), spki },
-		device: { id: deviceId(net.key), key: net.key },
+		passkey: { id: await passkeyId(spki), spki },
+		device: { id: await deviceId(net.key), key: net.key },
 	};
-	const text = joinText(config.network, key, statement.person, name, statement.passkey.id, spki, statement.device.id, net.key);
+	const text = await joinText(config.network, key, statement.person, name, statement.passkey.id, spki, statement.device.id, net.key);
 	statement.assertion = await assertion(config, text, created.rawId);
-	statement.signature = signJoin(secret, text);
+	statement.signature = await signJoin(secret, text);
 	send({ frame: 'join', statement: JSON.stringify(statement) });
 }
