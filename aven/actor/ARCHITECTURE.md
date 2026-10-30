@@ -154,7 +154,7 @@ the WebAssembly boundary's, not the part's.
 
 | Runtime | Part it runs | Gives back | Takes from |
 | --- | --- | --- | --- |
-| `json-runtime` | A declarative turn: for each message, updates to state (set, merge, append, remove by path) and messages to send. No code, so it always ends | A turn's output | avenVIBES's declarative inbox, where a payload merges into state with no code at all |
+| `state-runtime` | A declarative turn: for each message, updates to state (set, merge, append, remove by path) and messages to send. No code, so it always ends | A turn's output | avenVIBES's declarative inbox, where a payload merges into state with no code at all |
 | `js-runtime` | JavaScript: `init`, `turn`, `present`, `preview` | A turn's output, or a view model | QuickJS compiled to WebAssembly. maiaCITY's logic core: a seeded random, a frozen clock, no binary buffers |
 | `prolog-runtime` | A machine: fact-only Prolog with a real term parser | Whether the machine is well formed, and which messages are legal in a state | avenOS's `machine.ts`, without its comma splitting (README, weak spot 12) |
 | `view-runtime` | A view: an allowlisted tag tree with `$`, `$$`, `$each`, `$on` and components | A safe node tree for one viewer | avenVIBES's view grammar; aven-brands' component library; maiaCITY's view engine and Markdown engine, which write every tag themselves |
@@ -187,7 +187,7 @@ definitions, and every placed one is an actor (section 6).
 | --- | --- |
 | `interface` | The messages it accepts, each with a JSON schema for its payload; an ask also names its reply's schema |
 | `machine` | Optional: a `prolog-runtime` part. If present, the kernel refuses any message the machine does not allow in the current `phase` |
-| `turn` | Required: `{ runtime, v, part }` on `json-runtime` or `js-runtime` |
+| `turn` | Required: `{ runtime, v, part }` on `state-runtime` or `js-runtime` |
 | `faces` | Optional: named faces, each a `present` function plus a `view-runtime` part and a `css-runtime` part |
 | `init` | The first state |
 | `lifetime` | `durable` (the default): the actor lasts until it is retired, and later persists in avenDB. `mounted`: it lives while the face that placed it shows it, and goes when it is unplaced |
@@ -296,7 +296,7 @@ The host is the page. It runs the kernel in a worker, and holds one small piece 
 **applier**, written once in the repository.
 
 ```
- actor state ─▶ present (js- or json-runtime) ─▶ view model
+ actor state ─▶ present (state- or js-runtime) ─▶ view model
                                                      │
           view part + view model ─▶ view-runtime ─▶ node tree ─┐
           css part              ─▶ css-runtime  ─▶ scoped CSS ─┤
@@ -330,9 +330,9 @@ app spawns one `list`; each task is one more actor instance, spawned on demand. 
 | `person` | The device's person: clicks come from it | built in |
 | `kernel` | Spawns actors; is asked like any other | built in |
 | `clock` | Ticks and deadlines | built in |
-| `list` | Durable. Holds the tasks' addresses. Its face places a field, a button, and each task's row | `json-runtime` |
+| `list` | Durable. Holds the tasks' addresses. Its face places a field, a button, and each task's row | `state-runtime` |
 | `task` | Durable. A title and a machine (open, doing, done); its face, `row`, places a checkbox | `js-runtime`, `prolog-runtime` |
-| `field`, `button`, `checkbox` | Components from the library: face actors, mounted while their placer shows them | `json-runtime` |
+| `field`, `button`, `checkbox` | Components from the library: face actors, mounted while their placer shows them | `state-runtime` |
 
 A person types into the field and presses the button. The press goes to the button's face actor, which sends its
 `press` event to `list` as `add {title}`, as the list's face wired it; `list` asks `kernel` to spawn a `task`. Ticking a
@@ -399,7 +399,7 @@ aven/actor/
   spec/              the Lean model, Aven.Actor, and the vectors it exports
   core/              the kernel: Values, Docs, messages, router, scheduler, clock, the runtime host
   runtimes/
-    json/  js/  prolog/  view/  css/     one crate each, built to WebAssembly, frozen by hash
+    state/  js/  prolog/  view/  css/     one crate each, built to WebAssembly, frozen by hash
   host/              the page's side: the worker that runs the kernel, and the applier
   components/        the component library: definitions with faces, after aven-brands
   app/todo/          the version 1 app: its definitions and parts
@@ -413,7 +413,7 @@ Test-first, as avenDB works: the Lean model and its theorems, then Rust tests th
    handled in order; every ask gets exactly one answer by its deadline; a message is handled once; a turn never waits;
    replaying a journal gives the same state; a machine refuses every illegal message.
 2. **Layers 0 to 2** (`core`): Values and names, the in-memory Doc, messages, with the vectors.
-3. **Runtimes**: `prolog-runtime` and `json-runtime` first, then `js-runtime`; each with hostile parts that try to get
+3. **Runtimes**: `prolog-runtime` and `state-runtime` first, then `js-runtime`; each with hostile parts that try to get
    out, run too long or blow up, which must fail.
 4. **The kernel** (`core`): router, scheduler, turns, clock, spawning; native tests replay the vectors.
 5. **Faces**: `view-runtime`, `css-runtime`, the applier, events as tells.
@@ -428,7 +428,7 @@ Decided (Samuel, 30 Oct 2026):
 - Its own package, `aven/actor`, in Rust only, compiled to WebAssembly, with its own Cargo workspace: the actor is
   universal and depends on no storage backend, avenDB included (section 13).
 - Actors are mostly JSON, with JavaScript where code is needed, run by on-demand runtimes such as QuickJS.
-- The runtimes are rewritten from scratch and named `<format>-runtime`. They run untrusted parts securely and never
+- The runtimes are rewritten from scratch and named `<job>-runtime` after what their part does (every part is JSON, so `json-runtime` named nothing; the declarative turn runs on `state-runtime`). They run untrusted parts securely and never
   reach the host.
 - Version 1 is a standalone, in-memory todo app: no network, no avenDB, no capabilities.
 - Frames as JSON lines when the network comes; ids derived from definition, spawner and count; only definitions from
