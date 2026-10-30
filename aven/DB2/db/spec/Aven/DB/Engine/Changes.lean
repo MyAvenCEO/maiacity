@@ -179,4 +179,68 @@ theorem footprint_granted (grants : List Grant) (fp : List Step) (cs : List Reco
     · exact ⟨(fun h => nomatch h), (fun h => nomatch h), fun _ f hf' => wr f (this f hf')⟩
     · exact ⟨(fun h => nomatch h), (fun _ => hv _ this), fun h => absurd rfl h⟩
 
+/-! ## A merge into main is judged on the whole merge -/
+
+/-- **Every Record a merge changes on main is granted** (`merge_granted`; caps, "Checking"). A merge into main is
+judged on `changesFrom ver main merged`: main's Records before the merge (the version its `prev` alone names) against
+the merged Records, not on the commit that settles conflicts, whose changes are only the fixes. When that verdict
+passes, every Record of main the merge changes or removes, and every Record it brings, is granted, field by field.
+The same holds of any before and after; a merge only chooses which before. -/
+theorem merge_granted (ver : DocId → TypeId) (hver : ∀ t, (ver t).type = t) (grants : List Grant) (fp : List Step)
+    (main merged : List (Record Value)) (hn : (main.map (·.id)).Nodup)
+    (h : verdictFootprint grants fp (changesFrom ver main merged) = true) :
+    (∀ st ∈ fp, ∃ g ∈ grants, g.allows st = true) ∧
+    -- a Record main had, changed: every field whose value differs is written by a step of its type
+    (∀ r ∈ merged, ∀ r0 ∈ main, r0.id = r.id → ∀ f v, (f, v) ∈ r.fields →
+      optEq valEq (get r0.fields f) (get r.fields f) = false →
+        ∃ st ∈ fp, st.type = r.type ∧ f ∈ st.fields) ∧
+    -- a Record the merge brings: its type is created, and every field it carries is written by a step of its type
+    (∀ r ∈ merged, (∀ r0 ∈ main, r0.id ≠ r.id) →
+      (∃ st ∈ fp, st.type = r.type ∧ st.verb = .putNew) ∧
+      ∀ f ∈ r.fields.map Prod.fst, ∃ st ∈ fp, st.type = r.type ∧ f ∈ st.fields) ∧
+    -- a Record of main the merge removes: its type is removed
+    (∀ r0 ∈ main, (∀ r ∈ merged, r.id ≠ r0.id) → ∃ st ∈ fp, st.type = r0.type ∧ st.verb = .remove) := by
+  have ⟨hg, hc⟩ := footprint_granted grants fp _ h
+  refine ⟨hg, ?_, ?_, ?_⟩
+  · intro r hr r0 hr0 hid f v hfv hne
+    have hfind := find_id hn hr0 hid
+    -- the change the reader sees for r is an edit naming f
+    have hmem : edited ver r0 r ∈ changesFrom ver main merged := by
+      apply List.mem_append_left
+      refine List.mem_filterMap.mpr ⟨r, hr, ?_⟩
+      simp only [changeOf, hfind]
+      split
+      · rename_i hempty
+        simp only [Bool.and_eq_true, List.isEmpty_iff] at hempty
+        have : (f, v) ∈ (edited ver r0 r).fields := by
+          simp only [edited, List.mem_filter]
+          exact ⟨hfv, by simp [hne]⟩
+        rw [hempty.1] at this; cases this
+      · rfl
+    have ⟨_, _, hf⟩ := hc _ hmem
+    have := hf (by simp [edited]) f (by
+      simp only [RecordChange.names, edited, List.mem_map, List.mem_filter]
+      exact ⟨(f, v), ⟨hfv, by simp [hne]⟩, rfl⟩)
+    simpa [edited, hver] using this
+  · intro r hr hnone
+    have hfind : main.find? (·.id == r.id) = none := by
+      rw [List.find?_eq_none]
+      intro r0 hr0
+      simpa using hnone r0 hr0
+    have hmem : (⟨r.id.bytes, ver r.type, .new, r.fields⟩ : RecordChange) ∈ changesFrom ver main merged := by
+      apply List.mem_append_left
+      exact List.mem_filterMap.mpr ⟨r, hr, by simp [changeOf, hfind]⟩
+    have ⟨hnew, _, hf⟩ := hc _ hmem
+    refine ⟨by simpa [hver] using hnew rfl, fun f hf' => ?_⟩
+    simpa [hver] using hf (by simp) f hf'
+  · intro r0 hr0 hgone
+    have hmem : (⟨r0.id.bytes, ver r0.type, .gone, []⟩ : RecordChange) ∈ changesFrom ver main merged := by
+      apply List.mem_append_right
+      refine List.mem_map.mpr ⟨r0, List.mem_filter.mpr ⟨hr0, ?_⟩, rfl⟩
+      simp only [Bool.not_eq_true', List.any_eq_false, beq_iff_eq]
+      intro r hr e
+      exact hgone r hr e
+    have ⟨_, hrm, _⟩ := hc _ hmem
+    simpa [hver] using hrm rfl
+
 end Aven.DB.Engine
