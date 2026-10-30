@@ -161,9 +161,9 @@ The opfs-sync thread's five questions, answered:
 
 1. **Atomic writes.** Blobs and refs alike: write `tmp/<random>`, flush, then `move()` it into place. Where `move()`
    fails in an engine, copy and delete instead: a blob is checked against its name on every read, so a torn copy is
-   found and removed; a ref is 64 bytes, read whole and refused unless it is a valid hash. A ref's temporary file has a
-   fixed name, `tmp/ref-<name>`, so a copy torn mid-way loses nothing: opening the store rolls a whole `tmp/ref-<name>`
-   (one that reads as a valid hash) forward into place and sweeps every other temporary file (`Aven.DB.StoreCrash`:
+   found and removed; a ref is 64 bytes, read whole and refused unless it is a valid hash. Temporary files are named by
+   their place, `tmp/blob-<hash>` and `tmp/ref-<name>`, so a copy torn mid-way loses nothing: opening the store rolls
+   every whole one (a blob matching its hash, a ref reading as a valid hash) forward into place and removes the rest (`Aven.DB.StoreCrash`:
    after a crash in any call, in either mode, the store reads as before the call or after it). Measured: `move()`
    replaces an existing file in Chromium 156 and Firefox 157, from a dedicated worker too; WebKit is unknown until
    Samuel's iPhone tries it.
@@ -181,7 +181,12 @@ The opfs-sync thread's five questions, answered:
    crash between the temporary file and the move: what was moved is whole, the rest is swept. A change of leader is
    a change of the one writer, under the lock: modelled as one writer at a time. The suite runs in a dedicated worker
    only (the page run goes), in all three engines, and the bench becomes a gate: 200 writes of 4 KiB under 250 ms in
-   each engine (measured 4 to 45 ms).
+   each engine was the first gate, from in-place writes; one file per blob can't meet it (opening a sync access handle
+   costs 1.7 to 23 ms). **Decided (the architect, 30 Oct 2026): one file per blob stays**, and the gate is the real
+   workload: a chat line (one blob and one ref) under 60 ms p50 and a 1 MiB chunk under 30 ms p50 in every engine, and
+   catch-up of 500 lines under 10 s in Firefox. If catch-up misses, pack files (blobs appended to a few open files, a
+   refs log, rebuilt on open) come as their own step, Lean first. Refs are read through `getFile()`, retried when a
+   move replaces the file, since a reader's sync handle would block that move.
 5. **Scope.** In: the Service Worker's bridge to the leader (the BroadcastChannel, `os/web/peer`); the fork,
    `[patch.crates-io]` and `services-opfs` removed; the device's secret moved into the store;
    the leader and its takeover in `up --check` (close the leader's tab, a follower takes over within 5 s, and a chat
