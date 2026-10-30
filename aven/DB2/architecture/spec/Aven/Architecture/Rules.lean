@@ -163,7 +163,7 @@ theorem rule7_granted {w : ID.World} {keeper : String} (nothing : ∀ s ∈ w.se
     {writers : List String} {pubs : List ID.Sealed.Publish} {p : ID.Sealed.Publish}
     (hp : p ∈ ID.Sealed.taken writers pubs) :
     (∀ n, ∀ k ∈ w.knownAfter keeper n, k ∈ w.own keeper) ∧ p.vault ∈ writers :=
-  ⟨ID.World.keeper_blind nothing, (Sealed.root_by_writer hp).2⟩
+  ⟨ID.World.keeper_blind nothing, (ID.Sealed.root_by_writer hp).2⟩
 
 /-! ## Rule 8: derived state is a cache or a checkpoint -/
 
@@ -184,9 +184,9 @@ theorem rule8_cache_or_checkpoint {St : Type} (L : DB.Docs.Loro St) (covered aft
 theorem rule8_index_root (boundary : Bytes → Bool) (size : Bytes → Nat) (limit : Nat) (H : Bytes → Hash)
     (sealer : Bytes → Bytes → Bytes) {holders : ID.Sealed.Holders} {key : String} {e₁ e₂ : List ID.Sealed.Entry}
     (h : ∀ x, x ∈ ID.Sealed.contents holders key e₁ ↔ x ∈ ID.Sealed.contents holders key e₂) :
-    Sealed.sealedRoot boundary size limit H sealer holders key e₁ =
-      Sealed.sealedRoot boundary size limit H sealer holders key e₂ :=
-  Sealed.sealed_roots_agree boundary size limit H sealer h
+    ID.Sealed.sealedRoot (Sealed.docsRoot boundary size limit) H sealer holders key e₁ =
+      ID.Sealed.sealedRoot (Sealed.docsRoot boundary size limit) H sealer holders key e₂ :=
+  ID.Sealed.sealed_roots_agree (Sealed.docsRoot_set boundary size limit) H sealer h
 
 /-! ## Rule 9: sealed beyond the device -/
 

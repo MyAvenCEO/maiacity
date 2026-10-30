@@ -863,7 +863,10 @@ against the Rust's Loro on random ops, so it can never be simpler than the code.
   Vectors `checkpoints.json`.
 - **Fit:** the verdict depends only on the envelope and the Values it names; fit judged on the ops equals fit judged on
   the state; any merge of fit envelopes fits (`fit_merge`), each field's value fitting the schema of the envelope that wrote it
-  (`fit_envelopes`). Vectors `fit.json`.
+  (`fit_envelopes`). Fit and the engine's footprint read one view of an envelope, its `RecordChange`s (a Record's id
+  as bytes, its type id, new / edited / gone, and each field it writes with its new value); a field's merged value fits
+  the schema of the type that wrote it (`fit_records`), and where what an envelope says it does is the diff a reader
+  sees (`ChangesAreDiff`, carried by `Aven.Architecture`), fit on one is fit on the other (`fit_diff`). Vectors `fit.json`.
 - **Lenses:** GetPut, PutGet, an older version keeps what it can't see, composition along the tree keeps all three, a
   read through lenses commutes with a merge, a lossy step states its loss. Vectors `lenses.json`.
 - **Merges:** nothing the target changed is lost, everything the other branch changed alone lands, a conflict changes
