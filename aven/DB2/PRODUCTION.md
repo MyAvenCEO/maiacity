@@ -141,6 +141,33 @@ required reviewer for now (Samuel, 30 Oct 2026): starting the run is the decisio
 
 Nothing secret goes into a log: the repository and its Actions logs are public.
 
+## Part C: Maia City, the admin coop
+
+Samuel, 30 Oct 2026, after Part A landed. The coop vault comes back, every vault has a name, and the admin is a coop,
+not a person's vault. The first signup founds this tree:
+
+```
+<name>'s vault         person   owned by its passkey and MaiaCityGuardian; the name asked at signup
+├── Maia City          coop     the admin, seeded by the claim, owned by the person's vault
+│   └── Aven           network  owned by Maia City
+│       └── Aven Peer  device
+└── <name>'s browser   device   acts for the person's vault
+```
+
+- **A coop vault** is owned by person or coop vaults, at least one, and holds no devices: people act for it through
+  their own devices, signing with their passkeys.
+- **Every vault has a name:** 1 to 64 characters, no control characters. Signup asks for the person's; the coop's
+  comes from `--admin-coop NAME` (`AVEN_PEER_ADMIN_COOP`), `Maia City` by default.
+- **The admin is the owner of the network's vault:** Maia City. Its owners' passkeys sign what the admin does.
+- **The signup journey:** a name, then a passkey, then one statement that founds the person's vault, Maia City and the
+  browser's device, and claims Aven. Still the first signup only; every other is refused.
+- **The box's cast follows,** so it tests what ships: Alice's vault owns Maia City, which owns Aven. Bob's vault
+  stays a person's. avenOS's views (`Aven.ID.OS`) change with it.
+- **Lean first:** the kind `coop` and its rules in `WF`; names required; the claim's tree with the coop; theorems that
+  the claimant's vault owns the admin coop, the coop owns the network, and a coop holds no devices. Then aven-id, the
+  peer, avenOS's signup (the name field) and the check, all from the vectors.
+- **Production's store is wiped** once it lands, and the admin signs up again.
+
 ## Done when
 
 - The admin signs up first at `aven.maia.city` with a passkey, so claims it, and sees avenOS's dashboard there, live.
