@@ -82,7 +82,7 @@ impl Tree {
     }
 
     /// Whom a device may act as in avenOS: the person it serves, if it serves one. The box (`None`) holds every test
-    /// key and may act as every person. Never a network or a device.
+    /// key and may act as every person. Never an agent, a coop or a device.
     pub fn accounts(&self, device: Option<&str>) -> Vec<&str> {
         match device {
             Some(d) => self

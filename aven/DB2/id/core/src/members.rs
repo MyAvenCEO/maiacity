@@ -2,10 +2,11 @@
 //! admin's invites and withdrawals and the joins, each in the order it came. Every step returns the next state and
 //! leaves this one as it was, so the Aven Peer stores a statement first and takes the new state once its ref is set.
 //!
-//! The admin is whoever owns the network's vault, whatever its kind: its passkeys are those that own a vault governing
-//! the network (`admin_key`). The door ([`Members::admits`]) lets in the devices of member vaults, the network's own
-//! devices and the devices of the vaults that govern the network; a browser that is no device yet only for a statement
-//! the network would take from it now ([`Members::newcomer`]).
+//! Members belong to the admin coop, not to the agent (Samuel, 30 Oct 2026): Maia City is the community, and Aven, the
+//! agent it owns, runs the network for it. So the coop invites: its passkeys are those that own a vault governing the
+//! coop (`admin_key`). The door ([`Members::admits`]) hangs on the coop's membership: it lets in the devices of the
+//! coop's members, the devices of the vaults that govern the coop and the agent's own devices; a browser that is no
+//! device yet only for a statement the network would take from it now ([`Members::newcomer`]).
 
 use std::fmt;
 
@@ -135,14 +136,24 @@ impl Members {
         out
     }
 
-    /// The tree once claimed; before, it fails only for the network's missing owner.
+    /// The tree once claimed; before, it fails only for the agent's missing owner.
     pub fn tree(&self) -> Result<Tree, Invalid> {
         Tree::new(self.publics(), self.vaults())
     }
 
-    /// The members: the person vaults joins founded.
+    /// The admin coop, whose members the members are.
+    pub fn coop(&self) -> &str {
+        &self.network.coop
+    }
+
+    /// The members: the person vaults joins founded, members of the admin coop.
     pub fn members(&self) -> Vec<String> {
         self.joins.iter().map(|j| j.person.clone()).collect()
+    }
+
+    /// Whether `s` is a member of the coop `c`: the admin coop, and a join founded `s`.
+    pub fn member_of(&self, s: &str, c: &str) -> bool {
+        c == self.coop() && self.joins.iter().any(|j| j.person == s)
     }
 
     fn is_passkey(&self, k: &str) -> bool {
@@ -151,15 +162,14 @@ impl Members {
             .any(|(id, p)| id == k && p.starts_with("es256:"))
     }
 
-    /// Whether `k` signs for the admin: a passkey that owns a vault governing the network's vault.
+    /// Whether `k` signs for the admin coop: a passkey that owns a vault governing the coop.
     pub fn admin_key(&self, k: &str) -> bool {
         let Ok(tree) = self.tree() else {
             return false;
         };
-        let network = &self.network.network;
         self.is_passkey(k)
             && tree.vaults().iter().any(|v| {
-                v.owner_keys().any(|o| o == k) && tree.governs(&v.id).contains(&network.as_str())
+                v.owner_keys().any(|o| o == k) && tree.governs(&v.id).contains(&self.coop())
             })
     }
 
@@ -362,16 +372,15 @@ impl Members {
         Ok(next)
     }
 
-    /// Whether a device's vault is let in: the network's own, a member's, or one that governs the network.
+    /// Whether a device's vault is let in: the agent's own, a member's of the admin coop, or one that governs the coop.
     fn through(&self, tree: Option<&Tree>, s: &str) -> bool {
-        let network = self.network.network.as_str();
-        s == network
-            || self.joins.iter().any(|j| j.person == s)
-            || tree.is_some_and(|t| t.governs(s).contains(&network))
+        s == self.network.network
+            || self.member_of(s, self.coop())
+            || tree.is_some_and(|t| t.governs(s).contains(&self.coop()))
     }
 
     /// The door, by key: the key of a device whose vault is let in. Before the claim the tree isn't well formed, for
-    /// the network's missing owner, and nothing governs the network: its own device is let in, and nobody else.
+    /// the agent's missing owner, and there is no coop yet: the agent's own device is let in, and nobody else.
     pub fn admits(&self, key: &str) -> bool {
         let tree = self.tree().ok();
         let vaults = self.vaults();

@@ -3,6 +3,7 @@ import Aven.ID.Gen
 import Aven.ID.Keys
 import Aven.ID.ClaimJson
 import Aven.ID.InviteJson
+import Aven.ID.Before
 
 /-! # The test vectors (README, rule 10)
 
@@ -40,7 +41,13 @@ def treeVector (name : String) (t : Tree) (qs : List Query) : Json :=
 def formatVectors : List Json :=
   let input (kind owner : String) := Json.mkObj [("keys", toJson ["k"]), ("vaults", Json.arr #[Json.mkObj
     [("id", "a"), ("kind", kind), ("owners", toJson [owner])]]), ("queries", Json.arr #[])]
-  [("an unknown kind", input "ghost" "key:k"), ("an owner that is neither key: nor vault:", input "person" "k")].map
+  -- a tree written before 30 Oct 2026, when the agent's kind was called network (`Aven.ID.Before`)
+  let before := Json.mkObj [("keys", toJson ["k"]), ("vaults", Json.arr #[
+    Json.mkObj [("id", "a"), ("name", "A's vault"), ("kind", "person"), ("owners", toJson ["key:k"])],
+    Json.mkObj [("id", "n"), ("name", "Aven"), ("kind", Kind.agent.before), ("owners", toJson ["vault:a"])]]),
+    ("queries", Json.arr #[toJson ["kind", "n"], toJson ["owners", "n"]])]
+  [("an unknown kind", input "ghost" "key:k"), ("an owner that is neither key: nor vault:", input "person" "k"),
+   ("the agent's kind by its old name, network", before)].map
     fun (name, i) => vector name i (match answerCase i with | .ok j => j | .error e => toJson e)
 
 def generated : Nat := 80
