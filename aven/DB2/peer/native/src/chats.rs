@@ -23,6 +23,7 @@ use aven_db_core::chain::{self, Answer, Body, Held, Keeper, Line, Retraction, Se
 use aven_db_core::files::Announcement;
 use aven_db_core::timeline;
 use aven_db_core::wire::{Frame, Have, Head, MAX_FRAME, catch_up_pages, heads_pages};
+use aven_db_store::withhold::Withheld;
 use aven_db_store::{Hash, RefName};
 use bytes::Bytes;
 use iroh::{PublicKey, SecretKey};
@@ -63,6 +64,15 @@ fn unhex64(s: &str) -> Option<[u8; 64]> {
         *b = u8::from_str_radix(&s[2 * i..2 * i + 2], 16).ok()?;
     }
     Some(out)
+}
+
+/// Lines' blobs with the retractions first (`Aven.DB.Chains.Keeper.catchUpAll`), each group in its order: a peer
+/// applies every delete before any line or file it deletes reaches it.
+fn retractions_first(lines: Vec<String>) -> Vec<String> {
+    let (first, rest): (Vec<String>, Vec<String>) = lines.into_iter().partition(|l| {
+        Line::read_kept(l.as_bytes()).is_some_and(|(l, _)| matches!(l.body, Body::Retract(_)))
+    });
+    first.into_iter().chain(rest).collect()
 }
 
 /// Lines in frames that stay well under the wire's limit, in order.
@@ -130,8 +140,10 @@ fn body_json(body: &Body) -> serde_json::Value {
     match body {
         Body::Text(t) => json!({ "text": t }),
         Body::File(f) => json!({ "file": f }),
-        Body::Retract(r) => json!({ "retract": r.target, "device": r.device, "seq": r.seq, "prev": r.prev,
-            "at": r.at }),
+        Body::Retract(r) => {
+            json!({ "retract": r.target, "device": r.device, "seq": r.seq, "prev": r.prev,
+            "at": r.at })
+        }
         Body::Redacted => json!({}),
     }
 }
@@ -152,6 +164,9 @@ fn body_of(v: &serde_json::Value) -> Option<Body> {
         _ => None,
     }
 }
+
+/// The prefix of the ref kept while a file is being dropped, `dropped-<index>`: a restart finishes the drop.
+const DROPPED_REF: &str = "dropped-";
 
 /// The ref that names, for a line whose text this peer dropped, the retraction that counts for it: `gone-<id>`.
 fn gone_ref(id: &str) -> Result<RefName, String> {
@@ -181,6 +196,8 @@ pub struct Chats {
     replacing: Arc<Mutex<Option<String>>>,
     /// told each `file` line newly chained
     on_file: Arc<std::sync::OnceLock<OnFile>>,
+    /// the blobs of files a retraction took: served by no one here, even before their bytes are gone
+    withheld: Withheld,
     /// how many times a head moved here: the Aven Peer tells its links the heads that moved
     moved: Arc<std::sync::atomic::AtomicU64>,
     /// each line kept in a gap: since when, until this peer caught up for it once (then `None`)
@@ -256,10 +273,19 @@ impl Chats {
             gaps: Arc::default(),
             moved: Arc::default(),
             on_file: Arc::default(),
+            withheld: Arc::default(),
             learned: Arc::new(learned.into()),
             queued: Arc::default(),
             replacing: Arc::default(),
         };
+        // every delete it holds applied before anything is shown or served, and the files a stop left half dropped
+        // (`dropped-<index>`) dropped
+        chats.settle().await;
+        for name in chats.store.list_refs().await.map_err(|e| e.to_string())? {
+            if let Some(index) = name.as_str().strip_prefix(DROPPED_REF) {
+                chats.drop_file(index).await;
+            }
+        }
         let shown: Vec<Held> = chats
             .keeper
             .lock()
@@ -272,8 +298,6 @@ impl Chats {
             chats.show(h);
         }
         chats.note("chains", json!({ "notCanonical": not_canonical }));
-        // what a stop between a retraction and its text leaving the store left behind
-        chats.settle().await;
         for body in queued {
             chats.enqueue(body);
         }
@@ -295,8 +319,11 @@ impl Chats {
             Body::File(f) => f.name.clone(),
             // a delete waiting for this device's head: the line shows deleted at once (local first)
             Body::Retract(r) => {
-                self.note("chat", json!({ "id": r.target, "key": r.device, "seq": r.seq, "at": r.at,
-                    "deleted": true }));
+                self.note(
+                    "chat",
+                    json!({ "id": r.target, "key": r.device, "seq": r.seq, "at": r.at,
+                    "deleted": true }),
+                );
                 self.queued.lock().unwrap().push((name, body));
                 return;
             }
@@ -524,32 +551,35 @@ impl Chats {
 
     /// The lines `holds` misses, as `lines` frames: of the chains it names alone when `only` (a page of a catch-up),
     /// else of every chain this peer keeps, one it doesn't name from the first.
+    /// The retractions go first (`Aven.DB.Chains.Keeper.catchUpAll`): the asker applies every delete before any line
+    /// or file it deletes reaches it.
     pub async fn answer(&self, holds: &[Have], only: bool) -> Vec<Frame> {
         let mut lines = vec![];
         if only {
             for h in holds {
                 lines.extend(self.lines_after(&h.device, h.seq).await);
             }
-            return batches(lines);
+        } else {
+            for (device, _) in self.heads() {
+                let seq = holds
+                    .iter()
+                    .find(|h| h.device == device)
+                    .map_or(0, |h| h.seq);
+                lines.extend(self.lines_after(&device, seq).await);
+            }
         }
-        for (device, _) in self.heads() {
-            let seq = holds
-                .iter()
-                .find(|h| h.device == device)
-                .map_or(0, |h| h.seq);
-            lines.extend(self.lines_after(&device, seq).await);
-        }
-        batches(lines)
+        batches(retractions_first(lines))
     }
 
-    /// This device's own lines the Aven Peer's `heads` show it is missing: written offline, sent on reconnect.
+    /// This device's own lines the Aven Peer's `heads` show it is missing: written offline, sent on reconnect, the
+    /// retractions first.
     pub async fn unsent(&self, heads: &[Head]) -> Vec<Frame> {
         let device = self.device();
         let seq = heads
             .iter()
             .find(|h| h.device == device)
             .map_or(0, |h| h.seq);
-        batches(self.lines_after(&device, seq).await)
+        batches(retractions_first(self.lines_after(&device, seq).await))
     }
 
     /// This device's own lines the Aven Peer's `heads` show it holds: they have gone out.
@@ -662,14 +692,23 @@ impl Chats {
         let id = Hash::of(blob);
         let device = line.device.clone();
         // checked first, so a stranger's line never reaches the store
-        if let Err(why) = chain::check(&self.network, &|k: &str| self.gate.admits_hex(k), &verifies, &line)
-        {
+        if let Err(why) = chain::check(
+            &self.network,
+            &|k: &str| self.gate.admits_hex(k),
+            &verifies,
+            &line,
+        ) {
             let from = device.chars().take(10).collect::<String>();
             self.note("dropped", json!({ "from": from, "why": why.name() }));
             return Answer::Refused(why);
         }
         // held already, but for a line whose text it doesn't hold and that would count again: a retraction
-        let stub = self.keeper.lock().unwrap().stub_of(&device, &id.to_hex()).is_some();
+        let stub = self
+            .keeper
+            .lock()
+            .unwrap()
+            .stub_of(&device, &id.to_hex())
+            .is_some();
         if self.holds(&device, &id.to_hex()) && !(stub && matches!(line.body, Body::Retract(_))) {
             return Answer::Known;
         }
@@ -703,6 +742,11 @@ impl Chats {
                 // line was shown in WebKit lost it, 30 Oct 2026)
                 self.advance(&device).await;
                 for h in &held {
+                    if let Body::File(f) = &h.line.body
+                        && let Ok(index) = f.file.parse::<Hash>()
+                    {
+                        self.withheld.write().unwrap().remove(&index);
+                    }
                     self.show(h);
                     if let (Body::File(file), Some(f), Ok(from)) = (
                         &h.line.body,
@@ -764,7 +808,11 @@ impl Chats {
             let named = match (gone_ref(&h.id), r.id.parse::<Hash>()) {
                 (Ok(name), Ok(r)) => match self.store.get_ref(&name).await {
                     Ok(Some(_)) => Ok(()),
-                    Ok(None) => self.store.set_ref(&name, None, r).await.map_err(|e| e.to_string()),
+                    Ok(None) => self
+                        .store
+                        .set_ref(&name, None, r)
+                        .await
+                        .map_err(|e| e.to_string()),
                     Err(e) => Err(e.to_string()),
                 },
                 (Err(e), _) => Err(e),
@@ -773,12 +821,16 @@ impl Chats {
             match (named, h.id.parse::<Hash>()) {
                 (Ok(()), Ok(hash)) => {
                     if let Err(e) = self.store.delete(&hash).await {
-                        self.note("dropped", json!({ "why": format!("a deleted line's text kept: {e}") }));
+                        self.note(
+                            "dropped",
+                            json!({ "why": format!("a deleted line's text kept: {e}") }),
+                        );
                     }
                 }
-                (Err(why), _) => {
-                    self.note("dropped", json!({ "why": format!("a deleted line's text kept: {why}") }))
-                }
+                (Err(why), _) => self.note(
+                    "dropped",
+                    json!({ "why": format!("a deleted line's text kept: {why}") }),
+                ),
                 (_, Err(e)) => self.note("dropped", json!({ "why": e.to_string() })),
             }
         }
@@ -797,7 +849,12 @@ impl Chats {
                 .chain(stubs.iter())
                 .map(|(h, _)| h.id.as_str())
                 .collect();
-            keeper.shown().into_iter().filter(|h| ids.contains(h.id.as_str())).cloned().collect()
+            keeper
+                .shown()
+                .into_iter()
+                .filter(|h| ids.contains(h.id.as_str()))
+                .cloned()
+                .collect()
         };
         for h in &told {
             self.show(h);
@@ -845,10 +902,29 @@ impl Chats {
 
     /// A file no line names any more leaves the store: `file-<index>`, its index and the chunks no other file this
     /// peer keeps lists (files are named by their hash, so two files may share a chunk).
+    /// Withheld first, so nothing serves it while its bytes go; `dropped-<index>` kept until they have.
     pub async fn drop_file(&self, index: &str) {
-        let Ok(hash) = index.parse::<Hash>() else { return };
-        let Some(file) = aven_db_store::files::open(&*self.store, &hash).await.ok().flatten() else {
-            return self.drop_ref(&format!("file-{index}")).await;
+        let Ok(hash) = index.parse::<Hash>() else {
+            return;
+        };
+        self.withheld.write().unwrap().insert(hash);
+        // the ref names the index itself: nothing new is stored for it
+        if let Ok(name) = RefName::new(format!("{DROPPED_REF}{index}"))
+            && let Ok(None) = self.store.get_ref(&name).await
+            && let Err(why) = self.store.set_ref(&name, None, hash).await
+        {
+            self.note(
+                "dropped",
+                json!({ "why": format!("{DROPPED_REF}{index} not kept: {why}") }),
+            );
+        }
+        let Some(file) = aven_db_store::files::open(&*self.store, &hash)
+            .await
+            .ok()
+            .flatten()
+        else {
+            self.drop_ref(&format!("file-{index}")).await;
+            return self.drop_ref(&format!("{DROPPED_REF}{index}")).await;
         };
         let others: Vec<String> = self
             .keeper
@@ -868,11 +944,33 @@ impl Chats {
                 kept.extend(f.chunks);
             }
         }
+        let gone: Vec<Hash> = file
+            .chunks
+            .iter()
+            .filter(|c| !kept.contains(*c))
+            .copied()
+            .collect();
+        self.withheld.write().unwrap().extend(gone.iter().copied());
         self.drop_ref(&format!("file-{index}")).await;
-        for chunk in file.chunks.iter().filter(|c| !kept.contains(*c)) {
-            let _ = self.store.delete(chunk).await;
+        let mut failed = false;
+        for chunk in gone.iter().chain([&hash]) {
+            failed |= self.store.delete(chunk).await.is_err();
         }
-        let _ = self.store.delete(&hash).await;
+        if failed {
+            self.note("dropped", json!({ "why": format!("file {index} not all deleted; withheld, and dropped again on restart") }));
+        } else {
+            self.drop_ref(&format!("{DROPPED_REF}{index}")).await;
+        }
+    }
+
+    /// The blobs it serves no more: a store that withholds them (`aven_db_store::withhold::Withholding`) serves its files.
+    pub fn withheld(&self) -> Withheld {
+        self.withheld.clone()
+    }
+
+    /// Whether `file` (an index's hash) was taken by a retraction here and no line names it again.
+    pub fn withholds(&self, file: &Hash) -> bool {
+        self.withheld.read().unwrap().contains(file)
     }
 
     async fn drop_ref(&self, name: &str) {

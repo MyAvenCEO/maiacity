@@ -1152,6 +1152,7 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 
 | Module | Theorem | Says |
 |---|---|---|
+| `CapsCbor` | `Cap.digest_inj` | Two allowed caps with one id say the same thing: the bytes approved and signed name the cap exactly |
 | `Authorized` | `authorized_signer`, `authorized_root` | Caps' verdict on a Core envelope: its chain keeps every rule, its last cap is held by the signer's vault, and every step of its footprint is one the chain's root allows on its Doc, on its root issuer's authority (R4) |
 | | `counts_iff` | An envelope counts exactly when everything in its past is signed, fresh, authorized, live and fit, and none of it is half of a split. `Aven.Architecture` composes the parts |
 | | `readers_agree` | Two readers that hold the same past of an envelope, and the same splits in it, give it the same verdict, whatever else each holds |
@@ -1170,12 +1171,12 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `elsewhere_kept` | Elsewhere, once the revocation reaches the Doc, only what its kept list or another writer's ack had seen counts |
 | | `revocation_wins` | The three together (rule 14). An envelope lists its whole chain, so revoking any link reaches it: the cascade |
 | | `waits_named` | A wait names only what the envelope builds on and the reader lacks, by hash |
-| `Epochs` | `confidential` | A key is learned only as one's own or by opening a seal with a key already known |
+| `Epochs` | `confidential` | A key is learned only as one's own or by opening a seal with a key already known. Keys are any type with an equality (`WorldOf κ`): names in the examples (`World`), Core's bytes in `Aven.Architecture` (R5) |
 | | `unknowable` | Keys of a closed set a party owns none of stay unknown to it; the next three are its instances |
 | | `removal_next_epoch` | A new epoch sealed only to the remaining readers stays closed to a removed one |
 | | `heal_evicts` | After a heal, a removed device learns none of the new keys: vault key, tag seeds, letterbox keys and next epochs |
-| | `keeper_blind`, `outside_blind` | The keeper knows only its own keys, and sees of a segment only its Doc, epoch and padded length (D13) |
-| | `stale_refused` | An envelope under an epoch older than one it builds on doesn't pass (rule 16) |
+| | `keeper_blind`, `outside_blind` | The keeper knows only its own keys, and sees of a segment only its Doc, epoch and padded length (D13). A segment is Core's `DocId`, its epoch's `Hash`, and the Core envelopes inside its seal (R5) |
+| | `stale_refused` | A Core envelope under an epoch older than one it builds on doesn't pass (rule 16) |
 | `Recover` | `guardian_exit` | After MaiaCityGuardian's exit, no keyring epoch is sealed to it (D12) |
 | | `never_ownerless`, `removals_win` | Removals that clash all stand, unless they'd leave no owner; then none does |
 | `Network` | `public_member`, `removal_rotates` | A public write counts only from a member, and a removed member is in no later members epoch |
@@ -1183,7 +1184,8 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `settle_perm`, `settle_genesis` | Peers holding the same statements settle the same tree, and nothing outside the pinned genesis's descendants changes it |
 | | `settle_ticket_once`, `settle_withdrawn`, `settle_final` | A ticket founds at most one vault; a withdrawal beats every claim of it outside its past that isn't final; a final claim stays final, and stands unless an ack that never saw its ack makes a smaller one final |
 | | `settle_door`, `settle_listed` | The door admits exactly the member vaults' devices; a list's entry stands only through an add that saw every remove of it |
-| | `genesis_pinned`, `guardian_consented` | Everything in the tree descends from the pinned genesis, which the claimant's passkey and MaiaCityGuardian signed (A11); a claim counts only if it names that guardian (A13) |
+| `Restore`, `Records` (avenPEER) | `settle_restore` | Production's stored statements, migrated in their ref order onto a genesis both its signers signed, all count in the settled tree; vectors in `settled.json` |
+| `Network` | `genesis_pinned`, `guardian_consented` | Everything in the tree descends from the pinned genesis, which the claimant's passkey and MaiaCityGuardian signed (A11); a claim counts only if it names that guardian (A13) |
 | `Keep` | `fetch_chain`, `kept_every` | A keeper takes exactly the fetch keys that chain back to the Doc's genesis, each signed by the key before it (A22) |
 | | `current_agrees`, `current_chained` | Keepers holding the same links take the same current fetch key, whatever order they came in, and it chains |
 | | `fork_flagged` | Every fork a keeper takes is flagged |
@@ -1191,7 +1193,7 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `grind_settled`, `settled_example` | Once the keep cap's issuer chooses a branch at a fork, every keeper follows it whatever forks arrive after |
 | | `uploader_pays` | The uploading vault pays, and only for what the keeper took from it |
 | | `grind_example` | A removed reader's fork with a ground hash becomes current at a keeper until the issuer chooses; it is flagged, and honest readers are still served |
-| `SealedIndex` | `index_within_key`, `index_skips` | An index holds only entries read under keys every holder of its key holds; one some holder can't read changes nothing in it (rule 36) |
+| `SealedIndex`, moving to `Aven.Architecture.Sealed` (the docs thread) | `index_within_key`, `index_skips` | An index holds only entries read under keys every holder of its key holds; one some holder can't read changes nothing in it (rule 36) |
 | | `sealed_roots_agree` | Two readers holding the same admissible entries rebuild the same sealed root under one key, so each can check a published one. The root is a parameter here; `Aven.Architecture` joins it with the docs model's `root_set` |
 | | `sealed_padded`, `root_by_writer` | Sealed nodes are padded (D18); only a vault that may write the directory publishes a root a reader takes |
 
@@ -1202,8 +1204,8 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 - `group_holds` (a group cap's writes in `Revoke`);
 - `device_within_cap`;
 - `safe_holds` (the safe's interface);
-- `upgrade_no_wider` and `no_confused_deputy` (`Aven.Actor`, avenACTORS);
-- `settle_restore`, production's ref order, and `trees.json` (avenPEER, PEERS.md Thread A);
+- `upgrade_no_wider` and `no_confused_deputy`, in the cross-spec model `Aven.Architecture`: they need `Aven.Actor`,
+  and id/spec never requires the actor spec (the architect, 30 Oct 2026);
 
 Two smaller gaps:
 - An owner that is a vault approves by its own quorum, recursively. `Approve` counts owner keys only, so the cast's coop
@@ -1215,15 +1217,17 @@ Two smaller gaps:
 
 | File | What |
 |---|---|
-| `caps.json` | Chains on the cast, their lines in Core's form, each with the first rule it breaks or none; how avenOS shows a cap; 40 generated chains |
+| `caps.json` | Chains on the cast, their lines in Core's form, each cap with its CBOR bytes, its id and the bytes its device signs, and each chain with the first rule it breaks or none; how avenOS shows a cap; 40 generated chains |
 | `revocations.json` | Docs, the revocations held, and verdicts: hand-written, and 30 generated Docs with every envelope's verdict |
 | `epochs.json` | Who learns which key after Bob's removal and after Alice's heal |
 | `approvals.json` | Signatures, thresholds and digests on the cast, and whether each approval holds |
 | `network.json` | A ticket's claims in two orders (A12), removals that clash, MaiaCityGuardian's exit |
 | `keep.json` | Fetch-key links in the order they came, with the keys a keeper takes, its current key and its flags; proofs and whether they're served; what each vault pays; 30 generated keepers |
 
-`caps.json` adds each cap's CBOR bytes and hash once Core encodes targets (A8), and `derivations.json` follows once
-Core's BLAKE3 gains its keyed and key-derivation modes. The primitives themselves (X-Wing, ML-DSA, Ed25519, the AEAD)
+A cap's bytes are its body in Core's deterministic CBOR, its targets as `Aven.Core.TargetCbor` writes them; its id is
+their BLAKE3 hash, and its device signs them under the label `avenID cap 1` (`Aven.ID.CapsCbor`). The cast's caps go by
+readable names, so a parent and a role are text until R5 makes them hashes. `derivations.json` follows once Core's
+BLAKE3 gains its keyed and key-derivation modes. The primitives themselves (X-Wing, ML-DSA, Ed25519, the AEAD)
 stay outside Lean, as Ed25519 does today. They are tested against their standards' known answers and Wycheproof.
 
 ## Order of work

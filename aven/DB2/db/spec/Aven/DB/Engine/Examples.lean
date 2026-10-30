@@ -3,6 +3,7 @@ import Aven.DB.Engine.Query
 import Aven.DB.Engine.Wants
 import Aven.DB.Engine.Mutate
 import Aven.DB.Engine.Footprint
+import Aven.DB.Engine.Changes
 import Aven.DB.Engine.Index
 import Aven.DB.Engine.Probe
 
@@ -253,6 +254,24 @@ def chatKept : List (Kept WantKey) := [
 -- Over a budget of 250 bytes: the screen's room stays, then the later projects; the idle Docs go.
 #guard (evict 250 chatKept).map (·.key) == [room, projectsKey]
 
+-- The room's key waits for a cap; the outbox's upload waits on nothing: the round sends the upload, the room's wait
+-- stops nothing else.
+#guard (roundW (fun k => if k == roomKey then 1 else if k == outbox then 2 else 0)
+    (fun k => if k == roomKey then some Wait.cap else none) [outbox] [roomKey, room] (fun _ => true)).1 ==
+  .moved outbox
+
+-- When every key with work left waits, the round names each and what it waits for.
+#guard (roundW (fun k => if k == roomKey then 1 else if k == room then 3 else 0)
+    (fun k => if k == roomKey then some Wait.cap else if k == room then some Wait.key else none) [] [roomKey, room]
+    (fun _ => true)).1 ==
+  .waiting [(roomKey, .cap), (room, .key)]
+
+-- A page holds at most 3 entries and 1000 bytes: of the room's pending chunks of 400, 400, 400 and 100 bytes, a round
+-- moves the first two (800 bytes; a third would make 1200) and leaves the rest pending.
+#guard (match roundP id ⟨1000, 3⟩ (fun k => if k == room then [400, 400, 400, 100] else []) [] [room] (fun _ => true) with
+  | (.moved _, p, pending') => (p, pending' room)
+  | _ => ([], [])) == ([400, 400], [400, 100])
+
 def wantExamples : List Json := [
   wantVector "a chat room on screen, the outbox first" chatWants chatCaps chatPre
     [(room, 3), (roomKey, 1), (outbox, 2)] [outbox] [outbox] 250 chatKept,
@@ -349,6 +368,17 @@ def tick : List (Op Value) := [.patch task (rows [("x2", text "Order seeds")]) (
 -- The same grant doesn't cover renaming a task.
 #guard covers [⟨task, .patch, some [utf8 "done"]⟩]
   (footprint [.patch task (rows [("x2", text "Order seeds")]) (rows [("x2", text "Order bean seeds")])]) == false
+
+/-- Every type Doc written under one schema version in these examples. -/
+def ver (t : DocId) : TypeId := ⟨t, blake3 (utf8 "schema:v1")⟩
+
+-- Ticking a task done is one edited Record whose one field is `done`, and the untouched task is no change; the grant to patch `done` passes the verdict's
+-- footprint part on it.
+#guard (match commit valEq ofId 1 8 todo tick with
+  | .ok s' => ((changesFrom ver todo s').map fun c => (c.kind, c.names.map utf8Text),
+      verdictFootprint [⟨task, .patch, some [utf8 "done"]⟩] (footprint tick) (changesFrom ver todo s'))
+  | .error _ => ([], false)) ==
+  ([(Aven.DB.Docs.ChangeKind.edited, ["done"])], true)
 
 def mutationExamples : List Json := [
   mutationVector "I ate 2 bananas" 1 7 (everything [banana, quantity, eat]) [] bananas,

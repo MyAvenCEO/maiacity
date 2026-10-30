@@ -10,8 +10,12 @@ merge when it holds of every write (docs, rule 16; Samuel, 30 Oct 2026).
 A rule about a container's size doesn't survive: two writers each adding one item to a list allowed one item both fit,
 and their merge holds two (`size_rule_breaks`). That is why the schema language leaves such rules out.
 
+Fit is judged per envelope, from the schema the envelope names (docs, rule 17): an envelope fits when each of its
+changes keeps its schema's rule for the field it writes. The merged value of a field then fits the schema of the
+envelope that wrote it (`fit_envelopes`), and when every envelope names the same schema, that schema (`fit_one_schema`).
+
 What it proves: `latest_mem`, `fit_merge`, `latest_append` (the later write of a merge is the later of each side's),
-and the counterexample.
+`fit_envelopes`, `fit_one_schema`, and the counterexample.
 -/
 
 namespace Aven.DB.Docs
@@ -69,6 +73,42 @@ theorem pick_assoc {V : Type} (x y z : Option (Write V)) : pick x (pick y z) = p
 theorem latest_append {V : Type} : ∀ (a b : List (Write V)), latest (a ++ b) = pick (latest a) (latest b)
   | [], b => by simp [latest, pick]
   | x :: a, b => by simp only [List.cons_append, latest, latest_append a b, pick_assoc]
+
+/-- One change an envelope carries: the field it writes and the write. -/
+structure Change (K V : Type) where
+  field : K
+  write : Write V
+
+/-- An envelope's changes, under the schema it names. -/
+structure Changes (S K V : Type) where
+  schema : S
+  changes : List (Change K V)
+
+/-- An envelope fits when each change keeps its schema's rule for its field. -/
+def Changes.fits {S K V : Type} (rule : S → K → V → Prop) (e : Changes S K V) : Prop :=
+  ∀ c ∈ e.changes, rule e.schema c.field c.write.value
+
+/-- Every write of one field, across envelopes, each with the schema of the envelope that carries it. -/
+def writesOf {S K V : Type} [DecidableEq K] (k : K) (es : List (Changes S K V)) : List (Write (S × V)) :=
+  es.flatMap fun e => (e.changes.filter (·.field = k)).map fun c => ⟨c.write.stamp, (e.schema, c.write.value)⟩
+
+/-- A field's merged value, over envelopes that each fit, fits the schema of the envelope that wrote it. -/
+theorem fit_envelopes {S K V : Type} [DecidableEq K] (rule : S → K → V → Prop) {es : List (Changes S K V)}
+    (h : ∀ e ∈ es, e.fits rule) (k : K) {w : Write (S × V)} (hw : latest (writesOf k es) = some w) :
+    rule w.value.1 k w.value.2 := by
+  have hm := latest_mem hw
+  simp only [writesOf, List.mem_flatMap, List.mem_map, List.mem_filter, decide_eq_true_eq] at hm
+  obtain ⟨e, he, c, ⟨hc, hk⟩, rfl⟩ := hm
+  exact hk ▸ h e he c hc
+
+/-- When every envelope names one schema, the merged value fits it. -/
+theorem fit_one_schema {S K V : Type} [DecidableEq K] (rule : S → K → V → Prop) (s : S) {es : List (Changes S K V)}
+    (one : ∀ e ∈ es, e.schema = s) (h : ∀ e ∈ es, e.fits rule) (k : K) {w : Write (S × V)}
+    (hw : latest (writesOf k es) = some w) : rule s k w.value.2 := by
+  have hm := latest_mem hw
+  simp only [writesOf, List.mem_flatMap, List.mem_map, List.mem_filter, decide_eq_true_eq] at hm
+  obtain ⟨e, he, c, ⟨hc, hk⟩, rfl⟩ := hm
+  exact one e he ▸ hk ▸ h e he c hc
 
 /-- A size rule doesn't survive a merge: each side has one item, the merge has two. -/
 theorem size_rule_breaks : ∃ (base a b : List Nat), base.length ≤ 1 ∧ (base ++ a).length ≤ 1 ∧
