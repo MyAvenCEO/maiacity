@@ -37,8 +37,8 @@ thread's recommendation. Samuel may overrule any.
    it carries, and the relay path is what hides a member's IP from other members, so the admin chooses who sees that.
    Later the list is a cap that the network's owners grant: a grant, not a position.
 2. **A browser bootstraps from what it already holds.** The signed relay list, the members' address records and the
-   tree's tips are cached in the Peer-Light's OPFS, and are carried in every invite link. `/aven.json` stays as one source
-   among several. Reason: a returning browser, and a new invitee, need no single host to find the network.
+   tree's tips are cached in the Peer-Light's OPFS, and are carried in every invite link. `/aven.json` stays as one
+   source among several. Reason: a returning browser, and a new invitee, need no single host to find the network.
 3. **Addresses are signed address records,** gossiped in the room, kept by every peer and fed into iroh's
    `MemoryLookup`. No DNS, no pkarr, no n0. Reason: it stays private, and relays don't talk to each other, so a dialer
    must learn a peer's home relay from somewhere it can verify.
@@ -107,11 +107,11 @@ thread's recommendation. Samuel may overrule any.
 
 ## 3. Catch-up from whoever holds the posts
 
-- **Every native Peer answers** `heads`, `catch_up` and `lines` (the posts) on `aven/db/1` from its own store, the same frames the
-  Aven Peer's hub answers today. A Peer-Light answers nothing: it is rarely online, and serves no one.
+- **Every native Peer answers** `heads`, `catch_up` and `lines` (the posts) on `aven/db/1` from its own store, the
+  same frames the Aven Peer's hub answers today. A Peer-Light answers nothing: it is rarely online, and serves no one.
 - **Signed tips.** Each device signs the tip of its own log: the hash of its newest post and the post's number. Tips
-  travel on gossip and in `heads`. A peer that announces an older tip than one already seen is not believed for that log:
-  the gap shows, and the posts are asked of someone else (A3: envelopes name what they build on by hash).
+  travel on gossip and in `heads`. A peer that announces an older tip than one already seen is not believed for that
+  log: the gap shows, and the posts are asked of someone else (A3: envelopes name what they build on by hash).
 - **Whom to ask:** the link that announced the newest tip for a log. If it fails or stalls, the next one. Never all at
   once: the want queue's order is own devices, then other readers, then keepers (engine).
 - **Unchanged:** every post is still signed by its device and checked by the receiver, and a log only ever moves
