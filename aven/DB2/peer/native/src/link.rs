@@ -275,18 +275,27 @@ impl Link {
     }
 
     /// What the Aven Peer says of its network: the statements checked here before the gate believes them, and kept in
-    /// the store, so the next start opens on them before any link (`recall`).
-    async fn network(&self, claimed: bool, tree: Option<String>, statements: Option<String>) {
+    /// the store, so the next start opens on them before any link (`recall`). Whether the door now admits a key it
+    /// didn't before.
+    async fn network(
+        &self,
+        claimed: bool,
+        tree: Option<String>,
+        statements: Option<String>,
+    ) -> bool {
         let checked = statements.as_deref().map(|s| {
             serde_json::from_str(s)
                 .map_err(|e| e.to_string())
                 .and_then(|v| aven_id::Members::from_statements(&v))
         });
         let kept = checked.as_ref().map(|c| c.is_ok());
+        let mut grew = false;
         match checked {
             Some(Ok(m)) => {
                 if let Some(gate) = &self.gate {
+                    let before = gate.admitted();
                     gate.set_members(&m);
+                    grew = !gate.admitted().is_subset(&before);
                 }
                 self.note("network", told(&m, claimed, tree));
             }
@@ -312,6 +321,7 @@ impl Link {
                 json!({ "why": format!("the network not kept: {why}") }),
             );
         }
+        grew
     }
 
     fn note(&self, event: &str, fields: serde_json::Value) {
@@ -505,7 +515,21 @@ async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Re
                             claimed,
                             tree,
                             statements,
-                        } => link.network(claimed, tree, statements).await,
+                        } => {
+                            // the door admits someone new: lines of theirs that came before it knew them were dropped
+                            // as a stranger's (a browser that signs in hears the catch-up and the members at once, in
+                            // either order), so a link that has caught up asks again for what it still misses
+                            if link.network(claimed, tree, statements).await
+                                && link.caught
+                                && let Some(chats) = &link.chats
+                            {
+                                for page in chats.catch_up_frames(link.there.keys().cloned()) {
+                                    send.write_all(&encode(&page))
+                                        .await
+                                        .map_err(|e| e.to_string())?;
+                                }
+                            }
+                        }
                         Frame::Refused { why } => link.note("refused", json!({ "why": why })),
                         // catching up: told every head on each link, then whenever one moves there. It catches up
                         // when behind; its own lines the Aven Peer doesn't hold go on the next step (`upload`). The
