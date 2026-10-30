@@ -53,8 +53,9 @@ Each rule is held by a test or a check once there is code to hold.
 11. **Small packages in strict layers,** with a size limit per file.
 12. **Zero legacy.** Nothing here imports, copies or vendors code from `aven/db/` or its crates. Learnings come in as
     rules and tests, never as code. A check will fail on any such import.
-13. **Latest versions, always.** Every dependency and tool is pinned exactly at its newest stable release, and a daily
-    bump moves the pins forward ([`SANDBOX.md`](SANDBOX.md#latest-versions-always)).
+13. **Latest versions, always.** Every dependency and tool is pinned exactly. Pins move only when a person runs `bun
+    run bump`, never on their own; `bun run bump --check` and `bun run doctor` show what's behind
+    ([`SANDBOX.md`](SANDBOX.md#latest-versions-always)).
 14. **Nothing merges with a red check,** and every bug found becomes a test.
 
 ## Names

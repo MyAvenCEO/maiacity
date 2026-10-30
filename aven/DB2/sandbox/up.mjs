@@ -1,5 +1,5 @@
 // avenSANDBOX's runner (SANDBOX.md, "The box"): `bun run up [--check]`, `down [--wipe]`, `logs`, `shot`, `build`,
-// `doctor`, and `box <command>`, which runs any command in the box: `bun run box cargo test`.
+// `doctor`, and `box <command>`, which runs any command in the box: `bun run box cargo test`. bump.mjs imports `inBox`.
 // It runs on the host (a Mac with OrbStack, a Claude cloud session, a CI runner) and drives Docker; everything else
 // runs in the box's image, whose tag is a hash of every file its build reads (box/tag.mjs), as the image workflow
 // (.github/workflows/avensandbox-image.yml) tags it.
@@ -9,6 +9,7 @@ import { join, resolve } from 'node:path';
 import { $ } from 'bun';
 import { boxTag, toolsTag } from './box/tag.mjs';
 import { fence } from './fence.mjs';
+import { newest, table } from './versions.mjs';
 
 const db2 = resolve(import.meta.dir, '..');
 const box = join(db2, 'sandbox', 'box');
@@ -127,7 +128,7 @@ const rustVolumes = [
 	'-v', 'avensandbox_cargo_git:/opt/cargo/git',
 ];
 
-async function inBox(args) {
+export async function inBox(args) {
 	await ensureDocker();
 	await ensureImages();
 	const tty = process.stdout.isTTY ? ['-t'] : [];
@@ -293,19 +294,25 @@ async function doctor() {
 	say(`image: ${image} ${(await ok($`docker image inspect ${image}`)) ? '(here)' : '(not here yet: bun run up pulls or builds it)'}`);
 	const cast = JSON.parse(readFileSync(join(db2, 'sandbox', 'cast.json'), 'utf8'));
 	for (const [id, vault] of Object.entries(cast.vaults)) say(`${vault.name} (${id}, ${vault.kind}): owned by ${vault.owners.join(', ')}`);
+	// what's behind, as `bun run bump --check` lists it
+	say('versions:');
+	console.log(table(await newest()));
 }
 
-const [command = 'up', ...args] = process.argv.slice(2);
-try {
-	if (command === 'up') await up(args);
-	else if (command === 'down') await $`${compose} down ${args.includes('--wipe') ? ['--volumes'] : []}`.env(env);
-	else if (command === 'logs') await $`${compose} logs -f --tail 100`.env(env);
-	else if (command === 'shot') process.exit(await check());
-	else if (command === 'doctor') await doctor();
-	else if (command === 'build') await deliverables();
-	else if (command === 'box') process.exit(await inBox(args.length ? args : ['bash']));
-	else throw new Error(`unknown command ${command}: up [--check], down [--wipe], logs, shot, build, doctor, box <command>`);
-} catch (error) {
-	console.error(`avenSANDBOX: ${error.message}`);
-	process.exit(1);
+// bump.mjs imports this module for `inBox`; only `bun sandbox/up.mjs` runs a command
+if (import.meta.main) {
+	const [command = 'up', ...args] = process.argv.slice(2);
+	try {
+		if (command === 'up') await up(args);
+		else if (command === 'down') await $`${compose} down ${args.includes('--wipe') ? ['--volumes'] : []}`.env(env);
+		else if (command === 'logs') await $`${compose} logs -f --tail 100`.env(env);
+		else if (command === 'shot') process.exit(await check());
+		else if (command === 'doctor') await doctor();
+		else if (command === 'build') await deliverables();
+		else if (command === 'box') process.exit(await inBox(args.length ? args : ['bash']));
+		else throw new Error(`unknown command ${command}: up [--check], down [--wipe], logs, shot, build, doctor, box <command>`);
+	} catch (error) {
+		console.error(`avenSANDBOX: ${error.message}`);
+		process.exit(1);
+	}
 }

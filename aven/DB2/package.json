@@ -9,7 +9,8 @@
 		"shot": "bun sandbox/up.mjs shot",
 		"build": "bun sandbox/up.mjs build",
 		"doctor": "bun sandbox/up.mjs doctor",
-		"box": "bun sandbox/up.mjs box"
+		"box": "bun sandbox/up.mjs box",
+		"bump": "bun sandbox/bump.mjs"
 	},
 	"devDependencies": {
 		"@sveltejs/vite-plugin-svelte": "7.3.1",
