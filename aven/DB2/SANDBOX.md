@@ -59,7 +59,7 @@ cast. As in avenDB-old, vaults own vaults; the concept comes over, no code does.
 ```
 Alice's vault           person    owned by Alice's owner key
 ├── Maia City           coop      the admin, owned by Alice's vault
-│   └── Aven            network   the network's own vault
+│   └── Aven            agent     runs the network
 │       └── Aven Peer   device
 ├── Alice Peer          device
 └── Alice Peer-Light    device
@@ -70,8 +70,8 @@ Bob's vault             person    owned by Bob's owner key
 - **A person's vault** is owned by its owner key; later by keys and passkeys acting k of n, with recovery.
 - **A device's vault** is owned by the vault it serves. The device's key signs for that vault and governs nothing: a
   lost device is revoked by its vault, and the vault loses nothing.
-- **Maia City, a coop's vault,** is owned by Alice's vault and holds no devices; **Aven, the network's vault,** is
-  owned by Maia City (PRODUCTION.md, Part C). **So Maia City is the admin, not Alice's key:** her key governs her
+- **Maia City, a coop's vault,** is owned by Alice's vault and holds no devices; **Aven, the agent that runs the
+  network,** is owned by Maia City (PRODUCTION.md, Part C). **So Maia City is the admin, not Alice's key:** her key governs her
   vault, and through it Maia City, Aven and the Aven Peer. **Aven acts through its own device:** the Aven Peer signs
   for Aven, within the rights Alice's vault gives it and can take back. No person ever switches into Aven; Alice
   manages it as herself. From milestone 2 on, invites into the network are Aven's, within those rights; Bob is a member
@@ -281,7 +281,8 @@ One image holds every tool; every command runs in it.
 - **Networks:** milestone 1 uses one, `wan`. The P2P lanes add homes behind routers ([below](#real-world-iroh-inside-the-box)).
 - **Commands**, from `aven/DB2`:
   - `bun run up`: starts the box and prints avenOS's address;
-  - `bun run down`;
+  - `bun run down`; after `dockerd` restarts (a session that slept), run it before `up`: the containers come back on
+    new addresses while a running peer keeps the old one, so the check fails on the network, not on the code;
   - `bun run logs`;
   - `bun run doctor`: checks versions, Docker settings and kernel features, and lists the pins that are behind;
   - `bun run bump [--check]`: moves every pin to its newest stable release, by hand ([below](#latest-versions-always));
@@ -562,7 +563,7 @@ Made in milestone 1's threads and its integration (29–30 Oct 2026).
   decidable, so the running model checks a tree itself, and gives the bound that proves `governs` and `chain` complete.
 - **The device rules are part of `WF`** (Samuel, 29 Oct): a device's vault has exactly one owner, the vault it serves;
   it owns nothing; it has its own key, the key with its id, which owns nothing either. So `actsFor` is a function.
-- **Person and network vaults may have any known owners,** keys or vaults: room for k of n in milestone 3.
+- **Person and agent vaults may have any known owners,** keys or vaults: room for k of n in milestone 3.
 - **`governs` is depth first,** in the tree's order: the Vault app's tree reads the same way.
 - **`sees` keeps its name** (the architect, 30 Oct): the devices a vault governs, for its Control Room. avenOS's
   `peersOf` goes. Once caps come, reading data will be wider than governing; the name is to be looked at again then.
