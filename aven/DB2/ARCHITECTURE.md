@@ -583,8 +583,8 @@ the spec that owns it.
   - a message is stored once, by hash: *decided, yes*;
   - an actor's history is its Doc's Loro history, a turn is one commit, and Loro snapshots are its checkpoints:
     *decided, yes*;
-  - every actor keeps its own inbox. Whether the Doc that carries inboxes is one per pair of actors or one per pair of
-    vaults stays open: *recommend a pair of vaults*;
+  - every actor keeps its own inbox (queue, read position, order of handling). Between devices one carrier Doc per
+    pair of vaults, written by the sending vault's home device; none within one home: *decided, yes*;
   - loads are journaled as versions: *recommend yes*;
   - a definition is a version of an actor type, and lenses carry its state: *open*.
 - **A18. Plugins are runtimes.** A lowering is pinned by its runtime's hash, and an envelope carries the lowered hash.
