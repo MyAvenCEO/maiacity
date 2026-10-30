@@ -5,6 +5,9 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+/// The model's traces (`lake exe vectors` in db/spec), which the suite replays.
+const TRACES: &str = include_str!("../../spec/vectors/store.json");
+
 use aven_db_store::{Hash, RefName, Store, backend, conformance};
 use bytes::Bytes;
 
@@ -22,7 +25,7 @@ fn fresh_dir() -> PathBuf {
 
 #[tokio::test]
 async fn fs_passes_the_suite() {
-    let report = conformance::run(async || backend::fs(&fresh_dir()).unwrap()).await;
+    let report = conformance::run(async || backend::fs(&fresh_dir()).unwrap(), TRACES).await;
     println!("{report}");
     bench(&backend::fs(&fresh_dir()).unwrap()).await;
     assert!(report.passed());

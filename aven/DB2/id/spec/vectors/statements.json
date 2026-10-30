@@ -1,0 +1,17 @@
+[
+{"expected":{"holds":true,"signs":{"vault":"aven"}},"input":{"body":"hello","changes":[],"device":"aven-peer","key":"aven-peer","target":null},"name":"the Aven Peer signs for Aven"},
+{"expected":{"holds":true,"signs":{"vault":"bob"}},"input":{"body":"hello","changes":[],"device":"bob-peer-light","key":"bob-peer-light","target":null},"name":"Bob's Peer-Light signs for Bob"},
+{"expected":{"holds":null,"signs":{"error":"wrongKey","id":"aven-peer"}},"input":{"body":"x","changes":[],"device":"aven-peer","key":"alice-peer","target":null},"name":"only with its own key"},
+{"expected":{"holds":{"error":"badSignature"},"signs":{"vault":"alice"}},"input":{"body":"x","changes":[["device","alice-peer-light"]],"device":"alice-peer","key":"alice-peer","target":null},"name":"one device's signature, naming another device"},
+{"expected":{"holds":null,"signs":{"error":"notDevice","id":"alice-owner"}},"input":{"body":"x","changes":[],"device":"alice-owner","key":"alice-owner","target":null},"name":"an owner key is no device"},
+{"expected":{"holds":null,"signs":{"error":"notDevice","id":"alice"}},"input":{"body":"x","changes":[],"device":"alice","key":"alice-owner","target":null},"name":"a person's vault is no device"},
+{"expected":{"holds":{"device":"aven-peer","error":"wrongVault","vault":"alice"},"signs":{"vault":"aven"}},"input":{"body":"x","changes":[["vault","alice"]],"device":"aven-peer","key":"aven-peer","target":null},"name":"only for its vault"},
+{"expected":{"holds":{"error":"badSignature"},"signs":{"vault":"alice"}},"input":{"body":"x","changes":[["body","y"]],"device":"alice-peer-light","key":"alice-peer-light","target":null},"name":"not once its body changed"},
+{"expected":{"holds":{"error":"badSignature"},"signs":{"vault":"alice"}},"input":{"body":"x","changes":[["resign","bob-peer-light"]],"device":"alice-peer-light","key":"alice-peer-light","target":null},"name":"not with another key's signature"},
+{"expected":{"holds":true,"signs":{"vault":"bob"}},"input":{"body":"x","changes":[],"device":"bob-peer-light","key":"bob-peer-light","target":"bob"},"name":"Bob's Peer-Light acts on Bob's vault"},
+{"expected":{"holds":false,"signs":{"vault":"bob"}},"input":{"body":"x","changes":[],"device":"bob-peer-light","key":"bob-peer-light","target":"aven"},"name":"Bob's devices never act on Aven"},
+{"expected":{"holds":true,"signs":{"vault":"aven"}},"input":{"body":"x","changes":[],"device":"aven-peer","key":"aven-peer","target":"aven"},"name":"the Aven Peer acts on Aven"},
+{"expected":{"holds":false,"signs":{"vault":"aven"}},"input":{"body":"x","changes":[],"device":"aven-peer","key":"aven-peer","target":"alice"},"name":"nor the Aven Peer on Alice's vault above it"},
+{"expected":{"holds":true,"signs":{"vault":"alice"}},"input":{"body":"x","changes":[],"device":"alice-peer","key":"alice-peer","target":"aven-peer"},"name":"Alice Peer acts on the Aven Peer"},
+{"expected":{"holds":false,"signs":{"vault":"alice"}},"input":{"body":"x","changes":[],"device":"alice-peer","key":"alice-peer","target":"bob"},"name":"nor Alice Peer on Bob's vault"}
+]

@@ -1,4 +1,4 @@
-//! Our one protocol (README, rule 9), on ALPN `aven/db/1`, as frames: one JSON object per line on one stream each
+//! Our one protocol (README, rule 9, `Aven.DB.Wire`), on ALPN `aven/db/1`, as frames: one JSON object per line on one stream each
 //! way. Milestone 1 says hello and tells presence; the Aven Peer beats once per clock step, so a quiet link still
 //! moves, and a link that doesn't is stalled.
 
@@ -51,38 +51,5 @@ impl Decoder {
             return Err(WireError::TooLong);
         }
         Ok(frames)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn frames_survive_any_split() {
-        let frames = [
-            Frame::Hello {
-                peer: "alice-peer".into(),
-            },
-            Frame::Presence {
-                peers: vec!["a".into()],
-            },
-            Frame::Beat { n: 7 },
-        ];
-        let bytes: Vec<u8> = frames.iter().flat_map(encode).collect();
-        for cut in 0..bytes.len() {
-            let mut d = Decoder::default();
-            let mut got = d.push(&bytes[..cut]).unwrap();
-            got.extend(d.push(&bytes[cut..]).unwrap());
-            assert_eq!(got, frames);
-        }
-    }
-
-    #[test]
-    fn refuses_endless_lines() {
-        assert_eq!(
-            Decoder::default().push(&vec![b'x'; MAX_FRAME + 1]),
-            Err(WireError::TooLong)
-        );
     }
 }

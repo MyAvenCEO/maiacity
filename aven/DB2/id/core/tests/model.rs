@@ -1,5 +1,8 @@
 //! aven-id against the running Lean model (README rule 10): random trees, well formed or not, go to `aven-id-model`
-//! (`id/spec`), and every answer it gives must be this crate's. Set `AVEN_ID_MODEL` to a built model to skip `lake`.
+//! (`id/spec`), and every answer it gives must be this crate's, the rule a tree breaks included. Set `AVEN_ID_MODEL`
+//! to a built model to skip `lake`.
+
+mod common;
 
 use std::cell::{Cell, RefCell};
 use std::io::{BufRead, BufReader, Write};
@@ -7,7 +10,8 @@ use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::OnceLock;
 
-use aven_id::{Kind, Owner, Tree, Vault};
+use aven_id::{Kind, Owner, Vault};
+use common::{case, result};
 use proptest::prelude::*;
 use proptest::test_runner::{Config, TestRunner};
 use serde_json::{Value, json};
@@ -153,13 +157,15 @@ fn trees() -> impl Strategy<Value = (Vec<String>, Vec<Vault>)> {
         .prop_flat_map(|(keys, vaults)| (Just(keys), Just(vaults).prop_shuffle()))
 }
 
-/// Every query on every vault, an unknown one included, and every pair for `mayActOn`.
+/// Every query on every vault, an unknown one included, and every pair for `mayActOn`: `Tree.everyQuery`.
 fn queries(vaults: &[Vault]) -> Vec<Value> {
     let mut ids: Vec<&str> = vaults.iter().map(|v| v.id.as_str()).collect();
     ids.push("nobody");
     let mut out = vec![json!(["accounts", null])];
     for &x in &ids {
         for q in [
+            "kind",
+            "owners",
             "owned",
             "governs",
             "chain",
@@ -175,32 +181,6 @@ fn queries(vaults: &[Vault]) -> Vec<Value> {
         }
     }
     out
-}
-
-fn answer(t: &Tree, q: &Value) -> Value {
-    let arg = |i: usize| q[i].as_str().unwrap_or_default();
-    match arg(0) {
-        "owned" => json!(t.owned(arg(1))),
-        "governs" => json!(t.governs(arg(1))),
-        "chain" => json!(t.chain(arg(1))),
-        "actsFor" => json!(t.acts_for(arg(1))),
-        "actsThrough" => json!(t.acts_through(arg(1))),
-        "accounts" => json!(t.accounts(q[1].as_str())),
-        "sees" => json!(t.sees(arg(1))),
-        "mayActOn" => json!(t.may_act_on(arg(1), arg(2))),
-        other => panic!("unknown query {other}"),
-    }
-}
-
-fn case(keys: &[String], vaults: &[Vault]) -> Value {
-    let vaults: Vec<Value> = vaults
-        .iter()
-        .map(|v| {
-            let owners: Vec<String> = v.owners.iter().map(Owner::to_string).collect();
-            json!({ "id": v.id, "kind": v.kind.as_str(), "owners": owners })
-        })
-        .collect();
-    json!({ "keys": keys, "vaults": vaults })
 }
 
 #[test]
@@ -222,24 +202,12 @@ fn agrees_with_the_lean_model() {
             let queries = queries(&vaults);
             ask["queries"] = json!(queries);
             let lean = model.borrow_mut().ask(&ask);
-            let tree = Tree::new(
-                keys.iter().map(|k| (k.clone(), String::new())).collect(),
-                vaults.clone(),
-            );
-            prop_assert_eq!(
-                lean["wf"].as_bool(),
-                Some(tree.is_ok()),
-                "well formed? {} {:?}",
-                ask,
-                tree.err()
-            );
+            let ours = result(&keys, &vaults, &queries);
             total.set(total.get() + 1);
-            if let Ok(tree) = tree {
+            if ours["wf"] == json!(true) {
                 formed.set(formed.get() + 1);
-                for (q, want) in queries.iter().zip(lean["answers"].as_array().unwrap()) {
-                    prop_assert_eq!(&answer(&tree, q), want, "{} on {}", q, ask);
-                }
             }
+            prop_assert_eq!(&ours, &lean, "on {}", ask);
             Ok(())
         })
         .unwrap();
@@ -250,18 +218,4 @@ fn agrees_with_the_lean_model() {
         formed * 5 >= total && formed * 10 <= total * 9,
         "{formed} of {total} well formed"
     );
-}
-
-#[test]
-fn the_cast_agrees_with_the_lean_model() {
-    let t = Tree::from_cast(include_str!("../../../sandbox/cast.json")).unwrap();
-    let keys: Vec<String> = t.keys().map(|(id, _)| id.to_string()).collect();
-    let mut ask = case(&keys, t.vaults());
-    let queries = queries(t.vaults());
-    ask["queries"] = json!(queries);
-    let lean = Model::start().ask(&ask);
-    assert_eq!(lean["wf"], json!(true));
-    for (q, want) in queries.iter().zip(lean["answers"].as_array().unwrap()) {
-        assert_eq!(&answer(&t, q), want, "{q}");
-    }
 }

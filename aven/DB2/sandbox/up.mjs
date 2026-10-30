@@ -149,9 +149,13 @@ async function waitForPage() {
 async function check() {
 	const fenced = fence();
 	for (const problem of fenced) say(`fence: ${problem}`);
+	// Lean's vectors are what is committed (README, rule 10): regenerated in the box and compared
+	const vectorsStarted = Date.now();
+	const fresh = (await inBox(['sh', 'sandbox/vectors.sh', '--check'])) === 0;
+	say(`vectors ${fresh ? 'fresh' : 'STALE'} (${((Date.now() - vectorsStarted) / 1000).toFixed(1)} s)`);
 	const run = `runs/${new Date().toISOString().replace(/[:.]/g, '-')}`;
 	const result = await $`${compose} exec -T browsers node sandbox/check.mjs ${run}`.env(env).nothrow();
-	const passed = fenced.length === 0 && result.exitCode === 0 && (await keeps(run));
+	const passed = fenced.length === 0 && fresh && result.exitCode === 0 && (await keeps(run));
 	say(`${passed ? 'check passed' : 'check FAILED'}; screenshots and report in aven/DB2/${run}/`);
 	return passed ? 0 : 1;
 }
