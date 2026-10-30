@@ -2,6 +2,8 @@
 // server-sent events, a backlog and then each new line; a Peer-Light's own lines come straight from its worker. Each
 // peer's status is its newest status line, and its record (the first start it keeps through its store) its newest
 // stored line.
+import { openWorker } from './peer/open.js';
+
 export const live = $state({ timeline: [], status: {}, paths: {}, stored: {}, own: null, ownStored: null });
 
 const keep = 300;
@@ -37,10 +39,7 @@ async function configure(cast, me) {
 
 // Runs this origin's Peer-Light: one shared worker per origin, whatever the tabs and frames.
 export async function runLight(cast, me) {
-	const url = new URL('./peer/worker.js', import.meta.url);
-	const shared = typeof SharedWorker === 'function';
-	const worker = shared ? new SharedWorker(url, { type: 'module', name: me }) : new Worker(url, { type: 'module' });
-	const port = shared ? worker.port : worker;
+	const { port } = openWorker(me);
 	port.onmessage = ({ data }) => {
 		const line = JSON.parse(data);
 		if (line.event === 'status' || line.event === 'failed') live.own = line.event === 'failed' ? { ...line, phase: 'offline', peers: 0 } : line;
