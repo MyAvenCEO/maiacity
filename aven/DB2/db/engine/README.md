@@ -50,7 +50,7 @@ The research is in [`../research`](../research/README.md): avenOS's x1–x5 engi
 [C2](../research/C2-avenos-invoice.md)) and avenDB-old's query and sync engine ([E1](../research/E1-avendb-old-engine.md),
 by avenACTORS). The actor and caps designs this builds on are avenACTOR's `aven/actor/ARCHITECTURE.md` (sections 3, 6 and 11:
 one document per actor, its definition, and what goes into avenDB), `aven/actor/README.md` (section 8: an actor's
-`loads` are its wants) and `aven/ID/caps/README.md`.
+`loads` are its wants) and [`id/caps`](../../id/caps/README.md).
 
 | From | What held | Here |
 |---|---|---|
@@ -471,8 +471,8 @@ the writer commits it (the overlay drops, the delta arrives) or refuses it (the 
 ## Who checks what
 
 Decided (D9, Samuel). Loro itself checks nothing about authority: it is the CRDT. The docs layer wraps it and checks
-every envelope; the engine checks every operation. Caps are checked twice (`aven/ID/caps/README.md`, rule 8): once where
-an operation enters, once where its envelope is imported by every reader.
+every envelope; the engine checks every operation. Caps are checked twice ([`id/caps`](../../id/caps/README.md), its
+table of checks): once where an operation enters, once where its envelope is imported by every reader.
 
 | Check | Where | When |
 |---|---|---|
@@ -567,5 +567,5 @@ Notes for that iteration, from this one's discussion:
 
 Documents, versions, schemas and lenses ([docs](../docs/README.md)); what facts and kinds mean
 ([ontology](../ontology/README.md)); blobs and refs ([store](../../store/README.md)); caps themselves
-(`aven/ID/caps/README.md`); actors, their kernel and journal (`aven/actor/ARCHITECTURE.md`); the network's door
-(milestone 2); indexes (a later iteration); full-text search.
+([`id/caps`](../../id/caps/README.md)); actors, their kernel and journal (`aven/actor/ARCHITECTURE.md`); the
+network's door (milestone 2); indexes (a later iteration); full-text search.

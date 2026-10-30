@@ -226,8 +226,9 @@ means something else in another part, and that part's meaning is named.
 
 - **Value**: JSON only: null, bool, finite number, string, array, map. **= Value**.
 - **part**: code or data in one format, for one runtime. ⚠ A want has a **depth**.
-- **runtime**: shared primitive; **json-runtime, js-runtime, prolog-runtime, css-runtime**, and **view-runtime →
-  markup-runtime**.
+- **runtime**: shared primitive. #1488 names them after their job: **state-runtime** (was json-runtime),
+  **js-runtime**, **prolog-runtime**, **style-runtime** (was css-runtime), and **view-runtime → markup-runtime**,
+  since Samuel keeps "view" for the engine's sense. Their future home is [`aven/runtimes`](../runtimes/README.md).
 - **floor, fuel, shim, hostile parts**: the oldest runtime still run; work counted per instruction; the deterministic
   answer to clock and random calls; test parts that try to escape.
 - **definition**: the class: `interface`, `machine`, `turn`, `faces`, `init`, `lifetime`, `replaces`, `loads`.
