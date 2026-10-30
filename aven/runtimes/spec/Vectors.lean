@@ -18,8 +18,6 @@ by default), where they are committed. Every vector is `{"name", "input", "expec
   under BLAKE3 (`Aven.Runtime.Contract`).
 - `contrast.json`: `linear`, the table every contrast check uses, then pairs of colours with their luminances and
   whether they reach 4.5:1 and 3:1.
-- `state.json`: a state-runtime part, a state and a message; the new state, the sends and the phase, or `null` where
-  the part has no rule for the message. The todo app's list and field.
 - `markup.json`: markup and face data; the drawn tree, the placements, and whether face-runtime gives the face
   (`faceRun`). The todo app's row and list, and hostile markup whose tags, attributes, URLs and events must go.
 -/
@@ -185,76 +183,13 @@ def contractVectors : List Json :=
         ("params", hex (encode k.params))])
       (Json.mkObj [("cbor", hex (encode k.value)), ("name", (k.name blake3).text)])
 
-/-! ## state-runtime: `state.json` -/
+/-! ## Helpers -/
 
 def pathJson (p : Path) : Json := Json.arr (p.map fun b => toJson (utf8Text b)).toArray
-
-def Aven.Runtime.Source.json : Source → Json
-  | .lit v => Json.mkObj [("lit", Value.json v)]
-  | .payload p => Json.mkObj [("payload", pathJson p)]
-  | .state p => Json.mkObj [("state", pathJson p)]
-
-def Aven.Runtime.Update.json : Update → Json
-  | .set p s => Json.arr #["set", pathJson p, s.json]
-  | .merge p s => Json.arr #["merge", pathJson p, s.json]
-  | .append p s => Json.arr #["append", pathJson p, s.json]
-  | .remove p => Json.arr #["remove", pathJson p]
-
-def Aven.Runtime.Send.json : Send → Json
-  | .reply s => Json.arr #["reply", s.json]
-  | .tell to name p => Json.arr #["tell", to.json, name, p.json]
-
-def Aven.Runtime.SendOut.json : SendOut → Json
-  | .reply v => Json.arr #["reply", Value.json v]
-  | .tell to name p => Json.arr #["tell", to, name, Value.json p]
-
-def partJson (part : StatePart) : Json :=
-  Json.mkObj (part.map fun (name, rule) => (name, Json.mkObj [
-    ("updates", Json.arr (rule.updates.map Update.json).toArray),
-    ("sends", Json.arr (rule.sends.map Send.json).toArray),
-    ("phase", match rule.phase with | some p => toJson p | none => Json.null)]))
 
 def obj (kvs : List (String × Value)) : Value := .map (kvs.map fun (k', v) => (ascii k', v))
 
 def txt' (s : String) : Value := .text (ascii s)
-
-/-- The todo list's part: `add` appends the payload's text as a task, `get` replies with the tasks. -/
-def listPart : StatePart := [
-  ("add", ⟨[.append (path ["tasks"]) (.payload (path ["text"]))], [], none⟩),
-  ("get", ⟨[], [.reply (.state (path ["tasks"]))], none⟩)]
-
-/-- The field's part: `input` keeps the text; `submit` sends it to its placer as `add` and clears it. -/
-def fieldPart : StatePart := [
-  ("input", ⟨[.set (path ["text"]) (.payload (path ["text"]))], [], none⟩),
-  ("submit", ⟨[.set (path ["out", "text"]) (.state (path ["text"])), .remove (path ["text"])],
-    [.tell (.state (path ["placer"])) "add" (.state (path ["out"]))], none⟩),
-  ("props", ⟨[.merge [] (.payload [])], [], none⟩)]
-
-/-- A message: its name and payload, and whether it is an ask. -/
-def msg (name : String) (payload : Value) (ask : Bool := false) : String × Value × Bool := (name, payload, ask)
-
-def stateCases : List (String × StatePart × Value × (String × Value × Bool)) := [
-  ("add appends a task", listPart, obj [("tasks", .array [txt' "milk"])], msg "add" (obj [("text", txt' "bread")])),
-  ("add makes the list when there is none", listPart, obj [], msg "add" (obj [("text", txt' "milk")])),
-  ("get replies with the tasks", listPart, obj [("tasks", .array [txt' "milk"])], msg "get" .null true),
-  ("a reply to a tell is dropped", listPart, obj [("tasks", .array [])], msg "get" .null),
-  ("no rule for a message is an error", listPart, obj [], msg "remove" .null),
-  ("input keeps the text", fieldPart, obj [("placer", txt' "local/list/1")], msg "input" (obj [("text", txt' "milk")])),
-  ("submit tells the placer and clears the text", fieldPart,
-    obj [("placer", txt' "local/list/1"), ("text", txt' "milk")], msg "submit" .null),
-  ("a tell to something that is no address is dropped", fieldPart,
-    obj [("placer", .uint 7), ("text", txt' "milk")], msg "submit" .null),
-  ("props merge into the state", fieldPart, obj [("placer", txt' "local/list/1"), ("text", txt' "a")],
-    msg "props" (obj [("text", txt' "b"), ("hint", txt' "New task")]))]
-
-def stateVectors : List Json :=
-  stateCases.map fun (name, part, st, (mname, payload, ask)) =>
-    vector name (Json.mkObj [("part", partJson part), ("state", Value.json st),
-        ("message", Json.mkObj [("name", mname), ("ask", ask), ("payload", Value.json payload)])])
-      (match part.step st mname payload with
-        | some o => Json.mkObj [("state", Value.json o.state), ("sends", Json.arr (o.sends.map SendOut.json).toArray),
-            ("phase", match o.phase with | some p => toJson p | none => Json.null)]
-        | none => Json.null)
 
 /-! ## face-runtime's markup: `markup.json` -/
 
@@ -322,10 +257,6 @@ def markupVectors : List Json :=
 
 /-! ## Checks on state and markup before writing -/
 
--- the field's submit tells the list `add {text: milk}` and clears its text
-#guard match fieldPart.step (obj [("placer", txt' "local/list/1"), ("text", txt' "milk")]) "submit" .null with
-  | some o => o.sends.length == 1 && (getAt o.state (path ["text"])).isNone
-  | none => false
 -- the list draws two rows, not three: the repeated key is skipped
 #guard (draw tasks .null "" listMarkup).2.length == 3
 -- the hostile markup's forged event is gone
@@ -343,5 +274,5 @@ def main (args : List String) : IO Unit := do
   IO.FS.createDirAll dir
   for (file, vs) in [("table.json", table), ("registry.json", registryVectors), ("tree.json", treeVectors),
       ("face.json", faceVectors), ("contrast.json", contrastVectors), ("contract.json", contractVectors),
-      ("state.json", stateVectors), ("markup.json", markupVectors)] do
+      ("markup.json", markupVectors)] do
     IO.FS.writeFile (dir / file) (render vs)

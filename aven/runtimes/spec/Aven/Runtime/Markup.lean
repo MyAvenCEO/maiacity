@@ -1,4 +1,3 @@
-import Aven.Runtime.State
 import Aven.Runtime.Face
 
 /-!
@@ -28,6 +27,18 @@ The `style` part is the list of `Rule`s in `Face`: style as data, never CSS text
 namespace Aven.Runtime
 
 open Aven.Core
+
+/-- A path into the face data: map keys, each as its UTF-8 bytes. Until state-runtime's paths (`Aven.Runtime.State`)
+are on main, markup keeps this lookup of its own; then it uses theirs. -/
+abbrev Path := List Bytes
+
+def path (ks : List String) : Path := ks.map ascii
+
+/-- What is at a path, if anything. -/
+def getAt : Value → Path → Option Value
+  | v, [] => some v
+  | .map kvs, k :: p => (kvs.lookup k).bind (getAt · p)
+  | _, _ :: _ => none
 
 /-- Where a piece of text comes from: a literal, `$` (the face data) or `$$` (the current list item). -/
 inductive Src where

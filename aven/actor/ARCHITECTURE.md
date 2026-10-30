@@ -551,15 +551,15 @@ Test-first, as avenDB works: the Lean model and its theorems, then Rust tests th
    from the empty kernel and the kernel after them, over four test definitions the Rust tests implement natively.
    And `answered_by_deadline`: once the clock passes an ask's own deadline, it has its answer. `spec/vectors/traces.json`
    adds 40 generated traces, drawn from a fixed seed against the kernel so far.
-   The runtimes' grammars too (Samuel, 30 Oct 2026), in their home, `aven/runtimes/spec`. `Aven.Runtime.State`:
-   state-runtime's rules (updates by path from literals, the payload or the state; replies and tells), with
-   `get_set`, `get_set_other` and `get_remove`: an update touches only its path. `Aven.Runtime.Markup`:
-   face-runtime's markup (`$`, `$$`, `$each` keyed, `$on`, `$use`, no conditionals) drawn onto the node tree, with
-   `draw_nodes_ok` (every drawn node passes the applier's allowlist, for any markup and data), `draw_events` (a face
-   can send only the events its markup names; `data-on` and `data-place` are the runtime's own) and `faceRun_ok`.
-   Their vectors are `state.json` and `markup.json` there. `Aven.Actor.Runtimes` joins them to actors: a state part
-   as a turn (`stateTurn`, `stateTurn_phase`), and `face_actor_checked`: a face actor's face passes the applier's
-   check before it is drawn.
+   The runtimes' grammars too (Samuel, 30 Oct 2026), in their home, `aven/runtimes/spec`: state-runtime's
+   statechart and updates are the runtimes thread's `Aven.Runtime.State` (#1550), with the laws that an update
+   touches only its path (`get_set`, `get_set_other`, `get_remove`). `Aven.Runtime.Markup`: face-runtime's markup
+   (`$`, `$$`, `$each` keyed, `$on`, `$use`, no conditionals) drawn onto the node tree, with `draw_nodes_ok` (every
+   drawn node passes the applier's allowlist, for any markup and data), `draw_events` (a face can send only the
+   events its markup names; `data-on` and `data-place` are the runtime's own) and `faceRun_ok`; vectors
+   `markup.json`. `Aven.Actor.Runtimes` joins them to actors: `face_actor_checked` (a face actor's face passes the
+   applier's check before it is drawn), and, once #1550 is on main, a state part as a turn whose phase the kernel
+   takes only where the machine allows. The kernel hands the current phase to every turn.
 2. **Layers 0 to 2** (`core`): Values and names, the in-memory Doc, messages, with the vectors.
 3. **Runtimes**: `state-runtime` first, then `js-runtime`; each with hostile parts that try to get
    out, run too long or blow up, which must fail.
