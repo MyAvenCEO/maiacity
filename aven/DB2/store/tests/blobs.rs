@@ -242,3 +242,16 @@ async fn a_holder_that_hasnt_a_blob_says_so() {
     let conn = connect(&bob, &refusing).await;
     assert!(matches!(bob.blobs.fetch_file(&conn, kept).await, Err(FetchError::Failed(_))));
 }
+
+#[tokio::test]
+async fn a_blob_that_is_no_index_is_not_a_file() {
+    // a hash sequence's root that is no list of hashes ends the fetch as any trouble does; asked afterwards, the holder's
+    // blob is there and isn't an index: never a file, so nothing asks again
+    let (alice, bob) = (peer(memory(), anyone()).await, peer(memory(), anyone()).await);
+    let conn = connect(&bob, &alice).await;
+    let odd = alice.store.put(noise(33, "thirty-three bytes")).await.unwrap();
+    assert_eq!(bob.blobs.fetch_file(&conn, odd).await, Err(FetchError::NotAFile(odd)));
+    assert_eq!(bob.blobs.fetch_chunks(&conn, odd, 0..1).await, Err(FetchError::NotAFile(odd)));
+    // as a blob, it is one
+    assert_eq!(bob.blobs.fetch_blob(&conn, odd).await.map(|f| f.bytes), Ok(33));
+}
