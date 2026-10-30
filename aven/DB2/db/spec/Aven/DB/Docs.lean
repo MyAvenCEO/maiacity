@@ -5,6 +5,7 @@ import Aven.DB.Docs.Fit
 import Aven.DB.Docs.Lens
 import Aven.DB.Docs.Merge
 import Aven.DB.Docs.Index
+import Aven.DB.Docs.Directory
 
 /-!
 # Aven.DB.Docs: the docs layer's model
@@ -19,5 +20,7 @@ On top of the shared core (`Aven.Core`: Values, the codec, envelopes, logs, spli
 - `Lens`: a read through a lens commutes with a merge;
 - `Merge`: three-way merges place by place, and backing out a commit;
 - `Index`: directories and indexes as Prolly trees: the same entries make the same nodes, folds in steps equal folds
-  at once, and a lookup finds every entry in its range.
+  at once, and a lookup finds every entry in its range;
+- `Directory`: every Doc listed now was listed at the last fold or is unfolded, and one that isn't unfolded has the
+  entries it had then.
 -/
