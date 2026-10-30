@@ -141,26 +141,24 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
 ## The layers
 
 ```
- actors (aven/actor)      declare loads, hold caps, run turns; operations come from them and from pages
-        │  operations                       ▲ answers, deltas, `given`
- ── db/engine ────────────────────────────────────────────────────────────────────────────────────────
- plugins   ontology (x1–x5: assert, set, retract, walk, kinds)   … more later, built in
-        │  lowered to core operations
- core      the one writer · envelope and checks · one evaluator over Records · wants and their scheduler
-           sync · views and deltas · status
-        │  snapshots, diffs, commits, envelopes
- ── db/docs ──────────────────────────────────────────────────────────────────────────────────────────
-           Loro Docs · every Record under a schema · envelopes signed and checked · versions, branches, merges · lenses
-        │  blobs and refs
- ── store (aven/DB2/store) ───────────────────────────────────────────────────────────────────────────
-           Store: blobs by BLAKE3, refs by compare-and-set · iroh-blobs through our adapter · S3, folder, opfs
- ── avenPEER ─────────────────────────────────────────────────────────────────────────────────────────
-           iroh endpoint, relay, the door · /iroh-bytes/4 · iroh-gossip · aven/db/1 over irpc
+avenOS       apps and faces; the applier draws
+┌─ pure cores: no I/O, Lean first ────────────────────────────────────────────────────────────────────┐
+│ actors     declare loads, hold caps, run turns; operations come from them and from pages            │
+│ engine     plugins (ontology first) lowered to core operations · the committer's logic · one        │
+│            evaluator over Records · wants and their scheduler · sync · views and deltas · status    │
+│ docs       Docs, Records, envelopes, logs, types, lenses; every Record under a schema               │
+│ store      Values and refs; files as hash sequences                                                 │
+│ avenID     keys, vaults, groups, caps, seals                                                        │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────┘
+avenPEER     the edge that drives the cores: iroh, relays, the door, /iroh-bytes/4, iroh-gossip,
+             aven/db/1 over irpc, keepers, storage drivers (S3, folder, opfs), browser workers
 ```
 
-Each layer knows only the one below it. The store knows bytes, not documents. The docs layer knows Docs, Records
-and schemas, not queries or what a predicate means. The engine's core knows operations and Records; its plugins know
-meaning. Actors know operations and answers, not Loro.
+Decided as drawn (Samuel, 30 Oct 2026; ARCHITECTURE.md, A24). The cores are pure: each knows only the cores below it,
+and none depends on avenPEER. avenPEER is the edge: it does all the I/O and runs the cores, the one writer's commits
+included, whose logic lives in the engine's core (README, rule 2). The store knows bytes, not documents. The docs layer
+knows Docs, Records and schemas, not queries or what a predicate means. The engine's core knows operations and Records;
+its plugins know meaning. Actors know operations and answers, not Loro.
 
 ## One primitive: the Record
 
@@ -504,10 +502,11 @@ Notes for that iteration, from this one's discussion:
 - **No synced indexes:** an index synced between devices is derived state someone wrote, which a reader must trust or
   recompute. What must be shared, such as a phone's list of 10,000 invoices without the invoices, is a document kept by
   an act: a vault's **directory**, updated by the mutation that creates each one.
-- **No blind index by default:** avenDB-old let the server answer "which entries carry this tag" over keyed hashes of
-  labels, learning only equality; it cost re-hashing per audience, leaked who shares what, and was a second query
-  engine. Per-document caps and a directory answer the same question on devices. It returns only if search across
-  documents a device can't hold needs it.
+- **Search is local first** (Samuel, 30 Oct 2026; ARCHITECTURE.md, A21): a device searches what it holds, and its
+  wants sync what it wants to search: actors' `loads`, and a query's target as an implicit want (A8). No other peer
+  indexes or matches anyone's data: no blind index, and no `match` verb. avenDB-old's blind index let the server answer
+  "which entries carry this tag" over keyed hashes of labels; it cost re-hashing per audience, leaked who shares what,
+  and was a second query engine.
 
 ## Decisions
 
