@@ -1,7 +1,7 @@
 // avenOS's views, held to Lean's vectors (id/spec/vectors/avenos.json, README rule 10) in any engine: whom each host
 // may act as, each person's Control Room, each Vault and the names it shows, and whom each Peer-Light serves. Every
 // view is pushed by a Peer-Light (os/web/id.svelte.js): the box's own view runs its core for that alone. check.mjs walks
-// them in Chromium beside the peers' panes; webkit.mjs walks them in WebKit with this. No expected value is written
+// them in Chromium beside the peers' panes; engines.mjs walks them in WebKit and Firefox with this. No expected value is written
 // here.
 import { readFileSync } from 'node:fs';
 
