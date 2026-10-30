@@ -1,12 +1,12 @@
-// Serves the suite's wasm on localhost (OPFS needs a secure context), opens it in Playwright's Chromium and WebKit
-// (Safari's engine), and prints the report. In each it runs three times: on the page, in a worker, which has no
-// `window`, and in a shared worker, where the Peer-Light runs. WebKit has OPFS only with a profile directory
+// Serves the suite's wasm on localhost (OPFS needs a secure context), opens it in Playwright's Chromium, WebKit
+// (Safari's engine) and Firefox, and prints the report. In each it runs three times: on the page, in a worker, which
+// has no `window`, and in a shared worker, where the Peer-Light runs. WebKit has OPFS only with a profile directory
 // (`launchPersistentContext`). Exits non-zero unless every case passed everywhere.
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { chromium, webkit } from 'playwright';
+import { chromium, firefox, webkit } from 'playwright';
 
 const dir = process.argv[2];
 const page = `<!doctype html><script type="module">
@@ -46,7 +46,7 @@ const server = createServer(async (req, res) => {
 	}
 });
 await new Promise((ok) => server.listen(0, '127.0.0.1', ok));
-// both engines at once, each on a profile of its own; each prints its report whole
+// every engine at once, each on a profile of its own; each prints its report whole
 async function run(engine) {
 	const profile = await mkdtemp(join(tmpdir(), `opfs-${engine.name()}-`));
 	const context = await engine.launchPersistentContext(profile);
@@ -64,6 +64,6 @@ async function run(engine) {
 		await rm(profile, { recursive: true, force: true });
 	}
 }
-const passed = await Promise.all([chromium, webkit].map(run));
+const passed = await Promise.all([chromium, webkit, firefox].map(run));
 server.close();
 process.exitCode = passed.every(Boolean) ? 0 : 1;
