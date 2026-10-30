@@ -29,7 +29,7 @@ layers above.
 
 ```
  7  App         the version 1 todo app: definitions and their parts
- 6  Faces       view-runtime and css-runtime draw a node tree; the host's applier shows it; events come back as tells
+ 6  Faces       view-runtime and style-runtime draw a node tree; the host's applier shows it; events come back as tells
  5  Kernel      router, scheduler, turns, clock: pure Rust with no I/O, compiled to WebAssembly
  4  Actors      a definition (a Value), its Doc, and its turns
  3  Runtimes    pure functions over values: frozen WebAssembly modules named by hash, run with fuel
@@ -158,11 +158,11 @@ the WebAssembly boundary's, not the part's.
 | `js-runtime` | JavaScript: `init`, `turn`, `present`, `preview` | A turn's output, or a view model | QuickJS compiled to WebAssembly. maiaCITY's logic core: a seeded random, a frozen clock, no binary buffers |
 | `prolog-runtime` | A machine: fact-only Prolog with a real term parser | Whether the machine is well formed, and which messages are legal in a state | avenOS's `machine.ts`, without its comma splitting (README, weak spot 12) |
 | `view-runtime` | A view: an allowlisted tag tree with `$`, `$$`, `$each`, `$on` and components | A safe node tree for one viewer | avenVIBES's view grammar; aven-brands' component library; maiaCITY's view engine and Markdown engine, which write every tag themselves |
-| `css-runtime` | A style: tokens, component styles, variants and states as data | Scoped CSS text, from allowlisted properties and values only | avenVIBES's style engine and its eight states; aven-brands' brands as data. Raw CSS is never accepted |
+| `style-runtime` | A style: tokens, component styles, variants and states as data | Scoped CSS text, from allowlisted properties and values only | avenVIBES's style engine and its eight states; aven-brands' brands as data. Raw CSS is never accepted |
 
 Later: `markdown-runtime`, `math-runtime`, `three-runtime`, `lean-runtime`, and actors written in Rust as WebAssembly.
 
-**The rules of faces**, which view-runtime and css-runtime enforce, after avenVIBES and the component library of
+**The rules of faces**, which view-runtime and style-runtime enforce, after avenVIBES and the component library of
 aven-brands (`brands/CEO/design-system/src/brand/actors`: 53 components, each a JSON Value). Components themselves are
 definitions, and every placed one is an actor (section 6).
 
@@ -176,7 +176,7 @@ definitions, and every placed one is an actor (section 6).
   hover, focus, active and disabled, and the library fails to load without them.
 - **Styles stay inside their face.** A component's custom properties are declared on itself, never globally. It sizes
   by container queries, never by the viewport; the only media query is `prefers-reduced-motion`.
-- **The brand is data**: tones, roles, scales and tokens. The css-runtime generates every rule from it and from the
+- **The brand is data**: tones, roles, scales and tokens. The style-runtime generates every rule from it and from the
   components' styling. It never takes CSS text.
 
 ## 6. Layer 4: actors
@@ -188,7 +188,7 @@ definitions, and every placed one is an actor (section 6).
 | `interface` | The messages it accepts, each with a JSON schema for its payload; an ask also names its reply's schema |
 | `machine` | Optional: a `prolog-runtime` part. If present, the kernel refuses any message the machine does not allow in the current `phase` |
 | `turn` | Required: `{ runtime, v, part }` on `state-runtime` or `js-runtime` |
-| `faces` | Optional: named faces, each a `present` function plus a `view-runtime` part and a `css-runtime` part |
+| `faces` | Optional: named faces, each a `present` function plus a `view-runtime` part and a `style-runtime` part |
 | `init` | The first state |
 | `lifetime` | `durable` (the default): the actor lasts until it is retired, and later persists in avenDB. `mounted`: it lives while the face that placed it shows it, and goes when it is unplaced |
 | `replaces` | Optional: the name of the definition this one upgrades. Its actors move to the new definition, and a cap follows the upgrade only as far as the old interface reached (section 11) |
@@ -213,7 +213,7 @@ A component's definition adds to the fields above:
 | `props` | What its placer passes in: its first state, and later a `props` tell whenever they change |
 | `events` | The messages it sends out, to whatever address its placer wires them to (by default the placer) |
 | `slots` | The children its placer passes: faces of other actors. A leaf has no slots |
-| `view`, `styling`, `a11y` | Its face's parts: its tag tree for view-runtime, its styling for css-runtime, its accessible names and roles |
+| `view`, `styling`, `a11y` | Its face's parts: its tag tree for view-runtime, its styling for style-runtime, its accessible names and roles |
 | `name`, `description` | Its name, and why it is the way it is. A `$description` key is documentation at any depth |
 
 **Placing** is spawning. In a face's view, `$use: { component, props, slots, on }` places a component: on the first
@@ -299,7 +299,7 @@ The host is the page. It runs the kernel in a worker, and holds one small piece 
  actor state ─▶ present (state- or js-runtime) ─▶ view model
                                                      │
           view part + view model ─▶ view-runtime ─▶ node tree ─┐
-          css part              ─▶ css-runtime  ─▶ scoped CSS ─┤
+          style part            ─▶ style-runtime  ─▶ scoped CSS ─┤
                                                                ▼
                          applier: checks the tree again, writes it into the face's shadow root
                                                                │
@@ -310,7 +310,7 @@ A screen is a tree of face actors. Each one's face renders into its own shadow r
 the applier fits each child's root into the place its placer left for it. A click goes to the face actor whose node
 was clicked; its turn may send one of its `events` on, to the address its placer wired.
 
-- **Runtimes never touch the DOM.** view-runtime and css-runtime compute a node tree and CSS text from values. Only
+- **Runtimes never touch the DOM.** view-runtime and style-runtime compute a node tree and CSS text from values. Only
   the applier writes the DOM.
 - **The applier trusts nothing.** It checks every node and attribute against the same allowlist again, checks every
   URL's scheme, and adds no script. It writes into a shadow root of its own, so a face cannot style or read the page.
@@ -399,7 +399,7 @@ aven/actor/
   spec/              the Lean model, Aven.Actor, and the vectors it exports
   core/              the kernel: Values, Docs, messages, router, scheduler, clock, the runtime host
   runtimes/
-    state/  js/  prolog/  view/  css/     one crate each, built to WebAssembly, frozen by hash
+    state/  js/  prolog/  view/  style/     one crate each, built to WebAssembly, frozen by hash
   host/              the page's side: the worker that runs the kernel, and the applier
   components/        the component library: definitions with faces, after aven-brands
   app/todo/          the version 1 app: its definitions and parts
@@ -416,7 +416,7 @@ Test-first, as avenDB works: the Lean model and its theorems, then Rust tests th
 3. **Runtimes**: `prolog-runtime` and `state-runtime` first, then `js-runtime`; each with hostile parts that try to get
    out, run too long or blow up, which must fail.
 4. **The kernel** (`core`): router, scheduler, turns, clock, spawning; native tests replay the vectors.
-5. **Faces**: `view-runtime`, `css-runtime`, the applier, events as tells.
+5. **Faces**: `view-runtime`, `style-runtime`, the applier, events as tells.
 6. **The app**: the todo app in a page, the kernel in a worker.
 
 What version 1 is not: no network, no avenDB, no capabilities, no encryption, no composites, no Studio, no planner.
@@ -428,7 +428,7 @@ Decided (Samuel, 30 Oct 2026):
 - Its own package, `aven/actor`, in Rust only, compiled to WebAssembly, with its own Cargo workspace: the actor is
   universal and depends on no storage backend, avenDB included (section 13).
 - Actors are mostly JSON, with JavaScript where code is needed, run by on-demand runtimes such as QuickJS.
-- The runtimes are rewritten from scratch and named `<job>-runtime` after what their part does (every part is JSON, so `json-runtime` named nothing; the declarative turn runs on `state-runtime`). They run untrusted parts securely and never
+- The runtimes are rewritten from scratch and named `<job>-runtime` after what their part does (every part is JSON, so `json-runtime` named nothing; the declarative turn runs on `state-runtime`, styles on `style-runtime`, which never takes CSS and only gives it). They run untrusted parts securely and never
   reach the host.
 - Version 1 is a standalone, in-memory todo app: no network, no avenDB, no capabilities.
 - Frames as JSON lines when the network comes; ids derived from definition, spawner and count; only definitions from
