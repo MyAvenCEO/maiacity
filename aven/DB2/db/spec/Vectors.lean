@@ -36,8 +36,10 @@ import Aven.DB.Engine
 - `merges.json`: one place's base, the target's and the other branch's values and the merger's choice; the merged value,
   and backing out a commit (`Aven.DB.Docs.Merge`).
 - `lenses.json`: writes of a todo's done-ness by v0 and v1 apps; what a v0 reader reads (`Aven.DB.Docs.Lens`).
-- `indexes.json`: entries in any order, a size limit and a range; the nodes they make and what a lookup finds
-  (`Aven.DB.Docs.Index`).
+- `indexes.json`: invoices' entries (vendor, total, Doc) in any order, a size limit and a vendor; the nodes they make
+  and what a lookup of that vendor finds, by total (`Aven.DB.Docs.Index`, `Aven.DB.Docs.Key`).
+- `keys.json`: tuples and their keys in hex; pairs of tuples and whether the first key sorts before the second
+  (`Aven.DB.Docs.Key`).
 
 `aven-db-core`'s and `aven-db-store`'s tests load them. `bun run up --check` runs this again and fails when the files
 differ from what is committed. -/
@@ -651,25 +653,72 @@ end Engine
 
 /-! ## Docs: sealed indexes (`Aven.DB.Docs.Index`) -/
 
-/-- The vectors' boundary: an entry whose last byte is a multiple of four ends its node. The Rust uses its BLAKE3's
-low bits; any rule on the entry alone keeps the theorems. -/
-def indexBoundary (e : List UInt8) : Bool := (e.getLastD 0).toNat % 4 == 0
+/-- The vectors' boundary, the spec's rule with fewer bits: an entry whose BLAKE3's first byte has its low 2 bits zero
+ends its node (about four entries a node; the spec uses 6 bits). Any rule on the entry alone keeps the theorems. -/
+def indexBoundary (e : List UInt8) : Bool := ((Aven.Core.Blake3.digest e).headD 0).toNat % 4 == 0
 
-def indexCases : List (String × List String × Nat × String × String) := [
-  ("a directory in four nodes", ["d:01", "d:07", "d:04", "d:0a", "d:02", "d:09"], 8, "d:02", "d:07"),
-  ("the same entries, another order", ["d:09", "d:02", "d:0a", "d:04", "d:07", "d:01"], 8, "d:02", "d:07"),
-  ("a duplicate, folded once", ["d:01", "d:01", "d:05"], 8, "d:00", "d:ff"),
-  ("cut by size", ["aaaa", "bbbb", "cccc", "dddd"], 9, "b", "c~")]
+open Docs.Key in
+def Aven.DB.Docs.Key.Field.json : Field → Json
+  | .bytes b => Json.mkObj [("bytes", Aven.Core.hex b)]
+  | .text b => String.fromUTF8! ⟨b.toArray⟩
+  | .nint n => toJson (-(n : Int) - 1)
+  | .uint n => toJson n
 
+open Docs.Key in
+def keyCases : List (String × List Field) := [
+  ("an unsigned integer", [.uint 1000]), ("a negative integer", [.nint 4]),
+  ("text with a zero byte", [.text [0x61, 0x00, 0x62]]), ("text, then a number", [.text "Acme".toUTF8.toList, .uint 7]),
+  ("bytes", [.bytes [0x00, 0xFF]]), ("nothing", [])]
+
+open Docs.Key in
+def keyPairs : List (String × List Field × List Field) := [
+  ("shorter text first by code point, not by length", [.text "b".toUTF8.toList], [.text "ab".toUTF8.toList]),
+  ("a prefix first", [.text "Acme".toUTF8.toList], [.text "Acme".toUTF8.toList, .uint 1]),
+  ("negatives before positives", [.nint 0], [.uint 0]),
+  ("-5 before -1", [.nint 4], [.nint 0]),
+  ("255 before 256", [.uint 255], [.uint 256]),
+  ("a zero byte inside text", [.text [0x61, 0x00]], [.text [0x61]])]
+
+open Docs.Key in
+def keys : List Json :=
+  (keyCases.map fun (name, t) => vector name (Json.arr (t.map Field.json).toArray) (Aven.Core.hex (keyBytes t))) ++
+  keyPairs.map fun (name, a, b) =>
+    vector name (Json.arr #[Json.arr (a.map Field.json).toArray, Json.arr (b.map Field.json).toArray])
+      (toJson (Aven.Core.lexLt (keyBytes a) (keyBytes b)))
+
+open Docs.Key in
+/-- Invoices by vendor and total, each its Doc's entry. -/
+def invoices : List (List Field × String) := [
+  ([.text "Acme".toUTF8.toList, .uint 120], "d:01"), ([.text "Bolt".toUTF8.toList, .uint 40], "d:02"),
+  ([.text "Acme".toUTF8.toList, .uint 7], "d:03"), ([.text "Ab".toUTF8.toList, .uint 900], "d:04"),
+  ([.text "Acme".toUTF8.toList, .uint 3000], "d:05"), ([.text "Zed".toUTF8.toList, .uint 1], "d:06")]
+
+open Docs.Key in
+def invoiceEntry (fs : List Field) (doc : String) : List UInt8 := entry fs ⟨⟨doc.toUTF8.toList⟩⟩
+
+open Docs.Key in
+def indexCases : List (String × List (List Field × String) × Nat × List Field) := [
+  ("Acme's invoices, by total", invoices, 64, [.text "Acme".toUTF8.toList]),
+  ("the same entries, another order", invoices.reverse, 64, [.text "Acme".toUTF8.toList]),
+  ("small nodes, cut by size", invoices, 40, [.text "Acme".toUTF8.toList]),
+  ("one entry twice, folded once", invoices ++ invoices.take 1, 64, [.text "Bolt".toUTF8.toList])]
+
+open Docs.Key in
 def indexes : List Json :=
-  indexCases.map fun (name, es, limit, lo, hi) =>
-    let bs := es.map fun e => e.toUTF8.toList
-    let text (b : List UInt8) : Json := String.fromUTF8! ⟨b.toArray⟩
+  indexCases.map fun (name, es, limit, pre) =>
+    let bs := es.map fun (fs, d) => invoiceEntry fs d
+    let lo := keyBytes pre
+    let hi := lo ++ [0xFF]
+    let shown (b : List UInt8) : Json :=
+      match es.find? (fun (fs, d) => invoiceEntry fs d == b) with
+      | some (fs, d) => Json.arr ((fs.map Field.json) ++ [Json.str d]).toArray
+      | none => Aven.Core.hex b
     let nodes := Docs.Index.chunks indexBoundary List.length limit (Docs.Index.entries bs)
-    let found := Docs.Index.lookup indexBoundary List.length limit lo.toUTF8.toList hi.toUTF8.toList bs
-    vector name (Json.mkObj [("entries", toJson es), ("limit", toJson limit), ("lo", lo), ("hi", hi)])
-      (Json.mkObj [("nodes", Json.arr (nodes.map fun n => Json.arr (n.map text).toArray).toArray),
-        ("found", Json.arr (found.map text).toArray)])
+    let found := Docs.Index.lookup indexBoundary List.length limit lo hi bs
+    vector name (Json.mkObj [("entries", Json.arr (bs.map shown).toArray), ("limit", toJson limit),
+        ("prefix", Json.arr (pre.map Field.json).toArray)])
+      (Json.mkObj [("nodes", Json.arr (nodes.map fun n => Json.arr (n.map shown).toArray).toArray),
+        ("found", Json.arr (found.map shown).toArray)])
 
 /-- One vector per line, so a change reads as a diff of lines. -/
 def render (vs : List Json) : String :=
@@ -682,5 +731,5 @@ def main (args : List String) : IO Unit := do
       ("wire.json", wire), ("store.json", store), ("hashes.json", hashes), ("refs.json", refs),
       ("chat.json", chat), ("files.json", files), ("chats.json", chats), ("queries.json", queries),
       ("wants.json", wants), ("mutations.json", mutations), ("merges.json", merges), ("lenses.json", lenses),
-      ("indexes.json", indexes), ("lookups.json", lookups)] do
+      ("indexes.json", indexes), ("lookups.json", lookups), ("keys.json", keys)] do
     IO.FS.writeFile (dir / file) (render vs)
