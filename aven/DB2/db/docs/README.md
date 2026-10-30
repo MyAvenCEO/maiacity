@@ -717,6 +717,12 @@ readers. Whoever creates a Doc of the type, or changes a field an index sorts by
 commit, as an `entry` Record; a Doc that leaves (removed, or its field changed) leaves a `gone` Record. Loro merges
 writers who write at once.
 
+**The directory's two guarantees,** which make a lookup exact (Lean: `Aven.DB.Docs.Directory`; the engine's
+`lookup_exact` rests on them): every Doc listed now was listed at the last fold or is unfolded (`listed_now`), and a Doc
+that isn't unfolded has the entries it had at the last fold (`same_entries`). They hold because a commit that changes
+a Doc's entries (its birth, a field an index sorts by, its leaving) marks it unfolded in the same commit; a change to
+any other field needs no mark.
+
 **A fold** moves them into Values, as an LSM tree compacts. It is a checkpoint (rule 12): the directory's version it
 covers, the root it makes, the runtime that made it, hybrid-signed. Any device that holds the Docs an index covers and
 may write the directory can fold. A fold takes the entries of the last fold's root, drops the `gone`, adds the new
@@ -851,6 +857,8 @@ against the Rust's Loro on random ops, so it can never be simpler than the code.
   its nodes hold exactly those entries, each node within the size limit, and depend only on the set; folding in steps,
   removals included, gives what folding at once gives; a lookup finds every entry in its range, and only those.
   Vectors `indexes.json`.
+- **The directory** (`Aven.DB.Docs.Directory`): every Doc listed now was listed at the last fold or is unfolded; a Doc
+  that isn't unfolded has the entries it had then.
 
 **What the proofs exposed** (the docs thread, 30 Oct 2026, for the cross-spec step):
 - **Loro's convergence is a stated property.** The model takes it in any order; Loro states it for causal orders, so
