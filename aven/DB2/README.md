@@ -176,7 +176,8 @@ organization `aven` reserves the scope before anything is published.
   file)`): the space's peers store each file once, and outsiders, the Aven Peer included, can't even test a guess.
   This is Tahoe-LAFS's convergence secret, with symmetric crypto only. Private documents stay sealed with random keys;
   their segments are unique anyway. Dedup across all peers through the Aven Peer (DupLESS-style) stays an option, not
-  the default. It takes effect in the milestone that brings files; nothing changes before it.
+  the default. It takes effect with sealing, which comes with avenID's caps: the store upgrade's files are plain
+  until then (Samuel, 30 Oct 2026; [`store`](store/README.md#later-sealing)).
 - **Identity is a package of its own: avenID.** Vaults own vaults, a concept kept from avenDB-old and built anew. A
   person's vault is owned by its owner key. A device's vault is owned by the vault it serves; the device's key signs for
   that vault and governs nothing, so a lost device is revoked by its vault, and the vault loses nothing. A network's
