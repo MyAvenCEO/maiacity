@@ -147,17 +147,15 @@ async function install() {
 // when the wasm does.
 const peerBinary = '/work/target/debug/aven-peer';
 const lightWasm = 'target/wasm32-unknown-unknown/debug/aven_peer_light.wasm';
-const buildPeers = [
-	'set -e',
-	'cargo build -q -p aven-peer',
+const buildLight = [
 	'cargo build -q -p aven-peer-light --lib --target wasm32-unknown-unknown',
 	// wasm-bindgen takes 3 s even for nothing, so it runs only for a new wasm; one swap, so Vite never serves half a build
 	`src=$(sha256sum ${lightWasm} | cut -c1-64)`,
 	`if [ "$src" != "$(cat target/light/.source 2>/dev/null)" ]; then rm -rf target/light.next && wasm-bindgen --target web --no-typescript --out-dir target/light.next ${lightWasm} && echo "$src" > target/light.next/.source && rm -rf target/light && mv target/light.next target/light; fi`,
 	'sh id/core/wasm/build.sh',
-	'sh sandbox/box/qad.sh',
-	`sha256sum ${peerBinary} | cut -c1-16`,
-].join(' && ');
+];
+// the box's test certificate for the relay's QUIC address discovery, made once (box/qad.sh)
+const buildPeers = ['set -e', 'cargo build -q -p aven-peer', ...buildLight, 'sh sandbox/box/qad.sh', `sha256sum ${peerBinary} | cut -c1-16`].join(' && ');
 
 export async function build() {
 	await $`docker volume create avensandbox_target`.quiet();
@@ -190,7 +188,8 @@ async function check() {
 	say(`vectors ${fresh ? 'fresh' : 'STALE'} (${((Date.now() - vectorsStarted) / 1000).toFixed(1)} s)`);
 	const run = `runs/${new Date().toISOString().replace(/[:.]/g, '-')}`;
 	const result = await $`${compose} exec -T browsers node sandbox/check.mjs ${run}`.env(env).nothrow();
-	const passed = fenced.length === 0 && fresh && result.exitCode === 0 && (await keeps(run)) && (await claims(run)) && (await members(run));
+	const passed =
+		fenced.length === 0 && fresh && result.exitCode === 0 && (await keeps(run)) && (await inWebKit(run)) && (await claims(run)) && (await members(run)) && (await chats(run));
 	say(`${passed ? 'check passed' : 'check FAILED'}; screenshots and report in aven/DB2/${run}/`);
 	return passed ? 0 : 1;
 }
@@ -235,6 +234,18 @@ async function keeps(run) {
 	for (const problem of problems) say(`record: ${problem}`);
 	if (report.ok) say(`a restart kept all four records, and a wipe emptied them (${(report.ms / 1000).toFixed(1)} s)`);
 	return report.ok;
+}
+
+// The Peer-Lights in WebKit, Safari's engine (sandbox/webkit.mjs): the cast's two, live on their own OPFS, and avenOS's
+// release build, served as aven.maia.city serves it, reaching the prod peer in WebKit and Chromium. The build is the one
+// `bun run build` releases; the rest of the check runs the dev server.
+async function inWebKit(run) {
+	const timed = Date.now();
+	await buildPage();
+	const built = Date.now() - timed;
+	const ok = (await $`${compose} exec -T browsers node sandbox/webkit.mjs ${run}`.env(env).nothrow()).exitCode === 0;
+	say(`${ok ? 'WebKit runs both Peer-Lights, and the release build goes live in WebKit and Chromium' : 'the WebKit step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s, the build ${(built / 1000).toFixed(1)} s)`);
+	return ok;
 }
 
 // The admin's passkey (PRODUCTION.md, "How it is checked"), on production's stand-in: an Aven Peer in production's
@@ -295,6 +306,10 @@ async function members(run) {
 	return ok;
 }
 
+// avenOS's Invite, Join and Chat (MILESTONE2.md, steps 1, 2 and 4), on production's stand-in after the members' step
+// leaves its store empty: sandbox/chat.mjs
+const chats = async (run) => (await $`${compose} exec -T browsers node sandbox/chat.mjs ${run}`.env(env).nothrow()).exitCode === 0;
+
 async function up(args) {
 	const started = Date.now();
 	await ensureDocker();
@@ -318,16 +333,27 @@ async function up(args) {
 	if (args.includes('--check')) process.exit(await check());
 }
 
-// Every release's deliverables (SANDBOX.md, "Production"): for now avenOS for the browser, with aven-id's wasm, built in
-// the box.
+// Every release's deliverables (SANDBOX.md, "Production"): for now avenOS for the browser, built in the box, with
+// aven-id's wasm and the Peer-Light at /peer-light/, the same build the check runs: the dev server serves it there
+// (sandbox/peers.mjs), and a build without it never went live (aven.maia.city, 30 Oct 2026).
+async function buildPage() {
+	await $`docker volume create avensandbox_target`.quiet();
+	const volumes = ['-v', `${db2}:/work`, '-v', 'avensandbox_node_modules:/work/node_modules', ...rustVolumes];
+	const script = [
+		'set -e',
+		...buildLight,
+		'node_modules/.bin/vite build --config vite.config.js --logLevel warn',
+		'mkdir -p dist/peer-light',
+		'cp target/light/aven_peer_light.js target/light/aven_peer_light_bg.wasm dist/peer-light/',
+	].join(' && ');
+	await $`docker run --rm ${network()} ${volumes} -w /work ${image} sh -c ${script}`.env(env);
+}
+
 async function deliverables() {
 	await ensureDocker();
 	await ensureImages();
 	await install();
-	await $`docker volume create avensandbox_target`.quiet();
-	const volumes = ['-v', `${db2}:/work`, '-v', 'avensandbox_node_modules:/work/node_modules', ...rustVolumes];
-	const script = 'sh id/core/wasm/build.sh && node_modules/.bin/vite build --config vite.config.js';
-	await $`docker run --rm ${network()} ${volumes} -w /work ${image} sh -c ${script}`.env(env);
+	await buildPage();
 	const out = join(db2, 'deliverables');
 	rmSync(out, { recursive: true, force: true });
 	await $`mkdir -p ${out}`;

@@ -4,7 +4,9 @@
 // one of its devices, its tree. The claim and the sign-in are WebAuthn ceremonies here, on the page, since a worker
 // has no `navigator.credentials`; their statements go to the Aven Peer through the worker.
 import { challenge, claimText, deviceId, passkeyId, personId, signInText, validPersonName } from './id.js';
+import { openWorker } from './peer/open.js';
 import { live, take, timeline } from './peers.svelte.js';
+import { hear, speakThrough } from './room.svelte.js';
 
 // `me` and `key`: this browser's device and its key; `claimed`: null until the Aven Peer has said; `tree`: the
 // network's tree as cast JSON, told to its devices only; `refused`: why the last claim or sign-in was refused;
@@ -29,10 +31,9 @@ export async function hostNetwork() {
 
 export function runNetwork(config) {
 	timeline.box = false;
-	const url = new URL('./peer/worker.js', import.meta.url);
-	const shared = typeof SharedWorker === 'function';
-	const worker = shared ? new SharedWorker(url, { type: 'module', name: 'network' }) : new Worker(url, { type: 'module' });
-	port = shared ? worker.port : worker;
+	const opened = openWorker('network');
+	port = opened.port;
+	const worker = opened.worker;
 	worker.onerror = (event) => (net.trouble = `the Peer-Light's worker didn't load: ${event?.message || 'no reason given'}`);
 	// a worker that says nothing at all is a cause too
 	const silent = setTimeout(() => (net.trouble ??= 'the Peer-Light has said nothing for 15 s'), 15000);
@@ -48,7 +49,9 @@ export function runNetwork(config) {
 		if (line.event === 'status' || line.event === 'failed') live.own = line.event === 'failed' ? { ...line, phase: 'offline', peers: 0 } : line;
 		if (line.event === 'stored') live.ownStored = line;
 		if (line.peer === net.me) take(line);
+		hear(line);
 	};
+	speakThrough(port);
 	port.start?.();
 	port.postMessage({ start: { name: '', secret: 'opfs', avenKey: config.peer, avenName: 'aven-peer' } });
 }
@@ -57,7 +60,7 @@ const hex = (buffer) => [...new Uint8Array(buffer)].map((b) => b.toString(16).pa
 const unbase64url = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
 
 // The passkey signs a statement's text: its challenge is the text's SHA-256, so the assertion holds for nothing else
-async function assertion(config, text, credential) {
+export async function assertion(config, text, credential) {
 	const allowCredentials = credential ? [{ type: 'public-key', id: credential }] : [];
 	const got = await navigator.credentials.get({
 		publicKey: { challenge: unbase64url(challenge(text)), rpId: config.rpId, userVerification: 'required', allowCredentials },
@@ -66,7 +69,7 @@ async function assertion(config, text, credential) {
 	return { clientData: new TextDecoder().decode(r.clientDataJSON), authData: hex(r.authenticatorData), signature: hex(r.signature) };
 }
 
-function send(frame) {
+export function send(frame) {
 	net.refused = null;
 	port.postMessage({ send: JSON.stringify(frame) });
 }
