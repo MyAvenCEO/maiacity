@@ -203,7 +203,7 @@ definitions, and every placed one is an actor (section 6).
 | `faces` | Optional: named faces, each `{ present, view, style, a11y }`. `present` (optional; without it the view sees the state) is a part on state- or js-runtime that gives the view model; `view` is a view-runtime part, `style` a style-runtime part, `a11y` the accessible names and roles view-runtime checks |
 | `init` | The first state |
 | `lifetime` | `durable` (the default): the actor lasts until it is retired, and later persists in avenDB. `mounted`: it lives while the face that placed it shows it, and goes when it is unplaced |
-| `replaces` | Optional: the name of the definition this one upgrades. Its actors move to the new definition, and a cap follows the upgrade only as far as the old interface reached, and only in a vault that has itself adopted the new definition (section 11) |
+| `replaces` | Optional: the name of the definition this one upgrades. Its actors move to the new definition, a lens carrying their state into its shape (section 15), and a cap follows the upgrade only as far as the old interface reached, and only in a vault that has itself adopted the new definition (section 11) |
 | `loads` | Later, with avenDB's engine: what the actor needs, in tiers. Devices decide how deep they keep it, and the `now` tier is handed into each turn as part of `given`, so an actor never fetches (section 11) |
 
 An actor's code and faces are **parts**: values in a format, for the runtime of that format. Actors are mostly JSON;
