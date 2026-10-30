@@ -61,7 +61,7 @@ def hosts : List (String × Host) :=
    ("bob.localhost", .device "bob-peer-light"), ("os.localhost", .visitor)]
 
 /-- Whom each host may act as, written out by hand. No person switches into Aven: it acts only through its own
-device, the Aven Peer. -/
+device, the Aven Peer. Nor into Maia City: its people act for it as themselves. -/
 def accountsExamples : List (String × List String) :=
   [("localhost", ["alice", "bob"]), ("alice.localhost", ["alice"]), ("bob.localhost", ["bob"]),
    ("os.localhost", [])]
@@ -73,9 +73,11 @@ theorem accounts_examples :
 /-- The Vault app's tree for an account and a target (`none`: its own vault): a vault one governs opens, any other
 doesn't. -/
 def vaultExamples : List ((String × Option String) × List String) :=
-  [(("alice", none), ["alice", "aven", "aven-peer", "alice-peer", "alice-peer-light"]),
+  [(("alice", none), ["alice", "maia-city", "aven", "aven-peer", "alice-peer", "alice-peer-light"]),
+   (("alice", "maia-city"), ["maia-city", "aven", "aven-peer"]),
    (("alice", "aven"), ["aven", "aven-peer"]),
    (("bob", none), ["bob", "bob-peer-light"]),
+   (("bob", "maia-city"), ["bob", "bob-peer-light"]),
    (("bob", "aven"), ["bob", "bob-peer-light"])]
 
 theorem vault_examples :

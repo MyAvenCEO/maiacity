@@ -4,8 +4,8 @@
 //! A [`Tree`] is only ever well formed: [`Tree::new`] and [`Tree::from_cast`] refuse anything else, so every query
 //! answers for a tree the model's theorems hold for.
 //!
-//! In production the tree is data (PRODUCTION.md, Part A): a [`Network`] is claimed once by a passkey's signed
-//! [`Claim`] and grows by [`SignIn`]s, each a WebAuthn [`Assertion`] checked as `Aven.ID.Passkey` says.
+//! In production the tree is data (PRODUCTION.md, Parts A and C): a [`Network`] is claimed once by a passkey's signed
+//! [`Claim`], which founds the claimant's vault and the admin coop that owns the network, and grows by [`SignIn`]s, each a WebAuthn [`Assertion`] checked as `Aven.ID.Passkey` says.
 
 mod cast;
 mod claim;
@@ -22,7 +22,9 @@ mod wasm;
 pub use cast::CastError;
 pub use claim::{Claim, SignIn, claim_text, device_id, passkey_id, person_id, sign_in_text};
 pub use keys::{public_hex, test_signer};
-pub use network::{ClaimError, GUARDIAN, Network};
+pub use network::{COOP, COOP_NAME, ClaimError, GUARDIAN, Network};
 pub use passkey::{Assertion, AssertionError, Passkey, Relying, base64url, challenge};
 pub use sign::{SignError, Statement};
-pub use tree::{Invalid, Kind, Owner, Tree, Vault};
+pub use tree::{
+    Invalid, Kind, MAX_NAME, MAX_PERSON_NAME, Owner, Tree, Vault, valid_name, valid_person_name,
+};

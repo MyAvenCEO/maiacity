@@ -7,7 +7,7 @@ import Lean.Data.Json
 The one JSON form of `aven-id-model` (`Main.lean`) and of the vectors (`Vectors.lean`):
 
 ```
-tree:    {"keys":["k"],"vaults":[{"id":"a","kind":"person","owners":["key:k"]}]}
+tree:    {"keys":["k"],"vaults":[{"id":"a","name":"A's vault","kind":"person","owners":["key:k"]}]}
 query:   ["governs","a"]   ["accounts",null]   ["mayActOn","d","a"]
 answer:  ["a","b"]   "a"   null   true
 result:  {"wf":true,"answers":[…]}   {"wf":false,"invalid":{"rule":"unowned","vault":"a"},"answers":[]}
@@ -20,13 +20,14 @@ open Lean
 namespace Aven.ID
 
 def Vault.json (v : Vault) : Json :=
-  Json.mkObj [("id", v.id), ("kind", v.kind.name), ("owners", toJson (v.owners.map Owner.name))]
+  Json.mkObj [("id", v.id), ("name", v.name), ("kind", v.kind.name), ("owners", toJson (v.owners.map Owner.name))]
 
 def Tree.json (t : Tree) : Json :=
   Json.mkObj [("keys", toJson t.keys), ("vaults", Json.arr (t.vaults.map Vault.json).toArray)]
 
 def Query.json : Query → Json
   | .kind x => toJson ["kind", x]
+  | .name x => toJson ["name", x]
   | .owners x => toJson ["owners", x]
   | .owned x => toJson ["owned", x]
   | .governs x => toJson ["governs", x]
@@ -50,6 +51,9 @@ def Invalid.json : Invalid → Json
   | .deviceOwns d v => Json.mkObj [("rule", "deviceOwns"), ("device", d), ("vault", v)]
   | .deviceKeyless id => Json.mkObj [("rule", "deviceKeyless"), ("vault", id)]
   | .deviceKeyOwns d v => Json.mkObj [("rule", "deviceKeyOwns"), ("device", d), ("vault", v)]
+  | .name id => Json.mkObj [("rule", "name"), ("vault", id)]
+  | .coopOwner c o => Json.mkObj [("rule", "coopOwner"), ("vault", c), ("owner", o.name)]
+  | .coopDevice c d => Json.mkObj [("rule", "coopDevice"), ("vault", c), ("device", d)]
   | .cycle => Json.mkObj [("rule", "cycle")]
 
 /-- What the model answers for a tree and its queries. A tree that is not well formed gets no answers. -/
@@ -60,11 +64,12 @@ def Tree.result (t : Tree) (qs : List Query) : Json :=
 
 def parseVault (j : Json) : Except String Vault := do
   let id ← j.getObjValAs? String "id"
+  let name ← j.getObjValAs? String "name"
   let k ← j.getObjValAs? String "kind"
   let kind ← (Kind.parse k).elim (.error s!"{id}'s kind {k} is unknown") pure
   let owners ← (← j.getObjValAs? (List String) "owners").mapM fun o =>
     (Owner.parse o).elim (.error s!"{id}'s owner {o} is neither key: nor vault:") pure
-  pure ⟨id, kind, owners⟩
+  pure ⟨id, name, kind, owners⟩
 
 def parseTree (j : Json) : Except String Tree := do
   let keys ← j.getObjValAs? (List String) "keys"
@@ -76,6 +81,7 @@ def parseQuery (q : Json) : Except String Query := do
   let arg (i : Nat) : Except String String := (args[i]?.getD Json.null).getStr?
   match ← arg 0 with
   | "kind" => pure (.kind (← arg 1))
+  | "name" => pure (.name (← arg 1))
   | "owners" => pure (.owners (← arg 1))
   | "owned" => pure (.owned (← arg 1))
   | "governs" => pure (.governs (← arg 1))

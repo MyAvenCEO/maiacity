@@ -9,7 +9,7 @@ key and checks what was sent:
 
 ```
 assertion: {"clientData":"{…}","authData":"49960de5…","signer":"passkey-a","signed":{"clientData":"…","authData":"…"}}
-claim:     {"network":"aven","person":"person-a","passkey":{"id":"passkey-a","spki":"3059…"},
+claim:     {"network":"aven","person":"person-a","name":"Ada","passkey":{"id":"passkey-a","spki":"3059…"},
             "device":{"id":"device-1","key":"…"},"assertion":{…}}
 sign-in:   {"network":"aven","device":{"id":"device-2","key":"…"},"assertion":{…}}
 tree:      {"keys":[["passkey-a","es256:3059…"],…],"vaults":[{"id":"person-a","kind":"person","owners":["key:passkey-a"]},…]}
@@ -40,6 +40,7 @@ def ClaimError.json : ClaimError → Json
   | .taken => Json.mkObj [("error", "taken")]
   | .notFromDevice => Json.mkObj [("error", "notFromDevice")]
   | .wrongNetwork => Json.mkObj [("error", "wrongNetwork")]
+  | .name => Json.mkObj [("error", "name")]
   | .assertion why => Json.mkObj [("error", "assertion"), ("why", why.name)]
   | .invalid why => Json.mkObj [("error", "invalid"), ("invalid", why.json)]
   | .unclaimed => Json.mkObj [("error", "unclaimed")]
@@ -47,7 +48,7 @@ def ClaimError.json : ClaimError → Json
   | .counter => Json.mkObj [("error", "counter")]
 
 def Claim.json (c : Claim) : Json :=
-  Json.mkObj [("network", c.network), ("person", c.person),
+  Json.mkObj [("network", c.network), ("person", c.person), ("name", c.name),
     ("passkey", Json.mkObj [("id", c.passkey), ("spki", c.passkeyKey)]),
     ("device", Json.mkObj [("id", c.device), ("key", c.deviceKey)]), ("assertion", c.assertion.json)]
 
@@ -61,7 +62,7 @@ def Server.treeJson (s : Server) : Json :=
 
 def Server.json (s : Server) : Json :=
   Json.mkObj [("network", s.network), ("peer", s.peer), ("peerKey", s.peerKey), ("rpId", s.rp.rpId),
-    ("origins", toJson s.rp.origins), ("guardian", toJson s.guardian)]
+    ("origins", toJson s.rp.origins), ("guardian", toJson s.guardian), ("coop", s.coop), ("coopName", s.coopName)]
 
 /-- A step as a browser sends it: the statement, and the key of the browser that sends it. -/
 def Op.json : Op → Json
