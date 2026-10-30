@@ -850,16 +850,20 @@ against the Rust's Loro on random ops, so it can never be simpler than the code.
 - **Writer ids:** distinct (device, Doc, branch, generation) give distinct writer ids under the hash assumption; an
   envelope holding another writer id's op is refused. Vectors `writers.json`.
 - **Envelopes:** decoding and encoding are inverse on everything accepted; hashes and op ids agree or the envelope is
-  refused. Vectors `envelopes.json`.
+  refused, and among envelopes that pass, the same hashes name the same past exactly when the same op ids do
+  (`Aven.DB.Docs.OpIds`: `same_past`, from injective names and `UsedOpID`). Vectors `envelopes.json`.
 - **Logs and splits:** a split is found by any reader holding both sides; once found, neither side counts for any
   reader; a stuck log's next envelopes never count. Traces `logs.json`.
 - **Counts:** an envelope counts only if all three verdicts hold and its past counts; rebuilding from the envelopes
   that count equals the live state. Traces `counts.json`.
 - **Convergence:** the same counted envelopes in any order give the same Records and export the same bytes.
-- **Checkpoints:** a checkpoint whose covered segments replay to its state hash is accepted; any other is refused.
+- **Checkpoints:** a checkpoint whose covered segments replay to its state hash, whose version's tips are among what
+  it covers, and which names the reader's runtime is accepted; any other is refused (`checked_is_replay`,
+  `checked_names`).
   Vectors `checkpoints.json`.
 - **Fit:** the verdict depends only on the envelope and the Values it names; fit judged on the ops equals fit judged on
-  the state; any merge of fit envelopes fits (`fit_merge`). Vectors `fit.json`.
+  the state; any merge of fit envelopes fits (`fit_merge`), each field's value fitting the schema of the envelope that wrote it
+  (`fit_envelopes`). Vectors `fit.json`.
 - **Lenses:** GetPut, PutGet, an older version keeps what it can't see, composition along the tree keeps all three, a
   read through lenses commutes with a merge, a lossy step states its loss. Vectors `lenses.json`.
 - **Merges:** nothing the target changed is lost, everything the other branch changed alone lands, a conflict changes
