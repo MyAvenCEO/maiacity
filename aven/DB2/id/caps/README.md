@@ -173,8 +173,9 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
     proofs, never a write cap. It learns no content, type, signer, cap or reader list, beyond what serving a device
     shows ([metadata](#metadata-what-hosts-still-see)).
 23. **The signer is inside the seal.** Outside a segment is only what a blind keeper needs to serve catch-up and catch a
-    split: the Doc, the epoch, the writer's Loro peer for that Doc, branch and epoch (a pseudonym that names no device
-    or vault), its counter range, the previous segment's hash and the padded length.
+    split: the Doc, the key epoch, the writer's Loro peer for that Doc and branch, its counter range, the previous
+    segment's hash and the padded length. The peer is a pseudonym that names no device or vault. It is worked out from
+    the signing device and checked against it on import, and a key rotation doesn't change it.
 24. **A want grants nothing.** A device is served its wants intersected with its caps; an actor is handed its loads
     intersected with its run's caps (engine, rule 7).
 25. **Approval is a co-signature over one digest:** k of the named owners, for one act, used once.
@@ -542,8 +543,8 @@ through.
   - `avenDB converge 1`.
 - **Envelopes, segments and snapshots** use XChaCha20-Poly1305 with a key commitment. A segment holds one epoch, so a
   rotation closes the open segment (agreed with the docs thread).
-- **Each segment** carries its writer's hybrid signature, inside the seal (proposed to the docs thread). One signature
-  covers up to 256 envelopes.
+- **Each segment** carries its writer's hybrid signature, inside the seal (agreed with the docs thread). A device closes
+  only its own segments, and one signature covers up to 256 envelopes.
 - **Files:**
   - Each file's key is a keyed BLAKE3 of the epoch's convergence secret and the plaintext's BLAKE3, so a Doc's epoch
     stores a file once, and nobody without the secret can test a guess (Tahoe-LAFS).
@@ -765,7 +766,7 @@ with ML-DSA, which COSE is standardising and no authenticator we know of ships.
 | Who | Sees | Doesn't see |
 |---|---|---|
 | The relay | The device keys of the connections it carries, their IP addresses, timing and volume | Anything inside iroh's encryption |
-| The keeper (the Aven Peer) and its storage (Hetzner) | **The tree:** vaults, owners, devices, network members and public keys, because the door needs them. **Per Doc:** its id, its epochs and their stanza counts (padded), sizes (padded), times, and which device uploads or fetches what. **Per segment:** its writer's pseudonym for that Doc, branch and epoch, its counter range and the segment before, so it learns how many write a Doc and how much each writes, but not who. Letterboxes on first contact; the gossip topics it keeps | Content, types, signers, caps, who reads which Doc, groups' rosters, operations |
+| The keeper (the Aven Peer) and its storage (Hetzner) | **The tree:** vaults, owners, devices, network members and public keys, because the door needs them. **Per Doc:** its id, its epochs and their stanza counts (padded), sizes (padded), times, and which device uploads or fetches what. **Per segment:** its writer's pseudonym for that Doc and branch, its counter range and the segment before. So it learns how many write a Doc and how much each writes, and can follow one writer across key epochs within that Doc (whose writing stops after a rotation, say), but not who it is or what else it writes. Letterboxes on first contact; the gossip topics it keeps | Content, types, signers, caps, who reads which Doc, groups' rosters, operations |
 | A network member who doesn't read a Doc | Nothing of it: its topic and fetch key come from its key | |
 | A reader of a Doc | Its caps, its writers and how many read it; the caps of the groups that open it | Caps on other Docs |
 | A peer on a direct path | The other's IP address (README) | |
@@ -837,7 +838,7 @@ to and leave all the time. Scale need not be built from day one, but no choice m
 | Package | What it gives caps | What caps give it |
 |---|---|---|
 | avenID (`id/spec`, `id/core`) | The tree, `Governs`, statements, passkeys, invites | `Aven.ID.Caps` beside `Governs`; owners k of n; approvals; device removal and its acks; device and vault keys in statements (X-Wing and ML-DSA-65 public halves); recovery |
-| docs (`db/docs`) | Envelopes, lines (branches), Records, fit | **Agreed with the docs thread (30 Oct 2026):** outside a segment are the Doc, the epoch, the writer's Loro peer per Doc, branch and epoch, its counter range, the previous segment's hash and the ciphertext. Inside are the branch, the signer, the cap, acks, the operation and params, the changes and the schema. Three verdicts (fit, authorized, not split), and a revocation rebuilds state. A segment holds one epoch, and a rotation closes it. Snapshots and heads are each device's own and never travel, so checkpoints (milestone 7) carry the hybrid signatures. A merge is checked against the merger's grant over the whole merge. **Proposed:** a writer's hybrid signature on each segment; a Doc's vault and root type fixed at birth; every Record's creator known; the access map's types `cap`, `revoke` and `epoch` |
+| docs (`db/docs`) | Envelopes, lines (branches), Records, fit | **Agreed with the docs thread (30 Oct 2026):** outside a segment are the Doc, the key epoch, the writer's Loro peer per Doc and branch (unchanged by a key rotation), its counter range, the previous segment's hash and the ciphertext. Inside are the branch, the signer, the cap, acks, the operation and params, the changes and the schema. Three verdicts (fit, authorized, not split), and a revocation rebuilds state. A segment holds one epoch, and a rotation closes it. Snapshots and heads are each device's own and never travel, so checkpoints (milestone 7) carry the hybrid signatures. A merge is checked against the merger's grant over the whole merge. Each segment carries its writer's hybrid signature. **Proposed:** a Doc's vault and root type fixed at birth; every Record's creator known; the access map's types `cap`, `revoke` and `epoch` |
 | engine (`db/engine`) | Operations by hash, footprints, wants, the dry run | E1–E3; served is wants intersected with caps; `query` checked by the kernel or serving peer |
 | store (`store`) | Blobs and refs | Sealed blobs; key blobs and letters are blobs; the sealing parked in its "Later: sealing" comes here |
 | avenPEER | The door, the relay, the keeper | Keep caps, fetch proofs, quota per network member, letterboxes, topics per group |
