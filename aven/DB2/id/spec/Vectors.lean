@@ -6,6 +6,7 @@ import Aven.ID.InviteJson
 import Aven.ID.Before
 import Aven.ID.CapsJson
 import Aven.ID.SettleJson
+import Aven.ID.Expiry
 
 /-! # The test vectors (README, rule 10)
 
@@ -33,6 +34,8 @@ import Aven.ID.SettleJson
   hand-written and generated.
 - `epochs.json`: who learns which key after a removal and after a heal (`Aven.ID.Epochs`).
 - `approvals.json`: signatures, thresholds and digests on the cast, and whether each approval holds (`Aven.ID.Approve`).
+- `expiry.json`: writes under a cap that expires, with each envelope's signed time, and whether each counts for the
+  clock (`Aven.ID.Expiry`, R12).
 - `network.json`: tickets claimed in two orders (A12), removals that clash and MaiaCityGuardian's exit
   (`Aven.ID.Network`, `Aven.ID.Recover`).
 - `keep.json`: a keeper's fetch-key links in the order they came, with the keys it takes, its current fetch key and
@@ -168,6 +171,19 @@ def approvalVectors : List Json :=
         ("vault", v), ("digest", d)])
       (Json.mkObj [("approved", cast.approved k v d sigs)])
 
+/-- A write under a cap that expires: the Doc with each envelope's signed time, the cap, its expiry and the write,
+and whether it counts for the clock (`Aven.ID.Expiry`, R12). -/
+def expiryVectors : List Json :=
+  let timed (x : Timed) := Json.mkObj [("envelope", x.env.json), ("time", toJson x.time)]
+  let ask (name : String) (doc : List Timed) (e : Timed) :=
+    vector name (Json.mkObj [("doc", Json.arr (doc.map timed).toArray), ("cap", "cap-a"), ("expires", toJson (100 : Nat)),
+        ("write", e.env.id)])
+      (Json.mkObj [("inTime", inTime doc "cap-a" 100 e)])
+  [ask "a write before the expiry, which the ack had seen" expiryDoc bob90,
+   ask "a write backdated after an ack of the expiry, which it hadn't seen" expiryDoc bobBackdated,
+   ask "a write claiming a time past the expiry" expiryDoc bob105,
+   ask "a backdated write before any ack: judged by the time it claims" [bob90, bobBackdated] bobBackdated]
+
 def networkVectors : List Json :=
   let ticket (name : String) (cs : List TicketClaim) :=
     vector name (Json.mkObj [("claims", Json.arr (cs.map TicketClaim.json).toArray)])
@@ -221,6 +237,7 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "epochs.json") (render epochVectors)
   IO.FS.writeFile (dir / "approvals.json") (render approvalVectors)
   IO.FS.writeFile (dir / "network.json") (render networkVectors)
+  IO.FS.writeFile (dir / "expiry.json") (render expiryVectors)
   IO.FS.writeFile (dir / "keep.json") (render keepVectors)
   IO.FS.writeFile (dir / "settled.json") (render SettleJson.settledVectors)
   IO.FS.writeFile (dir / "records.json") (render SettleJson.recordVectors)
