@@ -7,7 +7,7 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 
-use aven_db_store::blobs::{self, Admit, Blobs, Shared};
+use aven_db_store::blobs::{self, Admit, Blobs, FetchError, Shared};
 use aven_db_store::files::{self, CHUNK};
 use aven_db_store::{Error, Hash, RefName, Result, Store, backend};
 use bytes::Bytes;
@@ -215,4 +215,30 @@ async fn a_file_as_chunks_and_an_index() {
     assert_eq!(files::touched(&(7..7)), 0..0);
     assert_eq!(files::touched(&(0..CHUNK)), 0..1);
     assert_eq!(files::touched(&(CHUNK..CHUNK + 1)), 1..2);
+}
+
+#[tokio::test]
+async fn a_holder_that_hasnt_a_blob_says_so() {
+    // the provider resets the stream for a blob it hasn't as for any trouble; asked afterwards, it says what it lacks:
+    // a page's 404, not its 502
+    let (alice, bob) = (peer(memory(), anyone()).await, peer(memory(), anyone()).await);
+    let conn = connect(&bob, &alice).await;
+    let never = Hash::of(b"a file never put");
+    assert_eq!(bob.blobs.fetch_file(&conn, never).await, Err(FetchError::NotFound(never)));
+    assert_eq!(bob.blobs.fetch_chunks(&conn, never, 0..1).await, Err(FetchError::NotFound(never)));
+    assert_eq!(bob.blobs.fetch_blob(&conn, never).await, Err(FetchError::NotFound(never)));
+
+    // the index is there, a chunk isn't: that chunk is what's missing
+    let file = files::put(&*alice.store, files::split(noise(4 * CHUNK, "a torn file"))).await.unwrap();
+    let lost = files::open(&*alice.store, &file).await.unwrap().unwrap().chunks[2];
+    alice.store.delete(&lost).await.unwrap();
+    assert_eq!(bob.blobs.fetch_chunks(&conn, file, 1..2).await.map(|f| f.bytes), Ok(CHUNK + 4 * 32));
+    assert_eq!(bob.blobs.fetch_chunks(&conn, file, 2..3).await, Err(FetchError::NotFound(lost)));
+    assert_eq!(bob.blobs.fetch_file(&conn, file).await, Err(FetchError::NotFound(lost)));
+
+    // a holder that refuses is no answer about the blob: a plain failure
+    let refusing = peer(memory(), Arc::new(|_| false)).await;
+    let kept = files::put(&*refusing.store, files::split(noise(100, "kept"))).await.unwrap();
+    let conn = connect(&bob, &refusing).await;
+    assert!(matches!(bob.blobs.fetch_file(&conn, kept).await, Err(FetchError::Failed(_))));
 }
