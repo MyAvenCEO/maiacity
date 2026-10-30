@@ -1,3 +1,5 @@
+import Aven.Runtime.Contract
+
 /-!
 # The node-tree allowlist (README, "Two kinds of output, and the drawers")
 
@@ -15,6 +17,8 @@ and the whole is within its limits:
 -/
 
 namespace Aven.Runtime
+
+open Aven.Core
 
 /-- A node: text, or an element with attributes and children. -/
 inductive Node where
@@ -38,6 +42,12 @@ def Node.tag? : Node → Option String
 def Node.attrs : Node → List (String × String)
   | .el _ attrs _ => attrs
   | .text _ => []
+
+/-- A tree as the Value it crosses in: text as text, an element as `[tag, [[name, value], …], [child, …]]`. -/
+def Node.value : Node → Value
+  | .text s => .text (ascii s)
+  | .el tag attrs kids => .array [.text (ascii tag), .array (attrs.map fun (k, v) => .array [.text (ascii k), .text (ascii v)]),
+      .array (kids.attach.map fun ⟨k, _⟩ => k.value)]
 
 def Node.textLength : Node → Nat
   | .text s => s.utf8ByteSize
@@ -222,5 +232,7 @@ def treeExamples : List (String × Node × Bool) :=
    ("65 deep", nest 64, false)]
 
 #guard treeExamples.all fun (_, t, ok) => check treeLimits t == ok
+-- every example is an allowed Value of the one codec, and decodes back to its own bytes
+#guard treeExamples.all fun (_, t, _) => Canon t.value && (decodeAll (encode t.value)).map encode == some (encode t.value)
 
 end Aven.Runtime

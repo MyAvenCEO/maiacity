@@ -11,20 +11,19 @@ by default), where they are committed. Every vector is `{"name", "input", "expec
   in.
 - `registry.json`: a stage, a head (hex), a size and a claim; the decision and the Service Worker's headers
   (`Aven.Runtime.Registry`). The examples, then heads cut and changed at random from them, under random claims.
-- `tree.json`: a node tree; whether the applier's check passes it (`Aven.Runtime.Tree`).
-- `face.json`: a face's tree and style; whether it is accepted, what is wrong with it, and its CSS text
+- `tree.json`: a node tree and its encoding; whether the applier's check passes it (`Aven.Runtime.Tree`).
+- `face.json`: a face's tree, style and encoding; whether it is accepted, what is wrong with it, and its CSS text
   (`Aven.Runtime.Face`).
+- `contract.json`: each failure and an answer as the Value the host hands on, encoded; render keys and their names
+  under BLAKE3 (`Aven.Runtime.Contract`).
 - `contrast.json`: `linear`, the table every contrast check uses, then pairs of colours with their luminances and
   whether they reach 4.5:1 and 3:1.
 -/
 
-open Lean Aven.Runtime
+open Lean Aven.Core Aven.Runtime
 
 def vector (name : String) (input expected : Json) : Json :=
   Json.mkObj [("name", name), ("input", input), ("expected", expected)]
-
-def hexOf (b : Bytes) : String :=
-  String.join (b.map fun x => hex2 x)
 
 /-- xorshift64, as the other specs' property tests draw. -/
 structure Rng where
@@ -75,7 +74,7 @@ def Decision.json (d : Decision) : Json :=
 end Aven.Runtime
 
 def registryVector (name : String) (st : Stage) (h : Bytes) (size : Nat) (c : Claim) : Json :=
-  vector name (Json.mkObj [("runtimes", st.runtimes), ("head", hexOf h), ("size", size), ("claim", c.json)])
+  vector name (Json.mkObj [("runtimes", st.runtimes), ("head", hex h), ("size", size), ("claim", c.json)])
     (decideFile st h size c).json
 
 def claims : List Claim :=
@@ -112,7 +111,7 @@ def table : List Json :=
   registry.map (fun e => Json.mkObj [("type", e.type.name), ("mime", e.type.mime), ("mode", e.mode.json),
       ("bytes", e.bytes), ("pixels", e.pixels)]) ++
   signatures.map fun (t, s) => Json.mkObj [("type", t.name),
-    ("signature", Json.arr (s.map fun (o, b) => Json.arr #[o, hexOf b]).toArray)]
+    ("signature", Json.arr (s.map fun (o, b) => Json.arr #[o, hex b]).toArray)]
 
 /-! ## Trees and faces -/
 
@@ -126,7 +125,8 @@ partial def Node.json : Node → Json
 end Aven.Runtime
 
 def treeVectors : List Json :=
-  treeExamples.map fun (name, t, _) => vector name (Json.mkObj [("tree", t.json)]) (check treeLimits t)
+  treeExamples.map fun (name, t, _) => vector name (Json.mkObj [("tree", t.json), ("cbor", hex (encode t.value))])
+    (check treeLimits t)
 
 namespace Aven.Runtime
 
@@ -145,7 +145,8 @@ end Aven.Runtime
 def faceVectors : List Json :=
   faceExamples.map fun (name, o, _) =>
     let i := issues o
-    vector name (Json.mkObj [("tree", o.tree.json), ("style", Json.arr (o.style.map Rule.json).toArray)])
+    vector name (Json.mkObj [("tree", o.tree.json), ("style", Json.arr (o.style.map Rule.json).toArray),
+        ("cbor", hex (encode o.value))])
       (Json.mkObj [("ok", faceOk treeLimits o), ("check", check treeLimits o.tree),
         ("unnamed", i.unnamed.length), ("noRole", i.noRole.length), ("noAlt", i.noAlt.length),
         ("lowContrast", Json.arr (i.lowContrast.map fun (c, s) => Json.arr #[c.json, s]).toArray),
@@ -164,6 +165,22 @@ def contrastVectors : List Json :=
     let c := fun (n : Nat) => (⟨(n / 65536).toUInt8, (n / 256 % 256).toUInt8, (n % 256).toUInt8⟩ : RGB)
     pair (c a) (c b)
 
+/-! ## The contract -/
+
+/-- A run's result as the host hands it on, encoded; and render keys with their names under BLAKE3. -/
+def contractVectors : List Json :=
+  let failures := [Failure.badInput, .outOfFuel, .outOfMemory, .refused, .outputTooLarge, .badOutput]
+  failures.map (fun f => vector s!"failure {f.name}" (Json.mkObj [("failure", f.name)])
+      (Json.mkObj [("cbor", hex (encode (result (.error f))))])) ++
+  [vector "ok" (Json.mkObj [("ok", hex (encode (.text (ascii "hi"))))])
+      (Json.mkObj [("cbor", hex (encode (result (.ok (.text (ascii "hi"))))))])] ++
+  (List.range 8).map fun i =>
+    let k : RenderKey := ⟨blake3 (ascii s!"svg-runtime@{i % 3 + 1}"), blake3 (ascii s!"file {i}"),
+      .map [(ascii "width", .uint (256 * (i + 1)))]⟩
+    vector s!"render key {i}" (Json.mkObj [("runtime", k.runtime.text), ("file", k.file.text),
+        ("params", hex (encode k.params))])
+      (Json.mkObj [("cbor", hex (encode k.value)), ("name", (k.name blake3).text)])
+
 /-- One vector per line, so a change reads as a diff of lines. -/
 def render (vs : List Json) : String :=
   "[\n" ++ ",\n".intercalate (vs.map Json.compress) ++ "\n]\n"
@@ -172,5 +189,5 @@ def main (args : List String) : IO Unit := do
   let dir : System.FilePath := args.headD "vectors"
   IO.FS.createDirAll dir
   for (file, vs) in [("table.json", table), ("registry.json", registryVectors), ("tree.json", treeVectors),
-      ("face.json", faceVectors), ("contrast.json", contrastVectors)] do
+      ("face.json", faceVectors), ("contrast.json", contrastVectors), ("contract.json", contractVectors)] do
     IO.FS.writeFile (dir / file) (render vs)

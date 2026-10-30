@@ -9,6 +9,8 @@ exports them (`registry.json`) for the registry crate, its wasm, the Service Wor
 
 namespace Aven.Runtime
 
+open Aven.Core
+
 def be32b (n : Nat) : Bytes := [(n / 16777216 % 256).toUInt8, (n / 65536 % 256).toUInt8, (n / 256 % 256).toUInt8,
   (n % 256).toUInt8]
 def le16b (n : Nat) : Bytes := [(n % 256).toUInt8, (n / 256 % 256).toUInt8]

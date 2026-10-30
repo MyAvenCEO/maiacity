@@ -18,10 +18,7 @@ all run this function, compiled from one Rust crate that replays these vectors; 
 
 namespace Aven.Runtime
 
-abbrev Bytes := List UInt8
-
-/-- A string's bytes. -/
-def ascii (s : String) : Bytes := s.toUTF8.toList
+open Aven.Core
 
 /-- The first bytes the registry reads: the first 64 KiB of the file's first chunk. -/
 def headMax : Nat := 65536
@@ -107,16 +104,16 @@ def sniffBinary (h : Bytes) : Option FileType := (signatures.find? fun (_, s) =>
 def isCont (b : UInt8) : Bool := b &&& 0xC0 == 0x80
 
 /-- Valid UTF-8 without NUL. A sequence cut by the end of the head is accepted, since the head may end mid-character. -/
-def utf8 : Bytes → Bool
+def textHead : Bytes → Bool
   | [] => true
   | b :: rest =>
     if b == 0 then false
-    else if b < 0x80 then utf8 rest
+    else if b < 0x80 then textHead rest
     else
       let n := if b ≥ 0xC2 && b ≤ 0xDF then 1 else if b &&& 0xF0 == 0xE0 then 2
         else if b ≥ 0xF0 && b ≤ 0xF4 then 3 else 0
       if n == 0 then false
-      else if (rest.take n).all isCont then (if rest.length < n then true else utf8 (rest.drop n))
+      else if (rest.take n).all isCont then (if rest.length < n then true else textHead (rest.drop n))
       else false
 termination_by l => l.length
 decreasing_by all_goals (simp_wf; try omega)
@@ -194,7 +191,7 @@ def sniff (h : Bytes) (c : Claim) : FileType :=
   match sniffBinary h with
   | some t => t
   | none =>
-    if !utf8 h then .unknown
+    if !textHead h then .unknown
     else
       let (root, prolog) := skipLead 8 h
       if startsTag "<svg" root then .svg
