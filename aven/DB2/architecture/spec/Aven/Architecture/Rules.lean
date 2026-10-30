@@ -280,6 +280,15 @@ theorem rule10_inputs (L : DB.Docs.Limits) {chunks : List Bytes} {b out : Bytes}
   ⟨DB.Docs.capped_holds (by simp) hb, DB.Docs.capped_within (by simp) ho, DB.Docs.admitted_bounded ha,
     DB.Docs.segment_records es hn hr, DB.Docs.blob_bounded hbl⟩
 
+/-- A want page is bounded: a round that moves sends at most the page's entries and bytes, takes them off the front of
+what was pending, and sends something whenever every pending entry fits a page. -/
+theorem rule10_pages {Key α : Type} [DecidableEq Key] (size : α → Nat) (lim : DB.Engine.Limit)
+    (pending : Key → List α) (uploads keys : List Key) (got : Key → Bool) (k : Key) (p : List α)
+    (pending' : Key → List α) (h : DB.Engine.roundP size lim pending uploads keys got = (.moved k, p, pending')) :
+    p.length ≤ lim.entries ∧ (p.map size).sum ≤ lim.bytes ∧ p ++ pending' k = pending k ∧
+      ((∀ x ∈ pending k, size x ≤ lim.bytes) → 0 < lim.entries → p ≠ []) :=
+  DB.Engine.page_bounded size lim pending uploads keys got k p pending' h
+
 /-! ## Rule 11: every wait ends -/
 
 /-- An envelope waits only for what it names by hash and the reader lacks: so each wait names what ends it. -/
