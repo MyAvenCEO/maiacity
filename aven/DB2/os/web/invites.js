@@ -1,21 +1,21 @@
-// Invites and joins, on the page (MILESTONE2.md, "Decisions"): only the admin invites, an invite names a one-time
-// Ed25519 key, and its link, `#/join/<invite>.<secret>`, carries that key's secret. Making and withdrawing one is an
-// owner's act on the network, signed with the passkey of a person whose vault owns the admin; joining is a statement
-// signed by the one-time key and by the joiner's new passkey. What each statement says is aven-id's (its wasm's
-// inviteText, withdrawText, joinText and inviteId); the Aven Peer decides what it takes, and tells the open invites
-// back to the admin's owners' devices (room.svelte.js). The one-time key is made here with WebCrypto and its secret
-// lives only in the link.
+// Invites and joins, on the page (MILESTONE2.md, "Decisions"; the statements as thread A's PR #1431 states them):
+// only the admin invites, an invite is a one-time Ed25519 key, and its link, `#/join/<secret>`, carries that key's
+// secret. Making and withdrawing one is an owner's act on the network, signed with the passkey of a person whose vault
+// owns the admin, which the statement names; joining is a statement signed by the one-time key and by the joiner's
+// new passkey. What each statement's text says is aven-id's (its wasm's inviteText, withdrawText, joinText); the
+// Aven Peer decides what it takes, and tells the invites back to the admin's owners' devices (room.svelte.js). The
+// one-time key is made here with WebCrypto and its secret lives only in the link.
 import * as aven from 'aven-id';
-import { deviceId, passkeyId, personId } from './id.js';
+import { deviceId, owners, passkeyId, personId } from './id.js';
 import { assertion, net, send } from './network.svelte.js';
 
-// STAND-IN until aven-id's wasm has them (thread A): any text, since the stand-in checks no signature
-const said = (what) => (...parts) => JSON.stringify([what, ...parts]);
+// STAND-IN until aven-id's wasm has them (thread A): the texts as #1431 states them
 const ids = {
-	inviteId: aven.inviteId ?? ((key) => `invite-${key.slice(0, 16)}`),
-	inviteText: aven.inviteText ?? said('invite'),
-	withdrawText: aven.withdrawText ?? said('withdraw'),
-	joinText: aven.joinText ?? said('join'),
+	inviteText: aven.inviteText ?? ((n, k) => `avenID invite 1\nnetwork ${n}\ninvite ${k}\n`),
+	withdrawText: aven.withdrawText ?? ((n, k) => `avenID withdraw 1\nnetwork ${n}\ninvite ${k}\n`),
+	joinText:
+		aven.joinText ??
+		((n, k, p, id, spki, d, key) => `avenID join 1\nnetwork ${n}\ninvite ${k}\nperson ${p}\npasskey ${id} ${spki}\ndevice ${d} ${key}\n`),
 };
 
 const hex = (bytes) => [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -29,40 +29,51 @@ async function oneTimeKey() {
 	return { secret, key: hex(await crypto.subtle.exportKey('raw', pair.publicKey)) };
 }
 
+// the one-time key's public half, from its secret: the private key's JWK carries it as `x`
+async function publicOf(secret) {
+	const key = await crypto.subtle.importKey('pkcs8', pkcs8(unhex(secret)), { name: 'Ed25519' }, true, ['sign']);
+	const { x } = await crypto.subtle.exportKey('jwk', key);
+	return hex(Uint8Array.from(atob(x.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0)));
+}
+
 async function signWith(secret, text) {
 	const key = await crypto.subtle.importKey('pkcs8', pkcs8(unhex(secret)), { name: 'Ed25519' }, false, ['sign']);
 	return hex(await crypto.subtle.sign({ name: 'Ed25519' }, key, new TextEncoder().encode(text)));
 }
 
 // The link a person opens to join, on this host
-export const linkOf = (invite, secret) => `${location.origin}/#/join/${invite}.${secret}`;
+export const linkOf = (secret) => `${location.origin}/#/join/${secret}`;
 
-// `#/join/<invite>.<secret>`, or null
+// `#/join/<secret>`, or null
 export function readLink(hash) {
-	const found = /^#\/join\/([A-Za-z0-9_-]+)\.([0-9a-f]{64})$/.exec(hash);
-	return found ? { invite: found[1], secret: found[2] } : null;
+	const found = /^#\/join\/([0-9a-f]{64})$/.exec(hash);
+	return found ? { secret: found[1] } : null;
 }
 
-// Makes an invite, signed by the admin's owner's passkey on this browser; returns its link, shown once
-export async function invite(config) {
+// the passkey of the person `account` acts as, which signs its owner's acts
+const passkeyOf = (account) => owners(account).find((owner) => owner.kind === 'key' && owner.id.startsWith('passkey-'))?.id;
+
+// Makes an invite, signed by the passkey of `account`, an owner of the admin, on this browser; returns its link,
+// shown once
+export async function invite(config, account) {
 	const { secret, key } = await oneTimeKey();
-	const id = ids.inviteId(key);
-	const statement = { network: config.network, invite: { id, key } };
-	statement.assertion = await assertion(config, ids.inviteText(config.network, id, key));
+	const statement = { network: config.network, invite: key, passkey: passkeyOf(account) };
+	statement.assertion = await assertion(config, ids.inviteText(config.network, key));
 	send({ frame: 'invite', statement: JSON.stringify(statement) });
-	return linkOf(id, secret);
+	return linkOf(secret);
 }
 
-// Withdraws an open invite: the same owner's act
-export async function withdraw(config, id) {
-	const statement = { network: config.network, invite: id };
-	statement.assertion = await assertion(config, ids.withdrawText(config.network, id));
+// Withdraws an open invite, named by its key: the same owner's act
+export async function withdraw(config, account, key) {
+	const statement = { network: config.network, invite: key, passkey: passkeyOf(account) };
+	statement.assertion = await assertion(config, ids.withdrawText(config.network, key));
 	send({ frame: 'withdraw', statement: JSON.stringify(statement) });
 }
 
 // Joins with an invite's link: a name, a new passkey (ES256, attestation none, as the claim's), and the statement
 // that founds the person's vault with this browser as its device, signed by that passkey and by the one-time key.
-export async function join(config, { invite: id, secret }, name) {
+export async function join(config, { secret }, name) {
+	const key = await publicOf(secret);
 	const created = await navigator.credentials.create({
 		publicKey: {
 			rp: { id: config.rpId, name: 'Aven' },
@@ -77,13 +88,13 @@ export async function join(config, { invite: id, secret }, name) {
 	const spki = hex(created.response.getPublicKey());
 	const statement = {
 		network: config.network,
-		invite: id,
+		invite: key,
 		person: personId(spki),
 		name,
 		passkey: { id: passkeyId(spki), spki },
 		device: { id: deviceId(net.key), key: net.key },
 	};
-	const text = ids.joinText(config.network, id, statement.person, name, statement.passkey.id, spki, statement.device.id, net.key);
+	const text = ids.joinText(config.network, key, statement.person, statement.passkey.id, spki, statement.device.id, net.key);
 	statement.assertion = await assertion(config, text, created.rawId);
 	statement.signature = await signWith(secret, text);
 	send({ frame: 'join', statement: JSON.stringify(statement) });

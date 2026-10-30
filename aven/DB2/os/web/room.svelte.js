@@ -14,7 +14,7 @@ export function speakThrough(worker) {
 // a line from the Peer-Light: a chat line, the room's presence, or the network's open invites
 export function hear(line) {
 	if (line.event === 'chat') {
-		room.lines.push({ from: line.from, vault: line.vault, text: line.text, sent: line.sent, joined: line.joined });
+		room.lines.push({ from: line.from, vault: line.vault, text: line.text, at: line.at, joined: line.joined });
 		if (room.lines.length > keep) room.lines.splice(0, room.lines.length - keep);
 	}
 	if (line.event === 'room') room.present = line.present;

@@ -40,19 +40,19 @@ export function standin() {
 	}
 	function tell() {
 		const t = tree();
-		const open = [...invites.values()].filter((i) => !i.used && !i.withdrawn).map(({ id, key, made }) => ({ id, key, made }));
+		const listed = [...invites.values()].map(({ id, key, state, person }) => ({ id, key, state, ...(person ? { person } : {}) }));
 		const present = ['aven-peer', ...clients.keys()].filter((id) => id === 'aven-peer' || t?.vaults[id]);
 		// nothing about the network until the real Aven Peer has said whether it is claimed
 		if (claimed === null) return;
 		for (const [device, res] of clients) {
 			const mine = t?.vaults[device] ? JSON.stringify(t) : null;
-			write(res, { event: 'network', claimed, tree: mine, ...(t && admins(t).includes(device) ? { invites: open } : {}) });
+			write(res, { event: 'network', claimed, tree: mine, ...(t && admins(t).includes(device) ? { invites: listed } : {}) });
 			if (mine) write(res, { event: 'room', present });
 		}
 	}
 	function chat(line) {
 		const t = tree();
-		for (const [device, res] of clients) if (t?.vaults[device]) write(res, { event: 'chat', sent: Date.now(), ...line });
+		for (const [device, res] of clients) if (t?.vaults[device]) write(res, { event: 'chat', at: Date.now(), ...line });
 	}
 
 	function take(device, body, res) {
@@ -72,16 +72,16 @@ export function standin() {
 			const t = tree();
 			if (frame.frame === 'invite' || frame.frame === 'withdraw') {
 				if (!t || !admins(t).includes(device)) return refuse('only the admin invites');
-				if (frame.frame === 'invite') invites.set(s.invite.id, { id: s.invite.id, key: s.invite.key, made: Date.now() });
-				else if (!invites.get(s.invite) || invites.get(s.invite).used) return refuse('no such open invite');
-				else invites.get(s.invite).withdrawn = true;
+				if (frame.frame === 'invite') invites.set(s.invite, { id: `invite-${s.invite.slice(0, 16)}`, key: s.invite, state: 'open' });
+				else if (invites.get(s.invite)?.state !== 'open') return refuse('no such open invite');
+				else invites.get(s.invite).state = 'withdrawn';
 			}
 			if (frame.frame === 'join') {
 				const i = invites.get(s.invite);
 				if (!i) return refuse('no such invite');
-				if (i.used) return refuse('this invite is used already');
-				if (i.withdrawn) return refuse('this invite was withdrawn');
-				i.used = true;
+				if (i.state === 'used') return refuse('this invite is used already');
+				if (i.state === 'withdrawn') return refuse('this invite was withdrawn');
+				Object.assign(i, { state: 'used', person: s.person });
 				members.push(s);
 				tell();
 				chat({ from: 'aven-peer', vault: 'aven', joined: s.person, text: `${s.name} joined` });

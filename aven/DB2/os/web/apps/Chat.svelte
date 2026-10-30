@@ -48,7 +48,7 @@
 						<strong>{who(line.vault)}</strong>
 						<span class="text">{line.text}</span>
 					{/if}
-					<time>{time(line.sent)}</time>
+					<time>{time(line.at)}</time>
 				</li>
 			{:else}
 				<li class="empty">Nobody has said anything since this page opened.</li>

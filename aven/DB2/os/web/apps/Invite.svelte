@@ -15,9 +15,8 @@
 	let copied = $state(false);
 	const why = $derived(failed || net.refused);
 	const qr = $derived(link ? renderSVG(link, { border: 2, whiteColor: '#ffffff', blackColor: '#1d1d1b' }) : '');
-	const open = $derived(room.invites ?? []);
-	const made = (ms) => new Date(ms).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
-
+	const open = $derived((room.invites ?? []).filter((item) => item.state === 'open'));
+	
 	async function run(act) {
 		busy = true;
 		failed = '';
@@ -30,8 +29,8 @@
 		}
 	}
 
-	const make = () => run(async () => ((copied = false), (link = await invite(config))));
-	const take = (id) => run(() => withdraw(config, id));
+	const make = () => run(async () => ((copied = false), (link = await invite(config, account))));
+	const take = (key) => run(() => withdraw(config, account, key));
 
 	async function copy() {
 		await navigator.clipboard?.writeText(link).catch(() => {});
@@ -69,8 +68,7 @@
 			{#each open as item (item.id)}
 				<li data-invite={item.id}>
 					<code>{item.id}</code>
-					<small>made {made(item.made)}</small>
-					<button class="quiet" data-testid="withdraw" disabled={busy} onclick={() => take(item.id)}>Withdraw</button>
+					<button class="quiet" data-testid="withdraw" disabled={busy} onclick={() => take(item.key)}>Withdraw</button>
 				</li>
 			{/each}
 		</ul>

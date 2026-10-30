@@ -59,7 +59,7 @@ const invite = async () => {
 	return (await admin.page.getByTestId('invite-link').textContent())?.trim();
 };
 const link = await invite();
-if (!/\/#\/join\/[A-Za-z0-9_-]+\.[0-9a-f]{64}$/.test(link ?? '')) problems.push(`the invite's link is ${link}`);
+if (!/\/#\/join\/[0-9a-f]{64}$/.test(link ?? '')) problems.push(`the invite's link is ${link}`);
 if (!(await admin.page.getByTestId('invite-qr').locator('svg').count())) problems.push('the invite shows no QR code');
 if (!(await seen(admin.page.locator('[data-testid="open-invites"] li')))) problems.push('the new invite is not among the open ones');
 await shot(admin.page, 'invite-made');
