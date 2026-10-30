@@ -55,12 +55,13 @@ use std::sync::{Arc, Mutex};
 use aven_db_core::timeline;
 use aven_db_core::wire::ALPN;
 use aven_db_store::backend::{self, DalStore};
+use aven_db_store::blobs::Blobs;
 use aven_id::Relying;
 use aven_peer::keys::{self, Members};
 use aven_peer::members::{Gate, Hook};
 use aven_peer::relay::Allow;
 use aven_peer::room::Room;
-use aven_peer::{Notes, door, door::Door, hub::Hub, link, now, record, tls};
+use aven_peer::{Notes, blobs, door, door::Door, hub::Hub, link, now, record, tls};
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
 use iroh::{Endpoint, EndpointAddr, RelayMap, RelayMode, RelayUrl};
@@ -301,7 +302,7 @@ async fn main() -> Result<(), Error> {
         .relay_mode(RelayMode::Custom(RelayMap::from(relay_url.clone())))
         .clear_ip_transports()
         .bind_addr(listen.as_str())?
-        .alpns(vec![ALPN.to_vec(), iroh_gossip::ALPN.to_vec()])
+        .alpns(vec![ALPN.to_vec(), iroh_gossip::ALPN.to_vec(), blobs::ALPN.to_vec()])
         .ca_tls_config(tls::trust(config.get("relay-ca").as_deref())?)
         .hooks(Hook {
             me: me.clone(),
@@ -337,7 +338,11 @@ async fn main() -> Result<(), Error> {
 
     // gossip on the same Router as aven/db/1 (README, rule 9): the chat's room, joined through the Aven Peer
     let gossip = Gossip::builder().spawn(endpoint.clone());
-    let router = Router::builder(endpoint.clone()).accept(iroh_gossip::ALPN, gossip.clone());
+    // and iroh-blobs' protocol, the files' bytes from this peer's store, to members only (store/README.md)
+    let files = Blobs::new(store.clone());
+    let router = Router::builder(endpoint.clone())
+        .accept(iroh_gossip::ALPN, gossip.clone())
+        .accept(blobs::ALPN, blobs::provider(&files, me.clone(), gate.clone(), notes.clone()));
     let (router, bootstrap) = if relay {
         (
             router
