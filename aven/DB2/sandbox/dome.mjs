@@ -6,9 +6,9 @@
 // - Bob, offline, writes a line: it shows at once, still on its way, and arrives on reconnect (4);
 // - a fork of Bob's chain is raised by the Aven Peer and never shown; a line of a device that is no member's is
 //   dropped by every peer and never shown (5);
-// - Alice shares an image and a PDF: her chat shows them at once from her own store, through the Service Worker's
-//   /files/<hash> (local first). Bob's copy needs the Aven Peer to keep the file and Bob to fetch its chunks, over
-//   iroh-blobs once the store's adapter is in: reported as `pending` until then.
+// - Alice shares an image and a PDF: each is a file line of her chain, shown in her chat at once (local first). Their
+//   bytes through the Service Worker's /files/<hash>, and Bob's copy, need the leader's bridge (opfs-sync) and the
+//   store's iroh-blobs adapter: reported as `pending` until they are in.
 //
 // The fork and the stranger's line are signed here with the cast's test keys (public on purpose, valid only inside
 // the box), as a cloned device or an outsider would, and sent through Alice's Peer-Light as they are. What a line's
@@ -55,8 +55,9 @@ const publicHex = (key) => Buffer.from(key.export({ format: 'jwk' }).x, 'base64u
 // A line's blob (aven-db-core's `chain::Line::blob`): its body with the signature after its `at` line
 function blob({ device, seq, prev, at, text }, key) {
 	const head = `avenDB line 1\nnetwork aven\ndevice ${device}\nseq ${seq}\nprev ${prev ?? 'none'}\nat ${at}\n`;
-	const sig = sign(null, Buffer.from(`${head}${text}`), key).toString('hex');
-	return `${head}sig ${sig}\n${text}`;
+	const body = `text\n${text}`;
+	const sig = sign(null, Buffer.from(`${head}${body}`), key).toString('hex');
+	return `${head}sig ${sig}\n${body}`;
 }
 
 // a line sent as it is through a page's Peer-Light, its worker opened as the page opens it (members.mjs)
@@ -173,26 +174,23 @@ await alice.getByTestId('file-input').setInputFiles([
 	{ name: `dot-${stamp}.png`, mimeType: 'image/png', buffer: png },
 	{ name: `page-${stamp}.pdf`, mimeType: 'application/pdf', buffer: pdf },
 ]);
-const image = alice.locator(`[data-testid="file"][data-kind="image"]`, { has: alice.locator(`a[download="dot-${stamp}.png"]`) }).locator('img');
-if (!(await seen(image))) problems.push("Alice's image did not show");
-const loaded = async (img) => img.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false);
-for (let i = 0; i < 40 && !(await loaded(image)); i++) await wait(250);
-if (!(await loaded(image))) problems.push("Alice's image did not load from /files/<hash>");
-report.imageShownMs = Date.now() - sharedAt;
-const file = await image.evaluate((i) => new URL(i.src).pathname).catch(() => null);
-const range = file && (await alice.evaluate(async (path) => {
-	const r = await fetch(path, { headers: { Range: 'bytes=1-3' } });
-	return { status: r.status, range: r.headers.get('content-range'), bytes: [...new Uint8Array(await r.arrayBuffer())] };
-}, file));
-report.range = range;
-if (range?.status !== 206 || JSON.stringify(range.bytes) !== JSON.stringify([...png.subarray(1, 4)]) || range.range !== `bytes 1-3/${png.length}`)
-	problems.push(`a range of the image is ${JSON.stringify(range)}`);
-if (!(await seen(alice.locator(`[data-testid="file"][data-kind="pdf"]`)))) problems.push("Alice's PDF did not show");
+const image = alice.locator(`[data-testid="file"][data-kind="image"]`, { has: alice.locator(`a[download="dot-${stamp}.png"]`) });
+if (!(await seen(image))) problems.push("Alice's image did not show as a line of her chat");
+if (!(await seen(alice.locator(`[data-testid="file"][data-kind="pdf"]`, { has: alice.locator(`a[download="page-${stamp}.pdf"]`) }))))
+	problems.push("Alice's PDF did not show as a line of her chat");
+report.fileShownMs = Date.now() - sharedAt;
 await alice.screenshot({ path: `${run}/dome-alice-files.png` });
-// Bob's copy: the Aven Peer keeps the file and Bob fetches its chunks once iroh-blobs is in
-const bobImage = bob.locator(`a[download="dot-${stamp}.png"]`);
+// the bytes: through /files/<hash> once the leader's bridge and the iroh-blobs adapter are in
+const loaded = async (img) => img.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false);
+const file = await image.getAttribute('data-file').catch(() => null);
+const range = file && (await alice.evaluate(async (path) => {
+	const r = await fetch(path, { headers: { Range: 'bytes=1-3' } }).catch(() => null);
+	return r && { status: r.status, range: r.headers.get('content-range') };
+}, `/files/${file}`));
 report.pending = {
-	bobSeesTheImage: (await seen(bobImage)) && (await loaded(bob.locator('[data-testid="file"][data-kind="image"] img').last())),
+	aliceLoadsTheImage: await loaded(image.locator('img')),
+	aRangeOfIt: range,
+	bobSeesTheImage: (await seen(bob.locator(`a[download="dot-${stamp}.png"]`), 5000)) && (await loaded(bob.locator('[data-testid="file"][data-kind="image"] img').last())),
 };
 await bob.screenshot({ path: `${run}/dome-bob-files.png` });
 await browser.close();

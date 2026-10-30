@@ -21,15 +21,13 @@ function load() {
 	return loading;
 }
 
-// every chat line the Peer-Light told, by its name: the history a page that connects later gets whole, and what the
-// Service Worker learns a file's size and type from
+// every chat line the Peer-Light told, by its name: the history a page that connects later gets whole
 const chat = new Map();
 
 function tell(line) {
 	const event = JSON.parse(line);
 	if (event.event === 'chat' && event.id) {
 		chat.set(event.id, line);
-		if (event.file) files.set(event.file.file, event.file);
 		for (const port of pages) port.postMessage(line);
 		fetch(`/events/${event.peer}`, { method: 'POST', body: line }).catch(() => {});
 		return;
@@ -135,27 +133,6 @@ function connect(port) {
 	if (!started) port.postMessage(JSON.stringify({ t: Date.now(), peer: 'page', event: 'start?' }));
 	port.start?.();
 }
-
-// The Service Worker's `/files/<hash>` (os/web/files-sw.js) asks for a range of a file on the BroadcastChannel
-// `aven-peer-light:<network>`: {id, read: {file, start, end}}, answered {id, size, type, bytes} or {id, error}. The
-// file's size and type are its announcement's, from the chat's lines; the bytes the Peer-Light reads from the chunks
-// the range touches.
-const files = new Map();
-const bridge = new BroadcastChannel('aven-peer-light:aven');
-bridge.onmessage = async ({ data }) => {
-	if (!data?.read || data.id === undefined) return;
-	const { file, start, end } = data.read;
-	const known = files.get(file);
-	if (!known) return; // another tab's Peer-Light may know it
-	try {
-		await started;
-		const last = Math.min(end ?? known.size, known.size);
-		const bytes = await light.read(file, known.size, Math.min(start ?? 0, last), last);
-		bridge.postMessage({ id: data.id, size: known.size, type: known.type, bytes });
-	} catch (error) {
-		bridge.postMessage({ id: data.id, error: String(error?.message ?? error) });
-	}
-};
 
 // a SharedWorker hears each page as a port; a plain Worker, where SharedWorker is missing, is its own one port
 if ('onconnect' in self) self.onconnect = (event) => connect(event.ports[0]);

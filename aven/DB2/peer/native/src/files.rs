@@ -20,7 +20,10 @@ fn hash(b: [u8; 32]) -> Hash {
 /// Puts one chunk, at most [`CHUNK`] bytes, and returns its name.
 pub async fn put_chunk<S: Store + ?Sized>(store: &S, bytes: Bytes) -> Result<Hash, String> {
     if bytes.is_empty() || bytes.len() as u64 > CHUNK {
-        return Err(format!("a chunk is 1 to {CHUNK} bytes, not {}", bytes.len()));
+        return Err(format!(
+            "a chunk is 1 to {CHUNK} bytes, not {}",
+            bytes.len()
+        ));
     }
     store.put(bytes).await.map_err(err)
 }
@@ -35,7 +38,11 @@ pub async fn share<S: Store + ?Sized>(
     chunks: &[Hash],
 ) -> Result<Announcement, String> {
     if chunks.len() as u64 != files::count(CHUNK, size) {
-        return Err(format!("{size} bytes are {} chunks, not {}", files::count(CHUNK, size), chunks.len()));
+        return Err(format!(
+            "{size} bytes are {} chunks, not {}",
+            files::count(CHUNK, size),
+            chunks.len()
+        ));
     }
     for c in chunks {
         if !store.has(c).await.map_err(err)? {
@@ -63,7 +70,10 @@ pub async fn keep<S: Store + ?Sized>(store: &S, file: &Hash) -> Result<(), Strin
 }
 
 /// The chunks of a file this store doesn't hold yet, in order: what a peer still has to fetch.
-pub async fn missing<S: Store + ?Sized>(store: &S, file: &Hash) -> Result<Option<Vec<Hash>>, String> {
+pub async fn missing<S: Store + ?Sized>(
+    store: &S,
+    file: &Hash,
+) -> Result<Option<Vec<Hash>>, String> {
     let Some(index) = store.get(file).await.map_err(err)? else {
         return Ok(None);
     };
@@ -87,7 +97,13 @@ pub enum Read {
 }
 
 /// Bytes `start..end` of a file of `size` bytes, from the chunks the range touches alone.
-pub async fn read<S: Store + ?Sized>(store: &S, file: &Hash, size: u64, start: u64, end: u64) -> Result<Read, String> {
+pub async fn read<S: Store + ?Sized>(
+    store: &S,
+    file: &Hash,
+    size: u64,
+    start: u64,
+    end: u64,
+) -> Result<Read, String> {
     if start > end || end > size {
         return Err(format!("{start}..{end} is outside the file's {size} bytes"));
     }
@@ -97,7 +113,11 @@ pub async fn read<S: Store + ?Sized>(store: &S, file: &Hash, size: u64, start: u
     let hashes = files::hashes(&index).ok_or("not an index")?;
     let (mut got, mut missing) = (vec![], vec![]);
     for i in files::touches(CHUNK, start..end) {
-        let h = hash(*hashes.get(i as usize).ok_or("the index is shorter than the file")?);
+        let h = hash(
+            *hashes
+                .get(i as usize)
+                .ok_or("the index is shorter than the file")?,
+        );
         match store.get(&h).await.map_err(err)? {
             Some(b) => got.push(b),
             None => missing.push(h),

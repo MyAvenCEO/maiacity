@@ -145,6 +145,7 @@ pub fn path(conn: &Connection) -> Option<&'static str> {
 
 /// Runs the link for ever: dial, follow, and dial again. `aven_name` is what the timeline calls the Aven Peer; the
 /// outbox, if any, holds the frames to send it; the gate, if any, learns the members from the statements it is told.
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     endpoint: Endpoint,
     me: String,
@@ -238,6 +239,14 @@ async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Re
             Err(_) => {
                 next += TICK;
                 link.step(Event::Tick);
+                // a gap still open after its wait: catch up for the lines before it
+                if let Some(chats) = &link.chats
+                    && chats.due(now())
+                {
+                    send.write_all(&encode(&chats.catch_up_frame(&[])))
+                        .await
+                        .map_err(|e| e.to_string())?;
+                }
                 if link.view.status.phase == Phase::Stalled && link.view.status.idle >= REDIAL_AFTER
                 {
                     link.tell();

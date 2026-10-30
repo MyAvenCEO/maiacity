@@ -1,10 +1,10 @@
 //! The chat's chains (`Aven.DB.Chains`, `store/README.md` "The chat keeps its history"): each device keeps a chain of
 //! its own lines, and every peer keeps every chain it hears, the Aven Peer all of them. A [`Line`] is a blob of plain
 //! bytes in v1: the network, the device, its sequence number, the hash of its previous line, the time, the signature
-//! and the text. A peer's [`Keeper`] takes each line it hears: known, a fork (kept, not chained, raised), moved (the
-//! device's head `chat-<device>` moves forward to it, and to the lines kept earlier that now fit on top), or a gap
-//! (kept until the lines before it arrive). Catching up takes the [`missing`] lines of another peer's chain, oldest
-//! first.
+//! and its [`Body`], a text or a file, typed so a text is never read as a file. A peer's [`Keeper`] takes each line it
+//! hears: known, a fork (kept, not chained, raised), moved (the device's head `chat-<device>` moves forward to it, and
+//! to the lines kept earlier that now fit on top), or a gap (kept until the lines before it arrive; a peer catches up
+//! for them after [`GAP_WAIT_MS`]). Catching up takes the [`missing`] lines of another peer's chain, oldest first.
 //!
 //! The core is pure: a line's name (the BLAKE3 of its blob) and the signature check come in from the edge, which
 //! stores the blobs and refs.
@@ -12,9 +12,85 @@
 use std::collections::BTreeMap;
 
 use crate::chat::MAX_TEXT;
+use crate::files::Announcement;
 
 /// The prefix of every chain's ref: `chat-<device>`.
 pub const REF: &str = "chat-";
+/// How long a gap may stay open before the peer catches up from the Aven Peer for the lines before it, in ms.
+pub const GAP_WAIT_MS: u64 = 5000;
+/// The longest MIME type a file line claims, in bytes.
+pub const MAX_TYPE: usize = 255;
+
+/// What a line says: a text, or a file shared in the chat.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Body {
+    Text(String),
+    File(Announcement),
+}
+
+impl Body {
+    /// As the line's bytes carry it, last: its kind first, the free text (a text, a file's name) last.
+    pub fn render(&self) -> String {
+        match self {
+            Body::Text(t) => format!("text\n{t}"),
+            Body::File(f) => format!(
+                "file {}\nsize {}\ntype {}\n{}",
+                f.file, f.size, f.kind, f.name
+            ),
+        }
+    }
+
+    fn parse(s: &str) -> Result<Body, String> {
+        if let Some(t) = s.strip_prefix("text\n") {
+            return Ok(Body::Text(t.to_string()));
+        }
+        let mut parts = s.splitn(4, '\n');
+        let mut field = |name: &str| {
+            parts
+                .next()
+                .and_then(|p| p.strip_prefix(name))
+                .and_then(|v| v.strip_prefix(' '))
+                .map(str::to_string)
+                .ok_or_else(|| format!("a body without {name}"))
+        };
+        let file = field("file")?;
+        let size = field("size")?
+            .parse()
+            .map_err(|_| "a bad size".to_string())?;
+        let kind = field("type")?;
+        let name = parts.next().ok_or("a file without its name")?.to_string();
+        Ok(Body::File(Announcement {
+            file,
+            size,
+            name,
+            kind,
+        }))
+    }
+
+    /// A text or a file's name of 1 to [`MAX_TEXT`] bytes, and a file's hash and type well formed.
+    pub fn check(&self) -> Result<(), Refusal> {
+        let words = match self {
+            Body::Text(t) => t,
+            Body::File(f) => {
+                let hash = f.file.len() == 64
+                    && f.file
+                        .bytes()
+                        .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+                if !hash || f.kind.is_empty() || f.kind.len() > MAX_TYPE || f.kind.contains('\n') {
+                    return Err(Refusal::BadFile);
+                }
+                &f.name
+            }
+        };
+        if words.is_empty() {
+            return Err(Refusal::Empty);
+        }
+        if words.len() > MAX_TEXT {
+            return Err(Refusal::TooLong);
+        }
+        Ok(())
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Line {
@@ -27,14 +103,14 @@ pub struct Line {
     pub prev: Option<String>,
     /// milliseconds since the epoch
     pub at: u64,
-    /// the device's signature over [`Line::body`], hex
+    /// the device's signature over [`Line::signs`], hex
     pub sig: String,
-    pub text: String,
+    pub body: Body,
 }
 
 impl Line {
-    /// What the device signs: every field but the signature, the text last.
-    pub fn body(&self) -> String {
+    /// What the device signs: every field but the signature, the body last.
+    pub fn signs(&self) -> String {
         format!(
             "avenDB line 1\nnetwork {}\ndevice {}\nseq {}\nprev {}\nat {}\n{}",
             self.network,
@@ -42,7 +118,7 @@ impl Line {
             self.seq,
             self.prev.as_deref().unwrap_or("none"),
             self.at,
-            self.text
+            self.body.render()
         )
     }
 
@@ -56,7 +132,7 @@ impl Line {
             self.prev.as_deref().unwrap_or("none"),
             self.at,
             self.sig,
-            self.text
+            self.body.render()
         )
         .into_bytes()
     }
@@ -84,7 +160,7 @@ impl Line {
         };
         let at = field("at")?.parse().map_err(|_| "a bad at".to_string())?;
         let sig = field("sig")?;
-        let text = parts.next().ok_or("no text")?.to_string();
+        let body = Body::parse(parts.next().ok_or("no body")?)?;
         Ok(Line {
             network,
             device,
@@ -92,7 +168,7 @@ impl Line {
             prev,
             at,
             sig,
-            text,
+            body,
         })
     }
 }
@@ -107,6 +183,8 @@ pub enum Refusal {
     TooLong,
     /// Not 1 for a first line, or 1 for a line with a previous one.
     BadSeq,
+    /// A file line whose hash isn't one, or whose type is empty, too long or breaks the line.
+    BadFile,
 }
 
 impl Refusal {
@@ -118,12 +196,14 @@ impl Refusal {
             Refusal::Empty => "empty",
             Refusal::TooLong => "tooLong",
             Refusal::BadSeq => "badSeq",
+            Refusal::BadFile => "badFile",
         }
     }
 }
 
-/// A line on its own: for `network`, from a device the door admits, signed by it over exactly its body
-/// (`verify(key, body, sig)`), its text's size, and a number that starts at 1 exactly when there is no previous line.
+/// A line on its own: for `network`, from a device the door admits, signed by it over exactly what it signs
+/// (`verify(key, signs, sig)`), its body well formed, and a number that starts at 1 exactly when there is no previous
+/// line.
 pub fn check(
     network: &str,
     member: impl Fn(&str) -> bool,
@@ -136,15 +216,10 @@ pub fn check(
     if !member(&l.device) {
         return Err(Refusal::NotMember);
     }
-    if !verify(&l.device, &l.body(), &l.sig) {
+    if !verify(&l.device, &l.signs(), &l.sig) {
         return Err(Refusal::BadSignature);
     }
-    if l.text.is_empty() {
-        return Err(Refusal::Empty);
-    }
-    if l.text.len() > MAX_TEXT {
-        return Err(Refusal::TooLong);
-    }
+    l.body.check()?;
     if l.seq == 0 || (l.seq == 1) != l.prev.is_none() {
         return Err(Refusal::BadSeq);
     }
@@ -283,7 +358,12 @@ impl Keeper {
             .chain(self.loose.iter().filter(|h| !self.forks.contains(&h.id)))
             .collect();
         all.sort_by(|a, b| {
-            (a.line.at, &a.line.device, a.line.seq, &a.id).cmp(&(b.line.at, &b.line.device, b.line.seq, &b.id))
+            (a.line.at, &a.line.device, a.line.seq, &a.id).cmp(&(
+                b.line.at,
+                &b.line.device,
+                b.line.seq,
+                &b.id,
+            ))
         });
         all
     }

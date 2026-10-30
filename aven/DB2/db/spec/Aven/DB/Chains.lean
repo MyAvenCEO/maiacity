@@ -6,12 +6,13 @@ import Aven.DB.Store
 
 The chat keeps its history (`store/README.md`, "The chat keeps its history"): each device keeps a chain of its own
 lines. A **line** is a blob: the network, the device, its sequence number, the hash of its previous line (none for the
-first), the time and the text, signed by the device's key. Lines are plain bytes in v1. The device's ref
+first), the time and its body, signed by the device's key. A body is typed: a text, or a file (its index's hash, its
+size, its name and MIME type, as its sender claims), so a text can never be read as a file. Lines are plain bytes in v1. The device's ref
 `chat-<device>` points at its newest line, and each device writes only its own store (README, rule 1).
 
 Every peer keeps every chain it hears, the Aven Peer all of them. It checks a line as the chat checks a message (the
-network, a device the door admits, its signature, the text's size, a sequence number that starts at 1 exactly when
-there is no previous line), then:
+network, a device the door admits, its signature, its body's size and form, a sequence number that starts at 1
+exactly when there is no previous line), then:
 
 - **known**: a line it holds already is kept once, by its hash;
 - **fork**: another line of the same device at the same place in its chain (the same sequence number, so the same
@@ -19,7 +20,8 @@ there is no previous line), then:
   raised;
 - **moved**: a line right on top of the device's chain (its previous line is the head, its number one more) moves
   `chat-<device>` forward to it, and so do the lines kept earlier that now fit on top, one after another;
-- **gap**: any other line is kept until the lines before it arrive.
+- **gap**: any other line is kept until the lines before it arrive. Lines arrive in order on gossip, so a gap is
+  usually a moment's; one still open after `gapWait` makes the peer catch up from the Aven Peer.
 
 So `chat-<device>` only ever moves forward (`chain_suffix`), a line received twice is kept once (`receive_twice`), a
 fork is raised and never chained (`fork_raised`), and a line from no member's device is dropped (`stranger_dropped`).
@@ -40,8 +42,27 @@ open Chat (maxText)
 
 abbrev Id := String
 
+/-- How long a gap may stay open, in milliseconds, before the peer catches up from the Aven Peer for the lines before
+it. -/
+def gapWait : Nat := 5000
+
+/-- The longest MIME type a file line claims, in bytes. -/
+def maxType : Nat := 255
+
+/-- What a line says: a text, or a file shared in the chat. -/
+inductive Body where
+  | text (text : String)
+  /-- a file: its index's hash (`Aven.DB.Files`), its size, its name and its MIME type -/
+  | file (file : String) (size : Nat) (name : String) (type : String)
+  deriving DecidableEq, Repr, Inhabited
+
+/-- A body as the line's bytes carry it, last: its kind first, the free text (a text, a file's name) last. -/
+def Body.render : Body → String
+  | .text t => "text\n" ++ t
+  | .file f n name type => "file " ++ f ++ "\nsize " ++ toString n ++ "\ntype " ++ type ++ "\n" ++ name
+
 /-- A line: its name (the hash of its blob), the network, the device that wrote it, its place in the device's chain,
-the name of the line before it, its time (ms), its text, and its signature as the model knows one: the key that made
+the name of the line before it, its time (ms), its body, and its signature as the model knows one: the key that made
 it and the bytes it signed. -/
 structure Line where
   id : Id
@@ -50,16 +71,16 @@ structure Line where
   seq : Nat
   prev : Option Id
   time : Nat
-  text : String
+  body : Body
   signer : String
   signed : String
   deriving DecidableEq, Repr, Inhabited
 
-/-- What a device signs: every field but the signature, the text last. The blob is this with the signature after its
+/-- What a device signs: every field but the signature, the body last. The blob is this with the signature after its
 `at` line (`sig <hex>`). -/
-def Line.body (l : Line) : String :=
+def Line.signs (l : Line) : String :=
   "avenDB line 1\nnetwork " ++ l.network ++ "\ndevice " ++ l.device ++ "\nseq " ++ toString l.seq ++ "\nprev " ++
-    l.prev.getD "none" ++ "\nat " ++ toString l.time ++ "\n" ++ l.text
+    l.prev.getD "none" ++ "\nat " ++ toString l.time ++ "\n" ++ l.body.render
 
 inductive Refusal where
   | wrongNetwork
@@ -70,17 +91,27 @@ inductive Refusal where
   | tooLong
   /-- not 1 for a first line, or 1 for a line with a previous one -/
   | badSeq
+  /-- a file line whose hash isn't one, or whose type is empty, too long or breaks the line -/
+  | badFile
   deriving DecidableEq, Repr
+
+/-- A body on its own: a text or a file's name of 1 to `maxText` bytes, and a file's hash and type well formed. -/
+def Body.check : Body → Except Refusal Unit
+  | .text t => if t.utf8ByteSize = 0 then .error .empty else if t.utf8ByteSize > maxText then .error .tooLong else .ok ()
+  | .file f _ name type =>
+    if !Store.validHash f ∨ type.isEmpty ∨ type.utf8ByteSize > maxType ∨ type.contains '\n' then .error .badFile
+    else if name.utf8ByteSize = 0 then .error .empty
+    else if name.utf8ByteSize > maxText then .error .tooLong
+    else .ok ()
 
 /-- A line on its own. -/
 def check (network : String) (members : List String) (l : Line) : Except Refusal Unit :=
   if l.network ≠ network then .error .wrongNetwork
   else if !members.contains l.device then .error .notMember
-  else if l.signer ≠ l.device ∨ l.signed ≠ l.body then .error .badSignature
-  else if l.text.utf8ByteSize = 0 then .error .empty
-  else if l.text.utf8ByteSize > maxText then .error .tooLong
-  else if l.seq = 0 ∨ (l.seq == 1) != l.prev.isNone then .error .badSeq
-  else .ok ()
+  else if l.signer ≠ l.device ∨ l.signed ≠ l.signs then .error .badSignature
+  else match l.body.check with
+    | .error why => .error why
+    | .ok () => if l.seq = 0 ∨ (l.seq == 1) != l.prev.isNone then .error .badSeq else .ok ()
 
 theorem check_member {network : String} {members : List String} {l : Line} (h : check network members l = .ok ()) :
     l.device ∈ members := by
@@ -416,7 +447,7 @@ end Keeper
 
 Lines arriving at peers, and peers catching up, written out by hand. The door admits `alice`, `aven`, `bob` and
 `carol`; `eve` is no member. A line is written with its name, its device, its number, the name of the line before it,
-its time and its text; and how it is tampered with after signing. Each step is a line a peer hears, a line a peer
+its time and its body; and how it is tampered with after signing. Each step is a line a peer hears, a line a peer
 writes itself, or a peer catching up from another; after each, the answer, the peer's heads, its loose lines, its
 forks and what its chat shows. -/
 
@@ -424,21 +455,24 @@ inductive Tamper where
   | none
   /-- signed by another key -/
   | signer (k : String)
-  /-- its text changed after signing -/
+  /-- its body changed after signing -/
   | text (s : String)
   /-- for another network -/
   | network (n : String)
   deriving DecidableEq, Repr
 
-def Line.make (id device : String) (seq : Nat) (prev : Option Id) (time : Nat) (text : String)
+def Line.make' (id device : String) (seq : Nat) (prev : Option Id) (time : Nat) (body : Body)
     (t : Tamper := .none) : Line :=
   let network := match t with | .network n => n | _ => "aven"
-  let l : Line := ⟨id, network, device, seq, prev, time, text, device, ""⟩
-  let l := { l with signed := l.body }
+  let l : Line := ⟨id, network, device, seq, prev, time, body, device, ""⟩
+  let l := { l with signed := l.signs }
   match t with
   | .signer k => { l with signer := k }
-  | .text s => { l with text := s }
+  | .text s => { l with body := .text s }
   | _ => l
+
+def Line.make (id device : String) (seq : Nat) (prev : Option Id) (time : Nat) (text : String)
+    (t : Tamper := .none) : Line := Line.make' id device seq prev time (.text text) t
 
 inductive Step where
   /-- `peer` hears `line` on gossip -/
@@ -478,6 +512,8 @@ def a1 := Line.make "a1" "alice" 1 none 10 "hi"
 def a2 := Line.make "a2" "alice" 2 (some "a1") 20 "how are you"
 def a3 := Line.make "a3" "alice" 3 (some "a2") 40 "a movie"
 def a2' := Line.make "a2'" "alice" 2 (some "a1") 21 "from a cloned laptop"
+def file := Blake3.hash "a movie's index".toUTF8.toList
+def f3 := Line.make' "f3" "alice" 3 (some "a2") 45 (.file file 200000000 "dome.mp4" "video/mp4")
 def b1 := Line.make "b1" "bob" 1 none 30 "hello"
 def b2 := Line.make "b2" "bob" 2 (some "b1") 50 "written offline"
 
@@ -504,6 +540,22 @@ def chainExamples : List (String × List Step × List (String × List Answer × 
      ("aven", [.moved ["a2"]], [("alice", "a2")], [], ["a1", "a2"]),
      ("aven", [.fork], [("alice", "a2")], ["a2'"], ["a1", "a2"]),
      ("aven", [.moved ["a3"]], [("alice", "a3")], ["a2'"], ["a1", "a2", "a3"])]),
+  ("a file is a line of its sender's chain",
+    [.hear "aven" a1, .hear "aven" a2, .hear "aven" f3],
+    [("aven", [.moved ["a1"]], [("alice", "a1")], [], ["a1"]),
+     ("aven", [.moved ["a2"]], [("alice", "a2")], [], ["a1", "a2"]),
+     ("aven", [.moved ["f3"]], [("alice", "f3")], [], ["a1", "a2", "f3"])]),
+  ("file lines that aren't well formed are dropped",
+    [.hear "aven" (.make' "y1" "alice" 1 none 10 (.file "not a hash" 1 "a.png" "image/png")),
+     .hear "aven" (.make' "y2" "alice" 1 none 10 (.file file 1 "a.png" "")),
+     .hear "aven" (.make' "y3" "alice" 1 none 10 (.file file 1 "a.png" "image/png\ntext")),
+     .hear "aven" (.make' "y4" "alice" 1 none 10 (.file file 1 "" "image/png")),
+     .hear "aven" (.make' "y5" "alice" 1 none 10 (.file file 1 "a.png" "image/png"))],
+    [("aven", [.refused .badFile], [], [], []),
+     ("aven", [.refused .badFile], [], [], []),
+     ("aven", [.refused .badFile], [], [], []),
+     ("aven", [.refused .empty], [], [], []),
+     ("aven", [.moved ["y5"]], [("alice", "y5")], [], ["y5"])]),
   ("a non-member's line, and lines tampered with, are dropped",
     [.hear "aven" (.make "e1" "eve" 1 none 10 "let me in"),
      .hear "aven" (.make "x1" "alice" 1 none 10 "hi" (.signer "eve")),

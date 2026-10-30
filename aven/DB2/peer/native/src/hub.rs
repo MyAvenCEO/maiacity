@@ -23,8 +23,8 @@ use aven_db_core::chain::Answer;
 
 use crate::chats::Chats;
 use crate::door::{Door, Statement};
-use crate::room::Room;
 use crate::keys::Members;
+use crate::room::Room;
 use crate::{Notes, link, now};
 
 #[derive(Clone)]

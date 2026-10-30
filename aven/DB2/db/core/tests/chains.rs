@@ -6,7 +6,8 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use aven_db_core::chain::{Answer, Keeper, Line, missing};
+use aven_db_core::chain::{Answer, Body, Keeper, Line, missing};
+use aven_db_core::files::Announcement;
 use serde_json::{Value, json};
 
 fn vectors(file: &str) -> Vec<Value> {
@@ -17,16 +18,31 @@ fn vectors(file: &str) -> Vec<Value> {
     serde_json::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
-/// A signature as the model knows one: the key that made it and the bytes it signed.
+/// A signature as the model knows one: the key that made it and the bytes it signed, hashed, so it fits on the
+/// blob's `sig` line.
 fn signature(signer: &str, signed: &str) -> String {
-    format!("{signer}\n{signed}")
+    blake3::hash(format!("{signer}\n{signed}").as_bytes())
+        .to_hex()
+        .to_string()
 }
 
-fn verify(key: &str, body: &str, sig: &str) -> bool {
-    sig == signature(key, body)
+fn verify(key: &str, signs: &str, sig: &str) -> bool {
+    sig == signature(key, signs)
 }
 
-/// The model's line as a real one: its previous line by hash, signed over its real body unless the model's was
+fn body(b: &Value) -> Body {
+    match b.get("text") {
+        Some(t) => Body::Text(t.as_str().unwrap().to_string()),
+        None => Body::File(Announcement {
+            file: b["file"].as_str().unwrap().to_string(),
+            size: b["size"].as_u64().unwrap(),
+            name: b["name"].as_str().unwrap().to_string(),
+            kind: b["type"].as_str().unwrap().to_string(),
+        }),
+    }
+}
+
+/// The model's line as a real one: its previous line by hash, signed over what it really signs unless the model's was
 /// tampered with.
 fn line(l: &Value, prev: Option<String>) -> Line {
     let text = |k: &str| l[k].as_str().unwrap().to_string();
@@ -37,14 +53,14 @@ fn line(l: &Value, prev: Option<String>) -> Line {
         prev,
         at: l["at"].as_u64().unwrap(),
         sig: String::new(),
-        text: text("text"),
+        body: body(&l["body"]),
     };
     let model = Line {
         prev: l["prev"].as_str().map(str::to_string),
         ..line.clone()
     };
-    line.sig = if model.body() == text("signed") {
-        signature(&text("signer"), &line.body())
+    line.sig = if model.signs() == text("signed") {
+        signature(&text("signer"), &line.signs())
     } else {
         signature(&text("signer"), "tampered")
     };
@@ -69,7 +85,14 @@ impl Labels {
         let prev = l["prev"].as_str().map(|p| self.resolve(p));
         let line = line(&l, prev);
         let id = blake3::hash(&line.blob()).to_hex().to_string();
-        assert_eq!(Line::parse(&line.blob()).unwrap(), line);
+        // a well-formed line reads back as itself; one whose type breaks the line can't, which is why it is refused
+        if line.body.check().is_ok() {
+            assert_eq!(
+                Line::parse(&line.blob())
+                    .map_err(|e| (e, String::from_utf8_lossy(&line.blob()).into_owned())),
+                Ok(line.clone())
+            );
+        }
         self.named.insert(label.to_string(), (line, id.clone()));
         id
     }
@@ -91,7 +114,7 @@ fn answer(a: &Answer, label: &BTreeMap<String, String>) -> Value {
 }
 
 #[test]
-fn bodies_follow_the_vectors() {
+fn what_a_line_signs_follows_the_vectors() {
     let all: Vec<Value> = vectors("chats.json")
         .into_iter()
         .filter(|v| v["input"].get("line").is_some())
@@ -100,7 +123,12 @@ fn bodies_follow_the_vectors() {
     for v in all {
         let l = &v["input"]["line"];
         let line = line(l, l["prev"].as_str().map(str::to_string));
-        assert_eq!(json!({ "body": line.body() }), v["expected"], "{}", v["name"]);
+        assert_eq!(
+            json!({ "signs": line.signs() }),
+            v["expected"],
+            "{}",
+            v["name"]
+        );
     }
 }
 
@@ -130,10 +158,8 @@ fn chains_follow_the_vectors() {
             named: BTreeMap::new(),
         };
         let all: Vec<String> = labels.lines.keys().cloned().collect();
-        let label: BTreeMap<String, String> = all
-            .iter()
-            .map(|l| (labels.get(l).1, l.clone()))
-            .collect();
+        let label: BTreeMap<String, String> =
+            all.iter().map(|l| (labels.get(l).1, l.clone())).collect();
         let mut peers: BTreeMap<String, Keeper> = BTreeMap::new();
         for (step, want) in steps.iter().zip(v["expected"].as_array().unwrap()) {
             let peer = step["peer"].as_str().unwrap().to_string();
@@ -149,7 +175,11 @@ fn chains_follow_the_vectors() {
                     .unwrap_or_default();
                 let k = peers.entry(peer.clone()).or_default();
                 for (device, _) in src.heads() {
-                    for h in missing(src.chain(&device), k.chain(&device)).into_iter().cloned().collect::<Vec<_>>() {
+                    for h in missing(src.chain(&device), k.chain(&device))
+                        .into_iter()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                    {
                         answers.push(k.receive(network, member, verify, h.id, h.line));
                     }
                 }

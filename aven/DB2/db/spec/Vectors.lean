@@ -20,7 +20,7 @@ import Aven.DB.Json
   range touches with the bytes read from them alone; files of the city-dome's size by their size alone
   (`Aven.DB.Files`).
 - `chats.json`: lines arriving at peers and peers catching up; after each step the answers, the peer's heads, loose
-  lines, forks and what its chat shows (`Aven.DB.Chains`); and how a line's body reads. Lines are named by labels,
+  lines, forks and what its chat shows (`Aven.DB.Chains`); and what a line's device signs. Lines are named by labels,
   which aven-db-core's tests replace with the hashes of real signed blobs.
 
 `aven-db-core`'s and `aven-db-store`'s tests load them. `bun run up --check` runs this again and fails when the files
@@ -291,9 +291,15 @@ def files : List Json :=
 /-! ## The chat's chains -/
 
 open Chains in
+def Aven.DB.Chains.Body.json : Body → Json
+  | .text t => Json.mkObj [("text", t)]
+  | .file f n name type => Json.mkObj [("file", f), ("size", toJson n), ("name", name), ("type", type)]
+
+open Chains in
 def Aven.DB.Chains.Line.json (l : Line) : Json :=
   Json.mkObj [("id", l.id), ("network", l.network), ("device", l.device), ("seq", toJson l.seq),
-    ("prev", toJson l.prev), ("at", toJson l.time), ("text", l.text), ("signer", l.signer), ("signed", l.signed)]
+    ("prev", toJson l.prev), ("at", toJson l.time), ("body", l.body.json), ("signer", l.signer),
+    ("signed", l.signed)]
 
 open Chains in
 def Aven.DB.Chains.Refusal.name : Refusal → String
@@ -303,6 +309,7 @@ def Aven.DB.Chains.Refusal.name : Refusal → String
   | .empty => "empty"
   | .tooLong => "tooLong"
   | .badSeq => "badSeq"
+  | .badFile => "badFile"
 
 open Chains in
 def Aven.DB.Chains.Answer.json : Answer → Json
@@ -353,12 +360,14 @@ def randomChains (seed : Nat) : List Step := Id.run do
   return steps.toList
 
 open Chains in
-/-- How a line's body reads with a real previous hash. -/
+/-- What a line's device signs, with a real previous hash. -/
 def bodies : List Json :=
   let prev := Blake3.hash (Store.bytes "a line")
   [Line.make "first" "alice" 1 none 1730000000000 "hi", Line.make "second" "alice" 2 (some prev) 1730000000001 "two\nlines",
-   Line.make "unicode" "bob" 7 (some prev) 5 "grüß dich 👋"].map fun l =>
-    vector s!"the body of {l.id}" (Json.mkObj [("line", l.json)]) (Json.mkObj [("body", l.body)])
+   Line.make "unicode" "bob" 7 (some prev) 5 "grüß dich 👋",
+   Line.make' "a file" "alice" 3 (some prev) 9 (.file prev 200000000 "the dome\nat night.mp4" "video/mp4"),
+   Line.make "a text that reads like a file" "alice" 4 (some prev) 10 s!"file {prev}\nsize 1\ntype x\nname"].map fun l =>
+    vector s!"what {l.id} signs" (Json.mkObj [("line", l.json)]) (Json.mkObj [("signs", l.signs)])
 
 def chats : List Json :=
   bodies ++ Chains.chainExamples.map (fun (name, steps, _) => chainVector name steps) ++

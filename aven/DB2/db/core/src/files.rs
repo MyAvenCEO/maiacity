@@ -42,7 +42,7 @@ pub fn index(hashes: impl IntoIterator<Item = [u8; 32]>) -> Vec<u8> {
 
 /// An index's hashes, or `None` when it isn't a whole number of them.
 pub fn hashes(index: &[u8]) -> Option<Vec<[u8; 32]>> {
-    if index.len() % 32 != 0 {
+    if !index.len().is_multiple_of(32) {
         return None;
     }
     Some(
@@ -68,12 +68,9 @@ pub fn read(c: u64, n: u64, range: Range<u64>, got: &[&[u8]]) -> Option<Vec<u8>>
     Some(all[skip..skip + (range.end - range.start) as usize].to_vec())
 }
 
-/// How a line that announces a file starts: the announcement follows as JSON.
-pub const LINE: &str = "avenDB file 1\n";
-
 /// A file as the city-dome announces it: its index's hash, its size, and the name and MIME type its sender claims. It
-/// travels as a line of the sender's chain ([`Announcement::text`]), so it is signed by the sender's device, kept in the
-/// chat's history and caught up like any line.
+/// travels as the body of a line of the sender's chain (`chain::Body::File`), so it is signed by the sender's device,
+/// kept in the chat's history and caught up like any line.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Announcement {
     pub file: String,
@@ -81,20 +78,6 @@ pub struct Announcement {
     pub name: String,
     #[serde(rename = "type")]
     pub kind: String,
-}
-
-impl Announcement {
-    /// The line's text.
-    pub fn text(&self) -> String {
-        format!("{LINE}{}", serde_json::to_string(self).expect("an announcement encodes"))
-    }
-
-    /// The announcement a line's text makes, if it makes one: a name and a hash as the store writes it.
-    pub fn of(text: &str) -> Option<Announcement> {
-        let a: Announcement = serde_json::from_str(text.strip_prefix(LINE)?).ok()?;
-        let hash = a.file.len() == 64 && a.file.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
-        hash.then_some(a)
-    }
 }
 
 /// The ref that keeps a file: `file-<index>`.

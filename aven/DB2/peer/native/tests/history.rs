@@ -7,9 +7,9 @@
 
 use std::sync::{Arc, Mutex};
 
-use aven_db_core::chain::{Answer, Line};
+use aven_db_core::chain::{Answer, Body, Line};
 use aven_db_core::wire::Frame;
-use aven_db_store::{Hash, RefName, Store, backend};
+use aven_db_store::{Hash, RefName, backend};
 use aven_peer::Notes;
 use aven_peer::chats::{self, Chats};
 use aven_peer::members::Gate;
@@ -22,7 +22,11 @@ struct Told(Arc<Mutex<Vec<Value>>>);
 impl Told {
     fn notes(&self) -> Notes {
         let told = self.0.clone();
-        Arc::new(move |line: String| told.lock().unwrap().push(serde_json::from_str(&line).unwrap()))
+        Arc::new(move |line: String| {
+            told.lock()
+                .unwrap()
+                .push(serde_json::from_str(&line).unwrap())
+        })
     }
 
     fn texts(&self) -> Vec<String> {
@@ -34,7 +38,12 @@ impl Told {
     }
 
     fn events(&self, event: &str) -> usize {
-        self.0.lock().unwrap().iter().filter(|l| l["event"] == event).count()
+        self.0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|l| l["event"] == event)
+            .count()
     }
 }
 
@@ -55,9 +64,16 @@ fn gate(keys: &[&SecretKey]) -> Gate {
 
 async fn open(name: &str, secret: &SecretKey, gate: &Gate, store: &chats::Shared) -> (Chats, Told) {
     let told = Told::default();
-    let chats = Chats::open(name.into(), "aven", secret.clone(), gate.clone(), told.notes(), store.clone())
-        .await
-        .unwrap();
+    let chats = Chats::open(
+        name.into(),
+        "aven",
+        secret.clone(),
+        gate.clone(),
+        told.notes(),
+        store.clone(),
+    )
+    .await
+    .unwrap();
     (chats, told)
 }
 
@@ -67,10 +83,16 @@ fn memory() -> chats::Shared {
 
 /// What `from` answers what `to` holds, taken by `to`: one catch-up through the frames.
 async fn catch_up(to: &Chats, from: &Chats) {
-    let Frame::Heads { heads } = from.heads_frame() else { panic!() };
-    let Frame::CatchUp { holds } = to.catch_up_frame(&heads) else { panic!() };
+    let Frame::Heads { heads } = from.heads_frame() else {
+        panic!()
+    };
+    let Frame::CatchUp { holds } = to.catch_up_frame(&heads) else {
+        panic!()
+    };
     for frame in from.answer(&holds).await {
-        let Frame::Lines { lines } = frame else { panic!() };
+        let Frame::Lines { lines } = frame else {
+            panic!()
+        };
         for line in lines {
             to.take(line.as_bytes()).await;
         }
@@ -88,7 +110,7 @@ async fn history_is_kept_and_caught_up() {
     // Alice writes; each line is in her store at once, chat-<alice> at its head; the Aven Peer takes it from gossip
     let mut blobs = vec![];
     for text in ["one", "two", "three"] {
-        let line = a.write(text.into()).await.unwrap();
+        let line = a.write(Body::Text(text.into())).await.unwrap();
         assert!(matches!(hub.take(&line.blob()).await, Answer::Moved(_)));
         blobs.push(line.blob());
     }
@@ -112,12 +134,16 @@ async fn history_is_kept_and_caught_up() {
     assert_eq!(told.texts().len(), 3);
 
     // Bob writes offline; on reconnect the Aven Peer's heads show what it misses, and Bob sends it
-    b.write("written offline".into()).await.unwrap();
-    let Frame::Heads { heads } = hub.heads_frame() else { panic!() };
+    b.write(Body::Text("written offline".into())).await.unwrap();
+    let Frame::Heads { heads } = hub.heads_frame() else {
+        panic!()
+    };
     let unsent = b.unsent(&heads).await;
     assert_eq!(unsent.len(), 1);
     for frame in unsent {
-        let Frame::Lines { lines } = frame else { panic!() };
+        let Frame::Lines { lines } = frame else {
+            panic!()
+        };
         for line in lines {
             assert!(matches!(hub.take(line.as_bytes()).await, Answer::Moved(_)));
         }
@@ -133,9 +159,14 @@ async fn history_is_kept_and_caught_up() {
         prev: None,
         at: 1,
         sig: String::new(),
-        text: "from a cloned laptop".into(),
+        body: Body::Text("from a cloned laptop".into()),
     };
-    fork.sig = alice.sign(fork.body().as_bytes()).to_bytes().iter().map(|b| format!("{b:02x}")).collect();
+    fork.sig = alice
+        .sign(fork.signs().as_bytes())
+        .to_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
     let (hub, told) = open("aven", &aven, &gate, &hub_store).await;
     assert!(matches!(hub.take(&fork.blob()).await, Answer::Fork));
     assert_eq!(told.events("fork"), 1);

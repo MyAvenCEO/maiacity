@@ -13,7 +13,9 @@
 
 use std::sync::{Arc, Mutex};
 
+use aven_db_core::chain::Body;
 use aven_db_core::chat::{self, EVERY_MS, Kind, Message};
+use aven_db_core::files::Announcement;
 use aven_db_core::timeline;
 use aven_db_store::Hash;
 use bytes::Bytes;
@@ -83,6 +85,7 @@ pub struct Room {
 impl Room {
     /// Joins the network's room through `bootstrap` (the Aven Peer, or nobody for the Aven Peer itself), and hears it
     /// for as long as the peer runs.
+    #[allow(clippy::too_many_arguments)]
     pub async fn join(
         gossip: &Gossip,
         me: String,
@@ -177,7 +180,10 @@ impl Room {
                 Some(chats) => {
                     chats.take(line.as_bytes()).await;
                 }
-                None => self.note("dropped", json!({ "why": "a line, and this peer keeps no chains" })),
+                None => self.note(
+                    "dropped",
+                    json!({ "why": "a line, and this peer keeps no chains" }),
+                ),
             }
             return;
         }
@@ -270,7 +276,23 @@ impl Room {
             self.send(Kind::Say, text).await;
             return;
         };
-        match chats.write(text).await {
+        self.write(chats, Body::Text(text)).await;
+    }
+
+    /// Shares a file in the room: its announcement as a line of this device's chain, kept and shown at once, then
+    /// sent. The file's chunks and index are in the store already.
+    pub async fn share(&self, file: Announcement) {
+        match &self.chats {
+            Some(chats) => self.write(chats, Body::File(file)).await,
+            None => self.note(
+                "dropped",
+                json!({ "why": "a file, and this peer keeps no chains" }),
+            ),
+        }
+    }
+
+    async fn write(&self, chats: &Chats, body: Body) {
+        match chats.write(body).await {
             Ok(line) => {
                 // out once a neighbour has it; alone, it waits in the store for the link to send it (`chats`)
                 let blob = line.blob();

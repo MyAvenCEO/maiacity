@@ -25,9 +25,9 @@ use aven_db_core::chat::Message;
 use aven_db_core::timeline;
 use aven_db_core::wire::{ALPN, Frame};
 use aven_db_store::backend;
+use aven_peer::chats::{self, Chats};
 use aven_peer::iroh_gossip::{self, Gossip};
 use aven_peer::members::{Gate, Hook};
-use aven_peer::chats::{self, Chats};
 use aven_peer::room::Room;
 use aven_peer::{Notes, files, keys, link, now, record};
 use iroh::endpoint::presets;
@@ -196,7 +196,12 @@ pub async fn put_chunk(bytes: Vec<u8>) -> Result<String, JsError> {
 /// `file-<index>`, and says its announcement as a line of this device's chain, shown at once. Returns the index's
 /// name.
 #[wasm_bindgen]
-pub async fn share(name: String, kind: String, size: f64, chunks: String) -> Result<String, JsError> {
+pub async fn share(
+    name: String,
+    kind: String,
+    size: f64,
+    chunks: String,
+) -> Result<String, JsError> {
     let (store, room) = running(|r| Ok((r.store.clone(), r.room.clone())))?;
     let chunks: Vec<String> = serde_json::from_str(&chunks).map_err(js)?;
     let chunks = chunks
@@ -208,7 +213,7 @@ pub async fn share(name: String, kind: String, size: f64, chunks: String) -> Res
         .await
         .map_err(js)?;
     let file = announced.file.clone();
-    room.say(announced.text()).await;
+    room.share(announced).await;
     Ok(file)
 }
 
@@ -224,7 +229,10 @@ pub async fn read(file: String, size: f64, start: f64, end: f64) -> Result<Vec<u
         .map_err(js)?
     {
         files::Read::Bytes(b) => Ok(b),
-        files::Read::Missing(m) => Err(JsError::new(&format!("{} chunks still on their way", m.len()))),
+        files::Read::Missing(m) => Err(JsError::new(&format!(
+            "{} chunks still on their way",
+            m.len()
+        ))),
     }
 }
 

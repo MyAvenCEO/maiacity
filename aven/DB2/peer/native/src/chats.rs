@@ -7,10 +7,10 @@
 //! Local first: a line this peer writes is in its store and on its page before any peer has it. What the page hears,
 //! as timeline lines: `chat` (a line shown, with its place: device, number, name), `fork` (a fork raised) and `dropped`.
 
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
-use aven_db_core::chain::{self, Answer, Held, Keeper, Line};
-use aven_db_core::files::Announcement;
+use aven_db_core::chain::{self, Answer, Body, Held, Keeper, Line};
 use aven_db_core::timeline;
 use aven_db_core::wire::{Frame, Have, Head, MAX_FRAME};
 use aven_db_store::{Hash, RefName, Store};
@@ -75,7 +75,7 @@ pub fn batches(lines: Vec<String>) -> Vec<Frame> {
 }
 
 fn ref_name(device: &str) -> Result<RefName, String> {
-    RefName::new(&format!("{}{device}", chain::REF)).map_err(|e| e.to_string())
+    RefName::new(format!("{}{device}", chain::REF)).map_err(|e| e.to_string())
 }
 
 /// A peer's chains: its store, and what it holds in memory, the one place they change.
@@ -88,6 +88,8 @@ pub struct Chats {
     notes: Notes,
     store: Shared,
     keeper: Arc<Mutex<Keeper>>,
+    /// each line kept in a gap: since when, until this peer caught up for it once (then `None`)
+    gaps: Arc<Mutex<BTreeMap<String, Option<u64>>>>,
 }
 
 impl Chats {
@@ -130,6 +132,7 @@ impl Chats {
             notes,
             store,
             keeper: Arc::new(Mutex::new(Keeper::load(chains))),
+            gaps: Arc::default(),
         };
         let shown: Vec<Held> = chats
             .keeper
@@ -155,11 +158,15 @@ impl Chats {
             Ok(k) => self.gate.name(&k),
             Err(_) => (h.line.device.clone(), None),
         };
-        let mut fields = json!({ "from": name, "vault": vault, "key": h.line.device, "text": h.line.text,
-            "at": h.line.at, "seq": h.line.seq, "id": h.id });
-        // a file's announcement: the page shows the file, by its index
-        if let Some(file) = Announcement::of(&h.line.text) {
-            fields["file"] = json!(file);
+        let mut fields = json!({ "from": name, "vault": vault, "key": h.line.device, "at": h.line.at,
+            "seq": h.line.seq, "id": h.id });
+        match &h.line.body {
+            Body::Text(text) => fields["text"] = json!(text),
+            // a file: the page shows it by its index, its name as its text
+            Body::File(file) => {
+                fields["text"] = json!(file.name);
+                fields["file"] = json!(file);
+            }
         }
         self.note("chat", fields);
     }
@@ -244,7 +251,10 @@ impl Chats {
     pub async fn answer(&self, holds: &[Have]) -> Vec<Frame> {
         let mut lines = vec![];
         for (device, _) in self.heads() {
-            let seq = holds.iter().find(|h| h.device == device).map_or(0, |h| h.seq);
+            let seq = holds
+                .iter()
+                .find(|h| h.device == device)
+                .map_or(0, |h| h.seq);
             lines.extend(self.lines_after(&device, seq).await);
         }
         batches(lines)
@@ -253,7 +263,10 @@ impl Chats {
     /// This device's own lines the Aven Peer's `heads` show it is missing: written offline, sent on reconnect.
     pub async fn unsent(&self, heads: &[Head]) -> Vec<Frame> {
         let device = self.device();
-        let seq = heads.iter().find(|h| h.device == device).map_or(0, |h| h.seq);
+        let seq = heads
+            .iter()
+            .find(|h| h.device == device)
+            .map_or(0, |h| h.seq);
         batches(self.lines_after(&device, seq).await)
     }
 
@@ -264,7 +277,7 @@ impl Chats {
     }
 
     /// Writes a line of this device's own: on top of its chain, signed, kept and shown at once. The line to send.
-    pub async fn write(&self, text: String) -> Result<Line, String> {
+    pub async fn write(&self, body: Body) -> Result<Line, String> {
         let line = {
             let keeper = self.keeper.lock().unwrap();
             let device = self.device();
@@ -277,9 +290,9 @@ impl Chats {
                 prev,
                 at: now().max(last + 1),
                 sig: String::new(),
-                text,
+                body,
             };
-            line.sig = hex(&self.secret.sign(line.body().as_bytes()).to_bytes());
+            line.sig = hex(&self.secret.sign(line.signs().as_bytes()).to_bytes());
             line
         };
         match self.take(&line.blob()).await {
@@ -300,7 +313,8 @@ impl Chats {
         let id = Hash::of(blob);
         let device = line.device.clone();
         // checked first, so a stranger's line never reaches the store
-        if let Err(why) = chain::check(&self.network, |k| self.gate.admits_hex(k), verifies, &line) {
+        if let Err(why) = chain::check(&self.network, |k| self.gate.admits_hex(k), verifies, &line)
+        {
             let from = device.chars().take(10).collect::<String>();
             self.note("dropped", json!({ "from": from, "why": why.name() }));
             return Answer::Refused(why);
@@ -337,6 +351,7 @@ impl Chats {
                 self.advance(&device).await;
             }
             Answer::Gap => {
+                self.gaps.lock().unwrap().insert(id.to_hex(), Some(now()));
                 let h = self.keeper.lock().unwrap().loose().first().cloned();
                 if let Some(h) = h {
                     self.show(&h);
@@ -347,11 +362,37 @@ impl Chats {
                     Ok(k) => self.gate.name(&k).0,
                     Err(_) => device.clone(),
                 };
-                self.note("fork", json!({ "device": name, "key": device, "id": id.to_hex() }));
+                self.note(
+                    "fork",
+                    json!({ "device": name, "key": device, "id": id.to_hex() }),
+                );
             }
             Answer::Known | Answer::Refused(_) => {}
         }
         answer
+    }
+
+    /// Whether a gap has been open for [`chain::GAP_WAIT_MS`], so the link should catch up for the lines before it:
+    /// once per gap, never again for the same one (README, rule 4). A gap that closed on its own asks for nothing.
+    pub fn due(&self, at: u64) -> bool {
+        let open: Vec<String> = self
+            .keeper
+            .lock()
+            .unwrap()
+            .loose()
+            .iter()
+            .map(|h| h.id.clone())
+            .collect();
+        let mut gaps = self.gaps.lock().unwrap();
+        gaps.retain(|id, _| open.contains(id));
+        let mut due = false;
+        for since in gaps.values_mut() {
+            if since.is_some_and(|s| at >= s + chain::GAP_WAIT_MS) {
+                *since = None;
+                due = true;
+            }
+        }
+        due
     }
 
     /// Moves `chat-<device>` to the head the keeper holds, by compare-and-set: forward only, as the keeper moves.
@@ -377,7 +418,10 @@ impl Chats {
                 Ok(()) => return,
                 Err(aven_db_store::Error::Stale { current }) => expected = current,
                 Err(e) => {
-                    self.note("dropped", json!({ "why": format!("{name:?} not moved: {e}") }));
+                    self.note(
+                        "dropped",
+                        json!({ "why": format!("{name:?} not moved: {e}") }),
+                    );
                     return;
                 }
             }

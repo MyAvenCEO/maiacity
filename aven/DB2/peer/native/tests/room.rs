@@ -8,9 +8,9 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use aven_db_core::chain::Line;
+use aven_db_core::chain::{Body, Line};
 use aven_db_core::chat::{Kind, Message};
-use aven_db_store::{RefName, Store, backend};
+use aven_db_store::{RefName, backend};
 use aven_peer::chats::{self, Chats};
 use aven_peer::members::{Gate, Hook};
 use aven_peer::relay::Allow;
@@ -188,9 +188,17 @@ async fn members_chat_through_the_relay_and_a_stranger_is_dropped() {
 
     // the line is a blob in every store, and the Aven Peer's chat-<alice> points at it
     let alice_ref = RefName::new(format!("chat-{}", key(2).public())).unwrap();
-    let head = hub.store.get_ref(&alice_ref).await.unwrap().expect("chat-<alice>");
+    let head = hub
+        .store
+        .get_ref(&alice_ref)
+        .await
+        .unwrap()
+        .expect("chat-<alice>");
     let line = Line::parse(&hub.store.get(&head).await.unwrap().unwrap()).unwrap();
-    assert_eq!((line.text.as_str(), line.seq, line.prev), ("hello", 1, None));
+    assert_eq!(
+        (line.body, line.seq, line.prev),
+        (Body::Text("hello".into()), 1, None)
+    );
     assert_eq!(b.store.get_ref(&alice_ref).await.unwrap(), Some(head));
 
     // a line of a device that is no member's, sent through a member: dropped, and never stored
@@ -201,26 +209,32 @@ async fn members_chat_through_the_relay_and_a_stranger_is_dropped() {
         prev: None,
         at: 1,
         sig: String::new(),
-        text: "a line from outside".into(),
+        body: Body::Text("a line from outside".into()),
     };
     stranger.sig = eve
-        .sign(stranger.body().as_bytes())
+        .sign(stranger.signs().as_bytes())
         .to_bytes()
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect();
     a.room.gossip_line(&stranger.blob()).await;
-    // the forged message above was the first stranger dropped; the line is the second
+    // the first stranger the Aven Peer drops: the forged message below is the second
     let dropped = || {
-        hub.lines.0.lock().unwrap().iter().filter(|l| l["event"] == "dropped" && l["why"] == "notMember").count()
+        hub.lines
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|l| l["event"] == "dropped" && l["why"] == "notMember")
+            .count()
     };
     for _ in 0..100 {
-        if dropped() >= 2 {
+        if dropped() >= 1 {
             break;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    assert_eq!(dropped(), 2);
+    assert_eq!(dropped(), 1);
     let eve_ref = RefName::new(format!("chat-{}", eve.public())).unwrap();
     assert_eq!(hub.store.get_ref(&eve_ref).await.unwrap(), None);
 
