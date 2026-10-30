@@ -394,7 +394,12 @@ async fn main() -> Result<(), Error> {
                     &endpoint, &at, &held, &*store, from, index, file.size, &me, &notes,
                 )
                 .await;
-                if kept.is_err() {
+                // only a sender that couldn't be reached is asked again: one that hasn't the file, or whose file
+                // isn't the size its line says, never will have it
+                if let Err(why) = kept
+                    && !why.starts_with("not found")
+                    && !why.contains("announced as")
+                {
                     waiting.lock().unwrap().entry(from).or_default().push(file);
                 }
             });
