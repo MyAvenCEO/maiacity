@@ -50,7 +50,8 @@ use wasm_bindgen::prelude::*;
 pub mod acts;
 pub mod views;
 
-/// The `name` of the `Error` the file API throws when the holder hasn't the file, or a chunk of it.
+/// The `name` of the `Error` the file API throws when the holder hasn't the file, or a chunk of it, or what it holds
+/// under that hash is no file.
 pub const NOT_FOUND: &str = "NotFoundError";
 
 /// The page's callback for timeline lines. A browser's worker has one thread, so it is never shared across threads.
@@ -605,7 +606,7 @@ async fn chunks(f: &Files, file: &files::File, range: Range<u64>, from: Option<S
 /// 404), a plain error otherwise (its 502).
 fn fetch_error(e: FetchError) -> JsValue {
     let error = js_sys::Error::new(&e.to_string());
-    if matches!(e, FetchError::NotFound(_)) {
+    if matches!(e, FetchError::NotFound(_) | FetchError::NotAFile(_)) {
         error.set_name(NOT_FOUND);
     }
     error.into()

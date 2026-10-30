@@ -53,6 +53,9 @@ pub enum FetchError {
     /// The holder said it hasn't this blob: the file's index, or a chunk asked for.
     #[error("not found: the holder has no blob {0}")]
     NotFound(Hash),
+    /// What was asked for as a file is a blob but no index, no list of 32-byte hashes: it never will be one.
+    #[error("not a file: {0} is no list of hashes")]
+    NotAFile(Hash),
     #[error("fetch: {0}")]
     Failed(String),
 }
@@ -91,7 +94,7 @@ impl Blobs {
 
     /// A whole file, its index and every chunk, from the peer at the other end of `conn`: only what isn't held.
     pub async fn fetch_file(&self, conn: &Connection, file: Hash) -> Result<Fetched, FetchError> {
-        self.fetch(conn, GetRequest::new(actor::theirs(file), ChunkRangesSeq::all()), file, None).await
+        self.fetch(conn, GetRequest::new(actor::theirs(file), ChunkRangesSeq::all()), file, Some(None)).await
     }
 
     /// A file's index and its chunks `chunks` (by their place in the file): a seek is the chunks its range touches
@@ -101,23 +104,24 @@ impl Blobs {
         for i in chunks.clone() {
             req = req.child(i, ChunkRanges::all());
         }
-        self.fetch(conn, req.build(actor::theirs(file)), file, Some(chunks)).await
+        self.fetch(conn, req.build(actor::theirs(file)), file, Some(Some(chunks))).await
     }
 
     /// One blob.
     pub async fn fetch_blob(&self, conn: &Connection, hash: Hash) -> Result<Fetched, FetchError> {
-        self.fetch(conn, GetRequest::blob(actor::theirs(hash)), hash, Some(0..0)).await
+        self.fetch(conn, GetRequest::blob(actor::theirs(hash)), hash, None).await
     }
 
-    /// `req` for `root` and its children `children` (all of them: `None`). A holder that hasn't a blob asked for
-    /// resets the stream as it does for any trouble, so after a failure the holder is asked what it has of the root and
-    /// of each child asked for: one it says it lacks is [`FetchError::NotFound`].
+    /// `req` for `root` and, when `root` is a file's index (`file` is `Some`), its children: all of them (`None`) or
+    /// those in a range. A holder that hasn't a blob asked for resets the stream as it does for any trouble, and a root
+    /// that is no index ends the fetch the same way, so after a failure the holder is asked what it has: a blob it lacks
+    /// is [`FetchError::NotFound`], a root it holds that is no list of hashes [`FetchError::NotAFile`].
     async fn fetch(
         &self,
         conn: &Connection,
         req: GetRequest,
         root: Hash,
-        children: Option<Range<u64>>,
+        file: Option<Option<Range<u64>>>,
     ) -> Result<Fetched, FetchError> {
         let remote = self.api.remote();
         let local = remote.local_for_request(req).await.map_err(failed)?;
@@ -126,37 +130,42 @@ impl Blobs {
         }
         match remote.execute_get(conn.clone(), local.missing()).await {
             Ok(stats) => Ok(Fetched { bytes: stats.payload_bytes_read }),
-            Err(e) => Err(match self.lacking(conn, root, children).await {
-                Some(missing) => FetchError::NotFound(missing),
-                None => failed(e),
-            }),
+            Err(e) => Err(self.why(conn, root, file).await.unwrap_or_else(|| failed(e))),
         }
     }
 
-    /// The first blob of `root` and its children that the holder says it hasn't, by an observe request; `None` when it
-    /// has them all, or doesn't answer.
-    async fn lacking(&self, conn: &Connection, root: Hash, children: Option<Range<u64>>) -> Option<Hash> {
-        if !self.holds(conn, root).await? {
-            return Some(root);
-        }
-        let file = crate::files::open(&*self.store, &root).await.ok()??;
-        let children = children.unwrap_or(0..file.chunks.len() as u64);
+    /// Why a fetch of `root` (and, for a file, its children) failed, as the holder answers: a blob it says it hasn't,
+    /// or a root that is no index; `None` when it has them all, or doesn't answer.
+    async fn why(&self, conn: &Connection, root: Hash, file: Option<Option<Range<u64>>>) -> Option<FetchError> {
+        let size = self.held_size(conn, root).await?;
+        let Some(size) = size else {
+            return Some(FetchError::NotFound(root));
+        };
+        let children = file?;
+        let index = match crate::files::open(&*self.store, &root).await {
+            Ok(Some(index)) => index,
+            Err(crate::Error::Corrupt(_)) => return Some(FetchError::NotAFile(root)),
+            // the root didn't arrive: the holder's word on its size says whether it can be an index
+            Ok(None) | Err(_) if size % 32 != 0 => return Some(FetchError::NotAFile(root)),
+            _ => return None,
+        };
+        let children = children.unwrap_or(0..index.chunks.len() as u64);
         for i in children {
-            let chunk = *file.chunks.get(i as usize)?;
-            if !self.holds(conn, chunk).await? {
-                return Some(chunk);
+            let chunk = *index.chunks.get(i as usize)?;
+            if self.held_size(conn, chunk).await?.is_none() {
+                return Some(FetchError::NotFound(chunk));
             }
         }
         None
     }
 
-    /// Whether the holder says it has `hash`, or `None` without an answer.
-    async fn holds(&self, conn: &Connection, hash: Hash) -> Option<bool> {
+    /// The size of `hash` as the holder says it holds it: `Some(None)` when it hasn't it, `None` without an answer.
+    async fn held_size(&self, conn: &Connection, hash: Hash) -> Option<Option<u64>> {
         use n0_future::StreamExt;
         let ask = ObserveRequest { hash: actor::theirs(hash), ranges: RangeSpec::all() };
         let mut answers = std::pin::pin!(self.api.remote().observe(conn.clone(), ask));
         let bits = answers.next().await?.ok()?;
-        Some(!bits.is_empty())
+        Some((!bits.is_empty()).then(|| bits.size()))
     }
 }
 
