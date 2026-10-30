@@ -1,44 +1,65 @@
-// aven-id's wasm on the cast's tree, held to values written out by hand from SANDBOX.md's "Vaults own vaults", as
-// sandbox/check.mjs does. Runs in the box after build.sh, from aven/DB2: `bun run box bun id/core/wasm/check.mjs`.
+// aven-id's wasm against Lean's vectors (id/spec/vectors/trees.json, README rule 10): every tree the model answers for
+// is read as a cast, asked the same queries, and must answer as the model does; every one it refuses, the wasm must
+// refuse. No expected value is written here. Runs in the box after build.sh, from aven/DB2:
+// `bun run box bun id/core/wasm/check.mjs`.
 import { readFileSync } from 'node:fs';
 import { Cast, initSync } from '../../../target/wasm/aven-id/aven_id.js';
 
 initSync({ module: readFileSync(new URL('../../../target/wasm/aven-id/aven_id_bg.wasm', import.meta.url)) });
-const cast = new Cast(readFileSync(new URL('../../../sandbox/cast.json', import.meta.url), 'utf8'));
+const read = (path) => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
+const vectors = read('../../spec/vectors/trees.json');
+const castFile = read('../../../sandbox/cast.json');
+// the model knows keys by id; a cast needs each one's public half, so every key gets a real one
+const someKey = Object.values(castFile.keys)[0];
 
-const expected = [
-	['accounts', [undefined], ['alice', 'bob']],
-	['accounts', ['alice-peer-light'], ['alice']],
-	['accounts', ['bob-peer-light'], ['bob']],
-	['accounts', ['aven-peer'], []],
-	['sees', ['alice'], ['aven-peer', 'alice-peer', 'alice-peer-light']],
-	['sees', ['bob'], ['bob-peer-light']],
-	['governs', ['alice'], ['aven', 'aven-peer', 'alice-peer', 'alice-peer-light']],
-	['governs', ['aven'], ['aven-peer']],
-	['chain', ['aven-peer'], ['aven', 'alice']],
-	['owned', ['alice'], ['aven', 'alice-peer', 'alice-peer-light']],
-	['actsThrough', ['alice'], ['alice-peer', 'alice-peer-light']],
-	['actsThrough', ['aven'], ['aven-peer']],
-	['actsFor', ['aven-peer'], 'aven'],
-	['actsFor', ['alice'], undefined],
-	['mayActOn', ['bob-peer-light', 'aven'], false],
-	['mayActOn', ['aven-peer', 'alice'], false],
-	['mayActOn', ['alice-peer-light', 'aven-peer'], true],
-	['name', ['bob-peer-light'], "Bob's Peer-Light"],
-	['kind', ['aven'], 'network'],
-	['owners', ['aven'], ['vault:alice']],
-	['key', ['alice-peer-light'], '9f78814b6ea9f2bb99fbbf738de54eb7dbf257ec6121c43c5d5c24d6b004fd55'],
-];
+// A vector's tree as a cast. A cast's vaults are an object, so a tree with two vaults of one id has no cast.
+function asCast({ keys, vaults }) {
+	if (new Set(vaults.map((v) => v.id)).size !== vaults.length) return null;
+	return JSON.stringify({
+		keys: Object.fromEntries(keys.map((k) => [k, someKey])),
+		vaults: Object.fromEntries(vaults.map((v) => [v.id, { kind: v.kind, owners: v.owners }])),
+	});
+}
+const ask = (cast, [query, ...args]) => cast[query](...args.map((a) => a ?? undefined)) ?? null;
+
 const problems = [];
-for (const [query, args, want] of expected) {
-	const got = cast[query](...args);
-	if (JSON.stringify(got) !== JSON.stringify(want)) problems.push(`${query}(${args}): ${JSON.stringify(got)}, not ${JSON.stringify(want)}`);
+let answered = 0;
+let refused = 0;
+let skipped = 0;
+for (const { name, input, expected } of vectors) {
+	const json = asCast(input);
+	if (json === null) {
+		skipped++;
+		continue;
+	}
+	let cast;
+	try {
+		cast = new Cast(json);
+	} catch (e) {
+		if (expected.wf) problems.push(`${name}: refused (${e.message}), but the model answers for it`);
+		else refused++;
+		continue;
+	}
+	if (!expected.wf) {
+		problems.push(`${name}: read, but the model refuses it: ${JSON.stringify(expected.invalid ?? expected.format)}`);
+		continue;
+	}
+	input.queries.forEach((q, i) => {
+		const got = ask(cast, q);
+		if (JSON.stringify(got) !== JSON.stringify(expected.answers[i]))
+			problems.push(`${name}: ${JSON.stringify(q)} is ${JSON.stringify(got)}, not ${JSON.stringify(expected.answers[i])}`);
+		answered++;
+	});
 }
-try {
-	new Cast('{"keys":{},"vaults":{"a":{"kind":"person","owners":["vault:a"]}}}');
-	problems.push('a cycle was accepted');
-} catch (e) {
-	if (!String(e.message).includes('above itself')) problems.push(`a cycle was refused with ${e.message}`);
-}
-console.log(problems.length ? problems.join('\n') : `aven-id wasm: ${expected.length + 1} checks pass`);
+// what the wasm reads back from the cast's file is the file's: names and public halves aren't the model's
+const cast = new Cast(JSON.stringify(castFile));
+for (const [id, vault] of Object.entries(castFile.vaults))
+	if (cast.name(id) !== vault.name) problems.push(`${id}'s name reads as ${cast.name(id)}, not the cast's ${vault.name}`);
+for (const [id, key] of Object.entries(castFile.keys)) if (cast.key(id) !== key) problems.push(`${id}'s key reads back as another`);
+
+console.log(
+	problems.length
+		? problems.slice(0, 20).join('\n')
+		: `aven-id wasm: ${answered} answers and ${refused} refusals agree with the model (${skipped} trees no cast can write)`,
+);
 process.exit(problems.length ? 1 : 0);

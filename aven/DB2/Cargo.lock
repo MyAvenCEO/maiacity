@@ -235,6 +235,7 @@ dependencies = [
  "futures",
  "js-sys",
  "opendal",
+ "serde_json",
  "thiserror 2.0.21",
  "tokio",
  "wasm-bindgen",

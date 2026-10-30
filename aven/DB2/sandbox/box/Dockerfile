@@ -1,7 +1,8 @@
-# avenSANDBOX's image: the tools, never our code (aven/DB2/SANDBOX.md, "Tools in the image, our code outside it").
-# Every version is pinned at its newest stable release. The image's tag is the first 16 hex digits of this file's
-# SHA-256 (.github/workflows/avensandbox-image.yml, aven/DB2/sandbox/up.mjs), so a change here is a new box. Only
-# GitHub builds it, on every push that changes this file; `bun run up` only pulls it.
+# avenSANDBOX's image: the tools and the third-party crates, compiled, never our code (aven/DB2/SANDBOX.md, "Tools in
+# the image, our code outside it"). Every version is pinned at its newest stable release. Its build context is aven/DB2,
+# cut down by aven/DB2/.dockerignore to what the crates are compiled from. The image's tag is a hash of every file the
+# build reads (sandbox/box/tag.mjs, which up.mjs and .github/workflows/avensandbox-image.yml share), so a change to any
+# of them is a new box. Only GitHub builds it, on every push that changes one; `bun run up` only pulls it.
 
 # The box's S3 server, versitygw (Versity's S3 gateway, Apache-2.0), taken from its own image, pinned by digest. The
 # binary is copied into the box below, so the box needs no third-party image at runtime.
@@ -58,3 +59,13 @@ RUN apt-get update \
     && clang --version > /dev/null && llvm-ar --version > /dev/null
 
 WORKDIR /work
+
+# The third-party crates, compiled, cargo-chef style, last, so a dependency change rebuilds only this layer. The context
+# brings only the manifests, the patched fork and deps.sh, which stubs our crates, builds them as `bun run up` and
+# `cargo test --workspace` do, and keeps only the dependencies in /work/target. Docker fills a new, empty volume from
+# the image's content at its mount path, so a new session's build folder (/work/target) and crates (/opt/cargo/registry)
+# start warm, and its first build compiles only our code and downloads nothing. The registry keeps the .crate files:
+# without them cargo downloads every crate again, though it compiles none.
+COPY . /work/
+RUN sh sandbox/box/deps.sh \
+    && find /work -mindepth 1 -maxdepth 1 ! -name target -exec rm -rf {} +

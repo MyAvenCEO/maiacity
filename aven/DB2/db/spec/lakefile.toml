@@ -1,7 +1,7 @@
 # Aven.DB: avenDB's model in Lean (README, "How we work"). Core Lean only: the box has no network for Lean packages.
 name = "aven-db-spec"
 version = "0.1.0"
-defaultTargets = ["Aven", "aven-db-model"]
+defaultTargets = ["Aven", "aven-db-model", "vectors"]
 
 [[lean_lib]]
 name = "Aven"
@@ -10,3 +10,8 @@ name = "Aven"
 [[lean_exe]]
 name = "aven-db-model"
 root = "Main"
+
+# The examples and generated cases as test vectors, committed in vectors/ (README, rule 10).
+[[lean_exe]]
+name = "vectors"
+root = "Vectors"

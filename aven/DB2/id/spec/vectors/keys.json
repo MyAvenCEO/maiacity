@@ -1,0 +1,8 @@
+[
+{"expected":{"public":"0254086bfa6b7557cc22939766aae0cf6314a383264d19c705a936673b677c85","seed":"8e2aed5bf90566957532fea605f99041a3323b401e9209f61018d88d9e1d219a"},"input":{"id":"alice-owner"},"name":"alice-owner's test key"},
+{"expected":{"public":"c82115cfc423ce2a11d417608ede18935cd859c31bf1e23124cd41612a976119","seed":"9b0fd23451ed048a8389950953fd8a69187c41459e04cd994c5e45a10dc711be"},"input":{"id":"bob-owner"},"name":"bob-owner's test key"},
+{"expected":{"public":"e8200646a82490e11e2acbc3abb16c4a0b67f14a10d4ab2e595ccbe2b5988b43","seed":"3ac1d6528a3fd8de79259b7c4970d0a9adae3c7e2dabca072a4b9f760baf0538"},"input":{"id":"aven-peer"},"name":"aven-peer's test key"},
+{"expected":{"public":"a69305c53e67189c1a973f1fb90a2ee4152bc5cd53fec0589eb3e78bb17a36b3","seed":"b9ac0621e7099cd5f64b217987681e454b975db8fb8424a6a62e1c32bcad29cb"},"input":{"id":"alice-peer"},"name":"alice-peer's test key"},
+{"expected":{"public":"9f78814b6ea9f2bb99fbbf738de54eb7dbf257ec6121c43c5d5c24d6b004fd55","seed":"b97b7a8d2ed152475cdc1a4583d652b5a53fab51aed8aacc5aa83226e234b63d"},"input":{"id":"alice-peer-light"},"name":"alice-peer-light's test key"},
+{"expected":{"public":"ced7ea594cbc184b49583508840a85e8f6e63ce9c48a8c618a42e39e2d2d74ab","seed":"aaf333703922c451fe40b962e5d042ab7eb9c8e545ee29ddc42d1f7bbf92690e"},"input":{"id":"bob-peer-light"},"name":"bob-peer-light's test key"}
+]

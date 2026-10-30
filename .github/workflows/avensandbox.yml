@@ -71,7 +71,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: The box's image
         id: box
-        run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/aven/sandbox:$(sha256sum aven/DB2/sandbox/box/Dockerfile | cut -c1-16)" >> "$GITHUB_OUTPUT"
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/aven/sandbox:$(node aven/DB2/sandbox/box/tag.mjs)" >> "$GITHUB_OUTPUT"
       - name: bun run up --check
         working-directory: aven/DB2
         env:

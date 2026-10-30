@@ -50,6 +50,27 @@ theorem nodup_dedup : ∀ l : List PeerId, (dedup l).Nodup
     · simp only [dedup, h, ite_false]
       exact List.nodup_cons.mpr ⟨h, nodup_dedup l⟩
 
+/-- Insertion sort, structural so the kernel can run it in the examples. -/
+def ins (a : PeerId) : List PeerId → List PeerId
+  | [] => [a]
+  | b :: l => if a ≤ b then a :: b :: l else b :: ins a l
+
+def sort : List PeerId → List PeerId
+  | [] => []
+  | a :: l => ins a (sort l)
+
+theorem ins_perm (a : PeerId) : ∀ l, (ins a l).Perm (a :: l)
+  | [] => .refl _
+  | b :: l => by
+    unfold ins
+    split
+    · exact .refl _
+    · exact ((ins_perm a l).cons b).trans (.swap a b l)
+
+theorem sort_perm : ∀ l, (sort l).Perm l
+  | [] => .refl _
+  | a :: l => (ins_perm a _).trans ((sort_perm l).cons a)
+
 namespace Presence
 
 def empty : Presence := ⟨[]⟩
@@ -65,6 +86,9 @@ def present (s : Presence) : List PeerId := dedup s.conns
 
 /-- What every peer is told: "N peers". -/
 def count (s : Presence) : Nat := s.present.length
+
+/-- The peers as every peer is told them: each once, in order. -/
+def told (s : Presence) : List PeerId := sort s.present
 
 /-! ## Presence counts each connected peer once -/
 
@@ -100,6 +124,27 @@ theorem leave_other (s : Presence) (p q : PeerId) (hne : p ≠ q) :
   rw [present_iff, present_iff]
   exact List.mem_erase_of_ne hne
 
+/-- Every peer is told exactly the peers with an open connection, each once. -/
+theorem mem_told (s : Presence) (p : PeerId) : p ∈ s.told ↔ p ∈ s.conns :=
+  (sort_perm _).mem_iff.trans (present_iff s p)
+
+theorem told_once (s : Presence) : s.told.Nodup := (sort_perm _).nodup_iff.mpr (present_once s)
+
 end Presence
+
+/-! ## Examples
+
+Changes and what every peer is told after the last, written out by hand: peers 1, 2 and 3 are Alice Peer, Bob's
+Peer-Light and a peer that never connected. -/
+
+def presenceExamples : List (String × List Change × List PeerId) := [
+  ("a second connection counts once", [.join 1, .join 1, .join 2], [1, 2]),
+  ("one of two connections closes", [.join 1, .join 1, .join 2, .leave 1], [1, 2]),
+  ("a peer never connected leaves", [.join 1, .join 2, .leave 3], [1, 2]),
+  ("the last connection closes", [.join 1, .join 1, .join 2, .leave 1, .leave 3, .leave 1], [2]),
+  ("nobody", [], [])]
+
+theorem presence_examples :
+    presenceExamples.all (fun (_, cs, ps) => decide ((Presence.empty.run cs).told = ps)) = true := by decide
 
 end Aven.DB
