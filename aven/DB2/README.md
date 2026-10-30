@@ -73,6 +73,9 @@ avenOS        the client app: one UI, several targets. The browser now, the Mac 
 avenSANDBOX   the box all of it is built and tested in
 ```
 
+avenPEER is the edge: it does all the I/O and runs avenDB's pure cores, and nothing in them depends on it
+([`ARCHITECTURE.md`](ARCHITECTURE.md#the-whole-on-one-page), decision A24).
+
 | Name | What |
 |---|---|
 | avenOS | the client app over everything below it: a dashboard of apps, the first two Vault and Control Room, and an account switcher for the people you may act as. Off the box, its browser client shows "avenOS · coming soon" for now; a Mac app with Tauri follows |

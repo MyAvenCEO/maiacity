@@ -1,4 +1,5 @@
 import Aven.DB.Json
+import Aven.DB.Engine
 
 /-!
 # The test vectors (README, rule 10)
@@ -23,6 +24,12 @@ import Aven.DB.Json
   lines, forks and what its chat shows (`Aven.DB.Chains`); what a line's device signs; and blobs read as lines or
   refused as not canonical (`Aven.DB.Chains.read`). Lines are named by labels,
   which aven-db-core's tests replace with the hashes of real signed blobs.
+- `queries.json`: Records, the Docs held, a target and what it resolves to, a stored query; the answer (refused,
+  complete, or short with the Docs missing), the query's bound and cost, and the work it did (`Aven.DB.Engine.Query`).
+- `wants.json`: wants, the keys caps allow and each key's prerequisites; the queue, one round over the pages left with
+  the device's uploads first, and what eviction to a budget keeps (`Aven.DB.Engine.Wants`).
+- `mutations.json`: a writer, its counter, a Doc's Records and core operations; the Records after the commit, or why it
+  was refused (`Aven.DB.Engine.Mutate`).
 - `merges.json`: one place's base, the target's and the other branch's values and the merger's choice; the merged value,
   and backing out a commit (`Aven.DB.Docs.Merge`).
 - `lenses.json`: writes of a todo's done-ness by v0 and v1 apps; what a v0 reader reads (`Aven.DB.Docs.Lens`).
@@ -461,6 +468,140 @@ def lenses : List Json :=
        | some w => Json.mkObj [("stamp", toJson w.stamp), ("done", toJson w.value)]
        | none => Json.null)
 
+/-! ## The engine -/
+
+section Engine
+open Aven.DB.Engine Aven.DB.Engine.Examples
+
+def pick {α : Type} (r : Rng) (xs : List α) (d : α) : α × Rng :=
+  let (i, r) := r.below (max 1 xs.length)
+  (xs.getD i d, r)
+
+/-- A subset: each element kept with probability one half. -/
+def subset {α : Type} (r : Rng) (xs : List α) : List α × Rng := Id.run do
+  let mut r := r
+  let mut out := #[]
+  for x in xs do
+    let (b, r') := r.below 2
+    r := r'
+    if b = 1 then out := out.push x
+  return (out.toList, r)
+
+def randomRecord (r : Rng) (i : Nat) : Rec String String V × Rng :=
+  let (doc, r) := pick r ["d1", "d2", "d3"] "d1"
+  let (ty, r) := pick r ["a", "b"] "a"
+  let (k, r) := r.below 4
+  (⟨doc, ty, [("id", .s s!"r{i}"), ("k", .n k)]⟩, r)
+
+def randomQuery (r : Rng) : Nat → Query String V × Rng
+  | 0 => let (ty, r) := pick r ["a", "b"] "a"; (.scan ty, r)
+  | d + 1 =>
+    let (op, r) := r.below 9
+    let (q, r) := randomQuery r d
+    let (q2, r) := randomQuery r d
+    let (k, r) := r.below 4
+    let (cmp, r) := pick r [Cmp.eq, .ne, .lt, .le] .eq
+    match op with
+    | 0 => (.filter "k" cmp (.n k) q, r)
+    | 1 => (.project ["k"] q, r)
+    | 2 => (.join q q2 "k" "k", r)
+    | 3 => (.leftJoin q q2 "k" "k", r)
+    | 4 => (.anti q q2 "k" "k", r)
+    | 5 => (.order "k" q, r)
+    | 6 => (.group "k" q, r)
+    | 7 => (.limit k q, r)
+    | _ => (q, r)
+
+def randomQueryVector (seed : Nat) : Json := Id.run do
+  let r := Rng.seed (seed + 7000)
+  let (n, r) := r.below 9
+  let mut r := r
+  let mut db := #[]
+  for i in [0:n] do
+    let (rec, r') := randomRecord r i
+    db := db.push rec
+    r := r'
+  let (held, r1) := subset r ["d1", "d2", "d3"]
+  let (resolves, r2) := subset r1 ["d1", "d2", "d3"]
+  let (t, r3) := r2.below 8
+  let (q, _) := randomQuery r3 2
+  return queryVector s!"seed {seed}" db.toList held (if t = 0 then none else some "t") resolves q
+
+def queries : List Json := queryExamples ++ (List.range generated).map fun i => randomQueryVector (i + 1)
+
+def keyNames : List String := ["k0", "k1", "k2", "k3", "k4", "k5"]
+
+/-- Each key's prerequisites among the keys before it, closed: what a prerequisite needs is a prerequisite too. -/
+def randomPre (r : Rng) : List (String × List String) × Rng := Id.run do
+  let mut r := r
+  let mut pre : List (String × List String) := []
+  for i in [0:keyNames.length] do
+    let (direct, r') := subset r (keyNames.take i)
+    r := r'
+    let closed := direct.foldl (fun acc k => acc ++ (pre.lookup k).getD [] ++ [k]) []
+    let once := keyNames.filter (· ∈ closed)
+    pre := pre ++ [(keyNames.getD i "k0", once)]
+  return (pre.filter (!·.2.isEmpty), r)
+
+def randomWantVector (seed : Nat) : Json := Id.run do
+  let r := Rng.seed (seed + 8000)
+  let (n, r) := r.below 7
+  let mut r := r
+  let mut ws : Array (Want String) := #[]
+  let mut kept : Array (Kept String) := #[]
+  for _ in [0:n] do
+    let (k, r1) := pick r keyNames "k0"
+    let (t, r2) := pick r1 [Tier.screen, .turn, .next, .later, .idle] .idle
+    let (sg, r3) := r2.below 5
+    let (b, r4) := r3.below 200
+    let (u, r5) := r4.below 10
+    ws := ws.push ⟨k, t, sg⟩
+    kept := kept.push ⟨k, t, b, u⟩
+    r := r5
+  let (caps, r1) := subset r keyNames
+  let (pre, r2) := randomPre r1
+  let (lk, r3) := subset r2 ("up" :: keyNames)
+  let mut left : Array (String × Nat) := #[]
+  let mut r4 := r3
+  for k in lk do
+    let (m, r') := r4.below 4
+    left := left.push (k, m)
+    r4 := r'
+  let (got, r5) := subset r4 ("up" :: keyNames)
+  let (budget, _) := r5.below 600
+  return wantVector s!"seed {seed}" ws.toList caps pre left.toList ["up"] got budget kept.toList
+
+def wants : List Json := wantExamples ++ (List.range generated).map fun i => randomWantVector (i + 1)
+
+def randomOp (r : Rng) : Op String String V × Rng :=
+  let (op, r) := r.below 4
+  let (ty, r) := pick r ["task", "note"] "task"
+  let (k, r) := r.below 3
+  let (n, r) := r.below 4
+  match op with
+  | 0 => let (isRef, r) := r.below 2
+         (.put ty [("x1", if isRef = 0 then .lit (.n k) else .ref n)], r)
+  | 1 => (.patch ty [("x1", .n k)] [("done", .n 1)], r)
+  | 2 => (.remove ty [("done", .n 1)], r)
+  | _ => let (w, r) := pick r ["dev1", "dev2", "dev3"] "dev1"
+         (.edit ⟨w, 4, 0⟩ "x1" (.n k), r)
+
+def randomMutationVector (seed : Nat) : Json := Id.run do
+  let r := Rng.seed (seed + 9000)
+  let (n, r) := r.below 5
+  let mut r := r
+  let mut ops := #[]
+  for _ in [0:n + 1] do
+    let (op, r') := randomOp r
+    ops := ops.push op
+    r := r'
+  let (c, _) := r.below 9
+  return mutationVector s!"seed {seed}" "dev1" c todo ops.toList
+
+def mutations : List Json := mutationExamples ++ (List.range generated).map fun i => randomMutationVector (i + 1)
+
+end Engine
+
 /-- One vector per line, so a change reads as a diff of lines. -/
 def render (vs : List Json) : String :=
   "[\n" ++ ",\n".intercalate (vs.map Json.compress) ++ "\n]\n"
@@ -470,6 +611,6 @@ def main (args : List String) : IO Unit := do
   IO.FS.createDirAll dir
   for (file, vs) in [("status.json", status), ("presence.json", presence), ("timeline.json", timeline),
       ("wire.json", wire), ("store.json", store), ("hashes.json", hashes), ("refs.json", refs),
-      ("chat.json", chat), ("files.json", files), ("chats.json", chats), ("merges.json", merges),
-      ("lenses.json", lenses)] do
+      ("chat.json", chat), ("files.json", files), ("chats.json", chats), ("queries.json", queries),
+      ("wants.json", wants), ("mutations.json", mutations), ("merges.json", merges), ("lenses.json", lenses)] do
     IO.FS.writeFile (dir / file) (render vs)

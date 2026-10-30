@@ -4,6 +4,7 @@ import Aven.ID.Keys
 import Aven.ID.ClaimJson
 import Aven.ID.InviteJson
 import Aven.ID.Before
+import Aven.ID.CapsJson
 
 /-! # The test vectors (README, rule 10)
 
@@ -25,6 +26,14 @@ import Aven.ID.Before
   examples and generated ones. aven-id's tests replay them with real keys, a restart reading the tree back.
 - `invites.json`: invite, withdrawal and join traces (`Aven.ID.InviteTrace`), with every answer, the tree, the
   members, the invites' states and what the door says of each key after every step. aven-id's tests replay them.
+- `caps.json`: cap chains on the cast, with the first rule each breaks or none (`Aven.ID.Caps`), how avenOS shows a cap
+  for a passkey tap, and generated chains (`Aven.ID.CapsJson`).
+- `revocations.json`: Docs of envelopes, the revocations a reader holds, and each envelope's verdict (`Aven.ID.Revoke`),
+  hand-written and generated.
+- `epochs.json`: who learns which key after a removal and after a heal (`Aven.ID.Epochs`).
+- `approvals.json`: signatures, thresholds and digests on the cast, and whether each approval holds (`Aven.ID.Approve`).
+- `network.json`: tickets claimed in two orders (A12), removals that clash and MaiaCityGuardian's exit
+  (`Aven.ID.Network`, `Aven.ID.Recover`).
 
 `bun run up --check` runs it again and fails when the files differ from what is committed. -/
 
@@ -120,6 +129,52 @@ def invites : List Json :=
     let (i, e) := memberVector boxMembers (randomMemberTrace n)
     vector s!"generated member trace, seed {n}" i e
 
+def capsVectors : List Json :=
+  let chain (cs : List Cap) := Json.mkObj [("context", castCtxJson), ("chain", Json.arr (cs.map Cap.json).toArray)]
+  (chainExamples.map fun (name, cs, _) => vector name (chain cs) (chainResult cs)) ++
+  ([capA, capB, capPublic].map fun c =>
+    vector s!"how avenOS shows {c.id}" (Json.mkObj [("show", c.json)]) (Json.mkObj [("text", c.text castCtx.roles)])) ++
+  (List.range generatedChains).map fun i =>
+    let cs := genChain (i + 1)
+    vector s!"generated chain, seed {i + 1}" (chain cs) (chainResult cs)
+
+def revocationVectors : List Json :=
+  (revocationExamples.map fun (name, doc, rs, id, _) =>
+    vector name (Json.mkObj (docJson doc rs ++ [("envelope", toJson id)]))
+      ((verdictOf doc rs id).elim Json.null Verdict.json)) ++
+  (List.range generatedDocs).map fun i =>
+    let (doc, rs) := genDoc (i + 1)
+    vector s!"generated Doc, seed {i + 1}" (Json.mkObj (docJson doc rs))
+      (Json.mkObj (doc.map fun e => (e.id, (verdict doc rs e).json)))
+
+def epochVectors : List Json :=
+  let ask (w : World) (parties : List String) (story p k : String) :=
+    vector s!"{story}: does {p} learn {k}?" (Json.mkObj [("world", worldJson w parties), ("party", p), ("key", k)])
+      (Json.mkObj [("learns", w.learns p k)])
+  (removalExamples.map fun (p, k, _) => ask removalWorld ["alice-peer", "bob-peer-light"] "after Bob's removal" p k) ++
+  (healExamples.map fun (p, k, _) => ask healWorld ["alice-peer", "alice-peer-light"] "after Alice's heal" p k)
+
+def approvalVectors : List Json :=
+  approvalExamples.map fun (name, sigs, k, v, d, _) =>
+    vector name (Json.mkObj [("tree", "cast"), ("sigs", Json.arr (sigs.map Sig.json).toArray), ("threshold", toJson k),
+        ("vault", v), ("digest", d)])
+      (Json.mkObj [("approved", cast.approved k v d sigs)])
+
+def networkVectors : List Json :=
+  let ticket (name : String) (cs : List TicketClaim) :=
+    vector name (Json.mkObj [("claims", Json.arr (cs.map TicketClaim.json).toArray)])
+      (Json.mkObj [("winner", (winner cs).elim Json.null TicketClaim.json)])
+  let settle (owners removed : List String) :=
+    vector s!"owners {owners} remove {removed} at once"
+      (Json.mkObj [("owners", toJson owners), ("removed", toJson removed)])
+      (Json.mkObj [("owners", toJson (settleRemovals owners removed))])
+  let keyring : Keyring := ⟨["alice-peer-kem"], ["alice-passkey-seal", "guardian"]⟩
+  [ticket "a ticket's claims" claims, ticket "the same claims in another order" claims.reverse,
+   settle ["alice-owner", "guardian"] ["guardian"], settle ["alice-owner", "guardian"] ["alice-owner", "guardian"],
+   vector "MaiaCityGuardian's exit from Alice's vault"
+     (Json.mkObj [("devices", toJson keyring.devices), ("sealers", toJson keyring.sealers), ("guardian", "guardian")])
+     (Json.mkObj [("rotate", toJson (keyring.exit "guardian").rotate)])]
+
 /-- One vector per line, so a change reads as a diff of lines. -/
 def render (vs : List Json) : String :=
   "[\n" ++ ",\n".intercalate (vs.map Json.compress) ++ "\n]\n"
@@ -134,3 +189,8 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "passkeys.json") (render passkeys)
   IO.FS.writeFile (dir / "claims.json") (render claims)
   IO.FS.writeFile (dir / "invites.json") (render invites)
+  IO.FS.writeFile (dir / "caps.json") (render capsVectors)
+  IO.FS.writeFile (dir / "revocations.json") (render revocationVectors)
+  IO.FS.writeFile (dir / "epochs.json") (render epochVectors)
+  IO.FS.writeFile (dir / "approvals.json") (render approvalVectors)
+  IO.FS.writeFile (dir / "network.json") (render networkVectors)
