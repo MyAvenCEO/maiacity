@@ -23,6 +23,7 @@
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { chromium, firefox, webkit } from 'playwright';
 import { served } from './prod.mjs';
+import { narrow } from './narrow.mjs';
 import { lines } from './records.mjs';
 import { walkViews } from './views.mjs';
 
@@ -30,7 +31,7 @@ const run = process.argv[2] ?? 'runs/latest';
 mkdirSync(run, { recursive: true });
 const problems = [];
 const started = Date.now();
-const report = { cast: {}, views: {}, build: {}, passkeys: {} };
+const report = { cast: {}, views: {}, narrow: {}, build: {}, passkeys: {} };
 const launch = (engine, name) => {
 	const dir = `/tmp/avensandbox-${engine.name()}-${name}`;
 	rmSync(dir, { recursive: true, force: true });
@@ -102,6 +103,17 @@ async function views(engine) {
 	await page.goto('http://localhost:5173/#/alice/vault');
 	await page.screenshot({ path: `${run}/${name}-vault-alice.png` });
 	report.views[name] = { ms: timed(since) };
+	await context.close();
+}
+
+// 2b. A phone's width (sandbox/narrow.mjs): Alice's chat, with a long word, a long file name, an image, a movie and
+// many presence chips, and the other views, no wider than 375 and 390 px screens, one engine at a time
+async function phone(engine) {
+	const since = Date.now();
+	const context = await launch(engine, 'narrow');
+	const page = context.pages()[0] ?? (await context.newPage());
+	problems.push(...(await narrow(page, engine.name(), run)));
+	report.narrow[engine.name()] = { ms: timed(since) };
 	await context.close();
 }
 
@@ -255,6 +267,7 @@ async function passkeys() {
 
 for (const engine of [webkit, firefox]) await cast(engine);
 for (const engine of [webkit, firefox]) await views(engine);
+for (const engine of [chromium, webkit, firefox]) await phone(engine);
 const server = await served({ root: '/work/dist', port: 5175 });
 const builds = Date.now();
 await Promise.all([chromium, webkit, firefox].map(build));
@@ -270,6 +283,6 @@ writeFileSync(`${run}/engines.json`, `${JSON.stringify(report, null, 2)}\n`);
 for (const problem of problems) console.log(`avenSANDBOX: engines: ${problem}`);
 const seconds = (ms) => `${(ms / 1000).toFixed(1)} s`;
 console.log(
-	`avenSANDBOX: engines: ${problems.length ? 'FAILED' : 'ok'} (${seconds(report.ms)}: WebKit's Peer-Lights ${seconds(report.cast.webkit?.ms ?? 0)}, Firefox's ${seconds(report.cast.firefox?.ms ?? 0)}, the views ${seconds((report.views.webkit?.ms ?? 0) + (report.views.firefox?.ms ?? 0))}, the build in three engines ${seconds(report.build.ms)}, the passkeys ${seconds(report.passkeys.ms ?? 0)})`,
+	`avenSANDBOX: engines: ${problems.length ? 'FAILED' : 'ok'} (${seconds(report.ms)}: WebKit's Peer-Lights ${seconds(report.cast.webkit?.ms ?? 0)}, Firefox's ${seconds(report.cast.firefox?.ms ?? 0)}, the views ${seconds((report.views.webkit?.ms ?? 0) + (report.views.firefox?.ms ?? 0))}, a phone's width ${seconds(Object.values(report.narrow).reduce((n, r) => n + r.ms, 0))}, the build in three engines ${seconds(report.build.ms)}, the passkeys ${seconds(report.passkeys.ms ?? 0)})`,
 );
 process.exit(problems.length ? 1 : 0);
