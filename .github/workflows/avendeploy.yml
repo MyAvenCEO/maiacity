@@ -236,7 +236,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PEER: ${{ inputs.peer }}
           OS: ${{ inputs.os }}
-          GUARDIAN: ${{ vars.AVEN_PEER_GUARDIAN }}
+          GUARDIAN: ${{ vars.AVEN_PEER_GUARDIAN || secrets.AVEN_PEER_GUARDIAN }}
         run: |
           newest() { gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName --jq "[.[].tagName | select(startswith(\"@aven/$1@\"))][0] // empty" | sed "s#^@aven/$1@##"; }
           peer=${PEER:-$(newest peer)}
@@ -251,7 +251,7 @@ jobs:
           if [ -n "$GUARDIAN" ] && ! [[ "$GUARDIAN" =~ ^[0-9a-f]{64}$ ]]; then
             echo "::error::the variable AVEN_PEER_GUARDIAN is not 64 hex digits"; exit 1
           fi
-          [ -n "$GUARDIAN" ] || echo "::warning::the environment production has no variable AVEN_PEER_GUARDIAN: vaults are founded without MaiaCityGuardian"
+          [ -n "$GUARDIAN" ] || echo "::warning::the environment production has no AVEN_PEER_GUARDIAN, as a variable or a secret: vaults are founded without MaiaCityGuardian"
           { echo "PEER_VERSION=$peer"; echo "PEER_IMAGE=$name@$digest"; echo "OS_VERSION=$os"; } >> "$GITHUB_ENV"
           echo "avenPEER $peer ($name@$digest), avenOS $os, guardian ${GUARDIAN:-none}"
 
@@ -283,7 +283,7 @@ jobs:
           S3_KEY: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
           S3_SECRET: ${{ secrets.HETZNER_S3_SECRET_KEY }}
           TOKEN: ${{ github.token }}
-          GUARDIAN: ${{ vars.AVEN_PEER_GUARDIAN }}
+          GUARDIAN: ${{ vars.AVEN_PEER_GUARDIAN || secrets.AVEN_PEER_GUARDIAN }}
         run: |
           ssh prod 'sudo install -d -o deploy -g deploy -m 700 /opt/aven'
           scp aven/DB2/deploy/compose.yml aven/DB2/deploy/server/peer.sh prod:/opt/aven/
