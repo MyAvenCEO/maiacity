@@ -35,6 +35,25 @@ pub fn fixed(addr: EndpointAddr) -> Resolve {
     })
 }
 
+/// The Aven Peer's address once it resolves, asked again every 250 ms, with one `waiting` line while it doesn't. A Peer
+/// waits for it before it joins the room: iroh-gossip 0.101 never dials again a bootstrap its first join couldn't
+/// reach, and a Peer that starts beside the Aven Peer (the box's `up`, a restart of both) may look it up before its
+/// name exists. Its room then stayed alone for good (30 Oct 2026).
+pub async fn resolved(aven: &Resolve, me: &str, notes: &Notes) -> EndpointAddr {
+    let mut told = false;
+    loop {
+        match aven().await {
+            Ok(addr) => return addr,
+            Err(why) if !told => {
+                told = true;
+                notes(timeline::line(now(), me, "waiting", json!({ "for": "aven", "why": why })));
+            }
+            Err(_) => {}
+        }
+        sleep(Duration::from_millis(250)).await;
+    }
+}
+
 const TICK: Duration = Duration::from_millis(TICK_MS);
 /// A stalled link waits this many more steps for progress, then dials again.
 const REDIAL_AFTER: u32 = 2 * STALL_AFTER;

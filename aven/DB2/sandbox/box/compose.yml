@@ -54,9 +54,10 @@ services:
       AVEN_PEER_AVEN_KEY: ${AVENSANDBOX_AVEN_KEY:?bun run up sets it}
       AVEN_PEER_MEMBERS: ${AVENSANDBOX_MEMBERS:?bun run up sets it}
       AVEN_PEER_EVENTS: /events
-      # it keeps its data in a folder, in its own volume
+      # it keeps its data in a folder, in its own volume, and shares the files in /data/files
       AVEN_PEER_STORE: fs
       AVEN_PEER_STORE_PATH: /data
+      AVEN_PEER_FILES: /data/files
     volumes:
       - target:/target:ro
       - events:/events

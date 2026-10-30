@@ -39,6 +39,8 @@ pub trait Store {
     /// The bytes `range` of a blob, or `None`. A range not inside the blob is [`Error::Range`]; an empty one is empty.
     async fn get_range(&self, hash: &Hash, range: Range<u64>) -> Result<Option<Bytes>>;
     async fn has(&self, hash: &Hash) -> Result<bool>;
+    /// A blob's length in bytes, or `None`, without reading it: one stat (a HEAD on S3).
+    async fn size(&self, hash: &Hash) -> Result<Option<u64>>;
     /// Every blob's hash, sorted.
     async fn list(&self) -> Result<Vec<Hash>>;
     /// Removes a blob; removing one that isn't there is fine.
