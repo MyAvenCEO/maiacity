@@ -4,7 +4,8 @@
 	// are the chat's history, so a reload finds them again. A line written here shows at once and says while it is
 	// still on its way; a dropped image, PDF or movie shows at once too, as a file card from /files/<hash>, which the
 	// Service Worker answers range by range. Senders are named through the tree: a device by the person vault it acts
-	// for. A line the network says through the Aven Peer (who joined) is its own kind.
+	// for. A line is yours when it is said for the vault you act as, from any of its devices, this browser or another
+	// (Samuel, 30 Oct 2026). A line the network says through the Aven Peer (who joined) is its own kind.
 	import Avatar from '../Avatar.svelte';
 	import { tree, vaultName } from '../id.svelte.js';
 	import { room, say, share } from '../room.svelte.js';
@@ -86,7 +87,7 @@
 			{#each room.lines as line, i (i)}
 				{@const vault = vaultOf(line)}
 				{@const said = known(vault) && tree.kind(vault) === 'agent'}
-				<li class:mine={line.from === device} class:said data-from={line.from} data-vault={vault} data-id={line.id}>
+				<li class:mine={line.from === device || (vault !== null && vault === account)} class:said data-from={line.from} data-vault={vault} data-id={line.id}>
 					{#if said}
 						<span class="text" data-testid="network-line">{line.text}</span>
 					{:else if line.file}
@@ -147,7 +148,7 @@
 
 <style>
 	/* the room: presence as chips on top, the thread on the cream ground, the input bar at the bottom. Lines are
-	   bubbles (`li`): your own (.mine) green, others' white with a hairline, the network's (.said) a muted note.
+	   bubbles (`li`): your vault's own (.mine) green, others' white with a hairline, the network's (.said) a muted note.
 	   A line's parts: `strong` its sender, `.text` what it says, `time` when */
 	[data-view='chat'] {
 		display: grid;

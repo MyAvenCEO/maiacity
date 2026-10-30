@@ -49,6 +49,8 @@ def MemberError.json : MemberError → Json
   | .notFromDevice => Json.mkObj [("error", "notFromDevice")]
   | .known => Json.mkObj [("error", "known")]
   | .invalid why => Json.mkObj [("error", "invalid"), ("invalid", why.json)]
+  | .stranger => Json.mkObj [("error", "stranger")]
+  | .counter => Json.mkObj [("error", "counter")]
 
 def Members.treeJson (m : Members) : Json :=
   Json.mkObj [("keys", Json.arr (m.publics.map fun (id, k) => toJson [id, k]).toArray),
