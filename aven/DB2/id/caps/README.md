@@ -1153,6 +1153,9 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | Module | Theorem | Says |
 |---|---|---|
 | `CapsCbor` | `Cap.digest_inj` | Two allowed caps with one id say the same thing: the bytes approved and signed name the cap exactly |
+| `Authorized` | `authorized_signer`, `authorized_root` | Caps' verdict on a Core envelope: its chain keeps every rule, its last cap is held by the signer's vault, and every step of its footprint is one the chain's root allows on its Doc, on its root issuer's authority (R4) |
+| | `counts_iff` | An envelope counts exactly when everything in its past is signed, fresh, authorized, live and fit, and none of it is half of a split. `Aven.Architecture` composes the parts |
+| | `readers_agree` | Two readers that hold the same past of an envelope, and the same splits in it, give it the same verdict, whatever else each holds |
 | `Caps` | `narrow_chain`, `narrow_steps` | No cap in a chain lets a verb reach a Doc, or allows a write step, that its root doesn't |
 | | `root_authority` | Every line a chain grants lies in its root issuer's authority: its own vault, one it governs, or a Doc of one |
 | | `chain_short` | A chain is no longer than its root may be shared |
@@ -1195,8 +1198,6 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `sealed_padded`, `root_by_writer` | Sealed nodes are padded (D18); only a vault that may write the directory publishes a root a reader takes |
 
 **After Core, or with another thread:**
-- `counts_iff`: an envelope counts exactly when its signer, its epoch, its chain, its liveness and its footprint hold;
-- `readers_agree`: a verdict depends only on the envelope, its causal past and the revocations known;
 - `merge_covered` and `footprints.json` (Core's footprints, with the engine);
 - `want_grants_nothing` and `one_grammar` (Core's target grammar);
 - `authority_down` (`below` groups);
