@@ -1,5 +1,5 @@
-//! The cast's format (`sandbox/cast.json`): `keys`, each id to its public half, and `vaults`, each id to its name,
-//! kind and owners, which read `"key:<id>"` or `"vault:<id>"`. The file's order is the tree's. Every key must be an
+//! The cast's format (`sandbox/cast.json`): `keys`, each id to its public half, and `vaults`, each id to its name
+//! (required: every vault has one), kind and owners, which read `"key:<id>"` or `"vault:<id>"`. The file's order is the tree's. Every key must be an
 //! Ed25519 public key in hex or a passkey's `es256:<SPKI in hex>`; the model knows keys only by id, so that check is
 //! the cast's. [`Tree::to_cast`] writes a tree back in the same form, for avenOS.
 
@@ -67,10 +67,11 @@ impl Tree {
             )?;
             let kind = Kind::parse(kind)
                 .ok_or_else(|| CastError::Format(format!("{id}'s kind {kind} is unknown")))?;
-            let name = match vault.get("name") {
-                Some(name) => text(name, &format!("{id}'s name"))?.to_string(),
-                None => id.clone(),
-            };
+            let name = text(
+                vault.get("name").unwrap_or(&Value::Null),
+                &format!("{id}'s name"),
+            )?
+            .to_string();
             let mut owners = Vec::new();
             let listed = vault.get("owners").and_then(Value::as_array);
             for owner in

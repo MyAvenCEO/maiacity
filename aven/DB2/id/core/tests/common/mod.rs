@@ -17,7 +17,7 @@ pub fn vectors(file: &str) -> Vec<Value> {
     serde_json::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
-/// A tree in the model's form: key ids and vaults, the kinds and owners as text. `Err` when it isn't one.
+/// A tree in the model's form: key ids and vaults, each with its name, the kinds and owners as text. `Err` when it isn't one.
 pub fn parse(input: &Value) -> Result<(Vec<String>, Vec<Vault>), String> {
     let keys = input["keys"].as_array().ok_or("no keys")?;
     let keys = keys
@@ -27,6 +27,7 @@ pub fn parse(input: &Value) -> Result<(Vec<String>, Vec<Vault>), String> {
     let mut vaults = Vec::new();
     for v in input["vaults"].as_array().ok_or("no vaults")? {
         let id = v["id"].as_str().ok_or("no id")?.to_string();
+        let name = v["name"].as_str().ok_or("no name")?.to_string();
         let kind = v["kind"]
             .as_str()
             .and_then(Kind::parse)
@@ -41,7 +42,7 @@ pub fn parse(input: &Value) -> Result<(Vec<String>, Vec<Vault>), String> {
             })
             .collect::<Result<_, _>>()?;
         vaults.push(Vault {
-            name: id.clone(),
+            name,
             id,
             kind,
             owners,
@@ -55,7 +56,7 @@ pub fn case(keys: &[String], vaults: &[Vault]) -> Value {
         .iter()
         .map(|v| {
             let owners: Vec<String> = v.owners.iter().map(Owner::to_string).collect();
-            json!({ "id": v.id, "kind": v.kind.as_str(), "owners": owners })
+            json!({ "id": v.id, "name": v.name, "kind": v.kind.as_str(), "owners": owners })
         })
         .collect();
     json!({ "keys": keys, "vaults": vaults })
@@ -65,6 +66,7 @@ pub fn answer(t: &Tree, q: &Value) -> Value {
     let arg = |i: usize| q[i].as_str().unwrap_or_default();
     match arg(0) {
         "kind" => json!(t.kind(arg(1)).map(Kind::as_str)),
+        "name" => json!(t.vault(arg(1)).map(|v| &v.name)),
         "owners" => json!(t.vault(arg(1)).map_or_else(Vec::new, |v| {
             v.owners.iter().map(Owner::to_string).collect::<Vec<_>>()
         })),
@@ -95,6 +97,13 @@ pub fn invalid(why: &Invalid) -> Value {
         Invalid::DeviceKeyless(id) => json!({ "rule": "deviceKeyless", "vault": id }),
         Invalid::DeviceKeyOwns { device, vault } => {
             json!({ "rule": "deviceKeyOwns", "device": device, "vault": vault })
+        }
+        Invalid::Name(id) => json!({ "rule": "name", "vault": id }),
+        Invalid::CoopOwner { coop, owner } => {
+            json!({ "rule": "coopOwner", "vault": coop, "owner": owner.to_string() })
+        }
+        Invalid::CoopDevice { coop, device } => {
+            json!({ "rule": "coopDevice", "vault": coop, "device": device })
         }
         Invalid::Cycle(_) => json!({ "rule": "cycle" }),
     }

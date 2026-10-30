@@ -18,12 +18,19 @@ pub fn challenge(text: &str) -> String {
 pub fn claim_text(
     network: &str,
     person: &str,
+    name: &str,
     passkey: &str,
     spki: &str,
     device: &str,
     key: &str,
 ) -> String {
-    claim::claim_text(network, person, passkey, spki, device, key)
+    claim::claim_text(network, person, name, passkey, spki, device, key)
+}
+
+/// Whether a name given at signup is one: 1 to 48 characters, no control characters.
+#[wasm_bindgen(js_name = validPersonName)]
+pub fn valid_person_name(name: &str) -> bool {
+    crate::tree::valid_person_name(name)
 }
 
 /// What a sign-in's passkey signs.
@@ -73,7 +80,7 @@ impl Cast {
         self.0.vault(id).map(|v| v.name.clone())
     }
 
-    /// `person`, `network` or `device`.
+    /// `person`, `network`, `coop` or `device`.
     pub fn kind(&self, id: &str) -> Option<String> {
         self.0.kind(id).map(|k| k.as_str().to_string())
     }
