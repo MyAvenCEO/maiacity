@@ -150,7 +150,8 @@ means something else in another part, and that part's meaning is named.
 - **merge, merge footprint**: a change building on both heads, plus the three-way fix-up; every type and field it
   changes.
 - **restore → revert to; undo of an older change → back out**.
-- **fork**: a copy of a Record into a new Doc, without its history (D6). Only this meaning.
+- **fork**: a new Doc started from a version, with its state and a link to its origin, without its history (D6).
+  Only this meaning.
 - **split**: shared primitive. **settle**: **retires** (**A4**: splits are final).
 - **counts, verdicts** (fit, authorized, not split), **stuck peer**: an envelope counts when all three hold and its
   past counts; a writer id whose next ops would build on one that doesn't.

@@ -506,15 +506,16 @@ the spec that owns it.
   cross-part rules, and every spec uses them in this sense. *Yes.*
 - **A2. One codec and signing rule** for everything signed (K1, rule 1). It starts with the chat's lines in the
   security fixes. *Yes.*
-- **A3. Envelopes name what they build on by hash** (rule 2). *Yes; the docs thread agrees.*
+- **A3. Envelopes name what they build on by hash** (rule 2). *Decided: yes (Samuel, 30 Oct 2026).*
 - **A4. Splits are final,** with no settlement that revives a side, and "fork" means only a copy into a new Doc. The
-  store's and Lean's fork becomes split. *Yes; the docs thread agrees.*
+  store's and Lean's fork becomes split. *Decided: yes (Samuel, 30 Oct 2026).*
 - **A5. Checkpoints travel:** sealed and hybrid-signed, naming the segments they cover. A new device starts from one
-  and checks it in the background, from milestone 4, whose catch-up target needs it. *Yes; the docs thread agrees.*
-- **A6. Collections that grow without end are chains of period Docs.** *Yes, rather than shallow snapshots, which
-  refuse older branches; the docs thread agrees.*
+  and checks it in the background, from milestone 4, whose catch-up target needs it. *Decided: yes (Samuel, 30 Oct
+  2026).*
+- **A6. Collections that grow without end are chains of period Docs.** *Decided: yes (Samuel, 30 Oct 2026), rather
+  than shallow snapshots, which refuse older branches.*
 - **A7. A Doc pins the type versions it accepts,** at birth or by its owners' act, and a listing can be withdrawn.
-  *Yes; the docs thread agrees.*
+  *Decided: yes (Samuel, 30 Oct 2026).*
 - **A8. One target grammar** for caps, wants and query scope. A query without a target is refused; `complete` means
   every Doc of the target is held, checked against its directory; the implicit want takes the query's tier and lasts
   while the query is live. *Yes; the engine thread agrees.*
