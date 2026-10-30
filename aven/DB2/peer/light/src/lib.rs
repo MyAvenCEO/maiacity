@@ -21,7 +21,9 @@
 //! Files (store/README.md, "How a file travels"): it serves its store's blobs to members over iroh-blobs, and fetches
 //! files by their index's hash, from the Aven Peer or another member: [`file_len`], [`file_range`] and [`file_fetch`].
 //! These three are the Peer-Light's stable API for files: the chat's Service Worker calls them through the leader to
-//! answer `/files/<hash>` with ranges, and the box's check calls them directly.
+//! answer `/files/<hash>` with ranges, and the box's check calls them directly. A file or a chunk of it that the holder
+//! asked says it hasn't throws an `Error` named [`NOT_FOUND`] (a 404); any other failure (no holder reached, a refusal) throws a
+//! plain one (a 502).
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -31,7 +33,7 @@ use std::sync::Arc;
 use aven_db_core::chat::Message;
 use aven_db_core::timeline;
 use aven_db_core::wire::{ALPN, Frame};
-use aven_db_store::blobs::{Blobs, Shared};
+use aven_db_store::blobs::{Blobs, FetchError, Shared};
 use aven_db_store::{Hash, backend, files};
 use aven_peer::iroh_gossip::{self, Gossip};
 use aven_peer::members::{Gate, Hook};
@@ -46,6 +48,9 @@ use wasm_bindgen::prelude::*;
 
 pub mod acts;
 pub mod views;
+
+/// The `name` of the `Error` the file API throws when the holder hasn't the file, or a chunk of it.
+pub const NOT_FOUND: &str = "NotFoundError";
 
 /// The page's callback for timeline lines. A browser's worker has one thread, so it is never shared across threads.
 struct Page(js_sys::Function);
@@ -441,7 +446,7 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
 }
 
 /// A connection on iroh-blobs' protocol to `from` (a member's key, hex), or to the Aven Peer: one kept while it is open.
-async fn connection(f: &Files, from: Option<String>) -> Result<Connection, JsError> {
+async fn connection(f: &Files, from: Option<String>) -> Result<Connection, JsValue> {
     let at = match from {
         Some(key) => EndpointAddr::new(keys::public(&key).map_err(js)?).with_relay_url(f.relay.clone()),
         None => f.aven.clone(),
@@ -456,24 +461,34 @@ async fn connection(f: &Files, from: Option<String>) -> Result<Connection, JsErr
 }
 
 /// The file's index, fetched if this Peer-Light hasn't it; and the bytes that crossed for it.
-async fn open(f: &Files, file: &Hash, from: Option<String>) -> Result<(files::File, u64), JsError> {
+async fn open(f: &Files, file: &Hash, from: Option<String>) -> Result<(files::File, u64), JsValue> {
     if let Some(found) = files::open(&*f.store, file).await.map_err(js)? {
         return Ok((found, 0));
     }
     let conn = connection(f, from).await?;
-    let fetched = f.held.fetch_chunks(&conn, *file, 0..0).await.map_err(js)?;
+    let fetched = f.held.fetch_chunks(&conn, *file, 0..0).await.map_err(fetch_error)?;
     let found = files::open(&*f.store, file).await.map_err(js)?.ok_or_else(|| JsError::new("no such file"))?;
     Ok((found, fetched.bytes))
 }
 
 /// The chunks of `range` this Peer-Light lacks, fetched; the bytes that crossed.
-async fn chunks(f: &Files, file: &files::File, range: Range<u64>, from: Option<String>) -> Result<u64, JsError> {
+async fn chunks(f: &Files, file: &files::File, range: Range<u64>, from: Option<String>) -> Result<u64, JsValue> {
     let missing = file.missing(&*f.store, range).await.map_err(js)?;
     let (Some(first), Some(last)) = (missing.first(), missing.last()) else {
         return Ok(0);
     };
     let conn = connection(f, from).await?;
-    Ok(f.held.fetch_chunks(&conn, file.name, *first..*last + 1).await.map_err(js)?.bytes)
+    Ok(f.held.fetch_chunks(&conn, file.name, *first..*last + 1).await.map_err(fetch_error)?.bytes)
+}
+
+/// A fetch's failure for the page: [`NOT_FOUND`] when the holder hasn't the file or a chunk of it (a Service Worker's
+/// 404), a plain error otherwise (its 502).
+fn fetch_error(e: FetchError) -> JsValue {
+    let error = js_sys::Error::new(&e.to_string());
+    if matches!(e, FetchError::NotFound(_)) {
+        error.set_name(NOT_FOUND);
+    }
+    error.into()
 }
 
 fn running_files() -> Result<Files, JsError> {
@@ -495,7 +510,7 @@ fn hash(file: &str) -> Result<Hash, JsError> {
 /// A file's length in bytes, by its name (its index's hash, hex): its index is fetched from `from` (a member's key,
 /// hex) or the Aven Peer if this Peer-Light hasn't it.
 #[wasm_bindgen]
-pub async fn file_len(file: String, from: Option<String>) -> Result<f64, JsError> {
+pub async fn file_len(file: String, from: Option<String>) -> Result<f64, JsValue> {
     let f = running_files()?;
     Ok(open(&f, &hash(&file)?, from).await?.0.len as f64)
 }
@@ -505,7 +520,7 @@ pub async fn file_len(file: String, from: Option<String>) -> Result<f64, JsError
 /// bytes that crossed for this call. A seek is a range: a movie played from its middle fetches only the chunks it
 /// plays.
 #[wasm_bindgen]
-pub async fn file_range(file: String, start: f64, end: f64, from: Option<String>) -> Result<JsValue, JsError> {
+pub async fn file_range(file: String, start: f64, end: f64, from: Option<String>) -> Result<JsValue, JsValue> {
     let f = running_files()?;
     let (found, mut fetched) = open(&f, &hash(&file)?, from.clone()).await?;
     let range = start as u64..(end as u64).min(found.len);
@@ -521,13 +536,13 @@ pub async fn file_range(file: String, start: f64, end: f64, from: Option<String>
 /// The whole file into this Peer-Light's store, from `from` or the Aven Peer: only what it lacks crosses.
 /// `{len, fetched, chunks}`.
 #[wasm_bindgen]
-pub async fn file_fetch(file: String, from: Option<String>) -> Result<JsValue, JsError> {
+pub async fn file_fetch(file: String, from: Option<String>) -> Result<JsValue, JsValue> {
     let f = running_files()?;
     let (found, mut fetched) = open(&f, &hash(&file)?, from.clone()).await?;
     fetched += chunks(&f, &found, 0..found.len, from).await?;
     let missing = found.missing(&*f.store, 0..found.len).await.map_err(js)?;
     if !missing.is_empty() {
-        return Err(JsError::new(&format!("{} chunks still missing", missing.len())));
+        return Err(JsError::new(&format!("{} chunks still missing", missing.len())).into());
     }
     Ok(object(&[
         ("len", (found.len as f64).into()),
