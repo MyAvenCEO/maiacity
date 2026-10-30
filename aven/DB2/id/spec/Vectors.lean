@@ -40,6 +40,8 @@ import Aven.ID.SettleJson
 - `settled.json`: sets of tree statements, each in several orders, and the tree `settle` gives (`Aven.ID.Network`,
   PEERS.md §5): `TreeExamples`, the races one by one, generated sets, and production's store migrated from every
   invite trace (`Aven.ID.Restore`). `records.json`: signed records and the newest of each (`Aven.ID.Records`, §6).
+  `node.json`: networks losing each peer in turn, with every home relay, who reaches whom and who can fetch the chat
+  (`Aven.ID.Node`, R7).
 
 `bun run up --check` runs it again and fails when the files differ from what is committed. -/
 
@@ -217,3 +219,4 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "keep.json") (render keepVectors)
   IO.FS.writeFile (dir / "settled.json") (render SettleJson.settledVectors)
   IO.FS.writeFile (dir / "records.json") (render SettleJson.recordVectors)
+  IO.FS.writeFile (dir / "node.json") (render SettleJson.nodeVectors)
