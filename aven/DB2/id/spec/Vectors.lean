@@ -5,6 +5,7 @@ import Aven.ID.ClaimJson
 import Aven.ID.InviteJson
 import Aven.ID.Before
 import Aven.ID.CapsJson
+import Aven.ID.SettleJson
 
 /-! # The test vectors (README, rule 10)
 
@@ -36,6 +37,9 @@ import Aven.ID.CapsJson
   (`Aven.ID.Network`, `Aven.ID.Recover`).
 - `keep.json`: a keeper's fetch-key links in the order they came, with the keys it takes, its current fetch key and
   its flags; the proofs it serves; what each vault pays (`Aven.ID.Keep`, A22). Hand-written and generated.
+- `settled.json`: sets of tree statements, each in several orders, and the tree `settle` gives (`Aven.ID.Network`,
+  PEERS.md §5): `TreeExamples`, the races one by one, generated sets, and production's store migrated from every
+  invite trace (`Aven.ID.Restore`). `records.json`: signed records and the newest of each (`Aven.ID.Records`, §6).
 
 `bun run up --check` runs it again and fails when the files differ from what is committed. -/
 
@@ -211,3 +215,5 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "approvals.json") (render approvalVectors)
   IO.FS.writeFile (dir / "network.json") (render networkVectors)
   IO.FS.writeFile (dir / "keep.json") (render keepVectors)
+  IO.FS.writeFile (dir / "settled.json") (render SettleJson.settledVectors)
+  IO.FS.writeFile (dir / "records.json") (render SettleJson.recordVectors)

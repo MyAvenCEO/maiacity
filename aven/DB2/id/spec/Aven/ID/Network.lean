@@ -37,7 +37,8 @@ The theorems:
 - `guardian_consented`: a claim counts only if it names the genesis's guardian (A13);
 - `settle_listed`: a list's entry stands only through an add that saw every remove of it.
 
-`settle_restore`, production's ref order, and `trees.json` are avenPEER's (PEERS.md, Thread A). -/
+`settle_restore`, production's ref order, the record kinds and `settled.json` are avenPEER's (`Aven.ID.Restore`,
+`Aven.ID.Records`; PEERS.md, Thread A). -/
 
 namespace Aven.ID
 
