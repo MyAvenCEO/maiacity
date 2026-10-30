@@ -191,7 +191,12 @@ async function keeps(run) {
 	if (Object.keys(before).length !== 4) problems.push(`records from ${Object.keys(before).length} peers, not 4`);
 
 	const report = { ok: problems.length === 0, problems, before, restarted, wiped, restartMs, ms: Date.now() - timed };
-	await Bun.write(join(db2, run, 'records.json'), `${JSON.stringify(report, null, 2)}\n`);
+	// written by the box, like everything under runs/: its containers run as root, and on a CI runner the host's user
+	// can't write into the folder the check made there
+	const write = 'require("node:fs").writeFileSync(process.argv[1], process.argv[2])';
+	await $`${compose} exec -T browsers node -e ${write} ${`${run}/records.json`} ${`${JSON.stringify(report, null, 2)}\n`}`
+		.env(env)
+		.quiet();
 	for (const problem of problems) say(`record: ${problem}`);
 	if (report.ok) say(`a restart kept all four records, and a wipe emptied them (${(report.ms / 1000).toFixed(1)} s)`);
 	return report.ok;
