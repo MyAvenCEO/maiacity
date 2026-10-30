@@ -426,7 +426,7 @@ it starts before Samuel decides the open questions it depends on.
 Each comes with a recommendation.
 
 1. **One home.** Every runtime (actors', plugins', files') lives in `aven/runtimes`, its own workspace, with one
-   contract, one host and one manifest. *Recommend: yes.*
+   contract, one host and one manifest. *Decided: yes (Samuel, 30 Oct 2026).*
 2. **Names.** File runtimes are named after their format (`svg-runtime`), actors' after their job, as decided
    (`state-runtime`), plugins' after their plugin, all in one namespace. *Recommend: yes; the glossary's actor entry
    moves from `json-runtime` and `css-runtime` to `state-runtime` and `style-runtime`.*
@@ -444,7 +444,7 @@ Each comes with a recommendation.
 7. **Plugins as runtimes, built twice:** native in the engine, frozen as wasm whose hash names the lowering, with
    the check proving them equal. *Recommend: yes; it reconciles D1 (built-in Rust) with A18.*
 8. **The actors' runtimes are born here,** not in `aven/actor/runtimes`, with avenACTORS still owning their
-   behaviour. *Recommend: yes, before the first one is built; agreed with avenACTORS first.*
+   behaviour. *Decided: yes (Samuel, 30 Oct 2026), in `aven/runtimes/actor/*`; avenACTORS agrees.*
 9. **One node-tree allowlist and one applier,** here, used by faces and files alike. *Recommend: yes; a second
    allowlist would be the two-lists problem again.*
 10. **The PDF renderer.** A pure-Rust renderer to wasm, pdf.js in the runtime worker, or PDFium compiled to wasm.
