@@ -1,0 +1,240 @@
+{
+  "server": {
+    "network": "aven",
+    "peer": "aven-peer",
+    "peerKey": "e8200646a82490e11e2acbc3abb16c4a0b67f14a10d4ab2e595ccbe2b5988b43",
+    "rpId": "maia.city",
+    "origins": [
+      "https://aven.maia.city"
+    ],
+    "guardian": "d6385231381d039bb56116ce247ec94f0d44533360337b113c8422da90e410c3",
+    "coop": "maia-city",
+    "coopName": "Maia City"
+  },
+  "refs": {
+    "claim": {
+      "network": "aven",
+      "person": "person-bd0447aa01352e8c",
+      "name": "Ada",
+      "passkey": {
+        "id": "passkey-bd0447aa01352e8c",
+        "spki": "3059301306072a8648ce3d020106082a8648ce3d03010703420004c3b214d8e1811e9cffeeaeede1a8818f81c13cde05d35ab73187bde87e1251073d1a5db579f5d1c81ab88a2f3b9e4f7744de817315fe0807bcc360d3031f7c3e"
+      },
+      "device": {
+        "id": "device-8c75a6d7d05c6d63",
+        "key": "8c75a6d7d05c6d639947931e8cc2bec6f2a0f6c8fd3a69ce2a78cb6968c92ba3"
+      },
+      "assertion": {
+        "clientData": "{\"type\":\"webauthn.get\",\"challenge\":\"EiDnqs7p_-KLEI5I08aZ_qWVuyzjiUgaZO1F90Knhs4\",\"origin\":\"https://aven.maia.city\",\"crossOrigin\":false}",
+        "authData": "5e99ca300fa6a2758ed9096d9cdb6b821243b8f7d8443304292c57e6dcbfa48e0500000000",
+        "signature": "3046022100e99d5de4031976d7ed0f062210529afb53151f2728d27c63744743188133188c02210087b0d71c00686aa5d57be2518d448a6e32705c84664e14989ba975edd8f7be46"
+      }
+    },
+    "signin-000001": {
+      "network": "aven",
+      "device": {
+        "id": "device-83caf888c3e4a527",
+        "key": "83caf888c3e4a5272381f90d68a1b3b8d1438373764b8e39a65f2e36ba2741e4"
+      },
+      "assertion": {
+        "clientData": "{\"type\":\"webauthn.get\",\"challenge\":\"nUkVJyE0_yC1BS-Ha8iBTENPeRqJRDXeNMX3HODuiac\",\"origin\":\"https://aven.maia.city\",\"crossOrigin\":false}",
+        "authData": "5e99ca300fa6a2758ed9096d9cdb6b821243b8f7d8443304292c57e6dcbfa48e0500000000",
+        "signature": "304402204b22f491b75cb7c1253fad6243a2144a72d93cec09a82c743932e65e22fb83f0022052a32a53b9ccd104f55a3e3ccbf40a10d67753755adc3b3382acd45078e9b4a1"
+      }
+    },
+    "signin-000002": {
+      "network": "aven",
+      "device": {
+        "id": "device-669894690a37681b",
+        "key": "669894690a37681b13fce48880cb982ebc05b4ebd458ec22ca9d6fefb3bee776"
+      },
+      "assertion": {
+        "clientData": "{\"type\":\"webauthn.get\",\"challenge\":\"8j0ENrRR90Sfl7j4Jx1ia2-3G_qw8vUAZCF3Vz1Td-I\",\"origin\":\"https://aven.maia.city\",\"crossOrigin\":false}",
+        "authData": "5e99ca300fa6a2758ed9096d9cdb6b821243b8f7d8443304292c57e6dcbfa48e0500000000",
+        "signature": "304502203dd56acff317cc5799911f95b30b8f7a7ae5bb4a5974e4201a74f4cadd2bc470022100f735b38cb1df84ea889c6151460642cfbc7cb4b59b186a15e70a40e2b847749b"
+      }
+    },
+    "invite-ffd36ee4c583a4a3": {
+      "network": "aven",
+      "invite": "ffd36ee4c583a4a3407d498154ef06883287d039395321edd7e3eda8b050bc33",
+      "passkey": "passkey-bd0447aa01352e8c",
+      "assertion": {
+        "clientData": "{\"type\":\"webauthn.get\",\"challenge\":\"64WNPIyKSvCTq9ElWjnP05cBlF8rwlelFZizxxaD_yg\",\"origin\":\"https://aven.maia.city\",\"crossOrigin\":false}",
+        "authData": "5e99ca300fa6a2758ed9096d9cdb6b821243b8f7d8443304292c57e6dcbfa48e0500000000",
+        "signature": "3045022100fa631cdfdd408ecba006521db27ead95575c380de9fe5eb8fd5db0911e31c1b702203601027bdffbe8c6d99f6ea57f3863acb8f7f9299b45f069dfc31c0497f9b477"
+      }
+    },
+    "invite-96fa4f10a2868cec": {
+      "network": "aven",
+      "invite": "96fa4f10a2868cecdcabafaa64e8ff08f7e33ca8a368801e2615bdeedbac2b97",
+      "passkey": "passkey-bd0447aa01352e8c",
+      "assertion": {
+        "clientData": "{\"type\":\"webauthn.get\",\"challenge\":\"PddtezFv6xCTb23GO6CGO6LBj0ISnQyWQUyhGkPlVr0\",\"origin\":\"https://aven.maia.city\",\"crossOrigin\":false}",
+        "authData": "5e99ca300fa6a2758ed9096d9cdb6b821243b8f7d8443304292c57e6dcbfa48e0500000000",
+        "signature": "3045022100f24ce32a0775dbc06385f3c7da21959a734187a7e88c74052f7ea65a6f7ced5702205a75ec0fe759429384df8ab629599b69c5fadbaa12289c57881086cbb7e1c82a"
+      }
+    },
+    "withdrawn-96fa4f10a2868cec": {
+      "network": "aven",
+      "invite": "96fa4f10a2868cecdcabafaa64e8ff08f7e33ca8a368801e2615bdeedbac2b97",
+      "passkey": "passkey-bd0447aa01352e8c",
+      "assertion": {
+        "clientData": "{\"type\":\"webauthn.get\",\"challenge\":\"U4N0rpboaN41gUBss7RPdywUQClJs04UKnSGzVar928\",\"origin\":\"https://aven.maia.city\",\"crossOrigin\":false}",
+        "authData": "5e99ca300fa6a2758ed9096d9cdb6b821243b8f7d8443304292c57e6dcbfa48e0500000000",
+        "signature": "304502202f1db6ced739aa74d7a095a383fcdb19f4ea80dfbd17f560c23608b0b79b64d5022100faa24fff473f0fdde42b1a1d3f02c421c31f771c70a67edd7d6c292e984e82bc"
+      }
+    },
+    "joined-ffd36ee4c583a4a3": {
+      "network": "aven",
+      "invite": "ffd36ee4c583a4a3407d498154ef06883287d039395321edd7e3eda8b050bc33",
+      "person": "person-86dd8e52c1f80d95",
+      "name": "Bea",
+      "passkey": {
+        "id": "passkey-86dd8e52c1f80d95",
+        "spki": "3059301306072a8648ce3d020106082a8648ce3d0301070342000467413329ae467e994bc98958770b2f663e0bd89d5e584fae50c706f4f4f34ec7b2124defde9e27217cb23923da16e68003ac7cc1c67d3db6e285ea8212216b4f"
+      },
+      "device": {
+        "id": "device-a2a52d1a76fa3aa8",
+        "key": "a2a52d1a76fa3aa89b5fef339c719a57276130c5c355d30cc47ef7671fc47c6f"
+      },
+      "signature": "24d347acb3d0194340dfd032875996fae64afc2412490a411ddf756224708ced244dbca2e5d3de341f1803f0e1633311363431d35a96b69e52752eb780dd7e0b",
+      "assertion": {
+        "clientData": "{\"type\":\"webauthn.get\",\"challenge\":\"QQ7BXrcNjMCPMwQNG_wkSx7I3uPbrNyAWNfs87ApGnM\",\"origin\":\"https://aven.maia.city\",\"crossOrigin\":false}",
+        "authData": "5e99ca300fa6a2758ed9096d9cdb6b821243b8f7d8443304292c57e6dcbfa48e0500000000",
+        "signature": "3046022100a8bcfbb76a14046ffaf3e5d91019c745495028c0d267f86e9baaeaae070b63f5022100eba30009063e7e5140e6d05086417842adecc4b3ebc0de054426a1e0f5c2c7eb"
+      }
+    }
+  },
+  "tree": {
+    "keys": [
+      [
+        "passkey-bd0447aa01352e8c",
+        "es256:3059301306072a8648ce3d020106082a8648ce3d03010703420004c3b214d8e1811e9cffeeaeede1a8818f81c13cde05d35ab73187bde87e1251073d1a5db579f5d1c81ab88a2f3b9e4f7744de817315fe0807bcc360d3031f7c3e"
+      ],
+      [
+        "maia-city-guardian",
+        "d6385231381d039bb56116ce247ec94f0d44533360337b113c8422da90e410c3"
+      ],
+      [
+        "aven-peer",
+        "e8200646a82490e11e2acbc3abb16c4a0b67f14a10d4ab2e595ccbe2b5988b43"
+      ],
+      [
+        "device-8c75a6d7d05c6d63",
+        "8c75a6d7d05c6d639947931e8cc2bec6f2a0f6c8fd3a69ce2a78cb6968c92ba3"
+      ],
+      [
+        "device-83caf888c3e4a527",
+        "83caf888c3e4a5272381f90d68a1b3b8d1438373764b8e39a65f2e36ba2741e4"
+      ],
+      [
+        "device-669894690a37681b",
+        "669894690a37681b13fce48880cb982ebc05b4ebd458ec22ca9d6fefb3bee776"
+      ],
+      [
+        "passkey-86dd8e52c1f80d95",
+        "es256:3059301306072a8648ce3d020106082a8648ce3d0301070342000467413329ae467e994bc98958770b2f663e0bd89d5e584fae50c706f4f4f34ec7b2124defde9e27217cb23923da16e68003ac7cc1c67d3db6e285ea8212216b4f"
+      ],
+      [
+        "device-a2a52d1a76fa3aa8",
+        "a2a52d1a76fa3aa89b5fef339c719a57276130c5c355d30cc47ef7671fc47c6f"
+      ]
+    ],
+    "vaults": [
+      {
+        "id": "person-bd0447aa01352e8c",
+        "name": "Ada's vault",
+        "kind": "person",
+        "owners": [
+          "key:passkey-bd0447aa01352e8c",
+          "key:maia-city-guardian"
+        ]
+      },
+      {
+        "id": "maia-city",
+        "name": "Maia City",
+        "kind": "coop",
+        "owners": [
+          "vault:person-bd0447aa01352e8c"
+        ]
+      },
+      {
+        "id": "aven",
+        "name": "Aven",
+        "kind": "network",
+        "owners": [
+          "vault:maia-city"
+        ]
+      },
+      {
+        "id": "aven-peer",
+        "name": "Aven Peer",
+        "kind": "device",
+        "owners": [
+          "vault:aven"
+        ]
+      },
+      {
+        "id": "device-8c75a6d7d05c6d63",
+        "name": "Ada's browser",
+        "kind": "device",
+        "owners": [
+          "vault:person-bd0447aa01352e8c"
+        ]
+      },
+      {
+        "id": "device-83caf888c3e4a527",
+        "name": "Ada's browser 2",
+        "kind": "device",
+        "owners": [
+          "vault:person-bd0447aa01352e8c"
+        ]
+      },
+      {
+        "id": "device-669894690a37681b",
+        "name": "Ada's browser 3",
+        "kind": "device",
+        "owners": [
+          "vault:person-bd0447aa01352e8c"
+        ]
+      },
+      {
+        "id": "person-86dd8e52c1f80d95",
+        "name": "Bea's vault",
+        "kind": "person",
+        "owners": [
+          "key:passkey-86dd8e52c1f80d95",
+          "key:maia-city-guardian"
+        ]
+      },
+      {
+        "id": "device-a2a52d1a76fa3aa8",
+        "name": "Bea's browser",
+        "kind": "device",
+        "owners": [
+          "vault:person-86dd8e52c1f80d95"
+        ]
+      }
+    ]
+  },
+  "members": [
+    "person-86dd8e52c1f80d95"
+  ],
+  "admitted": [
+    "e8200646a82490e11e2acbc3abb16c4a0b67f14a10d4ab2e595ccbe2b5988b43",
+    "8c75a6d7d05c6d639947931e8cc2bec6f2a0f6c8fd3a69ce2a78cb6968c92ba3",
+    "83caf888c3e4a5272381f90d68a1b3b8d1438373764b8e39a65f2e36ba2741e4",
+    "669894690a37681b13fce48880cb982ebc05b4ebd458ec22ca9d6fefb3bee776",
+    "a2a52d1a76fa3aa89b5fef339c719a57276130c5c355d30cc47ef7671fc47c6f"
+  ],
+  "invites": [
+    [
+      "ffd36ee4c583a4a3407d498154ef06883287d039395321edd7e3eda8b050bc33",
+      "used"
+    ],
+    [
+      "96fa4f10a2868cecdcabafaa64e8ff08f7e33ca8a368801e2615bdeedbac2b97",
+      "withdrawn"
+    ]
+  ]
+}

@@ -45,7 +45,7 @@ theorem opens_governed (w : t.WF) (account target : String) :
   · next h => exact .inr ((mem_governs w).mp (by simpa using h))
   · exact .inl rfl
 
-/-- No host may act as a network or a device. -/
+/-- No host may act as an agent, a coop or a device. -/
 theorem hostAccounts_people {h : Host} {x : String} (m : x ∈ t.hostAccounts h) :
     t.kind? x = some .person := by
   cases h with

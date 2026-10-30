@@ -68,7 +68,7 @@ def randomSpec (r : Rng) : Spec × Rng :=
   let (ats, r) := r.belows 8 (n + 1)
   let (up, r) := r.below 8
   let (named, r) := r.below 64
-  (⟨[Kind.person, .network, .coop, .device, .person][k]!, simple, tags.zip ats, up, named⟩, r)
+  (⟨[Kind.person, .agent, .coop, .device, .person][k]!, simple, tags.zip ats, up, named⟩, r)
 
 def randomTree (seed : Nat) : Tree := Id.run do
   let mut r := Rng.seed seed

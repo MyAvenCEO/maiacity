@@ -26,7 +26,7 @@ Targets, measured in this milestone and reported on every run:
 Smaller steps, measured by the threads: `lake build` warm 0.15 s each (cold, programs included, 6.1 s for `Aven.ID`,
 5.2 s for `Aven.DB`); `sandbox/vectors.sh --check`, both specs, 0.8–0.9 s warm; `cargo test -p aven-id` warm 4.4 s,
 2000 model cases; `cargo test -p aven-db-core` 1.1 s, 1000 traces; the store against the running model, 500 traces,
-1 s; `cargo test --workspace` 9.1–9.6 s warm (14 s before its dependencies were optimised); `db/store/check.sh`, all four backends, 11–12 s warm; an incremental `cargo build -p aven-peer` 1.3–2.4 s; aven-id's wasm 1.0 s incremental, 126 KB; the Peer-Light's
+1 s; `cargo test --workspace` 9.1–9.6 s warm (14 s before its dependencies were optimised); `store/check.sh`, all four backends, 11–12 s warm; an incremental `cargo build -p aven-peer` 1.3–2.4 s; aven-id's wasm 1.0 s incremental, 126 KB; the Peer-Light's
 debug wasm 8 MB, wasm-bindgen 1.1 s of every change to it (21.5 MB and 2.5–2.9 s before its dependencies were
 optimised, [Open questions](#open-questions), 2).
 
@@ -59,7 +59,7 @@ cast. As in avenDB-old, vaults own vaults; the concept comes over, no code does.
 ```
 Alice's vault           person    owned by Alice's owner key
 ├── Maia City           coop      the admin, owned by Alice's vault
-│   └── Aven            network   the network's own vault
+│   └── Aven            agent     runs the network
 │       └── Aven Peer   device
 ├── Alice Peer          device
 └── Alice Peer-Light    device
@@ -70,8 +70,8 @@ Bob's vault             person    owned by Bob's owner key
 - **A person's vault** is owned by its owner key; later by keys and passkeys acting k of n, with recovery.
 - **A device's vault** is owned by the vault it serves. The device's key signs for that vault and governs nothing: a
   lost device is revoked by its vault, and the vault loses nothing.
-- **Maia City, a coop's vault,** is owned by Alice's vault and holds no devices; **Aven, the network's vault,** is
-  owned by Maia City (PRODUCTION.md, Part C). **So Maia City is the admin, not Alice's key:** her key governs her
+- **Maia City, a coop's vault,** is owned by Alice's vault and holds no devices; **Aven, the agent that runs the
+  network,** is owned by Maia City (PRODUCTION.md, Part C). **So Maia City is the admin, not Alice's key:** her key governs her
   vault, and through it Maia City, Aven and the Aven Peer. **Aven acts through its own device:** the Aven Peer signs
   for Aven, within the rights Alice's vault gives it and can take back. No person ever switches into Aven; Alice
   manages it as herself. From milestone 2 on, invites into the network are Aven's, within those rights; Bob is a member
@@ -110,7 +110,7 @@ its key. Each place gets a backend:
 
 ### The contract
 
-`Store` (`db/store/src/store.rs`) is an async trait. It carries no OpenDAL types: only `Hash`, `RefName`, bytes and our
+`Store` (`store/src/store.rs`) is an async trait. It carries no OpenDAL types: only `Hash`, `RefName`, bytes and our
 `Error`.
 
 | Call | What it does |
@@ -129,7 +129,7 @@ its key. Each place gets a backend:
 - **The contract is Lean's** (`Aven.DB.Store`, README rule 10): blobs named by their BLAKE3 hash, refs and
   compare-and-set, with theorems that a blob never changes, a stale writer is refused, a ref is never torn and, of
   racing writers expecting the same value, exactly the first is done.
-- **The suite** (`db/store/src/conformance.rs`) replays the model's 75 traces (`db/spec/vectors/store.json`: 15
+- **The suite** (`store/src/conformance.rs`) replays the model's 75 traces (`db/spec/vectors/store.json`: 15
   examples and 60 generated, 1,333 calls), each on a fresh store, and every call must give the model's result. Beside
   them stay three mechanics cases: ranges over 1 MiB, 8 racing writers of which exactly one wins, and readers that
   never see a torn ref while a writer flips it. Cases report rather than panic, so the same suite runs under
@@ -155,7 +155,7 @@ its key. Each place gets a backend:
   read that fails checks whether the file exists and reads again, at most 8 times.
 - **OpenDAL's OPFS reads through `getFile()` and `Blob.slice`,** so every read, a range included, costs a fresh `File`.
 - **OpenDAL's OPFS found OPFS through `window`,** which a worker lacks, and panicked there. We fork its service
-  (`db/store/opendal-opfs`, [below](#decisions)) to take `navigator.storage` from a window or a worker; the suite
+  (`store/opendal-opfs`, [below](#decisions)) to take `navigator.storage` from a window or a worker; the suite
   runs on OPFS twice, on a page and in a worker.
 
 Measured (`conformance::bench`; native in release, OPFS in Chromium 156 on the main thread):
@@ -281,7 +281,8 @@ One image holds every tool; every command runs in it.
 - **Networks:** milestone 1 uses one, `wan`. The P2P lanes add homes behind routers ([below](#real-world-iroh-inside-the-box)).
 - **Commands**, from `aven/DB2`:
   - `bun run up`: starts the box and prints avenOS's address;
-  - `bun run down`;
+  - `bun run down`; after `dockerd` restarts (a session that slept), run it before `up`: the containers come back on
+    new addresses while a running peer keeps the old one, so the check fails on the network, not on the code;
   - `bun run logs`;
   - `bun run doctor`: checks versions, Docker settings and kernel features, and lists the pins that are behind;
   - `bun run bump [--check]`: moves every pin to its newest stable release, by hand ([below](#latest-versions-always));
@@ -315,7 +316,7 @@ The image's last layer compiles the workspace's dependencies, cargo-chef style
 ([`sandbox/box/deps.sh`](sandbox/box/deps.sh)):
 
 - **The build context is `aven/DB2`,** cut down by its [`.dockerignore`](.dockerignore) to `Cargo.toml`, `Cargo.lock`,
-  every crate's `Cargo.toml`, the patched fork `db/store/opendal-opfs` whole (opendal calls into it, so it can't be a
+  every crate's `Cargo.toml`, the patched fork `store/opendal-opfs` whole (opendal calls into it, so it can't be a
   stub), and `deps.sh`. Never our code.
 - **Each of our crates gets a stub:** an empty library, and `fn main() {}` for every bin, example, test and bench its
   manifest names.
@@ -489,8 +490,8 @@ Oct 2026): a person runs `bun run bump` when they choose. No scheduled workflow 
 | versitygw | the Dockerfile's `FROM`, by tag and digest | GitHub's registry |
 | GitHub Actions | avenDB's workflows | their GitHub tags, over git |
 
-- **OpenDAL is held** at the release `db/store/opendal-opfs` forks: moving it means a new fork
-  ([`FORK.md`](db/store/opendal-opfs/FORK.md)). The table names a newer release when there is one.
+- **OpenDAL is held** at the release `store/opendal-opfs` forks: moving it means a new fork
+  ([`FORK.md`](store/opendal-opfs/FORK.md)). The table names a newer release when there is one.
 - **A source the network refuses** is named in the table with its reason, and its pin stays where it is; the bump moves
   the rest. A cloud session refuses GitHub's API and `release.lean-lang.org`, so tags come over git, which the
   session's proxy lets through. Where GitHub's release storage is refused, elan's and Lean's downloads go unchecked,
@@ -545,7 +546,7 @@ aven/DB2/
   peer/native/     aven-peer: avenPEER's native Peer, one binary; --relay makes it the Aven Peer
   peer/light/      aven-peer-light: avenPEER's Peer-Light, the same core as wasm in a worker
   db/core/         aven-db-core: the pure core every peer runs, without I/O
-  db/store/        aven-db-store: the Store contract, its backends and their conformance suite
+  store/           aven-db-store: the Store contract, its backends and their conformance suite
   db/spec/         Lean: Aven.DB, with its vectors in db/spec/vectors
   id/core/         aven-id: avenID, who may act for a vault, pure
   id/spec/         Lean: Aven.ID, with its vectors in id/spec/vectors
@@ -562,7 +563,7 @@ Made in milestone 1's threads and its integration (29–30 Oct 2026).
   decidable, so the running model checks a tree itself, and gives the bound that proves `governs` and `chain` complete.
 - **The device rules are part of `WF`** (Samuel, 29 Oct): a device's vault has exactly one owner, the vault it serves;
   it owns nothing; it has its own key, the key with its id, which owns nothing either. So `actsFor` is a function.
-- **Person and network vaults may have any known owners,** keys or vaults: room for k of n in milestone 3.
+- **Person and agent vaults may have any known owners,** keys or vaults: room for k of n in milestone 3.
 - **`governs` is depth first,** in the tree's order: the Vault app's tree reads the same way.
 - **`sees` keeps its name** (the architect, 30 Oct): the devices a vault governs, for its Control Room. avenOS's
   `peersOf` goes. Once caps come, reading data will be wider than governing; the name is to be looked at again then.
@@ -575,7 +576,7 @@ Made in milestone 1's threads and its integration (29–30 Oct 2026).
 - **The suite is a public module,** so later backends and the peers can run it.
 - **The OPFS suite runs in Playwright's Chromium,** served by a small node server: the box has no chromedriver for
   `wasm-bindgen-test-runner`. It runs twice, on a page and in a worker, where the Peer-Light runs.
-- **OpenDAL's OPFS service is forked** (`db/store/opendal-opfs`, `opendal-service-opfs` 0.59.5, Apache-2.0, with its
+- **OpenDAL's OPFS service is forked** (`store/opendal-opfs`, `opendal-service-opfs` 0.59.5, Apache-2.0, with its
   `LICENSE` and `NOTICE`), so it runs in a worker: upstream took `window()` and panicked there. One function changes;
   `[patch.crates-io]` swaps it in, so the store still uses OpenDAL's `services::Opfs` and its conventions. The fix
   belongs upstream; once a release has it, the fork goes (`FORK.md`).
@@ -656,6 +657,12 @@ Raised by the threads, not settled in milestone 1:
 7. **Our own OPFS backend, or OpenDAL's with sync access handles.** OpenDAL's is slow for small writes and ranges and
    refuses reads that race a commit. Sync access handles in the Peer-Light's worker fix both; they exist only in
    workers, which the fork now reaches. Also: offer the fork's fix upstream, so the fork can go.
+   **Decided (Samuel, 30 Oct 2026): our own,** `opfs-sync` in `store`, after the agent rename. Measured that day,
+   200 × 4 KiB writes: Chromium 14 ms (OpenDAL 2,066), WebKit 4–10 ms (712–869), Firefox 24–45 ms (4,070). Sync access
+   handles exist in a dedicated worker in all three engines, but in a SharedWorker only in WebKit, so the Peer-Light
+   moves to a dedicated worker run by the one tab that holds a Web Lock; other tabs reach it through a BroadcastChannel,
+   and the next tab takes over when it closes. The contract, the Lean model and the conformance suite stay; the
+   opendal-opfs fork goes; iOS 15.2–25 may work too (to confirm on a real iOS 18).
 8. **Rule 10's vectors:** done (30 Oct 2026), [Tests in milestone 1](#tests-in-milestone-1).
 
 ## Done when
@@ -684,7 +691,7 @@ its PR's body.
 |---|---|---|
 | **Peers** (Rust and Lean), `claude/avendb-peers` | `db/core`: the status phases, presence and progress counters, pure. `db/spec/`: `Aven.DB`, their model. `peer/native`: the Peer, with the iroh endpoint, the `Router`, our ALPN `aven/db/1` (hello and presence) and `--relay`; its endpoint key is its device key from the cast. `peer/light`: the Peer-Light, the core as wasm in a worker, relay-only. The box's wiring for them (`compose.yml`, `up.mjs`, the check) and avenOS's live parts: the status line, the Control Room's panes, the timeline. State in memory until the store lands. | `lake build`; Rust tests against the model; `bun run up --check` waits for all four peers live, Alice Peer direct over UDP, "4 peers" on each Peer-Light |
 | **avenID** (Lean and Rust), `claude/avendb-id` | `id/spec/`: `Aven.ID`, vaults owning vaults, what a vault governs, whom a device acts for and may act on, whom a host may act as; theorems that authority never runs up the tree, a device governs nothing, and no person acts as a network. `id/core/`: `aven-id`, pure, with the cast's keys derived and checked, and a wasm build of its queries for avenOS. | `lake build` without `sorry`; `cargo test`, its property tests checked against the running Lean model |
-| **Store** (Rust), `claude/avendb-store` | `db/store`: the conformance suite first, then the `Store` contract (blobs and refs) and its backends through OpenDAL (memory, fs, s3, opfs), with an S3-compatible server in the box | the suite passes on all four backends in the box |
+| **Store** (Rust), `claude/avendb-store` | `store`: the conformance suite first, then the `Store` contract (blobs and refs) and its backends through OpenDAL (memory, fs, s3, opfs), with an S3-compatible server in the box | the suite passes on all four backends in the box |
 
 **Step 2, the integration (done 30 Oct 2026),** on `claude/avendb-integration`: the three branches collected, each a
 merge commit (id, store, peers); `Cargo.lock` settled by cargo; avenOS reading the tree through aven-id's wasm; every

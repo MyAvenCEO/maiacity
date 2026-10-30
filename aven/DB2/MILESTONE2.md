@@ -27,15 +27,16 @@ Only what this plan names gets built. Three task threads, in parallel, each in i
   statement signed by the one-time key and by the joiner's new passkey. The Aven Peer stores it under the ref
   `joined-<invite>`, set from nothing by compare-and-set, as the claim is. An invite can be withdrawn by the admin
   until it is used.
-- **Members are vaults, the door checks devices.** A member is a person's vault admitted by an invite. The door lets in
+- **Members are vaults, the door checks devices.** A member is a person's vault admitted by an invite, and belongs
+  to the admin coop (Samuel, 30 Oct 2026; #1457). The door lets in
   the devices of member vaults, the Aven Peer and the devices of the people who own the admin: nothing else.
 - **The door is checked twice** (README, "Invite-only, end to end"): the relay admits only members' device keys, and
   every peer's `after_handshake` refuses any other. Each peer learns who is a member from the network's tree, which the
   Aven Peer tells its members, signed statements and all, so each peer checks them itself.
 - **Members-only gossip:** one iroh-gossip topic per network, derived from the network's id. Peers join it only
   through members, and drop any message whose sender is not a member's device. Each message is signed by its device.
-- **The chat is in memory:** messages live in each peer's memory and nowhere else. No store, no Loro, no history
-  (that is milestone 4).
+- **The chat is in memory:** messages live in each peer's memory and nowhere else. No store, no Loro, no history.
+  The store upgrade that follows gives it its history and files ([`store`](store/README.md)).
 - **The Aven Peer is in the room:** it joins the topic, keeps it alive for the Peer-Lights, and says once who joined.
 - **No new protocol of our own:** invites, joins and the tree travel on `aven/db/1`; the chat is iroh-gossip beside it
   on the same `Router` (README rule 9).
@@ -92,6 +93,11 @@ until a chat line arrived.
 6. a restart keeps the members and empties the chat.
 
 In the cast's box, Alice, Bob and Aven are members by the cast, and their four peers chat the same way.
+
+## Open
+
+- **A refused join isn't told why:** the door closes the line, and avenOS shows only that it failed.
+- **Vite takes a second port** when the box restarts while the old dev server still holds the first.
 
 ## Not in milestone 2
 

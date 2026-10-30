@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 /// The model's traces (`lake exe vectors` in db/spec), which the suite replays.
-const TRACES: &str = include_str!("../../spec/vectors/store.json");
+const TRACES: &str = include_str!("../../db/spec/vectors/store.json");
 
 use aven_db_store::{Hash, RefName, Store, backend, conformance};
 use bytes::Bytes;

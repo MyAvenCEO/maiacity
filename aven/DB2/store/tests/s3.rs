@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// The model's traces (`lake exe vectors` in db/spec), which the suite replays.
-const TRACES: &str = include_str!("../../spec/vectors/store.json");
+const TRACES: &str = include_str!("../../db/spec/vectors/store.json");
 
 use aven_db_store::backend::{self, Conditions, S3};
 use aven_db_store::{Error, Hash, RefName, Store, conformance};

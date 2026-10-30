@@ -1,12 +1,32 @@
 // The Peer-Light's worker (SANDBOX.md, "avenOS in the browser"): one per origin, shared by every tab and frame that
-// shows it, since two Peer-Lights with one key would take the relay from each other. It runs the wasm core, posts
-// every timeline line to the box, and tells every page that connects the lines so far and each new one.
+// shows it, since two Peer-Lights with one key would take the relay from each other. It runs the wasm core, the page's
+// one WebAssembly module, posts every timeline line to the box, and tells every page that connects the lines so far and
+// each new one. The views of the tree (id.svelte.js) are a snapshot, not a timeline line: each page gets the newest, on
+// connecting and whenever it changes. The box's own view (localhost) runs no peer: it loads the core for the views alone.
 const pages = new Set();
 const lines = [];
+let views;
 let started;
 let light;
 
+// the Peer-Light's wasm, loaded once, whether to start a peer, to compute the box's views or to answer an ask
+let loading;
+function load() {
+	loading ??= (async () => {
+		const url = '/peer-light/aven_peer_light.js';
+		const core = await import(/* @vite-ignore */ url);
+		await core.default();
+		light = core;
+	})();
+	return loading;
+}
+
 function tell(line) {
+	if (JSON.parse(line).event === 'views') {
+		views = line;
+		for (const port of pages) port.postMessage(line);
+		return;
+	}
 	lines.push(line);
 	if (lines.length > 200) lines.shift();
 	for (const port of pages) port.postMessage(line);
@@ -31,27 +51,60 @@ async function deviceSecret() {
 // The Peer-Light is configured, never built for a place: its name, secret seed and the Aven Peer's key come from the
 // page (a secret `opfs` is this browser's own, and without a name it goes by its key); its relay is this origin,
 // where Vite (in the box) or Caddy (in production) passes /relay on to the Aven Peer.
-async function start({ name, secret, avenKey, avenName, members }) {
+// why the Peer-Light isn't running here, once its start has failed
+let down;
+
+// In the box's cast `cast` is its tree, whose views the Peer-Light pushes at once.
+async function start({ name, secret, avenKey, avenName, members, cast }) {
 	try {
-		const url = '/peer-light/aven_peer_light.js';
-		light = await import(/* @vite-ignore */ url);
-		await light.default();
+		await load();
 		if (secret === 'opfs') secret = await deviceSecret();
-		await light.start(name, secret, self.location.origin, avenKey, avenName, tell, members ?? null);
+		await light.start(name, secret, self.location.origin, avenKey, avenName, tell, members ?? null, cast ?? null);
 	} catch (error) {
-		tell(JSON.stringify({ t: Date.now(), peer: name, event: 'failed', why: String(error?.message ?? error) }));
+		down = String(error?.message ?? error);
+		tell(JSON.stringify({ t: Date.now(), peer: name, event: 'failed', why: down }));
 	}
+}
+
+// The box's own view: every view of the cast's tree as the box sees it, acting as every person and serving none
+async function showBox({ cast }) {
+	try {
+		await load();
+		tell(JSON.stringify({ t: Date.now(), peer: 'box', event: 'views', ...JSON.parse(light.views(cast, undefined)) }));
+	} catch (error) {
+		tell(JSON.stringify({ t: Date.now(), peer: 'box', event: 'failed', why: String(error?.message ?? error) }));
+	}
+}
+
+// What a person's acts need computed, asked by a page and answered to it alone (peer/light/src/acts.rs)
+const acts = new Set(['challenge', 'claimText', 'signInText', 'deviceId', 'passkeyId', 'personId', 'validPersonName']);
+for (const fn of ['inviteId', 'inviteText', 'withdrawText', 'joinText', 'oneTimePublic', 'signJoin']) acts.add(fn);
+async function answer(port, { id, fn, args }) {
+	const reply = { t: Date.now(), peer: 'page', event: 'answer', id };
+	try {
+		if (!acts.has(fn)) throw new Error(`the Peer-Light computes no ${fn}`);
+		await load();
+		reply.value = light[fn](...args);
+	} catch (error) {
+		reply.error = String(error?.message ?? error);
+	}
+	port.postMessage(JSON.stringify(reply));
 }
 
 function connect(port) {
 	pages.add(port);
 	port.onmessage = async ({ data }) => {
 		if (data?.start) started ??= start(data.start);
-		// a statement for the Aven Peer, a line for the chat's room, or a message as it is (the box's check), from the page
+		if (data?.box) started ??= showBox(data.box);
+		if (data?.ask) answer(port, data.ask);
+		// a statement for the Aven Peer, a line for the chat's room, or a message as it is (the box's check), from the page.
+		// The page sends its start with each, which only the first one here uses: a worker no page has started yet (Safari
+		// can hand a page one) starts then, rather than failing on a Peer-Light it never loaded (aven.maia.city, 30 Oct)
 		for (const call of ['send', 'say', 'post']) {
 			if (data?.[call] === undefined) continue;
 			await started;
 			try {
+				if (!light) throw new Error(`the Peer-Light isn't running: ${down ?? 'nothing started it'}`);
 				light[call](data[call]);
 			} catch (error) {
 				port.postMessage(JSON.stringify({ t: Date.now(), peer: 'page', event: 'refused', why: String(error?.message ?? error) }));
@@ -59,6 +112,10 @@ function connect(port) {
 		}
 	};
 	for (const line of lines) port.postMessage(line);
+	if (views) port.postMessage(views);
+	// a worker nobody has started asks its page for the start: Safari can bring one up behind a page that started an
+	// earlier one, which then talks to it as if it ran
+	if (!started) port.postMessage(JSON.stringify({ t: Date.now(), peer: 'page', event: 'start?' }));
 	port.start?.();
 }
 

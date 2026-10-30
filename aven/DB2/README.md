@@ -77,7 +77,7 @@ avenSANDBOX   the box all of it is built and tested in
 |---|---|
 | avenOS | the client app over everything below it: a dashboard of apps, the first two Vault and Control Room, and an account switcher for the people you may act as. Off the box, its browser client shows "avenOS · coming soon" for now; a Mac app with Tauri follows |
 | avenPEER | the node: the network, installing and running a node, and the one writer, on avenDB. The native Peer and the Peer-Light, one core in two builds |
-| avenDB | the database: this rebuild. Its core (`db/core`) holds the rules for documents, caps and sync without I/O; its store (`db/store`) is the one contract of blobs and refs, with a backend per place: S3, a folder, OPFS, memory |
+| avenDB | the database: this rebuild. Its core (`db/core`) holds the rules for documents, caps and sync without I/O; its store (`store`) is the one contract of blobs and refs, with a backend per place: S3, a folder, OPFS, memory |
 | avenID | identity, a package of its own: keys and their suites, vaults that own vaults, owners acting k of n, recovery and rotation. avenDB asks it who may act for a vault, avenPEER whom to let in, and avenOS shows it |
 | avenDB-old | the old database, in `aven/db/`: the testing and learning battleground until avenDB is ready, then deprecated. "v1" still names the whole old stack (its site, API and peer) |
 | `aven/DB2` | the new avenDB's folder while avenDB-old still lives in `aven/db`. A Mac's disk ignores case, so `aven/DB` couldn't sit beside `aven/db`, and a path spelled `aven/db2` works on a Mac and fails on Linux and CI; a check will reject any other spelling. When avenDB-old is deprecated, the new avenDB moves into `aven/db` |
@@ -94,14 +94,15 @@ avenSANDBOX   the box all of it is built and tested in
 - **key:** a signing key. An **owner key** governs a person's vault; a **device key** signs for the vault its device
   serves.
 - **vault:** an identity that can own things, with a name. A **person's vault** is owned by keys; a **coop's vault**
-  (Maia City) by person or coop vaults, and holds no devices; a **network's vault** (Aven) by its admin; a **device's
-  vault** by the vault it serves.
+  (Maia City) by person or coop vaults, and holds no devices; an **agent's vault** (Aven, which runs the network) by
+  its admin; a **device's vault** by the vault it serves. Agents are usually LLM agents (Samuel, 30 Oct 2026); the kind
+  was called `network` until then, and the old name still reads as `agent` (`Aven.ID.Before`).
 - **owns, governs:** a vault owns what is directly below it and governs everything below it. Authority runs only down.
-- **admin:** the vault that owns a network's vault: the coop Maia City is Aven's, and the people whose vaults own Maia
+- **admin:** the vault that owns the network's agent: the coop Maia City is Aven's, and the people whose vaults own Maia
   City act for it ([`PRODUCTION.md`](PRODUCTION.md#part-c-maia-city-the-admin-coop)).
 - **acts through:** a vault acts through its own devices, within the rights its owner gives it: Aven through the Aven
   Peer.
-- **account:** a person's vault, which one acts as in avenOS. Never a network's or a device's.
+- **account:** a person's vault, which one acts as in avenOS. Never an agent's or a device's.
 
 **Data (avenDB)**
 
@@ -110,7 +111,8 @@ avenSANDBOX   the box all of it is built and tested in
 - **document:** a Loro document: a head over sealed segments and snapshots.
 - **store:** where a peer's blobs and refs rest, behind one contract.
 - **cap:** a signed grant: which vault may read or write which document.
-- **member, invite:** a vault let into a network, and the ticket that lets it in (milestone 2).
+- **member, invite:** a person's vault let into the network, owned in the tree by the admin coop, and the ticket that
+  lets it in (milestone 2).
 
 **Running (avenPEER)**
 
@@ -174,7 +176,8 @@ organization `aven` reserves the scope before anything is published.
   file)`): the space's peers store each file once, and outsiders, the Aven Peer included, can't even test a guess.
   This is Tahoe-LAFS's convergence secret, with symmetric crypto only. Private documents stay sealed with random keys;
   their segments are unique anyway. Dedup across all peers through the Aven Peer (DupLESS-style) stays an option, not
-  the default. It takes effect in the milestone that brings files; nothing changes before it.
+  the default. It takes effect with sealing, which comes with avenID's caps: the store upgrade's files are plain
+  until then (Samuel, 30 Oct 2026; [`store`](store/README.md#later-sealing)).
 - **Identity is a package of its own: avenID.** Vaults own vaults, a concept kept from avenDB-old and built anew. A
   person's vault is owned by its owner key. A device's vault is owned by the vault it serves; the device's key signs for
   that vault and governs nothing, so a lost device is revoked by its vault, and the vault loses nothing. A network's
@@ -223,10 +226,12 @@ the `ProtocolHandler` registered for its ALPN. avenDB's own protocol plugs in th
    and the Aven Peer goes live at `aven.maia.city`. Everyone else waits for milestone 2's invites.
 2. **Network:** the invite-only door (invites, the relay's allow-list, the device handshake) and members-only gossip,
    with the first example app: a live chat ([`MILESTONE2.md`](MILESTONE2.md)).
+   Then **the store upgrade** ([`store`](store/README.md)): files in the chat (images, PDFs, movies that play
+   from any point), the chat's history, the city-dome's shared secret, and our own OPFS driver.
 3. **avenID and caps:** more passkeys per vault, owners k of n, recovery, rotation, devices and their revocation; caps,
    roles, delegation.
 4. **Docs:** Loro documents in signed, sealed envelopes; the one writer and its snapshots; the store; one document
-   synced. The chat gets its history.
+   synced. The chat's history becomes Loro's.
 5. **Version control:** history, versions, variants, proposals.
 6. **Schemas and lenses.**
 7. **Sync manifest and queries.**

@@ -7,7 +7,10 @@ use std::fmt;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Person,
-    Network,
+    /// An agent's vault, usually an LLM agent's (Aven): owned by the vault that runs it, it acts through its own devices
+    /// within the rights its owner gives it, and no person ever switches into it. Called a network's vault until 30 Oct
+    /// 2026, with the same rules.
+    Agent,
     /// Owned by people's or coops' vaults, and holds no devices: its people act for it through their own.
     Coop,
     Device,
@@ -17,7 +20,9 @@ impl Kind {
     pub fn parse(s: &str) -> Option<Kind> {
         match s {
             "person" => Some(Kind::Person),
-            "network" => Some(Kind::Network),
+            "agent" => Some(Kind::Agent),
+            // the kind's name before 30 Oct 2026 (`Aven.ID.Before`): a stored or cast text that says it reads as an agent
+            "network" => Some(Kind::Agent),
             "coop" => Some(Kind::Coop),
             "device" => Some(Kind::Device),
             _ => None,
@@ -27,7 +32,7 @@ impl Kind {
     pub fn as_str(self) -> &'static str {
         match self {
             Kind::Person => "person",
-            Kind::Network => "network",
+            Kind::Agent => "agent",
             Kind::Coop => "coop",
             Kind::Device => "device",
         }

@@ -6,7 +6,7 @@
 //! admin coop as well (PRODUCTION.md, Part C), named by `--admin-coop`: configuration, not part of the statement, so
 //! the stored claim still reads back after a rename.
 //!
-//! From milestone 2 the admin's invites are stored under `invite-<id>`, their withdrawals under `withdrawn-<id>` and
+//! From milestone 2 the admin coop's invites are stored under `invite-<id>`, their withdrawals under `withdrawn-<id>` and
 //! the joins under `joined-<id>` (`aven_id::invite_id`), each set from nothing: an invite is used once, even when two
 //! joins race for it. A start reads it all back and checks every statement again (`Members::restore`); one that fails
 //! stops the peer rather than leave the network open to a new claim. A wiped store is an unclaimed network. Given
@@ -35,7 +35,7 @@ const SIGN_IN: &str = "signin-";
 const INVITE: &str = "invite-";
 const WITHDRAWN: &str = "withdrawn-";
 const JOINED: &str = "joined-";
-/// The network's vault and the Aven Peer's own, by the ids the tree knows them by.
+/// Aven's vault, the agent's (the id the network goes by), and the Aven Peer's own, by the ids the tree knows them by.
 pub const NETWORK: &str = "aven";
 pub const PEER: &str = "aven-peer";
 

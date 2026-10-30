@@ -12,6 +12,11 @@
 //! device yet brings its claim, sign-in or join to the relay as its token, so the relay lets it in for that statement:
 //! the Peer-Light binds again, with the same key and name, its token set, since a relay connection keeps the token it
 //! started with.
+//!
+//! It is the page's one WebAssembly module (Samuel, 30 Oct 2026): avenDB and avenID run inside it, and it pushes the
+//! page every view of the tree as a `views` line, a snapshot stamped with the head it is correct at ([`views`]), on
+//! start and whenever the tree changes. The box's own view (`localhost`), which serves no vault, loads it only for that
+//! ([`views()`]). What a person's acts need computed (a passkey's texts, an invite's key) is in [`acts`].
 
 use std::cell::{Cell, RefCell};
 use std::sync::Arc;
@@ -31,6 +36,9 @@ use iroh::{
 };
 use wasm_bindgen::prelude::*;
 
+pub mod acts;
+pub mod views;
+
 /// The page's callback for timeline lines. A browser's worker has one thread, so it is never shared across threads.
 struct Page(js_sys::Function);
 // SAFETY: wasm32-unknown-unknown without threads runs everything on the worker's one thread.
@@ -39,6 +47,46 @@ unsafe impl Sync for Page {}
 
 fn js(e: impl std::fmt::Display) -> JsError {
     JsError::new(&e.to_string())
+}
+
+/// Every view of a tree in the cast's JSON as `device` sees it, without starting a peer: the box's own view, which acts
+/// as every person and serves none (`device` absent), runs only this. Refused when the tree is not well formed.
+#[wasm_bindgen]
+pub fn views(cast: &str, device: Option<String>) -> Result<String, JsError> {
+    views::of_cast(cast, device.as_deref())
+        .map(|v| v.to_string())
+        .map_err(js)
+}
+
+/// The `views` line for `tree` (cast JSON) as the device `me` sees it, or why it has none.
+fn views_line(me: &str, tree: &str) -> String {
+    let fields = match views::of_cast(tree, Some(me)) {
+        Ok(views) => views,
+        Err(why) => serde_json::json!({ "why": why.to_string() }),
+    };
+    timeline::line(now(), me, "views", fields)
+}
+
+/// The page's notes, and a new snapshot of the views whenever the Aven Peer tells this device a changed tree: the
+/// same tree told again (as with every invite) is no change, so no new snapshot (README rule 4).
+fn pushing_views(me: String, page: Notes) -> Notes {
+    let told = std::sync::Mutex::new(None::<String>);
+    Arc::new(move |line: String| {
+        let tree = line
+            .contains("\"network\"")
+            .then(|| serde_json::from_str::<serde_json::Value>(&line).ok())
+            .flatten()
+            .filter(|l| l["event"] == "network")
+            .and_then(|l| l["tree"].as_str().map(str::to_string));
+        page(line);
+        if let Some(tree) = tree {
+            let mut told = told.lock().unwrap_or_else(|e| e.into_inner());
+            if told.as_deref() != Some(tree.as_str()) {
+                page(views_line(&me, &tree));
+                *told = Some(tree);
+            }
+        }
+    })
 }
 
 /// How the page configured the Peer-Light: kept, so it can bind again with a newcomer's token.
@@ -184,8 +232,11 @@ fn door(endpoint: &Endpoint, bound: u32, name: String, notes: Notes) {
 /// Starts the Peer-Light `name` with its secret seed (hex), linking through `relay` to the Aven Peer (`aven_key`,
 /// called `aven_name` in the timeline), and tells `notes` every event. Without a name it goes by its key's device id.
 /// In the box's cast, `members` lists the cast's members (`name=key,…`); without them it learns the members from the
-/// Aven Peer's statements. Returns once the endpoint is bound; the link and the room run on.
+/// Aven Peer's statements. In the box, `cast` is the cast's tree, whose views it pushes at once; without one they
+/// follow the network's tree as the Aven Peer tells it. Returns once the endpoint is bound; the link and the room run
+/// on.
 #[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
 pub async fn start(
     name: String,
     secret: String,
@@ -194,6 +245,7 @@ pub async fn start(
     aven_name: String,
     notes: js_sys::Function,
     members: Option<String>,
+    cast: Option<String>,
 ) -> Result<(), JsError> {
     let page = Page(notes);
     let notes: Notes = Arc::new(move |line: String| {
@@ -205,6 +257,10 @@ pub async fn start(
     } else {
         name
     };
+    let notes = pushing_views(name.clone(), notes);
+    if let Some(cast) = &cast {
+        notes(views_line(&name, cast));
+    }
     let config = Config {
         name,
         secret,

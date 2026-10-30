@@ -78,7 +78,7 @@ fn trace(seed: u64) -> Vec<Value> {
 }
 
 fn model() -> std::path::PathBuf {
-    let spec = Path::new(env!("CARGO_MANIFEST_DIR")).join("../spec");
+    let spec = Path::new(env!("CARGO_MANIFEST_DIR")).join("../db/spec");
     let built = Command::new("lake")
         .arg("build")
         .current_dir(&spec)
