@@ -1,4 +1,5 @@
 import Aven.Runtime.Face
+import Aven.Runtime.State
 
 /-!
 # face-runtime's input: markup (ARCHITECTURE.md of aven/actor, sections 5, 6 and 8)
@@ -28,17 +29,9 @@ namespace Aven.Runtime
 
 open Aven.Core
 
-/-- A path into the face data: map keys, each as its UTF-8 bytes. Until state-runtime's paths (`Aven.Runtime.State`)
-are on main, markup keeps this lookup of its own; then it uses theirs. -/
-abbrev Path := List Bytes
-
-def path (ks : List String) : Path := ks.map ascii
-
-/-- What is at a path, if anything. -/
-def getAt : Value → Path → Option Value
-  | v, [] => some v
-  | .map kvs, k :: p => (kvs.lookup k).bind (getAt · p)
-  | _, _ :: _ => none
+/-- A path into the face data by its fields; paths and their lookup (`get`) are state-runtime's (`Aven.Runtime.State`),
+with array indexes too. -/
+def path (ks : List String) : Path := ks.map fun k => .field (ascii k)
 
 /-- Where a piece of text comes from: a literal, `$` (the face data) or `$$` (the current list item). -/
 inductive Src where
@@ -65,8 +58,8 @@ def shown : Value → String
 def Src.eval (src : Src) (data item : Value) : String :=
   match src with
   | .lit s => s
-  | .data p => ((getAt data p).map shown).getD ""
-  | .item p => ((getAt item p).map shown).getD ""
+  | .data p => ((get data p).map shown).getD ""
+  | .item p => ((get item p).map shown).getD ""
 
 /-- A placement: the place, the component placed there, and its props. -/
 structure Placement where
@@ -77,10 +70,10 @@ structure Placement where
 
 /-- The items of the list at `p`, with their keys, skipping an item whose key repeats an earlier one. -/
 def keyed (data : Value) (p key : Path) : List (String × Value) :=
-  let items := match getAt data p with
+  let items := match get data p with
     | some (.array xs) => xs
     | _ => []
-  (items.map fun it => (((getAt it key).map shown).getD "", it)).foldl
+  (items.map fun it => (((get it key).map shown).getD "", it)).foldl
     (fun acc kv => if acc.any (·.1 == kv.1) then acc else acc ++ [kv]) []
 
 /-- The attributes the runtime writes itself; markup can't set them. -/

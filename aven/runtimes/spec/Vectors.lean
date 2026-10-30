@@ -16,6 +16,8 @@ by default), where they are committed. Every vector is `{"name", "input", "expec
   (`Aven.Runtime.Face`).
 - `contract.json`: each failure and an answer as the Value the host hands on, encoded; render keys and their names
   under BLAKE3 (`Aven.Runtime.Contract`).
+- `state.json`: a state part, a turn's input and limits, in the one codec; the result the host hands on
+  (`Aven.Runtime.State`): the task and list actors of the todo app, hostile parts and inputs among them.
 - `contrast.json`: `linear`, the table every contrast check uses, then pairs of colours with their luminances and
   whether they reach 4.5:1 and 3:1.
 - `markup.json`: markup and face data; the drawn tree, the placements, and whether face-runtime gives the face
@@ -122,7 +124,8 @@ namespace Aven.Runtime
 partial def Node.json : Node → Json
   | .text s => Json.mkObj [("text", s)]
   | .el tag attrs kids => Json.mkObj [("tag", tag),
-      ("attrs", Json.arr (attrs.map fun (k, v) => Json.arr #[k, v]).toArray), ("kids", Json.arr (kids.map Node.json).toArray)]
+      ("attrs", Json.arr (attrs.map fun (k, v) => Json.arr #[k, v]).toArray),
+      ("kids", Json.arr (kids.map Node.json).toArray)]
 
 end Aven.Runtime
 
@@ -183,11 +186,20 @@ def contractVectors : List Json :=
         ("params", hex (encode k.params))])
       (Json.mkObj [("cbor", hex (encode k.value)), ("name", (k.name blake3).text)])
 
+/-! ## state-runtime -/
+
+def stateVectors : List Json :=
+  stateExamples.map fun e =>
+    let r := e.run
+    vector e.name
+      (Json.mkObj [("part", hex (encode e.part)), ("input", hex (encode e.input)), ("limits", e.limits.json)])
+      (Json.mkObj [("result", hex (encode (result r))), ("ok", match r with | .ok _ => true | .error _ => false)])
+
 /-! ## Helpers -/
 
-def pathJson (p : Path) : Json := Json.arr (p.map fun b => toJson (utf8Text b)).toArray
-
-def obj (kvs : List (String × Value)) : Value := .map (kvs.map fun (k', v) => (ascii k', v))
+def pathJson (p : Path) : Json := Json.arr (p.map fun
+  | .field b => toJson (utf8Text b)
+  | .index n => toJson n).toArray
 
 def txt' (s : String) : Value := .text (ascii s)
 
@@ -274,5 +286,5 @@ def main (args : List String) : IO Unit := do
   IO.FS.createDirAll dir
   for (file, vs) in [("table.json", table), ("registry.json", registryVectors), ("tree.json", treeVectors),
       ("face.json", faceVectors), ("contrast.json", contrastVectors), ("contract.json", contractVectors),
-      ("markup.json", markupVectors)] do
+      ("state.json", stateVectors), ("markup.json", markupVectors)] do
     IO.FS.writeFile (dir / file) (render vs)
