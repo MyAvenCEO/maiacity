@@ -166,13 +166,17 @@ every peer must reach the same tree from the same statements, whatever order the
 2. **Tickets and withdrawals:** a withdrawal of ticket T wins over every claim of T that isn't in the withdrawal's past.
    A withdrawal that has a claim of T in its past changes nothing: that ticket was already used (`withdraw_used`
    today).
-3. **Finality:** a claim is final once an ack from an admin device has it in its past. A withdrawal never wins over a
-   final claim. Admin devices ack on their own whenever they sync a new claim, so finality waits only for an admin's
-   device to be online.
-4. **Claims of one ticket:** of those still standing, the one with the smallest hash wins (`ticket_once`). The others
-   found nothing.
-5. **Lists:** an admin's remove wins over every add not in its past, as a withdrawal does.
-6. The door admits exactly the devices of the settled tree's group (K12): the same devices at every peer, because every
+3. **Acks:** an ack names the claim it acks, by hash, and has it in its past. An admin device acks on its own whenever
+   it syncs a new claim, but only the claim that stands in its own settled view, and never a second claim of a ticket
+   that already has a final claim in that view. So finality waits only for an admin's device to be online.
+4. **Finality:** a claim is final once an ack from an admin device names it. A withdrawal never wins over a final
+   claim, and a final claim wins over every claim of its ticket that isn't final.
+5. **Claims of one ticket:** among the final claims of a ticket, if there are any, the smallest hash wins; otherwise
+   among the claims still standing (`ticket_once`). The others found nothing. Two final claims of one ticket happen
+   only when two admin devices ack different claims without seeing each other's ack: the smallest hash still settles it,
+   and the conflict shows in the settled tree (the caps thread, 30 Oct 2026).
+6. **Lists:** an admin's remove wins over every add not in its past, as a withdrawal does.
+7. The door admits exactly the devices of the settled tree's group (K12): the same devices at every peer, because every
    peer settles the same set.
 
 ### Lean first
@@ -183,21 +187,22 @@ In `Aven.ID.Network`, with the caps thread (`ticket_once` is there since #1531),
   that peers hold the same set, which gossip's reconciliation gives and the box tests.
 - **`settle_ticket_once`:** in a settled tree, a ticket founds at most one vault.
 - **`settle_withdrawn`:** a withdrawal of T leaves no non-final claim of T outside its past standing.
-- **`settle_final`:** a final claim stays in the settled tree whatever statements are added later. That is what "final"
-  means.
+- **`settle_final`:** a final claim stays standing whatever statements are added later, unless what is added makes
+  another claim of its ticket with a smaller hash final, which only an ack that never saw the first ack can do.
 - **`settle_door`:** the door's admitted keys are a function of the settled tree only (`door_from_tree`).
 - **`settle_genesis`:** nothing outside the pinned genesis's descendants changes the tree.
 - **`settle_restore`:** production's stored statements, ordered by their ref names as the Aven Peer stored them,
   settle to the tree that `Members.restore` gives today. That is the migration's proof: the tree doesn't move when the
   rule replaces the ref order.
 - **Vectors:** `trees.json`. The same statement sets in many shuffled orders, each with its settled tree, and races:
-  two claims, a claim against a withdrawal, a claim after its ack, a list's add against its remove. aven-id, the wasm
-  and avenOS's check load them (README rule 10).
+  two claims, a claim against a withdrawal, a claim after its ack, two admin devices acking two claims, a list's add
+  against its remove. aven-id, the wasm and avenOS's check load them (README rule 10).
 
 ### The cost: a claim can be undone
 
 Until an admin device acks it, a claim can still lose to a withdrawal the admin signed without seeing it, or to a
-competing claim of the same ticket with a smaller hash. Both need a leaked link or a double tap. Meanwhile:
+competing claim of the same ticket with a smaller hash. After the ack, it can lose only if two admin devices acked two
+claims of its ticket without seeing each other. Both need a leaked link or a double tap. Meanwhile:
 
 - **The new member works fully:** they chat, are counted present, and their device is let in everywhere their claim
   has reached.
