@@ -132,7 +132,11 @@ pub fn test_passkey(id: &str) -> p256::ecdsa::SigningKey {
 
 /// A relying party's origins, as the vectors list them.
 pub fn origins(v: &Value) -> Vec<String> {
-    v.as_array().unwrap().iter().map(|o| o.as_str().unwrap().to_string()).collect()
+    v.as_array()
+        .unwrap()
+        .iter()
+        .map(|o| o.as_str().unwrap().to_string())
+        .collect()
 }
 
 pub fn unhex(s: &str) -> Vec<u8> {

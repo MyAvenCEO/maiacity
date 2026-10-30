@@ -110,12 +110,12 @@ inductive MemberError where
   | invalid (why : Invalid)
   deriving DecidableEq, Repr
 
-/-- An Aven Peer that keeps its members: its claim and sign-ins (`server`), then its invites, the one-time keys of
-those withdrawn, and its joins, each in the order it came. -/
+/-- An Aven Peer that keeps its members: its claim and sign-ins (`server`), then its invites, withdrawals and joins,
+each in the order it came. -/
 structure Members where
   server : Server
   invites : List Invite := []
-  withdrawn : List String := []
+  withdrawn : List Withdrawal := []
   joins : List Join := []
   deriving DecidableEq, Repr
 
@@ -149,9 +149,11 @@ def invite? (m : Members) (key : String) : Option Invite := m.invites.find? (·.
 
 def used (m : Members) (key : String) : Bool := m.joins.any (·.invite == key)
 
+def isWithdrawn (m : Members) (key : String) : Bool := m.withdrawn.any (·.key == key)
+
 /-- What became of an invite: open, used, or withdrawn. -/
 def state (m : Members) (key : String) : String :=
-  if m.used key then "used" else if m.withdrawn.contains key then "withdrawn" else "open"
+  if m.used key then "used" else if m.isWithdrawn key then "withdrawn" else "open"
 
 /-- Whether the tree has any of these ids, or any of these public halves. -/
 def knows (m : Members) (ids keys : List String) : Bool :=
@@ -175,8 +177,8 @@ def acceptWithdrawal (m : Members) (w : Withdrawal) : Except MemberError Members
   m.adminAct w.network w.passkey w.text w.assertion
   if (m.invite? w.key).isNone then .error .noInvite
   else if m.used w.key then .error .used
-  else if m.withdrawn.contains w.key then .error .withdrawn
-  else .ok { m with withdrawn := m.withdrawn ++ [w.key] }
+  else if m.isWithdrawn w.key then .error .withdrawn
+  else .ok { m with withdrawn := m.withdrawn ++ [w] }
 
 /-- A join's statement, checked: an open invite, its one-time key's signature, the passkey's assertion, nothing the
 tree has, and the tree it makes. -/
@@ -185,7 +187,7 @@ def acceptJoin (m : Members) (j : Join) : Except MemberError Members :=
   else if j.network ≠ m.network then .error .wrongNetwork
   else if (m.invite? j.invite).isNone then .error .noInvite
   else if m.used j.invite then .error .used
-  else if m.withdrawn.contains j.invite then .error .withdrawn
+  else if m.isWithdrawn j.invite then .error .withdrawn
   else if j.signature ≠ (j.invite, j.text) then .error .badInviteSignature
   else match j.assertion.check m.server.rp (challengeOf j.text) j.passkey with
     | .error why => .error (.assertion why)
@@ -224,8 +226,7 @@ def restore (m : Members) : Except MemberError Members := do
     | .ok s => pure s
     | .error why => .error (.claim why)
   let r ← m.invites.foldlM acceptInvite { server := s }
-  let r ← (m.withdrawn.filterMap fun k => (m.invite? k).map fun i => (⟨i.network, k, i.passkey, i.assertion⟩ : Withdrawal)).foldlM
-    (fun r w => pure { r with withdrawn := r.withdrawn ++ [w.key] }) r
+  let r ← m.withdrawn.foldlM acceptWithdrawal r
   m.joins.foldlM acceptJoin r
 
 /-! ## The door -/
@@ -305,7 +306,7 @@ theorem invite_admin {i : Invite} (h : m.acceptInvite i = .ok m') :
     exact ⟨c, adminKey_governs k, a, rfl⟩
 
 theorem acceptJoin_ok {j : Join} (h : m.acceptJoin j = .ok m') :
-    (m.invite? j.invite).isSome ∧ m.used j.invite = false ∧ j.invite ∉ m.withdrawn ∧
+    (m.invite? j.invite).isSome ∧ m.used j.invite = false ∧ m.isWithdrawn j.invite = false ∧
       j.signature = (j.invite, j.text) ∧ j.assertion.check m.server.rp (challengeOf j.text) j.passkey = .ok () ∧
       m.knows [j.person, j.passkey, j.device] [j.deviceKey, "es256:" ++ j.passkeyKey] = false ∧
       m' = { m with joins := m.joins ++ [j] } ∧ m'.tree.WF := by
@@ -334,7 +335,7 @@ theorem acceptJoin_ok {j : Join} (h : m.acceptJoin j = .ok m') :
 
 /-- A join needs an invite the admin made, still open, and its one-time key signed exactly this join. -/
 theorem join_invited {j : Join} (h : m.acceptJoin j = .ok m') :
-    ∃ i ∈ m.invites, i.key = j.invite ∧ m.used j.invite = false ∧ j.invite ∉ m.withdrawn ∧
+    ∃ i ∈ m.invites, i.key = j.invite ∧ m.used j.invite = false ∧ m.isWithdrawn j.invite = false ∧
       j.signature = (j.invite, j.text) := by
   obtain ⟨ni, nu, nw, s, _⟩ := acceptJoin_ok h
   obtain ⟨i, e⟩ := Option.isSome_iff_exists.mp ni
@@ -365,8 +366,8 @@ theorem joins_nodup {j : Join} (n : (m.joins.map (·.invite)).Nodup) (h : m.acce
   exact u x mx e
 
 /-- A withdrawn invite admits nobody. -/
-theorem join_withdrawn {j : Join} (w : j.invite ∈ m.withdrawn) : ∀ m', m.acceptJoin j ≠ .ok m' :=
-  fun _ h => (acceptJoin_ok h).2.2.1 w
+theorem join_withdrawn {j : Join} (w : m.isWithdrawn j.invite = true) : ∀ m', m.acceptJoin j ≠ .ok m' :=
+  fun _ h => by simp [(acceptJoin_ok h).2.2.1] at w
 
 /-- A used invite can't be withdrawn. -/
 theorem withdraw_used {w : Withdrawal} (u : m.used w.key = true) : ∀ m', m.acceptWithdrawal w ≠ .ok m' := by

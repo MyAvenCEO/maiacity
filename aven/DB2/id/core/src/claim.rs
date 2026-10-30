@@ -132,7 +132,7 @@ impl SignIn {
     }
 }
 
-fn text(v: &Value, path: &[&str]) -> Result<String, String> {
+pub(crate) fn text(v: &Value, path: &[&str]) -> Result<String, String> {
     path.iter()
         .try_fold(v, |v, k| v.get(k))
         .and_then(Value::as_str)
@@ -144,7 +144,7 @@ fn bytes(v: &Value, k: &str) -> Result<Vec<u8>, String> {
     hex::decode(&text(v, &["assertion", k])?).ok_or_else(|| format!("assertion.{k} is not hex"))
 }
 
-fn assertion(v: &Value) -> Result<Assertion, String> {
+pub(crate) fn assertion(v: &Value) -> Result<Assertion, String> {
     Ok(Assertion {
         client_data: text(v, &["assertion", "clientData"])?.into_bytes(),
         authenticator_data: bytes(v, "authData")?,
@@ -152,7 +152,7 @@ fn assertion(v: &Value) -> Result<Assertion, String> {
     })
 }
 
-fn assertion_json(a: &Assertion) -> Value {
+pub(crate) fn assertion_json(a: &Assertion) -> Value {
     json!({
         "clientData": String::from_utf8_lossy(&a.client_data),
         "authData": hex::encode(&a.authenticator_data),

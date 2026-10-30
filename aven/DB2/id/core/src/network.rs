@@ -156,7 +156,7 @@ impl Network {
     }
 
     /// A person's vault's owners when it is founded: its passkey, and the guardian if there is one.
-    fn founders(&self, passkey: &str) -> Vec<Owner> {
+    pub(crate) fn founders(&self, passkey: &str) -> Vec<Owner> {
         let mut out = vec![Owner::Key(passkey.into())];
         out.extend(self.guardian.iter().map(|_| Owner::Key(GUARDIAN.into())));
         out
