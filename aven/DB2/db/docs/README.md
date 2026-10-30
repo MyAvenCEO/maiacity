@@ -31,13 +31,14 @@ is built before its step's plan names it, and avenDB-old's learnings come in as 
 14. [Types, schemas and fit](#types-schemas-and-fit)
 15. [Lenses](#lenses)
 16. [Streams: period Docs](#streams-period-docs)
-17. [The chat moves onto a Doc](#the-chat-moves-onto-a-doc)
-18. [What the engine and actors build on](#what-the-engine-and-actors-build-on)
-19. [Decisions](#decisions)
-20. [What Lean proves](#what-lean-proves)
-21. [Order of work](#order-of-work)
-22. [Open questions](#open-questions)
-23. [Not in this spec](#not-in-this-spec)
+17. [Directories and indexes](#directories-and-indexes)
+18. [The chat moves onto a Doc](#the-chat-moves-onto-a-doc)
+19. [What the engine and actors build on](#what-the-engine-and-actors-build-on)
+20. [Decisions](#decisions)
+21. [What Lean proves](#what-lean-proves)
+22. [Order of work](#order-of-work)
+23. [Open questions](#open-questions)
+24. [Not in this spec](#not-in-this-spec)
 
 ## From first principles
 
@@ -237,6 +238,8 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
 23. **Catching up never rewrites** (README, rule 6). Moving Records into a newer schema's representation is an act.
 24. **Every input has a limit before Loro sees it:** envelope size, ops, Records touched, depth, segment size.
 25. **Streams that grow without end are chains of period Docs,** never one Doc forever.
+26. **A directory or an index is one sealed search tree** (A26): the same entries make the same Values, whoever builds
+    them and in whatever order, and a lookup finds every entry in its range.
 
 ## A Doc
 
@@ -682,6 +685,54 @@ snapshot, which would refuse branches that start before it:
 Other collections that grow, such as invoices or pages, are root Records: each is a Doc of its own (rule 4), listed by
 a directory Doc.
 
+## Directories and indexes
+
+A type with millions of Records is millions of Docs, of which a device wants a handful. Finding them by value, such as
+"invoices from vendor X", without holding the rest, is a **sealed index** (architecture, A26; Samuel, 30 Oct 2026).
+
+**One structure for both.** A **directory** lists a vault's Docs of one root type by Doc id; an **index** lists the
+same Docs by a query's fields. Both are a **Prolly tree**: a search tree whose nodes are sealed Values named by hash.
+- **Entries:** each a CBOR array, the key first: `[field values…, Doc id]` for an index, `[Doc id]` for a directory.
+  Entries sort bytewise by their encodings, so they sort by key, and every entry is distinct.
+- **Nodes:** a leaf is a CBOR array of entries; an inner node is an array of `[first entry, last entry, child]` per
+  child. A node ends after an entry whose BLAKE3's low 6 bits are zero (about 64 entries a node) or before an entry
+  that would take it past 64 KiB, the size limit (architecture, rule 10). The same rule cuts every level.
+- **Why a Prolly tree, not a Merkle search tree:** both make the same Values from the same entries, in any order. A
+  Prolly tree's nodes are cut by the entries' own hashes and also by size, so every node stays under the limit; a
+  Merkle search tree places each key on a level by its hash, and a node's size has no bound. Dolt's Prolly trees show
+  the shape at scale.
+
+**Recent entries stay in the directory Doc.** The directory is an ordinary Doc of the vault, read by the directory's
+readers. Whoever creates a Doc of the type, or changes a field an index sorts by, adds its entry there in the same
+commit, as an `entry` Record; a Doc that leaves (removed, or its field changed) leaves a `gone` Record. Loro merges
+writers who write at once.
+
+**A fold** moves them into Values, as an LSM tree compacts. It is a checkpoint (rule 12): the directory's version it
+covers, the root it makes, the runtime that made it, hybrid-signed. Any device that holds the Docs an index covers and
+may write the directory can fold. A fold takes the entries of the last fold's root, drops the `gone`, adds the new
+`entry` Records, and builds the tree. Two folds of one version give one root; folding in steps gives what folding at
+once gives. A device that holds the covered Docs rebuilds the root in the background and compares, as it checks any
+checkpoint.
+
+**A lookup runs on the device** (architecture, A26 4):
+1. it reads the directory Doc: the newest fold's root and the entries not yet folded;
+2. it walks down from the root, opening only the nodes whose span, first to last entry, meets the range: three or four
+   Values for millions of entries;
+3. it wants the Docs the entries name, and the engine runs the query on them;
+4. the answer is `complete` when every Doc that could match is held: the hits and the unfolded entries.
+
+A wrong entry costs a fetch, never a wrong row: the query reads the Docs themselves. A missing entry is the only harm,
+and only someone who may write the directory can cause it.
+
+**Sealing.** Every node is sealed under the directory's key, and equal Values under one key get equal names, so equal
+nodes are stored once; every Value is padded (caps, D18). An index holds fields only from Docs its directory's readers
+can read, so a Doc with fewer readers never enters it (caps).
+
+**The engine's side.** The engine derives an index from a query's shape (its filters and its order); equal shapes share
+one index, and installing an actor registers the indexes its `loads` need by the vault owners' act (architecture, A26
+3). The docs layer gives it four calls: `entry(index, Doc)` for a commit, `fold(directory, version)`, `lookup(index,
+range)` with the unfolded entries, and `rebuild(index)` to check a fold. To be agreed with the engine thread.
+
 ## The chat moves onto a Doc
 
 Loro segments replace the chat's one-blob-per-line chains (`chat-<device>`); that is the fix the chat waits for, with no
@@ -754,6 +805,9 @@ The engine's "heads" on answers are versions (architect, 30 Oct 2026).
     edits are shown for review.
 22. **A crate of its own, `aven-db-docs` in `db/docs`,** a pure core (README, rule 2), with Loro pinned at exactly
     1.17.1, the version its source was checked at (the architect, 30 Oct 2026).
+23. **Directories and indexes are Prolly trees of sealed Values** (A26, Samuel, 30 Oct 2026; the Prolly tree is the
+    docs thread's choice): the same entries give the same root, every node stays under the size limit, recent entries
+    stay in the directory Doc until a fold.
 
 ## What Lean proves
 
@@ -782,6 +836,10 @@ against the Rust's Loro on random ops, so it can never be simpler than the code.
   commit removes exactly its changes where nothing since touched them. Vectors `merges.json`.
 - **Before:** reading today's frozen chains gives every line both peers can see, in order, each checked. Vectors
   `before.json`.
+- **Indexes** (`Aven.DB.Docs.Index`): a fold's entries are the set of what went in, sorted, and nothing else could be;
+  its nodes hold exactly those entries, each node within the size limit, and depend only on the set; folding in steps,
+  removals included, gives what folding at once gives; a lookup finds every entry in its range, and only those.
+  Vectors `indexes.json`.
 
 ## Order of work
 
@@ -804,6 +862,7 @@ Each step starts with its Lean, then Rust tests against the vectors, then the co
    settle with the engine.
 6. **Checkpointers:** is "a device of the Doc's vault, or a vault granted `keep` with checkpoints" enough, or does a
    checkpoint need k of n for Docs with many readers?
+7. **The index interface** with the engine: the four calls above, and how a query's shape names its index.
 
 ## Not in this spec
 
