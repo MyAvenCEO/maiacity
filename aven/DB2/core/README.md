@@ -11,6 +11,7 @@ primitives everything shares" and rules 1 to 3). It is one Lean package, in [`sp
 | `Cbor`, `CborLaws` | a Value and the one codec: deterministic CBOR in A2's strict profile | `decode_encode`, `encode_decode` (bytes that don't encode back to themselves are refused), `encode_inj` |
 | `Blake3` | BLAKE3, in core Lean | the specification's known answers |
 | `Json` | the readable form of a Value, which every spec's vectors import | — |
+| `ValueEq` | `DecidableEq`, `BEq` and `LawfulBEq` for Values, by structural recursion | `Value.beq_iff`: the equality is lawful |
 | `Names` | hashes, Doc ids, type ids (`<type Doc>/<schema hash>`) | names of allowed Values don't collide under an injective hash |
 | `Signed` | a label plus a Value, signed over exactly its encoding | a signing input names its label and body |
 | `Log` | envelopes, logs, splits, versions | a chain holds no split; two readers' chains agree unless split; splits are final; what counts builds on what counts; versions only grow |
