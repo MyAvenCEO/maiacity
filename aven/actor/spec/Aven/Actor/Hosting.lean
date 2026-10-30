@@ -1,90 +1,93 @@
 import Aven.Actor.Runtimes
+import Aven.ID.Caps
 
 /-!
 # Hosting an actor is an explicit read cap (avenDB A16)
 
 An actor lives on one peer, its home; a member's own Peer is the default. A peer that hosts an actor for someone
-else, the Aven Peer included, reads nothing by hosting it. It reads only what its **hosting caps** grant: each names
-one host, one actor, and one target, the actor itself or one of the actor's loads, and is granted by the actor's
-owner, so the owner's list of them is exactly what the owner is shown.
+else, the Aven Peer included, reads nothing by hosting it. It reads only what its **hosting caps** grant. A hosting
+cap is one of avenID's caps (`Aven.ID.Cap`), not a kind of its own: its issuer is the actor's owner, its holder is the
+host, and every line of its grant reads, on the actor itself or on one of the actor's loads. The owner's list of
+the caps it issued is exactly what it is shown.
 
-The model takes from avenID and the engine what it doesn't decide: `gov` and `spawned` for targets (`Aven.Core`),
-`ownerOf` (the vault that owns an actor) and `loads` (the targets an actor's definition loads).
+The model takes what it doesn't decide as parameters: who governs whom and which actor spawned which (as
+`Aven.Core` does), the roles caps name, the vault that owns each actor, and the targets each actor loads.
 
 What it proves:
 
-- `hosting_explicit`: a host reads a Doc exactly when one of its hosting caps, valid and shown to the actor's owner,
-  covers it.
-- `no_hosting_without_cap`: a host with no hosting cap reads nothing, whatever it hosts.
-- `per_target`: a cap for one load reads only what that load's target covers, never another load of the same actor.
+- `hosting_explicit`: a host reads a Doc exactly when one of its hosting caps, issued by the actor's owner and shown
+  to it, reaches the Doc with `read`.
+- `no_hosting_without_cap`: a host that holds no cap reads nothing, whatever it hosts.
+- `per_target`: a hosting cap with one line reads only what that line's target covers.
+- `invalid_cap_reads_nothing`: a cap that is no hosting cap (another issuer, another holder, a verb other than
+  `read`, or a target the actor doesn't load) reads nothing.
 -/
 
 namespace Aven.Actor
 
-open Aven.Core (Value TypeId Bytes DocId Target Facts)
-
-/-- One hosting cap: `owner` lets `host` read `target`, for the actor `actor`. -/
-structure HostCap where
-  owner : Bytes
-  host : Bytes
-  actor : DocId
-  target : Target
-  deriving DecidableEq, Repr
+open Aven.Core (Bytes DocId Target Facts Verb)
+open Aven.ID (Cap Holder Role Line)
 
 /-- What the model takes from avenID and the engine. -/
 structure World where
   gov : Bytes → Bytes → Prop
   spawned : DocId → DocId → Prop
+  roles : List Role
   /-- The vault that owns each actor. -/
-  ownerOf : DocId → Bytes
+  ownerOf : DocId → String
   /-- The targets each actor's definition loads. -/
   loads : DocId → List Target
 
-/-- A cap counts only when the actor's owner granted it, and its target is the actor itself or one of its loads. -/
-def HostCap.valid (w : World) (c : HostCap) : Prop :=
-  c.owner = w.ownerOf c.actor ∧ (c.target = .actor c.actor false ∨ c.target ∈ w.loads c.actor)
+/-- `c` hosts actor `a` on `host`: issued by `a`'s owner, held by the host, and every line of it reads `a` itself or
+one of `a`'s loads. -/
+def Hosting (w : World) (c : Cap) (host : String) (a : DocId) : Prop :=
+  c.issuer = w.ownerOf a ∧ c.holder = .vault host ∧
+    ∀ l ∈ c.grants w.roles, l.verb = .read ∧ (l.target = .actor a false ∨ l.target ∈ w.loads a)
 
-/-- What an owner is shown: every cap granted in its name. -/
-def shownTo (caps : List HostCap) (owner : Bytes) : List HostCap := caps.filter (·.owner == owner)
+/-- What an owner is shown: every cap it issued. -/
+def shownTo (caps : List Cap) (owner : String) : List Cap := caps.filter (·.issuer == owner)
 
-/-- What a host may read: a Doc some valid hosting cap of that host covers. This is the only way a host reads; where
-an actor lives (`home`) is not an argument, so hosting alone grants nothing. -/
-def HostReads (w : World) (caps : List HostCap) (host : Bytes) (f : Facts) : Prop :=
-  ∃ c ∈ caps, c.host = host ∧ c.valid w ∧ c.target.covers w.gov w.spawned f
+/-- What a host may read: a Doc some hosting cap of that host reaches with `read`. This is the only way a host reads;
+where an actor lives is not an argument, so hosting alone grants nothing. -/
+def HostReads (w : World) (caps : List Cap) (host : String) (f : Facts) : Prop :=
+  ∃ c ∈ caps, ∃ a, Hosting w c host a ∧ (c.grants w.roles).reaches w.gov w.spawned f .read
 
-/-- A host reads a Doc exactly when a valid hosting cap of its own covers it, and that cap is one its actor's owner
-is shown. -/
-theorem hosting_explicit (w : World) (caps : List HostCap) (host : Bytes) (f : Facts) :
-    HostReads w caps host f ↔
-      ∃ c ∈ shownTo caps (w.ownerOf c.actor), c.host = host ∧ c.valid w ∧ c.target.covers w.gov w.spawned f := by
+/-- A host reads a Doc exactly when a hosting cap of its own reaches it with `read`, and that cap is one the actor's
+owner is shown. -/
+theorem hosting_explicit (w : World) (caps : List Cap) (host : String) (f : Facts) :
+    HostReads w caps host f ↔ ∃ a, ∃ c ∈ shownTo caps (w.ownerOf a),
+      Hosting w c host a ∧ (c.grants w.roles).reaches w.gov w.spawned f .read := by
   constructor
-  · rintro ⟨c, hc, hh, hv, hcov⟩
-    refine ⟨c, ?_, hh, hv, hcov⟩
+  · rintro ⟨c, hc, a, hh, hr⟩
+    refine ⟨a, c, ?_, hh, hr⟩
     simp only [shownTo, List.mem_filter, beq_iff_eq]
-    exact ⟨hc, hv.1⟩
-  · rintro ⟨c, hc, hh, hv, hcov⟩
-    exact ⟨c, (List.mem_filter.mp hc).1, hh, hv, hcov⟩
+    exact ⟨hc, hh.1⟩
+  · rintro ⟨a, c, hc, hh, hr⟩
+    exact ⟨c, (List.mem_filter.mp hc).1, a, hh, hr⟩
 
-/-- A host with no hosting cap reads nothing, whatever actors it hosts. -/
-theorem no_hosting_without_cap (w : World) (caps : List HostCap) (host : Bytes)
-    (hnone : ∀ c ∈ caps, c.host ≠ host) (f : Facts) : ¬ HostReads w caps host f := by
-  rintro ⟨c, hc, hh, -, -⟩
-  exact hnone c hc hh
+/-- A host that holds no cap reads nothing, whatever actors it hosts. -/
+theorem no_hosting_without_cap (w : World) (caps : List Cap) (host : String)
+    (hnone : ∀ c ∈ caps, c.holder ≠ .vault host) (f : Facts) : ¬ HostReads w caps host f := by
+  rintro ⟨c, hc, a, hh, -⟩
+  exact hnone c hc hh.2.1
 
-/-- With one cap for one load, the host reads only what that load covers, not the actor's other loads. -/
-theorem per_target (w : World) (c : HostCap) (f : Facts) :
-    HostReads w [c] c.host f → c.target.covers w.gov w.spawned f := by
-  rintro ⟨c', hc', -, -, hcov⟩
+/-- A hosting cap with one line reads only what that line's target covers: one load's cap is not another's. -/
+theorem per_target (w : World) (c : Cap) (host : String) (l : Line) (hl : c.grants w.roles = [l]) (f : Facts) :
+    HostReads w [c] host f → l.target.covers w.gov w.spawned f := by
+  rintro ⟨c', hc', -, -, hr⟩
   simp only [List.mem_singleton] at hc'
   subst hc'
+  obtain ⟨l', hl', -, hcov⟩ := hr
+  rw [hl, List.mem_singleton] at hl'
+  subst hl'
   exact hcov
 
-/-- A cap that names a target the actor doesn't load, or that someone other than the owner granted, reads nothing. -/
-theorem invalid_cap_reads_nothing (w : World) (c : HostCap) (hv : ¬ c.valid w) (f : Facts) :
-    ¬ HostReads w [c] c.host f := by
-  rintro ⟨c', hc', -, hv', -⟩
+/-- A cap that hosts no actor on the host reads nothing there. -/
+theorem invalid_cap_reads_nothing (w : World) (c : Cap) (host : String) (hv : ∀ a, ¬ Hosting w c host a)
+    (f : Facts) : ¬ HostReads w [c] host f := by
+  rintro ⟨c', hc', a, hh, -⟩
   simp only [List.mem_singleton] at hc'
   subst hc'
-  exact hv hv'
+  exact hv a hh
 
 end Aven.Actor
