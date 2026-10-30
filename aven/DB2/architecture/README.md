@@ -7,7 +7,7 @@ part requires another sideways: avenID, below docs, never requires docs (the arc
 
 | Module | What |
 |---|---|
-| `Rules` | a theorem per rule, composed from the parts' theorems, and the two views that join parts: `capsView` (a Core envelope as caps' revocation model sees it) and `served` (the engine's want queue over caps' read grants) |
+| `Rules` | a theorem per rule, composed from the parts' theorems, and the view that joins parts: `served` (the engine's want queue over caps' read grants). Caps' revocation verdict reads Core's envelopes itself |
 | `Sealed` | the join of caps' sealed index (`Aven.ID.SealedIndex`, A26) to the docs model: `docsRoot` is the Prolly root, and `docsRoot_set` discharges caps' hypothesis, so caps' one copy of `index_within_key`, `sealed_roots_agree` and `root_by_writer` holds of the real index |
 | `Gaps` | per rule: the theorems that compose it, what they rest on, and what no model states yet; exported as `spec/vectors/rules.json` |
 

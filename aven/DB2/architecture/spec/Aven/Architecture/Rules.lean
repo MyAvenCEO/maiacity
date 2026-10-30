@@ -12,10 +12,9 @@ Each of ARCHITECTURE.md's fourteen rules, composed from the parts' own theorems.
 the theorem states the part that can, and `Aven.Architecture.Gaps` names what is missing; the architect tunes
 ARCHITECTURE.md from those.
 
-The two views that join the parts are defined here, once:
-- `capsView`: a Core envelope as caps' revocation model sees it, its id and deps the hashes Core names (rules 2, 4,
-  11);
-- `served`: what a reader sends, the engine's want queue over caps' read grants (rule 6).
+The view that joins the parts is defined here, once: `served`, what a reader sends, the engine's want queue over caps'
+read grants (rule 6). Caps' revocation verdict reads Core's envelopes itself, its past Core's `Reaches`
+(`Aven.ID.Past.reaches_iff`, rules 2, 4 and 11).
 -/
 
 namespace Aven.Architecture
@@ -73,20 +72,12 @@ theorem rule3_split_final {H : Bytes → Hash} {v : DB.Docs.Verdicts} {S S' : Li
 
 /-! ## Joining Core's envelopes to caps' revocations -/
 
-/-- A Core envelope as caps' revocation model sees it: its id is its name, its deps the names it gives, and the vault
-it writes for, the caps it writes under and the revocations it acknowledges are read from its body. -/
-def capsView (H : Bytes → Hash) (vaultOf : Envelope → String) (capsOf acksOf : Envelope → List String)
-    (e : Envelope) : ID.Envelope where
-  id := (e.name H).text
-  writer := vaultOf e
-  caps := capsOf e
-  deps := (e.prev.toList ++ e.deps).map Hash.text
-  acks := acksOf e
-
-/-- The authorized verdict, as every reader computes it from the envelopes it holds and the revocations it knows. -/
-def authorized (H : Bytes → Hash) (vaultOf : Envelope → String) (capsOf acksOf : Envelope → List String)
+/-- The authorized verdict, as every reader computes it from the envelopes it holds and the revocations it knows: caps'
+verdict on Core's envelopes, with the vault each writes for, the caps it writes under and the revocations it
+acknowledges read from its body. -/
+def authorized (H : Bytes → Hash) (vaultOf : Envelope → String) (capsOf acksOf : Envelope → List Hash)
     (rs : List ID.Revocation) (S : List Envelope) (e : Envelope) : Prop :=
-  ID.verdict (S.map (capsView H vaultOf capsOf acksOf)) rs (capsView H vaultOf capsOf acksOf e) = .counts
+  ID.verdict (Envelope.name H) ⟨vaultOf, capsOf, acksOf⟩ S rs e = .counts
 
 /-- A writer's own log never waits for a peer: whether a write fits depends on its own log alone, and a write that fits
 keeps that log a chain, readable at once. -/
@@ -292,10 +283,10 @@ theorem rule10_pages {Key α : Type} [DecidableEq Key] (size : α → Nat) (lim 
 /-! ## Rule 11: every wait ends -/
 
 /-- An envelope waits only for what it names by hash and the reader lacks: so each wait names what ends it. -/
-theorem rule11_waits_named (H : Bytes → Hash) (vaultOf : Envelope → String) (capsOf acksOf : Envelope → List String)
-    (rs : List ID.Revocation) (S : List Envelope) (e : Envelope) {ms : List String}
-    (h : ID.verdict (S.map (capsView H vaultOf capsOf acksOf)) rs (capsView H vaultOf capsOf acksOf e) = .waits ms) :
-    ms ≠ [] ∧ ∀ d ∈ ms, d ∈ (e.prev.toList ++ e.deps).map Hash.text :=
+theorem rule11_waits_named (H : Bytes → Hash) (vaultOf : Envelope → String) (capsOf acksOf : Envelope → List Hash)
+    (rs : List ID.Revocation) (S : List Envelope) (e : Envelope) {ms : List Hash}
+    (h : ID.verdict (Envelope.name H) ⟨vaultOf, capsOf, acksOf⟩ S rs e = .waits ms) :
+    ms ≠ [] ∧ ∀ d ∈ ms, d ∈ e.prev.toList ++ e.deps :=
   let ⟨ne, all⟩ := ID.waits_named h
   ⟨ne, fun d m => (all d m).1⟩
 

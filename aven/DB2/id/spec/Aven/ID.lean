@@ -24,6 +24,7 @@ import Aven.ID.Before
 import Aven.ID.Approve
 import Aven.ID.Caps
 import Aven.ID.CapsCbor
+import Aven.ID.Past
 import Aven.ID.Revoke
 import Aven.ID.Epochs
 import Aven.ID.Recover

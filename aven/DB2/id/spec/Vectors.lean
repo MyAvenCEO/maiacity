@@ -29,8 +29,8 @@ import Aven.ID.SettleJson
   members, the invites' states and what the door says of each key after every step. aven-id's tests replay them.
 - `caps.json`: cap chains on the cast, with the first rule each breaks or none (`Aven.ID.Caps`), how avenOS shows a cap
   for a passkey tap, and generated chains (`Aven.ID.CapsJson`).
-- `revocations.json`: Docs of envelopes, the revocations a reader holds, and each envelope's verdict (`Aven.ID.Revoke`),
-  hand-written and generated.
+- `revocations.json`: Docs of Core envelopes, each with its name and what caps reads of it, the revocations a reader
+  holds, and each envelope's verdict (`Aven.ID.Revoke`), hand-written and generated.
 - `epochs.json`: who learns which key after a removal and after a heal (`Aven.ID.Epochs`).
 - `approvals.json`: signatures, thresholds and digests on the cast, and whether each approval holds (`Aven.ID.Approve`).
 - `network.json`: tickets claimed in two orders (A12), removals that clash and MaiaCityGuardian's exit
@@ -146,14 +146,15 @@ def capsVectors : List Json :=
     let cs := genChain (i + 1)
     vector s!"generated chain, seed {i + 1}" (chain cs) (chainResult cs)
 
+open RevokeExamples in
 def revocationVectors : List Json :=
-  (revocationExamples.map fun (name, doc, rs, id, _) =>
-    vector name (Json.mkObj (docJson doc rs ++ [("envelope", toJson id)]))
-      ((verdictOf doc rs id).elim Json.null Verdict.json)) ++
+  (revocationExamples.map fun (name, doc, rs, e, _) =>
+    vector name (Json.mkObj (docJson doc rs ++ [("envelope", Json.str (nm e).text)]))
+      (verdict nm reads doc rs e).json) ++
   (List.range generatedDocs).map fun i =>
     let (doc, rs) := genDoc (i + 1)
     vector s!"generated Doc, seed {i + 1}" (Json.mkObj (docJson doc rs))
-      (Json.mkObj (doc.map fun e => (e.id, (verdict doc rs e).json)))
+      (Json.mkObj (doc.map fun e => ((nm e).text, (verdict nm reads doc rs e).json)))
 
 def epochVectors : List Json :=
   let ask (w : World) (parties : List String) (story p k : String) :=
