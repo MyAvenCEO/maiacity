@@ -77,3 +77,19 @@ pub fn s3(at: &S3) -> Result<DalStore> {
 pub async fn opfs(root: &str) -> Result<crate::opfs::OpfsStore<crate::opfs_folder::OpfsFolder>> {
     crate::opfs::OpfsStore::open(crate::opfs_folder::OpfsFolder::open(root).await?).await
 }
+
+/// The opfs store under `root`, made fresh when this origin holds what an older avenOS left (`Error::Outdated`): its
+/// whole private file system cleared first. With why it was cleared, if it was.
+#[cfg(target_arch = "wasm32")]
+pub async fn opfs_or_reset(
+    root: &str,
+) -> Result<(crate::opfs::OpfsStore<crate::opfs_folder::OpfsFolder>, Option<String>)> {
+    match opfs(root).await {
+        Ok(store) => Ok((store, None)),
+        Err(Error::Outdated(why)) => {
+            crate::opfs_folder::clear_origin().await?;
+            Ok((opfs(root).await?, Some(why)))
+        }
+        Err(e) => Err(e),
+    }
+}

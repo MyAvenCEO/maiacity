@@ -7,7 +7,9 @@
 //                                           network and opens the dashboard, the admin's vault owned by the passkey
 //                                           and the guardian, owning Maia City, which owns Aven; a
 //                                           second signup with another passkey refused; a sign-in from a second
-//                                           profile with the same passkey, which becomes a second device
+//                                           profile with the same passkey, which becomes a second device; that
+//                                           browser's local data then made an older avenOS's, which it resets, and
+//                                           a sign-in with the passkey makes it a device again
 //   node sandbox/claim.mjs restarted <run>  after the Aven Peer restarted: both browsers on the same tree
 //   node sandbox/claim.mjs wiped <run>      after its store was wiped: the network unclaimed again
 //
@@ -208,6 +210,47 @@ if (phase === 'claim') {
 	const offered = await second.page.locator('#accounts [data-account]').evaluateAll((els) => els.map((el) => el.dataset.account));
 	if (JSON.stringify(offered) !== JSON.stringify([report.admin])) problems.push(`the switcher offers ${JSON.stringify(offered)}, not the admin alone`);
 	await second.page.screenshot({ path: `${run}/claim-signed-in.png` });
+
+	// A browser whose local data an older avenOS left (store/README.md, the opfs driver's `meta/version`): the
+	// Peer-Light clears its origin and starts fresh, a new device that says so, and the passkey makes it one again.
+	// Away from avenOS its worker ends; an older marker is put in its store, and avenOS opened again.
+	const deviceBefore = said('signed-in', since)?.device;
+	await second.page.goto(`${origin}/peer-light/aven_peer_light.js`);
+	for (let i = 0; i < 20; i++) {
+		const planted = await second.page
+			.evaluate(async () => {
+				const root = await navigator.storage.getDirectory();
+				const store = await root.getDirectoryHandle('store', { create: true });
+				const meta = await store.getDirectoryHandle('meta', { create: true });
+				const file = await meta.getFileHandle('version', { create: true });
+				const writable = await file.createWritable();
+				await writable.write('avenDB store 0\n');
+				await writable.close();
+				return true;
+			})
+			.catch(() => false);
+		if (planted) break;
+		await wait(250);
+	}
+	const resetAt = Date.now();
+	await second.page.goto(`${origin}/`);
+	if (!(await view(second.page, 'invite-only'))) problems.push('a browser with an older store is still a device');
+	report.reset = (await second.page.getByTestId('reset').textContent({ timeout: 10_000 }).catch(() => '')).trim();
+	const sentence = "This browser's local data was from an older avenOS and was reset. Sign in with your passkey.";
+	if (report.reset !== sentence) problems.push(`a reset browser says "${report.reset}", not "${sentence}"`);
+	const resetLine = lines().find((l) => l.event === 'reset' && l.t >= resetAt);
+	if (!resetLine) problems.push('the Peer-Light wrote no reset line');
+	await second.page.screenshot({ path: `${run}/claim-reset.png` });
+	await second.page.getByTestId('sign-in').click();
+	if (!(await view(second.page, 'dashboard'))) problems.push('after a reset, the sign-in did not open the dashboard');
+	const again = await second.page.locator('[data-view="dashboard"]').first().getAttribute('data-account').catch(() => null);
+	if (again !== report.admin) problems.push(`after a reset the browser acts as ${again}, not ${report.admin}`);
+	await wait(300);
+	const deviceAfter = said('signed-in', resetAt)?.device;
+	if (!deviceAfter || deviceAfter === deviceBefore) problems.push(`after a reset the sign-in added ${deviceAfter}, not a new device`);
+	if (devices(network()) !== 4) problems.push(`after the reset's sign-in the tree has ${devices(network())} devices, not 4`);
+	report.tree = network(since)?.tree;
+	await second.page.screenshot({ path: `${run}/claim-reset-signed-in.png` });
 	for (const b of [first, second]) await b.context.close();
 }
 

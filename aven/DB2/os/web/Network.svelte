@@ -86,6 +86,9 @@
 				<button data-testid="claim" disabled={busy || !net.key || !name.trim()}>Sign up with a passkey</button>
 			</form>
 		{:else}
+			{#if net.reset}
+				<p class="card" data-testid="reset">This browser's local data was from an older avenOS and was reset. Sign in with your passkey.</p>
+			{/if}
 			<p class="soon card" data-testid="invite-only">avenOS · invite only, coming soon</p>
 			<button data-testid="sign-in" disabled={busy || !net.key} onclick={() => run(() => signIn(config))}>
 				Sign in with your passkey

@@ -33,10 +33,22 @@ pub const CASES: &[&str] = &[
     "blob_range",
     "ref_one_of_racing_writers_wins",
     "ref_never_torn",
+    "ref_at_rest_in_one_form",
 ];
 
+/// A ref's bytes at rest, as a driver keeps them: what one case needs beyond the contract, to see the form a driver
+/// writes (Lean `Store.refText`) and to leave a ref in a form it doesn't (`Store.readRef`).
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+pub trait RefsAtRest {
+    /// The ref's bytes as they rest, or `None`.
+    async fn ref_bytes(&self, name: &RefName) -> Result<Option<Bytes>, Error>;
+    /// Leaves `bytes` as the ref's, as they are.
+    async fn put_ref_bytes(&self, name: &RefName, bytes: &[u8]) -> Result<(), Error>;
+}
+
 /// Runs every case and every trace of `traces` (the model's `store.json`), each on a fresh store from `fresh`.
-pub async fn run<S: Store>(mut fresh: impl AsyncFnMut() -> S, traces: &str) -> Report {
+pub async fn run<S: Store + RefsAtRest>(mut fresh: impl AsyncFnMut() -> S, traces: &str) -> Report {
     let mut outcomes = Vec::new();
     for &case in CASES {
         let store = fresh().await;
@@ -55,8 +67,9 @@ pub async fn run<S: Store>(mut fresh: impl AsyncFnMut() -> S, traces: &str) -> R
     Report(outcomes)
 }
 
-async fn run_case(case: &str, s: &impl Store) -> Outcome {
+async fn run_case(case: &str, s: &(impl Store + RefsAtRest)) -> Outcome {
     match case {
+        "ref_at_rest_in_one_form" => ref_at_rest_in_one_form(s).await,
         "blob_range" => blob_range(s).await,
         "ref_one_of_racing_writers_wins" => ref_one_of_racing_writers_wins(s).await,
         "ref_never_torn" => ref_never_torn(s).await,
@@ -216,6 +229,24 @@ pub fn noise(len: usize, seed: u64) -> Bytes {
 
 fn name(s: &str) -> RefName {
     RefName::new(s).expect("a valid name")
+}
+
+/// A ref rests as exactly its hash and a newline (Lean `Store.refText`), however it got there, and nothing else reads
+/// as one (`Store.readRef`): a bare hash, say, is refused as corrupt.
+async fn ref_at_rest_in_one_form(s: &(impl Store + RefsAtRest)) -> Outcome {
+    let h = ok!(s.put(Bytes::from_static(b"a ref at rest")).await);
+    let next = ok!(s.put(Bytes::from_static(b"the next one")).await);
+    let name = RefName::new("at-rest").expect("a name");
+    ok!(s.set_ref(&name, None, h).await);
+    let stored = ok!(s.ref_bytes(&name).await);
+    check!(stored.as_deref() == Some(h.ref_text().as_bytes()), "a new ref rests as {stored:?}, not its hash and a newline");
+    ok!(s.set_ref(&name, Some(h), next).await);
+    let stored = ok!(s.ref_bytes(&name).await);
+    check!(stored.as_deref() == Some(next.ref_text().as_bytes()), "a changed ref rests as {stored:?}");
+    let bare = RefName::new("bare").expect("a name");
+    ok!(s.put_ref_bytes(&bare, h.to_hex().as_bytes()).await);
+    check!(matches!(s.get_ref(&bare).await, Err(Error::Corrupt(_))), "a bare hash reads as a ref");
+    Ok(())
 }
 
 async fn blob_range(s: &impl Store) -> Outcome {

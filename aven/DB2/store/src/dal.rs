@@ -87,7 +87,7 @@ impl DalStore {
             let mut tries = 0;
             return loop {
                 let refused = match self.op.read(&path).await {
-                    Ok(buf) => match parse_ref(&buf.to_bytes()) {
+                    Ok(buf) => match Hash::from_ref(&buf.to_bytes()) {
                         Ok(hash) => break Ok((Some(hash), None)),
                         Err(e) if tries == 8 => break Err(e),
                         Err(_) => {
@@ -120,7 +120,7 @@ impl DalStore {
                 Err(e) => return Err(backend(e)),
             };
             match self.op.read_with(&path).if_match(&tag).await {
-                Ok(buf) => return Ok((Some(parse_ref(&buf.to_bytes())?), Some(tag))),
+                Ok(buf) => return Ok((Some(Hash::from_ref(&buf.to_bytes())?), Some(tag))),
                 Err(e)
                     if matches!(e.kind(), ErrorKind::ConditionNotMatch | ErrorKind::NotFound) =>
                 {
@@ -234,7 +234,7 @@ impl Store for DalStore {
             return Err(Error::Stale { current });
         }
         let path = ref_path(name);
-        let content = format!("{new}\n");
+        let content = new.ref_text();
         let create = expected.is_none() && self.conditions != Conditions::Off;
         let written = if create {
             self.op.write_with(&path, content).if_not_exists(true).await
@@ -301,15 +301,26 @@ fn blob_path(hash: &Hash) -> String {
     format!("blobs/{hash}")
 }
 
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+impl crate::conformance::RefsAtRest for DalStore {
+    async fn ref_bytes(&self, name: &RefName) -> Result<Option<Bytes>> {
+        match self.op.read(&ref_path(name)).await {
+            Ok(buf) => Ok(Some(buf.to_bytes())),
+            Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(backend(e)),
+        }
+    }
+
+    async fn put_ref_bytes(&self, name: &RefName, bytes: &[u8]) -> Result<()> {
+        self.op.write(&ref_path(name), bytes.to_vec()).await.map(|_| ()).map_err(backend)
+    }
+}
+
 fn ref_path(name: &RefName) -> String {
     format!("refs/{name}")
 }
 
-fn parse_ref(bytes: &[u8]) -> Result<Hash> {
-    let text =
-        std::str::from_utf8(bytes).map_err(|_| Error::Corrupt("a ref that isn't text".into()))?;
-    text.strip_suffix('\n').unwrap_or(text).parse()
-}
 
 fn is_refused(e: &opendal::Error) -> bool {
     matches!(
