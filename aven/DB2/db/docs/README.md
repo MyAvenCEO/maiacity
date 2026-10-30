@@ -212,8 +212,8 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
 10. **A container made after a Record is born is made mergeable,** so two writers creating it at once share it.
 11. **Each writer closes its own segments.** A segment is one log's run in one epoch, sealed and hybrid-signed by its
     writer. Outside it are only the Doc, the epoch and the padded length (caps D13).
-12. **Snapshots never travel; checkpoints do.** A checkpoint is signed, names its version and what it covers, and is
-    checked in the background. A state taken from it is unchecked until then. Snapshots are always full: history goes
+12. **Snapshots never travel; checkpoints do.** A checkpoint is signed by a device whose vault may write the Doc at
+    its version, names its version and what it covers, and is checked in the background. A state taken from it is unchecked until then. Snapshots are always full: history goes
     only by a period Doc's end, never by a shallow snapshot.
 13. **An envelope counts only when it is fit, authorized and not a split, and everything it builds on counts.** One
     that doesn't count never enters a branch's live state. A verdict that turns after import (a revocation, a split
@@ -432,8 +432,9 @@ separate step for devices that hold many Docs ([store](../../store/README.md#nex
     "runtime": "b3:<the code that made it>", "by": "device:…", "sig": "<hybrid>" }
   ```
 
-- **Who may sign one** a reader trusts: a device of the Doc's vault, or of a vault the Doc's caps grant `keep` with
-  checkpoints. A keeper with only a keep cap can't make one: it can't read.
+- **Who may sign one** a reader takes: a device whose vault may write the Doc at the version the checkpoint names, as
+  with index roots (architect, A5, 30 Oct 2026). A reader ignores one from anyone else, and still checks the one it
+  takes by replay. A keeper with only a keep cap can't make one: it can't read, nor write.
 - **A new device** starts from the newest checkpoint and the segments after it, and shows the Doc at once, marked
   **unchecked**.
 - **In the background** it fetches what the checkpoint covers, replays it, and compares the state's hash. Then the
@@ -859,7 +860,7 @@ against the Rust's Loro on random ops, so it can never be simpler than the code.
 - **Convergence:** the same counted envelopes in any order give the same Records and export the same bytes.
 - **Checkpoints:** a checkpoint whose covered segments replay to its state hash, whose version's tips are among what
   it covers, and which names the reader's runtime is accepted; any other is refused (`checked_is_replay`,
-  `checked_names`).
+  `checked_names`); a reader takes one only from a vault that may write the Doc at its version (`checkpoint_by_writer`).
   Vectors `checkpoints.json`.
 - **Fit:** the verdict depends only on the envelope and the Values it names; fit judged on the ops equals fit judged on
   the state; any merge of fit envelopes fits (`fit_merge`), each field's value fitting the schema of the envelope that wrote it
@@ -921,8 +922,9 @@ Each step starts with its Lean, then Rust tests against the vectors, then the co
 4. **Overlapping text edits** in a merge: shown only, or offered as a choice?
 5. **The vocabulary as one Doc per vault** for types and operations (the glossary's "catalogue = vocabulary"), to
    settle with the engine.
-6. **Checkpointers:** is "a device of the Doc's vault, or a vault granted `keep` with checkpoints" enough, or does a
-   checkpoint need k of n for Docs with many readers?
+6. ~~**Checkpointers**~~: answered (architect, A5, 30 Oct 2026). A checkpoint a reader takes is signed by a device
+   whose vault may write the Doc at the version it names, as with index roots; readers still check it by replay, and
+   ignore one from anyone else (Lean: `checkpoint_by_writer`).
 7. **The index interface** with the engine: the four calls above, and how a query's shape names its index.
 
 ## Not in this spec

@@ -3,6 +3,7 @@ import Aven.ID
 import Aven.DB
 import Aven.Runtime.Contract
 import Aven.Architecture.Sealed
+import Aven.Actor.Hosting
 
 /-!
 # The rules across all parts, as theorems
@@ -87,6 +88,21 @@ def authorized (H : Bytes → Hash) (vaultOf : Envelope → String) (capsOf acks
     (rs : List ID.Revocation) (S : List Envelope) (e : Envelope) : Prop :=
   ID.verdict (S.map (capsView H vaultOf capsOf acksOf)) rs (capsView H vaultOf capsOf acksOf e) = .counts
 
+/-- A writer's own log never waits for a peer: whether a write fits depends on its own log alone, and a write that fits
+keeps that log a chain, readable at once. -/
+theorem rule3_never_waits (nm : Envelope → Hash) (d d' : ID.Node.Device) (same : d.own = d'.own) (e : Envelope)
+    (c : IsChain nm d.own) :
+    (ID.Node.Fits nm d.own e ↔ ID.Node.Fits nm d'.own e) ∧
+      (ID.Node.Fits nm d.own e → IsChain nm (ID.Node.write d e).own) :=
+  ⟨ID.Node.write_fits nm d d' same e, ID.Node.write_chain nm c⟩
+
+/-- A split is shown to every reader that syncs: its two sides reach each, and nothing built on it counts there. -/
+theorem rule3_split_spreads (nm : Envelope → Hash) {ok : Envelope → Prop} (held : Nat → List Envelope)
+    (synced : ∀ i, ∀ x ∈ held i, x ∈ held (i + 1)) {x y : Envelope} (hx : x ∈ held 0) (hy : y ∈ held 0)
+    (sp : Split nm x y) (k : Nat) :
+    x ∈ held k ∧ y ∈ held k ∧ ∀ e, Reaches nm (held k) e x → ¬ Counts nm ok (held k) e :=
+  ID.Node.split_spreads nm held synced hx hy sp k
+
 /-! ## Rule 4: readers judge -/
 
 /-- What counts depends only on which envelopes a reader holds, never on the order they came in, nor on anyone's word:
@@ -165,6 +181,23 @@ theorem rule7_granted {w : ID.World} {keeper : String} (nothing : ∀ s ∈ w.se
     (∀ n, ∀ k ∈ w.knownAfter keeper n, k ∈ w.own keeper) ∧ p.vault ∈ writers :=
   ⟨ID.World.keeper_blind nothing, (ID.Sealed.root_by_writer hp).2⟩
 
+/-- No peer is the only source: with two relays listed, losing any one peer leaves every member reaching every other,
+and a Doc two members hold stays fetchable by every member. -/
+theorem rule7_no_only_source {n : ID.Node.Net} (hl : n.Listed) {r₁ r₂ : String} (m₁ : r₁ ∈ n.relays)
+    (m₂ : r₂ ∈ n.relays) (ne : r₁ ≠ r₂) (gone : String) {a b : String} (ma : a ∈ n.members) (mb : b ∈ n.members)
+    (ha : a ≠ gone) (hb : b ≠ gone) {doc h₁ h₂ : String} (k₁ : h₁ ∈ n.holders doc) (k₂ : h₂ ∈ n.holders doc)
+    (hne : h₁ ≠ h₂) (mh₁ : h₁ ∈ n.members) (mh₂ : h₂ ∈ n.members) :
+    ID.Node.reaches n gone a b = true ∧ ID.Node.fetchable n gone a doc = true :=
+  ⟨ID.Node.no_only_relay hl m₁ m₂ ne gone ma mb ha hb,
+    ID.Node.no_only_holder hl m₁ m₂ ne k₁ k₂ hne mh₁ mh₂ gone ma ha⟩
+
+/-- Hosting is an explicit read cap per actor (A16): a host reads a Doc exactly when a hosting cap of its own, one the
+actor's owner is shown, reaches it with `read`. -/
+theorem rule7_hosting_explicit (w : Actor.World) (caps : List ID.Cap) (host : String) (f : Facts) :
+    Actor.HostReads w caps host f ↔ ∃ a, ∃ c ∈ Actor.shownTo caps (w.ownerOf a),
+      Actor.Hosting w c host a ∧ (c.grants w.roles).reaches w.gov w.spawned f .read :=
+  Actor.hosting_explicit w caps host f
+
 /-! ## Rule 8: derived state is a cache or a checkpoint -/
 
 /-- A snapshot is a cache: loading it and the rest equals replaying everything. A checkpoint that checks is the replay
@@ -179,6 +212,12 @@ theorem rule8_cache_or_checkpoint {St : Type} (L : DB.Docs.Loro St) (covered aft
       Runtime.runOn d r l p i = Runtime.runOn d' r l p i :=
   ⟨L.snapshot_load covered after, DB.Docs.checked_is_replay hH hc he hs hck, (DB.Docs.checked_names hck).1,
     (DB.Docs.checked_names hck).2, Runtime.deterministic d d' r l p i⟩
+
+/-- A reader takes a checkpoint only from a device whose vault may write the Doc at the version it names (A5). -/
+theorem rule8_checkpoint_by_writer {mayWrite : Bytes → List Hash → Bool} {cps : List DB.Docs.Checkpoint}
+    {cp : DB.Docs.Checkpoint} (h : cp ∈ DB.Docs.takenCheckpoints mayWrite cps) :
+    cp ∈ cps ∧ mayWrite cp.vault cp.version = true :=
+  DB.Docs.checkpoint_by_writer h
 
 /-- A sealed index's root is a checkpoint any reader holding its entries can rebuild and compare. -/
 theorem rule8_index_root (boundary : Bytes → Bool) (size : Bytes → Nat) (limit : Nat) (H : Bytes → Hash)
@@ -195,6 +234,14 @@ given. That no plain byte leaves a device at all is a property of the node (`Ave
 theorem rule9_keeper {w : ID.World} {keeper : String} (nothing : ∀ s ∈ w.seals, s.2 ∉ w.own keeper) :
     ∀ n, ∀ k ∈ w.knownAfter keeper n, k ∈ w.own keeper :=
   ID.World.keeper_blind nothing
+
+/-- What leaves a device: plain bytes go only to a reader of that Doc, by caps' verdict; on any path a plain byte is
+seen only by that reader; a keeper that doesn't read the Doc is sent only its sealed bytes. -/
+theorem rule9_sealed {reads : String → String → Bool} {to doc d : String} (via : List String) {x keeper : String} :
+    (ID.Node.outgoing reads to doc = .plain d → reads to doc = true ∧ d = doc) ∧
+      (ID.Node.seenBy reads to via doc x = some (.plain d) → x = to ∧ reads to doc = true) ∧
+      (reads keeper doc = false → ID.Node.outgoing reads keeper doc = .sealed doc) :=
+  ⟨ID.Node.no_plain_to_nonreader, ID.Node.relay_blind, ID.Node.keeper_blind⟩
 
 /-! ## Rule 10: every input has a limit -/
 

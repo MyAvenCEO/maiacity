@@ -17,13 +17,13 @@ part requires another sideways: avenID, below docs, never requires docs (the arc
 |---|---|---|
 | 1. One codec | yes | — |
 | 2. History by hash | yes, on Core's envelopes; Loro's op ids and the hashes name the same past | — |
-| 3. One writer per log | splits final; a chain holds none | the writer's log never waiting; a split's proof reaching every reader (PEERS) |
+| 3. One writer per log | splits final; a chain holds none; a write fits from its own log alone; a split spreads to every reader that syncs | — |
 | 4. Readers judge | order-free verdicts; operations lowered alike; fit per envelope surviving merges; caps' verdict over Core envelopes | one verdict joining signature, cap chain, footprint and fit |
 | 5. Reading is the key | on caps' model | a link from Core's envelopes and docs' segments to their sealing |
 | 6. Demand never grants | yes: served = wants ∩ read grants; keepers serve on fetch proofs | — |
-| 7. No privilege by position | keepers blind; index roots only from writers | hosting caps (A16); no peer the only source (PEERS) |
-| 8. Cache or checkpoint | snapshots, checkpoints naming their tips and runtime, runtimes' determinism, index roots | who may sign a checkpoint a reader takes (docs open question 6) |
-| 9. Sealed beyond the device | keepers blind | a model of what leaves a device (PEERS) |
+| 7. No privilege by position | keepers blind; index roots only from writers; no peer the only relay or holder; hosting an explicit read cap | — |
+| 8. Cache or checkpoint | snapshots, checkpoints naming their tips and runtime and taken only from writers (A5), runtimes' determinism, index roots | — |
+| 9. Sealed beyond the device | keepers blind; plain bytes only to readers, relays see ciphertext | — |
 | 10. Every input has a limit | queries, runtimes, index nodes, wire frames | envelopes, blobs, pages, fan-out (docs rule 24); a quota per vault |
 | 11. Every wait ends | a wait names what ends it, by hash | the stall alarm; waits never blocking unrelated work |
 | 12. Order causal, time a claim | the past is what is named | caps' time conditions judged by acks |
