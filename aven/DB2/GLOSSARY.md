@@ -228,8 +228,9 @@ means something else in another part, and that part's meaning is named.
 - **Value**: JSON only: null, bool, finite number, string, array, map. **= Value**.
 - **part**: code or data in one format, for one runtime. ⚠ A want has a **depth**.
 - **runtime**: shared primitive. Actors' runtimes are named after their job (Samuel, 30 Oct 2026): **state-runtime**
-  (not json-runtime), **js-runtime**, **markup-runtime** (not view-runtime: "view" is the engine's) and
-  **style-runtime** (not css-runtime). There is no prolog-runtime (Samuel, 30 Oct 2026). Their home is
+  (not json-runtime), **js-runtime** and **face-runtime**: one runtime draws a face from its data, `markup` and
+  `style`, checking a11y across both (Samuel, 30 Oct 2026; it replaces view-, markup-, css- and style-runtime). There
+  is no prolog-runtime. Their home is
   [`aven/runtimes`](../runtimes/README.md).
 - **floor, fuel, shim, hostile parts**: the oldest runtime still run; work counted per instruction; the deterministic
   answer to clock and random calls; test parts that try to escape.
