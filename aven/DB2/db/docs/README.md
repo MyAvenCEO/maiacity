@@ -743,7 +743,7 @@ covers, the root it makes, the runtime that made it, hybrid-signed. Any device t
 may write the directory can fold. A fold takes the entries of the last fold's root, drops the `gone`, adds the new
 `entry` Records, and builds the tree. Two folds of one version give one root; folding in steps gives what folding at
 once gives. A device that holds the covered Docs rebuilds the root in the background and compares, as it checks any
-checkpoint.
+checkpoint; a reader takes a fold only from a vault that may write the directory (Lean: `fold_exact`).
 
 **A lookup runs on the device** (architecture, A26 4):
 1. it reads the directory Doc: the newest fold's root and the entries not yet folded;
@@ -879,6 +879,12 @@ against the Rust's Loro on random ops, so it can never be simpler than the code.
   its nodes hold exactly those entries, each node within the size limit, and depend only on the set; folding in steps,
   removals included, gives what folding at once gives; a lookup finds every entry in its range, and only those.
   Vectors `indexes.json`.
+- **The walk** (`Aven.DB.Docs.Walk`): a leaf is an array of entries and an inner node an array of `[first, last,
+  child]`; once a reader's store holds a fold's nodes by their names, every summary is honest (`fold_good`), and a walk
+  from the root, opening only the children whose span meets the range, finds every entry of the fold in the range and
+  only those (`walk_exact`). A fold is a checkpoint: a reader takes one only from a vault that may write the directory,
+  by its own runtime, and rebuilds the root from what it covers (`fold_exact`). Vectors `trees.json`: every level's
+  nodes in CBOR hex, the root, and what the walk finds.
 - **Keys** (`Aven.DB.Docs.Key`): comparing two keys bytewise is comparing their tuples, field by field, a prefix first
   (`key_order`); two tuples with one key are one tuple (`key_inj`); a key extends another's, at a field's edge, exactly
   when its tuple extends the other (`key_prefix`), and every extension lies in the prefix's range
@@ -904,6 +910,10 @@ against the Rust's Loro on random ops, so it can never be simpler than the code.
   (`key_prefix`).
 - **The directory's mark covers entries, not Records:** a lookup is exact when a Doc whose index entries changed is
   marked unfolded in the same commit (`same_entries`); a change no index reads needs no mark.
+- **A tree is shallow only when nodes hold several children:** the cut rule puts a summary bigger than the limit in a
+  node of its own, and a level whose nodes each hold one child makes no progress. The walk is exact either way
+  (`walk_exact`), and the build stops within as many levels as entries; the depth of three or four the lookups count on
+  needs entries far smaller than the limit, which 64 KiB nodes of keys a few dozen bytes long give.
 - **Values need an equality of their own:** `Value` can't derive one, and comparing encodings is sound only on canonical
   Values, so `Aven.Core.ValueEq` gives every spec one lawful equality.
 
