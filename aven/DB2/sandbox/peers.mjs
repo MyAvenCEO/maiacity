@@ -15,10 +15,11 @@ export function peers({ light = 'target/light', events = process.env.AVENSANDBOX
 	const clients = new Set();
 	const offsets = new Map();
 	const recent = [];
-	// each peer's newest record, which the views show however long ago it was told: kept beside the backlog's tail
+	// each peer's newest record and status, which the views show however long ago they were told: kept beside the
+	// backlog's tail, which a peer telling its chat's history on start can fill
 	const stored = new Map();
 	const keepStored = (lines) => {
-		for (const line of lines) if (line.event === 'stored') stored.set(line.peer, line);
+		for (const line of lines) if (line.event === 'stored' || line.event === 'status') stored.set(`${line.peer} ${line.event}`, line);
 	};
 
 	// every file's new whole lines since the last look

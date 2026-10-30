@@ -29,7 +29,8 @@ fork is raised and never chained (`fork_raised`), and a line from no member's de
 **Catching up:** a returning peer reads the other peer's `chat-*` refs, walks each chain back from its head to the
 lines it holds (`missing`), and takes the missing lines oldest first. When its own chain of a device is the start of
 the other's, it ends with exactly the other's chain (`catchUp_chain`); and when two peers catch up from each other,
-both end with every line either could see (`both_see`).
+both end with every line either could see (`both_see`). The lines come in bounded pages, each moving the receiver on
+from where the last left it (`receiveAll_pages`).
 
 The model names a line by its `id`, the hash of its blob, and takes the signature as sound, as `Aven.DB.Chat` does.
 aven-db-core's `chain` module implements it; its tests replay the traces in `vectors/chats.json` with real signed
@@ -415,6 +416,15 @@ theorem receiveAll_chain {d : String} :
     rw [receiveAll_chain q _ (by rw [c1]; simpa [List.append_assoc] using v) (by simpa using loose)
       (fun x mx => hq x (List.mem_cons_of_mem _ mx)), c1]
     simp
+
+/-- **Paged:** the missing lines taken a page at a time, in order, end where all of them at once do, so each page
+moves the receiver on from where the one before left it (the `lines` frames are bounded). -/
+theorem receiveAll_pages (k : Keeper) : ∀ pages : List (List Line),
+    pages.foldl (fun k p => k.receiveAll network members p) k = k.receiveAll network members pages.flatten
+  | [] => rfl
+  | p :: ps => by
+    simp only [List.foldl_cons, List.flatten_cons, receiveAll, List.foldl_append]
+    exact receiveAll_pages _ ps
 
 /-- **Catching up:** a peer whose chain of device `d` is the start of another's, holding no loose line of `d`, ends
 with exactly the other's chain, when every line of it passes the check (the other peer took each through it). -/
