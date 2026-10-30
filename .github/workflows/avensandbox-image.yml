@@ -95,8 +95,7 @@ jobs:
           context: aven/DB2
           file: aven/DB2/sandbox/box/Dockerfile
           platforms: linux/${{ matrix.arch }}
-          # avensandbox.tools, the Dockerfile's hash: up.mjs runs a box with the same tools while a checkout's own
-          # isn't built yet
+          # avensandbox.tools, the Dockerfile's hash: which tools a box holds
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.description=avenSANDBOX: the tools avenDB is built and tested with

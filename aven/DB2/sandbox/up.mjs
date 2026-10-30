@@ -7,14 +7,14 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { $ } from 'bun';
-import { boxTag, toolsTag } from './box/tag.mjs';
+import { boxTag } from './box/tag.mjs';
 import { fence } from './fence.mjs';
 import { newest, table } from './versions.mjs';
 
 const db2 = resolve(import.meta.dir, '..');
 const box = join(db2, 'sandbox', 'box');
 const boxes = 'ghcr.io/myavenceo/aven/sandbox';
-let image = process.env.AVENSANDBOX_IMAGE ?? `${boxes}:${boxTag()}`;
+const image = process.env.AVENSANDBOX_IMAGE ?? `${boxes}:${boxTag()}`;
 const port = process.env.AVENSANDBOX_PORT ?? '5173';
 const proxyCa = '/root/.ccr/ca-bundle.crt';
 // What ships is the node, never the box: the peers learn the box only as configuration. Here the cast's test keys
@@ -78,28 +78,10 @@ async function ensureImages() {
 		throw new Error(
 			"this environment's network refuses pkg-containers.githubusercontent.com, where GitHub's registry keeps the image's layers: allow it (SANDBOX.md, \"Where it runs\")",
 		);
-	if (/manifest unknown|not found/i.test(why)) {
-		if (!process.env.AVENSANDBOX_IMAGE && (await sameTools())) return;
-		throw new Error(`${missing.join(', ')} isn't published yet, and no box with the same tools is here or on main: GitHub builds it after the push that changes one of its inputs, in 10 to 12 minutes`);
-	}
+	// Only the checkout's own box runs, never another with the same tools (Samuel, 30 Oct 2026): wait for GitHub
+	if (/manifest unknown|not found/i.test(why))
+		throw new Error(`${missing.join(', ')} isn't published yet: GitHub builds it 10 to 12 minutes after the push that changes one of its inputs. Push, wait until it is published, then run this again`);
 	throw new Error(`can't pull ${missing.join(', ')}: ${why.trim().split('\n').at(-1)}`);
-}
-
-// The checkout's own box isn't published yet: its crates changed (a new dependency) and GitHub hasn't built it. A box
-// with the same tools serves meanwhile, one on disk or main's `latest`, whose label names its Dockerfile's hash; the
-// build folder compiles the crates that changed.
-async function sameTools() {
-	const tools = toolsTag();
-	const label = async (name) => (await $`docker image inspect --format ${'{{index .Config.Labels "avensandbox.tools"}}'} ${name}`.nothrow().quiet().text()).trim();
-	const here = (await $`docker images ${boxes} --format ${'{{.Repository}}:{{.Tag}}'}`.nothrow().quiet().text()).trim().split('\n').filter(Boolean);
-	let found = '';
-	for (const name of here) if (!found && (await label(name)) === tools) found = name;
-	if (!found && (await ok($`docker pull --quiet ${boxes}:latest`)) && (await label(`${boxes}:latest`)) === tools) found = `${boxes}:latest`;
-	if (!found) return false;
-	say(`${image} isn't published yet: running ${found}, the same tools, until GitHub builds it; the build folder compiles the crates that changed`);
-	image = found;
-	env.AVENSANDBOX_IMAGE = found;
-	return true;
 }
 
 // Every box but the one this checkout runs goes, once the containers run on it: each holds the tools and the compiled
