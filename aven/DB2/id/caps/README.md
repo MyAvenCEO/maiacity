@@ -31,7 +31,11 @@ document (moved there whole), and Signal, Matrix, MLS, Biscuit, Keyhive and Mead
 - a vault's secrets live in its safe, which opens only in a safe runtime (D17);
 - everything is padded (D18), and keys heal on a schedule and on suspicion (D19);
 - write without read comes later (D20);
-- keeping is a role any peer can take, and fetch keys chain from each Doc's genesis (D21).
+- keeping is a role any peer can take, and fetch keys chain from each Doc's genesis (D21);
+- the network's tree is a Doc of signed statements that one rule settles, from a genesis every member pins, with the
+  guardian named in every claim (A10 to A13, decided as recommended);
+- a lens grants nothing until it is pinned (rule 35), and a sealed index holds only what all its readers may read
+  (A26, rule 36).
 
 The engine thread agreed the footprints caps check (E1–E3). The docs and avenACTOR threads answered their seams on the
 same day, and what they agreed is marked where it applies. Nothing in this spec is still a proposal except how a
@@ -221,6 +225,17 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
     the public never shares.
 34. **Secrets never leave a safe runtime** (Samuel, 30 Oct 2026). Everything else holds handles and asks the safe
     runtime to act ([the safe](#the-safe)).
+35. **A lens grants nothing until it is pinned** (Samuel, 30 Oct 2026, the architect's extension of A7). A lens inside
+    one type Doc is published by whoever may write that type Doc. A lens between two type Docs is a Value anyone may
+    write, and it takes effect for a Doc or a vault only when its owners pin it, as they pin type versions: a write to
+    the pins, with their approval (D14). A reader reads through the lenses pinned where it reads, and an actor through
+    the receiving vault's. A pin that would make a second path between two versions is refused, and the checker holds
+    a lens to the laws before its pin counts (docs, rule 19).
+36. **A sealed index holds only what all its readers may read** (A26, decided 30 Oct 2026). An index is sealed under
+    the key of its directory and holds fields only from Docs every reader of the directory can read, so a Doc with
+    fewer readers never enters it. Equal index Values under one key get equal sealed names (a keyed nonce), so two
+    readers' rebuilt roots compare. Its nodes are padded (D18). Only a device that may write the directory folds in
+    recent entries and publishes a new root.
 
 ## The model
 
@@ -426,6 +441,20 @@ messages and queries. For people with keys, reading is whole Docs; for actors an
 - **Tickets** hold a cap until a vault claims it, with a statement signed by the ticket key and by a device of the
   claiming vault. Milestone 2's invites are tickets for the network's door. A ticket never holds `share` beyond its own
   depth, and never governs.
+- **The network's tree** is a Doc of signed statements, settled the same at every peer from the set of statements alone
+  (A10 to A13, decided 30 Oct 2026; `settle` in `Aven.ID.Network`, PEERS.md §5):
+  - the genesis is signed by the claimant's passkey and MaiaCityGuardian, and names the RP ID, the origins, the admin
+    coop, the agent, the Aven Peer's key and the guardian's hybrid keys. Every member pins its hash, and only its
+    descendants count (`genesis_pinned`, `settle_genesis`);
+  - every claim names the guardian, so nobody joins without being shown who co-owns their vault (`guardian_consented`);
+  - two claims of one ticket: the smallest hash wins (`settle_ticket_once`). A withdrawal wins over every claim not in
+    its past (`settle_withdrawn`). An admin device's ack, naming the claim and having it in its past, makes it final,
+    and no withdrawal wins over a final claim. An admin device acks only the claim that stands in its own view. Two
+    acks that didn't see each other can make two claims of one ticket final; then the smaller hash wins and the ticket
+    shows as contested (`settle_final`);
+  - the relay and keeper lists are admin statements: a remove wins over every add that hadn't seen it
+    (`settle_listed`);
+  - the door admits exactly the member vaults' devices (`settle_door`), the same at every peer (`settle_perm`).
 - **The public** is every member of the network, as the door admits them (`memberOf` the admin coop), and never
   anyone outside it (Samuel, 30 Oct 2026). There is no open, IPFS-style publishing.
   - A Doc the public reads is sealed to the network's members group, which a member joins when they join and leaves
@@ -1009,7 +1038,7 @@ to and leave all the time. Scale need not be built from day one, but no choice m
 | docs (`db/docs`) | Envelopes, branches, Records, fit | **Decided by Samuel (30 Oct 2026, D13):** outside a segment are only the Doc, the key epoch and the padded ciphertext. Keepers serve catch-up by arrival order. Inside are the branch, the writer id and counters, the previous segment's hash, the signer, the cap, acks, the operation and params, the changes and the schema. The docs thread had proposed the peer, counters and previous hash outside. **Agreed with the docs thread:** Three verdicts (fit, authorized, not split), and a revocation rebuilds state. A segment holds one epoch, and a rotation closes it. Snapshots and heads are each device's own and never travel. Checkpoints travel from the Loro docs step on (A5), sealed with the `avenDB snapshot 1` subkey and hybrid-signed. A merge is checked against the merger's grant over the whole merge. Each segment carries its writer's hybrid signature. A Doc's genesis fixes its vault and root type (docs D11). A Record's creator is the signer of the envelope that made it, read from history and never from a field, so `own` can't be faked by an edit. Every Doc pins caps' built-in types `cap`, `revoke` and `epoch`, beside docs' `branch`, `closed`, `version` and `split` |
 | engine (`db/engine`) | Operations by hash, footprints, wants, the dry run | E1–E3; served is wants intersected with caps; `query` checked by the kernel or serving peer |
 | store (`store`) | Blobs and refs | Sealed blobs; key blobs and letters are blobs; the sealing parked in its "Later: sealing" comes here |
-| avenPEER | The door, the relay, the keeper | Keep caps, fetch proofs, quota per network member, letterboxes, topics per group |
+| avenPEER | The door, relays and keepers, any peer | `settle`, the tree's one rule (`Aven.ID.Network`); keep caps, fetch-key links and proofs, quota, letterboxes, topics per group |
 | actors (`aven/actor`) | Runs, routers, inbox Docs | **Agreed with avenACTOR and confirmed by Samuel (30 Oct 2026, D16):** a `cap` beside `run` on every message; no confused deputy; `tell` caps by name, pinned by the definition's hash; actor targets by address, by spawn and by definition; an inbox Doc belongs to the sender's vault and is born with the tell cap; actors at home on the Aven Peer are readable there |
 | avenOS | The UI | The dry run, raw grants, vault fingerprints, PRF sign-in and pairing |
 
@@ -1143,7 +1172,11 @@ when Core lands.
 | `Recover` | `guardian_exit` | After MaiaCityGuardian's exit, no keyring epoch is sealed to it (D12) |
 | | `never_ownerless`, `removals_win` | Removals that clash all stand, unless they'd leave no owner; then none does |
 | `Network` | `public_member`, `removal_rotates` | A public write counts only from a member, and a removed member is in no later members epoch |
-| | `ticket_once` | A ticket is claimed once, by the smallest claim hash, whatever order the claims arrive in. Depends on **A12** |
+| | `ticket_once` | A ticket is claimed once, by the smallest claim hash, whatever order the claims arrive in (A12) |
+| | `settle_perm`, `settle_genesis` | Peers holding the same statements settle the same tree, and nothing outside the pinned genesis's descendants changes it |
+| | `settle_ticket_once`, `settle_withdrawn`, `settle_final` | A ticket founds at most one vault; a withdrawal beats every claim of it outside its past that isn't final; a final claim stays final, and stands unless an ack that never saw its ack makes a smaller one final |
+| | `settle_door`, `settle_listed` | The door admits exactly the member vaults' devices; a list's entry stands only through an add that saw every remove of it |
+| | `genesis_pinned`, `guardian_consented` | Everything in the tree descends from the pinned genesis, which the claimant's passkey and MaiaCityGuardian signed (A11); a claim counts only if it names that guardian (A13) |
 | `Keep` | `fetch_chain`, `kept_every` | A keeper takes exactly the fetch keys that chain back to the Doc's genesis, each signed by the key before it (A22) |
 | | `current_agrees`, `current_chained` | Keepers holding the same links take the same current fetch key, whatever order they came in, and it chains |
 | | `fork_flagged` | Every fork a keeper takes is flagged |
@@ -1152,6 +1185,9 @@ when Core lands.
 | | `grind_example` | The limit: a removed reader's fork with a ground hash becomes current at a keeper, flagged |
 
 **After Core, or with another thread:**
+- `counts_iff`: an envelope counts exactly when its signer, its epoch, its chain, its liveness and its footprint hold;
+- `readers_agree`: a verdict depends only on the envelope, its causal past and the revocations known;
+- `index_within_key`, `sealed_roots_agree` and `root_by_writer` (rule 36, over `Aven.DB.Docs.Index`'s entries);
 - `merge_covered` and `footprints.json` (Core's footprints, with the engine);
 - `want_grants_nothing` and `one_grammar` (Core's target grammar);
 - `authority_down` (`below` groups);
@@ -1159,7 +1195,7 @@ when Core lands.
 - `device_within_cap`;
 - `safe_holds` (the safe's interface);
 - `upgrade_no_wider` and `no_confused_deputy` (`Aven.Actor`, avenACTORS);
-- the guardian's keys named in the genesis (**A11**, **A13**);
+- `settle_restore`, production's ref order, and `trees.json` (avenPEER, PEERS.md Thread A);
 - how a flagged fork of fetch keys settles, once [decided](#open-questions).
 
 Two smaller gaps:
