@@ -417,7 +417,7 @@ separate step for devices that hold many Docs ([store](../../store/README.md#nex
   ```json
   { "checkpoint": 1, "doc": "d:7Hq…", "branch": "main",
     "version": [ "b3:<tip envelope>", … ], "covers": [ "b3:<segment>", … ],
-    "snapshot": "b3:<sealed Loro snapshot>", "state": "b3:<hash of the Records' canonical JSON>",
+    "snapshot": "b3:<sealed Loro snapshot>", "state": "b3:<hash of the Records' canonical encoding>",
     "runtime": "b3:<the code that made it>", "by": "device:…", "sig": "<hybrid>" }
   ```
 
