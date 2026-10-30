@@ -604,7 +604,7 @@ the spec that owns it.
   own Peer, or the Aven Peer, under a keep cap. Such a peer can't read caps, so it checks key proofs instead. Fetch keys
   chain from the Doc's genesis, each signed by the one before; it keeps every successor, takes the smaller epoch hash
   as current as writers do, and flags a fork; the uploading vault pays. Peer to peer: any peer may keep, and none is
-  special. *Recommended; Samuel asked what it means (30 Oct 2026).*
+  special. *Decided: yes (Samuel, 30 Oct 2026).*
 - **A23. Acks can't launder:** a revoked holder's envelope never counts if the revocation is in its past. *Done in
   caps (#1499), as what D8 meant.*
 
