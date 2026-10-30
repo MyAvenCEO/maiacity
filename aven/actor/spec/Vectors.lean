@@ -8,11 +8,6 @@ import Lean.Data.Json
 where they are committed. Every vector is `{"name", "input", "expected"}`.
 
 - `kernel.json`: a trace of events from the empty kernel, and the kernel after it.
-- `state.json`: a state-runtime part, a state and a message; the new state and the effects, or `null` where the
-  part has no rule for the message.
-- `face.json`: markup, face data and style; the drawn tree (`Aven.Runtime`'s Value form), the placements, and whether
-  face-runtime gives it (`faceRun`). The todo app's own parts, and hostile markup whose tags, attributes, URLs and
-  events must be dropped.
 - `traces.json`: the same for generated traces: 40 of them, the three test actors spawned and then 40 events drawn
   with xorshift64 from a fixed seed as `Aven.Core`'s vectors draw, each against the kernel so far (a `handle` among
   inboxes with a message waiting), over addresses that live, die and never were, and every kind of event.
@@ -32,7 +27,6 @@ a byte string as `{"bytes": hex}`; a type id is its text, `d:<hex>/b3:<hex>`.
 -/
 
 open Lean Aven.Core Aven.Actor
-open Aven.Runtime (Node)
 
 def vector (name : String) (input expected : Json) : Json :=
   Json.mkObj [("name", name), ("input", input), ("expected", expected)]
@@ -287,138 +281,6 @@ def traceVectors : List Json :=
   (List.range generated.length).zip generated |>.map fun (i, es) =>
     vector s!"generated trace {i + 1}" (Json.arr (es.map Event.json).toArray) (summary es)
 
-/-! ## state-runtime -/
-
-def pathJson (p : Path) : Json := Json.arr (p.map fun b => toJson (utf8Text b)).toArray
-
-def Aven.Actor.Source.json : Source → Json
-  | .lit v => Json.mkObj [("lit", valueJson v)]
-  | .payload p => Json.mkObj [("payload", pathJson p)]
-  | .state p => Json.mkObj [("state", pathJson p)]
-
-def Aven.Actor.Update.json : Update → Json
-  | .set p s => Json.arr #["set", pathJson p, s.json]
-  | .merge p s => Json.arr #["merge", pathJson p, s.json]
-  | .append p s => Json.arr #["append", pathJson p, s.json]
-  | .remove p => Json.arr #["remove", pathJson p]
-
-def Aven.Actor.Send.json : Send → Json
-  | .reply s => Json.arr #["reply", s.json]
-  | .tell to name p => Json.arr #["tell", to.json, name, p.json]
-
-def Aven.Actor.Effect.json : Effect → Json
-  | .tell r name p => Json.arr #["tell", r.text, name, valueJson p]
-  | .ask r name p within => Json.arr #["ask", r.text, name, valueJson p, within]
-  | .reply re p => Json.arr #["reply", re.json, valueJson p]
-
-def partJson (part : StatePart) : Json :=
-  Json.mkObj (part.map fun (name, rule) => (name, Json.mkObj [
-    ("updates", Json.arr (rule.updates.map Update.json).toArray),
-    ("sends", Json.arr (rule.sends.map Send.json).toArray),
-    ("phase", match rule.phase with | some p => toJson p | none => Json.null)]))
-
-def obj (kvs : List (String × Value)) : Value := .map (kvs.map fun (k', v) => (key k', v))
-
-/-- The todo list's part: `add` appends the payload's text as a task, `get` replies with the tasks. -/
-def listPart : StatePart := [
-  ("add", ⟨[.append (path ["tasks"]) (.payload (path ["text"]))], [], none⟩),
-  ("get", ⟨[], [.reply (.state (path ["tasks"]))], none⟩)]
-
-/-- The field's part: `input` keeps the text; `submit` sends it to its placer as `add` and clears it. -/
-def fieldPart : StatePart := [
-  ("input", ⟨[.set (path ["text"]) (.payload (path ["text"]))], [], none⟩),
-  ("submit", ⟨[.set (path ["out", "text"]) (.state (path ["text"])), .remove (path ["text"])],
-    [.tell (.state (path ["placer"])) "add" (.state (path ["out"]))], none⟩),
-  ("props", ⟨[.merge [] (.payload [])], [], none⟩)]
-
-def msg (name : String) (payload : Value) (kind : Kind := .tell) : Message := ⟨person, addr "x", 1, name, payload, kind⟩
-
-def stateCases : List (String × StatePart × Value × Message) := [
-  ("add appends a task", listPart, obj [("tasks", .array [text "milk"])], msg "add" (obj [("text", text "bread")])),
-  ("add makes the list when there is none", listPart, obj [], msg "add" (obj [("text", text "milk")])),
-  ("get replies with the tasks", listPart, obj [("tasks", .array [text "milk"])], msg "get" .null (.ask 500)),
-  ("a reply to a tell is dropped", listPart, obj [("tasks", .array [])], msg "get" .null),
-  ("no rule for a message is an error", listPart, obj [], msg "remove" .null),
-  ("input keeps the text", fieldPart, obj [("placer", text "local/list/1")], msg "input" (obj [("text", text "milk")])),
-  ("submit tells the placer and clears the text", fieldPart,
-    obj [("placer", text "local/list/1"), ("text", text "milk")], msg "submit" .null),
-  ("a tell to something that is no address is dropped", fieldPart,
-    obj [("placer", .uint 7), ("text", text "milk")], msg "submit" .null),
-  ("props merge into the state", fieldPart, obj [("placer", text "local/list/1"), ("text", text "a")],
-    msg "props" (obj [("text", text "b"), ("hint", text "New task")]))]
-
-def stateVectors : List Json :=
-  stateCases.map fun (name, part, st, m) =>
-    vector name (Json.mkObj [("part", partJson part), ("state", valueJson st),
-        ("message", Json.mkObj [("name", m.name), ("kind", m.kind.json), ("payload", valueJson m.payload)])])
-      (match part.turn st m ⟨0, 0⟩ with
-        | some o => Json.mkObj [("state", valueJson o.state), ("effects", Json.arr (o.effects.map Effect.json).toArray)]
-        | none => Json.null)
-
-/-! ## face-runtime -/
-
-def srcJson : Src → Json
-  | .lit s => Json.mkObj [("lit", s)]
-  | .data p => Json.mkObj [("$", pathJson p)]
-  | .item p => Json.mkObj [("$$", pathJson p)]
-
-partial def markupJson : Markup → Json
-  | .text s => Json.mkObj [("text", srcJson s)]
-  | .el tag attrs on kids => Json.mkObj [("tag", tag),
-      ("attrs", Json.mkObj (attrs.map fun (k', s) => (k', srcJson s))),
-      ("$on", match on with | some e => toJson e | none => Json.null),
-      ("kids", Json.arr (kids.map markupJson).toArray)]
-  | .each p kp body => Json.mkObj [("$each", pathJson p), ("key", pathJson kp), ("body", markupJson body)]
-  | .use place comp props => Json.mkObj [("$use", comp), ("place", place),
-      ("props", Json.mkObj (props.map fun (k', s) => (k', srcJson s)))]
-
-def mel (tag : String) (attrs : List (String × Src) := []) (on : Option String := none) (kids : List Markup := []) :
-    Markup := .el tag attrs on kids
-
-/-- A task's row: a checkbox named by the title, which sends `toggle`, and the title. -/
-def rowMarkup : Markup :=
-  mel "li" [("class", .lit "task")] none
-    [mel "input" [("type", .lit "checkbox"), ("aria-label", .data (path ["title"]))] (some "toggle"),
-     mel "span" [] none [.text (.data (path ["title"]))]]
-
-/-- The list's face: a field, and a row per task, keyed by its id. -/
-def listMarkup : Markup :=
-  mel "section" [] none
-    [.use "field" "field" [("hint", .lit "New task")],
-     mel "ul" [] none [.each (path ["tasks"]) (path ["id"]) (.use "row" "task-row" [("title", .item (path ["title"]))])]]
-
-/-- Everything a face must not get through. -/
-def hostileMarkup : Markup :=
-  mel "div" [("onclick", .lit "steal()"), ("style", .lit "position:fixed"), ("data-on", .data (path ["evil"]))] none
-    [mel "script" [] none [.text (.lit "steal()")],
-     mel "a" [("href", .lit "javascript:steal()")] none [.text (.lit "a link")],
-     mel "img" [("src", .lit "https://tracker.example/pixel"), ("alt", .lit "")],
-     mel "a" [("href", .data (path ["url"]))] none [.text (.lit "docs")],
-     mel "iframe" [("src", Src.lit ("/files/" ++ String.ofList (List.replicate 64 'a')))]]
-
-def tasks : Value := obj [("tasks", .array [obj [("id", text "1"), ("title", text "Buy milk")],
-  obj [("id", text "2"), ("title", text "Bake bread")], obj [("id", text "1"), ("title", text "A repeated key")]])]
-
-def faceCases : List (String × Markup × Value) := [
-  ("a task's row", rowMarkup, obj [("title", text "Buy milk")]),
-  ("the list places a field and a row per task, keyed; a repeated key is skipped", listMarkup, tasks),
-  ("hostile markup: handlers, styles, scripts, frames, foreign URLs and a forged event are dropped", hostileMarkup,
-    obj [("evil", text "deleteAll"), ("url", text "https://maia.city/docs")]),
-  ("an unnamed checkbox is refused for its accessibility", mel "input" [("type", .lit "checkbox")] (some "toggle"),
-    obj [])]
-
-def placementJson (pl : Placement) : Json :=
-  Json.mkObj [("place", pl.place), ("component", pl.component),
-    ("props", Json.mkObj (pl.props.map fun (k', v) => (k', toJson v)))]
-
-def faceVectors : List Json :=
-  faceCases.map fun (name, m, data) =>
-    let (ns, pls) := draw data .null "" m
-    vector name (Json.mkObj [("markup", markupJson m), ("data", valueJson data)])
-      (Json.mkObj [("tree", Json.arr (ns.map fun n => valueJson n.value).toArray),
-        ("placements", Json.arr (pls.map placementJson).toArray),
-        ("faceRun", toJson (faceRun ⟨m, []⟩ data).isSome)])
-
 /-! ## Checks before writing -/
 
 def final (es : List Event) : Kernel := Kernel.empty.run lib es
@@ -433,17 +295,6 @@ def final (es : List Event) : Kernel := Kernel.empty.run lib es
 #guard match (final (traces[5]!.2)).state (addr "a") with | .uint 0 => true | _ => false
 -- the broken definition is never spawned
 #guard ((final (traces[8]!.2)).defs (addr "b")).isNone
--- the field's submit tells the list `add {text: milk}` and clears its text
-#guard match fieldPart.turn (obj [("placer", text "local/list/1"), ("text", text "milk")]) (msg "submit" .null) ⟨0, 0⟩ with
-  | some o => o.effects.length == 1 && (getAt o.state (path ["text"])).isNone
-  | none => false
--- the list draws two rows, not three: the repeated key is skipped
-#guard (draw tasks .null "" listMarkup).2.length == 3
--- the hostile markup's forged event is gone
-#guard (draw (obj [("evil", text "deleteAll")]) .null "" hostileMarkup).1.all fun n =>
-  n.all.all fun x => !(x.attrs.any (·.1 == "data-on"))
--- the row is a face face-runtime gives
-#guard (faceRun ⟨rowMarkup, []⟩ (obj [("title", text "Buy milk")])).isSome
 -- admission accepts the test machines
 #guard task.admit && counter.admit && asker.admit && !broken.admit
 
@@ -454,6 +305,4 @@ def main (args : List String) : IO Unit := do
   let dir : System.FilePath := (args.head?.getD "vectors")
   IO.FS.createDirAll dir
   write dir "kernel.json" kernelVectors
-  write dir "state.json" stateVectors
-  write dir "face.json" faceVectors
   write dir "traces.json" traceVectors

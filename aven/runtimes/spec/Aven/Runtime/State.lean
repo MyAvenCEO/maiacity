@@ -1,33 +1,33 @@
-import Aven.Actor.Deadlines
+import Aven.Runtime.Contract
 
 /-!
-# state-runtime (ARCHITECTURE.md, section 5)
+# state-runtime (ARCHITECTURE.md of aven/actor, section 5)
 
 A declarative turn, with no code: for each message name, a rule of updates to the state and messages to send. It
-computes nothing but lookups, so a turn always ends, and every update touches only its own path.
+computes nothing but lookups, so a step always ends, and every update touches only its own path.
 
 - A **path** is a list of map keys.
 - A **source** is a literal Value, or a lookup in the message's payload or in the state.
 - An **update** sets, merges into, appends to or removes what is at a path.
 - A **send** replies to the ask being handled, or tells an address that a source gives as text (`scope/id/n`).
 
+`StatePart.step` is the runtime: a part, a state, a message's name and payload in; the new state, the sends and the
+next phase out. `Aven.Actor` joins it to the kernel's turn.
+
 What it proves:
 
 - `get_set`, `get_set_other`: after `set p v`, `p` holds `v`, and every path apart from `p` (neither along the other)
   holds what it held. `get_remove`: after `remove p`, `p` holds nothing. So an update touches only its path.
-- `stateTurn_total`: the turn is a total function; it never waits and always ends.
 -/
 
-namespace Aven.Actor
+namespace Aven.Runtime
 
-open Aven.Core (Value TypeId Bytes)
+open Aven.Core
 
 /-- A path: map keys, each as its UTF-8 bytes. -/
 abbrev Path := List Bytes
 
-def key (s : String) : Bytes := s.toUTF8.toList
-
-def path (ks : List String) : Path := ks.map key
+def path (ks : List String) : Path := ks.map ascii
 
 /-- What is at a path, if anything. -/
 def getAt : Value → Path → Option Value
@@ -104,32 +104,35 @@ structure StateRule where
 /-- A state-runtime part: a rule per message name. -/
 abbrev StatePart := List (String × StateRule)
 
-def Addr.ofText? (s : String) : Option Addr :=
-  match s.splitOn "/" with
-  | [scope, id, n] => n.toNat?.map fun n => ⟨scope, id, n⟩
-  | _ => none
+/-- What a send comes to: a reply's Value, or a tell to an address given as text. -/
+inductive SendOut where
+  | reply (v : Value)
+  | tell (to : String) (name : String) (payload : Value)
+  deriving Repr, Inhabited
 
 def textOf : Value → Option String
   | .text b => String.fromUTF8? ⟨b.toArray⟩
   | _ => none
 
-def Send.effect (s : Send) (st : Value) (m : Message) : Option Effect :=
+/-- A send, from the new state and the payload. A tell to something that is no text is dropped. -/
+def Send.out (s : Send) (st payload : Value) : Option SendOut :=
   match s with
-  | .reply src => if m.kind.isAsk then some (.reply m.id (src.eval st m.payload)) else none
-  | .tell to name p => ((textOf (to.eval st m.payload)).bind Addr.ofText?).map fun a =>
-      .tell a name (p.eval st m.payload)
+  | .reply src => some (.reply (src.eval st payload))
+  | .tell to name p => (textOf (to.eval st payload)).map fun a => .tell a name (p.eval st payload)
 
-/-- The turn a state-runtime part gives: no rule for the message is an error; otherwise the updates, then the sends.
-A reply to a tell, or a tell to something that is no address, is dropped. -/
-def StatePart.turn (part : StatePart) (st : Value) (m : Message) (_ : Given) : Option Output :=
-  match part.lookup m.name with
+structure StateOut where
+  state : Value
+  sends : List SendOut
+  phase : Option String
+  deriving Repr, Inhabited
+
+/-- state-runtime: no rule for the message is an error; otherwise the updates in order, then the sends. -/
+def StatePart.step (part : StatePart) (st : Value) (name : String) (payload : Value) : Option StateOut :=
+  match part.lookup name with
   | none => none
   | some rule =>
-    let st' := rule.updates.foldl (fun s u => u.apply m.payload s) st
-    some ⟨st', rule.sends.filterMap (·.effect st' m), rule.phase⟩
-
-theorem stateTurn_total (part : StatePart) (st : Value) (m : Message) (g : Given) :
-    ∃ o, part.turn st m g = o := ⟨_, rfl⟩
+    let st' := rule.updates.foldl (fun s u => u.apply payload s) st
+    some ⟨st', rule.sends.filterMap (·.out st' payload), rule.phase⟩
 
 /-! ## An update touches only its path -/
 
@@ -227,4 +230,4 @@ theorem get_remove (v : Value) (p : Path) (hp : p ≠ []) : getAt (removeAt v p)
         | some w => simp [getAt, lookup_setEntry_self, ih w (by simp)]
       | _ => simp [removeAt, getAt]
 
-end Aven.Actor
+end Aven.Runtime

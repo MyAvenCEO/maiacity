@@ -1,8 +1,8 @@
-import Aven.Actor.State
+import Aven.Runtime.State
 import Aven.Runtime.Face
 
 /-!
-# face-runtime's input: markup (ARCHITECTURE.md, sections 5, 6 and 8)
+# face-runtime's input: markup (ARCHITECTURE.md of aven/actor, sections 5, 6 and 8)
 
 A face's `markup` part is a tree in a small vocabulary, with no conditionals: the markup computes nothing.
 
@@ -16,19 +16,18 @@ A face's `markup` part is a tree in a small vocabulary, with no conditionals: th
 
 Drawing gives nodes and placements. What it proves, for any markup and any data:
 
-- `draw_nodes_ok`: every node drawn passes the applier's per-node check (`Aven.Runtime.nodeOk`): a tag the allowlist
+- `draw_nodes_ok`: every node drawn passes the applier's per-node check (`nodeOk`): a tag the allowlist
   refuses is dropped with what is under it, and an attribute it refuses is dropped. So a face can fail only on its
-  limits or its accessibility, which `faceRun` checks with `Aven.Runtime.faceOk`.
+  limits or its accessibility, which `faceRun` checks with `faceOk`.
 - `draw_events`: every event a drawn node carries is one the markup names, so the clicks a face can send are known
   from its definition.
 
-The `style` part is `Aven.Runtime`'s list of rules: style as data, never CSS text.
+The `style` part is the list of `Rule`s in `Face`: style as data, never CSS text.
 -/
 
-namespace Aven.Actor
+namespace Aven.Runtime
 
-open Aven.Core (Value TypeId Bytes)
-open Aven.Runtime (Node nodeOk tagOk attrOk FaceOut faceOk treeLimits)
+open Aven.Core
 
 /-- Where a piece of text comes from: a literal, `$` (the face data) or `$$` (the current list item). -/
 inductive Src where
@@ -45,7 +44,7 @@ inductive Markup where
   deriving Repr, Inhabited
 
 /-- A Value as text: text as itself, numbers in decimal, `true` and `false`; anything else is empty. -/
-def render : Value → String
+def shown : Value → String
   | .text b => (String.fromUTF8? ⟨b.toArray⟩).getD ""
   | .uint n => toString n
   | .nint n => "-" ++ toString (n + 1)
@@ -55,8 +54,8 @@ def render : Value → String
 def Src.eval (src : Src) (data item : Value) : String :=
   match src with
   | .lit s => s
-  | .data p => ((getAt data p).map render).getD ""
-  | .item p => ((getAt item p).map render).getD ""
+  | .data p => ((getAt data p).map shown).getD ""
+  | .item p => ((getAt item p).map shown).getD ""
 
 /-- A placement: the place, the component placed there, and its props. -/
 structure Placement where
@@ -70,7 +69,7 @@ def keyed (data : Value) (p key : Path) : List (String × Value) :=
   let items := match getAt data p with
     | some (.array xs) => xs
     | _ => []
-  (items.map fun it => (((getAt it key).map render).getD "", it)).foldl
+  (items.map fun it => (((getAt it key).map shown).getD "", it)).foldl
     (fun acc kv => if acc.any (·.1 == kv.1) then acc else acc ++ [kv]) []
 
 /-- The attributes the runtime writes itself; markup can't set them. -/
@@ -111,8 +110,8 @@ theorem attrsOf_ok (tag : String) (attrs : List (String × Src)) (on : Option St
   intro a ha; exact ha.2
 
 theorem slot_ok (at_ : String) : nodeOk (.el "slot" [("data-place", at_)] []) = true := by
-  simp [nodeOk, tagOk, Aven.Runtime.allowedTags, Aven.Runtime.forbidden, attrOk, Aven.Runtime.isHandler,
-    Aven.Runtime.globalAttrs, Aven.Runtime.valueOk]
+  simp [nodeOk, tagOk, allowedTags, forbidden, attrOk, isHandler,
+    globalAttrs, valueOk]
   decide
 
 theorem draw_nodes_ok (data item : Value) (pre : String) (m : Markup) :
@@ -189,7 +188,7 @@ theorem draw_events (data item : Value) (pre : String) (m : Markup) :
 /-- A face part: its markup and its style. -/
 structure FacePart where
   markup : Markup
-  style : List Aven.Runtime.Rule
+  style : List Rule
   deriving Repr, Inhabited
 
 /-- face-runtime: the tree under one root, its style, and its placements; refused when the face fails the applier's
@@ -209,4 +208,4 @@ theorem faceRun_ok {fp : FacePart} {data : Value} {o : FaceOut} {pls : List Plac
   · next hc => simp only [Option.some.injEq, Prod.mk.injEq] at h; obtain ⟨rfl, -⟩ := h; exact hc.1
   · simp at h
 
-end Aven.Actor
+end Aven.Runtime
