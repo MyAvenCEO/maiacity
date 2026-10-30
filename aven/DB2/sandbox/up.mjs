@@ -140,6 +140,8 @@ async function install() {
 	const frozen = lock === 'none' ? '' : '--frozen-lockfile';
 	const script = `bun install ${frozen} && sha256sum bun.lock | cut -d' ' -f1 > node_modules/.avensandbox-lock`;
 	await $`docker run --rm ${network()} ${volumes} -w /work ${image} sh -c ${script}`.env(env);
+	// a running Vite keeps an import it couldn't resolve before the install: it starts again on the new dependencies
+	if ((await $`${compose} ps -q browsers`.env(env).nothrow().quiet().text()).trim()) await $`${compose} restart browsers`.env(env).quiet();
 }
 
 // The builder (SANDBOX.md, "The box"): compiles the Peer and the Peer-Light's wasm, avenOS's one module, once, into
@@ -189,7 +191,14 @@ async function check() {
 	const run = `runs/${new Date().toISOString().replace(/[:.]/g, '-')}`;
 	const result = await $`${compose} exec -T browsers node sandbox/check.mjs ${run}`.env(env).nothrow();
 	const passed =
-		fenced.length === 0 && fresh && result.exitCode === 0 && (await keeps(run)) && (await claims(run)) && (await members(run)) && (await chats(run));
+		fenced.length === 0 &&
+		fresh &&
+		result.exitCode === 0 &&
+		(await keeps(run)) &&
+		(await inWebKit(run)) &&
+		(await claims(run)) &&
+		(await members(run)) &&
+		(await chats(run));
 	say(`${passed ? 'check passed' : 'check FAILED'}; screenshots and report in aven/DB2/${run}/`);
 	return passed ? 0 : 1;
 }
@@ -234,6 +243,18 @@ async function keeps(run) {
 	for (const problem of problems) say(`record: ${problem}`);
 	if (report.ok) say(`a restart kept all four records, and a wipe emptied them (${(report.ms / 1000).toFixed(1)} s)`);
 	return report.ok;
+}
+
+// The Peer-Lights in WebKit, Safari's engine (sandbox/webkit.mjs): the cast's two, live on their own OPFS, and avenOS's
+// release build, served as aven.maia.city serves it, reaching the prod peer in WebKit and Chromium. The build is the one
+// `bun run build` releases; the rest of the check runs the dev server.
+async function inWebKit(run) {
+	const timed = Date.now();
+	await buildPage();
+	const built = Date.now() - timed;
+	const ok = (await $`${compose} exec -T browsers node sandbox/webkit.mjs ${run}`.env(env).nothrow()).exitCode === 0;
+	say(`${ok ? 'WebKit runs both Peer-Lights, and the release build goes live in WebKit and Chromium' : 'the WebKit step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s, the build ${(built / 1000).toFixed(1)} s)`);
+	return ok;
 }
 
 // The admin's passkey (PRODUCTION.md, "How it is checked"), on production's stand-in: an Aven Peer in production's
@@ -321,15 +342,36 @@ async function up(args) {
 	if (args.includes('--check')) process.exit(await check());
 }
 
-// Every release's deliverables (SANDBOX.md, "Production"): for now avenOS for the browser, built in the box.
+// Every release's deliverables (SANDBOX.md, "Production"): for now avenOS for the browser, built in the box, with
+// the Peer-Light in release at /peer-light/, the page's one WebAssembly module, where the dev server serves the loop's debug build
+// (sandbox/peers.mjs); a build without it never went live (aven.maia.city, 30 Oct 2026). The check builds and runs
+// this same build (sandbox/webkit.mjs).
+async function buildPage() {
+	await $`docker volume create avensandbox_target`.quiet();
+	const volumes = ['-v', `${db2}:/work`, '-v', 'avensandbox_node_modules:/work/node_modules', ...rustVolumes];
+	// the Peer-Light in release, for phones, in a build folder of its own, so the release profile's settings below
+	// never rebuild the loop's crates. The loop's debug build stays as it is
+	const wasm = 'target/release-light/wasm32-unknown-unknown/release/aven_peer_light.wasm';
+	const script = [
+		'set -e',
+		// sized for a phone, by environment so the workspace's Cargo.toml and the box's tag stay as they are: 3.9 MB, 1.4 MB
+		// gzipped, where release as it is gives 7.5 MB and the loop's debug build 8.8 MB (11.25 MB as first shipped). The
+		// box has no wasm-opt
+		'export CARGO_PROFILE_RELEASE_OPT_LEVEL=s CARGO_PROFILE_RELEASE_LTO=true CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 CARGO_PROFILE_RELEASE_STRIP=symbols',
+		'cargo build -q --release -p aven-peer-light --lib --target wasm32-unknown-unknown --target-dir target/release-light',
+		`rm -rf target/light-release && wasm-bindgen --target web --no-typescript --out-dir target/light-release ${wasm}`,
+		'node_modules/.bin/vite build --config vite.config.js --logLevel warn',
+		'mkdir -p dist/peer-light',
+		'cp target/light-release/aven_peer_light.js target/light-release/aven_peer_light_bg.wasm dist/peer-light/',
+	].join(' && ');
+	await $`docker run --rm ${network()} ${volumes} -w /work ${image} sh -c ${script}`.env(env);
+}
+
 async function deliverables() {
 	await ensureDocker();
 	await ensureImages();
 	await install();
-	await $`docker volume create avensandbox_target`.quiet();
-	const volumes = ['-v', `${db2}:/work`, '-v', 'avensandbox_node_modules:/work/node_modules', ...rustVolumes];
-	const script = 'node_modules/.bin/vite build --config vite.config.js';
-	await $`docker run --rm ${network()} ${volumes} -w /work ${image} sh -c ${script}`.env(env);
+	await buildPage();
 	const out = join(db2, 'deliverables');
 	rmSync(out, { recursive: true, force: true });
 	await $`mkdir -p ${out}`;

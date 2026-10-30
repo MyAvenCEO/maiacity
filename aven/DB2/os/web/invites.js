@@ -2,8 +2,8 @@
 // only the admin invites, an invite is a one-time Ed25519 key, and its link, `#/join/<secret>`, carries that key's
 // secret. Making and withdrawing one is an owner's act on the network, signed with the passkey of a person whose vault
 // owns the admin, which the statement names; joining is a statement signed by the one-time key and by the joiner's
-// new passkey. What each statement's text says is aven-id's (inviteText, withdrawText, joinText, computed in the Peer-Light); the
-// Aven Peer decides what it takes, and the Peer-Light tells the invites and their states (room.svelte.js). The
+// new passkey. What each statement's text says is aven-id's (inviteText, withdrawText, joinText), computed in the
+// Peer-Light; the Aven Peer decides what it takes, and the Peer-Light tells the invites and their states (room.svelte.js). The
 // one-time key is made here with WebCrypto and its secret lives only in the link. A join is sent as the claim is; the
 // Peer-Light also hands it to the relay, so the door lets a newcomer in to deliver it (#1431).
 import { deviceId, inviteText, joinText, oneTimePublic, owners, passkeyId, personId, signJoin, tree, validPersonName, withdrawText } from './id.svelte.js';

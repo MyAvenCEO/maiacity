@@ -3,6 +3,7 @@
 // peer's status is its newest status line, and its record (the first start it keeps through its store) its newest
 // stored line.
 import { askThrough, hearViews } from './id.svelte.js';
+import { openWorker } from './peer/open.js';
 import { hear, speakThrough } from './room.svelte.js';
 
 export const live = $state({ timeline: [], status: {}, paths: {}, stored: {}, own: null, ownStored: null });
@@ -43,10 +44,7 @@ async function configure(cast, me) {
 
 // Runs this origin's Peer-Light: one shared worker per origin, whatever the tabs and frames.
 export async function runLight(cast, me) {
-	const url = new URL('./peer/worker.js', import.meta.url);
-	const shared = typeof SharedWorker === 'function';
-	const worker = shared ? new SharedWorker(url, { type: 'module', name: me }) : new Worker(url, { type: 'module' });
-	const port = shared ? worker.port : worker;
+	const { port } = openWorker(me);
 	port.onmessage = ({ data }) => {
 		const line = JSON.parse(data);
 		hearViews(line);
@@ -63,10 +61,7 @@ export async function runLight(cast, me) {
 // The box's own view (localhost) serves no vault and runs no peer, but its views come from the Peer-Light all the
 // same: its worker loads the core and pushes every view of the cast's tree as the box sees it, acting as every person.
 export function runBox(cast) {
-	const url = new URL('./peer/worker.js', import.meta.url);
-	const shared = typeof SharedWorker === 'function';
-	const worker = shared ? new SharedWorker(url, { type: 'module', name: 'box' }) : new Worker(url, { type: 'module' });
-	const port = shared ? worker.port : worker;
+	const { port } = openWorker('box');
 	port.onmessage = ({ data }) => hearViews(JSON.parse(data));
 	askThrough(port);
 	port.start?.();

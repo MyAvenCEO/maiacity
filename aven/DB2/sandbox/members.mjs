@@ -63,7 +63,9 @@ async function attach(page) {
 	await page.goto(`${origin}/`);
 	await page.locator('main[data-view]').first().waitFor({ timeout: 30_000 });
 	return page.evaluate(async () => {
-		const worker = new SharedWorker('/peer/worker.js', { type: 'module', name: 'network' });
+		// the page's own worker, opened as the page opens it: Vite names the worker's URL, and a shared worker is its URL
+		// and name
+		const { worker } = (await import('/peer/open.js')).openWorker('network');
 		const heard = [];
 		// what a statement needs computed, asked of the Peer-Light and answered to this port alone
 		const waiting = new Map();
