@@ -9,6 +9,7 @@ import Aven.ID.Ask
 import Aven.ID.Cast
 import Aven.ID.OS
 import Aven.ID.Sign
+import Aven.ID.Keys
 
 /-! # Aven.ID
 

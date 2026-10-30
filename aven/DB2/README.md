@@ -11,7 +11,9 @@ avenDB moves into `aven/db`.
 **Status (30 Oct 2026): milestone 1 is integrated.** avenSANDBOX's box runs all four peers live: the Aven Peer with
 its relay, Alice Peer direct over UDP, and two Peer-Lights in one Chromium. avenOS reads the cast's tree of vaults
 through avenID's wasm, and each peer keeps its record through avenDB's store: in S3, a folder or OPFS. Lean proves
-`Aven.ID` and `Aven.DB` without `sorry`. The plan: [`SANDBOX.md`](SANDBOX.md).
+`Aven.ID` and `Aven.DB` without `sorry`, the store's contract included, and every test derives from it (rule 10): Lean's
+examples and generated cases are exported as vectors that the Rust, the wasm and avenOS's check load. The plan:
+[`SANDBOX.md`](SANDBOX.md).
 
 ## Why a rebuild
 

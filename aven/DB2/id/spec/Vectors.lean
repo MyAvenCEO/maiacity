@@ -1,5 +1,6 @@
 import Aven.ID.Json
 import Aven.ID.Gen
+import Aven.ID.Keys
 
 /-! # The test vectors (README, rule 10)
 
@@ -11,6 +12,8 @@ import Aven.ID.Gen
   check load it.
 - `statements.json`: the cast's devices signing (`Aven.ID.Sign`): who signs what with which key, what is changed
   before verifying, and the answers. aven-id's tests sign and verify with real keys and compare.
+- `keys.json`: each cast key's seed and public half (`Aven.ID.Keys`). aven-id's tests derive them with Ed25519 and
+  compare, and hold `sandbox/cast.json`'s public halves to them.
 - `avenos.json`: what avenOS shows on the cast (`Aven.ID.OS`), for `sandbox/check.mjs`.
 
 `bun run up --check` runs it again and fails when the files differ from what is committed. -/
@@ -61,6 +64,12 @@ def statements : List Json :=
     let (input, expected) := e.vector
     vector e.name input expected
 
+def keys : List Json :=
+  cast.keys.map fun id =>
+    let seed := Keys.seed id
+    vector s!"{id}'s test key" (Json.mkObj [("id", id)])
+      (Json.mkObj [("seed", Keys.hex seed), ("public", Keys.hex (Keys.publicKey seed))])
+
 /-- One vector per line, so a change reads as a diff of lines. -/
 def render (vs : List Json) : String :=
   "[\n" ++ ",\n".intercalate (vs.map Json.compress) ++ "\n]\n"
@@ -70,4 +79,5 @@ def main (args : List String) : IO Unit := do
   IO.FS.createDirAll dir
   IO.FS.writeFile (dir / "trees.json") (render trees)
   IO.FS.writeFile (dir / "statements.json") (render statements)
+  IO.FS.writeFile (dir / "keys.json") (render keys)
   IO.FS.writeFile (dir / "avenos.json") (render avenos)
