@@ -317,6 +317,17 @@ pub fn say(text: String) -> Result<(), JsError> {
     })
 }
 
+/// Deletes a line of this device's vault, by its name: a retraction on this device's chain, kept and shown at once
+/// (the line shows deleted), then sent (`aven_peer::room::Room::retract`).
+#[wasm_bindgen]
+pub fn retract(id: String) -> Result<(), JsError> {
+    running(|r| {
+        let room = r.room.clone();
+        wasm_bindgen_futures::spawn_local(async move { room.retract(id).await });
+        Ok(())
+    })
+}
+
 /// Sends a line's blob on gossip as it is, unchecked here: every other peer checks it. The box's check sends a fork
 /// and a line of a device that is no member's this way (store/README.md, "How it is checked", 5).
 #[wasm_bindgen]

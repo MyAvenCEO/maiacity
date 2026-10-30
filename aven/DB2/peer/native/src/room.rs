@@ -13,7 +13,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use aven_db_core::chain::Body;
+use aven_db_core::chain::{Body, Line};
 use aven_db_core::chat::{self, EVERY_MS, Kind, Message};
 use aven_db_core::files::Announcement;
 use aven_db_core::timeline;
@@ -297,8 +297,27 @@ impl Room {
         }
     }
 
+    /// Deletes the line `id`, one of this device's vault: a retraction on this device's chain, kept and shown at once
+    /// (the line shows deleted), then sent. A line of another vault is refused here; every peer would ignore it.
+    pub async fn retract(&self, id: String) {
+        match &self.chats {
+            Some(chats) => match chats.retract(&id).await {
+                Err(why) => self.note("refused", json!({ "why": why })),
+                written => self.send_line(written).await,
+            },
+            None => self.note(
+                "dropped",
+                json!({ "why": "a delete, and this peer keeps no chains" }),
+            ),
+        }
+    }
+
     async fn write(&self, chats: &Chats, body: Body) {
-        match chats.write(body).await {
+        self.send_line(chats.write(body).await).await
+    }
+
+    async fn send_line(&self, written: Result<Option<Line>, String>) {
+        match written {
             Ok(None) => {}
             Ok(Some(line)) => {
                 // out once a neighbour has it; alone, it waits in the store for the link to send it (`chats`)

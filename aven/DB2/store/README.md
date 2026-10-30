@@ -210,6 +210,17 @@ avenDB-old kept each device's changes; this stays when sealing comes:
   them all (`headsPages_more`); a peer names every chain it wants in `catch_up` pages, each `only` for the chains it
   names, which the Aven Peer answers alone (`answer_pages`). No page is empty, so each moves the receiver forward
   (rule 3).
+- **Deleting a line or a file** (Samuel, 30 Oct 2026; `Aven.DB.Chains`, "Deleting a line"): a delete is a
+  retraction, a line of the deleting device's chain like any other, offline too, naming the line by its id and
+  repeating its place. It counts only from a device of the line's own vault, which every peer judges itself
+  (`retracts_author`); any other is kept and ignored. A peer that holds the line drops its text: the blob is deleted,
+  and the ref `gone-<id>` names the retraction, so a reload walks the chain past it and catching up sends the
+  retraction in its place. A peer that doesn't hold it yet keeps its place as a stub, so the line never shows, whatever
+  the order things arrive in. A file goes once no line names it any more, from every store that honours the delete:
+  the Peer-Light's OPFS, a Peer's folder and the Aven Peer's bucket, which then serves it no more. Every chat shows
+  "Message deleted" in the line's place. The chain still verifies by its links (`redact_valid`), but the deleted line's
+  own signature can't be checked again, since it signed the text; lines that sign their body's hash, a later line
+  version, would keep that too. A delete binds honest peers only: no peer can be forced to forget what it was sent.
 - **Later:** milestone 4 replaces the line format with Loro segments. The shape, a head over blobs, is the
   README's document, so nothing is thrown away, and the old lines stay readable (production keeps its store).
 

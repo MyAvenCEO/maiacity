@@ -2,8 +2,9 @@
 // the right edge). On Alice's Peer-Light in the cast's box, in any engine: Alice writes a long unbroken word, shares a
 // file with a long name, a wide image and a movie, and the presence row gets many chips; then at 375×667 and 390×844
 // the page scrolls no wider than the screen, and every bubble's right edge and the Send button lie inside it, Send
-// at least 44 px to touch. The dashboard, the Vault and the Control Room are held to the same width. Only layout is
-// checked here, so the extra chips are copies of the page's own.
+// at least 44 px to touch. Alice deletes a line at that width: the confirmation lies inside the screen, its buttons 44
+// px to touch, and the line shows deleted in place. The dashboard, the Vault and the Control Room are held to the same
+// width. Only layout is checked here, so the extra chips are copies of the page's own.
 import { deflateSync, crc32 } from 'node:zlib';
 
 export const phones = [
@@ -78,6 +79,27 @@ export async function narrow(page, engine, shots) {
 	if (!(await shown(page.getByTestId('lines').getByText(word)))) problems.push(`${engine}: the long word never showed`);
 	for (const name of [long, `wide-${stamp}.png`, `movie-${stamp}.mp4`])
 		if (!(await shown(page.locator(`[data-testid="file"] a[download="${name}"]`)))) problems.push(`${engine}: ${name} never showed`);
+	// a line deleted at a phone's width, through its bubble's delete and the confirmation
+	const doomed = `delete me, ${stamp}`;
+	await page.getByTestId('line').fill(doomed);
+	await page.getByTestId('say').click();
+	const bubble = page.getByTestId('lines').locator('li', { hasText: doomed }).last();
+	if (!(await shown(bubble))) problems.push(`${engine}: the line to delete never showed`);
+	else {
+		await bubble.hover();
+		await bubble.getByTestId('delete').click();
+		const dialog = page.getByTestId('confirm-delete');
+		if (!(await shown(dialog))) problems.push(`${engine}: deleting asked for no confirmation`);
+		const box = await dialog.boundingBox();
+		if (!box || box.x < 0 || box.x + box.width > phones[0].width + 0.5) problems.push(`${engine}: the confirmation lies at ${JSON.stringify(box)}`);
+		for (const button of ['delete-no', 'delete-yes']) {
+			const b = await page.getByTestId(button).boundingBox();
+			if (!b || b.width < 44 || b.height < 44) problems.push(`${engine}: ${button} is ${JSON.stringify(b)}, under 44 px to touch`);
+		}
+		const id = await bubble.getAttribute('data-id');
+		await page.getByTestId('delete-yes').click();
+		if (!(await shown(page.locator(`li[data-id="${id}"] [data-testid="deleted"]`)))) problems.push(`${engine}: the deleted line did not show deleted`);
+	}
 	// many presence chips: the row scrolls by itself, never the page
 	await page.evaluate(() => {
 		const row = document.querySelector('[data-testid="present"]');
