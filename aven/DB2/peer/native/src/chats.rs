@@ -10,6 +10,7 @@
 use std::sync::{Arc, Mutex};
 
 use aven_db_core::chain::{self, Answer, Held, Keeper, Line};
+use aven_db_core::files::Announcement;
 use aven_db_core::timeline;
 use aven_db_core::wire::{Frame, Have, Head, MAX_FRAME};
 use aven_db_store::{Hash, RefName, Store};
@@ -154,11 +155,13 @@ impl Chats {
             Ok(k) => self.gate.name(&k),
             Err(_) => (h.line.device.clone(), None),
         };
-        self.note(
-            "chat",
-            json!({ "from": name, "vault": vault, "key": h.line.device, "text": h.line.text, "at": h.line.at,
-                "seq": h.line.seq, "id": h.id }),
-        );
+        let mut fields = json!({ "from": name, "vault": vault, "key": h.line.device, "text": h.line.text,
+            "at": h.line.at, "seq": h.line.seq, "id": h.id });
+        // a file's announcement: the page shows the file, by its index
+        if let Some(file) = Announcement::of(&h.line.text) {
+            fields["file"] = json!(file);
+        }
+        self.note("chat", fields);
     }
 
     /// This device's key, as lines name it.
@@ -334,9 +337,7 @@ impl Chats {
                 self.advance(&device).await;
             }
             Answer::Gap => {
-                let keeper = self.keeper.lock().unwrap();
-                let h = keeper.loose().first().cloned();
-                drop(keeper);
+                let h = self.keeper.lock().unwrap().loose().first().cloned();
                 if let Some(h) = h {
                     self.show(&h);
                 }

@@ -21,8 +21,20 @@ function load() {
 	return loading;
 }
 
+// every chat line the Peer-Light told, by its name: the history a page that connects later gets whole, and what the
+// Service Worker learns a file's size and type from
+const chat = new Map();
+
 function tell(line) {
-	if (JSON.parse(line).event === 'views') {
+	const event = JSON.parse(line);
+	if (event.event === 'chat' && event.id) {
+		chat.set(event.id, line);
+		if (event.file) files.set(event.file.file, event.file);
+		for (const port of pages) port.postMessage(line);
+		fetch(`/events/${event.peer}`, { method: 'POST', body: line }).catch(() => {});
+		return;
+	}
+	if (event.event === 'views') {
 		views = line;
 		for (const port of pages) port.postMessage(line);
 		return;
@@ -78,13 +90,17 @@ async function showBox({ cast }) {
 
 // What a person's acts need computed, asked by a page and answered to it alone (peer/light/src/acts.rs)
 const acts = new Set(['challenge', 'claimText', 'signInText', 'deviceId', 'passkeyId', 'personId', 'validPersonName']);
+// a file shared in the chat, a chunk at a time, on the running Peer-Light's store (room.svelte.js)
+const running = new Set(['put_chunk', 'share']);
+for (const fn of running) acts.add(fn);
 for (const fn of ['inviteId', 'inviteText', 'withdrawText', 'joinText', 'oneTimePublic', 'signJoin']) acts.add(fn);
 async function answer(port, { id, fn, args }) {
 	const reply = { t: Date.now(), peer: 'page', event: 'answer', id };
 	try {
 		if (!acts.has(fn)) throw new Error(`the Peer-Light computes no ${fn}`);
 		await load();
-		reply.value = light[fn](...args);
+		if (running.has(fn)) await started;
+		reply.value = await light[fn](...args);
 	} catch (error) {
 		reply.error = String(error?.message ?? error);
 	}
@@ -100,7 +116,7 @@ function connect(port) {
 		// a statement for the Aven Peer, a line for the chat's room, or a message as it is (the box's check), from the page.
 		// The page sends its start with each, which only the first one here uses: a worker no page has started yet (Safari
 		// can hand a page one) starts then, rather than failing on a Peer-Light it never loaded (aven.maia.city, 30 Oct)
-		for (const call of ['send', 'say', 'post']) {
+		for (const call of ['send', 'say', 'post', 'post_line']) {
 			if (data?.[call] === undefined) continue;
 			await started;
 			try {
@@ -112,12 +128,34 @@ function connect(port) {
 		}
 	};
 	for (const line of lines) port.postMessage(line);
+	for (const line of chat.values()) port.postMessage(line);
 	if (views) port.postMessage(views);
 	// a worker nobody has started asks its page for the start: Safari can bring one up behind a page that started an
 	// earlier one, which then talks to it as if it ran
 	if (!started) port.postMessage(JSON.stringify({ t: Date.now(), peer: 'page', event: 'start?' }));
 	port.start?.();
 }
+
+// The Service Worker's `/files/<hash>` (os/web/files-sw.js) asks for a range of a file on the BroadcastChannel
+// `aven-peer-light:<network>`: {id, read: {file, start, end}}, answered {id, size, type, bytes} or {id, error}. The
+// file's size and type are its announcement's, from the chat's lines; the bytes the Peer-Light reads from the chunks
+// the range touches.
+const files = new Map();
+const bridge = new BroadcastChannel('aven-peer-light:aven');
+bridge.onmessage = async ({ data }) => {
+	if (!data?.read || data.id === undefined) return;
+	const { file, start, end } = data.read;
+	const known = files.get(file);
+	if (!known) return; // another tab's Peer-Light may know it
+	try {
+		await started;
+		const last = Math.min(end ?? known.size, known.size);
+		const bytes = await light.read(file, known.size, Math.min(start ?? 0, last), last);
+		bridge.postMessage({ id: data.id, size: known.size, type: known.type, bytes });
+	} catch (error) {
+		bridge.postMessage({ id: data.id, error: String(error?.message ?? error) });
+	}
+};
 
 // a SharedWorker hears each page as a port; a plain Worker, where SharedWorker is missing, is its own one port
 if ('onconnect' in self) self.onconnect = (event) => connect(event.ports[0]);

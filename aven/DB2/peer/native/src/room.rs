@@ -272,7 +272,12 @@ impl Room {
         };
         match chats.write(text).await {
             Ok(line) => {
-                self.gossip_line(&line.blob()).await;
+                // out once a neighbour has it; alone, it waits in the store for the link to send it (`chats`)
+                let blob = line.blob();
+                let near = self.state.lock().unwrap().neighbours > 0;
+                if self.gossip_line(&blob).await && near {
+                    self.note("sent", json!({ "ids": [Hash::of(&blob).to_hex()] }));
+                }
             }
             Err(why) => self.note("dropped", json!({ "why": why })),
         }

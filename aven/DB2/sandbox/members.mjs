@@ -11,8 +11,8 @@
 //                                              invite is kept out by the relay (3); the admin and the member chat, the
 //                                              Aven Peer says who joined, and a message signed by a key that is no
 //                                              member's is dropped by every peer (5)
-//   node sandbox/members.mjs restarted <run>   after the Aven Peer restarted: the same member, let in again, and an
-//                                              empty chat (6)
+//   node sandbox/members.mjs restarted <run>   after the Aven Peer restarted: the same member, let in again, and the
+//                                              chat kept: the Aven Peer's store holds every line (6; store/README.md)
 //
 // `bun run up --check` runs the phases, restarts the Aven Peer between them, and checks its hook from a stranger Peer
 // dialling it directly (3). What the door admits and what a join may do is the model's (`Aven.ID.Invite`, its traces
@@ -262,7 +262,7 @@ if (phase === 'members') {
 }
 
 if (phase === 'restarted') {
-	// 6. a restart keeps the members and empties the chat
+	// 6. a restart keeps the members and the chat: the Aven Peer loads every chain from its store
 	const since = report.restartedAt ?? 0;
 	const network = await line((l) => prod('network')(l) && l.claimed, since);
 	if (JSON.stringify(network?.members) !== JSON.stringify(report.memberIds)) problems.push(`after a restart the members are ${JSON.stringify(network?.members)}`);
@@ -272,7 +272,8 @@ if (phase === 'restarted') {
 	const memberDevice = device(member.key);
 	if (!(await line((l) => l.peer === memberDevice && l.event === 'status' && l.phase === 'live', opened))) problems.push("after a restart the member's browser isn't live");
 	await wait(1000);
-	if (lines().some((l) => l.t >= since && l.event === 'chat' && l.text?.startsWith('hello from'))) problems.push('after a restart the chat still holds the lines before');
+	for (const text of ['hello from the admin', 'hello from the member'])
+		if (!lines().some((l) => l.t >= since && l.peer === 'prod-peer' && l.event === 'chat' && l.text === text)) problems.push(`after a restart the Aven Peer lost "${text}"`);
 	const at = Date.now();
 	await say(member, 'hello again');
 	if (!(await line((l) => l.peer === 'prod-peer' && l.event === 'chat' && l.text === 'hello again', at))) problems.push("after a restart the member's line did not arrive");

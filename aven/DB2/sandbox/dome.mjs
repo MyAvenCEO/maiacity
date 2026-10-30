@@ -1,0 +1,206 @@
+// The city-dome's chat with its history and files, checked in the cast's box (store/README.md, "How it is checked"),
+// in the browsers' container, on Alice's and Bob's Peer-Lights at alice.localhost and bob.localhost:
+//
+// - Alice writes lines and Bob's chat shows them; Bob reloads and finds the whole chat, in order (3);
+// - a third browser on Bob's origin, with an empty OPFS, joins later and catches up on the whole chat (3);
+// - Bob, offline, writes a line: it shows at once, still on its way, and arrives on reconnect (4);
+// - a fork of Bob's chain is raised by the Aven Peer and never shown; a line of a device that is no member's is
+//   dropped by every peer and never shown (5);
+// - Alice shares an image and a PDF: her chat shows them at once from her own store, through the Service Worker's
+//   /files/<hash> (local first). Bob's copy needs the Aven Peer to keep the file and Bob to fetch its chunks, over
+//   iroh-blobs once the store's adapter is in: reported as `pending` until then.
+//
+// The fork and the stranger's line are signed here with the cast's test keys (public on purpose, valid only inside
+// the box), as a cloned device or an outsider would, and sent through Alice's Peer-Light as they are. What a line's
+// body is and what the peers answer comes from Lean (`Aven.DB.Chains`, its traces replayed by aven-db-core's tests);
+// here only the box's mechanics.
+import { createHash, createPrivateKey, sign } from 'node:crypto';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { crc32, deflateSync } from 'node:zlib';
+import { chromium } from 'playwright';
+import { lines } from './records.mjs';
+
+const run = process.argv[2] ?? 'runs/latest';
+mkdirSync(run, { recursive: true });
+const problems = [];
+const report = {};
+const started = Date.now();
+const wait = (ms) => new Promise((done) => setTimeout(done, ms));
+const stamp = `${started}`;
+
+async function line(match, since, timeout = 20_000) {
+	const deadline = Date.now() + timeout;
+	while (Date.now() < deadline) {
+		const found = lines().find((l) => l.t >= since && match(l));
+		if (found) return found;
+		await wait(200);
+	}
+	return null;
+}
+
+const seen = (locator, timeout = 20_000) =>
+	locator
+		.first()
+		.waitFor({ timeout })
+		.then(() => true)
+		.catch(() => false);
+const shown = (page) => page.getByTestId('lines').locator('li[data-from]');
+const texts = async (page) => (await shown(page).allTextContents()).map((t) => t.trim());
+
+// a cast's test key: its Ed25519 seed is sha256("avenSANDBOX test signer: <id>") (cast.json)
+const seed = (id) => createHash('sha256').update(`avenSANDBOX test signer: ${id}`).digest();
+const ed25519 = (seed) => createPrivateKey({ key: Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), seed]), format: 'der', type: 'pkcs8' });
+const publicHex = (key) => Buffer.from(key.export({ format: 'jwk' }).x, 'base64url').toString('hex');
+
+// A line's blob (aven-db-core's `chain::Line::blob`): its body with the signature after its `at` line
+function blob({ device, seq, prev, at, text }, key) {
+	const head = `avenDB line 1\nnetwork aven\ndevice ${device}\nseq ${seq}\nprev ${prev ?? 'none'}\nat ${at}\n`;
+	const sig = sign(null, Buffer.from(`${head}${text}`), key).toString('hex');
+	return `${head}sig ${sig}\n${text}`;
+}
+
+// a line sent as it is through a page's Peer-Light, its worker opened as the page opens it (members.mjs)
+const postLine = (page, name, blob) =>
+	page.evaluate(
+		async ({ name, blob }) => {
+			const { port } = (await import('/peer/open.js')).openWorker(name);
+			port.start?.();
+			port.postMessage({ post_line: blob });
+		},
+		{ name, blob },
+	);
+
+// a 16 × 16 image, a PNG made here: its chunks, each with its CRC
+function makePng() {
+	const chunk = (type, data) => {
+		const head = Buffer.alloc(4);
+		head.writeUInt32BE(data.length);
+		const body = Buffer.concat([Buffer.from(type), data]);
+		const crc = Buffer.alloc(4);
+		crc.writeUInt32BE(crc32(body));
+		return Buffer.concat([head, body, crc]);
+	};
+	const ihdr = Buffer.alloc(13);
+	ihdr.writeUInt32BE(16, 0);
+	ihdr.writeUInt32BE(16, 4);
+	ihdr.set([8, 6, 0, 0, 0], 8);
+	const row = Buffer.concat([Buffer.from([0]), Buffer.alloc(16 * 4, 0xc0)]);
+	const pixels = deflateSync(Buffer.concat(Array.from({ length: 16 }, () => row)));
+	return Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR', ihdr), chunk('IDAT', pixels), chunk('IEND', Buffer.alloc(0))]);
+}
+
+const browser = await chromium.launch();
+const profiles = {};
+async function open(who, profile = who) {
+	profiles[profile] ??= await browser.newContext({ viewport: { width: 1100, height: 700 } });
+	const page = await profiles[profile].newPage();
+	await page.goto(`http://${who}.localhost:5173/#/${who}/chat`);
+	await seen(page.locator('[data-view="chat"]'));
+	return page;
+}
+const say = async (page, text) => {
+	await page.getByTestId('line').fill(text);
+	await page.getByTestId('say').click();
+};
+
+const alice = await open('alice');
+const bob = await open('bob');
+await seen(bob.locator('[data-testid="present"] li[data-vault="alice"]'));
+
+// Alice's lines reach Bob, and show in order
+const written = [`one, ${stamp}`, `two, ${stamp}`, `three, ${stamp}`];
+for (const text of written) await say(alice, text);
+for (const text of written) if (!(await seen(bob.getByTestId('lines').locator('li', { hasText: text })))) problems.push(`"${text}" did not reach Bob`);
+
+// 3. Bob reloads and finds the whole chat, in order
+const before = await texts(bob);
+await bob.reload();
+await seen(bob.locator('[data-view="chat"]'));
+const same = async (page) => (await texts(page)).join('\n') === before.join('\n');
+for (let i = 0; i < 40 && !(await same(bob)); i++) await wait(250);
+if (!(await same(bob))) problems.push(`after a reload Bob's chat holds ${(await texts(bob)).length} of ${before.length} lines, or not in order`);
+await bob.screenshot({ path: `${run}/dome-bob-reloaded.png` });
+
+// a third browser on Bob's origin, its OPFS empty, joins later and catches up from the Aven Peer
+const late = await open('bob', 'late');
+const lateAt = Date.now();
+for (let i = 0; i < 80 && !(await same(late)); i++) await wait(250);
+report.lateJoinerMs = Date.now() - lateAt;
+if (!(await same(late))) problems.push(`a late joiner holds ${(await texts(late)).length} of ${before.length} lines, or not in order`);
+await late.screenshot({ path: `${run}/dome-late-joiner.png` });
+await late.close();
+
+// 4. Bob, offline, writes a line: shown at once, still on its way; on reconnect it arrives
+await profiles.bob.setOffline(true);
+const offline = `written offline, ${stamp}`;
+const offlineAt = Date.now();
+await say(bob, offline);
+if (!(await seen(bob.getByTestId('lines').locator('li', { hasText: offline }), 2000))) problems.push('a line written offline did not show at once');
+report.offlineShownMs = Date.now() - offlineAt;
+report.offlineSending = await bob.getByTestId('lines').locator('li', { hasText: offline }).getByTestId('sending').count();
+await bob.screenshot({ path: `${run}/dome-bob-offline.png` });
+await profiles.bob.setOffline(false);
+if (!(await seen(alice.getByTestId('lines').locator('li', { hasText: offline }), 40_000))) problems.push('a line written offline did not arrive on reconnect');
+report.offlineArrivedMs = Date.now() - offlineAt;
+
+// 5. a fork of Bob's chain: a second first line, as a cloned device would write it. Raised, never shown
+const bobKey = ed25519(seed('bob-peer-light'));
+const bobDevice = publicHex(bobKey);
+const forkAt = Date.now();
+const fork = blob({ device: bobDevice, seq: 1, at: forkAt, text: `a fork, ${stamp}` }, bobKey);
+await postLine(alice, 'alice-peer-light', fork);
+const raised = await line((l) => l.peer === 'aven-peer' && l.event === 'fork' && l.key === bobDevice, forkAt);
+if (!raised) problems.push('the Aven Peer did not raise the fork');
+// a line of a device that is no member's: dropped, never shown
+const eve = ed25519(createHash('sha256').update(`not a member ${stamp}`).digest());
+const strangerAt = Date.now();
+await postLine(alice, 'alice-peer-light', blob({ device: publicHex(eve), seq: 1, at: strangerAt, text: `a stranger, ${stamp}` }, eve));
+for (const peer of ['aven-peer', 'bob-peer-light']) {
+	const dropped = await line((l) => l.peer === peer && l.event === 'dropped' && l.from === publicHex(eve).slice(0, 10), strangerAt);
+	if (dropped?.why !== 'notMember') problems.push(`${peer} did not drop the stranger's line: ${JSON.stringify(dropped)}`);
+}
+await wait(1000);
+for (const text of [`a fork, ${stamp}`, `a stranger, ${stamp}`])
+	if (await bob.getByTestId('lines').locator('li', { hasText: text }).count()) problems.push(`Bob's chat shows "${text}"`);
+
+// files: Alice shares an image and a PDF; her chat shows them at once, from her own store
+const png = makePng();
+const pdf = Buffer.from(
+	'%PDF-1.1\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 100]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n',
+);
+const sharedAt = Date.now();
+await alice.getByTestId('file-input').setInputFiles([
+	{ name: `dot-${stamp}.png`, mimeType: 'image/png', buffer: png },
+	{ name: `page-${stamp}.pdf`, mimeType: 'application/pdf', buffer: pdf },
+]);
+const image = alice.locator(`[data-testid="file"][data-kind="image"]`, { has: alice.locator(`a[download="dot-${stamp}.png"]`) }).locator('img');
+if (!(await seen(image))) problems.push("Alice's image did not show");
+const loaded = async (img) => img.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false);
+for (let i = 0; i < 40 && !(await loaded(image)); i++) await wait(250);
+if (!(await loaded(image))) problems.push("Alice's image did not load from /files/<hash>");
+report.imageShownMs = Date.now() - sharedAt;
+const file = await image.evaluate((i) => new URL(i.src).pathname).catch(() => null);
+const range = file && (await alice.evaluate(async (path) => {
+	const r = await fetch(path, { headers: { Range: 'bytes=1-3' } });
+	return { status: r.status, range: r.headers.get('content-range'), bytes: [...new Uint8Array(await r.arrayBuffer())] };
+}, file));
+report.range = range;
+if (range?.status !== 206 || JSON.stringify(range.bytes) !== JSON.stringify([...png.subarray(1, 4)]) || range.range !== `bytes 1-3/${png.length}`)
+	problems.push(`a range of the image is ${JSON.stringify(range)}`);
+if (!(await seen(alice.locator(`[data-testid="file"][data-kind="pdf"]`)))) problems.push("Alice's PDF did not show");
+await alice.screenshot({ path: `${run}/dome-alice-files.png` });
+// Bob's copy: the Aven Peer keeps the file and Bob fetches its chunks once iroh-blobs is in
+const bobImage = bob.locator(`a[download="dot-${stamp}.png"]`);
+report.pending = {
+	bobSeesTheImage: (await seen(bobImage)) && (await loaded(bob.locator('[data-testid="file"][data-kind="image"] img').last())),
+};
+await bob.screenshot({ path: `${run}/dome-bob-files.png` });
+await browser.close();
+
+report.ok = problems.length === 0;
+report.problems = problems;
+report.ms = Date.now() - started;
+writeFileSync(`${run}/dome.json`, `${JSON.stringify(report, null, 2)}\n`);
+for (const problem of problems) console.log(`avenSANDBOX: dome: ${problem}`);
+console.log(`avenSANDBOX: dome: ${problems.length ? 'FAILED' : 'ok'} (${(report.ms / 1000).toFixed(1)} s)`);
+process.exit(problems.length ? 1 : 0);

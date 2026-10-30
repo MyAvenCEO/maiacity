@@ -29,7 +29,7 @@ use aven_peer::iroh_gossip::{self, Gossip};
 use aven_peer::members::{Gate, Hook};
 use aven_peer::chats::{self, Chats};
 use aven_peer::room::Room;
-use aven_peer::{Notes, keys, link, now, record};
+use aven_peer::{Notes, files, keys, link, now, record};
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
 use iroh::{
@@ -107,6 +107,7 @@ struct Running {
     outbox: futures_channel::mpsc::UnboundedSender<Frame>,
     room: Room,
     router: Router,
+    store: chats::Shared,
 }
 
 thread_local! {
@@ -167,6 +168,64 @@ pub fn say(text: String) -> Result<(), JsError> {
         wasm_bindgen_futures::spawn_local(async move { room.say(text).await });
         Ok(())
     })
+}
+
+/// Sends a line's blob on gossip as it is, unchecked here: every other peer checks it. The box's check sends a fork
+/// and a line of a device that is no member's this way (store/README.md, "How it is checked", 5).
+#[wasm_bindgen]
+pub fn post_line(blob: String) -> Result<(), JsError> {
+    running(|r| {
+        let room = r.room.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            room.gossip_line(blob.as_bytes()).await;
+        });
+        Ok(())
+    })
+}
+
+/// Puts one chunk of a file the page is sharing, at most 1 MiB, into this origin's store, and returns its name: the
+/// page reads a dropped file a chunk at a time, so a movie never sits in memory whole (store/README.md).
+#[wasm_bindgen]
+pub async fn put_chunk(bytes: Vec<u8>) -> Result<String, JsError> {
+    let store = running(|r| Ok(r.store.clone()))?;
+    let hash = files::put_chunk(&*store, bytes.into()).await.map_err(js)?;
+    Ok(hash.to_hex())
+}
+
+/// Shares a file whose chunks are in the store (their names, in order, as JSON): puts its index, keeps it under
+/// `file-<index>`, and says its announcement as a line of this device's chain, shown at once. Returns the index's
+/// name.
+#[wasm_bindgen]
+pub async fn share(name: String, kind: String, size: f64, chunks: String) -> Result<String, JsError> {
+    let (store, room) = running(|r| Ok((r.store.clone(), r.room.clone())))?;
+    let chunks: Vec<String> = serde_json::from_str(&chunks).map_err(js)?;
+    let chunks = chunks
+        .iter()
+        .map(|c| c.parse())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(js)?;
+    let announced = files::share(&*store, &name, &kind, size as u64, &chunks)
+        .await
+        .map_err(js)?;
+    let file = announced.file.clone();
+    room.say(announced.text()).await;
+    Ok(file)
+}
+
+/// Bytes `start..end` of the file `file` of `size` bytes, from the chunks the range touches: the Service Worker's
+/// `/files/<hash>` answers with them (206). Refused with the chunks still missing, which come from another holder once
+/// iroh-blobs is in.
+#[wasm_bindgen]
+pub async fn read(file: String, size: f64, start: f64, end: f64) -> Result<Vec<u8>, JsError> {
+    let store = running(|r| Ok(r.store.clone()))?;
+    let file = file.parse().map_err(js)?;
+    match files::read(&*store, &file, size as u64, start as u64, end as u64)
+        .await
+        .map_err(js)?
+    {
+        files::Read::Bytes(b) => Ok(b),
+        files::Read::Missing(m) => Err(JsError::new(&format!("{} chunks still on their way", m.len()))),
+    }
 }
 
 /// Sends a chat message as it is (JSON), unchecked here: every other peer checks it. The box's check sends one signed
@@ -327,7 +386,8 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
     // the crate also builds natively, for the workspace's tests; there it has no OPFS
     #[cfg(not(target_arch = "wasm32"))]
     let (store, kind) = (backend::memory().map_err(js)?, "memory");
-    let kept = record::first_start(&store, &name, now())
+    let store: chats::Shared = Arc::new(store);
+    let kept = record::first_start(&*store, &name, now())
         .await
         .map_err(js)?;
     notes(record::line(now(), &name, kind, &kept));
@@ -338,7 +398,7 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
         secret.clone(),
         gate.clone(),
         notes.clone(),
-        Arc::new(store) as chats::Shared,
+        store.clone(),
     )
     .await
     .map_err(js)?;
@@ -368,6 +428,7 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
             outbox,
             room,
             router,
+            store,
         })
     });
     wasm_bindgen_futures::spawn_local(link::run(

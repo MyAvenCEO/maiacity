@@ -264,6 +264,13 @@ async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Re
                                     send.write_all(&encode(&frame))
                                         .await
                                         .map_err(|e| e.to_string())?;
+                                    if let Frame::Lines { lines } = &frame {
+                                        let ids: Vec<String> = lines
+                                            .iter()
+                                            .map(|l| aven_db_store::Hash::of(l.as_bytes()).to_hex())
+                                            .collect();
+                                        link.note("sent", json!({ "ids": ids }));
+                                    }
                                 }
                             }
                         }

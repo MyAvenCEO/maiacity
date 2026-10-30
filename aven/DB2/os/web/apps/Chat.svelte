@@ -1,16 +1,20 @@
 <script>
-	// avenOS's Chat (MILESTONE2.md, thread B): the network's one room, everyone's lines live, who is present, and a line
-	// to write in. Lines are pushed by this origin's Peer-Light and never re-queried (README, rule 8); none is kept, so
-	// a reload empties the room. Senders are named through the tree: a device by the person vault it acts for. A line the
+	// avenOS's Chat (MILESTONE2.md, thread B; store/README.md): the city-dome, everyone's lines live, who is present,
+	// and a line to write in. Lines are pushed by this origin's Peer-Light and never re-queried (README, rule 8); they
+	// are the chat's history, so a reload finds them again. A line written here shows at once and says while it is
+	// still on its way; a dropped image, PDF or movie shows at once too, from /files/<hash>, which the Service Worker
+	// answers range by range. Senders are named through the tree: a device by the person vault it acts for. A line the
 	// network says through the Aven Peer (who joined) is its own kind.
 	import Avatar from '../Avatar.svelte';
 	import { tree, vaultName } from '../id.svelte.js';
-	import { room, say } from '../room.svelte.js';
+	import { room, say, share } from '../room.svelte.js';
 
 	let { account, device } = $props();
 
 	let text = $state('');
 	let list = $state();
+	let over = $state(false);
+	let picker = $state();
 	// a vault the tree may not know yet (a member who joined after it was told): its id stands for its name
 	const known = (id) => Boolean(id && tree.kind(id));
 	// the vault a line is said for: as the line names it, or, in the cast, whom its device acts for
@@ -29,6 +33,21 @@
 		say(text);
 		text = '';
 	}
+
+	function drop(event) {
+		event.preventDefault();
+		over = false;
+		for (const file of event.dataTransfer?.files ?? []) share(file);
+	}
+
+	function pick() {
+		for (const file of picker.files ?? []) share(file);
+		picker.value = '';
+	}
+
+	const kind = (type) =>
+		type.startsWith('image/') ? 'image' : type.startsWith('video/') ? 'video' : type === 'application/pdf' ? 'pdf' : 'file';
+	const size = (n) => (n < 1 << 20 ? `${Math.ceil(n / 1024)} KB` : `${(n / (1 << 20)).toFixed(1)} MB`);
 </script>
 
 <div data-view="chat" data-account={account}>
@@ -41,7 +60,16 @@
 		</ul>
 	</aside>
 
-	<section aria-label="Room">
+	<section
+		aria-label="Room"
+		class:over
+		ondragover={(e) => {
+			e.preventDefault();
+			over = true;
+		}}
+		ondragleave={() => (over = false)}
+		ondrop={drop}
+	>
 		<ol bind:this={list} data-testid="lines">
 			{#each room.lines as line, i (i)}
 				{@const vault = vaultOf(line)}
@@ -49,19 +77,39 @@
 				<li class:mine={line.from === device} class:said data-from={line.from} data-vault={vault}>
 					{#if said}
 						<span class="text" data-testid="network-line">{line.text}</span>
+					{:else if line.file}
+						{@const f = line.file}
+						<strong>{who(vault ?? line.from)}</strong>
+						<figure data-testid="file" data-file={f.file} data-kind={kind(f.type)}>
+							{#if kind(f.type) === 'image'}
+								<img src="/files/{f.file}" alt={f.name} />
+							{:else if kind(f.type) === 'video'}
+								<!-- svelte-ignore a11y_media_has_caption -->
+								<video src="/files/{f.file}" controls preload="metadata"></video>
+							{:else if kind(f.type) === 'pdf'}
+								<iframe src="/files/{f.file}" title={f.name}></iframe>
+							{/if}
+							<figcaption><a href="/files/{f.file}" download={f.name}>{f.name}</a> · {size(f.size)}</figcaption>
+						</figure>
 					{:else}
 						<strong>{who(vault ?? line.from)}</strong>
 						<span class="text">{line.text}</span>
 					{/if}
 					<time>{time(line.at)}</time>
+					{#if line.from === device && line.id && !room.sent[line.id]}<small data-testid="sending">sending</small>{/if}
 				</li>
 			{:else}
-				<li class="empty">Nobody has said anything since this page opened.</li>
+				<li class="empty">Nobody has said anything yet.</li>
+			{/each}
+			{#each room.sharing as s (s)}
+				<li class="mine" data-testid="sharing"><span class="text">{s.name}</span> <small>into the store, {size(s.done)} of {size(s.size)}</small></li>
 			{/each}
 		</ol>
 		<form onsubmit={send}>
 			<input bind:value={text} placeholder="Write to everyone here" aria-label="Line" data-testid="line" />
 			<button disabled={!text.trim()} data-testid="say">Send</button>
+			<input type="file" multiple hidden bind:this={picker} onchange={pick} data-testid="file-input" />
+			<button type="button" onclick={() => picker.click()} aria-label="Share a file" data-testid="share">+</button>
 		</form>
 		{#if room.refused}<p class="refused" data-testid="refused">{room.refused}</p>{/if}
 	</section>
@@ -109,6 +157,31 @@
 		gap: 8px;
 		padding: 4px 0;
 		font-size: 14px;
+	}
+
+	section.over {
+		outline: 2px dashed var(--muted);
+		outline-offset: 4px;
+	}
+
+	figure {
+		margin: 4px 0 0;
+		display: grid;
+		gap: 4px;
+	}
+
+	figure img,
+	figure video {
+		max-width: min(420px, 100%);
+		max-height: 320px;
+		border-radius: 6px;
+	}
+
+	figure iframe {
+		width: min(420px, 100%);
+		height: 320px;
+		border: 1px solid var(--muted);
+		border-radius: 6px;
 	}
 
 	section {
