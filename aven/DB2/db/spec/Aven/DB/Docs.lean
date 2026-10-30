@@ -3,6 +3,7 @@ import Aven.DB.Docs.OpIds
 import Aven.DB.Docs.Counts
 import Aven.DB.Docs.Checkpoint
 import Aven.DB.Docs.Fit
+import Aven.DB.Docs.Changes
 import Aven.DB.Docs.Lens
 import Aven.DB.Docs.Merge
 import Aven.DB.Docs.Index
@@ -20,6 +21,7 @@ On top of the shared core (`Aven.Core`: Values, the codec, envelopes, logs, spli
 - `Counts`: what counts is fit, authorized and not a split; revocations only narrow it; splits are final; writer ids;
 - `Checkpoint`: a checkpoint that checks is the replay of what it covers;
 - `Fit`: rules on single values survive a merge, judged per envelope, and size rules don't;
+- `Changes`: what an envelope does to a Doc's Records, the view fit and the engine's footprint both read;
 - `Lens`: a read through a lens commutes with a merge;
 - `Merge`: three-way merges place by place, and backing out a commit;
 - `Index`: directories and indexes as Prolly trees: the same entries make the same nodes, folds in steps equal folds
