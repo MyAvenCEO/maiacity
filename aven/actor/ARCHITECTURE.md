@@ -137,6 +137,26 @@ scale.
 from A to B is in A's order. Messages from different senders have no order between them until B's journal records the order in
 which B handled them.
 
+**Order between peers.** The same holds local-first and peer to peer, because no message is ever ordered by a CRDT
+merge. Each inbox is one writer's append-only log, each entry numbered by `seq` and later chained by hash, so there
+is nothing to merge and nothing to conflict. Sync may bring entries late or out of order; the receiver handles entry
+`n + 1` only after entry `n`, and a gap waits until sync fills it (`handled_in_order` holds for every schedule, and
+a sync's delays are a schedule). What is not promised:
+
+- **No causal order across pairs.** If A tells B `x`, then tells C, and C then tells B `y`, B may handle `y` before
+  `x`. A message that must come after another says so in its payload, and the turn waits for it in its state.
+- **Offline means later, not lost.** A message to an actor on a device that is away waits in its inbox; a turn never
+  waits for it. An ask to it fails with `timeout` at its deadline, and an answer after that is dropped.
+- **A gap holds up the pair behind it.** One missing entry holds back the later ones from that sender, until sync or
+  a keeper brings it.
+- **Moving an actor's home** (A17: the address names no device) needs a handover: the new home continues the actor's
+  logs from the last entry of the old one, and the old one writes no more. Specified with avenPEER, later.
+
+**Ask or tell.** The two differ in whether an answer comes back, not in reading or writing. An `ask` is a call: one
+question, exactly one `reply` or `fail`. A `tell` is a notice: no answer. A one-off read is an ask. A write that can
+be refused (no cap, a schema, a conflict) is an ask too, since its sender needs the outcome. A tell is for what
+needs no answer: an event, a notice, a person's decision that comes when it comes.
+
 ## 5. Layer 3: runtimes
 
 **A runtime is a pure function from values to values**, frozen as a WebAssembly module and named by its hash:
@@ -296,8 +316,29 @@ before and after; the effects; the fuel used; and the **outcome**: `done`, `refu
 its reason. A refused or failed message is journaled too, and leaves the state as it was. Replaying a journal with
 what it pins gives the same state.
 
-**Spawning** is an ask to the kernel, which is an actor too: `spawn { def, init }` replies with the new address. In
-version 1 any local actor may spawn, but only definitions that come from the repository.
+**Spawning** is an ask to the kernel, which is an actor too: `spawn { def, init }` replies with the new address.
+**Retiring** is a tell to it: `retire { address }`. In version 1 any local actor may spawn, but only definitions that
+come from the repository. The kernel has no other operations: everything is a message or the clock (Samuel, 30 Oct
+2026).
+
+**Doors.** An actor's own data is its own state, changed by its own turn and saved with it, atomically. Every other
+Doc is someone else's (law 1), reached only by messages to a **door**: a built-in actor that does I/O for the others.
+The doors are the engine (Docs and Records, later), files, and later the model and HTTP. The store is not a door: it
+sits inside avenDB, below the engine. A door:
+
+- runs in the host, outside the pure kernel. Its answers arrive as messages, journaled by their receivers, so a replay
+  never runs a door again;
+- takes one message as one atomic operation: a write that touches several Records is one ask;
+- acts only with the cap the message carries, never its own (no confused deputy);
+- handles one sender's messages in order, so an actor reads its own writes.
+
+A standing read is not a message: it is the definition's `loads`, handed into each turn and journaled as (Doc,
+version, query hash). When a loaded Doc changes, the engine sends the actor one `changed` tell, and its next turn sees
+the new data. Turns keep three effects: tell, ask and reply (Samuel, 30 Oct 2026).
+
+**Approvals are tells.** A turn that needs a person's decision tells the person actor, and the decision comes back as
+a tell whenever the person makes it, in minutes or days. An ask is for answers within its deadline (Samuel, 30 Oct
+2026).
 
 **Answers.** A `reply` or `fail` reaches the asker as a message named `reply` or `fail`, so a machine can wait for it
 (`transition(reply, waiting, done)`). An actor can answer only an ask that was sent to it and is still waiting; any
@@ -412,7 +453,7 @@ Each later step replaces a layer's implementation, not its interface:
 | Network and avenDB | Later (section 11); the Doc interface is the seam |
 | Composites and skills | A composite is an actor whose turn tells other actors. No kernel concept, no members field, no merge law. "Skill" is a product word for such an actor |
 | Studio, planner, `requires` / `produces` contracts, registry | Apps or actors that read definitions, later |
-| The model, the store, HTTP and other doors | Actors, each added when something needs it |
+| The model, HTTP, files and the engine | Doors: built-in actors, each added when something needs it (section 7). The store is avenDB's, below the engine |
 | `explain`, learning, self-healing adapters | Later |
 
 ## 13. The package
@@ -516,10 +557,18 @@ Decided here, on those grounds:
 
 Open, none of it blocking version 1 (the audit's findings, mostly avenDB's proposal A17, awaiting Samuel):
 
-- **Effects that write data:** a `mutate` effect with its signer, Doc and footprint, atomic with the journal or through
-  the outbox.
 - **The kernel's authority:** a narrow device vault for the actor host; click caps scoped to what the placer wired;
   who may spawn, and a bound on placement depth; a budget per run, and backpressure.
-- **Approvals longer than 10 minutes,** and a `timeout` that does not mean "not done".
+- **A `timeout` does not mean "not done":** a write asked of a door may still commit after its ask timed out. The
+  door's answer to a later read is the truth.
 - **Performance gates** for wasm inside wasm, fuel across engines, and a shadow root per face.
-- **Runtimes:** whether a fact table needs a Prolog runtime; state-runtime's grammar.
+- **Machines as data (recommended, awaiting Samuel).** A machine is fact-only: `transition(Message, From, To)` and
+  nothing else, so it is a table, which a Value expresses exactly. Recommended: the interface and the machine as one
+  structure, two parts: the interface gives each message its name and schema, the same in every phase (caps rely on
+  a message keeping its schema); the machine gives, per phase, the messages allowed and the phases they may lead to.
+  It is checked once, when a definition is admitted: states declared, one initial state, every message in the
+  interface, every state reachable, proven in Lean. No Prolog runtime in version 1. Kept from Prolog: facts as data,
+  relations as tuples, "which messages are legal now" as a query over facts, and every check declarative. Rules,
+  guards and questions such as "can this machine get stuck?" come later, as a logic runtime beside the table, or as
+  proofs in Lean when a definition is admitted.
+- **Runtimes:** state-runtime's grammar.
