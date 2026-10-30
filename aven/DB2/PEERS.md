@@ -175,7 +175,9 @@ every peer must reach the same tree from the same statements, whatever order the
    among the claims still standing (`ticket_once`). The others found nothing. Two final claims of one ticket happen
    only when two admin devices ack different claims without seeing each other's ack: the smallest hash still settles it,
    and the conflict shows in the settled tree (the caps thread, 30 Oct 2026).
-6. **Lists:** an admin's remove wins over every add not in its past, as a withdrawal does.
+6. **Lists:** an admin's remove wins over every add of the same device that hadn't seen it: the adds in its past and
+   those concurrent with it. An add that has the remove in its past puts the device back (the caps thread, 30 Oct
+   2026).
 7. The door admits exactly the devices of the settled tree's group (K12): the same devices at every peer, because every
    peer settles the same set.
 
@@ -185,7 +187,8 @@ In `Aven.ID.Network`, with the caps thread (`ticket_once` is there since #1531),
 
 - **`settle_perm`:** two lists of statements with the same members settle to the same tree. Convergence is then only
   that peers hold the same set, which gossip's reconciliation gives and the box tests.
-- **`settle_ticket_once`:** in a settled tree, a ticket founds at most one vault.
+- **`settle_ticket_once`:** in a settled tree, a ticket founds at most one vault. A ticket with two final claims is
+  marked `contested`.
 - **`settle_withdrawn`:** a withdrawal of T leaves no non-final claim of T outside its past standing.
 - **`settle_final`:** a final claim stays standing whatever statements are added later, unless what is added makes
   another claim of its ticket with a smaller hash final, which only an ack that never saw the first ack can do.
