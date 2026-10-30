@@ -51,7 +51,16 @@
 	const claimed = $derived(net.claimed ?? (net.door === false ? true : null));
 </script>
 
-{#if member && route !== 'claim'}
+{#if net.storage}
+	<main data-view="no-storage">
+		<h1>avenOS</h1>
+		<p data-testid="no-storage">
+			This browser window doesn't allow storage for {location.hostname} (a private window?). Open {link ? 'the link' : 'avenOS'} in a normal
+			window.
+		</p>
+		<p class="muted" data-testid="no-storage-why">{net.storage}</p>
+	</main>
+{:else if member && route !== 'claim'}
 	{#key stamp}
 		<App {cast} device={net.me} {config} />
 	{/key}
