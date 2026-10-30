@@ -29,6 +29,9 @@ services:
       AVEN_PEER_S3_ENDPOINT: https://hel1.your-objectstorage.com
       AVEN_PEER_S3_REGION: hel1
       AVEN_PEER_S3_BUCKET: city-maia-aven
+      # Hetzner's Object Storage refuses a correct If-Match and ignores a stale one on DELETE (the deploy's probe, 30 Oct
+      # 2026), so the store sends no conditions and leans on its lock and the one writer, like a folder
+      AVEN_PEER_S3_CONDITIONS: "off"
       # Part A's flags (PRODUCTION.md, "The code"): the passkeys' RP ID and origin, and MaiaCityGuardian's public
       # half. A peer without them ignores them; empty, the guardian is unset
       AVEN_PEER_RP_ID: maia.city
