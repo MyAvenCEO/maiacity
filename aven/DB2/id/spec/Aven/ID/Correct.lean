@@ -115,13 +115,24 @@ theorem actsFor_device (w : t.WF) {d : String} (h : t.kind? d = some .device) :
       simpa [Vault.ownerVaults, e, Owner.vault?] using o
     · contradiction
 
-/-- A device serves no device: what it serves is a person's or a network's vault. -/
+/-- A device serves no device. -/
 theorem actsFor_not_device (w : t.WF) {d s : String} (h : t.actsFor d = some s) : t.kind? s ≠ some .device :=
   w.not_device (actsFor_some h).1
+
+/-- Nor a coop: people act for a coop through their own devices, so it holds none (PRODUCTION.md, Part C). -/
+theorem actsFor_not_coop (w : t.WF) {d s : String} (h : t.actsFor d = some s) : t.kind? s ≠ some .coop :=
+  let ⟨o, k⟩ := actsFor_some h; w.coop_no_device o k
 
 /-- A device's own devices are exactly the device vaults it owns. -/
 theorem mem_actsThrough {a d : String} : d ∈ t.actsThrough a ↔ t.Owns a d ∧ t.kind? d = some .device := by
   simp [actsThrough, mem_owned, isDevice]
+
+/-- A coop acts through no device of its own. -/
+theorem actsThrough_coop (w : t.WF) {c : String} (h : t.kind? c = some .coop) : t.actsThrough c = [] := by
+  apply List.eq_nil_iff_forall_not_mem.mpr
+  intro d m
+  obtain ⟨o, k⟩ := mem_actsThrough.mp m
+  exact w.coop_no_device o k h
 
 /-- What a vault acts through serves that vault. -/
 theorem actsThrough_actsFor (w : t.WF) {a d : String} (h : d ∈ t.actsThrough a) : t.actsFor d = some a := by
@@ -143,12 +154,12 @@ theorem mem_accounts {d : Option String} {x : String} (h : x ∈ t.accounts d) :
       · simp at h
     · simp at h
 
-/-- No network or device vault is ever an account. -/
+/-- No network, coop or device vault is ever an account. -/
 theorem not_account {d : Option String} {x : String}
-    (h : t.kind? x = some .network ∨ t.kind? x = some .device) : x ∉ t.accounts d := by
+    (h : t.kind? x = some .network ∨ t.kind? x = some .coop ∨ t.kind? x = some .device) : x ∉ t.accounts d := by
   intro m
   have := mem_accounts m
-  cases h <;> simp_all
+  rcases h with h | h | h <;> simp_all
 
 /-- A device may act as the person it serves, and only as them. -/
 theorem accounts_device {d x : String} (h : x ∈ t.accounts (some d)) : t.actsFor d = some x := by

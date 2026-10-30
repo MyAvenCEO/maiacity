@@ -9,7 +9,7 @@ tests replay them with real keys: each passkey is a test P-256 key (`Aven.ID.P25
 (`Aven.ID.Keys`), and every assertion is signed for real.
 
 A browser is named by a short name (`1`, `2`): its device is `device-1`, its key the test key of that id. A passkey is
-named the same way (`a`): `passkey-a`, owning `person-a`. The server is the box's Aven Peer in production's
+named the same way (`a`): `passkey-a`, owning `person-a`, whose person gives the name `Ada`, `Bea` or `Cy`. The server is the box's Aven Peer in production's
 configuration (RP ID `localhost`, origin `http://localhost:5174`, the box's test MaiaCityGuardian), or the same
 without a guardian. -/
 
@@ -18,6 +18,7 @@ namespace Aven.ID
 def deviceId (d : String) : String := "device-" ++ d
 def passkeyId (p : String) : String := "passkey-" ++ p
 def personId (p : String) : String := "person-" ++ p
+def personName (p : String) : String := (([("a", "Ada"), ("b", "Bea"), ("c", "Cy")] : List _).lookup p).getD p
 
 /-- The traces' browsers' and passkeys' public halves, each derived once. -/
 def deviceKeys : List (String × String) :=
@@ -49,6 +50,8 @@ structure Tamper where
   /-- the claim names this person vault or device instead -/
   person : Option String := none
   device : Option String := none
+  /-- the name given at signup instead -/
+  name : Option String := none
   type : String := "webauthn.get"
   origin : String := "http://localhost:5174"
   rpId : String := "localhost"
@@ -73,8 +76,8 @@ def assert (t : Tamper) (text passkey : String) : Assertion :=
 
 /-- The claim a browser sends, and the key of the browser that sends it. -/
 def Op.claimOf (passkey device : String) (t : Tamper) : Claim × String :=
-  let c : Claim := ⟨t.network, t.person.getD (personId passkey), passkeyId passkey, passkeyKey passkey,
-    t.device.getD (deviceId device), deviceKey device, blank⟩
+  let c : Claim := ⟨t.network, t.person.getD (personId passkey), t.name.getD (personName passkey),
+    passkeyId passkey, passkeyKey passkey, t.device.getD (deviceId device), deviceKey device, blank⟩
   let c := { c with assertion := assert t c.text passkey }
   match t.swap with
   | some e => ({ c with device := deviceId e, deviceKey := deviceKey e }, deviceKey e)
@@ -160,6 +163,21 @@ def claimExamples : List (String × Server × List Op × List (Option ClaimError
     [.claim "a" "1" { person := some "aven" }], [(no (.invalid (.duplicate "aven")), 1)]),
   ("a claim naming the guardian's key as its browser", boxServer,
     [.claim "a" "1" { device := some guardianId }], [(no (.invalid (.deviceKeyOwns guardianId "person-a")), 1)]),
+  ("a claim naming the admin coop as its person", boxServer,
+    [.claim "a" "1" { person := some "maia-city" }], [(no (.invalid (.duplicate "maia-city")), 1)]),
+  ("a claim naming the admin coop as its browser", boxServer,
+    [.claim "a" "1" { device := some "maia-city" }], [(no (.invalid (.duplicate "maia-city")), 1)]),
+  ("a name of 48 characters is a name", boxServer, [.claim "a" "1" { name := some ("".pushn 'x' 48) }], [(ok, 2)]),
+  ("a name of 49 characters is refused", boxServer, [.claim "a" "1" { name := some ("".pushn 'x' 49) }],
+    [(no .name, 1)]),
+  ("a signup without a name is refused", boxServer, [.claim "a" "1" { name := some "" }], [(no .name, 1)]),
+  ("a name of two lines is refused", boxServer, [.claim "a" "1" { name := some "Ada\nLovelace" }], [(no .name, 1)]),
+  ("a name with spaces and accents", boxServer,
+    [.claim "a" "1" { name := some "Zoë Ada" }, .signIn "a" "2" {}, .restart], [(ok, 2), (ok, 3), (ok, 3)]),
+  ("an admin coop named otherwise", { boxServer with coop := "aven-coop", coopName := "Aven Coop" },
+    [.claim "a" "1" {}, .signIn "a" "2" {}, .restart], [(ok, 2), (ok, 3), (ok, 3)]),
+  ("an admin coop without a name founds nothing", { boxServer with coopName := "" },
+    [.claim "a" "1" {}], [(no (.invalid (.name "maia-city")), 1)]),
   ("a passkey that counts must count up", boxServer,
     [.claim "a" "1" { counter := 5 }, .signIn "a" "2" { counter := 5 }, .signIn "a" "2" { counter := 3 },
       .signIn "a" "2" { counter := 6 }, .restart, .signIn "a" "3" { counter := 0 }, .signIn "a" "3" { counter := 7 }],
@@ -185,7 +203,7 @@ Steps drawn at random from a seeded xorshift: signups, sign-ins, restarts and wi
 passkeys, now and then tampered with. -/
 
 def tampers : List Tamper := [{}, {}, {}, {}, { sender := some "3" }, { swap := some "2" }, { flags := 1 },
-  { origin := "http://localhost:5173" }, { rpId := "maia.city" }]
+  { origin := "http://localhost:5173" }, { rpId := "maia.city" }, { name := some "" }]
 
 def randomOp (r : Rng) : Op × Rng :=
   let (k, r) := r.below 10
