@@ -105,11 +105,12 @@ def chainResult (cs : List Cap) : Json :=
   | some e => Json.mkObj [("ok", false), ("error", e.json)]
 
 open RevokeExamples in
-/-- An example envelope: its label, its name, what caps reads of it, and the envelope as Core's vectors write it
-(`core/spec/vectors/envelopes.json`). -/
+/-- An example envelope: its label, its name, what caps reads of it, its signed time, and the envelope as Core's vectors
+write it (`core/spec/vectors/envelopes.json`). -/
 def envelopeJson (e : Core.Envelope) : Json :=
   Json.mkObj [("label", label e), ("name", (nm e).text), ("vault", reads.vault e),
     ("caps", toJson ((reads.caps e).map (·.text))), ("acks", toJson ((reads.acks e).map (·.text))),
+    ("time", toJson (time e)),
     ("envelope", Json.mkObj [("doc", e.doc.text), ("branch", Core.utf8Text e.branch), ("writer", toJson e.writer),
       ("seq", toJson e.seq), ("prev", toJson (e.prev.map (·.text))), ("deps", toJson (e.deps.map (·.text))),
       ("body", e.body.json), ("signer", Core.hex e.signer), ("sig", Core.hex e.sig)])]

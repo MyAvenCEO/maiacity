@@ -172,14 +172,14 @@ def approvalVectors : List Json :=
         ("vault", v), ("digest", d)])
       (Json.mkObj [("approved", cast.approved k v d sigs)])
 
+open RevokeExamples ExpiryExamples in
 /-- A write under a cap that expires: the Doc with each envelope's signed time, the cap, its expiry and the write,
 and whether it counts for the clock (`Aven.ID.Expiry`, R12). -/
 def expiryVectors : List Json :=
-  let timed (x : Timed) := Json.mkObj [("envelope", x.env.json), ("time", toJson x.time)]
-  let ask (name : String) (doc : List Timed) (e : Timed) :=
-    vector name (Json.mkObj [("doc", Json.arr (doc.map timed).toArray), ("cap", "cap-a"), ("expires", toJson (100 : Nat)),
-        ("write", e.env.id)])
-      (Json.mkObj [("inTime", inTime doc "cap-a" 100 e)])
+  let ask (name : String) (doc : List Aven.Core.Envelope) (e : Aven.Core.Envelope) :=
+    vector name (Json.mkObj [("doc", Json.arr (doc.map envelopeJson).toArray), ("expiry", Json.str expiryA.text),
+        ("expires", toJson (100 : Nat)), ("write", Json.str (nm e).text)])
+      (Json.mkObj [("inTime", inTime nm reads time doc expiryA 100 e)])
   [ask "a write before the expiry, which the ack had seen" expiryDoc bob90,
    ask "a write backdated after an ack of the expiry, which it hadn't seen" expiryDoc bobBackdated,
    ask "a write claiming a time past the expiry" expiryDoc bob105,
