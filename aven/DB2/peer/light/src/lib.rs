@@ -33,7 +33,7 @@ use std::sync::Arc;
 use aven_db_core::chat::Message;
 use aven_db_core::timeline;
 use aven_db_core::wire::{ALPN, Frame};
-use aven_db_store::blobs::{Blobs, FetchError, Shared};
+use aven_db_store::blobs::{Blobs, FetchError, Fetched, Shared};
 use aven_db_store::{Hash, backend, files};
 use aven_peer::chats::Chats;
 use aven_peer::iroh_gossip::{self, Gossip};
@@ -50,7 +50,8 @@ use wasm_bindgen::prelude::*;
 pub mod acts;
 pub mod views;
 
-/// The `name` of the `Error` the file API throws when the holder hasn't the file, or a chunk of it.
+/// The `name` of the `Error` the file API throws when the holder hasn't the file, or a chunk of it, or what it holds
+/// under that hash is no file.
 pub const NOT_FOUND: &str = "NotFoundError";
 
 /// The page's callback for timeline lines. A browser's worker has one thread, so it is never shared across threads.
@@ -551,30 +552,33 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
     Ok(())
 }
 
-/// A connection on iroh-blobs' protocol to `from` (a member's key, hex), or to the Aven Peer: one kept while it is open.
-async fn connection(f: &Files, from: Option<String>) -> Result<Connection, JsValue> {
+/// A fetch from `from` (a member's key, hex) or the Aven Peer, over the connection kept to it while it is open; one
+/// that fails over a kept connection is tried once more over a fresh one (`blobs::once_more`): a leader's takeover can
+/// leave a kept connection dead and still open.
+async fn fetching(
+    f: &Files,
+    from: Option<String>,
+    fetch: impl AsyncFn(Connection) -> Result<Fetched, FetchError>,
+) -> Result<Fetched, JsValue> {
     let at = match from {
         Some(key) => {
             EndpointAddr::new(keys::public(&key).map_err(js)?).with_relay_url(f.relay.clone())
         }
         None => f.aven.clone(),
     };
-    let open = CONNECTIONS.with(|c| {
+    let cached = CONNECTIONS.with(|c| {
         c.borrow()
             .get(&at.id)
             .filter(|c| c.close_reason().is_none())
             .cloned()
     });
-    if let Some(conn) = open {
-        return Ok(conn);
-    }
-    let conn = f
-        .endpoint
-        .connect(at.clone(), blobs::ALPN)
-        .await
-        .map_err(js)?;
-    CONNECTIONS.with(|c| c.borrow_mut().insert(at.id, conn.clone()));
-    Ok(conn)
+    let fresh = async || f.endpoint.connect(at.clone(), blobs::ALPN).await;
+    let (result, keep) = blobs::once_more(cached, fresh, fetch).await;
+    CONNECTIONS.with(|c| match keep {
+        Some(conn) => c.borrow_mut().insert(at.id, conn),
+        None => c.borrow_mut().remove(&at.id),
+    });
+    result.map_err(fetch_error)
 }
 
 /// The file's index, fetched if this Peer-Light hasn't it; and the bytes that crossed for it.
@@ -582,8 +586,7 @@ async fn open(f: &Files, file: &Hash, from: Option<String>) -> Result<(files::Fi
     if let Some(found) = files::open(&*f.store, file).await.map_err(js)? {
         return Ok((found, 0));
     }
-    let conn = connection(f, from).await?;
-    let fetched = f.held.fetch_chunks(&conn, *file, 0..0).await.map_err(fetch_error)?;
+    let fetched = fetching(f, from, async |conn| f.held.fetch_chunks(&conn, *file, 0..0).await).await?;
     let found = files::open(&*f.store, file).await.map_err(js)?.ok_or_else(|| JsError::new("no such file"))?;
     Ok((found, fetched.bytes))
 }
@@ -594,15 +597,16 @@ async fn chunks(f: &Files, file: &files::File, range: Range<u64>, from: Option<S
     let (Some(first), Some(last)) = (missing.first(), missing.last()) else {
         return Ok(0);
     };
-    let conn = connection(f, from).await?;
-    Ok(f.held.fetch_chunks(&conn, file.name, *first..*last + 1).await.map_err(fetch_error)?.bytes)
+    let wanted = *first..*last + 1;
+    let fetched = fetching(f, from, async |conn| f.held.fetch_chunks(&conn, file.name, wanted.clone()).await).await?;
+    Ok(fetched.bytes)
 }
 
 /// A fetch's failure for the page: [`NOT_FOUND`] when the holder hasn't the file or a chunk of it (a Service Worker's
 /// 404), a plain error otherwise (its 502).
 fn fetch_error(e: FetchError) -> JsValue {
     let error = js_sys::Error::new(&e.to_string());
-    if matches!(e, FetchError::NotFound(_)) {
+    if matches!(e, FetchError::NotFound(_) | FetchError::NotAFile(_)) {
         error.set_name(NOT_FOUND);
     }
     error.into()
