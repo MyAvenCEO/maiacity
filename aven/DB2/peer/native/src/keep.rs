@@ -130,6 +130,8 @@ pub enum KeepError {
     NotFound(String),
     /// The file it holds is `held` bytes; its line says `announced`.
     Mismatch { held: u64, announced: u64 },
+    /// The index it announced is no list of hashes: its bytes are checked against its name, so it never will be.
+    Malformed(String),
     /// The device couldn't be reached, or the fetch or the store failed on the way: worth asking again.
     Unreachable(String),
 }
@@ -144,7 +146,7 @@ impl KeepError {
 impl std::fmt::Display for KeepError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            KeepError::NotFound(why) | KeepError::Unreachable(why) => f.write_str(why),
+            KeepError::NotFound(why) | KeepError::Malformed(why) | KeepError::Unreachable(why) => f.write_str(why),
             KeepError::Mismatch { held, announced } => write!(f, "{held} bytes, announced as {announced}"),
         }
     }
@@ -180,7 +182,10 @@ pub async fn keep<S: Store + ?Sized>(
         })?;
         let file = files::open(store, &index)
             .await
-            .map_err(|e| unreachable(&e))?
+            .map_err(|e| match e {
+                aven_db_store::Error::Corrupt(_) => KeepError::Malformed(e.to_string()),
+                _ => unreachable(&e),
+            })?
             .ok_or_else(|| KeepError::NotFound("no index".into()))?;
         if file.len != size {
             return Err(KeepError::Mismatch { held: file.len, announced: size });
