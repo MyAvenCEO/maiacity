@@ -10,8 +10,8 @@ Loro documents, and are guarded by capabilities from [`../ID/caps`](../ID/caps/R
 layers above.
 
 1. [The layers](#1-the-layers)
-2. [Layer 0: values](#2-layer-0-values)
-3. [Layer 1: documents](#3-layer-1-documents)
+2. [Layer 0: Values](#2-layer-0-values)
+3. [Layer 1: Docs](#3-layer-1-docs)
 4. [Layer 2: messages](#4-layer-2-messages)
 5. [Layer 3: runtimes](#5-layer-3-runtimes)
 6. [Layer 4: actors](#6-layer-4-actors)
@@ -31,66 +31,68 @@ layers above.
  7  App         the version 1 todo app: definitions and their parts
  6  Faces       view-runtime and css-runtime draw a node tree; the host's applier shows it; events come back as tells
  5  Kernel      router, scheduler, turns, clock: pure Rust with no I/O, compiled to WebAssembly
- 4  Actors      a definition (named by hash), its document, and its turns
+ 4  Actors      a definition (a Value), its Doc, and its turns
  3  Runtimes    pure functions over values: frozen WebAssembly modules named by hash, run with fuel
- 2  Messages    tell, ask, reply, fail: values appended to an inbox document, one per sender and receiver
- 1  Documents   logs with one writer each, entries named (writer, seq): Loro-shaped, in memory in version 1
- 0  Values      JSON values, their canonical bytes, BLAKE3 names
- ── later ──    links between peers (frames on aven/db/1), documents in avenDB, capabilities (aven/ID/caps)
+ 2  Messages    tell, ask, reply, fail: Values appended to an inbox Doc, one per sender and receiver
+ 1  Docs        one writer each; their records named (writer, seq): Loro-shaped, in memory in version 1
+ 0  Values      immutable JSON, named by the BLAKE3 hash of its canonical bytes
+ ── later ──    links between peers (frames on aven/db/1), Docs in avenDB, capabilities (aven/ID/caps)
 ```
 
 Each layer has one job. Nothing reaches past the layer directly below it.
 
-## 2. Layer 0: values
+## 2. Layer 0: Values
 
-- **A value** is JSON with no surprises: null, true or false, a finite number, a string, an array, or a map with string
-  keys. No functions, no references, no cycles, no `undefined`.
+- **A Value** is immutable data: JSON with no surprises, that is null, true or false, a finite number, a string, an
+  array, or a map with string keys. No functions, no references, no cycles, no `undefined`. avenDB calls it a Value
+  too; a lowercase value in this file is just a field's data.
 - **Canonical bytes**: keys sorted, numbers in one spelling, UTF-8. The same value always has the same bytes.
-- **A name** is the BLAKE3 hash of a value's canonical bytes, 64 lowercase hex characters. Definitions, parts and
+- **A name** is the BLAKE3 hash of a Value's canonical bytes, 64 lowercase hex characters. Definitions, parts and
   runtimes are named this way, so what a name names never changes.
 
-Only values cross a wall: between layers, into and out of runtimes, between the kernel and the host, and later between
+Only Values cross a wall: between layers, into and out of runtimes, between the kernel and the host, and later between
 peers.
 
-## 3. Layer 1: documents
+## 3. Layer 1: Docs
 
-**One actor is one document**, and every document has exactly one writer. An actor's document holds everything
+**One actor is one Doc**, and every Doc has exactly one writer. avenDB calls it a Doc: mutable, named by its id, a
+head over Values. An actor's Doc holds everything
 about it: its definition, its state, and every turn it took, each with the message it handled, whole. Messages travel
-in **inbox documents**, one for each sender and receiver, written only by the sender.
+in **inbox Docs**, one for each sender and receiver, written only by the sender.
 
 ```
- actor document   <home>/<id>                written only by the actor's home kernel
+ actor Doc   <home>/<id>                written only by the actor's home kernel
  ├─ def           the definition's name (its hash)
  ├─ state         the latest state, and the journal entry it follows
  └─ journal       one entry per turn: the message it handled, whole; the state hashes; the effects it sent
 
- inbox document   <sender> → <receiver>      written only by the sender's home kernel
+ inbox Doc   <sender> → <receiver>      written only by the sender's home kernel
  └─ log           the messages from that sender to that receiver, in the sender's order
 ```
 
-Why two kinds of document, and not inboxes inside the receiver's document: in avenDB one document has one key and one
-grant. A sender that could write into the receiver's document could also read its state, its journal and every other
-sender's messages. With one inbox document per pair, each document keeps one writer, and a sender reaches nothing but
+Why two kinds of document, and not inboxes inside the receiver's Doc: in avenDB one Doc has one key and one
+grant. A sender that could write into the receiver's Doc could also read its state, its journal and every other
+sender's messages. With one inbox Doc per pair, each Doc keeps one writer, and a sender reaches nothing but
 its own messages. This is the shape avenDB's chat already has, one chain per device.
 
-The actor's own document still holds its whole history: its journal keeps each handled message whole, so an actor's
-record never needs its inbox documents. They are how messages travel, and once journaled they may later be compacted.
+The actor's own Doc still holds its whole history: its journal keeps each handled message whole, so an actor's
+record never needs its inbox Docs. They are how messages travel, and once journaled they may later be compacted.
 
-A document is made of two things:
+A Doc holds two things:
 
-- **Logs**: append-only, written only by the document's writer. An entry is named `(writer, seq)`, where `seq` counts
+- **Logs**: append-only, written only by the Doc's writer. Each entry is a record named `(writer, seq)`, where `seq` counts
   the writer's entries from 1. That is how a Loro document names its operations (peer and counter), so a log maps
   onto a Loro list one to one.
 - **Fields**: named values that the writer replaces whole (`def`, `state`).
 
-Because every document has one writer, concurrent writers never conflict: two senders append to two different inbox
+Because every Doc has one writer, concurrent writers never conflict: two senders append to two different inbox
 documents. The receiver's journal says in which order it handled them.
 
-Everything is kept: every message, every turn, every trace. Compacting old journals and inbox documents is a later
+Everything is kept: every message, every turn, every trace. Compacting old journals and inbox Docs is a later
 decision.
 
-In version 1 documents live in memory, behind a small interface: append to a log, read a log from a position, set and
-get a field, take a snapshot. Later the same interface is a Loro document in avenDB (section 11).
+In version 1 Docs live in memory, behind a small interface: append to a log, read a log from a position, set and
+get a field, take a snapshot. Later the same interface is a Loro document in avenDB, an avenDB Doc (section 11).
 
 ## 4. Layer 2: messages
 
@@ -107,19 +109,19 @@ A message is a value. There are four kinds:
 | --- | --- |
 | `kind` | One of the four |
 | `from`, `to` | Addresses, `<home>/<id>` |
-| `seq` | The sender's count. `(from, seq)` names the message, and is its entry name in the inbox document |
+| `seq` | The sender's count. `(from, seq)` names the message, and is its entry name in the inbox Doc |
 | `name` | The message's name in the receiver's interface |
 | `payload` | A value, checked against the interface's schema for `name` |
 | `re` | For `reply` and `fail`: the ask it answers |
 | `deadline` | For `ask`: when it fails if unanswered. 30 s unless the asker says otherwise; at most 10 minutes |
 | `run` | The causal chain: every message a turn sends carries the run of the message it handled |
 
-**Sending is appending.** To send, the sender's kernel appends the message to the inbox document for that sender and
+**Sending is appending.** To send, the sender's kernel appends the message to the inbox Doc for that sender and
 receiver. In
 memory this is a function call; later, between peers, it is the same append, carried by sync. One operation, at every
 scale.
 
-**Order is per pair of actors.** Messages from A to B are handled in the order A sent them, because the inbox document
+**Order is per pair of actors.** Messages from A to B are handled in the order A sent them, because the inbox Doc
 from A to B is in A's order. Messages from different senders have no order between them until B's journal records the order in
 which B handled them.
 
@@ -181,7 +183,7 @@ Components hold no state; state belongs to actors.
 An actor's code and faces are **parts**: values in a format, for the runtime of that format. Actors are mostly JSON;
 `js-runtime` is for the turns that need code.
 
-**An actor** is a live instance of a definition: an address `<home>/<id>` and its document. Its id is the hash of its
+**An actor** is a live instance of a definition: an address `<home>/<id>` and its Doc. Its id is the hash of its
 definition's name, its spawner's address and the spawner's count, so a replay names the same actors.
 
 **A turn** handles one message:
@@ -211,7 +213,7 @@ the turn's new `phase` must be that `To`. So the drawn machine and the behaviour
 The kernel is pure Rust with no I/O (avenDB's rule 2), compiled to WebAssembly for the browser and natively for tests.
 Its host feeds it time and events and takes back what it draws. It has four parts:
 
-- **Router.** Appends the message to the inbox document from its sender to its receiver. It answers an unknown
+- **Router.** Appends the message to the inbox Doc from its sender to its receiver. It answers an unknown
   receiver, or a payload that fails its schema, with a `fail`.
 - **Scheduler.** Picks an actor with unread inbox entries and runs one turn. One actor never runs two turns at once;
   different actors may run in parallel. Across senders, the oldest arrival goes first.
@@ -230,7 +232,7 @@ Its host feeds it time and events and takes back what it draws. It has four part
           the journal records the failure                  given, effects, fuel), then set the state
                                                                          │
                                                                          ▼
-                                                           router appends each effect to its inbox document
+                                                           router appends each effect to its inbox Doc
 ```
 
 A journal entry holds the message's name `(from, seq)`, the state hashes before and after, `given`, the effects, the
@@ -293,7 +295,7 @@ the face redraws. Every message, turn and trace stays in the actors' documents, 
 
 ## 10. Laws
 
-1. **Only messages.** Actors interact only by messages. Nothing reads or writes another actor's document.
+1. **Only messages.** Actors interact only by messages. Nothing reads or writes another actor's Doc.
 2. **One door.** Every message, from a person, a click, an actor or the clock, goes through the router into an inbox.
    Nothing calls a turn directly.
 3. **One at a time.** An actor handles one message at a time. Different actors run in parallel.
@@ -301,14 +303,14 @@ the face redraws. Every message, turn and trace stays in the actors' documents, 
 5. **Pure turns.** A turn is deterministic and does no I/O. Time and randomness come in as `given`; everything it does
    goes out as effects.
 6. **Every ask is answered once**, by a `reply` or a `fail`, by its deadline.
-7. **One actor, one record.** An actor's document holds its definition, its state and every turn with the message it
-   handled, whole. Every document has one writer; messages travel in inbox documents, one per sender and receiver.
+7. **One actor, one record.** An actor's Doc holds its definition, its state and every turn with the message it
+   handled, whole. Every Doc has one writer; messages travel in inbox Docs, one per sender and receiver.
    Everything is kept.
 8. **The journal is the truth.** Replaying it on the same runtimes gives the same state, anywhere.
 9. **Runtimes compute; the host only draws.** A runtime imports nothing that reaches the host. Runtimes come only
    from the repository.
 10. **Laws are code.** The kernel checks them. Never prompts, and never a reading of a part's source.
-11. **Commit, then send.** A turn's state and journal entry commit together, in one write to the actor's document.
+11. **Commit, then send.** A turn's state and journal entry commit together, in one write to the actor's Doc.
     Its effects are recorded in that entry and sent from it. A send lost in a crash is sent again from the journal,
     and the receiver drops it if it already has it, by `(from, seq)`.
 
@@ -318,11 +320,11 @@ Each later step replaces a layer's implementation, not its interface:
 
 | Later | What changes |
 | --- | --- |
-| **Persistence** | Each actor's document becomes one avenDB document under one schema (`def`, `state`, `journal`), its journal a Loro list whose entries keep their names `(writer, seq)`. Each inbox document becomes one avenDB document, written only by the sender's home device and readable by the receiver's home, like the chat's chain per device. Each document has one key and one writer, and commits atomically; law 11 covers the sends that cross documents |
+| **Persistence** | Each actor's Doc becomes one avenDB Doc under one schema (`def`, `state`, `journal`), its journal a Loro list whose entries keep their names `(writer, seq)`. Each inbox Doc becomes one avenDB Doc, written only by the sender's home device and readable by the receiver's home, like the chat's chain per device. Each Doc has one key and one writer, and commits atomically; law 11 covers the sends that cross Docs |
 | **Wants** | The definition's `loads` (section 6): avenDB's engine keeps them current and hands the `now` tier into each turn |
 | **Peers** | An actor lives on one peer, its home; its address names that peer's iroh `EndpointId`. Sending stays "append to the receiver's inbox log", now carried between peers by avenDB's sync. When the home is away, a keeper peer holds the inbox. There is no bus in the middle, and no gossip for messages |
 | **Live delivery** | For speed, `message` and `ack` frames on `aven/db/1` deliver an append directly, point to point, ahead of sync. The receiver drops duplicates by `(from, seq)` |
-| **Capabilities** | The signer of every write is a device, never an actor: actors hold no keys. avenDB's document layer checks that only the sender's home device writes an inbox document, and the receiver's router checks the sender may send that message: checked twice. Designed in [`../ID/caps`](../ID/caps/README.md), not here |
+| **Capabilities** | The signer of every write is a device, never an actor: actors hold no keys. avenDB's Doc layer checks that only the sender's home device writes an inbox Doc, and the receiver's router checks the sender may send that message: checked twice. Designed in [`../ID/caps`](../ID/caps/README.md), not here |
 | **Compaction** | Old journal and inbox entries folded into snapshots, once we decide what may be forgotten |
 
 ## 12. Not in the engine
@@ -330,7 +332,7 @@ Each later step replaces a layer's implementation, not its interface:
 | Left out | Why |
 | --- | --- |
 | Capabilities, signatures, encryption | Their own package (`aven/ID/caps`), designed next |
-| Network and avenDB | Later (section 11); the document interface is the seam |
+| Network and avenDB | Later (section 11); the Doc interface is the seam |
 | Composites and skills | A composite is an actor whose turn tells other actors. No kernel concept, no members field, no merge law. "Skill" is a product word for such an actor |
 | Studio, planner, `requires` / `produces` contracts, registry | Apps or actors that read definitions, later |
 | The model, the store, HTTP and other doors | Actors, each added when something needs it |
@@ -345,7 +347,7 @@ aven/actor/
   README.md          the learnings
   ARCHITECTURE.md    this file
   spec/              the Lean model, Aven.Actor, and the vectors it exports
-  core/              the kernel: values, documents, messages, router, scheduler, clock, the runtime host
+  core/              the kernel: Values, Docs, messages, router, scheduler, clock, the runtime host
   runtimes/
     json/  js/  prolog/  view/  css/     one crate each, built to WebAssembly, frozen by hash
   host/              the page's side: the worker that runs the kernel, and the applier
@@ -359,7 +361,7 @@ Test-first, as avenDB works: the Lean model and its theorems, then Rust tests th
 1. **Lean** (`spec`): values, logs, messages, turns, asks, the journal. Theorems: messages from one actor to another are
    handled in order; every ask gets exactly one answer by its deadline; a message is handled once; a turn never waits;
    replaying a journal gives the same state; a machine refuses every illegal message.
-2. **Layers 0 to 2** (`core`): values and names, the in-memory document, messages, with the vectors.
+2. **Layers 0 to 2** (`core`): Values and names, the in-memory Doc, messages, with the vectors.
 3. **Runtimes**: `prolog-runtime` and `json-runtime` first, then `js-runtime`; each with hostile parts that try to get
    out, run too long or blow up, which must fail.
 4. **The kernel** (`core`): router, scheduler, turns, clock, spawning; native tests replay the vectors.
@@ -379,7 +381,7 @@ Decided (Samuel, 30 Oct 2026):
 - Version 1 is a standalone, in-memory todo app: no network, no avenDB, no capabilities.
 - Frames as JSON lines when the network comes; ids derived from definition, spawner and count; only definitions from
   the repository are spawned.
-- Everything about an actor lives in its own document, shaped for Loro, and everything is kept.
+- Everything about an actor lives in its own Doc, shaped for Loro, and everything is kept.
 
 Decided here, on those grounds:
 
@@ -391,7 +393,7 @@ Decided here, on those grounds:
   the todo app (section 9).
 - Runtimes run inside the kernel in a pure-Rust WebAssembly interpreter with fuel. If one proves too slow there, it
   moves to the host's own WebAssembly engine, with fuel counters added when it is frozen.
-- The in-memory document is plain Rust behind the document interface, simple to model in Lean. Loro comes with
+- The in-memory Doc is plain Rust behind the Doc interface, simple to model in Lean. Loro comes with
   avenDB's documents.
 - Faces render into shadow roots through the applier. Opaque frames are for runtimes that run scripts in the page,
   which version 1 has none of.
