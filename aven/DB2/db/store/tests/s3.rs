@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// The model's traces (`lake exe vectors` in db/spec), which the suite replays.
 const TRACES: &str = include_str!("../../spec/vectors/store.json");
 
-use aven_db_store::backend::{self, S3};
+use aven_db_store::backend::{self, Conditions, S3};
 use aven_db_store::{Error, Hash, RefName, Store, conformance};
 
 fn fresh() -> S3 {
@@ -26,14 +26,22 @@ fn fresh() -> S3 {
         root: format!("/run-{run}-{}/", N.fetch_add(1, Ordering::Relaxed)),
         access_key_id: "avensandbox".into(),
         secret_access_key: "avensandbox-test-secret".into(),
-        conditions: true,
+        conditions: Conditions::On,
     }
 }
 
-/// The same, without the server's conditional writes, as on Hetzner (`--s3-conditions off`).
+/// The same, without the server's conditional writes (`--s3-conditions off`).
 fn unconditional() -> S3 {
     S3 {
-        conditions: false,
+        conditions: Conditions::Off,
+        ..fresh()
+    }
+}
+
+/// The same, with `If-None-Match: *` on creates only, as on Hetzner (`--s3-conditions create`).
+fn creates_only() -> S3 {
+    S3 {
+        conditions: Conditions::Create,
         ..fresh()
     }
 }
@@ -98,5 +106,45 @@ async fn bench(store: &impl aven_db_store::Store) {
         .unwrap();
     for (what, ms) in times {
         println!("bench {what}: {ms:.1} ms");
+    }
+}
+
+/// With conditions on creates only, the suite passes: a create is refused on the server, a change leans on the lock.
+#[tokio::test]
+async fn s3_with_creates_only_passes_the_suite() {
+    let report = conformance::run(async || backend::s3(&creates_only()).unwrap(), TRACES).await;
+    println!("{report}");
+    assert_eq!(
+        backend::s3(&creates_only()).unwrap().conditions(),
+        Conditions::Create
+    );
+    assert!(report.passed(), "{report}");
+}
+
+/// Two writers racing to create one ref, each with its own lock (two stores on one prefix, which rule 1 rules out):
+/// with conditions on creates only, the server still keeps exactly one, and the other is told it is stale.
+#[tokio::test]
+async fn s3_with_creates_only_keeps_one_of_two_racing_creates() {
+    for round in 0..10 {
+        let at = creates_only();
+        let (one, two) = (backend::s3(&at).unwrap(), backend::s3(&at).unwrap());
+        let name = RefName::new(format!("joined-{round}")).unwrap();
+        let (b, c) = (
+            Hash::of(format!("one {round}").as_bytes()),
+            Hash::of(format!("two {round}").as_bytes()),
+        );
+        let (won_one, won_two) =
+            futures::join!(one.set_ref(&name, None, b), two.set_ref(&name, None, c));
+        assert!(
+            won_one.is_ok() != won_two.is_ok(),
+            "both or neither won: {won_one:?} {won_two:?}"
+        );
+        let lost = [won_one, won_two]
+            .into_iter()
+            .find_map(Result::err)
+            .unwrap();
+        assert!(matches!(lost, Error::Stale { .. }), "{lost:?}");
+        let kept = one.get_ref(&name).await.unwrap();
+        assert!(kept == Some(b) || kept == Some(c));
     }
 }

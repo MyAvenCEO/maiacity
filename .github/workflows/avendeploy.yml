@@ -28,10 +28,6 @@ on:
         description: The avenOS release to serve (26.10.30, …); empty for the newest
         type: string
         default: ''
-      wipe:
-        description: Empties the peer's store first, so the network is unclaimed again; type the bucket's name to do it
-        type: string
-        default: ''
 
 permissions: {}
 
@@ -102,17 +98,25 @@ jobs:
           KEY="probe/$GITHUB_RUN_ID/conditional"
           printf 'avenDB conditional-write probe %s\n' "$GITHUB_RUN_ID" > body
           stale='"00000000000000000000000000000000"'
-          # each try: what S3 said, in one word
-          word() { grep -o 'PreconditionFailed\|ConditionalRequestConflict\|NotImplemented\|InvalidArgument\|AccessDenied\|Unknown options\|[0-9][0-9][0-9]' | head -n 1 | grep . || echo failed; }
-          put() { if out=$(s3 put-object --bucket "$BUCKET" --key "$KEY" --body body "$@" 2>&1); then echo written; else word <<< "$out"; fi; }
-          del() { if out=$(s3 delete-object --bucket "$BUCKET" --key "$KEY" "$@" 2>&1); then echo deleted; else word <<< "$out"; fi; }
+          # each try: what S3 said, in one word; and, into raw, its HTTP status and S3 error code as they came. --debug
+          # logs the request too, signature included, so only the response's status line and the error code are kept
+          word() { grep 'An error occurred\|Unknown options' | grep -o 'PreconditionFailed\|ConditionalRequestConflict\|NotImplemented\|InvalidArgument\|AccessDenied\|Unknown options\|[0-9][0-9][0-9]' | head -n 1 | grep . || echo failed; }
+          raw() {
+            local status code
+            status=$(grep -o 'HTTP/1.1" [0-9][0-9][0-9]' <<< "$2" | tail -n 1 | grep -o '[0-9][0-9][0-9]$')
+            code=$(grep -o 'An error occurred ([A-Za-z]*)' <<< "$2" | tail -n 1 | sed 's/.*(\(.*\))/\1/')
+            echo "| $1 | ${status:-?} | ${code:-none} |" >> raw
+          }
+          put() { local try=$1; shift; if out=$(s3 put-object --bucket "$BUCKET" --key "$KEY" --body body "$@" --debug 2>&1); then raw "$try" "$out"; echo written; else raw "$try" "$out"; word <<< "$out"; fi; }
+          del() { local try=$1; shift; if out=$(s3 delete-object --bucket "$BUCKET" --key "$KEY" "$@" --debug 2>&1); then raw "$try" "$out"; echo deleted; else raw "$try" "$out"; word <<< "$out"; fi; }
+          : > raw
           etag() { s3 head-object --bucket "$BUCKET" --key "$KEY" --query ETag --output text 2> /dev/null || true; }
-          first=$(put --if-none-match '*')
-          again=$(put --if-none-match '*')
-          stale_put=$(put --if-match "$stale")
-          right_put=$(put --if-match "$(etag)")
-          stale_del=$(del --if-match "$stale")
-          right_del=$(del --if-match "$(etag)")
+          first=$(put "PUT, If-None-Match: * on a new key" --if-none-match '*')
+          again=$(put "PUT, If-None-Match: * on the same key" --if-none-match '*')
+          stale_put=$(put "PUT, a stale If-Match" --if-match "$stale")
+          right_put=$(put "PUT, the current If-Match" --if-match "$(etag)")
+          stale_del=$(del "DELETE, a stale If-Match" --if-match "$stale")
+          right_del=$(del "DELETE, the current If-Match" --if-match "$(etag)")
           gone=$([ -z "$(etag)" ] && echo yes || echo no)
           [ "$gone" = yes ] || s3 delete-object --bucket "$BUCKET" --key "$KEY" > /dev/null || true
           {
@@ -126,6 +130,13 @@ jobs:
             echo "| PUT, the current If-Match | written | $right_put |"
             echo "| DELETE, a stale If-Match | 412 PreconditionFailed | $stale_del |"
             echo "| DELETE, the current If-Match | deleted | $right_del (gone: $gone) |"
+            echo
+            echo "As they came: the HTTP status and S3's error code of each try (the store's --s3-conditions create maps a"
+            echo "refused create to stale by them)"
+            echo
+            echo "| try | HTTP status | S3 error code |"
+            echo "| --- | --- | --- |"
+            cat raw
             echo
           } | tee -a "$GITHUB_STEP_SUMMARY"
           if [ "$first $again $stale_put $right_put $stale_del $right_del" = "written PreconditionFailed PreconditionFailed written PreconditionFailed deleted" ]; then
@@ -262,23 +273,6 @@ jobs:
           known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
 
       # Its secrets go to the server on stdin, never in an argument; it prints only its public half and its record
-      # The peer's store emptied, by hand only: the peer stops first so nothing writes meanwhile, then every object in
-      # the bucket goes. The next start finds the network unclaimed, and the first signup claims it again.
-      - name: Wipe the store
-        if: inputs.wipe != ''
-        env:
-          WIPE: ${{ inputs.wipe }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
-        run: |
-          [ "$WIPE" = "$BUCKET" ] || { echo "::error::wipe needs the bucket's name, $BUCKET, typed exactly"; exit 1; }
-          ssh prod 'cd /opt/aven 2>/dev/null && docker compose down || true'
-          aws s3 rm "s3://$BUCKET" --recursive --endpoint-url "$S3_ENDPOINT" --only-show-errors
-          # shellcheck disable=SC2016  # the backticks are JMESPath's literal, not a shell expansion
-          left=$(aws s3api list-objects-v2 --bucket "$BUCKET" --endpoint-url "$S3_ENDPOINT" --query 'length(Contents || `[]`)' --output text)
-          [ "$left" = 0 ] || { echo "::error::$left objects are left in $BUCKET"; exit 1; }
-          echo "The store in $BUCKET is empty: the network is unclaimed" | tee -a "$GITHUB_STEP_SUMMARY"
-
       - name: The peer
         env:
           S3_KEY: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
@@ -333,8 +327,17 @@ jobs:
               -e AVEN_PEER_AVEN="$2" -e AVEN_PEER_AVEN_KEY="$PEER_KEY" "$PEER_IMAGE" > /dev/null
             for _ in $(seq 20); do docker logs "probe-$1" 2>&1 | grep -q "\"path\":\"$1\"" && break; sleep 2; done
             got=$(docker logs "probe-$1" 2>&1 | grep -o '"path":"[a-z]*"' | sort -u | tr '\n' ' ')
+            key=$(docker logs "probe-$1" 2>&1 | grep -m 1 '"event":"started"' | grep -o '"key":"[0-9a-f]*"' | cut -d '"' -f 4)
             docker rm -f "probe-$1" > /dev/null
-            row "a peer, $1 ($2)" "${got:-no connection}" "$(grep -q "\"path\":\"$1\"" <<< "$got" && echo ok)"
+            if grep -q "\"path\":\"$1\"" <<< "$got"; then
+              row "a peer, $1 ($2)" "$got" ok
+            else
+              # once the network is claimed only members get in (MILESTONE2.md): the probe, no member, is kept out by
+              # the relay, or past it by the hook; the Aven Peer's own line for the probe's key proves the way works
+              by=$([ "$1" = relay ] && echo relay || echo hook)
+              kept=$(ssh prod 'docker logs --since 10m aven-peer 2>&1' | grep '"event":"kept-out"' | grep "\"key\":\"$key\"" | grep -c "\"by\":\"$by\"" || true)
+              row "a peer, $1 ($2)" "${got:-no connection}${key:+, kept out by the $by: $kept times}" "$([ -n "$key" ] && [ "${kept:-0}" -gt 0 ] && echo ok)"
+            fi
           }
           printf '%s' "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin > /dev/null
           probe direct "$IPV4:$PORT"

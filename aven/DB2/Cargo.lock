@@ -267,6 +267,7 @@ dependencies = [
  "iroh-relay",
  "n0-future",
  "p256",
+ "rustls",
  "serde_json",
  "sha2",
  "tokio",
