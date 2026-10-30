@@ -34,6 +34,9 @@ pub type Shared = Arc<dyn Store>;
 /// Whom a provider serves, asked once per connection after the door (README rule 9: the door is checked twice).
 pub type Admit = Arc<dyn Fn(&EndpointId) -> bool + Send + Sync>;
 
+/// How long a holder is given to say what it holds, after a fetch from it failed.
+const ASK_FOR: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// One peer's blobs, as iroh-blobs moves them.
 #[derive(Clone)]
 pub struct Blobs {
@@ -210,7 +213,11 @@ impl Blobs {
             ranges: RangeSpec::all(),
         };
         let mut answers = std::pin::pin!(self.api.remote().observe(conn.clone(), ask));
-        let bits = answers.next().await?.ok()?;
+        // a holder that never answers doesn't hold the fetch up for ever: it is asked once, for a while
+        let bits = n0_future::time::timeout(ASK_FOR, answers.next())
+            .await
+            .ok()??
+            .ok()?;
         Some((!bits.is_empty()).then(|| bits.size()))
     }
 }

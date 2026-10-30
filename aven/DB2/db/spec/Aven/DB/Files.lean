@@ -16,6 +16,12 @@ A range read (a browser seeking in a movie) takes exactly the chunks the range t
   bytes (`split_size`), and there are `count c n` of them (`length_split`).
 - **A range read takes exactly the chunks it touches** (`mem_touches`): a chunk is taken when, and only when, it
   shares a byte with the range.
+- **Limits** (the security audit, 30 Oct 2026): no blob a peer fetches is larger than `maxBlob`, a chunk plus room
+  for framing, checked before anything is allocated; no file is larger than `maxFile`, whose index still fits in one
+  chunk (`index_fits`).
+- **A file is cut as it must be** (`fits`): chunk `i` of a file of `n` bytes is exactly as long as `bounds` says,
+  every chunk but the last `c` bytes. A receiver checks each chunk on fetch and on read, so a file whose middle chunk
+  is short is malformed, never a crash; every file cut by `split` passes (`split_fits`).
 
 The size is a parameter, so the examples cut small files into small chunks; the city-dome cuts at `chunkSize`.
 `lake exe vectors` exports both (`vectors/files.json`), and aven-db-core's `files` module replays them.
@@ -27,6 +33,12 @@ abbrev Bytes := List UInt8
 
 /-- The largest chunk: 1 MiB. -/
 def chunkSize : Nat := 1048576
+
+/-- The largest blob a peer fetches: a chunk, and room for framing. A line and an index are smaller. -/
+def maxBlob : Nat := chunkSize + 65536
+
+/-- The largest file the city-dome takes: 32 GiB. -/
+def maxFile : Nat := 32 * 1024 * 1048576
 
 /-- How many chunks a file of `n` bytes has. -/
 def count (c n : Nat) : Nat := (n + c - 1) / c
@@ -118,6 +130,49 @@ theorem length_split {c : Nat} (hc : 0 < c) : ∀ (n : Nat) (b : Bytes), b.lengt
         length_split hc n _ (by simp only [List.length_drop, List.length_cons] at h ⊢; omega), List.length_drop,
         (count_pos hc (n := (y :: ys).length) (by simp)).symm]
 
+/-! ## A file is cut as it must be -/
+
+/-- Chunk `i` of a file of `n` bytes, `len` bytes long, is as `bounds` says: one of its chunks, exactly that long. -/
+def fits (c n i len : Nat) : Bool := i < count c n && len == (bounds c n i).2 - (bounds c n i).1
+
+/-- The index of the largest file fits in one chunk, so in a blob. -/
+theorem index_fits : count chunkSize maxFile * 32 ≤ chunkSize ∧ chunkSize ≤ maxBlob := by decide
+
+theorem split_length_le {c : Nat} (hc : 0 < c) : ∀ (n : Nat) (b : Bytes), b.length ≤ n → ∀ i,
+    ((split c b).getD i []).length = min b.length ((i + 1) * c) - min b.length (i * c)
+  | 0, b, h, i => by
+    cases b with
+    | nil => simp [split_nil]
+    | cons x xs => simp at h
+  | n + 1, b, h, i => by
+    cases b with
+    | nil => simp [split_nil]
+    | cons y ys =>
+      rw [split_cons hc _ (List.cons_ne_nil y ys)]
+      cases i with
+      | zero => simp only [List.getD_cons_zero, List.length_take]; simp; omega
+      | succ i =>
+        simp only [List.getD_cons_succ]
+        rw [split_length_le hc n _ (by simp only [List.length_drop, List.length_cons] at h ⊢; omega) i,
+          List.length_drop]
+        have e1 : (i + 1 + 1) * c = i * c + c + c := by rw [Nat.add_mul, Nat.add_mul, Nat.one_mul]
+        have e2 : (i + 1) * c = i * c + c := by rw [Nat.add_mul, Nat.one_mul]
+        rw [e1, e2]
+        generalize i * c = k
+        omega
+
+/-- **Every file cut by `split` passes:** its chunk `i` fits. -/
+theorem split_fits {c : Nat} (hc : 0 < c) (b : Bytes) (i : Nat) (hi : i < (split c b).length) :
+    fits c b.length i ((split c b).getD i []).length = true := by
+  have hl := length_split hc b.length b (Nat.le_refl _)
+  simp only [fits, bounds, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq]
+  refine ⟨hl ▸ hi, ?_⟩
+  rw [split_length_le hc b.length b (Nat.le_refl _) i]
+  have lt : i + 1 ≤ (b.length + c - 1) / c := by rw [hl] at hi; exact hi
+  rw [Nat.le_div_iff_mul_le hc, Nat.add_mul, Nat.one_mul] at lt
+  generalize i * c = k at lt ⊢
+  omega
+
 /-! ## A range read takes exactly the chunks it touches -/
 
 /-- A chunk is taken when, and only when, it shares a byte with the range: it starts before the range ends, and ends
@@ -197,6 +252,12 @@ def abc : Bytes := "abcdefghij".toUTF8.toList
 #guard count chunkSize 200000000 = 191
 #guard touches chunkSize 100000000 100500000 = [95]
 #guard touches chunkSize 100500000 101000000 = [95, 96]
+-- a file is cut as it must be: every chunk but the last is whole, the last 1 to c bytes
+#guard [fits 4 10 0 4, fits 4 10 1 4, fits 4 10 2 2] = [true, true, true]
+#guard [fits 4 10 1 2, fits 4 10 2 4, fits 4 10 3 0, fits 4 10 0 5, fits 4 8 1 0] = [false, false, false, false, false]
+#guard (List.range 12).all fun n => (List.range 5).all fun c => c = 0 ||
+  let b := (List.range n).map Nat.toUInt8
+  (List.range (split c b).length).all fun i => fits c n i ((split c b).getD i []).length
 -- reading only the chunks a range touches gives its bytes, every range of a small file
 #guard (List.range 11).all fun a => (List.range 11).all fun e =>
   a > e || (List.range 6).all fun c => c = 0 || read c abc a e == (abc.drop a).take (e - a)

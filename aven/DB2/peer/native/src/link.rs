@@ -337,9 +337,11 @@ async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Re
                 if let Some(chats) = &link.chats
                     && chats.due(now())
                 {
-                    send.write_all(&encode(&chats.catch_up_frame(&[])))
-                        .await
-                        .map_err(|e| e.to_string())?;
+                    for page in chats.catch_up_frames(link.there.keys().cloned()) {
+                        send.write_all(&encode(&page))
+                            .await
+                            .map_err(|e| e.to_string())?;
+                    }
                 }
                 upload(link, &mut send).await?;
                 if link.view.status.phase == Phase::Stalled && link.view.status.idle >= REDIAL_AFTER
@@ -359,20 +361,26 @@ async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Re
                             statements,
                         } => link.network(claimed, tree, statements),
                         Frame::Refused { why } => link.note("refused", json!({ "why": why })),
-                        // catching up: what it holds of each chain, and its own lines written offline
                         // catching up: told every head on each link, then whenever one moves there. It catches up
-                        // when behind; its own lines the Aven Peer doesn't hold go on the next step (`upload`)
-                        Frame::Heads { heads } => {
+                        // when behind; its own lines the Aven Peer doesn't hold go on the next step (`upload`). The
+                        // heads come in pages: the first telling is whole only at its last page (`more` false), and
+                        // only then does this link catch up on all of it and learn its own head
+                        Frame::Heads { heads, more } => {
                             if let Some(chats) = &link.chats {
-                                let first = !link.caught;
-                                link.caught = true;
                                 for h in &heads {
                                     link.there.insert(h.device.clone(), h.seq);
                                 }
+                                let first = !link.caught;
+                                if first && more {
+                                    continue;
+                                }
+                                link.caught = true;
                                 if first || chats.behind(&heads) {
-                                    send.write_all(&encode(&chats.catch_up_frame(&heads)))
-                                        .await
-                                        .map_err(|e| e.to_string())?;
+                                    for page in chats.catch_up_frames(link.there.keys().cloned()) {
+                                        send.write_all(&encode(&page))
+                                            .await
+                                            .map_err(|e| e.to_string())?;
+                                    }
                                 }
                                 link.learn().await;
                                 upload(link, &mut send).await?;

@@ -299,7 +299,14 @@ impl Actor {
             while rx.recv().await.map_err(io::Error::other)?.is_some() {}
             return Ok(());
         }
-        let mut buf = vec![0u8; usize::try_from(size).map_err(io::Error::other)?];
+        // the size is the holder's word, not yet checked by bao: nothing is allocated past the largest blob
+        if size > crate::files::MAX_BLOB {
+            return Err(io::Error::other(format!(
+                "a blob of {size} bytes is past the largest, {}",
+                crate::files::MAX_BLOB
+            )));
+        }
+        let mut buf = vec![0u8; size as usize];
         let mut got = 0u64;
         while let Some(item) = rx.recv().await.map_err(io::Error::other)? {
             if let BaoContentItem::Leaf(leaf) = item {

@@ -1,7 +1,7 @@
 //! Our one protocol (README, rule 9, `Aven.DB.Wire`), on ALPN `aven/db/1`, as frames: one JSON object per line on one
 //! stream each way. Milestone 1 says hello and tells presence, and carries a network's claim and sign-ins
 //! (PRODUCTION.md, Part A); milestone 2 its invites, withdrawals and joins; the store upgrade catching up on the chat's
-//! chains (`Heads`, `CatchUp`, `Lines`). The Aven Peer beats once per clock step, so a quiet link still moves, and a
+//! chains (`Heads`, `CatchUp`, `Lines`), each in pages that stay under the frame's limit however many devices there are. The Aven Peer beats once per clock step, so a quiet link still moves, and a
 //! link that doesn't is stalled.
 
 use serde::{Deserialize, Serialize};
@@ -39,12 +39,20 @@ pub enum Frame {
     },
     /// A statement the Aven Peer refused, and why.
     Refused { why: String },
-    /// The Aven Peer tells a member's peer the head of every chain it keeps (`chain`), once linked.
-    Heads { heads: Vec<Head> },
-    /// A peer asks for every line newer than what it holds of each chain; a chain it doesn't name, from the first.
+    /// The Aven Peer tells a member's peer the head of every chain it keeps (`chain`), once linked, in pages
+    /// ([`heads_pages`]): `more` until the last page of one telling.
+    Heads {
+        heads: Vec<Head>,
+        #[serde(default)]
+        more: bool,
+    },
+    /// A peer asks for every line newer than what it holds of each chain. With `only`, a page ([`catch_up_pages`]):
+    /// only the chains it names, from the number it names; without, every chain, one it doesn't name from the first.
     CatchUp {
         #[serde(rename = "have")]
         holds: Vec<Have>,
+        #[serde(default)]
+        only: bool,
     },
     /// Lines as their blobs, oldest first per chain: the Aven Peer's answer to `CatchUp`, or a peer's own lines the
     /// Aven Peer is missing.
@@ -64,6 +72,39 @@ pub struct Head {
 pub struct Have {
     pub device: String,
     pub seq: u64,
+}
+
+/// The most heads or haves in one frame (`Aven.DB.Wire.pageSize`): a page of the longest stays well under
+/// [`MAX_FRAME`], however many devices there are.
+pub const PAGE: usize = 128;
+
+/// One telling of the heads (`Aven.DB.Wire.headsPages`): pages of at most [`PAGE`], every one but the last with `more`;
+/// no heads is one empty page, so a peer always hears the end of a telling.
+pub fn heads_pages(heads: Vec<Head>) -> Vec<Frame> {
+    if heads.is_empty() {
+        return vec![Frame::Heads { heads, more: false }];
+    }
+    let n = heads.len().div_ceil(PAGE);
+    heads
+        .chunks(PAGE)
+        .enumerate()
+        .map(|(i, page)| Frame::Heads {
+            heads: page.to_vec(),
+            more: i + 1 < n,
+        })
+        .collect()
+}
+
+/// What a peer asks for, in pages of at most [`PAGE`] (`Aven.DB.Wire.catchUpPages`): each `only` for the chains it
+/// names, so the Aven Peer answers each alone, and the answers together are the answer to all of it.
+pub fn catch_up_pages(holds: Vec<Have>) -> Vec<Frame> {
+    holds
+        .chunks(PAGE)
+        .map(|page| Frame::CatchUp {
+            holds: page.to_vec(),
+            only: true,
+        })
+        .collect()
 }
 
 pub fn encode(frame: &Frame) -> Vec<u8> {

@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use aven_db_core::chain::{self, Answer, Body, Held, Keeper, Line};
 use aven_db_core::files::Announcement;
 use aven_db_core::timeline;
-use aven_db_core::wire::{Frame, Have, Head, MAX_FRAME};
+use aven_db_core::wire::{Frame, Have, Head, MAX_FRAME, catch_up_pages, heads_pages};
 use aven_db_store::{Hash, RefName};
 use bytes::Bytes;
 use iroh::{PublicKey, SecretKey};
@@ -287,18 +287,22 @@ impl Chats {
         self.moved.load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    /// The `heads` frame: each device's head this peer holds.
-    pub fn heads_frame(&self) -> Frame {
+    /// Each device's head this peer holds, with its number: what `heads` frames tell.
+    pub fn heads_told(&self) -> Vec<Head> {
         let keeper = self.keeper.lock().unwrap();
-        let heads = keeper
+        keeper
             .heads()
             .into_iter()
             .map(|(device, id)| {
                 let seq = keeper.chain(&device).last().map_or(0, |h| h.line.seq);
                 Head { device, id, seq }
             })
-            .collect();
-        Frame::Heads { heads }
+            .collect()
+    }
+
+    /// One telling of every head this peer holds, as `heads` frames in pages (`wire::heads_pages`).
+    pub fn heads_frames(&self) -> Vec<Frame> {
+        heads_pages(self.heads_told())
     }
 
     /// Whether the Aven Peer's `heads` name a line this peer doesn't hold: then it catches up.
@@ -306,26 +310,34 @@ impl Chats {
         heads.iter().any(|h| h.seq > self.have(&h.device))
     }
 
-    /// What it holds of every chain it keeps or the Aven Peer's `heads` name: the `catch_up` frame.
-    pub fn catch_up_frame(&self, heads: &[Head]) -> Frame {
+    /// What it holds of every chain it keeps or `devices` names (the Aven Peer's heads, as told), each named with the
+    /// number of its newest line here, 0 for none: `catch_up` frames in pages, `only` for the chains they name.
+    pub fn catch_up_frames(&self, devices: impl IntoIterator<Item = String>) -> Vec<Frame> {
         let keeper = self.keeper.lock().unwrap();
-        let mut devices: Vec<String> = keeper.heads().into_iter().map(|(d, _)| d).collect();
-        devices.extend(heads.iter().map(|h| h.device.clone()));
-        devices.sort();
-        devices.dedup();
-        let holds = devices
+        let mut named: Vec<String> = keeper.heads().into_iter().map(|(d, _)| d).collect();
+        named.extend(devices);
+        named.sort();
+        named.dedup();
+        let holds = named
             .into_iter()
-            .filter_map(|device| {
-                let seq = keeper.chain(&device).last()?.line.seq;
-                Some(Have { device, seq })
+            .map(|device| {
+                let seq = keeper.chain(&device).last().map_or(0, |h| h.line.seq);
+                Have { device, seq }
             })
             .collect();
-        Frame::CatchUp { holds }
+        catch_up_pages(holds)
     }
 
-    /// The lines `holds` misses of every chain this peer keeps, as `lines` frames.
-    pub async fn answer(&self, holds: &[Have]) -> Vec<Frame> {
+    /// The lines `holds` misses, as `lines` frames: of the chains it names alone when `only` (a page of a catch-up),
+    /// else of every chain this peer keeps, one it doesn't name from the first.
+    pub async fn answer(&self, holds: &[Have], only: bool) -> Vec<Frame> {
         let mut lines = vec![];
+        if only {
+            for h in holds {
+                lines.extend(self.lines_after(&h.device, h.seq).await);
+            }
+            return batches(lines);
+        }
         for (device, _) in self.heads() {
             let seq = holds
                 .iter()

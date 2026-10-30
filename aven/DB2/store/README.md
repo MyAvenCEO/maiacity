@@ -103,6 +103,15 @@ proposal kept the contract and split big files. **We split** (the architect, 30 
   does today. SANDBOX.md's "ranges aren't hash-checked yet" is closed by reading a chunk whole.
 - **The cost:** a 1 GB movie is about a thousand objects in S3, and a thousand GETs to fetch it all. Acceptable; the
   spike measures it.
+- **Limits** (the security audit, 30 Oct 2026; `Aven.DB.Files`): the largest blob a peer fetches is **1 MiB + 64 KiB**
+  (`maxBlob`, a chunk and room for framing), checked before anything is allocated, since the size a holder states
+  is its word until bao has checked the last chunk (iroh-blobs 0.104.0 hands it to the store's `import_bao` at once).
+  The largest file is **32 GiB** (`maxFile`), whose index, 32 KiB hashes, still fits in one chunk (`index_fits`); a
+  `file` line past it is refused as `badFile`.
+- **A file is cut as it must be** (`Aven.DB.Files.fits`): every chunk but the last is exactly 1 MiB, the last 1 byte to
+  1 MiB. A receiver checks it on fetch (the Aven Peer fetches the index first, refuses one listing more or fewer
+  chunks than the line's size needs, then checks every chunk) and on every read; a malformed file is
+  `KeepError::Malformed` or `Corrupt`, never a panic, and the Aven Peer doesn't fetch it again.
 
 ## Files in the city-dome
 
@@ -179,6 +188,13 @@ avenDB-old kept each device's changes; this stays when sealing comes:
 - **Catching up:** a returning peer asks the Aven Peer for its `chat-*` refs, walks each chain back from its head to
   what it holds, and fetches the missing lines as one hash sequence. Lines show ordered by time, then device; a line
   received twice is kept once, by its hash.
+- **Catching up goes in pages** (the security audit, 30 Oct 2026; `Aven.DB.Wire`): `heads` and `catch_up` name one
+  entry per device, and every browser reset adds a device, so in one frame each they passed the wire's 64 KiB at
+  about 400 devices. Both go in pages of at most 128 entries (`pageSize`), as `lines` does: a telling of the heads is
+  its pages, every one but the last with `more`, so a peer catches up and learns its own head only once it has heard
+  them all (`headsPages_more`); a peer names every chain it wants in `catch_up` pages, each `only` for the chains it
+  names, which the Aven Peer answers alone (`answer_pages`). No page is empty, so each moves the receiver forward
+  (rule 3).
 - **Later:** milestone 4 replaces the line format with Loro segments. The shape, a head over blobs, is the
   README's document, so nothing is thrown away, and the old lines stay readable (production keeps its store).
 
@@ -358,8 +374,8 @@ rest from the Aven Peer (199 MiB from S3 into OPFS through the relay: 17 s). Mea
 
 1. **Thumbnails and posters:** a second, small blob the sender makes, announced with the file, so the chat paints
    before a movie's first chunk arrives.
-2. **Limits:** the largest file the chat accepts; how much of a Peer-Light's OPFS cached chunks may take before the
-   oldest go.
+2. **Limits:** the largest file is 32 GiB ("Big files are hash sequences"); still open, how much of a Peer-Light's OPFS
+   cached chunks may take before the oldest go.
 3. **Where the Service Worker lives** with a Peer-Light on its own origin (README): on the Peer-Light's origin, with
    avenOS's media elements pointing there, or on avenOS's own, relaying through the page.
 4. **Catching up moves a ref per line** (city-dome, 30 Oct 2026): a Peer-Light taking ~70 lines into an empty OPFS
