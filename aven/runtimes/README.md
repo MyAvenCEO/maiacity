@@ -69,9 +69,9 @@ run(part, input) → output | failure        part, input and output are Values; 
   and reads only its input: the turn's frozen time and seed. The actor spec's "imports nothing that reaches the host"
   becomes "imports nothing", which a check can prove from the module's bytes alone.
 - It exports one memory and one ABI: `alloc(len) → ptr`, and `run(part_ptr, part_len, input_ptr, input_len) → ptr`
-  to a result of `(tag, ptr, len)`. Part, input and output cross as bytes in the canonical encoding of rule 1
-  ([ARCHITECTURE](../DB2/ARCHITECTURE.md#the-rules-across-all-parts)); the host decodes and checks them against the
-  schemas.
+  to a result of `(tag, ptr, len)`. Part, input and output cross as bytes in rule 1's one codec, deterministic CBOR
+  ([ARCHITECTURE](../DB2/ARCHITECTURE.md#the-rules-across-all-parts), A2), whose byte strings carry a file's bytes,
+  pixels and buffers; the host decodes and checks them against the schemas.
 - It declares its maximum memory in the module, and the host refuses one that declares more than its limit.
 
 **What every runtime declares,** in its manifest entry, frozen with it:
@@ -380,12 +380,12 @@ Later: `audio-runtime` and `video-runtime` never, since native players are the r
 
 ## Moving the actors' runtimes and the plugins in
 
-**The actors' runtimes** are specified in `aven/actor/ARCHITECTURE.md` and not built yet. The proposal: they are
-built here from their first line, in `aven/runtimes/actor/*`, with `aven-runtimes-host` as the kernel's runtime host,
-and the actor spec's section 13 points here instead of to `aven/actor/runtimes`. avenACTORS keeps owning what each
-actor runtime does, its parts and its schemas; this package owns the contract, the host, the import check, the
-manifest and the node-tree allowlist they share with file runtimes. Nothing moves without avenACTORS' agreement, and
-the order of its version 1 (prolog and state first, then js, then view and style) stays its own.
+**The actors' runtimes** are specified in `aven/actor/ARCHITECTURE.md` and not built yet. Decided (Samuel, 30 Oct 2026;
+questions 1 and 8): they are built here from their first line, in `aven/runtimes/actor/*`, with `aven-runtimes-host` as
+the kernel's runtime host, and the actor spec's section 13 points here instead of to `aven/actor/runtimes`. avenACTORS
+keeps owning what each actor runtime does, its parts and its schemas; this package owns the contract, the host, the
+import check, the manifest and the node-tree allowlist they share with file runtimes. avenACTORS agrees, and the order
+of its version 1 (prolog and state first, then js, then view and style) stays its own.
 
 **The plugins** are built-in Rust, versioned with the engine (engine D1), and A18 makes each a runtime. Both hold:
 - a plugin's lowering is a pure Rust function in `aven/runtimes/plugins/<name>`, with no I/O;
@@ -438,9 +438,9 @@ Each comes with a recommendation.
 5. **wasmi everywhere, or fuel injected at freeze** and run on the host's WebAssembly engine. *Recommend: wasmi
    first, since it is the actor spec's choice and the simplest determinism; the gates decide per runtime, and injected
    fuel is the planned fallback for `svg-runtime`, `gltf-runtime` and `pdf-runtime`.*
-6. **Byte strings in Values.** A file runtime takes a file's bytes and gives pixels and buffers; the actors' Value is
-   JSON only. *Recommend: rule 1's canonical codec gets a bytes leaf, with JSON as the text form (base64), decided
-   with the codec's thread (A2); actors' parts keep using JSON only.*
+6. **Byte strings in Values.** A file runtime takes a file's bytes and gives pixels and buffers. *Decided by A2
+   (Samuel, 30 Oct 2026: "CBOR is good"): the one codec is deterministic CBOR, whose native byte strings carry file
+   bytes, pixels and buffers in Values.*
 7. **Plugins as runtimes, built twice:** native in the engine, frozen as wasm whose hash names the lowering, with
    the check proving them equal. *Recommend: yes; it reconciles D1 (built-in Rust) with A18.*
 8. **The actors' runtimes are born here,** not in `aven/actor/runtimes`, with avenACTORS still owning their
