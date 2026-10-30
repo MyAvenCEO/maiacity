@@ -1,0 +1,124 @@
+//! What aven-id's tests share: Lean's vectors (`id/spec/vectors`, `lake exe vectors`) and aven-id's answers in the
+//! model's JSON form (`Aven.ID.Json`), so a test compares the two as values and writes no expected value of its own.
+
+#![allow(dead_code)]
+
+use std::path::PathBuf;
+
+use aven_id::{Invalid, Kind, Owner, SignError, Tree, Vault};
+use serde_json::{Value, json};
+
+/// A vector file, as Lean wrote it.
+pub fn vectors(file: &str) -> Vec<Value> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../spec/vectors")
+        .join(file);
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    serde_json::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+/// A tree in the model's form: key ids and vaults, the kinds and owners as text. `Err` when it isn't one.
+pub fn parse(input: &Value) -> Result<(Vec<String>, Vec<Vault>), String> {
+    let keys = input["keys"].as_array().ok_or("no keys")?;
+    let keys = keys
+        .iter()
+        .map(|k| k.as_str().map(str::to_string).ok_or("a key isn't text"))
+        .collect::<Result<_, _>>()?;
+    let mut vaults = Vec::new();
+    for v in input["vaults"].as_array().ok_or("no vaults")? {
+        let id = v["id"].as_str().ok_or("no id")?.to_string();
+        let kind = v["kind"]
+            .as_str()
+            .and_then(Kind::parse)
+            .ok_or("an unknown kind")?;
+        let owners = v["owners"].as_array().ok_or("no owners")?;
+        let owners = owners
+            .iter()
+            .map(|o| {
+                o.as_str()
+                    .and_then(Owner::parse)
+                    .ok_or("neither key: nor vault:")
+            })
+            .collect::<Result<_, _>>()?;
+        vaults.push(Vault {
+            name: id.clone(),
+            id,
+            kind,
+            owners,
+        });
+    }
+    Ok((keys, vaults))
+}
+
+pub fn case(keys: &[String], vaults: &[Vault]) -> Value {
+    let vaults: Vec<Value> = vaults
+        .iter()
+        .map(|v| {
+            let owners: Vec<String> = v.owners.iter().map(Owner::to_string).collect();
+            json!({ "id": v.id, "kind": v.kind.as_str(), "owners": owners })
+        })
+        .collect();
+    json!({ "keys": keys, "vaults": vaults })
+}
+
+pub fn answer(t: &Tree, q: &Value) -> Value {
+    let arg = |i: usize| q[i].as_str().unwrap_or_default();
+    match arg(0) {
+        "kind" => json!(t.kind(arg(1)).map(Kind::as_str)),
+        "owners" => json!(t.vault(arg(1)).map_or_else(Vec::new, |v| {
+            v.owners.iter().map(Owner::to_string).collect::<Vec<_>>()
+        })),
+        "owned" => json!(t.owned(arg(1))),
+        "governs" => json!(t.governs(arg(1))),
+        "chain" => json!(t.chain(arg(1))),
+        "actsFor" => json!(t.acts_for(arg(1))),
+        "actsThrough" => json!(t.acts_through(arg(1))),
+        "accounts" => json!(t.accounts(q[1].as_str())),
+        "sees" => json!(t.sees(arg(1))),
+        "mayActOn" => json!(t.may_act_on(arg(1), arg(2))),
+        other => panic!("unknown query {other}"),
+    }
+}
+
+/// The rule a tree breaks, as the model names it. A cycle names no vault: which one aven-id finds is its own.
+pub fn invalid(why: &Invalid) -> Value {
+    match why {
+        Invalid::Duplicate(id) => json!({ "rule": "duplicate", "vault": id }),
+        Invalid::Unowned(id) => json!({ "rule": "unowned", "vault": id }),
+        Invalid::Unknown { vault, owner } => {
+            json!({ "rule": "unknown", "vault": vault, "owner": owner.to_string() })
+        }
+        Invalid::DeviceOwners(id) => json!({ "rule": "deviceOwners", "vault": id }),
+        Invalid::DeviceOwns { device, vault } => {
+            json!({ "rule": "deviceOwns", "device": device, "vault": vault })
+        }
+        Invalid::DeviceKeyless(id) => json!({ "rule": "deviceKeyless", "vault": id }),
+        Invalid::DeviceKeyOwns { device, vault } => {
+            json!({ "rule": "deviceKeyOwns", "device": device, "vault": vault })
+        }
+        Invalid::Cycle(_) => json!({ "rule": "cycle" }),
+    }
+}
+
+/// aven-id's result for a tree and its queries, in the model's form. Keys are known by id only.
+pub fn result(keys: &[String], vaults: &[Vault], queries: &[Value]) -> Value {
+    let keys = keys.iter().map(|k| (k.clone(), String::new())).collect();
+    match Tree::new(keys, vaults.to_vec()) {
+        Ok(t) => {
+            json!({ "wf": true, "answers": queries.iter().map(|q| answer(&t, q)).collect::<Vec<_>>() })
+        }
+        Err(why) => json!({ "wf": false, "invalid": invalid(&why), "answers": [] }),
+    }
+}
+
+pub fn sign_error(e: &SignError) -> Value {
+    match e {
+        SignError::NotDevice(id) => json!({ "error": "notDevice", "id": id }),
+        SignError::NoKey(id) => json!({ "error": "noKey", "id": id }),
+        SignError::WrongKey(id) => json!({ "error": "wrongKey", "id": id }),
+        SignError::WrongVault { device, vault } => {
+            json!({ "error": "wrongVault", "device": device, "vault": vault })
+        }
+        SignError::BadSignature => json!({ "error": "badSignature" }),
+    }
+}

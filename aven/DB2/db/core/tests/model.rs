@@ -92,21 +92,6 @@ fn input(t: &Trace) -> String {
     json!({ "limit": t.limit, "status": events, "presence": changes }).to_string()
 }
 
-/// The model lists presence in its own order; the count and the members are what must agree.
-fn sorted(mut v: Value) -> Value {
-    for p in v["presence"].as_array_mut().unwrap() {
-        let mut ids: Vec<u64> = p
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|id| id.as_u64().unwrap())
-            .collect();
-        ids.sort();
-        *p = json!(ids);
-    }
-    v
-}
-
 fn model() -> std::path::PathBuf {
     let spec = Path::new(env!("CARGO_MANIFEST_DIR")).join("../spec");
     let built = Command::new("lake")
@@ -135,7 +120,9 @@ fn rust_follows_the_model_on_random_traces() {
     let replies: Vec<&str> = std::str::from_utf8(&out.stdout).unwrap().lines().collect();
     assert_eq!(replies.len(), TRACES);
     for (i, (t, reply)) in traces.iter().zip(replies).enumerate() {
-        let lean = sorted(serde_json::from_str(reply).unwrap());
+        let mut lean: Value = serde_json::from_str(reply).unwrap();
+        // the store is aven-db-store's to compare
+        lean.as_object_mut().unwrap().remove("store");
         assert_eq!(
             rust(t),
             lean,

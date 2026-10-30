@@ -1,132 +1,42 @@
-//! The cast's keys, derived from their seeds, and statements a device signs for the vault it serves.
+//! The cast's test keys, as the model derives them (`Aven.ID.Keys`, `id/spec/vectors/keys.json`): each seed is
+//! `sha256("avenSANDBOX test signer: <id>")` and each public half its Ed25519 key, and `sandbox/cast.json` holds those.
+//! What statements signed with these keys mean is Lean's too (`tests/vectors.rs`).
 
-use aven_id::{SignError, Tree, public_hex, test_signer};
+mod common;
+
+use aven_id::{CastError, Tree, public_hex, test_signer};
+use serde_json::{Value, json};
 
 const CAST: &str = include_str!("../../../sandbox/cast.json");
 
-fn cast() -> Tree {
-    Tree::from_cast(CAST).unwrap()
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 #[test]
-fn every_public_half_is_the_seeds() {
-    let t = cast();
-    let ids: Vec<_> = t.keys().map(|(id, _)| id).collect();
-    assert_eq!(
-        ids,
-        [
-            "alice-owner",
-            "bob-owner",
-            "aven-peer",
-            "alice-peer",
-            "alice-peer-light",
-            "bob-peer-light"
-        ]
-    );
-    for (id, public) in t.keys() {
-        assert_eq!(public_hex(&test_signer(id).verifying_key()), public, "{id}");
+fn every_key_is_the_models() {
+    let cast: Value = serde_json::from_str(CAST).unwrap();
+    let vectors = common::vectors("keys.json");
+    assert_eq!(vectors.len(), cast["keys"].as_object().unwrap().len());
+    for v in vectors {
+        let id = v["input"]["id"].as_str().unwrap();
+        let key = test_signer(id);
+        let derived = json!({ "seed": hex(&key.to_bytes()), "public": public_hex(&key.verifying_key()) });
+        assert_eq!(derived, v["expected"], "{id}");
+        assert_eq!(cast["keys"][id], v["expected"]["public"], "the cast's {id}");
     }
-    // one written out by hand, so a change to the derivation can't pass by changing the cast with it
-    assert_eq!(
-        public_hex(&test_signer("alice-peer-light").verifying_key()).get(..8),
-        Some("9f78814b")
-    );
+    // and the tree reads each key's public half from the cast
+    let t = Tree::from_cast(CAST).unwrap();
+    for (id, public) in t.keys() {
+        assert_eq!(public, cast["keys"][id], "{id}");
+    }
 }
 
+/// Ed25519 decides which bytes are a public key: mechanics outside the model, which knows keys by id.
 #[test]
-fn a_device_signs_for_the_vault_it_serves() {
-    let t = cast();
-    let s = t
-        .sign("aven-peer", &test_signer("aven-peer"), b"hello")
-        .unwrap();
-    assert_eq!(s.vault, "aven");
-    assert_eq!(t.verify(&s), Ok(()));
-    let s = t
-        .sign("bob-peer-light", &test_signer("bob-peer-light"), b"hello")
-        .unwrap();
-    assert_eq!(s.vault, "bob");
-    assert_eq!(t.verify(&s), Ok(()));
-}
-
-#[test]
-fn only_with_its_own_key() {
-    let t = cast();
-    assert_eq!(
-        t.sign("aven-peer", &test_signer("alice-peer"), b"x"),
-        Err(SignError::WrongKey("aven-peer".into()))
-    );
-    // a statement signed with another device's key, but naming this device, fails
-    let mut s = t
-        .sign("alice-peer", &test_signer("alice-peer"), b"x")
-        .unwrap();
-    s.device = "alice-peer-light".into();
-    assert_eq!(t.verify(&s), Err(SignError::BadSignature));
-    // an owner key is no device
-    assert_eq!(
-        t.sign("alice-owner", &test_signer("alice-owner"), b"x"),
-        Err(SignError::NotDevice("alice-owner".into()))
-    );
-    assert_eq!(
-        t.sign("alice", &test_signer("alice-owner"), b"x"),
-        Err(SignError::NotDevice("alice".into()))
-    );
-}
-
-#[test]
-fn only_for_its_vault() {
-    let t = cast();
-    let mut s = t
-        .sign("aven-peer", &test_signer("aven-peer"), b"x")
-        .unwrap();
-    s.vault = "alice".into();
-    assert_eq!(
-        t.verify(&s),
-        Err(SignError::WrongVault {
-            device: "aven-peer".into(),
-            vault: "alice".into()
-        })
-    );
-}
-
-#[test]
-fn not_once_changed() {
-    let t = cast();
-    let mut s = t
-        .sign("alice-peer-light", &test_signer("alice-peer-light"), b"x")
-        .unwrap();
-    s.body = b"y".to_vec();
-    assert_eq!(t.verify(&s), Err(SignError::BadSignature));
-    let mut s = t
-        .sign("alice-peer-light", &test_signer("alice-peer-light"), b"x")
-        .unwrap();
-    s.signature[0] ^= 1;
-    assert_eq!(t.verify(&s), Err(SignError::BadSignature));
-}
-
-#[test]
-fn may_act_on_decides_the_rest() {
-    let t = cast();
-    let bob = t
-        .sign("bob-peer-light", &test_signer("bob-peer-light"), b"x")
-        .unwrap();
-    assert_eq!(t.acts_on(&bob, "bob"), Ok(true));
-    assert_eq!(
-        t.acts_on(&bob, "aven"),
-        Ok(false),
-        "Bob's devices never act on Aven"
-    );
-    let aven = t
-        .sign("aven-peer", &test_signer("aven-peer"), b"x")
-        .unwrap();
-    assert_eq!(t.acts_on(&aven, "aven"), Ok(true));
-    assert_eq!(
-        t.acts_on(&aven, "alice"),
-        Ok(false),
-        "nor the Aven Peer on Alice's vault above it"
-    );
-    let alice = t
-        .sign("alice-peer", &test_signer("alice-peer"), b"x")
-        .unwrap();
-    assert_eq!(t.acts_on(&alice, "aven-peer"), Ok(true));
-    assert_eq!(t.acts_on(&alice, "bob"), Ok(false));
+fn a_cast_key_must_be_an_ed25519_key() {
+    assert!(matches!(
+        Tree::from_cast(r#"{"keys":{"k":"00"},"vaults":{"a":{"kind":"person","owners":["key:k"]}}}"#),
+        Err(CastError::Format(_))
+    ));
 }

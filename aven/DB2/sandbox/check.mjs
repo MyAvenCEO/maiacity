@@ -1,38 +1,37 @@
 // avenSANDBOX's health check (`bun run up --check`, SANDBOX.md). Runs in the browsers' container and walks through
 // avenOS: the vaults each host may act as, what each vault's Control Room and Vault show, and each Peer-Light on its
-// own origin with its own OPFS, whose mark survives a reload and differs from every other origin's. The expected
-// values are written out by hand from the cast's tree ("Vaults own vaults"), not computed by the code under test.
+// own origin with its own OPFS, whose mark survives a reload and differs from every other origin's. Whom each host may
+// act as, what each Control Room and Vault shows, whom each vault acts through and whom each Peer-Light serves come
+// from Lean (id/spec/vectors/avenos.json, README rule 10), not from the code under test; only the names they are shown
+// by come from the cast.
 // Photographs every screen as it goes. First it waits until all four peers are live: Alice Peer direct to the Aven
 // Peer over UDP, both Peer-Lights through the relay, each showing "4 peers"; it writes the run's timeline beside the
 // screenshots. Each peer keeps a record through its store (its first start), in the backend it is configured with;
 // every view that shows one must show the peer's newest. The check runs in a Chromium profile kept in a volume, so a
 // Peer-Light's OPFS outlives it, as Alice Peer's folder and the Aven Peer's bucket do.
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { lines as allLines, profile, records, stores } from './records.mjs';
+
+// What avenOS shows on the cast, as the model says (`Aven.ID.OS`), and the names the page shows vaults by
+const read = (path) => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
+const avenos = read('../id/spec/vectors/avenos.json');
+const names = Object.fromEntries(Object.entries(read('./cast.json').vaults).map(([id, vault]) => [id, vault.name]));
+const shown = (key) => avenos.filter((v) => key in v.input);
+const vaultPath = ({ vault, target }) => (target ? `${vault}/${target}` : vault);
 
 const expected = {
 	// the people a host may act as: the box's own view anyone, a Peer-Light the person it serves, a visitor no one.
 	// No person switches into Aven: it acts only through its own device, the Aven Peer
-	accounts: {
-		localhost: ['alice', 'bob'],
-		'alice.localhost': ['alice'],
-		'bob.localhost': ['bob'],
-		'os.localhost': [],
-	},
+	accounts: Object.fromEntries(shown('accounts').map((v) => [v.input.accounts, v.expected])),
 	// the peers each person's Control Room shows: those their vault governs, nothing else
-	sees: { alice: ['aven-peer', 'alice-peer', 'alice-peer-light'], bob: ['bob-peer-light'] },
+	sees: Object.fromEntries(shown('sees').map((v) => [v.input.sees, v.expected])),
 	// the Vault app's tree at #/<person>/vault/<vault>, depth first: a vault one governs opens, any other doesn't
-	tree: {
-		alice: ['alice', 'aven', 'aven-peer', 'alice-peer', 'alice-peer-light'],
-		'alice/aven': ['aven', 'aven-peer'],
-		bob: ['bob', 'bob-peer-light'],
-		'bob/aven': ['bob', 'bob-peer-light'],
-	},
-	// the devices a vault acts through, in the Vault app: Aven only through the Aven Peer
-	actsThrough: { alice: 'Alice Peer, Alice Peer-Light', 'alice/aven': 'Aven Peer', bob: "Bob's Peer-Light" },
-	// the vault each Peer-Light serves
-	serves: { 'alice-peer-light': "Alice's vault", 'bob-peer-light': "Bob's vault" },
+	tree: Object.fromEntries(shown('vault').map((v) => [vaultPath(v.input), v.expected.tree])),
+	// the devices the vault shown acts through, by name: Aven only through the Aven Peer
+	actsThrough: Object.fromEntries(shown('vault').map((v) => [vaultPath(v.input), v.expected.actsThrough.map((id) => names[id]).join(', ')])),
+	// the vault each Peer-Light serves, by name
+	serves: Object.fromEntries(shown('serves').map((v) => [v.input.serves, names[v.expected]])),
 	// presence, as the Aven Peer counts it: all four peers, each once
 	present: ['alice-peer', 'alice-peer-light', 'aven-peer', 'bob-peer-light'],
 	// each Peer-Light's own status line

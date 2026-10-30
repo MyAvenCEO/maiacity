@@ -23,9 +23,10 @@ Targets, measured in this milestone and reported on every run:
 | `bun run up --check` in all, warm | (none) | 25–32 s, of which the views 7 s and the restart and the wipe 12 s |
 | A change to the box's Dockerfile, pushed, until the new image pulls | (none) | 227 s: GitHub builds both platforms |
 
-Smaller steps, measured by the threads: `lake build` warm 0.2–2 s (cold 6.3 s for `Aven.ID`); `cargo test -p aven-id`
-warm 4.6 s, 2000 model cases; `aven-db-model`, 1000 traces, 0.8 s; `db/store/check.sh`, all four backends, 11–12 s
-warm; an incremental `cargo build -p aven-peer` 1.3–2.4 s; aven-id's wasm 1.0 s incremental, 126 KB; the Peer-Light's
+Smaller steps, measured by the threads: `lake build` warm 0.15 s each (cold, programs included, 6.1 s for `Aven.ID`,
+5.2 s for `Aven.DB`); `sandbox/vectors.sh --check`, both specs, 0.8–0.9 s warm; `cargo test -p aven-id` warm 4.4 s,
+2000 model cases; `cargo test -p aven-db-core` 1.1 s, 1000 traces; the store against the running model, 500 traces,
+1 s; `cargo test --workspace` 14 s warm; `db/store/check.sh`, all four backends, 11–12 s warm; an incremental `cargo build -p aven-peer` 1.3–2.4 s; aven-id's wasm 1.0 s incremental, 126 KB; the Peer-Light's
 debug wasm 21 MB, wasm-bindgen 3 s of every change to it.
 
 ## The cast
@@ -122,9 +123,14 @@ its key. Each place gets a backend:
 - **No append.**
 - **Ref names are flat:** 1 to 128 characters of `A-Za-z0-9._-`, not starting with a dot.
 - **The same layout everywhere:** blobs at `blobs/<hex>`, refs at `refs/<name>`, a ref holding its hash in hex.
-- **The suite** (`db/store/src/conformance.rs`) has 12 cases, each on a fresh store. Among them: ranges over 1 MiB, 8
-  racing writers of which exactly one wins, and readers that never see a torn ref while a writer flips it. Cases
-  report rather than panic, so the same suite runs under `cargo test` and in a browser.
+- **The contract is Lean's** (`Aven.DB.Store`, README rule 10): blobs named by their BLAKE3 hash, refs and
+  compare-and-set, with theorems that a blob never changes, a stale writer is refused, a ref is never torn and, of
+  racing writers expecting the same value, exactly the first is done.
+- **The suite** (`db/store/src/conformance.rs`) replays the model's 75 traces (`db/spec/vectors/store.json`: 15
+  examples and 60 generated, 1,333 calls), each on a fresh store, and every call must give the model's result. Beside
+  them stay three mechanics cases: ranges over 1 MiB, 8 racing writers of which exactly one wins, and readers that
+  never see a torn ref while a writer flips it. Cases report rather than panic, so the same suite runs under
+  `cargo test` and in a browser. The memory store also follows the running model on 500 random traces.
 - **Compare-and-set** runs under one async lock in the store, so the one writer's tasks take turns. S3 also refuses a
   stale write on the server.
 
@@ -243,8 +249,9 @@ per run. A cloud session can't show a window, so `bun run shot` takes a screensh
 session.
 
 `bun run up --check` walks through avenOS on every host: whom each may act as (never Aven), what each person's Control
-Room and Vault show, the vault each Peer-Light serves and its own OPFS, all held to values written out by hand from the
-tree above. It photographs every screen into the run's folder.
+Room and Vault show, the vault each Peer-Light serves and its own OPFS, held to what the model says avenOS shows
+(`Aven.ID.OS`, `id/spec/vectors/avenos.json`), shown by the cast's names. It photographs every screen into the run's
+folder. First it regenerates Lean's vectors and fails when they differ from what's committed.
 
 ## The box
 
@@ -480,9 +487,26 @@ No scenarios yet. The Lean project and the Rust tests build and run in the box w
 conformance suite runs on all four backends, so milestone 2 starts test-first with nothing left to set up. `bun run up
 --check` boots every peer and exits once all four are live: the box's own health check, the one CI runs.
 
-From here on, tests derive from Lean ([README, rule 10](README.md#the-rules)): the hand-written expected values in
-`check.mjs`, `id/core/wasm/check.mjs` and the Rust tests move into Lean examples, exported as test vectors. A thread
-after milestone 1's integration builds it ([Open questions](#open-questions), 8).
+Tests derive from Lean ([README, rule 10](README.md#the-rules)), since 30 Oct 2026. The expected values once written
+by hand in `check.mjs`, `id/core/wasm/check.mjs` and the Rust tests of `id/` and `db/` are Lean examples now, beside
+the definitions they show: `decide` checks them where the kernel can run them, `#guard` where it can't (strings,
+JSON, hashes). Each spec's `lake exe vectors` exports them with generated cases as JSON, one `{name, input,
+expected}` per line, committed beside the spec:
+
+| File | What | Loaded by |
+|---|---|---|
+| `id/spec/vectors/trees.json` | 100 trees and their queries: the cast's examples, trees that break each rule, input that is no tree, every query on the cast, 80 generated | aven-id's tests, its wasm check |
+| `id/spec/vectors/statements.json` | the cast's devices signing, changed statements, what each acts on | aven-id's tests, with real keys |
+| `id/spec/vectors/keys.json` | each cast key's seed and Ed25519 public half, derived in Lean | aven-id's tests, against `cast.json` |
+| `id/spec/vectors/avenos.json` | whom each host may act as, each Control Room, each Vault view, whom each Peer-Light serves | `sandbox/check.mjs` |
+| `db/spec/vectors/status.json`, `presence.json` | example and generated traces, with every state | aven-db-core's tests |
+| `db/spec/vectors/timeline.json`, `wire.json` | timeline lines; streams in chunks and the frames each completes | aven-db-core's tests |
+| `db/spec/vectors/store.json`, `hashes.json` | store traces with every result; spellings of a hash | the conformance suite on all four backends; aven-db-store's tests |
+
+The model runs, too: aven-id's property test holds 2000 random trees to `aven-id-model`, the rule a tree breaks
+included; aven-db-core's 1000 status and presence traces to `aven-db-model`; the memory store 500 traces. Only
+mechanics stay outside Lean: crash safety and torn reads in the store, Ed25519's own checks, the peers' persistence,
+what a live box shows (its status lines and paths).
 
 ## Layout
 
@@ -499,10 +523,10 @@ aven/DB2/
   peer/light/      aven-peer-light: avenPEER's Peer-Light, the same core as wasm in a worker
   db/core/         aven-db-core: the pure core every peer runs, without I/O
   db/store/        aven-db-store: the Store contract, its backends and their conformance suite
-  db/spec/         Lean: Aven.DB
+  db/spec/         Lean: Aven.DB, with its vectors in db/spec/vectors
   id/core/         aven-id: avenID, who may act for a vault, pure
-  id/spec/         Lean: Aven.ID
-  sandbox/         avenSANDBOX: the runner (up, down, logs, shot, build, doctor), the check, the cast
+  id/spec/         Lean: Aven.ID, with its vectors in id/spec/vectors
+  sandbox/         avenSANDBOX: the runner (up, down, logs, shot, build, doctor), the check, the cast, vectors.sh
   sandbox/box/     the image: Dockerfile, compose.yml, the cloud setup script
 ```
 
@@ -547,6 +571,23 @@ Made in milestone 1's threads and its integration (29–30 Oct 2026).
 - **Traces are JSON lines** through `Lean.Data.Json`, all in one process call; the Rust side uses a seeded xorshift, so
   a failure names its seed.
 
+**Rule 10** (30 Oct 2026)
+- **Examples are data beside their definitions:** a list of inputs and hand-written answers, one theorem (`decide`)
+  or `#guard` over it, and the same list exported. Exported answers are the model's, which the theorem holds equal to
+  the hand-written ones.
+- **Why a tree is not well formed is the model's:** `Tree.check` names the first rule broken in aven-id's order, and
+  `check_iff` proves it names nothing exactly for well-formed trees. A cycle names no vault; which one aven-id finds
+  is its own.
+- **The store's model is parametric in its hash;** its theorems hold for any. Its examples and traces run it with
+  BLAKE3, written in core Lean like SHA-256, SHA-512 and Ed25519's public key: so blob names and the cast's keys come
+  from the model too, checked against each specification's known answers.
+- **Statements take the signature as sound:** it verifies for exactly what its key signed. Ed25519 itself is
+  mechanics.
+- **A timeline field never takes the place of `t`, `peer` or `event`** (the model's rule; the Rust used to let it).
+- **The vectors are JSON, one vector per line,** keys sorted as Lean writes them, compared as values.
+  `sandbox/vectors.sh` writes them; with `--check`, which `up --check` runs, it writes them elsewhere and fails on a
+  difference.
+
 **The integration**
 - **The peers keep their record through the store** as configuration: `--store s3` for the Aven Peer, `--store fs`
   for Alice Peer, OPFS for the Peer-Lights.
@@ -575,14 +616,11 @@ Raised by the threads, not settled in milestone 1:
 4. **`set_ref` on a missing blob.** The store doesn't require the blob to exist. Should the core enforce it?
 5. **The fs folder's fsync.** fs syncs the file but not its folder after the rename: a power loss can lose the last
    write, never tear it.
-6. **A Lean model of the store's contract** (rule 10's follow-up): blobs and refs with compare-and-set, in `Aven.DB`,
-   exporting traces that every backend replays. The store has no Lean model yet.
+6. **A Lean model of the store's contract:** done (30 Oct 2026), `Aven.DB.Store`; its traces run on every backend.
 7. **Our own OPFS backend, or OpenDAL's with sync access handles.** OpenDAL's is slow for small writes and ranges and
    refuses reads that race a commit. Sync access handles in the Peer-Light's worker fix both; they exist only in
    workers, which the fork now reaches. Also: offer the fork's fix upstream, so the fork can go.
-8. **Rule 10's vectors** (README; Samuel, 30 Oct): `Aven.ID` and `Aven.DB` export their examples and generated cases
-   as JSON test vectors, and traces for presence and status; the Rust tests, the wasm check and avenOS's check load
-   them; `up --check` regenerates them and fails on a difference. Not built yet.
+8. **Rule 10's vectors:** done (30 Oct 2026), [Tests in milestone 1](#tests-in-milestone-1).
 
 ## Done when
 
