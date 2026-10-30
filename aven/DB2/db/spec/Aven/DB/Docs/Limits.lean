@@ -88,7 +88,7 @@ theorem capped_whole {limit : Nat} : ∀ {buf : Bytes} {cs : List Bytes},
   | buf, c :: cs, h => by
     have hc : (buf ++ c).length ≤ limit := by
       simp only [List.flatten_cons, List.length_append] at h ⊢; omega
-    simp only [capped, hc, if_true, List.flatten_cons, ← List.append_assoc]
+    simp only [capped, hc, ite_true, List.flatten_cons, ← List.append_assoc]
     exact capped_whole (by simpa [List.append_assoc] using h)
 
 /-! ## Steps 3 and 8: the decoded envelope -/
