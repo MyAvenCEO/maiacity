@@ -43,7 +43,7 @@ def runTurn (d : Def) (st : Value) (m : Message) (g : Given) (ph : String) :
     | none => some (out.state, out.phase.getD ph, out.effects)
     | some mc =>
       match out.phase with
-      | some p => if (m.name, ph, p) ∈ mc.transitions then some (out.state, p, out.effects) else none
+      | some p => if mc.allows m.name ph p then some (out.state, p, out.effects) else none
       | none => none
 
 /-- What handling `m` comes to, from what the journal entry pins: the definition in force, the state and phase
@@ -141,12 +141,32 @@ def Kernel.tick (k : Kernel) (t : Nat) : Kernel :=
   let k := { k with now := max k.now t }
   (k.pending.filter (·.2 ≤ k.now)).foldl (fun k p => k.answer p.1.to p.1 .null (some .timeout)) k
 
+/-- One round of reaching: the phases one allowed message away from those already reached. -/
+def Machine.grow (mc : Machine) (ps : List String) : List String :=
+  ps ++ (mc.phases.filter (fun e => ps.contains e.1)).flatMap fun e => e.2.flatMap (·.2)
+
+/-- The phases reachable from the initial one: as many rounds as there are phases is enough. -/
+def Machine.reach (mc : Machine) : List String := Nat.repeat mc.grow mc.phases.length [mc.initial]
+
+/-- The admission check (section 6): the initial phase is declared, every message the machine names is in the
+interface, every phase it leads to is declared, and every declared phase is reachable. -/
+def Machine.wellFormed (mc : Machine) (messages : List String) : Bool :=
+  mc.declared.contains mc.initial &&
+  mc.phases.all (fun e => e.2.all fun t => messages.contains t.1 && t.2.all mc.declared.contains) &&
+  mc.declared.all mc.reach.contains
+
+def Def.admit (d : Def) : Bool :=
+  match d.machine with
+  | none => true
+  | some mc => mc.wellFormed d.messages
+
 /-- The address a spawn of `id` gets: the next incarnation. -/
 def Kernel.next (k : Kernel) (id : String) : Addr := ⟨"local", id, k.spawned id + 1⟩
 
-/-- Spawning (section 7): only a definition from the repository, as a new incarnation of `id`. -/
+/-- Spawning (section 7): the kernel's turn on a `spawn` ask. Only a definition from the repository that its
+admission check accepts (`Aven.Actor.Machines`), as a new incarnation of `id`. -/
 def Kernel.spawn (lib : Library) (k : Kernel) (id dn : String) : Kernel :=
-  match lib dn with
+  match (lib dn).filter Def.admit with
   | none => k
   | some d =>
     let a := k.next id
@@ -157,6 +177,7 @@ def Kernel.spawn (lib : Library) (k : Kernel) (id dn : String) : Kernel :=
       state := upd k.state a d.init
       phase := upd k.phase a d.initialPhase }
 
+/-- Retiring (section 7): the kernel's turn on a `retire` tell. The actor's Doc stays. -/
 def Kernel.retire (k : Kernel) (a : Addr) : Kernel := { k with defs := upd k.defs a none }
 
 inductive Event where

@@ -91,19 +91,30 @@ structure Output where
   phase : Option String
   deriving Repr, Inhabited
 
-/-- A machine: fact-only, `transition(Message, From, To)` (section 6). -/
+/-- A machine is data (section 6): Prolog's facts `transition(Message, From, To)` as a table, per phase the messages
+it allows and the phases each may lead to. The interface's second part. -/
 structure Machine where
   initial : String
-  transitions : List (String × String × String)
+  phases : List (String × List (String × List String))
   deriving Repr, Inhabited
 
-/-- Whether some transition takes `name` out of `phase`. -/
-def Machine.opens (mc : Machine) (name phase : String) : Bool :=
-  mc.transitions.any fun t => t.1 == name && t.2.1 == phase
+/-- The phases that `name` may lead to out of `phase`. -/
+def Machine.targets (mc : Machine) (phase name : String) : List String :=
+  (mc.phases.filter (·.1 == phase)).flatMap fun e => (e.2.filter (·.1 == name)).flatMap (·.2)
+
+/-- Whether `phase` allows `name` at all. -/
+def Machine.opens (mc : Machine) (name phase : String) : Bool := !(mc.targets phase name).isEmpty
+
+/-- Whether `name` may take `phase` to `to`. -/
+def Machine.allows (mc : Machine) (name phase to : String) : Bool := (mc.targets phase name).contains to
+
+def Machine.declared (mc : Machine) : List String := mc.phases.map (·.1)
 
 /-- A definition (section 6). The interface's schemas are a check on a message's name and payload; the turn is
 whatever its runtime computes, a pure function. -/
 structure Def where
+  /-- The interface's message names. -/
+  messages : List String
   accepts : String → Value → Bool
   machine : Option Machine
   turn : Value → Message → Given → Option Output

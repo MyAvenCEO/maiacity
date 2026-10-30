@@ -8,7 +8,7 @@ One invariant, `Inv`, holds from the empty kernel through every event of every t
 - `handled_in_order`: what an actor handled from one sender is exactly the start of that sender's inbox, in order:
   messages from one actor to another are handled in the order sent, each once, with none skipped.
 - `replays`: replaying an actor's journal from its first state gives its state and phase now (law 8).
-- `machine_sound`: every turn that ran under a machine took one of its transitions (section 6).
+- `machine_sound`: every turn that ran under a machine took a step its table allows (section 6).
 - `spawn_fresh`: a spawn's address is new: no message was ever sent to it and it has no journal, so a face placed
   again is a new incarnation whose messages are never taken for the old one's.
 -/
@@ -298,7 +298,7 @@ apart (section 6). -/
 theorem judge_machine {lib : Library} {dn : String} {d : Def} {mc : Machine} {st : Value} {m : Message} {g : Given}
     {ph : String} (hd : lib dn = some d) (hm : d.machine = some mc)
     (hdone : (judge lib (some dn) st m g ph).2.2.1 = .done) :
-    (m.name, ph, (judge lib (some dn) st m g ph).2.1) ∈ mc.transitions := by
+    mc.allows m.name ph (judge lib (some dn) st m g ph).2.1 = true := by
   simp only [judge, Option.bind_some, hd] at hdone ⊢
   split at hdone
   · split at hdone
@@ -317,7 +317,7 @@ theorem judge_machine {lib : Library} {dn : String} {d : Def} {mc : Machine} {st
 theorem machine_sound (lib : Library) (es : List Event) (a : Addr) (e : Entry)
     (he : e ∈ (Kernel.empty.run lib es).journal a) (dn : String) (d : Def) (mc : Machine)
     (hdn : e.defn = some dn) (hd : lib dn = some d) (hm : d.machine = some mc) (hdone : e.outcome = .done) :
-    (e.msg.name, e.phaseBefore, e.phaseAfter) ∈ mc.transitions := by
+    mc.allows e.msg.name e.phaseBefore e.phaseAfter = true := by
   have h := (Inv.run lib es).entries a e he
   rw [hdn] at h
   have hph : e.phaseAfter = _ := congrArg (·.2.1) h
