@@ -77,13 +77,15 @@ const KEYS: [&str; 2] = ["k0", "k1"];
 
 /// A raw tree: keys, then vaults with ids `v0`, `v1`, … in a shuffled order. Owners mostly point at earlier vaults,
 /// so many trees are well formed; now and then at any vault, an unknown one, an unknown key or a device's key, and
-/// now and then a device lacks its key, so many are not.
+/// now and then a device lacks its key, so many are not. A device's one owner is mostly no coop, a coop's owners are
+/// mostly earlier people's or coops' vaults, and now and then a name is empty or two lines (`Aven.ID.Gen`).
 fn trees() -> impl Strategy<Value = (Vec<String>, Vec<Vault>)> {
     let vault = (
-        0u8..3,
+        0u8..5,
         0u8..4,
         proptest::collection::vec((0u8..40, 0u8..8), 1..4),
         0u8..8,
+        0u8..64,
     );
     (1usize..8)
         .prop_flat_map(move |n| (Just(n), proptest::collection::vec(vault.clone(), n)))
@@ -91,16 +93,22 @@ fn trees() -> impl Strategy<Value = (Vec<String>, Vec<Vault>)> {
             let ups: Vec<u8> = specs.iter().map(|s| s.3).collect();
             let kinds: Vec<Kind> = specs
                 .iter()
-                .map(|s| [Kind::Person, Kind::Network, Kind::Device][s.0 as usize])
+                .map(|s| {
+                    [
+                        Kind::Person,
+                        Kind::Network,
+                        Kind::Coop,
+                        Kind::Device,
+                        Kind::Person,
+                    ][s.0 as usize]
+                })
                 .collect();
             let devices: Vec<usize> = (0..kinds.len())
                 .filter(|&j| kinds[j] == Kind::Device)
                 .collect();
-            // an earlier vault, mostly one that may own (not a device)
-            let earlier = |i: usize, at: u8, any: bool| {
-                let owners: Vec<usize> = (0..i)
-                    .filter(|&j| any || kinds[j] != Kind::Device)
-                    .collect();
+            // an earlier vault of a kind that fits: mostly one that may own (not a device)
+            let earlier = |i: usize, at: u8, fits: &dyn Fn(Kind) -> bool| {
+                let owners: Vec<usize> = (0..i).filter(|&j| fits(kinds[j])).collect();
                 owners
                     .get(at as usize % owners.len().max(1))
                     .map(|j| Owner::Vault(format!("v{j}")))
@@ -108,10 +116,12 @@ fn trees() -> impl Strategy<Value = (Vec<String>, Vec<Vault>)> {
             let vaults: Vec<Vault> = specs
                 .into_iter()
                 .enumerate()
-                .map(|(i, (_, simple, owners, up))| {
+                .map(|(i, (_, simple, owners, up, named))| {
                     let kind = kinds[i];
+                    // a device's one owner: mostly a vault that may hold devices (no device, no coop)
+                    let holds = |k: Kind| simple == 1 || !matches!(k, Kind::Device | Kind::Coop);
                     let single = if kind == Kind::Device && simple > 0 {
-                        earlier(i, up, simple == 1)
+                        earlier(i, up, &holds)
                     } else {
                         None
                     };
@@ -121,6 +131,10 @@ fn trees() -> impl Strategy<Value = (Vec<String>, Vec<Vault>)> {
                         None => owners
                             .into_iter()
                             .map(|(tag, at)| match tag {
+                                0..12 if kind == Kind::Coop => {
+                                    earlier(i, at, &|k| matches!(k, Kind::Person | Kind::Coop))
+                                        .unwrap_or(Owner::Key("k0".into()))
+                                }
                                 0..12 => Owner::Key(KEYS[at as usize % 2].into()),
                                 12 => Owner::Key("k9".into()),
                                 // a device's key as an owner, which no well-formed tree has
@@ -130,15 +144,28 @@ fn trees() -> impl Strategy<Value = (Vec<String>, Vec<Vault>)> {
                                         Owner::Key(format!("v{j}"))
                                     }),
                                 14..38 => {
-                                    earlier(i, at, tag == 14).unwrap_or(Owner::Key("k0".into()))
+                                    let fits = |k: Kind| {
+                                        tag == 14
+                                            || if kind == Kind::Coop {
+                                                matches!(k, Kind::Person | Kind::Coop)
+                                            } else {
+                                                k != Kind::Device
+                                            }
+                                    };
+                                    earlier(i, at, &fits).unwrap_or(Owner::Key("k0".into()))
                                 }
                                 _ => Owner::Vault(format!("v{}", at as usize % (n + 1))),
                             })
                             .collect(),
                     };
+                    let name = match named {
+                        0 => String::new(),
+                        1 => format!("v{i}\nv{i}"),
+                        _ => format!("v{i}"),
+                    };
                     Vault {
                         id: format!("v{i}"),
-                        name: format!("v{i}"),
+                        name,
                         kind,
                         owners,
                     }
@@ -165,6 +192,7 @@ fn queries(vaults: &[Vault]) -> Vec<Value> {
     for &x in &ids {
         for q in [
             "kind",
+            "name",
             "owners",
             "owned",
             "governs",

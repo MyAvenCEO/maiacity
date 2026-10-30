@@ -13,6 +13,7 @@ fn error(e: &ClaimError) -> Value {
         ClaimError::Taken => json!({ "error": "taken" }),
         ClaimError::NotFromDevice => json!({ "error": "notFromDevice" }),
         ClaimError::WrongNetwork => json!({ "error": "wrongNetwork" }),
+        ClaimError::Name => json!({ "error": "name" }),
         ClaimError::Assertion(why) => json!({ "error": "assertion", "why": why.name() }),
         ClaimError::Invalid(why) => json!({ "error": "invalid", "invalid": invalid(why) }),
         ClaimError::Unclaimed => json!({ "error": "unclaimed" }),
@@ -32,7 +33,7 @@ fn tree(n: &Network) -> Value {
         .iter()
         .map(|v| {
             let owners: Vec<String> = v.owners.iter().map(ToString::to_string).collect();
-            json!({ "id": v.id, "kind": v.kind.as_str(), "owners": owners })
+            json!({ "id": v.id, "name": v.name, "kind": v.kind.as_str(), "owners": owners })
         })
         .collect();
     json!({ "keys": keys, "vaults": vaults })
@@ -69,7 +70,8 @@ fn traces_answer_as_the_model_does() {
                 aven_id::public_hex(&aven_id::test_signer(aven_id::GUARDIAN).verifying_key())
             );
         }
-        let mut n = Network::new(text("network"), text("peer"), text("peerKey"), rp, guardian);
+        let mut n = Network::new(text("network"), text("peer"), text("peerKey"), rp, guardian)
+            .with_coop(text("coop"), text("coopName"));
         let ops = v["input"]["ops"].as_array().unwrap();
         for (at, (op, want)) in ops
             .iter()

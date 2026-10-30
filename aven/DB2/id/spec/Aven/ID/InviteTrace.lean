@@ -33,8 +33,9 @@ structure JoinTamper where
   signer : Option String := none
   /-- after both signed, the join names another browser, which sends it -/
   swap : Option String := none
-  /-- the join names this person vault instead -/
+  /-- the join names this person vault, or gives this name, instead -/
   person : Option String := none
+  name : Option String := none
   origin : String := "http://localhost:5174"
   flags : UInt8 := 5
   deriving DecidableEq, Repr, Inhabited
@@ -62,7 +63,8 @@ def MemberOp.withdrawalOf (passkey key : String) (t : Tamper) : Withdrawal :=
 /-- The join a browser sends, and the key it is sent from. -/
 def MemberOp.joinOf (key passkey device : String) (t : JoinTamper) : Join × String :=
   let k := oneTimeKey key
-  let j : Join := ⟨t.network, k, t.person.getD (personId passkey), passkeyId passkey, passkeyKey passkey,
+  let j : Join := ⟨t.network, k, t.person.getD (personId passkey), t.name.getD (personName passkey), passkeyId passkey,
+    passkeyKey passkey,
     deviceId device, browserKey device, ("", ""), blank⟩
   let signer := (t.signer.map oneTimeKey).getD k
   let a := made "webauthn.get" t.origin "localhost" (challengeOf j.text) (passkeyId passkey) t.flags
@@ -162,6 +164,10 @@ def memberExamples : List (String × List MemberOp × List (Option MemberError �
     [.claim "a" "1" {}, .invite "a" "1" {}, .join "1" "b" "4" { origin := "http://localhost:5173" },
       .join "1" "b" "4" { flags := 4 }],
     [(mok, 2, 0), (mok, 2, 0), (mno (.assertion .origin), 2, 0), (mno (.assertion .notPresent), 2, 0)]),
+  ("a join without a name, or with a name of two lines",
+    [.claim "a" "1" {}, .invite "a" "1" {}, .join "1" "b" "4" { name := some "" },
+      .join "1" "b" "4" { name := some "Bea\nB" }, .join "1" "b" "4" { name := some "Zoë Bea" }],
+    [(mok, 2, 0), (mok, 2, 0), (mno .name, 2, 0), (mno .name, 2, 0), (mok, 3, 1)]),
   ("a join for another network", [.claim "a" "1" {}, .invite "a" "1" {}, .join "1" "b" "4" { network := "other" }],
     [(mok, 2, 0), (mok, 2, 0), (mno .wrongNetwork, 2, 0)]),
   ("two people join, the admin signs in again, a member can't sign in as the admin",

@@ -10,7 +10,7 @@ one-time key's real secret:
 ```
 invite:   {"network":"aven","invite":"<one-time key>","passkey":"passkey-a","assertion":{…}}
 withdraw: {"network":"aven","invite":"<one-time key>","passkey":"passkey-a","assertion":{…}}
-join:     {"network":"aven","invite":"<one-time key>","person":"person-b","passkey":{"id":"passkey-b","spki":"3059…"},
+join:     {"network":"aven","invite":"<one-time key>","person":"person-b","name":"Bea","passkey":{"id":"passkey-b","spki":"3059…"},
            "device":{"id":"device-4","key":"…"},"signature":{"signer":"<one-time key>","signed":"avenID join 1\n…"},
            "assertion":{…}}
 invites:  [{"id":"invite-…","key":"…","state":"open"|"used"|"withdrawn"}]
@@ -28,7 +28,7 @@ def Withdrawal.json (w : Withdrawal) : Json :=
   Json.mkObj [("network", w.network), ("invite", w.key), ("passkey", w.passkey), ("assertion", w.assertion.json)]
 
 def Join.json (j : Join) : Json :=
-  Json.mkObj [("network", j.network), ("invite", j.invite), ("person", j.person),
+  Json.mkObj [("network", j.network), ("invite", j.invite), ("person", j.person), ("name", j.name),
     ("passkey", Json.mkObj [("id", j.passkey), ("spki", j.passkeyKey)]),
     ("device", Json.mkObj [("id", j.device), ("key", j.deviceKey)]),
     ("signature", Json.mkObj [("signer", j.signature.1), ("signed", j.signature.2)]),
@@ -38,6 +38,7 @@ def MemberError.json : MemberError → Json
   | .claim why => Json.mkObj [("error", "claim"), ("claim", why.json)]
   | .unclaimed => Json.mkObj [("error", "unclaimed")]
   | .wrongNetwork => Json.mkObj [("error", "wrongNetwork")]
+  | .name => Json.mkObj [("error", "name")]
   | .notAdmin => Json.mkObj [("error", "notAdmin")]
   | .assertion why => Json.mkObj [("error", "assertion"), ("why", why.name)]
   | .knownInvite => Json.mkObj [("error", "knownInvite")]

@@ -18,6 +18,7 @@ fn claim_error(e: &ClaimError) -> Value {
         ClaimError::Taken => json!({ "error": "taken" }),
         ClaimError::NotFromDevice => json!({ "error": "notFromDevice" }),
         ClaimError::WrongNetwork => json!({ "error": "wrongNetwork" }),
+        ClaimError::Name => json!({ "error": "name" }),
         ClaimError::Assertion(why) => json!({ "error": "assertion", "why": why.name() }),
         ClaimError::Invalid(why) => json!({ "error": "invalid", "invalid": invalid(why) }),
         ClaimError::Unclaimed => json!({ "error": "unclaimed" }),
@@ -32,6 +33,7 @@ fn error(e: &MemberError) -> Value {
         MemberError::Claim(why) => json!({ "error": "claim", "claim": claim_error(why) }),
         MemberError::Unclaimed => named("unclaimed"),
         MemberError::WrongNetwork => named("wrongNetwork"),
+        MemberError::Name => named("name"),
         MemberError::NotAdmin => named("notAdmin"),
         MemberError::Assertion(why) => json!({ "error": "assertion", "why": why.name() }),
         MemberError::KnownInvite => named("knownInvite"),
@@ -56,7 +58,7 @@ fn tree(m: &Members) -> Value {
         .iter()
         .map(|v| {
             let owners: Vec<String> = v.owners.iter().map(ToString::to_string).collect();
-            json!({ "id": v.id, "kind": v.kind.as_str(), "owners": owners })
+            json!({ "id": v.id, "name": v.name, "kind": v.kind.as_str(), "owners": owners })
         })
         .collect();
     json!({ "keys": keys, "vaults": vaults })
@@ -133,13 +135,10 @@ fn traces_answer_as_the_model_does() {
             .iter()
             .map(|k| k.as_str().unwrap())
             .collect();
-        let mut m = Members::new(Network::new(
-            text("network"),
-            text("peer"),
-            text("peerKey"),
-            rp,
-            guardian,
-        ));
+        let mut m = Members::new(
+            Network::new(text("network"), text("peer"), text("peerKey"), rp, guardian)
+                .with_coop(text("coop"), text("coopName")),
+        );
         let ops = v["input"]["ops"].as_array().unwrap();
         let wants = v["expected"].as_array().unwrap();
         for (at, (op, want)) in ops.iter().zip(wants).enumerate() {
@@ -247,6 +246,7 @@ fn a_link_signs_its_join() {
         "aven",
         &public,
         "person-b",
+        "Bea",
         "passkey-b",
         "3059",
         "device-4",
@@ -254,7 +254,7 @@ fn a_link_signs_its_join() {
     );
     let signature = aven_id::sign_join(&secret, &text).unwrap();
     let join = Join::from_json(&json!({
-        "network": "aven", "invite": public, "person": "person-b", "passkey": { "id": "passkey-b", "spki": "3059" },
+        "network": "aven", "invite": public, "person": "person-b", "name": "Bea", "passkey": { "id": "passkey-b", "spki": "3059" },
         "device": { "id": "device-4", "key": "ab" }, "signature": signature,
         "assertion": { "clientData": "{}", "authData": "", "signature": "" },
     }))

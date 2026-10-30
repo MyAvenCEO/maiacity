@@ -1,4 +1,5 @@
 import Aven.ID.Tree
+import Aven.ID.Name
 import Aven.ID.Rank
 import Aven.ID.WF
 import Aven.ID.Governs

@@ -8,7 +8,7 @@
 //! ```text
 //! invite:   {"network":"aven","invite":"<one-time key>","passkey":"passkey-…","assertion":{…}}
 //! withdraw: {"network":"aven","invite":"<one-time key>","passkey":"passkey-…","assertion":{…}}
-//! join:     {"network":"aven","invite":"<one-time key>","person":"person-…","passkey":{"id":"passkey-…","spki":"3059…"},
+//! join:     {"network":"aven","invite":"<one-time key>","person":"person-…","name":"Bea","passkey":{"id":"passkey-…","spki":"3059…"},
 //!            "device":{"id":"device-…","key":"…"},"signature":"<Ed25519, 128 hex>","assertion":{…}}
 //! ```
 
@@ -28,17 +28,19 @@ pub fn withdraw_text(network: &str, key: &str) -> String {
     format!("avenID withdraw 1\nnetwork {network}\ninvite {key}\n")
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn join_text(
     network: &str,
     key: &str,
     person: &str,
+    name: &str,
     passkey: &str,
     spki: &str,
     device: &str,
     device_key: &str,
 ) -> String {
     format!(
-        "avenID join 1\nnetwork {network}\ninvite {key}\nperson {person}\npasskey {passkey} {spki}\ndevice {device} {device_key}\n"
+        "avenID join 1\nnetwork {network}\ninvite {key}\nperson {person}\nname {name}\npasskey {passkey} {spki}\ndevice {device} {device_key}\n"
     )
 }
 
@@ -87,6 +89,8 @@ pub struct Join {
     /// the invite's one-time key
     pub invite: String,
     pub person: String,
+    /// the person's name, asked at signup
+    pub name: String,
     pub passkey: String,
     /// SubjectPublicKeyInfo, hex
     pub passkey_key: String,
@@ -147,6 +151,7 @@ impl Join {
             &self.network,
             &self.invite,
             &self.person,
+            &self.name,
             &self.passkey,
             &self.passkey_key,
             &self.device,
@@ -170,6 +175,7 @@ impl Join {
             "network": self.network,
             "invite": self.invite,
             "person": self.person,
+            "name": self.name,
             "passkey": { "id": self.passkey, "spki": self.passkey_key },
             "device": { "id": self.device, "key": self.device_key },
             "signature": hex::encode(&self.signature),
@@ -183,6 +189,7 @@ impl Join {
             network: text(v, &["network"])?,
             invite: text(v, &["invite"])?,
             person: text(v, &["person"])?,
+            name: text(v, &["name"])?,
             passkey: text(v, &["passkey", "id"])?,
             passkey_key: text(v, &["passkey", "spki"])?,
             device: text(v, &["device", "id"])?,

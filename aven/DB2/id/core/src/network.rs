@@ -1,13 +1,15 @@
 //! A network whose tree is data (`Aven.ID.Claim`'s `Server`): unclaimed, then claimed once, then grown by sign-ins.
 //! Every step returns the next network and leaves this one as it was, so the Aven Peer stores a statement first and
-//! takes the new network only once its ref is set. The claim is the first signup: there is no code. When the Aven Peer
-//! is given MaiaCityGuardian's public half, the person's vault a claim founds has it among its owners.
+//! takes the new network only once its ref is set. The claim is the first signup: there is no code. It founds the
+//! claimant's vault, the admin coop it owns (Maia City by default, the Aven Peer's `--admin-coop`) and that owns the
+//! network, and the claiming browser (PRODUCTION.md, Part C). When the Aven Peer is given MaiaCityGuardian's public
+//! half, the person's vault a claim founds has it among its owners.
 
 use std::fmt;
 
 use crate::claim::{Claim, SignIn};
 use crate::passkey::{AssertionError, Passkey, Relying, challenge};
-use crate::tree::{Invalid, Kind, Owner, Tree, Vault};
+use crate::tree::{Invalid, Kind, Owner, Tree, Vault, valid_person_name};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ClaimError {
@@ -16,6 +18,8 @@ pub enum ClaimError {
     /// The statement names another device than the browser that sent it.
     NotFromDevice,
     WrongNetwork,
+    /// The name given at signup is none: 1 to 48 characters, no control characters.
+    Name,
     Assertion(AssertionError),
     /// The tree it would make is not well formed.
     Invalid(Invalid),
@@ -33,6 +37,11 @@ impl fmt::Display for ClaimError {
             ClaimError::Taken => write!(f, "this network is claimed already"),
             ClaimError::NotFromDevice => write!(f, "the statement is for another browser"),
             ClaimError::WrongNetwork => write!(f, "the statement is for another network"),
+            ClaimError::Name => write!(
+                f,
+                "a name is 1 to {} characters, without control characters",
+                crate::tree::MAX_PERSON_NAME
+            ),
             ClaimError::Assertion(why) => write!(f, "{why}"),
             ClaimError::Invalid(why) => write!(f, "{why}"),
             ClaimError::Unclaimed => write!(f, "nobody has claimed this network yet"),
@@ -49,6 +58,9 @@ impl std::error::Error for ClaimError {}
 
 /// MaiaCityGuardian's key, by the id trees know it by.
 pub const GUARDIAN: &str = "maia-city-guardian";
+/// The admin coop's id, and its name unless the Aven Peer is given another.
+pub const COOP: &str = "maia-city";
+pub const COOP_NAME: &str = "Maia City";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Network {
@@ -58,12 +70,16 @@ pub struct Network {
     pub rp: Relying,
     /// MaiaCityGuardian's public half, Ed25519 in hex
     pub guardian: Option<String>,
+    /// The admin coop's id and name: configuration, read at every start, never signed.
+    pub coop: String,
+    pub coop_name: String,
     claim: Option<Claim>,
     sign_ins: Vec<SignIn>,
 }
 
 impl Network {
-    /// An unclaimed network: its vault, without an owner yet, and the Aven Peer, its device with its key.
+    /// An unclaimed network: its vault, without an owner yet, and the Aven Peer, its device with its key. Its admin
+    /// coop is Maia City until [`Network::with_coop`] names another.
     pub fn new(
         network: &str,
         peer: &str,
@@ -77,8 +93,19 @@ impl Network {
             peer_key: peer_key.into(),
             rp,
             guardian,
+            coop: COOP.into(),
+            coop_name: COOP_NAME.into(),
             claim: None,
             sign_ins: Vec::new(),
+        }
+    }
+
+    /// The same network with another admin coop.
+    pub fn with_coop(self, id: &str, name: &str) -> Network {
+        Network {
+            coop: id.into(),
+            coop_name: name.into(),
+            ..self
         }
     }
 
@@ -111,7 +138,7 @@ impl Network {
         out
     }
 
-    /// The tree's vaults, in order, named for avenOS. Before the claim the network's vault has no owner.
+    /// The tree's vaults, in order, each with its name. Before the claim the network's vault has no owner.
     pub fn vaults(&self) -> Vec<Vault> {
         let vault = |id: &str, name: String, kind, owners| Vault {
             id: id.into(),
@@ -129,28 +156,27 @@ impl Network {
         let Some(c) = &self.claim else {
             return vec![network, peer];
         };
-        let browser = |id: &str, key: &str| {
-            let name = format!("Browser {}", &key[..key.len().min(8)]);
-            vault(id, name, Kind::Device, vec![Owner::Vault(c.person.clone())])
-        };
+        let person = || vec![Owner::Vault(c.person.clone())];
         let mut out = vec![
             vault(
                 &c.person,
-                "The admin's vault".into(),
+                c.vault_name(),
                 Kind::Person,
                 self.founders(&c.passkey),
             ),
+            vault(&self.coop, self.coop_name.clone(), Kind::Coop, person()),
             Vault {
-                owners: vec![Owner::Vault(c.person.clone())],
+                owners: vec![Owner::Vault(self.coop.clone())],
                 ..network
             },
             peer,
-            browser(&c.device, &c.device_key),
+            vault(&c.device, c.browser(1), Kind::Device, person()),
         ];
         out.extend(
             self.sign_ins
                 .iter()
-                .map(|i| browser(&i.device, &i.device_key)),
+                .enumerate()
+                .map(|(k, i)| vault(&i.device, c.browser(k + 2), Kind::Device, person())),
         );
         out
     }
@@ -190,10 +216,14 @@ impl Network {
                 .any(|(id, k)| id == device || k == key)
     }
 
-    /// A claim's statement, checked: its network, its passkey's assertion over its text, and the tree it makes.
+    /// A claim's statement, checked: its network, the name given, its passkey's assertion over its text, and the tree
+    /// it makes.
     pub fn accept_claim(&self, c: Claim) -> Result<Network, ClaimError> {
         if c.network != self.network {
             return Err(ClaimError::WrongNetwork);
+        }
+        if !valid_person_name(&c.name) {
+            return Err(ClaimError::Name);
         }
         let passkey = Passkey::from_spki_hex(&c.passkey_key)
             .ok_or(ClaimError::Assertion(AssertionError::BadSignature))?;

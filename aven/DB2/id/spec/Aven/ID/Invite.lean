@@ -44,9 +44,9 @@ def inviteText (network key : String) : String :=
 def withdrawText (network key : String) : String :=
   "avenID withdraw 1\nnetwork " ++ network ++ "\ninvite " ++ key ++ "\n"
 
-def joinText (network key person passkey spki device deviceKey : String) : String :=
-  "avenID join 1\nnetwork " ++ network ++ "\ninvite " ++ key ++ "\nperson " ++ person ++ "\npasskey " ++ passkey ++
-    " " ++ spki ++ "\ndevice " ++ device ++ " " ++ deviceKey ++ "\n"
+def joinText (network key person name passkey spki device deviceKey : String) : String :=
+  "avenID join 1\nnetwork " ++ network ++ "\ninvite " ++ key ++ "\nperson " ++ person ++ "\nname " ++ name ++
+    "\npasskey " ++ passkey ++ " " ++ spki ++ "\ndevice " ++ device ++ " " ++ deviceKey ++ "\n"
 
 /-- The id an invite goes by, which names its refs: the start of its one-time key. -/
 def inviteId (key : String) : String := "invite-" ++ String.ofList (key.toList.take 16)
@@ -68,13 +68,14 @@ structure Withdrawal where
   assertion : Assertion
   deriving DecidableEq, Repr
 
-/-- A join: the invite's one-time key, the joiner's person vault and new passkey (SubjectPublicKeyInfo, hex), the
-joining browser and its key; the one-time key's signature, as the model knows one (the key that made it and the text
+/-- A join: the invite's one-time key, the joiner's person vault, their name (asked at signup, as the claim's is) and
+their new passkey (SubjectPublicKeyInfo, hex), the joining browser and its key; the one-time key's signature, as the model knows one (the key that made it and the text
 it signed), and the passkey's assertion over the same text. -/
 structure Join where
   network : String
   invite : String
   person : String
+  name : String
   passkey : String
   passkeyKey : String
   device : String
@@ -86,13 +87,15 @@ structure Join where
 def Invite.text (i : Invite) : String := inviteText i.network i.key
 def Withdrawal.text (w : Withdrawal) : String := withdrawText w.network w.key
 def Join.text (j : Join) : String :=
-  joinText j.network j.invite j.person j.passkey j.passkeyKey j.device j.deviceKey
+  joinText j.network j.invite j.person j.name j.passkey j.passkeyKey j.device j.deviceKey
 
 inductive MemberError where
   /-- a claim or a sign-in refused, as `Aven.ID.Claim` refuses it -/
   | claim (why : ClaimError)
   | unclaimed
   | wrongNetwork
+  /-- the person's name is none: 1 to 48 characters, no control characters -/
+  | name
   /-- the passkey is no admin's -/
   | notAdmin
   | assertion (why : AssertionError)
@@ -126,9 +129,11 @@ def network (m : Members) : String := m.server.network
 
 def joinedPublics (j : Join) : List (String × String) := [(j.passkey, "es256:" ++ j.passkeyKey), (j.device, j.deviceKey)]
 
-/-- The vaults a join founds: the person's, owned by its passkey (and the guardian), and its browser. -/
+/-- The vaults a join founds, named after the person: theirs, owned by its passkey (and the guardian), and its
+browser. -/
 def joinedVaults (s : Server) (j : Join) : List Vault :=
-  [⟨j.person, .person, s.founders j.passkey⟩, ⟨j.device, .device, [.vault j.person]⟩]
+  [⟨j.person, j.name ++ "'s vault", .person, s.founders j.passkey⟩,
+    ⟨j.device, j.name ++ "'s browser", .device, [.vault j.person]⟩]
 
 def publics (m : Members) : List (String × String) := m.server.publics ++ m.joins.flatMap joinedPublics
 
@@ -190,6 +195,7 @@ def acceptJoin (m : Members) (j : Join) : Except MemberError Members :=
   else if m.used j.invite then .error .used
   else if m.isWithdrawn j.invite then .error .withdrawn
   else if j.signature ≠ (j.invite, j.text) then .error .badInviteSignature
+  else if validPersonName j.name = false then .error .name
   else match j.assertion.check m.server.rp (challengeOf j.text) j.passkey with
     | .error why => .error (.assertion why)
     | .ok () =>
@@ -326,6 +332,7 @@ theorem acceptJoin_ok {j : Join} (h : m.acceptJoin j = .ok m') :
   next nw =>
   split at h; · cases h
   next ns =>
+  split at h; · cases h
   split at h
   · cases h
   next e =>
@@ -388,15 +395,16 @@ theorem withdraw_used {w : Withdrawal} (u : m.used w.key = true) : ∀ m', m.acc
 /-- A join founds the joiner's person vault, owned by its passkey and (with a guardian) MaiaCityGuardian, with the
 joining browser as its device; the tree holds, and no vault there was changes. -/
 theorem join_founds {j : Join} (h : m.acceptJoin j = .ok m') :
-    m'.tree.vaults = m.tree.vaults ++ [⟨j.person, .person, m.server.founders j.passkey⟩,
-      ⟨j.device, .device, [.vault j.person]⟩] ∧ m'.tree.WF ∧ m'.tree.KeyOwns j.passkey j.person ∧
+    m'.tree.vaults = m.tree.vaults ++ [⟨j.person, j.name ++ "'s vault", .person, m.server.founders j.passkey⟩,
+      ⟨j.device, j.name ++ "'s browser", .device, [.vault j.person]⟩] ∧ m'.tree.WF ∧ m'.tree.KeyOwns j.passkey j.person ∧
     (∀ g, m.server.guardian = some g → Owner.key guardianId ∈ m.server.founders j.passkey) ∧
     m'.tree.actsFor j.device = some j.person ∧ j.person ∈ m'.members ∧
     ∀ x ∈ m.tree.ids, m'.tree.get? x = m.tree.get? x := by
   obtain ⟨_, _, _, _, _, nk, e, w⟩ := acceptJoin_ok h
   subst e
   have v : ({ m with joins := m.joins ++ [j] } : Members).tree.vaults =
-      m.tree.vaults ++ [⟨j.person, .person, m.server.founders j.passkey⟩, ⟨j.device, .device, [.vault j.person]⟩] := by
+      m.tree.vaults ++ [⟨j.person, j.name ++ "'s vault", .person, m.server.founders j.passkey⟩,
+        ⟨j.device, j.name ++ "'s browser", .device, [.vault j.person]⟩] := by
     simp [tree, vaults, joinedVaults]
   have old : ∀ x ∈ m.tree.ids, ({ m with joins := m.joins ++ [j] } : Members).tree.get? x = m.tree.get? x := by
     intro x mx
@@ -419,7 +427,7 @@ theorem join_founds {j : Join} (h : m.acceptJoin j = .ok m') :
     rw [v] at n
     simp [e, List.nodup_append] at n
   have gp : ({ m with joins := m.joins ++ [j] } : Members).tree.get? j.person =
-      some ⟨j.person, .person, m.server.founders j.passkey⟩ := by
+      some ⟨j.person, j.name ++ "'s vault", .person, m.server.founders j.passkey⟩ := by
     unfold Tree.get?
     rw [v, List.find?_append]
     have : m.tree.vaults.find? (·.id == j.person) = none := by
@@ -428,7 +436,7 @@ theorem join_founds {j : Join} (h : m.acceptJoin j = .ok m') :
       exact np (List.mem_map.mpr ⟨y, my, by simpa using e⟩)
     simp [this]
   have gd : ({ m with joins := m.joins ++ [j] } : Members).tree.get? j.device =
-      some ⟨j.device, .device, [.vault j.person]⟩ := by
+      some ⟨j.device, j.name ++ "'s browser", .device, [.vault j.person]⟩ := by
     unfold Tree.get?
     rw [v, List.find?_append]
     have : m.tree.vaults.find? (·.id == j.device) = none := by

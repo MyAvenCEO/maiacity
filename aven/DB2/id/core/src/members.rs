@@ -13,7 +13,7 @@ use crate::claim::{Claim, SignIn};
 use crate::invite::{Invite, Join, Withdrawal, invite_id};
 use crate::network::{ClaimError, Network};
 use crate::passkey::{Assertion, AssertionError, Passkey, challenge};
-use crate::tree::{Invalid, Kind, Owner, Tree, Vault};
+use crate::tree::{Invalid, Kind, Owner, Tree, Vault, valid_person_name};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MemberError {
@@ -21,6 +21,8 @@ pub enum MemberError {
     Claim(ClaimError),
     Unclaimed,
     WrongNetwork,
+    /// The person's name is none: 1 to 48 characters, no control characters.
+    Name,
     /// The passkey is no admin's.
     NotAdmin,
     Assertion(AssertionError),
@@ -45,6 +47,7 @@ impl fmt::Display for MemberError {
             MemberError::Claim(why) => write!(f, "{why}"),
             MemberError::Unclaimed => write!(f, "nobody has claimed this network yet"),
             MemberError::WrongNetwork => write!(f, "the statement is for another network"),
+            MemberError::Name => write!(f, "a name is 1 to 48 characters, on one line"),
             MemberError::NotAdmin => write!(f, "only the admin invites"),
             MemberError::Assertion(why) => write!(f, "{why}"),
             MemberError::KnownInvite => write!(f, "this invite exists already"),
@@ -112,26 +115,19 @@ impl Members {
         out
     }
 
-    /// The tree's vaults: the network's, then each join's person vault and its browser, named for avenOS.
+    /// The tree's vaults: the network's, then each join's person vault and its browser, named after the person.
     pub fn vaults(&self) -> Vec<Vault> {
         let mut out = self.network.vaults();
         for j in &self.joins {
-            let short = |s: &str| {
-                s.chars()
-                    .filter(|c| *c != '-')
-                    .skip(6)
-                    .take(8)
-                    .collect::<String>()
-            };
             out.push(Vault {
                 id: j.person.clone(),
-                name: format!("Member {}", short(&j.person)),
+                name: format!("{}'s vault", j.name),
                 kind: Kind::Person,
                 owners: self.network.founders(&j.passkey),
             });
             out.push(Vault {
                 id: j.device.clone(),
-                name: format!("Browser {}", &j.device_key[..j.device_key.len().min(8)]),
+                name: format!("{}'s browser", j.name),
                 kind: Kind::Device,
                 owners: vec![Owner::Vault(j.person.clone())],
             });
@@ -269,6 +265,9 @@ impl Members {
         }
         if !j.signed_by_invite() {
             return Err(MemberError::BadInviteSignature);
+        }
+        if !valid_person_name(&j.name) {
+            return Err(MemberError::Name);
         }
         let passkey = Passkey::from_spki_hex(&j.passkey_key)
             .ok_or(MemberError::Assertion(AssertionError::BadSignature))?;

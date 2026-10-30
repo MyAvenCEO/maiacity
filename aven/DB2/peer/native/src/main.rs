@@ -28,7 +28,10 @@
 //!                            the passkeys' RP ID: maia.city in production, localhost in the box
 //!     --origin URLS          with --rp-id: avenOS's origins, comma-separated; an assertion must come from one, and a
 //!                            stored one holds while its origin stays listed
-//!     --guardian HEX         with --rp-id: MaiaCityGuardian's public half, an owner of every person's vault founded
+//!     --guardian HEX         with --rp-id, and required with it: MaiaCityGuardian's public half, an owner of every
+//!                            person's vault founded
+//!     --admin-coop NAME      with --rp-id: the name of the admin coop the claim founds, which owns the network
+//!                            (Maia City); read at every start, so a restart with another renames it
 //!
 //! The door is members only (MILESTONE2.md): the relay and every connection's `after_handshake` admit the cast's
 //! members, or the devices of the tree's members and admin, and the Aven Peer. Every peer is in the network's chat
@@ -185,19 +188,30 @@ async fn main() -> Result<(), Error> {
     };
     notes(record::line(now(), &me, &kind, &record));
 
-    // without a cast, an Aven Peer keeps its tree in its store, claimable once, its members by invite only
-    let door = match (config.get("rp-id"), config.get("origin"), config.get("guardian")) {
-        (None, None, None) => None,
-        (Some(rp_id), Some(origins), guardian) if relay => {
-            let guardian = guardian.map(|g| g.trim().to_lowercase());
+    // without a cast, an Aven Peer keeps its tree in its store, claimable once, its members by invite only; never
+    // without MaiaCityGuardian (Samuel, 30 Oct 2026)
+    let door = match (config.get("rp-id"), config.get("origin"), config.get("guardian"), config.get("admin-coop")) {
+        (None, None, None, None) => None,
+        (Some(_), _, None, _) => return Err("--rp-id needs --guardian: no claimable network without MaiaCityGuardian".into()),
+        (Some(rp_id), Some(origins), Some(guardian), coop) if relay => {
+            let coop = coop.unwrap_or_else(|| aven_id::COOP_NAME.to_string());
+            if !aven_id::valid_name(&coop) {
+                return Err(format!("--admin-coop: a name is 1 to {} characters, without control characters", aven_id::MAX_NAME).into());
+            }
+            let guardian = Some(guardian.trim().to_lowercase());
             let origins = origins.split(',').map(|o| o.trim().to_string()).filter(|o| !o.is_empty()).collect();
             if let Some(g) = &guardian {
                 keys::public(g).map_err(|e| format!("--guardian: {e}"))?;
             }
             let rp = Relying { rp_id, origins };
-            Some(Arc::new(Door::open(me.clone(), store.clone(), &key.to_string(), rp, guardian, notes.clone()).await?))
+            let coop = (aven_id::COOP, coop.as_str());
+            Some(Arc::new(Door::open(me.clone(), store.clone(), &key.to_string(), rp, guardian, coop, notes.clone()).await?))
         }
-        _ => return Err("--rp-id and --origin come together, on an Aven Peer (--relay); --guardian only with them".into()),
+        _ => {
+            return Err(
+                "--rp-id and --origin come together, on an Aven Peer (--relay); --guardian and --admin-coop only with them".into()
+            )
+        }
     };
 
     // the door, as this peer knows it: from its own tree, or the cast's members (and itself)
@@ -322,11 +336,11 @@ async fn main() -> Result<(), Error> {
         let mut known = door.members().members();
         tokio::spawn(async move {
             while changed.changed().await.is_ok() {
-                let now_members = changed.borrow_and_update().members();
-                for person in now_members.iter().filter(|p| !known.contains(p)) {
-                    room.say(format!("{person} joined")).await;
+                let joins = changed.borrow_and_update().joins().to_vec();
+                for j in joins.iter().filter(|j| !known.contains(&j.person)) {
+                    room.say(format!("{} joined", j.name)).await;
                 }
-                known = now_members;
+                known = joins.into_iter().map(|j| j.person).collect();
             }
         });
     }

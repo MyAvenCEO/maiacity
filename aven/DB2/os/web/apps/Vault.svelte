@@ -1,7 +1,8 @@
 <script>
 	// avenOS's Vault: the person you act as, who owns their vault, and everything below it as a tree. A vault governs
 	// what it owns and all that owns in turn; the tree is all it may see. Any vault in it opens here
-	// (#/alice/vault/aven): Alice manages Aven as herself, never as Aven. A vault outside the tree doesn't open.
+	// (#/alice/vault/aven): Alice manages Aven as herself, never as Aven. A vault outside the tree doesn't open. A coop
+	// (Maia City) holds no devices: its people act for it through their own, as themselves (PRODUCTION.md, Part C).
 	import Avatar from '../Avatar.svelte';
 	import { ownerName, owners, tree, vaultName } from '../id.js';
 
@@ -37,9 +38,11 @@
 			{:else}
 				<dt>acts through</dt>
 				<dd data-testid="acts-through">
-					{tree.actsThrough(shown)
-						.map((id) => vaultName(id))
-						.join(', ') || 'no device of its own yet'}
+					{vault.kind === 'coop'
+						? 'its people, through their own devices: a coop holds none'
+						: tree.actsThrough(shown)
+								.map((id) => vaultName(id))
+								.join(', ') || 'no device of its own yet'}
 				</dd>
 			{/if}
 			{#if shown !== account}

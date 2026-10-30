@@ -1,4 +1,5 @@
-//! Keys, vaults of three kinds and their owners, and what makes a tree well formed: `Aven.ID.Tree` and `Aven.ID.WF`.
+//! Keys, vaults of four kinds and their owners, every vault's name, and what makes a tree well formed: `Aven.ID.Tree`,
+//! `Aven.ID.Name` and `Aven.ID.WF`.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -7,6 +8,8 @@ use std::fmt;
 pub enum Kind {
     Person,
     Network,
+    /// Owned by people's or coops' vaults, and holds no devices: its people act for it through their own.
+    Coop,
     Device,
 }
 
@@ -15,6 +18,7 @@ impl Kind {
         match s {
             "person" => Some(Kind::Person),
             "network" => Some(Kind::Network),
+            "coop" => Some(Kind::Coop),
             "device" => Some(Kind::Device),
             _ => None,
         }
@@ -24,6 +28,7 @@ impl Kind {
         match self {
             Kind::Person => "person",
             Kind::Network => "network",
+            Kind::Coop => "coop",
             Kind::Device => "device",
         }
     }
@@ -88,6 +93,22 @@ impl Vault {
     }
 }
 
+/// The longest name, in characters.
+pub const MAX_NAME: usize = 64;
+/// The longest name a person gives at signup, so every vault named after it fits.
+pub const MAX_PERSON_NAME: usize = 48;
+
+/// A vault's name (`Aven.ID.validName`): 1 to 64 characters, none of them a control character (Unicode's Cc).
+pub fn valid_name(name: &str) -> bool {
+    let n = name.chars().count();
+    (1..=MAX_NAME).contains(&n) && !name.chars().any(char::is_control)
+}
+
+/// The name a person gives at signup (`Aven.ID.validPersonName`): a name of at most 48 characters.
+pub fn valid_person_name(name: &str) -> bool {
+    valid_name(name) && name.chars().count() <= MAX_PERSON_NAME
+}
+
 /// Why a tree is not well formed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Invalid {
@@ -105,6 +126,12 @@ pub enum Invalid {
     DeviceKeyless(String),
     /// A device's key owns a vault.
     DeviceKeyOwns { device: String, vault: String },
+    /// A vault's name is none: empty, too long, or with a control character.
+    Name(String),
+    /// A coop is owned by something else than a person's or a coop's vault.
+    CoopOwner { coop: String, owner: Owner },
+    /// A coop holds a device.
+    CoopDevice { coop: String, device: String },
     /// A vault is above itself.
     Cycle(String),
 }
@@ -122,6 +149,19 @@ impl fmt::Display for Invalid {
             Invalid::DeviceKeyless(id) => write!(f, "the device {id} has no key"),
             Invalid::DeviceKeyOwns { device, vault } => {
                 write!(f, "the device {device}'s key owns {vault}")
+            }
+            Invalid::Name(id) => write!(
+                f,
+                "{id}'s name must be 1 to {MAX_NAME} characters, without control characters"
+            ),
+            Invalid::CoopOwner { coop, owner } => {
+                write!(
+                    f,
+                    "the coop {coop} is owned by {owner}, which is no person's or coop's vault"
+                )
+            }
+            Invalid::CoopDevice { coop, device } => {
+                write!(f, "the coop {coop} holds the device {device}")
             }
             Invalid::Cycle(id) => write!(f, "{id} is above itself"),
         }
@@ -141,9 +181,10 @@ pub struct Tree {
 }
 
 impl Tree {
-    /// A tree, if it is well formed (`Aven.ID.Tree.WF`): each id once; every vault owned, by known keys and vaults;
-    /// a device's vault owned by exactly one vault and owning nothing, with its own key, the key with its id, which
-    /// owns nothing either; and no vault above itself.
+    /// A tree, if it is well formed (`Aven.ID.Tree.WF`): each id once; every vault named and owned, by known keys and
+    /// vaults; a device's vault owned by exactly one vault and owning nothing, with its own key, the key with its id,
+    /// which owns nothing either; a coop owned by people's or coops' vaults only, holding no devices; and no vault
+    /// above itself. The first rule broken is named in `Aven.ID.Tree.check`'s order.
     pub fn new(keys: Vec<(String, String)>, vaults: Vec<Vault>) -> Result<Tree, Invalid> {
         let mut index = HashMap::new();
         for (at, vault) in vaults.iter().enumerate() {
@@ -151,7 +192,11 @@ impl Tree {
                 return Err(Invalid::Duplicate(vault.id.clone()));
             }
         }
+        let kind = |id: &str| index.get(id).map(|&at: &usize| vaults[at].kind);
         for vault in &vaults {
+            if !valid_name(&vault.name) {
+                return Err(Invalid::Name(vault.id.clone()));
+            }
             if vault.owners.is_empty() {
                 return Err(Invalid::Unowned(vault.id.clone()));
             }
@@ -191,6 +236,26 @@ impl Tree {
                         vault: vault.id.clone(),
                     });
                 }
+            }
+            if vault.kind == Kind::Coop {
+                let fits = |o: &Owner| {
+                    o.vault()
+                        .is_some_and(|v| matches!(kind(v), Some(Kind::Person | Kind::Coop)))
+                };
+                if let Some(owner) = vault.owners.iter().find(|o| !fits(o)) {
+                    return Err(Invalid::CoopOwner {
+                        coop: vault.id.clone(),
+                        owner: owner.clone(),
+                    });
+                }
+            }
+            if vault.kind == Kind::Device
+                && let Some(coop) = vault.owner_vaults().find(|&v| kind(v) == Some(Kind::Coop))
+            {
+                return Err(Invalid::CoopDevice {
+                    coop: coop.to_string(),
+                    device: vault.id.clone(),
+                });
             }
         }
         let mut children = vec![Vec::new(); vaults.len()];

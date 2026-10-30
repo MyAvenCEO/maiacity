@@ -2,7 +2,9 @@
 //! and no cast, its tree is data in its store. The claim is the first signup: one statement, stored as a blob, with
 //! the ref `claim` set to it from nothing by compare-and-set, so a second signup finds it taken, even racing the first;
 //! each sign-in is stored the same way under `signin-000001`, `signin-000002`, … in the order they came. The deploy's
-//! health step reads `refs/claim` to tell whether the network is claimed, so the name stays.
+//! health step reads `refs/claim` to tell whether the network is claimed, so the name stays. The claim founds the
+//! admin coop as well (PRODUCTION.md, Part C), named by `--admin-coop`: configuration, not part of the statement, so
+//! the stored claim still reads back after a rename.
 //!
 //! From milestone 2 the admin's invites are stored under `invite-<id>`, their withdrawals under `withdrawn-<id>` and
 //! the joins under `joined-<id>` (`aven_id::invite_id`), each set from nothing: an invite is used once, even when two
@@ -119,9 +121,12 @@ impl Door {
         peer_key: &str,
         rp: Relying,
         guardian: Option<String>,
+        (coop, coop_name): (&str, &str),
         notes: Notes,
     ) -> Result<Door, String> {
-        let base = Members::new(Network::new(NETWORK, PEER, peer_key, rp, guardian));
+        let base = Members::new(
+            Network::new(NETWORK, PEER, peer_key, rp, guardian).with_coop(coop, coop_name),
+        );
         let refs = store.list_refs().await.map_err(store_error)?;
         let (mut claim, mut sign_ins, mut invites, mut withdrawn, mut joins) =
             (None, vec![], vec![], vec![], vec![]);
@@ -217,7 +222,10 @@ impl Door {
                 members.submit_claim(from, c.clone()),
                 CLAIM.to_string(),
                 c.to_json(),
-                ("claimed", json!({ "person": c.person, "device": c.device })),
+                (
+                    "claimed",
+                    json!({ "person": c.person, "coop": members.network().coop, "device": c.device }),
+                ),
             ),
             Statement::SignIn(i) => (
                 members.submit_sign_in(from, i.clone()),

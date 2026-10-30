@@ -93,10 +93,12 @@ avenSANDBOX   the box all of it is built and tested in
 
 - **key:** a signing key. An **owner key** governs a person's vault; a **device key** signs for the vault its device
   serves.
-- **vault:** an identity that can own things. A **person's vault** is owned by keys; a **network's vault** (Aven) by a
-  person's vault; a **device's vault** by the vault it serves.
+- **vault:** an identity that can own things, with a name. A **person's vault** is owned by keys; a **coop's vault**
+  (Maia City) by person or coop vaults, and holds no devices; a **network's vault** (Aven) by its admin; a **device's
+  vault** by the vault it serves.
 - **owns, governs:** a vault owns what is directly below it and governs everything below it. Authority runs only down.
-- **admin:** the vault that owns a network's vault: Alice's vault is Aven's.
+- **admin:** the vault that owns a network's vault: the coop Maia City is Aven's, and the people whose vaults own Maia
+  City act for it ([`PRODUCTION.md`](PRODUCTION.md#part-c-maia-city-the-admin-coop)).
 - **acts through:** a vault acts through its own devices, within the rights its owner gives it: Aven through the Aven
   Peer.
 - **account:** a person's vault, which one acts as in avenOS. Never a network's or a device's.
@@ -176,7 +178,8 @@ organization `aven` reserves the scope before anything is published.
 - **Identity is a package of its own: avenID.** Vaults own vaults, a concept kept from avenDB-old and built anew. A
   person's vault is owned by its owner key. A device's vault is owned by the vault it serves; the device's key signs for
   that vault and governs nothing, so a lost device is revoked by its vault, and the vault loses nothing. A network's
-  vault is owned by the vault that runs it: Aven by Alice's vault, which makes **Alice's vault the admin, not her key.**
+  vault is owned by the vault that runs it: Aven by the coop Maia City, which Alice's vault owns, which makes **Maia City
+  the admin, not Alice's key.**
   **A network acts through its own devices, and no person switches into it.** Aven has its own vault; the Aven Peer,
   its device, signs for Aven within the rights Alice's vault gives it and can take back. People act on Aven only as
   themselves: Alice manages it as Alice's vault, signing with her own devices, and a network is never an account.

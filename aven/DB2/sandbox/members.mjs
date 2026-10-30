@@ -100,8 +100,8 @@ const withdraw = (b, passkey, key) =>
 	);
 
 // A browser joins with a link's secret: a new passkey, the join signed by the one-time key and by it
-const join = (b, secret) =>
-	b.page.evaluate(async (secret) => {
+const join = (b, secret, name) =>
+	b.page.evaluate(async ({ secret, name }) => {
 		const { id, hex, assertion, send, key: device } = window.peer;
 		const created = await navigator.credentials.create({
 			publicKey: {
@@ -115,13 +115,13 @@ const join = (b, secret) =>
 		});
 		const spki = hex(created.response.getPublicKey());
 		const key = id.oneTimePublic(secret);
-		const s = { network: 'aven', invite: key, person: id.personId(spki), passkey: { id: id.passkeyId(spki), spki }, device: { id: id.deviceId(device), key: device } };
-		const text = id.joinText('aven', key, s.person, s.passkey.id, spki, s.device.id, device);
+		const s = { network: 'aven', invite: key, person: id.personId(spki), name, passkey: { id: id.passkeyId(spki), spki }, device: { id: id.deviceId(device), key: device } };
+		const text = id.joinText('aven', key, s.person, name, s.passkey.id, spki, s.device.id, device);
 		s.signature = id.signJoin(secret, text);
 		s.assertion = await assertion(text, created.rawId);
 		send('join', s);
 		return s.person;
-	}, secret);
+	}, { secret, name });
 
 const say = (b, text) => b.page.evaluate((text) => window.peer.worker.port.postMessage({ say: text }), text);
 
@@ -154,6 +154,7 @@ if (phase === 'members') {
 
 	// 1. the admin claims and invites; a second browser joins with the link and is a member
 	const admin = await open('admin');
+	await admin.page.getByTestId('name').fill('Ada');
 	await admin.page.getByTestId('claim').click();
 	if (!(await view(admin, 'dashboard'))) problems.push('the admin did not claim');
 	const claimed = await line((l) => prod('network')(l) && l.claimed, since);
@@ -172,7 +173,7 @@ if (phase === 'members') {
 	const keptOut = await line((l) => prod('kept-out')(l) && l.key === member.key && l.by === 'relay', since, 10_000);
 	if (!keptOut) problems.push("before it joined, the relay didn't keep the member's browser out");
 	const joinedAt = Date.now();
-	report.person = await join(member, first.secret);
+	report.person = await join(member, first.secret, 'Bea');
 	const joined = await line((l) => prod('joined')(l) && l.person === report.person, joinedAt);
 	if (!joined) problems.push('the join was not taken');
 	if (!(await view(member, 'dashboard'))) problems.push('the member\'s browser opened no dashboard');
@@ -191,7 +192,7 @@ if (phase === 'members') {
 	const stranger = await open('stranger');
 	for (const [what, link] of [['the link used again', first], ['a withdrawn link', second]]) {
 		const at = Date.now();
-		await join(stranger, link.secret);
+		await join(stranger, link.secret, 'Eve');
 		const refused = await stranger.page.getByTestId('refused').textContent({ timeout: 15_000 }).catch(() => null);
 		if (!refused) problems.push(`${what}: no refusal shown`);
 		if (await line((l) => prod('joined')(l), at, 3_000)) problems.push(`${what} was taken`);
@@ -217,7 +218,7 @@ if (phase === 'members') {
 	};
 	report.chatMs = Object.fromEntries(Object.entries(chat).map(([k, l]) => [k, l ? l.t - chatAt : null]));
 	for (const [k, l] of Object.entries(chat)) if (!l) problems.push(`the chat line ${k} did not arrive`);
-	if (!lines().some((l) => l.peer === 'prod-peer' && l.event === 'chat' && l.text === `${report.person} joined`))
+	if (!lines().some((l) => l.peer === 'prod-peer' && l.event === 'chat' && l.text === 'Bea joined'))
 		problems.push("the Aven Peer didn't say who joined");
 	const forgedAt = Date.now();
 	const forger = await forge(admin, 'let me in');

@@ -16,7 +16,8 @@ import Aven.ID.InviteJson
   before verifying, and the answers. aven-id's tests sign and verify with real keys and compare.
 - `keys.json`: each cast key's seed and public half (`Aven.ID.Keys`). aven-id's tests derive them with Ed25519 and
   compare, and hold `sandbox/cast.json`'s public halves to them.
-- `avenos.json`: what avenOS shows on the cast (`Aven.ID.OS`), for `sandbox/check.mjs`.
+- `avenos.json`: what avenOS shows on the cast (`Aven.ID.OS`) and the names it shows vaults by, for
+  `sandbox/check.mjs`.
 - `passkeys.json`: the test passkeys' P-256 keys (`Aven.ID.P256`), challenges of statements' texts, and assertions
   with what each check says (`Aven.ID.Passkey`). aven-id's tests sign each with the passkey's real key and compare.
 - `claims.json`: claim and sign-in traces with every answer and every resulting tree (`Aven.ID.ClaimTrace`), the
@@ -63,6 +64,8 @@ def avenos : List Json :=
     vector s!"{a}'s Vault at {target.getD a}" (Json.mkObj [("vault", a), ("target", toJson target)])
       (Json.mkObj [("opens", shown), ("tree", toJson (cast.vaultView a (target.getD a))),
         ("actsThrough", toJson (cast.actsThrough shown))])) ++
+  [vector "the cast's names" (Json.mkObj [("names", Json.null)])
+    (Json.mkObj (cast.vaults.map fun v => (v.id, toJson v.name)))] ++
   (hosts.filterMap fun (_, h) => match h with
     | .device d => some (vector s!"{d} serves" (Json.mkObj [("serves", d)]) (toJson (cast.actsFor d)))
     | _ => none)

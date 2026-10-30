@@ -5,7 +5,7 @@
 //!
 //! ```text
 //! {"network":"aven","peer":"aven-peer","peerKey":"…","rpId":"maia.city","origins":["https://aven.maia.city"],
-//!  "guardian":"…"|null,"claim":{…}|null,"signIns":[…],"invites":[…],"withdrawn":[…],"joins":[…]}
+//!  "guardian":"…"|null,"coop":"maia-city","coopName":"Maia City","claim":{…}|null,"signIns":[…],"invites":[…],"withdrawn":[…],"joins":[…]}
 //! ```
 
 use serde_json::{Value, json};
@@ -42,6 +42,8 @@ impl Members {
             "rpId": n.rp.rp_id,
             "origins": n.rp.origins,
             "guardian": n.guardian,
+            "coop": n.coop,
+            "coopName": n.coop_name,
             "claim": n.claim().map(Claim::to_json),
             "signIns": n.sign_ins().iter().map(SignIn::to_json).collect::<Vec<_>>(),
             "invites": self.invites().iter().map(Invite::to_json).collect::<Vec<_>>(),
@@ -67,7 +69,8 @@ impl Members {
             text(v, "peerKey")?,
             rp,
             guardian,
-        );
+        )
+        .with_coop(text(v, "coop")?, text(v, "coopName")?);
         let claim = match &v["claim"] {
             Value::Null => None,
             c => Some(Claim::from_json(c)?),

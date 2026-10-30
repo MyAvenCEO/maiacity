@@ -10,8 +10,9 @@ export let tree = new Cast(castText);
 export function useTree(json) {
 	tree = new Cast(json);
 }
-// What a passkey signs and what browsers and passkeys are called, as aven-id computes them (PRODUCTION.md, Part A)
-export { challenge, claimText, deviceId, passkeyId, personId, signInText } from 'aven-id';
+// What a passkey signs, what browsers and passkeys are called and what a person's name may be, as aven-id computes
+// them (PRODUCTION.md, Parts A and C)
+export { challenge, claimText, deviceId, passkeyId, personId, signInText, validPersonName } from 'aven-id';
 // and invites, withdrawals and joins (MILESTONE2.md): their texts, an invite's id, and the one-time key a link carries
 export { inviteId, inviteText, joinText, oneTimePublic, signJoin, withdrawText } from 'aven-id';
 
