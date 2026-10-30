@@ -20,6 +20,14 @@ It comes after milestone 2 and before milestone 3 ([README](../../README.md#mile
   **city-dome** (until now "the room"). Every member of Maia City is in it, and all members share its secret.
 - **Loro.** The chat's history is a chain of sealed blobs; milestone 4 makes its segments Loro's.
 
+## The package
+
+**The store is one package** (Samuel, 30 Oct 2026): the `Store` contract, the iroh-blobs adapter and every backend,
+OpenDAL inside it. It moves out of `db/` to **`aven/DB2/store`**; the crate keeps its name, `aven-db-store`. Our OPFS
+backend is called **`opfs`**: OpenDAL's OPFS service goes, so it is the only one. `aven/PEER` owns iroh-blobs'
+networking (the protocol on the `Router`, the provider gate); the store answers it. The folder move is the opfs-sync
+thread's first commit, alone, so the other threads build on it; this file moves with it.
+
 ## One of each
 
 | | The one source of truth |
@@ -42,18 +50,18 @@ It comes after milestone 2 and before milestone 3 ([README](../../README.md#mile
  ── the Peer-Light (or a Peer) ─────────────────────────────────────────────────────────────
  city-dome            seals and unseals lines and files; keeps the chat's chains; holds the secret
         │
- db/store             Store: blobs and refs  ◄── iroh-blobs' store API, through our adapter
+ aven/DB2/store       Store: blobs and refs  ◄── iroh-blobs' store API, through our adapter
    drivers:           OpenDAL ─► S3 (Aven Peer) · folder (Alice Peer) · memory (tests)
-                      opfs-sync ─► OPFS sync access handles (Peer-Lights)
+                      opfs ─► OPFS sync access handles (Peer-Lights)
         │
  aven/PEER            iroh endpoint · relay · the door · Router:
                         /iroh-bytes/4 (iroh-blobs)   iroh-gossip (city-dome)   aven/db/1 (ours)
 ```
 
-- **OpenDAL is only a driver under the store.** Nothing outside `db/store` sees its types.
-- **opfs-sync replaces OpenDAL on OPFS** and implements the driver directly. The `opendal-opfs` fork, its
+- **OpenDAL is only a driver under the store.** Nothing outside the store sees its types.
+- **Our `opfs` driver replaces OpenDAL's on OPFS** and implements the driver directly. The `opendal-opfs` fork, its
   `[patch.crates-io]` and OpenDAL's `services-opfs` feature go.
-- **iroh-blobs sits behind one module of ours,** `db/store`'s adapter. Nothing above the store names an iroh-blobs type:
+- **iroh-blobs sits behind one module of ours,** the store's adapter. Nothing above the store names an iroh-blobs type:
   it is 0.x and breaks about monthly.
 
 ## What the store holds, and what it doesn't
@@ -147,7 +155,7 @@ browser and an existing member's second one. Decided:
   joiner reads the chat at once.
 - **Rotation and removal** wait for caps (milestone 3): until then a removed member keeps what it could read.
 
-## What the store asks of opfs-sync
+## What the store asks of the opfs driver
 
 The opfs-sync thread's five questions, answered:
 
@@ -221,9 +229,9 @@ Peer to a Peer-Light through the relay, seeking to the middle, in the box. iroh-
 
 ## Threads
 
-1. **opfs-sync** (session_01E9zxn44sLhsYn1LTSeusWt, `db/store/opfs*`, `os/web/peer`): the driver, the leader and the
-   check's takeover step, as answered above. Starts now.
-2. **iroh-blobs:** the spike, then the adapter and hash sequences in `db/store`, the provider gate in `peer/native`.
+1. **opfs-sync** (session_01E9zxn44sLhsYn1LTSeusWt, the store's `opfs` driver, `os/web/peer`): first the folder move
+   below, then the driver, the leader and the check's takeover step, as answered above. Starts now.
+2. **iroh-blobs:** the spike, then the adapter and hash sequences in the store, the provider gate in `peer/native`.
    Starts now; reports the spike's numbers before the adapter.
 3. **city-dome:** Lean (files, chains, the secret), sealing, the chains and catch-up, the secret's copies and the
    invite's, files and history in avenOS's Chat and the Service Worker. Starts once the spike has decided, on the
