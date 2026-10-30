@@ -53,7 +53,8 @@ settles it as drawn here.
 | docs | Mutable data and its history | Doc, Record, envelope, log, segment, type, lens, branch, checkpoint | [`db/docs`](db/docs/README.md) | docs |
 | engine | Operations and demand | operation, want, target, view, runtime, vocabulary | [`db/engine`](db/engine/README.md) | engine |
 | ontology | Meaning: facts over predicates | fact, predicate, trait | [`db/ontology`](db/ontology/README.md) | engine |
-| actors | Behaviour | actor, definition, message, turn, face | [`aven/actor`](../actor/ARCHITECTURE.md) (#1488) | avenACTORS |
+| actors | Behaviour | actor, definition, message, turn, face | [`aven/actor`](../actor/ARCHITECTURE.md) | avenACTORS |
+| runtimes | Every runtime: the actors', the engine's plugins, and file runtimes with one registry of file types | runtime, registry, applier | [`aven/runtimes`](../runtimes/README.md) (a plan; Samuel, 30 Oct 2026: one home) | runtimes (plan only) |
 | avenPEER | The node and the network | Peer, Peer-Light, relay, door, keeper | [`README`](README.md), [`MILESTONE2.md`](MILESTONE2.md), [`PRODUCTION.md`](PRODUCTION.md), [`SANDBOX.md`](SANDBOX.md) | PEERS planning |
 | avenOS | The apps | app, face, the applier | `os/` | — |
 
@@ -505,15 +506,16 @@ the spec that owns it.
   cross-part rules, and every spec uses them in this sense. *Yes.*
 - **A2. One codec and signing rule** for everything signed (K1, rule 1). It starts with the chat's lines in the
   security fixes. *Yes.*
-- **A3. Envelopes name what they build on by hash** (rule 2). *Yes; the docs thread agrees.*
+- **A3. Envelopes name what they build on by hash** (rule 2). *Decided: yes (Samuel, 30 Oct 2026).*
 - **A4. Splits are final,** with no settlement that revives a side, and "fork" means only a copy into a new Doc. The
-  store's and Lean's fork becomes split. *Yes; the docs thread agrees.*
+  store's and Lean's fork becomes split. *Decided: yes (Samuel, 30 Oct 2026).*
 - **A5. Checkpoints travel:** sealed and hybrid-signed, naming the segments they cover. A new device starts from one
-  and checks it in the background, from milestone 4, whose catch-up target needs it. *Yes; the docs thread agrees.*
-- **A6. Collections that grow without end are chains of period Docs.** *Yes, rather than shallow snapshots, which
-  refuse older branches; the docs thread agrees.*
+  and checks it in the background, from milestone 4, whose catch-up target needs it. *Decided: yes (Samuel, 30 Oct
+  2026).*
+- **A6. Collections that grow without end are chains of period Docs.** *Decided: yes (Samuel, 30 Oct 2026), rather
+  than shallow snapshots, which refuse older branches.*
 - **A7. A Doc pins the type versions it accepts,** at birth or by its owners' act, and a listing can be withdrawn.
-  *Yes; the docs thread agrees.*
+  *Decided: yes (Samuel, 30 Oct 2026).*
 - **A8. One target grammar** for caps, wants and query scope. A query without a target is refused; `complete` means
   every Doc of the target is held, checked against its directory; the implicit want takes the query's tier and lasts
   while the query is live. *Yes; the engine thread agrees.*
@@ -555,7 +557,7 @@ the spec that owns it.
 
   *Yes.*
 - **A16. Hosting an actor on the Aven Peer is an explicit read cap** per actor and per load target, shown to its
-  owner; a member's own Peer is the default home. *Yes.*
+  owner; a member's own Peer is the default home. *Decided: yes (Samuel, 30 Oct 2026).*
 
 **The engine and actors**
 - **A9. The want queue** as in [Massive data](#massive-data-wants-decide-what-moves). Its laws go into Lean before
