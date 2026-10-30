@@ -372,7 +372,7 @@ async fn main() -> Result<(), Error> {
     let waiting: Arc<Mutex<BTreeMap<PublicKey, Vec<Announcement>>>> = Arc::default();
     let keeping = Arc::new(tokio::sync::Semaphore::new(KEEPING));
     let keeps: chats::OnFile = {
-        let (endpoint, at, held, store, me, notes, waiting, keeping) = (
+        let (endpoint, at, held, store, me, notes, waiting, keeping, chats) = (
             endpoint.clone(),
             relay_url.clone(),
             held.clone(),
@@ -381,9 +381,10 @@ async fn main() -> Result<(), Error> {
             notes.clone(),
             waiting.clone(),
             keeping.clone(),
+            chats.clone(),
         );
         Arc::new(move |from, file: Announcement| {
-            let (endpoint, at, held, store, me, notes, waiting, keeping) = (
+            let (endpoint, at, held, store, me, notes, waiting, keeping, chats) = (
                 endpoint.clone(),
                 at.clone(),
                 held.clone(),
@@ -392,6 +393,7 @@ async fn main() -> Result<(), Error> {
                 notes.clone(),
                 waiting.clone(),
                 keeping.clone(),
+                chats.clone(),
             );
             tokio::spawn(async move {
                 let Ok(index) = file.file.parse() else { return };
@@ -402,6 +404,11 @@ async fn main() -> Result<(), Error> {
                     &endpoint, &at, &held, &*store, from, index, file.size, &me, &notes,
                 )
                 .await;
+                // deleted while it was fetched: no line names it any more, so it goes again
+                if kept.is_ok() && !chats.names(&file.file) {
+                    chats.drop_file(&file.file).await;
+                    return;
+                }
                 // only a sender that couldn't be reached is asked again (`KeepError::retry`): one that hasn't the
                 // file, or whose file isn't the size its line says, never will have it
                 if let Err(why) = kept

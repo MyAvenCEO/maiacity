@@ -14,6 +14,9 @@ use std::collections::BTreeMap;
 use crate::chat::MAX_TEXT;
 use crate::files::Announcement;
 
+mod retract;
+pub use retract::{Settled, retracts};
+
 /// The prefix of every chain's ref: `chat-<device>`.
 pub const REF: &str = "chat-";
 /// How long a gap may stay open before the peer catches up from the Aven Peer for the lines before it, in ms.
@@ -21,11 +24,38 @@ pub const GAP_WAIT_MS: u64 = 5000;
 /// The longest MIME type a file line claims, in bytes.
 pub const MAX_TYPE: usize = 255;
 
-/// What a line says: a text, or a file shared in the chat.
+/// What a line says: a text, a file shared in the chat, or a retraction of a line.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Body {
     Text(String),
     File(Announcement),
+    Retract(Retraction),
+    /// A line whose text this peer dropped ([`Keeper::settle`]): never the body of a line heard or written.
+    Redacted,
+}
+
+/// A delete (`Aven.DB.Chains`, "Deleting a line"): the line it retracts, named by its id, and that line's place, so a
+/// peer that never held it keeps its place as a stub.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Retraction {
+    pub target: String,
+    pub device: String,
+    pub seq: u64,
+    pub prev: Option<String>,
+    pub at: u64,
+}
+
+impl Retraction {
+    /// The retraction of `line`, named `id`.
+    pub fn of(id: &str, line: &Line) -> Retraction {
+        Retraction {
+            target: id.to_string(),
+            device: line.device.clone(),
+            seq: line.seq,
+            prev: line.prev.clone(),
+            at: line.at,
+        }
+    }
 }
 
 impl Body {
@@ -37,12 +67,37 @@ impl Body {
                 "file {}\nsize {}\ntype {}\n{}",
                 f.file, f.size, f.kind, f.name
             ),
+            Body::Retract(r) => format!(
+                "retract {}\ndevice {}\nseq {}\nprev {}\nat {}",
+                r.target,
+                r.device,
+                r.seq,
+                r.prev.as_deref().unwrap_or("none"),
+                r.at
+            ),
+            Body::Redacted => "redacted".to_string(),
         }
     }
 
     fn parse(s: &str) -> Option<Body> {
         if let Some(t) = s.strip_prefix("text\n") {
             return Some(Body::Text(t.to_string()));
+        }
+        if s.starts_with("retract ") {
+            let parts: Vec<&str> = s.split('\n').collect();
+            let [r, d, q, p, a] = parts[..] else {
+                return None;
+            };
+            let field =
+                |s: &str, name: &str| s.strip_prefix(name)?.strip_prefix(' ').map(str::to_string);
+            let prev = field(p, "prev")?;
+            return Some(Body::Retract(Retraction {
+                target: field(r, "retract")?,
+                device: field(d, "device")?,
+                seq: number(&field(q, "seq")?)?,
+                prev: (prev != "none").then_some(prev),
+                at: number(&field(a, "at")?)?,
+            }));
         }
         let mut parts = s.splitn(4, '\n');
         let mut field = |name: &str| {
@@ -64,9 +119,24 @@ impl Body {
         }))
     }
 
-    /// A text or a file's name of 1 to [`MAX_TEXT`] bytes, and a file's hash and type well formed.
+    /// A text or a file's name of 1 to [`MAX_TEXT`] bytes, a file's hash and type well formed, and a retraction's
+    /// place one: a number from 1, a previous line exactly when it isn't 1, no field empty or breaking the line.
     pub fn check(&self) -> Result<(), Refusal> {
         let words = match self {
+            Body::Retract(r) => {
+                let field = |f: &str| f.is_empty() || f.contains('\n');
+                let bad = field(&r.target)
+                    || field(&r.device)
+                    || r.seq == 0
+                    || (r.seq == 1) != r.prev.is_none()
+                    || r.prev.as_deref().is_some_and(field);
+                return if bad {
+                    Err(Refusal::BadRetract)
+                } else {
+                    Ok(())
+                };
+            }
+            Body::Redacted => return Err(Refusal::BadRetract),
             Body::Text(t) => t,
             Body::File(f) => {
                 let hash = f.file.len() == 64
@@ -161,6 +231,15 @@ impl Line {
             && lower_hex(&self.device, 64)
             && self.prev.as_deref().is_none_or(|p| lower_hex(p, 64))
             && lower_hex(&self.sig, 128)
+            && match &self.body {
+                Body::Retract(r) => {
+                    lower_hex(&r.target, 64)
+                        && lower_hex(&r.device, 64)
+                        && r.prev.as_deref().is_none_or(|p| lower_hex(p, 64))
+                }
+                Body::Redacted => false,
+                Body::Text(_) | Body::File(_) => true,
+            }
     }
 
     /// Field by field, lenient: `parse` takes it only when it renders back to the same bytes.
@@ -227,6 +306,8 @@ pub enum Refusal {
     BadFile,
     /// A blob that isn't exactly the bytes its line renders to ([`Line::parse`]).
     NotCanonical,
+    /// A retraction whose line or place isn't one, or a body only a peer's own record holds ([`Body::Redacted`]).
+    BadRetract,
 }
 
 impl Refusal {
@@ -240,6 +321,7 @@ impl Refusal {
             Refusal::BadSeq => "badSeq",
             Refusal::BadFile => "badFile",
             Refusal::NotCanonical => "notCanonical",
+            Refusal::BadRetract => "badRetract",
         }
     }
 }
@@ -249,8 +331,8 @@ impl Refusal {
 /// line.
 pub fn check(
     network: &str,
-    member: impl Fn(&str) -> bool,
-    verify: impl Fn(&str, &str, &str) -> bool,
+    member: &impl Fn(&str) -> bool,
+    verify: &impl Fn(&str, &str, &str) -> bool,
     l: &Line,
 ) -> Result<(), Refusal> {
     if l.network != network {
@@ -362,7 +444,7 @@ impl Keeper {
         id: String,
         line: Line,
     ) -> Answer {
-        if let Err(why) = check(network, member, verify, &line) {
+        if let Err(why) = check(network, &member, &verify, &line) {
             return Answer::Refused(why);
         }
         let device = line.device.clone();
@@ -392,13 +474,11 @@ impl Keeper {
         Answer::Moved(moved)
     }
 
-    /// The lines a chat shows: every line held but the forks, ordered by time, then device.
+    /// The lines a chat shows: every line held but the forks and the retractions, ordered by time, then device.
     pub fn shown(&self) -> Vec<&Held> {
         let mut all: Vec<&Held> = self
-            .chains
-            .values()
-            .flatten()
-            .chain(self.loose.iter().filter(|h| !self.forks.contains(&h.id)))
+            .live()
+            .filter(|h| !matches!(h.line.body, Body::Retract(_)))
             .collect();
         all.sort_by(|a, b| {
             (a.line.at, &a.line.device, a.line.seq, &a.id).cmp(&(
