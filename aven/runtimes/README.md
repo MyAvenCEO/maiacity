@@ -303,21 +303,27 @@ failure. A fuzz target per runtime runs in the box on demand and in the goal's C
 
 ## What Lean states
 
-`Aven.Runtime`, in [`spec/`](spec), is written: core Lean 4.35.0, no packages and no `sorry`, built in the box's image
-(`lake build`, then `lake exe vectors`). It models the contract and the decisions, not the parsers. Values, the codec
-and hashes are `Aven.Core`'s, which the docs thread builds; until it lands, the contract is stated for any part, input
-and output type and any hash, and nothing here defines its own.
+`Aven.Runtime`, in [`spec/`](spec), is written: core Lean 4.35.0, no packages and no `sorry`, on `Aven.Core`'s Values,
+codec and hashes, which it requires by path (`aven/DB2/core/spec`) and never defines itself. The box builds and checks
+it with the other specs (`bun run box sh sandbox/vectors.sh --check`, which `up --check` runs). It models the contract
+and the decisions, not the parsers.
 
-- **The contract** (`Contract`). A runtime's meaning is its answer for a part and an input, with what it costs in fuel
-  and memory; the host's `run` checks the input's schema, the limits, and the output's size and schema. `run` takes
-  nothing else, so a device's clock and randomness never reach it (`deterministic`). Theorems:
-  - `run_ok_fits`: every answer fits its schema and its output limit;
+- **The contract** (`Contract`). A runtime's meaning is its answer for a part and an input, both Values, with what it
+  costs in fuel and memory; the host's `run` checks the input's schema, the limits, and the output's schema and size,
+  the length of its encoding in the one codec. `run` takes nothing else, so a device's clock and randomness never
+  reach it (`deterministic`). Theorems:
+  - `run_ok_fits`: every answer fits its schema, and its encoding its output limit;
   - `run_more_room`: more fuel, memory or output room never changes an answer;
   - `resolve_ge_floor`, `resolve_named`: a part runs on the version it names, or on the floor;
   - `admit_imports_nothing`, `admit_memory`: a module is admitted only when it imports nothing at all and declares a
     maximum memory within the limit;
   - `frozen`: the manifest only appends, so a frozen entry never changes; `loads_listed`: a host loads only bytes
-    whose hash the manifest lists.
+    whose hash the manifest lists;
+  - `renderKey_inj`: a render's cache key is the name of the Value `[runtime hash, file hash, params]`, so two keys
+    with one name are one key, for a hash without collisions: a cached render is never handed out for another runtime,
+    file or params.
+
+  A run's result crosses as a Value, `{"ok": output}` or `{"failure": name}`.
 - **The registry as a function** (`Registry`, its examples in `RegistryExamples`). `decideFile st head size claim`
   gives the type, the mode (`native`, `frame`, `runtime` or `download`, with the runtime's limits), how the Service
   Worker serves it, and its headers. Theorems:
@@ -352,15 +358,18 @@ and output type and any hash, and nothing here defines its own.
   exported with their outputs' hashes, and the check runs every vector in the native host and in all three browser
   engines and compares hashes. A float result must be bit-identical, so the host canonicalizes NaNs as it reads an
   output, and a runtime whose vectors differ between engines fails the check. This comes with the first runtime.
-- **The cache key.** A render's key is `(runtime hash, file hash, params hash)`, and a cache entry is dropped when its
-  runtime falls below the floor. It comes with `Aven.Core`'s hashes.
+- **The cache key** is in the contract (`renderKey_inj`); a cache entry is dropped when its runtime falls below the
+  floor.
 
 **The vectors** (`spec/vectors/`, one vector per line): `table.json` (the registry and its signatures, the data the
-registry crate compiles in), `registry.json`, `tree.json`, `face.json` (with each rule's CSS text) and `contrast.json`
-(`linear`, then pairs of colours). The parsers themselves stay outside Lean, as mechanics (rule 10): their hostile
+registry crate compiles in), `registry.json`, `tree.json` and `face.json` (each tree and face with its encoding, a face
+with each rule's CSS text), `contract.json` (each failure and an answer as encoded, render keys and their BLAKE3 names)
+and `contrast.json` (`linear`, then pairs of colours). A tree crosses as a Value: text as text, an element as
+`[tag, [[name, value], …], [child, …]]`; a face as `{"tree", "style"}`; every example's is an allowed Value of the
+codec. The parsers themselves stay outside Lean, as mechanics (rule 10): their hostile
 corpora and fuzzing hold them.
 
-**Choices the model made,** for review:
+**Choices the model made,** accepted as the safer defaults (the architect, 30 Oct 2026):
 - The head is the first 64 KiB. A JPEG whose start of frame lies past it (a large EXIF block) downloads.
 - An `ftyp` box's first byte must be 0 (it is always small), so MP4 and AVIF can't overlap a signature at offset 0.
 - A text file is HTML only when its root is an HTML tag, as WHATWG's sniffing reads it; a Markdown note that mentions

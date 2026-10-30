@@ -20,6 +20,8 @@ the vectors export, so the face-runtime, the applier's check and any tool comput
 
 namespace Aven.Runtime
 
+open Aven.Core
+
 /-- sRGB's 8-bit channel to linear light, × 10⁷, rounded: (c/255)/12.92 up to 0.04045, else
 ((c/255 + 0.055)/1.055)^2.4. -/
 def linear : Array Nat := #[
@@ -80,11 +82,7 @@ structure Rule where
 def classOk (c : String) : Bool :=
   !c.isEmpty && c.toList.all fun ch => ('a' ≤ ch && ch ≤ 'z') || ('0' ≤ ch && ch ≤ '9') || ch == '-'
 
-def hex2 (n : UInt8) : String :=
-  let d := fun (k : Nat) => "0123456789abcdef".toList[k]!
-  String.ofList [d (n.toNat / 16), d (n.toNat % 16)]
-
-def RGB.css (c : RGB) : String := "#" ++ hex2 c.r ++ hex2 c.g ++ hex2 c.b
+def RGB.css (c : RGB) : String := "#" ++ hex [c.r, c.g, c.b]
 
 /-- The CSS text of a rule, generated: the only CSS a face ever gives. -/
 def Rule.css (r : Rule) : String :=
@@ -94,10 +92,24 @@ def Rule.css (r : Rule) : String :=
     (r.bold.map fun b => "font-weight:" ++ (if b then "700" else "400")).toList
   "." ++ r.cls ++ "{" ++ ";".intercalate decls ++ "}"
 
+def RGB.value (c : RGB) : Value := .bytes [c.r, c.g, c.b]
+
+def opt {α : Type} (f : α → Value) : Option α → Value
+  | some a => f a
+  | none => .null
+
+/-- A rule as a Value: `[class, color, background, size, bold]`, each missing value null. -/
+def Rule.value (r : Rule) : Value :=
+  .array [.text (ascii r.cls), opt RGB.value r.color, opt RGB.value r.background, opt Value.uint r.size,
+    opt Value.bool r.bold]
+
 structure FaceOut where
   tree : Node
   style : List Rule
   deriving Repr, Inhabited
+
+/-- A face's output as the Value it crosses in: `{"tree": …, "style": [rule, …]}`, keys in the codec's order. -/
+def FaceOut.value (o : FaceOut) : Value := .map [(ascii "tree", o.tree.value), (ascii "style", .array (o.style.map Rule.value))]
 
 /-- What a text is drawn with: its colour, the background under it, its size in pixels and its weight. -/
 structure Ctx where
@@ -287,5 +299,6 @@ def faceExamples : List (String × FaceOut × Bool) :=
    ("a class that closes its rule", ⟨el "p" [] [txt "x"], [{ cls := "a}body{color:red" }]⟩, false)]
 
 #guard faceExamples.all fun (_, o, ok) => faceOk treeLimits o == ok
+#guard faceExamples.all fun (_, o, _) => Canon o.value
 
 end Aven.Runtime
