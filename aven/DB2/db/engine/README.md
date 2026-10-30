@@ -55,7 +55,7 @@ one document per actor, its definition, and what goes into avenDB), `aven/actor/
 | From | What held | Here |
 |---|---|---|
 | avenOS, boards 0085–0112 | Queries and mutations as specs checked against a fixed meta-schema, never SQL or code from a model; values always bound, columns allow-listed; chained joins; `HAVING` counts; `{ "ref": n }`; a failed step rolls back the steps before it; kinds compiled to stored operations when saved, and the interpreting path deleted once parity was proven | Operations, Queries, Mutations, Kinds |
-| avenDB-old's sync | Each log compared by its frontier, one digest each; only what lies beyond is sent, nothing withheld (T19); a change waits for what it builds on; two changes of one device where neither builds on the other reveal a fork; nothing leaves a peer for a device that may not receive it (T12); changed digests told to the peers that may hold the log | Sync |
+| avenDB-old's sync | Each log compared by its frontier, one digest each; only what lies beyond is sent, nothing withheld (T19); a change waits for what it builds on; two changes of one device where neither builds on the other reveal a split; nothing leaves a peer for a device that may not receive it (T12); changed digests told to the peers that may hold the log | Sync |
 | avenDB-old's Interests | Wants in four tiers (`now`, `next`, `later`, `idle`), slots bound by the route, `part`, `window`, `follow`, a signal that orders; the laws proven: tiers only order and never add or withhold, each entry once at its highest tier, an unbound slot wants nothing, **a want grants nothing**; asking yields to a new `now`; wants published before any read | Wants |
 | avenDB-old's answers | Coverage (complete, partial, denied) and freshness as pure functions of state, never of a clock; query views checked against an oracle; writes go first, painted at once, gone without a trace when refused | Answers |
 
@@ -127,7 +127,7 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
     not.
 14. **Receiving is not reading.** A peer without a document's key stores and forwards its sealed bytes and reads none of
     them. The Aven Peer is such a peer for everything not published.
-15. **An envelope waits for what it builds on. A fork is raised, not merged quietly.**
+15. **An envelope waits for what it builds on. A split is raised, not merged quietly.**
 16. **Catching up only reads and always progresses** (README, rules 3 and 6): every step moves a version forward, or it
     stops and raises the stall alarm.
 17. **Views are caches** keyed by the versions they were built from and the code version (README, rule 5). They never
@@ -150,7 +150,7 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
            sync · views and deltas · status
         │  snapshots, diffs, commits, envelopes
  ── db/docs ──────────────────────────────────────────────────────────────────────────────────────────
-           Loro Docs · every Record under a schema · envelopes signed and checked · versions, lines, merges · lenses
+           Loro Docs · every Record under a schema · envelopes signed and checked · versions, branches, merges · lenses
         │  blobs and refs
  ── store (aven/DB2/store) ───────────────────────────────────────────────────────────────────────────
            Store: blobs by BLAKE3, refs by compare-and-set · iroh-blobs through our adapter · S3, folder, opfs
@@ -253,7 +253,7 @@ A **catalogue** is a document of a vault that maps names to hashes, so people an
     "invoice.list":     "b3:51d2…", "invoice.create": "b3:c7f0…" } }
 ```
 
-A catalogue is an ordinary document: it syncs, has history and lines, and changes by proposal where its vault says
+A catalogue is an ordinary document: it syncs, has history and branches, and changes by proposal where its vault says
 so. A group of operations, such as the four a kind compiles to or the set an app ships, is a set of names in one
 catalogue. Lookup follows the vocabularies' lanes: the vault's own, the network's, the core's.
 
@@ -271,8 +271,8 @@ catalogue. Lookup follows the vocabularies' lanes: the vault's own, the network'
   "lifetime": "mounted" }
 ```
 
-- `want`: the target, in the **caps' target grammar** (D4, Samuel): a document, a vault's subtree, a kind of document in
-  a vault, or a stored query whose rows name documents (`{ "query": "b3:…", "column": "x2" }`).
+- `want`: the target, in the **caps' target grammar** (D4, Samuel): a document, a vault's subtree, a type of Doc in a
+  vault, or a stored query whose rows name documents (`{ "query": "b3:…", "column": "x2" }`).
 - `part`: `head` (that it exists and its version), `records` (what it holds), or `files` (the bytes of its file Records,
   by schema field or media type).
 - `window`: the newest `n`, or everything, for documents with long histories or long lists.
@@ -339,9 +339,9 @@ footprint of its diff, then imported. Either way the heads move, and everything 
 
 ## Sync
 
-**Live.** Changes not yet sealed travel as signed, sealed messages on an iroh-gossip topic shared by the peers that hold
-the document. The Aven Peer can join and forward what it cannot read, as it keeps the chat's room alive in milestone 2.
-Gossip is best effort; catching up fills any gap.
+**Live.** Changes not yet closed into a segment travel as signed, sealed messages on an iroh-gossip topic shared by the
+peers that hold the document. The Aven Peer can join and forward what it cannot read, as it keeps the chat's room
+alive in milestone 2. Gossip is best effort; catching up fills any gap.
 
 **At rest.** Segments and snapshots are blobs, moved by iroh-blobs through the store's adapter. How bytes are named,
 kept and moved, one of each, is the store's: [One of each](../../store/README.md#one-of-each). A big file is a hash
@@ -359,7 +359,8 @@ behind asks for what it lacks.
 **Before Loro: the chat.** Until milestone 4, the chat's history is one chain per device: each line a signed blob
 naming the previous one, the device's ref `chat-<device>` its newest line ([store](../../store/README.md#the-chat-keeps-its-history)).
 It already has the shape of rules 13 and 15: a head per device compared and walked back, two lines with one previous
-line raised as a fork. Milestone 4 replaces the lines with Loro segments and keeps the shape.
+line raised as a split. The Loro docs step replaces the lines with a log per writer, closed into segments, and keeps the
+shape; today's chains are read as they are ([docs](../docs/README.md#the-chat-moves-onto-a-doc)).
 
 ### What we take from iroh
 
@@ -476,7 +477,7 @@ table of checks): once where an operation enters, once where its envelope is imp
 
 | Check | Where | When |
 |---|---|---|
-| Signer, peer, envelope chain, fork | docs | Every envelope, local or imported |
+| Signer, writer id, log, split | docs | Every envelope, local or imported |
 | Schema fit | docs | Once per envelope, cached |
 | Write cap on the document | docs, asking avenID | Every envelope, local or imported |
 | Grammar, and a plugin's own checks | engine | Before an operation is stored, and before it runs |
@@ -549,7 +550,7 @@ Notes for that iteration, from this one's discussion:
 - **Wants:** tiers only order, never add or withhold; each document once, at its highest tier; an unbound slot wants
   nothing; served is within caps; a composite's member never rises above its tier. Vectors `wants.json`.
 - **Sync:** two peers that answered each other hold the same envelopes of every document both keep; nothing a device may
-  receive is withheld, and nothing it may not is sent; every catch-up step moves a version forward; a fork is detected.
+  receive is withheld, and nothing it may not is sent; every catch-up step moves a version forward; a split is detected.
   Traces `sync.json`.
 - **Plugins:** each plugin's lowering means what its model says: the ontology's `assert`, `set` and `retract` equal its
   model of facts. Vectors `ontology.json`.
@@ -561,7 +562,9 @@ Notes for that iteration, from this one's discussion:
 2. What is a device's default query bound?
 3. How many documents share a gossip topic, when a device holds thousands?
 4. Delta granularity: rows (proposed), fields, or Loro updates?
-5. Windows inside one document's history need snapshots plus the edits after them: milestone 4 or 7?
+5. Windows inside one document's history: answered in docs. `records` is the newest checkpoint and the segments after
+   it, older history comes by keeper number, and period Docs bound it
+   ([docs](../docs/README.md#what-the-engine-and-actors-build-on), need 6).
 6. Is a vault's directory kept by every mutation that creates a document, or by the kinds' compiled operations?
 
 ## Not in this spec
