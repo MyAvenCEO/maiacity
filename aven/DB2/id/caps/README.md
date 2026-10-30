@@ -108,8 +108,8 @@ same day, and what they agreed is marked where it applies. Nothing in this spec 
 - **ticket:** a one-time key that holds a cap until a vault claims it. An invite is one.
 - **public:** a holder meaning every member of the network, and never anyone outside it.
 - **revocation:** a signed Record that ends a cap and everything resting on it.
-- **ack:** a writer's mark inside an envelope that it has seen a revocation. From the first ack in a Doc on, the revoked
-  holder's writes there count only if an ack had seen them.
+- **ack:** a writer's mark inside an envelope that it has seen a revocation, carrying that revocation. It ends a
+  revoked holder's writes in a Doc where the revocation itself doesn't live (rule 14).
 - **kept list:** what a revocation keeps: for each Doc its revoker holds, the revoked holder's last envelope it had
   seen.
 - **letter:** a sealed Value from one vault to another, which is how a cap reaches its holder.
@@ -158,11 +158,14 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
 12. **Caps live where their checkers read them.** A Doc's caps and revocations are Records in that Doc. A cap on a
     vault's Docs lives in the group that opens them. A cap reaches its holder in a letter.
 13. **A group can hold a cap.** What a group holds, everyone in it holds, and a write under it carries the writer's way
-    into the group.
-14. **Revocation wins over what it had not seen.** It ends the cap and every cap resting on it. In each Doc it takes
-    effect at its first ack: the revocation itself where it lives in that Doc, its kept list for the Docs it names, or
-    the first envelope of any other writer there that names it. From then on, the revoked holder's writes count only if
-    an ack had seen them.
+    into the group. A cap someone issues from a group's cap lives only while its issuer is in the group.
+14. **Revocation wins over what it had not seen.** It ends the cap and every cap resting on it.
+    - A revoked holder's envelope that has the revocation in its own past never counts.
+    - Under a Doc cap, the revocation lives in the Doc, and only its own past is kept. No other writer's ack can add to
+      it.
+    - For a cap whose revocation lives elsewhere (a vault's Docs, a group, a device's removal), it takes effect in each
+      Doc at its kept list, or at the first envelope of another writer there that acks it. Only what those had seen is
+      kept. A writer who vouches this way could have written the same itself.
 15. **Removal closes reading at the next epoch.** Before writing, the next writer of each Doc a removed reader could
     open rotates its key. What was read stays read; no system can take it back.
 16. **A write uses an epoch no older than any in what it builds on.**
@@ -192,10 +195,11 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
     intersected with its run's caps (engine, rule 7).
 25. **Approval is a co-signature over one digest:** k of the named owners, for one act, used once.
 26. **Conditions only narrow.** Uses and budgets hold only where one checker counts them: a kernel or a router.
-27. **It fails closed.** An envelope counts, doesn't count, or waits for a key, a cap or what it builds on. It counts
-    when it fits, is authorized and isn't a split (the docs layer's three verdicts), and everything it builds on counts.
-    Fit never changes. A revocation can later turn "authorized" into "doesn't count", and the Doc's state is then
-    rebuilt from its envelopes.
+27. **It fails closed.** An envelope counts, doesn't count, or waits for a key, a cap or what it builds on. What it
+    names is in its own past or inside it, so a wait is always for something known by hash, and every wait raises the
+    stall alarm (README, rule 3). It counts when it fits, is authorized and isn't a split (the docs layer's three
+    verdicts), and everything it builds on counts. Fit never changes. A revocation can later turn "authorized" into
+    "doesn't count", and the Doc's state is then rebuilt from its envelopes.
 28. **No global state.** No check needs the whole tree, a sequencer, a list of every cap or a scan of everyone's
     letters. Proofs travel with the acts, and each check reads only the Docs it concerns.
 29. **Every format names its scheme.** A key blob says flat or tree, and seals and signatures say their suite. Scale and
@@ -432,6 +436,9 @@ messages and queries. For people with keys, reading is whole Docs; for actors an
 | An actor's narrower cap, message by message | The kernel, inside a cap someone approved. Not a new grant |
 | A revocation | Any device of a vault that may revoke. It only takes away, so a lost passkey never stops it |
 
+Approvals bind what others check: writes, `share` and `tell`. Reading is holding a key, and anyone holding a Doc's key
+can pass it on without an approval. No approval stops that, as no system stops a reader from leaking (rule 15).
+
 A root cap is issued by the target's vault or by a vault that governs it: authority runs down the tree.
 
 **Delegating needs no one online.** The holder signs a child cap that narrows its own and writes it where its target's
@@ -440,19 +447,21 @@ caps live. Readers check it when they meet it, as Biscuit's offline attenuation 
 **Where caps live** (rule 12):
 - **A Doc's caps, revocations and epochs** are Records of avenID's types `cap`, `revoke` and `epoch` in the Doc's
   access map, sealed with the Doc. Its readers are exactly its checkers, and they see who else reads and writes it.
-- **A cap on a vault's Docs** is a read cap on that vault's group for the target, plus its writes. It lives in that
-  group's Doc, which every reader of the covered Docs can open. So readers of Alice's Docs see her caps that span many
-  Docs, and never her caps on other single Docs.
+- **A cap on a vault's Docs** lives in the Doc of the group that opens them. A reader given only one Doc can't open
+  that group, so every envelope carries, inside the seal, the caps it rests on, and every ack carries the revocation it
+  names. A reader of one Doc sees only the caps its writers use.
 - **A tell cap** lives with the receiver's vault, where its router checks it.
 
-**Letters.** A cap reaches its holder in a letter. The letter is sealed to the holder's vault key and hybrid-signed by
-the sending device, and it carries:
+**Letters.** A cap reaches its holder in a letter. The sending device hybrid-signs the letter's content together with
+its recipient, and the signature goes inside the seal to the holder's vault key. So the keeper can't see who sent it,
+and nobody can pass it on as if it were sent to someone else. It carries:
 - the cap;
 - the ids of the target's Docs or group;
 - the holder's **tag seed** for finding its stanzas.
 
 The first letter between two vaults goes to the recipient's letterbox, so the keeper can tell whose box it is. Later
-letters use tags only the pair can compute.
+letters use tags only the pair can compute. A letterbox takes a bounded number of first letters per sending device per
+day.
 
 ## Checking
 
@@ -466,9 +475,11 @@ An imported envelope, in order. The docs layer and the engine run these checks
 4. **Authority.** Either the signer's vault is the Doc's vault, or governs it, and the device acts within its device
    cap. Or the envelope names a cap whose chain holds:
    - **valid:** signatures, approvals, every link narrowing, conditions;
-   - **live:** no ack of a revocation on the chain had not seen this envelope;
+   - **live:** kept by every revocation on the chain that the reader holds (rule 14);
    - **covering:** its footprint covers the change; with `approve`, the approvals over this envelope's digest; and for
-     a group's cap, the writer's live read cap on the group.
+     a group's cap, the writer's live read cap on the group, and the issuer of each child still in it.
+
+   The chain comes from the Doc's access map or from inside the envelope.
 5. **The docs layer's own checks:** the signer's Loro peer, what it builds on, fit, and no split (docs rules 2 and 10).
 6. **The engine's:** a named operation is re-lowered, and the change must be what it produces.
 
@@ -525,7 +536,8 @@ An envelope counts when all three hold and everything it builds on counts.
 
 A Doc is sealed to its type's group, the type group to the all group, and the all group to the vault itself and to
 everyone who reads all its Docs. Granting read on a vault's Docs is joining one group: one seal, and no Doc is touched.
-`below` adds the all groups of the vaults it governs as readers of its own.
+`below` uses a group per vault that reads the all group of every vault it governs. Its keys are sealed downward, so
+holding it reads a vault's Docs and those below it, never those above.
 
 A Doc shared with more than 64 vaults one by one is shared with a group instead.
 
@@ -540,12 +552,15 @@ An epoch is named by the BLAKE3 hash of its key blob:
 ```
 
 - **`stanzas`:** the epoch's key sealed with X-Wing to each reader's vault or group key. Each stanza is found by a
-  **tag**, a keyed BLAKE3 of the reader's tag seed and the epoch number. Only readers and writers of the Doc can compute
-  a tag, so the keeper can't link a reader across Docs or epochs. The list is padded to the next power of two.
+  **tag**, a keyed BLAKE3 of the reader's tag seed, the Doc's id and the epoch number. Only readers and writers of the
+  Doc can compute a tag, so the keeper can't link a reader, or the Docs of one group, across Docs or epochs. The list's
+  length is padded with Padmé, at most about 12 % (D18).
 - **`commit`:** a commitment to the key. A reader opening a stanza checks it, so a stanza with a wrong key is found at
   once (avenDB-old never checked what its boxes held).
 - **`back`:** the previous epoch's key, sealed under this one. With it, the newest key opens all of history, for a
   reader granted `history: all`. A `from-now` grant rotates without it. Old readers keep the old keys in their keyrings.
+  Through a group, `from-now` can't hold: the group's own `back` opens its past keys, and those open its Docs' past
+  epochs. Joining a group reads its history, so where `from-now` matters, share per Doc.
 - **`scheme`:**
   - `flat 1` now;
   - `tree 1` later, for big groups.
@@ -606,7 +621,7 @@ kept, such as presence, typing and calls (later).
 **Healing after a stolen key** (post-compromise security) is an act, the **heal**:
 1. the owners revoke the device;
 2. the remaining devices make new device keys;
-3. the keyring rotates;
+3. the keyring rotates, with a new vault key, new tag seeds and new letterbox keys;
 4. every group the vault is in rotates;
 5. each Doc rotates at its next use.
 
@@ -664,7 +679,7 @@ and a device writing two histories at once (a split), are checked by readers, wh
 | A cap | Its issuer, any issuer up its chain, the target's vault, or the holder (renouncing) | From its first ack in each Doc | At each Doc's next write | The revoker |
 | A device | Its vault's owners, k of n | From the first ack of the removal in each Doc | Keyring at once; groups and Docs at their next use | One owner's device |
 | An owner | The owners, k of n, or recovery | Governance: avenID | Keyring at once, if it held keys | The owners |
-| A network member | The admin coop | The door closes at the relay and every peer | Its caps stand until their issuers revoke them | An admin |
+| A network member | The admin coop | The door closes at the relay and every peer, and public caps stop reaching them at once | The members group rotates at once, so public Docs rotate at their next write. Caps others gave them stand until revoked, behind a closed door | An admin |
 | A ticket | Its issuer (a withdrawal) | Nothing to stop before the claim | | The issuer |
 | A public cap | As any cap | From its first ack in each Doc | At each Doc's next write | The revoker |
 
@@ -867,7 +882,7 @@ with ML-DSA, which COSE is standardising and no authenticator we know of ships.
 |---|---|---|
 | The relay | The device keys of the connections it carries, their IP addresses, timing and volume | Anything inside iroh's encryption |
 | The keeper (the Aven Peer) and its storage (Hetzner) | **The tree:** vaults, owners, devices, network members and public keys, because the door needs them. **Per Doc:** its id, its epochs and their stanza counts (padded), sizes (padded), times, and which device uploads or fetches what. Nothing about a segment's writer: no pseudonym, counters or chain (rule 23). Letterboxes on first contact; the gossip topics it keeps | Content, types, signers, caps, who reads which Doc, groups' rosters, operations |
-| A network member who doesn't read a Doc | Nothing of it: its topic and fetch key come from its key | |
+| A network member who doesn't read a Doc | Its key blobs (sealed stanzas and their padded count) and letters, all sealed. Its topic and fetch key come from its key | Content, readers, writers |
 | A reader of a Doc | Its caps, its writers and how many read it; the caps of the groups that open it | Caps on other Docs |
 | A peer on a direct path | The other's IP address (README) | |
 
@@ -909,7 +924,7 @@ to and leave all the time. Scale need not be built from day one, but no choice m
 |---|---|---|---|---|
 | A person adds a phone; 5 devices, 300 groups, 100,000 Docs | One seal into their keyring. No group or Doc notices | Yes | | Nothing but the keyring is sealed to devices (rule 17) |
 | A person loses a phone | Keyring rotates; each of their 300 groups rotates in the background, busiest first; Docs at their next write | Flat | Trees make big groups cheap | Rotations are lazy and need no one else online |
-| A group of 10,000, one leaves | Flat: about 11 MB of stanzas once | Flat | Tree: about 14 nodes, roughly 20–30 KB | The key blob's `scheme` byte; vault and group keys are the leaves either way |
+| A group of 10,000, one leaves | Flat: about 12–13 MB of stanzas once, padded with Padmé | Flat | Tree: about 14 nodes, roughly 20–30 KB | The key blob's `scheme` byte; vault and group keys are the leaves either way |
 | A group of 1,000,000 | A single key can't serve it: each member would hold the whole tree (about 2 GB with post-quantum keys), and churn never stops | | A group of groups: 1,000 groups of 1,000. Rotations batched (say hourly); memberships live a week and renew | Groups can read groups, and readers are vaults or groups from day one |
 | Hundreds join or leave a big group per minute, with no sequencer | Flat: rotations at once are all valid, nothing to merge | Flat | Tree: cost grows with updates made at once, then heals | Epochs form a graph, not a counter |
 | 10 TB shared with a group, then someone removed | Nothing re-encrypted; each Doc seals one new key, about 1.2 KB, at its next write | Yes | | Rule 19; file keys live in Records |
@@ -1049,7 +1064,11 @@ export traces.
 | `root_authority` | A valid chain's root is issued by the target's vault or one that governs it, with approvals where required |
 | `counts_iff` | An envelope counts exactly when its signer, epoch, chain, liveness and footprint hold. The model is the check, and it runs against the Rust on random cases |
 | `readers_agree` | A verdict depends only on the envelope, its causal past and the revocations known |
-| `revocation_wins` | After an ack, no envelope of the revoked holder that no ack had seen ever counts, in any order of arrival |
+| `revocation_wins` | A revoked holder's envelope with the revocation in its own past never counts; under a Doc cap only the revocation's own past is kept; elsewhere nothing an ack hadn't seen counts, in any order of arrival |
+| `child_live` | A cap issued from a group's cap counts only while its issuer is in the group |
+| `authority_down` | A `below` grant reads the Docs of the vaults below its vault, never above |
+| `waits_end` | Every wait names something by hash in the envelope's own past or inside it, and raises the stall alarm |
+| `heal_evicts` | After a heal, nothing new opens for a removed device's keys: vault key, tag seeds and letterbox keys included |
 | `cascade` | Revoking a cap ends every cap whose chain contains it |
 | `stale_refused` | An envelope under an epoch older than one in its causal past doesn't count |
 | `confidential` | A vault learns an epoch's key only by being its reader, by reading a later epoch with history, or by a reader handing it on |
