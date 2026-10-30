@@ -25,14 +25,14 @@
 			<Avatar id={shown} size={40} />
 			<div>
 				<h1>{vault.name}</h1>
-				<small>{vault.kind} vault</small>
+				<small data-testid="kind">{vault.kind} vault</small>
 			</div>
 		</div>
 		<dl>
 			<dt>owned by</dt>
 			<dd>{owners(shown).map((owner) => ownerName(owner)).join(', ')}</dd>
 			<dt>governed by</dt>
-			<dd>
+			<dd data-testid="governed-by">
 				{above.length ? above.map((id) => vaultName(id)).join(' → ') : top}
 			</dd>
 			<dt>governs</dt>
