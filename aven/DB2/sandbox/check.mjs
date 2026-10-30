@@ -4,9 +4,12 @@
 // values are written out by hand from the cast's tree ("Vaults own vaults"), not computed by the code under test.
 // Photographs every screen as it goes. First it waits until all four peers are live: Alice Peer direct to the Aven
 // Peer over UDP, both Peer-Lights through the relay, each showing "4 peers"; it writes the run's timeline beside the
-// screenshots.
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+// screenshots. Each peer keeps a record through its store (its first start), in the backend it is configured with;
+// every view that shows one must show the peer's newest. The check runs in a Chromium profile kept in a volume, so a
+// Peer-Light's OPFS outlives it, as Alice Peer's folder and the Aven Peer's bucket do.
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
+import { lines as allLines, profile, records, stores } from './records.mjs';
 
 const expected = {
 	// the people a host may act as: the box's own view anyone, a Peer-Light the person it serves, a visitor no one.
@@ -47,9 +50,8 @@ const expected = {
 
 const out = process.argv[2] ?? 'runs/latest';
 mkdirSync(out, { recursive: true });
-const browser = await chromium.launch();
 // one context, as one browser: each Peer-Light origin runs one shared worker, whatever its tabs and frames
-const context = await browser.newContext({ viewport: { width: 1280, height: 960 } });
+const context = await chromium.launchPersistentContext(profile, { viewport: { width: 1280, height: 960 } });
 const page = await context.newPage();
 const problems = [];
 const differ = (what, got, want) => {
@@ -59,16 +61,10 @@ const ids = (selector, name) => page.locator(selector).evaluateAll((els, name) =
 const started = Date.now();
 
 // The peers: both Peer-Lights in tabs of their own, kept open through the whole check, and the Peers' own lines
-const events = process.env.AVENSANDBOX_EVENTS ?? '/events';
 function newest() {
 	const status = {};
 	const paths = {};
-	const files = existsSync(events) ? readdirSync(events).filter((name) => name.endsWith('.jsonl')) : [];
-	const lines = files
-		.flatMap((name) => readFileSync(`${events}/${name}`, 'utf8').split('\n'))
-		.filter(Boolean)
-		.map((line) => JSON.parse(line))
-		.sort((a, b) => a.t - b.t);
+	const lines = allLines();
 	for (const line of lines) {
 		if (line.event === 'status') status[line.peer] = line;
 		if (line.event === 'joined' && line.peer === 'aven-peer') paths[line.from] = line.path;
@@ -136,19 +132,29 @@ async function controlRoom(vault, shot) {
 				problems.push(`${vault}'s Control Room shows ${id} as "${got.trim()}", not "${expected.panes[id]}"`);
 			});
 	if (!(await page.getByTestId('timeline').locator('[data-event]').count())) problems.push(`${vault}'s Control Room has no timeline`);
+	// each pane's record, as the time it names
+	const shownRecords = {};
+	for (const id of peers) {
+		const shown = page.locator(`[data-peer="${id}"] [data-testid="record"][data-first]`);
+		await shown.waitFor({ timeout: 10_000 }).catch(() => {});
+		shownRecords[id] = Number(await shown.getAttribute('data-first', { timeout: 1_000 }).catch(() => null));
+	}
 	const lights = {};
 	for (const id of peers) {
 		const frame = page.locator(`[data-peer="${id}"] iframe`);
 		if (!(await frame.count())) continue;
 		const mark = frame.contentFrame().getByTestId('mark');
 		await mark.filter({ hasText: /mark [0-9a-f]{8}/ }).waitFor({ timeout: 20_000 });
+		const record = frame.contentFrame().locator('[data-testid="record"][data-first]');
+		await record.waitFor({ timeout: 20_000 }).catch(() => {});
 		lights[id] = {
 			mark: (await mark.textContent()).match(/mark ([0-9a-f]{8})/)[1],
 			serves: (await frame.contentFrame().getByTestId('serves').textContent()).trim(),
+			record: Number(await record.getAttribute('data-first', { timeout: 1_000 }).catch(() => null)),
 		};
 	}
 	if (shot) await page.screenshot({ path: `${out}/control-room-${vault}.png`, fullPage: true });
-	return { peers, lights };
+	return { peers, lights, records: shownRecords };
 }
 
 const views = {};
@@ -182,14 +188,24 @@ for (const vault of ['alice', 'bob']) {
 }
 const marks = Object.values(lights).map((light) => light.mark);
 if (new Set(marks).size !== marks.length) problems.push('two Peer-Lights share one OPFS mark');
-await browser.close();
+await context.close();
+
+// Each peer's record: kept in the backend it is configured with, and shown as it is in every view
+const kept = records();
+for (const [id, store] of Object.entries(stores))
+	if (kept[id]?.store !== store) problems.push(`${id} keeps its record in ${kept[id]?.store ?? 'nothing'}, not ${store}`);
+for (const [vault, view] of Object.entries(views))
+	for (const [id, first] of Object.entries(view.records))
+		if (first !== kept[id]?.first) problems.push(`${vault}'s Control Room shows ${id}'s record as ${first}, not ${kept[id]?.first}`);
+for (const [id, light] of Object.entries(lights))
+	if (light.record !== kept[id]?.first) problems.push(`${id}'s dashboard shows its record as ${light.record}, not ${kept[id]?.first}`);
 
 // the run's timeline: every peer's lines since the Aven Peer last started, in one file
 const { lines } = newest();
 const since = lines.findLast((line) => line.peer === 'aven-peer' && line.event === 'started')?.t ?? 0;
 writeFileSync(`${out}/timeline.jsonl`, lines.filter((line) => line.t >= since).map((line) => `${JSON.stringify(line)}\n`).join(''));
 
-const report = { ok: problems.length === 0, problems, peers, accounts, views, ms: Date.now() - started };
+const report = { ok: problems.length === 0, problems, peers, records: kept, accounts, views, ms: Date.now() - started };
 writeFileSync(`${out}/check.json`, `${JSON.stringify(report, null, 2)}\n`);
 console.log(JSON.stringify(report, null, 2));
 process.exit(report.ok ? 0 : 1);

@@ -1,11 +1,11 @@
 <script>
 	// avenOS's dashboard: the vault you act as, a grid of its apps and, on a Peer-Light's origin, this device: the vault
-	// it serves, its key, its own OPFS, which keeps a mark across reloads, and the Peer-Light's status line, its phase
-	// and "N peers" from presence, pushed by its worker.
+	// it serves, its key, its own OPFS, which keeps a mark across reloads, the record its Peer-Light keeps through the
+	// store, and the Peer-Light's status line, its phase and "N peers" from presence, pushed by its worker.
 	import Avatar from './Avatar.svelte';
 	import Phase from './Phase.svelte';
-	import { actsFor, governs, key, peersOf, vaultName } from './cast.js';
-	import { describe, live } from './peers.svelte.js';
+	import { tree, vaultName } from './id.js';
+	import { describe, live, record } from './peers.svelte.js';
 
 	let { cast, device, account, apps } = $props();
 
@@ -40,12 +40,12 @@
 <main data-view="dashboard" data-account={account}>
 	{#if account}
 		<section class="account">
-			<Avatar {cast} id={account} size={40} />
+			<Avatar id={account} size={40} />
 			<div>
-				<h1>{vaultName(cast, account)}</h1>
+				<h1>{vaultName(account)}</h1>
 				<small>
-					{cast.vaults[account].kind} · governs {count(governs(cast, account).length, 'vault')} ·
-					{count(peersOf(cast, account).length, 'peer')}
+					{tree.kind(account)} · governs {count(tree.governs(account).length, 'vault')} ·
+					{count(tree.sees(account).length, 'peer')}
 				</small>
 			</div>
 		</section>
@@ -80,11 +80,13 @@
 				<dt>device</dt>
 				<dd data-testid="device">{cast.peers[device].name}</dd>
 				<dt>serves</dt>
-				<dd data-testid="serves">{vaultName(cast, actsFor(cast, device))}</dd>
+				<dd data-testid="serves">{vaultName(tree.actsFor(device))}</dd>
 				<dt>key</dt>
-				<dd><code>{key(cast, device).slice(0, 8)}…</code></dd>
+				<dd><code>{tree.key(device).slice(0, 8)}…</code></dd>
 				<dt>stores in</dt>
 				<dd data-testid="mark">{storage}{mark ? ` · mark ${mark}` : ''}</dd>
+				<dt>its record</dt>
+				<dd data-testid="record" data-first={live.ownStored?.first}>{record(live.ownStored)}, through the store</dd>
 			</dl>
 			<p class="status"><Phase phase={live.own?.phase} text={describe(live.own)} testid="status" /></p>
 		</section>

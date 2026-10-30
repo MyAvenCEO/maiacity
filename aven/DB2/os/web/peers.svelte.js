@@ -1,7 +1,8 @@
 // What avenOS knows of the peers, pushed and never re-queried (README, rule 8). The box's timeline arrives as
 // server-sent events, a backlog and then each new line; a Peer-Light's own lines come straight from its worker. Each
-// peer's status is its newest status line.
-export const live = $state({ timeline: [], status: {}, paths: {}, own: null });
+// peer's status is its newest status line, and its record (the first start it keeps through its store) its newest
+// stored line.
+export const live = $state({ timeline: [], status: {}, paths: {}, stored: {}, own: null, ownStored: null });
 
 const keep = 300;
 
@@ -9,6 +10,7 @@ function take(line) {
 	live.timeline.push(line);
 	if (live.timeline.length > keep) live.timeline.splice(0, live.timeline.length - keep);
 	if (line.event === 'status') live.status[line.peer] = line;
+	if (line.event === 'stored') live.stored[line.peer] = line;
 	if (line.event === 'stopped' || line.event === 'failed') live.status[line.peer] = { ...line, phase: 'offline', peers: 0 };
 	// the paths the Aven Peer sees its peers on, for "relays N"
 	if (line.peer === 'aven-peer' && line.event === 'joined') live.paths[line.from] = line.path;
@@ -40,10 +42,15 @@ export async function runLight(cast, me) {
 	port.onmessage = ({ data }) => {
 		const line = JSON.parse(data);
 		if (line.event === 'status' || line.event === 'failed') live.own = line.event === 'failed' ? { ...line, phase: 'offline', peers: 0 } : line;
+		if (line.event === 'stored') live.ownStored = line;
 	};
 	port.start?.();
 	port.postMessage({ start: await configure(cast, me) });
 }
+
+// "first started 20:14:03 · kept": a record's line, as a person reads it
+export const record = (stored) =>
+	stored ? `first started ${new Date(stored.first).toLocaleTimeString('en-GB')}${stored.kept ? ' · kept' : ' · new'}` : 'no record yet';
 
 // "● live · 4 peers"
 export const describe = (status) =>

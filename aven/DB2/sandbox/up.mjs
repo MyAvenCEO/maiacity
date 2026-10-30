@@ -40,7 +40,8 @@ async function ensureDocker() {
 	// It runs in a session of its own (setsid), so it outlives the command that started it.
 	if (process.env.CLAUDE_CODE_REMOTE === 'true' && Bun.which('dockerd') && Bun.which('setsid')) {
 		say('starting dockerd');
-		await $`setsid -f sh -c ${'exec dockerd --allow-direct-routing > /tmp/avensandbox-dockerd.log 2>&1'} < /dev/null > /dev/null 2>&1`;
+		// every redirect sits inside sh: bun's shell refuses `< /dev/null` followed by another redirect
+		await $`setsid -f sh -c ${'exec dockerd --allow-direct-routing < /dev/null > /tmp/avensandbox-dockerd.log 2>&1'}`.quiet();
 		for (let i = 0; i < 60; i++) {
 			if (await ok($`docker info`)) return;
 			await Bun.sleep(500);
@@ -106,8 +107,9 @@ async function install() {
 	await $`docker run --rm ${network()} ${volumes} -w /work ${image} sh -c ${script}`.env(env);
 }
 
-// The builder (SANDBOX.md, "The box"): compiles the Peer and the Peer-Light's wasm once, into the shared build folder,
-// incrementally. The Peers run that binary and restart when it changes; Vite reloads the pages when the wasm does.
+// The builder (SANDBOX.md, "The box"): compiles the Peer, the Peer-Light's wasm and aven-id's wasm for avenOS once, into
+// the shared build folder, incrementally. The Peers run that binary and restart when it changes; Vite reloads the pages
+// when the wasm does.
 const peerBinary = '/work/target/debug/aven-peer';
 const lightWasm = 'target/wasm32-unknown-unknown/debug/aven_peer_light.wasm';
 const buildPeers = [
@@ -117,6 +119,7 @@ const buildPeers = [
 	// wasm-bindgen takes 3 s even for nothing, so it runs only for a new wasm; one swap, so Vite never serves half a build
 	`src=$(sha256sum ${lightWasm} | cut -c1-64)`,
 	`if [ "$src" != "$(cat target/light/.source 2>/dev/null)" ]; then rm -rf target/light.next && wasm-bindgen --target web --no-typescript --out-dir target/light.next ${lightWasm} && echo "$src" > target/light.next/.source && rm -rf target/light && mv target/light.next target/light; fi`,
+	'sh id/core/wasm/build.sh',
 	`sha256sum ${peerBinary} | cut -c1-16`,
 ].join(' && ');
 
@@ -147,9 +150,46 @@ async function check() {
 	for (const problem of fenced) say(`fence: ${problem}`);
 	const run = `runs/${new Date().toISOString().replace(/[:.]/g, '-')}`;
 	const result = await $`${compose} exec -T browsers node sandbox/check.mjs ${run}`.env(env).nothrow();
-	const passed = fenced.length === 0 && result.exitCode === 0;
+	const passed = fenced.length === 0 && result.exitCode === 0 && (await keeps(run));
 	say(`${passed ? 'check passed' : 'check FAILED'}; screenshots and report in aven/DB2/${run}/`);
 	return passed ? 0 : 1;
+}
+
+// The record every peer keeps through its store (SANDBOX.md, "Done when"): a restart keeps it, and `down --wipe`
+// empties it, so the next start writes a new one. Restarting means the Peers' containers and a new Chromium on the
+// same profile for the Peer-Lights; the wipe leaves the box up, fresh.
+async function keeps(run) {
+	const problems = [];
+	const before = JSON.parse(readFileSync(join(db2, run, 'check.json'), 'utf8')).records;
+	const read = async (since) =>
+		JSON.parse((await $`${compose} exec -T browsers node sandbox/records.mjs ${since}`.env(env).quiet().text()).trim().split('\n').at(-1));
+	const timed = Date.now();
+
+	let since = Date.now();
+	await $`${compose} restart aven alice`.env(env).quiet();
+	const restarted = await read(since);
+	for (const [id, was] of Object.entries(before)) {
+		const now = restarted[id];
+		if (!now?.kept || now.first !== was.first || now.blob !== was.blob)
+			problems.push(`after a restart, ${id}'s record is ${JSON.stringify(now)}, not ${JSON.stringify(was)} kept`);
+	}
+	const restartMs = Date.now() - timed;
+
+	since = Date.now();
+	await $`${compose} down --volumes`.env(env).quiet();
+	await up([]);
+	const wiped = await read(since);
+	for (const id of Object.keys(before)) {
+		const now = wiped[id];
+		if (!now || now.kept || now.first < since) problems.push(`after a wipe, ${id}'s record is ${JSON.stringify(now)}, not a new one`);
+	}
+	if (Object.keys(before).length !== 4) problems.push(`records from ${Object.keys(before).length} peers, not 4`);
+
+	const report = { ok: problems.length === 0, problems, before, restarted, wiped, restartMs, ms: Date.now() - timed };
+	await Bun.write(join(db2, run, 'records.json'), `${JSON.stringify(report, null, 2)}\n`);
+	for (const problem of problems) say(`record: ${problem}`);
+	if (report.ok) say(`a restart kept all four records, and a wipe emptied them (${(report.ms / 1000).toFixed(1)} s)`);
+	return report.ok;
 }
 
 async function up(args) {
@@ -174,13 +214,16 @@ async function up(args) {
 	if (args.includes('--check')) process.exit(await check());
 }
 
-// Every release's deliverables (SANDBOX.md, "Production"): for now avenOS for the browser, built in the box.
+// Every release's deliverables (SANDBOX.md, "Production"): for now avenOS for the browser, with aven-id's wasm, built in
+// the box.
 async function deliverables() {
 	await ensureDocker();
 	await ensureImages();
 	await install();
-	const volumes = ['-v', `${db2}:/work`, '-v', 'avensandbox_node_modules:/work/node_modules'];
-	await $`docker run --rm ${volumes} -w /work ${image} node_modules/.bin/vite build --config vite.config.js`.env(env);
+	await $`docker volume create avensandbox_target`.quiet();
+	const volumes = ['-v', `${db2}:/work`, '-v', 'avensandbox_node_modules:/work/node_modules', ...rustVolumes];
+	const script = 'sh id/core/wasm/build.sh && node_modules/.bin/vite build --config vite.config.js';
+	await $`docker run --rm ${network()} ${volumes} -w /work ${image} sh -c ${script}`.env(env);
 	const out = join(db2, 'deliverables');
 	rmSync(out, { recursive: true, force: true });
 	await $`mkdir -p ${out}`;

@@ -1,6 +1,7 @@
 //! avenPEER's Peer: the native node, one binary for the box and for production. `--relay` makes it the Aven Peer
 //! (SANDBOX.md, "The cast"): iroh's relay runs in the same process, and its hub counts presence. Without it, the Peer
-//! links to the Aven Peer directly over UDP, with the relay as fallback. Fully private: the relay it is given only, no
+//! links to the Aven Peer directly over UDP, with the relay as fallback. It keeps its data through avenDB's store, in
+//! the backend `--store` names: S3 for the Aven Peer, a folder for a Peer, memory for a test. Fully private: the relay it is given only, no
 //! n0 services, no public DNS. Everything that differs between the box and the world is configuration, by flag or by
 //! environment (`--name` or `AVEN_PEER_NAME`, and so on):
 //!
@@ -14,6 +15,14 @@
 //!     --aven HOST:PORT       the Aven Peer's UDP address, without --relay
 //!     --aven-key HEX         the Aven Peer's key, without --relay
 //!     --events DIR           also write the timeline's lines to DIR/NAME.jsonl
+//!     --store KIND           where it keeps its data: memory (the default), fs or s3
+//!     --store-path DIR       the folder, with --store fs
+//!     --s3-endpoint URL      the S3 server, with --store s3
+//!     --s3-bucket NAME       its bucket
+//!     --s3-root PREFIX       the store's prefix in the bucket (/)
+//!     --s3-region NAME       its region (us-east-1)
+//!     --s3-key ID            its access key id (better by environment: AVEN_PEER_S3_KEY)
+//!     --s3-secret SECRET     its secret access key (better by environment: AVEN_PEER_S3_SECRET)
 
 use std::collections::HashMap;
 use std::fs::OpenOptions;
@@ -24,7 +33,8 @@ use std::sync::{Arc, Mutex};
 use aven_db_core::timeline;
 use aven_db_core::wire::ALPN;
 use aven_peer::keys::{self, Members};
-use aven_peer::{Notes, hub::Hub, link, now};
+use aven_db_store::backend::{self, DalStore};
+use aven_peer::{Notes, hub::Hub, link, now, record};
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
 use iroh::{Endpoint, EndpointAddr, RelayMap, RelayMode, RelayUrl};
@@ -82,6 +92,29 @@ fn notes(name: &str, dir: Option<String>) -> Result<Notes, Error> {
     }))
 }
 
+/// The store `--store` names, and that name for the timeline.
+fn store(config: &Config) -> Result<(DalStore, String), Error> {
+    let kind = config.or("store", "memory");
+    let store = match kind.as_str() {
+        "memory" => backend::memory()?,
+        "fs" => {
+            let dir = config.need("store-path")?;
+            std::fs::create_dir_all(&dir)?;
+            backend::fs(std::path::Path::new(&dir))?
+        }
+        "s3" => backend::s3(&backend::S3 {
+            endpoint: config.need("s3-endpoint")?,
+            region: config.or("s3-region", "us-east-1"),
+            bucket: config.need("s3-bucket")?,
+            root: config.or("s3-root", "/"),
+            access_key_id: config.need("s3-key")?,
+            secret_access_key: config.need("s3-secret")?,
+        })?,
+        other => return Err(format!("--store {other}: memory, fs or s3").into()),
+    };
+    Ok((store, kind))
+}
+
 async fn resolve(host: &str) -> Result<SocketAddr, Error> {
     Ok(tokio::net::lookup_host(host).await?.find(SocketAddr::is_ipv4).ok_or_else(|| format!("{host} has no address"))?)
 }
@@ -119,6 +152,11 @@ async fn main() -> Result<(), Error> {
         .bind()
         .await?;
     note("started", json!({ "key": endpoint.id().to_string(), "listen": listen, "relay": relay }));
+
+    let (store, kind) = store(&config)?;
+    // the one record it keeps: its first start, found again after a restart
+    let record = record::first_start(&store, &me, now()).await?;
+    notes(record::line(now(), &me, &kind, &record));
 
     let router = if relay {
         Router::builder(endpoint.clone()).accept(ALPN, Hub::new(me.clone(), members, notes.clone())).spawn()

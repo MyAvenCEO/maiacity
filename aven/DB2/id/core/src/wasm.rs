@@ -1,4 +1,4 @@
-//! aven-id's queries for avenOS, in place of `os/web/cast.js`: `new Cast(json)` reads the cast's tree and refuses
+//! aven-id's queries for avenOS (`os/web/id.js`): `new Cast(json)` reads the cast's tree and refuses
 //! one that is not well formed; its methods answer as the Rust API does, ids in the tree's order.
 
 use wasm_bindgen::prelude::*;

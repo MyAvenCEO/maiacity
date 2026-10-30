@@ -1,13 +1,15 @@
 //! avenPEER's Peer-Light: the same core as wasm, in a browser's worker (SANDBOX.md, "The cast"). It is relay-only: it
 //! reaches the Aven Peer through the relay it is given (in the box, the page's own origin, where Vite passes `/relay`
 //! on). Like the Peer, it is configured, never built for a place: its name, its secret seed and the Aven Peer's key
-//! come from the page. Every event goes to the page as a timeline line.
+//! come from the page. It keeps its data through avenDB's store, in its origin's OPFS. Every event goes to the page as a
+//! timeline line.
 
 use std::sync::Arc;
 
 use aven_db_core::timeline;
 use aven_db_core::wire::ALPN;
-use aven_peer::{Notes, keys, link, now};
+use aven_db_store::backend;
+use aven_peer::{Notes, keys, link, now, record};
 use iroh::endpoint::presets;
 use iroh::{Endpoint, EndpointAddr, RelayMap, RelayMode, RelayUrl};
 use wasm_bindgen::prelude::*;
@@ -52,6 +54,10 @@ pub async fn start(
         "started",
         serde_json::json!({ "key": endpoint.id().to_string(), "relay": relay.to_string() }),
     ));
+    // the one record it keeps, in this origin's OPFS: its first start, found again after a reload
+    let store = backend::opfs("/store/").map_err(js)?;
+    let kept = record::first_start(&store, &name, now()).await.map_err(js)?;
+    notes(record::line(now(), &name, "opfs", &kept));
     let aven = EndpointAddr::new(keys::public(&aven_key).map_err(js)?).with_relay_url(relay);
     wasm_bindgen_futures::spawn_local(link::run(endpoint, name, aven, aven_name, notes));
     Ok(())

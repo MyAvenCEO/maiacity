@@ -1,7 +1,9 @@
 # avenSANDBOX's containers (aven/DB2/SANDBOX.md, "The box"). Only aven/DB2 is mounted, so nothing else of the
 # repository is reachable inside the box. `bun run up` first builds the Peer and the Peer-Light's wasm once, into the
 # shared build folder (the avensandbox_target volume); `aven` and `alice` run that binary, `browsers` serves avenOS and
-# that wasm, and `s3` is the box's S3.
+# that wasm, and `s3` is the box's S3. Each peer keeps its data through avenDB's store: the Aven Peer in `s3`, Alice
+# Peer in its volume `alice`, the Peer-Lights in their origins' OPFS, in the volume `chromium`. `down --wipe` empties
+# them all.
 name: avensandbox
 
 x-peer: &peer
@@ -26,6 +28,14 @@ services:
       AVEN_PEER_RELAY_URL: http://aven:3340
       AVEN_PEER_MEMBERS: ${AVENSANDBOX_MEMBERS:?bun run up sets it}
       AVEN_PEER_EVENTS: /events
+      # it keeps its data in the box's S3, bucket aven, with the box's test credentials
+      AVEN_PEER_STORE: s3
+      AVEN_PEER_S3_ENDPOINT: http://s3:7070
+      AVEN_PEER_S3_BUCKET: aven
+      AVEN_PEER_S3_KEY: avensandbox
+      AVEN_PEER_S3_SECRET: avensandbox-test-secret
+    depends_on:
+      s3: { condition: service_healthy }
 
   # Alice Peer: the same binary, relay off, direct to the Aven Peer over UDP
   alice:
@@ -39,6 +49,13 @@ services:
       AVEN_PEER_AVEN_KEY: ${AVENSANDBOX_AVEN_KEY:?bun run up sets it}
       AVEN_PEER_MEMBERS: ${AVENSANDBOX_MEMBERS:?bun run up sets it}
       AVEN_PEER_EVENTS: /events
+      # it keeps its data in a folder, in its own volume
+      AVEN_PEER_STORE: fs
+      AVEN_PEER_STORE_PATH: /data
+    volumes:
+      - target:/target:ro
+      - events:/events
+      - alice:/data
     depends_on: [aven]
 
   # Chromium with both Peer-Lights, and Vite serving avenOS, the Peer-Light's wasm and the relay's path
@@ -56,6 +73,8 @@ services:
       - node_modules:/work/node_modules
       - target:/work/target:ro
       - events:/events
+      # the check's Chromium profile, so each Peer-Light's OPFS outlives a check; `down --wipe` empties it
+      - chromium:/profile
     ports:
       - "${AVENSANDBOX_PORT:-5173}:5173"
     networks: [wan]
@@ -63,7 +82,7 @@ services:
   # The box's S3 (SANDBOX.md, "Storage"): versitygw, shipped in the box's own image, over a folder in its own volume,
   # never a real cloud bucket. At http://s3:7070 on `wan`, and at 127.0.0.1:7070 for the box's commands, which run on
   # the host's network in a cloud session. Test credentials, valid only in the box; the store's tests use the bucket
-  # aven-db-store, the Aven Peer will use aven. `down --wipe` empties it.
+  # aven-db-store, the Aven Peer keeps its data in aven. `down --wipe` empties it.
   s3:
     image: ${AVENSANDBOX_IMAGE:?bun run up sets it}
     entrypoint: ["sh", "-c", "mkdir -p /data/aven /data/aven-db-store && exec versitygw --port :7070 posix /data"]
@@ -86,6 +105,9 @@ networks:
 
 volumes:
   s3: {}
+  # Alice Peer's store
+  alice: {}
+  chromium: {}
   # made by `bun run up`, which installs into it before the containers start
   node_modules:
     name: avensandbox_node_modules

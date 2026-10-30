@@ -16,6 +16,10 @@ function tell(line) {
 // page; its relay is this origin, where Vite passes /relay on to the Aven Peer.
 async function start({ name, secret, avenKey, avenName }) {
 	try {
+		// OpenDAL's OPFS backend finds OPFS through `web_sys::window()`, which a worker lacks; what it then calls,
+		// navigator.storage.getDirectory(), a worker has. So the worker's own scope answers as the window. Our own OPFS
+		// backend, with sync access handles in this worker, makes this go (SANDBOX.md, "Open questions").
+		self.Window ??= self.constructor;
 		const url = '/peer-light/aven_peer_light.js';
 		const light = await import(/* @vite-ignore */ url);
 		await light.default();

@@ -1,10 +1,11 @@
 <script>
 	// avenOS's Control Room: every peer the vault you act as governs, side by side, and nothing else, each with its
-	// live status, and below them the box's one timeline of their events. The Peer-Lights run avenOS in frames on
-	// their own origins. Everything here is pushed: the timeline arrives as server-sent events (README, rule 8).
+	// live status and the record it keeps through its store, and below them the box's one timeline of their events.
+	// The Peer-Lights run avenOS in frames on their own origins. Everything here is pushed: the timeline arrives as
+	// server-sent events (README, rule 8).
 	import Phase from '../Phase.svelte';
-	import { actsFor, chain, key, peersOf, vaultName } from '../cast.js';
-	import { follow, live } from '../peers.svelte.js';
+	import { tree, vaultName } from '../id.js';
+	import { follow, live, record } from '../peers.svelte.js';
 	import { read } from './timeline.js';
 
 	let { cast, account, device } = $props();
@@ -12,9 +13,9 @@
 	follow();
 
 	const port = location.port ? `:${location.port}` : '';
-	const peers = $derived(peersOf(cast, account));
+	const peers = $derived(tree.sees(account));
 	const kind = (peer) => (peer.kind === 'peer-light' ? 'Peer-Light' : peer.relay ? 'Peer + relay' : 'Peer');
-	const above = (id) => chain(cast, id).map((vault) => vaultName(cast, vault)).join(' → ');
+	const above = (id) => tree.chain(id).map((vault) => vaultName(vault)).join(' → ');
 	// the Aven Peer counts who is connected: a peer it doesn't count isn't live, whatever its last line said
 	const phase = (id) => {
 		const said = live.status[id]?.phase;
@@ -38,7 +39,7 @@
 
 <div data-view="control-room" data-account={account}>
 	<p class="lead">
-		<span>{vaultName(cast, account)} governs {[`no peers yet`, 'one peer'][peers.length] ?? `${peers.length} peers`}</span>
+		<span>{vaultName(account)} governs {[`no peers yet`, 'one peer'][peers.length] ?? `${peers.length} peers`}</span>
 		<span data-testid="live-count">{liveCount} live</span>
 	</p>
 
@@ -48,9 +49,10 @@
 			<article data-peer={id}>
 				<h2>{peer.name} <small>{kind(peer)}</small></h2>
 				<p class="meta">
-					acts for {vaultName(cast, actsFor(cast, id))}{chain(cast, id).length > 1 ? ` (${above(id)})` : ''} · key
-					<code>{key(cast, id).slice(0, 8)}…</code> · stores in {peer.store}{peer.relay ? ` · relays ${relays}` : ''}
+					acts for {vaultName(tree.actsFor(id))}{tree.chain(id).length > 1 ? ` (${above(id)})` : ''} · key
+					<code>{tree.key(id).slice(0, 8)}…</code> · stores in {peer.store}{peer.relay ? ` · relays ${relays}` : ''}
 				</p>
+				<p class="meta" data-testid="record" data-first={live.stored[id]?.first}>{record(live.stored[id])}</p>
 				<p class="status"><Phase phase={phase(id)} text={says(id)} testid="peer-status" /></p>
 				{#if id === device}
 					<p class="pending">this device</p>
