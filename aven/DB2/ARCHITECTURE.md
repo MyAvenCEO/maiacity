@@ -516,7 +516,9 @@ the spec that owns it.
   A decoder refuses anything that doesn't encode back to itself, and Lean proves it. JSON stays the readable form,
   with bytes as `b3:` or base64url text. It is standard and widely implemented (COSE, WebAuthn, DAG-CBOR), and it
   answers the runtimes plan's question 6, a bytes leaf. Canonical JSON (RFC 8785) can't tell bytes from text and is
-  weak on large integers. *Yes; Samuel to confirm.*
+  weak on large integers. What a person approves is shown decoded from the exact bytes the passkey signs, never from a
+  separate copy, and Lean's vectors include that rendering, so what is shown and what is signed can't drift (from the
+  caps thread). *Yes; Samuel to confirm.*
 - **A3. Envelopes name what they build on by hash** (rule 2). *Decided: yes (Samuel, 30 Oct 2026).*
 - **A4. Splits are final,** with no settlement that revives a side, and "fork" means only a copy into a new Doc. The
   store's and Lean's fork becomes split. *Decided: yes (Samuel, 30 Oct 2026).*
