@@ -30,29 +30,21 @@ def vault (label : String) : Bytes := utf8 ("vault:" ++ label)
 
 def text (s : String) : Value := .text (utf8 s)
 
-/-- Where a Value sorts among the kinds an index key holds: bytes, text, negative, then non-negative integers, as
-`Aven.DB.Docs.Key.Field.lt` orders them. -/
-def keyKind : Value → Option Nat
-  | .bytes _ => some 0
-  | .text _ => some 1
-  | .nint _ => some 2
-  | .uint _ => some 3
-  | _ => none
-
-/-- Values are equal by `Aven.Core`'s lawful equality, and ordered as the index keys are (`Aven.DB.Docs.Key`): by kind,
-then integers by sign and magnitude (`nint n` is `-1 - n`), text and bytes bytewise, which for UTF-8 is code-point
-order. Other Values, which no key holds, order by their encoding. -/
+/-- Values are equal by `Aven.Core`'s lawful equality, and ordered as the index keys are (`Aven.DB.Docs.Key.Field.lt`):
+by kind (bytes, text, negative, then non-negative integers), then integers by sign and magnitude (`nint n` is
+`-1 - n`), text and bytes bytewise, which for UTF-8 is code-point order. Other Values, which no key holds, order by
+their encoding. -/
 def vals : Vals Value where
   eq a b := decide (a = b)
-  lt
-    | .nint a, .nint b => b < a
-    | .uint a, .uint b => a < b
-    | .text a, .text b => decide (a < b)
-    | .bytes a, .bytes b => decide (a < b)
-    | a, b => match keyKind a, keyKind b with
-      | some i, some j => i < j
-      | _, _ => decide (encode a < encode b)
+  lt a b := match toField a, toField b with
+    | some x, some y => x.lt y
+    | _, _ => lexLt (encode a) (encode b)
   count := .uint
+
+/-- **The engine orders keyable Values as the index keys do,** field by field. -/
+theorem vals_lt_key (a b : Value) (x y : Aven.DB.Docs.Key.Field) (ha : toField a = some x) (hb : toField b = some y) :
+    vals.lt a b = x.lt y := by
+  simp [vals, ha, hb]
 
 theorem vals_refl : ∀ x, vals.eq x x = true := by intro x; simp [vals]
 

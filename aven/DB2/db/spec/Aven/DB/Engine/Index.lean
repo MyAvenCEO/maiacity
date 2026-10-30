@@ -1,6 +1,7 @@
 import Aven.DB.Engine.Query
 import Aven.DB.Docs.Index
 import Aven.DB.Docs.Directory
+import Aven.DB.Docs.Key
 
 /-!
 # Sealed indexes (ARCHITECTURE.md, A26; decided 30 Oct 2026)
@@ -306,8 +307,18 @@ end Directory
 
 /-! ## The docs layer's tree -/
 
-/-- An entry as the docs layer's tree holds it: the encoding of its key Values and its Doc, which sorts in key order. -/
-def entryBytes (e : Entry Value) : Bytes := encode (.array (e.key ++ [.bytes e.doc.hash.bytes]))
+/-- A Value as an index key's field: bytes, text and integers are keyable; no other kind is, and a shape's fields hold
+only keyable Values. -/
+def toField : Value → Option Aven.DB.Docs.Key.Field
+  | .bytes b => some (.bytes b)
+  | .text b => some (.text b)
+  | .nint n => some (.nint n)
+  | .uint n => some (.uint n)
+  | _ => none
+
+/-- An entry as the docs layer's tree holds it: its fields and its Doc in the order-preserving key encoding
+(`Aven.DB.Docs.Key.entry`), whose bytewise order is the fields' order (`key_order`). -/
+def entryBytes (e : Entry Value) : Bytes := Aven.DB.Docs.Key.entry (e.key.filterMap toField) e.doc
 
 /-- The docs layer's Prolly tree (`Aven.DB.Docs.Index`), with its node-cutting rule, as a `Tree`: its `root_set` is
 the one law the proofs above need. -/

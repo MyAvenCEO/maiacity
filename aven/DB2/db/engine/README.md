@@ -569,8 +569,9 @@ and that folding in steps equals building at once (below).
 
 **Proven so far** (30 Oct 2026), in `db/spec/Aven/DB/Engine`, on `Aven.Core`'s own types (Doc ids, type Docs, Values,
 targets, steps and grants), without `sorry`, with vectors that `lake exe vectors` writes and `bun run up --check`
-compares. Values are equal by `Aven.Core`'s lawful equality (`Aven.Core.ValueEq`); integers order by sign and magnitude,
-text and bytes bytewise, which for UTF-8 is code-point order.
+compares. Values are equal by `Aven.Core`'s lawful equality (`Aven.Core.ValueEq`), and keyable Values (bytes, text,
+integers) order exactly as the index keys do (`vals_lt_key`, against `Aven.DB.Docs.Key.Field.lt`): by kind, integers by
+sign and magnitude, text and bytes bytewise, which for UTF-8 is code-point order.
 
 | Module | Theorems | Vectors |
 |---|---|---|
@@ -596,12 +597,13 @@ an index reads needs a mark.
 - **The diff check counts only fields whose value differs** from before the commit, so a field that changes and
   changes back within one commit needs no grant.
 - **Index keys need an order-preserving encoding.** Canonical CBOR sorts unsigned integers numerically but text by
-  length first and negative integers after positives. Decided (the architect, 30 Oct 2026): index entries use an
-  order-preserving key encoding in the style of FoundationDB's tuple layer (integers by sign and magnitude, text as NFC
-  UTF-8 by code point, bytes alike, the Doc id last), whose bytewise order is the fields' order (`key_order`, the docs
-  layer's). Shapes keep text ranges and orders; the engine's value order is the keys' order.
+  length first and negative integers after positives. Decided (the architect, 30 Oct 2026) and built by the docs layer
+  (`Aven.DB.Docs.Key`, #1551): a tag and order-preserving bytes per field, the Doc id last, whose bytewise order is the
+  fields' order (`key_order`). The engine's entries are in it (`entryBytes`), shapes keep text ranges and orders, and the
+  engine's value order is the keys' (`vals_lt_key`).
 
-Still to come: index entries in the docs layer's key encoding, once it lands; live deltas equal a fresh run; sync; the
+Still to come: the lookup's probe as a byte range over the keys, proven equal to `keyMatch` from `key_order` and
+`key_inj`, so `hits` is the tree's `lookup`; live deltas equal a fresh run; sync; the
 ontology's lowering; kinds; constraints on field values in footprints, which stay caps' own.
 
 ## Open questions
