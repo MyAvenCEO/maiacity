@@ -2,7 +2,8 @@
 # The Aven Peer on the server (PRODUCTION.md, Part B, "The deploy", 4), run there by avendeploy.yml from /opt/aven,
 # where it has put compose.yml:  bash peer.sh IMAGE GUARDIAN USER < secrets
 # stdin holds three lines, never an argument: the bucket's access key, its secret key, and a token that reads
-# ghcr.io. It prints no secret: only the peer's public half, whether its key was made or kept, and its record.
+# ghcr.io. It prints no secret: only the peer's public half, whether its key was made or kept, and its record. It also
+# writes /aven.json, which tells avenOS which Aven Peer its host is in front of.
 set -euo pipefail
 image=$1 guardian=$2 user=$3
 IFS= read -r s3_key
@@ -11,8 +12,11 @@ IFS= read -r token
 cd /opt/aven
 umask 077
 
-# The peer's key, made here at its first deploy, in a file only deploy reads, and never copied anywhere
-secret=$(sed -n 's/^AVEN_PEER_SECRET=//p' peer.env 2>/dev/null || true)
+# The peer's key, made here at its first deploy, in the file `secret` that only the peer's user (nonroot, 65532)
+# reads, through --secret-file, so no `docker inspect` shows it; never copied anywhere. A key an earlier deploy kept in
+# peer.env moves there
+secret=$(sudo cat secret 2>/dev/null || sed -n 's/^AVEN_PEER_SECRET=//p' peer.env 2>/dev/null || true)
+secret=$(printf '%s' "$secret" | tr -d '[:space:]')
 if [ -z "$secret" ]; then
   secret=$(openssl rand -hex 32)
   echo "key=made"
@@ -20,7 +24,11 @@ else
   echo "key=kept"
 fi
 [[ "$secret" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::peer.env holds a key that is not 64 hex digits; left as it is"; exit 1; }
-printf 'AVEN_PEER_SECRET=%s\nAVEN_PEER_S3_KEY=%s\nAVEN_PEER_S3_SECRET=%s\n' "$secret" "$s3_key" "$s3_secret" > peer.env.next
+printf '%s\n' "$secret" | sudo tee secret.next > /dev/null
+sudo chown 65532:65532 secret.next
+sudo chmod 400 secret.next
+sudo mv -f secret.next secret
+printf 'AVEN_PEER_S3_KEY=%s\nAVEN_PEER_S3_SECRET=%s\n' "$s3_key" "$s3_secret" > peer.env.next
 mv -f peer.env.next peer.env
 # Ed25519's public half of the seed, through openssl: the seed wrapped as PKCS#8 DER, the last 32 bytes of the SPKI
 public=$(printf '302e020100300506032b657004220420%s' "$secret" \
@@ -29,6 +37,13 @@ public=$(printf '302e020100300506032b657004220420%s' "$secret" \
   | python3 -c 'import sys; print(sys.stdin.buffer.read()[-32:].hex())')
 unset secret s3_secret
 echo "public=$public"
+
+# /aven.json beside avenOS's builds, which Caddy serves at aven.maia.city/aven.json (aven/ops/deploy/Caddyfile)
+site=/opt/maia-city/site/aven
+mkdir -p "$site"
+printf '{"network":"aven","peer":"%s","rpId":"maia.city"}\n' "$public" > "$site/aven.json.next"
+chmod 644 "$site/aven.json.next"
+mv -f "$site/aven.json.next" "$site/aven.json"
 
 # The network of v1's Caddy, which the peer joins so Caddy reaches its relay
 network=$(docker inspect maia-city-caddy --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' | awk '{print $1}')
