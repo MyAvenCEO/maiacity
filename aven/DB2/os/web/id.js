@@ -5,7 +5,13 @@ import init, { Cast } from 'aven-id';
 import castText from '../../sandbox/cast.json?raw';
 
 await init();
-export const tree = new Cast(castText);
+export let tree = new Cast(castText);
+// On an Aven Peer's host without a cast (Network.svelte) the tree is the network's, as its Aven Peer tells it.
+export function useTree(json) {
+	tree = new Cast(json);
+}
+// What a passkey signs and what browsers and passkeys are called, as aven-id computes them (PRODUCTION.md, Part A)
+export { challenge, claimText, deviceId, passkeyId, personId, signInText } from 'aven-id';
 
 export const vaultName = (id) => tree.name(id) ?? id;
 // A vault's owners as the cast writes them, `key:<id>` or `vault:<id>`, split for the page.

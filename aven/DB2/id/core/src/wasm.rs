@@ -3,7 +3,50 @@
 
 use wasm_bindgen::prelude::*;
 
+use crate::claim;
+use crate::passkey;
 use crate::tree::Tree;
+
+/// The challenge a passkey signs for a statement's text.
+#[wasm_bindgen]
+pub fn challenge(text: &str) -> String {
+    passkey::challenge(text)
+}
+
+/// What a claim's passkey signs.
+#[wasm_bindgen(js_name = claimText)]
+pub fn claim_text(
+    network: &str,
+    person: &str,
+    passkey: &str,
+    spki: &str,
+    device: &str,
+    key: &str,
+) -> String {
+    claim::claim_text(network, person, passkey, spki, device, key)
+}
+
+/// What a sign-in's passkey signs.
+#[wasm_bindgen(js_name = signInText)]
+pub fn sign_in_text(network: &str, device: &str, key: &str) -> String {
+    claim::sign_in_text(network, device, key)
+}
+
+/// The ids a browser and a passkey go by, from their public keys.
+#[wasm_bindgen(js_name = deviceId)]
+pub fn device_id(key: &str) -> String {
+    claim::device_id(key)
+}
+
+#[wasm_bindgen(js_name = passkeyId)]
+pub fn passkey_id(spki: &str) -> String {
+    claim::passkey_id(spki)
+}
+
+#[wasm_bindgen(js_name = personId)]
+pub fn person_id(spki: &str) -> String {
+    claim::person_id(spki)
+}
 
 #[wasm_bindgen]
 pub struct Cast(Tree);
@@ -42,7 +85,7 @@ impl Cast {
         })
     }
 
-    /// The public half of a key, in hex.
+    /// The public half of a key: Ed25519 in hex, a passkey's `es256:<SPKI>`.
     pub fn key(&self, id: &str) -> Option<String> {
         self.0.key(id).map(str::to_string)
     }

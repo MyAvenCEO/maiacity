@@ -4,6 +4,7 @@
 const pages = new Set();
 const lines = [];
 let started;
+let light;
 
 function tell(line) {
 	lines.push(line);
@@ -12,13 +13,30 @@ function tell(line) {
 	fetch(`/events/${JSON.parse(line).peer}`, { method: 'POST', body: line }).catch(() => {});
 }
 
+// A browser's own device key, on an Aven Peer's host without a cast (PRODUCTION.md, Part A): made here, in the
+// browser, the first time, and kept in this origin's OPFS. It never leaves the browser.
+async function deviceSecret() {
+	const root = await navigator.storage.getDirectory();
+	const handle = await root.getFileHandle('device-key', { create: true });
+	let secret = (await (await handle.getFile()).text()).trim();
+	if (!/^[0-9a-f]{64}$/.test(secret)) {
+		secret = [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, '0')).join('');
+		const writable = await handle.createWritable();
+		await writable.write(secret);
+		await writable.close();
+	}
+	return secret;
+}
+
 // The Peer-Light is configured, never built for a place: its name, secret seed and the Aven Peer's key come from the
-// page; its relay is this origin, where Vite passes /relay on to the Aven Peer.
+// page (a secret `opfs` is this browser's own, and without a name it goes by its key); its relay is this origin,
+// where Vite (in the box) or Caddy (in production) passes /relay on to the Aven Peer.
 async function start({ name, secret, avenKey, avenName }) {
 	try {
 		const url = '/peer-light/aven_peer_light.js';
-		const light = await import(/* @vite-ignore */ url);
+		light = await import(/* @vite-ignore */ url);
 		await light.default();
+		if (secret === 'opfs') secret = await deviceSecret();
 		await light.start(name, secret, self.location.origin, avenKey, avenName, tell);
 	} catch (error) {
 		tell(JSON.stringify({ t: Date.now(), peer: name, event: 'failed', why: String(error?.message ?? error) }));
@@ -27,8 +45,17 @@ async function start({ name, secret, avenKey, avenName }) {
 
 function connect(port) {
 	pages.add(port);
-	port.onmessage = ({ data }) => {
+	port.onmessage = async ({ data }) => {
 		if (data?.start) started ??= start(data.start);
+		// a claim or a sign-in for the Aven Peer, from the page
+		if (data?.send) {
+			await started;
+			try {
+				light.send(data.send);
+			} catch (error) {
+				port.postMessage(JSON.stringify({ t: Date.now(), peer: 'page', event: 'refused', why: String(error?.message ?? error) }));
+			}
+		}
 	};
 	for (const line of lines) port.postMessage(line);
 	port.start?.();

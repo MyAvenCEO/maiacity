@@ -5,6 +5,8 @@
 
 pub mod keys;
 #[cfg(feature = "native")]
+pub mod door;
+#[cfg(feature = "native")]
 pub mod hub;
 pub mod link;
 pub mod record;

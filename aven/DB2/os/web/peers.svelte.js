@@ -5,8 +5,10 @@
 export const live = $state({ timeline: [], status: {}, paths: {}, stored: {}, own: null, ownStored: null });
 
 const keep = 300;
+// whether the box's timeline is this page's: not on an Aven Peer's host without a cast, whose peers aren't the box's
+export const timeline = { box: true };
 
-function take(line) {
+export function take(line) {
 	live.timeline.push(line);
 	if (live.timeline.length > keep) live.timeline.splice(0, live.timeline.length - keep);
 	if (line.event === 'status') live.status[line.peer] = line;
@@ -20,7 +22,7 @@ function take(line) {
 let following = false;
 // The whole timeline, for the Control Room.
 export function follow() {
-	if (following) return;
+	if (following || !timeline.box) return;
 	following = true;
 	new EventSource('/events').onmessage = ({ data }) => take(JSON.parse(data));
 }
