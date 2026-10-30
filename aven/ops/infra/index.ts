@@ -1,7 +1,7 @@
 // The machine behind api.maia.city — deliberately one of everything:
 //   a server (smallest current x86 shared type with at least 2 vCPU / 4 GB),
 //   a volume that holds the Postgres data and survives a rebuild,
-//   a firewall open on SSH, HTTP and HTTPS, and on UDP for avenDB's iroh endpoint.
+//   a firewall open on SSH, HTTP and HTTPS, and on UDP for avenDB's iroh endpoints (v1's and the new avenDB's).
 //
 // Docker arrives through cloud-init; the containers arrive over SSH from the
 // API job in .github/workflows/release.yml (made by ops.yml's infra task). No secrets are written here — the
@@ -79,6 +79,9 @@ const firewall = new hcloud.Firewall(`${NAME}-fw`, {
     // post-quantum TLS under certificates it pins by hash; the relay stays the fallback (Samuel 2026-10-26: a phone's
     // pages took 3-40 s through the relay while the server answered each in under 250 ms)
     { direction: "in", protocol: "udp", port: "7402", sourceIps: ["0.0.0.0/0", "::/0"] },
+    // the new avenDB's Aven Peer (aven/DB2/PRODUCTION.md, Part B): peers reach its iroh endpoint straight; its relay
+    // rides HTTPS through Caddy at aven.maia.city. avendeploy.yml adds this rule through Hetzner's API too
+    { direction: "in", protocol: "udp", port: "7501", sourceIps: ["0.0.0.0/0", "::/0"] },
   ],
 });
 

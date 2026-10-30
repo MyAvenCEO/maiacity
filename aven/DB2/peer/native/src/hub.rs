@@ -1,6 +1,8 @@
 //! Presence as the Aven Peer counts it (`aven_db_core::presence`): every peer that says hello on `aven/db/1` joins,
 //! each of its connections counted, and every connected peer is told who is there, itself included, on every change.
-//! The Aven Peer beats once per clock step on every link, so a quiet link still moves.
+//! The Aven Peer beats once per clock step on every link, so a quiet link still moves. An Aven Peer that keeps its tree
+//! (`door`) also tells every link whether its network is claimed, and its tree to the tree's own devices, on every
+//! change; it takes claims and sign-ins on the same stream, and answers a refused one with why.
 
 use std::sync::{Arc, Mutex};
 
@@ -14,6 +16,7 @@ use serde_json::json;
 use tokio::sync::watch;
 use tokio::time::{Duration, interval};
 
+use crate::door::Door;
 use crate::keys::Members;
 use crate::{Notes, link, now};
 
@@ -24,6 +27,7 @@ pub struct Hub {
     presence: Arc<Mutex<Presence<String>>>,
     told: watch::Sender<Vec<String>>,
     notes: Notes,
+    door: Option<Arc<Door>>,
 }
 
 impl std::fmt::Debug for Hub {
@@ -38,7 +42,7 @@ fn fail(what: impl std::fmt::Display) -> AcceptError {
 
 impl Hub {
     /// The Aven Peer's hub; it is present itself from the start. With members, it admits only them, each by its name.
-    pub fn new(me: String, members: Members, notes: Notes) -> Self {
+    pub fn new(me: String, members: Members, notes: Notes, door: Option<Arc<Door>>) -> Self {
         let mut presence = Presence::default();
         presence.join(me.clone());
         let (told, _) = watch::channel(presence.present().cloned().collect());
@@ -48,6 +52,7 @@ impl Hub {
             presence: Arc::new(Mutex::new(presence)),
             told,
             notes,
+            door,
         };
         hub.tell();
         hub
@@ -106,7 +111,8 @@ impl Hub {
         };
         // the first frame names the peer; a member must name itself
         let named = matches!(&said, Frame::Hello { peer: name } if name == peer);
-        if !named && (self.members.knows(&conn.remote_id()) || !matches!(said, Frame::Hello { .. })) {
+        if !named && (self.members.knows(&conn.remote_id()) || !matches!(said, Frame::Hello { .. }))
+        {
             return Err(fail(format!("{peer} said {said:?}")));
         }
         send.write_all(&encode(&Frame::Hello {
@@ -118,23 +124,67 @@ impl Hub {
         told.mark_changed();
         let mut beat = interval(Duration::from_millis(TICK_MS));
         let mut n = 0;
+        let key = conn.remote_id().to_string();
+        let mut network = self.door.as_ref().map(|door| {
+            let mut network = door.subscribe();
+            network.mark_changed();
+            network
+        });
         loop {
             tokio::select! {
                 _ = told.changed() => {
                     let peers = told.borrow_and_update().clone();
                     send.write_all(&encode(&Frame::Presence { peers })).await.map_err(fail)?;
                 }
+                Some(Ok(())) = async {
+                    match network.as_mut() {
+                        Some(network) => Some(network.changed().await),
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    let frame = Door::frame(&network.as_mut().unwrap().borrow_and_update(), &key);
+                    send.write_all(&encode(&frame)).await.map_err(fail)?;
+                }
                 _ = beat.tick() => {
                     n += 1;
                     send.write_all(&encode(&Frame::Beat { n })).await.map_err(fail)?;
                 }
                 read = recv.read(&mut buf) => match read.map_err(fail)? {
-                    Some(m) => { decoder.push(&buf[..m]).map_err(|e| fail(format!("{e:?}")))?; }
+                    Some(m) => {
+                        for frame in decoder.push(&buf[..m]).map_err(|e| fail(format!("{e:?}")))? {
+                            if let Some(why) = self.take(&key, frame).await {
+                                send.write_all(&encode(&Frame::Refused { why })).await.map_err(fail)?;
+                            }
+                        }
+                    }
                     None => return Ok(()),
                 },
                 _ = conn.closed() => return Ok(()),
             }
         }
+    }
+}
+
+impl Hub {
+    /// A claim or sign-in from the browser whose key is `key`, and why it was refused; any other frame is no news.
+    async fn take(&self, key: &str, frame: Frame) -> Option<String> {
+        let door = || {
+            self.door
+                .as_ref()
+                .ok_or_else(|| "this peer keeps no tree".to_string())
+        };
+        let taken = match frame {
+            Frame::Claim { statement } => match door() {
+                Ok(door) => door.claim(key, &statement).await,
+                Err(why) => Err(why),
+            },
+            Frame::SignIn { statement } => match door() {
+                Ok(door) => door.sign_in(key, &statement).await,
+                Err(why) => Err(why),
+            },
+            _ => Ok(()),
+        };
+        taken.err()
     }
 }
 

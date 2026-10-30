@@ -335,9 +335,9 @@ The image's last layer compiles the workspace's dependencies, cargo-chef style
   `Dockerfile`, `deps.sh`, `tag.mjs`, `.dockerignore`, `Cargo.toml`, `Cargo.lock`, every `Cargo.toml` and the fork's
   files. [`sandbox/box/tag.mjs`](sandbox/box/tag.mjs) is the one definition: `up.mjs` imports it, and both workflows run
   `node aven/DB2/sandbox/box/tag.mjs` (`--files` lists the inputs). The image workflow's paths are the same files.
-- **A new dependency doesn't stop the loop.** Until GitHub has built the checkout's own box, `bun run up` runs one with
-  the same tools: one on disk, or main's `latest`, whose label `avensandbox.tools` holds its Dockerfile's hash. The
-  build folder compiles the crates that changed.
+- **Only the checkout's own box runs** (Samuel, 30 Oct 2026): no fallback to another box, not even one with the same
+  tools. A change that moves the tag, a new dependency included, is pushed to its branch first; until GitHub has
+  published that box, `bun run up` stops and says so.
 - **One box on disk:** once the containers run on the checkout's box, `up` removes the older ones. Each is about
   14 GB on disk (3.2 GB compressed), and a cloud session has 30 GB.
 
@@ -494,9 +494,8 @@ Oct 2026): a person runs `bun run bump` when they choose. No scheduled workflow 
   session's proxy lets through. Where GitHub's release storage is refused, elan's and Lean's downloads go unchecked,
   said so in the table; the image's build on GitHub fetches them.
 - **A moved tool or crate is a new box.** The bump's checks run on the box the checkout had. A moved crate changes
-  `Cargo.lock` and so the tag: until GitHub builds it, `bun run up` runs a box with the same tools and compiles the
-  crates that moved. A moved tool changes the Dockerfile: `bun run up --check` needs the new box, which GitHub builds
-  10 to 12 minutes after the change is pushed to a branch. wasm-bindgen is one: its CLI in the box must match the crate
+  `Cargo.lock` and a moved tool the Dockerfile, so either changes the tag: `bun run up --check` needs the new box,
+  which GitHub builds 10 to 12 minutes after the change is pushed to a branch. wasm-bindgen is one: its CLI in the box must match the crate
   exactly.
 
 The box also ends a drift: the repository's root pins Playwright 1.56.1, while the cloud session's own copy is 1.63.0.

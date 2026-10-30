@@ -122,3 +122,43 @@ pub fn sign_error(e: &SignError) -> Value {
         SignError::BadSignature => json!({ "error": "badSignature" }),
     }
 }
+
+/// A test passkey: its P-256 scalar is `sha256("avenSANDBOX test passkey: <id>")` (`Aven.ID.P256`).
+pub fn test_passkey(id: &str) -> p256::ecdsa::SigningKey {
+    use sha2::{Digest, Sha256};
+    let scalar = Sha256::digest(format!("avenSANDBOX test passkey: {id}"));
+    p256::ecdsa::SigningKey::from_slice(&scalar).expect("a scalar below the group's order")
+}
+
+/// A relying party's origins, as the vectors list them.
+pub fn origins(v: &Value) -> Vec<String> {
+    v.as_array().unwrap().iter().map(|o| o.as_str().unwrap().to_string()).collect()
+}
+
+pub fn unhex(s: &str) -> Vec<u8> {
+    (0..s.len() / 2)
+        .map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap())
+        .collect()
+}
+
+pub fn hex(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+/// An assertion as the vectors write it, signed for real: its signer signs what the model says it signed
+/// (`signed`: the authenticator data, then the SHA-256 of the client data), and what is sent is the rest.
+pub fn assertion(a: &Value) -> aven_id::Assertion {
+    use p256::ecdsa::signature::Signer;
+    use sha2::{Digest, Sha256};
+    let mut signed = unhex(a["signed"]["authData"].as_str().unwrap());
+    signed.extend_from_slice(&Sha256::digest(
+        a["signed"]["clientData"].as_str().unwrap().as_bytes(),
+    ));
+    let signature: p256::ecdsa::Signature =
+        test_passkey(a["signer"].as_str().unwrap()).sign(&signed);
+    aven_id::Assertion {
+        client_data: a["clientData"].as_str().unwrap().as_bytes().to_vec(),
+        authenticator_data: unhex(a["authData"].as_str().unwrap()),
+        signature: signature.to_der().as_bytes().to_vec(),
+    }
+}

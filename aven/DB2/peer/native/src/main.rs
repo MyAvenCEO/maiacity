@@ -7,6 +7,7 @@
 //!
 //!     --name NAME            what this peer is called in presence and the timeline
 //!     --secret HEX           its Ed25519 secret seed (better by environment: AVEN_PEER_SECRET)
+//!     --secret-file PATH     or a file holding it, so it shows in no `docker inspect`; exactly one of the two
 //!     --listen ADDR          its UDP socket (0.0.0.0:4433)
 //!     --relay                run the relay here: this is the Aven Peer
 //!     --relay-listen ADDR    the relay's HTTP socket (0.0.0.0:3340), with --relay
@@ -23,6 +24,11 @@
 //!     --s3-region NAME       its region (us-east-1)
 //!     --s3-key ID            its access key id (better by environment: AVEN_PEER_S3_KEY)
 //!     --s3-secret SECRET     its secret access key (better by environment: AVEN_PEER_S3_SECRET)
+//!     --rp-id ID             with --relay: keep the tree in the store, claimed by the first passkey to sign up;
+//!                            the passkeys' RP ID: maia.city in production, localhost in the box
+//!     --origin URLS          with --rp-id: avenOS's origins, comma-separated; an assertion must come from one, and a
+//!                            stored one holds while its origin stays listed
+//!     --guardian HEX         with --rp-id: MaiaCityGuardian's public half, an owner of every person's vault founded
 
 use std::collections::HashMap;
 use std::fs::OpenOptions;
@@ -34,7 +40,8 @@ use aven_db_core::timeline;
 use aven_db_core::wire::ALPN;
 use aven_peer::keys::{self, Members};
 use aven_db_store::backend::{self, DalStore};
-use aven_peer::{Notes, hub::Hub, link, now, record};
+use aven_id::Relying;
+use aven_peer::{Notes, door::Door, hub::Hub, link, now, record};
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
 use iroh::{Endpoint, EndpointAddr, RelayMap, RelayMode, RelayUrl};
@@ -123,7 +130,11 @@ async fn resolve(host: &str) -> Result<SocketAddr, Error> {
 async fn main() -> Result<(), Error> {
     let config = Config::read()?;
     let me = config.need("name")?;
-    let secret = keys::secret(&config.need("secret")?)?;
+    let secret = keys::secret(&match (config.get("secret"), config.get("secret-file")) {
+        (Some(hex), None) => hex,
+        (None, Some(path)) => std::fs::read_to_string(&path).map_err(|e| format!("--secret-file {path}: {e}"))?,
+        _ => return Err("give exactly one of --secret and --secret-file".into()),
+    })?;
     let members = Members::parse(&config.or("members", ""))?;
     let notes = notes(&me, config.get("events"))?;
     let relay = config.get("relay").is_some_and(|v| v != "false");
@@ -154,16 +165,33 @@ async fn main() -> Result<(), Error> {
     note("started", json!({ "key": endpoint.id().to_string(), "listen": listen, "relay": relay }));
 
     let (store, kind) = store(&config)?;
+    let store = Arc::new(store);
     // the one record it keeps: its first start, found again after a restart
-    let record = record::first_start(&store, &me, now()).await?;
+    let record = record::first_start(&*store, &me, now()).await?;
     notes(record::line(now(), &me, &kind, &record));
 
+    // without a cast, an Aven Peer keeps its tree in its store, claimable once (PRODUCTION.md, Part A)
+    let door = match (config.get("rp-id"), config.get("origin"), config.get("guardian")) {
+        (None, None, None) => None,
+        (Some(rp_id), Some(origins), guardian) if relay => {
+            let guardian = guardian.map(|g| g.trim().to_lowercase());
+            let origins = origins.split(',').map(|o| o.trim().to_string()).filter(|o| !o.is_empty()).collect();
+            if let Some(g) = &guardian {
+                keys::public(g).map_err(|e| format!("--guardian: {e}"))?;
+            }
+            let key = endpoint.id().to_string();
+            let rp = Relying { rp_id, origins };
+            Some(Arc::new(Door::open(me.clone(), store.clone(), &key, rp, guardian, notes.clone()).await?))
+        }
+        _ => return Err("--rp-id and --origin come together, on an Aven Peer (--relay); --guardian only with them".into()),
+    };
+
     let router = if relay {
-        Router::builder(endpoint.clone()).accept(ALPN, Hub::new(me.clone(), members, notes.clone())).spawn()
+        Router::builder(endpoint.clone()).accept(ALPN, Hub::new(me.clone(), members, notes.clone(), door)).spawn()
     } else {
         let aven_key = keys::public(&config.need("aven-key")?)?;
         let aven = EndpointAddr::new(aven_key).with_ip_addr(resolve(&config.need("aven")?).await?).with_relay_url(relay_url);
-        tokio::spawn(link::run(endpoint.clone(), me.clone(), aven, members.name(&aven_key), notes.clone()));
+        tokio::spawn(link::run(endpoint.clone(), me.clone(), aven, members.name(&aven_key), notes.clone(), None));
         Router::builder(endpoint.clone()).spawn()
     };
 

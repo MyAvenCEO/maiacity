@@ -65,9 +65,10 @@ export function peers({ light = 'target/light', events = process.env.AVENSANDBOX
 					req.on('close', () => clients.delete(res));
 					return;
 				}
-				const posted = url.pathname.match(/^\/events\/([a-z-]+)$/);
+				const posted = url.pathname.match(/^\/events\/([a-z0-9-]+)$/);
 				if (req.method === 'POST' && posted) {
-					if (!lights.includes(posted[1])) return res.writeHead(403).end();
+					// the cast's Peer-Lights, and the browsers of production's stand-in, named by their keys
+					if (!lights.includes(posted[1]) && !/^device-[0-9a-f]{16}$/.test(posted[1])) return res.writeHead(403).end();
 					let body = '';
 					req.on('data', (chunk) => (body += chunk));
 					req.on('end', () => {

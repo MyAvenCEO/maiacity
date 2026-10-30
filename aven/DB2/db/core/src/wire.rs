@@ -1,5 +1,5 @@
 //! Our one protocol (README, rule 9, `Aven.DB.Wire`), on ALPN `aven/db/1`, as frames: one JSON object per line on one stream each
-//! way. Milestone 1 says hello and tells presence; the Aven Peer beats once per clock step, so a quiet link still
+//! way. Milestone 1 says hello and tells presence, and carries a network's claim and sign-ins (PRODUCTION.md, Part A); the Aven Peer beats once per clock step, so a quiet link still
 //! moves, and a link that doesn't is stalled.
 
 use serde::{Deserialize, Serialize};
@@ -17,6 +17,14 @@ pub enum Frame {
     Presence { peers: Vec<String> },
     /// The Aven Peer's clock, once per step.
     Beat { n: u64 },
+    /// A browser signs up first, so claims an unclaimed network: the claim's statement as JSON text.
+    Claim { statement: String },
+    /// A browser signs in with the passkey that claimed the network: the sign-in's statement as JSON text.
+    SignIn { statement: String },
+    /// An Aven Peer that keeps its tree tells each peer whether it is claimed and, to a device of its tree, the tree.
+    Network { claimed: bool, tree: Option<String> },
+    /// A claim or sign-in the Aven Peer refused, and why.
+    Refused { why: String },
 }
 
 pub fn encode(frame: &Frame) -> Vec<u8> {

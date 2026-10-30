@@ -26,7 +26,7 @@ export function lines() {
 export function records(since = 0) {
 	const out = {};
 	for (const line of lines())
-		if (line.event === 'stored' && line.t >= since) out[line.peer] = { store: line.store, first: line.first, blob: line.blob, kept: line.kept };
+		if (line.event === 'stored' && line.t >= since && line.peer in stores) out[line.peer] = { store: line.store, first: line.first, blob: line.blob, kept: line.kept };
 	return out;
 }
 

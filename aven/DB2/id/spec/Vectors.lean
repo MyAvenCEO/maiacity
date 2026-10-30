@@ -1,6 +1,7 @@
 import Aven.ID.Json
 import Aven.ID.Gen
 import Aven.ID.Keys
+import Aven.ID.ClaimJson
 
 /-! # The test vectors (README, rule 10)
 
@@ -15,6 +16,10 @@ import Aven.ID.Keys
 - `keys.json`: each cast key's seed and public half (`Aven.ID.Keys`). aven-id's tests derive them with Ed25519 and
   compare, and hold `sandbox/cast.json`'s public halves to them.
 - `avenos.json`: what avenOS shows on the cast (`Aven.ID.OS`), for `sandbox/check.mjs`.
+- `passkeys.json`: the test passkeys' P-256 keys (`Aven.ID.P256`), challenges of statements' texts, and assertions
+  with what each check says (`Aven.ID.Passkey`). aven-id's tests sign each with the passkey's real key and compare.
+- `claims.json`: claim and sign-in traces with every answer and every resulting tree (`Aven.ID.ClaimTrace`), the
+  examples and generated ones. aven-id's tests replay them with real keys, a restart reading the tree back.
 
 `bun run up --check` runs it again and fails when the files differ from what is committed. -/
 
@@ -70,6 +75,30 @@ def keys : List Json :=
     vector s!"{id}'s test key" (Json.mkObj [("id", id)])
       (Json.mkObj [("seed", Keys.hex seed), ("public", Keys.hex (Keys.publicKey seed))])
 
+def passkeys : List Json :=
+  (["a", "b", "c"].map fun p =>
+    vector s!"{passkeyId p}'s test key" (Json.mkObj [("id", passkeyId p)])
+      (Json.mkObj [("scalar", Keys.hex (Keys.be 32 (P256.scalar (passkeyId p)))), ("spki", passkeyKey p)])) ++
+  (([("nothing", ""), ("a statement", "a statement"), ("passkey-a's claim from device-1", (Op.claimOf "a" "1" {}).1.text),
+      ("device-2's sign-in", (Op.signInOf "a" "2" {}).1.text)] : List (String × String)).map fun (name, text) =>
+    vector s!"the challenge of {name}" (Json.mkObj [("text", text)]) (toJson (challengeOf text))) ++
+  ((passkeyExamples.map (boxRelying, ·)) ++ (twoOriginExamples.map (twoOrigins, ·))).map fun (rp, name, m, _) =>
+    let a := m.make
+    let challenge := challengeOf "a statement"
+    vector name (Json.mkObj [("rpId", rp.rpId), ("origins", toJson rp.origins), ("challenge", challenge),
+        ("key", "passkey-a"), ("assertion", a.json)])
+      (match a.check rp challenge "passkey-a" with
+        | .ok () => Json.mkObj [("holds", true)]
+        | .error why => Json.mkObj [("error", why.name)])
+
+def generatedTraces : Nat := 40
+
+def claims : List Json :=
+  (claimExamples.map fun (name, server, ops, _) => let (i, e) := traceVector server ops; vector name i e) ++
+  (List.range generatedTraces).map fun n =>
+    let (i, e) := traceVector boxServer (randomTrace n)
+    vector s!"generated trace, seed {n}" i e
+
 /-- One vector per line, so a change reads as a diff of lines. -/
 def render (vs : List Json) : String :=
   "[\n" ++ ",\n".intercalate (vs.map Json.compress) ++ "\n]\n"
@@ -81,3 +110,5 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "statements.json") (render statements)
   IO.FS.writeFile (dir / "keys.json") (render keys)
   IO.FS.writeFile (dir / "avenos.json") (render avenos)
+  IO.FS.writeFile (dir / "passkeys.json") (render passkeys)
+  IO.FS.writeFile (dir / "claims.json") (render claims)

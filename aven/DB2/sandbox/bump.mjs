@@ -68,8 +68,8 @@ async function bump(list) {
 	const refused = [];
 	const say = (line) => console.log(`bump: ${line}`);
 	({ inBox } = await import('./up.mjs'));
-	// the box is found (pulled, or one with the same tools) before anything is written, while the Dockerfile still
-	// names the tools it has
+	// the checkout's box is found (pulled) before anything is written, while the Dockerfile still names the tools it
+	// has
 	if (!(await run('true'))) throw new Error('no box to run cargo and bun in: nothing was changed');
 	const lockBefore = locked();
 	const tagBefore = boxTag();
@@ -116,8 +116,8 @@ async function bump(list) {
 	if (toolsTag() !== toolsBefore)
 		console.log(`\nThe box's tools moved (${tagBefore} → ${boxTag()}): \`bun run up --check\` needs the new box, which GitHub builds 10 to 12 minutes after this is pushed to a branch. The checks above ran with the current tools.`);
 	else if (boxTag() !== tagBefore)
-		console.log(`\nThe box's tag changed (${tagBefore} → ${boxTag()}): until GitHub builds it after the push, \`bun run up\` runs a box with the same tools and compiles the crates that moved.`);
-	const next = toolsTag() !== toolsBefore
+		console.log(`\nThe box's tag changed (${tagBefore} → ${boxTag()}): \`bun run up --check\` needs the new box, which GitHub builds 10 to 12 minutes after this is pushed to a branch.`);
+	const next = boxTag() !== tagBefore
 		? 'commit it to a branch and push it, then run `bun run up --check` once GitHub built its box'
 		: 'run `bun run up --check`, and commit it';
 	console.log(ok ? `\nEverything builds. Review the change, ${next}.` : '\nThe build is red: see above. Nothing was committed.');

@@ -137,3 +137,40 @@ www.{$SITE_ADDRESS:maia.city} {
 		reverse_proxy api:3000
 	}
 }
+
+# >>> aven.maia.city
+# The new avenDB's Aven Peer (aven/DB2/PRODUCTION.md, Part B). .github/workflows/avendeploy.yml puts this block, from
+# the line above to the line below, into the server's Caddyfile in place of its last copy, and leaves every other line
+# as it is. The Aven Peer runs in its own compose project (/opt/aven), on this Caddy's network, its relay's HTTP port
+# reachable only there:
+#   /relay /ping /healthz /generate_204   iroh's relay (iroh-relay 1.4.1: the WebSocket, its latency probe, health,
+#                                         the captive-portal check)
+#   /aven.json                            which Aven Peer this host is in front of, for avenOS: its key and the
+#                                         passkeys' RP ID, written by the deploy beside the builds
+#   everything else                       avenOS's released build (@aven/os, aven-os-web-<version>.tar.gz), in
+#                                         site/aven/current, unpacked by the deploy
+{$AVEN_ADDRESS:aven.maia.city} {
+	import walls
+	@relay path /relay /ping /healthz /generate_204
+	handle @relay {
+		reverse_proxy aven-peer:3340
+	}
+	handle /aven.json {
+		root * /srv/site/aven
+		header Content-Type application/json
+		header Cache-Control no-store
+		file_server
+	}
+	handle {
+		root * /srv/site/aven/current
+		encode zstd gzip
+		# Vite's hashed chunks never change; the page is looked at again
+		@immutable path /assets/*
+		header @immutable Cache-Control "public, max-age=31536000, immutable"
+		@pages not path /assets/*
+		header @pages Cache-Control "public, max-age=0, must-revalidate"
+		try_files {path} /index.html
+		file_server
+	}
+}
+# <<< aven.maia.city
