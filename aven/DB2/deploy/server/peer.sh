@@ -38,7 +38,7 @@ printf 'AVEN_PEER_IMAGE=%s\nAVEN_PEER_GUARDIAN=%s\nCADDY_NETWORK=%s\n' "$image" 
 printf '%s' "$token" | docker login ghcr.io -u "$user" --password-stdin > /dev/null
 docker compose pull -q
 docker logout ghcr.io > /dev/null
-docker compose up -d --remove-orphans
+docker compose up -d --remove-orphans --force-recreate
 
 # Its first lines: started (its key) and stored (its record in the bucket), from the container running now
 began=$(date -u +%s)
@@ -48,7 +48,8 @@ for _ in $(seq 60); do
   last=$(awk '/"event":"started"/ { n = NR } END { print n + 0 }' <<< "$logs")
   since=$(tail -n "+$last" <<< "$logs")
   grep -q '"event":"stored"' <<< "$since" && break
-  [ "$(docker inspect aven-peer --format '{{.State.Running}}')" = true ] || break
+  # a peer that stopped, or restarted since it was started, won't keep its record by waiting
+  [ "$(docker inspect aven-peer --format '{{.State.Running}} {{.RestartCount}}')" = "true 0" ] || break
   sleep 2
 done
 python3 -c '
