@@ -170,16 +170,17 @@ organization `aven` reserves the scope before anything is published.
   Aven Peer, a folder for a Peer, OPFS for a Peer-Light, memory for tests. Apache OpenDAL provides the first backends;
   our own OPFS backend comes where speed needs it ([`SANDBOX.md`](SANDBOX.md#storage-one-contract-pluggable-backends)).
 - **One primitive underneath: the sealed blob.** Everything at rest and on the wire is an immutable object named by
-  the BLAKE3 hash of its bytes, sealed unless it is published. A file is a hash sequence of chunks of at most 1 MiB
+  the BLAKE3 hash of its bytes, sealed to its readers. A file is a hash sequence of chunks of at most 1 MiB
   ([`store`](store/README.md)). A Loro document is a small head (its id, its version and
   the hashes of its pieces) over blobs: sealed segments of edits and, now and then, a snapshot. Both live in the same
   `Store` and travel by the same blob transfer. Only the edits being made right now travel live over our sync protocol,
   until they are sealed into the next segment. The Aven Peer can store, verify and serve every sealed byte without
   reading it. Loro is the document model, so iroh-docs is not needed. The only other thing in storage is a ref: a name
   pointing at a blob, such as a document's latest head, changed atomically, as in git.
-- **Deduplication follows who may know a file.** Published files are signed, not encrypted, and dedup with everyone,
-  like IPFS. Files shared in a space are sealed convergently with the space's secret (`key = hash(space secret,
-  file)`): the space's peers store each file once, and outsiders, the Aven Peer included, can't even test a guess.
+- **Deduplication follows who may know a file.** Nothing is published to the world: a public file is sealed to the
+  network's members and dedups among them ([`id/caps`](id/caps/README.md), decision 15). Files shared in a space are
+  sealed convergently with the space's secret (`key = hash(space secret, file)`): the space's peers store each file
+  once, and outsiders, the Aven Peer included, can't even test a guess.
   This is Tahoe-LAFS's convergence secret, with symmetric crypto only. Private documents stay sealed with random keys;
   their segments are unique anyway. Dedup across all peers through the Aven Peer (DupLESS-style) stays an option, not
   the default. It takes effect with sealing, which comes with avenID's caps: the store upgrade's files are plain
@@ -201,7 +202,8 @@ organization `aven` reserves the scope before anything is published.
   No Classic McEliece: v1 derived a pair for every key, each with a 1 MB public half that took most of a second to
   make. Signatures: Ed25519 and passkeys, with Ed25519 and ML-DSA-65 together wherever authority lasts
   ([`id/caps`](id/caps/README.md), decision 10).
-- **The Aven Peer only ever sees ciphertext,** except what is published.
+- **The Aven Peer only ever sees ciphertext,** once sealing ships with caps. The city-dome's history from before then
+  stays plain and readable ([`store`](store/README.md#later-sealing)).
 - **What ships is the node, never the box.** avenSANDBOX's image is a development machine (browsers, compilers,
   Lean) and is never deployed. avenPEER ships one binary whose modes are flags (`--relay`, `--store memory|fs|s3`), in
   one slim image: the binary on a minimal base. Sandbox or live is only configuration: which relay, which S3. The box
