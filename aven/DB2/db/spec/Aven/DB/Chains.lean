@@ -552,7 +552,10 @@ After every line, a peer **settles** (`settle`):
 - **stubs:** a retraction that counts, naming a line the peer doesn't hold, keeps that line's place as a stub (its id
   and place, no text), so the chain still continues past it, and the line, arriving later, takes the stub's place
   without its text: arrival order doesn't matter (`retracted_congr`). A peer catching up from one that holds only the
-  stub is sent the retraction in its place (`standIn`).
+  stub is sent the retraction in its place (`standIn`), and catching up sends every retraction before any other line,
+  so a peer applies the deletes it learns before it shows or serves what they delete (`catchUpAll`). Once a peer takes
+  a retraction, it holds it whatever comes after (`retraction_stays`) and shows the line deleted (`retraction_spreads`):
+  the retraction is never dropped, so a device that comes back with the old line can't bring it back to anyone.
 - **redaction:** every line it holds that a retraction counts for loses its text (`redact`): its body becomes
   `redacted`, and the bytes it signed go with it. Its id, its place and the links of its chain stay, so the chain still
   verifies by its links (`redact_valid`, `redact_heads`). Its own signature can't be checked again, since it signed the
@@ -560,8 +563,12 @@ After every line, a peer **settles** (`settle`):
 - **files:** a file's bytes are dropped exactly when a redaction took the last line naming it (`settle_dropped`):
   files are named by their hash, so another line naming the same file keeps its bytes.
 
-Every view shows a retracted line as deleted, in place (`retracted_deleted`). Deletion binds honest peers only: no peer
+Every view shows a retracted line as deleted, in place (`retracted_deleted`), and a peer serves no file a retraction
+took: its file-serving refuses it as gone even before its bytes are deleted. Deletion binds honest peers only: no peer
 can be forced to forget what it was sent.
+
+**Next, once the chat is sealed:** each file gets its own content key, carried inside its line. A delete then removes
+the key everywhere the line is held, so whatever ciphertext a keeper still holds is unreadable. Not built yet.
 -/
 
 /-- Which vault each device acts for, as the door names it. -/
@@ -810,6 +817,255 @@ def take (k : Keeper) (network : String) (members : List String) (vaults : Vault
     let (dropped, k'') := k'.settle vaults
     (a, dropped, k'')
 
+/-! ### A retraction, once held, stays
+
+Samuel, 30 Oct 2026: deletion holds the moment a peer meets any other that has it. A peer that takes a retraction
+holds it from then on, whatever lines come after (`retraction_stays`), and shows the line it deletes as deleted
+(`retraction_spreads`); catching up sends the retractions first (`catchUpAll`). The retraction is never dropped, so a
+device that comes back with the old line can't bring it back to anyone. -/
+
+/-- A peer holds `r`, not raised as a fork: it counts. -/
+def Holds (k : Keeper) (r : Line) : Prop := r ∈ k.held r.device ∧ k.forks.contains r.id = false
+
+theorem absorb_from_chain (d : String) (forks : List Id) (f : Nat) (c loose : List Line) (moved : List Id)
+    {m : Line} (h : m ∈ c) : m ∈ (absorb d forks f c loose moved).1 :=
+  (absorb_suffix d forks f c loose moved).mem h
+
+theorem absorb_from_loose (d : String) (forks : List Id) :
+    ∀ f c loose moved {m : Line}, m ∈ loose →
+      m ∈ (absorb d forks f c loose moved).1 ∨ m ∈ (absorb d forks f c loose moved).2.1
+  | 0, _, _, _, _, h => .inr h
+  | f + 1, c, loose, moved, m, h => by
+    unfold absorb
+    split
+    · exact .inr h
+    · next x hx =>
+      by_cases e : m = x
+      · subst e
+        exact .inl (absorb_from_chain d forks f _ _ _ (List.mem_cons_self ..))
+      · exact absorb_from_loose d forks f _ _ _ ((List.mem_erase_of_ne e).mpr h)
+
+theorem absorb_other (d : String) (forks : List Id) :
+    ∀ f c loose moved {m : Line}, m ∈ loose → m.device ≠ d → m ∈ (absorb d forks f c loose moved).2.1
+  | 0, _, _, _, _, h, _ => h
+  | f + 1, c, loose, moved, m, h, n => by
+    unfold absorb
+    split
+    · exact h
+    · next x hx =>
+      have xd : x.device = d := by
+        have := List.find?_some hx
+        simp only [Bool.and_eq_true, beq_iff_eq] at this
+        exact this.1.1
+      exact absorb_other d forks f _ _ _ ((List.mem_erase_of_ne (by rintro rfl; exact n xd)).mpr h) n
+
+/-- Chaining lines of `d` by `absorb` keeps every line a peer held, of every device. -/
+theorem absorb_held {k : Keeper} {d : String} {c : List Line} (sub : ∀ m ∈ k.chain d, m ∈ c) (f : Nat)
+    (e : String) {m : Line} (h : m ∈ k.held e) :
+    m ∈ ({ k with chains := Store.set k.chains d (absorb d k.forks f c k.loose []).1,
+                  loose := (absorb d k.forks f c k.loose []).2.1 } : Keeper).held e := by
+  simp only [held, List.mem_append, List.mem_filter, beq_iff_eq] at h ⊢
+  by_cases de : d = e
+  · subst de
+    rw [chain_set_self]
+    rcases h with h | ⟨h, hd⟩
+    · exact .inl (absorb_from_chain _ _ _ _ _ _ (sub m h))
+    · rcases absorb_from_loose _ _ _ _ _ _ h with h | h
+      · exact .inl h
+      · exact .inr ⟨h, hd⟩
+  · rw [chain_set_ne _ _ _ de]
+    rcases h with h | ⟨h, hd⟩
+    · exact .inl h
+    · exact .inr ⟨absorb_other _ _ _ _ _ _ h (by rw [hd]; exact Ne.symm de), hd⟩
+
+theorem cons_held {k : Keeper} (l : Line) (e : String) {m : Line} (h : m ∈ k.held e) :
+    m ∈ ({ k with loose := l :: k.loose } : Keeper).held e := by
+  simp only [held, chain, List.mem_append, List.mem_filter, List.mem_cons] at h ⊢
+  rcases h with h | ⟨h, hd⟩
+  · exact .inl h
+  · exact .inr ⟨.inr h, hd⟩
+
+theorem fork_held {k : Keeper} (l : Line) (e : String) {m : Line} (h : m ∈ k.held e) :
+    m ∈ ({ k with loose := l :: k.loose, forks := l.id :: k.forks } : Keeper).held e := by
+  simp only [held, chain, List.mem_append, List.mem_filter, List.mem_cons] at h ⊢
+  rcases h with h | ⟨h, hd⟩
+  · exact .inl h
+  · exact .inr ⟨.inr h, hd⟩
+
+theorem place_held (k : Keeper) (s : Line) (e : String) {m : Line} (h : m ∈ k.held e) :
+    m ∈ (k.place s).held e := by
+  unfold place
+  split
+  · exact absorb_held (fun _ h => List.mem_cons_of_mem _ h) _ e h
+  · exact cons_held s e h
+
+theorem stubs_held (k : Keeper) (vaults : Vaults) (e : String) {m : Line} (h : m ∈ k.held e) :
+    m ∈ (k.stubs vaults).held e := by
+  unfold stubs
+  generalize (List.filterMap _ k.live).mergeSort stubLe = wanted
+  induction wanted generalizing k with
+  | nil => exact h
+  | cons p ps ih =>
+    simp only [List.foldl_cons]
+    apply ih
+    split
+    · exact place_held k _ e h
+    · exact h
+
+theorem place_forks (k : Keeper) (s : Line) : (k.place s).forks = k.forks := by
+  unfold place
+  split <;> rfl
+
+theorem stubs_forks (k : Keeper) (vaults : Vaults) : (k.stubs vaults).forks = k.forks := by
+  unfold stubs
+  generalize (List.filterMap _ k.live).mergeSort stubLe = wanted
+  induction wanted generalizing k with
+  | nil => rfl
+  | cons p ps ih =>
+    simp only [List.foldl_cons]
+    rw [ih]
+    split
+    · exact place_forks k _
+    · rfl
+
+theorem redactLine_retract {k : Keeper} {vaults : Vaults} {r : Line} (h : r.body.isRetract = true) :
+    k.redactLine vaults r = r := by
+  unfold redactLine
+  have : r.body.hasText = false := by
+    cases e : r.body <;> simp_all [Body.isRetract, Body.hasText]
+  simp [this]
+
+theorem redact_held {k : Keeper} {vaults : Vaults} {r : Line} (hr : r.body.isRetract = true) (e : String)
+    (h : r ∈ k.held e) : r ∈ (k.redact vaults).held e := by
+  have keep := redactLine_retract (k := k) (vaults := vaults) hr
+  simp only [held, List.mem_append, List.mem_filter] at h ⊢
+  rw [redact_chain]
+  rcases h with h | ⟨h, hd⟩
+  · exact .inl (keep ▸ List.mem_map_of_mem h)
+  · refine .inr ⟨?_, hd⟩
+    simp only [redact]
+    exact keep ▸ List.mem_map_of_mem h
+
+theorem settle_holds {k : Keeper} {vaults : Vaults} {r : Line} (hr : r.body.isRetract = true) (h : k.Holds r) :
+    (k.settle vaults).2.Holds r :=
+  ⟨redact_held hr _ (stubs_held k vaults _ h.1), by simp only [settle, redact]; rw [stubs_forks]; exact h.2⟩
+
+theorem get_mem {β : Type} : ∀ (l : List (String × β)) {d : String} {v : β}, Store.get l d = some v → (d, v) ∈ l
+  | [], _, _, g => by simp [Store.get] at g
+  | (x, w) :: l, d, v, g => by
+    simp only [Store.get] at g
+    split at g
+    · next e => cases g; subst e; exact List.mem_cons_self ..
+    · exact List.mem_cons_of_mem _ (get_mem l g)
+
+/-- Every line a peer holds of a device, not raised as a fork, counts. -/
+theorem held_live {k : Keeper} {r : Line} (h : k.Holds r) : r ∈ k.live := by
+  obtain ⟨m, f⟩ := h
+  simp only [held, live, List.mem_append, List.mem_filter] at m ⊢
+  rcases m with m | ⟨m, _⟩
+  · left
+    simp only [chain] at m
+    cases g : Store.get k.chains r.device with
+    | none => simp [g] at m
+    | some c =>
+      rw [g] at m
+      exact List.mem_flatMap.mpr ⟨_, get_mem _ g, m⟩
+  · right
+    refine ⟨m, ?_⟩
+    cases e : k.forks.contains r.id
+    · rfl
+    · rw [e] at f; cases f
+
+theorem receive_held {k : Keeper} {network : String} {members : List String} (l : Line) (e : String) {m : Line}
+    (h : m ∈ k.held e) : m ∈ (k.receive network members l).2.held e := by
+  unfold receive
+  split
+  · exact h
+  · split
+    · exact h
+    split
+    · exact fork_held l e h
+    split
+    · exact absorb_held (fun _ h => List.mem_cons_of_mem _ h) _ e h
+    · exact cons_held l e h
+
+theorem receive_forks {k : Keeper} {network : String} {members : List String} (l : Line) :
+    (k.receive network members l).2.forks = k.forks ∨ (k.receive network members l).2.forks = l.id :: k.forks := by
+  unfold receive
+  split
+  · exact .inl rfl
+  · split
+    · exact .inl rfl
+    split
+    · exact .inr rfl
+    split
+    · exact .inl rfl
+    · exact .inl rfl
+
+theorem fill_held {k : Keeper} {r : Line} (l : Line) (hr : r.body.isRetract = true) (e : String) (h : r ∈ k.held e) :
+    r ∈ (k.fill l).held e := by
+  have keep : (fun m : Line => if m.id == l.id && m.body == .redacted then l else m) r = r := by
+    have : (r.body == .redacted) = false := by cases g : r.body <;> simp_all [Body.isRetract]
+    simp [this]
+  simp only [held, fill, chain, List.mem_append, List.mem_filter] at h ⊢
+  rw [get_map]
+  rcases h with h | ⟨h, hd⟩
+  · left
+    cases g : Store.get k.chains e with
+    | none => simp [g] at h
+    | some c =>
+      simp only [g, Option.getD_some, Option.map_some] at h ⊢
+      exact keep ▸ List.mem_map_of_mem h
+  · exact .inr ⟨keep ▸ List.mem_map_of_mem h, hd⟩
+
+/-- **A retraction stays:** a peer that holds a retraction holds it after any other line it takes. -/
+theorem retraction_stays {k : Keeper} {network : String} {members : List String} {vaults : Vaults} {r : Line}
+    (hr : r.body.isRetract = true) (h : k.Holds r) (l : Line) (other : l.id ≠ r.id) :
+    (k.take network members vaults l).2.2.Holds r := by
+  have forks_ok : ∀ fs : List Id, (fs = k.forks ∨ fs = l.id :: k.forks) → fs.contains r.id = false := by
+    rintro fs (rfl | rfl)
+    · exact h.2
+    · simp only [List.contains_cons, Bool.or_eq_false_iff, beq_eq_false_iff_ne]
+      exact ⟨Ne.symm other, by simpa using h.2⟩
+  unfold take
+  split
+  · exact h
+  · simp only
+    split
+    · split
+      · exact settle_holds hr ⟨fill_held l hr _ h.1, h.2⟩
+      · exact settle_holds hr ⟨fork_held l _ h.1, forks_ok _ (.inr rfl)⟩
+    · exact settle_holds hr ⟨receive_held l _ h.1, forks_ok _ (receive_forks l)⟩
+
+/-- **A retraction spreads:** a peer that takes a retraction into its chains or keeps it waiting for the lines before
+it, not as a fork, holds it, so every line it deletes shows as deleted there from then on (`retraction_stays`),
+whatever order the line comes in. -/
+theorem retraction_spreads {k : Keeper} {network : String} {members : List String} {vaults : Vaults} {r l : Line}
+    (hc : check network members r = .ok ()) (hr : r.body.isRetract = true) (stub : k.stubOf r = none)
+    (fresh : k.forks.contains r.id = false)
+    (taken : (k.receive network members r).1 = .gap ∨ ∃ ids, (k.receive network members r).1 = .moved ids)
+    (h : retracts vaults r l = true) :
+    (k.take network members vaults r).2.2.Holds r ∧ (k.take network members vaults r).2.2.deleted vaults l = true := by
+  have holds : (k.take network members vaults r).2.2.Holds r := by
+    have notFork : (k.receive network members r).2.forks = k.forks := by
+      rcases receive_forks (k := k) (network := network) (members := members) r with e | e
+      · exact e
+      · exfalso
+        revert taken e
+        unfold receive
+        rw [hc]
+        simp only
+        split
+        · simp
+        split
+        · simp
+        split <;> simp
+    unfold take
+    rw [hc]
+    simp only [stub]
+    exact settle_holds hr ⟨held_after hc, by rw [notFork]; exact fresh⟩
+  exact ⟨holds, retracted_deleted (held_live holds) h⟩
+
 /-- What a peer sends in place of a line it holds without its text: a retraction that counts for it, the first by its
 device and number, the same on every peer. -/
 def standIn (k : Keeper) (vaults : Vaults) (l : Line) : Option Line :=
@@ -867,13 +1123,15 @@ abbrev World := List (String × Keeper)
 
 def World.at (w : World) (p : String) : Keeper := (Store.get w p).getD {}
 
-/-- Catching up on every device whose chain `src` keeps, in order of the device's name: the answers, oldest line
-first. -/
+/-- Catching up on every device whose chain `src` keeps, in order of the device's name, oldest line first, the
+retractions before every other line: the answers. -/
 def Keeper.catchUpAll (k src : Keeper) : List Answer × Keeper :=
   let devices := Store.sort (src.chains.map (·.1))
-  devices.foldl (fun (out, k) d =>
-    let ls := (Keeper.missing (src.chain d) (k.chain d)).reverse.filterMap (src.standIn vaults)
-    ls.foldl (fun (out, k) l => let (a, _, k') := k.take "aven" members vaults l; (out ++ [a], k')) (out, k)) ([], k)
+  let ls := devices.flatMap fun d =>
+    (Keeper.missing (src.chain d) (k.chain d)).reverse.filterMap (src.standIn vaults)
+  -- the retractions first, so a peer learns every delete before any line it deletes (`retraction_spreads`)
+  let first := ls.filter (·.body.isRetract) ++ ls.filter (!·.body.isRetract)
+  first.foldl (fun (out, k) l => let (a, _, k') := k.take "aven" members vaults l; (out ++ [a], k')) ([], k)
 
 /-- A step, at the peer it happens at: its answers and the files it dropped. -/
 def World.step (w : World) : Step → String × List Answer × List String × World
@@ -1049,13 +1307,13 @@ def retractExamples : List (String × List Step × List (String × List Answer �
      ("aven", [.moved ["a2"]], ["a1", "a2"], [], []),
      ("aven", [.moved ["ra"]], ["a1", "a2"], ["a2"], []),
      ("aven", [.moved ["rr"]], ["a1", "a2"], ["a2"], [])]),
-  ("catching up from a peer that dropped the text: the retraction comes in its place",
+  ("catching up from a peer that dropped the text: the retractions come first, and in the line's place",
     [.hear "aven" a1, .hear "aven" a2, .hear "aven" ra, .hear "aven" a4, .catchUp "carol" "aven"],
     [("aven", [.moved ["a1"]], ["a1"], [], []),
      ("aven", [.moved ["a2"]], ["a1", "a2"], [], []),
      ("aven", [.moved ["ra"]], ["a1", "a2"], ["a2"], []),
      ("aven", [.moved ["a4"]], ["a1", "a2", "a4"], ["a2"], []),
-     ("carol", [.moved ["a1"], .gap, .known, .moved ["a4"]], ["a1", "a2", "a4"], ["a2"], [])]),
+     ("carol", [.gap, .known, .moved ["a1", "a2", "ra"], .moved ["a4"]], ["a1", "a2", "a4"], ["a2"], [])]),
   ("a file's bytes go once no line names it",
     [.hear "aven" fa, .hear "aven" fb, .hear "aven" rfa, .hear "aven" rfb],
     [("aven", [.moved ["fa"]], ["fa"], [], []),

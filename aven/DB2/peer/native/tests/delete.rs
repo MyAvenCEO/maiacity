@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use aven_db_core::chain::{Answer, Body, Retraction};
 use aven_db_core::files::Announcement;
 use aven_db_core::wire::Frame;
+use aven_db_store::withhold::Withholding;
 use aven_db_store::{Hash, RefName, backend, files};
 use aven_peer::Notes;
 use aven_peer::chats::{self, Chats};
@@ -31,21 +32,34 @@ impl Told {
         })
     }
 
-    /// The page's lines as it shows them, each once, by its name: its text, or `deleted`.
+    /// The page's lines as it shows them (room.svelte.js), each once, by its name, ordered by time, then device, then
+    /// number: its text, or `deleted`.
     fn shown(&self) -> Vec<String> {
-        let mut out: Vec<(String, String)> = vec![];
-        for l in self.0.lock().unwrap().iter().filter(|l| l["event"] == "chat") {
+        let mut out: Vec<((u64, String, u64), String, String)> = vec![];
+        for l in self
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|l| l["event"] == "chat")
+        {
             let id = l["id"].as_str().unwrap().to_string();
             let said = match l["deleted"].as_bool() {
                 Some(true) => "deleted".to_string(),
                 _ => l["text"].as_str().unwrap().to_string(),
             };
-            match out.iter_mut().find(|(i, _)| *i == id) {
-                Some(seen) => seen.1 = said,
-                None => out.push((id, said)),
+            let at = (
+                l["at"].as_u64().unwrap(),
+                l["key"].as_str().unwrap_or_default().to_string(),
+                l["seq"].as_u64().unwrap_or_default(),
+            );
+            match out.iter_mut().find(|(_, i, _)| *i == id) {
+                Some(seen) => seen.2 = said,
+                None => out.push((at, id, said)),
             }
         }
-        out.into_iter().map(|(_, s)| s).collect()
+        out.sort();
+        out.into_iter().map(|(_, _, s)| s).collect()
     }
 }
 
@@ -143,10 +157,16 @@ async fn a_delete_takes_the_text_out_of_every_store_and_keeps_the_chain() {
         alice_store.get_ref(&gone).await.unwrap(),
         Some(Hash::of(&retraction.blob()))
     );
-    assert!(a.retract(&id(&retraction)).await.is_err(), "a delete is never undone");
+    assert!(
+        a.retract(&id(&retraction)).await.is_err(),
+        "a delete is never undone"
+    );
 
     // the Aven Peer takes the delete: the text leaves its store (its S3 bucket in production) too
-    assert!(matches!(hub.take(&retraction.blob()).await, Answer::Moved(_)));
+    assert!(matches!(
+        hub.take(&retraction.blob()).await,
+        Answer::Moved(_)
+    ));
     assert!(!hub_store.has(&hash).await.unwrap());
     assert_eq!(hub_told.shown(), ["hello", "deleted", "still here"]);
 
@@ -166,6 +186,13 @@ async fn a_delete_takes_the_text_out_of_every_store_and_keeps_the_chain() {
     assert_eq!(told.shown(), ["hello", "deleted", "still here", "after"]);
     assert!(!alice2_store.has(&hash).await.unwrap());
     assert_eq!(a2.have(&alice.public().to_string()), 5);
+
+    // catching up, the retractions go first, before any line they delete
+    let Frame::Lines { lines: answered } = &hub.answer(&[], false).await[0] else {
+        panic!()
+    };
+    let first = aven_db_core::chain::Line::parse(answered[0].as_bytes()).unwrap();
+    assert!(matches!(first.body, Body::Retract(_)), "{answered:?}");
 
     // from her second device Alice deletes another of her lines; Bob's peer, holding it, drops it too
     let first = id(&lines[0]);
@@ -188,9 +215,12 @@ async fn a_file_leaves_the_store_once_no_line_names_it() {
     hub.learn().await;
     // two chunks, one a chunk of another file too
     let shared = Bytes::from(vec![7u8; files::CHUNK as usize]);
-    let index = files::put(&*hub_store, [shared.clone(), Bytes::from_static(b"the end")])
-        .await
-        .unwrap();
+    let index = files::put(
+        &*hub_store,
+        [shared.clone(), Bytes::from_static(b"the end")],
+    )
+    .await
+    .unwrap();
     let other = files::put(&*hub_store, [shared.clone()]).await.unwrap();
     let file_ref = RefName::new(format!("file-{index}")).unwrap();
     hub_store.set_ref(&file_ref, None, index).await.unwrap();
@@ -211,8 +241,16 @@ async fn a_file_leaves_the_store_once_no_line_names_it() {
     a.learn().await;
     let (b, _) = open("bob", &bob, &gate, &memory()).await;
     b.learn().await;
-    let mine = a.write(Body::File(file("dome.mp4"))).await.unwrap().unwrap();
-    let his = b.write(Body::File(file("same.mp4"))).await.unwrap().unwrap();
+    let mine = a
+        .write(Body::File(file("dome.mp4")))
+        .await
+        .unwrap()
+        .unwrap();
+    let his = b
+        .write(Body::File(file("same.mp4")))
+        .await
+        .unwrap()
+        .unwrap();
     let kept = b.write(Body::File(other_file)).await.unwrap().unwrap();
     for line in [&mine, &his, &kept] {
         assert!(matches!(hub.take(&line.blob()).await, Answer::Moved(_)));
@@ -232,4 +270,15 @@ async fn a_file_leaves_the_store_once_no_line_names_it() {
     assert!(!hub_store.has(&Hash::of(b"the end")).await.unwrap());
     assert!(hub_store.has(&Hash::of(&shared)).await.unwrap());
     assert!(hub_store.has(&other).await.unwrap());
+    let dropped = RefName::new(format!("dropped-{index}")).unwrap();
+    assert_eq!(hub_store.get_ref(&dropped).await.unwrap(), None);
+
+    // nothing serves it again, even with its bytes back on disk (a delete that failed, or bytes fetched late)
+    assert!(hub.withholds(&index));
+    let serving = Withholding::serving(hub_store.clone(), hub.withheld());
+    hub_store.put(Bytes::from_static(b"the end")).await.unwrap();
+    assert!(hub_store.has(&Hash::of(b"the end")).await.unwrap());
+    assert!(!serving.has(&Hash::of(b"the end")).await.unwrap());
+    assert_eq!(serving.get(&Hash::of(b"the end")).await.unwrap(), None);
+    assert!(serving.has(&other).await.unwrap());
 }
