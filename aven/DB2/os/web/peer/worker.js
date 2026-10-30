@@ -28,6 +28,7 @@ function tell(line) {
 	const event = JSON.parse(line);
 	if (event.event === 'chat' && event.id) {
 		chat.set(event.id, line);
+		if (event.file) files.set(event.file.file, { type: event.file.type, key: event.key });
 		for (const port of pages) port.postMessage(line);
 		fetch(`/events/${event.peer}`, { method: 'POST', body: line }).catch(() => {});
 		return;
@@ -133,6 +134,40 @@ function connect(port) {
 	if (!started) port.postMessage(JSON.stringify({ t: Date.now(), peer: 'page', event: 'start?' }));
 	port.start?.();
 }
+
+// The Service Worker's /files/<hash> (public/files-sw.js) asks the leader, this worker today, for a range of a file
+// on the BroadcastChannel `aven-peer-light:<network>`: {id, read: {file, start, end}}, `end` exclusive, at most 1 MiB,
+// answered {id, size, type, bytes} or {id, error}. The leader clamps `end` to the file's size. Its type, and the device
+// that shared it, are its `file` line's; the bytes come through the Peer-Light's `file_range`, which fetches the chunks
+// it lacks: from the Aven Peer, which keeps every file, or else from the device that shared it.
+const files = new Map();
+const reading = new Set();
+const bridge = new BroadcastChannel('aven-peer-light:aven');
+bridge.onmessage = async ({ data }) => {
+	// a read asked again while this one is still at it is the same read
+	if (!data?.read || data.id === undefined || reading.has(data.id)) return;
+	reading.add(data.id);
+	setTimeout(() => reading.delete(data.id), 60000);
+	const { file, start = 0, end } = data.read;
+	const known = files.get(file);
+	try {
+		await started;
+		if (!light) throw new Error(`the Peer-Light isn't running: ${down ?? 'nothing started it'}`);
+		let got;
+		for (const from of [undefined, known?.key]) {
+			try {
+				got = await light.file_range(file, start, end ?? start + (1 << 20), from);
+				break;
+			} catch (error) {
+				if (from === known?.key) throw error;
+			}
+		}
+		bridge.postMessage({ id: data.id, size: got.len, type: known?.type ?? 'application/octet-stream', bytes: got.bytes });
+	} catch (error) {
+		const why = String(error?.message ?? error);
+		bridge.postMessage({ id: data.id, error: /no such file/.test(why) ? 'not found' : why });
+	}
+};
 
 // a SharedWorker hears each page as a port; a plain Worker, where SharedWorker is missing, is its own one port
 if ('onconnect' in self) self.onconnect = (event) => connect(event.ports[0]);

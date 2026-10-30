@@ -299,7 +299,8 @@ impl Room {
 
     async fn write(&self, chats: &Chats, body: Body) {
         match chats.write(body).await {
-            Ok(line) => {
+            Ok(None) => {}
+            Ok(Some(line)) => {
                 // out once a neighbour has it; alone, it waits in the store for the link to send it (`chats`)
                 let blob = line.blob();
                 let near = self.state.lock().unwrap().neighbours > 0;

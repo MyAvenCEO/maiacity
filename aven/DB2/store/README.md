@@ -293,3 +293,6 @@ rest from the Aven Peer (199 MiB from S3 into OPFS through the relay: 17 s). Mea
    oldest go.
 3. **Where the Service Worker lives** with a Peer-Light on its own origin (README): on the Peer-Light's origin, with
    avenOS's media elements pointing there, or on avenOS's own, relaying through the page.
+4. **Catching up moves a ref per line** (city-dome, 30 Oct 2026): a Peer-Light taking ~70 lines into an empty OPFS
+   takes 2 to 3 s, each line a put and a compare-and-set of `chat-<device>`. Moving each chain's ref once per page of
+   `lines` would cut it; measured again once the `opfs` driver is in.

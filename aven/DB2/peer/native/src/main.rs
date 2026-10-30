@@ -350,6 +350,10 @@ async fn main() -> Result<(), Error> {
         store.clone() as chats::Shared,
     )
     .await?;
+    // the Aven Peer holds every chain, its own included: it knows its head from the start
+    if relay {
+        chats.learn().await;
+    }
     let joined = Arc::new(OnceLock::new());
 
     // gossip on the same Router as aven/db/1 (README, rule 9): the chat's room, joined through the Aven Peer

@@ -30,7 +30,8 @@ fork is raised and never chained (`fork_raised`), and a line from no member's de
 lines it holds (`missing`), and takes the missing lines oldest first. When its own chain of a device is the start of
 the other's, it ends with exactly the other's chain (`catchUp_chain`); and when two peers catch up from each other,
 both end with every line either could see (`both_see`). The lines come in bounded pages, each moving the receiver on
-from where the last left it (`receiveAll_pages`).
+from where the last left it (`receiveAll_pages`). A device writes on its own chain only once it has learned its head
+from the Aven Peer, so it never forks itself (`learned_never_forks`).
 
 The model names a line by its `id`, the hash of its blob, and takes the signature as sound, as `Aven.DB.Chat` does.
 aven-db-core's `chain` module implements it; its tests replay the traces in `vectors/chats.json` with real signed
@@ -451,6 +452,33 @@ theorem both_see {a b : Keeper} {d : String} (v : Valid (b.chain d)) (behind : a
   have ha := catchUp_chain v behind loose ok
   exact ⟨ha, back _ ha⟩
 
+/-! ## A device never forks itself
+
+A browser that lost its store but kept its key starts from nothing, and a line it wrote then would be number 1 again:
+a fork of its own chain. So a device writes no line to its chain until it has learned its own head from the Aven Peer
+(`heads` on connect) and caught up on it; until then, offline from the very start, it queues what it writes,
+unchained, and chains it once it knows. Its lines then continue the Aven Peer's chain of it, which takes them as
+they are: never a fork (`learned_never_forks`). The Aven Peer itself holds every chain, so it knows from the start. -/
+
+/-- **A device that learned its head never forks itself:** its chain is the Aven Peer's chain of it, caught up; the
+lines it writes on top of it, received by the Aven Peer in order, become the Aven Peer's chain of it. -/
+theorem learned_never_forks {aven : Keeper} {d : String} (learned : k.chain d = aven.chain d)
+    (loose : ∀ m ∈ aven.loose, m.device ≠ d) (q : List Line) (written : Valid (q.reverse ++ k.chain d))
+    (ok : ∀ x ∈ q, check network members x = .ok () ∧ x.device = d) :
+    (aven.receiveAll network members q).chain d = q.reverse ++ aven.chain d := by
+  rw [learned] at written
+  exact receiveAll_chain q aven written loose ok
+
+/-- **Learning first:** a device whose chain of itself is the start of the Aven Peer's catches up to exactly it,
+then never forks itself. -/
+theorem catchUp_then_write {aven : Keeper} {d : String} (v : Valid (aven.chain d))
+    (behind : k.chain d <:+ aven.chain d) (kl : ∀ m ∈ k.loose, m.device ≠ d) (al : ∀ m ∈ aven.loose, m.device ≠ d)
+    (ok : ∀ x ∈ aven.chain d, check network members x = .ok () ∧ x.device = d) (q : List Line)
+    (written : Valid (q.reverse ++ (k.catchUp aven network members d).chain d))
+    (qok : ∀ x ∈ q, check network members x = .ok () ∧ x.device = d) :
+    (aven.receiveAll network members q).chain d = q.reverse ++ aven.chain d :=
+  learned_never_forks (catchUp_chain v behind kl ok) al q written qok
+
 end Keeper
 
 /-! ## Examples
@@ -599,6 +627,17 @@ def chainExamples : List (String × List Step × List (String × List Answer × 
      ("bob", [.moved ["b2"]], [("bob", "b2")], [], ["b1", "b2"]),
      ("aven", [.moved ["b2"]], [("bob", "b2")], [], ["b1", "b2"]),
      ("alice", [.moved ["b1"], .moved ["b2"]], [("bob", "b2")], [], ["b1", "b2"])]),
+  ("a fresh profile with a known key that writes before it learns its head forks itself",
+    [.hear "aven" b1, .hear "aven" b2, .hear "aven" (.make "b1'" "bob" 1 none 60 "from a fresh profile")],
+    [("aven", [.moved ["b1"]], [("bob", "b1")], [], ["b1"]),
+     ("aven", [.moved ["b2"]], [("bob", "b2")], [], ["b1", "b2"]),
+     ("aven", [.fork], [("bob", "b2")], ["b1'"], ["b1", "b2"])]),
+  ("one that learns its head first continues its chain",
+    [.hear "aven" b1, .hear "aven" b2, .catchUp "bob" "aven", .hear "aven" (.make "b3" "bob" 3 (some "b2") 60 "from a fresh profile")],
+    [("aven", [.moved ["b1"]], [("bob", "b1")], [], ["b1"]),
+     ("aven", [.moved ["b2"]], [("bob", "b2")], [], ["b1", "b2"]),
+     ("bob", [.moved ["b1"], .moved ["b2"]], [("bob", "b2")], [], ["b1", "b2"]),
+     ("aven", [.moved ["b3"]], [("bob", "b3")], [], ["b1", "b2", "b3"])]),
   ("catching up from a peer that knows nothing new changes nothing",
     [.hear "aven" a1, .hear "bob" a1, .catchUp "bob" "aven", .catchUp "aven" "bob"],
     [("aven", [.moved ["a1"]], [("alice", "a1")], [], ["a1"]),

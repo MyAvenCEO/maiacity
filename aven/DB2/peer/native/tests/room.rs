@@ -112,6 +112,8 @@ async fn peer(
     )
     .await
     .unwrap();
+    // no link to the Aven Peer here: each peer knows its own head, which is none
+    chats.learn().await;
     let room = Room::join(
         &gossip,
         name.into(),

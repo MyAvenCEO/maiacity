@@ -6,9 +6,9 @@
 //   for him again (4);
 // - a fork of Bob's chain is raised by the Aven Peer and never shown; a line of a device that is no member's is
 //   dropped by every peer and never shown (5);
-// - Alice shares an image and a PDF: each is a file line of her chain, shown in her chat at once (local first). Their
-//   bytes through the Service Worker's /files/<hash>, and Bob's copy, need the leader's bridge (opfs-sync) and the
-//   store's iroh-blobs adapter: reported as `pending` until they are in;
+// - Alice shares an image and a PDF: each is a file line of her chain, shown in her chat at once (local first) and
+//   loaded from her own store through the Service Worker's /files/<hash>, a range of it a 206; Bob's chat loads them
+//   too, their chunks fetched from the Aven Peer, which keeps every file, or from Alice;
 // - last, a third browser on Bob's origin, with an empty OPFS, joins later and catches up on the whole chat (3).
 //
 // The fork and the stranger's line are signed here with the cast's test keys (public on purpose, valid only inside
@@ -183,24 +183,41 @@ await alice.getByTestId('file-input').setInputFiles([
 	{ name: `dot-${stamp}.png`, mimeType: 'image/png', buffer: png },
 	{ name: `page-${stamp}.pdf`, mimeType: 'application/pdf', buffer: pdf },
 ]);
-const image = alice.locator(`[data-testid="file"][data-kind="image"]`, { has: alice.locator(`a[download="dot-${stamp}.png"]`) });
+const image = alice.locator(`[data-testid="file"][data-kind="image"]`, { has: alice.locator(`a[download="dot-${stamp}.png"]`) }).last();
 if (!(await seen(image))) problems.push("Alice's image did not show as a line of her chat");
 if (!(await seen(alice.locator(`[data-testid="file"][data-kind="pdf"]`, { has: alice.locator(`a[download="page-${stamp}.pdf"]`) }))))
 	problems.push("Alice's PDF did not show as a line of her chat");
 report.fileShownMs = Date.now() - sharedAt;
 await alice.screenshot({ path: `${run}/dome-alice-files.png` });
-// the bytes: through /files/<hash> once the leader's bridge and the iroh-blobs adapter are in
+// the bytes, through the Service Worker's /files/<hash>: Alice's from her own store, a range of them as a 206
 const loaded = async (img) => img.evaluate((i) => i.complete && i.naturalWidth > 0).catch(() => false);
-const file = await image.getAttribute('data-file').catch(() => null);
-const range = file && (await alice.evaluate(async (path) => {
-	const r = await fetch(path, { headers: { Range: 'bytes=1-3' } }).catch(() => null);
-	return r && { status: r.status, range: r.headers.get('content-range') };
-}, `/files/${file}`));
-report.pending = {
-	aliceLoadsTheImage: await loaded(image.locator('img')),
-	aRangeOfIt: range,
-	bobSeesTheImage: (await seen(bob.locator(`a[download="dot-${stamp}.png"]`), 5000)) && (await loaded(bob.locator('[data-testid="file"][data-kind="image"] img').last())),
+const until = async (ok, ms = 30_000) => {
+	for (const end = Date.now() + ms; Date.now() < end; await wait(250)) if (await ok()) return true;
+	return false;
 };
+if (!(await until(() => loaded(image.locator('img'))))) problems.push("Alice's image did not load from /files/<hash>");
+report.imageLoadedMs = Date.now() - sharedAt;
+const file = await image.getAttribute('data-file').catch(() => null);
+const range = await alice.evaluate(async (path) => {
+	const r = await fetch(path, { headers: { Range: 'bytes=1-3' } }).catch(() => null);
+	return r && { status: r.status, range: r.headers.get('content-range'), bytes: [...new Uint8Array(await r.arrayBuffer())] };
+}, `/files/${file}`);
+report.range = range;
+if (range?.status !== 206 || range.range !== `bytes 1-3/${png.length}` || JSON.stringify(range.bytes) !== JSON.stringify([...png.subarray(1, 4)]))
+	problems.push(`a range of Alice's image is ${JSON.stringify(range)}`);
+await alice.screenshot({ path: `${run}/dome-alice-files.png` });
+// Bob's copy: his Peer-Light fetches the chunks from the Aven Peer, which kept the file, or from Alice
+const bobImage = bob.locator(`[data-testid="file"][data-file="${file}"] img`);
+if (!(await seen(bobImage)) || !(await until(() => loaded(bobImage)))) problems.push("Bob's chat did not load Alice's image");
+report.bobImageMs = Date.now() - sharedAt;
+const bobPdf = await bob.evaluate(async (name) => {
+	const a = [...document.querySelectorAll('a[download]')].find((a) => a.getAttribute('download') === name);
+	if (!a) return null;
+	const r = await fetch(a.getAttribute('href'));
+	return { status: r.status, type: r.headers.get('content-type'), start: new TextDecoder().decode((await r.arrayBuffer()).slice(0, 8)) };
+}, `page-${stamp}.pdf`);
+report.bobPdf = bobPdf;
+if (bobPdf?.status !== 200 || bobPdf.type !== 'application/pdf' || bobPdf.start !== '%PDF-1.1') problems.push(`Bob's PDF is ${JSON.stringify(bobPdf)}`);
 await bob.screenshot({ path: `${run}/dome-bob-files.png` });
 // last, a third browser on Bob's origin, its OPFS empty, joins later and catches up from the Aven Peer. It has Bob's
 // cast key, so Bob's own browser closes first: two Peer-Lights with one key would take the relay from each other

@@ -27,6 +27,8 @@ export function hear(line) {
 		const said = { id: line.id, from: line.from, vault: line.vault, key: line.key, seq: line.seq, text: line.text, at: line.at, file: line.file ?? null };
 		// a line is shown once, by its name; told again (its sender named now), it changes in place. A line without a name
 		// (milestone 2's `say`) shows every time
+		// a line written before this device knew its own head, chained now, takes its queued line's place
+		if (line.replaces) room.lines = room.lines.filter((l) => l.id !== line.replaces);
 		const shown = said.id ? room.lines.findIndex((l) => l.id === said.id) : -1;
 		if (shown >= 0) return void (room.lines[shown] = said);
 		let at = room.lines.length;

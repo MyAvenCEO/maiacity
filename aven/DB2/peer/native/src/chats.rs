@@ -90,6 +90,13 @@ pub struct Chats {
     notes: Notes,
     store: Shared,
     keeper: Arc<Mutex<Keeper>>,
+    /// whether this device knows its own head (from the Aven Peer, or as the Aven Peer): until then what it writes
+    /// waits in `queued`, unchained, so it never forks itself (`Aven.DB.Chains.learned_never_forks`)
+    learned: Arc<std::sync::atomic::AtomicBool>,
+    /// what it wrote before it knew its head: a name the page shows it by, and the body
+    queued: Arc<Mutex<Vec<(String, Body)>>>,
+    /// the queued line being chained now, which the line shown replaces
+    replacing: Arc<Mutex<Option<String>>>,
     /// told each `file` line newly chained
     on_file: Arc<std::sync::OnceLock<OnFile>>,
     /// how many times a head moved here: the Aven Peer tells its links the heads that moved
@@ -141,6 +148,9 @@ impl Chats {
             gaps: Arc::default(),
             moved: Arc::default(),
             on_file: Arc::default(),
+            learned: Arc::default(),
+            queued: Arc::default(),
+            replacing: Arc::default(),
         };
         let shown: Vec<Held> = chats
             .keeper
@@ -184,6 +194,12 @@ impl Chats {
         };
         let mut fields = json!({ "from": name, "vault": vault, "key": h.line.device, "at": h.line.at,
             "seq": h.line.seq, "id": h.id });
+        // a line written before this device knew its head, chained now: the page shows it in place of its queued one
+        if h.line.device == self.device()
+            && let Some(queued) = self.replacing.lock().unwrap().as_ref()
+        {
+            fields["replaces"] = json!(queued);
+        }
         match &h.line.body {
             Body::Text(text) => fields["text"] = json!(text),
             // a file: the page shows it by its index, its name as its text
@@ -332,8 +348,54 @@ impl Chats {
         self.store.get(&hash).await.ok().flatten()
     }
 
-    /// Writes a line of this device's own: on top of its chain, signed, kept and shown at once. The line to send.
-    pub async fn write(&self, body: Body) -> Result<Line, String> {
+    /// Whether this device knows its own head, so may write on its chain.
+    pub fn learned(&self) -> bool {
+        self.learned.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// This device knows its own head now: as the Aven Peer, from the start; any other peer once the Aven Peer's
+    /// `heads` named its head and it caught up to it. What it queued is chained on top, in order, and shown in place
+    /// of its queued line. The lines to send.
+    pub async fn learn(&self) -> Vec<Line> {
+        if self.learned.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            return vec![];
+        }
+        let queued = std::mem::take(&mut *self.queued.lock().unwrap());
+        let mut out = vec![];
+        for (name, body) in queued {
+            self.replacing.lock().unwrap().replace(name);
+            match self.write(body).await {
+                Ok(Some(line)) => out.push(line),
+                Ok(None) => {}
+                Err(why) => self.note("dropped", json!({ "why": why })),
+            }
+            self.replacing.lock().unwrap().take();
+        }
+        out
+    }
+
+    /// Writes a line of this device's own: on top of its chain, signed, kept and shown at once. The line to send; or,
+    /// before this device knows its own head, `None`: queued and shown, chained once it knows (`learn`).
+    pub async fn write(&self, body: Body) -> Result<Option<Line>, String> {
+        if !self.learned() {
+            body.check().map_err(|why| why.name().to_string())?;
+            let name = format!("queued-{}-{}", now(), self.queued.lock().unwrap().len());
+            let text = match &body {
+                Body::Text(t) => t.clone(),
+                Body::File(f) => f.name.clone(),
+            };
+            let (from, vault) = match crate::keys::public(&self.device()) {
+                Ok(k) => self.gate.name(&k),
+                Err(_) => (self.device(), None),
+            };
+            self.note(
+                "chat",
+                json!({ "from": from, "vault": vault, "key": self.device(), "text": text, "at": now(), "seq": 0,
+                    "id": name, "queued": true }),
+            );
+            self.queued.lock().unwrap().push((name, body));
+            return Ok(None);
+        }
         let line = {
             let keeper = self.keeper.lock().unwrap();
             let device = self.device();
@@ -352,7 +414,7 @@ impl Chats {
             line
         };
         match self.take(&line.blob()).await {
-            Answer::Moved(_) => Ok(line),
+            Answer::Moved(_) => Ok(Some(line)),
             other => Err(format!("its own line was not chained: {other:?}")),
         }
     }

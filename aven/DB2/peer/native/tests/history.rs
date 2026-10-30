@@ -105,12 +105,14 @@ async fn history_is_kept_and_caught_up() {
     let gate = gate(&[&aven, &alice, &bob]);
     let (hub_store, alice_store, bob_store) = (memory(), memory(), memory());
     let (hub, _) = open("aven", &aven, &gate, &hub_store).await;
+    hub.learn().await;
     let (a, _) = open("alice", &alice, &gate, &alice_store).await;
+    a.learn().await;
 
     // Alice writes; each line is in her store at once, chat-<alice> at its head; the Aven Peer takes it from gossip
     let mut blobs = vec![];
     for text in ["one", "two", "three"] {
-        let line = a.write(Body::Text(text.into())).await.unwrap();
+        let line = a.write(Body::Text(text.into())).await.unwrap().unwrap();
         assert!(matches!(hub.take(&line.blob()).await, Answer::Moved(_)));
         blobs.push(line.blob());
     }
@@ -127,6 +129,7 @@ async fn history_is_kept_and_caught_up() {
     // Bob joins late, holding nothing, and catches up from the Aven Peer
     let (b, told) = open("bob", &bob, &gate, &bob_store).await;
     catch_up(&b, &hub).await;
+    b.learn().await;
     assert_eq!(told.texts(), ["one", "two", "three"]);
     assert_eq!(bob_store.get_ref(&alice_ref).await.unwrap(), Some(head));
     // again, nothing new
@@ -150,6 +153,19 @@ async fn history_is_kept_and_caught_up() {
     }
     let (_, told) = open("aven", &aven, &gate, &hub_store).await;
     assert_eq!(told.texts(), ["one", "two", "three", "written offline"]);
+
+    // a fresh profile with Alice's key: what it writes before it learns its head waits, unchained, and then continues
+    // her chain, never a fork of it (Aven.DB.Chains.learned_never_forks)
+    let fresh_store = memory();
+    let (fresh, told) = open("alice", &alice, &gate, &fresh_store).await;
+    assert_eq!(fresh.write(Body::Text("from a fresh profile".into())).await, Ok(None));
+    assert_eq!(told.texts(), ["from a fresh profile"]);
+    catch_up(&fresh, &hub).await;
+    let lines = fresh.learn().await;
+    assert_eq!(lines.len(), 1);
+    assert_eq!((lines[0].seq, lines[0].prev.as_deref()), (4, Some(head.to_hex().as_str())));
+    assert!(matches!(hub.take(&lines[0].blob()).await, Answer::Moved(_)));
+    let head = Hash::of(&lines[0].blob());
 
     // a fork of Alice's chain: a second first line, signed by her key. Raised; her head stays
     let mut fork = Line {

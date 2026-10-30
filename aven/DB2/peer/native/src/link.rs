@@ -126,6 +126,16 @@ async fn upload(link: &mut Link, send: &mut iroh::endpoint::SendStream) -> Resul
 }
 
 impl Link {
+    /// Once the Aven Peer's heads name this device's head and it holds it, it knows its own head: what it queued is
+    /// chained, and goes out with its other unsent lines (`upload`).
+    async fn learn(&mut self) {
+        let Some(chats) = &self.chats else { return };
+        let me = chats.device();
+        if !chats.learned() && self.caught && chats.have(&me) >= self.there.get(&me).copied().unwrap_or(0) {
+            chats.learn().await;
+        }
+    }
+
     /// Tells the page which of this device's own lines the Aven Peer holds, as its heads have said, when that grew.
     fn sent(&mut self) {
         let Some(chats) = &self.chats else { return };
@@ -356,6 +366,7 @@ async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Re
                                         .await
                                         .map_err(|e| e.to_string())?;
                                 }
+                                link.learn().await;
                                 upload(link, &mut send).await?;
                                 link.sent();
                             }
@@ -365,6 +376,8 @@ async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Re
                                 for line in lines {
                                     chats.take(line.as_bytes()).await;
                                 }
+                                link.learn().await;
+                                upload(link, &mut send).await?;
                                 link.sent();
                             }
                         }
