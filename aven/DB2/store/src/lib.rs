@@ -4,8 +4,10 @@
 pub mod backend;
 pub mod conformance;
 mod dal;
+pub mod folder;
 mod hash;
 mod name;
+pub mod opfs;
 mod store;
 
 pub use hash::Hash;
