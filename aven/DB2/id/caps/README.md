@@ -1065,55 +1065,80 @@ Agreed with the engine thread (30 Oct 2026):
 
 ## What Lean proves
 
-`Aven.ID` grows a caps model beside `Governs`, in modules `Caps` (targets, grants, chains), `Revoke` (revocations, kept
-lists, acks), `Epochs` (keys, symbolically: what each party can know), `Approve` and `Recover`. As everywhere (README,
-rule 10), its examples and generated cases are exported as vectors every implementation loads, and stateful models
-export traces.
+`Aven.ID` holds caps' model beside `Governs`, in `id/spec` (Lean 4.35.0, core only, no `sorry`; `lake build` in the box
+proves it). Its examples on the cast carry their answers, written by hand and checked by `decide`. `lake exe vectors`
+exports them with generated cases (README, rule 10).
 
-| Theorem | Says |
+What a grant reaches is `Aven.Core`'s once it lands: Values and the CBOR codec, hashes, envelopes and logs, the target
+grammar, verbs and footprints. Until then an **atom** names the vault whose Docs it concerns and an opaque permission,
+and a grant is a set of atoms checked by subset. A theorem marked *after Core* states its rule over Core's grammar
+when Core lands.
+
+| Module | Theorem | Says |
+|---|---|---|
+| `Caps` | `narrow_chain` | Every cap in a chain grants within its root: the subset check at every link |
+| | `root_authority` | Every atom a chain grants lies in its root issuer's authority, its own vault or one it governs |
+| | `chain_short` | A chain is no longer than its root may be shared |
+| | `grant_approved` | Every cap in a chain was signed by a device of its issuer and approved by its issuer's owners (D14) |
+| | `child_live` | A cap issued from a group's cap holds only while its issuer is in the group |
+| | `public_bounded`, `public_no_share` | The public passes nothing on and never shares (D15) |
+| | `role_pinned` | A new version of a role changes nothing a cap naming the old one grants (D6) |
+| | `chainError_none` | The first rule a chain breaks is none exactly when it keeps them all |
+| `Approve` | `approval_exact` | An approval holds only with k distinct owners, each having signed exactly its digest |
+| | `shown_is_signed` | What avenOS shows for a passkey tap is decoded from the exact bytes signed (A2, rule 25) |
+| `Revoke` | `seen_never_counts` | A revoked holder's envelope with the revocation in its own past never counts: no laundering |
+| | `doc_cap_kept` | Under a Doc cap, only the revocation's own past is kept |
+| | `elsewhere_kept` | Elsewhere, once the revocation reaches the Doc, only what its kept list or another writer's ack had seen counts |
+| | `revocation_wins` | The three together (rule 14). An envelope lists its whole chain, so revoking any link reaches it: the cascade |
+| | `waits_named` | A wait names only what the envelope builds on and the reader lacks, by hash |
+| `Epochs` | `confidential` | A key is learned only as one's own or by opening a seal with a key already known |
+| | `unknowable` | Keys of a closed set a party owns none of stay unknown to it; the next three are its instances |
+| | `removal_next_epoch` | A new epoch sealed only to the remaining readers stays closed to a removed one |
+| | `heal_evicts` | After a heal, a removed device learns none of the new keys: vault key, tag seeds, letterbox keys and next epochs |
+| | `keeper_blind`, `outside_blind` | The keeper knows only its own keys, and sees of a segment only its Doc, epoch and padded length (D13) |
+| | `stale_refused` | An envelope under an epoch older than one it builds on doesn't pass (rule 16) |
+| `Recover` | `guardian_exit` | After MaiaCityGuardian's exit, no keyring epoch is sealed to it (D12) |
+| | `never_ownerless`, `removals_win` | Removals that clash all stand, unless they'd leave no owner; then none does |
+| `Network` | `public_member`, `removal_rotates` | A public write counts only from a member, and a removed member is in no later members epoch |
+| | `ticket_once` | A ticket is claimed once, by the smallest claim hash, whatever order the claims arrive in. Depends on **A12** |
+
+**After Core, or with another thread:**
+- `merge_covered` and `footprints.json` (Core's footprints, with the engine);
+- `want_grants_nothing` and `one_grammar` (Core's target grammar);
+- `authority_down` (`below` groups);
+- `group_holds` (a group cap's writes in `Revoke`);
+- `device_within_cap`;
+- `safe_holds` (the safe's interface);
+- `upgrade_no_wider` and `no_confused_deputy` (`Aven.Actor`, avenACTORS);
+- the guardian's keys named in the genesis (**A11**, **A13**);
+- fetch keys that chain (**A22**).
+
+Two smaller gaps:
+- An owner that is a vault approves by its own quorum, recursively. `Approve` counts owner keys only, so the cast's coop
+  can't yet approve a grant.
+- The Revoke model's reader holds one Doc; the order in which envelopes arrive changes nothing, because a verdict is
+  computed from the Doc and the revocations alone.
+
+**Vectors** (`id/spec/vectors/`):
+
+| File | What |
 |---|---|
-| `narrow_chain` | Every link grants a part of its parent; a leaf grants a part of its root, and a root no more than its issuer's authority over the target's vault |
-| `root_authority` | A valid chain's root is issued by the target's vault or one that governs it, with approvals where required |
-| `counts_iff` | An envelope counts exactly when its signer, epoch, chain, liveness and footprint hold. The model is the check, and it runs against the Rust on random cases |
-| `readers_agree` | A verdict depends only on the envelope, its causal past and the revocations known |
-| `revocation_wins` | A revoked holder's envelope with the revocation in its own past never counts; under a Doc cap only the revocation's own past is kept; elsewhere nothing an ack hadn't seen counts, in any order of arrival |
-| `child_live` | A cap issued from a group's cap counts only while its issuer is in the group |
-| `authority_down` | A `below` grant reads the Docs of the vaults below its vault, never above |
-| `waits_end` | Every wait names something by hash in the envelope's own past or inside it, and raises the stall alarm |
-| `heal_evicts` | After a heal, nothing new opens for a removed device's keys: vault key, tag seeds and letterbox keys included |
-| `cascade` | Revoking a cap ends every cap whose chain contains it |
-| `stale_refused` | An envelope under an epoch older than one in its causal past doesn't count |
-| `confidential` | A vault learns an epoch's key only by being its reader, by reading a later epoch with history, or by a reader handing it on |
-| `removal_next_epoch` | No epoch made by a writer who had seen a removal opens for the removed |
-| `keeper_blind` | Keep caps, blobs, key blobs and the keeper's letters yield it no Doc's key |
-| `want_grants_nothing`, `one_grammar` | What is served lies within the caps; wants and caps share one `Target`, and served is their intersection |
-| `approval_exact` | An act that needs k approvals counts only with k distinct owners' signatures over exactly its digest |
-| `grant_approved` | A cap counts only with its granting vault's owners' approval (D14), and a revocation needs none |
-| `public_bounded` | A public cap reaches only the network's members, never grants `share`, and a write under it counts only from a member |
-| `upgrade_no_wider` | A cap that follows an upgrade covers only messages whose schemas didn't change, and only in a vault that adopted the new definition |
-| `safe_holds` | Nothing leaves a safe runtime but signatures, ciphertexts, public keys and Doc keys it lends the engine |
-| `group_holds` | A write under a group's cap counts only with the writer's live read on the group |
-| `merge_covered` | A merge into main counts only when the merger's grant covers every type and field the merge changes from its base |
-| `no_confused_deputy` | A turn's effects carry the handled message's cap or a narrower one, never the actor's standing cap |
-| `device_within_cap` | A device acts only within its device cap, and never governs (extending `device_governs_nothing`) |
-| `guardian_exit` | After its exit, no keyring epoch is sealed to MaiaCityGuardian |
+| `caps.json` | Chains on the cast, each with the first rule it breaks or none; how avenOS shows a cap; 40 generated chains |
+| `revocations.json` | Docs, the revocations held, and verdicts: hand-written, and 30 generated Docs with every envelope's verdict |
+| `epochs.json` | Who learns which key after Bob's removal and after Alice's heal |
+| `approvals.json` | Signatures, thresholds and digests on the cast, and whether each approval holds |
+| `network.json` | A ticket's claims in two orders (A12), removals that clash, MaiaCityGuardian's exit |
 
-**Vectors:**
-- `caps.json`: chains, valid and not, each with the first rule a bad one breaks;
-- `revocations.json`: traces of revocations, acks and late arrivals;
-- `epochs.json`: traces of rotations and who can open what;
-- `approvals.json`;
-- `footprints.json`, shared with the engine;
-- `derivations.json`: labels to bytes, once `Aven.DB.Blake3` gains BLAKE3's keyed and key-derivation modes.
-
-The primitives themselves (X-Wing, ML-DSA, Ed25519, the AEAD) stay outside Lean, as Ed25519 does today. They are tested
-against their standards' known answers and Wycheproof.
+When Core lands, `caps.json` adds each cap's CBOR bytes and hash, and `derivations.json` follows once `Aven.DB.Blake3`
+gains BLAKE3's keyed and key-derivation modes. The primitives themselves (X-Wing, ML-DSA, Ed25519, the AEAD) stay
+outside Lean, as Ed25519 does today. They are tested against their standards' known answers and Wycheproof.
 
 ## Order of work
 
 A proposal for milestone 3's plan, for the architect:
 
-1. **Lean:** `Caps`, `Revoke`, `Epochs` and `Approve`, with vectors.
+1. **Lean:** `Caps`, `Revoke`, `Epochs`, `Approve`, `Recover` and `Network`, with vectors. The first pass is in
+   `id/spec`; what waits for `Aven.Core` is listed [above](#what-lean-proves).
 2. **avenID:**
    - owners k of n and approvals;
    - device removal and its acks;
