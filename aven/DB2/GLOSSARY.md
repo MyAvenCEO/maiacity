@@ -274,8 +274,10 @@ means something else in another part, and that part's meaning is named.
   and is never configured apart.
 - **sends**: the messages a definition declares it may send; the kernel enforces them.
 - **contracts** (requires, produces) **= interface types and `sends`**.
-- **type id** (of a message's payload): the schema's hash in version 1, later a type Doc's version (K5); versions a
-  lens joins are compatible. Edges between actors are derived by type id, never by name or prose.
+- **type id**: `<type Doc>/<schema hash>`, the address of a version Record in a type Doc, from version 1 on (Samuel,
+  30 Oct 2026). It names a version everywhere: an envelope's `records`, a fact's `p`, an actor message's payload.
+  Equal schema bytes in two type Docs are two type ids; versions a lens path joins in one type Doc are compatible.
+  Edges between actors are derived by type id, never by name or prose.
 - **keeper, live delivery, `ack` frame, compaction**: a keeper holds an absent home's inboxes; point-to-point
   appends; a delivery mark (⚠ caps' ack); later.
 - **trace, outcome, preview**: used but undefined. To define.
