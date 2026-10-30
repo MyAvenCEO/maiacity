@@ -26,6 +26,15 @@ fn fresh() -> S3 {
         root: format!("/run-{run}-{}/", N.fetch_add(1, Ordering::Relaxed)),
         access_key_id: "avensandbox".into(),
         secret_access_key: "avensandbox-test-secret".into(),
+        conditions: true,
+    }
+}
+
+/// The same, without the server's conditional writes, as on Hetzner (`--s3-conditions off`).
+fn unconditional() -> S3 {
+    S3 {
+        conditions: false,
+        ..fresh()
     }
 }
 
@@ -38,6 +47,16 @@ async fn s3_passes_the_suite() {
         report.passed(),
         "is the box's S3 server up? `bun run up` starts it"
     );
+}
+
+/// Without the server's conditional writes, the suite passes all the same: the store's lock and the one writer
+/// refuse a stale write (a second writer could overwrite unseen, as on a folder).
+#[tokio::test]
+async fn s3_without_conditions_passes_the_suite() {
+    let report = conformance::run(async || backend::s3(&unconditional()).unwrap(), TRACES).await;
+    println!("{report}");
+    assert!(!backend::s3(&unconditional()).unwrap().conditional_writes());
+    assert!(report.passed(), "{report}");
 }
 
 /// S3 refuses a stale ref write itself, with `If-Match` and `If-None-Match`: even two writers on one prefix,

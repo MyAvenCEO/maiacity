@@ -164,7 +164,8 @@ pub async fn run(
         gate,
     };
     link.tell();
-    loop {
+    // until its endpoint closes: a Peer-Light rebinds with a newcomer's relay token
+    while !endpoint.is_closed() {
         link.step(Event::Dial);
         link.tell();
         let why = match aven().await {

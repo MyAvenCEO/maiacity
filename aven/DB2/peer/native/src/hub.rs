@@ -94,20 +94,19 @@ impl Hub {
         let (mut send, mut recv) = conn.accept_bi().await?;
         let mut decoder = Decoder::default();
         let mut buf = vec![0u8; 16 * 1024];
-        // the first frame is a hello
-        let said = loop {
+        // the first frame is a hello; what came with it, a newcomer's statement, is taken once it is answered
+        let (said, early) = loop {
             let n = recv
                 .read(&mut buf)
                 .await
                 .map_err(fail)?
                 .ok_or_else(|| fail("closed before hello"))?;
-            if let Some(frame) = decoder
+            let mut frames = decoder
                 .push(&buf[..n])
-                .map_err(|e| fail(format!("{e:?}")))?
-                .into_iter()
-                .next()
-            {
-                break frame;
+                .map_err(|e| fail(format!("{e:?}")))?;
+            if !frames.is_empty() {
+                let first = frames.remove(0);
+                break (first, frames);
             }
         };
         // the first frame names the peer; a member must name itself
@@ -131,6 +130,13 @@ impl Hub {
             network.mark_changed();
             network
         });
+        for frame in early {
+            if let Some(why) = self.take(&key, frame).await {
+                send.write_all(&encode(&Frame::Refused { why }))
+                    .await
+                    .map_err(fail)?;
+            }
+        }
         loop {
             tokio::select! {
                 _ = told.changed() => {
