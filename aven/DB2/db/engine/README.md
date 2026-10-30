@@ -580,6 +580,7 @@ sign and magnitude, text and bytes bytewise, which for UTF-8 is code-point order
 | `Mutate` | a refused commit changes nothing (`refused_changes_nothing`); references point back at a `put` (`refs_point_backward`); ids from (writer id, counter, op index) never collide (`created_distinct`, `ids_differ_across`); readers that agree on a runtime hash lower and commit alike (`readers_agree`) | `mutations.json` |
 | `Footprint` | every op's footprint step (type, verb, fields) is known before it runs; a commit that ran as its ops say passes every reader's check of its diff: new Records only of `put-new` types and footprint fields, changed fields only footprint fields, gone Records only of `remove` types (`commit_within`); an honest writer whose grants cover its footprint is accepted by every reader (`honest_passes`); what passes is granted (`check_sound`) | `mutations.json` |
 | `Index` | the lookup plus the local query returns exactly the query over every Doc the directory lists (`lookup_exact`); `complete` with an index means every candidate is held (`complete_with_index`); same entries, same root, whatever the order (`same_root`); folding in equals building at once (`fold_eq_build`, `fold_root`), in any number of steps (`fold_steps`); equal shapes register once, up to a limit (`register_once`, `register_limit`); over the docs layer's directory `Dir`, the lookup is exact and folding equals building with the directory's facts proven, not assumed (`directory_facts`, `lookup_exact_dir`, `fold_eq_build_dir`) | `lookups.json` |
+| `Probe` | a probe is a byte range over the index's keys whose bounds are keys themselves (`bounds`), and the range holds exactly the entries the probe matches (`inRange_iff_keyMatch`, from `key_order`); so the docs layer's tree lookup finds exactly the probe's hits (`treeHits_eq_hits`, from `lookup_complete` and `lookup_sound`), and the lookup is exact through the tree (`lookup_exact_tree`). A probe fits its shape: a keyable value for every equality field, and a range exactly when the shape has a range field | `lookups.json` |
 
 A8, A9, A18, A19 and A20 were decided as recommended (Samuel, 30 Oct 2026), so these theorems are the decided design.
 The sealed index's tree is the docs layer's Prolly tree (`Aven.DB.Docs.Index`); the proofs take any tree whose root
@@ -602,8 +603,7 @@ an index reads needs a mark.
   fields' order (`key_order`). The engine's entries are in it (`entryBytes`), shapes keep text ranges and orders, and the
   engine's value order is the keys' (`vals_lt_key`).
 
-Still to come: the lookup's probe as a byte range over the keys, proven equal to `keyMatch` from `key_order` and
-`key_inj`, so `hits` is the tree's `lookup`; live deltas equal a fresh run; sync; the
+Still to come: live deltas equal a fresh run; sync; the
 ontology's lowering; kinds; constraints on field values in footprints, which stay caps' own.
 
 ## Open questions

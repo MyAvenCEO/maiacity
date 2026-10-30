@@ -715,7 +715,9 @@ same Docs by a query's fields. Both are a **Prolly tree**: a search tree whose n
   A key is never named or signed, only sorted, and sits in a node as a CBOR byte string, so rule 1 holds. A range is
   two keys; a prefix `p` is the range from `p` to `p FF`: every extension of `p` lies in it, since no field starts with
   `FF` (`extension_in_range`). A byte prefix alone isn't an extension (text `a` is a byte prefix of text `a 00`), so
-  the engine keeps only the entries whose tuple extends `p` (`key_prefix`). Every entry is distinct.
+  a lookup over it keeps only the entries whose tuple extends `p` (`key_prefix`). A query needs neither: its shape
+  fixes every entry's arity, so the engine bounds a range by whole keys, `(e…, a)` to `(e…, b, 0)`, where the `0` sorts
+  after every Doc id, and `key_order` alone makes the lookup exact. Every entry is distinct.
 - **Nodes:** a leaf is a CBOR array of entries; an inner node is an array of `[first entry, last entry, child]` per
   child. A node ends after an entry whose BLAKE3's low 6 bits are zero (about 64 entries a node) or before an entry
   that would take it past 64 KiB, the size limit (architecture, rule 10). The same rule cuts every level.

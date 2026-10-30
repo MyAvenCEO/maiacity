@@ -354,6 +354,23 @@ and the decisions, not the parsers.
   text has 4.5:1 against the background the style resolves under it, 3:1 when large) and `face_classes`. Contrast is
   exact integer arithmetic over one table, `linear` (sRGB to linear light, × 10⁷), which the vectors export: #767676
   on white passes and #777777 fails, as WCAG has it.
+- **state-runtime** (`State`, its examples in `StateExamples`). The grammar of a state part: a statechart and a
+  reducer as data, one handler per message with its moves (`from → to`), its updates (`set`, `merge`, `append`,
+  `remove` at a path of fields and indexes) and its sends (`tell`, `ask`, `reply`). A runtime is a pure
+  `run(part, input)` the kernel calls, so it names nothing of the actors': a message is a sender's address, a name, a
+  payload and an ask's id, all Values, and a step gives back the new state, its sends as data and the phase it moved
+  to. `Aven.Actor` maps them to its effects and joins the step to its kernel and its machines; actors build on
+  runtimes, never the reverse. `step` is total and deterministic; under the contract (`stateRuntime`) the part and
+  the input are Values, the fuel a count of the part's work. Theorems:
+  - `step_moves`: a step that answers took one of the part's moves for that message and phase; otherwise it refuses;
+  - `step_allowed`: under a machine's transitions the part `fits`, the move is one they allow;
+  - **an update touches only its path:** `get_set`, `get_set_other`, `get_remove` (for a path that ends at a field:
+    removing an array's item moves the later ones up), and per update `set_get`, `merge_get`, `append_get`,
+    `remove_get` and `update_other`; maps stay in the codec's order, so every state is an allowed Value;
+  - `state_output_fits`, `state_never_badOutput`, `state_more_room`, `state_run_moves`.
+
+  24 examples: the todo app's task and list, refusals in the wrong phase, paths that don't fit, a tell to something
+  that isn't an address, fuel, memory and output limits, and inputs and parts that aren't ones.
 - **Determinism, practically.** Lean can't see a wasm module, so the vectors carry it: each runtime's examples are
   exported with their outputs' hashes, and the check runs every vector in the native host and in all three browser
   engines and compares hashes. A float result must be bit-identical, so the host canonicalizes NaNs as it reads an
@@ -364,7 +381,8 @@ and the decisions, not the parsers.
 **The vectors** (`spec/vectors/`, one vector per line): `table.json` (the registry and its signatures, the data the
 registry crate compiles in), `registry.json`, `tree.json` and `face.json` (each tree and face with its encoding, a face
 with each rule's CSS text), `contract.json` (each failure and an answer as encoded, render keys and their BLAKE3 names)
-and `contrast.json` (`linear`, then pairs of colours). A tree crosses as a Value: text as text, an element as
+`state.json` (a part, an input and limits, and the result, all in the one codec) and `contrast.json` (`linear`,
+then pairs of colours). A tree crosses as a Value: text as text, an element as
 `[tag, [[name, value], …], [child, …]]`; a face as `{"tree", "style"}`; every example's is an allowed Value of the
 codec. The parsers themselves stay outside Lean, as mechanics (rule 10): their hostile
 corpora and fuzzing hold them.

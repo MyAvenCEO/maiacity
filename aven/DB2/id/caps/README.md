@@ -1138,18 +1138,18 @@ Agreed with the engine thread (30 Oct 2026):
 ## What Lean proves
 
 `Aven.ID` holds caps' model beside `Governs`, in `id/spec` (Lean 4.35.0, core only, no `sorry`; `lake build` in the box
-proves it). Its examples on the cast carry their answers, written by hand and checked by `decide`. `lake exe vectors`
-exports them with generated cases (README, rule 10).
+proves it). Its examples on the cast carry their answers, written by hand and checked as it builds: by `decide`, or by
+`#guard` where they go through UTF-8. `lake exe vectors` exports them with generated cases (README, rule 10).
 
-What a grant reaches is `Aven.Core`'s once it lands: Values and the CBOR codec, hashes, envelopes and logs, the target
-grammar, verbs and footprints. Until then an **atom** names the vault whose Docs it concerns and an opaque permission,
-and a grant is a set of atoms checked by subset. A theorem marked *after Core* states its rule over Core's grammar
-when Core lands.
+What a grant reaches is `Aven.Core`'s (`core/spec`), which `id/spec` requires. A **line** of a grant is a target in
+Core's grammar, a verb, and for a write the footprint grants each step must keep. A line lies within another when its
+target is narrower (`Target.le`), its verb the same and its footprint grants no wider, so a chain narrows by Core's
+`Target.le_sound`. Caps defines no Values, hashes or targets of its own.
 
 | Module | Theorem | Says |
 |---|---|---|
-| `Caps` | `narrow_chain` | Every cap in a chain grants within its root: the subset check at every link |
-| | `root_authority` | Every atom a chain grants lies in its root issuer's authority, its own vault or one it governs |
+| `Caps` | `narrow_chain`, `narrow_steps` | No cap in a chain lets a verb reach a Doc, or allows a write step, that its root doesn't |
+| | `root_authority` | Every line a chain grants lies in its root issuer's authority: its own vault, one it governs, or a Doc of one |
 | | `chain_short` | A chain is no longer than its root may be shared |
 | | `grant_approved` | Every cap in a chain was signed by a device of its issuer and approved by its issuer's owners (D14) |
 | | `child_live` | A cap issued from a group's cap holds only while its issuer is in the group |
@@ -1183,11 +1183,13 @@ when Core lands.
 | | `served_current` | A keeper serves a fetch or takes an upload only from a device proving the current fetch key on that connection |
 | | `uploader_pays` | The uploading vault pays, and only for what the keeper took from it |
 | | `grind_example` | The limit: a removed reader's fork with a ground hash becomes current at a keeper, flagged |
+| `SealedIndex` | `index_within_key`, `index_skips` | An index holds entries only from Docs every reader of its directory can read; a Doc with fewer readers changes nothing in it (rule 36) |
+| | `sealed_roots_agree` | Two readers holding the same admissible entries rebuild the same sealed root under one key, so each can check a published one |
+| | `sealed_padded`, `root_by_writer` | Sealed nodes are padded (D18); only a vault that may write the directory publishes a root a reader takes |
 
 **After Core, or with another thread:**
 - `counts_iff`: an envelope counts exactly when its signer, its epoch, its chain, its liveness and its footprint hold;
 - `readers_agree`: a verdict depends only on the envelope, its causal past and the revocations known;
-- `index_within_key`, `sealed_roots_agree` and `root_by_writer` (rule 36, over `Aven.DB.Docs.Index`'s entries);
 - `merge_covered` and `footprints.json` (Core's footprints, with the engine);
 - `want_grants_nothing` and `one_grammar` (Core's target grammar);
 - `authority_down` (`below` groups);
@@ -1208,16 +1210,16 @@ Two smaller gaps:
 
 | File | What |
 |---|---|
-| `caps.json` | Chains on the cast, each with the first rule it breaks or none; how avenOS shows a cap; 40 generated chains |
+| `caps.json` | Chains on the cast, their lines in Core's form, each with the first rule it breaks or none; how avenOS shows a cap; 40 generated chains |
 | `revocations.json` | Docs, the revocations held, and verdicts: hand-written, and 30 generated Docs with every envelope's verdict |
 | `epochs.json` | Who learns which key after Bob's removal and after Alice's heal |
 | `approvals.json` | Signatures, thresholds and digests on the cast, and whether each approval holds |
 | `network.json` | A ticket's claims in two orders (A12), removals that clash, MaiaCityGuardian's exit |
 | `keep.json` | Fetch-key links in the order they came, with the keys a keeper takes, its current key and its flags; proofs and whether they're served; what each vault pays; 30 generated keepers |
 
-When Core lands, `caps.json` adds each cap's CBOR bytes and hash, and `derivations.json` follows once `Aven.DB.Blake3`
-gains BLAKE3's keyed and key-derivation modes. The primitives themselves (X-Wing, ML-DSA, Ed25519, the AEAD) stay
-outside Lean, as Ed25519 does today. They are tested against their standards' known answers and Wycheproof.
+`caps.json` adds each cap's CBOR bytes and hash once Core encodes targets (A8), and `derivations.json` follows once
+Core's BLAKE3 gains its keyed and key-derivation modes. The primitives themselves (X-Wing, ML-DSA, Ed25519, the AEAD)
+stay outside Lean, as Ed25519 does today. They are tested against their standards' known answers and Wycheproof.
 
 ## Order of work
 
