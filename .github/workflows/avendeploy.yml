@@ -248,10 +248,10 @@ jobs:
           [ -n "$digest" ] || { echo "::error::$name:$peer is not in the registry"; exit 1; }
           mkdir os && gh release download "@aven/os@$os" --repo "$GITHUB_REPOSITORY" --dir os --pattern 'aven-os-web-*.tar.gz' --pattern SHA256SUMS
           (cd os && sha256sum -c SHA256SUMS)
-          if [ -n "$GUARDIAN" ] && ! [[ "$GUARDIAN" =~ ^[0-9a-f]{64}$ ]]; then
-            echo "::error::the variable AVEN_PEER_GUARDIAN is not 64 hex digits"; exit 1
-          fi
-          [ -n "$GUARDIAN" ] || echo "::warning::the environment production has no AVEN_PEER_GUARDIAN, as a variable or a secret: vaults are founded without MaiaCityGuardian"
+          # No deploy without MaiaCityGuardian (Samuel, 30 Oct 2026): every person's vault founded here must have it.
+          # This step runs before anything on the server is touched
+          [ -n "$GUARDIAN" ] || { echo "::error::the environment production has no AVEN_PEER_GUARDIAN, as a variable or a secret: no deploy without MaiaCityGuardian"; exit 1; }
+          [[ "$GUARDIAN" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::AVEN_PEER_GUARDIAN is not 64 lowercase hex digits"; exit 1; }
           { echo "PEER_VERSION=$peer"; echo "PEER_IMAGE=$name@$digest"; echo "OS_VERSION=$os"; } >> "$GITHUB_ENV"
           echo "avenPEER $peer ($name@$digest), avenOS $os, guardian ${GUARDIAN:-none}"
 

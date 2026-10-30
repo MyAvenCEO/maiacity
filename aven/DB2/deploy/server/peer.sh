@@ -6,6 +6,8 @@
 # writes /aven.json, which tells avenOS which Aven Peer its host is in front of.
 set -euo pipefail
 image=$1 guardian=$2 user=$3
+# no Aven Peer in production without MaiaCityGuardian (Samuel, 30 Oct 2026)
+[[ "$guardian" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::no MaiaCityGuardian given: the peer is left as it is"; exit 1; }
 IFS= read -r s3_key
 IFS= read -r s3_secret
 IFS= read -r token
