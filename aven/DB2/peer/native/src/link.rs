@@ -11,7 +11,7 @@ use iroh::{Endpoint, EndpointAddr};
 use n0_future::time::{Duration, Instant, sleep, timeout};
 use serde_json::json;
 
-use crate::{Notes, cast, now};
+use crate::{Notes, now};
 
 const TICK: Duration = Duration::from_millis(TICK_MS);
 /// A stalled link waits this many more steps for progress, then dials again.
@@ -27,6 +27,8 @@ pub struct View {
 
 struct Link {
     me: String,
+    /// the Aven Peer's name, for the timeline
+    aven: String,
     notes: Notes,
     view: View,
     told: Option<View>,
@@ -70,10 +72,11 @@ pub fn path(conn: &Connection) -> Option<&'static str> {
         .map(|p| if p.is_ip() { "direct" } else { "relay" })
 }
 
-/// Runs the link for ever: dial, follow, and dial again.
-pub async fn run(endpoint: Endpoint, me: String, aven: EndpointAddr, notes: Notes) {
+/// Runs the link for ever: dial, follow, and dial again. `aven_name` is what the timeline calls the Aven Peer.
+pub async fn run(endpoint: Endpoint, me: String, aven: EndpointAddr, aven_name: String, notes: Notes) {
     let mut link = Link {
         me,
+        aven: aven_name,
         notes,
         view: View {
             status: Status::start(),
@@ -92,7 +95,7 @@ pub async fn run(endpoint: Endpoint, me: String, aven: EndpointAddr, notes: Note
             .unwrap_or_default();
         link.step(Event::Lost);
         link.tell();
-        link.note("lost", json!({ "to": cast::AVEN_PEER, "why": why }));
+        link.note("lost", json!({ "to": link.aven, "why": why }));
         sleep(TICK).await;
     }
 }
@@ -114,7 +117,7 @@ async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Re
     link.view.path = path(&conn);
     link.note(
         "connected",
-        json!({ "to": cast::AVEN_PEER, "path": link.view.path }),
+        json!({ "to": link.aven, "path": link.view.path }),
     );
     let mut decoder = Decoder::default();
     let mut buf = vec![0u8; 16 * 1024];
@@ -149,7 +152,7 @@ async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Re
         let now_on = path(&conn);
         if now_on != link.view.path {
             link.view.path = now_on;
-            link.note("path", json!({ "to": cast::AVEN_PEER, "path": now_on }));
+            link.note("path", json!({ "to": link.aven, "path": now_on }));
         }
         link.tell();
     }

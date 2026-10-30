@@ -23,8 +23,16 @@ export function follow() {
 	new EventSource('/events').onmessage = ({ data }) => take(JSON.parse(data));
 }
 
+// The box's configuration for a Peer-Light of the cast: its test signer's seed, sha256("avenSANDBOX test signer: <id>"),
+// public on purpose and valid only inside the box, and the Aven Peer's key.
+async function configure(cast, me) {
+	const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`avenSANDBOX test signer: ${me}`));
+	const secret = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+	return { name: me, secret, avenKey: cast.keys['aven-peer'], avenName: 'aven-peer' };
+}
+
 // Runs this origin's Peer-Light: one shared worker per origin, whatever the tabs and frames.
-export function runLight(me) {
+export async function runLight(cast, me) {
 	const url = new URL('./peer/worker.js', import.meta.url);
 	const shared = typeof SharedWorker === 'function';
 	const worker = shared ? new SharedWorker(url, { type: 'module', name: me }) : new Worker(url, { type: 'module' });
@@ -34,7 +42,7 @@ export function runLight(me) {
 		if (line.event === 'status' || line.event === 'failed') live.own = line.event === 'failed' ? { ...line, phase: 'offline', peers: 0 } : line;
 	};
 	port.start?.();
-	port.postMessage({ start: me });
+	port.postMessage({ start: await configure(cast, me) });
 }
 
 // "● live · 4 peers"

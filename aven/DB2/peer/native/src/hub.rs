@@ -14,11 +14,13 @@ use serde_json::json;
 use tokio::sync::watch;
 use tokio::time::{Duration, interval};
 
-use crate::{Notes, cast, link, now};
+use crate::keys::Members;
+use crate::{Notes, link, now};
 
 #[derive(Clone)]
 pub struct Hub {
     me: String,
+    members: Members,
     presence: Arc<Mutex<Presence<String>>>,
     told: watch::Sender<Vec<String>>,
     notes: Notes,
@@ -35,13 +37,14 @@ fn fail(what: impl std::fmt::Display) -> AcceptError {
 }
 
 impl Hub {
-    /// The Aven Peer's hub; it is present itself from the start.
-    pub fn new(me: String, notes: Notes) -> Self {
+    /// The Aven Peer's hub; it is present itself from the start. With members, it admits only them, each by its name.
+    pub fn new(me: String, members: Members, notes: Notes) -> Self {
         let mut presence = Presence::default();
         presence.join(me.clone());
         let (told, _) = watch::channel(presence.present().cloned().collect());
         let hub = Hub {
             me,
+            members,
             presence: Arc::new(Mutex::new(presence)),
             told,
             notes,
@@ -85,7 +88,7 @@ impl Hub {
         let (mut send, mut recv) = conn.accept_bi().await?;
         let mut decoder = Decoder::default();
         let mut buf = vec![0u8; 16 * 1024];
-        // the first frame names the peer, and it must be the peer whose key this connection proved
+        // the first frame is a hello
         let said = loop {
             let n = recv
                 .read(&mut buf)
@@ -101,11 +104,9 @@ impl Hub {
                 break frame;
             }
         };
-        if said
-            != (Frame::Hello {
-                peer: peer.to_string(),
-            })
-        {
+        // the first frame names the peer; a member must name itself
+        let named = matches!(&said, Frame::Hello { peer: name } if name == peer);
+        if !named && (self.members.knows(&conn.remote_id()) || !matches!(said, Frame::Hello { .. })) {
             return Err(fail(format!("{peer} said {said:?}")));
         }
         send.write_all(&encode(&Frame::Hello {
@@ -140,11 +141,12 @@ impl Hub {
 impl ProtocolHandler for Hub {
     async fn accept(&self, conn: Connection) -> Result<(), AcceptError> {
         let key = conn.remote_id();
-        // the members-only door is milestone 2's; for now a peer must at least be one of the cast
-        let Some(peer) = cast::peer_of(&key) else {
+        // the members-only door (invites, the relay's allow-list) is milestone 2's; members given, only they get in
+        if !self.members.is_empty() && !self.members.knows(&key) {
             self.note("refused", json!({ "key": key.to_string() }));
-            return Err(fail("not one of the cast"));
-        };
+            return Err(fail("not a member"));
+        }
+        let peer = self.members.name(&key);
         self.change(true, &peer);
         self.note("joined", json!({ "from": peer, "path": link::path(&conn) }));
         let served = self.serve(&conn, &peer).await;

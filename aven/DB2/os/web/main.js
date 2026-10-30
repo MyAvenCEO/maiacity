@@ -9,7 +9,7 @@ import './style.css';
 const device = Object.keys(cast.peers).find((id) => cast.peers[id].origin === location.hostname);
 
 // a Peer-Light's origin runs that Peer-Light, in a worker of its own
-if (device) runLight(device);
+if (device) runLight(cast, device);
 
 document.title = device ? `avenOS · ${cast.peers[device].name}` : 'avenOS';
 mount(App, { target: document.getElementById('app'), props: { cast, device } });

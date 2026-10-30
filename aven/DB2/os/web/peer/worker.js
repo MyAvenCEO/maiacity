@@ -12,14 +12,16 @@ function tell(line) {
 	fetch(`/events/${JSON.parse(line).peer}`, { method: 'POST', body: line }).catch(() => {});
 }
 
-async function start(me) {
+// The Peer-Light is configured, never built for a place: its name, secret seed and the Aven Peer's key come from the
+// page; its relay is this origin, where Vite passes /relay on to the Aven Peer.
+async function start({ name, secret, avenKey, avenName }) {
 	try {
 		const url = '/peer-light/aven_peer_light.js';
 		const light = await import(/* @vite-ignore */ url);
 		await light.default();
-		await light.start(me, self.location.origin, tell);
+		await light.start(name, secret, self.location.origin, avenKey, avenName, tell);
 	} catch (error) {
-		tell(JSON.stringify({ t: Date.now(), peer: me, event: 'failed', why: String(error?.message ?? error) }));
+		tell(JSON.stringify({ t: Date.now(), peer: name, event: 'failed', why: String(error?.message ?? error) }));
 	}
 }
 

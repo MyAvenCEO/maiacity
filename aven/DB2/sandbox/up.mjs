@@ -15,7 +15,18 @@ const tag = createHash('sha256').update(readFileSync(join(box, 'Dockerfile'))).d
 const image = process.env.AVENSANDBOX_IMAGE ?? `ghcr.io/myavenceo/aven/sandbox:${tag}`;
 const port = process.env.AVENSANDBOX_PORT ?? '5173';
 const proxyCa = '/root/.ccr/ca-bundle.crt';
-const env = { ...process.env, AVENSANDBOX_IMAGE: image, AVENSANDBOX_PORT: port };
+// What ships is the node, never the box: the peers learn the box only as configuration. Here the cast's test keys
+// become it: each device's secret seed is sha256("avenSANDBOX test signer: <id>"), public on purpose and valid only
+// inside the box, and the members are every peer of the cast by its public key.
+const cast = JSON.parse(readFileSync(join(db2, 'sandbox', 'cast.json'), 'utf8'));
+const seed = (id) => createHash('sha256').update(`avenSANDBOX test signer: ${id}`).digest('hex');
+const peerConfig = {
+	AVENSANDBOX_MEMBERS: Object.keys(cast.peers).map((id) => `${id}=${cast.keys[id]}`).join(','),
+	AVENSANDBOX_AVEN_KEY: cast.keys['aven-peer'],
+	AVENSANDBOX_AVEN_SECRET: seed('aven-peer'),
+	AVENSANDBOX_ALICE_SECRET: seed('alice-peer'),
+};
+const env = { ...process.env, AVENSANDBOX_IMAGE: image, AVENSANDBOX_PORT: port, ...peerConfig };
 const compose = ['docker', 'compose', '-f', join(box, 'compose.yml'), '-p', 'avensandbox'];
 
 const say = (line) => console.log(`avenSANDBOX: ${line}`);
@@ -39,20 +50,24 @@ async function ensureDocker() {
 }
 
 // Only GitHub builds the box (.github/workflows/avensandbox-image.yml), after every push that changes its Dockerfile;
-// nothing builds it here. A pull that fails says why.
-async function ensureImage() {
-	if (await ok($`docker image inspect ${image}`)) return;
-	say(`pulling ${image}`);
-	const pull = await $`docker pull ${image}`.nothrow().quiet();
-	if (pull.exitCode === 0) return;
+// nothing builds it here. Every service's image comes in one `docker compose pull`, in parallel, whenever any is
+// missing; a pull that fails says why.
+async function ensureImages() {
+	const images = [...new Set([image, ...(await $`${compose} config --images`.env(env).quiet().text()).trim().split('\n').filter(Boolean)])];
+	const missing = [];
+	for (const name of images) if (!(await ok($`docker image inspect ${name}`))) missing.push(name);
+	if (!missing.length) return;
+	say(`pulling ${missing.join(', ')}`);
+	const pull = await $`${compose} pull --quiet`.env(env).nothrow().quiet();
+	if (pull.exitCode === 0 && (await ok($`docker image inspect ${image}`))) return;
 	const why = `${pull.stdout}${pull.stderr}`;
 	if (/pkg-containers\.githubusercontent\.com[^\n]*Forbidden/.test(why))
 		throw new Error(
 			"this environment's network refuses pkg-containers.githubusercontent.com, where GitHub's registry keeps the image's layers: allow it (SANDBOX.md, \"Where it runs\")",
 		);
 	if (/manifest unknown|not found/i.test(why))
-		throw new Error(`${image} isn't published yet: GitHub builds it after the push that changes the Dockerfile, in about 4 minutes`);
-	throw new Error(`can't pull ${image}: ${why.trim().split('\n').at(-1)}`);
+		throw new Error(`${missing.join(', ')} isn't published yet: GitHub builds the box after the push that changes the Dockerfile, in about 4 minutes`);
+	throw new Error(`can't pull ${missing.join(', ')}: ${why.trim().split('\n').at(-1)}`);
 }
 
 // What a container needs to reach the internet: through a cloud session's proxy, which it must trust, or directly.
@@ -72,7 +87,7 @@ const rustVolumes = [
 
 async function inBox(args) {
 	await ensureDocker();
-	await ensureImage();
+	await ensureImages();
 	const tty = process.stdout.isTTY ? ['-t'] : [];
 	const volumes = ['-v', `${db2}:/work`, '-v', 'avensandbox_node_modules:/work/node_modules', ...rustVolumes];
 	return (await $`docker run --rm -i ${tty} ${network()} ${volumes} -w /work ${image} ${args}`.env(env).nothrow()).exitCode;
@@ -140,7 +155,7 @@ async function check() {
 async function up(args) {
 	const started = Date.now();
 	await ensureDocker();
-	await ensureImage();
+	await ensureImages();
 	await install();
 	const binary = await build();
 	// a new binary restarts the peers that run it: the loop's "a Rust change, running on every peer"
@@ -162,7 +177,7 @@ async function up(args) {
 // Every release's deliverables (SANDBOX.md, "Production"): for now avenOS for the browser, built in the box.
 async function deliverables() {
 	await ensureDocker();
-	await ensureImage();
+	await ensureImages();
 	await install();
 	const volumes = ['-v', `${db2}:/work`, '-v', 'avensandbox_node_modules:/work/node_modules'];
 	await $`docker run --rm ${volumes} -w /work ${image} node_modules/.bin/vite build --config vite.config.js`.env(env);

@@ -14,15 +14,31 @@ x-peer: &peer
   networks: [wan]
 
 services:
-  # the Aven Peer: the Peer with its relay on
+  # the Aven Peer: the Peer with its relay on. What ships is the node, never the box: the box is only its
+  # configuration, the cast's test keys included, which `bun run up` derives (AVENSANDBOX_*)
   aven:
     <<: *peer
-    command: ["/target/debug/aven-peer", "--id", "aven-peer", "--relay", "--relay-url", "http://aven:3340", "--events", "/events"]
+    command: ["/target/debug/aven-peer"]
+    environment:
+      AVEN_PEER_NAME: aven-peer
+      AVEN_PEER_SECRET: ${AVENSANDBOX_AVEN_SECRET:?bun run up sets it}
+      AVEN_PEER_RELAY: "true"
+      AVEN_PEER_RELAY_URL: http://aven:3340
+      AVEN_PEER_MEMBERS: ${AVENSANDBOX_MEMBERS:?bun run up sets it}
+      AVEN_PEER_EVENTS: /events
 
   # Alice Peer: the same binary, relay off, direct to the Aven Peer over UDP
   alice:
     <<: *peer
-    command: ["/target/debug/aven-peer", "--id", "alice-peer", "--aven", "aven:4433", "--relay-url", "http://aven:3340", "--events", "/events"]
+    command: ["/target/debug/aven-peer"]
+    environment:
+      AVEN_PEER_NAME: alice-peer
+      AVEN_PEER_SECRET: ${AVENSANDBOX_ALICE_SECRET:?bun run up sets it}
+      AVEN_PEER_RELAY_URL: http://aven:3340
+      AVEN_PEER_AVEN: aven:4433
+      AVEN_PEER_AVEN_KEY: ${AVENSANDBOX_AVEN_KEY:?bun run up sets it}
+      AVEN_PEER_MEMBERS: ${AVENSANDBOX_MEMBERS:?bun run up sets it}
+      AVEN_PEER_EVENTS: /events
     depends_on: [aven]
 
   # Chromium with both Peer-Lights, and Vite serving avenOS, the Peer-Light's wasm and the relay's path
