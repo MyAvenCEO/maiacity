@@ -193,7 +193,9 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
     else are inside. A keeper serves catch-up by its own arrival order. Readers check a writer's order and catch splits.
 24. **A want grants nothing.** A device is served its wants intersected with its caps; an actor is handed its loads
     intersected with its run's caps (engine, rule 7).
-25. **Approval is a co-signature over one digest:** k of the named owners, for one act, used once.
+25. **Approval is a co-signature over one digest:** k of the named owners, for one act, used once. **What is shown is
+    what is signed:** avenOS renders the act being approved by decoding the exact bytes the passkey signs, never from
+    a separate copy, and Lean's vectors include that rendering (A2).
 26. **Conditions only narrow.** Uses and budgets hold only where one checker counts them: a kernel or a router.
 27. **It fails closed.** An envelope counts, doesn't count, or waits for a key, a cap or what it builds on. What it
     names is in its own past or inside it, so a wait is always for something known by hash, and every wait raises the
@@ -254,7 +256,10 @@ Everything older is one of these four, or gone:
 
 ## A cap
 
-A cap is a Value: canonical JSON, named by its BLAKE3 hash, which is its id.
+A cap is a Value in avenDB's one codec: deterministic CBOR in the strict profile of A2 (Samuel, 30 Oct 2026;
+[`ARCHITECTURE.md`](../../ARCHITECTURE.md)). Its id is the BLAKE3 hash of those bytes. JSON is its readable form, and
+the examples here are written in it; bytes appear as `b3:` or base64url text. Roles, key blobs, letters and revocations
+are Values the same way.
 
 ```json
 { "cap": 1,
