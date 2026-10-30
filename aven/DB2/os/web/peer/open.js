@@ -40,6 +40,11 @@ export function openWorker(name) {
 		port.onmessage?.({ data: data.line });
 	};
 	addEventListener('pagehide', () => channel.postMessage({ tab, bye: true }));
+	// the device may be back: a phone that changed networks, came back online or woke the tab. The Peer-Light's link
+	// dials again at once, without a reload (peer/light, `wake`)
+	const wake = () => channel.postMessage({ tab, data: { wake: true } });
+	addEventListener('online', wake);
+	document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && wake());
 	hello();
 	const lead = () => {
 		// this tab runs the Peer-Light now: the check's takeover step reads it (sandbox/chat.mjs)

@@ -5,12 +5,18 @@
 	// vault the network holds, the admin or a member, signs in there with their passkey, which makes it a device of
 	// their vault too (Aven.ID.SignIn). A passkey that owns no vault here is refused with a word to ask for an invite. `#/claim` shows the signup screen whatever the
 	// network says: a second signup is the Aven Peer's to refuse, and it does.
+	//
+	// Offline first (README rule 3): a returning browser opens on the tree its Peer-Light keeps, before any link, and a
+	// browser that can't reach the network is told so plainly, with the reason in the timeline. Sign in shows while
+	// connecting too: the passkey's ceremony is local, and the statement it signs waits in the Peer-Light's store until
+	// the network takes it, so the person taps once and this browser joins by itself when it is back.
 	import App from './App.svelte';
 	import Join from './Join.svelte';
 	import Phase from './Phase.svelte';
 	import { at, tree } from './id.svelte.js';
 	import { readLink } from './invites.js';
 	import { castOf, claim, net, signIn } from './network.svelte.js';
+	import Offline from './Offline.svelte';
 	import { describe, live } from './peers.svelte.js';
 
 	let { config } = $props();
@@ -72,6 +78,7 @@
 		<h1>avenOS</h1>
 		{#if claimed === null}
 			<p class="muted">Connecting to the network…</p>
+			{@render signingIn()}
 		{:else if !claimed || route === 'claim'}
 			<form onsubmit={(event) => (event.preventDefault(), run(() => claim(config, { name, deliberate: route === 'claim' })))}>
 				<h2>Sign up</h2>
@@ -91,15 +98,26 @@
 				<p class="card" data-testid="reset">This browser's local data was from an older avenOS and was reset. Sign in with your passkey.</p>
 			{/if}
 			<p class="soon card" data-testid="invite-only">avenOS · invite only, coming soon</p>
-			<button data-testid="sign-in" disabled={busy || !net.key} onclick={() => run(() => signIn(config))}>
-				Sign in with your passkey
-			</button>
+			{@render signingIn()}
 		{/if}
 		{#if why}<p class="refused" data-testid="refused">{why}</p>{/if}
 		<p class="status"><Phase phase={live.own?.phase} text={describe(live.own)} testid="status" /></p>
+		<Offline />
 		{#if net.trouble && live.own?.phase !== 'live'}<p class="refused" data-testid="trouble">{net.trouble}</p>{/if}
 	</main>
 {/if}
+
+{#snippet signingIn()}
+	{#if net.pending}
+		<p class="card" data-testid="signed-in-pending">
+			Signed in with your passkey. This browser joins your vault as soon as it reaches the network.
+		</p>
+	{:else}
+		<button data-testid="sign-in" disabled={busy || !net.key} onclick={() => run(() => signIn(config))}>
+			Sign in with your passkey
+		</button>
+	{/if}
+{/snippet}
 
 <style>
 	main {

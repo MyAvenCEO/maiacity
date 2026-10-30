@@ -104,6 +104,8 @@ function connect(port) {
 		if (data?.start) started ??= start(data.start);
 		if (data?.box) started ??= showBox(data.box);
 		if (data?.ask) answer(port, data.ask);
+		// online again or back in view (peer/open.js): the link dials at once if it isn't live
+		if (data?.wake) light?.wake?.();
 		// signing out (network.svelte.js): every page hears it, and the worker ends, so its store's handles are free
 		if (data?.end) {
 			tell(JSON.stringify({ t: Date.now(), peer: 'page', event: 'signed-out' }));

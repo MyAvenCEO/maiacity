@@ -330,3 +330,95 @@ async fn the_door_reads_what_production_stored_before_the_agent() {
     // a restart on the same store reads the same
     assert_eq!(tree(&open(&store, &old["server"]).await.members()), want);
 }
+
+/// Offline first (`aven_peer::link::{remember, recall}`): what the Aven Peer tells a device of its network, kept in
+/// the device's store, reads back at its next start as the same tree, every statement checked again, and the gate
+/// admits the members; a kept network whose statements were changed tells no tree. Without statements (a browser that
+/// is no device yet) it still says the network is claimed.
+#[tokio::test]
+async fn a_device_keeps_the_network_it_was_told() {
+    use std::sync::Mutex;
+    let v = vectors("claims.json")
+        .into_iter()
+        .find(|v| {
+            v["input"]["ops"][0]["op"] == "claim" && v["expected"][0]["answer"]["ok"] == json!(true)
+        })
+        .unwrap();
+    let op = &v["input"]["ops"][0];
+    let store = Arc::new(backend::memory().unwrap());
+    let door = open(&store, &v["input"]["server"]).await;
+    take(&door, op).await.unwrap();
+    let device = op["from"].as_str().unwrap();
+    let Frame::Network {
+        claimed,
+        tree,
+        statements,
+    } = Door::frame(&door.members(), device)
+    else {
+        panic!()
+    };
+    assert!(claimed && tree.is_some() && statements.is_some());
+
+    let read = |device_store: &Arc<DalStore>| {
+        let device_store: aven_peer::chats::Shared = device_store.clone();
+        async move {
+            let told = Arc::new(Mutex::new(vec![]));
+            let notes: aven_peer::Notes = {
+                let told = told.clone();
+                Arc::new(move |l: String| {
+                    told.lock()
+                        .unwrap()
+                        .push(serde_json::from_str::<Value>(&l).unwrap())
+                })
+            };
+            let gate = aven_peer::members::Gate::default();
+            let shown = aven_peer::link::recall(&device_store, "device", &gate, &notes).await;
+            let network = told
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|l| l["event"] == "network")
+                .cloned();
+            (shown, network, gate)
+        }
+    };
+
+    // kept, and read back: the Aven Peer's tree, checked here, and its members let in
+    let kept = Arc::new(backend::memory().unwrap());
+    let shared: aven_peer::chats::Shared = kept.clone();
+    aven_peer::link::remember(&shared, claimed, statements.as_deref())
+        .await
+        .unwrap();
+    let (shown, network, gate) = read(&kept).await;
+    let network = network.unwrap();
+    assert!(shown);
+    assert_eq!(network["tree"].as_str(), tree.as_deref());
+    assert_eq!(
+        (network["claimed"].clone(), network["kept"].clone()),
+        (json!(true), json!(true))
+    );
+    assert!(gate.admits_hex(device));
+
+    // nothing kept: nothing told
+    let (shown, network, _) = read(&Arc::new(backend::memory().unwrap())).await;
+    assert!(!shown && network.is_none());
+
+    // statements changed after they were told: no tree, and nobody let in by them
+    let changed = statements.unwrap().replacen(device, &"0".repeat(64), 1);
+    aven_peer::link::remember(&shared, true, Some(&changed))
+        .await
+        .unwrap();
+    let (shown, network, gate) = read(&kept).await;
+    assert!(!shown && network.unwrap()["tree"].is_null());
+    assert!(!gate.admits_hex(device));
+
+    // a browser that is no device yet keeps only that the network is claimed
+    aven_peer::link::remember(&shared, true, None)
+        .await
+        .unwrap();
+    let (shown, network, _) = read(&kept).await;
+    assert_eq!(
+        (shown, network.unwrap()["claimed"].clone()),
+        (false, json!(true))
+    );
+}

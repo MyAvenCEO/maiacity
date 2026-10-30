@@ -32,6 +32,21 @@ A rule for every part of the upgrade (Samuel, 30 Oct 2026):
 - **Sending and fetching run in the background:** the UI never waits on the network, and shows what is still on its
   way (sending, fetching, the share fetched).
 - **Offline works:** writes queue in the local store, and on reconnect the peer sends them and catches up.
+- **Opening and signing in never wait** (Samuel, 30 Oct 2026, from his iPhone: "we shouldn't need to be waiting,
+  right?"). A device's own store is its truth (README rule 3):
+  - **A returning browser opens at once:** the Peer-Light keeps the network it was told (the ref `network`: whether
+    it is claimed, and every statement) and reads it back at start, each statement checked again, so its views and
+    its chat's history are on screen before any link. Offline is said in plain words; the reason stays in the
+    timeline.
+  - **Its lines are chained as they are written:** a store that holds its device's key (a Peer-Light's `device-key`,
+    or `chain-key` once a native Peer has learned its head) holds every line that key signed, so the device writes on
+    its chain at once and nothing waits in memory (`Aven.DB.Chains.own_store_never_forks`). A key given apart from its
+    store (the box's cast, a native Peer's `--secret` with an empty `--store`) still learns its head from the Aven
+    Peer first (`learned_never_forks`), and keeps what it writes until then in its store (`queued`).
+  - **Signing in is one tap:** the passkey's ceremony is local; the statement it signs is kept (`statement`) and sent
+    once the link is up, after a reload too. A brand-new browser can't know its vault before then, so it says it
+    joins as soon as it reaches the network.
+  - **The link dials again at once** when the page comes back online or into view (`wake`).
 
 ## The package
 

@@ -13,22 +13,49 @@ import { hear, speakThrough } from './room.svelte.js';
 // `trouble`: why the Peer-Light is not live, as it last said (its start failed, the Aven Peer didn't answer), shown
 // under the status line so a screenshot names the cause; `door`: whether the relay lets this browser in, null until it
 // has said (MILESTONE2.md: after the claim, only members get in); `storage`: why this browser keeps no storage for the
-// host, when it doesn't, and then no Peer-Light starts
-export const net = $state({ me: null, key: null, claimed: null, tree: null, refused: null, trouble: null, door: null, storage: null, reset: false });
+// host, when it doesn't, and then no Peer-Light starts. Offline first (README rule 3): `claimed` and the tree come at
+// once from what the Peer-Light keeps (`kept`), before any link; `unreachable`: why the link to the Aven Peer was lost,
+// for the timeline only, while the page says it plainly; `pending`: a statement this browser signed waits in its store
+// for the network (a sign-in made offline)
+export const net = $state({
+	me: null,
+	key: null,
+	claimed: null,
+	tree: null,
+	refused: null,
+	trouble: null,
+	door: null,
+	storage: null,
+	reset: false,
+	unreachable: null,
+	pending: false,
+});
 
 let port;
 // the start this page gives its Peer-Light, sent again with every statement (peer/worker.js)
 let starting;
 
-// The host's Aven Peer, or null on a host that has none (a visitor's: avenOS is "coming soon" there)
+// The host's Aven Peer, or null on a host that has none (a visitor's: avenOS is "coming soon" there). Kept in this
+// browser once read, so a page that can't reach its host still knows its network and opens offline
 export async function hostNetwork() {
+	const kept = () => {
+		try {
+			return JSON.parse(localStorage.getItem('aven.json') ?? 'null');
+		} catch {
+			return null;
+		}
+	};
 	try {
 		const answer = await fetch('/aven.json', { cache: 'no-store' });
 		if (!answer.ok || !answer.headers.get('content-type')?.includes('json')) return null;
 		const config = await answer.json();
-		return config.peer && config.rpId ? config : null;
+		if (!config.peer || !config.rpId) return null;
+		try {
+			localStorage.setItem('aven.json', JSON.stringify(config));
+		} catch {}
+		return config;
 	} catch {
-		return null;
+		return kept();
 	}
 }
 
@@ -60,12 +87,15 @@ export function runNetwork(config) {
 		const line = JSON.parse(data);
 		hearViews(line);
 		if (line.event === 'views' || line.event === 'answer') return;
-		if (line.event === 'failed' || line.event === 'lost') net.trouble = line.why ?? line.event;
-		if (line.event === 'status' && line.phase === 'live') net.trouble = null;
+		// a lost link is the network out of reach: said plainly on the page, its reason kept in the timeline
+		if (line.event === 'lost') net.unreachable = line.why ?? line.event;
+		if (line.event === 'failed') net.trouble = line.why ?? line.event;
+		if (line.event === 'status' && line.phase === 'live') net.trouble = net.unreachable = null;
+		if (line.event === 'pending') net.pending = true;
 		if (line.event === 'started') Object.assign(net, { me: line.peer, key: line.key });
 		if (line.event === 'network') Object.assign(net, { claimed: line.claimed, tree: line.tree });
 		if (line.event === 'start?' && starting) port.postMessage({ start: starting });
-		if (line.event === 'refused') net.refused = line.why;
+		if (line.event === 'refused') Object.assign(net, { refused: line.why, pending: false });
 		if (line.event === 'reset') net.reset = true;
 		if (line.event === 'signed-out' && !signingOut) setTimeout(() => location.reload(), 2000);
 		if (line.event === 'door') net.door = line.admitted;
