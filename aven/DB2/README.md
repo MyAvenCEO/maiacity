@@ -8,9 +8,10 @@ this folder: its crates, its Lean spec, its pages and avenSANDBOX, the local net
 v1 stays as the testing and learning battleground until the new avenDB is ready. Then v1 is deprecated, and the new
 avenDB moves into `aven/db`.
 
-**Status (29 Oct 2026): milestone 1 has started.** avenSANDBOX's box runs: its image, `bun run up --check`, and
-avenOS on two Peer-Lights' origins, with its account switcher and its first two apps, Vault and Control Room, on the
-cast's vaults. The peers themselves and avenID come next. The plan: [`SANDBOX.md`](SANDBOX.md).
+**Status (30 Oct 2026): milestone 1 is integrated.** avenSANDBOX's box runs all four peers live: the Aven Peer with
+its relay, Alice Peer direct over UDP, and two Peer-Lights in one Chromium. avenOS reads the cast's tree of vaults
+through avenID's wasm, and each peer keeps its record through avenDB's store: in S3, a folder or OPFS. Lean proves
+`Aven.ID` and `Aven.DB` without `sorry`. The plan: [`SANDBOX.md`](SANDBOX.md).
 
 ## Why a rebuild
 
@@ -180,10 +181,10 @@ organization `aven` reserves the scope before anything is published.
   make. Signatures: Ed25519 and passkeys now, ML-DSA later through the same suite byte.
 - **The Aven Peer only ever sees ciphertext,** except what is published.
 - **What ships is the node, never the box.** avenSANDBOX's image is a development machine (browsers, compilers,
-  Lean) and is never deployed. avenPEER ships one binary whose modes are flags (`--relay`, `--store fs|s3`), in one
-  slim image: the binary on a minimal base. Sandbox or live is only configuration: which relay, which S3. The box runs
-  that same image for its peers, so what is tested is what ships; for the fast loop it runs the binary straight from
-  its build folder.
+  Lean) and is never deployed. avenPEER ships one binary whose modes are flags (`--relay`, `--store memory|fs|s3`), in
+  one slim image: the binary on a minimal base. Sandbox or live is only configuration: which relay, which S3. The box
+  runs that same image for its peers, so what is tested is what ships; for the fast loop it runs the binary straight
+  from its build folder.
 
 ## What we take from iroh
 

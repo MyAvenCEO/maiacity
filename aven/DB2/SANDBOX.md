@@ -14,13 +14,19 @@ container.
 
 Targets, measured in this milestone and reported on every run:
 
-| Step | Target | Measured (cloud session, 29 Oct) |
+| Step | Target | Measured (cloud session, 4 vCPU, 30 Oct) |
 |---|---|---|
-| `bun run up` with a warm build, until every peer is live | < 10 s | 1.9 s; with `--check`, 3.6 s (the page only, no peers yet) |
-| A change to the page, visible | < 1 s (hot reload) | |
-| A Rust change, running on every peer | < 30 s | |
-| A new cloud session, image already on disk, until every peer is live | < 2 min | |
+| `bun run up` with a warm build, until every peer is live | < 10 s | **~9.5 s**: `up` 5.3–5.5 s, then all four live 4.0–4.2 s into the check, Chromium's start included |
+| A change to the page, visible | < 1 s (hot reload) | **82–193 ms** (a Svelte edit until the browser shows it, 5 runs) |
+| A Rust change, running on every peer | < 30 s | **14–17 s**: a change in the shared `link.rs`, so the binary and the Peer-Light's wasm both rebuild (7.9–10.8 s), the Peers restart, and every peer is live about 4 s later |
+| A new cloud session, image already on disk, until every peer is live | < 2 min | not yet: an empty build folder costs 137–183 s of crates before the peers start ([Open questions](#open-questions), 1) |
+| `bun run up --check` in all, warm | (none) | 25–32 s, of which the views 7 s and the restart and the wipe 12 s |
 | A change to the box's Dockerfile, pushed, until the new image pulls | (none) | 227 s: GitHub builds both platforms |
+
+Smaller steps, measured by the threads: `lake build` warm 0.2–2 s (cold 6.3 s for `Aven.ID`); `cargo test -p aven-id`
+warm 4.6 s, 2000 model cases; `aven-db-model`, 1000 traces, 0.8 s; `db/store/check.sh`, all four backends, 11–12 s
+warm; an incremental `cargo build -p aven-peer` 1.3–2.4 s; aven-id's wasm 1.0 s incremental, 126 KB; the Peer-Light's
+debug wasm 21 MB, wasm-bindgen 3 s of every change to it.
 
 ## The cast
 
@@ -97,6 +103,80 @@ its key. Each place gets a backend:
   would use sync access handles in the Peer-Light's worker: writes in place, ranges read directly, and one exclusive
   handle per file, which fits the one writer.
 - **One conformance suite** that every backend passes, run in the box on all four.
+
+### The contract
+
+`Store` (`db/store/src/store.rs`) is an async trait. It carries no OpenDAL types: only `Hash`, `RefName`, bytes and our
+`Error`.
+
+| Call | What it does |
+|---|---|
+| `put(bytes) -> Hash` | The store computes the BLAKE3 hash. The same bytes twice keep one blob. |
+| `get(hash)` | The whole blob, checked against its hash (`Error::Corrupt` otherwise), or `None`. |
+| `get_range(hash, a..b)` | The bytes `a..b`. A range outside the blob is `Error::Range`. Ranges aren't hash-checked yet; verified ranges come with bao. |
+| `has`, `list` (sorted), `delete` | Deleting a missing blob is fine. |
+| `get_ref`, `list_refs` (sorted) | |
+| `set_ref(name, expected, new)` | Compare-and-set. `expected = None` means the ref must not exist yet. A stale writer gets `Error::Stale`. |
+| `delete_ref(name, expected)` | The same rule. |
+
+- **No append.**
+- **Ref names are flat:** 1 to 128 characters of `A-Za-z0-9._-`, not starting with a dot.
+- **The same layout everywhere:** blobs at `blobs/<hex>`, refs at `refs/<name>`, a ref holding its hash in hex.
+- **The suite** (`db/store/src/conformance.rs`) has 12 cases, each on a fresh store. Among them: ranges over 1 MiB, 8
+  racing writers of which exactly one wins, and readers that never see a torn ref while a writer flips it. Cases
+  report rather than panic, so the same suite runs under `cargo test` and in a browser.
+- **Compare-and-set** runs under one async lock in the store, so the one writer's tasks take turns. S3 also refuses a
+  stale write on the server.
+
+### How the backends differ
+
+| Backend | A write is atomic because | Compare-and-set |
+|---|---|---|
+| memory | it is inserted whole | the lock |
+| fs | OpenDAL writes to `<root>/.tmp`, syncs the file, then renames it into place | the lock |
+| s3 | one PUT per object, whole or absent | the lock, plus `If-Match` / `If-None-Match: *` on PUT and `If-Match` on DELETE |
+| opfs | `createWritable`, which the browser commits whole on close | the lock |
+
+- **versitygw's conditional writes are real:** a stale `If-Match` or `If-None-Match: *` gets 412, on PUT and DELETE,
+  under concurrent PUTs too (20 of 20 races, one winner each).
+- **S3's ETag is the content's MD5,** so rewriting the same bytes keeps the tag. Harmless, but a test must write fresh
+  values.
+- **OPFS refuses to delete a missing file;** the shared layer treats that as fine.
+- **OPFS refuses a read that races a commit** (`NotReadableError`, sometimes `NotFoundError`); it never tears one. A ref
+  read that fails checks whether the file exists and reads again, at most 8 times.
+- **OpenDAL's OPFS reads through `getFile()` and `Blob.slice`,** so every read, a range included, costs a fresh `File`.
+- **OpenDAL's OPFS finds OPFS through `window`,** which a worker lacks. The Peer-Light's worker answers as the window
+  (`os/web/peer/worker.js`) until our own backend replaces it.
+
+Measured (`conformance::bench`; native in release, OPFS in Chromium 156 on the main thread):
+
+| | memory | fs | s3 (versitygw) | opfs |
+|---|---|---|---|---|
+| put 200 × 4 KiB | 1.3 ms | 210 ms | 415 ms | 1117–1250 ms |
+| get 200 × 4 KiB | 0.9 ms | 93 ms | 170 ms | 515–660 ms |
+| put 8 MiB | 2.2 ms | 45 ms | 27 ms | 69–90 ms |
+| get 8 MiB | 1.8 ms | 16 ms | 18 ms | 27–36 ms |
+| 100 ranges × 4 KiB of 8 MiB | 0.4 ms | 15 ms | 223 ms | 470–570 ms |
+| set_ref 100 × | 0.7 ms | 166 ms | 336 ms | 690–870 ms |
+
+This is the case for our own OPFS backend: OpenDAL's pays about 6 ms per small write (5× fs) and 5 ms per 4 KiB range
+(30× fs). Sync access handles in the worker read ranges in place, write in place, and, being exclusive, end the refused
+reads.
+
+### What each peer keeps
+
+In milestone 1 each peer keeps one small record through its store: when it first started, a blob (`{"peer", "first"}`)
+and the ref `first-start` pointing at it (`peer/native/src/record.rs`, the same code in every peer). It tells the
+timeline in a `stored` line, and avenOS shows it in the Control Room and on a Peer-Light's dashboard.
+
+| Peer | `--store` | Where, in the box |
+|---|---|---|
+| Aven Peer | `s3` | the box's `s3` at `http://s3:7070`, bucket `aven` |
+| Alice Peer | `fs` | `/data`, its own volume `alice` |
+| Peer-Lights | (OPFS, always) | their origins' OPFS, in the check's Chromium profile, the volume `chromium` |
+
+`bun run up --check` proves both halves: after it walks the views, it restarts every peer and finds the same four
+records (same time, same blob), then runs `down --wipe` and `up` and finds four new ones. The box is left up, fresh.
 
 StorageSDK (storagesdk.dev) was considered: it is a TypeScript library for cloud buckets, and the core is Rust, in the
 browser too, and needs a folder and OPFS as well.
@@ -222,6 +302,32 @@ the binary is compiled in the box's image, then copied onto a minimal base, tens
 Production runs it with its live configuration (the real relay, Hetzner's S3); the box's `aven` and `alice` can run
 the same image with the box's (its relay, `http://s3:7070`), so what is tested is byte for byte what ships. It comes
 once the Peer runs, built and released by the Goal thread like the box.
+
+### The Peer's flags
+
+One `aven-peer` binary runs in the box and in production. Every flag can also come from the environment as
+`AVEN_PEER_<FLAG>`, and a flag wins. Nothing checks where it runs, and nothing of the cast is compiled into the binary
+or the wasm. The box derives the cast's test keys in `up.mjs` and hands them to compose.
+
+| Flag | What |
+|---|---|
+| `--name NAME` | what the peer is called in presence and the timeline (required) |
+| `--secret HEX` | its Ed25519 secret seed, 64 hex digits (required; better by environment) |
+| `--listen ADDR` | its UDP socket, `0.0.0.0:4433` |
+| `--relay` | run the relay here: the Aven Peer |
+| `--relay-listen ADDR` | the relay's HTTP socket, `0.0.0.0:3340` |
+| `--relay-url URL` | the relay every peer reaches, this one's included (required) |
+| `--members LIST` | `name=key,…`: the peers it knows by name; the Aven Peer admits only them |
+| `--aven HOST:PORT`, `--aven-key HEX` | the Aven Peer's UDP address and key (without `--relay`) |
+| `--events DIR` | also write the timeline's lines to `DIR/NAME.jsonl` |
+| `--store memory\|fs\|s3` | where it keeps its data, `memory` by default |
+| `--store-path DIR` | the folder, with `--store fs` |
+| `--s3-endpoint URL`, `--s3-bucket NAME` | the S3 server and bucket, with `--store s3` |
+| `--s3-root PREFIX`, `--s3-region NAME` | the store's prefix in the bucket (`/`) and the region (`us-east-1`) |
+| `--s3-key ID`, `--s3-secret SECRET` | its credentials (better by environment) |
+
+The Peer-Light takes the same configuration from its page: its name, its seed, the Aven Peer's key, and the page's own
+origin as its relay. It always stores in OPFS.
 
 ### Where it runs
 
@@ -350,7 +456,7 @@ aven/DB2/
   package.json     @aven/os, its own JS, with bun.lock
   Cargo.toml       its own Cargo workspace, with Cargo.lock and target/ (with the first crate)
   os/web/          avenOS's browser client: the dashboard, the account switcher, and its apps in os/web/apps,
-                   Vault and Control Room (Svelte 5 + Vite)
+                   Vault and Control Room (Svelte 5 + Vite); it reads the tree through aven-id's wasm (os/web/id.js)
   peer/native/     aven-peer: avenPEER's native Peer, one binary; --relay makes it the Aven Peer
   peer/light/      aven-peer-light: avenPEER's Peer-Light, the same core as wasm in a worker
   db/core/         aven-db-core: the pure core every peer runs, without I/O
@@ -361,6 +467,76 @@ aven/DB2/
   sandbox/         avenSANDBOX: the runner (up, down, logs, shot, build, doctor), the check, the cast
   sandbox/box/     the image: Dockerfile, compose.yml, the cloud setup script
 ```
+
+## Decisions
+
+Made in milestone 1's threads and its integration (29–30 Oct 2026).
+
+**avenID**
+- **No cycles is defined by a rank:** every owner has a strictly lower height than what it owns. That keeps `WF`
+  decidable, so the running model checks a tree itself, and gives the bound that proves `governs` and `chain` complete.
+- **The device rules are part of `WF`** (Samuel, 29 Oct): a device's vault has exactly one owner, the vault it serves;
+  it owns nothing; it has its own key, the key with its id, which owns nothing either. So `actsFor` is a function.
+- **Person and network vaults may have any known owners,** keys or vaults: room for k of n in milestone 3.
+- **`governs` is depth first,** in the tree's order: the Vault app's tree reads the same way.
+- **`sees` keeps its name** (the architect, 30 Oct): the devices a vault governs, for its Control Room. avenOS's
+  `peersOf` goes. Once caps come, reading data will be wider than governing; the name is to be looked at again then.
+- **avenOS reads the tree through aven-id's wasm** (Samuel, 29 Oct): a Vite alias `aven-id` points at
+  `target/wasm/aven-id/`, which `bun run up` and `bun run build` build with `id/core/wasm/build.sh`. Nothing is copied
+  into `os/web`. `os/web/id.js` keeps only how the page names things.
+
+**The store**
+- **Ref names are flat,** so every backend lays them out the same.
+- **The suite is a public module,** so later backends and the peers can run it.
+- **The OPFS suite runs in Playwright's Chromium,** served by a small node server: the box has no chromedriver for
+  `wasm-bindgen-test-runner`.
+- **versitygw is the box's S3:** its conditional writes are atomic. s3s-fs passed the suite only because our lock
+  serialises compare-and-set; it checks `If-Match` before writing, not with it, and ignores it on DELETE.
+
+**The Peers**
+- **One core, two builds:** `aven-peer` is a library and a binary; the Peer-Light depends on it without `native`.
+- **Configuration only:** keys, members, relay, addresses and the store come by flag or environment.
+- **The builder is a `docker run` from `up.mjs`,** not a compose service: a cloud session's proxy needs host networking
+  and its CA, which compose can't add only when they exist.
+- **Presence counts the Aven Peer itself,** which gives "4 peers" and "4 connected".
+- **The Peer-Light runs in a SharedWorker per origin,** since two Peer-Lights with one key would take the relay from
+  each other.
+- **The members-only door stays milestone 2's:** the relay admits everyone; the hub refuses keys outside its members.
+- **Traces are JSON lines** through `Lean.Data.Json`, all in one process call; the Rust side uses a seeded xorshift, so
+  a failure names its seed.
+
+**The integration**
+- **The peers keep their record through the store** as configuration: `--store s3` for the Aven Peer, `--store fs`
+  for Alice Peer, OPFS for the Peer-Lights.
+- **The check's Chromium keeps its profile in a volume,** so a Peer-Light's OPFS outlives a check, and a wipe empties
+  it with everything else.
+- **`Cargo.lock` was settled by cargo,** never by hand: each merge took the lock as it was and let `cargo metadata`
+  add the other branch's packages. Every version the branches resolved is kept.
+- **Tests compare JSON as values, never as text.** aven-id turns on serde_json's `preserve_order`, and Cargo unifies
+  features across the workspace, so after the merge every crate's maps keep insertion order. One test of
+  `aven-db-core` had compared a line's text with sorted keys.
+- **rustfmt's default width (100)** stays for Rust; the prose wraps at 120. No `rustfmt.toml`.
+
+## Open questions
+
+Raised by the threads, not settled in milestone 1:
+
+1. **Precompiled crates in the image.** A first build from an empty build folder takes 137–183 s, most of it
+   third-party crates (iroh, OpenDAL, reqwest, rustls). cargo-chef style, the image would build them into
+   `/work/target`, and Docker copies that into an empty volume on first mount. The image's tag would then need
+   `Cargo.lock`'s hash, and it grows by an estimated 1–2 GB. The alternative, for CI only, is GitHub's cache.
+2. **`opt-level` for dependencies.** wasm-bindgen takes 3 s per changed Peer-Light wasm, because the code is
+   unoptimised (the debug wasm is 19.6 MB, 17 MB without debug info). `[profile.dev.package."*"] opt-level = 1` should
+   shrink it and speed up wasm-bindgen and the page's load. Not measured.
+3. **Hetzner's `If-Match`.** The Aven Peer's server-side compare-and-set needs Hetzner Object Storage to honour
+   `If-Match` on PUT and DELETE. Otherwise it relies on the one writer alone, like fs. Check before production.
+4. **`set_ref` on a missing blob.** The store doesn't require the blob to exist. Should the core enforce it?
+5. **The fs folder's fsync.** fs syncs the file but not its folder after the rename: a power loss can lose the last
+   write, never tear it.
+6. **A Lean model of compare-and-set.** The store has no Lean model yet. Compare-and-set refs are a small, good target
+   for `Aven.DB`.
+7. **Our own OPFS backend.** OpenDAL's is slow for small writes and ranges, refuses reads that race a commit, and needs
+   the worker to answer as the window. Sync access handles in the Peer-Light's worker fix all three.
 
 ## Done when
 
@@ -380,8 +556,9 @@ aven/DB2/
 with its five crates as stubs) and avenOS's screens on the cast's vaults: the dashboard, the account switcher, Vault
 and Control Room. The UX is settled before the peers run under it.
 
-**Step 1, three threads in parallel (started 29 Oct 2026).** Each works on its own branch with a draft PR, sized by
-`.claude/skills/devx-speed`, stays in its own folders and writes what the plan should learn into its PR's body.
+**Step 1, three threads in parallel (done 29–30 Oct 2026: #1402, #1403, #1404).** Each works on its own branch with
+a draft PR, sized by `.claude/skills/devx-speed`, stays in its own folders and writes what the plan should learn into
+its PR's body.
 
 | Thread, branch | Builds | Its own check |
 |---|---|---|
@@ -389,9 +566,10 @@ and Control Room. The UX is settled before the peers run under it.
 | **avenID** (Lean and Rust), `claude/avendb-id` | `id/spec/`: `Aven.ID`, vaults owning vaults, what a vault governs, whom a device acts for and may act on, whom a host may act as; theorems that authority never runs up the tree, a device governs nothing, and no person acts as a network. `id/core/`: `aven-id`, pure, with the cast's keys derived and checked, and a wasm build of its queries for avenOS. | `lake build` without `sorry`; `cargo test`, its property tests checked against the running Lean model |
 | **Store** (Rust), `claude/avendb-store` | `db/store`: the conformance suite first, then the `Store` contract (blobs and refs) and its backends through OpenDAL (memory, fs, s3, opfs), with an S3-compatible server in the box | the suite passes on all four backends in the box |
 
-**Step 2, in this thread as the avenDB Goal thread:** collect the three branches, each a merge commit; settle the
-lockfile; wire avenOS to avenID's wasm and the peers to the store; run `bun run up --check`, measure the loop and write
-the times into this file. Then the change merges into `main`, and `production` releases what changed.
+**Step 2, the integration (done 30 Oct 2026),** on `claude/avendb-integration`: the three branches collected, each a
+merge commit (id, store, peers); `Cargo.lock` settled by cargo; avenOS reading the tree through aven-id's wasm; every
+peer keeping its record through the store; `bun run up --check` green, with the restart and the wipe proven; the loop
+measured and written into this file. Then the change merges into `main`, and `production` releases what changed.
 
 **Samuel's part,** the settings no agent can change:
 
