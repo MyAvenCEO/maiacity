@@ -29,7 +29,7 @@ layers above.
 
 ```
  7  App         the version 1 todo app: definitions and their parts
- 6  Faces       markup-runtime and style-runtime draw a node tree; the host's applier shows it; events come back as tells
+ 6  Faces       view-runtime and style-runtime draw a node tree; the host's applier shows it; events come back as tells
  5  Kernel      router, scheduler, turns, clock: pure Rust with no I/O, compiled to WebAssembly
  4  Actors      a definition (a Value), its Doc, and its turns
  3  Runtimes    pure functions over values: frozen WebAssembly modules named by hash, run with fuel
@@ -146,7 +146,7 @@ random bytes), the kernel answers them with a deterministic shim: the turn's fro
 else. Everything a runtime needs comes in `input`; everything it does goes out as `output`. Sandboxing is the runtime's job and
 the WebAssembly boundary's, not the part's.
 
-- **Where runtimes come from.** Only the repository. Each is built from source in [`aven/runtimes`](../runtimes/README.md), reviewed,
+- **Where runtimes come from.** Only the repository. Each is built from source in `aven/actor/runtimes`, reviewed,
   frozen, named by its hash and never changed. A new capability is a new version beside the old ones. A part names the
   version it was made for. A version that closes a hole raises the runtime's **floor**, and a part naming an older
   version runs on the floor.
@@ -163,12 +163,12 @@ the WebAssembly boundary's, not the part's.
 | `state-runtime` | A declarative turn: for each message, updates to state (set, merge, append, remove by path) and messages to send. No code, so it always ends | A turn's output | avenVIBES's declarative inbox, where a payload merges into state with no code at all |
 | `js-runtime` | JavaScript: `init`, `turn`, `present` | A turn's output, or a view model | QuickJS compiled to WebAssembly. maiaCITY's logic core: a seeded random, a frozen clock, no binary buffers |
 | `prolog-runtime` | A machine: fact-only Prolog with a real term parser | Whether the machine is well formed, and which messages are legal in a state | avenOS's `machine.ts`, without its comma splitting (README, weak spot 12) |
-| `markup-runtime` | Markup: an allowlisted tag tree with `$`, `$$`, `$each`, `$on` and components | A safe node tree for one viewer. It also checks the face's `a11y`: every interactive node has an accessible name and role | avenVIBES's view grammar; aven-brands' component library; maiaCITY's view engine and Markdown engine, which write every tag themselves |
+| `view-runtime` | A view: an allowlisted tag tree with `$`, `$$`, `$each`, `$on` and components | A safe node tree for one viewer. It also checks the face's `a11y`: every interactive node has an accessible name and role | avenVIBES's view grammar; aven-brands' component library; maiaCITY's view engine and Markdown engine, which write every tag themselves |
 | `style-runtime` | A style: tokens, component styles, variants and states as data | Scoped CSS text, from allowlisted properties and values only | avenVIBES's style engine and its eight states; aven-brands' brands as data. Raw CSS is never accepted |
 
 Later: `markdown-runtime`, `math-runtime`, `three-runtime`, `lean-runtime`, and actors written in Rust as WebAssembly.
 
-**The rules of faces**, which markup-runtime and style-runtime enforce, after avenVIBES and the component library of
+**The rules of faces**, which view-runtime and style-runtime enforce, after avenVIBES and the component library of
 aven-brands (`brands/CEO/design-system/src/brand/actors`: 53 components, each a JSON Value). Components themselves are
 definitions, and every placed one is an actor (section 6).
 
@@ -194,7 +194,7 @@ definitions, and every placed one is an actor (section 6).
 | `interface` | The messages it accepts, each with a JSON schema for its payload; an ask also names its reply's schema |
 | `machine` | Optional: a `prolog-runtime` part. If present, the kernel refuses any message the machine does not allow in the current `phase` |
 | `turn` | Required: `{ runtime, v, part }` on `state-runtime` or `js-runtime` |
-| `faces` | Optional: named faces, each `{ present, markup, style, a11y }`. `present` (optional; without it the markup sees the state) is a part on state- or js-runtime that gives the view model; `markup` is a markup-runtime part, `style` a style-runtime part, `a11y` the accessible names and roles markup-runtime checks |
+| `faces` | Optional: named faces, each `{ present, view, style, a11y }`. `present` (optional; without it the view sees the state) is a part on state- or js-runtime that gives the view model; `view` is a view-runtime part, `style` a style-runtime part, `a11y` the accessible names and roles view-runtime checks |
 | `init` | The first state |
 | `lifetime` | `durable` (the default): the actor lasts until it is retired, and later persists in avenDB. `mounted`: it lives while the face that placed it shows it, and goes when it is unplaced |
 | `replaces` | Optional: the name of the definition this one upgrades. Its actors move to the new definition, and a cap follows the upgrade only as far as the old interface reached, and only in a vault that has itself adopted the new definition (section 11) |
@@ -225,7 +225,7 @@ A component's definition adds to the fields above:
 | `slots` | The children its placer passes: faces of other actors. A leaf has no slots |
 | `name`, `description` | Its name, and why it is the way it is. A `$description` key is documentation at any depth |
 
-**Placing** is spawning. In a face's markup, `$use: { component, props, slots, on }` places a component: on the first
+**Placing** is spawning. In a face's view, `$use: { component, props, slots, on }` places a component: on the first
 draw the kernel spawns a face actor at an address derived from its placer and its place (and, in `$each`, the item's
 key); a later draw with new props sends it a `props` tell; a draw without it retires it, which ends that incarnation. `$use: { actor, face }`
 instead shows an existing actor's face, such as a durable task's row, without spawning anything.
@@ -312,8 +312,8 @@ The host is the page. It runs the kernel in a worker, and holds one small piece 
 ```
  actor state ─▶ present (state- or js-runtime) ─▶ view model
                                                      │
-      markup part + view model ─▶ markup-runtime ─▶ node tree ─┐
-      style part              ─▶ style-runtime  ─▶ scoped CSS ─┤
+          view part + view model ─▶ view-runtime ─▶ node tree ─┐
+          style part            ─▶ style-runtime  ─▶ scoped CSS ─┤
                                                                ▼
                          applier: checks the tree again, writes it into the face's shadow root
                                                                │
@@ -324,7 +324,7 @@ A screen is a tree of face actors. Each one's face renders into its own shadow r
 the applier fits each child's root into the place its placer left for it. A click goes to the face actor whose node
 was clicked; its turn may send one of its `events` on, to the address its placer wired.
 
-- **Runtimes never touch the DOM.** markup-runtime and style-runtime compute a node tree and CSS text from values. Only
+- **Runtimes never touch the DOM.** view-runtime and style-runtime compute a node tree and CSS text from values. Only
   the applier writes the DOM.
 - **The applier trusts nothing.** It checks every node and attribute against the same allowlist again, checks every
   URL's scheme, and adds no script. It writes into a shadow root of its own, so a face cannot style or read the page.
@@ -417,13 +417,12 @@ aven/actor/
   ARCHITECTURE.md    this file
   spec/              the Lean model, Aven.Actor, and the vectors it exports
   core/              the kernel: Values, Docs, messages, router, scheduler, clock, the runtime host
+  runtimes/
+    state/  js/  prolog/  view/  style/     one crate each, built to WebAssembly, frozen by hash
   host/              the page's side: the worker that runs the kernel, and the applier
   components/        the component library: definitions with faces, after aven-brands
   app/todo/          the version 1 app: its definitions and parts
 ```
-
-The runtimes live in [`aven/runtimes/actor`](../runtimes/README.md) (`state/`, `js/`, `prolog/`, `markup/`, `style/`),
-the one home of every runtime (Samuel, 30 Oct 2026); the kernel's runtime host is `aven-runtimes-host`.
 
 ## 14. Version 1, step by step
 
@@ -437,7 +436,7 @@ Test-first, as avenDB works: the Lean model and its theorems, then Rust tests th
 3. **Runtimes**: `prolog-runtime` and `state-runtime` first, then `js-runtime`; each with hostile parts that try to get
    out, run too long or blow up, which must fail.
 4. **The kernel** (`core`): router, scheduler, turns, clock, spawning; native tests replay the vectors.
-5. **Faces**: `markup-runtime`, `style-runtime`, the applier, events as tells.
+5. **Faces**: `view-runtime`, `style-runtime`, the applier, events as tells.
 6. **The app**: the todo app in a page, the kernel in a worker.
 
 What version 1 is not: no network, no avenDB, no capabilities, no encryption, no composites, no Studio, no planner.
@@ -495,4 +494,5 @@ Open, none of it blocking version 1 (the audit's findings, mostly avenDB's propo
 - **Hosting on the Aven Peer** is an explicit read cap shown to the owner (A16).
 - **Approvals longer than 10 minutes,** and a `timeout` that does not mean "not done".
 - **Performance gates** for wasm inside wasm, fuel across engines, and a shadow root per face.
-- **Runtimes:** whether a fact table needs a Prolog runtime; state-runtime's grammar.
+- **Runtimes:** whether a fact table needs a Prolog runtime; state-runtime's grammar; and whether every runtime moves
+  to one package, `aven/runtimes` (Samuel considering).
