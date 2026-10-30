@@ -16,8 +16,14 @@
 //      offline reach the others, and the new browser opens its vault's dashboard by itself. Then 3 and 4 again for a
 //      new WebKit and a new Firefox, one stop each: Playwright's passkey counts its signatures, so its copies must sign
 //      in one after another (a synced passkey on a phone keeps its counter at 0).
+//   5. The host itself can't be reached (aven.maia.city down, or the phone without a network): avenOS's release build,
+//      served as Caddy serves it (prod.mjs, `served`, at localhost:5175, one of the prod peer's origins). Each engine
+//      signs in there once, online, so its Service Worker keeps the shell (public/files-sw.js); then the host stops,
+//      page and relay both, and a reload still opens the dashboard from the cached shell and what the Peer-Light keeps,
+//      saying it is offline; the host comes back, and the page goes live without a reload.
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { chromium, firefox, webkit } from 'playwright';
+import { served } from './prod.mjs';
 
 const run = process.argv[2] ?? 'runs/latest';
 const origin = 'http://localhost:5174';
@@ -186,6 +192,67 @@ try {
 		await host('start');
 		await joins(engine, Date.now());
 	}
+
+	// 5. The host unreachable: the release build, from the shell its Service Worker keeps
+	const at = 'http://localhost:5175';
+	const sockets = new Set();
+	const serve = async () => {
+		const server = await served({ root: '/work/dist', port: 5175 });
+		server.on('connection', (socket) => (sockets.add(socket), socket.on('close', () => sockets.delete(socket))));
+		return server;
+	};
+	let server = await serve();
+	for (const engine of engines) {
+		const name = engine.name();
+		const got = (report.engines[name].shell = {});
+		const dir = `/tmp/avensandbox-offline-${name}-shell`;
+		rmSync(dir, { recursive: true, force: true });
+		const context = await engine.launchPersistentContext(dir, { viewport: { width: 1000, height: 760 } });
+		await context.credentials.create(passkey.rpId, passkey);
+		await context.credentials.install();
+		const page = context.pages()[0] ?? (await context.newPage());
+		try {
+			await page.goto(`${at}/`);
+			await page.getByTestId('sign-in').click({ timeout: 30_000 });
+			got.signedIn = await dashboard(page, 30_000);
+			[passkey] = await context.credentials.get({ rpId: 'localhost' });
+			// the shell kept: the page and the Peer-Light's wasm, which the Service Worker caches once it is installed
+			got.kept = await page.evaluate(async () => {
+				await navigator.serviceWorker.ready;
+				for (let i = 0; i < 300; i++) {
+					const cache = await caches.open('aven-shell-1');
+					if ((await cache.match('/')) && (await cache.match('/peer-light/aven_peer_light_bg.wasm'))) return true;
+					await new Promise((done) => setTimeout(done, 100));
+				}
+				return false;
+			});
+			// a moment, as a person who just signed in: the Peer-Light keeps the network it was told right after it tells
+			// the page, and Firefox's OPFS takes its time. A browser closed in that moment opens on "Sign in" until it is
+			// online again
+			await wait(3_000);
+			// the host goes: its page and its relay
+			const closed = new Promise((done) => server.close(done));
+			for (const socket of sockets) socket.destroy();
+			await closed;
+			const since = Date.now();
+			await page.reload();
+			got.opened = await dashboard(page, 20_000);
+			got.openMs = Date.now() - since;
+			got.offline = await seen(page.getByTestId('offline'), 30_000);
+			await shot(page, `${name}-host-unreachable`);
+			// back: live again without a reload
+			server = await serve();
+			got.live = await seen(page.locator('[data-testid="status"][data-phase="live"]'), 60_000);
+		} catch (error) {
+			got.why = error.message.split('\n')[0];
+			if (!server.listening) server = await serve();
+		}
+		if (!got.signedIn || !got.kept || !got.opened || !got.offline || !got.live)
+			problems.push(`${name}, the host unreachable: the release build didn't open from its kept shell: ${JSON.stringify(got)}`);
+		await context.close();
+	}
+	server.close();
+	for (const socket of sockets) socket.destroy();
 } catch (error) {
 	problems.push(`offline: ${error?.message ?? error}`);
 } finally {
