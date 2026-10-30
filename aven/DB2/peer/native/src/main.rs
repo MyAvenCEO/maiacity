@@ -375,7 +375,10 @@ async fn main() -> Result<(), Error> {
     const KEEPING: usize = 4;
     let waiting: Arc<Mutex<BTreeMap<PublicKey, Vec<Announcement>>>> = Arc::default();
     let keeping = Arc::new(tokio::sync::Semaphore::new(KEEPING));
+    // each file kept whole, by its name: every link is told (`kept`), so its sender says "Kept by the network"
+    let (kept, _) = tokio::sync::broadcast::channel::<String>(64);
     let keeps: chats::OnFile = {
+        let kept = kept.clone();
         let (endpoint, at, held, store, me, notes, waiting, keeping, chats) = (
             endpoint.clone(),
             relay_url.clone(),
@@ -399,23 +402,27 @@ async fn main() -> Result<(), Error> {
                 keeping.clone(),
                 chats.clone(),
             );
+            let kept = kept.clone();
             tokio::spawn(async move {
                 let Ok(index) = file.file.parse() else { return };
                 let Ok(_turn) = keeping.acquire_owned().await else {
                     return;
                 };
-                let kept = keep::keep(
+                let result = keep::keep(
                     &endpoint, &at, &held, &*store, from, index, file.size, &me, &notes,
                 )
                 .await;
                 // deleted while it was fetched: no line names it any more, so it goes again
-                if kept.is_ok() && !chats.names(&file.file) {
+                if result.is_ok() && !chats.names(&file.file) {
                     chats.drop_file(&file.file).await;
                     return;
                 }
+                if result.is_ok() {
+                    let _ = kept.send(file.file.clone());
+                }
                 // only a sender that couldn't be reached is asked again (`KeepError::retry`): one that hasn't the
                 // file, or whose file isn't the size its line says, never will have it
-                if let Err(why) = kept
+                if let Err(why) = result
                     && why.retry()
                 {
                     waiting.lock().unwrap().entry(from).or_default().push(file);
@@ -442,6 +449,7 @@ async fn main() -> Result<(), Error> {
                     ALPN,
                     Hub::new(me.clone(), members, notes.clone(), door.clone())
                         .with_chats(chats.clone(), joined.clone())
+                        .with_kept(kept.clone())
                         .with_joins(Arc::new(move |key| {
                             let files = waiting.lock().unwrap().remove(&key);
                             for file in files.into_iter().flatten() {

@@ -531,6 +531,8 @@ async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Re
                             }
                         }
                         Frame::Refused { why } => link.note("refused", json!({ "why": why })),
+                        // files the Aven Peer holds whole: their senders say "Kept by the network"
+                        Frame::Kept { files } => link.note("kept", json!({ "files": files })),
                         // catching up: told every head on each link, then whenever one moves there. It catches up
                         // when behind; its own lines the Aven Peer doesn't hold go on the next step (`upload`). The
                         // heads come in pages: the first telling is whole only at its last page (`more` false), and
