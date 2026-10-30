@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use aven_db_core::chat::{Announce, Kind, Message, Room};
+use aven_db_core::chat::{Kind, Message, Room};
 use serde_json::{Value, json};
 
 fn vectors(file: &str) -> Vec<Value> {
@@ -23,7 +23,7 @@ fn signature(signer: &str, signed: &str) -> String {
 
 fn message(m: &Value) -> Message {
     let text = |k: &str| m[k].as_str().unwrap().to_string();
-    let kind = [Kind::Here, Kind::Say, Kind::Bye, Kind::File]
+    let kind = [Kind::Here, Kind::Say, Kind::Bye]
         .into_iter()
         .find(|k| k.name() == m["kind"])
         .unwrap();
@@ -33,7 +33,6 @@ fn message(m: &Value) -> Message {
         at: m["at"].as_u64().unwrap(),
         kind,
         text: text("text"),
-        file: m.get("file").map(|a| serde_json::from_value(a.clone()).unwrap()),
         sig: signature(&text("signer"), &text("signed")),
     }
 }
@@ -81,8 +80,7 @@ fn rooms_follow_the_vectors() {
                 .iter()
                 .map(|(who, text)| json!([who, text]))
                 .collect();
-            let files: Vec<Value> = room.files().iter().map(|(who, a)| json!([who, a])).collect();
-            let got = json!({ "answer": answer, "body": body, "present": room.present(now), "said": said, "files": files });
+            let got = json!({ "answer": answer, "body": body, "present": room.present(now), "said": said });
             assert_eq!(&got, want, "{}, step {at}", v["name"]);
         }
     }
@@ -97,21 +95,9 @@ fn a_message_travels_as_json() {
         at: 7,
         kind: Kind::Say,
         text: "hi".into(),
-        file: None,
         sig: "00".into(),
     };
     let wire = serde_json::to_string(&m).unwrap();
     assert_eq!(serde_json::from_str::<Message>(&wire).unwrap(), m);
     assert!(wire.contains("\"kind\":\"say\""));
-    assert!(!wire.contains("file"), "a line travels as it did before announcements");
-
-    let a = Message {
-        kind: Kind::File,
-        text: String::new(),
-        file: Some(Announce { file: "ab".repeat(32), size: 3, name: "a.pdf".into(), mime: "application/pdf".into() }),
-        ..m
-    };
-    let wire = serde_json::to_string(&a).unwrap();
-    assert!(wire.contains("\"type\":\"application/pdf\""), "{wire}");
-    assert_eq!(serde_json::from_str::<Message>(&wire).unwrap(), a);
 }

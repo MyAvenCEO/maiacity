@@ -1,30 +1,31 @@
-//! Files on a Peer (store/README.md, "How a file travels"). A Peer shares a folder (`--files DIR`): each file that
-//! lands in it is put into its store as a hash sequence, its ref `file-<index>` set, and announced in the network's
-//! room once the room has a neighbour. The Aven Peer keeps every file announced: it fetches the whole hash sequence
-//! from the sender through iroh-blobs, checks its size against the announcement, and sets `file-<index>`, so the file
-//! stays reachable when its sender is gone.
+//! Files on a Peer (store/README.md, "How a file travels"): the folder a Peer shares, and the Aven Peer's rule that
+//! keeps every file announced. A file is announced as a line of its sender's chain (`aven_peer::chats`, the city-dome
+//! thread's); this module is the bytes' side of it.
 //!
-//! Timeline lines: `shared` (a file put and announced), `kept` (a file fetched whole and kept: from whom, how many
-//! bytes crossed, how long it took) and `dropped` (an announcement not kept, and why).
+//! - [`share`]: a Peer shares a folder (`--files DIR`). Each file that lands in it is put into the store as a hash
+//!   sequence, a chunk at a time, its ref `file-<index>` set, and handed to `announce`.
+//! - [`keep`]: the Aven Peer, told of a file line on a member device's chain, fetches the whole hash sequence from that
+//!   device through iroh-blobs, checks its length against the line's size and sets `file-<index>`, so the file is
+//!   served once its sender is gone.
+//!
+//! Timeline lines: `shared` (a file put), `kept` (a file fetched whole and kept: how many bytes crossed, how long it
+//! took) and `dropped` (a file not shared or kept, and why).
 
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
-use aven_db_core::chat::Announce;
 use aven_db_core::timeline;
 use aven_db_store::blobs::Blobs;
 use aven_db_store::{Hash, RefName, Store, files};
 use bytes::Bytes;
-use futures_channel::mpsc::UnboundedReceiver;
 use iroh::{Endpoint, EndpointAddr, PublicKey, RelayUrl};
-use n0_future::StreamExt;
 use serde_json::json;
 use tokio::time::{Duration, sleep};
 
-use crate::room::Room;
 use crate::{Notes, now};
 
 /// The ref that keeps a file: `file-<index>`.
@@ -50,6 +51,15 @@ pub fn mime(name: &str) -> &'static str {
     }
 }
 
+/// A file put from the folder, to announce: its index's hash, its size, its name and the type its name claims.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Shared {
+    pub index: Hash,
+    pub size: u64,
+    pub name: String,
+    pub mime: String,
+}
+
 /// A file's chunks as they are read from disk, one at a time.
 fn chunks(path: &Path) -> std::io::Result<impl Iterator<Item = Bytes>> {
     let mut file = std::fs::File::open(path)?;
@@ -63,8 +73,13 @@ fn chunks(path: &Path) -> std::io::Result<impl Iterator<Item = Bytes>> {
 }
 
 /// Shares the folder `dir` for as long as the Peer runs: every new or changed file in it, but those whose name starts
-/// with a dot or ends in `.part` (still being written).
-pub async fn share<S: Store + ?Sized>(dir: PathBuf, store: Arc<S>, room: Room, me: String, notes: Notes) {
+/// with a dot or ends in `.part` (still being written), is put and handed to `announce`.
+pub async fn share<S, F, A>(dir: PathBuf, store: Arc<S>, announce: A, me: String, notes: Notes)
+where
+    S: Store + ?Sized,
+    A: Fn(Shared) -> F,
+    F: Future<Output = ()>,
+{
     let note = |event: &str, fields| notes(timeline::line(now(), &me, event, fields));
     let mut seen: BTreeMap<PathBuf, (u64, SystemTime)> = BTreeMap::new();
     loop {
@@ -97,66 +112,55 @@ pub async fn share<S: Store + ?Sized>(dir: PathBuf, store: Arc<S>, room: Room, m
                 }
             };
             let _ = store.set_ref(&file_ref(&index), None, index).await;
-            // an announcement is heard only by those connected when it goes out
-            while !room.connected() {
-                sleep(Duration::from_millis(500)).await;
-            }
-            let a = Announce { file: index.to_string(), size: stamp.0, mime: mime(&name).into(), name };
-            room.announce(a.clone()).await;
             note(
                 "shared",
-                json!({ "file": a.file, "name": a.name, "size": a.size, "ms": started.elapsed().as_millis() as u64 }),
+                json!({ "file": index.to_string(), "name": name, "size": stamp.0, "ms": started.elapsed().as_millis() as u64 }),
             );
+            announce(Shared { index, size: stamp.0, mime: mime(&name).into(), name }).await;
         }
         sleep(Duration::from_secs(1)).await;
     }
 }
 
-/// The Aven Peer's rule: every file announced in the room is fetched whole from its sender and kept under
-/// `file-<index>`, one at a time, unless it is kept already.
+/// The Aven Peer's rule for one file line: the whole hash sequence `index` fetched from the device `from`, its length
+/// checked against `size`, and kept under `file-<index>`; a file kept already is left as it is. The bytes that
+/// crossed, and a `kept` or `dropped` line.
 #[allow(clippy::too_many_arguments)]
 pub async fn keep<S: Store + ?Sized>(
-    endpoint: Endpoint,
-    relay: RelayUrl,
-    blobs: Blobs,
-    store: Arc<S>,
-    mut announced: UnboundedReceiver<(PublicKey, Announce)>,
-    me: String,
-    notes: Notes,
-) {
-    let note = |event: &str, fields| notes(timeline::line(now(), &me, event, fields));
-    while let Some((from, a)) = announced.next().await {
-        if from == endpoint.id() {
-            continue;
-        }
-        let Ok(index) = a.file.parse::<Hash>() else { continue };
-        let name = file_ref(&index);
-        if matches!(store.get_ref(&name).await, Ok(Some(_))) {
-            continue;
-        }
-        let started = Instant::now();
-        let kept = async {
-            let at = EndpointAddr::new(from).with_relay_url(relay.clone());
-            let conn = endpoint.connect(at, files_alpn()).await.map_err(|e| e.to_string())?;
-            let fetched = blobs.fetch_file(&conn, index).await.map_err(|e| e.to_string())?;
-            let file = files::open(&*store, &index).await.map_err(|e| e.to_string())?.ok_or("no index")?;
-            if file.len != a.size {
-                return Err(format!("{} bytes, announced as {}", file.len, a.size));
-            }
-            store.set_ref(&name, None, index).await.map_err(|e| e.to_string())?;
-            Ok::<_, String>(fetched.bytes)
-        };
-        match kept.await {
-            Ok(bytes) => note(
-                "kept",
-                json!({ "file": a.file, "name": a.name, "size": a.size, "bytes": bytes,
-                    "ms": started.elapsed().as_millis() as u64 }),
-            ),
-            Err(why) => note("dropped", json!({ "file": a.file, "why": why })),
-        }
+    endpoint: &Endpoint,
+    relay: &RelayUrl,
+    blobs: &Blobs,
+    store: &S,
+    from: PublicKey,
+    index: Hash,
+    size: u64,
+    me: &str,
+    notes: &Notes,
+) -> Result<u64, String> {
+    let name = file_ref(&index);
+    if matches!(store.get_ref(&name).await, Ok(Some(_))) {
+        return Ok(0);
     }
-}
-
-fn files_alpn() -> &'static [u8] {
-    crate::blobs::ALPN
+    let started = Instant::now();
+    let kept = async {
+        let at = EndpointAddr::new(from).with_relay_url(relay.clone());
+        let conn = endpoint.connect(at, crate::blobs::ALPN).await.map_err(|e| e.to_string())?;
+        let fetched = blobs.fetch_file(&conn, index).await.map_err(|e| e.to_string())?;
+        let file = files::open(store, &index).await.map_err(|e| e.to_string())?.ok_or("no index")?;
+        if file.len != size {
+            return Err(format!("{} bytes, announced as {size}", file.len));
+        }
+        match store.set_ref(&name, None, index).await {
+            Ok(()) | Err(aven_db_store::Error::Stale { .. }) => Ok(fetched.bytes),
+            Err(e) => Err(e.to_string()),
+        }
+    };
+    let result = kept.await;
+    let line = match &result {
+        Ok(bytes) => ("kept", json!({ "file": index.to_string(), "size": size, "bytes": bytes,
+            "ms": started.elapsed().as_millis() as u64 })),
+        Err(why) => ("dropped", json!({ "file": index.to_string(), "why": why })),
+    };
+    notes(timeline::line(now(), me, line.0, line.1));
+    result
 }

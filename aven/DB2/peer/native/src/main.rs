@@ -21,7 +21,7 @@
 //!     --aven HOST:PORT       the Aven Peer's UDP address, without --relay
 //!     --aven-key HEX         the Aven Peer's key, without --relay
 //!     --events DIR           also write the timeline's lines to DIR/NAME.jsonl
-//!     --files DIR            share this folder: each file in it is put as a hash sequence and announced in the room
+//!     --files DIR            share this folder: each file in it is put as a hash sequence and kept
 //!     --store KIND           where it keeps its data: memory (the default), fs or s3
 //!     --store-path DIR       the folder, with --store fs
 //!     --s3-endpoint URL      the S3 server, with --store s3
@@ -46,8 +46,7 @@
 //! members, or the devices of the admin coop's members and people, and the Aven Peer, the device of Aven, the agent
 //! that runs the network for the coop. Every peer is in the network's chat
 //! room, over iroh-gossip on the same Router; the Aven Peer joins it first and says once who joined. Every Peer serves its
-//! store's blobs over iroh-blobs (`/iroh-bytes/4`) to members only, and the Aven Peer keeps every file announced in the
-//! room (store/README.md, "How a file travels").
+//! store's blobs over iroh-blobs (`/iroh-bytes/4`) to members only (store/README.md, "How a file travels").
 
 use std::collections::HashMap;
 use std::fs::OpenOptions;
@@ -64,7 +63,7 @@ use aven_peer::keys::{self, Members};
 use aven_peer::members::{Gate, Hook};
 use aven_peer::relay::Allow;
 use aven_peer::room::Room;
-use aven_peer::{Notes, blobs, door, door::Door, files, hub::Hub, link, now, record, tls};
+use aven_peer::{Notes, blobs, door, door::Door, hub::Hub, keep, link, now, record, tls};
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
 use iroh::{Endpoint, EndpointAddr, RelayMap, RelayMode, RelayUrl};
@@ -403,15 +402,12 @@ async fn main() -> Result<(), Error> {
         notes.clone(),
     )
     .await?;
-    // files: the folder this Peer shares, and the Aven Peer's rule, which keeps every file announced
+    // the folder this Peer shares: each file put and kept under `file-<index>`. Announcing it is a `file` line on this
+    // device's chain (city-dome's `Room::share`); the Aven Peer's rule (`keep::keep`) runs on each one it chains
     if let Some(dir) = config.get("files") {
         std::fs::create_dir_all(&dir)?;
-        tokio::spawn(files::share(dir.into(), store.clone(), room.clone(), me.clone(), notes.clone()));
-    }
-    if relay {
-        let announced = room.announced();
-        let (endpoint, relay_url) = (endpoint.clone(), relay_url.clone());
-        tokio::spawn(files::keep(endpoint, relay_url, held, store.clone(), announced, me.clone(), notes.clone()));
+        let announce = |_: keep::Shared| async {};
+        tokio::spawn(keep::share(dir.into(), store.clone(), announce, me.clone(), notes.clone()));
     }
 
     // the Aven Peer says once who joined

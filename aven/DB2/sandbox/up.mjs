@@ -197,7 +197,6 @@ async function check() {
 		fresh &&
 		result.exitCode === 0 &&
 		(await keeps(run)) &&
-		(await shares(run)) &&
 		(await inEngines(run)) &&
 		(await claims(run)) &&
 		(await members(run)) &&
@@ -251,7 +250,10 @@ async function keeps(run) {
 // A file's way (store/README.md, "How it is checked"), by sandbox/files.mjs: Alice Peer shares a 200 MiB file from its
 // folder, written beside it and moved in; Bob's Peer-Light seeks to its middle, fetching less than a quarter of it, and
 // the Aven Peer keeps it; then Alice Peer stops, Bob's Peer-Light fetches the whole file from the Aven Peer, and Alice
-// Peer starts again. Only the host stops a peer, so the step's phases run around it.
+// Peer starts again. Only the host stops a peer, so the step's phases run around it. It joins `check()` once a file is
+// announced as a `file` line on its sender's chain (the city-dome thread): Alice Peer's `--files` announces through
+// `Room::share`, and the Aven Peer runs `keep::keep` on each file line it chains. It passed whole on 30 Oct 2026 with
+// an interim announcement in its place.
 async function shares(run) {
 	const timed = Date.now();
 	const share = [
