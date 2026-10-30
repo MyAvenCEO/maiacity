@@ -43,7 +43,7 @@ def footprintJson (g : Core.Grant) : Json :=
     ("fields", match g.fields with | some fs => toJson (fs.map Core.utf8Text) | none => Json.null)]
 
 def Line.json (l : Line) : Json :=
-  Json.mkObj [("target", targetJson l.target), ("verb", verbText l.verb),
+  Json.mkObj [("target", targetJson l.target), ("verb", verbName l.verb),
     ("footprint", Json.arr (l.footprint.map footprintJson).toArray)]
 
 def Branches.json : Branches → Json
@@ -71,7 +71,8 @@ def Sig.json (s : Sig) : Json := Json.mkObj [("key", s.key), ("digest", s.digest
 def Cap.json (c : Cap) : Json :=
   Json.mkObj [("id", c.id), ("issuer", c.issuer), ("holder", c.holder.json), ("parent", toJson c.parent),
     ("grant", Json.arr (c.grant.map Line.json).toArray), ("role", toJson c.role), ("share", toJson c.share),
-    ("conditions", c.conditions.json), ("signer", c.signer), ("approvals", Json.arr (c.approvals.map Sig.json).toArray)]
+    ("conditions", c.conditions.json), ("signer", c.signer), ("approvals", Json.arr (c.approvals.map Sig.json).toArray),
+    ("cbor", Core.hex c.bytes), ("id", (c.digest Core.blake3).text), ("signs", Core.hex c.signing)]
 
 def Role.json (r : Role) : Json :=
   Json.mkObj [("id", r.id), ("name", r.name), ("grant", Json.arr (r.grant.map Line.json).toArray)]

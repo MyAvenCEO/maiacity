@@ -24,6 +24,11 @@ namespace Aven.ID
 /-- A vault's id as Core's targets name it: the bytes of `v:` and its name, as Core's vectors write them. -/
 def vaultId (v : String) : Core.Bytes := ("v:" ++ v).toUTF8.toList
 
+/-- A verb as caps writes it, in its bytes and as avenOS shows it. -/
+def verbName : Core.Verb → String
+  | .read => "read" | .query => "query" | .put => "put" | .patch => "patch" | .remove => "remove"
+  | .edit => "edit" | .tell => "tell" | .keep => "keep" | .share => "share"
+
 /-- One line of a grant: a verb on a target, and for a write the footprint grants each of its steps must keep. -/
 structure Line where
   target : Core.Target

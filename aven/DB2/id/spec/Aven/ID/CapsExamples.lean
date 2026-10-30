@@ -3,6 +3,7 @@ import Aven.ID.Revoke
 import Aven.ID.Epochs
 import Aven.ID.Recover
 import Aven.ID.Network
+import Aven.ID.CapsCbor
 
 /-! # Caps on the cast
 
@@ -211,11 +212,6 @@ def Holder.text : Holder → String
   | .«public» => "every member of the network"
   | .ticket k => s!"whoever claims the ticket {k}"
 
-/-- A verb as avenOS shows it. -/
-def verbText : Core.Verb → String
-  | .read => "read" | .query => "query" | .put => "put" | .patch => "patch" | .remove => "remove"
-  | .edit => "edit" | .tell => "tell" | .keep => "keep" | .share => "share"
-
 /-- A target as avenOS shows it, the Docs and vaults by the names `name` gives them. -/
 def targetText (name : Core.DocId → String) (vault : Core.Bytes → String) : Core.Target → String
   | .doc d => name d
@@ -226,7 +222,7 @@ def targetText (name : Core.DocId → String) (vault : Core.Bytes → String) : 
 
 /-- A line as avenOS shows it: its verb, its target, and for a write what each step may do. -/
 def Line.text (name : Core.DocId → String) (vault : Core.Bytes → String) (l : Line) : String :=
-  s!"{verbText l.verb} {targetText name vault l.target}" ++
+  s!"{verbName l.verb} {targetText name vault l.target}" ++
     if l.footprint.isEmpty then "" else
       " (" ++ ", ".intercalate (l.footprint.map fun g => s!"{g.verb.name} {name g.type}" ++
         match g.fields with | none => "" | some _ => " (some fields)") ++ ")"
@@ -247,5 +243,8 @@ def Cap.text (c : Cap) (roles : List Role) : String :=
 
 #guard capA.text [] == "alice grants bob: read d1, put d1 (put-new tasks, patch tasks); may share on 1 more hop(s)"
 #guard capB.text [] == "bob grants everyone in g-garden: read d1; no sharing on"
+
+-- Every cap of the examples is a Value the codec allows, so its bytes and its id name it exactly.
+#guard (chainExamples.flatMap (·.2.1)).all fun c => Core.Canon c.body
 
 end Aven.ID
