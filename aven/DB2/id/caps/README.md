@@ -21,7 +21,8 @@ document (moved there whole), and Signal, Matrix, MLS, Biscuit, Keyhive and Mead
 - the keeper is blind (D9);
 - hybrid post-quantum signatures go where authority lasts (D10);
 - passkeys use the PRF step (D11);
-- MaiaCityGuardian stays a full owner through the evaluation phase (D12);
+- MaiaCityGuardian stays a full owner through the evaluation phase, and leaves before the network opens beyond the
+  founding circle (D12);
 - the keeper sees as little as possible: a segment's Doc, epoch and padded length (D13);
 - every grant needs its vault's owners' approval, for now (D14);
 - the public is the network's members, never the open internet (D15);
@@ -716,11 +717,16 @@ ack on it is final like any other.
   control. It needs an X-Wing key beside its Ed25519 key; `bun run guardian` would make both.
 - It is the one place where recovery is one key, kept for the evaluation phase.
 
-**Its exit,** when Samuel calls it:
+**Its exit comes before the network opens beyond the founding circle,** whatever else is ready (Samuel, 30 Oct 2026):
 1. one act per vault removes it as an owner;
 2. the same act rotates the keyring, so nothing new is sealed to it;
 3. the guardian's secrets are destroyed. Everything it could open before stays open to whoever kept them, so destroying
    them is part of the exit.
+
+Recommended on the way there:
+- remove it from a vault as soon as that person has their own way back: a second passkey, a recovery kit, or chosen
+  guardians;
+- until then, keep its secret as 2-of-3 pieces in different places, so no single stolen copy is the master key.
 
 **The end state:**
 - **Recovery owners:** a person chooses guardian vaults, k of n, whose act takes effect only after a delay (seven days,
@@ -988,7 +994,8 @@ to and leave all the time. Scale need not be built from day one, but no choice m
 11. **The passkey PRF step** (Samuel, 30 Oct 2026). The PRF opens the keyring the keeper keeps, so a new browser needs
     no other device. Device keys are made fresh. Pairing and a recovery kit cover the gaps.
 12. **MaiaCityGuardian stays a full owner through the evaluation phase** (Samuel, 30 Oct 2026), its keyring seal
-    included. Its exit is written above and comes when Samuel calls it.
+    included. It leaves before the network opens beyond the founding circle (Samuel, 30 Oct 2026): one act per vault
+    removes it and rotates the keyring, and its secrets are destroyed.
 13. **The keeper sees as little as possible** (Samuel, 30 Oct 2026). Outside a segment are only its Doc, its key epoch
     and its padded length. Keepers serve catch-up by arrival order, and readers check writers. The docs thread had
     proposed showing each writer's pseudonym, counters and previous segment, so a keeper could serve by version and
@@ -1095,14 +1102,11 @@ A proposal for milestone 3's plan, for the architect:
    - the `tree 1` scheme, started when Maia City passes about 150 members (D7);
    - recovery owners with a delay;
    - nested groups and batched rotation for communities;
-   - MaiaCityGuardian's exit.
+   - MaiaCityGuardian's exit, before the network opens beyond the founding circle (D12).
 
 ## Open questions
 
-1. **MaiaCityGuardian's exit** (Samuel: later). Recommended when it comes:
-   - per vault, once that person has their own way back (a second passkey, a recovery kit, chosen guardians);
-   - before the network opens beyond the founding circle, or before anyone stores truly private data;
-   - meanwhile, its secret kept as 2-of-3 pieces in different places.
+None at the moment. What comes later is scheduled in [order of work](#order-of-work).
 
 ## Not in this spec
 
