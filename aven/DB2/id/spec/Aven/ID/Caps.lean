@@ -280,11 +280,11 @@ def holds (x : Ctx) (p : Cap) (issuer : String) : Bool :=
   | .«public» => false
   | .ticket _ => false
 
-/-- What every cap must keep: a device of its issuer signed it, its issuer's owners approved it (D14), and a public cap
-may not share. -/
+/-- What every cap must keep: a device of its issuer signed it, its issuer's owners approved it, an owner vault by its
+own quorum (D14), and a public cap may not share. -/
 def capRules (x : Ctx) (c : Cap) : List (Bool × ChainError) :=
   [(x.tree.actsFor c.signer == some c.issuer, .signer c.id),
-   (x.tree.approved (x.threshold c.issuer) c.issuer c.id c.approvals, .approval c.id),
+   (x.tree.approves x.threshold c.issuer c.id c.approvals, .approval c.id),
    (c.holder != .«public» || c.share == 0, .publicShares c.id)]
 
 /-- A root names no parent, and every atom it grants lies in its issuer's authority. -/
@@ -324,7 +324,7 @@ theorem rules_all {l m : List (Bool × ChainError)} :
   simp only [List.all_append, Bool.and_eq_true]
 
 theorem capRules_ok {c : Cap} (h : (capRules x c).all (·.1) = true) :
-    x.tree.actsFor c.signer = some c.issuer ∧ x.tree.approved (x.threshold c.issuer) c.issuer c.id c.approvals = true ∧
+    x.tree.actsFor c.signer = some c.issuer ∧ x.tree.approves x.threshold c.issuer c.id c.approvals = true ∧
       (c.holder = .«public» → c.share = 0) := by
   simp only [capRules, List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true,
     bne_iff_ne, ne_eq] at h
@@ -452,10 +452,11 @@ theorem links_caps : ∀ {p : Cap} {cs : List Cap}, (linksRules x p cs).all (·.
     · exact e ▸ (linkRules_ok l).2.2.2.2.2
     · exact links_caps rest d m
 
-/-- Every grant carries its issuer's owners' approval, and a device of its issuer signed it (D14). -/
+/-- Every grant carries its issuer's owners' approval, an owner vault's by its own quorum, and a device of its issuer
+signed it (D14). -/
 theorem grant_approved {r : Cap} {cs : List Cap} (h : chainOk x (r :: cs) = true) :
     ∀ c ∈ r :: cs, x.tree.actsFor c.signer = some c.issuer ∧
-      x.tree.approved (x.threshold c.issuer) c.issuer c.id c.approvals = true := by
+      x.tree.approves x.threshold c.issuer c.id c.approvals = true := by
   rw [chainOk, chainRules, rules_all] at h
   intro c m
   rcases List.mem_cons.mp m with e | m

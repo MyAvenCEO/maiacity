@@ -140,14 +140,17 @@ touches.
 parts' own models, on the shared core `Aven.Core`. Where each rule stands, what is still open and who closes it is
 kept in one place, beside the proofs: [`architecture/README.md`](architecture/README.md), "Where the rules stand".
 
-On 30 Oct 2026, seven rules were proven whole: 1, 2, 3, 6, 7, 8 and 9. Still open:
-- **4:** one verdict joining signature, cap chain, footprint and fit;
-- **5 and 11:** proven in the parts, to be composed;
-- **10:** limits on envelopes, blobs and pages, and a quota per vault;
-- **12:** time judged by acks;
-- **13:** a model of the safe.
+On 30 Oct 2026, 13 of the 14 rules were composed from the parts' own theorems (the last four, 4, 10, 12 and 13, in
+#1593). Rule 4 is one verdict: an envelope counts exactly when everything in its past is signed, in a fresh epoch,
+authorized by its cap chain, not revoked, within its footprint and fit, and none of it is half of a split; readers
+holding the same past agree.
 
-Rule 14 is a property of the node, held by the format vectors and the box's check.
+One piece of rule 4 is open again, found by caps the same day: a merge into main counts only when the merger's grant
+covers the whole merge (caps README, "Checking"), but the content check reads a merge against the version its prev and
+deps name, which already holds the proposal. The engine (`merge_granted`) and caps (`merge_covered`) model it, and
+`Aven.Architecture` joins them by judging a merge into main against main before it.
+
+Rule 14 is a property of the node, held by the format vectors and the box's check; no theorem is planned for it.
 
 ## One vocabulary
 
@@ -718,8 +721,8 @@ codec, names, envelopes, logs and the target grammar, defined once.
 | runtimes | `Aven.Runtime` (#1533) onto the core; the box checks the vectors of `aven/runtimes` and `aven/actor` too |
 | PEERS planning | `PEERS.md`: relays, address records, catch-up and keepers peer to peer, upgrades by wire version; the tree's Lean with caps (**A10** to **A13**) |
 
-Then one model across them all, `Aven.Architecture`, proves the rules above across parts, and whatever its proofs
-expose comes back into this document.
+One model across them all, `Aven.Architecture`, proves the rules above across parts: 13 of 14 since 30 Oct 2026
+(see "The rules in Lean"). Whatever its proofs expose comes back into this document.
 
 Text fixes that need no decision (broken links to `aven/ID/caps` and `aven/actor`, wrong rule numbers, stale
 milestone numbers) go to each spec's own thread.

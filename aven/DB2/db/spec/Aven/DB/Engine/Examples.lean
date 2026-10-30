@@ -380,6 +380,18 @@ def ver (t : DocId) : TypeId := ⟨t, blake3 (utf8 "schema:v1")⟩
   | .error _ => ([], false)) ==
   ([(Aven.DB.Docs.ChangeKind.edited, ["done"])], true)
 
+-- A merge into main is judged on the whole merge. A proposal renamed the task; the merger, granted only to tick
+-- tasks done, settles the merge by ticking it. The settling commit's own changes are only `done`, which the narrow
+-- grant covers; the whole merge also renames the task on main, which it doesn't.
+def mainBefore : List (Record Value) := [⟨⟨1, 1, 0⟩, task, rows [("x2", text "Order seeds"), ("done", .uint 0)]⟩]
+def proposal : List (Record Value) := [⟨⟨1, 1, 0⟩, task, rows [("x2", text "Order bean seeds"), ("done", .uint 0)]⟩]
+def merged : List (Record Value) := [⟨⟨1, 1, 0⟩, task, rows [("done", .uint 1), ("x2", text "Order bean seeds")]⟩]
+def tickOnly : List Grant := [⟨task, .patch, some [utf8 "done"]⟩]
+def settle : List (Op Value) := [.patch task [] (rows [("done", .uint 1)])]
+
+#guard verdictFootprint tickOnly (footprint settle) (changesFrom ver proposal merged) == true
+#guard verdictFootprint tickOnly (footprint settle) (changesFrom ver mainBefore merged) == false
+
 def mutationExamples : List Json := [
   mutationVector "I ate 2 bananas" 1 7 (everything [banana, quantity, eat]) [] bananas,
   mutationVector "a reference forward: refused" 1 7 (everything [banana, eat]) []
