@@ -9,6 +9,8 @@
 // - Alice shares an image and a PDF: each is a file line of her chain, shown in her chat at once (local first) and
 //   loaded from her own store through the Service Worker's /files/<hash>, a range of it a 206; Bob's chat loads them
 //   too, their chunks fetched from the Aven Peer, which keeps every file, or from Alice;
+// - Alice shares an HTML page and an SVG with a script: Bob's chat shows each as a download link only, and opened in a
+//   tab of his own neither runs on avenOS's origin;
 // - last, a third browser on Bob's origin, with an empty OPFS, joins later and catches up on the whole chat (3); it
 //   writes at once, before it knows its own head, and the line continues Bob's chain: never a fork of it.
 //
@@ -228,6 +230,42 @@ const bobPdf = await bob.evaluate(async (name) => {
 }, `page-${stamp}.pdf`);
 report.bobPdf = bobPdf;
 if (bobPdf?.status !== 200 || bobPdf.type !== 'application/pdf' || bobPdf.start !== '%PDF-1.1') problems.push(`Bob's PDF is ${JSON.stringify(bobPdf)}`);
+// a hostile member's HTML page and SVG, each with a script: shown as download links only, never as an image or a
+// frame, served to Bob as attachments, and opened in a tab of his they run nothing on avenOS's origin, which holds his
+// device's secret (sandbox/inline.mjs checks the Service Worker alone, in all three engines)
+const script = `<script>try { localStorage.setItem('ran', location.href) } catch {} try { new BroadcastChannel('ran').postMessage(location.href) } catch {}</script>`;
+const hostile = [
+	{ name: `page-${stamp}.html`, mimeType: 'text/html', buffer: Buffer.from(`<!doctype html><title>hi</title>${script}`) },
+	{ name: `logo-${stamp}.svg`, mimeType: 'image/svg+xml', buffer: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg">${script}</svg>`) },
+];
+await bob.evaluate(() => {
+	window.ran = [];
+	new BroadcastChannel('ran').onmessage = ({ data }) => window.ran.push(data);
+});
+await alice.getByTestId('file-input').setInputFiles(hostile);
+for (const { name, mimeType } of hostile) {
+	const card = bob.locator('[data-testid="file"]', { has: bob.locator(`a[download="${name}"]`) }).last();
+	if (!(await seen(card, 30_000))) {
+		problems.push(`Bob's chat did not show ${name}`);
+		continue;
+	}
+	const shownAs = await card.evaluate((f) => ({ kind: f.dataset.kind, embedded: f.querySelectorAll('img, video, iframe, object, embed').length }));
+	if (shownAs.kind !== 'file' || shownAs.embedded) problems.push(`Bob's chat shows ${name} (${mimeType}) as ${JSON.stringify(shownAs)}`);
+	const hash = await card.getAttribute('data-file');
+	const served = await bob.evaluate(async (path) => {
+		const r = await fetch(path);
+		return { type: r.headers.get('content-type'), as: r.headers.get('content-disposition'), sniff: r.headers.get('x-content-type-options'), csp: r.headers.get('content-security-policy') };
+	}, `/files/${hash}`);
+	report[`served ${mimeType}`] = served;
+	if (served.type !== 'application/octet-stream' || served.as !== 'attachment' || served.sniff !== 'nosniff' || !/^sandbox;/.test(served.csp ?? ''))
+		problems.push(`${name} is served to Bob as ${JSON.stringify(served)}`);
+	const tab = await profiles.bob.newPage();
+	await tab.goto(new URL(`/files/${hash}`, bob.url()).href, { timeout: 10_000 }).catch(() => {});
+	await wait(1000);
+	await tab.close();
+}
+const ran = await bob.evaluate(() => ({ heard: window.ran, stored: localStorage.getItem('ran') }));
+if (ran.heard.length || ran.stored) problems.push(`a shared file's script ran on Bob's avenOS: ${JSON.stringify(ran)}`);
 await bob.screenshot({ path: `${run}/dome-bob-files.png` });
 // last, a third browser on Bob's origin, its OPFS empty, joins later and catches up from the Aven Peer. It has Bob's
 // cast key, so Bob's own browser closes first: two Peer-Lights with one key would take the relay from each other

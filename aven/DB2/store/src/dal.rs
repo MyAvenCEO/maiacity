@@ -313,14 +313,17 @@ impl crate::conformance::RefsAtRest for DalStore {
     }
 
     async fn put_ref_bytes(&self, name: &RefName, bytes: &[u8]) -> Result<()> {
-        self.op.write(&ref_path(name), bytes.to_vec()).await.map(|_| ()).map_err(backend)
+        self.op
+            .write(&ref_path(name), bytes.to_vec())
+            .await
+            .map(|_| ())
+            .map_err(backend)
     }
 }
 
 fn ref_path(name: &RefName) -> String {
     format!("refs/{name}")
 }
-
 
 fn is_refused(e: &opendal::Error) -> bool {
     matches!(

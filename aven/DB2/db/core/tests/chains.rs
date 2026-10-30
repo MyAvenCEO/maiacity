@@ -85,12 +85,14 @@ impl Labels {
         let prev = l["prev"].as_str().map(|p| self.resolve(p));
         let line = line(&l, prev);
         let id = blake3::hash(&line.blob()).to_hex().to_string();
-        // a well-formed line reads back as itself; one whose type breaks the line can't, which is why it is refused
+        // a well-formed line reads back as itself, field by field; one whose type breaks the line can't, which is why
+        // it is refused. The model's labels aren't hex, so the canonical reading has vectors of its own (`read`)
         if line.body.check().is_ok() {
             assert_eq!(
-                Line::parse(&line.blob())
-                    .map_err(|e| (e, String::from_utf8_lossy(&line.blob()).into_owned())),
-                Ok(line.clone())
+                Line::read_kept(&line.blob()).map(|(l, _)| l),
+                Some(line.clone()),
+                "{}",
+                String::from_utf8_lossy(&line.blob())
             );
         }
         self.named.insert(label.to_string(), (line, id.clone()));
@@ -130,6 +132,46 @@ fn what_a_line_signs_follows_the_vectors() {
             v["name"]
         );
     }
+}
+
+/// A blob read as a line, or refused as not canonical, as Lean reads it (`Aven.DB.Chains.read`); a line taken renders
+/// back to exactly its bytes.
+#[test]
+fn reads_follow_the_vectors() {
+    let all: Vec<Value> = vectors("chats.json")
+        .into_iter()
+        .filter(|v| v["input"].get("read").is_some())
+        .collect();
+    assert!(all.len() > 10);
+    for v in all {
+        let blob = v["input"]["read"].as_str().unwrap().as_bytes();
+        let got = match Line::parse(blob) {
+            Ok(l) => {
+                assert_eq!(l.blob(), blob, "{}", v["name"]);
+                let mut fields = json!({
+                    "network": l.network, "device": l.device, "seq": l.seq, "prev": l.prev, "at": l.at,
+                    "sig": l.sig,
+                });
+                fields["body"] = match &l.body {
+                    Body::Text(t) => json!({ "text": t }),
+                    Body::File(f) => {
+                        json!({ "file": f.file, "size": f.size, "name": f.name, "type": f.kind })
+                    }
+                };
+                json!({ "line": fields })
+            }
+            Err(why) => json!({ "refused": why.name() }),
+        };
+        assert_eq!(got, v["expected"], "{}", v["name"]);
+    }
+}
+
+#[test]
+fn a_blob_that_is_no_utf8_is_not_canonical() {
+    assert_eq!(
+        Line::parse(b"avenDB line 1\nnetwork \xff"),
+        Err(aven_db_core::chain::Refusal::NotCanonical)
+    );
 }
 
 #[test]
