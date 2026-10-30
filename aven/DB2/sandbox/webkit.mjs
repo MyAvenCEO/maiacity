@@ -6,7 +6,9 @@
 //   1. Both cast Peer-Lights in WebKit, each live with "4 peers", each on its own OPFS: its mark differs from the other
 //      origin's and survives a reload, and its record, kept in OPFS, is found again after the reload. The check's
 //      Chromium is closed by now: two Peer-Lights with one key would take the relay from each other.
-//   2. avenOS's release build (dist/, `bun run build`), served as Caddy serves aven.maia.city (sandbox/prod.mjs,
+//   2. avenOS's views, in WebKit, held to Lean's vectors as check.mjs holds them in Chromium (sandbox/views.mjs): each
+//      pushed by a Peer-Light, the page's one WebAssembly module.
+//   3. avenOS's release build (dist/, `bun run build`), served as Caddy serves aven.maia.city (sandbox/prod.mjs,
 //      `served`), in front of the prod peer, in WebKit and in Chromium: each browser makes its device key in OPFS and
 //      reaches the Aven Peer, live, and the network shows unclaimed. The dev server never runs the build; a build that
 //      left its Peer-Light behind showed "Connecting to the network…" on aven.maia.city in every browser (30 Oct 2026).
@@ -14,6 +16,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { chromium, webkit } from 'playwright';
 import { served } from './prod.mjs';
 import { lines } from './records.mjs';
+import { walkViews } from './views.mjs';
 
 const run = process.argv[2] ?? 'runs/latest';
 mkdirSync(run, { recursive: true });
@@ -79,7 +82,19 @@ const text = async (locator) => (await locator.textContent({ timeout: 1_000 }).c
 	await context.close();
 }
 
-// 2. The release build, as aven.maia.city serves it
+// 2. Every view, as the model says, in WebKit
+{
+	const since = Date.now();
+	const context = await webkit.launchPersistentContext(profile('views'), { viewport: { width: 1000, height: 760 } });
+	const page = context.pages()[0] ?? (await context.newPage());
+	problems.push(...(await walkViews(page, 'WebKit')));
+	report.viewsMs = Date.now() - since;
+	await page.goto('http://localhost:5173/#/alice/vault');
+	await page.screenshot({ path: `${run}/webkit-vault-alice.png` });
+	await context.close();
+}
+
+// 3. The release build, as aven.maia.city serves it
 {
 	const port = 5175;
 	const server = await served({ root: '/work/dist', port });
