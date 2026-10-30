@@ -4,6 +4,7 @@ import Aven.DB.Engine.Wants
 import Aven.DB.Engine.Mutate
 import Aven.DB.Engine.Footprint
 import Aven.DB.Engine.Index
+import Aven.DB.Engine.Probe
 
 /-!
 # The engine's examples, and how its vectors are written (README, rule 10)
@@ -29,22 +30,6 @@ def doc (label : String) : DocId := ⟨blake3 (utf8 ("doc:" ++ label))⟩
 def vault (label : String) : Bytes := utf8 ("vault:" ++ label)
 
 def text (s : String) : Value := .text (utf8 s)
-
-/-- Values are equal by `Aven.Core`'s lawful equality, and ordered as the index keys are (`Aven.DB.Docs.Key.Field.lt`):
-by kind (bytes, text, negative, then non-negative integers), then integers by sign and magnitude (`nint n` is
-`-1 - n`), text and bytes bytewise, which for UTF-8 is code-point order. Other Values, which no key holds, order by
-their encoding. -/
-def vals : Vals Value where
-  eq a b := decide (a = b)
-  lt a b := match toField a, toField b with
-    | some x, some y => x.lt y
-    | _, _ => lexLt (encode a) (encode b)
-  count := .uint
-
-/-- **The engine orders keyable Values as the index keys do,** field by field. -/
-theorem vals_lt_key (a b : Value) (x y : Aven.DB.Docs.Key.Field) (ha : toField a = some x) (hb : toField b = some y) :
-    vals.lt a b = x.lt y := by
-  simp [vals, ha, hb]
 
 theorem vals_refl : ∀ x, vals.eq x x = true := by intro x; simp [vals]
 
@@ -442,6 +427,14 @@ def docsNow : List DocId := (List.range 7).map inv
 
 -- The same as running the query over every invoice the directory lists now.
 #guard (select vals byCustomer anaFrom200 invoicesNow docsNow).map (·.doc) == [inv 2, inv 4, inv 6]
+
+-- The docs layer's tree, nodes cut by the last byte and 64 bytes, finds the same hits through the probe's byte range.
+#guard treeHits (fun e => (e.getLastD 0).toNat % 4 == 0) List.length 64 anaFrom200 (build byCustomer invoicesV docsV) ==
+  hits vals byCustomer anaFrom200 (build byCustomer invoicesV docsV)
+
+-- It is Ana's invoices 2 and 4 from 200 at V.
+#guard treeHits (fun e => (e.getLastD 0).toNat % 4 == 0) List.length 64 anaFrom200 (build byCustomer invoicesV docsV) ==
+  [inv 2, inv 4]
 
 def indexExamples : List Json := [
   indexVector "Ana's invoices from 200, two unfolded" byCustomer invoicesV invoicesNow docsV [inv 1, inv 6] docsNow
