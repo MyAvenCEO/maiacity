@@ -261,10 +261,13 @@ version = "0.0.0"
 dependencies = [
  "aven-db-core",
  "aven-db-store",
+ "aven-id",
  "bytes",
+ "futures-channel",
  "iroh",
  "iroh-relay",
  "n0-future",
+ "p256",
  "serde_json",
  "sha2",
  "tokio",
@@ -276,7 +279,9 @@ version = "0.0.0"
 dependencies = [
  "aven-db-core",
  "aven-db-store",
+ "aven-id",
  "aven-peer",
+ "futures-channel",
  "iroh",
  "js-sys",
  "serde_json",

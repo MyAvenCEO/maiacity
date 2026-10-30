@@ -23,6 +23,10 @@
 //!     --s3-region NAME       its region (us-east-1)
 //!     --s3-key ID            its access key id (better by environment: AVEN_PEER_S3_KEY)
 //!     --s3-secret SECRET     its secret access key (better by environment: AVEN_PEER_S3_SECRET)
+//!     --claim-code CODE      with --relay: keep the tree in the store, claimable once with this code (better by
+//!                            environment: AVEN_PEER_CLAIM_CODE); never written to a log or the timeline
+//!     --rp-id ID             the passkeys' RP ID, with --claim-code: maia.city in production, localhost in the box
+//!     --origin URL           avenOS's origin, with --claim-code: the page every assertion must come from
 
 use std::collections::HashMap;
 use std::fs::OpenOptions;
@@ -32,9 +36,10 @@ use std::sync::{Arc, Mutex};
 
 use aven_db_core::timeline;
 use aven_db_core::wire::ALPN;
-use aven_peer::keys::{self, Members};
 use aven_db_store::backend::{self, DalStore};
-use aven_peer::{Notes, hub::Hub, link, now, record};
+use aven_id::Relying;
+use aven_peer::keys::{self, Members};
+use aven_peer::{Notes, door::Door, hub::Hub, link, now, record};
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
 use iroh::{Endpoint, EndpointAddr, RelayMap, RelayMode, RelayUrl};
@@ -50,7 +55,10 @@ impl Config {
         let mut out = HashMap::new();
         let mut it = std::env::args().skip(1).peekable();
         while let Some(flag) = it.next() {
-            let name = flag.strip_prefix("--").ok_or_else(|| format!("unexpected {flag}"))?.to_string();
+            let name = flag
+                .strip_prefix("--")
+                .ok_or_else(|| format!("unexpected {flag}"))?
+                .to_string();
             let value = match it.peek() {
                 Some(v) if !v.starts_with("--") => it.next().unwrap(),
                 _ => "true".into(),
@@ -62,12 +70,18 @@ impl Config {
 
     fn get(&self, name: &str) -> Option<String> {
         self.0.get(name).cloned().or_else(|| {
-            std::env::var(format!("AVEN_PEER_{}", name.to_uppercase().replace('-', "_"))).ok().filter(|v| !v.is_empty())
+            std::env::var(format!(
+                "AVEN_PEER_{}",
+                name.to_uppercase().replace('-', "_")
+            ))
+            .ok()
+            .filter(|v| !v.is_empty())
         })
     }
 
     fn need(&self, name: &str) -> Result<String, Error> {
-        self.get(name).ok_or_else(|| format!("--{name} is required").into())
+        self.get(name)
+            .ok_or_else(|| format!("--{name} is required").into())
     }
 
     fn or(&self, name: &str, default: &str) -> String {
@@ -80,7 +94,12 @@ fn notes(name: &str, dir: Option<String>) -> Result<Notes, Error> {
     let file = match dir {
         Some(dir) => {
             std::fs::create_dir_all(&dir)?;
-            Some(Mutex::new(OpenOptions::new().create(true).append(true).open(format!("{dir}/{name}.jsonl"))?))
+            Some(Mutex::new(
+                OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(format!("{dir}/{name}.jsonl"))?,
+            ))
         }
         None => None,
     };
@@ -116,7 +135,10 @@ fn store(config: &Config) -> Result<(DalStore, String), Error> {
 }
 
 async fn resolve(host: &str) -> Result<SocketAddr, Error> {
-    Ok(tokio::net::lookup_host(host).await?.find(SocketAddr::is_ipv4).ok_or_else(|| format!("{host} has no address"))?)
+    Ok(tokio::net::lookup_host(host)
+        .await?
+        .find(SocketAddr::is_ipv4)
+        .ok_or_else(|| format!("{host} has no address"))?)
 }
 
 #[tokio::main]
@@ -137,7 +159,10 @@ async fn main() -> Result<(), Error> {
         let mut server = iroh_relay::server::ServerConfig::default();
         server.relay = Some(iroh_relay::server::RelayConfig::new(bind));
         let server = iroh_relay::server::Server::spawn(server).await?;
-        note("relay", json!({ "listen": server.http_addr().map(|a| a.to_string()), "url": relay_url.to_string() }));
+        note(
+            "relay",
+            json!({ "listen": server.http_addr().map(|a| a.to_string()), "url": relay_url.to_string() }),
+        );
         Some(server)
     } else {
         None
@@ -151,19 +176,56 @@ async fn main() -> Result<(), Error> {
         .alpns(vec![ALPN.to_vec()])
         .bind()
         .await?;
-    note("started", json!({ "key": endpoint.id().to_string(), "listen": listen, "relay": relay }));
+    note(
+        "started",
+        json!({ "key": endpoint.id().to_string(), "listen": listen, "relay": relay }),
+    );
 
     let (store, kind) = store(&config)?;
+    let store = Arc::new(store);
     // the one record it keeps: its first start, found again after a restart
-    let record = record::first_start(&store, &me, now()).await?;
+    let record = record::first_start(&*store, &me, now()).await?;
     notes(record::line(now(), &me, &kind, &record));
 
+    // without a cast, an Aven Peer keeps its tree in its store, claimable once (PRODUCTION.md, Part A)
+    let door = match (
+        config.get("claim-code"),
+        config.get("rp-id"),
+        config.get("origin"),
+    ) {
+        (None, None, None) => None,
+        (Some(code), Some(rp_id), Some(origin)) if relay => {
+            let rp = Relying { rp_id, origin };
+            let key = endpoint.id().to_string();
+            Some(Arc::new(
+                Door::open(me.clone(), store.clone(), &key, rp, &code, notes.clone()).await?,
+            ))
+        }
+        _ => {
+            return Err(
+                "--claim-code, --rp-id and --origin come together, on an Aven Peer (--relay)"
+                    .into(),
+            );
+        }
+    };
+
     let router = if relay {
-        Router::builder(endpoint.clone()).accept(ALPN, Hub::new(me.clone(), members, notes.clone())).spawn()
+        Router::builder(endpoint.clone())
+            .accept(ALPN, Hub::new(me.clone(), members, notes.clone(), door))
+            .spawn()
     } else {
         let aven_key = keys::public(&config.need("aven-key")?)?;
-        let aven = EndpointAddr::new(aven_key).with_ip_addr(resolve(&config.need("aven")?).await?).with_relay_url(relay_url);
-        tokio::spawn(link::run(endpoint.clone(), me.clone(), aven, members.name(&aven_key), notes.clone()));
+        let aven = EndpointAddr::new(aven_key)
+            .with_ip_addr(resolve(&config.need("aven")?).await?)
+            .with_relay_url(relay_url);
+        tokio::spawn(link::run(
+            endpoint.clone(),
+            me.clone(),
+            aven,
+            members.name(&aven_key),
+            notes.clone(),
+            None,
+        ));
         Router::builder(endpoint.clone()).spawn()
     };
 
