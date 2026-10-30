@@ -5,7 +5,7 @@ The single source of truth for the next actor implementation. The learnings and 
 
 Two concerns are deliberately left to their own packages and threads: **capabilities and encryption**
 ([`../ID/caps/README.md`](../ID/caps/README.md)) and **persistence and sync** in avenDB
-([`../DB2/engine/README.md`](../DB2/engine/README.md)). This design leaves a seam for each and builds neither.
+([`../DB2/db/engine/README.md`](../DB2/db/engine/README.md)). This design leaves a seam for each and builds neither.
 
 1. [The model in one picture](#1-the-model-in-one-picture)
 2. [Words](#2-words)
@@ -285,7 +285,7 @@ Kept out on purpose, so the kernel stays small. Each is either an actor, an app,
 | Left out | Why |
 | --- | --- |
 | Capabilities, signatures, encryption | Their own package and thread (`aven/ID/caps`). The router has the place where the check goes |
-| Persistence and sync | avenDB's engine (`aven/DB2/engine`). The journal's interface is the seam |
+| Persistence and sync | avenDB's engine (`aven/DB2/db/engine`). The journal's interface is the seam |
 | Composites and skills | A composite is an actor whose turn tells other actors. It needs no kernel concept, no members field and no merge law. "Skill" is a product word for such an actor |
 | Studio | An app that writes definitions. It is an actor, not part of the kernel |
 | Planner, solver, `requires` / `produces` contracts | Discovery and planning are actors that read definitions, later |

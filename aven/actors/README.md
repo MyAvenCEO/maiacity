@@ -254,7 +254,8 @@ model's judgment; avenDB's identity, shares and proofs instead of per-peer keys 
   `follow` depth, and a signal that orders it (viewport, playhead, camera). An actor's `loads` may hold another actor,
   which never pulls its parts above the tier it sits in. Proven: tiers and signals only order and never add or withhold
   an entry, a slot nobody bound wants nothing, and an Interest grants nothing. The query and sync learnings are in
-  [`../DB2/engine/README.md`](../DB2/engine/README.md).
+  [`../DB2/db/research/E1-avendb-old-engine.md`](../DB2/db/research/E1-avendb-old-engine.md), which avenDB's one engine
+  spec, [`../DB2/db/engine/README.md`](../DB2/db/engine/README.md), takes up.
 
 What we lack is the layer beside it: mailboxes, messages between actors, capabilities per message, a journal, and the
 lifecycle of actors made on demand. Those avenDB-old actors only load; their `interface`, `needs` and `code` are still
