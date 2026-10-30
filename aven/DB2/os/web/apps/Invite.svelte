@@ -80,26 +80,40 @@
 		display: grid;
 		gap: 20px;
 		max-width: 720px;
-		padding: 20px 16px;
+		margin: 0 auto;
+		padding: 28px 16px 48px;
 	}
 
 	section {
 		display: grid;
-		gap: 10px;
-		padding: 16px;
+		gap: 14px;
+		padding: 24px;
 		background: var(--surface);
 		border: 1px solid var(--line);
-		border-radius: 12px;
+		border-radius: var(--radius-card);
+		box-shadow: var(--shadow-soft);
 	}
 
 	h1,
 	h2 {
 		margin: 0;
-		font-size: 18px;
+		font-size: 28px;
 	}
 
 	h2 {
-		font-size: 15px;
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		font-size: 20px;
+	}
+
+	h2 small {
+		padding: 2px 10px;
+		color: var(--text);
+		font-family: var(--font-body);
+		font-size: 12px;
+		background: var(--sage);
+		border-radius: var(--radius-pill);
 	}
 
 	.muted,
@@ -111,26 +125,6 @@
 
 	button {
 		justify-self: start;
-		padding: 8px 14px;
-		color: var(--surface);
-		font: inherit;
-		background: var(--text);
-		border: 0;
-		border-radius: 999px;
-		cursor: pointer;
-	}
-
-	button.quiet {
-		padding: 4px 10px;
-		color: var(--text);
-		font-size: 13px;
-		background: transparent;
-		border: 1px solid var(--line);
-	}
-
-	button:disabled {
-		opacity: 0.5;
-		cursor: default;
 	}
 
 	.made {
@@ -142,7 +136,11 @@
 
 	.qr {
 		width: 180px;
+		padding: 8px;
 		line-height: 0;
+		background: var(--raised);
+		border: 1px solid var(--line);
+		border-radius: var(--radius-inner);
 	}
 
 	.qr :global(svg) {
@@ -175,6 +173,10 @@
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 10px;
+		padding: 8px 8px 8px 16px;
+		background: var(--raised);
+		border: 1px solid var(--line);
+		border-radius: var(--radius-pill);
 	}
 
 	li button {
@@ -183,6 +185,6 @@
 
 	.refused {
 		margin: 0;
-		color: var(--pending);
+		color: var(--down);
 	}
 </style>

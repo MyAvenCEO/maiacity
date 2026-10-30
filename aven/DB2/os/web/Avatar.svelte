@@ -22,10 +22,11 @@
 		width: var(--size);
 		height: var(--size);
 		border-radius: 50%;
-		background: oklch(56% 0.13 var(--hue));
-		color: #fff;
+		background: oklch(var(--mark-l) var(--mark-c) var(--hue));
+		color: var(--on-accent);
 		font-size: calc(var(--size) * 0.5);
-		font-weight: 600;
+		font-family: var(--font-display);
+		font-weight: 500;
 		line-height: 1;
 	}
 
@@ -40,7 +41,7 @@
 
 	.device {
 		background: transparent;
-		border: 1.5px solid oklch(56% 0.13 var(--hue));
-		color: oklch(56% 0.13 var(--hue));
+		border: 1.5px solid oklch(var(--mark-l) var(--mark-c) var(--hue));
+		color: oklch(var(--mark-l) var(--mark-c) var(--hue));
 	}
 </style>
