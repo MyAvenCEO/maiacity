@@ -293,6 +293,10 @@ what it pins gives the same state.
 **Spawning** is an ask to the kernel, which is an actor too: `spawn { def, init }` replies with the new address. In
 version 1 any local actor may spawn, but only definitions that come from the repository.
 
+**Answers.** A `reply` or `fail` reaches the asker as a message named `reply` or `fail`, so a machine can wait for it
+(`transition(reply, waiting, done)`). An actor can answer only an ask that was sent to it and is still waiting; any
+other reply is dropped, so answers cannot be forged or sent twice.
+
 **Asking** never blocks:
 
 ```
@@ -431,10 +435,13 @@ says what they do: their parts, the turn's contract, determinism and fuel.
 
 Test-first, as avenDB works: the Lean model and its theorems, then Rust tests that replay its vectors, then the code.
 
-1. **Lean** (`spec`): values, logs, messages, turns, asks, the journal. Theorems: messages from one actor to another are
+1. **Lean** (`spec`, `Aven.Actor`): values, logs, messages, turns, asks, the journal. Theorems: messages from one actor to another are
    handled in order; every ask gets exactly one answer by its deadline; a message is handled once; a turn never waits;
    replaying a journal gives the same state; a machine refuses every illegal message; a face placed again is a new
    incarnation, whose messages are never taken for the old one's.
+   Proven so far, for every trace and every schedule: `handled_in_order`, `replays`, `machine_sound`, `spawn_fresh`,
+   `answers_at_most_once`, `ask_answered_or_waiting` and `ask_not_overdue`. Next: the vectors it exports, and tying
+   each waiting ask to its message's deadline.
 2. **Layers 0 to 2** (`core`): Values and names, the in-memory Doc, messages, with the vectors.
 3. **Runtimes**: `prolog-runtime` and `state-runtime` first, then `js-runtime`; each with hostile parts that try to get
    out, run too long or blow up, which must fail.

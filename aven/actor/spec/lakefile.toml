@@ -1,0 +1,7 @@
+# Aven.Actor: avenACTOR's model in Lean (ARCHITECTURE.md, section 14). Core Lean only, no packages.
+name = "aven-actor-spec"
+version = "0.1.0"
+defaultTargets = ["Aven"]
+
+[[lean_lib]]
+name = "Aven"

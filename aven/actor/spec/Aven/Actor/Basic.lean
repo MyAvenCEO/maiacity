@@ -1,0 +1,143 @@
+/-!
+# The things an actor is made of (ARCHITECTURE.md, sections 2, 4 and 6)
+
+Values, addresses, messages, definitions and journal entries. Version 1's numbers are integers. A Value's name (the
+BLAKE3 hash of its canonical bytes) is not modelled here: the kernel never looks inside a name, so its theorems hold
+for any.
+-/
+
+namespace Aven.Actor
+
+/-- A Value: JSON with no surprises (section 2). Version 1's numbers are integers. -/
+inductive Value where
+  | null
+  | bool (b : Bool)
+  | int (i : Int)
+  | str (s : String)
+  | arr (xs : List Value)
+  | obj (kvs : List (String × Value))
+  deriving Repr, Inhabited
+
+/-- An address `<scope>/<id>/<n>` (section 6). `n` is the incarnation: how often `id` had been spawned when this one
+was. The scope is `local` in version 1. -/
+structure Addr where
+  scope : String
+  id : String
+  n : Nat
+  deriving DecidableEq, Repr, Inhabited
+
+/-- The device's person, where clicks come from (section 9). Incarnation 0: it is never spawned. -/
+def person : Addr := ⟨"local", "person", 0⟩
+
+/-- The kernel, an actor too (section 7). Incarnation 0: it is never spawned. -/
+def kernelAddr : Addr := ⟨"local", "kernel", 0⟩
+
+/-- A message's name `(from, to, seq)` (section 4). -/
+structure MsgId where
+  sender : Addr
+  to : Addr
+  seq : Nat
+  deriving DecidableEq, Repr, Inhabited
+
+/-- Why an ask could not be answered (section 4). -/
+inductive Reason where
+  | timeout
+  | refused
+  | error
+  deriving DecidableEq, Repr, Inhabited
+
+inductive Kind where
+  | tell
+  | ask (deadline : Nat)
+  | reply (re : MsgId)
+  | fail (re : MsgId) (reason : Reason)
+  deriving DecidableEq, Repr, Inhabited
+
+/-- A message (section 4). `run` and the reserved `cap` do not change what the kernel does in version 1. -/
+structure Message where
+  sender : Addr
+  to : Addr
+  seq : Nat
+  name : String
+  payload : Value
+  kind : Kind
+  deriving Repr, Inhabited
+
+def Message.id (m : Message) : MsgId := ⟨m.sender, m.to, m.seq⟩
+
+/-- The ask a reply or a fail answers. -/
+def Kind.answers : Kind → Option MsgId
+  | .reply re => some re
+  | .fail re _ => some re
+  | _ => none
+
+/-- What a turn may do (section 6): tell, ask within some time, or reply to an ask it was sent. -/
+inductive Effect where
+  | tell (to : Addr) (name : String) (payload : Value)
+  | ask (to : Addr) (name : String) (payload : Value) (within : Nat)
+  | reply (re : MsgId) (payload : Value)
+  deriving Repr, Inhabited
+
+/-- The turn's time and seed, journaled so a replay sees the same (section 6). -/
+structure Given where
+  now : Nat
+  seed : Nat
+  deriving DecidableEq, Repr, Inhabited
+
+/-- What a turn gives back: `turn(state, message, given) → { state', effects, phase'? }`. -/
+structure Output where
+  state : Value
+  effects : List Effect
+  phase : Option String
+  deriving Repr, Inhabited
+
+/-- A machine: fact-only, `transition(Message, From, To)` (section 6). -/
+structure Machine where
+  initial : String
+  transitions : List (String × String × String)
+  deriving Repr, Inhabited
+
+/-- Whether some transition takes `name` out of `phase`. -/
+def Machine.opens (mc : Machine) (name phase : String) : Bool :=
+  mc.transitions.any fun t => t.1 == name && t.2.1 == phase
+
+/-- A definition (section 6). The interface's schemas are a check on a message's name and payload; the turn is
+whatever its runtime computes, a pure function. -/
+structure Def where
+  accepts : String → Value → Bool
+  machine : Option Machine
+  turn : Value → Message → Given → Option Output
+  init : Value
+
+def Def.initialPhase (d : Def) : String := (d.machine.map (·.initial)).getD ""
+
+/-- How a handled message ended (section 7). -/
+inductive Outcome where
+  | done
+  | refused
+  | error
+  deriving DecidableEq, Repr, Inhabited
+
+/-- A journal entry (section 7): the message whole, the definition in force, `given`, the state and phase before and
+after, the effects and the outcome. Runtimes, fuel and the interpreter's version are pinned by the definition's name
+in this model, since a definition names its parts. -/
+structure Entry where
+  msg : Message
+  defn : Option String
+  given : Given
+  before : Value
+  phaseBefore : String
+  after : Value
+  phaseAfter : String
+  effects : List Effect
+  outcome : Outcome
+  deriving Repr, Inhabited
+
+/-- The repository's definitions, by name. Only these can be spawned. -/
+abbrev Library := String → Option Def
+
+/-- Asks default to 30 s, at most 10 minutes (section 4), in milliseconds. -/
+def askDefault : Nat := 30000
+def askMax : Nat := 600000
+
+end Aven.Actor
