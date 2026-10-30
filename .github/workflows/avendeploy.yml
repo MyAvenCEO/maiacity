@@ -274,7 +274,8 @@ jobs:
           [ "$WIPE" = "$BUCKET" ] || { echo "::error::wipe needs the bucket's name, $BUCKET, typed exactly"; exit 1; }
           ssh prod 'cd /opt/aven 2>/dev/null && docker compose down || true'
           aws s3 rm "s3://$BUCKET" --recursive --endpoint-url "$S3_ENDPOINT" --only-show-errors
-          left=$(aws s3api list-objects-v2 --bucket "$BUCKET" --endpoint-url "$S3_ENDPOINT" --query 'KeyCount' --output text)
+          # shellcheck disable=SC2016  # the backticks are JMESPath's literal, not a shell expansion
+          left=$(aws s3api list-objects-v2 --bucket "$BUCKET" --endpoint-url "$S3_ENDPOINT" --query 'length(Contents || `[]`)' --output text)
           [ "$left" = 0 ] || { echo "::error::$left objects are left in $BUCKET"; exit 1; }
           echo "The store in $BUCKET is empty: the network is unclaimed" | tee -a "$GITHUB_STEP_SUMMARY"
 
