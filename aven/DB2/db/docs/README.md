@@ -432,7 +432,7 @@ separate step for devices that hold many Docs ([store](../../store/README.md#nex
 
 ## Importing: three verdicts
 
-An imported envelope, in order (caps' [checking](../../id/caps/README.md#checking) runs steps 2, 4 and 6):
+An imported envelope, in order (caps' [checking](../../id/caps/README.md#checking) runs steps 2, 4 and 7):
 
 1. **Limits** on the sealed bytes, before anything is decoded (rule 24).
 2. **Open** it with its epoch's key (caps).
@@ -572,6 +572,10 @@ A **type** is a Doc whose Records are its versions:
 - A type Doc is written by whoever its caps let publish versions. The ontology's predicates and kinds, actor
   definitions and runtime grammars are types the same way (architecture, K5). A fact's `p` names the schema's hash.
 - A Record's type is its schema's type Doc, so Records carry no `kind` field.
+- **Every Record's creator is known:** the device and vault that signed the envelope creating it, read from history
+  and never stored as a field anyone could change. Caps' `own` condition reads it.
+- **Built-in types** every Doc pins without asking: caps' access map (`cap`, `revoke`, `epoch`), `branch`, `closed`,
+  `version` and `split`.
 
 ```json
 { "title": "Todo, v1", "type": "object",
