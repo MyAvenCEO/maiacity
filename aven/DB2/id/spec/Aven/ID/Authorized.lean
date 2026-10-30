@@ -4,18 +4,23 @@ import Aven.ID.Caps
 
 `chainOk` judges a chain of caps. A reader judges envelopes: `Aven.Core`'s signed units of change. This module is caps'
 part of one reader verdict, which `Aven.Architecture` composes with the others: the envelope's signature (Core), its
-cap chain and what it may touch (here), its footprint as the engine lowers it (`check_sound`), and its fit (docs).
+authority and what it may touch (here), its footprint as the engine lowers it (`check_sound`), and its fit (docs).
 
 The docs layer hands caps what an envelope carries inside its seal: the chain it rests on, root first, and its
 footprint, the lowered steps. Caps reads them as parameters and never fixes how a body is laid out. The reader brings
-what it knows: its context, which vault each signing key is a device of, the network's members, and what each Doc's
-genesis fixed.
+what it knows: its context, which vault each signing key is a device of, the network's members, what each Doc's genesis
+fixed, and each device's cap.
 
-**Authorized:** the signing device acts within its device cap (rule 1), the chain keeps every rule, its last cap is held
-by the vault whose device signed the envelope (that vault, its group, or the network's members for the public), its
-branches let it write on the envelope's branch, and every step of the footprint is one the last cap allows on the
-envelope's Doc. A device cap is a cap from the vault to its device: by default everything its vault may do except
-govern, which a device added by a passkey sign-in holds, and narrower for an agent's devices and the Aven Peer.
+**Authorized** (caps, "Checking", step 7): the signing device acts within its device cap (rule 1), and the envelope
+writes on its vault's own authority or under a chain.
+- **Own authority:** the signer's vault is the Doc's vault, or governs it. No chain is named: the most common write, an
+  owner writing their own Docs.
+- **A chain:** it keeps every rule, its last cap is held by the vault whose device signed the envelope (that vault, its
+  group, or the network's members for the public), its branches let it write on the envelope's branch, and every step
+  of the footprint is one the last cap allows on the envelope's Doc.
+
+A device cap is a cap from the vault to its device: by default everything its vault may do except govern, which a
+device added by a passkey sign-in holds, and narrower for an agent's devices and the Aven Peer.
 
 **A merge into main** counts only when the merger's grant covers the whole merge (caps, "Checking"): every type and
 field that differs between main's version at the merge's `prev` and what it makes, not the fixing commit's alone. The
@@ -23,17 +28,21 @@ engine computes that diff (`Aven.DB.Engine.merge_granted`, over `changesFrom` fr
 a merge into main on it is `WholeMerges`, and `Aven.Architecture` joins the two.
 
 The theorems:
-- `authorized_signer`: the signer is a device of a vault that holds the last cap;
-- `authorized_root`: every step is one the chain's root allows on that Doc, and every line the chain grants lies in
-  the root issuer's authority, so no envelope writes on authority from nowhere;
-- `branch_allowed`, `proposals_never_main`: every cap of the chain lets its holder write on the envelope's branch, so a
-  cap for proposals, or for one branch, never writes on main: landing on main is someone else's merge;
-- `merge_covered`: an authorized merge into main, read whole, has a last cap that writes on main and allows every step
-  of the whole merge;
+- `own_authorized`: a device of the Doc's vault, or of a vault that governs it, acting within its device cap, is
+  authorized without a chain;
+- `authorized_vault`: on either path, the signer is a device of a vault that is the Doc's vault, governs it, or holds
+  the last cap of the chain it names, so no envelope writes on authority from nowhere;
+- `chain_signer`: under a chain, the signer is a device of a vault that holds the last cap;
+- `chain_root`: under a chain, every step is one the chain's root allows on that Doc, and every line the chain grants
+  lies in the root issuer's authority, so no envelope writes on authority from nowhere;
+- `branch_allowed`, `proposals_never_main`: every cap of a chain lets its holder write on the envelope's branch, so a
+  chain holding a cap for proposals, or for one branch, never writes on main: landing on main is someone else's merge;
+- `merge_covered`: a merge into main under a chain, read whole, has a last cap that writes on main and allows every
+  step of the whole merge;
 - `device_within_cap`, `device_and_chain`, `device_proposals_never_main`, `merge_within_device`: the signing device acts
-  within its device cap, so every step is allowed both by the chain for its vault and by the device cap for the device;
-  a device whose cap is for proposals, as an agent's removals go, never writes on main; and a merge into main read whole
-  stays within the merging device's cap;
+  within its device cap, on either path, so under a chain every step is allowed both by the chain for its vault and by
+  the device cap for the device; a device whose cap is for proposals, as an agent's removals go, never writes on main;
+  and a merge into main read whole stays within the merging device's cap;
 - `counts_iff`: an envelope counts exactly when everything in its past is signed, fresh, authorized, live and fit, and
   none of it is half of a split (the docs layer's rule 13, over Core's `Counts`);
 - `readers_agree`: two readers that hold the same past of an envelope, and the same splits in it, give it the same
@@ -52,7 +61,8 @@ structure DeviceCap where
   grants : Option Grant := none
   branches : Branches := .any
 
-/-- A step a device cap lets its device write on a Doc. -/
+/-- A step a device cap lets its device write on a Doc. With no grants listed, every step: governing is never a step,
+since owners govern k of n and no cap and no device does (rule 2), so this never lets a device govern. -/
 def DeviceCap.allows (gov : Bytes → Bytes → Prop) (spawned : DocId → DocId → Prop) (dc : DeviceCap) (f : Facts)
     (s : Step) : Prop :=
   match dc.grants with
@@ -62,7 +72,7 @@ def DeviceCap.allows (gov : Bytes → Bytes → Prop) (spawned : DocId → DocId
 /-- What caps reads of an envelope, and what the reader knows. -/
 structure Reader where
   ctx : Ctx
-  /-- The caps an envelope rests on, root first, as the docs layer reads them inside its seal. -/
+  /-- The caps an envelope rests on, root first, as the docs layer reads them inside its seal; none on own authority. -/
   chain : Envelope → List Cap
   /-- Its footprint: the steps the engine lowers it to; for a merge into main, the whole merge's (`WholeMerges`). -/
   footprint : Envelope → List Step
@@ -92,26 +102,53 @@ def Reader.WithinDevice (e : Envelope) : Prop :=
   ∃ dc f, r.deviceCap e.signer = some dc ∧ r.vaultOf e.signer = some dc.vault ∧ dc.branches.allows e.branch = true ∧
     r.facts e.doc = some f ∧ ∀ s ∈ r.footprint e, dc.allows gov spawned f s
 
-/-- Caps' verdict on an envelope. -/
-def Reader.Authorized (e : Envelope) : Prop :=
-  r.WithinDevice gov spawned e ∧ chainOk r.ctx (r.chain e) = true ∧
+/-- Its vault's own authority: the signer's vault is the Doc's vault, or governs it. -/
+def Reader.Own (e : Envelope) : Prop :=
+  ∃ v f, r.vaultOf e.signer = some v ∧ r.facts e.doc = some f ∧ (f.vault = vaultId v ∨ gov (vaultId v) f.vault)
+
+/-- Under a chain: it keeps every rule, its last cap is held by the signer's vault, lets it write on the envelope's
+branch, and allows every step of the footprint on the envelope's Doc. -/
+def Reader.ByChain (e : Envelope) : Prop :=
+  chainOk r.ctx (r.chain e) = true ∧
     ∃ last, (r.chain e).getLast? = some last ∧ (∃ v, r.vaultOf e.signer = some v ∧ r.holdsAt last v = true) ∧
       last.conditions.branches.allows e.branch = true ∧
       ∃ f, r.facts e.doc = some f ∧ ∀ s ∈ r.footprint e, (last.grants r.ctx.roles).allows gov spawned f s
 
-/-- The signer is a device of a vault that holds the chain's last cap. -/
-theorem authorized_signer {e : Envelope} (h : r.Authorized gov spawned e) :
+/-- Caps' verdict on an envelope: its device acts within its device cap, and it writes on its vault's own authority or
+under a chain. -/
+def Reader.Authorized (e : Envelope) : Prop :=
+  r.WithinDevice gov spawned e ∧ (r.Own gov e ∨ r.ByChain gov spawned e)
+
+/-- **An owner writes their own Docs without a chain** (checking, step 7): a device of the Doc's vault, or of a vault
+that governs it, acting within its device cap, is authorized. -/
+theorem own_authorized {e : Envelope} (o : r.Own gov e) (wd : r.WithinDevice gov spawned e) :
+    r.Authorized gov spawned e :=
+  ⟨wd, .inl o⟩
+
+/-- Under a chain, the signer is a device of a vault that holds the chain's last cap. -/
+theorem chain_signer {e : Envelope} (h : r.ByChain gov spawned e) :
     ∃ last ∈ r.chain e, ∃ v, r.vaultOf e.signer = some v ∧ r.holdsAt last v = true := by
-  obtain ⟨_, _, last, hl, sv, _⟩ := h
+  obtain ⟨_, last, hl, sv, _⟩ := h
   exact ⟨last, List.mem_of_getLast? hl, sv⟩
 
-/-- No envelope writes on authority from nowhere: every step of it is one the chain's root allows on its Doc, and every
-line the chain grants lies in the root issuer's authority. -/
-theorem authorized_root {e : Envelope} (h : r.Authorized gov spawned e) :
+/-- No envelope writes on authority from nowhere, on either path: its signer is a device of a vault that is the Doc's
+vault, governs it, or holds the last cap of the chain it names. -/
+theorem authorized_vault {e : Envelope} (h : r.Authorized gov spawned e) :
+    ∃ v, r.vaultOf e.signer = some v ∧
+      ((∃ f, r.facts e.doc = some f ∧ (f.vault = vaultId v ∨ gov (vaultId v) f.vault)) ∨
+        ∃ last ∈ r.chain e, r.holdsAt last v = true) := by
+  rcases h.2 with ⟨v, f, hv, hf, o⟩ | c
+  · exact ⟨v, hv, .inl ⟨f, hf, o⟩⟩
+  · obtain ⟨last, ml, v, hv, hl⟩ := chain_signer r gov spawned c
+    exact ⟨v, hv, .inr ⟨last, ml, hl⟩⟩
+
+/-- No envelope writes on authority from nowhere: under a chain, every step of it is one the chain's root allows on its
+Doc, and every line the chain grants lies in the root issuer's authority. -/
+theorem chain_root {e : Envelope} (h : r.ByChain gov spawned e) :
     ∃ root rest f, r.chain e = root :: rest ∧ r.facts e.doc = some f ∧
       (∀ s ∈ r.footprint e, (root.grants r.ctx.roles).allows gov spawned f s) ∧
       ∀ c ∈ r.chain e, ∀ l ∈ c.grants r.ctx.roles, authorityOver r.ctx root.issuer l = true := by
-  obtain ⟨_, ok, last, hl, _, _, f, hf, steps⟩ := h
+  obtain ⟨ok, last, hl, _, _, f, hf, steps⟩ := h
   cases hc : r.chain e with
   | nil => simp [hc] at hl
   | cons root rest =>
@@ -120,11 +157,11 @@ theorem authorized_root {e : Envelope} (h : r.Authorized gov spawned e) :
     refine ⟨root, rest, f, rfl, hf, fun s ms => narrow_steps gov spawned ok last ml f s (steps s ms), ?_⟩
     exact root_authority ok
 
-/-- Every cap of an authorized chain lets its holder write on the envelope's branch: conditions narrow down a chain, so
-the branches its last cap allows, every cap above it allows. -/
-theorem branch_allowed {e : Envelope} (h : r.Authorized gov spawned e) :
+/-- Every cap of a chain an envelope rests on lets its holder write on the envelope's branch: conditions narrow down a
+chain, so the branches its last cap allows, every cap above it allows. -/
+theorem branch_allowed {e : Envelope} (h : r.ByChain gov spawned e) :
     ∀ c ∈ r.chain e, c.conditions.branches.allows e.branch = true := by
-  obtain ⟨_, ok, last, hl, _, br, _⟩ := h
+  obtain ⟨ok, last, hl, _, br, _⟩ := h
   cases hc : r.chain e with
   | nil => simp [hc] at hl
   | cons root rest =>
@@ -132,11 +169,11 @@ theorem branch_allowed {e : Envelope} (h : r.Authorized gov spawned e) :
     rw [chainOk, chainRules, rules_all] at ok
     exact links_branch ok.2 hl br
 
-/-- A cap for proposals, or for one branch, never writes on main: no envelope on main is authorized under a chain that
-holds one. Landing a proposal on main is someone else's merge. -/
+/-- A cap for proposals, or for one branch, never writes on main: no envelope on main rests on a chain that holds one.
+Landing a proposal on main is someone else's merge. -/
 theorem proposals_never_main {e : Envelope} (main : e.branch = mainBranch) {c : Cap} (m : c ∈ r.chain e)
     (prop : c.conditions.branches = .proposals ∨ ∃ b, c.conditions.branches = .one b) :
-    ¬ r.Authorized gov spawned e := by
+    ¬ r.ByChain gov spawned e := by
   intro h
   have al := branch_allowed r gov spawned h c m
   rw [main] at al
@@ -149,31 +186,34 @@ def Reader.WholeMerges (whole : Envelope → List Step) : Prop :=
   ∀ e, e.branch = mainBranch → ∀ s ∈ whole e, s ∈ r.footprint e
 
 /-- **A merge into main counts only when the merger's grant covers the whole merge.** For a reader that judges merges
-whole, an authorized envelope on main has a last cap that writes on main and allows every step of the whole merge on
-its Doc; with the engine's `merge_granted`, that is every type and field the merge changes. -/
+whole, a merge into main under a chain has a last cap that writes on main and allows every step of the whole merge on
+its Doc; with the engine's `merge_granted`, that is every type and field the merge changes. On own authority the
+device cap covers it (`merge_within_device`). -/
 theorem merge_covered {whole : Envelope → List Step} (wm : r.WholeMerges whole) {e : Envelope}
-    (main : e.branch = mainBranch) (h : r.Authorized gov spawned e) :
+    (main : e.branch = mainBranch) (h : r.ByChain gov spawned e) :
     ∃ last, (r.chain e).getLast? = some last ∧ last.conditions.branches.allows mainBranch = true ∧
       ∃ f, r.facts e.doc = some f ∧ ∀ s ∈ whole e, (last.grants r.ctx.roles).allows gov spawned f s := by
-  obtain ⟨_, _, last, hl, _, br, f, hf, steps⟩ := h
+  obtain ⟨_, last, hl, _, br, f, hf, steps⟩ := h
   exact ⟨last, hl, main ▸ br, f, hf, fun s m => steps s (wm e main s m)⟩
 
-/-- **A device acts within its device cap** (rule 1): the signing device of an authorized envelope holds a device cap
-from the vault it serves, which lets it write on the envelope's branch and allows every step of its footprint. -/
+/-- **A device acts within its device cap** (rule 1), on either path: the signing device of an authorized envelope
+holds a device cap from the vault it serves, which lets it write on the envelope's branch and allows every step of its
+footprint. -/
 theorem device_within_cap {e : Envelope} (h : r.Authorized gov spawned e) : r.WithinDevice gov spawned e := h.1
 
-/-- Every step of an authorized envelope is allowed twice over: by the chain's last cap, for the vault, and by the
-device cap, for the device. -/
-theorem device_and_chain {e : Envelope} (h : r.Authorized gov spawned e) :
+/-- Under a chain, every step of an authorized envelope is allowed twice over: by the chain's last cap, for the vault,
+and by the device cap, for the device. -/
+theorem device_and_chain {e : Envelope} (h : r.Authorized gov spawned e) (c : r.ByChain gov spawned e) :
     ∃ dc last f, r.deviceCap e.signer = some dc ∧ (r.chain e).getLast? = some last ∧ r.facts e.doc = some f ∧
       ∀ s ∈ r.footprint e, dc.allows gov spawned f s ∧ (last.grants r.ctx.roles).allows gov spawned f s := by
-  obtain ⟨⟨dc, f, hd, _, _, hf, dsteps⟩, _, last, hl, _, _, f', hf', steps⟩ := h
+  obtain ⟨dc, f, hd, _, _, hf, dsteps⟩ := h.1
+  obtain ⟨_, last, hl, _, _, f', hf', steps⟩ := c
   rw [hf] at hf'
   cases hf'
   exact ⟨dc, last, f, hd, hl, hf, fun s m => ⟨dsteps s m, steps s m⟩⟩
 
-/-- A device whose cap is for proposals, or for one branch, never writes on main, whatever chain it names: an agent's
-removals go to proposals, and landing them on main is someone else's merge. -/
+/-- A device whose cap is for proposals, or for one branch, never writes on main, on its vault's own authority or under
+any chain: an agent's removals go to proposals, and landing them on main is someone else's merge. -/
 theorem device_proposals_never_main {e : Envelope} (main : e.branch = mainBranch) {dc : DeviceCap}
     (hd : r.deviceCap e.signer = some dc) (prop : dc.branches = .proposals ∨ ∃ b, dc.branches = .one b) :
     ¬ r.Authorized gov spawned e := by
@@ -184,8 +224,8 @@ theorem device_proposals_never_main {e : Envelope} (main : e.branch = mainBranch
   rw [main] at br
   rcases prop with p | ⟨b, p⟩ <;> simp [p, Branches.allows] at br
 
-/-- A merge into main, read whole, stays within the merging device's cap: it writes on main and allows every step of
-the whole merge. -/
+/-- A merge into main, read whole, stays within the merging device's cap on either path: it writes on main and allows
+every step of the whole merge. -/
 theorem merge_within_device {whole : Envelope → List Step} (wm : r.WholeMerges whole) {e : Envelope}
     (main : e.branch = mainBranch) (h : r.Authorized gov spawned e) :
     ∃ dc f, r.deviceCap e.signer = some dc ∧ dc.branches.allows mainBranch = true ∧ r.facts e.doc = some f ∧
