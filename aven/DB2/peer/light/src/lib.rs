@@ -3,18 +3,28 @@
 //! on). Like the Peer, it is configured, never built for a place: its name, its secret seed and the Aven Peer's key
 //! come from the page. It keeps its data through avenDB's store, in its origin's OPFS. Every event goes to the page as a
 //! timeline line. On an Aven Peer's host without a cast (PRODUCTION.md, Part A) the page makes its secret itself and
-//! keeps it in OPFS, and the Peer-Light is named by its key (`device-…`); the page's claim and sign-in go to the Aven
-//! Peer through `send`.
+//! keeps it in OPFS, and the Peer-Light is named by its key (`device-…`); the page's statements go to the Aven Peer
+//! through `send`.
+//!
+//! From milestone 2 it keeps the members-only door like every peer (`aven_peer::members`): the cast's members, given by
+//! the page, or the members it checks itself from the statements the Aven Peer tells it. It is in the network's chat
+//! room over iroh-gossip on its own `Router` (`say`, and the `chat`, `room` and `dropped` lines). A browser that is no
+//! device yet brings its claim, sign-in or join to the relay as its token, so the relay lets it in for that statement.
 
 use std::cell::RefCell;
 use std::sync::Arc;
 
+use aven_db_core::chat::Message;
 use aven_db_core::timeline;
 use aven_db_core::wire::{ALPN, Frame};
 use aven_db_store::backend;
+use aven_peer::iroh_gossip::{self, Gossip};
+use aven_peer::members::{Gate, Hook};
+use aven_peer::room::Room;
 use aven_peer::{Notes, keys, link, now, record};
 use iroh::endpoint::presets;
-use iroh::{Endpoint, EndpointAddr, RelayMap, RelayMode, RelayUrl};
+use iroh::protocol::Router;
+use iroh::{Endpoint, EndpointAddr, RelayConfig, RelayMap, RelayMode, RelayUrl};
 use wasm_bindgen::prelude::*;
 
 /// The page's callback for timeline lines. A browser's worker has one thread, so it is never shared across threads.
@@ -27,27 +37,125 @@ fn js(e: impl std::fmt::Display) -> JsError {
     JsError::new(&e.to_string())
 }
 
-thread_local! {
-    /// Where `send` puts the page's frames for the link.
-    static OUTBOX: RefCell<Option<futures_channel::mpsc::UnboundedSender<Frame>>> = const { RefCell::new(None) };
+/// What the page's calls reach once the Peer-Light runs.
+struct Running {
+    outbox: futures_channel::mpsc::UnboundedSender<Frame>,
+    endpoint: Endpoint,
+    relay: RelayUrl,
+    room: Room,
+    _router: Router,
 }
 
-/// Sends the page's claim or sign-in (a frame as JSON) to the Aven Peer, once the link is up. Only those two.
-#[wasm_bindgen]
-pub fn send(frame: String) -> Result<(), JsError> {
-    let frame: Frame = serde_json::from_str(&frame).map_err(js)?;
-    if !matches!(frame, Frame::Claim { .. } | Frame::SignIn { .. }) {
-        return Err(JsError::new("a page sends only a claim or a sign-in"));
-    }
-    OUTBOX.with(|outbox| match outbox.borrow().as_ref() {
-        Some(outbox) => outbox.unbounded_send(frame).map_err(js),
+thread_local! {
+    static RUNNING: RefCell<Option<Running>> = const { RefCell::new(None) };
+    /// Whether a newcomer's statement waits on the relay: a refusal of this browser is then that statement's.
+    static PENDING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn running<T>(f: impl FnOnce(&Running) -> Result<T, JsError>) -> Result<T, JsError> {
+    RUNNING.with(|r| match r.borrow().as_ref() {
+        Some(running) => f(running),
         None => Err(JsError::new("the Peer-Light has not started")),
     })
 }
 
+/// Sends the page's statement (a frame as JSON) to the Aven Peer, once the link is up: a claim, a sign-in, an invite,
+/// a withdrawal or a join. A claim, a sign-in or a join is also this browser's relay token from now on, so a relay
+/// that admits only the door's keys lets it in for this statement.
+#[wasm_bindgen]
+pub fn send(frame: String) -> Result<(), JsError> {
+    let frame: Frame = serde_json::from_str(&frame).map_err(js)?;
+    let newcomer = matches!(
+        frame,
+        Frame::Claim { .. } | Frame::SignIn { .. } | Frame::Join { .. }
+    );
+    if !newcomer && !matches!(frame, Frame::Invite { .. } | Frame::Withdraw { .. }) {
+        return Err(JsError::new("a page sends only a statement"));
+    }
+    running(|r| {
+        if newcomer {
+            PENDING.with(|p| p.set(true));
+            let config = Arc::new(
+                RelayConfig::from(r.relay.clone()).with_auth_token(aven_peer::token(&frame)),
+            );
+            let (endpoint, relay) = (r.endpoint.clone(), r.relay.clone());
+            wasm_bindgen_futures::spawn_local(async move {
+                endpoint.insert_relay(relay, config).await;
+            });
+        }
+        r.outbox.unbounded_send(frame).map_err(js)
+    })
+}
+
+/// Says a line in the network's chat room.
+#[wasm_bindgen]
+pub fn say(text: String) -> Result<(), JsError> {
+    running(|r| {
+        let room = r.room.clone();
+        wasm_bindgen_futures::spawn_local(async move { room.say(text).await });
+        Ok(())
+    })
+}
+
+/// Sends a chat message as it is (JSON), unchecked here: every other peer checks it. The box's check sends one signed
+/// by a key that is no member's this way (MILESTONE2.md, "How it is checked", 5).
+#[wasm_bindgen]
+pub fn post(message: String) -> Result<(), JsError> {
+    let m: Message = serde_json::from_str(&message).map_err(js)?;
+    running(|r| {
+        let room = r.room.clone();
+        wasm_bindgen_futures::spawn_local(async move { room.post(&m).await });
+        Ok(())
+    })
+}
+
+/// Tells the page whether the relay lets this browser in (`door` lines): a stranger's page learns it is invite only
+/// this way, since no peer answers it. A statement the relay refused is `refused`, as the Aven Peer's refusals are.
+fn door(endpoint: &Endpoint, name: String, notes: Notes) {
+    use aven_peer::n0_future::StreamExt;
+    use iroh::Watcher;
+    let mut statuses = endpoint.home_relay_status().stream();
+    wasm_bindgen_futures::spawn_local(async move {
+        let mut told = None;
+        while let Some(all) = statuses.next().await {
+            let denied = all
+                .iter()
+                .find_map(|s| s.auth_denied_reason().map(str::to_string));
+            let admitted = match &denied {
+                Some(_) => Some(false),
+                None if all.iter().any(|s| s.is_connected()) => Some(true),
+                None => None,
+            };
+            if admitted.is_none() || admitted == told {
+                continue;
+            }
+            told = admitted;
+            notes(timeline::line(
+                now(),
+                &name,
+                "door",
+                serde_json::json!({ "admitted": admitted, "why": denied }),
+            ));
+            if admitted == Some(false) && PENDING.with(|p| p.replace(false)) {
+                let why = "the network did not take this browser's statement: invite only";
+                notes(timeline::line(
+                    now(),
+                    &name,
+                    "refused",
+                    serde_json::json!({ "why": why }),
+                ));
+            }
+            if admitted == Some(true) {
+                PENDING.with(|p| p.set(false));
+            }
+        }
+    });
+}
+
 /// Starts the Peer-Light `name` with its secret seed (hex), linking through `relay` to the Aven Peer (`aven_key`,
 /// called `aven_name` in the timeline), and tells `notes` every event. Without a name it goes by its key's device id.
-/// Returns once the endpoint is bound; the link runs on.
+/// In the box's cast, `members` lists the cast's members (`name=key,…`); without them it learns the members from the
+/// Aven Peer's statements. Returns once the endpoint is bound; the link and the room run on.
 #[wasm_bindgen]
 pub async fn start(
     name: String,
@@ -56,24 +164,38 @@ pub async fn start(
     aven_key: String,
     aven_name: String,
     notes: js_sys::Function,
+    members: Option<String>,
 ) -> Result<(), JsError> {
     let page = Page(notes);
     let notes: Notes = Arc::new(move |line: String| {
         let _ = page.0.call1(&JsValue::NULL, &JsValue::from_str(&line));
     });
     let relay: RelayUrl = relay.parse().map_err(js)?;
-    let endpoint = Endpoint::builder(presets::Minimal)
-        .secret_key(keys::secret(&secret).map_err(js)?)
-        .relay_mode(RelayMode::Custom(RelayMap::from(relay.clone())))
-        .alpns(vec![ALPN.to_vec()])
-        .bind()
-        .await
-        .map_err(js)?;
+    let secret = keys::secret(&secret).map_err(js)?;
+    let aven_key = keys::public(&aven_key).map_err(js)?;
     let name = if name.is_empty() {
-        aven_id::device_id(&endpoint.id().to_string())
+        aven_id::device_id(&secret.public().to_string())
     } else {
         name
     };
+    // the door as this browser knows it: the Aven Peer, and the cast's members or, later, the statements' members
+    let gate = Gate::default();
+    let cast = keys::Members::parse(members.as_deref().unwrap_or_default()).map_err(js)?;
+    let known = cast.keys().chain([(aven_key, aven_name.clone())]);
+    gate.set(known.map(|(k, n)| (k, n, None)).collect::<Vec<_>>());
+    let endpoint = Endpoint::builder(presets::Minimal)
+        .secret_key(secret.clone())
+        .relay_mode(RelayMode::Custom(RelayMap::from(relay.clone())))
+        .alpns(vec![ALPN.to_vec(), iroh_gossip::ALPN.to_vec()])
+        .hooks(Hook {
+            me: name.clone(),
+            gate: gate.clone(),
+            notes: notes.clone(),
+        })
+        .bind()
+        .await
+        .map_err(js)?;
+    door(&endpoint, name.clone(), notes.clone());
     notes(timeline::line(
         now(),
         &name,
@@ -90,16 +212,43 @@ pub async fn start(
         .await
         .map_err(js)?;
     notes(record::line(now(), &name, kind, &kept));
-    let aven = EndpointAddr::new(keys::public(&aven_key).map_err(js)?).with_relay_url(relay);
+    let aven = EndpointAddr::new(aven_key).with_relay_url(relay.clone());
+    aven_peer::know(&endpoint, aven.clone());
+    let gossip = Gossip::builder().spawn(endpoint.clone());
+    let router = Router::builder(endpoint.clone())
+        .accept(iroh_gossip::ALPN, gossip.clone())
+        .spawn();
+    let room = Room::join(
+        &gossip,
+        name.clone(),
+        "aven",
+        secret,
+        gate.clone(),
+        vec![aven_key],
+        notes.clone(),
+    )
+    .await
+    .map_err(js)?;
     let (outbox, frames) = futures_channel::mpsc::unbounded();
-    OUTBOX.with(|o| *o.borrow_mut() = Some(outbox));
+    // the cast's members are configuration; without a cast the statements say who they are
+    let learns = members.is_none().then_some(gate);
+    RUNNING.with(|r| {
+        *r.borrow_mut() = Some(Running {
+            outbox,
+            endpoint: endpoint.clone(),
+            relay,
+            room,
+            _router: router,
+        })
+    });
     wasm_bindgen_futures::spawn_local(link::run(
         endpoint,
         name,
-        aven,
+        link::fixed(aven),
         aven_name,
         notes,
         Some(frames),
+        learns,
     ));
     Ok(())
 }

@@ -9,13 +9,12 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vite';
 import { peers } from './sandbox/peers.mjs';
 import { prod } from './sandbox/prod.mjs';
-import { standin } from './sandbox/standin.mjs';
 
 const relay = process.env.AVENSANDBOX_RELAY ?? 'http://localhost:3340';
 
 export default defineConfig({
 	root: 'os/web',
-	plugins: [svelte(), peers(), prod(), standin()],
+	plugins: [svelte(), peers(), prod()],
 	resolve: { alias: { 'aven-id': fileURLToPath(new URL('target/wasm/aven-id/aven_id.js', import.meta.url)) } },
 	// avenOS for the browser (`bun run build`), a deliverable of every release
 	build: { outDir: '../../dist', emptyOutDir: true },

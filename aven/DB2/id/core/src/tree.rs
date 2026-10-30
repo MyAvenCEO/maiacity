@@ -155,9 +155,14 @@ impl fmt::Display for Invalid {
                 "{id}'s name must be 1 to {MAX_NAME} characters, without control characters"
             ),
             Invalid::CoopOwner { coop, owner } => {
-                write!(f, "the coop {coop} is owned by {owner}, which is no person's or coop's vault")
+                write!(
+                    f,
+                    "the coop {coop} is owned by {owner}, which is no person's or coop's vault"
+                )
             }
-            Invalid::CoopDevice { coop, device } => write!(f, "the coop {coop} holds the device {device}"),
+            Invalid::CoopDevice { coop, device } => {
+                write!(f, "the coop {coop} holds the device {device}")
+            }
             Invalid::Cycle(id) => write!(f, "{id} is above itself"),
         }
     }

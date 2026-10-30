@@ -5,13 +5,21 @@
 // so is an invite the admin withdrew; then the admin and the member chat both ways, the Aven Peer's join line arrives,
 // and a reload empties the room. Every screen is photographed into the run's folder. Nothing here writes what a peer
 // should answer: a line must arrive as it was written, and a refusal must be shown and change nothing.
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 
 const run = process.argv[2] ?? 'runs/latest';
 const origin = 'http://localhost:5174';
 const dirs = { admin: '/tmp/avensandbox-chat-admin', member: '/tmp/avensandbox-chat-member', stranger: '/tmp/avensandbox-chat-stranger' };
 mkdirSync(run, { recursive: true });
+
+// Lean's chat vectors (README, rule 10): the Aven Peer's join line, and the longest line a member may say
+const vectors = JSON.parse(readFileSync('db/spec/vectors/chat.json', 'utf8'));
+const vector = (name) => vectors.find((v) => v.name === name);
+const joinVector = vector("the Aven Peer's join line");
+const joinedText = (name) => joinVector.expected[0].said[0][1].replace(joinVector.input.members.at(-1), name);
+const lengths = vector('an empty line, and the longest one and one byte more');
+const longest = lengths.input.steps.map((step, i) => [step.message.text, lengths.expected[i].answer]).filter(([, answer]) => answer.ok).at(-1)[0];
 
 const problems = [];
 const report = {};
@@ -104,9 +112,10 @@ await stranger.context.close();
 // 4. the admin and the member chat both ways, and the Aven Peer's join line arrives
 await go(admin.page, `#/${report.admin}/chat`);
 await go(member.page, `#/${report.member}/chat`);
-const joinLine = admin.page.getByTestId('joined-line');
+const joinLine = admin.page.getByTestId('network-line');
 if (!(await seen(joinLine))) problems.push("the Aven Peer's join line did not arrive");
-else if (!(await joinLine.first().textContent()).includes('Bob')) problems.push(`the join line names no Bob: ${await joinLine.first().textContent()}`);
+report.joinLine = (await joinLine.first().textContent().catch(() => ''))?.trim();
+if (report.joinLine !== joinedText('Bob')) problems.push(`the join line reads "${report.joinLine}", not "${joinedText('Bob')}"`);
 if (!(await seen(admin.page.locator(`[data-testid="present"] li[data-vault="${report.member}"]`)))) problems.push('the admin sees no member present');
 const sayAndHear = async (from, to, text) => {
 	const at = Date.now();
@@ -117,7 +126,13 @@ const sayAndHear = async (from, to, text) => {
 };
 report.adminToMemberMs = await sayAndHear(admin.page, member.page, 'hello from the admin');
 report.memberToAdminMs = await sayAndHear(member.page, admin.page, 'hello back from the member');
-report.lines = await lines(admin.page).allTextContents();
+// the longest line arrives whole, and one byte more arrives nowhere
+await sayAndHear(admin.page, member.page, longest);
+await admin.page.getByTestId('line').fill(`${longest}b`);
+await admin.page.getByTestId('say').click();
+await member.page.waitForTimeout(2000);
+if (await member.page.getByTestId('lines').locator('li', { hasText: `${longest}b` }).count()) problems.push('a line longer than the longest arrived');
+report.lines = (await lines(admin.page).allTextContents()).map((text) => (text.length > 80 ? `${text.slice(0, 40)}… (${text.length})` : text));
 await shot(admin.page, 'room-admin');
 await shot(member.page, 'room-member');
 

@@ -2,6 +2,7 @@ import Aven.ID.Json
 import Aven.ID.Gen
 import Aven.ID.Keys
 import Aven.ID.ClaimJson
+import Aven.ID.InviteJson
 
 /-! # The test vectors (README, rule 10)
 
@@ -21,6 +22,8 @@ import Aven.ID.ClaimJson
   with what each check says (`Aven.ID.Passkey`). aven-id's tests sign each with the passkey's real key and compare.
 - `claims.json`: claim and sign-in traces with every answer and every resulting tree (`Aven.ID.ClaimTrace`), the
   examples and generated ones. aven-id's tests replay them with real keys, a restart reading the tree back.
+- `invites.json`: invite, withdrawal and join traces (`Aven.ID.InviteTrace`), with every answer, the tree, the
+  members, the invites' states and what the door says of each key after every step. aven-id's tests replay them.
 
 `bun run up --check` runs it again and fails when the files differ from what is committed. -/
 
@@ -102,6 +105,14 @@ def claims : List Json :=
     let (i, e) := traceVector boxServer (randomTrace n)
     vector s!"generated trace, seed {n}" i e
 
+def generatedMemberTraces : Nat := 40
+
+def invites : List Json :=
+  (memberExamples.map fun (name, ops, _) => let (i, e) := memberVector boxMembers ops; vector name i e) ++
+  (List.range generatedMemberTraces).map fun n =>
+    let (i, e) := memberVector boxMembers (randomMemberTrace n)
+    vector s!"generated member trace, seed {n}" i e
+
 /-- One vector per line, so a change reads as a diff of lines. -/
 def render (vs : List Json) : String :=
   "[\n" ++ ",\n".intercalate (vs.map Json.compress) ++ "\n]\n"
@@ -115,3 +126,4 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "avenos.json") (render avenos)
   IO.FS.writeFile (dir / "passkeys.json") (render passkeys)
   IO.FS.writeFile (dir / "claims.json") (render claims)
+  IO.FS.writeFile (dir / "invites.json") (render invites)

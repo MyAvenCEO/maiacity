@@ -21,7 +21,8 @@ fn every_key_is_the_models() {
     for v in vectors {
         let id = v["input"]["id"].as_str().unwrap();
         let key = test_signer(id);
-        let derived = json!({ "seed": hex(&key.to_bytes()), "public": public_hex(&key.verifying_key()) });
+        let derived =
+            json!({ "seed": hex(&key.to_bytes()), "public": public_hex(&key.verifying_key()) });
         assert_eq!(derived, v["expected"], "{id}");
         assert_eq!(cast["keys"][id], v["expected"]["public"], "the cast's {id}");
     }
@@ -36,7 +37,9 @@ fn every_key_is_the_models() {
 #[test]
 fn a_cast_key_must_be_an_ed25519_key() {
     assert!(matches!(
-        Tree::from_cast(r#"{"keys":{"k":"00"},"vaults":{"a":{"kind":"person","owners":["key:k"]}}}"#),
+        Tree::from_cast(
+            r#"{"keys":{"k":"00"},"vaults":{"a":{"kind":"person","owners":["key:k"]}}}"#
+        ),
         Err(CastError::Format(_))
     ));
 }

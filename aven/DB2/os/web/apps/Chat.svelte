@@ -1,7 +1,8 @@
 <script>
 	// avenOS's Chat (MILESTONE2.md, thread B): the network's one room, everyone's lines live, who is present, and a line
 	// to write in. Lines are pushed by this origin's Peer-Light and never re-queried (README, rule 8); none is kept, so
-	// a reload empties the room. Senders are named through the tree: a device by the person vault it acts for.
+	// a reload empties the room. Senders are named through the tree: a device by the person vault it acts for. A line the
+	// network says through the Aven Peer (who joined) is its own kind.
 	import Avatar from '../Avatar.svelte';
 	import { tree, vaultName } from '../id.js';
 	import { room, say } from '../room.svelte.js';
@@ -41,9 +42,10 @@
 	<section aria-label="Room">
 		<ol bind:this={list} data-testid="lines">
 			{#each room.lines as line, i (i)}
-				<li class:mine={line.from === device} class:joined={line.joined} data-from={line.from} data-vault={line.vault}>
-					{#if line.joined}
-						<span class="text" data-testid="joined-line">{line.text}</span>
+				{@const said = tree.kind(line.vault) === 'network'}
+				<li class:mine={line.from === device} class:said data-from={line.from} data-vault={line.vault}>
+					{#if said}
+						<span class="text" data-testid="network-line">{line.text}</span>
 					{:else}
 						<strong>{who(line.vault)}</strong>
 						<span class="text">{line.text}</span>
@@ -55,7 +57,7 @@
 			{/each}
 		</ol>
 		<form onsubmit={send}>
-			<input bind:value={text} maxlength="1000" placeholder="Write to everyone here" aria-label="Line" data-testid="line" />
+			<input bind:value={text} placeholder="Write to everyone here" aria-label="Line" data-testid="line" />
 			<button disabled={!text.trim()} data-testid="say">Send</button>
 		</form>
 	</section>
@@ -139,7 +141,7 @@
 		color: var(--live);
 	}
 
-	.joined {
+	.said {
 		color: var(--muted);
 		font-style: italic;
 	}

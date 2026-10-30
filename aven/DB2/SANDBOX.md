@@ -58,8 +58,9 @@ cast. As in avenDB-old, vaults own vaults; the concept comes over, no code does.
 
 ```
 Alice's vault           person    owned by Alice's owner key
-├── Aven                network   the network's own vault
-│   └── Aven Peer       device
+├── Maia City           coop      the admin, owned by Alice's vault
+│   └── Aven            network   the network's own vault
+│       └── Aven Peer   device
 ├── Alice Peer          device
 └── Alice Peer-Light    device
 Bob's vault             person    owned by Bob's owner key
@@ -69,8 +70,9 @@ Bob's vault             person    owned by Bob's owner key
 - **A person's vault** is owned by its owner key; later by keys and passkeys acting k of n, with recovery.
 - **A device's vault** is owned by the vault it serves. The device's key signs for that vault and governs nothing: a
   lost device is revoked by its vault, and the vault loses nothing.
-- **Aven, the network's vault,** is owned by Alice's vault. **So Alice's vault is the admin, not Alice's key:** her key
-  governs her vault, and through it Aven and the Aven Peer. **Aven acts through its own device:** the Aven Peer signs
+- **Maia City, a coop's vault,** is owned by Alice's vault and holds no devices; **Aven, the network's vault,** is
+  owned by Maia City (PRODUCTION.md, Part C). **So Maia City is the admin, not Alice's key:** her key governs her
+  vault, and through it Maia City, Aven and the Aven Peer. **Aven acts through its own device:** the Aven Peer signs
   for Aven, within the rights Alice's vault gives it and can take back. No person ever switches into Aven; Alice
   manages it as herself. From milestone 2 on, invites into the network are Aven's, within those rights; Bob is a member
   because Alice invited him.
