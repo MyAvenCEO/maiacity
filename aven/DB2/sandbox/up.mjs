@@ -197,6 +197,7 @@ async function check() {
 		fresh &&
 		result.exitCode === 0 &&
 		(await keeps(run)) &&
+		(await shares(run)) &&
 		(await inEngines(run)) &&
 		(await claims(run)) &&
 		(await members(run)) &&
@@ -245,6 +246,31 @@ async function keeps(run) {
 	for (const problem of problems) say(`record: ${problem}`);
 	if (report.ok) say(`a restart kept all four records, and a wipe emptied them (${(report.ms / 1000).toFixed(1)} s)`);
 	return report.ok;
+}
+
+// A file's way (store/README.md, "How it is checked"), by sandbox/files.mjs: Alice Peer shares a 200 MiB file from its
+// folder, written beside it and moved in; Bob's Peer-Light seeks to its middle, fetching less than a quarter of it, and
+// the Aven Peer keeps it; then Alice Peer stops, Bob's Peer-Light fetches the whole file from the Aven Peer, and Alice
+// Peer starts again. Only the host stops a peer, so the step's phases run around it.
+async function shares(run) {
+	const timed = Date.now();
+	const share = [
+		'mkdir -p /data/files',
+		'head -c 209715200 /dev/urandom > /data/files/.movie.mp4',
+		'mv /data/files/.movie.mp4 /data/files/movie.mp4',
+		'dd if=/data/files/movie.mp4 bs=65536 skip=1600 count=1 2>/dev/null | sha256sum',
+	].join(' && ');
+	const sha = (await $`${compose} exec -T alice sh -c ${share}`.env(env).quiet().text()).trim().split(' ')[0];
+	const step = async (phase) =>
+		(await $`${compose} exec -T browsers node sandbox/files.mjs ${phase} ${run} ${timed} ${sha}`.env(env).nothrow()).exitCode === 0;
+	let ok = await step('seek');
+	if (ok) {
+		await $`${compose} stop alice`.env(env).quiet();
+		ok = await step('whole');
+		await $`${compose} start alice`.env(env).quiet();
+	}
+	say(`${ok ? "a 200 MiB file: a seek fetched less than a quarter, and the Aven Peer served it once Alice was gone" : 'the files step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s)`);
+	return ok;
 }
 
 // avenOS in all three engines (sandbox/engines.mjs): the cast's two Peer-Lights in WebKit and Firefox, live on their own

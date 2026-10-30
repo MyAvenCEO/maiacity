@@ -3,7 +3,7 @@
 # beside them, outside the workspace. The repository's root workspace, v1's, excludes this folder.
 [workspace]
 resolver = "3"
-members = ["db/core", "store", "id/core", "peer/native", "peer/light", "store-spike"]
+members = ["db/core", "store", "id/core", "peer/native", "peer/light"]
 # OpenDAL's OPFS service, forked so it runs in a worker too (store/opendal-opfs/FORK.md): not ours to lint or test,
 # only patched in
 exclude = ["store/opendal-opfs"]

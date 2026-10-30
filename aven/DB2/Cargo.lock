@@ -306,24 +306,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aven-store-spike"
-version = "0.0.0"
-dependencies = [
- "async-trait",
- "aven-db-store",
- "bao-tree",
- "blake3",
- "bytes",
- "iroh",
- "iroh-blobs",
- "irpc",
- "n0-future",
- "range-collections",
- "ref-cast",
- "tokio",
-]
-
-[[package]]
 name = "aws-lc-rs"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
