@@ -6,7 +6,7 @@ import { mount } from 'svelte';
 import cast from '../../sandbox/cast.json';
 import App from './App.svelte';
 import Network from './Network.svelte';
-import { hostNetwork, runNetwork } from './network.svelte.js';
+import { hostNetwork, net, runNetwork, storageBlocked } from './network.svelte.js';
 import { runBox, runLight } from './peers.svelte.js';
 import './style.css';
 
@@ -22,6 +22,8 @@ if (!device && !config && location.hostname === 'localhost') runBox(cast);
 
 document.title = device ? `avenOS · ${cast.peers[device].name}` : 'avenOS';
 if (config) {
-	runNetwork(config);
+	// a browser that keeps no storage for this host (site data blocked, always private) gets no Peer-Light, and is told why
+	net.storage = await storageBlocked();
+	if (!net.storage) runNetwork(config);
 	mount(Network, { target, props: { config } });
 } else mount(App, { target, props: { cast, device } });

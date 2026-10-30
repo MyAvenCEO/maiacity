@@ -12,8 +12,9 @@ import { hear, speakThrough } from './room.svelte.js';
 // network's tree as cast JSON, told to its devices only; `refused`: why the last claim or sign-in was refused;
 // `trouble`: why the Peer-Light is not live, as it last said (its start failed, the Aven Peer didn't answer), shown
 // under the status line so a screenshot names the cause; `door`: whether the relay lets this browser in, null until it
-// has said (MILESTONE2.md: after the claim, only members get in)
-export const net = $state({ me: null, key: null, claimed: null, tree: null, refused: null, trouble: null, door: null });
+// has said (MILESTONE2.md: after the claim, only members get in); `storage`: why this browser keeps no storage for the
+// host, when it doesn't, and then no Peer-Light starts
+export const net = $state({ me: null, key: null, claimed: null, tree: null, refused: null, trouble: null, door: null, storage: null });
 
 let port;
 // the start this page gives its Peer-Light, sent again with every statement (peer/worker.js)
@@ -28,6 +29,21 @@ export async function hostNetwork() {
 		return config.peer && config.rpId ? config : null;
 	} catch {
 		return null;
+	}
+}
+
+// Whether this browser may keep storage for the host: the Peer-Light's device key lives in its OPFS. Firefox throws a
+// SecurityError from `getDirectory` when cookies and site data are blocked for the site, or it always browses privately
+// (Samuel's Firefox on macOS, 30 Oct 2026: "Security error when calling GetDirectory" under "Connecting to the
+// network…", where Chrome joined with the same link). Asked on the page, before the
+// Peer-Light starts, so avenOS can say so plainly. Returns the technical reason, or null.
+export async function storageBlocked() {
+	try {
+		if (!navigator.storage?.getDirectory) return 'this browser has no origin private file system (navigator.storage.getDirectory)';
+		await navigator.storage.getDirectory();
+		return null;
+	} catch (error) {
+		return `${error?.name ?? 'Error'}: ${error?.message ?? error}`;
 	}
 }
 

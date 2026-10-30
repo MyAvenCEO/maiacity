@@ -51,7 +51,16 @@
 	const claimed = $derived(net.claimed ?? (net.door === false ? true : null));
 </script>
 
-{#if member && route !== 'claim'}
+{#if net.storage}
+	<main data-view="no-storage">
+		<h1>avenOS</h1>
+		<p data-testid="no-storage">
+			This browser doesn't allow avenOS to store data for {location.hostname}. In Firefox, check that cookies and site data are allowed for
+			this site and that 'Always use private browsing mode' is off, or open {link ? 'the link' : 'avenOS'} in another browser.
+		</p>
+		<p class="muted" data-testid="no-storage-why">{net.storage}</p>
+	</main>
+{:else if member && route !== 'claim'}
 	{#key stamp}
 		<App {cast} device={net.me} {config} />
 	{/key}
