@@ -1,0 +1,20 @@
+# Aven.Runtime: aven/runtimes' model in Lean (README, "What Lean states"). Core Lean only, no packages: the box has no
+# network for Lean packages. `lake build` proves every theorem and checks every example; `vectors` exports the examples
+# and generated cases as JSON (aven/DB2/README.md, rule 10).
+name = "aven-runtimes-spec"
+version = "0.1.0"
+defaultTargets = ["AvenRuntime", "vectors"]
+
+[[lean_lib]]
+name = "AvenRuntime"
+# Only Aven.Runtime is this package's: Aven.Core comes from the core package.
+roots = ["Aven.Runtime"]
+
+[[lean_exe]]
+name = "vectors"
+root = "Vectors"
+
+# The shared core: Values, the codec and hashes (aven/DB2/core/spec).
+[[require]]
+name = "aven-core-spec"
+path = "../../DB2/core/spec"

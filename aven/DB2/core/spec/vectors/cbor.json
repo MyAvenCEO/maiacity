@@ -1,0 +1,402 @@
+{"expected":"00","input":0,"name":"zero"}
+{"expected":"17","input":23,"name":"23"}
+{"expected":"1818","input":24,"name":"24"}
+{"expected":"1903e8","input":1000,"name":"1000"}
+{"expected":"1bffffffffffffffff","input":18446744073709551615,"name":"the largest"}
+{"expected":"20","input":-1,"name":"minus one"}
+{"expected":"3863","input":-100,"name":"minus 100"}
+{"expected":"40","input":{"bytes":""},"name":"empty bytes"}
+{"expected":"5820af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262","input":{"bytes":"af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"},"name":"a hash"}
+{"expected":"6449455446","input":"IETF","name":"text"}
+{"expected":"64f09f9880","input":"😀","name":"text, four bytes a character"}
+{"expected":"8201820203","input":[1,[2,3]],"name":"nested arrays"}
+{"expected":"a261620162616102","input":{"aa":2,"b":1},"name":"a map, shorter key first"}
+{"expected":"f5","input":true,"name":"true"}
+{"expected":"f4","input":false,"name":"false"}
+{"expected":"f6","input":null,"name":"null"}
+{"expected":"60","input":"","name":"seed 1"}
+{"expected":"3868","input":-105,"name":"seed 2"}
+{"expected":"617a","input":"z","name":"seed 3"}
+{"expected":"1bf0c186b3bb6bc97e","input":17348295346109532542,"name":"seed 4"}
+{"expected":"f5","input":true,"name":"seed 5"}
+{"expected":"582311eb96c3c0d15e4aec25d92614da512ffbca5989f853d186e5b459c952c891ca092111","input":{"bytes":"11eb96c3c0d15e4aec25d92614da512ffbca5989f853d186e5b459c952c891ca092111"},"name":"seed 6"}
+{"expected":"4717a7a09f92e558","input":{"bytes":"17a7a09f92e558"},"name":"seed 7"}
+{"expected":"f5","input":true,"name":"seed 8"}
+{"expected":"f5","input":true,"name":"seed 9"}
+{"expected":"8100","input":[0],"name":"seed 10"}
+{"expected":"1bed2f8a52abd101c6","input":17091031198568874438,"name":"seed 11"}
+{"expected":"a0","input":{},"name":"seed 12"}
+{"expected":"f5","input":true,"name":"seed 13"}
+{"expected":"f4","input":false,"name":"seed 14"}
+{"expected":"f6","input":null,"name":"seed 15"}
+{"expected":"1b4798a8915d2f9d80","input":5159058715440029056,"name":"seed 16"}
+{"expected":"f6","input":null,"name":"seed 17"}
+{"expected":"f5","input":true,"name":"seed 18"}
+{"expected":"a0","input":{},"name":"seed 19"}
+{"expected":"81f6","input":[null],"name":"seed 20"}
+{"expected":"f5","input":true,"name":"seed 21"}
+{"expected":"f6","input":null,"name":"seed 22"}
+{"expected":"f6","input":null,"name":"seed 23"}
+{"expected":"f4","input":false,"name":"seed 24"}
+{"expected":"f6","input":null,"name":"seed 25"}
+{"expected":"a0","input":{},"name":"seed 26"}
+{"expected":"f5","input":true,"name":"seed 27"}
+{"expected":"8163c39f61","input":["ßa"],"name":"seed 28"}
+{"expected":"6161","input":"a","name":"seed 29"}
+{"expected":"f5","input":true,"name":"seed 30"}
+{"expected":"1b1e7c38d20a12b423","input":2196693193013244963,"name":"seed 31"}
+{"expected":"f5","input":true,"name":"seed 32"}
+{"expected":"80","input":[],"name":"seed 33"}
+{"expected":"a360a061625368d26d1b9bf0a94e96ddb8b5728e99d49fbe1563e8aa9e410f","input":{"":{},"b":{"bytes":"68d26d1b9bf0a94e96ddb8b5728e99d49fbe15"},"語":{"bytes":"0f"}},"name":"seed 34"}
+{"expected":"18c0","input":192,"name":"seed 35"}
+{"expected":"f4","input":false,"name":"seed 36"}
+{"expected":"52aed92444685c2a665ae49728eee70ef42971","input":{"bytes":"aed92444685c2a665ae49728eee70ef42971"},"name":"seed 37"}
+{"expected":"1848","input":72,"name":"seed 38"}
+{"expected":"f4","input":false,"name":"seed 39"}
+{"expected":"f4","input":false,"name":"seed 40"}
+{"expected":"60","input":"","name":"seed 41"}
+{"expected":"3bd45d387d132e3d4d","input":-15302449218718678350,"name":"seed 42"}
+{"expected":"f5","input":true,"name":"seed 43"}
+{"expected":"f6","input":null,"name":"seed 44"}
+{"expected":"8282821bb279d2ef02207a8a19010e81185480","input":[[[12860542134907861642,270],[84]],[]],"name":"seed 45"}
+{"expected":"1affffffff","input":4294967295,"name":"seed 46"}
+{"expected":"18be","input":190,"name":"seed 47"}
+{"expected":"f5","input":true,"name":"seed 48"}
+{"expected":"f5","input":true,"name":"seed 49"}
+{"expected":"f4","input":false,"name":"seed 50"}
+{"expected":"f5","input":true,"name":"seed 51"}
+{"expected":"83f4a0190108","input":[false,{},264],"name":"seed 52"}
+{"expected":"f5","input":true,"name":"seed 53"}
+{"expected":"1ba5a6c9baf33aaaa9","input":11936449667173886633,"name":"seed 54"}
+{"expected":"f6","input":null,"name":"seed 55"}
+{"expected":"81834b05a50c28f26d2bcfa643eb3beaf5c92e190fa93c3b6c54e6684a30d5a4","input":[[{"bytes":"05a50c28f26d2bcfa643eb"},-16930659573995383101,-7806117389735613861]],"name":"seed 56"}
+{"expected":"f4","input":false,"name":"seed 57"}
+{"expected":"38f9","input":-250,"name":"seed 58"}
+{"expected":"82a160f6a262206160646261207a821b2e2926312a80d83d1818","input":[{"":null},{" a":"","ba z":[3326231792398161981,24]}],"name":"seed 59"}
+{"expected":"6c62c39ff09f9880e282acc39f","input":"bß😀€ß","name":"seed 60"}
+{"expected":"f5","input":true,"name":"seed 61"}
+{"expected":"65c3a9e8aa9e","input":"é語","name":"seed 62"}
+{"expected":"5499c0c1ca7793a479cb5cb8654d314ffd2446b853","input":{"bytes":"99c0c1ca7793a479cb5cb8654d314ffd2446b853"},"name":"seed 63"}
+{"expected":"f4","input":false,"name":"seed 64"}
+{"expected":"a16520c3a920301856","input":{" é 0":86},"name":"seed 65"}
+{"expected":"51bf84b7985f016f6917977698f91a142ea6","input":{"bytes":"bf84b7985f016f6917977698f91a142ea6"},"name":"seed 66"}
+{"expected":"00","input":0,"name":"seed 67"}
+{"expected":"a0","input":{},"name":"seed 68"}
+{"expected":"f6","input":null,"name":"seed 69"}
+{"expected":"05","input":5,"name":"seed 70"}
+{"expected":"83f6a26620f09f988062183a67e8aa9e6161c3a9f6825827f4fd8e6f13d3d08b0e0c625e6036bad3cc4f53cd7a92c5627ae4bfcaa5ead100a6ddbedf02161838ff","input":[null,{" 😀b":58,"語aaé":null},[{"bytes":"f4fd8e6f13d3d08b0e0c625e6036bad3cc4f53cd7a92c5627ae4bfcaa5ead100a6ddbedf021618"},-256]],"name":"seed 71"}
+{"expected":"82a260617a64c39f7a30f51a00010000","input":[{"":"z","ßz0":true},65536],"name":"seed 72"}
+{"expected":"82581cbe9d74a23fa7d4e7dea906305c846bbd64a0e94006760c6e3842f08918e1","input":[{"bytes":"be9d74a23fa7d4e7dea906305c846bbd64a0e94006760c6e3842f089"},225],"name":"seed 73"}
+{"expected":"f6","input":null,"name":"seed 74"}
+{"expected":"17","input":23,"name":"seed 75"}
+{"expected":"f5","input":true,"name":"seed 76"}
+{"expected":"5824eb0896e7a27d53e73c4cc2c3ce7f69670d258954c829c7d66b1705bf8031dd02546eca3f","input":{"bytes":"eb0896e7a27d53e73c4cc2c3ce7f69670d258954c829c7d66b1705bf8031dd02546eca3f"},"name":"seed 77"}
+{"expected":"f5","input":true,"name":"seed 78"}
+{"expected":"a362c39ff464f09f9880f6687ae282acc3a9617a82f4f6","input":{"z€éaz":[false,null],"ß":false,"😀":null},"name":"seed 79"}
+{"expected":"6462302020","input":"b0  ","name":"seed 80"}
+{"expected":"f5","input":true,"name":"seed 81"}
+{"expected":"f5","input":true,"name":"seed 82"}
+{"expected":"5820fbc0fb12668833b11c6e48ca432b7941b72cee4d036913b1fa132bc544b47dd5","input":{"bytes":"fbc0fb12668833b11c6e48ca432b7941b72cee4d036913b1fa132bc544b47dd5"},"name":"seed 83"}
+{"expected":"a16a7ac3a9e282ace282ac7a80","input":{"zé€€z":[]},"name":"seed 84"}
+{"expected":"49ad3eb0dff485985d8b","input":{"bytes":"ad3eb0dff485985d8b"},"name":"seed 85"}
+{"expected":"3affffffff","input":-4294967296,"name":"seed 86"}
+{"expected":"82a03893","input":[{},-148],"name":"seed 87"}
+{"expected":"581f0953bd241ae451c95224e093867999b00b1baf46c2bf14ec1d059740b0859a","input":{"bytes":"0953bd241ae451c95224e093867999b00b1baf46c2bf14ec1d059740b0859a"},"name":"seed 88"}
+{"expected":"6161","input":"a","name":"seed 89"}
+{"expected":"5824aa31b90ca2b590f9d461ef4ec0710143efda27cf5cc0a9e0831090079558d8cb7e4e7e66","input":{"bytes":"aa31b90ca2b590f9d461ef4ec0710143efda27cf5cc0a9e0831090079558d8cb7e4e7e66"},"name":"seed 90"}
+{"expected":"f6","input":null,"name":"seed 91"}
+{"expected":"6ce8aa9ef09f988020e8aa9e7a","input":"語😀 語z","name":"seed 92"}
+{"expected":"6ac39f7a61e8aa9ee8aa9e","input":"ßza語語","name":"seed 93"}
+{"expected":"190124","input":292,"name":"seed 94"}
+{"expected":"3be4d184691fb61d21","input":-16488105297818557730,"name":"seed 95"}
+{"expected":"f5","input":true,"name":"seed 96"}
+{"expected":"f6","input":null,"name":"seed 97"}
+{"expected":"f4","input":false,"name":"seed 98"}
+{"expected":"f6","input":null,"name":"seed 99"}
+{"expected":"582624bee9781a668af13032be1ddfe8db681eeeb3b403b952bab10e5ef6973660d213afba75e132","input":{"bytes":"24bee9781a668af13032be1ddfe8db681eeeb3b403b952bab10e5ef6973660d213afba75e132"},"name":"seed 100"}
+{"expected":"f4","input":false,"name":"seed 101"}
+{"expected":"81a169e282ac7a20e8aa9e61f6","input":[{"€z 語a":null}],"name":"seed 102"}
+{"expected":"3b18bdb17b087df4d9","input":-1782776169490150618,"name":"seed 103"}
+{"expected":"37","input":-24,"name":"seed 104"}
+{"expected":"80","input":[],"name":"seed 105"}
+{"expected":"f4","input":false,"name":"seed 106"}
+{"expected":"f4","input":false,"name":"seed 107"}
+{"expected":"39ffff","input":-65536,"name":"seed 108"}
+{"expected":"825826b3fae796cfac29553f853c1404269003e53e32020a8675eb981b5b792d2f47337741dd6e5ce21bc227aacdd0a0f6d8","input":[{"bytes":"b3fae796cfac29553f853c1404269003e53e32020a8675eb981b5b792d2f47337741dd6e5ce2"},13990338568394962648],"name":"seed 109"}
+{"expected":"68e8aa9e20f09f9880","input":"語 😀","name":"seed 110"}
+{"expected":"f6","input":null,"name":"seed 111"}
+{"expected":"f6","input":null,"name":"seed 112"}
+{"expected":"1affffffff","input":4294967295,"name":"seed 113"}
+{"expected":"f6","input":null,"name":"seed 114"}
+{"expected":"a26462e282ac687ae282ace282ac7a66c39ff09f98804bef3a70ee9926f8a7000a28","input":{"b€":"z€€z","ß😀":{"bytes":"ef3a70ee9926f8a7000a28"}},"name":"seed 115"}
+{"expected":"652020e282ac","input":"  €","name":"seed 116"}
+{"expected":"581f803db7ce0d71a1883dbdb485dea956dc6f271fa1c8f920384218ba8f7a7c0c","input":{"bytes":"803db7ce0d71a1883dbdb485dea956dc6f271fa1c8f920384218ba8f7a7c0c"},"name":"seed 117"}
+{"expected":"3b74949aba84125d0f","input":-8400509330823208208,"name":"seed 118"}
+{"expected":"f4","input":false,"name":"seed 119"}
+{"expected":"3a00010000","input":-65537,"name":"seed 120"}
+{"expected":null,"input":"1817","name":"not the shortest: 23 in one byte"}
+{"expected":null,"input":"1900ff","name":"not the shortest: 255 in two bytes"}
+{"expected":null,"input":"580100","name":"not the shortest: a length"}
+{"expected":null,"input":"f93c00","name":"a half float"}
+{"expected":null,"input":"fb3ff0000000000000","name":"a double"}
+{"expected":null,"input":"c24101","name":"a tag"}
+{"expected":null,"input":"9f01ff","name":"an indefinite array"}
+{"expected":null,"input":"7f6161ff","name":"an indefinite text"}
+{"expected":null,"input":"f820","name":"a simple value in one byte"}
+{"expected":null,"input":"f7","name":"undefined"}
+{"expected":null,"input":"a2616201616102","name":"keys out of order"}
+{"expected":null,"input":"a2616101616102","name":"a duplicate key"}
+{"expected":null,"input":"a10102","name":"a key that isn't text"}
+{"expected":null,"input":"62c0af","name":"an overlong slash"}
+{"expected":null,"input":"63eda080","name":"a surrogate"}
+{"expected":null,"input":"6180","name":"a lone continuation byte"}
+{"expected":null,"input":"64f4908080","name":"above U+10FFFF"}
+{"expected":null,"input":"0101","name":"a byte after the item"}
+{"expected":null,"input":"4201","name":"too few bytes"}
+{"expected":null,"input":"","name":"nothing"}
+{"expected":null,"input":"7b0000000000000000","name":"seed 1, widened"}
+{"expected":null,"input":"6000","name":"seed 1, a byte after it"}
+{"expected":null,"input":"3b0000000000000068","name":"seed 2, widened"}
+{"expected":null,"input":"38","name":"seed 2, cut short"}
+{"expected":null,"input":"386800","name":"seed 2, a byte after it"}
+{"expected":null,"input":"7b00000000000000017a","name":"seed 3, widened"}
+{"expected":null,"input":"61","name":"seed 3, cut short"}
+{"expected":null,"input":"617a00","name":"seed 3, a byte after it"}
+{"expected":null,"input":"1bf0c186b3bb6bc9","name":"seed 4, cut short"}
+{"expected":null,"input":"1bf0c186b3bb6bc97e00","name":"seed 4, a byte after it"}
+{"expected":null,"input":"f500","name":"seed 5, a byte after it"}
+{"expected":null,"input":"5b000000000000002311eb96c3c0d15e4aec25d92614da512ffbca5989f853d186e5b459c952c891ca092111","name":"seed 6, widened"}
+{"expected":null,"input":"582311eb96c3c0d15e4aec25d92614da512ffbca5989f853d186e5b459c952c891ca0921","name":"seed 6, cut short"}
+{"expected":null,"input":"582311eb96c3c0d15e4aec25d92614da512ffbca5989f853d186e5b459c952c891ca09211100","name":"seed 6, a byte after it"}
+{"expected":null,"input":"5b000000000000000717a7a09f92e558","name":"seed 7, widened"}
+{"expected":null,"input":"4717a7a09f92e5","name":"seed 7, cut short"}
+{"expected":null,"input":"4717a7a09f92e55800","name":"seed 7, a byte after it"}
+{"expected":null,"input":"f500","name":"seed 8, a byte after it"}
+{"expected":null,"input":"f500","name":"seed 9, a byte after it"}
+{"expected":null,"input":"9b000000000000000100","name":"seed 10, widened"}
+{"expected":null,"input":"81","name":"seed 10, cut short"}
+{"expected":null,"input":"810000","name":"seed 10, a byte after it"}
+{"expected":null,"input":"1bed2f8a52abd101","name":"seed 11, cut short"}
+{"expected":null,"input":"1bed2f8a52abd101c600","name":"seed 11, a byte after it"}
+{"expected":null,"input":"bb0000000000000000","name":"seed 12, widened"}
+{"expected":null,"input":"a000","name":"seed 12, a byte after it"}
+{"expected":null,"input":"f500","name":"seed 13, a byte after it"}
+{"expected":null,"input":"f400","name":"seed 14, a byte after it"}
+{"expected":null,"input":"f600","name":"seed 15, a byte after it"}
+{"expected":null,"input":"1b4798a8915d2f9d","name":"seed 16, cut short"}
+{"expected":null,"input":"1b4798a8915d2f9d8000","name":"seed 16, a byte after it"}
+{"expected":null,"input":"f600","name":"seed 17, a byte after it"}
+{"expected":null,"input":"f500","name":"seed 18, a byte after it"}
+{"expected":null,"input":"bb0000000000000000","name":"seed 19, widened"}
+{"expected":null,"input":"a000","name":"seed 19, a byte after it"}
+{"expected":null,"input":"9b0000000000000001f6","name":"seed 20, widened"}
+{"expected":null,"input":"81","name":"seed 20, cut short"}
+{"expected":null,"input":"81f600","name":"seed 20, a byte after it"}
+{"expected":null,"input":"f500","name":"seed 21, a byte after it"}
+{"expected":null,"input":"f600","name":"seed 22, a byte after it"}
+{"expected":null,"input":"f600","name":"seed 23, a byte after it"}
+{"expected":null,"input":"f400","name":"seed 24, a byte after it"}
+{"expected":null,"input":"f600","name":"seed 25, a byte after it"}
+{"expected":null,"input":"bb0000000000000000","name":"seed 26, widened"}
+{"expected":null,"input":"a000","name":"seed 26, a byte after it"}
+{"expected":null,"input":"f500","name":"seed 27, a byte after it"}
+{"expected":null,"input":"9b000000000000000163c39f61","name":"seed 28, widened"}
+{"expected":null,"input":"8163c39f","name":"seed 28, cut short"}
+{"expected":null,"input":"8163c39f6100","name":"seed 28, a byte after it"}
+{"expected":null,"input":"7b000000000000000161","name":"seed 29, widened"}
+{"expected":null,"input":"61","name":"seed 29, cut short"}
+{"expected":null,"input":"616100","name":"seed 29, a byte after it"}
+{"expected":null,"input":"f500","name":"seed 30, a byte after it"}
+{"expected":null,"input":"1b1e7c38d20a12b4","name":"seed 31, cut short"}
+{"expected":null,"input":"1b1e7c38d20a12b42300","name":"seed 31, a byte after it"}
+{"expected":null,"input":"f500","name":"seed 32, a byte after it"}
+{"expected":null,"input":"9b0000000000000000","name":"seed 33, widened"}
+{"expected":null,"input":"8000","name":"seed 33, a byte after it"}
+{"expected":null,"input":"bb000000000000000360a061625368d26d1b9bf0a94e96ddb8b5728e99d49fbe1563e8aa9e410f","name":"seed 34, widened"}
+{"expected":null,"input":"a361625368d26d1b9bf0a94e96ddb8b5728e99d49fbe1560a063e8aa9e410f","name":"seed 34, keys swapped"}
+{"expected":null,"input":"a360a061625368d26d1b9bf0a94e96ddb8b5728e99d49fbe1563e8aa9e41","name":"seed 34, cut short"}
+{"expected":null,"input":"a360a061625368d26d1b9bf0a94e96ddb8b5728e99d49fbe1563e8aa9e410f00","name":"seed 34, a byte after it"}
+{"expected":null,"input":"1b00000000000000c0","name":"seed 35, widened"}
+{"expected":null,"input":"18","name":"seed 35, cut short"}
+{"expected":null,"input":"18c000","name":"seed 35, a byte after it"}
+{"expected":null,"input":"f400","name":"seed 36, a byte after it"}
+{"expected":null,"input":"5b0000000000000012aed92444685c2a665ae49728eee70ef42971","name":"seed 37, widened"}
+{"expected":null,"input":"52aed92444685c2a665ae49728eee70ef429","name":"seed 37, cut short"}
+{"expected":null,"input":"52aed92444685c2a665ae49728eee70ef4297100","name":"seed 37, a byte after it"}
+{"expected":null,"input":"1b0000000000000048","name":"seed 38, widened"}
+{"expected":null,"input":"18","name":"seed 38, cut short"}
+{"expected":null,"input":"184800","name":"seed 38, a byte after it"}
+{"expected":null,"input":"f400","name":"seed 39, a byte after it"}
+{"expected":null,"input":"f400","name":"seed 40, a byte after it"}
+{"expected":null,"input":"7b0000000000000000","name":"seed 41, widened"}
+{"expected":null,"input":"6000","name":"seed 41, a byte after it"}
+{"expected":null,"input":"3bd45d387d132e3d","name":"seed 42, cut short"}
+{"expected":null,"input":"3bd45d387d132e3d4d00","name":"seed 42, a byte after it"}
+{"expected":null,"input":"f500","name":"seed 43, a byte after it"}
+{"expected":null,"input":"f600","name":"seed 44, a byte after it"}
+{"expected":null,"input":"9b000000000000000282821bb279d2ef02207a8a19010e81185480","name":"seed 45, widened"}
+{"expected":null,"input":"8282821bb279d2ef02207a8a19010e811854","name":"seed 45, cut short"}
+{"expected":null,"input":"8282821bb279d2ef02207a8a19010e8118548000","name":"seed 45, a byte after it"}
+{"expected":null,"input":"1b00000000ffffffff","name":"seed 46, widened"}
+{"expected":null,"input":"1affffff","name":"seed 46, cut short"}
+{"expected":null,"input":"1affffffff00","name":"seed 46, a byte after it"}
+{"expected":null,"input":"1b00000000000000be","name":"seed 47, widened"}
+{"expected":null,"input":"18","name":"seed 47, cut short"}
+{"expected":null,"input":"18be00","name":"seed 47, a byte after it"}
+{"expected":null,"input":"f500","name":"seed 48, a byte after it"}
+{"expected":null,"input":"f500","name":"seed 49, a byte after it"}
+{"expected":null,"input":"f400","name":"seed 50, a byte after it"}
+{"expected":null,"input":"f500","name":"seed 51, a byte after it"}
+{"expected":null,"input":"9b0000000000000003f4a0190108","name":"seed 52, widened"}
+{"expected":null,"input":"83f4a01901","name":"seed 52, cut short"}
+{"expected":null,"input":"83f4a019010800","name":"seed 52, a byte after it"}
+{"expected":null,"input":"f500","name":"seed 53, a byte after it"}
+{"expected":null,"input":"1ba5a6c9baf33aaa","name":"seed 54, cut short"}
+{"expected":null,"input":"1ba5a6c9baf33aaaa900","name":"seed 54, a byte after it"}
+{"expected":null,"input":"f600","name":"seed 55, a byte after it"}
+{"expected":null,"input":"9b0000000000000001834b05a50c28f26d2bcfa643eb3beaf5c92e190fa93c3b6c54e6684a30d5a4","name":"seed 56, widened"}
+{"expected":null,"input":"81834b05a50c28f26d2bcfa643eb3beaf5c92e190fa93c3b6c54e6684a30d5","name":"seed 56, cut short"}
+{"expected":null,"input":"81834b05a50c28f26d2bcfa643eb3beaf5c92e190fa93c3b6c54e6684a30d5a400","name":"seed 56, a byte after it"}
+{"expected":null,"input":"f400","name":"seed 57, a byte after it"}
+{"expected":null,"input":"3b00000000000000f9","name":"seed 58, widened"}
+{"expected":null,"input":"38","name":"seed 58, cut short"}
+{"expected":null,"input":"38f900","name":"seed 58, a byte after it"}
+{"expected":null,"input":"9b0000000000000002a160f6a262206160646261207a821b2e2926312a80d83d1818","name":"seed 59, widened"}
+{"expected":null,"input":"82a160f6a262206160646261207a821b2e2926312a80d83d18","name":"seed 59, cut short"}
+{"expected":null,"input":"82a160f6a262206160646261207a821b2e2926312a80d83d181800","name":"seed 59, a byte after it"}
+{"expected":null,"input":"7b000000000000000c62c39ff09f9880e282acc39f","name":"seed 60, widened"}
+{"expected":null,"input":"6c62c39ff09f9880e282acc3","name":"seed 60, cut short"}
+{"expected":null,"input":"6c62c39ff09f9880e282acc39f00","name":"seed 60, a byte after it"}
+{"expected":null,"input":"f500","name":"seed 61, a byte after it"}
+{"expected":null,"input":"7b0000000000000005c3a9e8aa9e","name":"seed 62, widened"}
+{"expected":null,"input":"65c3a9e8aa","name":"seed 62, cut short"}
+{"expected":null,"input":"65c3a9e8aa9e00","name":"seed 62, a byte after it"}
+{"expected":null,"input":"5b000000000000001499c0c1ca7793a479cb5cb8654d314ffd2446b853","name":"seed 63, widened"}
+{"expected":null,"input":"5499c0c1ca7793a479cb5cb8654d314ffd2446b8","name":"seed 63, cut short"}
+{"expected":null,"input":"5499c0c1ca7793a479cb5cb8654d314ffd2446b85300","name":"seed 63, a byte after it"}
+{"expected":null,"input":"f400","name":"seed 64, a byte after it"}
+{"expected":null,"input":"bb00000000000000016520c3a920301856","name":"seed 65, widened"}
+{"expected":null,"input":"a16520c3a9203018","name":"seed 65, cut short"}
+{"expected":null,"input":"a16520c3a92030185600","name":"seed 65, a byte after it"}
+{"expected":null,"input":"5b0000000000000011bf84b7985f016f6917977698f91a142ea6","name":"seed 66, widened"}
+{"expected":null,"input":"51bf84b7985f016f6917977698f91a142e","name":"seed 66, cut short"}
+{"expected":null,"input":"51bf84b7985f016f6917977698f91a142ea600","name":"seed 66, a byte after it"}
+{"expected":null,"input":"1b0000000000000000","name":"seed 67, widened"}
+{"expected":null,"input":"0000","name":"seed 67, a byte after it"}
+{"expected":null,"input":"bb0000000000000000","name":"seed 68, widened"}
+{"expected":null,"input":"a000","name":"seed 68, a byte after it"}
+{"expected":null,"input":"f600","name":"seed 69, a byte after it"}
+{"expected":null,"input":"1b0000000000000005","name":"seed 70, widened"}
+{"expected":null,"input":"0500","name":"seed 70, a byte after it"}
+{"expected":null,"input":"9b0000000000000003f6a26620f09f988062183a67e8aa9e6161c3a9f6825827f4fd8e6f13d3d08b0e0c625e6036bad3cc4f53cd7a92c5627ae4bfcaa5ead100a6ddbedf02161838ff","name":"seed 71, widened"}
+{"expected":null,"input":"83f6a26620f09f988062183a67e8aa9e6161c3a9f6825827f4fd8e6f13d3d08b0e0c625e6036bad3cc4f53cd7a92c5627ae4bfcaa5ead100a6ddbedf02161838","name":"seed 71, cut short"}
+{"expected":null,"input":"83f6a26620f09f988062183a67e8aa9e6161c3a9f6825827f4fd8e6f13d3d08b0e0c625e6036bad3cc4f53cd7a92c5627ae4bfcaa5ead100a6ddbedf02161838ff00","name":"seed 71, a byte after it"}
+{"expected":null,"input":"9b0000000000000002a260617a64c39f7a30f51a00010000","name":"seed 72, widened"}
+{"expected":null,"input":"82a260617a64c39f7a30f51a000100","name":"seed 72, cut short"}
+{"expected":null,"input":"82a260617a64c39f7a30f51a0001000000","name":"seed 72, a byte after it"}
+{"expected":null,"input":"9b0000000000000002581cbe9d74a23fa7d4e7dea906305c846bbd64a0e94006760c6e3842f08918e1","name":"seed 73, widened"}
+{"expected":null,"input":"82581cbe9d74a23fa7d4e7dea906305c846bbd64a0e94006760c6e3842f08918","name":"seed 73, cut short"}
+{"expected":null,"input":"82581cbe9d74a23fa7d4e7dea906305c846bbd64a0e94006760c6e3842f08918e100","name":"seed 73, a byte after it"}
+{"expected":null,"input":"f600","name":"seed 74, a byte after it"}
+{"expected":null,"input":"1b0000000000000017","name":"seed 75, widened"}
+{"expected":null,"input":"1700","name":"seed 75, a byte after it"}
+{"expected":null,"input":"f500","name":"seed 76, a byte after it"}
+{"expected":null,"input":"5b0000000000000024eb0896e7a27d53e73c4cc2c3ce7f69670d258954c829c7d66b1705bf8031dd02546eca3f","name":"seed 77, widened"}
+{"expected":null,"input":"5824eb0896e7a27d53e73c4cc2c3ce7f69670d258954c829c7d66b1705bf8031dd02546eca","name":"seed 77, cut short"}
+{"expected":null,"input":"5824eb0896e7a27d53e73c4cc2c3ce7f69670d258954c829c7d66b1705bf8031dd02546eca3f00","name":"seed 77, a byte after it"}
+{"expected":null,"input":"f500","name":"seed 78, a byte after it"}
+{"expected":null,"input":"bb000000000000000362c39ff464f09f9880f6687ae282acc3a9617a82f4f6","name":"seed 79, widened"}
+{"expected":null,"input":"a364f09f9880f662c39ff4687ae282acc3a9617a82f4f6","name":"seed 79, keys swapped"}
+{"expected":null,"input":"a362c39ff464f09f9880f6687ae282acc3a9617a82f4","name":"seed 79, cut short"}
+{"expected":null,"input":"a362c39ff464f09f9880f6687ae282acc3a9617a82f4f600","name":"seed 79, a byte after it"}
+{"expected":null,"input":"7b000000000000000462302020","name":"seed 80, widened"}
+{"expected":null,"input":"64623020","name":"seed 80, cut short"}
+{"expected":null,"input":"646230202000","name":"seed 80, a byte after it"}
+{"expected":null,"input":"f500","name":"seed 81, a byte after it"}
+{"expected":null,"input":"f500","name":"seed 82, a byte after it"}
+{"expected":null,"input":"5b0000000000000020fbc0fb12668833b11c6e48ca432b7941b72cee4d036913b1fa132bc544b47dd5","name":"seed 83, widened"}
+{"expected":null,"input":"5820fbc0fb12668833b11c6e48ca432b7941b72cee4d036913b1fa132bc544b47d","name":"seed 83, cut short"}
+{"expected":null,"input":"5820fbc0fb12668833b11c6e48ca432b7941b72cee4d036913b1fa132bc544b47dd500","name":"seed 83, a byte after it"}
+{"expected":null,"input":"bb00000000000000016a7ac3a9e282ace282ac7a80","name":"seed 84, widened"}
+{"expected":null,"input":"a16a7ac3a9e282ace282ac7a","name":"seed 84, cut short"}
+{"expected":null,"input":"a16a7ac3a9e282ace282ac7a8000","name":"seed 84, a byte after it"}
+{"expected":null,"input":"5b0000000000000009ad3eb0dff485985d8b","name":"seed 85, widened"}
+{"expected":null,"input":"49ad3eb0dff485985d","name":"seed 85, cut short"}
+{"expected":null,"input":"49ad3eb0dff485985d8b00","name":"seed 85, a byte after it"}
+{"expected":null,"input":"3b00000000ffffffff","name":"seed 86, widened"}
+{"expected":null,"input":"3affffff","name":"seed 86, cut short"}
+{"expected":null,"input":"3affffffff00","name":"seed 86, a byte after it"}
+{"expected":null,"input":"9b0000000000000002a03893","name":"seed 87, widened"}
+{"expected":null,"input":"82a038","name":"seed 87, cut short"}
+{"expected":null,"input":"82a0389300","name":"seed 87, a byte after it"}
+{"expected":null,"input":"5b000000000000001f0953bd241ae451c95224e093867999b00b1baf46c2bf14ec1d059740b0859a","name":"seed 88, widened"}
+{"expected":null,"input":"581f0953bd241ae451c95224e093867999b00b1baf46c2bf14ec1d059740b085","name":"seed 88, cut short"}
+{"expected":null,"input":"581f0953bd241ae451c95224e093867999b00b1baf46c2bf14ec1d059740b0859a00","name":"seed 88, a byte after it"}
+{"expected":null,"input":"7b000000000000000161","name":"seed 89, widened"}
+{"expected":null,"input":"61","name":"seed 89, cut short"}
+{"expected":null,"input":"616100","name":"seed 89, a byte after it"}
+{"expected":null,"input":"5b0000000000000024aa31b90ca2b590f9d461ef4ec0710143efda27cf5cc0a9e0831090079558d8cb7e4e7e66","name":"seed 90, widened"}
+{"expected":null,"input":"5824aa31b90ca2b590f9d461ef4ec0710143efda27cf5cc0a9e0831090079558d8cb7e4e7e","name":"seed 90, cut short"}
+{"expected":null,"input":"5824aa31b90ca2b590f9d461ef4ec0710143efda27cf5cc0a9e0831090079558d8cb7e4e7e6600","name":"seed 90, a byte after it"}
+{"expected":null,"input":"f600","name":"seed 91, a byte after it"}
+{"expected":null,"input":"7b000000000000000ce8aa9ef09f988020e8aa9e7a","name":"seed 92, widened"}
+{"expected":null,"input":"6ce8aa9ef09f988020e8aa9e","name":"seed 92, cut short"}
+{"expected":null,"input":"6ce8aa9ef09f988020e8aa9e7a00","name":"seed 92, a byte after it"}
+{"expected":null,"input":"7b000000000000000ac39f7a61e8aa9ee8aa9e","name":"seed 93, widened"}
+{"expected":null,"input":"6ac39f7a61e8aa9ee8aa","name":"seed 93, cut short"}
+{"expected":null,"input":"6ac39f7a61e8aa9ee8aa9e00","name":"seed 93, a byte after it"}
+{"expected":null,"input":"1b0000000000000124","name":"seed 94, widened"}
+{"expected":null,"input":"1901","name":"seed 94, cut short"}
+{"expected":null,"input":"19012400","name":"seed 94, a byte after it"}
+{"expected":null,"input":"3be4d184691fb61d","name":"seed 95, cut short"}
+{"expected":null,"input":"3be4d184691fb61d2100","name":"seed 95, a byte after it"}
+{"expected":null,"input":"f500","name":"seed 96, a byte after it"}
+{"expected":null,"input":"f600","name":"seed 97, a byte after it"}
+{"expected":null,"input":"f400","name":"seed 98, a byte after it"}
+{"expected":null,"input":"f600","name":"seed 99, a byte after it"}
+{"expected":null,"input":"5b000000000000002624bee9781a668af13032be1ddfe8db681eeeb3b403b952bab10e5ef6973660d213afba75e132","name":"seed 100, widened"}
+{"expected":null,"input":"582624bee9781a668af13032be1ddfe8db681eeeb3b403b952bab10e5ef6973660d213afba75e1","name":"seed 100, cut short"}
+{"expected":null,"input":"582624bee9781a668af13032be1ddfe8db681eeeb3b403b952bab10e5ef6973660d213afba75e13200","name":"seed 100, a byte after it"}
+{"expected":null,"input":"f400","name":"seed 101, a byte after it"}
+{"expected":null,"input":"9b0000000000000001a169e282ac7a20e8aa9e61f6","name":"seed 102, widened"}
+{"expected":null,"input":"81a169e282ac7a20e8aa9e61","name":"seed 102, cut short"}
+{"expected":null,"input":"81a169e282ac7a20e8aa9e61f600","name":"seed 102, a byte after it"}
+{"expected":null,"input":"3b18bdb17b087df4","name":"seed 103, cut short"}
+{"expected":null,"input":"3b18bdb17b087df4d900","name":"seed 103, a byte after it"}
+{"expected":null,"input":"3b0000000000000017","name":"seed 104, widened"}
+{"expected":null,"input":"3700","name":"seed 104, a byte after it"}
+{"expected":null,"input":"9b0000000000000000","name":"seed 105, widened"}
+{"expected":null,"input":"8000","name":"seed 105, a byte after it"}
+{"expected":null,"input":"f400","name":"seed 106, a byte after it"}
+{"expected":null,"input":"f400","name":"seed 107, a byte after it"}
+{"expected":null,"input":"3b000000000000ffff","name":"seed 108, widened"}
+{"expected":null,"input":"39ff","name":"seed 108, cut short"}
+{"expected":null,"input":"39ffff00","name":"seed 108, a byte after it"}
+{"expected":null,"input":"9b00000000000000025826b3fae796cfac29553f853c1404269003e53e32020a8675eb981b5b792d2f47337741dd6e5ce21bc227aacdd0a0f6d8","name":"seed 109, widened"}
+{"expected":null,"input":"825826b3fae796cfac29553f853c1404269003e53e32020a8675eb981b5b792d2f47337741dd6e5ce21bc227aacdd0a0f6","name":"seed 109, cut short"}
+{"expected":null,"input":"825826b3fae796cfac29553f853c1404269003e53e32020a8675eb981b5b792d2f47337741dd6e5ce21bc227aacdd0a0f6d800","name":"seed 109, a byte after it"}
+{"expected":null,"input":"7b0000000000000008e8aa9e20f09f9880","name":"seed 110, widened"}
+{"expected":null,"input":"68e8aa9e20f09f98","name":"seed 110, cut short"}
+{"expected":null,"input":"68e8aa9e20f09f988000","name":"seed 110, a byte after it"}
+{"expected":null,"input":"f600","name":"seed 111, a byte after it"}
+{"expected":null,"input":"f600","name":"seed 112, a byte after it"}
+{"expected":null,"input":"1b00000000ffffffff","name":"seed 113, widened"}
+{"expected":null,"input":"1affffff","name":"seed 113, cut short"}
+{"expected":null,"input":"1affffffff00","name":"seed 113, a byte after it"}
+{"expected":null,"input":"f600","name":"seed 114, a byte after it"}
+{"expected":null,"input":"bb00000000000000026462e282ac687ae282ace282ac7a66c39ff09f98804bef3a70ee9926f8a7000a28","name":"seed 115, widened"}
+{"expected":null,"input":"a266c39ff09f98804bef3a70ee9926f8a7000a286462e282ac687ae282ace282ac7a","name":"seed 115, keys swapped"}
+{"expected":null,"input":"a26462e282ac687ae282ace282ac7a66c39ff09f98804bef3a70ee9926f8a7000a","name":"seed 115, cut short"}
+{"expected":null,"input":"a26462e282ac687ae282ace282ac7a66c39ff09f98804bef3a70ee9926f8a7000a2800","name":"seed 115, a byte after it"}
+{"expected":null,"input":"7b00000000000000052020e282ac","name":"seed 116, widened"}
+{"expected":null,"input":"652020e282","name":"seed 116, cut short"}
+{"expected":null,"input":"652020e282ac00","name":"seed 116, a byte after it"}
+{"expected":null,"input":"5b000000000000001f803db7ce0d71a1883dbdb485dea956dc6f271fa1c8f920384218ba8f7a7c0c","name":"seed 117, widened"}
+{"expected":null,"input":"581f803db7ce0d71a1883dbdb485dea956dc6f271fa1c8f920384218ba8f7a7c","name":"seed 117, cut short"}
+{"expected":null,"input":"581f803db7ce0d71a1883dbdb485dea956dc6f271fa1c8f920384218ba8f7a7c0c00","name":"seed 117, a byte after it"}
+{"expected":null,"input":"3b74949aba84125d","name":"seed 118, cut short"}
+{"expected":null,"input":"3b74949aba84125d0f00","name":"seed 118, a byte after it"}
+{"expected":null,"input":"f400","name":"seed 119, a byte after it"}
+{"expected":null,"input":"3b0000000000010000","name":"seed 120, widened"}
+{"expected":null,"input":"3a000100","name":"seed 120, cut short"}
+{"expected":null,"input":"3a0001000000","name":"seed 120, a byte after it"}

@@ -1,0 +1,7 @@
+[
+{"expected":{"winner":{"claimant":"carol","hash":3}},"input":{"claims":[{"claimant":"bob","hash":7},{"claimant":"carol","hash":3},{"claimant":"dave","hash":9}]},"name":"a ticket's claims"},
+{"expected":{"winner":{"claimant":"carol","hash":3}},"input":{"claims":[{"claimant":"dave","hash":9},{"claimant":"carol","hash":3},{"claimant":"bob","hash":7}]},"name":"the same claims in another order"},
+{"expected":{"owners":["alice-owner"]},"input":{"owners":["alice-owner","guardian"],"removed":["guardian"]},"name":"owners [alice-owner, guardian] remove [guardian] at once"},
+{"expected":{"owners":["alice-owner","guardian"]},"input":{"owners":["alice-owner","guardian"],"removed":["alice-owner","guardian"]},"name":"owners [alice-owner, guardian] remove [alice-owner, guardian] at once"},
+{"expected":{"rotate":["alice-peer-kem","alice-passkey-seal"]},"input":{"devices":["alice-peer-kem"],"guardian":"guardian","sealers":["alice-passkey-seal","guardian"]},"name":"MaiaCityGuardian's exit from Alice's vault"}
+]

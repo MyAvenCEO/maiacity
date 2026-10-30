@@ -31,13 +31,14 @@ is built before its step's plan names it, and avenDB-old's learnings come in as 
 14. [Types, schemas and fit](#types-schemas-and-fit)
 15. [Lenses](#lenses)
 16. [Streams: period Docs](#streams-period-docs)
-17. [The chat moves onto a Doc](#the-chat-moves-onto-a-doc)
-18. [What the engine and actors build on](#what-the-engine-and-actors-build-on)
-19. [Decisions](#decisions)
-20. [What Lean proves](#what-lean-proves)
-21. [Order of work](#order-of-work)
-22. [Open questions](#open-questions)
-23. [Not in this spec](#not-in-this-spec)
+17. [Directories and indexes](#directories-and-indexes)
+18. [The chat moves onto a Doc](#the-chat-moves-onto-a-doc)
+19. [What the engine and actors build on](#what-the-engine-and-actors-build-on)
+20. [Decisions](#decisions)
+21. [What Lean proves](#what-lean-proves)
+22. [Order of work](#order-of-work)
+23. [Open questions](#open-questions)
+24. [Not in this spec](#not-in-this-spec)
 
 ## From first principles
 
@@ -171,9 +172,11 @@ What Loro 1.17.1 changes in the design, read in its source:
   counts.
 - **stuck:** a log whose next envelope would build on one that doesn't count.
 - **type:** a Doc whose versions are schemas, joined by lenses. **schema:** one version of a Record's shape, a Value.
-  **pin:** a schema version a Doc accepts for a type.
+  **pin:** a schema version a Doc accepts for a type. **type id:** a version's address in its type Doc,
+  `<type Doc>/<schema hash>`, the one way a version is named anywhere.
 - **fit:** whether an envelope's changes are allowed by the schemas it names.
-- **lens:** a two-way mapping between a schema version and its parent, a Value.
+- **lens:** a two-way mapping between two versions, a Value: a version and its parent in one type Doc, or versions of
+  two type Docs.
 - **vocabulary:** a vault's named types, operations, runtimes and definitions (Samuel's word; the engine's catalogue).
 - **period Doc:** one period of a stream (a chat room's month), linking the period before.
 
@@ -226,8 +229,11 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
 18. **Nothing is migrated.** A Record is read through lenses into the reader's schema version and written back as the
     difference, in the representation the Record already uses. A default is never written, and what an older app
     can't see survives its edits.
-19. **Lenses follow the type's tree.** Each version names its parent and the one lens to it, so the path between two
-    versions is unique. The laws hold along the path, and a read through lenses commutes with a merge.
+19. **Lenses form a forest where they are pinned** (Samuel, 30 Oct 2026). Inside one type Doc, each version names its
+    parent and the one lens to it. Between two type Docs, a lens counts only where a Doc's or vault's owners pin it. A
+    reader uses only the lenses pinned where it reads, and a pin that would make a second path between two versions is
+    refused, so every path is unique. The laws hold along every path, and a read through lenses commutes with a
+    merge.
 20. **A version that drops a field says where its data goes:** a lens into another field or Record, or "kept, unseen".
 21. **Versions open on a scratch copy,** never by checking out the live Doc, which would stop it taking imports.
 22. **A branch's commits reach another branch only by a merge,** and merges are three-way, place by place. Nothing the
@@ -236,6 +242,8 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
 23. **Catching up never rewrites** (README, rule 6). Moving Records into a newer schema's representation is an act.
 24. **Every input has a limit before Loro sees it:** envelope size, ops, Records touched, depth, segment size.
 25. **Streams that grow without end are chains of period Docs,** never one Doc forever.
+26. **A directory or an index is one sealed search tree** (A26): the same entries make the same Values, whoever builds
+    them and in whatever order, and a lookup finds every entry in its range.
 
 ## A Doc
 
@@ -269,8 +277,8 @@ root map
 root Record's field "lines": a movable list of ids  ["l1", "l2"]
 ```
 
-- Every Record is a map container under the root map, keyed by its id, holding `t` (its schema's hash, fixed at birth)
-  and its fields.
+- Every Record is a map container under the root map, keyed by its id, holding `t` (its type Doc's id, fixed at
+  birth) and its fields.
 - Where a Record sits (which list, which place in a tree) is a field of its parent: ids in a movable list or a tree.
   Moving a Record never changes its address.
 - A change to a container maps straight to the Record it lies in, which gives the engine its change feed and every
@@ -304,7 +312,7 @@ Inside the seal, as deterministic CBOR (architecture, rule 1; shown as JSON):
 { "envelope": 1, "doc": "d:7Hq…", "branch": "main", "generation": 0,
   "writer": "9f2c…", "seq": 42, "prev": "b3:11f2…", "deps": [ "b3:a4d7…" ],
   "ops": { "from": 1180, "to": 1193 },
-  "records": { "l3": { "schema": "b3:51aa…" }, "d:7Hq…": { "schema": "b3:0d78…" } },
+  "records": { "l3": { "version": "d:line…/b3:51aa…" }, "d:7Hq…": { "version": "d:invoice…/b3:0d78…" } },
   "changes": h'<Loro update bytes, a CBOR byte string>',
   "at": "2026-10-30T17:02:11Z",
   "signer": "device:…", "cap": "b3:…", "acks": [ … ], "call": "b3:…", "params": { … },
@@ -316,9 +324,9 @@ Inside the seal, as deterministic CBOR (architecture, rule 1; shown as JSON):
 - **`deps`:** the hashes of the tip envelopes of other logs it builds on (rule 7). The reader checks that the commit's
   Loro dependencies are exactly the op ids those envelopes hold.
 - **`ops`:** the commit's counter range for its writer id.
-- **`records`:** every Record the commit creates, changes or removes, with the schema it was written under. Merges,
-  reverts and back-outs name them too. The reader works out the touched Records from the ops itself and refuses an
-  envelope whose list differs. The commit's Loro message is the hash of this map.
+- **`records`:** every Record the commit creates, changes or removes, with the type id of the version it was written
+  under. Merges, reverts and back-outs name them too. The reader works out the touched Records from the ops itself
+  and refuses an envelope whose list differs. The commit's Loro message is the hash of this map.
 - **`at`:** the writer's claimed time (rule 9).
 - **`signer`, `cap`, `acks`, `call`, `params`:** the device, the cap it writes under, the revocations it acknowledges,
   the engine's operation and its params ([caps](../../id/caps/README.md#checking)).
@@ -573,8 +581,12 @@ A **type** is a Doc whose Records are its versions:
 - Each version names its **parent** and the one **lens** to it, so a type's versions form a tree (Samuel,
   30 Oct 2026). The newest on a line of versions is a leaf.
 - A type Doc is written by whoever its caps let publish versions. The ontology's predicates and kinds, actor
-  definitions and runtime grammars are types the same way (architecture, K5). A fact's `p` names the schema's hash.
-- A Record's type is its schema's type Doc, so Records carry no `kind` field.
+  definitions and runtime grammars are types the same way (architecture, K5).
+- **A version is named by its type id,** `<type Doc>/<schema hash>`: the version Record's id is its schema's hash
+  (Samuel, 30 Oct 2026). It names a version everywhere: a Record's writes in an envelope's `records`, a fact's `p`, an
+  actor message's payload. Two type Docs may hold the same schema bytes, and their type ids still differ. Type ids a
+  lens path joins are compatible, in one type Doc or across two.
+- A Record's type is its `t`, a type Doc's id, so Records carry no `kind` field.
 - **Every Record's creator is known:** the device and vault that signed the envelope creating it, read from history
   and never stored as a field anyone could change. Caps' `own` condition reads it.
 - **Built-in types** every Doc pins without asking: caps' access map (`cap`, `revoke`, `epoch`), `branch`, `closed`,
@@ -625,7 +637,7 @@ one as a conflict to settle.
 
 It checks:
 1. the Records the ops touch are exactly those the envelope names;
-2. every named schema is pinned for that Record's type;
+2. every named version is in the Record's type Doc (its `t`) and pinned by the Doc;
 3. every value the ops set, and every element they insert, is allowed by its field's schema;
 4. a new Record's type is allowed where its parent's schema puts it, and its required fields are set;
 5. no op removes a required field;
@@ -638,7 +650,7 @@ decides only what the reader can see through lenses (Samuel, 30 Oct 2026).
 
 ## Lenses
 
-A lens is a Value of steps between a version and its parent:
+A lens is a Value of steps between two versions (Samuel, 30 Oct 2026: "lens", not "bridge"):
 
 ```json
 { "lens": "Todo, v0 to v1", "from": "b3:40de…", "to": "b3:0d78…",
@@ -651,8 +663,14 @@ A lens is a Value of steps between a version and its parent:
   Lean defines, such as text to money), `in` (steps for each Record of a list), `wrap` and `unwrap` (a field to a
   nested Record and back), `move` (a field to another Record of the same Doc), `container` (a value to a text and back),
   and `drop` (with where its data goes, rule 20).
-- **Paths:** a reader at version A reads a Record written at version B along the unique path between them in the
-  type's tree, composing each lens forward or backward.
+- **Who publishes one:**
+  - **inside one type Doc,** whoever may write it (architecture, K5);
+  - **between two type Docs,** anyone may write the lens as a Value, but it takes effect only where a Doc's or a vault's
+    owners pin it, as they pin versions (the architect's extension of A7, 30 Oct 2026). That is how two vocabularies
+    that minted one meaning twice are aligned, and how actors' messages cross types.
+- **Paths:** a reader at version A reads a Record written at version B along the unique path between them through
+  the lenses pinned where it reads, composing each lens forward or backward. A pin that would make a second path is
+  refused, so the pinned lenses stay a forest and two paths can't disagree.
 - **Reading:** where the Record holds a field of both versions, the one written later by Loro's order (Lamport, then
   writer id) wins, exactly as if both had written one field. So a read through lenses commutes with a merge: an older
   app's tick is never lost to a newer app's earlier write. What neither stored shows the schema's default, never
@@ -676,6 +694,72 @@ snapshot, which would refuse branches that start before it:
 
 Other collections that grow, such as invoices or pages, are root Records: each is a Doc of its own (rule 4), listed by
 a directory Doc.
+
+## Directories and indexes
+
+A type with millions of Records is millions of Docs, of which a device wants a handful. Finding them by value, such as
+"invoices from vendor X", without holding the rest, is a **sealed index** (architecture, A26; Samuel, 30 Oct 2026).
+
+**One structure for both.** A **directory** lists a vault's Docs of one root type by Doc id; an **index** lists the
+same Docs by a query's fields. Both are a **Prolly tree**: a search tree whose nodes are sealed Values named by hash.
+- **Entries:** each a **key**, `(field values…, Doc id)` for an index and `(Doc id)` for a directory, in an
+  order-preserving encoding, not CBOR (the architect and the engine, 30 Oct 2026; FoundationDB's tuple layer as the
+  pattern). Canonical CBOR sorts text by length first and negative integers after positive ones; a key's bytes sort
+  exactly as its tuple does. Each field is a tag, then:
+  - an unsigned integer: its 8 bytes, big-endian (tag `15`);
+  - a negative integer `-1 - n`: the 8 bytes of `2⁶⁴ - 1 - n` (tag `13`), so negatives sort first;
+  - text: its UTF-8, normalised to NFC, with each `00` written `00 FF` and a `00` to end it (tag `02`);
+  - bytes, the Doc id among them: the same escaping (tag `01`).
+
+  Text compares by code point, UTF-8's byte order; collation by locale comes later through a pinned sort-key runtime.
+  A key is never named or signed, only sorted, and sits in a node as a CBOR byte string, so rule 1 holds. A range is
+  two keys; a prefix `p` is the range from `p` to `p FF`: every extension of `p` lies in it, since no field starts with
+  `FF` (`extension_in_range`). A byte prefix alone isn't an extension (text `a` is a byte prefix of text `a 00`), so
+  the engine keeps only the entries whose tuple extends `p` (`key_prefix`). Every entry is distinct.
+- **Nodes:** a leaf is a CBOR array of entries; an inner node is an array of `[first entry, last entry, child]` per
+  child. A node ends after an entry whose BLAKE3's low 6 bits are zero (about 64 entries a node) or before an entry
+  that would take it past 64 KiB, the size limit (architecture, rule 10). The same rule cuts every level.
+- **Why a Prolly tree, not a Merkle search tree:** both make the same Values from the same entries, in any order. A
+  Prolly tree's nodes are cut by the entries' own hashes and also by size, so every node stays under the limit; a
+  Merkle search tree places each key on a level by its hash, and a node's size has no bound. Dolt's Prolly trees show
+  the shape at scale.
+
+**Recent entries stay in the directory Doc.** The directory is an ordinary Doc of the vault, read by the directory's
+readers. Whoever creates a Doc of the type, or changes a field an index sorts by, adds its entry there in the same
+commit, as an `entry` Record; a Doc that leaves (removed, or its field changed) leaves a `gone` Record. Loro merges
+writers who write at once.
+
+**The directory's two guarantees,** which make a lookup exact (Lean: `Aven.DB.Docs.Directory`; the engine's
+`lookup_exact` rests on them): every Doc listed now was listed at the last fold or is unfolded (`listed_now`), and a Doc
+that isn't unfolded has the entries it had at the last fold (`same_entries`). They hold because a commit that changes
+a Doc's entries (its birth, a field an index sorts by, its leaving) marks it unfolded in the same commit; a change to
+any other field needs no mark.
+
+**A fold** moves them into Values, as an LSM tree compacts. It is a checkpoint (rule 12): the directory's version it
+covers, the root it makes, the runtime that made it, hybrid-signed. Any device that holds the Docs an index covers and
+may write the directory can fold. A fold takes the entries of the last fold's root, drops the `gone`, adds the new
+`entry` Records, and builds the tree. Two folds of one version give one root; folding in steps gives what folding at
+once gives. A device that holds the covered Docs rebuilds the root in the background and compares, as it checks any
+checkpoint.
+
+**A lookup runs on the device** (architecture, A26 4):
+1. it reads the directory Doc: the newest fold's root and the entries not yet folded;
+2. it walks down from the root, opening only the nodes whose span, first to last entry, meets the range: three or four
+   Values for millions of entries;
+3. it wants the Docs the entries name, and the engine runs the query on them;
+4. the answer is `complete` when every Doc that could match is held: the hits and the unfolded entries.
+
+A wrong entry costs a fetch, never a wrong row: the query reads the Docs themselves. A missing entry is the only harm,
+and only someone who may write the directory can cause it.
+
+**Sealing.** Every node is sealed under the directory's key, and equal Values under one key get equal names, so equal
+nodes are stored once; every Value is padded (caps, D18). An index holds fields only from Docs its directory's readers
+can read, so a Doc with fewer readers never enters it (caps).
+
+**The engine's side.** The engine derives an index from a query's shape (its filters and its order); equal shapes share
+one index, and installing an actor registers the indexes its `loads` need by the vault owners' act (architecture, A26
+3). The docs layer gives it four calls: `entry(index, Doc)` for a commit, `fold(directory, version)`, `lookup(index,
+range)` with the unfolded entries, and `rebuild(index)` to check a fold. To be agreed with the engine thread.
 
 ## The chat moves onto a Doc
 
@@ -704,7 +788,7 @@ device's chain of line blobs in S3 (from release #1476 on), each line signed by 
 | 4. Records by type, at the reader's schema version, with the version's hash | **Reads through lenses,** each row carrying the schema version it was read at and the one it was written under |
 | 5. The footprint of an envelope's diff | **Per envelope:** each Record touched, its type, the fields changed and whether it was created, changed or removed |
 | 6. `head`, `records`, `files` and a window in a long history | `head` is the genesis and the tips; `records` is the newest checkpoint and the segments after it; older history comes by keeper number, and period Docs bound it |
-| 7. Type and predicate Docs | **Types are Docs** whose Records are versions; a fact's `p` is the schema's hash |
+| 7. Type and predicate Docs | **Types are Docs** whose Records are versions; a version's type id is `<type Doc>/<schema hash>`, and a fact's `p` is one |
 | 8. Who checks what | **Docs checks every envelope** (signer, writer id, log, dependencies, split, fit, with caps' authority); the engine checks operations and re-lowers a named one |
 | 9. The chat's chains replaced by segments of the same shape | **A log per writer,** each envelope naming the one before by hash, closed into segments; old chains read as they are |
 | 10. Actor Docs and inbox Docs | **Ordinary Docs.** One writer's commit is one envelope, so "commit, then send" holds: a turn's state and journal entry are one commit, its sends are envelopes on inbox Docs recorded in it, and a resent envelope is dropped by its hash |
@@ -738,7 +822,8 @@ The engine's "heads" on answers are versions (architect, 30 Oct 2026).
     into the name.
 14. **Branches inside one Doc; a fork is a new Doc** (Samuel, 30 Oct 2026). A fork carries state and a link to its
     origin, not its history, so its caps and key are its own.
-15. **A tree of lenses per type** (Samuel, 30 Oct 2026). Paths are unique, so two paths can't disagree.
+15. **A tree of lenses per type, and pinned lenses across types, as one forest** (Samuel, 30 Oct 2026). Paths are
+    unique, so two paths can't disagree; a lens between two types counts only where owners pin it.
 16. **Named versions are Records** (Samuel, 30 Oct 2026). A name is a person's act, and syncs.
 17. **Revert by Loro's `revert_to`; back out by a three-way merge** (Samuel, 30 Oct 2026). Loro 1.17.1 made both all
     or nothing, so avenDB-old's revert-by-merge goes.
@@ -749,6 +834,9 @@ The engine's "heads" on answers are versions (architect, 30 Oct 2026).
     edits are shown for review.
 22. **A crate of its own, `aven-db-docs` in `db/docs`,** a pure core (README, rule 2), with Loro pinned at exactly
     1.17.1, the version its source was checked at (the architect, 30 Oct 2026).
+23. **Directories and indexes are Prolly trees of sealed Values** (A26, Samuel, 30 Oct 2026; the Prolly tree is the
+    docs thread's choice): the same entries give the same root, every node stays under the size limit, recent entries
+    stay in the directory Doc until a fold.
 
 ## What Lean proves
 
@@ -777,6 +865,33 @@ against the Rust's Loro on random ops, so it can never be simpler than the code.
   commit removes exactly its changes where nothing since touched them. Vectors `merges.json`.
 - **Before:** reading today's frozen chains gives every line both peers can see, in order, each checked. Vectors
   `before.json`.
+- **Indexes** (`Aven.DB.Docs.Index`): a fold's entries are the set of what went in, sorted, and nothing else could be;
+  its nodes hold exactly those entries, each node within the size limit, and depend only on the set; folding in steps,
+  removals included, gives what folding at once gives; a lookup finds every entry in its range, and only those.
+  Vectors `indexes.json`.
+- **Keys** (`Aven.DB.Docs.Key`): comparing two keys bytewise is comparing their tuples, field by field, a prefix first
+  (`key_order`); two tuples with one key are one tuple (`key_inj`); a key extends another's, at a field's edge, exactly
+  when its tuple extends the other (`key_prefix`), and every extension lies in the prefix's range
+  (`extension_in_range`). Vectors `keys.json`.
+- **The directory** (`Aven.DB.Docs.Directory`): every Doc listed now was listed at the last fold or is unfolded; a Doc
+  that isn't unfolded has the entries it had then.
+
+**What the proofs exposed** (the docs thread, 30 Oct 2026, for the cross-spec step):
+- **Loro's convergence is a stated property.** The model takes it in any order; Loro states it for causal orders, so
+  the Rust tests check Loro against the model on causal orders.
+- **A field merged by its later write needs a total order on stamps:** Lamport, then writer id. The lens law rests on
+  it.
+- **Size rules can't be in schemas:** a counterexample shows two fit writes merging into an unfit state.
+- **CBOR's order isn't a query's order:** canonical CBOR sorts text by length first and negative integers after
+  positive ones, so index entries became keys in an order-preserving encoding (`key_order`); CBOR stays the codec for
+  everything named or signed.
+- **A byte prefix isn't a tuple prefix:** text `a` is a byte prefix of text `a 00`. Prefix lookups cover the range from
+  `p` to `p FF`, which holds every extension (`extension_in_range`), and keep only the entries whose tuple extends `p`
+  (`key_prefix`).
+- **The directory's mark covers entries, not Records:** a lookup is exact when a Doc whose index entries changed is
+  marked unfolded in the same commit (`same_entries`); a change no index reads needs no mark.
+- **Values need an equality of their own:** `Value` can't derive one, and comparing encodings is sound only on canonical
+  Values, so `Aven.Core.ValueEq` gives every spec one lawful equality.
 
 ## Order of work
 
@@ -799,6 +914,7 @@ Each step starts with its Lean, then Rust tests against the vectors, then the co
    settle with the engine.
 6. **Checkpointers:** is "a device of the Doc's vault, or a vault granted `keep` with checkpoints" enough, or does a
    checkpoint need k of n for Docs with many readers?
+7. **The index interface** with the engine: the four calls above, and how a query's shape names its index.
 
 ## Not in this spec
 

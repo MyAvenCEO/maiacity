@@ -9,11 +9,17 @@
 //! once, offline too; one whose key is given apart from its store learns its head from the Aven Peer first, and keeps
 //! what it writes until then in its store (`queued`), so a reload loses nothing. What the page hears,
 //! as timeline lines: `chat` (a line shown, with its place: device, number, name), `fork` (a fork raised) and `dropped`.
+//!
+//! Deleting (`Aven.DB.Chains`, "Deleting a line"): a delete is a retraction, a line of this device's chain
+//! ([`Chats::retract`]). Every line its own vault retracted loses its text in the store: its blob is deleted and the ref
+//! `gone-<id>` names the retraction instead, so a reload still walks the chain past it, and catching up sends the
+//! retraction in its place. A file no line names any more leaves the store, its index, its chunks no other file lists
+//! and its `file-<index>`, so this peer stops serving it. The page hears the line again as `deleted`, in place.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
-use aven_db_core::chain::{self, Answer, Body, Held, Keeper, Line};
+use aven_db_core::chain::{self, Answer, Body, Held, Keeper, Line, Retraction, Settled};
 use aven_db_core::files::Announcement;
 use aven_db_core::timeline;
 use aven_db_core::wire::{Frame, Have, Head, MAX_FRAME, catch_up_pages, heads_pages};
@@ -124,15 +130,32 @@ fn body_json(body: &Body) -> serde_json::Value {
     match body {
         Body::Text(t) => json!({ "text": t }),
         Body::File(f) => json!({ "file": f }),
+        Body::Retract(r) => json!({ "retract": r.target, "device": r.device, "seq": r.seq, "prev": r.prev,
+            "at": r.at }),
+        Body::Redacted => json!({}),
     }
 }
 
 fn body_of(v: &serde_json::Value) -> Option<Body> {
+    if let Some(target) = v["retract"].as_str() {
+        return Some(Body::Retract(Retraction {
+            target: target.to_string(),
+            device: v["device"].as_str()?.to_string(),
+            seq: v["seq"].as_u64()?,
+            prev: v["prev"].as_str().map(str::to_string),
+            at: v["at"].as_u64()?,
+        }));
+    }
     match (v["text"].as_str(), v.get("file")) {
         (Some(t), _) => Some(Body::Text(t.to_string())),
         (None, Some(f)) => serde_json::from_value(f.clone()).ok().map(Body::File),
         _ => None,
     }
+}
+
+/// The ref that names, for a line whose text this peer dropped, the retraction that counts for it: `gone-<id>`.
+fn gone_ref(id: &str) -> Result<RefName, String> {
+    RefName::new(format!("gone-{id}")).map_err(|e| e.to_string())
 }
 
 fn ref_name(device: &str) -> Result<RefName, String> {
@@ -186,7 +209,16 @@ impl Chats {
             // newest first, back to the first line: each step one line older (README, rule 3)
             while let Some(hash) = at {
                 let Some(bytes) = store.get(&hash).await.map_err(|e| e.to_string())? else {
-                    break;
+                    // a line whose text was dropped: its place, from the retraction `gone-<id>` names
+                    let Some(line) = Chats::gone(&store, &hash.to_hex()).await else {
+                        break;
+                    };
+                    at = line.prev.as_deref().and_then(|p| p.parse().ok());
+                    lines.push(Held {
+                        id: hash.to_hex(),
+                        line,
+                    });
+                    continue;
                 };
                 let (line, canonical) = Line::read_kept(&bytes)
                     .ok_or_else(|| format!("{name} reaches a blob that is no line"))?;
@@ -240,6 +272,8 @@ impl Chats {
             chats.show(h);
         }
         chats.note("chains", json!({ "notCanonical": not_canonical }));
+        // what a stop between a retraction and its text leaving the store left behind
+        chats.settle().await;
         for body in queued {
             chats.enqueue(body);
         }
@@ -259,6 +293,14 @@ impl Chats {
         let text = match &body {
             Body::Text(t) => t.clone(),
             Body::File(f) => f.name.clone(),
+            // a delete waiting for this device's head: the line shows deleted at once (local first)
+            Body::Retract(r) => {
+                self.note("chat", json!({ "id": r.target, "key": r.device, "seq": r.seq, "at": r.at,
+                    "deleted": true }));
+                self.queued.lock().unwrap().push((name, body));
+                return;
+            }
+            Body::Redacted => return,
         };
         let (from, vault) = match crate::keys::public(&self.device()) {
             Ok(k) => self.gate.name(&k),
@@ -303,6 +345,9 @@ impl Chats {
     /// Tells the page every line again, each with its sender as the door now names it: when the door changes, as a
     /// Peer-Light's does once the Aven Peer tells it the members, the history it showed by keys gets its names.
     pub fn retell(&self) {
+        // the vaults the door names may have changed what counts: settled again
+        let me = self.clone();
+        n0_future::task::spawn(async move { me.settle().await });
         let shown: Vec<Held> = self
             .keeper
             .lock()
@@ -335,12 +380,15 @@ impl Chats {
             fields["replaces"] = json!(queued);
         }
         match &h.line.body {
+            // a retraction isn't shown: the line it deletes is, as deleted once settling took its text
+            Body::Retract(_) => return,
             Body::Text(text) => fields["text"] = json!(text),
             // a file: the page shows it by its index, its name as its text
             Body::File(file) => {
                 fields["text"] = json!(file.name);
                 fields["file"] = json!(file);
             }
+            Body::Redacted => fields["deleted"] = json!(true),
         }
         self.note("chat", fields);
     }
@@ -398,18 +446,30 @@ impl Chats {
 
     /// The blobs of `device`'s chain newer than `seq`, oldest first, as frames' text.
     pub async fn lines_after(&self, device: &str, seq: u64) -> Vec<String> {
-        let ids: Vec<String> = self
-            .keeper
-            .lock()
-            .unwrap()
-            .chain(device)
-            .iter()
-            .filter(|h| h.line.seq > seq)
-            .map(|h| h.id.clone())
-            .collect();
+        // a line held without its text goes as the retraction that counts for it
+        let ids: Vec<(String, Option<String>)> = {
+            let keeper = self.keeper.lock().unwrap();
+            let author = self.author();
+            keeper
+                .chain(device)
+                .iter()
+                .filter(|h| h.line.seq > seq)
+                .map(|h| match h.line.body {
+                    Body::Redacted => (h.id.clone(), keeper.stand_in(&author, h).map(|r| r.id)),
+                    _ => (h.id.clone(), Some(h.id.clone())),
+                })
+                .collect()
+        };
         let mut out = vec![];
-        for id in ids {
-            if let Some(blob) = self.blob(&id).await {
+        for (id, sent) in ids {
+            let sent = match sent {
+                Some(sent) => Some(sent),
+                None => self.gone_to(&id).await,
+            };
+            if let Some(blob) = match sent {
+                Some(sent) => self.blob(&sent).await,
+                None => None,
+            } {
                 out.push(String::from_utf8_lossy(&blob).into_owned());
             }
         }
@@ -602,13 +662,15 @@ impl Chats {
         let id = Hash::of(blob);
         let device = line.device.clone();
         // checked first, so a stranger's line never reaches the store
-        if let Err(why) = chain::check(&self.network, |k| self.gate.admits_hex(k), verifies, &line)
+        if let Err(why) = chain::check(&self.network, &|k: &str| self.gate.admits_hex(k), &verifies, &line)
         {
             let from = device.chars().take(10).collect::<String>();
             self.note("dropped", json!({ "from": from, "why": why.name() }));
             return Answer::Refused(why);
         }
-        if self.holds(&device, &id.to_hex()) {
+        // held already, but for a line whose text it doesn't hold and that would count again: a retraction
+        let stub = self.keeper.lock().unwrap().stub_of(&device, &id.to_hex()).is_some();
+        if self.holds(&device, &id.to_hex()) && !(stub && matches!(line.body, Body::Retract(_))) {
             return Answer::Known;
         }
         // every line it keeps rests in the store first, chained or not
@@ -616,10 +678,11 @@ impl Chats {
             self.note("dropped", json!({ "why": format!("not stored: {e}") }));
             return Answer::Refused(chain::Refusal::BadSignature);
         }
-        let answer = self.keeper.lock().unwrap().receive(
+        let (answer, settled) = self.keeper.lock().unwrap().take(
             &self.network,
             |k| self.gate.admits_hex(k),
             verifies,
+            &self.author(),
             id.to_hex(),
             line,
         );
@@ -669,7 +732,175 @@ impl Chats {
             }
             Answer::Known | Answer::Refused(_) => {}
         }
+        self.apply(settled).await;
         answer
+    }
+
+    /// The vault a device's lines are said for, as the door names it now; the device itself when it names none.
+    fn author(&self) -> impl Fn(&str) -> String + use<> {
+        let gate = self.gate.clone();
+        move |d: &str| match crate::keys::public(d) {
+            Ok(k) => gate.name(&k).1.unwrap_or_else(|| d.to_string()),
+            Err(_) => d.to_string(),
+        }
+    }
+
+    /// Settles what it holds again, with the door as it is now, and does what that asks of the store.
+    pub async fn settle(&self) {
+        let settled = self.keeper.lock().unwrap().settle(&self.author());
+        self.apply(settled).await;
+    }
+
+    /// What settling asks of the store and the page: each line that lost its text named gone (`gone-<id>`, the
+    /// retraction that counts for it) before its blob is deleted, so a reload still walks its chain; the chains a stub
+    /// moved; the files no line names any more dropped; and each such line told again, as deleted.
+    async fn apply(&self, settled: Settled) {
+        let Settled {
+            dropped,
+            redacted,
+            stubs,
+        } = settled;
+        for (h, r) in redacted.iter().chain(stubs.iter()) {
+            let named = match (gone_ref(&h.id), r.id.parse::<Hash>()) {
+                (Ok(name), Ok(r)) => match self.store.get_ref(&name).await {
+                    Ok(Some(_)) => Ok(()),
+                    Ok(None) => self.store.set_ref(&name, None, r).await.map_err(|e| e.to_string()),
+                    Err(e) => Err(e.to_string()),
+                },
+                (Err(e), _) => Err(e),
+                (_, Err(e)) => Err(e.to_string()),
+            };
+            match (named, h.id.parse::<Hash>()) {
+                (Ok(()), Ok(hash)) => {
+                    if let Err(e) = self.store.delete(&hash).await {
+                        self.note("dropped", json!({ "why": format!("a deleted line's text kept: {e}") }));
+                    }
+                }
+                (Err(why), _) => {
+                    self.note("dropped", json!({ "why": format!("a deleted line's text kept: {why}") }))
+                }
+                (_, Err(e)) => self.note("dropped", json!({ "why": e.to_string() })),
+            }
+        }
+        let devices: std::collections::BTreeSet<String> =
+            stubs.iter().map(|(s, _)| s.line.device.clone()).collect();
+        for device in devices {
+            self.advance(&device).await;
+        }
+        for file in &dropped {
+            self.drop_file(file).await;
+        }
+        let told: Vec<Held> = {
+            let keeper = self.keeper.lock().unwrap();
+            let ids: std::collections::BTreeSet<&str> = redacted
+                .iter()
+                .chain(stubs.iter())
+                .map(|(h, _)| h.id.as_str())
+                .collect();
+            keeper.shown().into_iter().filter(|h| ids.contains(h.id.as_str())).cloned().collect()
+        };
+        for h in &told {
+            self.show(h);
+        }
+        if !redacted.is_empty() || !dropped.is_empty() {
+            self.note(
+                "deleted",
+                json!({ "lines": redacted.iter().map(|(h, _)| &h.id).collect::<Vec<_>>(), "files": dropped }),
+            );
+        }
+    }
+
+    /// The place of a line whose text this store dropped, from the retraction its `gone-<id>` names.
+    async fn gone(store: &Shared, id: &str) -> Option<Line> {
+        let at = store.get_ref(&gone_ref(id).ok()?).await.ok()??;
+        let r = Line::read_kept(&store.get(&at).await.ok()??)?.0;
+        let Body::Retract(t) = &r.body else {
+            return None;
+        };
+        Some(Line {
+            network: r.network.clone(),
+            device: t.device.clone(),
+            seq: t.seq,
+            prev: t.prev.clone(),
+            at: t.at,
+            sig: String::new(),
+            body: Body::Redacted,
+        })
+    }
+
+    /// The retraction `gone-<id>` names.
+    async fn gone_to(&self, id: &str) -> Option<String> {
+        let name = gone_ref(id).ok()?;
+        Some(self.store.get_ref(&name).await.ok()??.to_hex())
+    }
+
+    /// Whether a line this peer holds names the file `index`.
+    pub fn names(&self, index: &str) -> bool {
+        self.keeper
+            .lock()
+            .unwrap()
+            .all()
+            .any(|h| matches!(&h.line.body, Body::File(f) if f.file == index))
+    }
+
+    /// A file no line names any more leaves the store: `file-<index>`, its index and the chunks no other file this
+    /// peer keeps lists (files are named by their hash, so two files may share a chunk).
+    pub async fn drop_file(&self, index: &str) {
+        let Ok(hash) = index.parse::<Hash>() else { return };
+        let Some(file) = aven_db_store::files::open(&*self.store, &hash).await.ok().flatten() else {
+            return self.drop_ref(&format!("file-{index}")).await;
+        };
+        let others: Vec<String> = self
+            .keeper
+            .lock()
+            .unwrap()
+            .all()
+            .filter_map(|h| match &h.line.body {
+                Body::File(f) if f.file != index => Some(f.file.clone()),
+                _ => None,
+            })
+            .collect();
+        let mut kept = std::collections::BTreeSet::new();
+        for other in others {
+            if let Ok(other) = other.parse::<Hash>()
+                && let Ok(Some(f)) = aven_db_store::files::open(&*self.store, &other).await
+            {
+                kept.extend(f.chunks);
+            }
+        }
+        self.drop_ref(&format!("file-{index}")).await;
+        for chunk in file.chunks.iter().filter(|c| !kept.contains(*c)) {
+            let _ = self.store.delete(chunk).await;
+        }
+        let _ = self.store.delete(&hash).await;
+    }
+
+    async fn drop_ref(&self, name: &str) {
+        let Ok(name) = RefName::new(name) else { return };
+        if let Ok(Some(at)) = self.store.get_ref(&name).await {
+            let _ = self.store.delete_ref(&name, at).await;
+        }
+    }
+
+    /// Deletes the line `id`: a retraction of it, written on this device's chain like any line, offline too. Only a
+    /// line of the vault this device acts for (`Aven.DB.Chains.retracts`); the line to send, as `write` returns it.
+    pub async fn retract(&self, id: &str) -> Result<Option<Line>, String> {
+        let body = {
+            let keeper = self.keeper.lock().unwrap();
+            let author = self.author();
+            let held = keeper
+                .all()
+                .find(|h| h.id == id)
+                .ok_or_else(|| format!("no line {id}"))?;
+            if matches!(held.line.body, Body::Retract(_)) {
+                return Err("a delete can't be deleted".into());
+            }
+            if author(&held.line.device) != author(&self.device()) {
+                return Err("only its own vault deletes a line".into());
+            }
+            Body::Retract(Retraction::of(id, &held.line))
+        };
+        self.write(body).await
     }
 
     /// Whether a gap has been open for [`chain::GAP_WAIT_MS`], so the link should catch up for the lines before it:

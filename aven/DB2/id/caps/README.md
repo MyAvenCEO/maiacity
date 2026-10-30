@@ -3,7 +3,8 @@
 avenID's capabilities, for a network that is end-to-end encrypted, peer to peer and owned by the people in it
 (30 Oct 2026). A **cap** is a signed grant from one vault to another: which operations, on which Docs, under which
 conditions. Who may read is decided by who holds a Doc's key; who may write, by every reader checking every change;
-who may tell an actor, by its router. No server decides anything, and the servers that keep the bytes can't read them.
+who may tell an actor, by its router. It is peer to peer: no peer is special, and a peer that keeps bytes for others,
+a keeper, can't read them.
 
 It is written for milestone 3 (avenID and caps) and is what milestones 4 to 7 plug into: the
 [docs](../../db/docs/README.md) layer's envelopes, the [engine](../../db/engine/README.md)'s operations and wants, the
@@ -29,10 +30,16 @@ document (moved there whole), and Signal, Matrix, MLS, Biscuit, Keyhive and Mead
 - actors act under caps as agreed with avenACTOR, and caps follow an upgrade only so far (D16);
 - a vault's secrets live in its safe, which opens only in a safe runtime (D17);
 - everything is padded (D18), and keys heal on a schedule and on suspicion (D19);
-- write without read comes later (D20).
+- write without read comes later (D20);
+- keeping is a role any peer can take, and fetch keys chain from each Doc's genesis (D21);
+- the network's tree is a Doc of signed statements that one rule settles, from a genesis every member pins, with the
+  guardian named in every claim (A10 to A13, decided as recommended);
+- a lens grants nothing until it is pinned (rule 35), and a sealed index holds only what all its readers may read
+  (A26, rule 36).
 
 The engine thread agreed the footprints caps check (E1–E3). The docs and avenACTOR threads answered their seams on the
-same day, and what they agreed is marked where it applies. Nothing in this spec is still a proposal.
+same day, and what they agreed is marked where it applies. Nothing in this spec is still a proposal except how a
+flagged fork of fetch keys settles, which the Lean model turned up ([open questions](#open-questions)).
 
 ## Contents
 
@@ -125,8 +132,10 @@ same day, and what they agreed is marked where it applies. Nothing in this spec 
 - **vault key, group key:** X-Wing key pairs. The private half lives in the keyring or the group's Doc; anyone can seal
   to the public half.
 - **rotation:** a new epoch, sealed to the readers that remain.
-- **keeper:** a peer that keeps and serves sealed bytes it can't open: the Aven Peer, or any member's Peer.
-- **fetch key:** what a device proves it holds to be served a Doc's sealed bytes.
+- **keeper:** a role any peer can take: keeping and serving sealed bytes it can't open, under a keep cap. The Aven Peer
+  is one, and so is any member's Peer.
+- **fetch key:** what a device proves it holds to be served a Doc's sealed bytes. Each epoch's is signed by the one
+  before, back to the Doc's genesis.
 
 ## The rules
 
@@ -184,8 +193,9 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
     - Every seal and every signature names its suite.
 21. **A passkey's act needs both proofs:** the WebAuthn assertion, which proves the authenticator and the person
     (ES256), and the hybrid signature derived from its PRF (post-quantum).
-22. **The keeper is blind.** It keeps and serves sealed bytes under keep caps. It checks the door, quota, and the proofs
-    that an uploading or fetching device holds the Doc's current fetch key, never a write cap. It learns no content,
+22. **The keeper is blind.** It keeps and serves sealed bytes under keep caps. It checks the door, quota, that each
+    fetch key is signed by the one before (D21), and the proofs that an uploading or fetching device holds the Doc's
+    current fetch key, never a write cap. It learns no content,
     type, signer, writer, cap or reader list, beyond what serving a device shows
     ([metadata](#metadata-what-hosts-still-see)).
 23. **As little as possible outside the seal** (Samuel, 30 Oct 2026). Outside a segment are only its Doc, its key epoch
@@ -215,6 +225,17 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
     the public never shares.
 34. **Secrets never leave a safe runtime** (Samuel, 30 Oct 2026). Everything else holds handles and asks the safe
     runtime to act ([the safe](#the-safe)).
+35. **A lens grants nothing until it is pinned** (Samuel, 30 Oct 2026, the architect's extension of A7). A lens inside
+    one type Doc is published by whoever may write that type Doc. A lens between two type Docs is a Value anyone may
+    write, and it takes effect for a Doc or a vault only when its owners pin it, as they pin type versions: a write to
+    the pins, with their approval (D14). A reader reads through the lenses pinned where it reads, and an actor through
+    the receiving vault's. A pin that would make a second path between two versions is refused, and the checker holds
+    a lens to the laws before its pin counts (docs, rule 19).
+36. **A sealed index holds only what all its readers may read** (A26, decided 30 Oct 2026). An index is sealed under
+    the key of its directory and holds fields only from Docs every reader of the directory can read, so a Doc with
+    fewer readers never enters it. Equal index Values under one key get equal sealed names (a keyed nonce), so two
+    readers' rebuilt roots compare. Its nodes are padded (D18). Only a device that may write the directory folds in
+    recent entries and publishes a new root.
 
 ## The model
 
@@ -232,7 +253,7 @@ Four things remain when every concept is reduced to its job (avenACTOR's discove
 
 | Essential | Its one job |
 |---|---|
-| **Key** | The only thing that signs or opens. Passkeys, device keys, ticket keys, recovery keys and server keys differ only in who keeps them |
+| **Key** | The only thing that signs or opens. Passkeys, device keys, ticket keys, recovery keys and fetch keys differ only in who keeps them |
 | **Vault** | A principal: owners (keys or vaults) and how many must agree. People, coops, agents and devices are kinds of vault |
 | **Cap** | A signed grant that narrows something its issuer holds: to whom, which operations, on what, under which conditions |
 | **Proof** | The way from a signing key, through devices, owners and caps, to one act. Anyone can check it |
@@ -420,6 +441,20 @@ messages and queries. For people with keys, reading is whole Docs; for actors an
 - **Tickets** hold a cap until a vault claims it, with a statement signed by the ticket key and by a device of the
   claiming vault. Milestone 2's invites are tickets for the network's door. A ticket never holds `share` beyond its own
   depth, and never governs.
+- **The network's tree** is a Doc of signed statements, settled the same at every peer from the set of statements alone
+  (A10 to A13, decided 30 Oct 2026; `settle` in `Aven.ID.Network`, PEERS.md §5):
+  - the genesis is signed by the claimant's passkey and MaiaCityGuardian, and names the RP ID, the origins, the admin
+    coop, the agent, the Aven Peer's key and the guardian's hybrid keys. Every member pins its hash, and only its
+    descendants count (`genesis_pinned`, `settle_genesis`);
+  - every claim names the guardian, so nobody joins without being shown who co-owns their vault (`guardian_consented`);
+  - two claims of one ticket: the smallest hash wins (`settle_ticket_once`). A withdrawal wins over every claim not in
+    its past (`settle_withdrawn`). An admin device's ack, naming the claim and having it in its past, makes it final,
+    and no withdrawal wins over a final claim. An admin device acks only the claim that stands in its own view. Two
+    acks that didn't see each other can make two claims of one ticket final; then the smaller hash wins and the ticket
+    shows as contested (`settle_final`);
+  - the relay and keeper lists are admin statements: a remove wins over every add that hadn't seen it
+    (`settle_listed`);
+  - the door admits exactly the member vaults' devices (`settle_door`), the same at every peer (`settle_perm`).
 - **The public** is every member of the network, as the door admits them (`memberOf` the admin coop), and never
   anyone outside it (Samuel, 30 Oct 2026). There is no open, IPFS-style publishing.
   - A Doc the public reads is sealed to the network's members group, which a member joins when they join and leaves
@@ -583,7 +618,9 @@ An epoch is named by the BLAKE3 hash of its key blob:
 - Before writing, a writer rotates when its Doc's epoch isn't sealed to the current key of every reader, or still
   seals to a removed one. The writer knows both from the tree and the groups.
 - Two writers may rotate at once. Both epochs are valid, nothing has to be merged, and the next writer uses the one with
-  the smaller hash. No sequencer is needed, which is what MLS lacks and what DMLS and BeeKEM were built for.
+  the smaller hash. Where forks follow forks, each goes to the smaller hash, from the genesis on, and keepers take the
+  same epoch as current (`Keep.current`). No sequencer is needed, which is what MLS lacks and what DMLS and BeeKEM
+  were built for.
 - A Doc nobody writes is never rotated, and needs no rotation: nothing new in it is left to protect.
 
 **Readers check only staleness** (rule 16). A malicious writer can always leak what it writes, so checking its epoch
@@ -664,16 +701,37 @@ at once, until a later update folds them together.
 
 ### Blind keepers
 
+Keeping is a role any peer can take (D21). Phones and browsers are rarely online at the same time, so some peers keep
+a Doc's sealed bytes for its readers: any member's own Peer, or the Aven Peer. None is special.
+
 A keep cap tells a keeper what to keep and nothing about what it is:
 - the Doc ids, or the group whose Docs to keep;
-- for each epoch, the public half of the fetch key, which the rotation's writer sends it by letter;
+- each Doc's first fetch key, from its genesis;
 - the gossip topics;
-- the quota, and which network member's vault pays.
+- the quota.
 
-The keeper takes and serves a Doc's sealed bytes only for a device that proves it holds the current fetch key, by
-signing the connection's TLS exporter. So "nothing leaves for a device that may not receive it" (engine, rule 13) holds
-at a keeper that can't read caps, and nobody outside a Doc can fill it with junk. The uploading member's vault pays.
-Key blobs and letters are served to any member, since they are useless without the keys they're sealed to.
+**Fetch keys chain** (A22, Samuel, 30 Oct 2026). Each epoch's fetch key comes from its key (`avenDB fetch 1`). The
+rotation's writer signs a link with the fetch key before it: the Doc, the epoch's depth `n` and hash, and the new fetch
+key's public half. A keeper takes a link on that signature alone, since it reads no caps:
+1. A link counts only if it is for this Doc, one epoch deeper than the key before it, and signed by that key, which the
+   keeper has taken. So every fetch key a keeper takes chains back to the genesis (`fetch_chain`), and nobody who
+   never held one of the Doc's fetch keys can change it.
+2. It keeps every successor (`kept_every`). Where two follow one key, it takes as current the one with the smaller
+   epoch hash, as writers do, and flags the fork (`fork_flagged`). Keepers holding the same links agree on the current
+   fetch key, whatever order the links came in (`current_agrees`).
+3. It takes and serves a Doc's sealed bytes only for a device that signs the connection's TLS exporter with the current
+   fetch key (`served_current`). So "nothing leaves for a device that may not receive it" (engine, rule 13) holds at a
+   keeper that can't read caps, and nobody outside a Doc can fill it with junk.
+4. The uploading vault pays, and only for what the keeper took from it (`uploader_pays`).
+
+Key blobs and letters are served to any member, since they are useless without the keys they're sealed to. A device
+whose proof is refused because a newer epoch came fetches that epoch's key blob, opens its stanza and proves again.
+
+**What a keeper can't tell** (`grind_example`). A reader of an earlier epoch still holds that epoch's fetch key. Once
+removed, it can fork the chain from there and grind its epoch hash below the writers'. Writers check the rotation's
+cap and never take that epoch. A keeper can't, so it takes the fork as current and refuses the readers, who don't hold
+it, until the fork settles. It flags the fork, and it knows which device uploaded the link. How the fork settles is
+[open](#open-questions).
 
 **Catching up from a keeper** knows nothing about writers (rule 23):
 1. The keeper numbers each Doc's segments in the order they arrive.
@@ -772,6 +830,9 @@ input. avenID uses it so that **a new browser signing in with a passkey opens it
 **Derivations.**
 - The input is `avenID prf 1`, the vault's id and the owner's epoch. The browser hashes it into the authenticator's
   salt.
+- The input can be guessed, so any origin the passkey's RP ID covers could ask for the same output. A dedicated RP ID
+  for avenOS, with a secret mixed into the input (A14), is not yet (Samuel, 30 Oct 2026). Until then, the origins are
+  few and their releases signed (A15).
 - From the output, BLAKE3's key derivation makes:
   - `avenID owner 1`: the Ed25519 and ML-DSA-65 seeds of the passkey's **hybrid owner key**;
   - `avenID seal 1`: the X-Wing seed of its **seal key**.
@@ -854,7 +915,7 @@ It works like a password manager, except that the secrets are never handed out.
 | Mac and iOS app | A separate process, its keys in the Secure Enclave or wrapped by it, unlocked with Face ID or Touch ID. avenDB-old already signed with ML-DSA-65 from a Mac's enclave | Strong |
 | Android | Keystore, with StrongBox or the TEE | Strong |
 | Windows | The TPM, through Windows Hello | Strong |
-| A server Peer (the Aven Peer) | A separate process, its keys sealed at rest; a hardware security module later | Medium |
+| An always-on Peer (the Aven Peer, or a member's own) | A separate process, its keys sealed at rest; a hardware security module later | Medium |
 | A browser (the Peer-Light) | The Peer-Light's dedicated worker on its own origin, never avenOS's page. Keys at rest wrapped with a WebCrypto key that can't be exported. A strict Content-Security-Policy, and no third-party scripts. Unlocked by the passkey's PRF; "lock when idle" (one passkey tap per session) is a setting later | Weakest, but apart from every app's page |
 
 **Its limits, honestly:**
@@ -863,6 +924,10 @@ It works like a password manager, except that the secrets are never handed out.
 - A compromised operating system beats any app.
 - Enclaves run only the algorithms they support. Where ours aren't among them, the enclave guards a wrapping key, and
   our keys are used only inside the safe runtime's process.
+- Changed code served from the safe's own origin would run with its keys. Releases are signed (A15, Samuel,
+  30 Oct 2026): in the browser, a Service Worker on the safe's origin checks a release's signature before new code
+  takes over, which raises the bar but can't close it, since a browser re-checks a worker's script against its
+  origin. The Mac app checks signatures before it runs new code, which makes it the trusted path.
 
 The safe gets its own spec, `aven/DB2/id/safe`, when its milestone comes.
 
@@ -893,7 +958,7 @@ with ML-DSA, which COSE is standardising and no authenticator we know of ships.
 | Who | Sees | Doesn't see |
 |---|---|---|
 | The relay | The device keys of the connections it carries, their IP addresses, timing and volume | Anything inside iroh's encryption |
-| The keeper (the Aven Peer) and its storage (Hetzner) | **The tree:** vaults, owners, devices, network members and public keys, because the door needs them. **Per Doc:** its id, its epochs and their stanza counts (padded), sizes (padded), times, and which device uploads or fetches what. Nothing about a segment's writer: no pseudonym, counters or chain (rule 23). Letterboxes on first contact; the gossip topics it keeps | Content, types, signers, caps, who reads which Doc, groups' rosters, operations |
+| A keeper (the Aven Peer, or a member's own Peer) and its storage (Hetzner, for the Aven Peer) | **The tree:** vaults, owners, devices, network members and public keys, because the door needs them. **Per Doc:** its id, its epochs and their stanza counts (padded), sizes (padded), times, and which device uploads or fetches what. Nothing about a segment's writer: no pseudonym, counters or chain (rule 23). Letterboxes on first contact; the gossip topics it keeps | Content, types, signers, caps, who reads which Doc, groups' rosters, operations |
 | A network member who doesn't read a Doc | Its key blobs (sealed stanzas and their padded count) and letters, all sealed. Its topic and fetch key come from its key | Content, readers, writers |
 | A reader of a Doc | Its caps, its writers and how many read it; the caps of the groups that open it | Caps on other Docs |
 | A peer on a direct path | The other's IP address (README) | |
@@ -973,7 +1038,7 @@ to and leave all the time. Scale need not be built from day one, but no choice m
 | docs (`db/docs`) | Envelopes, branches, Records, fit | **Decided by Samuel (30 Oct 2026, D13):** outside a segment are only the Doc, the key epoch and the padded ciphertext. Keepers serve catch-up by arrival order. Inside are the branch, the writer id and counters, the previous segment's hash, the signer, the cap, acks, the operation and params, the changes and the schema. The docs thread had proposed the peer, counters and previous hash outside. **Agreed with the docs thread:** Three verdicts (fit, authorized, not split), and a revocation rebuilds state. A segment holds one epoch, and a rotation closes it. Snapshots and heads are each device's own and never travel. Checkpoints travel from the Loro docs step on (A5), sealed with the `avenDB snapshot 1` subkey and hybrid-signed. A merge is checked against the merger's grant over the whole merge. Each segment carries its writer's hybrid signature. A Doc's genesis fixes its vault and root type (docs D11). A Record's creator is the signer of the envelope that made it, read from history and never from a field, so `own` can't be faked by an edit. Every Doc pins caps' built-in types `cap`, `revoke` and `epoch`, beside docs' `branch`, `closed`, `version` and `split` |
 | engine (`db/engine`) | Operations by hash, footprints, wants, the dry run | E1–E3; served is wants intersected with caps; `query` checked by the kernel or serving peer |
 | store (`store`) | Blobs and refs | Sealed blobs; key blobs and letters are blobs; the sealing parked in its "Later: sealing" comes here |
-| avenPEER | The door, the relay, the keeper | Keep caps, fetch proofs, quota per network member, letterboxes, topics per group |
+| avenPEER | The door, relays and keepers, any peer | `settle`, the tree's one rule (`Aven.ID.Network`); keep caps, fetch-key links and proofs, quota, letterboxes, topics per group |
 | actors (`aven/actor`) | Runs, routers, inbox Docs | **Agreed with avenACTOR and confirmed by Samuel (30 Oct 2026, D16):** a `cap` beside `run` on every message; no confused deputy; `tell` caps by name, pinned by the definition's hash; actor targets by address, by spawn and by definition; an inbox Doc belongs to the sender's vault and is born with the tell cap; actors at home on the Aven Peer are readable there |
 | avenOS | The UI | The dry run, raw grants, vault fingerprints, PRF sign-in and pairing |
 
@@ -1014,8 +1079,9 @@ to and leave all the time. Scale need not be built from day one, but no choice m
 8. **A revocation keeps what it names and wins over the rest** (Samuel, 30 Oct 2026). Acks carry it to Docs the revoker
    doesn't hold. Writes stop counting from the first ack; reading ends at the next epoch; only the revoker must be
    online.
-9. **The keeper is blind** (Samuel, 30 Oct 2026). It checks the door, quota, keep caps and fetch proofs, never a write
-   cap. avenDB-old's relay check (T25) needed the plaintext graph, and avenOS's relay kept every bad write.
+9. **The keeper is blind** (Samuel, 30 Oct 2026). It checks the door, quota, keep caps, fetch-key links and fetch
+   proofs, never a write cap. avenDB-old's relay check (T25) needed the plaintext graph, and avenOS's relay kept every
+   bad write.
 10. **Hybrid signatures where authority lasts** (Samuel, 30 Oct 2026). Ed25519 + ML-DSA-65 on caps, governance,
     segments and checkpoints; Ed25519 on single envelopes; an owner key derived from the passkey's PRF.
 11. **The passkey PRF step** (Samuel, 30 Oct 2026). The PRF opens the keyring the keeper keeps, so a new browser needs
@@ -1050,12 +1116,18 @@ to and leave all the time. Scale need not be built from day one, but no choice m
     The architect's avenACTORS thread carries them on.
 17. **The safe** (Samuel, 30 Oct 2026). A vault's secrets live in its safe, a Doc synced by avenDB that opens only in a
     safe runtime. There is one interface, with a backend per host: the Secure Enclave, Android's Keystore, Windows' TPM,
-    a server process, and the browser's own-origin worker. Secrets never leave it; everything else asks it to act.
+    an always-on Peer's own process, and the browser's own-origin worker. Secrets never leave it; everything else asks
+    it to act.
 18. **Everything is padded** (Samuel, 30 Oct 2026). Live messages to fixed sizes, segments and files with Padmé.
 19. **The heal** (Samuel, 30 Oct 2026). Device keys rotate monthly. The full heal runs on suspicion and on a device's
     removal. A scheduled full heal for everyone waits for the tree.
 20. **Write without read comes later** (Samuel, 30 Oct 2026), at its first real case: likely invoices sent to a coop.
     A Doc's epoch would also carry an X-Wing key that drop-box writers seal to.
+21. **Keeping is a role any peer can take** (Samuel, 30 Oct 2026, A22). Any peer may keep a Doc's sealed bytes for its
+    readers under a keep cap, and none is special; nothing is framed as a server. A keeper checks who may add or fetch
+    by key proofs, never by reading. Fetch keys chain from the Doc's genesis, each signed by the one before. It keeps
+    every successor, takes the smaller epoch hash as current, as writers do, and flags a fork. The uploading vault
+    pays.
 
 Agreed with the engine thread (30 Oct 2026):
 
@@ -1065,55 +1137,94 @@ Agreed with the engine thread (30 Oct 2026):
 
 ## What Lean proves
 
-`Aven.ID` grows a caps model beside `Governs`, in modules `Caps` (targets, grants, chains), `Revoke` (revocations, kept
-lists, acks), `Epochs` (keys, symbolically: what each party can know), `Approve` and `Recover`. As everywhere (README,
-rule 10), its examples and generated cases are exported as vectors every implementation loads, and stateful models
-export traces.
+`Aven.ID` holds caps' model beside `Governs`, in `id/spec` (Lean 4.35.0, core only, no `sorry`; `lake build` in the box
+proves it). Its examples on the cast carry their answers, written by hand and checked by `decide`. `lake exe vectors`
+exports them with generated cases (README, rule 10).
 
-| Theorem | Says |
+What a grant reaches is `Aven.Core`'s once it lands: Values and the CBOR codec, hashes, envelopes and logs, the target
+grammar, verbs and footprints. Until then an **atom** names the vault whose Docs it concerns and an opaque permission,
+and a grant is a set of atoms checked by subset. A theorem marked *after Core* states its rule over Core's grammar
+when Core lands.
+
+| Module | Theorem | Says |
+|---|---|---|
+| `Caps` | `narrow_chain` | Every cap in a chain grants within its root: the subset check at every link |
+| | `root_authority` | Every atom a chain grants lies in its root issuer's authority, its own vault or one it governs |
+| | `chain_short` | A chain is no longer than its root may be shared |
+| | `grant_approved` | Every cap in a chain was signed by a device of its issuer and approved by its issuer's owners (D14) |
+| | `child_live` | A cap issued from a group's cap holds only while its issuer is in the group |
+| | `public_bounded`, `public_no_share` | The public passes nothing on and never shares (D15) |
+| | `role_pinned` | A new version of a role changes nothing a cap naming the old one grants (D6) |
+| | `chainError_none` | The first rule a chain breaks is none exactly when it keeps them all |
+| `Approve` | `approval_exact` | An approval holds only with k distinct owners, each having signed exactly its digest |
+| | `shown_is_signed` | What avenOS shows for a passkey tap is decoded from the exact bytes signed (A2, rule 25) |
+| `Revoke` | `seen_never_counts` | A revoked holder's envelope with the revocation in its own past never counts: no laundering |
+| | `doc_cap_kept` | Under a Doc cap, only the revocation's own past is kept |
+| | `elsewhere_kept` | Elsewhere, once the revocation reaches the Doc, only what its kept list or another writer's ack had seen counts |
+| | `revocation_wins` | The three together (rule 14). An envelope lists its whole chain, so revoking any link reaches it: the cascade |
+| | `waits_named` | A wait names only what the envelope builds on and the reader lacks, by hash |
+| `Epochs` | `confidential` | A key is learned only as one's own or by opening a seal with a key already known |
+| | `unknowable` | Keys of a closed set a party owns none of stay unknown to it; the next three are its instances |
+| | `removal_next_epoch` | A new epoch sealed only to the remaining readers stays closed to a removed one |
+| | `heal_evicts` | After a heal, a removed device learns none of the new keys: vault key, tag seeds, letterbox keys and next epochs |
+| | `keeper_blind`, `outside_blind` | The keeper knows only its own keys, and sees of a segment only its Doc, epoch and padded length (D13) |
+| | `stale_refused` | An envelope under an epoch older than one it builds on doesn't pass (rule 16) |
+| `Recover` | `guardian_exit` | After MaiaCityGuardian's exit, no keyring epoch is sealed to it (D12) |
+| | `never_ownerless`, `removals_win` | Removals that clash all stand, unless they'd leave no owner; then none does |
+| `Network` | `public_member`, `removal_rotates` | A public write counts only from a member, and a removed member is in no later members epoch |
+| | `ticket_once` | A ticket is claimed once, by the smallest claim hash, whatever order the claims arrive in (A12) |
+| | `settle_perm`, `settle_genesis` | Peers holding the same statements settle the same tree, and nothing outside the pinned genesis's descendants changes it |
+| | `settle_ticket_once`, `settle_withdrawn`, `settle_final` | A ticket founds at most one vault; a withdrawal beats every claim of it outside its past that isn't final; a final claim stays final, and stands unless an ack that never saw its ack makes a smaller one final |
+| | `settle_door`, `settle_listed` | The door admits exactly the member vaults' devices; a list's entry stands only through an add that saw every remove of it |
+| | `genesis_pinned`, `guardian_consented` | Everything in the tree descends from the pinned genesis, which the claimant's passkey and MaiaCityGuardian signed (A11); a claim counts only if it names that guardian (A13) |
+| `Keep` | `fetch_chain`, `kept_every` | A keeper takes exactly the fetch keys that chain back to the Doc's genesis, each signed by the key before it (A22) |
+| | `current_agrees`, `current_chained` | Keepers holding the same links take the same current fetch key, whatever order they came in, and it chains |
+| | `fork_flagged` | Every fork a keeper takes is flagged |
+| | `served_current` | A keeper serves a fetch or takes an upload only from a device proving the current fetch key on that connection |
+| | `uploader_pays` | The uploading vault pays, and only for what the keeper took from it |
+| | `grind_example` | The limit: a removed reader's fork with a ground hash becomes current at a keeper, flagged |
+
+**After Core, or with another thread:**
+- `counts_iff`: an envelope counts exactly when its signer, its epoch, its chain, its liveness and its footprint hold;
+- `readers_agree`: a verdict depends only on the envelope, its causal past and the revocations known;
+- `index_within_key`, `sealed_roots_agree` and `root_by_writer` (rule 36, over `Aven.DB.Docs.Index`'s entries);
+- `merge_covered` and `footprints.json` (Core's footprints, with the engine);
+- `want_grants_nothing` and `one_grammar` (Core's target grammar);
+- `authority_down` (`below` groups);
+- `group_holds` (a group cap's writes in `Revoke`);
+- `device_within_cap`;
+- `safe_holds` (the safe's interface);
+- `upgrade_no_wider` and `no_confused_deputy` (`Aven.Actor`, avenACTORS);
+- `settle_restore`, production's ref order, and `trees.json` (avenPEER, PEERS.md Thread A);
+- how a flagged fork of fetch keys settles, once [decided](#open-questions).
+
+Two smaller gaps:
+- An owner that is a vault approves by its own quorum, recursively. `Approve` counts owner keys only, so the cast's coop
+  can't yet approve a grant.
+- The Revoke model's reader holds one Doc; the order in which envelopes arrive changes nothing, because a verdict is
+  computed from the Doc and the revocations alone.
+
+**Vectors** (`id/spec/vectors/`):
+
+| File | What |
 |---|---|
-| `narrow_chain` | Every link grants a part of its parent; a leaf grants a part of its root, and a root no more than its issuer's authority over the target's vault |
-| `root_authority` | A valid chain's root is issued by the target's vault or one that governs it, with approvals where required |
-| `counts_iff` | An envelope counts exactly when its signer, epoch, chain, liveness and footprint hold. The model is the check, and it runs against the Rust on random cases |
-| `readers_agree` | A verdict depends only on the envelope, its causal past and the revocations known |
-| `revocation_wins` | A revoked holder's envelope with the revocation in its own past never counts; under a Doc cap only the revocation's own past is kept; elsewhere nothing an ack hadn't seen counts, in any order of arrival |
-| `child_live` | A cap issued from a group's cap counts only while its issuer is in the group |
-| `authority_down` | A `below` grant reads the Docs of the vaults below its vault, never above |
-| `waits_end` | Every wait names something by hash in the envelope's own past or inside it, and raises the stall alarm |
-| `heal_evicts` | After a heal, nothing new opens for a removed device's keys: vault key, tag seeds and letterbox keys included |
-| `cascade` | Revoking a cap ends every cap whose chain contains it |
-| `stale_refused` | An envelope under an epoch older than one in its causal past doesn't count |
-| `confidential` | A vault learns an epoch's key only by being its reader, by reading a later epoch with history, or by a reader handing it on |
-| `removal_next_epoch` | No epoch made by a writer who had seen a removal opens for the removed |
-| `keeper_blind` | Keep caps, blobs, key blobs and the keeper's letters yield it no Doc's key |
-| `want_grants_nothing`, `one_grammar` | What is served lies within the caps; wants and caps share one `Target`, and served is their intersection |
-| `approval_exact` | An act that needs k approvals counts only with k distinct owners' signatures over exactly its digest |
-| `grant_approved` | A cap counts only with its granting vault's owners' approval (D14), and a revocation needs none |
-| `public_bounded` | A public cap reaches only the network's members, never grants `share`, and a write under it counts only from a member |
-| `upgrade_no_wider` | A cap that follows an upgrade covers only messages whose schemas didn't change, and only in a vault that adopted the new definition |
-| `safe_holds` | Nothing leaves a safe runtime but signatures, ciphertexts, public keys and Doc keys it lends the engine |
-| `group_holds` | A write under a group's cap counts only with the writer's live read on the group |
-| `merge_covered` | A merge into main counts only when the merger's grant covers every type and field the merge changes from its base |
-| `no_confused_deputy` | A turn's effects carry the handled message's cap or a narrower one, never the actor's standing cap |
-| `device_within_cap` | A device acts only within its device cap, and never governs (extending `device_governs_nothing`) |
-| `guardian_exit` | After its exit, no keyring epoch is sealed to MaiaCityGuardian |
+| `caps.json` | Chains on the cast, each with the first rule it breaks or none; how avenOS shows a cap; 40 generated chains |
+| `revocations.json` | Docs, the revocations held, and verdicts: hand-written, and 30 generated Docs with every envelope's verdict |
+| `epochs.json` | Who learns which key after Bob's removal and after Alice's heal |
+| `approvals.json` | Signatures, thresholds and digests on the cast, and whether each approval holds |
+| `network.json` | A ticket's claims in two orders (A12), removals that clash, MaiaCityGuardian's exit |
+| `keep.json` | Fetch-key links in the order they came, with the keys a keeper takes, its current key and its flags; proofs and whether they're served; what each vault pays; 30 generated keepers |
 
-**Vectors:**
-- `caps.json`: chains, valid and not, each with the first rule a bad one breaks;
-- `revocations.json`: traces of revocations, acks and late arrivals;
-- `epochs.json`: traces of rotations and who can open what;
-- `approvals.json`;
-- `footprints.json`, shared with the engine;
-- `derivations.json`: labels to bytes, once `Aven.DB.Blake3` gains BLAKE3's keyed and key-derivation modes.
-
-The primitives themselves (X-Wing, ML-DSA, Ed25519, the AEAD) stay outside Lean, as Ed25519 does today. They are tested
-against their standards' known answers and Wycheproof.
+When Core lands, `caps.json` adds each cap's CBOR bytes and hash, and `derivations.json` follows once `Aven.DB.Blake3`
+gains BLAKE3's keyed and key-derivation modes. The primitives themselves (X-Wing, ML-DSA, Ed25519, the AEAD) stay
+outside Lean, as Ed25519 does today. They are tested against their standards' known answers and Wycheproof.
 
 ## Order of work
 
 A proposal for milestone 3's plan, for the architect:
 
-1. **Lean:** `Caps`, `Revoke`, `Epochs` and `Approve`, with vectors.
+1. **Lean:** `Caps`, `Revoke`, `Epochs`, `Approve`, `Recover`, `Network` and `Keep`, with vectors. The first pass is in
+   `id/spec`; what waits for `Aven.Core` is listed [above](#what-lean-proves).
 2. **avenID:**
    - owners k of n and approvals;
    - device removal and its acks;
@@ -1126,7 +1237,8 @@ A proposal for milestone 3's plan, for the architect:
    - the safe's interface, and its first runtime: the Peer-Light's own-origin worker, wrapped at rest, with a strict
      Content-Security-Policy;
    - native runtimes come with the Mac app.
-5. **The blind keeper:** keep caps, fetch and upload proofs, quota, and catch-up by arrival order.
+5. **Keepers:** keep caps, fetch keys that chain, fetch and upload proofs, quota, and catch-up by arrival order, on
+   any peer.
 6. **Caps on writes,** with the docs layer's envelopes (milestone 4). Until then, the chat's lines keep checking their
    signer's membership, and the room's key keeps them sealed.
 7. **Later:**
@@ -1137,7 +1249,15 @@ A proposal for milestone 3's plan, for the architect:
 
 ## Open questions
 
-None at the moment. What comes later is scheduled in [order of work](#order-of-work).
+1. **How a flagged fork of fetch keys settles** (for the architect, 30 Oct 2026). The Lean model shows that a removed
+   reader can fork the chain from a key it held and grind the smaller hash, and a keeper can't tell
+   (`grind_example`). Recommended:
+   - while a fork is flagged, the keeper serves a proof by the newest key of either branch, so a fork can't lock
+     readers out;
+   - a device of the vault that issued the keep cap, which reads the Doc and checks the rotations' caps, signs the
+     branch to follow. The keeper checks that signature against the tree and follows that branch from then on.
+
+What comes later is scheduled in [order of work](#order-of-work).
 
 ## Not in this spec
 

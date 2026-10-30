@@ -121,11 +121,20 @@ const rustVolumes = [
 	'-v', 'avensandbox_cargo_git:/opt/cargo/git',
 ];
 
+// The Lean specs outside aven/DB2, which sandbox/vectors.sh builds and checks: aven/runtimes/spec and aven/actor/spec,
+// each at /aven/<name>/spec, and aven/DB2 once more at /aven/DB2, so their path to Aven.Core (`../../DB2/core/spec`)
+// resolves. Only these: the rest of the repository, avenDB-old among it, stays out of the box (README, rule 12).
+const specVolumes = () =>
+	['runtimes', 'actor']
+		.filter((name) => existsSync(join(db2, '..', name, 'spec')))
+		.flatMap((name) => ['-v', `${join(db2, '..', name, 'spec')}:/aven/${name}/spec`])
+		.concat(['-v', `${db2}:/aven/DB2`]);
+
 export async function inBox(args) {
 	await ensureDocker();
 	await ensureImages();
 	const tty = process.stdout.isTTY ? ['-t'] : [];
-	const volumes = ['-v', `${db2}:/work`, '-v', 'avensandbox_node_modules:/work/node_modules', ...rustVolumes];
+	const volumes = ['-v', `${db2}:/work`, '-v', 'avensandbox_node_modules:/work/node_modules', ...rustVolumes, ...specVolumes()];
 	return (await $`docker run --rm -i ${tty} ${network()} ${volumes} -w /work ${image} ${args}`.env(env).nothrow()).exitCode;
 }
 

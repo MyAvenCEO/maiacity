@@ -1,4 +1,5 @@
 import Aven.DB.Json
+import Aven.DB.Engine
 
 /-!
 # The test vectors (README, rule 10)
@@ -23,6 +24,22 @@ import Aven.DB.Json
   lines, forks and what its chat shows (`Aven.DB.Chains`); what a line's device signs; and blobs read as lines or
   refused as not canonical (`Aven.DB.Chains.read`). Lines are named by labels,
   which aven-db-core's tests replace with the hashes of real signed blobs.
+- `queries.json`: a directory's genesis facts, Records, the Docs held, a target, a stored query; the answer (refused,
+  complete, or short with the Docs missing), the query's bound and cost, and the work it did (`Aven.DB.Engine.Query`).
+- `wants.json`: wants, the keys caps allow and each key's prerequisites; the queue, one round over the pages left with
+  the device's uploads first, and what eviction to a budget keeps (`Aven.DB.Engine.Wants`).
+- `mutations.json`: a writer id, its counter, its grants, a Doc's Records and core operations; the footprint and
+  whether the grants cover it, the Records after the commit or why it was refused, and every reader's check of the
+  diff (`Aven.DB.Engine.Mutate`, `Aven.DB.Engine.Footprint`).
+- `lookups.json`: a shape, the Records and Docs at version V, the Records now, the Docs unfolded since and listed now, a
+  probe; the index at V, its hits, the candidates, the query over them and the folded index (`Aven.DB.Engine.Index`).
+- `merges.json`: one place's base, the target's and the other branch's values and the merger's choice; the merged value,
+  and backing out a commit (`Aven.DB.Docs.Merge`).
+- `lenses.json`: writes of a todo's done-ness by v0 and v1 apps; what a v0 reader reads (`Aven.DB.Docs.Lens`).
+- `indexes.json`: invoices' entries (vendor, total, Doc) in any order, a size limit and a vendor; the nodes they make
+  and what a lookup of that vendor finds, by total (`Aven.DB.Docs.Index`, `Aven.DB.Docs.Key`).
+- `keys.json`: tuples and their keys in hex; pairs of tuples and whether the first key sorts before the second
+  (`Aven.DB.Docs.Key`).
 
 `aven-db-core`'s and `aven-db-store`'s tests load them. `bun run up --check` runs this again and fails when the files
 differ from what is committed. -/
@@ -321,6 +338,9 @@ open Chains in
 def Aven.DB.Chains.Body.json : Body → Json
   | .text t => Json.mkObj [("text", t)]
   | .file f n name type => Json.mkObj [("file", f), ("size", toJson n), ("name", name), ("type", type)]
+  | .retract t d s p time =>
+    Json.mkObj [("retract", t), ("device", d), ("seq", toJson s), ("prev", toJson p), ("at", toJson time)]
+  | .redacted => Json.mkObj [("redacted", true)]
 
 open Chains in
 def Aven.DB.Chains.Line.json (l : Line) : Json :=
@@ -338,6 +358,7 @@ def Aven.DB.Chains.Refusal.name : Refusal → String
   | .badSeq => "badSeq"
   | .badFile => "badFile"
   | .notCanonical => "notCanonical"
+  | .badRetract => "badRetract"
 
 open Chains in
 def Aven.DB.Chains.Answer.json : Answer → Json
@@ -350,17 +371,20 @@ def Aven.DB.Chains.Answer.json : Answer → Json
 open Chains in
 def chainVector (name : String) (steps : List Step) : Json :=
   let input := Json.mkObj [("network", "aven"), ("members", toJson Chains.members),
+    ("vaults", Json.mkObj (Chains.vaults.map fun (d, v) => (d, toJson v))),
     ("steps", Json.arr (steps.map fun
       | .hear p l => Json.mkObj [("peer", p), ("hear", l.json)]
       | .catchUp p src => Json.mkObj [("peer", p), ("catchUp", src)]).toArray)]
-  let expected := (World.run [] steps).map fun (p, as, k) =>
+  let expected := (World.run [] steps).map fun (p, as, dropped, k) =>
     Json.mkObj [("peer", p), ("answers", Json.arr (as.map Answer.json).toArray),
       ("heads", Json.arr (k.heads.map fun (d, i) => toJson [d, i]).toArray),
-      ("loose", toJson (k.loose.map (·.id))), ("forks", toJson k.forks), ("shown", toJson (k.shown.map (·.id)))]
+      ("loose", toJson (k.loose.map (·.id))), ("forks", toJson k.forks), ("shown", toJson (k.shown.map (·.id))),
+      ("deleted", toJson ((k.shown.filter (k.deleted Chains.vaults)).map (·.id))), ("dropped", toJson dropped)]
   vector name input (Json.arr expected.toArray)
 
 open Chains in
-/-- Every device's chain of four lines, a fork at each place, and now and then a line tampered with. -/
+/-- Every device's chain of four lines, a fork at each place, now and then a line tampered with, and retractions of
+lines of any device, by any device, so some count (the same vault) and some don't. -/
 def randomChains (seed : Nat) : List Step := Id.run do
   let devices := ["alice", "bob", "carol", "eve"]
   let main (d : String) (s : Nat) : Line :=
@@ -381,6 +405,13 @@ def randomChains (seed : Nat) : List Step := Id.run do
     let dev := devices[d]!
     if k < 2 then steps := steps.push (.catchUp peer peers[q]!)
     else if k = 2 then steps := steps.push (.hear peer (fork dev (s + 1)))
+    else if k = 9 then
+      -- half the time its own line, which counts; else any device's, which counts only for its own
+      let tdev := if p % 2 = 0 then dev else devices[q]!
+      -- the line before the retraction's own place, so a device retracting its own isn't a fork of it
+      let t := main tdev (max s 1)
+      steps := steps.push (.hear peer (Line.make' s!"r{dev}{s + 1}-{t.id}" dev (s + 1) (if s = 0 then none else some s!"{dev}{s}")
+        (s * 100 + 30) (.retract t.id t.device t.seq t.prev t.time)))
     else if k = 3 then
       steps := steps.push (.hear peer (Line.make s!"t{i}" dev (s + 1) (if s = 0 then none else some s!"{dev}{s}")
         (s * 100) "tampered" (if q % 2 = 0 then .signer "eve" else .text "changed")))
@@ -394,7 +425,8 @@ def bodies : List Json :=
   [Line.make "first" "alice" 1 none 1730000000000 "hi", Line.make "second" "alice" 2 (some prev) 1730000000001 "two\nlines",
    Line.make "unicode" "bob" 7 (some prev) 5 "grüß dich 👋",
    Line.make' "a file" "alice" 3 (some prev) 9 (.file prev 200000000 "the dome\nat night.mp4" "video/mp4"),
-   Line.make "a text that reads like a file" "alice" 4 (some prev) 10 s!"file {prev}\nsize 1\ntype x\nname"].map fun l =>
+   Line.make "a text that reads like a file" "alice" 4 (some prev) 10 s!"file {prev}\nsize 1\ntype x\nname",
+   Line.make' "a retraction" "alice" 5 (some prev) 11 (.retract prev "alice" 4 (some prev) 10)].map fun l =>
     vector s!"what {l.id} signs" (Json.mkObj [("line", l.json)]) (Json.mkObj [("signs", l.signs)])
 
 open Chains in
@@ -410,11 +442,300 @@ def reads : List Json :=
     vector s!"read: {name}" (Json.mkObj [("read", blob)]) (match read blob with
       | .ok f => Json.mkObj [("line", f.json)]
       | .error why => Json.mkObj [("refused", why.name)])
-  [one "a text line" sample.blob, one "a first line, a file" sampleFile.blob] ++ variants.map fun (n, b) => one n b
+  [one "a text line" sample.blob, one "a first line, a file" sampleFile.blob, one "a retraction" sampleRetract.blob] ++
+    variants.map fun (n, b) => one n b
 
 def chats : List Json :=
   bodies ++ reads ++ Chains.chainExamples.map (fun (name, steps, _) => chainVector name steps) ++
+  Chains.retractExamples.map (fun (name, steps, _) => chainVector name steps) ++
   (List.range generated).map fun i => chainVector s!"seed {i + 1}" (randomChains (i + 1))
+
+/-! ## Docs: merges and lenses (`Aven.DB.Docs`) -/
+
+open Docs in
+def mergeCases : List (String × String × String × String × Bool) := [
+  ("only the target changed", "Order seeds", "Order seeds today", "Order seeds", false),
+  ("only the other branch changed", "Order seeds", "Order seeds", "Order seeds by Friday", false),
+  ("both changed, the target keeps its own", "Order seeds", "Order seeds today", "Order seeds by Friday", false),
+  ("both changed, the merger takes the other's", "Order seeds", "Order seeds today", "Order seeds by Friday", true),
+  ("both changed alike", "Order seeds", "Order beans", "Order beans", false)]
+
+open Docs in
+def merges : List Json :=
+  mergeCases.map (fun (name, base, target, other, take) =>
+    vector name (Json.mkObj [("base", base), ("target", target), ("other", other), ("takeOther", toJson take)])
+      (toJson (merge3 base target other take))) ++
+  -- backing out the commit that set "by Friday", where nothing since touched the title, and where something did
+  [vector "back out, untouched since" (Json.mkObj [("after", "by Friday"), ("now", "by Friday"), ("before", "")])
+      (toJson (merge3 "by Friday" "by Friday" "" false)),
+    vector "back out, changed since" (Json.mkObj [("after", "by Friday"), ("now", "by Monday"), ("before", "")])
+      (toJson (merge3 "by Friday" "by Monday" "" false))]
+
+open Docs in
+def TodoWrite.json : TodoWrite → Json
+  | .done b => Json.mkObj [("done", toJson b)]
+  | .status s => Json.mkObj [("status", s)]
+
+open Docs in
+def lensCases : List (String × List (Write TodoWrite)) := [
+  ("a v0 tick after a v1 status", [⟨1, .status "doing"⟩, ⟨2, .done true⟩]),
+  ("a v1 status after a v0 tick", [⟨1, .done true⟩, ⟨2, .status "doing"⟩]),
+  ("only v1 writes", [⟨3, .status "done"⟩, ⟨1, .status "open"⟩]),
+  ("nothing written", [])]
+
+open Docs in
+def lenses : List Json :=
+  lensCases.map fun (name, ws) =>
+    let input := ws.map fun w => Json.mkObj [("stamp", toJson w.stamp), ("write", TodoWrite.json w.value)]
+    vector name (Json.arr input.toArray)
+      (match readThrough asDone ws with
+       | some w => Json.mkObj [("stamp", toJson w.stamp), ("done", toJson w.value)]
+       | none => Json.null)
+
+/-! ## The engine -/
+
+section Engine
+open Aven.Core Aven.DB.Engine Aven.DB.Engine.Examples
+
+def pick {α : Type} (r : Rng) (xs : List α) (d : α) : α × Rng :=
+  let (i, r) := r.below (max 1 xs.length)
+  (xs.getD i d, r)
+
+/-- A subset: each element kept with probability one half. -/
+def subset {α : Type} (r : Rng) (xs : List α) : List α × Rng := Id.run do
+  let mut r := r
+  let mut out := #[]
+  for x in xs do
+    let (b, r') := r.below 2
+    r := r'
+    if b = 1 then out := out.push x
+  return (out.toList, r)
+
+def gDocs : List DocId := ["d1", "d2", "d3"].map doc
+def gTypes : List DocId := ["type:a", "type:b"].map doc
+def gDir : List Facts := [⟨doc "d1", vault "v1", doc "type:list"⟩, ⟨doc "d2", vault "v1", doc "type:list"⟩,
+  ⟨doc "d3", vault "v2", doc "type:list"⟩]
+def gTargets : List Target := [.doc (doc "d1"), .vault (vault "v1") false, .vault (vault "v2") false,
+  .vaultType (vault "v1") (doc "type:list") false]
+
+def randomRecord (r : Rng) (i : Nat) : Rec Value × Rng :=
+  let (d, r) := pick r gDocs (doc "d1")
+  let (ty, r) := pick r gTypes (doc "type:a")
+  let (k, r) := r.below 4
+  (⟨d, ty, rows [("id", text s!"r{i}"), ("k", .uint k)]⟩, r)
+
+def randomQuery (r : Rng) : Nat → Query Value × Rng
+  | 0 => let (ty, r) := pick r gTypes (doc "type:a"); (.scan ty, r)
+  | d + 1 =>
+    let (op, r) := r.below 9
+    let (q, r) := randomQuery r d
+    let (q2, r) := randomQuery r d
+    let (k, r) := r.below 4
+    let (cmp, r) := pick r [Cmp.eq, .ne, .lt, .le] .eq
+    let col := utf8 "k"
+    match op with
+    | 0 => (.filter col cmp (.uint k) q, r)
+    | 1 => (.project [col] q, r)
+    | 2 => (.join q q2 col col, r)
+    | 3 => (.leftJoin q q2 col col, r)
+    | 4 => (.anti q q2 col col, r)
+    | 5 => (.order col q, r)
+    | 6 => (.group col q, r)
+    | 7 => (.limit k q, r)
+    | _ => (q, r)
+
+def randomQueryVector (seed : Nat) : Json := Id.run do
+  let r := Rng.seed (seed + 7000)
+  let (n, r) := r.below 9
+  let mut r := r
+  let mut db := #[]
+  for i in [0:n] do
+    let (rec, r') := randomRecord r i
+    db := db.push rec
+    r := r'
+  let (held, r1) := subset r gDocs
+  let (t, r2) := r1.below 9
+  let (q, _) := randomQuery r2 2
+  return queryVector s!"seed {seed}" gDir db.toList held ⟨gTargets[t]?, q⟩
+
+def queries : List Json := queryExamples ++ (List.range generated).map fun i => randomQueryVector (i + 1)
+
+def gKeys : List WantKey := ["k0", "k1", "k2", "k3", "k4", "k5"].map fun l => key l .records
+
+/-- Each key's prerequisites among the keys before it, closed: what a prerequisite needs is a prerequisite too. -/
+def randomPre (r : Rng) : List (WantKey × List WantKey) × Rng := Id.run do
+  let mut r := r
+  let mut pre : List (WantKey × List WantKey) := []
+  for i in [0:gKeys.length] do
+    let (direct, r') := subset r (gKeys.take i)
+    r := r'
+    let closed := direct.foldl (fun acc k => acc ++ (pre.lookup k).getD [] ++ [k]) []
+    pre := pre ++ [(gKeys.getD i (key "k0" .records), gKeys.filter (closed.contains ·))]
+  return (pre.filter (!·.2.isEmpty), r)
+
+def randomWantVector (seed : Nat) : Json := Id.run do
+  let r := Rng.seed (seed + 8000)
+  let (n, r) := r.below 7
+  let mut r := r
+  let mut ws : Array (Want WantKey) := #[]
+  let mut kept : Array (Kept WantKey) := #[]
+  for _ in [0:n] do
+    let (k, r1) := pick r gKeys (key "k0" .records)
+    let (t, r2) := pick r1 [Tier.screen, .turn, .next, .later, .idle] .idle
+    let (sg, r3) := r2.below 5
+    let (b, r4) := r3.below 200
+    let (u, r5) := r4.below 10
+    ws := ws.push ⟨k, t, sg⟩
+    kept := kept.push ⟨k, t, b, u⟩
+    r := r5
+  let up := key "up" .records
+  let (caps, r1) := subset r gKeys
+  let (pre, r2) := randomPre r1
+  let (lk, r3) := subset r2 (up :: gKeys)
+  let mut left : Array (WantKey × Nat) := #[]
+  let mut r4 := r3
+  for k in lk do
+    let (m, r') := r4.below 4
+    left := left.push (k, m)
+    r4 := r'
+  let (got, r5) := subset r4 (up :: gKeys)
+  let (budget, _) := r5.below 600
+  return wantVector s!"seed {seed}" ws.toList caps pre left.toList [up] got budget kept.toList
+
+def wants : List Json := wantExamples ++ (List.range generated).map fun i => randomWantVector (i + 1)
+
+def randomOp (r : Rng) : Op Value × Rng :=
+  let (op, r) := r.below 4
+  let (ty, r) := pick r [task, note] task
+  let (k, r) := r.below 3
+  let (n, r) := r.below 4
+  match op with
+  | 0 => let (isRef, r) := r.below 2
+         (.put ty [(utf8 "x1", if isRef = 0 then .lit (.uint k) else .ref n)], r)
+  | 1 => (.patch ty (rows [("x1", .uint k)]) (rows [("done", .uint 1)]), r)
+  | 2 => (.remove ty (rows [("done", .uint 1)]), r)
+  | _ => let (w, r) := pick r [1, 2, 3] 1
+         (.edit ty ⟨w, 4, 0⟩ (utf8 "x1") (.uint k), r)
+
+def gGrants : List (List Grant) := [everything [task, note], everything [task],
+  [⟨task, .patch, some [utf8 "done"]⟩, ⟨task, .putNew, none⟩], []]
+
+def randomMutationVector (seed : Nat) : Json := Id.run do
+  let r := Rng.seed (seed + 9000)
+  let (n, r) := r.below 5
+  let mut r := r
+  let mut ops := #[]
+  for _ in [0:n + 1] do
+    let (op, r') := randomOp r
+    ops := ops.push op
+    r := r'
+  let (c, r1) := r.below 9
+  let (g, _) := pick r1 gGrants []
+  return mutationVector s!"seed {seed}" 1 c g todo ops.toList
+
+def mutations : List Json := mutationExamples ++ (List.range generated).map fun i => randomMutationVector (i + 1)
+
+def gInvoices (r : Rng) (docs : List DocId) : List (Rec Value) × Rng := Id.run do
+  let mut r := r
+  let mut out := #[]
+  for d in docs do
+    let (c, r1) := pick r ["ana", "ben", "cai"] "ana"
+    let (t, r2) := r1.below 5
+    let (twice, r3) := r2.below 4
+    out := out.push (⟨d, invoice, rows [("customer", text c), ("total", .uint (100 * t))]⟩ : Rec Value)
+    if twice = 0 then out := out.push ⟨d, invoice, rows [("customer", text c), ("total", .uint (100 * t + 50))]⟩
+    r := r3
+  return (out.toList, r)
+
+def randomIndexVector (seed : Nat) : Json := Id.run do
+  let r := Rng.seed (seed + 9500)
+  let all := (List.range 6).map inv
+  let (docsV, r1) := subset r all
+  let (dbV, r2) := gInvoices r1 docsV
+  let (unfolded, r3) := subset r2 all
+  -- what the directory lists now: everything listed at V or unfolded, minus unfolded Docs that went
+  let (gone, r4) := subset r3 unfolded
+  let now := all.filter fun d => (docsV.contains d || unfolded.contains d) && !gone.contains d
+  let (fresh, r5) := gInvoices r4 (unfolded.filter now.contains)
+  let db := dbV.filter (fun x => !unfolded.contains x.doc) ++ fresh
+  let (c, r6) := pick r5 ["ana", "ben", "cai"] "ana"
+  let (lo, r7) := r6.below 5
+  let (ranged, _) := r7.below 2
+  let p : Probe Value := ⟨[text c], if ranged = 0 then none else some (.uint (100 * lo), .uint 10000)⟩
+  return indexVector s!"seed {seed}" byCustomer dbV db docsV unfolded now p
+
+def lookups : List Json := indexExamples ++ (List.range generated).map fun i => randomIndexVector (i + 1)
+
+end Engine
+
+/-! ## Docs: sealed indexes (`Aven.DB.Docs.Index`) -/
+
+/-- The vectors' boundary, the spec's rule with fewer bits: an entry whose BLAKE3's first byte has its low 2 bits zero
+ends its node (about four entries a node; the spec uses 6 bits). Any rule on the entry alone keeps the theorems. -/
+def indexBoundary (e : List UInt8) : Bool := ((Aven.Core.Blake3.digest e).headD 0).toNat % 4 == 0
+
+open Docs.Key in
+def Aven.DB.Docs.Key.Field.json : Field → Json
+  | .bytes b => Json.mkObj [("bytes", Aven.Core.hex b)]
+  | .text b => String.fromUTF8! ⟨b.toArray⟩
+  | .nint n => toJson (-(n : Int) - 1)
+  | .uint n => toJson n
+
+open Docs.Key in
+def keyCases : List (String × List Field) := [
+  ("an unsigned integer", [.uint 1000]), ("a negative integer", [.nint 4]),
+  ("text with a zero byte", [.text [0x61, 0x00, 0x62]]), ("text, then a number", [.text "Acme".toUTF8.toList, .uint 7]),
+  ("bytes", [.bytes [0x00, 0xFF]]), ("nothing", [])]
+
+open Docs.Key in
+def keyPairs : List (String × List Field × List Field) := [
+  ("shorter text first by code point, not by length", [.text "b".toUTF8.toList], [.text "ab".toUTF8.toList]),
+  ("a prefix first", [.text "Acme".toUTF8.toList], [.text "Acme".toUTF8.toList, .uint 1]),
+  ("negatives before positives", [.nint 0], [.uint 0]),
+  ("-5 before -1", [.nint 4], [.nint 0]),
+  ("255 before 256", [.uint 255], [.uint 256]),
+  ("a zero byte inside text", [.text [0x61, 0x00]], [.text [0x61]])]
+
+open Docs.Key in
+def keys : List Json :=
+  (keyCases.map fun (name, t) => vector name (Json.arr (t.map Field.json).toArray) (Aven.Core.hex (keyBytes t))) ++
+  keyPairs.map fun (name, a, b) =>
+    vector name (Json.arr #[Json.arr (a.map Field.json).toArray, Json.arr (b.map Field.json).toArray])
+      (toJson (Aven.Core.lexLt (keyBytes a) (keyBytes b)))
+
+open Docs.Key in
+/-- Invoices by vendor and total, each its Doc's entry. -/
+def invoices : List (List Field × String) := [
+  ([.text "Acme".toUTF8.toList, .uint 120], "d:01"), ([.text "Bolt".toUTF8.toList, .uint 40], "d:02"),
+  ([.text "Acme".toUTF8.toList, .uint 7], "d:03"), ([.text "Ab".toUTF8.toList, .uint 900], "d:04"),
+  ([.text "Acme".toUTF8.toList, .uint 3000], "d:05"), ([.text "Zed".toUTF8.toList, .uint 1], "d:06")]
+
+open Docs.Key in
+def invoiceEntry (fs : List Field) (doc : String) : List UInt8 := entry fs ⟨⟨doc.toUTF8.toList⟩⟩
+
+open Docs.Key in
+def indexCases : List (String × List (List Field × String) × Nat × List Field) := [
+  ("Acme's invoices, by total", invoices, 64, [.text "Acme".toUTF8.toList]),
+  ("the same entries, another order", invoices.reverse, 64, [.text "Acme".toUTF8.toList]),
+  ("small nodes, cut by size", invoices, 40, [.text "Acme".toUTF8.toList]),
+  ("one entry twice, folded once", invoices ++ invoices.take 1, 64, [.text "Bolt".toUTF8.toList])]
+
+open Docs.Key in
+def indexes : List Json :=
+  indexCases.map fun (name, es, limit, pre) =>
+    let bs := es.map fun (fs, d) => invoiceEntry fs d
+    let lo := keyBytes pre
+    let hi := lo ++ [0xFF]
+    let shown (b : List UInt8) : Json :=
+      match es.find? (fun (fs, d) => invoiceEntry fs d == b) with
+      | some (fs, d) => Json.arr ((fs.map Field.json) ++ [Json.str d]).toArray
+      | none => Aven.Core.hex b
+    let nodes := Docs.Index.chunks indexBoundary List.length limit (Docs.Index.entries bs)
+    let found := Docs.Index.lookup indexBoundary List.length limit lo hi bs
+    vector name (Json.mkObj [("entries", Json.arr (bs.map shown).toArray), ("limit", toJson limit),
+        ("prefix", Json.arr (pre.map Field.json).toArray)])
+      (Json.mkObj [("nodes", Json.arr (nodes.map fun n => Json.arr (n.map shown).toArray).toArray),
+        ("found", Json.arr (found.map shown).toArray)])
 
 /-- One vector per line, so a change reads as a diff of lines. -/
 def render (vs : List Json) : String :=
@@ -425,5 +746,7 @@ def main (args : List String) : IO Unit := do
   IO.FS.createDirAll dir
   for (file, vs) in [("status.json", status), ("presence.json", presence), ("timeline.json", timeline),
       ("wire.json", wire), ("store.json", store), ("hashes.json", hashes), ("refs.json", refs),
-      ("chat.json", chat), ("files.json", files), ("chats.json", chats)] do
+      ("chat.json", chat), ("files.json", files), ("chats.json", chats), ("queries.json", queries),
+      ("wants.json", wants), ("mutations.json", mutations), ("merges.json", merges), ("lenses.json", lenses),
+      ("indexes.json", indexes), ("lookups.json", lookups), ("keys.json", keys)] do
     IO.FS.writeFile (dir / file) (render vs)

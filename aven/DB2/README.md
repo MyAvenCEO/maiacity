@@ -73,6 +73,9 @@ avenOS        the client app: one UI, several targets. The browser now, the Mac 
 avenSANDBOX   the box all of it is built and tested in
 ```
 
+avenPEER is the edge: it does all the I/O and runs avenDB's pure cores, and nothing in them depends on it
+([`ARCHITECTURE.md`](ARCHITECTURE.md#the-whole-on-one-page), decision A24).
+
 | Name | What |
 |---|---|
 | avenOS | the client app over everything below it: a dashboard of apps, the first two Vault and Control Room, and an account switcher for the people you may act as. Off the box, its browser client shows "avenOS · coming soon" for now; a Mac app with Tauri follows |
@@ -234,8 +237,9 @@ and peer to peer: [`ARCHITECTURE.md`](ARCHITECTURE.md). Every term of every part
 
 Each plan is its own document; there is no numbered roadmap here (Samuel, 30 Oct 2026). The box:
 [`SANDBOX.md`](SANDBOX.md). Production: [`PRODUCTION.md`](PRODUCTION.md). The members' network:
-[`MILESTONE2.md`](MILESTONE2.md). The store: [`store`](store/README.md). Caps: [`id/caps`](id/caps/README.md). The data
-design: [`db/docs`](db/docs/README.md), [`db/engine`](db/engine/README.md) and [`db/ontology`](db/ontology/README.md).
+[`MILESTONE2.md`](MILESTONE2.md). Every Peer can do the Aven Peer's jobs: [`PEERS.md`](PEERS.md). The store:
+[`store`](store/README.md). Caps: [`id/caps`](id/caps/README.md). The data design: [`db/docs`](db/docs/README.md),
+[`db/engine`](db/engine/README.md) and [`db/ontology`](db/ontology/README.md).
 
 ## How we work
 

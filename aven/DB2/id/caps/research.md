@@ -485,7 +485,7 @@ this package and keeps the router's place for the check.
 
 ### 1. The question
 
-Who may make what happen, and how can anyone check it without trusting a server? Every system below answers part of
+Who may make what happen, and how can anyone check it without trusting any one peer? Every system below answers part of
 it. avenDB-old answered most of it, proved it in Lean, and grew too many concepts doing so.
 
 ### 2. Where we looked
@@ -596,7 +596,7 @@ update is deterministic and complete; that part is tested, not proven. Signature
 - **Authority by name.** The gate finds admins by the cap group named `Admin`; standing grants are found by a name
   prefix; the app opens pages by the names of the groups a person holds. The app does look the groups up in the right
   coop by its id, never by its name, but a name is still the key.
-- **A server not fully blind.** The gate must read Maia City's cap-group entries.
+- **A gate not fully blind.** The gate must read Maia City's cap-group entries.
 - **Uncounted writes as log bloat.** A write through a write-level share is accepted by relays even when its ops
   forbid it, and stays in the log forever.
 - **Social graph in the clear.** Relays see who holds which share, at which level, from whom, and which shares reach
@@ -730,7 +730,8 @@ What failed, as patterns:
 9. **Hidden is not refused.** What a caller is not shown must still be refused at the door.
 10. **Laws are code.** Never enforced by prompts, by reading source text, or by names.
 11. **Human approval is a co-signature** over one digest, used once, and the passkey signs the thing itself.
-12. **Short grants for servers, revocable capabilities for peers.** Each fits a different place.
+12. **Short grants where one host checks online, revocable capabilities where peers check offline.** Each fits a
+    different place.
 13. **Viewing as someone else narrows rights** and never widens them.
 14. **Recovery is never one key.** Guardians, a quorum, and a delay in which the owners can cancel.
 15. **Hosts see ciphertext and as little metadata as possible,** including the social graph.
@@ -746,7 +747,7 @@ Strip each concept to the job it does; where two do the same job, keep one. Four
 
 | Essential | Its one job |
 | --- | --- |
-| **Key** | The only thing that can sign. Passkeys, device keys, invite keys, recovery keys and server keys are all keys; they differ only in who keeps them |
+| **Key** | The only thing that can sign. Passkeys, device keys, invite keys, recovery keys and a keeper's keys are all keys; they differ only in who keeps them |
 | **Vault** | A principal: a set of owners (keys or vaults) and a rule for when they agree (k of n). People, coops, networks and devices are vaults of different kinds, and ownership forms the tree |
 | **Capability** | A signed grant from a vault that narrows one it holds: to whom, which ops, on what, and under which conditions (expiry, uses, budget, approval) |
 | **Proof** | The chain from a signing key, through owners and capabilities, to one act. Anyone can check it |
@@ -802,7 +803,7 @@ A checklist from avenDB-old's shares and avenOS's grants:
 3. **Recovery:** who the guardians are, and how long the delay.
 4. **Post-quantum signatures:** when ML-DSA joins through the suite byte.
 5. **Actors and keys:** does an actor ever hold a key, or only capabilities the kernel holds for it?
-6. **Offline checks and short grants:** which places verify capability chains, and which accept short server grants.
+6. **Offline checks and short grants:** which places verify capability chains, and which accept short grants.
 7. **Metadata:** how much of a capability a relay must see to route.
 
 ### 13. Next steps

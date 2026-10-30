@@ -11,8 +11,12 @@
 //   too, their chunks fetched from the Aven Peer, which keeps every file, or from Alice;
 // - Alice shares an HTML page and an SVG with a script: Bob's chat shows each as a download link only, and opened in a
 //   tab of his own neither runs on avenOS's origin;
-// - last, a third browser on Bob's origin, with an empty OPFS, joins later and catches up on the whole chat (3); it
-//   writes at once, before it knows its own head, and the line continues Bob's chain: never a fork of it.
+// - Alice deletes one of her lines and her image (`Aven.DB.Chains`, "Deleting a line"): each shows deleted in place at
+//   once, and in Bob's chat once the retraction arrives; Bob gets no delete on her lines; the image leaves the Aven
+//   Peer's store and Bob's, so /files/<hash> serves it no more;
+// - last, a third browser on Bob's origin, with an empty OPFS, joins later and catches up on the whole chat (3), the
+//   deleted lines deleted; it writes at once, before it knows its own head, and the line continues Bob's chain: never a
+//   fork of it.
 //
 // The fork and the stranger's line are signed here with the cast's test keys (public on purpose, valid only inside
 // the box), as a cloned device or an outsider would, and sent through Alice's Peer-Light as they are. What a line's
@@ -267,6 +271,39 @@ for (const { name, mimeType } of hostile) {
 const ran = await bob.evaluate(() => ({ heard: window.ran, stored: localStorage.getItem('ran') }));
 if (ran.heard.length || ran.stored) problems.push(`a shared file's script ran on Bob's avenOS: ${JSON.stringify(ran)}`);
 await bob.screenshot({ path: `${run}/dome-bob-files.png` });
+
+// Alice deletes her second line and her image, for everyone, through the bubble's delete and its confirmation
+const remove = async (page, li) => {
+	await li.hover();
+	await li.getByTestId('delete').click();
+	await page.getByTestId('delete-yes').click();
+};
+const doomed = alice.getByTestId('lines').locator('li', { hasText: written[1] }).last();
+const doomedId = await doomed.getAttribute('data-id');
+const imageLine = alice.getByTestId('lines').locator('li', { has: alice.locator(`[data-testid="file"][data-file="${file}"]`) }).last();
+const imageId = await imageLine.getAttribute('data-id');
+if ((await bob.getByTestId('lines').locator(`li[data-id="${doomedId}"]`).getByTestId('delete').count()) !== 0) problems.push("Bob's chat offers a delete on Alice's line");
+const deletedAt = Date.now();
+await remove(alice, doomed);
+await remove(alice, imageLine);
+for (const [who, page] of [
+	['Alice', alice],
+	['Bob', bob],
+])
+	for (const id of [doomedId, imageId])
+		if (!(await seen(page.locator(`li[data-id="${id}"] [data-testid="deleted"]`), who === 'Alice' ? 3_000 : 30_000)))
+			problems.push(`${who}'s chat does not show line ${id} deleted`);
+report.deletedMs = Date.now() - deletedAt;
+if (await bob.getByTestId('lines').locator('li', { hasText: written[1] }).count()) problems.push("Bob's chat still shows the deleted line's words");
+const dropped = await line((l) => l.peer === 'aven-peer' && l.event === 'deleted' && l.files?.includes(file), deletedAt, 30_000);
+if (!dropped) problems.push("the Aven Peer did not drop the deleted image's bytes");
+const gone = await until(
+	() => bob.evaluate(async (path) => (await fetch(`${path}?gone=${Date.now()}`).catch(() => null))?.status !== 200, `/files/${file}`),
+	30_000,
+);
+if (!gone) problems.push("Bob's /files/<hash> still serves the deleted image");
+await alice.screenshot({ path: `${run}/dome-alice-deleted.png` });
+await bob.screenshot({ path: `${run}/dome-bob-deleted.png` });
 // last, a third browser on Bob's origin, its OPFS empty, joins later and catches up from the Aven Peer. It has Bob's
 // cast key, so Bob's own browser closes first: two Peer-Lights with one key would take the relay from each other
 const whole = await texts(alice);

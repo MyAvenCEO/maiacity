@@ -2,7 +2,7 @@
 // always"). `pins()` reads what is pinned, `newest()` asks each pin's source, and `moves()` says what a bump would move.
 // It only reads: `bun run bump` (bump.mjs) writes, and `bun run doctor` lists what's behind. A source the network
 // refuses is named with its reason, never guessed. Node's and bun's own modules only, so it runs on the host.
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { $ } from 'bun';
 
@@ -11,7 +11,9 @@ const repo = resolve(db2, '../..');
 const dockerfile = 'sandbox/box/Dockerfile';
 // avenDB's own workflows, relative to aven/DB2
 const workflows = ['../../.github/workflows/avensandbox.yml', '../../.github/workflows/avensandbox-image.yml'];
-const leanToolchains = ['id/spec/lean-toolchain', 'db/spec/lean-toolchain'];
+// every Lean spec's toolchain, relative to aven/DB2: its own, and those outside it that vectors.sh builds
+const leanToolchains = ['core/spec/lean-toolchain', 'id/spec/lean-toolchain', 'db/spec/lean-toolchain',
+	'../runtimes/spec/lean-toolchain', '../actor/spec/lean-toolchain'].filter((file) => existsSync(join(db2, file)));
 // Pins held back by hand, each with its reason; none since the store's own opfs driver replaced OpenDAL's forked one.
 const held = {};
 // What ships together: the wasm-bindgen CLI follows the crate; Playwright's image follows the npm package
