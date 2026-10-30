@@ -395,7 +395,9 @@ async fn main() -> Result<(), Error> {
             );
             tokio::spawn(async move {
                 let Ok(index) = file.file.parse() else { return };
-                let Ok(_turn) = keeping.acquire_owned().await else { return };
+                let Ok(_turn) = keeping.acquire_owned().await else {
+                    return;
+                };
                 let kept = keep::keep(
                     &endpoint, &at, &held, &*store, from, index, file.size, &me, &notes,
                 )

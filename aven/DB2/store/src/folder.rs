@@ -50,7 +50,10 @@ pub struct MemFolder {
 
 impl MemFolder {
     pub fn new(moves: bool) -> Self {
-        Self { files: Arc::default(), moves }
+        Self {
+            files: Arc::default(),
+            moves,
+        }
     }
 
     /// Every file and its bytes.
@@ -60,12 +63,18 @@ impl MemFolder {
 
     /// A folder of its own holding these files.
     pub fn with_files(files: BTreeMap<String, Vec<u8>>, moves: bool) -> Self {
-        Self { files: Arc::new(Mutex::new(files)), moves }
+        Self {
+            files: Arc::new(Mutex::new(files)),
+            moves,
+        }
     }
 
     /// Sets a file's bytes directly, as a crash leaves them.
     pub fn set(&self, path: &str, bytes: &[u8]) {
-        self.files.lock().expect("files").insert(path.into(), bytes.to_vec());
+        self.files
+            .lock()
+            .expect("files")
+            .insert(path.into(), bytes.to_vec());
     }
 }
 
@@ -84,7 +93,12 @@ impl Folder for MemFolder {
     }
 
     async fn size(&self, path: &str) -> Result<Option<u64>> {
-        Ok(self.files.lock().expect("files").get(path).map(|b| b.len() as u64))
+        Ok(self
+            .files
+            .lock()
+            .expect("files")
+            .get(path)
+            .map(|b| b.len() as u64))
     }
 
     async fn write(&self, path: &str, bytes: &[u8]) -> Result<()> {

@@ -13,7 +13,8 @@ use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
     DomException, FileSystemDirectoryHandle, FileSystemFileHandle, FileSystemGetDirectoryOptions,
-    FileSystemGetFileOptions, FileSystemReadWriteOptions, FileSystemSyncAccessHandle, WorkerGlobalScope,
+    FileSystemGetFileOptions, FileSystemReadWriteOptions, FileSystemSyncAccessHandle,
+    WorkerGlobalScope,
 };
 
 use crate::folder::Folder;
@@ -32,14 +33,17 @@ pub struct OpfsFolder {
 
 fn backend(e: JsValue) -> Error {
     match e.dyn_ref::<DomException>() {
-        Some(d) if d.name() == "QuotaExceededError" => Error::Backend(format!("OPFS is full: {}", d.message())),
+        Some(d) if d.name() == "QuotaExceededError" => {
+            Error::Backend(format!("OPFS is full: {}", d.message()))
+        }
         Some(d) => Error::Backend(format!("OPFS {}: {}", d.name(), d.message())),
         None => Error::Backend(format!("OPFS: {e:?}")),
     }
 }
 
 fn named(e: &JsValue, name: &str) -> bool {
-    e.dyn_ref::<DomException>().is_some_and(|d| d.name() == name)
+    e.dyn_ref::<DomException>()
+        .is_some_and(|d| d.name() == name)
 }
 
 async fn wait(p: Promise) -> Result<JsValue> {
@@ -48,7 +52,9 @@ async fn wait(p: Promise) -> Result<JsValue> {
 
 async fn sleep(ms: i32) {
     let p = Promise::new(&mut |done, _| {
-        if let Ok(set) = Reflect::get(&js_sys::global(), &"setTimeout".into()).and_then(|f| f.dyn_into::<Function>()) {
+        if let Ok(set) = Reflect::get(&js_sys::global(), &"setTimeout".into())
+            .and_then(|f| f.dyn_into::<Function>())
+        {
             let _ = set.call2(&JsValue::NULL, &done, &ms.into());
         }
     });
@@ -60,13 +66,17 @@ async fn root() -> Result<FileSystemDirectoryHandle> {
     let scope: WorkerGlobalScope = js_sys::global()
         .dyn_into()
         .map_err(|_| Error::Backend("the opfs driver runs in a dedicated worker only".into()))?;
-    Ok(wait(scope.navigator().storage().get_directory()).await?.unchecked_into())
+    Ok(wait(scope.navigator().storage().get_directory())
+        .await?
+        .unchecked_into())
 }
 
 async fn subdir(dir: &FileSystemDirectoryHandle, name: &str) -> Result<FileSystemDirectoryHandle> {
     let options = FileSystemGetDirectoryOptions::new();
     options.set_create(true);
-    Ok(wait(dir.get_directory_handle_with_options(name, &options)).await?.unchecked_into())
+    Ok(wait(dir.get_directory_handle_with_options(name, &options))
+        .await?
+        .unchecked_into())
 }
 
 /// Removes everything in this origin's private file system: what an older avenOS left there, before a store of this
@@ -77,19 +87,30 @@ pub async fn clear_origin() -> Result<()> {
     let mut names = Vec::new();
     loop {
         let next = wait(keys.next().map_err(backend)?).await?;
-        if Reflect::get(&next, &"done".into()).map_err(backend)?.is_truthy() {
+        if Reflect::get(&next, &"done".into())
+            .map_err(backend)?
+            .is_truthy()
+        {
             break;
         }
-        if let Some(name) = Reflect::get(&next, &"value".into()).map_err(backend)?.as_string() {
+        if let Some(name) = Reflect::get(&next, &"value".into())
+            .map_err(backend)?
+            .as_string()
+        {
             names.push(name);
         }
     }
     // removeEntry(name, { recursive: true }), through Reflect: web-sys's options type is a feature the store needn't add
-    let remove: Function = Reflect::get(&dir, &"removeEntry".into()).map_err(backend)?.unchecked_into();
+    let remove: Function = Reflect::get(&dir, &"removeEntry".into())
+        .map_err(backend)?
+        .unchecked_into();
     let options = js_sys::Object::new();
     Reflect::set(&options, &"recursive".into(), &JsValue::TRUE).map_err(backend)?;
     for name in names {
-        let promise: Promise = remove.call2(&dir, &name.into(), &options).map_err(backend)?.unchecked_into();
+        let promise: Promise = remove
+            .call2(&dir, &name.into(), &options)
+            .map_err(backend)?
+            .unchecked_into();
         wait(promise).await?;
     }
     Ok(())
@@ -107,12 +128,17 @@ impl OpfsFolder {
         for name in ["blobs", "refs", "tmp", "meta"] {
             dirs.push((name, subdir(&dir, name).await?));
         }
-        Ok(Self { dirs, open: RefCell::new(Vec::new()) })
+        Ok(Self {
+            dirs,
+            open: RefCell::new(Vec::new()),
+        })
     }
 
     /// The directory and the file's name in it, for a path such as `blobs/<hash>`.
     fn split<'p>(&self, path: &'p str) -> Result<(&FileSystemDirectoryHandle, &'p str)> {
-        let (dir, name) = path.split_once('/').ok_or_else(|| Error::Backend(format!("no folder in {path}")))?;
+        let (dir, name) = path
+            .split_once('/')
+            .ok_or_else(|| Error::Backend(format!("no folder in {path}")))?;
         let handle = self
             .dirs
             .iter()
@@ -215,9 +241,14 @@ fn read_at(h: &FileSystemSyncAccessHandle, range: Option<Range<u64>>) -> Result<
     let mut done = 0;
     while done < buf.len() {
         options.set_at_f64((start + done as u64) as f64);
-        let n = h.read_with_u8_array_and_options(&mut buf[done..], &options).map_err(backend)? as usize;
+        let n = h
+            .read_with_u8_array_and_options(&mut buf[done..], &options)
+            .map_err(backend)? as usize;
         if n == 0 {
-            return Err(Error::Backend(format!("OPFS read stopped at {done} of {} bytes", buf.len())));
+            return Err(Error::Backend(format!(
+                "OPFS read stopped at {done} of {} bytes",
+                buf.len()
+            )));
         }
         done += n;
     }
@@ -242,7 +273,12 @@ impl Folder for OpfsFolder {
             };
             match JsFuture::from(file.array_buffer()).await {
                 Ok(buf) => break Uint8Array::new(&buf).to_vec(),
-                Err(e) if tries < 8 && ["NotFoundError", "NotReadableError", "AbortError"].iter().any(|n| named(&e, n)) => {
+                Err(e)
+                    if tries < 8
+                        && ["NotFoundError", "NotReadableError", "AbortError"]
+                            .iter()
+                            .any(|n| named(&e, n)) =>
+                {
                     tries += 1;
                 }
                 Err(e) => return Err(backend(e)),
@@ -266,7 +302,10 @@ impl Folder for OpfsFolder {
 
     async fn write(&self, path: &str, bytes: &[u8]) -> Result<()> {
         self.forget(path);
-        let file = self.file(path, true).await?.ok_or_else(|| Error::Backend(format!("{path} can't be made")))?;
+        let file = self
+            .file(path, true)
+            .await?
+            .ok_or_else(|| Error::Backend(format!("{path} can't be made")))?;
         let h = Self::handle(&file).await?;
         let written = (|| {
             h.truncate_with_f64(0.0).map_err(backend)?;
@@ -274,9 +313,14 @@ impl Folder for OpfsFolder {
             let mut done = 0;
             while done < bytes.len() {
                 options.set_at_f64(done as f64);
-                let n = h.write_with_u8_array_and_options(&bytes[done..], &options).map_err(backend)? as usize;
+                let n = h
+                    .write_with_u8_array_and_options(&bytes[done..], &options)
+                    .map_err(backend)? as usize;
                 if n == 0 {
-                    return Err(Error::Backend(format!("OPFS write stopped at {done} of {} bytes", bytes.len())));
+                    return Err(Error::Backend(format!(
+                        "OPFS write stopped at {done} of {} bytes",
+                        bytes.len()
+                    )));
                 }
                 done += n;
             }
@@ -287,17 +331,26 @@ impl Folder for OpfsFolder {
     }
 
     async fn rename(&self, from: &str, to: &str) -> Result<bool> {
-        let file = self.file(from, false).await?.ok_or_else(|| Error::Backend(format!("{from} isn't there to move")))?;
-        let Ok(mover) = Reflect::get(&file, &"move".into()).and_then(|f| f.dyn_into::<Function>()) else {
+        let file = self
+            .file(from, false)
+            .await?
+            .ok_or_else(|| Error::Backend(format!("{from} isn't there to move")))?;
+        let Ok(mover) = Reflect::get(&file, &"move".into()).and_then(|f| f.dyn_into::<Function>())
+        else {
             return Ok(false);
         };
         let (dir, name) = self.split(to)?;
         self.forget(to);
-        let p: Promise = mover.call2(&file, dir, &name.into()).map_err(backend)?.unchecked_into();
+        let p: Promise = mover
+            .call2(&file, dir, &name.into())
+            .map_err(backend)?
+            .unchecked_into();
         match JsFuture::from(p).await {
             Ok(_) => Ok(true),
             // an engine whose move() can't do this: the store copies, and nothing moved
-            Err(e) if named(&e, "NotSupportedError") || e.is_instance_of::<js_sys::TypeError>() => Ok(false),
+            Err(e) if named(&e, "NotSupportedError") || e.is_instance_of::<js_sys::TypeError>() => {
+                Ok(false)
+            }
             Err(e) => Err(backend(e)),
         }
     }
@@ -318,10 +371,16 @@ impl Folder for OpfsFolder {
         let mut out = Vec::new();
         loop {
             let next = wait(keys.next().map_err(backend)?).await?;
-            if Reflect::get(&next, &"done".into()).map_err(backend)?.is_truthy() {
+            if Reflect::get(&next, &"done".into())
+                .map_err(backend)?
+                .is_truthy()
+            {
                 return Ok(out);
             }
-            if let Some(name) = Reflect::get(&next, &"value".into()).map_err(backend)?.as_string() {
+            if let Some(name) = Reflect::get(&next, &"value".into())
+                .map_err(backend)?
+                .as_string()
+            {
                 out.push(name);
             }
         }

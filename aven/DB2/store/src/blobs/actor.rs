@@ -19,9 +19,9 @@ use iroh_blobs::api::proto::{self, BlobStatus, Command, ExportRangesItem};
 use iroh_blobs::api::{self, TempTag};
 use iroh_blobs::store::IROH_BLOCK_SIZE;
 use irpc::channel::mpsc;
-use tokio::sync::oneshot;
 use range_collections::range_set::RangeSetRange;
 use ref_cast::RefCast;
+use tokio::sync::oneshot;
 
 use super::Shared;
 use crate::{Error, Hash};
@@ -35,7 +35,12 @@ const INDEX_MAX: usize = 256 << 10;
 /// which builds one. The store's test `iroh_blobs_runs_on_our_store` fails at once if that ever stops working.
 pub(super) fn spawn(store: Shared) -> api::Store {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<Command>(32);
-    let actor = Arc::new(Actor { store, indexes: Mutex::default(), ahead: Mutex::default(), last: Mutex::default() });
+    let actor = Arc::new(Actor {
+        store,
+        indexes: Mutex::default(),
+        ahead: Mutex::default(),
+        last: Mutex::default(),
+    });
     n0_future::task::spawn(async move {
         while let Some(cmd) = rx.recv().await {
             if let Command::Shutdown(cmd) = cmd {
@@ -91,7 +96,10 @@ impl Actor {
 
     fn kept_index(&self, hash: &Hash) -> Option<Bytes> {
         let indexes = self.indexes.lock().unwrap();
-        indexes.iter().find(|(h, _)| h == hash).map(|(_, b)| b.clone())
+        indexes
+            .iter()
+            .find(|(h, _)| h == hash)
+            .map(|(_, b)| b.clone())
     }
 
     /// Keeps a blob that may be an index: at most `INDEX_MAX` bytes, a list of hashes. A small blob that isn't one
@@ -170,7 +178,9 @@ impl Actor {
                     // against their name, so its root is the hash asked for
                     let outboard = PreOrderMemOutboard::create(&data, IROH_BLOCK_SIZE);
                     let tx = Sink::ref_cast_mut(&mut cmd.tx);
-                    traverse_ranges_validated(data, outboard, &cmd.inner.ranges, tx).await.ok();
+                    traverse_ranges_validated(data, outboard, &cmd.inner.ranges, tx)
+                        .await
+                        .ok();
                 }
                 Err(e) => {
                     cmd.tx.send(EncodedItem::Error(e.into())).await.ok();
@@ -182,7 +192,9 @@ impl Actor {
                 }
             }
             Command::ImportBao(cmd) => {
-                let done = self.import_bao(ours(cmd.inner.hash), cmd.inner.size.get(), cmd.rx).await;
+                let done = self
+                    .import_bao(ours(cmd.inner.hash), cmd.inner.size.get(), cmd.rx)
+                    .await;
                 cmd.tx.send(done.map_err(Into::into)).await.ok();
             }
             Command::ListBlobs(cmd) => match self.store.list().await {
@@ -265,7 +277,10 @@ impl Actor {
                 RangeSetRange::RangeFrom(r) => (size.min(*r.start), size),
             };
             if start < end {
-                let leaf = Leaf { offset: start, data: data.slice(start as usize..end as usize) };
+                let leaf = Leaf {
+                    offset: start,
+                    data: data.slice(start as usize..end as usize),
+                };
                 tx.send(leaf.into()).await?;
             }
         }
@@ -274,7 +289,12 @@ impl Actor {
 
     /// A fetched blob, checked by iroh-blobs as it arrives, kept whole: buffered, then one `put` once every byte is
     /// here. A fetch of part of a blob keeps nothing (whole or absent); a blob held already is not written again.
-    async fn import_bao(&self, hash: Hash, size: u64, mut rx: mpsc::Receiver<BaoContentItem>) -> io::Result<()> {
+    async fn import_bao(
+        &self,
+        hash: Hash,
+        size: u64,
+        mut rx: mpsc::Receiver<BaoContentItem>,
+    ) -> io::Result<()> {
         if self.store.has(&hash).await.map_err(io_err)? {
             while rx.recv().await.map_err(io::Error::other)?.is_some() {}
             return Ok(());

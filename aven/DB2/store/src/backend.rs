@@ -83,7 +83,10 @@ pub async fn opfs(root: &str) -> Result<crate::opfs::OpfsStore<crate::opfs_folde
 #[cfg(target_arch = "wasm32")]
 pub async fn opfs_or_reset(
     root: &str,
-) -> Result<(crate::opfs::OpfsStore<crate::opfs_folder::OpfsFolder>, Option<String>)> {
+) -> Result<(
+    crate::opfs::OpfsStore<crate::opfs_folder::OpfsFolder>,
+    Option<String>,
+)> {
     match opfs(root).await {
         Ok(store) => Ok((store, None)),
         Err(Error::Outdated(why)) => {
