@@ -115,8 +115,8 @@ and `alice` can run it too, so what is tested is what ships.
 
 ### The deploy
 
-A workflow run by hand (`avendeploy.yml`), behind the GitHub environment `production`, which Samuel approves each run
-of. In order:
+A workflow run by hand (`avendeploy.yml`), in the GitHub environment `production`, which holds its variables. No
+required reviewer for now (Samuel, 30 Oct 2026): starting the run is the decision. In order:
 
 1. **Bucket:** `city-maia-aven` made if it is missing, then a probe that a stale `If-Match` and `If-None-Match: *` get
    412 on PUT and DELETE. If Hetzner doesn't honour them, the job says so, and the store leans on the one writer alone.
