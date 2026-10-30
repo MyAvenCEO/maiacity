@@ -1,16 +1,23 @@
 // The Peer-Light's worker (SANDBOX.md, "avenOS in the browser"): one per origin, shared by every tab and frame that
 // shows it, since two Peer-Lights with one key would take the relay from each other. It runs the wasm core, posts
 // every timeline line to the box, and tells every page that connects the lines so far and each new one.
+import * as standin from './standin.js';
+
 const pages = new Set();
 const lines = [];
 let started;
 let light;
 
 function tell(line) {
+	if (standin.standing(light) && !standin.before(line, toPages)) return;
+	toPages(line);
+	fetch(`/events/${JSON.parse(line).peer}`, { method: 'POST', body: line }).catch(() => {});
+}
+
+function toPages(line) {
 	lines.push(line);
 	if (lines.length > 200) lines.shift();
 	for (const port of pages) port.postMessage(line);
-	fetch(`/events/${JSON.parse(line).peer}`, { method: 'POST', body: line }).catch(() => {});
 }
 
 // A browser's own device key, on an Aven Peer's host without a cast (PRODUCTION.md, Part A): made here, in the
@@ -47,7 +54,18 @@ function connect(port) {
 	pages.add(port);
 	port.onmessage = async ({ data }) => {
 		if (data?.start) started ??= start(data.start);
-		// a claim or a sign-in for the Aven Peer, from the page
+		if (data?.say || data?.send) await started;
+		if (standin.standing(light) && standin.take(data)) return;
+		// a chat line from the page, for the room: the Peer-Light signs and gossips it (MILESTONE2.md, thread A)
+		if (data?.say) {
+			await started;
+			try {
+				light.say(data.say);
+			} catch (error) {
+				port.postMessage(JSON.stringify({ t: Date.now(), peer: 'page', event: 'refused', why: String(error?.message ?? error) }));
+			}
+		}
+		// a claim, a sign-in, an invite, a withdrawal or a join for the Aven Peer, from the page
 		if (data?.send) {
 			await started;
 			try {

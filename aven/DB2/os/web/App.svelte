@@ -5,17 +5,24 @@
 	// that device, localhost is the box's own view, which holds every test key, and any other host is a visitor.
 	import Avatar from './Avatar.svelte';
 	import Dashboard from './Dashboard.svelte';
+	import Chat from './apps/Chat.svelte';
 	import ControlRoom from './apps/ControlRoom.svelte';
+	import Invite from './apps/Invite.svelte';
 	import Vault from './apps/Vault.svelte';
 	import { ownerName, owners, tree, vaultName } from './id.js';
+	import { room } from './room.svelte.js';
 
-	let { cast, device } = $props();
+	// `config`: the host's network (network.svelte.js), on an Aven Peer's host without a cast
+	let { cast, device, config = null } = $props();
 
 	const mine = $derived(device ? tree.accounts(device) : location.hostname === 'localhost' ? tree.accounts() : []);
-	const apps = [
+	// Invite is for the admin's owners only: the Aven Peer tells the open invites to their devices and to no other
+	const apps = $derived([
 		{ id: 'vault', name: 'Vault', what: 'Who owns it and all it governs', component: Vault },
 		{ id: 'control-room', name: 'Control Room', what: 'Every peer it governs, side by side', component: ControlRoom },
-	];
+		{ id: 'chat', name: 'Chat', what: "The network's room, live", component: Chat },
+		...(room.invites ? [{ id: 'invite', name: 'Invite', what: 'Let someone into the network', component: Invite }] : []),
+	]);
 
 	const read = () => location.hash.replace(/^#\/?/, '').split('/');
 	let route = $state(read());
@@ -73,7 +80,7 @@
 
 {#if open}
 	{@const App = open.component}
-	<App {cast} {account} {device} target={route[2]} />
+	<App {cast} {account} {device} {config} target={route[2]} />
 {:else}
 	<Dashboard {cast} {device} {account} {apps} />
 {/if}
