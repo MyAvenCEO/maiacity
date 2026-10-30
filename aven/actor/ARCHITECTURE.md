@@ -191,6 +191,7 @@ definitions, and every placed one is an actor (section 6).
 | `faces` | Optional: named faces, each a `present` function plus a `view-runtime` part and a `css-runtime` part |
 | `init` | The first state |
 | `lifetime` | `durable` (the default): the actor lasts until it is retired, and later persists in avenDB. `mounted`: it lives while the face that placed it shows it, and goes when it is unplaced |
+| `replaces` | Optional: the name of the definition this one upgrades. Its actors move to the new definition, and a cap follows the upgrade only as far as the old interface reached (section 11) |
 | `loads` | Later, with avenDB's engine: what the actor needs, in tiers. Devices decide how deep they keep it, and the `now` tier is handed into each turn as part of `given`, so an actor never fetches (section 11) |
 
 An actor's code and faces are **parts**: values in a format, for the runtime of that format. Actors are mostly JSON;
@@ -371,7 +372,7 @@ Each later step replaces a layer's implementation, not its interface:
 | **Wants** | The definition's `loads` (section 6): avenDB's engine keeps them current and hands the `now` tier into each turn |
 | **Peers** | An actor lives on one peer, its home; its address names that peer's iroh `EndpointId`. Sending stays "append to the receiver's inbox log", now carried between peers by avenDB's sync. When the home is away, a keeper peer holds the inbox. There is no bus in the middle, and no gossip for messages |
 | **Live delivery** | For speed, `message` and `ack` frames on `aven/db/1` deliver an append directly, point to point, ahead of sync. The receiver drops duplicates by `(from, seq)` |
-| **Capabilities** | Caps are held by vaults, and the kernel holds them for its actors: actors hold no keys, and the signer of every write is a device. A message gains a `cap` field beside `run`, the cap it acts under; a turn's effects carry that cap or a narrower one, and an actor uses its own standing cap only for messages its definition declares as its own. A tell cap names messages of an interface, which the definition's hash pins. The inbox Doc from A to B belongs to A's vault and is written by A's home device; B's vault reads it, and B's router checks the cap: checked twice. Designed in avenID's caps spec, not here |
+| **Capabilities** | Caps are held by vaults, and the kernel holds them for its actors: actors hold no keys, and the signer of every write is a device. A message gains a `cap` field beside `run`, the cap it acts under; a turn's effects carry that cap or a narrower one, and an actor uses its own standing cap only for messages its definition declares as its own. A tell cap names messages of an interface, which the definition's hash pins. The inbox Doc from A to B belongs to A's vault and is written by A's home device; B's vault reads it, and B's router checks the cap: checked twice. Across an upgrade, a definition names the one it `replaces`: a tell cap follows the upgrade while every message it names keeps its schema, and a message that is new or changed is not covered until it is granted. Designed in avenID's caps spec, not here |
 | **Compaction** | Old journal and inbox entries folded into snapshots, once we decide what may be forgotten |
 
 ## 12. Not in the engine
