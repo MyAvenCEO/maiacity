@@ -76,18 +76,22 @@ everything downstream reacts to the new head (README, rule 4).
 
 ### Sync
 
-**Live.** Changes not yet sealed travel over `aven/db/1` to the document's other peers that are online: members whose
-caps let them receive it (README, rule 9).
+**Live.** Changes not yet sealed travel as signed, sealed messages on an iroh-gossip topic shared by the peers that hold
+the document. The topic's id is derived from the id of the documents it carries, so the Aven Peer can join it and
+forward what it cannot read, as it keeps the chat's room alive in milestone 2. Gossip is best effort; catching up
+fills any gap.
 
-**At rest.** Segments and snapshots are blobs, moved by blob transfer and verified by their hash; a head is a ref.
+**At rest.** Segments and snapshots are blobs, moved by iroh-blobs: a document's snapshot and segments as one request
+(a hash sequence), checked against their BLAKE3 hash as they arrive, from several holders at once. A head is a ref and
+never travels as a blob.
 
 **Catching up.** A device tells a peer its version of each document it keeps. The peer answers with the segments and
 envelopes beyond that version, in the order they build on each other, a page at a time. The device imports each page and
 asks on from the last thing it got, until nothing is left. Every page moves the device's version forward or the step
 stops (rule 6).
 
-**Telling.** When a head changes, the writer tells each peer that may hold the document, directly, with the new digest.
-A peer that is behind asks.
+**Telling.** When a head changes, the writer announces it on the same topic. A peer that is behind asks for the blobs it
+lacks.
 
 **The manifest** says what a device keeps (milestone 7):
 
@@ -99,6 +103,52 @@ A peer that is behind asks.
 A query in the manifest names documents through a place of its rows, so "every project I'm a member of" keeps those
 projects' documents on this device, and a new membership brings a new document. A manifest's queries run only over what
 the device already holds.
+
+### What we take from iroh
+
+iroh's stack is hardened where avenDB-old's own networking hurt most, so the engine writes its own only where iroh has
+no fitting piece. Checked on 30 Oct 2026 against the crates DB2 pins (`Cargo.lock`), iroh-blobs 0.104.0's source, and
+the repository's iroh skill (`.claude/skills/iroh`). The README's table lists the crates; this is how sync uses them.
+
+| Need | From iroh | Notes |
+|---|---|---|
+| Connections, identity, NAT traversal, encryption | `iroh` 1.4.1 endpoint over `noq` (QUIC), its relay | Stable 1.x, already in use. Private: no n0 services (`presets::N0`, n0 DNS), our own relay |
+| The door | endpoint hooks (`after_handshake`), the relay's allow-list | Milestone 2 |
+| Live changes and new heads | `iroh-gossip` 0.101: HyParView membership, PlumTree broadcast | Builds for wasm; best effort, so catch-up stays the guarantee |
+| Moving segments and snapshots | `iroh-blobs` 0.104: its protocol (`/iroh-bytes/4`), verified ranges, resume from what is already held, hash sequences for bundles, a downloader that asks several holders | Pre-production by its own README ("use 0.35 for production"): pinned exactly, behind one module of ours |
+| Who may fetch | iroh-blobs' provider events (`EventMask`: intercept `connected`, `get`, `push`) | A second gate after the door; push off unless a peer is allowed |
+| Verified bytes | `bao-tree` 0.17, the BLAKE3 tree under iroh-blobs | 16 KiB chunk groups, about 0.4 % extra; nothing below 16 KiB needs one |
+| Typed messages of `aven/db/1` | `irpc` 0.17 (already in the lock through iroh-gossip) | Typed request and response streams over iroh, and over in-process channels for the deterministic simulation (README, rule 2) |
+| "Which of these do you have?" | iroh-docs' range-based set reconciliation, as a pattern | For manifests of many documents; per document, Loro's version vectors suffice |
+| Invites, progress, state | `iroh-tickets`, `iroh-metrics`, `n0-watcher` | Invites (milestone 2); the counters behind status and the stall alarm |
+
+Not taken, and why:
+
+- **iroh-docs, the crate:** a last-writer-wins table with timestamps, no revocation and its own storage; documents here
+  are Loro, with caps.
+- **iroh-blobs' tags and its garbage collector:** tags are pins without compare-and-set. Our refs are proven in Lean, and
+  a blob stays while a ref reaches it.
+- **iroh-blobs' file store:** it keeps redb and files on a local disk. The Aven Peer keeps S3, a Peer-Light OPFS, and
+  in a browser iroh-blobs has only a memory store. All of them keep one `Store` (`db/store`).
+
+**Bytes, one of each.** iroh-blobs' `Hash` is plain BLAKE3 of the bytes, which is what `db/store` names a blob by, so a
+segment has one name on disk, on the wire and in S3. Each kind of thing has one source of truth:
+
+| | The one source of truth |
+|---|---|
+| A blob's name | BLAKE3 of its bytes: one `Hash` type for store, docs and iroh-blobs |
+| Its check | the bao tree, made once when the blob is stored, kept beside it, used for local range reads and for transfer alike |
+| Named pointers | refs, compare-and-set (`db/store`) |
+| What keeps a blob | a ref reaching it: head, snapshot, segments |
+| Where bytes rest | `Store`, nothing else |
+| How bytes move | iroh-blobs' protocol |
+
+So iroh-blobs runs on a store of our own over `Store`. In 0.104 a store is an actor answering 23 requests;
+`readonly_mem.rs` (424 lines) is its stated starting point for custom stores, and transfer needs only the bao import
+and export, status and observe among them. `Store` has no appends, so a blob being fetched is buffered until it is whole
+and then put once. Blobs stay small for that: a segment is bounded, and a big file is a hash sequence of chunks, which
+also resumes and deduplicates by chunk. If the custom store costs more than it saves, `bao-tree` serves the same
+protocol's checks directly over `Store`, as maiaCITY's media server already does over S3.
 
 ### The index
 
@@ -189,8 +239,9 @@ holds the rows it was given and applies each delta.
 5. **Sync by version, not by budget.** Comparing versions decides what is sent and redone (README, rule 4); a step with
    no progress stops instead of looping.
 6. **The manifest as queries.** What a device keeps follows what its person works with, and changes when that changes.
-7. **Telling peers directly.** A gossip topic per document would tell every member which documents exist; a direct
-   message tells only peers that may hold it.
+7. **iroh before our own.** Gossip for live changes and heads, iroh-blobs for bytes, irpc for our messages: each is
+   hardened by more use than ours would get. A topic is shared only by the peers holding its documents, so it tells no
+   one else they exist. Our own code is the store under iroh-blobs and the rules above it.
 
 ## What Lean proves
 
@@ -209,9 +260,12 @@ holds the rows it was given and applies each delta.
 
 1. Is the manifest a document of the device's own vault, or of its person's?
 2. Which peer serves a catch-up: any member that holds the document, or the Aven Peer first?
-3. iroh-blobs for segments, or `bao-tree` directly on our store (README, "What we take from iroh")?
+3. iroh-blobs on a custom store over `Store`, or `bao-tree` directly: decided by a spike that serves and fetches a
+   segment both ways, in a Peer and a Peer-Light.
 4. How is the index laid out on disk, and how big may it grow on a phone?
 5. What is a device's query bound by default?
+6. How many documents share a gossip topic: one per document, or one per set of documents shared with the same peers?
+   A device holding thousands of documents can't keep thousands of topics.
 
 ## Not in this spec
 
