@@ -446,6 +446,10 @@ No scenarios yet. The Lean project and the Rust tests build and run in the box w
 conformance suite runs on all four backends, so milestone 2 starts test-first with nothing left to set up. `bun run up
 --check` boots every peer and exits once all four are live: the box's own health check, the one CI runs.
 
+From here on, tests derive from Lean ([README, rule 10](README.md#the-rules)): the hand-written expected values in
+`check.mjs`, `id/core/wasm/check.mjs` and the Rust tests move into Lean examples, exported as test vectors. A thread
+after milestone 1's integration builds it ([Open questions](#open-questions), 8).
+
 ## Layout
 
 ```
@@ -533,10 +537,13 @@ Raised by the threads, not settled in milestone 1:
 4. **`set_ref` on a missing blob.** The store doesn't require the blob to exist. Should the core enforce it?
 5. **The fs folder's fsync.** fs syncs the file but not its folder after the rename: a power loss can lose the last
    write, never tear it.
-6. **A Lean model of compare-and-set.** The store has no Lean model yet. Compare-and-set refs are a small, good target
-   for `Aven.DB`.
+6. **A Lean model of the store's contract** (rule 10's follow-up): blobs and refs with compare-and-set, in `Aven.DB`,
+   exporting traces that every backend replays. The store has no Lean model yet.
 7. **Our own OPFS backend.** OpenDAL's is slow for small writes and ranges, refuses reads that race a commit, and needs
    the worker to answer as the window. Sync access handles in the Peer-Light's worker fix all three.
+8. **Rule 10's vectors** (README; Samuel, 30 Oct): `Aven.ID` and `Aven.DB` export their examples and generated cases
+   as JSON test vectors, and traces for presence and status; the Rust tests, the wasm check and avenOS's check load
+   them; `up --check` regenerates them and fails on a difference. Not built yet.
 
 ## Done when
 

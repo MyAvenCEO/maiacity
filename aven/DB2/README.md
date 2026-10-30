@@ -41,7 +41,13 @@ Each rule is held by a test or a check once there is code to hold.
 8. **The UI is pushed deltas.** It never re-queries.
 9. **One protocol of our own,** behind one ALPN, with no fallbacks for older peers. iroh's protocols (gossip, later
    blobs) sit beside it on the same `Router`.
-10. **The Lean model runs.** It checks the Rust on random traces, so the model can never be simpler than the code.
+10. **Lean is the source of truth, and the tests derive from it.** Every answer a test checks comes from the Lean
+    model. Examples are written once, in Lean, beside the definitions they show, and `lake build` checks them. A Lean
+    program exports them, with generated cases, as test vectors (JSON) that the Rust tests, the wasm and JS build and
+    avenOS's check all load. Models with state, such as the store and presence, export traces that every
+    implementation replays. And the model runs: it checks the Rust on random inputs, so it can never be simpler than
+    the code. No test elsewhere writes its own expected values. `bun run up --check` regenerates the vectors and fails
+    when they differ from what's committed. Only mechanics stay outside Lean: crash safety, rendering, timing.
 11. **Small packages in strict layers,** with a size limit per file.
 12. **Zero legacy.** Nothing here imports, copies or vendors code from `aven/db/` or its crates. Learnings come in as
     rules and tests, never as code. A check will fail on any such import.
