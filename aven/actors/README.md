@@ -1,7 +1,8 @@
 # aven/actors
 
-The actor architecture for the next iteration: what three systems that built one taught us, reduced to first
-principles, and the design we take forward. Status: **discovery**. There is no code here yet.
+What three systems that built an actor architecture taught us, reduced to first principles. Status: **discovery**.
+There is no code here yet. The design itself is [`ARCHITECTURE.md`](ARCHITECTURE.md), the single source of truth for
+the next implementation; where the two disagree, it wins.
 
 Authority (accounts, signers, owners, capabilities, access control) has its own document,
 [`../ID/caps/README.md`](../ID/caps/README.md), because it will live with avenID's signing and vault infrastructure.
@@ -18,9 +19,8 @@ This document links to it wherever authority comes up.
 6. [What maiaCITY already has](#6-what-maiacity-already-has)
 7. [Weak spots we must not repeat](#7-weak-spots-we-must-not-repeat)
 8. [First principles: what each concept is for](#8-first-principles-what-each-concept-is-for)
-9. [The architecture](#9-the-architecture)
-10. [Open questions](#10-open-questions)
-11. [Next steps](#11-next-steps)
+9. [What runtimes taught us](#9-what-runtimes-taught-us)
+10. [The design](#10-the-design)
 
 ## 1. The goal
 
@@ -240,7 +240,7 @@ model's judgment; avenDB's identity, shares and proofs instead of per-peer keys 
     back as plain data (`maia/content/assets/box/engine.js`).
 
   Beside them, the Markdown engine (`maia/site/lib/markdown/index.js`) writes every tag itself from an allowlist, so
-  nothing in Markdown can run, load or lead anywhere. Section 9.9 makes these the actor model's runtimes.
+  nothing in Markdown can run, load or lead anywhere. [`ARCHITECTURE.md`](ARCHITECTURE.md) (section 11) makes these the runtimes of the actor model.
 - **avenDB's rules** (`aven/DB2/README.md`): pure protocol cores as state machines without I/O; no step without
   progress; react to changes, never to states; derived state is a cache keyed by its inputs and code version; only a
   person's or an agent's act writes; Lean is the source of truth and the tests derive from it.
@@ -353,241 +353,30 @@ Everything else in the sources is one of these four, or a role an actor plays:
 | Chat, conversation | An actor that turns a person's words into messages |
 | Window, face, vibe | An actor with no capabilities that projects another actor's state for one viewer |
 | Planner, solver | A pure function from contracts to a plan, which is data. It is an actor only so it can be addressed |
-| Registry, factory, supervisor | System actors: the directory and the lifecycle |
+| Registry, factory, supervisor | The kernel's own duties; a registry is later a query over avenDB |
 | Model, store, clock, HTTP, files, push | Door actors: the only holders of effects in the real world |
 | `emit` routing, `dispatch`, UI events, releasing a held call | One verb, `tell` to an address. Matching contracts is a registry query that picks addresses, not a router |
 | Human gate, permission prompt, access request, approving a new goal | An `ask` addressed to a person. For authority it is a co-signature ([caps](../ID/caps/README.md)) |
 | `shape()` (parsing model text) | Handling the model's `reply` in an ordinary turn |
 | `cap()` host calls inside logic | Effects returned by the turn, or reads handed in with the message |
-| `requires`/`produces`, input and output slots, Studio ports | One thing: typed ports on the interface |
+| `requires`/`produces`, input and output slots, Studio ports | Typed messages on the interface. Contracts for discovery and planning are later actors, not the kernel |
 | `.pl` machine, reducer guards | The machine says which messages are legal now; the logic computes the next state |
 | `record` and `wire`, `said` | The reply is data. Prose for a model is rendered from it by whoever needs prose |
-| `ask()` / interview | `explain`, answered by the kernel from definition, source and state |
+| `ask()` / interview | `explain`: a message an actor may answer from its definition, source and state; later, not the kernel |
 | Metrics, `measure` | A read-only ask |
 | Run ledger, trace, activity feed, held-envelope store, actor state table | The journal and views of it |
 | Derived state, snapshots | Caches of the journal or of the store |
 | Cases, lessons, patterns | Knowledge facts with evidence |
 | Supervision retry | A policy keyed on the interface's declared idempotency |
-| Merge law, members | The derived interface of a composite actor; no new concept |
+| Merge law, members | Not needed: a composite is an actor whose turn tells other actors |
 | Manifest, `loads`, keep share, query held by a view | The actor's declared wants: its dependencies, which the sync engine brings. A want grants nothing |
-| `logic`, `view`, `style`, face, vibe, draw script, Markdown, LaTeX, recipe, chart | Parts: content in a format, for the runtime of that kind (section 9.9) |
+| `logic`, `view`, `style`, face, vibe, draw script, Markdown, LaTeX, recipe, chart | Parts: content in a format, for the runtime of that kind ([`ARCHITECTURE.md`](ARCHITECTURE.md), section 11) |
 | Sandbox, logic core, view engine, math host, asset box, Markdown engine | Runtimes: frozen engines that run any part without trusting it |
-| Skill (the composite) vs actor (the leaf) | Structure, not kind: an actor with members is a composite, one without is a leaf (section 9.8) |
+| Skill (the composite) vs actor (the leaf) | No second kind. A composite is an actor that tells other actors; "skill" is a product word for one ([`ARCHITECTURE.md`](ARCHITECTURE.md), section 13) |
 
-## 9. The architecture
+## 9. What runtimes taught us
 
-### 9.1 Laws
-
-1. **One verb.** Actors interact only by `tell`. `ask` = tell + reply address + deadline.
-2. **No waiting.** A turn never waits. A reply or a timeout arrives as a later message, and the actor's machine has a
-   state for waiting. Nothing can deadlock, and nothing needs a lock.
-3. **Pure turns.** A turn is `turn(state, message, given) → { state', effects }`, deterministic, with no I/O. The
-   kernel performs the effects.
-4. **One door.** Every change, whether from a person, a model, a click or a timer, is a message through the router.
-5. **Authority is held, never declared.** The router checks a capability for every message. Identity comes from
-   signatures, never from the payload ([caps](../ID/caps/README.md)).
-6. **The journal is the truth.** State is a cache. Same engine hash and same journal give the same state on every
-   peer.
-7. **Laws in code, cases in data.** What an actor may be is checked by the kernel at admission and at the door, not
-   by reading its source text and not by prompts.
-8. **No step without progress.** Every run and goal has a progress measure; one that stops moving fails loudly.
-9. **An actor declares what it needs; the engine brings it.** Its definition lists its wants in tiers. The sync engine
-   brings them before and while it runs and hands them in with each message. A want grants nothing: what arrives is
-   only what the run's capabilities let it read.
-10. **Code is content; runtimes run it.** An actor's behaviour, faces, docs and builds are parts for runtimes. Only
-    a runtime runs a part, and sandboxing is the runtime's job. Runtimes come only from the repository, frozen and
-    named by hash (section 9.9).
-
-### 9.2 Taxonomy
-
-**Data: everything is content-addressed**
-
-| Part | What it is | Role |
-| --- | --- | --- |
-| Definition | An immutable bundle named by its BLAKE3 hash: interface, contract, machine, parts (its turn, faces, docs and builds, each for a runtime), `loads` (its wants, in tiers), members (for a composite), requested capabilities, budget | The class. A new version is a new hash |
-| Interface | The messages it accepts and emits, each with a JSON schema; an ask also declares its reply schema | The only thing others may rely on |
-| Contract | `requires` / `produces` as typed ports | Discovery and planning, not routing |
-| Machine | The statechart (`.pl`) | Enforced by the kernel: a message illegal in the current state is refused |
-| Part | Content in one format for one runtime, named by hash and by the runtime version it was made for. The `turn` part is a pure program (`init`, `turn`, and optionally `preview` for what a held card shows, `present` for what a window draws, `measure` for a metric) | Behaviour, faces, docs and builds, all one kind of thing |
-| Runtime | A frozen engine of one kind, named by hash, that runs parts without trusting them | Gives content its meaning, inside walls |
-| Instance | Address, definition hash, state, mailbox, held capabilities, budget | The live actor |
-| Envelope | `tell` / `ask` / `reply` / `fail`, with sender, receiver, method, payload, reply address, deadline, run and proof | The only way anything happens |
-| Capability | An unforgeable grant to send a kind of message to an actor, narrowed when passed on, revocable | Authority |
-| Run | The causal context every envelope carries, owned by one person | Whose authority applies, which budget, which trace |
-| Journal | Append-only envelopes and turn hashes, with snapshots | The truth |
-| Fact / artifact | An immutable result in the store | Durable output |
-| Goal | A target over a metric or a fact | What "done" means, measured |
-| Lesson | A prediction compared with its outcome, with evidence counts | Memory across goals |
-
-**The kernel: the only trusted code, small and proven in Lean**
-
-| Part | Does | Never does |
-| --- | --- | --- |
-| Router | Delivers envelopes. Checks the capability proof at the door. Stamps sender and run from the signature or the transport. Turns an expired ask into a `fail` | Read what a payload means, or believe a sender named inside it |
-| Scheduler | Runs one turn per actor at a time and many actors in parallel on a worker pool. Commits state and effects to the journal atomically, then sends the effects | Let a turn wait on anything |
-| Runtimes | The frozen, hash-named engines that run parts: deciding runtimes (deterministic, such as the logic core) for turns and builds, showing runtimes for faces and docs (section 9.9) | Give a part a door of any kind, or change without a new version |
-| Journal | Appends, snapshots, replays | Lose an envelope or reorder an actor's messages |
-
-**System actors: built in, reviewed, holding the real-world doors**
-
-| Actor | Role |
-| --- | --- |
-| Registry | The directory of definitions and instances; finds actors by contract |
-| Factory | Spawns on demand: a definition hash, plus capabilities narrowed from the spawner's own, plus a budget, after the admission laws pass |
-| Supervisor | Restarts from snapshot and journal. Retries only what the interface marks idempotent. Quarantines repeat offenders |
-| Store | Facts and artifacts in avenDB. Each read and write is an ask, judged by the run owner's shares |
-| Model | Model completions as asks, with tiers, budgets and a cost ledger. Its text is untrusted data |
-| Clock | Time arrives as messages (`tick`, `at`); logic never reads a clock |
-| Doors | HTTP, files, shell, push: each a capability actor behind a permission policy |
-| Gate | Holds asks addressed to a person. Only a signed press from that person's device answers. One card per person, redrawn when facts change, with a stated meaning for silence |
-| Person | Every human is an actor with devices. Asking a person goes through the gate |
-
-**Domain roles: untrusted, written by anyone, equal before the kernel**
-
-| Role | Does | Usually holds |
-| --- | --- | --- |
-| Skill | A pure transform or observation over facts | Store access to its own entities |
-| Agent | Decides with the model and parses the model's text in its own turns | Ask on the model, plus its tools |
-| Planner | Searches contracts and returns a plan as data | Registry read |
-| Goal | Holds a target, asks the planner for the next calls, sends them, waits on the gate, measures | Capabilities delegated by its owner |
-| Composite | Has members; its interface is derived by the merge law | Nothing of its own |
-| Window | Projects a subject's state for one viewer as view data | Nothing |
-| Adapter | Translates between two interfaces | Sends only to its two ends |
-| Reviewer | Compares predictions with outcomes and writes lessons | Knowledge write |
-
-Every actor also answers `explain`, provided by the kernel from definition, source and state through the model, with
-the definition's prose as the fallback.
-
-### 9.3 Messages and turns
-
-A turn takes one message from the mailbox and runs the logic once:
-
-```
-turn(state, message, given) → { state', effects: [ tell | ask | reply ... ] }
-```
-
-- `given` holds what the kernel hands in: the frozen time and random seed for this turn (both from the journal), and
-  the results of queries the definition declares.
-- The kernel commits the message id, the old and new state hashes and the effects atomically, then sends the effects.
-  A turn that throws or runs out of fuel commits nothing, and its message gets a `fail` reply.
-- An `ask` gets exactly one answer by its deadline: a `reply`, or a `fail` (refused, error, timeout). The asker's
-  machine waits in a named state.
-- **Reads** are either an ask to the store (the answer comes next turn) or the definition's `loads`, which the sync
-  engine keeps current and the kernel hands in as `given`. This is how an actor collects its own dependencies: it
-  says what it needs, in tiers, and never fetches. Its `now` tier must be present before a turn runs; later tiers
-  arrive as they come, each arrival a message. An actor held by a composite brings its own `loads` with it, never above
-  the tier the composite holds it at.
-- **The model** is asked like any actor. Its text arrives as a reply, which the asker parses in a normal turn. Because
-  it is in the journal, a replay sees the same text.
-- **Ordering**: each actor's messages are handled in order. There is no global order; a run gives causality.
-- **Parallelism**: different actors run in parallel; one actor never runs two turns at once, so no locks are needed.
-
-### 9.4 Authority
-
-An actor has no authority of its own. It holds capabilities delegated to it, narrowed at every step, rooted in a
-person's avenID vault. Every envelope carries its run, and the run's owner bounds what can happen. The router checks
-the capability, the door actor that performs the effect checks it again, and anything marked consequential needs the
-person's signed press. Budgets (ticks, messages, tokens, money) are capabilities too. The full model and what we
-learned about it are in [`../ID/caps/README.md`](../ID/caps/README.md).
-
-### 9.5 Lifecycle
-
-1. **Author.** A person, a model or a peer writes a definition. Its hash names it.
-2. **Admit.** The factory checks the definition: schemas valid, machine consistent, interface types, admission laws,
-   budget, and requested capabilities no wider than the spawner holds.
-3. **Spawn.** An instance with narrowed capabilities and a budget.
-4. **Run.** Turns, journaled.
-5. **Explain.** Anyone with the right may ask the actor what it is and does.
-6. **Version.** A new definition hash. The old instance gets an `upgrade` message with the new hash and keeps its
-   address and state.
-7. **Retire.** The instance stops; its journal stays.
-
-### 9.6 Faces
-
-A window is an actor with no capabilities. It projects its subject's state for one viewer, and its face is a part
-for a showing runtime: avenVIBES view data, an HTML view with a draw script, Markdown, a chart, a 3D scene. Events from
-a face are tells by name, checked like any other message.
-
-### 9.7 Goals and learning
-
-A goal is an actor holding a metric and a target. It asks a planner for the next calls, sends them, waits on people
-through the gate, and measures. It fails when its progress measure stops moving. After a goal, a reviewer compares
-what each step predicted with what happened and keeps the lessons as facts with evidence, which the next plan starts
-from.
-
-### 9.8 Leaf and composite
-
-Actors compose: a composite actor holds member actors, and members may be composites themselves, to any depth. Every
-source found this, in its own words. avenVIBES has one type, where a leaf is "not a kind, it is the absence of slots".
-avenDB-old's actors hold actors in their `loads` (the composite pattern of 21 Oct). avenOS draws Skill → Workflow → Node
-with nodes as leaf actors, and its merge law derives a composite's interface from its members.
-
-The kernel needs no second kind. A composite is an actor whose definition lists members:
-
-- **Its interface is derived** by the merge law: it requires what its members require and do not produce themselves,
-  and produces what they produce. Nothing about it is stored twice.
-- **Its members are private.** Outside actors address the composite; it forwards to its members. Their capabilities
-  are narrowed from the composite's.
-- **Its wants are the union** of its members' `loads`, each held no higher than the tier the composite gives it.
-- **Its journal holds its members' turns** under its run, so a composite replays as one.
-
-"Leaf" and "composite" are structure, not kinds, because a skill can contain a skill (Studio's nested `skill` step):
-two kinds named Skill and Actor break at the second level. **Skill** stays useful as the product word for a composite
-that reaches an outcome and is published for reuse, as long as it means only that. avenOS used it for six things
-(section 7).
-
-### 9.9 Runtimes
-
-An actor's behaviour and its faces are content, and content means nothing until a runtime runs it. So `logic`,
-`view` and `style` are not three concerns of the actor model. They are **parts** in different formats, for different
-**runtimes**. The same holds for a doc's Markdown and LaTeX, an asset's three.js recipe, a chart, and later a Lean
-proof or a WebAssembly module. Runtimes are pluggable: a new format is a new runtime kind, and nothing else in the
-model changes.
-
-**The hard rule.** A runtime runs any part, written by anyone (a person, a model, a peer), without trusting it.
-Sandboxing is the runtime's job, not the part's and not the actor's. Runtimes come only from the repository: reviewed,
-frozen, named by hash, served by our hosts and checked against that hash before they start. A part never brings a
-runtime with it, and no model or actor can change one.
-
-**What a part is for, and which runtimes run it**
-
-| Part | Job | Runtime kinds |
-| --- | --- | --- |
-| `turn` | Decides the next state and effects | `logic` (QuickJS); later `wasm` |
-| `preview`, `present`, `measure` | Pure functions of state: what a held card shows, what a window draws, a metric | `logic` |
-| `face` | Draws for one viewer and emits events by name | `vibe` (avenVIBES data, no script), `view` (HTML with an optional draw script) with the frozen libraries `three`, `d3` and MCP Apps |
-| `doc` | Text a person reads | `markdown`, `math` |
-| `build` | Makes an artifact from declared parameters | `box` (three.js recipes, handed back as plain data) |
-| `check` (later) | Checks a proof or evaluates a definition | `lean` |
-
-**Two classes of runtime**
-
-| Class | What it gives back | It must be | Kinds |
-| --- | --- | --- | --- |
-| **Deciding** | State, effects and artifacts that the journal or the store keeps | Deterministic: work counted in ticks, a seeded random, a frozen clock, so the same part and input give the same output on every device and in every replay | `logic`, `box`; later `wasm`, `lean` |
-| **Showing** | What a viewer sees, and events by name | Contained: it can show and emit, nothing more. It need not be deterministic | `view`, `vibe`, `markdown`, `math`, the libraries |
-
-Only deciding runtimes produce anything the journal or the store keeps. A showing runtime's events are tells, checked
-like any other message.
-
-**What every runtime kind declares**
-
-| Field | Why |
-| --- | --- |
-| Kind, version, BLAKE3 hash, the commit it is kept at | Identity; a frozen runtime never changes or goes |
-| Floor | The oldest version parts may still run on. A version that closes a hole raises it, so a part cannot step around a wall by naming an older runtime |
-| Input format and schema | What a part of this kind is, checked before it runs |
-| Output schema and its checker | What may come out. The host checks it before using it, as the math host checks MathML element by element |
-| Limits | Work, memory, size, and a clock only as a backstop |
-| Determinism | Whether its output may enter the journal or the store |
-| Walls | Where it runs and what is taken away |
-| Probes | Hostile parts that try every way out, run in every browser engine we ship |
-
-A part names its runtime: `{ runtime: 'logic', v: 2, part: <hash> }`. The host runs that version, or the floor where
-the part names an older one or none; a version that is not frozen runs nothing. A new capability is a new version
-beside the old ones, so a part made for version 1 behaves the same for good.
-
-**What maiaCITY's runtimes taught us** (`aven/kernel/sandbox`)
+From maiaCITY's runtimes in `aven/kernel/sandbox`:
 
 1. **Two walls.** A worker inside a frame with no origin (`sandbox="allow-scripts"` without `allow-same-origin`):
    no cookie, storage, passkey or page of ours; a policy that allows no connection; every device feature off from one
@@ -618,44 +407,9 @@ same view to a string at build time and to the DOM at run time; two runtimes for
 and a test holds them to it. Abject runs other languages as WebAssembly with only three imports (send a message, log,
 read the clock).
 
-**Where runtimes run**
+## 10. The design
 
-- **In a page:** in the shell above. A showing runtime with no script may render in the page itself only through a
-  renderer that writes every tag from an allowlist.
-- **On a host** (a Peer or the Aven Peer): the same engines, QuickJS and WebAssembly, inside the peer with no doors.
-  A general-purpose runtime such as Bun or Node never runs untrusted code; it implements trusted door actors, from
-  the repository. Untrusted native code would need a wall at the operating-system level (a micro-VM), as a runtime
-  kind of its own with its own probes.
-
-**Runtimes to come**
-
-- `wasm`: any language compiled to WebAssembly (Rust first), with no imports at all. It gets its input in and hands
-  its state and effects out, the same turn interface as `logic`.
-- `lean`: checks a proof or evaluates a definition. It is deterministic, so a goal's measure can be a theorem.
-- Others, such as a shader or an audio graph, on the same terms.
-
-A new runtime kind is code in the repository: its walls, its output checker, its limits and its probes in every
-browser engine we ship. It is then frozen like any other.
-
-## 10. Open questions
-
-1. **Where the kernel runs.** On the device (a Peer or a Peer-Light), on the Aven Peer, or both with one journal
-   format, as avenOS's `local` / `server` placement suggests.
-2. **Store writes and atomicity.** Should a turn's store writes commit atomically with its state, or always be asks
-   to the store?
-3. **How much Prolog.** Unification for discovery and planning only, with a structured term parser instead of comma
-   splitting?
-4. **Runtimes on hosts.** Which runtime kinds a Peer runs, and whether a host's deciding runtimes are the very same
-   frozen bytes as the page's, so a replay gives the same state anywhere.
-5. **Journal privacy.** A journal holds payloads. Is it sealed per vault like avenDB entries?
-6. **Signatures.** Does every turn carry a signature, or only the journal's head?
-7. **Cost of `explain`.** Answers cached by definition hash and state version?
-
-## 11. Next steps
-
-1. The turn interface, the envelope wire format, and the runtime contract (section 9.9) as one list of kinds.
-2. A Lean model of router and scheduler, with its theorems: no message is delivered without a capability; a replay
-   gives the same state; no turn waits; every ask gets one answer by its deadline.
-3. The admission laws, written as code.
-4. A first slice in avenSANDBOX: two actors exchanging tells and asks on maiaCITY's logic core, journaled.
-5. One real actor (todo) with a window, ported onto it.
+The design that follows from all of this is [`ARCHITECTURE.md`](ARCHITECTURE.md), the single source of truth for the
+next implementation. It keeps only what the first principles above require for version 1: actors, messages, turns,
+journals and runtimes on peers with no bus in the middle. Capabilities and encryption, persistence, composites, Studio
+and planning are left to their own packages or to later actors.

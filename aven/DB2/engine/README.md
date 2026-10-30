@@ -5,7 +5,7 @@ What avenDB-old's query and sync engine taught us, reduced to first principles, 
 Learnings come in as rules and tests, never as code (README rule 12).
 
 The engine's input from apps is what actors declare they need: their `loads`
-([`../../actors/README.md`](../../actors/README.md), sections 6, 9.3 and 9.8). What it may serve is decided by
+([`../../actors/ARCHITECTURE.md`](../../actors/ARCHITECTURE.md), sections 9 and 12). What it may serve is decided by
 capabilities ([`../../ID/caps/README.md`](../../ID/caps/README.md)).
 
 1. [What the engine does](#1-what-the-engine-does)
@@ -225,7 +225,7 @@ What may be served is a capability's question, not the engine's.
 - **Writes are local first:** painted at once, never waiting for a peer, gone without trace when refused.
 - **Long logs** are a snapshot plus the edits after it, with windows inside the log.
 - **Actors**: the engine keeps each actor's `loads` current and hands the `now` tier into its turns; later tiers
-  arrive as messages ([`../../actors/README.md`](../../actors/README.md), section 9.3). A want is computed from the
+  arrive as messages ([`../../actors/ARCHITECTURE.md`](../../actors/ARCHITECTURE.md), section 12). A want is computed from the
   actor's definition and its bound slots, never by reading data first.
 
 ## 9. Tensions in avenDB today
