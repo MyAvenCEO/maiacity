@@ -1,6 +1,7 @@
 import Aven.ID.Json
 import Aven.ID.Gen
 import Aven.ID.Keys
+import Aven.ID.SafeJson
 import Aven.ID.ClaimJson
 import Aven.ID.InviteJson
 import Aven.ID.Before
@@ -37,6 +38,8 @@ import Aven.ID.SettleJson
   (`Aven.ID.Network`, `Aven.ID.Recover`).
 - `keep.json`: a keeper's fetch-key links in the order they came, with the keys it takes, its current fetch key and
   its flags; the proofs it serves; what each vault pays (`Aven.ID.Keep`, A22). Hand-written and generated.
+- `safe.json`: requests to a vault's safe from its agent and from Mallory, on a Mac and on a host that keeps Doc keys
+  inside, with what each request gives back (`Aven.ID.Safe`, R13).
 - `settled.json`: sets of tree statements, each in several orders, and the tree `settle` gives (`Aven.ID.Network`,
   PEERS.md §5): `TreeExamples`, the races one by one, generated sets, and production's store migrated from every
   invite trace (`Aven.ID.Restore`). `records.json`: signed records and the newest of each (`Aven.ID.Records`, §6).
@@ -217,6 +220,7 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "approvals.json") (render approvalVectors)
   IO.FS.writeFile (dir / "network.json") (render networkVectors)
   IO.FS.writeFile (dir / "keep.json") (render keepVectors)
+  IO.FS.writeFile (dir / "safe.json") (render Safe.safeVectors)
   IO.FS.writeFile (dir / "settled.json") (render SettleJson.settledVectors)
   IO.FS.writeFile (dir / "records.json") (render SettleJson.recordVectors)
   IO.FS.writeFile (dir / "node.json") (render SettleJson.nodeVectors)
