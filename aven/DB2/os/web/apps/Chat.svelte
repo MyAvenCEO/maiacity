@@ -74,7 +74,7 @@
 	// a file still on its way (the Aven Peer not yet keeping it, its sender's peer not reachable): a placeholder of its
 	// kind until it has loaded (`data-ready`), asked for again, a little later each time, until it comes
 	function retrying(node, file) {
-		const base = node.getAttribute('src');
+		const base = `/files/${file}`;
 		let tries = 0;
 		// one try waits at a time, and none once the file has loaded: a late one would load a playing movie again from
 		// its start (WebKit, 30 Oct 2026). A player asked again goes on from where it was
@@ -119,6 +119,59 @@
 				clearTimeout(waiting);
 				node.removeEventListener('error', again);
 				node.removeEventListener(loaded, ready);
+			},
+		};
+	}
+	// A player loads once its bubble is in view, and at most `LOADING` at once: a fresh viewer of a chat full of big
+	// movies asked for every one's metadata through one Peer-Light and waited a minute for the newest (30 Oct 2026).
+	// Until then it has no src, so it costs nothing
+	const LOADING = 3;
+	let loading = 0;
+	const turns = [];
+	const nextTurn = () => {
+		while (loading < LOADING && turns.length) {
+			loading++;
+			turns.shift()();
+		}
+	};
+	function lazy(node, file) {
+		let mine = false;
+		let gone = false;
+		const done = () => {
+			if (!mine) return;
+			mine = false;
+			loading--;
+			nextTurn();
+		};
+		const load = () => {
+			if (gone) return;
+			mine = true;
+			node.setAttribute('preload', 'metadata');
+			node.setAttribute('src', `/files/${file}`);
+			setTimeout(done, 30_000);
+		};
+		node.addEventListener('loadedmetadata', done);
+		node.addEventListener('error', done);
+		// in view for a moment, not passed by: catching up adds lines at the bottom and scrolls past each
+		let dwell = null;
+		const seen = new IntersectionObserver((entries) => {
+			clearTimeout(dwell);
+			if (!entries.at(-1).isIntersecting) return;
+			dwell = setTimeout(() => {
+				seen.disconnect();
+				turns.push(load);
+				nextTurn();
+			}, 400);
+		});
+		seen.observe(node);
+		return {
+			destroy: () => {
+				gone = true;
+				clearTimeout(dwell);
+				seen.disconnect();
+				const waiting = turns.indexOf(load);
+				if (waiting >= 0) turns.splice(waiting, 1);
+				done();
 			},
 		};
 	}
@@ -213,17 +266,17 @@
 
 								<!-- opened large in a tab of its own on a tap -->
 								<a class="media" href="/files/{f.file}" target="_blank" rel="noopener" aria-label="Open {f.name}"
-									><img src="/files/{f.file}" alt={f.name} use:retrying={f.file} /></a
+									><img src="/files/{f.file}" alt={f.name} loading="lazy" use:retrying={f.file} /></a
 								>
 							{:else if kind(f.type) === 'audio'}
-								<audio src="/files/{f.file}" controls preload="metadata" use:retrying={f.file}></audio>
+								<audio controls preload="none" use:retrying={f.file} use:lazy={f.file}></audio>
 							{:else if kind(f.type) === 'video'}
 								<!-- playsinline: iOS plays it in the bubble, not full-screen; it seeks by ranges (files-sw.js answers 206) -->
 								<!-- svelte-ignore a11y_media_has_caption -->
-								<video src="/files/{f.file}" controls playsinline preload="metadata" use:retrying={f.file}></video>
+								<video controls playsinline preload="none" use:retrying={f.file} use:lazy={f.file}></video>
 							{:else if kind(f.type) === 'pdf'}
 								<!-- previewed where the browser shows a PDF in a sandboxed frame; the link opens it in any case -->
-								<iframe src="/files/{f.file}" title={f.name}></iframe>
+								<iframe src="/files/{f.file}" title={f.name} loading="lazy"></iframe>
 							{/if}
 							{/key}
 							{#if card?.state === 'waiting'}<p class="note" data-testid="file-waiting">{card.why}</p>{/if}
@@ -231,14 +284,15 @@
 									>Try again</button
 								>{/if}
 							<!-- how far it is on its way: from this device to the network, or from the network here -->
-							{#if going?.size && going.sent < going.size}
+							<!-- "Kept by the network" only once the Aven Peer says it holds the file whole (`kept`), for its sender -->
+							{#if going?.kept && mine}
+								<p class="going" data-testid="file-kept">Kept by the network</p>
+							{:else if going?.size}
 								<p class="going" data-testid="file-sending">
 									Sending to the network, {percent(going.sent, going.size)}<span class="bar"
 										><span style:width={percent(going.sent, going.size)}></span></span
 									>
 								</p>
-							{:else if going?.size}
-								<p class="going" data-testid="file-sent">Sent to the network</p>
 							{:else if going?.len && going.held < going.len}
 								<p class="going" data-testid="file-fetching">
 									Fetching {size(going.held)} of {size(going.len)}<span class="bar"

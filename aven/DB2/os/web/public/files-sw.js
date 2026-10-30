@@ -35,8 +35,95 @@ function headers(claimed, more) {
 // the most one read asks for: a chunk. A browser's open-ended range gets the first MiB, and asks again
 const most = 1 << 20;
 
-self.addEventListener('install', () => self.skipWaiting());
-self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
+// avenOS's shell, so it opens when its host can't be reached (README rule 3; Samuel's iPhone, 30 Oct 2026): the page
+// (`/`, which every path of the release build is) network first, the cached copy only when the network doesn't
+// answer, and replaced each time it does; the build's hashed files (`/assets/`, JS, CSS, fonts, the Peer-Light's
+// worker) cache first, by their names, which change with their bytes; the Peer-Light's own JS and wasm
+// (`/peer-light/`, not hashed) network first. Installing caches the page and what it names, so the shell is whole after
+// the first visit, the Peer-Light's worker included, which starts before this worker controls the page. The dev server's
+// modules aren't the build's and are never cached. Nothing of /files/ is: the store is its cache.
+const shell = 'aven-shell-1';
+const peerLight = ['/peer-light/aven_peer_light.js', '/peer-light/aven_peer_light_bg.wasm'];
+const hashed = (path) => path.startsWith('/assets/');
+const named = (text) => [...new Set([...text.matchAll(/\/?assets\/[\w.-]+\.(?:js|css|woff2?|wasm|svg|png)/g)].map((m) => `/${m[0].replace(/^\//, '')}`))];
+
+async function keepShell() {
+	const cache = await caches.open(shell);
+	const page = await fetch('/', { cache: 'no-store' });
+	if (!page.ok) return;
+	await cache.put('/', page.clone());
+	// what the page names, and what its scripts name in turn (the worker's file, chunks): one level is the build's
+	const assets = named(await page.text());
+	for (const path of [...assets]) {
+		if (!path.endsWith('.js')) continue;
+		const script = await fetch(path).catch(() => null);
+		if (!script?.ok) continue;
+		await cache.put(path, script.clone());
+		for (const more of named(await script.text())) if (!assets.includes(more)) assets.push(more);
+	}
+	await Promise.all(
+		[...assets, ...(assets.length ? peerLight : [])].map(async (path) => {
+			if (await cache.match(path)) return;
+			const got = await fetch(path).catch(() => null);
+			if (got?.ok) await cache.put(path, got);
+		}),
+	);
+}
+
+// Keeps a copy of an answer, never at the answer's cost: a cache that refuses it (a quota, a dev server's 13 MB debug
+// wasm) leaves the answer as it was
+const keep = (key, got) => {
+	if (!got.ok || got.status !== 200) return got;
+	// copied now, before the page reads the answer's body
+	const copy = got.clone();
+	caches
+		.open(shell)
+		.then((cache) => cache.put(key, copy))
+		.catch(() => {});
+	return got;
+};
+
+// the network's answer, kept; the kept one when the network gives none
+async function networkFirst(request, key) {
+	let got;
+	try {
+		got = await fetch(request);
+	} catch (error) {
+		const kept = await caches.match(key, { cacheName: shell }).catch(() => null);
+		if (kept) return kept;
+		throw error;
+	}
+	return keep(key, got);
+}
+
+async function cacheFirst(request) {
+	const kept = await caches.match(request.url, { cacheName: shell }).catch(() => null);
+	return kept ?? keep(request.url, await fetch(request));
+}
+
+self.addEventListener('install', (event) => {
+	self.skipWaiting();
+	// the shell is cached in the background: a host that can't be reached now never keeps this worker from installing
+	event.waitUntil(keepShell().catch(() => {}));
+});
+self.addEventListener('activate', (event) =>
+	event.waitUntil(
+		(async () => {
+			for (const name of await caches.keys()) if (name.startsWith('aven-shell-') && name !== shell) await caches.delete(name);
+			await self.clients.claim();
+		})(),
+	),
+);
+
+self.addEventListener('fetch', (event) => {
+	const request = event.request;
+	const url = new URL(request.url);
+	// a file's bytes are the listener below's, opened in a tab of their own too (a PDF's Open)
+	if (request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/files/')) return;
+	if (request.mode === 'navigate') return event.respondWith(networkFirst(request, '/'));
+	if (hashed(url.pathname)) return event.respondWith(cacheFirst(request));
+	if (peerLight.includes(url.pathname)) return event.respondWith(networkFirst(request, url.pathname));
+});
 
 // at most 1 MiB of a file from the leader: {size, type, bytes} or {error}. Asked again every 2 s while unanswered, as a
 // new leader may have taken over; given up after 60 s: a chunk the leader fetches first, from the Aven Peer or the

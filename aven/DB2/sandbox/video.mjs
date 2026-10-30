@@ -4,11 +4,13 @@
 // its index at the end, as an iPhone writes it: three chunks) from Chromium; Bob plays it in Chromium, WebKit and
 // Firefox, a fresh browser each:
 //
-// - Alice's card says how far it is on its way to the network ("Sending to the network" or "Sent to the network"),
-//   and her own player plays it;
+// - Alice's card says "Kept by the network" once the Aven Peer has kept it whole (its `kept` frame), and her own
+//   player plays it;
 // - Bob's player shows its first frame, and seeked to the middle plays on from there. Bob reads it through his Service
 //   Worker, whose answers carry the file's true length from the first, and stream: they used to gather a whole movie
 //   before answering, and to guess its length until its last chunk was there;
+// - a player loads once its bubble is in view, a few at a time: of six movies above the newest, a fresh viewer asks
+//   for no more than the few on its screen before it scrolls;
 // - a movie this browser can't play (bytes no player decodes, as an HEVC movie is in a browser without the codec)
 //   says so with its download link, never a dead player.
 //
@@ -43,6 +45,8 @@ async function plays(page, name) {
 	return card(page, name)
 		.locator('video')
 		.evaluate(async (el) => {
+			// a player loads once it is in view (Chat.svelte, `lazy`)
+			el.scrollIntoView({ block: 'center' });
 			const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 			const until = async (ok, ms) => {
 				for (const end = Date.now() + ms; Date.now() < end; await sleep(100)) if (ok()) return true;
@@ -73,14 +77,20 @@ async function plays(page, name) {
 const alice = await open(chromium, 'alice');
 const movie = `phone-${stamp}.mp4`;
 const broken = `broken-${stamp}.mp4`;
+const phoneMp4 = readFileSync(new URL('media/phone.mp4', import.meta.url));
+// six movies above the newest, each its own file
+const crowd = Array.from({ length: 6 }, (_, i) => ({ name: `crowd-${i}-${stamp}.mp4`, mimeType: 'video/mp4', buffer: Buffer.concat([phoneMp4, Buffer.from(`${stamp}-${i}`)]) }));
+await alice.page.getByTestId('file-input').setInputFiles(crowd);
+for (const c of crowd) if (!(await shown(card(alice.page, c.name)))) problems.push(`Alice's ${c.name} never showed`);
 await alice.page.getByTestId('file-input').setInputFiles([
 	// its own bytes, so it is a file the network doesn't hold yet: a player ignores what follows a movie's index
-	{ name: movie, mimeType: 'video/mp4', buffer: Buffer.concat([readFileSync(new URL('media/phone.mp4', import.meta.url)), Buffer.from(stamp)]) },
+	{ name: movie, mimeType: 'video/mp4', buffer: Buffer.concat([phoneMp4, Buffer.from(stamp)]) },
 	{ name: broken, mimeType: 'video/mp4', buffer: Buffer.from(`no player decodes this ${stamp} `.repeat(2000)) },
 ]);
 if (!(await shown(card(alice.page, movie)))) problems.push("Alice's movie never showed in her chat");
-report.sender = (await shown(alice.page.locator('[data-testid="file-sending"], [data-testid="file-sent"]'), 60_000)) ? 'told' : 'silent';
-if (report.sender !== 'told') problems.push("Alice's card never said how far her movie is on its way to the network");
+// "Kept by the network" only once the Aven Peer says it holds the file whole (its `kept` frame)
+report.sender = (await shown(card(alice.page, movie).getByTestId('file-kept'), 60_000)) ? 'kept' : 'not kept';
+if (report.sender !== 'kept') problems.push("Alice's card never said the network keeps her movie");
 // her own player plays it too, from her own store
 report.alice = await plays(alice.page, movie).catch((e) => ({ first: false, why: e.message.split('\n')[0] }));
 if (!report.alice.first) problems.push(`Alice's own player never showed her movie: ${JSON.stringify(report.alice)}`);
@@ -89,8 +99,18 @@ await alice.page.screenshot({ path: `${run}/video-alice.png` }).catch(() => {});
 for (const engine of [chromium, webkit, firefox]) {
 	const name = engine.name();
 	const bob = await open(engine, 'bob');
+	const asked = new Set();
+	bob.context.on('request', (r) => {
+		const file = /\/files\/([0-9a-f]{64})/.exec(r.url())?.[1];
+		if (file) asked.add(file);
+	});
 	const got = (report.engines[name] = {});
 	got.shown = await shown(card(bob.page, movie), 60_000);
+	// before any scroll: only the players in view loaded, a few at a time
+	await bob.page.waitForTimeout(3_000);
+	const crowdFiles = await Promise.all(crowd.map((c) => card(bob.page, c.name).getAttribute('data-file').catch(() => null)));
+	got.crowdAsked = crowdFiles.filter((f) => f && asked.has(f)).length;
+	if (got.crowdAsked > 3) problems.push(`${name}: a fresh viewer asked for ${got.crowdAsked} of the six movies above the newest before scrolling`);
 	if (!got.shown) problems.push(`${name}: Alice's movie never reached Bob's chat`);
 	else {
 		Object.assign(got, await plays(bob.page, movie).catch((e) => ({ first: false, why: e.message.split('\n')[0] })));

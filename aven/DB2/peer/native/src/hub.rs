@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use aven_db_core::presence::Presence;
 use aven_db_core::status::TICK_MS;
 use aven_db_core::timeline;
-use aven_db_core::wire::{Decoder, Frame, encode, heads_pages};
+use aven_db_core::wire::{Decoder, Frame, encode, heads_pages, kept_pages};
 use iroh::PublicKey;
 use iroh::endpoint::Connection;
 use iroh::protocol::{AcceptError, ProtocolHandler};
@@ -41,6 +41,8 @@ pub struct Hub {
     room: Arc<OnceLock<Room>>,
     /// told each peer that connects, by its key: a file it shared that the Aven Peer couldn't keep is tried again
     joins: Option<Arc<dyn Fn(PublicKey) + Send + Sync>>,
+    /// each file the Aven Peer kept whole, by its name, as it keeps it: every link is told (`kept`)
+    kept: Option<tokio::sync::broadcast::Sender<String>>,
 }
 
 impl std::fmt::Debug for Hub {
@@ -69,6 +71,7 @@ impl Hub {
             chats: None,
             room: Arc::new(OnceLock::new()),
             joins: None,
+            kept: None,
         };
         hub.tell();
         hub
@@ -79,6 +82,33 @@ impl Hub {
         self.chats = Some(chats);
         self.room = room;
         self
+    }
+
+    /// The hub that tells every link each file kept whole, as `kept` says it.
+    pub fn with_kept(mut self, kept: tokio::sync::broadcast::Sender<String>) -> Self {
+        self.kept = Some(kept);
+        self
+    }
+
+    /// The files of `key`'s own chain this peer holds whole (`file-<index>` set, as keeping sets it last).
+    async fn kept_of(&self, key: &PublicKey) -> Vec<String> {
+        let Some(chats) = &self.chats else {
+            return vec![];
+        };
+        let store = chats.store();
+        let mut out = vec![];
+        for (from, file) in chats.files() {
+            if from != *key {
+                continue;
+            }
+            let Ok(name) = aven_db_store::RefName::new(format!("file-{}", file.file)) else {
+                continue;
+            };
+            if matches!(store.get_ref(&name).await, Ok(Some(_))) && !out.contains(&file.file) {
+                out.push(file.file);
+            }
+        }
+        out
     }
 
     /// The hub that tells `joins` of each peer that connects.
@@ -173,6 +203,12 @@ impl Hub {
                 send.write_all(&encode(&page)).await.map_err(fail)?;
             }
         }
+        // the files of this peer's own chain kept whole, so its sender says so after a reload too; then each file as
+        // it is kept
+        let mut kept = self.kept.as_ref().map(|k| k.subscribe());
+        for page in kept_pages(self.kept_of(&conn.remote_id()).await) {
+            send.write_all(&encode(&page)).await.map_err(fail)?;
+        }
         let mut told = self.told.subscribe();
         told.mark_changed();
         let mut beat = interval(Duration::from_millis(TICK_MS));
@@ -206,6 +242,19 @@ impl Hub {
                 } => {
                     let frame = Door::frame(&network.as_mut().unwrap().borrow_and_update(), &key);
                     send.write_all(&encode(&frame)).await.map_err(fail)?;
+                }
+                file = async {
+                    match kept.as_mut() {
+                        Some(kept) => kept.recv().await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    match file {
+                        Ok(file) => send.write_all(&encode(&Frame::Kept { files: vec![file] })).await.map_err(fail)?,
+                        // a link too slow to hear them all is told its own again on its next connect
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => kept = None,
+                    }
                 }
                 _ = beat.tick() => {
                     if let (Some(chats), Some((moved, told))) = (&self.chats, told_heads.as_mut())

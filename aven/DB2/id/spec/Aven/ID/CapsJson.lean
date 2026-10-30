@@ -18,8 +18,9 @@ cap:      {"id":"cap-a","issuer":"alice","holder":{"vault":"bob"},"parent":null,
            "conditions":{…},
            "signer":"alice-peer","approvals":[{"key":"alice-owner","digest":"cap-a"}]}
 error:    {"rule":"wider","cap":"cap-w"}   {"rule":"authority","cap":"cap-x","line":{…}}   {"rule":"empty"}
-envelope: {"id":"b1","writer":"bob","caps":["cap-a"],"deps":[],"acks":[]}
-verdict:  "counts"   {"revoked":"rev-a"}   {"waits":["zz"]}
+envelope: {"label":"b1","name":"b3:…","vault":"bob","caps":["b3:…"],"acks":[],
+           "envelope":{"doc":"d:…","branch":"main","writer":2,"seq":1,"prev":null,"deps":[],"body":{…},…}}
+verdict:  "counts"   {"revoked":"b3:…"}   {"waits":["b3:…"]}
 link:     {"doc":"d1","n":1,"epoch":7,"key":201,"prev":100,"signer":100}
 proof:    {"device":"alice-peer-light","vault":"alice","key":301,"exporter":"x-1"}
 ```
@@ -103,20 +104,28 @@ def chainResult (cs : List Cap) : Json :=
   | none => Json.mkObj [("ok", true)]
   | some e => Json.mkObj [("ok", false), ("error", e.json)]
 
-def Envelope.json (e : Envelope) : Json :=
-  Json.mkObj [("id", e.id), ("writer", e.writer), ("caps", toJson e.caps), ("deps", toJson e.deps),
-    ("acks", toJson e.acks)]
+open RevokeExamples in
+/-- An example envelope: its label, its name, what caps reads of it, its signed time, and the envelope as Core's vectors
+write it (`core/spec/vectors/envelopes.json`). -/
+def envelopeJson (e : Core.Envelope) : Json :=
+  Json.mkObj [("label", label e), ("name", (nm e).text), ("vault", reads.vault e),
+    ("caps", toJson ((reads.caps e).map (·.text))), ("acks", toJson ((reads.acks e).map (·.text))),
+    ("time", toJson (time e)),
+    ("envelope", Json.mkObj [("doc", e.doc.text), ("branch", Core.utf8Text e.branch), ("writer", toJson e.writer),
+      ("seq", toJson e.seq), ("prev", toJson (e.prev.map (·.text))), ("deps", toJson (e.deps.map (·.text))),
+      ("body", e.body.json), ("signer", Core.hex e.signer), ("sig", Core.hex e.sig)])]
 
 def Revocation.json (r : Revocation) : Json :=
-  Json.mkObj [("id", r.id), ("cap", r.cap), ("envelope", toJson r.envelope), ("kept", toJson r.kept)]
+  Json.mkObj [("id", r.id.text), ("cap", r.cap.text), ("envelope", toJson (r.envelope.map (·.text))),
+    ("kept", toJson (r.kept.map (·.map (·.text))))]
 
 def Verdict.json : Verdict → Json
   | .counts => "counts"
-  | .revoked r => Json.mkObj [("revoked", r)]
-  | .waits m => Json.mkObj [("waits", toJson m)]
+  | .revoked r => Json.mkObj [("revoked", r.text)]
+  | .waits m => Json.mkObj [("waits", toJson (m.map (·.text)))]
 
-def docJson (doc : List Envelope) (rs : List Revocation) : List (String × Json) :=
-  [("doc", Json.arr (doc.map Envelope.json).toArray), ("revocations", Json.arr (rs.map Revocation.json).toArray)]
+def docJson (doc : List Core.Envelope) (rs : List Revocation) : List (String × Json) :=
+  [("doc", Json.arr (doc.map envelopeJson).toArray), ("revocations", Json.arr (rs.map Revocation.json).toArray)]
 
 def worldJson (w : World) (parties : List String) : Json :=
   Json.mkObj [("own", Json.mkObj (parties.map fun p => (p, toJson (w.own p)))),
@@ -218,31 +227,35 @@ def genChain (seed : Nat) : List Cap := Id.run do
     prev := some c
   pure caps
 
-/-- A random Doc: envelopes by Alice, Bob and Maia City building on earlier ones, Bob's mostly under `cap-a`, now and
-then an ack, and one revocation of `cap-a`, living in the Doc or elsewhere, perhaps with a kept list. -/
-def genDoc (seed : Nat) : List Envelope × List Revocation := Id.run do
+open RevokeExamples in
+/-- A random Doc: Core envelopes by Alice, Bob and Maia City building on earlier ones, Bob's mostly under `cap-a`, now
+and then an ack, and one revocation of `cap-a`, living in the Doc or elsewhere, perhaps with a kept list. -/
+def genDoc (seed : Nat) : List Core.Envelope × List Revocation := Id.run do
   let mut r := Rng.seed (seed + 1000)
   let (n, r1) := r.below 5; r := r1
-  let mut doc : List Envelope := []
+  let mut doc : List Core.Envelope := []
   let (inDoc, r2) := r.below 2; r := r2
   let (at_, r3) := r.below (n + 4); r := r3
+  let rev := Core.blake3 "rev".toUTF8.toList
   for i in [0:n + 4] do
     let (wi, r4) := r.below 3; r := r4
-    let writer := ["alice", "bob", "maia-city"][wi]?.getD "alice"
+    let isRev := inDoc == 1 && i == at_
+    let writer := if isRev then "alice" else ["alice", "bob", "maia-city"][wi]?.getD "alice"
     let (d1, r5) := r.below (i + 1); r := r5
     let (d2, r6) := r.below (i + 1); r := r6
-    let deps := ((if d1 < i then [s!"e{d1}"] else []) ++ (if d2 < i ∧ d2 ≠ d1 then [s!"e{d2}"] else []))
+    let deps := ((if d1 < i then [doc[d1]?] else []) ++ (if d2 < i ∧ d2 ≠ d1 then [doc[d2]?] else [])).filterMap
+      (·.map nm)
     let (a, r7) := r.below 4; r := r7
-    let isRev := inDoc == 1 && i == at_
-    let acks := if inDoc == 0 && writer ≠ "bob" && a == 0 then ["rev"] else []
-    let caps := if writer = "bob" && a ≠ 3 && !isRev then ["cap-a"] else []
-    doc := doc ++ [⟨s!"e{i}", if isRev then "alice" else writer, caps, deps, acks⟩]
+    let acks := if inDoc == 0 && writer ≠ "bob" && a == 0 then [rev] else []
+    let caps := if writer = "bob" && a ≠ 3 && !isRev then [RevokeExamples.capA] else []
+    let w := if writer = "alice" then 1 else if writer = "bob" then 2 else 3
+    doc := doc ++ [env w (i + 1) s!"e{i}" writer caps acks deps]
   let (kept, r8) := r.below 3; r := r8
-  let bobs := (doc.filter (·.writer == "bob")).map (·.id)
-  let rev : Revocation := if inDoc == 1 then ⟨"rev", "cap-a", some s!"e{at_}", none⟩
-    else ⟨"rev", "cap-a", none, if kept == 0 then some (bobs.take 1) else none⟩
+  let bobs := (doc.filter (reads.vault · == "bob")).map nm
+  let revocation : Revocation := if inDoc == 1 then ⟨rev, RevokeExamples.capA, (doc[at_]?).map nm, none⟩
+    else ⟨rev, RevokeExamples.capA, none, if kept == 0 then some (bobs.take 1) else none⟩
   let _ := r
-  pure (doc, [rev])
+  pure (doc, [revocation])
 
 /-- A random keeper's links for `d1`, each after a key made before it: mostly rotations, so forks come when two pick
 one key, and now and then a link signed by another key, for `d2`, after a key that doesn't chain, or one epoch too

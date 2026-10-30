@@ -583,7 +583,7 @@ An envelope counts when all three hold and everything it builds on counts.
 A Doc is sealed to its type's group, the type group to the all group, and the all group to the vault itself and to
 everyone who reads all its Docs. Granting read on a vault's Docs is joining one group: one seal, and no Doc is touched.
 `below` uses a group per vault that reads the all group of every vault it governs. Its keys are sealed downward, so
-holding it reads a vault's Docs and those below it, never those above.
+holding it reads a vault's Docs and those below it, never those above (`authority_down`, `never_above`).
 
 A Doc shared with more than 64 vaults one by one is shared with a group instead.
 
@@ -721,7 +721,9 @@ key's public half. A keeper takes a link on that signature alone, since it reads
 3. It takes and serves a Doc's sealed bytes only for a device that signs the connection's TLS exporter with the current
    fetch key (`served_current`). So "nothing leaves for a device that may not receive it" (engine, rule 13) holds at a
    keeper that can't read caps, and nobody outside a Doc can fill it with junk.
-4. The uploading vault pays, and only for what the keeper took from it (`uploader_pays`).
+4. The uploading vault pays, and only for what the keeper took from it (`uploader_pays`). Uploads are taken in the
+   order they come, each only while its vault's spending stays within the quota the keep cap gives it, so no vault ever
+   spends past it (`quota_holds`, R10).
 
 Key blobs and letters are served to any member, since they are useless without the keys they're sealed to. A device
 whose proof is refused because a newer epoch came fetches that epoch's key blob, opens its stanza and proves again.
@@ -773,7 +775,8 @@ still holding a cap can apply it again.
 whole chain from genesis for every removal.
 
 **Expiry** is a revocation made by the clock. It is acked by the first writer whose clock has passed it, and from that
-ack on it is final like any other.
+ack on it is final like any other: a write the ack hadn't seen doesn't count, whatever time it claims (`time_acked`).
+Until the first ack, a write is judged by the time it claims (`before_ack`).
 
 **Lost and stolen devices.** Owners remove the device. A device that may have been copied gets the heal.
 
@@ -789,7 +792,7 @@ ack on it is final like any other.
 - A vault's owners are keys (passkeys, a recovery kit, MaiaCityGuardian) or vaults.
 - An act that needs the owners carries k approvals over its digest: a list of signatures, not an aggregate, so each
   stays post-quantum on its own.
-- An owner that is a vault approves by its own quorum, recursively.
+- An owner that is a vault approves by its own quorum, recursively (`Aven.ID.Approve`, `approves`).
 
 | Lost | Back in by | Data |
 |---|---|---|
@@ -912,7 +915,8 @@ It works like a password manager, except that the secrets are never handed out.
 - a Rust trait: `unlock`, `lock`, `sign`, `open`, `seal`, `derive`, `use` (a credential, for an operation) and `enroll`
   (seal the safe to a new device);
 - one backend per host;
-- a Lean model of what may ever leave the safe (`safe_holds`).
+- a Lean model of what may ever leave the safe, `Aven.ID.Safe` ([what Lean proves](#what-lean-proves)), with its
+  vectors in `safe.json`.
 
 | Host | Safe runtime | Strength |
 |---|---|---|
@@ -1153,17 +1157,24 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | Module | Theorem | Says |
 |---|---|---|
 | `CapsCbor` | `Cap.digest_inj` | Two allowed caps with one id say the same thing: the bytes approved and signed name the cap exactly |
+| `Authorized` | `authorized_signer`, `authorized_root` | Caps' verdict on a Core envelope: its chain keeps every rule, its last cap is held by the signer's vault, and every step of its footprint is one the chain's root allows on its Doc, on its root issuer's authority (R4) |
+| | `counts_iff` | An envelope counts exactly when everything in its past is signed, fresh, authorized, live and fit, and none of it is half of a split. `Aven.Architecture` composes the parts |
+| | `readers_agree` | Two readers that hold the same past of an envelope, and the same splits in it, give it the same verdict, whatever else each holds |
 | `Caps` | `narrow_chain`, `narrow_steps` | No cap in a chain lets a verb reach a Doc, or allows a write step, that its root doesn't |
 | | `root_authority` | Every line a chain grants lies in its root issuer's authority: its own vault, one it governs, or a Doc of one |
 | | `chain_short` | A chain is no longer than its root may be shared |
-| | `grant_approved` | Every cap in a chain was signed by a device of its issuer and approved by its issuer's owners (D14) |
+| | `grant_approved` | Every cap in a chain was signed by a device of its issuer and approved by its issuer's owners, an owner vault by its own quorum (D14) |
 | | `child_live` | A cap issued from a group's cap holds only while its issuer is in the group |
 | | `public_bounded`, `public_no_share` | The public passes nothing on and never shares (D15) |
 | | `role_pinned` | A new version of a role changes nothing a cap naming the old one grants (D6) |
 | | `chainError_none` | The first rule a chain breaks is none exactly when it keeps them all |
 | `Approve` | `approval_exact` | An approval holds only with k distinct owners, each having signed exactly its digest |
+| | `approvesF_exact`, `approves_signed` | An owner that is a vault approves by its own quorum, recursively: a vault approves only with its threshold of distinct owners, each a key that signed exactly the digest or a vault that approves it, and with every threshold at least one, an approval rests on such a signature by a key above the vault |
+| | `approves_iff` | In a well-formed tree, looking as many levels up as the tree has vaults finds every approval: a vault's owners stand lower than it |
 | | `shown_is_signed` | What avenOS shows for a passkey tap is decoded from the exact bytes signed (A2, rule 25) |
-| `Revoke` | `seen_never_counts` | A revoked holder's envelope with the revocation in its own past never counts: no laundering |
+| `Past` | `reaches_iff`, `found_iff`, `inPast_iff` | An envelope's past among those a reader holds, decided: exactly Core's `Reaches`, the envelope itself and what is before it |
+| `Revoke` | `seen_never_counts` | A revoked holder's envelope with the revocation in its own past never counts: no laundering. Envelopes are Core's, and caps reads the vault, the cap chain and the acks of each from inside its seal |
+| | `saw_iff` | Having seen a revocation, in Core's past: its envelope is before the envelope, or the envelope or something it reaches acknowledges it |
 | | `doc_cap_kept` | Under a Doc cap, only the revocation's own past is kept |
 | | `elsewhere_kept` | Elsewhere, once the revocation reaches the Doc, only what its kept list or another writer's ack had seen counts |
 | | `revocation_wins` | The three together (rule 14). An envelope lists its whole chain, so revoking any link reaches it: the cascade |
@@ -1174,6 +1185,9 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `heal_evicts` | After a heal, a removed device learns none of the new keys: vault key, tag seeds, letterbox keys and next epochs |
 | | `keeper_blind`, `outside_blind` | The keeper knows only its own keys, and sees of a segment only its Doc, epoch and padded length (D13). A segment is Core's `DocId`, its epoch's `Hash`, and the Core envelopes inside its seal (R5) |
 | | `stale_refused` | A Core envelope under an epoch older than one it builds on doesn't pass (rule 16) |
+| | `authority_down`, `never_above` | Where every seal opens a key of the vault it is sealed under or of one below it, as `below` groups seal, a party learns keys only of the vaults whose keys it holds and those below them, and in a well-formed tree none of a vault above them all: a `below` grant on Maia City never reads Alice's vault |
+| `Expiry` | `time_acked`, `claimed_late` | Time is a claim: once a writer whose clock had passed a cap's expiry acks it, a write the ack hadn't seen doesn't count, whatever time it claims; nor does one claiming a time past it (rule 12, R12) |
+| | `before_ack` | The limit rule 12 accepts: until the first ack, a write is judged by the time it claims |
 | `Recover` | `guardian_exit` | After MaiaCityGuardian's exit, no keyring epoch is sealed to it (D12) |
 | | `never_ownerless`, `removals_win` | Removals that clash all stand, unless they'd leave no owner; then none does |
 | `Network` | `public_member`, `removal_rotates` | A public write counts only from a member, and a removed member is in no later members epoch |
@@ -1187,28 +1201,28 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `current_agrees`, `current_chained` | Keepers holding the same links take the same current fetch key, whatever order they came in, and it chains |
 | | `fork_flagged` | Every fork a keeper takes is flagged |
 | | `served_current`, `fork_served` | A keeper serves a fetch or takes an upload only for a proof on that connection by the current fetch key, or, while a fork is unsettled, by a branch's newest key, so honest readers are never refused |
+| | `quota_holds`, `admitted_served` | A keeper takes uploads in the order they come, each only while its vault's spending stays within the quota its keep cap gives it, so no vault's spending ever passes its quota; and it takes only what it serves (R10) |
 | | `grind_settled`, `settled_example` | Once the keep cap's issuer chooses a branch at a fork, every keeper follows it whatever forks arrive after |
 | | `uploader_pays` | The uploading vault pays, and only for what the keeper took from it |
 | | `grind_example` | A removed reader's fork with a ground hash becomes current at a keeper until the issuer chooses; it is flagged, and honest readers are still served |
 | `SealedIndex`, moving to `Aven.Architecture.Sealed` (the docs thread) | `index_within_key`, `index_skips` | An index holds only entries read under keys every holder of its key holds; one some holder can't read changes nothing in it (rule 36) |
 | | `sealed_roots_agree` | Two readers holding the same admissible entries rebuild the same sealed root under one key, so each can check a published one. The root is a parameter here; `Aven.Architecture` joins it with the docs model's `root_set` |
 | | `sealed_padded`, `root_by_writer` | Sealed nodes are padded (D18); only a vault that may write the directory publishes a root a reader takes |
+| `Safe` | `safe_holds` | For any requests, from anyone, in any order, nothing leaves the safe but signatures, ciphertexts, public keys, answers and Doc keys lent to the engine (rule 34) |
+| | `stays_inside` | The device's keys, the vault's keys and credentials never leave it, not even sealed; it seals a Doc's key only to a reader or to the Doc's next key, and a group's key only to a member vault (rule 17) |
+| | `enroll_admitted` | The safe's own key leaves only sealed to the safe runtime of a device the vault admits |
+| | `kept_inside` | A host that keeps Doc keys inside its safe runtime gives no secret in plain |
+| | `acts_on_cap`, `locked_refuses` | It acts only when unlocked, and only on a `tell` cap that names the act (D16) |
 
 **After Core, or with another thread:**
-- `counts_iff`: an envelope counts exactly when its signer, its epoch, its chain, its liveness and its footprint hold;
-- `readers_agree`: a verdict depends only on the envelope, its causal past and the revocations known;
 - `merge_covered` and `footprints.json` (Core's footprints, with the engine);
 - `want_grants_nothing` and `one_grammar` (Core's target grammar);
-- `authority_down` (`below` groups);
 - `group_holds` (a group cap's writes in `Revoke`);
 - `device_within_cap`;
-- `safe_holds` (the safe's interface);
 - `upgrade_no_wider` and `no_confused_deputy`, in the cross-spec model `Aven.Architecture`: they need `Aven.Actor`,
   and id/spec never requires the actor spec (the architect, 30 Oct 2026);
 
-Two smaller gaps:
-- An owner that is a vault approves by its own quorum, recursively. `Approve` counts owner keys only, so the cast's coop
-  can't yet approve a grant.
+One smaller gap:
 - The Revoke model's reader holds one Doc; the order in which envelopes arrive changes nothing, because a verdict is
   computed from the Doc and the revocations alone.
 
@@ -1217,9 +1231,11 @@ Two smaller gaps:
 | File | What |
 |---|---|
 | `caps.json` | Chains on the cast, their lines in Core's form, each cap with its CBOR bytes, its id and the bytes its device signs, and each chain with the first rule it breaks or none; how avenOS shows a cap; 40 generated chains |
-| `revocations.json` | Docs, the revocations held, and verdicts: hand-written, and 30 generated Docs with every envelope's verdict |
-| `epochs.json` | Who learns which key after Bob's removal and after Alice's heal |
-| `approvals.json` | Signatures, thresholds and digests on the cast, and whether each approval holds |
+| `revocations.json` | Docs of Core envelopes, each with its name and what caps reads of it, the revocations held, and verdicts: hand-written, and 30 generated Docs with every envelope's verdict |
+| `epochs.json` | Who learns which key after Bob's removal and after Alice's heal, and what Bob learns holding Maia City's `below` group |
+| `safe.json` | Requests to Alice's safe from her agent and from Mallory, on her Mac and on a host that keeps Doc keys inside, with what each gives back |
+| `approvals.json` | Signatures, thresholds and digests on the cast, and whether each approval holds; approvals where an owner is a vault, with a coop of two vaults added |
+| `expiry.json` | Writes under a cap that expires, with each envelope's signed time, and whether each counts for the clock |
 | `network.json` | A ticket's claims in two orders (A12), removals that clash, MaiaCityGuardian's exit |
 | `keep.json` | Fetch-key links in the order they came, with the keys a keeper takes, its current key and its flags; proofs and whether they're served; what each vault pays; 30 generated keepers |
 

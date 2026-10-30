@@ -57,6 +57,10 @@ pub enum Frame {
     /// Lines as their blobs, oldest first per chain: the Aven Peer's answer to `CatchUp`, or a peer's own lines the
     /// Aven Peer is missing.
     Lines { lines: Vec<String> },
+    /// The Aven Peer tells a peer files it holds whole, by their names: each file as it keeps it, to every link; and on
+    /// each link the files of that peer's own chain it has kept, in pages ([`kept_pages`]). A sender says "Kept by the
+    /// network" only then.
+    Kept { files: Vec<String> },
 }
 
 /// A device's chain as a peer holds it: the device's key, its newest line's name, and that line's number.
@@ -103,6 +107,16 @@ pub fn catch_up_pages(holds: Vec<Have>) -> Vec<Frame> {
         .map(|page| Frame::CatchUp {
             holds: page.to_vec(),
             only: true,
+        })
+        .collect()
+}
+
+/// Files kept, in pages of at most [`PAGE`] (`Aven.DB.Wire.keptPages`); none for none.
+pub fn kept_pages(files: Vec<String>) -> Vec<Frame> {
+    files
+        .chunks(PAGE)
+        .map(|page| Frame::Kept {
+            files: page.to_vec(),
         })
         .collect()
 }

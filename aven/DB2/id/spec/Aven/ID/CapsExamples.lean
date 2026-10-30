@@ -71,6 +71,12 @@ def capPublic : Cap :=
   { id := "cap-public", issuer := "alice", holder := .«public», signer := "alice-peer",
     grant := [readOn cityNotes], approvals := [⟨"alice-owner", "cap-public"⟩] }
 
+/-- Aven, the agent Maia City owns, lets Bob read its vault; its device signs, and its owner approves by its own
+quorum: Maia City's owner, Alice's vault, approves with her owner's key. -/
+def capAven : Cap :=
+  { id := "cap-aven", issuer := "aven", holder := .vault "bob", signer := "aven-peer",
+    grant := [⟨.vault (vaultId "aven") false, .read, []⟩], approvals := [⟨"alice-owner", "cap-aven"⟩] }
+
 /-- Chains, each with the first rule it breaks, or none. -/
 def chainExamples : List (String × List Cap × Option ChainError) := [
   ("Alice gives Bob read and task writing on d1", [capA], none),
@@ -135,51 +141,13 @@ def chainExamples : List (String × List Cap × Option ChainError) := [
   ("a child that keeps its parent's expiry",
     [capAExpiring,
      recap capB "cap-e2" "bob-owner" fun c => { c with parent := "cap-a-100", conditions := { expires := some 50 } }],
-    none)]
+    none),
+  ("Aven's cap, approved by its owner Maia City, which approves through Alice's key", [capAven], none),
+  ("Aven's cap, approved by Bob's key, which is above neither", [recap capAven "cap-aven-b" "bob-owner"],
+    some (.approval "cap-aven-b"))]
 
 -- Vault ids are UTF-8 bytes, which the kernel doesn't compute, so the chains are checked as the module builds.
 #guard chainExamples.all fun (_, cs, e) => chainError castCtx cs == e
-
-/-- A Doc cap revoked inside the Doc: `r0` is Alice's revocation of `cap-a`, after `b1`. -/
-def docCapDoc : List Envelope := [
-  ⟨"b1", "bob", ["cap-a"], [], []⟩, ⟨"r0", "alice", [], ["b1"], []⟩,
-  ⟨"b2", "bob", ["cap-a"], ["r0"], []⟩, ⟨"b3", "bob", ["cap-a"], ["b1"], []⟩,
-  ⟨"a1", "alice", [], ["b3"], ["rev-a"]⟩, ⟨"c1", "maia-city", ["cap-a", "cap-b"], ["b1"], []⟩]
-
-def docCapRevocations : List Revocation := [⟨"rev-a", "cap-a", some "r0", none⟩]
-
-/-- A cap on a vault's Docs, revoked elsewhere and acknowledged here by Alice's `y1`. -/
-def elsewhereDoc : List Envelope := [
-  ⟨"x1", "bob", ["cap-team"], [], []⟩, ⟨"x2", "bob", ["cap-team"], ["x1"], []⟩,
-  ⟨"y1", "alice", [], ["x1"], ["rev-t"]⟩, ⟨"x3", "bob", ["cap-team"], ["y1"], []⟩,
-  ⟨"y2", "alice", [], ["x3"], ["rev-t"]⟩, ⟨"w1", "bob", [], ["zz"], []⟩]
-
-def elsewhereRevocations : List Revocation := [⟨"rev-t", "cap-team", none, none⟩]
-
-/-- Verdicts, each written out by hand: a Doc, the revocations held, the envelope, and its verdict. -/
-def revocationExamples : List (String × List Envelope × List Revocation × String × Verdict) := [
-  ("under a Doc cap, what the revocation had seen counts", docCapDoc, docCapRevocations, "b1", .counts),
-  ("written after seeing the revocation", docCapDoc, docCapRevocations, "b2", .revoked "rev-a"),
-  ("concurrent with the revocation: not in its past", docCapDoc, docCapRevocations, "b3", .revoked "rev-a"),
-  ("under a Doc cap, a later ack keeps nothing more", docCapDoc, docCapRevocations, "b3", .revoked "rev-a"),
-  ("revoking a cap ends what rests on it", docCapDoc, docCapRevocations, "c1", .revoked "rev-a"),
-  ("not under the revoked cap", docCapDoc, docCapRevocations, "a1", .counts),
-  ("elsewhere: an ack had seen it", elsewhereDoc, elsewhereRevocations, "x1", .counts),
-  ("elsewhere: no ack had seen it", elsewhereDoc, elsewhereRevocations, "x2", .revoked "rev-t"),
-  ("no laundering: written after an ack, acknowledged again later", elsewhereDoc, elsewhereRevocations, "x3",
-    .revoked "rev-t"),
-  ("before any ack reaches the Doc, it still counts", elsewhereDoc.take 2, elsewhereRevocations, "x2", .counts),
-  ("a kept list keeps what it names", elsewhereDoc.take 2, [⟨"rev-t", "cap-team", none, some ["x1"]⟩], "x1", .counts),
-  ("and nothing else", elsewhereDoc.take 2, [⟨"rev-t", "cap-team", none, some ["x1"]⟩], "x2", .revoked "rev-t"),
-  ("the holder's own ack keeps nothing it wrote",
-    [⟨"x5", "bob", ["cap-team"], [], []⟩, ⟨"y3", "bob", [], ["x5"], ["rev-t"]⟩], elsewhereRevocations, "x5", .counts),
-  ("waiting for what it builds on, named by hash", elsewhereDoc, elsewhereRevocations, "w1", .waits ["zz"])]
-
-def verdictOf (doc : List Envelope) (rs : List Revocation) (id : String) : Option Verdict :=
-  (doc.find? (·.id == id)).map (verdict doc rs)
-
-theorem revocation_examples :
-    revocationExamples.all (fun (_, doc, rs, id, v) => verdictOf doc rs id == some v) = true := by decide
 
 /-- Approvals on the cast: signatures, how many owners are needed, the vault, the digest, and whether it holds. -/
 def approvalExamples : List (String × List Sig × Nat × String × String × Bool) := [
@@ -192,6 +160,28 @@ def approvalExamples : List (String × List Sig × Nat × String × String × Bo
 
 theorem approval_examples :
     approvalExamples.all (fun (_, sigs, k, v, d, b) => cast.approved k v d sigs == b) = true := by decide
+
+/-- The cast with the garden, a coop of Alice's and Bob's vaults that needs both. -/
+def garden : Vault := ⟨"garden", "The garden", .coop, [.vault "alice", .vault "bob"]⟩
+
+def gardenCast : Tree := { cast with vaults := cast.vaults ++ [garden] }
+
+def gardenThreshold (v : String) : Nat := if v == "garden" then 2 else 1
+
+/-- Approvals where an owner is a vault, which approves by its own quorum: signatures, the vault, the digest, and
+whether it holds. -/
+def quorumExamples : List (String × List Sig × String × String × Bool) := [
+  ("Maia City, through Alice's vault and her owner's key", [⟨"alice-owner", "d"⟩], "maia-city", "d", true),
+  ("Aven, through Maia City, through Alice", [⟨"alice-owner", "d"⟩], "aven", "d", true),
+  ("Maia City, over another digest", [⟨"alice-owner", "e"⟩], "maia-city", "d", false),
+  ("Maia City, by Bob's owner, who is above neither", [⟨"bob-owner", "d"⟩], "maia-city", "d", false),
+  ("Maia City, by a device's key, which owns nothing", [⟨"alice-peer", "d"⟩], "maia-city", "d", false),
+  ("the garden needs both of its vaults: Alice's alone", [⟨"alice-owner", "d"⟩], "garden", "d", false),
+  ("the garden: Alice's and Bob's", [⟨"alice-owner", "d"⟩, ⟨"bob-owner", "d"⟩], "garden", "d", true),
+  ("the garden: Alice's twice is one vault", [⟨"alice-owner", "d"⟩, ⟨"alice-owner", "d"⟩], "garden", "d", false)]
+
+theorem quorum_examples :
+    quorumExamples.all (fun (_, sigs, v, d, b) => gardenCast.approves gardenThreshold v d sigs == b) = true := by decide
 
 /-- Tickets, claimed in two orders: the smallest hash wins either way (A12). -/
 def claims : List TicketClaim := [⟨"bob", 7⟩, ⟨"carol", 3⟩, ⟨"dave", 9⟩]

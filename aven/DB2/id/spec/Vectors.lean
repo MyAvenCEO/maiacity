@@ -1,11 +1,13 @@
 import Aven.ID.Json
 import Aven.ID.Gen
 import Aven.ID.Keys
+import Aven.ID.SafeJson
 import Aven.ID.ClaimJson
 import Aven.ID.InviteJson
 import Aven.ID.Before
 import Aven.ID.CapsJson
 import Aven.ID.SettleJson
+import Aven.ID.Expiry
 
 /-! # The test vectors (README, rule 10)
 
@@ -29,14 +31,19 @@ import Aven.ID.SettleJson
   members, the invites' states and what the door says of each key after every step. aven-id's tests replay them.
 - `caps.json`: cap chains on the cast, with the first rule each breaks or none (`Aven.ID.Caps`), how avenOS shows a cap
   for a passkey tap, and generated chains (`Aven.ID.CapsJson`).
-- `revocations.json`: Docs of envelopes, the revocations a reader holds, and each envelope's verdict (`Aven.ID.Revoke`),
-  hand-written and generated.
-- `epochs.json`: who learns which key after a removal and after a heal (`Aven.ID.Epochs`).
-- `approvals.json`: signatures, thresholds and digests on the cast, and whether each approval holds (`Aven.ID.Approve`).
+- `revocations.json`: Docs of Core envelopes, each with its name and what caps reads of it, the revocations a reader
+  holds, and each envelope's verdict (`Aven.ID.Revoke`), hand-written and generated.
+- `epochs.json`: who learns which key after a removal, after a heal, and holding a `below` group (`Aven.ID.Epochs`).
+- `approvals.json`: signatures, thresholds and digests on the cast, and whether each approval holds; then approvals
+  where an owner is a vault, which approves by its own quorum, with a coop of two vaults added (`Aven.ID.Approve`).
+- `expiry.json`: writes under a cap that expires, with each envelope's signed time, and whether each counts for the
+  clock (`Aven.ID.Expiry`, R12).
 - `network.json`: tickets claimed in two orders (A12), removals that clash and MaiaCityGuardian's exit
   (`Aven.ID.Network`, `Aven.ID.Recover`).
 - `keep.json`: a keeper's fetch-key links in the order they came, with the keys it takes, its current fetch key and
   its flags; the proofs it serves; what each vault pays (`Aven.ID.Keep`, A22). Hand-written and generated.
+- `safe.json`: requests to a vault's safe from its agent and from Mallory, on a Mac and on a host that keeps Doc keys
+  inside, with what each request gives back (`Aven.ID.Safe`, R13).
 - `settled.json`: sets of tree statements, each in several orders, and the tree `settle` gives (`Aven.ID.Network`,
   PEERS.md §5): `TreeExamples`, the races one by one, generated sets, and production's store migrated from every
   invite trace (`Aven.ID.Restore`). `records.json`: signed records and the newest of each (`Aven.ID.Records`, §6).
@@ -146,27 +153,52 @@ def capsVectors : List Json :=
     let cs := genChain (i + 1)
     vector s!"generated chain, seed {i + 1}" (chain cs) (chainResult cs)
 
+open RevokeExamples in
 def revocationVectors : List Json :=
-  (revocationExamples.map fun (name, doc, rs, id, _) =>
-    vector name (Json.mkObj (docJson doc rs ++ [("envelope", toJson id)]))
-      ((verdictOf doc rs id).elim Json.null Verdict.json)) ++
+  (revocationExamples.map fun (name, doc, rs, e, _) =>
+    vector name (Json.mkObj (docJson doc rs ++ [("envelope", Json.str (nm e).text)]))
+      (verdict nm reads doc rs e).json) ++
   (List.range generatedDocs).map fun i =>
     let (doc, rs) := genDoc (i + 1)
     vector s!"generated Doc, seed {i + 1}" (Json.mkObj (docJson doc rs))
-      (Json.mkObj (doc.map fun e => (e.id, (verdict doc rs e).json)))
+      (Json.mkObj (doc.map fun e => ((nm e).text, (verdict nm reads doc rs e).json)))
 
 def epochVectors : List Json :=
   let ask (w : World) (parties : List String) (story p k : String) :=
     vector s!"{story}: does {p} learn {k}?" (Json.mkObj [("world", worldJson w parties), ("party", p), ("key", k)])
       (Json.mkObj [("learns", w.learns p k)])
   (removalExamples.map fun (p, k, _) => ask removalWorld ["alice-peer", "bob-peer-light"] "after Bob's removal" p k) ++
-  (healExamples.map fun (p, k, _) => ask healWorld ["alice-peer", "alice-peer-light"] "after Alice's heal" p k)
+  (healExamples.map fun (p, k, _) => ask healWorld ["alice-peer", "alice-peer-light"] "after Alice's heal" p k) ++
+  belowExamples.map fun ((kind, v), _) =>
+    let key := kind ++ ":" ++ v
+    vector s!"holding Maia City's below group: does bob learn {key}?"
+      (Json.mkObj [("world", worldJson (belowWorld.map fun k => k.1 ++ ":" ++ k.2) ["bob"]), ("party", "bob"),
+        ("key", key)])
+      (Json.mkObj [("learns", belowWorld.learns "bob" (kind, v))])
 
 def approvalVectors : List Json :=
-  approvalExamples.map fun (name, sigs, k, v, d, _) =>
+  (approvalExamples.map fun (name, sigs, k, v, d, _) =>
     vector name (Json.mkObj [("tree", "cast"), ("sigs", Json.arr (sigs.map Sig.json).toArray), ("threshold", toJson k),
         ("vault", v), ("digest", d)])
-      (Json.mkObj [("approved", cast.approved k v d sigs)])
+      (Json.mkObj [("approved", cast.approved k v d sigs)])) ++
+  quorumExamples.map fun (name, sigs, v, d, _) =>
+    vector name (Json.mkObj [("tree", "cast"), ("plus", Json.arr #[garden.json]),
+        ("thresholds", Json.mkObj [("garden", toJson (2 : Nat))]), ("sigs", Json.arr (sigs.map Sig.json).toArray),
+        ("vault", v), ("digest", d)])
+      (Json.mkObj [("approves", gardenCast.approves gardenThreshold v d sigs)])
+
+open RevokeExamples ExpiryExamples in
+/-- A write under a cap that expires: the Doc with each envelope's signed time, the cap, its expiry and the write,
+and whether it counts for the clock (`Aven.ID.Expiry`, R12). -/
+def expiryVectors : List Json :=
+  let ask (name : String) (doc : List Aven.Core.Envelope) (e : Aven.Core.Envelope) :=
+    vector name (Json.mkObj [("doc", Json.arr (doc.map envelopeJson).toArray), ("expiry", Json.str expiryA.text),
+        ("expires", toJson (100 : Nat)), ("write", Json.str (nm e).text)])
+      (Json.mkObj [("inTime", inTime nm reads time doc expiryA 100 e)])
+  [ask "a write before the expiry, which the ack had seen" expiryDoc bob90,
+   ask "a write backdated after an ack of the expiry, which it hadn't seen" expiryDoc bobBackdated,
+   ask "a write claiming a time past the expiry" expiryDoc bob105,
+   ask "a backdated write before any ack: judged by the time it claims" [bob90, bobBackdated] bobBackdated]
 
 def networkVectors : List Json :=
   let ticket (name : String) (cs : List TicketClaim) :=
@@ -193,6 +225,11 @@ def keepVectors : List Json :=
     vector s!"what {v} pays" (Json.mkObj [("keep", keepD1.json), ("uploads", Json.arr (uploads.map (·.json)).toArray),
         ("vault", v)])
       (Json.mkObj [("bill", toJson (keepD1.bill uploads v))])) ++
+  [vector "a vault's quota: what the keeper takes, in the order the uploads came"
+    (Json.mkObj [("keep", keepD1.json), ("quota", Json.arr #[Json.mkObj [("vault", "alice"),
+        ("bytes", toJson (aliceQuota "alice"))]]), ("uploads", Json.arr (quotaUploads.map (·.json)).toArray)])
+    (Json.mkObj [("taken", Json.arr ((keepD1.admit aliceQuota [] quotaUploads).map (·.json)).toArray),
+      ("spent", Json.mkObj [("alice", toJson (Keep.spent (keepD1.admit aliceQuota [] quotaUploads) "alice"))])])] ++
   (List.range generatedKeeps).map fun i =>
     let s := genKeep (i + 1)
     vector s!"generated keeper, seed {i + 1}" (Json.mkObj [("keep", s.json)]) (keepResult s)
@@ -216,7 +253,9 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "epochs.json") (render epochVectors)
   IO.FS.writeFile (dir / "approvals.json") (render approvalVectors)
   IO.FS.writeFile (dir / "network.json") (render networkVectors)
+  IO.FS.writeFile (dir / "expiry.json") (render expiryVectors)
   IO.FS.writeFile (dir / "keep.json") (render keepVectors)
+  IO.FS.writeFile (dir / "safe.json") (render Safe.safeVectors)
   IO.FS.writeFile (dir / "settled.json") (render SettleJson.settledVectors)
   IO.FS.writeFile (dir / "records.json") (render SettleJson.recordVectors)
   IO.FS.writeFile (dir / "node.json") (render SettleJson.nodeVectors)
