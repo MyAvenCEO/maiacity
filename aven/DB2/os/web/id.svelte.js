@@ -55,12 +55,16 @@ export const ownerName = (owner) => (owner.kind === 'vault' ? vaultName(owner.id
 // A person's acts need what avenID computes (PRODUCTION.md, Parts A and C; MILESTONE2.md): what a passkey signs, the
 // ids a browser, a passkey and a person go by, an invite's one-time key. The page runs the WebAuthn ceremony, which a
 // worker can't, and asks the Peer-Light for these (peer/light/src/acts.rs); each answers once, asynchronously.
+// Like every line the page sends, an ask carries the page's start, for a worker nobody has started yet
+// (peer/worker.js).
 let port;
+let starting;
 const waiting = new Map();
 let asked = 0;
 
-export function askThrough(p) {
+export function askThrough(p, start) {
 	port = p;
+	starting = start;
 }
 
 function answered({ id, value, error }) {
@@ -78,7 +82,7 @@ const ask =
 			if (!port) return reject(new Error("this page runs no Peer-Light to ask"));
 			const id = ++asked;
 			waiting.set(id, { resolve, reject });
-			port.postMessage({ ask: { id, fn, args } });
+			port.postMessage({ start: starting, ask: { id, fn, args } });
 		});
 
 export const challenge = ask('challenge');

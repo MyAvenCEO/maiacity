@@ -51,6 +51,9 @@ async function deviceSecret() {
 // The Peer-Light is configured, never built for a place: its name, secret seed and the Aven Peer's key come from the
 // page (a secret `opfs` is this browser's own, and without a name it goes by its key); its relay is this origin,
 // where Vite (in the box) or Caddy (in production) passes /relay on to the Aven Peer.
+// why the Peer-Light isn't running here, once its start has failed
+let down;
+
 // In the box's cast `cast` is its tree, whose views the Peer-Light pushes at once.
 async function start({ name, secret, avenKey, avenName, members, cast }) {
 	try {
@@ -58,7 +61,8 @@ async function start({ name, secret, avenKey, avenName, members, cast }) {
 		if (secret === 'opfs') secret = await deviceSecret();
 		await light.start(name, secret, self.location.origin, avenKey, avenName, tell, members ?? null, cast ?? null);
 	} catch (error) {
-		tell(JSON.stringify({ t: Date.now(), peer: name, event: 'failed', why: String(error?.message ?? error) }));
+		down = String(error?.message ?? error);
+		tell(JSON.stringify({ t: Date.now(), peer: name, event: 'failed', why: down }));
 	}
 }
 
@@ -93,11 +97,14 @@ function connect(port) {
 		if (data?.start) started ??= start(data.start);
 		if (data?.box) started ??= showBox(data.box);
 		if (data?.ask) answer(port, data.ask);
-		// a statement for the Aven Peer, a line for the chat's room, or a message as it is (the box's check), from the page
+		// a statement for the Aven Peer, a line for the chat's room, or a message as it is (the box's check), from the page.
+		// The page sends its start with each, which only the first one here uses: a worker no page has started yet (Safari
+		// can hand a page one) starts then, rather than failing on a Peer-Light it never loaded (aven.maia.city, 30 Oct)
 		for (const call of ['send', 'say', 'post']) {
 			if (data?.[call] === undefined) continue;
 			await started;
 			try {
+				if (!light) throw new Error(`the Peer-Light isn't running: ${down ?? 'nothing started it'}`);
 				light[call](data[call]);
 			} catch (error) {
 				port.postMessage(JSON.stringify({ t: Date.now(), peer: 'page', event: 'refused', why: String(error?.message ?? error) }));
@@ -106,6 +113,9 @@ function connect(port) {
 	};
 	for (const line of lines) port.postMessage(line);
 	if (views) port.postMessage(views);
+	// a worker nobody has started asks its page for the start: Safari can bring one up behind a page that started an
+	// earlier one, which then talks to it as if it ran
+	if (!started) port.postMessage(JSON.stringify({ t: Date.now(), peer: 'page', event: 'start?' }));
 	port.start?.();
 }
 

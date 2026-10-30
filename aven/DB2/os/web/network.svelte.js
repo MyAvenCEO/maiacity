@@ -16,6 +16,8 @@ import { hear, speakThrough } from './room.svelte.js';
 export const net = $state({ me: null, key: null, claimed: null, tree: null, refused: null, trouble: null, door: null });
 
 let port;
+// the start this page gives its Peer-Light, sent again with every statement (peer/worker.js)
+let starting;
 
 // The host's Aven Peer, or null on a host that has none (a visitor's: avenOS is "coming soon" there)
 export async function hostNetwork() {
@@ -46,6 +48,7 @@ export function runNetwork(config) {
 		if (line.event === 'status' && line.phase === 'live') net.trouble = null;
 		if (line.event === 'started') Object.assign(net, { me: line.peer, key: line.key });
 		if (line.event === 'network') Object.assign(net, { claimed: line.claimed, tree: line.tree });
+		if (line.event === 'start?' && starting) port.postMessage({ start: starting });
 		if (line.event === 'refused') net.refused = line.why;
 		if (line.event === 'door') net.door = line.admitted;
 		if (line.event === 'status' || line.event === 'failed') live.own = line.event === 'failed' ? { ...line, phase: 'offline', peers: 0 } : line;
@@ -53,10 +56,11 @@ export function runNetwork(config) {
 		if (line.peer === net.me) take(line);
 		hear(line);
 	};
-	speakThrough(port);
-	askThrough(port);
+	starting = { name: '', secret: 'opfs', avenKey: config.peer, avenName: 'aven-peer' };
+	speakThrough(port, starting);
+	askThrough(port, starting);
 	port.start?.();
-	port.postMessage({ start: { name: '', secret: 'opfs', avenKey: config.peer, avenName: 'aven-peer' } });
+	port.postMessage({ start: starting });
 }
 
 const hex = (buffer) => [...new Uint8Array(buffer)].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -74,7 +78,7 @@ export async function assertion(config, text, credential) {
 
 export function send(frame) {
 	net.refused = null;
-	port.postMessage({ send: JSON.stringify(frame) });
+	port.postMessage({ start: starting, send: JSON.stringify(frame) });
 }
 
 // Sign up, so claim the network if nobody has: the person's name, then a new passkey (ES256, attestation none, its
