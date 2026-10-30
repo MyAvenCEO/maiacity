@@ -9,26 +9,56 @@ replays what the checkpoint covers and compares the state's hash. The model take
 CBOR) as a parameter that loses nothing.
 
 What it proves: a state a reader took from a checkpoint that then checks is exactly the replay of what it covers
-(`checked_is_replay`), so a checkpoint that lies is always caught.
+(`checked_is_replay`), so a checkpoint that lies is always caught; and it names its version's tips, among what it
+covers, and the runtime that made it (`checked_names`); and a reader takes one only from a device whose vault may
+write the Doc at the version it names, as with index roots, ignoring one from anyone else (`checkpoint_by_writer`;
+architect, A5, 30 Oct 2026).
 -/
 
 namespace Aven.DB.Docs
 
 open Aven.Core
 
+/-- A checkpoint: the version it is at (its tips' names), what it covers, the state's hash, and the runtime that made
+it (architecture, rule 8). -/
 structure Checkpoint where
+  version : List Hash
   covers : List Envelope
   state : Hash
+  runtime : Hash
+  /-- The vault of the device that signed it. -/
+  vault : Bytes
 
-/-- The background check: replay what it covers, and compare the state's hash. -/
-def Checkpoint.check {St : Type} (L : Loro St) (enc : St → Value) (H : Bytes → Hash) (cp : Checkpoint) : Bool :=
-  nameOf H (enc (L.replay cp.covers)) == cp.state
+/-- The background check, with the runtime the reader replays with: the checkpoint names that runtime, every tip it
+names is an envelope it covers, and replaying what it covers gives the state's hash. -/
+def Checkpoint.check {St : Type} (L : Loro St) (enc : St → Value) (H : Bytes → Hash) (runtime : Hash)
+    (cp : Checkpoint) : Bool :=
+  cp.runtime == runtime && cp.version.all (fun t => cp.covers.any (·.name H == t)) &&
+    nameOf H (enc (L.replay cp.covers)) == cp.state
 
 /-- A state whose hash a checkpoint names, when the checkpoint checks, is the replay of what it covers. -/
 theorem checked_is_replay {St : Type} {L : Loro St} {enc : St → Value} {H : Bytes → Hash} (hH : Injective H)
-    (hc : ∀ s, Canon (enc s) = true) (he : ∀ a b, enc a = enc b → a = b) {cp : Checkpoint} {s : St}
-    (hs : nameOf H (enc s) = cp.state) (hck : cp.check L enc H = true) : s = L.replay cp.covers := by
-  simp only [Checkpoint.check, beq_iff_eq] at hck
-  exact he _ _ (nameOf_inj hH (hc _) (hc _) (hs.trans hck.symm))
+    (hc : ∀ s, Canon (enc s) = true) (he : ∀ a b, enc a = enc b → a = b) {runtime : Hash} {cp : Checkpoint} {s : St}
+    (hs : nameOf H (enc s) = cp.state) (hck : cp.check L enc H runtime = true) : s = L.replay cp.covers := by
+  simp only [Checkpoint.check, Bool.and_eq_true, beq_iff_eq] at hck
+  exact he _ _ (nameOf_inj hH (hc _) (hc _) (hs.trans hck.2.symm))
+
+/-- A checkpoint that checks names the runtime the reader replays with, and every tip of its version is one of the
+envelopes it covers. -/
+theorem checked_names {St : Type} {L : Loro St} {enc : St → Value} {H : Bytes → Hash} {runtime : Hash}
+    {cp : Checkpoint} (hck : cp.check L enc H runtime = true) :
+    cp.runtime = runtime ∧ ∀ t ∈ cp.version, ∃ e ∈ cp.covers, e.name H = t := by
+  simp only [Checkpoint.check, Bool.and_eq_true, beq_iff_eq, List.all_eq_true, List.any_eq_true] at hck
+  exact ⟨hck.1.1, hck.1.2⟩
+
+/-- The checkpoints a reader takes: only those signed by a device whose vault may write the Doc at the version they
+name. It still checks each by replay. -/
+def takenCheckpoints (mayWrite : Bytes → List Hash → Bool) (cps : List Checkpoint) : List Checkpoint :=
+  cps.filter fun cp => mayWrite cp.vault cp.version
+
+/-- A reader takes a checkpoint only from a vault that may write the Doc at the version it names. -/
+theorem checkpoint_by_writer {mayWrite : Bytes → List Hash → Bool} {cps : List Checkpoint} {cp : Checkpoint}
+    (h : cp ∈ takenCheckpoints mayWrite cps) : cp ∈ cps ∧ mayWrite cp.vault cp.version = true :=
+  List.mem_filter.mp h
 
 end Aven.DB.Docs

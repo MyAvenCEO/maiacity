@@ -1,0 +1,34 @@
+# Aven.Architecture: the rules across all parts (ARCHITECTURE.md, "The rules across all parts"), stated as theorems
+# composed from the parts' own models. It requires every part, so no part requires another sideways. Core Lean only.
+name = "aven-architecture-spec"
+version = "0.1.0"
+defaultTargets = ["AvenArchitecture", "vectors"]
+
+[[lean_lib]]
+name = "AvenArchitecture"
+roots = ["Aven.Architecture"]
+
+# Each rule, what composes it and what is still missing, as JSON (rules.json).
+[[lean_exe]]
+name = "vectors"
+root = "Vectors"
+
+[[require]]
+name = "aven-core-spec"
+path = "../../core/spec"
+
+[[require]]
+name = "aven-id-spec"
+path = "../../id/spec"
+
+[[require]]
+name = "aven-db-spec"
+path = "../../db/spec"
+
+[[require]]
+name = "aven-runtimes-spec"
+path = "../../../runtimes/spec"
+
+[[require]]
+name = "aven-actor-spec"
+path = "../../../actor/spec"
