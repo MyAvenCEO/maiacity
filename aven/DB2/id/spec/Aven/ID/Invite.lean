@@ -25,8 +25,9 @@ it is unclaimed, its claim; then an admin passkey's sign-in, or a join with an o
 admits it for that statement and nothing more.
 
 A restart reads it all back (`restore`): the claim and sign-ins, then the invites, the withdrawals and the joins, each
-checked again. Invites and withdrawals don't take part in the passkey's counter: their order against the sign-ins is
-not kept.
+checked again. A store lists refs by name, so invites, withdrawals and joins come back in their invite's order, not
+the order they came in: the members are the same, perhaps listed in another order. Invites and withdrawals don't take
+part in the passkey's counter, since their order against the sign-ins is not kept.
 
 Theorems: only the admin invites (`invite_admin`), and it takes a claimed network; an invite is used at most once
 (`join_once`, `joins_nodup`), not after it is withdrawn (`join_withdrawn`), and a used one can't be withdrawn
@@ -220,14 +221,18 @@ def submitSignIn (m : Members) (sender : String) (i : SignIn) : Except MemberErr
 /-- An empty store: the network unclaimed again, without invites or members. -/
 def wipe (m : Members) : Members := { server := m.server.wipe }
 
-/-- A restart: the claim and sign-ins, then the invites, withdrawals and joins, each checked again as when it came. -/
+/-- The order a store lists refs in: invites, withdrawals and joins come back by their invite's id. -/
+def byId (a b : String) : Bool := decide (inviteId a ≤ inviteId b)
+
+/-- A restart: the claim and sign-ins, then the invites, withdrawals and joins, each checked again, in the order the
+store lists them: by their invite's id. -/
 def restore (m : Members) : Except MemberError Members := do
   let s ← match m.server.restore with
     | .ok s => pure s
     | .error why => .error (.claim why)
-  let r ← m.invites.foldlM acceptInvite { server := s }
-  let r ← m.withdrawn.foldlM acceptWithdrawal r
-  m.joins.foldlM acceptJoin r
+  let r ← (m.invites.mergeSort fun a b => byId a.key b.key).foldlM acceptInvite { server := s }
+  let r ← (m.withdrawn.mergeSort fun a b => byId a.key b.key).foldlM acceptWithdrawal r
+  (m.joins.mergeSort fun a b => byId a.invite b.invite).foldlM acceptJoin r
 
 /-! ## The door -/
 

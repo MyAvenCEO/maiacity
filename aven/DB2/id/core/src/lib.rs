@@ -18,6 +18,7 @@ mod network;
 mod passkey;
 mod query;
 mod sign;
+mod statements;
 mod tree;
 #[cfg(target_arch = "wasm32")]
 mod wasm;

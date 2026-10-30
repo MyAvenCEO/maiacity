@@ -179,10 +179,15 @@ def Members.devices (m : Members) : Nat := (m.tree.vaults.filter (·.kind == .de
 #guard memberExamples.all fun (_, ops, want) =>
   (boxMembers.run ops).map (fun (answer, m) => (answer, m.devices, m.members.length)) == want
 
--- a restart finds the tree, the invites and the withdrawals it had, in every example
+/-- Vault ids as a set, in one order. -/
+def sorted (ids : List String) : List String := ids.mergeSort fun a b => decide (a ≤ b)
+
+-- a restart finds the vaults, the members and the invites' states it had, in every example, perhaps in another order
 #guard memberExamples.all fun (_, ops, _) =>
-  (boxMembers.run ops).all fun (_, m) => (m.restore.toOption.map fun r => (r.tree.vaults, r.invites, r.withdrawn)) ==
-    some (m.tree.vaults, m.invites, m.withdrawn)
+  (boxMembers.run ops).all fun (_, m) =>
+    (m.restore.toOption.map fun r => (sorted (r.tree.vaults.map (·.id)), sorted r.members,
+      sorted (r.invites.map fun i => i.key ++ r.state i.key))) ==
+    some (sorted (m.tree.vaults.map (·.id)), sorted m.members, sorted (m.invites.map fun i => i.key ++ m.state i.key))
 
 /-- The members after a trace from the box's Aven Peer. -/
 def membersAfter (ops : List MemberOp) : Members := ((boxMembers.run ops).getLast?.map (·.2)).getD boxMembers

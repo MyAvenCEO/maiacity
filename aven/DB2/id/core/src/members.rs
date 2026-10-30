@@ -332,7 +332,7 @@ impl Members {
     }
 
     /// The state read back from its stored statements: the claim and sign-ins, then the invites, withdrawals and
-    /// joins, each checked again as when it came.
+    /// joins, each checked again, in the order a store lists them: by their invite's id.
     pub fn restore(
         &self,
         claim: Option<Claim>,
@@ -346,6 +346,11 @@ impl Members {
             .restore(claim, sign_ins)
             .map_err(MemberError::Claim)?;
         let mut next = Members::new(network);
+        // in the order a store lists their refs: by their invite's id
+        let (mut invites, mut withdrawn, mut joins) = (invites, withdrawn, joins);
+        invites.sort_by_key(|i| invite_id(&i.key));
+        withdrawn.sort_by_key(|w| invite_id(&w.key));
+        joins.sort_by_key(|j| invite_id(&j.invite));
         for i in invites {
             next = next.accept_invite(i)?;
         }
