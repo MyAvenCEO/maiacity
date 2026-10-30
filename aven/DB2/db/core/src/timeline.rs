@@ -25,9 +25,11 @@ mod tests {
             "phase",
             serde_json::json!({ "phase": "live" }),
         );
+        // compared as values: serde_json keeps insertion order where another crate of the workspace turns on
+        // `preserve_order` (aven-id does), and sorts keys where none does
         assert_eq!(
-            l,
-            r#"{"event":"phase","peer":"aven-peer","phase":"live","t":5}"#
+            serde_json::from_str::<serde_json::Value>(&l).unwrap(),
+            serde_json::json!({ "t": 5, "peer": "aven-peer", "event": "phase", "phase": "live" })
         );
     }
 }

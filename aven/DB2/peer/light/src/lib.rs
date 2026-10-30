@@ -55,9 +55,13 @@ pub async fn start(
         serde_json::json!({ "key": endpoint.id().to_string(), "relay": relay.to_string() }),
     ));
     // the one record it keeps, in this origin's OPFS: its first start, found again after a reload
-    let store = backend::opfs("/store/").map_err(js)?;
+    #[cfg(target_arch = "wasm32")]
+    let (store, kind) = (backend::opfs("/store/").map_err(js)?, "opfs");
+    // the crate also builds natively, for the workspace's tests; there it has no OPFS
+    #[cfg(not(target_arch = "wasm32"))]
+    let (store, kind) = (backend::memory().map_err(js)?, "memory");
     let kept = record::first_start(&store, &name, now()).await.map_err(js)?;
-    notes(record::line(now(), &name, "opfs", &kept));
+    notes(record::line(now(), &name, kind, &kept));
     let aven = EndpointAddr::new(keys::public(&aven_key).map_err(js)?).with_relay_url(relay);
     wasm_bindgen_futures::spawn_local(link::run(endpoint, name, aven, aven_name, notes));
     Ok(())
