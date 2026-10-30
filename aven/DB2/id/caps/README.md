@@ -721,7 +721,9 @@ key's public half. A keeper takes a link on that signature alone, since it reads
 3. It takes and serves a Doc's sealed bytes only for a device that signs the connection's TLS exporter with the current
    fetch key (`served_current`). So "nothing leaves for a device that may not receive it" (engine, rule 13) holds at a
    keeper that can't read caps, and nobody outside a Doc can fill it with junk.
-4. The uploading vault pays, and only for what the keeper took from it (`uploader_pays`).
+4. The uploading vault pays, and only for what the keeper took from it (`uploader_pays`). Uploads are taken in the
+   order they come, each only while its vault's spending stays within the quota the keep cap gives it, so no vault ever
+   spends past it (`quota_holds`, R10).
 
 Key blobs and letters are served to any member, since they are useless without the keys they're sealed to. A device
 whose proof is refused because a newer epoch came fetches that epoch's key blob, opens its stanza and proves again.
@@ -1187,6 +1189,7 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `current_agrees`, `current_chained` | Keepers holding the same links take the same current fetch key, whatever order they came in, and it chains |
 | | `fork_flagged` | Every fork a keeper takes is flagged |
 | | `served_current`, `fork_served` | A keeper serves a fetch or takes an upload only for a proof on that connection by the current fetch key, or, while a fork is unsettled, by a branch's newest key, so honest readers are never refused |
+| | `quota_holds`, `admitted_served` | A keeper takes uploads in the order they come, each only while its vault's spending stays within the quota its keep cap gives it, so no vault's spending ever passes its quota; and it takes only what it serves (R10) |
 | | `grind_settled`, `settled_example` | Once the keep cap's issuer chooses a branch at a fork, every keeper follows it whatever forks arrive after |
 | | `uploader_pays` | The uploading vault pays, and only for what the keeper took from it |
 | | `grind_example` | A removed reader's fork with a ground hash becomes current at a keeper until the issuer chooses; it is flagged, and honest readers are still served |
