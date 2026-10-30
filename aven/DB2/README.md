@@ -229,7 +229,7 @@ the `ProtocolHandler` registered for its ALPN. avenDB's own protocol plugs in th
 2. **Network:** the invite-only door (invites, the relay's allow-list, the device handshake) and members-only gossip,
    with the first example app: a live chat ([`MILESTONE2.md`](MILESTONE2.md)).
    Then **the store upgrade** ([`store`](store/README.md)): files in the chat (images, PDFs, movies that play
-   from any point), the chat's history, the city-dome's shared secret, and our own OPFS driver.
+   from any point), the chat's history and our own OPFS driver; sealing waits for caps (live since release #1476).
 3. **avenID and caps:** more passkeys per vault, owners k of n, recovery, rotation, devices and their revocation; caps,
    roles, delegation.
 4. **Docs:** Loro documents in signed, sealed envelopes; the one writer and its snapshots; the store; one document
