@@ -18,6 +18,8 @@ pub mod record;
 #[cfg(feature = "native")]
 pub mod relay;
 pub mod room;
+#[cfg(feature = "native")]
+pub mod tls;
 
 /// Where a peer's events go: the timeline's lines (`aven_db_core::timeline`), already shaped.
 pub type Notes = std::sync::Arc<dyn Fn(String) + Send + Sync>;

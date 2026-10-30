@@ -12,6 +12,11 @@
 //!     --relay                run the relay here: this is the Aven Peer
 //!     --relay-listen ADDR    the relay's HTTP socket (0.0.0.0:3340), with --relay
 //!     --relay-url URL        the relay every peer reaches, this one's included
+//!     --relay-cert PATH      with --relay: the certificate (PEM, its chain) its QUIC address discovery serves, so
+//!                            members learn their public address; without it the relay serves no QAD
+//!     --relay-key PATH       the certificate's key (PEM)
+//!     --relay-quic ADDR      QAD's UDP socket (0.0.0.0:7842, iroh's port, which every Peer probes)
+//!     --relay-ca PATH        an extra root (PEM) this Peer trusts for its relay's QAD: the box's test CA
 //!     --members LIST         name=key,…: the peers this one knows by name; the Aven Peer admits only them
 //!     --aven HOST:PORT       the Aven Peer's UDP address, without --relay
 //!     --aven-key HEX         the Aven Peer's key, without --relay
@@ -53,7 +58,7 @@ use aven_peer::keys::{self, Members};
 use aven_peer::members::{Gate, Hook};
 use aven_peer::relay::Allow;
 use aven_peer::room::Room;
-use aven_peer::{Notes, door, door::Door, hub::Hub, link, now, record};
+use aven_peer::{Notes, door, door::Door, hub::Hub, link, now, record, tls};
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
 use iroh::{Endpoint, EndpointAddr, RelayMap, RelayMode, RelayUrl};
@@ -255,10 +260,22 @@ async fn main() -> Result<(), Error> {
         });
         let mut server = iroh_relay::server::ServerConfig::default();
         server.relay = Some(relay_config);
+        // its QUIC address discovery, given a certificate: each member learns its public address from it
+        let qad = match (config.get("relay-cert"), config.get("relay-key")) {
+            (Some(cert), Some(key)) => {
+                let at: SocketAddr = config.or("relay-quic", "0.0.0.0:7842").parse()?;
+                let mut quic = iroh_relay::server::QuicConfig::new(at);
+                quic.server_config = Some(tls::qad_server(&cert, &key)?);
+                server.quic = Some(quic);
+                Some(at.to_string())
+            }
+            (None, None) => None,
+            _ => return Err("--relay-cert and --relay-key come together".into()),
+        };
         let server = iroh_relay::server::Server::spawn(server).await?;
         note(
             "relay",
-            json!({ "listen": server.http_addr().map(|a| a.to_string()), "url": relay_url.to_string() }),
+            json!({ "listen": server.http_addr().map(|a| a.to_string()), "url": relay_url.to_string(), "qad": qad }),
         );
         Some(server)
     } else {
@@ -271,6 +288,7 @@ async fn main() -> Result<(), Error> {
         .clear_ip_transports()
         .bind_addr(listen.as_str())?
         .alpns(vec![ALPN.to_vec(), iroh_gossip::ALPN.to_vec()])
+        .ca_tls_config(tls::trust(config.get("relay-ca").as_deref())?)
         .hooks(Hook {
             me: me.clone(),
             gate: gate.clone(),
@@ -283,6 +301,25 @@ async fn main() -> Result<(), Error> {
         json!({ "key": endpoint.id().to_string(), "listen": listen, "relay": relay,
             "s3Conditions": (kind == "s3").then(|| store.conditional_writes()) }),
     );
+
+    // the addresses others may reach it at, on every change: its own sockets and, once its relay's QAD has answered,
+    // the public address its NAT gave it
+    {
+        let (notes, me) = (notes.clone(), me.clone());
+        let mut addrs = iroh::Watcher::stream(endpoint.watch_addr());
+        tokio::spawn(async move {
+            use n0_future::StreamExt;
+            while let Some(addr) = addrs.next().await {
+                let direct: Vec<String> = addr.ip_addrs().map(|a| a.to_string()).collect();
+                notes(timeline::line(
+                    now(),
+                    &me,
+                    "addresses",
+                    json!({ "direct": direct }),
+                ));
+            }
+        });
+    }
 
     // gossip on the same Router as aven/db/1 (README, rule 9): the chat's room, joined through the Aven Peer
     let gossip = Gossip::builder().spawn(endpoint.clone());
