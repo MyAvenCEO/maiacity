@@ -126,6 +126,7 @@ function connect(port) {
 const channel = new BroadcastChannel(self.name);
 const tabs = new Map();
 channel.onmessage = ({ data }) => {
+	if (data?.read && data.id !== undefined) return read(data);
 	if (!data?.tab) return;
 	if (data.bye) {
 		pages.delete(tabs.get(data.tab));
@@ -141,3 +142,21 @@ channel.onmessage = ({ data }) => {
 	if (data.data !== undefined) port.onmessage({ data: data.data });
 };
 channel.postMessage({ leader: true });
+
+// A file's bytes for the Service Worker (peer/bridge.js): `{id, read: {file, start, end}}`, `end` exclusive, answered
+// `{id, size, type, bytes}` with at most 1 MiB, clamped to the file's length (`size`, for Content-Range), or
+// `{id, error}`: "not found", or why not. Only the leader runs this worker, so only the leader answers.
+const MiB = 1 << 20;
+async function read({ id, read: { file, start = 0, end } }) {
+	try {
+		await started;
+		if (!light) throw new Error(`the Peer-Light isn't running: ${down ?? 'nothing started it'}`);
+		const from = Math.max(0, Number(start) || 0);
+		const to = Math.min(Number.isFinite(Number(end)) ? Number(end) : from + MiB, from + MiB);
+		const got = await light.file_range(file, from, to, undefined);
+		channel.postMessage({ id, size: got.len, type: null, bytes: got.bytes });
+	} catch (error) {
+		const why = String(error?.message ?? error);
+		channel.postMessage({ id, error: /not found|missing|no such/i.test(why) ? 'not found' : why });
+	}
+}

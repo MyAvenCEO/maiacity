@@ -132,6 +132,23 @@ try {
 			const again = await call('file_range', [shared.file, middle, middle + span, null]);
 			report.again = again;
 			if (again.sha !== sha || again.fetched !== 0) problems.push(`the middle read again: ${JSON.stringify(again)}`);
+			// the Service Worker's bridge (peer/bridge.js): Alice's own page leads her Peer-Light, and the middle comes over
+			// its BroadcastChannel as the Service Worker will ask for it, from the Aven Peer; a file nobody has is "not found"
+			const page = await context.newPage();
+			await page.goto('http://alice.localhost:5173/#/alice');
+			await page.locator('[data-testid="status"][data-phase="live"]').waitFor({ timeout: 30_000 });
+			report.bridge = await page.evaluate(
+				async ({ file, middle, span }) => {
+					const { read } = await import('/peer/bridge.js');
+					const t = Date.now();
+					const got = await read('alice-peer-light', file, middle, middle + span);
+					const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', got.bytes));
+					const missing = await read('alice-peer-light', '0'.repeat(64), 0, 10).then(() => 'answered', (e) => e.message);
+					return { sha: [...digest].map((b) => b.toString(16).padStart(2, '0')).join(''), length: got.bytes.length, size: got.size, ms: Date.now() - t, missing };
+				},
+				{ file: shared.file, middle, span },
+			);
+			if (report.bridge.sha !== sha || report.bridge.size !== size) problems.push(`the bridge read: ${JSON.stringify(report.bridge)}`);
 		} else problems.push(`unknown phase ${phase}`);
 	}
 } catch (error) {
