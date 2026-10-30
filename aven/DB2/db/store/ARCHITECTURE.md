@@ -58,12 +58,14 @@ Above the contract, everything is the same. Below it, each place gets the driver
 ```
 
 - **"The store" is the whole package:** the adapter, the contract and the backends, OpenDAL included. It moves to
-  `aven/DB2/store` (Samuel, 30 Oct 2026: the refactor reshapes everything anyway), as the first step of the opfs backend's
-  work. iroh-blobs is avenPEER's; the storage itself (a bucket, a folder, OPFS) is outside.
-- **OpenDAL is only a driver under the store.** It never sits above the contract, and nothing outside `db/store`
-  sees its types.
-- **The opfs backend is our own, replacing OpenDAL's.** Its one difference: sync access handles, not `createWritable`. It implements `Store` directly, so the `opendal-opfs` fork, its
-  `[patch.crates-io]` and OpenDAL's `services-opfs` feature all go. This also removes OpenDAL's OPFS problems:
+  `aven/DB2/store` (Samuel, 30 Oct 2026: the refactor reshapes everything anyway) as the first step of the opfs
+  backend's work, and its crate keeps its name, `aven-db-store`. iroh-blobs is avenPEER's; the storage itself (a
+  bucket, a folder, OPFS) is outside.
+- **OpenDAL is only a driver under the store.** It never sits above the contract, and nothing outside the store sees
+  its types.
+- **The opfs backend is our own, replacing OpenDAL's.** Its one difference: sync access handles, not
+  `createWritable`. It implements `Store` directly, so the `opendal-opfs` fork, its `[patch.crates-io]` and OpenDAL's
+  `services-opfs` feature all go. This also removes OpenDAL's OPFS problems:
   slow small writes, a fresh `File` on every range, and refused reads while a commit races.
 - **The outboard and writing in parts** (below) are written once, in the shared layer above the drivers. A driver
   provides only temp file, move, read range, list and delete.
