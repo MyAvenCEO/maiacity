@@ -33,6 +33,8 @@ import Aven.DB.Engine
 - `merges.json`: one place's base, the target's and the other branch's values and the merger's choice; the merged value,
   and backing out a commit (`Aven.DB.Docs.Merge`).
 - `lenses.json`: writes of a todo's done-ness by v0 and v1 apps; what a v0 reader reads (`Aven.DB.Docs.Lens`).
+- `indexes.json`: entries in any order, a size limit and a range; the nodes they make and what a lookup finds
+  (`Aven.DB.Docs.Index`).
 
 `aven-db-core`'s and `aven-db-store`'s tests load them. `bun run up --check` runs this again and fails when the files
 differ from what is committed. -/
@@ -602,6 +604,28 @@ def mutations : List Json := mutationExamples ++ (List.range generated).map fun 
 
 end Engine
 
+/-! ## Docs: sealed indexes (`Aven.DB.Docs.Index`) -/
+
+/-- The vectors' boundary: an entry whose last byte is a multiple of four ends its node. The Rust uses its BLAKE3's
+low bits; any rule on the entry alone keeps the theorems. -/
+def indexBoundary (e : List UInt8) : Bool := (e.getLastD 0).toNat % 4 == 0
+
+def indexCases : List (String × List String × Nat × String × String) := [
+  ("a directory in four nodes", ["d:01", "d:07", "d:04", "d:0a", "d:02", "d:09"], 8, "d:02", "d:07"),
+  ("the same entries, another order", ["d:09", "d:02", "d:0a", "d:04", "d:07", "d:01"], 8, "d:02", "d:07"),
+  ("a duplicate, folded once", ["d:01", "d:01", "d:05"], 8, "d:00", "d:ff"),
+  ("cut by size", ["aaaa", "bbbb", "cccc", "dddd"], 9, "b", "c~")]
+
+def indexes : List Json :=
+  indexCases.map fun (name, es, limit, lo, hi) =>
+    let bs := es.map fun e => e.toUTF8.toList
+    let text (b : List UInt8) : Json := String.fromUTF8! ⟨b.toArray⟩
+    let nodes := Docs.Index.chunks indexBoundary List.length limit (Docs.Index.entries bs)
+    let found := Docs.Index.lookup indexBoundary List.length limit lo.toUTF8.toList hi.toUTF8.toList bs
+    vector name (Json.mkObj [("entries", toJson es), ("limit", toJson limit), ("lo", lo), ("hi", hi)])
+      (Json.mkObj [("nodes", Json.arr (nodes.map fun n => Json.arr (n.map text).toArray).toArray),
+        ("found", Json.arr (found.map text).toArray)])
+
 /-- One vector per line, so a change reads as a diff of lines. -/
 def render (vs : List Json) : String :=
   "[\n" ++ ",\n".intercalate (vs.map Json.compress) ++ "\n]\n"
@@ -612,5 +636,6 @@ def main (args : List String) : IO Unit := do
   for (file, vs) in [("status.json", status), ("presence.json", presence), ("timeline.json", timeline),
       ("wire.json", wire), ("store.json", store), ("hashes.json", hashes), ("refs.json", refs),
       ("chat.json", chat), ("files.json", files), ("chats.json", chats), ("queries.json", queries),
-      ("wants.json", wants), ("mutations.json", mutations), ("merges.json", merges), ("lenses.json", lenses)] do
+      ("wants.json", wants), ("mutations.json", mutations), ("merges.json", merges), ("lenses.json", lenses),
+      ("indexes.json", indexes)] do
     IO.FS.writeFile (dir / file) (render vs)
