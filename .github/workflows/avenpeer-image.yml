@@ -161,7 +161,9 @@ jobs:
           NAME: ${{ needs.plan.outputs.name }}
           IMAGE: ${{ needs.plan.outputs.image }}
         run: |
-          docker buildx imagetools create --tag "$IMAGE" $(printf "$NAME@sha256:%s " *)
+          sources=()
+          for d in *; do sources+=("$NAME@sha256:$d"); done
+          docker buildx imagetools create --tag "$IMAGE" "${sources[@]}"
           docker buildx imagetools inspect "$IMAGE"
       # Its size: compressed, as a pull fetches it, per platform; and on disk, unpacked, for amd64
       - name: Measure it
