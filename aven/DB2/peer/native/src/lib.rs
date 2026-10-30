@@ -1,14 +1,16 @@
 //! avenPEER's core, the same in every peer: its keys, the link to the Aven Peer that says how it is, the record it keeps
-//! through its store, the members-only door (`members`), the chat's room (`room`), its history (`chats`) and its files
-//! (`files`), and (in the Peer, `native`) presence as the Aven Peer counts it and its relay's allow-list. The
-//! protocol's rules live in `aven-db-core`; this is the edge where iroh and the clock meet them (README, rule 2). What
-//! ships is the node, never the box: sandbox or live is configuration only (keys, members, the relay, the addresses),
-//! and nothing here knows which it is.
+//! through its store, the members-only door (`members`), the chat's room (`room`) and its history (`chats`), iroh-blobs'
+//! provider behind the door (`blobs`), and (in the Peer, `native`) the files it shares and keeps (`keep`), presence as
+//! the Aven Peer counts it and its relay's allow-list. The protocol's rules live in `aven-db-core`; this is the edge
+//! where iroh and the clock meet them (README, rule 2). What ships is the node, never the box: sandbox or live is
+//! configuration only (keys, members, the relay, the addresses), and nothing here knows which it is.
 
+pub mod blobs;
 pub mod chats;
 #[cfg(feature = "native")]
 pub mod door;
-pub mod files;
+#[cfg(feature = "native")]
+pub mod keep;
 #[cfg(feature = "native")]
 pub mod hub;
 /// iroh-gossip, as every peer runs it: the Peer-Light takes it from here.

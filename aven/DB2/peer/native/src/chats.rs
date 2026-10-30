@@ -15,17 +15,19 @@ use aven_db_core::timeline;
 use aven_db_core::wire::{Frame, Have, Head, MAX_FRAME};
 use aven_db_store::{Hash, RefName, Store};
 use bytes::Bytes;
-use iroh::SecretKey;
+use aven_db_core::files::Announcement;
+use iroh::{PublicKey, SecretKey};
 use serde_json::json;
 
 use crate::members::Gate;
 use crate::{Notes, now};
 
 /// The store a peer keeps its chains in, shared by the tasks that hear and write lines.
-#[cfg(not(target_arch = "wasm32"))]
-pub type Shared = Arc<dyn Store + Send + Sync>;
-#[cfg(target_arch = "wasm32")]
-pub type Shared = Arc<dyn Store>;
+pub use aven_db_store::blobs::Shared;
+
+/// What a peer does with each `file` line it newly chains, told the device whose chain it is on: the Aven Peer keeps
+/// the file (`keep::keep`).
+pub type OnFile = Arc<dyn Fn(PublicKey, Announcement) + Send + Sync>;
 
 fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
@@ -88,6 +90,8 @@ pub struct Chats {
     notes: Notes,
     store: Shared,
     keeper: Arc<Mutex<Keeper>>,
+    /// told each `file` line newly chained
+    on_file: Arc<std::sync::OnceLock<OnFile>>,
     /// how many times a head moved here: the Aven Peer tells its links the heads that moved
     moved: Arc<std::sync::atomic::AtomicU64>,
     /// each line kept in a gap: since when, until this peer caught up for it once (then `None`)
@@ -136,6 +140,7 @@ impl Chats {
             keeper: Arc::new(Mutex::new(Keeper::load(chains))),
             gaps: Arc::default(),
             moved: Arc::default(),
+            on_file: Arc::default(),
         };
         let shown: Vec<Held> = chats
             .keeper
@@ -188,6 +193,11 @@ impl Chats {
             }
         }
         self.note("chat", fields);
+    }
+
+    /// What to do with each `file` line chained from now on; set once.
+    pub fn on_file(&self, f: OnFile) {
+        let _ = self.on_file.set(f);
     }
 
     /// This device's key, as lines name it.
@@ -395,6 +405,11 @@ impl Chats {
                 };
                 for h in &held {
                     self.show(h);
+                    if let (Body::File(file), Some(f), Ok(from)) =
+                        (&h.line.body, self.on_file.get(), crate::keys::public(&h.line.device))
+                    {
+                        f(from, file.clone());
+                    }
                 }
                 self.advance(&device).await;
             }
