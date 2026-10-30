@@ -357,6 +357,10 @@ async function buildPage() {
 	const script = [
 		'set -e',
 		'sh id/core/wasm/build.sh',
+		// sized for a phone, by environment so the workspace's Cargo.toml and the box's tag stay as they are: 3.9 MB, 1.4 MB
+		// gzipped, where release as it is gives 7.5 MB and the loop's debug build 8.8 MB (11.25 MB as first shipped). The
+		// box has no wasm-opt
+		'export CARGO_PROFILE_RELEASE_OPT_LEVEL=s CARGO_PROFILE_RELEASE_LTO=true CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 CARGO_PROFILE_RELEASE_STRIP=symbols',
 		'cargo build -q --release -p aven-peer-light --lib --target wasm32-unknown-unknown --target-dir target/release-light',
 		`rm -rf target/light-release && wasm-bindgen --target web --no-typescript --out-dir target/light-release ${wasm}`,
 		'node_modules/.bin/vite build --config vite.config.js --logLevel warn',
