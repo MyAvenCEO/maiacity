@@ -108,7 +108,7 @@ avenSANDBOX   the box all of it is built and tested in
 
 - **Value:** immutable bytes named by their BLAKE3 hash, like IPFS. At rest in the store it is a **blob**.
 - **Doc:** mutable, a Loro document named by a stable id, like IPNS: a head over Values (segments and snapshots). It
-  holds **records**, each named `<doc>/<id>` and each under a schema ([`db/docs`](db/docs/README.md), Samuel,
+  holds **Records**, each named `<doc>/<id>` and each under a schema ([`db/docs`](db/docs/README.md), Samuel,
   30 Oct 2026).
 - **ref:** a name pointing at a Value, changed atomically: a Doc's head.
 - **store:** where a peer's blobs and refs rest, behind one contract.

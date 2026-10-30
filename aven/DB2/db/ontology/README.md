@@ -4,7 +4,7 @@ A proposal (30 Oct 2026) for how avenDB says what its data means: one grammar fo
 with place structures borrowed from Lojban's gismu, and everything above that grammar kept as data that a person or an
 agent can add to while the system runs. It is written for milestones 6 (schemas and lenses) and 7 (queries).
 
-The ontology is a part of avenDB, between two neighbours. Facts are records in [docs](../docs/README.md), and a predicate
+The ontology is a part of avenDB, between two neighbours. Facts are Records in [docs](../docs/README.md), and a predicate
 is a schema there, so predicates get versions, lanes and lenses from the docs layer. The [engine](../engine/README.md)
 syncs the documents facts live in and runs queries and mutations over them. Nothing here is built before its
 milestone, and nothing comes in from the older engines as code ([README](../../README.md), rule 12): their learnings
@@ -43,7 +43,7 @@ reasons with. Nothing a person or an agent adds needs a deploy.
 
 - **fact:** one statement, `{ id, p, x1…x5 }`, kept in a document. Its `id` names the entity it introduces.
 - **predicate:** a definition of a relation: an English name, the gismu it borrows from, a gloss, and its places. In the
-  docs layer's terms, a type: a Doc whose versions are Values, each the schema of a fact record, named by its
+  docs layer's terms, a type: a Doc whose versions are Values, each the schema of a fact Record, named by its
   hash. A fact's `p` names the version's hash.
 - **place:** one of `x1…x5`. A **value place** holds a typed value; a **ref place** holds a fact's id.
 - **entity:** whatever a fact's id stands for. The `person` fact is the person; facts about them point at it.
@@ -249,7 +249,7 @@ Nothing in that example needed a deploy, and every step is a check Lean defines.
 
 1. **A fact grammar, not documents of JSON.** Records with fields are easier at first and harder forever: every kind
    needs its own code, and nothing composes across kinds. avenOS proved the grammar carries todos, contacts, invoices and
-   reified quantities on one engine. (Documents of plain records still exist in the docs layer, for things like the
+   reified quantities on one engine. (Documents of plain Records still exist in the docs layer, for things like the
    editor's text; facts are for what needs meaning across kinds.)
 2. **Gismu place structures, English names.** Argument order is the thing every relation format gets wrong differently.
    The gismu are a standard refined for decades, small (1341), and readable by any model. Names stay English, so nobody
