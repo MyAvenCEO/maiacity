@@ -66,7 +66,7 @@ today; these 27 carry the whole design. [`GLOSSARY.md`](GLOSSARY.md) maps every 
 |---|---|---|---|
 | **Value** | Immutable bytes named by their BLAKE3 hash, written `b3:<hex>` in text. At rest in a store it is a **blob** | store, docs | — |
 | **ref** | A peer's own name for a Value, changed by compare-and-set. Refs never leave their peer | store | the README's "shared head, like IPNS" |
-| **envelope** | The one signed unit of change. Its bytes are canonical, its signature covers exactly them, and it is named by their hash. It names its writer, its place in its log and, by hash, what it builds on. Sealed unless it belongs to the network's members | docs, avenID | avenID statements, the chat's lines and docs envelopes. Actor messages and caps letters travel inside envelopes |
+| **envelope** | The one signed unit of change. Its bytes are canonical, its signature covers exactly them, and it is named by their hash. It names its writer, its place in its log and, by hash, what it builds on. Always sealed to its readers; a public one to the network's members (caps D15) | docs, avenID | avenID statements, the chat's lines and docs envelopes. Actor messages and caps letters travel inside envelopes |
 | **log** | One writer's envelopes in one Doc and branch, each naming the one before it by hash | docs | the store's chain, a device's run of segments, an actor's journal, an inbox's entries, a vault's statements |
 | **segment** | A closed run of one log, sealed and hybrid-signed as one blob | docs | — |
 | **split** | A writer signing two different envelopes after the same one. Final: neither side counts | docs, caps | "fork" in the store, the engine and Lean |
