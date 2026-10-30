@@ -1,10 +1,12 @@
-// Serves the suite's wasm on localhost (OPFS needs a secure context), opens it in Playwright's Chromium, and
-// prints the report. It runs twice: on the page, and in a worker, where the Peer-Light runs and which has no `window`.
-// Exits non-zero unless every case passed in both.
+// Serves the suite's wasm on localhost (OPFS needs a secure context), opens it in Playwright's Chromium and WebKit
+// (Safari's engine), and prints the report. In each it runs three times: on the page, in a worker, which has no
+// `window`, and in a shared worker, where the Peer-Light runs. WebKit has OPFS only with a profile directory
+// (`launchPersistentContext`). Exits non-zero unless every case passed everywhere.
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { chromium } from 'playwright';
+import { chromium, webkit } from 'playwright';
 
 const dir = process.argv[2];
 const page = `<!doctype html><script type="module">
@@ -16,19 +18,26 @@ const inWorker = await new Promise((done) => {
 	worker.onmessage = ({ data }) => done(data);
 	worker.onerror = (e) => done('FAILED: the worker threw ' + e.message);
 });
-window.report = { page, worker: inWorker };
+const shared = new SharedWorker('./worker.js?shared', { type: 'module' });
+const inShared = await new Promise((done) => {
+	shared.port.onmessage = ({ data }) => done(data);
+	shared.onerror = (e) => done('FAILED: the shared worker threw ' + e.message);
+});
+window.report = { page, worker: inWorker, 'shared worker': inShared };
 </script>`;
+// a shared worker answers its first page's port; a worker, its page
 const worker = `import init, { conformance } from './opfs_conformance.js';
+const port = await new Promise((done) => ('onconnect' in self ? (self.onconnect = (e) => done(e.ports[0])) : done(self)));
 try {
 	await init();
-	postMessage(await conformance('aven-db-store-worker-' + Date.now()));
+	port.postMessage(await conformance('aven-db-store-' + ('onconnect' in self ? 'shared' : 'worker') + '-' + Date.now()));
 } catch (e) {
-	postMessage('FAILED: ' + (e?.message ?? e));
+	port.postMessage('FAILED: ' + (e?.message ?? e));
 }`;
 const types = { '.js': 'text/javascript', '.wasm': 'application/wasm' };
 const server = createServer(async (req, res) => {
 	if (req.url === '/') return res.writeHead(200, { 'content-type': 'text/html' }).end(page);
-	if (req.url === '/worker.js') return res.writeHead(200, { 'content-type': 'text/javascript' }).end(worker);
+	if (req.url.startsWith('/worker.js')) return res.writeHead(200, { 'content-type': 'text/javascript' }).end(worker);
 	try {
 		const file = await readFile(join(dir, req.url.slice(1)));
 		res.writeHead(200, { 'content-type': types[req.url.slice(req.url.lastIndexOf('.'))] ?? 'application/octet-stream' }).end(file);
@@ -37,16 +46,24 @@ const server = createServer(async (req, res) => {
 	}
 });
 await new Promise((ok) => server.listen(0, '127.0.0.1', ok));
-const browser = await chromium.launch();
-try {
-	const tab = await browser.newPage();
-	tab.on('pageerror', (e) => console.error(`page error: ${e.message}`));
-	tab.on('console', (m) => m.type() === 'error' && console.error(`console: ${m.text()}`));
-	await tab.goto(`http://localhost:${server.address().port}/`);
-	const report = await (await tab.waitForFunction(() => window.report, null, { timeout: 240_000 })).jsonValue();
-	for (const [where, text] of Object.entries(report)) console.log(`opfs, ${where}, ${await browser.version()}:\n${text}`);
-	process.exitCode = Object.values(report).every((text) => text.startsWith('passed')) ? 0 : 1;
-} finally {
-	await browser.close();
-	server.close();
+// both engines at once, each on a profile of its own; each prints its report whole
+async function run(engine) {
+	const profile = await mkdtemp(join(tmpdir(), `opfs-${engine.name()}-`));
+	const context = await engine.launchPersistentContext(profile);
+	const version = context.browser()?.version() ?? '';
+	try {
+		const tab = context.pages()[0] ?? (await context.newPage());
+		tab.on('pageerror', (e) => console.error(`${engine.name()} page error: ${e.message}`));
+		tab.on('console', (m) => m.type() === 'error' && console.error(`${engine.name()} console: ${m.text()}`));
+		await tab.goto(`http://localhost:${server.address().port}/`);
+		const report = await (await tab.waitForFunction(() => window.report, null, { timeout: 240_000 })).jsonValue();
+		console.log(Object.entries(report).map(([where, text]) => `opfs, ${where}, ${engine.name()} ${version}:\n${text}`).join('\n'));
+		return Object.values(report).every((text) => text.startsWith('passed'));
+	} finally {
+		await context.close();
+		await rm(profile, { recursive: true, force: true });
+	}
 }
+const passed = await Promise.all([chromium, webkit].map(run));
+server.close();
+process.exitCode = passed.every(Boolean) ? 0 : 1;
