@@ -551,6 +551,12 @@ Test-first, as avenDB works: the Lean model and its theorems, then Rust tests th
    from the empty kernel and the kernel after them, over four test definitions the Rust tests implement natively.
    And `answered_by_deadline`: once the clock passes an ask's own deadline, it has its answer. `spec/vectors/traces.json`
    adds 40 generated traces, drawn from a fixed seed against the kernel so far.
+   The runtimes' grammars too (Samuel, 30 Oct 2026). `Aven.Actor.State`: state-runtime's rules (updates by path from
+   literals, the payload or the state; replies and tells), with `get_set`, `get_set_other` and `get_remove`: an
+   update touches only its path. `Aven.Actor.Face`: face-runtime's markup (`$`, `$$`, `$each` keyed, `$on`, `$use`,
+   no conditionals) drawn onto `Aven.Runtime`'s node tree, with `draw_nodes_ok` (every drawn node passes the
+   applier's allowlist, for any markup and data), `draw_events` (a face can send only the events its markup names;
+   `data-on` and `data-place` are the runtime's own) and `faceRun_ok`. Vectors: `state.json`, `face.json`.
 2. **Layers 0 to 2** (`core`): Values and names, the in-memory Doc, messages, with the vectors.
 3. **Runtimes**: `state-runtime` first, then `js-runtime`; each with hostile parts that try to get
    out, run too long or blow up, which must fail.
@@ -630,4 +636,3 @@ Open, none of it blocking version 1 (the audit's findings, mostly avenDB's propo
 - **The kernel's authority:** a narrow device vault for the actor host; click caps scoped to what the placer wired;
   who may spawn, and a bound on placement depth; a budget per run, and backpressure.
 - **Performance gates** for wasm inside wasm, fuel across engines, and a shadow root per face.
-- **Runtimes:** state-runtime's grammar.

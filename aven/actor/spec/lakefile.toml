@@ -8,6 +8,11 @@ defaultTargets = ["AvenActor", "vectors"]
 name = "aven-core-spec"
 path = "../../DB2/core/spec"
 
+# The runtimes' contract, the node-tree allowlist and the face's output (aven/runtimes/spec).
+[[require]]
+name = "aven-runtimes-spec"
+path = "../../runtimes/spec"
+
 [[lean_lib]]
 name = "AvenActor"
 roots = ["Aven.Actor"]
