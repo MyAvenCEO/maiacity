@@ -1,8 +1,8 @@
 // avenSANDBOX's runner (SANDBOX.md, "The box"): `bun run up [--check]`, `down [--wipe]`, `logs`, `shot`, `build`,
-// `doctor`, and `box <command>`, which runs any command in the box: `bun run box cargo test`. bump.mjs imports `inBox`.
-// It runs on the host (a Mac with OrbStack, a Claude cloud session, a CI runner) and drives Docker; everything else
-// runs in the box's image, whose tag is a hash of every file its build reads (box/tag.mjs), as the image workflow
-// (.github/workflows/avensandbox-image.yml) tags it.
+// `doctor`, and `box <command>`, which runs any command in the box: `bun run box cargo test`. bump.mjs imports `inBox`;
+// lanes.mjs the box's Docker, image, build and test keys. It runs on the host (a Mac with OrbStack, a Claude cloud
+// session, a CI runner) and drives Docker; everything else runs in the box's image, whose tag is a hash of every file
+// its build reads (box/tag.mjs), as the image workflow (.github/workflows/avensandbox-image.yml) tags it.
 import { createHash, createPrivateKey, createPublicKey } from 'node:crypto';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -14,16 +14,16 @@ import { newest, table } from './versions.mjs';
 const db2 = resolve(import.meta.dir, '..');
 const box = join(db2, 'sandbox', 'box');
 const boxes = 'ghcr.io/myavenceo/aven/sandbox';
-const image = process.env.AVENSANDBOX_IMAGE ?? `${boxes}:${boxTag()}`;
+export const image = process.env.AVENSANDBOX_IMAGE ?? `${boxes}:${boxTag()}`;
 const port = process.env.AVENSANDBOX_PORT ?? '5173';
 const proxyCa = '/root/.ccr/ca-bundle.crt';
 // What ships is the node, never the box: the peers learn the box only as configuration. Here the cast's test keys
 // become it: each device's secret seed is sha256("avenSANDBOX test signer: <id>"), public on purpose and valid only
 // inside the box, and the members are every peer of the cast by its public key.
 const cast = JSON.parse(readFileSync(join(db2, 'sandbox', 'cast.json'), 'utf8'));
-const seed = (id) => createHash('sha256').update(`avenSANDBOX test signer: ${id}`).digest('hex');
+export const seed = (id) => createHash('sha256').update(`avenSANDBOX test signer: ${id}`).digest('hex');
 // an Ed25519 seed's public half: the seed in PKCS #8, its key's SubjectPublicKeyInfo, whose last 32 bytes are it
-const publicOf = (hex) => {
+export const publicOf = (hex) => {
 	const pkcs8 = Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), Buffer.from(hex, 'hex')]);
 	const spki = createPublicKey(createPrivateKey({ key: pkcs8, format: 'der', type: 'pkcs8' })).export({ format: 'der', type: 'spki' });
 	return spki.subarray(-32).toString('hex');
@@ -47,7 +47,7 @@ const proxyNames = () =>
 	['HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy'].filter((name) => process.env[name]);
 const ok = async (cmd) => (await cmd.nothrow().quiet()).exitCode === 0;
 
-async function ensureDocker() {
+export async function ensureDocker() {
 	if (await ok($`docker info`)) return;
 	// A Claude cloud session has Docker installed but not running; the box starts it, with the routing it needs.
 	// It runs in a session of its own (setsid), so it outlives the command that started it.
@@ -76,7 +76,7 @@ async function ensureDocker() {
 // Only GitHub builds the box (.github/workflows/avensandbox-image.yml), after every push that changes one of its inputs;
 // nothing builds it here. Every service's image comes in one `docker compose pull`, in parallel, whenever any is
 // missing; a pull that fails says why.
-async function ensureImages() {
+export async function ensureImages() {
 	const images = [...new Set([image, ...(await $`${compose} config --images`.env(env).quiet().text()).trim().split('\n').filter(Boolean)])];
 	const missing = [];
 	for (const name of images) if (!(await ok($`docker image inspect ${name}`))) missing.push(name);
@@ -158,7 +158,7 @@ const buildPeers = [
 	`sha256sum ${peerBinary} | cut -c1-16`,
 ].join(' && ');
 
-async function build() {
+export async function build() {
 	await $`docker volume create avensandbox_target`.quiet();
 	const started = Date.now();
 	const tty = process.stdout.isTTY ? ['-t'] : [];
