@@ -136,25 +136,18 @@ touches.
 
 ### The rules in Lean
 
-`Aven.Architecture` ([`architecture/`](architecture/README.md), #1567) states these rules as theorems composed from the
-parts' own models, on the shared core `Aven.Core`. What a rule still lacks is a gap, and each gap has an owner:
+`Aven.Architecture` ([`architecture/`](architecture/README.md)) states these rules as theorems composed from the
+parts' own models, on the shared core `Aven.Core`. Where each rule stands, what is still open and who closes it is
+kept in one place, beside the proofs: [`architecture/README.md`](architecture/README.md), "Where the rules stand".
 
-| Rule | Proven | Open | Owner |
-|---|---|---|---|
-| 1 | Canonical, labelled, named | — | — |
-| 2 | Envelopes name their past; Loro's op ids are the hashes | — | — |
-| 3 | Splits are final, and a chain holds none. A write never waits, and a split's proof spreads (`Aven.ID.Node`, #1566) | Compose `Node` into the rule | docs |
-| 4 | Verdicts are order-free, operations are lowered alike, and fit holds per envelope through merges | One verdict: signature, cap chain, footprint and fit together | caps, engine, docs |
-| 5 | On caps' model | Caps' keys and segments on Core's types | caps |
-| 6 | Served = wants ∩ read grants; keepers serve on fetch proofs | — | — |
-| 7 | Keepers are blind, index roots come only from writers, hosting is an explicit cap (`Aven.Actor.Hosting`, #1565), and no peer is the only source (`Aven.ID.Node`) | Compose them into the rule | docs |
-| 8 | Snapshots are caches; checkpoints name their tips and runtime; runtimes are deterministic; index roots agree | — (who signs a checkpoint: **A5**) | — |
-| 9 | Keepers are blind; nothing plain goes to a non-reader (`Aven.ID.Node`) | Compose it into the rule | docs |
-| 10 | Queries, runtimes, index nodes and frames have limits | Limits on envelopes, blobs and pages; a quota per vault | docs, caps |
-| 11 | A wait names its ends | Waits never block unrelated work, and the stall alarm rises (#1570, on its way) | engine |
-| 12 | The past is what is named | Time conditions judged by acks | caps |
-| 13 | — | A model of the safe (D17) | caps |
-| 14 | Held by the format vectors and the box's check: a property of the node, not a theorem | — | — |
+On 30 Oct 2026, seven rules were proven whole: 1, 2, 3, 6, 7, 8 and 9. Still open:
+- **4:** one verdict joining signature, cap chain, footprint and fit;
+- **5 and 11:** proven in the parts, to be composed;
+- **10:** limits on envelopes, blobs and pages, and a quota per vault;
+- **12:** time judged by acks;
+- **13:** a model of the safe.
+
+Rule 14 is a property of the node, held by the format vectors and the box's check.
 
 ## One vocabulary
 
