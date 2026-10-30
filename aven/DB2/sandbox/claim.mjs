@@ -3,8 +3,9 @@
 // virtual authenticator over CDP, a passkey on one browser profile copied to another as a synced passkey would be.
 // `bun run up --check` runs it in three phases around what only the host can do, restarting and wiping that peer:
 //
-//   node sandbox/claim.mjs claim <run>      on an empty store: the first signup claims the network and opens the
-//                                           dashboard, the admin's vault owned by the passkey and the guardian; a
+//   node sandbox/claim.mjs claim <run>      on an empty store: the first signup, a name then a passkey, claims the
+//                                           network and opens the dashboard, the admin's vault owned by the passkey
+//                                           and the guardian, owning Maia City, which owns Aven; a
 //                                           second signup with another passkey refused; a sign-in from a second
 //                                           profile with the same passkey, which becomes a second device
 //   node sandbox/claim.mjs restarted <run>  after the Aven Peer restarted: both browsers on the same tree
@@ -12,7 +13,9 @@
 //
 // What a claim and a sign-in may do is the model's (`Aven.ID.Claim`, its traces replayed by aven-id's and the Peer's
 // tests); here only the box's mechanics are new: real passkeys, a real store, the page. The tree the Aven Peer keeps
-// is read from its `network` lines; the box's MaiaCityGuardian from its configuration.
+// is read from its `network` lines, and held whole, names included, to the model's trace written for this check
+// (claims.json, "the box's check"): only the ids and public halves of real passkeys and browsers are put in for the
+// model's; the box's MaiaCityGuardian and the Aven Peer's key are the model's own.
 import { createHash, createPrivateKey, createPublicKey } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
@@ -57,7 +60,11 @@ async function view(page, want, timeout = 30_000) {
 		.catch(() => false);
 }
 
-const signUp = (page) => page.getByTestId('claim').click();
+// a signup: the name, then the passkey
+async function signUp(page) {
+	await page.getByTestId('name').fill(givenName);
+	await page.getByTestId('claim').click();
+}
 
 // a refusal shown, and the network's tree unchanged since `before`
 async function refused(page, what, before) {
@@ -68,6 +75,37 @@ async function refused(page, what, before) {
 	if (JSON.stringify(after?.tree) !== JSON.stringify(before?.tree)) problems.push(`${what} changed the tree`);
 	return shown?.trim();
 }
+
+// The model's trace for this check, the name the signup gives, and its tree after a step with the real passkey's and
+// browsers' ids put in: `ids` maps the model's ids to the box's, whose public halves come from the box's tree
+const model = JSON.parse(readFileSync(new URL('../id/spec/vectors/claims.json', import.meta.url), 'utf8'));
+const trace = model.find((v) => v.name.startsWith("the box's check"));
+const givenName = trace.input.ops[0].claim.name;
+function expectedTree(step, ids, real) {
+	const id = (x) => ids[x] ?? x;
+	const owner = (o) => o.replace(/^(key|vault):(.*)$/, (_, kind, x) => `${kind}:${id(x)}`);
+	const { keys, vaults } = trace.expected[step].tree;
+	return {
+		keys: keys.map(([k, public_]) => [id(k), ids[k] ? real.keys[ids[k]] : public_]),
+		vaults: vaults.map((v) => ({ id: id(v.id), name: v.name, kind: v.kind, owners: v.owners.map(owner) })),
+	};
+}
+// the Aven Peer's tree, a cast's JSON, in the model's form
+function asModel(json) {
+	const tree = JSON.parse(json);
+	return {
+		keys: Object.entries(tree.keys),
+		vaults: Object.entries(tree.vaults).map(([id, v]) => ({ id, name: v.name, kind: v.kind, owners: v.owners })),
+	};
+}
+function sameTree(what, line, step, ids) {
+	const got = line?.tree ? asModel(line.tree) : null;
+	const want = got && expectedTree(step, ids, JSON.parse(line.tree));
+	if (JSON.stringify(got) !== JSON.stringify(want))
+		problems.push(`${what}, the tree is ${JSON.stringify(got)}, not the model's ${JSON.stringify(want)}`);
+}
+// what the Aven Peer said it did: the device a claim or sign-in added
+const said = (event, since) => lines().findLast((line) => line.peer === 'prod-peer' && line.event === event && line.t >= since);
 
 const devices = (line) => (line?.tree ? Object.values(JSON.parse(line.tree).vaults).filter((v) => v.kind === 'device').length : 0);
 
@@ -96,6 +134,13 @@ if (phase === 'claim') {
 		problems.push(`the admin's vault is owned by ${JSON.stringify(report.owners)}, not its passkey and the guardian`);
 	if (report.owners?.[1] !== 'key:maia-city-guardian' || tree.keys['maia-city-guardian'] !== guardian)
 		problems.push(`the admin's vault's second owner is ${report.owners?.[1]}, not the box's MaiaCityGuardian`);
+	// the whole tree: the admin's vault named after them, Maia City, Aven, the Aven Peer and this browser
+	const ids = { 'person-a': report.admin, 'passkey-a': passkeyOwner, 'device-1': said('claimed', since)?.device };
+	sameTree('after the claim', claimed, 0, ids);
+	report.names = Object.fromEntries(Object.entries(tree.vaults).map(([id, v]) => [id, v.name]));
+	// the dashboard shows the admin's vault by its name
+	const shownName = (await first.page.locator('[data-view="dashboard"] h1').first().textContent().catch(() => '')).trim();
+	if (shownName !== `${givenName}'s vault`) problems.push(`the dashboard shows "${shownName}", not "${givenName}'s vault"`);
 
 	// the second browser: invite only, and no signup offered, so no passkey made; a deliberate second signup at #/claim,
 	// with another passkey, refused by the Aven Peer
@@ -141,6 +186,15 @@ if (phase === 'claim') {
 	await wait(300);
 	report.tree = network(since)?.tree;
 	if (devices(network()) !== 3) problems.push(`after the sign-in the tree has ${devices(network())} devices, not 3`);
+	sameTree('after the sign-in', network(since), 2, { ...ids, 'device-2': said('signed-in', since)?.device });
+	// Maia City in the admin's Vault, where it opens as a vault the admin governs; the switcher never offers it
+	await second.page.goto(`${origin}/#/${report.admin}/vault/maia-city`);
+	const opened = second.page.locator('[data-view="vault"][data-shown="maia-city"]');
+	if (!(await opened.waitFor({ timeout: 10_000 }).then(() => true, () => false))) problems.push("Maia City doesn't open in the admin's Vault");
+	await second.page.screenshot({ path: `${run}/claim-vault-maia-city.png`, fullPage: true });
+	await second.page.getByTestId('account').click();
+	const offered = await second.page.locator('#accounts [data-account]').evaluateAll((els) => els.map((el) => el.dataset.account));
+	if (JSON.stringify(offered) !== JSON.stringify([report.admin])) problems.push(`the switcher offers ${JSON.stringify(offered)}, not the admin alone`);
 	await second.page.screenshot({ path: `${run}/claim-signed-in.png` });
 	for (const b of [first, second]) await b.context.close();
 }

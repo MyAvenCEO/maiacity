@@ -1,6 +1,6 @@
 <script>
 	// avenOS on an Aven Peer's host without a cast (PRODUCTION.md, "What a person sees"). Unclaimed, one screen: Sign
-	// up, one button that makes a passkey; the first signup claims the network. Claimed, this browser opens avenOS's dashboard as the admin's
+	// up, which asks for the person's name, then makes a passkey (Part C); the first signup claims the network. Claimed, this browser opens avenOS's dashboard as the admin's
 	// vault once it is one of the network's devices; any other browser sees "invite only, coming soon", and the admin
 	// signs in there with the passkey, which makes it a device too. `#/claim` shows the signup screen whatever the
 	// network says: a second signup is the Aven Peer's to refuse, and it does.
@@ -26,6 +26,7 @@
 
 	const member = $derived(Boolean(net.tree && net.me && JSON.parse(net.tree).vaults[net.me]));
 	let busy = $state(false);
+	let name = $state('');
 	let failed = $state('');
 	const why = $derived(failed || net.refused);
 
@@ -62,14 +63,18 @@
 		{#if net.claimed === null}
 			<p class="muted">Connecting to the network…</p>
 		{:else if !net.claimed || route === 'claim'}
-			<form onsubmit={(event) => (event.preventDefault(), run(() => claim(config, { deliberate: route === 'claim' })))}>
+			<form onsubmit={(event) => (event.preventDefault(), run(() => claim(config, { name, deliberate: route === 'claim' })))}>
 				<h2>Sign up</h2>
 				{#if net.claimed}
 					<p class="muted" data-testid="claimed-note">This network is claimed already: the Aven Peer will refuse this signup, and the passkey it makes owns nothing.</p>
 				{:else}
-					<p class="muted">The first to sign up is this network's admin. It makes a passkey on this device.</p>
+					<p class="muted">The first to sign up owns this network's admin coop. Your name, then a passkey on this device.</p>
 				{/if}
-				<button data-testid="claim" disabled={busy || !net.key}>Sign up with a passkey</button>
+				<label>
+					Your name
+					<input data-testid="name" bind:value={name} required maxlength="48" autocomplete="name" placeholder="Ada" />
+				</label>
+				<button data-testid="claim" disabled={busy || !net.key || !name.trim()}>Sign up with a passkey</button>
 			</form>
 		{:else}
 			<p class="soon" data-testid="invite-only">avenOS · invite only, coming soon</p>
@@ -108,6 +113,21 @@
 		background: var(--surface);
 		border: 1px solid var(--line);
 		border-radius: 12px;
+	}
+
+	label {
+		display: grid;
+		gap: 6px;
+		color: var(--muted);
+	}
+
+	input {
+		padding: 8px 10px;
+		color: var(--text);
+		font: inherit;
+		background: var(--bg);
+		border: 1px solid var(--line);
+		border-radius: 8px;
 	}
 
 	button {

@@ -3,7 +3,7 @@
 // its OPFS (peer/worker.js), and hears from the Aven Peer whether the network is claimed and, once this browser is
 // one of its devices, its tree. The claim and the sign-in are WebAuthn ceremonies here, on the page, since a worker
 // has no `navigator.credentials`; their statements go to the Aven Peer through the worker.
-import { challenge, claimText, deviceId, passkeyId, personId, signInText } from './id.js';
+import { challenge, claimText, deviceId, passkeyId, personId, signInText, validPersonName } from './id.js';
 import { live, take, timeline } from './peers.svelte.js';
 import { hear, speakThrough } from './room.svelte.js';
 
@@ -64,17 +64,21 @@ export function send(frame) {
 	port.postMessage({ send: JSON.stringify(frame) });
 }
 
-// Sign up, so claim the network if nobody has: a new passkey (ES256, attestation none, its public key from
-// getPublicKey(), so no CBOR), then its assertion over the claim, which names it, its person vault and this browser.
+// Sign up, so claim the network if nobody has: the person's name, then a new passkey (ES256, attestation none, its
+// public key from getPublicKey(), so no CBOR), then its assertion over the claim, which names it, the person's vault
+// and their name, and this browser (PRODUCTION.md, Part C). The claim founds `<name>'s vault`, the admin coop it owns
+// (the Aven Peer's to name) and this browser as `<name>'s browser`.
 // The Aven Peer decides only which signup came first, and its word never deletes a passkey: so none is made when the
 // network is known to be claimed, unless the signup is deliberate (`#/claim`, where the Aven Peer refuses it). A race
 // can still leave the loser a passkey that owns nothing, which its person can remove in their passkey manager.
-export async function claim(config, { deliberate = false } = {}) {
+export async function claim(config, { name, deliberate = false }) {
 	if (net.claimed && !deliberate) throw new Error('this network is claimed already');
+	name = name.trim();
+	if (!validPersonName(name)) throw new Error('a name is 1 to 48 characters, without control characters');
 	const created = await navigator.credentials.create({
 		publicKey: {
 			rp: { id: config.rpId, name: 'Aven' },
-			user: { id: crypto.getRandomValues(new Uint8Array(16)), name: 'admin', displayName: "Aven's admin" },
+			user: { id: crypto.getRandomValues(new Uint8Array(16)), name, displayName: name },
 			challenge: crypto.getRandomValues(new Uint8Array(32)),
 			pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
 			authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
@@ -86,10 +90,11 @@ export async function claim(config, { deliberate = false } = {}) {
 	const statement = {
 		network: config.network,
 		person: personId(spki),
+		name,
 		passkey: { id: passkeyId(spki), spki },
 		device: { id: deviceId(net.key), key: net.key },
 	};
-	const text = claimText(statement.network, statement.person, statement.passkey.id, spki, statement.device.id, net.key);
+	const text = claimText(statement.network, statement.person, name, statement.passkey.id, spki, statement.device.id, net.key);
 	statement.assertion = await assertion(config, text, created.rawId);
 	send({ frame: 'claim', statement: JSON.stringify(statement) });
 }

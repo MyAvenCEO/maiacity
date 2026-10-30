@@ -29,6 +29,8 @@
 //!     --origin URLS          with --rp-id: avenOS's origins, comma-separated; an assertion must come from one, and a
 //!                            stored one holds while its origin stays listed
 //!     --guardian HEX         with --rp-id: MaiaCityGuardian's public half, an owner of every person's vault founded
+//!     --admin-coop NAME      with --rp-id: the name of the admin coop the claim founds, which owns the network
+//!                            (Maia City); read at every start, so a restart with another renames it
 
 use std::collections::HashMap;
 use std::fs::OpenOptions;
@@ -171,9 +173,13 @@ async fn main() -> Result<(), Error> {
     notes(record::line(now(), &me, &kind, &record));
 
     // without a cast, an Aven Peer keeps its tree in its store, claimable once (PRODUCTION.md, Part A)
-    let door = match (config.get("rp-id"), config.get("origin"), config.get("guardian")) {
-        (None, None, None) => None,
-        (Some(rp_id), Some(origins), guardian) if relay => {
+    let door = match (config.get("rp-id"), config.get("origin"), config.get("guardian"), config.get("admin-coop")) {
+        (None, None, None, None) => None,
+        (Some(rp_id), Some(origins), guardian, coop) if relay => {
+            let coop = coop.unwrap_or_else(|| aven_id::COOP_NAME.to_string());
+            if !aven_id::valid_name(&coop) {
+                return Err(format!("--admin-coop: a name is 1 to {} characters, without control characters", aven_id::MAX_NAME).into());
+            }
             let guardian = guardian.map(|g| g.trim().to_lowercase());
             let origins = origins.split(',').map(|o| o.trim().to_string()).filter(|o| !o.is_empty()).collect();
             if let Some(g) = &guardian {
@@ -181,9 +187,14 @@ async fn main() -> Result<(), Error> {
             }
             let key = endpoint.id().to_string();
             let rp = Relying { rp_id, origins };
-            Some(Arc::new(Door::open(me.clone(), store.clone(), &key, rp, guardian, notes.clone()).await?))
+            let coop = (aven_id::COOP, coop.as_str());
+            Some(Arc::new(Door::open(me.clone(), store.clone(), &key, rp, guardian, coop, notes.clone()).await?))
         }
-        _ => return Err("--rp-id and --origin come together, on an Aven Peer (--relay); --guardian only with them".into()),
+        _ => {
+            return Err(
+                "--rp-id and --origin come together, on an Aven Peer (--relay); --guardian and --admin-coop only with them".into()
+            )
+        }
     };
 
     let router = if relay {

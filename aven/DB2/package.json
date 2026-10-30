@@ -11,7 +11,8 @@
 		"doctor": "bun sandbox/up.mjs doctor",
 		"box": "bun sandbox/up.mjs box",
 		"bump": "bun sandbox/bump.mjs",
-		"guardian": "bun sandbox/guardian.mjs"
+		"guardian": "bun sandbox/guardian.mjs",
+		"lanes": "bun sandbox/lanes.mjs"
 	},
 	"devDependencies": {
 		"@sveltejs/vite-plugin-svelte": "7.3.1",

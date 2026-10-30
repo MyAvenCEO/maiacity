@@ -6,7 +6,7 @@ import Aven.ID.Json
 (`Aven.ID.Json`):
 
 ```
-{"keys":["k"],"vaults":[{"id":"a","kind":"person","owners":["key:k"]}],"queries":[["governs","a"],["accounts",null]]}
+{"keys":["k"],"vaults":[{"id":"a","name":"A's vault","kind":"person","owners":["key:k"]}],"queries":[["governs","a"],["accounts",null]]}
 {"wf":true,"answers":[[],["a"]]}
 ```
 

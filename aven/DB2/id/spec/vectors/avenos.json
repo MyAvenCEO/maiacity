@@ -5,10 +5,13 @@
 {"expected":[],"input":{"accounts":"os.localhost"},"name":"os.localhost may act as"},
 {"expected":["aven-peer","alice-peer","alice-peer-light"],"input":{"sees":"alice"},"name":"alice's Control Room"},
 {"expected":["bob-peer-light"],"input":{"sees":"bob"},"name":"bob's Control Room"},
-{"expected":{"actsThrough":["alice-peer","alice-peer-light"],"opens":"alice","tree":["alice","aven","aven-peer","alice-peer","alice-peer-light"]},"input":{"target":null,"vault":"alice"},"name":"alice's Vault at alice"},
+{"expected":{"actsThrough":["alice-peer","alice-peer-light"],"opens":"alice","tree":["alice","maia-city","aven","aven-peer","alice-peer","alice-peer-light"]},"input":{"target":null,"vault":"alice"},"name":"alice's Vault at alice"},
+{"expected":{"actsThrough":[],"opens":"maia-city","tree":["maia-city","aven","aven-peer"]},"input":{"target":"maia-city","vault":"alice"},"name":"alice's Vault at maia-city"},
 {"expected":{"actsThrough":["aven-peer"],"opens":"aven","tree":["aven","aven-peer"]},"input":{"target":"aven","vault":"alice"},"name":"alice's Vault at aven"},
 {"expected":{"actsThrough":["bob-peer-light"],"opens":"bob","tree":["bob","bob-peer-light"]},"input":{"target":null,"vault":"bob"},"name":"bob's Vault at bob"},
+{"expected":{"actsThrough":["bob-peer-light"],"opens":"bob","tree":["bob","bob-peer-light"]},"input":{"target":"maia-city","vault":"bob"},"name":"bob's Vault at maia-city"},
 {"expected":{"actsThrough":["bob-peer-light"],"opens":"bob","tree":["bob","bob-peer-light"]},"input":{"target":"aven","vault":"bob"},"name":"bob's Vault at aven"},
+{"expected":{"alice":"Alice's vault","alice-peer":"Alice Peer","alice-peer-light":"Alice Peer-Light","aven":"Aven","aven-peer":"Aven Peer","bob":"Bob's vault","bob-peer-light":"Bob's Peer-Light","maia-city":"Maia City"},"input":{"names":null},"name":"the cast's names"},
 {"expected":"alice","input":{"serves":"alice-peer-light"},"name":"alice-peer-light serves"},
 {"expected":"bob","input":{"serves":"bob-peer-light"},"name":"bob-peer-light serves"}
 ]

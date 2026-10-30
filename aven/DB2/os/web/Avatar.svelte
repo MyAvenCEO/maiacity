@@ -1,5 +1,5 @@
 <script>
-	// A vault's mark: its initial on a colour of its own. A network's is square, a device's outlined.
+	// A vault's mark: its initial on a colour of its own. A network's is square, a coop's a hexagon, a device's outlined.
 	import { tree, vaultName } from './id.js';
 	let { id, size = 24 } = $props();
 
@@ -31,6 +31,11 @@
 
 	.network {
 		border-radius: 28%;
+	}
+
+	.coop {
+		border-radius: 0;
+		clip-path: polygon(25% 4%, 75% 4%, 100% 50%, 75% 96%, 25% 96%, 0 50%);
 	}
 
 	.device {

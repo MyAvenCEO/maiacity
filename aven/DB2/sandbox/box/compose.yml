@@ -78,6 +78,7 @@ services:
       AVEN_PEER_S3_KEY: avensandbox
       AVEN_PEER_S3_SECRET: avensandbox-test-secret
       AVEN_PEER_GUARDIAN: ${AVENSANDBOX_GUARDIAN:?bun run up sets it}
+      AVEN_PEER_ADMIN_COOP: Maia City
       AVEN_PEER_RP_ID: localhost
       AVEN_PEER_ORIGIN: http://localhost:5174
     depends_on:
