@@ -88,8 +88,9 @@ button:hover:not(:disabled) {
 	background: var(--accent-hover);
 }
 
+/* a disabled button stays green, only dimmed a little */
 button:disabled {
-	opacity: 0.45;
+	opacity: 0.72;
 	cursor: default;
 }
 
