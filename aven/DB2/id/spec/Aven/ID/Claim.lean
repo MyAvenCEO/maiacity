@@ -17,6 +17,10 @@ names and every public half, the browser's device key included, and an assertion
 its challenge. The browser sending a statement must be the device it names: the Aven Peer compares the connection's
 key with it (`sender`).
 
+A passkey that counts its signatures must count up: a sign-in whose counter isn't above the last one the network
+kept, while either is not 0, is refused, as WebAuthn advises against a cloned authenticator. Synced passkeys keep the
+counter at 0, and pass.
+
 A restart reads the tree back (`restore`): every stored statement is checked again, as when it came. A wipe empties
 the store, and the network is unclaimed again.
 
@@ -84,6 +88,8 @@ inductive ClaimError where
   | unclaimed
   /-- a sign-in for a device or key the tree has -/
   | known
+  /-- a sign-in whose passkey's counter did not count up -/
+  | counter
   deriving DecidableEq, Repr
 
 namespace Server
@@ -128,6 +134,10 @@ def submitClaim (s : Server) (sender : String) (c : Claim) : Except ClaimError S
 def knows (s : Server) (device key : String) : Bool :=
   s.tree.ids.contains device || s.publics.any fun (id, k) => id == device || k == key
 
+/-- The last signature counter the network kept for its passkey: its claim's, then each sign-in's. -/
+def lastCounter (s : Server) : Nat :=
+  ((s.claim.map (·.assertion.counter)).toList ++ s.signIns.map (·.assertion.counter)).getLastD 0
+
 def acceptSignIn (s : Server) (i : SignIn) : Except ClaimError Server :=
   match s.claim with
   | none => .error .unclaimed
@@ -136,7 +146,9 @@ def acceptSignIn (s : Server) (i : SignIn) : Except ClaimError Server :=
     else if s.knows i.device i.deviceKey then .error .known
     else match i.assertion.check s.rp (challengeOf i.text) c.passkey with
       | .error why => .error (.assertion why)
-      | .ok () => match ({ s with signIns := s.signIns ++ [i] } : Server).tree.check with
+      | .ok () =>
+        if (i.assertion.counter ≠ 0 ∨ s.lastCounter ≠ 0) ∧ i.assertion.counter ≤ s.lastCounter then .error .counter
+        else match ({ s with signIns := s.signIns ++ [i] } : Server).tree.check with
         | some why => .error (.invalid why)
         | none => .ok { s with signIns := s.signIns ++ [i] }
 
@@ -224,6 +236,7 @@ theorem acceptSignIn_ok {i : SignIn} (h : s.acceptSignIn i = .ok s') :
   split at h
   · cases h
   next e =>
+  split at h; · cases h
   split at h
   · cases h
   next hw =>

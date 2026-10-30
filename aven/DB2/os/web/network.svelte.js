@@ -61,9 +61,13 @@ function send(frame) {
 	port.postMessage({ send: JSON.stringify(frame) });
 }
 
-// Sign up, so claim the network if nobody has: a new passkey (ES256, attestation none, its public key from getPublicKey(), so no CBOR), then
-// its assertion over the claim, which names it, its person vault and this browser
-export async function claim(config) {
+// Sign up, so claim the network if nobody has: a new passkey (ES256, attestation none, its public key from
+// getPublicKey(), so no CBOR), then its assertion over the claim, which names it, its person vault and this browser.
+// The Aven Peer decides only which signup came first, and its word never deletes a passkey: so none is made when the
+// network is known to be claimed, unless the signup is deliberate (`#/claim`, where the Aven Peer refuses it). A race
+// can still leave the loser a passkey that owns nothing, which its person can remove in their passkey manager.
+export async function claim(config, { deliberate = false } = {}) {
+	if (net.claimed && !deliberate) throw new Error('this network is claimed already');
 	const created = await navigator.credentials.create({
 		publicKey: {
 			rp: { id: config.rpId, name: 'Aven' },

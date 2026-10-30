@@ -23,6 +23,8 @@ pub enum ClaimError {
     Unclaimed,
     /// A sign-in for a device or key the tree has.
     Known,
+    /// A sign-in whose passkey's signature counter did not count up.
+    Counter,
 }
 
 impl fmt::Display for ClaimError {
@@ -35,6 +37,10 @@ impl fmt::Display for ClaimError {
             ClaimError::Invalid(why) => write!(f, "{why}"),
             ClaimError::Unclaimed => write!(f, "nobody has claimed this network yet"),
             ClaimError::Known => write!(f, "this browser is a device already"),
+            ClaimError::Counter => write!(
+                f,
+                "the passkey's counter did not count up: it may be a copy"
+            ),
         }
     }
 }
@@ -58,7 +64,13 @@ pub struct Network {
 
 impl Network {
     /// An unclaimed network: its vault, without an owner yet, and the Aven Peer, its device with its key.
-    pub fn new(network: &str, peer: &str, peer_key: &str, rp: Relying, guardian: Option<String>) -> Network {
+    pub fn new(
+        network: &str,
+        peer: &str,
+        peer_key: &str,
+        rp: Relying,
+        guardian: Option<String>,
+    ) -> Network {
         Network {
             network: network.into(),
             peer: peer.into(),
@@ -84,7 +96,11 @@ impl Network {
             return vec![(self.peer.clone(), self.peer_key.clone())];
         };
         let mut out = vec![(c.passkey.clone(), format!("es256:{}", c.passkey_key))];
-        out.extend(self.guardian.iter().map(|g| (GUARDIAN.to_string(), g.clone())));
+        out.extend(
+            self.guardian
+                .iter()
+                .map(|g| (GUARDIAN.to_string(), g.clone())),
+        );
         out.push((self.peer.clone(), self.peer_key.clone()));
         out.push((c.device.clone(), c.device_key.clone()));
         out.extend(
@@ -118,7 +134,12 @@ impl Network {
             vault(id, name, Kind::Device, vec![Owner::Vault(c.person.clone())])
         };
         let mut out = vec![
-            vault(&c.person, "The admin's vault".into(), Kind::Person, self.founders(&c.passkey)),
+            vault(
+                &c.person,
+                "The admin's vault".into(),
+                Kind::Person,
+                self.founders(&c.passkey),
+            ),
             Vault {
                 owners: vec![Owner::Vault(c.person.clone())],
                 ..network
@@ -148,8 +169,17 @@ impl Network {
 
     /// Whether `key` is a device of this tree: only those are told the tree.
     pub fn has_device(&self, key: &str) -> bool {
-        let devices: Vec<String> = self.vaults().into_iter().filter(|v| v.kind == Kind::Device).map(|v| v.id).collect();
-        self.claim.is_some() && self.publics().iter().any(|(id, k)| k == key && devices.contains(id))
+        let devices: Vec<String> = self
+            .vaults()
+            .into_iter()
+            .filter(|v| v.kind == Kind::Device)
+            .map(|v| v.id)
+            .collect();
+        self.claim.is_some()
+            && self
+                .publics()
+                .iter()
+                .any(|(id, k)| k == key && devices.contains(id))
     }
 
     fn knows(&self, device: &str, key: &str) -> bool {
@@ -203,6 +233,11 @@ impl Network {
         i.assertion
             .check(&self.rp, &challenge(&i.text()), &passkey)
             .map_err(ClaimError::Assertion)?;
+        // a passkey that counts must count up; synced ones keep it at 0
+        let (n, last) = (i.assertion.counter(), self.last_counter());
+        if (n != 0 || last != 0) && n <= last {
+            return Err(ClaimError::Counter);
+        }
         let mut next = self.clone();
         next.sign_ins.push(i);
         next.tree().map_err(ClaimError::Invalid)?;
@@ -217,6 +252,15 @@ impl Network {
             return Err(ClaimError::NotFromDevice);
         }
         self.accept_sign_in(i)
+    }
+
+    /// The last signature counter the network kept for its passkey: its claim's, then each sign-in's.
+    fn last_counter(&self) -> u32 {
+        let claimed = self.claim.iter().map(|c| c.assertion.counter());
+        claimed
+            .chain(self.sign_ins.iter().map(|i| i.assertion.counter()))
+            .last()
+            .unwrap_or(0)
     }
 
     /// An empty store: the network unclaimed again.

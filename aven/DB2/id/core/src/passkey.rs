@@ -34,6 +34,8 @@ pub enum AssertionError {
     Type,
     Challenge,
     Origin,
+    /// Made in a frame of another origin.
+    CrossOrigin,
     /// The authenticator data is shorter than 37 bytes.
     AuthData,
     /// Made for another RP ID.
@@ -51,6 +53,7 @@ impl AssertionError {
             AssertionError::Type => "type",
             AssertionError::Challenge => "challenge",
             AssertionError::Origin => "origin",
+            AssertionError::CrossOrigin => "crossOrigin",
             AssertionError::AuthData => "authData",
             AssertionError::RpId => "rpId",
             AssertionError::NotPresent => "notPresent",
@@ -102,6 +105,13 @@ pub fn challenge(text: &str) -> String {
 }
 
 impl Assertion {
+    /// The signature counter, the four bytes after the flags. Synced passkeys keep it at 0.
+    pub fn counter(&self) -> u32 {
+        self.authenticator_data
+            .get(33..37)
+            .map_or(0, |b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
+    }
+
     /// The assertion holds for `rp`, the challenge and the passkey `key`, or names the first check it fails.
     pub fn check(
         &self,
@@ -125,6 +135,14 @@ impl Assertion {
         }
         if !rp.origins.iter().any(|o| o == origin) {
             return Err(AssertionError::Origin);
+        }
+        // absent, it is false; anything but true or false is no client data
+        let cross = match data.get("crossOrigin") {
+            None => false,
+            Some(v) => v.as_bool().ok_or(AssertionError::ClientData)?,
+        };
+        if cross {
+            return Err(AssertionError::CrossOrigin);
         }
         let auth = &self.authenticator_data;
         if auth.len() < 37 {

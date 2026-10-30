@@ -56,9 +56,13 @@
 		{#if net.claimed === null}
 			<p class="muted">Connecting to the network…</p>
 		{:else if !net.claimed || route === 'claim'}
-			<form onsubmit={(event) => (event.preventDefault(), run(() => claim(config)))}>
+			<form onsubmit={(event) => (event.preventDefault(), run(() => claim(config, { deliberate: route === 'claim' })))}>
 				<h2>Sign up</h2>
-				<p class="muted">The first to sign up is this network's admin. It makes a passkey on this device.</p>
+				{#if net.claimed}
+					<p class="muted" data-testid="claimed-note">This network is claimed already: the Aven Peer will refuse this signup, and the passkey it makes owns nothing.</p>
+				{:else}
+					<p class="muted">The first to sign up is this network's admin. It makes a passkey on this device.</p>
+				{/if}
 				<button data-testid="claim" disabled={busy || !net.key}>Sign up with a passkey</button>
 			</form>
 		{:else}

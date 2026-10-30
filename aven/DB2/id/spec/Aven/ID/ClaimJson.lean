@@ -29,6 +29,7 @@ def AssertionError.name : AssertionError → String
   | .type => "type"
   | .challenge => "challenge"
   | .origin => "origin"
+  | .crossOrigin => "crossOrigin"
   | .authData => "authData"
   | .rpId => "rpId"
   | .notPresent => "notPresent"
@@ -43,6 +44,7 @@ def ClaimError.json : ClaimError → Json
   | .invalid why => Json.mkObj [("error", "invalid"), ("invalid", why.json)]
   | .unclaimed => Json.mkObj [("error", "unclaimed")]
   | .known => Json.mkObj [("error", "known")]
+  | .counter => Json.mkObj [("error", "counter")]
 
 def Claim.json (c : Claim) : Json :=
   Json.mkObj [("network", c.network), ("person", c.person),
