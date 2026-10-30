@@ -82,6 +82,8 @@ const firewall = new hcloud.Firewall(`${NAME}-fw`, {
     // the new avenDB's Aven Peer (aven/DB2/PRODUCTION.md, Part B): peers reach its iroh endpoint straight; its relay
     // rides HTTPS through Caddy at aven.maia.city. avendeploy.yml adds this rule through Hetzner's API too
     { direction: "in", protocol: "udp", port: "7501", sourceIps: ["0.0.0.0/0", "::/0"] },
+    // its relay's QUIC address discovery (iroh's port 7842), on Caddy's certificate for aven.maia.city
+    { direction: "in", protocol: "udp", port: "7842", sourceIps: ["0.0.0.0/0", "::/0"] },
   ],
 });
 
