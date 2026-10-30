@@ -43,10 +43,14 @@ Each layer has one job. Nothing reaches past the layer directly below it.
 
 ## 2. Layer 0: Values
 
-- **A Value** is immutable data: JSON with no surprises, that is null, true or false, a finite number, a string, an
-  array, or a map with string keys. No functions, no references, no cycles, no `undefined`. avenDB calls it a Value
+- **A Value** is immutable data: JSON with no surprises, that is null, true or false, an integer, a string, an
+  array, or a map with string keys. Version 1 has integers only (Samuel, 30 Oct 2026); decimals come when an app needs
+  them, with the same encoding as avenDB's. No functions, no references, no cycles, no `undefined`. avenDB calls it a Value
   too; a lowercase value in this file is just a field's data.
-- **Canonical bytes**: keys sorted, numbers in one spelling, UTF-8. The same value always has the same bytes.
+- **Canonical bytes**: keys sorted, numbers in one spelling, UTF-8. The same value always has the same bytes. The
+  encoding is avenDB's one codec (its architecture, rule 1 and K1), shared byte for byte, so a Value has one name in
+  the actor engine and in avenDB: bytes that don't encode back to themselves are refused, and Lean proves decoding and
+  encoding inverse.
 - **A name** is the BLAKE3 hash of a Value's canonical bytes, 64 lowercase hex characters. Definitions, parts and
   runtimes are named this way, so what a name names never changes.
 
@@ -494,12 +498,20 @@ Decided here, on those grounds:
 - Hosting an actor on the Aven Peer is an explicit read cap per actor, shown to its owner; a member's own Peer is the
   default home (avenDB A16). Every runtime lives in `aven/runtimes` (section 13). (Samuel, 30 Oct 2026.)
 
+- avenDB's A17, parts 1, 2 and 4 (Samuel, 30 Oct 2026): an address names a vault-scoped id and an incarnation, never
+  a device, and the home is only where to route; a message is stored once and referenced by its hash; an actor's
+  history is its Doc's own Loro history, each turn one commit of Loro operations, with Loro's snapshots as its
+  checkpoints, and loads journaled as (Doc, version, query hash). Version 1 keeps the same shape in memory: an
+  operation log and snapshots behind the Doc interface.
+- Values are integers only in version 1, in avenDB's one codec (section 2).
+
 Open, none of it blocking version 1 (the audit's findings, mostly avenDB's proposal A17, awaiting Samuel):
 
-- **Identity and Docs (A17).** An address names a vault-scoped id, with the home as routing only; the journal becomes
-  the actor Doc's log; a message is stored once and referenced by hash; one inbox per pair of vaults, none within one
-  home; state as checkpoints, not replaced whole; loads journaled as (Doc, version, query hash); a definition is a
-  version of an actor type, and lenses carry state across `replaces` (K5).
+- **Inboxes (A17, part 3).** Every actor keeps its own inbox: its own queue, its own read position and its own order
+  of handling. Open is only how messages are carried: one Doc per pair of actors, as now, or one Doc per pair of
+  vaults that holds the messages of all their actors, each addressed to one actor.
+- **Upgrades (A17, part 5):** a definition is a version of an actor type, and lenses carry state across `replaces`
+  (K5).
 - **Effects that write data:** a `mutate` effect with its signer, Doc and footprint, atomic with the journal or through
   the outbox.
 - **The kernel's authority:** a narrow device vault for the actor host; click caps scoped to what the placer wired;
