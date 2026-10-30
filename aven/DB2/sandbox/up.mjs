@@ -3,7 +3,7 @@
 // It runs on the host (a Mac with OrbStack, a Claude cloud session, a CI runner) and drives Docker; everything else
 // runs in the box's image, whose tag is a hash of every file its build reads (box/tag.mjs), as the image workflow
 // (.github/workflows/avensandbox-image.yml) tags it.
-import { createHash } from 'node:crypto';
+import { createHash, createPrivateKey, createPublicKey } from 'node:crypto';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { $ } from 'bun';
@@ -22,7 +22,18 @@ const proxyCa = '/root/.ccr/ca-bundle.crt';
 // inside the box, and the members are every peer of the cast by its public key.
 const cast = JSON.parse(readFileSync(join(db2, 'sandbox', 'cast.json'), 'utf8'));
 const seed = (id) => createHash('sha256').update(`avenSANDBOX test signer: ${id}`).digest('hex');
+// an Ed25519 seed's public half: the seed in PKCS #8, its key's SubjectPublicKeyInfo, whose last 32 bytes are it
+const publicOf = (hex) => {
+	const pkcs8 = Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), Buffer.from(hex, 'hex')]);
+	const spki = createPublicKey(createPrivateKey({ key: pkcs8, format: 'der', type: 'pkcs8' })).export({ format: 'der', type: 'spki' });
+	return spki.subarray(-32).toString('hex');
+};
+// Production's stand-in (sandbox/prod.mjs) is no peer of the cast: its key is a test key too, and its claim code the
+// one the model's traces use (id/spec, Aven.ID.ClaimTrace), valid only in the box
 const peerConfig = {
+	AVENSANDBOX_PROD_SECRET: seed('prod-peer'),
+	AVENSANDBOX_PROD_KEY: publicOf(seed('prod-peer')),
+	AVENSANDBOX_CLAIM_CODE: 'box-claim-code',
 	AVENSANDBOX_MEMBERS: Object.keys(cast.peers).map((id) => `${id}=${cast.keys[id]}`).join(','),
 	AVENSANDBOX_AVEN_KEY: cast.keys['aven-peer'],
 	AVENSANDBOX_AVEN_SECRET: seed('aven-peer'),
@@ -196,7 +207,7 @@ async function check() {
 	say(`vectors ${fresh ? 'fresh' : 'STALE'} (${((Date.now() - vectorsStarted) / 1000).toFixed(1)} s)`);
 	const run = `runs/${new Date().toISOString().replace(/[:.]/g, '-')}`;
 	const result = await $`${compose} exec -T browsers node sandbox/check.mjs ${run}`.env(env).nothrow();
-	const passed = fenced.length === 0 && fresh && result.exitCode === 0 && (await keeps(run));
+	const passed = fenced.length === 0 && fresh && result.exitCode === 0 && (await keeps(run)) && (await claims(run));
 	say(`${passed ? 'check passed' : 'check FAILED'}; screenshots and report in aven/DB2/${run}/`);
 	return passed ? 0 : 1;
 }
@@ -212,7 +223,7 @@ async function keeps(run) {
 	const timed = Date.now();
 
 	let since = Date.now();
-	await $`${compose} restart aven alice`.env(env).quiet();
+	await $`${compose} restart aven alice prod`.env(env).quiet();
 	const restarted = await read(since);
 	for (const [id, was] of Object.entries(before)) {
 		const now = restarted[id];
@@ -243,6 +254,33 @@ async function keeps(run) {
 	return report.ok;
 }
 
+// The admin's passkey (PRODUCTION.md, "How it is checked"), on production's stand-in: an Aven Peer in production's
+// configuration and avenOS at localhost:5174, driven by sandbox/claim.mjs in the browsers' container with Chromium's
+// virtual authenticator. It claims the network with the code, is refused a second claim with and without it, signs in
+// from a second browser profile with the same passkey, which becomes a second device; then the Aven Peer restarts and
+// both find the same tree, and its store is wiped and the network is unclaimed again. The step starts from an empty
+// store and leaves one.
+async function claims(run) {
+	const timed = Date.now();
+	const wipe = async () => {
+		await $`${compose} exec -T s3 rm -rf /data/aven/prod`.env(env).quiet();
+		await $`${compose} restart prod`.env(env).quiet();
+	};
+	const step = async (phase) => (await $`${compose} exec -T browsers node sandbox/claim.mjs ${phase} ${run}`.env(env).nothrow()).exitCode === 0;
+	await wipe();
+	let ok = await step('claim');
+	if (ok) {
+		await $`${compose} restart prod`.env(env).quiet();
+		ok = await step('restarted');
+	}
+	if (ok) {
+		await wipe();
+		ok = await step('wiped');
+	}
+	say(`${ok ? 'the claim, the refusals, the sign-in, the restart and the wipe hold' : 'the claim step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s)`);
+	return ok;
+}
+
 async function up(args) {
 	const started = Date.now();
 	await ensureDocker();
@@ -252,11 +290,11 @@ async function up(args) {
 	// a new binary restarts the peers that run it: the loop's "a Rust change, running on every peer"
 	const stamp = join(db2, 'runs', '.peer-running');
 	const running = existsSync(stamp) ? readFileSync(stamp, 'utf8').trim() : '';
-	const peersUp = (await $`${compose} ps -q aven alice`.env(env).nothrow().quiet().text()).trim().split('\n').filter(Boolean).length;
+	const peersUp = (await $`${compose} ps -q aven alice prod`.env(env).nothrow().quiet().text()).trim().split('\n').filter(Boolean).length;
 	await $`${compose} up -d --remove-orphans`.env(env);
 	if (peersUp && running !== binary) {
-		say('the Peer changed: restarting aven and alice');
-		await $`${compose} restart aven alice`.env(env).quiet();
+		say('the Peer changed: restarting aven, alice and prod');
+		await $`${compose} restart aven alice prod`.env(env).quiet();
 	}
 	await $`mkdir -p ${join(db2, 'runs')}`;
 	await Bun.write(stamp, `${binary}\n`);

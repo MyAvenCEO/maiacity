@@ -58,6 +58,31 @@ services:
       - alice:/data
     depends_on: [aven]
 
+  # Production's stand-in (PRODUCTION.md, "How it is checked"): an Aven Peer in production's configuration. No cast:
+  # its tree is kept in the box's S3 under a root of its own, claimable once with a test claim code by a passkey made
+  # for `localhost` on avenOS at http://localhost:5174 (sandbox/prod.mjs). No members: anyone may connect, as in
+  # production until milestone 2's invites
+  prod:
+    <<: *peer
+    command: ["/target/debug/aven-peer"]
+    environment:
+      AVEN_PEER_NAME: prod-peer
+      AVEN_PEER_SECRET: ${AVENSANDBOX_PROD_SECRET:?bun run up sets it}
+      AVEN_PEER_RELAY: "true"
+      AVEN_PEER_RELAY_URL: http://prod:3340
+      AVEN_PEER_EVENTS: /events
+      AVEN_PEER_STORE: s3
+      AVEN_PEER_S3_ENDPOINT: http://s3:7070
+      AVEN_PEER_S3_BUCKET: aven
+      AVEN_PEER_S3_ROOT: /prod/
+      AVEN_PEER_S3_KEY: avensandbox
+      AVEN_PEER_S3_SECRET: avensandbox-test-secret
+      AVEN_PEER_CLAIM_CODE: ${AVENSANDBOX_CLAIM_CODE:?bun run up sets it}
+      AVEN_PEER_RP_ID: localhost
+      AVEN_PEER_ORIGIN: http://localhost:5174
+    depends_on:
+      s3: { condition: service_healthy }
+
   # Chromium with both Peer-Lights, and Vite serving avenOS, the Peer-Light's wasm and the relay's path
   browsers:
     image: ${AVENSANDBOX_IMAGE:?bun run up sets it}
@@ -68,6 +93,9 @@ services:
     environment:
       AVENSANDBOX_RELAY: http://aven:3340
       AVENSANDBOX_EVENTS: /events
+      AVENSANDBOX_PROD_RELAY: http://prod:3340
+      AVENSANDBOX_PROD_KEY: ${AVENSANDBOX_PROD_KEY:?bun run up sets it}
+      AVENSANDBOX_CLAIM_CODE: ${AVENSANDBOX_CLAIM_CODE:?bun run up sets it}
     volumes:
       - ../..:/work
       - node_modules:/work/node_modules
@@ -77,6 +105,7 @@ services:
       - chromium:/profile
     ports:
       - "${AVENSANDBOX_PORT:-5173}:5173"
+      - "${AVENSANDBOX_PROD_PORT:-5174}:5174"
     networks: [wan]
 
   # The box's S3 (SANDBOX.md, "Storage"): versitygw, shipped in the box's own image, over a folder in its own volume,
