@@ -134,6 +134,28 @@ touches.
 14. **One protocol of ours.** `aven/db/1`, with iroh's gossip and blobs beside it on one `Router`. Every format is
     named and versioned, and Lean comes first, with vectors for every format.
 
+### The rules in Lean
+
+`Aven.Architecture` ([`architecture/`](architecture/README.md), #1567) states these rules as theorems composed from the
+parts' own models, on the shared core `Aven.Core`. What a rule still lacks is a gap, and each gap has an owner:
+
+| Rule | Proven | Open | Owner |
+|---|---|---|---|
+| 1 | Canonical, labelled, named | — | — |
+| 2 | Envelopes name their past; Loro's op ids are the hashes | — | — |
+| 3 | Splits are final, and a chain holds none. A write never waits, and a split's proof spreads (`Aven.ID.Node`, #1566) | Compose `Node` into the rule | docs |
+| 4 | Verdicts are order-free, operations are lowered alike, and fit holds per envelope through merges | One verdict: signature, cap chain, footprint and fit together | caps, engine, docs |
+| 5 | On caps' model | Caps' keys and segments on Core's types | caps |
+| 6 | Served = wants ∩ read grants; keepers serve on fetch proofs | — | — |
+| 7 | Keepers are blind, index roots come only from writers, hosting is an explicit cap (`Aven.Actor.Hosting`, #1565), and no peer is the only source (`Aven.ID.Node`) | Compose them into the rule | docs |
+| 8 | Snapshots are caches; checkpoints name their tips and runtime; runtimes are deterministic; index roots agree | — (who signs a checkpoint: **A5**) | — |
+| 9 | Keepers are blind; nothing plain goes to a non-reader (`Aven.ID.Node`) | Compose it into the rule | docs |
+| 10 | Queries, runtimes, index nodes and frames have limits | Limits on envelopes, blobs and pages; a quota per vault | docs, caps |
+| 11 | A wait names its ends | Waits never block unrelated work, and the stall alarm rises (#1570, on its way) | engine |
+| 12 | The past is what is named | Time conditions judged by acks | caps |
+| 13 | — | A model of the safe (D17) | caps |
+| 14 | Held by the format vectors and the box's check: a property of the node, not a theorem | — | — |
+
 ## One vocabulary
 
 Of about 300 terms, about 40 mean two or more things across the specs, and about 30 pairs name one thing twice. Every
@@ -583,6 +605,9 @@ the spec that owns it.
   store's and Lean's fork becomes split. *Decided: yes (Samuel, 30 Oct 2026).*
 - **A5. Checkpoints travel:** sealed and hybrid-signed, naming the segments they cover. A new device starts from one
   and checks it in the background, from milestone 4, whose catch-up target needs it. *Decided: yes (Samuel, 30 Oct
+  2026).* Who may sign one a reader takes: a device whose vault may write the Doc at the version the checkpoint names,
+  as only writers publish a sealed index's root (A26). A reader still checks it by replay in the background, and
+  ignores a checkpoint from anyone else. *The architect's answer to docs' open question 6, which Lean exposed (30 Oct
   2026).*
 - **A6. Collections that grow without end are chains of period Docs.** *Decided: yes (Samuel, 30 Oct 2026), rather
   than shallow snapshots, which refuse older branches.*

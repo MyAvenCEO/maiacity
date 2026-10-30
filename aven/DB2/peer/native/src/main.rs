@@ -363,7 +363,11 @@ async fn main() -> Result<(), Error> {
     // gossip on the same Router as aven/db/1 (README, rule 9): the chat's room, joined through the Aven Peer
     let gossip = Gossip::builder().spawn(endpoint.clone());
     // and iroh-blobs' protocol, the files' bytes from this peer's store, to members only (store/README.md)
-    let held = Blobs::new(store.clone());
+    // a file a retraction took is served no more, even while its bytes are being deleted
+    let held = Blobs::new(aven_db_store::withhold::Withholding::serving(
+        store.clone(),
+        chats.withheld(),
+    ));
     // the Aven Peer keeps every file a member says in the city-dome: each `file` line it chains, fetched whole from
     // the device whose chain it is on (store/README.md, "How a file travels", 2). A file it couldn't keep, its sender
     // gone, waits until that device next connects; on start, it tries every file line it holds again. At most

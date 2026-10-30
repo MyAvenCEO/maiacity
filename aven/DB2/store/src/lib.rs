@@ -14,6 +14,7 @@ pub mod opfs;
 #[cfg(target_arch = "wasm32")]
 pub mod opfs_folder;
 mod store;
+pub mod withhold;
 
 pub use hash::Hash;
 pub use name::RefName;
