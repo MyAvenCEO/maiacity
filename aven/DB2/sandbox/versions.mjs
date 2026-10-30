@@ -86,7 +86,7 @@ const sources = {
 	github: (slug) =>
 		once(`github:${slug}`, async () => {
 			const out = await $`git ls-remote --tags --refs ${`https://github.com/${slug}`}`.nothrow().quiet();
-			if (out.exitCode !== 0) throw new Error(`github.com refused git ls-remote: ${out.stderr.toString().trim().split('\n').at(-1)}`);
+			if (out.exitCode !== 0) throw new Error(`git ls-remote github.com failed: ${out.stderr.toString().trim().split('\n').at(-1)}`);
 			const tags = out.stdout.toString().trim().split('\n').map((line) => line.split('refs/tags/')[1]).filter(Boolean);
 			return { version: newestOf(tags) };
 		}),

@@ -267,7 +267,7 @@ One image holds every tool; every command runs in it.
     code ([below](#the-third-party-crates-precompiled)).
 
   It's built for amd64 (cloud, CI) and arm64 (OrbStack on Apple Silicon, natively). A GitHub workflow builds it when
-  any file its build reads changes, and with every daily version bump. The repository is public, so the image is too,
+  any file its build reads changes, a moved pin included. The repository is public, so the image is too,
   and it pulls without a token. Each image is tagged with a hash of those files, so every checkout runs exactly its
   own box; `latest` is main's.
 - **Containers** (`sandbox/box/compose.yml`):
@@ -281,7 +281,8 @@ One image holds every tool; every command runs in it.
   - `bun run up`: starts the box and prints avenOS's address;
   - `bun run down`;
   - `bun run logs`;
-  - `bun run doctor`: checks versions, Docker settings and kernel features;
+  - `bun run doctor`: checks versions, Docker settings and kernel features, and lists the pins that are behind;
+  - `bun run bump [--check]`: moves every pin to its newest stable release, by hand ([below](#latest-versions-always));
   - `bun run shot`: a screenshot of the Control Room;
   - `bun run box <command>`: any command in the box, from `aven/DB2`: `bun run box cargo test`, `bun run box sh -c
     'cd id/spec && lake build'`. Rust's build folder and its crate downloads live in volumes, kept across runs; in a
@@ -296,7 +297,7 @@ The image never holds our code. It holds the tools; our crates and pages come fr
 
 | Layer | Where it lives | Changes when |
 |---|---|---|
-| Tools: Rust, wasm-bindgen, bun, Lean, Chromium | the image | a version bump, at most daily |
+| Tools: Rust, wasm-bindgen, bun, Lean, Chromium | the image | a person runs `bun run bump` |
 | Third-party crates, compiled | the image, keyed by its tag (`Cargo.lock`, the manifests, the fork) | a dependency changes |
 | Our code: crates, pages, spec | the checkout, mounted into the containers | every edit |
 | Our builds | one build folder in a Docker volume, kept across `up` and `down` | every build, incrementally |
@@ -461,25 +462,42 @@ iroh in the box runs fully private: our own relay, addresses handed out by the b
 
 ## Latest versions, always
 
-Every dependency and tool is pinned exactly at its newest stable release, so every build can be reproduced. `bun run
-bump` moves every pin to the newest release. A scheduled GitHub workflow runs it daily, rebuilds the image and puts the
-change on a task branch for the next goal. `bun run doctor` names anything that's behind.
+Every dependency and tool is pinned exactly, so every build can be reproduced. **Pins move only by hand** (Samuel, 30
+Oct 2026): a person runs `bun run bump` when they choose. No scheduled workflow and no bot updates anything.
 
-The newest releases on 29 Oct 2026:
+- **`bun run bump --check`** lists every pin that's behind its newest stable release, and changes nothing. `bun run
+  doctor` prints the same table.
+- **`bun run bump`** ([`sandbox/bump.mjs`](sandbox/bump.mjs), its pins and sources in
+  [`sandbox/versions.mjs`](sandbox/versions.mjs)) moves every pin to its newest stable release, regenerates `Cargo.lock`
+  (`cargo update`) and `bun.lock` (`bun install`) in the box, checks in the box that the workspace with its tests, both
+  wasm crates and avenOS's page still build, and prints what moved, from which version to which. A major release that
+  breaks that build goes back and is reported. The change stays in the working tree: a person reviews it, runs `bun run
+  up --check` and commits it. It never commits, pushes or merges.
+- **Pre-releases never count**; nor do yanked crates or deprecated npm releases.
 
-| Tool | Version |
-|---|---|
-| Rust | 1.99.1 |
-| iroh, iroh-relay | 1.4.1 (v1 is on 1.3.0) |
-| loro, loro-crdt | 1.17.1 |
-| OpenDAL | 0.59.5 |
-| versitygw (the box's S3, pinned by digest) | 1.10.0 |
-| wasm-bindgen | 0.2.129 |
-| Playwright and its image (amd64 and arm64) | 1.64.1 |
-| bun | 1.4.4 |
-| Svelte, Vite, vite-plugin-svelte | 5.57.3, 8.3.5, 7.3.1 |
-| TypeScript | 7.0.2 |
-| Lean 4 | read from its releases at the first build |
+| Pin | Where | Its source |
+|---|---|---|
+| every crate (`=x.y.z`) | every `Cargo.toml` | crates.io's sparse index |
+| every npm package | `package.json` | npm's registry |
+| Rust | the Dockerfile's `RUST_VERSION` | Rust's stable channel (static.rust-lang.org) |
+| wasm-bindgen's CLI | `WASM_BINDGEN_VERSION` | the `wasm-bindgen` crate: the two must match exactly |
+| bun | `BUN_VERSION`, `packageManager`, `setup-bun`'s `bun-version` | npm's `bun` |
+| elan, Lean | `ELAN_VERSION`, `LEAN_VERSION`, both `lean-toolchain` files | their GitHub tags, over git; their downloads, from GitHub's release storage |
+| Playwright's image | the Dockerfile's `FROM` | Microsoft's registry, at the newest release npm's `playwright` has too: the two move together |
+| versitygw | the Dockerfile's `FROM`, by tag and digest | GitHub's registry |
+| GitHub Actions | avenDB's workflows | their GitHub tags, over git |
+
+- **OpenDAL is held** at the release `db/store/opendal-opfs` forks: moving it means a new fork
+  ([`FORK.md`](db/store/opendal-opfs/FORK.md)). The table names a newer release when there is one.
+- **A source the network refuses** is named in the table with its reason, and its pin stays where it is; the bump moves
+  the rest. A cloud session refuses GitHub's API and `release.lean-lang.org`, so tags come over git, which the
+  session's proxy lets through. Where GitHub's release storage is refused, elan's and Lean's downloads go unchecked,
+  said so in the table; the image's build on GitHub fetches them.
+- **A moved tool or crate is a new box.** The bump's checks run on the box the checkout had. A moved crate changes
+  `Cargo.lock` and so the tag: until GitHub builds it, `bun run up` runs a box with the same tools and compiles the
+  crates that moved. A moved tool changes the Dockerfile: `bun run up --check` needs the new box, which GitHub builds
+  10 to 12 minutes after the change is pushed to a branch. wasm-bindgen is one: its CLI in the box must match the crate
+  exactly.
 
 The box also ends a drift: the repository's root pins Playwright 1.56.1, while the cloud session's own copy is 1.63.0.
 

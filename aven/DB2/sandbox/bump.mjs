@@ -6,7 +6,7 @@
 // behind.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { boxTag } from './box/tag.mjs';
+import { boxTag, toolsTag } from './box/tag.mjs';
 import { behind, db2, major, newest, table } from './versions.mjs';
 
 const esc = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -68,8 +68,12 @@ async function bump(list) {
 	const refused = [];
 	const say = (line) => console.log(`bump: ${line}`);
 	({ inBox } = await import('./up.mjs'));
+	// the box is found (pulled, or one with the same tools) before anything is written, while the Dockerfile still
+	// names the tools it has
+	if (!(await run('true'))) throw new Error('no box to run cargo and bun in: nothing was changed');
 	const lockBefore = locked();
 	const tagBefore = boxTag();
+	const toolsBefore = toolsTag();
 
 	for (const pin of moves) move(pin);
 	say(`${moves.length} pins moved; regenerating the lockfiles in the box`);
@@ -81,7 +85,12 @@ async function bump(list) {
 		say(`the build broke; trying the ${majors.length} major moves one at a time`);
 		for (const pin of majors) back(pin);
 		ok = (await relock()) && (await builds());
-		if (ok)
+		// red without them too: they aren't the cause, so they come back, and the build stays red for a person to read
+		if (!ok) {
+			say('the build is red without the major moves too: keeping every move');
+			for (const pin of majors) move(pin);
+			await relock();
+		} else
 			for (const pin of majors) {
 				move(pin);
 				if ((await relock()) && (await builds())) continue;
@@ -103,9 +112,13 @@ async function bump(list) {
 		console.log(`\nCargo.lock: ${transitive.length} crates under the pins moved too${added ? `, ${added} came in` : ''}${transitive.length ? `: ${transitive.map(([key, v]) => `${key.split(' ')[0]} ${lockBefore.get(key)} → ${v}`).join(', ')}` : ''}`);
 	for (const pin of refused) console.log(`\nNot moved: ${pin.name} ${pin.from} → ${pin.to} is a major release that breaks the build; it needs a change by hand.`);
 	for (const pin of list.filter((p) => p.error)) console.log(`\nNot checked: ${pin.name} (${pin.from}): ${pin.error}`);
-	if (boxTag() !== tagBefore)
-		console.log(`\nThe box's tag changed, ${tagBefore} → ${boxTag()}: GitHub builds the new box after the push (SANDBOX.md, "The box"). The build above ran with the box's current tools.`);
-	console.log(ok ? '\nEverything builds. Review the change, run `bun run up --check`, and commit it.' : '\nThe build is red: see above. Nothing was committed.');
+	// The checks above ran on the box this checkout had; a new box is GitHub's to build (SANDBOX.md, "The box")
+	if (toolsTag() !== toolsBefore)
+		console.log(`\nThe box's tools moved (${tagBefore} → ${boxTag()}): \`bun run up --check\` needs the new box, which GitHub builds 10 to 12 minutes after this is pushed to a branch. The checks above ran with the current tools.`);
+	else if (boxTag() !== tagBefore)
+		console.log(`\nThe box's tag changed (${tagBefore} → ${boxTag()}): until GitHub builds it after the push, \`bun run up\` runs a box with the same tools and compiles the crates that moved.`);
+	const next = toolsTag() !== toolsBefore ? 'push it to a branch, run `bun run up --check` once GitHub built its box' : 'run `bun run up --check`';
+	console.log(ok ? `\nEverything builds. Review the change, ${next}, and commit it.` : '\nThe build is red: see above. Nothing was committed.');
 	return ok ? 0 : 1;
 }
 
