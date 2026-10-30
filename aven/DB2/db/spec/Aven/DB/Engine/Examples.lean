@@ -2,277 +2,458 @@ import Lean.Data.Json
 import Aven.DB.Engine.Query
 import Aven.DB.Engine.Wants
 import Aven.DB.Engine.Mutate
+import Aven.DB.Engine.Footprint
+import Aven.DB.Engine.Index
 
 /-!
 # The engine's examples, and how its vectors are written (README, rule 10)
 
-The models are generic over `Aven.Core`'s types. Here they run on stand-ins: Docs, types, targets, keys and writers
-are strings, and a value is a number or a string. Every example is checked by `lake build` (`#guard`), and `Vectors`
-writes them, with generated cases, to `queries.json`, `wants.json` and `mutations.json`. -/
+The models run here on `Aven.Core`'s own types: Values, Doc ids and type Docs named by BLAKE3 hashes, targets, steps
+and grants. Two Values are equal when their encodings are; numbers order as numbers and text bytewise. Every example is
+checked by `lake build` (`#guard`), and `Vectors` writes them, with generated cases, to `queries.json`, `wants.json`,
+`mutations.json` and `indexes.json`. JSON is only the readable form: a Value as `Aven.Core`'s vectors write it, a Doc
+id as `d:<hex>`. -/
 
 open Lean
 
 namespace Aven.DB.Engine.Examples
 
-open Aven.DB.Engine
+open Aven.Core Aven.DB.Engine
 
-/-- A value: a number or a string. Numbers sort before strings. -/
-inductive V where
-  | n (k : Nat)
-  | s (t : String)
-  deriving DecidableEq, Repr
+def utf8 (s : String) : Bytes := s.toUTF8.toList
 
-def V.lt : V → V → Bool
-  | .n a, .n b => a < b
-  | .n _, .s _ => true
-  | .s _, .n _ => false
-  | .s a, .s b => decide (a < b)
+def utf8Text (b : Bytes) : String := String.fromUTF8! ⟨b.toArray⟩
 
-def vals : Vals V := ⟨V.lt, V.n⟩
+/-- A Doc named in an example: the hash of its label. -/
+def doc (label : String) : DocId := ⟨blake3 (utf8 ("doc:" ++ label))⟩
 
-def V.json : V → Json
-  | .n k => toJson k
-  | .s t => toJson t
+/-- A vault named in an example. -/
+def vault (label : String) : Bytes := utf8 ("vault:" ++ label)
 
-def tupleJson (t : Tuple V) : Json := Json.mkObj (t.map fun (c, v) => (c, v.json))
+def text (s : String) : Value := .text (utf8 s)
 
-def rows (fs : List (String × V)) : Tuple V := fs
+/-- Values compare by their one encoding (`Aven.Core.encode_inj`); numbers order as numbers, text bytewise. -/
+def vals : Vals Value where
+  eq a b := encode a == encode b
+  lt
+    | .uint a, .uint b => a < b
+    | .text a, .text b => decide (a < b)
+    | a, b => decide (encode a < encode b)
+  count := .uint
+
+theorem vals_refl : ∀ x, vals.eq x x = true := by intro x; simp [vals]
+
+partial def valueJson : Value → Json
+  | .uint n => toJson n
+  | .nint n => toJson (-(n : Int) - 1)
+  | .bytes b => Json.mkObj [("bytes", toJson (hex b))]
+  | .text b => toJson (utf8Text b)
+  | .array xs => Json.arr (xs.map valueJson).toArray
+  | .map kvs => Json.mkObj (kvs.map fun (k, v) => (utf8Text k, valueJson v))
+  | .bool b => toJson b
+  | .null => Json.null
+
+def docJson (d : DocId) : Json := toJson d.text
+
+def tupleJson (t : Tuple Value) : Json := Json.mkObj (t.map fun (c, v) => (utf8Text c, valueJson v))
+
+def rows (fs : List (String × Value)) : Tuple Value := fs.map fun (c, v) => (utf8 c, v)
+
+/-! ## Queries -/
 
 def cmpName : Cmp → String
   | .eq => "eq" | .ne => "ne" | .lt => "lt" | .le => "le"
 
-def pairJson (l r : Json) (lc rc : String) : Json :=
-  Json.mkObj [("left", l), ("right", r), ("leftColumn", toJson lc), ("rightColumn", toJson rc)]
+def pairJson (l r : Json) (lc rc : Bytes) : Json :=
+  Json.mkObj [("left", l), ("right", r), ("leftColumn", toJson (utf8Text lc)), ("rightColumn", toJson (utf8Text rc))]
 
-def queryJson : Query String V → Json
-  | .scan ty => Json.mkObj [("scan", toJson ty)]
+def queryJson : Query Value → Json
+  | .scan ty => Json.mkObj [("scan", docJson ty)]
   | .filter col cmp v q => Json.mkObj [("filter", Json.mkObj
-      [("column", toJson col), ("cmp", toJson (cmpName cmp)), ("value", v.json), ("query", queryJson q)])]
-  | .project cols q => Json.mkObj [("project", Json.mkObj [("columns", toJson cols), ("query", queryJson q)])]
+      [("column", toJson (utf8Text col)), ("cmp", toJson (cmpName cmp)), ("value", valueJson v),
+       ("query", queryJson q)])]
+  | .project cols q => Json.mkObj [("project", Json.mkObj
+      [("columns", toJson (cols.map utf8Text)), ("query", queryJson q)])]
   | .join l r lc rc => Json.mkObj [("join", pairJson (queryJson l) (queryJson r) lc rc)]
   | .leftJoin l r lc rc => Json.mkObj [("leftJoin", pairJson (queryJson l) (queryJson r) lc rc)]
   | .anti l r lc rc => Json.mkObj [("anti", pairJson (queryJson l) (queryJson r) lc rc)]
-  | .order col q => Json.mkObj [("order", Json.mkObj [("column", toJson col), ("query", queryJson q)])]
-  | .group col q => Json.mkObj [("group", Json.mkObj [("column", toJson col), ("query", queryJson q)])]
+  | .order col q => Json.mkObj [("order", Json.mkObj [("column", toJson (utf8Text col)), ("query", queryJson q)])]
+  | .group col q => Json.mkObj [("group", Json.mkObj [("column", toJson (utf8Text col)), ("query", queryJson q)])]
   | .limit n q => Json.mkObj [("limit", Json.mkObj [("n", toJson n), ("query", queryJson q)])]
 
-def answerJson : Answer String V → Json
+def targetJson : Target → Json
+  | .doc d => Json.mkObj [("doc", docJson d)]
+  | .vault v b => Json.mkObj [("vault", toJson (utf8Text v)), ("below", toJson b)]
+  | .vaultType v t b => Json.mkObj [("vault", toJson (utf8Text v)), ("type", docJson t), ("below", toJson b)]
+  | .actor a b => Json.mkObj [("actor", docJson a), ("below", toJson b)]
+  | .vaultDef v d => Json.mkObj [("vault", toJson (utf8Text v)), ("def", docJson d)]
+
+def factsJson (f : Facts) : Json :=
+  Json.mkObj [("id", docJson f.id), ("vault", toJson (utf8Text f.vault)), ("type", docJson f.type)]
+
+def answerJson : Answer Value → Json
   | .refused => toJson "refused"
   | .rows st rs => Json.mkObj [
       ("status", match st with
         | .complete => toJson "complete"
-        | .short missing => Json.mkObj [("short", toJson missing)]),
+        | .short missing => Json.mkObj [("short", Json.arr (missing.map docJson).toArray)]),
       ("rows", Json.arr (rs.map tupleJson).toArray)]
 
-def recJson (r : Rec String String V) : Json :=
-  Json.mkObj [("doc", toJson r.doc), ("type", toJson r.ty), ("fields", tupleJson r.fields)]
+def recJson (r : Rec Value) : Json :=
+  Json.mkObj [("doc", docJson r.doc), ("type", docJson r.type), ("fields", tupleJson r.fields)]
 
 /-- How many Records of each type the database has at all: the counts a query's bound and cost come from. -/
-def counts (db : List (Rec String String V)) (ty : String) : Nat := (db.filter (·.ty = ty)).length
+def counts (db : List (Rec Value)) (ty : DocId) : Nat := (db.filter (·.type == ty)).length
 
-/-- A query vector: a database, what this device holds, what the target resolves to, the stored query; the answer,
-and the bound, cost and work. -/
-def queryVector (name : String) (db : List (Rec String String V)) (held : List String) (target : Option String)
-    (resolves : List String) (q : Query String V) : Json :=
-  let heldF := fun d => decide (d ∈ held)
-  let answer := run vals (fun _ => resolves) heldF db ⟨target, q⟩
-  let src := inScope db resolves heldF
+/-- No vault governs another, and no actor spawned another, in these examples. -/
+def noGov : Bytes → Bytes → Bool := fun _ _ => false
+def noSpawn : DocId → DocId → Bool := fun _ _ => false
+
+/-- A query vector: the directory's genesis facts, Records, the Docs held, a stored query; the answer (refused,
+complete, or short with the Docs missing), the query's bound and cost, and the work it did. -/
+def queryVector (name : String) (dir : List Facts) (db : List (Rec Value)) (held : List DocId) (s : Spec Value) :
+    Json :=
+  let heldF := fun d => held.contains d
+  let answer := run vals noGov noSpawn dir heldF db s
+  let docs := match s.target with | some t => resolve noGov noSpawn dir t | none => []
   Json.mkObj [("name", toJson name),
-    ("input", Json.mkObj [("records", Json.arr (db.map recJson).toArray), ("held", toJson held),
-      ("target", match target with | some t => toJson t | none => Json.null), ("resolves", toJson resolves),
-      ("query", queryJson q)]),
-    ("expected", Json.mkObj [("answer", answerJson answer), ("bound", toJson (bound (counts db) q)),
-      ("cost", toJson (cost (counts db) q)), ("work", toJson (work vals src q))])]
+    ("input", Json.mkObj [("directory", Json.arr (dir.map factsJson).toArray),
+      ("records", Json.arr (db.map recJson).toArray), ("held", Json.arr (held.map docJson).toArray),
+      ("target", match s.target with | some t => targetJson t | none => Json.null),
+      ("query", queryJson s.body)]),
+    ("expected", Json.mkObj [("answer", answerJson answer), ("bound", toJson (bound (counts db) s.body)),
+      ("cost", toJson (cost (counts db) s.body)), ("work", toJson (work vals (inScope db docs heldF) s.body))])]
 
-/-! ## Queries -/
+def task : DocId := doc "type:task"
+def done_ : DocId := doc "type:done"
+def due : DocId := doc "type:due"
+def memberOf : DocId := doc "type:member_of"
+def home : DocId := doc "home"
+def coop : DocId := doc "coop"
+def garden : DocId := doc "garden-books"
 
-def home : List (Rec String String V) := [
-  ⟨"home", "task", [("id", .s "t1"), ("x2", .s "Order seeds")]⟩,
-  ⟨"home", "task", [("id", .s "t2"), ("x2", .s "Water the beans")]⟩,
-  ⟨"home", "task", [("id", .s "t3"), ("x2", .s "Prune the apple")]⟩,
-  ⟨"home", "done", [("id", .s "f1"), ("x1", .s "t2")]⟩,
-  ⟨"home", "due", [("id", .s "f2"), ("x1", .s "2026-11-02"), ("x2", .s "t1")]⟩,
-  ⟨"home", "due", [("id", .s "f3"), ("x1", .s "2026-11-01"), ("x2", .s "t3")]⟩,
-  ⟨"coop", "task", [("id", .s "t9"), ("x2", .s "Not in this target")]⟩]
+def dir : List Facts := [⟨home, vault "samuel", doc "type:household"⟩, ⟨coop, vault "maia-city", doc "type:projects"⟩,
+  ⟨garden, vault "samuel", doc "type:books"⟩]
+
+def tasks : List (Rec Value) := [
+  ⟨home, task, rows [("id", text "t1"), ("x2", text "Order seeds")]⟩,
+  ⟨home, task, rows [("id", text "t2"), ("x2", text "Water the beans")]⟩,
+  ⟨home, task, rows [("id", text "t3"), ("x2", text "Prune the apple")]⟩,
+  ⟨home, done_, rows [("id", text "f1"), ("x1", text "t2")]⟩,
+  ⟨home, due, rows [("id", text "f2"), ("x1", text "2026-11-02"), ("x2", text "t1")]⟩,
+  ⟨home, due, rows [("id", text "f3"), ("x1", text "2026-11-01"), ("x2", text "t3")]⟩,
+  ⟨coop, task, rows [("id", text "t9"), ("x2", text "Not in this target")]⟩]
 
 /-- Open tasks by due date: tasks with no `done`, each with its `due`, soonest first. -/
-def openByDue : Query String V :=
-  .project ["id", "x2", "x1"] <|
-    .order "x1" <| .leftJoin (.anti (.scan "task") (.scan "done") "id" "x1") (.scan "due") "id" "x2"
+def openByDue : Query Value :=
+  .project [utf8 "id", utf8 "x2", utf8 "x1"] <|
+    .order (utf8 "x1") <| .leftJoin (.anti (.scan task) (.scan done_) (utf8 "id") (utf8 "x1")) (.scan due)
+      (utf8 "id") (utf8 "x2")
 
-#guard answerJson (run vals (fun _ => ["home"]) (· = "home") home ⟨some "home", openByDue⟩) ==
+-- Samuel's vault: the household and the garden books. The coop's Doc is outside it.
+#guard answerJson (run vals noGov noSpawn dir (· == home) tasks ⟨some (.vault (vault "samuel") false), openByDue⟩) ==
+  answerJson (.rows (.short [garden]) [
+    rows [("id", text "t3"), ("x2", text "Prune the apple"), ("x1", text "2026-11-01")],
+    rows [("id", text "t1"), ("x2", text "Order seeds"), ("x1", text "2026-11-02")]])
+
+-- One Doc as the target, held: complete.
+#guard answerJson (run vals noGov noSpawn dir (· == home) tasks ⟨some (.doc home), openByDue⟩) ==
   answerJson (.rows .complete [
-    [("id", .s "t3"), ("x2", .s "Prune the apple"), ("x1", .s "2026-11-01")],
-    [("id", .s "t1"), ("x2", .s "Order seeds"), ("x1", .s "2026-11-02")]])
+    rows [("id", text "t3"), ("x2", text "Prune the apple"), ("x1", text "2026-11-01")],
+    rows [("id", text "t1"), ("x2", text "Order seeds"), ("x1", text "2026-11-02")]])
 
 -- A query without a target is refused.
-#guard answerJson (run vals (fun _ => ["home"]) (fun _ => true) home (⟨none, openByDue⟩ : Spec String String V)) ==
-  toJson "refused"
+#guard answerJson (run vals noGov noSpawn dir (fun _ => true) tasks ⟨none, openByDue⟩) == toJson "refused"
 
--- The coop's Doc is in the target but not held: the answer is short, and names it.
-#guard answerJson (run vals (fun _ => ["home", "coop"]) (· = "home") home ⟨some "both", .scan "task"⟩) ==
-  answerJson (.rows (.short ["coop"]) [
-    [("id", .s "t1"), ("x2", .s "Order seeds")], [("id", .s "t2"), ("x2", .s "Water the beans")],
-    [("id", .s "t3"), ("x2", .s "Prune the apple")]])
-
-def projects : List (Rec String String V) :=
-  (["ana", "ben", "cai", "dee"].map fun p => ⟨"coop", "member_of", [("x1", .s p), ("x2", .s "garden")]⟩) ++
-  (["ana", "ben"].map fun p => ⟨"coop", "member_of", [("x1", .s p), ("x2", .s "bees")]⟩)
+def projects : List (Rec Value) :=
+  (["ana", "ben", "cai", "dee"].map fun p => ⟨coop, memberOf, rows [("x1", text p), ("x2", text "garden")]⟩) ++
+  (["ana", "ben"].map fun p => ⟨coop, memberOf, rows [("x1", text p), ("x2", text "bees")]⟩)
 
 /-- Projects with more than three members (ontology, "A worked example"). -/
-def crowded : Query String V := .filter "count" .lt (.n 3) (.group "x2" (.scan "member_of"))
+def crowded : Query Value :=
+  .anti (.group (utf8 "x2") (.scan memberOf))
+    (.filter (utf8 "count") .lt (.uint 4) (.group (utf8 "x2") (.scan memberOf))) (utf8 "x2") (utf8 "x2")
 
-def crowdedGt : Query String V := .anti (.group "x2" (.scan "member_of")) crowded "x2" "x2"
-
-#guard answerJson (run vals (fun _ => ["coop"]) (fun _ => true) projects ⟨some "coop", crowdedGt⟩) ==
-  answerJson (.rows .complete [[("x2", .s "garden"), ("count", .n 4)]])
+#guard answerJson (run vals noGov noSpawn dir (fun _ => true) projects ⟨some (.doc coop), crowded⟩) ==
+  answerJson (.rows .complete [rows [("x2", text "garden"), ("count", .uint 4)]])
 
 def queryExamples : List Json := [
-  queryVector "open tasks by due date" home ["home"] (some "home") ["home"] openByDue,
-  queryVector "no target: refused" home ["home"] none ["home"] openByDue,
-  queryVector "a Doc not held: short" home ["home"] (some "both") ["home", "coop"] (.scan "task"),
-  queryVector "projects with more than three members" projects ["coop"] (some "coop") ["coop"] crowdedGt,
-  queryVector "the first two tasks" home ["home"] (some "home") ["home"] (.limit 2 (.scan "task")),
-  queryVector "every task with its facts" home ["home"] (some "home") ["home"]
-    (.join (.scan "task") (.scan "due") "id" "x2")]
+  queryVector "open tasks by due date, one Doc" dir tasks [home] ⟨some (.doc home), openByDue⟩,
+  queryVector "open tasks in a vault, one Doc not held: short" dir tasks [home]
+    ⟨some (.vault (vault "samuel") false), openByDue⟩,
+  queryVector "no target: refused" dir tasks [home] ⟨none, openByDue⟩,
+  queryVector "projects with more than three members" dir projects [coop] ⟨some (.doc coop), crowded⟩,
+  queryVector "the first two tasks" dir tasks [home, coop] ⟨some (.vault (vault "samuel") false), .limit 2 (.scan task)⟩,
+  queryVector "every task with its due date" dir tasks [home] ⟨some (.doc home),
+    .join (.scan task) (.scan due) (utf8 "id") (utf8 "x2")⟩]
 
 /-! ## Wants -/
 
 def tierName : Tier → String
   | .screen => "screen" | .turn => "turn" | .next => "next" | .later => "later" | .idle => "idle"
 
-def wantJson (w : Want String) : Json :=
-  Json.mkObj [("key", toJson w.key), ("tier", toJson (tierName w.tier)), ("signal", toJson w.signal)]
+def depthName : Depth → String
+  | .head => "head" | .records => "records" | .files => "files"
 
-def keptJson (e : Kept String) : Json :=
-  Json.mkObj [("key", toJson e.key), ("tier", toJson (tierName e.tier)), ("bytes", toJson e.bytes),
+def windowJson : Window → Json
+  | .newest n => Json.mkObj [("newest", toJson n)]
+  | .since v => Json.mkObj [("since", toJson (v.map Hash.text))]
+  | .all => toJson "all"
+  | .bytes lo hi => Json.mkObj [("bytes", toJson [lo, hi])]
+
+def keyJson (k : WantKey) : Json :=
+  Json.mkObj [("doc", docJson k.doc), ("branch", toJson (utf8Text k.branch)), ("depth", toJson (depthName k.depth)),
+    ("window", windowJson k.window)]
+
+def wantJson (w : Want WantKey) : Json :=
+  Json.mkObj [("key", keyJson w.key), ("tier", toJson (tierName w.tier)), ("signal", toJson w.signal)]
+
+def keptJson (e : Kept WantKey) : Json :=
+  Json.mkObj [("key", keyJson e.key), ("tier", toJson (tierName e.tier)), ("bytes", toJson e.bytes),
     ("used", toJson e.used)]
 
-def roundJson : Round String → Json
-  | .moved k => Json.mkObj [("moved", toJson k)]
+def roundJson : Round WantKey → Json
+  | .moved k => Json.mkObj [("moved", keyJson k)]
   | .done => toJson "done"
-  | .stalled k => Json.mkObj [("stalled", toJson k)]
+  | .stalled k => Json.mkObj [("stalled", keyJson k)]
+
+/-- A key on `main`. -/
+def key (label : String) (d : Depth) (w : Window := .all) : WantKey := ⟨doc label, utf8 "main", d, w⟩
 
 /-- A want vector: wants, the keys caps allow, each key's prerequisites; the queue. Then a round over pages left
 and a source, and eviction to a budget. -/
-def wantVector (name : String) (ws : List (Want String)) (caps : List String) (pre : List (String × List String))
-    (left : List (String × Nat)) (uploads : List String) (got : List String) (budget : Nat)
-    (kept : List (Kept String)) : Json :=
+def wantVector (name : String) (ws : List (Want WantKey)) (caps : List WantKey) (pre : List (WantKey × List WantKey))
+    (left : List (WantKey × Nat)) (uploads : List WantKey) (got : List WantKey) (budget : Nat)
+    (kept : List (Kept WantKey)) : Json :=
   let preF := fun k => (pre.lookup k).getD []
-  let q := queue (fun k => decide (k ∈ caps)) (expand preF ws)
+  let q := queue (fun k => caps.contains k) (expand preF ws)
   let leftF := fun k => (left.lookup k).getD 0
-  let (r, left') := round leftF uploads (q.map (·.key)) (fun k => decide (k ∈ got))
+  let (r, left') := round leftF uploads (q.map (·.key)) (fun k => got.contains k)
   let keys := uploads ++ q.map (·.key)
   Json.mkObj [("name", toJson name),
-    ("input", Json.mkObj [("wants", Json.arr (ws.map wantJson).toArray), ("caps", toJson caps),
-      ("pre", Json.mkObj (pre.map fun (k, ks) => (k, toJson ks))),
-      ("left", Json.mkObj (left.map fun (k, n) => (k, toJson n))), ("uploads", toJson uploads), ("got", toJson got),
+    ("input", Json.mkObj [("wants", Json.arr (ws.map wantJson).toArray), ("caps", Json.arr (caps.map keyJson).toArray),
+      ("pre", Json.arr (pre.map fun (k, ks) => Json.mkObj [("key", keyJson k),
+        ("needs", Json.arr (ks.map keyJson).toArray)]).toArray),
+      ("left", Json.arr (left.map fun (k, n) => Json.mkObj [("key", keyJson k), ("pages", toJson n)]).toArray),
+      ("uploads", Json.arr (uploads.map keyJson).toArray), ("got", Json.arr (got.map keyJson).toArray),
       ("budget", toJson budget), ("kept", Json.arr (kept.map keptJson).toArray)]),
     ("expected", Json.mkObj [("queue", Json.arr (q.map wantJson).toArray), ("round", roundJson r),
-      ("left", Json.mkObj (keys.map fun k => (k, toJson (left' k)))),
+      ("left", Json.arr (keys.map fun k => Json.mkObj [("key", keyJson k), ("pages", toJson (left' k))]).toArray),
       ("kept", Json.arr ((evict budget kept).map keptJson).toArray)])]
 
-def chatWants : List (Want String) := [
-  ⟨"room:head", .next, 2⟩, ⟨"room:records", .screen, 0⟩, ⟨"archive:records", .idle, 0⟩,
-  ⟨"photo:files", .screen, 1⟩, ⟨"secret:records", .screen, 0⟩, ⟨"room:records", .idle, 0⟩]
+def room := key "room" .records (.newest 50)
+def roomHead := key "room" .head
+def roomKey := key "room:key" .records
+def roomCheckpoint := key "room" .records
+def archive := key "archive" .records
+def photo := key "photo" .files (.bytes 0 1048576)
+def secret := key "secret" .records
+def outbox := key "outbox" .records
+def projectsKey := key "projects" .records
+def oldKey := key "old" .records
 
-def chatPre : List (String × List String) := [
-  ("room:records", ["room:key", "room:checkpoint"]), ("photo:files", ["room:key"])]
+def chatWants : List (Want WantKey) := [
+  ⟨roomHead, .next, 2⟩, ⟨room, .screen, 0⟩, ⟨archive, .idle, 0⟩, ⟨photo, .screen, 1⟩, ⟨secret, .screen, 0⟩,
+  ⟨room, .idle, 0⟩]
 
-def chatCaps : List String :=
-  ["room:head", "room:records", "room:key", "room:checkpoint", "archive:records", "photo:files"]
+def chatPre : List (WantKey × List WantKey) := [(room, [roomKey, roomCheckpoint]), (photo, [roomKey])]
+
+def chatCaps : List WantKey := [roomHead, room, roomKey, roomCheckpoint, archive, photo]
 
 -- The room's key and checkpoint come first, at the screen's tier its Records are wanted at, then the Records; the
 -- secret Doc is wanted but not allowed, so it is not queued; the room's head, wanted at `next`, is queued once.
-#guard (queue (fun k => decide (k ∈ chatCaps)) (expand (fun k => (chatPre.lookup k).getD []) chatWants)).map
+#guard (queue (fun k => chatCaps.contains k) (expand (fun k => (chatPre.lookup k).getD []) chatWants)).map
     (fun w => (w.key, tierName w.tier)) ==
-  [("room:key", "screen"), ("room:checkpoint", "screen"), ("room:records", "screen"), ("photo:files", "screen"),
-   ("room:head", "next"), ("archive:records", "idle")]
+  [(roomKey, "screen"), (roomCheckpoint, "screen"), (room, "screen"), (photo, "screen"), (roomHead, "next"),
+   (archive, "idle")]
 
-def chatKept : List (Kept String) := [
-  ⟨"room:records", .screen, 40, 9⟩, ⟨"archive:records", .idle, 300, 1⟩, ⟨"old:records", .idle, 200, 5⟩,
-  ⟨"projects:records", .later, 100, 3⟩]
+def chatKept : List (Kept WantKey) := [
+  ⟨room, .screen, 40, 9⟩, ⟨archive, .idle, 300, 1⟩, ⟨oldKey, .idle, 200, 5⟩, ⟨projectsKey, .later, 100, 3⟩]
 
--- Over a budget of 250 bytes: the screen's room stays, then the later projects, then the idle Doc used last.
-#guard (evict 250 chatKept).map (·.key) == ["room:records", "projects:records"]
+-- Over a budget of 250 bytes: the screen's room stays, then the later projects; the idle Docs go.
+#guard (evict 250 chatKept).map (·.key) == [room, projectsKey]
 
 def wantExamples : List Json := [
-  wantVector "a chat room on screen" chatWants chatCaps chatPre
-    [("room:records", 3), ("room:key", 1), ("outbox", 2)] ["outbox"] ["outbox"] 250 chatKept,
+  wantVector "a chat room on screen, the outbox first" chatWants chatCaps chatPre
+    [(room, 3), (roomKey, 1), (outbox, 2)] [outbox] [outbox] 250 chatKept,
   wantVector "uploads done, the room's key first" chatWants chatCaps chatPre
-    [("room:records", 3), ("room:key", 1)] ["outbox"] ["room:key"] 1000 chatKept,
-  wantVector "a source that gives nothing: stalled" chatWants chatCaps chatPre
-    [("room:records", 3)] [] [] 40 chatKept,
+    [(room, 3), (roomKey, 1)] [outbox] [roomKey] 1000 chatKept,
+  wantVector "a source that gives nothing: stalled" chatWants chatCaps chatPre [(room, 3)] [] [] 40 chatKept,
   wantVector "nothing left: done" chatWants chatCaps chatPre [] [] [] 0 chatKept]
 
-/-! ## Mutations -/
+/-! ## Mutations and footprints -/
 
-def ofId (i : NewId String) : V := .s s!"{i.writer}/{i.counter}/{i.index}"
+def ofId (i : NewId) : Value := .array [.uint i.writer, .uint i.counter, .uint i.index]
 
-def cellJson : Cell V → Json
-  | .lit v => v.json
+def cellJson : Cell Value → Json
+  | .lit v => valueJson v
   | .ref n => Json.mkObj [("ref", toJson n)]
 
-def idJson (i : NewId String) : Json :=
+def idJson (i : NewId) : Json :=
   Json.mkObj [("writer", toJson i.writer), ("counter", toJson i.counter), ("index", toJson i.index)]
 
-def opJson : Op String String V → Json
-  | .put ty fs => Json.mkObj [("put", Json.mkObj [("type", toJson ty),
-      ("fields", Json.mkObj (fs.map fun (c, x) => (c, cellJson x)))])]
-  | .patch ty wh set => Json.mkObj [("patch", Json.mkObj [("type", toJson ty), ("where", tupleJson wh),
+def opJson : Op Value → Json
+  | .put ty fs => Json.mkObj [("put", Json.mkObj [("type", docJson ty),
+      ("fields", Json.mkObj (fs.map fun (c, x) => (utf8Text c, cellJson x)))])]
+  | .patch ty wh set => Json.mkObj [("patch", Json.mkObj [("type", docJson ty), ("where", tupleJson wh),
       ("set", tupleJson set)])]
-  | .remove ty wh => Json.mkObj [("remove", Json.mkObj [("type", toJson ty), ("where", tupleJson wh)])]
-  | .edit id f v => Json.mkObj [("edit", Json.mkObj [("id", idJson id), ("field", toJson f), ("value", v.json)])]
+  | .remove ty wh => Json.mkObj [("remove", Json.mkObj [("type", docJson ty), ("where", tupleJson wh)])]
+  | .edit ty id f v => Json.mkObj [("edit", Json.mkObj [("type", docJson ty), ("id", idJson id),
+      ("field", toJson (utf8Text f)), ("value", valueJson v)])]
 
-def recordJson (r : Record String String V) : Json :=
-  Json.mkObj [("id", idJson r.id), ("type", toJson r.ty), ("fields", tupleJson r.fields)]
+def recordJson (r : Record Value) : Json :=
+  Json.mkObj [("id", idJson r.id), ("type", docJson r.type), ("fields", tupleJson r.fields)]
 
 def refusedJson : Refused → Json
-  | .badRef op _ => Json.mkObj [("badRef", toJson op)]
+  | .badRef op => Json.mkObj [("badRef", toJson op)]
   | .missing op => Json.mkObj [("missing", toJson op)]
 
-/-- A mutation vector: the writer, its counter, the Doc's Records and the ops; the Records after, or why it was refused
-(and then the Doc is as it was). -/
-def mutationVector (name : String) (w : String) (c : Nat) (s : List (Record String String V))
-    (ops : List (Op String String V)) : Json :=
+def stepJson (s : Step) : Json :=
+  Json.mkObj [("type", docJson s.type), ("verb", toJson s.verb.name), ("fields", toJson (s.fields.map utf8Text))]
+
+def grantJson (g : Grant) : Json :=
+  Json.mkObj [("type", docJson g.type), ("verb", toJson g.verb.name),
+    ("fields", match g.fields with | some fs => toJson (fs.map utf8Text) | none => Json.null)]
+
+/-- A mutation vector: the writer id, its counter, its grants, a Doc's Records and core operations; the footprint, the
+Records after the commit or why it was refused (and then the Doc is as it was), and every reader's check. -/
+def mutationVector (name : String) (w c : Nat) (grants : List Grant) (s : List (Record Value)) (ops : List (Op Value)) :
+    Json :=
   Json.mkObj [("name", toJson name),
     ("input", Json.mkObj [("writer", toJson w), ("counter", toJson c),
+      ("grants", Json.arr (grants.map grantJson).toArray),
       ("records", Json.arr (s.map recordJson).toArray), ("ops", Json.arr (ops.map opJson).toArray)]),
-    ("expected", match commit ofId w c s ops with
-      | .ok s' => Json.mkObj [("ok", Json.arr (s'.map recordJson).toArray)]
-      | .error e => Json.mkObj [("refused", refusedJson e)])]
+    ("expected", Json.mkObj [("footprint", Json.arr ((footprint ops).map stepJson).toArray),
+      ("covered", toJson (covers grants (footprint ops))),
+      ("commit", match commit vals.eq ofId w c s ops with
+        | .ok s' => Json.mkObj [("ok", Json.arr (s'.map recordJson).toArray),
+            ("check", toJson (check vals.eq grants ops s s'))]
+        | .error e => Json.mkObj [("refused", refusedJson e)])])]
+
+def banana : DocId := doc "type:banana"
+def quantity : DocId := doc "type:quantity"
+def eat : DocId := doc "type:eat"
+def note : DocId := doc "type:note"
 
 /-- "I ate 2 bananas": the banana, its quantity, and the eating, each pointing back at the banana. -/
-def bananas : List (Op String String V) := [
-  .put "banana" [],
-  .put "quantity" [("x1", .ref 0), ("x2", .lit (.n 2))],
-  .put "eat" [("x1", .lit (.s "samuel")), ("x2", .ref 0)]]
+def bananas : List (Op Value) := [
+  .put banana [],
+  .put quantity [(utf8 "x1", .ref 0), (utf8 "x2", .lit (.uint 2))],
+  .put eat [(utf8 "x1", .lit (text "samuel")), (utf8 "x2", .ref 0)]]
 
-#guard (match commit ofId "dev1" 7 [] bananas with
-  | .ok s => s.map fun r => (r.ty, r.fields.map fun (c, v) => (c, v.json))
+def everything (tys : List DocId) : List Grant :=
+  tys.flatMap fun ty => [StepVerb.putNew, .patch, .remove, .edit].map fun v => ⟨ty, v, none⟩
+
+#guard (match commit vals.eq ofId 1 7 [] bananas with
+  | .ok s => s.map fun r => (r.type, tupleJson r.fields)
   | .error _ => []) ==
-  [("banana", []), ("quantity", [("x1", toJson "dev1/7/0"), ("x2", toJson 2)]),
-   ("eat", [("x1", toJson "samuel"), ("x2", toJson "dev1/7/0")])]
+  [(banana, tupleJson []), (quantity, tupleJson (rows [("x1", ofId ⟨1, 7, 0⟩), ("x2", .uint 2)])),
+   (eat, tupleJson (rows [("x1", text "samuel"), ("x2", ofId ⟨1, 7, 0⟩)]))]
 
 -- A reference forward is refused, and the Doc is as it was.
-#guard (match commit ofId "dev1" 7 [] [.put "eat" [("x2", .ref 1)], .put "banana" []] with
+#guard (match commit vals.eq ofId 1 7 [] [.put eat [(utf8 "x2", .ref 1)], .put banana []] with
   | .ok _ => false
   | .error _ => true)
 
-def todo : List (Record String String V) := [
-  ⟨⟨"dev1", 1, 0⟩, "task", [("x2", .s "Order seeds"), ("done", .n 0)]⟩,
-  ⟨⟨"dev2", 4, 0⟩, "task", [("x2", .s "Water the beans"), ("done", .n 0)]⟩]
+def todo : List (Record Value) := [
+  ⟨⟨1, 1, 0⟩, task, rows [("x2", text "Order seeds"), ("done", .uint 0)]⟩,
+  ⟨⟨2, 4, 0⟩, task, rows [("x2", text "Water the beans"), ("done", .uint 0)]⟩]
+
+def tick : List (Op Value) := [.patch task (rows [("x2", text "Order seeds")]) (rows [("done", .uint 1)])]
+
+-- A grant to tick tasks done, field `done` only, covers ticking; the diff passes every reader's check.
+#guard (match commit vals.eq ofId 1 8 todo tick with
+  | .ok s' => check vals.eq [⟨task, .patch, some [utf8 "done"]⟩] tick todo s'
+  | .error _ => false)
+
+-- The same grant doesn't cover renaming a task.
+#guard covers [⟨task, .patch, some [utf8 "done"]⟩]
+  (footprint [.patch task (rows [("x2", text "Order seeds")]) (rows [("x2", text "Order bean seeds")])]) == false
 
 def mutationExamples : List Json := [
-  mutationVector "I ate 2 bananas" "dev1" 7 [] bananas,
-  mutationVector "a reference forward: refused" "dev1" 7 [] [.put "eat" [("x2", .ref 1)], .put "banana" []],
-  mutationVector "a reference to a patch: refused" "dev1" 7 todo
-    [.patch "task" [] [("done", .n 1)], .put "note" [("x1", .ref 0)]],
-  mutationVector "tick one task done" "dev1" 8 todo [.patch "task" [("x2", .s "Order seeds")] [("done", .n 1)]],
-  mutationVector "remove done tasks" "dev1" 9 todo
-    [.patch "task" [("x2", .s "Order seeds")] [("done", .n 1)], .remove "task" [("done", .n 1)]],
-  mutationVector "edit a title" "dev2" 5 todo [.edit ⟨"dev2", 4, 0⟩ "x2" (.s "Water the beans at dawn")],
-  mutationVector "edit a Record that isn't there: refused" "dev2" 5 todo
-    [.patch "task" [] [("done", .n 1)], .edit ⟨"dev3", 1, 0⟩ "x2" (.s "?")]]
+  mutationVector "I ate 2 bananas" 1 7 (everything [banana, quantity, eat]) [] bananas,
+  mutationVector "a reference forward: refused" 1 7 (everything [banana, eat]) []
+    [.put eat [(utf8 "x2", .ref 1)], .put banana []],
+  mutationVector "a reference to a patch: refused" 1 7 (everything [task, note]) todo
+    [.patch task [] (rows [("done", .uint 1)]), .put note [(utf8 "x1", .ref 0)]],
+  mutationVector "tick one task done, granted the done field" 1 8 [⟨task, .patch, some [utf8 "done"]⟩] todo tick,
+  mutationVector "rename a task, granted only the done field: not covered" 1 8 [⟨task, .patch, some [utf8 "done"]⟩]
+    todo [.patch task (rows [("x2", text "Order seeds")]) (rows [("x2", text "Order bean seeds")])],
+  mutationVector "remove done tasks" 1 9 (everything [task]) todo
+    (tick ++ [.remove task (rows [("done", .uint 1)])]),
+  mutationVector "edit a title" 2 5 [⟨task, .edit, some [utf8 "x2"]⟩] todo
+    [.edit task ⟨2, 4, 0⟩ (utf8 "x2") (text "Water the beans at dawn")],
+  mutationVector "edit a Record that isn't there: refused" 2 5 (everything [task]) todo
+    [.patch task [] (rows [("done", .uint 1)]), .edit task ⟨3, 1, 0⟩ (utf8 "x2") (text "?")]]
+
+/-! ## Sealed indexes -/
+
+def shapeJson (sh : Shape) : Json :=
+  Json.mkObj [("vault", toJson (utf8Text sh.vault)), ("type", docJson sh.type), ("eqs", toJson (sh.eqs.map utf8Text)),
+    ("range", match sh.range with | some f => toJson (utf8Text f) | none => Json.null),
+    ("order", match sh.order with | some f => toJson (utf8Text f) | none => Json.null),
+    ("name", toJson (sh.name blake3).text)]
+
+def probeJson (p : Probe Value) : Json :=
+  Json.mkObj [("eqs", Json.arr (p.eqs.map valueJson).toArray),
+    ("range", match p.range with | some (lo, hi) => Json.arr #[valueJson lo, valueJson hi] | none => Json.null)]
+
+def entryJson (e : Entry Value) : Json :=
+  Json.mkObj [("key", Json.arr (e.key.map valueJson).toArray), ("doc", docJson e.doc)]
+
+/-- An index vector: a shape, the Records at version V and the Docs the directory listed then, the Records now, the
+Docs unfolded since and the Docs listed now, a probe; the index at V, its hits, the candidates, the query over them,
+and the folded index. -/
+def indexVector (name : String) (sh : Shape) (dbV db : List (Rec Value)) (docsV unfolded now : List DocId)
+    (p : Probe Value) : Json :=
+  let idx := build sh dbV docsV
+  let cands := candidates vals sh p idx unfolded now
+  Json.mkObj [("name", toJson name),
+    ("input", Json.mkObj [("shape", shapeJson sh), ("recordsAtV", Json.arr (dbV.map recJson).toArray),
+      ("docsAtV", Json.arr (docsV.map docJson).toArray), ("records", Json.arr (db.map recJson).toArray),
+      ("unfolded", Json.arr (unfolded.map docJson).toArray), ("now", Json.arr (now.map docJson).toArray),
+      ("probe", probeJson p)]),
+    ("expected", Json.mkObj [("index", Json.arr (idx.map entryJson).toArray),
+      ("hits", Json.arr ((hits vals sh p idx).map docJson).toArray),
+      ("candidates", Json.arr (cands.map docJson).toArray),
+      ("rows", Json.arr ((select vals sh p db cands).map recJson).toArray),
+      ("folded", Json.arr ((fold sh idx db unfolded now).map entryJson).toArray)])]
+
+def invoice : DocId := doc "type:invoice"
+def inv (n : Nat) : DocId := doc s!"invoice-{n}"
+
+def invoicesV : List (Rec Value) := (List.range 6).map fun n =>
+  ⟨inv n, invoice, rows [("customer", text (if n % 2 = 0 then "ana" else "ben")), ("total", .uint (100 * n))]⟩
+
+/-- Invoice 6 is new since V, and invoice 1 changed its customer. -/
+def invoicesNow : List (Rec Value) :=
+  invoicesV.filter (·.doc != inv 1) ++
+  [⟨inv 1, invoice, rows [("customer", text "ana"), ("total", .uint 100)]⟩,
+   ⟨inv 6, invoice, rows [("customer", text "ana"), ("total", .uint 600)]⟩]
+
+/-- Ana's invoices by total. -/
+def byCustomer : Shape := ⟨vault "samuel", invoice, [utf8 "customer"], some (utf8 "total"), some (utf8 "total")⟩
+
+def anaFrom200 : Probe Value := ⟨[text "ana"], some (.uint 200, .uint 10000)⟩
+
+def docsV : List DocId := (List.range 6).map inv
+def docsNow : List DocId := (List.range 7).map inv
+
+-- The index at V names invoices 2 and 4; the directory adds 1 and 6, unfolded; the query re-checks every candidate
+-- and returns 2, 4 and 6: invoice 1, now Ana's, is below 200.
+#guard (select vals byCustomer anaFrom200 invoicesNow
+    (candidates vals byCustomer anaFrom200 (build byCustomer invoicesV docsV) [inv 1, inv 6] docsNow)).map (·.doc) ==
+  [inv 2, inv 4, inv 6]
+
+-- The same as running the query over every invoice the directory lists now.
+#guard (select vals byCustomer anaFrom200 invoicesNow docsNow).map (·.doc) == [inv 2, inv 4, inv 6]
+
+def indexExamples : List Json := [
+  indexVector "Ana's invoices from 200, two unfolded" byCustomer invoicesV invoicesNow docsV [inv 1, inv 6] docsNow
+    anaFrom200,
+  indexVector "Ben's invoices, everything folded" byCustomer invoicesV invoicesV docsV [] docsV
+    ⟨[text "ben"], none⟩,
+  indexVector "a probe nothing matches" byCustomer invoicesV invoicesNow docsV [inv 1, inv 6] docsNow
+    ⟨[text "cai"], none⟩]
 
 end Aven.DB.Engine.Examples
