@@ -4,7 +4,7 @@
 	// a reload empties the room. Senders are named through the tree: a device by the person vault it acts for. A line the
 	// network says through the Aven Peer (who joined) is its own kind.
 	import Avatar from '../Avatar.svelte';
-	import { tree, vaultName } from '../id.js';
+	import { tree, vaultName } from '../id.svelte.js';
 	import { room, say } from '../room.svelte.js';
 
 	let { account, device } = $props();
@@ -45,7 +45,7 @@
 		<ol bind:this={list} data-testid="lines">
 			{#each room.lines as line, i (i)}
 				{@const vault = vaultOf(line)}
-				{@const said = known(vault) && tree.kind(vault) === 'network'}
+				{@const said = known(vault) && tree.kind(vault) === 'agent'}
 				<li class:mine={line.from === device} class:said data-from={line.from} data-vault={vault}>
 					{#if said}
 						<span class="text" data-testid="network-line">{line.text}</span>

@@ -4,7 +4,7 @@
 	// store, and the Peer-Light's status line, its phase and "N peers" from presence, pushed by its worker.
 	import Avatar from './Avatar.svelte';
 	import Phase from './Phase.svelte';
-	import { tree, vaultName } from './id.js';
+	import { tree, vaultName } from './id.svelte.js';
 	import { describe, live, record } from './peers.svelte.js';
 
 	let { cast, device, account, apps } = $props();

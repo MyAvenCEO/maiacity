@@ -30,7 +30,7 @@ inductive Answer where
 
 def Kind.name : Kind → String
   | .person => "person"
-  | .network => "network"
+  | .agent => "agent"
   | .coop => "coop"
   | .device => "device"
 
@@ -41,7 +41,9 @@ def Owner.name : Owner → String
 
 def Kind.parse : String → Option Kind
   | "person" => some .person
-  | "network" => some .network
+  | "agent" => some .agent
+  -- the kind's name before 30 Oct 2026 (Samuel: avens are agents); a stored or cast text that says it reads as `agent`
+  | "network" => some .agent
   | "coop" => some .coop
   | "device" => some .device
   | _ => none
@@ -54,7 +56,8 @@ def Owner.parse (s : String) : Option Owner :=
 
 /-- What a cast may not write, beside a tree that is not well formed: an unknown kind, an owner without its prefix. -/
 def formatExamples : List (String × Option Kind × Option Owner) :=
-  [("ghost", none, none), ("k", none, none), ("person", some .person, none), ("key:k", none, some (.key "k")),
+  [("ghost", none, none), ("k", none, none), ("person", some .person, none), ("agent", some .agent, none),
+   ("network", some .agent, none), ("key:k", none, some (.key "k")),
    ("vault:a", none, some (.vault "a"))]
 
 -- evaluated as `lake build` compiles this file: the kernel can't unfold `String.startsWith`

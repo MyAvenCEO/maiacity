@@ -187,6 +187,18 @@ if (phase === 'claim') {
 	report.tree = network(since)?.tree;
 	if (devices(network()) !== 3) problems.push(`after the sign-in the tree has ${devices(network())} devices, not 3`);
 	sameTree('after the sign-in', network(since), 2, { ...ids, 'device-2': said('signed-in', since)?.device });
+	// the admin's own vault is governed by its owner keys, the passkey and MaiaCityGuardian, as many as the tree has
+	// (a bug of 30 Oct 2026 said "its owner key alone"); Aven opens as an agent's vault
+	const text = async (testid) => (await second.page.getByTestId(testid).first().textContent().catch(() => '')).trim();
+	await second.page.goto(`${origin}/#/${report.admin}/vault`);
+	await second.page.locator(`[data-view="vault"][data-shown="${report.admin}"]`).waitFor({ timeout: 10_000 }).catch(() => {});
+	const keys = (report.owners ?? []).filter((o) => o.startsWith('key:')).length;
+	const governed = await text('governed-by');
+	if (governed !== `its ${keys} owner keys: nothing is above it`) problems.push(`the admin's vault is governed by "${governed}"`);
+	await second.page.goto(`${origin}/#/${report.admin}/vault/aven`);
+	await second.page.locator('[data-view="vault"][data-shown="aven"]').waitFor({ timeout: 10_000 }).catch(() => {});
+	const kind = await text('kind');
+	if (kind !== 'agent vault') problems.push(`Aven shows as "${kind}", not an agent vault`);
 	// Maia City in the admin's Vault, where it opens as a vault the admin governs; the switcher never offers it
 	await second.page.goto(`${origin}/#/${report.admin}/vault/maia-city`);
 	const opened = second.page.locator('[data-view="vault"][data-shown="maia-city"]');

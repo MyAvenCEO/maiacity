@@ -1,8 +1,8 @@
 //! A network whose tree is data (`Aven.ID.Claim`'s `Server`): unclaimed, then claimed once, then grown by sign-ins.
 //! Every step returns the next network and leaves this one as it was, so the Aven Peer stores a statement first and
 //! takes the new network only once its ref is set. The claim is the first signup: there is no code. It founds the
-//! claimant's vault, the admin coop it owns (Maia City by default, the Aven Peer's `--admin-coop`) and that owns the
-//! network, and the claiming browser (PRODUCTION.md, Part C). When the Aven Peer is given MaiaCityGuardian's public
+//! claimant's vault, the admin coop it owns (Maia City by default, the Aven Peer's `--admin-coop`) and that owns Aven,
+//! the agent that runs the network, and the claiming browser (PRODUCTION.md, Part C). When the Aven Peer is given MaiaCityGuardian's public
 //! half, the person's vault a claim founds has it among its owners.
 
 use std::fmt;
@@ -78,7 +78,7 @@ pub struct Network {
 }
 
 impl Network {
-    /// An unclaimed network: its vault, without an owner yet, and the Aven Peer, its device with its key. Its admin
+    /// An unclaimed network: its agent's vault (`network`, the id the network goes by), without an owner yet, and the Aven Peer, its device with its key. Its admin
     /// coop is Maia City until [`Network::with_coop`] names another.
     pub fn new(
         network: &str,
@@ -138,7 +138,7 @@ impl Network {
         out
     }
 
-    /// The tree's vaults, in order, each with its name. Before the claim the network's vault has no owner.
+    /// The tree's vaults, in order, each with its name. Before the claim the agent's vault has no owner.
     pub fn vaults(&self) -> Vec<Vault> {
         let vault = |id: &str, name: String, kind, owners| Vault {
             id: id.into(),
@@ -146,7 +146,7 @@ impl Network {
             kind,
             owners,
         };
-        let network = vault(&self.network, "Aven".into(), Kind::Network, vec![]);
+        let network = vault(&self.network, "Aven".into(), Kind::Agent, vec![]);
         let peer = vault(
             &self.peer,
             "Aven Peer".into(),
@@ -188,7 +188,7 @@ impl Network {
         out
     }
 
-    /// The tree once claimed; before, the tree fails only for the network's missing owner.
+    /// The tree once claimed; before, the tree fails only for the agent's missing owner.
     pub fn tree(&self) -> Result<Tree, Invalid> {
         Tree::new(self.publics(), self.vaults())
     }

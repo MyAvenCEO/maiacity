@@ -4,7 +4,7 @@
 	// The Peer-Lights run avenOS in frames on their own origins. Everything here is pushed: the timeline arrives as
 	// server-sent events (README, rule 8).
 	import Phase from '../Phase.svelte';
-	import { tree, vaultName } from '../id.js';
+	import { tree, vaultName } from '../id.svelte.js';
 	import { follow, live, record } from '../peers.svelte.js';
 	import { read } from './timeline.js';
 

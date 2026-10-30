@@ -38,11 +38,12 @@
 //!                            stored one holds while its origin stays listed
 //!     --guardian HEX         with --rp-id, and required with it: MaiaCityGuardian's public half, an owner of every
 //!                            person's vault founded
-//!     --admin-coop NAME      with --rp-id: the name of the admin coop the claim founds, which owns the network
+//!     --admin-coop NAME      with --rp-id: the name of the admin coop the claim founds, which owns Aven, the agent
 //!                            (Maia City); read at every start, so a restart with another renames it
 //!
 //! The door is members only (MILESTONE2.md): the relay and every connection's `after_handshake` admit the cast's
-//! members, or the devices of the tree's members and admin, and the Aven Peer. Every peer is in the network's chat
+//! members, or the devices of the admin coop's members and people, and the Aven Peer, the device of Aven, the agent
+//! that runs the network for the coop. Every peer is in the network's chat
 //! room, over iroh-gossip on the same Router; the Aven Peer joins it first and says once who joined.
 
 use std::collections::HashMap;
