@@ -67,8 +67,10 @@ fn views_line(me: &str, tree: &str) -> String {
     timeline::line(now(), me, "views", fields)
 }
 
-/// The page's notes, and a new snapshot of the views whenever the Aven Peer tells this device its network's tree.
+/// The page's notes, and a new snapshot of the views whenever the Aven Peer tells this device a changed tree: the
+/// same tree told again (as with every invite) is no change, so no new snapshot (README rule 4).
 fn pushing_views(me: String, page: Notes) -> Notes {
+    let told = std::sync::Mutex::new(None::<String>);
     Arc::new(move |line: String| {
         let tree = line
             .contains("\"network\"")
@@ -78,7 +80,11 @@ fn pushing_views(me: String, page: Notes) -> Notes {
             .and_then(|l| l["tree"].as_str().map(str::to_string));
         page(line);
         if let Some(tree) = tree {
-            page(views_line(&me, &tree));
+            let mut told = told.lock().unwrap_or_else(|e| e.into_inner());
+            if told.as_deref() != Some(tree.as_str()) {
+                page(views_line(&me, &tree));
+                *told = Some(tree);
+            }
         }
     })
 }
@@ -230,6 +236,7 @@ fn door(endpoint: &Endpoint, bound: u32, name: String, notes: Notes) {
 /// follow the network's tree as the Aven Peer tells it. Returns once the endpoint is bound; the link and the room run
 /// on.
 #[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
 pub async fn start(
     name: String,
     secret: String,

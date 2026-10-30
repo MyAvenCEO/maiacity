@@ -9,7 +9,8 @@ let index = new Map();
 
 // The worker's lines: a `views` line is the new snapshot, an `answer` line the Peer-Light's answer to an ask
 export function hearViews(line) {
-	if (line.event === 'views' && line.vaults) {
+	// a snapshot of the same tree for the same device is no change
+	if (line.event === 'views' && line.vaults && (line.at !== shown?.at || line.device !== shown?.device)) {
 		index = new Map(line.vaults.map((vault) => [vault.id, vault]));
 		shown = line;
 	}

@@ -45,13 +45,14 @@
 
 	// the network's devices for avenOS's apps, new with each snapshot of the views
 	const cast = $derived(member && at() ? castOf(net.me) : null);
+	const stamp = $derived(cast ? at() : null);
 	// whether the network is claimed: as the Aven Peer says, or, once the relay keeps this browser out, claimed (after
 	// the claim only members get in, MILESTONE2.md)
 	const claimed = $derived(net.claimed ?? (net.door === false ? true : null));
 </script>
 
 {#if member && route !== 'claim'}
-	{#key cast}
+	{#key stamp}
 		<App {cast} device={net.me} {config} />
 	{/key}
 {:else if link && claimed}
