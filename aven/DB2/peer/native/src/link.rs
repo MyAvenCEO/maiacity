@@ -2,9 +2,11 @@
 //! and reads frames; every frame is progress, every clock step without one counts against it
 //! (`aven_db_core::status`). A link that stays stalled, or is lost, dials again. What it learns goes out as timeline
 //! lines whenever the phase, the presence or the path changes, so a page is pushed deltas (README, rule 8). A Peer-Light
-//! also hands it frames to send, its claims and sign-ins (`Outbox`), and hears back from an Aven Peer that keeps its
-//! tree whether the network is claimed and, once it is a device, the tree (`network` lines), or why a claim or sign-in
-//! was refused (`refused`).
+//! also hands it frames to send, its statements (`Outbox`), and hears back from an Aven Peer that keeps its tree whether
+//! the network is claimed and, once the door admits it, the tree and every statement, which it checks itself
+//! (`aven_id::Members::from_statements`) before it believes who the members are (`network` lines, and the `Gate`); or
+//! why a statement was refused (`refused`). The Aven Peer's address is resolved again before every dial, so a Peer
+//! follows it when it moves (30 Oct 2026: Alice Peer kept a stale address after the Aven Peer's container restarted).
 
 use aven_db_core::status::{Event, Phase, STALL_AFTER, Status, TICK_MS};
 use aven_db_core::timeline;
@@ -15,7 +17,23 @@ use n0_future::time::{Duration, Instant, sleep, timeout};
 use n0_future::{FutureExt, StreamExt};
 use serde_json::json;
 
+use std::sync::Arc;
+
+use n0_future::boxed::BoxFuture;
+
+use crate::members::Gate;
 use crate::{Notes, now};
+
+/// Where the Aven Peer is now: resolved again before every dial.
+pub type Resolve = Arc<dyn Fn() -> BoxFuture<Result<EndpointAddr, String>> + Send + Sync>;
+
+/// An address that never moves: the Peer-Light's, which reaches the Aven Peer by its key through the relay.
+pub fn fixed(addr: EndpointAddr) -> Resolve {
+    Arc::new(move || {
+        let addr = addr.clone();
+        Box::pin(async move { Ok(addr) })
+    })
+}
 
 const TICK: Duration = Duration::from_millis(TICK_MS);
 /// A stalled link waits this many more steps for progress, then dials again.
@@ -46,6 +64,8 @@ struct Link {
     view: View,
     told: Option<View>,
     outbox: Option<Outbox>,
+    /// the door as the statements say, for a link to an Aven Peer that keeps its tree
+    gate: Option<Gate>,
 }
 
 impl Link {
@@ -56,6 +76,39 @@ impl Link {
             if event == Event::Lost {
                 self.view.peers.clear();
             }
+        }
+    }
+
+    /// What the Aven Peer says of its network: the statements checked here before the gate believes them.
+    fn network(&self, claimed: bool, tree: Option<String>, statements: Option<String>) {
+        let checked = statements.map(|s| {
+            serde_json::from_str(&s)
+                .map_err(|e| e.to_string())
+                .and_then(|v| aven_id::Members::from_statements(&v))
+        });
+        match checked {
+            Some(Ok(m)) => {
+                if let Some(gate) = &self.gate {
+                    gate.set_members(&m);
+                }
+                let invites: Vec<serde_json::Value> = m
+                    .invites()
+                    .iter()
+                    .map(|i| json!({ "id": aven_id::invite_id(&i.key), "key": i.key, "state": m.state(&i.key) }))
+                    .collect();
+                self.note(
+                    "network",
+                    json!({ "claimed": claimed, "tree": tree, "members": m.members(), "invites": invites }),
+                );
+            }
+            Some(Err(why)) => {
+                self.note("network", json!({ "claimed": claimed, "tree": null }));
+                self.note(
+                    "refused",
+                    json!({ "why": format!("the network's statements don't hold: {why}") }),
+                );
+            }
+            None => self.note("network", json!({ "claimed": claimed, "tree": tree })),
         }
     }
 
@@ -87,14 +140,15 @@ pub fn path(conn: &Connection) -> Option<&'static str> {
 }
 
 /// Runs the link for ever: dial, follow, and dial again. `aven_name` is what the timeline calls the Aven Peer; the
-/// outbox, if any, holds the frames to send it.
+/// outbox, if any, holds the frames to send it; the gate, if any, learns the members from the statements it is told.
 pub async fn run(
     endpoint: Endpoint,
     me: String,
-    aven: EndpointAddr,
+    aven: Resolve,
     aven_name: String,
     notes: Notes,
     outbox: Option<Outbox>,
+    gate: Option<Gate>,
 ) {
     let mut link = Link {
         me,
@@ -107,15 +161,20 @@ pub async fn run(
         },
         told: None,
         outbox,
+        gate,
     };
     link.tell();
-    loop {
+    // until its endpoint closes: a Peer-Light rebinds with a newcomer's relay token
+    while !endpoint.is_closed() {
         link.step(Event::Dial);
         link.tell();
-        let why = follow(&endpoint, &aven, &mut link)
-            .await
-            .err()
-            .unwrap_or_default();
+        let why = match aven().await {
+            Ok(addr) => follow(&endpoint, &addr, &mut link)
+                .await
+                .err()
+                .unwrap_or_default(),
+            Err(why) => format!("the Aven Peer's address: {why}"),
+        };
         link.step(Event::Lost);
         link.tell();
         link.note("lost", json!({ "to": link.aven, "why": why }));
@@ -184,9 +243,11 @@ async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Re
                     link.step(Event::Frame);
                     match frame {
                         Frame::Presence { peers } => link.view.peers = peers,
-                        Frame::Network { claimed, tree } => {
-                            link.note("network", json!({ "claimed": claimed, "tree": tree }))
-                        }
+                        Frame::Network {
+                            claimed,
+                            tree,
+                            statements,
+                        } => link.network(claimed, tree, statements),
                         Frame::Refused { why } => link.note("refused", json!({ "why": why })),
                         _ => {}
                     }

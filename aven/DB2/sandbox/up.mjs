@@ -189,7 +189,7 @@ async function check() {
 	say(`vectors ${fresh ? 'fresh' : 'STALE'} (${((Date.now() - vectorsStarted) / 1000).toFixed(1)} s)`);
 	const run = `runs/${new Date().toISOString().replace(/[:.]/g, '-')}`;
 	const result = await $`${compose} exec -T browsers node sandbox/check.mjs ${run}`.env(env).nothrow();
-	const passed = fenced.length === 0 && fresh && result.exitCode === 0 && (await keeps(run)) && (await claims(run));
+	const passed = fenced.length === 0 && fresh && result.exitCode === 0 && (await keeps(run)) && (await claims(run)) && (await members(run));
 	say(`${passed ? 'check passed' : 'check FAILED'}; screenshots and report in aven/DB2/${run}/`);
 	return passed ? 0 : 1;
 }
@@ -264,6 +264,36 @@ async function claims(run) {
 	return ok;
 }
 
+// The members' network (MILESTONE2.md, "How it is checked", 1–3, 5, 6), by sandbox/members.mjs on production's stand-in,
+// from an empty store, which it leaves empty again. Between its phases only the host can restart the Aven Peer, and
+// dial it as a stranger Peer straight over UDP, past the relay, so its hook is what keeps the stranger out.
+async function members(run) {
+	const timed = Date.now();
+	const wipe = async () => {
+		await $`${compose} exec -T s3 rm -rf /data/aven/prod`.env(env).quiet();
+		await $`${compose} restart prod`.env(env).quiet();
+	};
+	const step = async (phase) => (await $`${compose} exec -T browsers node sandbox/members.mjs ${phase} ${run}`.env(env).nothrow()).exitCode === 0;
+	await wipe();
+	let ok = await step('members');
+	const stranger = createHash('sha256').update(`avenSANDBOX stranger ${timed}`).digest('hex');
+	const prodKey = peerConfig.AVENSANDBOX_PROD_KEY;
+	const dial = ['/target/debug/aven-peer', '--name', 'stranger', '--secret', stranger, '--listen', '0.0.0.0:4434', '--relay-url', 'http://prod:3340', '--aven', 'prod:4433', '--aven-key', prodKey, '--members', `prod-peer=${prodKey}`];
+	await $`${compose} exec -T alice env -i /usr/bin/timeout 6 ${dial}`.env(env).nothrow().quiet();
+	const prodLines = (await $`${compose} exec -T browsers cat /events/prod-peer.jsonl`.env(env).quiet().text()).split('\n').filter(Boolean).map((l) => JSON.parse(l));
+	const hooked = prodLines.some((l) => l.t >= timed && l.event === 'kept-out' && l.by === 'hook' && l.alpn === 'aven/db/1' && l.key === publicOf(stranger));
+	if (!hooked) say("members: the Aven Peer's hook did not keep a stranger Peer out");
+	const state = `${run}/members.json`;
+	const report = existsSync(join(db2, state)) ? JSON.parse(readFileSync(join(db2, state), 'utf8')) : {};
+	const note = `require("node:fs").writeFileSync(process.argv[1], JSON.stringify({ ...JSON.parse(require("node:fs").readFileSync(process.argv[1])), restartedAt: Date.now() }, null, 2))`;
+	if (ok) await $`${compose} exec -T browsers node -e ${note} ${state}`.env(env).quiet();
+	await $`${compose} restart prod`.env(env).quiet();
+	ok = ok && hooked && report.memberIds?.length === 1 && (await step('restarted'));
+	await wipe();
+	say(`${ok ? 'invites, joins, the door, the chat and the restart hold' : 'the members step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s)`);
+	return ok;
+}
+
 async function up(args) {
 	const started = Date.now();
 	await ensureDocker();
@@ -331,6 +361,8 @@ if (import.meta.main) {
 		else if (command === 'doctor') await doctor();
 		else if (command === 'build') await deliverables();
 		else if (command === 'box') process.exit(await inBox(args.length ? args : ['bash']));
+		// the members' step alone, on a box that is up (the check runs it after the others)
+		else if (command === 'members') process.exit((await members(`runs/members-${Date.now()}`)) ? 0 : 1);
 		else throw new Error(`unknown command ${command}: up [--check], down [--wipe], logs, shot, build, doctor, box <command>`);
 	} catch (error) {
 		console.error(`avenSANDBOX: ${error.message}`);

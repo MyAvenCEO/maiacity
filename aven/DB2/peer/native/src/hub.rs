@@ -1,8 +1,9 @@
 //! Presence as the Aven Peer counts it (`aven_db_core::presence`): every peer that says hello on `aven/db/1` joins,
 //! each of its connections counted, and every connected peer is told who is there, itself included, on every change.
 //! The Aven Peer beats once per clock step on every link, so a quiet link still moves. An Aven Peer that keeps its tree
-//! (`door`) also tells every link whether its network is claimed, and its tree to the tree's own devices, on every
-//! change; it takes claims and sign-ins on the same stream, and answers a refused one with why.
+//! (`door`) also tells every link whether its network is claimed and, to the devices its door admits, its tree and
+//! every statement, on every change; it takes claims, sign-ins, invites, withdrawals and joins on the same stream, and
+//! answers a refused one with why. Who may connect at all is the hook's (`members`), not the hub's.
 
 use std::sync::{Arc, Mutex};
 
@@ -16,7 +17,7 @@ use serde_json::json;
 use tokio::sync::watch;
 use tokio::time::{Duration, interval};
 
-use crate::door::Door;
+use crate::door::{Door, Statement};
 use crate::keys::Members;
 use crate::{Notes, link, now};
 
@@ -93,20 +94,19 @@ impl Hub {
         let (mut send, mut recv) = conn.accept_bi().await?;
         let mut decoder = Decoder::default();
         let mut buf = vec![0u8; 16 * 1024];
-        // the first frame is a hello
-        let said = loop {
+        // the first frame is a hello; what came with it, a newcomer's statement, is taken once it is answered
+        let (said, early) = loop {
             let n = recv
                 .read(&mut buf)
                 .await
                 .map_err(fail)?
                 .ok_or_else(|| fail("closed before hello"))?;
-            if let Some(frame) = decoder
+            let mut frames = decoder
                 .push(&buf[..n])
-                .map_err(|e| fail(format!("{e:?}")))?
-                .into_iter()
-                .next()
-            {
-                break frame;
+                .map_err(|e| fail(format!("{e:?}")))?;
+            if !frames.is_empty() {
+                let first = frames.remove(0);
+                break (first, frames);
             }
         };
         // the first frame names the peer; a member must name itself
@@ -130,6 +130,13 @@ impl Hub {
             network.mark_changed();
             network
         });
+        for frame in early {
+            if let Some(why) = self.take(&key, frame).await {
+                send.write_all(&encode(&Frame::Refused { why }))
+                    .await
+                    .map_err(fail)?;
+            }
+        }
         loop {
             tokio::select! {
                 _ = told.changed() => {
@@ -166,36 +173,19 @@ impl Hub {
 }
 
 impl Hub {
-    /// A claim or sign-in from the browser whose key is `key`, and why it was refused; any other frame is no news.
+    /// A statement from the peer whose key is `key`, and why it was refused; any other frame is no news.
     async fn take(&self, key: &str, frame: Frame) -> Option<String> {
-        let door = || {
-            self.door
-                .as_ref()
-                .ok_or_else(|| "this peer keeps no tree".to_string())
-        };
-        let taken = match frame {
-            Frame::Claim { statement } => match door() {
-                Ok(door) => door.claim(key, &statement).await,
-                Err(why) => Err(why),
-            },
-            Frame::SignIn { statement } => match door() {
-                Ok(door) => door.sign_in(key, &statement).await,
-                Err(why) => Err(why),
-            },
-            _ => Ok(()),
-        };
-        taken.err()
+        let statement = Statement::of(&frame)?;
+        match &self.door {
+            Some(door) => door.take(key, statement).await.err(),
+            None => Some("this peer keeps no tree".to_string()),
+        }
     }
 }
 
 impl ProtocolHandler for Hub {
     async fn accept(&self, conn: Connection) -> Result<(), AcceptError> {
         let key = conn.remote_id();
-        // the members-only door (invites, the relay's allow-list) is milestone 2's; members given, only they get in
-        if !self.members.is_empty() && !self.members.knows(&key) {
-            self.note("refused", json!({ "key": key.to_string() }));
-            return Err(fail("not a member"));
-        }
         let peer = self.members.name(&key);
         self.change(true, &peer);
         self.note("joined", json!({ "from": peer, "path": link::path(&conn) }));

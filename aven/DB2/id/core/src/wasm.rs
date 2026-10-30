@@ -4,6 +4,7 @@
 use wasm_bindgen::prelude::*;
 
 use crate::claim;
+use crate::invite;
 use crate::passkey;
 use crate::tree::Tree;
 
@@ -53,6 +54,54 @@ pub fn passkey_id(spki: &str) -> String {
 #[wasm_bindgen(js_name = personId)]
 pub fn person_id(spki: &str) -> String {
     claim::person_id(spki)
+}
+
+/// What an invite's and a withdrawal's passkey sign: the admin's acts on the invite with one-time key `key`.
+#[wasm_bindgen(js_name = inviteText)]
+pub fn invite_text(network: &str, key: &str) -> String {
+    invite::invite_text(network, key)
+}
+
+#[wasm_bindgen(js_name = withdrawText)]
+pub fn withdraw_text(network: &str, key: &str) -> String {
+    invite::withdraw_text(network, key)
+}
+
+/// What a join's passkey and the invite's one-time key sign.
+#[wasm_bindgen(js_name = joinText)]
+#[allow(clippy::too_many_arguments)]
+pub fn join_text(
+    network: &str,
+    key: &str,
+    person: &str,
+    name: &str,
+    passkey: &str,
+    spki: &str,
+    device: &str,
+    device_key: &str,
+) -> String {
+    invite::join_text(
+        network, key, person, name, passkey, spki, device, device_key,
+    )
+}
+
+#[wasm_bindgen(js_name = inviteId)]
+pub fn invite_id(key: &str) -> String {
+    invite::invite_id(key)
+}
+
+/// A one-time key's public half from the secret an invite's link carries (both hex).
+#[wasm_bindgen(js_name = oneTimePublic)]
+pub fn one_time_public(secret: &str) -> Result<String, JsError> {
+    invite::one_time_public(secret)
+        .ok_or_else(|| JsError::new("a one-time secret is 64 hex digits"))
+}
+
+/// The one-time key's signature over a join's text (hex), made from the link's secret.
+#[wasm_bindgen(js_name = signJoin)]
+pub fn sign_join(secret: &str, text: &str) -> Result<String, JsError> {
+    invite::sign_join(secret, text)
+        .ok_or_else(|| JsError::new("a one-time secret is 64 hex digits"))
 }
 
 #[wasm_bindgen]
