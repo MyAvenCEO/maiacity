@@ -391,6 +391,163 @@ theorem uploads_first (left : Key → Nat) (uploads keys : List Key)
       | inl e => subst e; exact absurd hl ha
       | inr e => obtain ⟨k, hk, h⟩ := ih e; exact ⟨k, List.mem_cons_of_mem _ hk, h⟩
 
+/-! ### Pages: a round holds at most one page, under the limit -/
+
+/-- The most one page may hold (rule 10): bytes and entries. -/
+structure Limit where
+  bytes : Nat
+  entries : Nat
+  deriving DecidableEq, Repr
+
+/-- A page: the longest prefix of what is pending that fits the limit. -/
+def pageFit {α : Type} (size : α → Nat) : Nat → Nat → List α → List α
+  | _, _, [] => []
+  | bytes, entries, x :: xs =>
+    if size x ≤ bytes ∧ 0 < entries then x :: pageFit size (bytes - size x) (entries - 1) xs else []
+
+def page {α : Type} (size : α → Nat) (lim : Limit) (pending : List α) : List α :=
+  pageFit size lim.bytes lim.entries pending
+
+omit [DecidableEq Key] in
+theorem pageFit_bounded {α : Type} (size : α → Nat) : ∀ (b n : Nat) (l : List α),
+    (pageFit size b n l).length ≤ n ∧ ((pageFit size b n l).map size).sum ≤ b
+  | _, _, [] => by simp [pageFit]
+  | b, n, x :: xs => by
+    simp only [pageFit]
+    split
+    · rename_i h
+      have := pageFit_bounded size (b - size x) (n - 1) xs
+      simp only [List.length_cons, List.map_cons, List.sum_cons]
+      omega
+    · simp
+
+omit [DecidableEq Key] in
+theorem pageFit_prefix {α : Type} (size : α → Nat) : ∀ (b n : Nat) (l : List α),
+    pageFit size b n l ++ l.drop (pageFit size b n l).length = l
+  | _, _, [] => by simp [pageFit]
+  | b, n, x :: xs => by
+    simp only [pageFit]
+    split
+    · simp [pageFit_prefix size (b - size x) (n - 1) xs]
+    · simp
+
+omit [DecidableEq Key] in
+theorem pageFit_nonempty {α : Type} (size : α → Nat) (b n : Nat) (x : α) (xs : List α) (hx : size x ≤ b) (hn : 0 < n) :
+    pageFit size b n (x :: xs) ≠ [] := by
+  simp [pageFit, hx, hn]
+
+/-- One round with pages: the first key in order, uploads first, with anything pending is served one page of it. -/
+def roundP {α : Type} (size : α → Nat) (lim : Limit) (pending : Key → List α) (uploads keys : List Key)
+    (got : Key → Bool) : Round Key × List α × (Key → List α) :=
+  match firstLeft (fun k => (pending k).length) (uploads ++ keys) with
+  | none => (.done, [], pending)
+  | some k =>
+    let p := page size lim (pending k)
+    if got k then (.moved k, p, fun x => if x = k then (pending k).drop p.length else pending x)
+    else (.stalled k, [], pending)
+
+omit [DecidableEq Key] in
+theorem measure_lower (left left' : Key → Nat) (k : Key) (hk : left' k < left k)
+    (hrest : ∀ x, x ≠ k → left' x = left x) :
+    ∀ ks : List Key, k ∈ ks → ks.Nodup → measure left' ks < measure left ks
+  | [], h, _ => by simp at h
+  | a :: ks, h, hn => by
+    have ⟨hna, hnd⟩ := List.nodup_cons.mp hn
+    simp only [measure, List.map_cons, List.sum_cons]
+    by_cases hak : a = k
+    · subst hak
+      have : (ks.map left') = ks.map left := by
+        apply List.map_congr_left
+        intro x hx
+        exact hrest x (fun e => hna (e ▸ hx))
+      rw [this]; omega
+    · have hks : k ∈ ks := by
+        cases List.mem_cons.mp h with
+        | inl e => exact absurd e.symm hak
+        | inr e => exact e
+      have := measure_lower left left' k hk hrest ks hks hnd
+      simp only [measure] at this
+      rw [hrest a hak]; omega
+
+/-- **A round holds at most one page, under the limit** (rule 10, `page_bounded`): what it moves is a prefix of what
+was pending, at most `entries` entries and `bytes` bytes, and, when every pending entry fits the byte limit and a page
+may hold an entry, never empty, so the round still moves the measure (the pending entries) down. -/
+theorem page_bounded {α : Type} (size : α → Nat) (lim : Limit) (pending : Key → List α) (uploads keys : List Key)
+    (got : Key → Bool) (k : Key) (p : List α) (pending' : Key → List α)
+    (h : roundP size lim pending uploads keys got = (.moved k, p, pending')) :
+    p.length ≤ lim.entries ∧ (p.map size).sum ≤ lim.bytes ∧ p ++ pending' k = pending k ∧
+      ((∀ x ∈ pending k, size x ≤ lim.bytes) → 0 < lim.entries → p ≠ []) := by
+  unfold roundP at h
+  cases hf : firstLeft (fun k => (pending k).length) (uploads ++ keys) with
+  | none => rw [hf] at h; simp at h
+  | some k' =>
+    rw [hf] at h
+    simp only at h
+    split at h
+    · simp only [Prod.mk.injEq, Round.moved.injEq] at h
+      obtain ⟨rfl, rfl, rfl⟩ := h
+      have hb := pageFit_bounded size lim.bytes lim.entries (pending k')
+      refine ⟨hb.1, hb.2, by simpa [page] using pageFit_prefix size lim.bytes lim.entries (pending k'), ?_⟩
+      intro hs he
+      have ⟨_, hl⟩ := firstLeft_spec _ _ k' hf
+      cases hp : pending k' with
+      | nil => rw [hp] at hl; simp at hl
+      | cons x xs =>
+        simp only [page]
+        exact pageFit_nonempty size _ _ x xs (hs x (by simp [hp])) he
+    · simp at h
+
+/-- **Every round with pages moves** (`round_moves`, with pages): it moves what is pending down, or nothing is left, or
+it raises the stall alarm. -/
+theorem roundP_moves {α : Type} (size : α → Nat) (lim : Limit) (pending : Key → List α) (uploads keys : List Key)
+    (got : Key → Bool) (hn : (uploads ++ keys).Nodup) (hfit : ∀ k, ∀ x ∈ pending k, size x ≤ lim.bytes)
+    (he : 0 < lim.entries) :
+    (∀ k p pending', roundP size lim pending uploads keys got = (.moved k, p, pending') →
+        measure (fun k => (pending' k).length) (uploads ++ keys) < measure (fun k => (pending k).length) (uploads ++ keys)) ∧
+    (∀ p pending', roundP size lim pending uploads keys got = (.done, p, pending') →
+        ∀ k ∈ uploads ++ keys, pending k = []) ∧
+    (∀ k p pending', roundP size lim pending uploads keys got = (.stalled k, p, pending') →
+        pending' = pending ∧ k ∈ uploads ++ keys ∧ pending k ≠ []) := by
+  refine ⟨fun k p pending' h => ?_, fun p pending' h => ?_, fun k p pending' h => ?_⟩
+  · have ⟨_, _, happ, hne⟩ := page_bounded size lim pending uploads keys got k p pending' h
+    have hpne := hne (hfit k) he
+    unfold roundP at h
+    cases hf : firstLeft (fun k => (pending k).length) (uploads ++ keys) with
+    | none => rw [hf] at h; simp at h
+    | some k' =>
+      rw [hf] at h
+      simp only at h
+      split at h
+      · simp only [Prod.mk.injEq, Round.moved.injEq] at h
+        obtain ⟨rfl, rfl, rfl⟩ := h
+        have ⟨hm, hl⟩ := firstLeft_spec _ _ k' hf
+        apply measure_lower _ _ k' _ _ _ hm hn
+        · simp only [ite_true, List.length_drop]
+          have : 0 < (page size lim (pending k')).length := List.length_pos_iff.mpr hpne
+          omega
+        · intro x hx; simp [hx]
+      · simp at h
+  · unfold roundP at h
+    cases hf : firstLeft (fun k => (pending k).length) (uploads ++ keys) with
+    | none =>
+      intro k hk
+      have := firstLeft_none _ _ hf k hk
+      exact List.length_eq_zero_iff.mp this
+    | some k' =>
+      rw [hf] at h; simp only at h; split at h <;> simp at h
+  · unfold roundP at h
+    cases hf : firstLeft (fun k => (pending k).length) (uploads ++ keys) with
+    | none => rw [hf] at h; simp at h
+    | some k' =>
+      rw [hf] at h
+      simp only at h
+      split at h
+      · simp at h
+      · simp only [Prod.mk.injEq, Round.stalled.injEq] at h
+        obtain ⟨rfl, -, rfl⟩ := h
+        have ⟨hm, hl⟩ := firstLeft_spec _ _ k' hf
+        exact ⟨rfl, hm, fun e => by rw [e] at hl; simp at hl⟩
+
 /-! ### Waits: a wait never stops other keys, and a round that moves nothing says why -/
 
 /-- What a key waits for before it can move: an envelope it builds on (a dependency), a cap, a revocation to settle, or

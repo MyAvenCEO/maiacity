@@ -66,6 +66,15 @@ fn unhex64(s: &str) -> Option<[u8; 64]> {
     Some(out)
 }
 
+/// Lines' blobs with the retractions first (`Aven.DB.Chains.Keeper.catchUpAll`), each group in its order: a peer
+/// applies every delete before any line or file it deletes reaches it.
+fn retractions_first(lines: Vec<String>) -> Vec<String> {
+    let (first, rest): (Vec<String>, Vec<String>) = lines.into_iter().partition(|l| {
+        Line::read_kept(l.as_bytes()).is_some_and(|(l, _)| matches!(l.body, Body::Retract(_)))
+    });
+    first.into_iter().chain(rest).collect()
+}
+
 /// Lines in frames that stay well under the wire's limit, in order.
 pub fn batches(lines: Vec<String>) -> Vec<Frame> {
     let mut out = vec![];
@@ -559,20 +568,18 @@ impl Chats {
                 lines.extend(self.lines_after(&device, seq).await);
             }
         }
-        let (first, rest): (Vec<String>, Vec<String>) = lines.into_iter().partition(|l| {
-            Line::read_kept(l.as_bytes()).is_some_and(|(l, _)| matches!(l.body, Body::Retract(_)))
-        });
-        batches(first.into_iter().chain(rest).collect())
+        batches(retractions_first(lines))
     }
 
-    /// This device's own lines the Aven Peer's `heads` show it is missing: written offline, sent on reconnect.
+    /// This device's own lines the Aven Peer's `heads` show it is missing: written offline, sent on reconnect, the
+    /// retractions first.
     pub async fn unsent(&self, heads: &[Head]) -> Vec<Frame> {
         let device = self.device();
         let seq = heads
             .iter()
             .find(|h| h.device == device)
             .map_or(0, |h| h.seq);
-        batches(self.lines_after(&device, seq).await)
+        batches(retractions_first(self.lines_after(&device, seq).await))
     }
 
     /// This device's own lines the Aven Peer's `heads` show it holds: they have gone out.
