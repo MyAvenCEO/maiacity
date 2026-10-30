@@ -223,7 +223,7 @@ definitions, and every placed one is an actor (section 6).
 | `faces` | Optional: named faces, each `{ present, markup, style, a11y }`. `present` (optional; without it the markup sees the state) is a part on state- or js-runtime that gives the face data; `markup` and `style` are the parts face-runtime draws, `a11y` the accessible names and roles it checks. Only the runtimes are one; the parts stay apart |
 | `init` | The first state |
 | `lifetime` | `durable` (the default): the actor lasts until it is retired, and later persists in avenDB. `mounted`: it lives while the face that placed it shows it, and goes when it is unplaced |
-| `replaces` | Optional: the name of the definition this one upgrades. Its actors move to the new definition, a bridge carrying their state into its shape (section 15), and a cap follows the upgrade only as far as the old interface reached, and only in a vault that has itself adopted the new definition (section 11) |
+| `replaces` | Optional: the name of the definition this one upgrades. Its actors move to the new definition, a lens carrying their state into its shape (section 15), and a cap follows the upgrade only as far as the old interface reached, and only in a vault that has itself adopted the new definition (section 11) |
 | `loads` | Later, with avenDB's engine: what the actor needs, in tiers. Devices decide how deep they keep it, and the `now` tier is handed into each turn as part of `given`, so an actor never fetches (section 11) |
 
 An actor's code and faces are **parts**: values in a format, for the runtime of that format. Actors are mostly JSON;
@@ -259,7 +259,7 @@ instead shows an existing actor's face, such as a durable task's row, without sp
 **Types, not words.** A message's payload is typed by a **type id**, `<type Doc>/<schema hash>`: the address of one
 version in a type Doc, whose Record's id is its schema's hash (K5, avenDB's docs spec). It is the same from version 1
 on, where type Docs live in memory like every Doc. Equal schemas in two type Docs are two types; two type ids joined by a
-path of bridges are compatible. A message's `name` is a label in one interface, and its `description` is prose for people and models. Neither is ever
+path of lenses are compatible. A message's `name` is a label in one interface, and its `description` is prose for people and models. Neither is ever
 matched: whatever links two actors links them by type id.
 
 **Self-description.** Every actor accepts a built-in ask, `describe`, which the kernel answers on its behalf from
@@ -271,22 +271,22 @@ apart. One answer serves a model asking "what do you do, and how can I use you?"
 plain-language `explain`, a model reading the definition and answering in words, is an ordinary actor built on
 `describe`, later.
 
-**Bridges.** A bridge is a two-way mapping between two type versions, a Value, with laws: a round trip keeps what both
+**Lenses.** A lens is a two-way mapping between two type versions, a Value, with laws: a round trip keeps what both
 sides can hold, and a lossy step states its loss. It joins a version to its parent inside one type Doc, and versions
-of two different type Docs alike: one concept, everywhere in the stack (Samuel, 30 Oct 2026). Bridges across the whole stack form a forest: a bridge that would make a second path between
+of two different type Docs alike: one concept, everywhere in the stack (Samuel, 30 Oct 2026). Lenses across the whole stack form a forest: a lens that would make a second path between
 two versions is refused, so every path is unique and the laws hold along it.
 
-Between actors, a message whose type differs from the one the receiver accepts is delivered when a path of bridges
+Between actors, a message whose type differs from the one the receiver accepts is delivered when a path of lenses
 joins them: the router reads the payload through the path into the receiver's type, and a reply comes back through
-it the other way. The journal entry pins the bridges used, by hash, so a replay reads the same. With no path the
+it the other way. The journal entry pins the lenses used, by hash, so a replay reads the same. With no path the
 message is refused, as an undeclared one is. Nothing is translated by guessing: no names, no prose.
 
 This replaces Abject's negotiator and self-healing adapters. Where Abject had a model write a proxy at run time, per
-pair, as code, a bridge is written once, as data: a model may propose one, a person approves it (a tell), the checker
+pair, as code, a lens is written once, as data: a model may propose one, a person approves it (a tell), the checker
 holds it to the laws, and it is frozen by hash and reused by every actor and every reader of those types.
 
 **Derived edges.** There is an edge from A to B wherever a type in A's `sends` is a type B's interface accepts, or one
-joined to it by bridges. The graph is a query over definitions, computed and never stored, so the drawn graph, a planner's input and what the
+joined to it by lenses. The graph is a query over definitions, computed and never stored, so the drawn graph, a planner's input and what the
 kernel allows are one rule. Where a placer wires a face actor's `events`, the wire must follow such an edge. This is
 Abject's requires and produces, by type id instead of by predicate.
 
@@ -500,7 +500,7 @@ Each later step replaces a layer's implementation, not its interface:
 | Composites and skills | A composite is an actor whose turn tells other actors. No kernel concept, no members field, no merge law. "Skill" is a product word for such an actor |
 | Studio, planner, `requires` / `produces` contracts, registry | Apps or actors that read definitions, later |
 | The model, HTTP, files and the engine | Doors: built-in actors, each added when something needs it (section 7). The store is avenDB's, below the engine |
-| A plain-language `explain`, learning | Later: actors built on `describe` and the journal. Self-healing adapters are bridges (section 6) |
+| A plain-language `explain`, learning | Later: actors built on `describe` and the journal. Self-healing adapters are lenses (section 6) |
 
 ## 13. The package
 
@@ -600,12 +600,12 @@ Decided here, on those grounds:
   The order from one actor to another stays the order sent (section 4). In version 1, in memory, the carrier is not
   modelled: each pair of actors is one inbox log.
 - avenDB's A17, part 5 (Samuel, 30 Oct 2026): a definition is a version of an actor type; `replaces` names the
-  version before it, and a bridge carries the actor's state from the old version's shape into the new one's (K5).
+  version before it, and a lens carries the actor's state from the old version's shape into the new one's (K5).
 - Machines are data, merged with the interface; no Prolog runtime; their checker proven in Lean, and deeper
   properties of a definition proven in Lean in the repository (section 6).
 - Every actor answers a built-in `describe` ask with its tool specs; definitions declare `sends`, enforced by the
   kernel; edges between actors are derived by type id, never by name or prose (section 6; Samuel, 30 Oct 2026).
-- Bridges, universally: one concept joining versions of one type and of different type Docs, kept a forest so paths
+- Lenses, universally: one concept joining versions of one type and of different type Docs, kept a forest so paths
   stay unique; actors' messages cross types through them, and they replace Abject's negotiator and self-healing
   adapters (section 6; Samuel, 30 Oct 2026).
 - Values are integers only in version 1, in avenDB's one codec (section 2): deterministic CBOR (Samuel, 30 Oct 2026).
