@@ -23,7 +23,8 @@ document (moved there whole), and Signal, Matrix, MLS, Biscuit, Keyhive and Mead
 - passkeys use the PRF step (D11);
 - MaiaCityGuardian stays a full owner through the evaluation phase (D12).
 
-The engine thread agreed the footprints caps check (E1–E3). Two things are proposals of this document, marked where they
+The engine thread agreed the footprints caps check (E1–E3). The docs and avenACTOR threads answered their seams on the
+same day, and what they agreed is marked where it applies. Two things are proposals of this document, marked where they
 appear: groups holding caps (an extension of D2) and the exact layers of D7.
 
 ## Contents
@@ -163,21 +164,25 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
     were sealed with.
 20. **Hybrid where authority lasts.**
     - X-Wing for every key sent.
-    - Hybrid signatures on caps, revocations, governance, approvals, letters and heads.
-    - Ed25519 on single envelopes, which the hybrid-signed heads cover.
+    - Hybrid signatures on caps, revocations, governance, approvals, letters, segments and checkpoints.
+    - Ed25519 on single live envelopes, which their segment's hybrid signature covers once they are sealed into it.
     - Every seal and every signature names its suite.
 21. **A passkey's act needs both proofs:** the WebAuthn assertion, which proves the authenticator and the person
     (ES256), and the hybrid signature derived from its PRF (post-quantum).
 22. **The keeper is blind.** It keeps and serves sealed bytes under keep caps. It checks the door, quota and fetch
     proofs, never a write cap. It learns no content, type, signer, cap or reader list, beyond what serving a device
     shows ([metadata](#metadata-what-hosts-still-see)).
-23. **The signer is inside the seal.** Outside an envelope are its Doc, its epoch and its padded length.
+23. **The signer is inside the seal.** Outside a segment is only what a blind keeper needs to serve catch-up and catch a
+    split: the Doc, the epoch, the writer's Loro peer for that Doc, branch and epoch (a pseudonym that names no device
+    or vault), its counter range, the previous segment's hash and the padded length.
 24. **A want grants nothing.** A device is served its wants intersected with its caps; an actor is handed its loads
     intersected with its run's caps (engine, rule 7).
 25. **Approval is a co-signature over one digest:** k of the named owners, for one act, used once.
 26. **Conditions only narrow.** Uses and budgets hold only where one checker counts them: a kernel or a router.
-27. **Three verdicts, and it fails closed.** An envelope counts, doesn't count, or waits for a key, a cap or what it
-    builds on. Only "doesn't count" is final, and only new information changes a verdict.
+27. **It fails closed.** An envelope counts, doesn't count, or waits for a key, a cap or what it builds on. It counts
+    when it fits, is authorized and isn't a split (the docs layer's three verdicts), and everything it builds on counts.
+    Fit never changes. A revocation can later turn "authorized" into "doesn't count", and the Doc's state is then
+    rebuilt from its envelopes.
 28. **No global state.** No check needs the whole tree, a sequencer, a list of every cap or a scan of everyone's
     letters. Proofs travel with the acts, and each check reads only the Docs it concerns.
 29. **Every format names its scheme.** A key blob says flat or tree, and seals and signatures say their suite. Scale and
@@ -270,10 +275,15 @@ The same grammar as the engine's wants (D4):
 { "vault": "v:alice" }                           every Doc of Alice's vault
 { "vault": "v:alice", "below": true }            and every Doc of the vaults she governs
 { "vault": "v:alice", "type": "b3:invoice…" }    her Docs of one root type
+{ "actor": "e:9f78…/list" }                      one actor (an actor is a Doc)
+{ "actor": "e:9f78…/list", "below": true }       and every actor it spawned: a screen and its buttons
+{ "vault": "v:alice", "def": "b3:todo…" }        every actor of one definition in her vault
 ```
 
 A want may also name `{ "query": "b3:…", "column": "x2" }`; a cap never does. Readers decide whether a Doc is in a
-target from its vault and its root type, both fixed when it is made.
+target from its vault and its root type, both fixed when it is made. An actor's address survives its upgrades and a
+definition's hash doesn't, so a cap by address carries over to a new version and a cap by definition doesn't
+(avenACTOR, 30 Oct 2026).
 
 ### Operations
 
@@ -322,7 +332,7 @@ its params inside the seal, so a reader re-lowers it and checks the change is ex
 | `approve` | `{ "k": 2, "of": [ owners ] }`: every act under the cap carries k approvals over its digest | Every reader, or the router |
 | `uses`, `budget` | How many acts, how much spend | Only where one router or kernel counts them |
 | `own` | `patch` and `remove` only on Records the holder created. The docs layer knows each Record's creator from its first envelope | Every reader |
-| `lines` | `main`, or `proposals`: writes only on proposal lines, and landing them on main is someone else's merge. An agent's removals go this way (engine rule 12) | Every reader |
+| `lines` | `main`, or `proposals`: writes only on proposal lines, and landing them on main is someone else's merge, which counts only when the merger's grant covers the whole merge. An agent's removals go this way (engine rule 12). The docs thread proposes calling lines **branches** | Every reader |
 | `history` | On `read`: `all` or `from-now` | Crypto: a `from-now` grant rotates without a link back |
 
 ### Roles
@@ -362,11 +372,20 @@ messages and queries. For people with keys, reading is whole Docs; for actors an
   them: a team editing the team's Docs, a family reading the family's photos. A write under a group's cap carries,
   inside the seal, the writer's read cap on the group. Groups aren't vaults, so they aren't in the tree the keeper sees,
   and making one needs no governance.
-- **Actors** hold no keys (`aven/actor/ARCHITECTURE.md`, section 11).
-  - A run carries the cap it acts under, narrowed at every hop. It starts from the person whose click began it, or from
-    the cap a standing actor was given.
-  - The kernel holds the keys and runs only the operations the run's cap names.
-  - The receiver's router checks `tell`.
+- **Actors** hold no keys (`aven/actor/ARCHITECTURE.md`, section 11). Agreed with avenACTOR on 30 Oct 2026, for
+  Samuel to confirm:
+  - **Every message carries a `cap` beside its `run`.** The run is the causal chain and stays the same; the cap narrows
+    at every hop. It starts from the person whose click began the run. When an actor acts on its own (a timer, or a duty
+    its definition declares), it starts a new run under the actor's standing cap.
+  - **No confused deputy:** a turn's effects carry the cap of the message it handled, or a narrower one, never the
+    actor's standing cap mixed in.
+  - **The kernel** holds the keys and runs only the operations the message's cap names.
+  - **The receiver's router** checks `tell` on the message's `name`. The interface is part of the definition, so its
+    hash pins it.
+  - **The inbox Doc from A to B** belongs to A's vault and is written only by A's home device. It comes into being when
+    B's vault grants A a tell cap, together with B's read cap on it, so no inbox exists that its receiver can't read.
+  - **Where an actor lives is a privacy decision.** The keeper is blind exactly for the Docs of actors it doesn't host.
+    Inbox Docs it keeps for absent homes stay sealed, and face actors never live on the Aven Peer.
 - **Agents** are vaults whose devices run their actors (ontology rule 13). Their caps usually write removals only as
   proposals, and spend only with an approval.
 - **Tickets** hold a cap until a vault claims it, with a statement signed by the ticket key and by a device of the
@@ -422,11 +441,24 @@ An imported envelope, in order. The docs layer and the engine run these checks
    - **live:** no ack of a revocation on the chain had not seen this envelope;
    - **covering:** its footprint covers the change; with `approve`, the approvals over this envelope's digest; and for
      a group's cap, the writer's live read cap on the group.
-5. **The docs layer's own checks:** the signer's Loro peer, what it builds on, and fit (docs rules 2 and 10).
+5. **The docs layer's own checks:** the signer's Loro peer, what it builds on, fit, and no split (docs rules 2 and 10).
 6. **The engine's:** a named operation is re-lowered, and the change must be what it produces.
 
-A verdict is cached per envelope, per revocations known and per code version (README, rule 5). A revocation that arrives
-later recomputes the verdicts it touches (README, rule 4). Two readers holding the same revocations always agree.
+**A merge into main** counts only when the merger's grant covers the footprint of the whole merge: every type and field
+that differs between the base and the merged state, not only the commit that fixes conflicts. Otherwise a merger with a
+narrow cap could land a proposal's wider changes (agreed with the docs thread, 30 Oct 2026).
+
+**Three verdicts per envelope** (the docs layer's):
+- **fit**, which depends only on the envelope and never changes;
+- **authorized**, steps 1–4 and 6, which a later revocation can turn;
+- **not a split**.
+
+An envelope counts when all three hold and everything it builds on counts.
+- A revocation that discounts envelopes already imported rebuilds the Doc's state from its envelopes. The last state
+  stays on screen until the rebuild is done.
+- Honest edits built on a discounted envelope are re-applied by their devices on top.
+- Verdicts are cached per envelope, per revocations known and per code version (README, rules 4 and 5). Two readers
+  holding the same revocations always agree.
 
 | Check | Who | When |
 |---|---|---|
@@ -509,7 +541,9 @@ through.
   - `avenDB topic 1`;
   - `avenDB converge 1`.
 - **Envelopes, segments and snapshots** use XChaCha20-Poly1305 with a key commitment. A segment holds one epoch, so a
-  rotation closes the open segment.
+  rotation closes the open segment (agreed with the docs thread).
+- **Each segment** carries its writer's hybrid signature, inside the seal (proposed to the docs thread). One signature
+  covers up to 256 envelopes.
 - **Files:**
   - Each file's key is a keyed BLAKE3 of the epoch's convergence secret and the plaintext's BLAKE3, so a Doc's epoch
     stores a file once, and nobody without the secret can test a guess (Tahoe-LAFS).
@@ -709,8 +743,8 @@ and avenOS learns at sign-up whether PRF answered, never by guessing from the br
 | What | Suite | Why |
 |---|---|---|
 | Every key sent: stanzas, letters, the keyring | X-Wing | Harvest now, decrypt later. Hybrid holds while either ML-KEM or X25519 holds |
-| Caps, revocations, approvals, governance, letters, snapshot and segment heads | Ed25519 + ML-DSA-65 | Authority that lasts |
-| Single envelopes | Ed25519 | The hybrid-signed heads cover them; 64 bytes instead of about 3.4 KB |
+| Caps, revocations, approvals, governance, letters, segments, checkpoints (milestone 7) | Ed25519 + ML-DSA-65 | Authority that lasts. One per segment covers up to 256 envelopes |
+| Single live envelopes | Ed25519 | Their segment's hybrid signature covers them once they are sealed into it; 64 bytes instead of about 3.4 KB each |
 | Passkey owners | ES256 assertion + PRF-derived hybrid key, both required | PRF is HMAC-SHA-256 inside the authenticator, which a quantum computer only halves |
 | Content | XChaCha20-Poly1305, BLAKE3 | Symmetric, 256-bit keys |
 | iroh's connections | iroh's own handshake | Content is sealed above it; it protects transport metadata only |
@@ -731,7 +765,7 @@ with ML-DSA, which COSE is standardising and no authenticator we know of ships.
 | Who | Sees | Doesn't see |
 |---|---|---|
 | The relay | The device keys of the connections it carries, their IP addresses, timing and volume | Anything inside iroh's encryption |
-| The keeper (the Aven Peer) and its storage (Hetzner) | **The tree:** vaults, owners, devices, network members and public keys, because the door needs them. **Per Doc:** its id, its epochs and their stanza counts (padded), sizes (padded), times, and which device uploads or fetches what. Letterboxes on first contact; the gossip topics it keeps | Content, types, signers, caps, who reads which Doc, groups' rosters, operations |
+| The keeper (the Aven Peer) and its storage (Hetzner) | **The tree:** vaults, owners, devices, network members and public keys, because the door needs them. **Per Doc:** its id, its epochs and their stanza counts (padded), sizes (padded), times, and which device uploads or fetches what. **Per segment:** its writer's pseudonym for that Doc, branch and epoch, its counter range and the segment before, so it learns how many write a Doc and how much each writes, but not who. Letterboxes on first contact; the gossip topics it keeps | Content, types, signers, caps, who reads which Doc, groups' rosters, operations |
 | A network member who doesn't read a Doc | Nothing of it: its topic and fetch key come from its key | |
 | A reader of a Doc | Its caps, its writers and how many read it; the caps of the groups that open it | Caps on other Docs |
 | A peer on a direct path | The other's IP address (README) | |
@@ -803,11 +837,11 @@ to and leave all the time. Scale need not be built from day one, but no choice m
 | Package | What it gives caps | What caps give it |
 |---|---|---|
 | avenID (`id/spec`, `id/core`) | The tree, `Governs`, statements, passkeys, invites | `Aven.ID.Caps` beside `Governs`; owners k of n; approvals; device removal and its acks; device and vault keys in statements (X-Wing and ML-DSA-65 public halves); recovery |
-| docs (`db/docs`) | Envelopes, lines, Records, fit | **Proposed:** the outside of an envelope is the Doc, the epoch and the padded length; inside are the line, the signer, the cap id, acks, the operation and params, and the changes. Import runs [checking](#checking) steps 1–4 before its own; segments hold one epoch; heads are hybrid-signed; a Doc's vault and root type are fixed at birth; every Record's creator is known; the access map's types `cap`, `revoke` and `epoch` |
+| docs (`db/docs`) | Envelopes, lines (branches), Records, fit | **Agreed with the docs thread (30 Oct 2026):** outside a segment are the Doc, the epoch, the writer's Loro peer per Doc, branch and epoch, its counter range, the previous segment's hash and the ciphertext. Inside are the branch, the signer, the cap, acks, the operation and params, the changes and the schema. Three verdicts (fit, authorized, not split), and a revocation rebuilds state. A segment holds one epoch, and a rotation closes it. Snapshots and heads are each device's own and never travel, so checkpoints (milestone 7) carry the hybrid signatures. A merge is checked against the merger's grant over the whole merge. **Proposed:** a writer's hybrid signature on each segment; a Doc's vault and root type fixed at birth; every Record's creator known; the access map's types `cap`, `revoke` and `epoch` |
 | engine (`db/engine`) | Operations by hash, footprints, wants, the dry run | E1–E3; served is wants intersected with caps; `query` checked by the kernel or serving peer |
 | store (`store`) | Blobs and refs | Sealed blobs; key blobs and letters are blobs; the sealing parked in its "Later: sealing" comes here |
 | avenPEER | The door, the relay, the keeper | Keep caps, fetch proofs, quota per network member, letterboxes, topics per group |
-| actors (`aven/actor`) | Runs, routers, inbox Docs | **Proposed:** a run carries its cap; `tell` caps name messages; an inbox Doc belongs to the sender's vault and the receiver holds read; actors at home on the Aven Peer are readable there |
+| actors (`aven/actor`) | Runs, routers, inbox Docs | **Agreed with avenACTOR (30 Oct 2026), for Samuel to confirm:** a `cap` beside `run` on every message; no confused deputy; `tell` caps by name, pinned by the definition's hash; actor targets by address, by spawn and by definition; an inbox Doc belongs to the sender's vault and is born with the tell cap; actors at home on the Aven Peer are readable there |
 | avenOS | The UI | The dry run, raw grants, vault fingerprints, PRF sign-in and pairing |
 
 **Proposals for other documents**, to be agreed with their threads, not edited by this one:
@@ -883,6 +917,8 @@ export traces.
 | `want_grants_nothing`, `one_grammar` | What is served lies within the caps; wants and caps share one `Target`, and served is their intersection |
 | `approval_exact` | An act that needs k approvals counts only with k distinct owners' signatures over exactly its digest |
 | `group_holds` | A write under a group's cap counts only with the writer's live read on the group |
+| `merge_covered` | A merge into main counts only when the merger's grant covers every type and field the merge changes from its base |
+| `no_confused_deputy` | A turn's effects carry the handled message's cap or a narrower one, never the actor's standing cap |
 | `device_within_cap` | A device acts only within its device cap, and never governs (extending `device_governs_nothing`) |
 | `guardian_exit` | After its exit, no keyring epoch is sealed to MaiaCityGuardian |
 
@@ -932,9 +968,12 @@ A proposal for milestone 3's plan, for the architect:
 6. **The heal on a schedule:** monthly, or only on suspicion?
 7. **When MaiaCityGuardian exits,** and whether the guardian vaults chosen later may hold a keyring seal when a person
    opts in.
-8. **Actors' targets:** does an actor's definition act as a type, so that "every actor of definition X in vault V" is a
-   target? (Asked of avenACTOR.)
+8. **Caps across an actor's upgrade:** a cap by definition hash doesn't carry over to a new version. Should a definition
+   name the one it replaces, so such a cap follows an upgrade that doesn't widen the interface?
 9. **Padding:** Padmé on every envelope, or only on segments and files?
+10. **What a blind keeper may see of writers:** per segment, a pseudonymous peer and its counters, so it can serve
+    catch-up by version and catch splits (the docs thread's proposal, taken here). The alternative, "everything after
+    segment X", hides how many write a Doc but costs bandwidth and loses split detection at the keeper.
 
 ## Not in this spec
 
