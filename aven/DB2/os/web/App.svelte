@@ -7,11 +7,11 @@
 	import Dashboard from './Dashboard.svelte';
 	import ControlRoom from './apps/ControlRoom.svelte';
 	import Vault from './apps/Vault.svelte';
-	import { accounts, ownerName, owners, vaultName } from './cast.js';
+	import { ownerName, owners, tree, vaultName } from './id.js';
 
 	let { cast, device } = $props();
 
-	const mine = $derived(device ? accounts(cast, device) : location.hostname === 'localhost' ? accounts(cast) : []);
+	const mine = $derived(device ? tree.accounts(device) : location.hostname === 'localhost' ? tree.accounts() : []);
 	const apps = [
 		{ id: 'vault', name: 'Vault', what: 'Who owns it and all it governs', component: Vault },
 		{ id: 'control-room', name: 'Control Room', what: 'Every peer it governs, side by side', component: ControlRoom },
@@ -32,8 +32,8 @@
 
 	let menu = $state();
 	const describe = (id) =>
-		`${cast.vaults[id].kind} · owned by ${owners(cast, id)
-			.map((owner) => ownerName(cast, owner))
+		`${tree.kind(id)} · owned by ${owners(id)
+			.map((owner) => ownerName(owner))
 			.join(', ')}`;
 </script>
 
@@ -46,8 +46,8 @@
 		{#if where}<span class="where" data-testid="where">{where}</span>{/if}
 		{#if account}
 			<button class="pill" popovertarget="accounts" data-testid="account" aria-label="Switch vault">
-				<Avatar {cast} id={account} size={22} />
-				<span class="name">{vaultName(cast, account)}</span>
+				<Avatar id={account} size={22} />
+				<span class="name">{vaultName(account)}</span>
 				<svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" /></svg>
 			</button>
 			<div id="accounts" popover bind:this={menu}>
@@ -61,8 +61,8 @@
 						aria-current={id === account ? 'true' : undefined}
 						onclick={() => menu.hidePopover()}
 					>
-						<Avatar {cast} {id} size={28} />
-						<span><strong>{vaultName(cast, id)}</strong><small>{describe(id)}</small></span>
+						<Avatar {id} size={28} />
+						<span><strong>{vaultName(id)}</strong><small>{describe(id)}</small></span>
 						{#if id === account}<span class="tick" aria-hidden="true">✓</span>{/if}
 					</a>
 				{/each}

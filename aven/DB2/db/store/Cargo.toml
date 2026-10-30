@@ -5,3 +5,33 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
+
+[dependencies]
+async-lock = "=3.4.2"
+async-trait = "=0.1.92"
+blake3 = "=1.8.7"
+bytes = "=1.12.1"
+futures = { version = "=0.3.34", default-features = false, features = ["std", "async-await"] }
+thiserror = "=2.0.21"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+opendal = { version = "=0.59.5", default-features = false, features = ["services-memory", "services-fs", "services-s3", "http-transport-reqwest"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+opendal = { version = "=0.59.5", default-features = false, features = ["services-memory", "services-opfs"] }
+
+[dev-dependencies]
+futures = { version = "=0.3.34", default-features = false, features = ["std", "async-await"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tokio = { version = "=1.54.1", features = ["macros", "rt-multi-thread"] }
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+js-sys = "=0.3.106"
+wasm-bindgen = "=0.2.129"
+wasm-bindgen-futures = "=0.4.79"
+
+# The suite on OPFS, as wasm for a browser: `opfs/run.sh` builds it and runs it in Chromium.
+[[example]]
+name = "opfs_conformance"
+crate-type = ["cdylib"]

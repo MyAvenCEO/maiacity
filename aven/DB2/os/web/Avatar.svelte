@@ -1,8 +1,9 @@
 <script>
 	// A vault's mark: its initial on a colour of its own. A network's is square, a device's outlined.
-	let { cast, id, size = 24 } = $props();
+	import { tree, vaultName } from './id.js';
+	let { id, size = 24 } = $props();
 
-	const vault = $derived(cast.vaults[id]);
+	const vault = $derived({ name: vaultName(id), kind: tree.kind(id) });
 	const hue = $derived([...id].reduce((sum, char) => (sum * 31 + char.charCodeAt(0)) % 360, 17));
 </script>
 
