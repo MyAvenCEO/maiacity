@@ -231,6 +231,7 @@ impl Room {
                 at,
                 kind,
                 text,
+                file: None,
                 sig: String::new(),
             };
             m.sig = hex(&self.secret.sign(m.body().as_bytes()).to_bytes());

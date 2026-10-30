@@ -1,3 +1,5 @@
+import Aven.DB.Store
+
 /-!
 # The chat
 
@@ -8,6 +10,12 @@ the admin's people, `Aven.ID.Invite`), a signature by exactly that sender over e
 sender's last (so a message replayed later is dropped), and a line of 1 to `maxText` bytes. Presence is the senders
 heard from in the last `ttl` milliseconds that have not said goodbye: each peer says `here` every `every`
 milliseconds. The chat lives in memory only: no store, no history (milestone 4).
+
+A member shares a file by announcing it in the room (store/README.md, "How a file travels"): a message of kind `file`
+carrying `{file, size, name, type}`, where `file` is the hash of the file's index (a hash sequence of its chunks), and
+`name` and `type` are what its sender claims. It is signed and checked like every message, and its announcement must
+hold a hash in the store's spelling and a name and a type of 1 to `maxName` bytes without control characters, so the
+signed body reads back one way only. The Aven Peer, hearing one, keeps the file; every member can fetch it.
 
 As `Aven.ID.Sign` does, the model takes the signature as sound: it verifies for exactly the key and bytes signed, and
 with no other key. Ed25519 is mechanics; aven-db-core's tests sign for real.
@@ -27,29 +35,55 @@ inductive Kind where
   | here
   | say
   | bye
+  | file
   deriving DecidableEq, Repr, Inhabited
 
 def Kind.name : Kind → String
   | .here => "here"
   | .say => "say"
   | .bye => "bye"
+  | .file => "file"
+
+/-- The longest name or type a file is announced with, in bytes of UTF-8. -/
+def maxName : Nat := 255
+
+/-- A file announced: its index's hash, its size in bytes, and the name and MIME type its sender claims. -/
+structure Announce where
+  file : String
+  size : Nat
+  name : String
+  type : String
+  deriving DecidableEq, Repr, Inhabited
+
+/-- 1 to `maxName` bytes, no control character: one line of the body. -/
+def plain (s : String) : Bool :=
+  0 < s.utf8ByteSize && s.utf8ByteSize ≤ maxName && s.all fun c => 32 ≤ c.toNat && c.toNat ≠ 127
+
+def Announce.valid (a : Announce) : Bool := Store.validHash a.file && plain a.name && plain a.type
+
+/-- An announcement's lines in the body, each field on its own. -/
+def Announce.body (a : Announce) : String :=
+  "file " ++ a.file ++ "\nsize " ++ toString a.size ++ "\nname " ++ a.name ++ "\ntype " ++ a.type ++ "\n"
 
 /-- A message: the network's room it is for, the sending device's key, its time (ms), its kind and line (empty but
-for `say`); and its signature, as the model knows one: the key that made it and the bytes it signed. -/
+for `say`), its announcement (only for `file`); and its signature, as the model knows one: the key that made it and
+the bytes it signed. -/
 structure Message where
   network : String
   sender : String
   time : Nat
   kind : Kind
   text : String
+  file : Option Announce
   signer : String
   signed : String
   deriving DecidableEq, Repr, Inhabited
 
-/-- What a sender signs: every field, the line last. -/
+/-- What a sender signs: every field, the announcement's lines, then the line last. A message without an announcement
+signs what it signed before announcements were. -/
 def Message.body (m : Message) : String :=
   "avenDB chat 1\nnetwork " ++ m.network ++ "\nfrom " ++ m.sender ++ "\nat " ++ toString m.time ++ "\nkind " ++
-    m.kind.name ++ "\n" ++ m.text
+    m.kind.name ++ "\n" ++ (match m.file with | some a => a.body | none => "") ++ m.text
 
 inductive Refusal where
   | wrongNetwork
@@ -60,8 +94,10 @@ inductive Refusal where
   | stale
   | empty
   | tooLong
-  /-- a `here` or a `bye` with a line -/
+  /-- a `here`, a `bye` or a `file` with a line, or anything but a `file` with an announcement -/
   | notSaid
+  /-- a `file` without an announcement, or one whose hash, name or type isn't valid -/
+  | badFile
   deriving DecidableEq, Repr
 
 /-- A message on its own: for this network, from a key the door admits, signed by it over exactly this, its line's
@@ -70,17 +106,22 @@ def check (network : String) (members : List String) (m : Message) : Except Refu
   if m.network ≠ network then .error .wrongNetwork
   else if !members.contains m.sender then .error .notMember
   else if m.signer ≠ m.sender ∨ m.signed ≠ m.body then .error .badSignature
-  else match m.kind with
-    | .say =>
+  else match m.kind, m.file with
+    | .file, none => .error .badFile
+    | .file, some a => if m.text ≠ "" then .error .notSaid else if a.valid then .ok () else .error .badFile
+    | _, some _ => .error .notSaid
+    | .say, none =>
       if m.text.utf8ByteSize = 0 then .error .empty
       else if m.text.utf8ByteSize > maxText then .error .tooLong
       else .ok ()
-    | _ => if m.text = "" then .ok () else .error .notSaid
+    | _, none => if m.text = "" then .ok () else .error .notSaid
 
 theorem check_ok {network : String} {members : List String} {m : Message} (h : check network members m = .ok ()) :
     m.network = network ∧ m.sender ∈ members ∧ m.signer = m.sender ∧ m.signed = m.body ∧
       (m.kind = .say → 0 < m.text.utf8ByteSize ∧ m.text.utf8ByteSize ≤ maxText) ∧
-      (m.kind ≠ .say → m.text = "") := by
+      (m.kind ≠ .say → m.text = "") ∧
+      (m.kind = .file → ∃ a, m.file = some a ∧ a.valid = true) ∧
+      (m.kind ≠ .file → m.file = none) := by
   unfold check at h
   split at h; · cases h
   next n =>
@@ -90,22 +131,9 @@ theorem check_ok {network : String} {members : List String} {m : Message} (h : c
   next s =>
   simp only [Bool.not_eq_true', Bool.eq_false_iff, ne_eq, Decidable.not_not, List.contains_iff_mem] at n k
   simp only [not_or, Decidable.not_not] at s
-  refine ⟨n, by simpa using k, s.1, s.2, ?_, ?_⟩
-  · intro e
-    rw [e] at h
-    simp only at h
-    split at h; · cases h
-    split at h; · cases h
-    omega
-  · intro e
-    cases g : m.kind with
-    | say => exact absurd g e
-    | here | bye =>
-      rw [g] at h
-      simp only at h
-      split at h
-      · assumption
-      · cases h
+  refine ⟨n, by simpa using k, s.1, s.2, ?_⟩
+  cases hk : m.kind <;> cases hf : m.file <;> simp only [hk, hf] at h ⊢ <;>
+    (try split at h) <;> (try split at h) <;> simp_all <;> exact Nat.pos_of_ne_zero fun z => by simp_all
 
 /-! ## The room -/
 
@@ -117,10 +145,12 @@ structure Seen where
   gone : Bool
   deriving DecidableEq, Repr
 
-/-- What a peer holds of the room: each sender heard, and the lines said, in the order they came. -/
+/-- What a peer holds of the room: each sender heard, and the lines said and the files announced, in the order they
+came. -/
 structure Room where
   seen : List Seen := []
   said : List (String × String) := []
+  files : List (String × Announce) := []
   deriving DecidableEq, Repr
 
 /-- Insertion sort, structural so the kernel can run it in the examples. -/
@@ -156,7 +186,8 @@ def receive (r : Room) (network : String) (members : List String) (now : Nat) (m
     if (r.last? m.sender).any (m.time ≤ ·) then .error .stale
     else .ok {
       seen := ⟨m.sender, m.time, now, m.kind = .bye⟩ :: r.seen.filter (·.sender != m.sender),
-      said := if m.kind = .say then r.said ++ [(m.sender, m.text)] else r.said }
+      said := if m.kind = .say then r.said ++ [(m.sender, m.text)] else r.said
+      files := r.files ++ (m.file.toList.map (m.sender, ·)) }
 
 /-- Who is in the room at `now`: each sender heard within `ttl` that has not said goodbye, once, in order. -/
 def present (r : Room) (now : Nat) : List String :=
@@ -169,7 +200,8 @@ variable {r r' : Room} {network : String} {members : List String} {now : Nat} {m
 theorem receive_ok (h : r.receive network members now m = .ok r') :
     check network members m = .ok () ∧ (r.last? m.sender).all (· < m.time) ∧
       r'.seen = ⟨m.sender, m.time, now, m.kind = .bye⟩ :: r.seen.filter (·.sender != m.sender) ∧
-      r'.said = if m.kind = .say then r.said ++ [(m.sender, m.text)] else r.said := by
+      r'.said = (if m.kind = .say then r.said ++ [(m.sender, m.text)] else r.said) ∧
+      r'.files = r.files ++ (m.file.toList.map (m.sender, ·)) := by
   unfold receive at h
   split at h
   · cases h
@@ -178,7 +210,7 @@ theorem receive_ok (h : r.receive network members now m = .ok r') :
   · cases h
   next s =>
   cases h
-  refine ⟨c, ?_, rfl, rfl⟩
+  refine ⟨c, ?_, rfl, rfl, rfl⟩
   cases e : r.last? m.sender with
   | none => rfl
   | some l => simp_all
@@ -186,7 +218,7 @@ theorem receive_ok (h : r.receive network members now m = .ok r') :
 /-- Every line shown was said by a sender the door admits, signed by it, within the size limit. -/
 theorem said_members (h : r.receive network members now m = .ok r') (old : ∀ x ∈ r.said, x.1 ∈ members) :
     ∀ x ∈ r'.said, x.1 ∈ members := by
-  obtain ⟨c, _, _, e⟩ := receive_ok h
+  obtain ⟨c, _, _, e, _⟩ := receive_ok h
   have mm := (check_ok c).2.1
   rw [e]
   split
@@ -196,6 +228,27 @@ theorem said_members (h : r.receive network members now m = .ok r') (old : ∀ x
     · simp at mx; rw [mx]; exact mm
   · exact old
 
+/-- Every file announced was announced by a sender the door admits, signed by it, with a valid announcement: a hash
+in the store's spelling, a name and a type of one line each. -/
+theorem files_members (h : r.receive network members now m = .ok r')
+    (old : ∀ x ∈ r.files, x.1 ∈ members ∧ x.2.valid = true) : ∀ x ∈ r'.files, x.1 ∈ members ∧ x.2.valid = true := by
+  obtain ⟨c, _, _, _, e⟩ := receive_ok h
+  have k := check_ok c
+  rw [e]
+  intro x mx
+  rcases List.mem_append.mp mx with mx | mx
+  · exact old x mx
+  · cases g : m.file with
+    | none => simp [g] at mx
+    | some a =>
+      simp only [g, Option.toList_some, List.map_cons, List.map_nil, List.mem_singleton] at mx
+      subst mx
+      refine ⟨k.2.1, ?_⟩
+      by_cases f : m.kind = .file
+      · obtain ⟨b, gb, v⟩ := k.2.2.2.2.2.2.1 f
+        rw [g] at gb; cases gb; exact v
+      · simp [k.2.2.2.2.2.2.2 f] at g
+
 /-- A message from a key the door doesn't admit changes nothing: it is dropped. -/
 theorem stranger_dropped (h : m.sender ∉ members) : ∀ r', r.receive network members now m ≠ .ok r' := by
   intro r' e
@@ -204,7 +257,7 @@ theorem stranger_dropped (h : m.sender ∉ members) : ∀ r', r.receive network 
 /-- The same message twice is taken once: the second is stale. -/
 theorem replay_stale (h : r.receive network members now m = .ok r') {later : Nat} :
     r'.receive network members later m = .error .stale := by
-  obtain ⟨c, _, e, _⟩ := receive_ok h
+  obtain ⟨c, _, e, _, _⟩ := receive_ok h
   have l : r'.last? m.sender = some m.time := by simp [last?, e]
   simp [receive, c, l]
 
@@ -218,7 +271,7 @@ theorem mem_present {x : String} : x ∈ r.present now ↔
 /-- A sender is present right after any word but goodbye, and absent right after goodbye. -/
 theorem heard_present (h : r.receive network members now m = .ok r') :
     (m.sender ∈ r'.present now ↔ m.kind ≠ .bye) := by
-  obtain ⟨_, _, e, _⟩ := receive_ok h
+  obtain ⟨_, _, e, _, _⟩ := receive_ok h
   rw [mem_present, e]
   constructor
   · rintro ⟨s, ms, se, g, _⟩
@@ -246,15 +299,19 @@ inductive Tamper where
   | text (s : String)
   /-- sent to another network's room -/
   | network (n : String)
+  /-- its announced size changed after signing -/
+  | size (n : Nat)
   deriving DecidableEq, Repr
 
-def Message.make (sender : String) (time : Nat) (kind : Kind) (text : String) (t : Tamper := .none) : Message :=
+def Message.make (sender : String) (time : Nat) (kind : Kind) (text : String) (t : Tamper := .none)
+    (file : Option Announce := none) : Message :=
   let network := match t with | .network n => n | _ => "aven"
-  let m : Message := ⟨network, sender, time, kind, text, sender, ""⟩
+  let m : Message := ⟨network, sender, time, kind, text, file, sender, ""⟩
   let m := { m with signed := m.body }
   match t with
   | .signer k => { m with signer := k }
   | .text s => { m with text := s }
+  | .size n => { m with file := m.file.map ({ · with size := n }) }
   | _ => m
 
 inductive Step where
@@ -321,5 +378,41 @@ def Room.shows (r : Room) (steps : List Step) : List (Option Refusal × List Str
   (steps.zip (r.run steps)).map fun (s, answer, r') => (answer, r'.present s.now, r'.said.length)
 
 #guard chatExamples.all fun (_, steps, want) => ({} : Room).shows steps == want
+
+/-- A file's announcement, as the examples make one: a movie's index and its size. -/
+def movie : Announce := ⟨Blake3.hash [1, 2, 3], 209715200, "a movie.mp4", "video/mp4"⟩
+
+/-- Each example: its steps, and after each the answer and the files announced so far, by sender and name. -/
+def fileExamples : List (String × List Step × List (Option Refusal × List (String × String))) := [
+  ("a member announces a file; the room keeps it",
+    [.arrive 0 (.make "alice" 0 .file "" .none (some movie)), .arrive 1 (.make "bob" 1 .file "" .none (some
+      { movie with name := "notes.pdf", type := "application/pdf", size := 0 }))],
+    [(none, [("alice", "a movie.mp4")]), (none, [("alice", "a movie.mp4"), ("bob", "notes.pdf")])]),
+  ("a stranger's announcement is dropped", [.arrive 0 (.make "eve" 0 .file "" .none (some movie))],
+    [(some .notMember, [])]),
+  ("an announcement changed after signing, or signed by another key",
+    [.arrive 0 (.make "alice" 0 .file "" (.size 1) (some movie)),
+      .arrive 1 (.make "bob" 1 .file "" (.signer "alice") (some movie))],
+    [(some .badSignature, []), (some .badSignature, [])]),
+  ("an announcement replayed is stale",
+    [.arrive 0 (.make "alice" 7 .file "" .none (some movie)), .arrive 1 (.make "alice" 7 .file "" .none (some movie))],
+    [(none, [("alice", "a movie.mp4")]), (some .stale, [("alice", "a movie.mp4")])]),
+  ("a file without an announcement, or with a hash, a name or a type that isn't valid",
+    [.arrive 0 (.make "alice" 0 .file ""), .arrive 1 (.make "alice" 1 .file "" .none (some { movie with file := "abc" })),
+      .arrive 2 (.make "alice" 2 .file "" .none (some { movie with name := "" })),
+      .arrive 3 (.make "alice" 3 .file "" .none (some { movie with name := "two\nlines" })),
+      .arrive 4 (.make "alice" 4 .file "" .none (some { movie with type := String.ofList (List.replicate (maxName + 1) 'a') })),
+      .arrive 5 (.make "alice" 5 .file "" .none (some { movie with type := String.ofList (List.replicate maxName 'a') }))],
+    [(some .badFile, []), (some .badFile, []), (some .badFile, []), (some .badFile, []), (some .badFile, []),
+      (none, [("alice", "a movie.mp4")])]),
+  ("a line with an announcement, and an announcement with a line",
+    [.arrive 0 (.make "alice" 0 .say "look" .none (some movie)), .arrive 1 (.make "alice" 1 .file "look" .none (some movie)),
+      .arrive 2 (.make "alice" 2 .here "" .none (some movie))],
+    [(some .notSaid, []), (some .notSaid, []), (some .notSaid, [])])]
+
+def Room.announced (r : Room) (steps : List Step) : List (Option Refusal × List (String × String)) :=
+  (r.run steps).map fun (answer, r') => (answer, r'.files.map fun (who, a) => (who, a.name))
+
+#guard fileExamples.all fun (_, steps, want) => ({} : Room).announced steps == want
 
 end Aven.DB.Chat

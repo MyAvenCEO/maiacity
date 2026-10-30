@@ -164,9 +164,14 @@ def hashes : List Json :=
 /-! ## The chat -/
 
 open Chat in
+def Aven.DB.Chat.Announce.json (a : Announce) : Json :=
+  Json.mkObj [("file", a.file), ("size", toJson a.size), ("name", a.name), ("type", a.type)]
+
+open Chat in
 def Aven.DB.Chat.Message.json (m : Message) : Json :=
-  Json.mkObj [("network", m.network), ("from", m.sender), ("at", toJson m.time), ("kind", m.kind.name),
-    ("text", m.text), ("signer", m.signer), ("signed", m.signed)]
+  Json.mkObj (([("network", toJson m.network), ("from", toJson m.sender), ("at", toJson m.time),
+    ("kind", toJson m.kind.name), ("text", toJson m.text)] : List (String × Json)) ++
+    (m.file.map fun a => ("file", a.json)).toList ++ [("signer", toJson m.signer), ("signed", toJson m.signed)])
 
 open Chat in
 def Aven.DB.Chat.Refusal.name : Refusal → String
@@ -177,6 +182,7 @@ def Aven.DB.Chat.Refusal.name : Refusal → String
   | .empty => "empty"
   | .tooLong => "tooLong"
   | .notSaid => "notSaid"
+  | .badFile => "badFile"
 
 open Chat in
 def chatVector (name : String) (steps : List Step) : Json :=
@@ -188,7 +194,8 @@ def chatVector (name : String) (steps : List Step) : Json :=
     Json.mkObj [("answer", match answer with | none => Json.mkObj [("ok", true)] | some why => Json.mkObj [("error", why.name)]),
       ("body", match step with | .arrive _ m => toJson m.body | .clock _ => Json.null),
       ("present", toJson (r.present step.now)),
-      ("said", Json.arr (r.said.map fun (who, text) => Json.arr #[who, text]).toArray)]
+      ("said", Json.arr (r.said.map fun (who, text) => Json.arr #[who, text]).toArray),
+      ("files", Json.arr (r.files.map fun (who, a) => Json.arr #[who, a.json]).toArray)]
   vector name input (Json.arr expected.toArray)
 
 open Chat in
@@ -199,7 +206,7 @@ def randomChat (seed : Nat) : List Step := Id.run do
   let mut sent : Array Message := #[]
   let mut steps := #[]
   for _ in [0:len + 1] do
-    let (k, r1) := r.below 12
+    let (k, r1) := r.below 13
     let (who, r2) := r1.below 4
     let (gap, r3) := r2.below 16000
     let (t, r4) := r3.below 8
@@ -214,7 +221,9 @@ def randomChat (seed : Nat) : List Step := Id.run do
     if k = 0 then steps := steps.push (.clock now)
     else if k = 1 && !sent.isEmpty then steps := steps.push (.arrive now sent[now % sent.size]!)
     else
-      let m := if k < 4 then Message.make sender now .here "" tamper
+      let m := if k = 12 then Message.make sender now .file "" (if t = 1 then .size 7 else tamper)
+          (some { movie with size := gap, name := s!"file {now}" })
+        else if k < 4 then Message.make sender now .here "" tamper
         else if k < 5 then Message.make sender now .bye "" tamper
         else if k < 6 then Message.make sender now .say (if t < 6 then "" else long) .none
         else Message.make sender now .say s!"line {now}" tamper
@@ -224,6 +233,7 @@ def randomChat (seed : Nat) : List Step := Id.run do
 
 def chat : List Json :=
   Chat.chatExamples.map (fun (name, steps, _) => chatVector name steps) ++
+  Chat.fileExamples.map (fun (name, steps, _) => chatVector name steps) ++
   (List.range generated).map fun i => chatVector s!"seed {i + 1}" (randomChat (i + 1))
 
 /-- One vector per line, so a change reads as a diff of lines. -/

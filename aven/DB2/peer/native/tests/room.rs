@@ -176,6 +176,7 @@ async fn members_chat_through_the_relay_and_a_stranger_is_dropped() {
         at: 1,
         kind: Kind::Say,
         text: "let me in".into(),
+        file: None,
         sig: String::new(),
     };
     forged.sig = eve
