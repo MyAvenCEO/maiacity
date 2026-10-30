@@ -656,6 +656,12 @@ Raised by the threads, not settled in milestone 1:
 7. **Our own OPFS backend, or OpenDAL's with sync access handles.** OpenDAL's is slow for small writes and ranges and
    refuses reads that race a commit. Sync access handles in the Peer-Light's worker fix both; they exist only in
    workers, which the fork now reaches. Also: offer the fork's fix upstream, so the fork can go.
+   **Decided (Samuel, 30 Oct 2026): our own,** `opfs-sync` in `db/store`, after the agent rename. Measured that day,
+   200 × 4 KiB writes: Chromium 14 ms (OpenDAL 2,066), WebKit 4–10 ms (712–869), Firefox 24–45 ms (4,070). Sync access
+   handles exist in a dedicated worker in all three engines, but in a SharedWorker only in WebKit, so the Peer-Light
+   moves to a dedicated worker run by the one tab that holds a Web Lock; other tabs reach it through a BroadcastChannel,
+   and the next tab takes over when it closes. The contract, the Lean model and the conformance suite stay; the
+   opendal-opfs fork goes; iOS 15.2–25 may work too (to confirm on a real iOS 18).
 8. **Rule 10's vectors:** done (30 Oct 2026), [Tests in milestone 1](#tests-in-milestone-1).
 
 ## Done when
