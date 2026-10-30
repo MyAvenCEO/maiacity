@@ -1,4 +1,5 @@
 import Aven.DB.Chat
+import Aven.DB.Files
 import Aven.DB.Store
 
 /-!
@@ -93,15 +94,17 @@ inductive Refusal where
   | tooLong
   /-- not 1 for a first line, or 1 for a line with a previous one -/
   | badSeq
-  /-- a file line whose hash isn't one, or whose type is empty, too long or breaks the line -/
+  /-- a file line whose hash isn't one, whose type is empty, too long or breaks the line, or whose size is past
+  `Files.maxFile` -/
   | badFile
   deriving DecidableEq, Repr
 
 /-- A body on its own: a text or a file's name of 1 to `maxText` bytes, and a file's hash and type well formed. -/
 def Body.check : Body → Except Refusal Unit
   | .text t => if t.utf8ByteSize = 0 then .error .empty else if t.utf8ByteSize > maxText then .error .tooLong else .ok ()
-  | .file f _ name type =>
+  | .file f size name type =>
     if !Store.validHash f ∨ type.isEmpty ∨ type.utf8ByteSize > maxType ∨ type.contains '\n' then .error .badFile
+    else if size > Files.maxFile then .error .badFile
     else if name.utf8ByteSize = 0 then .error .empty
     else if name.utf8ByteSize > maxText then .error .tooLong
     else .ok ()
@@ -588,11 +591,13 @@ def chainExamples : List (String × List Step × List (String × List Answer × 
      .hear "aven" (.make' "y2" "alice" 1 none 10 (.file file 1 "a.png" "")),
      .hear "aven" (.make' "y3" "alice" 1 none 10 (.file file 1 "a.png" "image/png\ntext")),
      .hear "aven" (.make' "y4" "alice" 1 none 10 (.file file 1 "" "image/png")),
-     .hear "aven" (.make' "y5" "alice" 1 none 10 (.file file 1 "a.png" "image/png"))],
+     .hear "aven" (.make' "y6" "alice" 1 none 10 (.file file (Files.maxFile + 1) "huge.mp4" "video/mp4")),
+     .hear "aven" (.make' "y5" "alice" 1 none 10 (.file file Files.maxFile "a.png" "image/png"))],
     [("aven", [.refused .badFile], [], [], []),
      ("aven", [.refused .badFile], [], [], []),
      ("aven", [.refused .badFile], [], [], []),
      ("aven", [.refused .empty], [], [], []),
+     ("aven", [.refused .badFile], [], [], []),
      ("aven", [.moved ["y5"]], [("alice", "y5")], [], ["y5"])]),
   ("a non-member's line, and lines tampered with, are dropped",
     [.hear "aven" (.make "e1" "eve" 1 none 10 "let me in"),

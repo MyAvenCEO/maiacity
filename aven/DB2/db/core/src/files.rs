@@ -11,6 +11,23 @@ use std::ops::Range;
 /// The largest chunk: 1 MiB.
 pub const CHUNK: u64 = 1 << 20;
 
+/// The largest blob a peer fetches: a chunk, and room for framing. A line and an index are smaller. Checked before
+/// anything is allocated for a fetched blob.
+pub const MAX_BLOB: u64 = CHUNK + 64 * 1024;
+
+/// The largest file the city-dome takes: 32 GiB, whose index (32 KiB hashes) still fits in one chunk.
+pub const MAX_FILE: u64 = 32 << 30;
+
+/// Whether chunk `i` of a file of `n` bytes, `len` bytes long, is cut as it must be: one of its chunks, exactly as long
+/// as [`bounds`] says. Every chunk but the last is `c` bytes.
+pub fn fits(c: u64, n: u64, i: u64, len: u64) -> bool {
+    if i >= count(c, n) {
+        return false;
+    }
+    let b = bounds(c, n, i);
+    len == b.end - b.start
+}
+
 /// How many chunks a file of `n` bytes has.
 pub fn count(c: u64, n: u64) -> u64 {
     n.div_ceil(c)

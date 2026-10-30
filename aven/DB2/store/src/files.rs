@@ -12,6 +12,13 @@ use crate::{Error, Hash, Result, Store};
 /// A chunk's size: every chunk of a file is this long but the last, which is 1 to this many bytes.
 pub const CHUNK: u64 = 1 << 20;
 
+/// The largest blob a peer fetches: a chunk, and room for framing (`Aven.DB.Files.maxBlob`). Checked before anything
+/// is allocated for a fetched blob, whatever size its holder claims.
+pub const MAX_BLOB: u64 = CHUNK + 64 * 1024;
+
+/// The largest file the city-dome takes, 32 GiB (`Aven.DB.Files.maxFile`): its index still fits in one chunk.
+pub const MAX_FILE: u64 = 32 << 30;
+
 /// Puts a file's chunks, then its index, and returns the file's name, its index's hash. The chunks come one at a time,
 /// so a file of several GB never sits in memory; each must be `CHUNK` long but the last.
 pub async fn put<S: Store + ?Sized>(
@@ -70,15 +77,25 @@ pub struct File {
 }
 
 /// Reads a file's index, and its length from its last chunk's size; `None` without the index. A file whose last chunk
-/// isn't here yet has its length counted as if that chunk were whole, until it is.
+/// isn't here yet has its length counted as if that chunk were whole, until it is. An index of more chunks than
+/// [`MAX_FILE`] holds, or a last chunk empty or longer than `CHUNK`, is `Corrupt`.
 pub async fn open<S: Store + ?Sized>(store: &S, name: &Hash) -> Result<Option<File>> {
     let Some(index) = store.get(name).await? else {
         return Ok(None);
     };
     let chunks = chunks(&index)?;
+    if chunks.len() as u64 > MAX_FILE / CHUNK {
+        return Err(Error::Corrupt("a file past the largest one".into()));
+    }
     let len = match chunks.last() {
         None => 0,
-        Some(last) => (chunks.len() as u64 - 1) * CHUNK + store.size(last).await?.unwrap_or(CHUNK),
+        Some(last) => {
+            let size = store.size(last).await?.unwrap_or(CHUNK);
+            if size == 0 || size > CHUNK {
+                return Err(Error::Corrupt(format!("a last chunk of {size} bytes")));
+            }
+            (chunks.len() as u64 - 1) * CHUNK + size
+        }
     };
     Ok(Some(File {
         name: *name,
@@ -123,11 +140,50 @@ impl File {
             let Some(chunk) = store.get(&self.chunks[i as usize]).await? else {
                 return Ok(None);
             };
+            self.fits(i, chunk.len() as u64)?;
             let at = i * CHUNK;
             let from = start.max(at) - at;
             let to = end.min(at + chunk.len() as u64) - at;
+            if from > to {
+                // the last chunk arrived shorter than the length counted while it was missing
+                return Err(Error::Range {
+                    start,
+                    end,
+                    len: at + chunk.len() as u64,
+                });
+            }
             out.extend_from_slice(&chunk[from as usize..to as usize]);
         }
         Ok(Some(out.freeze()))
+    }
+
+    /// Whether chunk `i`, `len` bytes long, is cut as it must be (`Aven.DB.Files.fits`): every chunk but the last is
+    /// exactly `CHUNK`, the last 1 to `CHUNK` bytes. Anything else is `Corrupt`: a malformed file, never a panic.
+    pub fn fits(&self, i: u64, len: u64) -> Result<()> {
+        let last = self.chunks.len() as u64 - 1;
+        let ok = if i < last {
+            len == CHUNK
+        } else {
+            i == last && len > 0 && len <= CHUNK
+        };
+        if ok {
+            Ok(())
+        } else {
+            Err(Error::Corrupt(format!(
+                "chunk {i} of {} is {len} bytes",
+                self.chunks.len()
+            )))
+        }
+    }
+
+    /// Every chunk this store holds of the file, checked against [`File::fits`]: what a peer checks once it has fetched
+    /// a file, before it keeps it.
+    pub async fn check<S: Store + ?Sized>(&self, store: &S) -> Result<()> {
+        for (i, chunk) in self.chunks.iter().enumerate() {
+            if let Some(len) = store.size(chunk).await? {
+                self.fits(i as u64, len)?;
+            }
+        }
+        Ok(())
     }
 }

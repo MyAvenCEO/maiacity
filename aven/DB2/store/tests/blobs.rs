@@ -387,3 +387,122 @@ async fn a_blob_that_is_no_index_is_not_a_file() {
         Ok(33)
     );
 }
+
+/// A holder that claims a blob far past the largest: the 8-byte size iroh-blobs reads before any byte is checked.
+#[derive(Debug, Clone)]
+struct Liar;
+
+impl iroh::protocol::ProtocolHandler for Liar {
+    async fn accept(
+        &self,
+        conn: iroh::endpoint::Connection,
+    ) -> std::result::Result<(), iroh::protocol::AcceptError> {
+        // every stream it is asked on, the same lie
+        while let Ok((mut send, mut recv)) = conn.accept_bi().await {
+            let mut buf = [0u8; 1024];
+            let _ = recv.read(&mut buf).await;
+            send.write_all(&(u64::MAX / 2).to_le_bytes()).await.ok();
+            send.write_all(&[0u8; 1024]).await.ok();
+            send.finish().ok();
+        }
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn a_holder_claiming_a_huge_blob_allocates_nothing() {
+    // the size is the holder's word until bao has checked the last chunk: refused before a byte is allocated, and the
+    // store's actor lives on (the Aven Peer retries file lines at start; a bad file must never crash it)
+    let bob = peer(memory(), anyone()).await;
+    let liar = Endpoint::builder(presets::Minimal)
+        .relay_mode(RelayMode::Disabled)
+        .bind()
+        .await
+        .unwrap();
+    let _router = Router::builder(liar.clone())
+        .accept(blobs::ALPN, Liar)
+        .spawn();
+    let conn = bob
+        .endpoint
+        .connect(liar.addr(), blobs::ALPN)
+        .await
+        .unwrap();
+    let wanted = Hash::of(b"a blob the liar hasn't");
+    assert!(bob.blobs.fetch_blob(&conn, wanted).await.is_err());
+    assert!(!bob.store.has(&wanted).await.unwrap());
+
+    let alice = peer(memory(), anyone()).await;
+    let bytes = noise(CHUNK + 7, "after the liar");
+    let file = files::put(&*alice.store, files::split(bytes.clone()))
+        .await
+        .unwrap();
+    bob.blobs
+        .fetch_file(&connect(&bob, &alice).await, file)
+        .await
+        .expect("the store still answers");
+    let held = files::open(&*bob.store, &file).await.unwrap().unwrap();
+    assert_eq!(
+        held.read(&*bob.store, 0..held.len).await.unwrap().unwrap(),
+        bytes
+    );
+}
+
+#[tokio::test]
+async fn a_short_middle_chunk_is_corrupt_never_a_panic() {
+    // an index whose middle chunk is shorter than 1 MiB: its length counts that chunk as whole, so a read would slice
+    // past it. Every chunk but the last is exactly CHUNK (`Aven.DB.Files.fits`), checked on read and as a whole
+    let store = memory();
+    let mut index = Vec::new();
+    for chunk in [
+        noise(CHUNK, "first"),
+        noise(10, "short"),
+        noise(CHUNK, "last"),
+    ] {
+        index.extend_from_slice(store.put(chunk).await.unwrap().as_bytes());
+    }
+    let name = store.put(index.into()).await.unwrap();
+    let file = files::open(&*store, &name).await.unwrap().unwrap();
+    assert_eq!(file.len, 3 * CHUNK);
+    for range in [0..file.len, CHUNK..CHUNK + 20, CHUNK + 5..2 * CHUNK + 5] {
+        assert!(
+            matches!(
+                file.read(&*store, range.clone()).await,
+                Err(Error::Corrupt(_))
+            ),
+            "{range:?}"
+        );
+    }
+    assert!(matches!(file.check(&*store).await, Err(Error::Corrupt(_))));
+
+    // an empty last chunk, or one longer than CHUNK, is no file
+    for last in [Bytes::new(), noise(CHUNK + 1, "too long")] {
+        let mut index = store
+            .put(noise(CHUNK, "whole"))
+            .await
+            .unwrap()
+            .as_bytes()
+            .to_vec();
+        index.extend_from_slice(store.put(last).await.unwrap().as_bytes());
+        let name = store.put(index.into()).await.unwrap();
+        assert!(matches!(
+            files::open(&*store, &name).await,
+            Err(Error::Corrupt(_))
+        ));
+    }
+}
+
+#[test]
+fn the_limits_are_the_models() {
+    let path =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../db/spec/vectors/files.json");
+    let all: Vec<serde_json::Value> =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let limits = all
+        .iter()
+        .find(|v| v["name"] == "limits")
+        .expect("the limits");
+    assert_eq!(
+        serde_json::json!({ "chunk": CHUNK, "maxBlob": files::MAX_BLOB, "maxFile": files::MAX_FILE }),
+        limits["expected"]
+    );
+}
