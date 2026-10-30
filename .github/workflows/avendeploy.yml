@@ -348,8 +348,17 @@ jobs:
               -e AVEN_PEER_AVEN="$2" -e AVEN_PEER_AVEN_KEY="$PEER_KEY" "$PEER_IMAGE" > /dev/null
             for _ in $(seq 20); do docker logs "probe-$1" 2>&1 | grep -q "\"path\":\"$1\"" && break; sleep 2; done
             got=$(docker logs "probe-$1" 2>&1 | grep -o '"path":"[a-z]*"' | sort -u | tr '\n' ' ')
+            key=$(docker logs "probe-$1" 2>&1 | grep -m 1 '"event":"started"' | grep -o '"key":"[0-9a-f]*"' | cut -d '"' -f 4)
             docker rm -f "probe-$1" > /dev/null
-            row "a peer, $1 ($2)" "${got:-no connection}" "$(grep -q "\"path\":\"$1\"" <<< "$got" && echo ok)"
+            if grep -q "\"path\":\"$1\"" <<< "$got"; then
+              row "a peer, $1 ($2)" "$got" ok
+            else
+              # once the network is claimed only members get in (MILESTONE2.md): the probe, no member, is kept out by
+              # the relay, or past it by the hook; the Aven Peer's own line for the probe's key proves the way works
+              by=$([ "$1" = relay ] && echo relay || echo hook)
+              kept=$(ssh prod 'docker logs --since 10m aven-peer 2>&1' | grep '"event":"kept-out"' | grep "\"key\":\"$key\"" | grep -c "\"by\":\"$by\"" || true)
+              row "a peer, $1 ($2)" "${got:-no connection}${key:+, kept out by the $by: $kept times}" "$([ -n "$key" ] && [ "${kept:-0}" -gt 0 ] && echo ok)"
+            fi
           }
           printf '%s' "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin > /dev/null
           probe direct "$IPV4:$PORT"

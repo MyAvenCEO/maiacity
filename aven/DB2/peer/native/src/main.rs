@@ -241,13 +241,24 @@ async fn main() -> Result<(), Error> {
                 }
             });
         }
-        None => gate.set(
-            members
-                .keys()
-                .chain([(key, me.clone())])
-                .map(|(k, n)| (k, n, None))
-                .collect::<Vec<_>>(),
-        ),
+        // and always the Aven Peer it links to, whom the door always admits: without it a Peer given no members (the
+        // deploy's probe) refused its own link to the Aven Peer in its hook
+        None => {
+            let aven = match config.get("aven-key") {
+                Some(k) if !relay => Some((keys::public(&k)?, "aven-peer".to_string())),
+                _ => None,
+            };
+            let known: Vec<_> = members.keys().collect();
+            let aven = aven.filter(|(k, _)| !known.iter().any(|(m, _)| m == k));
+            gate.set(
+                known
+                    .into_iter()
+                    .chain(aven)
+                    .chain([(key, me.clone())])
+                    .map(|(k, n)| (k, n, None))
+                    .collect::<Vec<_>>(),
+            )
+        }
     }
 
     // the Aven Peer's relay, in this process, for the door's keys only
