@@ -1180,7 +1180,8 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `settle_perm`, `settle_genesis` | Peers holding the same statements settle the same tree, and nothing outside the pinned genesis's descendants changes it |
 | | `settle_ticket_once`, `settle_withdrawn`, `settle_final` | A ticket founds at most one vault; a withdrawal beats every claim of it outside its past that isn't final; a final claim stays final, and stands unless an ack that never saw its ack makes a smaller one final |
 | | `settle_door`, `settle_listed` | The door admits exactly the member vaults' devices; a list's entry stands only through an add that saw every remove of it |
-| | `genesis_pinned`, `guardian_consented` | Everything in the tree descends from the pinned genesis, which the claimant's passkey and MaiaCityGuardian signed (A11); a claim counts only if it names that guardian (A13) |
+| `Restore`, `Records` (avenPEER) | `settle_restore` | Production's stored statements, migrated in their ref order onto a genesis both its signers signed, all count in the settled tree; vectors in `settled.json` |
+| `Network` | `genesis_pinned`, `guardian_consented` | Everything in the tree descends from the pinned genesis, which the claimant's passkey and MaiaCityGuardian signed (A11); a claim counts only if it names that guardian (A13) |
 | `Keep` | `fetch_chain`, `kept_every` | A keeper takes exactly the fetch keys that chain back to the Doc's genesis, each signed by the key before it (A22) |
 | | `current_agrees`, `current_chained` | Keepers holding the same links take the same current fetch key, whatever order they came in, and it chains |
 | | `fork_flagged` | Every fork a keeper takes is flagged |
@@ -1201,8 +1202,8 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 - `group_holds` (a group cap's writes in `Revoke`);
 - `device_within_cap`;
 - `safe_holds` (the safe's interface);
-- `upgrade_no_wider` and `no_confused_deputy` (`Aven.Actor`, avenACTORS);
-- `settle_restore`, production's ref order, and `trees.json` (avenPEER, PEERS.md Thread A);
+- `upgrade_no_wider` and `no_confused_deputy`, in the cross-spec model `Aven.Architecture`: they need `Aven.Actor`,
+  and id/spec never requires the actor spec (the architect, 30 Oct 2026);
 
 Two smaller gaps:
 - An owner that is a vault approves by its own quorum, recursively. `Approve` counts owner keys only, so the cast's coop
