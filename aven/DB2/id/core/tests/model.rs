@@ -93,7 +93,15 @@ fn trees() -> impl Strategy<Value = (Vec<String>, Vec<Vault>)> {
             let ups: Vec<u8> = specs.iter().map(|s| s.3).collect();
             let kinds: Vec<Kind> = specs
                 .iter()
-                .map(|s| [Kind::Person, Kind::Network, Kind::Coop, Kind::Device, Kind::Person][s.0 as usize])
+                .map(|s| {
+                    [
+                        Kind::Person,
+                        Kind::Network,
+                        Kind::Coop,
+                        Kind::Device,
+                        Kind::Person,
+                    ][s.0 as usize]
+                })
                 .collect();
             let devices: Vec<usize> = (0..kinds.len())
                 .filter(|&j| kinds[j] == Kind::Device)

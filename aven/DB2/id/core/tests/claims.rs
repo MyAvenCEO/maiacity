@@ -65,7 +65,10 @@ fn traces_answer_as_the_model_does() {
         let guardian = s["guardian"].as_str().map(str::to_string);
         // the box's MaiaCityGuardian is a test key from the cast's rule; the model derived its public half too
         if let Some(g) = &guardian {
-            assert_eq!(*g, aven_id::public_hex(&aven_id::test_signer(aven_id::GUARDIAN).verifying_key()));
+            assert_eq!(
+                *g,
+                aven_id::public_hex(&aven_id::test_signer(aven_id::GUARDIAN).verifying_key())
+            );
         }
         let mut n = Network::new(text("network"), text("peer"), text("peerKey"), rp, guardian)
             .with_coop(text("coop"), text("coopName"));

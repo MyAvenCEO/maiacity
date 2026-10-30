@@ -1,6 +1,7 @@
 //! Our one protocol (README, rule 9, `Aven.DB.Wire`), on ALPN `aven/db/1`, as frames: one JSON object per line on one stream each
-//! way. Milestone 1 says hello and tells presence, and carries a network's claim and sign-ins (PRODUCTION.md, Part A); the Aven Peer beats once per clock step, so a quiet link still
-//! moves, and a link that doesn't is stalled.
+//! way. Milestone 1 says hello and tells presence, and carries a network's claim and sign-ins (PRODUCTION.md, Part A);
+//! milestone 2 its invites, withdrawals and joins. The Aven Peer beats once per clock step, so a quiet link still moves,
+//! and a link that doesn't is stalled.
 
 use serde::{Deserialize, Serialize};
 
@@ -21,9 +22,21 @@ pub enum Frame {
     Claim { statement: String },
     /// A browser signs in with the passkey that claimed the network: the sign-in's statement as JSON text.
     SignIn { statement: String },
-    /// An Aven Peer that keeps its tree tells each peer whether it is claimed and, to a device of its tree, the tree.
-    Network { claimed: bool, tree: Option<String> },
-    /// A claim or sign-in the Aven Peer refused, and why.
+    /// The admin invites (MILESTONE2.md): the invite's statement as JSON text.
+    Invite { statement: String },
+    /// The admin withdraws an open invite.
+    Withdraw { statement: String },
+    /// A browser joins with an invite.
+    Join { statement: String },
+    /// An Aven Peer that keeps its tree tells each peer whether it is claimed and, to a device the door admits, the
+    /// tree and every statement it holds, so each peer checks the members itself. `statements` absent reads as none.
+    Network {
+        claimed: bool,
+        tree: Option<String>,
+        #[serde(default)]
+        statements: Option<String>,
+    },
+    /// A statement the Aven Peer refused, and why.
     Refused { why: String },
 }
 

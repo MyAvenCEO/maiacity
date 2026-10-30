@@ -8,10 +8,11 @@ import { openWorker } from './peer/open.js';
 import { live, take, timeline } from './peers.svelte.js';
 
 // `me` and `key`: this browser's device and its key; `claimed`: null until the Aven Peer has said; `tree`: the
-// network's tree as cast JSON, told to its devices only; `refused`: why the last claim or sign-in was refused
+// network's tree as cast JSON, told to its devices only; `refused`: why the last claim or sign-in was refused;
 // `trouble`: why the Peer-Light is not live, as it last said (its start failed, the Aven Peer didn't answer), shown
-// under the status line so a screenshot names the cause
-export const net = $state({ me: null, key: null, claimed: null, tree: null, refused: null, trouble: null });
+// under the status line so a screenshot names the cause; `door`: whether the relay lets this browser in, null until it
+// has said (MILESTONE2.md: after the claim, only members get in)
+export const net = $state({ me: null, key: null, claimed: null, tree: null, refused: null, trouble: null, door: null });
 
 let port;
 
@@ -43,6 +44,7 @@ export function runNetwork(config) {
 		if (line.event === 'started') Object.assign(net, { me: line.peer, key: line.key });
 		if (line.event === 'network') Object.assign(net, { claimed: line.claimed, tree: line.tree });
 		if (line.event === 'refused') net.refused = line.why;
+		if (line.event === 'door') net.door = line.admitted;
 		if (line.event === 'status' || line.event === 'failed') live.own = line.event === 'failed' ? { ...line, phase: 'offline', peers: 0 } : line;
 		if (line.event === 'stored') live.ownStored = line;
 		if (line.peer === net.me) take(line);

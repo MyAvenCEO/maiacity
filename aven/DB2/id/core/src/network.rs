@@ -158,7 +158,12 @@ impl Network {
         };
         let person = || vec![Owner::Vault(c.person.clone())];
         let mut out = vec![
-            vault(&c.person, c.vault_name(), Kind::Person, self.founders(&c.passkey)),
+            vault(
+                &c.person,
+                c.vault_name(),
+                Kind::Person,
+                self.founders(&c.passkey),
+            ),
             vault(&self.coop, self.coop_name.clone(), Kind::Coop, person()),
             Vault {
                 owners: vec![Owner::Vault(self.coop.clone())],
@@ -177,7 +182,7 @@ impl Network {
     }
 
     /// A person's vault's owners when it is founded: its passkey, and the guardian if there is one.
-    fn founders(&self, passkey: &str) -> Vec<Owner> {
+    pub(crate) fn founders(&self, passkey: &str) -> Vec<Owner> {
         let mut out = vec![Owner::Key(passkey.into())];
         out.extend(self.guardian.iter().map(|_| Owner::Key(GUARDIAN.into())));
         out

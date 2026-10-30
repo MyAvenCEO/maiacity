@@ -30,6 +30,14 @@ impl DalStore {
         }
     }
 
+    /// The same store without the backend's conditional writes: its own lock and the one writer refuse a stale write.
+    pub(crate) fn unconditional(self) -> Self {
+        Self {
+            conditional: false,
+            ..self
+        }
+    }
+
     /// Whether the backend itself refuses stale ref writes.
     pub fn conditional_writes(&self) -> bool {
         self.conditional
