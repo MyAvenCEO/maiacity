@@ -90,7 +90,8 @@ until a chat line arrived.
 3. a third profile without an invite is refused by the relay and by the Aven Peer's hook;
 4. the admin and the member exchange chat lines both ways, and the Aven Peer's join line arrives;
 5. a message signed by a key that is no member's is dropped by every peer;
-6. a restart keeps the members and empties the chat.
+6. a restart keeps the members and empties the chat (until the store upgrade, which keeps the chat:
+   [`store`](store/README.md#how-it-is-checked)).
 
 In the cast's box, Alice, Bob and Aven are members by the cast, and their four peers chat the same way.
 

@@ -35,6 +35,7 @@ use aven_db_core::timeline;
 use aven_db_core::wire::{ALPN, Frame};
 use aven_db_store::blobs::{Blobs, FetchError, Shared};
 use aven_db_store::{Hash, backend, files};
+use aven_peer::chats::Chats;
 use aven_peer::iroh_gossip::{self, Gossip};
 use aven_peer::members::{Gate, Hook};
 use aven_peer::room::Room;
@@ -192,6 +193,76 @@ pub fn say(text: String) -> Result<(), JsError> {
         wasm_bindgen_futures::spawn_local(async move { room.say(text).await });
         Ok(())
     })
+}
+
+/// Sends a line's blob on gossip as it is, unchecked here: every other peer checks it. The box's check sends a fork
+/// and a line of a device that is no member's this way (store/README.md, "How it is checked", 5).
+#[wasm_bindgen]
+pub fn post_line(blob: String) -> Result<(), JsError> {
+    running(|r| {
+        let room = r.room.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            room.gossip_line(blob.as_bytes()).await;
+        });
+        Ok(())
+    })
+}
+
+/// Puts one chunk of a file the page is sharing, 1 MiB but the last, into this origin's store, and returns its name:
+/// the page reads a dropped file a chunk at a time, so a movie never sits in memory whole (store/README.md).
+#[wasm_bindgen]
+pub async fn put_chunk(bytes: Vec<u8>) -> Result<String, JsError> {
+    let store = running(|r| Ok(r.files.store.clone()))?;
+    if bytes.is_empty() || bytes.len() as u64 > files::CHUNK {
+        return Err(JsError::new("a chunk is 1 byte to 1 MiB"));
+    }
+    Ok(store.put(bytes.into()).await.map_err(js)?.to_hex())
+}
+
+/// Shares a file whose chunks are in the store (their names, in order, as JSON): puts its index, keeps it under
+/// `file-<index>`, and says it as a `file` line of this device's chain, shown at once. Returns the index's name.
+#[wasm_bindgen]
+pub async fn share(
+    name: String,
+    kind: String,
+    size: f64,
+    chunks: String,
+) -> Result<String, JsError> {
+    let (store, room) = running(|r| Ok((r.files.store.clone(), r.room.clone())))?;
+    let chunks: Vec<String> = serde_json::from_str(&chunks).map_err(js)?;
+    let mut index = Vec::with_capacity(chunks.len() * 32);
+    for c in &chunks {
+        let h = hash(c)?;
+        if !store.has(&h).await.map_err(js)? {
+            return Err(JsError::new(&format!("chunk {c} isn't in the store")));
+        }
+        index.extend_from_slice(h.as_bytes());
+    }
+    let file = store.put(index.into()).await.map_err(js)?;
+    let len = files::open(&*store, &file)
+        .await
+        .map_err(js)?
+        .map(|f| f.len);
+    if len != Some(size as u64) {
+        return Err(JsError::new(&format!(
+            "the chunks hold {len:?} bytes, not {size}"
+        )));
+    }
+    let _ = store
+        .set_ref(
+            &aven_db_store::RefName::new(format!("file-{file}")).map_err(js)?,
+            None,
+            file,
+        )
+        .await;
+    room.share(aven_db_core::files::Announcement {
+        file: file.to_hex(),
+        size: size as u64,
+        name,
+        kind,
+    })
+    .await;
+    Ok(file.to_hex())
 }
 
 /// Sends a chat message as it is (JSON), unchecked here: every other peer checks it. The box's check sends one signed
@@ -385,7 +456,11 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
     let endpoint = Endpoint::builder(presets::Minimal)
         .secret_key(secret.clone())
         .relay_mode(RelayMode::Custom(relays))
-        .alpns(vec![ALPN.to_vec(), iroh_gossip::ALPN.to_vec(), blobs::ALPN.to_vec()])
+        .alpns(vec![
+            ALPN.to_vec(),
+            iroh_gossip::ALPN.to_vec(),
+            blobs::ALPN.to_vec(),
+        ])
         .hooks(Hook {
             me: name.clone(),
             gate: gate.clone(),
@@ -411,15 +486,35 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
         .await
         .map_err(js)?;
     notes(record::line(now(), &name, kind, &kept));
+    // the chat's history, from the same store: shown before any peer answers (store/README.md, "Local first")
+    let chats = Chats::open(
+        name.clone(),
+        "aven",
+        secret.clone(),
+        gate.clone(),
+        notes.clone(),
+        store.clone(),
+    )
+    .await
+    .map_err(js)?;
     let aven = EndpointAddr::new(aven_key).with_relay_url(relay.clone());
     aven_peer::know(&endpoint, aven.clone());
     let held = Blobs::new(store.clone());
     let gossip = Gossip::builder().spawn(endpoint.clone());
     let router = Router::builder(endpoint.clone())
         .accept(iroh_gossip::ALPN, gossip.clone())
-        .accept(blobs::ALPN, blobs::provider(&held, name.clone(), gate.clone(), notes.clone()))
+        .accept(
+            blobs::ALPN,
+            blobs::provider(&held, name.clone(), gate.clone(), notes.clone()),
+        )
         .spawn();
-    let files = Files { endpoint: endpoint.clone(), store, held, aven: aven.clone(), relay: relay.clone() };
+    let files = Files {
+        endpoint: endpoint.clone(),
+        store,
+        held,
+        aven: aven.clone(),
+        relay: relay.clone(),
+    };
     let room = Room::join(
         &gossip,
         name.clone(),
@@ -428,6 +523,7 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
         gate.clone(),
         vec![aven_key],
         notes.clone(),
+        Some(chats.clone()),
     )
     .await
     .map_err(js)?;
@@ -450,6 +546,7 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
         notes,
         Some(frames),
         learns,
+        Some(chats),
     ));
     Ok(())
 }
@@ -457,14 +554,25 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
 /// A connection on iroh-blobs' protocol to `from` (a member's key, hex), or to the Aven Peer: one kept while it is open.
 async fn connection(f: &Files, from: Option<String>) -> Result<Connection, JsValue> {
     let at = match from {
-        Some(key) => EndpointAddr::new(keys::public(&key).map_err(js)?).with_relay_url(f.relay.clone()),
+        Some(key) => {
+            EndpointAddr::new(keys::public(&key).map_err(js)?).with_relay_url(f.relay.clone())
+        }
         None => f.aven.clone(),
     };
-    let open = CONNECTIONS.with(|c| c.borrow().get(&at.id).filter(|c| c.close_reason().is_none()).cloned());
+    let open = CONNECTIONS.with(|c| {
+        c.borrow()
+            .get(&at.id)
+            .filter(|c| c.close_reason().is_none())
+            .cloned()
+    });
     if let Some(conn) = open {
         return Ok(conn);
     }
-    let conn = f.endpoint.connect(at.clone(), blobs::ALPN).await.map_err(js)?;
+    let conn = f
+        .endpoint
+        .connect(at.clone(), blobs::ALPN)
+        .await
+        .map_err(js)?;
     CONNECTIONS.with(|c| c.borrow_mut().insert(at.id, conn.clone()));
     Ok(conn)
 }
@@ -534,7 +642,11 @@ pub async fn file_range(file: String, start: f64, end: f64, from: Option<String>
     let (found, mut fetched) = open(&f, &hash(&file)?, from.clone()).await?;
     let range = start as u64..(end as u64).min(found.len);
     fetched += chunks(&f, &found, range.clone(), from).await?;
-    let bytes = found.read(&*f.store, range).await.map_err(js)?.ok_or_else(|| JsError::new("a chunk went missing"))?;
+    let bytes = found
+        .read(&*f.store, range)
+        .await
+        .map_err(js)?
+        .ok_or_else(|| JsError::new("a chunk went missing"))?;
     Ok(object(&[
         ("bytes", js_sys::Uint8Array::from(&bytes[..]).into()),
         ("len", (found.len as f64).into()),

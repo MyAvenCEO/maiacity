@@ -1,16 +1,20 @@
 <script>
-	// avenOS's Chat (MILESTONE2.md, thread B): the network's one room, everyone's lines live, who is present, and a line
-	// to write in. Lines are pushed by this origin's Peer-Light and never re-queried (README, rule 8); none is kept, so
-	// a reload empties the room. Senders are named through the tree: a device by the person vault it acts for. A line the
-	// network says through the Aven Peer (who joined) is its own kind.
+	// avenOS's Chat (MILESTONE2.md, thread B; store/README.md): the city-dome, everyone's lines live, who is present,
+	// and a line to write in. Lines are pushed by this origin's Peer-Light and never re-queried (README, rule 8); they
+	// are the chat's history, so a reload finds them again. A line written here shows at once and says while it is
+	// still on its way; a dropped image, PDF or movie shows at once too, as a file card from /files/<hash>, which the
+	// Service Worker answers range by range. Senders are named through the tree: a device by the person vault it acts
+	// for. A line the network says through the Aven Peer (who joined) is its own kind.
 	import Avatar from '../Avatar.svelte';
 	import { tree, vaultName } from '../id.svelte.js';
-	import { room, say } from '../room.svelte.js';
+	import { room, say, share } from '../room.svelte.js';
 
 	let { account, device } = $props();
 
 	let text = $state('');
 	let list = $state();
+	let over = $state(false);
+	let picker = $state();
 	// a vault the tree may not know yet (a member who joined after it was told): its id stands for its name
 	const known = (id) => Boolean(id && tree.kind(id));
 	// the vault a line is said for: as the line names it, or, in the cast, whom its device acts for
@@ -29,6 +33,33 @@
 		say(text);
 		text = '';
 	}
+
+	function drop(event) {
+		event.preventDefault();
+		over = false;
+		for (const file of event.dataTransfer?.files ?? []) share(file);
+	}
+
+	function pick() {
+		for (const file of picker.files ?? []) share(file);
+		picker.value = '';
+	}
+
+	const kind = (type) =>
+		type.startsWith('image/') ? 'image' : type.startsWith('video/') ? 'video' : type === 'application/pdf' ? 'pdf' : 'file';
+	// a file still on its way (the Aven Peer not yet keeping it, its sender's peer not reachable): asked for again, a
+	// little later each time, until it comes
+	function retrying(node) {
+		const base = node.getAttribute('src');
+		let tries = 0;
+		const again = () => {
+			if (++tries > 8) return;
+			setTimeout(() => node.setAttribute('src', `${base}?try=${tries}`), 500 * 2 ** Math.min(tries, 4));
+		};
+		node.addEventListener('error', again);
+		return { destroy: () => node.removeEventListener('error', again) };
+	}
+	const size = (n) => (n < 1 << 20 ? `${Math.ceil(n / 1024)} KB` : `${(n / (1 << 20)).toFixed(1)} MB`);
 </script>
 
 <div data-view="chat" data-account={account}>
@@ -41,26 +72,70 @@
 		</ul>
 	</aside>
 
-	<section aria-label="Room">
+	<section
+		aria-label="Room"
+		class:over
+		ondragover={(e) => {
+			e.preventDefault();
+			over = true;
+		}}
+		ondragleave={() => (over = false)}
+		ondrop={drop}
+	>
 		<ol bind:this={list} data-testid="lines">
 			{#each room.lines as line, i (i)}
 				{@const vault = vaultOf(line)}
 				{@const said = known(vault) && tree.kind(vault) === 'agent'}
-				<li class:mine={line.from === device} class:said data-from={line.from} data-vault={vault}>
+				<li class:mine={line.from === device} class:said data-from={line.from} data-vault={vault} data-id={line.id}>
 					{#if said}
 						<span class="text" data-testid="network-line">{line.text}</span>
+					{:else if line.file}
+						{@const f = line.file}
+						<strong>{who(vault ?? line.from)}</strong>
+						<figure class="file card" data-testid="file" data-file={f.file} data-kind={kind(f.type)}>
+							{#if kind(f.type) === 'image'}
+								<img src="/files/{f.file}" alt={f.name} use:retrying />
+							{:else if kind(f.type) === 'video'}
+								<!-- svelte-ignore a11y_media_has_caption -->
+								<video src="/files/{f.file}" controls preload="metadata" use:retrying></video>
+							{:else if kind(f.type) === 'pdf'}
+								<iframe src="/files/{f.file}" title={f.name}></iframe>
+							{/if}
+							<figcaption>
+								<svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"
+									><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></svg
+								>
+								<a href="/files/{f.file}" download={f.name}>{f.name}</a>
+								<small>{size(f.size)}</small>
+							</figcaption>
+						</figure>
 					{:else}
 						<strong>{who(vault ?? line.from)}</strong>
 						<span class="text">{line.text}</span>
 					{/if}
-					<time>{time(line.at)}</time>
+					<time>{time(line.at)}{#if line.from === device && line.id && !room.sent[line.id]}<small data-testid="sending">
+								· sending</small
+							>{/if}</time
+					>
 				</li>
 			{:else}
-				<li class="empty">Nobody has said anything since this page opened.</li>
+				<li class="empty">Nobody has said anything yet.</li>
+			{/each}
+			{#each room.sharing as s (s)}
+				<li class="mine" data-testid="sharing">
+					<span class="text">{s.name}</span>
+					<span class="bar"><span style:width="{(100 * s.done) / Math.max(1, s.size)}%"></span></span>
+					<time>into the store, {size(s.done)} of {size(s.size)}</time>
+				</li>
 			{/each}
 		</ol>
 		<form onsubmit={send}>
 			<input bind:value={text} placeholder="Write to everyone here" aria-label="Line" data-testid="line" />
+			<input type="file" multiple hidden bind:this={picker} onchange={pick} data-testid="file-input" />
+			<button type="button" class="quiet" onclick={() => picker.click()} aria-label="Share a file" data-testid="share"
+				><svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg
+				></button
+			>
 			<button disabled={!text.trim()} data-testid="say"
 				><svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg
 				><span>Send</span></button
@@ -246,6 +321,64 @@
 		align-items: center;
 		gap: 6px;
 		padding: 10px 18px;
+	}
+
+	/* a file is a card inside its bubble: the image, movie or PDF, and below it its name and size */
+	section.over ol {
+		outline: 2px dashed var(--accent);
+		outline-offset: -2px;
+		border-radius: var(--radius-card);
+	}
+
+	figure.file {
+		display: grid;
+		gap: 6px;
+		margin: 2px 0 0;
+		padding: 6px;
+		border-radius: var(--radius-inner);
+	}
+
+	figure.file img,
+	figure.file video,
+	figure.file iframe {
+		display: block;
+		max-width: 100%;
+		max-height: 320px;
+		border-radius: var(--radius-inner);
+	}
+
+	figure.file iframe {
+		width: min(420px, 70vw);
+		height: 320px;
+		border: 1px solid var(--line);
+	}
+
+	figcaption {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 0 4px;
+		font-size: 13px;
+	}
+
+	figcaption a {
+		overflow: hidden;
+		color: inherit;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.mine figure.file {
+		color: var(--text, inherit);
+	}
+
+	.mine figcaption small,
+	.mine time small {
+		color: var(--on-accent-muted);
+	}
+
+	li .bar {
+		width: 220px;
 	}
 
 	.refused {

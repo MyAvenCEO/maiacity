@@ -13,6 +13,19 @@ open Lean
 
 namespace Aven.DB
 
+/-- A device's chain as a peer holds it: the device's key, its newest line's name, and that line's number. -/
+structure Head where
+  device : String
+  id : String
+  seq : Nat
+  deriving DecidableEq, Repr, ToJson, FromJson
+
+/-- How far a peer holds a device's chain: the number of its newest line there. -/
+structure Have where
+  device : String
+  seq : Nat
+  deriving DecidableEq, Repr, ToJson, FromJson
+
 inductive Frame where
   /-- the first frame each side sends: the cast's id of the peer it is -/
   | hello (peer : String)
@@ -35,6 +48,13 @@ inductive Frame where
   | network (claimed : Bool) (tree : Option String) (statements : Option String)
   /-- a statement the Aven Peer refused, and why -/
   | refused (why : String)
+  /-- the Aven Peer tells a member's peer the head of every chain it keeps (`Aven.DB.Chains`), once linked -/
+  | heads (heads : List Head)
+  /-- a peer asks for every line newer than what it holds of each chain; a chain it doesn't name, from the first -/
+  | catchUp («have» : List Have)
+  /-- lines as their blobs, oldest first per chain: the Aven Peer's answer to `catchUp`, or a peer's own lines the
+  Aven Peer is missing -/
+  | lines (lines : List String)
   deriving DecidableEq, Repr
 
 /-- A line longer than this, without its newline, is refused: no peer needs one. -/
@@ -52,6 +72,9 @@ def Frame.json : Frame → Json
   | .network c t st => Json.mkObj [("frame", "network"), ("claimed", toJson c), ("tree", toJson t),
       ("statements", toJson st)]
   | .refused w => Json.mkObj [("frame", "refused"), ("why", w)]
+  | .heads hs => Json.mkObj [("frame", "heads"), ("heads", toJson hs)]
+  | .catchUp hs => Json.mkObj [("frame", "catch_up"), ("have", toJson hs)]
+  | .lines ls => Json.mkObj [("frame", "lines"), ("lines", toJson ls)]
 
 def Frame.parse (line : String) : Option Frame := do
   let j ← (Json.parse line).toOption
@@ -70,6 +93,9 @@ def Frame.parse (line : String) : Option Frame := do
     (.network · · statements) <$> (j.getObjValAs? Bool "claimed").toOption <*>
       (j.getObjValAs? (Option String) "tree").toOption
   | "refused" => .refused <$> (j.getObjValAs? String "why").toOption
+  | "heads" => .heads <$> (j.getObjValAs? (List Head) "heads").toOption
+  | "catch_up" => .catchUp <$> (j.getObjValAs? (List Have) "have").toOption
+  | "lines" => .lines <$> (j.getObjValAs? (List String) "lines").toOption
   | _ => none
 
 inductive WireError where
@@ -118,6 +144,13 @@ def wireExamples : List (String × List String × List (List Frame) × Option Wi
     ["{\"frame\":\"invite\",\"statement\":\"{}\"}\n{\"frame\":\"withdraw\",\"statement\":\"{}\"}\n{\"frame\":\"join\",\"statement\":\"{}\"}\n",
       "{\"frame\":\"network\",\"claimed\":true,\"tree\":\"{}\",\"statements\":\"{}\"}\n"],
     [[.invite "{}", .withdraw "{}", .join "{}"], [.network true (some "{}") (some "{}")]], none),
+  ("catching up: the heads, what a peer holds, and the lines",
+    ["{\"frame\":\"heads\",\"heads\":[{\"device\":\"ab\",\"id\":\"cd\",\"seq\":2}]}\n",
+      "{\"frame\":\"catch_up\",\"have\":[{\"device\":\"ab\",\"seq\":1}]}\n{\"frame\":\"lines\",\"lines\":[\"x\",\"y\"]}\n",
+      "{\"frame\":\"heads\",\"heads\":[]}\n{\"frame\":\"catch_up\",\"have\":[]}\n"],
+    [[.heads [⟨"ab", "cd", 2⟩]], [.catchUp [⟨"ab", 1⟩], .lines ["x", "y"]], [.heads [], .catchUp []]], none),
+  ("a head without its number", ["{\"frame\":\"heads\",\"heads\":[{\"device\":\"ab\",\"id\":\"cd\"}]}\n"], [],
+    some .bad),
   ("a join without its statement", ["{\"frame\":\"join\"}\n"], [], some .bad),
   ("a claim without its statement", ["{\"frame\":\"claim\"}\n"], [], some .bad),
   ("a line that isn't JSON", ["nope\n"], [], some .bad),

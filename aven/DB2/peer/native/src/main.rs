@@ -48,17 +48,19 @@
 //! room, over iroh-gossip on the same Router; the Aven Peer joins it first and says once who joined. Every Peer serves its
 //! store's blobs over iroh-blobs (`/iroh-bytes/4`) to members only (store/README.md, "How a file travels").
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
+use aven_db_core::files::Announcement;
 use aven_db_core::timeline;
 use aven_db_core::wire::ALPN;
 use aven_db_store::backend::{self, DalStore};
 use aven_db_store::blobs::Blobs;
 use aven_id::Relying;
+use aven_peer::chats::{self, Chats};
 use aven_peer::keys::{self, Members};
 use aven_peer::members::{Gate, Hook};
 use aven_peer::relay::Allow;
@@ -66,7 +68,7 @@ use aven_peer::room::Room;
 use aven_peer::{Notes, blobs, door, door::Door, hub::Hub, keep, link, now, record, tls};
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
-use iroh::{Endpoint, EndpointAddr, RelayMap, RelayMode, RelayUrl};
+use iroh::{Endpoint, EndpointAddr, PublicKey, RelayMap, RelayMode, RelayUrl};
 use iroh_gossip::Gossip;
 use serde_json::json;
 use tokio::time::Duration;
@@ -304,7 +306,11 @@ async fn main() -> Result<(), Error> {
         .relay_mode(RelayMode::Custom(RelayMap::from(relay_url.clone())))
         .clear_ip_transports()
         .bind_addr(listen.as_str())?
-        .alpns(vec![ALPN.to_vec(), iroh_gossip::ALPN.to_vec(), blobs::ALPN.to_vec()])
+        .alpns(vec![
+            ALPN.to_vec(),
+            iroh_gossip::ALPN.to_vec(),
+            blobs::ALPN.to_vec(),
+        ])
         .ca_tls_config(tls::trust(config.get("relay-ca").as_deref())?)
         .hooks(Hook {
             me: me.clone(),
@@ -338,19 +344,87 @@ async fn main() -> Result<(), Error> {
         });
     }
 
+    // the chat's history: every chain this peer keeps, loaded from its store (store/README.md)
+    let chats = Chats::open(
+        me.clone(),
+        door::NETWORK,
+        secret.clone(),
+        gate.clone(),
+        notes.clone(),
+        store.clone() as chats::Shared,
+    )
+    .await?;
+    // the Aven Peer holds every chain, its own included: it knows its head from the start
+    if relay {
+        chats.learn().await;
+    }
+    let joined = Arc::new(OnceLock::new());
+
     // gossip on the same Router as aven/db/1 (README, rule 9): the chat's room, joined through the Aven Peer
     let gossip = Gossip::builder().spawn(endpoint.clone());
     // and iroh-blobs' protocol, the files' bytes from this peer's store, to members only (store/README.md)
     let held = Blobs::new(store.clone());
+    // the Aven Peer keeps every file a member says in the city-dome: each `file` line it chains, fetched whole from
+    // the device whose chain it is on (store/README.md, "How a file travels", 2). A file it couldn't keep, its sender
+    // gone, waits until that device next connects; on start, it tries every file line it holds again
+    let waiting: Arc<Mutex<BTreeMap<PublicKey, Vec<Announcement>>>> = Arc::default();
+    let keeps: chats::OnFile = {
+        let (endpoint, at, held, store, me, notes, waiting) = (
+            endpoint.clone(),
+            relay_url.clone(),
+            held.clone(),
+            store.clone(),
+            me.clone(),
+            notes.clone(),
+            waiting.clone(),
+        );
+        Arc::new(move |from, file: Announcement| {
+            let (endpoint, at, held, store, me, notes, waiting) = (
+                endpoint.clone(),
+                at.clone(),
+                held.clone(),
+                store.clone(),
+                me.clone(),
+                notes.clone(),
+                waiting.clone(),
+            );
+            tokio::spawn(async move {
+                let Ok(index) = file.file.parse() else { return };
+                let kept = keep::keep(
+                    &endpoint, &at, &held, &*store, from, index, file.size, &me, &notes,
+                )
+                .await;
+                if kept.is_err() {
+                    waiting.lock().unwrap().entry(from).or_default().push(file);
+                }
+            });
+        })
+    };
+    if relay {
+        chats.on_file(keeps.clone());
+        for (from, file) in chats.files() {
+            keeps(from, file);
+        }
+    }
     let router = Router::builder(endpoint.clone())
         .accept(iroh_gossip::ALPN, gossip.clone())
-        .accept(blobs::ALPN, blobs::provider(&held, me.clone(), gate.clone(), notes.clone()));
+        .accept(
+            blobs::ALPN,
+            blobs::provider(&held, me.clone(), gate.clone(), notes.clone()),
+        );
     let (router, bootstrap) = if relay {
         (
             router
                 .accept(
                     ALPN,
-                    Hub::new(me.clone(), members, notes.clone(), door.clone()),
+                    Hub::new(me.clone(), members, notes.clone(), door.clone())
+                        .with_chats(chats.clone(), joined.clone())
+                        .with_joins(Arc::new(move |key| {
+                            let files = waiting.lock().unwrap().remove(&key);
+                            for file in files.into_iter().flatten() {
+                                keeps(key, file);
+                            }
+                        })),
                 )
                 .spawn(),
             vec![],
@@ -381,6 +455,7 @@ async fn main() -> Result<(), Error> {
             notes.clone(),
             None,
             None,
+            Some(chats.clone()),
         ));
         (router.spawn(), vec![aven_key])
     };
@@ -392,14 +467,35 @@ async fn main() -> Result<(), Error> {
         gate.clone(),
         bootstrap,
         notes.clone(),
+        Some(chats),
     )
     .await?;
-    // the folder this Peer shares: each file put and kept under `file-<index>`. Announcing it is a `file` line on this
-    // device's chain (city-dome's `Room::share`); the Aven Peer's rule (`keep::keep`) runs on each one it chains
+    let _ = joined.set(room.clone());
+
+    // the folder this Peer shares: each file put and kept under `file-<index>`, then said as a `file` line of this
+    // device's chain (`Room::share`)
     if let Some(dir) = config.get("files") {
         std::fs::create_dir_all(&dir)?;
-        let announce = |_: keep::Shared| async {};
-        tokio::spawn(keep::share(dir.into(), store.clone(), announce, me.clone(), notes.clone()));
+        let shares = room.clone();
+        let announce = move |s: keep::Shared| {
+            let room = shares.clone();
+            async move {
+                room.share(Announcement {
+                    file: s.index.to_hex(),
+                    size: s.size,
+                    name: s.name,
+                    kind: s.mime,
+                })
+                .await
+            }
+        };
+        tokio::spawn(keep::share(
+            dir.into(),
+            store.clone(),
+            announce,
+            me.clone(),
+            notes.clone(),
+        ));
     }
 
     // the Aven Peer says once who joined

@@ -21,8 +21,19 @@ function load() {
 	return loading;
 }
 
+// every chat line the Peer-Light told, by its name: the history a page that connects later gets whole
+const chat = new Map();
+
 function tell(line) {
-	if (JSON.parse(line).event === 'views') {
+	const event = JSON.parse(line);
+	if (event.event === 'chat' && event.id) {
+		chat.set(event.id, line);
+		if (event.file) files.set(event.file.file, { type: event.file.type, key: event.key });
+		for (const port of pages) port.postMessage(line);
+		fetch(`/events/${event.peer}`, { method: 'POST', body: line }).catch(() => {});
+		return;
+	}
+	if (event.event === 'views') {
 		views = line;
 		for (const port of pages) port.postMessage(line);
 		return;
@@ -70,13 +81,17 @@ async function showBox({ cast }) {
 
 // What a person's acts need computed, asked by a page and answered to it alone (peer/light/src/acts.rs)
 const acts = new Set(['challenge', 'claimText', 'signInText', 'deviceId', 'passkeyId', 'personId', 'validPersonName']);
+// a file shared in the chat, a chunk at a time, on the running Peer-Light's store (room.svelte.js)
+const running = new Set(['put_chunk', 'share']);
+for (const fn of running) acts.add(fn);
 for (const fn of ['inviteId', 'inviteText', 'withdrawText', 'joinText', 'oneTimePublic', 'signJoin']) acts.add(fn);
 async function answer(port, { id, fn, args }) {
 	const reply = { t: Date.now(), peer: 'page', event: 'answer', id };
 	try {
 		if (!acts.has(fn)) throw new Error(`the Peer-Light computes no ${fn}`);
 		await load();
-		reply.value = light[fn](...args);
+		if (running.has(fn)) await started;
+		reply.value = await light[fn](...args);
 	} catch (error) {
 		reply.error = String(error?.message ?? error);
 	}
@@ -92,7 +107,7 @@ function connect(port) {
 		// a statement for the Aven Peer, a line for the chat's room, or a message as it is (the box's check), from the page.
 		// The page sends its start with each, which only the first one here uses: a worker no page has started yet (Safari
 		// can hand a page one) starts then, rather than failing on a Peer-Light it never loaded (aven.maia.city, 30 Oct)
-		for (const call of ['send', 'say', 'post']) {
+		for (const call of ['send', 'say', 'post', 'post_line']) {
 			if (data?.[call] === undefined) continue;
 			await started;
 			try {
@@ -104,6 +119,7 @@ function connect(port) {
 		}
 	};
 	for (const line of lines) port.postMessage(line);
+	for (const line of chat.values()) port.postMessage(line);
 	if (views) port.postMessage(views);
 	// a worker nobody has started asks its page for the start: Safari can bring one up behind a page that started an
 	// earlier one, which then talks to it as if it ran
@@ -134,20 +150,36 @@ channel.onmessage = ({ data }) => {
 };
 channel.postMessage({ leader: true });
 
-// A file's bytes for the Service Worker (peer/bridge.js): `{id, read: {file, start, end}}`, `end` exclusive, answered
-// `{id, size, type, bytes}` with at most 1 MiB, clamped to the file's length (`size`, for Content-Range), or
-// `{id, error}`: "not found", or why not. Only the leader runs this worker, so only the leader answers.
+// A file's bytes for the Service Worker (public/files-sw.js, peer/bridge.js): `{id, read: {file, start, end}}`, `end`
+// exclusive, answered `{id, size, type, bytes}` with at most 1 MiB, clamped to the file's length (`size`, for
+// Content-Range), or `{id, error}`: "not found", or why not. Only the leader runs this worker, so only the leader
+// answers. The type, and the device that shared the file, are its `file` line's; the bytes come through the
+// Peer-Light's `file_range`, which fetches the chunks it lacks: from the Aven Peer, which keeps every file, or else from
+// the device that shared it. A read asked again while this one is at it is the same read.
 const MiB = 1 << 20;
+const files = new Map();
+const reading = new Set();
 async function read({ id, read: { file, start = 0, end } }) {
+	if (reading.has(id)) return;
+	reading.add(id);
+	setTimeout(() => reading.delete(id), 60_000);
+	const known = files.get(file);
 	try {
 		await started;
 		if (!light) throw new Error(`the Peer-Light isn't running: ${down ?? 'nothing started it'}`);
 		const from = Math.max(0, Number(start) || 0);
 		const to = Math.min(Number.isFinite(Number(end)) ? Number(end) : from + MiB, from + MiB);
-		const got = await light.file_range(file, from, to, undefined);
-		channel.postMessage({ id, size: got.len, type: null, bytes: got.bytes });
+		let got;
+		for (const holder of [undefined, known?.key]) {
+			try {
+				got = await light.file_range(file, from, to, holder);
+				break;
+			} catch (error) {
+				if (holder === known?.key) throw error;
+			}
+		}
+		channel.postMessage({ id, size: got.len, type: known?.type ?? null, bytes: got.bytes });
 	} catch (error) {
-		const why = String(error?.message ?? error);
-		channel.postMessage({ id, error: /not found|missing|no such/i.test(why) ? 'not found' : why });
+		channel.postMessage({ id, error: error?.name === 'NotFoundError' ? 'not found' : String(error?.message ?? error) });
 	}
 }

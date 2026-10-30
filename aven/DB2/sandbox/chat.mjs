@@ -3,9 +3,10 @@
 // an empty store: the admin signs up and makes an invite (its link and QR code); a second profile opens the link,
 // joins with a name and a passkey, and lands on its dashboard; the link used again by a third profile is refused, and
 // so is an invite the admin withdrew; then the admin and the member chat both ways, the Aven Peer's join line arrives,
-// and a reload empties the room. In the cast's box, Alice's and Bob's Peer-Lights chat both ways too, and Alice's
-// second tab takes over her Peer-Light when the first closes. Every screen is photographed into the run's folder. What
-// a line or a refusal should say comes from Lean's chat vectors or from the page that wrote it, never from this file.
+// and a reload keeps the whole chat, in order. In the cast's box, Alice's and Bob's Peer-Lights chat both ways too, and
+// Alice's second tab takes over her Peer-Light when the first closes. Every screen is photographed into the run's
+// folder. What a line or a refusal should say comes from Lean's chat vectors or from the page that wrote it, never
+// from this file.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 
@@ -137,12 +138,17 @@ report.lines = (await lines(admin.page).allTextContents()).map((text) => (text.l
 await shot(admin.page, 'room-admin');
 await shot(member.page, 'room-member');
 
-// a reload empties the room
+// a reload keeps the chat, whole and in order: its history is in the store (store/README.md, "How it is checked", 3)
+// each line by its name, its sender and its words: not whether it is still on its way, which a reload may learn
+const said = (page) =>
+	lines(page).evaluateAll((lis) => lis.map((li) => `${li.dataset.id} ${li.querySelector('strong')?.textContent ?? ''} ${li.querySelector('.text')?.textContent ?? ''}`));
+const before = await said(admin.page);
 await admin.page.reload();
 await seen(admin.page.locator('[data-view="chat"]'));
-await admin.page.waitForTimeout(1000);
+const kept = async () => (await said(admin.page)).join('\n') === before.join('\n');
+for (let i = 0; i < 120 && !(await kept()); i++) await admin.page.waitForTimeout(250);
 report.afterReload = await lines(admin.page).count();
-if (report.afterReload) problems.push(`after a reload the room holds ${report.afterReload} lines`);
+if (!(await kept())) problems.push(`after a reload the room holds ${report.afterReload} of ${before.length} lines, or not in order`);
 await shot(admin.page, 'room-reloaded');
 for (const b of [admin, member]) await b.context.close();
 

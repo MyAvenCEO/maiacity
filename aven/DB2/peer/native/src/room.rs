@@ -2,14 +2,20 @@
 //! peer's shared `Router` beside `aven/db/1` (README, rule 9). A peer joins it through the Aven Peer, a member; every
 //! message it sends is signed by its device key, and every message it hears is checked by `aven_db_core::chat` against
 //! the door as this peer knows it (`Gate`), so a message whose sender is no member's device is dropped. Each peer says
-//! `here` every `EVERY_MS`, and `bye` when it stops. The room is in memory only: a restart or a reload empties it.
+//! `here` every `EVERY_MS`, and `bye` when it stops. Presence is in memory only.
 //!
-//! What the page hears, as timeline lines: `chat` (a line said: who, the vault it serves, the text, when), `room` (who
-//! is present, on every change) and `dropped` (a message refused, and why).
+//! The lines said are the chat's history (`store/README.md`, "The chat keeps its history"): each is a line of its
+//! device's chain (`chats`), kept in the store and travelling on gossip as its whole blob, `{"line": "<blob>"}`, so
+//! every peer keeps it and nobody waits for a fetch.
+//!
+//! What the page hears, as timeline lines: `chat` (a line said: who, the vault it serves, the text, when, its place in
+//! its chain), `room` (who is present, on every change) and `dropped` (a message refused, and why).
 
 use std::sync::{Arc, Mutex};
 
+use aven_db_core::chain::Body;
 use aven_db_core::chat::{self, EVERY_MS, Kind, Message};
+use aven_db_core::files::Announcement;
 use aven_db_core::timeline;
 use aven_db_store::Hash;
 use bytes::Bytes;
@@ -20,6 +26,7 @@ use n0_future::StreamExt;
 use n0_future::time::{Duration, sleep};
 use serde_json::json;
 
+use crate::chats::Chats;
 use crate::members::Gate;
 use crate::{Notes, now};
 
@@ -72,11 +79,13 @@ pub struct Room {
     notes: Notes,
     sender: GossipSender,
     state: Arc<Mutex<State>>,
+    chats: Option<Chats>,
 }
 
 impl Room {
     /// Joins the network's room through `bootstrap` (the Aven Peer, or nobody for the Aven Peer itself), and hears it
     /// for as long as the peer runs.
+    #[allow(clippy::too_many_arguments)]
     pub async fn join(
         gossip: &Gossip,
         me: String,
@@ -85,6 +94,7 @@ impl Room {
         gate: Gate,
         bootstrap: Vec<PublicKey>,
         notes: Notes,
+        chats: Option<Chats>,
     ) -> Result<Room, String> {
         let topic = gossip
             .subscribe(topic(network), vec![])
@@ -104,12 +114,13 @@ impl Room {
                 last: 0,
                 neighbours: 0,
             })),
+            chats,
         };
         let hears = room.clone();
         n0_future::task::spawn(async move {
             while let Some(event) = receiver.next().await {
                 match event {
-                    Ok(Event::Received(m)) => hears.hear(&m.content, m.delivered_from),
+                    Ok(Event::Received(m)) => hears.hear(&m.content, m.delivered_from).await,
                     Ok(Event::NeighborUp(k)) => {
                         hears.state.lock().unwrap().neighbours += 1;
                         hears.note("neighbour", json!({ "up": hears.gate.name(&k).0 }));
@@ -145,6 +156,12 @@ impl Room {
                         let _ = beats.sender.join_peers(bootstrap.clone()).await;
                     }
                     if beats.gate.version() != door || quiet >= EVERY_MS {
+                        // the door changed: the history's senders by their names now
+                        if beats.gate.version() != door
+                            && let Some(chats) = &beats.chats
+                        {
+                            chats.retell();
+                        }
                         door = beats.gate.version();
                         break;
                     }
@@ -159,8 +176,23 @@ impl Room {
         (self.notes)(timeline::line(now(), &self.me, event, fields));
     }
 
-    /// A message heard, checked and taken, or dropped.
-    fn hear(&self, bytes: &[u8], via: PublicKey) {
+    /// A message heard, checked and taken, or dropped: a line goes to the chains.
+    async fn hear(&self, bytes: &[u8], via: PublicKey) {
+        if let Some(line) = serde_json::from_slice::<serde_json::Value>(bytes)
+            .ok()
+            .and_then(|v| v.get("line").and_then(|l| l.as_str()).map(str::to_string))
+        {
+            match &self.chats {
+                Some(chats) => {
+                    chats.take(line.as_bytes()).await;
+                }
+                None => self.note(
+                    "dropped",
+                    json!({ "why": "a line, and this peer keeps no chains" }),
+                ),
+            }
+            return;
+        }
         let m: Message = match serde_json::from_slice(bytes) {
             Ok(m) => m,
             Err(e) => {
@@ -243,9 +275,54 @@ impl Room {
         self.post(&m).await
     }
 
-    /// Says a line in the room.
+    /// Says a line in the room: a line of this device's chain, kept and shown at once, then sent. Without chains, a
+    /// `say` message as in milestone 2.
     pub async fn say(&self, text: String) {
-        self.send(Kind::Say, text).await;
+        let Some(chats) = &self.chats else {
+            self.send(Kind::Say, text).await;
+            return;
+        };
+        self.write(chats, Body::Text(text)).await;
+    }
+
+    /// Shares a file in the room: its announcement as a line of this device's chain, kept and shown at once, then
+    /// sent. The file's chunks and index are in the store already.
+    pub async fn share(&self, file: Announcement) {
+        match &self.chats {
+            Some(chats) => self.write(chats, Body::File(file)).await,
+            None => self.note(
+                "dropped",
+                json!({ "why": "a file, and this peer keeps no chains" }),
+            ),
+        }
+    }
+
+    async fn write(&self, chats: &Chats, body: Body) {
+        match chats.write(body).await {
+            Ok(None) => {}
+            Ok(Some(line)) => {
+                // out once a neighbour has it; alone, it waits in the store for the link to send it (`chats`)
+                let blob = line.blob();
+                let near = self.state.lock().unwrap().neighbours > 0;
+                if self.gossip_line(&blob).await && near {
+                    self.note("sent", json!({ "ids": [Hash::of(&blob).to_hex()] }));
+                }
+            }
+            Err(why) => self.note("dropped", json!({ "why": why })),
+        }
+    }
+
+    /// Sends a line's blob on gossip, as it is: every peer checks it.
+    pub async fn gossip_line(&self, blob: &[u8]) -> bool {
+        let line = String::from_utf8_lossy(blob);
+        let bytes = Bytes::from(json!({ "line": line }).to_string());
+        match self.sender.broadcast(bytes).await {
+            Ok(()) => true,
+            Err(e) => {
+                self.note("dropped", json!({ "why": format!("not sent: {e}") }));
+                false
+            }
+        }
     }
 
     /// Says goodbye: the others take this peer out of the room.

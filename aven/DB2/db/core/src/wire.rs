@@ -1,7 +1,8 @@
-//! Our one protocol (README, rule 9, `Aven.DB.Wire`), on ALPN `aven/db/1`, as frames: one JSON object per line on one stream each
-//! way. Milestone 1 says hello and tells presence, and carries a network's claim and sign-ins (PRODUCTION.md, Part A);
-//! milestone 2 its invites, withdrawals and joins. The Aven Peer beats once per clock step, so a quiet link still moves,
-//! and a link that doesn't is stalled.
+//! Our one protocol (README, rule 9, `Aven.DB.Wire`), on ALPN `aven/db/1`, as frames: one JSON object per line on one
+//! stream each way. Milestone 1 says hello and tells presence, and carries a network's claim and sign-ins
+//! (PRODUCTION.md, Part A); milestone 2 its invites, withdrawals and joins; the store upgrade catching up on the chat's
+//! chains (`Heads`, `CatchUp`, `Lines`). The Aven Peer beats once per clock step, so a quiet link still moves, and a
+//! link that doesn't is stalled.
 
 use serde::{Deserialize, Serialize};
 
@@ -38,6 +39,31 @@ pub enum Frame {
     },
     /// A statement the Aven Peer refused, and why.
     Refused { why: String },
+    /// The Aven Peer tells a member's peer the head of every chain it keeps (`chain`), once linked.
+    Heads { heads: Vec<Head> },
+    /// A peer asks for every line newer than what it holds of each chain; a chain it doesn't name, from the first.
+    CatchUp {
+        #[serde(rename = "have")]
+        holds: Vec<Have>,
+    },
+    /// Lines as their blobs, oldest first per chain: the Aven Peer's answer to `CatchUp`, or a peer's own lines the
+    /// Aven Peer is missing.
+    Lines { lines: Vec<String> },
+}
+
+/// A device's chain as a peer holds it: the device's key, its newest line's name, and that line's number.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Head {
+    pub device: String,
+    pub id: String,
+    pub seq: u64,
+}
+
+/// How far a peer holds a device's chain: the number of its newest line there.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Have {
+    pub device: String,
+    pub seq: u64,
 }
 
 pub fn encode(frame: &Frame) -> Vec<u8> {
