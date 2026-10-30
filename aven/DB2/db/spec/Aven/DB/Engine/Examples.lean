@@ -3,6 +3,7 @@ import Aven.DB.Engine.Query
 import Aven.DB.Engine.Wants
 import Aven.DB.Engine.Mutate
 import Aven.DB.Engine.Footprint
+import Aven.DB.Engine.Changes
 import Aven.DB.Engine.Index
 import Aven.DB.Engine.Probe
 
@@ -361,6 +362,17 @@ def tick : List (Op Value) := [.patch task (rows [("x2", text "Order seeds")]) (
 -- The same grant doesn't cover renaming a task.
 #guard covers [⟨task, .patch, some [utf8 "done"]⟩]
   (footprint [.patch task (rows [("x2", text "Order seeds")]) (rows [("x2", text "Order bean seeds")])]) == false
+
+/-- Every type Doc written under one schema version in these examples. -/
+def ver (t : DocId) : TypeId := ⟨t, blake3 (utf8 "schema:v1")⟩
+
+-- Ticking a task done is one edited Record whose one field is `done`, and the untouched task is no change; the grant to patch `done` passes the verdict's
+-- footprint part on it.
+#guard (match commit valEq ofId 1 8 todo tick with
+  | .ok s' => ((changesFrom ver todo s').map fun c => (c.kind, c.names.map utf8Text),
+      verdictFootprint [⟨task, .patch, some [utf8 "done"]⟩] (footprint tick) (changesFrom ver todo s'))
+  | .error _ => ([], false)) ==
+  ([(Aven.DB.Docs.ChangeKind.edited, ["done"])], true)
 
 def mutationExamples : List Json := [
   mutationVector "I ate 2 bananas" 1 7 (everything [banana, quantity, eat]) [] bananas,
