@@ -135,16 +135,24 @@ theorem rule4_fit_merges {S K V : Type} [DecidableEq K] (rule : S → K → V �
 
 /-- A party nothing is sealed to, a keeper, learns only its own keys; and of a segment it sees only its Doc, its epoch
 and its padded length. -/
-theorem rule5_keeper_blind {w : ID.World} {keeper : String} (nothing : ∀ s ∈ w.seals, s.2 ∉ w.own keeper)
-    (pad : Nat → Nat) {s t : ID.Segment} (d : s.doc = t.doc) (e : s.epoch = t.epoch)
-    (l : pad s.body.length = pad t.body.length) :
+theorem rule5_keeper_blind {κ : Type} [DecidableEq κ] {w : ID.WorldOf κ} {keeper : String}
+    (nothing : ∀ s ∈ w.seals, s.2 ∉ w.own keeper) (pad : Nat → Nat) {s t : ID.Segment} (d : s.doc = t.doc)
+    (e : s.epoch = t.epoch) (l : pad s.body.length = pad t.body.length) :
     (∀ n, ∀ k ∈ w.knownAfter keeper n, k ∈ w.own keeper) ∧ s.outside pad = t.outside pad :=
-  ⟨ID.World.keeper_blind nothing, ID.outside_blind pad d e l⟩
+  ⟨ID.WorldOf.keeper_blind nothing, ID.outside_blind pad d e l⟩
 
-/-- A key is learned only by holding a key it is sealed under. -/
-theorem rule5_read_is_key {w : ID.World} {n : Nat} {p k : String} (h : w.knows (n + 1) p k = true) :
-    w.knows n p k = true ∨ ∃ s ∈ w.seals, s.1 = k ∧ w.knows n p s.2 = true :=
-  ID.World.confidential h
+/-- A key is learned only by holding a key it is sealed under, for keys of any kind: Core's bytes where the docs
+layer's segments are sealed. -/
+theorem rule5_read_is_key {κ : Type} [DecidableEq κ] {w : ID.WorldOf κ} {n : Nat} {p : String} {k : κ}
+    (h : w.knows (n + 1) p k = true) : w.knows n p k = true ∨ ∃ s ∈ w.seals, s.1 = k ∧ w.knows n p s.2 = true :=
+  ID.WorldOf.confidential h
+
+/-- An envelope sealed under an epoch older than one it builds on, among the Core envelopes a reader holds, doesn't
+pass: a removed reader's old key reads nothing new. -/
+theorem rule5_epoch_fresh {nm : Envelope → Hash} {epochOf : Envelope → Nat} {doc : List Envelope} {e x : Envelope}
+    {d : Hash} (ok : ID.freshEpoch nm epochOf doc e = true) (dm : d ∈ e.deps) (found : doc.find? (nm · == d) = some x) :
+    epochOf x ≤ epochOf e :=
+  ID.stale_refused ok dm found
 
 /-! ## Rule 6: demand never grants -/
 
@@ -266,6 +274,29 @@ theorem rule11_waits_named (H : Bytes → Hash) (vaultOf : Envelope → String) 
     ms ≠ [] ∧ ∀ d ∈ ms, d ∈ (e.prev.toList ++ e.deps).map Hash.text :=
   let ⟨ne, all⟩ := ID.waits_named h
   ⟨ne, fun d m => (all d m).1⟩
+
+/-- A wait never blocks unrelated work: while some key with work left waits on nothing, a round moves such a key and
+shrinks what is left, or raises the stall alarm on it, whatever the other keys wait for. -/
+theorem rule11_waits_isolated {Key : Type} [DecidableEq Key] (left : Key → Nat)
+    (waits : Key → Option DB.Engine.Wait) (uploads keys : List Key) (got : Key → Bool) (hn : (uploads ++ keys).Nodup)
+    (k : Key) (hk : k ∈ uploads ++ keys) (hw : waits k = none) (hl : 0 < left k) :
+    ∃ k', (waits k' = none ∧ k' ∈ uploads ++ keys ∧ 0 < left k') ∧
+      ((DB.Engine.roundW left waits uploads keys got).1 = .moved k' ∧
+          DB.Engine.measure (DB.Engine.roundW left waits uploads keys got).2 (uploads ++ keys) <
+            DB.Engine.measure left (uploads ++ keys) ∨
+        (DB.Engine.roundW left waits uploads keys got).1 = .stalled k') :=
+  DB.Engine.waits_isolated left waits uploads keys got hn k hk hw hl
+
+/-- Every round ends one of four ways, each named: done when nothing is left; the stall alarm on a key that could
+move and got nothing; waiting, naming every key with work left and what it waits for; or a move. -/
+theorem rule11_stall_raised {Key : Type} [DecidableEq Key] (left : Key → Nat) (waits : Key → Option DB.Engine.Wait)
+    (uploads keys : List Key) (got : Key → Bool) :
+    (∀ left', DB.Engine.roundW left waits uploads keys got = (.done, left') → ∀ k ∈ uploads ++ keys, left k = 0) ∧
+    (∀ k left', DB.Engine.roundW left waits uploads keys got = (.stalled k, left') →
+        left' = left ∧ k ∈ uploads ++ keys ∧ 0 < left k ∧ waits k = none) ∧
+    (∀ ks left', DB.Engine.roundW left waits uploads keys got = (.waiting ks, left') →
+        left' = left ∧ ks ≠ [] ∧ ∀ k ∈ uploads ++ keys, 0 < left k → ∃ w, waits k = some w ∧ (k, w) ∈ ks) :=
+  DB.Engine.stall_raised left waits uploads keys got
 
 /-! ## Rule 12: order is causal; time is a claim -/
 
