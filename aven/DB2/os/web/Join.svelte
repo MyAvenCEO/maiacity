@@ -47,60 +47,42 @@
 <style>
 	main {
 		display: grid;
-		gap: 16px;
-		max-width: 420px;
-		margin: 12vh auto 0;
-		padding: 0 16px;
+		gap: 20px;
+		max-width: 440px;
+		margin: 10vh auto 0;
+		padding: 0 16px 48px;
 	}
 
 	h1 {
 		margin: 0;
-		font-size: 22px;
+		color: var(--accent);
+		font-size: 30px;
 	}
 
 	h2 {
 		margin: 0;
-		font-size: 18px;
+		font-size: 26px;
 	}
 
 	form {
 		display: grid;
-		gap: 12px;
-		padding: 16px;
+		gap: 16px;
+		padding: 24px;
 		background: var(--surface);
 		border: 1px solid var(--line);
-		border-radius: 12px;
+		border-radius: var(--radius-card);
+		box-shadow: var(--shadow-soft);
 	}
 
 	label {
 		display: grid;
-		gap: 6px;
+		gap: 8px;
 		color: var(--muted);
-	}
-
-	input {
-		padding: 8px 10px;
-		color: var(--text);
-		font: inherit;
-		background: var(--bg);
-		border: 1px solid var(--line);
-		border-radius: 8px;
+		font-size: 13px;
 	}
 
 	button {
 		justify-self: start;
-		padding: 8px 14px;
-		color: var(--surface);
-		font: inherit;
-		background: var(--text);
-		border: 0;
-		border-radius: 999px;
-		cursor: pointer;
-	}
-
-	button:disabled {
-		opacity: 0.5;
-		cursor: default;
 	}
 
 	.muted {
@@ -110,6 +92,15 @@
 
 	.refused {
 		margin: 0;
-		color: var(--pending);
+		padding: 12px 16px;
+		color: var(--down);
+		font-size: 14px;
+		background: var(--raised);
+		border: 1px solid var(--line);
+		border-radius: var(--radius-inner);
+	}
+
+	.status {
+		margin: 0;
 	}
 </style>

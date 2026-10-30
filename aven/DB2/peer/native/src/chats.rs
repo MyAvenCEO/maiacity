@@ -211,6 +211,22 @@ impl Chats {
         self.note("chat", fields);
     }
 
+    /// Every `file` line it holds in a chain, with the device whose chain it is on.
+    pub fn files(&self) -> Vec<(PublicKey, Announcement)> {
+        let keeper = self.keeper.lock().unwrap();
+        keeper
+            .heads()
+            .iter()
+            .flat_map(|(device, _)| keeper.chain(device).iter())
+            .filter_map(
+                |h| match (&h.line.body, crate::keys::public(&h.line.device)) {
+                    (Body::File(f), Ok(from)) => Some((from, f.clone())),
+                    _ => None,
+                },
+            )
+            .collect()
+    }
+
     /// What to do with each `file` line chained from now on; set once.
     pub fn on_file(&self, f: OnFile) {
         let _ = self.on_file.set(f);

@@ -106,11 +106,13 @@ avenSANDBOX   the box all of it is built and tested in
 
 **Data (avenDB)**
 
-- **blob:** immutable bytes named by their BLAKE3 hash, sealed unless published.
-- **ref:** a name pointing at a blob, changed atomically: a document's head.
-- **document:** a Loro document: a head over sealed segments and snapshots.
+- **Value:** immutable bytes named by their BLAKE3 hash, like IPFS. At rest in the store it is a **blob**.
+- **Doc:** mutable, a Loro document named by a stable id, like IPNS: a head over Values (segments and snapshots). It
+  holds **Records**, each named `<doc>/<id>` and each under a schema ([`db/docs`](db/docs/README.md), Samuel,
+  30 Oct 2026).
+- **ref:** a name pointing at a Value, changed atomically: a Doc's head.
 - **store:** where a peer's blobs and refs rest, behind one contract.
-- **cap:** a signed grant: which vault may read or write which document.
+- **cap:** a signed grant: which vault may read or write which Doc.
 - **member, invite:** a person's vault let into the network, owned in the tree by the admin coop, and the ticket that
   lets it in (milestone 2).
 
@@ -235,6 +237,10 @@ the `ProtocolHandler` registered for its ALPN. avenDB's own protocol plugs in th
 5. **Version control:** history, versions, variants, proposals.
 6. **Schemas and lenses.**
 7. **Sync manifest and queries.**
+
+The design of avenDB's data, proposals for 4 to 7: [`db/docs`](db/docs/README.md) (documents, versions, schemas,
+lenses), [`db/engine`](db/engine/README.md) (sync, queries, mutations) and [`db/ontology`](db/ontology/README.md) (what
+facts mean).
 
 The chat is the first example app and grows with each milestone. The Google-Docs-like editor, with history, variants
 and proposals, follows it.

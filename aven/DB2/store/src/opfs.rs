@@ -3,6 +3,10 @@
 //! (`tmp/blob-<hash>`, `tmp/ref-<name>`), then moves into place, or is copied where the folder can't move. Opening
 //! recovers what a crash left: a whole temporary file rolls forward, every other one goes (Lean: `Aven.DB.StoreCrash`,
 //! `crash_atomic`).
+//!
+//! A store says which avenDB laid it out: `meta/version` holds [`VERSION`], written when the store is made. A store with
+//! anything in it and not exactly that marker is from an older avenOS, and opening it is [`Error::Outdated`]: the
+//! Peer-Light clears its origin and starts fresh (no migration of a browser's store, Samuel 30 Oct 2026).
 
 use std::ops::Range;
 
@@ -19,6 +23,10 @@ pub struct OpfsStore<F> {
     writes: Mutex<()>,
 }
 
+/// What `meta/version` holds in a store this avenDB laid out.
+pub const VERSION: &[u8] = b"avenDB store 1\n";
+const VERSION_PATH: &str = "meta/version";
+
 fn blob_path(h: &Hash) -> String {
     format!("blobs/{h}")
 }
@@ -28,9 +36,22 @@ fn ref_path(n: &RefName) -> String {
 }
 
 impl<F: Folder> OpfsStore<F> {
-    /// Opens the store on `folder`, recovering what a crash left there.
+    /// Opens the store on `folder`, recovering what a crash left there; an empty folder becomes a store of this
+    /// version. [`Error::Outdated`] for a folder an older avenDB laid out.
     pub async fn open(folder: F) -> Result<Self> {
         let store = Self { folder, writes: Mutex::new(()) };
+        match store.folder.read(VERSION_PATH, None).await? {
+            Some(v) if v.as_ref() == VERSION => {}
+            Some(v) => return Err(Error::Outdated(format!("its version is {:?}", String::from_utf8_lossy(&v)))),
+            None => {
+                for dir in ["blobs", "refs", "tmp"] {
+                    if !store.folder.list(dir).await?.is_empty() {
+                        return Err(Error::Outdated(format!("it has {dir} and no version")));
+                    }
+                }
+                store.folder.write(VERSION_PATH, VERSION).await?;
+            }
+        }
         store.recover().await?;
         Ok(store)
     }
@@ -53,7 +74,7 @@ impl<F: Folder> OpfsStore<F> {
     }
 
     /// Where the temporary file `name` goes, if it is whole: a blob's bytes that hash to its name, a ref's value that
-    /// is a hash.
+    /// is a hash and a newline (`Hash::from_ref`).
     async fn whole(&self, name: &str, tmp: &str) -> Result<Option<String>> {
         let Some(bytes) = self.folder.read(tmp, None).await? else {
             return Ok(None);
@@ -66,7 +87,7 @@ impl<F: Folder> OpfsStore<F> {
         }
         if let Some(n) = name.strip_prefix("ref-")
             && let Ok(n) = RefName::new(n)
-            && std::str::from_utf8(&bytes).is_ok_and(|v| v.parse::<Hash>().is_ok())
+            && Hash::from_ref(&bytes).is_ok()
         {
             return Ok(Some(ref_path(&n)));
         }
@@ -102,9 +123,21 @@ impl<F: Folder> OpfsStore<F> {
         let Some(bytes) = self.folder.read(&ref_path(n), None).await? else {
             return Ok(None);
         };
-        let text = std::str::from_utf8(&bytes)
-            .map_err(|_| Error::Corrupt(format!("ref {n} isn't text")))?;
-        text.parse().map(Some)
+        Hash::from_ref(&bytes)
+            .map(Some)
+            .map_err(|e| Error::Corrupt(format!("ref {n}: {e}")))
+    }
+}
+
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+impl<F: Folder> crate::conformance::RefsAtRest for OpfsStore<F> {
+    async fn ref_bytes(&self, name: &RefName) -> Result<Option<Bytes>> {
+        self.folder.read(&ref_path(name), None).await
+    }
+
+    async fn put_ref_bytes(&self, name: &RefName, bytes: &[u8]) -> Result<()> {
+        self.folder.write(&ref_path(name), bytes).await
     }
 }
 
@@ -178,7 +211,7 @@ impl<F: Folder> Store for OpfsStore<F> {
         if current != expected {
             return Err(Error::Stale { current });
         }
-        self.write(&format!("ref-{n}"), &ref_path(n), new.to_hex().as_bytes()).await
+        self.write(&format!("ref-{n}"), &ref_path(n), new.ref_text().as_bytes()).await
     }
 
     async fn delete_ref(&self, n: &RefName, expected: Hash) -> Result<()> {

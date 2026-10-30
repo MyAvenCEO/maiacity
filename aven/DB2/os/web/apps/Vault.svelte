@@ -83,33 +83,28 @@
 <style>
 	main {
 		display: grid;
-		gap: 16px;
-		padding: 20px 16px;
-	}
-
-	.card {
-		padding: 14px;
-		background: var(--surface);
-		border: 1px solid var(--line);
-		border-radius: 10px;
+		gap: 20px;
+		max-width: 880px;
+		margin: 0 auto;
+		padding: 28px 16px 48px;
 	}
 
 	.head {
 		display: flex;
 		align-items: center;
-		gap: 12px;
-		margin-bottom: 12px;
+		gap: 14px;
+		margin-bottom: 18px;
 	}
 
 	h1 {
 		margin: 0;
-		font-size: 20px;
+		font-size: 28px;
 		line-height: 1.2;
 	}
 
 	h2 {
-		margin: 0 0 10px;
-		font-size: 15px;
+		margin: 0 0 14px;
+		font-size: 20px;
 	}
 
 	small,
@@ -121,7 +116,7 @@
 	dl {
 		display: grid;
 		grid-template-columns: max-content 1fr;
-		gap: 2px 14px;
+		gap: 8px 16px;
 		margin: 0;
 		font-size: 14px;
 	}
@@ -149,15 +144,18 @@
 		align-items: center;
 		gap: 8px;
 		width: fit-content;
-		padding: 4px 8px 4px 4px;
+		padding: 5px 14px 5px 5px;
 		color: inherit;
 		font-size: 14px;
 		text-decoration: none;
-		border-radius: 8px;
+		border-radius: var(--radius-pill);
 	}
 
-	.row:hover,
+	.row:hover {
+		background: var(--sage);
+	}
+
 	.row.here {
-		background: var(--bg);
+		background: var(--accent-soft);
 	}
 </style>

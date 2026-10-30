@@ -13,6 +13,7 @@ use aven_db_core::presence::Presence;
 use aven_db_core::status::TICK_MS;
 use aven_db_core::timeline;
 use aven_db_core::wire::{Decoder, Frame, encode};
+use iroh::PublicKey;
 use iroh::endpoint::Connection;
 use iroh::protocol::{AcceptError, ProtocolHandler};
 use serde_json::json;
@@ -38,6 +39,8 @@ pub struct Hub {
     chats: Option<Chats>,
     /// the room, once joined: lines a peer sends here go on to gossip
     room: Arc<OnceLock<Room>>,
+    /// told each peer that connects, by its key: a file it shared that the Aven Peer couldn't keep is tried again
+    joins: Option<Arc<dyn Fn(PublicKey) + Send + Sync>>,
 }
 
 impl std::fmt::Debug for Hub {
@@ -65,6 +68,7 @@ impl Hub {
             door,
             chats: None,
             room: Arc::new(OnceLock::new()),
+            joins: None,
         };
         hub.tell();
         hub
@@ -74,6 +78,12 @@ impl Hub {
     pub fn with_chats(mut self, chats: Chats, room: Arc<OnceLock<Room>>) -> Self {
         self.chats = Some(chats);
         self.room = room;
+        self
+    }
+
+    /// The hub that tells `joins` of each peer that connects.
+    pub fn with_joins(mut self, joins: Arc<dyn Fn(PublicKey) + Send + Sync>) -> Self {
+        self.joins = Some(joins);
         self
     }
 
@@ -252,6 +262,9 @@ impl ProtocolHandler for Hub {
         let key = conn.remote_id();
         let peer = self.members.name(&key);
         self.change(true, &peer);
+        if let Some(joins) = &self.joins {
+            joins(key);
+        }
         self.note("joined", json!({ "from": peer, "path": link::path(&conn) }));
         let served = self.serve(&conn, &peer).await;
         self.change(false, &peer);

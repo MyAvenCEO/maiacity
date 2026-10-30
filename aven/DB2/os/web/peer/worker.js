@@ -45,19 +45,10 @@ function tell(line) {
 }
 
 // A browser's own device key, on an Aven Peer's host without a cast (PRODUCTION.md, Part A): kept in the Peer-Light's
-// store (the ref `device-key`), made here the first time. An older Peer-Light kept it in the file `device-key` at
-// OPFS's root: the store adopts it, and the file goes, so a browser keeps the key its vault knows. It never leaves the
-// browser.
+// store (the ref `device-key`), made here the first time. It never leaves the browser.
 async function deviceSecret() {
-	const root = await navigator.storage.getDirectory();
-	let older = null;
-	try {
-		older = (await (await (await root.getFileHandle('device-key')).getFile()).text()).trim();
-	} catch {}
-	const fresh = () => [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, '0')).join('');
-	const secret = await light.deviceSecret(/^[0-9a-f]{64}$/.test(older ?? '') ? older : fresh());
-	if (older !== null) await root.removeEntry('device-key').catch(() => {});
-	return secret;
+	const fresh = [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, '0')).join('');
+	return light.deviceSecret(fresh);
 }
 
 // The Peer-Light is configured, never built for a place: its name, secret seed and the Aven Peer's key come from the

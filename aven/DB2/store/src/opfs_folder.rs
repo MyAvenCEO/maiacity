@@ -69,15 +69,42 @@ async fn subdir(dir: &FileSystemDirectoryHandle, name: &str) -> Result<FileSyste
     Ok(wait(dir.get_directory_handle_with_options(name, &options)).await?.unchecked_into())
 }
 
+/// Removes everything in this origin's private file system: what an older avenOS left there, before a store of this
+/// version is made (`backend::opfs_or_reset`). Every folder on it must have been let go, so no handle is open.
+pub async fn clear_origin() -> Result<()> {
+    let dir = root().await?;
+    let keys = dir.keys();
+    let mut names = Vec::new();
+    loop {
+        let next = wait(keys.next().map_err(backend)?).await?;
+        if Reflect::get(&next, &"done".into()).map_err(backend)?.is_truthy() {
+            break;
+        }
+        if let Some(name) = Reflect::get(&next, &"value".into()).map_err(backend)?.as_string() {
+            names.push(name);
+        }
+    }
+    // removeEntry(name, { recursive: true }), through Reflect: web-sys's options type is a feature the store needn't add
+    let remove: Function = Reflect::get(&dir, &"removeEntry".into()).map_err(backend)?.unchecked_into();
+    let options = js_sys::Object::new();
+    Reflect::set(&options, &"recursive".into(), &JsValue::TRUE).map_err(backend)?;
+    for name in names {
+        let promise: Promise = remove.call2(&dir, &name.into(), &options).map_err(backend)?.unchecked_into();
+        wait(promise).await?;
+    }
+    Ok(())
+}
+
 impl OpfsFolder {
-    /// The folder `root` (such as `/store/`) in this origin's private file system, with its `blobs`, `refs` and `tmp`.
+    /// The folder `root` (such as `/store/`) in this origin's private file system, with its `blobs`, `refs`, `tmp` and
+    /// `meta`.
     pub async fn open(root_path: &str) -> Result<Self> {
         let mut dir = root().await?;
         for part in root_path.split('/').filter(|p| !p.is_empty()) {
             dir = subdir(&dir, part).await?;
         }
         let mut dirs = Vec::new();
-        for name in ["blobs", "refs", "tmp"] {
+        for name in ["blobs", "refs", "tmp", "meta"] {
             dirs.push((name, subdir(&dir, name).await?));
         }
         Ok(Self { dirs, open: RefCell::new(Vec::new()) })

@@ -167,6 +167,14 @@ def hashes : List Json :=
   Store.hashExamples.map fun (s, _) =>
     vector s!"{s.length} characters" (Json.mkObj [("hash", s)]) (toJson (Store.validHash s))
 
+/-- A ref's text at rest: what a hash is written as, and what each text reads back as. -/
+def refs : List Json :=
+  (Store.refExamples.map fun (s, r) =>
+    vector s!"stored {s.quote}" (Json.mkObj [("stored", s)]) (Json.mkObj [("reads", toJson r)])) ++
+  [vector "written" (Json.mkObj [("hash", Store.nm (Store.bytes "a ref"))])
+    (Json.mkObj [("stored", Store.refText (Store.nm (Store.bytes "a ref")))]),
+   vector "a browser store's version" (Json.mkObj []) (Json.mkObj [("version", Store.version)])]
+
 /-! ## The chat -/
 
 open Chat in
@@ -382,6 +390,6 @@ def main (args : List String) : IO Unit := do
   let dir : System.FilePath := args.headD "vectors"
   IO.FS.createDirAll dir
   for (file, vs) in [("status.json", status), ("presence.json", presence), ("timeline.json", timeline),
-      ("wire.json", wire), ("store.json", store), ("hashes.json", hashes),
+      ("wire.json", wire), ("store.json", store), ("hashes.json", hashes), ("refs.json", refs),
       ("chat.json", chat), ("files.json", files), ("chats.json", chats)] do
     IO.FS.writeFile (dir / file) (render vs)

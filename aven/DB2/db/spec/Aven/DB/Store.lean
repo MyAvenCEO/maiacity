@@ -30,6 +30,11 @@ touched. The model is parametric in the hash `H`; `Blake3.hash` is the store's. 
   writers that all expect the same value, exactly the first is done (`one_wins`).
 - **Refs and blobs stay apart** (`refs_apart`, `blobs_apart`).
 - **A size is the blob's length** (`size_get`): `size` says what `get` would hold, without the bytes.
+- **A ref at rest is its hash and a newline** (`refText`), in every driver, and reads back as its hash
+  (`readRef_refText`); nothing else reads as a ref (`readRef_only_refText`), the bare hash included
+  (`readRef_bare_refused`).
+- **A browser's store says its version** (`Kept`, `version`): one without exactly this version's marker opens as the
+  empty store, its origin cleared (`open_unmarked`); one with it opens as it is (`open_marked`).
 
 `lake exe vectors` exports the examples below and generated traces (`vectors/store.json`), and the conformance suite
 (`store/src/conformance.rs`) replays them on every backend: memory, a folder, S3 and OPFS.
@@ -331,6 +336,66 @@ theorem blobs_apart {s : Store} (op : Op) (r : op.isRef = true) : (step H s op).
 theorem size_get (s : Store) (h : Hash) :
     ∃ b, step H s (.get h) = (s, .bytes b) ∧ step H s (.size h) = (s, .size (b.map List.length)) :=
   ⟨_, rfl, rfl⟩
+
+/-! ## A ref at rest -/
+
+/-- How a ref holds its hash at rest, in every driver: the hash and a newline. -/
+def refText (h : Hash) : String := h ++ "\n"
+
+/-- A ref's text read back: exactly a hash in the store's spelling and a newline, or nothing. -/
+def readRef (s : String) : Option Hash :=
+  if s.toList.getLast? = some '\n' then
+    let t := String.ofList s.toList.dropLast
+    if validHash t then some t else none
+  else none
+
+/-- What a ref is written as reads back as its hash. -/
+theorem readRef_refText {h : Hash} (v : validHash h = true) : readRef (refText h) = some h := by
+  simp [readRef, refText, String.toList_append, v]
+
+/-- A bare hash is no ref at rest: a hash never ends in a newline. -/
+theorem readRef_bare_refused {h : Hash} (v : validHash h = true) : readRef h = none := by
+  have last : h.toList.getLast? ≠ some '\n' := by
+    intro e
+    have m := List.mem_of_getLast? e
+    simp only [validHash, Bool.and_eq_true, String.all_bool_eq, List.all_eq_true] at v
+    have := v.2 '\n' m
+    simp at this
+  simp [readRef, last]
+
+/-- Whatever reads as a ref was written as one: exactly a hash and a newline. -/
+theorem readRef_only_refText {s : String} {h : Hash} (r : readRef s = some h) : s = refText h ∧ validHash h = true := by
+  unfold readRef at r
+  split at r
+  · next last =>
+    simp only at r
+    split at r
+    · next v =>
+      cases r
+      refine ⟨?_, v⟩
+      apply String.toList_injective
+      obtain ⟨ys, e⟩ := List.getLast?_eq_some_iff.mp last
+      simp [refText, String.toList_append, e]
+    · cases r
+  · cases r
+
+/-! ## A browser's store and its version -/
+
+/-- What `meta/version` holds in a store this avenDB laid out. -/
+def version : String := "avenDB store 1\n"
+
+/-- A browser's store as its origin keeps it: the marker it was laid out with, if any, and what it holds. -/
+structure Kept where
+  marker : Option String
+  store : Store
+
+/-- Opening a browser's store: as it is with this version's marker, else the empty store, its origin cleared. An
+older avenOS's store is never read (Samuel, 30 Oct 2026: browsers may be reset; no migration). -/
+def Kept.open (d : Kept) : Store := if d.marker = some version then d.store else {}
+
+theorem open_marked {d : Kept} (m : d.marker = some version) : d.open = d.store := by simp [Kept.open, m]
+
+theorem open_unmarked {d : Kept} (m : d.marker ≠ some version) : d.open = {} := by simp [Kept.open, m]
 
 end Store
 end Aven.DB

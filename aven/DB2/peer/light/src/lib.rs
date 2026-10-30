@@ -327,10 +327,12 @@ fn door(endpoint: &Endpoint, bound: u32, name: String, notes: Notes) {
 }
 
 // This worker's store, in this origin's OPFS under `/store/`, opened once: the one writer holds its handles until the
-// worker ends (store/README.md, the opfs driver). The crate also builds natively, for the workspace's tests; there it
-// has no OPFS, and keeps its store in memory.
+// worker ends (store/README.md, the opfs driver). What an older avenOS left in this origin is cleared, and the store
+// made fresh: `RESET` says why until `start` tells the page (a `reset` line). The crate also builds natively, for the
+// workspace's tests; there it has no OPFS, and keeps its store in memory.
 thread_local! {
     static STORE: RefCell<Option<Shared>> = const { RefCell::new(None) };
+    static RESET: RefCell<Option<String>> = const { RefCell::new(None) };
 }
 
 async fn store() -> Result<(Shared, &'static str), JsError> {
@@ -339,7 +341,11 @@ async fn store() -> Result<(Shared, &'static str), JsError> {
     }
     #[cfg(target_arch = "wasm32")]
     #[allow(clippy::arc_with_non_send_sync)]
-    let s: Shared = Arc::new(backend::opfs("/store/").await.map_err(js)?);
+    let s: Shared = {
+        let (store, reset) = backend::opfs_or_reset("/store/").await.map_err(js)?;
+        RESET.with(|r| *r.borrow_mut() = reset);
+        Arc::new(store)
+    };
     #[cfg(not(target_arch = "wasm32"))]
     let s: Shared = Arc::new(backend::memory().map_err(js)?);
     STORE.with(|kept| *kept.borrow_mut() = Some(s.clone()));
@@ -352,8 +358,7 @@ const KIND: &str = "opfs";
 const KIND: &str = "memory";
 
 /// This browser's device secret (PRODUCTION.md, Part A), kept in its store under the ref `device-key`: the one there,
-/// or else `candidate` (the page's: an older Peer-Light's file in OPFS, or new random bytes), stored now. Returns the
-/// secret the Peer-Light goes by.
+/// or else `candidate` (new random bytes from the page), stored now. Returns the secret the Peer-Light goes by.
 #[wasm_bindgen(js_name = deviceSecret)]
 pub async fn device_secret(candidate: String) -> Result<String, JsError> {
     use aven_db_store::RefName;
@@ -473,6 +478,10 @@ async fn bind(token: Option<String>) -> Result<(), JsError> {
     ));
     // the one record it keeps, in this origin's OPFS: its first start, found again after a reload
     let (store, kind) = store().await?;
+    // this origin held what an older avenOS left: it was cleared, so this browser is a new device, which signs in again
+    if let Some(why) = RESET.with(|r| r.borrow_mut().take()) {
+        notes(timeline::line(now(), &name, "reset", serde_json::json!({ "why": why })));
+    }
     let kept = record::first_start(&*store, &name, now())
         .await
         .map_err(js)?;

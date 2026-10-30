@@ -8,6 +8,9 @@ import App from './App.svelte';
 import Network from './Network.svelte';
 import { hostNetwork, net, runNetwork, storageBlocked } from './network.svelte.js';
 import { runBox, runLight } from './peers.svelte.js';
+// the fonts are self-hosted from their packages: avenOS calls no third party
+import '@fontsource-variable/fraunces/opsz.css';
+import '@fontsource-variable/inter';
 import './style.css';
 
 const device = Object.keys(cast.peers).find((id) => cast.peers[id].origin === location.hostname);

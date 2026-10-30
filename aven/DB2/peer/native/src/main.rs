@@ -48,7 +48,7 @@
 //! room, over iroh-gossip on the same Router; the Aven Peer joins it first and says once who joined. Every Peer serves its
 //! store's blobs over iroh-blobs (`/iroh-bytes/4`) to members only (store/README.md, "How a file travels").
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::net::SocketAddr;
@@ -68,7 +68,7 @@ use aven_peer::room::Room;
 use aven_peer::{Notes, blobs, door, door::Door, hub::Hub, keep, link, now, record, tls};
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
-use iroh::{Endpoint, EndpointAddr, RelayMap, RelayMode, RelayUrl};
+use iroh::{Endpoint, EndpointAddr, PublicKey, RelayMap, RelayMode, RelayUrl};
 use iroh_gossip::Gossip;
 use serde_json::json;
 use tokio::time::Duration;
@@ -365,34 +365,46 @@ async fn main() -> Result<(), Error> {
     // and iroh-blobs' protocol, the files' bytes from this peer's store, to members only (store/README.md)
     let held = Blobs::new(store.clone());
     // the Aven Peer keeps every file a member says in the city-dome: each `file` line it chains, fetched whole from
-    // the device whose chain it is on (store/README.md, "How a file travels", 2)
-    if relay {
-        let (endpoint, at, held, store, me, notes) = (
+    // the device whose chain it is on (store/README.md, "How a file travels", 2). A file it couldn't keep, its sender
+    // gone, waits until that device next connects; on start, it tries every file line it holds again
+    let waiting: Arc<Mutex<BTreeMap<PublicKey, Vec<Announcement>>>> = Arc::default();
+    let keeps: chats::OnFile = {
+        let (endpoint, at, held, store, me, notes, waiting) = (
             endpoint.clone(),
             relay_url.clone(),
             held.clone(),
             store.clone(),
             me.clone(),
             notes.clone(),
+            waiting.clone(),
         );
-        chats.on_file(Arc::new(move |from, file: Announcement| {
-            let (endpoint, at, held, store, me, notes) = (
+        Arc::new(move |from, file: Announcement| {
+            let (endpoint, at, held, store, me, notes, waiting) = (
                 endpoint.clone(),
                 at.clone(),
                 held.clone(),
                 store.clone(),
                 me.clone(),
                 notes.clone(),
+                waiting.clone(),
             );
             tokio::spawn(async move {
-                if let Ok(index) = file.file.parse() {
-                    let _ = keep::keep(
-                        &endpoint, &at, &held, &*store, from, index, file.size, &me, &notes,
-                    )
-                    .await;
+                let Ok(index) = file.file.parse() else { return };
+                let kept = keep::keep(
+                    &endpoint, &at, &held, &*store, from, index, file.size, &me, &notes,
+                )
+                .await;
+                if kept.is_err() {
+                    waiting.lock().unwrap().entry(from).or_default().push(file);
                 }
             });
-        }));
+        })
+    };
+    if relay {
+        chats.on_file(keeps.clone());
+        for (from, file) in chats.files() {
+            keeps(from, file);
+        }
     }
     let router = Router::builder(endpoint.clone())
         .accept(iroh_gossip::ALPN, gossip.clone())
@@ -406,7 +418,13 @@ async fn main() -> Result<(), Error> {
                 .accept(
                     ALPN,
                     Hub::new(me.clone(), members, notes.clone(), door.clone())
-                        .with_chats(chats.clone(), joined.clone()),
+                        .with_chats(chats.clone(), joined.clone())
+                        .with_joins(Arc::new(move |key| {
+                            let files = waiting.lock().unwrap().remove(&key);
+                            for file in files.into_iter().flatten() {
+                                keeps(key, file);
+                            }
+                        })),
                 )
                 .spawn(),
             vec![],
