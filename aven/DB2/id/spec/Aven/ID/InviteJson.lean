@@ -80,11 +80,11 @@ def MemberOp.challenge : MemberOp → Json
   | .join k p d t => challengeOf (MemberOp.joinOf k p d t).1.text
   | _ => Json.null
 
-/-- A trace's vector: the server, the keys asked at the door and the steps; for each step the challenge, whether the
+/-- A trace's vector: the founding (under the key `server`), the keys asked at the door and the steps; for each step the challenge, whether the
 door would let its sender in for it beforehand (a claim's, a sign-in's or a join's), the answer, and after it the tree,
 the members, the invites and what the door says of each key. -/
 def memberVector (m : Members) (ops : List MemberOp) : Json × Json :=
-  let input := Json.mkObj [("server", m.server.json), ("doorKeys", toJson doorKeys),
+  let input := Json.mkObj [("server", m.founding.json), ("doorKeys", toJson doorKeys),
     ("ops", Json.arr (ops.map MemberOp.json).toArray)]
   let befores := m :: (m.run ops).map (·.2)
   let steps := ((ops.zip befores).zip (m.run ops)).map fun ((op, before), answer, m') =>

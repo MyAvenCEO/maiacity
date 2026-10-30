@@ -122,9 +122,9 @@ def passkeys : List Json :=
 def generatedTraces : Nat := 40
 
 def claims : List Json :=
-  (claimExamples.map fun (name, server, ops, _) => let (i, e) := traceVector server ops; vector name i e) ++
+  (claimExamples.map fun (name, founding, ops, _) => let (i, e) := traceVector founding ops; vector name i e) ++
   (List.range generatedTraces).map fun n =>
-    let (i, e) := traceVector boxServer (randomTrace n)
+    let (i, e) := traceVector boxFounding (randomTrace n)
     vector s!"generated trace, seed {n}" i e
 
 def generatedMemberTraces : Nat := 40
