@@ -5,8 +5,8 @@ the bottom up: each layer uses only the layers below it. The learnings behind ea
 [`README.md`](README.md). Where the two disagree, this file wins.
 
 Version 1 is a standalone app, in memory: a minimal todo app on one device, with no network, no avenDB and no
-capabilities. Every layer is shaped so that later the same actors run peer to peer, persist everything in avenDB on
-Loro documents, and are guarded by capabilities from [`../ID/caps`](../ID/caps/README.md), without changing the
+capabilities. Every layer is shaped so that later the same actors run peer to peer, persist everything in avenDB Docs,
+and are guarded by capabilities from [`../ID/caps`](../ID/caps/README.md), without changing the
 layers above.
 
 1. [The layers](#1-the-layers)
@@ -81,7 +81,7 @@ record never needs its inbox Docs. They are how messages travel, and once journa
 A Doc holds two things:
 
 - **Logs**: append-only, written only by the Doc's writer. Each entry is a record named `(writer, seq)`, where `seq` counts
-  the writer's entries from 1. That is how a Loro document names its operations (peer and counter), so a log maps
+  the writer's entries from 1. That is how Loro names its operations (peer and counter), so a log maps
   onto a Loro list one to one.
 - **Fields**: named values that the writer replaces whole (`def`, `state`).
 
@@ -92,7 +92,7 @@ Everything is kept: every message, every turn, every trace. Compacting old journ
 decision.
 
 In version 1 Docs live in memory, behind a small interface: append to a log, read a log from a position, set and
-get a field, take a snapshot. Later the same interface is a Loro document in avenDB, an avenDB Doc (section 11).
+get a field, take a snapshot. Later the same interface is an avenDB Doc, with Loro underneath (section 11).
 
 ## 4. Layer 2: messages
 
@@ -157,15 +157,38 @@ the WebAssembly boundary's, not the part's.
 | `json-runtime` | A declarative turn: for each message, updates to state (set, merge, append, remove by path) and messages to send. No code, so it always ends | A turn's output | avenVIBES's declarative inbox, where a payload merges into state with no code at all |
 | `js-runtime` | JavaScript: `init`, `turn`, `present`, `preview` | A turn's output, or a view model | QuickJS compiled to WebAssembly. maiaCITY's logic core: a seeded random, a frozen clock, no binary buffers |
 | `prolog-runtime` | A machine: fact-only Prolog with a real term parser | Whether the machine is well formed, and which messages are legal in a state | avenOS's `machine.ts`, without its comma splitting (README, weak spot 12) |
-| `view-runtime` | A view: an allowlisted tag tree with `$`, `$$`, `$each`, `$on` and components | A safe node tree for one viewer | avenVIBES's view grammar and its components; maiaCITY's view engine and Markdown engine, which write every tag themselves |
-| `css-runtime` | A style: tokens, component styles, variants and states as data | Scoped CSS text, from allowlisted properties and values only | avenVIBES's style engine and states; raw CSS is never accepted |
+| `view-runtime` | A view: an allowlisted tag tree with `$`, `$$`, `$each`, `$on` and components | A safe node tree for one viewer | avenVIBES's view grammar; aven-brands' component library; maiaCITY's view engine and Markdown engine, which write every tag themselves |
+| `css-runtime` | A style: tokens, component styles, variants and states as data | Scoped CSS text, from allowlisted properties and values only | avenVIBES's style engine and its eight states; aven-brands' brands as data. Raw CSS is never accepted |
 
 Later: `markdown-runtime`, `math-runtime`, `three-runtime`, `lean-runtime`, and actors written in Rust as WebAssembly.
 
-**Components** are a view-runtime concept, taken from avenVIBES. A component is one type: it has props in, events
-out and slots for children, plus variants and states. A leaf is simply a component with no slots. A placement passes
-props and wiring, and an unknown prop is an error, never silently ignored. A component sees only its own props.
-Components hold no state; state belongs to actors.
+**Components** are what faces are built from, after avenVIBES and the component library of aven-brands
+(`brands/CEO/design-system/src/brand/actors`: 53 components, each one JSON Value). aven-brands calls them actors;
+here they are **components**, because they hold no state and have no mailbox, and "actor" means one thing. A
+component is a Value with:
+
+| Field | Meaning |
+| --- | --- |
+| `name`, `description` | Its name, and why it is the way it is. A `$description` key is documentation at any depth |
+| `interface` | `props` in, `events` out, `slots` for children. A leaf is a component with no slots |
+| `view` | Its tag tree, in the view-runtime's grammar |
+| `styling` | `base`; `variants` as separate axes; `states`; `parts`; `reducedMotion` |
+| `a11y` | What its accessible name and roles must be |
+
+The rules the runtimes enforce:
+
+- **A placement is checked.** An unknown prop, slot or variant is an error, never silently ignored. A component sees
+  only its own props, never its placer's state.
+- **Variants are axes that answer different questions**: what the thing means, what shape it has, how big it is.
+  A danger icon button is `variant: danger` and `shape: icon`, never a variant of its own.
+- **Anything true only for a moment is a state, not a variant.** There are eight: default, hover, focus, active,
+  disabled, loading, error, selected. The runtime fixes their selectors (focus is `:focus-visible`, loading is
+  `aria-busy`, selected is `aria-selected`, `aria-pressed` or `aria-current`). An interactive component must declare
+  hover, focus, active and disabled, and the library fails to load without them.
+- **Styles stay inside their component.** A component's custom properties are declared on itself, never globally. It
+  sizes by container queries, never by the viewport; the only media query is `prefers-reduced-motion`.
+- **The brand is data**: tones, roles, scales and tokens. The css-runtime generates every rule from it and from the
+  components' styling. It never takes CSS text.
 
 ## 6. Layer 4: actors
 
@@ -279,7 +302,9 @@ The host is the page. It runs the kernel in a worker, and holds one small piece 
 
 ## 9. Layer 7: the version 1 app
 
-A minimal todo app, standalone, in memory, in one page:
+The app is nothing but actor instances on the engine. It has no code of its own beyond its definitions and their
+parts, which are Values: the engine, the runtimes and the host are generic and know nothing about todos. Starting the
+app spawns one `list`; each task is one more actor instance, spawned on demand. Standalone, in memory, in one page:
 
 | Actor | Definition | Runtime |
 | --- | --- | --- |
@@ -291,7 +316,7 @@ A minimal todo app, standalone, in memory, in one page:
 
 A person adds a task: the face sends `add {title}` to `list`, which asks `kernel` to spawn a `task`. Starting or
 finishing a task is a tell to that task, legal only as its machine allows. Each task tells `list` when it changes, and
-the face redraws. Every message, turn and trace stays in the actors' documents, in memory.
+the face redraws. Every message, turn and trace stays in the actors' Docs, in memory.
 
 ## 10. Laws
 
@@ -398,8 +423,7 @@ Decided here, on those grounds:
 - Faces render into shadow roots through the applier. Opaque frames are for runtimes that run scripts in the page,
   which version 1 has none of.
 
-Open:
+- Components follow aven-brands' component library and avenVIBES (section 5), named components because they hold no
+  state.
 
-1. **The components library of the "avenDB website"** you named: where it lives. It is not in any repository this
-   session can reach. Until then, the view-runtime's components follow avenVIBES's `ActorDef` and maiaCITY's `maia-*`
-   view components.
+Open: nothing for version 1.

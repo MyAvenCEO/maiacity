@@ -37,6 +37,7 @@ demand, fully generic, without trusting them:
 | --- | --- | --- |
 | avenOS (`MyAvenCEO/avenOS`) | `main` 8310bc3, 16 Sep 2026 | The desktop app: an in-app actor mesh (`libs/aven-actors`, `app/src/lib/actors`), a durable server runner (`services/actor-runner`) and Skill Studio |
 | avenVIBES (`MyAvenCEO/avenVIBES`) | b893b15, 30 Aug 2026 | The UI engine avenOS's actors paint with: views as JSON, rendered into a shadow root |
+| aven-brands (`MyAvenCEO/aven-brands`) | 88a8427, 4 Sep 2026 | avenCEO's and avenYMA's brands as data, and the component library avenCEO's site is built from: 53 components as JSON, rendered by avenVIBES |
 | avenVICTORIO | `main` e1c15a8, 23 Sep 2026 | A restaurant's team app. It ported the avenOS mesh to a server on 15 Sep and changed it in 192 commits over nine days of real use |
 | Abject (`mempko/abject`, abject.world) | v0.16.1, 27 Oct 2026 | An open-source "Abject-oriented OS" whose ideas avenOS borrowed and named deviations from |
 | maiaCITY | this repository | The deterministic logic core and the view host in `aven/kernel/sandbox`; avenDB's rules in `aven/DB2` |
@@ -408,6 +409,23 @@ whose renderer writes every tag itself from an allowlist, as maiaCITY's Markdown
 same view to a string at build time and to the DOM at run time; two runtimes for one format must give the same result,
 and a test holds them to it. Abject runs other languages as WebAssembly with only three imports (send a message, log,
 read the clock).
+
+From aven-brands' component library (`brands/CEO/design-system/src/brand/actors`, `actors.ts`) and avenVIBES's
+`states.ts`:
+
+1. **One component type,** with `props`, `events` and `slots`; a leaf has no slots. aven-brands calls components
+   actors, after avenVIBES's `ActorDef`, which made one word mean two things.
+2. **Variants are axes** that answer different questions: what a button means, its shape, its size. Before the split,
+   a destructive icon button could not be expressed.
+3. **A moment is a state, not a variant.** `unavailable` and `success` were variants that meant states; eight states
+   with fixed selectors replaced them.
+4. **The state contract is checked at load.** An interactive component that does not declare hover, focus, active and
+   disabled fails the build, because those states never show in a screenshot of the resting component.
+5. **Scope everything to the component.** Its custom properties are declared on itself, not at the root, so two brands
+   on one page cannot overwrite each other. It sizes by container queries; the library has no viewport media query.
+6. **A brand is data.** The generator, utilities and scanner know no particular brand. Generated CSS is committed,
+   so a hex edited anywhere but the brand's definition shows as drift.
+7. **Decisions travel with the component.** `$description` keys at any depth say why each choice was made.
 
 ## 10. The design
 
