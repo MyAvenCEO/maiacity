@@ -586,7 +586,10 @@ on field values in footprints, which stay caps' own.
 
 ## Open questions
 
-1. Which peer serves a catch-up: any member that holds the document, or the Aven Peer first?
+1. Which peer serves a catch-up: answered for the chat in [`PEERS.md`](../../PEERS.md) (#1537). Every native Peer
+   answers from its own store; a peer links to up to three members and asks whichever announced the newest signed tip,
+   then the next, in the want queue's order of sources: own devices, other readers, keepers. Signed log tips show what
+   a peer withheld.
 2. What is a device's default query bound?
 3. How many documents share a gossip topic, when a device holds thousands?
 4. Delta granularity: rows (proposed), fields, or Loro updates?
