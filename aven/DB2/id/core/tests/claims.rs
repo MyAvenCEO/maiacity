@@ -17,6 +17,7 @@ fn error(e: &ClaimError) -> Value {
         ClaimError::Invalid(why) => json!({ "error": "invalid", "invalid": invalid(why) }),
         ClaimError::Unclaimed => json!({ "error": "unclaimed" }),
         ClaimError::Known => json!({ "error": "known" }),
+        ClaimError::Counter => json!({ "error": "counter" }),
     }
 }
 

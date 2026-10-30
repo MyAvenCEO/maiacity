@@ -53,6 +53,8 @@ structure Tamper where
   origin : String := "http://localhost:5174"
   rpId : String := "localhost"
   flags : UInt8 := 5
+  /-- the passkey's signature counter; synced passkeys keep it at 0 -/
+  counter : Nat := 0
   deriving DecidableEq, Repr, Inhabited
 
 inductive Op where
@@ -67,7 +69,7 @@ inductive Op where
 def blank : Assertion := ⟨"", [], "", ("", [])⟩
 
 def assert (t : Tamper) (text passkey : String) : Assertion :=
-  made t.type t.origin t.rpId (challengeOf text) (passkeyId passkey) t.flags
+  made t.type t.origin t.rpId (challengeOf text) (passkeyId passkey) t.flags false t.counter
 
 /-- The claim a browser sends, and the key of the browser that sends it. -/
 def Op.claimOf (passkey device : String) (t : Tamper) : Claim × String :=
@@ -158,6 +160,12 @@ def claimExamples : List (String × Server × List Op × List (Option ClaimError
     [.claim "a" "1" { person := some "aven" }], [(no (.invalid (.duplicate "aven")), 1)]),
   ("a claim naming the guardian's key as its browser", boxServer,
     [.claim "a" "1" { device := some guardianId }], [(no (.invalid (.deviceKeyOwns guardianId "person-a")), 1)]),
+  ("a passkey that counts must count up", boxServer,
+    [.claim "a" "1" { counter := 5 }, .signIn "a" "2" { counter := 5 }, .signIn "a" "2" { counter := 3 },
+      .signIn "a" "2" { counter := 6 }, .restart, .signIn "a" "3" { counter := 0 }, .signIn "a" "3" { counter := 7 }],
+    [(ok, 2), (no .counter, 2), (no .counter, 2), (ok, 3), (ok, 3), (no .counter, 3), (ok, 4)]),
+  ("a synced passkey keeps its counter at 0", boxServer,
+    [.claim "a" "1" {}, .signIn "a" "2" {}, .signIn "a" "3" {}], [(ok, 2), (ok, 3), (ok, 4)]),
   ("a wipe makes it unclaimed, and the next signup claims it again", boxServer,
     [.claim "a" "1" {}, .signIn "a" "2" {}, .wipe, .signIn "a" "2" {}, .claim "b" "2" {}, .restart],
     [(ok, 2), (ok, 3), (ok, 1), (no .unclaimed, 1), (ok, 2), (ok, 2)])]
