@@ -266,6 +266,12 @@ def chatKept : List (Kept WantKey) := [
     (fun _ => true)).1 ==
   .waiting [(roomKey, .cap), (room, .key)]
 
+-- A page holds at most 3 entries and 1000 bytes: of the room's pending chunks of 400, 400, 400 and 100 bytes, a round
+-- moves the first two (800 bytes; a third would make 1200) and leaves the rest pending.
+#guard (match roundP id ⟨1000, 3⟩ (fun k => if k == room then [400, 400, 400, 100] else []) [] [room] (fun _ => true) with
+  | (.moved _, p, pending') => (p, pending' room)
+  | _ => ([], [])) == ([400, 400], [400, 100])
+
 def wantExamples : List Json := [
   wantVector "a chat room on screen, the outbox first" chatWants chatCaps chatPre
     [(room, 3), (roomKey, 1), (outbox, 2)] [outbox] [outbox] 250 chatKept,
