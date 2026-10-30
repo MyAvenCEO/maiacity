@@ -194,12 +194,20 @@ In `Aven.ID.Network`, with the caps thread (`ticket_once` is there since #1531),
   another claim of its ticket with a smaller hash final, which only an ack that never saw the first ack can do.
 - **`settle_door`:** the door's admitted keys are a function of the settled tree only (`door_from_tree`).
 - **`settle_genesis`:** nothing outside the pinned genesis's descendants changes the tree.
-- **`settle_restore`:** production's stored statements, ordered by their ref names as the Aven Peer stored them,
-  settle to the tree that `Members.restore` gives today. That is the migration's proof: the tree doesn't move when the
-  rule replaces the ref order.
-- **Vectors:** `trees.json`. The same statement sets in many shuffled orders, each with its settled tree, and races:
-  two claims, a claim against a withdrawal, a claim after its ack, two admin devices acking two claims, a list's add
-  against its remove. aven-id, the wasm and avenOS's check load them (README rule 10).
+- **`settle_restore`** (`Aven.ID.Restore`): production's stored statements, ordered by their ref names as the Aven
+  Peer stored them, become tree statements after a genesis, each naming the one before it (`migrate`). Proved: every
+  one of them counts, so the change of rule loses nothing. Checked at every step of every invite trace, the examples
+  and 40 generated ones: the settled door admits exactly the keys `Members.admits` does, and the member vaults are the
+  same (`restore_agrees`). A proof of that agreement for every store is open.
+- **Records** (`Aven.ID.Records`): the record kinds of [6](#6-signed-records-not-a-peers-word), each under its own
+  label, and which is newest: `newest_set` (no order is an input), `newest_signed` (only the device it is about, or a
+  release signer), `newest_agree` (two newest say the same; a split takes the smaller body), `newest_grows`, and
+  `speaks_same` for the wire version ([7](#7-upgrades)).
+- **Vectors:** `settled.json`. The same statement sets in six orders each, with their settled tree: `TreeExamples`,
+  the races one by one (two claims, a claim against a withdrawal, a claim after its ack, two admin devices acking two
+  claims, a list's add against its remove, a statement outside the genesis, a bad one), 40 generated sets, and
+  production's store migrated from the invite traces. `records.json`: records and the newest of each. aven-id, the
+  wasm and avenOS's check load them (README rule 10).
 
 ### The cost: a claim can be undone
 
@@ -222,7 +230,7 @@ claims of its ticket without seeing each other. Both need a leaked link or a dou
 Production is never wiped (PRODUCTION.md). Its store holds the claim, two sign-ins and whatever invites and joins
 milestone 2 adds, under their ref names. The peer reads them as they are and treats the old claim as the genesis's
 past: Samuel signs the genesis once, with his passkey and the guardian's key, naming the old claim's hash.
-`settle_restore` proves the tree doesn't move, and a frozen copy of production's store format is tested, as
+`settle_restore` shows the tree doesn't move, and a frozen copy of production's store format is tested, as
 `id/core/tests/before/` is today.
 
 ## 6. Signed records, not a peer's word
@@ -289,13 +297,13 @@ Six task threads, the Lean first, each in its own folders. Rust threads run in s
 
 ### Thread A: the tree's Lean (`id/spec`, with the caps thread)
 
-`Aven.ID.Network`: statements naming their tips, the genesis, `settle` and the theorems in [5](#lean-first);
-`trees.json` and traces. Also the record kinds of [6](#6-signed-records-not-a-peers-word) as `Aven.Core.Signed`
-labels, and their checks. Comes first; threads B to E build against its vectors.
+`Aven.ID.Network` (the caps thread, #1555): statements naming their tips, the genesis, `settle` and its theorems.
+`Aven.ID.Restore` and `Aven.ID.Records` (this thread): `settle_restore`, the record kinds and their checks;
+`settled.json` and `records.json`. Comes first; threads B to E build against its vectors.
 
 ### Thread B: the tree as a Doc (`id/core`, `peer/native/src/door.rs`, `members.rs`)
 
-aven-id's `settle`, against `trees.json`. Statements stored by hash, not by ref name, and production's refs read as
+aven-id's `settle`, against `settled.json`. Statements stored by hash, not by ref name, and production's refs read as
 they are (`settle_restore`, the frozen format). Any member accepts a statement: it checks it, keeps it, gossips it, and
 settles. Admin devices ack. The Peer refuses flags that disagree with its genesis.
 
@@ -350,6 +358,8 @@ peer served the catch-up.
   an admin is too slow.
 - **A member's relay sees other members' IPs:** the relay list is the admin's choice for that reason. Mixing traffic
   over several relays is not in this plan.
+- **`settle_restore` for every store:** the agreement of the settled door with `Members.admits` is checked on every
+  trace, not yet proved in general: that needs `settle` related to `Members.tree`'s owners and `Tree.actsFor`.
 - **Presence at scale:** a beat per device per step on one topic is fine for the chat's network, but not for millions
   (caps, "Scale").
 
