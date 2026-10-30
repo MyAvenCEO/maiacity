@@ -123,7 +123,9 @@ structure Def where
   sends : List TypeId
   accepts : String → Value → Bool
   machine : Option Machine
-  turn : Value → Message → Given → Option Output
+  /-- The turn: the state, the message, `given` and the current phase, which the kernel holds and hands in, so a
+  statechart's moves can depend on it. -/
+  turn : Value → Message → Given → String → Option Output
   init : Value
 
 def Def.initialPhase (d : Def) : String := (d.machine.map (·.initial)).getD ""

@@ -112,10 +112,10 @@ function connect(port) {
 			self.close();
 			return;
 		}
-		// a statement for the Aven Peer, a line for the chat's room, or a message as it is (the box's check), from the page.
+		// a statement for the Aven Peer, a line for the chat's room or a delete of one, or a message as it is (the box's check), from the page.
 		// The page sends its start with each, which only the first one here uses: a worker no page has started yet (Safari
 		// can hand a page one) starts then, rather than failing on a Peer-Light it never loaded (aven.maia.city, 30 Oct)
-		for (const call of ['send', 'say', 'post', 'post_line']) {
+		for (const call of ['send', 'say', 'retract', 'post', 'post_line']) {
 			if (data?.[call] === undefined) continue;
 			await started;
 			try {

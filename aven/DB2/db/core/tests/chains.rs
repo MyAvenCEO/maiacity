@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use aven_db_core::chain::{Answer, Body, Keeper, Line, missing};
+use aven_db_core::chain::{Answer, Body, Keeper, Line, Retraction, missing};
 use aven_db_core::files::Announcement;
 use serde_json::{Value, json};
 
@@ -30,7 +30,17 @@ fn verify(key: &str, signs: &str, sig: &str) -> bool {
     sig == signature(key, signs)
 }
 
-fn body(b: &Value) -> Body {
+/// The model's body; a retraction's line and previous line by `name` (a label's real hash in a trace).
+fn body(b: &Value, name: &mut impl FnMut(&str) -> String) -> Body {
+    if let Some(t) = b.get("retract") {
+        return Body::Retract(Retraction {
+            target: name(t.as_str().unwrap()),
+            device: b["device"].as_str().unwrap().to_string(),
+            seq: b["seq"].as_u64().unwrap(),
+            prev: b["prev"].as_str().map(&mut *name),
+            at: b["at"].as_u64().unwrap(),
+        });
+    }
     match b.get("text") {
         Some(t) => Body::Text(t.as_str().unwrap().to_string()),
         None => Body::File(Announcement {
@@ -42,9 +52,9 @@ fn body(b: &Value) -> Body {
     }
 }
 
-/// The model's line as a real one: its previous line by hash, signed over what it really signs unless the model's was
-/// tampered with.
-fn line(l: &Value, prev: Option<String>) -> Line {
+/// The model's line as a real one: its previous line (and a retraction's lines) by hash, signed over what it really
+/// signs unless the model's was tampered with.
+fn line(l: &Value, prev: Option<String>, name: &mut impl FnMut(&str) -> String) -> Line {
     let text = |k: &str| l[k].as_str().unwrap().to_string();
     let mut line = Line {
         network: text("network"),
@@ -53,10 +63,11 @@ fn line(l: &Value, prev: Option<String>) -> Line {
         prev,
         at: l["at"].as_u64().unwrap(),
         sig: String::new(),
-        body: body(&l["body"]),
+        body: body(&l["body"], name),
     };
     let model = Line {
         prev: l["prev"].as_str().map(str::to_string),
+        body: body(&l["body"], &mut |s: &str| s.to_string()),
         ..line.clone()
     };
     line.sig = if model.signs() == text("signed") {
@@ -72,6 +83,8 @@ fn line(l: &Value, prev: Option<String>) -> Line {
 struct Labels {
     lines: BTreeMap<String, Value>,
     named: BTreeMap<String, (Line, String)>,
+    /// labels never heard, by their stand-in hash: lines only named, by a previous line or a retraction
+    unheard: BTreeMap<String, String>,
 }
 
 impl Labels {
@@ -80,10 +93,12 @@ impl Labels {
             return id.clone();
         }
         let Some(l) = self.lines.get(label).cloned() else {
-            return blake3::hash(label.as_bytes()).to_hex().to_string();
+            let id = blake3::hash(label.as_bytes()).to_hex().to_string();
+            self.unheard.insert(id.clone(), label.to_string());
+            return id;
         };
         let prev = l["prev"].as_str().map(|p| self.resolve(p));
-        let line = line(&l, prev);
+        let line = line(&l, prev, &mut |p: &str| self.resolve(p));
         let id = blake3::hash(&line.blob()).to_hex().to_string();
         // a well-formed line reads back as itself, field by field; one whose type breaks the line can't, which is why
         // it is refused. The model's labels aren't hex, so the canonical reading has vectors of its own (`read`)
@@ -124,7 +139,9 @@ fn what_a_line_signs_follows_the_vectors() {
     assert!(!all.is_empty());
     for v in all {
         let l = &v["input"]["line"];
-        let line = line(l, l["prev"].as_str().map(str::to_string));
+        let line = line(l, l["prev"].as_str().map(str::to_string), &mut |s: &str| {
+            s.to_string()
+        });
         assert_eq!(
             json!({ "signs": line.signs() }),
             v["expected"],
@@ -157,6 +174,9 @@ fn reads_follow_the_vectors() {
                     Body::File(f) => {
                         json!({ "file": f.file, "size": f.size, "name": f.name, "type": f.kind })
                     }
+                    Body::Retract(r) => json!({ "retract": r.target, "device": r.device,
+                        "seq": r.seq, "prev": r.prev, "at": r.at }),
+                    Body::Redacted => json!({ "redacted": true }),
                 };
                 json!({ "line": fields })
             }
@@ -190,6 +210,8 @@ fn chains_follow_the_vectors() {
             .map(|m| m.as_str().unwrap())
             .collect();
         let member = |k: &str| members.contains(&k);
+        let vaults = &v["input"]["vaults"];
+        let author = |d: &str| vaults[d].as_str().unwrap_or(d).to_string();
         let steps = v["input"]["steps"].as_array().unwrap();
         let mut labels = Labels {
             lines: steps
@@ -198,33 +220,49 @@ fn chains_follow_the_vectors() {
                 .map(|l| (l["id"].as_str().unwrap().to_string(), l.clone()))
                 .collect(),
             named: BTreeMap::new(),
+            unheard: BTreeMap::new(),
         };
         let all: Vec<String> = labels.lines.keys().cloned().collect();
-        let label: BTreeMap<String, String> =
+        let mut label: BTreeMap<String, String> =
             all.iter().map(|l| (labels.get(l).1, l.clone())).collect();
+        label.extend(labels.unheard.clone());
+        let files = |k: &Keeper| -> std::collections::BTreeSet<String> {
+            k.all()
+                .filter_map(|h| match &h.line.body {
+                    Body::File(f) => Some(f.file.clone()),
+                    _ => None,
+                })
+                .collect()
+        };
         let mut peers: BTreeMap<String, Keeper> = BTreeMap::new();
         for (step, want) in steps.iter().zip(v["expected"].as_array().unwrap()) {
             let peer = step["peer"].as_str().unwrap().to_string();
             let mut answers = vec![];
+            let dropped: Vec<String>;
             if let Some(l) = step.get("hear") {
                 let (line, id) = labels.get(l["id"].as_str().unwrap());
                 let k = peers.entry(peer.clone()).or_default();
-                answers.push(k.receive(network, member, verify, id, line));
+                let (answer, settled) = k.take(network, member, verify, &author, id, line);
+                answers.push(answer);
+                dropped = settled.dropped;
             } else {
                 let src = peers
                     .get(step["catchUp"].as_str().unwrap())
                     .cloned()
                     .unwrap_or_default();
                 let k = peers.entry(peer.clone()).or_default();
+                let before = files(k);
                 for (device, _) in src.heads() {
+                    // a line held without its text goes as the retraction that counts for it
                     for h in missing(src.chain(&device), k.chain(&device))
                         .into_iter()
-                        .cloned()
+                        .filter_map(|h| src.stand_in(&author, h))
                         .collect::<Vec<_>>()
                     {
-                        answers.push(k.receive(network, member, verify, h.id, h.line));
+                        answers.push(k.take(network, member, verify, &author, h.id, h.line).0);
                     }
                 }
+                dropped = before.difference(&files(k)).cloned().collect();
             }
             let k = peers.entry(peer.clone()).or_default();
             let got = json!({
@@ -234,6 +272,9 @@ fn chains_follow_the_vectors() {
                 "loose": k.loose().iter().map(|h| &label[&h.id]).collect::<Vec<_>>(),
                 "forks": k.forks().iter().map(|i| &label[i]).collect::<Vec<_>>(),
                 "shown": k.shown().iter().map(|h| &label[&h.id]).collect::<Vec<_>>(),
+                "deleted": k.shown().iter().filter(|h| k.deleted(&author, h)).map(|h| &label[&h.id])
+                    .collect::<Vec<_>>(),
+                "dropped": dropped,
             });
             assert_eq!(&got, want, "{}", v["name"]);
         }

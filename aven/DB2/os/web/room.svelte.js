@@ -3,7 +3,8 @@
 // which the Peer-Light keeps in its store: after a reload it tells them again, and catches up on the rest. Each line
 // has a name (its blob's hash) and shows once, ordered by time, then device. A line written here shows at once, local
 // first, and says when it has gone out (`sent`). A file is a line that announces it; it shows from /files/<hash>.
-// The network's invites and their states come the same way, in its `network` lines.
+// The network's invites and their states come the same way, in its `network` lines. A deleted line is told again as
+// `deleted`, without its text or file, and shows so in its place.
 // `refused`: why the Peer-Light refused the last line written here; `sharing`: files on their way into the store
 import { putChunk, shareFile } from './id.svelte.js';
 
@@ -24,13 +25,14 @@ export function speakThrough(worker, start) {
 // a line from the Peer-Light: a chat line, the room's presence (device names), or the network's invites
 export function hear(line) {
 	if (line.event === 'chat') {
-		const said = { id: line.id, from: line.from, vault: line.vault, key: line.key, seq: line.seq, text: line.text, at: line.at, file: line.file ?? null };
+		const said = { id: line.id, from: line.from, vault: line.vault, key: line.key, seq: line.seq, text: line.text, at: line.at, file: line.file ?? null, deleted: Boolean(line.deleted) };
 		// a line is shown once, by its name; told again (its sender named now), it changes in place. A line without a name
 		// (milestone 2's `say`) shows every time
 		// a line written before this device knew its own head, chained now, takes its queued line's place
 		if (line.replaces) room.lines = room.lines.filter((l) => l.id !== line.replaces);
 		const shown = said.id ? room.lines.findIndex((l) => l.id === said.id) : -1;
-		if (shown >= 0) return void (room.lines[shown] = said);
+		// a delete written before this device knew its own head names only the line: the rest stays as it was
+		if (shown >= 0) return void (room.lines[shown] = said.deleted ? { ...room.lines[shown], ...Object.fromEntries(Object.entries(said).filter(([, v]) => v != null)), text: null, file: null } : said);
 		let at = room.lines.length;
 		while (at > 0 && before(room.lines[at - 1], said) > 0) at--;
 		room.lines.splice(at, 0, said);
@@ -47,6 +49,14 @@ export function say(text) {
 	if (!line || !port) return;
 	room.refused = null;
 	port.postMessage({ start: starting, say: line });
+}
+
+// a line of the vault this device acts for, deleted: the Peer-Light writes a retraction of it on this device's chain,
+// and the line shows deleted, here at once and for everyone once it arrives
+export function remove(id) {
+	if (!id || !port) return;
+	room.refused = null;
+	port.postMessage({ start: starting, retract: id });
 }
 
 // A file dropped into the chat: read a chunk at a time into this origin's store, then shared as a line. It shows once

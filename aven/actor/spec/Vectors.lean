@@ -31,20 +31,6 @@ open Lean Aven.Core Aven.Actor
 def vector (name : String) (input expected : Json) : Json :=
   Json.mkObj [("name", name), ("input", input), ("expected", expected)]
 
-/-! ## The readable form -/
-
-def utf8Text (b : Bytes) : String := String.fromUTF8! ⟨b.toArray⟩
-
-partial def valueJson : Value → Json
-  | .uint n => toJson n
-  | .nint n => toJson (-(n : Int) - 1)
-  | .bytes b => Json.mkObj [("bytes", hex b)]
-  | .text b => utf8Text b
-  | .array xs => Json.arr (xs.map valueJson).toArray
-  | .map kvs => Json.mkObj (kvs.map fun (k, v) => (utf8Text k, valueJson v))
-  | .bool b => toJson b
-  | .null => Json.null
-
 def Aven.Actor.Addr.text (a : Addr) : String := s!"{a.scope}/{a.id}/{a.n}"
 
 def Aven.Actor.MsgId.json (i : MsgId) : Json :=
@@ -68,11 +54,11 @@ def Aven.Actor.Outcome.name : Outcome → String
   | .error => "error"
 
 def Aven.Actor.Message.json (m : Message) : Json :=
-  Json.mkObj [("seq", m.seq), ("name", m.name), ("kind", m.kind.json), ("payload", valueJson m.payload)]
+  Json.mkObj [("seq", m.seq), ("name", m.name), ("kind", m.kind.json), ("payload", Value.json m.payload)]
 
 def Aven.Actor.Entry.json (e : Entry) : Json :=
   Json.mkObj [("from", e.msg.sender.text), ("seq", e.msg.seq), ("name", e.msg.name), ("outcome", e.outcome.name),
-    ("phaseBefore", e.phaseBefore), ("phaseAfter", e.phaseAfter), ("after", valueJson e.after)]
+    ("phaseBefore", e.phaseBefore), ("phaseAfter", e.phaseAfter), ("after", Value.json e.after)]
 
 /-! ## The test definitions -/
 
@@ -96,7 +82,7 @@ def counter : Def where
   sends := []
   accepts := fun _ _ => true
   machine := none
-  turn := fun st m _ => match m.name with
+  turn := fun st m _ _ => match m.name with
     | "inc" => some ⟨match st with | .uint n => .uint (n + 1) | _ => .uint 1, [], none⟩
     | "get" => some ⟨st, [.reply m.id st], none⟩
     | _ => none
@@ -111,7 +97,7 @@ def task : Def where
   sends := []
   accepts := fun _ _ => true
   machine := some taskMachine
-  turn := fun st m _ => match m.name with
+  turn := fun st m _ _ => match m.name with
     | "finish" => some ⟨st, [], some "done"⟩
     | "reopen" => some ⟨st, [], some "open"⟩
     | _ => none
@@ -124,7 +110,7 @@ def asker : Def where
   sends := [tGet]
   accepts := fun _ _ => true
   machine := none
-  turn := fun st m _ => match m.name with
+  turn := fun st m _ _ => match m.name with
     | "go" => some ⟨st, [.ask counterAddr "get" .null 1000, .tell counterAddr "inc" .null], none⟩
     | "reply" => some ⟨m.payload, [], none⟩
     | "fail" => some ⟨text "failed", [], none⟩
@@ -138,7 +124,7 @@ def broken : Def where
   sends := []
   accepts := fun _ _ => true
   machine := some ⟨"a", [("a", [("go", ["b"])])]⟩
-  turn := fun st _ _ => some ⟨st, [], some "b"⟩
+  turn := fun st _ _ _ => some ⟨st, [], some "b"⟩
   init := .null
 
 def lib : Library
@@ -157,9 +143,9 @@ def Aven.Actor.Event.json : Event → Json
   | .handle r s => Json.arr #["handle", r.text, s.text]
   | .tick t => Json.arr #["tick", t]
   | .retire a => Json.arr #["retire", a.text]
-  | .send (.tell r name p) => Json.arr #["tell", r.text, name, valueJson p]
-  | .send (.ask r name p within) => Json.arr #["ask", r.text, name, valueJson p, within]
-  | .send (.reply re p) => Json.arr #["reply", re.json, valueJson p]
+  | .send (.tell r name p) => Json.arr #["tell", r.text, name, Value.json p]
+  | .send (.ask r name p within) => Json.arr #["ask", r.text, name, Value.json p, within]
+  | .send (.reply re p) => Json.arr #["reply", re.json, Value.json p]
 
 def traces : List (String × List Event) := [
   ("a counter counts, and answers an ask",
@@ -208,7 +194,7 @@ def summary (es : List Event) : Json :=
   let as := addrsOf kn es
   let actors := as.filter (fun a => (kn.defs a).isSome || !(kn.journal a).isEmpty) |>.map fun a =>
     Json.mkObj [("address", a.text), ("def", match kn.defs a with | some d => toJson d | none => Json.null),
-      ("phase", kn.phase a), ("state", valueJson (kn.state a)),
+      ("phase", kn.phase a), ("state", Value.json (kn.state a)),
       ("journal", Json.arr ((kn.journal a).map Entry.json).toArray)]
   let inboxes := as.flatMap fun s => as.filterMap fun r =>
     if (kn.inbox s r).isEmpty then none

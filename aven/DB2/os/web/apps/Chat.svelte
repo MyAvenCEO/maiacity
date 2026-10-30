@@ -5,11 +5,13 @@
 	// still on its way; a dropped image, PDF or movie shows at once too, as a file card from /files/<hash>, which the
 	// Service Worker answers range by range. Senders are named through the tree: a device by the person vault it acts
 	// for. A line is yours when it is said for the vault you act as, from any of its devices, this browser or another
-	// (Samuel, 30 Oct 2026). A line the network says through the Aven Peer (who joined) is its own kind.
+	// (Samuel, 30 Oct 2026). A line the network says through the Aven Peer (who joined) is its own kind. Your own lines
+	// and files can be deleted, for everyone (a retraction, Aven.DB.Chains): a small button beside the bubble, or a long
+	// press on a phone, then a confirmation; a deleted line stays in its place as a quiet "Message deleted".
 	import Avatar from '../Avatar.svelte';
 	import Offline from '../Offline.svelte';
 	import { tree, vaultName } from '../id.svelte.js';
-	import { room, say, share } from '../room.svelte.js';
+	import { remove, room, say, share } from '../room.svelte.js';
 
 	let { account, device } = $props();
 
@@ -67,6 +69,37 @@
 		node.addEventListener('error', again);
 		return { destroy: () => node.removeEventListener('error', again) };
 	}
+	// deleting: the line asked about, and the dialog that asks
+	let asking = $state(null);
+	let confirming = $state();
+	function ask(line) {
+		asking = line;
+		confirming?.showModal();
+	}
+	function confirmed() {
+		if (asking) remove(asking.id);
+		confirming?.close();
+	}
+	// a long press on a touch screen asks too: half a second without moving
+	function holding(node, line) {
+		let timer;
+		const stop = () => clearTimeout(timer);
+		const start = (event) => {
+			if (event.pointerType !== 'touch' || !line) return;
+			stop();
+			timer = setTimeout(() => ask(line), 500);
+		};
+		node.addEventListener('pointerdown', start);
+		for (const end of ['pointerup', 'pointercancel', 'pointermove']) node.addEventListener(end, stop);
+		return {
+			update: (next) => (line = next),
+			destroy: () => {
+				stop();
+				node.removeEventListener('pointerdown', start);
+				for (const end of ['pointerup', 'pointercancel', 'pointermove']) node.removeEventListener(end, stop);
+			},
+		};
+	}
 	const size = (n) => (n < 1 << 20 ? `${Math.ceil(n / 1024)} KB` : `${(n / (1 << 20)).toFixed(1)} MB`);
 </script>
 
@@ -94,9 +127,14 @@
 			{#each room.lines as line, i (i)}
 				{@const vault = vaultOf(line)}
 				{@const said = known(vault) && tree.kind(vault) === 'agent'}
-				<li class:mine={line.from === device || (vault !== null && vault === account)} class:said data-from={line.from} data-vault={vault} data-id={line.id}>
+				{@const mine = line.from === device || (vault !== null && vault === account)}
+				{@const deletable = mine && !said && !line.deleted && /^[0-9a-f]{64}$/.test(line.id ?? '')}
+				<li class:mine class:said class:deleted={line.deleted} data-from={line.from} data-vault={vault} data-id={line.id} use:holding={deletable ? line : null}>
 					{#if said}
 						<span class="text" data-testid="network-line">{line.text}</span>
+					{:else if line.deleted}
+						<strong>{who(vault ?? line.from)}</strong>
+						<span class="text" data-testid="deleted">Message deleted</span>
 					{:else if line.file}
 						{@const f = line.file}
 						<strong>{who(vault ?? line.from)}</strong>
@@ -121,7 +159,12 @@
 						<strong>{who(vault ?? line.from)}</strong>
 						<span class="text">{line.text}</span>
 					{/if}
-					<time>{time(line.at)}{#if line.from === device && line.id && !room.sent[line.id]}<small data-testid="sending">
+					<time
+						>{#if deletable}<button type="button" class="delete" onclick={() => ask(line)} aria-label="Delete" data-testid="delete"
+								><svg class="icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"
+									><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></svg
+								></button
+							>{/if}{time(line.at)}{#if line.from === device && line.id && !line.deleted && !room.sent[line.id]}<small data-testid="sending">
 								· sending</small
 							>{/if}</time
 					>
@@ -149,6 +192,13 @@
 				><span>Send</span></button
 			>
 		</form>
+		<dialog bind:this={confirming} onclose={() => (asking = null)} data-testid="confirm-delete">
+			<p>Delete this {asking?.file ? 'file' : 'message'} for everyone?</p>
+			<div>
+				<button type="button" class="quiet" onclick={() => confirming.close()} data-testid="delete-no">Cancel</button>
+				<button type="button" class="danger" onclick={confirmed} data-testid="delete-yes">Delete</button>
+			</div>
+		</dialog>
 		<Offline />
 		{#if room.refused}<p class="refused" data-testid="refused">{room.refused}</p>{/if}
 	</section>
@@ -432,6 +482,86 @@
 
 	li .bar {
 		width: min(220px, 100%);
+	}
+
+	/* a deleted line: a quiet note in its place, its bubble without colour */
+	ol li.deleted,
+	ol li.mine.deleted {
+		color: var(--muted);
+		background: transparent;
+		border: 1px dashed var(--line);
+	}
+
+	.deleted .text {
+		font-style: italic;
+	}
+
+	.mine.deleted strong,
+	.mine.deleted time {
+		color: var(--muted);
+	}
+
+	/* the delete button sits before the time, shown on hover or focus where there is a pointer; a phone long-presses */
+	ol li time {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+
+	button.delete {
+		min-width: 24px;
+		min-height: 24px;
+		padding: 2px;
+		color: inherit;
+		background: transparent;
+		border: 0;
+		opacity: 0;
+	}
+
+	li:hover button.delete,
+	li:focus-within button.delete {
+		opacity: 1;
+	}
+
+	@media (hover: none) {
+		button.delete {
+			display: none;
+		}
+
+		ol li.mine {
+			-webkit-touch-callout: none;
+		}
+	}
+
+	dialog {
+		max-width: min(360px, calc(100vw - 32px));
+		padding: 20px;
+		color: var(--text, inherit);
+		background: var(--raised);
+		border: 1px solid var(--line);
+		border-radius: var(--radius-card);
+		box-shadow: var(--shadow-soft);
+	}
+
+	dialog::backdrop {
+		background: rgb(0 0 0 / 30%);
+	}
+
+	dialog p {
+		margin: 0 0 16px;
+	}
+
+	dialog div {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
+		gap: 8px;
+	}
+
+	dialog .danger {
+		color: #fff;
+		background: var(--down);
+		border-color: var(--down);
 	}
 
 	.refused {

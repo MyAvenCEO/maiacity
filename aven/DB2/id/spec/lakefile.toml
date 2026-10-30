@@ -7,6 +7,7 @@ defaultTargets = ["AvenID", "aven-id-model", "vectors"]
 
 [[lean_lib]]
 name = "AvenID"
+# Only Aven.ID is this package's: Aven.Core and Aven.DB come from their own packages.
 roots = ["Aven.ID"]
 
 [[lean_exe]]
@@ -16,3 +17,13 @@ root = "Main"
 [[lean_exe]]
 name = "vectors"
 root = "Vectors"
+
+# The shared core: Values, the codec, hashes, envelopes, targets and footprints (core/spec, ARCHITECTURE.md).
+[[require]]
+name = "aven-core-spec"
+path = "../../core/spec"
+
+# The docs model, for what caps says of its sealed indexes (A26, Aven.DB.Docs.Index).
+[[require]]
+name = "aven-db-spec"
+path = "../../db/spec"

@@ -51,11 +51,16 @@ def lowerHex (n : Nat) (s : String) : Bool := s.length = n && s.all fun c => c.i
 def maxNumber : Nat := 2 ^ 64 - 1
 
 /-- Well formed: the device a key, the previous line a hash, the signature 64 bytes, all lower-case hex; the network
-on one line; the numbers in range. -/
+on one line; the numbers in range; a retraction's line and previous line hashes and its device a key. -/
 def Fields.wf (f : Fields) : Bool :=
   f.network.all (· != '\n') && lowerHex 64 f.device && (f.prev.all (lowerHex 64)) && lowerHex 128 f.sig &&
     f.seq ≤ maxNumber && f.time ≤ maxNumber &&
-    (match f.body with | .file _ n _ _ => n ≤ maxNumber | .text _ => true)
+    (match f.body with
+      | .file _ n _ _ => n ≤ maxNumber
+      | .text _ => true
+      | .retract t d s p time =>
+        lowerHex 64 t && lowerHex 64 d && p.all (lowerHex 64) && s ≤ maxNumber && time ≤ maxNumber
+      | .redacted => false)
 
 /-- A number: one or more decimal digits. -/
 def number (s : String) : Option Nat :=
@@ -65,9 +70,18 @@ def number (s : String) : Option Nat :=
 def field (name : String) (s : String) : Option String :=
   if s.startsWith (name ++ " ") then some (s.drop (name.length + 1)).copy else none
 
-/-- A body read back: a text, or a file's fields, its name the rest. -/
+/-- A body read back: a text, a retraction's five fields, or a file's fields, its name the rest. -/
 def Body.parse (s : String) : Option Body :=
   if s.startsWith "text\n" then some (.text (s.drop 5).copy)
+  else if s.startsWith "retract " then match s.splitOn "\n" with
+    | [r, d, q, p, a] => do
+      let target ← field "retract" r
+      let device ← field "device" d
+      let seq ← number (← field "seq" q)
+      let prev ← field "prev" p
+      let time ← number (← field "at" a)
+      some (.retract target device seq (if prev = "none" then none else some prev) time)
+    | _ => none
   else match s.splitOn "\n" with
     | f :: n :: t :: name => do
       let file ← field "file" f
@@ -180,6 +194,9 @@ def hexOf (c : Char) (n : Nat) : String := String.ofList (List.replicate n c)
 def sample : Fields :=
   ⟨"aven", hexOf 'a' 64, 7, some (hexOf 'b' 64), 1730000000000, hexOf 'c' 128, .text "hi\nthere"⟩
 
+def sampleRetract : Fields :=
+  { sample with seq := 8, body := .retract (hexOf 'e' 64) (hexOf 'a' 64) 6 (some (hexOf 'f' 64)) 1729999999999 }
+
 def sampleFile : Fields :=
   { sample with seq := 1, prev := none, body := .file (hexOf 'd' 64) 200000000 "the dome\nat night.mp4" "video/mp4" }
 
@@ -199,12 +216,17 @@ def variants : List (String × String) :=
    ("a file size with a leading zero", sampleFile.blob.replace "size 200000000" "size 0200000000"),
    ("a file size with a plus", sampleFile.blob.replace "size 200000000" "size +200000000"),
    ("a carriage return after the version", swap "avenDB line 1\n" "avenDB line 1\r\n"),
+   ("a retraction's line in upper case", sampleRetract.blob.replace (hexOf 'e' 64) (hexOf 'E' 64)),
+   ("a retraction's number with a leading zero", sampleRetract.blob.replace "\nseq 6\n" "\nseq 06\n"),
+   ("a retraction with a field after it", sampleRetract.blob ++ "\nname x"),
+   ("a body that only a peer's record holds", sample.blob.replace "text\nhi\nthere" "redacted"),
    ("no line at all", "hello")]
 
 def refusedAs (why : Refusal) (s : String) : Bool := match read s with | .error w => w == why | .ok _ => false
 
 #guard (read sample.blob).toOption == some sample
 #guard (read sampleFile.blob).toOption == some sampleFile
+#guard (read sampleRetract.blob).toOption == some sampleRetract
 #guard variants.all fun (_, v) => refusedAs .notCanonical v
 
 end Aven.DB.Chains

@@ -1,0 +1,14 @@
+[
+{"expected":"1500000000000003e8","input":[1000],"name":"an unsigned integer"},
+{"expected":"13fffffffffffffffb","input":[-5],"name":"a negative integer"},
+{"expected":"026100ff6200","input":["a\u0000b"],"name":"text with a zero byte"},
+{"expected":"0241636d6500150000000000000007","input":["Acme",7],"name":"text, then a number"},
+{"expected":"0100ffff00","input":[{"bytes":"00ff"}],"name":"bytes"},
+{"expected":"","input":[],"name":"nothing"},
+{"expected":false,"input":[["b"],["ab"]],"name":"shorter text first by code point, not by length"},
+{"expected":true,"input":[["Acme"],["Acme",1]],"name":"a prefix first"},
+{"expected":true,"input":[[-1],[0]],"name":"negatives before positives"},
+{"expected":true,"input":[[-5],[-1]],"name":"-5 before -1"},
+{"expected":true,"input":[[255],[256]],"name":"255 before 256"},
+{"expected":false,"input":[["a\u0000"],["a"]],"name":"a zero byte inside text"}
+]
