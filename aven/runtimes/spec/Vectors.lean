@@ -18,6 +18,8 @@ by default), where they are committed. Every vector is `{"name", "input", "expec
   under BLAKE3 (`Aven.Runtime.Contract`).
 - `contrast.json`: `linear`, the table every contrast check uses, then pairs of colours with their luminances and
   whether they reach 4.5:1 and 3:1.
+- `markup.json`: markup and face data; the drawn tree, the placements, and whether face-runtime gives the face
+  (`faceRun`). The todo app's row and list, and hostile markup whose tags, attributes, URLs and events must go.
 -/
 
 open Lean Aven.Core Aven.Runtime
@@ -181,6 +183,88 @@ def contractVectors : List Json :=
         ("params", hex (encode k.params))])
       (Json.mkObj [("cbor", hex (encode k.value)), ("name", (k.name blake3).text)])
 
+/-! ## Helpers -/
+
+def pathJson (p : Path) : Json := Json.arr (p.map fun b => toJson (utf8Text b)).toArray
+
+def obj (kvs : List (String × Value)) : Value := .map (kvs.map fun (k', v) => (ascii k', v))
+
+def txt' (s : String) : Value := .text (ascii s)
+
+/-! ## face-runtime's markup: `markup.json` -/
+
+def srcJson : Src → Json
+  | .lit s => Json.mkObj [("lit", s)]
+  | .data p => Json.mkObj [("$", pathJson p)]
+  | .item p => Json.mkObj [("$$", pathJson p)]
+
+partial def markupJson : Markup → Json
+  | .text s => Json.mkObj [("text", srcJson s)]
+  | .el tag attrs on kids => Json.mkObj [("tag", tag),
+      ("attrs", Json.mkObj (attrs.map fun (k', s) => (k', srcJson s))),
+      ("$on", match on with | some e => toJson e | none => Json.null),
+      ("kids", Json.arr (kids.map markupJson).toArray)]
+  | .each p kp body => Json.mkObj [("$each", pathJson p), ("key", pathJson kp), ("body", markupJson body)]
+  | .use place comp props => Json.mkObj [("$use", comp), ("place", place),
+      ("props", Json.mkObj (props.map fun (k', s) => (k', srcJson s)))]
+
+def mel (tag : String) (attrs : List (String × Src) := []) (on : Option String := none) (kids : List Markup := []) :
+    Markup := .el tag attrs on kids
+
+/-- A task's row: a checkbox named by the title, which sends `toggle`, and the title. -/
+def rowMarkup : Markup :=
+  mel "li" [("class", .lit "task")] none
+    [mel "input" [("type", .lit "checkbox"), ("aria-label", .data (path ["title"]))] (some "toggle"),
+     mel "span" [] none [.text (.data (path ["title"]))]]
+
+/-- The list's face: a field, and a row per task, keyed by its id. -/
+def listMarkup : Markup :=
+  mel "section" [] none
+    [.use "field" "field" [("hint", .lit "New task")],
+     mel "ul" [] none [.each (path ["tasks"]) (path ["id"]) (.use "row" "task-row" [("title", .item (path ["title"]))])]]
+
+/-- Everything a face must not get through. -/
+def hostileMarkup : Markup :=
+  mel "div" [("onclick", .lit "steal()"), ("style", .lit "position:fixed"), ("data-on", .data (path ["evil"]))] none
+    [mel "script" [] none [.text (.lit "steal()")],
+     mel "a" [("href", .lit "javascript:steal()")] none [.text (.lit "a link")],
+     mel "img" [("src", .lit "https://tracker.example/pixel"), ("alt", .lit "")],
+     mel "a" [("href", .data (path ["url"]))] none [.text (.lit "docs")],
+     mel "iframe" [("src", Src.lit ("/files/" ++ String.ofList (List.replicate 64 'a')))]]
+
+def tasks : Value := obj [("tasks", .array [obj [("id", txt' "1"), ("title", txt' "Buy milk")],
+  obj [("id", txt' "2"), ("title", txt' "Bake bread")], obj [("id", txt' "1"), ("title", txt' "A repeated key")]])]
+
+def faceCases : List (String × Markup × Value) := [
+  ("a task's row", rowMarkup, obj [("title", txt' "Buy milk")]),
+  ("the list places a field and a row per task, keyed; a repeated key is skipped", listMarkup, tasks),
+  ("hostile markup: handlers, styles, scripts, frames, foreign URLs and a forged event are dropped", hostileMarkup,
+    obj [("evil", txt' "deleteAll"), ("url", txt' "https://maia.city/docs")]),
+  ("an unnamed checkbox is refused for its accessibility", mel "input" [("type", .lit "checkbox")] (some "toggle"),
+    obj [])]
+
+def placementJson (pl : Placement) : Json :=
+  Json.mkObj [("place", pl.place), ("component", pl.component),
+    ("props", Json.mkObj (pl.props.map fun (k', v) => (k', toJson v)))]
+
+def markupVectors : List Json :=
+  faceCases.map fun (name, m, data) =>
+    let (ns, pls) := draw data .null "" m
+    vector name (Json.mkObj [("markup", markupJson m), ("data", Value.json data)])
+      (Json.mkObj [("tree", Json.arr (ns.map fun n => Value.json n.value).toArray),
+        ("placements", Json.arr (pls.map placementJson).toArray),
+        ("faceRun", toJson (faceRun ⟨m, []⟩ data).isSome)])
+
+/-! ## Checks on state and markup before writing -/
+
+-- the list draws two rows, not three: the repeated key is skipped
+#guard (draw tasks .null "" listMarkup).2.length == 3
+-- the hostile markup's forged event is gone
+#guard (draw (obj [("evil", txt' "deleteAll")]) .null "" hostileMarkup).1.all fun n =>
+  n.all.all fun x => !(x.attrs.any (·.1 == "data-on"))
+-- the row is a face face-runtime gives
+#guard (faceRun ⟨rowMarkup, []⟩ (obj [("title", txt' "Buy milk")])).isSome
+
 /-- One vector per line, so a change reads as a diff of lines. -/
 def render (vs : List Json) : String :=
   "[\n" ++ ",\n".intercalate (vs.map Json.compress) ++ "\n]\n"
@@ -189,5 +273,6 @@ def main (args : List String) : IO Unit := do
   let dir : System.FilePath := args.headD "vectors"
   IO.FS.createDirAll dir
   for (file, vs) in [("table.json", table), ("registry.json", registryVectors), ("tree.json", treeVectors),
-      ("face.json", faceVectors), ("contrast.json", contrastVectors), ("contract.json", contractVectors)] do
+      ("face.json", faceVectors), ("contrast.json", contrastVectors), ("contract.json", contractVectors),
+      ("markup.json", markupVectors)] do
     IO.FS.writeFile (dir / file) (render vs)
