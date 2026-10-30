@@ -43,7 +43,7 @@ reasons with. Nothing a person or an agent adds needs a deploy.
 
 - **fact:** one statement, `{ id, p, x1…x5 }`, kept in a document. Its `id` names the entity it introduces.
 - **predicate:** a definition of a relation: an English name, the gismu it borrows from, a gloss, and its places. In the
-  docs layer's terms, the schema of a fact record: a blob named by its hash.
+  docs layer's terms, the schema of a fact (a type): a blob named by its hash.
 - **place:** one of `x1…x5`. A **value place** holds a typed value; a **ref place** holds a fact's id.
 - **entity:** whatever a fact's id stands for. The `person` fact is the person; facts about them point at it.
 - **referent:** an entity made only so other facts can point at it ("the 2 bananas", "this payment").
@@ -246,9 +246,9 @@ Nothing in that example needed a deploy, and every step is a check Lean defines.
 
 ## Decisions
 
-1. **A fact grammar, not documents of JSON.** Records with fields are easier at first and harder forever: every kind
+1. **A fact grammar, not documents of JSON.** Values with app-specific fields are easier at first and harder forever: every kind
    needs its own code, and nothing composes across kinds. avenOS proved the grammar carries todos, contacts, invoices and
-   reified quantities on one engine. (Documents of plain records still exist in the docs layer, for things like the
+   reified quantities on one engine. (Values of an app's own types still exist in the docs layer, for things like the
    editor's text; facts are for what needs meaning across kinds.)
 2. **Gismu place structures, English names.** Argument order is the thing every relation format gets wrong differently.
    The gismu are a standard refined for decades, small (1341), and readable by any model. Names stay English, so nobody
