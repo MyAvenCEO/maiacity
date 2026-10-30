@@ -50,4 +50,11 @@ RUN arch=$(uname -m) \
 COPY --from=versitygw /versitygw /usr/local/bin/versitygw
 RUN versitygw --help > /dev/null
 
+# clang and llvm: ring, under iroh, compiles C for the Peer-Light's wasm32 target, which gcc can't. A layer of its own
+# at the end, so the layers above stay cached.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends clang llvm \
+    && rm -rf /var/lib/apt/lists/* \
+    && clang --version > /dev/null && llvm-ar --version > /dev/null
+
 WORKDIR /work
