@@ -316,6 +316,22 @@ def toField : Value → Option Aven.DB.Docs.Key.Field
   | .uint n => some (.uint n)
   | _ => none
 
+/-- Values are equal by `Aven.Core`'s lawful equality, and ordered as the index keys are (`Aven.DB.Docs.Key.Field.lt`):
+by kind (bytes, text, negative, then non-negative integers), then integers by sign and magnitude (`nint n` is
+`-1 - n`), text and bytes bytewise, which for UTF-8 is code-point order. Other Values, which no key holds, order by
+their encoding. -/
+def vals : Vals Value where
+  eq a b := decide (a = b)
+  lt a b := match toField a, toField b with
+    | some x, some y => x.lt y
+    | _, _ => lexLt (encode a) (encode b)
+  count := .uint
+
+/-- **The engine orders keyable Values as the index keys do,** field by field. -/
+theorem vals_lt_key (a b : Value) (x y : Aven.DB.Docs.Key.Field) (ha : toField a = some x) (hb : toField b = some y) :
+    vals.lt a b = x.lt y := by
+  simp [vals, ha, hb]
+
 /-- An entry as the docs layer's tree holds it: its fields and its Doc in the order-preserving key encoding
 (`Aven.DB.Docs.Key.entry`), whose bytewise order is the fields' order (`key_order`). -/
 def entryBytes (e : Entry Value) : Bytes := Aven.DB.Docs.Key.entry (e.key.filterMap toField) e.doc
