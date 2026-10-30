@@ -71,6 +71,12 @@ def capPublic : Cap :=
   { id := "cap-public", issuer := "alice", holder := .«public», signer := "alice-peer",
     grant := [readOn cityNotes], approvals := [⟨"alice-owner", "cap-public"⟩] }
 
+/-- Aven, the agent Maia City owns, lets Bob read its vault; its device signs, and its owner approves by its own
+quorum: Maia City's owner, Alice's vault, approves with her owner's key. -/
+def capAven : Cap :=
+  { id := "cap-aven", issuer := "aven", holder := .vault "bob", signer := "aven-peer",
+    grant := [⟨.vault (vaultId "aven") false, .read, []⟩], approvals := [⟨"alice-owner", "cap-aven"⟩] }
+
 /-- Chains, each with the first rule it breaks, or none. -/
 def chainExamples : List (String × List Cap × Option ChainError) := [
   ("Alice gives Bob read and task writing on d1", [capA], none),
@@ -135,7 +141,10 @@ def chainExamples : List (String × List Cap × Option ChainError) := [
   ("a child that keeps its parent's expiry",
     [capAExpiring,
      recap capB "cap-e2" "bob-owner" fun c => { c with parent := "cap-a-100", conditions := { expires := some 50 } }],
-    none)]
+    none),
+  ("Aven's cap, approved by its owner Maia City, which approves through Alice's key", [capAven], none),
+  ("Aven's cap, approved by Bob's key, which is above neither", [recap capAven "cap-aven-b" "bob-owner"],
+    some (.approval "cap-aven-b"))]
 
 -- Vault ids are UTF-8 bytes, which the kernel doesn't compute, so the chains are checked as the module builds.
 #guard chainExamples.all fun (_, cs, e) => chainError castCtx cs == e
@@ -151,6 +160,28 @@ def approvalExamples : List (String × List Sig × Nat × String × String × Bo
 
 theorem approval_examples :
     approvalExamples.all (fun (_, sigs, k, v, d, b) => cast.approved k v d sigs == b) = true := by decide
+
+/-- The cast with the garden, a coop of Alice's and Bob's vaults that needs both. -/
+def garden : Vault := ⟨"garden", "The garden", .coop, [.vault "alice", .vault "bob"]⟩
+
+def gardenCast : Tree := { cast with vaults := cast.vaults ++ [garden] }
+
+def gardenThreshold (v : String) : Nat := if v == "garden" then 2 else 1
+
+/-- Approvals where an owner is a vault, which approves by its own quorum: signatures, the vault, the digest, and
+whether it holds. -/
+def quorumExamples : List (String × List Sig × String × String × Bool) := [
+  ("Maia City, through Alice's vault and her owner's key", [⟨"alice-owner", "d"⟩], "maia-city", "d", true),
+  ("Aven, through Maia City, through Alice", [⟨"alice-owner", "d"⟩], "aven", "d", true),
+  ("Maia City, over another digest", [⟨"alice-owner", "e"⟩], "maia-city", "d", false),
+  ("Maia City, by Bob's owner, who is above neither", [⟨"bob-owner", "d"⟩], "maia-city", "d", false),
+  ("Maia City, by a device's key, which owns nothing", [⟨"alice-peer", "d"⟩], "maia-city", "d", false),
+  ("the garden needs both of its vaults: Alice's alone", [⟨"alice-owner", "d"⟩], "garden", "d", false),
+  ("the garden: Alice's and Bob's", [⟨"alice-owner", "d"⟩, ⟨"bob-owner", "d"⟩], "garden", "d", true),
+  ("the garden: Alice's twice is one vault", [⟨"alice-owner", "d"⟩, ⟨"alice-owner", "d"⟩], "garden", "d", false)]
+
+theorem quorum_examples :
+    quorumExamples.all (fun (_, sigs, v, d, b) => gardenCast.approves gardenThreshold v d sigs == b) = true := by decide
 
 /-- Tickets, claimed in two orders: the smallest hash wins either way (A12). -/
 def claims : List TicketClaim := [⟨"bob", 7⟩, ⟨"carol", 3⟩, ⟨"dave", 9⟩]
