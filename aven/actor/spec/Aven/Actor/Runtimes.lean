@@ -31,11 +31,11 @@ def sendEffect (m : Message) (s : SendOut) : Option Effect :=
   | .tell to name p => (Addr.ofText? to).map fun a => .tell a name p
 
 /-- A state-runtime part as an actor's turn. -/
-def stateTurn (part : StatePart) (st : Value) (m : Message) (_ : Given) : Option Output :=
+def stateTurn (part : StatePart) (st : Value) (m : Message) (_ : Given) (_ : String) : Option Output :=
   (part.step st m.name m.payload).map fun o => ⟨o.state, o.sends.filterMap (sendEffect m), o.phase⟩
 
 theorem stateTurn_phase (part : StatePart) (st : Value) (m : Message) (g : Given) (rule : Aven.Runtime.StateRule)
-    (h : part.lookup m.name = some rule) : (stateTurn part st m g).map (·.phase) = some rule.phase := by
+    (ph : String) (h : part.lookup m.name = some rule) : (stateTurn part st m g ph).map (·.phase) = some rule.phase := by
   simp [stateTurn, Aven.Runtime.StatePart.step, h]
 
 /-- A face actor's face passes the applier's check before the applier draws it. -/

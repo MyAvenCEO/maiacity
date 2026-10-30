@@ -82,7 +82,7 @@ def counter : Def where
   sends := []
   accepts := fun _ _ => true
   machine := none
-  turn := fun st m _ => match m.name with
+  turn := fun st m _ _ => match m.name with
     | "inc" => some ⟨match st with | .uint n => .uint (n + 1) | _ => .uint 1, [], none⟩
     | "get" => some ⟨st, [.reply m.id st], none⟩
     | _ => none
@@ -97,7 +97,7 @@ def task : Def where
   sends := []
   accepts := fun _ _ => true
   machine := some taskMachine
-  turn := fun st m _ => match m.name with
+  turn := fun st m _ _ => match m.name with
     | "finish" => some ⟨st, [], some "done"⟩
     | "reopen" => some ⟨st, [], some "open"⟩
     | _ => none
@@ -110,7 +110,7 @@ def asker : Def where
   sends := [tGet]
   accepts := fun _ _ => true
   machine := none
-  turn := fun st m _ => match m.name with
+  turn := fun st m _ _ => match m.name with
     | "go" => some ⟨st, [.ask counterAddr "get" .null 1000, .tell counterAddr "inc" .null], none⟩
     | "reply" => some ⟨m.payload, [], none⟩
     | "fail" => some ⟨text "failed", [], none⟩
@@ -124,7 +124,7 @@ def broken : Def where
   sends := []
   accepts := fun _ _ => true
   machine := some ⟨"a", [("a", [("go", ["b"])])]⟩
-  turn := fun st _ _ => some ⟨st, [], some "b"⟩
+  turn := fun st _ _ _ => some ⟨st, [], some "b"⟩
   init := .null
 
 def lib : Library

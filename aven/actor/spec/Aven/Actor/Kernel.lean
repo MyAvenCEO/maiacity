@@ -38,7 +38,7 @@ def gate (d : Def) (m : Message) (ph : String) : Bool :=
 /-- The turn, and the kernel's check after it: under a machine the new phase must be a transition's `To`. -/
 def runTurn (d : Def) (st : Value) (m : Message) (g : Given) (ph : String) :
     Option (Value × String × List Effect) :=
-  match d.turn st m g with
+  match d.turn st m g ph with
   | none => none
   | some out =>
     match d.machine with
