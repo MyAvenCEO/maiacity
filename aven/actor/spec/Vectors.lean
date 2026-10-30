@@ -8,6 +8,9 @@ import Lean.Data.Json
 where they are committed. Every vector is `{"name", "input", "expected"}`.
 
 - `kernel.json`: a trace of events from the empty kernel, and the kernel after it.
+- `traces.json`: the same for generated traces: 40 of them, the three test actors spawned and then 40 events drawn
+  with xorshift64 from a fixed seed as `Aven.Core`'s vectors draw, each against the kernel so far (a `handle` among
+  inboxes with a message waiting), over addresses that live, die and never were, and every kind of event.
 
 The traces run four test definitions, which the Rust tests implement natively, exactly as written here:
 
@@ -218,6 +221,80 @@ def summary (es : List Event) : Json :=
 def kernelVectors : List Json :=
   traces.map fun (name, es) => vector name (Json.arr (es.map Event.json).toArray) (summary es)
 
+/-! ## Generated traces -/
+
+/-- xorshift64, as the Rust property tests draw: the same file on every run. -/
+structure Rng where
+  s : UInt64
+
+def Rng.seed (n : Nat) : Rng := ⟨(n.toUInt64 * 0x9e3779b97f4a7c15) ||| 1⟩
+
+def Rng.below (r : Rng) (n : Nat) : Nat × Rng :=
+  let x := r.s ^^^ (r.s <<< 13)
+  let x := x ^^^ (x >>> 7)
+  let x := x ^^^ (x <<< 17)
+  (x.toNat % n, ⟨x⟩)
+
+def Rng.pick {α : Type} [Inhabited α] (r : Rng) (xs : List α) : α × Rng :=
+  let (i, r) := r.below xs.length
+  (xs[i]!, r)
+
+/-- The addresses a generated trace uses: the person, two incarnations of each test actor, and one that never is. -/
+def pool : List Addr :=
+  [person, counterAddr, addr "c" 2, addr "t", addr "t" 2, addr "a", addr "nobody"]
+
+def names : List String := ["inc", "get", "finish", "reopen", "go", "describe", "nothing"]
+
+/-- One drawn event. A `handle` is drawn among the inboxes with a message not handled yet, when there is one. -/
+def Rng.event (r : Rng) (kn : Kernel) : Event × Rng :=
+  let (kind, r) := r.below 10
+  match kind with
+  | 0 => let (d, r) := r.pick [("c", "counter"), ("t", "task"), ("a", "asker"), ("b", "broken")]; (.spawn d.1 d.2, r)
+  | 1 => let (a, r) := r.pick pool; (.retire a, r)
+  | 2 => let (t, r) := r.below 400; (.tick (kn.now + t), r)
+  | 3 | 4 =>
+    let (to, r) := r.pick pool
+    let (name, r) := r.pick names
+    (.send (.tell to name .null), r)
+  | 5 =>
+    let (to, r) := r.pick pool
+    let (name, r) := r.pick names
+    let (within, r) := r.below 300
+    (.send (.ask to name .null within), r)
+  | _ =>
+    let senders := pool ++ [kernelAddr]
+    let ready := pool.flatMap fun rcv => (senders.filter fun snd =>
+      kn.read rcv snd < (kn.inbox snd rcv).length).map fun snd => (rcv, snd)
+    match ready with
+    | [] => let (rcv, r) := r.pick pool; let (snd, r) := r.pick senders; (.handle rcv snd, r)
+    | _ => let (p, r) := r.pick ready; (.handle p.1 p.2, r)
+
+/-- A drawn trace: the three test actors spawned first, then `n` drawn events, each drawn against the kernel so far. -/
+def Rng.trace (r : Rng) (n : Nat) : List Event × Rng := Id.run do
+  let start : List Event := [.spawn "c" "counter", .spawn "t" "task", .spawn "a" "asker"]
+  let mut r := r
+  let mut kn := Kernel.empty.run lib start
+  let mut out := start.toArray
+  for _ in [0:n] do
+    let (e, r') := r.event kn
+    out := out.push e
+    kn := kn.step lib e
+    r := r'
+  return (out.toList, r)
+
+def generated : List (List Event) := Id.run do
+  let mut r := Rng.seed 1
+  let mut out := #[]
+  for _ in [0:40] do
+    let (es, r') := r.trace 40
+    out := out.push es
+    r := r'
+  return out.toList
+
+def traceVectors : List Json :=
+  (List.range generated.length).zip generated |>.map fun (i, es) =>
+    vector s!"generated trace {i + 1}" (Json.arr (es.map Event.json).toArray) (summary es)
+
 /-! ## Checks before writing -/
 
 def final (es : List Event) : Kernel := Kernel.empty.run lib es
@@ -242,3 +319,4 @@ def main (args : List String) : IO Unit := do
   let dir : System.FilePath := (args.head?.getD "vectors")
   IO.FS.createDirAll dir
   write dir "kernel.json" kernelVectors
+  write dir "traces.json" traceVectors
