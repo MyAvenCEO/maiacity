@@ -54,6 +54,10 @@ impl<S: Store + Send + Sync> Store for Counted<S> {
         self.heads.fetch_add(1, Relaxed);
         self.inner.has(hash).await
     }
+    async fn size(&self, hash: &Hash) -> Result<Option<u64>> {
+        self.heads.fetch_add(1, Relaxed);
+        self.inner.size(hash).await
+    }
     async fn list(&self) -> Result<Vec<Hash>> {
         self.inner.list().await
     }

@@ -127,7 +127,7 @@ def randomTrace (seed : Nat) : List Op := Id.run do
   let mut s : Store := {}
   let mut ops := #[]
   for _ in [0:len + 1] do
-    let (k, r') := r.below 20
+    let (k, r') := r.below 21
     let (h, r') := pick r' hashes
     let (b, r') := pick r' blobs
     let (n, r') := pick r' (if k % 7 = 0 then names else names.take 4)
@@ -147,6 +147,7 @@ def randomTrace (seed : Nat) : List Op := Id.run do
       | 12 | 13 => .getRef n
       | 14 | 15 | 16 => .setRef n expected h
       | 17 => .deleteRef n (expected.getD h)
+      | 18 => .size h
       | _ => .listRefs
     s := (step Blake3.hash s op).1
     ops := ops.push op
