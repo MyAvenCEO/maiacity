@@ -141,7 +141,7 @@ same day, and what they agreed is marked where it applies. Nothing in this spec 
 Each rule is held by a Lean theorem or a check once there is code to hold.
 
 1. **Keys sign; vaults hold.** Only a key signs, and only a vault, a group of vaults (rule 13), a ticket or the public
-   (rule 33) holds a cap. A device signs for the vault it serves, within its device cap.
+   (rule 33) holds a cap. A device signs for the vault it serves, within its device cap (`device_within_cap`).
 2. **Governing is ownership, never a cap.** A vault's owners change its owners, devices, thresholds and recovery, k of
    n. No cap governs, and no device governs (`Aven.ID.Governs`).
 3. **Every cap narrows what it rests on.** A root cap rests on its issuer's authority over the target's vault. Every
@@ -416,7 +416,9 @@ messages and queries. For people with keys, reading is whole Docs; for actors an
   through their own devices, with its approvals where needed.
 - **Devices** act for their vault within a **device cap**, a cap from the vault to its device vault. A device added by a
   passkey sign-in holds everything its vault may do except govern, as avenID has it today. A grant it prepares counts
-  only with an owner's approval (D14). An agent's devices and the Aven Peer hold narrower ones.
+  only with an owner's approval (D14). An agent's devices and the Aven Peer hold narrower ones. Every step a device
+  writes is allowed both by the chain, for its vault, and by its device cap (`device_and_chain`), and a device whose
+  cap is for proposals never writes on main (`device_proposals_never_main`).
 - **Groups** (Samuel, 30 Oct 2026: a cap goes to one vault or a group of vaults). A group is a Doc whose readers are
   its members. It holds caps for them: a team editing the team's Docs, a family reading the family's photos. A write
   under a group's cap carries, inside the seal, the writer's read cap on the group. Groups aren't vaults, so they
@@ -1164,6 +1166,8 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `readers_agree` | Two readers that hold the same past of an envelope, and the same splits in it, give it the same verdict, whatever else each holds |
 | | `branch_allowed`, `proposals_never_main` | Every cap of an authorized chain lets its holder write on the envelope's branch, so a cap for proposals, or for one branch, never writes on main: landing a proposal on main is someone else's merge |
 | | `merge_covered` | A merge into main counts only when the merger's grant covers the whole merge: for a reader that judges merges whole (the engine's `changesFrom` from main's version at the merge's `prev`, `merge_granted`), an authorized merge's last cap writes on main and allows every step of the whole merge |
+| | `device_within_cap`, `device_and_chain` | The signing device acts within its device cap, a cap from the vault it serves: it lets the device write on the envelope's branch and allows every step, so each step is allowed both by the chain for the vault and by the device cap for the device (rule 1) |
+| | `device_proposals_never_main`, `merge_within_device` | A device whose cap is for proposals, as an agent's removals go, never writes on main whatever chain it names; a merge into main read whole stays within the merging device's cap |
 | `Caps` | `narrow_chain`, `narrow_steps` | No cap in a chain lets a verb reach a Doc, or allows a write step, that its root doesn't |
 | | `root_authority` | Every line a chain grants lies in its root issuer's authority: its own vault, one it governs, or a Doc of one |
 | | `chain_short` | A chain is no longer than its root may be shared |
@@ -1222,7 +1226,8 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 - `footprints.json` (Core's footprints, with the engine);
 - `want_grants_nothing` and `one_grammar` (Core's target grammar);
 - `group_holds` (a group cap's writes in `Revoke`);
-- `device_within_cap`;
+- the own-authority path of checking's step 7 (the signer's vault is the Doc's vault or governs it, without a chain),
+  beside `Authorized`'s chain, both within the device cap;
 - `upgrade_no_wider` and `no_confused_deputy`, in the cross-spec model `Aven.Architecture`: they need `Aven.Actor`,
   and id/spec never requires the actor spec (the architect, 30 Oct 2026);
 
