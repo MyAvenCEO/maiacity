@@ -12,7 +12,7 @@ RUN cp "$(command -v versitygw)" /versitygw
 FROM mcr.microsoft.com/playwright:v1.64.1-noble
 
 ARG RUST_VERSION=1.99.1
-ARG WASM_BINDGEN_VERSION=0.2.129
+ARG WASM_BINDGEN_VERSION=0.2.130
 ARG BUN_VERSION=1.4.4
 ARG ELAN_VERSION=v4.2.4
 ARG LEAN_VERSION=v4.35.0

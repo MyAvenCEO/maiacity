@@ -2,7 +2,7 @@
 # to it boots the sandbox from the box's image and checks it: the same `bun run up --check` a Claude cloud session or a
 # Mac runs. Then each package that changed gets a release of its own, tagged @aven/<package>@<version>: the date in
 # Berlin for its first release that day (26.10.29), then 26.10.29v2, 26.10.29v3, ... A package that didn't change gets
-# no new version, and a push that changes none releases nothing.
+# no new version, and a push that changes none releases nothing. The packages: avenOS, avenSANDBOX and avenPEER.
 name: avenSANDBOX
 
 on:
@@ -98,9 +98,18 @@ jobs:
           path: aven/DB2/runs/
           if-no-files-found: ignore
 
+  # avenPEER's slim image for this commit, built in its box unless an earlier push built the same inputs
+  peer:
+    name: avenPEER image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/production'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/avenpeer-image.yml
+
   release:
     name: Release
-    needs: sandbox
+    needs: [sandbox, peer]
     if: github.event_name == 'push' && github.ref == 'refs/heads/production'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -126,6 +135,7 @@ jobs:
           REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
           IMAGE: ${{ needs.sandbox.outputs.image }}
+          PEER_IMAGE: ${{ needs.peer.outputs.image }}
         run: |
           set -euo pipefail
           day=$(TZ=Europe/Berlin date +%y.%m.%d)
@@ -193,6 +203,35 @@ jobs:
             gh release create "@aven/sandbox@$v" --repo "$REPO" --target "$SHA" --title "avenSANDBOX $v" \
               --notes-file sandbox.md
             released+=("avenSANDBOX $v")
+          fi
+
+          # avenPEER: released when its image changed. Its tag is a hash of its inputs (aven/DB2/deploy/tag.mjs), so
+          # an unchanged peer is the same image, the same digest
+          peer="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/aven/peer"
+          prev=$(latest peer)
+          now=$(digest "$PEER_IMAGE")
+          [ -n "$now" ] || { echo "::error::$PEER_IMAGE is not published"; exit 1; }
+          if [ -z "$prev" ] || [ "$(digest "$peer:${prev#@aven/peer@}")" != "$now" ]; then
+            v=$(next peer)
+            docker buildx imagetools create --tag "$peer:$v" "$PEER_IMAGE"
+            peer_paths=(aven/DB2/peer aven/DB2/db/core aven/DB2/db/store aven/DB2/id/core aven/DB2/deploy/peer.Dockerfile aven/DB2/Cargo.toml aven/DB2/Cargo.lock)
+            {
+              echo "**avenPEER**, the node: \`aven-peer\` on a minimal base (amd64 and arm64)."
+              echo "\`--relay\` makes it the Aven Peer."
+              echo
+              echo '```bash'
+              echo "docker pull $peer:$v"
+              echo '```'
+              echo
+              echo "Digest: \`$peer@$now\`"
+              echo
+              echo "## Changes"
+              echo
+              changes "$prev" "${peer_paths[@]}"
+            } > peer.md
+            gh release create "@aven/peer@$v" --repo "$REPO" --target "$SHA" --title "avenPEER $v" \
+              --notes-file peer.md
+            released+=("avenPEER $v")
           fi
 
           if [ ${#released[@]} -eq 0 ]; then

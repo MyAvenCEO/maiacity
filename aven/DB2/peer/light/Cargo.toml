@@ -18,7 +18,7 @@ aven-db-store = { path = "../../db/store" }
 aven-id = { path = "../../id/core" }
 futures-channel = "=0.3.34"
 iroh = { version = "=1.4.1", default-features = false, features = ["tls-ring"] }
-js-sys = "=0.3.106"
+js-sys = "=0.3.107"
 serde_json = "=1.0.154"
-wasm-bindgen = "=0.2.129"
-wasm-bindgen-futures = "=0.4.79"
+wasm-bindgen = "=0.2.130"
+wasm-bindgen-futures = "=0.4.80"

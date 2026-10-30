@@ -10,8 +10,8 @@ Only what this plan names gets built. Two parts, in order, each a task thread of
 
 ### What a person sees
 
-On a host whose Aven Peer nobody has claimed yet, avenOS shows one screen: **Claim this network**, with a field for
-the claim code and a button that makes a passkey. Once claimed:
+On a host whose Aven Peer nobody has claimed yet, avenOS shows one screen: **Sign up**, a button that makes a
+passkey. The claim is just the first signup (Samuel, 30 Oct 2026): no code. Once claimed:
 
 - the admin's browser is a Peer-Light of the admin's vault, and avenOS opens on its dashboard as in the box;
 - on another browser, **Sign in with your passkey** makes that browser a new device of the admin's vault;
@@ -23,11 +23,25 @@ In the box the tree is the cast, fixed. In production it is kept by the Aven Pee
 
 - **Before the claim,** the tree holds Aven, a network vault with no owner yet, and the Aven Peer, its device. The
   Aven Peer's key is made on the server at its first start ([Part B](#the-aven-peers-key)).
-- **The claim** adds the admin's person vault, owned by its passkey; makes it Aven's owner; and adds the claiming
+- **The claim** adds the admin's person vault, owned by its passkey and by MaiaCityGuardian ([below](#maiacityguardian));
+  makes it Aven's owner; and adds the claiming
   browser as a device of the admin's vault. One signed statement, stored as a blob, with the ref `claim` set from
   nothing to it by compare-and-set. A second claim finds the ref taken and is refused, even racing the first.
 - **Each later sign-in** adds a device, a statement signed by the passkey, stored the same way under its own ref.
 - **A restart** reads the tree back from the store. A wipe of the store makes the network unclaimed again.
+
+### MaiaCityGuardian
+
+The master recovery key, named MaiaCityGuardian (Samuel, 30 Oct 2026): an additional owner of every person's vault,
+added when the vault is founded, so it is the way back in beside the passkeys. A person can remove it, as any owner,
+once owners can be changed (milestone 3).
+
+- **One Ed25519 key.** Its secret, 32 bytes, is made and kept offline by its holder and is never on a server, in the
+  repository or in GitHub. Whoever holds it owns every person's vault that has it.
+- **Its public half comes by configuration:** `--guardian HEX`, or `AVEN_PEER_GUARDIAN`. A peer without one founds
+  vaults without it. Nothing of it is compiled in.
+- **`bun run guardian`** makes one: it prints the secret and the public half and writes nothing.
+- **In the box** it is a test key from the cast's rule, `sha256("avenSANDBOX test signer: maia-city-guardian")`.
 
 ### Lean first
 
@@ -39,7 +53,8 @@ In the box the tree is the cast, fixed. In production it is kept by the Aven Pee
   hash and its user-present and user-verified flags. Pure checks, with examples that break each one.
 - **Unclaimed and claimed:** a network vault may lack an owner only before its claim. A claim makes a well-formed
   tree whose admin is the claimant's vault. Theorems: a server is claimed at most once; after the claim, Aven's owner
-  is the claimant's vault and no device governs anything; a sign-in adds a device and changes no owner.
+  is the claimant's vault and no device governs anything; a sign-in adds a device and changes no owner; with a
+  guardian configured, every person's vault founded has it among its owners.
 - **Vectors** (`id/spec/vectors/passkeys.json`, `claims.json`): assertions and what each check says; claim and
   sign-in traces with every resulting tree. aven-id's tests and the check load them (README rule 10).
 
@@ -48,8 +63,8 @@ In the box the tree is the cast, fixed. In production it is kept by the Aven Pee
 - **`aven-id`:** WebAuthn assertions checked (ES256 only, the algorithm every authenticator has), the statements of a
   claim and a sign-in, and the tree read back from them. The passkey's public key comes from the browser's
   `getPublicKey()` at creation (attestation `none`), so no CBOR is parsed.
-- **The Aven Peer:** new flags `--claim-code`, `--rp-id`, `--origin`, and the tree kept in its store instead of the
-  cast's. The claim code is compared in constant time and never written to a log or the timeline.
+- **The Aven Peer:** new flags `--rp-id`, `--origin` and `--guardian`, and the tree kept in its store instead of the
+  cast's.
 - **The Peer-Light and avenOS:** the claim and sign-in screens; the browser's device key is made in the browser and
   kept in its OPFS.
 - **The passkey's RP ID is `maia.city`** in production, so avenOS can later move to `maia.city` itself without anyone
@@ -58,18 +73,19 @@ In the box the tree is the cast, fixed. In production it is kept by the Aven Pee
 ### How it is checked
 
 `bun run up --check` adds one step: an Aven Peer in production's configuration (no cast, its tree in the box's S3
-under a root of its own, a test claim code), and a Chromium page with Chromium's virtual authenticator
+under a root of its own, the test guardian), and a Chromium page with Chromium's virtual authenticator
 (Playwright, over CDP), which:
 
-1. claims the network with the code, and sees its dashboard;
-2. tries a second claim, with and without the code, and is refused;
+1. signs up first, so claims the network, and sees its dashboard; the admin's vault has the passkey and the
+   guardian as its owners;
+2. tries a second signup with another passkey, and is refused;
 3. signs in from a second browser profile with the same passkey, and becomes a second device;
 4. restarts the Aven Peer and finds the same tree; wipes its store and finds it unclaimed.
 
 ### Not in Part A
 
 Invites and anyone else's signup (milestone 2); more than one passkey per vault, owners k of n, recovery, rotation
-and revoking a device (milestone 3); the master recovery key's successor.
+and revoking a device (milestone 3); removing MaiaCityGuardian from a vault (milestone 3).
 
 ## Part B: aven.maia.city
 
@@ -99,15 +115,17 @@ and `alice` can run it too, so what is tested is what ships.
 
 ### The deploy
 
-A workflow run by hand (`avendeploy.yml`), behind the GitHub environment `production`, which Samuel approves each run
-of. In order:
+A workflow run by hand (`avendeploy.yml`), in the GitHub environment `production`, which holds its variables. No
+required reviewer for now (Samuel, 30 Oct 2026): starting the run is the decision. In order:
 
 1. **Bucket:** `city-maia-aven` made if it is missing, then a probe that a stale `If-Match` and `If-None-Match: *` get
    412 on PUT and DELETE. If Hetzner doesn't honour them, the job says so, and the store leans on the one writer alone.
 2. **DNS:** reads the zone `maia.city` first, through whichever API holds it (Hetzner has moved DNS into its Cloud
    Console), then sets the records. Without a token it prints the records to set by hand.
 3. **Firewall:** the UDP rule.
-4. **The peer:** pulls the released image, makes its key if there is none, starts it.
+4. **The peer:** pulls the released image, makes its key if there is none, starts it. The claim is the first
+   signup, so Samuel signs up right after the first deploy; the job ends by saying whether the network is claimed.
+   Claimed by anyone else, its store is wiped and the deploy runs again.
 5. **Caddy:** the site block, validated, then reloaded.
 6. **Health:** the relay answers over HTTPS, UDP 7501 answers, and the Aven Peer's record is in the bucket.
 
@@ -115,17 +133,17 @@ of. In order:
 
 | Secret | What | Set by |
 |---|---|---|
-| `AVEN_CLAIM_CODE` | the one-time claim code, in the environment `production` | Samuel |
+| `AVEN_PEER_GUARDIAN` | MaiaCityGuardian's public half, a variable of the environment `production` (not secret) | Samuel, from `bun run guardian` |
 | `HETZNER_S3_ACCESS_KEY`, `HETZNER_S3_SECRET_KEY` | the bucket's credentials | there already |
 | `HETZNER_API_KEY` | the firewall rule | there already |
-| `HETZNER_DNS_TOKEN` | the DNS records, where the zone is still on Hetzner's DNS API | Samuel, if missing |
+| `HETZNER_DNS_TOKEN` | the DNS records | there already |
 | `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS` | the server, through `.github/actions/prod-ssh` | there already |
 
 Nothing secret goes into a log: the repository and its Actions logs are public.
 
 ## Done when
 
-- The admin claims `aven.maia.city` with the claim code and a passkey, and sees avenOS's dashboard there, live.
-- A second claim is refused; a second browser of the admin signs in with the passkey and becomes a device.
+- The admin signs up first at `aven.maia.city` with a passkey, so claims it, and sees avenOS's dashboard there, live.
+- The admin's vault has MaiaCityGuardian among its owners. A second signup is refused; a second browser of the admin signs in with the passkey and becomes a device.
 - `bun run up --check` proves the claim, the refusal, the sign-in, the restart and the wipe in the box.
 - v1's site, API and peer answer as before.

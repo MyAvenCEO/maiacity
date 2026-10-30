@@ -1,0 +1,346 @@
+# The Aven Peer at aven.maia.city (aven/DB2/PRODUCTION.md, Part B, "The deploy"), beside v1 on its server, touching
+# none of v1's containers. Run by hand only, in the environment production, which holds its secrets and the variable
+# AVEN_PEER_GUARDIAN; no required reviewer for now (Samuel, 30 Oct 2026): starting the run is the decision. In order:
+#   bucket     city-maia-aven in Helsinki, made if missing, then a probe of its conditional writes (reported only)
+#   DNS        A and AAAA for aven.maia.city, read first, through whichever Hetzner API holds the zone maia.city
+#   firewall   UDP 7501 on the server's firewall (aven/ops/infra/index.ts holds the same rule)
+#   the peer   the released image, by digest, in its own compose project in /opt/aven; its key made there if it has none
+#   Caddy      v1's Caddy gets the site block for aven.maia.city (aven/ops/deploy/Caddyfile), validated, then reloaded;
+#              avenOS's released build is unpacked beside it
+#   health     the relay over HTTPS, the peer over UDP 7501 and through the relay, its record in the bucket, and
+#              whether the network is claimed
+# The server is one input: v1's maia-city, or any Hetzner server whose deploy user takes DEPLOY_SSH_KEY and whose
+# host keys DEPLOY_KNOWN_HOSTS pins. Nothing secret is printed: the repository and these logs are public.
+name: avenDEPLOY
+
+on:
+  workflow_dispatch:
+    inputs:
+      server:
+        description: The Hetzner server it runs on, by name
+        type: string
+        default: maia-city
+      peer:
+        description: The avenPEER release to run (26.10.30, …); empty for the newest
+        type: string
+        default: ''
+      os:
+        description: The avenOS release to serve (26.10.30, …); empty for the newest
+        type: string
+        default: ''
+
+permissions: {}
+
+concurrency:
+  group: avendeploy
+  cancel-in-progress: false
+
+env:
+  SITE: aven.maia.city
+  ZONE: maia.city
+  NAME: aven
+  PORT: '7501'
+  BUCKET: city-maia-aven
+  S3_ENDPOINT: https://hel1.your-objectstorage.com
+  AWS_DEFAULT_REGION: hel1
+  # Hetzner takes no default CRC32 checksums: one only where S3 asks for it
+  AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+  AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+  CLOUD: https://api.hetzner.cloud/v1
+
+jobs:
+  deploy:
+    name: aven.maia.city
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: The server
+        env:
+          SERVER: ${{ inputs.server }}
+          HCLOUD_TOKEN: ${{ secrets.HETZNER_API_KEY }}
+        run: |
+          [ -n "$HCLOUD_TOKEN" ] || { echo "::error::HETZNER_API_KEY is not set"; exit 1; }
+          curl -fsS -H "Authorization: Bearer $HCLOUD_TOKEN" "$CLOUD/servers?name=$SERVER" | jq '.servers[0] // empty' > server.json
+          [ -s server.json ] || { echo "::error::no Hetzner server named $SERVER"; exit 1; }
+          ipv4=$(jq -r '.public_net.ipv4.ip // empty' server.json)
+          # the server's own address in its /64, ::1, as Hetzner configures it
+          ipv6=$(jq -r '.public_net.ipv6.ip // empty' server.json | python3 -c 'import ipaddress, sys; n = sys.stdin.read().strip(); print(ipaddress.ip_network(n)[1] if n else "")')
+          [[ "$ipv4" =~ ^[0-9]+(\.[0-9]+){3}$ ]] || { echo "::error::$SERVER has no IPv4 address"; exit 1; }
+          { echo "IPV4=$ipv4"; echo "IPV6=$ipv6"; echo "SERVER_ID=$(jq -r .id server.json)"; } >> "$GITHUB_ENV"
+          echo "$SERVER: $(jq -r '.server_type.name + " in " + .datacenter.location.name + ", " + .status' server.json), $ipv4, ${ipv6:-no IPv6}"
+
+      # Made if missing, with no object lock, so deletes are real. Then one small object under probe/<run>/, outside
+      # the store's blobs/ and refs/, takes each condition the store sends, and is deleted
+      - name: Bucket
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
+        run: |
+          [ -n "$AWS_ACCESS_KEY_ID" ] && [ -n "$AWS_SECRET_ACCESS_KEY" ] || { echo "::error::set HETZNER_S3_ACCESS_KEY and HETZNER_S3_SECRET_KEY"; exit 1; }
+          s3() { aws s3api --endpoint-url "$S3_ENDPOINT" --cli-connect-timeout 20 "$@"; }
+          if s3 head-bucket --bucket "$BUCKET" 2> /dev/null; then
+            echo "$BUCKET is there"
+          else
+            s3 create-bucket --bucket "$BUCKET" > /dev/null 2> err \
+              || s3 create-bucket --bucket "$BUCKET" --create-bucket-configuration LocationConstraint=hel1 > /dev/null 2> err \
+              || { echo "::error::$BUCKET could not be made: $(grep -o 'BucketAlreadyExists\|BucketAlreadyOwnedByYou\|AccessDenied\|InvalidBucketName\|[A-Za-z]*Error' err | head -1)"; exit 1; }
+            echo "$BUCKET made in hel1"
+          fi
+          lock=$(s3 get-object-lock-configuration --bucket "$BUCKET" --query ObjectLockConfiguration.ObjectLockEnabled --output text 2> /dev/null || echo none)
+          echo "object lock: $lock"
+
+          KEY="probe/$GITHUB_RUN_ID/conditional"
+          printf 'avenDB conditional-write probe %s\n' "$GITHUB_RUN_ID" > body
+          stale='"00000000000000000000000000000000"'
+          # each try: what S3 said, in one word
+          word() { grep -o 'PreconditionFailed\|ConditionalRequestConflict\|NotImplemented\|InvalidArgument\|AccessDenied\|Unknown options\|[0-9][0-9][0-9]' | head -n 1 | grep . || echo failed; }
+          put() { if out=$(s3 put-object --bucket "$BUCKET" --key "$KEY" --body body "$@" 2>&1); then echo written; else word <<< "$out"; fi; }
+          del() { if out=$(s3 delete-object --bucket "$BUCKET" --key "$KEY" "$@" 2>&1); then echo deleted; else word <<< "$out"; fi; }
+          etag() { s3 head-object --bucket "$BUCKET" --key "$KEY" --query ETag --output text 2> /dev/null || true; }
+          first=$(put --if-none-match '*')
+          again=$(put --if-none-match '*')
+          stale_put=$(put --if-match "$stale")
+          right_put=$(put --if-match "$(etag)")
+          stale_del=$(del --if-match "$stale")
+          right_del=$(del --if-match "$(etag)")
+          gone=$([ -z "$(etag)" ] && echo yes || echo no)
+          [ "$gone" = yes ] || s3 delete-object --bucket "$BUCKET" --key "$KEY" > /dev/null || true
+          {
+            echo "### The bucket's conditional writes ($BUCKET)"
+            echo
+            echo "| try | expected | Hetzner said |"
+            echo "| --- | --- | --- |"
+            echo "| PUT, If-None-Match: * on a new key | written | $first |"
+            echo "| PUT, If-None-Match: * on the same key | 412 PreconditionFailed | $again |"
+            echo "| PUT, a stale If-Match | 412 PreconditionFailed | $stale_put |"
+            echo "| PUT, the current If-Match | written | $right_put |"
+            echo "| DELETE, a stale If-Match | 412 PreconditionFailed | $stale_del |"
+            echo "| DELETE, the current If-Match | deleted | $right_del (gone: $gone) |"
+            echo
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$first $again $stale_put $right_put $stale_del $right_del" = "written PreconditionFailed PreconditionFailed written PreconditionFailed deleted" ]; then
+            echo "Hetzner honours If-Match and If-None-Match on PUT and DELETE: the store's compare-and-set is refused on the server too." | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::Hetzner does not honour every condition here: the store leans on its one writer alone (SANDBOX.md, Open questions, 3)"
+            echo "Not every condition holds: the store leans on its one writer alone." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Hetzner moved DNS into its Cloud Console: the zone is either still at dns.hetzner.com (HETZNER_DNS_TOKEN) or
+      # in the Cloud API's zones and rrsets (HETZNER_DNS_TOKEN or HETZNER_API_KEY). Each record is read first and
+      # written only when it differs. Without a token that reaches the zone, it prints the records to set by hand.
+      - name: DNS
+        env:
+          DNS_TOKEN: ${{ secrets.HETZNER_DNS_TOKEN }}
+          HCLOUD_TOKEN: ${{ secrets.HETZNER_API_KEY }}
+        run: |
+          want() { if [ "$1" = A ]; then echo "$IPV4"; else echo "$IPV6"; fi; }
+          api=
+          if [ -n "$DNS_TOKEN" ]; then
+            zone=$(curl -fsS -H "Auth-API-Token: $DNS_TOKEN" "https://dns.hetzner.com/api/v1/zones?name=$ZONE" 2> /dev/null | jq -r '.zones[0].id // empty' || true)
+            [ -n "$zone" ] && api=dns
+          fi
+          if [ -z "$api" ]; then
+            for token in "$DNS_TOKEN" "$HCLOUD_TOKEN"; do
+              [ -n "$token" ] || continue
+              if curl -fsS -o /dev/null -H "Authorization: Bearer $token" "$CLOUD/zones/$ZONE" 2> /dev/null; then
+                api=cloud; CLOUD_DNS=$token; break
+              fi
+            done
+          fi
+          if [ -z "$api" ]; then
+            echo "::warning::No token reaches the zone $ZONE (neither dns.hetzner.com nor the Cloud API): set these by hand"
+            for type in A AAAA; do [ -n "$(want $type)" ] && echo "  $SITE. 300 IN $type $(want $type)"; done
+            exit 0
+          fi
+          echo "The zone $ZONE is in $([ "$api" = dns ] && echo 'dns.hetzner.com (the DNS Console)' || echo "the Cloud API's zones")"
+          for type in A AAAA; do
+            value=$(want $type)
+            [ -n "$value" ] || { echo "$type: the server has no address of that kind"; continue; }
+            if [ "$api" = dns ]; then
+              H="Auth-API-Token: $DNS_TOKEN"
+              records=$(curl -fsS -H "$H" "https://dns.hetzner.com/api/v1/records?zone_id=$zone" | jq -c --arg n "$NAME" --arg t "$type" '[.records[] | select(.type == $t and .name == $n)]')
+              now=$(jq -r 'map(.value) | join(" ")' <<< "$records")
+              echo "$type $SITE now: ${now:-none}"
+              [ "$now" = "$value" ] && continue
+              body=$(jq -nc --arg z "$zone" --arg t "$type" --arg n "$NAME" --arg v "$value" '{zone_id: $z, type: $t, name: $n, value: $v, ttl: 300}')
+              id=$(jq -r '.[0].id // empty' <<< "$records")
+              if [ -n "$id" ]; then
+                curl -fsS -X PUT -H "$H" -H 'Content-Type: application/json' -d "$body" "https://dns.hetzner.com/api/v1/records/$id" > /dev/null
+              else
+                curl -fsS -X POST -H "$H" -H 'Content-Type: application/json' -d "$body" https://dns.hetzner.com/api/v1/records > /dev/null
+              fi
+            else
+              H="Authorization: Bearer $CLOUD_DNS"
+              set=$(curl -sS -H "$H" "$CLOUD/zones/$ZONE/rrsets/$NAME/$type")
+              now=$(jq -r '.rrset.records // [] | map(.value) | join(" ")' <<< "$set")
+              echo "$type $SITE now: ${now:-none}"
+              [ "$now" = "$value" ] && continue
+              records=$(jq -nc --arg v "$value" '[{value: $v}]')
+              if jq -e .rrset > /dev/null <<< "$set"; then
+                curl -fsS -X POST -H "$H" -H 'Content-Type: application/json' -d "{\"records\": $records}" \
+                  "$CLOUD/zones/$ZONE/rrsets/$NAME/$type/actions/set_records" > /dev/null
+              else
+                curl -fsS -X POST -H "$H" -H 'Content-Type: application/json' \
+                  -d "$(jq -nc --arg n "$NAME" --arg t "$type" --argjson r "$records" '{name: $n, type: $t, ttl: 300, records: $r}')" \
+                  "$CLOUD/zones/$ZONE/rrsets" > /dev/null
+              fi
+            fi
+            echo "$type $SITE set: $value"
+          done
+
+      # The firewall applied to the server (maia-city's is maia-city, aven/ops/infra/index.ts), its rules read and
+      # written back whole with one more: UDP 7501 from anywhere
+      - name: Firewall
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HETZNER_API_KEY }}
+          SERVER: ${{ inputs.server }}
+        run: |
+          H="Authorization: Bearer $HCLOUD_TOKEN"
+          ids=$(jq -r '.public_net.firewalls[]?.id' server.json)
+          [ -n "$ids" ] || { echo "::warning::$SERVER has no firewall applied: UDP $PORT is open as far as Hetzner goes"; exit 0; }
+          id=
+          for f in $ids; do
+            [ "$(curl -fsS -H "$H" "$CLOUD/firewalls/$f" | jq -r .firewall.name)" = "$SERVER" ] && id=$f
+          done
+          id=${id:-$(head -1 <<< "$ids")}
+          curl -fsS -H "$H" "$CLOUD/firewalls/$id" | jq .firewall > firewall.json
+          echo "firewall $(jq -r .name firewall.json): $(jq -r '[.rules[] | "\(.protocol) \(.port // "-")"] | join(", ")' firewall.json)"
+          if jq -e --arg p "$PORT" '.rules[] | select(.direction == "in" and .protocol == "udp" and .port == $p)' firewall.json > /dev/null; then
+            echo "UDP $PORT is open already"
+            exit 0
+          fi
+          jq -c --arg p "$PORT" '{rules: ([.rules[] | with_entries(select(.value != null))]
+            + [{direction: "in", protocol: "udp", port: $p, source_ips: ["0.0.0.0/0", "::/0"]}])}' firewall.json > rules.json
+          curl -fsS -X POST -H "$H" -H 'Content-Type: application/json' -d @rules.json "$CLOUD/firewalls/$id/actions/set_rules" > /dev/null
+          echo "UDP $PORT opened on $(jq -r .name firewall.json)"
+
+      # the peer's package may be private until it is made public: the job's token reads it either way
+      - uses: docker/login-action@v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: The releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PEER: ${{ inputs.peer }}
+          OS: ${{ inputs.os }}
+          GUARDIAN: ${{ vars.AVEN_PEER_GUARDIAN }}
+        run: |
+          newest() { gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName --jq "[.[].tagName | select(startswith(\"@aven/$1@\"))][0] // empty" | sed "s#^@aven/$1@##"; }
+          peer=${PEER:-$(newest peer)}
+          os=${OS:-$(newest os)}
+          [ -n "$peer" ] || { echo "::error::no @aven/peer release yet: production releases it"; exit 1; }
+          [ -n "$os" ] || { echo "::error::no @aven/os release yet: production releases it"; exit 1; }
+          name="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/aven/peer"
+          digest=$(docker buildx imagetools inspect "$name:$peer" --format '{{json .Manifest}}' | jq -r '.digest // empty')
+          [ -n "$digest" ] || { echo "::error::$name:$peer is not in the registry"; exit 1; }
+          mkdir os && gh release download "@aven/os@$os" --repo "$GITHUB_REPOSITORY" --dir os --pattern 'aven-os-web-*.tar.gz' --pattern SHA256SUMS
+          (cd os && sha256sum -c SHA256SUMS)
+          if [ -n "$GUARDIAN" ] && ! [[ "$GUARDIAN" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::the variable AVEN_PEER_GUARDIAN is not 64 hex digits"; exit 1
+          fi
+          [ -n "$GUARDIAN" ] || echo "::warning::the environment production has no variable AVEN_PEER_GUARDIAN: vaults are founded without MaiaCityGuardian"
+          { echo "PEER_VERSION=$peer"; echo "PEER_IMAGE=$name@$digest"; echo "OS_VERSION=$os"; } >> "$GITHUB_ENV"
+          echo "avenPEER $peer ($name@$digest), avenOS $os, guardian ${GUARDIAN:-none}"
+
+      - uses: ./.github/actions/prod-ssh
+        with:
+          host: ${{ env.IPV4 }}
+          ssh-key: ${{ secrets.DEPLOY_SSH_KEY }}
+          known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+
+      # Its secrets go to the server on stdin, never in an argument; it prints only its public half and its record
+      - name: The peer
+        env:
+          S3_KEY: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
+          S3_SECRET: ${{ secrets.HETZNER_S3_SECRET_KEY }}
+          TOKEN: ${{ github.token }}
+          GUARDIAN: ${{ vars.AVEN_PEER_GUARDIAN }}
+        run: |
+          ssh prod 'sudo install -d -o deploy -g deploy -m 700 /opt/aven'
+          scp aven/DB2/deploy/compose.yml aven/DB2/deploy/server/peer.sh prod:/opt/aven/
+          # shellcheck disable=SC2029  # the image, the guardian and the actor are meant to expand here, on the runner
+          printf '%s\n%s\n%s\n' "$S3_KEY" "$S3_SECRET" "$TOKEN" \
+            | ssh prod "bash /opt/aven/peer.sh '$PEER_IMAGE' '$GUARDIAN' '$GITHUB_ACTOR'" | tee peer.out
+          public=$(sed -n 's/^public=//p' peer.out)
+          started=$(sed -n 's/^started=//p' peer.out | tail -1)
+          [ "$public" = "$started" ] || echo "::warning::the key the peer started with ($started) is not its key file's ($public)"
+          echo "PEER_KEY=$public" >> "$GITHUB_ENV"
+
+      - name: Caddy
+        run: |
+          sed -n '/^# >>> aven.maia.city$/,/^# <<< aven.maia.city$/p' aven/ops/deploy/Caddyfile > aven.caddy
+          [ -s aven.caddy ] || { echo "::error::aven/ops/deploy/Caddyfile has no block for aven.maia.city"; exit 1; }
+          scp aven.caddy aven/DB2/deploy/server/caddy.sh "os/aven-os-web-$OS_VERSION.tar.gz" prod:/opt/aven/
+          # shellcheck disable=SC2029  # the version and the run expand here, on the runner
+          ssh prod "bash /opt/aven/caddy.sh '$OS_VERSION' '$GITHUB_RUN_ID'"
+
+      # From outside, by the server's address, so a record that hasn't spread yet doesn't hide the server. A first run
+      # may wait for Caddy's certificate, which needs the new records to have spread.
+      - name: Health
+        env:
+          TOKEN: ${{ github.token }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
+        run: |
+          s3() { aws s3api --endpoint-url "$S3_ENDPOINT" --cli-connect-timeout 20 "$@"; }
+          red=0
+          row() { echo "| $1 | $2 |" >> health.md; [ "$3" = ok ] || red=1; }
+          echo "DNS: $SITE is $(getent ahosts "$SITE" | awk '{print $1}' | sort -u | xargs || echo nothing) to this runner"
+
+          # the relay, over HTTPS: its probe and health, and avenOS beside it
+          https() { curl -sS -o /dev/null -w '%{http_code}' --max-time 10 --resolve "$SITE:443:$IPV4" "https://$SITE$1" 2> /dev/null || echo none; }
+          for _ in $(seq 36); do [ "$(https /ping)" = 200 ] && break; sleep 5; done
+          for path in /ping /healthz /; do
+            code=$(https "$path")
+            row "https://$SITE$path" "$code" "$([ "$code" = 200 ] && echo ok)"
+          done
+
+          # the peer itself, from a throwaway peer of the same image: once straight over UDP 7501, once with no UDP
+          # address it can reach, so only through the relay
+          probe() {
+            docker run -d --name "probe-$1" --add-host "$SITE:$IPV4" -e AVEN_PEER_NAME="deploy-probe-$1" \
+              -e AVEN_PEER_SECRET="$(openssl rand -hex 32)" -e AVEN_PEER_RELAY_URL="https://$SITE" \
+              -e AVEN_PEER_AVEN="$2" -e AVEN_PEER_AVEN_KEY="$PEER_KEY" "$PEER_IMAGE" > /dev/null
+            for _ in $(seq 20); do docker logs "probe-$1" 2>&1 | grep -q "\"path\":\"$1\"" && break; sleep 2; done
+            got=$(docker logs "probe-$1" 2>&1 | grep -o '"path":"[a-z]*"' | sort -u | tr '\n' ' ')
+            docker rm -f "probe-$1" > /dev/null
+            row "a peer, $1 ($2)" "${got:-no connection}" "$(grep -q "\"path\":\"$1\"" <<< "$got" && echo ok)"
+          }
+          printf '%s' "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin > /dev/null
+          probe direct "$IPV4:$PORT"
+          probe relay 127.0.0.1:9
+
+          # its record, in the bucket: the ref first-start and the blob it names
+          blob=$(s3 get-object --bucket "$BUCKET" --key refs/first-start ref > /dev/null 2>&1 && tr -d '[:space:]' < ref || true)
+          if [ -n "$blob" ] && s3 head-object --bucket "$BUCKET" --key "blobs/$blob" > /dev/null 2>&1; then
+            row "the Aven Peer's record" "refs/first-start → blobs/${blob:0:16}…" ok
+          else
+            row "the Aven Peer's record" "${blob:+refs/first-start → a missing blob}${blob:-no refs/first-start}" red
+          fi
+
+          if s3 head-object --bucket "$BUCKET" --key refs/claim > /dev/null 2>&1; then
+            claimed="**Claimed**: the ref claim is set, so its admin has signed up."
+          else
+            claimed="**Not claimed yet**: the first signup at https://$SITE claims it. Sign up now."
+          fi
+          {
+            echo "### aven.maia.city: avenPEER $PEER_VERSION, avenOS $OS_VERSION"
+            echo
+            echo "The Aven Peer's key: \`$PEER_KEY\`"
+            echo
+            echo "| check | result |"
+            echo "| --- | --- |"
+            cat health.md
+            echo
+            echo "$claimed"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$red" = 0 ] || { echo "::error::a health check is red (the table above)"; exit 1; }
