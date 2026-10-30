@@ -5,22 +5,27 @@ import Aven.ID.Governs
 /-! # Unclaimed and claimed
 
 In production the tree is data the Aven Peer keeps through its store (PRODUCTION.md, "The tree becomes data"). Before
-its claim, the tree holds the network's vault, which has no owner yet, and the Aven Peer, its device. The claim is the
+its claim, the tree holds Aven, the agent that runs the network, whose vault has no owner yet, and the Aven Peer, its
+device. A statement's `network` names the network it is for by its agent's id (`aven`): the stored texts keep that
+word, and read as they always have. The claim is the
 first signup (Samuel, 30 Oct 2026: no code), one statement signed by a passkey, which founds this tree (PRODUCTION.md,
-Part C):
+Part C; Aven is an agent, Samuel, 30 Oct 2026):
 
 ```
 <name>'s vault         person   owned by the passkey and, when the Aven Peer is given one, MaiaCityGuardian
 ├── Maia City          coop     the admin coop, owned by the person's vault
-│   └── Aven           network  owned by Maia City
+│   └── Aven           agent    owned by Maia City: it runs the members' network for it
 │       └── Aven Peer  device
 └── <name>'s browser   device   acts for the person's vault
 ```
 
 The person's name is the one asked at signup, which the passkey signs (`validPersonName`). The coop's id and name are
 the Aven Peer's configuration (`--admin-coop`, `Maia City` by default): read at every start, never signed, so the coop
-is renamed by a restart with another name. Each later sign-in is a statement signed by the same passkey that adds one
-more browser, `<name>'s browser 2`, `3`, … in the order they came. The Aven Peer keeps each statement as a blob, the
+is renamed by a restart with another name. The stored claims of the days the agent was called a network's vault read
+the same: their tree is the one they made then but for that one kind (`Aven.ID.Before`). Each later sign-in is a statement signed by the same passkey that adds one
+more browser, `<name>'s browser 2`, `3`, … in the order they came. A member signs in with the same statement, signed
+by their own passkey, which the network keeps beside its members (`Aven.ID.Invite`, "Sign-ins"; `Aven.ID.SignIn`):
+the claimant's sign-ins are the ones kept here. The Aven Peer keeps each statement as a blob, the
 claim under the ref `claim`, set from nothing by compare-and-set, so a second claim is refused even racing the first.
 
 A statement's passkey signs its text, through the challenge (`challengeOf`): so it binds the network, the vaults it
@@ -29,16 +34,16 @@ its challenge. The browser sending a statement must be the device it names: the 
 key with it (`sender`).
 
 A passkey that counts its signatures must count up: a sign-in whose counter isn't above the last one the network
-kept, while either is not 0, is refused, as WebAuthn advises against a cloned authenticator. Synced passkeys keep the
+kept for that passkey, while either is not 0, is refused, as WebAuthn advises against a cloned authenticator. Synced passkeys keep the
 counter at 0, and pass.
 
 A restart reads the tree back (`restore`): every stored statement is checked again, as when it came. A wipe empties
 the store, and the network is unclaimed again.
 
 Theorems: a server is claimed at most once (`claim_once`); after its claim the claimant's vault, which its passkey
-owns, is the admin coop's one owner, the coop the network's, the tree is well formed, no device governs anything and
+owns, is the admin coop's one owner, the coop the agent's, the tree is well formed, no device governs anything and
 the coop holds no devices (`claim_admin`); a sign-in adds
-one device and changes no vault that was there (`signIn_adds`); the network vault lacks an owner only before its claim
+one device and changes no vault that was there (`signIn_adds`); the agent's vault lacks an owner only before its claim
 (`unclaimed_vaults`, `claimed_owned`); with a guardian configured, every person's vault founded has it among its
 owners (`guardian_owns`). -/
 
@@ -73,8 +78,11 @@ def Claim.text (c : Claim) : String :=
 /-- The vaults named after the claimant: their vault, and their browsers, the claiming one first. -/
 def Claim.vaultName (c : Claim) : String := c.name ++ "'s vault"
 
-def Claim.browser (c : Claim) (n : Nat) : String :=
-  if n = 1 then c.name ++ "'s browser" else c.name ++ "'s browser " ++ toString n
+/-- A person's browsers, named after them: the first `<name>'s browser`, then `<name>'s browser 2`, `3`, … -/
+def browserName (name : String) (n : Nat) : String :=
+  if n = 1 then name ++ "'s browser" else name ++ "'s browser " ++ toString n
+
+def Claim.browser (c : Claim) (n : Nat) : String := browserName c.name n
 
 def SignIn.text (i : SignIn) : String :=
   "avenID sign-in 1\nnetwork " ++ i.network ++ "\ndevice " ++ i.device ++ " " ++ i.deviceKey ++ "\n"
@@ -82,12 +90,12 @@ def SignIn.text (i : SignIn) : String :=
 /-- MaiaCityGuardian's key, by the id trees know it by. -/
 def guardianId : String := "maia-city-guardian"
 
-/-- The names of the network's vault and its device. -/
+/-- The names of the agent's vault, which runs the network, and its device. -/
 def networkName : String := "Aven"
 def peerName : String := "Aven Peer"
 
-/-- An Aven Peer that keeps its tree: its network's vault, its own device and key, the relying party its passkeys
-are for, MaiaCityGuardian's public half if it is given one, the admin coop's id and name, and the statements its
+/-- An Aven Peer that keeps its tree: its agent's vault (`network`, the id the network goes by), its own device and
+key, the relying party its passkeys are for, MaiaCityGuardian's public half if it is given one, the admin coop's id and name, and the statements its
 store holds. -/
 structure Server where
   network : String
@@ -136,9 +144,9 @@ def founders (s : Server) (passkey : String) : List Owner :=
 
 def vaults (s : Server) : List Vault :=
   match s.claim with
-  | none => [⟨s.network, networkName, .network, []⟩, ⟨s.peer, peerName, .device, [.vault s.network]⟩]
+  | none => [⟨s.network, networkName, .agent, []⟩, ⟨s.peer, peerName, .device, [.vault s.network]⟩]
   | some c => [⟨c.person, c.vaultName, .person, s.founders c.passkey⟩,
-      ⟨s.coop, s.coopName, .coop, [.vault c.person]⟩, ⟨s.network, networkName, .network, [.vault s.coop]⟩,
+      ⟨s.coop, s.coopName, .coop, [.vault c.person]⟩, ⟨s.network, networkName, .agent, [.vault s.coop]⟩,
       ⟨s.peer, peerName, .device, [.vault s.network]⟩, ⟨c.device, c.browser 1, .device, [.vault c.person]⟩] ++
     s.signIns.mapIdx fun k i => ⟨i.device, c.browser (k + 2), .device, [.vault c.person]⟩
 
@@ -233,7 +241,7 @@ theorem claim_then_taken {sender sender' : String} {c c' : Claim} (h : s.submitC
   exact ⟨rfl, claim_once rfl⟩
 
 /-- After its claim, the claimant's vault, which its passkey owns, is the admin coop's one owner, and the coop the
-network's; the tree is well formed, no device governs anything, and the coop holds no devices. -/
+agent's; the tree is well formed, no device governs anything, and the coop holds no devices. -/
 theorem claim_admin {sender : String} {c : Claim} (h : s.submitClaim sender c = .ok s') :
     s'.tree.WF ∧ s'.tree.kind? s.coop = some .coop ∧ s'.tree.ownersOf s.coop = [c.person] ∧
     s'.tree.ownersOf s.network = [s.coop] ∧ s'.tree.KeyOwns c.passkey c.person ∧
@@ -245,7 +253,7 @@ theorem claim_admin {sender : String} {c : Claim} (h : s.submitClaim sender c = 
   obtain ⟨e, w, _⟩ := acceptClaim_ok h
   subst e
   have v : ({ s with claim := some c } : Server).tree.vaults = ⟨c.person, c.vaultName, .person, s.founders c.passkey⟩ ::
-      ⟨s.coop, s.coopName, .coop, [.vault c.person]⟩ :: ⟨s.network, networkName, .network, [.vault s.coop]⟩ ::
+      ⟨s.coop, s.coopName, .coop, [.vault c.person]⟩ :: ⟨s.network, networkName, .agent, [.vault s.coop]⟩ ::
       (⟨s.peer, peerName, .device, [.vault s.network]⟩ :: ⟨c.device, c.browser 1, .device, [.vault c.person]⟩ ::
       s.signIns.mapIdx fun k i => ⟨i.device, c.browser (k + 2), .device, [.vault c.person]⟩) := by
     simp [tree, vaults, founders]
@@ -308,12 +316,12 @@ theorem signIn_adds {sender : String} {i : SignIn} (h : s.submitSignIn sender i 
   | none => simp [g] at some
   | some y => rfl
 
-/-- Before its claim, the tree is the network's vault, with no owner, and the Aven Peer, its device. -/
+/-- Before its claim, the tree is the agent's vault, with no owner, and the Aven Peer, its device. -/
 theorem unclaimed_vaults (h : s.claim = none) :
-    s.tree.vaults = [⟨s.network, networkName, .network, []⟩, ⟨s.peer, peerName, .device, [.vault s.network]⟩] := by
+    s.tree.vaults = [⟨s.network, networkName, .agent, []⟩, ⟨s.peer, peerName, .device, [.vault s.network]⟩] := by
   simp [tree, vaults, h]
 
-/-- After its claim, every vault has an owner: the network's lacks one only before. -/
+/-- After its claim, every vault has an owner: the agent's lacks one only before. -/
 theorem claimed_owned {sender : String} {c : Claim} (h : s.submitClaim sender c = .ok s') :
     ∀ v ∈ s'.tree.vaults, v.owners ≠ [] :=
   (claim_admin h).1.owned

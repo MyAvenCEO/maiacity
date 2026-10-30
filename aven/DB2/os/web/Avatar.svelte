@@ -1,6 +1,6 @@
 <script>
-	// A vault's mark: its initial on a colour of its own. A network's is square, a coop's a hexagon, a device's outlined.
-	import { tree, vaultName } from './id.js';
+	// A vault's mark: its initial on a colour of its own. An agent's is square, a coop's a hexagon, a device's outlined.
+	import { tree, vaultName } from './id.svelte.js';
 	let { id, size = 24 } = $props();
 
 	const vault = $derived({ name: vaultName(id), kind: tree.kind(id) });
@@ -22,14 +22,15 @@
 		width: var(--size);
 		height: var(--size);
 		border-radius: 50%;
-		background: oklch(56% 0.13 var(--hue));
-		color: #fff;
+		background: oklch(var(--mark-l) var(--mark-c) var(--hue));
+		color: var(--on-accent);
 		font-size: calc(var(--size) * 0.5);
-		font-weight: 600;
+		font-family: var(--font-display);
+		font-weight: 500;
 		line-height: 1;
 	}
 
-	.network {
+	.agent {
 		border-radius: 28%;
 	}
 
@@ -40,7 +41,7 @@
 
 	.device {
 		background: transparent;
-		border: 1.5px solid oklch(56% 0.13 var(--hue));
-		color: oklch(56% 0.13 var(--hue));
+		border: 1.5px solid oklch(var(--mark-l) var(--mark-c) var(--hue));
+		color: oklch(var(--mark-l) var(--mark-c) var(--hue));
 	}
 </style>

@@ -8,8 +8,8 @@ set -e
 cd /work
 
 # A stub for every target a manifest names: the library, and each [[bin]], [[example]], [[test]] and [[bench]] at its
-# `path` or cargo's default for its name. A crate that came with its source is third-party code: the patched fork of
-# OpenDAL's OPFS service (db/store/opendal-opfs), which opendal itself calls, so it can't be a stub.
+# `path` or cargo's default for its name. A crate that came with its source is third-party code, kept whole (none
+# today).
 for manifest in $(find . -name Cargo.toml -not -path ./Cargo.toml); do
 	dir=$(dirname "$manifest")
 	[ -e "$dir/src/lib.rs" ] && continue
@@ -32,10 +32,9 @@ for manifest in $(find . -name Cargo.toml -not -path ./Cargo.toml); do
 	done
 done
 
-# What `bun run up` builds (sandbox/up.mjs, id/core/wasm/build.sh), then what `cargo test --workspace` builds
+# What `bun run up` builds (sandbox/up.mjs), then what `cargo test --workspace` builds
 cargo build --locked -p aven-peer
 cargo build --locked -p aven-peer-light --lib --target wasm32-unknown-unknown
-cargo build --locked -p aven-id --lib --target wasm32-unknown-unknown --release
 cargo test --locked --workspace --no-run
 
 # The stubs' own artifacts go, and the fork's, whose source the checkout brings again with newer times: our crates and
@@ -51,5 +50,5 @@ for target in "" "--target wasm32-unknown-unknown"; do
 	done
 done
 rm -rf target/debug/incremental target/wasm32-unknown-unknown/*/incremental
-left=$(find target -name '*aven*' -o -name '*opendal_service_opfs*' -o -name 'opendal-service-opfs-*' | head -5)
+left=$(find target -name '*aven*' | head -5)
 if [ -n "$left" ]; then echo "stub artifacts left: $left"; exit 1; fi

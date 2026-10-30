@@ -249,3 +249,84 @@ async fn of_two_racing_joins_with_one_invite_one_is_kept() {
     let (kept, _) = race("invites.json", name, 2, 2, 3).await;
     assert_eq!(kept.members().members().len(), 1);
 }
+
+/// Production's store as main's code wrote it before the agent (30 Oct 2026, `Aven.ID.Before`; made in the box from
+/// main's aven-id, see `id/core/tests/before`): every ref's blob byte for byte, the tree those statements made then,
+/// with Aven of kind `network`, and its members, invites and door. A new door on that store reads every statement as
+/// it is and builds the same tree but for Aven's kind, which reads as `agent`, as Lean's vector of the old name says
+/// (`trees.json`); the members are the admin coop's, and the door lets in the same keys.
+#[tokio::test]
+async fn the_door_reads_what_production_stored_before_the_agent() {
+    use aven_db_store::{RefName, Store};
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../id/core/tests/before/store-2026-10-30.json");
+    let old: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let store = Arc::new(backend::memory().unwrap());
+    for (name, statement) in old["refs"].as_object().unwrap() {
+        let blob = store
+            .put(bytes::Bytes::from(statement.to_string()))
+            .await
+            .unwrap();
+        store
+            .set_ref(&RefName::new(name).unwrap(), None, blob)
+            .await
+            .unwrap();
+    }
+    let door = open(&store, &old["server"]).await;
+    let m = door.members();
+
+    // the same tree but for the agent's kind, read from its old name
+    let mut want = old["tree"].clone();
+    for v in want["vaults"].as_array_mut().unwrap() {
+        let kind = aven_id::Kind::parse(v["kind"].as_str().unwrap()).unwrap();
+        v["kind"] = json!(kind.as_str());
+    }
+    assert_ne!(want, old["tree"], "the old tree names a network");
+    assert_eq!(tree(&m), want);
+    assert_eq!(m.tree().unwrap().kind("aven"), Some(aven_id::Kind::Agent));
+
+    // the members are the admin coop's, and the door admits the same keys
+    assert_eq!(json!(m.members()), old["members"]);
+    for s in m.members() {
+        assert!(m.member_of(&s, m.coop()), "{s} is a member of Maia City");
+    }
+    assert_eq!(json!(m.admitted()), old["admitted"]);
+    // a restart reads invites back by their id, not in the order they came (`Aven.ID.Invite`)
+    let sorted = |v: &Value| {
+        let mut all: Vec<String> = v.as_array().unwrap().iter().map(Value::to_string).collect();
+        all.sort();
+        all
+    };
+    let states: Vec<Value> = m
+        .invites()
+        .iter()
+        .map(|i| json!([i.key, m.state(&i.key)]))
+        .collect();
+    assert_eq!(sorted(&json!(states)), sorted(&old["invites"]));
+
+    // nothing stored changes: every statement reads back as the bytes it was kept as
+    let mut kept = serde_json::Map::new();
+    kept.insert("claim".into(), m.network().claim().unwrap().to_json());
+    for (n, i) in m.all_sign_ins().iter().enumerate() {
+        kept.insert(format!("signin-{:06}", n + 1), i.to_json());
+    }
+    for i in m.invites() {
+        kept.insert(aven_id::invite_id(&i.key), i.to_json());
+    }
+    for w in m.withdrawn() {
+        kept.insert(
+            format!("withdrawn-{}", &aven_id::invite_id(&w.key)[7..]),
+            w.to_json(),
+        );
+    }
+    for j in m.joins() {
+        kept.insert(
+            format!("joined-{}", &aven_id::invite_id(&j.invite)[7..]),
+            j.to_json(),
+        );
+    }
+    assert_eq!(Value::Object(kept), old["refs"]);
+
+    // a restart on the same store reads the same
+    assert_eq!(tree(&open(&store, &old["server"]).await.members()), want);
+}

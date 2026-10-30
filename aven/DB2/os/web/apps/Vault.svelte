@@ -4,7 +4,7 @@
 	// (#/alice/vault/aven): Alice manages Aven as herself, never as Aven. A vault outside the tree doesn't open. A coop
 	// (Maia City) holds no devices: its people act for it through their own, as themselves (PRODUCTION.md, Part C).
 	import Avatar from '../Avatar.svelte';
-	import { ownerName, owners, tree, vaultName } from '../id.js';
+	import { ownerName, owners, tree, vaultName } from '../id.svelte.js';
 
 	let { account, target } = $props();
 
@@ -12,6 +12,11 @@
 	const vault = $derived({ name: vaultName(shown), kind: tree.kind(shown) });
 	const above = $derived(tree.chain(shown));
 	const below = $derived(tree.governs(shown).length);
+	// a vault with no vault above it is governed by its owner keys alone: a person's passkey and MaiaCityGuardian
+	const keys = $derived(owners(shown).filter((owner) => owner.kind === 'key').length);
+	const top = $derived(
+		keys === 1 ? 'its owner key: nothing is above it' : keys ? `its ${keys} owner keys: nothing is above it` : 'no owner yet'
+	);
 </script>
 
 <main data-view="vault" data-account={account} data-shown={shown}>
@@ -20,15 +25,15 @@
 			<Avatar id={shown} size={40} />
 			<div>
 				<h1>{vault.name}</h1>
-				<small>{vault.kind} vault</small>
+				<small data-testid="kind">{vault.kind} vault</small>
 			</div>
 		</div>
 		<dl>
 			<dt>owned by</dt>
 			<dd>{owners(shown).map((owner) => ownerName(owner)).join(', ')}</dd>
 			<dt>governed by</dt>
-			<dd>
-				{above.length ? above.map((id) => vaultName(id)).join(' → ') : 'its owner key alone: nothing is above it'}
+			<dd data-testid="governed-by">
+				{above.length ? above.map((id) => vaultName(id)).join(' → ') : top}
 			</dd>
 			<dt>governs</dt>
 			<dd>{below === 1 ? 'one vault' : below ? `${below} vaults` : 'nothing'}{below ? ', in the tree below' : ''}</dd>
@@ -78,33 +83,28 @@
 <style>
 	main {
 		display: grid;
-		gap: 16px;
-		padding: 20px 16px;
-	}
-
-	.card {
-		padding: 14px;
-		background: var(--surface);
-		border: 1px solid var(--line);
-		border-radius: 10px;
+		gap: 20px;
+		max-width: 880px;
+		margin: 0 auto;
+		padding: 28px 16px 48px;
 	}
 
 	.head {
 		display: flex;
 		align-items: center;
-		gap: 12px;
-		margin-bottom: 12px;
+		gap: 14px;
+		margin-bottom: 18px;
 	}
 
 	h1 {
 		margin: 0;
-		font-size: 20px;
+		font-size: 28px;
 		line-height: 1.2;
 	}
 
 	h2 {
-		margin: 0 0 10px;
-		font-size: 15px;
+		margin: 0 0 14px;
+		font-size: 20px;
 	}
 
 	small,
@@ -116,7 +116,7 @@
 	dl {
 		display: grid;
 		grid-template-columns: max-content 1fr;
-		gap: 2px 14px;
+		gap: 8px 16px;
 		margin: 0;
 		font-size: 14px;
 	}
@@ -144,15 +144,18 @@
 		align-items: center;
 		gap: 8px;
 		width: fit-content;
-		padding: 4px 8px 4px 4px;
+		padding: 5px 14px 5px 5px;
 		color: inherit;
 		font-size: 14px;
 		text-decoration: none;
-		border-radius: 8px;
+		border-radius: var(--radius-pill);
 	}
 
-	.row:hover,
+	.row:hover {
+		background: var(--sage);
+	}
+
 	.row.here {
-		background: var(--bg);
+		background: var(--accent-soft);
 	}
 </style>

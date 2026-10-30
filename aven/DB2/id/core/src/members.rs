@@ -1,15 +1,22 @@
-//! A network that keeps its members (`Aven.ID.Invite`'s `Members`): its claim and sign-ins ([`Network`]), then the
-//! admin's invites and withdrawals and the joins, each in the order it came. Every step returns the next state and
+//! A network that keeps its members (`Aven.ID.Invite`'s `Members`): its claim and the claimant's sign-ins
+//! ([`Network`]), then the admin's invites and withdrawals, the joins and the members' sign-ins, each in the order it
+//! came. Every step returns the next state and
 //! leaves this one as it was, so the Aven Peer stores a statement first and takes the new state once its ref is set.
 //!
-//! The admin is whoever owns the network's vault, whatever its kind: its passkeys are those that own a vault governing
-//! the network (`admin_key`). The door ([`Members::admits`]) lets in the devices of member vaults, the network's own
-//! devices and the devices of the vaults that govern the network; a browser that is no device yet only for a statement
-//! the network would take from it now ([`Members::newcomer`]).
+//! Members belong to the admin coop, not to the agent (Samuel, 30 Oct 2026): Maia City is the community, and Aven, the
+//! agent it owns, runs the network for it. So the coop invites: its passkeys are those that own a vault governing the
+//! coop (`admin_key`). The door ([`Members::admits`]) hangs on the coop's membership: it lets in the devices of the
+//! coop's members, the devices of the vaults that govern the coop and the agent's own devices; a browser that is no
+//! device yet only for a statement the network would take from it now ([`Members::newcomer`]).
+//!
+//! Every person whose vault the tree holds signs in with their passkey (`Aven.ID.SignIn`): the statement names no
+//! passkey, since a browser learns which one signed only from the assertion, so the passkey is found by it, the
+//! claimant's or a member's ([`Members::accept_sign_in`]). The new browser is a device of that passkey's own vault,
+//! and counters are kept per passkey.
 
 use std::fmt;
 
-use crate::claim::{Claim, SignIn};
+use crate::claim::{Claim, SignIn, browser_name};
 use crate::invite::{Invite, Join, Withdrawal, invite_id};
 use crate::network::{ClaimError, Network};
 use crate::passkey::{Assertion, AssertionError, Passkey, challenge};
@@ -36,9 +43,13 @@ pub enum MemberError {
     BadInviteSignature,
     /// The join names another browser than the one that sent it.
     NotFromDevice,
-    /// The join names a vault, a passkey or a browser the tree has.
+    /// The join names a vault, a passkey or a browser the tree has; a sign-in a browser it has.
     Known,
     Invalid(Invalid),
+    /// A sign-in by a passkey that owns no vault here.
+    Stranger,
+    /// A sign-in whose passkey's signature counter did not count up.
+    Counter,
 }
 
 impl fmt::Display for MemberError {
@@ -58,6 +69,11 @@ impl fmt::Display for MemberError {
             MemberError::NotFromDevice => write!(f, "the join is for another browser"),
             MemberError::Known => write!(f, "this person, passkey or browser is known already"),
             MemberError::Invalid(why) => write!(f, "{why}"),
+            MemberError::Stranger => write!(f, "this passkey isn't a member here"),
+            MemberError::Counter => write!(
+                f,
+                "the passkey's counter did not count up: it may be a copy"
+            ),
         }
     }
 }
@@ -72,12 +88,20 @@ pub enum Pending {
     Join(Join),
 }
 
+/// A member's sign-in, as the network keeps it: the statement, and the join whose passkey signed it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MemberSignIn {
+    pub member: Join,
+    pub sign_in: SignIn,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Members {
     network: Network,
     invites: Vec<Invite>,
     withdrawn: Vec<Withdrawal>,
     joins: Vec<Join>,
+    sign_ins: Vec<MemberSignIn>,
 }
 
 impl Members {
@@ -87,6 +111,7 @@ impl Members {
             invites: Vec::new(),
             withdrawn: Vec::new(),
             joins: Vec::new(),
+            sign_ins: Vec::new(),
         }
     }
 
@@ -106,16 +131,47 @@ impl Members {
         &self.joins
     }
 
+    /// The members' sign-ins, in the order they came.
+    pub fn sign_ins(&self) -> &[MemberSignIn] {
+        &self.sign_ins
+    }
+
+    /// Every sign-in kept: the claimant's, then the members'.
+    pub fn all_sign_ins(&self) -> Vec<SignIn> {
+        let members = self.sign_ins.iter().map(|s| s.sign_in.clone());
+        self.network
+            .sign_ins()
+            .iter()
+            .cloned()
+            .chain(members)
+            .collect()
+    }
+
+    /// Why a statement was refused, as a person reads it: a stranger's passkey is told to ask for an invite.
+    pub fn say(&self, e: &MemberError) -> String {
+        match e {
+            MemberError::Stranger => format!(
+                "This passkey isn't a member of {}. Ask the admin for an invite.",
+                self.network.coop_name
+            ),
+            e => e.to_string(),
+        }
+    }
+
     pub fn publics(&self) -> Vec<(String, String)> {
         let mut out = self.network.publics();
         for j in &self.joins {
             out.push((j.passkey.clone(), format!("es256:{}", j.passkey_key)));
             out.push((j.device.clone(), j.device_key.clone()));
         }
+        for s in &self.sign_ins {
+            out.push((s.sign_in.device.clone(), s.sign_in.device_key.clone()));
+        }
         out
     }
 
-    /// The tree's vaults: the network's, then each join's person vault and its browser, named after the person.
+    /// The tree's vaults: the network's, then each join's person vault and its browser, named after the person, then
+    /// each member's browser that signed in, numbered after their join's and those they signed in before.
     pub fn vaults(&self) -> Vec<Vault> {
         let mut out = self.network.vaults();
         for j in &self.joins {
@@ -132,17 +188,40 @@ impl Members {
                 owners: vec![Owner::Vault(j.person.clone())],
             });
         }
+        for (k, s) in self.sign_ins.iter().enumerate() {
+            let person = &s.member.person;
+            let before = self.sign_ins[..k]
+                .iter()
+                .filter(|x| &x.member.person == person)
+                .count();
+            out.push(Vault {
+                id: s.sign_in.device.clone(),
+                name: browser_name(&s.member.name, before + 2),
+                kind: Kind::Device,
+                owners: vec![Owner::Vault(person.clone())],
+            });
+        }
         out
     }
 
-    /// The tree once claimed; before, it fails only for the network's missing owner.
+    /// The tree once claimed; before, it fails only for the agent's missing owner.
     pub fn tree(&self) -> Result<Tree, Invalid> {
         Tree::new(self.publics(), self.vaults())
     }
 
-    /// The members: the person vaults joins founded.
+    /// The admin coop, whose members the members are.
+    pub fn coop(&self) -> &str {
+        &self.network.coop
+    }
+
+    /// The members: the person vaults joins founded, members of the admin coop.
     pub fn members(&self) -> Vec<String> {
         self.joins.iter().map(|j| j.person.clone()).collect()
+    }
+
+    /// Whether `s` is a member of the coop `c`: the admin coop, and a join founded `s`.
+    pub fn member_of(&self, s: &str, c: &str) -> bool {
+        c == self.coop() && self.joins.iter().any(|j| j.person == s)
     }
 
     fn is_passkey(&self, k: &str) -> bool {
@@ -151,15 +230,14 @@ impl Members {
             .any(|(id, p)| id == k && p.starts_with("es256:"))
     }
 
-    /// Whether `k` signs for the admin: a passkey that owns a vault governing the network's vault.
+    /// Whether `k` signs for the admin coop: a passkey that owns a vault governing the coop.
     pub fn admin_key(&self, k: &str) -> bool {
         let Ok(tree) = self.tree() else {
             return false;
         };
-        let network = &self.network.network;
         self.is_passkey(k)
             && tree.vaults().iter().any(|v| {
-                v.owner_keys().any(|o| o == k) && tree.governs(&v.id).contains(&network.as_str())
+                v.owner_keys().any(|o| o == k) && tree.governs(&v.id).contains(&self.coop())
             })
     }
 
@@ -312,8 +390,88 @@ impl Members {
         self.with_network(self.network.submit_claim(from, c))
     }
 
+    /// A sign-in's passkey, found by its assertion: the claimant's (`None`), or the member whose join's passkey made
+    /// it. An assertion that fails before its signature fails for every passkey alike.
+    fn signer_of(&self, c: &Claim, i: &SignIn) -> Result<Option<Join>, MemberError> {
+        let challenge = challenge(&i.text());
+        let check = |spki: &str| match Passkey::from_spki_hex(spki) {
+            Some(p) => i.assertion.check(&self.network.rp, &challenge, &p),
+            None => Err(AssertionError::BadSignature),
+        };
+        match check(&c.passkey_key) {
+            Ok(()) => Ok(None),
+            Err(AssertionError::BadSignature) => self
+                .joins
+                .iter()
+                .find(|j| check(&j.passkey_key).is_ok())
+                .map(|j| Some(j.clone()))
+                .ok_or(MemberError::Stranger),
+            Err(why) => Err(MemberError::Assertion(why)),
+        }
+    }
+
+    /// The last signature counter the network kept for the passkey `p`: its claim's or its join's, then each of its
+    /// sign-ins'.
+    fn last_counter(&self, p: &str) -> u32 {
+        if self.network.claim().is_some_and(|c| c.passkey == p) {
+            return self.network.last_counter();
+        }
+        let joined = self.joins.iter().filter(|j| j.passkey == p);
+        let signed = self.sign_ins.iter().filter(|s| s.member.passkey == p);
+        joined
+            .map(|j| j.assertion.counter())
+            .chain(signed.map(|s| s.sign_in.assertion.counter()))
+            .last()
+            .unwrap_or(0)
+    }
+
+    /// A passkey that counts must count up; synced ones keep it at 0.
+    fn counts_back(&self, p: &str, i: &SignIn) -> bool {
+        let (n, last) = (i.assertion.counter(), self.last_counter(p));
+        (n != 0 || last != 0) && n <= last
+    }
+
+    /// A sign-in's statement, checked: its network, a browser the tree hasn't, the passkey that signed it, which owns
+    /// a vault here, and that passkey's counter. The claimant's goes to [`Network`], a member's is kept here.
+    pub fn accept_sign_in(&self, i: SignIn) -> Result<Members, MemberError> {
+        let c = self.network.claim().ok_or(MemberError::Unclaimed)?;
+        if i.network != self.network.network {
+            return Err(MemberError::WrongNetwork);
+        }
+        if self.knows(&[&i.device], &[&i.device_key]) {
+            return Err(MemberError::Known);
+        }
+        match self.signer_of(c, &i)? {
+            None => {
+                if self.counts_back(&c.passkey, &i) {
+                    return Err(MemberError::Counter);
+                }
+                self.with_network(self.network.accept_sign_in(i))
+            }
+            Some(j) => {
+                if self.counts_back(&j.passkey, &i) {
+                    return Err(MemberError::Counter);
+                }
+                let mut next = self.clone();
+                next.sign_ins.push(MemberSignIn {
+                    member: j,
+                    sign_in: i,
+                });
+                next.tree().map_err(MemberError::Invalid)?;
+                Ok(next)
+            }
+        }
+    }
+
+    /// A sign-in as a browser sends it: from the browser it names.
     pub fn submit_sign_in(&self, from: &str, i: SignIn) -> Result<Members, MemberError> {
-        self.with_network(self.network.submit_sign_in(from, i))
+        if self.network.claim().is_none() {
+            return Err(MemberError::Unclaimed);
+        }
+        if from != i.device_key {
+            return Err(MemberError::NotFromDevice);
+        }
+        self.accept_sign_in(i)
     }
 
     /// What a browser brings, from the browser whose key is `from`.
@@ -330,8 +488,9 @@ impl Members {
         Members::new(self.network.wipe())
     }
 
-    /// The state read back from its stored statements: the claim and sign-ins, then the invites, withdrawals and
-    /// joins, each checked again, in the order a store lists them: by their invite's id.
+    /// The state read back from its stored statements: the claim, then the invites, withdrawals and joins, each
+    /// checked again, in the order a store lists them: by their invite's id; then every sign-in in the order it came,
+    /// so a member's finds the member.
     pub fn restore(
         &self,
         claim: Option<Claim>,
@@ -342,7 +501,7 @@ impl Members {
     ) -> Result<Members, MemberError> {
         let network = self
             .network
-            .restore(claim, sign_ins)
+            .restore(claim, Vec::new())
             .map_err(MemberError::Claim)?;
         let mut next = Members::new(network);
         // in the order a store lists their refs: by their invite's id
@@ -359,19 +518,21 @@ impl Members {
         for j in joins {
             next = next.accept_join(j)?;
         }
+        for i in sign_ins {
+            next = next.accept_sign_in(i)?;
+        }
         Ok(next)
     }
 
-    /// Whether a device's vault is let in: the network's own, a member's, or one that governs the network.
+    /// Whether a device's vault is let in: the agent's own, a member's of the admin coop, or one that governs the coop.
     fn through(&self, tree: Option<&Tree>, s: &str) -> bool {
-        let network = self.network.network.as_str();
-        s == network
-            || self.joins.iter().any(|j| j.person == s)
-            || tree.is_some_and(|t| t.governs(s).contains(&network))
+        s == self.network.network
+            || self.member_of(s, self.coop())
+            || tree.is_some_and(|t| t.governs(s).contains(&self.coop()))
     }
 
     /// The door, by key: the key of a device whose vault is let in. Before the claim the tree isn't well formed, for
-    /// the network's missing owner, and nothing governs the network: its own device is let in, and nobody else.
+    /// the agent's missing owner, and there is no coop yet: the agent's own device is let in, and nobody else.
     pub fn admits(&self, key: &str) -> bool {
         let tree = self.tree().ok();
         let vaults = self.vaults();

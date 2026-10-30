@@ -9,14 +9,17 @@
 	import ControlRoom from './apps/ControlRoom.svelte';
 	import Invite from './apps/Invite.svelte';
 	import Vault from './apps/Vault.svelte';
-	import { ownerName, owners, tree, vaultName } from './id.js';
+	import { ownerName, owners, ready, tree, vaultName } from './id.svelte.js';
 	import { mayInvite } from './invites.js';
+	import { signOut } from './network.svelte.js';
 
 	// `config`: the host's network (network.svelte.js), on an Aven Peer's host without a cast
 	let { cast, device, config = null } = $props();
 
-	const mine = $derived(device ? tree.accounts(device) : location.hostname === 'localhost' ? tree.accounts() : []);
-	// Invite is for the admin's owners only: a person whose passkey governs the network
+	// whom this host may act as, as its Peer-Light's views say; a visitor's host has none and may act as no one
+	const viewed = $derived(Boolean(device) || location.hostname === 'localhost');
+	const mine = $derived(viewed ? tree.accounts() : []);
+	// Invite is for the admin coop's people only: a person whose passkey governs the coop that owns Aven
 	const apps = $derived([
 		{ id: 'vault', name: 'Vault', what: 'Who owns it and all it governs', component: Vault },
 		{ id: 'control-room', name: 'Control Room', what: 'Every peer it governs, side by side', component: ControlRoom },
@@ -38,6 +41,17 @@
 	const where = $derived(device ? `on ${cast.peers[device].name}` : account ? 'avenSANDBOX' : '');
 
 	let menu = $state();
+	let leaving = $state(false);
+	let stuck = $state('');
+	async function leave() {
+		leaving = true;
+		try {
+			await signOut();
+		} catch (error) {
+			stuck = error?.message ?? String(error);
+			leaving = false;
+		}
+	}
 	const describe = (id) =>
 		`${tree.kind(id)} · owned by ${owners(id)
 			.map((owner) => ownerName(owner))
@@ -55,7 +69,7 @@
 			<button class="pill" popovertarget="accounts" data-testid="account" aria-label="Switch vault">
 				<Avatar id={account} size={22} />
 				<span class="name">{vaultName(account)}</span>
-				<svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" /></svg>
+				<svg class="icon" viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" /></svg>
 			</button>
 			<div id="accounts" popover bind:this={menu}>
 				<p class="hint">
@@ -70,15 +84,24 @@
 					>
 						<Avatar {id} size={28} />
 						<span><strong>{vaultName(id)}</strong><small>{describe(id)}</small></span>
-						{#if id === account}<span class="tick" aria-hidden="true">✓</span>{/if}
+						{#if id === account}<svg class="tick icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>{/if}
 					</a>
 				{/each}
+				{#if config}
+					<!-- on an Aven Peer's host this browser is a device it signed in as: signing out forgets its key here -->
+					<button class="leave" data-testid="sign-out" disabled={leaving} onclick={leave}>
+						{leaving ? 'Signing out…' : 'Sign out of this browser'}
+					</button>
+					{#if stuck}<p class="hint" data-testid="sign-out-stuck">{stuck}</p>{/if}
+				{/if}
 			</div>
 		{/if}
 	</div>
 </header>
 
-{#if open}
+{#if viewed && !ready()}
+	<main data-view="starting"><p class="hint">Starting this device's Peer-Light…</p></main>
+{:else if open}
 	{@const App = open.component}
 	<App {cast} {account} {device} {config} target={route[2]} />
 {:else}
@@ -91,8 +114,9 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 12px;
-		min-height: 56px;
-		padding: 8px 16px;
+		min-height: 64px;
+		padding: 10px 16px;
+		background: var(--bg);
 		border-bottom: 1px solid var(--line);
 	}
 
@@ -104,10 +128,23 @@
 		min-width: 0;
 	}
 
+	nav {
+		flex: none;
+	}
+
+	/* a phone has room for the brand, the crumb and the switcher, not for where too */
+	@media (max-width: 560px) {
+		.where {
+			display: none;
+		}
+	}
+
 	.home {
-		color: var(--text);
-		font-size: 18px;
-		font-weight: 600;
+		color: var(--accent);
+		font-family: var(--font-display);
+		font-size: 21px;
+		font-weight: 500;
+		letter-spacing: -0.01em;
 		text-decoration: none;
 	}
 
@@ -135,18 +172,17 @@
 		align-items: center;
 		gap: 8px;
 		min-width: 0;
-		padding: 4px 10px 4px 4px;
+		padding: 4px 12px 4px 4px;
 		color: var(--text);
-		font: inherit;
 		font-size: 14px;
+		font-weight: 400;
 		background: var(--surface);
 		border: 1px solid var(--line);
-		border-radius: 999px;
-		cursor: pointer;
+		box-shadow: var(--shadow-soft);
 	}
 
-	.pill:hover {
-		border-color: var(--muted);
+	.pill:hover:not(:disabled) {
+		background: var(--raised);
 	}
 
 	.name {
@@ -155,23 +191,17 @@
 		white-space: nowrap;
 	}
 
-	.pill svg {
-		flex: none;
-		fill: none;
-		stroke: currentColor;
-		stroke-width: 1.6;
-	}
 
 	[popover] {
 		inset: 60px 16px auto auto;
-		width: min(320px, calc(100vw - 32px));
+		width: min(340px, calc(100vw - 32px));
 		margin: 0;
-		padding: 6px;
+		padding: 8px;
 		color: var(--text);
 		background: var(--surface);
 		border: 1px solid var(--line);
-		border-radius: 12px;
-		box-shadow: 0 8px 28px rgb(0 0 0 / 0.16);
+		border-radius: var(--radius-card);
+		box-shadow: var(--shadow-lift);
 	}
 
 	.hint {
@@ -181,16 +211,19 @@
 	[popover] a {
 		display: flex;
 		align-items: center;
-		gap: 10px;
-		padding: 8px;
+		gap: 12px;
+		padding: 10px;
 		color: inherit;
 		text-decoration: none;
-		border-radius: 8px;
+		border-radius: var(--radius-inner);
 	}
 
-	[popover] a:hover,
+	[popover] a:hover {
+		background: var(--sage);
+	}
+
 	[popover] a[aria-current] {
-		background: var(--bg);
+		background: var(--accent-soft);
 	}
 
 	[popover] a > span:not(.tick) {
@@ -199,7 +232,33 @@
 		min-width: 0;
 	}
 
+	/* below the vaults, apart from them: it acts on this browser, not on a vault */
+	.leave {
+		width: 100%;
+		margin-top: 6px;
+		color: var(--muted);
+		background: none;
+		border: 0;
+		border-top: 1px solid var(--line);
+		border-radius: 0;
+		box-shadow: none;
+		font-size: 14px;
+		text-align: left;
+		padding: 12px 10px 6px;
+	}
+
+	.leave:hover:not(:disabled) {
+		color: var(--text);
+		background: var(--sage);
+	}
+
+	[data-view='starting'] {
+		padding: 64px 16px;
+		text-align: center;
+	}
+
 	.tick {
-		color: var(--live);
+		color: var(--accent);
+		stroke-width: 2;
 	}
 </style>

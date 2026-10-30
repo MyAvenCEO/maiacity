@@ -14,7 +14,8 @@ On a host whose Aven Peer nobody has claimed yet, avenOS shows one screen: **Sig
 passkey. The claim is just the first signup (Samuel, 30 Oct 2026): no code. Once claimed:
 
 - the admin's browser is a Peer-Light of the admin's vault, and avenOS opens on its dashboard as in the box;
-- on another browser, **Sign in with your passkey** makes that browser a new device of the admin's vault;
+- on another browser, **Sign in with your passkey** makes that browser a new device of the admin's vault (from
+  milestone 2, of any member's vault too, with the member's passkey: [`MILESTONE2.md`](MILESTONE2.md));
 - everyone else sees "avenOS · invite only, coming soon". Nobody else can sign up.
 
 ### The tree becomes data
@@ -148,7 +149,7 @@ not a person's vault. The first signup founds this tree:
 ```
 <name>'s vault         person   owned by its passkey and MaiaCityGuardian; the name asked at signup
 ├── Maia City          coop     the admin, seeded by the claim, owned by the person's vault
-│   └── Aven           network  owned by Maia City
+│   └── Aven           agent    owned by Maia City; runs the network
 │       └── Aven Peer  device
 └── <name>'s browser   device   acts for the person's vault
 ```
@@ -177,6 +178,19 @@ input, and nothing else deletes the bucket's objects. From the first signup on, 
   peer, tested against the old format's vectors. It never asks for a reset.
 - **The box keeps its own wipe** (`bun run down --wipe`, the check's restart and wipe): its data is test data, made
   from the cast's public keys.
+
+## As it runs (30 Oct 2026)
+
+- **Claimed:** Samuel signed up first. The tree is his vault (owned by his passkey and MaiaCityGuardian), Maia City,
+  Aven (kind `agent` since #1457, read from the stored statements, which never named a kind) and the Aven Peer; his
+  vault has two browsers. A frozen copy of that store's format is tested (`id/core/tests/before/`).
+- **The store's conditions:** Hetzner Object Storage answers `If-None-Match: *` on an existing key with 412, but also
+  answers a correct `If-Match` with 412, and ignores `If-Match` on DELETE. So production runs `--s3-conditions create`:
+  creating a ref is conditional, replacing one leans on the one writer.
+- **QAD:** the relay's UDP 7842 uses Caddy's own Let's Encrypt certificate for `aven.maia.city`, copied out of v1's
+  Caddy by `deploy/server/qad.sh` at each deploy and daily by cron, which restarts the peer when Caddy has renewed.
+- **The browsers:** the check runs avenOS's release build in Chromium, WebKit and Firefox. A browser that keeps no
+  storage for the host (Firefox with site data blocked, or always private) is told so, with the reason under it.
 
 ## Done when
 

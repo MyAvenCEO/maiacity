@@ -1,5 +1,5 @@
 //! Every statement a network holds, as the Aven Peer tells the devices its door admits (MILESTONE2.md, "the door is
-//! checked twice"): its configuration, the claim and sign-ins, the invites, withdrawals and joins. A peer reads them
+//! checked twice"): its configuration, the claim and every sign-in (the claimant's, then the members'), the invites, withdrawals and joins. A peer reads them
 //! back with [`Members::from_statements`], which checks each one again, so it learns who is a member without taking the
 //! Aven Peer's word for it.
 //!
@@ -45,7 +45,7 @@ impl Members {
             "coop": n.coop,
             "coopName": n.coop_name,
             "claim": n.claim().map(Claim::to_json),
-            "signIns": n.sign_ins().iter().map(SignIn::to_json).collect::<Vec<_>>(),
+            "signIns": self.all_sign_ins().iter().map(SignIn::to_json).collect::<Vec<_>>(),
             "invites": self.invites().iter().map(Invite::to_json).collect::<Vec<_>>(),
             "withdrawn": self.withdrawn().iter().map(Withdrawal::to_json).collect::<Vec<_>>(),
             "joins": self.joins().iter().map(Join::to_json).collect::<Vec<_>>(),

@@ -96,7 +96,7 @@ fn trees() -> impl Strategy<Value = (Vec<String>, Vec<Vault>)> {
                 .map(|s| {
                     [
                         Kind::Person,
-                        Kind::Network,
+                        Kind::Agent,
                         Kind::Coop,
                         Kind::Device,
                         Kind::Person,

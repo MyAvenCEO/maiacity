@@ -40,6 +40,8 @@ env:
   ZONE: maia.city
   NAME: aven
   PORT: '7501'
+  # the relay's QUIC address discovery (iroh's port), on Caddy's certificate for the site
+  QAD_PORT: '7842'
   BUCKET: city-maia-aven
   S3_ENDPOINT: https://hel1.your-objectstorage.com
   AWS_DEFAULT_REGION: hel1
@@ -210,7 +212,7 @@ jobs:
           done
 
       # The firewall applied to the server (maia-city's is maia-city, aven/ops/infra/index.ts), its rules read and
-      # written back whole with one more: UDP 7501 from anywhere
+      # written back whole with what's missing: UDP 7501 and 7842 from anywhere
       - name: Firewall
         env:
           HCLOUD_TOKEN: ${{ secrets.HETZNER_API_KEY }}
@@ -226,14 +228,20 @@ jobs:
           id=${id:-$(head -1 <<< "$ids")}
           curl -fsS -H "$H" "$CLOUD/firewalls/$id" | jq .firewall > firewall.json
           echo "firewall $(jq -r .name firewall.json): $(jq -r '[.rules[] | "\(.protocol) \(.port // "-")"] | join(", ")' firewall.json)"
-          if jq -e --arg p "$PORT" '.rules[] | select(.direction == "in" and .protocol == "udp" and .port == $p)' firewall.json > /dev/null; then
-            echo "UDP $PORT is open already"
-            exit 0
-          fi
-          jq -c --arg p "$PORT" '{rules: ([.rules[] | with_entries(select(.value != null))]
-            + [{direction: "in", protocol: "udp", port: $p, source_ips: ["0.0.0.0/0", "::/0"]}])}' firewall.json > rules.json
+          missing=()
+          for p in "$PORT" "$QAD_PORT"; do
+            if jq -e --arg p "$p" '.rules[] | select(.direction == "in" and .protocol == "udp" and .port == $p)' firewall.json > /dev/null; then
+              echo "UDP $p is open already"
+            else
+              missing+=("$p")
+            fi
+          done
+          [ ${#missing[@]} -gt 0 ] || exit 0
+          jq -c --args '{rules: ([.rules[] | with_entries(select(.value != null))]
+            + [$ARGS.positional[] | {direction: "in", protocol: "udp", port: ., source_ips: ["0.0.0.0/0", "::/0"]}])}' "${missing[@]}" \
+            < firewall.json > rules.json
           curl -fsS -X POST -H "$H" -H 'Content-Type: application/json' -d @rules.json "$CLOUD/firewalls/$id/actions/set_rules" > /dev/null
-          echo "UDP $PORT opened on $(jq -r .name firewall.json)"
+          echo "UDP ${missing[*]} opened on $(jq -r .name firewall.json)"
 
       # the peer's package may be private until it is made public: the job's token reads it either way
       - uses: docker/login-action@v4.7.0
@@ -281,7 +289,7 @@ jobs:
           GUARDIAN: ${{ vars.AVEN_PEER_GUARDIAN || secrets.AVEN_PEER_GUARDIAN }}
         run: |
           ssh prod 'sudo install -d -o deploy -g deploy -m 700 /opt/aven'
-          scp aven/DB2/deploy/compose.yml aven/DB2/deploy/server/peer.sh prod:/opt/aven/
+          scp aven/DB2/deploy/compose.yml aven/DB2/deploy/server/peer.sh aven/DB2/deploy/server/qad.sh prod:/opt/aven/
           # shellcheck disable=SC2029  # the image, the guardian and the actor are meant to expand here, on the runner
           printf '%s\n%s\n%s\n' "$S3_KEY" "$S3_SECRET" "$TOKEN" \
             | ssh prod "bash /opt/aven/peer.sh '$PEER_IMAGE' '$GUARDIAN' '$GITHUB_ACTOR'" | tee peer.out

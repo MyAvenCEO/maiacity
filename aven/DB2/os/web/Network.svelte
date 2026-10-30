@@ -1,13 +1,14 @@
 <script>
 	// avenOS on an Aven Peer's host without a cast (PRODUCTION.md, "What a person sees"). Unclaimed, one screen: Sign
 	// up, which asks for the person's name, then makes a passkey (Part C); the first signup claims the network. Claimed, this browser opens avenOS's dashboard as the admin's
-	// vault once it is one of the network's devices; any other browser sees "invite only, coming soon", and the admin
-	// signs in there with the passkey, which makes it a device too. `#/claim` shows the signup screen whatever the
+	// vault once it is one of the network's devices; any other browser sees "invite only, coming soon", and anyone whose
+	// vault the network holds, the admin or a member, signs in there with their passkey, which makes it a device of
+	// their vault too (Aven.ID.SignIn). A passkey that owns no vault here is refused with a word to ask for an invite. `#/claim` shows the signup screen whatever the
 	// network says: a second signup is the Aven Peer's to refuse, and it does.
 	import App from './App.svelte';
 	import Join from './Join.svelte';
 	import Phase from './Phase.svelte';
-	import { useTree } from './id.js';
+	import { at, tree } from './id.svelte.js';
 	import { readLink } from './invites.js';
 	import { castOf, claim, net, signIn } from './network.svelte.js';
 	import { describe, live } from './peers.svelte.js';
@@ -24,7 +25,8 @@
 		return () => removeEventListener('hashchange', follow);
 	});
 
-	const member = $derived(Boolean(net.tree && net.me && JSON.parse(net.tree).vaults[net.me]));
+	// a device of the network once the Peer-Light's views of its tree have this browser in them
+	const member = $derived(Boolean(net.me && tree.has(net.me)));
 	let busy = $state(false);
 	let name = $state('');
 	let failed = $state('');
@@ -42,20 +44,25 @@
 		}
 	}
 
-	// the network's tree for avenOS's apps, swapped in before they read it: a prop is read only when used
-	const cast = $derived.by(() => {
-		if (!member) return null;
-		const cast = castOf(net.tree, net.me);
-		useTree(JSON.stringify(cast));
-		return cast;
-	});
+	// the network's devices for avenOS's apps, new with each snapshot of the views
+	const cast = $derived(member && at() ? castOf(net.me) : null);
+	const stamp = $derived(cast ? at() : null);
 	// whether the network is claimed: as the Aven Peer says, or, once the relay keeps this browser out, claimed (after
 	// the claim only members get in, MILESTONE2.md)
 	const claimed = $derived(net.claimed ?? (net.door === false ? true : null));
 </script>
 
-{#if member && route !== 'claim'}
-	{#key cast}
+{#if net.storage}
+	<main data-view="no-storage">
+		<h1>avenOS</h1>
+		<p class="card" data-testid="no-storage">
+			This browser doesn't allow avenOS to store data for {location.hostname}. In Firefox, check that cookies and site data are allowed for
+			this site and that 'Always use private browsing mode' is off, or open {link ? 'the link' : 'avenOS'} in another browser.
+		</p>
+		<p class="muted" data-testid="no-storage-why">{net.storage}</p>
+	</main>
+{:else if member && route !== 'claim'}
+	{#key stamp}
 		<App {cast} device={net.me} {config} />
 	{/key}
 {:else if link && claimed}
@@ -80,7 +87,10 @@
 				<button data-testid="claim" disabled={busy || !net.key || !name.trim()}>Sign up with a passkey</button>
 			</form>
 		{:else}
-			<p class="soon" data-testid="invite-only">avenOS · invite only, coming soon</p>
+			{#if net.reset}
+				<p class="card" data-testid="reset">This browser's local data was from an older avenOS and was reset. Sign in with your passkey.</p>
+			{/if}
+			<p class="soon card" data-testid="invite-only">avenOS · invite only, coming soon</p>
 			<button data-testid="sign-in" disabled={busy || !net.key} onclick={() => run(() => signIn(config))}>
 				Sign in with your passkey
 			</button>
@@ -94,60 +104,42 @@
 <style>
 	main {
 		display: grid;
-		gap: 16px;
-		max-width: 420px;
-		margin: 12vh auto 0;
-		padding: 0 16px;
+		gap: 20px;
+		max-width: 440px;
+		margin: 10vh auto 0;
+		padding: 0 16px 48px;
 	}
 
 	h1 {
 		margin: 0;
-		font-size: 22px;
+		color: var(--accent);
+		font-size: 30px;
 	}
 
 	h2 {
 		margin: 0;
-		font-size: 18px;
+		font-size: 26px;
 	}
 
 	form {
 		display: grid;
-		gap: 12px;
-		padding: 16px;
+		gap: 16px;
+		padding: 24px;
 		background: var(--surface);
 		border: 1px solid var(--line);
-		border-radius: 12px;
+		border-radius: var(--radius-card);
+		box-shadow: var(--shadow-soft);
 	}
 
 	label {
 		display: grid;
-		gap: 6px;
+		gap: 8px;
 		color: var(--muted);
-	}
-
-	input {
-		padding: 8px 10px;
-		color: var(--text);
-		font: inherit;
-		background: var(--bg);
-		border: 1px solid var(--line);
-		border-radius: 8px;
+		font-size: 13px;
 	}
 
 	button {
 		justify-self: start;
-		padding: 8px 14px;
-		color: var(--surface);
-		font: inherit;
-		background: var(--text);
-		border: 0;
-		border-radius: 999px;
-		cursor: pointer;
-	}
-
-	button:disabled {
-		opacity: 0.5;
-		cursor: default;
 	}
 
 	.muted,
@@ -156,8 +148,27 @@
 		color: var(--muted);
 	}
 
+	.card {
+		margin: 0;
+	}
+
+	.soon {
+		color: var(--text);
+		font-family: var(--font-display);
+		font-size: 20px;
+	}
+
 	.refused {
 		margin: 0;
-		color: var(--pending);
+		padding: 12px 16px;
+		color: var(--down);
+		font-size: 14px;
+		background: var(--raised);
+		border: 1px solid var(--line);
+		border-radius: var(--radius-inner);
+	}
+
+	.status {
+		margin: 0;
 	}
 </style>

@@ -144,7 +144,7 @@ async function install() {
 	if ((await $`${compose} ps -q browsers`.env(env).nothrow().quiet().text()).trim()) await $`${compose} restart browsers`.env(env).quiet();
 }
 
-// The builder (SANDBOX.md, "The box"): compiles the Peer, the Peer-Light's wasm and aven-id's wasm for avenOS once, into
+// The builder (SANDBOX.md, "The box"): compiles the Peer and the Peer-Light's wasm, avenOS's one module, once, into
 // the shared build folder, incrementally. The Peers run that binary and restart when it changes; Vite reloads the pages
 // when the wasm does.
 const peerBinary = '/work/target/debug/aven-peer';
@@ -156,7 +156,6 @@ const buildPeers = [
 	// wasm-bindgen takes 3 s even for nothing, so it runs only for a new wasm; one swap, so Vite never serves half a build
 	`src=$(sha256sum ${lightWasm} | cut -c1-64)`,
 	`if [ "$src" != "$(cat target/light/.source 2>/dev/null)" ]; then rm -rf target/light.next && wasm-bindgen --target web --no-typescript --out-dir target/light.next ${lightWasm} && echo "$src" > target/light.next/.source && rm -rf target/light && mv target/light.next target/light; fi`,
-	'sh id/core/wasm/build.sh',
 	// the box's test certificate for the relay's QUIC address discovery, made once (box/qad.sh)
 	'sh sandbox/box/qad.sh',
 	`sha256sum ${peerBinary} | cut -c1-16`,
@@ -201,7 +200,9 @@ async function check() {
 		(await inEngines(run)) &&
 		(await claims(run)) &&
 		(await members(run)) &&
-		(await chats(run));
+		(await chats(run)) &&
+		(await domes(run)) &&
+		(await shares(run));
 	say(`${passed ? 'check passed' : 'check FAILED'}; screenshots and report in aven/DB2/${run}/`);
 	return passed ? 0 : 1;
 }
@@ -246,6 +247,33 @@ async function keeps(run) {
 	for (const problem of problems) say(`record: ${problem}`);
 	if (report.ok) say(`a restart kept all four records, and a wipe emptied them (${(report.ms / 1000).toFixed(1)} s)`);
 	return report.ok;
+}
+
+// A file's way (store/README.md, "How it is checked"), by sandbox/files.mjs: Alice Peer shares a 200 MiB file from its
+// folder, written beside it and moved in; Bob's Peer-Light seeks to its middle, fetching less than a quarter of it, and
+// the Aven Peer keeps it; then Alice Peer stops, Bob's Peer-Light fetches the whole file from the Aven Peer, and Alice
+// Peer starts again. Only the host stops a peer, so the step's phases run around it. The file is announced as a `file`
+// line on Alice Peer's chain (`--files` says it through `Room::share`), and the Aven Peer runs `keep::keep` on each
+// file line it chains. It runs after the dome's step, which leaves Bob's tab closed (one key, one Peer-Light).
+async function shares(run) {
+	const timed = Date.now();
+	const share = [
+		'mkdir -p /data/files',
+		'head -c 209715200 /dev/urandom > /data/files/.movie.mp4',
+		'mv /data/files/.movie.mp4 /data/files/movie.mp4',
+		'dd if=/data/files/movie.mp4 bs=65536 skip=1600 count=1 2>/dev/null | sha256sum',
+	].join(' && ');
+	const sha = (await $`${compose} exec -T alice sh -c ${share}`.env(env).quiet().text()).trim().split(' ')[0];
+	const step = async (phase) =>
+		(await $`${compose} exec -T browsers node sandbox/files.mjs ${phase} ${run} ${timed} ${sha}`.env(env).nothrow()).exitCode === 0;
+	let ok = await step('seek');
+	if (ok) {
+		await $`${compose} stop alice`.env(env).quiet();
+		ok = await step('whole');
+		await $`${compose} start alice`.env(env).quiet();
+	}
+	say(`${ok ? "a 200 MiB file: a seek fetched less than a quarter, and the Aven Peer served it once Alice was gone" : 'the files step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s)`);
+	return ok;
 }
 
 // avenOS in all three engines (sandbox/engines.mjs): the cast's two Peer-Lights in WebKit and Firefox, live on their own
@@ -321,6 +349,8 @@ async function members(run) {
 
 // avenOS's Invite, Join and Chat (MILESTONE2.md, steps 1, 2 and 4), on production's stand-in after the members' step
 // leaves its store empty: sandbox/chat.mjs
+// the city-dome's history and files in the cast's box: sandbox/dome.mjs
+const domes = async (run) => (await $`${compose} exec -T browsers node sandbox/dome.mjs ${run}`.env(env).nothrow()).exitCode === 0;
 const chats = async (run) => (await $`${compose} exec -T browsers node sandbox/chat.mjs ${run}`.env(env).nothrow()).exitCode === 0;
 
 async function up(args) {
@@ -347,19 +377,17 @@ async function up(args) {
 }
 
 // Every release's deliverables (SANDBOX.md, "Production"): for now avenOS for the browser, built in the box, with
-// aven-id's wasm and the Peer-Light in release at /peer-light/, where the dev server serves the loop's debug build
+// the Peer-Light in release at /peer-light/, the page's one WebAssembly module, where the dev server serves the loop's debug build
 // (sandbox/peers.mjs); a build without it never went live (aven.maia.city, 30 Oct 2026). The check builds and runs
 // this same build (sandbox/engines.mjs).
 async function buildPage() {
 	await $`docker volume create avensandbox_target`.quiet();
 	const volumes = ['-v', `${db2}:/work`, '-v', 'avensandbox_node_modules:/work/node_modules', ...rustVolumes];
-	// the Peer-Light in release, for phones, in a build folder of its own: beside aven-id's wasm, which resolves
-	// wasm-bindgen's features differently, each build would rebuild the other's (8 s every time). The loop's debug build
-	// stays as it is
+	// the Peer-Light in release, for phones, in a build folder of its own, so the release profile's settings below
+	// never rebuild the loop's crates. The loop's debug build stays as it is
 	const wasm = 'target/release-light/wasm32-unknown-unknown/release/aven_peer_light.wasm';
 	const script = [
 		'set -e',
-		'sh id/core/wasm/build.sh',
 		// sized for a phone, by environment so the workspace's Cargo.toml and the box's tag stay as they are: 3.9 MB, 1.4 MB
 		// gzipped, where release as it is gives 7.5 MB and the loop's debug build 8.8 MB (11.25 MB as first shipped). The
 		// box has no wasm-opt
@@ -414,6 +442,10 @@ if (import.meta.main) {
 		else if (command === 'box') process.exit(await inBox(args.length ? args : ['bash']));
 		// the members' step alone, on a box that is up (the check runs it after the others)
 		else if (command === 'members') process.exit((await members(`runs/members-${Date.now()}`)) ? 0 : 1);
+		// the city-dome's step alone, on a box that is up
+		else if (command === 'dome') process.exit((await domes(`runs/dome-${Date.now()}`)) ? 0 : 1);
+		// the files' step alone
+		else if (command === 'files') process.exit((await shares(`runs/files-${Date.now()}`)) ? 0 : 1);
 		else throw new Error(`unknown command ${command}: up [--check], down [--wipe], logs, shot, build, doctor, box <command>`);
 	} catch (error) {
 		console.error(`avenSANDBOX: ${error.message}`);

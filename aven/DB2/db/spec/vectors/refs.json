@@ -1,0 +1,13 @@
+[
+{"expected":{"reads":"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a"},"input":{"stored":"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a\n"},"name":"stored \"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a\\n\""},
+{"expected":{"reads":null},"input":{"stored":"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a"},"name":"stored \"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a\""},
+{"expected":{"reads":null},"input":{"stored":"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a\n\n"},"name":"stored \"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a\\n\\n\""},
+{"expected":{"reads":null},"input":{"stored":"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a\r\n"},"name":"stored \"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a\\x0d\\n\""},
+{"expected":{"reads":null},"input":{"stored":"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a "},"name":"stored \"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a \""},
+{"expected":{"reads":null},"input":{"stored":"\n"},"name":"stored \"\\n\""},
+{"expected":{"reads":null},"input":{"stored":""},"name":"stored \"\""},
+{"expected":{"reads":null},"input":{"stored":"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0\n"},"name":"stored \"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0\\n\""},
+{"expected":{"reads":null},"input":{"stored":"E24C86634AD3381124DDD0AF2CB4738683DA2F44BED7F53113F758C596A55E0A\n"},"name":"stored \"E24C86634AD3381124DDD0AF2CB4738683DA2F44BED7F53113F758C596A55E0A\\n\""},
+{"expected":{"stored":"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a\n"},"input":{"hash":"e24c86634ad3381124ddd0af2cb4738683da2f44bed7f53113f758c596a55e0a"},"name":"written"},
+{"expected":{"version":"avenDB store 1\n"},"input":{},"name":"a browser store's version"}
+]

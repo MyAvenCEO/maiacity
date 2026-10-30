@@ -3,7 +3,7 @@ import Aven.DB.Blake3
 /-!
 # The store
 
-`db/store`'s contract (SANDBOX.md, "The contract"): blobs named by their hash, and refs, names pointing at a hash,
+`store`'s contract (SANDBOX.md, "The contract"): blobs named by their hash, and refs, names pointing at a hash,
 changed by compare-and-set. One writer per store (README, rule 1), so the model is a sequence of calls, each with its
 result as the contract gives it:
 
@@ -11,6 +11,7 @@ result as the contract gives it:
 |---|---|
 | `put bytes` | its hash; the same bytes twice keep one blob |
 | `get h`, `has h` | the blob or none; whether it is there |
+| `size h` | the blob's length in bytes, or none, without reading it |
 | `getRange h a b` | none for a missing blob; bytes `a..b`; `range` when `a > b` or `b` is past its end |
 | `list`, `listRefs` | every blob's hash, every ref's name, sorted |
 | `delete h` | done, also for a blob that isn't there |
@@ -28,9 +29,15 @@ touched. The model is parametric in the hash `H`; `Blake3.hash` is the store's. 
 - **A ref is never torn** (`ref_written`): whatever a ref reads is what some write of the trace set it to. Of racing
   writers that all expect the same value, exactly the first is done (`one_wins`).
 - **Refs and blobs stay apart** (`refs_apart`, `blobs_apart`).
+- **A size is the blob's length** (`size_get`): `size` says what `get` would hold, without the bytes.
+- **A ref at rest is its hash and a newline** (`refText`), in every driver, and reads back as its hash
+  (`readRef_refText`); nothing else reads as a ref (`readRef_only_refText`), the bare hash included
+  (`readRef_bare_refused`).
+- **A browser's store says its version** (`Kept`, `version`): one without exactly this version's marker opens as the
+  empty store, its origin cleared (`open_unmarked`); one with it opens as it is (`open_marked`).
 
 `lake exe vectors` exports the examples below and generated traces (`vectors/store.json`), and the conformance suite
-(`db/store/src/conformance.rs`) replays them on every backend: memory, a folder, S3 and OPFS.
+(`store/src/conformance.rs`) replays them on every backend: memory, a folder, S3 and OPFS.
 -/
 
 namespace Aven.DB.Store
@@ -102,6 +109,7 @@ inductive Op where
   | get (h : Hash)
   | getRange (h : Hash) (start stop : Nat)
   | has (h : Hash)
+  | size (h : Hash)
   | list
   | delete (h : Hash)
   | getRef (n : Name)
@@ -115,6 +123,7 @@ inductive Res where
   | bytes (b : Option Bytes)
   | yes (b : Bool)
   | hashes (l : List Hash)
+  | size (n : Option Nat)
   | done
   | ref (h : Option Hash)
   | names (l : List Name)
@@ -147,6 +156,7 @@ def step (s : Store) : Op → Store × Res
     | none => (s, .bytes none)
     | some b => if a > e ∨ e > b.length then (s, .range a e b.length) else (s, .bytes ((b.drop a).take (e - a)))
   | .has h => (s, .yes (get s.blobs h).isSome)
+  | .size h => (s, .size ((get s.blobs h).map List.length))
   | .list => (s, .hashes (sort (s.blobs.map (·.1))))
   | .delete h => ({ s with blobs := erase s.blobs h }, .done)
   | .getRef n => if validName n then (s, .ref (get s.refs n)) else (s, .invalidName n)
@@ -319,6 +329,73 @@ theorem refs_apart {s : Store} (op : Op) (r : op.isRef = false) : (step H s op).
 
 theorem blobs_apart {s : Store} (op : Op) (r : op.isRef = true) : (step H s op).1.blobs = s.blobs := by
   cases op <;> simp [Op.isRef] at r <;> simp only [step] <;> split <;> (try split) <;> rfl
+
+/-! ## A size is the blob's length -/
+
+/-- `size` changes nothing, and is the length of exactly what `get` holds: none for a blob that isn't there. -/
+theorem size_get (s : Store) (h : Hash) :
+    ∃ b, step H s (.get h) = (s, .bytes b) ∧ step H s (.size h) = (s, .size (b.map List.length)) :=
+  ⟨_, rfl, rfl⟩
+
+/-! ## A ref at rest -/
+
+/-- How a ref holds its hash at rest, in every driver: the hash and a newline. -/
+def refText (h : Hash) : String := h ++ "\n"
+
+/-- A ref's text read back: exactly a hash in the store's spelling and a newline, or nothing. -/
+def readRef (s : String) : Option Hash :=
+  if s.toList.getLast? = some '\n' then
+    let t := String.ofList s.toList.dropLast
+    if validHash t then some t else none
+  else none
+
+/-- What a ref is written as reads back as its hash. -/
+theorem readRef_refText {h : Hash} (v : validHash h = true) : readRef (refText h) = some h := by
+  simp [readRef, refText, String.toList_append, v]
+
+/-- A bare hash is no ref at rest: a hash never ends in a newline. -/
+theorem readRef_bare_refused {h : Hash} (v : validHash h = true) : readRef h = none := by
+  have last : h.toList.getLast? ≠ some '\n' := by
+    intro e
+    have m := List.mem_of_getLast? e
+    simp only [validHash, Bool.and_eq_true, String.all_bool_eq, List.all_eq_true] at v
+    have := v.2 '\n' m
+    simp at this
+  simp [readRef, last]
+
+/-- Whatever reads as a ref was written as one: exactly a hash and a newline. -/
+theorem readRef_only_refText {s : String} {h : Hash} (r : readRef s = some h) : s = refText h ∧ validHash h = true := by
+  unfold readRef at r
+  split at r
+  · next last =>
+    simp only at r
+    split at r
+    · next v =>
+      cases r
+      refine ⟨?_, v⟩
+      apply String.toList_injective
+      obtain ⟨ys, e⟩ := List.getLast?_eq_some_iff.mp last
+      simp [refText, String.toList_append, e]
+    · cases r
+  · cases r
+
+/-! ## A browser's store and its version -/
+
+/-- What `meta/version` holds in a store this avenDB laid out. -/
+def version : String := "avenDB store 1\n"
+
+/-- A browser's store as its origin keeps it: the marker it was laid out with, if any, and what it holds. -/
+structure Kept where
+  marker : Option String
+  store : Store
+
+/-- Opening a browser's store: as it is with this version's marker, else the empty store, its origin cleared. An
+older avenOS's store is never read (Samuel, 30 Oct 2026: browsers may be reset; no migration). -/
+def Kept.open (d : Kept) : Store := if d.marker = some version then d.store else {}
+
+theorem open_marked {d : Kept} (m : d.marker = some version) : d.open = d.store := by simp [Kept.open, m]
+
+theorem open_unmarked {d : Kept} (m : d.marker ≠ some version) : d.open = {} := by simp [Kept.open, m]
 
 end Store
 end Aven.DB
