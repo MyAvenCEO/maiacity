@@ -17,7 +17,7 @@ function asCast({ keys, vaults }) {
 	if (new Set(vaults.map((v) => v.id)).size !== vaults.length) return null;
 	return JSON.stringify({
 		keys: Object.fromEntries(keys.map((k) => [k, someKey])),
-		vaults: Object.fromEntries(vaults.map((v) => [v.id, { kind: v.kind, owners: v.owners }])),
+		vaults: Object.fromEntries(vaults.map((v) => [v.id, { name: v.name, kind: v.kind, owners: v.owners }])),
 	});
 }
 const ask = (cast, [query, ...args]) => cast[query](...args.map((a) => a ?? undefined)) ?? null;
@@ -51,7 +51,8 @@ for (const { name, input, expected } of vectors) {
 		answered++;
 	});
 }
-// what the wasm reads back from the cast's file is the file's: names and public halves aren't the model's
+// what the wasm reads back from the cast's file is the file's: its names are the model's (the vectors' test), its
+// public halves aren't
 const cast = new Cast(JSON.stringify(castFile));
 for (const [id, vault] of Object.entries(castFile.vaults))
 	if (cast.name(id) !== vault.name) problems.push(`${id}'s name reads as ${cast.name(id)}, not the cast's ${vault.name}`);

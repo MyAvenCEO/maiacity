@@ -1,13 +1,15 @@
 /-! # Keys, vaults and owners
 
-A tree is the keys it knows and its vaults, in order. A vault has a kind and its owners, each a key or another vault
-(SANDBOX.md, "Vaults own vaults"). Every lookup is by id; a well-formed tree (`Aven.ID.WF`) has each id once. -/
+A tree is the keys it knows and its vaults, in order. A vault has a name, a kind and its owners, each a key or another
+vault (SANDBOX.md, "Vaults own vaults"). A coop's vault is owned by people's or coops' vaults and holds no devices:
+its people act for it through their own (PRODUCTION.md, Part C). Every lookup is by id; a well-formed tree (`Aven.ID.WF`) has each id once. -/
 
 namespace Aven.ID
 
 inductive Kind where
   | person
   | network
+  | coop
   | device
   deriving DecidableEq, Repr
 
@@ -27,6 +29,7 @@ def Owner.key? : Owner → Option String
 
 structure Vault where
   id : String
+  name : String
   kind : Kind
   owners : List Owner
   deriving DecidableEq, Repr

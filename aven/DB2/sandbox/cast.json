@@ -1,5 +1,5 @@
 {
-  "about": "avenSANDBOX's cast (aven/DB2/SANDBOX.md, \"Vaults own vaults\"). Who may act for whom is avenID's, which reads the box's tree from this fixed list: aven-id's tests, and avenOS through its wasm. Vaults own vaults: a person's vault is owned by its owner key, a device's vault by the vault it serves, and Aven, the network's own vault, by Alice's vault, which makes Alice's vault the admin. A vault governs everything below it and sees only that. A device's key signs for the vault it serves and governs nothing. Every key is a test key: its Ed25519 seed is sha256(\"avenSANDBOX test signer: <id>\"), public on purpose and valid only inside the box; the keys below are the public halves.",
+  "about": "avenSANDBOX's cast (aven/DB2/SANDBOX.md, \"Vaults own vaults\"). Who may act for whom is avenID's, which reads the box's tree from this fixed list: aven-id's tests, and avenOS through its wasm. Vaults own vaults, and every vault has a name: a person's vault is owned by its owner key, a device's vault by the vault it serves, Maia City, the admin coop, by Alice's vault, and Aven, the network's own vault, by Maia City, which makes Maia City the admin and Alice's vault its owner. A coop holds no devices: Alice acts for it through her own. Bob's vault stays a person's. A vault governs everything below it and sees only that. A device's key signs for the vault it serves and governs nothing. Every key is a test key: its Ed25519 seed is sha256(\"avenSANDBOX test signer: <id>\"), public on purpose and valid only inside the box; the keys below are the public halves.",
   "keys": {
     "alice-owner": "0254086bfa6b7557cc22939766aae0cf6314a383264d19c705a936673b677c85",
     "bob-owner": "c82115cfc423ce2a11d417608ede18935cd859c31bf1e23124cd41612a976119",
@@ -11,7 +11,8 @@
   "vaults": {
     "alice": { "name": "Alice's vault", "kind": "person", "owners": ["key:alice-owner"] },
     "bob": { "name": "Bob's vault", "kind": "person", "owners": ["key:bob-owner"] },
-    "aven": { "name": "Aven", "kind": "network", "owners": ["vault:alice"] },
+    "maia-city": { "name": "Maia City", "kind": "coop", "owners": ["vault:alice"] },
+    "aven": { "name": "Aven", "kind": "network", "owners": ["vault:maia-city"] },
     "aven-peer": { "name": "Aven Peer", "kind": "device", "owners": ["vault:aven"] },
     "alice-peer": { "name": "Alice Peer", "kind": "device", "owners": ["vault:alice"] },
     "alice-peer-light": { "name": "Alice Peer-Light", "kind": "device", "owners": ["vault:alice"] },

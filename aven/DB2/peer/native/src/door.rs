@@ -5,7 +5,8 @@
 //! reads `refs/claim` to tell whether the network is claimed, so the name stays. A start reads the tree back and checks
 //! every statement again (`Network::restore`); one that fails stops the peer rather than leave the network open to a
 //! new claim. A wiped store is an unclaimed network. Given `--guardian`, the vault a claim founds is owned by
-//! MaiaCityGuardian too.
+//! MaiaCityGuardian too. The claim founds the admin coop as well (PRODUCTION.md, Part C), named by `--admin-coop`:
+//! configuration, not part of the statement, so the stored claim still reads back after a rename.
 //!
 //! Claims and sign-ins take turns, under one lock: the one writer (README, rule 1).
 
@@ -66,9 +67,10 @@ impl Door {
         peer_key: &str,
         rp: Relying,
         guardian: Option<String>,
+        (coop, coop_name): (&str, &str),
         notes: Notes,
     ) -> Result<Door, String> {
-        let base = Network::new(NETWORK, PEER, peer_key, rp, guardian);
+        let base = Network::new(NETWORK, PEER, peer_key, rp, guardian).with_coop(coop, coop_name);
         let refs = store.list_refs().await.map_err(store_error)?;
         let mut claim = None;
         let mut sign_ins = Vec::new();
@@ -156,7 +158,10 @@ impl Door {
             .map_err(|e| self.refused(from, e))?;
         *network = next;
         self.told.send_replace(network.clone());
-        self.note("claimed", json!({ "person": c.person, "device": c.device }));
+        self.note(
+            "claimed",
+            json!({ "person": c.person, "coop": network.coop, "device": c.device }),
+        );
         self.tell("network", &network);
         Ok(())
     }

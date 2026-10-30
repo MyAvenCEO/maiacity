@@ -10,8 +10,9 @@ export let tree = new Cast(castText);
 export function useTree(json) {
 	tree = new Cast(json);
 }
-// What a passkey signs and what browsers and passkeys are called, as aven-id computes them (PRODUCTION.md, Part A)
-export { challenge, claimText, deviceId, passkeyId, personId, signInText } from 'aven-id';
+// What a passkey signs, what browsers and passkeys are called and what a person's name may be, as aven-id computes
+// them (PRODUCTION.md, Parts A and C)
+export { challenge, claimText, deviceId, passkeyId, personId, signInText, validPersonName } from 'aven-id';
 
 export const vaultName = (id) => tree.name(id) ?? id;
 // A vault's owners as the cast writes them, `key:<id>` or `vault:<id>`, split for the page.

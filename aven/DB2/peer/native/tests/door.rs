@@ -64,7 +64,7 @@ fn tree(n: &Network) -> Value {
         .iter()
         .map(|v| {
             let owners: Vec<String> = v.owners.iter().map(ToString::to_string).collect();
-            json!({ "id": v.id, "kind": v.kind.as_str(), "owners": owners })
+            json!({ "id": v.id, "name": v.name, "kind": v.kind.as_str(), "owners": owners })
         })
         .collect();
     json!({ "keys": keys, "vaults": vaults })
@@ -80,6 +80,7 @@ async fn open(store: &Arc<DalStore>, server: &Value) -> Door {
         &text("peerKey"),
         rp,
         server["guardian"].as_str().map(str::to_string),
+        (&text("coop"), &text("coopName")),
         Arc::new(|_| {}),
     )
     .await
