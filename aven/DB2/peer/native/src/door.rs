@@ -1,7 +1,8 @@
 //! The door of an Aven Peer that keeps its tree (PRODUCTION.md, Part A; MILESTONE2.md): with `--rp-id` and `--origin`,
 //! and no cast, its tree is data in its store. The claim is the first signup: one statement, stored as a blob, with
 //! the ref `claim` set to it from nothing by compare-and-set, so a second signup finds it taken, even racing the first;
-//! each sign-in is stored the same way under `signin-000001`, `signin-000002`, … in the order they came. The deploy's
+//! each sign-in, the claimant's or a member's (`Aven.ID.SignIn`), is stored the same way under `signin-000001`,
+//! `signin-000002`, … in the order they came. The deploy's
 //! health step reads `refs/claim` to tell whether the network is claimed, so the name stays. The claim founds the
 //! admin coop as well (PRODUCTION.md, Part C), named by `--admin-coop`: configuration, not part of the statement, so
 //! the stored claim still reads back after a rename.
@@ -229,7 +230,7 @@ impl Door {
             ),
             Statement::SignIn(i) => (
                 members.submit_sign_in(from, i.clone()),
-                sign_in_ref(members.network().sign_ins().len() + 1),
+                sign_in_ref(members.all_sign_ins().len() + 1),
                 i.to_json(),
                 ("signed-in", json!({ "device": i.device })),
             ),
@@ -255,7 +256,7 @@ impl Door {
                 ),
             ),
         };
-        let next = next.map_err(|e: MemberError| self.refused(from, e.to_string()))?;
+        let next = next.map_err(|e: MemberError| self.refused(from, members.say(&e)))?;
         self.keep(&RefName::new(name).map_err(store_error)?, kept)
             .await
             .map_err(|e| self.refused(from, e))?;

@@ -43,6 +43,8 @@ fn error(e: &MemberError) -> Value {
         MemberError::BadInviteSignature => named("badInviteSignature"),
         MemberError::NotFromDevice => named("notFromDevice"),
         MemberError::Known => named("known"),
+        MemberError::Stranger => named("stranger"),
+        MemberError::Counter => named("counter"),
         MemberError::Invalid(why) => json!({ "error": "invalid", "invalid": invalid(why) }),
     }
 }
@@ -168,7 +170,7 @@ fn traces_answer_as_the_model_does() {
                     let n = m.network();
                     let back = m.restore(
                         n.claim().map(|c| Claim::from_json(&c.to_json()).unwrap()),
-                        n.sign_ins()
+                        m.all_sign_ins()
                             .iter()
                             .map(|i| SignIn::from_json(&i.to_json()).unwrap())
                             .collect(),

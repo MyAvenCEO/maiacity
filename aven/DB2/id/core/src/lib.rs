@@ -23,13 +23,15 @@ mod statements;
 mod tree;
 
 pub use cast::CastError;
-pub use claim::{Claim, SignIn, claim_text, device_id, passkey_id, person_id, sign_in_text};
+pub use claim::{
+    Claim, SignIn, browser_name, claim_text, device_id, passkey_id, person_id, sign_in_text,
+};
 pub use invite::{
     Invite, Join, Withdrawal, invite_id, invite_text, join_text, one_time_public, sign_join,
     withdraw_text,
 };
 pub use keys::{public_hex, test_signer};
-pub use members::{MemberError, Members, Pending};
+pub use members::{MemberError, MemberSignIn, Members, Pending};
 pub use network::{COOP, COOP_NAME, ClaimError, GUARDIAN, Network};
 pub use passkey::{Assertion, AssertionError, Passkey, Relying, base64url, challenge};
 pub use sign::{SignError, Statement};

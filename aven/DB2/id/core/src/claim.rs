@@ -59,6 +59,15 @@ pub fn sign_in_text(network: &str, device: &str, key: &str) -> String {
     format!("avenID sign-in 1\nnetwork {network}\ndevice {device} {key}\n")
 }
 
+/// A person's browsers, named after them: the first `<name>'s browser`, then `<name>'s browser 2`, `3`, …
+pub fn browser_name(name: &str, n: usize) -> String {
+    if n == 1 {
+        format!("{name}'s browser")
+    } else {
+        format!("{name}'s browser {n}")
+    }
+}
+
 /// The id a browser's device goes by: the start of its key.
 pub fn device_id(key: &str) -> String {
     format!("device-{}", &key[..key.len().min(16)])
@@ -84,11 +93,7 @@ impl Claim {
     }
 
     pub fn browser(&self, n: usize) -> String {
-        if n == 1 {
-            format!("{}'s browser", self.name)
-        } else {
-            format!("{}'s browser {n}", self.name)
-        }
+        browser_name(&self.name, n)
     }
 
     pub fn text(&self) -> String {

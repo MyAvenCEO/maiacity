@@ -285,7 +285,7 @@ impl Network {
     }
 
     /// The last signature counter the network kept for its passkey: its claim's, then each sign-in's.
-    fn last_counter(&self) -> u32 {
+    pub(crate) fn last_counter(&self) -> u32 {
         let claimed = self.claim.iter().map(|c| c.assertion.counter());
         claimed
             .chain(self.sign_ins.iter().map(|i| i.assertion.counter()))
