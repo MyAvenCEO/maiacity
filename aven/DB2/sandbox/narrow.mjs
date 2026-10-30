@@ -48,8 +48,6 @@ async function plays(card, kind) {
 	if (kind === 'file') return { ok: true };
 	return card.evaluate(
 		async (figure, kind) => {
-			// a file loads once its bubble is in view (Chat.svelte: players' `lazy`, images' and frames' loading="lazy")
-			figure.scrollIntoView({ block: 'center' });
 			const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 			const until = async (ok, ms = 30_000) => {
 				for (const end = Date.now() + ms; Date.now() < end; await sleep(100)) if (ok()) return true;
