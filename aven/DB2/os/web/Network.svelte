@@ -55,8 +55,8 @@
 	<main data-view="no-storage">
 		<h1>avenOS</h1>
 		<p data-testid="no-storage">
-			This browser window doesn't allow storage for {location.hostname} (a private window?). Open {link ? 'the link' : 'avenOS'} in a normal
-			window.
+			This browser doesn't allow avenOS to store data for {location.hostname}. In Firefox, check that cookies and site data are allowed for
+			this site and that 'Always use private browsing mode' is off, or open {link ? 'the link' : 'avenOS'} in another browser.
 		</p>
 		<p class="muted" data-testid="no-storage-why">{net.storage}</p>
 	</main>

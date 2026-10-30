@@ -22,7 +22,7 @@ if (!device && !config && location.hostname === 'localhost') runBox(cast);
 
 document.title = device ? `avenOS · ${cast.peers[device].name}` : 'avenOS';
 if (config) {
-	// a window that keeps no storage for this host (a private window) gets no Peer-Light, and is told why
+	// a browser that keeps no storage for this host (site data blocked, always private) gets no Peer-Light, and is told why
 	net.storage = await storageBlocked();
 	if (!net.storage) runNetwork(config);
 	mount(Network, { target, props: { config } });

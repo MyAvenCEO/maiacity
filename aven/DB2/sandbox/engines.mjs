@@ -13,7 +13,7 @@
 //      device key in OPFS, reaches the Aven Peer, live, and finds the network unclaimed; and a worker nobody started
 //      asks for its start, refuses a line with why, and starts with a line that carries it. The dev server never runs
 //      the build; a build that left its Peer-Light behind showed "Connecting to the network…" on aven.maia.city.
-//      And a Firefox private window, whose OPFS throws: avenOS says plainly that it keeps no storage there.
+//      And a Firefox that blocks cookies and site data, whose OPFS throws: avenOS says plainly that it keeps no storage.
 //   4. The passkeys on that build, in WebKit and Firefox, through Playwright's `context.credentials`: a stand-in for
 //      `navigator.credentials` that signs ES256 in Node, so it checks our ceremony, not the engine's own WebAuthn.
 //      WebKit signs up first, so claims the network, opens its dashboard and sees its own chat line shown; Firefox's
@@ -151,12 +151,13 @@ async function build(engine) {
 	await context.close();
 }
 
-// 3b. A window that keeps no storage for the host: Firefox's private window, whose OPFS throws "SecurityError: Security
-// error when calling GetDirectory" (Samuel's invite link on aven.maia.city, 30 Oct 2026). avenOS says so plainly, with
-// the reason under it, and starts no Peer-Light, rather than "Connecting to the network… offline"
+// 3b. A browser that keeps no storage for the host: Firefox with cookies and site data blocked, whose OPFS throws
+// "SecurityError: Security error when calling GetDirectory" (Samuel's Firefox on aven.maia.city, 30 Oct 2026; a private
+// window throws the same). avenOS says so plainly, with the reason under it, and starts no Peer-Light, rather than
+// "Connecting to the network… offline"
 async function noStorage() {
 	const since = Date.now();
-	const browser = await firefox.launch({ firefoxUserPrefs: { 'browser.privatebrowsing.autostart': true } });
+	const browser = await firefox.launch({ firefoxUserPrefs: { 'network.cookie.cookieBehavior': 2 } });
 	const page = await browser.newPage();
 	await page.goto(`${origin}/#/join/${'ab'.repeat(32)}`);
 	const shown = await page
@@ -167,10 +168,11 @@ async function noStorage() {
 	got.connecting = (await page.locator('[data-view="connecting"]').count()) > 0;
 	got.ms = timed(since);
 	report.build.noStorage = got;
-	const plain = "This browser window doesn't allow storage for localhost (a private window?). Open the link in a normal window.";
+	const plain =
+		"This browser doesn't allow avenOS to store data for localhost. In Firefox, check that cookies and site data are allowed for this site and that 'Always use private browsing mode' is off, or open the link in another browser.";
 	if (!shown || got.said.replace(/\s+/g, ' ') !== plain || !/^SecurityError/.test(got.why) || got.connecting)
-		problems.push(`Firefox's private window isn't told plainly that it keeps no storage: ${JSON.stringify(got)}`);
-	await page.screenshot({ path: `${run}/build-firefox-private.png` });
+		problems.push(`a Firefox that blocks site data isn't told plainly that it keeps no storage: ${JSON.stringify(got)}`);
+	await page.screenshot({ path: `${run}/build-firefox-no-storage.png` });
 	await browser.close();
 }
 
