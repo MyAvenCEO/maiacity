@@ -558,8 +558,10 @@ Test-first, as avenDB works: the Lean model and its theorems, then Rust tests th
    drawn node passes the applier's allowlist, for any markup and data), `draw_events` (a face can send only the
    events its markup names; `data-on` and `data-place` are the runtime's own) and `faceRun_ok`; vectors
    `markup.json`. `Aven.Actor.Runtimes` joins them to actors: `face_actor_checked` (a face actor's face passes the
-   applier's check before it is drawn), and, once #1550 is on main, a state part as a turn whose phase the kernel
-   takes only where the machine allows. The kernel hands the current phase to every turn.
+   applier's check before it is drawn); `stateTurn`, a state part as a turn, whose sends become effects or refuse
+   the turn; `stateTurn_phase` and `runTurn_state` (it moves only where its machine allows, and the kernel takes
+   every answer, so `machine_sound` covers it); and `partMachine` with `fits_machine` (the machine a statechart
+   draws, which it always fits). The kernel hands the current phase to every turn.
 2. **Layers 0 to 2** (`core`): Values and names, the in-memory Doc, messages, with the vectors.
 3. **Runtimes**: `state-runtime` first, then `js-runtime`; each with hostile parts that try to get
    out, run too long or blow up, which must fail.
