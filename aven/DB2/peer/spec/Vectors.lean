@@ -10,6 +10,8 @@ import Lean.Data.Json
 - `topics.json`: a group's epoch key and a wire version, and the group's gossip topic (`groupTopic`), in hex.
 - `live.json`: sealed envelopes of sizes about the gossip limit: what a writer gossips for each (`Live.of`) and its
   bytes, in hex; a version message; and messages a reader refuses, `expected` null.
+- `judge.json`: pages that crashed the docs worker, and which of their envelopes crash it alone (after given ones
+  went through, or whatever went before); expected, what sifting marks unfit (`Aven.Peer.Judge.sift`).
 - `doc-sync.json`: generated worlds of two readers. Each world is entries (an envelope as sync reads it: its name, its
   writer, its place, `prev` and `deps`, by name) and which of them each reader holds, each a version; expected are each
   reader's tips and its version (`version`), what each answers the other's tips with (`beyond`), whether each holds a
@@ -147,6 +149,33 @@ def syncVectors : List Json :=
         ("splitA", splits A all), ("splitB", splits B all),
         ("heldA", toJson (held (A ++ toA)).length), ("heldB", toJson (held (B ++ toB)).length)])
 
+/-! ## Sifting a page that crashed the judge -/
+
+/-- A page of `n` envelopes; each of `kills` crashes the judge alone, and each `(e, after)` of `when` crashes it once
+`after` went through. -/
+structure Sifted where
+  page : List Nat
+  kills : List Nat
+  when : List (Nat × Nat)
+
+def Sifted.run (s : Sifted) (held : List Nat) (e : Nat) : Aven.Peer.Judge.Run :=
+  if s.kills.contains e || s.when.any (fun (x, a) => x == e && held.contains a) then .crashed else .done
+
+def sifts : List Sifted := [
+  ⟨[1, 2, 3, 4, 5], [2], [(4, 3)]⟩,
+  ⟨[1, 4, 3], [], [(4, 3)]⟩,
+  ⟨[1, 2, 3], [], []⟩,
+  ⟨[7], [7], []⟩,
+  ⟨[], [], []⟩,
+  ⟨[1, 2, 3, 4, 5, 6], [1, 6], [(3, 2), (5, 3)]⟩]
+
+def judgeVectors : List Json :=
+  sifts.zipIdx.map fun (s, i) =>
+    vector s!"page {i + 1}"
+      (Json.mkObj [("page", toJson s.page), ("kills", toJson s.kills),
+        ("when", toJson (s.when.map fun (e, a) => [e, a]))])
+      (Json.mkObj [("unfit", toJson (Aven.Peer.Judge.sift s.run [] s.page))])
+
 def write (dir : System.FilePath) (file : String) (vs : List Json) : IO Unit :=
   IO.FS.writeFile (dir / file) (String.join (vs.map fun v => v.compress ++ "\n"))
 
@@ -155,4 +184,5 @@ def main (args : List String) : IO Unit := do
   IO.FS.createDirAll dir
   write dir "topics.json" topics
   write dir "live.json" liveVectors
+  write dir "judge.json" judgeVectors
   write dir "doc-sync.json" syncVectors

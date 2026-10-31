@@ -1,12 +1,12 @@
 //! Docs in the Peers against the model (`Aven.Peer.DocSync`, README rule 10): each epoch key's topic
 //! (`peer/spec/vectors/topics.json`), and on every generated world of two readers, each reader's tips, what each answers
 //! the other's with, the splits each holds and how many names each holds after one exchange
-//! (`peer/spec/vectors/doc-sync.json`).
+//! (`peer/spec/vectors/doc-sync.json`); and what sifting a page that crashed the judge marks unfit (`judge.json`).
 
 use std::collections::BTreeSet;
 
 use aven_core::Hash;
-use aven_peer::docs::{Entry, Live, Tip, beyond, group_topic, split, tips, version};
+use aven_peer::docs::{Entry, Live, Run, Sifting, Tip, beyond, group_topic, split, tips, version};
 use serde_json::Value;
 
 fn vectors(file: &str) -> Vec<Value> {
@@ -191,5 +191,40 @@ fn live_is_the_models() {
         let bytes = unhex(v["expected"]["bytes"].as_str().unwrap());
         assert_eq!(live.encode(), bytes, "{name}");
         assert_eq!(Live::decode(&bytes), Some(live), "{name}: read back");
+    }
+}
+
+#[test]
+fn sifting_is_the_models() {
+    let vs = vectors("judge.json");
+    assert!(vs.len() >= 6);
+    let nums = |v: &Value| -> Vec<u64> {
+        v.as_array()
+            .unwrap()
+            .iter()
+            .map(|n| n.as_u64().unwrap())
+            .collect()
+    };
+    for v in vs {
+        let page = nums(&v["input"]["page"]);
+        let kills = nums(&v["input"]["kills"]);
+        let when: Vec<(u64, u64)> = v["input"]["when"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| (p[0].as_u64().unwrap(), p[1].as_u64().unwrap()))
+            .collect();
+        let mut s = Sifting::new(page);
+        while let Some(e) = s.trying() {
+            let crashes =
+                kills.contains(&e) || when.iter().any(|(x, a)| *x == e && s.held().contains(a));
+            s.report(if crashes { Run::Crashed } else { Run::Done });
+        }
+        assert_eq!(
+            s.unfit().to_vec(),
+            nums(&v["expected"]["unfit"]),
+            "{}",
+            v["name"]
+        );
     }
 }

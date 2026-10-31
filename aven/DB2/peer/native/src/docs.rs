@@ -526,3 +526,61 @@ pub fn seal_segment(
         aven_db_docs::Device::from_seeds(device_seed, &aven_id::device_ml_dsa_seed(device_seed));
     closed.segment.seal(&device, epoch, entropy)
 }
+
+/// What one run of the judge did (`Aven.Peer.Judge.Run`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Run {
+    Done,
+    Crashed,
+}
+
+/// Sifting a page that crashed the docs worker (`Aven.Peer.Judge.sift`): its envelopes again one at a time, in
+/// order, each in a worker fresh from the store and the ones before it that went through. An envelope is unfit only
+/// when it crashes alone, so a passing fault never marks a valid envelope. The Peer-Light drives it: [`Sifting::trying`]
+/// names what to try after [`Sifting::held`], and [`Sifting::report`] says how it went.
+#[derive(Debug)]
+pub struct Sifting<T> {
+    rest: std::collections::VecDeque<T>,
+    held: Vec<T>,
+    unfit: Vec<T>,
+    trying: Option<T>,
+}
+
+impl<T: Clone> Sifting<T> {
+    pub fn new(page: Vec<T>) -> Sifting<T> {
+        Sifting {
+            rest: page.into(),
+            held: vec![],
+            unfit: vec![],
+            trying: None,
+        }
+    }
+
+    /// The next envelope to try alone, or none once the page is sifted.
+    pub fn trying(&mut self) -> Option<T> {
+        if self.trying.is_none() {
+            self.trying = self.rest.pop_front();
+        }
+        self.trying.clone()
+    }
+
+    /// What went through before the one being tried, in order.
+    pub fn held(&self) -> &[T] {
+        &self.held
+    }
+
+    /// How the one being tried went.
+    pub fn report(&mut self, run: Run) {
+        if let Some(e) = self.trying.take() {
+            match run {
+                Run::Done => self.held.push(e),
+                Run::Crashed => self.unfit.push(e),
+            }
+        }
+    }
+
+    /// What crashed alone, in the page's order.
+    pub fn unfit(&self) -> &[T] {
+        &self.unfit
+    }
+}
