@@ -225,8 +225,8 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
     letters. Proofs travel with the acts, and each check reads only the Docs it concerns.
 29. **Every format names its scheme.** A key blob says flat or tree, and seals and signatures say their suite. Scale and
     new cryptography come in as new schemes, never as a redesign.
-30. **Recovery is never one key,** except MaiaCityGuardian through the evaluation phase (D12), with its exit written
-    [below](#recovery).
+30. **Recovery is never one key.** MaiaCityGuardian is no recovery: it is a super admin for now, a full owner of every
+    person's vault (D12, A42), with its exit written [below](#recovery). Recovery comes later.
 31. **The UI holds no rule.** avenOS asks the engine's dry run, and shows each grant as it is, never only a role's name.
 32. **Lean first.** Every rule here is a theorem or a check before it is code (README, rule 10).
 33. **The public is the network's members** (Samuel, 30 Oct 2026). A public cap reaches every member of the
@@ -280,7 +280,7 @@ Everything older is one of these four, or gone:
 | Audience, stays, marks, intake | Gone: Docs and groups carry keys |
 | Standing grant | A cap on a vault's Docs with `below` |
 | Device rights, agent limits, viewing as someone | Device caps; run caps |
-| Recovery key, guardians | Owners with a delay; MaiaCityGuardian for now |
+| Recovery key, guardians | Recovery owners with a delay, later; MaiaCityGuardian is a full owner for now (A42) |
 | Gate, admission, door, membership | The network's door (milestone 2): a cap to connect in all but name |
 | Identity token, session | Evidence that a key was used, not authority |
 
@@ -311,7 +311,7 @@ are Values the same way.
 | Field | Meaning |
 |---|---|
 | `issuer` | The vault that grants |
-| `holder` | A vault (devices are vaults), a group (`{"group": <its Doc>}`), a ticket's public key, or `public`: every member of the network |
+| `holder` | A vault (a device is its own vault), a group of vaults (`{"group": <its Doc>}`), or `public`: every member of the network. A bearer key, a ticket's one-time key or a fetch key, proves a condition and never holds a cap (rule 15, A42) |
 | `parent` | The cap it narrows, by id, or `null` for a root cap |
 | `form` | `grant`, or `attenuate` for a link that narrows its parent for the same holder, as a message's cap narrows per hop (A27, D16). ("Kind" is only a vault's, A1) |
 | `grant` | Its lines, each an op, the Docs it may act on and bounds on its parameters; or `role` and a target instead |
@@ -462,19 +462,22 @@ messages and queries. For people with keys, reading is whole Docs; for actors an
 ## Holders
 
 - **Vaults** (D2): person, coop, agent and device vaults. A coop holds no devices; what it holds, its owners act on
-  through their own devices, with its approvals where needed.
-- **Devices** act for their vault within a **device cap**, a cap from the vault to its device vault. A device added by a
-  passkey sign-in holds everything its vault may do except govern, as avenID has it today. A grant it prepares counts
-  only with an owner's approval (D14). An agent's devices and the Aven Peer hold narrower ones. On its vault's own
-  authority a device writes within its device cap (`device_within_cap`); under a chain every step it writes is allowed
-  both by the chain, for its vault, and by its device cap (`device_and_chain`). A device whose cap is for proposals
-  never writes on main (`device_proposals_never_main`).
+  through their own devices, with its approvals where needed. Only a vault, a group of vaults or the public holds a
+  cap; a bearer key, a ticket's one-time key or a fetch key, proves a condition of one and never holds it (rule 15,
+  A42).
+- **Devices.** A device is its own vault, owned by its key and by the vault it serves (rule 15, A42). What it may do
+  for that vault is its **device cap**, a cap from the vault to the device's vault. A device added by a passkey
+  sign-in holds everything its vault may do except govern, as avenID has it today. A grant it prepares counts only with
+  an owner's approval (D14). An agent's devices and the Aven Peer hold narrower ones. On its vault's own authority a
+  device writes within its device cap (`device_within_cap`); under a chain every call it makes is allowed both by the
+  chain, for its vault, and by its device cap (`device_and_chain`). A device whose cap is for proposals never writes on
+  main (`device_proposals_never_main`).
 - **Actor hosts** (A27, Samuel, 31 Oct 2026). Actors hold no keys: a host's kernel signs every write of the actors it
   hosts with one device of its own, a narrow device vault, never a member's personal device. Its device cap is the
   union of its hosted actors' standing caps, the outer bound a misbehaving runtime can't exceed. A host device never
   writes on its vault's own authority, only under the chain the acting actor's message carried, as it came, and each
-  envelope it signs names that actor (`host_chain_only`). The actor's narrowing for a write is its footprint, which the
-  reader checks against that chain (D16), never a link added to it. So every step is within the actor's chain and
+  envelope it signs names that actor (`host_chain_only`). The actor's narrowing for a write is its call, which the
+  reader checks against that chain (D16, A32), never a link added to it. So every call is within the actor's chain and
   within the host's device cap (`actor_within_device`, `host_never_beyond`). The Aven Peer signs with Aven's own
   device, under a chain the owner issued to Aven's vault for that actor's Docs and its owners approved (D14).
 - **Groups** (Samuel, 30 Oct 2026: a cap goes to one vault or a group of vaults). A group is a Doc whose readers are its
@@ -528,9 +531,10 @@ messages and queries. For people with keys, reading is whole Docs; for actors an
 
 | Act | Signed by |
 |---|---|
-| Every grant: a root cap, a child cap, a ticket, a group's new reader | The granting vault's owners, k of n (an approval). Today that is one passkey tap, since any one owner suffices (Samuel, 30 Oct 2026, for now) |
+| Every grant: a root cap, a child cap, a group's new reader | The granting vault's owners, k of n (an approval). Today that is one passkey tap, since any one owner suffices (Samuel, 30 Oct 2026, for now) |
 | A public cap | The granting vault's owners, k of n |
 | A new vault's default keep cap | Its owner, with what they sign to join (D14, A22) |
+| A keeper's offer | The keeper's vault's owners, k of n (A44) |
 | Governance | Owners, k of n (avenID) |
 | A new device's device cap | The passkey sign-in that adds the device, which is already an owner's act |
 | An actor's narrower cap, message by message: an attenuation | A device of its holder, the host's (A27). It grants nothing new, so no approval |
@@ -571,6 +575,11 @@ and nobody can pass it on as if it were sent to someone else. It carries:
 The first letter between two vaults goes to the recipient's letterbox, so the keeper can tell whose box it is. Later
 letters use tags only the pair can compute. A letterbox takes a bounded number of first letters per sending device per
 day.
+
+**Letters only start a carrier Doc** (A33, A42). Two vaults' messages are envelopes in their carrier Doc, which
+belongs to the vault that opened contact; the other holds `read` and `tell` on it, and its readers are its group, so
+its gossip is the group's. The first letter carries the cap that lets the other vault in; after that, the pair talks in
+the carrier Doc, never by letters.
 
 ## Checking
 
@@ -796,12 +805,20 @@ it.
   Every keeper of a Doc is named by a keep cap its issuer's owners approved, with a line covering the Doc in its
   issuer's authority (`keepers_by_owner`). Neither Maia City nor a keeper can extend it; a new keeper needs a new keep
   cap from the owner.
+- **A keeper decides only about its own resources** (A44, Samuel, 31 Oct 2026: "we can't have two sources of truth for
+  who keeps what"). Its vault issues **offer caps** to a vault or a group of vaults: the op `keep-offer`, avenID's own
+  (`id/1`), on the keeper's vault, its `quota` in bytes and its `rate` in bytes a second each bounded to one value
+  (`keepOffer`, `offerLine`). A keeper keeps a Doc only where both hold: the owner's keep cap names it, and the
+  keeper's own offer, valid and not withdrawn, covers that owner (`kept_only_offered`): keep caps ∩ offers, as wants
+  ∩ caps. The quota it keeps for a vault is its offer's (`Books.quota`). The admin's keeper list goes: the offers
+  Maia City's members hold are the list.
 
 A keep cap tells a keeper what to keep and nothing about what it is:
 - the Doc ids, or the group whose Docs to keep;
 - each Doc's first fetch key, from its genesis;
-- the gossip topics;
-- the quota.
+- the gossip topics.
+
+How much it keeps for a vault, and how fast, is the keeper's own offer (A44).
 
 **Fetch keys chain** (A22, Samuel, 30 Oct 2026). Each epoch's fetch key comes from its key (`avenDB fetch 1`). The
 rotation's writer signs a link with the fetch key before it: the Doc, the epoch's depth `n` and hash, and the new fetch
@@ -920,15 +937,16 @@ and bytes. What a reader had seen can't be unseen (rule 15).
 | One device | Another device or a passkey removes it; the heal if it may be copied | Nothing lost |
 | One passkey, while a synced copy remains | The synced copy (iCloud Keychain, Google Password Manager) | Nothing lost: the copy's PRF opens the keyring |
 | Every device, with a passkey left | Sign in on a new browser: the passkey adds it as a device, and its PRF opens the keyring | Nothing lost |
-| Every passkey, with a device left | Devices never govern, so recovery: other owners, a recovery kit, or MaiaCityGuardian now | The device still opens the keyring |
+| Every passkey, with a device left | Devices never govern, so another owner: other owners, a recovery kit, or MaiaCityGuardian now | The device still opens the keyring |
 | Everything | A recovery kit, or MaiaCityGuardian now; recovery owners after a delay later | From the kit or the guardian's seal; otherwise gone. Nobody else holds the keys |
 
-**MaiaCityGuardian, now** (Samuel, 30 Oct 2026):
-- It stays an owner of every person's vault, as [`PRODUCTION.md`](../../PRODUCTION.md#maiacityguardian) has it, and any
-  one owner is enough.
-- Once sealing comes, each keyring is also sealed to the guardian's seal key, so a recovery restores data and not just
-  control. It needs an X-Wing key beside its Ed25519 key; `bun run guardian` would make both.
-- It is the one place where recovery is one key, kept for the evaluation phase.
+**MaiaCityGuardian, now** (Samuel, 30 Oct 2026; a super admin for now, A42, 31 Oct 2026):
+- It stays a full owner of every person's vault, as [`PRODUCTION.md`](../../PRODUCTION.md#maiacityguardian) has it,
+  and any one owner is enough. That makes it a super admin, not recovery: recovery, with its delay and its cancel, comes
+  later.
+- Once sealing comes, each keyring is also sealed to the guardian's seal key, so it restores data and not just control.
+  It needs an X-Wing key beside its Ed25519 key; `bun run guardian` would make both.
+- It is the one place where one key is enough, kept for the evaluation phase.
 
 **Its exit comes before the network opens beyond the founding circle,** whatever else is ready (Samuel, 30 Oct 2026):
 1. one act per vault removes it as an owner;
@@ -958,9 +976,12 @@ input. avenID uses it so that **a new browser signing in with a passkey opens it
 **Derivations.**
 - The input is `avenID prf 1`, the vault's id and the owner's epoch. The browser hashes it into the authenticator's
   salt.
-- The input can be guessed, so any origin the passkey's RP ID covers could ask for the same output. A dedicated RP ID
-  for avenOS, with a secret mixed into the input (A14), is not yet (Samuel, 30 Oct 2026). Until then, the origins are
-  few and their releases signed (A15).
+- **The owner key is derived, never stored** (A42, Samuel, 31 Oct 2026: the more secure way). Each ceremony derives
+  it from the PRF output, signs, and drops it; no safe, keyring or page keeps it.
+- **Its boundary is every origin under `maia.city`.** The input can be guessed and the passkey answers any origin its
+  RP ID covers, so each could ask for the same output. So every such origin serves only our signed releases (A15), and
+  rule 13 (keys live only in the safe) holds within that boundary. A dedicated RP ID for avenOS, with a secret mixed
+  into the input (A14), is not yet (Samuel, 30 Oct 2026).
 - From the output, BLAKE3's key derivation makes:
   - `avenID owner 1`: the Ed25519 and ML-DSA-65 seeds of the passkey's **hybrid owner key**;
   - `avenID seal 1`: the X-Wing seed of its **seal key**.
@@ -1013,6 +1034,8 @@ A vault's **safe** holds its secrets (Samuel, 30 Oct 2026, D17):
 - its device and vault keys, which the keyring holds today;
 - the Doc keys it has learned;
 - later, passwords, API tokens, SSH keys and other services' credentials.
+
+A passkey's owner key isn't among them: it is derived from the passkey's PRF for each act and never stored (A42).
 
 It is a Doc like any other, synced by avenDB, and it opens only inside a **safe runtime**: each host's protected place.
 It works like a password manager, except that the secrets are never handed out.
@@ -1190,7 +1213,8 @@ to and leave all the time. Scale need not be built from day one, but no choice m
    discovery document folds in: its rules learned and first principles became the rules and the model here, and its
    survey moved whole to [`research.md`](research.md). Its old path becomes a pointer on its branch.
 2. **Vaults issue and hold caps** (Samuel, 30 Oct 2026). A device is a vault, so "a narrower cap for one device" is a
-   cap its device vault holds. A ticket holds one until a vault claims it. Actors hold no keys.
+   cap its device vault holds. Actors hold no keys. (A ticket held one until a vault claimed it; since A42 a bearer key
+   only proves a condition, and a ticket's key proves its claim.)
    **A group of vaults can hold a cap too** (Samuel, 30 Oct 2026): a cap goes to one vault or a group of vaults
    (rule 13). Otherwise a team's caps would be issued once per member, and a group would have to be a vault in the tree
    the keeper sees.
@@ -1270,6 +1294,9 @@ to and leave all the time. Scale need not be built from day one, but no choice m
 23. **Holdings follow caps** (A40, Samuel, 31 Oct 2026). A device or keeper holds only what its caps cover, so when
     coverage shrinks, by a delete, a Doc leaving a collection, a revoked or narrowed cap or a withdrawn keep cap, honest
     peers drop the bytes and keys at their next sync.
+24. **Placement has one source, the owner's vault** (A44, Samuel, 31 Oct 2026). A vault's keep caps say which keeper
+    holds which of its Docs; a keeper's vault only offers its resources, quota and rate, to a vault or a group, and
+    keeps a Doc only where both hold.
 
 Agreed with the engine thread (30 Oct 2026):
 
@@ -1363,8 +1390,9 @@ Values, hashes, ops or targets of its own; its built-in types are `Aven.ID.Types
 | | `served_current`, `fork_served` | A keeper serves a fetch or takes an upload only for a proof on that connection by the current fetch key, or, while a fork is unsettled, by a branch's newest key, so honest readers are never refused |
 | | `quota_holds`, `admitted_served` | A keeper takes uploads in the order they come, each only while its vault's spending stays within the quota its keep cap gives it, so no vault's spending ever passes its quota; and it takes only what it serves (R10) |
 | | `grind_settled`, `settled_example` | Once the keep cap's issuer chooses a branch at a fork, every keeper follows it whatever forks arrive after |
+| | `kept_only_offered` | A keeper keeps a Doc only where the owner's keep cap names it and the keeper's own offer, valid and not withdrawn, covers that owner: keep caps ∩ offers (A44) |
 | | `kept_only_covered`, `kept_only_by_owner`, `kept_by_owner` | A keeper keeps only what a keep cap it holds lists, one naming it that a device of its issuer signed, its issuer's owners approved, and its issuer hasn't withdrawn: a keeper holds a vault's data only under a keep cap that vault's owners approved (A22) |
-| | `withdrawn_dropped`, `withdrawn_not_served`, `others_kept` | A withdrawn keep cap's Docs are dropped and served no more, and what other keep caps cover stays |
+| | `withdrawn_dropped`, `withdrawn_not_served`, `others_kept` | A withdrawn keep cap's Docs are dropped and served no more, and what other keep caps cover stays, as do the keeper's offers |
 | | `deleted_gone`, `deleted_final` | A Doc its vault deleted is dropped and served no more, whatever comes after |
 | | `uploader_pays` | The uploading vault pays, and only for what the keeper took from it |
 | | `grind_example` | A removed reader's fork with a ground hash becomes current at a keeper until the issuer chooses; it is flagged, and honest readers are still served |
@@ -1399,7 +1427,11 @@ One smaller gap:
 | `approvals.json` | Signatures, thresholds and digests on the cast, and whether each approval holds; approvals where an owner is a vault, with a coop of two vaults added |
 | `expiry.json` | Writes under a cap that expires, with each envelope's signed time, and whether each counts for the clock |
 | `network.json` | A ticket's claims in two orders (A12), removals that clash, MaiaCityGuardian's exit |
-| `keep.json` | Fetch-key links in the order they came, with the keys a keeper takes, its current key and its flags; proofs and whether they're served; what each vault pays; 30 generated keepers |
+| `keep.json` | Fetch-key links in the order they came, with the keys a keeper takes, its current key and its flags; proofs and whether they're served; what each vault pays; what a keeper keeps under the keep caps it holds and its own offers (A44); 30 generated keepers |
+
+`aven-id-model` answers the same cases a backend's property tests draw: a chain, who keeps a Doc, and a Doc of
+envelopes with its revocations, each in the form its vector's input takes (`Aven.ID.CapsModel`). Every Doc id in the
+vectors is 32 bytes, as Core's are.
 
 A cap's bytes are its body in Core's deterministic CBOR, its targets as `Aven.Core.TargetCbor` writes them; its id is
 their BLAKE3 hash, and its device signs them under the label `avenID cap 1` (`Aven.ID.CapsCbor`). The cast's caps go by
@@ -1438,9 +1470,19 @@ A proposal for milestone 3's plan, for the architect:
 
 ## Open questions
 
-None at the moment. How a flagged fork of fetch keys settles, which the Lean model turned up, was answered on
-30 Oct 2026 ([how a ground fork settles](#blind-keepers)). What comes later is scheduled in
-[order of work](#order-of-work).
+What is open (A42: the status lists say so):
+- **Rule 15, A28's caps items:**
+  - a root cap over a coop's Docs needs the coop's own owners, k of n;
+  - a vault without devices, such as a coop, issues by its owners' approval alone;
+  - a ticket becomes a cap from Maia City to the vault its claim founds, its one-time key proving the claim;
+  - each vault stores its own threshold (`Ctx.threshold` is 1 today).
+- **Rule 4:** `rule4_reading_writes_nothing` concludes that no Record changes once the engine refuses a change of a
+  Record's type (`typesKept`, with the docs thread).
+- **The safe's vectors** tag their unions with `kind`, which is only a vault's (A1); they get another word.
+- The Lean that waits for another thread, [above](#what-lean-proves).
+
+How a flagged fork of fetch keys settles, which the Lean model turned up, was answered on 30 Oct 2026
+([how a ground fork settles](#blind-keepers)). What comes later is scheduled in [order of work](#order-of-work).
 
 ## Not in this spec
 
