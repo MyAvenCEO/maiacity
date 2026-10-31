@@ -3,62 +3,62 @@
   {
    "id": "identity",
    "title": "Identity",
-   "file": "identity.json"
+   "file": "chapters/identity.json"
   },
   {
    "id": "data",
    "title": "Data",
-   "file": "data.json"
+   "file": "chapters/data.json"
   },
   {
    "id": "merge",
    "title": "Merging",
-   "file": "merge.json"
+   "file": "chapters/merge.json"
   },
   {
    "id": "rules",
    "title": "Rules",
-   "file": "rules.json"
+   "file": "chapters/rules.json"
   },
   {
    "id": "check",
    "title": "Checking",
-   "file": "check.json"
+   "file": "chapters/check.json"
   },
   {
    "id": "keys",
    "title": "Keys",
-   "file": "keys.json"
+   "file": "chapters/keys.json"
   },
   {
    "id": "end",
    "title": "Endings",
-   "file": "end.json"
+   "file": "chapters/end.json"
   },
   {
    "id": "time",
    "title": "Time",
-   "file": "time.json"
+   "file": "chapters/time.json"
   },
   {
    "id": "net",
    "title": "Network",
-   "file": "net.json"
+   "file": "chapters/net.json"
   },
   {
    "id": "sync",
    "title": "Sync",
-   "file": "sync.json"
+   "file": "chapters/sync.json"
   },
   {
    "id": "carry",
    "title": "Carriers",
-   "file": "carry.json"
+   "file": "chapters/carry.json"
   },
   {
    "id": "ops",
    "title": "Operations",
-   "file": "ops.json"
+   "file": "chapters/ops.json"
   },
   {
    "id": "decisions",

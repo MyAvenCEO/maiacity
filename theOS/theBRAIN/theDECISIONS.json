@@ -1012,6 +1012,25 @@
     "identity-7",
     "ops-8"
    ]
+  },
+  {
+   "id": "D50",
+   "title": "Record conventions",
+   "status": "decided",
+   "date": "2026-10-31",
+   "decision": "Every stored or sent thing is a record: {\"type\": \"theos/<kind>@<version>\", …fields, \"sig\"} in canonical CBOR (shown as JSON). IDs are typed: human:, coop:, agent:, role:, rule:, ending: and chunk: followed by b3: and the BLAKE3 hash of the record; data: followed by the seal's ed25519 public key; value: b3: hash of the bytes. A #label after an ID is only for people (human:b3:q4x7…#you). Public keys: ed25519:… (signers, seals), x25519:… (locks). Secret keys never appear; they are named, for example datakey:house-list/3. CRDT op IDs are Loro's peer and counter (5f3a9c:41). Times are RFC 3339 in UTC. Signatures: \"sig\": {\"by\": agent ID, \"key\": ed25519 public key, \"value\": …}.",
+   "why": "Slides and code use the same shapes and names, so the examples are drafts of the real schema, not illustrations.",
+   "sources": [
+    {
+     "label": "RFC 8949: CBOR",
+     "url": "https://www.rfc-editor.org/rfc/rfc8949"
+    },
+    {
+     "label": "RFC 3339: timestamps",
+     "url": "https://www.rfc-editor.org/rfc/rfc3339"
+    }
+   ],
+   "slides": []
   }
  ]
 }

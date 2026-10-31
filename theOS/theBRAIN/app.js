@@ -1,4 +1,4 @@
-// theID, told as stories in text. Each slide is one moment; {word} marks a term the moment introduces, and a slide may
+// theOS, told as stories in text. Each slide is one moment; {word} marks a term the moment introduces, and a slide may
 // show a small JSON example, a flow of steps or a table. The hash is #<story>-<n>.
 const $ = (s) => document.querySelector(s);
 const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;');
@@ -114,7 +114,7 @@ async function openDecisions(st, i) {
 async function start() {
   stories = (await (await fetch('stories.json')).json()).stories;
   const counts = await Promise.all(stories.map(async (x) => (x.kind ? null : (await (await fetch(x.file)).json()).slides.length)));
-  $('#stories').innerHTML = '<b class="navhead">theID</b>' + stories.map((x, i) => x.kind
+  $('#stories').innerHTML = '<b class="navhead">theOS</b>' + stories.map((x, i) => x.kind
     ? `<button type="button" class="navdec" data-story="${x.id}">${esc(x.title)}</button>`
     : `<button type="button" data-story="${x.id}"><span class="nn">${String(i + 1).padStart(2, '0')}</span><span class="nt">${esc(x.title)}</span><span class="nc">${counts[i]}</span></button>`).join('');
   $('#stories').addEventListener('click', (e) => { const b = e.target.closest('[data-story]'); if (b) open(stories.find((x) => x.id === b.dataset.story), 0); });
