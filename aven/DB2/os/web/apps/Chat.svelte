@@ -134,41 +134,63 @@
 			turns.shift()();
 		}
 	};
+	// `node` holds the player and, until it has a src, a Play button over it: a press is intent, not passing by, so the
+	// player loads at once, whatever waits for a turn, and plays. The button is the press's: Chromium's controls let no
+	// press or play through to a player without a src
 	function lazy(node, file) {
+		const player = node.querySelector('video, audio');
+		const tap = node.querySelector('.tap');
 		let mine = false;
 		let gone = false;
+		let started = false;
+		let dwell = null;
 		const done = () => {
 			if (!mine) return;
 			mine = false;
 			loading--;
 			nextTurn();
 		};
+		const start = () => {
+			started = true;
+			tap?.remove();
+			player.setAttribute('preload', 'metadata');
+			player.setAttribute('src', `/files/${file}`);
+		};
 		const load = () => {
-			if (gone) return;
+			if (gone || started) return;
 			mine = true;
-			node.setAttribute('preload', 'metadata');
-			node.setAttribute('src', `/files/${file}`);
+			start();
 			setTimeout(done, 30_000);
 		};
-		node.addEventListener('loadedmetadata', done);
-		node.addEventListener('error', done);
-		// in view for a moment, not passed by: catching up adds lines at the bottom and scrolls past each
-		let dwell = null;
 		const seen = new IntersectionObserver((entries) => {
 			clearTimeout(dwell);
 			if (!entries.at(-1).isIntersecting) return;
+			// in view for a moment, not passed by: catching up adds lines at the bottom and scrolls past each
 			dwell = setTimeout(() => {
 				seen.disconnect();
 				turns.push(load);
 				nextTurn();
 			}, 400);
 		});
+		const now = () => {
+			if (gone) return;
+			clearTimeout(dwell);
+			seen.disconnect();
+			const waiting = turns.indexOf(load);
+			if (waiting >= 0) turns.splice(waiting, 1);
+			if (!started) start();
+			player.play().catch(() => {});
+		};
+		player.addEventListener('loadedmetadata', done);
+		player.addEventListener('error', done);
+		tap?.addEventListener('click', now);
 		seen.observe(node);
 		return {
 			destroy: () => {
 				gone = true;
 				clearTimeout(dwell);
 				seen.disconnect();
+				tap?.removeEventListener('click', now);
 				const waiting = turns.indexOf(load);
 				if (waiting >= 0) turns.splice(waiting, 1);
 				done();
@@ -269,11 +291,17 @@
 									><img src="/files/{f.file}" alt={f.name} loading="lazy" use:retrying={f.file} /></a
 								>
 							{:else if kind(f.type) === 'audio'}
-								<audio controls preload="none" use:retrying={f.file} use:lazy={f.file}></audio>
+								<div class="player" use:lazy={f.file}>
+									<audio controls preload="none" use:retrying={f.file}></audio>
+									<button type="button" class="tap" aria-label="Play {f.name}" data-testid="tap">{@render playIcon()}</button>
+								</div>
 							{:else if kind(f.type) === 'video'}
 								<!-- playsinline: iOS plays it in the bubble, not full-screen; it seeks by ranges (files-sw.js answers 206) -->
 								<!-- svelte-ignore a11y_media_has_caption -->
-								<video controls playsinline preload="none" use:retrying={f.file} use:lazy={f.file}></video>
+								<div class="player" use:lazy={f.file}>
+									<video controls playsinline preload="none" use:retrying={f.file}></video>
+									<button type="button" class="tap" aria-label="Play {f.name}" data-testid="tap">{@render playIcon()}</button>
+								</div>
 							{:else if kind(f.type) === 'pdf'}
 								<!-- previewed where the browser shows a PDF in a sandboxed frame; the link opens it in any case -->
 								<iframe src="/files/{f.file}" title={f.name} loading="lazy"></iframe>
@@ -360,6 +388,10 @@
 		{#if room.refused}<p class="refused" data-testid="refused">{room.refused}</p>{/if}
 	</section>
 </div>
+
+{#snippet playIcon()}
+	<svg class="icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" /></svg>
+{/snippet}
 
 <style>
 	/* Every grid here has one column of minmax(0, 1fr), and every grid or flex child that holds text or a file has
@@ -604,7 +636,32 @@
 		min-width: 0;
 	}
 
-	figure.file audio {
+	/* a player and, until it has its src, its Play button over it */
+	figure.file .player {
+		position: relative;
+		display: grid;
+		min-width: 0;
+	}
+
+	figure.file .tap {
+		position: absolute;
+		inset: 0;
+		width: 56px;
+		height: 56px;
+		margin: auto;
+		padding: 0;
+		color: var(--on-accent);
+		background: var(--accent);
+		border-radius: 50%;
+		box-shadow: var(--shadow-soft);
+	}
+
+	figure.file audio + .tap {
+		width: 44px;
+		height: 44px;
+	}
+
+		figure.file audio {
 		display: block;
 		width: 300px;
 		max-width: 100%;

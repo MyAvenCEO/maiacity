@@ -121,14 +121,19 @@ const rustVolumes = [
 	'-v', 'avensandbox_cargo_git:/opt/cargo/git',
 ];
 
-// The Lean specs outside aven/DB2, which sandbox/vectors.sh builds and checks: aven/runtimes/spec and aven/actor/spec,
-// each at /aven/<name>/spec, and aven/DB2 once more at /aven/DB2, so their path to Aven.Core (`../../DB2/core/spec`)
-// resolves. Only these: the rest of the repository, avenDB-old among it, stays out of the box (README, rule 12).
-const specVolumes = () =>
-	['runtimes', 'actor']
-		.filter((name) => existsSync(join(db2, '..', name, 'spec')))
-		.flatMap((name) => ['-v', `${join(db2, '..', name, 'spec')}:/aven/${name}/spec`])
-		.concat(['-v', `${db2}:/aven/DB2`]);
+// What the box takes from outside aven/DB2: aven/runtimes whole at /aven/runtimes (its Lean spec, which
+// sandbox/vectors.sh builds and checks, and its own Cargo workspace, whose build folder is a volume like aven/DB2's),
+// and aven/actor/spec at /aven/actor/spec; and aven/DB2 once more at /aven/DB2, so their path to Aven.Core
+// (`../../DB2/core/spec`) resolves. Only these: the rest of the repository, avenDB-old among it, stays out of the box
+// (README, rule 12).
+const specVolumes = () => {
+	const out = [];
+	if (existsSync(join(db2, '..', 'runtimes'))) {
+		out.push('-v', `${join(db2, '..', 'runtimes')}:/aven/runtimes`, '-v', 'avensandbox_runtimes_target:/aven/runtimes/target');
+	}
+	if (existsSync(join(db2, '..', 'actor', 'spec'))) out.push('-v', `${join(db2, '..', 'actor', 'spec')}:/aven/actor/spec`);
+	return out.concat(['-v', `${db2}:/aven/DB2`]);
+};
 
 export async function inBox(args) {
 	await ensureDocker();
@@ -208,6 +213,7 @@ async function check() {
 		(await keeps(run)) &&
 		(await inEngines(run)) &&
 		(await inlines(run)) &&
+		(await docs(run)) &&
 		(await claims(run)) &&
 		(await members(run)) &&
 		(await chats(run)) &&
@@ -409,6 +415,8 @@ export async function offlines(run) {
 	say(`${ok ? 'opening, writing and signing in without the Aven Peer hold' : 'the offline step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s)`);
 	return ok;
 }
+// avenBRAIN's docs in avenOS, in three engines at a desktop's and a phone's width: sandbox/docs.mjs
+const docs = async (run) => (await $`${compose} exec -T browsers node sandbox/docs.mjs ${run}`.env(env).nothrow()).exitCode === 0;
 const chats = async (run) => (await $`${compose} exec -T browsers node sandbox/chat.mjs ${run}`.env(env).nothrow()).exitCode === 0;
 
 async function up(args) {

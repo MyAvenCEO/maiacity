@@ -141,12 +141,13 @@ same day, and what they agreed is marked where it applies. Nothing in this spec 
 Each rule is held by a Lean theorem or a check once there is code to hold.
 
 1. **Keys sign; vaults hold.** Only a key signs, and only a vault, a group of vaults (rule 13), a ticket or the public
-   (rule 33) holds a cap. A device signs for the vault it serves, within its device cap.
+   (rule 33) holds a cap. A device signs for the vault it serves, within its device cap (`device_within_cap`).
 2. **Governing is ownership, never a cap.** A vault's owners change its owners, devices, thresholds and recovery, k of
    n. No cap governs, and no device governs (`Aven.ID.Governs`).
 3. **Every cap narrows what it rests on.** A root cap rests on its issuer's authority over the target's vault. Every
    other cap rests on a parent its issuer holds and grants part of it: targets within, operations within, footprints
-   within, conditions at least as strict, and a lower share depth.
+   within, conditions at least as strict. A grant passes it to a holder, a share depth lower; an attenuation narrows it
+   for the same holder, no deeper (A27).
 4. **The verifier computes the chain, and a cap never changes.** Nothing a cap says about itself widens it. It names
    operations and roles by hash, so what it grants is fixed when it is signed.
 5. **A cap grants operations on targets.** The engine's operations (`read`, `query`, `write`, `mutate`) and the
@@ -286,6 +287,7 @@ are Values the same way.
   "issuer": "v:alice",
   "holder": "v:bob",
   "parent": null,
+  "kind": "grant",
   "grants": [
     { "target": { "doc": "d:7Hq…" },
       "read": { "history": "all" },
@@ -303,6 +305,7 @@ are Values the same way.
 | `issuer` | The vault that grants |
 | `holder` | A vault (devices are vaults), a group (`g:<doc>`), a ticket's public key, or `public`: every member of the network |
 | `parent` | The cap it narrows, by id, or `null` for a root cap |
+| `kind` | `grant`, or `attenuate` for a link that narrows its parent for the same holder, as a message's cap narrows per hop (A27, D16) |
 | `grants` | Each a target, the operations on it and the branches it may write; or `role` and `target` instead |
 | `conditions` | [Below](#conditions); they apply to every grant |
 | `nonce` | Makes two caps with the same grants two caps, each revocable on its own |
@@ -381,7 +384,7 @@ its params inside the seal, so a reader re-lowers it and checks the change is ex
 | `approve` | `{ "k": 2, "of": [ owners ] }`: every act under the cap carries k approvals over its digest | Every reader, or the router |
 | `uses`, `budget` | How many acts, how much spend | Only where one router or kernel counts them |
 | `own` | `patch` and `remove` only on Records the holder created: the signer of the envelope that made the Record, read from history, never from a field | Every reader |
-| `branches` | `main`, a branch's hash, or `proposals` (every branch but main): writes only on proposals, and landing them on main is someone else's merge, which counts only when the merger's grant covers the whole merge. An agent's removals go this way (engine rule 12) | Every reader |
+| `branches` | `main`, a branch's hash, or `proposals` (every branch but main): writes only on proposals, and landing them on main is someone else's merge, which counts only when the merger's grant covers the whole merge. An agent's removals go this way (engine rule 12) | Every reader (`branch_allowed`, `proposals_never_main`) |
 | `history` | On `read`: `all` or `from-now` | Crypto: a `from-now` grant rotates without a link back |
 
 ### Roles
@@ -416,7 +419,18 @@ messages and queries. For people with keys, reading is whole Docs; for actors an
   through their own devices, with its approvals where needed.
 - **Devices** act for their vault within a **device cap**, a cap from the vault to its device vault. A device added by a
   passkey sign-in holds everything its vault may do except govern, as avenID has it today. A grant it prepares counts
-  only with an owner's approval (D14). An agent's devices and the Aven Peer hold narrower ones.
+  only with an owner's approval (D14). An agent's devices and the Aven Peer hold narrower ones. On its vault's own
+  authority a device writes within its device cap (`device_within_cap`); under a chain every step it writes is allowed
+  both by the chain, for its vault, and by its device cap (`device_and_chain`). A device whose cap is for proposals
+  never writes on main (`device_proposals_never_main`).
+- **Actor hosts** (A27, Samuel, 31 Oct 2026). Actors hold no keys: a host's kernel signs every write of the actors it
+  hosts with one device of its own, a narrow device vault, never a member's personal device. Its device cap is the
+  union of its hosted actors' standing caps, the outer bound a misbehaving runtime can't exceed. A host device never
+  writes on its vault's own authority, only under the chain the acting actor's message carried, as it came, and each
+  envelope it signs names that actor (`host_chain_only`). The actor's narrowing for a write is its footprint, which the
+  reader checks against that chain (D16), never a link added to it. So every step is within the actor's chain and
+  within the host's device cap (`actor_within_device`, `host_never_beyond`). The Aven Peer signs with Aven's own
+  device, under a chain the owner issued to Aven's vault for that actor's Docs and its owners approved (D14).
 - **Groups** (Samuel, 30 Oct 2026: a cap goes to one vault or a group of vaults). A group is a Doc whose readers are
   its members. It holds caps for them: a team editing the team's Docs, a family reading the family's photos. A write
   under a group's cap carries, inside the seal, the writer's read cap on the group. Groups aren't vaults, so they
@@ -472,7 +486,7 @@ messages and queries. For people with keys, reading is whole Docs; for actors an
 | A public cap | The granting vault's owners, k of n |
 | Governance | Owners, k of n (avenID) |
 | A new device's device cap | The passkey sign-in that adds the device, which is already an owner's act |
-| An actor's narrower cap, message by message | The kernel, inside a cap someone approved. Not a new grant |
+| An actor's narrower cap, message by message: an attenuation | A device of its holder, the host's (A27). It grants nothing new, so no approval |
 | A revocation | Any device of a vault that may revoke. It only takes away, so a lost passkey never stops it |
 
 Approvals bind what others check: writes, `share` and `tell`. Reading is holding a key, and anyone holding a Doc's key
@@ -482,6 +496,15 @@ A root cap is issued by the target's vault or by a vault that governs it: author
 
 **Delegating needs no one online.** The holder signs a child cap that narrows its own and writes it where its target's
 caps live. Readers check it when they meet it, as Biscuit's offline attenuation does without Datalog.
+
+**Attenuating needs no approval** (A27, the architect, 31 Oct 2026). A cap that travels on in a message narrows at each
+hop (D16) by an attenuation: a link that keeps its parent's holder, lies within its parent, shares no deeper, and is
+signed by a device of that holder, the host's for an actor's message. It grants nothing new, so D14's approval doesn't
+apply to it. A chain still starts from authority: its root is an approved grant, attenuations follow approved grants,
+directly or through other attenuations, and a cap reaches a new holder only by an approved grant
+(`new_holder_granted`, `holder_granted`). A message that crosses to an actor on another vault's host carries its
+chain only as provenance. The receiver acts under its own standing caps, unless that vault holds an approved grant to
+act on the sender's authority, which attenuations can follow in turn.
 
 **Where caps live** (rule 12):
 - **A Doc's caps, revocations and epochs** are Records of avenID's types `cap`, `revoke` and `epoch` in the Doc's
@@ -517,9 +540,11 @@ checks the footprint ([engine](../../db/engine/README.md#who-checks-what)):
 6. **Dependencies,** by hash. A wait raises the stall alarm (docs).
 7. **Epoch and authority** (**caps**):
    - the epoch is no older than any epoch in what the envelope builds on (rule 16);
-   - either the signer's vault is the Doc's vault, or governs it, and the device acts within its device cap;
+   - either the signer's vault is the Doc's vault, or governs it, and the device acts within its device cap
+     (`own_authorized`);
    - or the envelope names a cap whose chain holds:
-     - **valid:** signatures, approvals, every link narrowing, conditions;
+     - **valid:** signatures, approvals on every grant, every link narrowing, every attenuation keeping its holder,
+       conditions;
      - **live:** kept by every revocation on the chain that the reader holds (rule 14);
      - **covering:** its footprint covers the change; with `approve`, the approvals over this envelope's digest; and
        for a group's cap, the writer's live read cap on the group, and the issuer of each child still in it.
@@ -531,7 +556,9 @@ checks the footprint ([engine](../../db/engine/README.md#who-checks-what)):
 
 **A merge into main** counts only when the merger's grant covers the footprint of the whole merge: every type and field
 that differs between the base and the merged state, not only the commit that fixes conflicts. Otherwise a merger with a
-narrow cap could land a proposal's wider changes (agreed with the docs thread, 30 Oct 2026).
+narrow cap could land a proposal's wider changes (agreed with the docs thread, 30 Oct 2026). The engine computes that
+diff from main's version at the merge's `prev` (`merge_granted`), and caps' verdict judges a merge into main on it
+(`merge_covered`).
 
 **Three verdicts per envelope** (the docs layer's):
 - **fit**, which depends only on the envelope and never changes;
@@ -1157,23 +1184,30 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | Module | Theorem | Says |
 |---|---|---|
 | `CapsCbor` | `Cap.digest_inj` | Two allowed caps with one id say the same thing: the bytes approved and signed name the cap exactly |
-| `Authorized` | `authorized_signer`, `authorized_root` | Caps' verdict on a Core envelope: its chain keeps every rule, its last cap is held by the signer's vault, and every step of its footprint is one the chain's root allows on its Doc, on its root issuer's authority (R4) |
+| `Authorized` | `own_authorized`, `authorized_vault` | Caps' verdict on a Core envelope (checking, step 7): its device acts within its device cap, and it writes on its vault's own authority (the signer's vault is the Doc's vault or governs it: an owner writing their own Docs, with no chain; never an actor host's device) or under a chain. On either path the signer's vault owns or governs the Doc or holds the chain's last cap: no authority from nowhere |
+| | `chain_signer`, `chain_root` | Under a chain: it keeps every rule, its last cap is held by the signer's vault, every step of the footprint is one the chain's root allows on the Doc, and every line the chain grants lies in the root issuer's authority |
 | | `counts_iff` | An envelope counts exactly when everything in its past is signed, fresh, authorized, live and fit, and none of it is half of a split. `Aven.Architecture` composes the parts |
 | | `readers_agree` | Two readers that hold the same past of an envelope, and the same splits in it, give it the same verdict, whatever else each holds |
+| | `branch_allowed`, `proposals_never_main` | Every cap of a chain an envelope rests on lets its holder write on the envelope's branch, so a cap for proposals, or for one branch, never writes on main: landing a proposal on main is someone else's merge |
+| | `merge_covered` | A merge into main counts only when the merger's grant covers the whole merge: for a reader that judges merges whole (the engine's `changesFrom` from main's version at the merge's `prev`, `merge_granted`), a merge under a chain has a last cap that writes on main and allows every step of the whole merge; on own authority the device cap covers it (`merge_within_device`) |
+| | `device_within_cap`, `device_and_chain` | The signing device acts within its device cap on either path, a cap from the vault it serves: it lets the device write on the envelope's branch and allows every step, so under a chain each step is allowed both by the chain for the vault and by the device cap for the device (rule 1) |
+| | `device_proposals_never_main`, `merge_within_device` | A device whose cap is for proposals, as an agent's removals go, never writes on main whatever chain it names; a merge into main read whole stays within the merging device's cap |
+| | `host_chain_only`, `actor_within_device`, `host_never_beyond` | An authorized envelope an actor host's device signed rests on a chain, the one the acting actor's message carried, and names that actor; every step of it is allowed both by that chain's last cap and by the host's device cap, the union of its hosted actors' standing caps (A27) |
 | `Caps` | `narrow_chain`, `narrow_steps` | No cap in a chain lets a verb reach a Doc, or allows a write step, that its root doesn't |
 | | `root_authority` | Every line a chain grants lies in its root issuer's authority: its own vault, one it governs, or a Doc of one |
-| | `chain_short` | A chain is no longer than its root may be shared |
-| | `grant_approved` | Every cap in a chain was signed by a device of its issuer and approved by its issuer's owners, an owner vault by its own quorum (D14) |
+| | `chain_short` | A chain passes its root on no more often than its root may be shared: every grant lowers the share depth, and an attenuation never raises it |
+| | `grant_approved` | Every cap in a chain was signed by a device of its issuer, and every grant in it approved by its issuer's owners, an owner vault by its own quorum (D14) |
 | | `child_live` | A cap issued from a group's cap holds only while its issuer is in the group |
 | | `public_bounded`, `public_no_share` | The public passes nothing on and never shares (D15) |
+| | `attenuate_within`, `attenuate_signed` | An attenuation keeps its parent's holder, a device of a vault that holds it signs it, and it reaches and allows nothing its parent doesn't, shares no deeper and is at least as strict: no later expiry, no other branches (A27) |
+| | `new_holder_granted`, `holder_granted` | A cap reaches a new holder only by a grant its issuer's owners approved (D14), and every cap of a chain is held by a holder an approved grant in it reached: a chain starts from authority, and an attenuation only follows an approved grant |
 | | `role_pinned` | A new version of a role changes nothing a cap naming the old one grants (D6) |
 | | `chainError_none` | The first rule a chain breaks is none exactly when it keeps them all |
 | `Approve` | `approval_exact` | An approval holds only with k distinct owners, each having signed exactly its digest |
 | | `approvesF_exact`, `approves_signed` | An owner that is a vault approves by its own quorum, recursively: a vault approves only with its threshold of distinct owners, each a key that signed exactly the digest or a vault that approves it, and with every threshold at least one, an approval rests on such a signature by a key above the vault |
 | | `approves_iff` | In a well-formed tree, looking as many levels up as the tree has vaults finds every approval: a vault's owners stand lower than it |
 | | `shown_is_signed` | What avenOS shows for a passkey tap is decoded from the exact bytes signed (A2, rule 25) |
-| `Past` | `reaches_iff`, `found_iff`, `inPast_iff` | An envelope's past among those a reader holds, decided: exactly Core's `Reaches`, the envelope itself and what is before it |
-| `Revoke` | `seen_never_counts` | A revoked holder's envelope with the revocation in its own past never counts: no laundering. Envelopes are Core's, and caps reads the vault, the cap chain and the acks of each from inside its seal |
+| `Revoke` | `seen_never_counts` | A revoked holder's envelope with the revocation in its own past never counts: no laundering. Envelopes are Core's, and caps reads the vault, the cap chain and the acks of each from inside its seal; their past is Core's `Reaches`, which `Aven.Core.Past` decides |
 | | `saw_iff` | Having seen a revocation, in Core's past: its envelope is before the envelope, or the envelope or something it reaches acknowledges it |
 | | `doc_cap_kept` | Under a Doc cap, only the revocation's own past is kept |
 | | `elsewhere_kept` | Elsewhere, once the revocation reaches the Doc, only what its kept list or another writer's ack had seen counts |
@@ -1215,10 +1249,9 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `acts_on_cap`, `locked_refuses` | It acts only when unlocked, and only on a `tell` cap that names the act (D16) |
 
 **After Core, or with another thread:**
-- `merge_covered` and `footprints.json` (Core's footprints, with the engine);
+- `footprints.json` (Core's footprints, with the engine);
 - `want_grants_nothing` and `one_grammar` (Core's target grammar);
 - `group_holds` (a group cap's writes in `Revoke`);
-- `device_within_cap`;
 - `upgrade_no_wider` and `no_confused_deputy`, in the cross-spec model `Aven.Architecture`: they need `Aven.Actor`,
   and id/spec never requires the actor spec (the architect, 30 Oct 2026);
 

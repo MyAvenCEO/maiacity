@@ -1,11 +1,12 @@
-import Aven.Core
+import Aven.Core.Log
 
-/-! # Core's past, decided
+/-! # The past, decided
 
-Caps' rules read an envelope's past: an envelope that had seen a revocation never counts, and a revocation keeps
-what its own past holds (rule 14). Core states the past as `Reaches`, a proposition. This module decides it for the
-envelopes a reader holds: rounds of names, each adding the envelopes that something already found builds on, until a
-round adds nothing. That takes no more rounds than there are envelopes.
+Readers read an envelope's past: caps' revocations and expiry (an envelope that had seen a revocation never counts,
+and a revocation keeps what its own past holds), the docs layer's logs and counts. `Log` states the past as `Reaches`,
+a proposition. This module decides it for the envelopes a reader holds: rounds of names, each adding the envelopes
+that something already found builds on, until a round adds nothing. That takes no more rounds than there are
+envelopes.
 
 - `reaches_iff`: Core's past is the envelope itself and what is `Before` it;
 - `found_iff`, `inPast_iff`: `past` finds exactly the names of what is before an envelope, and `inPast` decides
@@ -14,9 +15,7 @@ round adds nothing. That takes no more rounds than there are envelopes.
 Envelopes are found by name, as Core's `BuildsOn` finds them: two envelopes of `S` with one name are both in the past
 or neither is (`Before.rename`). -/
 
-namespace Aven.ID.Past
-
-open Aven.Core
+namespace Aven.Core.Past
 
 /-- The names an envelope builds on: the one before it in its log, and the tips it names. -/
 def tips (e : Envelope) : List Hash := e.prev.toList ++ e.deps
@@ -222,4 +221,4 @@ theorem inPast_iff (m : b ∈ S) : inPast nm S a b = true ↔ Before nm S a b :=
     exact p.rename m e.symm
   · exact fun h => ⟨b, m, rfl, h⟩
 
-end Aven.ID.Past
+end Aven.Core.Past

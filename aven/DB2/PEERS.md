@@ -20,7 +20,7 @@ Only what this plan names gets built. Lean first, then Rust against its vectors,
 | Entry to gossip | The Aven Peer is every peer's only bootstrap (`--aven`, `--aven-key`) | `room.rs`, `main.rs` | Any member with a known address ([2](#2-entry-through-any-member)) |
 | Presence and "who joined" | The hub counts connections and says who joined | `hub.rs` | Signed presence beats on gossip ([2](#2-entry-through-any-member)) |
 | Catch-up | Only the Aven Peer's hub answers `heads`, `catch_up`, `lines` | `hub.rs`, `link.rs`, `chats.rs` | Every native Peer answers from its store; signed tips show what is withheld ([3](#3-catch-up-from-whoever-holds-the-posts)) |
-| Keeping logs and files | Only the Aven Peer keeps every log and file (`keep::keep`) | `keep.rs`, `main.rs` | Every native Peer keeps the chat's logs; opt-in keepers keep files, two each ([4](#4-any-members-peer-as-a-keeper)) |
+| Keeping logs and files | Only the Aven Peer keeps every log and file (`keep::keep`) | `keep.rs`, `main.rs` | Every native Peer keeps the chat's logs; each vault's keep caps name its keepers, Maia City's by default ([4](#4-any-members-peer-as-a-keeper)) |
 | Accepting the claim, tickets, sign-ins | The Aven Peer decides by compare-and-set on refs (`claim`, `signin-NNNNNN`, `joined-<invite>`) | `door.rs`, `Aven.ID.{Claim,Invite}` | The tree as a Doc of signed statements; one rule settles it the same everywhere ([5](#5-one-rule-for-the-tree)) |
 | Telling members the tree | The Aven Peer tells each peer the statements, unsigned configuration included | `door.rs`, `members.rs`, `link.rs` | Any member tells it; the genesis names the configuration; signed tips catch a peer that hides statements ([6](#6-signed-records-not-a-peers-word)) |
 
@@ -55,9 +55,12 @@ thread's recommendation. Samuel may overrule any.
    `catch_up` from its own store. A peer links to up to 3 members and asks whichever announced the newer tip. This is
    the want queue's order of sources (engine): your own devices, then other readers, then keepers. It answers engine
    open question 1.
-8. **Keepers keep by grant.** Every native Peer keeps the chat's logs, which are small. Keepers for files opt in, and
-   an admin statement lists them until keep caps land (A22). Each file goes to 2 keepers, chosen by rendezvous hashing
-   over that list; the Aven Peer is one candidate. Any peer may keep, and none is special.
+8. **Each vault chooses its keepers, by keep caps** (Samuel, 31 Oct 2026; A22). The admin's keeper list says who
+   offers to keep. A vault's keep caps say which keeper holds which of its Docs and Values. A new vault starts with one
+   keep cap for everything to Maia City's keeper (the Aven Peer, acting for Aven), and changes it or adds others as it
+   likes. Keepers stay blind. Files are no special case: a file's chunks are Values that a file Record in its Doc names,
+   kept as that Doc is. Every native Peer also keeps the chat's logs it hears. Any peer may keep, and none is
+   special.
 9. **What stays special is named, signed or on its way out** ([8](#8-what-stays-special)). The claim becomes the
    signed genesis that every member pins (A11). The guardian is named in what people sign (A13). The `maia.city` origin
    stays special until Samuel takes up A14.
@@ -67,11 +70,16 @@ thread's recommendation. Samuel may overrule any.
     and changed rarely. A peer refuses any other wire version with "update to join", and never falls back (README rule
     9). The Service Worker and native Peers read one signed release record. Stored formats stay readable forever,
     tested against frozen vectors, because production is never wiped ([7](#7-upgrades)).
+12. **The admin's passkey signs what changes who is in or who sees whom.** Tickets, withdrawals, and the relay and
+    keeper lists are signed by the admin's passkey, a tap each time; an admin device's key only acks claims, which it
+    does on its own (Samuel, 31 Oct 2026: "choose the more secure way"). Reason: a stolen or compromised browser can't
+    let anyone in, or route members through a relay that logs their addresses (`adminPasskey` in `Aven.ID.Network`).
 
 ## 1. Several relays
 
-- **The relay list** is part of the tree: admin statements `relay-add` (a member device's key and its relay's HTTPS
-  URL) and `relay-remove`. The tree settles the list as it settles everything else ([5](#5-one-rule-for-the-tree)).
+- **The relay list** is part of the tree: statements `relay-add` (a member device's key and its relay's HTTPS URL)
+  and `relay-remove`, each signed by the admin's passkey (decision 12). The tree settles the list as it settles
+  everything else ([5](#5-one-rule-for-the-tree)).
 - **Any member's Peer can run a relay** with `--relay`, as the Aven Peer does today. The flag no longer means "this is
   the Aven Peer". A relay on the list admits exactly the door's devices (K12), built from the settled tree, plus a
   newcomer whose token is a statement the tree would take now (`newcomer`), as the Aven Peer's relay does today.
@@ -123,21 +131,29 @@ thread's recommendation. Samuel may overrule any.
 
 ## 4. Any member's Peer as a keeper
 
-- **The chat's logs:** every native Peer keeps every log it hears, as the Aven Peer does today. They are small, and
-  that gives as many keepers as there are Peers.
-- **Files:** the keeper list is admin statements `keeper-add` and `keeper-remove`, naming a member device. When keep
-  caps land (A22, milestone 3), each statement becomes a keep cap that Maia City's owners grant, with the same fields.
-  A device with `--keep` offers itself, and an admin's avenOS shows the offer to accept.
-- **Two keepers per file,** chosen by rendezvous hashing: hash the file's index with each keeper's key and take the 2
-  smallest. Every peer computes the same 2 from the same list, so nobody has to say who keeps what. The sender keeps
-  its own copy as well.
-- **A keeper leaves** when its `keeper-remove` settles, or when it hasn't beaten for 7 days. The next keeper in
-  rendezvous order fetches its files from whoever still holds them. A keeper that comes back just catches up.
+- **Who offers:** the keeper list is statements `keeper-add` and `keeper-remove`, naming a member device, each signed
+  by the admin's passkey (decision 12). A device with `--keep` offers itself, and the admin's avenOS shows the offer to
+  accept. Being on the list keeps nothing by itself.
+- **Who keeps what:** a vault's keep caps (A22), each naming a keeper from the list and a target, which may be a query
+  (A8). Samuel, 31 Oct 2026: caps decide which vault gets which Docs and Values, and each vault decides itself.
+- **The default:** every new vault issues one keep cap for everything to Maia City's keeper, the Aven Peer acting for
+  Aven (`default_kept`). The vault can change it or add others in avenOS.
+- **Two holders, the vault's choice:** a Doc is held by its writers' own devices and by the keepers its vault's keep
+  caps name. With the default alone, the Aven Peer is its one keeper: a Doc whose writer's devices are all offline is
+  then fetchable only while the Aven Peer is up. A vault that adds a keep cap naming a second keeper keeps its Docs
+  fetchable by every member when any one peer is lost, the Aven Peer included (`kept_fetchable`, `Aven.ID.Node`).
+- **Files are no special case:** a file's chunks and its chunk list are Values that a file Record in a Doc names
+  (`db/docs`), kept and read as that Doc is. Until Docs come (milestone 4), the chat's `file` posts stand for that
+  Record, and a keeper keeps a file under the keep caps of the vault whose device posted it.
+- **The chat's logs:** every native Peer keeps every log it hears, as the Aven Peer does today. They are small.
+- **A keeper leaves** when its `keeper-remove` settles, or when it hasn't beaten for 7 days. Its keep caps then name
+  a keeper that isn't there: avenOS tells the vault's owners, and the default keeper still holds what it covers. A
+  keeper that comes back just catches up.
 - **What a keeper stores:** the file's hash sequence, by hash, under the ref `file-<index>`, as the Aven Peer's
   `keep::keep` does today. Its rules stay: fetch it whole, check its length against the post's size, and retry only a
-  sender that couldn't be reached. Blind keeping (sealed bytes, fetch proofs, quota) comes with caps and doesn't change
-  this layout.
-- **Serving:** a file is fetched from its sender, then its 2 keepers, then any peer that holds it, over iroh-blobs
+  sender that couldn't be reached. Blind keeping (sealed bytes, fetch proofs, quota: `Aven.ID.Keep`) comes with caps
+  and doesn't change this layout.
+- **Serving:** a file is fetched from its sender, then its keepers, then any peer that holds it, over iroh-blobs
   (`/iroh-bytes/4`). The provider still serves members only (the door), and fetch proofs come with A22.
 
 ## 5. One rule for the tree
@@ -167,7 +183,7 @@ every peer must reach the same tree from the same statements, whatever order the
 1. Drop every statement that fails its own checks, or whose past doesn't reach the genesis.
 2. **Tickets and withdrawals:** a withdrawal of ticket T wins over every claim of T that isn't in the withdrawal's past.
    A withdrawal that has a claim of T in its past changes nothing: that ticket was already used (`withdraw_used`
-   today).
+   today). Tickets and withdrawals count only when the admin's passkey signed them (decision 12).
 3. **Acks:** an ack names the claim it acks, by hash, and has it in its past. An admin device acks on its own whenever
    it syncs a new claim, but only the claim that stands in its own settled view, and never a second claim of a ticket
    that already has a final claim in that view. So finality waits only for an admin's device to be online.
@@ -208,7 +224,7 @@ In `Aven.ID.Network`, with the caps thread (`ticket_once` is there since #1531),
 - **Node** (`Aven.ID.Node`, the architecture's R3, R7 and R9; the architect, 30 Oct 2026): a write fits on the
   device's own log alone (`write_fits`, `write_chain`), and a split's proof reaches every reader that syncs with a peer
   holding it (`split_spreads`); with two relays every member can use, losing any one peer leaves every member reachable
-  and every Doc held by two members fetchable (`no_only_relay`, `no_only_holder`, `keepers_two`), a re-homed device's
+  and every Doc held by two members fetchable (`no_only_relay`, `no_only_holder`, `kept_fetchable`), a re-homed device's
   new address record is the newest (`rehome_newest`), and one relay alone is an only source (`one_relay_only_source`);
   plain bytes go only to a reader, and relays and keepers that aren't readers see sealed bytes only
   (`no_plain_to_nonreader`, `relay_blind`, `keeper_blind`). Vectors `node.json`: networks losing each peer in turn.
@@ -325,8 +341,9 @@ log tips. The Peer-Light's cache in OPFS and the invite link's records.
 
 ### Thread D: keepers (`peer/native/src/keep.rs`, `main.rs`)
 
-`--keep`, the keeper list, rendezvous over it, two keepers per file, re-keeping when a keeper leaves, fetching from
-sender, then keepers, then anyone.
+`--keep`, the keeper list; a vault's keep caps (the default to Maia City's keeper, and the vault's own, from the caps
+thread's types) deciding which keeper keeps which file; a keeper keeping what its keep caps name; telling the vault's
+owners when a keeper leaves; fetching from sender, then keepers, then anyone.
 
 ### Thread E: upgrades and avenOS (`os/web`, the Service Worker, `deploy`)
 
@@ -337,7 +354,7 @@ in Invite's screen.
 ### Thread F: the box's failures (`sandbox/cast.json`, `sandbox/box`, `sandbox/check.mjs`, `sandbox/lanes.mjs`)
 
 The cast gets a second relay: Alice Peer runs one, with the box's test CA, and is on the relay list. Bob gets a native
-Peer as a keeper. Then the checks below.
+Peer as a keeper, named by a keep cap of Bob's vault. Then the checks below.
 
 ## How it is checked
 
@@ -346,7 +363,8 @@ Peer as a keeper. Then the checks below.
 1. Alice Peer and Bob's Peer-Light still chat, through Alice Peer's relay: posts both ways.
 2. A third peer (Alice Peer-Light, reloaded) catches up from Alice Peer, and its view equals the posts every log's
    signed tip names.
-3. A file Bob's Peer-Light shared loads, from Bob's Peer as its keeper, while its sender's tab is closed.
+3. A file Bob's Peer-Light shared loads from Bob's Peer, which Bob's vault named as a keeper beside the default,
+   while its sender's tab is closed.
 4. An invite made before the stop is claimed through Alice Peer's relay; the new member chats, shows "Waiting for Maia
    City to confirm", and stops showing it when the admin's device acks.
 5. Two claims of one ticket from two profiles, at once: every peer settles the same winner, and the loser's avenOS says

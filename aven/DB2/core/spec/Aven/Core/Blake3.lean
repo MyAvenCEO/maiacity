@@ -4,8 +4,8 @@
 Every Value's name is the BLAKE3 hash of its bytes (ARCHITECTURE.md, "Value"). This is the hash as its
 specification's reference implementation computes it, in core Lean, so the store's traces (`Aven.DB.Store`) carry
 real names: chunks of 1024 bytes in blocks of 64, each chunk's chaining value, and a binary tree of parents whose
-left side holds the largest power of two chunks that leaves the right one non-empty. Only hashing, no keyed mode or
-longer output. The models take the hash as a parameter, and their theorems hold for any injective one; this is the
+left side holds the largest power of two chunks that leaves the right one non-empty. Hashing, and key derivation
+(`deriveKey`, the specification's `derive_key`, for writer ids); no keyed mode or longer output. The models take the hash as a parameter, and their theorems hold for any injective one; this is the
 one their examples and vectors use. It moved here from `Aven.DB.Blake3`, which now names it.
 -/
 
@@ -20,6 +20,8 @@ def flagChunkStart : UInt32 := 1
 def flagChunkEnd : UInt32 := 2
 def flagParent : UInt32 := 4
 def flagRoot : UInt32 := 8
+def flagDeriveKeyContext : UInt32 := 32
+def flagDeriveKeyMaterial : UInt32 := 64
 
 def rotr (x n : UInt32) : UInt32 := (x >>> n) ||| (x <<< (32 - n))
 
@@ -76,15 +78,18 @@ def blocks : (fuel : Nat) → List UInt8 → List (List UInt8)
   | 0, bytes => [bytes]
   | f + 1, bytes => if bytes.length ≤ 64 then [bytes] else bytes.take 64 :: blocks f (bytes.drop 64)
 
-/-- A chunk of at most 1024 bytes, chunk number `counter`. -/
-def chunk (bytes : List UInt8) (counter : UInt64) : Output := Id.run do
+/-- A chunk of at most 1024 bytes, chunk number `counter`, under key words `key` and the mode's flags `mode`. -/
+def chunkWith (key : Array UInt32) (mode : UInt32) (bytes : List UInt8) (counter : UInt64) : Output := Id.run do
   let bs := blocks bytes.length bytes
-  let mut cv := iv
+  let mut cv := key
   for (b, i) in bs.dropLast.zipIdx do
-    cv := (compress cv (words b) counter 64 (if i = 0 then flagChunkStart else 0)).extract 0 8
+    cv := (compress cv (words b) counter 64 (mode ||| if i = 0 then flagChunkStart else 0)).extract 0 8
   let last := bs.getLastD []
   let first := if bs.length = 1 then flagChunkStart else 0
-  return ⟨cv, words last, counter, last.length.toUInt32, first ||| flagChunkEnd⟩
+  return ⟨cv, words last, counter, last.length.toUInt32, mode ||| first ||| flagChunkEnd⟩
+
+/-- A chunk, hashing. -/
+def chunk (bytes : List UInt8) (counter : UInt64) : Output := chunkWith iv 0 bytes counter
 
 /-- The largest power of two at most `n`, or 1. -/
 def pow2le (n : Nat) : Nat := Id.run do
@@ -93,15 +98,19 @@ def pow2le (n : Nat) : Nat := Id.run do
     if 2 * p ≤ n then p := 2 * p
   return p
 
-/-- The node over `bytes`, whose first chunk is chunk number `start`; `fuel` is at least the tree's depth. -/
-def node : (fuel : Nat) → List UInt8 → Nat → Output
-  | 0, bytes, start => chunk bytes start.toUInt64
+/-- The node over `bytes`, whose first chunk is chunk number `start`, under `key` and `mode`; `fuel` is at least the
+tree's depth. -/
+def nodeWith (key : Array UInt32) (mode : UInt32) : (fuel : Nat) → List UInt8 → Nat → Output
+  | 0, bytes, start => chunkWith key mode bytes start.toUInt64
   | f + 1, bytes, start =>
-    if bytes.length ≤ 1024 then chunk bytes start.toUInt64 else
+    if bytes.length ≤ 1024 then chunkWith key mode bytes start.toUInt64 else
       let left := pow2le ((bytes.length - 1) / 1024) * 1024
-      let l := node f (bytes.take left) start
-      let r := node f (bytes.drop left) (start + left / 1024)
-      ⟨iv, l.chain ++ r.chain, 0, 64, flagParent⟩
+      let l := nodeWith key mode f (bytes.take left) start
+      let r := nodeWith key mode f (bytes.drop left) (start + left / 1024)
+      ⟨key, l.chain ++ r.chain, 0, 64, mode ||| flagParent⟩
+
+/-- The node over `bytes`, hashing. -/
+def node (fuel : Nat) (bytes : List UInt8) (start : Nat) : Output := nodeWith iv 0 fuel bytes start
 
 def hexDigit (x : UInt8) : Char := "0123456789abcdef".toList[x.toNat]!
 
@@ -109,11 +118,20 @@ def hexDigit (x : UInt8) : Char := "0123456789abcdef".toList[x.toNat]!
 def hex (bytes : List UInt8) : String :=
   String.ofList (bytes.flatMap fun (b : UInt8) => [hexDigit (b >>> 4), hexDigit (b &&& 15)])
 
-/-- The 32 bytes of the hash of `bytes`. -/
-def digest (bytes : List UInt8) : List UInt8 :=
-  let o := node bytes.length bytes 0
+/-- The 32 bytes of the root over `bytes`, under `key` and `mode`. -/
+def digestWith (key : Array UInt32) (mode : UInt32) (bytes : List UInt8) : List UInt8 :=
+  let o := nodeWith key mode bytes.length bytes 0
   let w := (compress o.cv o.block 0 o.len (o.flags ||| flagRoot)).extract 0 8
   w.toList.flatMap fun (x : UInt32) => [x.toUInt8, (x >>> 8).toUInt8, (x >>> 16).toUInt8, (x >>> 24).toUInt8]
+
+/-- The 32 bytes of the hash of `bytes`. -/
+def digest (bytes : List UInt8) : List UInt8 := digestWith iv 0 bytes
+
+/-- Key derivation (the specification's `derive_key`): the context string is hashed in its own mode into a key, under
+which the key material is hashed in another. -/
+def deriveKey (context : String) (material : List UInt8) : List UInt8 :=
+  let ctx := digestWith iv flagDeriveKeyContext context.toUTF8.toList
+  digestWith ((words ctx).extract 0 8) flagDeriveKeyMaterial material
 
 /-- The hash of `bytes`, as 64 lowercase hex digits: how the store writes it. -/
 def hash (bytes : List UInt8) : String := hex (digest bytes)
@@ -121,5 +139,15 @@ def hash (bytes : List UInt8) : String := hex (digest bytes)
 -- known answers: the specification's for no bytes, and `abc`
 #guard hash [] = "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
 #guard hash "abc".toUTF8.toList = "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85"
+
+-- key derivation's known answers: the specification's test vectors (`test_vectors/test_vectors.json` in the BLAKE3
+-- repository, its `derive_key` cases, first 32 bytes), over inputs `i mod 251` of 0, 1, 1024, 1025 and 3073 bytes
+def tvInput (n : Nat) : List UInt8 := (List.range n).map fun i => (i % 251).toUInt8
+def tvContext : String := "BLAKE3 2019-12-27 16:29:52 test vectors context"
+#guard hex (deriveKey tvContext (tvInput 0)) = "2cc39783c223154fea8dfb7c1b1660f2ac2dcbd1c1de8277b0b0dd39b7e50d7d"
+#guard hex (deriveKey tvContext (tvInput 1)) = "b3e2e340a117a499c6cf2398a19ee0d29cca2bb7404c73063382693bf66cb06c"
+#guard hex (deriveKey tvContext (tvInput 1024)) = "7356cd7720d5b66b6d0697eb3177d9f8d73a4a5c5e968896eb6a689684302706"
+#guard hex (deriveKey tvContext (tvInput 1025)) = "effaa245f065fbf82ac186839a249707c3bddf6d3fdda22d1b95a3c970379bcb"
+#guard hex (deriveKey tvContext (tvInput 3073)) = "72613c9ec9ff7e40f8f5c173784c532ad852e827dba2bf85b2ab4b76f7079081"
 
 end Aven.Core.Blake3

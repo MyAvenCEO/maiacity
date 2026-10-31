@@ -11,6 +11,7 @@
 	// connecting too: the passkey's ceremony is local, and the statement it signs waits in the Peer-Light's store until
 	// the network takes it, so the person taps once and this browser joins by itself when it is back.
 	import App from './App.svelte';
+	import MainNav from './docs/MainNav.svelte';
 	import Join from './Join.svelte';
 	import Phase from './Phase.svelte';
 	import { at, tree } from './id.svelte.js';
@@ -74,6 +75,7 @@
 {:else if link && claimed}
 	<Join {config} {link} />
 {:else}
+	<header class="top"><MainNav /></header>
 	<main data-view={claimed === null ? 'connecting' : !claimed || route === 'claim' ? 'claim' : 'invite-only'}>
 		<h1>avenOS</h1>
 		{#if claimed === null}
@@ -120,6 +122,14 @@
 {/snippet}
 
 <style>
+	.top {
+		padding: 10px 16px;
+		min-height: 64px;
+		display: flex;
+		align-items: center;
+		border-bottom: 1px solid var(--line);
+	}
+
 	main {
 		display: grid;
 		gap: 20px;

@@ -10,14 +10,17 @@ the entries, never on the order they arrived in, so the same entries always make
 two devices, or two folds, agree byte for byte, and sealed nodes dedupe.
 
 The model takes the boundary and the entries' sizes as parameters; the Rust uses the low bits of an entry's BLAKE3 and
-its encoded length. A node holds what lies between its first and last entry, which its parent names, so a lookup
-opens only the nodes whose span meets the range.
+its encoded length. A leaf is an array of entries, as byte strings; an inner node is an array of its children's
+summaries, `[first entry, last entry, child]`, the child named by the hash of its Value (docs, "Nodes"). A node holds
+what lies between its first and last entry, which its parent names, so a lookup opens only the nodes whose span meets
+the range (`Aven.DB.Docs.Walk`).
 
 What it proves:
 - `entries_sorted`, `entries_mem`, `sorted_unique`: the entries of a fold are the set of what went in, sorted, and
   nothing else could be;
 - `chunks_flatten`, `chunks_size`: the nodes hold exactly the entries, in order, each within the size limit;
-- `nodes_set`, `root_set`: the nodes and the root depend only on the set of entries;
+- `nodes_set`, `root_set`: the nodes and the root depend only on the set of entries; `rootFrom_top`: the root names
+  the one node the levels end in;
 - `fold_steps`, `fold_removes`: folding in steps gives what folding at once gives, removals included;
 - `lookup_complete`, `lookup_sound`: a lookup finds every entry in its range, and only those.
 -/
@@ -175,11 +178,14 @@ theorem fold_removes (keep : Bytes → Bool) (a c : List Bytes) :
 
 /-! ## Nodes -/
 
-variable (boundary : Bytes → Bool) (size : Bytes → Nat) (limit : Nat)
+section Chunks
 
-/-- Cut sorted entries into nodes: a node ends after a boundary entry, or before an entry that would take it past the
-size limit. `cur` is the node so far, newest first, and `used` its size. -/
-def chunksFrom (cur : List Bytes) (used : Nat) : List Bytes → List (List Bytes)
+variable {α : Type} (boundary : α → Bool) (size : α → Nat) (limit : Nat)
+
+/-- Cut sorted items into nodes: a node ends after a boundary item, or before an item that would take it past the size
+limit. `cur` is the node so far, newest first, and `used` its size. Items are entries at the leaves and children's
+summaries above; the same rule cuts every level. -/
+def chunksFrom (cur : List α) (used : Nat) : List α → List (List α)
   | [] => if cur = [] then [] else [cur.reverse]
   | x :: xs =>
     if cur ≠ [] ∧ used + size x > limit then
@@ -187,9 +193,9 @@ def chunksFrom (cur : List Bytes) (used : Nat) : List Bytes → List (List Bytes
     else if boundary x then (x :: cur).reverse :: chunksFrom [] 0 xs
     else chunksFrom (x :: cur) (used + size x) xs
 
-def chunks (l : List Bytes) : List (List Bytes) := chunksFrom boundary size limit [] 0 l
+def chunks (l : List α) : List (List α) := chunksFrom boundary size limit [] 0 l
 
-theorem chunksFrom_flatten : ∀ (cur : List Bytes) (used : Nat) (l : List Bytes),
+theorem chunksFrom_flatten : ∀ (cur : List α) (used : Nat) (l : List α),
     (chunksFrom boundary size limit cur used l).flatten = cur.reverse ++ l
   | cur, used, [] => by unfold chunksFrom; split <;> simp_all
   | cur, used, x :: xs => by
@@ -203,10 +209,10 @@ theorem chunksFrom_flatten : ∀ (cur : List Bytes) (used : Nat) (l : List Bytes
       · rw [chunksFrom_flatten (x :: cur) _ xs]; simp
 
 /-- The nodes hold exactly the entries, in order. -/
-theorem chunks_flatten (l : List Bytes) : (chunks boundary size limit l).flatten = l := by
+theorem chunks_flatten (l : List α) : (chunks boundary size limit l).flatten = l := by
   simp [chunks, chunksFrom_flatten]
 
-theorem chunksFrom_size (hx : ∀ x, size x ≤ limit) : ∀ (cur : List Bytes) (used : Nat) (l : List Bytes),
+theorem chunksFrom_size (hx : ∀ x, size x ≤ limit) : ∀ (cur : List α) (used : Nat) (l : List α),
     (cur.map size).sum = used → used ≤ limit →
     ∀ c ∈ chunksFrom boundary size limit cur used l, (c.map size).sum ≤ limit
   | cur, used, [], hu, hl, c, hc => by
@@ -241,9 +247,13 @@ theorem chunksFrom_size (hx : ∀ x, size x ≤ limit) : ∀ (cur : List Bytes) 
         · exact hfit
 
 /-- Every node is within the size limit, when every entry is. -/
-theorem chunks_size (hx : ∀ x, size x ≤ limit) (l : List Bytes) :
+theorem chunks_size (hx : ∀ x, size x ≤ limit) (l : List α) :
     ∀ c ∈ chunks boundary size limit l, (c.map size).sum ≤ limit :=
   chunksFrom_size boundary size limit hx [] 0 l rfl (Nat.zero_le _)
+
+end Chunks
+
+variable (boundary : Bytes → Bool) (size : Bytes → Nat) (limit : Nat)
 
 /-- The nodes of a fold depend only on the set of its entries, not the order they came in. -/
 theorem nodes_set {a b : List Bytes} (h : ∀ x, x ∈ a ↔ x ∈ b) :
@@ -252,23 +262,60 @@ theorem nodes_set {a b : List Bytes} (h : ∀ x, x ∈ a ↔ x ∈ b) :
 
 /-! ## The root -/
 
-/-- A node as a Value: its entries, or its children's summaries, in order. -/
-def nodeValue (c : List Bytes) : Value := .array (c.map .bytes)
+/-- An item as the cut rule reads it: an entry's own bytes at the leaves, a summary's encoding above. -/
+def itemBytes : Value → Bytes
+  | .bytes e => e
+  | v => encode v
 
-/-- A child's summary in its parent: its first entry, its last entry and its name. -/
-def summary (H : Bytes → Hash) (c : List Bytes) : Bytes :=
-  encode (.array [.bytes (c.headD []), .bytes (c.getLastD []), .bytes (nameOf H (nodeValue c)).bytes])
+/-- The span an item covers: an entry is its own; a summary names its child's first and last entry. -/
+def spanOf : Value → Bytes × Bytes
+  | .bytes e => (e, e)
+  | .array [.bytes f, .bytes l, _] => (f, l)
+  | _ => ([], [])
 
-/-- Build upwards, a level at a time, until one node is left; the same rule cuts every level. -/
-def rootFrom (H : Bytes → Hash) : Nat → List Bytes → Hash
-  | 0, level => nameOf H (nodeValue level)
+/-- A child's summary in its parent: `[first entry, last entry, child]`, the child named by the hash of its Value. -/
+def summary (H : Bytes → Hash) (c : List Value) : Value :=
+  .array [.bytes (spanOf (c.headD .null)).1, .bytes (spanOf (c.getLastD .null)).2, .bytes (nameOf H (.array c)).bytes]
+
+/-- One level's nodes, cut by the same rule at every level. -/
+def cut (level : List Value) : List (List Value) :=
+  chunks (boundary ∘ itemBytes) (size ∘ itemBytes) limit level
+
+/-- The nodes of every level, the leaves first, until one node is left: a leaf is an array of entries, as byte strings;
+an inner node an array of its children's summaries. -/
+def levelsFrom (H : Bytes → Hash) : Nat → List Value → List (List (List Value))
+  | 0, level => [[level]]
   | fuel + 1, level =>
-    let ns := chunks boundary size limit level
-    if ns.length ≤ 1 then nameOf H (nodeValue level) else rootFrom H fuel (ns.map (summary H))
+    let ns := cut boundary size limit level
+    if ns.length ≤ 1 then [[level]] else ns :: levelsFrom H fuel (ns.map (summary H))
+
+/-- Build upwards, a level at a time, until one node is left; its name is the root. -/
+def rootFrom (H : Bytes → Hash) : Nat → List Value → Hash
+  | 0, level => nameOf H (.array level)
+  | fuel + 1, level =>
+    let ns := cut boundary size limit level
+    if ns.length ≤ 1 then nameOf H (.array level) else rootFrom H fuel (ns.map (summary H))
+
+/-- A fold's nodes, every level. -/
+def levels (H : Bytes → Hash) (l : List Bytes) : List (List (List Value)) :=
+  levelsFrom boundary size limit H (entries l).length ((entries l).map .bytes)
 
 /-- A fold's root. -/
 def root (H : Bytes → Hash) (l : List Bytes) : Hash :=
-  rootFrom boundary size limit H (entries l).length (entries l)
+  rootFrom boundary size limit H (entries l).length ((entries l).map .bytes)
+
+/-- The root is the name of the one node the levels end in. -/
+theorem rootFrom_top (H : Bytes → Hash) : ∀ (fuel : Nat) (level : List Value),
+    ∃ top, (levelsFrom boundary size limit H fuel level).getLast? = some [top] ∧
+      rootFrom boundary size limit H fuel level = nameOf H (.array top)
+  | 0, level => ⟨level, rfl, rfl⟩
+  | fuel + 1, level => by
+    simp only [levelsFrom, rootFrom]
+    split
+    · exact ⟨level, rfl, rfl⟩
+    · obtain ⟨top, ht, hr⟩ := rootFrom_top H fuel _
+      refine ⟨top, ?_, hr⟩
+      rw [List.getLast?_cons, ht]; rfl
 
 /-- The root depends only on the set of entries: two folds of one version give one root. -/
 theorem root_set (H : Bytes → Hash) {a b : List Bytes} (h : ∀ x, x ∈ a ↔ x ∈ b) :

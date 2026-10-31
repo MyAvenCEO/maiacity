@@ -9,7 +9,7 @@ Everything a Doc is lives here. Two neighbours build on it: the [engine](../engi
 over Docs, and the [ontology](../ontology/README.md) says what their Records mean. Below it sit the
 [store](../../store/README.md) (Values and refs, iroh-blobs through our adapter, unchanged by this spec) and avenID's
 [caps](../../id/caps/README.md) (keys, seals, who may write). Shared words are the
-[glossary](../../GLOSSARY.md)'s and the [architecture](../../ARCHITECTURE.md)'s, in exactly their sense. Nothing here
+[glossary](../../brain/GLOSSARY.md)'s and the [architecture](../../ARCHITECTURE.md)'s, in exactly their sense. Nothing here
 is built before its step's plan names it, and avenDB-old's learnings come in as rules and Lean theorems, never as code
 (README, rule 12).
 
@@ -340,9 +340,10 @@ first and survives a crash.
 
 ### Writer ids
 
-`writer(device, doc, branch, generation)` is the first 64 bits of BLAKE3's key derivation under the label
-`avenDB writer 1` over the device's public key, the Doc's id, the branch's id and the generation, skipping the one
-value Loro reserves. It is defined once in `Aven.DB`, exported as vectors, and never stored as an identity: the
+`writer(device, doc, branch, generation)` is the first 64 bits of BLAKE3's key derivation under the context
+`avenDB writer 1` over the canonical CBOR array `[device's public key, the Doc's id, the branch, the generation]`, read
+little-endian: the first of the output's four 64-bit windows that isn't the one value Loro reserves (`2⁶⁴ - 1`), and 0
+when all four are, a chance of 2⁻²⁵⁶; so no writer id is the reserved value (Lean: `writer_ne_reserved`). It is defined once in `Aven.DB`, exported as vectors, and never stored as an identity: the
 identity is the avenID device, and blame maps an op straight back to it.
 
 Each part earns its place:
@@ -743,7 +744,7 @@ covers, the root it makes, the runtime that made it, hybrid-signed. Any device t
 may write the directory can fold. A fold takes the entries of the last fold's root, drops the `gone`, adds the new
 `entry` Records, and builds the tree. Two folds of one version give one root; folding in steps gives what folding at
 once gives. A device that holds the covered Docs rebuilds the root in the background and compares, as it checks any
-checkpoint.
+checkpoint; a reader takes a fold only from a vault that may write the directory (Lean: `fold_exact`).
 
 **A lookup runs on the device** (architecture, A26 4):
 1. it reads the directory Doc: the newest fold's root and the entries not yet folded;
@@ -848,37 +849,55 @@ its laws (the same ops in any order give the same state and the same bytes) and 
 lenses rely on: a map's later writer by (Lamport, writer id), lists, movable lists, text and counters. The model runs
 against the Rust's Loro on random ops, so it can never be simpler than the code.
 
-- **Writer ids:** distinct (device, Doc, branch, generation) give distinct writer ids under the hash assumption; an
-  envelope holding another writer id's op is refused. Vectors `writers.json`.
+- **Writer ids** (`Aven.DB.Docs.Writers`): `writer` is defined once, BLAKE3's `derive_key` (`Aven.Core.Blake3.deriveKey`,
+  checked against the `blake3` crate) over the CBOR of the inputs; distinct (device, Doc, branch, generation) give
+  distinct writer ids under the hash assumption; every writer id is a 64-bit peer, never the one Loro reserves (`writer_lt`, `writer_ne_reserved`); an envelope holding
+  another writer id's op is refused. Vectors `writers.json`: the inputs, their CBOR, the derived bytes and the id.
 - **Envelopes:** decoding and encoding are inverse on everything accepted; hashes and op ids agree or the envelope is
   refused, and among envelopes that pass, the same hashes name the same past exactly when the same op ids do
-  (`Aven.DB.Docs.OpIds`: `same_past`, from injective names and `UsedOpID`). Vectors `envelopes.json`.
+  (`Aven.DB.Docs.OpIds`: `same_past`, from injective names and `UsedOpID`; the check as a reader runs it,
+  `opsAgreeB`, is sound). The codec's own vectors are Core's (`core/spec/vectors/envelopes.json`: what a writer signs,
+  the encoding and the name); docs' `envelopes.json` gives what a reader holds, an envelope's names and op ids, and
+  whether it agrees, waits or is refused.
 - **Logs and splits:** a split is found by any reader holding both sides; once found, neither side counts for any
-  reader; a stuck log's next envelopes never count. Traces `logs.json`.
+  reader; a stuck log's next envelopes never count. Traces `logs.json`: two readers holding each side of a split,
+  then both, then a stuck log's next envelope, and what each sees; Core's `logs.json` gives pairs and whether they
+  split.
 - **Counts:** an envelope counts only if all three verdicts hold and its past counts; rebuilding from the envelopes
-  that count equals the live state. Traces `counts.json`.
+  that count equals the live state. A reader decides it with `countsB`, an envelope's past from Core's `Past`, which
+  is exactly `Counts` (`countsB_iff`). Traces `counts.json`: verdicts per envelope, which count, and the live state.
 - **Convergence:** the same counted envelopes in any order give the same Records and export the same bytes.
 - **Checkpoints:** a checkpoint whose covered segments replay to its state hash, whose version's tips are among what
   it covers, and which names the reader's runtime is accepted; any other is refused (`checked_is_replay`,
   `checked_names`); a reader takes one only from a vault that may write the Doc at its version (`checkpoint_by_writer`).
-  Vectors `checkpoints.json`.
+  Vectors `checkpoints.json`: honest, a state that isn't the replay, another runtime, an uncovered tip, a vault that
+  may not write; whether each is taken, checks and is accepted.
 - **Fit:** the verdict depends only on the envelope and the Values it names; fit judged on the ops equals fit judged on
   the state; any merge of fit envelopes fits (`fit_merge`), each field's value fitting the schema of the envelope that wrote it
   (`fit_envelopes`). Fit and the engine's footprint read one view of an envelope, its `RecordChange`s (a Record's id
   as bytes, its type id, new / edited / gone, and each field it writes with its new value); a field's merged value fits
   the schema of the type that wrote it (`fit_records`), and where what an envelope says it does is the diff a reader
-  sees (`ChangesAreDiff`, carried by `Aven.Architecture`), fit on one is fit on the other (`fit_diff`). Vectors `fit.json`.
+  sees (`ChangesAreDiff`, carried by `Aven.Architecture`), fit on one is fit on the other (`fit_diff`). Vectors `fit.json`: envelopes under `v1` and `v2` writing one
+  field; which fit, and the merged value with the schema that wrote it.
 - **Lenses:** GetPut, PutGet, an older version keeps what it can't see, composition along the tree keeps all three, a
   read through lenses commutes with a merge, a lossy step states its loss. Vectors `lenses.json`.
 - **Merges:** nothing the target changed is lost, everything the other branch changed alone lands, a conflict changes
   only by the merger's choice, the merged history is the union; revert to equals the version's Records; backing out a
   commit removes exactly its changes where nothing since touched them. Vectors `merges.json`.
 - **Before:** reading today's frozen chains gives every line both peers can see, in order, each checked. Vectors
-  `before.json`.
+  `before.json`, to come with the chat move.
 - **Indexes** (`Aven.DB.Docs.Index`): a fold's entries are the set of what went in, sorted, and nothing else could be;
   its nodes hold exactly those entries, each node within the size limit, and depend only on the set; folding in steps,
   removals included, gives what folding at once gives; a lookup finds every entry in its range, and only those.
   Vectors `indexes.json`.
+- **The walk** (`Aven.DB.Docs.Walk`): a leaf is an array of entries and an inner node an array of `[first, last,
+  child]`; once a reader's store holds a fold's nodes by their names, every summary is honest (`fold_good`), and a walk
+  from the root, opening only the children whose span meets the range, finds every entry of the fold in the range and
+  only those (`walk_exact`). A fold is a checkpoint: a reader takes one only from a vault that may write the directory,
+  by its own runtime, and rebuilds the root from what it covers (`fold_exact`). Peers may lie: the reader keeps a
+  fetched node only when its hash is the name it asked for, so the walk finds only entries of the fold in the range
+  whatever a peer serves, and all of them once peers serve the fold's nodes (`walk_verified`). Vectors `trees.json`: every level's
+  nodes in CBOR hex, the root, and what the walk finds.
 - **Keys** (`Aven.DB.Docs.Key`): comparing two keys bytewise is comparing their tuples, field by field, a prefix first
   (`key_order`); two tuples with one key are one tuple (`key_inj`); a key extends another's, at a field's edge, exactly
   when its tuple extends the other (`key_prefix`), and every extension lies in the prefix's range
@@ -904,6 +923,10 @@ against the Rust's Loro on random ops, so it can never be simpler than the code.
   (`key_prefix`).
 - **The directory's mark covers entries, not Records:** a lookup is exact when a Doc whose index entries changed is
   marked unfolded in the same commit (`same_entries`); a change no index reads needs no mark.
+- **A tree is shallow only when nodes hold several children:** the cut rule puts a summary bigger than the limit in a
+  node of its own, and a level whose nodes each hold one child makes no progress. The walk is exact either way
+  (`walk_exact`), and the build stops within as many levels as entries; the depth of three or four the lookups count on
+  needs entries far smaller than the limit, which 64 KiB nodes of keys a few dozen bytes long give.
 - **Values need an equality of their own:** `Value` can't derive one, and comparing encodings is sound only on canonical
   Values, so `Aven.Core.ValueEq` gives every spec one lawful equality.
 

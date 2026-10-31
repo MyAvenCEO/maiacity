@@ -22,7 +22,7 @@ Examples on Bob's cap, which expires at 100, are Core envelopes named by BLAKE3,
 
 namespace Aven.ID
 
-open Aven.Core Past
+open Aven.Core Aven.Core.Past
 
 section
 
