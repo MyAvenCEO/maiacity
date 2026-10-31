@@ -1,6 +1,6 @@
 //! The link: a peer's one connection to the Aven Peer on `aven/db/1`, and the status it is in. It dials, says hello,
 //! and reads frames; every frame is progress, every clock step without one counts against it
-//! (`aven_db_core::status`). A link that stays stalled, or is lost, dials again. What it learns goes out as timeline
+//! (`aven_gen1::status`). A link that stays stalled, or is lost, dials again. What it learns goes out as timeline
 //! lines whenever the phase, the presence or the path changes, so a page is pushed deltas (README, rule 8). A Peer-Light
 //! also hands it frames to send, its statements (`Outbox`), and hears back from an Aven Peer that keeps its tree whether
 //! the network is claimed and, once the door admits it, the tree and every statement, which it checks itself
@@ -14,9 +14,9 @@
 //! browser knows its tree and opens before any link is up. A [`Wake`] (the page's `online` and `visibilitychange`)
 //! makes a link that isn't live dial again at once rather than at its next try.
 
-use aven_db_core::status::{Event, Phase, STALL_AFTER, Status, TICK_MS};
-use aven_db_core::timeline;
-use aven_db_core::wire::{self, ALPN, Decoder, Frame, Greeting, Head, encode};
+use aven_gen1::status::{Event, Phase, STALL_AFTER, Status, TICK_MS};
+use aven_gen1::timeline;
+use aven_gen1::wire::{self, ALPN, Decoder, Frame, Greeting, Head, encode};
 use iroh::endpoint::Connection;
 use iroh::{Endpoint, EndpointAddr};
 use n0_future::time::{Duration, Instant, sleep, timeout};

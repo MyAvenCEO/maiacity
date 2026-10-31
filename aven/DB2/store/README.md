@@ -136,7 +136,7 @@ proposal kept the contract and split big files. **We split** (the architect, 30 
 
 - **The announcement** is a gossip message on the city-dome: `{file, size, name, type}`, where `file` is the index's
   hash, signed by the sender's device. It is a `file` line of the sender's chain
-  (the city-dome thread's `Aven.DB.Chains`, `aven_db_core::files::Announcement`), signed and kept in history.
+  (the city-dome thread's `Aven.DB.Chains`, `aven_gen1::files::Announcement`), signed and kept in history.
 - **The same file sent twice is stored once,** by its hash, across the network.
 
 ## How a file travels

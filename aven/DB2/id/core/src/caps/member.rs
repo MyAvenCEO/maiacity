@@ -122,8 +122,25 @@ impl Reader<'_> {
         self.authorized(e).is_ok() && e.doc == *tree && e.calls.contains(&confirm_call(claim))
     }
 
-    /// Vault `v` holds the member cap (`Reader.Member`): among the envelopes the reader holds, an authorized confirm on
-    /// the tree Doc names a claim that founded `v`, as the tree settles claims (`founded`).
+    /// The vaults an envelope makes members (`Reader.membersB`, sound by `membersB_sound`): when caps authorizes it
+    /// and it is on the tree Doc, the vault each of its confirms' claims founded, as the tree settles claims.
+    pub fn members(
+        &self,
+        tree: &DocId,
+        e: &Reading,
+        founded: &dyn Fn(&Hash) -> Option<String>,
+    ) -> Vec<String> {
+        if self.authorized(e).is_err() || e.doc != *tree {
+            return vec![];
+        }
+        e.calls
+            .iter()
+            .filter_map(claim_of)
+            .filter_map(|c| founded(&c))
+            .collect()
+    }
+
+    /// Vault `v` holds the member cap (`Reader.Member`): among the envelopes the reader holds, one makes it a member.
     pub fn member(
         &self,
         tree: &DocId,
@@ -131,16 +148,17 @@ impl Reader<'_> {
         founded: &dyn Fn(&Hash) -> Option<String>,
         v: &str,
     ) -> bool {
-        held.iter().any(|e| {
-            e.calls.iter().any(|c| {
-                c.op == confirm_op() && c.params.iter().any(|(p, x)| {
-                    p == CLAIM_PARAM
-                        && matches!(x, Value::Bytes(b) if b.len() == 32 && {
-                            let claim = Hash(b.as_slice().try_into().expect("32 bytes"));
-                            founded(&claim).as_deref() == Some(v) && self.confirms(tree, e, &claim)
-                        })
-                })
-            })
-        })
+        held.iter()
+            .any(|e| self.members(tree, e, founded).iter().any(|m| m == v))
+    }
+}
+
+/// The claim a call confirms (`claimOf?`): only `tree/1`'s confirm, with exactly its one parameter, the claim's name.
+pub fn claim_of(c: &Call) -> Option<Hash> {
+    match c.params.as_slice() {
+        [(k, Value::Bytes(b))] if c.op == confirm_op() && k == CLAIM_PARAM => {
+            Some(Hash(b.as_slice().try_into().ok()?))
+        }
+        _ => None,
     }
 }

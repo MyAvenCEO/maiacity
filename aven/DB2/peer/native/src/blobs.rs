@@ -5,8 +5,8 @@
 
 use std::sync::Arc;
 
-use aven_db_core::timeline;
 use aven_db_store::blobs::{Blobs, FetchError, Provider};
+use aven_gen1::timeline;
 use serde_json::json;
 
 use crate::members::Gate;

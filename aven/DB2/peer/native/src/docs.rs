@@ -22,7 +22,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use aven_core::{Hash, Value, decode, encode};
-use aven_db_core::timeline;
+use aven_gen1::timeline;
 use iroh::PublicKey;
 use iroh_gossip::api::{Event, GossipSender};
 use iroh_gossip::{Gossip, TopicId};

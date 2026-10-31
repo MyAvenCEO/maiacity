@@ -20,6 +20,7 @@ mod epoch;
 mod hex;
 mod hybrid;
 mod invite;
+pub mod keep;
 mod keys;
 mod members;
 mod network;

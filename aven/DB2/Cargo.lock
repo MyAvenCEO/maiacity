@@ -287,16 +287,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aven-db-core"
-version = "0.0.0"
-dependencies = [
- "aven-core",
- "blake3",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "aven-db-docs"
 version = "0.0.0"
 dependencies = [
@@ -338,6 +328,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "aven-gen1"
+version = "0.0.0"
+dependencies = [
+ "aven-core",
+ "blake3",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "aven-id"
 version = "0.0.0"
 dependencies = [
@@ -360,9 +360,9 @@ name = "aven-peer"
 version = "0.0.0"
 dependencies = [
  "aven-core",
- "aven-db-core",
  "aven-db-docs",
  "aven-db-store",
+ "aven-gen1",
  "aven-id",
  "aven-runtimes-registry",
  "blake3",
@@ -384,8 +384,8 @@ name = "aven-peer-light"
 version = "0.0.0"
 dependencies = [
  "aven-core",
- "aven-db-core",
  "aven-db-store",
+ "aven-gen1",
  "aven-id",
  "aven-peer",
  "aven-runtimes-registry",

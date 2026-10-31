@@ -3,14 +3,14 @@
 
 use std::path::PathBuf;
 
-use aven_db_core::files::{
+use aven_gen1::files::{
     self, CHUNK, MAX_BLOB, MAX_FILE, bounds, count, fits, read, split, touches,
 };
 use serde_json::{Value, json};
 
 fn vectors(file: &str) -> Vec<Value> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../spec/vectors")
+        .join("../db/spec/vectors")
         .join(file);
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     serde_json::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
