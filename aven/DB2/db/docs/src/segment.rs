@@ -4,7 +4,8 @@
 //! A segment is Core's [`Signed`] under [`SEGMENT_LABEL`], hybrid-signed by its writer, sealed with the `segment` kind
 //! of the one seal. Its body is `{to, from, prev, branch, writer, envelopes, generation}`: `from` and `to` its
 //! envelopes' sequence numbers, half-open; `prev` the name of the writer's segment before it in this log; its
-//! envelopes the same signed bytes, so their names stay, and a keeper drops loose envelopes by them.
+//! envelopes the same signed bytes, so their names stay. A keeper never reads them: the upload names the loose items
+//! it covers by their sealed hashes, beside the segment ([`Closed::covers`]; A44).
 //!
 //! A [`Closer`] closes a writer's loose envelopes at whichever comes first: the limits (256 envelopes or 1 MiB), a
 //! rotation of the Doc's epoch (a segment holds one epoch), or the caller's word (quiet, or the page hiding).
@@ -206,7 +207,7 @@ impl Segment {
 
 /// A closed segment, and the loose envelopes it replaces as the writer uploaded them: the hashes of their sealed bytes.
 /// `covers` travels beside the sealed segment, never inside it: a keeper drops loose envelopes only by its uploader's
-/// covers, and only that uploader's own (`Aven.DB.Keeper`).
+/// covers, and only that uploader's own (A44, `Aven.Peer.Keeper`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Closed {
     pub segment: Segment,
