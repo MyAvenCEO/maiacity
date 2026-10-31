@@ -96,10 +96,17 @@ try {
 			const name = engine.name();
 			const { page } = tabs[name];
 			const got = report.engines[name];
-			got.updating = await seen(page.getByTestId('updating'), 30_000);
+			// what the page shows while "Updating…" is up, read in one go inside the page: the tab reloads a moment later
+			let shown = null;
+			for (const until = Date.now() + 30_000; shown === null && Date.now() < until; await wait(50))
+				shown = await page
+					.evaluate(() => (document.querySelector('[data-testid="updating"]') ? document.body.innerText.trim() : null))
+					.catch(() => null);
+			got.updating = shown !== null;
 			if (got.updating) {
 				got.updatingMs = Date.now() - ahead;
-				got.onlyUpdating = (await page.locator('body').innerText()).trim() === 'Updating…';
+				got.onlyUpdating = shown === 'Updating…';
+				if (!got.onlyUpdating) got.shown = shown.slice(0, 200);
 				await shot(page, `${name}-updating`);
 			}
 			if (!got.updating) problems.push(`${name}, refused with update: no "Updating…"`);
