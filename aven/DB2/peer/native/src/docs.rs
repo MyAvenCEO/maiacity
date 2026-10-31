@@ -15,8 +15,20 @@
 //! by arrival number for others (that is keepers' catch-up, stage 5).
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use aven_core::{Hash, Value, decode, encode};
+use aven_db_core::timeline;
+use iroh::PublicKey;
+use iroh_gossip::api::{Event, GossipSender};
+use iroh_gossip::{Gossip, TopicId};
+use n0_future::StreamExt;
+use n0_future::time::{Duration, sleep};
+use serde_json::json;
+
+use crate::members::Gate;
+use crate::{Notes, now};
 
 /// The subkey label a Doc's gossip topic is derived under (`Aven.Peer.DocSync.topicLabel`).
 pub const TOPIC_LABEL: &str = "avenDB topic 1";
@@ -162,4 +174,114 @@ pub fn beyond<'a>(held: &'a [Entry], tips: &[Tip]) -> Vec<&'a Entry> {
     held.iter()
         .filter(|e| !(told_names.contains(&e.name) || before.contains(&e.name) || by_place(e)))
         .collect()
+}
+
+/// What a topic hands up: a message heard and the neighbour it came through, or a reader met on the topic, whom the
+/// host then syncs with by version.
+pub enum Heard {
+    Live(Live, PublicKey),
+    Met(PublicKey),
+}
+
+/// A peer's place on one Doc's topic in one epoch: iroh-gossip on the peer's `Router`, whose connections the door
+/// already keeps to members (`members::Hook`). It forwards sealed bytes blind (rule 7) and hands up every message
+/// that reads as a [`Live`]; every reader judges each envelope itself (rule 4), so nothing is taken on a neighbour's
+/// word.
+#[derive(Clone)]
+pub struct DocTopic {
+    me: String,
+    notes: Notes,
+    sender: GossipSender,
+    neighbours: Arc<AtomicUsize>,
+}
+
+impl DocTopic {
+    #[allow(clippy::too_many_arguments)]
+    /// Joins the topic `topic` (`docs::topic` of an epoch's key) through `bootstrap`: the devices of the Doc's readers
+    /// this peer knows. As in the room, a peer dials them only once the door admits it, and again every second while
+    /// it has no neighbour on the topic, for as long as its gossip runs.
+    pub async fn join(
+        gossip: &Gossip,
+        topic: [u8; 32],
+        me: String,
+        gate: Gate,
+        public: PublicKey,
+        bootstrap: Vec<PublicKey>,
+        notes: Notes,
+        hear: Arc<dyn Fn(Heard) + Send + Sync>,
+    ) -> Result<DocTopic, String> {
+        let (sender, mut receiver) = gossip
+            .subscribe(TopicId::from_bytes(topic), vec![])
+            .await
+            .map_err(|e| e.to_string())?
+            .split();
+        let t = DocTopic {
+            me,
+            notes,
+            sender,
+            neighbours: Arc::new(AtomicUsize::new(0)),
+        };
+        let hears = t.clone();
+        n0_future::task::spawn(async move {
+            while let Some(event) = receiver.next().await {
+                match event {
+                    Ok(Event::Received(m)) => match Live::decode(&m.content) {
+                        Some(live) => hear(Heard::Live(live, m.delivered_from)),
+                        None => hears.note(
+                            "dropped",
+                            json!({ "why": "not a Doc's message", "via": m.delivered_from.fmt_short().to_string() }),
+                        ),
+                    },
+                    Ok(Event::NeighborUp(k)) => {
+                        hears.neighbours.fetch_add(1, Ordering::Relaxed);
+                        hear(Heard::Met(k));
+                    }
+                    Ok(Event::NeighborDown(_)) => {
+                        let _ = hears.neighbours.try_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
+                            Some(n.saturating_sub(1))
+                        });
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        hears.note("dropped", json!({ "why": format!("a Doc's topic: {e}") }));
+                        break;
+                    }
+                }
+            }
+        });
+        let dials = t.clone();
+        n0_future::task::spawn(async move {
+            loop {
+                if dials.neighbours.load(Ordering::Relaxed) == 0
+                    && gate.admits(&public)
+                    && !bootstrap.is_empty()
+                    && dials.sender.join_peers(bootstrap.clone()).await.is_err()
+                {
+                    break;
+                }
+                sleep(Duration::from_secs(1)).await;
+            }
+        });
+        Ok(t)
+    }
+
+    /// Whether a neighbour is on the topic now.
+    pub fn near(&self) -> bool {
+        self.neighbours.load(Ordering::Relaxed) > 0
+    }
+
+    /// Sends a message on the topic. Whether it went out: gossip never echoes it back.
+    pub async fn send(&self, live: &Live) -> bool {
+        match self.sender.broadcast(live.encode().into()).await {
+            Ok(()) => true,
+            Err(e) => {
+                self.note("dropped", json!({ "why": format!("not sent: {e}") }));
+                false
+            }
+        }
+    }
+
+    fn note(&self, event: &str, fields: serde_json::Value) {
+        (self.notes)(timeline::line(now(), &self.me, event, fields));
+    }
 }
