@@ -13,6 +13,7 @@
 !id/core
 !peer/native
 !peer/light
+!peer/keeper
 **/target
 **/node_modules
 **/.lake
