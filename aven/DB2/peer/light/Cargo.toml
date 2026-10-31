@@ -13,6 +13,7 @@ crate-type = ["cdylib", "rlib"]
 # send UDP.
 [dependencies]
 aven-peer = { path = "../native", default-features = false }
+aven-core = { path = "../../core" }
 aven-db-core = { path = "../../db/core" }
 aven-db-store = { path = "../../store" }
 aven-id = { path = "../../id/core" }
