@@ -6,11 +6,12 @@ import Lean.Data.Json
 
 /-! # Caps as JSON, and generated cases
 
-The form of `vectors/caps.json`, `revocations.json`, `epochs.json`, `approvals.json`, `network.json`, `keep.json` and
-`collections.json` (`Vectors.lean`). Caps' readable form is JSON. A line's op is its id, as Core's `ops.json` names
-`core/1`'s, and its target is written as Core's vectors write it (`targets.json`): Docs as `d:` and hex, vaults as
-their UTF-8 ids; a bound is null for any value, or the values it allows. Each cap carries its CBOR bytes and hash. A
-context names the cast's tree, which `trees.json` carries, and lists who is in each group and what each Doc is.
+The form of `vectors/caps.json`, `revocations.json`, `epochs.json`, `approvals.json`, `network.json`, `keep.json`,
+`collections.json` and `authorized.json` (`Vectors.lean`). Caps' readable form is JSON. A line's op is its id, as Core's
+`ops.json` names `core/1`'s, and its target is written as Core's vectors write it (`targets.json`): Docs as `d:` and
+hex, vaults as their UTF-8 ids; a bound is null for any value, or the values it allows. Each cap carries its CBOR bytes
+and hash. A context names the cast's tree, which `trees.json` carries, and lists who is in each group and what each Doc
+is.
 
 ```
 cap:      {"id":"cap-a","issuer":"alice","holder":{"vault":"bob"},"parent":null,"form":"grant",
@@ -119,7 +120,7 @@ def castCtxJson : Json :=
   Json.mkObj [("tree", "cast"), ("threshold", toJson (1 : Nat)),
     ("groups", Json.arr #[Json.mkObj [("group", gGarden.text), ("members", toJson ["alice", "bob"])]]),
     ("roles", Json.arr (castCtx.roles.map Role.json).toArray),
-    ("docs", Json.arr ([d1, d2, b1, cityNotes, cityDome, gGarden, album].filterMap fun d =>
+    ("docs", Json.arr ([d1, d2, b1, cityNotes, cityDome, gGarden, album, avenNotes].filterMap fun d =>
       (castFacts d).map factsJson).toArray)]
 
 def chainResult (cs : List Cap) : Json :=
@@ -180,6 +181,21 @@ def keepResult (s : Keep) : Json :=
   let flags := s.flags.eraseDups.mergeSort fun a b => a.1 < b.1 || (a.1 == b.1 && a.2 ≤ b.2)
   Json.mkObj [("kept", Json.arr (kept.map fun (i, k) => pair i k).toArray), ("current", toJson s.current),
     ("flags", Json.arr (flags.map fun (i, k) => pair i k).toArray), ("unsettled", toJson s.unsettled)]
+
+/-- A reader's verdict on an envelope, as `authorized.json` writes it: each check (`Aven.ID.Authorized`), and the
+path it takes, `"own"` or `"chain"`, or `"refused"` with the first check that fails, in the order a reader checks:
+`"device"`, its device cap; `"authority"`, neither its vault's own authority, which never counts for an actor host,
+nor a chain that allows its calls; `"actor"`, an actor host's envelope under a chain that names no actor (A27). -/
+def readerVerdictJson : Bool × Bool × Bool × Bool × Bool → Json
+  | (withinDevice, own, byChain, hostSigned, authorized) =>
+    let path : String := if !authorized then "refused" else if own && !hostSigned then "own" else "chain"
+    let refusal : List (String × Json) :=
+      if authorized then []
+      else if !withinDevice then [("refusal", "device")]
+      else if !byChain then [("refusal", "authority")]
+      else [("refusal", "actor")]
+    Json.mkObj ([("withinDevice", toJson withinDevice), ("own", toJson own), ("byChain", toJson byChain),
+      ("hostSigned", toJson hostSigned), ("authorized", toJson authorized), ("path", path)] ++ refusal)
 
 /-! ## Generated cases -/
 

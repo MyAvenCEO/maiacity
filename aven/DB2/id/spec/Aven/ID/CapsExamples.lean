@@ -30,6 +30,7 @@ def tasks : Core.DocId := docOf "tasks"
 def notes : Core.DocId := docOf "notes"
 def gGarden : Core.DocId := docOf "g-garden"
 def album : Core.DocId := docOf "album"
+def avenNotes : Core.DocId := docOf "aven-notes"
 
 /-- The parameters caps bounds on `core/1`'s writes: the type a step writes, and the fields it writes. -/
 def typeParam : Core.Bytes := "type".toUTF8.toList
@@ -60,6 +61,7 @@ def castFacts (d : Core.DocId) : Option Core.Facts :=
   else if d == cityDome then some ⟨d, vaultId "maia-city", notes⟩
   else if d == gGarden then some ⟨d, vaultId "alice", groupType⟩
   else if d == album then some ⟨d, vaultId "alice", collectionType⟩
+  else if d == avenNotes then some ⟨d, vaultId "aven", notes⟩
   else none
 
 /-- What a reader of the cast knows: the tree, one owner per approval, who is in `g-garden`, one role, and what each
@@ -413,9 +415,9 @@ theorem recover_examples :
 
 /-- The cast's names for its Docs and vaults. -/
 def castName (d : Core.DocId) : String :=
-  ((([d1, d2, b1, cityNotes, cityDome, tasks, notes, gGarden, album].zip
-    ["d1", "d2", "b1", "city-notes", "city-dome", "tasks", "notes", "g-garden", "album"]).find? (·.1 == d)).map
-    (·.2)).getD "a Doc"
+  ((([d1, d2, b1, cityNotes, cityDome, tasks, notes, gGarden, album, avenNotes].zip
+    ["d1", "d2", "b1", "city-notes", "city-dome", "tasks", "notes", "g-garden", "album", "aven-notes"]).find?
+    (·.1 == d)).map (·.2)).getD "a Doc"
 
 def castVault (v : Core.Bytes) : String :=
   ((["alice", "bob", "maia-city", "aven"].find? (vaultId · == v))).getD "a vault"

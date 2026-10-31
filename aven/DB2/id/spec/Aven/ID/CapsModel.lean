@@ -1,4 +1,5 @@
 import Aven.ID.CapsJson
+import Aven.ID.Authorized
 import Aven.ID.Json
 import Aven.Core.Model
 
@@ -15,6 +16,9 @@ come from (README, rule 10). Each case is one JSON object, read in the form its 
   verdict of the envelope named, or of every one (`verdict`). With `"owner": vault` beside the envelope it answers
   `{"survives": bool}` instead, a delete being an envelope whose body says `"delete": true`, written for the owner's
   vault (`survives`).
+- `{"context", "envelope", "calls", "chain", "keys", "deviceCaps", "members", "actor"}`, as `authorized.json` writes
+  a case, answers the reader's verdict on the envelope: each check, the path and the first check that refuses it
+  (`Reader.authorizedB`, which `authorizedB_iff` makes `Authorized`).
 
 A Doc's names are taken as each entry gives them, with the vault, caps and acks it lists and the envelope's `prev`
 and `deps`; aven-core's tests own the hashing. -/
@@ -222,15 +226,64 @@ def docAnswer (j : Json) : Except String Json := do
   | .ok n, .error _ => return (verdict nameOf rd doc rs (← named n)).json
   | .error _, _ => return Json.mkObj (doc.map fun e => ((nameOf e).text, (verdict nameOf rd doc rs e).json))
 
-/-- Who keeps a Doc (`keepersOf`): `{"context", "caps": [cap…], "doc": facts}`, as `caps.json` writes it. Who governs
-whom is the context's tree's, by vault ids `v:<name>`; no actor spawned another and no collection lists a Doc here. -/
+/-- Who governs whom, as the context's tree says, by vault ids `v:<name>`. -/
+def govOf (x : Ctx) (v w : Bytes) : Bool :=
+  let name (v : Bytes) : String := (Core.utf8Text v).drop 2 |>.toString
+  (x.tree.governs (name v)).contains (name w)
+
+/-- No actor spawned another and no collection lists a Doc in caps' cases. -/
+def noDocs (_ _ : DocId) : Bool := false
+
+/-- Who keeps a Doc (`keepersOf`): `{"context", "caps": [cap…], "doc": facts}`, as `caps.json` writes it. -/
 def keepersAnswer (j : Json) : Except String Json := do
   let x ← ctxOf (← j.getObjVal? "context")
   let caps ← (← j.getObjValAs? (Array Json) "caps").toList.mapM capOf
   let f ← factsOf (← j.getObjVal? "doc")
-  let name (v : Bytes) : String := (Core.utf8Text v).drop 2 |>.toString
-  let gov (v w : Bytes) : Bool := (x.tree.governs (name v)).contains (name w)
-  return Json.mkObj [("keepers", toJson (keepersOf gov (fun _ _ => false) (fun _ _ => false) x.roles caps f))]
+  return Json.mkObj [("keepers", toJson (keepersOf (govOf x) noDocs noDocs x.roles caps f))]
+
+def bytesOf (s : String) : Except String Bytes := req (Model.unhex? s) s!"{s} isn't hex"
+
+/-- A call: its op's id, and its parameters, a map whose keys are put in the codec's order. -/
+def callOf (j : Json) : Except String Call := do
+  let ps ← members (← j.getObjVal? "params")
+  return ⟨← hashOf (← j.getObjValAs? String "op"), ← ps.mapM fun (p, v) => return (p.toUTF8.toList, ← valueOf v)⟩
+
+/-- A device's cap, by the key its device signs with; `"grants": null` is everything its vault may do. -/
+def deviceCapOf (j : Json) : Except String (Bytes × DeviceCap) := do
+  let grants ← match j.getObjValD "grants" with
+    | .null => pure none
+    | g => do pure (some (← (← fromJson? (α := Array Json) g).toList.mapM lineOf))
+  return (← bytesOf (← j.getObjValAs? String "key"),
+    { device := ← j.getObjValAs? String "device", vault := ← j.getObjValAs? String "vault", grants,
+      branches := ← branchesOf (← j.getObjVal? "branches"), host := ← j.getObjValAs? Bool "host" })
+
+/-- The reader's verdict on an envelope (`Aven.ID.Authorized`), as `authorized.json` writes a case: the envelope's Doc,
+branch and signing key; its calls, for a merge into main every call the whole merge brings; the chain it names, empty
+on its vault's own authority; and what the reader knows: its context, each signing key's vault, each device's cap, the
+network's members, and the actor an actor host's envelope names. -/
+def authorizedAnswer (j : Json) : Except String Json := do
+  let x ← ctxOf (← j.getObjVal? "context")
+  let ej ← j.getObjVal? "envelope"
+  let e : Envelope :=
+    { doc := ← docId (← ej.getObjValAs? String "doc"), branch := (← ej.getObjValAs? String "branch").toUTF8.toList,
+      writer := 0, seq := 0, prev := none, deps := [], body := .null,
+      signer := ← bytesOf (← ej.getObjValAs? String "signer"), sig := [] }
+  let calls ← (← j.getObjValAs? (Array Json) "calls").toList.mapM callOf
+  let chain ← (← j.getObjValAs? (Array Json) "chain").toList.mapM capOf
+  let keys ← (← j.getObjValAs? (Array Json) "keys").toList.mapM fun k =>
+    return (← bytesOf (← k.getObjValAs? String "key"), ← k.getObjValAs? String "vault")
+  let dcs ← (← j.getObjValAs? (Array Json) "deviceCaps").toList.mapM deviceCapOf
+  let ms ← j.getObjValAs? (List String) "members"
+  let actor ← match j.getObjValD "actor" with
+    | .null => pure none
+    | a => do pure (some (← docId (← fromJson? a)))
+  let r : Reader :=
+    { ctx := x, chain := fun _ => chain, calls := fun _ => calls, lower := fun _ => [],
+      vaultOf := fun k => (keys.find? (·.1 == k)).map (·.2), member := ms.contains, facts := x.facts,
+      deviceCap := fun k => (dcs.find? (·.1 == k)).map (·.2), actorOf := fun _ => actor }
+  let gov := govOf x
+  return readerVerdictJson (r.withinDeviceB gov noDocs noDocs e, r.ownB gov e, r.byChainB gov noDocs noDocs e,
+    r.hostSignedB e, r.authorizedB gov noDocs noDocs e)
 
 /-- A caps case, or `none` when the object is none: a tree's case then. Malformed input is a `format` result. -/
 def answer? (j : Json) : Option Json :=
@@ -238,7 +291,8 @@ def answer? (j : Json) : Option Json :=
     match r with
     | .ok a => a
     | .error why => Json.mkObj [("format", why)]
-  if (j.getObjVal? "chain").toOption.isSome then
+  if (j.getObjVal? "deviceCaps").toOption.isSome then some (format (authorizedAnswer j))
+  else if (j.getObjVal? "chain").toOption.isSome then
     some (format do
       let x ← ctxOf (← j.getObjVal? "context")
       let cs ← (← j.getObjValAs? (Array Json) "chain").toList.mapM capOf
