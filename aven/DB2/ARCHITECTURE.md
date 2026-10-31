@@ -686,9 +686,18 @@ the spec that owns it.
     revocable as one cap, beside A16's read caps.
 
   *Decided: yes (Samuel, 31 Oct 2026: "do it").* A host gets only the caps its owners give it. In Lean, avenACTORS
-  proves the kernel's half (`Aven.Actor.Signing`: `host_never_own`, `write_names_actor`, `actor_within_chain`), and caps
-  the reader's (`actor_within_device`, `host_never_beyond`, and that a host device's envelope counts only by chain).
-  Version 1 (no caps, in memory) is unaffected.
+  proves the kernel's half (`Aven.Actor.Signing`, #1617: `signs_by_chain`, `write_names_actor`, `write_keeps_chain`,
+  `actor_within_chain`, `actor_steps_within`), and caps the reader's (`host_chain_only`, `actor_within_device`,
+  `host_never_beyond`). Version 1 (no caps, in memory) is unaffected.
+
+  Lean showed where per-hop narrowing (D16) lives. *The architect's answer (31 Oct 2026):*
+  - **A write** carries its message's chain as it came. The actor's narrowing for that write is its footprint, which
+    the reader checks against the chain; it is never appended as a link, which would need the owners' approval (D14).
+  - **A cap that travels on in a message** narrows by an attenuation link. It needs no approval, since it grants
+    nothing new. It is valid only within its parent, keeps its parent's holder, is signed by a device of that holder,
+    and only follows an approved grant. Caps adds it to `chainOk`.
+  - **A message that crosses to an actor on another vault's host** changes the holder, which is a grant (D14): open
+    with caps and avenACTORS, to Samuel if it needs him.
 - **A18. Plugins are runtimes.** A lowering is pinned by its runtime's hash, and an envelope carries the lowered hash.
   *Decided: yes (Samuel, 30 Oct 2026: "do as you believe").*
 - **A19. One update grammar:** put, patch, remove and a new `edit` for text, lists and trees, each with a verb and a
