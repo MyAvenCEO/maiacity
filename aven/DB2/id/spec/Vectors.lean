@@ -12,6 +12,7 @@ import Aven.ID.FailJson
 import Aven.ID.Expiry
 import Aven.ID.Collections
 import Aven.ID.KeyFormatsJson
+import Aven.ID.AccessJson
 import Aven.ID.SealJson
 
 /-! # The test vectors (README, rule 10)
@@ -66,6 +67,9 @@ import Aven.ID.SealJson
   (`Aven.ID.Node`, R7). `catchup.json`: sources offered against a signed log tip, the one chosen and the ones caught,
   and presence from signed beats (`Aven.ID.CatchUp`). `failures.json`: the nine checks the box runs with the Aven Peer
   stopped, each with what the models say it must see (`Aven.ID.FailJson`, PEERS.md).
+
+- `access.json`: Values that fit or don't fit avenID's built-in Records in a Doc, `cap`, `revoke` and `epoch`
+  (`Aven.ID.AccessRecords`), with the name of each that fits. aven-id reads each and compares.
 
 - `derivations.json` and `stanzas.json`: avenID's key formats (`Aven.ID.KeyFormats`, A43): BLAKE3's keyed and
   extendable modes, the PRF step's input, salt and seeds, a stanza's AAD, keys and commitment, an epoch's subkeys and
@@ -374,3 +378,4 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "derivations.json") (render KeyFormats.derivationVectors)
   IO.FS.writeFile (dir / "stanzas.json") (render KeyFormats.stanzaVectors)
   IO.FS.writeFile (dir / "seals.json") (render Seal.sealVectors)
+  IO.FS.writeFile (dir / "access.json") (render AccessJson.accessVectors)

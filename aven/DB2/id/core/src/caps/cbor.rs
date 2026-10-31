@@ -273,8 +273,19 @@ impl Cap {
         signer: String,
         approvals: Vec<super::approve::Sig>,
     ) -> Option<Cap> {
-        let body = aven_core::decode(bytes)?;
-        let kvs = as_map(&body)?;
+        let cap = Cap::of_body(&aven_core::decode(bytes)?, id, signer, approvals)?;
+        (cap.bytes() == bytes).then_some(cap)
+    }
+
+    /// A cap read from its body's Value, exactly its keys, each in its form; the caller checks it writes back as
+    /// itself.
+    pub fn of_body(
+        body: &Value,
+        id: String,
+        signer: String,
+        approvals: Vec<super::approve::Sig>,
+    ) -> Option<Cap> {
+        let kvs = as_map(body)?;
         let keys = [
             "form",
             "role",
@@ -292,7 +303,7 @@ impl Cap {
             Value::Array(ls) => ls.iter().map(Line::of_value).collect::<Option<_>>()?,
             _ => return None,
         };
-        let cap = Cap {
+        Some(Cap {
             id,
             issuer: as_text(field(kvs, "issuer")?)?.into(),
             holder: Holder::of_value(field(kvs, "holder")?)?,
@@ -304,7 +315,6 @@ impl Cap {
             conditions: Conditions::of_value(field(kvs, "conditions")?)?,
             signer,
             approvals,
-        };
-        (cap.bytes() == bytes).then_some(cap)
+        })
     }
 }
