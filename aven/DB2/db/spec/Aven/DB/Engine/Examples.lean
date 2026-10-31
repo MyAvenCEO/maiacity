@@ -131,7 +131,8 @@ def openByDue : Query Value :=
       (utf8 "id") (utf8 "x2")
 
 -- Samuel's vault: the household and the garden books. The coop's Doc is outside it.
-#guard answerJson (run vals noGov noSpawn noLists dir (· == home) tasks ⟨some (.vault (vault "samuel") false), openByDue⟩) ==
+#guard answerJson
+    (run vals noGov noSpawn noLists dir (· == home) tasks ⟨some (.vault (vault "samuel") false), openByDue⟩) ==
   answerJson (.rows (.short [garden]) [
     rows [("id", text "t3"), ("x2", text "Prune the apple"), ("x1", text "2026-11-01")],
     rows [("id", text "t1"), ("x2", text "Order seeds"), ("x1", text "2026-11-02")]])
@@ -363,8 +364,8 @@ def tick : List (Op Value) := [.patch task (rows [("x2", text "Order seeds")]) (
 /-- Every type Doc written under one schema version in these examples. -/
 def ver (t : DocId) : TypeId := ⟨t, blake3 (utf8 "schema:v1")⟩
 
--- Ticking a task done is one edited Record whose one field is `done`, and the untouched task is no change; it passes the
--- verdict's footprint part.
+-- Ticking a task done is one edited Record whose one field is `done`, and the untouched task is no change; it passes
+-- the verdict's footprint part.
 #guard (match commit valEq ofId 1 8 todo tick with
   | .ok s' => ((changesFrom ver todo s').map fun c => (c.kind, c.names.map utf8Text),
       verdictFootprint (footprint tick) (changesFrom ver todo s'))

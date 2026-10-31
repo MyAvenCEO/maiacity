@@ -177,7 +177,8 @@ def collectionVector (name : String) (S : List Aven.Core.Envelope) (c d : Aven.C
   vector name
     (Json.mkObj [("known", Json.arr (known.map factsJson).toArray),
       ("signs", Json.arr #[Json.mkObj [("key", Aven.Core.hex mac), ("vault", Aven.Core.utf8Text samuel)]]),
-      ("governs", Json.arr #[Json.mkObj [("vault", Aven.Core.utf8Text samuel), ("governed", Aven.Core.utf8Text garden)]]),
+      ("governs",
+        Json.arr #[Json.mkObj [("vault", Aven.Core.utf8Text samuel), ("governed", Aven.Core.utf8Text garden)]]),
       ("depth", toJson collectionDepth),
       ("envelopes", Json.arr (S.map fun e => Json.mkObj [("name", (nm e).text), ("doc", e.doc.text),
         ("branch", Aven.Core.utf8Text e.branch), ("writer", toJson e.writer), ("seq", toJson e.seq),

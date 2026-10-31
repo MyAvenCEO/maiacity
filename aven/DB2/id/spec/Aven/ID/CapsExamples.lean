@@ -438,7 +438,8 @@ def Cap.text (c : Cap) (roles : List Role) : String :=
     (if c.share = 0 then "; no sharing on" else s!"; may share on {c.share} more hop(s)") ++
     (match c.conditions.expires with | some t => s!"; until {t}" | none => "")
 
-#guard capA.text [] == "alice grants bob: read d1, put d1 (type tasks), patch d1 (type tasks); may share on 1 more hop(s)"
+#guard capA.text [] ==
+  "alice grants bob: read d1, put d1 (type tasks), patch d1 (type tasks); may share on 1 more hop(s)"
 #guard capB.text [] == "bob grants everyone in g-garden: read d1; no sharing on"
 #guard attRead.text [] == "aven narrows the cap aven holds to: read d1; no sharing on"
 

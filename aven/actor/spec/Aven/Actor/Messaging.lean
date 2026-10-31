@@ -59,7 +59,8 @@ theorem attenuation_within_message {roles : List Aven.ID.Role} (gov : Bytes → 
     a.form = .attenuate ∧ a.holder = parent.holder ∧
       (∀ f v, (a.grants roles).reaches gov spawned lists f v → (bound.grants roles).reaches gov spawned lists f v) ∧
       (∀ f c, (a.grants roles).allows gov spawned lists f c → (bound.grants roles).allows gov spawned lists f c) ∧
-      (∀ f v, (a.grants roles).reaches gov spawned lists f v → (parent.grants roles).reaches gov spawned lists f v) := by
+      (∀ f v, (a.grants roles).reaches gov spawned lists f v →
+        (parent.grants roles).reaches gov spawned lists f v) := by
   unfold kernelAttenuate at h
   split at h
   · next hw =>

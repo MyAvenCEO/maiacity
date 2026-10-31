@@ -144,17 +144,20 @@ def Reader.HostSigned (e : Envelope) : Prop :=
 under a chain; an actor host's device only under a chain, naming the acting actor (A27). -/
 def Reader.Authorized (e : Envelope) : Prop :=
   r.WithinDevice gov spawned lists e ∧
-    ((r.Own gov e ∧ ¬ r.HostSigned e) ∨ (r.ByChain gov spawned lists e ∧ (r.HostSigned e → (r.actorOf e).isSome = true)))
+    ((r.Own gov e ∧ ¬ r.HostSigned e) ∨
+      (r.ByChain gov spawned lists e ∧ (r.HostSigned e → (r.actorOf e).isSome = true)))
 
 /-- **An owner writes their own Docs without a chain** (checking, step 7): a device of the Doc's vault, or of a vault
 that governs it, acting within its device cap, is authorized, unless it is an actor host's. -/
-theorem own_authorized {e : Envelope} (o : r.Own gov e) (nh : ¬ r.HostSigned e) (wd : r.WithinDevice gov spawned lists e) :
+theorem own_authorized {e : Envelope} (o : r.Own gov e) (nh : ¬ r.HostSigned e)
+    (wd : r.WithinDevice gov spawned lists e) :
     r.Authorized gov spawned lists e :=
   ⟨wd, .inl ⟨o, nh⟩⟩
 
 /-- An authorized envelope writes on its vault's own authority or under a chain: the two paths, whatever else the
 verdict asks of each. -/
-theorem authorized_by {e : Envelope} (h : r.Authorized gov spawned lists e) : r.Own gov e ∨ r.ByChain gov spawned lists e :=
+theorem authorized_by {e : Envelope} (h : r.Authorized gov spawned lists e) :
+    r.Own gov e ∨ r.ByChain gov spawned lists e :=
   h.2.imp (·.1) (·.1)
 
 /-- A write under a chain its signer's vault holds, within the device cap, is authorized; an actor host's names its
@@ -250,7 +253,8 @@ theorem merge_covered {whole : Envelope → List Call} (wm : r.WholeMerges whole
 /-- **A device acts within its device cap** (rule 1), on either path: the signing device of an authorized envelope
 holds a device cap from the vault it serves, which lets it write on the envelope's branch and allows every call it
 makes. -/
-theorem device_within_cap {e : Envelope} (h : r.Authorized gov spawned lists e) : r.WithinDevice gov spawned lists e := h.1
+theorem device_within_cap {e : Envelope} (h : r.Authorized gov spawned lists e) :
+    r.WithinDevice gov spawned lists e := h.1
 
 /-- Under a chain, every call of an authorized envelope is allowed twice over: by the chain's last cap, for the vault,
 and by the device cap, for the device. -/
