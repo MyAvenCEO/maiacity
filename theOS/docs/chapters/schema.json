@@ -1,0 +1,99 @@
+{
+ "title": "Schemas",
+ "slides": [
+  {
+   "title": "Nothing without a schema.",
+   "text": "Every piece of data names its {schema}: the shape its content must have. Your to-do list says it holds items, and each item has a text and a done flag. No piece of data exists without one.",
+   "code": {
+    "type": "theos/genesis@1",
+    "data": "data:ed25519:7Hq…#house-list",
+    "schema": "data:ed25519:Sc4…#todo-list@2",
+    "owner": "human:b3:q4x7…#you"
+   },
+   "deep": "The schema reference is part of the data's genesis, signed by the seal. Docs name a schema for their content; a Value's metadata Doc names one for the Value too."
+  },
+  {
+   "title": "A schema is data too.",
+   "text": "A schema is itself a Doc: a JSON Schema with its own seal, its own owner and its own rules. Anyone may use a schema they can read, so many lists can share one to-do schema.",
+   "code": {
+    "type": "object",
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "text": {
+         "type": "string"
+        },
+        "done": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "text",
+        "done"
+       ]
+      }
+     }
+    }
+   },
+   "deep": "Schemas are written in JSON Schema and stored as a Loro Doc like any other data, so they sync, merge and carry rules. Reading a schema needs read on the schema Doc."
+  },
+  {
+   "title": "Data pins a version.",
+   "text": "A schema can change over time. So data names the exact version it follows, written after an @. Moving to a newer version is a change the data's owner makes, like a migration; until then, nothing changes under the data's feet.",
+   "code": {
+    "schema": "data:ed25519:Sc4…#todo-list@2",
+    "version": "b3:1f0… (state of the schema Doc)",
+    "next": "data:ed25519:Sc4…#todo-list@3",
+    "moved_by": "owner's change"
+   },
+   "deep": "A version is the hash of the schema Doc's state (its frontier). Old versions stay valid for the data that names them."
+  },
+  {
+   "title": "Every change must fit.",
+   "text": "Before a device merges a change, it checks it against the schema, the same way it will check rules later. A tick must be true or false; an item without a text is not an item. A change that doesn't fit is dropped on every device.",
+   "code": {
+    "change": {
+     "set": "/items/0/done",
+     "to": "yes"
+    },
+    "schema_says": "boolean",
+    "result": "dropped"
+   },
+   "deep": "Validation is deterministic, so every peer reaches the same verdict. It runs on the merged state after the change, and on the change's own values."
+  },
+  {
+   "title": "Values have schemas too.",
+   "text": "A photo or a PDF never changes, but it still has a shape: its type and its size. A Value's metadata Doc names a schema for the Value and one for itself, so even a file is never just loose bytes.",
+   "code": {
+    "type": "theos/meta@1",
+    "value": "value:b3:9f2c…#movie",
+    "value_schema": "data:ed25519:Vd1…#video@1",
+    "schema": "data:ed25519:Mt7…#media-meta@4"
+   },
+   "deep": "A value schema can require a media type, a size limit or a hash algorithm; the metadata Doc is validated like any Doc."
+  },
+  {
+   "title": "Schemas give everything an address.",
+   "text": "Because every piece of data has a known shape, every part of it has a {path}: /items, /items/0/done. Rules and operations will point at these paths, so they can be as precise as one field.",
+   "code": {
+    "/items": "the list of items",
+    "/items/*/done": "every item's done flag",
+    "/title": "the list's title"
+   },
+   "deep": "Paths are JSON Pointers into the schema's shape; a * matches any list index or map key. Rules (at) and operations (at) use them."
+  },
+  {
+   "title": "Schemas, in short.",
+   "list": [
+    "No piece of data without a schema.",
+    "A schema is a Doc too, reusable by anyone who can read it.",
+    "Data pins the exact version it follows; moving on is an owner's change.",
+    "Every change is checked against the schema; paths give every part an address."
+   ],
+   "deep": "JSON Schema in Loro Docs, versioned by state hash, validated by every peer."
+  }
+ ]
+}

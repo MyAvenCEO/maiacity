@@ -3,7 +3,7 @@
  "slides": [
   {
    "title": "Four things to start with.",
-   "text": "Create, read, update and delete are {operations}: things you can do with data. A rule gives a {role}, a set of identities, some operations on one piece of data. Never a person directly, always a role. The owner writes the first rules; later we'll see how a role can be allowed to pass its own on.",
+   "text": "Create, read, update and delete are {operations}: things you can do with data. A rule gives a role some operations on one piece of data. Never a person directly, always a role. The owner writes the first rules; later we'll see how a role can be allowed to pass its own on.",
    "list": [
     "create",
     "read",

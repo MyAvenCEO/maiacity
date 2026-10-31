@@ -61,16 +61,31 @@
   },
   {
    "title": "You and Mia start a home.",
-   "text": "Together you form a {coop}: an identity made of identities. You and Mia are its members. Neither of you is the coop alone, and it lives on even if one of you loses every agent.",
-   "deep": "A coop's members are human or coop identities, never agents and never signers, and membership may not form a cycle. A coop owns agents too, for example a shared server."
+   "text": "Together you form a {coop}: an identity made of identities. It has a {role}, a named set of identities, called “members”, which holds you and Mia. A rule lets that role act for the coop. Neither of you is the coop alone, and it lives on even if one of you loses every agent.",
+   "deep": "There are no membership records: a coop's members are simply its “members” role, and rules say what that role may do. A role holds humans or coops, never agents or signers.",
+   "code": {
+    "type": "theos/role@1",
+    "id": "role:b3:h8m…#home/members",
+    "of": "coop:b3:c7n2…#home",
+    "identities": [
+     "human:b3:q4x7…#you",
+     "human:b3:m2a9…#mia"
+    ],
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
+   }
   },
   {
    "title": "Coops can hold coops.",
-   "text": "Your street is a coop of homes, and a home is a coop of people. Coops can be members of coops, as deep as you like, just never in a circle.",
+   "text": "Your street is a coop of homes, and a home is a coop of people. The street's “members” role holds the home coops, so coops can be inside coops, as deep as you like, just never in a circle.",
    "code": {
-    "type": "theos/identity@1",
-    "id": "coop:b3:s5t8…#street",
-    "members": [
+    "type": "theos/role@1",
+    "id": "role:b3:s9m…#street/members",
+    "of": "coop:b3:s5t8…#street",
+    "identities": [
      "coop:b3:c7n2…#home",
      "coop:b3:h1x…#home-12",
      "coop:b3:h4y…#home-14"
@@ -81,17 +96,14 @@
      "value": "…"
     }
    },
-   "deep": "Membership is checked whenever it changes; a change that would close a circle is rejected."
+   "deep": "Roles are checked whenever they change; a change that would close a circle of identities is rejected."
   },
   {
    "title": "A coop decides by its own rules.",
-   "text": "A coop's rules say which members may act for it. They know only three kinds of act. Acting: ordinary changes. Owning: writing rules for what it owns, and handing things over. Governing: changing its own members and rules. For now, one member's signature is enough for each.",
+   "text": "A rule on the coop says what its “members” role may do for it. Only three kinds of act exist here. Acting: ordinary changes. Owning: writing rules for what it owns, and handing things over. Governing: changing its own roles and rules. For now, one member's signature is enough for each.",
    "code": {
     "type": "theos/rule@1",
-    "to": [
-     "human:b3:q4x7…#you",
-     "human:b3:m2a9…#mia"
-    ],
+    "to": "role:b3:h8m…#home/members",
     "on": "coop:b3:c7n2…#home",
     "operations": [
      "act",
@@ -104,7 +116,7 @@
      "value": "…"
     }
    },
-   "deep": "Same shape as every rule: who (its members), on what (the coop itself), operations (act, own, govern), conditions. The default condition is one signature (1 of 1). Counts like 2 of 3, weights or a waiting time can be plugged in later as condition plugins; a device that does not know one treats it as not satisfied."
+   "deep": "Same shape as every rule: who (a role or an agent), on what (here the coop itself), operations (act, own, govern), conditions. The default condition is one signature (1 of 1). Counts like 2 of 3 can be plugged in later as condition plugins; an unknown one counts as not satisfied."
   },
   {
    "title": "Losing your phone.",
@@ -120,9 +132,9 @@
    "title": "Identity, in short.",
    "list": [
     "Humans and coops are identities that own and decide.",
-    "Agents are identities that act for exactly one owner, each with its own signer.",
-    "An agent may do only what its owner's rule gives it.",
-    "A coop decides by its own rules: act, own, govern."
+    "Agents act for exactly one owner, each with its own signer.",
+    "A role is a named set of identities; a coop's members are its “members” role.",
+    "Rules say what a role or an agent may do for an identity: act, own, govern."
    ],
    "deep": "Three identity types: human, coop, agent. Ownership points from humans and coops to agents and data; authority to act flows back only through rules."
   }

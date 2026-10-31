@@ -7,7 +7,8 @@
    "code": {
     "type": "theos/operation@1",
     "operation": "get",
-    "on": "data:ed25519:7Hq…#house-list"
+    "on": "data:ed25519:7Hq…#house-list",
+    "schema": "data:ed25519:Sc4…#todo-list@2"
    },
    "deep": "An operation is JSON: {operation, data, …arguments}. One engine parses it, checks the rule, runs it locally and returns a result or a set of CRDT ops."
   },
@@ -18,7 +19,8 @@
     "type": "theos/operation@1",
     "operation": "find",
     "on": "data:ed25519:7Hq…#house-list",
-    "at": "items",
+    "schema": "data:ed25519:Sc4…#todo-list@2",
+    "at": "/items",
     "where": {
      "done": false
     },
@@ -29,12 +31,13 @@
   },
   {
    "title": "Changes are operations too.",
-   "text": "Ticking an item is an operation. The engine checks your rule, turns it into CRDT ops, signs them and hands them to sync. An operation is what you mean; CRDT ops are what gets stored.",
+   "text": "Ticking an item is a {set} at a path. The engine checks your rule, turns it into CRDT ops, signs them and hands them to sync. An operation is what you mean; CRDT ops are what gets stored.",
    "code": {
     "type": "theos/operation@1",
-    "operation": "update",
+    "operation": "set",
     "on": "data:ed25519:7Hq…#house-list",
-    "at": "items/milk/done",
+    "schema": "data:ed25519:Sc4…#todo-list@2",
+    "at": "/items/0/done",
     "value": true
    },
    "flow": [
@@ -45,6 +48,18 @@
     "sync"
    ],
    "deep": "update becomes one or more CRDT ops on the Doc, grouped into a change, signed by the signer, sealed into a chunk and announced."
+  },
+  {
+   "title": "Every operation names its schema.",
+   "text": "An operation says which data, which version of its schema and which path. The engine checks the input against the schema before it runs: a set at /items/0/done must be true or false. A wrong operation fails on your own device, long before any peer would drop it.",
+   "code": {
+    "operation": "set",
+    "at": "/items/0/done",
+    "value": "yes",
+    "schema": "data:ed25519:Sc4…#todo-list@2",
+    "result": "refused: boolean expected"
+   },
+   "deep": "Each operation plugin declares its input shape; the engine validates the input against both the plugin's shape and the data's schema at that path."
   },
   {
    "title": "Walking a graph.",
@@ -66,8 +81,8 @@
    "deep": "walk follows link fields across Docs to a given depth. Each hop needs read on the next piece of data; without it, the walk stops there."
   },
   {
-   "title": "Searching by words.",
-   "text": "A {search} finds the notes that best match your words, ranked the way search engines do it (BM25). The index is built on your device, from what you can read, and never leaves it.",
+   "title": "Searching by words or by meaning.",
+   "text": "A {search} finds the notes that best match your words; a {near} finds the ones closest in meaning, so “plumbing problems” also finds “water under the sink”. Both indexes are built on your device, from what you can read, and never leave it.",
    "code": {
     "type": "theos/operation@1",
     "operation": "search",
@@ -79,19 +94,7 @@
     ],
     "limit": 5
    },
-   "deep": "BM25 full-text ranking over a local inverted index built from readable data. Neither the index nor the query leaves the device."
-  },
-  {
-   "title": "Searching by meaning.",
-   "text": "“Plumbing problems” should also find “water under the sink”. A {near} compares meaning as vectors and returns the closest entries. Same rule: the index is local.",
-   "code": {
-    "type": "theos/operation@1",
-    "operation": "near",
-    "on": "data:ed25519:5Wn…#notes",
-    "text": "plumbing problems",
-    "k": 5
-   },
-   "deep": "near: vector similarity (for example cosine) over local embeddings, with an approximate nearest-neighbour index on the device. Embeddings are computed locally."
+   "deep": "search ranks with BM25 over a local inverted index; near compares embeddings with an approximate nearest-neighbour index. Both are read operations."
   },
   {
    "title": "Operations chain together.",
@@ -141,33 +144,37 @@
    "deep": "One plugin registry for operations (find, walk, near, act …) and for rule conditions (at, where, limit …, and later signature counts). Each plugin is named by the hash of its specification, declares its JSON shape, what a rule must allow, and, for conditions, whether it applies to identities or to data. Unknown plugins fail closed."
   },
   {
-   "title": "Rules name the operations.",
-   "text": "Reading operations, like find, walk, search and near, need read on the data, and that's all: once your device can read it, the engine may search it any way you like. Change operations are where rules get fine: every device checks every signed change against them, down to one path or one matching entry.",
-   "code": {
-    "type": "theos/rule@1",
-    "to": "role:b3:d5k…#kids",
-    "on": "data:ed25519:7Hq…#house-list",
-    "operations": [
-     "read",
-     {
-      "operation": "create",
-      "at": "items"
-     },
-     {
-      "operation": "update",
-      "at": "items/*/done",
-      "where": {
-       "author": "$self"
-      }
-     }
+   "title": "From rules to operations.",
+   "text": "A rule names broad operations: read, create, update, delete. The engine's operations are more specific, and each belongs to one of them. Before running one, the engine checks that a rule allows its broad operation at that path.",
+   "deep": "Reading operations need read on the data and nothing else, because a reader holds the plaintext. Change operations are checked again by every peer, down to a path or matching entry.",
+   "table": {
+    "head": [
+     "Rule allows",
+     "Engine operations"
     ],
-    "sig": {
-     "by": "agent:b3:f2p…#your-phone",
-     "key": "ed25519:Fp2…",
-     "value": "…"
-    }
-   },
-   "deep": "Reading operations need read on the data and nothing else, because a reader holds the plaintext. Change operations are checked by every peer, down to a path or matching entry."
+    "rows": [
+     [
+      "read",
+      "get, find, walk, search, near, count"
+     ],
+     [
+      "create",
+      "create (new data), insert (into a list)"
+     ],
+     [
+      "update",
+      "set, move, splice (text)"
+     ],
+     [
+      "delete",
+      "remove (one entry), delete (whole data)"
+     ],
+     [
+      "share, want, keep, sync",
+      "the same names"
+     ]
+    ]
+   }
   },
   {
    "title": "Peers sync. They never ask.",
@@ -201,11 +208,10 @@
   {
    "title": "The engine, in short.",
    "list": [
-    "Every read, change, search and sync is a JSON operation.",
-    "A change you do becomes CRDT ops that are signed and synced.",
-    "Operations chain: one answer feeds the next.",
+    "Every read, change, search and sync is a JSON operation on a schema path.",
+    "Engine operations are specific; each belongs to one broad operation a rule allows.",
     "Operations run only on your device, over what you can read. Peers sync; they never ask.",
-    "Reading is allowed per piece of data; changes as finely as you like."
+    "New kinds of operations plug in, each with its own input shape."
    ],
    "deep": "JSON operations, local execution, plugins, rules per operation, and peer-to-peer only. Your data, your device, your answers."
   }

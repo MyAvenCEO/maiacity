@@ -16,6 +16,11 @@
    "file": "chapters/merge.json"
   },
   {
+   "id": "schema",
+   "title": "Schemas",
+   "file": "chapters/schema.json"
+  },
+  {
    "id": "rules",
    "title": "Rules",
    "file": "chapters/rules.json"

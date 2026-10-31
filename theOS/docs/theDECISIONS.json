@@ -37,7 +37,7 @@
    "id": "D3",
    "title": "Two kinds of identity: human and coop",
    "status": "decided",
-   "decision": "Identity types: human, coop, agent. Humans and coops own and decide. A coop's members are humans or coops, never agents or signers; coops may contain coops, never in a circle. Agents are never members; they are owned.",
+   "decision": "Identity types: human, coop, agent. Humans and coops own and decide. A coop's members are its “members” role, which holds humans or coops, never agents or signers; coops may be inside coops, never in a circle. Agents are owned, never in roles of other identities.",
    "why": "Families, teams and organisations are identities of identities; one model covers all of them.",
    "sources": [
     {
@@ -106,7 +106,7 @@
    "id": "D6",
    "title": "Rules go to roles, never to identities",
    "status": "decided",
-   "decision": "Everyone except the owner gets access through roles. A role is a set of identities. Rules attach only to roles.",
+   "decision": "Everyone except the owner gets access through rules. A rule is given to a role (a named set of identities) or, for an identity's own agents, to an agent directly.",
    "why": "People come and go; roles stay. Changing who is in a role never touches the data's rules.",
    "sources": [
     {
@@ -1020,7 +1020,7 @@
    "title": "Record conventions",
    "status": "decided",
    "date": "2026-10-31",
-   "decision": "Every stored or sent thing is a record: {\"type\": \"theos/<kind>@<version>\", …fields, \"sig\"} in canonical CBOR (shown as JSON). IDs are typed: human:, coop:, agent:, role:, rule:, ending: and chunk: followed by b3: and the BLAKE3 hash of the record; data: followed by the seal's ed25519 public key; value: b3: hash of the bytes. A #label after an ID is only for people (human:b3:q4x7…#you). Public keys: ed25519:… (signers, seals), x25519:… (locks). Secret keys never appear; they are named, for example datakey:house-list/3. CRDT op IDs are Loro's peer and counter (5f3a9c:41). Times are RFC 3339 in UTC. Signatures: \"sig\": {\"by\": agent ID, \"key\": ed25519 public key, \"value\": …}. Record kinds: genesis, identity, member, rule, renewal, ending, envelope, keyring, change, chunk, value, meta, retain, erase, record, proof, want, news, operation. A member record joins an identity to a coop; an ending ends a rule or a member record. A data's first rule gives its owner the operation own (everything, including writing rules) and is signed by the seal, the only signer that is not an agent. A proof is the ordered list of record IDs from the seal or an identity's genesis to the acting agent. Identity rules do not expire unless they say so.",
+   "decision": "Every stored or sent thing is a record: {\"type\": \"theos/<kind>@<version>\", …fields, \"sig\"} in canonical CBOR (shown as JSON). IDs are typed: human:, coop:, agent:, role:, rule:, ending: and chunk: followed by b3: and the BLAKE3 hash of the record; data: followed by the seal's ed25519 public key; value: b3: hash of the bytes. A #label after an ID is only for people (human:b3:q4x7…#you). Public keys: ed25519:… (signers, seals), x25519:… (locks). Secret keys never appear; they are named, for example datakey:house-list/3. CRDT op IDs are Loro's peer and counter (5f3a9c:41). Times are RFC 3339 in UTC. Signatures: \"sig\": {\"by\": agent ID, \"key\": ed25519 public key, \"value\": …}. Record kinds: genesis, identity, role, rule, renewal, ending, envelope, keyring, change, chunk, value, meta, retain, erase, record, proof, want, news, operation. An ending ends a rule; role changes are role records signed under the owner's rules. A data's first rule gives its owner the operation own (everything, including writing rules) and is signed by the seal, the only signer that is not an agent. A proof is the ordered list of record IDs from the seal or an identity's genesis to the acting agent. Identity rules do not expire unless they say so.",
    "why": "Slides and code use the same shapes and names, so the examples are drafts of the real schema, not illustrations.",
    "sources": [
     {
@@ -1033,6 +1033,61 @@
     }
    ],
    "slides": []
+  },
+  {
+   "id": "D51",
+   "title": "Only roles and rules",
+   "status": "decided",
+   "decision": "There are no membership records. A role is a named set of identities; a rule says what a role (or an agent) may do on an identity or a piece of data. A coop's members are its “members” role, with a rule giving that role act, own and govern on the coop.",
+   "why": "One mechanism for everything: who is in which group (roles) and what that group may do (rules).",
+   "supersedes": "membership as its own record kind",
+   "sources": [],
+   "slides": [
+    "identity-5",
+    "identity-6",
+    "identity-7"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D52",
+   "title": "No data without a schema",
+   "status": "decided",
+   "decision": "Every piece of data names a schema in its genesis; a Value's metadata Doc names one for the Value and one for itself. A schema is a JSON Schema stored as a Loro Doc with its own seal, owner and rules. Data pins an exact schema version (the hash of the schema Doc's state); moving to a new version is an owner's change. Every peer validates every change against the schema and drops what does not fit. Paths (JSON Pointer, * for any index or key) give every part of the data an address for rules and operations.",
+   "why": "Typed data makes rules and operations precise and keeps every copy well-formed without a server.",
+   "sources": [
+    {
+     "label": "JSON Schema",
+     "url": "https://json-schema.org"
+    },
+    {
+     "label": "RFC 6901: JSON Pointer",
+     "url": "https://www.rfc-editor.org/rfc/rfc6901"
+    }
+   ],
+   "slides": [
+    "schema-1",
+    "schema-2",
+    "schema-3",
+    "schema-4",
+    "schema-5",
+    "schema-6",
+    "schema-7"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D53",
+   "title": "Engine operations are specific and typed",
+   "status": "decided",
+   "decision": "Rules name broad operations (read, create, update, delete, share, want, keep, sync). Engine operations are specific and each belongs to one: read → get, find, walk, search, near, count; create → create, insert; update → set, move, splice; delete → remove, delete. Every operation names data, schema version and path; the engine validates its input against the plugin's shape and the schema before running it.",
+   "why": "Precise, checkable operations, with rules that stay short and readable.",
+   "sources": [],
+   "slides": [
+    "ops-4",
+    "ops-9"
+   ],
+   "date": "2026-10-31"
   }
  ]
 }
