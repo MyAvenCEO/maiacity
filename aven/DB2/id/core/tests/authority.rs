@@ -20,6 +20,7 @@ fn answer(a: Option<Authority>) -> Value {
             "reads": true,
             "caps": a.caps.iter().map(Hash::text).collect::<Vec<_>>(),
             "acks": a.acks.iter().map(Hash::text).collect::<Vec<_>>(),
+            "actor": a.actor.map(|d| d.text()),
         }),
     }
 }
@@ -64,6 +65,7 @@ fn authorities_read_as_the_running_model_says() {
     let key = prop_oneof![
         Just("acks".to_string()),
         Just("caps".to_string()),
+        Just("actor".to_string()),
         Just("more".to_string())
     ];
     let value = proptest::collection::vec((key, list), 0..4).prop_map(|kvs| {
@@ -77,12 +79,15 @@ fn authorities_read_as_the_running_model_says() {
         proptest::collection::vec(any::<[u8; 32]>(), 0..3),
         proptest::collection::vec(any::<[u8; 32]>(), 0..3),
     )
-        .prop_map(|(caps, acks)| {
-            Authority {
-                caps: caps.into_iter().map(Hash).collect(),
-                acks: acks.into_iter().map(Hash).collect(),
-            }
-            .value()
+        .prop_flat_map(|(caps, acks)| {
+            proptest::option::of(any::<[u8; 32]>()).prop_map(move |actor| {
+                Authority {
+                    caps: caps.iter().copied().map(Hash).collect(),
+                    acks: acks.iter().copied().map(Hash).collect(),
+                    actor: actor.map(|a| aven_core::DocId(Hash(a))),
+                }
+                .value()
+            })
         });
     let value = prop_oneof![good, value];
     let mut runner = TestRunner::new(Config {

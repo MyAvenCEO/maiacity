@@ -4,11 +4,13 @@
 //!
 //! ```text
 //! authority: {"acks": [name…], "caps": [name…]}
+//!            {"acks": [name…], "caps": [name…], "actor": Doc}   an actor host's envelope (A27, A188)
 //! ```
 //!
-//! Exactly those two keys, in the codec's order, each a list of 32-byte names; anything else reads as nothing.
+//! Exactly one of those two shapes, keys in the codec's order, names and the actor 32 bytes; anything else reads as
+//! nothing.
 
-use aven_core::{Hash, Value};
+use aven_core::{DocId, Hash, Value};
 
 /// What an envelope's body says of its authority.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -17,6 +19,8 @@ pub struct Authority {
     pub caps: Vec<Hash>,
     /// The revocations its writer acknowledges, by name (`Revocation::digest`).
     pub acks: Vec<Hash>,
+    /// The acting actor an actor host's envelope names (A27, A188).
+    pub actor: Option<DocId>,
 }
 
 fn names(v: &[Hash]) -> Value {
@@ -36,21 +40,34 @@ fn names_of(v: &Value) -> Option<Vec<Hash>> {
 impl Authority {
     /// The Value the body carries under `authority`, `acks` before `caps` (`Authority.value`).
     pub fn value(&self) -> Value {
-        Value::Map(vec![
+        let mut kvs = vec![
             ("acks".into(), names(&self.acks)),
             ("caps".into(), names(&self.caps)),
-        ])
+        ];
+        if let Some(a) = &self.actor {
+            kvs.push(("actor".into(), Value::Bytes(a.0.0.to_vec())));
+        }
+        Value::Map(kvs)
     }
 
-    /// The authority a body carries: exactly the two keys, in the codec's order, each a list of 32-byte names
-    /// (`Authority.ofValue?`).
+    /// The authority a body carries: exactly one of its two shapes, in the codec's order (`Authority.ofValue?`).
     pub fn of_value(v: &Value) -> Option<Authority> {
         let Value::Map(kvs) = v else { return None };
         match kvs.as_slice() {
             [(a, acks), (c, caps)] if a == "acks" && c == "caps" => Some(Authority {
                 caps: names_of(caps)?,
                 acks: names_of(acks)?,
+                actor: None,
             }),
+            [(a, acks), (c, caps), (t, Value::Bytes(actor))]
+                if a == "acks" && c == "caps" && t == "actor" =>
+            {
+                Some(Authority {
+                    caps: names_of(caps)?,
+                    acks: names_of(acks)?,
+                    actor: Some(DocId(Hash(actor.as_slice().try_into().ok()?))),
+                })
+            }
             _ => None,
         }
     }
