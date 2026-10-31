@@ -20,7 +20,7 @@ its questions ([Decisions](#decisions)). The words are those of [`GLOSSARY.md`](
 
 1. [Why one home](#why-one-home)
 2. [The runtime contract](#the-runtime-contract)
-3. [Names, versions, hashes and floors](#names-versions-hashes-and-floors)
+3. [Names, versions, hashes and withdrawals](#names-versions-hashes-and-withdrawals)
 4. [Only from the repository](#only-from-the-repository)
 5. [The package](#the-package)
 6. [Loading by hash](#loading-by-hash)
@@ -69,20 +69,23 @@ run(part, input) → output | failure        part, input and output are Values; 
   system calls (QuickJS asks for a clock and random bytes), the shim that answers them is linked *inside* the module
   and reads only its input: the turn's frozen time and seed. The actor spec's "imports nothing that reaches the host"
   becomes "imports nothing", which a check can prove from the module's bytes alone.
-- It exports one memory and one ABI: `alloc(len) → ptr`, and `run(part_ptr, part_len, input_ptr, input_len) → ptr`
-  to a result of `(tag, ptr, len)`. Part, input and output cross as bytes in rule 1's one codec, deterministic CBOR
-  ([ARCHITECTURE](../DB2/ARCHITECTURE.md#the-rules-across-all-parts), A2), whose byte strings carry a file's bytes,
-  pixels and buffers; the host decodes and checks them against the schemas.
+- It exports one memory and one ABI (`abi/`). `alloc(len) → ptr` gives the host room for the part and the input;
+  `run(part_ptr, part_len, input_ptr, input_len) → ptr` points to an 8-byte header, the result's pointer and length,
+  each a little-endian u32, over the encoding of `{"ok": …}` or `{"failure": …}`. Part, input and output cross as
+  bytes in rule 1's one codec, deterministic CBOR ([ARCHITECTURE](../DB2/ARCHITECTURE.md#the-rules-across-all-parts),
+  A2), whose byte strings carry a file's bytes, pixels and buffers. The host reads the header and the result only
+  inside the module's memory: a header or a result out of bounds, or bytes that aren't a result, are `badOutput`; a
+  length past the output limit is `outputTooLarge`, refused before it is read, with the sum checked so it can't wrap.
+  Then it decodes and checks the answer against the schemas.
 - It declares its maximum memory in the module, and the host refuses one that declares more than its limit.
 
 **What every runtime declares,** in its manifest entry, frozen with it:
 
 | Field | Meaning |
 |---|---|
-| `name` | `<format>-runtime` or `<job>-runtime` ([Names](#names-versions-hashes-and-floors)) |
+| `name` | `<format>-runtime` or `<job>-runtime` ([Names](#names-versions-hashes-and-withdrawals)) |
 | `version` | An integer, counting up from 1 |
 | `hash` | `b3:<hex>` of the module's bytes |
-| `floor` | The oldest version a device still runs for itself: a cached render below it is dropped. Never a verdict's: a verdict runs the hash an envelope names, if pinned in its past |
 | `input`, `output` | The hashes of its input and output schemas (JSON Schema, `additionalProperties: false`) |
 | `limits` | Part bytes, fuel, memory pages, output bytes, and the output's own measures (nodes, depth, pixels) |
 | `journal` | Whether its output may be journaled (actors) or must stay a cache (files) |
@@ -94,7 +97,7 @@ run(part, input) → output | failure        part, input and output are Values; 
 - after: the output's size, its schema, and the output's own limits (a node tree against the allowlist, pixels
   against their dimensions).
 
-## Names, versions, hashes and floors
+## Names, versions, hashes and withdrawals
 
 - **Names** (decision 2). Actors' runtimes are named after their job: `state-runtime`, `js-runtime` and
   `face-runtime`. One face-runtime draws a whole face: its data, `markup` and `style` in, a checked node tree and
@@ -114,8 +117,9 @@ run(part, input) → output | failure        part, input and output are Values; 
   (`verdictRuntime`), so two readers holding the same past agree (`readers_agree_pins`), and a withdrawal closes the
   hash for every envelope after it (`withdraw_closes`). A rising floor would make a reader re-lower an old envelope on
   a newer version and disagree with one that hadn't upgraded.
-- **Floors** bind only what a device runs for itself. A file render uses the newest version the registry names for
-  its type, and a cached render below its runtime's floor is dropped (`cacheKeeps`).
+- **Withdrawals, not floors, for what a device runs for itself.** The manifest only appends: an entry freezes a
+  module, or withdraws a hash. A file render uses the newest version the manifest lists for its type; a withdrawn
+  hash is never loaded again (`withdrawn_not_loaded`), and its cached renders are dropped (`cacheKeeps`).
 - **Releases** (A36). Runtimes ship in the package's dated release (`@aven/runtimes@26.10.31`); there is no
   per-vault catalogue of runtimes. A format's label is its version: a format that changes gets a new label, never a
   version number beside the old one.
@@ -146,10 +150,12 @@ excludes it as it excludes `aven/DB2`.
 aven/runtimes/
   README.md          this plan
   spec/              Lean: Aven.Runtime, and the vectors it exports (the contract, the registry, the node tree)
-  manifest.json      every frozen runtime: name, version, hash, floor, schemas, limits, users (append-only)
-  host/              aven-runtimes-host: load by hash, refuse imports, fuel, memory, schemas, output limits
-                     (native for the Peer, the kernel and the engine; wasm for a browser worker)
-  freeze/            the reproducible build and the checks: no imports, declared memory, hash = manifest
+  manifest.json      built: every frozen runtime (name, version, hash, limits, users) and every withdrawal; append-only
+  host/              built: aven-runtimes-host: load by hash, refuse imports, fuel, memory, output limits (native;
+                     wasm for a browser worker next)
+  abi/               built: the module ABI, alloc and run over the one codec's bytes, in safe Rust
+  modules/           built: each runtime as a WebAssembly module importing nothing: markdown/ face/
+  freeze.sh          built: the reproducible build, each module's hash, and the host's tests against the manifest
   registry/          built: aven-runtimes-registry, the file registry, the sniffer, decide_file(); native and wasm
   tree/              built: the node-tree allowlist, shared by every runtime that draws and the applier
   contract/          built: the contract's failures, limits, results and render keys
@@ -208,7 +214,7 @@ For each file, from its first bytes, its size and its claimed type, `decide` giv
    attachment, and the same `nosniff` and `Content-Security-Policy: sandbox; …` on every answer as today. A file shown
    through a runtime is served only to the runtime's worker, as `application/octet-stream`.
 5. **How its renders are cached:** by `(runtime hash, file hash, params hash)`, as a cache on the device (README rule
-   5): kept in the files origin's own storage, evicted by size, dropped when its runtime falls below the floor, never
+   5): kept in the files origin's own storage, evicted by size, dropped when its runtime is withdrawn, never
    synced, never part of a file Record. A reader always re-renders; nobody receives another's render as truth.
 
 ### Its shape
@@ -330,7 +336,7 @@ and the decisions, not the parsers.
   - `run_more_room`: more fuel, memory or output room never changes an answer;
   - `verdict_named`, `readers_agree_pins`, `withdraw_closes`: a verdict runs exactly the hash the envelope names,
     when it is pinned in the envelope's past, so readers with that past agree, and a withdrawal closes it;
-    `cache_drops`: a floor only drops a device's own cached renders;
+    `cache_drops`: a withdrawal drops a device's own cached renders;
   - `admit_imports_nothing`, `admit_memory`: a module is admitted only when it imports nothing at all and declares a
     maximum memory within the limit;
   - `frozen`: the manifest only appends, so a frozen entry never changes; `loads_listed`: a host loads only bytes
@@ -401,11 +407,13 @@ and the decisions, not the parsers.
   24 examples: the todo app's task and list, refusals in the wrong phase, paths that don't fit, a tell to something
   that isn't an address, fuel, memory and output limits, and inputs and parts that aren't ones.
 - **Determinism, practically.** Lean can't see a wasm module, so the vectors carry it: each runtime's examples are
-  exported with their outputs' hashes, and the check runs every vector in the native host and in all three browser
-  engines and compares hashes. A float result must be bit-identical, so the host canonicalizes NaNs as it reads an
-  output, and a runtime whose vectors differ between engines fails the check. This comes with the first runtime.
-- **The cache key** is in the contract (`renderKey_inj`); a cache entry is dropped when its runtime falls below the
-  floor.
+  exported with their outputs' hashes, and the check runs every vector in the native host and compares hashes, in
+  the browser engines once the host runs there. What could differ between two hosts is refused before a run: `admit`
+  refuses float instructions (a NaN's bits are the one thing wasm leaves to the engine, and a runtime's numbers are
+  integers: contrast is computed in integers too), more than one memory, SIMD and threads (the interpreter is built
+  without them, so a module that uses them doesn't validate). What's left is integer arithmetic over one memory, the
+  same on every engine.
+- **The cache key** is in the contract (`renderKey_inj`); a cache entry is dropped when its runtime is withdrawn.
 
 **The vectors** (`spec/vectors/`, one vector per line): `table.json` (the registry and its signatures, the data the
 registry crate compiles in), `registry.json`, `tree.json` and `face.json` (each tree and face with its encoding, a face
@@ -496,8 +504,12 @@ starts until Samuel says so (plan only).
    and `kind()` gone, the Peer-Light recording sniffed types. Behaviour as the chat thread left it; the security gain
    is that bytes, not claims, decide. `sandbox/inline.mjs` and `sandbox/dome.mjs` extend to lying claims and
    polyglots.
-3. **The host and the freeze** (`host/`, `freeze/`): wasmi with fuel and memory limits, the import check, the
-   manifest, the reproducible build; hostile modules that import, grow memory, loop and flood output, which must fail.
+3. **The host and the freeze** (`host/`, `modules/`, `manifest.json`, `freeze.sh`): wasmi with fuel and memory
+   limits, the import check, the manifest, the reproducible build; hostile modules that import, grow memory, loop and
+   flood output, which must fail. *First step built:* markdown-runtime and face-runtime as modules, frozen by hash; the
+   native host loads only a listed hash whose bytes match, admits only a module that imports nothing and declares its
+   memory, and runs it under fuel, memory and output, answering face-runtime's vectors byte for byte. Next: the host
+   in the Peer-Light's wasm, and the browser loading runtimes by hash.
 4. **The files origin** (A15), with avenOS and avenPEER's planning: the runtime worker, the Service Worker serving it.
 5. **Trees:** the allowlist crate and the applier as the tree drawer; `text-runtime`, `json-runtime`,
    `markdown-runtime`.

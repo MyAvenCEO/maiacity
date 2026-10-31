@@ -1,0 +1,28 @@
+# The docs layer's import under cargo-fuzz (db/docs/README.md, "Importing"): `cargo +nightly fuzz run import`, from
+# db/docs. Its own workspace, so the main one never builds libFuzzer; tests/hostile.rs runs the same inputs on stable.
+[package]
+name = "aven-db-docs-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "UNLICENSED"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+aven-core = { path = "../../../core" }
+aven-db-docs = { path = ".." }
+aven-id = { path = "../../../id/core" }
+libfuzzer-sys = "=0.4.13"
+loro = "=1.17.1"
+
+[[bin]]
+name = "import"
+path = "fuzz_targets/import.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]
