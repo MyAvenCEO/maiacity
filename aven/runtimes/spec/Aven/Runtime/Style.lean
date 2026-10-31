@@ -1,10 +1,11 @@
 import Aven.Runtime.Face
 
 /-!
-# A face's style, typed (README, "Two kinds of output, and the drawers"; avenBRAIN's slides)
+# The face-runtime's output: a tree and its style, typed (README, "Two kinds of output, and the drawers")
 
-`Face`'s first style was one class and four values. A slide needs layers placed in a 16:9 picture, so a style rule here
-is a selector and typed declarations, the subset avenBRAIN's slides are written in and nothing else:
+The face-runtime draws a face, its markup part and its style part with the face data, into a node tree and its
+style. The style is data: a rule is a selector and typed declarations, the subset avenBRAIN's slides are written in
+and nothing else:
 
 - **selectors** are descendant chains, one to four compounds deep, each compound an optional tag of the tree's
   allowlist and up to four class names (`.slide .label`, `.sign .signs-1`, `.slide img`). No pseudo-classes, no
@@ -12,10 +13,13 @@ is a selector and typed declarations, the subset avenBRAIN's slides are written 
   later rule;
 - **declarations** are typed: lengths in `cqw`, `%`, `px` or `em` with two decimals, colours as RGB, a font weight in
   hundreds, a transform of `translateX`, `translateY`, `rotate` and `scale`, and the one arrowhead clip-path. No
-  custom properties, no `url()`, no free text: the CSS text is generated from the data (`Rule.css`).
+  custom properties, no `url()`, no free text: the drawer writes the CSS text from the data (`Rule.css`).
 
-A face whose style is of these types is accepted only when, besides `Face`'s checks of its tree:
+A face is accepted (`faceOk`) only when:
 
+- **the tree passes the applier's check** (`Tree`), and every interactive node has an accessible name, every
+  non-native interactive node a role and a tab stop, every image an `alt` (`Face`);
+- **every rule is of the types,** its values in range;
 - **every text is at least 9 px where a slide is smallest,** 356 px wide, a phone's width: 2.6cqw is 9.26 px there,
   2.5cqw only 8.9 px, as Firefox measures it, so 2.6cqw is the smallest a slide writes (avenBRAIN's STYLE.md and its
   box check). A size in `px` is held to the same 9 px;
@@ -246,15 +250,21 @@ def Selector.matches (s : Selector) (ancestors : List Node) (n : Node) : Bool :=
   | c :: cs => c.matches n && ancestorsMatch cs ancestors
 
 /-- A rule: a selector and its declarations, in order. -/
-structure StyleRule where
+structure Rule where
   sel : Selector
   decls : List Decl
   deriving DecidableEq, Repr, Inhabited
 
-def StyleRule.ok (r : StyleRule) : Bool := r.sel.ok && !r.decls.isEmpty && r.decls.length ≤ 32 && r.decls.all Decl.ok
+def Rule.ok (r : Rule) : Bool := r.sel.ok && !r.decls.isEmpty && r.decls.length ≤ 32 && r.decls.all Decl.ok
 
 /-- The CSS text of a rule, generated: the only CSS a face ever gives. -/
-def StyleRule.css (r : StyleRule) : String := r.sel.css ++ "{" ++ ";".intercalate (r.decls.map Decl.css) ++ "}"
+def Rule.css (r : Rule) : String := r.sel.css ++ "{" ++ ";".intercalate (r.decls.map Decl.css) ++ "}"
+
+/-- `.a .b …`: a chain of single classes. -/
+def cls (cs : List String) : Selector := cs.map fun c => { classes := [c] }
+
+/-- A rule for a chain of single classes. -/
+def rule (cs : List String) (ds : List Decl) : Rule := ⟨cls cs, ds⟩
 
 /-! ## The cascade -/
 
@@ -262,7 +272,7 @@ def lexLe (a b : Nat × Nat) : Bool := a.1 < b.1 || (a.1 == b.1 && a.2 ≤ b.2)
 
 /-- The declarations that reach node `n`, in the order they apply: matching rules by specificity, the later rule
 last among equals (a stable sort), each rule's declarations in order. -/
-def cascade (style : List StyleRule) (ancestors : List Node) (n : Node) : List Decl :=
+def cascade (style : List Rule) (ancestors : List Node) (n : Node) : List Decl :=
   ((style.filter fun r => r.sel.matches ancestors n).mergeSort fun a b => lexLe a.sel.specificity b.sel.specificity)
     |>.flatMap (·.decls)
 
@@ -316,14 +326,14 @@ def Look.sizeOk (l : Look) : Bool := minText ≤ l.size.pxAt
 
 mutual
 /-- Every text with what it is drawn with; `ancestors` nearest first. -/
-def textsOf (style : List StyleRule) (ancestors : List Node) (l : Look) : Node → List (Look × String)
+def textsOf (style : List Rule) (ancestors : List Node) (l : Look) : Node → List (Look × String)
   | .text s => if s.trimAscii.isEmpty then [] else [(l, s)]
   | .el tag attrs kids =>
     let n := Node.el tag attrs kids
     kidsTexts style (n :: ancestors) (l.apply (cascade style ancestors n)) kids
 
 /-- The children in order: a layer that covers its parent with a background is what the later ones are drawn on. -/
-def kidsTexts (style : List StyleRule) (ancestors : List Node) (l : Look) : List Node → List (Look × String)
+def kidsTexts (style : List Rule) (ancestors : List Node) (l : Look) : List Node → List (Look × String)
   | [] => []
   | k :: ks =>
     let l' := match k with
@@ -334,76 +344,82 @@ def kidsTexts (style : List StyleRule) (ancestors : List Node) (l : Look) : List
     textsOf style ancestors l k ++ kidsTexts style ancestors l' ks
 end
 
-/-! ## A styled face -/
+/-! ## A face -/
 
-structure Styled where
+structure FaceOut where
   tree : Node
-  style : List StyleRule
+  style : List Rule
   deriving Repr, Inhabited
 
-def Styled.texts (o : Styled) : List (Look × String) := textsOf o.style [] Look.base o.tree
+def FaceOut.texts (o : FaceOut) : List (Look × String) := textsOf o.style [] Look.base o.tree
 
-/-- What a styled face gets wrong, by kind. -/
-structure StyleIssues where
+/-- What a face gets wrong, by kind. -/
+structure Issues where
   unnamed : List Node
   noRole : List Node
   noAlt : List Node
-  badRule : List StyleRule
+  badRule : List Rule
   small : List (Look × String)
   lowContrast : List (Look × String)
   deriving Repr
 
-def styleIssues (o : Styled) : StyleIssues :=
+def issues (o : FaceOut) : Issues :=
   ⟨o.tree.all.filter (fun n => n.interactive && !n.named), o.tree.all.filter (!·.roleOk),
    o.tree.all.filter (!·.altOk), o.style.filter (!·.ok), o.texts.filter (!·.1.sizeOk),
    o.texts.filter (!·.1.contrastOk)⟩
 
-/-- A styled face is accepted. -/
-def styledOk (l : TreeLimits) (o : Styled) : Bool :=
-  let i := styleIssues o
+/-- A face is accepted. -/
+def faceOk (l : TreeLimits) (o : FaceOut) : Bool :=
+  let i := issues o
   check l o.tree && i.unnamed.isEmpty && i.noRole.isEmpty && i.noAlt.isEmpty && i.badRule.isEmpty &&
     i.small.isEmpty && i.lowContrast.isEmpty
 
-theorem styledOk_parts {l : TreeLimits} {o : Styled} (h : styledOk l o = true) :
-    check l o.tree = true ∧ (styleIssues o).unnamed.isEmpty = true ∧ (styleIssues o).noRole.isEmpty = true ∧
-    (styleIssues o).noAlt.isEmpty = true ∧ (styleIssues o).badRule.isEmpty = true ∧
-    (styleIssues o).small.isEmpty = true ∧ (styleIssues o).lowContrast.isEmpty = true := by
-  unfold styledOk at h
+theorem faceOk_parts {l : TreeLimits} {o : FaceOut} (h : faceOk l o = true) :
+    check l o.tree = true ∧ (issues o).unnamed.isEmpty = true ∧ (issues o).noRole.isEmpty = true ∧
+    (issues o).noAlt.isEmpty = true ∧ (issues o).badRule.isEmpty = true ∧
+    (issues o).small.isEmpty = true ∧ (issues o).lowContrast.isEmpty = true := by
+  unfold faceOk at h
   simp only [Bool.and_eq_true] at h
   exact ⟨h.1.1.1.1.1.1, h.1.1.1.1.1.2, h.1.1.1.1.2, h.1.1.1.2, h.1.1.2, h.1.2, h.2⟩
 
-/-- An accepted styled face passes the applier's check. -/
-theorem styled_passes_check {l : TreeLimits} {o : Styled} (h : styledOk l o = true) : check l o.tree = true :=
-  (styledOk_parts h).1
+/-- An accepted face passes the applier's check. -/
+theorem face_passes_check {l : TreeLimits} {o : FaceOut} (h : faceOk l o = true) : check l o.tree = true :=
+  (faceOk_parts h).1
 
-/-- Every rule of an accepted styled face is of the types: a plain selector, values in range. -/
-theorem styled_rules {l : TreeLimits} {o : Styled} (h : styledOk l o = true) : ∀ r ∈ o.style, r.ok = true := by
+/-- Every rule of an accepted face is of the types: a plain selector, values in range. -/
+theorem face_rules {l : TreeLimits} {o : FaceOut} (h : faceOk l o = true) : ∀ r ∈ o.style, r.ok = true := by
   intro r hr
-  have := filter_empty (styledOk_parts h).2.2.2.2.1 r hr
+  have := filter_empty (faceOk_parts h).2.2.2.2.1 r hr
   simpa using this
 
-/-- Every text of an accepted styled face is at least 9 px where the slide is narrowest (2.6cqw). -/
-theorem styled_size {l : TreeLimits} {o : Styled} (h : styledOk l o = true) :
+/-- Every text of an accepted face is at least 9 px where the slide is narrowest (2.6cqw). -/
+theorem face_size {l : TreeLimits} {o : FaceOut} (h : faceOk l o = true) :
     ∀ p ∈ o.texts, minText ≤ p.1.size.pxAt := by
   intro p hp
-  have := filter_empty (styledOk_parts h).2.2.2.2.2.1 p hp
+  have := filter_empty (faceOk_parts h).2.2.2.2.2.1 p hp
   simpa [Look.sizeOk] using this
 
-/-- Every text of an accepted styled face has enough contrast against what it is drawn on. -/
-theorem styled_contrast {l : TreeLimits} {o : Styled} (h : styledOk l o = true) :
+/-- Every text of an accepted face has enough contrast against what it is drawn on. -/
+theorem face_contrast {l : TreeLimits} {o : FaceOut} (h : faceOk l o = true) :
     ∀ p ∈ o.texts, p.1.contrastOk = true := by
   intro p hp
-  have := filter_empty (styledOk_parts h).2.2.2.2.2.2 p hp
+  have := filter_empty (faceOk_parts h).2.2.2.2.2.2 p hp
   simpa using this
 
-/-- Every interactive node of an accepted styled face has an accessible name, and every image an `alt`. -/
-theorem styled_named {l : TreeLimits} {o : Styled} (h : styledOk l o = true) :
+/-- Every node of an accepted face that takes clicks without being a native control has a role and a tab stop. -/
+theorem face_roles {l : TreeLimits} {o : FaceOut} (h : faceOk l o = true) : ∀ n ∈ o.tree.all, n.roleOk = true := by
+  intro n hn
+  have := filter_empty (faceOk_parts h).2.2.1 n hn
+  simpa using this
+
+/-- Every interactive node of an accepted face has an accessible name, and every image an `alt`. -/
+theorem face_named {l : TreeLimits} {o : FaceOut} (h : faceOk l o = true) :
     (∀ n ∈ o.tree.all, n.interactive = true → n.named = true) ∧ ∀ n ∈ o.tree.all, n.altOk = true := by
   refine ⟨fun n hn hi => ?_, fun n hn => ?_⟩
-  · have := filter_empty (styledOk_parts h).2.1 n hn
+  · have := filter_empty (faceOk_parts h).2.1 n hn
     simp only [hi, Bool.true_and, Bool.not_eq_false'] at this
     exact this
-  · have := filter_empty (styledOk_parts h).2.2.2.1 n hn
+  · have := filter_empty (faceOk_parts h).2.2.2.1 n hn
     simpa using this
 
 /-! ## As Values -/
@@ -455,9 +471,9 @@ def Compound.value (c : Compound) : Value :=
   .array [opt (fun s => .text (ascii s)) c.tag, .array (c.classes.map fun s => .text (ascii s))]
 
 /-- A rule as a Value: `[[compound, …], [declaration, …]]`. -/
-def StyleRule.value (r : StyleRule) : Value := .array [.array (r.sel.map Compound.value), .array (r.decls.map Decl.value)]
+def Rule.value (r : Rule) : Value := .array [.array (r.sel.map Compound.value), .array (r.decls.map Decl.value)]
 
-def Styled.value (o : Styled) : Value :=
-  .map [(ascii "tree", o.tree.value), (ascii "style", .array (o.style.map StyleRule.value))]
+def FaceOut.value (o : FaceOut) : Value :=
+  .map [(ascii "tree", o.tree.value), (ascii "style", .array (o.style.map Rule.value))]
 
 end Aven.Runtime
