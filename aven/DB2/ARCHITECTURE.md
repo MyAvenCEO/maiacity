@@ -651,7 +651,8 @@ the spec that owns it.
   the network opens beyond the founding circle (caps D12). *Decided: yes (Samuel, 30 Oct 2026: "do as you believe").*
 - **A14. A dedicated passkey RP ID for avenOS,** for example `aven.maia.city`, before more passkeys exist; today's few
   members register once more. A salt the keeper serves per credential goes into the PRF input: secret from other
-  origins, not from the keeper. *Not yet (Samuel, 30 Oct 2026): it waits until he takes it up.*
+  origins, not from the keeper. *Decided: no (Samuel, 31 Oct 2026: "dont do a14").* avenOS's passkeys stay bound to
+  `maia.city`, and the genesis (A11, PEERS) names it; moving to another RP ID later means a new genesis.
 - **A15. Three origins:** avenOS (the app), the safe (D17: keys, the Peer-Light) and files (no keys, sandboxed).
   Releases are signed:
   - in the browser, a Service Worker on the safe's origin checks a release's signature before new code activates,
@@ -734,6 +735,15 @@ the spec that owns it.
   device of the vault that issued the keep cap signs which branch to follow, naming the fork point. The keeper checks
   that signature against the tree and ignores later forks from that point. *The architect's answer to the caps
   thread's open question 1 (30 Oct 2026).*
+
+  **Who keeps what is each vault's own decision, by the keep caps it issues** (Samuel, 31 Oct 2026):
+  - the admin's keeper list says who offers to keep;
+  - a vault's keep caps say which keeper holds which of its Docs and Values; their targets may be queries (A8);
+  - by default, a new vault issues a keep cap for everything to Maia City's keeper, the Aven Peer acting for Aven, and
+    each vault can change it.
+
+  Keepers stay blind (rule 9). A file is no special case: its chunks and chunk list are Values that a file Record in a
+  Doc names, kept and read as that Doc is.
 - **A23. Acks can't launder:** a revoked holder's envelope never counts if the revocation is in its past. *Done in
   caps (#1499), as what D8 meant.*
 
