@@ -264,7 +264,7 @@ fn pt_len(s: &[u8]) -> usize {
 
 #[test]
 fn a_mixed_sealed_page_lands_in_one_batch() {
-    use aven_db_docs::{SealedItem, Unopened};
+    use aven_db_docs::Unopened;
     let a = device("alice");
     let g = genesis(&a);
     let mut writer = open(&g);
@@ -300,12 +300,8 @@ fn a_mixed_sealed_page_lands_in_one_batch() {
     );
     // the later loose envelope first: it waits in the page for the segment, and the page settles at once
     let mut reader = open(&g);
-    let page = [
-        SealedItem::Loose(&later),
-        SealedItem::Segment(&seg),
-        SealedItem::Loose(&unknown),
-        SealedItem::Loose(b"junk"),
-    ];
+    // as a keeper serves them, without kinds: each found by its commitment
+    let page: [&[u8]; 4] = [&later, &seg, &unknown, b"junk"];
     let keys = [&e1, &e2];
     let r = reader.import_sealed_page(
         &page,
@@ -323,22 +319,19 @@ fn a_mixed_sealed_page_lands_in_one_batch() {
     assert!(matches!(r[2], Err(Unopened::Epoch(_))));
     assert_eq!(r[3], Err(Unopened::Form));
     assert_eq!(reader.snapshot(), writer.snapshot());
-    // the same page as a keeper serves it: no kinds, each found by its commitment
+    // a checkpoint is no page's, and a commitment one byte off matches no kind: neither opens
     let mut blind = open(&g);
-    let page = [
-        SealedItem::Sealed(&later),
-        SealedItem::Sealed(&seg),
-        SealedItem::Sealed(&unknown),
-    ];
+    let snap = seal(Kind::Snapshot, &e1, &g.id(), b"a checkpoint", &mut ent);
+    let mut wrong = seal(Kind::Envelope, &e1, &g.id(), b"x", &mut ent);
+    let n = wrong.len();
+    wrong[n - 1] ^= 1;
+    let page: [&[u8]; 2] = [&snap, &wrong];
     let r = blind.import_sealed_page(
         &page,
         |n| keys.iter().copied().find(|k| k.name == *n),
         &Allow,
     );
-    assert_eq!(r[0], Ok(vec![Ok(Imported::Counts)]));
-    assert_eq!(r[1].as_ref().map(Vec::len), Ok(4));
-    assert!(matches!(r[2], Err(Unopened::Epoch(_))));
-    assert_eq!(blind.snapshot(), writer.snapshot());
+    assert_eq!(r, vec![Err(Unopened::Seal), Err(Unopened::Seal)]);
     // a kind found by the commitment alone, and none under another epoch's key
     assert_eq!(
         aven_db_docs::seal::kind_of(&e1, &seg, 1 << 21),

@@ -433,15 +433,6 @@ fn changes_of(
     Ok(out)
 }
 
-/// A sealed thing catch-up fetched: a loose envelope, or a segment.
-#[derive(Clone, Copy, Debug)]
-pub enum SealedItem<'a> {
-    Loose(&'a [u8]),
-    Segment(&'a [u8]),
-    /// Of a kind the reader doesn't know, as a keeper serves it: found by its commitment ([`crate::seal::kind_of`]).
-    Sealed(&'a [u8]),
-}
-
 /// Why a sealed thing in a page didn't open.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Unopened {
@@ -451,7 +442,8 @@ pub enum Unopened {
     Doc,
     /// An epoch the reader holds no key for.
     Epoch(Hash),
-    /// It doesn't open under its epoch's key.
+    /// No kind's commitment matches under its epoch's key (a snapshot's is no page's), or it doesn't open as the kind
+    /// found.
     Seal,
     Segment(BadSegment),
 }
@@ -655,58 +647,40 @@ impl Doc {
         Ok(self.import_page(&page, auth))
     }
 
-    /// Imports a page of sealed things as catch-up fetches them, loose envelopes and segments mixed, in one batch: each
-    /// is opened under its epoch's key (found by the epoch its outside names), segments are flattened in order, and the
-    /// whole goes through [`Doc::import_page`]: one judge, one `import_batch`, one snapshot. Per item, the results of its
-    /// envelopes in order, or why it didn't open.
+    /// Imports a page of sealed things as catch-up fetches them, loose envelopes and segments mixed, in one batch. A
+    /// keeper serves them by hash and the reader doesn't know their kinds (the kind is in the AAD, D13), so each is
+    /// opened under its epoch's key (found by the epoch its outside names) as the kind whose commitment it carries
+    /// ([`crate::seal::kind_of`], `Aven.ID.Seal.kind_by_commit`), all before decrypting. Segments are flattened in
+    /// order, and the whole goes through [`Doc::import_page`]: one judge, one `import_batch`, one snapshot. Per item,
+    /// the results of its envelopes in order, or why it didn't open.
     pub fn import_sealed_page<'k>(
         &mut self,
-        items: &[SealedItem<'_>],
+        items: &[&[u8]],
         epochs: impl Fn(&Hash) -> Option<&'k EpochKey>,
         auth: &impl Authorize,
     ) -> Vec<Result<Vec<Result<Imported, Refused>>, Unopened>> {
         let limit = self.limits.sealed + self.limits.sealed / 8 + 256;
         let seg_limit = self.limits.segment_bytes + self.limits.segment_bytes / 8 + 256;
-        let mut opened: Vec<Result<Vec<Vec<u8>>, Unopened>> = Vec::with_capacity(items.len());
-        for item in items {
-            let bytes = match item {
-                SealedItem::Loose(b) | SealedItem::Segment(b) | SealedItem::Sealed(b) => *b,
-            };
-            let Some(out) = crate::seal::outside(bytes, limit.max(seg_limit)) else {
-                opened.push(Err(Unopened::Form));
-                continue;
-            };
-            if out.doc != self.id {
-                opened.push(Err(Unopened::Doc));
-                continue;
-            }
-            let Some(epoch) = epochs(&out.epoch) else {
-                opened.push(Err(Unopened::Epoch(out.epoch)));
-                continue;
-            };
-            let item = match item {
-                SealedItem::Sealed(b) => match crate::seal::kind_of(epoch, b, limit.max(seg_limit))
-                {
-                    Some(Kind::Envelope) => SealedItem::Loose(b),
-                    Some(Kind::Segment) => SealedItem::Segment(b),
-                    _ => {
-                        opened.push(Err(Unopened::Seal));
-                        continue;
-                    }
-                },
-                other => *other,
-            };
-            opened.push(match item {
-                SealedItem::Sealed(_) => unreachable!("its kind was found above"),
-                SealedItem::Loose(b) => match open(Kind::Envelope, epoch, b, limit) {
-                    Some((d, pt)) if d == self.id => Ok(vec![pt]),
-                    _ => Err(Unopened::Seal),
-                },
-                SealedItem::Segment(b) => Segment::open(b, &self.id, epoch, &self.limits)
-                    .map(|(s, _)| s.envelopes)
-                    .map_err(Unopened::Segment),
-            });
-        }
+        let opened: Vec<Result<Vec<Vec<u8>>, Unopened>> = items
+            .iter()
+            .map(|&b| {
+                let out = crate::seal::outside(b, limit.max(seg_limit)).ok_or(Unopened::Form)?;
+                if out.doc != self.id {
+                    return Err(Unopened::Doc);
+                }
+                let epoch = epochs(&out.epoch).ok_or(Unopened::Epoch(out.epoch))?;
+                match crate::seal::kind_of(epoch, b, limit.max(seg_limit)) {
+                    Some(Kind::Envelope) => match open(Kind::Envelope, epoch, b, limit) {
+                        Some((d, pt)) if d == self.id => Ok(vec![pt]),
+                        _ => Err(Unopened::Seal),
+                    },
+                    Some(Kind::Segment) => Segment::open(b, &self.id, epoch, &self.limits)
+                        .map(|(s, _)| s.envelopes)
+                        .map_err(Unopened::Segment),
+                    Some(Kind::Snapshot) | None => Err(Unopened::Seal),
+                }
+            })
+            .collect();
         let page: Vec<&[u8]> = opened
             .iter()
             .flatten()

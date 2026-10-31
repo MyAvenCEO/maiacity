@@ -17,12 +17,16 @@ keeper sees of each only its Doc, its epoch and its padded length (D13). It foll
 - **The plaintext** is padded before sealing: a `0x80` byte, then zeros, to Padmé's length (`Aven.ID.Padme`) of its
   length plus one.
 - **Outside:** `encode({ct, doc, epoch, nonce, commit})` and nothing else (D13).
+- **The kind, read back:** a keeper serves sealed things without their kinds (the kind is in the AAD, D13), so a reader
+  computes each kind's commitment over `{aad, nonce}` and takes the one that matches, refusing a thing matching none,
+  all before decrypting (`kindOf`). At most one matches (`kind_by_commit`).
 
 XChaCha20-Poly1305 stays outside Lean, held to its standard's known answers, as the stanzas' is: the model takes it as
 a parameter with its one law, that opening what was sealed under the same key, nonce and AAD gives it back
 (`Aead.correct`). What goes into it and what comes out around it is fixed here, byte for byte (`seals.json`).
 
-What it proves: `unpad_pad`, `open_seal`, `open_checks_commit`, `kindOf_sound`. -/
+What it proves: `unpad_pad`, `open_seal`, `open_checks_commit`, and the kind by its commitment: `kind_by_commit`,
+`kindOf_sound`, `kindOf_complete`, `kindOf_seal`. -/
 
 namespace Aven.ID.Seal
 
@@ -136,11 +140,37 @@ does with an item a keeper served, the keeper knowing only hashes (D13). Each ki
 def kindOf (epochKey : Bytes) (s : Sealed) : Option Kind :=
   [Kind.envelope, .segment, .snapshot].find? fun k => commit k epochKey (aad k s.doc s.epoch) s.nonce == s.commit
 
+/-- The commitment nothing collides under: for one epoch key, Doc, epoch and nonce, no two kinds' commitments are equal.
+Each kind's key and AAD are its own, so this is BLAKE3's collision resistance, which Lean takes as given. -/
+def Distinct (key : Bytes) (doc : DocId) (epoch : Hash) (nonce : Bytes) : Prop :=
+  ∀ k k', commit k key (aad k doc epoch) nonce = commit k' key (aad k' doc epoch) nonce → k = k'
+
+/-- At most one kind matches a sealed thing's commitment, under a commitment nothing collides under. -/
+theorem kind_by_commit {key : Bytes} {s : Sealed} (hd : Distinct key s.doc s.epoch s.nonce) {k k' : Kind}
+    (h : commit k key (aad k s.doc s.epoch) s.nonce = s.commit)
+    (h' : commit k' key (aad k' s.doc s.epoch) s.nonce = s.commit) : k = k' :=
+  hd k k' (h.trans h'.symm)
+
 /-- A kind found is one whose commitment the sealed thing carries, so opening it as that kind passes the commitment. -/
 theorem kindOf_sound {key : Bytes} {s : Sealed} {k : Kind} (h : kindOf key s = some k) :
     commit k key (aad k s.doc s.epoch) s.nonce = s.commit := by
   have := List.find?_some h
   simpa using this
+
+/-- The kind whose commitment matches is the one found, whatever the order kinds are tried in. -/
+theorem kindOf_complete {key : Bytes} {s : Sealed} (hd : Distinct key s.doc s.epoch s.nonce) {k : Kind}
+    (h : commit k key (aad k s.doc s.epoch) s.nonce = s.commit) : kindOf key s = some k := by
+  cases hk : kindOf key s with
+  | none =>
+    exfalso
+    have := List.find?_eq_none.mp hk k (by cases k <;> simp)
+    simp [h] at this
+  | some k' => exact congrArg some (kind_by_commit hd (kindOf_sound hk) h)
+
+/-- A reader finds the kind a thing was sealed as. -/
+theorem kindOf_seal (A : Aead) (k : Kind) (key : Bytes) (doc : DocId) (epoch : Hash) (nonce pt : Bytes)
+    (hd : Distinct key doc epoch nonce) : kindOf key (sealWith A k key doc epoch nonce pt) = some k :=
+  kindOf_complete (s := sealWith A k key doc epoch nonce pt) hd (by simp only [sealWith])
 
 theorem open_seal (A : Aead) (k : Kind) (key : Bytes) (doc : DocId) (epoch : Hash) (nonce pt : Bytes) :
     openWith A k key (sealWith A k key doc epoch nonce pt) = some pt := by
