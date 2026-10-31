@@ -13,6 +13,8 @@ entries in the range. Here the walk is over a **store**, the Values the reader c
 - `fold_good`: every node a fold builds is honest once the store holds the fold's nodes by their names, and the top
   node holds exactly the fold's entries, so a walk from the root finds every entry of the fold in the range, and only
   those (`walk_exact`);
+- `walk_verified`: through what peers serve, keeping only nodes whose hash is their name (`verify`), the walk finds only
+  entries of the fold in the range, whatever a peer serves, and all of them once peers serve the fold's nodes;
 - `fold_exact`: a fold is a checkpoint. A reader takes one only from a writer of the directory, by its own runtime,
   rebuilding the root from what it covers; a lookup from a fold that checks is exact.
 -/
@@ -363,5 +365,143 @@ theorem fold_exact {mayWrite : Bytes → List Hash → Bool} {runtime : Hash} {c
   exact ⟨h.1.1, h.1.2, top, d, h.2.trans hr, hw⟩
 
 end Fold
+
+/-! ## A store that may lie
+
+The reader fetches nodes from peers, and a peer may answer anything. It keeps a node only when it is canonical and its
+hash is the name it asked for (`verify`), so every node it keeps is named by its key (`Honest`). With an injective hash
+two honest stores agree wherever both answer, so the walk through what a lying peer serves stays inside the honest walk:
+it never finds an entry outside the fold or the range, and it finds all of them once the peer serves the fold's nodes.
+-/
+
+/-- A store whose every answer is canonical and named by its key. -/
+def Honest (H : Bytes → Hash) (s : Hash → Option Value) : Prop :=
+  ∀ h v, s h = some v → Canon v = true ∧ nameOf H v = h
+
+/-- Keep a fetched node only when it is canonical and its hash is the name asked for. -/
+def verify (H : Bytes → Hash) (s : Hash → Option Value) (h : Hash) : Option Value :=
+  match s h with
+  | some v => if Canon v && nameOf H v == h then some v else none
+  | none => none
+
+theorem verify_honest (H : Bytes → Hash) (s : Hash → Option Value) : Honest H (verify H s) := by
+  intro h v hv
+  simp only [verify] at hv
+  split at hv
+  · split at hv
+    · next hc =>
+      simp only [Option.some.injEq] at hv; subst hv
+      simp only [Bool.and_eq_true, beq_iff_eq] at hc
+      exact hc
+    · cases hv
+  · cases hv
+
+/-- Two honest stores agree wherever both answer. -/
+theorem honest_agree {H : Bytes → Hash} (hH : Injective H) {s₁ s₂ : Hash → Option Value} (h₁ : Honest H s₁)
+    (h₂ : Honest H s₂) {h : Hash} {v w : Value} (hv : s₁ h = some v) (hw : s₂ h = some w) : v = w :=
+  let ⟨cv, nv⟩ := h₁ h v hv
+  let ⟨cw, nw⟩ := h₂ h w hw
+  nameOf_inj hH cv cw (nv.trans nw.symm)
+
+/-- A store that answers more lets the walk find more. -/
+theorem walk_mono {s₁ s₂ : Hash → Option Value} (sub : ∀ h v, s₁ h = some v → s₂ h = some v) {lo hi x : Bytes} :
+    ∀ {d : Nat} {v : Value}, x ∈ walk s₁ lo hi d v → x ∈ walk s₂ lo hi d v
+  | _, .bytes e, h => by simpa [walk] using h
+  | d + 1, .array [.bytes f, .bytes l, .bytes n], h => by
+    simp only [walk] at h ⊢
+    split at h
+    · next hm =>
+      simp only [hm, ite_true]
+      split at h
+      · next c hs =>
+        rw [sub _ _ hs]
+        obtain ⟨it, hit, hx⟩ := List.mem_flatMap.mp h
+        exact List.mem_flatMap.mpr ⟨it, hit, walk_mono sub hx⟩
+      · simp at h
+    · simp at h
+  | 0, .array _, h => by simp [walk] at h
+  | d + 1, .array [], h => by simp [walk] at h
+  | d + 1, .array [_], h => by simp [walk] at h
+  | d + 1, .array [_, _], h => by simp [walk] at h
+  | d + 1, .array (_ :: _ :: _ :: _ :: _), h => by simp [walk] at h
+  | _, .uint _, h => by simp [walk] at h
+  | _, .nint _, h => by simp [walk] at h
+  | _, .text _, h => by simp [walk] at h
+  | _, .map _, h => by simp [walk] at h
+  | _, .bool _, h => by simp [walk] at h
+  | _, .null, h => by simp [walk] at h
+
+/-- Under a node honest in an honest store, a walk through any other honest store finds nothing the honest walk
+doesn't. -/
+theorem walk_within {H : Bytes → Hash} (hH : Injective H) {s hs : Hash → Option Value} (honS : Honest H s)
+    (honHs : Honest H hs) {lo hi x : Bytes} :
+    ∀ {d : Nat} {v : Value}, Good hs d v → x ∈ walk s lo hi d v → x ∈ walk hs lo hi d v
+  | _, .bytes e, _, h => by simpa [walk] using h
+  | d + 1, .array [.bytes f, .bytes l, .bytes n], hg, h => by
+    obtain ⟨c, hc, hgood, _⟩ := hg
+    simp only [walk] at h ⊢
+    split at h
+    · next hm =>
+      simp only [hm, ite_true, hc]
+      split at h
+      · next c' hs' =>
+        have := honest_agree hH honS honHs hs' hc
+        simp only [Value.array.injEq] at this
+        subst this
+        obtain ⟨it, hit, hx⟩ := List.mem_flatMap.mp h
+        exact List.mem_flatMap.mpr ⟨it, hit, walk_within hH honS honHs (hgood it hit) hx⟩
+      · simp at h
+    · simp at h
+  | 0, .array _, hg, _ => by simp [Good] at hg
+  | d + 1, .array [], hg, _ => by simp [Good] at hg
+  | d + 1, .array [_], hg, _ => by simp [Good] at hg
+  | d + 1, .array [_, _], hg, _ => by simp [Good] at hg
+  | d + 1, .array (_ :: _ :: _ :: _ :: _), hg, _ => by simp [Good] at hg
+  | _, .uint _, hg, _ => by simp [Good] at hg
+  | _, .nint _, hg, _ => by simp [Good] at hg
+  | _, .text _, hg, _ => by simp [Good] at hg
+  | _, .map _, hg, _ => by simp [Good] at hg
+  | _, .bool _, hg, _ => by simp [Good] at hg
+  | _, .null, hg, _ => by simp [Good] at hg
+
+section Verified
+
+variable (boundary : Bytes → Bool) (size : Bytes → Nat) (limit : Nat) (H : Bytes → Hash)
+
+/-- **A walk through whatever peers serve, verified, is sound, and exact once they serve the fold.** Take an honest
+store holding the fold's nodes, `hs`; the peers serve `s`, which may lie. The walk through `verify H s` from the top
+node finds only entries of the fold in the range; and when the peers serve at least what `hs` holds, it finds every one
+of them. -/
+theorem walk_verified (hH : Injective H) (l : List Bytes) (lo hi : Bytes) (s hs : Hash → Option Value)
+    (honest : Honest H hs)
+    (stored : ∀ lv ∈ (levels boundary size limit H l).dropLast, ∀ c ∈ lv,
+      hs (nameOf H (.array c)) = some (.array c)) :
+    ∃ top d, root boundary size limit H l = nameOf H (.array top) ∧
+      (∀ x, x ∈ top.flatMap (walk (verify H s) lo hi d) → x ∈ l ∧ inRange lo hi x = true) ∧
+      ((∀ h v, hs h = some v → s h = some v) →
+        ∀ x, x ∈ l → inRange lo hi x = true → x ∈ top.flatMap (walk (verify H s) lo hi d)) := by
+  have hg : ∀ it ∈ (entries l).map Value.bytes, Good hs 0 it := by
+    intro it hit; obtain ⟨e, _, rfl⟩ := List.mem_map.mp hit; trivial
+  have hu : ((entries l).map Value.bytes).flatMap (under hs 0) = entries l := by
+    clear stored hg; induction entries l with
+    | nil => rfl
+    | cons e es ih => simp only [List.map_cons, List.flatMap_cons, ih]; rfl
+  obtain ⟨top, d, _, hr, htop, hcover⟩ :=
+    fold_good hs boundary size limit H _ 0 _ hg (by rw [hu]; exact entries_sorted l) stored
+  refine ⟨top, d, hr, fun x hx => ?_, fun more x hx hin => ?_⟩
+  · obtain ⟨it, hit, hw⟩ := List.mem_flatMap.mp hx
+    have := walk_sound hs (walk_within hH (verify_honest H s) honest (htop it hit) hw)
+    refine ⟨entries_mem.mp ?_, this.2⟩
+    rw [← hu, ← hcover]
+    exact List.mem_flatMap.mpr ⟨it, hit, this.1⟩
+  · have sub : ∀ h v, hs h = some v → verify H s h = some v := by
+      intro h v hv
+      have ⟨cv, nv⟩ := honest h v hv
+      simp [verify, more h v hv, cv, nv]
+    have hxe : x ∈ top.flatMap (under hs d) := by rw [hcover, hu]; exact entries_mem.mpr hx
+    obtain ⟨it, hit, hxi⟩ := List.mem_flatMap.mp hxe
+    exact List.mem_flatMap.mpr ⟨it, hit, walk_mono sub (walk_complete hs hin (htop it hit) hxi)⟩
+
+end Verified
 
 end Aven.DB.Docs.Index

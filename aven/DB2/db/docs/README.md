@@ -883,7 +883,9 @@ against the Rust's Loro on random ops, so it can never be simpler than the code.
   child]`; once a reader's store holds a fold's nodes by their names, every summary is honest (`fold_good`), and a walk
   from the root, opening only the children whose span meets the range, finds every entry of the fold in the range and
   only those (`walk_exact`). A fold is a checkpoint: a reader takes one only from a vault that may write the directory,
-  by its own runtime, and rebuilds the root from what it covers (`fold_exact`). Vectors `trees.json`: every level's
+  by its own runtime, and rebuilds the root from what it covers (`fold_exact`). Peers may lie: the reader keeps a
+  fetched node only when its hash is the name it asked for, so the walk finds only entries of the fold in the range
+  whatever a peer serves, and all of them once peers serve the fold's nodes (`walk_verified`). Vectors `trees.json`: every level's
   nodes in CBOR hex, the root, and what the walk finds.
 - **Keys** (`Aven.DB.Docs.Key`): comparing two keys bytewise is comparing their tuples, field by field, a prefix first
   (`key_order`); two tuples with one key are one tuple (`key_inj`); a key extends another's, at a field's edge, exactly
