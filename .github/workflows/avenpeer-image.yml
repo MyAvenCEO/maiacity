@@ -22,6 +22,7 @@ on:
       - aven/DB2/db/docs/**
       - aven/DB2/store/**
       - aven/DB2/id/core/**
+      - aven/DB2/peer/wire/**
       - aven/DB2/peer/native/**
       - aven/DB2/peer/light/**
       - aven/runtimes/registry/**

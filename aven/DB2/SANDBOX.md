@@ -542,8 +542,10 @@ aven/DB2/
                    Vault and Control Room (Svelte 5 + Vite); it reads the tree through aven-id's wasm (os/web/id.js)
   peer/native/     aven-peer: avenPEER's native Peer, one binary; --relay makes it the Aven Peer
   peer/light/      aven-peer-light: avenPEER's Peer-Light, the same core as wasm in a worker
-  gen1/            aven-gen1: avenDB's first generation every peer runs, without I/O (the wire, the chat's
-                   chains, status, presence): it splits up as Docs arrive
+  gen1/            aven-gen1: avenDB's first generation every peer runs, without I/O (the chat's chains,
+                   status, the timeline): it splits up as Docs arrive
+  peer/wire/       aven-peer-wire: the Peers' wire (its greeting and frames in Core's CBOR) and presence
+  peer/spec/       Lean: Aven.Peer, the wire and presence, with its vectors in peer/spec/vectors
   store/           aven-db-store: the Store contract, its backends and their conformance suite
   db/spec/         Lean: Aven.DB, with its vectors in db/spec/vectors
   id/core/         aven-id: avenID, who may act for a vault, pure

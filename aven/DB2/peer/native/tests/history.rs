@@ -9,10 +9,10 @@ use std::sync::{Arc, Mutex};
 
 use aven_db_store::{Hash, RefName, backend};
 use aven_gen1::chain::{Answer, Body, Line};
-use aven_gen1::wire::{Frame, Head, MAX_FRAME, encode};
 use aven_peer::Notes;
 use aven_peer::chats::{self, Chats};
 use aven_peer::members::Gate;
+use aven_peer_wire::wire::{Frame, Head, MAX_FRAME, encode};
 use iroh::SecretKey;
 use serde_json::Value;
 
@@ -245,7 +245,7 @@ fn first_line(secret: &SecretKey, text: &str) -> Vec<u8> {
 #[tokio::test]
 async fn catching_up_on_many_devices_stays_under_the_frame_limit() {
     // every browser reset adds a device: in one frame each, `heads` and `catch_up` passed the wire's 64 KiB at about
-    // 400 of them, and catching up broke for everyone. In pages (`Aven.DB.Wire.headsPages`, `catchUpPages`) it holds
+    // 400 of them, and catching up broke for everyone. In pages (`Aven.Peer.Wire.headsPages`, `catchUpPages`) it holds
     // at any number
     let devices: Vec<SecretKey> = (0..600u16)
         .map(|i| {

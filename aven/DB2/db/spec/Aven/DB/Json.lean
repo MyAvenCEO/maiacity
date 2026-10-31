@@ -7,7 +7,6 @@ import Lean.Data.Json
 The one JSON form of `aven-db-model` (`Main.lean`) and of the vectors (`Vectors.lean`).
 
 - A status event is `"dial"`, `"frame"`, `"tick"` or `"lost"`; a state `{"phase", "moved", "idle"}`.
-- A presence change is `["join", p]` or `["leave", p]`; what every peer is told, a sorted list of peers.
 - A store call is `["put", hex]`, `["get", h]`, `["getRange", h, a, b]`, `["has", h]`, `["size", h]`, `["list"]`, `["delete", h]`,
   `["getRef", n]`, `["setRef", n, expected or null, new]`, `["deleteRef", n, expected]` or `["listRefs"]`; bytes in
   hex, hashes as the store writes them. A result is `{"ok": value}`, or `{"error": "stale", "current"}`,
@@ -33,19 +32,6 @@ def parseEvent : String → Except String Event
 
 def Status.json (s : Status) : Json :=
   Json.mkObj [("phase", s.phase.name), ("moved", s.moved), ("idle", s.idle)]
-
-def Change.json : Change → Json
-  | .join p => Json.arr #["join", toJson p]
-  | .leave p => Json.arr #["leave", toJson p]
-
-def parseChange (j : Json) : Except String Change := do
-  let arr ← j.getArr?
-  let kind ← (arr[0]?.getD Json.null).getStr?
-  let p ← (arr[1]?.getD Json.null).getNat?
-  match kind with
-  | "join" => pure (.join p)
-  | "leave" => pure (.leave p)
-  | k => throw s!"unknown presence change {k}"
 
 /-- Every state a fold passes through, after each step. -/
 def trail {σ α : Type} (step : σ → α → σ) (s : σ) : List α → List σ

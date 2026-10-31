@@ -31,7 +31,7 @@ pub type Notes = std::sync::Arc<dyn Fn(String) + Send + Sync>;
 
 /// A newcomer's relay token: the frame that carries its statement, its Value's one encoding (`aven_core`) as hex, so
 /// it travels in a URL's query. The Aven Peer's relay reads it (`relay`).
-pub fn token(frame: &aven_gen1::wire::Frame) -> String {
+pub fn token(frame: &aven_peer_wire::wire::Frame) -> String {
     aven_core::encode(&frame.value())
         .iter()
         .map(|b| format!("{b:02x}"))
@@ -49,7 +49,7 @@ pub fn know(endpoint: &iroh::Endpoint, addr: iroh::EndpointAddr) {
 
 /// The wire version this peer says it speaks (PEERS.md §7): `wire::VERSION`, unless [`speak`] set another.
 static WIRE: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(aven_gen1::wire::VERSION);
+    std::sync::atomic::AtomicU64::new(aven_peer_wire::wire::VERSION);
 
 /// The wire version this peer's hellos and gossip topic name, and the only one it accepts.
 pub fn wire_version() -> u64 {

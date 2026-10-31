@@ -372,8 +372,8 @@ Installing, running and upgrading a node belong to avenPEER (the architect, 30 O
 
 How it is built (thread E, 31 Oct 2026):
 
-- **The wire version** is `Aven.DB.Wire.wireVersion`, 2, and `aven_gen1::wire::VERSION`. Version 1 carried it
-  first, with frames as JSON lines; version 2 moved the frames to Core's CBOR (A29, `Aven.DB.WireCbor`). `meet`
+- **The wire version** is `Aven.Peer.Wire.wireVersion`, 2, and `aven_peer_wire::wire::VERSION` (the Peers' wire, `peer/spec` and `peer/wire`, A45). Version 1 carried it
+  first, with frames as JSON lines; version 2 moved the frames to Core's CBOR (A29, `Aven.Peer.WireCbor`). `meet`
   answers any other version with `update` and closes; `follows` says which side is behind, and only that one updates
   (`meet_speaks`, `meet_refuses`, `follows_newer`, `follows_one`; `upgrades.json`). The topic's name carries it too
   (`topicName`: `avenDB chat 1\nwire 2\nnetwork <id>`). The ALPN stays `aven/db/1`, frozen as a name: the hello's

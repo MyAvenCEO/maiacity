@@ -207,7 +207,7 @@ avenDB-old kept each device's changes; this stays when sealing comes:
 - **Catching up:** a returning peer asks the Aven Peer for its `chat-*` refs, walks each chain back from its head to
   what it holds, and fetches the missing lines as one hash sequence. Lines show ordered by time, then device; a line
   received twice is kept once, by its hash.
-- **Catching up goes in pages** (the security audit, 30 Oct 2026; `Aven.DB.Wire`): `heads` and `catch_up` name one
+- **Catching up goes in pages** (the security audit, 30 Oct 2026; `Aven.Peer.Wire`): `heads` and `catch_up` name one
   entry per device, and every browser reset adds a device, so in one frame each they passed the wire's 64 KiB at
   about 400 devices. Both go in pages of at most 128 entries (`pageSize`), as `lines` does: a telling of the heads is
   its pages, every one but the last with `more`, so a peer catches up and learns its own head only once it has heard

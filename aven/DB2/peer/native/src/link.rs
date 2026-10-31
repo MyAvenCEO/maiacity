@@ -16,7 +16,7 @@
 
 use aven_gen1::status::{Event, Phase, STALL_AFTER, Status, TICK_MS};
 use aven_gen1::timeline;
-use aven_gen1::wire::{self, ALPN, Decoder, Frame, Greeting, Head, encode};
+use aven_peer_wire::wire::{self, ALPN, Decoder, Frame, Greeting, Head, encode};
 use iroh::endpoint::Connection;
 use iroh::{Endpoint, EndpointAddr};
 use n0_future::time::{Duration, Instant, sleep, timeout};

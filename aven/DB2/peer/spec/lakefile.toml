@@ -1,0 +1,25 @@
+# Aven.Peer: the Peers' Lean model (A45): the wire (its greeting and its frames in Core's CBOR) and presence as the
+# Aven Peer counts it, moved out of Aven.DB's first generation. Core Lean only: the box has no network for Lean packages.
+# `lake build` proves every theorem and checks every example; `aven-peer-model` runs presence for the Rust's random
+# traces, and `vectors` exports the examples and generated cases (README rule 10).
+name = "aven-peer-spec"
+version = "0.1.0"
+defaultTargets = ["Aven", "aven-peer-model", "vectors"]
+
+[[lean_lib]]
+name = "Aven"
+# Only Aven.Peer is this package's: Aven.Core comes from the core package.
+roots = ["Aven.Peer"]
+
+[[lean_exe]]
+name = "aven-peer-model"
+root = "Main"
+
+[[lean_exe]]
+name = "vectors"
+root = "Vectors"
+
+# The shared core: Values, the codec, text (core/spec, ARCHITECTURE.md).
+[[require]]
+name = "aven-core-spec"
+path = "../../core/spec"

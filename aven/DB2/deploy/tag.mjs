@@ -16,7 +16,7 @@ const db2 = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const fixed = ['deploy/peer.Dockerfile', 'deploy/peer.Dockerfile.dockerignore', 'deploy/tag.mjs', 'Cargo.toml', 'Cargo.lock'];
 // the workspace's members, whole (Cargo.toml's members, and the fork store holds)
 // and aven/runtimes' file registry, which the Peer takes by path, from the named context `registry`
-const whole = ['core', 'gen1', 'db/docs', 'store', 'id/core', 'peer/native', 'peer/light', '../runtimes/registry'];
+const whole = ['core', 'gen1', 'db/docs', 'store', 'id/core', 'peer/wire', 'peer/native', 'peer/light', '../runtimes/registry'];
 // what the .dockerignore leaves out wherever it is
 const skipped = new Set(['target', 'node_modules', '.git', '.lake', 'runs', 'dist', 'deliverables']);
 

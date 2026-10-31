@@ -9,6 +9,7 @@
 !db/docs
 !store
 !id/core
+!peer/wire
 !peer/native
 !peer/light
 **/target

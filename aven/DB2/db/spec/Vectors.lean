@@ -9,14 +9,7 @@ import Aven.DB.Docs
 (`vectors/` by default), where they are committed. Every vector is `{"name", "input", "expected"}`:
 
 - `status.json`: a limit and status events; the state after each (`Aven.DB.Status`).
-- `presence.json`: connections joining and leaving; what every peer is told after each (`Aven.DB.Presence`).
 - `timeline.json`: a timeline line's parts; the line (`Aven.DB.Timeline`).
-- `wire.json`: greeting lines, and the greeting each is or none (`Aven.DB.Wire.Greeting`).
-- `frames.json`: streams as chunks of hex: the greeting read, the frames each chunk completes in Core's CBOR, and the
-  error that ends it (`Aven.DB.WireCbor`, A29). A line's bytes are hex in the readable form.
-- `upgrades.json`: a peer's wire version and the version a hello names; its answer (none, or `update` and its own
-  version) and whether the hello's peer follows that refusal; and the gossip topic's name for a wire version and a
-  network (`Aven.DB.Wire`, "The wire version").
 - `store.json`: traces of store calls from an empty store; the result of each (`Aven.DB.Store`). Every backend
   replays them in the conformance suite.
 - `hashes.json`: spellings of a hash; whether the store reads each as one.
@@ -103,7 +96,7 @@ def Rng.many {α : Type} (r : Rng) (n : Nat) (f : Rng → α × Rng) : List α �
 
 def generated : Nat := 60
 
-/-! ## Status and presence -/
+/-! ## Status -/
 
 def statusVector (name : String) (limit : Nat) (es : List Event) : Json :=
   vector name (Json.mkObj [("limit", toJson limit), ("events", toJson (es.map Event.name))])
@@ -122,101 +115,12 @@ def status : List Json :=
   statusExamples.map (fun (name, es, _) => statusVector name 3 es) ++
   (List.range generated).map fun i => let (limit, es) := randomEvents (i + 1); statusVector s!"seed {i + 1}" limit es
 
-def presenceVector (name : String) (cs : List Change) : Json :=
-  vector name (Json.mkObj [("changes", Json.arr (cs.map Change.json).toArray)])
-    (Json.arr ((trail Presence.step Presence.empty cs).map fun p => toJson p.told).toArray)
-
-def randomChanges (seed : Nat) : List Change := Id.run do
-  let (len, r) := (Rng.seed seed).below 60
-  let (cs, _) := r.many len fun r =>
-    let (j, r) := r.below 3
-    let (p, r) := r.below 6
-    ((if j ≠ 0 then .join p else .leave p), r)
-  return cs
-
-def presence : List Json :=
-  presenceExamples.map (fun (name, cs, _) => presenceVector name cs) ++
-  (List.range generated).map fun i => presenceVector s!"seed {i + 1}" (randomChanges (i + 1))
-
-/-! ## The timeline and the wire -/
+/-! ## The timeline -/
 
 def timeline : List Json :=
   lineExamples.map fun (name, (t, peer, event, fields), _) =>
     vector name (Json.mkObj [("t", toJson t), ("peer", peer), ("event", event),
       ("fields", Json.arr (fields.map fun (k, v) => Json.arr #[k, v]).toArray)]) (line t peer event fields)
-
-/-- A long run of one character is written as `{"fill", "len"}`, so the file stays small. -/
-def WireError.name : WireError → String
-  | .bad => "bad"
-  | .tooLong => "tooLong"
-
-/-- A frame in the vectors' readable form: its Value's keys as JSON, a line's bytes in hex. -/
-def Frame.json : Frame → Json
-  | .presence ps => Json.mkObj [("frame", "presence"), ("peers", toJson ps)]
-  | .beat n => Json.mkObj [("frame", "beat"), ("n", toJson n)]
-  | .claim st => Json.mkObj [("frame", "claim"), ("statement", st)]
-  | .signIn st => Json.mkObj [("frame", "sign_in"), ("statement", st)]
-  | .invite st => Json.mkObj [("frame", "invite"), ("statement", st)]
-  | .withdraw st => Json.mkObj [("frame", "withdraw"), ("statement", st)]
-  | .join st => Json.mkObj [("frame", "join"), ("statement", st)]
-  | .network c t st => Json.mkObj [("frame", "network"), ("claimed", toJson c), ("tree", toJson t),
-      ("statements", toJson st)]
-  | .refused w => Json.mkObj [("frame", "refused"), ("why", w)]
-  | .heads hs more => Json.mkObj [("frame", "heads"), ("heads", toJson hs), ("more", toJson more)]
-  | .catchUp hs only => Json.mkObj [("frame", "catch_up"), ("have", toJson hs), ("only", toJson only)]
-  | .lines ls => Json.mkObj [("frame", "lines"), ("lines", toJson (ls.map Aven.Core.hex))]
-  | .kept fs => Json.mkObj [("frame", "kept"), ("files", toJson fs)]
-
-/-- The greetings: a line, and the greeting it is, or none. -/
-def wire : List Json :=
-  let lines : List (String × String) := [
-    ("a hello", (Greeting.hello "alice-peer" wireVersion).json.compress),
-    ("an update", (Greeting.update wireVersion).json.compress),
-    ("a hello of version 1", (Greeting.hello "alice-peer" 1).json.compress),
-    ("a hello without its version, as version 0 sent it", "{\"frame\":\"hello\",\"peer\":\"a\"}"),
-    ("a hello with a key extra", "{\"frame\":\"hello\",\"peer\":\"a\",\"wire\":2,\"x\":1}"),
-    ("a hello whose version is text", "{\"frame\":\"hello\",\"peer\":\"a\",\"wire\":\"2\"}"),
-    ("an update without its version", "{\"frame\":\"update\"}"),
-    ("a frame, which is no greeting", "{\"frame\":\"beat\",\"n\":1}"),
-    ("not JSON", "nope")]
-  lines.map fun (name, line) =>
-    vector name (Json.mkObj [("line", line)]) ((Greeting.parse line).elim Json.null Greeting.json)
-
-open WireCbor in
-/-- Streams as hex: the greeting read, the frames each chunk completes, and the error that ends it. -/
-def frames : List Json :=
-  let hello := greetingBytes (.hello "alice-peer" wireVersion)
-  let result (chunks : List (List UInt8)) := let (g, fs, err) := WireCbor.read chunks
-    Json.mkObj [("greeting", g.elim Json.null Greeting.json),
-      ("frames", Json.arr (fs.map fun f => Json.arr (f.map Frame.json).toArray).toArray),
-      ("error", toJson (err.map WireError.name))]
-  let one (name : String) (chunks : List (List UInt8)) :=
-    vector name (Json.mkObj [("chunks", toJson (chunks.map Aven.Core.hex))]) (result chunks)
-  (frameExamples.map fun f => one s!"a frame: {(Frame.json f).compress}" [hello ++ frameBytes f]) ++
-  [one "every frame, the greeting in a chunk of its own" [hello, bytesOf frameExamples],
-   one "cut in the greeting and in a frame" [hello.take 9, hello.drop 9 ++ (bytesOf (frameExamples.take 2)).take 5,
-     (bytesOf (frameExamples.take 2)).drop 5],
-   one "an update, and nothing after it" [greetingBytes (.update wireVersion)],
-   one "version 0's hello, without its version" [Aven.Core.text "{\"frame\":\"hello\",\"peer\":\"a\"}\n"],
-   one "a greeting past the limit, without its newline" [List.replicate (maxFrame + 1) 0x61],
-   one "a key missing" [hello ++ framed (obj [("frame", txt "heads"), ("heads", .array [])])],
-   one "a key extra" [hello ++ framed (obj [("n", .uint 1), ("extra", .null), ("frame", txt "beat")])],
-   one "a key of the wrong kind" [hello ++ framed (obj [("n", txt "1"), ("frame", txt "beat")])],
-   one "a line as text, not bytes" [hello ++ framed (obj [("frame", txt "lines"), ("lines", .array [txt "x"])])],
-   one "a frame no peer sends" [hello ++ framed (obj [("frame", txt "shout")])],
-   one "a number longer than it needs" [hello ++ Aven.Core.be 4 4 ++ [0xA1, 0x61, 0x6E, 0x18]],
-   one "a length of none" [hello ++ [0, 0, 0, 0]],
-   one "a length over the limit" [hello ++ Aven.Core.be 4 (maxFrame + 1)],
-   one "a frame half in" [hello ++ (frameBytes (.beat 7)).take 6]]
-
-def upgrades : List Json :=
-  (meetExamples.map fun (name, mine, theirs) =>
-    vector name (Json.mkObj [("mine", toJson mine), ("theirs", toJson theirs)])
-      (Json.mkObj [("answer", match meet mine theirs with | some f => f.json | none => Json.null),
-        ("follows", toJson (follows theirs mine))])) ++
-  ([(wireVersion, "aven"), (wireVersion, "maia.city"), (3, "aven")].map fun (w, n) =>
-    vector s!"the topic of {n} on wire {w}" (Json.mkObj [("wire", toJson w), ("network", toJson n)])
-      (Json.mkObj [("topic", toJson (topicName w n))]))
 
 /-! ## The store -/
 
@@ -1261,8 +1165,8 @@ def render (vs : List Json) : String :=
 def main (args : List String) : IO Unit := do
   let dir : System.FilePath := args.headD "vectors"
   IO.FS.createDirAll dir
-  for (file, vs) in [("status.json", status), ("presence.json", presence), ("timeline.json", timeline),
-      ("wire.json", wire), ("frames.json", frames), ("upgrades.json", upgrades), ("store.json", store), ("hashes.json", hashes), ("refs.json", refs),
+  for (file, vs) in [("status.json", status), ("timeline.json", timeline),
+      ("store.json", store), ("hashes.json", hashes), ("refs.json", refs),
       ("chat.json", chat), ("files.json", files), ("chats.json", chats), ("queries.json", queries),
       ("wants.json", wants), ("mutations.json", mutations), ("merges.json", merges), ("lenses.json", lenses),
       ("indexes.json", indexes), ("trees.json", trees), ("lookups.json", lookups), ("keys.json", keys), ("writers.json", writers), ("envelopes.json", envelopes),

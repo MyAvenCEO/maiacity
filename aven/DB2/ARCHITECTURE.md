@@ -863,7 +863,7 @@ the spec that owns it.
     vault that publishes it (Aven's for the built-ins), kept where its keep caps say (A44). Git holds the frozen bytes
     only until Docs run. A runtime runs on the reader's device, in a worker of its own, apart from the device key.
   - **Owners are packages, not threads.** The tree (Maia City's register and membership) and the seal are avenID's,
-    whichever thread writes them; the wire and its frames are the Peers', with their Lean (today `Aven.DB.Wire`).
+    whichever thread writes them; the wire and its frames are the Peers', with their Lean (`Aven.Peer.Wire` and `Aven.Peer.WireCbor` in `peer/spec`, the Rust in `aven-peer-wire`).
   - **The first generation splits up.** `aven-gen1` holds four jobs today; each goes to its owner as Docs arrive:
     the wire and presence to the Peers, the chat to a Doc, files to the Store and the registry.
 
