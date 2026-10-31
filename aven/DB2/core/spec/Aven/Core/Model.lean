@@ -1,6 +1,8 @@
 import Aven.Core.Verdicts
 import Aven.Core.Limits
 import Aven.Core.Json
+import Aven.Core.Op
+import Aven.Core.TargetCbor
 import Lean.Data.Json
 
 /-!
@@ -25,14 +27,22 @@ def hexVal (c : Char) : Option Nat :=
   else none
 
 /-- Bytes from lowercase hex, tail recursive: an envelope can be a megabyte. -/
-def unhex? (s : String) : Option Bytes :=
+def unhexChars (cs : List Char) : Option Bytes :=
   let rec go : List Char → List UInt8 → Option (List UInt8)
     | [], acc => some acc.reverse
     | a :: b :: rest, acc => match hexVal a, hexVal b with
       | some x, some y => go rest ((x * 16 + y).toUInt8 :: acc)
       | _, _ => none
     | [_], _ => none
-  go s.toList []
+  go cs []
+
+def unhex? (s : String) : Option Bytes := unhexChars s.toList
+
+/-- A Doc id from its readable form, `d:<hex>`. -/
+def docId? (s : String) : Option DocId :=
+  match s.toList with
+  | 'd' :: ':' :: rest => (unhexChars rest).map fun b => ⟨⟨b⟩⟩
+  | _ => none
 
 def nm (e : Envelope) : Hash := e.name blake3
 
@@ -77,14 +87,90 @@ def encodesOpt : Option Value → Json
   | some v => hex (encode v)
   | none => Json.null
 
+/-! ## Coverage and bounds -/
+
+/-- Targets, the facts of some Docs, and who governs whom, which actor spawned which and what each collection lists, as
+pairs: for each target, whether it covers each Doc (`Target.coversB`), and whether it narrows each target
+(`Target.le`). -/
+structure Coverage where
+  targets : List Target
+  facts : List Facts
+  gov : List (Bytes × Bytes)
+  spawned : List (DocId × DocId)
+  lists : List (DocId × DocId)
+
+def Coverage.answer (c : Coverage) : Json :=
+  let gov v w := c.gov.contains (v, w)
+  let spawned a b := c.spawned.contains (a, b)
+  let lists a b := c.lists.contains (a, b)
+  Json.mkObj [
+    ("covers", toJson (c.targets.map fun t => c.facts.map (t.coversB gov spawned lists))),
+    ("le", toJson (c.targets.map fun a => c.targets.map fun b => a.le b))]
+
+/-- A bound from its Value (`Bound.value`): null for any value, else an array of the values it allows. -/
+def boundOf? : Value → Option Bound
+  | .null => some none
+  | .array vs => some (some vs)
+  | _ => none
+
+def valueOf (h : String) : Except String Value :=
+  match unhex? h >>= decodeAll with
+  | some v => pure v
+  | none => throw s!"not a Value: {h}"
+
+def docPair (p : List String) : Except String (DocId × DocId) :=
+  match p with
+  | [a, b] => match docId? a, docId? b with
+    | some x, some y => pure (x, y)
+    | _, _ => throw "not two Doc ids"
+  | _ => throw "not a pair"
+
+def factsOf (j : Json) : Except String Facts := do
+  let id ← j.getObjValAs? String "id"
+  let vault ← j.getObjValAs? String "vault"
+  let type ← j.getObjValAs? String "type"
+  match docId? id, docId? type with
+  | some i, some t => pure ⟨i, vault.toUTF8.toList, t⟩
+  | _, _ => throw "facts: not Doc ids"
+
+def coverageCase (j : Json) : Except String Json := do
+  let targets ← (← j.getObjValAs? (List String) "targets").mapM fun h => do
+    match Target.ofValue? (← valueOf h) with
+    | some t => pure t
+    | none => throw s!"not a target: {h}"
+  let facts ← (← j.getObjValAs? (List Json) "facts").mapM factsOf
+  let gov := (← j.getObjValAs? (List (List String)) "gov").filterMap fun
+    | [a, b] => some (a.toUTF8.toList, b.toUTF8.toList)
+    | _ => none
+  let spawned ← (← j.getObjValAs? (List (List String)) "spawned").mapM docPair
+  let lists ← (← j.getObjValAs? (List (List String)) "lists").mapM docPair
+  return Coverage.answer ⟨targets, facts, gov, spawned, lists⟩
+
+def boundsCase (j : Json) : Except String Json := do
+  let bounds ← (← j.getObjValAs? (List String) "bounds").mapM fun h => do
+    match boundOf? (← valueOf h) with
+    | some b => pure b
+    | none => throw s!"not a bound: {h}"
+  let values ← (← j.getObjValAs? (List String) "values").mapM valueOf
+  return Json.mkObj [
+    ("allows", toJson (bounds.map fun b => values.map b.allows)),
+    ("within", toJson (bounds.map fun a => bounds.map a.within))]
+
 /-- One case of the running model:
 - `{"envelopes": [hex], "held": [bool], "bad": [index], "tips": [index]}`, envelopes in CBOR: a world's answer;
-- `{"accept": hex}`: what `Envelope.accept` and `Signed.accept` take from those bytes, encoded again, or null. -/
+- `{"accept": hex}`: what `Envelope.accept`, `Signed.accept` and `Target.ofValue?` take from those bytes, encoded
+  again, or null;
+- `{"targets": [hex], "facts": [{"id", "vault", "type"}], "gov": [[vault, vault]], "spawned": [[doc, doc]],
+  "lists": [[doc, doc]]}`: coverage and narrowing (`Coverage`);
+- `{"bounds": [hex], "values": [hex]}`: whether each bound allows each value, and is within each bound. -/
 def answerCase (j : Json) : Except String Json := do
   if let .ok h := j.getObjValAs? String "accept" then
     let bs ← (unhex? h).elim (.error "accept: not hex") pure
     return Json.mkObj [("envelope", encodesOpt ((Envelope.accept bs).map Envelope.value)),
-      ("signed", encodesOpt ((Signed.accept bs).map Signed.value))]
+      ("signed", encodesOpt ((Signed.accept bs).map Signed.value)),
+      ("target", encodesOpt ((decodeAll bs >>= Target.ofValue?).map Target.value))]
+  if (j.getObjVal? "targets").isOk then return ← coverageCase j
+  if (j.getObjVal? "bounds").isOk then return ← boundsCase j
   let hexes ← j.getObjValAs? (List String) "envelopes"
   let all ← hexes.mapM fun h => match unhex? h >>= Envelope.accept with
     | some e => pure e
