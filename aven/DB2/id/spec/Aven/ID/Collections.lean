@@ -21,6 +21,9 @@ What a collection lists is read from the collection Doc's past as a reader holds
 - **It is bounded** (rule 10): collections listing collections go at most `collectionDepth` levels, 8, deep enough for
   albums of albums and shared folders in folders, shallow enough that a reader's check stays small. A deeper tree is
   shared by a cap on its inner collection.
+- **A write is judged on its own past** (A42): a write under a cap through a collection counts only if its Doc was
+  listed in the write's past (`listsAt`), so lists change by their vault's own acts, never while a reader catches up
+  on others' envelopes (`listsAt_catch_up`).
 
 When a Doc leaves the list, the holder's coverage shrinks, and its devices drop the Doc at their next sync
 (`Aven.ID.Holdings`, A40). -/
@@ -254,6 +257,50 @@ theorem listed_in_authority (trans : ∀ a b c, gov a b = true → gov b c = tru
 
 end
 
+/-! ## A write, judged on its past (A42) -/
+
+/-- What collection `c` lists for envelope `e`, as a reader holding `S` judges it: from the listings in `e`'s past. A
+write under a cap through a collection counts only if its Doc was listed in its past. -/
+def listsAt (nm : Envelope → Hash) (read : Envelope → Option ListChange) (signs gov : Bytes → Bytes → Bool)
+    (facts : DocId → Option Facts) (S : List Envelope) (e : Envelope) (c d : DocId) : Bool :=
+  lists nm read signs gov facts (S.filter (Past.inPast nm S e)) c d
+
+/-- What `e`'s past among `S ++ X` holds, its past among `S` holds, when nothing of `X` is in it. -/
+theorem before_of_append {nm : Envelope → Hash} {S X : List Envelope} {e x : Envelope}
+    (outside : ∀ y ∈ X, ¬ Past.Before nm (S ++ X) e y) (h : Past.Before nm (S ++ X) e x) :
+    Past.Before nm S e x := by
+  induction h with
+  | tip m t =>
+    rcases List.mem_append.mp m with m' | m'
+    · exact .tip m' t
+    · exact absurd (.tip m t) (outside _ m')
+  | step hb m t ih =>
+    rcases List.mem_append.mp m with m' | m'
+    · exact .step ih m' t
+    · exact absurd (.step hb m t) (outside _ m')
+
+/-- **Catching up on others changes nothing** (A42): envelopes a reader takes in that aren't in a write's past leave
+what a collection lists for that write as it was. A removal the write never saw doesn't undo it, and an addition it
+never saw doesn't make it count. -/
+theorem listsAt_catch_up {nm : Envelope → Hash} {read : Envelope → Option ListChange} {signs gov : Bytes → Bytes → Bool}
+    {facts : DocId → Option Facts} {S X : List Envelope} {e : Envelope}
+    (outside : ∀ y ∈ X, ¬ Past.Before nm (S ++ X) e y) (c d : DocId) :
+    listsAt nm read signs gov facts (S ++ X) e c d = listsAt nm read signs gov facts S e c d := by
+  unfold listsAt
+  have same : (S ++ X).filter (Past.inPast nm (S ++ X) e) = S.filter (Past.inPast nm S e) := by
+    rw [List.filter_append]
+    have hX : X.filter (Past.inPast nm (S ++ X) e) = [] := by
+      rw [List.filter_eq_nil_iff]
+      intro y my hy
+      exact outside y my ((Past.inPast_iff (List.mem_append_right _ my)).mp hy)
+    rw [hX, List.append_nil]
+    apply List.filter_congr
+    intro x mx
+    apply Bool.eq_iff_iff.mpr
+    rw [Past.inPast_iff (List.mem_append_left _ mx), Past.inPast_iff mx]
+    exact ⟨before_of_append outside, Past.Before.mono fun y m => List.mem_append_left _ m⟩
+  rw [same]
+
 /-! ## Examples
 
 Samuel's beach album, a collection of his vault that his Mac keeps by hand. Mallory, whose phone signs for no vault of
@@ -297,30 +344,46 @@ def facts (d : DocId) : Option Facts := known.find? (·.id == d)
 def nm : Envelope → Hash := Envelope.name blake3
 def read (e : Envelope) : Option ListChange := ListChange.ofValue? e.body
 
-def env (doc : DocId) (writer seq : Nat) (signer : Bytes) (l : ListChange) : Envelope :=
-  { doc, branch := utf8 "main", writer, seq, prev := none, deps := [], body := l.value, signer, sig := [] }
+def env (doc : DocId) (writer seq : Nat) (signer : Bytes) (l : ListChange) (prev : Option Hash := none) : Envelope :=
+  { doc, branch := utf8 "main", writer, seq, prev, deps := [], body := l.value, signer, sig := [] }
 
 def a1 : Envelope := env beach.id 1 1 mac (.add p1.id)
-def a2 : Envelope := env beach.id 1 2 mac (.add p2.id)
-def r1 : Envelope := env beach.id 1 3 mac (.remove [nm a2])
+def a2 : Envelope := env beach.id 1 2 mac (.add p2.id) (nm a1)
+def r1 : Envelope := env beach.id 1 3 mac (.remove [nm a2]) (nm a2)
 def m1 : Envelope := env beach.id 2 1 mallory (.add p3.id)
-def x1 : Envelope := env beach.id 1 4 mac (.add q1.id)
-def x2 : Envelope := env beach.id 1 5 mac (.add g1.id)
-def e1 : Envelope := env p1.id 1 6 mac (.add p3.id)
-def t1 : Envelope := env trips.id 1 7 mac (.add beach.id)
+def x1 : Envelope := env beach.id 1 4 mac (.add q1.id) (nm r1)
+def x2 : Envelope := env beach.id 1 5 mac (.add g1.id) (nm x1)
+def e1 : Envelope := env p1.id 1 1 mac (.add p3.id)
+def t1 : Envelope := env trips.id 1 1 mac (.add beach.id)
 
-def album : List Envelope := [a1, a2, r1, m1, x1, x2, e1, t1]
+def beachLog : List Envelope := [a1, a2, r1, m1, x1, x2, e1, t1]
 
 def listed (S : List Envelope) (c d : Facts) : Bool := lists nm read signs gov facts S c.id d.id
 
-#guard listed album beach p1 && listed album beach g1 && listed album trips p1 && listed album trips beach
-#guard !listed album beach p2 && !listed album beach p3 && !listed album beach q1 && !listed album trips p2
+#guard listed beachLog beach p1 && listed beachLog beach g1 && listed beachLog trips p1 &&
+  listed beachLog trips beach
+#guard !listed beachLog beach p2 && !listed beachLog beach p3 && !listed beachLog beach q1 &&
+  !listed beachLog trips p2
 #guard isListing read signs facts a1 && !isListing read signs facts m1 && !isListing read signs facts e1
 -- Before its removal, `p2` is listed.
 #guard listed [a1, a2] beach p2
 -- What `listed_by_issuer` says, here: the listings alone give the same answers.
 #guard [p1, p2, p3, q1, g1].all fun d =>
-  listed album beach d == listed (album.filter (isListing read signs facts)) beach d
+  listed beachLog beach d == listed (beachLog.filter (isListing read signs facts)) beach d
+
+/-- Two of Bob's writes to `p2` under a cap on what the album lists: one built on `p2`'s entry, one on its removal. -/
+def bob : Bytes := utf8 "bob-phone"
+def w1 : Envelope :=
+  { doc := p2.id, branch := utf8 "main", writer := 3, seq := 1, prev := none, deps := [nm a2], body := .null,
+    signer := bob, sig := [] }
+def w2 : Envelope := { w1 with seq := 2, prev := some (nm w1), deps := [nm r1] }
+
+def listedAt (S : List Envelope) (e : Envelope) (c d : Facts) : Bool := listsAt nm read signs gov facts S e c.id d.id
+
+-- The first was written while `p2` was listed, so it counts whatever the reader catches up on; the second saw the
+-- removal.
+#guard listedAt (beachLog ++ [w1, w2]) w1 beach p2 && !listedAt (beachLog ++ [w1, w2]) w2 beach p2
+#guard listedAt [a1, a2, w1] w1 beach p2 == listedAt (beachLog ++ [w1, w2]) w1 beach p2
 
 /-- A chain of `k + 1` collections: each lists the next, and the last lists `p1`. -/
 def chain (k : Nat) : List Envelope :=

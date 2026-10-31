@@ -187,18 +187,35 @@ def collectionVector (name : String) (S : List Aven.Core.Envelope) (c d : Aven.C
     (Json.mkObj [("lists", toJson (listed S c d))])
 
 open CollectionExamples in
+/-- Whether a write to `d` counts under a cap through collection `c`: `d` listed in the write's own past (A42). -/
+def writeVector (name : String) (S : List Aven.Core.Envelope) (w : Aven.Core.Envelope) (c d : Aven.Core.Facts) :
+    Json :=
+  vector name
+    (Json.mkObj [("known", Json.arr (known.map factsJson).toArray),
+      ("signs", Json.arr #[Json.mkObj [("key", Aven.Core.hex mac), ("vault", Aven.Core.utf8Text samuel)]]),
+      ("depth", toJson collectionDepth),
+      ("envelopes", Json.arr (S.map fun e => Json.mkObj [("name", (nm e).text), ("doc", e.doc.text),
+        ("seq", toJson e.seq), ("prev", toJson (e.prev.map (·.text))), ("deps", toJson (e.deps.map (·.text))),
+        ("body", e.body.json), ("signer", Aven.Core.hex e.signer)]).toArray),
+      ("write", (nm w).text), ("collection", c.id.text), ("doc", d.id.text)])
+    (Json.mkObj [("listedInItsPast", toJson (listedAt S w c d))])
+
+open CollectionExamples in
 def collectionVectors : List Json := [
-  collectionVector "Samuel's Mac lists p1 in the beach album" album beach p1,
-  collectionVector "an entry Samuel's Mac removed leaves the list" album beach p2,
+  collectionVector "Samuel's Mac lists p1 in the beach album" beachLog beach p1,
+  collectionVector "an entry Samuel's Mac removed leaves the list" beachLog beach p2,
   collectionVector "p2 before its removal" [a1, a2] beach p2,
-  collectionVector "Mallory's phone signs for no vault of Samuel's" album beach p3,
-  collectionVector "a photo of Ana's vault, which Samuel's doesn't govern" album beach q1,
-  collectionVector "a photo of the garden, which Samuel's vault governs" album beach g1,
-  collectionVector "trips lists the album, so what the album lists" album trips p1,
-  collectionVector "and not what the album no longer lists" album trips p2,
-  collectionVector "trips lists the album itself" album trips beach,
+  collectionVector "Mallory's phone signs for no vault of Samuel's" beachLog beach p3,
+  collectionVector "a photo of Ana's vault, which Samuel's doesn't govern" beachLog beach q1,
+  collectionVector "a photo of the garden, which Samuel's vault governs" beachLog beach g1,
+  collectionVector "trips lists the album, so what the album lists" beachLog trips p1,
+  collectionVector "and not what the album no longer lists" beachLog trips p2,
+  collectionVector "trips lists the album itself" beachLog trips beach,
   collectionVector "eight collections deep" (chain 7) (link 0) p1,
-  collectionVector "nine collections deep: past the depth" (chain 8) (link 0) p1]
+  collectionVector "nine collections deep: past the depth" (chain 8) (link 0) p1,
+  writeVector "Bob's write built on p2's entry counts, whatever the reader caught up on" (beachLog ++ [w1, w2]) w1
+    beach p2,
+  writeVector "Bob's write built on p2's removal doesn't" (beachLog ++ [w1, w2]) w2 beach p2]
 
 open RevokeExamples in
 def revocationVectors : List Json :=

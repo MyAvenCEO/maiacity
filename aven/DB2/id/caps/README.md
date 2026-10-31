@@ -368,6 +368,9 @@ Directories (A26), shared folders and keep scopes are collections.
   vaults its vault governs.
 - **It is bounded** (rule 10): collections nest at most 8 deep, counting the outer one, enough for albums of albums
   and folders in folders while a reader's check stays small. A deeper tree is shared by a cap on an inner collection.
+- **A write is judged on its own past** (A42): a write through a collection counts only if its Doc was listed in the
+  write's past (`listsAt`), so a list changes by its vault's own acts, never while a reader catches up on others'
+  envelopes (`listsAt_catch_up`).
 
 A Doc that leaves the list leaves its holders' devices at their next sync (A40, `unlisted_not_held`).
 
@@ -1315,6 +1318,7 @@ Values, hashes, ops or targets of its own; its built-in types are `Aven.ID.Types
 | `Collections` | `listed_by_issuer` | What a collection lists is decided by the listings in the collection Doc's past that a device of its own vault signed, and nothing else (A32) |
 | | `edit_keeps_coverage`, `content_no_listing`, `stranger_no_listing` | An envelope that is no listing, an edit to a listed Doc's content or anyone else's envelope, changes no coverage |
 | | `listed_in_authority` | A collection lists only Docs of its own vault or of vaults its vault governs, however deep it nests (at most 8) |
+| | `listsAt_catch_up` | A write through a collection is judged on the listings in its own past: envelopes a reader takes in outside that past change nothing (A42) |
 | `Holdings` | `holds_within_caps`, `keeps_covered` | After its sync a peer holds nothing outside its coverage, however that shrank, and drops nothing it still covers (A40) |
 | | `withdrawn_not_held`, `deleted_not_held`, `delete_held`, `unlisted_not_held` | Its instances: a withdrawn keep cap's Docs and a deleted Doc leave the keeper; a reader holding a delete keeps only the delete and its past; a Doc that leaves a collection leaves its holders |
 | `Keeping` | `keeps_iff` | A cap keeps a Doc exactly when one of its `keep` lines reaches it, coverage being Core's `Target.covers` as `Target.coversB` decides it |
