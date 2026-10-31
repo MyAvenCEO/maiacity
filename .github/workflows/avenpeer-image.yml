@@ -17,6 +17,7 @@ on:
       - aven/DB2/.dockerignore
       - aven/DB2/Cargo.toml
       - aven/DB2/Cargo.lock
+      - aven/DB2/codec/**
       - aven/DB2/core/**
       - aven/DB2/db/core/**
       - aven/DB2/db/docs/**
