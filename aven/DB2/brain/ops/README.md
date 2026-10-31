@@ -25,16 +25,19 @@ and decides the order in which a device fetches and opens its Docs.
 - [avenCORE](../core/README.md#targets-and-steps): the one target grammar, and steps `{type, verb, fields}` with their
   verbs.
 - [avenCORE](../core/README.md#values): Values, their equality and the codec.
+- [avenCORE](../core/README.md#the-past): versions, a Doc's envelopes named by their tips, which every answer, want and
+  index is read at.
 - [avenDOCS](../docs/README.md#records): Records flat by id in a Doc, a Doc's root Record, links as addresses
-  `<doc>/<id>`, and the vocabulary that names ops for people.
+  `<doc>/<id>`, and [the vocabulary](../docs/README.md#types-are-docs) that names ops for people.
 - [avenDOCS](../docs/README.md#types-schemas-and-fit): types and their versions (`Docs.Version`), and fit, which reads
   the same change view as the footprint.
 - [avenDOCS](../docs/README.md#lenses): lenses, so a column is always read at the reader's version.
-- [avenDOCS](../docs/README.md#a-commit): the commit, snapshot reads stamped with a version, and the diff per version.
+- [avenDOCS](../docs/README.md#a-commit): the commit, and [the live state](../docs/README.md#the-live-state): snapshot
+  reads stamped with a version, and the diff per version.
 - [avenDOCS](../docs/README.md#directories-and-indexes): directories and the index tree: entries, keys, nodes, folds and
   their sealing.
-- [avenCAPS](../caps/README.md#authorized): whether a caller may call an op, constraints on field values, collections,
-  keep caps.
+- [avenCAPS](../caps/README.md#the-readers-verdict): whether a caller may call an op, constraints on field values,
+  collections, keep caps.
 - [avenID](../id/README.md): the keyring and the epoch keys a want waits on.
 - [avenRUNTIME](../runtime/README.md#pins): runtimes, frozen, pinned and run by hash.
 - [avenACTORS](../actors/README.md#loads): an actor's `loads`, its turns and their `given`.
@@ -62,7 +65,7 @@ verb and a footprint. A mutation is a list of them applied to one Doc as one com
 - **Every grammar above it lowers to these:** the ontology's `assert`, `set` and `retract`, and state-runtime's steps
   ([avenRUNTIME](../runtime/README.md#state-runtime)).
 
-**Decided:** A19, K8, A37, engine D11, engine rule 12 · **Lean:** `Aven.DB.Engine.Mutate` —
+**Decided:** A19, K8, A37, engine 11, engine rule 12 · **Lean:** `Aven.DB.Engine.Mutate` —
 `refused_changes_nothing`, `refs_point_backward`, `created_distinct`, `ids_differ_across`
 
 ## Lowering a call to steps
@@ -88,7 +91,7 @@ lowering on trust. This is `core/1`'s lowering, `lowerCore : Call → Option (Li
   envelope names and what every reader lowers it to agree.
 - **avenCAPS takes the lowering as a parameter,** so caps never depends on the engine's internals.
 
-**Decided:** A32, A19, ledger 09:20, ledger 09:43, ledger 10:00 · **Lean:** `Aven.DB.Engine.Lower` —
+**Decided:** A32, A19, A90, A101 · **Lean:** `Aven.DB.Engine.Lower` —
 `lowerCore_no_replace`, `lower_call`, `lower_calls` (pending in #1697)
 
 ## Plugins are runtimes
@@ -114,7 +117,7 @@ slot ids. A `walk` over a category tree lowers to the core's bounded walk. A typ
 once, when it is saved, into stored ops: `<type>.list` (a query over the type joined to each trait), `<type>.create`,
 `<type>.update` and `<type>.delete`. A composed type stays inside one plugin.
 
-**Decided:** A18, K7, engine D6, engine D8 · **Lean:** `Aven.DB.Engine.Mutate` — `readers_agree`; the ontology's
+**Decided:** A18, K7, engine 6, engine 8 · **Lean:** `Aven.DB.Engine.Mutate` — `readers_agree`; the ontology's
 lowering and its compiled types: not in Lean yet
 
 ## Footprints and the merge check
@@ -155,10 +158,12 @@ reused one would make an id a Record already has, which is a split of the writer
 **A merge into main is judged whole.** The reader compares main's Records before the merge with the merged Records, not
 the commit that settles conflicts. Every Record the merge changes, brings or removes on main, field by field, removed
 fields included, must be made by the steps the whole merge's calls lower to. Whether the merger may call them is
-[avenCAPS](../caps/README.md#authorized)'s.
+[avenCAPS](../caps/README.md#the-readers-verdict)'s.
 
 **Who checks what.** Loro checks nothing about authority. [avenDOCS](../docs/README.md#importing-three-verdicts)
-checks every envelope: its signer, writer id, log, split and fit, with caps' authority. avenOPS checks every op:
+checks every envelope: its signer, writer id, log, split and fit, with caps' authority. What counts is
+[avenCORE's](../core/README.md#counting) one rule, where a split or a revocation learned later discounts. avenOPS
+checks every op:
 
 | Check | When |
 |---|---|
@@ -168,13 +173,14 @@ checks every envelope: its signer, writer id, log, split and fit, with caps' aut
 | What a device is served: its wants ∩ its caps | Every request |
 | What an actor is handed: its loads ∩ its run's caps | Every turn |
 
-Whether the signer's caps allow each call is [avenCAPS](../caps/README.md#authorized)' part of the same verdict.
+Whether the signer's caps allow each call is [avenCAPS](../caps/README.md#the-readers-verdict)' part of the same
+verdict.
 
-**Decided:** rule 4, A32, A45, engine D9, ledger 09:20, ledger 09:43, ledger 10:00, ledger 10:14, ledger 10:50 ·
-**Lean:** `Aven.DB.Engine.Footprint` — `commit_within`, `honest_passes`; `Aven.DB.Engine.Changes` —
-`changesFrom_edited_names`, `typesKept` (#1712), `diff_footprint`, `commit_types_kept`, `honest_footprint`,
-`footprint_steps`, `merge_steps`; `Fresh`, removed fields and `RecordChange.type : Docs.Version` pending in #1697;
-`Aven.Architecture` composes the merge (`rule4_merge_whole`, #1608)
+**Decided:** rule 4, A32, A45, engine 9, A83, A90, A96, A101, A182 · **Lean:** `Aven.DB.Engine.Footprint` —
+`commit_within`, `honest_passes`; `Aven.DB.Engine.Changes` — `changesFrom_edited_names`, `typesKept` (#1712),
+`diff_footprint`, `commit_types_kept`, `honest_footprint`, `footprint_steps`, `merge_steps`; `Fresh`, removed fields
+and `RecordChange.type : Docs.Version` pending in #1697; `Aven.Architecture` composes the merge
+(`rule4_merge_whole`, #1608)
 
 ## A Record id as a key
 
@@ -188,7 +194,7 @@ form.
 - **The ids the engine mints** are the codec's encoding of `[writer, counter, index]`. Ids two writers may create at
   once, such as a slot id, meet on one key, so not every id is a minted one.
 
-**Decided:** ledger 09:43 · **Lean:** `Aven.DB.Engine.Changes` — `idOfKey_idKey`, `idKey_inj` (pending in #1697)
+**Decided:** A96 · **Lean:** `Aven.DB.Engine.Changes` — `idOfKey_idKey`, `idKey_inj` (pending in #1697)
 
 ## Facts and Records
 
@@ -210,7 +216,7 @@ are **facts**; documents are **Records with fields**. Both are Records, so one e
 - **A trait with at most one fact per entity** writes it under a slot id, so two devices setting it at once write one
   key ([ontology](../../db/ontology/README.md#the-rules), rule 9).
 
-**Decided:** A20, A17, engine D2 · **Lean:** not in Lean yet
+**Decided:** A20, A17, engine 2 · **Lean:** not in Lean yet
 
 ## Queries
 
@@ -241,7 +247,7 @@ hash, named for people in the vault's vocabulary.
 - **Order of values.** Values compare by avenCORE's equality. Keyable Values (bytes, text, integers) order as index keys
   do: by kind, integers by sign and magnitude, text and bytes bytewise, which for UTF-8 is code-point order.
 
-**Decided:** A8, A32, engine D6, engine D7, ledger 07:46 · **Lean:** `Aven.DB.Engine.Query` —
+**Decided:** A8, A32, A66, engine 6, engine 7 · **Lean:** `Aven.DB.Engine.Query` —
 `run_refused_without_target`, `complete_iff`, `scoped_only`, `length_le_bound`, `work_le_cost`; `Aven.Core` —
 `Target.coversB_iff`; `Aven.DB.Engine.Index` — `vals_lt_key`
 
@@ -250,7 +256,7 @@ hash, named for people in the vault's vocabulary.
 Every answer, to a query, a want or an actor's loads, carries:
 
 - **its rows,** keyed by their row id;
-- **the version** each Doc was read at;
+- **the version** each Doc was read at ([avenCORE's](../core/README.md#the-past) version, named by its tips);
 - **its status:** `complete`, `partial` (with what is held, what is known and what is waited for) or `denied`, and the
   phase (connecting, catching up with what is left, live, offline, stalled), all from one status snapshot and one
   clock. `complete` means every Doc the target covers is held, checked against its directory.
@@ -266,7 +272,7 @@ commits it (the overlay drops, the delta arrives) or refuses it (the overlay dro
 **Views are caches.** A view is a query's rows, keyed by the versions it was built from and the code's version. Views
 never sync, and a rebuild never blanks a screen.
 
-**Decided:** A8, rule 8, engine rules 17–20, the `changed` tell (#1504) · **Lean:** `Aven.DB.Engine.Query` —
+**Decided:** A8, A175, rule 8, engine rules 17–20, the `changed` tell (#1504) · **Lean:** `Aven.DB.Engine.Query` —
 `complete_iff`; live deltas: not in Lean yet
 
 ## The want queue
@@ -306,7 +312,7 @@ Wants are computed from definitions and bound slots, never by reading data first
 3. **Resolving targets.** A Doc target is direct. A vault or type target resolves through its vault's directory for
    that root type; a collection through what it lists.
 4. **Prerequisites inherit priority.** A key needs, in order: its Doc id resolved; the key blob and the epoch key,
-   through the keyring and its groups; the fetch key; the newest checkpoint, once there are checkpoints (P24); the
+   through the keyring and its groups; the fetch key; the newest checkpoint, once there are checkpoints (A150); the
    segments after it; then follows and files. Each runs at the highest priority of anything waiting on it, so a `now`
    want never waits behind an `idle` key fetch.
 5. **Uploads first.** A device's own unsent envelopes and segments go out before any pull.
@@ -320,11 +326,11 @@ Wants are computed from definitions and bound slots, never by reading data first
 9. **Budgets and eviction.** The profile gives bytes per tier. Over budget, the lowest tier goes first, then the least
    recently used: their refs are dropped, and cleanup by reachability frees the blobs. `now` is never evicted.
 10. **Older periods** of a Doc that grows without end are reached by a bounded `follow` of the link to the period
-    before ([avenDOCS](../docs/README.md#streams-period-docs)).
+    before ([avenDOCS](../docs/README.md#period-docs)).
 11. **Privacy.** Wants stay on the device. A keeper learns which Docs a device fetches, in what order and when, and
     nothing else.
 
-**Decided:** A9, K4, A8, A1, rule 6, rule 11, engine D3, engine D4, engine D5, P24 · **Lean:**
+**Decided:** A9, K4, A8, A1, rule 6, rule 11, engine 3, engine 4, engine 5, A150 · **Lean:**
 `Aven.DB.Engine.Wants` — `served_eq_wants_caps`, `keys_once`, `queued_highest`, `tiers_only_order`,
 `prerequisites_inherit`, `uploads_first`, `page_bounded`, `round_moves`, `roundP_moves`, `waits_isolated`,
 `stall_raised`, `now_never_evicted`, `evict_fits`
@@ -370,7 +376,7 @@ is how the engine derives an index and looks a query up in it.
 - **Built from its entries alone.** Two readers who build from the same version get the same root, whatever order they
   read the Docs in, and folding entries in, in any number of steps, equals building at once.
 
-**Decided:** A26, K13, A42, P25 · **Lean:** `Aven.DB.Engine.Index` — `register_once`, `register_limit`,
+**Decided:** A26, K13, A42 · **Lean:** `Aven.DB.Engine.Index` — `register_once`, `register_limit`,
 `lookup_exact`, `complete_with_index`, `same_root`, `fold_eq_build`, `fold_root`, `fold_steps`, `directory_facts`,
 `lookup_exact_dir`, `fold_eq_build_dir`, `same_root_docs`, `fold_steps_docs`; `Aven.DB.Engine.Probe` — `bounds`,
 `inRange_iff_keyMatch`, `treeHits_eq_hits`, `lookup_exact_tree`
@@ -398,10 +404,11 @@ The Rust crate is pure (`no_std`, no `unsafe`, builds for wasm32) and replays ev
   `WritesField` (A45).
 - A directory entry is its own envelope in the directory's Doc (A42), so it can lag its Doc. avenDOCS' `listed_now`
   and `same_entries` assume one commit, and `lookup_exact` and `directory_facts` rest on them: avenDOCS and avenOPS
-  restate them for an entry that lags, the Doc counting as unfolded until its entry counts (P25).
+  restate them for an entry that lags, the Doc counting as unfolded until its entry counts.
 - `aven-db-docs` takes `RecordChange` from `aven-db-engine` once #1697 lands; `aven-db-docs` depends on
   `aven-db-engine`, never the other way.
-- Docs' `Version` and avenCORE's `Version` (a log version) share a name; avenDOCS renames its own.
+- Docs' `Version` (a type's version) and avenCORE's `Version` (a Doc's version, A175) share a name; avenDOCS renames
+  its own.
 - The grammar check (an op its grammar refuses is never stored or run) has no Lean and no vectors.
 - Not in Lean yet: live deltas equal a fresh run; `walk`, `sum`, `min`, `max`, `having`, `in` and `exists`; the
   ontology's lowering and its compiled types.
