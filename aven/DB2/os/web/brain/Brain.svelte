@@ -68,7 +68,8 @@
 	// a slide asked for by name: scroll to it, once its page is drawn; any other page opens at its top
 	$effect(() => {
 		if (route[0] === 'glossary' || (part?.slides?.length && !slides.length)) return;
-		const entry = route[1] && document.getElementById(`slide-${route[1]}`);
+		// a slide by its id, or a heading of the page by its own (an in-page link, brain.js)
+		const entry = route[1] && (document.getElementById(`slide-${route[1]}`) ?? document.getElementById(route[1]));
 		if (entry) entry.scrollIntoView({ block: 'start' });
 		else scrollTo(0, 0);
 	});

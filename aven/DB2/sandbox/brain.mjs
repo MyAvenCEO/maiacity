@@ -133,7 +133,11 @@ async function read(engine) {
 					const low = (await page.evaluate(contrasts, linear)).filter((c) => !c.ok);
 					seen.lowContrast = low;
 					for (const c of low) say(`"${c.text}" has ${c.ratio}:1, under ${c.need}:1`);
-					await page.screenshot({ path: `${run}/brain-${view}-${where}-${size}-${name}.png`, fullPage: view !== 'glossary' });
+					// the whole page, up to the 32,767 px every engine can take in one picture: a long page is cut there
+					const tall = await page.evaluate(() => document.documentElement.scrollHeight);
+					const shot = { path: `${run}/brain-${view}-${where}-${size}-${name}.png` };
+					if (view !== 'glossary') Object.assign(shot, tall <= 32767 ? { fullPage: true } : { fullPage: true, clip: { x: 0, y: 0, width, height: 32767 } });
+					await page.screenshot(shot);
 					got[`${where}-${view}-${size}`] = seen;
 				}
 			}
