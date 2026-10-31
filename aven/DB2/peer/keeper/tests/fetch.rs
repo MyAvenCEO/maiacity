@@ -51,6 +51,10 @@ fn answers_and_parts_are_the_models() {
             assert_eq!(a.finish(&bytes.len(), |b| b.len()), Ok(bytes), "{name}");
             continue;
         }
+        if input.get("exporter").is_some() {
+            // what a fetch proof signs: avenID's proof check replays it (Core's signing bytes, after #1710)
+            continue;
+        }
         let doc = input["doc"].as_str().unwrap();
         let held: Vec<(u64, String, u64)> = input["held"]
             .as_array()

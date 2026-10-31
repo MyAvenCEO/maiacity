@@ -25,8 +25,11 @@ pub trait Gate<D> {
     /// `Books.serves`: the keeper keeps `doc` and `proof` signs this connection's TLS `exporter` with the Doc's current
     /// fetch key, or a branch's newest while a fork is unsettled. The vault to bill when it serves.
     fn serves(&self, doc: &D, exporter: &[u8; 32], proof: &Self::Proof) -> Option<Self::Vault>;
-    /// `admit` under `Books.quota`: takes `bytes` more from `vault` onto its bill, or refuses past its quota.
+    /// `admit` under `Books.quota`: takes `bytes` more from `vault` onto its bill, or refuses past its quota. A bill
+    /// counts the bytes held for the vault now.
     fn admit(&mut self, vault: &Self::Vault, bytes: u64) -> bool;
+    /// An item `vault` paid for was dropped: its `bytes` leave the bill.
+    fn release(&mut self, vault: &Self::Vault, bytes: u64);
 }
 
 /// One connection as the keeper sees it: the door's device, the TLS exporter, the Docs proven on it with the vault each
@@ -77,9 +80,11 @@ pub enum Reply<H> {
 
 /// A keeper: what it holds of each Doc, and the gate that decides for it.
 #[derive(Debug)]
-pub struct Keeper<D, H: Ord, G> {
+pub struct Keeper<D, H: Ord, G: Gate<D>> {
     pub gate: G,
     docs: BTreeMap<D, Arrivals<H>>,
+    /// per Doc, who pays for each item held: the vault of the device that first uploaded it, and its bytes
+    payers: BTreeMap<D, BTreeMap<H, (G::Vault, u64)>>,
 }
 
 impl<D: Ord + Clone, H: Ord + Clone, G: Gate<D>> Keeper<D, H, G> {
@@ -87,6 +92,7 @@ impl<D: Ord + Clone, H: Ord + Clone, G: Gate<D>> Keeper<D, H, G> {
         Self {
             gate,
             docs: BTreeMap::new(),
+            payers: BTreeMap::new(),
         }
     }
 
@@ -108,23 +114,39 @@ impl<D: Ord + Clone, H: Ord + Clone, G: Gate<D>> Keeper<D, H, G> {
 
     /// An upload of `puts` to `doc` from `c`, whole: one write of the Doc's arrivals.
     pub fn upload(&mut self, c: &Conn<D, G::Vault>, doc: &D, puts: &[Put<H>]) -> Reply<H> {
-        let Some(v) = c.proven.get(doc) else {
+        let Some(v) = c.proven.get(doc).cloned() else {
             return Reply::Refused;
         };
         let empty = Arrivals::default();
         let held = self.docs.get(doc).unwrap_or(&empty);
-        // the bytes the upload adds: the puts new to the Doc, once each (`adds`)
+        // the puts the upload adds: those new to the Doc, once each (`fresh`)
         let mut seen = BTreeSet::new();
-        let adds: u64 = puts
+        let fresh: Vec<&Put<H>> = puts
             .iter()
             .filter(|p| held.get(&p.hash).is_none() && seen.insert(p.hash.clone()))
-            .map(|p| p.bytes)
-            .sum();
-        if !self.gate.admit(v, adds) {
+            .collect();
+        if !self.gate.admit(&v, fresh.iter().map(|p| p.bytes).sum()) {
             return Reply::UploadRefused(UploadRefused::Quota);
         }
         let s = self.docs.entry(doc.clone()).or_default();
-        s.upload(&c.device, puts);
+        let payers = self.payers.entry(doc.clone()).or_default();
+        for p in fresh {
+            payers.insert(p.hash.clone(), (v.clone(), p.bytes));
+        }
+        // what is gone once the whole upload is in frees its payer's bill (`release`)
+        let dropped: Vec<H> = s
+            .upload(&c.device, puts)
+            .into_iter()
+            .flat_map(|t| t.dropped)
+            .map(|i| i.hash)
+            .collect();
+        for h in dropped {
+            if s.get(&h).is_none()
+                && let Some((w, bytes)) = payers.remove(&h)
+            {
+                self.gate.release(&w, bytes);
+            }
+        }
         Reply::Took(
             puts.iter()
                 .filter_map(|p| s.get(&p.hash).map(|i| (p.hash.clone(), i.n)))

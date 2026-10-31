@@ -1,4 +1,4 @@
-import Aven.Core.Bytes
+import Aven.Core.Signed
 
 /-!
 # The fetch gate: sealed bytes only to a connection that proved their Doc (A22; PEERS.md §3 and §4)
@@ -83,6 +83,27 @@ theorem parts_join (h : Nat) (b : Bytes) : (parts h b).flatMap (·.bytes) = b :=
 theorem parts_bounded (h : Nat) (b : Bytes) :
     ∀ p ∈ parts h b, p.hash = h ∧ p.total = b.length ∧ p.bytes.length ≤ partBytes :=
   fun p m => let ⟨a, b', c, _⟩ := (partsFrom_spec h b.length b.length 0 b (Nat.le_refl _)).2 p m; ⟨a, b', c⟩
+
+/-! ## What a fetch proof signs
+
+A device proves a Doc on a connection by signing, with the Doc's fetch key, `["avenDB fetch 1", {doc, exporter}]`: a
+label and a Value as every signed thing is (A30, Core's `signingBytes`), `doc` the Doc's 32-byte id and `exporter` the
+connection's TLS exporter, `exporterLength` bytes under the label `exporterLabel` with no context, which both ends
+compute and no other connection shares (the architect, 31 Oct 2026). Whether the key is the Doc's current fetch key
+is avenID's (`Keep.serves`). -/
+
+def fetchLabel : Bytes := "avenDB fetch 1".toUTF8.toList
+/-- The TLS exporter's label, and its length in bytes. -/
+def exporterLabel : Bytes := "avenDB fetch exporter 1".toUTF8.toList
+def exporterLength : Nat := 32
+
+/-- What a fetch proof signs, its keys in the codec's order. -/
+def proofBody (doc exporter : Bytes) : Aven.Core.Value :=
+  .map [("doc".toUTF8.toList, .bytes doc), ("exporter".toUTF8.toList, .bytes exporter)]
+
+def proofBytes (doc exporter : Bytes) : Bytes := Aven.Core.signingBytes fetchLabel (proofBody doc exporter)
+
+#guard Aven.Core.keysSorted [("doc".toUTF8.toList, .null), ("exporter".toUTF8.toList, .null)] = true
 
 /-! ## Whom a device proves to
 

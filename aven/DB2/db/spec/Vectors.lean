@@ -73,7 +73,7 @@ import Aven.DB.Docs
 - `keeper.json`: uploads from devices to a keeper, one Doc, from an empty store; after each, the items held (number,
   hash, uploaders) and the next number, the pages of what came after each asked number, and where a device at that
   number holding 11 and 12 is after catching up, with what it holds (`Aven.Peer.Keeper`).
-- `fetch.json`: what a peer holds for which Doc and each item's length, the Docs proven on a connection, a fetch; the
+- `fetch.json`: the bytes a fetch proof signs for a Doc and a TLS exporter; what a peer holds for which Doc and each item's length, the Docs proven on a connection, a fetch; the
   answer (refused, or the hashes served, missing and later); and items' lengths with their parts' offsets and lengths
   (`Aven.Peer.Fetch`).
 - `serve.json`: a gate's verdicts (which proof of which Doc it serves, for which vault; each vault's quota) and asks on
@@ -1351,6 +1351,10 @@ def fetchCases : List Json :=
    fetchVector "too many hashes get nothing" fetchTable ["d1"] "d1" (List.replicate 129 1),
    fetchVector "128 hashes are answered" fetchTable ["d1", "d2"] "d2" ((List.range 127).map (· + 100) ++ [9]),
    fetchVector "nothing held: all missing" fetchTable ["d1"] "d1" [5, 6],
+   vector "what a fetch proof signs" (Json.mkObj [("doc", hexJson ((List.range 32).map (·.toUInt8))),
+       ("exporter", hexJson ((List.range 32).map fun i => (200 + i).toUInt8)),
+       ("exporterLabel", Json.str "avenDB fetch exporter 1"), ("exporterLength", toJson Aven.Peer.Fetch.exporterLength)])
+     (hexJson (Aven.Peer.Fetch.proofBytes ((List.range 32).map (·.toUInt8)) ((List.range 32).map fun i => (200 + i).toUInt8))),
    fetchVector "once one waits, nothing after it is served, not even an empty item"
      (fetchTable ++ [(4, "d1", 0)]) ["d1"] "d1" [1, 2, 4]] ++
   [0, 1, 49151, 49152, 49153, 100 * 1024, 1024 * 1024 + 3].map partsVector ++
@@ -1410,7 +1414,15 @@ def serveCases : List Json :=
      [("d1", 1, "alice")] [("alice", 3000)] "alice-peer-light"
      [.prove "d1" 1, .upload "d1" [⟨11, 900, []⟩, ⟨12, 900, []⟩], .upload "d1" [⟨13, 900, []⟩, ⟨14, 900, []⟩],
       .upload "d1" [⟨13, 900, []⟩], .after "d1" 0, .fetch "d1" [11, 99], .upload "d1" [⟨50, 300, [11, 12, 13]⟩],
-      .after "d1" 1, .fetch "d1" [11, 50]],
+      .after "d1" 1, .fetch "d1" [11, 50], .upload "d1" [⟨20, 2500, []⟩]],
+   serveVector "an item dropped and put again in one upload stays on its bill"
+     [("d1", 1, "alice")] [("alice", 3000)] "alice-peer-light"
+     [.prove "d1" 1, .upload "d1" [⟨11, 900, []⟩], .upload "d1" [⟨50, 300, [11]⟩, ⟨11, 900, []⟩],
+      .upload "d1" [⟨20, 1900, []⟩], .after "d1" 0],
+   serveVector "a drop frees its payer's bill: the quota counts what is held"
+     [("d1", 1, "alice"), ("d1", 2, "bob")] [("alice", 3000), ("bob", 3000)] "alice-peer-light"
+     [.prove "d1" 1, .upload "d1" [⟨11, 900, []⟩, ⟨12, 900, []⟩, ⟨13, 900, []⟩], .upload "d1" [⟨20, 2500, []⟩],
+      .upload "d1" [⟨50, 300, [11, 12, 13]⟩], .upload "d1" [⟨20, 2500, []⟩]],
    serveVector "500 envelopes, after 0 in pages"
      [("d1", 1, "alice")] [("alice", 1000000)] "alice-peer"
      [.prove "d1" 1, .upload "d1" ((List.range 500).map fun i => ⟨1000 + i, 900, []⟩), .after "d1" 0,

@@ -41,6 +41,10 @@ impl Gate<String> for Verdicts {
         *bill += bytes;
         true
     }
+    fn release(&mut self, vault: &String, bytes: u64) {
+        let bill = self.bills.entry(vault.clone()).or_default();
+        *bill = bill.saturating_sub(bytes);
+    }
 }
 
 fn nums(v: &Value) -> Vec<u64> {

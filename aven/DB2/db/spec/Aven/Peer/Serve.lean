@@ -23,7 +23,9 @@ What it proves:
 - `unproven_refused`: an upload, an after or a fetch for a Doc not proven on the connection is refused and changes
   nothing: a Doc no keep cap names is never kept or served;
 - `kept_only_proven`: the keeper holds a Doc's items only after an upload from a connection the gate served for it;
-- `quota_kept`: no vault's bill ever passes its quota (`quota_holds`, by the keeper's own sums).
+- `quota_kept`: no vault's bill ever passes its quota. A bill counts the bytes the keeper holds for the vault now:
+  each new item is paid by the vault of the device that first uploaded it, and a drop frees what it paid (the
+  architect, 31 Oct 2026: the quota counts what is held; a rate limit, apart, counts bytes taken per window).
 -/
 
 namespace Aven.Peer.Serve
@@ -59,6 +61,8 @@ inductive Reply where
 structure Keeper where
   docs : List (String × Store) := []
   bills : List (String × Nat) := []
+  /-- per Doc, who pays for each item it holds: the hash, the vault, the bytes -/
+  payers : List (String × List (Nat × String × Nat)) := []
   deriving Repr
 
 /-- A connection: the door's device for it, and the Docs proven on it with the vault each bills. -/
@@ -97,10 +101,17 @@ def store (k : Keeper) (doc : String) : Store := (lookup k.docs doc).getD {}
 
 def bill (k : Keeper) (v : String) : Nat := (lookup k.bills v).getD 0
 
-/-- The bytes an upload adds: the puts new to the Doc, once each. -/
-def adds (s : Store) : List Put → Nat
-  | [] => 0
-  | p :: ps => (if s.holds p.hash then 0 else p.bytes) + adds (s.put "" ⟨p.hash, p.bytes, []⟩) ps
+/-- The puts an upload adds: those new to the Doc, once each, by hash and bytes. -/
+def fresh (s : Store) : List Put → List (Nat × Nat)
+  | [] => []
+  | p :: ps =>
+    if s.holds p.hash then fresh s ps else (p.hash, p.bytes) :: fresh (s.put "" ⟨p.hash, p.bytes, []⟩) ps
+
+/-- An item dropped frees its bytes from its payer's bill. -/
+def release (bills : List (String × Nat)) (e : Nat × String × Nat) : List (String × Nat) :=
+  setAt bills e.2.1 (((lookup bills e.2.1).getD 0) - e.2.2)
+
+def payersOf (k : Keeper) (doc : String) : List (Nat × String × Nat) := (lookup k.payers doc).getD []
 
 /-- One ask on connection `c`. -/
 def step (g : Gate) (k : Keeper) (c : Conn) : Ask → Keeper × Conn × Reply
@@ -113,10 +124,14 @@ def step (g : Gate) (k : Keeper) (c : Conn) : Ask → Keeper × Conn × Reply
     | none => (k, c, .refused doc)
     | some v =>
       let s := k.store doc
-      let more := adds s puts
+      let new := fresh s puts
+      let more := (new.map (·.2)).sum
       if k.bill v + more ≤ g.quota v then
         let s' := s.upload c.device puts
-        ({ docs := setAt k.docs doc s', bills := setAt k.bills v (k.bill v + more) }, c,
+        let paid := k.payersOf doc ++ new.map fun (h, b) => (h, v, b)
+        let gone := paid.filter fun e => !s'.holds e.1
+        ({ docs := setAt k.docs doc s', bills := gone.foldl release (setAt k.bills v (k.bill v + more)),
+           payers := setAt k.payers doc (paid.filter fun e => s'.holds e.1) }, c,
           .took doc (puts.filterMap fun p => (s'.items.find? (·.hash == p.hash)).map fun i => (p.hash, i.n)))
       else (k, c, .uploadRefused doc "quota")
   | .after doc n =>
@@ -169,6 +184,16 @@ theorem kept_only_proven (g : Gate) (k : Keeper) (c : Conn) (a : Ask) (doc : Str
       simp only [step, e] at now
       split at now <;> exact absurd rfl now
 
+theorem release_kept (q : String → Nat) : ∀ (gone : List (Nat × String × Nat)) (bills : List (String × Nat)),
+    (∀ v, (lookup bills v).getD 0 ≤ q v) → ∀ v, (lookup (gone.foldl release bills) v).getD 0 ≤ q v
+  | [], _, ok => ok
+  | e :: es, bills, ok => by
+    refine release_kept q es _ (fun w => ?_)
+    simp only [release, lookup_setAt]
+    split
+    · rename_i h; subst h; exact Nat.le_trans (Nat.sub_le _ _) (ok _)
+    · exact ok w
+
 /-- **`quota_kept`:** a keeper whose bills are within their quotas keeps them so after any ask. -/
 theorem quota_kept (g : Gate) (k : Keeper) (c : Conn) (a : Ask) (ok : ∀ v, k.bill v ≤ g.quota v) :
     ∀ v, (k.step g c a).1.bill v ≤ g.quota v := by
@@ -182,10 +207,11 @@ theorem quota_kept (g : Gate) (k : Keeper) (c : Conn) (a : Ask) (ok : ∀ v, k.b
       simp only [step, e]
       split
       · rename_i fits
-        simp only [bill, lookup_setAt]
+        refine release_kept g.quota _ _ (fun x => ?_) w
+        simp only [lookup_setAt]
         split
         · rename_i h; subst h; simpa [bill] using fits
-        · exact ok w
+        · exact ok x
       · exact ok w
   | after d n => cases e : lookup c.proven d <;> simp [step, e, ok w]
   | fetch d hs =>
@@ -223,6 +249,10 @@ def replies (as : List Ask) : List Reply := (Keeper.run gate {} ⟨"alice-peer-l
     .upload "d1" [⟨13, 900, []⟩], .after "d1" 0, .fetch "d1" [11, 99]] ==
   [.proven "d1", .took "d1" [(11, 1), (12, 2)], .uploadRefused "d1" "quota", .took "d1" [(13, 3)],
    .arrived "d1" [(1, 11), (2, 12), (3, 13)] false, .fetched "d1" [11] [99] []]
+-- the bill counts what is held: Alice's segment drops 2700 bytes of loose envelopes, so 2500 more fit again
+#guard (replies [.prove "d1" 1, .upload "d1" [⟨11, 900, []⟩, ⟨12, 900, []⟩, ⟨13, 900, []⟩],
+    .upload "d1" [⟨20, 2500, []⟩], .upload "d1" [⟨50, 300, [11, 12, 13]⟩], .upload "d1" [⟨20, 2500, []⟩]]).drop 2 ==
+  [.uploadRefused "d1" "quota", .took "d1" [(50, 4)], .took "d1" [(20, 5)]]
 
 end ServeExamples
 
