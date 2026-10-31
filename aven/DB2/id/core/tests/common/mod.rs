@@ -3,6 +3,8 @@
 
 #![allow(dead_code)]
 
+pub mod caps;
+
 use std::path::PathBuf;
 
 use aven_id::{Invalid, Kind, Owner, SignError, Tree, Vault};
