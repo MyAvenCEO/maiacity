@@ -54,6 +54,7 @@ function render() {
   $('#fill').style.width = `calc(100% / var(--n) * ${at})`;
   const h = `#${story.id}-${at + 1}`;
   if (location.hash !== h) history.replaceState(null, '', h);
+  renderSpec();
   void card.offsetWidth;
   card.classList.add('enter');
 }
@@ -80,6 +81,28 @@ async function open(st, i) {
   }
   at = Math.max(0, Math.min(i, deck.length - 1));
   render();
+}
+
+// Architecture: each slide's detailed definition, colocated in its JSON as "spec": the records field by field, the
+// rules with stable IDs (the names a Lean formalisation refers to), and every decision behind it.
+let specOpen = false, allDecisions = null;
+function renderSpec() {
+  const s = deck[at], sp = s.spec, ref = `${story.id}-${at + 1}`;
+  $('#spectab').classList.toggle('has', Boolean(sp));
+  $('#spectab').hidden = specOpen;
+  $('#spectab').setAttribute('aria-expanded', String(specOpen));
+  $('#spec').hidden = !specOpen;
+  if (!specOpen) return;
+  const ids = [...new Set([...(sp?.decisions || []), ...(allDecisions || []).filter((d) => d.slides.includes(ref)).map((d) => d.id)])]
+    .sort((x, y) => Number(x.slice(1)) - Number(y.slice(1)));
+  const status = Object.fromEntries((allDecisions || []).map((d) => [d.id, d.status]));
+  $('#spec').innerHTML = `<header><b>Architecture</b><button type="button" class="sclose" aria-label="Close">×</button></header>
+    <h2>${esc(s.title)}</h2>` + (sp ? `${sp.summary ? `<p>${esc(sp.summary)}</p>` : ''}` +
+    (sp.records || []).map((r) => `<h3>${esc(r.name)}</h3>${r.about ? `<p>${esc(r.about)}</p>` : ''}<table class="sfields">${r.fields.map(([f, t, m]) =>
+      `<tr><td><code>${esc(f)}</code></td><td>${esc(t)}</td><td>${esc(m)}</td></tr>`).join('')}</table>`).join('') +
+    (sp.rules?.length ? `<h3>Rules</h3><ol class="srules">${sp.rules.map((r) => `<li><code>${esc(r.id)}</code>${esc(r.text)}</li>`).join('')}</ol>` : '')
+    : '<p class="snone">Not defined in detail yet.</p>') +
+    (ids.length ? `<h3>Decisions</h3><div class="arefs">${ids.map((d) => `<a class="${status[d] === 'proposed' ? 'prop' : ''}" href="#decisions-${d.slice(1)}">${d}${status[d] === 'proposed' ? ' proposed' : ''}</a>`).join('')}</div>` : '');
 }
 
 // theDECISIONS: every decision as a card, numbered D1, D2 …, with its sources and the slides that tell it.
@@ -152,6 +175,10 @@ async function start() {
   $('#stories').addEventListener('click', (e) => { const b = e.target.closest('[data-story]'); if (b) open(stories.find((x) => x.id === b.dataset.story), 0); });
   $('#decisions').addEventListener('click', (e) => { const b = e.target.closest('[data-filter]'); if (b) { filter = b.dataset.filter; openDecisions(story, 0); } });
   $('#track').addEventListener('click', (e) => { const b = e.target.closest('[data-go]'); if (b) go(Number(b.dataset.go)); });
+  $('#spectab').addEventListener('click', () => { specOpen = true; renderSpec(); });
+  $('#spec').addEventListener('click', (e) => { if (e.target.closest('.sclose')) { specOpen = false; renderSpec(); } });
+  addEventListener('keydown', (e) => { if (e.key === 'Escape' && specOpen) { specOpen = false; renderSpec(); } });
+  allDecisions = (await (await fetch(stories.find((x) => x.kind === 'decisions').file)).json()).decisions;
   $('#prev').addEventListener('click', () => at > 0 && go(at - 1));
   $('#next').addEventListener('click', () => go(at + 1));
   $('#card').addEventListener('click', (e) => { if (!e.target.closest('pre')) go(at + 1); });

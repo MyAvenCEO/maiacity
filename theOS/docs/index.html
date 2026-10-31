@@ -14,6 +14,7 @@
 <main class="stage">
   <nav class="stories" id="stories" aria-label="Chapters"></nav>
   <div class="main">
+  <div class="cardwrap">
   <article class="card" id="card" aria-live="polite">
     <div class="terms" id="terms" aria-label="Terms so far"></div>
     <div class="body">
@@ -29,6 +30,9 @@
     </div>
     <aside class="deep" id="deep" hidden></aside>
   </article>
+  <button type="button" class="spectab" id="spectab" aria-controls="spec" aria-expanded="false">Architecture</button>
+  <aside class="spec" id="spec" aria-label="Architecture" hidden></aside>
+  </div>
   <div class="nav">
     <button type="button" id="prev">← Back</button>
     <div class="track" id="track" aria-label="The story so far"></div>

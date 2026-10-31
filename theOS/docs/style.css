@@ -125,7 +125,7 @@ body {
 /* theDECISIONS */
 .decisions { display: none; gap: 14px; }
 .show-decisions .decisions { display: grid; }
-.show-decisions .card, .show-decisions .terms, .show-decisions .nav, .show-decisions .track { display: none; }
+.show-decisions .cardwrap, .show-decisions .card, .show-decisions .terms, .show-decisions .nav, .show-decisions .track { display: none; }
 .dhead h1 { margin: 6px 0 4px; font: 500 clamp(26px, 4vw, 40px)/1.1 var(--display); color: var(--paper); }
 .dhead p { margin: 0 0 12px; color: var(--stage-soft); }
 .dfilter { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -241,3 +241,29 @@ body {
   .table { font-size: clamp(11px, min(1.2vw, 1.6vh), 14px); }
   .table td { padding: clamp(4px, 1vh, 9px) 8px clamp(4px, 1vh, 9px) 0; }
 }
+
+/* Architecture: a panel over the card's right half with the slide's exact records, rules and decisions. */
+.cardwrap { position: relative; display: grid; min-height: 0; }
+.cardwrap > .card { min-height: 0; }
+.spectab { position: absolute; top: 12px; right: 14px; z-index: 2; font: 500 10.5px var(--mono); letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-soft); background: var(--paper); border: 1px solid #d9ccb4; border-radius: 999px; padding: 4px 10px; cursor: pointer; }
+.spectab.has { color: var(--ink); border-color: var(--clay); }
+.spec { position: absolute; top: 0; right: 0; bottom: 0; width: min(580px, 52%); z-index: 3; overflow-y: auto; box-sizing: border-box;
+  background: #fbf7ee; color: var(--ink); border-left: 1px solid #d9ccb4; border-radius: 0 6px 6px 0; box-shadow: -14px 0 32px rgba(10, 20, 28, .22);
+  padding: 18px 22px 24px; font-size: 13px; line-height: 1.5; }
+.spec header { display: flex; align-items: center; justify-content: space-between; font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); }
+.sclose { font: 400 20px/1 var(--display); color: var(--ink); background: none; border: 0; cursor: pointer; padding: 2px 6px; }
+.spec h2 { margin: 6px 0 8px; font: 500 20px/1.2 var(--display); }
+.spec h3 { margin: 16px 0 6px; font: 500 12px var(--mono); color: var(--ink); }
+.spec p { margin: 0 0 6px; color: var(--ink-soft); }
+.sfields { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+.sfields td:first-child { width: 30%; }
+.sfields td:nth-child(2) { width: 22%; }
+.sfields td { vertical-align: top; padding: 4px 6px 4px 0; border-top: 1px solid #e6dbc7; }
+.sfields td:first-child { overflow-wrap: anywhere; }
+.sfields td:nth-child(2) { color: var(--ink-soft); font: 400 11px var(--mono); }
+.spec code { font: 500 11.5px var(--mono); }
+.srules { margin: 0; padding-left: 20px; display: grid; gap: 7px; }
+.srules code { display: block; color: #8a4a33; }
+.snone { font-style: italic; }
+@media (max-width: 900px) { .spec { position: fixed; inset: 0; width: auto; border-radius: 0; z-index: 20; } }

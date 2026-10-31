@@ -9,7 +9,122 @@
   {
    "title": "Your phone is your agent.",
    "text": "Your phone runs an {agent}: an identity that acts on your behalf. Inside it sits a {signer}: a {key}, a secret only the phone holds, that can say “this really comes from this agent.” The agent belongs to you: you are its {owner}, and it owns nothing itself.",
-   "deep": "An agent identity is owned by exactly one human or coop. Its signer is just its current key; how the key is kept is up to the device it runs on: derived from the passkey's PRF plus a salt on a phone, the keychain on a laptop, an environment variable, secret manager or HSM on a server."
+   "deep": "An agent identity is owned by exactly one human or coop. Its signer is just its current key; how the key is kept is up to the device it runs on: derived from the passkey's PRF plus a salt on a phone, the keychain on a laptop, an environment variable, secret manager or HSM on a server.",
+   "spec": {
+    "summary": "An agent is an identity owned by exactly one human or coop. Its record says who it is; what it may do comes only from policies (D58).",
+    "records": [
+     {
+      "name": "theos/identity@1 (an agent)",
+      "about": "The agent's own history: one record per change of key or epoch, each signed by the agent's current signer.",
+      "fields": [
+       [
+        "id",
+        "agent ID",
+        "agent:b3: and the hash of the agent's birth record (D50)"
+       ],
+       [
+        "owner",
+        "human or coop ID",
+        "exactly one, fixed at birth"
+       ],
+       [
+        "signer",
+        "ed25519 public key",
+        "the current signing key; on phones derived from the passkey's PRF plus a salt"
+       ],
+       [
+        "lock",
+        "x25519 public key",
+        "the agent's own lock; envelopes are sealed to it (D57)"
+       ],
+       [
+        "rev",
+        "integer ≥ 0",
+        "signer revision: +1 on every key rotation"
+       ],
+       [
+        "next",
+        "b3 hash",
+        "the hash of the next signer's public key (pre-rotation)"
+       ],
+       [
+        "epoch",
+        "integer ≥ 1",
+        "continuity epoch: +1 on every restore or reinstall"
+       ],
+       [
+        "seq",
+        "integer ≥ 1",
+        "the signer's running number within this epoch (D61)"
+       ],
+       [
+        "sig",
+        "signature",
+        "by the signer of the rev it names"
+       ]
+      ]
+     },
+     {
+      "name": "theos/epoch@1",
+      "about": "Written once by a restored or reinstalled device before anything else.",
+      "fields": [
+       [
+        "agent",
+        "agent ID",
+        "the agent that continues"
+       ],
+       [
+        "epoch",
+        "integer",
+        "the previous epoch + 1"
+       ],
+       [
+        "after",
+        "heads",
+        "the agent's last records it still has"
+       ],
+       [
+        "sig",
+        "signature",
+        "by the agent's current signer"
+       ]
+      ]
+     }
+    ],
+    "rules": [
+     {
+      "id": "agent.owner_unique",
+      "text": "Every agent has exactly one owner, a human or a coop, fixed at birth; an agent is never in a role."
+     },
+     {
+      "id": "agent.rights_by_policy",
+      "text": "An agent's rights are exactly the live policies whose to is the agent and whose on is its owner; owning gives nothing."
+     },
+     {
+      "id": "agent.rotation",
+      "text": "A record with rev r+1 is valid only if its signer hashes to the next of the record that set rev r."
+     },
+     {
+      "id": "agent.epoch",
+      "text": "An epoch record raises epoch by exactly one; within an epoch, seq starts at 1 and rises by one per record."
+     },
+     {
+      "id": "agent.record_key",
+      "text": "A record is identified by (agent, epoch, seq); two different records with the same triple prove the signer lied (D61)."
+     },
+     {
+      "id": "agent.peer_id",
+      "text": "The agent's Loro peer ID for a piece of data is the first 8 bytes of b3(\"theos/loro-peer\" ‖ agent ID ‖ epoch ‖ data ID), so a restore never reuses an op ID (D63)."
+     }
+    ],
+    "decisions": [
+     "D31",
+     "D58",
+     "D61",
+     "D63",
+     "D69"
+    ]
+   }
   },
   {
    "title": "You and your first agent are born together.",
@@ -39,7 +154,70 @@
      "value": "…"
     }
    },
-   "deep": "One genesis record creates the human and its first agent together: no chicken-and-egg. It commits to the agent's next key in advance (KERI-style pre-rotation). Both IDs are its hash, typed once as human and once as agent (D50); a record can't contain its own hash, so inside it the two are “this human” and “this agent”."
+   "deep": "One genesis record creates the human and its first agent together: no chicken-and-egg. It commits to the agent's next key in advance (KERI-style pre-rotation). Both IDs are its hash, typed once as human and once as agent (D50); a record can't contain its own hash, so inside it the two are “this human” and “this agent”.",
+   "spec": {
+    "summary": "One record creates a human (or coop) and its first agent, and gives that agent its first policy.",
+    "records": [
+     {
+      "name": "theos/genesis@1 (identity)",
+      "fields": [
+       [
+        "creates",
+        "list",
+        "[\"human\", \"agent\"] or [\"coop\", \"agent\"]"
+       ],
+       [
+        "agent.signer",
+        "ed25519 public key",
+        "the first agent's signer, rev 0"
+       ],
+       [
+        "agent.lock",
+        "x25519 public key",
+        "the first agent's lock"
+       ],
+       [
+        "agent.next",
+        "b3 hash",
+        "pre-rotation: hash of the next signer"
+       ],
+       [
+        "policy",
+        "policy body",
+        "to “this agent”, on “this human”; operations act, own, govern"
+       ],
+       [
+        "sig",
+        "signature",
+        "by the new agent; key = agent.signer"
+       ]
+      ]
+     }
+    ],
+    "rules": [
+     {
+      "id": "genesis.ids",
+      "text": "For a birth record g without its signature, the human ID is human:b3:b3(\"human\" ‖ cbor(g)) and the agent ID is agent:b3:b3(\"agent\" ‖ cbor(g))."
+     },
+     {
+      "id": "genesis.self_names",
+      "text": "Inside a birth record, “this human” and “this agent” name what the record creates; a record never contains its own hash."
+     },
+     {
+      "id": "genesis.signed_by_created",
+      "text": "sig.by is the created agent's ID and sig.key equals agent.signer."
+     },
+     {
+      "id": "genesis.first_state",
+      "text": "The first agent starts at rev 0, epoch 1, seq 1; the birth record is its seq 1."
+     }
+    ],
+    "decisions": [
+     "D50",
+     "D58",
+     "D69"
+    ]
+   }
   },
   {
    "title": "Each agent gets only what you give it.",
@@ -62,7 +240,214 @@
      "value": "…"
     }
    },
-   "deep": "An agent has two parts. Who it is: its own identity, owned by exactly one human or coop, with its own signer. What it may do: only what policies from the identity it acts for say, here act for you on your health data. Owning an agent gives it nothing. The same policy decides which keys it gets (Keys chapter, D57, D58)."
+   "deep": "An agent has two parts. Who it is: its own identity, owned by exactly one human or coop, with its own signer. What it may do: only what policies from the identity it acts for say, here act for you on your health data. Owning an agent gives it nothing. The same policy decides which keys it gets (Keys chapter, D57, D58).",
+   "spec": {
+    "summary": "Every further agent gets one policy from the identity it acts for, with conditions on act.",
+    "records": [
+     {
+      "name": "theos/policy@1 (on an identity)",
+      "fields": [
+       [
+        "to",
+        "agent ID",
+        "the agent; never a role"
+       ],
+       [
+        "on",
+        "human or coop ID",
+        "the identity the agent acts for: its owner"
+       ],
+       [
+        "operations",
+        "object",
+        "keyed by name: act, own, govern (D56)"
+       ],
+       [
+        "operations.act.data",
+        "data ID or list",
+        "only this data"
+       ],
+       [
+        "operations.act.operations",
+        "object",
+        "only these data operations, keyed by name"
+       ],
+       [
+        "expires",
+        "time or null",
+        "identity policies don't expire unless they say so (D50)"
+       ],
+       [
+        "proof",
+        "record IDs",
+        "from the identity's birth record to the signing agent"
+       ]
+      ]
+     }
+    ],
+    "rules": [
+     {
+      "id": "policy.agent.issuer",
+      "text": "An agent policy is valid only if signed by an agent of on whose own policy includes govern."
+     },
+     {
+      "id": "policy.agent.no_widening",
+      "text": "Its operations and conditions are within the signing agent's own (D59)."
+     },
+     {
+      "id": "policy.agent.both_layers",
+      "text": "An agent may do an operation on data only if its policy on its owner covers it and the owner's roles and policies on the data cover it (D58)."
+     }
+    ],
+    "decisions": [
+     "D56",
+     "D58",
+     "D59",
+     "D69"
+    ]
+   }
+  },
+  {
+   "title": "A new device joins with a one-time code.",
+   "text": "To add your laptop, your phone writes an {invite}: a one-time key, an expiry, and exactly what the new device may do. You scan its code with the laptop, which makes its own signer and signs its birth together with the one-time key. The invite already says what it gets, so no other device of yours has to be online, and the code is worthless after one use or ten minutes.",
+   "code": {
+    "type": "theos/invite@1",
+    "on": "human:b3:q4x7…#you",
+    "key": "ed25519:Iv9…",
+    "expires": "2026-11-01T10:10:00Z",
+    "grants": {
+     "act": {},
+     "own": {},
+     "govern": {}
+    },
+    "proof": [
+     "human:b3:q4x7…#you"
+    ],
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
+   },
+   "deep": "The laptop's birth record names the invite and carries a second signature by the one-time key; together they are its policy, exactly as granted. Two births citing one invite are both invalid. An invite can't grant more than the agent that signed it holds (D69).",
+   "spec": {
+    "summary": "Pairing without a second device online: the invite is the policy, signed in advance; the birth record proves possession of the one-time secret.",
+    "records": [
+     {
+      "name": "theos/invite@1",
+      "about": "Written into the identity's history by an agent with govern.",
+      "fields": [
+       [
+        "on",
+        "human or coop ID",
+        "the identity the new agent will act for"
+       ],
+       [
+        "key",
+        "ed25519 public key",
+        "one-time key; its secret travels only out of band (QR code or typed code)"
+       ],
+       [
+        "expires",
+        "time",
+        "short, for example 10 minutes"
+       ],
+       [
+        "grants",
+        "operations object",
+        "exactly what the new agent gets (D56, act conditions D58)"
+       ],
+       [
+        "proof",
+        "record IDs",
+        "to the signing agent"
+       ],
+       [
+        "sig",
+        "signature",
+        "by an agent of on with govern"
+       ]
+      ]
+     },
+     {
+      "name": "theos/genesis@1 (agent by invite)",
+      "fields": [
+       [
+        "creates",
+        "list",
+        "[\"agent\"]"
+       ],
+       [
+        "owner",
+        "human or coop ID",
+        "= invite.on"
+       ],
+       [
+        "invite",
+        "invite ID",
+        "the invite it uses"
+       ],
+       [
+        "agent.signer / lock / next",
+        "keys",
+        "the new agent's own, made on the new device"
+       ],
+       [
+        "after",
+        "heads",
+        "must include the invite"
+       ],
+       [
+        "time",
+        "RFC 3339",
+        "the author's signed time (D60)"
+       ],
+       [
+        "invite_sig",
+        "signature",
+        "by invite.key over the record without both signatures"
+       ],
+       [
+        "sig",
+        "signature",
+        "by the new agent's signer"
+       ]
+      ]
+     }
+    ],
+    "rules": [
+     {
+      "id": "invite.issuer",
+      "text": "An invite is valid only if signed by an agent whose policy on invite.on includes govern, and its grants are within that agent's own operations and conditions."
+     },
+     {
+      "id": "invite.join",
+      "text": "A birth by invite is valid iff invite_sig verifies under invite.key, the invite is in its after, and its signed time is before invite.expires."
+     },
+     {
+      "id": "invite.policy",
+      "text": "A valid birth by invite gives the new agent exactly invite.grants on invite.on, as a policy of invite.on; it ends like any policy (D58, D60)."
+     },
+     {
+      "id": "invite.single_use",
+      "text": "If two different births cite the same invite, both are invalid."
+     },
+     {
+      "id": "invite.cancel",
+      "text": "The owner may end an unused invite with an ending; a birth that didn't see the ending loses (D60)."
+     },
+     {
+      "id": "invite.secret",
+      "text": "The one-time secret never travels over theOS; only the device that scanned or typed it can sign invite_sig."
+     }
+    ],
+    "decisions": [
+     "D56",
+     "D58",
+     "D60",
+     "D69"
+    ]
+   }
   },
   {
    "title": "You and Mia start a home.",

@@ -51,9 +51,9 @@
    ],
    "slides": [
     "identity-1",
-    "identity-5",
-    "identity-7",
-    "identity-6"
+    "identity-6",
+    "identity-8",
+    "identity-7"
    ],
    "date": "2026-10-31"
   },
@@ -584,9 +584,9 @@
    ],
    "slides": [
     "net-1",
-    "net-5",
+    "net-6",
     "net-2",
-    "net-4"
+    "net-5"
    ],
    "date": "2026-10-31"
   },
@@ -635,7 +635,7 @@
     "policies-8",
     "policies-9",
     "time-4",
-    "identity-6"
+    "identity-7"
    ],
    "date": "2026-10-31"
   },
@@ -675,7 +675,7 @@
    "sources": [],
    "slides": [
     "net-2",
-    "net-5"
+    "net-6"
    ],
    "date": "2026-10-31"
   },
@@ -906,7 +906,7 @@
    "why": "Agency and access are different questions; mixing them made the coop example ambiguous.",
    "sources": [],
    "slides": [
-    "identity-6",
+    "identity-7",
     "check-2"
    ],
    "date": "2026-10-31"
@@ -975,7 +975,7 @@
    "sources": [],
    "slides": [
     "identity-4",
-    "identity-6",
+    "identity-7",
     "policies-4",
     "ops-8"
    ]
@@ -989,7 +989,7 @@
    "why": "Keeps the first version simple while the plugin system leaves room to grow.",
    "sources": [],
    "slides": [
-    "identity-6",
+    "identity-7",
     "ops-8"
    ]
   },
@@ -1021,9 +1021,9 @@
    "supersedes": "membership as its own record kind",
    "sources": [],
    "slides": [
-    "identity-5",
-    "identity-7",
-    "identity-6"
+    "identity-6",
+    "identity-8",
+    "identity-7"
    ],
    "date": "2026-10-31"
   },
@@ -1198,8 +1198,8 @@
     }
    ],
    "slides": [
-    "identity-6",
-    "identity-9",
+    "identity-7",
+    "identity-10",
     "check-7"
    ],
    "status": "decided",
@@ -1281,7 +1281,7 @@
   {
    "id": "D63",
    "title": "One writer can't make devices disagree",
-   "decision": "A change's Loro peer ID is derived from its signer and the data ID, so nobody can write under another's ID. Two different changes with the same peer and counter prove the signer lied: both are invalid and its policy is ended. On arrival, each change is checked on its own: signature, policy, the schema's shape. Rules that span concurrent changes (limits, required entries across a list, loops of coops inside coops) are settled when the view is built, in one fixed order (causal order, then hash). A change that uses an unknown plugin waits until the plugin is known; it is not rejected.",
+   "decision": "A change's Loro peer ID is derived from its agent, epoch and data ID (D69), so nobody can write under another's ID. Two different changes with the same peer and counter prove the signer lied: both are invalid and its policy is ended. On arrival, each change is checked on its own: signature, policy, the schema's shape. Rules that span concurrent changes (limits, required entries across a list, loops of coops inside coops) are settled when the view is built, in one fixed order (causal order, then hash). A change that uses an unknown plugin waits until the plugin is known; it is not rejected.",
    "why": "Otherwise one authorised writer could split devices for good: by signing two versions of one change, by two changes that are valid alone but not together, or by a plugin old devices don't know.",
    "sources": [
     {
@@ -1342,7 +1342,7 @@
     "carry-6",
     "carry-9",
     "sync-7",
-    "net-4"
+    "net-5"
    ],
    "status": "decided",
    "date": "2026-10-31"
@@ -1415,11 +1415,11 @@
   },
   {
    "id": "D69",
-   "title": "Pairing by invite; agent epochs",
-   "status": "proposed",
+   "title": "Joining by invite; agent epochs",
+   "status": "decided",
    "date": "2026-10-31",
-   "decision": "Every agent record header names its signer revision and a continuity epoch; a restored or reinstalled device starts a new epoch, so it never reuses a running number or a CRDT op ID. New agents pair through invite records: a one-time key, an expiry and the agent policy it will create, written into the identity's history so any of its agents with govern can answer.",
-   "why": "An honest restore from a backup currently looks like a lying signer (D61, D63), and pairing needs a manual exchange with one specific agent online.",
+   "decision": "A new agent joins by invite. An agent with govern writes an invite record into the identity's history: a one-time public key, a short expiry and exactly the operations the new agent gets, within its own. The one-time secret goes to the new device out of band (QR code or typed code). The new device makes its own signer and lock and signs its birth record, which names the invite and carries a second signature by the one-time key. That pair is the new agent's policy, exactly as granted: no other agent has to be online. An invite is single use: two births citing it are both invalid; the owner may end an unused invite. Every agent record carries rev (signer revision) and epoch (continuity epoch); a restored or reinstalled device writes an epoch record and starts a new epoch, so it never reuses a running number or a CRDT op ID.",
+   "why": "Pairing needs no second device online and can't be widened by the new device; a copied code is worthless after one use or its expiry. An honest restore no longer looks like a lying signer.",
    "sources": [
     {
      "label": "Urbit: life and rift",
@@ -1437,7 +1437,9 @@
    "slides": [
     "identity-2",
     "identity-3",
-    "identity-4"
+    "identity-4",
+    "identity-5",
+    "net-3"
    ]
   },
   {
@@ -1454,7 +1456,7 @@
     }
    ],
    "slides": [
-    "identity-6"
+    "identity-7"
    ]
   },
   {
@@ -1591,7 +1593,7 @@
    "slides": [
     "policies-2",
     "end-2",
-    "identity-5"
+    "identity-6"
    ]
   },
   {
@@ -1780,8 +1782,8 @@
    ],
    "slides": [
     "net-2",
-    "net-3",
-    "net-5",
+    "net-4",
+    "net-6",
     "sync-7"
    ]
   },
