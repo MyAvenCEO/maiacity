@@ -43,11 +43,23 @@ def CoreOp.writes : CoreOp → Bool
 
 private def k (s : String) : Bytes := s.toUTF8.toList
 
-/-- A core op's stored form, `{"op": name, "plugin": "core/1"}`, its keys in the codec's order. -/
-def CoreOp.value (o : CoreOp) : Value := .map [(k "op", .text (k o.name)), (k "plugin", .text (k "core/1"))]
+/-- A plugin's built-in op in its stored form, `{"op": name, "plugin": plugin}`, its keys in the codec's order. -/
+def OpId.stored (plugin name : String) : Value := .map [(k "op", .text (k name)), (k "plugin", .text (k plugin))]
 
-/-- A core op's id: the name of its stored form. -/
-def CoreOp.id (H : Bytes → Hash) (o : CoreOp) : OpId := nameOf H o.value
+/-- Any plugin's built-in op id: the name of its stored form, the one way an op of `core/1`, `tree/1` or any other
+plugin is named (A45). -/
+def OpId.ofPlugin (H : Bytes → Hash) (plugin name : String) : OpId := nameOf H (OpId.stored plugin name)
+
+/-- A core op's stored form, `{"op": name, "plugin": "core/1"}`. -/
+def CoreOp.value (o : CoreOp) : Value := OpId.stored "core/1" o.name
+
+/-- A core op's id: `core/1`'s op of its name. -/
+def CoreOp.id (H : Bytes → Hash) (o : CoreOp) : OpId := OpId.ofPlugin H "core/1" o.name
+
+/-- `core/1`'s write params, by name: the type a write is on and the fields it sets (caps' lines and the engine's
+lowering read them here). -/
+def typeParam : Bytes := k "type"
+def fieldsParam : Bytes := k "fields"
 
 #guard [CoreOp.read, .put, .patch, .remove, .edit, .tell, .keep, .share].all fun o => Canon o.value
 
