@@ -27,14 +27,18 @@ namespace Settle
 
 variable (pinned : Core.Hash)
 
-/-! ## B1: honest acks -/
+/-! ## B1: honest confirmations -/
 
-/-- The ack policy, over the statements a device holds when it signs `a`: an ack names a claim that stands in that
-view, and no other claim of its ticket is final there. Any other statement is no ack and passes. -/
+/-- The confirm policy, over the statements a device holds when it signs `a`: a confirmation names a claim that stands
+in that view and names the guardian vault new vaults are founded with there (A42), and no other claim of its ticket is
+final there. Any other statement is no confirmation and passes. -/
 def confirmPolicy (V : List TreeStatement) (a : TreeStatement) : Bool :=
   match a.says with
   | .confirm n =>
     (view pinned V).any fun c => c.name == n && standing (view pinned V) c &&
+      (match c.says with
+       | .claim _ _ _ _ gu => (settle pinned V).guardianVault gu
+       | _ => false) &&
       (view pinned V).all fun f => !(final (view pinned V) f && sameTicket f c && f.name != c.name)
   | _ => true
 
@@ -51,12 +55,15 @@ theorem honest_confirm_once {V₁ V₂ : List TreeStatement} (sub : ∀ x ∈ V�
   rw [acks]
   simp only
   cases e : (view pinned V₂).any fun c => c.name == c₂.name && standing (view pinned V₂) c &&
+      (match c.says with
+       | .claim _ _ _ _ gu => (settle pinned V₂).guardianVault gu
+       | _ => false) &&
       (view pinned V₂).all fun f => !(final (view pinned V₂) f && sameTicket f c && f.name != c.name)
   · rfl
   · exfalso
     obtain ⟨c, mc, _, hc⟩ := (view_any pinned).mp e
     simp only [Bool.and_eq_true, beq_iff_eq] at hc
-    obtain ⟨⟨hn, _⟩, hall⟩ := hc
+    obtain ⟨⟨⟨hn, _⟩, _⟩, hall⟩ := hc
     have hcc : c = c₂ := uniq c mc c₂ m₂ hn
     subst hcc
     have := view_all pinned hall (sub c₁ m₁) cnt
@@ -111,7 +118,7 @@ open Settle TreeExamples
 
 def g : TreeStatement := ⟨100, "alice-passkey", [], .genesis alicesGenesis⟩
 def t : TreeStatement := ⟨120, "alice-passkey", [100], .ticket "t-bob"⟩
-def bob : TreeStatement := ⟨500, "t-bob", [120], .claim 120 "bob" "bob-passkey" "bob-peer" guardian⟩
+def bob : TreeStatement := ⟨500, "t-bob", [120], .claim 120 "bob" "bob-passkey" "bob-peer" "maia-city-guardian"⟩
 
 -- Bob's browser, not yet a member, is let in at any relay for its claim, and for nothing else
 #guard newcomer 100 [g, t] "bob-peer" (some bob)
@@ -122,11 +129,31 @@ def bob : TreeStatement := ⟨500, "t-bob", [120], .claim 120 "bob" "bob-passkey
 #guard !newcomer 100 [g, t, bob] "bob-peer" none
 #guard newcomer 100 [g, t, bob, ⟨510, "aven-peer", [500], .confirm 500⟩] "bob-peer" none
 
--- the ack policy: Alice's Peer acks Bob's claim; once that ack is in its view, it refuses to ack a leaked one
-def leak : TreeStatement := ⟨300, "t-bob", [120], .claim 120 "mallory" "mallory-passkey" "mallory-peer" guardian⟩
+-- the confirm policy: Alice's Peer confirms Bob's claim; once that confirmation is in its view, it refuses to confirm
+-- a leaked one
+def leak : TreeStatement :=
+  ⟨300, "t-bob", [120], .claim 120 "mallory" "mallory-passkey" "mallory-peer" "maia-city-guardian"⟩
 def ack1 : TreeStatement := ⟨510, "alice-peer", [500], .confirm 500⟩
 #guard confirmPolicy 100 [g, t, bob] ack1
 #guard !confirmPolicy 100 [g, t, bob, ack1, leak] ⟨520, "alice-peer", [510, 300], .confirm 300⟩
+
+-- the guardian setting (A42): Maia City names a new guardian vault for new vaults. Carol's claim saw the change and
+-- names the new one; Dan's saw it too but names the old one, which counts in the tree, yet an honest confirmer
+-- confirms only Carol's. Bob's vault, confirmed before the change, keeps its owners.
+def setG : TreeStatement := ⟨150, "alice-passkey", [510], .setGuardian "new-guardian"⟩
+def tc : TreeStatement := ⟨130, "alice-passkey", [100], .ticket "t-carol"⟩
+def td : TreeStatement := ⟨140, "alice-passkey", [100], .ticket "t-dan"⟩
+def carol : TreeStatement :=
+  ⟨600, "t-carol", [130, 150], .claim 130 "carol" "carol-passkey" "carol-peer" "new-guardian"⟩
+def dan : TreeStatement := ⟨700, "t-dan", [140, 150], .claim 140 "dan" "dan-passkey" "dan-peer" "maia-city-guardian"⟩
+def withG : List TreeStatement := [g, t, bob, ack1, setG, tc, td, carol, dan]
+#guard (settle 100 withG).standing 600 && (settle 100 withG).standing 700
+#guard confirmPolicy 100 withG ⟨610, "aven-peer", [600], .confirm 600⟩
+#guard !confirmPolicy 100 withG ⟨710, "aven-peer", [700], .confirm 700⟩
+#guard (settle 100 withG).member "bob" && (settle 100 withG).guardianVault "new-guardian"
+-- a claim naming a guardian vault it never saw named doesn't count
+#guard !(settle 100 [g, td, ⟨700, "t-dan", [140], .claim 140 "dan" "dan-passkey" "dan-peer" "new-guardian"⟩]).standing
+  700
 
 end AdmitExamples
 

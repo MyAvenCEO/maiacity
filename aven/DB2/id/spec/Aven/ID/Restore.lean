@@ -89,11 +89,11 @@ def genesisOf (s : Founding) (c : Claim) (g : GuardianKeys) : Genesis :=
     signedBy := [c.passkey, g.ed25519, g.mlDsa] }
 
 /-- An old statement's signer and what it says as a tree statement. Devices go by their keys, as the door does. -/
-def Old.says (olds : List Old) (c : Claim) (g : GuardianKeys) : Old → String × TreeSays
+def Old.says (olds : List Old) (c : Claim) : Old → String × TreeSays
   | .signIn i => (c.passkey, .signIn c.person i.deviceKey)
   | .invite i => (i.passkey, .ticket i.key)
   | .withdrawal w => (w.passkey, .withdrawal (ticketName olds w.key))
-  | .join j => (j.invite, .claim (ticketName olds j.invite) j.person j.passkey j.deviceKey g)
+  | .join j => (j.invite, .claim (ticketName olds j.invite) j.person j.passkey j.deviceKey guardianId)
   | .memberSignIn s => (s.member.passkey, .signIn s.member.person s.signIn.deviceKey)
   | .confirm j => (c.passkey, .confirm (joinName olds j.invite))
 
@@ -108,8 +108,8 @@ def Old.parents (olds : List Old) : Old → List Core.Hash
   | _ => []
 
 /-- The `k`-th old statement as a tree statement: named `nameAt k`, naming the one before it, and a join its ticket. -/
-def step (m : Members) (c : Claim) (g : GuardianKeys) (k : Nat) (o : Old) : TreeStatement :=
-  let (signer, says) := o.says (refOrder m) c g
+def step (m : Members) (c : Claim) (k : Nat) (o : Old) : TreeStatement :=
+  let (signer, says) := o.says (refOrder m) c
   ⟨nameAt k, signer, num (k + 1) :: o.parents (refOrder m), says⟩
 
 /-- Production's store as tree statements: the genesis, then every old statement in ref order, each naming the one
@@ -117,21 +117,21 @@ before it (a join its ticket too). An unclaimed store has none. -/
 def migrate (m : Members) (g : GuardianKeys) : List TreeStatement :=
   match m.founding.claim with
   | none => []
-  | some c => genesisStatement m c g :: (refOrder m).mapIdx (step m c g)
+  | some c => genesisStatement m c g :: (refOrder m).mapIdx (step m c)
 
 /-! ## Every migrated statement counts -/
 
-theorem step_name (m : Members) (c : Claim) (g : GuardianKeys) (k : Nat) (o : Old) :
-    (step m c g k o).name = nameAt k ∧ (step m c g k o).parents = num (k + 1) :: o.parents (refOrder m) := by
+theorem step_name (m : Members) (c : Claim) (k : Nat) (o : Old) :
+    (step m c k o).name = nameAt k ∧ (step m c k o).parents = num (k + 1) :: o.parents (refOrder m) := by
   simp [step]
 
 /-- Each migrated old statement has the genesis in its past: its parent is the one before it, down to the genesis. -/
 theorem migrate_past (m : Members) (g : GuardianKeys) (c : Claim) (hc : m.founding.claim = some c) :
-    ∀ k (hk : k < ((refOrder m).mapIdx (step m c g)).length),
-      Core.Past.Before TreeStatement.name (migrate m g) (((refOrder m).mapIdx (step m c g))[k])
+    ∀ k (hk : k < ((refOrder m).mapIdx (step m c)).length),
+      Core.Past.Before TreeStatement.name (migrate m g) (((refOrder m).mapIdx (step m c))[k])
         (genesisStatement m c g) := by
-  have mem : ∀ k (hk : k < ((refOrder m).mapIdx (step m c g)).length),
-      ((refOrder m).mapIdx (step m c g))[k] ∈ migrate m g := fun k hk => by
+  have mem : ∀ k (hk : k < ((refOrder m).mapIdx (step m c)).length),
+      ((refOrder m).mapIdx (step m c))[k] ∈ migrate m g := fun k hk => by
     simp only [migrate, hc]
     exact List.mem_cons_of_mem _ (List.getElem_mem hk)
   intro k
@@ -142,7 +142,7 @@ theorem migrate_past (m : Members) (g : GuardianKeys) (c : Claim) (hc : m.foundi
     simp [List.getElem_mapIdx, step_name, genesisStatement, genesisName, Core.Past.parents]
   | succ k ih =>
     intro hk
-    have hk' : k < ((refOrder m).mapIdx (step m c g)).length := by omega
+    have hk' : k < ((refOrder m).mapIdx (step m c)).length := by omega
     refine Core.Past.Before.trans (.tip (mem k hk') ?_) (ih hk')
     simp [List.getElem_mapIdx, step_name, nameAt, Core.Past.parents]
 

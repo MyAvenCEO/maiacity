@@ -115,9 +115,10 @@ thread's recommendation. Samuel may overrule any.
 - **A fresh browser** has an invite link. The link carries the relay list, a few members' address records, the
   genesis hash and the tree's tips, all signed, so it can join through any relay listed. A returning browser has all
   of that in its OPFS. `/aven.json` stays, as one more source.
-- **Presence is signed.** Each device beats on gossip with a signed record: its key, a counter and the clock step. A
-  peer counts a device present while its beats keep coming. "Who joined" is the first beat after a claim settles, and
-  each peer says it itself. The hub's presence counting goes away.
+- **Presence is signed.** Each device beats on gossip with a signed record: its key and a counter. The counter only
+  orders a device's beats; each peer ages the newest by its own clock, from when it heard it, so a beat dated ahead
+  stays present no longer than any other (A42, `CatchUp.present`, `present_ages`). "Who joined" is the first beat
+  after a claim settles, and each peer says it itself. The hub's presence counting goes away.
 - **The link** (`link.rs`) stops meaning "the one connection to the Aven Peer". A peer keeps up to 3 links on
   `aven/db/1` to members, chosen from its address records, and replaces one that stalls (README rule 3). Status names
   its phase from all of them together (rule 7).
@@ -198,6 +199,10 @@ every peer must reach the same tree from the same statements, whatever order the
   Peer's key, avenOS's origins and MaiaCityGuardian's vault (rule 15, A28). A change counts only with Maia City's
   owners' approval; the latest settles it, and concurrent changes settle by the smallest name (`setting`,
   `config_by_admin`). Each is checked alone as it is today (signatures, assertions, names), then settled together.
+- **The guardian setting** names the guardian vault new vaults are founded with; it never changes who owns a vault
+  founded before it (A42, caps rule 2). A claim names the guardian vault it consents to, not its keys: one the genesis
+  or an approved change in its past named (`guardianNamed`, `guardian_consented`), and an honest confirmer confirms
+  only a claim that names the current one (`confirmPolicy`).
 - **The genesis names vaults, not keys, for authority:** Maia City's vault and its owners (`coopOwners`), and
   MaiaCityGuardian's vault, which its key owns and which owns each person's vault (`guardianVault`).
 - **Sign-ins** stop being numbered by arrival (`signin-000001`). A sign-in adds a device and conflicts with nothing,
@@ -215,7 +220,8 @@ every peer must reach the same tree from the same statements, whatever order the
 3. **Confirmations** (A38, Samuel and the architect, 31 Oct 2026): membership is a cap. Maia City's vault grants a
    standing cap for the confirm op to the vaults the genesis names (`confirmers`): Aven's, so the Aven Peer confirms
    on its own, and today Alice's (the claimant's) too. A confirmation names the claim it confirms, by hash, and has it
-   in its past, and is signed by Maia City's owners or by a device of a vault holding the cap (`confirmer`). It is
+   in its past, and is signed for a vault holding the cap, by its owners' approval or by one of its devices
+   (`confirmer`, A42's one answer; Maia City's owners as such confirm nothing). It is
    bounded to a standing claim of a ticket Maia City issued, so it lets in no one without a ticket. A confirming
    device confirms only the claim that stands in its own view, and never a second claim of a ticket that already has
    a final claim there (`confirmPolicy`). The ticket keeps its passkey tap; the confirmation is automatic.
@@ -324,9 +330,9 @@ Every record a peer takes from another is signed by the one it is about, so who 
 | Tree statements | their signers, as today | the Aven Peer's ref order |
 | Tree tips | any member device, over the tree statements it holds | the Aven Peer telling each peer the tree it likes |
 | Relay and keeper lists | admin passkeys, as statements | `--relay-url` for everyone; the Aven Peer as the only keeper |
-| Address records | the device they describe | `--aven HOST:PORT` |
-| Presence beats | the device present | the hub's count |
-| Log tips | the device whose log it is | the Aven Peer's `heads` |
+| Address records | the device they describe; history with a generation, so a split ends that generation, not the device (A42) | `--aven HOST:PORT` |
+| Presence beats | the device present; aged by each peer's own clock | the hub's count |
+| Log tips | the device whose log it is; history, so a split is final (A42) | the Aven Peer's `heads` |
 | The release record | the release signers (A15) | whatever the host serves |
 
 What nothing may depend on any more, and a check that holds it:

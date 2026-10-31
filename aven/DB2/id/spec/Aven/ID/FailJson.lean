@@ -54,11 +54,11 @@ def tree : List TreeStatement :=
   [⟨100, "alice-passkey", [], .genesis alicesGenesis⟩, ⟨110, "alice-passkey", [100], .signIn "alice" "alice-light"⟩,
    ⟨120, "alice-passkey", [110], .ticket "t-carol"⟩, ⟨130, "alice-passkey", [110], .ticket "t-dan"⟩]
 
-def carol : TreeStatement := ⟨500, "t-carol", [120], .claim 120 "carol" "carol-passkey" "carol-light" guardian⟩
+def carol : TreeStatement := ⟨500, "t-carol", [120], .claim 120 "carol" "carol-passkey" "carol-light" "maia-city-guardian"⟩
 def carolConfirm : TreeStatement := ⟨510, "alice-peer", [500], .confirm 500⟩
 -- step 5: two profiles claim Dan's ticket at once
-def dan1 : TreeStatement := ⟨610, "t-dan", [130], .claim 130 "dan" "dan-passkey" "dan-light" guardian⟩
-def dan2 : TreeStatement := ⟨605, "t-dan", [130], .claim 130 "dan2" "dan2-passkey" "dan2-light" guardian⟩
+def dan1 : TreeStatement := ⟨610, "t-dan", [130], .claim 130 "dan" "dan-passkey" "dan-light" "maia-city-guardian"⟩
+def dan2 : TreeStatement := ⟨605, "t-dan", [130], .claim 130 "dan2" "dan2-passkey" "dan2-light" "maia-city-guardian"⟩
 -- step 6: Carol's claim and a withdrawal of her ticket, neither seeing the other
 def carolWithdrawn : TreeStatement := ⟨520, "alice-passkey", [120], .withdrawal 120⟩
 
