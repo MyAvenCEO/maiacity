@@ -8,6 +8,7 @@
 {"expected":{"cbor":"a2626f7065736861726566706c7567696e66636f72652f31","id":"b3:a195dd41b57aea6e3062d207e7b9e0a41b5145e94179c3c681a9e39566c87426","writes":false},"input":{"op":"share","plugin":"core/1"},"name":"core/1's share"}
 {"expected":{"cbor":"a2626f70582022c616aa24bab8360bf28b4c5cc743cd4836c363c0ac37bbecf9fed23e4a52ae66706172616d73a26474797065582015f06611701e814d9a5ac38ac44cdf33ac0816c7930b1fc86ce2a549e81ddf75666669656c64738166737461747573","op":"b3:22c616aa24bab8360bf28b4c5cc743cd4836c363c0ac37bbecf9fed23e4a52ae"},"input":{"op":{"bytes":"22c616aa24bab8360bf28b4c5cc743cd4836c363c0ac37bbecf9fed23e4a52ae"},"params":{"fields":["status"],"type":{"bytes":"15f06611701e814d9a5ac38ac44cdf33ac0816c7930b1fc86ce2a549e81ddf75"}}},"name":"a call to core/1's patch: a type and the fields it sets"}
 {"expected":null,"input":"a2626f70582022c616aa24bab8360bf28b4c5cc743cd4836c363c0ac37bbecf9fed23e4a52ae66706172616d73a2666669656c647381667374617475736474797065582015f06611701e814d9a5ac38ac44cdf33ac0816c7930b1fc86ce2a549e81ddf75","name":"a call with its params out of order: refused on read"}
+{"expected":null,"input":"a2626f70581f0101010101010101010101010101010101010101010101010101010101010166706172616d73a26474797065582015f06611701e814d9a5ac38ac44cdf33ac0816c7930b1fc86ce2a549e81ddf75666669656c64738166737461747573","name":"a call whose op isn't 32 bytes: refused on read"}
 {"expected":"d:5ee79c756d45c6c7b573ff7a88b4e5fd67b664fb89b8a9bde2d099e3cc718430","input":"avenDB type of types 1","name":"the type of types"}
 {"expected":true,"input":{"bound":null,"value":"total"},"name":"does it allow? any value"}
 {"expected":true,"input":{"bound":["status"],"value":"status"},"name":"does it allow? one of these"}
@@ -18,3 +19,8 @@
 {"expected":false,"input":[["status","total"],["status"]],"name":"is it within? more values, within fewer"}
 {"expected":false,"input":[null,["status"]],"name":"is it within? any value, within one of these"}
 {"expected":true,"input":[["status"],null],"name":"is it within? one of these, within any"}
+{"expected":null,"input":"f6","name":"a bound: any value"}
+{"expected":["status","total"],"input":"826673746174757365746f74616c","name":"a bound: one of these"}
+{"expected":[],"input":"80","name":"a bound: none at all"}
+{"expected":null,"input":"66737461747573","name":"no bound: text"}
+{"expected":null,"input":"a1616166737461747573","name":"no bound: a map"}
