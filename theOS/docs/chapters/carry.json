@@ -38,10 +38,8 @@
     "type": "theos/policy@1",
     "to": "agent:b3:k8b…#backup",
     "on": "human:b3:q4x7…#you",
-    "operations": [
-     {
-      "operation": "act",
-      "at": "",
+    "operations": {
+     "act": {
       "where": {
        "data": "data:ed25519:7Hq…#house-list",
        "operations": [
@@ -50,7 +48,7 @@
        ]
       }
      }
-    ],
+    },
     "proof": [
      "policy:b3:a0p…#your-phone"
     ],
@@ -69,16 +67,10 @@
     "type": "theos/policy@1",
     "to": "role:b3:e9s…#street-carrier",
     "on": "data:ed25519:7Hq…#house-list",
-    "operations": [
-     {
-      "operation": "want",
-      "at": ""
-     },
-     {
-      "operation": "sync",
-      "at": ""
-     }
-    ],
+    "operations": {
+     "want": {},
+     "sync": {}
+    },
     "expires": "2026-12-01T00:00:00Z",
     "proof": [
      "policy:b3:z0e…#first",
@@ -118,12 +110,12 @@
    "table": {
     "head": [
      "Who",
-     "Operations"
+     "Operations (whole list unless a path is given)"
     ],
     "rows": [
      [
       "household (role)",
-      "create, read, update at \"\""
+      "create, read, update"
      ],
      [
       "kids (role)",
@@ -131,15 +123,15 @@
      ],
      [
       "grandma (role)",
-      "read at \"\""
+      "read"
      ],
      [
       "street-carrier (role)",
-      "want, sync at \"\""
+      "want, sync"
      ],
      [
       "backup (your agent)",
-      "want, keep at \"\""
+      "want, keep"
      ]
     ]
    }

@@ -164,14 +164,12 @@
      "type": "theos/policy@1",
      "to": "role:b3:s9m…#street/members",
      "on": "data:ed25519:8Rs…#home-stats",
-     "operations": [
-      {
-       "operation": "read",
-       "at": ""
-      }
-     ],
+     "operations": {
+      "read": {}
+     },
      "proof": [
       "policy:b3:z2h…#first",
+      "policy:b3:h0g…#home-members",
       "role:b3:h8m…#home/members",
       "policy:b3:a0p…#your-phone"
      ],
@@ -182,7 +180,7 @@
      }
     }
    },
-   "deep": "The answer is written as new data, computed and signed by your own device, with its own policy for the asker. That policy is revocable and expires like any other."
+   "deep": "The answer is written as new data, owned by the home, computed and signed by your own device, with its own policy for the asker. Your phone may write it because the home's policy gives its members role own. That policy is revocable and expires like any other."
   },
   {
    "title": "Sync, in short.",

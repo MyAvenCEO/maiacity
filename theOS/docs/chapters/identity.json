@@ -25,20 +25,11 @@
     "policy": {
      "to": "agent:b3:f2p…#your-phone",
      "on": "human:b3:q4x7…#you",
-     "operations": [
-      {
-       "operation": "act",
-       "at": ""
-      },
-      {
-       "operation": "own",
-       "at": ""
-      },
-      {
-       "operation": "govern",
-       "at": ""
-      }
-     ]
+     "operations": {
+      "act": {},
+      "own": {},
+      "govern": {}
+     }
     },
     "sig": {
      "by": "agent:b3:f2p…#your-phone",
@@ -55,15 +46,13 @@
     "type": "theos/policy@1",
     "to": "agent:b3:w3t…#watch",
     "on": "human:b3:q4x7…#you",
-    "operations": [
-     {
-      "operation": "act",
-      "at": "",
+    "operations": {
+     "act": {
       "where": {
        "data": "data:ed25519:4Hb…#health"
       }
      }
-    ],
+    },
     "proof": [
      "policy:b3:a0p…#your-phone"
     ],
@@ -95,46 +84,17 @@
    }
   },
   {
-   "title": "Coops can hold coops.",
-   "text": "Your street is a coop of homes, and a home is a coop of people. The street's “members” role holds the home coops, so coops can be inside coops, as deep as you like, just never in a circle.",
-   "code": {
-    "type": "theos/role@1",
-    "id": "role:b3:s9m…#street/members",
-    "of": "coop:b3:s5t8…#street",
-    "identities": [
-     "coop:b3:c7n2…#home",
-     "coop:b3:h1x…#home-12",
-     "coop:b3:h4y…#home-14"
-    ],
-    "sig": {
-     "by": "agent:b3:f2p…#your-phone",
-     "key": "ed25519:Fp2…",
-     "value": "…"
-    }
-   },
-   "deep": "Roles are checked whenever they change; a change that would close a circle of identities is rejected."
-  },
-  {
    "title": "A coop decides by its own policies.",
-   "text": "A policy on the coop says what its “members” role may do for it. Only three kinds of act exist here. Acting: ordinary changes. Owning: writing policies for what it owns, and handing things over. Governing: changing its own roles and policies. For now, one signature from an agent of any member is enough for each.",
+   "text": "A policy on the coop says what its “members” role may do for it. Three operations exist here. Act: ordinary changes for the coop. Own: what an owner does with the coop's data, writing and ending its policies. Govern: changing the coop's own roles and policies. For now, one signature from an agent of any member is enough.",
    "code": {
     "type": "theos/policy@1",
     "to": "role:b3:h8m…#home/members",
     "on": "coop:b3:c7n2…#home",
-    "operations": [
-     {
-      "operation": "act",
-      "at": ""
-     },
-     {
-      "operation": "own",
-      "at": ""
-     },
-     {
-      "operation": "govern",
-      "at": ""
-     }
-    ],
+    "operations": {
+     "act": {},
+     "own": {},
+     "govern": {}
+    },
     "proof": [
      "coop:b3:c7n2…#home",
      "policy:b3:a0p…#your-phone"
@@ -146,6 +106,28 @@
     }
    },
    "deep": "Same shape as every policy: who (a role or an agent), on what (here the coop itself), operations (act, own, govern), conditions. The default condition is one signature (1 of 1). Counts like 2 of 3 can be plugged in later as condition plugins; an unknown one counts as not satisfied."
+  },
+  {
+   "title": "Coops can hold coops.",
+   "text": "Your street is a coop of homes, and a home is a coop of people. The street's “members” role holds the home coops, and a policy on the street says what they may do for it: here, act, but not own or govern. A home acts through its own members' agents. Coops can sit inside coops as deep as you like, never in a circle.",
+   "code": {
+    "type": "theos/policy@1",
+    "to": "role:b3:s9m…#street/members",
+    "on": "coop:b3:s5t8…#street",
+    "operations": {
+     "act": {}
+    },
+    "proof": [
+     "coop:b3:s5t8…#street",
+     "policy:b3:s1g…#street-govern"
+    ],
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
+   },
+   "deep": "The street's members role (theos/role@1) lists home coops; this policy gives that role act on the street. An agent of yours acts for the street through the chain: your agent's policy on you, the home's policy for its members role, the street's policy for its members role. Roles are checked whenever they change; a change that would close a circle of identities is rejected."
   },
   {
    "title": "Losing your phone.",

@@ -70,16 +70,10 @@
      "type": "theos/policy@1",
      "to": "role:b3:r4p…#plumber",
      "on": "data:ed25519:3Tk…#fix-tap",
-     "operations": [
-      {
-       "operation": "read",
-       "at": ""
-      },
-      {
-       "operation": "update",
-       "at": ""
-      }
-     ]
+     "operations": {
+      "read": {},
+      "update": {}
+     }
     },
     "envelope": {
      "type": "theos/envelope@1",

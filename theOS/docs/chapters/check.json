@@ -42,20 +42,11 @@
     "type": "theos/policy@1",
     "to": "role:b3:k1m…#household",
     "on": "data:ed25519:7Hq…#house-list",
-    "operations": [
-     {
-      "operation": "create",
-      "at": ""
-     },
-     {
-      "operation": "read",
-      "at": ""
-     },
-     {
-      "operation": "update",
-      "at": ""
-     }
-    ],
+    "operations": {
+     "create": {},
+     "read": {},
+     "update": {}
+    },
     "expires": "2026-12-01T00:00:00Z",
     "proof": [
      "policy:b3:z0e…#first",
@@ -67,7 +58,7 @@
      "value": "…"
     }
    },
-   "deep": "Like a Biscuit or UCAN token: a chain of signed blocks, each signed by the holder of the previous one, verifiable offline without any server. Like every signed or hashed thing, it is encoded as canonical CBOR, so the same policy always gives the same bytes."
+   "deep": "Like a Biscuit or UCAN token, it carries its own proof: the records from the seal through the owner to the agent that signed it, verifiable offline without any server. Only the owner's agents sign policies, so the chain never branches through anyone else. Like every signed or hashed thing, it is encoded as canonical CBOR, so the same policy always gives the same bytes."
   },
   {
    "title": "Every device checks the same four things.",

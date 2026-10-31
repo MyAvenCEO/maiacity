@@ -16,12 +16,9 @@
     "schema": "data:ed25519:Sc4…@b3:1f0…#todo-list",
     "policy": {
      "to": "human:b3:q4x7…#you",
-     "operations": [
-      {
-       "operation": "own",
-       "at": ""
-      }
-     ],
+     "operations": {
+      "own": {}
+     },
      "expires": null
     },
     "sig": {

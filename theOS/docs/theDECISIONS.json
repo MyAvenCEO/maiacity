@@ -52,8 +52,8 @@
    "slides": [
     "identity-1",
     "identity-5",
-    "identity-6",
-    "identity-7"
+    "identity-7",
+    "identity-6"
    ],
    "date": "2026-10-31"
   },
@@ -82,7 +82,7 @@
    "id": "D5",
    "title": "One owner per piece of data, and it is an identity",
    "status": "decided",
-   "decision": "The seal's first policy names exactly one owner: an identity, human or coop. The owner may do everything, its policy never expires, and only the owner can hand ownership to another identity. The owner is not a role.",
+   "decision": "The seal's first policy names exactly one owner: an identity, human or coop. The owner may do everything, its policy never expires, and ownership never moves to another identity (D54). The owner is not a role.",
    "why": "A role of owners cannot shrink durably: any past owner could revoke the others for good (Keyline's warning). With one owner identity, people change inside the coop, not in the data.",
    "rejected": "An \"owners\" role holding admin.",
    "supersedes": "D4 as first drafted (owners role)",
@@ -153,7 +153,7 @@
    "id": "D8",
    "title": "A policy: role, data, operations, conditions, expiry, proof",
    "status": "decided",
-   "decision": "A policy is a signed certificate with: the role it is given to; the data it applies to; a list of operations (create, read, update, delete, want, keep, sync), each optionally narrowed by at (a path), where (matching entries) or a limit; an expiry; the signature of the owner's agent; and the proof chain back to the seal. Identity policies use the same shape with act, own and govern (D48). Writing policies is not an operation: it belongs to the owner (D30).",
+   "decision": "A policy is a signed certificate with: the role it is given to; the data it applies to; its operations, keyed by name (D56) (create, read, update, delete, want, keep, sync), each optionally narrowed by at (a path), where (matching entries) or a limit; an expiry; the signature of the owner's agent; and the proof chain back to the seal. Identity policies use the same shape with act, own and govern (D48). Writing policies is not an operation: it belongs to the owner (D30).",
    "why": "One small vocabulary for content, carrying and the policies themselves. Keyhive's Relay, Read, Edit and Admin map onto it; ours is finer.",
    "sources": [
     {
@@ -484,7 +484,7 @@
    "id": "D23",
    "title": "The engine: JSON operations, pluggable, local",
    "status": "decided",
-   "decision": "Every read, change, search and sync is a JSON operation (find, walk, search, near …, and chain, which runs each step under that step's own operation). New kinds plug in and name what a policy must allow. Operations run only on your own device, over what you can read.",
+   "decision": "Every read, change, search and sync is a JSON operation (find, walk, search, near …, and chain, which runs each step under that step's own operation). New kinds plug in and name their broad operation (D53), which a policy must allow. Operations run only on your own device, over what you can read.",
    "why": "One engine for everything, with no server in the loop.",
    "sources": [],
    "slides": [
@@ -649,7 +649,7 @@
     "policies-8",
     "policies-9",
     "time-4",
-    "identity-7"
+    "identity-6"
    ],
    "date": "2026-10-31"
   },
@@ -895,7 +895,7 @@
    "id": "D43",
    "title": "Retain: an owner event at any time",
    "status": "decided",
-   "decision": "The owner can say “retain until <date>” at any time; the date can only move later. Until then, honest devices refuse cuts, shreds and erasure. A retention role names identities that keep the sealed bytes (want, keep) and may hold a share of the archive key. Stored as canonical CBOR, exported as JSON and PDF/A, resealed periodically under current algorithms.",
+   "decision": "The owner can say “retain until <date>” at any time; the date can only move later. Until then, honest devices refuse cuts, shreds and erasure. A retention role names identities that keep the sealed bytes (want, keep) and may hold a part of the archive key. Stored as canonical CBOR, exported as JSON and PDF/A, resealed periodically under current algorithms.",
    "why": "Bookkeeping must be kept for years (in Germany 10 years for books, 8 for vouchers since 2025; check with a tax adviser), and a legal retention duty takes priority over erasure (GDPR Art. 17(3)(b)).",
    "sources": [
     {
@@ -920,7 +920,7 @@
    "why": "Agency and access are different questions; mixing them made the coop example ambiguous.",
    "sources": [],
    "slides": [
-    "identity-7",
+    "identity-6",
     "check-2"
    ],
    "date": "2026-10-31"
@@ -993,7 +993,7 @@
    "sources": [],
    "slides": [
     "identity-4",
-    "identity-7",
+    "identity-6",
     "policies-4",
     "ops-8"
    ]
@@ -1007,7 +1007,7 @@
    "why": "Keeps the first version simple while the plugin system leaves room to grow.",
    "sources": [],
    "slides": [
-    "identity-7",
+    "identity-6",
     "ops-8"
    ]
   },
@@ -1016,7 +1016,7 @@
    "title": "Record conventions",
    "status": "decided",
    "date": "2026-10-31",
-   "decision": "Every stored or sent thing is a record: {\"type\": \"theos/<kind>@<version>\", …fields, \"sig\"} in canonical CBOR (shown as JSON). IDs are typed: human:, coop:, agent:, role:, policy:, ending: and chunk: followed by b3: and the BLAKE3 hash of the record; data: followed by the seal's ed25519 public key; value: b3: hash of the bytes. A #label after an ID is only for people (human:b3:q4x7…#you). One genesis record can create a human or coop and its first agent: both IDs are the BLAKE3 hash of that record without its sig, typed by prefix (human:b3:… and agent:b3:… differ because the type is hashed in: b3(\"human\" ‖ record), b3(\"agent\" ‖ record)). A schema is pinned as its data ID, @ and the hash of the schema Doc's state: data:ed25519:Sc4…@b3:1f0…#todo-list. Public keys: ed25519:… (signers, seals), x25519:… (locks). Secret keys never appear; they are named, for example datakey:house-list/3. CRDT op IDs are Loro's peer and counter (5f3a9c:41). Times are RFC 3339 in UTC. Signatures: \"sig\": {\"by\": agent ID, \"key\": ed25519 public key, \"value\": …}. Record kinds: genesis, identity, role, policy, renewal, ending, envelope, keyring, change, chunk, value, meta, retain, erase, directory, proof, want, news, operation. An ending ends a policy; role changes are role records signed under the owner's policies. A data's genesis record names its pinned schema and holds its first policy, which gives its owner the operation own (everything, including writing policies); it is signed by the seal, the only signer that is not an agent. A proof is the ordered list of record IDs from the seal or an identity's genesis to the acting agent; examples always show a policy's proof, and a shared policy's issuer. Identity policies do not expire unless they say so.",
+   "decision": "Every stored or sent thing is a record: {\"type\": \"theos/<kind>@<version>\", …fields, \"sig\"} in canonical CBOR (shown as JSON). IDs are typed: human:, coop:, agent:, role:, policy:, ending: and chunk: followed by b3: and the BLAKE3 hash of the record; data: followed by the seal's ed25519 public key; value: b3: hash of the bytes. A #label after an ID is only for people (human:b3:q4x7…#you). One genesis record can create a human or coop and its first agent: both IDs are the BLAKE3 hash of that record without its sig, typed by prefix (human:b3:… and agent:b3:… differ because the type is hashed in: b3(\"human\" ‖ record), b3(\"agent\" ‖ record)). A schema is pinned as its data ID, @ and the hash of the schema Doc's state: data:ed25519:Sc4…@b3:1f0…#todo-list. Public keys: ed25519:… (signers, seals), x25519:… (locks). Secret keys never appear; they are named, for example datakey:house-list/3. CRDT op IDs are Loro's peer and counter (5f3a9c:41). Times are RFC 3339 in UTC. Signatures: \"sig\": {\"by\": agent ID, \"key\": ed25519 public key, \"value\": …}. Record kinds: genesis, identity, role, policy, renewal, ending, envelope, keyring, change, chunk, value, meta, retain, erase, directory, proof, want, news, operation. An ending ends a policy; role changes are role records signed under the owner's policies. A data's genesis record names its pinned schema and holds its first policy, which gives its owner the operation own (everything, including writing policies); it is signed by the seal, the only signer that is not an agent. A proof is the ordered list of record IDs from the seal or an identity's genesis to the acting agent; examples always show a policy's proof. Identity policies do not expire unless they say so.",
    "why": "Slides and code use the same shapes and names, so the examples are drafts of the real schema, not illustrations.",
    "sources": [
     {
@@ -1034,14 +1034,14 @@
    "id": "D51",
    "title": "Only roles and policies",
    "status": "decided",
-   "decision": "There are no membership records. A role is a named set of identities; a policy says what a role (or an agent) may do on an identity or a piece of data. A coop's members are its “members” role, with a policy giving that role act, own and govern on the coop.",
+   "decision": "There are no membership records. A role is a named set of identities; a policy says what a role (or an agent) may do on an identity or a piece of data. A coop's members are its “members” role; policies on the coop say what that role may do, for example act, own and govern for a home, only act for the homes of a street.",
    "why": "One mechanism for everything: who is in which group (roles) and what that group may do (policies).",
    "supersedes": "membership as its own record kind",
    "sources": [],
    "slides": [
     "identity-5",
-    "identity-6",
-    "identity-7"
+    "identity-7",
+    "identity-6"
    ],
    "date": "2026-10-31"
   },
@@ -1138,8 +1138,8 @@
    "title": "One operation shape everywhere",
    "status": "decided",
    "date": "2026-10-31",
-   "decision": "Policies and the engine write an operation the same way: {\"operation\", \"at\", \"where\", \"limit\"}, defined once as a schema. In a policy the operation is broad (read, create …); in the engine (theos/operation@1) it is specific (find, set …) with its own inputs. at is a JSON Pointer, \"\" for the whole data or identity; where and limit only narrow. An engine operation is allowed when a policy entry covers its broad operation, its path lies under at, and where and limit hold. Never a bare name.",
-   "why": "One source of truth for what an operation is: every example, record and check reads the same fields, and read answers “read what?” like everything else.",
+   "decision": "Policies write operations as one object keyed by operation name: {\"read\": {\"at\": \"/items\"}, \"create\": {\"at\": \"/items\", \"limit\": 20}}, defined once as a schema. Each name appears once; its value holds the conditions: at (a JSON Pointer or a list of them, default \"\" = the whole data or identity), where and limit, which only narrow. The engine's record (theos/operation@1) uses the same fields for one specific operation (find, set …). An engine operation is allowed when a policy names its broad operation, its path lies under at, and where and limit hold.",
+   "why": "One source of truth for what an operation is: no repeated keys, no bare names next to objects, and every example, record and check reads the same fields.",
    "sources": [
     {
      "label": "RFC 6901: JSON Pointer",

@@ -76,7 +76,7 @@ async function open(st, i) {
     deck = (await (await fetch(st.file)).json()).slides;
     $('#track').style.setProperty('--n', deck.length);
     $('#track').innerHTML = '<span class="fill" id="fill"></span>' +
-      deck.map((s, n) => `<button type="button" aria-label="${n + 1}: ${esc(s.title)}" title="${esc(s.title)}" data-go="${n}"><i></i><span>${termsOf(s).map((t) => esc(cap(t))).join(' · ')}</span></button>`).join('');
+      deck.map((s, n) => `<button type="button" aria-label="${n + 1}: ${esc(s.title)}" title="${esc(s.title)}" data-go="${n}"><i></i><span>${termsOf(s).map((t) => esc(cap(t))).join('<br>')}</span></button>`).join('');
   }
   at = Math.max(0, Math.min(i, deck.length - 1));
   render();

@@ -10,7 +10,7 @@
     "update",
     "delete"
    ],
-   "deep": "A policy is a signed certificate: role, data, list of operations, conditions, expiry, plus the proof chain back to the seal. Only the owner writes them, through its own agents (D54). Conditions come later in this chapter, proofs in Checking, expiry in Endings."
+   "deep": "A policy is a signed certificate: role, data, operations keyed by name, conditions, expiry, plus the proof chain back to the seal. Only the owner writes them, through its own agents (D54). Conditions come later in this chapter, proofs in Checking, expiry in Endings."
   },
   {
    "title": "Mia, Alice and Bob get the list.",
@@ -29,20 +29,11 @@
     "type": "theos/policy@1",
     "to": "role:b3:k1m…#household",
     "on": "data:ed25519:7Hq…#house-list",
-    "operations": [
-     {
-      "operation": "create",
-      "at": ""
-     },
-     {
-      "operation": "read",
-      "at": ""
-     },
-     {
-      "operation": "update",
-      "at": ""
-     }
-    ],
+    "operations": {
+     "create": {},
+     "read": {},
+     "update": {}
+    },
     "expires": "2026-12-01T00:00:00Z",
     "proof": [
      "policy:b3:z0e…#first",
@@ -69,44 +60,46 @@
   },
   {
    "title": "Every operation looks the same.",
-   "text": "Every operation is written the same way, in every policy and in the engine: what, at which path, and optionally which entries and how many. Read too: read what? “at” answers it. An empty path, \"\", means the whole thing.",
+   "text": "Every policy writes its operations the same way: each operation by name, with where it applies. “at” is a path into the data, or a list of paths; leave it out and it means the whole thing. Read too: read what? “at” answers it.",
    "code": {
-    "$id": "data:ed25519:Op7…@b3:2c4…#operation",
+    "$id": "data:ed25519:Op7…@b3:2c4…#operations",
     "type": "object",
-    "required": [
-     "operation",
-     "at"
-    ],
-    "properties": {
-     "operation": {
-      "enum": [
-       "create",
-       "read",
-       "update",
-       "delete",
-       "want",
-       "keep",
-       "sync",
-       "act",
-       "own",
-       "govern"
-      ]
-     },
-     "at": {
-      "type": "string",
-      "format": "json-pointer"
-     },
-     "where": {
-      "type": "object"
-     },
-     "limit": {
-      "type": "integer",
-      "minimum": 1
-     }
+    "propertyNames": {
+     "enum": [
+      "create",
+      "read",
+      "update",
+      "delete",
+      "want",
+      "keep",
+      "sync",
+      "act",
+      "own",
+      "govern"
+     ]
     },
-    "additionalProperties": false
+    "additionalProperties": {
+     "type": "object",
+     "properties": {
+      "at": {
+       "type": [
+        "string",
+        "array"
+       ],
+       "default": ""
+      },
+      "where": {
+       "type": "object"
+      },
+      "limit": {
+       "type": "integer",
+       "minimum": 1
+      }
+     },
+     "additionalProperties": false
+    }
    },
-   "deep": "One shape, one schema (D56): operation, at (a JSON Pointer), where, limit; never a bare name. A policy names broad operations; the engine's operation record (theos/operation@1, Operations chapter) uses the same fields with a specific operation and its own inputs. An engine operation is allowed when a policy entry covers its broad operation, its path lies under at, and where and limit hold."
+   "deep": "One shape, one schema (D56): operations is an object keyed by operation name, so no operation appears twice. Each value holds its conditions: at (a JSON Pointer or a list of them, default \"\", the whole data), where, limit. The engine's operation record (theos/operation@1) uses the same fields for one specific operation. An engine operation is allowed when a policy names its broad operation, its path lies under at, and where and limit hold."
   },
   {
    "title": "Conditions make a policy narrower.",
@@ -115,24 +108,21 @@
     "type": "theos/policy@1",
     "to": "role:b3:d5k…#kids",
     "on": "data:ed25519:7Hq…#house-list",
-    "operations": [
-     {
-      "operation": "read",
+    "operations": {
+     "read": {
       "at": "/items"
      },
-     {
-      "operation": "create",
+     "create": {
       "at": "/items",
       "limit": 20
      },
-     {
-      "operation": "update",
+     "update": {
       "at": "/items/*/done",
       "where": {
        "author": "$self"
       }
      }
-    ],
+    },
     "proof": [
      "policy:b3:z0e…#first",
      "policy:b3:a0p…#your-phone"
@@ -165,12 +155,9 @@
     "schema": "data:ed25519:Sc4…@b3:1f0…#todo-list",
     "policy": {
      "to": "human:b3:q4x7…#you",
-     "operations": [
-      {
-       "operation": "own",
-       "at": ""
-      }
-     ],
+     "operations": {
+      "own": {}
+     },
      "expires": null
     },
     "sig": {
