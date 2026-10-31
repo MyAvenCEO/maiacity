@@ -474,7 +474,7 @@ fn links_in_their_document() {
 /// The params refuse a key they don't know, a key twice, and a value of the wrong kind.
 #[test]
 fn params_are_exact() {
-    use aven_core::Value;
+    use aven_codec::Value;
     let text = |s: &str| Value::Text(s.into());
     assert_eq!(
         Params::of_value(&Value::Map(vec![])),

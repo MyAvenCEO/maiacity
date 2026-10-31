@@ -150,16 +150,9 @@ fn face_runtime_vectors() {
     }
 }
 
-/// Every frozen version of markdown-runtime's module, each loaded by its hash, answers as the crate does natively, this
-/// package's own README among the documents.
-#[test]
-fn markdown_as_native() {
-    for (version, m) in versions("markdown-runtime") {
-        markdown_answers(version, &m);
-    }
-}
-
-fn markdown_answers(version: u64, m: &Loaded) {
+/// Documents and params every markdown-runtime takes: this package's own README among them, a file that isn't UTF-8,
+/// and an input that isn't params.
+fn markdown_cases() -> Vec<(Value, Value)> {
     let rules = Value::Map(vec![(
         "links".into(),
         Value::Array(vec![Value::Array(vec![
@@ -175,14 +168,55 @@ fn markdown_answers(version: u64, m: &Loaded) {
         vec![0xC3, 0x28],
         readme,
     ];
-    for d in docs {
-        let part = Value::Bytes(d);
-        for input in [&Value::Map(vec![]), &rules, &Value::Null] {
-            assert_eq!(
-                run(m, ROOMY, &part, input),
-                aven_runtimes_markdown::eval(&part, input),
-                "markdown-runtime@{version}"
-            );
+    docs.into_iter()
+        .flat_map(|d| {
+            [Value::Map(vec![]), rules.clone(), Value::Null]
+                .into_iter()
+                .map(move |i| (Value::Bytes(d.clone()), i))
+        })
+        .collect()
+}
+
+/// markdown-runtime's newest module, loaded by its hash, answers as the crate does natively.
+#[test]
+fn markdown_as_native() {
+    let m = module("markdown-runtime");
+    for (part, input) in markdown_cases() {
+        assert_eq!(
+            run(&m, ROOMY, &part, &input),
+            aven_runtimes_markdown::eval(&part, &input)
+        );
+    }
+}
+
+/// The versions of markdown-runtime that behave alike: v2 is v1 frozen again on aven-codec, its bytes new and its
+/// answers v1's; v3 resolves links against their document.
+const MARKDOWN_ALIKE: &[&[u64]] = &[&[1, 2], &[3]];
+
+/// Every frozen markdown-runtime still loads by its hash after its source has moved on, and answers as the versions
+/// that behave like it do: an older version's answers are its own, frozen with its bytes, never the crate's today.
+#[test]
+fn markdown_versions() {
+    let all = versions("markdown-runtime");
+    let listed: Vec<u64> = all.iter().map(|(v, _)| *v).collect();
+    let grouped: Vec<u64> = MARKDOWN_ALIKE
+        .iter()
+        .flat_map(|g| g.iter().copied())
+        .collect();
+    assert_eq!(listed, grouped, "every frozen version is in one group");
+    for group in MARKDOWN_ALIKE {
+        let ms: Vec<&Loaded> = group
+            .iter()
+            .map(|v| &all.iter().find(|(w, _)| w == v).unwrap().1)
+            .collect();
+        for (part, input) in markdown_cases() {
+            let first = run(ms[0], ROOMY, &part, &input);
+            if part != Value::Bytes(vec![0xC3, 0x28]) && input != Value::Null {
+                assert!(first.is_ok(), "markdown-runtime@{}: {first:?}", group[0]);
+            }
+            for (v, m) in group.iter().zip(&ms).skip(1) {
+                assert_eq!(run(m, ROOMY, &part, &input), first, "markdown-runtime@{v}");
+            }
         }
     }
 }
@@ -391,14 +425,21 @@ fn brain_documents() {
     let rules = Value::Array(
         [
             ("glossary:", "#/brain/glossary/"),
-            ("aven/", "https://github.com/myavenceo/maiacity/blob/main/aven/"),
+            (
+                "aven/",
+                "https://github.com/myavenceo/maiacity/blob/main/aven/",
+            ),
         ]
         .iter()
         .map(|(a, b)| Value::Array(vec![text(a), text(b)]))
         .collect(),
     );
     for doc in docs {
-        let rel = doc.strip_prefix(&brain).unwrap().to_string_lossy().into_owned();
+        let rel = doc
+            .strip_prefix(&brain)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
         let pre = if rel == "GLOSSARY.md" { "g-" } else { "" };
         let params = Value::Map(vec![
             ("base".into(), text(&format!("aven/DB2/brain/{rel}"))),
@@ -410,9 +451,16 @@ fn brain_documents() {
         assert!(native.is_ok(), "{rel}: refused natively: {native:?}");
         assert_eq!(run(&m, ROOMY, &part, &params), native, "{rel}");
         if rel == "GLOSSARY.md" {
-            let Ok(Value::Array(root)) = native else { panic!("{rel}: not a tree") };
-            let Value::Array(kids) = &root[2] else { panic!("{rel}: no children") };
-            let h2 = kids.iter().filter(|k| matches!(k, Value::Array(n) if n[0] == text("h2"))).count();
+            let Ok(Value::Array(root)) = native else {
+                panic!("{rel}: not a tree")
+            };
+            let Value::Array(kids) = &root[2] else {
+                panic!("{rel}: no children")
+            };
+            let h2 = kids
+                .iter()
+                .filter(|k| matches!(k, Value::Array(n) if n[0] == text("h2")))
+                .count();
             assert!(h2 > 5, "{rel}: {h2} sections");
         }
     }
