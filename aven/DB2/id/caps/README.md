@@ -146,7 +146,8 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
    n. No cap governs, and no device governs (`Aven.ID.Governs`).
 3. **Every cap narrows what it rests on.** A root cap rests on its issuer's authority over the target's vault. Every
    other cap rests on a parent its issuer holds and grants part of it: targets within, operations within, footprints
-   within, conditions at least as strict, and a lower share depth.
+   within, conditions at least as strict. A grant passes it to a holder, a share depth lower; an attenuation narrows it
+   for the same holder, no deeper (A27).
 4. **The verifier computes the chain, and a cap never changes.** Nothing a cap says about itself widens it. It names
    operations and roles by hash, so what it grants is fixed when it is signed.
 5. **A cap grants operations on targets.** The engine's operations (`read`, `query`, `write`, `mutate`) and the
@@ -286,6 +287,7 @@ are Values the same way.
   "issuer": "v:alice",
   "holder": "v:bob",
   "parent": null,
+  "kind": "grant",
   "grants": [
     { "target": { "doc": "d:7Hq…" },
       "read": { "history": "all" },
@@ -303,6 +305,7 @@ are Values the same way.
 | `issuer` | The vault that grants |
 | `holder` | A vault (devices are vaults), a group (`g:<doc>`), a ticket's public key, or `public`: every member of the network |
 | `parent` | The cap it narrows, by id, or `null` for a root cap |
+| `kind` | `grant`, or `attenuate` for a link that narrows its parent for the same holder, as a message's cap narrows per hop (A27, D16) |
 | `grants` | Each a target, the operations on it and the branches it may write; or `role` and `target` instead |
 | `conditions` | [Below](#conditions); they apply to every grant |
 | `nonce` | Makes two caps with the same grants two caps, each revocable on its own |
@@ -475,7 +478,7 @@ messages and queries. For people with keys, reading is whole Docs; for actors an
 | A public cap | The granting vault's owners, k of n |
 | Governance | Owners, k of n (avenID) |
 | A new device's device cap | The passkey sign-in that adds the device, which is already an owner's act |
-| An actor's narrower cap, message by message | The kernel, inside a cap someone approved. Not a new grant |
+| An actor's narrower cap, message by message: an attenuation | A device of its holder, the host's (A27). It grants nothing new, so no approval |
 | A revocation | Any device of a vault that may revoke. It only takes away, so a lost passkey never stops it |
 
 Approvals bind what others check: writes, `share` and `tell`. Reading is holding a key, and anyone holding a Doc's key
@@ -485,6 +488,15 @@ A root cap is issued by the target's vault or by a vault that governs it: author
 
 **Delegating needs no one online.** The holder signs a child cap that narrows its own and writes it where its target's
 caps live. Readers check it when they meet it, as Biscuit's offline attenuation does without Datalog.
+
+**Attenuating needs no approval** (A27, the architect, 31 Oct 2026). A cap that travels on in a message narrows at each
+hop (D16) by an attenuation: a link that keeps its parent's holder, lies within its parent, shares no deeper, and is
+signed by a device of that holder, the host's for an actor's message. It grants nothing new, so D14's approval doesn't
+apply to it. A chain still starts from authority: its root is an approved grant, attenuations follow approved grants,
+directly or through other attenuations, and a cap reaches a new holder only by an approved grant
+(`new_holder_granted`, `holder_granted`). A message that crosses to an actor on another vault's host carries its
+chain only as provenance. The receiver acts under its own standing caps, unless that vault holds an approved grant to
+act on the sender's authority, which attenuations can follow in turn.
 
 **Where caps live** (rule 12):
 - **A Doc's caps, revocations and epochs** are Records of avenID's types `cap`, `revoke` and `epoch` in the Doc's
@@ -523,7 +535,8 @@ checks the footprint ([engine](../../db/engine/README.md#who-checks-what)):
    - either the signer's vault is the Doc's vault, or governs it, and the device acts within its device cap
      (`own_authorized`);
    - or the envelope names a cap whose chain holds:
-     - **valid:** signatures, approvals, every link narrowing, conditions;
+     - **valid:** signatures, approvals on every grant, every link narrowing, every attenuation keeping its holder,
+       conditions;
      - **live:** kept by every revocation on the chain that the reader holds (rule 14);
      - **covering:** its footprint covers the change; with `approve`, the approvals over this envelope's digest; and
        for a group's cap, the writer's live read cap on the group, and the issuer of each child still in it.
@@ -1173,10 +1186,12 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `device_proposals_never_main`, `merge_within_device` | A device whose cap is for proposals, as an agent's removals go, never writes on main whatever chain it names; a merge into main read whole stays within the merging device's cap |
 | `Caps` | `narrow_chain`, `narrow_steps` | No cap in a chain lets a verb reach a Doc, or allows a write step, that its root doesn't |
 | | `root_authority` | Every line a chain grants lies in its root issuer's authority: its own vault, one it governs, or a Doc of one |
-| | `chain_short` | A chain is no longer than its root may be shared |
-| | `grant_approved` | Every cap in a chain was signed by a device of its issuer and approved by its issuer's owners, an owner vault by its own quorum (D14) |
+| | `chain_short` | A chain passes its root on no more often than its root may be shared: every grant lowers the share depth, and an attenuation never raises it |
+| | `grant_approved` | Every cap in a chain was signed by a device of its issuer, and every grant in it approved by its issuer's owners, an owner vault by its own quorum (D14) |
 | | `child_live` | A cap issued from a group's cap holds only while its issuer is in the group |
 | | `public_bounded`, `public_no_share` | The public passes nothing on and never shares (D15) |
+| | `attenuate_within`, `attenuate_signed` | An attenuation keeps its parent's holder, a device of a vault that holds it signs it, and it reaches and allows nothing its parent doesn't, shares no deeper and is at least as strict: no later expiry, no other branches (A27) |
+| | `new_holder_granted`, `holder_granted` | A cap reaches a new holder only by a grant its issuer's owners approved (D14), and every cap of a chain is held by a holder an approved grant in it reached: a chain starts from authority, and an attenuation only follows an approved grant |
 | | `role_pinned` | A new version of a role changes nothing a cap naming the old one grants (D6) |
 | | `chainError_none` | The first rule a chain breaks is none exactly when it keeps them all |
 | `Approve` | `approval_exact` | An approval holds only with k distinct owners, each having signed exactly its digest |

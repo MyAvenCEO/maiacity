@@ -77,6 +77,28 @@ def capAven : Cap :=
   { id := "cap-aven", issuer := "aven", holder := .vault "bob", signer := "aven-peer",
     grant := [⟨.vault (vaultId "aven") false, .read, []⟩], approvals := [⟨"alice-owner", "cap-aven"⟩] }
 
+/-- Alice lets Aven read `d1` and write tasks on it, and pass that on one hop: the cap Aven's actors run under (A27). -/
+def capHost : Cap :=
+  { id := "cap-host", issuer := "alice", holder := .vault "aven", share := 1, signer := "alice-peer",
+    grant := [readOn d1, tasksOn d1], approvals := [⟨"alice-owner", "cap-host"⟩] }
+
+/-- Aven's Peer, the actors' host, narrows it to reading `d1` for one hop of a run: an attenuation, which keeps Aven as
+its holder and carries no approval (D16). -/
+def attRead : Cap :=
+  { id := "att-read", issuer := "aven", holder := .vault "aven", parent := "cap-host", kind := .attenuate,
+    signer := "aven-peer", grant := [readOn d1] }
+
+/-- A first hop that keeps both lines until 100, before `attRead`'s narrowing on the next. -/
+def attTasks : Cap :=
+  { attRead with
+    id := "att-tasks", grant := [readOn d1, tasksOn d1], share := 1, conditions := { expires := some 100 } }
+
+/-- A grant from Aven to Bob after a hop, which the cap may share one hop on: a holder change, so Aven's owners
+approve it (D14). -/
+def capHostBob : Cap :=
+  { id := "cap-hb", issuer := "aven", holder := .vault "bob", parent := "att-pass", signer := "aven-peer",
+    grant := [readOn d1] }
+
 /-- Chains, each with the first rule it breaks, or none. -/
 def chainExamples : List (String × List Cap × Option ChainError) := [
   ("Alice gives Bob read and task writing on d1", [capA], none),
@@ -144,7 +166,37 @@ def chainExamples : List (String × List Cap × Option ChainError) := [
     none),
   ("Aven's cap, approved by its owner Maia City, which approves through Alice's key", [capAven], none),
   ("Aven's cap, approved by Bob's key, which is above neither", [recap capAven "cap-aven-b" "bob-owner"],
-    some (.approval "cap-aven-b"))]
+    some (.approval "cap-aven-b")),
+  ("Aven's Peer narrows Alice's cap for one hop of a run: an attenuation, with no approval", [capHost, attRead], none),
+  ("and narrows it again on the next hop, with no later expiry",
+    [capHost, attTasks,
+     { attRead with id := "att-read-50", parent := "att-tasks", conditions := { expires := some 50 } }], none),
+  ("an attenuation that starts a chain", [{ attRead with parent := none }], some (.notRoot "att-read")),
+  ("an attenuation that hands the cap to Bob", [capHost, { attRead with id := "att-bob", holder := .vault "bob" }],
+    some (.holder "att-bob")),
+  ("an attenuation wider than its parent",
+    [capHost, { attRead with id := "att-wide", grant := [readOn d1, readOn d2] }], some (.wider "att-wide")),
+  ("an attenuation signed by a device of another vault",
+    [capHost, { attRead with id := "att-dev", signer := "alice-peer" }], some (.signer "att-dev")),
+  ("an attenuation by a vault that doesn't hold the parent",
+    [capHost, { attRead with id := "att-alice", issuer := "alice", signer := "alice-peer" }],
+    some (.issuer "att-alice")),
+  ("an attenuation that drops its parent's expiry",
+    [capHost, attTasks, { attRead with id := "att-late", parent := "att-tasks" }], some (.conditions "att-late")),
+  ("an attenuation that may share further than its parent", [capHost, { attRead with id := "att-share", share := 2 }],
+    some (.share "att-share")),
+  ("after a hop, the cap reaches Bob only by a grant Aven's owners approve (D14)",
+    [capHost, { attRead with id := "att-pass", share := 1 }, capHostBob], some (.approval "cap-hb")),
+  ("approved by Aven's owner Maia City, through Alice's key",
+    [capHost, { attRead with id := "att-pass", share := 1 }, recap capHostBob "cap-hb2" "alice-owner"], none),
+  ("a group's cap, narrowed by someone in the group",
+    [capA2, capG,
+     { id := "att-g", issuer := "alice", holder := .group "g-garden", parent := "cap-g", kind := .attenuate,
+       signer := "alice-peer", grant := [readOn d1] }], none),
+  ("the public narrows nothing",
+    [capPublic,
+     { id := "att-pub", issuer := "alice", holder := .«public», parent := "cap-public", kind := .attenuate,
+       signer := "alice-peer", grant := [readOn cityNotes] }], some (.issuer "att-pub"))]
 
 -- Vault ids are UTF-8 bytes, which the kernel doesn't compute, so the chains are checked as the module builds.
 #guard chainExamples.all fun (_, cs, e) => chainError castCtx cs == e
@@ -235,13 +287,16 @@ def castVault (v : Core.Bytes) : String :=
   ((["alice", "bob", "maia-city", "aven"].find? (vaultId · == v))).getD "a vault"
 
 def Cap.text (c : Cap) (roles : List Role) : String :=
-  s!"{c.issuer} grants {c.holder.text}: " ++
+  (match c.kind with
+    | .grant => s!"{c.issuer} grants {c.holder.text}: "
+    | .attenuate => s!"{c.issuer} narrows the cap {c.holder.text} holds to: ") ++
     ", ".intercalate ((c.grants roles).map (Line.text castName castVault)) ++
     (if c.share = 0 then "; no sharing on" else s!"; may share on {c.share} more hop(s)") ++
     (match c.conditions.expires with | some t => s!"; until {t}" | none => "")
 
 #guard capA.text [] == "alice grants bob: read d1, put d1 (put-new tasks, patch tasks); may share on 1 more hop(s)"
 #guard capB.text [] == "bob grants everyone in g-garden: read d1; no sharing on"
+#guard attRead.text [] == "aven narrows the cap aven holds to: read d1; no sharing on"
 
 -- Every cap of the examples is a Value the codec allows, so its bytes and its id name it exactly.
 #guard (chainExamples.flatMap (·.2.1)).all fun c => Core.Canon c.body
