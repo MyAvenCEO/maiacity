@@ -701,12 +701,29 @@ the spec that owns it.
 - **A31. Two kinds of signed thing:** history (envelopes in a log, where a split is final) and beats, which decide
   nothing. An address or release record is history: an envelope in its signer's own log, the newest the latest there,
   so the "smaller body wins" tie-break goes. *Decided (the architect, 31 Oct 2026): it follows from A4.*
-- **A32. Targets, not queries.** A cap names a target over a Doc's birth facts (its id, vault, type and the actor that
-  spawned it), never a query over its content, so what it covers can't drift with the data, and anyone can check it.
-  A keep cap's target is resolved to Doc ids by the issuer's devices for its blind keeper (#1642); "query" in A22 meant
-  this. Queries are for wants and search. The target grammar shrinks to a Doc (with what it spawned or not), a vault's
-  Docs and a vault's Docs of one type, each with the vaults below or not; only a write line carries a footprint
-  (#1653). *Decided (the architect, 31 Oct 2026): it follows from caps rule 6 and A8.*
+- **A32. Caps are built from ops.** *Decided: yes (Samuel, 31 Oct 2026: "caps should be built from their ops").*
+  A cap line names an operation by its hash (rule 1's name of its stored form) and bounds on its parameters, and nothing
+  else.
+  - **The core verbs are ops:** read, put, patch, remove, edit, tell, keep and share are the core plugin's (`core/1`).
+    Free editing is `edit` on a type and field. Reading is still the key (rule 5): `read`'s check is holding it.
+  - **The Doc an op acts on is a parameter,** bounded by a target over the Doc's birth facts (its id, vault, type and
+    the actor that spawned it), never by a query over content, so what a cap covers can't drift with the data (caps
+    rule 6, A8). A keep cap's target is resolved to Doc ids by its issuer's devices for a blind keeper (#1642). The
+    targets are three forms: a Doc (with what it spawned or not), a vault's Docs and a vault's Docs of one type, each
+    with the vaults below or not.
+  - **Footprints are computed from an op's lowering** (E1 to E3), never written in a cap, so what an owner approves is
+    the op's name and definition, exactly what it lets the holder do. An envelope names the op it ran; a reader checks
+    the cap lists it and the steps are what it produces.
+  - **Narrowing is a subset:** fewer ops, or tighter bounds. An op is pinned by its hash, and a vault adopts a new
+    version as it adopts an actor's (`replaces`), so a grant never changes behaviour by itself.
+  - **One list of what can be done:** an actor's `describe`, an app's actions and the record of who did what are the
+    ops a caller's caps allow.
+  - Lean first, before any caps code: Core's `Verb` and `Grant`, caps' `Line` and the engine's op declaration become
+    one.
+- **A39. Every Doc has a type, always** (Samuel, 31 Oct 2026: "no doc can be without type ever"). A Doc's genesis
+  fixes its root type with its vault (docs D11), and Core's `Facts.type` is never empty. That holds for every kind of
+  Doc: the network tree, a carrier Doc, the release vault's Doc, an actor's Doc, a catalogue, a period Doc. A type Doc's
+  own type is the one built-in type of types. *Decided: yes.*
 - **A33. An actor's message is an envelope** in the carrier Doc of its two vaults (A17), born with the first letter
   through the letterbox, and delivered as any Doc's envelopes are (K11): live by the pair's gossip, caught up by
   reconciliation; a direct connection is a faster path for the same sync. The receiver's turn names the message by hash
