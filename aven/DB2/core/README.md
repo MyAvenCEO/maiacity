@@ -22,13 +22,29 @@ primitives everything shares" and rules 1 to 3). It is one Lean package, in [`sp
 The hash and signatures are parameters: a theorem that needs the hash collision-free assumes it (`Injective`), and
 signatures are taken as sound, as in every Aven model. `Blake3` is the hash the examples and vectors use.
 
-**In Rust: `aven-core`** (this folder, a member of aven/DB2's workspace). For now the codec and names: `Value`,
-`encode` and `decode` in the strict profile, held to `spec/vectors/cbor.json` both ways (every encoding written and
-read back, every refusal refused), and BLAKE3 names, Doc ids and type ids, held to `names.json`. `no_std`, no
-`unsafe`; it builds for wasm32, so the runtimes in aven/runtimes use it by path. Nothing deeper than 512 is read
-(`MAX_DEPTH`, Lean's `maxDepth`, a scalar counting as 1), so a hostile input can't exhaust the stack (ARCHITECTURE
-rule 10); `cbor.json` holds it at 512 and 513 deep. Other threads extend the crate (envelopes, logs) Lean-first, as
-here.
+**In Rust: `aven-core`** (this folder, a member of aven/DB2's workspace). `no_std`, no `unsafe`; it builds for
+wasm32, so the runtimes in aven/runtimes use it by path.
+
+- **The codec and names:** `Value`, `encode` and `decode` in the strict profile, held to `spec/vectors/cbor.json` both
+  ways (every encoding written and read back, every refusal refused), and BLAKE3 names, Doc ids and type ids, held to
+  `names.json`. Nothing deeper than 512 is read (`MAX_DEPTH`, Lean's `maxDepth`, a scalar counting as 1), so a
+  hostile input can't exhaust the stack (ARCHITECTURE rule 10); `cbor.json` holds it at 512 and 513 deep.
+- **Signed things** (`signed.rs`): `signing_bytes`, `Signed` with its `value`, `name` and `valid`. A thing's name is
+  the hash of `[label, body]`, never of its signature (A30). Verification is the `Verify` trait, a parameter as in the
+  Lean: aven-core holds no keys, and avenID implements the schemes.
+- **Envelopes, logs, splits, versions** (`log.rs`): `Envelope` with `unsigned`, `value`, `signing` (under
+  `avenDB envelope 1`), `name` and `valid`, read back by `Envelope::decode`; `split`; `Held`, what a reader holds, which
+  decides `discounted`, `counts` and a version's `holds`; `is_chain`, and `Log`, a writer's log that grows only at its
+  head and refuses a split. Held to `envelopes.json` and `logs.json` byte for byte.
+- **The past** (`past.rs`): `Parents`, and `past` and `in_past` for anything named that names its parents.
+- **Limits** (`limits.rs`, rule 10): an envelope or signed thing is at most 1 MiB, at most 256 deps, a branch or label
+  256 bytes, a signer 4 KiB and a signature 16 KiB, each refused before it is kept. These are Rust's alone for now;
+  Lean states none of them yet.
+
+`tests/log.rs` transcribes Lean's definitions as they read (`pastNames` in rounds, `Before`, `Reaches`, `Split`,
+`Discounted`, `Counts`, `Version.holds`) and checks the crate against them on random envelopes, with the theorems
+(`split_final`, `counts_past`, `resign_no_split`, `chain_no_split`, `chains_agree`, `Version.holds_mono`) and round
+trips of every encoding.
 
 **Run it in the box,** from `aven/DB2`: `bun run box sh -c 'cd core/spec && lake build'`; `bun run box sh
 sandbox/vectors.sh` writes the vectors in [`spec/vectors`](spec/vectors), and `--check` compares them with what's

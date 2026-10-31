@@ -1,7 +1,7 @@
 [package]
 name = "aven-core"
 version = "0.0.0"
-description = "What every part of avenDB shares, in Rust: Values in the one codec, and their names (Aven.Core)"
+description = "What every part of avenDB shares, in Rust: Values in the one codec, their names, signed things, envelopes, logs and the past (Aven.Core)"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -11,5 +11,6 @@ publish.workspace = true
 blake3 = { version = "=1.8.7", default-features = false }
 
 [dev-dependencies]
+proptest = "=1.12.0"
 serde = "=1.0.229"
 serde_json = { version = "=1.0.154", features = ["arbitrary_precision", "unbounded_depth"] }
