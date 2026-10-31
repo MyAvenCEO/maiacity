@@ -1,4 +1,4 @@
-/* Dark marina blue around paper; one stage, one moment at a time: paper, a single unbroken ink line, one quiet earth-toned shape. */
+/* Text first: one moment per card, cream paper on dark marina blue. */
 :root {
   --stage: #13212c;
   --stage-ink: #dcd5c6;
@@ -8,10 +8,8 @@
   --ink-soft: #4f5a5f;
   --clay: #c9876a;
   --ochre: #d6ae6a;
-  --sage: #a9b79a;
-  --moss: #7f8c66;
-  --sand: #e3cfa9;
   --chip: #1b2e3c;
+  --line: #2c4252;
   --display: "Instrument Sans", "Helvetica Neue", Arial, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
   color-scheme: dark;
@@ -21,52 +19,47 @@ body {
   margin: 0;
   background: var(--stage);
   color: var(--stage-ink);
-  font: 15px/1.5 var(--display);
+  font: 16px/1.5 var(--display);
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
-.stage { max-width: 1120px; margin: 0 auto; padding-block: 28px 36px; display: grid; gap: 18px; }
+.stage { max-width: 960px; margin: 0 auto; padding-block: 28px 36px; display: grid; gap: 18px; }
 .card {
-  position: relative;
   background: var(--paper);
   color: var(--ink);
   border-radius: 6px;
-  aspect-ratio: 16 / 9;
-  max-width: 100%;
-  overflow: hidden;
+  min-height: min(62vh, 520px);
+  padding: clamp(28px, 6vw, 72px);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 18px;
   cursor: pointer;
-  transition: background-color .5s ease;
 }
-.card[data-tint="sand"] { background: #f1e6d0; }
-.card[data-tint="sage"] { background: #ecebdc; }
-.card[data-tint="clay"] { background: #f4e5d8; }
-.card svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.copy { position: relative; z-index: 1; padding: 26px 30px; max-width: 37ch; display: grid; gap: 8px; }
 .num { font: 500 13px/1 var(--mono); letter-spacing: .04em; color: var(--ink-soft); }
-.title { margin: 8px 0 0; font: 500 clamp(22px, 2.6vw, 30px)/1.15 var(--display); text-wrap: balance; }
-.text { margin: 0; font-size: 15px; line-height: 1.6; color: var(--ink-soft); }
-.text b { font-weight: 500; color: var(--ink); border-bottom: 1.5px solid var(--clay); }
-
-.ln { fill: none; stroke: var(--ink); stroke-width: 2.3; stroke-linecap: round; stroke-linejoin: round; }
-.shape { opacity: .9; }
-.lbl { font: 500 14px var(--mono); fill: var(--ink-soft); }
+.title { margin: 0; font: 500 clamp(28px, 4.6vw, 48px)/1.1 var(--display); text-wrap: balance; max-width: 18ch; }
+.text { margin: 0; font-size: clamp(17px, 2vw, 21px); line-height: 1.55; color: var(--ink-soft); max-width: 40ch; text-wrap: pretty; }
+.text b { font-weight: 500; color: var(--ink); border-bottom: 2px solid var(--clay); }
+.list { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; font-size: clamp(18px, 2.2vw, 24px); }
+.list li { padding-left: 22px; position: relative; }
+.list li::before { content: ""; position: absolute; left: 0; top: .55em; width: 9px; height: 9px; border-radius: 50%; background: var(--ochre); }
 
 @media (prefers-reduced-motion: no-preference) {
-  .card.enter .ln { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 3.2s cubic-bezier(.45, .05, .35, 1) forwards; }
-  .card.enter .shape { transform-box: fill-box; transform-origin: center; animation: grow 1.1s .7s ease-out both; }
-  .card.enter .lbl { animation: fade .6s 1.6s ease-out both; }
-  .card.enter .copy { animation: fade .6s ease-out both; }
+  .card.enter .title { animation: fade .5s ease-out both; }
+  .card.enter .text, .card.enter .list { animation: fade .5s .12s ease-out both; }
 }
-@keyframes draw { to { stroke-dashoffset: 0; } }
-@keyframes grow { from { transform: scale(.7); opacity: 0; } }
-@keyframes fade { from { opacity: 0; transform: translateY(5px); } }
+@keyframes fade { from { opacity: 0; transform: translateY(6px); } }
+
+.terms { display: flex; flex-wrap: wrap; gap: 8px; min-height: 32px; }
+.terms span { font: 500 13px var(--mono); padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); color: var(--stage-soft); }
+.terms span.new { border-color: var(--ochre); color: var(--ochre); }
 
 .nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .nav button {
-  font: 500 14px var(--display);
+  font: 500 15px var(--display);
   color: var(--paper);
   background: var(--chip);
-  border: 1px solid #2c4252;
+  border: 1px solid var(--line);
   border-radius: 999px;
   padding: 10px 20px;
   cursor: pointer;
@@ -75,19 +68,9 @@ body {
 .nav button:disabled { opacity: .3; cursor: default; }
 .nav button:focus-visible, .track button:focus-visible { outline: 2px solid var(--ochre); outline-offset: 2px; }
 
-/* the story so far: one thin line, a mark per moment */
 .track { position: relative; display: flex; justify-content: space-between; align-items: center; padding: 6px 2px; }
-.track::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1.5px; background: #2c4252; }
+.track::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1.5px; background: var(--line); }
 .track .fill { position: absolute; left: 0; top: 50%; height: 1.5px; background: var(--stage-ink); transition: width .5s ease; }
-.track button {
-  position: relative; width: 11px; height: 11px; padding: 0; border-radius: 50%;
-  border: 1.5px solid #3b5466; background: var(--stage); cursor: pointer;
-}
+.track button { position: relative; width: 11px; height: 11px; padding: 0; border-radius: 50%; border: 1.5px solid #3b5466; background: var(--stage); cursor: pointer; }
 .track button.past { background: var(--stage-ink); border-color: var(--stage-ink); }
 .track button.now { background: var(--ochre); border-color: var(--ochre); transform: scale(1.35); }
-
-@media (max-width: 860px) {
-  .card { aspect-ratio: auto; display: grid; }
-  .card svg { position: relative; inset: auto; height: auto; aspect-ratio: 16 / 9; }
-  .copy { max-width: none; padding: 22px 22px 4px; }
-}
