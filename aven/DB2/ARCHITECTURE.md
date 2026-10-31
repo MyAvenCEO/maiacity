@@ -709,8 +709,13 @@ the spec that owns it.
   - **The Doc an op acts on is a parameter,** bounded by a target over the Doc's birth facts (its id, vault, type and
     the actor that spawned it), never by a query over content, so what a cap covers can't drift with the data (caps
     rule 6, A8). A keep cap's target is resolved to Doc ids by its issuer's devices for a blind keeper (#1642). The
-    targets are three forms: a Doc (with what it spawned or not), a vault's Docs and a vault's Docs of one type, each
-    with the vaults below or not.
+    targets are three forms: a Doc (with what it spawned or lists, or not), a vault's Docs and a vault's Docs of one
+    type, each with the vaults below or not.
+  - **A query's flexibility comes as a collection** (Samuel, 31 Oct 2026: "photos tagged beach from 2026"): a Doc of
+    the sharing vault that lists Docs, like a smart album. The vault's devices run the query, an op, and sign each
+    change to the list; a cap names the collection and what it lists. So what a cap covers changes only by its
+    issuer's signed act, never because someone edited a tag, and anyone can check it, keepers too. A Doc that leaves
+    the list gets no new key for the holder; what was seen stays seen.
   - **Footprints are computed from an op's lowering** (E1 to E3), never written in a cap, so what an owner approves is
     the op's name and definition, exactly what it lets the holder do. An envelope names the op it ran; a reader checks
     the cap lists it and the steps are what it produces.
