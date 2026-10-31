@@ -131,6 +131,13 @@ decision's own text, reasons and Lean are its row there.
 
 | Decision | What | Page | Holds |
 |---|---|---|---|
+| [A222](DECISIONS.md) | No owner changes for now: a vault's owners and k are fixed at its birth (Samuel) | [id](id/README.md) | yes |
+| [A221](DECISIONS.md) | avenID consolidated: the keyring's epoch key is the vault key, two key moves, one seal, the passkey reaches the owner key, names (Samuel) | [id](id/README.md) | superseded by [A222](DECISIONS.md) in part |
+| [A220](DECISIONS.md) | One passkey per vault, and no recovery (Samuel) | [id](id/README.md) | yes |
+| [A219](DECISIONS.md) | maia.city's passkeys stay open for now; tags come with the key tree (Samuel) | [id](id/README.md) | yes |
+| [A218](DECISIONS.md) | No guardian: MaiaCityGuardian leaves the architecture (Samuel) | [id](id/README.md) | yes |
+| [A217](DECISIONS.md) | Everything that belongs to avenCAPS moves to avenCAPS; avenID never imports avenCAPS (Samuel) | [caps](caps/README.md) | superseded by [A221](DECISIONS.md) in part |
+| [A216](DECISIONS.md) | The safe and the keyring are one: the keyring; a removal always renews the vault key (Samuel) | [id](id/README.md) | yes |
 | [A215](DECISIONS.md) | A telling ends with one page that says no more; an empty telling is that page alone | [peers](peers/README.md) | yes |
 | [A214](DECISIONS.md) | The cast's vault nonces are #1738's; vectors name cast vaults by handle only in case descriptions | [id](id/README.md) | yes |
 | [A213](DECISIONS.md) | The tree starts from its setup's Value, never from a body; the `genesis` op goes | [caps](caps/README.md) | yes |
@@ -155,7 +162,7 @@ decision's own text, reasons and Lean are its row there.
 | [A194](DECISIONS.md) | History entries: `Aven.Peer.History`, one-key bodies, no tree-tip beat | [peers](peers/README.md) | superseded by A197 in part |
 | [A193](DECISIONS.md) | Peer records are avenPEERS' | [peers](peers/README.md) | superseded by A194 in part |
 | [A192](DECISIONS.md) | markdown-runtime v3: links resolve against their document | [runtime](runtime/README.md) | yes |
-| [A191](DECISIONS.md) | A removal never undoes finality | [caps](caps/README.md) | yes |
+| [A191](DECISIONS.md) | A removal never undoes finality | [caps](caps/README.md) | superseded by [A222](DECISIONS.md) |
 | [A190](DECISIONS.md) | Core names vaults by plain 32 bytes; one switch, two PRs back to back | [core](core/README.md) | yes |
 | [A189](DECISIONS.md) | Approvals are Core signatures, and Lean's vectors sign for real | [caps](caps/README.md) | yes |
 | [A188](DECISIONS.md) | An actor host's envelope names its actor in its authority | [caps](caps/README.md) | yes |
@@ -303,8 +310,8 @@ decision's own text, reasons and Lean are its row there.
 | [A46](DECISIONS.md) | `Aven.ID.Past` moves into Core as `Aven.Core.Past` | [core](core/README.md) | yes |
 | [A45](DECISIONS.md) | One concept, one owner | this page | superseded by A159 in part, A206 in part |
 | [A44](DECISIONS.md) | Placement has one source: the owner's vault | [caps](caps/README.md) | superseded by A144 in part |
-| [A43](DECISIONS.md) | The Doc foundation comes first | process | superseded by A112 in part |
-| [A42](DECISIONS.md) | The contradictions of 31 Oct | [caps](caps/README.md) | superseded by A148 in part |
+| [A43](DECISIONS.md) | The Doc foundation comes first | process | superseded by A112, [A221](DECISIONS.md) in part |
+| [A42](DECISIONS.md) | The contradictions of 31 Oct | [caps](caps/README.md) | superseded by A148, [A218](DECISIONS.md), [A220](DECISIONS.md) in part |
 | [A41](DECISIONS.md) | avenOS's documentation is "Brain" | [os](os/README.md) | yes |
 | [A40](DECISIONS.md) | Holdings follow caps | [caps](caps/README.md) | yes |
 | [A39](DECISIONS.md) | Every Doc has a type, always | [docs](docs/README.md) | yes |
