@@ -11,7 +11,7 @@ date; the rest is a proposal.
 - **Plain, short sentences,** one idea each. Concrete before abstract: Alice and her key before "a principal".
 - **Exact.** Every claim says what the specs mean, in their words ([`GLOSSARY.md`](GLOSSARY.md)); a simplification
   says so ("That comes later"), it never says something false.
-- **English first.**
+- **English.** The docs are in English (Samuel, 31 Oct 2026).
 
 ## The story map
 
@@ -24,4 +24,3 @@ Each package's page opens with its story: the concepts in the order a reader mee
 2. **The first slide's words** (`id/slides/owns.md`), and its title, "A key owns a vault".
 3. **The metaphor:** a vault as a dome on its plot, a person as a settler, a relation as a dotted path with its name
    on a tag.
-4. **German:** a German version of every page beside the English, or English only.

@@ -54,7 +54,8 @@ component draws it, never parsing HTML on the page:
 - a slide's markup through `render/tree.js`, which parses it and checks it against the allowlist, as the face-runtime
   will.
 
-So the face-runtime and the markdown-runtime can take a slide over without a rewrite of the slide.
+So the face-runtime and the markdown-runtime can take a slide over without a rewrite of the slide. The runtimes thread
+builds both as code (31 Oct 2026); once they and the tree drawer land, the pages switch to them.
 
 ## What the runtimes plan lacks
 
