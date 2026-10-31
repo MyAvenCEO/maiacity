@@ -101,7 +101,7 @@ theorem present_signed {admits : String → Bool} {window now : Nat} {rs : List 
     ∃ r ∈ rs, r.kind = .presence ∧ r.about = d ∧ r.signer = d ∧ admits d = true := by
   simp only [present, List.any_eq_true, Bool.and_eq_true, beq_iff_eq] at h
   obtain ⟨r, mr, ⟨⟨⟨k, a⟩, n⟩, _⟩⟩ := h
-  have t := ((isNewest_iff.mp n).1).2
+  have t := ((isNewest_iff.mp n).1).1.2
   simp only [takes, k, Bool.and_eq_true, beq_iff_eq] at t
   exact ⟨r, mr, k, a, t.1.trans a, a ▸ t.1 ▸ t.2⟩
 
