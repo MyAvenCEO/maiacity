@@ -49,6 +49,26 @@ fn module(runtime: &str) -> Loaded {
     load(&m, &e.hash, &kept(&e.hash)).unwrap_or_else(|err| panic!("{runtime}: {err:?}"))
 }
 
+/// Every frozen version of a runtime the manifest lists, each loaded from its kept bytes by its hash: a version stays
+/// loadable after its source has moved on.
+fn versions(runtime: &str) -> Vec<(u64, Loaded)> {
+    let m = manifest();
+    let all: Vec<(u64, Loaded)> = m
+        .iter()
+        .filter_map(|e| match e {
+            Entry::Frozen(f) if f.name == runtime && listed(&m, &f.hash) => Some(f.clone()),
+            _ => None,
+        })
+        .map(|f| {
+            let l = load(&m, &f.hash, &kept(&f.hash))
+                .unwrap_or_else(|err| panic!("{runtime}@{}: {err:?}", f.version));
+            (f.version, l)
+        })
+        .collect();
+    assert!(!all.is_empty(), "{runtime}: no frozen version");
+    all
+}
+
 const ROOMY: Limits = Limits {
     fuel: 2_000_000_000,
     memory: 64 << 20,
@@ -102,32 +122,44 @@ fn frozen() {
     }
 }
 
-/// face-runtime's vectors through its module: the result, byte for byte, as the model has it.
+/// face-runtime's vectors through every frozen version of its module, each loaded by its hash: the result, byte for
+/// byte, as the model has it.
 #[test]
 fn face_runtime_vectors() {
-    let m = module("face-runtime");
     let vs: Vec<Json> = serde_json::from_str(
         &std::fs::read_to_string(here("spec/vectors/face-runtime.json")).unwrap(),
     )
     .unwrap();
     assert!(vs.len() >= 8);
-    for v in vs {
-        let name = v["name"].as_str().unwrap();
-        let part = decode(&unhex(v["input"]["part"].as_str().unwrap())).unwrap();
-        let data = decode(&unhex(v["input"]["data"].as_str().unwrap())).unwrap();
-        let got = run(&m, ROOMY, &part, &data);
-        let hex: String = encode(&result(&got))
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect();
-        assert_eq!(hex, v["expected"]["result"].as_str().unwrap(), "{name}");
+    for (version, m) in versions("face-runtime") {
+        for v in &vs {
+            let name = v["name"].as_str().unwrap();
+            let part = decode(&unhex(v["input"]["part"].as_str().unwrap())).unwrap();
+            let data = decode(&unhex(v["input"]["data"].as_str().unwrap())).unwrap();
+            let got = run(&m, ROOMY, &part, &data);
+            let hex: String = encode(&result(&got))
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect();
+            assert_eq!(
+                hex,
+                v["expected"]["result"].as_str().unwrap(),
+                "face-runtime@{version}: {name}"
+            );
+        }
     }
 }
 
-/// markdown-runtime's module answers as the crate does natively, this package's own README among the documents.
+/// Every frozen version of markdown-runtime's module, each loaded by its hash, answers as the crate does natively, this
+/// package's own README among the documents.
 #[test]
 fn markdown_as_native() {
-    let m = module("markdown-runtime");
+    for (version, m) in versions("markdown-runtime") {
+        markdown_answers(version, &m);
+    }
+}
+
+fn markdown_answers(version: u64, m: &Loaded) {
     let rules = Value::Map(vec![(
         "links".into(),
         Value::Array(vec![Value::Array(vec![
@@ -147,8 +179,9 @@ fn markdown_as_native() {
         let part = Value::Bytes(d);
         for input in [&Value::Map(vec![]), &rules, &Value::Null] {
             assert_eq!(
-                run(&m, ROOMY, &part, input),
-                aven_runtimes_markdown::eval(&part, input)
+                run(m, ROOMY, &part, input),
+                aven_runtimes_markdown::eval(&part, input),
+                "markdown-runtime@{version}"
             );
         }
     }
@@ -224,12 +257,13 @@ fn wasm(extra: &[u8]) -> Vec<u8> {
     .concat()
 }
 
-/// The host loads nothing it shouldn't.
+/// The host loads nothing it shouldn't. Every byte string here is a frozen module's, read by its hash, or made to be
+/// refused: a fresh build is held to the manifest by `frozen`, never loaded.
 #[test]
 fn refusals() {
-    let face = built("face");
     let m = manifest();
     let face_hash = latest(&m, "face-runtime").hash;
+    let face = kept(&face_hash);
     // a hash the manifest doesn't list, even for good bytes
     assert_eq!(
         load(&m, &blake3(b"something else"), &face).err(),
@@ -237,7 +271,7 @@ fn refusals() {
     );
     // bytes that aren't the hash's
     assert_eq!(
-        load(&m, &face_hash, &built("markdown")).err(),
+        load(&m, &face_hash, &kept(&latest(&m, "markdown-runtime").hash)).err(),
         Some(LoadError::WrongBytes)
     );
     let mut flipped = face.clone();
