@@ -1,0 +1,77 @@
+{
+ "title": "Identity",
+ "slides": [
+  {
+   "title": "It starts with your phone.",
+   "text": "Your phone is a {device}: an identity of its own. Inside it sits a {signer}, a key that can say one thing: “this really comes from this phone.” A signer is only a key. The device never owns anything.",
+   "deep": "A device identity's ID is the hash of its birth record, so it outlives its keys. Its signer is a key it holds and registers in its own history. How it is kept is up to the device: on a phone, derived from the passkey's PRF plus a per-device salt; on a laptop, the keychain; on a server, an environment variable, a secret manager or an HSM."
+  },
+  {
+   "title": "Your devices act for you.",
+   "text": "You are an {identity} too: a human. Your phone, laptop and watch are your devices, your hands, and each signs with its own signer. Lose one, add another, and you're still you.",
+   "deep": "A human identity's members are device identities. Its history lists them and commits to the next ones in advance (KERI-style pre-rotation). Identity types: device, human, coop."
+  },
+  {
+   "title": "You and Mia start a home.",
+   "text": "Together you form a {coop}: an identity made of identities. Neither of you is the coop alone, and it lives on even if one of you loses every device.",
+   "deep": "A coop's members are identities, never signers, and membership may not form a cycle."
+  },
+  {
+   "title": "Coops can hold coops.",
+   "text": "Your street is a coop of homes, and a home is a coop of people. Coops can be members of coops, as deep as you like, just never in a circle.",
+   "code": {
+    "street": {
+     "members": [
+      "home",
+      "home-12",
+      "home-14"
+     ]
+    },
+    "home": {
+     "members": [
+      "you",
+      "mia"
+     ]
+    }
+   },
+   "deep": "Identity types: device, human, coop. A coop's members are human or coop identities; a human's members are device identities. Cycles are rejected when a membership change is checked."
+  },
+  {
+   "title": "A coop decides by its own signing rules.",
+   "text": "A coop has members, and its own {signing rules}: who must agree for the coop to act. They know only three kinds of act. Acting: ordinary changes. Owning: writing rules, handing data over. Governing: changing its own members and signing rules. Signing rules never mention a piece of data.",
+   "code": {
+    "coop": "home",
+    "members": [
+     "you",
+     "mia"
+    ],
+    "signing_rules": {
+     "act": "1 of 2",
+     "own": "2 of 2",
+     "govern": "2 of 2, then 7 days to object"
+    }
+   },
+   "deep": "Policies are built from threshold (k of n), weights, all-of / any-of and time locks. They live in the identity's own signed history. A device that does not know a policy kind treats it as not satisfied."
+  },
+  {
+   "title": "Losing your phone.",
+   "text": "Your identity named its next keys when it was born, so you can switch to them. You mark the lost phone as gone, and from then on it can sign nothing for you. What it could still read, and how keys turn after that, comes in the Keys chapter.",
+   "flow": [
+    "next keys",
+    "switch",
+    "lost phone signs nothing new"
+   ],
+   "deep": "Pre-rotation (KERI): the birth record commits to the hash of the next keys. The device identity of the lost phone is removed from the human identity's members, so its signer no longer counts."
+  },
+  {
+   "title": "Identity, in short.",
+   "list": [
+    "A device is an identity of its own; its signer is only a key.",
+    "A human identity's members are its devices.",
+    "A coop is an identity made of identities, and coops can hold coops.",
+    "Each identity decides by its own signing rules: act, own, govern."
+   ],
+   "deep": "Three identity types: device, human, coop. Every identity's ID is the hash of its birth record, so it outlives all of its keys."
+  }
+ ]
+}

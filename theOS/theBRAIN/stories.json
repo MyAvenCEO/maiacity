@@ -1,33 +1,63 @@
 {
  "stories": [
   {
-   "id": "own",
-   "title": "1 · Owning and sharing",
-   "file": "own.json"
-  },
-  {
-   "id": "keys",
-   "title": "2 · Under the hood",
-   "file": "keys.json"
+   "id": "identity",
+   "title": "Identity",
+   "file": "identity.json"
   },
   {
    "id": "data",
-   "title": "3 · Inside data",
+   "title": "Data",
    "file": "data.json"
   },
   {
-   "id": "sync",
-   "title": "4 · Between devices",
-   "file": "sync.json"
+   "id": "merge",
+   "title": "Merging",
+   "file": "merge.json"
   },
   {
    "id": "rules",
-   "title": "5 · Rules",
+   "title": "Rules",
    "file": "rules.json"
   },
   {
+   "id": "check",
+   "title": "Checking",
+   "file": "check.json"
+  },
+  {
+   "id": "end",
+   "title": "Endings",
+   "file": "end.json"
+  },
+  {
+   "id": "keys",
+   "title": "Keys",
+   "file": "keys.json"
+  },
+  {
+   "id": "time",
+   "title": "Time",
+   "file": "time.json"
+  },
+  {
+   "id": "net",
+   "title": "Network",
+   "file": "net.json"
+  },
+  {
+   "id": "sync",
+   "title": "Sync",
+   "file": "sync.json"
+  },
+  {
+   "id": "carry",
+   "title": "Carriers",
+   "file": "carry.json"
+  },
+  {
    "id": "ops",
-   "title": "6 · Operations",
+   "title": "Operations",
    "file": "ops.json"
   },
   {

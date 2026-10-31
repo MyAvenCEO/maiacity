@@ -1,6 +1,35 @@
 {
- "title": "Inside data",
+ "title": "Data",
  "slides": [
+  {
+   "title": "You write a to-do list.",
+   "text": "Everything you keep is {data}. Your list keeps changing; the photo of the leaking tap you attach never will. Both are data.",
+   "deep": "The list is a Doc (story 3): CRDT maps, lists and text. The photo is a Value: immutable bytes named by their BLAKE3 hash, streamed in verified chunks."
+  },
+  {
+   "title": "The list starts from itself.",
+   "text": "When data is born, it gets a {seal}: a key used exactly once, to sign the data's first {rule}, a signed statement of who may do what, naming its owner, and then destroyed. Nobody holds the seal, so nobody can share it, lose it or steal it. The list doesn't come from any account; its authority starts with itself.",
+   "deep": "The seal is a fresh Ed25519 key pair. Its public key is the data ID. It signs one certificate, naming the owner, and the private key is zeroised. Keyhive calls the same pattern the genesis key.",
+   "code": {
+    "id": "ed25519:7Hq…",
+    "first_rule": {
+     "owner": "you",
+     "operation": "everything"
+    },
+    "sig": "seal:…",
+    "seal": "destroyed"
+   },
+   "flow": [
+    "new seal",
+    "sign first rule",
+    "wipe seal"
+   ]
+  },
+  {
+   "title": "Its first rule makes you the owner.",
+   "text": "The seal's one signature names a single {owner}: you. The owner may do everything, for good, including writing the rules for everyone else. There is always exactly one owner: an identity, never a group.",
+   "deep": "The owner is an identity ID inside the first certificate. Its authority never expires and only the owner can sign a hand-over. Ownership is never a set, so there is no removing someone from it. (D5, D30)"
+  },
   {
    "title": "Data comes in two kinds.",
    "text": "A {Doc} is data that changes: a list, a note, a calendar. A {Value} is bytes that never change: a photo, a PDF, a movie. Together they cover everything.",
@@ -8,7 +37,6 @@
     "Doc: any JSON that changes, built from CRDT data types that merge by themselves.",
     "Value: any file that never changes, named by its hash."
    ],
-   "action": "Open a Doc",
    "deep": "Doc: a Loro document, a history of CRDT ops. Value: immutable bytes addressed by BLAKE3, fetched in verified ranges (iroh-blobs style)."
   },
   {
@@ -29,24 +57,7 @@
      }
     ]
    },
-   "action": "Look closer",
    "deep": "CRDT containers: map, list, movable list, text, tree, counter. The JSON you see is a projection of their current state."
-  },
-  {
-   "title": "But really, a Doc is a history.",
-   "text": "Every change is a {CRDT op} with its own ID: which device made it, and its counter on that device. Each CRDT op also says which CRDT ops it had already seen. The JSON is just what you get when you play the history.",
-   "code": {
-    "id": "alice:41",
-    "deps": [
-     "alice:40",
-     "bob:17"
-    ],
-    "op": "set",
-    "at": "items/milk/done",
-    "value": true
-   },
-   "action": "Open a Value",
-   "deep": "Every CRDT op has an ID (peer, counter) and depends on the frontier it was made on. Replaying the ops in causal order gives the same state everywhere."
   },
   {
    "title": "A Value never changes.",
@@ -57,7 +68,6 @@
     "fetched": "in verified ranges",
     "type": "video/mp4"
    },
-   "action": "And its Doc",
    "deep": "BLAKE3 builds a hash tree over 1 KiB blocks, so any range can be verified against the root hash alone. Change one byte and the name changes."
   },
   {
@@ -70,234 +80,17 @@
     "notes": "Under the sink",
     "value_key": "sealed with this Doc's data key"
    },
-   "action": "Meet Alice and Bob",
    "deep": "A Value's data key is stored inside its metadata Doc, under that Doc's own data key. Read on the Doc implies read on the Value. Taking read away protects only future versions of an immutable Value."
   },
   {
-   "title": "Alice and Bob share a list.",
-   "text": "Both of them have a full copy on their own devices. There's no master copy on a server. Each copy is complete, and each can be edited on its own.",
-   "action": "Go offline",
-   "deep": "Every replica is complete and primary; carriers hold secondary, sealed copies. This is the local-first model."
-  },
-  {
-   "title": "Both edit offline.",
-   "text": "On a train, Alice ticks “buy milk”. At home, Bob renames the list and adds “call grandma”. Neither knows about the other's changes.",
-   "code": {
-    "alice": [
-     {
-      "id": "alice:41",
-      "set": "items/milk/done",
-      "to": true
-     }
-    ],
-    "bob": [
-     {
-      "id": "bob:18",
-      "set": "title",
-      "to": "Home"
-     },
-     {
-      "id": "bob:19",
-      "insert": "items/2",
-      "to": "Call grandma"
-     }
-    ]
-   },
-   "action": "They meet",
-   "deep": "Each device appends CRDT ops to its own counter sequence. Nothing coordinates while offline."
-  },
-  {
-   "title": "They swap only what's missing.",
-   "text": "Each device keeps a {version vector}: the highest CRDT op it has seen from every device. They compare vectors and send only the difference. Three small CRDT ops, not the whole list.",
-   "code": {
-    "alice_has": {
-     "alice": 41,
-     "bob": 17
-    },
-    "bob_has": {
-     "alice": 40,
-     "bob": 19
-    },
-    "send": {
-     "to_bob": [
-      "alice:41"
-     ],
-     "to_alice": [
-      "bob:18",
-      "bob:19"
-     ]
-    }
-   },
-   "action": "Merge",
-   "deep": "A version vector maps each peer to the highest counter seen from it. Comparing two vectors yields exactly which ops each side lacks. Over the network we compare sealed chunks instead (story 4)."
-  },
-  {
-   "title": "They end up the same.",
-   "text": "However the CRDT ops arrive, in any order, twice or late, every copy ends in the same state. That's the promise of CRDT data types: no server, no locking, no “who was first?”.",
-   "code": {
-    "title": "Home",
-    "items": [
-     {
-      "text": "Buy milk",
-      "done": true
-     },
-     {
-      "text": "Fix the tap",
-      "done": false
-     },
-     {
-      "text": "Call grandma",
-      "done": false
-     }
-    ]
-   },
-   "action": "Same field, twice",
-   "deep": "CRDT merge is commutative, associative and idempotent: any order, any duplicates, same result. That is strong eventual consistency."
-  },
-  {
-   "title": "Both rename the list.",
-   "text": "Alice types “Our home”, Bob types “Home”. For one field, one value has to win. The map picks the CRDT op with the later logical clock, and if those tie, the higher device ID. Every copy picks the same one.",
-   "code": {
-    "alice": {
-     "id": "alice:42",
-     "lamport": 61,
-     "title": "Our home"
-    },
-    "bob": {
-     "id": "bob:20",
-     "lamport": 61,
-     "title": "Home"
-    },
-    "winner": "same clock, higher device ID"
-   },
-   "action": "Type together",
-   "deep": "Maps resolve concurrent sets with last-writer-wins by Lamport timestamp, ties broken by peer ID. Deterministic, so every replica picks the same winner."
-  },
-  {
-   "title": "Text merges letter by letter.",
-   "text": "In a note, both type into the same sentence at once. CRDT text is a list of characters, each with its own ID, so both edits survive and never get shuffled into each other.",
-   "code": {
-    "before": "Fix the tap",
-    "alice": "Fix the kitchen tap",
-    "bob": "Fix the tap today",
-    "merged": "Fix the kitchen tap today"
-   },
-   "action": "What history remembers",
-   "deep": "Text is a sequence CRDT (Loro uses the Fugue algorithm), which avoids interleaving concurrent insertions character by character."
-  },
-  {
-   "title": "History remembers what you deleted.",
-   "text": "A CRDT keeps every CRDT op, because a device that was offline for weeks may still send a CRDT op that builds on an old state. That also means a sentence you typed and erased is still in the history, and anyone who can read the history can read it.",
-   "code": {
-    "now": "Fix the tap",
-    "history": [
-     "insert “Call the landlord about the tap”",
-     "delete “Call the landlord about ”"
-    ]
-   },
-   "action": "Let the past go",
-   "deep": "A delete in a CRDT is a tombstone: the inserted characters stay in the history. Anyone given the history can reconstruct deleted text."
-  },
-  {
-   "title": "Snapshots let the past go.",
-   "text": "At key turns older than 30 days, the history is cut: newcomers get a snapshot of the state, not the old CRDT ops, so they never see what was deleted. The older keys go to the owner's archive. A writer who comes back from before the cut loses, and sees what was not adopted.",
-   "code": {
-    "cut_at": "a key turn > 30 days old",
-    "newcomers_get": "snapshot + later CRDT ops",
-    "before_the_cut": "keys to the archive"
-   },
-   "flow": [
-    "older than the hot window",
-    "cut",
-    "snapshot for newcomers",
-    "old keys to the archive"
-   ],
-   "action": "Now with rules",
-   "deep": "Loro's shallow snapshot holds the state plus the history after a cut. Cuts happen at key-rotation boundaries older than the hot window; the old chunks' keys go to the owner's archive or are shredded on erase."
-  },
-  {
-   "title": "Every change is checked on arrival.",
-   "text": "Before Alice's device merges Bob's CRDT ops, it checks each one against the rules in the Doc's own history. Bob's role has update, so his CRDT ops go in. A stranger's CRDT op on the same list is dropped, quietly, everywhere.",
-   "code": {
-    "op": "bob:19",
-    "kind": "insert",
-    "by": "bob",
-    "in": "home",
-    "home_may": [
-     "create",
-     "read",
-     "update"
-    ],
-    "result": "merge"
-   },
-   "action": "Bob loses update",
-   "deep": "Verification happens before merge: signature, signer registration, role membership and covering rule, evaluated against the rules known in the change's causal history."
-  },
-  {
-   "title": "Bob loses update.",
-   "text": "You take update away from “home”. A revoke is a signed event, not a CRDT op, and it syncs like everything else. Bob's CRDT op had not seen it, so the ending wins: it is dropped on every device. His earlier CRDT ops stay.",
-   "code": {
-    "ending": "revoke",
-    "rule": "home: update",
-    "by": "you (owner)",
-    "bob": {
-     "op": "bob:21",
-     "seen": [
-      "bob:20"
-     ],
-     "result": "dropped: ending wins"
-    }
-   },
-   "action": "Seal it",
-   "deep": "A revoke is a certificate in the rule set, not a CRDT op. A CRDT op whose dependencies don't include the revoke counts as concurrent with it, and the ending wins."
-  },
-  {
-   "title": "Sealed in chunks, not one by one.",
-   "text": "Sealing every CRDT op on its own would make data huge. So a device seals {chunks}: a run of changes, compressed, then encrypted. Chunk boundaries come from the changes' hashes, so every device splits at the same places. Old small chunks get merged into bigger ones, like layers of sediment.",
-   "code": {
-    "chunk": "blake3:a91f…",
-    "holds": "bob:18 – bob:40",
-    "after": [
-     "blake3:77c2…"
-    ],
-    "signed_by": "bob-laptop",
-    "bytes": "sealed"
-   },
-   "flow": [
-    "changes",
-    "compress",
-    "seal",
-    "hash",
-    "link to the chunks before"
-   ],
-   "action": "What does a carrier see?",
-   "deep": "A chunk is Loro's exported update bytes for a range of changes: compressed, then sealed with the data key (AEAD). Its BLAKE3 hash names it; its signed header lists the previous chunk hashes and binds Loro's peer ID to the signer."
-  },
-  {
-   "title": "What a carrier sees.",
-   "text": "Sealed chunks, the hashes that link them, and the {proofs}, signed chains from the seal to whoever asks, it needs to decide whom to give them to. It can store, count and forward them. It can't read a title, a tick, a rule or a frame of the movie.",
-   "code": {
-    "chunk": "blake3:a91f…",
-    "after": [
-     "blake3:77c2…"
-    ],
-    "author_proof": "…",
-    "bytes": "e4 1a 9c 07 …"
-   },
-   "action": "Sum it up",
-   "deep": "Visible to a carrier: chunk hashes, sizes, links between chunks, and the proofs needed to decide whom to serve. Invisible: content, rules and keys."
-  },
-  {
-   "title": "Inside data, in short.",
+   "title": "Data, in short.",
    "list": [
-    "A Doc is JSON that changes: a history of CRDT ops that merges.",
-    "A Value is bytes that never change, named by its hash.",
-    "Every Value has a Doc for its metadata and its key.",
-    "Copies swap only what's missing and always end the same.",
-    "Every change is checked against the rules on arrival."
+    "Everything you keep is data, and every piece of data starts from itself.",
+    "Its seal names exactly one owner, an identity.",
+    "A Doc is JSON that changes; a Value is bytes that never change.",
+    "Every Value has a Doc for its metadata and its key."
    ],
-   "action": "",
-   "deep": "Docs are CRDT histories; Values are hashed bytes. Both travel as sealed chunks. Every change is verified on arrival; history is cut at key turns older than the hot window."
+   "deep": "Data IDs are seal public keys; Value names are BLAKE3 hashes; Docs are CRDT documents."
   }
  ]
 }

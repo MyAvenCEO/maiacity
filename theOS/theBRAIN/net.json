@@ -1,0 +1,77 @@
+{
+ "title": "Network",
+ "slides": [
+  {
+   "title": "Your devices talk directly.",
+   "text": "No cloud in the middle. Alice's phone and Bob's laptop connect to each other, wherever they are. The layer that does this is {iroh}.",
+   "deep": "iroh: QUIC connections between devices, direct when possible, through a relay otherwise. Every connection is end-to-end encrypted and authenticated with the endpoint keys."
+  },
+  {
+   "title": "You dial identities, not devices.",
+   "text": "Every device has an {address} on the network: its signer's public key. But you never need to know it. Each identity publishes a signed record of its devices, and each device's history holds its current address. You dial Alice, and the connection goes to whichever of her devices is online.",
+   "code": {
+    "dial": "alice",
+    "record": {
+     "devices": [
+      "alice-phone",
+      "alice-laptop"
+     ]
+    },
+    "alice-phone": {
+     "address": "ed25519:k51q…"
+    }
+   },
+   "deep": "An iroh endpoint ID is an Ed25519 public key; here it is the device's signer key. Identity records are signed and published like iroh's own discovery records. A new key changes the device's address, never the identity's."
+  },
+  {
+   "title": "Finding each other.",
+   "text": "On the same Wi-Fi, devices simply see each other. Further away, a device publishes where it can be reached, under its own key, and anyone with the key can look it up.",
+   "flow": [
+    "know the key",
+    "look up where it is",
+    "connect"
+   ],
+   "deep": "Local discovery via mDNS on the same network; global discovery through signed records published under the key (pkarr / DNS). A record lists the addresses where an endpoint can be reached."
+  },
+  {
+   "title": "Getting through.",
+   "text": "Most home routers block incoming connections. iroh punches a hole from both sides at once, and usually gets a direct line. If that fails, a {relay} passes the packets along. The relay sees only sealed traffic.",
+   "flow": [
+    "try direct",
+    "punch a hole",
+    "else: relay"
+   ],
+   "deep": "UDP hole punching from both sides at once. If that fails, a relay forwards encrypted QUIC packets it cannot read. Connections upgrade to direct when possible."
+  },
+  {
+   "title": "Both sides know who they talk to.",
+   "text": "Every connection is encrypted with the two devices' keys. Then the device shows that its key is registered in its own history, and who owns it. The other side knows: this is Alice's phone, acting for Alice.",
+   "code": {
+    "connected": "ed25519:k51q…",
+    "device": "alice-phone",
+    "owned_by": "alice",
+    "proof": "registered in alice-phone's history"
+   },
+   "deep": "The QUIC handshake proves the key. The device identity's history proves the key is its current signer, and its owner's history proves the device belongs to it."
+  },
+  {
+   "title": "One line, three languages.",
+   "text": "Over one connection, devices speak a small {protocol} for each kind of work.",
+   "list": [
+    "Docs: find the missing sealed chunks, then swap them.",
+    "Values: stream chunks by hash, checked as they arrive.",
+    "News: tell interested peers “there's something new”."
+   ],
+   "deep": "Each protocol is an ALPN on the same endpoint: chunk sync for Docs, blob ranges for Values, gossip for announcements."
+  },
+  {
+   "title": "Network, in short.",
+   "list": [
+    "Devices connect directly; relays only see sealed traffic.",
+    "You dial identities; their devices answer.",
+    "Both sides prove who they are."
+   ],
+   "deep": "iroh: QUIC with Ed25519 endpoint keys, hole punching, relays and signed discovery records."
+  }
+ ]
+}

@@ -29,8 +29,8 @@
     }
    ],
    "slides": [
-    "own-1",
-    "own-2"
+    "identity-1",
+    "identity-2"
    ],
    "date": "2026-10-31"
   },
@@ -51,8 +51,8 @@
     }
    ],
    "slides": [
-    "own-10",
-    "own-11"
+    "identity-3",
+    "identity-5"
    ],
    "date": "2026-10-31"
   },
@@ -73,8 +73,7 @@
     }
    ],
    "slides": [
-    "own-4",
-    "keys-3"
+    "data-2"
    ],
    "date": "2026-10-31"
   },
@@ -97,9 +96,9 @@
     }
    ],
    "slides": [
-    "own-5",
-    "rules-6",
-    "own-10"
+    "data-3",
+    "rules-8",
+    "identity-3"
    ],
    "date": "2026-10-31"
   },
@@ -120,8 +119,8 @@
     }
    ],
    "slides": [
-    "own-6",
-    "own-7"
+    "rules-1",
+    "rules-2"
    ],
    "date": "2026-10-31"
   },
@@ -146,7 +145,7 @@
     }
    ],
    "slides": [
-    "rules-7"
+    "check-3"
    ],
    "date": "2026-10-31"
   },
@@ -167,9 +166,9 @@
     }
    ],
    "slides": [
-    "rules-1",
-    "rules-2",
-    "rules-3"
+    "rules-4",
+    "rules-5",
+    "rules-6"
    ],
    "date": "2026-10-31"
   },
@@ -194,7 +193,7 @@
     }
    ],
    "slides": [
-    "rules-8"
+    "rules-7"
    ],
    "date": "2026-10-31"
   },
@@ -215,8 +214,8 @@
     }
    ],
    "slides": [
-    "keys-4",
-    "keys-5"
+    "keys-3",
+    "check-1"
    ],
    "date": "2026-10-31"
   },
@@ -228,8 +227,8 @@
    "why": "A reader holds the plaintext, so finer read limits would be promises, not protection.",
    "sources": [],
    "slides": [
-    "ops-10",
-    "keys-15"
+    "ops-9",
+    "time-5"
    ],
    "date": "2026-10-31"
   },
@@ -241,8 +240,8 @@
    "why": "Forgotten shares close by themselves; families are never locked out.",
    "sources": [],
    "slides": [
-    "rules-4",
-    "rules-5"
+    "end-1",
+    "end-2"
    ],
    "date": "2026-10-31"
   },
@@ -268,10 +267,10 @@
     }
    ],
    "slides": [
-    "rules-10",
-    "rules-11",
-    "rules-12",
-    "keys-16"
+    "end-4",
+    "end-5",
+    "end-6",
+    "end-8"
    ],
    "date": "2026-10-31"
   },
@@ -292,7 +291,7 @@
     }
    ],
    "slides": [
-    "keys-11"
+    "check-6"
    ],
    "date": "2026-10-31"
   },
@@ -342,8 +341,8 @@
    ],
    "slides": [
     "keys-2",
-    "keys-4",
-    "keys-18"
+    "keys-3",
+    "keys-9"
    ],
    "date": "2026-10-31"
   },
@@ -360,7 +359,7 @@
     }
    ],
    "slides": [
-    "keys-18"
+    "keys-9"
    ],
    "date": "2026-10-31"
   },
@@ -381,7 +380,7 @@
     }
    ],
    "slides": [
-    "keys-19"
+    "keys-10"
    ],
    "date": "2026-10-31"
   },
@@ -406,7 +405,7 @@
     }
    ],
    "slides": [
-    "keys-17"
+    "keys-4"
    ],
    "date": "2026-10-31"
   },
@@ -454,9 +453,9 @@
     }
    ],
    "slides": [
-    "data-1",
     "data-4",
-    "data-5"
+    "data-6",
+    "data-7"
    ],
    "date": "2026-10-31"
   },
@@ -474,8 +473,8 @@
    ],
    "slides": [
     "ops-3",
-    "rules-2",
-    "data-3"
+    "rules-5",
+    "merge-1"
    ],
    "date": "2026-10-31"
   },
@@ -490,7 +489,7 @@
     "ops-1",
     "ops-8",
     "ops-2",
-    "ops-11"
+    "ops-10"
    ],
    "date": "2026-10-31"
   },
@@ -507,8 +506,8 @@
     }
    ],
    "slides": [
-    "ops-11",
-    "ops-12"
+    "ops-10",
+    "ops-11"
    ],
    "date": "2026-10-31"
   },
@@ -548,8 +547,8 @@
     }
    ],
    "slides": [
-    "data-16",
-    "sync-7"
+    "sync-1",
+    "sync-2"
    ],
    "date": "2026-10-31"
   },
@@ -570,9 +569,9 @@
     }
    ],
    "slides": [
-    "sync-13",
-    "sync-14",
-    "data-17"
+    "carry-1",
+    "carry-2",
+    "carry-5"
    ],
    "date": "2026-10-31"
   },
@@ -593,10 +592,10 @@
     }
    ],
    "slides": [
-    "sync-1",
-    "sync-5",
-    "sync-2",
-    "sync-4"
+    "net-1",
+    "net-5",
+    "net-2",
+    "net-4"
    ],
    "date": "2026-10-31"
   },
@@ -621,7 +620,7 @@
     }
    ],
    "slides": [
-    "sync-8"
+    "sync-3"
    ],
    "date": "2026-10-31"
   },
@@ -639,9 +638,9 @@
     }
    ],
    "slides": [
-    "own-6",
-    "own-11",
-    "rules-2"
+    "rules-1",
+    "identity-5",
+    "rules-5"
    ],
    "date": "2026-10-31"
   },
@@ -667,8 +666,8 @@
     }
    ],
    "slides": [
-    "own-1",
-    "own-2"
+    "identity-1",
+    "identity-2"
    ],
    "date": "2026-10-31"
   },
@@ -680,8 +679,8 @@
    "why": "One word per thing, matching the Safe analogy (a Safe's members are signers). Addressing identities keeps the address stable while signers change, like a phone number and its SIM.",
    "sources": [],
    "slides": [
-    "sync-2",
-    "sync-5"
+    "net-2",
+    "net-5"
    ],
    "date": "2026-10-31"
   },
@@ -699,8 +698,8 @@
     }
    ],
    "slides": [
-    "sync-7",
-    "data-16"
+    "sync-2",
+    "sync-1"
    ],
    "date": "2026-10-31"
   },
@@ -725,9 +724,9 @@
     }
    ],
    "slides": [
-    "sync-8",
-    "sync-9",
-    "sync-10"
+    "sync-3",
+    "sync-4",
+    "sync-5"
    ],
    "date": "2026-10-31"
   },
@@ -748,8 +747,8 @@
     }
    ],
    "slides": [
-    "data-12",
-    "data-13"
+    "merge-8",
+    "time-2"
    ],
    "date": "2026-10-31",
    "superseded_by": "D39"
@@ -780,7 +779,7 @@
     }
    ],
    "slides": [
-    "keys-12"
+    "time-1"
    ]
   },
   {
@@ -796,7 +795,7 @@
     }
    ],
    "slides": [
-    "keys-12"
+    "time-1"
    ],
    "date": "2026-10-31",
    "superseded_by": "D40"
@@ -814,7 +813,7 @@
     }
    ],
    "slides": [
-    "own-11"
+    "identity-5"
    ],
    "date": "2026-10-31"
   },
@@ -836,8 +835,8 @@
     }
    ],
    "slides": [
-    "keys-12",
-    "data-13"
+    "time-1",
+    "time-2"
    ],
    "date": "2026-10-31"
   },
@@ -850,7 +849,7 @@
    "supersedes": "D37",
    "sources": [],
    "slides": [
-    "keys-12"
+    "time-1"
    ],
    "date": "2026-10-31"
   },
@@ -862,8 +861,8 @@
    "why": "Two different promises, two words.",
    "sources": [],
    "slides": [
-    "keys-12",
-    "keys-14"
+    "time-1",
+    "time-4"
    ],
    "date": "2026-10-31"
   },
@@ -885,7 +884,7 @@
     }
    ],
    "slides": [
-    "keys-13"
+    "time-3"
    ],
    "date": "2026-10-31"
   },
@@ -906,7 +905,7 @@
     }
    ],
    "slides": [
-    "keys-14"
+    "time-4"
    ],
    "date": "2026-10-31"
   },
@@ -918,8 +917,8 @@
    "why": "Agency and access are different questions; mixing them made the coop example ambiguous.",
    "sources": [],
    "slides": [
-    "own-11",
-    "own-12"
+    "identity-5",
+    "check-2"
    ],
    "date": "2026-10-31"
   },
@@ -950,7 +949,7 @@
    "why": "Servers and shared machines belong to organisations, not to one person. A coop still never contains a signer, because a device is an identity.",
    "sources": [],
    "slides": [
-    "own-1"
+    "identity-1"
    ],
    "date": "2026-10-31"
   },
@@ -972,8 +971,8 @@
     }
    ],
    "slides": [
-    "rules-8",
-    "rules-2"
+    "rules-7",
+    "rules-5"
    ]
   }
  ]

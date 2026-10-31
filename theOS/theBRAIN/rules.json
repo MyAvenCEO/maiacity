@@ -2,6 +2,27 @@
  "title": "Rules",
  "slides": [
   {
+   "title": "Four things to start with.",
+   "text": "Create, read, update and delete are {operations}: things you can do with data. A rule gives a {role}, a set of identities, some operations on one piece of data. Never a person directly, always a role. The owner writes the first rules; later we'll see how a role can be allowed to pass its own on.",
+   "list": [
+    "create",
+    "read",
+    "update",
+    "delete"
+   ],
+   "deep": "A rule is a signed certificate: role, data, list of operations, conditions, expiry, plus the proof chain back to the seal. Rules are written only by the owner (D30). Conditions, expiry and proofs come in story 5, Rules."
+  },
+  {
+   "title": "You share the list with Mia.",
+   "text": "You make a role “home”, give it read, create and update on the list, and add Mia. She can see the list, add things and tick them off. She can't delete it, and she can't change the rules.",
+   "deep": "Mia's identity is added to the role “home”. Technically: the owner signs a membership change and wraps the role key for Mia's identity key (both explained in story 2). The data's rules don't change at all."
+  },
+  {
+   "title": "The plumber gets one item.",
+   "text": "“Fix the tap” is its own little piece of data, linked from the list. Born inside the list, it starts with the list's rules. You add one more: the role “plumber” may read and update this item, and nothing else.",
+   "deep": "Read access can only be as fine as a key. So an item shared on its own is its own piece of data, with its own data key, linked from the list. New data born inside the list copies the list's rules once, at birth."
+  },
+  {
    "title": "Every rule is one sentence.",
    "text": "A rule says: this role may perform these operations, on this data, until then. Nothing more. Everything anyone may ever do with your data is written in rules like this one.",
    "code": {
@@ -21,7 +42,6 @@
     "signed_by": "you (owner)",
     "proof": "…back to the seal"
    },
-   "action": "What can a rule allow?",
    "deep": "A rule is a signed certificate: role, data, operations (each optionally narrowed by at, where or a limit), expiry, and a proof chain back to the seal. People see “rule”; underneath it is a capability."
   },
   {
@@ -34,7 +54,6 @@
     "Operations that only look at data, like searching, need only read.",
     "Writing rules is not on the list: only the owner does that."
    ],
-   "action": "Make it narrower",
    "deep": "The full list of operations: create, read, update, delete, share, want, keep, sync. Writing rules is not an operation anyone can be given; it belongs to the owner (D30). Engine operations that only read need read."
   },
   {
@@ -58,71 +77,7 @@
      }
     ]
    },
-   "action": "Every rule ends",
    "deep": "Conditions are evaluated by every verifying peer: at (a path prefix), where (matching entries, for example author = $self), limits. Like Meadowcap's areas, each condition can only narrow."
-  },
-  {
-   "title": "Every rule expires.",
-   "text": "No rule lasts forever by accident. Each one has an {expiry}, 30 days unless you choose otherwise. A forgotten share closes by itself.",
-   "code": {
-    "role": "plumber",
-    "data": "fix-tap",
-    "operations": [
-     "read",
-     "update"
-    ],
-    "expires": "2026-11-07"
-   },
-   "action": "But my family?",
-   "deep": "The default expiry is 30 days. Expiry is enforced through endings in the history (lapses), never by a verifier's clock."
-  },
-  {
-   "title": "Unchanged rules renew themselves.",
-   "text": "You don't want your family locked out every month. So the owner quietly renews every rule that hasn't changed, a week before it ends, under its own signing rules (a coop can let one member do renewals). Rules you changed or removed simply run out.",
-   "flow": [
-    "rule still the same?",
-    "renew for 30 days",
-    "else: let it run out"
-   ],
-   "action": "And the first rule?",
-   "deep": "Renewal is a new certificate with the same content and a later expiry, signed under the owner's signing rule for renewals. Changed or removed rules are simply not renewed."
-  },
-  {
-   "title": "Only the owner never expires.",
-   "text": "The rule the seal signed at birth names the owner. It has no expiry, so data can never end up with nobody allowed to look after it. Only the owner can hand it over to another identity. Every other rule expires.",
-   "code": {
-    "data": "house-list",
-    "first_rule": {
-     "owner": "you",
-     "operation": "everything, and the rules"
-    },
-    "signed_by": "seal",
-    "expires": "never"
-   },
-   "action": "What is a rule, really?",
-   "deep": "The genesis certificate has no expiry. Ownership moves only through a hand-over signed by the owner under its own signing rules."
-  },
-  {
-   "title": "Under the hood, a rule is a capability.",
-   "text": "Each rule is a signed token, a {capability}. It carries its own proof: who signed it, and why they were allowed to, all the way back to the seal. Any device can check it offline. Nobody can forge it.",
-   "code": {
-    "rule": {
-     "role": "home",
-     "operations": [
-      "create",
-      "read",
-      "update"
-     ],
-     "expires": "2026-12-01"
-    },
-    "signed_by": "you (owner)",
-    "proof": [
-     "seal → owner: you",
-     "you → home"
-    ]
-   },
-   "action": "Pass it on",
-   "deep": "Like a Biscuit or UCAN token: a chain of signed blocks, each signed by the holder of the previous one, verifiable offline without any server."
   },
   {
    "title": "Passing a rule on only narrows it.",
@@ -150,66 +105,21 @@
     ],
     "if_mia_leaves_home": "grandma's rule ends too"
    },
-   "action": "Check a rule",
    "deep": "Attenuation: each appended block can only remove operations, shorten the expiry or add conditions; a verifier intersects all blocks. A delegate may end only rules it issued. When a rule ends, every rule issued under it ends too (cascade); the owner's rules are the root. Writes by a removed delegate that never saw the ending are dropped."
   },
   {
-   "title": "Every device checks the same four things.",
-   "text": "Before a change goes in, or before a single byte goes out, a device checks the rule behind it.",
-   "list": [
-    "Every signature in the proof is valid, back to the seal.",
-    "The rule hasn't ended.",
-    "The operation is listed in the rule.",
-    "Every condition holds."
-   ],
-   "action": "End one early",
-   "deep": "Verification order: signatures along the chain, no ending in the causal past, operation covered, conditions hold. All deterministic, so every peer reaches the same verdict."
-  },
-  {
-   "title": "Ending a rule early.",
-   "text": "You don't have to wait for the expiry. The owner writes a revoke: a signed event in the history that says “this rule is over”. It travels like any other change.",
+   "title": "Only the owner never expires.",
+   "text": "The rule the seal signed at birth names the owner. It has no expiry, so data can never end up with nobody allowed to look after it. Only the owner can hand it over to another identity. Every other rule expires.",
    "code": {
-    "ending": "revoke",
-    "rule": "home → plumber",
-    "by": "you (owner)",
-    "when": "any time"
-   },
-   "action": "And when time runs out?",
-   "deep": "A revoke is a signed certificate in the rule set (a grow-only set). It cannot be undone; access returns only through a new rule."
-  },
-  {
-   "title": "When time runs out, anyone may say so.",
-   "text": "Devices are often offline, and a device can lie about its time, so no clock decides. Once a rule's date has passed for it, any peer that can read the rules writes a lapse: the same kind of event as a revoke. It can only end a rule, never grant anything. From then on, the history decides.",
-   "code": {
-    "ending": "lapse",
-    "rule": "home → plumber",
-    "by": "mia-phone",
-    "after": "2026-11-07"
-   },
-   "action": "One concept",
-   "deep": "A lapse may be written by any peer that can read the rules, once the date has passed for it. It can only end a rule, never grant one. From then on the causal history decides."
-  },
-  {
-   "title": "Revoke or lapse: one ending, same effect.",
-   "text": "Whoever wrote it, an ending does the same things on every device. Changes that never saw it are dropped, because the ending wins. If the rule gave read, the data key turns. And every honest device wipes the keys and copies the rule gave it. Validity follows from the history alone, so every copy agrees.",
-   "code": {
-    "ending": "lapse",
-    "rule": "home → plumber",
-    "change": {
-     "id": "plumber:12",
-     "claims": "2026-11-06",
-     "seen": [
-      "you:80"
-     ]
+    "data": "house-list",
+    "first_rule": {
+     "owner": "you",
+     "operation": "everything, and the rules"
     },
-    "then": [
-     "drop: ending wins",
-     "if it gave read: the data key turns",
-     "wipe keys and copies"
-    ]
+    "signed_by": "seal",
+    "expires": "never"
    },
-   "action": "Sum it up",
-   "deep": "One ending type, two authors. Effects: concurrent changes that never saw it are dropped, the data key turns if the rule gave read, and the delete trigger runs on honest devices."
+   "deep": "The genesis certificate has no expiry. Ownership moves only through a hand-over signed by the owner under its own signing rules."
   },
   {
    "title": "Rules, in short.",
@@ -220,7 +130,6 @@
     "A revoke or a lapse is an ending: it wins, turns the key if it gave read, wipes copies, and takes everything passed on under it.",
     "Under the hood: a signed token any device checks offline."
    ],
-   "action": "",
    "deep": "Rules are capabilities attached to roles, granted only by the owner, narrowable, expiring by default, ended by events, and checked offline by every peer."
   }
  ]

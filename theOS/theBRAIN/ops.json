@@ -1,5 +1,5 @@
 {
- "title": "The operations engine",
+ "title": "Operations",
  "slides": [
   {
    "title": "Everything you do is an operation.",
@@ -8,7 +8,6 @@
     "operation": "get",
     "data": "house-list"
    },
-   "action": "Ask a question",
    "deep": "An operation is JSON: {operation, data, …arguments}. One engine parses it, checks the rule, runs it locally and returns a result or a set of CRDT ops."
   },
   {
@@ -24,7 +23,6 @@
     "order": "due",
     "limit": 10
    },
-   "action": "Change something",
    "deep": "find evaluates over the local decrypted state: filter (where), sort (order) and limit. Indexes are local and rebuilt from data the device can read."
   },
   {
@@ -43,7 +41,6 @@
     "sign",
     "sync"
    ],
-   "action": "Follow the links",
    "deep": "update becomes one or more CRDT ops on the Doc, grouped into a change, signed by the signer, sealed into a chunk and announced."
   },
   {
@@ -62,7 +59,6 @@
      "tag": "garden"
     }
    },
-   "action": "Search by words",
    "deep": "walk follows link fields across Docs to a given depth. Each hop needs read on the next piece of data; without it, the walk stops there."
   },
   {
@@ -78,7 +74,6 @@
     ],
     "limit": 5
    },
-   "action": "Search by meaning",
    "deep": "BM25 full-text ranking over a local inverted index built from readable data. Neither the index nor the query leaves the device."
   },
   {
@@ -90,7 +85,6 @@
     "text": "plumbing problems",
     "k": 5
    },
-   "action": "Chain them",
    "deep": "near: vector similarity (for example cosine) over local embeddings, with an approximate nearest-neighbour index on the device. Embeddings are computed locally."
   },
   {
@@ -119,7 +113,6 @@
      }
     ]
    },
-   "action": "Add a new kind",
    "deep": "chain pipes the result set of each step into the next; each step is checked against its own required rule."
   },
   {
@@ -135,33 +128,7 @@
     "needs": "read",
     "runs": "local"
    },
-   "action": "And syncing?",
    "deep": "A plugin declares its name, JSON input schema, required rule operation and where it runs. Unknown operations are rejected."
-  },
-  {
-   "title": "Sync is operations too.",
-   "text": "Your device's sync plan is written as operations: what it wants, what it keeps, what it passes on. Here, your phone keeps three months of the house list and only fetches the photos you open.",
-   "code": {
-    "operation": "chain",
-    "steps": [
-     {
-      "operation": "want",
-      "data": "house-list"
-     },
-     {
-      "operation": "keep",
-      "data": "house-list",
-      "for": "90 days"
-     },
-     {
-      "operation": "want",
-      "data": "house-list/photos",
-      "when": "opened"
-     }
-    ]
-   },
-   "action": "Who may run what?",
-   "deep": "Sync plans are operations evaluated by the device's sync layer: want and keep with arguments (for, when). A rule's conditions still apply."
   },
   {
    "title": "Rules name the operations.",
@@ -184,7 +151,6 @@
      }
     ]
    },
-   "action": "Who asks whom?",
    "deep": "Reading operations need read on the data and nothing else, because a reader holds the plaintext. Change operations are checked by every peer, down to a path or matching entry."
   },
   {
@@ -196,7 +162,6 @@
     "your operation",
     "your answer"
    ],
-   "action": "Sharing an answer",
    "deep": "There is no query protocol between peers, only chunk sync. That removes trust in a remote answerer and inference attacks by repeated questions."
   },
   {
@@ -214,7 +179,6 @@
     },
     "updated_by": "count, on your device"
    },
-   "action": "Sum it up",
    "deep": "The answer is written as new data, computed and signed by your own device, with its own rule for the asker. That rule is revocable and expires like any other."
   },
   {
@@ -226,7 +190,6 @@
     "Operations run only on your device, over what you can read. Peers sync; they never ask.",
     "Reading is allowed per piece of data; changes as finely as you like."
    ],
-   "action": "",
    "deep": "JSON operations, local execution, plugins, rules per operation, and peer-to-peer only. Your data, your device, your answers."
   }
  ]

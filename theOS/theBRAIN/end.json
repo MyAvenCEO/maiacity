@@ -1,0 +1,124 @@
+{
+ "title": "Endings",
+ "slides": [
+  {
+   "title": "Every rule expires.",
+   "text": "No rule lasts forever by accident. Each one has an {expiry}, 30 days unless you choose otherwise. A forgotten share closes by itself.",
+   "code": {
+    "role": "plumber",
+    "data": "fix-tap",
+    "operations": [
+     "read",
+     "update"
+    ],
+    "expires": "2026-11-07"
+   },
+   "deep": "The default expiry is 30 days. Expiry is enforced through endings in the history (lapses), never by a verifier's clock."
+  },
+  {
+   "title": "Unchanged rules renew themselves.",
+   "text": "You don't want your family locked out every month. So the owner quietly renews every rule that hasn't changed, a week before it ends, under its own signing rules (a coop can let one member do renewals). Rules you changed or removed simply run out.",
+   "flow": [
+    "rule still the same?",
+    "renew for 30 days",
+    "else: let it run out"
+   ],
+   "deep": "Renewal is a new certificate with the same content and a later expiry, signed under the owner's signing rule for renewals. Changed or removed rules are simply not renewed."
+  },
+  {
+   "title": "The job is done.",
+   "text": "You take the plumber out of his role. He sees nothing new, and his devices, if they're honest, forget what he saw. The role stays, ready for the next plumber.",
+   "deep": "Removing a member is an ending: the role key turns, data keys turn on the next write, and honest devices that learn of it wipe the keys and plaintext the rule gave them."
+  },
+  {
+   "title": "Ending a rule early.",
+   "text": "You don't have to wait for the expiry. The owner writes a revoke: a signed event in the history that says “this rule is over”. It travels like any other change.",
+   "code": {
+    "ending": "revoke",
+    "rule": "home → plumber",
+    "by": "you (owner)",
+    "when": "any time"
+   },
+   "deep": "A revoke is a signed certificate in the rule set (a grow-only set). It cannot be undone; access returns only through a new rule."
+  },
+  {
+   "title": "When time runs out, anyone may say so.",
+   "text": "Devices are often offline, and a device can lie about its time, so no clock decides. Once a rule's date has passed for it, any peer that can read the rules writes a lapse: the same kind of event as a revoke. It can only end a rule, never grant anything. From then on, the history decides.",
+   "code": {
+    "ending": "lapse",
+    "rule": "home → plumber",
+    "by": "mia-phone",
+    "after": "2026-11-07"
+   },
+   "deep": "A lapse may be written by any peer that can read the rules, once the date has passed for it. It can only end a rule, never grant one. From then on the causal history decides."
+  },
+  {
+   "title": "Revoke or lapse: one ending, same effect.",
+   "text": "Whoever wrote it, an ending does the same things on every device. Changes that never saw it are dropped, because the ending wins. If the rule gave read, the data key turns. And every honest device wipes the keys and copies the rule gave it. Validity follows from the history alone, so every copy agrees.",
+   "code": {
+    "ending": "lapse",
+    "rule": "home → plumber",
+    "change": {
+     "id": "plumber:12",
+     "claims": "2026-11-06",
+     "seen": [
+      "you:80"
+     ]
+    },
+    "then": [
+     "drop: ending wins",
+     "if it gave read: the data key turns",
+     "wipe keys and copies"
+    ]
+   },
+   "deep": "One ending type, two authors. Effects: concurrent changes that never saw it are dropped, the data key turns if the rule gave read, and the delete trigger runs on honest devices."
+  },
+  {
+   "title": "Bob loses update.",
+   "text": "You take update away from “home”. A revoke is a signed event, not a CRDT op, and it syncs like everything else. Bob's CRDT op had not seen it, so the ending wins: it is dropped on every device. His earlier CRDT ops stay.",
+   "code": {
+    "ending": "revoke",
+    "rule": "home: update",
+    "by": "you (owner)",
+    "bob": {
+     "op": "bob:21",
+     "seen": [
+      "bob:20"
+     ],
+     "result": "dropped: ending wins"
+    }
+   },
+   "deep": "A revoke is a certificate in the rule set, not a CRDT op. A CRDT op whose dependencies don't include the revoke counts as concurrent with it, and the ending wins."
+  },
+  {
+   "title": "Ended means forgotten.",
+   "text": "The moment a device meets any peer that holds an {ending}, either a {revoke} by the owner or a {lapse} written once a rule's date has passed, it applies it like a {delete trigger}: it wipes the keys and the plaintext copies of everything it may no longer read. It happens offline-first and without a server, on every honest device, the plumber's included.",
+   "code": {
+    "on": "ending (revoke or lapse)",
+    "data": "fix-tap",
+    "role": "plumber",
+    "then": [
+     "wipe data key",
+     "wipe local plaintext",
+     "keep only sealed bytes"
+    ]
+   },
+   "flow": [
+    "meet a peer",
+    "learn the ending",
+    "wipe keys and copies"
+   ],
+   "deep": "An ending (revoke or lapse) is a signed event in the history. On learning it, an honest device deletes the affected data keys and decrypted copies. A carrier keeps only sealed bytes, which it could never open."
+  },
+  {
+   "title": "Endings, in short.",
+   "list": [
+    "Every rule expires and renews itself while unchanged.",
+    "The owner can revoke; anyone may write a lapse once the date has passed.",
+    "An ending wins over changes that never saw it.",
+    "Honest devices forget what an ended rule gave them."
+   ],
+   "deep": "Endings are events in the causal history, so no clock has to be trusted."
+  }
+ ]
+}

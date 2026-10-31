@@ -1,0 +1,106 @@
+{
+ "title": "Checking",
+ "slides": [
+  {
+   "title": "Writing is a chain of signatures.",
+   "text": "Mia ticks “buy milk”. Her phone's signer signs the change. Every {peer}, any device holding a copy, checks the links before merging: the signer belongs to Mia's phone, the phone belongs to Mia, Mia is in “home”, and “home” has update on this list. One broken link, and the change is dropped.",
+   "code": {
+    "change": {
+     "data": "house-list",
+     "operation": "update",
+     "by": "mia-phone",
+     "sig": "…"
+    },
+    "check": [
+     "signer registered to mia-phone",
+     "mia-phone belongs to mia",
+     "mia is in home",
+     "home may update house-list"
+    ]
+   },
+   "deep": "Every peer checks a change before merging: the signature, the signer's registration in the identity's history, the identity's role membership, and a rule covering this operation on this data. Any broken link: dropped."
+  },
+  {
+   "title": "Two questions, every time.",
+   "text": "Every change has to pass two checks. Does it really come from the coop? The coop's signing rules decide. May the coop do this to this data? The data's rules decide. Only both together let a change in.",
+   "flow": [
+    "signatures",
+    "signing rules: who speaks?",
+    "the data's rules: may it?",
+    "accepted"
+   ],
+   "deep": "Agency and access stay apart. The chain signer → device → human → coop only answers who is acting; rules on data only answer what that identity may do. Both use the same small policy language and are checked offline by every peer."
+  },
+  {
+   "title": "Under the hood, a rule is a capability.",
+   "text": "Each rule is a signed token, a {capability}. It carries its own proof: who signed it, and why they were allowed to, all the way back to the seal. Any device can check it offline. Nobody can forge it.",
+   "code": {
+    "rule": {
+     "role": "home",
+     "operations": [
+      "create",
+      "read",
+      "update"
+     ],
+     "expires": "2026-12-01"
+    },
+    "signed_by": "you (owner)",
+    "proof": [
+     "seal → owner: you",
+     "you → home"
+    ]
+   },
+   "deep": "Like a Biscuit or UCAN token: a chain of signed blocks, each signed by the holder of the previous one, verifiable offline without any server."
+  },
+  {
+   "title": "Every device checks the same four things.",
+   "text": "Before a change goes in, or before a single byte goes out, a device checks the rule behind it.",
+   "list": [
+    "Every signature in the proof is valid, back to the seal.",
+    "The rule hasn't ended.",
+    "The operation is listed in the rule.",
+    "Every condition holds."
+   ],
+   "deep": "Verification order: signatures along the chain, no ending in the causal past, operation covered, conditions hold. All deterministic, so every peer reaches the same verdict."
+  },
+  {
+   "title": "Every change is checked on arrival.",
+   "text": "Before Alice's device merges Bob's CRDT ops, it checks each one against the rules in the Doc's own history. Bob's role has update, so his CRDT ops go in. A stranger's CRDT op on the same list is dropped, quietly, everywhere.",
+   "code": {
+    "op": "bob:19",
+    "kind": "insert",
+    "by": "bob",
+    "in": "home",
+    "home_may": [
+     "create",
+     "read",
+     "update"
+    ],
+    "result": "merge"
+   },
+   "deep": "Verification happens before merge: signature, signer registration, role membership and covering rule, evaluated against the rules known in the change's causal history."
+  },
+  {
+   "title": "Two things at once.",
+   "text": "Mia edits the list on a train, offline, at the same moment you remove her. When both devices meet, the removal wins: her edit is dropped everywhere. Every device decides the same way, so they all end up agreeing.",
+   "code": {
+    "concurrent": [
+     "you: remove mia from home",
+     "mia: update house-list"
+    ],
+    "result": "removal wins, edit dropped"
+   },
+   "deep": "Concurrency is resolved toward less authority: a removal and a change made without seeing it count as concurrent, and the removal wins. Every peer applies the same deterministic rule, so all copies converge."
+  },
+  {
+   "title": "Checking, in short.",
+   "list": [
+    "Every peer checks every change before merging it.",
+    "Signing rules answer who speaks; the data's rules answer what may be done.",
+    "Rules carry their own proof, checked offline.",
+    "When it's unclear, less authority wins."
+   ],
+   "deep": "Verification is deterministic, so every peer reaches the same verdict without asking anyone."
+  }
+ ]
+}

@@ -1,0 +1,112 @@
+{
+ "title": "Carriers",
+ "slides": [
+  {
+   "title": "Who may even get the bytes?",
+   "text": "Read decides who can open data. Three more things a rule can allow decide who can carry it: want, keep and sync. Carriers never see the rules themselves: those are sealed for readers. Whoever asks shows their own proof.",
+   "list": [
+    "want: may ask for this data and receive it, sealed.",
+    "keep: may store it for good.",
+    "sync: may pass it on to others whose rules say want."
+   ],
+   "deep": "want, keep and sync are operations in rules, like any other. Rules are sealed for readers; a carrier only checks the proof chain that the asker presents."
+  },
+  {
+   "title": "want",
+   "text": "Before a device sends anything, even sealed chunks, the asker shows a proof that a rule gives them {want}. The carrier checks the signatures and nothing else. A stranger gets nothing at all, not even ciphertext to count or keep. Read includes want.",
+   "code": {
+    "asker": "bob-laptop",
+    "proof": [
+     "seal → owner",
+     "owner → home: want",
+     "home ∋ bob"
+    ],
+    "result": "send sealed chunks"
+   },
+   "deep": "The asker presents a proof chain: seal → owner → rule granting want to a role → the asker's identity in that role → the asker's registered signer. Valid chain: sealed chunks are sent. No chain: nothing, not even ciphertext."
+  },
+  {
+   "title": "keep",
+   "text": "Your backup gets want and {keep}. It holds every sealed chunk, for good, and gives them back to your new phone. It has no read, so to it they're just sealed bytes.",
+   "code": {
+    "role": "backup",
+    "data": "house-list",
+    "operations": [
+     "want",
+     "keep"
+    ]
+   },
+   "deep": "keep means the carrier stores sealed chunks durably and serves them to askers holding want. It never holds a data key."
+  },
+  {
+   "title": "sync",
+   "text": "The street's always-on peer gets {sync}. It passes your changes between Alice and Bob when they're never online at the same time. It keeps them only as long as it has to.",
+   "code": {
+    "role": "street",
+    "data": "house-list",
+    "operations": [
+     "want",
+     "sync"
+    ]
+   },
+   "deep": "sync means the peer may forward sealed chunks to others whose rules give them want, which bridges devices that are never online at the same time."
+  },
+  {
+   "title": "What a carrier sees.",
+   "text": "Sealed chunks, the hashes that link them, and the {proofs}, signed chains from the seal to whoever asks, it needs to decide whom to give them to. It can store, count and forward them. It can't read a title, a tick, a rule or a frame of the movie.",
+   "code": {
+    "chunk": "blake3:a91f…",
+    "after": [
+     "blake3:77c2…"
+    ],
+    "author_proof": "…",
+    "bytes": "e4 1a 9c 07 …"
+   },
+   "deep": "Visible to a carrier: chunk hashes, sizes, links between chunks, and the proofs needed to decide whom to serve. Invisible: content, rules and keys."
+  },
+  {
+   "title": "All the rules on one list.",
+   "text": "One piece of data, one owner, three roles, each with exactly what it needs.",
+   "code": {
+    "data": "house-list",
+    "owner": "you",
+    "rules": {
+     "home": [
+      "create",
+      "read",
+      "update"
+     ],
+     "backup": [
+      "want",
+      "keep"
+     ],
+     "street": [
+      "want",
+      "sync"
+     ]
+    }
+   },
+   "deep": "One owner, three roles: readers and writers (home), a durable carrier (backup) and a forwarding carrier (street). Each role holds exactly the operations it needs."
+  },
+  {
+   "title": "Alice and Bob, never online together.",
+   "text": "Alice ticks milk on the train and goes offline. The street's peer picks it up, the backup keeps it, and Bob's laptop gets it in the evening. Neither carrier read a word.",
+   "flow": [
+    "alice-phone",
+    "street (sync)",
+    "backup (keep)",
+    "bob-laptop"
+   ],
+   "deep": "Store-and-forward over carriers: every hop checks want, holds only sealed chunks, and is replaceable. This is the local-first “cloud peer”."
+  },
+  {
+   "title": "Carriers, in short.",
+   "list": [
+    "want, keep and sync decide who may carry data; read decides who may open it.",
+    "Carriers check proofs and hold sealed chunks only.",
+    "Devices that are never online together still sync, through carriers."
+   ],
+   "deep": "Store-and-forward peers are replaceable and never trusted with content."
+  }
+ ]
+}

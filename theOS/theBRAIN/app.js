@@ -47,7 +47,8 @@ function render() {
   const known = [...new Set(deck.slice(0, at + 1).flatMap(termsOf))];
   $('#terms').innerHTML = known.map((t) => `<span class="${fresh.has(t) ? 'new' : ''}">${esc(cap(t))}</span>`).join('');
   $('#prev').disabled = at === 0;
-  $('#next').textContent = at === deck.length - 1 ? 'Start over' : `${s.action} →`;
+  const nxt = stories[stories.indexOf(story) + 1];
+  $('#next').textContent = at < deck.length - 1 ? `${deck[at + 1].title.replace(/\.$/, '')} →` : nxt && !nxt.kind ? `Next chapter: ${nxt.title} →` : 'Start over';
   document.querySelectorAll('#track button').forEach((b, i) => { b.className = i === at ? 'now' : i < at ? 'past' : ''; });
   $('#fill').style.width = `${(at / (deck.length - 1)) * 100}%`;
   const h = `#${story.id}-${at + 1}`;
@@ -55,7 +56,10 @@ function render() {
   void card.offsetWidth;
   card.classList.add('enter');
 }
-function go(i) { at = (i + deck.length) % deck.length; render(); }
+function go(i) {
+  if (i >= deck.length) { const nxt = stories[stories.indexOf(story) + 1]; if (nxt && !nxt.kind) return open(nxt, 0); }
+  at = (i + deck.length) % deck.length; render();
+}
 function fromHash() {
   const m = /^#([a-z]+)-(\d+)$/.exec(location.hash);
   const st = stories.find((x) => x.id === m?.[1]) || stories[0];
@@ -107,7 +111,10 @@ async function openDecisions(st, i) {
 
 async function start() {
   stories = (await (await fetch('stories.json')).json()).stories;
-  $('#stories').innerHTML = stories.map((x) => `<button type="button" data-story="${x.id}">${esc(x.title)}</button>`).join('');
+  const counts = await Promise.all(stories.map(async (x) => (x.kind ? null : (await (await fetch(x.file)).json()).slides.length)));
+  $('#stories').innerHTML = '<b class="navhead">theID</b>' + stories.map((x, i) => x.kind
+    ? `<button type="button" class="navdec" data-story="${x.id}">${esc(x.title)}</button>`
+    : `<button type="button" data-story="${x.id}"><span class="nn">${String(i + 1).padStart(2, '0')}</span><span class="nt">${esc(x.title)}</span><span class="nc">${counts[i]}</span></button>`).join('');
   $('#stories').addEventListener('click', (e) => { const b = e.target.closest('[data-story]'); if (b) open(stories.find((x) => x.id === b.dataset.story), 0); });
   $('#decisions').addEventListener('click', (e) => { const b = e.target.closest('[data-filter]'); if (b) { filter = b.dataset.filter; openDecisions(story, 0); } });
   $('#track').addEventListener('click', (e) => { const b = e.target.closest('[data-go]'); if (b) go(Number(b.dataset.go)); });

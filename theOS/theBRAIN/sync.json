@@ -1,74 +1,26 @@
 {
- "title": "Between devices",
+ "title": "Sync",
  "slides": [
   {
-   "title": "Your devices talk directly.",
-   "text": "No cloud in the middle. Alice's phone and Bob's laptop connect to each other, wherever they are. The layer that does this is {iroh}.",
-   "action": "Give them addresses",
-   "deep": "iroh: QUIC connections between devices, direct when possible, through a relay otherwise. Every connection is end-to-end encrypted and authenticated with the endpoint keys."
-  },
-  {
-   "title": "You dial identities, not devices.",
-   "text": "Every device has an {address} on the network: its signer's public key. But you never need to know it. Each identity publishes a signed record of its devices, and each device's history holds its current address. You dial Alice, and the connection goes to whichever of her devices is online.",
+   "title": "Sealed in chunks, not one by one.",
+   "text": "Sealing every CRDT op on its own would make data huge. So a device seals {chunks}: a run of changes, compressed, then encrypted. Chunk boundaries come from the changes' hashes, so every device splits at the same places. Old small chunks get merged into bigger ones, like layers of sediment.",
    "code": {
-    "dial": "alice",
-    "record": {
-     "devices": [
-      "alice-phone",
-      "alice-laptop"
-     ]
-    },
-    "alice-phone": {
-     "address": "ed25519:k51q…"
-    }
+    "chunk": "blake3:a91f…",
+    "holds": "bob:18 – bob:40",
+    "after": [
+     "blake3:77c2…"
+    ],
+    "signed_by": "bob-laptop",
+    "bytes": "sealed"
    },
-   "action": "Find each other",
-   "deep": "An iroh endpoint ID is an Ed25519 public key; here it is the device's signer key. Identity records are signed and published like iroh's own discovery records. A new key changes the device's address, never the identity's."
-  },
-  {
-   "title": "Finding each other.",
-   "text": "On the same Wi-Fi, devices simply see each other. Further away, a device publishes where it can be reached, under its own key, and anyone with the key can look it up.",
    "flow": [
-    "know the key",
-    "look up where it is",
-    "connect"
+    "changes",
+    "compress",
+    "seal",
+    "hash",
+    "link to the chunks before"
    ],
-   "action": "Get through",
-   "deep": "Local discovery via mDNS on the same network; global discovery through signed records published under the key (pkarr / DNS). A record lists the addresses where an endpoint can be reached."
-  },
-  {
-   "title": "Getting through.",
-   "text": "Most home routers block incoming connections. iroh punches a hole from both sides at once, and usually gets a direct line. If that fails, a {relay} passes the packets along. The relay sees only sealed traffic.",
-   "flow": [
-    "try direct",
-    "punch a hole",
-    "else: relay"
-   ],
-   "action": "Who's there?",
-   "deep": "UDP hole punching from both sides at once. If that fails, a relay forwards encrypted QUIC packets it cannot read. Connections upgrade to direct when possible."
-  },
-  {
-   "title": "Both sides know who they talk to.",
-   "text": "Every connection is encrypted with the two devices' keys. Then the device shows that its key is registered in its own history, and who owns it. The other side knows: this is Alice's phone, acting for Alice.",
-   "code": {
-    "connected": "ed25519:k51q…",
-    "device": "alice-phone",
-    "owned_by": "alice",
-    "proof": "registered in alice-phone's history"
-   },
-   "action": "Speak",
-   "deep": "The QUIC handshake proves the key. The device identity's history proves the key is its current signer, and its owner's history proves the device belongs to it."
-  },
-  {
-   "title": "One line, three languages.",
-   "text": "Over one connection, devices speak a small {protocol} for each kind of work.",
-   "list": [
-    "Docs: find the missing sealed chunks, then swap them.",
-    "Values: stream chunks by hash, checked as they arrive.",
-    "News: tell interested peers “there's something new”."
-   ],
-   "action": "Layers of chunks",
-   "deep": "Each protocol is an ALPN on the same endpoint: chunk sync for Docs, blob ranges for Values, gossip for announcements."
+   "deep": "A chunk is Loro's exported update bytes for a range of changes: compressed, then sealed with the data key (AEAD). Its BLAKE3 hash names it; its signed header lists the previous chunk hashes and binds Loro's peer ID to the signer."
   },
   {
    "title": "Sealed chunks settle in layers.",
@@ -78,7 +30,6 @@
     "0x00b1…": "depth 1: closes a chunk",
     "0x0000…": "depth 2: closes a bigger chunk"
    },
-   "action": "Find what's missing",
    "deep": "Sedimentree (from Ink & Switch's Subduction): depth = number of leading zero bytes of a change's BLAKE3 hash. Depth ≥ 1 closes a chunk; deeper chunks contain shallower ones. Equal content gives an equal minimal hash. (D33)"
   },
   {
@@ -88,7 +39,6 @@
     "inside_one": "fingerprints of its layers",
     "across_many": "summaries that peel apart"
    },
-   "action": "Fingerprints, step by step",
    "deep": "Two levels (D34, proposed): fingerprints within one piece of data, RIBLT set reconciliation across many. Both cost roughly in proportion to the difference."
   },
   {
@@ -116,7 +66,6 @@
     "compare",
     "swap the missing"
    ],
-   "action": "Thousands of pieces",
    "deep": "SipHash-2-4 keyed with a fresh 128-bit seed per request, giving 8 bytes per item, computed over the item's causal identity. The responder diffs u64 fingerprints and replies with what is missing in both directions: 1.5 round trips."
   },
   {
@@ -134,7 +83,6 @@
     "peel",
     "repeat until done"
    ],
-   "action": "Fetch a Value",
    "deep": "Rateless Invertible Bloom Lookup Tables (arXiv 2402.02668). Each coded symbol is the XOR of a pseudo-random subset of item hashes plus a count and a checksum. Peel pure symbols iteratively. About 1.35 to 1.7 × d symbols for d differences."
   },
   {
@@ -148,7 +96,6 @@
      "backup"
     ]
    },
-   "action": "Spread the news",
    "deep": "BLAKE3 verified streaming: every received range is checked against the root hash before use. Ranges can come from several peers at once."
   },
   {
@@ -160,110 +107,16 @@
      "chunk": "blake3:e40d…"
     }
    },
-   "action": "Who may get bytes?",
    "deep": "Gossip topic = data ID. Announcements carry only new chunk hashes, so carriers learn no author or content."
   },
   {
-   "title": "Who may even get the bytes?",
-   "text": "Read decides who can open data. Three more things a rule can allow decide who can carry it: want, keep and sync. Carriers never see the rules themselves: those are sealed for readers. Whoever asks shows their own proof.",
+   "title": "Sync, in short.",
    "list": [
-    "want: may ask for this data and receive it, sealed.",
-    "keep: may store it for good.",
-    "sync: may pass it on to others whose rules say want."
+    "Changes travel as sealed chunks that settle in layers.",
+    "Fingerprints find what's missing inside one piece of data; summaries across many.",
+    "Values stream in checked ranges; gossip spreads the news."
    ],
-   "action": "want",
-   "deep": "want, keep and sync are operations in rules, like any other. Rules are sealed for readers; a carrier only checks the proof chain that the asker presents."
-  },
-  {
-   "title": "want",
-   "text": "Before a device sends anything, even sealed chunks, the asker shows a proof that a rule gives them {want}. The carrier checks the signatures and nothing else. A stranger gets nothing at all, not even ciphertext to count or keep. Read includes want.",
-   "code": {
-    "asker": "bob-laptop",
-    "proof": [
-     "seal → owner",
-     "owner → home: want",
-     "home ∋ bob"
-    ],
-    "result": "send sealed chunks"
-   },
-   "action": "keep",
-   "deep": "The asker presents a proof chain: seal → owner → rule granting want to a role → the asker's identity in that role → the asker's registered signer. Valid chain: sealed chunks are sent. No chain: nothing, not even ciphertext."
-  },
-  {
-   "title": "keep",
-   "text": "Your backup gets want and {keep}. It holds every sealed chunk, for good, and gives them back to your new phone. It has no read, so to it they're just sealed bytes.",
-   "code": {
-    "role": "backup",
-    "data": "house-list",
-    "operations": [
-     "want",
-     "keep"
-    ]
-   },
-   "action": "sync",
-   "deep": "keep means the carrier stores sealed chunks durably and serves them to askers holding want. It never holds a data key."
-  },
-  {
-   "title": "sync",
-   "text": "The street's always-on peer gets {sync}. It passes your changes between Alice and Bob when they're never online at the same time. It keeps them only as long as it has to.",
-   "code": {
-    "role": "street",
-    "data": "house-list",
-    "operations": [
-     "want",
-     "sync"
-    ]
-   },
-   "action": "All the rules at once",
-   "deep": "sync means the peer may forward sealed chunks to others whose rules give them want, which bridges devices that are never online at the same time."
-  },
-  {
-   "title": "All the rules on one list.",
-   "text": "One piece of data, one owner, three roles, each with exactly what it needs.",
-   "code": {
-    "data": "house-list",
-    "owner": "you",
-    "rules": {
-     "home": [
-      "create",
-      "read",
-      "update"
-     ],
-     "backup": [
-      "want",
-      "keep"
-     ],
-     "street": [
-      "want",
-      "sync"
-     ]
-    }
-   },
-   "action": "Watch it travel",
-   "deep": "One owner, three roles: readers and writers (home), a durable carrier (backup) and a forwarding carrier (street). Each role holds exactly the operations it needs."
-  },
-  {
-   "title": "Alice and Bob, never online together.",
-   "text": "Alice ticks milk on the train and goes offline. The street's peer picks it up, the backup keeps it, and Bob's laptop gets it in the evening. Neither carrier read a word.",
-   "flow": [
-    "alice-phone",
-    "street (sync)",
-    "backup (keep)",
-    "bob-laptop"
-   ],
-   "action": "Sum it up",
-   "deep": "Store-and-forward over carriers: every hop checks want, holds only sealed chunks, and is replaceable. This is the local-first “cloud peer”."
-  },
-  {
-   "title": "Between devices, in short.",
-   "list": [
-    "Every device's address is its key.",
-    "Devices connect directly, or through a relay that sees only sealed traffic.",
-    "Docs swap missing sealed chunks; Values stream checked chunks; gossip spreads the news.",
-    "want, keep and sync decide who may carry data. Read decides who may open it."
-   ],
-   "action": "",
-   "deep": "iroh for connections, sedimentree for chunking, fingerprints and RIBLT for differences, want, keep and sync for who may carry."
+   "deep": "Sedimentree, keyed fingerprints and RIBLT: costs grow with the difference, not the total."
   }
  ]
 }

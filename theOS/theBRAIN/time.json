@@ -1,0 +1,100 @@
+{
+ "title": "Time",
+ "slides": [
+  {
+   "title": "Every key lives through three windows.",
+   "text": "A key is {hot} for 30 days: ready on every reader's device, and each new key opens the one before. Keys also turn regularly, so they {heal}: a stolen key soon opens nothing new. Then a key goes {cold}: out of the chain, so today's key no longer opens it, and into the owner's {archive}, a sealed store of old keys, opened only by the owner's own signing rules. On request, keys are {erased} everywhere.",
+   "deep": "Hot: back-links within the window, keys turn regularly (post-compromise security). Cold: at each rotation boundary older than the window, the chain is cut; old keys are sealed for the owner identity's archive key, split among its members by its signing rules. Late writers from before a cut lose and get a conflict view.",
+   "table": {
+    "head": [
+     "Window",
+     "Age",
+     "Keys",
+     "Protects against"
+    ],
+    "rows": [
+     [
+      "hot",
+      "last 30 days",
+      "linked, ready",
+      "a stolen key opens only these 30 days"
+     ],
+     [
+      "cold",
+      "older",
+      "in the owner's archive",
+      "nobody but the owner opens the past"
+     ],
+     [
+      "erased",
+      "on request",
+      "deleted everywhere",
+      "the content is gone for good"
+     ]
+    ]
+   }
+  },
+  {
+   "title": "Snapshots let the past go.",
+   "text": "At key turns older than 30 days, the history is cut: newcomers get a snapshot of the state, not the old CRDT ops, so they never see what was deleted. The older keys go to the owner's archive. A writer who comes back from before the cut loses, and sees what was not adopted.",
+   "code": {
+    "cut_at": "a key turn > 30 days old",
+    "newcomers_get": "snapshot + later CRDT ops",
+    "before_the_cut": "keys to the archive"
+   },
+   "flow": [
+    "older than the hot window",
+    "cut",
+    "snapshot for newcomers",
+    "old keys to the archive"
+   ],
+   "deep": "Loro's shallow snapshot holds the state plus the history after a cut. Cuts happen at key-rotation boundaries older than the hot window; the old chunks' keys go to the owner's archive or are shredded on erase."
+  },
+  {
+   "title": "Erasing works on any text.",
+   "text": "A note names ten people, and one of them asks to be forgotten. You delete their name. Then the note is {cut}: a fresh {snapshot}, the current state with no history, without the name, under a new key. The keys of everything before the cut are {shredded} on every honest device and in the archive. The name is gone for good, even from the history.",
+   "flow": [
+    "delete",
+    "cut",
+    "new key",
+    "shred the old keys"
+   ],
+   "deep": "In the live state, a deleted character is only an ID; its content survives only in old CRDT ops, inside sealed chunks. Destroying those chunks' keys makes them unreadable everywhere (crypto-shredding). Cost: the history before the cut is gone, not just the name. Legal retention, if set, comes first."
+  },
+  {
+   "title": "Some things must be kept for years.",
+   "text": "Bookkeeping must be kept for ten years. At any time, the owner can say {retain}: keep this until 2036. From then on, nobody can cut, shred or erase it before that date, and the date can only move later. Identities in a retention role, like your tax adviser, help keep it.",
+   "code": {
+    "event": "retain",
+    "data": "invoices-2026",
+    "until": "2036-12-31",
+    "by": "you (owner)",
+    "retainers": [
+     "backup",
+     "tax adviser"
+    ]
+   },
+   "deep": "Retain is an owner-signed event, extend-only; honest devices refuse cuts and erasures before the date (erring toward keeping). The retention role holds want and keep, and optionally a share of the archive key. Stored as canonical CBOR; exported as JSON and PDF/A; resealed periodically under current algorithms."
+  },
+  {
+   "title": "What no cryptography can do, and why that's fine.",
+   "text": "Whatever someone once saw, they can remember, screenshot or copy. That's true of every app today, and no system can change it. What we can promise is the rest.",
+   "list": [
+    "Nothing new: rotation keeps the future out.",
+    "Nothing kept, on honest devices: the next step.",
+    "Read is per piece of data, so what you share alone is its own data."
+   ],
+   "deep": "The analogue hole is real for every system: whatever a reader saw can be copied. Read granularity equals key granularity, so a part shared on its own must be its own data."
+  },
+  {
+   "title": "Time, in short.",
+   "list": [
+    "Keys are hot for 30 days, then cold in the owner's archive.",
+    "History is cut at old key turns; newcomers get snapshots.",
+    "Erasing works on any text: delete, cut, shred.",
+    "Retain keeps things for years; nothing can undo what someone saw."
+   ],
+   "deep": "Heal, archive, erase and retain are one key lifecycle per piece of data."
+  }
+ ]
+}
