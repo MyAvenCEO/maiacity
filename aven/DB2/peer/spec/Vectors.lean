@@ -21,6 +21,11 @@ import Lean.Data.Json
 - `upgrades.json`: a peer's wire version and the version a hello names; its answer (none, or `update` and its own
   version) and whether the hello's peer follows that refusal; and the gossip topic's name for a wire version and a
   network (`Aven.Peer.Wire`, "The wire version").
+- `history.json`: history entries in their signers' logs, and the newest of each sort about each device or release
+  line, in several orders; presence beats and the newest of each (`Aven.Peer.History`, A193, A194). `catchup.json`: sources offered against a signed
+  log tip, the one chosen and the ones caught, and presence from signed beats (`Aven.Peer.CatchUp`). `failures.json`:
+  the nine checks the box runs with the Aven Peer stopped, each with what the models say it must see
+  (`Aven.Peer.Failures`, PEERS.md).
 -/
 
 open Lean Aven.Core Aven.Core.Past Aven.Peer.DocSync Aven.Peer
@@ -247,5 +252,6 @@ def main (args : List String) : IO Unit := do
   write dir "topics.json" topics
   write dir "doc-sync.json" syncVectors
   for (file, vs) in [("presence.json", presence), ("wire.json", wire), ("frames.json", frames),
-      ("upgrades.json", upgrades)] do
+      ("upgrades.json", upgrades), ("history.json", HistoryJson.historyVectors),
+      ("catchup.json", HistoryJson.catchUpVectors), ("failures.json", Failures.failureVectors)] do
     IO.FS.writeFile (dir / file) (render vs)

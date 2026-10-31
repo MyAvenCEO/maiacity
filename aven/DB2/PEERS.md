@@ -265,24 +265,25 @@ In `Aven.ID.Network`, with the caps thread (`ticket_once` is there since #1531),
   one of them counts, so the change of rule loses nothing. Checked at every step of every invite trace, the examples
   and 40 generated ones: the settled door admits exactly the keys `Members.admits` does, and the member vaults are the
   same (`restore_agrees`). A proof of that agreement for every store is open.
-- **Records** (`Aven.ID.Records`): the record kinds of [6](#6-signed-records-not-a-peers-word), each under its own
-  label, and which is newest: `newest_set` (no order is an input), `newest_signed` (only the device it is about, or a
-  release signer), `newest_agree` (two newest say the same), `split_final` (address and release records are history in
-  their signer's own log, A31: once a split is held, nothing at or after it counts), `newest_grows`, and `speaks_same`
-  for the wire version ([7](#7-upgrades)).
-- **Node** (`Aven.ID.Node`, the architecture's R3, R7 and R9; the architect, 30 Oct 2026): a write fits on the
-  device's own log alone (`write_fits`, `write_chain`), and a split's proof reaches every reader that syncs with a peer
-  holding it (`split_spreads`); with two relays every member can use, losing any one peer leaves every member reachable
-  and every Doc held by two members fetchable (`no_only_relay`, `no_only_holder`, `kept_fetchable`), a re-homed device's
-  new address record is the newest (`rehome_newest`), and one relay alone is an only source (`one_relay_only_source`);
-  plain bytes go only to a reader, and relays and keepers that aren't readers see sealed bytes only
-  (`no_plain_to_nonreader`, `relay_blind`, `keeper_blind`). Vectors `node.json`: networks losing each peer in turn.
+- **History** (`Aven.Peer.History`, A193, A194): the record kinds of [6](#6-signed-records-not-a-peers-word), each under
+  its own label, and which is newest: `newest_set` (no order is an input), `newest_signed` (only the device it is about,
+  or a release signer), `newest_agree` (two newest say the same), `split_final` (address and release records are history
+  in their signer's own log, A31: once a split is held, nothing at or after it counts), `newest_grows`, and
+  `speaks_same` for the wire version ([7](#7-upgrades)).
+- **Node** (`Aven.ID.Node`, the architecture's R3, R7 and R9; the architect, 30 Oct 2026): a write fits on the device's
+  own log alone (`write_fits`, `write_chain`), and a split's proof reaches every reader that syncs with a peer holding
+  it (`split_spreads`); with two relays every member can use, losing any one peer leaves every member reachable and
+  every Doc held by two members fetchable (`no_only_relay`, `no_only_holder`, `kept_fetchable`), a re-homed device's new
+  address record is the newest (`Aven.Peer.History.rehome_newest`), and one relay alone is an only source
+  (`one_relay_only_source`); plain bytes go only to a reader, and relays and keepers that aren't readers see sealed
+  bytes only (`no_plain_to_nonreader`, `relay_blind`, `keeper_blind`). Vectors `node.json`: networks losing each peer in
+  turn.
 - **Vectors:** `settled.json`. Each statement is given as its envelope's CBOR under its name, with what it says
   written out to read. The same statement sets in six orders each, with their settled tree: `TreeExamples`, the
   races one by one (two claims, a claim against a withdrawal, a claim after its confirmation, two devices confirming two
   claims, the Aven Peer's key changed, a list's add against its remove, a statement outside the genesis, a bad one), 40
-  generated sets, and production's store migrated from the invite traces. `records.json`: records and the newest of
-  each. aven-id, the wasm and avenOS's check load them (README rule 10).
+  generated sets, and production's store migrated from the invite traces. peer/spec's `history.json`: records and
+  the newest of each. aven-id, the wasm and avenOS's check load them (README rule 10).
 
 ### The cost: a claim waits for its confirmation, and can be undone before it
 
@@ -444,8 +445,8 @@ Six task threads, the Lean first, each in its own folders. Rust threads run in s
 ### Thread A: the tree's Lean (`id/spec`, with the caps thread)
 
 `Aven.ID.Network` (the caps thread, #1555): statements naming their tips, the genesis, `settle` and its theorems.
-`Aven.ID.Restore`, `Aven.ID.Records` and `Aven.ID.Node` (this thread): `settle_restore`, the record kinds and
-their checks, the node properties; `settled.json`, `records.json` and `node.json`. Comes first; threads B to E build
+`Aven.ID.Restore`, `Aven.Peer.History` and `Aven.ID.Node` (this thread): `settle_restore`, the record kinds and
+their checks, the node properties; `settled.json`, `history.json` and `node.json`. Comes first; threads B to E build
 against its vectors.
 
 ### Thread B: the tree as a Doc (`id/core`, `peer/native/src/door.rs`, `members.rs`)

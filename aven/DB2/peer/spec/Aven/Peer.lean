@@ -3,3 +3,7 @@ import Aven.Peer.Presence
 import Aven.Peer.Wire
 import Aven.Peer.WireCbor
 import Aven.Peer.Json
+import Aven.Peer.History
+import Aven.Peer.CatchUp
+import Aven.Peer.HistoryJson
+import Aven.Peer.Failures
