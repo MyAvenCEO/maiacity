@@ -58,7 +58,7 @@ on the page:
   `Node.svelte` draws it.
 - **A slide is a face.** Its part, `<id>.part.json`, goes through the frozen face-runtime, loaded by its hash in
   avenOS's runtimes worker, a worker of its own (`aven/runtimes`, README, "The browser host"). face-runtime checks the
-  tree against the allowlist, every rule's range, the text's size and contrast, and the a11y, and answers the tree and
+  tree against the allowlist, every rule's range, the text's size and contrast, and that it can be read aloud, and answers the tree and
   the style; a part it refuses draws nothing, and the slide says why (`data-refused`). The drawer
   (`os/web/runtimes/draw.js`) checks both again, builds the slide node by node into a shadow root of its own and
   writes its CSS there from the rules. No slide style is in avenOS's own sheets, and none of avenOS's reaches a slide.
