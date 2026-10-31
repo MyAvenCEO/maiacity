@@ -4,8 +4,9 @@ import Aven.Core.Names
 # Signed things (rule 1)
 
 Everything signed is a label plus a Value: the signature covers exactly the encoding of `[label, body]`, so a
-signature made for one kind of thing can never be read as another's. A signed thing is named by the hash of its whole
-encoding, signature included.
+signature made for one kind of thing can never be read as another's. A signed thing is named by the hash of exactly
+those bytes, its signatures beside it (A30). Passkey and ML-DSA signatures are randomized, so signing one act twice
+gives two signatures, but never two names (`Signed.name_resign`).
 
 Signatures are taken as sound: the model is parametric in `verify`, and nothing here depends on how it checks.
 -/
@@ -37,12 +38,24 @@ structure Signed where
 
 def Signed.valid (verify : Verify) (s : Signed) : Bool := verify s.signer (signingBytes s.label s.body) s.sig
 
-/-- A signed thing as a Value: its keys sorted as the codec sorts them. -/
+/-- A signed thing as a Value, its signature with it, as it travels: its keys sorted as the codec sorts them. -/
 def Signed.value (s : Signed) : Value :=
   .map [("sig".toUTF8.toList, .bytes s.sig), ("body".toUTF8.toList, s.body),
     ("label".toUTF8.toList, .text s.label), ("signer".toUTF8.toList, .bytes s.signer)]
 
-def Signed.name (H : Bytes → Hash) (s : Signed) : Hash := nameOf H s.value
+/-- A signed thing's name: the hash of its label and body, exactly what its signer signs (A30). -/
+def Signed.name (H : Bytes → Hash) (s : Signed) : Hash := H (signingBytes s.label s.body)
+
+/-- Signing one act again, by any signer, keeps its name. -/
+theorem Signed.name_resign (H : Bytes → Hash) (s : Signed) (signer sig : Bytes) :
+    ({ s with signer, sig } : Signed).name H = s.name H := rfl
+
+/-- Two well-formed signed things with one name, under a hash nothing collides under, have one label and one body:
+they differ at most in who signed and how. -/
+theorem Signed.name_inj {H : Bytes → Hash} (hH : Injective H) {s t : Signed} (hl : textOk s.label = true)
+    (hl' : textOk t.label = true) (hb : Canon s.body = true) (hb' : Canon t.body = true) (h : s.name H = t.name H) :
+    s.label = t.label ∧ s.body = t.body :=
+  signing_separates hl hl' hb hb' (hH _ _ h)
 
 #guard keysSorted [("sig".toUTF8.toList, .null), ("body".toUTF8.toList, .null), ("label".toUTF8.toList, .null),
   ("signer".toUTF8.toList, .null)]
