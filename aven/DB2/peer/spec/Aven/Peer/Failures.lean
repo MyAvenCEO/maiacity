@@ -10,7 +10,7 @@ import Aven.Peer.Wire
 outcome the models give: who reaches whom and through which relay (`Aven.ID.Node`), which source a catch-up takes and
 which it catches (`Aven.Peer.CatchUp`), which keeper serves a file (`Aven.ID.Keeping`'s `keepersOf`), whether a
 newcomer gets in at Alice Peer's relay (`Settle.newcomer`), the settled tree after each race and after a restart
-(`settle`), and the wire version's refusal (`Aven.Peer.meet`). The `#guard`s below hold each outcome to what PEERS.md
+(`settle`), and the wire version's refusal (`Aven.Peer.speaks`). The `#guard`s below hold each outcome to what PEERS.md
 says the box must see, so the vectors can't drift from the plan.
 
 The cast: the Aven Peer (`aven-peer`) and Alice Peer (`alice-peer`) run the listed relays; Bob's Peer (`bob-peer`)
@@ -120,7 +120,7 @@ def failureVectors : List Json :=
        ("settled", settled all7)]),
    step 8 "a peer on another wire version is refused with update"
      (Json.mkObj [("mine", toJson (1 : Nat)), ("theirs", toJson (2 : Nat))])
-     (Json.mkObj [("speaks", toJson (meet 1 2).isNone)]),
+     (Json.mkObj [("speaks", toJson (speaks 1 2))]),
    step 9 "a peer that hides Bob's newest post is caught"
      (Json.mkObj [("tip", Json.mkObj [("number", toJson bobsTip.number), ("hash", toJson bobsTip.hash)]),
        ("sources", Json.arr (hider.map fun (s, c) => Json.mkObj [("source", s), ("copy", toJson c)]).toArray)])
@@ -153,7 +153,7 @@ def failureVectors : List Json :=
 -- 7. the same tree, whatever order the Aven Peer reads it back in
 #guard (settle 100 all7).listed all7 == (settle 100 all7.reverse).listed all7
 -- 8. no fallback
-#guard meet 1 2 = some (.update 1)
+#guard !speaks 1 2 && meet 1 2 = some (.update 1)
 -- 9. the hider is caught, and Alice Peer is asked instead
 #guard (choose bobsTip hider).map (·.1) == some "alice-peer" && caught bobsTip [11, 22]
 

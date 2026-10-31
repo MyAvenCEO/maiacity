@@ -310,10 +310,10 @@ Every connection's greeting, the hello, names the wire version its peer speaks, 
 (`topicName`). The version is a number of its own, not the release's: it changes only when a frame's meaning changes,
 rarely, and never with an ordinary release (PEERS.md §7, decision 11). Two peers meet only on one version:
 
-- **no fallback** (README rule 9): a peer speaks to another only when their versions are equal (`meet_speaks`); any
-  other hello is answered with `update` and the version it speaks, and the connection closes (`meet_refuses`). A line
-  that is no greeting, such as version 0's hello without its version, is refused as `bad`: version 1, the first to
-  carry a version, made those tabs reload once by hand;
+- **no fallback** (README rule 9): a peer speaks to another only when their versions are equal (`meet_speaks`, as
+  `speaks_same` says of every peer); any other hello is answered with `update` and the version it speaks, and the
+  connection closes (`meet_refuses`). A line that is no greeting, such as version 0's hello without its version, is
+  refused as `bad`: version 1, the first to carry a version, made those tabs reload once by hand;
 - **the older one follows**: of two peers that differ, exactly one is behind (`follows_one`), and only it updates
   (`follows_newer`): an open tab switches to the newer release at once, a native Peer says `update` until its owner
   upgrades it. A peer that is ahead never goes back, so a tab never reloads for an older peer;
@@ -331,6 +331,14 @@ def meet (mine theirs : Nat) : Option Greeting := if theirs = mine then none els
 /-- **No fallback:** a connection carries on only between peers of one wire version. -/
 theorem meet_speaks {mine theirs : Nat} : meet mine theirs = none ↔ theirs = mine := by
   unfold meet; split <;> simp_all
+
+/-- A peer speaks to another only on its own wire version. -/
+def speaks (mine theirs : Nat) : Bool := mine == theirs
+
+/-- **`speaks_same`:** no fallback: a peer speaks exactly one wire version, the one `meet` carries on with. -/
+theorem speaks_same {mine theirs : Nat} : speaks mine theirs = true ↔ theirs = mine ∧ meet mine theirs = none := by
+  simp only [speaks, beq_iff_eq, meet_speaks]
+  exact ⟨fun h => ⟨h.symm, h.symm⟩, fun h => h.1.symm⟩
 
 /-- **Any other version is refused with `update`,** and the version spoken. -/
 theorem meet_refuses {mine theirs : Nat} (h : theirs ≠ mine) : meet mine theirs = some (.update mine) := by

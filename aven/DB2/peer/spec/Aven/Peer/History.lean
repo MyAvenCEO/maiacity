@@ -1,42 +1,43 @@
 import Aven.Core
 
-/-! # Notices: what a peer says of itself, signed, never a peer's word (A193; PEERS.md §6 and §7)
+/-! # History: what a peer says of itself, signed, never a peer's word (A193, A194; PEERS.md §6 and §7)
 
-What peers tell each other about themselves travels as notices, each signed by the one it is about, so who passed it
-on never matters:
+What peers tell each other about themselves travels as history entries, each signed by the one it is about, so who
+passed it on never matters:
 
 - **address:** how to reach a device: its home relay and direct addresses;
-- **log tip:** the newest post of a device's own log, by hash and number;
+- **tip:** the newest post of a device's own log, by hash and number;
 - **release:** a release's version, its wire version and the hashes of what it ships, signed by a release signer
-  (A15);
-- **presence:** a device's beat while it is there;
-- **tree tip:** the tree statements a member device holds, by their names.
+  (A15), about its release line.
 
-What a notice says is opaque here, named by its hash as a number (`body`): only which notice is newest matters to the
-rules. Each kind signs under a label of its own (`Kind.label`), so a notice of one kind is never read as another's.
+What an entry says is opaque here, named by its hash as a number (`body`): only which entry is newest matters to the
+rules. Its body is a map with exactly one key, naming what it is (`Says.value`, A194), so an entry of one is never read
+as another.
 
-**History is a Core log** (A193, A31, A42). An address, a log tip or a release notice is an entry in its signer's own
-notices log: a Core envelope (`Aven.Core.Envelope`) in the signer's notices Doc, whose writer id the docs layer derives
-from the signer and a generation (`Logs`), so each generation is a log of its own. The entry's place in it is its
+**History is a Core log** (A193, A31, A42). Each entry is a Core envelope (`Aven.Core.Envelope`) in its signer's own
+history log: the docs layer derives the log's writer id from the signer and a generation, so each generation is a log
+of its own, and a reader knows whose log a Doc and writer id are (`Logs.owner`). The entry's place in it is its
 sequence number, and it names the entry before it (`chained`). It counts by Core's one counting rule
-(`Aven.Core.Counts`, A45), with this layer's verdicts: it is `fit` when it carries a notice at its signer's log, and
-`authorized` when the notice is the signer's to give (`takes`: a device about itself, admitted by the door; a release
-by a release signer) and the entry is chained. The newest is the counting entry of the latest generation at the
-latest place. Its signature was checked as it came (`Aven.Core.Envelope.placed`): a reader holds no other.
+(`Aven.Core.Counts`, A45), with this layer's verdicts: it is `fit` when its body is one of the three shapes in its
+signer's history log, and `authorized` when it is the signer's to give (`takes`: a device about itself, admitted by the
+door; a release by a release signer) and the entry is chained. The newest is the counting entry of the latest
+generation at the latest place. Its signature was checked as it came (`Aven.Core.Envelope.placed`): a reader holds no
+other.
 
 Two different entries at one place are a split (`Aven.Core.Split`), and a split is final (A4): nothing at or after it
 in that log counts, for any reader, however much more it learns (`split_final`), since every entry after it is chained
 back through that place. A split ends one generation, not the device: a log's first entry counts whatever other logs
 hold (`split_spares_next`), so a device that split re-homes in a new generation (`rehome_new_generation`).
 
-**Presence and tree tips are beats** (`Beat`): they decide nothing, and the latest counter is all that matters; a peer
-ages a beat by its own clock (`Aven.Peer.CatchUp.present`).
+**Presence is a beat** (`Beat`, A35): it decides nothing, and the latest counter is all that matters; a peer ages a
+beat by its own clock (`Aven.Peer.CatchUp.present`). A member's tree tips are no entry and no beat: the register is a
+Doc, and its tips travel as any Doc's do (`doc_tips`).
 
 The theorems:
-- `newest_set`: which notice is newest depends only on the set of entries a peer holds, not their order;
-- `newest_signed`: the newest notice about a device was signed by that device (a release's by a release signer), so
-  no peer's word stands in for it;
-- `newest_agree`: two notices that are both newest say the same thing, at the same place;
+- `newest_set`: which entry is newest depends only on the set of entries a peer holds, not their order;
+- `newest_signed`: the newest entry about a device was signed by that device (a release's by a release signer), so no
+  peer's word stands in for it;
+- `newest_agree`: two entries that are both newest are at the same place and say the same thing;
 - `split_final`: once a peer holds a split in a log, nothing at or after it there is ever counted;
 - `split_spares_next`: a log's first entry counts while nothing splits it, whatever other generations hold;
 - `newest_grows`: holding more entries never makes the newest one older, while what was newest still counts;
@@ -45,85 +46,81 @@ The theorems:
 - `beat_newest_set`, `beat_newest_signed`: the same of beats. -/
 
 namespace Aven.Peer
-namespace Notices
+namespace History
 
 open Aven.Core
 
-/-! ## Notices -/
+/-! ## Entries -/
 
-/-- The three kinds of history: each an entry in its signer's notices log. -/
-inductive Kind where
+/-- What an entry says: one of three, each by the hash of what it says. -/
+inductive Says where
+  | address (body : Nat)
+  | tip (body : Nat)
+  /-- about a release line -/
+  | release (line : String) (body : Nat)
+  deriving DecidableEq, Repr
+
+/-- Which of the three an entry is: the one key of its body. -/
+inductive Which where
   | address
-  | logTip
+  | tip
   | release
   deriving DecidableEq, Repr
 
-/-- The label each kind signs under. -/
-def Kind.label : Kind → String
-  | .address => "aven/peer/address/1"
-  | .logTip => "aven/peer/log-tip/1"
-  | .release => "aven/peer/release/1"
-
-def Kind.name : Kind → String
+def Which.key : Which → String
   | .address => "address"
-  | .logTip => "logTip"
+  | .tip => "tip"
   | .release => "release"
 
-def Kind.ofLabel? (s : String) : Option Kind :=
-  if s = Kind.address.label then some .address
-  else if s = Kind.logTip.label then some .logTip
-  else if s = Kind.release.label then some .release
-  else none
+def Says.which : Says → Which
+  | .address _ => .address
+  | .tip _ => .tip
+  | .release _ _ => .release
 
-theorem label_inj {a b : Kind} (h : a.label = b.label) : a = b := by
-  cases a <;> cases b <;> simp_all [Kind.label]
-
-theorem ofLabel_label (k : Kind) : Kind.ofLabel? k.label = some k := by
-  cases k <;> simp [Kind.ofLabel?, Kind.label]
-
-/-- A notice: its kind, what it is about (a device; a release's: the name of the release line), who signed it, the
-generation of the signer's log it is in, and what it says, by hash. -/
-structure Notice where
-  kind : Kind
-  about : String
-  signer : String
-  generation : Nat
-  body : Nat
-  deriving DecidableEq, Repr
+def Says.body : Says → Nat
+  | .address n | .tip n | .release _ n => n
 
 private def k (s : String) : Bytes := text s
 
-/-- A notice as its entry's body: keys in the codec's order, shorter first. -/
-def Notice.value (n : Notice) : Value :=
-  .map [(k "body", .uint n.body), (k "kind", .text (text n.kind.label)), (k "about", .text (text n.about)),
-    (k "signer", .text (text n.signer)), (k "generation", .uint n.generation)]
+/-- An entry's body: a map with exactly one key, naming what it is (A194); a release's value also names its line. -/
+def Says.value : Says → Value
+  | .address n => .map [(k "address", .uint n)]
+  | .tip n => .map [(k "tip", .uint n)]
+  | .release l n => .map [(k "release", .map [(k "body", .uint n), (k "about", .text (text l))])]
 
-#guard keysSorted (match (Notice.mk .address "" "" 0 0).value with | .map kvs => kvs | _ => [])
+#guard keysSorted [(k "body", Value.uint 0), (k "about", .text [])]
 
 def str? (b : Bytes) : Option String := String.fromUTF8? ⟨b.toArray⟩
 
-/-- An entry's body read back as a notice: exactly its keys, none missing and none extra (A42). -/
-def Notice.read? : Value → Option Notice
-  | .map [(kb, .uint b), (kk, .text kd), (ka, .text a), (ks, .text s), (kg, .uint g)] =>
-    if kb = k "body" ∧ kk = k "kind" ∧ ka = k "about" ∧ ks = k "signer" ∧ kg = k "generation" then do
-      let kind ← Kind.ofLabel? (← str? kd)
-      pure ⟨kind, ← str? a, ← str? s, g, b⟩
+/-- An entry's body read back: exactly its keys, none missing and none extra (A42). -/
+def Says.read? : Value → Option Says
+  | .map [(key, v)] =>
+    if key = k "address" then match v with | .uint n => some (.address n) | _ => none
+    else if key = k "tip" then match v with | .uint n => some (.tip n) | _ => none
+    else if key = k "release" then match v with
+      | .map [(kb, .uint n), (ka, .text l)] =>
+        if kb = k "body" ∧ ka = k "about" then (str? l).map (.release · n) else none
+      | _ => none
     else none
   | _ => none
 
 theorem str_text (s : String) : str? (text s) = some s := fromUTF8_text s
 
-/-- **`read_value`:** a notice reads back as itself. -/
-theorem read_value (n : Notice) : Notice.read? n.value = some n := by
-  simp [Notice.value, Notice.read?, str_text, ofLabel_label]
+theorem tip_ne_address : k "tip" ≠ k "address" := by decide +kernel
+theorem release_ne_address : k "release" ≠ k "address" := by decide +kernel
+theorem release_ne_tip : k "release" ≠ k "tip" := by decide +kernel
 
-/-- Where notices live: each signer's notices Doc, and the writer id of each of its generations, as the docs layer
-derives it from the signer's key, the Doc, the branch and the generation. -/
+/-- **`read_value`:** an entry's body reads back as what it says. -/
+theorem read_value (s : Says) : Says.read? s.value = some s := by
+  cases s <;>
+    simp [Says.value, Says.read?, str_text, tip_ne_address, release_ne_address, release_ne_tip]
+
+/-- Where history lives: whose history log a Doc and a writer id are, and which generation of it, as the docs layer
+derives a writer id from the signer's key, the Doc, the branch and the generation. -/
 structure Logs where
-  doc : String → DocId
-  writer : String → Nat → Nat
+  owner : DocId → Nat → Option (String × Nat)
 
-/-- What a reader of notices needs: where notices live, how envelopes are named, whom the door admits and who signs
+/-- What a reader of history needs: where it lives, how envelopes are named, whom the door admits and who signs
 releases. -/
 structure Reader where
   logs : Logs
@@ -131,23 +128,34 @@ structure Reader where
   admits : String → Bool
   releasers : String → Bool
 
+/-- A history entry as a reader reads it: what it says, who signed it, and the generation of its log. -/
+structure Entry where
+  says : Says
+  signer : String
+  generation : Nat
+  deriving DecidableEq, Repr
+
+/-- What an entry is about: a release's line, or else its signer. -/
+def Entry.about (n : Entry) : String :=
+  match n.says with
+  | .release l _ => l
+  | _ => n.signer
+
 variable (R : Reader)
 
-/-- The notice an entry carries, when it is one at its signer's log: in its notices Doc, on no branch, under the writer
-id of its generation, building on nothing but the entry before it. -/
-def noticeOf (e : Envelope) : Option Notice :=
-  match Notice.read? e.body with
-  | some n =>
-    if e.doc = R.logs.doc n.signer ∧ e.branch = [] ∧ e.writer = R.logs.writer n.signer n.generation ∧ e.deps = []
-    then some n else none
-  | none => none
+/-- The entry an envelope is, when it is one: in a signer's history log, on no branch, building on nothing but the
+entry before it, and saying one of the three. -/
+def entryOf (e : Envelope) : Option Entry :=
+  match R.logs.owner e.doc e.writer, Says.read? e.body with
+  | some (s, g), some w => if e.branch = [] ∧ e.deps = [] then some ⟨w, s, g⟩ else none
+  | _, _ => none
 
-/-- A notice the reader takes: a release signed by a release signer, or any other kind signed by the device it is
-about, which the door admits. -/
-def takes (n : Notice) : Bool :=
-  match n.kind with
-  | .release => R.releasers n.signer
-  | _ => n.signer == n.about && R.admits n.signer
+/-- An entry the reader takes: a release signed by a release signer, or any other signed by a device the door admits,
+about itself. -/
+def takes (n : Entry) : Bool :=
+  match n.says with
+  | .release _ _ => R.releasers n.signer
+  | _ => R.admits n.signer
 
 /-- An entry is chained among `S`: the first of its log names nothing before it, and every other names the entry of
 its log at the place before its own. -/
@@ -156,12 +164,12 @@ def chained (S : List Envelope) (e : Envelope) : Bool :=
   | none => e.seq == 1
   | some h => S.any fun x => R.nm x == h && decide (SameLog x e) && x.seq + 1 == e.seq
 
-/-- Core's `fit`: the entry carries a notice at its signer's log. -/
-def fit (e : Envelope) : Bool := (noticeOf R e).isSome
+/-- Core's `fit`: the envelope is an entry of a signer's history. -/
+def fit (e : Envelope) : Bool := (entryOf R e).isSome
 
-/-- Core's `authorized`: the notice is the signer's to give, and the entry is chained. -/
+/-- Core's `authorized`: the entry is its signer's to give, and it is chained. -/
 def authorized (S : List Envelope) (e : Envelope) : Bool :=
-  (match noticeOf R e with | some n => takes R n | none => false) && chained R S e
+  (match entryOf R e with | some n => takes R n | none => false) && chained R S e
 
 /-- An entry counts by Core's one rule (`Aven.Core.Counts`, A45): its whole past is held, fit and authorized, and none
 of it is half of a split. -/
@@ -169,57 +177,57 @@ def counts (S : List Envelope) (e : Envelope) : Bool := countsB R.nm (fit R) (au
 
 /-- Its place: generation, then sequence number, then what it says. -/
 def place (e : Envelope) : Nat × Nat × Nat :=
-  match noticeOf R e with
-  | some n => (n.generation, e.seq, n.body)
+  match entryOf R e with
+  | some n => (n.generation, e.seq, n.says.body)
   | none => (0, 0, 0)
 
 /-- `a` is newer than `b`: a later generation, or the same one and a later place, or the same place and a smaller
-body (two notices of one log at one place are a split, and never count; of two release signers', the smaller wins). -/
+body (two entries of one log at one place are a split, and never count; of two release signers', the smaller wins). -/
 def newer (a b : Envelope) : Bool :=
   let (ga, sa, ba) := place R a
   let (gb, sb, bb) := place R b
   gb < ga || (ga == gb && (sb < sa || (sa == sb && ba < bb)))
 
-/-- The entries a reader takes of one kind about one device. -/
-def candidates (kind : Kind) (about : String) (S : List Envelope) : List Envelope :=
-  S.filter fun e => match noticeOf R e with
-    | some n => takes R n && n.kind == kind && n.about == about
+/-- The entries a reader takes of one sort about one device or release line. -/
+def candidates (which : Which) (about : String) (S : List Envelope) : List Envelope :=
+  S.filter fun e => match entryOf R e with
+    | some n => takes R n && n.says.which == which && n.about == about
     | none => false
 
-/-- `e` is the newest notice of its kind about its device among `S`: it counts, and no other one taken that counts is
-newer. -/
+/-- `e` is the newest entry of its sort about what it is about among `S`: it counts, and no other one taken that counts
+is newer. -/
 def isNewest (S : List Envelope) (e : Envelope) : Bool :=
-  match noticeOf R e with
+  match entryOf R e with
   | none => false
   | some n =>
-    (candidates R n.kind n.about S).contains e && counts R S e &&
-      (candidates R n.kind n.about S).all fun f => !(counts R S f && newer R f e)
+    (candidates R n.says.which n.about S).contains e && counts R S e &&
+      (candidates R n.says.which n.about S).all fun f => !(counts R S f && newer R f e)
 
-/-- The newest notice of a kind about a device, if a peer holds any. -/
-def newest (kind : Kind) (about : String) (S : List Envelope) : Option Envelope :=
-  (candidates R kind about S).find? (isNewest R S)
+/-- The newest entry of a sort about a device or a release line, if a peer holds any. -/
+def newest (which : Which) (about : String) (S : List Envelope) : Option Envelope :=
+  (candidates R which about S).find? (isNewest R S)
 
 variable {R} {S S' : List Envelope} {e f : Envelope}
 
-theorem mem_candidates {kind : Kind} {about : String} :
-    e ∈ candidates R kind about S ↔ e ∈ S ∧ ∃ n, noticeOf R e = some n ∧ takes R n = true ∧ n.kind = kind ∧
+theorem mem_candidates {which : Which} {about : String} :
+    e ∈ candidates R which about S ↔ e ∈ S ∧ ∃ n, entryOf R e = some n ∧ takes R n = true ∧ n.says.which = which ∧
       n.about = about := by
   simp only [candidates, List.mem_filter]
   constructor
   · rintro ⟨m, h⟩
     refine ⟨m, ?_⟩
-    cases e' : noticeOf R e with
+    cases e' : entryOf R e with
     | none => simp [e'] at h
     | some n => simp only [e', Bool.and_eq_true, beq_iff_eq] at h; exact ⟨n, rfl, h.1.1, h.1.2, h.2⟩
   · rintro ⟨m, n, e', t, kk, ka⟩
     simp [m, e', t, kk, ka]
 
-theorem isNewest_iff : isNewest R S e = true ↔ ∃ n, noticeOf R e = some n ∧
+theorem isNewest_iff : isNewest R S e = true ↔ ∃ n, entryOf R e = some n ∧
     (e ∈ S ∧ takes R n = true ∧ counts R S e = true) ∧
-      ∀ f ∈ S, ∀ m, noticeOf R f = some m → takes R m = true → m.kind = n.kind → m.about = n.about →
+      ∀ f ∈ S, ∀ m, entryOf R f = some m → takes R m = true → m.says.which = n.says.which → m.about = n.about →
         counts R S f = true → newer R f e = false := by
   unfold isNewest
-  cases en : noticeOf R e with
+  cases en : entryOf R e with
   | none => simp
   | some n =>
     simp only [Bool.and_eq_true, List.contains_iff_mem, mem_candidates, List.all_eq_true, Bool.not_eq_true',
@@ -263,18 +271,21 @@ theorem newest_set (h : ∀ x, x ∈ S ↔ x ∈ S') : isNewest R S = isNewest R
   apply Bool.eq_iff_iff.mpr
   simp only [isNewest_iff, h, counts_set h]
 
-/-- **`newest_signed`:** the newest notice about a device was signed by it; a release's by a release signer. -/
-theorem newest_signed (h : isNewest R S e = true) : ∃ n, noticeOf R e = some n ∧
-    ((n.kind = .release ∧ R.releasers n.signer = true) ∨ (n.kind ≠ .release ∧ n.signer = n.about)) := by
+/-- **`newest_signed`:** the newest entry about a device was signed by it, which the door admits; a release's by a
+release signer. -/
+theorem newest_signed (h : isNewest R S e = true) : ∃ n, entryOf R e = some n ∧
+    ((n.says.which = .release ∧ R.releasers n.signer = true) ∨
+      (n.says.which ≠ .release ∧ n.about = n.signer ∧ R.admits n.signer = true)) := by
   obtain ⟨n, en, ⟨_, t, _⟩, _⟩ := isNewest_iff.mp h
   refine ⟨n, en, ?_⟩
   unfold takes at t
-  cases kn : n.kind <;> simp_all
+  obtain ⟨s, sg, g⟩ := n
+  cases s <;> simp_all [Entry.about, Says.which]
 
-/-- **`newest_agree`:** two newest notices of one kind about one device say the same thing, at the same place. -/
-theorem newest_agree (h : isNewest R S e = true) (h' : isNewest R S f = true) {n m : Notice}
-    (en : noticeOf R e = some n) (fm : noticeOf R f = some m) (kk : m.kind = n.kind) (ka : m.about = n.about) :
-    place R e = place R f := by
+/-- **`newest_agree`:** two newest entries of one sort about one thing are at the same place and say the same thing. -/
+theorem newest_agree (h : isNewest R S e = true) (h' : isNewest R S f = true) {n m : Entry}
+    (en : entryOf R e = some n) (fm : entryOf R f = some m) (kk : m.says.which = n.says.which)
+    (ka : m.about = n.about) : place R e = place R f := by
   obtain ⟨n₀, en₀, ⟨me, te, ce⟩, ne⟩ := isNewest_iff.mp h
   obtain ⟨m₀, fm₀, ⟨mf, tf, cf⟩, nf⟩ := isNewest_iff.mp h'
   rw [en] at en₀; rw [fm] at fm₀
@@ -289,11 +300,11 @@ theorem newest_agree (h : isNewest R S e = true) (h' : isNewest R S f = true) {n
   simp only [Prod.mk.injEq]
   omega
 
-/-- **`newest_grows`:** a notice newest among more entries is at no earlier place than one newest among fewer, while
+/-- **`newest_grows`:** an entry newest among more entries is at no earlier place than one newest among fewer, while
 the one newest among fewer still counts among more: a split arriving later is the only thing that takes it back (A4). -/
 theorem newest_grows (sub : ∀ x ∈ S, x ∈ S') (h : isNewest R S e = true) (still : counts R S' e = true)
-    (h' : isNewest R S' f = true) {n m : Notice} (en : noticeOf R e = some n) (fm : noticeOf R f = some m)
-    (kk : m.kind = n.kind) (ka : m.about = n.about) :
+    (h' : isNewest R S' f = true) {n m : Entry} (en : entryOf R e = some n) (fm : entryOf R f = some m)
+    (kk : m.says.which = n.says.which) (ka : m.about = n.about) :
     (place R e).1 < (place R f).1 ∨ ((place R e).1 = (place R f).1 ∧ (place R e).2.1 ≤ (place R f).2.1) := by
   obtain ⟨n₀, en₀, ⟨me, te, _⟩, _⟩ := isNewest_iff.mp h
   obtain ⟨m₀, fm₀, _, nf⟩ := isNewest_iff.mp h'
@@ -319,7 +330,7 @@ theorem counts_reaches_place (c : Counts R.nm (fun x => fit R x = true) (fun x =
   | succ d ih =>
     intro j hj one
     obtain ⟨x, rx, lx, sx⟩ := ih (j + 1) (by omega) (by omega)
-    have ax := ((c.2 x rx).1.2 : authorized R S x = true)
+    have ax : authorized R S x = true := (c.2 x rx).1.2
     simp only [authorized, Bool.and_eq_true] at ax
     have ch := ax.2
     unfold chained at ch
@@ -354,20 +365,20 @@ theorem reaches_root (np : e.prev = none) (nd : e.deps = []) {x : Envelope} (h :
   | refl => rfl
   | step _ hb _ => rcases hb with hb | hb <;> simp_all
 
-theorem noticeOf_deps {n : Notice} (h : noticeOf R e = some n) : e.deps = [] := by
-  unfold noticeOf at h
+theorem entryOf_deps {n : Entry} (h : entryOf R e = some n) : e.deps = [] := by
+  unfold entryOf at h
   split at h
   · split at h
-    · rename_i c; exact c.2.2.2
+    · rename_i c; exact c.2
     · cases h
   · cases h
 
 /-- **`split_spares_next`:** a log's first entry, taken and split by nothing a peer holds, counts: whatever other logs
 hold, the signer's earlier generations among them. A split ends its own generation, not the device. -/
-theorem split_spares_next {n : Notice} (en : noticeOf R e = some n) (t : takes R n = true) (first : e.prev = none)
+theorem split_spares_next {n : Entry} (en : entryOf R e = some n) (t : takes R n = true) (first : e.prev = none)
     (one : e.seq = 1) (alone : ∀ y ∈ S, ¬ Split R.nm e y) : counts R S e = true := by
   apply counts_iff.mpr
-  have nd := noticeOf_deps en
+  have nd := entryOf_deps en
   refine ⟨fun x rx h hx => ?_, fun x rx => ?_⟩
   · rw [reaches_root first nd rx] at hx
     rcases hx with hx | hx <;> simp_all
@@ -377,15 +388,21 @@ theorem split_spares_next {n : Notice} (en : noticeOf R e = some n) (t : takes R
 
 /-! ### Re-homing (`Aven.ID.Node`) -/
 
+theorem not_newer_older {a b : Envelope} {n m : Entry} (ea : entryOf R a = some m) (eb : entryOf R b = some n)
+    (h : m.generation < n.generation ∨ (m.generation = n.generation ∧ a.seq < b.seq)) : newer R a b = false := by
+  simp only [newer, place, ea, eb]
+  simp only [Bool.or_eq_false_iff, decide_eq_false_iff_not, Bool.and_eq_false_iff, beq_eq_false_iff_ne, ne_eq]
+  omega
+
 /-- **`rehome_new_generation`:** a device that split its log re-homes in a new generation, later than every one it
 signed an address in before, and every peer takes its new address as newest: a split ends a generation, not the device
 (A42). -/
 theorem rehome_new_generation {b : String} {g body : Nat}
-    (en : noticeOf R e = some ⟨.address, b, b, g, body⟩) (ad : R.admits b = true) (first : e.prev = none)
+    (en : entryOf R e = some ⟨.address body, b, g⟩) (ad : R.admits b = true) (first : e.prev = none)
     (one : e.seq = 1) (alone : ∀ y ∈ S, ¬ Split R.nm e y)
-    (later : ∀ f ∈ S, ∀ m, noticeOf R f = some m → m.kind = .address → m.about = b → m.generation < g) :
+    (later : ∀ f ∈ S, ∀ m, entryOf R f = some m → m.says.which = .address → m.about = b → m.generation < g) :
     isNewest R (e :: S) e = true := by
-  have t : takes R ⟨.address, b, b, g, body⟩ = true := by simp [takes, ad]
+  have t : takes R ⟨.address body, b, g⟩ = true := by simp [takes, ad]
   have alone' : ∀ y ∈ e :: S, ¬ Split R.nm e y := by
     intro y my
     rcases List.mem_cons.mp my with rfl | my
@@ -395,74 +412,66 @@ theorem rehome_new_generation {b : String} {g body : Nat}
   intro f mf m fm _ km am _
   rcases List.mem_cons.mp mf with rfl | mf
   · simp [newer]
-  · have := later f mf m fm km am
-    simp only [newer, place, fm, en]
-    simp only [Bool.or_eq_false_iff, decide_eq_false_iff_not, Bool.and_eq_false_iff, beq_eq_false_iff_ne, ne_eq]
-    omega
+  · exact not_newer_older fm en (.inl (later f mf m fm km am))
 
 /-- With names that never collide, a closed entry's past among more entries is its past among those it was closed
 in. -/
-theorem reaches_closed_in (hnm : ∀ a b, R.nm a = R.nm b → a = b) {T : List Envelope} :
-    ∀ {a c : Envelope}, Reaches R.nm T a c → Closed R.nm S a → (∀ x ∈ S, x ∈ T) → Reaches R.nm S a c := by
+theorem reaches_closed_in (hnm : ∀ a b, R.nm a = R.nm b → a = b) {T : List Envelope} (sub : ∀ x ∈ S, x ∈ T) :
+    ∀ {a c : Envelope}, Reaches R.nm T a c → Closed R.nm S a → Reaches R.nm S a c := by
   intro a c h
   induction h with
-  | refl => exact fun _ _ => .refl _
+  | refl => exact fun _ => .refl _
   | @step a b c _ hab _ ih =>
-    intro hc _
-    have hb : a.prev = some (R.nm b) ∨ R.nm b ∈ a.deps := hab
-    obtain ⟨y, my, ny⟩ := hc a (.refl _) (R.nm b) hb
+    intro hc
+    obtain ⟨y, my, ny⟩ := hc a (.refl _) (R.nm b) hab
     have yb := hnm y b ny
     subst yb
     have rb : Reaches R.nm S a y := .step my hab (.refl _)
-    exact reaches_trans R.nm rb (ih (closed_past R.nm hc rb) ‹_›)
+    exact reaches_trans R.nm rb (ih (closed_past R.nm hc rb))
 
-/-- Along a counting entry's past, places only fall. -/
+/-- Along a counting entry's past, places only fall, within its own log. -/
 theorem reaches_seq_le (hnm : ∀ a b, R.nm a = R.nm b → a = b)
     (c : Counts R.nm (fun x => fit R x = true) (fun x => authorized R S x = true) S e) :
-    ∀ {x}, Reaches R.nm S e x → x.seq ≤ e.seq ∧ SameLog x e := by
-  intro x h
-  suffices ∀ a, Reaches R.nm S e a → ∀ x, Reaches R.nm S a x → x.seq ≤ a.seq ∧ SameLog x a by
-    exact this e (.refl _) x h
+    ∀ {x}, Reaches R.nm S e x → x.seq ≤ e.seq := by
+  suffices ∀ a, Reaches R.nm S e a → ∀ x, Reaches R.nm S a x → x.seq ≤ a.seq from
+    fun h => this e (.refl _) _ h
   intro a ra x h
   induction h with
-  | refl => exact ⟨Nat.le_refl _, rfl, rfl, rfl⟩
-  | @step a b x mb hab rbx ih =>
+  | refl => exact Nat.le_refl _
+  | @step a b x mb hab _ ih =>
     have ok := c.2 a ra
     have fa : fit R a = true := ok.1.1
     have aa : authorized R S a = true := ok.1.2
     obtain ⟨n, en⟩ := Option.isSome_iff_exists.mp fa
-    have nd := noticeOf_deps en
+    have nd := entryOf_deps en
     have pb : a.prev = some (R.nm b) := by
       rcases hab with h | h
       · exact h
       · simp [nd] at h
     simp only [authorized, Bool.and_eq_true, chained, pb, List.any_eq_true, beq_iff_eq,
       decide_eq_true_eq] at aa
-    obtain ⟨y, _, ⟨ny, ly⟩, sy⟩ := aa.2
+    obtain ⟨y, _, ⟨ny, _⟩, sy⟩ := aa.2
     have yb := hnm y b ny
     subst yb
-    obtain ⟨le, lx⟩ := ih (reaches_trans R.nm ra (.step mb hab (.refl _)))
-    exact ⟨by omega, lx.1.trans ly.1, lx.2.1.trans ly.2.1, lx.2.2.trans ly.2.2⟩
+    have := ih (reaches_trans R.nm ra (.step mb hab (.refl _)))
+    omega
 
 /-- **`rehome_newest`:** a device that re-homes signs an address at the next place of its own log, after an entry that
 counts and after every address it signed before, and every peer takes it as newest, as long as nothing splits it
 (A4, A31). Names never collide, as `Aven.Core.Envelope.name_inj` gives for well-formed envelopes under an injective
 hash. -/
 theorem rehome_newest (hnm : ∀ a b, R.nm a = R.nm b → a = b) {tip : Envelope} {b : String} {g body : Nat}
-    (en : noticeOf R e = some ⟨.address, b, b, g, body⟩) (ad : R.admits b = true) (mt : tip ∈ S)
+    (en : entryOf R e = some ⟨.address body, b, g⟩) (ad : R.admits b = true) (mt : tip ∈ S)
     (ct : counts R S tip = true) (pt : e.prev = some (R.nm tip)) (lt : SameLog tip e) (st : tip.seq + 1 = e.seq)
     (alone : ∀ y ∈ S, ¬ Split R.nm e y)
-    (older : ∀ f ∈ S, ∀ m, noticeOf R f = some m → m.kind = .address → m.about = b →
+    (older : ∀ f ∈ S, ∀ m, entryOf R f = some m → m.says.which = .address → m.about = b →
       m.generation < g ∨ (m.generation = g ∧ f.seq < e.seq)) :
     isNewest R (e :: S) e = true := by
-  have t : takes R ⟨.address, b, b, g, body⟩ = true := by simp [takes, ad]
-  have nd := noticeOf_deps en
+  have t : takes R ⟨.address body, b, g⟩ = true := by simp [takes, ad]
+  have nd := entryOf_deps en
   have c := counts_iff.mp ct
   have sub : ∀ x ∈ S, x ∈ e :: S := fun x m => List.mem_cons_of_mem _ m
-  -- what the tip reaches among `e :: S` it reaches among `S`
-  have back : ∀ {x}, Reaches R.nm (e :: S) tip x → Reaches R.nm S tip x :=
-    fun h => reaches_closed_in hnm h c.1 sub
-  -- what `e` reaches: itself, or what the tip reaches
+  -- what `e` reaches: itself, or what the tip reaches among `S`
   have via : ∀ {x}, Reaches R.nm (e :: S) e x → x = e ∨ Reaches R.nm S tip x := by
     intro x h
     cases h with
@@ -472,18 +481,17 @@ theorem rehome_newest (hnm : ∀ a b, R.nm a = R.nm b → a = b) {tip : Envelope
       · rw [pt] at hb
         have := hnm _ _ (Option.some.inj hb).symm
         subst this
-        exact .inr (back r)
+        exact .inr (reaches_closed_in hnm sub r c.1)
       · simp [nd] at hb
-  have chainedMono : ∀ x, chained R S x = true → chained R (e :: S) x = true := by
-    intro x h
-    unfold chained at h ⊢
-    cases x.prev with
-    | none => exact h
-    | some p => simp only [List.any_cons, h, Bool.or_true]
   have authMono : ∀ x, authorized R S x = true → authorized R (e :: S) x = true := by
     intro x h
     simp only [authorized, Bool.and_eq_true] at h ⊢
-    exact ⟨h.1, chainedMono x h.2⟩
+    refine ⟨h.1, ?_⟩
+    have h2 := h.2
+    unfold chained at h2 ⊢
+    cases x.prev with
+    | none => exact h2
+    | some p => simp only [List.any_cons, h2, Bool.or_true]
   have ce : counts R (e :: S) e = true := by
     apply counts_iff.mpr
     refine ⟨fun x rx p hp => ?_, fun x rx => ?_⟩
@@ -506,7 +514,7 @@ theorem rehome_newest (hnm : ∀ a b, R.nm a = R.nm b → a = b) {tip : Envelope
         refine ⟨⟨ok.1.1, authMono x ok.1.2⟩, fun y my => ?_⟩
         rcases List.mem_cons.mp my with rfl | my
         · intro sp
-          have := (reaches_seq_le hnm c rx).1
+          have := reaches_seq_le hnm c rx
           have := sp.2.1
           omega
         · exact ok.2 y my
@@ -514,14 +522,11 @@ theorem rehome_newest (hnm : ∀ a b, R.nm a = R.nm b → a = b) {tip : Envelope
   intro f mf m fm _ km am _
   rcases List.mem_cons.mp mf with rfl | mf
   · simp [newer]
-  · have := older f mf m fm km am
-    simp only [newer, place, fm, en]
-    simp only [Bool.or_eq_false_iff, decide_eq_false_iff_not, Bool.and_eq_false_iff, beq_eq_false_iff_ne, ne_eq]
-    omega
+  · exact not_newer_older fm en (older f mf m fm km am)
 
-/-- `newest` finds the newest notice when there is one. -/
-theorem newest_isNewest {kind : Kind} {about : String} (h : newest R kind about S = some e) :
-    isNewest R S e = true ∧ ∃ n, noticeOf R e = some n ∧ n.kind = kind ∧ n.about = about := by
+/-- `newest` finds the newest entry when there is one. -/
+theorem newest_isNewest {which : Which} {about : String} (h : newest R which about S = some e) :
+    isNewest R S e = true ∧ ∃ n, entryOf R e = some n ∧ n.says.which = which ∧ n.about = about := by
   have := List.find?_some h
   have m := List.mem_of_find?_eq_some h
   obtain ⟨_, n, en, _, kk, ka⟩ := mem_candidates.mp m
@@ -529,23 +534,8 @@ theorem newest_isNewest {kind : Kind} {about : String} (h : newest R kind about 
 
 /-! ## Beats -/
 
-/-- The two kinds of beat. -/
-inductive BeatKind where
-  | presence
-  | treeTip
-  deriving DecidableEq, Repr
-
-def BeatKind.label : BeatKind → String
-  | .presence => "aven/peer/presence/1"
-  | .treeTip => "aven/peer/tree-tip/1"
-
-def BeatKind.name : BeatKind → String
-  | .presence => "presence"
-  | .treeTip => "treeTip"
-
-/-- A beat: its kind, the device it is about, who signed it, its counter, and what it says, by hash. -/
+/-- A presence beat: the device it is about, who signed it, its counter, and what it says, by hash. -/
 structure Beat where
-  kind : BeatKind
   about : String
   signer : String
   counter : Nat
@@ -558,13 +548,12 @@ def Beat.takes (admits : String → Bool) (b : Beat) : Bool := b.signer == b.abo
 /-- `a` is a later beat than `b`: a larger counter, or the same one and a smaller body. -/
 def Beat.newer (a b : Beat) : Bool := b.counter < a.counter || (a.counter == b.counter && a.body < b.body)
 
-/-- `b` is the newest beat of its kind about its device among `bs`. -/
+/-- `b` is the newest beat about its device among `bs`. -/
 def Beat.isNewest (admits : String → Bool) (bs : List Beat) (b : Beat) : Bool :=
-  bs.contains b && b.takes admits &&
-    bs.all fun c => !(c.takes admits && c.kind == b.kind && c.about == b.about && c.newer b)
+  bs.contains b && b.takes admits && bs.all fun c => !(c.takes admits && c.about == b.about && c.newer b)
 
-def Beat.newest (admits : String → Bool) (kind : BeatKind) (about : String) (bs : List Beat) : Option Beat :=
-  bs.find? fun b => b.kind == kind && b.about == about && b.isNewest admits bs
+def Beat.newest (admits : String → Bool) (about : String) (bs : List Beat) : Option Beat :=
+  bs.find? fun b => b.about == about && b.isNewest admits bs
 
 /-- **`beat_newest_set`:** holding the same beats, in any order, gives the same newest one. -/
 theorem beat_newest_set {admits : String → Bool} {bs bs' : List Beat} (h : ∀ x, x ∈ bs ↔ x ∈ bs') :
@@ -583,67 +572,74 @@ theorem beat_newest_signed {admits : String → Bool} {bs : List Beat} {b : Beat
 
 namespace Examples
 
-def logs : Logs := ⟨fun s => ⟨blake3 (text s!"notices of {s}")⟩, fun _ g => g⟩
-def nm (e : Envelope) : Hash := e.name blake3
+/-- Each signer's history Doc is named by the signer here, and its writer id is its generation. -/
+def logs : Logs := ⟨fun d w => (str? d.hash.bytes).map (·, w)⟩
 def admitted (s : String) : Bool := s == "alice-peer" || s == "bob-peer"
 def releaseSigners (s : String) : Bool := s == "release-signer"
-def reader : Reader := ⟨logs, nm, admitted, releaseSigners⟩
 
-/-- An entry of `signer`'s notices log: its generation, its place, the entry before it, and what it says. -/
-def entry (signer : String) (generation seq : Nat) (prev : Option Envelope) (kind : Kind) (about : String)
-    (body : Nat) : Envelope :=
-  { doc := logs.doc signer, branch := [], writer := logs.writer signer generation, seq, prev := prev.map nm,
-    deps := [], body := (Notice.mk kind about signer generation body).value, sigs := [] }
+/-- An entry of `signer`'s history: its generation, its place, the name of the entry before it, and what it says. -/
+def entry (signer : String) (generation seq : Nat) (prev : Option Envelope) (says : Says) : Envelope :=
+  { doc := ⟨⟨text signer⟩⟩, branch := [], writer := generation, seq, prev := prev.map (·.name blake3),
+    deps := [], body := says.value, sigs := [] }
 
--- Alice's Peer: an address, a log tip, then a split at place 3 (two addresses); after it, an address chained to one
--- half and one that skips the split by naming place 2: neither counts, so its address is its first (A4)
-def a1 := entry "alice-peer" 0 1 none .address "alice-peer" 10
-def a2 := entry "alice-peer" 0 2 (some a1) .logTip "alice-peer" 22
-def a3 := entry "alice-peer" 0 3 (some a2) .address "alice-peer" 30
-def a3' := entry "alice-peer" 0 3 (some a2) .address "alice-peer" 20
-def a4 := entry "alice-peer" 0 4 (some a3) .address "alice-peer" 40
-def a4skip := entry "alice-peer" 0 4 (some a2) .address "alice-peer" 41
--- the Aven Peer passing on its own word about Alice: not taken
-def v1 := entry "aven-peer" 0 1 none .address "alice-peer" 90
--- Bob's Peer split its first generation and re-homed in its second: the second's address counts (A42); its log
--- tips split at place 3, which leaves the tip before it
-def b1 := entry "bob-peer" 0 1 none .address "bob-peer" 12
-def b2 := entry "bob-peer" 0 2 (some b1) .address "bob-peer" 21
-def b2' := entry "bob-peer" 0 2 (some b1) .address "bob-peer" 22
-def c1 := entry "bob-peer" 1 1 none .address "bob-peer" 100
-def c2 := entry "bob-peer" 1 2 (some c1) .logTip "bob-peer" 33
-def c3 := entry "bob-peer" 1 3 (some c2) .logTip "bob-peer" 44
-def c3' := entry "bob-peer" 1 3 (some c2) .logTip "bob-peer" 45
+-- Alice's Peer: an address, a tip, then a split at place 3 (two addresses); after it, an address chained to one half
+-- and one that skips the split by naming place 2: neither counts, so its address is its first (A4)
+def a1 := entry "alice-peer" 0 1 none (.address 10)
+def a2 := entry "alice-peer" 0 2 (some a1) (.tip 22)
+def a3 := entry "alice-peer" 0 3 (some a2) (.address 30)
+def a3' := entry "alice-peer" 0 3 (some a2) (.address 20)
+def a4 := entry "alice-peer" 0 4 (some a3) (.address 40)
+def a4skip := entry "alice-peer" 0 4 (some a2) (.address 41)
+-- the Aven Peer's own address, in its own log, and nothing it says about Alice
+def v1 := entry "aven-peer" 0 1 none (.address 90)
+-- Bob's Peer split its first generation and re-homed in its second: the second's address counts (A42); its tips
+-- split at place 3, which leaves the tip before it
+def b1 := entry "bob-peer" 0 1 none (.address 12)
+def b2 := entry "bob-peer" 0 2 (some b1) (.address 21)
+def b2' := entry "bob-peer" 0 2 (some b1) (.address 22)
+def c1 := entry "bob-peer" 1 1 none (.address 100)
+def c2 := entry "bob-peer" 1 2 (some c1) (.tip 33)
+def c3 := entry "bob-peer" 1 3 (some c2) (.tip 44)
+def c3' := entry "bob-peer" 1 3 (some c2) (.tip 45)
 -- a release by the release signer, and one Bob's Peer signed: not a release signer's
-def r1 := entry "release-signer" 0 1 none .release "aven" 202
-def d1 := entry "bob-peer" 2 1 none .release "aven" 505
+def r1 := entry "release-signer" 0 1 none (.release "aven" 202)
+def d1 := entry "bob-peer" 2 1 none (.release "aven" 505)
 -- an entry whose entry before it the peer doesn't hold: it waits (rule 11)
-def e2 := entry "bob-peer" 3 2 (some (entry "bob-peer" 3 1 none .address "bob-peer" 7)) .address "bob-peer" 8
+def e2 := entry "bob-peer" 3 2 (some (entry "bob-peer" 3 1 none (.address 7))) (.address 8)
+-- Alice's Peer re-homed in a new generation
+def a5 := entry "alice-peer" 1 1 none (.address 50)
 
 def entries : List Envelope := [a1, a2, a3, a3', a4, a4skip, v1, b1, b2, b2', c1, c2, c3, c3', r1, d1, e2]
 
+/-- The names, worked out once: BLAKE3 in Lean is slow, and counting asks for a name many times. -/
+def names : List (Envelope × Hash) := (a5 :: entries).map fun e => (e, e.name blake3)
+
+def nm (e : Envelope) : Hash :=
+  match names.find? (·.1 == e) with
+  | some p => p.2
+  | none => e.name blake3
+
+def reader : Reader := ⟨logs, nm, admitted, releaseSigners⟩
+
 #guard newest reader .address "alice-peer" entries == some a1
 #guard newest reader .address "alice-peer" entries.reverse == some a1
-#guard newest reader .logTip "alice-peer" entries == some a2
+#guard newest reader .tip "alice-peer" entries == some a2
 #guard newest reader .address "bob-peer" entries == some c1
-#guard newest reader .logTip "bob-peer" entries == some c2
+#guard newest reader .tip "bob-peer" entries == some c2
 #guard newest reader .release "aven" entries == some r1
 #guard newest reader .address "aven-peer" entries == none
 #guard !counts reader entries a4 && !counts reader entries a4skip && !counts reader entries e2
 #guard counts reader entries b1 && !counts reader entries b2
--- once Alice's Peer re-homes in a new generation, its address is the new one
-#guard newest reader .address "alice-peer" (entry "alice-peer" 1 1 none .address "alice-peer" 50 :: entries) ==
-  some (entry "alice-peer" 1 1 none .address "alice-peer" 50)
+#guard newest reader .address "alice-peer" (a5 :: entries) == some a5
 
 def beats : List Beat :=
-  [⟨.presence, "mallory-peer", "mallory-peer", 5, 1⟩, ⟨.presence, "bob-peer", "bob-peer", 7, 1⟩,
-   ⟨.presence, "bob-peer", "bob-peer", 6, 1⟩, ⟨.presence, "bob-peer", "aven-peer", 9, 1⟩]
+  [⟨"mallory-peer", "mallory-peer", 5, 1⟩, ⟨"bob-peer", "bob-peer", 7, 1⟩, ⟨"bob-peer", "bob-peer", 6, 1⟩,
+   ⟨"bob-peer", "aven-peer", 9, 1⟩]
 
-#guard Beat.newest admitted .presence "bob-peer" beats == some ⟨.presence, "bob-peer", "bob-peer", 7, 1⟩
-#guard Beat.newest admitted .presence "mallory-peer" beats == none
-#guard Beat.newest admitted .treeTip "bob-peer" beats == none
+#guard Beat.newest admitted "bob-peer" beats == some ⟨"bob-peer", "bob-peer", 7, 1⟩
+#guard Beat.newest admitted "mallory-peer" beats == none
 
 end Examples
 
-end Notices
+end History
 end Aven.Peer

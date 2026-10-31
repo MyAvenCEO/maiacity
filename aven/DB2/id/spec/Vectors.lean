@@ -76,7 +76,7 @@ import Aven.ID.SealJson
   PEERS.md §5): `TreeExamples`, the races one by one, generated sets, and production's store migrated from every
   invite trace (`Aven.ID.Restore`). `tree-ops.json`: `tree/1`'s op ids and a call of each (A32).
   `node.json`: networks losing each peer in turn, with every home relay, who reaches whom and who can fetch the chat
-  (`Aven.ID.Node`, R7). Notices, catch-up and the box's failures are avenPEERS' (peer/spec, A193).
+  (`Aven.ID.Node`, R7). History, catch-up and the box's failures are avenPEERS' (peer/spec, A193).
 
 - `access.json`: Values that fit or don't fit avenID's built-in Records in a Doc, `cap`, `revoke` and `epoch`
   (`Aven.ID.AccessRecords`), with the name of each that fits. aven-id reads each and compares.

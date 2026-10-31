@@ -1,65 +1,64 @@
 import Lean.Data.Json
 import Aven.ID.Gen
-import Aven.Peer.Notices
+import Aven.Peer.History
 import Aven.Peer.CatchUp
 
-/-! # Notices and catch-up as vectors
+/-! # History and catch-up as vectors
 
-`notices.json`: notices as the entries of their signers' logs, each with its name, its place and its CBOR, and the
-newest of each kind about each device, in several orders; beats and the newest of each (`Aven.Peer.Notices`).
+`history.json`: history entries in their signers' logs, each with its name, its place and its CBOR, and the newest of
+each sort about each device or release line, in several orders; presence beats and the newest of each
+(`Aven.Peer.History`).
 `catchup.json`: sources offered against a signed log tip, the one chosen and the ones caught, and presence from
 signed beats (`Aven.Peer.CatchUp`). -/
 
 open Lean
 
 namespace Aven.Peer
-namespace NoticesJson
+namespace HistoryJson
 
-open Aven.Core Notices Notices.Examples
+open Aven.Core History History.Examples
 
-def Notice.json (n : Notice) : Json :=
-  Json.mkObj [("kind", n.kind.name), ("label", n.kind.label), ("about", n.about), ("signer", n.signer),
-    ("generation", toJson n.generation), ("body", toJson n.body)]
+def Says.json : Says → Json
+  | .address n => Json.mkObj [("address", toJson n)]
+  | .tip n => Json.mkObj [("tip", toJson n)]
+  | .release l n => Json.mkObj [("release", Json.mkObj [("body", toJson n), ("about", l)])]
+
+def Entry.json (n : Entry) : Json :=
+  Json.mkObj [("says", Says.json n.says), ("signer", n.signer), ("generation", toJson n.generation)]
 
 def entryJson (e : Envelope) : Json :=
-  Json.mkObj [("name", (nm e).text), ("doc", e.doc.hash.text), ("writer", toJson e.writer), ("seq", toJson e.seq),
+  Json.mkObj [("name", (nm e).text), ("doc", hex e.doc.hash.bytes), ("writer", toJson e.writer), ("seq", toJson e.seq),
     ("prev", e.prev.elim Json.null fun h => h.text),
-    ("notice", (noticeOf reader e).elim Json.null Notice.json), ("cbor", hex (encode e.value))]
+    ("entry", (entryOf reader e).elim Json.null Entry.json), ("cbor", hex (encode e.value))]
 
 def Beat.json (b : Beat) : Json :=
-  Json.mkObj [("kind", b.kind.name), ("label", b.kind.label), ("about", b.about), ("signer", b.signer),
-    ("counter", toJson b.counter), ("body", toJson b.body)]
+  Json.mkObj [("about", b.about), ("signer", b.signer), ("counter", toJson b.counter), ("body", toJson b.body)]
 
 def Heard.json (h : CatchUp.Heard) : Json := Json.mkObj [("beat", Beat.json h.beat), ("heardAt", toJson h.at_)]
 
-def asks : List (Kind × String) :=
-  [(.address, "alice-peer"), (.logTip, "alice-peer"), (.address, "bob-peer"), (.logTip, "bob-peer"),
-   (.release, "aven"), (.address, "aven-peer")]
+def asks : List (Which × String) :=
+  [(.address, "alice-peer"), (.tip, "alice-peer"), (.address, "bob-peer"), (.tip, "bob-peer"), (.release, "aven"),
+   (.address, "aven-peer")]
 
-def beatAsks : List (BeatKind × String) :=
-  [(.presence, "bob-peer"), (.presence, "mallory-peer"), (.treeTip, "bob-peer")]
-
-def notices (label : String) (S : List Envelope) : Json :=
-  Json.mkObj [("name", s!"notices, {label}"),
+def history (label : String) (S : List Envelope) : Json :=
+  Json.mkObj [("name", s!"history, {label}"),
     ("input", Json.mkObj [("admitted", toJson ["alice-peer", "bob-peer"]),
       ("releaseSigners", toJson ["release-signer"]),
       ("entries", Json.arr (S.map entryJson).toArray),
-      ("asks", Json.arr (asks.map fun (k, a) => Json.mkObj [("kind", k.name), ("about", a)]).toArray)]),
+      ("asks", Json.arr (asks.map fun (w, a) => Json.mkObj [("which", w.key), ("about", a)]).toArray)]),
     ("expected", Json.mkObj [
       ("counts", toJson ((S.filter (counts reader S)).map fun e => (nm e).text)),
-      ("newest", Json.arr (asks.map fun (k, a) => (newest reader k a S).elim Json.null fun e => (nm e).text).toArray)])]
+      ("newest", Json.arr (asks.map fun (w, a) => (newest reader w a S).elim Json.null fun e => (nm e).text).toArray)])]
 
-def noticeVectors : List Json :=
-  [notices "as written" entries, notices "reversed" entries.reverse,
-   notices "Alice's Peer re-homed in a new generation"
-     (entry "alice-peer" 1 1 none .address "alice-peer" 50 :: entries)] ++
-  ((List.range 4).map fun i => notices s!"shuffle {i + 1}" ((Aven.ID.Rng.seed (i + 900)).shuffle entries).1) ++
-  [Json.mkObj [("name", "beats"),
+def historyVectors : List Json :=
+  [history "as written" entries, history "reversed" entries.reverse,
+   history "Alice's Peer re-homed in a new generation" (a5 :: entries)] ++
+  ((List.range 4).map fun i => history s!"shuffle {i + 1}" ((Aven.ID.Rng.seed (i + 900)).shuffle entries).1) ++
+  [Json.mkObj [("name", "presence beats"),
     ("input", Json.mkObj [("admitted", toJson ["alice-peer", "bob-peer"]),
-      ("beats", Json.arr (beats.map Beat.json).toArray),
-      ("asks", Json.arr (beatAsks.map fun (k, a) => Json.mkObj [("kind", k.name), ("about", a)]).toArray)]),
-    ("expected", Json.arr (beatAsks.map fun (k, a) =>
-      (Beat.newest admitted k a beats).elim Json.null Beat.json).toArray)]]
+      ("beats", Json.arr (beats.map Beat.json).toArray), ("asks", toJson ["bob-peer", "mallory-peer"])]),
+    ("expected", Json.arr (["bob-peer", "mallory-peer"].map fun a =>
+      (Beat.newest admitted a beats).elim Json.null Beat.json).toArray)]]
 
 open CatchUp in
 def catchUpVectors : List Json :=
@@ -84,5 +83,5 @@ def catchUpVectors : List Json :=
       ("expected", Json.mkObj [("present",
         toJson (["alice-peer", "aven-peer", "bob-light"].filter (present CatchUpExamples.admitted 3 now heard)))])])
 
-end NoticesJson
+end HistoryJson
 end Aven.Peer

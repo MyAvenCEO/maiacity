@@ -13,8 +13,8 @@ the split counts there (`split_spreads`).
 **R7, no peer is the only source.** Devices reach each other through the relays on the settled relay list (PEERS §1), at
 the home relay each one's newest address record names (§2). The admin lists only relays every member can use. With two
 relays listed, losing any one peer leaves every member reachable by every other (`no_only_relay`); with one, losing it
-leaves nobody reachable through a relay (`one_relay_only_source`). A device that re-homes signs a newer address notice,
-which every peer takes as newest (`Aven.Peer.Notices.rehome_newest`). A Doc held by two members stays fetchable by every
+leaves nobody reachable through a relay (`one_relay_only_source`). A device that re-homes signs a newer address entry,
+which every peer takes as newest (`Aven.Peer.History.rehome_newest`). A Doc held by two members stays fetchable by every
 member when any one peer is lost (`no_only_holder`). Who keeps a Doc is its vault's choice, by keep caps
 (`Aven.ID.Keeping`): every new vault starts with one for everything of its own to Maia City's keeper, approved by its
 owner (`default_kept`), and a second keeper of its own choice makes the Doc survive the Aven Peer's loss
