@@ -70,6 +70,9 @@ import Aven.DB.Docs
 - `builtins.json`: Records of the docs layer's built-in types; which their shapes take (`docsBuiltinFit`).
 - `keys.json`: tuples and their keys in hex; pairs of tuples and whether the first key sorts before the second
   (`Aven.DB.Docs.Key`).
+- `keeper.json`: uploads from devices to a keeper, one Doc, from an empty store; after each, the items held (number,
+  hash, uploaders) and the next number, and the pages of what came after each asked number
+  (`Aven.DB.Keeper`).
 
 `aven-db-core`'s and `aven-db-store`'s tests load them. `bun run up --check` runs this again and fails when the files
 differ from what is committed. -/
@@ -1258,6 +1261,57 @@ end DocsVectors
 def render (vs : List Json) : String :=
   "[\n" ++ ",\n".intercalate (vs.map Json.compress) ++ "\n]\n"
 
+/-! ## A keeper's arrivals -/
+
+open Aven.DB.Keeper in
+def keeperPut (p : Put) : Json :=
+  Json.mkObj [("hash", toJson p.hash), ("bytes", toJson p.bytes), ("covers", toJson p.covers)]
+
+open Aven.DB.Keeper in
+def keeperVector (name : String) (ups : List (String × List Put)) (asks : List Nat) : Json :=
+  let states := (ups.foldl (fun (acc : List Keeper.Store × Keeper.Store) u =>
+    let s := acc.2.upload u.1 u.2; (acc.1 ++ [s], s)) ([], ({} : Keeper.Store))).1
+  vector name
+    (Json.mkObj [("uploads", Json.arr (ups.map fun (d, ps) =>
+        Json.mkObj [("device", Json.str d), ("puts", Json.arr (ps.map keeperPut).toArray)]).toArray),
+      ("after", toJson asks)])
+    (Json.arr (states.map fun s => Json.mkObj [("next", toJson s.next),
+        ("items", Json.arr (s.items.map fun i => Json.mkObj [("n", toJson i.n), ("hash", toJson i.hash),
+          ("bytes", toJson i.bytes), ("uploaders", toJson i.uploaders)]).toArray),
+        ("after", Json.arr (asks.map fun n => Json.arr ((s.after n).map fun q =>
+          Json.arr (q.map fun (m, h) => Json.arr #[toJson m, toJson h]).toArray).toArray).toArray)]).toArray)
+
+open Aven.DB.Keeper in
+def keeperExamples : List (String × List (String × List Put) × List Nat) := [
+  ("a reader's covers take only itself off; the writer's segment drops its loose envelopes",
+    [("bob", [⟨11, 900, []⟩, ⟨12, 900, []⟩, ⟨13, 900, []⟩]), ("carol", [⟨12, 900, []⟩, ⟨99, 100, [11, 12]⟩]),
+     ("bob", [⟨50, 3000, [11, 12, 13]⟩])], [0, 2, 5]),
+  ("a writer that never comes back keeps its loose envelopes", [("dave", [⟨21, 900, []⟩]), ("bob", [⟨51, 3000, [21]⟩])],
+    [0]),
+  ("a segment can't cover itself", [("bob", [⟨60, 3000, [60]⟩])], [0]),
+  ("the same bytes twice get one number", [("bob", [⟨70, 900, []⟩, ⟨70, 900, []⟩]), ("bob", [⟨70, 900, []⟩])], [0]),
+  ("500 loose envelopes, then their two segments", [("alice", (List.range 500).map fun i => ⟨1000 + i, 900, []⟩),
+     ("alice", [⟨2000, 200000, (List.range 256).map (1000 + ·)⟩, ⟨2001, 200000, (List.range 244).map (1256 + ·)⟩])],
+    [0, 200, 499, 500, 501])]
+
+open Aven.DB.Keeper in
+def randomUploads (seed : Nat) : List (String × List Put) := Id.run do
+  let (len, r) := (Rng.seed seed).below 12
+  let (ups, _) := r.many (len + 1) fun r =>
+    let (d, r) := r.below 3
+    let (k, r) := r.below 5
+    let (ps, r) := r.many (k + 1) fun r =>
+      let (h, r) := r.below 16
+      let (c, r) := r.below 3
+      let (cs, r) := r.many (if c = 0 then 3 else 0) fun r => r.below 16
+      (⟨h, h * 10 + 1, cs⟩, r)
+    ((["alice", "bob", "carol"].getD d "alice", ps), r)
+  return ups
+
+def keeper : List Json :=
+  keeperExamples.map (fun (name, ups, asks) => keeperVector name ups asks) ++
+  (List.range generated).map fun i => keeperVector s!"seed {i + 1}" (randomUploads (i + 1)) [0, 3, 8]
+
 def main (args : List String) : IO Unit := do
   let dir : System.FilePath := args.headD "vectors"
   IO.FS.createDirAll dir
@@ -1269,5 +1323,5 @@ def main (args : List String) : IO Unit := do
       ("checkpoints.json", checkpoints), ("fit.json", fit), ("logs.json", logs),
       ("counts.json", counts), ("genesis.json", genesisVectors), ("bodies.json", bodyVectors),
       ("segments.json", segmentVectors), ("heads.json", headVectors), ("loro.json", loroVectors),
-      ("placements.json", placementVectors), ("builtins.json", builtinVectors)] do
+      ("placements.json", placementVectors), ("builtins.json", builtinVectors), ("keeper.json", keeper)] do
     IO.FS.writeFile (dir / file) (render vs)
