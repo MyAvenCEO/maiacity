@@ -22,6 +22,9 @@ come from (README, rule 10). Each case is one JSON object, read in the form its 
   (`Reader.authorizedB`, which `authorizedB_iff` makes `Authorized`).
 - The same with `"tree"` and `"founded": [{"claim", "vault"}]`, as `member.json` writes a case, answers
   `{"authorized", "members"}`: whether caps authorizes it and the vaults it makes members (`Reader.membersB`, A38).
+- `{"authority": Value}`, the Value in its readable form as `authority.json` writes a case, answers what caps reads of
+  an envelope's authority: `{"reads": false}`, or `{"reads": true, "caps": [name…], "acks": [name…], "actor"}`, the
+  actor a Doc on an actor host's envelope and null on any other (`Authority.ofValue?`, A45, A188).
 
 A Doc's names are taken as each entry gives them, with the vault, caps and acks it lists and the envelope's `prev`
 and `deps`; aven-core's tests own the hashing. -/
@@ -307,13 +310,18 @@ def membersAnswer (j : Json) : Except String Json := do
   return Json.mkObj [("authorized", toJson (r.authorizedB gov noDocs noDocs e)),
     ("members", toJson (r.membersB tree gov noDocs noDocs founded e))]
 
+/-- What caps reads of an envelope's authority, as `authority.json` writes a case (`Authority.ofValue?`). -/
+def authorityAnswer (j : Json) : Except String Json := do
+  return Authority.readJson (Authority.ofValue? (← valueOf (← j.getObjVal? "authority")))
+
 /-- A caps case, or `none` when the object is none: a tree's case then. Malformed input is a `format` result. -/
 def answer? (j : Json) : Option Json :=
   let format (r : Except String Json) : Json :=
     match r with
     | .ok a => a
     | .error why => Json.mkObj [("format", why)]
-  if (j.getObjVal? "founded").toOption.isSome then some (format (membersAnswer j))
+  if (j.getObjVal? "authority").toOption.isSome then some (format (authorityAnswer j))
+  else if (j.getObjVal? "founded").toOption.isSome then some (format (membersAnswer j))
   else if (j.getObjVal? "deviceCaps").toOption.isSome then some (format (authorizedAnswer j))
   else if (j.getObjVal? "chain").toOption.isSome then
     some (format do
