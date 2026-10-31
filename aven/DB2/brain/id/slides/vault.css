@@ -1,0 +1,6 @@
+/* "A vault" (vault.html): Alice's vault as a record, and the four kinds a vault can be */
+.vault .key .bit-1 { left: 8.6cqw; height: 1.6cqw; }
+.vault .key .bit-2 { left: 10.4cqw; height: 2.2cqw; }
+.vault .alice { left: 27%; top: 28%; width: 46cqw; height: 18cqw; }
+.vault .kinds { left: 50%; top: 72%; transform: translateX(-50%); }
+.vault .kinds-note { left: 50%; top: 85%; }

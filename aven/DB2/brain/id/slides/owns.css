@@ -1,0 +1,8 @@
+/* "A key owns a vault" (owns.html): Left: Alice's key. Right: her vault, a record whose list of owners holds that key */
+.owns .key .bit-1 { left: 8.6cqw; height: 1.6cqw; }
+.owns .key .bit-2 { left: 10.4cqw; height: 2.2cqw; }
+.owns .key.big { left: 5%; top: 50%; transform: rotate(-12deg) scale(1.35); transform-origin: 0 50%; width: 16cqw; height: 6cqw; }
+.owns .key-label { left: 16.5%; top: 72%; }
+.owns .owns-arrow { left: 33%; top: 56%; width: 12cqw; }
+.owns .owns-label { left: 39%; top: 45%; }
+.owns .alice { left: 51%; top: 30%; width: 44cqw; height: 31cqw; }

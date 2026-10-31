@@ -11,4 +11,5 @@ publish.workspace = true
 blake3 = { version = "=1.8.7", default-features = false }
 
 [dev-dependencies]
-serde_json = { version = "=1.0.154", features = ["arbitrary_precision"] }
+serde = "=1.0.229"
+serde_json = { version = "=1.0.154", features = ["arbitrary_precision", "unbounded_depth"] }
