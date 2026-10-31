@@ -98,6 +98,15 @@ impl Bound {
         }
     }
 
+    /// Read back from [`Bound::value`] (`Bound.ofValue?`): null for any value, an array for the values it allows.
+    pub fn of_value(v: Value) -> Option<Bound> {
+        match v {
+            Value::Null => Some(Bound::Any),
+            Value::Array(vs) => Some(Bound::OneOf(vs)),
+            _ => None,
+        }
+    }
+
     /// `Bound.within`: any value it allows, the other allows too.
     pub fn within(&self, other: &Bound) -> bool {
         match (self, other) {
@@ -140,6 +149,24 @@ impl Call {
             ("op".into(), self.op.value()),
             ("params".into(), Value::Map(self.params.clone())),
         ])
+    }
+
+    /// Read back from [`Call::value`] (`Call.ofValue?`): its op a hash of 32 bytes, its params a map. Bytes that aren't
+    /// canonical never reach it: `decode` refuses them, a call's params out of order among them.
+    pub fn of_value(v: Value) -> Option<Call> {
+        let Value::Map(kvs) = v else { return None };
+        let [(ko, Value::Bytes(op)), (kp, Value::Map(params))]: [(String, Value); 2] =
+            kvs.try_into().ok()?
+        else {
+            return None;
+        };
+        if ko != "op" || kp != "params" {
+            return None;
+        }
+        Some(Call {
+            op: Hash(op.as_slice().try_into().ok()?),
+            params,
+        })
     }
 }
 

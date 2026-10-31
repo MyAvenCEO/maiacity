@@ -41,7 +41,8 @@ wasm32, so the runtimes in aven/runtimes use it by path.
   head and refuses a split. Held to `envelopes.json` and `logs.json` byte for byte.
 - **The past** (`past.rs`): `Parents`, and `past` and `in_past` for anything named that names its parents.
 - **Ops** (`op.rs`, A32): `OpId`, `CoreOp` (`core/1`'s eight ops, their stored forms, fixed ids and whether they
-  write), `Bound` (`allows`, `within`), `Call` (`param`, `value`), `type_of_types`. Held to `ops.json`.
+  write), `Bound` (`allows`, `within`, `of_value`), `Call` (`param`, `value`, `of_value`), `type_of_types`. Held to
+  `ops.json`.
 - **Targets** (`target.rs`, A8): `Facts`, `Reach`, `Target` (`covers` with who governs whom, which actor spawned which
   and what a collection lists as parameters; `le`; its CBOR, a Doc or type id exactly 32 bytes), `StepVerb`, `Step`.
   Held to `targets.json` and `target-bytes.json`.
