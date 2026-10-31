@@ -63,6 +63,7 @@ import Aven.DB.Docs
   (`Aven.DB.Docs.Body`).
 - `segments.json`: segments' bodies and names, and which a reader takes (`Aven.DB.Docs.Segment`).
 - `heads.json`: a head's encoding (`Aven.DB.Docs.Head`).
+- `held.json`: what a peer holds of a Doc, its envelopes' names and blob hashes in the order held (`Docs.Held`).
 - `loro.json`: rule 7 on Loro commits: the deps a change carries, read with its writer's previous op, and the verdict
   (`Aven.DB.Docs.loroAgrees`).
 - `placements.json`: envelopes with and without the genesis; whether each is its log's first, and whether the
@@ -1179,6 +1180,17 @@ def segmentVectors : List Json :=
       (Json.mkObj [("value", hexJson (encode sg.value)), ("name", Json.str (sg.name blake3).text),
         ("ok", toJson (sg.ok Docs.Limits.defaults (Envelope.name blake3)))])
 
+def heldVectors : List Json :=
+  let one : Docs.Held := ⟨docOf "a Doc's genesis", [(a1.name blake3, blake3 (encode a1.value)),
+    (b1.name blake3, blake3 (encode b1.value)), (a2.name blake3, blake3 (encode a2.value))]⟩
+  let twice : Value := .map [(tb "doc", .bytes (docOf "a Doc's genesis").hash.bytes),
+    (tb "envelopes", .array [.array [(a1.name blake3).value, (blake3 (encode a1.value)).value],
+      .array [(a1.name blake3).value, (blake3 (encode a1.value)).value]])]
+  [vector "three envelopes, in the order held" (Json.mkObj [("doc", Json.str one.doc.text),
+      ("envelopes", Json.arr (one.envelopes.map fun (n, b) => Json.arr #[Json.str n.text, Json.str b.text]).toArray)])
+    (Json.mkObj [("value", hexJson (encode one.value)), ("reads", toJson (Docs.Held.ofValue? one.value).isSome)]),
+   vector "refused: an envelope named twice" (hexJson (encode twice)) (toJson (Docs.Held.ofValue? twice).isSome)]
+
 def headVectors : List Json :=
   let h : Docs.Head := ⟨docOf "a Doc's genesis", [(tb "main", [(1, a2.name blake3), (2, b1.name blake3)])]⟩
   [vector "two logs of main" (Json.mkObj [("doc", Json.str h.doc.text),
@@ -1278,5 +1290,5 @@ def main (args : List String) : IO Unit := do
       ("checkpoints.json", checkpoints), ("fit.json", fit), ("logs.json", logs),
       ("counts.json", counts), ("genesis.json", genesisVectors), ("bodies.json", bodyVectors),
       ("segments.json", segmentVectors), ("heads.json", headVectors), ("loro.json", loroVectors),
-      ("placements.json", placementVectors), ("builtins.json", builtinVectors)] do
+      ("placements.json", placementVectors), ("held.json", heldVectors), ("builtins.json", builtinVectors)] do
     IO.FS.writeFile (dir / file) (render vs)

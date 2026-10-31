@@ -174,6 +174,8 @@ pub enum CommitError {
     Stuck,
     /// It was refused or didn't count as its own reader judged it.
     NotCounted(String),
+    /// The Doc moved on between prepare and finish: prepare again.
+    Moved,
 }
 
 /// One Record's writes in a commit, under the schema version the app writes through.
@@ -228,6 +230,8 @@ pub struct Doc {
     head: Head,
     snapshot: Arc<Snapshot>,
     feed: Vec<Feed>,
+    /// Envelopes the caller marked unfit: the judge crashed on them alone.
+    crashed: BTreeSet<Hash>,
 }
 
 fn fresh() -> LoroDoc {
@@ -537,6 +541,7 @@ impl Doc {
             },
             snapshot: Arc::new(Snapshot::default()),
             feed: vec![],
+            crashed: BTreeSet::new(),
         })
     }
 
@@ -908,7 +913,9 @@ impl Doc {
             } else if !h.authorized {
                 Some(Why::Unauthorized)
             } else {
-                if h.fit.is_none() {
+                if h.fit.is_none() && self.crashed.contains(&h.name) {
+                    self.held[i].fit = Some(Err(Unfit::Op("the judge crashed on it".into())));
+                } else if h.fit.is_none() {
                     let sc = scratch.get_or_insert_with(|| {
                         let sc = self.live.fork();
                         sc.set_record_timestamp(false);
@@ -1019,8 +1026,9 @@ impl Doc {
         writer(&device.public(), &self.id, MAIN, generation)
     }
 
-    /// A local write: one batch of Record writes, as one envelope (docs, "A commit"). Returns the envelope's bytes,
-    /// already counted here, to put in the store and hand to sync.
+    /// A local write: one batch of Record writes, as one envelope (docs, "A commit"), signed by `device`. Returns the
+    /// envelope's bytes, already counted here, to put in the store and hand to sync. It is [`Doc::prepare`], the
+    /// device's signature over [`Prepared::signing`], and [`Doc::finish`].
     pub fn commit(
         &mut self,
         device: &Device,
@@ -1030,7 +1038,23 @@ impl Doc {
         act: Act,
         auth: &impl Authorize,
     ) -> Result<Vec<u8>, CommitError> {
-        let w = self.writer_of(device, generation);
+        let p = self.prepare(device.public(), generation, batch, at, act)?;
+        let sig = device.sign(&p.signing());
+        self.finish(p, sig, auth)
+    }
+
+    /// Everything a commit does before its signature, for a device whose key lives elsewhere (the Peer-Light keeps keys
+    /// in a worker of their own): the scratch copy, fit, the op range, the body and the unsigned envelope. Nothing in
+    /// the Doc changes until [`Doc::finish`].
+    pub fn prepare(
+        &self,
+        signer: [u8; 32],
+        generation: u64,
+        batch: &[RecordWrite],
+        at: &str,
+        act: Act,
+    ) -> Result<Prepared, CommitError> {
+        let w = writer(&signer, &self.id, MAIN, generation);
         let own = self
             .held
             .iter()
@@ -1130,7 +1154,7 @@ impl Doc {
         judged.map_err(CommitError::Unfit)?;
         // the genesis rides exactly in a log's first envelope
         body.genesis = (seq == 1 && deps.is_empty()).then(|| self.genesis.clone());
-        let mut e = Envelope {
+        let e = Envelope {
             doc: self.id,
             branch: MAIN.into(),
             writer: w,
@@ -1138,15 +1162,141 @@ impl Doc {
             prev,
             deps,
             body: body.value(),
-            signer: device.public().to_vec(),
+            signer: signer.to_vec(),
             sig: vec![],
         };
-        e.sig = device.sign(&e.signing()).to_vec();
+        Ok(Prepared {
+            envelope: e,
+            base: self.held.len(),
+            version: self.snapshot.version.clone(),
+        })
+    }
+
+    /// Attaches the device's signature to a prepared commit and imports it through every check a reader runs. Refused
+    /// when the Doc moved on since [`Doc::prepare`] (another import or commit in between): prepare again.
+    pub fn finish(
+        &mut self,
+        prepared: Prepared,
+        sig: [u8; 64],
+        auth: &impl Authorize,
+    ) -> Result<Vec<u8>, CommitError> {
+        if prepared.base != self.held.len() || prepared.version != self.snapshot.version {
+            return Err(CommitError::Moved);
+        }
+        let mut e = prepared.envelope;
+        e.sig = sig.to_vec();
         let bytes = e.encode();
         match self.import(&bytes, auth) {
             Ok(Imported::Counts) => Ok(bytes),
             other => Err(CommitError::NotCounted(format!("{other:?}"))),
         }
+    }
+
+    /// Every envelope held, counted or not, with its name, in the order it was held.
+    pub fn held(&self) -> impl Iterator<Item = (Hash, &Envelope)> {
+        self.held.iter().map(|h| (h.name, &h.e))
+    }
+
+    /// What this peer holds of the Doc (`Docs.Held`): each envelope's name and the hash of its encoded bytes, in the
+    /// order held, to keep beside the head. Reopening is [`Doc::open`], then [`Doc::import_page`] of those bytes.
+    pub fn held_page(&self) -> HeldPage {
+        HeldPage {
+            doc: self.id,
+            envelopes: self
+                .held
+                .iter()
+                .map(|h| (h.name, aven_core::blake3(&h.e.encode())))
+                .collect(),
+        }
+    }
+
+    /// Marks an envelope unfit by its name, before or after it is held: the judge crashed on it alone (the Peer-Light's
+    /// docs worker, `db/docs/README.md`, "Importing", (c)). It never counts; if it counted, the live state rebuilds. The
+    /// mark is the caller's own, never stored or sent by the docs layer.
+    pub fn mark_unfit(&mut self, name: Hash) {
+        self.crashed.insert(name);
+        if let Some(&i) = self.by_name.get(&name) {
+            let was = self.counted.contains(&name);
+            self.held[i].fit = Some(Err(Unfit::Op("the judge crashed on it".into())));
+            if was {
+                let _ = self.rebuild();
+            }
+        }
+    }
+}
+
+/// A commit prepared and not yet signed: what the device signs, and the Doc as it was.
+#[derive(Clone, Debug)]
+pub struct Prepared {
+    envelope: Envelope,
+    base: usize,
+    version: Vec<Hash>,
+}
+
+impl Prepared {
+    /// The bytes the device signs: Core's `["avenDB envelope 1", unsigned envelope]`.
+    pub fn signing(&self) -> Vec<u8> {
+        self.envelope.signing()
+    }
+
+    /// The envelope it will be, unsigned.
+    pub fn envelope(&self) -> &Envelope {
+        &self.envelope
+    }
+}
+
+/// What a peer holds of a Doc (`Aven.DB.Docs.Held`, `held.json`): every envelope by its name and the hash of its encoded
+/// bytes, in the order held. The head's companion, kept beside it, never travelling.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HeldPage {
+    pub doc: DocId,
+    pub envelopes: Vec<(Hash, Hash)>,
+}
+
+impl HeldPage {
+    pub fn value(&self) -> Value {
+        Value::Map(vec![
+            ("doc".into(), self.doc.0.value()),
+            (
+                "envelopes".into(),
+                Value::Array(
+                    self.envelopes
+                        .iter()
+                        .map(|(n, b)| Value::Array(vec![n.value(), b.value()]))
+                        .collect(),
+                ),
+            ),
+        ])
+    }
+
+    /// `Held.ofValue?`: exactly its two keys, each pair two 32-byte hashes, no envelope named twice.
+    pub fn of_value(v: &Value) -> Option<HeldPage> {
+        let h = |v: &Value| match v {
+            Value::Bytes(b) => Some(Hash(b.as_slice().try_into().ok()?)),
+            _ => None,
+        };
+        let Value::Map(kvs) = v else { return None };
+        let [(d, doc), (e, Value::Array(es))] = kvs.as_slice() else {
+            return None;
+        };
+        if d != "doc" || e != "envelopes" {
+            return None;
+        }
+        let envelopes: Vec<(Hash, Hash)> = es
+            .iter()
+            .map(|p| match p {
+                Value::Array(p) => match p.as_slice() {
+                    [n, b] => Some((h(n)?, h(b)?)),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect::<Option<_>>()?;
+        let names: BTreeSet<Hash> = envelopes.iter().map(|x| x.0).collect();
+        (names.len() == envelopes.len()).then_some(HeldPage {
+            doc: DocId(h(doc)?),
+            envelopes,
+        })
     }
 }
 

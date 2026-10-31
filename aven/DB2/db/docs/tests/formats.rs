@@ -349,3 +349,33 @@ fn builtins() {
         );
     }
 }
+
+#[test]
+fn held() {
+    for v in vectors("db/spec/vectors/held.json") {
+        let (name, i, x) = (s(&v["name"]), &v["input"], &v["expected"]);
+        if let Some(bytes) = i.as_str() {
+            assert_eq!(
+                aven_db_docs::HeldPage::of_value(&decode(&unhex(bytes)).unwrap()).is_some(),
+                x.as_bool().unwrap(),
+                "{name}"
+            );
+            continue;
+        }
+        let page = aven_db_docs::HeldPage {
+            doc: DocId::parse(s(&i["doc"])).unwrap(),
+            envelopes: i["envelopes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|p| (hash(&p[0]), hash(&p[1])))
+                .collect(),
+        };
+        assert_eq!(hex(&encode(&page.value())), s(&x["value"]), "{name}");
+        assert_eq!(
+            aven_db_docs::HeldPage::of_value(&page.value()).is_some(),
+            x["reads"].as_bool().unwrap(),
+            "{name}"
+        );
+    }
+}

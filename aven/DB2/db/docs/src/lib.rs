@@ -48,8 +48,8 @@ pub use body::{Body, Call, Version, codec_order};
 pub use builtins::{BuiltinFit, DocsBuiltins, Either};
 pub use device::{Device, Ed25519};
 pub use doc::{
-    Act, Authorize, CommitError, Doc, Feed, Head, Imported, MAIN, RECORDS, Record, RecordWrite,
-    Refused, SealedItem, Snapshot, TYPE_FIELD, Unopened, Why, envelope_valid,
+    Act, Authorize, CommitError, Doc, Feed, Head, HeldPage, Imported, MAIN, Prepared, RECORDS,
+    Record, RecordWrite, Refused, SealedItem, Snapshot, TYPE_FIELD, Unopened, Why, envelope_valid,
 };
 pub use fit::{ChangeKind, RecordChange, Rules, Unfit};
 pub use genesis::{GENESIS_LABEL, Genesis};
