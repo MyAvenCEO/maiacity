@@ -76,6 +76,8 @@ import Aven.DB.Docs
 - `fetch.json`: what a peer holds for which Doc and each item's length, the Docs proven on a connection, a fetch; the
   answer (refused, or the hashes served, missing and later); and items' lengths with their parts' offsets and lengths
   (`Aven.Peer.Fetch`).
+- `serve.json`: a gate's verdicts (which proof of which Doc it serves, for which vault; each vault's quota) and asks on
+  one connection of a device; the keeper's reply to each (`Aven.Peer.Serve`).
 
 `aven-db-core`'s and `aven-db-store`'s tests load them. `bun run up --check` runs this again and fails when the files
 differ from what is committed. -/
@@ -1364,6 +1366,75 @@ def fetchCases : List Json :=
     let (p, _) := r.below 3
     return fetchVector s!"seed {i + 1}" table (if p = 0 then [] else if p = 1 then ["d1"] else ["d1", "d2"]) "d1" hs
 
+/-! ## A keeper serving a connection -/
+
+open Aven.Peer.Keeper Aven.Peer.Serve in
+def askJson : Ask → Json
+  | .prove d p => Json.mkObj [("ask", "prove"), ("doc", Json.str d), ("proof", toJson p)]
+  | .upload d ps => Json.mkObj [("ask", "upload"), ("doc", Json.str d), ("puts", Json.arr (ps.map keeperPut).toArray)]
+  | .after d n => Json.mkObj [("ask", "after"), ("doc", Json.str d), ("n", toJson n)]
+  | .fetch d hs => Json.mkObj [("ask", "fetch"), ("doc", Json.str d), ("hashes", toJson hs)]
+
+open Aven.Peer.Serve in
+def replyJson : Reply → Json
+  | .proven d => Json.mkObj [("reply", "proven"), ("doc", Json.str d)]
+  | .proveRefused d => Json.mkObj [("reply", "prove_refused"), ("doc", Json.str d)]
+  | .took d ns => Json.mkObj [("reply", "took"), ("doc", Json.str d),
+      ("numbers", Json.arr (ns.map fun (h, n) => Json.arr #[toJson h, toJson n]).toArray)]
+  | .uploadRefused d why => Json.mkObj [("reply", "upload_refused"), ("doc", Json.str d), ("why", Json.str why)]
+  | .arrived d es more => Json.mkObj [("reply", "arrived"), ("doc", Json.str d),
+      ("entries", Json.arr (es.map fun (n, h) => Json.arr #[toJson n, toJson h]).toArray), ("more", toJson more)]
+  | .fetched d s m l => Json.mkObj [("reply", "fetched"), ("doc", Json.str d), ("served", toJson s),
+      ("missing", toJson m), ("later", toJson l)]
+  | .refused d => Json.mkObj [("reply", "refused"), ("doc", Json.str d)]
+
+open Aven.Peer.Serve in
+def serveVector (name : String) (serves : List (String × Nat × String)) (quotas : List (String × Nat))
+    (device : String) (as : List Ask) : Json :=
+  let g : Gate := { serves := fun d p => (serves.find? fun (d', p', _) => d' == d && p' == p).map (·.2.2),
+                    quota := fun v => ((quotas.find? (·.1 == v)).map (·.2)).getD 0 }
+  vector name
+    (Json.mkObj [("serves", Json.arr (serves.map fun (d, p, v) =>
+        Json.mkObj [("doc", Json.str d), ("proof", toJson p), ("vault", Json.str v)]).toArray),
+      ("quotas", Json.arr (quotas.map fun (v, q) => Json.mkObj [("vault", Json.str v), ("quota", toJson q)]).toArray),
+      ("device", Json.str device), ("asks", Json.arr (as.map askJson).toArray)])
+    (Json.arr ((Keeper.run g {} ⟨device, []⟩ as).2.2.map replyJson).toArray)
+
+open Aven.Peer.Keeper Aven.Peer.Serve in
+def serveCases : List Json :=
+  [serveVector "refused before proving, by an old key, and for a Doc no keep cap names"
+     [("d1", 1, "alice")] [("alice", 3000)] "alice-peer-light"
+     [.upload "d1" [⟨11, 900, []⟩], .prove "d1" 2, .prove "d9" 1, .upload "d9" [⟨11, 900, []⟩], .after "d9" 0,
+      .fetch "d9" [11]],
+   serveVector "taken within the quota, refused whole past it, covered by a segment"
+     [("d1", 1, "alice")] [("alice", 3000)] "alice-peer-light"
+     [.prove "d1" 1, .upload "d1" [⟨11, 900, []⟩, ⟨12, 900, []⟩], .upload "d1" [⟨13, 900, []⟩, ⟨14, 900, []⟩],
+      .upload "d1" [⟨13, 900, []⟩], .after "d1" 0, .fetch "d1" [11, 99], .upload "d1" [⟨50, 300, [11, 12, 13]⟩],
+      .after "d1" 1, .fetch "d1" [11, 50]],
+   serveVector "500 envelopes, after 0 in pages"
+     [("d1", 1, "alice")] [("alice", 1000000)] "alice-peer"
+     [.prove "d1" 1, .upload "d1" ((List.range 500).map fun i => ⟨1000 + i, 900, []⟩), .after "d1" 0,
+      .after "d1" 128, .after "d1" 384, .after "d1" 500]] ++
+  (List.range generated).map fun i => Id.run do
+    let (len, r) := (Rng.seed (i + 1)).below 14
+    let (as, _) := r.many (len + 1) fun r =>
+      let (k, r) := r.below 4
+      let (d, r) := r.below 2
+      let doc := if d = 0 then "d1" else "d2"
+      if k = 0 then let (p, r) := r.below 3; (Ask.prove doc p, r)
+      else if k = 1 then
+        let (n, r) := r.below 4
+        let (ps, r) := r.many (n + 1) fun r =>
+          let (h, r) := r.below 12
+          let (c, r) := r.below 3
+          let (cs, r) := r.many (if c = 0 then 2 else 0) fun r => r.below 12
+          (⟨h, 100 * (h + 1), cs⟩, r)
+        (Ask.upload doc ps, r)
+      else if k = 2 then let (n, r) := r.below 6; (Ask.after doc n, r)
+      else let (n, r) := r.below 4; let (hs, r) := r.many (n + 1) fun r => r.below 14; (Ask.fetch doc hs, r)
+    return serveVector s!"seed {i + 1}" [("d1", 1, "alice"), ("d2", 2, "bob")] [("alice", 2500), ("bob", 1000)]
+      "a-device" as
+
 def main (args : List String) : IO Unit := do
   let dir : System.FilePath := args.headD "vectors"
   IO.FS.createDirAll dir
@@ -1375,5 +1446,5 @@ def main (args : List String) : IO Unit := do
       ("checkpoints.json", checkpoints), ("fit.json", fit), ("logs.json", logs),
       ("counts.json", counts), ("genesis.json", genesisVectors), ("bodies.json", bodyVectors),
       ("segments.json", segmentVectors), ("heads.json", headVectors), ("loro.json", loroVectors),
-      ("placements.json", placementVectors), ("builtins.json", builtinVectors), ("keeper.json", keeper), ("fetch.json", fetchCases)] do
+      ("placements.json", placementVectors), ("builtins.json", builtinVectors), ("keeper.json", keeper), ("fetch.json", fetchCases), ("serve.json", serveCases)] do
     IO.FS.writeFile (dir / file) (render vs)

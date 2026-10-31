@@ -8,7 +8,8 @@ reader's by version ("Docs in the Peers"). It runs on our own ALPN, `aven/db/1`,
 exporter of the connection that serves (`Aven.ID.Keep`, `served_current`), and iroh opens one connection per ALPN
 (the architect, 31 Oct 2026). iroh-blobs stays for files.
 
-- **`prove`:** a device proves a Doc's fetch key on this connection; whether the proof holds is `Keep.serves`. The
+- **`prove`:** a device proves a Doc's fetch key on this connection, and only to a peer it knows holds the Doc
+  (`prove_only_to_holders`); whether the proof holds is `Keep.serves`. The
   gate keeps the Docs proven on the connection (`proven`).
 - **`fetch {doc, hashes}`:** at most `fetchHashes` hashes. Each is served only if the peer holds it *for that Doc*: a
   hash held for another Doc is answered as missing, never served across Docs (`served_proven`, `served_held`). A Doc
@@ -82,6 +83,28 @@ theorem parts_join (h : Nat) (b : Bytes) : (parts h b).flatMap (·.bytes) = b :=
 theorem parts_bounded (h : Nat) (b : Bytes) :
     ∀ p ∈ parts h b, p.hash = h ∧ p.total = b.length ∧ p.bytes.length ≤ partBytes :=
   fun p m => let ⟨a, b', c, _⟩ := (partsFrom_spec h b.length b.length 0 b (Nat.le_refl _)).2 p m; ⟨a, b', c⟩
+
+/-! ## Whom a device proves to
+
+The gate names a Doc by its id, which the fetch proof signs; gossip and `doc_tips` name it by its topic. Naming it by id
+widens nothing a link peer learns, because a device sends `prove {doc}` only to a peer it already knows holds that
+Doc: a keeper its vault's keep caps name for it, or a reader it met on the Doc's topic (the architect,
+31 Oct 2026). -/
+
+/-- A device may prove a Doc to `peer`: a keeper its vault's keep caps name for the Doc, or a reader it met on the
+Doc's topic. -/
+def mayProve (keepers met : List String) (peer : String) : Bool := keepers.contains peer || met.contains peer
+
+/-- The peers among `links` a device sends `prove {doc}` to. -/
+def provesTo (keepers met links : List String) : List String := links.filter (mayProve keepers met)
+
+/-- **`prove_only_to_holders`:** a device proves a Doc only to a keeper named for it or a reader met on its topic. -/
+theorem prove_only_to_holders {keepers met links : List String} {p : String} (h : p ∈ provesTo keepers met links) :
+    p ∈ links ∧ (p ∈ keepers ∨ p ∈ met) := by
+  simp only [provesTo, mayProve, List.mem_filter, Bool.or_eq_true, List.contains_iff_mem] at h
+  exact h
+
+#guard provesTo ["aven-peer"] ["alice-peer"] ["aven-peer", "carol-peer", "alice-peer"] == ["aven-peer", "alice-peer"]
 
 /-! ## Serving -/
 
