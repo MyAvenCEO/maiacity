@@ -9,6 +9,7 @@ primitives everything shares" and rules 1 to 3). It is one Lean package, in [`sp
 |---|---|---|
 | `Bytes` | bytes, numbers big-endian, the bytewise order | reading back what was written, in every width |
 | `Cbor`, `CborLaws` | a Value and the one codec: deterministic CBOR in A2's strict profile | `decode_encode`, `encode_decode` (bytes that don't encode back to themselves are refused), `encode_inj`; `decodeAll_deep`: nothing nests deeper than 512 |
+| `Text` | a `String`'s UTF-8 as a Value's text | `utf8_text`: Lean's strings are valid UTF-8 by the codec's table; `fromUTF8_text`, `text_inj` |
 | `Blake3` | BLAKE3, in core Lean | the specification's known answers |
 | `Json` | the readable form of a Value, which every spec's vectors import | — |
 | `ValueEq` | `DecidableEq`, `BEq` and `LawfulBEq` for Values, by structural recursion | `Value.beq_iff`: the equality is lawful |

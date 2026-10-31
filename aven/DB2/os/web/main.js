@@ -6,6 +6,7 @@ import { mount } from 'svelte';
 import cast from '../../sandbox/cast.json';
 import App from './App.svelte';
 import Network from './Network.svelte';
+import Updating from './Updating.svelte';
 import Root from './Root.svelte';
 import { hostNetwork, net, runNetwork, storageBlocked } from './network.svelte.js';
 import { runBox, runLight } from './peers.svelte.js';
@@ -16,6 +17,8 @@ import './style.css';
 
 const device = Object.keys(cast.peers).find((id) => cast.peers[id].origin === location.hostname);
 const target = document.getElementById('app');
+// "Updating…" while this tab follows an `update` refusal, over whatever else shows (update.svelte.js)
+mount(Updating, { target: document.body });
 
 // a Peer-Light's origin runs that Peer-Light, in a worker of its own
 if (device) runLight(cast, device);

@@ -7,6 +7,10 @@ Our one protocol (README, rule 9), on ALPN `aven/db/1`: frames, one JSON object 
 reading half takes bytes as they come and gives whole frames: a line is a frame once its newline arrives, a line that
 isn't one is refused, and so is a line that grows past `maxFrame` bytes without its newline. `aven-db-core`'s `wire`
 module implements it, and its tests replay the vectors.
+
+Every connection starts with a hello that names the wire version its peer speaks (`wireVersion`, PEERS.md §7). A peer
+speaks only its own: any other is refused with `update` and the version it speaks, and never falls back (README rule
+9; [The wire version](#the-wire-version) below).
 -/
 
 open Lean
@@ -27,8 +31,9 @@ structure Have where
   deriving DecidableEq, Repr, ToJson, FromJson
 
 inductive Frame where
-  /-- the first frame each side sends: the cast's id of the peer it is -/
-  | hello (peer : String)
+  /-- the first frame each side sends: the cast's id of the peer it is, and the wire version it speaks. A hello without
+  one is from before the wire had versions: version 0, which no peer speaks any more -/
+  | hello (peer : String) (wire : Nat)
   /-- the Aven Peer tells each peer who is connected, itself included, on every change -/
   | presence (peers : List String)
   /-- the Aven Peer's clock, once per step -/
@@ -61,13 +66,15 @@ inductive Frame where
   it keeps it, to the links of the device that shared it; and on each link the files of that peer's own chain it has
   kept, in pages (`keptPages`). A sender says "Kept by the network" only then -/
   | kept (files : List String)
+  /-- the answer to a hello of another wire version: update, and the version this peer speaks. It closes then -/
+  | update (wire : Nat)
   deriving DecidableEq, Repr
 
 /-- A line longer than this, without its newline, is refused: no peer needs one. -/
 def maxFrame : Nat := 64 * 1024
 
 def Frame.json : Frame → Json
-  | .hello p => Json.mkObj [("frame", "hello"), ("peer", p)]
+  | .hello p w => Json.mkObj [("frame", "hello"), ("peer", p), ("wire", toJson w)]
   | .presence ps => Json.mkObj [("frame", "presence"), ("peers", toJson ps)]
   | .beat n => Json.mkObj [("frame", "beat"), ("n", toJson n)]
   | .claim st => Json.mkObj [("frame", "claim"), ("statement", st)]
@@ -82,11 +89,17 @@ def Frame.json : Frame → Json
   | .catchUp hs only => Json.mkObj [("frame", "catch_up"), ("have", toJson hs), ("only", toJson only)]
   | .lines ls => Json.mkObj [("frame", "lines"), ("lines", toJson ls)]
   | .kept fs => Json.mkObj [("frame", "kept"), ("files", toJson fs)]
+  | .update w => Json.mkObj [("frame", "update"), ("wire", toJson w)]
 
 def Frame.parse (line : String) : Option Frame := do
   let j ← (Json.parse line).toOption
   match ← (j.getObjValAs? String "frame").toOption with
-  | "hello" => .hello <$> (j.getObjValAs? String "peer").toOption
+  -- a hello without its wire version is from before there was one: version 0, refused with `update` like any other
+  | "hello" => do
+    let p ← (j.getObjValAs? String "peer").toOption
+    match j.getObjVal? "wire" with
+    | .error _ => pure (.hello p 0)
+    | .ok w => .hello p <$> (fromJson? w : Except String Nat).toOption
   | "presence" => .presence <$> (j.getObjValAs? (List String) "peers").toOption
   | "beat" => .beat <$> (j.getObjValAs? Nat "n").toOption
   | "claim" => .claim <$> (j.getObjValAs? String "statement").toOption
@@ -106,6 +119,7 @@ def Frame.parse (line : String) : Option Frame := do
       (j.getObjValAs? (List Have) "have").toOption
   | "lines" => .lines <$> (j.getObjValAs? (List String) "lines").toOption
   | "kept" => .kept <$> (j.getObjValAs? (List String) "files").toOption
+  | "update" => .update <$> (j.getObjValAs? Nat "wire").toOption
   | _ => none
 
 inductive WireError where
@@ -139,8 +153,14 @@ Chunks as they arrive and the frames each one completes, written out by hand. -/
 
 def wireExamples : List (String × List String × List (List Frame) × Option WireError) := [
   ("three frames in one chunk",
-    ["{\"frame\":\"hello\",\"peer\":\"alice-peer\"}\n{\"frame\":\"presence\",\"peers\":[\"a\"]}\n{\"frame\":\"beat\",\"n\":7}\n"],
-    [[.hello "alice-peer", .presence ["a"], .beat 7]], none),
+    ["{\"frame\":\"hello\",\"peer\":\"alice-peer\",\"wire\":1}\n{\"frame\":\"presence\",\"peers\":[\"a\"]}\n{\"frame\":\"beat\",\"n\":7}\n"],
+    [[.hello "alice-peer" 1, .presence ["a"], .beat 7]], none),
+  ("a hello from before the wire had versions is version 0", ["{\"frame\":\"hello\",\"peer\":\"alice-peer\"}\n"],
+    [[.hello "alice-peer" 0]], none),
+  ("a hello refused: update, and the version spoken", ["{\"frame\":\"hello\",\"peer\":\"b\",\"wire\":7}\n{\"frame\":\"update\",\"wire\":1}\n"],
+    [[.hello "b" 7, .update 1]], none),
+  ("an update without its version", ["{\"frame\":\"update\"}\n"], [], some .bad),
+  ("a hello whose version isn't a number", ["{\"frame\":\"hello\",\"peer\":\"b\",\"wire\":\"1\"}\n"], [], some .bad),
   ("a frame split across chunks", ["{\"frame\":\"be", "at\",\"n\":1}", "\n"], [[], [], [.beat 1]], none),
   ("two frames, then half a third", ["{\"frame\":\"beat\",\"n\":1}\n{\"frame\":\"beat\",\"n\":2}\n{\"frame\":"],
     [[.beat 1, .beat 2]], none),
@@ -372,5 +392,72 @@ theorem keptPages_files (fs : List String) : (keptPages fs).flatMap Frame.kept? 
 #guard keptPages [] = []
 #guard ((Frame.kept (List.replicate pageSize (String.ofList (List.replicate 64 'f')))).json.compress.utf8ByteSize) * 2 <
   maxFrame
+
+/-! ## The wire version
+
+Every connection's first frame, the hello, names the wire version its peer speaks, and so does the gossip topic's name
+(`topicName`). The version is a number of its own, not the release's: it changes only when a frame's meaning changes,
+rarely, and never with an ordinary release (PEERS.md §7, decision 11). Two peers meet only on one version:
+
+- **no fallback** (README rule 9): a peer speaks to another only when their versions are equal (`meet_speaks`, as
+  `Aven.ID.Records.speaks_same` says of every peer); any other hello, the unversioned one included, is answered with
+  `update` and the version it speaks, and the connection closes (`meet_refuses`);
+- **the older one follows**: of two peers that differ, exactly one is behind (`follows_one`), and only it updates
+  (`follows_newer`): an open tab switches to the newer release at once, a native Peer says `update` until its owner
+  upgrades it. A peer that is ahead never goes back, so a tab never reloads for an older peer;
+- **the gossip topic is per version**: a peer on another version is in another room, so no message of another meaning
+  ever reaches it (`topicName`). -/
+
+/-- The wire version this model speaks. Version 0 is the wire before it had versions: a hello without one. -/
+def wireVersion : Nat := 1
+
+/-- What a peer answers a hello of version `theirs` with, speaking `mine`: nothing, and the connection carries on; or
+`update` with its own version, and the connection closes. -/
+def meet (mine theirs : Nat) : Option Frame := if theirs = mine then none else some (.update mine)
+
+/-- **No fallback:** a connection carries on only between peers of one wire version. -/
+theorem meet_speaks {mine theirs : Nat} : meet mine theirs = none ↔ theirs = mine := by
+  unfold meet; split <;> simp_all
+
+/-- **Any other version is refused with `update`,** and the version spoken. -/
+theorem meet_refuses {mine theirs : Nat} (h : theirs ≠ mine) : meet mine theirs = some (.update mine) := by
+  simp [meet, h]
+
+/-- A peer told `update` by a peer of version `theirs`: it updates only when that peer is ahead of it. -/
+def follows (mine theirs : Nat) : Bool := decide (mine < theirs)
+
+/-- **Only to a newer version:** a peer that follows a refusal moves forward, never back. -/
+theorem follows_newer {mine theirs : Nat} : follows mine theirs = true ↔ mine < theirs := by
+  simp [follows]
+
+/-- **Exactly one of two peers that differ follows:** the one behind. Two peers of one version never do. -/
+theorem follows_one {a b : Nat} (h : a ≠ b) : follows a b = !follows b a := by
+  unfold follows
+  by_cases l : a < b
+  · simp [l, Nat.not_lt.mpr (Nat.le_of_lt l)]
+  · simp [l, Nat.lt_of_le_of_ne (Nat.not_lt.mp l) (Ne.symm h)]
+
+theorem follows_same (v : Nat) : follows v v = false := by simp [follows]
+
+/-- The gossip topic's name for a network on a wire version: its BLAKE3 is the topic (`aven-peer`'s `room::topic`). -/
+def topicName (wire : Nat) (network : String) : String := s!"avenDB chat 1\nwire {wire}\nnetwork {network}"
+
+/-! ### Examples -/
+
+#guard meet 1 1 = none
+#guard meet 1 0 = some (.update 1)
+#guard meet 1 2 = some (.update 1)
+#guard follows 1 2 && !follows 2 1 && !follows 1 1 && !follows 1 0
+#guard topicName 1 "aven" = "avenDB chat 1\nwire 1\nnetwork aven"
+#guard topicName 1 "aven" ≠ topicName 2 "aven"
+
+/-- Hellos of every kind a peer of `wireVersion` meets, the unversioned one included: its answer, and whether the
+peer that sent the hello follows the refusal. -/
+def meetExamples : List (String × Nat × Nat) := [
+  ("one version: the connection carries on", wireVersion, wireVersion),
+  ("a hello from before the wire had versions: refused, and the tab follows", wireVersion, 0),
+  ("an older peer: refused, and it follows", 2, 1),
+  ("a newer peer: refused, and it waits for this one", 1, 2),
+  ("far apart: refused", 1, 9)]
 
 end Aven.DB

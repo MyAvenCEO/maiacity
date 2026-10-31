@@ -55,6 +55,12 @@
 				</p>
 				<p class="meta" data-testid="record" data-first={live.stored[id]?.first}>{record(live.stored[id])}</p>
 				<p class="status"><Phase phase={phase(id)} text={says(id)} testid="peer-status" /></p>
+				{#if live.update[id]}
+					<!-- a Peer behind its network's wire version: its owner upgrades it, it never upgrades itself -->
+					<p class="update" data-testid="peer-update">
+						update · the network speaks wire version {live.update[id].theirs}, this {kind(peer)} {live.update[id].mine}
+					</p>
+				{/if}
 				{#if id === device}
 					<p class="pending">this device</p>
 				{:else if peer.origin}
@@ -110,6 +116,12 @@
 		border: 1px solid var(--line);
 		border-radius: var(--radius-card);
 		box-shadow: var(--shadow-soft);
+	}
+
+	.update {
+		margin: 4px 0 0;
+		color: var(--pending);
+		font-weight: 600;
 	}
 
 	h2 {

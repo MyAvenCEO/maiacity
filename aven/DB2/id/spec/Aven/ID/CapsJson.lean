@@ -6,11 +6,12 @@ import Lean.Data.Json
 
 /-! # Caps as JSON, and generated cases
 
-The form of `vectors/caps.json`, `revocations.json`, `epochs.json`, `approvals.json`, `network.json`, `keep.json` and
-`collections.json` (`Vectors.lean`). Caps' readable form is JSON. A line's op is its id, as Core's `ops.json` names
-`core/1`'s, and its target is written as Core's vectors write it (`targets.json`): Docs as `d:` and hex, vaults as
-their UTF-8 ids; a bound is null for any value, or the values it allows. Each cap carries its CBOR bytes and hash. A
-context names the cast's tree, which `trees.json` carries, and lists who is in each group and what each Doc is.
+The form of `vectors/caps.json`, `revocations.json`, `epochs.json`, `approvals.json`, `network.json`, `keep.json`,
+`collections.json` and `authorized.json` (`Vectors.lean`). Caps' readable form is JSON. A line's op is its id, as Core's
+`ops.json` names `core/1`'s, and its target is written as Core's vectors write it (`targets.json`): Docs as `d:` and
+hex, vaults as their UTF-8 ids; a bound is null for any value, or the values it allows. Each cap carries its CBOR bytes
+and hash. A context names the cast's tree, which `trees.json` carries, and lists who is in each group and what each Doc
+is.
 
 ```
 cap:      {"id":"cap-a","issuer":"alice","holder":{"vault":"bob"},"parent":null,"form":"grant",
@@ -64,7 +65,6 @@ def Holder.json : Holder → Json
   | .vault v => Json.mkObj [("vault", v)]
   | .group g => Json.mkObj [("group", g.text)]
   | .«public» => "public"
-  | .ticket k => Json.mkObj [("ticket", k)]
 
 def Sig.json (s : Sig) : Json := Json.mkObj [("key", s.key), ("digest", s.digest)]
 
@@ -88,11 +88,13 @@ def Signed.json (o : Signed) : Json :=
   | .withdraw c => Json.mkObj [("withdraw", c), ("signer", o.signer)]
   | .delete d => Json.mkObj [("delete", d.text), ("signer", o.signer)]
 
-/-- A keeper's books on the cast's tree, one owner per approval. -/
+/-- A keeper's books on the cast's tree, one owner per approval, with its vault's offers and Maia City's members. -/
 def Books.json (b : Books) : Json :=
   Json.mkObj [("keeper", b.keeper), ("tree", "cast"), ("threshold", toJson (1 : Nat)),
     ("listings", Json.arr (b.listings.map Listing.json).toArray),
-    ("orders", Json.arr (b.orders.map Signed.json).toArray)]
+    ("orders", Json.arr (b.orders.map Signed.json).toArray),
+    ("offers", Json.arr (b.offers.map Cap.json).toArray),
+    ("groups", Json.arr #[Json.mkObj [("group", gMembers.text), ("members", toJson ["alice", "bob"])]])]
 
 def Role.json (r : Role) : Json :=
   Json.mkObj [("id", r.id), ("name", r.name), ("grant", Json.arr (r.grant.map Line.json).toArray)]
@@ -118,7 +120,7 @@ def castCtxJson : Json :=
   Json.mkObj [("tree", "cast"), ("threshold", toJson (1 : Nat)),
     ("groups", Json.arr #[Json.mkObj [("group", gGarden.text), ("members", toJson ["alice", "bob"])]]),
     ("roles", Json.arr (castCtx.roles.map Role.json).toArray),
-    ("docs", Json.arr ([d1, d2, b1, cityNotes, cityDome, gGarden, album].filterMap fun d =>
+    ("docs", Json.arr ([d1, d2, b1, cityNotes, cityDome, gGarden, album, avenNotes].filterMap fun d =>
       (castFacts d).map factsJson).toArray)]
 
 def chainResult (cs : List Cap) : Json :=
@@ -182,6 +184,21 @@ def keepResult (s : Keep) : Json :=
   Json.mkObj [("kept", Json.arr (kept.map fun (i, k) => pair i k).toArray), ("current", toJson s.current),
     ("flags", Json.arr (flags.map fun (i, k) => pair i k).toArray), ("unsettled", toJson s.unsettled)]
 
+/-- A reader's verdict on an envelope, as `authorized.json` writes it: each check (`Aven.ID.Authorized`), and the
+path it takes, `"own"` or `"chain"`, or `"refused"` with the first check that fails, in the order a reader checks:
+`"device"`, its device cap; `"authority"`, neither its vault's own authority, which never counts for an actor host,
+nor a chain that allows its calls; `"actor"`, an actor host's envelope under a chain that names no actor (A27). -/
+def readerVerdictJson : Bool × Bool × Bool × Bool × Bool → Json
+  | (withinDevice, own, byChain, hostSigned, authorized) =>
+    let path : String := if !authorized then "refused" else if own && !hostSigned then "own" else "chain"
+    let refusal : List (String × Json) :=
+      if authorized then []
+      else if !withinDevice then [("refusal", "device")]
+      else if !byChain then [("refusal", "authority")]
+      else [("refusal", "actor")]
+    Json.mkObj ([("withinDevice", toJson withinDevice), ("own", toJson own), ("byChain", toJson byChain),
+      ("hostSigned", toJson hostSigned), ("authorized", toJson authorized), ("path", path)] ++ refusal)
+
 /-! ## Generated cases -/
 
 def pick (r : Rng) (l : List String) : String × Rng :=
@@ -203,8 +220,9 @@ def genLines (v : String) : List Line :=
   else if v = "maia-city" then [readOn cityDome] else [readOn (docOf "a1")]
 
 /-- A random cap after `parent`: mostly a fair narrowing by the parent's holder, now and then wider, longer, unsigned,
-unapproved, or issued by someone else. A quarter of the links attenuate: by the parent's holder, keeping it, with no
-approval, now and then handing the cap to another holder or sharing further; now and then a chain starts with one. -/
+unapproved, issued by someone else, or held by a group the reader doesn't know. A quarter of the links attenuate: by
+the parent's holder, keeping it, with no approval, now and then handing the cap to another holder or sharing further;
+now and then a chain starts with one. -/
 def genCap (r : Rng) (id : String) (parent : Option Cap) : Cap × Rng := Id.run do
   let mut r := r
   let (k, r1) := r.below 20; r := r1
@@ -217,7 +235,7 @@ def genCap (r : Rng) (id : String) (parent : Option Cap) : Cap × Rng := Id.run 
   let (h, r3) := r.below 20; r := r3
   let (hv, r4) := pick r (if h < 11 then ["alice", "bob"] else genVaults); r := r4
   let holder : Holder := if h < 14 then .vault hv else if h < 17 then .group gGarden else if h < 19 then .«public»
-    else .ticket "t-1"
+    else .group (docOf "g-unknown")
   let (w, r5) := r.below 2; r := r5
   let (wv, r6) := pick r (issuer :: genVaults); r := r6
   let (li, r7) := r.below 3; r := r7
