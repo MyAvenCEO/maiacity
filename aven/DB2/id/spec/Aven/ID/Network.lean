@@ -217,6 +217,78 @@ def Tree.ofSetup (g : Setup) : Tree :=
 /-- The tree the setup founds (`Tree.ofSetup`). -/
 abbrev Setup.tree (g : Setup) : Tree := Tree.ofSetup g
 
+/-- A tree with some of its vaults' owners and thresholds changed: `ch` gives a vault's new ones, if it has any. -/
+def Tree.withOwners (t : Tree) (ch : String → Option (List Owner × Nat)) : Tree :=
+  { t with vaults := t.vaults.map fun v =>
+      match ch v.id with
+      | some (os, th) => { v with owners := os, threshold := th }
+      | none => v }
+
+theorem Tree.withOwners_none (t : Tree) : t.withOwners (fun _ => none) = t := by
+  cases t
+  simp [withOwners]
+
+/-- A vault of a changed tree: the tree's own, with its new owners and threshold if it has them. -/
+theorem Tree.get?_withOwners (t : Tree) (ch : String → Option (List Owner × Nat)) (b : String) :
+    (t.withOwners ch).get? b = (t.get? b).map fun v =>
+      match ch v.id with
+      | some (os, th) => { v with owners := os, threshold := th }
+      | none => v := by
+  unfold withOwners get?
+  rw [List.find?_map]
+  congr 1
+  congr 1
+  funext v
+  simp only [Function.comp]
+  split <;> rfl
+
+/-- The one entry of a list, if every entry is it. -/
+def theOne {α : Type} [DecidableEq α] : List α → Option α
+  | [] => none
+  | a :: l => if l.all (fun b => decide (b = a)) then some a else none
+
+theorem theOne_eq_some {α : Type} [DecidableEq α] {l : List α} {a : α} :
+    theOne l = some a ↔ a ∈ l ∧ ∀ b ∈ l, b = a := by
+  cases l with
+  | nil => simp [theOne]
+  | cons x l =>
+    by_cases h : (l.all fun b => decide (b = x)) = true
+    · simp only [theOne, h, ↓reduceIte]
+      simp only [List.all_eq_true, decide_eq_true_eq] at h
+      constructor
+      · intro e
+        obtain rfl := Option.some.inj e
+        refine ⟨List.mem_cons_self .., fun b mb => ?_⟩
+        rcases List.mem_cons.mp mb with rfl | mb
+        · rfl
+        · exact h b mb
+      · rintro ⟨_, hall⟩
+        rw [hall x (List.mem_cons_self ..)]
+    · simp only [theOne, h, ↓reduceIte, Bool.false_eq_true]
+      constructor
+      · intro e; cases e
+      · rintro ⟨_, hall⟩
+        exfalso
+        apply h
+        simp only [List.all_eq_true, decide_eq_true_eq]
+        intro b mb
+        rw [hall b (List.mem_cons_of_mem _ mb), hall x (List.mem_cons_self ..)]
+
+/-- `theOne` reads only what a list holds. -/
+theorem theOne_congr {α : Type} [DecidableEq α] {l l' : List α} (h : ∀ x, x ∈ l ↔ x ∈ l') :
+    theOne l = theOne l' := by
+  cases e : theOne l' with
+  | none =>
+    cases e' : theOne l with
+    | none => rfl
+    | some a =>
+      have := theOne_eq_some.mp e'
+      have : theOne l' = some a := theOne_eq_some.mpr ⟨(h a).mp this.1, fun b m => this.2 b ((h b).mpr m)⟩
+      rw [e] at this; cases this
+  | some a =>
+    have := theOne_eq_some.mp e
+    exact theOne_eq_some.mpr ⟨(h a).mpr this.1, fun b m => this.2 b ((h b).mp m)⟩
+
 /-- What every tree statement's signer signs, as `Aven.ID.Approve` names a digest: the statement itself. -/
 def stmtDigest : String := "tree statement"
 
@@ -643,6 +715,9 @@ structure TreeStatement where
 /-- Every key that signed a statement: its signer and its approvals. -/
 def TreeStatement.keys (s : TreeStatement) : List String := s.signer :: s.approvals
 
+/-- A statement's signatures, as `Aven.ID.Approve` reads them. -/
+def TreeStatement.sigs (s : TreeStatement) : List Sig := s.keys.map (⟨·, stmtDigest⟩)
+
 /-- The ticket a claim claims. -/
 def TreeStatement.ticketOf (s : TreeStatement) : Option Core.Hash :=
   match s.says with
@@ -807,12 +882,233 @@ theorem counted_iff : counted pinned S s = true ↔ Counts pinned S s := by
 
 theorem Counts.desc (h : Counts pinned S s) : Desc pinned S s := h.1
 
-/-- What the rest of `settle` reads: the pinned name, the counted statements, and the past between them. -/
+/-! ### Owners in force (A28, A191)
+
+An owner change sets a vault's owners and its threshold k. It counts when its vault's owners in force in its own past
+approve it, k of n. The owners in force at a statement are the setup's, with each vault's latest approved change in its
+past applied: the latest by the past, ties by the smallest name, the same at every peer (`owners_perm`). That recurses on
+the past, which shrinks along it (`depth`). A change reaches the vaults the setup founds; a vault a claim founds is
+changed once vaults are named by their genesis. -/
+
+/-- How many statements a statement's past holds. -/
+def depth (S : List TreeStatement) (s : TreeStatement) : Nat := (past TreeStatement.name S s).length
+
+/-- `u` changes `x`'s owners. -/
+def changes (x : String) (u : TreeStatement) : Bool :=
+  match u.says with
+  | .setOwners y _ _ => y == x
+  | _ => false
+
+/-- An owner change's owners and threshold. -/
+def ownersSet (u : TreeStatement) : Option (List Owner × Nat) :=
+  match u.says with
+  | .setOwners _ os th => some (os, th)
+  | _ => none
+
+/-- `u`, an owner change, has a threshold of at least one and its vault's owners approve it, in the setup's tree with
+the owners `ch` in force. -/
+def changeOk (S : List TreeStatement) (ch : String → Option (List Owner × Nat)) (u : TreeStatement) : Bool :=
+  match u.says with
+  | .setOwners x _ th =>
+    decide (1 ≤ th) && S.any fun g => pinnedGenesis pinned g &&
+      match g.says with
+      | .setup gs => (gs.tree.withOwners ch).approves (gs.tree.withOwners ch).threshold x stmtDigest u.sigs
+      | _ => false
+  | _ => false
+
+/-- Of the changes `C`, the latest's owners: no other has it in its past, and of those, the smallest name. -/
+def latestOwners (S C : List TreeStatement) : Option (List Owner × Nat) :=
+  theOne ((C.filter fun u => !(C.any fun w => inPast TreeStatement.name S w u) &&
+    C.all fun w => (C.any fun w' => inPast TreeStatement.name S w' w) || hashAtMost u.name w.name).filterMap ownersSet)
+
+/-- The owners and threshold in force for vault `x` at `s`: of the approved changes of `x` that count in `s`'s past,
+the latest. -/
+def inForce (S : List TreeStatement) (s : TreeStatement) (x : String) : Option (List Owner × Nat) :=
+  latestOwners S (S.filter fun u => changes x u && inPast TreeStatement.name S s u && counted pinned S u &&
+    if _ : depth S u < depth S s then changeOk pinned S (fun y => inForce S u y) u else false)
+termination_by depth S s
+
+/-- What owners are in force from: an owner change of `S`. -/
+theorem inForce_some {x : String} {o : List Owner × Nat} (h : inForce pinned S s x = some o) :
+    ∃ u ∈ S, u.says = .setOwners x o.1 o.2 ∧ 1 ≤ o.2 := by
+  rw [inForce] at h
+  have m := (theOne_eq_some.mp h).1
+  obtain ⟨u, mu, hu⟩ := List.mem_filterMap.mp m
+  have mu := (List.mem_filter.mp (List.mem_filter.mp mu).1)
+  refine ⟨u, mu.1, ?_⟩
+  have hc := mu.2
+  simp only [Bool.and_eq_true] at hc
+  have ok := hc.2
+  split at ok
+  · unfold changes at hc
+    unfold ownersSet at hu
+    unfold changeOk at ok
+    split at hu
+    · rename_i y os th e
+      simp only [e, beq_iff_eq, Bool.and_eq_true, decide_eq_true_eq] at hc ok
+      cases hu
+      exact ⟨by rw [e, hc.1.1.1], ok.1⟩
+    · cases hu
+  · cases ok
+
+/-- No owner changes, no owners in force but the setup's. -/
+theorem inForce_none (h : ∀ u ∈ S, ∀ x os th, u.says ≠ .setOwners x os th) {x : String} :
+    inForce pinned S s x = none := by
+  cases e : inForce pinned S s x with
+  | none => rfl
+  | some o =>
+    obtain ⟨u, mu, hu, _⟩ := inForce_some pinned e
+    exact absurd hu (h u mu x o.1 o.2)
+
+/-! ### Owners in force read only the past (`owners_perm`) -/
+
+theorem any_congr' {l l' : List TreeStatement} {p q : TreeStatement → Bool} (h : ∀ x, x ∈ l ↔ x ∈ l')
+    (hp : ∀ x ∈ l, p x = q x) : l.any p = l'.any q := by
+  apply Bool.eq_iff_iff.mpr
+  simp only [List.any_eq_true]
+  constructor
+  · rintro ⟨x, m, px⟩
+    exact ⟨x, (h x).mp m, (hp x m) ▸ px⟩
+  · rintro ⟨x, m, qx⟩
+    exact ⟨x, (h x).mpr m, (hp x ((h x).mpr m)).symm ▸ qx⟩
+
+theorem all_congr' {l l' : List TreeStatement} {p q : TreeStatement → Bool} (h : ∀ x, x ∈ l ↔ x ∈ l')
+    (hp : ∀ x ∈ l, p x = q x) : l.all p = l'.all q := by
+  apply Bool.eq_iff_iff.mpr
+  simp only [List.all_eq_true]
+  constructor
+  · intro a x m
+    exact (hp x ((h x).mpr m)) ▸ a x ((h x).mpr m)
+  · intro a x m
+    exact (hp x m).symm ▸ a x ((h x).mp m)
+
+/-- Two holdings agree on `s`'s past: the same statements are before `s` and before each of them, they count alike,
+and the same pinned setups are held. -/
+structure Agree (S S' : List TreeStatement) (s : TreeStatement) : Prop where
+  past : ∀ x, (x = s ∨ Before TreeStatement.name S s x) →
+    ∀ y, Before TreeStatement.name S x y ↔ Before TreeStatement.name S' x y
+  counted : ∀ x, Before TreeStatement.name S s x → counted pinned S x = counted pinned S' x
+  pinned : ∀ g, (g ∈ S ∧ pinnedGenesis pinned g = true) ↔ (g ∈ S' ∧ pinnedGenesis pinned g = true)
+
+theorem Agree.down {S S' : List TreeStatement} {s u : TreeStatement} (h : Agree pinned S S' s)
+    (hu : Before TreeStatement.name S s u) : Agree pinned S S' u :=
+  ⟨fun x hx => h.past x (.inr (hx.elim (· ▸ hu) hu.trans)), fun x hx => h.counted x (hu.trans hx), h.pinned⟩
+
+theorem depth_eq {S S' : List TreeStatement} {x : TreeStatement}
+    (h : ∀ y, Before TreeStatement.name S x y ↔ Before TreeStatement.name S' x y) : depth S x = depth S' x := by
+  change (past TreeStatement.name S x).length = (past TreeStatement.name S' x).length
+  refine ((List.perm_ext_iff_of_nodup (Core.Past.pastNames_nodup _) (Core.Past.pastNames_nodup _)).mpr ?_).length_eq
+  intro n
+  have e1 : (past TreeStatement.name S x).contains n = true ↔ _ := found_iff
+  have e2 : (past TreeStatement.name S' x).contains n = true ↔ _ := found_iff
+  rw [List.contains_iff_mem] at e1 e2
+  refine e1.trans (Iff.trans ⟨?_, ?_⟩ e2.symm)
+  · rintro ⟨y, _, e, b⟩
+    exact ⟨y, ((h y).mp b).mem, e, (h y).mp b⟩
+  · rintro ⟨y, _, e, b⟩
+    exact ⟨y, ((h y).mpr b).mem, e, (h y).mpr b⟩
+
+theorem changeOk_agree {S S' : List TreeStatement}
+    (hp : ∀ g, (g ∈ S ∧ pinnedGenesis pinned g = true) ↔ (g ∈ S' ∧ pinnedGenesis pinned g = true))
+    (f : String → Option (List Owner × Nat)) (u : TreeStatement) : changeOk pinned S f u = changeOk pinned S' f u := by
+  unfold changeOk
+  split
+  · congr 1
+    apply Bool.eq_iff_iff.mpr
+    simp only [List.any_eq_true, Bool.and_eq_true]
+    constructor
+    · rintro ⟨g, m, pg, x⟩
+      exact ⟨g, ((hp g).mp ⟨m, pg⟩).1, pg, x⟩
+    · rintro ⟨g, m, pg, x⟩
+      exact ⟨g, ((hp g).mpr ⟨m, pg⟩).1, pg, x⟩
+  · rfl
+
+theorem latestOwners_agree {S S' C C' : List TreeStatement} (hC : ∀ u, u ∈ C ↔ u ∈ C') (hS : ∀ u ∈ C, u ∈ S)
+    (hS' : ∀ u ∈ C', u ∈ S')
+    (hb : ∀ w ∈ C, ∀ u ∈ C, Before TreeStatement.name S w u ↔ Before TreeStatement.name S' w u) :
+    latestOwners S C = latestOwners S' C' := by
+  have ip : ∀ w ∈ C, ∀ u ∈ C, inPast TreeStatement.name S w u = inPast TreeStatement.name S' w u := by
+    intro w mw u mu
+    apply Bool.eq_iff_iff.mpr
+    rw [inPast_iff (hS u mu), inPast_iff (hS' u ((hC u).mp mu))]
+    exact hb w mw u mu
+  unfold latestOwners
+  apply theOne_congr
+  intro o
+  simp only [List.mem_filterMap, List.mem_filter]
+  have pr : ∀ u ∈ C, (!(C.any fun w => inPast TreeStatement.name S w u) &&
+      C.all fun w => (C.any fun w' => inPast TreeStatement.name S w' w) || hashAtMost u.name w.name) =
+      (!(C'.any fun w => inPast TreeStatement.name S' w u) &&
+      C'.all fun w => (C'.any fun w' => inPast TreeStatement.name S' w' w) || hashAtMost u.name w.name) := by
+    intro u mu
+    rw [any_congr' hC fun w mw => ip w mw u mu]
+    congr 1
+    apply all_congr' hC
+    intro w mw
+    rw [any_congr' hC fun w' mw' => ip w' mw' w mw]
+  constructor
+  · rintro ⟨u, ⟨mu, pu⟩, e⟩
+    exact ⟨u, ⟨(hC u).mp mu, (pr u mu) ▸ pu⟩, e⟩
+  · rintro ⟨u, ⟨mu, pu⟩, e⟩
+    exact ⟨u, ⟨(hC u).mpr mu, (pr u ((hC u).mpr mu)).symm ▸ pu⟩, e⟩
+
+/-- **`owners_perm`, its core:** the owners in force at `s` read only `s`'s past, so two holdings that agree on it
+agree on them. -/
+theorem inForce_agree {S S' : List TreeStatement} :
+    ∀ n s, depth S s < n → Agree pinned S S' s → inForce pinned S s = inForce pinned S' s
+  | 0, _, h, _ => absurd h (Nat.not_lt_zero _)
+  | n + 1, s, hn, ag => by
+    funext x
+    rw [inForce, inForce]
+    have ds : depth S s = depth S' s := depth_eq (ag.past s (.inl rfl))
+    have mem : ∀ u, u ∈ S.filter (fun u => changes x u && inPast TreeStatement.name S s u && counted pinned S u &&
+          if _ : depth S u < depth S s then changeOk pinned S (fun y => inForce pinned S u y) u else false) ↔
+        u ∈ S'.filter (fun u => changes x u && inPast TreeStatement.name S' s u && counted pinned S' u &&
+          if _ : depth S' u < depth S' s then changeOk pinned S' (fun y => inForce pinned S' u y) u else false) := by
+      intro u
+      simp only [List.mem_filter, Bool.and_eq_true]
+      constructor
+      · rintro ⟨mu, ⟨⟨cx, ip⟩, cu⟩, ok⟩
+        have b := (inPast_iff mu).mp ip
+        have b' := (ag.past s (.inl rfl) u).mp b
+        have du : depth S u = depth S' u := depth_eq ((ag.down pinned b).past u (.inl rfl))
+        refine ⟨b'.mem, ⟨⟨cx, (inPast_iff b'.mem).mpr b'⟩, (ag.counted u b) ▸ cu⟩, ?_⟩
+        by_cases hd : depth S u < depth S s
+        · rw [dif_pos hd] at ok
+          have ih := inForce_agree n u (by omega) (ag.down pinned b)
+          rw [dif_pos (by rw [← du, ← ds]; exact hd), ← ih, ← changeOk_agree pinned ag.pinned]
+          exact ok
+        · rw [dif_neg hd] at ok
+          cases ok
+      · rintro ⟨mu, ⟨⟨cx, ip⟩, cu⟩, ok⟩
+        have b' := (inPast_iff mu).mp ip
+        have b := (ag.past s (.inl rfl) u).mpr b'
+        have du : depth S u = depth S' u := depth_eq ((ag.down pinned b).past u (.inl rfl))
+        refine ⟨b.mem, ⟨⟨cx, (inPast_iff b.mem).mpr b⟩, (ag.counted u b).symm ▸ cu⟩, ?_⟩
+        by_cases hd : depth S' u < depth S' s
+        · rw [dif_pos hd] at ok
+          have hd0 : depth S u < depth S s := by rw [du, ds]; exact hd
+          have ih := inForce_agree n u (by omega) (ag.down pinned b)
+          rw [dif_pos hd0, ih, changeOk_agree pinned ag.pinned]
+          exact ok
+        · rw [dif_neg hd] at ok
+          cases ok
+    apply latestOwners_agree mem (fun u m => (List.mem_filter.mp m).1) (fun u m => (List.mem_filter.mp m).1)
+    intro w mw u _
+    have bw : Before TreeStatement.name S s w := by
+      have := (List.mem_filter.mp mw)
+      simp only [Bool.and_eq_true] at this
+      exact (inPast_iff this.1).mp this.2.1.1.2
+    exact ag.past w (.inr bw) u
+
+/-- What the rest of `settle` reads: the pinned name, the counted statements, the past between them, and the owners in
+force at each. -/
 structure View where
   pinned : Core.Hash
   any : (TreeStatement → Bool) → Bool
   all : (TreeStatement → Bool) → Bool
   past : TreeStatement → TreeStatement → Bool
+  owners : TreeStatement → String → Option (List Owner × Nat)
 
 /-- Each statement of `C` with the names in its past among `S`, worked out once. -/
 def pastTable (S C : List TreeStatement) : List (TreeStatement × List Core.Hash) :=
@@ -829,7 +1125,8 @@ def view (S : List TreeStatement) : View :=
   { pinned := pinned
     any := C.any
     all := C.all
-    past := fun a b => C.contains b && ((row T a).map (·.contains b.name)).getD false }
+    past := fun a b => C.contains b && ((row T a).map (·.contains b.name)).getD false
+    owners := fun a => if C.contains a then inForce pinned S a else fun _ => none }
 
 /-! ### The settle rule -/
 
@@ -840,12 +1137,11 @@ def gen (v : View) (P : Setup → Bool) : Bool :=
     | .setup gen => gen.consented && P gen
     | _ => false
 
-/-- An admin act's keys: Maia City's owners approve it (`Tree.approves`, D14), k of n by each vault's stored threshold
-(`Tree.threshold`, A28), recursive through the vaults that own the coop, down to their owner keys. The admin is Maia
-City's vault, never a key (rule 15, A28): tickets, withdrawals and the relay list count only so. A device's key owns
-nothing, so it never approves (`device_not_admin`); "the more secure way" (Samuel, 31 Oct 2026) holds. -/
-def byAdmin (v : View) (ks : List String) : Bool :=
-  gen v (fun g => g.tree.approves g.tree.threshold g.coop stmtDigest (ks.map (⟨·, stmtDigest⟩)))
+/-- The tree in force at `s`: the setup's, with the owner changes in `s`'s past applied (A191). -/
+def View.treeAt (v : View) (g : Setup) (s : TreeStatement) : Tree := g.tree.withOwners (v.owners s)
+
+/-- `vault`'s owners in tree `t` approve `s`, k of n by each vault's stored threshold. -/
+def approvedIn (t : Tree) (vault : String) (s : TreeStatement) : Bool := t.approves t.threshold vault stmtDigest s.sigs
 
 /-- Passkey `p` added its owner and seal keys (`ownerEpoch`, signed by `p`'s ES256). -/
 def ownerAdded (v : View) (p : String) : Bool :=
@@ -871,8 +1167,43 @@ def confirmer (v : View) (k : String) : Bool :=
           gen v (fun g => g.confirmers.contains g.claimant && s.signer == g.passkey.spki) && ownerAdded v s.signer)
       | _ => false
 
+/-- An approved owner change: a threshold of at least one, and its vault's owners in force in its own past approve
+it. -/
+def changed (v : View) (r : TreeStatement) : Bool :=
+  match r.says with
+  | .setOwners x _ th => decide (1 ≤ th) && gen v fun g => approvedIn (v.treeAt g r) x r
+  | _ => false
+
+/-- An owner change that drops one of its vault's owners in force. -/
+def drops (v : View) (r : TreeStatement) : Bool :=
+  gen v fun g =>
+    match r.says with
+    | .setOwners x os _ => ((v.treeAt g r).get? x).any fun vt => vt.owners.any fun o => !os.contains o
+    | _ => false
+
+/-- In the past of a counted confirmation: no removal undoes it (A191). -/
+def kept (v : View) (a : TreeStatement) : Bool :=
+  v.any fun f => (match f.says with | .confirm _ => true | _ => false) && confirmer v f.signer && v.past f a
+
+/-- **A removal beats** `a` (A191): `r`, an approved owner change that drops an owner, and `a` never saw each other, no
+counted confirmation rests on `a`, and under `r`'s owners Maia City's owners no longer approve `a`. -/
+def removes (v : View) (r a : TreeStatement) : Bool :=
+  changed v r && drops v r && !v.past r a && !v.past a r && !kept v a &&
+    match r.says with
+    | .setOwners x os th =>
+      !(gen v fun g => approvedIn ((v.treeAt g a).withOwners fun y => if y == x then some (os, th) else none) g.coop a)
+    | _ => false
+
+/-- An admin act: Maia City's owners in force in its own past approve it (`Tree.approves`, D14), k of n by each
+vault's stored threshold (`Tree.threshold`, A28), recursive through the vaults that own the coop, down to their owner
+keys, and no removal beats it. The admin is Maia City's vault, never a key (rule 15, A28): tickets, withdrawals and the
+relay list count only so. A device's key owns nothing, so it never approves (`device_not_admin`); "the more secure way"
+(Samuel, 31 Oct 2026) holds. -/
+def byAdmin (v : View) (s : TreeStatement) : Bool :=
+  (gen v fun g => approvedIn (v.treeAt g s) g.coop s) && !(v.any fun r => removes v r s)
+
 /-- A change Maia City's owners approved (rule 15, A28): `sel` picks which setting it changes. -/
-def configBy (v : View) (sel : TreeSays → Bool) (s : TreeStatement) : Bool := byAdmin v s.keys && sel s.says
+def configBy (v : View) (sel : TreeSays → Bool) (s : TreeStatement) : Bool := byAdmin v s && sel s.says
 
 def isGuardianSet : TreeSays → Bool | .setGuardian _ => true | _ => false
 
@@ -889,7 +1220,7 @@ A42). -/
 def claimOk (v : View) (c : TreeStatement) : Bool :=
   match c.says with
   | .claim t _ _ _ guardian =>
-    (v.any fun s => s.name == t && byAdmin v s.keys && s.says == .ticket c.signer && v.past c s) &&
+    (v.any fun s => s.name == t && byAdmin v s && s.says == .ticket c.signer && v.past c s) &&
       guardianNamed v c guardian
   | _ => false
 
@@ -903,7 +1234,7 @@ def final (v : View) (c : TreeStatement) : Bool :=
 /-- `w` wins over claim `c`: Maia City's owners' withdrawal of its ticket that didn't have it in its past. -/
 def beats (v : View) (w c : TreeStatement) : Bool :=
   match c.ticketOf with
-  | some t => byAdmin v w.keys && w.says == .withdrawal t && !v.past w c
+  | some t => byAdmin v w && w.says == .withdrawal t && !v.past w c
   | none => false
 
 /-- A claim stands: of its ticket's final claims the one with the smallest hash; if none is final, of the claims no
@@ -998,8 +1329,8 @@ def admits (v : View) (d : String) : Bool :=
 over every add that hadn't seen it, the ones it saw and the ones made at the same time, and an add made after it
 stands again. -/
 def listed (v : View) (add remove : String → TreeSays) (d : String) : Bool :=
-  v.any fun a => byAdmin v a.keys && a.says == add d &&
-    !(v.any fun r => byAdmin v r.keys && r.says == remove d && !v.past a r)
+  v.any fun a => byAdmin v a && a.says == add d &&
+    !(v.any fun r => byAdmin v r && r.says == remove d && !v.past a r)
 
 /-! ### Reading the view -/
 
@@ -1124,7 +1455,7 @@ theorem counted_set (h : ∀ x, x ∈ S ↔ x ∈ S') : counted pinned S = count
   exact ⟨counts_set pinned h, counts_set pinned fun x => (h x).symm⟩
 
 theorem View.ext' {v w : View} (p : v.pinned = w.pinned) (a : v.any = w.any) (l : v.all = w.all)
-    (q : v.past = w.past) : v = w := by
+    (q : v.past = w.past) (o : v.owners = w.owners) : v = w := by
   cases v
   cases w
   simp_all
@@ -1139,8 +1470,19 @@ theorem view_set (h : ∀ x, x ∈ S ↔ x ∈ S') : view pinned S = view pinned
     intro x
     simp only [List.mem_filter, h, hc]
   refine View.ext' rfl (funext (any_set hf)) (funext (all_set hf)) (funext fun a => funext fun b => ?_)
-  apply Bool.eq_iff_iff.mpr
-  rw [view_past, view_past, hc, past_set h, h, h]
+    (funext fun a => ?_)
+  · apply Bool.eq_iff_iff.mpr
+    rw [view_past, view_past, hc, past_set h, h, h]
+  · have ag : Agree pinned S S' a :=
+      ⟨fun _ _ _ => past_set h, fun x _ => by rw [hc], fun g => by rw [h]⟩
+    simp only [view, List.contains_iff_mem, hf]
+    rw [inForce_agree pinned _ a (Nat.lt_succ_self _) ag]
+
+/-- **`owners_perm`:** two peers holding the same statements, in whatever order, hold the same owners in force at
+each. -/
+theorem owners_perm (h : ∀ x, x ∈ S ↔ x ∈ S') (a : TreeStatement) :
+    (view pinned S).owners a = (view pinned S').owners a := by
+  rw [view_set pinned h]
 
 end Settle
 
@@ -1233,13 +1575,35 @@ theorem view_without (hX : ∀ x ∈ X, ¬ Desc pinned (S ++ X) x) (hN : ∀ x �
     simp only [List.mem_filter]
     exact hm x
   refine View.ext' rfl (funext (any_set hf)) (funext (all_set hf)) (funext fun a => funext fun b => ?_)
-  apply Bool.eq_iff_iff.mpr
-  rw [view_past, view_past, hm, hm]
-  constructor
-  · rintro ⟨ha, hb, p⟩
-    exact ⟨ha, hb, (before_without hN ha.1 p).2⟩
-  · rintro ⟨ha, hb, p⟩
-    exact ⟨ha, hb, p.mono fun x m => List.mem_append_left _ m⟩
+    (funext fun a => ?_)
+  · apply Bool.eq_iff_iff.mpr
+    rw [view_past, view_past, hm, hm]
+    constructor
+    · rintro ⟨ha, hb, p⟩
+      exact ⟨ha, hb, (before_without hN ha.1 p).2⟩
+    · rintro ⟨ha, hb, p⟩
+      exact ⟨ha, hb, p.mono fun x m => List.mem_append_left _ m⟩
+  · simp only [view, List.contains_iff_mem, hf]
+    split
+    · rename_i ma
+      have ma := (List.mem_filter.mp ma).1
+      have inS : ∀ {x}, (x = a ∨ Before TreeStatement.name (S ++ X) a x) → x ∈ S :=
+        fun hx => hx.elim (· ▸ ma) fun b => (before_without hN ma b).1
+      have ag : Agree pinned (S ++ X) S a := by
+        refine ⟨fun x hx y => ⟨fun b => (before_without hN (inS hx) b).2,
+            Before.mono fun z m => List.mem_append_left _ m⟩, fun x bx => ?_, fun g => ?_⟩
+        · have mx := inS (.inr bx)
+          rw [counted_without pinned hX hN (List.mem_append_left _ mx)]
+          simp [mx]
+        · constructor
+          · rintro ⟨m, pg⟩
+            rcases List.mem_append.mp m with m | m
+            · exact ⟨m, pg⟩
+            · exact absurd (.inl pg) (hX g m)
+          · rintro ⟨m, pg⟩
+            exact ⟨List.mem_append_left _ m, pg⟩
+      rw [inForce_agree pinned _ a (Nat.lt_succ_self _) ag]
+    · rfl
 
 end Settle
 open Settle in
@@ -1283,7 +1647,7 @@ theorem guardian_consented (h : claimOk (view pinned S) c = true) :
     ∃ t vault passkey device guardian, c.says = .claim t vault passkey device guardian ∧
       ((∃ g ∈ S, g.name = pinned ∧ ∃ gen, g.says = .setup gen ∧ gen.consented = true ∧
         gen.guardianVault = guardian) ∨
-       ∃ s ∈ S, counted pinned S s = true ∧ byAdmin (view pinned S) s.keys = true ∧
+       ∃ s ∈ S, counted pinned S s = true ∧ byAdmin (view pinned S) s = true ∧
         s.says = .setGuardian guardian ∧ Before TreeStatement.name S c s) := by
   unfold claimOk at h
   split at h
@@ -1341,7 +1705,7 @@ theorem settle_ticket_once {c d : TreeStatement} (mc : c ∈ S) (md : d ∈ S)
 
 /-- A withdrawal of a ticket leaves no claim of it standing that isn't final and wasn't in the withdrawal's past. -/
 theorem settle_withdrawn {w : TreeStatement} {t : Core.Hash} (mw : w ∈ S) (cw : counted pinned S w = true)
-    (aw : byAdmin (view pinned S) w.keys = true) (says : w.says = .withdrawal t) (ct : c.ticketOf = some t)
+    (aw : byAdmin (view pinned S) w = true) (says : w.says = .withdrawal t) (ct : c.ticketOf = some t)
     (np : ¬ Before TreeStatement.name S w c) (nf : final (view pinned S) c = false) :
     standing (view pinned S) c = false := by
   have hb : (view pinned S).any (fun x => beats (view pinned S) x c) = true := by
@@ -1441,27 +1805,99 @@ theorem confirmer_mono {k : String} (h : confirmer (view pinned S) k = true) :
       · exact .inr ⟨gen_mono pinned sub uniq g, ownerAdded_mono pinned sub uniq o⟩
     · cases hx
 
-theorem claimOk_mono (h : claimOk (view pinned S) c = true) :
-    claimOk (view pinned S') c = true := by
+theorem any_mono_mem {p q : TreeStatement → Bool}
+    (pq : ∀ x ∈ S, counted pinned S x = true → p x = true → q x = true)
+    (h : (view pinned S).any p = true) : (view pinned S').any q = true := by
+  obtain ⟨x, m, cx, px⟩ := (view_any pinned).mp h
+  exact (view_any pinned).mpr ⟨x, sub x m, counted_mono pinned sub uniq cx, pq x m cx px⟩
+
+/-- Of a statement that counts, more statements change neither its past nor what counts in it. -/
+theorem agree_mono {a : TreeStatement} (ma : a ∈ S) (ca : counted pinned S a = true) : Agree pinned S S' a := by
+  have cl := ((counted_iff pinned).mp ca).2.1
+  have down : ∀ {x}, (x = a ∨ Before TreeStatement.name S a x) → Closed S x := fun hx y hy =>
+    cl y (hx.elim (fun e => e ▸ hy) fun b => .inr (hy.elim (· ▸ b) b.trans))
+  refine ⟨fun x hx y => (past_closed sub uniq (down hx)).symm, fun x bx => ?_, fun g => ?_⟩
+  · have clx := down (.inr bx)
+    apply Bool.eq_iff_iff.mpr
+    rw [counted_iff, counted_iff]
+    refine ⟨counts_mono pinned sub uniq, fun ⟨d, _, ft⟩ => ⟨?_, clx, fun y hy => ft y (hy.imp_right (Before.mono sub))⟩⟩
+    rcases d with g | ⟨g, mg, pg, sg⟩
+    · exact .inl g
+    · obtain ⟨mg, sg⟩ := before_closed sub uniq clx sg
+      exact .inr ⟨g, mg, pg, sg⟩
+  · refine ⟨fun ⟨m, pg⟩ => ⟨sub g m, pg⟩, fun ⟨m, pg⟩ => ⟨?_, pg⟩⟩
+    obtain ⟨g₀, _, n₀, _, _, w⟩ := genesis_pinned pinned ca
+    have m₀ : g₀ ∈ S := w.elim (· ▸ ma) (·.1)
+    have ng : g.name = pinned := by
+      unfold pinnedGenesis at pg
+      simp only [Bool.and_eq_true, beq_iff_eq] at pg
+      exact pg.1.1
+    exact uniq g m g₀ (sub g₀ m₀) (ng.trans n₀.symm) ▸ m₀
+
+/-- The owners in force at a statement that counts stay as more statements come: its whole past is held. -/
+theorem owners_mono {a : TreeStatement} (ma : a ∈ S) (ca : counted pinned S a = true) :
+    (view pinned S').owners a = (view pinned S).owners a := by
+  have c' := counted_mono pinned sub uniq ca
+  simp only [view, List.contains_iff_mem, List.mem_filter, sub a ma, c', ma, ca, and_self, ↓reduceIte]
+  exact (inForce_agree pinned _ a (Nat.lt_succ_self _) (agree_mono pinned sub uniq ma ca)).symm
+
+/-- **An admin act no removal can undo stays one** (A191): its owners in force stay, and a counted confirmation that
+rests on it keeps every removal from beating it. -/
+theorem byAdmin_mono {a : TreeStatement} (ma : a ∈ S) (ca : counted pinned S a = true)
+    (h : byAdmin (view pinned S) a = true) (k : kept (view pinned S') a = true) :
+    byAdmin (view pinned S') a = true := by
+  have e : ∀ g, (view pinned S').treeAt g a = (view pinned S).treeAt g a := fun g => by
+    simp only [View.treeAt, owners_mono pinned sub uniq ma ca]
+  simp only [byAdmin, Bool.and_eq_true, Bool.not_eq_true'] at h ⊢
+  refine ⟨?_, ?_⟩
+  · simp only [e]
+    exact gen_mono pinned sub uniq h.1
+  · cases hr : (view pinned S').any fun r => removes (view pinned S') r a
+    · rfl
+    · obtain ⟨r, _, _, hr⟩ := (view_any pinned).mp hr
+      simp [removes, k] at hr
+
+/-- A confirmation that counts keeps what is in its past. -/
+theorem kept_of {f x : TreeStatement} (mf : f ∈ S) (cf : counted pinned S f = true) {n : Core.Hash}
+    (hf : f.says = .confirm n) (cn : confirmer (view pinned S) f.signer = true)
+    (p : (view pinned S).past f x = true) : kept (view pinned S') x = true :=
+  (view_any pinned).mpr ⟨f, sub f mf, counted_mono pinned sub uniq cf,
+    by simp [hf, confirmer_mono pinned sub uniq cn, past_mono pinned sub uniq p]⟩
+
+/-- A claim stays good while what its past rests on is kept. -/
+theorem claimOk_mono (kp : ∀ x, (view pinned S).past c x = true → kept (view pinned S') x = true)
+    (h : claimOk (view pinned S) c = true) : claimOk (view pinned S') c = true := by
   unfold claimOk at h ⊢
   split at h
   · simp only [Bool.and_eq_true] at h ⊢
-    refine ⟨any_mono pinned sub uniq (fun x hx => ?_) h.1, ?_⟩
+    refine ⟨any_mono_mem pinned sub uniq (fun x mx cx hx => ?_) h.1, ?_⟩
     · simp only [Bool.and_eq_true] at hx ⊢
-      exact ⟨⟨⟨hx.1.1.1, gen_mono pinned sub uniq hx.1.1.2⟩, hx.1.2⟩, past_mono pinned sub uniq hx.2⟩
+      exact ⟨⟨⟨hx.1.1.1, byAdmin_mono pinned sub uniq mx cx hx.1.1.2 (kp x hx.2)⟩, hx.1.2⟩,
+        past_mono pinned sub uniq hx.2⟩
     · have g := h.2
       simp only [guardianNamed, Bool.or_eq_true] at g ⊢
       rcases g with g | g
       · exact .inl (gen_mono pinned sub uniq g)
-      · refine .inr (any_mono pinned sub uniq (fun x hx => ?_) g)
+      · refine .inr (any_mono_mem pinned sub uniq (fun x mx cx hx => ?_) g)
         simp only [configBy, Bool.and_eq_true] at hx ⊢
-        exact ⟨⟨⟨gen_mono pinned sub uniq hx.1.1.1, hx.1.1.2⟩, hx.1.2⟩, past_mono pinned sub uniq hx.2⟩
+        exact ⟨⟨⟨byAdmin_mono pinned sub uniq mx cx hx.1.1.1 (kp x hx.2), hx.1.1.2⟩, hx.1.2⟩,
+          past_mono pinned sub uniq hx.2⟩
   · cases h
 
+/-- **A removal never undoes finality** (A191): a final claim's confirmation keeps its ticket and the guardian change
+it names, so whatever more statements come, it stays final. -/
 theorem final_mono (h : final (view pinned S) c = true) :
     final (view pinned S') c = true := by
   simp only [final, Bool.and_eq_true] at h ⊢
-  refine ⟨claimOk_mono pinned sub uniq h.1, any_mono pinned sub uniq (fun x hx => ?_) h.2⟩
+  obtain ⟨f, mf, cf, hf⟩ := (view_any pinned).mp h.2
+  simp only [Bool.and_eq_true, beq_iff_eq] at hf
+  obtain ⟨⟨cn, sf⟩, pfc⟩ := hf
+  have kp : ∀ x, (view pinned S).past c x = true → kept (view pinned S') x = true := by
+    intro x pcx
+    obtain ⟨⟨mf', cf'⟩, _, bfc⟩ := (view_past pinned).mp pfc
+    obtain ⟨_, ⟨mx, cx⟩, bcx⟩ := (view_past pinned).mp pcx
+    exact kept_of pinned sub uniq mf cf sf cn ((view_past pinned).mpr ⟨⟨mf', cf'⟩, ⟨mx, cx⟩, bfc.trans bcx⟩)
+  refine ⟨claimOk_mono pinned sub uniq kp h.1, any_mono pinned sub uniq (fun x hx => ?_) h.2⟩
   simp only [Bool.and_eq_true] at hx ⊢
   exact ⟨⟨confirmer_mono pinned sub uniq hx.1.1, hx.1.2⟩, past_mono pinned sub uniq hx.2⟩
 
@@ -1507,14 +1943,51 @@ theorem gen_intro {g : TreeStatement} {gs : Setup} {P : Setup → Bool} (mg : g 
     (hp : P gs = true) : gen (view pinned S) P = true :=
   (view_any pinned).mpr ⟨g, mg, cg, by simp [n, e, c, hp, view]⟩
 
+theorem byAdmin_gen {v : View} {s : TreeStatement} (h : byAdmin v s = true) :
+    (gen v fun g => approvedIn (v.treeAt g s) g.coop s) = true := by
+  simp only [byAdmin, Bool.and_eq_true] at h
+  exact h.1
+
+/-- The owners in force come from an owner change, of a threshold of at least one. -/
+theorem owners_some {s : TreeStatement} {y : String} {o : List Owner × Nat}
+    (h : (view pinned S).owners s y = some o) : ∃ u ∈ S, u.says = .setOwners y o.1 o.2 ∧ 1 ≤ o.2 := by
+  simp only [view] at h
+  split at h
+  · exact inForce_some pinned h
+  · cases h
+
+/-- No owner changes, no owners in force but the setup's. -/
+theorem owners_none (h : ∀ u ∈ S, ∀ x os th, u.says ≠ .setOwners x os th) (s : TreeStatement) :
+    (view pinned S).owners s = fun _ => none := by
+  funext y
+  cases e : (view pinned S).owners s y with
+  | none => rfl
+  | some o =>
+    obtain ⟨u, mu, hu, _⟩ := owners_some pinned e
+    exact absurd hu (h u mu y o.1 o.2)
+
+/-- With no owner changes, an admin act is one the setup's owners approve: nothing to remove. -/
+theorem byAdmin_plain (h : ∀ u ∈ S, ∀ x os th, u.says ≠ .setOwners x os th) (s : TreeStatement) :
+    byAdmin (view pinned S) s = gen (view pinned S) fun g => approvedIn g.tree g.coop s := by
+  have nr : (view pinned S).any (fun r => removes (view pinned S) r s) = false := by
+    cases e : (view pinned S).any fun r => removes (view pinned S) r s
+    · rfl
+    · obtain ⟨r, mr, _, hr⟩ := (view_any pinned).mp e
+      simp only [removes, changed, Bool.and_eq_true] at hr
+      split at hr
+      · rename_i x os th he
+        exact absurd he (h r mr x os th)
+      · simp at hr
+  simp only [byAdmin, View.treeAt, owners_none pinned h, Tree.withOwners_none, nr, Bool.not_false, Bool.and_true]
+
 /-- The Aven Peer's key is set only where there is a pinned genesis. -/
 theorem peerIs_gen {d : String} (h : peerIs (view pinned S) d = true) :
     gen (view pinned S) (fun _ => true) = true := by
   unfold peerIs setting at h
   split at h
   · obtain ⟨s, _, _, hs⟩ := (view_any pinned).mp h
-    simp only [latest, configBy, byAdmin, Bool.and_eq_true] at hs
-    obtain ⟨g, mg, cg, n, gs, e, c, _⟩ := gen_elim pinned hs.1.1.1.1
+    simp only [latest, configBy, Bool.and_eq_true] at hs
+    obtain ⟨g, mg, cg, n, gs, e, c, _⟩ := gen_elim pinned (byAdmin_gen hs.1.1.1.1)
     exact gen_intro pinned mg cg n e c rfl
   · obtain ⟨g, mg, cg, n, gs, e, c, _⟩ := gen_elim pinned h
     exact gen_intro pinned mg cg n e c rfl
@@ -1523,7 +1996,7 @@ theorem peerIs_gen {d : String} (h : peerIs (view pinned S) d = true) :
 theorem config_by_admin {sel now : TreeSays → Bool} {genesis : Setup → Bool}
     (h : setting (view pinned S) sel now genesis = true)
     (changed : (view pinned S).any (configBy (view pinned S) sel) = true) :
-    ∃ s ∈ S, byAdmin (view pinned S) s.keys = true ∧ sel s.says = true ∧ now s.says = true := by
+    ∃ s ∈ S, byAdmin (view pinned S) s = true ∧ sel s.says = true ∧ now s.says = true := by
   unfold setting at h
   simp only [changed, ↓reduceIte] at h
   obtain ⟨s, ms, _, hs⟩ := (view_any pinned).mp h
@@ -1648,6 +2121,45 @@ theorem approvesF_extra {t : Tree} {th : String → Nat} {d : String} {sigs : Li
         simp only [Tree.ownerApproves] at ho ⊢
         exact approvesF_extra np ho
 
+/-- A vault of the setup's tree with owners changed: the setup's, or one with an owner change's owners. -/
+theorem withOwners_vault {g : Setup} {ch : String → Option (List Owner × Nat)} {v : Vault}
+    (h : v ∈ (g.tree.withOwners ch).vaults) :
+    ∃ v₀ ∈ g.tree.vaults, (ch v₀.id = none ∧ v = v₀) ∨
+      ∃ os th, ch v₀.id = some (os, th) ∧ v = { v₀ with owners := os, threshold := th } := by
+  simp only [Tree.withOwners, List.mem_map] at h
+  obtain ⟨v₀, m, e⟩ := h
+  refine ⟨v₀, m, ?_⟩
+  split at e
+  · rename_i os th hc
+    exact .inr ⟨os, th, hc, e.symm⟩
+  · rename_i hc
+    exact .inl ⟨hc, e.symm⟩
+
+/-- An owner key of the setup's tree with owners changed: the claimant's passkey, MaiaCityGuardian's, or a key an
+owner change names. -/
+theorem keyAbove_withOwners {g : Setup} {ch : String → Option (List Owner × Nat)} {k b : String}
+    (h : (g.tree.withOwners ch).KeyAbove k b) :
+    k = g.passkey.spki ∨ k = g.guardian.ed25519 ∨ ∃ x os th, ch x = some (os, th) ∧ Owner.key k ∈ os := by
+  induction h with
+  | own ko =>
+    obtain ⟨v, hv, mk⟩ := ko
+    rw [Tree.get?_withOwners] at hv
+    obtain ⟨v₁, h₁, e₁⟩ := Option.map_eq_some_iff.mp hv
+    split at e₁
+    · rename_i os th hc
+      subst e₁
+      simp only [Vault.ownerKeys, List.mem_filterMap] at mk
+      obtain ⟨o, mo, ho⟩ := mk
+      cases o with
+      | key k' =>
+        simp only [Owner.key?, Option.some.injEq] at ho
+        subst ho
+        exact .inr (.inr ⟨v₁.id, os, th, hc, mo⟩)
+      | vault _ => simp [Owner.key?] at ho
+    · subst e₁
+      exact (g.keyAbove (.own ⟨v₁, h₁, mk⟩)).elim .inl (.inr ∘ .inl)
+  | up _ _ ih => exact ih
+
 /-- **`ownerless_only_adds_owner`** (A42): a passkey whose record has no owner, and which signed no owner-epoch op of
 its own, has no act counted but that op. It signs in no device; its signature beside an act adds nothing to Maia City's
 approval of it; and it confirms nothing. -/
@@ -1658,9 +2170,13 @@ theorem ownerless_only_adds_owner {p : String}
     (noEpoch : ∀ s ∈ S, s.signer = p → ∀ c o se e, s.says ≠ .ownerEpoch c o se e)
     (notGuardian : ∀ g ∈ S, ∀ gs, g.says = .setup gs → p ≠ gs.guardian.ed25519)
     (notDevice : ∀ g ∈ S, ∀ gs, g.says = .setup gs → p ∉ gs.devices ∧ p ≠ gs.avenPeer)
-    (notSignedIn : ∀ s ∈ S, s.says ≠ .signIn p) :
+    (notSignedIn : ∀ s ∈ S, s.says ≠ .signIn p)
+    (notOwnerChanged : ∀ u ∈ S, ∀ x os th, u.says = .setOwners x os th → Owner.key p ∉ os) :
     (∀ vault, passkeyOf (view pinned S) vault p = false) ∧
-      (∀ ks, byAdmin (view pinned S) (p :: ks) = true → byAdmin (view pinned S) ks = true) ∧
+      (∀ s ks, (gen (view pinned S) fun g => ((view pinned S).treeAt g s).approves
+          ((view pinned S).treeAt g s).threshold g.coop stmtDigest ((p :: ks).map (⟨·, stmtDigest⟩))) = true →
+        (gen (view pinned S) fun g => ((view pinned S).treeAt g s).approves
+          ((view pinned S).treeAt g s).threshold g.coop stmtDigest (ks.map (⟨·, stmtDigest⟩))) = true) ∧
       confirmer (view pinned S) p = false := by
   -- in a pinned genesis's tree, p owns no vault: its owner keys are the claimant's passkey, which has an owner, and
   -- MaiaCityGuardian's
@@ -1673,10 +2189,26 @@ theorem ownerless_only_adds_owner {p : String}
     simp only [Setup.tree, Tree.ofSetup, List.mem_cons, List.not_mem_nil, or_false] at mv
     rcases mv with rfl | rfl | rfl | rfl <;>
       simp [Vault.ownerKeys, Owner.key?, List.filterMap_map, Function.comp_def, ps, pg]
-  refine ⟨fun _ => ownerless_signs_in_nothing pinned noOwner noClaimOwner noEpoch, fun ks h => ?_, ?_⟩
+  refine ⟨fun _ => ownerless_signs_in_nothing pinned noOwner noClaimOwner noEpoch, fun s ks h => ?_, ?_⟩
   · obtain ⟨g, mg, cg, n, gs, e, c, ap⟩ := gen_elim pinned h
+    have np : ∀ v ∈ ((view pinned S).treeAt gs s).vaults, p ∉ v.ownerKeys := by
+      intro v mv
+      obtain ⟨v₀, m₀, hv⟩ := withOwners_vault mv
+      rcases hv with ⟨_, hv⟩ | ⟨os, th, ho, rfl⟩
+      · rw [hv]
+        exact notKey g mg gs e c v₀ m₀
+      · intro mk
+        simp only [Vault.ownerKeys, List.mem_filterMap] at mk
+        obtain ⟨o, mo, hk⟩ := mk
+        cases o with
+        | key k' =>
+          simp only [Owner.key?, Option.some.injEq] at hk
+          subst hk
+          obtain ⟨u, mu, hu, _⟩ := owners_some pinned ho
+          exact notOwnerChanged u mu _ os th hu mo
+        | vault _ => simp [Owner.key?] at hk
     simp only [List.map_cons, Tree.approves] at ap
-    exact gen_intro pinned mg cg n e c (approvesF_extra (notKey g mg gs e c) ap)
+    exact gen_intro pinned mg cg n e c (approvesF_extra np ap)
   · cases h : confirmer (view pinned S) p
     · rfl
     · exfalso
@@ -1780,39 +2312,65 @@ theorem settle_door {d : String} :
 
 /-! ### Rule 15: the admin is a vault -/
 
-/-- **`admin_by_owners`:** an admin act counts only with Maia City's owners' approval, through the vaults that own it,
-resting on a signature by an owner key above the coop: the claimant's passkey or MaiaCityGuardian's, never a device's
-key (rule 15, A28). -/
-theorem admin_by_owners {ks : List String} (h : byAdmin (view pinned S) ks = true) :
-    ∃ g ∈ S, counted pinned S g = true ∧ g.name = pinned ∧ ∃ gs, g.says = .setup gs ∧ gs.consented = true ∧
-      gs.tree.approves gs.tree.threshold gs.coop stmtDigest (ks.map (⟨·, stmtDigest⟩)) = true ∧
-      ∃ k ∈ ks, gs.tree.KeyAbove k gs.coop ∧ (k = gs.passkey.spki ∨ k = gs.guardian.ed25519) := by
-  obtain ⟨g, mg, cg, n, gs, e, c, ap⟩ := gen_elim pinned h
-  have pos : ∀ x, 1 ≤ gs.tree.threshold x := by
-    simp only [Setup.consented, Bool.and_eq_true, decide_eq_true_eq] at c
-    exact gs.threshold_pos c.1.1.1.1
-  obtain ⟨k', ka, mk⟩ := Tree.approvesF_signed pos ap
-  simp only [List.mem_map, Sig.mk.injEq, and_true] at mk
-  obtain ⟨k, mk, rfl⟩ := mk
-  exact ⟨g, mg, cg, n, gs, e, c, ap, k, mk, ka, Setup.keyAbove ka⟩
+/-- In the setup's tree with owner changes in force, every threshold is at least one. -/
+theorem threshold_withOwners_pos (g : Setup) (hc : 1 ≤ g.coopThreshold) (ch : String → Option (List Owner × Nat))
+    (hch : ∀ y o, ch y = some o → 1 ≤ o.2) (x : String) : 1 ≤ (g.tree.withOwners ch).threshold x := by
+  unfold Tree.threshold
+  rw [Tree.get?_withOwners]
+  cases hg : g.tree.get? x with
+  | none => simp
+  | some v₀ =>
+    simp only [Option.map_some, Option.getD_some]
+    split
+    · rename_i os th hcv
+      exact hch _ _ hcv
+    · have := g.threshold_pos hc x
+      simpa [Tree.threshold, hg] using this
 
-/-- **`device_not_admin`:** a key that is neither the pinned genesis's passkey nor MaiaCityGuardian's, a device's
-among them, never signs an admin act. -/
-theorem device_not_admin {ks : List String}
-    (no : ∀ k ∈ ks, ∀ g ∈ S, ∀ gs, g.says = .setup gs → k ≠ gs.passkey.spki ∧ k ≠ gs.guardian.ed25519) :
-    byAdmin (view pinned S) ks = false := by
-  cases h : byAdmin (view pinned S) ks
+/-- **`admin_by_owners`:** an admin act counts only with Maia City's owners' approval in force in its own past,
+through the vaults that own it, resting on a signature by an owner key above the coop: the claimant's passkey,
+MaiaCityGuardian's, or a key an approved owner change named, never a device's key (rule 15, A28, A191). -/
+theorem admin_by_owners {s : TreeStatement} (h : byAdmin (view pinned S) s = true) :
+    ∃ g ∈ S, counted pinned S g = true ∧ g.name = pinned ∧ ∃ gs, g.says = .setup gs ∧ gs.consented = true ∧
+      approvedIn ((view pinned S).treeAt gs s) gs.coop s = true ∧
+      ∃ k ∈ s.keys, ((view pinned S).treeAt gs s).KeyAbove k gs.coop ∧
+        (k = gs.passkey.spki ∨ k = gs.guardian.ed25519 ∨
+          ∃ u ∈ S, ∃ x os th, u.says = .setOwners x os th ∧ Owner.key k ∈ os) := by
+  obtain ⟨g, mg, cg, n, gs, e, c, ap⟩ := gen_elim pinned (byAdmin_gen h)
+  have hc : 1 ≤ gs.coopThreshold := by
+    have c' := c
+    simp only [Setup.consented, Bool.and_eq_true, decide_eq_true_eq] at c'
+    exact c'.1.1.1.1
+  have pos := threshold_withOwners_pos gs hc ((view pinned S).owners s) fun y o ho => by obtain ⟨_, _, _, h⟩ := owners_some pinned ho; exact h
+  obtain ⟨k', ka, mk⟩ := Tree.approvesF_signed pos ap
+  simp only [TreeStatement.sigs, List.mem_map, Sig.mk.injEq, and_true] at mk
+  obtain ⟨k, mk, rfl⟩ := mk
+  refine ⟨g, mg, cg, n, gs, e, c, ap, k, mk, ka, ?_⟩
+  rcases keyAbove_withOwners ka with h | h | ⟨x, os, th, ho, mo⟩
+  · exact .inl h
+  · exact .inr (.inl h)
+  · obtain ⟨u, mu, hu, _⟩ := owners_some pinned ho
+    exact .inr (.inr ⟨u, mu, x, os, th, hu, mo⟩)
+
+/-- **`device_not_admin`:** a key that is neither the setup's passkey nor MaiaCityGuardian's, nor named by an owner
+change, a device's among them, never signs an admin act. -/
+theorem device_not_admin {s : TreeStatement}
+    (no : ∀ k ∈ s.keys, ∀ g ∈ S, ∀ gs, g.says = .setup gs → k ≠ gs.passkey.spki ∧ k ≠ gs.guardian.ed25519)
+    (noChange : ∀ k ∈ s.keys, ∀ u ∈ S, ∀ x os th, u.says = .setOwners x os th → Owner.key k ∉ os) :
+    byAdmin (view pinned S) s = false := by
+  cases h : byAdmin (view pinned S) s
   · rfl
   · obtain ⟨g, mg, _, _, gs, e, _, _, k, mk, _, ko⟩ := admin_by_owners pinned h
-    rcases ko with ko | ko
+    rcases ko with ko | ko | ⟨u, mu, x, os, th, hu, mo⟩
     · exact absurd ko (no k mk g mg gs e).1
     · exact absurd ko (no k mk g mg gs e).2
+    · exact (noChange k mk u mu x os th hu mo).elim
 
 /-- A list's entry stands only through an admin act's add that saw every remove of it. -/
 theorem settle_listed {add remove : String → TreeSays} {d : String}
     (h : listed (view pinned S) add remove d = true) :
-    ∃ a ∈ S, counted pinned S a = true ∧ byAdmin (view pinned S) a.keys = true ∧ a.says = add d ∧
-      ∀ r ∈ S, counted pinned S r = true → byAdmin (view pinned S) r.keys = true → r.says = remove d →
+    ∃ a ∈ S, counted pinned S a = true ∧ byAdmin (view pinned S) a = true ∧ a.says = add d ∧
+      ∀ r ∈ S, counted pinned S r = true → byAdmin (view pinned S) r = true → r.says = remove d →
         Before TreeStatement.name S a r := by
   obtain ⟨a, ma, ca, ha⟩ := (view_any pinned).mp h
   simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at ha
@@ -1822,7 +2380,7 @@ theorem settle_listed {add remove : String → TreeSays} {d : String}
     cases e : (view pinned S).past a r
     · rfl
     · exact absurd ((view_past pinned).mp e).2.2 np
-  have : (view pinned S).any (fun r => byAdmin (view pinned S) r.keys && r.says == remove d &&
+  have : (view pinned S).any (fun r => byAdmin (view pinned S) r && r.says == remove d &&
       !(view pinned S).past a r) = true :=
     (view_any pinned).mpr ⟨r, mr, cr, by simp [ar, sr, pf]⟩
   rw [this] at none

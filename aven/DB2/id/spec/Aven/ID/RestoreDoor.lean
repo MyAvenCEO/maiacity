@@ -83,6 +83,17 @@ theorem vpast (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c
   exact ⟨fun ⟨⟨ma, _⟩, ⟨mb, _⟩, p⟩ => ⟨ma, mb, p⟩,
     fun ⟨ma, mb, p⟩ => ⟨⟨ma, migrate_counted hc signed named a ma⟩, ⟨mb, migrate_counted hc signed named b mb⟩, p⟩⟩
 
+/-- No migrated statement changes owners: production had no owner changes. -/
+theorem migrate_no_owners (hc : r.founding.claim = some c) :
+    ∀ u ∈ migrate r g, ∀ x os th, u.says ≠ .setOwners x os th := by
+  intro u mu x os th
+  rw [migrate_eq hc] at mu
+  rcases List.mem_cons.mp mu with rfl | mu
+  · simp [genesisStatement]
+  · obtain ⟨k, hk, rfl⟩ := mem_steps.mp mu
+    generalize (refOrder r)[k] = o
+    cases o <;> simp [step, Old.says]
+
 /-- No migrated old statement is a genesis: they say what the old statements said. -/
 theorem step_not_genesis {k : Nat} {o : Old} {gs : Setup} : (step r c k o).says ≠ .setup gs := by
   cases o <;> simp [step, Old.says]
@@ -294,7 +305,9 @@ theorem claimOk_join (hc : r.founding.claim = some c) (signed : (genesisOf r.fou
   simp only [Bool.and_eq_true, beq_iff_eq]
   refine ⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩
   · simp [step, tn]
-  · simp only [byAdmin, gen_eq hc signed named, step, Old.says, cl.invites_admin i mi]
+  · rw [byAdmin_plain genesisName (migrate_no_owners hc)]
+    simp only [gen_eq hc signed named, approvedIn, TreeStatement.sigs, TreeStatement.keys, step, Old.says,
+      cl.invites_admin i mi, List.map_cons, List.map_nil]
     exact Setup.approves_claimant (genesisOf r.founding c g) (by simp [genesisOf]) rfl stmtDigest
   · simp [step, Old.says, ki]
   · refine (vpast hc signed named).mpr ⟨by simpa [step, Old.says] using mC, mT, .tip mT ?_⟩
