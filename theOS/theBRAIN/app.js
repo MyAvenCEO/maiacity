@@ -1,5 +1,5 @@
 // theID, told as stories in text. Each slide is one moment; {word} marks a term the moment introduces, and a slide may
-// show a small JSON example. The hash is #<story>-<n>.
+// show a small JSON example and a flow of steps. The hash is #<story>-<n>.
 const $ = (s) => document.querySelector(s);
 const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 const rich = (t) => esc(t).replace(/\{([^}]+)\}/g, '<b>$1</b>');
@@ -33,7 +33,9 @@ function render() {
   $('#list').hidden = !s.list;
   $('#code').innerHTML = s.code ? json(s.code) : '';
   $('#code').hidden = !s.code;
-  card.classList.toggle('has-code', Boolean(s.code));
+  $('#flow').innerHTML = (s.flow || []).map((f) => `<span>${esc(f)}</span>`).join('<i>→</i>');
+  $('#flow').hidden = !s.flow;
+  card.classList.toggle('has-code', Boolean(s.code || s.flow));
   document.querySelectorAll('#stories button').forEach((b) => b.classList.toggle('on', b.dataset.story === story.id));
   const fresh = new Set(termsOf(s));
   const known = [...new Set(deck.slice(0, at + 1).flatMap(termsOf))];

@@ -1,4 +1,4 @@
 { "stories": [
-  { "id": "groups", "title": "1 · Owning and sharing", "file": "groups.json" },
-  { "id": "caps", "title": "2 · Groups and caps", "file": "caps.json" }
+  { "id": "own", "title": "1 · Owning and sharing", "file": "own.json" },
+  { "id": "keys", "title": "2 · Under the hood", "file": "keys.json" }
 ] }

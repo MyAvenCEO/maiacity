@@ -85,7 +85,11 @@ body {
 .card { display: grid; grid-template-columns: minmax(0, 1fr); align-content: center; }
 .card.has-code { grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); column-gap: 40px; }
 .card > * { grid-column: 1; }
-.card .code { grid-column: 2; grid-row: 1 / span 4; align-self: center; }
+.card .side { grid-column: 2; grid-row: 1 / span 4; align-self: center; display: grid; gap: 16px; min-width: 0; }
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.flow span { font: 500 13px var(--mono); padding: 8px 12px; border-radius: 6px; background: var(--ochre); color: var(--ink); }
+.flow i { font-style: normal; color: var(--ink-soft); }
+.side:has(> :not([hidden])) { display: grid; }
 .card.has-code .title { font-size: clamp(26px, 3.4vw, 38px); }
 .card.has-code .text { font-size: clamp(16px, 1.6vw, 18px); }
 .code {
@@ -97,5 +101,5 @@ body {
 .code s { text-decoration: none; color: #c9876a; }
 @media (max-width: 820px) {
   .card.has-code { grid-template-columns: minmax(0, 1fr); }
-  .card .code { grid-column: 1; grid-row: auto; }
+  .card .side { grid-column: 1; grid-row: auto; }
 }
