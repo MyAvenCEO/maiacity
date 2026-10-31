@@ -181,6 +181,7 @@ impl Members {
                 kind: Kind::Person,
                 owners: self.network.founders(&j.passkey),
                 threshold: 1,
+                key: None,
             });
             out.push(Vault {
                 id: j.device.clone(),
@@ -188,6 +189,7 @@ impl Members {
                 kind: Kind::Device,
                 owners: vec![Owner::Vault(j.person.clone())],
                 threshold: 1,
+                key: Some(j.device.clone()),
             });
         }
         for (k, s) in self.sign_ins.iter().enumerate() {
@@ -202,6 +204,7 @@ impl Members {
                 kind: Kind::Device,
                 owners: vec![Owner::Vault(person.clone())],
                 threshold: 1,
+                key: Some(s.sign_in.device.clone()),
             });
         }
         out

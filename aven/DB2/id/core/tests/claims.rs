@@ -33,7 +33,11 @@ fn tree(n: &Network) -> Value {
         .iter()
         .map(|v| {
             let owners: Vec<String> = v.owners.iter().map(ToString::to_string).collect();
-            json!({ "id": v.id, "name": v.name, "kind": v.kind.as_str(), "owners": owners, "threshold": v.threshold })
+            let mut vault = json!({ "id": v.id, "name": v.name, "kind": v.kind.as_str(), "owners": owners, "threshold": v.threshold });
+            if let Some(key) = &v.key {
+                vault["key"] = json!(key);
+            }
+            vault
         })
         .collect();
     json!({ "keys": keys, "vaults": vaults })

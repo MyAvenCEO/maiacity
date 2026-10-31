@@ -7,7 +7,7 @@ mod common;
 use aven_core::{Call, CoreOp, DocId, Facts, Hash, Target, Value, blake3};
 use aven_id::caps::{
     Cap, DeviceCap, Reader, Reading, Sig, World, confirm_call, confirm_cap, confirm_op,
-    grant_allows, sign_in_op, vault_id,
+    grant_allows, sign_in_op,
 };
 use common::caps::{Context, Names};
 use common::{hex, vectors};
@@ -47,8 +47,8 @@ fn the_confirm_cap_is_the_models() {
         vec![Sig::new("alice-owner", "confirm-aven")],
     );
     assert_eq!(ours, cap);
-    assert_eq!(hex(&ours.bytes()), raw["cbor"]);
-    assert_eq!(ours.digest().text(), raw["hash"]);
+    assert_eq!(hex(&ours.named().bytes()), raw["cbor"]);
+    assert_eq!(ours.named().digest().text(), raw["hash"]);
     // a coop issues it by its owners' quorum, no device signing (A28)
     ctx.with(|x| assert_eq!(x.chain_error(std::slice::from_ref(&ours)), None));
     assert_eq!(ours.grant[0].op, confirm_op());
@@ -68,7 +68,7 @@ proptest! {
         let ops = [confirm_op(), sign_in_op(), CoreOp::Put.id(), CoreOp::Read.id()];
         let call = Call { op: ops[op], params: vec![("claim".into(), Value::Bytes(claim.to_vec()))] };
         let doc = [tree, chat, DocId(blake3(b"other"))][on];
-        let f = Facts { id: doc, vault: vault_id("maia-city"), r#type: DocId(blake3(b"t")) };
+        let f = Facts { id: doc, vault: aven_id::cast_name("maia-city"), r#type: DocId(blake3(b"t")) };
         let gov = |_: &Hash, _: &Hash| false;
         let w = World { gov: &gov, spawned: &never, lists: &never };
         if grant_allows(&w, &cap.grant, &f, &call) {
@@ -100,7 +100,7 @@ fn a_member_only_by_a_confirm() {
     let mut docs = ctx.docs.clone();
     docs.push(Facts {
         id: tree,
-        vault: vault_id("maia-city"),
+        vault: aven_id::cast_name("maia-city"),
         r#type: DocId(blake3(b"tree/1")),
     });
     let ctx = Context { docs, ..ctx };
@@ -198,13 +198,13 @@ fn members_are_the_models() {
             let cap = member_cap(d("tree"), d("chat"), d("message"), vault);
             assert_eq!(cap, names.cap(&v["expected"]["cap"]), "{}", v["name"]);
             assert_eq!(
-                hex(&cap.bytes()),
+                hex(&cap.named().bytes()),
                 v["expected"]["cap"]["cbor"],
                 "{}",
                 v["name"]
             );
             assert_eq!(
-                cap.digest().text(),
+                cap.named().digest().text(),
                 v["expected"]["cap"]["hash"],
                 "{}",
                 v["name"]

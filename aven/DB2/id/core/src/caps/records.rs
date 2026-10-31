@@ -55,7 +55,7 @@ fn same(a: &Value, b: &Value) -> bool {
 /// A cap Record: a cap and its signatures.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CapRecord {
-    pub cap: Cap,
+    pub cap: Cap<Hash>,
     pub sigs: Vec<Sig>,
 }
 

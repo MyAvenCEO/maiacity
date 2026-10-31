@@ -90,12 +90,18 @@ impl Tree {
                     .ok_or_else(|| CastError::Format(format!("{id}'s threshold is not a number")))?
                     as usize,
             };
+            // a device names its key (A211); a tree written before that names none, and a device's key was its id
+            let key = match vault.get("key") {
+                None | Some(Value::Null) => (kind == Kind::Device).then(|| id.clone()),
+                Some(k) => Some(text(k, &format!("{id}'s key"))?.to_string()),
+            };
             vaults.push(Vault {
                 id: id.clone(),
                 name,
                 kind,
                 owners,
                 threshold,
+                key,
             });
         }
         Tree::new(keys, vaults).map_err(CastError::Invalid)
@@ -114,7 +120,11 @@ impl Tree {
             .iter()
             .map(|v| {
                 let owners: Vec<String> = v.owners.iter().map(ToString::to_string).collect();
-                (v.id.clone(), serde_json::json!({ "name": v.name, "kind": v.kind.as_str(), "owners": owners }))
+                let mut vault = serde_json::json!({ "name": v.name, "kind": v.kind.as_str(), "owners": owners });
+                if let Some(key) = &v.key {
+                    vault["key"] = Value::from(key.as_str());
+                }
+                (v.id.clone(), vault)
             })
             .collect();
         serde_json::json!({ "keys": keys, "vaults": vaults }).to_string()

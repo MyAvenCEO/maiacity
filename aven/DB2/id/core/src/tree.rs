@@ -88,6 +88,8 @@ pub struct Vault {
     pub owners: Vec<Owner>,
     /// How many of its owners approve for it (D14, A28): k of n, at least one.
     pub threshold: usize,
+    /// The key a device's vault names, the one its device signs with (A211); no other vault names one.
+    pub key: Option<String>,
 }
 
 impl Vault {
@@ -129,10 +131,10 @@ pub enum Invalid {
     DeviceOwners(String),
     /// A device's vault owns another vault.
     DeviceOwns { device: String, vault: String },
-    /// A device has no key of its own: none with its id.
+    /// A device's vault names no key the tree knows (A211).
     DeviceKeyless(String),
     /// A device's key owns a vault.
-    DeviceKeyOwns { device: String, vault: String },
+    DeviceKeyOwns { key: String, vault: String },
     /// A vault's name is none: empty, too long, or with a control character.
     Name(String),
     /// A coop is owned by something else than a person's or a coop's vault.
@@ -156,8 +158,8 @@ impl fmt::Display for Invalid {
             }
             Invalid::DeviceOwns { device, vault } => write!(f, "the device {device} owns {vault}"),
             Invalid::DeviceKeyless(id) => write!(f, "the device {id} has no key"),
-            Invalid::DeviceKeyOwns { device, vault } => {
-                write!(f, "the device {device}'s key owns {vault}")
+            Invalid::DeviceKeyOwns { key, vault } => {
+                write!(f, "the device key {key} owns {vault}")
             }
             Invalid::Name(id) => write!(
                 f,
@@ -192,8 +194,8 @@ pub struct Tree {
 
 impl Tree {
     /// A tree, if it is well formed (`Aven.ID.Tree.WF`): each id once; every vault named and owned, by known keys and
-    /// vaults; a device's vault owned by exactly one vault and owning nothing, with its own key, the key with its id,
-    /// which owns nothing either; a coop owned by people's or coops' vaults only, holding no devices; and no vault
+    /// vaults; a device's vault owned by exactly one vault and owning nothing, naming its own key (A211), a key the
+    /// tree knows, which owns nothing either; a coop owned by people's or coops' vaults only, holding no devices; and no vault
     /// above itself. The first rule broken is named in `Aven.ID.Tree.check`'s order.
     pub fn new(keys: Vec<(String, String)>, vaults: Vec<Vault>) -> Result<Tree, Invalid> {
         let mut index = HashMap::new();
@@ -233,16 +235,21 @@ impl Tree {
                     });
                 }
             }
-            if vault.kind == Kind::Device && !keys.iter().any(|(id, _)| *id == vault.id) {
+            if vault.kind == Kind::Device
+                && !vault
+                    .key
+                    .as_ref()
+                    .is_some_and(|k| keys.iter().any(|(id, _)| id == k))
+            {
                 return Err(Invalid::DeviceKeyless(vault.id.clone()));
             }
             for key in vault.owner_keys() {
-                if index
-                    .get(key)
-                    .is_some_and(|&at| vaults[at].kind == Kind::Device)
+                if vaults
+                    .iter()
+                    .any(|d| d.kind == Kind::Device && d.key.as_deref() == Some(key))
                 {
                     return Err(Invalid::DeviceKeyOwns {
-                        device: key.to_string(),
+                        key: key.to_string(),
                         vault: vault.id.clone(),
                     });
                 }
@@ -311,7 +318,12 @@ impl Tree {
         self.vault(id).map(|vault| vault.kind)
     }
 
-    /// The public half of a key, in hex. A device's key has its device vault's id.
+    /// The key a device's vault names (A211).
+    pub fn device_key(&self, device: &str) -> Option<&str> {
+        self.vault(device).and_then(|v| v.key.as_deref())
+    }
+
+    /// The public half of a key, in hex.
     pub fn key(&self, id: &str) -> Option<&str> {
         self.keys
             .iter()

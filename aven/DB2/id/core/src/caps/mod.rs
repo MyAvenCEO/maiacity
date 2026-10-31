@@ -19,7 +19,7 @@ pub use approve::Sig;
 pub use authority::Authority;
 pub use authorized::{DeviceCap, Path, Reader, Reading, Refusal};
 pub use cbor::CAP_LABEL;
-pub use chain::{Cap, ChainError, Ctx, Role, authority_over_vault, issued, vault_id};
+pub use chain::{Cap, ChainError, Ctx, Role, authority_over_vault, issued};
 pub use conditions::{Branches, Conditions, Form, History, Holder, MAIN};
 pub use line::{Grant, Line, World, grant_allows, grant_reaches, grant_within};
 pub use member::{

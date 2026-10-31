@@ -113,8 +113,8 @@ impl Conditions {
 /// `group`), or the public (every member of the network, D15). Nothing else holds one: a bearer key, a ticket's
 /// one-time key or a fetch key, proves a condition of a cap and never holds it (rule 15, A42).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Holder {
-    Vault(String),
+pub enum Holder<V = String> {
+    Vault(V),
     Group(DocId),
     Public,
 }
