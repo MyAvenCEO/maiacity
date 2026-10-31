@@ -566,6 +566,80 @@ pub async fn device_secret(candidate: String) -> Result<String, JsError> {
     Ok(candidate)
 }
 
+std::thread_local! {
+    /// The passkey's owner and seal keys, for this session only: derived again at each ceremony, never stored (A42).
+    static OWNER: RefCell<Option<(aven_id::HybridKey, aven_id::SealKey)>> = const { RefCell::new(None) };
+}
+
+/// The passkey's PRF output for `vault`'s owner at `epoch`, straight from the ceremony (rule 13): the Peer-Light derives
+/// the owner key and the seal key from it, keeps them in memory for this session, wipes the output, and keeps only the
+/// public halves in its store, under the ref `owner-keys`, until the tree's ops carry them. Gives back `{owner, seal}`,
+/// hex: never a secret.
+#[wasm_bindgen(js_name = prfKeys)]
+pub async fn prf_keys(vault: String, epoch: u32, mut output: Vec<u8>) -> Result<JsValue, JsError> {
+    use aven_db_store::RefName;
+    let derived = acts::prf_derive(&mut output).map_err(|e| JsError::new(&e))?;
+    let kept = serde_json::json!({ "vault": vault, "epoch": epoch, "owner": derived.owner, "seal": derived.seal });
+    let (store, _) = store().await?;
+    let name = RefName::new("owner-keys").map_err(js)?;
+    let blob = store
+        .put(kept.to_string().into_bytes().into())
+        .await
+        .map_err(js)?;
+    let was = store.get_ref(&name).await.map_err(js)?;
+    store.set_ref(&name, was, blob).await.map_err(js)?;
+    OWNER.with(|o| *o.borrow_mut() = Some((derived.owner_key, derived.seal_key)));
+    Ok(object(&[
+        ("owner", derived.owner.into()),
+        ("seal", derived.seal.into()),
+    ]))
+}
+
+/// What the passkey's hybrid owner key signs, inside the Peer-Light: `bytes` (hex) in, the signature's Value's bytes
+/// (hex) out. Refused when no PRF ceremony ran in this session.
+#[wasm_bindgen(js_name = ownerSign)]
+pub fn owner_sign(bytes: String) -> Result<String, JsError> {
+    let msg = unhex(&bytes).ok_or_else(|| JsError::new("not hex"))?;
+    OWNER.with(|o| {
+        let held = o.borrow();
+        let (key, _) = held
+            .as_ref()
+            .ok_or_else(|| JsError::new("no passkey has opened this session"))?;
+        Ok(key
+            .sign(&msg)
+            .to_bytes()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect())
+    })
+}
+
+/// The public halves this browser keeps (`owner-keys`), or null.
+#[wasm_bindgen(js_name = ownerKeys)]
+pub async fn owner_keys() -> Result<JsValue, JsError> {
+    use aven_db_store::RefName;
+    let (store, _) = store().await?;
+    let name = RefName::new("owner-keys").map_err(js)?;
+    let Some(blob) = store.get_ref(&name).await.map_err(js)? else {
+        return Ok(JsValue::NULL);
+    };
+    let bytes = store
+        .get(&blob)
+        .await
+        .map_err(js)?
+        .ok_or_else(|| JsError::new("owner-keys points at a missing blob"))?;
+    Ok(String::from_utf8(bytes.to_vec()).map_err(js)?.into())
+}
+
+fn unhex(s: &str) -> Option<Vec<u8>> {
+    if !s.len().is_multiple_of(2) || !s.is_ascii() {
+        return None;
+    }
+    (0..s.len() / 2)
+        .map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).ok())
+        .collect()
+}
+
 /// Starts the Peer-Light `name` with its secret seed (hex), linking through `relay` to the Aven Peer (`aven_key`,
 /// called `aven_name` in the timeline), and tells `notes` every event. Without a name it goes by its key's device id.
 /// In the box's cast, `members` lists the cast's members (`name=key,…`); without them it learns the members from the

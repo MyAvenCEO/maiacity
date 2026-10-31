@@ -98,6 +98,11 @@ export const withdrawText = ask('withdrawText');
 export const joinText = ask('joinText');
 export const oneTimePublic = ask('oneTimePublic');
 export const signJoin = ask('signJoin');
+// the passkey's PRF step (peer/light/src/lib.rs, `prfKeys`): only public halves and signatures come back
+export const prfInput = ask('prfInput');
+export const prfKeys = ask('prfKeys');
+export const ownerSign = ask('ownerSign');
+export const ownerKeys = ask('ownerKeys');
 // a file shared in the chat: its chunks into this origin's store, then its index and its line (room.svelte.js)
 export const putChunk = ask('put_chunk');
 export const shareFile = ask('share');

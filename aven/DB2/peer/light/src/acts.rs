@@ -102,43 +102,36 @@ pub fn sign_join(secret: &str, text: &str) -> Result<String, JsError> {
     id::sign_join(secret, text).ok_or_else(|| JsError::new("a one-time secret is 64 hex digits"))
 }
 
-/// The PRF step's input for a vault's owner at an epoch (`Aven.ID.KeyFormats.prfInput`), as bytes for the page's
-/// WebAuthn `prf.eval.first`. The browser hashes it into the authenticator's salt itself.
+/// The PRF step's input for a vault's owner at an epoch (`Aven.ID.KeyFormats.prfInput`), hex, for the page's WebAuthn
+/// `prf.eval.first`. The browser hashes it into the authenticator's salt itself.
 #[wasm_bindgen(js_name = prfInput)]
-pub fn prf_input(vault: &str, epoch: u32) -> Vec<u8> {
-    id::prf_input(vault, epoch.into())
+pub fn prf_input(vault: &str, epoch: u32) -> String {
+    hex(&id::prf_input(vault, epoch.into()))
 }
 
-std::thread_local! {
-    /// The passkey's seal key, for this session only: derived again at each ceremony, never stored (A42).
-    static SEAL: std::cell::RefCell<Option<id::SealKey>> = const { std::cell::RefCell::new(None) };
+fn hex(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
-/// The public halves a PRF output derives: the hybrid owner key's (its Value's bytes, hex) and the seal key's (X-Wing,
-/// hex). `output` is wiped before this returns, whatever it returns.
-pub fn prf_public(output: &mut [u8]) -> Result<(String, String, id::SealKey), String> {
+/// What a PRF output derives: the owner key and the seal key, and their public halves (the owner key's Value's bytes,
+/// and X-Wing's), hex. `output` is wiped before this returns, whatever it returns.
+pub struct Derived {
+    pub owner: String,
+    pub seal: String,
+    pub owner_key: id::HybridKey,
+    pub seal_key: id::SealKey,
+}
+
+pub fn prf_derive(output: &mut [u8]) -> Result<Derived, String> {
     use zeroize::Zeroize;
     let taken = <&mut [u8; 32]>::try_from(&mut *output).map(id::Secret::take);
     output.zeroize();
     let prf = id::PrfOutput::new(taken.map_err(|_| "a PRF output is 32 bytes".to_string())?);
-    let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
-    let seal = prf.seal_key();
-    Ok((
-        hex(&prf.owner_key().public().to_bytes()),
-        hex(&seal.public().to_bytes()),
-        seal,
-    ))
-}
-
-/// Takes a passkey's PRF output (rule 13: it goes straight into the Peer-Light, which derives from it and keeps the
-/// seal key in memory for this session), and gives back only the public halves: `{owner, seal}`, hex.
-#[wasm_bindgen(js_name = prfKeys)]
-pub fn prf_keys(mut output: Vec<u8>) -> Result<JsValue, JsError> {
-    let (owner, seal, key) = prf_public(&mut output).map_err(|e| JsError::new(&e))?;
-    SEAL.with(|s| *s.borrow_mut() = Some(key));
-    let out = js_sys::Object::new();
-    js_sys::Reflect::set(&out, &"owner".into(), &owner.into())
-        .map_err(|_| JsError::new("owner"))?;
-    js_sys::Reflect::set(&out, &"seal".into(), &seal.into()).map_err(|_| JsError::new("seal"))?;
-    Ok(out.into())
+    let (owner_key, seal_key) = (prf.owner_key(), prf.seal_key());
+    Ok(Derived {
+        owner: hex(&owner_key.public().to_bytes()),
+        seal: hex(&seal_key.public().to_bytes()),
+        owner_key,
+        seal_key,
+    })
 }

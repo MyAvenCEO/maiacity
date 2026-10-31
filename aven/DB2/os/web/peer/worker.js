@@ -89,6 +89,8 @@ const acts = new Set(['challenge', 'claimText', 'signInText', 'deviceId', 'passk
 const running = new Set(['put_chunk', 'share']);
 for (const fn of running) acts.add(fn);
 for (const fn of ['inviteId', 'inviteText', 'withdrawText', 'joinText', 'oneTimePublic', 'signJoin']) acts.add(fn);
+// the passkey's PRF step: its input, its output straight into the wasm, and what the owner key signs there (rule 13)
+for (const fn of ['prfInput', 'prfKeys', 'ownerSign', 'ownerKeys']) acts.add(fn);
 async function answer(port, { id, fn, args }) {
 	const reply = { t: Date.now(), peer: 'page', event: 'answer', id };
 	try {

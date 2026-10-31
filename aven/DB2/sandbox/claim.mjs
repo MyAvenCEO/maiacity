@@ -46,10 +46,16 @@ async function open(name) {
 	const cdp = await context.newCDPSession(page);
 	await cdp.send('WebAuthn.enable');
 	const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', {
-		options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true },
+		options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, hasPrf: true, isUserVerified: true, automaticPresenceSimulation: true },
 	});
 	await page.goto(`${origin}/`);
 	return { context, page, cdp, authenticatorId };
+}
+
+// the owner and seal keys' public halves the page's Peer-Light keeps, or null (peer/light, `ownerKeys`)
+async function ownerKeys(page) {
+	const kept = await page.evaluate(async () => (await import('/id.svelte.js')).ownerKeys()).catch(() => null);
+	return kept ? JSON.parse(kept) : null;
 }
 
 // the view a page shows once the Aven Peer has spoken: claim, invite-only, or the dashboard of the vault it acts as
@@ -126,6 +132,11 @@ if (phase === 'claim') {
 	report.admin = await first.page.locator('[data-view="dashboard"]').first().getAttribute('data-account').catch(() => null);
 	if (!report.admin?.startsWith('person-')) problems.push(`the dashboard acts as ${report.admin}, not the admin's vault`);
 	await first.page.screenshot({ path: `${run}/claim-dashboard.png` });
+	// the claim's own assertion asked the passkey's PRF: its vault's keys are open on this browser, so no "open your
+	// vault" is offered, and the Peer-Light keeps the owner and seal keys' public halves (id/caps, "Passkeys and the PRF step")
+	if (await first.page.getByTestId('open-vault').count()) problems.push('after the claim the vault was not opened by the passkey\'s PRF');
+	report.ownerKeys = await ownerKeys(first.page);
+	if (!report.ownerKeys?.owner || !report.ownerKeys?.seal) problems.push('the claiming browser keeps no owner and seal public halves');
 	const claimed = network(since);
 	if (!claimed?.claimed || devices(claimed) !== 2) problems.push(`after the claim the tree has ${devices(claimed)} devices, not 2`);
 	// the admin's vault is owned by its passkey and by MaiaCityGuardian, the box's test one
@@ -185,6 +196,18 @@ if (phase === 'claim') {
 	report.signInMs = Date.now() - signedAt;
 	const signedIn = await second.page.locator('[data-view="dashboard"]').first().getAttribute('data-account').catch(() => null);
 	if (signedIn !== report.admin) problems.push(`the second browser acts as ${signedIn}, not ${report.admin}`);
+	// a new browser opens its vault with the passkey alone: a second tap, once it knows the vault, asks the PRF; the same
+	// passkey derives the same owner and seal keys there
+	const opener = second.page.getByTestId('open-vault');
+	if (!(await opener.count())) problems.push('a signed-in new browser offers no "open your vault"');
+	else {
+		await opener.getByRole('button').click();
+		await opener.waitFor({ state: 'detached', timeout: 10_000 }).catch(() => problems.push('the second tap did not open the vault'));
+	}
+	await second.page.screenshot({ path: `${run}/claim-opened.png` });
+	const secondKeys = await ownerKeys(second.page);
+	if (secondKeys?.owner !== report.ownerKeys?.owner || secondKeys?.seal !== report.ownerKeys?.seal)
+		problems.push('the same passkey derived other owner or seal keys on the second browser');
 	await wait(300);
 	report.tree = network(since)?.tree;
 	if (devices(network()) !== 3) problems.push(`after the sign-in the tree has ${devices(network())} devices, not 3`);

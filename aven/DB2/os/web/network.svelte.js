@@ -3,7 +3,20 @@
 // its OPFS (peer/worker.js), and hears from the Aven Peer whether the network is claimed and, once this browser is
 // one of its devices, its tree, whose views the Peer-Light pushes (id.svelte.js). The claim and the sign-in are WebAuthn ceremonies here, on the page, since a worker
 // has no `navigator.credentials`; their statements go to the Aven Peer through the worker.
-import { askThrough, challenge, claimText, deviceId, hearViews, passkeyId, personId, signInText, tree, validPersonName } from './id.svelte.js';
+import {
+	askThrough,
+	challenge,
+	claimText,
+	deviceId,
+	hearViews,
+	passkeyId,
+	personId,
+	prfInput,
+	prfKeys,
+	signInText,
+	tree,
+	validPersonName,
+} from './id.svelte.js';
 import { openWorker } from './peer/open.js';
 import { live, take, timeline } from './peers.svelte.js';
 import { hear, speakThrough } from './room.svelte.js';
@@ -29,7 +42,21 @@ export const net = $state({
 	reset: false,
 	unreachable: null,
 	pending: false,
+	// the passkey's PRF step (id/caps/README.md, "Passkeys and the PRF step"): null until a ceremony has asked, then
+	// whether the passkey answered; `opened`: the vault whose owner and seal keys this session derived
+	prf: null,
+	opened: null,
 });
+
+// What sign-up does when the passkey has no PRF (Samuel's to decide): 'stop' says so plainly and makes no claim. It is
+// the one switch; no ES256-only owner path exists behind it.
+export const WITHOUT_PRF = 'stop';
+export const NO_PRF_MESSAGE = "this passkey provider can't open your vault on a new device; use one that can";
+
+// The owner's epoch, which the PRF input names. No register carries one yet (the tree's ops will): until then, 1.
+export const ownerEpoch = (_vault) => 1;
+
+const unhex = (s) => Uint8Array.from(s.match(/../g) ?? [], (b) => parseInt(b, 16));
 
 let port;
 // the start this page gives its Peer-Light, sent again with every statement (peer/worker.js)
@@ -114,14 +141,38 @@ export function runNetwork(config) {
 const hex = (buffer) => [...new Uint8Array(buffer)].map((b) => b.toString(16).padStart(2, '0')).join('');
 const unbase64url = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
 
-// The passkey signs a statement's text: its challenge is the text's SHA-256, so the assertion holds for nothing else
-export async function assertion(config, text, credential) {
+// The passkey signs a statement's text: its challenge is the text's SHA-256, so the assertion holds for nothing else.
+// Given a vault, the same ceremony asks the passkey's PRF for that vault's owner at its epoch.
+export async function assertion(config, text, credential, vault) {
 	const allowCredentials = credential ? [{ type: 'public-key', id: credential }] : [];
+	const extensions = vault ? { prf: { eval: { first: unhex(await prfInput(vault, ownerEpoch(vault))) } } } : undefined;
 	const got = await navigator.credentials.get({
-		publicKey: { challenge: unbase64url(await challenge(text)), rpId: config.rpId, userVerification: 'required', allowCredentials },
+		publicKey: { challenge: unbase64url(await challenge(text)), rpId: config.rpId, userVerification: 'required', allowCredentials, extensions },
 	});
 	const r = got.response;
-	return { clientData: new TextDecoder().decode(r.clientDataJSON), authData: hex(r.authenticatorData), signature: hex(r.signature) };
+	if (vault) await openWith(vault, got);
+	return {
+		clientData: new TextDecoder().decode(r.clientDataJSON),
+		authData: hex(r.authenticatorData),
+		signature: hex(r.signature),
+		credential: got.rawId,
+	};
+}
+
+// The PRF output goes straight into the Peer-Light, which derives the owner and seal keys and keeps only their public
+// halves; the page's copy is wiped at once. Whether the passkey answered is learnt here, never guessed (`net.prf`).
+async function openWith(vault, got) {
+	const first = got.getClientExtensionResults?.().prf?.results?.first;
+	net.prf = !!first;
+	if (!first) return;
+	const output = new Uint8Array(first);
+	try {
+		await prfKeys(vault, ownerEpoch(vault), output);
+		net.opened = vault;
+	} finally {
+		output.fill(0);
+		if (first instanceof ArrayBuffer) new Uint8Array(first).fill(0);
+	}
 }
 
 export function send(frame) {
@@ -148,8 +199,14 @@ export async function claim(config, { name, deliberate = false }) {
 			pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
 			authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
 			attestation: 'none',
+			extensions: { prf: {} },
 		},
 	});
+	// a platform that says outright it has no PRF stops here, before anything is signed
+	if (created.getClientExtensionResults?.().prf?.enabled === false) {
+		net.prf = false;
+		if (WITHOUT_PRF === 'stop') throw new Error(NO_PRF_MESSAGE);
+	}
 	if (created.response.getPublicKeyAlgorithm() !== -7) throw new Error('the passkey is not ES256');
 	const spki = hex(created.response.getPublicKey());
 	const statement = {
@@ -160,17 +217,45 @@ export async function claim(config, { name, deliberate = false }) {
 		device: { id: await deviceId(net.key), key: net.key },
 	};
 	const text = await claimText(statement.network, statement.person, name, statement.passkey.id, spki, statement.device.id, net.key);
-	statement.assertion = await assertion(config, text, created.rawId);
+	// the claim's own assertion asks the PRF too, for the vault it founds: no extra tap at sign-up
+	const { credential: _, ...signed } = await assertion(config, text, created.rawId, statement.person);
+	if (!net.prf && WITHOUT_PRF === 'stop') throw new Error(NO_PRF_MESSAGE);
+	statement.assertion = signed;
 	send({ frame: 'claim', statement: JSON.stringify(statement) });
 }
 
 // Sign in with your passkey, the admin's or a member's: this browser becomes one more device of the vault it owns. The
 // page asks for any passkey of this RP ID and needn't know whose: the Aven Peer finds the vault by the assertion
 // (Aven.ID.SignIn), and a passkey that owns none is refused with a word to ask for an invite.
+// A new browser doesn't know its vault before the passkey answers, so the PRF waits for a second tap: once the network
+// has taken the sign-in and told this device its tree, `openVault` asks the same passkey for its vault's PRF output.
+let signedInWith = null;
 export async function signIn(config) {
 	const statement = { network: config.network, device: { id: await deviceId(net.key), key: net.key } };
-	statement.assertion = await assertion(config, await signInText(config.network, statement.device.id, net.key));
+	const { credential, ...signed } = await assertion(config, await signInText(config.network, statement.device.id, net.key));
+	signedInWith = credential;
+	statement.assertion = signed;
 	send({ frame: 'sign_in', statement: JSON.stringify(statement) });
+}
+
+// The second tap on a new browser, and the first in a later session: the passkey's PRF for the vault this device acts
+// for opens its owner and seal keys in the Peer-Light. Its assertion signs only a fresh challenge and goes nowhere.
+export async function openVault(config) {
+	const vault = net.me && tree.actsFor(net.me);
+	if (!vault) throw new Error('this browser acts for no vault yet');
+	const allowCredentials = signedInWith ? [{ type: 'public-key', id: signedInWith }] : [];
+	const got = await navigator.credentials.get({
+		publicKey: {
+			challenge: crypto.getRandomValues(new Uint8Array(32)),
+			rpId: config.rpId,
+			userVerification: 'required',
+			allowCredentials,
+			extensions: { prf: { eval: { first: unhex(await prfInput(vault, ownerEpoch(vault))) } } },
+		},
+	});
+	await openWith(vault, got);
+	if (!net.prf) throw new Error(NO_PRF_MESSAGE);
+	return vault;
 }
 
 // Sign out of this browser: the Peer-Light's worker ends, then this origin's storage, where its device key lives, is
