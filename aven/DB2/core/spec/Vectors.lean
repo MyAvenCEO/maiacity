@@ -242,7 +242,8 @@ def logs : List Json :=
 def Aven.Core.Signed.json (s : Signed) : Json :=
   Json.mkObj [("label", utf8Text s.label), ("body", s.body.json), ("signer", hex s.signer), ("sig", hex s.sig)]
 
-def s1 : Signed := ⟨k "aven example 1", .map [(k "says", .text (k "hello"))], List.replicate 32 7, List.replicate 64 9⟩
+def s1 : Signed :=
+  ⟨k "aven example 1", .map [(k "says", .text (k "hello"))], List.replicate 32 7, List.replicate 64 9⟩
 def s2 : Signed := { s1 with label := k "aven example 2" }
 def s3 : Signed := { s1 with signer := List.replicate 32 8, sig := List.replicate 64 10 }
 
@@ -300,7 +301,8 @@ def limits : List Json :=
   ([maxEnvelopeBytes, maxEnvelopeBytes + 1].map fun size =>
     let (e, n) := envelopeOfSize e1 size
     let bs := encode e.value
-    vector s!"an envelope of {size} bytes" (Json.mkObj [("envelope", { e with body := .null }.json), ("bodyZeros", toJson n)])
+    vector s!"an envelope of {size} bytes"
+      (Json.mkObj [("envelope", { e with body := .null }.json), ("bodyZeros", toJson n)])
       (accepted bs (Envelope.accept bs).isSome)) ++
   (limitSigned.map fun (name, s) =>
     let bs := encode s.value
@@ -308,7 +310,8 @@ def limits : List Json :=
   ([maxEnvelopeBytes, maxEnvelopeBytes + 1].map fun size =>
     let (s, n) := signedOfSize s1 size
     let bs := encode s.value
-    vector s!"a signed thing of {size} bytes" (Json.mkObj [("signed", { s with body := .null }.json), ("bodyZeros", toJson n)])
+    vector s!"a signed thing of {size} bytes"
+      (Json.mkObj [("signed", { s with body := .null }.json), ("bodyZeros", toJson n)])
       (accepted bs (Signed.accept bs).isSome))
 
 /-! ## The past and the verdicts, on generated worlds -/
