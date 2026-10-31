@@ -102,12 +102,48 @@ async function answer(port, { id, fn, args }) {
 	port.postMessage(JSON.stringify(reply));
 }
 
+// The chat's draft, the line being written and not yet sent (room.svelte.js), kept in this origin's OPFS beside the
+// store (`/drafts/chat`), so it survives a reload: an update's above all (PEERS.md §7). One draft per origin, the newest
+// written by any tab. Written through a sync access handle, which only a worker has in every engine; each write is
+// told back to the page that asked (`draft-kept`), so it reloads only once its draft is on disk.
+let drafting = Promise.resolve();
+async function draftFile() {
+	const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('drafts', { create: true });
+	return dir.getFileHandle('chat', { create: true });
+}
+async function readDraft() {
+	try {
+		return await (await (await draftFile()).getFile()).text();
+	} catch {
+		return '';
+	}
+}
+function keepDraft(port, { id, text }) {
+	drafting = drafting.then(async () => {
+		const reply = { t: Date.now(), peer: 'page', event: 'draft-kept', id };
+		let handle;
+		try {
+			handle = await (await draftFile()).createSyncAccessHandle();
+			const bytes = new TextEncoder().encode(String(text ?? ''));
+			handle.truncate(0);
+			handle.write(bytes, { at: 0 });
+			handle.flush();
+		} catch (error) {
+			reply.error = String(error?.message ?? error);
+		} finally {
+			handle?.close();
+		}
+		port.postMessage(JSON.stringify(reply));
+	});
+}
+
 function connect(port) {
 	pages.add(port);
 	port.onmessage = async ({ data }) => {
 		if (data?.start) started ??= start(data.start);
 		if (data?.box) started ??= showBox(data.box);
 		if (data?.ask) answer(port, data.ask);
+		if (data?.draft) keepDraft(port, data.draft);
 		// online again or back in view (peer/open.js): the link dials at once if it isn't live
 		if (data?.wake) light?.wake?.();
 		// signing out (network.svelte.js): every page hears it, and the worker ends, so its store's handles are free
@@ -133,6 +169,8 @@ function connect(port) {
 	for (const line of lines) port.postMessage(line);
 	for (const line of chat.values()) port.postMessage(line);
 	if (views) port.postMessage(views);
+	// the draft as this origin kept it, for the page's line to write in
+	readDraft().then((text) => text && port.postMessage(JSON.stringify({ t: Date.now(), peer: 'page', event: 'draft', text })));
 	// a worker nobody has started asks its page for the start: Safari can bring one up behind a page that started an
 	// earlier one, which then talks to it as if it ran
 	if (!started) port.postMessage(JSON.stringify({ t: Date.now(), peer: 'page', event: 'start?' }));
