@@ -19,9 +19,9 @@ def signingBytes (label : Bytes) (body : Value) : Bytes := encode (.array [.text
 theorem signing_separates {l₁ l₂ : Bytes} {b₁ b₂ : Value} (hl₁ : textOk l₁ = true) (hl₂ : textOk l₂ = true)
     (hb₁ : Canon b₁ = true) (hb₂ : Canon b₂ = true) (h : signingBytes l₁ b₁ = signingBytes l₂ b₂) :
     l₁ = l₂ ∧ b₁ = b₂ := by
-  have c₁ : Canon (.array [.text l₁, b₁]) = true := by simp [Canon, CanonList, hl₁, hb₁, limit]
-  have c₂ : Canon (.array [.text l₂, b₂]) = true := by simp [Canon, CanonList, hl₂, hb₂, limit]
-  have := encode_inj c₁ c₂ h
+  have c₁ : Shape (.array [.text l₁, b₁]) = true := by simp [Shape, ShapeList, hl₁, Canon.shape hb₁, limit]
+  have c₂ : Shape (.array [.text l₂, b₂]) = true := by simp [Shape, ShapeList, hl₂, Canon.shape hb₂, limit]
+  have := encode_inj_shape c₁ c₂ h
   simp only [Value.array.injEq, List.cons.injEq, Value.text.injEq, and_true] at this
   exact this
 
