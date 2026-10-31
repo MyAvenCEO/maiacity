@@ -45,8 +45,8 @@ The theorems:
 - `admin_by_owners`, `device_not_admin`: an admin act counts only with Maia City's owners' approval (`Tree.approves`),
   resting on an owner key above the coop, never a device's (rule 15, A28).
 
-`settle_restore`, production's ref order, the record kinds and `settled.json` are avenPEER's (`Aven.ID.Restore`,
-`Aven.ID.Records`; PEERS.md, Thread A). -/
+`settle_restore`, production's ref order, the history entries and `settled.json` are avenPEER's (`Aven.ID.Restore`,
+`Aven.Peer.History`; PEERS.md, Thread A). -/
 
 namespace Aven.ID
 
