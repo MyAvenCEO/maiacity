@@ -125,25 +125,10 @@ def eval (V : Vals Val) (src : DocId → List (Tuple Val)) : Query Val → List 
 
 /-! ## Scope (A8) -/
 
-/-- `Aven.Core.Target.covers`, decided: who governs whom, which actor spawned which and what a collection lists are
-given as tests. -/
-def inTarget (gov : Bytes → Bytes → Bool) (spawned lists : DocId → DocId → Bool) : Target → Facts → Bool
-  | .doc d .self, f => f.id == d
-  | .doc d .spawned, f => f.id == d || spawned d f.id
-  | .doc d .lists, f => f.id == d || lists d f.id
-  | .vault v b, f => f.vault == v || (b && gov v f.vault)
-  | .vaultType v t b, f => f.type == t && (f.vault == v || (b && gov v f.vault))
-
-theorem inTarget_iff (gov : Bytes → Bytes → Bool) (spawned lists : DocId → DocId → Bool) (t : Target) (f : Facts) :
-    inTarget gov spawned lists t f = true ↔ t.covers (gov · · = true) (spawned · · = true) (lists · · = true) f := by
-  cases t with
-  | doc d r => cases r <;> simp [inTarget, Target.covers]
-  | _ => simp [inTarget, Target.covers]
-
 /-- The Docs a target resolves to, among those a directory lists. -/
 def resolve (gov : Bytes → Bytes → Bool) (spawned lists : DocId → DocId → Bool) (dir : List Facts) (t : Target) :
     List DocId :=
-  (dir.filter (inTarget gov spawned lists t)).map (·.id)
+  (dir.filter (t.coversB gov spawned lists)).map (·.id)
 
 /-- How complete an answer is: every Doc of the target held, or the ones still missing. -/
 inductive Completeness where
@@ -207,9 +192,9 @@ theorem complete_iff (V : Vals Val) (gov : Bytes → Bytes → Bool) (spawned li
   simp only [resolve, List.mem_map, List.mem_filter]
   constructor
   · intro h f hf hc
-    exact h f.id ⟨f, ⟨hf, (inTarget_iff gov spawned lists t f).mpr hc⟩, rfl⟩
+    exact h f.id ⟨f, ⟨hf, Target.coversB_iff.mpr hc⟩, rfl⟩
   · rintro h d ⟨f, ⟨hf, hc⟩, rfl⟩
-    exact h f hf ((inTarget_iff gov spawned lists t f).mp hc)
+    exact h f hf (Target.coversB_iff.mp hc)
 
 /-- A Record outside the scope, or in a Doc not held, changes no answer: rows come from the scope alone. -/
 theorem scoped_only (db : List (Rec Val)) (docs : List DocId) (held : DocId → Bool) (ty : DocId) :

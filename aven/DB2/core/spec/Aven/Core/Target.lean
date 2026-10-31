@@ -14,7 +14,8 @@ signed listings, so the model takes them as parameters.
 A **step** is what a write touches, per lowered core op: the type, the step's verb and the fields (caps,
 "Footprints"). Steps are computed from an op's lowering (E1 to E3), never written in a cap.
 
-What it proves: a narrower target covers only what the wider one does (`Target.le_sound`).
+What it proves: a narrower target covers only what the wider one does (`Target.le_sound`); `Target.coversB` decides
+coverage (`Target.coversB_iff`).
 -/
 
 namespace Aven.Core
@@ -50,6 +51,22 @@ def Target.covers (gov : Bytes → Bytes → Prop) (spawned lists : DocId → Do
   | .doc d .lists, f => f.id = d ∨ lists d f.id
   | .vault v b, f => f.vault = v ∨ (b = true ∧ gov v f.vault)
   | .vaultType v t b, f => f.type = t ∧ (f.vault = v ∨ (b = true ∧ gov v f.vault))
+
+/-- `Target.covers`, decided, with who governs whom, which actor spawned which and what a collection lists given as
+tests, as a device evaluates them. -/
+def Target.coversB (gov : Bytes → Bytes → Bool) (spawned lists : DocId → DocId → Bool) : Target → Facts → Bool
+  | .doc d .self, f => f.id == d
+  | .doc d .spawned, f => f.id == d || spawned d f.id
+  | .doc d .lists, f => f.id == d || lists d f.id
+  | .vault v b, f => f.vault == v || (b && gov v f.vault)
+  | .vaultType v t b, f => f.type == t && (f.vault == v || (b && gov v f.vault))
+
+theorem Target.coversB_iff {gov : Bytes → Bytes → Bool} {spawned lists : DocId → DocId → Bool} {t : Target}
+    {f : Facts} :
+    t.coversB gov spawned lists f = true ↔ t.covers (gov · · = true) (spawned · · = true) (lists · · = true) f := by
+  cases t with
+  | doc d r => cases r <;> simp [Target.coversB, Target.covers]
+  | _ => simp [Target.coversB, Target.covers]
 
 /-- As caps writes it. -/
 def Reach.name : Reach → String

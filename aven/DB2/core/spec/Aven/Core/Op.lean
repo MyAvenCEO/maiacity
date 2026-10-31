@@ -59,6 +59,11 @@ def Bound.allows : Bound → Value → Bool
   | some vs, .array xs => xs.all (vs.contains ·)
   | some vs, v => vs.contains v
 
+/-- A bound as a Value: null for any value, else the values it allows. -/
+def Bound.value : Bound → Value
+  | none => .null
+  | some vs => .array vs
+
 /-- A bound within another: any value it allows, the other allows too. -/
 def Bound.within : Bound → Bound → Bool
   | _, none => true
