@@ -16,8 +16,8 @@ this gate like any sealed Value (A22).
 - **`fetch {doc, hashes}`:** at most `fetchHashes` hashes. Each is served only if the peer holds it *for that Doc*: a
   hash held for another Doc is answered as missing, never served across Docs (`served_proven`, `served_held`). A Doc
   not proven gets nothing (`unproven_nothing`). The items served together stay within `inFlight` bytes, at least one
-  item always (`answer_bounded`, `answer_moves`); from the first that doesn't fit on, the rest held are answered `later`,
-  so what is served keeps the order asked and the device asks again for the rest. Every
+  item always (`answer_bounded`, `answer_moves`); from the first that doesn't fit on, the rest held are answered
+  `later`, so what is served keeps the order asked and the device asks again for the rest. Every
   hash asked is answered exactly once, as served, missing or later (`answer_partition`).
 - **`items`:** each item in parts of at most `partBytes`, at consecutive offsets, which together are its bytes
   (`parts_join`, `parts_bounded`), so every frame stays under the wire's 64 KiB.
@@ -302,7 +302,8 @@ theorem serveFrom_moves : ∀ (hs : List Nat) (room : Nat) (x : Nat) (b : Bytes)
       · exact serveFrom_moves hs room x b m e
 
 /-- **`unproven_nothing`:** a Doc not proven on the connection, or a fetch of too many hashes, gets nothing. -/
-theorem unproven_nothing {proven : List String} {hs : List Nat} (h : proven.contains doc = false ∨ fetchHashes < hs.length) :
+theorem unproven_nothing {proven : List String} {hs : List Nat}
+    (h : proven.contains doc = false ∨ fetchHashes < hs.length) :
     answer proven held doc hs = none := by
   unfold answer
   rcases h with h | h

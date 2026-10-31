@@ -1,6 +1,6 @@
-//! The fetch gate (`Aven.Peer.Fetch`): sealed bytes only to a connection that proved their Doc, on our own ALPN, since a
-//! fetch proof signs the TLS exporter of the connection that serves. One gate for a keeper's catch-up by number and a
-//! reader's by version.
+//! The fetch gate (`Aven.Peer.Fetch`): sealed bytes only to a connection that proved their Doc, on our own ALPN,
+//! since a fetch proof signs the TLS exporter of the connection that serves. One gate for a keeper's catch-up by
+//! number and a reader's by version.
 //!
 //! - [`answer`]: a `fetch {doc, hashes}` of at most [`FETCH_HASHES`], on a connection that proved `doc`: each hash held
 //!   *for that Doc* is served, in the order asked, while the bytes beyond the first item stay within [`IN_FLIGHT`];

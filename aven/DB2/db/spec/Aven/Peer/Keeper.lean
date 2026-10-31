@@ -12,8 +12,8 @@ is an item named by the hash of its sealed bytes. A new item gets the Doc's next
 (`numbers_fresh`, `Store.wf`); the same bytes again get no new number, only another uploader.
 
 **Covers: the uploader's own word, binding only its own uploads** (the gap in `Aven.DB.Docs.Segment`, settled
-31 Oct 2026, A44). A segment holds its loose envelopes by their names, the hashes of their signed plaintext, which a keeper
-can't see. So the keeper records which devices uploaded each item (the door knows every connection's device), and a
+31 Oct 2026, A44). A segment holds its loose envelopes by their names, the hashes of their signed plaintext, which a
+keeper can't see. So the keeper records which devices uploaded each item (the door knows every connection's device), and a
 segment's upload names, in the clear, the sealed hashes of the loose envelopes it holds: its `covers`. A cover takes
 off an item's uploaders only the device that uploaded the segment, and an item is dropped once no uploader is left.
 - every item dropped was covered, by each device that ever uploaded it, by an item the keeper still holds
@@ -257,8 +257,8 @@ theorem put_order {s : Store} {d : String} {p : Put} {j : Item} (m : j ∈ (s.pu
         j.uploaders = (i.uploaders ++ [d]).filter (· != d))) ∨ j.uploaders = [d] := by
   simp only [put, cover, List.mem_filter, List.mem_map] at m
   obtain ⟨⟨k, mk, e⟩, -⟩ := m
-  have hk : (∃ i ∈ s.items, k.n = i.n ∧ k.hash = i.hash ∧ (k.uploaders = i.uploaders ∨ k.uploaders = i.uploaders ++ [d]))
-      ∨ (k.uploaders = [d] ∧ k.hash = p.hash) := by
+  have hk : (∃ i ∈ s.items, k.n = i.n ∧ k.hash = i.hash ∧
+      (k.uploaders = i.uploaders ∨ k.uploaders = i.uploaders ++ [d])) ∨ (k.uploaders = [d] ∧ k.hash = p.hash) := by
     unfold add at mk
     split at mk
     · simp only [List.mem_map] at mk
@@ -338,7 +338,8 @@ theorem numbers_fresh (s : Store) (d : String) (p : Put) (nh : s.holds p.hash = 
 
 /-- **`cover_own`:** device `d`'s upload never takes another device off any item: every item held with an uploader
 other than `d` is held after, by the same number, with that uploader still on it. -/
-theorem cover_own {s : Store} {d x : String} (xd : x ≠ d) {i : Item} (m : i ∈ s.items) (hx : x ∈ i.uploaders) (p : Put) :
+theorem cover_own {s : Store} {d x : String} (xd : x ≠ d) {i : Item} (m : i ∈ s.items) (hx : x ∈ i.uploaders)
+    (p : Put) :
     ∃ j ∈ (s.put d p).items, j.n = i.n ∧ j.hash = i.hash ∧ x ∈ j.uploaders := by
   obtain ⟨k, mk, nk, hk, up⟩ := add_keeps (d := d) (p := p) m
   obtain ⟨j, mj, nj, hj, up'⟩ := cover_keeps (p := p) mk (.inl ⟨x, up x hx, xd⟩)

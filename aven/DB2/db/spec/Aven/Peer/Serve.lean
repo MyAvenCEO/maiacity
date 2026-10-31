@@ -300,7 +300,8 @@ def moved : List (String × Ask) :=
    .uploadRefused "d1" "quota", .arrived "d1" [(1, 12), (2, 50)] false]
 #guard let k := (Keeper.run gate {} [] moved).1; (k.bill "carol", k.bill "bob") == (900, 300)
 -- Carol sheds it: her segment covering 12 drops 900 bytes for 10, so it is taken, and then 77 fits
-#guard (replies (moved ++ [("carol-peer", .upload "d1" [⟨60, 10, [12]⟩]), ("carol-peer", .upload "d1" [⟨77, 10, []⟩])])).drop 7 ==
+#guard (replies (moved ++ [("carol-peer", .upload "d1" [⟨60, 10, [12]⟩]),
+    ("carol-peer", .upload "d1" [⟨77, 10, []⟩])])).drop 7 ==
   [.took "d1" [(60, 3)], .took "d1" [(77, 4)]]
 
 end ServeExamples
