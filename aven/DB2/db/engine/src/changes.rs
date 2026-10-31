@@ -120,7 +120,8 @@ fn edited(ver: &impl Fn(&DocId) -> Version, r0: &Record, r: &Record) -> RecordCh
     }
 }
 
-/// What a reader sees of one Record after: new, edited, or nothing when it is as it was (`changeOf`).
+/// What a reader sees of one Record after: new, edited, or nothing when no field of it changed (`changeOf`). A Record's
+/// type is fixed at birth; the verdict refuses a change of it ([`types_kept`]), so the change view never shows one.
 pub fn change_of(
     ver: &impl Fn(&DocId) -> Version,
     s: &[Record],
@@ -139,7 +140,7 @@ pub fn change_of(
         }),
         Some(r0) => {
             let e = edited(ver, r0, r);
-            (!(e.fields.is_empty() && r0.r#type == r.r#type)).then_some(e)
+            (!e.fields.is_empty()).then_some(e)
         }
     }
 }
@@ -180,10 +181,21 @@ pub fn footprint_ok(fp: &[Step], cs: &[RecordChange]) -> bool {
     })
 }
 
-/// The verdict's footprint part for a commit: the changes stay within the footprint of the ops it calls
-/// (`verdictFootprint`).
-pub fn verdict_footprint(fp: &[Step], cs: &[RecordChange]) -> bool {
-    footprint_ok(fp, cs)
+/// Every Record after that has an id from before keeps its type: a Record's type is fixed at birth (`typesKept`).
+pub fn types_kept(s: &[Record], s2: &[Record]) -> bool {
+    s2.iter()
+        .all(|r| s.iter().all(|r0| r0.id != r.id || r0.r#type == r.r#type))
+}
+
+/// The verdict's footprint part for a commit from Records `s` to `s2`: no Record changes its type, and the changes
+/// stay within the footprint of the ops it calls (`verdictFootprint`).
+pub fn verdict_footprint(
+    ver: &impl Fn(&DocId) -> Version,
+    fp: &[Step],
+    s: &[Record],
+    s2: &[Record],
+) -> bool {
+    types_kept(s, s2) && footprint_ok(fp, &changes_from(ver, s, s2))
 }
 
 /// A Record's id as a key: the lowercase hex of its bytes, the key the docs layer writes it under in a Doc's `records`

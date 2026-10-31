@@ -93,7 +93,7 @@ fn checks(file: &str) {
         let want: Vec<Json> = list(&v["expected"]["changes"], sorted_fields);
         assert_eq!(got, want, "{name}: changes");
         assert_eq!(
-            json!(verdict_footprint(&fp, &cs)),
+            json!(verdict_footprint(&ver, &fp, &before, &after)),
             v["expected"]["verdict"],
             "{name}: verdict"
         );

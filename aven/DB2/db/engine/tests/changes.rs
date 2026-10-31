@@ -59,7 +59,7 @@ fn a_tick_is_one_edit() {
     let seen: Vec<(ChangeKind, Vec<&str>)> =
         cs.iter().map(|c| (c.kind, c.names().collect())).collect();
     assert_eq!(seen, [(ChangeKind::Edited, vec!["done"])]);
-    assert!(verdict_footprint(&footprint(&tick), &cs));
+    assert!(verdict_footprint(&ver, &footprint(&tick), &todo, &after));
 }
 
 /// A merge into main is judged on the whole merge: the settling tick's own changes pass, the whole merge, which also
@@ -79,11 +79,35 @@ fn a_merge_is_judged_whole() {
         set: rows(&[("done", Value::Uint(1))]),
     }];
     assert!(verdict_footprint(
+        &ver,
         &footprint(&settle),
-        &changes_from(&ver, &proposal, &merged)
+        &proposal,
+        &merged
     ));
     assert!(!verdict_footprint(
+        &ver,
         &footprint(&settle),
-        &changes_from(&ver, &main_before, &merged)
+        &main_before,
+        &merged
     ));
+}
+
+/// A Record's type is fixed at birth: a task turned into a note, its id and fields kept, shows no change, and the verdict
+/// refuses it whatever the footprint (`typesKept`).
+#[test]
+fn a_retype_is_refused() {
+    let todo = [
+        task(id(1, 1, 0), "Order seeds", 0),
+        task(id(2, 4, 0), "Water the beans", 0),
+    ];
+    let mut retyped = todo.clone();
+    retyped[0].r#type = doc("type:note");
+    assert!(changes_from(&ver, &todo, &retyped).is_empty());
+    assert!(!verdict_footprint(&ver, &[], &todo, &retyped));
+    let tick = [Op::Patch {
+        r#type: doc("type:task"),
+        r#where: vec![],
+        set: rows(&[("done", Value::Uint(1))]),
+    }];
+    assert!(!verdict_footprint(&ver, &footprint(&tick), &todo, &retyped));
 }

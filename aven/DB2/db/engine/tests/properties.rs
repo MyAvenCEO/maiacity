@@ -10,9 +10,8 @@
 
 use aven_core::{DocId, Hash, Value};
 use aven_db_engine::{
-    Cell, Cmp, NewId, Op, Query, Rec, Record, Version, apply, bound, changes_from, check, commit,
-    cost, created, eval, footprint, id_key, id_of_key, in_scope, lower_core, verdict_footprint,
-    work,
+    Cell, Cmp, NewId, Op, Query, Rec, Record, Version, apply, bound, check, commit, cost, created,
+    eval, footprint, id_key, id_of_key, in_scope, lower_core, verdict_footprint, work,
 };
 use proptest::prelude::*;
 
@@ -183,7 +182,7 @@ proptest! {
                 let distinct = s.iter().enumerate().all(|(i, r)| s[i + 1..].iter().all(|x| x.id != r.id));
                 if fresh && distinct {
                     let ver = |t: &DocId| Version { r#type: *t, schema: Some(Hash([7; 32])) };
-                    prop_assert!(verdict_footprint(&footprint(&ops), &changes_from(&ver, &s, &after)));
+                    prop_assert!(verdict_footprint(&ver, &footprint(&ops), &s, &after));
                 }
                 for (i, op) in ops.iter().enumerate() {
                     for n in op.refs() {

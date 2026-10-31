@@ -802,7 +802,8 @@ def mergeCheckExamples : List Json := [
   checkVector "the settling tick alone, against the proposal: passes" proposal merged (footprint settle),
   checkVector "the whole merge on main, with only the tick's footprint: refused" mainBefore merged (footprint settle),
   checkVector "the whole merge on main, with the rename's call too: passes" mainBefore merged
-    (footprint (settle ++ rename))]
+    (footprint (settle ++ rename)),
+  checkVector "a task retyped as a note: refused, whatever the footprint" todo retyped (footprint tick)]
 
 /-- The steps a merge's footprint is drawn from. -/
 def gSteps : List Step := [⟨task, .patch, [utf8 "done"]⟩, ⟨task, .patch, [utf8 "x2"]⟩,
