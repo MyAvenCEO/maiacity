@@ -2402,3 +2402,52 @@ changed. A refinement names what it refines; a change of mind names what it supe
 - **Why:** one owner per concept (A45).
 - **Supersedes:** — (realizes A161 and A163)
 - **Lean or code then:** caps' Keep PR, stacked on #1722.
+
+### A174 · Bytes in JSON are `{"bytes": hex}`, as built
+- **Decided by:** the architect, from avenCORE's Lean and vectors (12:16)
+- **Decision:** JSON, the readable form, writes a byte string as `{"bytes": "<hex>"}`, lowercase, as `Aven.Core.Json`
+  and every vector file already do. A hash is such a byte string of 32 bytes.
+- **Why:** A2's `b3:` or base64url text was never built, and the vectors are the contract every implementation is held
+  to.
+- **Supersedes:** A2 (in part: "bytes as `b3:` or base64url text")
+- **Lean or code then:** `Aven.Core.Json`, done.
+
+### A175 · Versions are avenCORE's
+- **Decided by:** the architect, for the avenCORE page (12:16)
+- **Decision:** a version, a set of envelopes with everything they build on, named by its tips, is avenCORE's primitive
+  beside logs and the past: `Version` and `Version.holds` in `Aven.Core`. avenDOCS uses it as a Doc's version. Snapshots
+  and checkpoints stay avenDOCS'.
+- **Why:** one concept, one owner (A45): a version is made of logs, which are Core's, and its Lean is already Core's.
+- **Supersedes:** A1 (in part: the glossary gave "version" to docs)
+- **Lean or code then:** `Aven.Core` `Version`, done.
+
+### A176 · One padding for every sealed byte
+- **Decided by:** the architect, holding caps D18 (Samuel, 30 Oct 2026: everything is padded) (12:17)
+- **Decision:** one function pads every sealed thing a device sends, before sealing: up to 4 KiB, the next of 256 B, 1
+  KiB and 4 KiB; above that, Padmé. The seal pads with it, so a live message, which carries a sealed envelope, needs no
+  padding of its own. avenID defines it once, beside `Aven.ID.Padme`, and every user imports it.
+- **Why:** D18 is Samuel's, and Padmé alone hides almost nothing in small messages; the seal, built with Padmé only,
+  drifted from it. One function used once is rule 16.
+- **Supersedes:** — (refines caps D18 and A93)
+- **Lean or code then:** to come: avenID's `pad`, the seal's Rust and `seals.json`. Free while nothing stored is sealed.
+
+### A177 · The seal names what it seals, and a checkpoint is a checkpoint
+- **Decided by:** the architect, for the avenID page (12:17)
+- **Decision:** the seal's field `kind` is renamed `seals`, with the values `envelope`, `segment` and `checkpoint`. The
+  AAD is `encode({doc, seals, epoch})`, and the keys are `derive_key("avenDB <seals> 1")` and
+  `derive_key("avenDB <seals> commit 1")`, so a checkpoint's labels are `avenDB checkpoint 1` and
+  `avenDB checkpoint commit 1`.
+- **Why:** "kind" is only a vault's, and what travels is a checkpoint, never a snapshot (A1). Renaming is free while
+  nothing stored is sealed.
+- **Supersedes:** — (applies A1 to the seal)
+- **Lean or code then:** to come: `Aven.ID.Seal`, the seal's Rust, `seals.json`, with A176's change.
+
+### A178 · A device's vault: its key signs, the vault it serves owns
+- **Decided by:** the architect, from the 08:22 briefs and the Lean (12:18)
+- **Decision:** a device has its own vault. Its key signs for that vault and governs nothing. The vault it serves is its
+  one owner, the only one that may change or end it. What the device may do for that vault is its device cap.
+- **Why:** rule 15's wording said the device's key also owns its vault, while the 08:22 briefs and the Lean (`WF`,
+  `device_key_governs_nothing`) have one owner. A key that owned its own vault could keep it alive against the vault it
+  serves.
+- **Supersedes:** rule 15 (in part: "which its key owns")
+- **Lean or code then:** `device_key_governs_nothing`, done.

@@ -11,26 +11,35 @@ in pure turns, under caps.
 - [Messages](#messages): tell, ask, reply and fail; order per pair; stored once, by hash.
 - [Inboxes and carrier Docs](#inboxes-and-carrier-docs): each actor's own inbox; one carrier Doc per pair of vaults.
 - [Turns as commits](#turns-as-commits): a turn is one commit of the actor's Doc; its journal is the Doc's log.
+- [Loads](#loads): what an actor reads without asking, handed into each turn and journaled as versions.
 - [The actor kernel](#the-actor-kernel): router, scheduler, turns and clock; spawning, doors and asks.
 - [Face actors](#face-actors): every placed component is an actor.
 - [Hosting is an explicit read cap](#hosting-is-an-explicit-read-cap): a home reads only what its owner granted.
 - [Actor hosts write only under their actors' chains](#actor-hosts-write-only-under-their-actors-chains): the
-  kernel's half of A27.
+  kernel's half of A27: what it hands the actor host's device to sign, and the cap a message carries.
 - [The model in Lean](#the-model-in-lean): `Aven.Actor`, its modules and its vectors.
 
 ## Uses
 
-- [avenCORE](../core/README.md): Values, the one codec, names, type ids, envelopes and logs, ops, calls and steps.
-- [avenDOCS](../docs/README.md): Docs (an actor's Doc, a carrier Doc), type Docs and lenses, pins (A7), checkpoints.
-- [avenID](../id/README.md): device keys and vaults; an actor host's device and its own vault.
-- [avenCAPS](../caps/README.md): caps, chains and their narrowing, attenuation links, device caps, letters and the
-  letterbox, and the reader's half of A27.
-- [avenRUNTIME](../runtime/README.md): state-runtime and its steps, `js-runtime`, face-runtime, the runtime host and
-  the drawer.
-- [avenOPS](../ops/README.md): wants (an actor's loads) and the engine as a door.
-- [avenPEERS](../peers/README.md): delivery of a carrier Doc's envelopes (its group's topic, reconciliation), and
-  finding an actor's home.
-- [avenOS](../os/README.md): the page that runs the kernel in a worker and draws faces.
+- [avenCORE](../core/README.md#values): Values and the one codec; [names](../core/README.md#names) and type ids;
+  [envelopes](../core/README.md#envelopes) and [logs](../core/README.md#logs); ops, calls and
+  [steps](../core/README.md#targets-and-steps).
+- [avenDOCS](../docs/README.md#a-doc-and-its-genesis): Docs (an actor's Doc, a carrier Doc);
+  [type Docs](../docs/README.md#types-schemas-and-fit) and pins (A7); [lenses](../docs/README.md#lenses);
+  [checkpoints](../docs/README.md#checkpoints).
+- [avenID](../id/README.md#devices): device keys and [vaults](../id/README.md#vaults); an actor host's device and its
+  own vault.
+- [avenCAPS](../caps/README.md#chains): caps, chains and attenuation links;
+  [device caps and actor hosts](../caps/README.md#device-caps-and-actor-hosts), the reader's half of A27; letters and
+  the letterbox ([where caps live](../caps/README.md#where-caps-live));
+  [the reader's verdict](../caps/README.md#the-readers-verdict).
+- [avenRUNTIME](../runtime/README.md#state-runtime): state-runtime and its steps, `js-runtime`,
+  [face-runtime](../runtime/README.md#face-runtime), [the runtime host](../runtime/README.md#the-host),
+  [pins](../runtime/README.md#pins) and [the drawer](../runtime/README.md#the-node-tree-and-the-drawer).
+- [avenOPS](../ops/README.md#the-want-queue): wants (an actor's loads) and `changed`; the engine as a door.
+- [avenPEERS](../peers/README.md#gossip-per-group): delivery of a carrier Doc's envelopes, live on its group's topic
+  and by [sync between readers](../peers/README.md#sync-by-version-between-readers); finding an actor's home.
+- [avenOS](../os/README.md#the-page-and-its-workers): the page that runs the kernel in a worker and draws faces.
 
 ## An actor
 
@@ -74,18 +83,19 @@ old version's shape into the new one's. Who may publish a version is whoever may
 | `init` | The first state |
 | `lifetime` | `durable` (the default: it lasts until retired, and persists) or `mounted` (it lives while the face that placed it shows it) |
 | `replaces` | Optional: the definition this one upgrades |
-| `loads` | Its wants, in tiers ([avenOPS](../ops/README.md)); an entry may name a query, whose sealed index its vault's owners register on install (A26) |
+| `loads` | What it reads without asking ([Loads](#loads)) |
 
 A definition's code and faces are **parts**: Values in a format, for the runtime of that format
 ([avenRUNTIME](../runtime/README.md)).
 
 **Types, not words.** A payload is typed by a **type id**, `<type Doc>/<schema hash>`. A message's `name` is a label
 in one interface and its `description` prose for people and models; neither is ever matched. A message whose type
-differs from the one the receiver accepts is delivered when a path of lenses joins them among those the receiving
-vault has pinned: the router reads the payload through the path, and a reply comes back through it. The journal entry
-pins the lenses used, by hash. With no path, the message is refused. **Edges** between actors are derived, never
-stored: from A to B wherever a type in A's `sends` is one B's interface accepts, or one joined to it by lenses pinned
-in B's vault. The drawn graph, a planner's input and what the kernel allows are one rule.
+differs from the one the receiver accepts is delivered when a path of [lenses](../docs/README.md#lenses) joins them
+among those the receiving vault has pinned: the router reads the payload through the path, and a reply comes back
+through it. The journal entry pins the lenses used, by hash. With no path, the message is refused. **Edges** between
+actors are derived, never stored: from A to B wherever a type in A's `sends` is one B's interface accepts, or one
+joined to it by lenses pinned in B's vault. The drawn graph, a planner's input and what the kernel allows are one
+rule.
 
 **A machine is data:** `{"initial": phase, "phases": {phase: {message: [phase, …]}}}`. A message reaches the turn
 only if the current phase allows it, and the turn's new phase must be one it lists. A definition is admitted only when
@@ -186,20 +196,22 @@ actors, in memory)
 turn(state, message, given) → { state', effects: [tell | ask | reply …], phase'? }
 ```
 
-`given` holds the turn's time and random seed, and the `now` tier of its loads. A turn is pure: deterministic, with no
-I/O; everything it does goes out as effects. It never waits: an answer or a timeout arrives as a later message.
+`given` holds the turn's time and random seed, and the `now` tier of its [loads](#loads). A turn is pure:
+deterministic, with no I/O; everything it does goes out as effects. It never waits: an answer or a timeout arrives as
+a later message.
 
-**An actor's history is its Doc's log.** A turn is one commit: one envelope on the actor's Doc
-([avenCORE](../core/README.md)'s envelopes and logs). Its writes are steps (put, patch, remove, edit at a path), never
-a whole new state: state-runtime answers with them ([avenRUNTIME](../runtime/README.md)), and they are the footprint
-caps check. What travels of an actor's state is a checkpoint of its Doc ([avenDOCS](../docs/README.md)).
+**An actor's history is its Doc's log.** A turn is one commit: one envelope on the actor's Doc, in its log
+([avenCORE](../core/README.md#logs)). Its writes are steps (put, patch, remove, edit at a path), never a whole new
+state: state-runtime answers with them ([avenRUNTIME](../runtime/README.md#state-runtime)), and they are the footprint
+caps check. What travels of an actor's state is a checkpoint of its Doc
+([avenDOCS](../docs/README.md#checkpoints)).
 
 **A journal entry** holds:
 - the message it handled, by hash;
 - the definition in force;
 - the hash of the runtime that ran (the one the part names, pinned) and the interpreter's version, which fixes the
   fuel schedule;
-- `given`, with its loads as (Doc, version, query hash), never as data;
+- `given`, its loads as versions ([Loads](#loads));
 - the state's hashes before and after; the effects; the fuel used;
 - the **outcome:** `done`; `described` (a `describe` the kernel answered, which is no turn); `refused` with its
   reason; or `error` with its reason. A refused or failed message is journaled too, and leaves the state as it was.
@@ -212,6 +224,22 @@ drops it if it already has it.
 
 **Decided:** A17, A37, K9; rule 2; actors §15 · **Lean:** `Aven.Actor.Theorems` — `replays`, `machine_sound`;
 `Aven.Actor.Runtimes` — `stateTurn_phase`, `runTurn_state`, `fits_machine`
+
+## Loads
+
+A standing read is not a message. An actor's definition names its **loads**: its wants, in tiers
+([avenOPS](../ops/README.md#the-want-queue)), which the engine keeps current where the actor lives. Each turn is
+handed the `now` tier of them in `given`, so an actor never fetches. What it is handed is its loads ∩ its run's caps:
+a load grants nothing.
+
+- **Journaled as versions:** a turn's journal entry records its loads as (Doc, version, query hash), never as data,
+  so a replay reads the same versions and nothing loaded is copied into the journal.
+- **Changes arrive as a tell:** when a loaded Doc moves, the engine tells the actor `changed`, and its next turn sees
+  the new data.
+- **An entry may name a query:** installing the actor registers in its vault the sealed index that query needs, by
+  the vault owners' act (A26).
+
+**Decided:** A9, A17, A26, K4, K9 · **Lean:** not in Lean yet (version 1 has no loads)
 
 ## The actor kernel
 
@@ -229,8 +257,8 @@ browser and natively for tests. It is not avenCORE. The page feeds it time and e
 - **Clock.** The only source of time: each turn's `given.now`, `tick` and `at` messages, and the fail of an ask
   whose deadline passed.
 - **Spawning** is an ask to the kernel, which is an actor too: `spawn {def, init}` replies with the new address.
-  **Retiring** is a tell: `retire {address}`. In version 1, only definitions from the repository are
-  spawned. The kernel has no other operation: everything is a message or the clock.
+  **Retiring** is a tell: `retire {address}`. In version 1, only definitions from the repository are spawned. The
+  kernel has no other operation: everything is a message or the clock.
 
 **Doors.** An actor's own data is its state. Every other Doc is reached by a message to a **door**: a built-in actor
 that does I/O for the others, such as the engine ([avenOPS](../ops/README.md)), files, and later the model and HTTP.
@@ -292,36 +320,32 @@ for the actors it doesn't host.
 
 ## Actor hosts write only under their actors' chains
 
-Actors hold no keys. The **actor host** is a device that signs for the actors it hosts: one device key per actor
-host, in a narrow device vault of its own, never a member's personal device ([avenID](../id/README.md)). Its device
-cap is the union of its hosted actors' standing caps: only the outer bound, which a misbehaving runtime can't exceed.
+Actors hold no keys. Every write an actor makes is signed by its actor host's one device, whose device cap is the
+union of its hosted actors' standing caps: only the outer bound. The actor host's device vault, its device cap, the
+Aven Peer's chain, the attenuation link and what a reader checks are avenCAPS'
+([device caps and actor hosts](../caps/README.md#device-caps-and-actor-hosts), [chains](../caps/README.md#chains)).
+This is the kernel's half: what it hands the device to sign, and the cap a message carries.
 
-**Writes.** An actor host never writes on its vault's own authority, only under a chain:
-- each envelope it signs names the acting actor and carries the chain its handled message carried, **as it came**;
-- an actor's narrowing for one write is never appended as a link (a link would need its owners' approval, D14): it is
-  the write's footprint, its calls, which the reader checks against the chain;
-- so when a reader accepts the chain, nothing in it reaches a Doc or allows a call beyond the chain's root: the actor
-  writes nothing its caller couldn't.
+**A write.** For each write, the kernel hands the actor host's device a write that:
+- **names the acting actor;**
+- **carries the chain its handled message carried, as it came.** An actor's narrowing for one write is never appended
+  as a link, which would need its owners' approval (D14): it is the write's own calls, which the reader checks against
+  the chain;
+- **never claims the vault's own authority,** so "the signer's vault owns the Doc" never lets a kernel write past an
+  actor's grant.
 
-The Aven Peer signs as Aven's own device, under a chain the actor's owner issued to Aven's vault for that actor's Docs
-and its owners approved, never as a device of the owner's vault. Its writes stay attributable to it and revocable as
-one cap, beside its hosting caps.
+So when a reader accepts that chain, nothing in it reaches a Doc or allows a call beyond the chain's root, the
+authority the caller started with: an actor writes nothing its caller couldn't, and the device cap never widens it.
 
-**Messages.** A cap that travels on in a message narrows by caps' **attenuation** link: no approval, within its
-parent, the same holder, signed by a device of that holder, only after an approved grant. The chain a message carries
-is its handled message's chain plus at most one attenuation, and the kernel makes an attenuation only when it lies
-within both the handled message's own cap and its parent in the chain.
+**A message.** A cap that travels on in a message narrows by an attenuation link. The chain a message carries is its
+handled message's chain plus at most one attenuation, and the kernel makes an attenuation only when the narrowed
+grant lies within both the handled message's own cap and its parent in the chain; otherwise the message goes without
+one. When a reader accepts the chain, nothing in it, the attenuation included, reaches beyond the root.
 
-**Across vaults.** Authority doesn't cross vaults by itself. An actor on another vault's actor host handles a message
-under its own vault's standing caps, and the sender's chain travels as provenance. Acting with the sender's authority
-needs a standing grant to the receiver's vault that the sender's side's owners approved, which attenuations may
-follow.
-
-**Who checks what.**
-- **The reader** checks the owner-approved bound: every grant approved, every attenuation within its parent
-  (avenCAPS: `host_chain_only`, `actor_within_device`, `host_never_beyond`, `attenuate_within`).
-- **The kernel** holds each message's narrowing within the handled message's own cap, which a reader can't check
-  after a standing delegation to another vault.
+**Who checks what.** The reader checks the owner-approved bound: every grant approved, every attenuation within its
+parent (avenCAPS). The kernel holds each message's narrowing within the handled message's own cap, which a reader
+can't check after a standing delegation to another vault, since there the attenuation's parent in the chain is the
+delegation. A message to an actor on another vault's actor host carries its chain only as provenance (avenCAPS).
 
 **Decided:** A27, A28; caps D14, D16 · **Lean:** `Aven.Actor.Signing` — `signs_by_chain`, `write_names_actor`,
 `write_keeps_chain`, `actor_within_chain`, `actor_calls_within`; `Aven.Actor.Messaging` —
@@ -356,9 +380,9 @@ seed.
 
 | Piece | Lean | Rust | TS/JS | State |
 |---|---|---|---|---|
-| Kernel, messages, asks, machines, `describe` | `Aven.Actor` (#1504 and after) | — | — | Lean only; vectors `kernel.json`, `traces.json` |
-| Hosting (A16) | `Hosting` | — | — | Lean only |
-| Actor hosts and chains (A27, kernel half) | `Signing` (#1617, #1623), `Messaging` (#1628) | — | — | Lean only; the reader's half is avenCAPS' (#1619, #1624, #1626) |
+| Kernel, messages, asks, machines, `describe` | `Aven.Actor` (#1504, #1544) | — | — | Lean only; vectors `kernel.json`, `traces.json` |
+| Hosting (A16) | `Hosting` (#1565) | — | — | Lean only |
+| Actor hosts and chains (A27, kernel half) | `Signing` (#1617, #1623, #1681), `Messaging` (#1628) | — | — | Lean only; the reader's half is avenCAPS' (#1619, #1624, #1626) |
 | Turns as steps (A37) | `Runtimes`, with state-runtime's `State` (#1676) | — | — | Lean only |
 | Carrier Doc (A33) | — | — | — | written down (#1685); for milestone 3 |
 | Version 1: the todo app in memory | — | — | — | not started; actor code waits for its go |
@@ -376,8 +400,8 @@ every Value that sets a field kept for later (a message's `cap`, the `now` tier,
   log per pair of actors, and its journal entries hold the message whole.
 - Performance gates for WebAssembly inside WebAssembly, fuel across engines and a shadow root per face are not
   measured.
-- `ARCHITECTURE.md`'s stress-test row 22 cites `no_confused_deputy`, which no spec defines; the property is
-  `actor_within_chain` and `actor_calls_within`.
+- `no_confused_deputy`, which `ARCHITECTURE.md`'s stress test cites (row 22), is not in Lean on main; the kernel's half
+  of it is `actor_within_chain` and `actor_calls_within`.
 
 ## Open questions
 

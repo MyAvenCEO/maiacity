@@ -11,30 +11,36 @@ without trusting it.
 - [The host](#the-host): wasmi with fuel and memory limits; no floats, threads or SIMD; `auto-dispatch`.
 - [Where runtimes live](#where-runtimes-live): with their publisher's vault; the bootstrap manifest until Docs run.
 - [Frozen bytes, loading by hash, and versions](#frozen-bytes-loading-by-hash-and-versions): appended, never changed,
-  always loadable.
+  always loadable; withdrawals.
+- [Pins](#pins): the runtime a verdict runs is the hash an envelope names, pinned in its past.
 - [The browser host](#the-browser-host): a runtimes worker of its own, apart from the device key.
 - [The node tree and the drawer](#the-node-tree-and-the-drawer): one allowlist, checked on the page by the drawer's
   `checkTree`.
 - [face-runtime](#face-runtime): markup and style as data, to a checked tree and typed style.
 - [markdown-runtime](#markdown-runtime): GitHub-flavoured Markdown to a checked tree.
-- [state-runtime and its steps](#state-runtime-and-its-steps): a declarative turn that answers with steps.
+- [state-runtime](#state-runtime): a declarative turn that answers with steps, never a whole state.
 - [The file registry](#the-file-registry): what a file really is, by its bytes, and how it shows.
 - [Hostile parts and files](#hostile-parts-and-files): what holds each threat.
 - [Built on aven-codec](#built-on-aven-codec): every runtime crate takes the codec alone.
 
 ## Uses
 
-- [avenCORE](../core/README.md): Values, the one codec (`aven-codec`) and its JSON form, BLAKE3 names, type ids, and
-  the steps a write is made of (put, patch, remove, edit). The Lean requires `Aven.Core` by path and never defines
-  Values itself.
-- [avenDOCS](../docs/README.md): typed Docs (the manifest becomes one), and pins (A7), which decide the runtime a
-  verdict runs.
-- [avenCAPS](../caps/README.md): keep caps (A44), which say where a publisher's modules are kept.
-- [avenSTORE](../store/README.md): blobs (a module is one) and files, `/files/<hash>`.
-- [avenPEERS](../peers/README.md): fetch by hash; the Peer-Light and the native Peer compile the file registry.
-- [avenOS](../os/README.md): the release that carries the browser host and the frozen modules; the page code that
-  holds the runtimes worker and the drawer.
-- [avenSANDBOX](../sandbox/README.md): the box that builds the modules reproducibly and runs every check.
+- [avenCORE](../core/README.md#values): Values, the one codec (`aven-codec`) and its JSON form; BLAKE3
+  [names](../core/README.md#names) and type ids; the [steps](../core/README.md#targets-and-steps) a write is made of
+  (put, patch, remove, edit). The Lean requires `Aven.Core` by path and never defines Values itself.
+- [avenDOCS](../docs/README.md#types-schemas-and-fit): typed Docs (the manifest becomes one), and pins (A7), which
+  decide the runtime a verdict runs.
+- [avenCAPS](../caps/README.md#keep-caps-offers-and-placement): keep caps (A44), which say where a publisher's
+  modules are kept.
+- [avenSTORE](../store/README.md#blobs-and-refs): blobs (a module is one) and [files](../store/README.md#files),
+  `/files/<hash>`.
+- [avenPEERS](../peers/README.md#the-peer-and-the-peer-light): the Peer-Light and the native Peer, which compile the
+  file registry; [the fetch gate](../peers/README.md#the-fetch-gate), by which a module is fetched by hash once Docs
+  run.
+- [avenOS](../os/README.md#the-page-and-its-workers): its workers and its one origin; the release that carries the
+  browser host and the frozen modules; the page code that holds the runtimes worker and the drawer; the
+  [Service Worker](../os/README.md#the-service-worker), which serves a file as the registry decides.
+- [avenSANDBOX](../sandbox/README.md#the-check): the box that builds the modules reproducibly and runs every check.
 
 ## A runtime
 
@@ -205,14 +211,20 @@ checked before a byte is compiled. A compiled module is a cache keyed by its has
 loaded again, and the device's own renders made by it are dropped. A device's own render uses the newest version the
 manifest still lists.
 
-**Pins, for what others wrote.** A verdict runs exactly the hash an envelope names, and only when that hash is pinned
-in the envelope's past (A7): a Doc or a vault pins the runtime hashes it accepts, and closes a hole by withdrawing the
-pin, by its owners' act, in its history. So two readers holding the same past run the same runtime, or both refuse.
-A floor that rose with releases would make a reader re-lower an old envelope on a newer version, and disagree with
-one that hadn't upgraded.
+**Decided:** A42, A45; ledger 09:18, 09:57, 10:01, 10:55 · **Lean:** `Aven.Runtime.Contract` — `frozen`,
+`loads_listed`, `withdrawn_unlisted`, `withdrawn_not_loaded`, `cache_drops`
 
-**Decided:** A7, A42, A45; ledger 09:18, 09:57, 10:01, 10:55 · **Lean:** `Aven.Runtime.Contract` — `frozen`,
-`loads_listed`, `withdrawn_unlisted`, `withdrawn_not_loaded`, `cache_drops`, `verdict_named`, `readers_agree_pins`,
+## Pins
+
+What others wrote names its runtime by hash: a lowered operation, a checkpoint, a fold. A reader runs exactly the hash
+an envelope names, and only when that hash is pinned in the envelope's past: a Doc or a vault pins the runtime hashes
+it accepts, as it pins type versions ([avenDOCS](../docs/README.md#types-schemas-and-fit)), and closes a hole by
+withdrawing the pin, by its owners' act, in its history. So two readers holding the same past run the same runtime,
+or both refuse it, whatever came after; and a withdrawal closes the hash for every envelope after it. A floor that
+rose with releases would make a reader re-run an old envelope on a newer version, and disagree with one that hadn't
+upgraded: there are no floors.
+
+**Decided:** A7, A18, A42, K7 · **Lean:** `Aven.Runtime.Contract` — `verdict_named`, `readers_agree_pins`,
 `withdraw_closes`
 
 ## The browser host
@@ -237,8 +249,9 @@ Peer-Light's worker, which holds the device key.
   device key. wasm32 aborts on a panic: a fault in the host stops only this worker, which says so (`fatal`) and ends;
   what was asked of it is refused, and the next ask starts it again. Sync, the store and the key's holder never
   notice.
-- **The origin.** Until the safe's own origin exists (A15), the runtimes worker shares avenOS's origin with the
-  Peer-Light's worker. Its walls are the worker of its own, a module that imports nothing, and fuel.
+- **The origin** is avenOS's, shared with the Peer-Light's worker until A15's three origins exist
+  ([avenOS](../os/README.md#the-page-and-its-workers)); the runtimes' walls are the worker of its own, a module that
+  imports nothing, and fuel.
 - **What it runs.** avenOS's own first-party content: avenBRAIN's slides through face-runtime. A shared file never
   runs here (see [the file registry](#the-file-registry)).
 - **Its build.** `aven-runtimes-web` is built in this workspace and bound by the same wasm-bindgen as the Peer-Light
@@ -362,7 +375,7 @@ the repository's URL); the runtime knows no repository.
 **Decided:** runtimes 2, 12; A45; ledger 10:39, 10:55 · **Lean:** `Aven.Runtime.Markdown` — `markdown_ok`,
 `rewrite_link`; v3's `resolve`, `removeDots_no_dots`, `linkTo_link` pending in #1737; vectors `markdown.json`
 
-## state-runtime and its steps
+## state-runtime
 
 state-runtime runs a declarative turn: no code, so it always ends. Its part is a statechart and a reducer as data, a
 list of handlers, each for one message:
