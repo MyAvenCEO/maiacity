@@ -331,3 +331,55 @@ fn slides() {
         assert_eq!(run(&m, ROOMY, &part, &data), native, "{path}");
     }
 }
+
+/// Every document avenBRAIN shows is Markdown the frozen markdown-runtime draws, under params as the brain gives them
+/// (its links resolved against the document's own path, the glossary's ids under `g-`), with the answer the crate
+/// gives natively; and the glossary's headings are there to name its terms.
+#[test]
+fn brain_documents() {
+    let m = module("markdown-runtime");
+    let brain = here("../DB2/brain");
+    let mut docs = Vec::new();
+    let mut walk = vec![std::path::PathBuf::from(&brain)];
+    while let Some(dir) = walk.pop() {
+        for f in std::fs::read_dir(&dir).unwrap() {
+            let p = f.unwrap().path();
+            if p.is_dir() {
+                walk.push(p);
+            } else if p.extension().is_some_and(|e| e == "md") {
+                docs.push(p);
+            }
+        }
+    }
+    docs.sort();
+    assert!(docs.len() >= 14, "avenBRAIN's documents: {docs:?}");
+    let text = |s: &str| Value::Text(s.into());
+    let rules = Value::Array(
+        [
+            ("glossary:", "#/brain/glossary/"),
+            ("aven/", "https://github.com/myavenceo/maiacity/blob/main/aven/"),
+        ]
+        .iter()
+        .map(|(a, b)| Value::Array(vec![text(a), text(b)]))
+        .collect(),
+    );
+    for doc in docs {
+        let rel = doc.strip_prefix(&brain).unwrap().to_string_lossy().into_owned();
+        let pre = if rel == "GLOSSARY.md" { "g-" } else { "" };
+        let params = Value::Map(vec![
+            ("base".into(), text(&format!("aven/DB2/brain/{rel}"))),
+            ("idPrefix".into(), text(pre)),
+            ("links".into(), rules.clone()),
+        ]);
+        let part = Value::Bytes(std::fs::read(&doc).unwrap());
+        let native = aven_runtimes_markdown::eval(&part, &params);
+        assert!(native.is_ok(), "{rel}: refused natively: {native:?}");
+        assert_eq!(run(&m, ROOMY, &part, &params), native, "{rel}");
+        if rel == "GLOSSARY.md" {
+            let Ok(Value::Array(root)) = native else { panic!("{rel}: not a tree") };
+            let Value::Array(kids) = &root[2] else { panic!("{rel}: no children") };
+            let h2 = kids.iter().filter(|k| matches!(k, Value::Array(n) if n[0] == text("h2"))).count();
+            assert!(h2 > 5, "{rel}: {h2} sections");
+        }
+    }
+}

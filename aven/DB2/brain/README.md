@@ -18,7 +18,7 @@ every term in [`GLOSSARY.md`](GLOSSARY.md).
 | [`style/slide.style.json`](style/slide.style.json) | The slide as style data: its ground, its type, its labels and dotted paths |
 | [`style/reference/`](style/reference/) | The first references, from the game |
 | [`id/`](id/README.md) | avenID's page: its story, and its slides in `id/slides/` |
-| [`render/`](render/) | Markdown and slide markup to a checked node tree, links, contrast, and their tests |
+| [`render/`](render/) | Slide markup to a checked node tree, contrast, and their tests |
 | [`art/`](art/) | The objects drawn in code, their images by hash, and the slide layouts |
 
 The first references, from the game (the look has since moved to the brand's UI, [`STYLE.md`](STYLE.md)):
@@ -53,9 +53,11 @@ slide against the allowlist and that every element has a class (`bun test brain/
 The content is first-party, from the repo, bundled at build time (`os/web/brain`), and none of it is parsed as HTML
 on the page:
 
-- **Markdown** becomes a node tree through `render/markdown.js`, the markdown-runtime's job: GitHub's Markdown as the
-  brain writes it, raw HTML as text, links rewritten or dropped. It is checked against the allowlist, and
-  `Node.svelte` draws it.
+- **Markdown** goes through the frozen markdown-runtime, in the same worker: GitHub's Markdown, raw HTML as text, its
+  tree checked against the allowlist. Each document resolves its links against its own path in the repository, and
+  the brain's rules turn them into links: a term (`glossary:vault`) to the glossary, a package's page to its page, any
+  other file of the repository to GitHub; a link no rule makes one the allowlist takes keeps only its text. The
+  glossary's headings carry `g-`. `Node.svelte` draws the tree.
 - **A slide is a face.** Its part, `<id>.part.json`, goes through the frozen face-runtime, loaded by its hash in
   avenOS's runtimes worker, a worker of its own (`aven/runtimes`, README, "The browser host"). face-runtime checks the
   tree against the allowlist, every rule's range, the text's size and contrast, and that it can be read aloud, and answers the tree and
@@ -63,9 +65,6 @@ on the page:
   (`os/web/runtimes/draw.js`) checks both again, builds the slide node by node into a shadow root of its own and
   writes its CSS there from the rules. No slide style is in avenOS's own sheets, and none of avenOS's reaches a slide.
   The drawer asks avenOS where each `/files/<hash>` drawing is, and avenOS serves the brain's own from its bundle.
-
-Markdown goes the same way next: through markdown-runtime, held to `render/markdown.js`'s tree, links included, and
-then `render/` goes.
 
 ## Drawing
 
