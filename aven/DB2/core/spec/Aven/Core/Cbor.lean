@@ -11,7 +11,9 @@ strict profile (ARCHITECTURE.md, rule 1, A2; Samuel, 30 Oct 2026):
 - every length and number in its shortest form;
 - map keys are text, sorted bytewise by their encodings, with no duplicates;
 - text is valid UTF-8 (RFC 3629): no overlong forms, no surrogates, nothing above U+10FFFF;
-- a hash is a byte string of its 32 bytes.
+- a hash is a byte string of its 32 bytes;
+- nothing nests deeper than 512 (`maxDepth`), a scalar or an empty array or map counting as 1 deep: so no reader's
+  stack runs out on a hostile input, and the reader and the writer agree on where the limit is.
 
 What it proves (rule 1): decoding an encoding gives the Value back (`decode_encode`), and every byte string the decoder
 accepts is exactly the encoding of what it decoded (`encode_decode`), so bytes that don't encode back to themselves are
@@ -106,25 +108,48 @@ def keysSorted (kvs : List (Bytes × Value)) : Bool := strictlySorted (kvs.map f
 def textOk (b : Bytes) : Bool := b.length < limit && utf8 b
 
 mutual
-/-- A Value the profile allows. Only these have an encoding the decoder accepts. -/
-def Canon : Value → Bool
+/-- How deeply a Value nests: the fuel its decoding needs. A scalar is 1 deep, an empty array or map too. -/
+def depth : Value → Nat
+  | .array xs => depthList xs + 1
+  | .map kvs => depthMap kvs + 1
+  | _ => 1
+
+def depthList : List Value → Nat
+  | [] => 0
+  | v :: vs => max (depth v) (depthList vs)
+
+def depthMap : List (Bytes × Value) → Nat
+  | [] => 0
+  | (_, v) :: kvs => max (depth v) (depthMap kvs)
+end
+
+mutual
+/-- A Value in the profile's forms, at any depth. -/
+def Shape : Value → Bool
   | .uint n => n < limit
   | .nint n => n < limit
   | .bytes b => b.length < limit
   | .text b => textOk b
-  | .array xs => xs.length < limit && CanonList xs
-  | .map kvs => kvs.length < limit && keysSorted kvs && CanonMap kvs
+  | .array xs => xs.length < limit && ShapeList xs
+  | .map kvs => kvs.length < limit && keysSorted kvs && ShapeMap kvs
   | .bool _ => true
   | .null => true
 
-def CanonList : List Value → Bool
+def ShapeList : List Value → Bool
   | [] => true
-  | v :: vs => Canon v && CanonList vs
+  | v :: vs => Shape v && ShapeList vs
 
-def CanonMap : List (Bytes × Value) → Bool
+def ShapeMap : List (Bytes × Value) → Bool
   | [] => true
-  | (k, v) :: kvs => textOk k && Canon v && CanonMap kvs
+  | (k, v) :: kvs => textOk k && Shape v && ShapeMap kvs
 end
+
+/-- How deep an allowed Value may nest. -/
+abbrev maxDepth : Nat := 512
+
+/-- A Value the profile allows: in its forms, and at most `maxDepth` deep. Only these have an encoding the decoder
+accepts. -/
+def Canon (v : Value) : Bool := Shape v && decide (depth v ≤ maxDepth)
 
 /-! ## Decoding -/
 
@@ -199,9 +224,9 @@ def decodeMap : Nat → Nat → Bytes → Option (List (Bytes × Value) × Bytes
     | _ => none
 end
 
-/-- A whole byte string as one Value: nothing may follow it. -/
+/-- A whole byte string as one Value: nothing may follow it, and it nests at most `maxDepth` deep. -/
 def decodeAll (bs : Bytes) : Option Value :=
-  match decode (bs.length + 1) bs with
+  match decode maxDepth bs with
   | some (v, []) => some v
   | _ => none
 

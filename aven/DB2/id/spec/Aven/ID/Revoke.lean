@@ -20,7 +20,16 @@ the Doc, or through another writer's ack. The verdict:
 - elsewhere, once the revocation has reached the Doc, only what its kept list or another writer's ack had seen counts
   (`elsewhere_kept`).
 
-`revocation_wins` is the three together. -/
+`revocation_wins` is the three together.
+
+**A delete** (A22, Samuel, 31 Oct 2026: the right to be forgotten). A vault deletes a Doc by a Record in it: an
+envelope its own vault writes on its own authority, which caps reads as a delete. Once a reader holds one, an envelope
+counts only if it is the delete or in its past: the Doc ends where its vault ended it, and nothing written after it or
+beside it counts, whatever cap it writes under (`delete_ends`). Until a reader holds one, a delete changes nothing
+(`undeleted_survive`). It depends on the envelopes named, never on the order they came in, so readers holding the same
+deletes, and the same past of each, agree (`deleted_agree`). What a reader had seen can't be unseen (rule 15):
+forgetting is each device's, dropping the Doc's keys and bytes. The keeper's half is `Keep`'s (`Books.deleted_gone`).
+-/
 
 namespace Aven.ID
 
@@ -83,7 +92,7 @@ inductive Verdict where
 
 /-- What `e` builds on that isn't here, by name. -/
 def missing (doc : List Envelope) (e : Envelope) : List Hash :=
-  (tips e).filter fun d => !doc.any (nm · == d)
+  (parents e).filter fun d => !doc.any (nm · == d)
 
 /-- The authorized verdict of `e`, with the revocations `rs` the reader holds. -/
 def verdict (doc : List Envelope) (rs : List Revocation) (e : Envelope) : Verdict :=
@@ -175,7 +184,7 @@ theorem revocation_wins {r : Revocation} (m : r ∈ rs) (hit : r.cap ∈ rd.caps
 
 /-- A wait names only what the envelope builds on and the reader lacks, by hash, so it can end. -/
 theorem waits_named {ms : List Hash} (h : verdict nm rd doc rs e = .waits ms) :
-    ms ≠ [] ∧ ∀ d ∈ ms, d ∈ tips e ∧ ∀ y ∈ doc, nm y ≠ d := by
+    ms ≠ [] ∧ ∀ d ∈ ms, d ∈ parents e ∧ ∀ y ∈ doc, nm y ≠ d := by
   unfold verdict at h
   split at h
   · split at h <;> contradiction
@@ -184,6 +193,71 @@ theorem waits_named {ms : List Hash} (h : verdict nm rd doc rs e = .waits ms) :
     refine ⟨n, fun d dm => ?_⟩
     simp only [missing, List.mem_filter, Bool.not_eq_true', List.any_eq_false, beq_iff_eq] at dm
     exact dm
+
+end
+
+/-! ## A delete (A22) -/
+
+section
+
+variable (nm : Envelope → Hash) (rd : Reads)
+
+/-- The deletes a reader holds of a Doc: the envelopes that read as a delete (`isDelete`) and that the Doc's vault
+wrote on its own authority (`byOwner`: caps' `Reader.Own`, never an actor host's). -/
+def deletesOf (isDelete byOwner : Envelope → Bool) (doc : List Envelope) : List Envelope :=
+  doc.filter fun d => isDelete d && byOwner d
+
+/-- `e` survives the deletes a reader holds: it is each of them, or in its past. -/
+def survives (isDelete byOwner : Envelope → Bool) (doc : List Envelope) (e : Envelope) : Bool :=
+  (deletesOf isDelete byOwner doc).all fun d => nm d == nm e || inPast nm doc d e
+
+/-- Caps' liveness with the deletes a reader holds: the revocations' verdict counts it, and it survives every delete. -/
+def liveWith (isDelete byOwner : Envelope → Bool) (doc : List Envelope) (rs : List Revocation) (e : Envelope) :
+    Bool :=
+  verdict nm rd doc rs e == .counts && survives nm isDelete byOwner doc e
+
+variable {nm rd} {isDelete byOwner : Envelope → Bool} {doc doc' : List Envelope} {d e : Envelope}
+
+/-- What `liveWith` says, read through this lemma rather than its definition: the revocations' verdict counts it, and it
+survives every delete the reader holds. -/
+theorem liveWith_iff {rs : List Revocation} :
+    liveWith nm rd isDelete byOwner doc rs e = true ↔
+      verdict nm rd doc rs e = .counts ∧ survives nm isDelete byOwner doc e = true := by
+  simp only [liveWith, Bool.and_eq_true, beq_iff_eq]
+
+/-- **A delete ends the Doc** (A22): once a reader holds a delete its vault wrote, an envelope survives only if it is
+the delete, or in its past. Nothing written after it, or beside it, counts, whatever cap it writes under. -/
+theorem delete_ends (hd : d ∈ doc) (del : isDelete d = true) (own : byOwner d = true) (he : e ∈ doc)
+    (s : survives nm isDelete byOwner doc e = true) : nm d = nm e ∨ Before nm doc d e := by
+  simp only [survives, deletesOf, List.all_eq_true, List.mem_filter, Bool.and_eq_true, Bool.or_eq_true,
+    beq_iff_eq] at s
+  rcases s d ⟨hd, del, own⟩ with eq | p
+  · exact .inl eq
+  · exact .inr ((inPast_iff he).mp p)
+
+/-- Until a reader holds a delete its vault wrote, a delete changes nothing: a delete by anyone else is no delete. -/
+theorem undeleted_survive (none : ∀ d ∈ doc, isDelete d = true → byOwner d = false) :
+    survives nm isDelete byOwner doc e = true := by
+  simp only [survives, deletesOf, List.all_eq_true, List.mem_filter, Bool.and_eq_true]
+  intro d ⟨m, del, own⟩
+  rw [none d m del] at own
+  cases own
+
+/-- **Readers agree on a delete**: two readers that hold the same deletes, and the same past of each, give every
+envelope the same survival, whatever else each holds and in whatever order it came. -/
+theorem deleted_agree (same : ∀ d, d ∈ deletesOf isDelete byOwner doc ↔ d ∈ deletesOf isDelete byOwner doc')
+    (past : ∀ d ∈ deletesOf isDelete byOwner doc, inPast nm doc d e = inPast nm doc' d e) :
+    survives nm isDelete byOwner doc e = survives nm isDelete byOwner doc' e := by
+  apply Bool.eq_iff_iff.mpr
+  simp only [survives, List.all_eq_true]
+  constructor
+  · intro h d m
+    have m' := (same d).mpr m
+    rw [← past d m']
+    exact h d m'
+  · intro h d m
+    rw [past d m]
+    exact h d ((same d).mp m)
 
 end
 
@@ -212,12 +286,14 @@ def zz : Hash := blake3 (utf8 "zz")
 
 def notes : DocId := ⟨blake3 (utf8 "the notes' genesis")⟩
 
-/-- An example envelope at its writer's place `seq`, with its label, vault, caps, acks and signed time in its body. It
-names what it builds on as deps, never as prev, so its past is what it lists. -/
-def env (writer seq : Nat) (label vault : String) (caps acks deps : List Hash) (time : Nat := 0) : Envelope :=
+/-- An example envelope at its writer's place `seq`, with its label, vault, caps, acks and signed time in its body,
+and, for a delete Record, `delete`. It names what it builds on as deps, never as prev, so its past is what it lists. -/
+def env (writer seq : Nat) (label vault : String) (caps acks deps : List Hash) (time : Nat := 0)
+    (delete : Bool := false) : Envelope :=
   { doc := notes, branch := utf8 "main", writer, seq, prev := none, deps,
-    body := .map [(utf8 "acks", .array (acks.map Hash.value)), (utf8 "caps", .array (caps.map Hash.value)),
-      (utf8 "time", .uint time), (utf8 "label", .text (utf8 label)), (utf8 "vault", .text (utf8 vault))],
+    body := .map ([(utf8 "acks", .array (acks.map Hash.value)), (utf8 "caps", .array (caps.map Hash.value)),
+      (utf8 "time", .uint time), (utf8 "label", .text (utf8 label)), (utf8 "vault", .text (utf8 vault))] ++
+      if delete then [(utf8 "delete", .bool true)] else []),
     signer := utf8 vault, sig := [] }
 
 private def field (e : Envelope) (key : String) : Option Value :=
@@ -299,6 +375,36 @@ def revocationExamples : List (String × List Envelope × List Revocation × Env
   ("waiting for what it builds on, named by hash", elsewhereDoc, elsewhereRevocations, w1, .waits [zz])]
 
 #guard revocationExamples.all fun (_, doc, rs, e, v) => verdict nm reads doc rs e == v
+
+/-! Alice deletes the notes, after Alice's `n1` and Bob's `m1`. Bob writes `m2` beside the delete, Alice's other device
+writes `n2` after it, and Bob writes a delete as well, which is no delete: the notes are Alice's. -/
+
+/-- A delete Record, as caps reads one from inside the seal. -/
+def isDelete (e : Envelope) : Bool := field e "delete" == some (.bool true)
+
+/-- On the notes' vault's own authority: Alice's. -/
+def byAlice (e : Envelope) : Bool := reads.vault e == "alice"
+
+def n1 : Envelope := env 1 10 "n1" "alice" [] [] []
+def m1 : Envelope := env 2 10 "m1" "bob" [capA] [] [nm n1]
+def del : Envelope := env 1 11 "del" "alice" [] [] [nm m1] (delete := true)
+def m2 : Envelope := env 2 11 "m2" "bob" [capA] [] [nm m1]
+def n2 : Envelope := env 1 12 "n2" "alice" [] [] [nm del]
+def bobsDelete : Envelope := env 2 12 "bobs-delete" "bob" [capA] [] [nm m2] (delete := true)
+
+def deletedDoc : List Envelope := [n1, m1, del, m2, n2, bobsDelete]
+
+/-- Whether each envelope survives the deletes held, each answer written out by hand. -/
+def deleteExamples : List (String × List Envelope × Envelope × Bool) := [
+  ("before the delete, Alice's own", deletedDoc, n1, true),
+  ("before the delete, Bob's under cap-a", deletedDoc, m1, true),
+  ("the delete itself", deletedDoc, del, true),
+  ("beside the delete: not in its past", deletedDoc, m2, false),
+  ("after the delete, by Alice's own device", deletedDoc, n2, false),
+  ("a delete by someone else, after it", deletedDoc, bobsDelete, false),
+  ("without Alice's delete, Bob's changes nothing", [n1, m1, m2, bobsDelete], m2, true)]
+
+#guard deleteExamples.all fun (_, doc, e, b) => survives nm isDelete byAlice doc e == b
 
 end RevokeExamples
 

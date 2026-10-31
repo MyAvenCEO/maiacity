@@ -63,7 +63,7 @@ def Target.ok : Target → Bool
 /-- An allowed target is a canonical Value. -/
 theorem Target.value_canon (t : Target) (h : t.ok = true) (hb : ∀ d : DocId, d.hash.bytes.length < limit) :
     Canon t.value = true := by
-  cases t <;> simp_all [Target.value, Target.ok, Canon, CanonMap, keysSorted, strictlySorted, keyBytes, textOk,
+  cases t <;> simp_all [Target.value, Target.ok, Canon, Shape, ShapeMap, depth, depthMap, keysSorted, strictlySorted, keyBytes, textOk,
     keyDoc, keyDef, keyType, keyActor, keyBelow, keyVault, limit] <;> decide
 
 #guard (Target.vault "v:alice".toUTF8.toList true).value matches .map _

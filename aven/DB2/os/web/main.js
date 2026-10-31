@@ -1,12 +1,13 @@
 // avenOS in the browser. A Peer-Light's origin from the cast runs avenOS as that device; a host whose `/aven.json`
 // names an Aven Peer is that network's (Network.svelte: claim it, sign in, or invite only); any other host is the
 // box's own view (localhost) or a visitor's (App.svelte). Every view of the tree is pushed by the Peer-Light's core
-// (id.svelte.js), the page's one WebAssembly module.
+// (id.svelte.js), the page's one WebAssembly module. #/brain is avenBRAIN on every host (Root.svelte).
 import { mount } from 'svelte';
 import cast from '../../sandbox/cast.json';
 import App from './App.svelte';
 import Network from './Network.svelte';
 import Updating from './Updating.svelte';
+import Root from './Root.svelte';
 import { hostNetwork, net, runNetwork, storageBlocked } from './network.svelte.js';
 import { runBox, runLight } from './peers.svelte.js';
 // the fonts are self-hosted from their packages: avenOS calls no third party
@@ -37,5 +38,5 @@ if (config) {
 	net.storage = await storageBlocked();
 	if (!net.storage) runNetwork(config);
 	if (!net.storage) files('network');
-	mount(Network, { target, props: { config } });
-} else mount(App, { target, props: { cast, device } });
+	mount(Root, { target, props: { view: Network, props: { config } } });
+} else mount(Root, { target, props: { view: App, props: { cast, device } } });

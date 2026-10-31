@@ -23,7 +23,7 @@ The runtimes live in `aven/runtimes` and know nothing of actors; this file joins
 namespace Aven.Actor
 
 open Aven.Core (Value TypeId Bytes)
-open Aven.Runtime (FacePart Placement FaceOut faceRun treeLimits StatePart StateInput Msg Out StateOut step ascii)
+open Aven.Runtime (FacePart Placement FaceOut faceRun treeLimits StatePart StateInput Msg Out StateOut step applyAll ascii)
 
 /-! ## state-runtime -/
 
@@ -52,11 +52,13 @@ def outEffect : Out → Option Effect
   | .ask to name p within => (addrOf? to).map fun a => .ask a name p within
   | .reply re p => (msgIdOf? re).map fun i => .reply i p
 
-/-- A state-runtime part as an actor's turn: its phase is always the one the step moved to. -/
+/-- A state-runtime part as an actor's turn: the state is what the step's writes make of it (A37), and its phase is
+always the one the step moved to. -/
 def stateTurn (sp : StatePart) (st : Value) (m : Message) (g : Given) (ph : String) : Option Output :=
   match step sp ⟨st, m.toMsg, g.now, g.seed, ph⟩ with
   | .error _ => none
-  | .ok o => (Aven.Runtime.mapM outEffect o.sends).map fun fx => ⟨o.state, fx, some o.phase⟩
+  | .ok o => (applyAll st o.writes).bind fun st' =>
+    (Aven.Runtime.mapM outEffect o.sends).map fun fx => ⟨st', fx, some o.phase⟩
 
 /-- A state-runtime turn moves only where its machine allows, when the part fits the machine. -/
 theorem stateTurn_phase {sp : StatePart} {mc : Machine} (hfit : sp.fits mc.allows = true) {st : Value}
@@ -66,8 +68,8 @@ theorem stateTurn_phase {sp : StatePart} {mc : Machine} (hfit : sp.fits mc.allow
   split at h
   · simp at h
   · next so hstep =>
-    simp only [Option.map_eq_some_iff] at h
-    obtain ⟨fx, -, rfl⟩ := h
+    simp only [Option.bind_eq_some_iff, Option.map_eq_some_iff] at h
+    obtain ⟨st', -, fx, -, rfl⟩ := h
     exact ⟨so.phase, rfl, Aven.Runtime.step_allowed hfit hstep⟩
 
 /-- The kernel takes a state-runtime turn's answer as it is: `runTurn` never refuses it for its phase, so

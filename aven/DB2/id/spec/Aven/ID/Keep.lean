@@ -1,4 +1,6 @@
-/-! # Keepers: fetch keys that chain, proofs, and who pays
+import Aven.ID.Placement
+
+/-! # Keepers: fetch keys that chain, proofs, who pays, and what a keeper keeps for whom
 
 Keeping is a role any peer can take (A22, Samuel, 30 Oct 2026). A member's own Peer, or the Aven Peer, keeps a Doc's
 sealed bytes for its readers under a keep cap, and none is special. A keeper reads no caps, so it checks who may add
@@ -24,6 +26,18 @@ unsettled, serves proofs by any branch's newest key, so honest readers are never
 the vault that issued the keep cap, which can check caps, signs which branch to follow; the keeper checks the signer
 against the tree, follows that branch, and later forks from that point change nothing (`grind_settled`,
 `settled_example`).
+
+**What a keeper keeps, and for whom** (A22, Samuel, 31 Oct 2026: "a Vault owner always decides, where its data gets
+shared to"). A keeper keeps a vault's data only under a keep cap that vault's owners approved, naming the keeper. It
+holds its keep caps, so it checks each against the tree: the cap names the keeper's vault, a device of its issuer
+signed it, and its issuer's owners approved it (D14). It can't read a Doc's facts, so it takes the Docs the issuer's
+device resolved the cap's target to (`resolve_exact`). A device of the issuing vault withdraws a keep cap, or deletes
+a Doc, by an order the keeper checks against the tree. A withdrawal or a delete only takes away, so a device signs it
+alone, as it signs a revocation. The theorems: whatever a keeper keeps, an owner-approved keep cap lists
+(`kept_only_covered`, `kept_only_by_owner`), and by its facts covers, a cap in its issuer's authority
+(`kept_by_owner`); a withdrawn keep cap's Docs are dropped and served no more (`withdrawn_dropped`,
+`withdrawn_not_served`), and the others stay (`others_kept`); a deleted Doc is gone for good (`deleted_gone`,
+`deleted_final`).
 
 Examples are checked by `decide` and exported as vectors (`keep.json`). -/
 
@@ -542,6 +556,172 @@ theorem admitted_served (s : Keep) (quota : String → Nat) :
     · exact admitted_served s quota us taken h u m
 
 end Keep
+
+/-! ## What a keeper keeps, and for whom (A22) -/
+
+/-- A keep cap as its keeper holds it: the cap, and the Docs its issuer's device resolved its target to, each with its
+first fetch key (`resolve`). -/
+structure Listing where
+  cap : Cap
+  docs : List (Core.DocId × Nat)
+
+/-- What a device of a keep cap's issuer orders its keeper: withdraw that cap, or delete a Doc. -/
+inductive Order where
+  | withdraw (cap : String)
+  | delete (doc : Core.DocId)
+  deriving DecidableEq, Repr
+
+/-- An order and the device that signed it. -/
+structure Signed where
+  order : Order
+  signer : String
+  deriving DecidableEq, Repr
+
+/-- A keeper's books: its own vault, the tree as it holds it, how many owners each vault needs, the keep caps it was
+handed, and the orders that came. -/
+structure Books where
+  keeper : String
+  tree : Tree
+  threshold : String → Nat := fun _ => 1
+  listings : List Listing
+  orders : List Signed := []
+
+namespace Books
+
+variable (b : Books)
+
+/-- A keep cap the keeper takes: a grant to the keeper's vault, signed by a device of its issuer, which its issuer's
+owners approved, an owner vault by its own quorum (D14). -/
+def valid (c : Cap) : Bool :=
+  c.kind == .grant && c.holder == .vault b.keeper && b.tree.actsFor c.signer == some c.issuer &&
+    b.tree.approves b.threshold c.issuer c.id c.approvals
+
+/-- An order a device of vault `v` signed, as the tree says. -/
+def signedBy (v : String) (o : Signed) : Bool := b.tree.actsFor o.signer == some v
+
+/-- A keep cap a device of its issuer withdrew. -/
+def withdrawn (c : Cap) : Bool := b.orders.any fun o => o.order == .withdraw c.id && b.signedBy c.issuer o
+
+/-- A Doc a device of vault `v` deleted. -/
+def deleted (v : String) (d : Core.DocId) : Bool := b.orders.any fun o => o.order == .delete d && b.signedBy v o
+
+/-- The keeper keeps `d` under the keep cap `l`: the cap is valid and not withdrawn, it lists `d`, and its issuer
+hasn't deleted `d`. -/
+def keepsUnder (l : Listing) (d : Core.DocId) : Bool :=
+  b.valid l.cap && !b.withdrawn l.cap && l.docs.any (·.1 == d) && !b.deleted l.cap.issuer d
+
+/-- The keeper keeps `d`: under one of its keep caps. -/
+def keeps (d : Core.DocId) : Bool := b.listings.any (b.keepsUnder · d)
+
+/-- The keeper serves a fetch of `d`, or takes an upload for it, only while it keeps `d`, and only for a device that
+proves `d`'s current fetch key (`Keep.serves`). -/
+def serves (k : Keep) (d : Core.DocId) (exporter : String) (p : Keep.Proof) : Bool := b.keeps d && k.serves exporter p
+
+theorem keepsUnder_iff {l : Listing} {d : Core.DocId} :
+    b.keepsUnder l d = true ↔ b.valid l.cap = true ∧ b.withdrawn l.cap = false ∧ (∃ k, (d, k) ∈ l.docs) ∧
+      b.deleted l.cap.issuer d = false := by
+  simp only [keepsUnder, Bool.and_eq_true, Bool.not_eq_true', List.any_eq_true, beq_iff_eq, Prod.exists]
+  constructor
+  · rintro ⟨⟨⟨v, w⟩, d', k, m, rfl⟩, nd⟩
+    exact ⟨v, w, ⟨k, m⟩, nd⟩
+  · rintro ⟨v, w, ⟨k, m⟩, nd⟩
+    exact ⟨⟨⟨v, w⟩, d, k, m, rfl⟩, nd⟩
+
+/-- **A keeper keeps only what a keep cap covers** (D1): whatever it keeps, a valid keep cap lists, one its issuer
+hasn't withdrawn, with the Doc not deleted. -/
+theorem kept_only_covered {d : Core.DocId} (h : b.keeps d = true) :
+    ∃ l ∈ b.listings, b.valid l.cap = true ∧ b.withdrawn l.cap = false ∧ (∃ k, (d, k) ∈ l.docs) ∧
+      b.deleted l.cap.issuer d = false := by
+  simp only [keeps, List.any_eq_true] at h
+  obtain ⟨l, m, k⟩ := h
+  exact ⟨l, m, (b.keepsUnder_iff).mp k⟩
+
+/-- **A keeper holds a vault's data only under a keep cap that vault's owners approved** (A22): whatever it keeps, a
+keep cap lists that names the keeper, that a device of its issuer signed, and that its issuer's owners approved. That
+its issuer is the Doc's own vault, or one that governs it, is the issuer's check and every reader's
+(`kept_by_owner`). -/
+theorem kept_only_by_owner {d : Core.DocId} (h : b.keeps d = true) :
+    ∃ l ∈ b.listings, (∃ k, (d, k) ∈ l.docs) ∧ l.cap.kind = .grant ∧ l.cap.holder = .vault b.keeper ∧
+      b.tree.actsFor l.cap.signer = some l.cap.issuer ∧
+      b.tree.approves b.threshold l.cap.issuer l.cap.id l.cap.approvals = true := by
+  obtain ⟨l, m, v, _, ld, _⟩ := b.kept_only_covered h
+  simp only [valid, Bool.and_eq_true, beq_iff_eq] at v
+  obtain ⟨⟨⟨g, ho⟩, s⟩, a⟩ := v
+  exact ⟨l, m, ld, g, ho, s, a⟩
+
+/-- With every list resolved by its issuer's device from the Docs that vault holds, and every keep cap one its issuer
+checked, a keeper keeps a Doc only when a keep cap its issuer's owners approved covers it by its facts, every line of it
+in its issuer's authority: its own vault, or one it governs. -/
+theorem kept_by_owner (gov : Core.Bytes → Core.Bytes → Bool) (spawned : Core.DocId → Core.DocId → Bool) (x : Ctx)
+    (held : String → List (Core.Facts × Nat))
+    (resolved : ∀ l ∈ b.listings, l.docs = resolve gov spawned x.roles l.cap (held l.cap.issuer))
+    (checked : ∀ l ∈ b.listings, chainOk x [l.cap] = true) {d : Core.DocId} (h : b.keeps d = true) :
+    ∃ l ∈ b.listings, ∃ f, f.id = d ∧ l.cap.keeps gov spawned x.roles f = true ∧
+      b.tree.approves b.threshold l.cap.issuer l.cap.id l.cap.approvals = true ∧
+      ∀ line ∈ l.cap.grants x.roles, authorityOver x l.cap.issuer line = true := by
+  obtain ⟨l, m, ⟨k, ld⟩, _, _, _, a⟩ := b.kept_only_by_owner h
+  rw [resolved l m] at ld
+  obtain ⟨f, _, fd, kf⟩ := (resolve_exact gov spawned).mp ld
+  exact ⟨l, m, f, fd, kf, a, root_authority (checked l m) l.cap (List.mem_singleton_self _)⟩
+
+/-- **A withdrawn keep cap is dropped** (D2): once a device of its issuer withdraws every keep cap that lists a Doc,
+the keeper keeps it no more. -/
+theorem withdrawn_dropped {d : Core.DocId}
+    (w : ∀ l ∈ b.listings, (∃ k, (d, k) ∈ l.docs) → b.withdrawn l.cap = true) : b.keeps d = false := by
+  cases h : b.keeps d
+  · rfl
+  · obtain ⟨l, m, _, nw, ld, _⟩ := b.kept_only_covered h
+    rw [w l m ld] at nw
+    exact absurd nw (by decide)
+
+/-- And serves it no more: no fetch of it and no upload for it, whatever proof comes. -/
+theorem withdrawn_not_served {d : Core.DocId}
+    (w : ∀ l ∈ b.listings, (∃ k, (d, k) ∈ l.docs) → b.withdrawn l.cap = true) (k : Keep) (e : String) (p : Keep.Proof) :
+    b.serves k d e p = false := by
+  simp [serves, b.withdrawn_dropped w]
+
+/-- **Withdrawing one keep cap leaves the others** (D2): a Doc the keeper keeps under another keep cap, it keeps. -/
+theorem others_kept {l : Listing} {d : Core.DocId} (m : l ∈ b.listings) (k : b.keepsUnder l d = true) {c : String}
+    (other : l.cap.id ≠ c) (s : String) :
+    ({ b with orders := b.orders ++ [⟨.withdraw c, s⟩] } : Books).keeps d = true := by
+  simp only [keeps, List.any_eq_true]
+  refine ⟨l, m, ?_⟩
+  simp only [keepsUnder, valid, withdrawn, deleted, signedBy, List.any_append, List.any_cons, List.any_nil,
+    Bool.or_false] at k ⊢
+  simp only [Bool.and_eq_true, Bool.not_eq_true', Bool.or_eq_false_iff] at k ⊢
+  have h1 : (Order.withdraw c == Order.withdraw l.cap.id) = false := by simp [Ne.symm other]
+  have h2 : (Order.withdraw c == Order.delete d) = false := by simp
+  exact ⟨⟨⟨k.1.1.1, k.1.1.2, by rw [h1]; rfl⟩, k.1.2⟩, k.2, by rw [h2]; rfl⟩
+
+/-- **A delete drops the bytes** (D3): once a device of a Doc's vault deletes it, the keeper keeps it under none of
+that vault's keep caps, and, a vault's keep caps listing only its own Docs (`kept_by_owner`), under none at all: it
+keeps and serves nothing of it. -/
+theorem deleted_gone {d : Core.DocId} {v : String}
+    (del : ∃ o ∈ b.orders, o.order = .delete d ∧ b.tree.actsFor o.signer = some v)
+    (only : ∀ l ∈ b.listings, (∃ k, (d, k) ∈ l.docs) → l.cap.issuer = v) :
+    b.keeps d = false ∧ ∀ k e p, b.serves k d e p = false := by
+  have gone : b.keeps d = false := by
+    cases h : b.keeps d
+    · rfl
+    · obtain ⟨l, m, _, _, ld, nd⟩ := b.kept_only_covered h
+      obtain ⟨o, mo, od, sv⟩ := del
+      have : b.deleted l.cap.issuer d = true := by
+        simp only [deleted, signedBy, List.any_eq_true, Bool.and_eq_true, beq_iff_eq]
+        exact ⟨o, mo, od, by rw [only l m ld]; exact sv⟩
+      rw [this] at nd
+      exact absurd nd (by decide)
+  exact ⟨gone, fun k e p => by simp [serves, gone]⟩
+
+/-- **A delete is final** (D3): whatever keep caps and orders come after, under the same tree, a deleted Doc stays gone
+while only its own vault lists it. -/
+theorem deleted_final {d : Core.DocId} {v : String}
+    (del : ∃ o ∈ b.orders, o.order = .delete d ∧ b.tree.actsFor o.signer = some v) (b' : Books)
+    (tree : b'.tree = b.tree) (more : ∀ o ∈ b.orders, o ∈ b'.orders)
+    (only : ∀ l ∈ b'.listings, (∃ k, (d, k) ∈ l.docs) → l.cap.issuer = v) : b'.keeps d = false := by
+  obtain ⟨o, mo, od, sv⟩ := del
+  exact (b'.deleted_gone ⟨o, more o mo, od, tree ▸ sv⟩ only).1
+
+end Books
 
 /-! ## Examples
 
