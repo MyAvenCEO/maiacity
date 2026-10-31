@@ -754,7 +754,7 @@ def checkVector (name : String) (before after : List (Record Value)) (fp : List 
   vector name (Json.mkObj [("schema", toJson (blake3 (utf8 "schema:v1")).text),
       ("before", Json.arr (before.map recordJson).toArray), ("after", Json.arr (after.map recordJson).toArray),
       ("footprint", Json.arr (fp.map stepJson).toArray)])
-    (Json.mkObj [("changes", Json.arr (cs.map changeJson).toArray), ("verdict", toJson (verdictFootprint fp cs))])
+    (Json.mkObj [("changes", Json.arr (cs.map changeJson).toArray), ("verdict", toJson (verdictFootprint ver fp before after))])
 
 /-- A commit's changes against its own footprint, `tamper` applied to what it made: none for an honest writer. -/
 def commitCheck (name : String) (w c : Nat) (s : List (Record Value)) (ops : List (Op Value))
