@@ -11,19 +11,23 @@ namespace Aven.Actor
 
 open Aven.Core (Value TypeId Bytes)
 
-/-- An address `<scope>/<id>/<n>` (section 6). `n` is the incarnation: how often `id` had been spawned when this one
-was. The scope is `local` in version 1. -/
+/-- An actor's genesis inputs (A201): its vault (32 bytes), its id (the hash of its definition's name, its spawner's
+address and the spawner's count) and its incarnation `n`, how often `id` had been spawned when this one was. The
+actor's address is the Doc id this genesis names (`Aven.Actor.Address`). -/
 structure Addr where
-  scope : String
-  id : String
+  vault : Bytes
+  id : Bytes
   n : Nat
   deriving DecidableEq, Repr, Inhabited
 
+/-- Version 1's one vault, in memory: a fixed 32-byte name (not 32 zero bytes, the type of types' vault). -/
+def localVault : Bytes := List.replicate 32 1
+
 /-- The device's person, where clicks come from (section 9). Incarnation 0: it is never spawned. -/
-def person : Addr := ⟨"local", "person", 0⟩
+def person : Addr := ⟨localVault, "person".toUTF8.toList, 0⟩
 
 /-- The kernel, an actor too (section 7). Incarnation 0: it is never spawned. -/
-def kernelAddr : Addr := ⟨"local", "kernel", 0⟩
+def kernelAddr : Addr := ⟨localVault, "kernel".toUTF8.toList, 0⟩
 
 /-- A message's name `(from, to, seq)` (section 4). -/
 structure MsgId where
