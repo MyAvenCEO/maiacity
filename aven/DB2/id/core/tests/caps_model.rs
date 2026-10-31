@@ -303,8 +303,10 @@ fn revocations_are_the_models() {
                     prev: None,
                     deps,
                     body: V::Map(body),
-                    signer: writers[*w].as_bytes().to_vec(),
-                    sig: vec![],
+                    sigs: vec![aven_core::Sig {
+                        signer: writers[*w].as_bytes().to_vec(),
+                        sig: vec![],
+                    }],
                 });
             }
             let names: Vec<Hash> = doc.iter().map(Envelope::name).collect();
@@ -331,7 +333,7 @@ fn revocations_are_the_models() {
                             "doc": e.doc.text(), "branch": e.branch, "writer": e.writer, "seq": e.seq,
                             "prev": e.prev.map(|p| p.text()),
                             "deps": e.deps.iter().map(Hash::text).collect::<Vec<_>>(),
-                            "body": common::caps::value_json(&e.body), "signer": hex(&e.signer), "sig": hex(&e.sig),
+                            "body": common::caps::value_json(&e.body), "sigs": e.sigs.iter().map(|x| json!({"signer": hex(&x.signer), "sig": hex(&x.sig)})).collect::<Vec<_>>(),
                         },
                     })
                 })

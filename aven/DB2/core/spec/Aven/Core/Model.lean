@@ -11,10 +11,10 @@ import Lean.Data.Json
 `aven-core-model` (`Model.lean` beside the spec) and the vectors (`past.json`, `counts.json`) answer from here, so the
 property tests and the vectors ask the same Lean. Envelopes are named by BLAKE3 (`Envelope.name blake3`).
 
-A **world** is envelopes, which of them a reader holds (`S`), which are bad (`ok` is false for an envelope with a bad
-one's name: what the other verdicts, fit and authorized, would refuse) and a version's tips. Its answer gives, for each
+A **world** is envelopes, which of them a reader holds (`S`), which are unfit and which unauthorized (an envelope with the name
+of one of them is), the verdicts `Counts` takes and a version's tips. Its answer gives, for each
 envelope `a` of the world: its name; `past`, the names before it among `S`; `inPast`, whether each envelope of `S` is
-before it; `split` with each envelope of the world; and whether it is `discounted`, `counts` and is held by the version.
+before it; `split` with each envelope of the world; and whether its whole past is held (`closed`), it is `discounted`, `counts` and is held by the version.
 -/
 
 namespace Aven.Core.Model
@@ -49,15 +49,17 @@ def nm (e : Envelope) : Hash := e.name blake3
 structure World where
   all : List Envelope
   held : List Bool
-  bad : List Nat
+  unfit : List Nat
+  unauthorized : List Nat
   tips : List Nat
 
 namespace World
 
 def S (w : World) : List Envelope := (w.all.zip w.held).filterMap fun (e, h) => if h then some e else none
 
-def ok (w : World) (nm : Envelope → Hash) (x : Envelope) : Bool :=
-  !(w.bad.any fun i => match w.all[i]? with | some b => nm b == nm x | none => false)
+/-- Not one of `bad`: an envelope with the name of none of them. -/
+def notIn (w : World) (bad : List Nat) (nm : Envelope → Hash) (x : Envelope) : Bool :=
+  !(bad.any fun i => match w.all[i]? with | some b => nm b == nm x | none => false)
 
 def version (w : World) (nm : Envelope → Hash) : Version := w.tips.filterMap fun i => w.all[i]?.map nm
 
@@ -77,8 +79,9 @@ def answer (w : World) : Json :=
     ("past", toJson (w.all.map fun a => (past nm S a).map Hash.text)),
     ("inPast", toJson (w.all.map fun a => S.map fun b => inPast nm S a b)),
     ("split", toJson (w.all.map fun a => w.all.map fun b => splitB nm a b)),
+    ("closed", toJson (w.all.map (closedB nm S))),
     ("discounted", toJson (w.all.map (discountedB nm S))),
-    ("counts", toJson (w.all.map (countsB nm (w.ok nm) S))),
+    ("counts", toJson (w.all.map (countsB nm (w.notIn w.unfit nm) (w.notIn w.unauthorized nm) S))),
     ("holds", toJson (w.all.map (holdsB nm S (w.version nm))))]
 
 end World
@@ -157,7 +160,7 @@ def boundsCase (j : Json) : Except String Json := do
     ("within", toJson (bounds.map fun a => bounds.map a.within))]
 
 /-- One case of the running model:
-- `{"envelopes": [hex], "held": [bool], "bad": [index], "tips": [index]}`, envelopes in CBOR: a world's answer;
+- `{"envelopes": [hex], "held": [bool], "unfit": [index], "unauthorized": [index], "tips": [index]}`, envelopes in CBOR: a world's answer;
 - `{"accept": hex}`: what `Envelope.accept`, `Signed.accept`, `Target.ofValue?`, `Call.ofValue?` and `Bound.ofValue?`
   take from those bytes, encoded
   again, or null;
@@ -179,9 +182,10 @@ def answerCase (j : Json) : Except String Json := do
     | some e => pure e
     | none => throw s!"not an envelope: {h}"
   let held ← j.getObjValAs? (List Bool) "held"
-  let bad ← j.getObjValAs? (List Nat) "bad"
+  let unfit ← j.getObjValAs? (List Nat) "unfit"
+  let unauthorized ← j.getObjValAs? (List Nat) "unauthorized"
   let tips ← j.getObjValAs? (List Nat) "tips"
   if held.length ≠ all.length then throw "held: one per envelope"
-  return World.answer ⟨all, held, bad, tips⟩
+  return World.answer ⟨all, held, unfit, unauthorized, tips⟩
 
 end Aven.Core.Model
