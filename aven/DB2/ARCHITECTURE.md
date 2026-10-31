@@ -744,6 +744,16 @@ the spec that owns it.
 
   Keepers stay blind (rule 9). A file is no special case: its chunks and chunk list are Values that a file Record in a
   Doc names, kept and read as that Doc is.
+
+  **So a vault decides who keeps its data and who sees it, by its caps:** keep caps for keepers, keys and read caps for
+  readers. This is what data privacy and the right to be forgotten rest on (Samuel, 31 Oct 2026):
+  - withdrawing a keep cap makes the keeper drop what it covered and stop serving it;
+  - a delete spreads to every peer, and keepers drop the bytes (live in the chat since #1583);
+  - rotating a Doc's key shuts removed readers out of everything after it;
+  - once every key holder drops a Doc's keys, any copy left anywhere is unreadable.
+
+  What a reader has already seen can't be unseen; no system can (rule 15). The Lean for all of this, and for the rest
+  of PEERS threads B to F, comes before their code (Samuel, 31 Oct 2026: "do all lean for these things first").
 - **A23. Acks can't launder:** a revoked holder's envelope never counts if the revocation is in its past. *Done in
   caps (#1499), as what D8 meant.*
 
