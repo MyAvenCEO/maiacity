@@ -29,7 +29,7 @@ structure Verdicts where
 
 /-- An envelope counts, among `S`, named by `H`. -/
 def counts (H : Bytes → Hash) (v : Verdicts) (S : List Envelope) (e : Envelope) : Prop :=
-  Counts (Envelope.name H) (fun x => v.fit x ∧ v.authorized x) S e
+  Counts (Envelope.name H) v.fit v.authorized S e
 
 theorem counts_verdicts {H : Bytes → Hash} {v : Verdicts} {S : List Envelope} {e x : Envelope}
     (h : counts H v S e) (hx : Reaches (Envelope.name H) S e x) :
@@ -65,13 +65,14 @@ def splitB (nm : Envelope → Hash) (a b : Envelope) : Bool :=
 theorem splitB_iff {nm : Envelope → Hash} {a b : Envelope} : splitB nm a b = true ↔ Split nm a b := by
   simp only [splitB, Bool.and_eq_true, beq_iff_eq, bne_iff_ne, Split, SameLog, and_assoc]
 
-/-- An envelope counts, decided: Core's `countsB`. Its whole past is held, it and everything in its past pass `ok`,
+/-- An envelope counts, decided: Core's `countsB`. Its whole past is held, it and everything in its past are fit and
+authorized,
 and none of them is half of a split. -/
-def countsB (nm : Envelope → Hash) (ok : Envelope → Bool) (S : List Envelope) (e : Envelope) : Bool :=
-  Aven.Core.countsB nm ok S e
+def countsB (nm : Envelope → Hash) (fit authorized : Envelope → Bool) (S : List Envelope) (e : Envelope) : Bool :=
+  Aven.Core.countsB nm fit authorized S e
 
-theorem countsB_iff {nm : Envelope → Hash} {ok : Envelope → Bool} {S : List Envelope} {e : Envelope} :
-    countsB nm ok S e = true ↔ Counts nm (fun x => ok x = true) S e :=
+theorem countsB_iff {nm : Envelope → Hash} {fit authorized : Envelope → Bool} {S : List Envelope} {e : Envelope} :
+    countsB nm fit authorized S e = true ↔ Counts nm (fun x => fit x = true) (fun x => authorized x = true) S e :=
   Aven.Core.countsB_iff
 
 /-! ## Writer ids -/

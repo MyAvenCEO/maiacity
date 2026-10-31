@@ -97,6 +97,13 @@ fn ops() {
             let (a, b) = (bound(&i[0]), bound(&i[1]));
             assert_eq!(a.within(&b), x.as_bool().unwrap(), "{name}");
             within += 1;
+        } else if name.starts_with("a built-in type: ") {
+            let t = aven_core::builtin_type(
+                i["namespace"].as_str().unwrap(),
+                i["name"].as_str().unwrap(),
+            );
+            assert_eq!(t.text(), x.as_str().unwrap(), "{name}");
+            types += 1;
         } else if name == "the type of types" {
             assert_eq!(aven_core::name_of(&value(i)), type_of_types().0, "{name}");
             assert_eq!(type_of_types().text(), x.as_str().unwrap(), "{name}: id");
@@ -109,7 +116,7 @@ fn ops() {
             panic!("{name}: no reader for it");
         }
     }
-    assert_eq!((core, calls, types, bounds), (8, 3, 1, 5));
+    assert_eq!((core, calls, types, bounds), (8, 3, 3, 5));
     assert!(allows >= 5 && within >= 4);
 }
 

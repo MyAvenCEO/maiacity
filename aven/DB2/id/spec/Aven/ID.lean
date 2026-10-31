@@ -33,6 +33,7 @@ import Aven.ID.Expiry
 import Aven.ID.Epochs
 import Aven.ID.Recover
 import Aven.ID.Network
+import Aven.ID.TreeDoc
 import Aven.ID.Restore
 import Aven.ID.RestoreDoor
 import Aven.ID.Records

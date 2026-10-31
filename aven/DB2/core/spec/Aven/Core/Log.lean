@@ -193,12 +193,13 @@ def Closed (S : List Envelope) (e : Envelope) : Prop :=
 def Discounted (S : List Envelope) (e : Envelope) : Prop :=
   ∃ x y, Reaches nm S e x ∧ y ∈ S ∧ Split nm x y
 
-/-- An envelope counts when its whole past is held (`Closed`), everything in it passes the other verdicts (`ok`: fit and
-authorized) and none of it is half of a split (docs, rule 13). Counting is not monotone in what a reader holds, by
+/-- An envelope counts when its whole past is held (`Closed`), everything in it is `fit` and `authorized` and none of it
+is half of a split (docs, rule 13). This is the one counting rule (A45): the docs layer, avenID and the tree each supply
+their verdicts here, and none defines its own. Counting is not monotone in what a reader holds, by
 design: a split learned later discounts (A4, `split_final`), and a parent learned later is the first step to counting
 (`closed_mono`). -/
-def Counts (ok : Envelope → Prop) (S : List Envelope) (e : Envelope) : Prop :=
-  Closed nm S e ∧ ∀ x, Reaches nm S e x → ok x ∧ ∀ y ∈ S, ¬ Split nm x y
+def Counts (fit authorized : Envelope → Prop) (S : List Envelope) (e : Envelope) : Prop :=
+  Closed nm S e ∧ ∀ x, Reaches nm S e x → (fit x ∧ authorized x) ∧ ∀ y ∈ S, ¬ Split nm x y
 
 theorem reaches_trans {S : List Envelope} {a b c : Envelope} (h₁ : Reaches nm S a b) (h₂ : Reaches nm S b c) :
     Reaches nm S a c := by
@@ -217,12 +218,12 @@ theorem closed_past {S : List Envelope} {e x : Envelope} (h : Closed nm S e) (hx
   fun y hy => h y (reaches_trans nm hx hy)
 
 /-- What an envelope that counts builds on counts too. -/
-theorem counts_past {ok : Envelope → Prop} {S : List Envelope} {e x : Envelope} (h : Counts nm ok S e)
-    (hx : Reaches nm S e x) : Counts nm ok S x :=
+theorem counts_past {fit authorized : Envelope → Prop} {S : List Envelope} {e x : Envelope}
+    (h : Counts nm fit authorized S e) (hx : Reaches nm S e x) : Counts nm fit authorized S x :=
   ⟨closed_past nm h.1 hx, fun y hy => h.2 y (reaches_trans nm hx hy)⟩
 
-theorem discounted_not_counts {ok : Envelope → Prop} {S : List Envelope} {e : Envelope} (h : Discounted nm S e) :
-    ¬ Counts nm ok S e := by
+theorem discounted_not_counts {fit authorized : Envelope → Prop} {S : List Envelope} {e : Envelope}
+    (h : Discounted nm S e) : ¬ Counts nm fit authorized S e := by
   intro hc
   obtain ⟨x, y, hx, hy, hs⟩ := h
   exact (hc.2 x hx).2 y hy hs
@@ -262,8 +263,8 @@ theorem closed_mono {S S' : List Envelope} (hs : ∀ x ∈ S, x ∈ S') (hp : �
   exact ⟨y, hs y my, ny⟩
 
 /-- Splits are final: once an envelope's past holds a split, no reader that learns more ever counts it (A4). -/
-theorem split_final {ok : Envelope → Prop} {S S' : List Envelope} (hs : ∀ x ∈ S, x ∈ S') {e : Envelope}
-    (h : Discounted nm S e) : ¬ Counts nm ok S' e := by
+theorem split_final {fit authorized : Envelope → Prop} {S S' : List Envelope} (hs : ∀ x ∈ S, x ∈ S')
+    {e : Envelope} (h : Discounted nm S e) : ¬ Counts nm fit authorized S' e := by
   obtain ⟨x, y, hx, hy, hsp⟩ := h
   exact discounted_not_counts nm ⟨x, y, reaches_mono nm hs hx, hs y hy, hsp⟩
 

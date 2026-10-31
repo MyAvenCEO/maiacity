@@ -306,7 +306,11 @@ fn counts_vectors() {
     for v in vectors("counts.json") {
         let name = v["name"].as_str().unwrap();
         let (all, s) = world(&v["input"]);
-        let bad: Vec<Hash> = indices(&v["input"]["bad"])
+        let unfit: Vec<Hash> = indices(&v["input"]["unfit"])
+            .iter()
+            .map(|&i| all[i].name())
+            .collect();
+        let unauthorized: Vec<Hash> = indices(&v["input"]["unauthorized"])
             .iter()
             .map(|&i| all[i].name())
             .collect();
@@ -315,7 +319,8 @@ fn counts_vectors() {
             .map(|&i| all[i].name())
             .collect();
         let held = Held::new(&s);
-        let ok = |x: &Envelope| !bad.contains(&x.name());
+        let fit = |x: &Envelope| !unfit.contains(&x.name());
+        let authorized = |x: &Envelope| !unauthorized.contains(&x.name());
         let x = &v["expected"];
         let got = |f: &dyn Fn(&Envelope) -> bool| all.iter().map(f).collect::<Vec<bool>>();
         assert_eq!(
@@ -329,7 +334,7 @@ fn counts_vectors() {
             "{name}: discounted"
         );
         assert_eq!(
-            got(&|e| held.counts(e, ok)),
+            got(&|e| held.counts(e, fit, authorized)),
             bools(&x["counts"]),
             "{name}: counts"
         );

@@ -3,7 +3,7 @@
 # beside them, outside the workspace. The repository's root workspace, v1's, excludes this folder.
 [workspace]
 resolver = "3"
-members = ["core", "db/core", "db/docs", "store", "id/core", "peer/native", "peer/light"]
+members = ["codec", "core", "db/core", "db/docs", "store", "id/core", "peer/native", "peer/light"]
 # The docs layer's fuzz targets are a workspace of their own (db/docs/fuzz), built only by cargo-fuzz.
 exclude = ["db/docs/fuzz"]
 

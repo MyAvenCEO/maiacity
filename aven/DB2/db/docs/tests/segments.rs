@@ -78,8 +78,7 @@ fn a_segment_closes_at_its_limits() {
         prev: None,
         deps: vec![],
         body: aven_core::Value::Bytes(vec![0; pad]),
-        signer: vec![],
-        sig: vec![],
+        sigs: vec![],
     };
     let mut c = Closer::new(doc, "main", 9, 0, Limits::DEFAULTS);
     let mut sizes = vec![];
@@ -218,7 +217,7 @@ proptest! {
         let mut segs = vec![];
         for (i, ep) in epochs.iter().enumerate() {
             let e = Envelope { doc, branch: "main".into(), writer: 9, seq: i as u64 + 1, prev: None, deps: vec![],
-                body: aven_core::Value::Null, signer: vec![], sig: vec![] };
+                body: aven_core::Value::Null, sigs: vec![] };
             segs.extend(c.add(blake3(&[*ep]), e));
         }
         let mut seqs = vec![];

@@ -19,8 +19,8 @@ import Lean.Data.Json
   bytes (a megabyte written out would be two in hex).
 - `past.json`: generated worlds (`Aven.Core.Model`): envelopes and which a reader holds; for each envelope, the names
   before it and whether each held one is before it.
-- `counts.json`: the same worlds with bad envelopes and a version's tips; for each envelope, whether its whole past is
-  held (closed), whether it is discounted, counts and is held by the version.
+- `counts.json`: the same worlds with unfit and unauthorized envelopes and a version's tips; for each envelope, whether
+  its whole past is held (closed), whether it is discounted, counts and is held by the version.
 - `targets.json`: pairs of targets; whether the first narrows the second, and which Docs each covers.
 - `target-bytes.json`: each target form, readable, and its CBOR in hex (`Aven.Core.TargetCbor`); and the CBOR of
   targets whose Doc or type id isn't 32 bytes, refused on read (`expected` null).
@@ -380,10 +380,12 @@ def Rng.world (r : Rng) : Aven.Core.Model.World × Rng := Id.run do
     all := all.push e
     held := held.push (h ≠ 0)
   let (nb, r') := r.below 3
-  let (bad, r') := r'.many nb fun r => r.below all.size
+  let (unfit, r') := r'.many nb fun r => r.below all.size
+  let (na, r') := r'.below 3
+  let (unauthorized, r') := r'.many na fun r => r.below all.size
   let (nt, r') := r'.below 3
   let (tips, r') := r'.many nt fun r => r.below all.size
-  return (⟨all.toList, held.toList, bad, tips⟩, r')
+  return (⟨all.toList, held.toList, unfit, unauthorized, tips⟩, r')
 
 def worlds : List Aven.Core.Model.World :=
   (List.range 40).map fun i => (Rng.world (Rng.seed (1000 + i))).1
@@ -400,7 +402,9 @@ def pastVectors : List Json :=
 def countsVectors : List Json :=
   worlds.zipIdx.map fun (w, i) =>
     let a := w.answer
-    vector s!"world {i + 1}" (Json.mkObj (worldInput w ++ [("bad", toJson w.bad), ("tips", toJson w.tips)]))
+    vector s!"world {i + 1}"
+      (Json.mkObj (worldInput w ++ [("unfit", toJson w.unfit), ("unauthorized", toJson w.unauthorized),
+        ("tips", toJson w.tips)]))
       (Json.mkObj [("closed", a.getObjValD "closed"), ("discounted", a.getObjValD "discounted"),
         ("counts", a.getObjValD "counts"),
         ("holds", a.getObjValD "holds")])
@@ -519,6 +523,8 @@ def boundBytes : List Json :=
 def ops : List Json :=
   coreOps ++ calls ++
   [vector "the type of types" (utf8Text (k "avenDB type of types 1")) (typeOfTypes blake3).text] ++
+  ([("avenDB", "type of types"), ("avenID", "cap")].map fun (ns, n) =>
+    vector s!"a built-in type: {ns} {n}" (Json.mkObj [("namespace", ns), ("name", n)]) (builtinType blake3 ns n).text) ++
   (boundAllows.map fun (name, b, v, _) =>
     vector s!"does it allow? {name}" (Json.mkObj [("bound", b.json), ("value", v.json)]) (toJson (b.allows v))) ++
   (boundWithin.map fun (name, a, b, _) =>

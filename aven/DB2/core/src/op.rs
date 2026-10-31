@@ -12,9 +12,9 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use crate::cbor::Value;
-use crate::names::{DocId, Hash, name_of};
 use crate::target::Facts;
+use aven_codec::Value;
+use aven_codec::{DocId, Hash, name_of};
 
 /// An operation, named by the hash of its stored form.
 pub type OpId = Hash;
@@ -170,9 +170,17 @@ impl Call {
     }
 }
 
-/// The built-in type of types: the root type of every type Doc, and its own. Its id is the name of a fixed label.
+/// A built-in type (`builtinType`): no Doc's genesis, its id the name of the label `<namespace> <name> 1`. The one
+/// way a part names its built-in types (A45).
+pub fn builtin_type(namespace: &str, name: &str) -> DocId {
+    DocId(name_of(&Value::Text(alloc::format!(
+        "{namespace} {name} 1"
+    ))))
+}
+
+/// The built-in type of types: the root type of every type Doc, and its own, `avenDB type of types 1`.
 pub fn type_of_types() -> DocId {
-    DocId(name_of(&Value::Text("avenDB type of types 1".into())))
+    builtin_type("avenDB", "type of types")
 }
 
 impl Facts {

@@ -186,17 +186,21 @@ impl Segment {
         if signed.label != SEGMENT_LABEL {
             return Err(BadSegment::Form);
         }
+        // hybrid-signed by its writer alone
+        let [by] = signed.sigs.as_slice() else {
+            return Err(BadSegment::Signature);
+        };
         if !signed.valid(&Hybrid) {
             return Err(BadSegment::Signature);
         }
-        let key = aven_core::decode(&signed.signer)
+        let key = aven_core::decode(&by.signer)
             .and_then(|v| HybridPublic::of_value(&v))
             .ok_or(BadSegment::Signature)?;
         let s = Segment::of_body(*doc, epoch.name, &signed.body, limits).ok_or(BadSegment::Form)?;
         let envs = s.run(limits).ok_or(BadSegment::Run)?;
         if envs
             .iter()
-            .any(|e| e.signer != key.ed25519 || e.doc != *doc)
+            .any(|e| !e.sigs.iter().any(|x| x.signer == key.ed25519) || e.doc != *doc)
         {
             return Err(BadSegment::Signature);
         }
