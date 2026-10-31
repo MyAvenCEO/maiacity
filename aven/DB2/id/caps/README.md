@@ -1329,6 +1329,7 @@ Values, hashes, ops or targets of its own; its built-in types are `Aven.ID.Types
 | | `device_within_cap`, `device_and_chain` | The signing device acts within its device cap on either path, a cap from the vault it serves: it lets the device write on the envelope's branch and allows every call, so under a chain each call is allowed both by the chain for the vault and by the device cap for the device (rule 1) |
 | | `device_proposals_never_main`, `merge_within_device` | A device whose cap is for proposals, as an agent's removals go, never writes on main whatever chain it names; a merge into main read whole stays within the merging device's cap |
 | | `host_chain_only`, `actor_within_device`, `host_never_beyond` | An authorized envelope an actor host's device signed rests on a chain, the one the acting actor's message carried, and names that actor; every call of it is allowed both by that chain's last cap and by the host's device cap, the union of its hosted actors' standing caps (A27) |
+| | `authorizedB_iff` | The verdict a reader computes, with its tests for who governs whom, spawned and lists, is `Authorized`; `aven-id-model` answers `authorized.json`'s cases with it |
 | `Caps` | `narrow_chain`, `narrow_ops` | No cap in a chain lets an op reach a Doc, or allows a call (an op, on a Doc, with parameters), that its root doesn't (A32) |
 | | `root_authority` | Every line a chain grants lies in its root issuer's authority: its own vault, one it governs, or a Doc of one |
 | | `no_step_without_write` | A grant whose ops all lower to no step, as `core/1`'s read, tell, keep and share do, lets no call write a step (A2) |
@@ -1420,6 +1421,7 @@ One smaller gap:
 | File | What |
 |---|---|
 | `caps.json` | Chains on the cast, their lines of ops in Core's form (A32), each cap with its CBOR bytes, its id and the bytes its device signs, and each chain with the first rule it breaks or none; who keeps a Doc; how avenOS shows a cap; 40 generated chains |
+| `authorized.json` | An envelope's signer, Doc and branch, its calls (a merge into main's whole calls) and the chain it names, with what the reader knows: its context, each signing key's vault, each device's cap and the network's members; each check's verdict, the path (own or chain) and the first check that refuses it: own authority, chains in and out of their bounds, a device cap for proposals, an actor host with and without its actor, and merges read whole |
 | `collections.json` | A collection's envelopes, the Docs a reader knows, who signs for and governs which vault, and whether it lists a Doc: removals, strangers, reach, nesting and the depth (A32) |
 | `revocations.json` | Docs of Core envelopes, each with its name and what caps reads of it, the revocations held, and verdicts: hand-written, and 30 generated Docs with every envelope's verdict |
 | `epochs.json` | Who learns which key after Bob's removal and after Alice's heal, and what Bob learns holding Maia City's `below` group |
@@ -1428,6 +1430,10 @@ One smaller gap:
 | `expiry.json` | Writes under a cap that expires, with each envelope's signed time, and whether each counts for the clock |
 | `network.json` | A ticket's claims in two orders (A12), removals that clash, MaiaCityGuardian's exit |
 | `keep.json` | Fetch-key links in the order they came, with the keys a keeper takes, its current key and its flags; proofs and whether they're served; what each vault pays; what a keeper keeps under the keep caps it holds and its own offers (A44); 30 generated keepers |
+
+`aven-id-model` answers the same cases a backend's property tests draw: a chain, who keeps a Doc, a Doc of envelopes
+with its revocations, and an envelope's authority, each in the form its vector's input takes (`Aven.ID.CapsModel`).
+Every Doc id in the vectors is 32 bytes, as Core's are.
 
 A cap's bytes are its body in Core's deterministic CBOR, its targets as `Aven.Core.TargetCbor` writes them; its id is
 their BLAKE3 hash, and its device signs them under the label `avenID cap 1` (`Aven.ID.CapsCbor`). The cast's caps go by
