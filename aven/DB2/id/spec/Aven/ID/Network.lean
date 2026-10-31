@@ -1373,9 +1373,8 @@ theorem signIn_own_vault {vault d : String} {s : TreeStatement} (ms : s ∈ S) (
   simp only [Bool.or_eq_true]
   exact .inr ((view_any pinned).mpr ⟨s, ms, cs, by simp [e, pk]⟩)
 
-/-- **`ownerless_only_adds_owner`:** a passkey whose record has no owner, and which added none, signs in no device:
-the owner-epoch op is the one act it signs (A42). -/
-theorem ownerless_only_adds_owner {vault p : String}
+/-- A passkey whose record has no owner, and which added none, signs in no device. -/
+theorem ownerless_signs_in_nothing {vault p : String}
     (noOwner : ∀ g ∈ S, ∀ gs, g.says = .genesis gs → p = gs.passkey.spki → gs.passkey.owner = none)
     (noClaimOwner : ∀ c ∈ S, ∀ t founded pk ds gu, c.says = .claim t founded pk ds gu → pk.spki = p →
       pk.owner = none)
@@ -1406,6 +1405,87 @@ theorem ownerless_only_adds_owner {vault p : String}
         simp only [Bool.and_eq_true, beq_iff_eq, Option.isSome_iff_ne_none] at hc
         exact hc.2.2 (noClaimOwner c mc t founded pk ds gu e hc.2.1.2)
       · simp at hc
+
+/-- A signature by a key that owns no vault of the tree never makes an approval: k of n counts owners only. -/
+theorem approvesF_extra {t : Tree} {th : String → Nat} {d : String} {sigs : List Sig} {p : String}
+    (np : ∀ v ∈ t.vaults, p ∉ v.ownerKeys) :
+    ∀ {f : Nat} {vault : String}, t.approvesF th d (⟨p, d⟩ :: sigs) f vault = true →
+      t.approvesF th d sigs f vault = true
+  | 0, _, h => by simp [Tree.approvesF] at h
+  | f + 1, vault, h => by
+    unfold Tree.approvesF at h ⊢
+    cases g : t.get? vault with
+    | none => simp [g] at h
+    | some v =>
+      simp only [g, decide_eq_true_eq] at h ⊢
+      refine Nat.le_trans h (length_filter_le fun o m ho => ?_)
+      cases o with
+      | key k =>
+        simp only [Tree.ownerApproves, List.contains_cons, Bool.or_eq_true, beq_iff_eq, Sig.mk.injEq,
+          and_true] at ho ⊢
+        rcases ho with rfl | ho
+        · have mk : Owner.key k ∈ v.owners := mem_ownersOnce.mp m
+          exact absurd (List.mem_filterMap.mpr ⟨_, mk, rfl⟩ : k ∈ v.ownerKeys) (np v (Tree.get?_some g).1)
+        · exact ho
+      | vault a =>
+        simp only [Tree.ownerApproves] at ho ⊢
+        exact approvesF_extra np ho
+
+/-- **`ownerless_only_adds_owner`** (A42): a passkey whose record has no owner, and which signed no owner-epoch op of
+its own, has no act counted but that op. It signs in no device; its signature beside an act adds nothing to Maia City's
+approval of it; and it confirms nothing. -/
+theorem ownerless_only_adds_owner {p : String}
+    (noOwner : ∀ g ∈ S, ∀ gs, g.says = .genesis gs → p = gs.passkey.spki → gs.passkey.owner = none)
+    (noClaimOwner : ∀ c ∈ S, ∀ t founded pk ds gu, c.says = .claim t founded pk ds gu → pk.spki = p →
+      pk.owner = none)
+    (noEpoch : ∀ s ∈ S, s.signer = p → ∀ c o se e, s.says ≠ .ownerEpoch c o se e)
+    (notGuardian : ∀ g ∈ S, ∀ gs, g.says = .genesis gs → p ≠ gs.guardian.ed25519)
+    (notDevice : ∀ g ∈ S, ∀ gs, g.says = .genesis gs → p ∉ gs.devices ∧ p ≠ gs.avenPeer)
+    (notSignedIn : ∀ s ∈ S, s.says ≠ .signIn p) :
+    (∀ vault, passkeyOf (view pinned S) vault p = false) ∧
+      (∀ ks, byAdmin (view pinned S) (p :: ks) = true → byAdmin (view pinned S) ks = true) ∧
+      confirmer (view pinned S) p = false := by
+  -- in a pinned genesis's tree, p owns no vault: its owner keys are the claimant's passkey, which has an owner, and
+  -- MaiaCityGuardian's
+  have notKey : ∀ g ∈ S, ∀ gs, g.says = .genesis gs → gs.consented = true →
+      ∀ v ∈ gs.tree.vaults, p ∉ v.ownerKeys := by
+    intro g mg gs e c v mv
+    have ps : p ≠ gs.passkey.spki := fun h => by
+      simp [Genesis.consented, noOwner g mg gs e h] at c
+    have pg := notGuardian g mg gs e
+    simp only [Genesis.tree, List.mem_cons, List.not_mem_nil, or_false] at mv
+    rcases mv with rfl | rfl | rfl | rfl <;>
+      simp [Vault.ownerKeys, Owner.key?, List.filterMap_map, Function.comp_def, ps, pg]
+  refine ⟨fun _ => ownerless_signs_in_nothing pinned noOwner noClaimOwner noEpoch, fun ks h => ?_, ?_⟩
+  · obtain ⟨g, mg, cg, n, gs, e, c, ap⟩ := gen_elim pinned h
+    simp only [List.map_cons, Tree.approves] at ap
+    exact gen_intro pinned mg cg n e c (approvesF_extra (notKey g mg gs e c) ap)
+  · cases h : confirmer (view pinned S) p
+    · rfl
+    · exfalso
+      unfold confirmer at h
+      simp only [Bool.or_eq_true] at h
+      rcases h with (h | h) | h
+      · obtain ⟨g, mg, _, _, gs, e, c, ap⟩ := gen_elim pinned h
+        simp only [List.any_eq_true] at ap
+        obtain ⟨x, _, ap⟩ := ap
+        have pos : ∀ y, 1 ≤ gs.tree.threshold y := by
+          simp only [Genesis.consented, Bool.and_eq_true, decide_eq_true_eq] at c
+          exact gs.threshold_pos c.1.1.1.1
+        unfold Tree.approves at ap
+        obtain ⟨k, _, mk⟩ := Tree.approvesF_signed pos (approvesF_extra (notKey g mg gs e c) ap)
+        simp at mk
+      · obtain ⟨g, mg, _, _, gs, e, _, hp⟩ := gen_elim pinned h
+        simp only [Bool.or_eq_true, Bool.and_eq_true, List.contains_iff_mem, beq_iff_eq] at hp
+        rcases hp with ⟨_, d⟩ | ⟨_, d⟩
+        · exact (notDevice g mg gs e).1 d
+        · exact (notDevice g mg gs e).2 d
+      · obtain ⟨s, ms, _, hs⟩ := (view_any pinned).mp h
+        split at hs
+        · rename_i d e
+          simp only [Bool.and_eq_true, beq_iff_eq] at hs
+          exact notSignedIn s ms (hs.1 ▸ e)
+        · cases hs
 
 /-- The door admits exactly the devices of the member vaults (K12): the claimant's first devices, the Aven Peer, the
 first device of each vault a standing claim founds, and the devices a member's passkey signs in. So it is a function of
