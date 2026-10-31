@@ -369,6 +369,32 @@ Installing, running and upgrading a node belong to avenPEER (the architect, 30 O
 - **Stored formats are read forever:** every release reads what every older release stored, tested against frozen
   vectors of each format. Only the wire refuses older peers; the store never does.
 
+How it is built (thread E, 31 Oct 2026):
+
+- **The wire version** is `Aven.DB.Wire.wireVersion`, 1, and `aven_db_core::wire::VERSION`. The hello carries it as
+  `wire`; a hello without one is version 0, the wire before it had versions. `meet` answers any other with
+  `{"frame":"update","wire":1}` and closes; `follows` says which side is behind, and only that one updates
+  (`meet_speaks`, `meet_refuses`, `follows_newer`, `follows_one`; `upgrades.json`). The topic's name carries it too
+  (`topicName`: `avenDB chat 1\nwire 1\nnetwork <id>`). The ALPN stays `aven/db/1`, frozen as a name: the hello's
+  number is the only wire version, and a new one never bumps the ALPN. Moving frames from JSON lines to Core's CBOR
+  (rule 1) is such a later bump, made cheap by this. Both sides say `update` on their timeline, with `mine`,
+  `theirs` and `follows`; a link refused that way dials again after a minute, or when woken.
+- **A tab behind** shows "Updating…" and nothing else, keeps its draft, and reloads; a host that still serves the older
+  release refuses the reloaded tab again, and it waits a minute before the next reload, so it never loops
+  (`os/web/update.svelte.js`). A tab ahead of the peer that refused it waits for that peer.
+- **What survives the reload, in OPFS:** the store (`/store/`): every post written, in the device's own chain before
+  any peer has it, the network as it was told, the device key, and a newcomer's signed statement until the network
+  takes it; and now the chat's draft (`/drafts/chat`), kept by the Peer-Light's worker a moment after each keystroke
+  and at once before the reload. Still missing: a file half way into the store when the tab reloads (its chunks stay,
+  but the share isn't resumed, so it must be dropped again: the Service Worker's safe switch waits for it, "no post
+  half written"); drafts of other screens (Invite's name, Sign up's name); and one draft per origin, not per tab.
+- **A native Peer behind** says `update` on its timeline; avenOS's Control Room shows it on the Peer's card and in the
+  timeline until the Peer starts again, upgraded by its owner. It never upgrades itself.
+- **The box rehearses it** with `--wire-version` (`AVEN_PEER_WIRE_VERSION`), which makes a Peer say another version,
+  and only for that: `sandbox/upgrade.mjs` in `bun run up --check`.
+- **The last manual reload:** the first release with the wire version refuses today's unversioned tabs, which can't
+  read `update`. They drop and redial until a person reloads them once; every release after that is followed by itself.
+
 ## 8. What stays special
 
 | What | Why it stays | How it goes, or why it may stay |
@@ -443,7 +469,8 @@ Peer as a keeper, named by a keep cap of Bob's vault. Then the checks below.
    the claimant's device is out at every peer.
 7. The Aven Peer starts again, catches up from members, and settles the same tree as every other peer.
 8. A peer whose wire version differs is refused with `update`, and an open tab switches to a newer release without
-   losing a draft.
+   losing a draft (`sandbox/upgrade.mjs`, with the Aven Peer up: production's stand-in a version ahead, in all three
+   engines, and Alice Peer a version behind).
 9. A peer that hides a tree envelope, or the newest entry of a Doc's log, from one member is caught by the signed
    tips.
 

@@ -16,7 +16,7 @@
 
 use aven_db_core::status::{Event, Phase, STALL_AFTER, Status, TICK_MS};
 use aven_db_core::timeline;
-use aven_db_core::wire::{ALPN, Decoder, Frame, Head, encode};
+use aven_db_core::wire::{self, ALPN, Decoder, Frame, Head, encode};
 use iroh::endpoint::Connection;
 use iroh::{Endpoint, EndpointAddr};
 use n0_future::time::{Duration, Instant, sleep, timeout};
@@ -70,6 +70,9 @@ pub async fn resolved(aven: &Resolve, me: &str, notes: &Notes) -> EndpointAddr {
 const TICK: Duration = Duration::from_millis(TICK_MS);
 /// A stalled link waits this many more steps for progress, then dials again.
 const REDIAL_AFTER: u32 = 2 * STALL_AFTER;
+/// A link refused for another wire version tries again after this, or at once when woken: the other side may have
+/// been upgraded in between, and nothing else changes by dialing sooner.
+const UPDATE_WAIT: Duration = Duration::from_secs(60);
 
 /// The frames a page hands the link to send to the Aven Peer.
 pub type Outbox = futures_channel::mpsc::UnboundedReceiver<Frame>;
@@ -207,6 +210,8 @@ struct Link {
     uploaded: u64,
     /// how many of its own lines it told the page the Aven Peer holds
     told_sent: usize,
+    /// the wire version the other side speaks, when it refused this link or this link refused it (`wire::meet`)
+    update: Option<u64>,
 }
 
 /// This device's own lines the Aven Peer doesn't hold, written offline or lost on gossip, sent once each on the link:
@@ -328,6 +333,28 @@ impl Link {
         (self.notes)(timeline::line(now(), &self.me, event, fields));
     }
 
+    /// Says `update` on the timeline (PEERS.md §7): the other side speaks wire version `theirs`, and whether this peer
+    /// is the one behind (`follows`). A tab follows at once; a native Peer waits for its owner. Returns why the link
+    /// ended.
+    fn refused(&mut self, theirs: u64) -> String {
+        self.update = Some(theirs);
+        let follows = wire::follows(crate::wire_version(), theirs);
+        self.note(
+            "update",
+            json!({ "to": self.aven, "mine": crate::wire_version(), "theirs": theirs, "follows": follows }),
+        );
+        format!(
+            "{} speaks wire version {theirs}, this peer {}: {}",
+            self.aven,
+            crate::wire_version(),
+            if follows {
+                "update to join"
+            } else {
+                "it updates"
+            }
+        )
+    }
+
     /// Tells the timeline when what the link shows has changed, and only then.
     fn tell(&mut self) {
         let shown = |v: &View| (v.status.phase, v.peers.clone(), v.path);
@@ -383,6 +410,7 @@ pub async fn run(
         there: BTreeMap::new(),
         uploaded: 0,
         told_sent: 0,
+        update: None,
     };
     link.tell();
     // until its endpoint closes: a Peer-Light rebinds with a newcomer's relay token
@@ -399,8 +427,13 @@ pub async fn run(
         link.step(Event::Lost);
         link.tell();
         link.note("lost", json!({ "to": link.aven, "why": why }));
-        // the next try after a step, or at once when woken
-        sleep(TICK).or(woken(&mut link.wake)).await;
+        // the next try after a step, or at once when woken; after a refusal for another wire version, after a minute
+        let wait = if link.update.take().is_some() {
+            UPDATE_WAIT
+        } else {
+            TICK
+        };
+        sleep(wait).or(woken(&mut link.wake)).await;
     }
 }
 
@@ -442,6 +475,7 @@ async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Re
     let (mut send, mut recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
     send.write_all(&encode(&Frame::Hello {
         peer: link.me.clone(),
+        wire: crate::wire_version(),
     }))
     .await
     .map_err(|e| e.to_string())?;
@@ -510,6 +544,20 @@ async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Re
                 for frame in decoder.push(&buf[..n]).map_err(|e| format!("{e:?}"))? {
                     link.step(Event::Frame);
                     match frame {
+                        // the Aven Peer's hello: one wire version, or this link refuses it and closes
+                        Frame::Hello { wire: theirs, .. } => {
+                            if let Some(answer) = wire::meet(crate::wire_version(), theirs) {
+                                send.write_all(&encode(&answer))
+                                    .await
+                                    .map_err(|e| e.to_string())?;
+                                let _ = send.finish();
+                                // the refusal reaches the Aven Peer before the connection goes, or a moment passes
+                                let _ = timeout(Duration::from_secs(2), send.stopped()).await;
+                                return Err(link.refused(theirs));
+                            }
+                        }
+                        // refused for another wire version: no fallback, and the older side follows
+                        Frame::Update { wire: theirs } => return Err(link.refused(theirs)),
                         Frame::Presence { peers } => link.view.peers = peers,
                         Frame::Network {
                             claimed,

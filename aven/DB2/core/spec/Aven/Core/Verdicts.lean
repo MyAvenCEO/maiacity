@@ -86,7 +86,8 @@ theorem countsB_iff {ok : Envelope → Bool} {S : List Envelope} {e : Envelope} 
     · exact .inl rfl
     · exact .inr (h x (reaches_decided.mpr (.inr ⟨hx, hp⟩)))
 
-theorem holdsB_iff {S : List Envelope} {v : Version} {e : Envelope} : holdsB nm S v e = true ↔ Version.holds nm S v e := by
+theorem holdsB_iff {S : List Envelope} {v : Version} {e : Envelope} :
+    holdsB nm S v e = true ↔ Version.holds nm S v e := by
   simp only [holdsB, List.any_eq_true, Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq, List.contains_iff_mem,
     Version.holds]
   constructor

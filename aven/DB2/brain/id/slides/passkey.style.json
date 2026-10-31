@@ -1,0 +1,16 @@
+[
+[[[null,["passkey"]],[null,["phone"]]],[["left",[800,"%"]],["top",[1244,"%"]],["width",[3600,"cqw"]],["height",[3600,"cqw"]]]],
+[[[null,["passkey"]],[null,["phone-label"]]],[["left",[2600,"%"]],["top",[7644,"%"]]]],
+[[[null,["passkey"]],[null,["unlocks-1"]]],[["left",[4200,"%"]],["top",[5333,"%"]],["width",[285,"cqw"]],["transform",[["rotate",-3787]]]]],
+[[[null,["passkey"]],[null,["unlocks-2"]]],[["left",[4425,"%"]],["top",[5022,"%"]],["width",[257,"cqw"]],["transform",[["rotate",-2905]]]]],
+[[[null,["passkey"]],[null,["unlocks-3"]]],[["left",[4650,"%"]],["top",[4800,"%"]],["width",[237,"cqw"]],["transform",[["rotate",-1843]]]]],
+[[[null,["passkey"]],[null,["unlocks-4"]]],[["left",[4875,"%"]],["top",[4667,"%"]],["width",[226,"cqw"]],["transform",[["rotate",-634]]]]],
+[[[null,["passkey"]],[null,["unlocks-5"]]],[["left",[5100,"%"]],["top",[4622,"%"]],["width",[226,"cqw"]],["transform",[["rotate",634]]]]],
+[[[null,["passkey"]],[null,["unlocks-6"]]],[["left",[5325,"%"]],["top",[4667,"%"]],["width",[237,"cqw"]],["transform",[["rotate",1843]]]]],
+[[[null,["passkey"]],[null,["unlocks-7"]]],[["left",[5550,"%"]],["top",[4800,"%"]],["width",[257,"cqw"]],["transform",[["rotate",2905]]]]],
+[[[null,["passkey"]],[null,["unlocks-8"]]],[["left",[5775,"%"]],["top",[5022,"%"]],["width",[285,"cqw"]],["transform",[["rotate",3787]]]]],
+[[[null,["passkey"]],[null,["unlocks-head"]]],[["left",[5880,"%"]],["top",[5120,"%"]],["transform",[["rotate",3787]]]]],
+[[[null,["passkey"]],[null,["unlocks-name"]]],[["left",[5100,"%"]],["top",[3804,"%"]]]],
+[[[null,["passkey"]],[null,["key"]]],[["left",[6000,"%"]],["top",[2133,"%"]],["width",[2800,"cqw"]],["height",[2800,"cqw"]]]],
+[[[null,["passkey"]],[null,["key-label"]]],[["left",[7400,"%"]],["top",[6812,"%"]]]]
+]
