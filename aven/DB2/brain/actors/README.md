@@ -408,11 +408,11 @@ every Value that sets a field kept for later (a message's `cap`, the `now` tier,
 ## Open questions
 
 - **How an address names its vault:** a vault is named by 32 bytes (A164), in every format, never text (A190); how an
-  address and a cap's target encode it. avenACTORS decides, with avenID.
+  address and a cap's target encode it. avenMAIA decides, on avenACTORS' and avenID's proposal.
 - **The kernel's own authority:** click caps scoped to what the placer wired; who may spawn, and a bound on placement
   depth; a budget per run, and backpressure. Samuel decides, on avenACTORS' proposal.
 - **Compaction:** which journal and carrier entries may be folded into checkpoints, and whether a mounted face
   actor's journal is kept after it is unplaced. Samuel decides.
-- **Moving an actor's home:** the handover's protocol. avenACTORS decides, with avenPEERS.
-- **The word "kernel":** the actor kernel keeps it, or takes another name so it never meets avenCORE's. The architect
+- **Moving an actor's home:** the handover's protocol. avenMAIA decides, on avenACTORS' and avenPEERS' proposal.
+- **The word "kernel":** the actor kernel keeps it, or takes another name so it never meets avenCORE's. avenMAIA
   decides.

@@ -13,7 +13,7 @@ architecture: the whole on one page, the rules every part keeps, who owns what, 
   decisions it rests on and the Lean that proves it. A change rewrites the page; it is never appended below.
 - **The decision log is the history.** One table, the newest decision on top. It only grows: a new decision is a new
   row at the top, a row is never edited, and a change of mind is a new row naming the one it supersedes (checked by
-  `aven/ops/devx/decisions.mjs`). The architect is its only writer.
+  `aven/ops/devx/decisions.mjs`). avenMAIA is its only writer.
 - **Package READMEs** say what the package is, link its page, and give its commands and file map. They don't decide.
 
 The working rules for every thread are in [`aven/DB2/CLAUDE.md`](../CLAUDE.md).
@@ -106,25 +106,25 @@ row in [the log](DECISIONS.md), its page states it, and it leaves both the page 
 | Who may publish a runtime once Docs run | [runtime](runtime/README.md#open-questions) | Samuel |
 | The actor kernel's own authority: click caps, who may spawn, a run budget | [actors](actors/README.md#open-questions) | Samuel, on avenACTORS' proposal |
 | An actor's compaction | [actors](actors/README.md#open-questions) | Samuel |
-| A vault-wide cap in a one-Doc reader's hands | [caps](caps/README.md#open-questions) | the architect, on avenCAPS' and avenDOCS' proposal |
-| Directory and vocabulary root types: built-in or user types | [docs](docs/README.md#open-questions) | the architect, with avenCAPS |
-| The index interface between avenDOCS and avenOPS | [docs](docs/README.md#open-questions) | the architect, on avenDOCS' and avenOPS' proposal |
-| The first lens catalogue's named conversions | [docs](docs/README.md#open-questions) | the architect, with avenDOCS at its step 3 |
-| The root Record's fields for a Doc's birth references | [docs](docs/README.md#open-questions) | the architect |
-| A slot-id put, a device's default query bound, and the granularity of deltas | [ops](ops/README.md#open-questions) | the architect, with avenOPS |
-| Whether `set_ref` requires its blob to exist | [store](store/README.md#open-questions) | the architect |
-| How much of a Peer-Light's OPFS cached chunks may take | [store](store/README.md#open-questions) | the architect, with avenOS |
-| Reconciling many Docs at a reconnect | [peers](peers/README.md#open-questions) | the architect |
-| Large values over iroh-blobs | [peers](peers/README.md#open-questions) | the architect, at stage 6 |
-| Which stage builds relays, address entries, bootstrap and signed presence | [peers](peers/README.md#open-questions) | the architect |
-| When a keeper that goes quiet counts as gone | [peers](peers/README.md#open-questions) | the architect |
-| Presence at scale | [peers](peers/README.md#open-questions) | the architect |
-| Which `users` label avenOS's own pages load a runtime as | [runtime](runtime/README.md#open-questions) | the architect, with the runtimes thread |
-| The word "kernel" | [actors](actors/README.md#open-questions) | the architect |
-| How an actor's address names its vault | [actors](actors/README.md#open-questions) | avenACTORS, with avenID |
-| Moving an actor's home | [actors](actors/README.md#open-questions) | avenACTORS, with avenPEERS |
-| Where the Service Worker lives once the safe has its own origin | [os](os/README.md#open-questions) | the architect |
-| Thumbnails and posters for files in the chat | [os](os/README.md#open-questions) | the architect |
+| A vault-wide cap in a one-Doc reader's hands | [caps](caps/README.md#open-questions) | avenMAIA, on avenCAPS' and avenDOCS' proposal |
+| Directory and vocabulary root types: built-in or user types | [docs](docs/README.md#open-questions) | avenMAIA, with avenCAPS |
+| The index interface between avenDOCS and avenOPS | [docs](docs/README.md#open-questions) | avenMAIA, on avenDOCS' and avenOPS' proposal |
+| The first lens catalogue's named conversions | [docs](docs/README.md#open-questions) | avenMAIA, with avenDOCS at its step 3 |
+| The root Record's fields for a Doc's birth references | [docs](docs/README.md#open-questions) | avenMAIA |
+| A slot-id put, a device's default query bound, and the granularity of deltas | [ops](ops/README.md#open-questions) | avenMAIA, with avenOPS |
+| Whether `set_ref` requires its blob to exist | [store](store/README.md#open-questions) | avenMAIA |
+| How much of a Peer-Light's OPFS cached chunks may take | [store](store/README.md#open-questions) | avenMAIA, with avenOS |
+| Reconciling many Docs at a reconnect | [peers](peers/README.md#open-questions) | avenMAIA |
+| Large values over iroh-blobs | [peers](peers/README.md#open-questions) | avenMAIA, at stage 6 |
+| Which stage builds relays, address entries, bootstrap and signed presence | [peers](peers/README.md#open-questions) | avenMAIA |
+| When a keeper that goes quiet counts as gone | [peers](peers/README.md#open-questions) | avenMAIA |
+| Presence at scale | [peers](peers/README.md#open-questions) | avenMAIA |
+| Which `users` label avenOS's own pages load a runtime as | [runtime](runtime/README.md#open-questions) | avenMAIA, with the runtimes thread |
+| The word "kernel" | [actors](actors/README.md#open-questions) | avenMAIA |
+| How an actor's address names its vault | [actors](actors/README.md#open-questions) | avenMAIA, on avenACTORS' and avenID's proposal |
+| Moving an actor's home | [actors](actors/README.md#open-questions) | avenMAIA, on avenACTORS' and avenPEERS' proposal |
+| Where the Service Worker lives once the safe has its own origin | [os](os/README.md#open-questions) | avenMAIA |
+| Thumbnails and posters for files in the chat | [os](os/README.md#open-questions) | avenMAIA |
 
 ## Every decision
 
@@ -196,7 +196,7 @@ decision's own text, reasons and Lean are its row there.
 | [A141](DECISIONS.md) | The keeper owns its bill and admission; the earliest remaining uploader's vault pays | [peers](peers/README.md) | yes |
 | [A140](DECISIONS.md) | The Peer image takes its crates from one list (`tag.mjs` reads `Cargo.toml`) | [peers](peers/README.md) | yes |
 | [A139](DECISIONS.md) | Held and spent in caps' Keep | [id](id/README.md) | superseded by A141 |
-| [A138](DECISIONS.md) | The decision log is append-only; the architect is its only writer | process | yes |
+| [A138](DECISIONS.md) | The decision log is append-only; avenMAIA is its only writer | process | yes |
 | [A137](DECISIONS.md) | Authorize judges an envelope on its own counted past | [docs](docs/README.md) | yes |
 | [A136](DECISIONS.md) | Tips are log heads `{writer, seq, name}` | [peers](peers/README.md) | yes |
 | [A135](DECISIONS.md) | The tree on the Doc host: its `BuiltinFit` and `Authorize` | [id](id/README.md) | yes |
@@ -335,7 +335,8 @@ decision's own text, reasons and Lean are its row there.
 | [A2](DECISIONS.md) | One codec and signing rule | [core](core/README.md) | superseded by A174 in part |
 | [A1](DECISIONS.md) | One vocabulary | [glossary](GLOSSARY.md) | superseded by A175 in part |
 
-The package lists' decisions, below A1 in the log, that a later decision supersedes (every other one still holds, cited on its page):
+The package lists' decisions, below A1 in the log, that a later decision supersedes (every other one still holds, cited
+on its page):
 
 | Imported | Superseded by |
 |---|---|

@@ -9,17 +9,18 @@ one page per package (`brain/<package>/README.md`), [the decision log](brain/DEC
   new row at the top, a row is never edited, and a change of mind is a new row that names the one it supersedes
   (`bun aven/ops/devx/decisions.mjs` checks it). The pages are the latest truth: each concept is stated once, on its
   owner's page, as it is now, with the decisions it rests on and the Lean that proves it.
-- **The architect writes both.** A thread never adds an A-number or architecture prose (A171). Every decision, whether
-  Samuel's or agreed between threads in messages or a PR body, goes to the architect, who logs it and rewrites the
-  page that owns the concept. A decision that lives only in a message, a PR body or a README is drift. A thread may
-  update its page's Status table in the PR that builds what a row lists.
+- **avenMAIA writes both.** avenMAIA is avenDB's architect, the session that orchestrates the threads, and every
+  decision is Samuel's or avenMAIA's. A thread never adds an A-number or architecture prose (A171). A thread's proposal,
+  and every decision of Samuel's, whether in a message or a PR body, goes to avenMAIA, who logs what is decided and
+  rewrites the page that owns the concept. A decision that lives only in a message, a PR body or a README is drift. A
+  thread may update its page's Status table in the PR that builds what a row lists.
 - **Replace, don't append.** A later decision rewrites the page text it changes. The log keeps what it replaced.
 - **READMEs and Lean don't decide.** A package's README says what the package is, links its page, and gives its
   commands and file map. Its Lean proves what the page states and cites the A-number. Where code, Lean or a README
-  disagrees with the page, the page wins: the owner fixes theirs in its next PR and tells the architect.
+  disagrees with the page, the page wins: the owner fixes theirs in its next PR and tells avenMAIA.
 - **Done means recorded, proven and built.** A decision is done when its page states it, the Lean names the page cites
   exist on main, and the code follows. Until then, the page's Status says what is pending and where.
-- **Before you start,** read your package's page and the log's entries newer than your branch.
+- **Before you start,** read your package's page and the log's rows newer than your branch.
 
 ## The rules of the work
 

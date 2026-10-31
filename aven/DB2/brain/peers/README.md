@@ -567,15 +567,15 @@ Known gaps, code and Lean:
 ## Open questions
 
 - **Many Docs at a reconnect.** Sync runs per Doc. Reconciling many Docs' versions with a source in one round
-  (A9, item 6) has no frame yet. The architect decides.
+  (A9, item 6) has no frame yet. avenMAIA decides.
 - **Large values over iroh-blobs.** Whether large values, video first, go over iroh-blobs with the proof bound to the
-  authenticated endpoint id, measured (A144). The architect decides, at stage 6.
-- **Who builds relays, address entries, bootstrap and signed presence.** No cutover stage names them yet. The
-  architect decides.
-- **A keeper that goes quiet.** Whether a keeper that hasn't beaten for 7 days counts as gone, so avenOS tells the
-  vault's owners their keep caps name a keeper that isn't there. Nothing decides it and no Lean holds it. The architect
+  authenticated endpoint id, measured (A144). avenMAIA decides, at stage 6.
+- **Who builds relays, address entries, bootstrap and signed presence.** No cutover stage names them yet. avenMAIA
   decides.
-- **Presence at scale.** A beat per device per step on one topic suits Maia City, not millions. The architect
+- **A keeper that goes quiet.** Whether a keeper that hasn't beaten for 7 days counts as gone, so avenOS tells the
+  vault's owners their keep caps name a keeper that isn't there. Nothing decides it and no Lean holds it. avenMAIA
+  decides.
+- **Presence at scale.** A beat per device per step on one topic suits Maia City, not millions. avenMAIA
   decides.
 - **The release vault.** Who owns it, and when signed release entries replace the dated release (A36, A42). Samuel
   decides.

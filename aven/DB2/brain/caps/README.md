@@ -72,7 +72,7 @@ it sits beside it and never changes its name. A cap is its content: it carries n
 {"form": "grant" | "attenuate", "role": role, "grant": [line…], "share": n,
  "holder": holder, "issuer": vault, "parent": cap,
  "conditions": {"own", "uses", "approve", "expires", "history", "branches", "notBefore"}}
-line:    {"op": op id, "doc": target, "params": {param: [value…] or null, …}}
+line:    {"op": op id, "doc": target, "params": {param: [value…], …}}
 holder:  {"vault": vault}  |  {"group": Doc id}  |  "public"
 ```
 
@@ -133,10 +133,9 @@ it lists, or not), a vault's Docs, or a vault's Docs of one root type, each with
 Doc is in a target follows from its birth facts and from a [collection's](#collections) signed listings, never from
 content. A cap never names a query as a target: a query's flexibility comes as a collection.
 
-**Bounds.** A line bounds each parameter by enumeration: null for any value, or a list of the values it allows; for a
-list-valued parameter, every element must be one of them. A parameter the line doesn't name is free. `core/1`'s writes
-take `type`, the type Doc a step writes, and `fields`, the fields it writes. Ranges come only when a real op needs
-them.
+**Bounds.** A line bounds a parameter by the list of values it allows; for a list-valued parameter, every element must
+be one of them. A parameter the line leaves out is free, and none is written as `null` (A200). `core/1`'s writes take
+`type`, the type Doc a step writes, and `fields`, the fields it writes. Ranges come only when a real op needs them.
 
 **Narrower** means the same op, a narrower target (`Target.le`) and every bound at least as tight (`Bound.within`).
 
@@ -791,4 +790,4 @@ The Lean is `Aven.ID` in `id/spec`, the Rust the `aven-id` crate in `id/core`, u
 
 - **A vault-wide cap in a one-Doc reader's hands.** `authority.caps` names a chain by its caps' names. A cap on a
   vault's Docs lives in a group Doc that a reader given one Doc can't open. Where that reader finds the cap's body:
-  caps and avenDOCS propose, the architect decides.
+  caps and avenDOCS propose, avenMAIA decides.

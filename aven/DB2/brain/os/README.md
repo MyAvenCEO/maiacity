@@ -261,6 +261,6 @@ the faces are avenRUNTIME's (`Aven.Runtime.Tree`, `Aven.Runtime.Face`)
 ## Open questions
 
 1. **Where the Service Worker lives** once A15's safe has an origin of its own: on the safe's origin, with avenOS's
-   media elements pointing there, or on avenOS's, relaying through the page. The architect decides.
+   media elements pointing there, or on avenOS's, relaying through the page. avenMAIA decides.
 2. **Thumbnails and posters:** a small second Value the sender makes, named beside the file, so the chat paints before
-   a movie's first chunk arrives. The architect decides.
+   a movie's first chunk arrives. avenMAIA decides.

@@ -208,7 +208,8 @@ type's writers can publish a version; only a Doc's owners decide whether that Do
   and there are no floors ([avenRUNTIME](../runtime/README.md#pins)).
 - **Fit never reads a type Doc's changing state,** only the pinned schema Values, by hash.
 - **Pins cover lenses** between two type Docs too ([Lenses](#lenses)).
- **Decided:** A7, A18, A42, docs 11, docs rule 17 · **Lean:** pins at birth: `Aven.DB.Docs.Genesis` (`Genesis.ok`); pins
+
+**Decided:** A7, A18, A42, docs 11, docs rule 17 · **Lean:** pins at birth: `Aven.DB.Docs.Genesis` (`Genesis.ok`); pins
 by act: not in Lean yet
 
 ### Fit
@@ -876,11 +877,11 @@ one (`tests/catchup.rs`, #1694). In the browsers with Docs in the Peers (#1727).
 ## Open questions
 
 1. **Directory and vocabulary root types:** built-in types with their definers' shapes, or user types? A42 says every
-   sort of Doc names its root type. *The architect, with avenCAPS.*
+   sort of Doc names its root type. *avenMAIA, with avenCAPS.*
 2. **The index interface** with avenOPS: `entry`, `fold`, `lookup` with the unfolded entries, and `rebuild` to check a
-   fold, for entries that are envelopes of their own. *avenDOCS and avenOPS; the architect decides.*
+   fold, for entries that are envelopes of their own. *avenDOCS and avenOPS; avenMAIA decides.*
 3. **The first lens catalogue's named conversions:** text to money, text to date, text to number. *avenDOCS at step 3;
-   the architect decides.*
+   avenMAIA decides.*
 4. **Overlapping text edits in a merge:** shown only, or offered as a choice? *Samuel.*
 5. **The root Record's fields for a Doc's birth references** (a fork's origin, the period before, the frozen chains):
-   their names and shapes, and how a user root type's schema admits them. *The architect.*
+   their names and shapes, and how a user root type's schema admits them. *avenMAIA.*

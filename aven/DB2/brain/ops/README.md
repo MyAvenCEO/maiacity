@@ -417,7 +417,7 @@ The Rust crate is pure (`no_std`, no `unsafe`, builds for wasm32) and replays ev
 
 1. **A slot-id put.** The ontology writes an at-most-one trait under a slot id, an upsert that may meet a Record that
    is there; avenCAPS' footprints call it `put-replace`, but no `core/1` call lowers to `put-replace`. How does it
-   lower: a `put` when the Record is absent and a `patch` when present, or a write of its own? *The architect, with
+   lower: a `put` when the Record is absent and a `patch` when present, or a write of its own? *avenMAIA, with
    avenOPS and avenCAPS.*
-2. **A device's default query bound.** *avenOPS, with the architect.*
-3. **Delta granularity:** rows, fields or Loro updates. Rows are proposed. *avenOPS, with the architect.*
+2. **A device's default query bound.** *avenMAIA, on avenOPS' proposal.*
+3. **Delta granularity:** rows, fields or Loro updates. Rows are proposed. *avenMAIA, on avenOPS' proposal.*

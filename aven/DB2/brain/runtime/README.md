@@ -535,4 +535,4 @@ move, each module gets one new version, appended. The file registry takes no dep
   and under what review. Samuel decides.
 - **Which `users` label avenOS's own pages load a runtime as:** markdown-runtime is listed for `file`, yet it runs
   avenBRAIN's first-party pages on avenOS's origin; a `page` user, or `file` read as including first-party content.
-  The architect decides, with the runtimes thread.
+  avenMAIA decides, with the runtimes thread.

@@ -208,7 +208,7 @@ opfs driver changes underneath.
   byte offset a crash point; then the driver.
 - **Its gates** are the same workload, every engine held to 60 ms, 30 ms and 10 s.
 
-**Decided:** the architect, 30 Oct (packs next, on the upgrade's evidence; not in the log yet) · **Lean:** not in Lean
+**Decided:** avenMAIA, 30 Oct (packs next, on the upgrade's evidence; not in the log yet) · **Lean:** not in Lean
 yet
 
 ## Status
@@ -231,5 +231,5 @@ The store's Lean (`Aven.DB.Store`, `Aven.DB.StoreCrash`, `Aven.DB.Files`) is in 
 
 ## Open questions
 
-1. **Does `set_ref` require its blob to exist?** Today the store doesn't check. The architect decides.
-2. **How much of a Peer-Light's OPFS cached chunks may take** before the oldest go. The architect decides, with avenOS.
+1. **Does `set_ref` require its blob to exist?** Today the store doesn't check. avenMAIA decides.
+2. **How much of a Peer-Light's OPFS cached chunks may take** before the oldest go. avenMAIA decides, with avenOS.
