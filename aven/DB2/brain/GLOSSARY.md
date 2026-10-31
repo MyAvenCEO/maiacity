@@ -1,9 +1,9 @@
-# avenDB glossary
+# The glossary
 
-Every term the avenDB specs use, part by part, with its one meaning and a verdict. The shared primitives (Value,
-envelope, log, Doc, cap, want and the rest) are defined once, in
-[`ARCHITECTURE.md`](ARCHITECTURE.md#the-primitives-everything-shares). This file maps every other term onto them.
-The verdicts are proposals until Samuel decides (**A1**).
+The one glossary of the whole system, kept in avenBRAIN and shown in avenOS under Docs: every term the specs use,
+part by part, with its one meaning and a verdict. The shared primitives (Value, envelope, log, Doc, cap, want and the
+rest) are defined once, in [`ARCHITECTURE.md`](../ARCHITECTURE.md#the-primitives-everything-shares). This file maps
+every other term onto them. The verdicts are proposals until Samuel decides (**A1**).
 
 **Verdicts.** No mark: keep as is. **→ x:** rename to x. **= x:** the same thing as x; use x. **⚠:** the same word
 means something else in another part, and that part's meaning is named.
@@ -134,7 +134,7 @@ means something else in another part, and that part's meaning is named.
 - **`x-loro`, `x-link`**: the container a field uses; **`x-link` = link**.
 - **lens**: two-way steps between two schema versions: add, rename, convert, in, wrap, unwrap, move, container.
   Universal (Samuel, 30 Oct 2026): a lens joins versions inside one type Doc or of two type Docs. A reader uses only
-  the lenses pinned where it reads, and those form a forest ([A7](ARCHITECTURE.md#proposals-for-samuel)).
+  the lenses pinned where it reads, and those form a forest ([A7](../ARCHITECTURE.md#proposals-for-samuel)).
 - **kept, unseen**: where a dropped field's data goes.
 - **lane → vocabulary** (Samuel); largely retired by D8 and type Docs.
 - **view**: an app's schema and lenses. **= the input of a view** (one meaning, shared with the engine).
@@ -202,11 +202,11 @@ means something else in another part, and that part's meaning is named.
 - **line** (chat) **→ post**. **chain** (chat) **→ log**. **fork** (chat) **→ split**.
 - **stall alarm**: raised when a step moves no version.
 - **directory**: the index of a vault's Docs of one root type, by Doc id: sealed Values, with recent entries in a small
-  Doc ([A26](ARCHITECTURE.md#a-handful-among-millions-sealed-indexes)).
+  Doc ([A26](../ARCHITECTURE.md#a-handful-among-millions-sealed-indexes)).
 - **index**: a derived map that must equal a scan: a device's own cache, or a **sealed index** its readers share, a
   search tree of sealed Values derived from a query's shape, kept current by folds, which are checkpoints (A26).
   **blind index**: tokens another peer could match; not used, since search is local
-  ([A21](ARCHITECTURE.md#search-local-first)).
+  ([A21](../ARCHITECTURE.md#search-local-first)).
 - **door, provider events, RBSR**: admission; iroh-blobs' hooks; range-based set reconciliation.
 - **run, journal**: as in actors.
 
@@ -236,7 +236,7 @@ means something else in another part, and that part's meaning is named.
   (not json-runtime), **js-runtime** and **face-runtime**: one runtime draws a face from its data, `markup` and
   `style`, checking a11y across both (Samuel, 30 Oct 2026; it replaces view-, markup-, css- and style-runtime). There
   is no prolog-runtime. Their home is
-  [`aven/runtimes`](../runtimes/README.md).
+  [`aven/runtimes`](../../runtimes/README.md).
 - **floor, fuel, shim, hostile parts**: the oldest runtime still run; work counted per instruction; the deterministic
   answer to clock and random calls; test parts that try to escape.
 - **definition**: the class: `interface`, `machine`, `turn`, `faces`, `init`, `lifetime`, `replaces`, `loads`.
@@ -291,7 +291,7 @@ means something else in another part, and that part's meaning is named.
 
 ## runtimes
 
-[`aven/runtimes`](../runtimes/README.md), the one home of every runtime.
+[`aven/runtimes`](../../runtimes/README.md), the one home of every runtime.
 
 - **runtime name**: `<job>-runtime` for actors (above), `<format>-runtime` for files (**svg-runtime**,
   **markdown-runtime**, **text-runtime**, **csv-runtime**, **json-runtime**, **pdf-runtime**), and after its plugin for
@@ -333,6 +333,17 @@ means something else in another part, and that part's meaning is named.
 - **lane** (iroh) **→ topology**: a NAT or UDP test setup in the box. ⚠ docs' lane retires.
 - **record** (a peer's status, `first-start`) **→ status**, **first-start ref**.
 - **`aven/db/1`, `Router`, `ProtocolHandler`, `after_handshake`**: our ALPN; iroh's dispatch and hook.
+
+## avenBRAIN: the docs
+
+- **avenBRAIN**: the package that holds all the documentation (`aven/DB2/brain`): the wiki, its slides, the style,
+  the voice and this glossary. avenOS shows it under **Docs**.
+- **page**: one package's part of the wiki, in Markdown: its story, then its slides in order.
+- **story**: a page's concepts in the order a reader meets them, from first principles; never a term before its slide.
+- **slide**: one concept on one 16:9 still: an illustration and its text in Markdown. Its markup is allowlisted HTML
+  with classes only, so the face-runtime can draw it later.
+- **layer**: one visual element of a slide, with a stable class, so a motion version can move it.
+- **path** (on a slide): the dotted ochre line that shows a relation, named on its **tag**.
 
 ## Words with two meanings
 

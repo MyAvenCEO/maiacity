@@ -3,7 +3,7 @@
 This document is the one map of every part of avenDB. It says what each part is for and which few primitives they all
 share. It also gives the words the parts use, the rules that hold across all of them, and how the whole stands up to
 end-to-end encryption, local first and peer to peer. Each part's own spec has the detail; this document links to it
-and owns only what is shared. Every term of every part, with what should merge, is in [`GLOSSARY.md`](GLOSSARY.md).
+and owns only what is shared. Every term of every part, with what should merge, is in [`GLOSSARY.md`](brain/GLOSSARY.md).
 
 It was written on 30 Oct 2026 from six audits of the specs as they stood at main `2c1a9890`, one per part, and
 updated for caps D13 to D20. Proposals are marked **A1** to **A25**
@@ -61,7 +61,7 @@ settles it as drawn here.
 ## The primitives everything shares
 
 These are the shared words. Every spec uses each of them in exactly this sense. The specs define about 300 terms
-today; these 27 carry the whole design. [`GLOSSARY.md`](GLOSSARY.md) maps every other term onto them.
+today; these 27 carry the whole design. [`GLOSSARY.md`](brain/GLOSSARY.md) maps every other term onto them.
 
 | Primitive | Its one meaning | Owned by | Replaces |
 |---|---|---|---|
@@ -159,7 +159,7 @@ Rule 14 is a property of the node, held by the format vectors and the box's chec
 
 Of about 300 terms, about 40 mean two or more things across the specs, and about 30 pairs name one thing twice. Every
 homonym is a place where two threads building in parallel will diverge. These are the merges that matter most; the
-full list, part by part, is in [`GLOSSARY.md`](GLOSSARY.md) (**A1**).
+full list, part by part, is in [`GLOSSARY.md`](brain/GLOSSARY.md) (**A1**).
 
 | Word | Today it means | Proposed |
 |---|---|---|
@@ -582,7 +582,7 @@ Each proposal comes with a recommendation; "yes" means the architect recommends 
 the spec that owns it.
 
 **Before any docs or engine code**
-- **A1. One vocabulary:** this document and [`GLOSSARY.md`](GLOSSARY.md) are the single source for shared words and
+- **A1. One vocabulary:** this document and [`GLOSSARY.md`](brain/GLOSSARY.md) are the single source for shared words and
   cross-part rules, and every spec uses them in this sense. *Decided: yes (Samuel, 30 Oct 2026).*
 - **A2. One codec and signing rule** for everything signed (K1, rule 1). It started with the chat's lines in the
   security fixes (#1493). Samuel asked for "the best-practice encoding possible", shared by avenDB and the actors

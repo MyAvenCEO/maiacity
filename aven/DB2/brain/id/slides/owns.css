@@ -1,0 +1,46 @@
+/* "A key owns a vault" (owns.html): where each layer stands in the frame. Left: Alice, holding up her key. Right: her
+   vault, a dome on its plot. Between them, the dotted path of the relation, named on its chip. */
+.owns .facet-1 { clip-path: polygon(0 0, 34% 0, 20% 30%, 0 44%); }
+.owns .facet-2 { clip-path: polygon(34% 0, 52% 0, 20% 30%); }
+.owns .facet-3 { clip-path: polygon(64% 0, 100% 0, 100% 34%, 86% 18%); }
+.owns .facet-4 { clip-path: polygon(0 70%, 14% 60%, 28% 100%, 0 100%); }
+.owns .facet-5 { clip-path: polygon(72% 100%, 90% 76%, 100% 84%, 100% 100%); }
+
+.owns .home { left: 57%; top: 41%; width: 39cqw; height: 20cqw; }
+
+.owns .grove { inset: 0; }
+.owns .conifer-1 { left: 60%; top: 30%; }
+.owns .conifer-2 { left: 63.5%; top: 27%; height: 7.6cqw; width: 3cqw; }
+.owns .conifer-3 { left: 57%; top: 37%; height: 5.6cqw; width: 2.3cqw; }
+.owns .conifer-4 { left: 90%; top: 36%; }
+
+.owns .dome { left: 65%; top: 33%; width: 22cqw; height: 15cqw; }
+.owns .dome .door { left: 58%; top: 56%; }
+
+.owns .orchard { inset: 0; }
+.owns .round-1 { left: 88%; top: 58%; }
+.owns .round-2 { left: 92.5%; top: 52%; width: 3.8cqw; height: 5cqw; }
+
+.owns .rocks { inset: 0; }
+.owns .rock-1 { left: 6%; top: 80%; width: 4cqw; height: 3cqw; }
+.owns .rock-2 { left: 10%; top: 84%; width: 2.2cqw; height: 1.6cqw; }
+.owns .rock-3 { left: 44%; top: 86%; width: 1.6cqw; height: 1.2cqw; }
+
+.owns .settler { left: 16%; top: 46%; width: 5cqw; height: 13cqw; }
+.owns .settler .arm-down { left: 8%; top: 36%; transform: rotate(14deg); }
+.owns .settler .arm-up { left: 70%; top: 30%; transform: rotate(-140deg); }
+
+.owns .key { left: 23%; top: 37%; width: 13cqw; height: 5cqw; transform: rotate(-16deg); }
+.owns .key .bit-1 { left: 8.6cqw; height: 1.6cqw; }
+.owns .key .bit-2 { left: 10.4cqw; height: 2.2cqw; }
+
+.owns .owns-path { left: 34.85%; top: 35.8%; width: 35.8cqw; height: 16cqw; transform: rotate(15.4deg); }
+.owns .owns-from { left: 34.85%; top: 40.44%; }
+.owns .owns-to { left: 69.35%; top: 57.33%; }
+.owns .owns-tag { left: 57.5%; top: 64.6%; }
+
+.owns .key-label { left: 30%; top: 31%; }
+.owns .alice-label { left: 18.5%; top: 75%; }
+.owns .vault-label { left: 76%; top: 72%; }
+
+.owns .title { left: 3.5%; top: 6%; }

@@ -208,6 +208,7 @@ async function check() {
 		(await keeps(run)) &&
 		(await inEngines(run)) &&
 		(await inlines(run)) &&
+		(await docs(run)) &&
 		(await claims(run)) &&
 		(await members(run)) &&
 		(await chats(run)) &&
@@ -409,6 +410,8 @@ export async function offlines(run) {
 	say(`${ok ? 'opening, writing and signing in without the Aven Peer hold' : 'the offline step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s)`);
 	return ok;
 }
+// avenBRAIN's docs in avenOS, in three engines at a desktop's and a phone's width: sandbox/docs.mjs
+const docs = async (run) => (await $`${compose} exec -T browsers node sandbox/docs.mjs ${run}`.env(env).nothrow()).exitCode === 0;
 const chats = async (run) => (await $`${compose} exec -T browsers node sandbox/chat.mjs ${run}`.env(env).nothrow()).exitCode === 0;
 
 async function up(args) {

@@ -1,0 +1,277 @@
+/* A slide (STYLE.md, "A slide"): a 16:9 frame that reads as a still, and the parts every illustration is drawn from.
+   Every length inside is in cqw, a hundredth of the frame's width, so the still scales as one picture. Every element is
+   a layer with a stable class, so a motion version can move each one. Light falls from the top left: a part's lit faces
+   are its -light colour, the faces away from the light its -deep one, as hard stops, never a blend. */
+.slide {
+	position: relative;
+	width: 100%;
+	aspect-ratio: 16 / 9;
+	margin: 0;
+	overflow: hidden;
+	container-type: inline-size;
+	color: var(--brain-ink);
+	background: var(--brain-cream);
+	border: 1px solid var(--brain-gold);
+	border-radius: var(--brain-radius);
+}
+
+.slide :where(div, span) {
+	position: absolute;
+	display: block;
+}
+
+/* drawn: the thin dark warm outline round whatever a layer holds, and its soft shadow to the lower right */
+.slide .drawn {
+	filter: drop-shadow(0.13cqw 0 0 var(--brain-ink)) drop-shadow(-0.13cqw 0 0 var(--brain-ink))
+		drop-shadow(0 0.13cqw 0 var(--brain-ink)) drop-shadow(0 -0.13cqw 0 var(--brain-ink))
+		drop-shadow(0.7cqw 0.5cqw 0.35cqw var(--brain-shadow));
+}
+
+/* the ground: cream, with large faint facets */
+.slide .ground {
+	inset: 0;
+}
+
+.slide .facet {
+	inset: 0;
+	background: var(--brain-facet);
+}
+
+.slide .facet.deep {
+	background: var(--brain-facet-deep);
+}
+
+/* a plot: a soft rounded lot with a gold line round it */
+.slide .plot {
+	background: var(--brain-plot);
+	border: 0.18cqw solid var(--brain-gold);
+	border-radius: 46% 54% 50% 50% / 52% 44% 56% 48%;
+}
+
+/* a shadow on the ground */
+.slide .shadow {
+	background: var(--brain-shadow);
+	border-radius: 50%;
+	filter: blur(0.5cqw);
+}
+
+/* the dotted ochre path: a relation between two things. An arc is the lower half of a dotted ellipse, turned to run
+   from one end to the other */
+.slide .path {
+	border: 0.5cqw dotted var(--brain-path);
+	border-radius: 50%;
+	clip-path: inset(50% -1cqw -1cqw -1cqw);
+}
+
+.slide .path-end {
+	width: 1.3cqw;
+	height: 1.3cqw;
+	background: var(--brain-path);
+	border-radius: 50%;
+}
+
+/* a panel: rounded off-white, a thin gold border */
+.slide .panel {
+	position: absolute;
+	margin: 0;
+	padding: 1.3cqw 2cqw 1.5cqw;
+	background: var(--brain-panel);
+	border: 0.14cqw solid var(--brain-gold);
+	border-radius: 1.3cqw;
+	box-shadow: 0 0.5cqw 1.6cqw rgb(118 88 62 / 0.12);
+}
+
+.slide .kicker {
+	margin: 0;
+	color: var(--brain-quiet);
+	font: 600 1.05cqw/1.3 var(--brain-sans);
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+}
+
+.slide .headline {
+	margin: 0.3cqw 0 0;
+	font: 500 3.3cqw/1.1 var(--brain-serif);
+	letter-spacing: -0.01em;
+}
+
+/* a label: small uppercase sans under a thing, centred on its left edge */
+.slide .label {
+	position: absolute;
+	margin: 0;
+	font: 600 1.2cqw/1 var(--brain-sans);
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	white-space: nowrap;
+	transform: translateX(-50%);
+}
+
+/* a tag: a relation's name, a chip on its path */
+.slide .tag {
+	padding: 0.45cqw 1.1cqw;
+	font: 700 1.1cqw/1 var(--brain-sans);
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	background: var(--brain-panel);
+	border: 0.14cqw solid var(--brain-gold);
+	border-radius: 2cqw;
+	transform: translateX(-50%);
+}
+
+/* trees: a conifer is a triangle lit on its left; a round tree an octagon */
+.slide .conifer {
+	width: 2.6cqw;
+	height: 6.4cqw;
+}
+
+.slide .conifer .crown {
+	inset: 0 0 14% 0;
+	clip-path: polygon(50% 0, 100% 100%, 0 100%);
+	background: linear-gradient(90deg, var(--brain-conifer-light) 0 50%, var(--brain-conifer-deep) 50%);
+}
+
+.slide .conifer .trunk,
+.slide .round-tree .trunk {
+	left: 42%;
+	bottom: 0;
+	width: 16%;
+	height: 18%;
+	background: var(--brain-timber-deep);
+}
+
+.slide .round-tree {
+	width: 4.6cqw;
+	height: 6cqw;
+}
+
+.slide .round-tree .crown {
+	inset: 0 0 22% 0;
+	clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%);
+	background: linear-gradient(135deg, var(--brain-sage-light) 0 45%, var(--brain-conifer-light) 45% 72%, var(--brain-conifer) 72%);
+}
+
+/* a rock: low-poly terracotta */
+.slide .rock {
+	clip-path: polygon(18% 0, 62% 6%, 100% 48%, 88% 100%, 8% 100%, 0 40%);
+	background: linear-gradient(120deg, var(--brain-terracotta-light) 0 44%, var(--brain-terracotta) 44% 70%, var(--brain-terracotta-deep) 70%);
+}
+
+/* a settler: hooded, in a blue-grey coat */
+.slide .settler .legs {
+	left: 32%;
+	top: 70%;
+	width: 36%;
+	height: 26%;
+	background: #4a4e55;
+	border-radius: 0 0 0.4cqw 0.4cqw;
+}
+
+.slide .settler .body {
+	left: 14%;
+	top: 30%;
+	width: 72%;
+	height: 46%;
+	background: linear-gradient(100deg, var(--brain-coat-light) 0 46%, var(--brain-coat) 46%);
+	border-radius: 46% 46% 16% 16% / 40% 40% 12% 12%;
+}
+
+.slide .settler .arm {
+	width: 22%;
+	height: 34%;
+	background: var(--brain-coat);
+	border-radius: 1cqw;
+	transform-origin: 50% 10%;
+}
+
+.slide .settler .head {
+	left: 22%;
+	top: 4%;
+	width: 56%;
+	height: 30%;
+	background: linear-gradient(100deg, var(--brain-coat-light) 0 46%, var(--brain-coat) 46%);
+	border-radius: 50% 50% 44% 44%;
+}
+
+.slide .settler .face {
+	left: 36%;
+	top: 13%;
+	width: 34%;
+	height: 17%;
+	background: var(--brain-skin);
+	border-radius: 50%;
+}
+
+/* a geodesic dome: a white lattice over facets lit from the top left, on a timber ring, with its door to the front */
+.slide .dome .ring {
+	left: 1%;
+	top: 72%;
+	width: 98%;
+	height: 24%;
+	background: linear-gradient(180deg, var(--brain-timber) 0 50%, var(--brain-timber-deep) 50%);
+	border-radius: 50%;
+}
+
+.slide .dome .shell {
+	left: 4%;
+	top: 0;
+	width: 92%;
+	height: 86%;
+	border-radius: 50% 50% 50% 50% / 100% 100% 22% 22%;
+	background:
+		repeating-linear-gradient(60deg, transparent 0 3.1cqw, var(--brain-lattice-deep) 3.1cqw 3.3cqw),
+		repeating-linear-gradient(-60deg, transparent 0 3.1cqw, var(--brain-lattice-deep) 3.1cqw 3.3cqw),
+		repeating-linear-gradient(0deg, transparent 0 3.1cqw, var(--brain-lattice-deep) 3.1cqw 3.3cqw),
+		linear-gradient(125deg, var(--brain-lattice) 0 42%, var(--brain-lattice-shade) 42% 68%, var(--brain-lattice-deep) 68%);
+}
+
+.slide .dome .door {
+	width: 20%;
+	height: 34%;
+	background: var(--brain-timber);
+	border-radius: 50% 50% 0 0 / 40% 40% 0 0;
+}
+
+.slide .dome .doorway {
+	left: 20%;
+	top: 22%;
+	width: 60%;
+	height: 78%;
+	background: #4a3a30;
+	border-radius: 50% 50% 0 0 / 40% 40% 0 0;
+}
+
+/* a key: a hexagonal bow, a shaft and two bits, in ochre */
+.slide .key .bow {
+	left: 0;
+	top: 0;
+	width: 5cqw;
+	height: 5cqw;
+	clip-path: polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0 50%);
+	background: linear-gradient(135deg, var(--brain-ochre-light) 0 46%, var(--brain-ochre) 46% 70%, var(--brain-ochre-deep) 70%);
+}
+
+.slide .key .hole {
+	left: 1.7cqw;
+	top: 1.7cqw;
+	width: 1.6cqw;
+	height: 1.6cqw;
+	background: var(--brain-ink);
+	clip-path: polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0 50%);
+}
+
+.slide .key .shaft,
+.slide .key .bit {
+	background: linear-gradient(180deg, var(--brain-ochre-light) 0 45%, var(--brain-ochre-deep) 45%);
+}
+
+.slide .key .shaft {
+	left: 4.7cqw;
+	top: 1.95cqw;
+	width: 7cqw;
+	height: 1.1cqw;
+}
+
+.slide .key .bit {
+	top: 2.9cqw;
+	width: 1cqw;
+}

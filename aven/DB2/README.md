@@ -93,7 +93,7 @@ avenPEER is the edge: it does all the I/O and runs avenDB's pure cores, and noth
 ### Terms
 
 The words below are the ones every page here needs. Every term of every part, with the words that should merge, is in
-[`GLOSSARY.md`](GLOSSARY.md).
+[`GLOSSARY.md`](brain/GLOSSARY.md).
 
 **Who (avenID)**
 
@@ -233,7 +233,7 @@ the `ProtocolHandler` registered for its ALPN. avenDB's own protocol plugs in th
 ## The specs
 
 The whole, with its shared primitives, its cross-part rules and how it stands up to end-to-end encryption, local first
-and peer to peer: [`ARCHITECTURE.md`](ARCHITECTURE.md). Every term of every part: [`GLOSSARY.md`](GLOSSARY.md).
+and peer to peer: [`ARCHITECTURE.md`](ARCHITECTURE.md). Every term of every part: [`GLOSSARY.md`](brain/GLOSSARY.md).
 
 Each plan is its own document; there is no numbered roadmap here (Samuel, 30 Oct 2026). The box:
 [`SANDBOX.md`](SANDBOX.md). Production: [`PRODUCTION.md`](PRODUCTION.md). The members' network:
