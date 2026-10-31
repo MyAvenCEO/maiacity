@@ -89,3 +89,36 @@ pub fn indices(j: &Json) -> Vec<usize> {
         .map(|i| i.as_u64().unwrap() as usize)
         .collect()
 }
+
+/// A target from its readable form (`Target.json` in `Vectors.lean`).
+pub fn target(j: &Json) -> aven_core::Target {
+    use aven_core::{Reach, Target};
+    let below = || j["below"].as_bool().unwrap();
+    let vault = || j["vault"].as_str().unwrap().to_string();
+    if let Some(d) = j.get("doc") {
+        Target::Doc {
+            doc: DocId::parse(d.as_str().unwrap()).unwrap(),
+            reach: Reach::of_name(j["reach"].as_str().unwrap()).unwrap(),
+        }
+    } else if let Some(t) = j.get("type") {
+        Target::VaultType {
+            vault: vault(),
+            r#type: DocId::parse(t.as_str().unwrap()).unwrap(),
+            below: below(),
+        }
+    } else {
+        Target::Vault {
+            vault: vault(),
+            below: below(),
+        }
+    }
+}
+
+/// A bound from its readable form: null for any value, else the values it allows.
+pub fn bound(j: &Json) -> aven_core::Bound {
+    match j {
+        Json::Null => aven_core::Bound::Any,
+        Json::Array(vs) => aven_core::Bound::OneOf(vs.iter().map(value).collect()),
+        j => panic!("not a bound: {j}"),
+    }
+}
