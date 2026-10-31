@@ -29,9 +29,9 @@ signatures are taken as sound, as in every Aven model. `Blake3` is the hash the 
 **In Rust: `aven-core`** (this folder, a member of aven/DB2's workspace). `no_std`, no `unsafe`; it builds for
 wasm32, so the runtimes in aven/runtimes use it by path.
 
-- **The codec and names**, from [`aven-codec`](../codec), re-exported: `Value`, `encode` and `decode` in the strict profile, held to `spec/vectors/cbor.json` both
-  ways (every encoding written and read back, every refusal refused), and BLAKE3 names, Doc ids and type ids, held to
-  `names.json`. Nothing deeper than 512 is read (`MAX_DEPTH`, Lean's `maxDepth`, a scalar counting as 1), so a
+- **The codec and names**, from [`aven-codec`](../codec), re-exported: `Value`, `encode` and `decode` in the strict
+  profile, held to `spec/vectors/cbor.json` both ways (every encoding written and read back, every refusal refused),
+  and BLAKE3 names, Doc ids and type ids, held to `names.json`. Nothing deeper than 512 is read (`MAX_DEPTH`, Lean's `maxDepth`, a scalar counting as 1), so a
   hostile input can't exhaust the stack (ARCHITECTURE rule 10); `cbor.json` holds it at 512 and 513 deep.
 - **Signed things** (`signed.rs`): `signing_bytes`, `Sig`, `add_sig`, `Signed` with its `value`, `name`, `valid` and
   `signed_by`. A thing's name is the hash of `[label, body]`, never of a signature (A30); its signatures are a set,
