@@ -812,10 +812,13 @@ the keeper, which can't read a Doc's facts. The Values a Doc's Records name, a f
 it.
 - **By default** a new vault's keep cap covers everything of its own, to Maia City's keeper, the Aven Peer acting for
   Aven (`defaultKeep`, `default_kept`). It is an ordinary grant: it holds only with its owners' approval (D14), however
-  the join collects it, and without one it breaks `.approval` (`default_approved`, `default_needs_owner`). One tap that
-  covers the join and the keep cap together is a change to the signed join text, for avenPEER's code threads, Lean
-  and Rust together. The vault can withdraw it or issue others. It doesn't reach below, so a vault it governs keeps its
-  own default.
+  the join collects it, and without one it breaks `.approval` (`default_approved`, `default_needs_owner`). The tree's
+  claim carries it as a cap Record, its body with its own approval beside it (A44, A30): the passkey's PRF gives the
+  owner key, which signs the claim and the keep cap in one tap, and no device need sign it (A28). A vault migrated
+  from production approves it at its next sign-in. `Cap.isDefaultKeep` checks that the cap a claim carries says
+  exactly what the default says, so its keeper keeps every Doc of the vault (`isDefaultKeep_kept`) and it holds only
+  with that vault's owners' approval (`isDefaultKeep_approved`). The vault can withdraw it or issue others. It doesn't
+  reach below, so a vault it governs keeps its own default.
 - **The owner always decides where its data goes.** A keep cap may not share, so no keeper passes data on: a chain
   that keeps has one holder, and every link after its root only attenuates (`keep_one_holder`). A cap keeps a Doc only
   as its root does, a grant by a vault with authority over it, its own or one it governs (`keeper_named_by_owner`).
@@ -1392,6 +1395,7 @@ Values, hashes, ops or targets of its own; its built-in types are `Aven.ID.Types
 | | `resolve_exact` | A keep cap's issuer hands its keeper exactly the Docs the cap covers, each with its first fetch key |
 | | `keepers_by_caps`, `holder_keeps`, `default_kept` | A Doc's keepers are exactly the vaults holding the caps that keep it; a new vault's default keep cap has every Doc of its own kept by Maia City's keeper (A22) |
 | | `default_approved`, `default_needs_owner` | The default keep cap is an ordinary grant: it holds only with its owners' approval, and without one it breaks `.approval` (D14) |
+| | `isDefaultKeep_kept`, `isDefaultKeep_approved` | A cap that says what the default says, as the tree's claim carries it, has its keeper keep every Doc of the vault, and holds only with that vault's owners' approval (A44) |
 | | `keepers_by_owner` | Every keeper of a Doc, by keep caps that are valid roots, is named by one its issuer's owners approved, with a line covering the Doc in its issuer's authority (A22) |
 | | `keep_one_holder` | No keeper passes a vault's data on: a keep cap may not share, so a chain that keeps has one holder, and every link after its root only attenuates |
 | | `keeper_named_by_owner` | A cap keeps a Doc only as its chain's root does, a grant by a vault with authority over every line, its own or one it governs: the owner decides who keeps (A22) |

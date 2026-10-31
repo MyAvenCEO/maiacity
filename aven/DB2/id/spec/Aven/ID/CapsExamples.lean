@@ -347,6 +347,10 @@ def bookCases : List (String × Books × List Core.DocId) := [
       { c with issuer := "bob", signer := "bob-peer-light" }] }, [])]
 
 #guard bookCases.all fun (_, b, ks) => bookDocs.filter b.keeps == ks
+-- Bob's keep cap is his default at the Aven Peer; one that may share, or is another vault's, is not.
+#guard keepBob.isDefaultKeep "bob" "aven" && !{ keepBob with share := 1 }.isDefaultKeep "bob" "aven" &&
+  !keepBob.isDefaultKeep "alice" "aven" &&
+  (defaultKeep "carol" "aven" none [⟨"carol-owner", "keep-carol"⟩]).isDefaultKeep "carol" "aven"
 -- The quota Aven keeps for a member is its offer's, and nothing for anyone the offer doesn't cover.
 #guard avenBooks.quota "bob" == 10000000000 && avenBooks.quota "maia-city" == 0
 
