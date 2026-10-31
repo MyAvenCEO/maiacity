@@ -10,7 +10,7 @@
       "code": { "op": "find", "data": "house-list", "at": "items", "where": { "done": false }, "order": "due", "limit": 10 },
       "action": "Change something" },
     { "title": "Changes are ops too.",
-      "text": "Ticking an item is an op. The engine checks your rule, turns the op into a Loro change, signs it and hands it to sync.",
+      "text": "Ticking an item is an op. The engine checks your rule, turns the op into a CRDT change, signs it and hands it to sync.",
       "code": { "op": "update", "data": "house-list", "at": "items/milk/done", "value": true },
       "action": "Follow the links" },
     { "title": "Walking a graph.",

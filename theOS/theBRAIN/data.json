@@ -5,14 +5,14 @@
    "title": "Data comes in two kinds.",
    "text": "A {Doc} is data that changes: a list, a note, a calendar. A {Value} is bytes that never change: a photo, a PDF, a movie. Together they cover everything.",
    "list": [
-    "Doc: any JSON that changes, merged by Loro.",
+    "Doc: any JSON that changes, built from CRDT data types that merge by themselves.",
     "Value: any file that never changes, named by its hash."
    ],
    "action": "Open a Doc"
   },
   {
    "title": "A Doc looks like JSON.",
-   "text": "Under the hood it's built from Loro {containers}: maps, lists, text, trees and counters. Your to-do list is a map holding a title and a list of items.",
+   "text": "Under the hood it's built from {CRDT} data types: maps, lists, text, trees and counters. CRDT means: copies can be changed separately and always merge back into the same result. Your to-do list is a map holding a title and a list of items.",
    "code": {
     "title": "House",
     "items": [
@@ -125,7 +125,7 @@
   },
   {
    "title": "They end up the same.",
-   "text": "However the ops arrive, in any order, twice or late, every copy ends in the same state. This is what makes Loro a {CRDT}: no server, no locking, no “who was first?”.",
+   "text": "However the ops arrive, in any order, twice or late, every copy ends in the same state. That's the promise of CRDT data types: no server, no locking, no “who was first?”.",
    "code": {
     "title": "Home",
     "items": [
@@ -147,7 +147,7 @@
   },
   {
    "title": "Both rename the list.",
-   "text": "Alice types “Our home”, Bob types “Home”. For one field, one value has to win. Loro picks the op with the later logical clock, and if those tie, the higher device ID. Every copy picks the same one.",
+   "text": "Alice types “Our home”, Bob types “Home”. For one field, one value has to win. The map picks the op with the later logical clock, and if those tie, the higher device ID. Every copy picks the same one.",
    "code": {
     "alice": {
      "id": "alice:42",
@@ -165,7 +165,7 @@
   },
   {
    "title": "Text merges letter by letter.",
-   "text": "In a note, both type into the same sentence at once. Text in Loro is a list of characters, each with its own ID, so both edits survive and never get shuffled into each other.",
+   "text": "In a note, both type into the same sentence at once. CRDT text is a list of characters, each with its own ID, so both edits survive and never get shuffled into each other.",
    "code": {
     "before": "Fix the tap",
     "alice": "Fix the kitchen tap",
