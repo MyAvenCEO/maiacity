@@ -25,7 +25,11 @@ fn a_segment_closes_at_rotation_and_imports() {
     for i in 0..5 {
         let b = commit(&mut doc, &a, &[todo_put(&format!("t{i}"), "x")]);
         let ep = if i < 3 { &e1 } else { &e2 };
-        closed.extend(closer.add(ep.name, Envelope::decode(&b).unwrap()));
+        closed.extend(
+            closer
+                .add(ep.name, Envelope::decode(&b).unwrap(), blake3(&b))
+                .map(|c| c.segment),
+        );
     }
     assert_eq!(
         closed.len(),
@@ -34,7 +38,13 @@ fn a_segment_closes_at_rotation_and_imports() {
     );
     let first = &closed[0];
     assert_eq!((first.from, first.to, first.epoch), (1, 4, e1.name));
-    let second = closer.close().expect("the quiet closes the rest");
+    let second_closed = closer.close().expect("the quiet closes the rest");
+    assert_eq!(
+        second_closed.covers.len(),
+        2,
+        "covers: the sealed hashes of what it replaces"
+    );
+    let second = second_closed.segment;
     assert_eq!((second.from, second.to, second.epoch), (4, 6, e2.name));
     assert_eq!(second.prev, Some(first.name()));
     assert!(closer.close().is_none());
@@ -83,7 +93,10 @@ fn a_segment_closes_at_its_limits() {
     let mut c = Closer::new(doc, "main", 9, 0, Limits::DEFAULTS);
     let mut sizes = vec![];
     for seq in 1..=600 {
-        if let Some(s) = c.add(blake3(b"e"), env(seq, 10)) {
+        if let Some(s) = c
+            .add(blake3(b"e"), env(seq, 10), blake3(&seq.to_le_bytes()))
+            .map(|c| c.segment)
+        {
             sizes.push(s.envelopes.len());
         }
     }
@@ -91,7 +104,14 @@ fn a_segment_closes_at_its_limits() {
     let mut c = Closer::new(doc, "main", 9, 0, Limits::DEFAULTS);
     let mut closed = vec![];
     for seq in 1..=10 {
-        closed.extend(c.add(blake3(b"e"), env(seq, 300 * 1024)));
+        closed.extend(
+            c.add(
+                blake3(b"e"),
+                env(seq, 300 * 1024),
+                blake3(&seq.to_le_bytes()),
+            )
+            .map(|c| c.segment),
+        );
     }
     assert!(
         closed
@@ -111,8 +131,8 @@ fn a_tampered_or_foreign_segment_is_refused() {
     let w = doc.writer_of(&a, 0);
     let mut c = Closer::new(g.id(), "main", w, 0, Limits::DEFAULTS);
     let x = commit(&mut doc, &a, &[todo_put("t1", "x")]);
-    c.add(e1.name, Envelope::decode(&x).unwrap());
-    let seg = c.close().unwrap();
+    c.add(e1.name, Envelope::decode(&x).unwrap(), blake3(&x));
+    let seg = c.close().unwrap().segment;
     let mut ent = TestEntropy::new("seal");
     // signed by a device that didn't sign its envelopes
     let wrong = seg.seal(&b, &e1, &mut ent);
@@ -218,7 +238,7 @@ proptest! {
         for (i, ep) in epochs.iter().enumerate() {
             let e = Envelope { doc, branch: "main".into(), writer: 9, seq: i as u64 + 1, prev: None, deps: vec![],
                 body: aven_core::Value::Null, sigs: vec![] };
-            segs.extend(c.add(blake3(&[*ep]), e));
+            segs.extend(c.add(blake3(&[*ep]), e, blake3(&(i as u64).to_le_bytes())).map(|c| c.segment));
         }
         let mut seqs = vec![];
         for s in &segs {
@@ -240,4 +260,67 @@ proptest! {
 /// The plaintext's length a sealed thing pads, read back from its ciphertext's length.
 fn pt_len(s: &[u8]) -> usize {
     outside(s, 1 << 20).unwrap().len - 16
+}
+
+#[test]
+fn a_mixed_sealed_page_lands_in_one_batch() {
+    use aven_db_docs::{SealedItem, Unopened};
+    let a = device("alice");
+    let g = genesis(&a);
+    let mut writer = open(&g);
+    let w = writer.writer_of(&a, 0);
+    let (e1, e2) = (epoch("epoch 1"), epoch("epoch 2"));
+    let mut ent = TestEntropy::new("seal");
+    let mut closer = Closer::new(g.id(), "main", w, 0, Limits::DEFAULTS);
+    let mut sealed_loose = vec![];
+    for i in 0..4 {
+        let b = commit(&mut writer, &a, &[todo_put(&format!("t{i}"), "x")]);
+        let s = seal(Kind::Envelope, &e1, &g.id(), &b, &mut ent);
+        assert!(
+            closer
+                .add(e1.name, Envelope::decode(&b).unwrap(), blake3(&s))
+                .is_none()
+        );
+        sealed_loose.push(s);
+    }
+    let closed = closer.close().unwrap();
+    assert_eq!(
+        closed.covers,
+        sealed_loose.iter().map(|s| blake3(s)).collect::<Vec<_>>()
+    );
+    let seg = closed.segment.seal(&a, &e1, &mut ent);
+    let later = commit(&mut writer, &a, &[todo_put("t9", "after the segment")]);
+    let later = seal(Kind::Envelope, &e2, &g.id(), &later, &mut ent);
+    let unknown = seal(
+        Kind::Envelope,
+        &epoch("an epoch nobody gave us"),
+        &g.id(),
+        b"x",
+        &mut ent,
+    );
+    // the later loose envelope first: it waits in the page for the segment, and the page settles at once
+    let mut reader = open(&g);
+    let page = [
+        SealedItem::Loose(&later),
+        SealedItem::Segment(&seg),
+        SealedItem::Loose(&unknown),
+        SealedItem::Loose(b"junk"),
+    ];
+    let keys = [&e1, &e2];
+    let r = reader.import_sealed_page(
+        &page,
+        |n| keys.iter().copied().find(|k| k.name == *n),
+        &Allow,
+    );
+    assert_eq!(r[0], Ok(vec![Ok(Imported::Counts)]));
+    assert_eq!(r[1].as_ref().map(Vec::len), Ok(4));
+    assert!(
+        r[1].as_ref()
+            .unwrap()
+            .iter()
+            .all(|x| *x == Ok(Imported::Counts))
+    );
+    assert!(matches!(r[2], Err(Unopened::Epoch(_))));
+    assert_eq!(r[3], Err(Unopened::Form));
+    assert_eq!(reader.snapshot(), writer.snapshot());
 }

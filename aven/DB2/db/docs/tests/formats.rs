@@ -308,6 +308,16 @@ fn loro() {
 fn placements() {
     for v in vectors("db/spec/vectors/placements.json") {
         let (name, i, x) = (s(&v["name"]), &v["input"], &v["expected"]);
+        if let Some(doc) = i.get("doc") {
+            // `genesisOk`: the genesis a first envelope carries names the envelope's Doc
+            let g = Genesis::decode(&unhex(s(&i["genesis"]))).unwrap();
+            assert_eq!(
+                g.id().text() == s(doc),
+                x["ok"].as_bool().unwrap(),
+                "{name}"
+            );
+            continue;
+        }
         let first = i["seq"].as_u64() == Some(1)
             && !i["prev"].as_bool().unwrap()
             && i["deps"].as_u64() == Some(0);
@@ -335,6 +345,36 @@ fn builtins() {
         assert_eq!(
             DocsBuiltins.check(&t, &record),
             x["fits"].as_bool(),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn held() {
+    for v in vectors("db/spec/vectors/held.json") {
+        let (name, i, x) = (s(&v["name"]), &v["input"], &v["expected"]);
+        if let Some(bytes) = i.as_str() {
+            assert_eq!(
+                aven_db_docs::HeldPage::of_value(&decode(&unhex(bytes)).unwrap()).is_some(),
+                x.as_bool().unwrap(),
+                "{name}"
+            );
+            continue;
+        }
+        let page = aven_db_docs::HeldPage {
+            doc: DocId::parse(s(&i["doc"])).unwrap(),
+            envelopes: i["envelopes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|p| (hash(&p[0]), hash(&p[1])))
+                .collect(),
+        };
+        assert_eq!(hex(&encode(&page.value())), s(&x["value"]), "{name}");
+        assert_eq!(
+            aven_db_docs::HeldPage::of_value(&page.value()).is_some(),
+            x["reads"].as_bool().unwrap(),
             "{name}"
         );
     }

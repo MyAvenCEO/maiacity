@@ -143,7 +143,7 @@ impl Names {
                     _ => History::FromNow,
                 },
             },
-            signer: v["signer"].as_str().unwrap().into(),
+            signer: v["signer"].as_str().map(str::to_string),
             approvals: v["approvals"]
                 .as_array()
                 .unwrap()
@@ -215,6 +215,8 @@ pub fn value_json(v: &aven_core::Value) -> Value {
 pub struct Context {
     pub tree: Tree,
     pub threshold: usize,
+    /// Each vault's own threshold, where the context names one.
+    pub thresholds: Vec<(String, usize)>,
     pub groups: Vec<(DocId, Vec<String>)>,
     pub roles: Vec<Role>,
     pub docs: Vec<Facts>,
@@ -222,10 +224,25 @@ pub struct Context {
 
 impl Context {
     pub fn of(names: &Names, v: &Value) -> Context {
-        assert_eq!(v["tree"], "cast");
+        let tree = if v["tree"] == "cast" {
+            Tree::from_cast(CAST).expect("the cast")
+        } else {
+            let (keys, vaults) = super::parse(&v["tree"]).expect("a tree as trees.json writes one");
+            Tree::new(
+                keys.into_iter().map(|k| (k, String::new())).collect(),
+                vaults,
+            )
+            .expect("a well-formed tree")
+        };
         Context {
-            tree: Tree::from_cast(CAST).expect("the cast"),
+            tree,
             threshold: v["threshold"].as_u64().unwrap() as usize,
+            thresholds: v["thresholds"]
+                .as_object()
+                .into_iter()
+                .flatten()
+                .map(|(k, n)| (k.clone(), n.as_u64().unwrap() as usize))
+                .collect(),
             groups: v["groups"]
                 .as_array()
                 .unwrap()
@@ -267,7 +284,12 @@ impl Context {
     }
 
     pub fn with<T>(&self, f: impl FnOnce(&Ctx) -> T) -> T {
-        let threshold = |_: &str| self.threshold;
+        let threshold = |v: &str| {
+            self.thresholds
+                .iter()
+                .find(|(w, _)| w == v)
+                .map_or(self.threshold, |(_, n)| *n)
+        };
         let in_group = |g: &DocId, v: &str| {
             self.groups
                 .iter()
@@ -323,14 +345,9 @@ pub fn full_docs(v: aven_core::Value) -> aven_core::Value {
 pub fn judge(input: &Value) -> Value {
     use super::unhex;
     use aven_core::{Call, DocId};
-    use aven_id::caps::{Authority, DeviceCap, Reader, Reading, Refusal, World, vault_id};
-    let gov = |t: &Tree, v: &str, w: &str| {
-        v.strip_prefix("v:")
-            .is_some_and(|v| t.governs(v).into_iter().any(|g| vault_id(g) == w))
-    };
+    use aven_id::caps::{Authority, DeviceCap, Reader, Reading, Refusal, World};
     let names = Names::default();
     let ctx = Context::of(&names, &input["context"]);
-    let t = &ctx.tree;
     let chain: Vec<Cap> = input["chain"]
         .as_array()
         .unwrap()
@@ -397,7 +414,6 @@ pub fn judge(input: &Value) -> Value {
         calls,
         actor: input["actor"].as_str().map(|a| names.doc(a)),
     };
-    let gov_ = |a: &str, b: &str| gov(t, a, b);
     let never = |_: &DocId, _: &DocId| false;
     let member = |m: &str| members.iter().any(|x| x == m);
     let vault_of = |k: &[u8]| keys.iter().find(|(x, _)| x == k).map(|(_, v)| v.clone());
@@ -408,6 +424,8 @@ pub fn judge(input: &Value) -> Value {
             .map(|(_, d)| d.clone())
     };
     ctx.with(|x| {
+        // who governs whom as authority runs, through quorums (`Ctx.governs`, A28)
+        let gov_ = |a: &str, b: &str| x.governs(a, b);
         let r = Reader {
             ctx: aven_id::caps::Ctx {
                 tree: x.tree,

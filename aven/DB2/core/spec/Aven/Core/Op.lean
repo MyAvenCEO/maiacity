@@ -79,15 +79,26 @@ def Bound.value : Bound → Value
   | none => .null
   | some vs => .array vs
 
-/-- A bound read back from its Value: null for any value, an array for the values it allows. -/
+/-- The most values one bound allows (rule 10; the limit follows its primitive's owner, A45): room for every field of
+a schema, every type of a vault or every op of a plugin a cap line names. -/
+def maxBoundValues : Nat := 256
+
+/-- The most params one call names: `core/1`'s take two, a plugin's op a handful. -/
+def maxParams : Nat := 64
+
+/-- A bound read back from its Value: null for any value, an array of at most `maxBoundValues` for the values it
+allows. -/
 def Bound.ofValue? : Value → Option Bound
   | .null => some none
-  | .array vs => some (some vs)
+  | .array vs => if vs.length ≤ maxBoundValues then some (some vs) else none
   | _ => none
 
-/-- A bound reads back as itself. -/
-theorem Bound.ofValue_value (b : Bound) : Bound.ofValue? b.value = some b := by
-  cases b <;> rfl
+/-- A bound within its limit reads back as itself. -/
+theorem Bound.ofValue_value (b : Bound) (h : ∀ vs, b = some vs → vs.length ≤ maxBoundValues) :
+    Bound.ofValue? b.value = some b := by
+  cases b with
+  | none => rfl
+  | some vs => simp [Bound.value, Bound.ofValue?, h vs rfl]
 
 /-- A bound within another: any value it allows, the other allows too. -/
 def Bound.within : Bound → Bound → Bool
@@ -136,18 +147,21 @@ hash, its params a map with text keys. A call whose params aren't in the codec's
 canonical, so one call has one encoding. -/
 def Call.value (c : Call) : Value := .map [(k "op", .bytes c.op.bytes), (k "params", .map c.params)]
 
-/-- A call read back from `Call.value`'s shape: its op a hash of 32 bytes, its params a map. Bytes that aren't
-canonical never reach it: the codec refuses them, a call's params out of order among them. -/
+/-- A call read back from `Call.value`'s shape: its op a hash (`Hash.ofValue?`), its params a map of at most
+`maxParams`. Bytes that aren't canonical never reach it: the codec refuses them, a call's params out of order among
+them. -/
 def Call.ofValue? : Value → Option Call
   | .map [(a, .bytes op), (b, .map ps)] =>
-    if a = k "op" ∧ b = k "params" ∧ op.length = 32 then some ⟨⟨op⟩, ps⟩ else none
+    if a = k "op" ∧ b = k "params" ∧ ps.length ≤ maxParams then (Hash.ofValue? (.bytes op)).map (⟨·, ps⟩)
+    else none
   | _ => none
 
-/-- A call whose op is a hash reads back as itself. -/
-theorem Call.ofValue_value (c : Call) (h : c.op.ok = true) : Call.ofValue? c.value = some c := by
+/-- A call whose op is a hash, within its limit, reads back as itself. -/
+theorem Call.ofValue_value (c : Call) (h : c.op.ok = true) (hp : c.params.length ≤ maxParams) :
+    Call.ofValue? c.value = some c := by
   obtain ⟨⟨op⟩, ps⟩ := c
   simp only [Hash.ok, beq_iff_eq] at h
-  simp [Call.value, Call.ofValue?, h]
+  simp [Call.value, Call.ofValue?, Hash.ofValue?, h, hp]
 
 /-! ## The type of types (A39) -/
 

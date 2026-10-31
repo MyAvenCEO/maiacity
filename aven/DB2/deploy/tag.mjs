@@ -14,9 +14,31 @@ import { boxTag } from '../sandbox/box/tag.mjs';
 
 const db2 = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const fixed = ['deploy/peer.Dockerfile', 'deploy/peer.Dockerfile.dockerignore', 'deploy/tag.mjs', 'Cargo.toml', 'Cargo.lock'];
-// the workspace's members, whole (Cargo.toml's members, and the fork store holds)
-// and aven/runtimes' file registry, which the Peer takes by path, from the named context `registry`
-const whole = ['core', 'gen1', 'db/docs', 'store', 'id/core', 'peer/native', 'peer/light', '../runtimes/registry'];
+// The workspace's members, read from Cargo.toml, so a new member is in the tag at once: one list, not two.
+export function members() {
+	const list = /^members\s*=\s*\[([^\]]*)\]/m.exec(readFileSync(join(db2, 'Cargo.toml'), 'utf8'));
+	if (!list) throw new Error('aven/DB2/Cargo.toml has no members list');
+	return [...list[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+}
+
+// Cargo loads every workspace member to build any one of them, so the build context must admit each one. A member
+// the .dockerignore leaves out fails here, by name, before Docker runs, not as a missing manifest inside the build.
+export function unadmitted() {
+	const admitted = new Set(
+		readFileSync(join(db2, 'deploy/peer.Dockerfile.dockerignore'), 'utf8')
+			.split('\n')
+			.filter((line) => line.startsWith('!'))
+			.map((line) => line.slice(1).trim()),
+	);
+	return members().filter((member) => !admitted.has(member));
+}
+
+// The members, whole, and aven/runtimes' file registry, which the Peer takes by path, from the named context `registry`
+const whole = () => {
+	const missing = unadmitted();
+	if (missing.length) throw new Error(`peer.Dockerfile.dockerignore leaves out workspace members: ${missing.join(', ')}`);
+	return [...members(), '../runtimes/registry'];
+};
 // what the .dockerignore leaves out wherever it is
 const skipped = new Set(['target', 'node_modules', '.git', '.lake', 'runs', 'dist', 'deliverables']);
 
@@ -32,7 +54,7 @@ function walk(dir, out) {
 
 // The build's inputs, sorted, relative to aven/DB2
 export function peerFiles() {
-	return [...new Set([...fixed, ...whole.flatMap((dir) => walk(join(db2, dir), []))])].sort();
+	return [...new Set([...fixed, ...whole().flatMap((dir) => walk(join(db2, dir), []))])].sort();
 }
 
 // The box's tag first, then one line per file, its path and its content's SHA-256, hashed again

@@ -387,7 +387,10 @@ A segment is Core's `Signed` under `avenDB segment 1`, hybrid-signed by its writ
 ```
 
 - Its envelopes are the same signed bytes, so their names stay; `from` and `to` are their sequence numbers, half-open.
-  A keeper drops the loose envelopes a segment holds by their names.
+  A keeper sees only sealed bytes, so a segment's upload names the loose items it covers by their sealed hashes,
+  beside the sealed segment and never inside it. That is the uploader's own word: the keeper takes only that device
+  off those items' uploaders, and drops an item once none is left (A44, `Aven.Peer.Keeper`). A lie costs only the
+  liar's own uploads, and a writer that never comes back covers nothing.
 - One hybrid signature (Ed25519 and ML-DSA-65) covers the segment, inside the seal, about 3.4 KB per segment: what keeps
   single Ed25519 envelopes safe from a later quantum forgery (agreed with caps). Its Ed25519 half is the key every
   envelope in it is signed with.
@@ -500,7 +503,7 @@ and a panic in the browser kills the worker, then kills it again on every catch-
   nothing there. The Peer-Light runs the judge in its own wasm instance; when it dies, that envelope is unfit, recorded
   by its name, and the judge restarts. This comes when the Peer-Light wires the docs layer in.
 
-Import's decoding is fuzzed (`db/docs/fuzz`, `cargo +nightly fuzz run import`, every release): random bytes as an
+Import's decoding is fuzzed (`db/docs/fuzz`; in the box, `bun run box sh sandbox/fuzz.sh`, every release): random bytes as an
 envelope, as the Loro update inside a member's signed envelope, and as a sealed segment. `tests/hostile.rs` runs the
 same inputs, and bit-flipped real updates, on every check.
 

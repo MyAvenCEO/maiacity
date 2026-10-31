@@ -13,8 +13,9 @@ namespace Aven.ID
 
 open Aven.Core
 
-/-- An avenID built-in type, named by the hash of its label `avenID <name> 1`. -/
-def builtinType (name : String) : DocId := ⟨nameOf blake3 (.text ("avenID " ++ name ++ " 1").toUTF8.toList)⟩
+/-- An avenID built-in type, named by the hash of its label `avenID <name> 1`: Core's `builtinType` in avenID's
+namespace (A45). -/
+def builtinType (name : String) : DocId := Core.builtinType blake3 "avenID" name
 
 def keyringType : DocId := builtinType "keyring"
 def safeType : DocId := builtinType "safe"

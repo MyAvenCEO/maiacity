@@ -101,3 +101,42 @@ impl Tree {
         answer
     }
 }
+
+impl Tree {
+    /// Vault `a` meets vault `w`'s quorum alone (`alone`, A28): `w` is `a`, or at least `w`'s threshold of its owners,
+    /// each once, are vaults `a` meets alone. An owner key never counts. A tree is only ever well formed, so one answer
+    /// per vault is the model's, which looks as many levels up as the tree has vaults.
+    pub fn alone(&self, threshold: &dyn Fn(&str) -> usize, a: &str, w: &str) -> bool {
+        let mut memo = HashMap::new();
+        self.alone_memo(threshold, a, w, &mut memo)
+    }
+
+    fn alone_memo(
+        &self,
+        threshold: &dyn Fn(&str) -> usize,
+        a: &str,
+        w: &str,
+        memo: &mut HashMap<String, bool>,
+    ) -> bool {
+        if w == a {
+            return true;
+        }
+        if let Some(&known) = memo.get(w) {
+            return known;
+        }
+        let Some(v) = self.vault(w) else {
+            return false;
+        };
+        let mut yes = 0;
+        for o in once(v.owners.iter()) {
+            if let Owner::Vault(b) = o
+                && self.alone_memo(threshold, a, b, memo)
+            {
+                yes += 1;
+            }
+        }
+        let answer = threshold(w) <= yes;
+        memo.insert(w.to_string(), answer);
+        answer
+    }
+}

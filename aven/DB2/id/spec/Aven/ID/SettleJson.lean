@@ -28,8 +28,15 @@ def hashesJson (l : List Core.Hash) : Json := Json.arr (l.map hashJson).toArray
 def GuardianKeys.json (g : GuardianKeys) : Json :=
   Json.mkObj [("ed25519", g.ed25519), ("mlDsa", g.mlDsa), ("xWing", g.xWing)]
 
+def HybridKey.json (h : HybridKey) : Json := Json.mkObj [("ed25519", h.ed25519), ("mlDsa", h.mlDsa)]
+
+def Passkey.json (k : Passkey) : Json :=
+  Json.mkObj [("credential", k.credential), ("spki", k.spki), ("owner", (k.owner.map HybridKey.json).getD Json.null),
+    ("seal", (k.sealKey.map Json.str).getD Json.null), ("epoch", toJson k.epoch)]
+
 def Genesis.json (g : Genesis) : Json :=
-  Json.mkObj [("rpId", g.rpId), ("origins", toJson g.origins), ("claimant", g.claimant), ("passkey", g.passkey),
+  Json.mkObj [("rpId", g.rpId), ("origins", toJson g.origins), ("claimant", g.claimant),
+    ("passkey", Passkey.json g.passkey),
     ("devices", toJson g.devices), ("coop", g.coop), ("coopOwners", toJson g.coopOwners), ("agent", g.agent),
     ("avenPeer", g.avenPeer),
     ("guardian", GuardianKeys.json g.guardian), ("guardianVault", g.guardianVault),
@@ -37,17 +44,19 @@ def Genesis.json (g : Genesis) : Json :=
 
 def TreeSays.json : TreeSays → Json
   | .genesis g => Json.mkObj [("kind", "genesis"), ("genesis", Genesis.json g)]
-  | .signIn v d => Json.mkObj [("kind", "signIn"), ("vault", v), ("device", d)]
+  | .signIn d => Json.mkObj [("kind", "signIn"), ("device", d)]
   | .ticket k => Json.mkObj [("kind", "ticket"), ("key", k)]
   | .withdrawal t => Json.mkObj [("kind", "withdrawal"), ("ticket", hashJson t)]
-  | .claim t v p d g => Json.mkObj [("kind", "claim"), ("ticket", hashJson t), ("vault", v), ("passkey", p),
-      ("device", d), ("guardian", g)]
+  | .claim t v p ds g => Json.mkObj [("kind", "claim"), ("ticket", hashJson t), ("vault", v),
+      ("passkey", Passkey.json p), ("devices", toJson ds), ("guardian", g)]
   | .confirm c => Json.mkObj [("kind", "confirm"), ("claim", hashJson c)]
   | .relayAdd d => Json.mkObj [("kind", "relayAdd"), ("vault", d)]
   | .relayRemove d => Json.mkObj [("kind", "relayRemove"), ("vault", d)]
   | .setAvenPeer k => Json.mkObj [("kind", "setAvenPeer"), ("key", k)]
   | .setOrigins os => Json.mkObj [("kind", "setOrigins"), ("origins", toJson os)]
   | .setGuardian v => Json.mkObj [("kind", "setGuardian"), ("vault", v)]
+  | .ownerEpoch c o se e => Json.mkObj [("kind", "ownerEpoch"), ("credential", c), ("owner", HybridKey.json o),
+      ("seal", se), ("epoch", toJson e)]
 
 /-- The tree Doc of the vectors. -/
 def treeDoc : Core.DocId := ⟨Core.blake3 (Body.utf8 "Maia City's tree")⟩
@@ -104,13 +113,14 @@ def g : TreeStatement := ⟨100, "alice-passkey", [], .genesis alicesGenesis⟩
 open TreeExamples in
 def raceCases : List Case :=
   let t : TreeStatement := ⟨120, "alice-passkey", [100], .ticket "t-bob"⟩
-  let bob : TreeStatement := ⟨500, "t-bob", [120], .claim 120 "bob" "bob-passkey" "bob-peer" "maia-city-guardian"⟩
+  let bob : TreeStatement :=
+    ⟨500, "t-bob", [120], .claim 120 "bob" (pk "bob-passkey") ["bob-peer"] "maia-city-guardian"⟩
   let leak : TreeStatement :=
-    ⟨300, "t-bob", [120], .claim 120 "mallory" "mallory-passkey" "mallory-peer" "maia-city-guardian"⟩
+    ⟨300, "t-bob", [120], .claim 120 "mallory" (pk "mallory-passkey") ["mallory-peer"] "maia-city-guardian"⟩
   [{ name := "the genesis alone", statements := [g], pinned := 100 },
    { name := "the genesis and two sign-ins", pinned := 100,
-     statements := [g, ⟨110, "alice-passkey", [100], .signIn "alice" "alice-phone"⟩,
-       ⟨111, "alice-passkey", [100], .signIn "alice" "alice-laptop"⟩] },
+     statements := [g, ⟨110, "alice-passkey", [100], .signIn "alice-phone"⟩,
+       ⟨111, "alice-passkey", [100], .signIn "alice-laptop"⟩] },
    { name := "a claim, not yet acked", statements := [g, t, bob], pinned := 100 },
    { name := "a claim and its ack", pinned := 100,
      statements := [g, t, bob, ⟨510, "alice-peer", [500], .confirm 500⟩] },
@@ -123,9 +133,9 @@ def raceCases : List Case :=
      statements := [g, t, bob, ⟨610, "alice-passkey", [500], .withdrawal 120⟩] },
    { name := "a claim that saw the withdrawal is out", pinned := 100,
      statements := [g, t, ⟨610, "alice-passkey", [120], .withdrawal 120⟩,
-       ⟨500, "t-bob", [610], .claim 120 "bob" "bob-passkey" "bob-peer" "maia-city-guardian"⟩] },
+       ⟨500, "t-bob", [610], .claim 120 "bob" (pk "bob-passkey") ["bob-peer"] "maia-city-guardian"⟩] },
    { name := "two admin devices ack two claims without seeing each other: contested, the smaller hash", pinned := 100,
-     statements := [g, ⟨110, "alice-passkey", [100], .signIn "alice" "alice-peer-light"⟩, t, bob, leak,
+     statements := [g, ⟨110, "alice-passkey", [100], .signIn "alice-peer-light"⟩, t, bob, leak,
        ⟨510, "alice-peer", [500], .confirm 500⟩, ⟨511, "alice-peer-light", [300, 110], .confirm 300⟩] },
    { name := "a withdrawal never wins over a final claim", pinned := 100,
      statements := [g, t, bob, ⟨510, "alice-peer", [500], .confirm 500⟩,
@@ -142,7 +152,7 @@ def raceCases : List Case :=
    { name := "a ticket and a relay signed by an admin device, not the passkey: neither counts for anything",
      pinned := 100,
      statements := [g, ⟨120, "alice-peer", [100], .ticket "t-bob"⟩,
-       ⟨500, "t-bob", [120], .claim 120 "bob" "bob-passkey" "bob-peer" "maia-city-guardian"⟩,
+       ⟨500, "t-bob", [120], .claim 120 "bob" (pk "bob-passkey") ["bob-peer"] "maia-city-guardian"⟩,
        ⟨700, "alice-peer", [100], .relayAdd "bob"⟩] },
    { name := "Maia City moves the Aven Peer to a new key; a device's change and a concurrent rival don't win",
      pinned := 100,
@@ -156,7 +166,7 @@ def raceCases : List Case :=
        ⟨130, "alice-passkey", [110], .setAvenPeer "aven-peer-3"⟩] },
    { name := "a statement whose past doesn't reach the genesis", pinned := 100,
      statements := [g, ⟨120, "alice-passkey", [99], .ticket "t-bob"⟩,
-       ⟨500, "t-bob", [120], .claim 120 "bob" "bob-passkey" "bob-peer" "maia-city-guardian"⟩] },
+       ⟨500, "t-bob", [120], .claim 120 "bob" (pk "bob-passkey") ["bob-peer"] "maia-city-guardian"⟩] },
    { name := "a ticket that fails its own checks", statements := [g, t, bob], failing := [120], pinned := 100 }]
 
 /-! ## Generated sets -/
@@ -188,11 +198,12 @@ def genCase (seed : Nat) : Case := Id.run do
     -- a claim mostly names its ticket, and an ack its claim, so many count; now and then they name only one
     -- earlier statement, so acks and withdrawals often don't see each other
     let (signer, tips, says) : String × List Core.Hash × TreeSays :=
-      if k == 0 then ("alice-passkey", [tip1], .signIn "alice" "alice-peer-light")
+      if k == 0 then ("alice-passkey", [tip1], .signIn "alice-peer-light")
       else if k ≤ 2 then ("alice-passkey", [tip1, tip2].eraseDups, .ticket s!"t-{i}")
       else if k ≤ 4 ∧ tickets.size > 0 then
         let (tn, key) := tickets[x % tickets.size]!
-        (key, (if x == 6 then [tip1] else [tn, tip1].eraseDups), .claim tn s!"vault-{i}" s!"passkey-{i}" s!"browser-{i}"
+        (key, (if x == 6 then [tip1] else [tn, tip1].eraseDups), .claim tn s!"vault-{i}" (pk s!"passkey-{i}")
+          [s!"browser-{i}"]
           (if x == 7 then "other-guardian" else "maia-city-guardian"))
       else if k == 5 ∧ claims.size > 0 then
         let c := claims[x % claims.size]!
@@ -227,7 +238,7 @@ def restoreCases : List Case :=
     let m := membersAfter ops
     match m.founding.claim, m.restore with
     | some _, .ok r =>
-      some { name := s!"migrated: {name}", statements := migrate r boxGuardianKeys, pinned := genesisName }
+      some { name := s!"migrated: {name}", statements := migrate r boxSwitchKeys, pinned := genesisName }
     | _, _ => none
 
 /-! ## All of it -/
@@ -250,9 +261,11 @@ def treeOpVectors : List Json :=
   let g : TreeStatement := SettleJson.g
   let h : Core.Hash := ⟨Core.be 32 120⟩
   let examples : List TreeSays :=
-    [g.says, .signIn "alice" "alice-phone", .ticket "t-bob", .withdrawal h,
-     .claim h "bob" "bob-passkey" "bob-peer" "maia-city-guardian", .confirm h, .relayAdd "bob", .relayRemove "bob",
-     .setAvenPeer "aven-peer-2", .setOrigins ["https://maia.city"], .setGuardian "new-guardian"]
+    [g.says, .signIn "alice-phone", .ticket "t-bob", .withdrawal h,
+     .claim h "bob" (pk "bob-passkey") ["bob-peer"] "maia-city-guardian", .confirm h, .relayAdd "bob",
+     .relayRemove "bob",
+     .setAvenPeer "aven-peer-2", .setOrigins ["https://maia.city"], .setGuardian "new-guardian",
+     .ownerEpoch "bob-passkey-credential" ⟨"bob-ed25519", "bob-ml-dsa"⟩ "bob-seal" 2]
   (TreeOp.all.map fun o =>
     Json.mkObj [("name", s!"tree/1 op {o.name}"),
       ("input", Json.mkObj [("op", o.name), ("plugin", "tree/1")]),

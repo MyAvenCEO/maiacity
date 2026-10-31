@@ -21,7 +21,13 @@ impl<F: Fn(&Envelope, &Body) -> bool> Authorize for When<F> {
         true
     }
 
-    fn authorized(&self, _: &Genesis, e: &Envelope, body: &Body) -> bool {
+    fn authorized(
+        &self,
+        _: &Genesis,
+        e: &Envelope,
+        body: &Body,
+        _: &aven_db_docs::Past<'_>,
+    ) -> bool {
         (self.0)(e, body)
     }
 }
@@ -34,7 +40,7 @@ impl Authorize for Allow {
         true
     }
 
-    fn authorized(&self, _: &Genesis, _: &Envelope, _: &Body) -> bool {
+    fn authorized(&self, _: &Genesis, _: &Envelope, _: &Body, _: &aven_db_docs::Past<'_>) -> bool {
         true
     }
 }

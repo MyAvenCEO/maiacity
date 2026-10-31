@@ -263,6 +263,7 @@ One image holds every tool; every command runs in it.
 - **The image** is `ghcr.io/myavenceo/aven/sandbox`, built from `sandbox/box/Dockerfile`. It holds:
   - Playwright's image from Microsoft's registry, at the newest release;
   - stable Rust with the wasm target and wasm-bindgen;
+  - a dated nightly and cargo-fuzz, for the fuzzer only (`sandbox/fuzz.sh`);
   - bun;
   - Lean, through elan;
   - the third-party crates (iroh, Loro, OpenDAL and the rest), already compiled, so a fresh box builds only our own
@@ -483,6 +484,8 @@ Oct 2026): a person runs `bun run bump` when they choose. No scheduled workflow 
 | every npm package | `package.json` | npm's registry |
 | Rust | the Dockerfile's `RUST_VERSION` | Rust's stable channel (static.rust-lang.org) |
 | wasm-bindgen's CLI | `WASM_BINDGEN_VERSION` | the `wasm-bindgen` crate: the two must match exactly |
+| Rust's nightly, for the fuzzer only | `RUST_NIGHTLY`, a dated nightly | Rust's nightly channel (static.rust-lang.org), at a recent date whose build is whole |
+| cargo-fuzz | `CARGO_FUZZ_VERSION` | crates.io |
 | bun | `BUN_VERSION`, `packageManager`, `setup-bun`'s `bun-version` | npm's `bun` |
 | elan, Lean | `ELAN_VERSION`, `LEAN_VERSION`, both `lean-toolchain` files | their GitHub tags, over git; their downloads, from GitHub's release storage |
 | Playwright's image | the Dockerfile's `FROM` | Microsoft's registry, at the newest release npm's `playwright` has too: the two move together |
