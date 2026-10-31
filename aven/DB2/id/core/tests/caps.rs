@@ -65,8 +65,7 @@ fn chains_are_judged_as_the_model_does() {
                 let c = c.named();
                 assert_eq!(hex(&c.bytes()), hex(&theirs), "{}: {}", v["name"], c.id);
                 // and read back as itself
-                let back =
-                    Cap::from_bytes(&theirs, c.id.clone(), c.signer, c.approvals.clone());
+                let back = Cap::from_bytes(&theirs, c.id.clone(), c.signer, c.approvals.clone());
                 assert_eq!(
                     back.map(codec_order),
                     Some(codec_order(c.clone())),

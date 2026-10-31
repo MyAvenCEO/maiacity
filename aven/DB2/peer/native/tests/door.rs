@@ -79,7 +79,14 @@ fn tree(m: &Members) -> Value {
         .iter()
         .map(|v| {
             let owners: Vec<String> = v.owners.iter().map(ToString::to_string).collect();
-            json!({ "id": v.id, "name": v.name, "kind": v.kind.as_str(), "owners": owners })
+            let mut vault = json!({
+                "id": v.id, "name": v.name, "kind": v.kind.as_str(), "owners": owners, "threshold": v.threshold
+            });
+            // a device names its key (A211)
+            if let Some(key) = &v.key {
+                vault["key"] = json!(key);
+            }
+            vault
         })
         .collect();
     json!({ "keys": keys, "vaults": vaults })
@@ -275,11 +282,16 @@ async fn the_door_reads_what_production_stored_before_the_agent() {
     let door = open(&store, &old["server"]).await;
     let m = door.members();
 
-    // the same tree but for the agent's kind, read from its old name
+    // the same tree but for the agent's kind, read from its old name; each vault takes one owner (A28), and a device's
+    // key is its id, as a tree written before A211 reads
     let mut want = old["tree"].clone();
     for v in want["vaults"].as_array_mut().unwrap() {
         let kind = aven_id::Kind::parse(v["kind"].as_str().unwrap()).unwrap();
         v["kind"] = json!(kind.as_str());
+        v["threshold"] = json!(1);
+        if kind == aven_id::Kind::Device {
+            v["key"] = v["id"].clone();
+        }
     }
     assert_ne!(want, old["tree"], "the old tree names a network");
     assert_eq!(tree(&m), want);
