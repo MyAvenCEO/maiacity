@@ -712,6 +712,13 @@ the spec that owns it.
 - **A30. One name for a signed thing:** the hash of `[label, body]`, its signatures beside it, so signing one act
   twice never makes two names. A split is two different bodies at one place (A4). The tree's statements become Core
   envelopes on Core's past. *Decided (the architect, 31 Oct 2026): it follows from rule 1 and A4.*
+  - **Many signatures beside one name** (the architect, 31 Oct 2026). A signed thing or an envelope carries a set of
+    signatures that only grows: adding one never renames it and is never a split. In an envelope, its log writer's
+    signature places it in the log, and the others are approvals over the same name: k of a vault's owners (D14,
+    caps' approvals), or a passkey's ES256 beside its owner's hybrid at a sign-in (caps rule 21).
+  - **What counts has its whole past held** (rule 11). An envelope built on a parent the reader doesn't hold waits;
+    it counts only once every parent its `prev` and `deps` name is held, recursively. So counting is monotone, and
+    an approval that depends on the owners in its past is judged on that whole past.
 - **A31. Two kinds of signed thing:** history (envelopes in a log, where a split is final) and beats, which decide
   nothing. An address or release record is history: an envelope in its signer's own log, the newest the latest there,
   so the "smaller body wins" tie-break goes. *Decided (the architect, 31 Oct 2026): it follows from A4.*
@@ -836,6 +843,27 @@ the spec that owns it.
   keeper's offer covers that owner (keep caps ∩ offers, as wants ∩ caps). The admin's keeper list goes: the offers
   Maia City's members hold are the list. The relay list stays Maia City's: it is about who sees members' connections,
   not about data. *Decided: yes.*
+
+- **A45. One concept, one owner** (Samuel, 31 Oct 2026). Every concept is defined once, in the spec that owns it,
+  with its vectors beside it; the others reuse it and add only what is theirs, as parameters. Core defines the
+  primitives (Values, names, signed things, envelopes, logs, the past, splits, counting, limits, ops, calls, targets,
+  steps, built-in type names); avenID supplies *authorized*, docs supplies *fit* and writer ids, the engine lowers
+  calls to steps. The duplicates found on 31 Oct 2026 go:
+  - **Counting** is Core's `Counts`, with fit and authorized as parameters: docs' own `Verdicts` and counting, avenID's
+    record counting and the tree's own past go (A30, A31) (core, docs, caps, avenPEER).
+  - **Signatures** are Core's `Sig {signer, sig}` beside a name: caps' approvals count k of n over them, and the
+    keeper's `Signed` becomes `KeepOrder` (core, caps).
+  - **An envelope's `cap` and `acks`** are caps' authority part of the body; docs carries it without reading it (caps,
+    docs).
+  - **Writer ids** are docs': Core takes `writes` as a parameter, and caps never derives one (docs, core).
+  - **"Op" means only an op.** Loro's op id is a `LoroId`, and the body's counter range is `loro {from, to}` (docs).
+  - **Built-in type names** come from one `builtinType` in Core; each spec lists its own types (core, caps, docs).
+  - **Vectors** have one owner each: db's copies of `envelopes.json`, `logs.json` and `counts.json` go (docs).
+  - **Runtimes live with their publisher's vault:** a module is a blob, and its manifest a typed Doc, owned by the
+    vault that publishes it (Aven's for the built-ins), kept where its keep caps say (A44). Git holds the frozen bytes
+    only until Docs run. A runtime runs on the reader's device, in a worker of its own, apart from the device key.
+
+  *Decided: yes.*
 
 **The engine and actors**
 - **A9. The want queue** as in [Massive data](#massive-data-wants-decide-what-moves). Its laws go into Lean before

@@ -6,11 +6,13 @@ import Aven.ID.ClaimJson
 import Aven.ID.InviteJson
 import Aven.ID.Before
 import Aven.ID.CapsJson
+import Aven.ID.AuthorizedExamples
 import Aven.ID.SettleJson
 import Aven.ID.FailJson
 import Aven.ID.Expiry
 import Aven.ID.Collections
 import Aven.ID.KeyFormatsJson
+import Aven.ID.SealJson
 
 /-! # The test vectors (README, rule 10)
 
@@ -35,6 +37,10 @@ import Aven.ID.KeyFormatsJson
 - `caps.json`: cap chains on the cast, each cap with its lines of ops (A32), its CBOR bytes and its hash, with the first
   rule each chain breaks or none (`Aven.ID.Caps`); who keeps a Doc (`Aven.ID.Keeping`); how avenOS shows a cap for a
   passkey tap; and generated chains (`Aven.ID.CapsJson`).
+- `authorized.json`: an envelope's signer, Doc and branch, the calls it makes (a merge into main's whole calls), the
+  chain it names, and what the reader knows: its context, each signing key's vault, each device's cap and the
+  network's members; with each check's verdict, the path, own or chain, and the first check that refuses it
+  (`Aven.ID.Authorized`, `Aven.ID.AuthorizedExamples`).
 - `collections.json`: a collection's envelopes, the Docs a reader knows, who signs for and governs which vault, and
   whether the collection lists a Doc (`Aven.ID.Collections`, A32): removals, strangers' listings, a Doc out of reach,
   nesting, and the depth.
@@ -55,7 +61,8 @@ import Aven.ID.KeyFormatsJson
   inside, with what each request gives back (`Aven.ID.Safe`, R13).
 - `settled.json`: sets of tree statements, each in several orders, and the tree `settle` gives (`Aven.ID.Network`,
   PEERS.md §5): `TreeExamples`, the races one by one, generated sets, and production's store migrated from every
-  invite trace (`Aven.ID.Restore`). `records.json`: signed records and the newest of each (`Aven.ID.Records`, §6).
+  invite trace (`Aven.ID.Restore`). `tree-ops.json`: `tree/1`'s op ids and a call of each (A32). `records.json`:
+  signed records and the newest of each (`Aven.ID.Records`, §6).
   `node.json`: networks losing each peer in turn, with every home relay, who reaches whom and who can fetch the chat
   (`Aven.ID.Node`, R7). `catchup.json`: sources offered against a signed log tip, the one chosen and the ones caught,
   and presence from signed beats (`Aven.ID.CatchUp`). `failures.json`: the nine checks the box runs with the Aven Peer
@@ -65,6 +72,9 @@ import Aven.ID.KeyFormatsJson
   extendable modes, the PRF step's input, salt and seeds, a stanza's AAD, keys and commitment, an epoch's subkeys and
   tags; and the bytes of stanzas, keyring and Doc epochs with their names, and hybrid keys and signatures. aven-id
   derives and encodes each and compares.
+- `seals.json`: the one seal for loose envelopes, segments and checkpoints (`Aven.ID.Seal`): each kind's cipher and
+  commitment keys, the AAD, the commitment, the padded plaintext and the outside's bytes; Padmé's lengths; paddings a
+  reader refuses. aven-db-docs checks each, and seals and opens through XChaCha20-Poly1305 itself.
 
 `bun run up --check` runs it again and fails when the files differ from what is committed. -/
 
@@ -176,6 +186,27 @@ def capsVectors : List Json :=
   (List.range generatedChains).map fun i =>
     let cs := genChain (i + 1)
     vector s!"generated chain, seed {i + 1}" (chain cs) (chainResult cs)
+
+open AuthorizedExamples in
+/-- The reader's verdict on each case of the cast: the envelope, its calls and chain, and what the reader knows. -/
+def authorizedVectors : List Json :=
+  let call (c : Aven.Core.Call) := Json.mkObj [("op", c.op.text),
+    ("params", Json.mkObj (c.params.map fun (p, v) => (Aven.Core.utf8Text p, v.json)))]
+  let deviceCap (k : Aven.Core.Bytes) (dc : DeviceCap) := Json.mkObj [("key", Aven.Core.hex k),
+    ("device", dc.device), ("vault", dc.vault), ("grants", match dc.grants with
+      | none => Json.null
+      | some g => Json.arr (g.map Line.json).toArray), ("branches", dc.branches.json), ("host", toJson dc.host)]
+  cases.map fun c =>
+    let e := c.envelope
+    vector c.name
+      (Json.mkObj [("context", castCtxJson),
+        ("envelope", Json.mkObj [("doc", e.doc.text), ("branch", Aven.Core.utf8Text e.branch),
+          ("signer", Aven.Core.hex e.signer)]),
+        ("calls", Json.arr (c.calls.map call).toArray), ("chain", Json.arr (c.chain.map Cap.json).toArray),
+        ("keys", Json.arr (castKeys.map fun (k, v) => Json.mkObj [("key", Aven.Core.hex k), ("vault", v)]).toArray),
+        ("deviceCaps", Json.arr (castDeviceCaps.map fun (k, dc) => deviceCap k dc).toArray),
+        ("members", toJson castMembers), ("actor", toJson (c.actor.map (·.text)))])
+      (readerVerdictJson c.answer)
 
 open CollectionExamples in
 /-- Whether collection `c` lists `d` among envelopes `S`, with everything a reader needs to decide it. -/
@@ -327,6 +358,7 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "claims.json") (render claims)
   IO.FS.writeFile (dir / "invites.json") (render invites)
   IO.FS.writeFile (dir / "caps.json") (render capsVectors)
+  IO.FS.writeFile (dir / "authorized.json") (render authorizedVectors)
   IO.FS.writeFile (dir / "collections.json") (render collectionVectors)
   IO.FS.writeFile (dir / "revocations.json") (render revocationVectors)
   IO.FS.writeFile (dir / "epochs.json") (render epochVectors)
@@ -337,8 +369,10 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "safe.json") (render Safe.safeVectors)
   IO.FS.writeFile (dir / "settled.json") (render SettleJson.settledVectors)
   IO.FS.writeFile (dir / "records.json") (render SettleJson.recordVectors)
+  IO.FS.writeFile (dir / "tree-ops.json") (render SettleJson.treeOpVectors)
   IO.FS.writeFile (dir / "node.json") (render SettleJson.nodeVectors)
   IO.FS.writeFile (dir / "catchup.json") (render SettleJson.catchUpVectors)
   IO.FS.writeFile (dir / "failures.json") (render FailJson.failureVectors)
   IO.FS.writeFile (dir / "derivations.json") (render KeyFormats.derivationVectors)
   IO.FS.writeFile (dir / "stanzas.json") (render KeyFormats.stanzaVectors)
+  IO.FS.writeFile (dir / "seals.json") (render Seal.sealVectors)

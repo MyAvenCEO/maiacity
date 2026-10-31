@@ -249,22 +249,25 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
 
 ### Its genesis and its id
 
-A Doc is born with a **genesis**, a CBOR Value signed by the creating device (shown as JSON):
+A Doc is born with a **genesis**, a Core Value with exactly these keys and no defaults (`Aven.DB.Docs.Genesis`; A30,
+A39):
 
 ```json
-{ "genesis": 1, "vault": "v:alice…", "type": "d:invoice…",
-  "pins": { "d:invoice…": [ "b3:0d78…" ], "d:line…": [ "b3:51aa…" ] },
-  "nonce": "b3:<32 random bytes>", "by": "device:…", "sig": "…" }
+{ "pins": [ [ "d:invoice…", [ "b3:0d78…" ] ], [ "d:line…", [ "b3:51aa…" ] ] ],
+  "type": "d:invoice…", "nonce": "<32 random bytes>", "vault": "v:alice…" }
 ```
 
-- **Its id is the hash of the genesis,** written `d:<hex>`: the vault and root type are sealed into the Doc's name, and
-  nobody can later claim another owner or type without another id (Samuel, 30 Oct 2026).
+- **Its id is the genesis's name** by A30, the hash of `["avenDB genesis 1", genesis]`, written `d:<hex>`: the vault
+  and root type are sealed into the Doc's name, and nobody can later claim another owner or type without another id
+  (Samuel, 30 Oct 2026; `id_fixes`). The label is its version.
+- **It carries no signature of its own.** It rides in its body's `genesis` exactly in a log's first envelope (sequence
+  number 1, no `prev`, no `deps`) and nowhere else (`genesis_iff_first`); the Doc's first envelope's signature and cap
+  authorize it: a `core/1` `put` of the root Record on `vaultType(vault, type)` (A32).
+- **`pins`** lists only user types, sorted, each with its schema hashes sorted. The built-in types are never pinned.
 - **The nonce** makes two Docs born alike different. A vault's singletons (its profile, its vocabulary) are found by
   name in the vault's vocabulary, never by a guessable id; two made offline at once are both kept, and the vocabulary's
   one key picks the one that counts.
 - **A Doc never changes type.** Turning an invoice into something else is a fork into a new Doc.
-- The genesis is the first thing the Doc's first envelope carries, so the writer id of that envelope can already name
-  the Doc.
 
 ### Records flat by id
 
@@ -306,37 +309,38 @@ The ontology's facts are Records of predicate types, flat by fact id like every 
 
 ### What one holds
 
-Inside the seal, as deterministic CBOR (architecture, rule 1; shown as JSON):
+Core's envelope holds the Doc, the branch, the writer id, `seq`, `prev`, `deps`, the signer and the signature
+(`Aven.Core.Log`). Its `body` is the docs layer's (`Aven.DB.Docs.Body`), as deterministic CBOR (shown as JSON):
 
 ```json
-{ "envelope": 1, "doc": "d:7Hq…", "branch": "main", "generation": 0,
-  "writer": "9f2c…", "seq": 42, "prev": "b3:11f2…", "deps": [ "b3:a4d7…" ],
-  "ops": { "from": 1180, "to": 1193 },
-  "records": { "l3": { "version": "d:line…/b3:51aa…" }, "d:7Hq…": { "version": "d:invoice…/b3:0d78…" } },
-  "changes": h'<Loro update bytes, a CBOR byte string>',
-  "at": "2026-10-30T17:02:11Z",
-  "signer": "device:…", "cap": "b3:…", "acks": [ … ], "call": "b3:…", "params": { … },
-  "sig": "…" }
+{ "at": "2026-10-30T17:02:11Z", "cap": "b3:…", "ops": { "to": 1194, "from": 1180 },
+  "acks": [ … ], "calls": [ { "op": "b3:…", "params": { … } } ],
+  "changes": h'<Loro update bytes>', "genesis": { … },
+  "records": { "l3": [ "d:line…", "b3:51aa…" ], "v1": [ "d:<the built-in version type>" ] },
+  "generation": 0 }
 ```
 
-- **`writer`, `seq`, `prev`:** its place in its log. `seq` counts the writer's envelopes from 1; `prev` is the hash of
+- **`seq`, `prev`** (Core's): its place in its log. `seq` counts the writer's envelopes from 1; `prev` is the hash of
   the one before (none for the first).
-- **`deps`:** the hashes of the tip envelopes of other logs it builds on (rule 7). The reader checks that the commit's
-  Loro dependencies are exactly the op ids those envelopes hold.
-- **`ops`:** the commit's counter range for its writer id.
-- **`records`:** every Record the commit creates, changes or removes, with the type id of the version it was written
-  under. Merges, reverts and back-outs name them too. The reader works out the touched Records from the ops itself
-  and refuses an envelope whose list differs. The commit's Loro message is the hash of this map.
+- **`deps`** (Core's): the hashes of the tip envelopes of other logs it builds on (rule 7). The reader checks that the
+  commit's Loro dependencies, read with its writer's previous op first (`carriedDeps`), are exactly the last op ids of
+  `prev` then `deps` (`loroAgrees`).
+- **`ops`:** the commit's counters, half-open as Loro's spans are: its first, and its writer's next. In one log an
+  envelope's `from` is the one before's `to`, so no two of a log's envelopes share an op id (`log_ops_disjoint`).
+- **`records`:** every Record the commit creates, changes or removes, with the version it was written under: `[type
+  Doc, schema hash]` for a user type, `[type Doc]` for a built-in type, which is versioned by its label. The reader
+  works out the touched Records from the ops itself and refuses an envelope whose list differs. The commit's Loro
+  message is the lowercase hex of BLAKE3 over the canonical CBOR of `records`.
+- **`calls`:** the operations the commit ran, each a `Call` (`{op, params}`, A32). **`cap`**, **`acks`:** the cap it
+  writes under and the revocations it acknowledges ([caps](../../id/caps/README.md#checking)).
 - **`at`:** the writer's claimed time (rule 9).
-- **`signer`, `cap`, `acks`, `call`, `params`:** the device, the cap it writes under, the revocations it acknowledges,
-  the engine's operation and its params ([caps](../../id/caps/README.md#checking)).
-- **`sig`:** Ed25519 by the device over exactly the CBOR encoding of the envelope without `sig`, under the label
-  `avenDB envelope 1`. The segment that later covers it adds the hybrid signature.
-- In CBOR every hash is its 32 bytes and every id its bytes; `b3:<hex>` and `d:<hex>` are only the readable form.
+- **`genesis`:** exactly in a log's first envelope, and nowhere else; a reader refuses either mismatch.
+- **The signature:** Ed25519 by the device over Core's `["avenDB envelope 1", unsigned envelope]`. The segment that
+  later covers it adds the hybrid signature.
 
-An envelope is named by the hash of its signed bytes. Sealed, it travels live as a **loose envelope** with the
-`avenDB envelope 1` subkey on the Doc's gossip topic, and is put in the writer's own store at once: a write is local
-first and survives a crash.
+An envelope is named by the hash of what its device signs (A30). Sealed with the `envelope` kind (`Aven.ID.Seal`), it
+travels live as a **loose envelope** on the Doc's gossip topic, and is put in the writer's own store at once: a write
+is local first and survives a crash.
 
 ### Writer ids
 
@@ -375,37 +379,43 @@ Samuel's "do as you believe"):
 - the writer goes quiet on the Doc for a few seconds (5 s to start; the catch-up target tunes it);
 - the page hides or closes, best effort.
 
+A segment is Core's `Signed` under `avenDB segment 1`, hybrid-signed by its writer (`Aven.DB.Docs.Segment`):
+
 ```json
-{ "segment": 1, "doc": "d:7Hq…", "epoch": "b3:…", "branch": "main", "writer": "9f2c…", "generation": 0,
-  "from": 41, "to": 297, "prev": "b3:<previous segment>", "envelopes": [ "<bytes>", … ],
-  "covers": [ "b3:<loose envelope>", … ], "sig": "<hybrid>" }
+{ "to": 298, "from": 41, "prev": "b3:<previous segment>", "branch": "main", "writer": "9f2c…",
+  "envelopes": [ h'<envelope>', … ], "generation": 0 }
 ```
 
-- Its envelopes are the same signed bytes, so their hashes stay.
+- Its envelopes are the same signed bytes, so their names stay; `from` and `to` are their sequence numbers, half-open.
+  A keeper drops the loose envelopes a segment holds by their names.
 - One hybrid signature (Ed25519 and ML-DSA-65) covers the segment, inside the seal, about 3.4 KB per segment: what keeps
-  single Ed25519 envelopes safe from a later quantum forgery (agreed with caps).
-- It is sealed with the `avenDB segment 1` subkey and padded. Outside are only the Doc, the epoch and the padded
-  length.
-- `covers` lets a keeper drop the loose envelopes the segment replaces, without reading them.
+  single Ed25519 envelopes safe from a later quantum forgery (agreed with caps). Its Ed25519 half is the key every
+  envelope in it is signed with.
+- It is sealed with the `segment` kind of the one seal (`Aven.ID.Seal`): the cipher key `derive_key("avenDB segment
+  1", epoch key)` and its commitment key, a fresh 24-byte nonce, the AAD `{doc, kind, epoch}`, a commitment over `{aad,
+  nonce}` checked before decrypting, and the plaintext padded with Padmé. Outside are only `{ct, doc, epoch, nonce,
+  commit}`: the Doc, the epoch and the padded length (D13).
 
 **Keepers keep loose envelopes** until a segment covers them, so a writer that never comes back leaves nothing
 unreachable (architecture, scenario 16).
 
 ### The head
 
-A peer's own record of a Doc, a small Value under the ref `doc-<id>`, replaced by compare-and-set:
+A peer's own record of a Doc, a small Value under the ref `doc-<id>`, replaced by compare-and-set
+(`Aven.DB.Docs.Head`):
 
 ```json
-{ "doc": "d:7Hq…",
-  "branches": { "main": { "logs": { "9f2c…": "b3:<newest envelope>", "0c2e…": "b3:…" },
-                          "snapshot": "b3:…", "checkpoint": "b3:…" } },
-  "keeper": { "after": 1183 } }
+{ "doc": "d:7Hq…", "branches": { "main": { "logs": [ [ "9f2c…", "b3:<newest envelope>" ], [ "0c2e…", "b3:…" ] ] } } }
 ```
 
-It lists, per branch, each log's newest envelope, the peer's newest snapshot and the checkpoint it started from, and
-how far it has caught up from each keeper. It never travels: what a peer tells others is a version, by hash.
+It lists, per branch, each log's newest envelope that counts, sorted by writer id. The newest snapshot, the checkpoint
+it started from and how far it has caught up from each keeper join it with catch-up and checkpoints. It never
+travels: what a peer tells others is a version, by hash. A branch's Records sit in its Loro document's root map
+`records`, flat by id.
 
 ### Catching up
+
+## Catching up
 
 1. **From a keeper,** which knows nothing about writers (caps D13): the device asks "what came after your number n?",
    gets hashes of segments and loose envelopes, and fetches the ones it lacks as one hash sequence.
@@ -475,8 +485,29 @@ When a verdict turns after import, the branch's state is rebuilt from the envelo
 ops back out). Honest edits built on a discounted envelope are shown as not counted, with the reason, and their devices
 re-apply them as new commits on top.
 
-**Loro sees only bytes that passed the limits and a member's signature.** Its decoding is fuzzed (`cargo-fuzz`, every
-release), and a decoding failure refuses one envelope without touching the live state.
+**Loro is a hole until proven otherwise** (the architect, 31 Oct 2026). It can panic on bytes it should have refused,
+and a panic in the browser kills the worker, then kills it again on every catch-up. Three defences:
+
+- **(a) Strangers never reach Loro.** Steps 1 to 8 run before a byte of an envelope's changes is read: the limits, strict
+  decoding, the device's signature, that the signer's chain reaches this Doc at all (caps' `reaches`; a stranger's
+  envelope is refused and never held), the writer id, its place in its log, and rule 7 from the update's metadata.
+  Only a member's signed envelope, in its right place, reaches Loro's decoding.
+- **(b) Natively, the judge catches.** Fit is judged on a scratch copy, inside `catch_unwind`; a panic there makes one
+  envelope unfit, recorded by its name and never judged again, and the live state is never touched. That needs
+  `panic = "unwind"`: aven-db-docs refuses to compile natively without it, and no profile of the workspace or the
+  Peer sets `abort`.
+- **(c) In the browser, the judge runs in a worker of its own.** wasm32 aborts on a panic, so `catch_unwind` does
+  nothing there. The Peer-Light runs the judge in its own wasm instance; when it dies, that envelope is unfit, recorded
+  by its name, and the judge restarts. This comes when the Peer-Light wires the docs layer in.
+
+Import's decoding is fuzzed (`db/docs/fuzz`, `cargo +nightly fuzz run import`, every release): random bytes as an
+envelope, as the Loro update inside a member's signed envelope, and as a sealed segment. `tests/hostile.rs` runs the
+same inputs, and bit-flipped real updates, on every check.
+
+**Imports go by page.** A page's envelopes all pass steps 1 to 8 first, and whatever waited on them joins; the page is
+then judged on one scratch copy, each envelope read by two checkouts (at itself, at its dependencies), and what counts
+enters the live state in one `import_batch`: one diff, one snapshot, one event. Measured natively: 500 envelopes of
+one Doc in one page in 76 ms (release), against about 0.7 s one by one (`tests/catchup.rs`).
 
 ## Splits
 
@@ -591,8 +622,10 @@ A **type** is a Doc whose Records are its versions:
 - A Record's type is its `t`, a type Doc's id, so Records carry no `kind` field.
 - **Every Record's creator is known:** the device and vault that signed the envelope creating it, read from history
   and never stored as a field anyone could change. Caps' `own` condition reads it.
-- **Built-in types** every Doc pins without asking: caps' access map (`cap`, `revoke`, `epoch`), `branch`, `closed`,
-  `version` and `split`.
+- **Built-in types** every Doc takes without a pin: caps' access map (`cap`, `revoke`, `epoch`), `branch`, `closed`,
+  `version` and `split`. Each is versioned by its label and has no schema; its definer checks its Records' shape, and
+  fit takes those checks as a parameter (`Aven.DB.Docs.Builtins`): docs supplies its four, avenID its three. A
+  built-in Record is written whole at birth, never edited, and may be removed.
 
 ```json
 { "title": "Todo, v1", "type": "object",
@@ -841,6 +874,9 @@ The engine's "heads" on answers are versions (architect, 30 Oct 2026).
 23. **Directories and indexes are Prolly trees of sealed Values** (A26, Samuel, 30 Oct 2026; the Prolly tree is the
     docs thread's choice): the same entries give the same root, every node stays under the size limit, recent entries
     stay in the directory Doc until a fold.
+24. **The formats follow A28–A44** (the architect, 31 Oct 2026): an unsigned genesis named by A30 and carried by the
+    first envelope; a body with `calls` and half-open `ops`; built-in types named by their labels and never pinned;
+    one seal for loose envelopes, segments and checkpoints (`Aven.ID.Seal`).
 
 ## What Lean proves
 
@@ -908,6 +944,13 @@ against the Rust's Loro on random ops, so it can never be simpler than the code.
   (`segment_records`); a blob stops at its limit whatever it declared (`blob_bounded`).
 - **The directory** (`Aven.DB.Docs.Directory`): every Doc listed now was listed at the last fold or is unfolded; a Doc
   that isn't unfolded has the entries it had then.
+- **The formats** (`Aven.DB.Docs.Genesis`, `Body`, `Segment`, `Head`; `Aven.ID.Seal`): two well-formed geneses with one
+  id are one genesis (`id_fixes`); a log's half-open ops never overlap (`log_ops_disjoint`); a segment that checks is one
+  run of one log within the limit (`run_one_log`, `run_bounded`); rule 7 on a Loro commit, read with its writer's
+  previous op (`carriedDeps`), passes only when `opsAgreeB` does (`loroAgrees_sound`); the seal opens what it sealed
+  (`open_seal`), only under a key whose commitment it carries (`open_checks_commit`), and Padmé adds at most an eighth
+  (`padme_le`). Vectors `genesis.json`, `bodies.json`, `segments.json`, `heads.json`, `loro.json`, and id's
+  `seals.json`.
 
 **What the proofs exposed** (the docs thread, 30 Oct 2026, for the cross-spec step):
 - **Loro's convergence is a stated property.** The model takes it in any order; Loro states it for causal orders, so

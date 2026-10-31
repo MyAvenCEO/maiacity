@@ -50,37 +50,20 @@ slide against the allowlist and that every element has a class (`bun test brain/
 
 ## How avenOS draws it
 
-Until the runtimes exist, avenOS draws the brain with its own Svelte (`os/web/brain`): the content is first-party, from
-the repo, bundled at build time. Both kinds of text become the node tree the runtimes will hand over, and one
-component draws it, never parsing HTML on the page:
+The content is first-party, from the repo, bundled at build time (`os/web/brain`), and none of it is parsed as HTML
+on the page:
 
-- Markdown through `render/markdown.js`, the markdown-runtime's job: GitHub's Markdown as the brain writes it, raw
-  HTML as text, links rewritten or dropped;
-- a slide's markup through `render/tree.js`, which parses it and checks it against the allowlist, as the face-runtime
-  will.
+- **Markdown** becomes a node tree through `render/markdown.js`, the markdown-runtime's job: GitHub's Markdown as the
+  brain writes it, raw HTML as text, links rewritten or dropped. It is checked against the allowlist, and
+  `Node.svelte` draws it.
+- **A slide is a face.** Its markup becomes one tree through `render/tree.js`, checked against the allowlist, and its
+  style is its rules, `style/slide.style.json`'s first. The face-runtime's drawer (`os/web/runtimes/draw.js`) checks
+  both again, builds the slide node by node into a shadow root of its own and writes its CSS there from the rules. No
+  slide style is in avenOS's own sheets, and none of avenOS's reaches a slide. The drawer asks avenOS where each
+  `/files/<hash>` drawing is, and avenOS serves the brain's own from its bundle.
 
-So the face-runtime and the markdown-runtime can take a slide over without a rewrite of the slide. The runtimes thread
-builds both as code (31 Oct 2026); once they and the tree drawer land, the pages switch to them.
-
-## What the runtimes plan lacks
-
-The face-runtime's style is data: typed rules per class ([`aven/runtimes/README.md`](../../runtimes/README.md)). The
-slides' CSS is written in the subset agreed with the runtimes thread, which `render/tree.test.js` holds it to: class
-and tag selectors, plain values, no custom properties and no `url()`. Beyond colours, sizes and weights, it needs:
-
-| Property | Used for |
-|---|---|
-| `position`, `inset`, `left`, `top`, `width`, `height` | where each layer stands |
-| `container-type: inline-size` and `cqw` lengths | a slide that scales as one picture |
-| `aspect-ratio` | the 16:9 slide |
-| `transform` (`rotate`, `translateX`) and `transform-origin` | dotted path segments, arrowheads, centred labels |
-| `border` (`dotted`), `border-radius` | dotted paths, the slide's corners |
-| `clip-path: polygon(…)` | an arrowhead |
-| `font-family`, `font-size`, `font-weight`, `line-height`, `letter-spacing`, `text-transform`, `text-align`, `white-space` | labels and titles; no text under 2.6cqw |
-| `animation`, `@keyframes` | not used yet: the motion version will move the layers |
-
-The node tree needs the allowlist's `img`, by hash: `figure`, `img`, `div`, `p`, `h2` and `header`, with `class`,
-`src`, `alt`, `role` and `aria-label`.
+`<id>.part.json` is the same face as the face-runtime takes it. Once the face-runtime runs in avenOS's worker, it
+hands the drawer that tree and style, and the page draws them the same way.
 
 ## Drawing
 
@@ -91,8 +74,7 @@ PNG in `art/img/`, named by the BLAKE3 hash of its bytes, as the network names i
 part; the rules every slide shares, `style/slide.style.json`, are written by hand. A test holds every rule to `ruleOk`,
 every font size to 2.6cqw or more, each part to its markup and style, and the runtimes' vector for "A key signs"
 (`face.json`) to the CSS the drawer writes from the brain's own rules. A slide shows
-a drawing as `<img src="/files/<hash>">`, the only image the allowlist takes; avenOS resolves the brain's own from its
-bundle (`os/web/brain/brain.js`). The images and the slides' files are generated: edit the objects and the layouts, then run them.
+a drawing as `<img src="/files/<hash>">`, the only image the allowlist takes. The images and the slides' files are generated: edit the objects and the layouts, then run them.
 
 ## Releases
 

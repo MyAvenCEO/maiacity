@@ -207,11 +207,17 @@ async function check() {
 	const vectorsStarted = Date.now();
 	const fresh = (await inBox(['sh', 'sandbox/vectors.sh', '--check'])) === 0;
 	say(`vectors ${fresh ? 'fresh' : 'STALE'} (${((Date.now() - vectorsStarted) / 1000).toFixed(1)} s)`);
+	// aven/runtimes' modules are what the manifest froze: rebuilt in the box, hashed, and run by the host under fuel
+	// (aven/runtimes/freeze.sh)
+	const frozenStarted = Date.now();
+	const frozen = (await inBox(['sh', '-c', 'cd /aven/runtimes && sh freeze.sh --check'])) === 0;
+	say(`runtime modules ${frozen ? 'as frozen' : 'NOT as frozen'} (${((Date.now() - frozenStarted) / 1000).toFixed(1)} s)`);
 	const run = `runs/${new Date().toISOString().replace(/[:.]/g, '-')}`;
 	const result = await $`${compose} exec -T browsers node sandbox/check.mjs ${run}`.env(env).nothrow();
 	const passed =
 		fenced.length === 0 &&
 		fresh &&
+		frozen &&
 		result.exitCode === 0 &&
 		(await keeps(run)) &&
 		(await inEngines(run)) &&
@@ -441,11 +447,12 @@ export async function upgrades(run) {
 		await $`${compose} restart prod`.env(env).quiet();
 	};
 	await wipe();
+	// a version ahead of this build's, and one behind, from the model's own (db/spec/vectors/upgrades.json)
+	const wire = JSON.parse(readFileSync(join(db2, 'db/spec/vectors/upgrades.json'), 'utf8')).find((v) => v.expected.answer === null).input.mine;
 	const asks = {
-		// a version ahead of this build's, and one behind: version 0 is the wire before it had versions
-		'prod-ahead': () => restart('prod', '2'),
+		'prod-ahead': () => restart('prod', String(wire + 1)),
 		'prod-back': () => restart('prod', ''),
-		'alice-behind': () => restart('alice', '0'),
+		'alice-behind': () => restart('alice', String(wire - 1)),
 		'alice-back': () => restart('alice', ''),
 	};
 	const script = $`${compose} exec -T browsers node sandbox/upgrade.mjs ${run}`.env(env).nothrow();
