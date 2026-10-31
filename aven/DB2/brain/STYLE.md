@@ -6,7 +6,7 @@ around them share it.
 
 The objects are drawn in code ([`art/objects.mjs`](art/objects.mjs), with the kit in [`art/paint.mjs`](art/paint.mjs))
 and rendered to images, so every one is reproducible and its own layer. The tokens are in
-[`style/tokens.css`](style/tokens.css), the slide in [`style/slide.css`](style/slide.css).
+[`style/tokens.css`](style/tokens.css), the slide in [`style/slide.style.json`](style/slide.style.json), the face-runtime's style data.
 
 ## The objects
 
