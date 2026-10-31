@@ -2,14 +2,14 @@
 //! `aven/db/1` connection names the wire version its peer speaks, and a peer of another version is answered `update`,
 //! with the version this one speaks, and closed, never fallen back for. Both sides say `update` on their timeline, and
 //! the one behind says it `follows`: a tab switches to the newer release, a native Peer waits for its owner. What each
-//! side answers is the model's (`upgrades.json`, in aven-db-core's tests); here only that the hub and the link do it.
+//! side answers is the model's (`upgrades.json`, in aven-gen1's tests); here only that the hub and the link do it.
 
 #![cfg(feature = "native")]
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use aven_db_core::wire::{self, ALPN, Decoder, Greeting, Incoming};
+use aven_gen1::wire::{self, ALPN, Decoder, Greeting, Incoming};
 use aven_peer::Notes;
 use aven_peer::hub::Hub;
 use aven_peer::keys::Members;

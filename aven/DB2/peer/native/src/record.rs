@@ -2,8 +2,8 @@
 //! and the ref `first-start` pointing at it. A restart finds it again; a wiped store is empty, and the next start
 //! writes a new one. The same code runs in every peer, over whichever backend it was configured with.
 
-use aven_db_core::timeline;
 use aven_db_store::{Error, Hash, RefName, Result, Store};
+use aven_gen1::timeline;
 use bytes::Bytes;
 use serde_json::json;
 

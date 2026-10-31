@@ -1,4 +1,4 @@
-//! Presence as the Aven Peer counts it (`aven_db_core::presence`): every peer that says hello on `aven/db/1` joins,
+//! Presence as the Aven Peer counts it (`aven_gen1::presence`): every peer that says hello on `aven/db/1` joins,
 //! each of its connections counted, and every connected peer is told who is there, itself included, on every change.
 //! The Aven Peer beats once per clock step on every link, so a quiet link still moves. An Aven Peer that keeps its tree
 //! (`door`) also tells every link whether its network is claimed and, to the devices its door admits, its tree and
@@ -9,10 +9,10 @@
 
 use std::sync::{Arc, Mutex, OnceLock};
 
-use aven_db_core::presence::Presence;
-use aven_db_core::status::TICK_MS;
-use aven_db_core::timeline;
-use aven_db_core::wire::{self, Decoder, Frame, Greeting, encode, heads_pages, kept_pages};
+use aven_gen1::presence::Presence;
+use aven_gen1::status::TICK_MS;
+use aven_gen1::timeline;
+use aven_gen1::wire::{self, Decoder, Frame, Greeting, encode, heads_pages, kept_pages};
 use iroh::PublicKey;
 use iroh::endpoint::Connection;
 use iroh::protocol::{AcceptError, ProtocolHandler};
@@ -20,7 +20,7 @@ use serde_json::json;
 use tokio::sync::watch;
 use tokio::time::{Duration, interval};
 
-use aven_db_core::chain::Answer;
+use aven_gen1::chain::Answer;
 
 use crate::chats::Chats;
 use crate::door::{Door, Statement};

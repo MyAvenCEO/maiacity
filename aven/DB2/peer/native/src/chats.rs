@@ -1,4 +1,4 @@
-//! The chat's history (`store/README.md`, "The chat keeps its history"; `aven_db_core::chain`): every line this peer
+//! The chat's history (`store/README.md`, "The chat keeps its history"; `aven_gen1::chain`): every line this peer
 //! hears or writes is a blob in its store, and each device's newest line is the ref `chat-<device>`, moved forward by
 //! compare-and-set, only ever as the [`Keeper`] moves it. The Aven Peer keeps every chain and raises forks; every peer
 //! does the same with what it hears. A restart or a reload loads the chains from the store, and catching up takes the
@@ -19,12 +19,12 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
-use aven_db_core::chain::{self, Answer, Body, Held, Keeper, Line, Retraction, Settled};
-use aven_db_core::files::Announcement;
-use aven_db_core::timeline;
-use aven_db_core::wire::{Frame, Have, Head, MAX_FRAME, catch_up_pages, heads_pages};
 use aven_db_store::withhold::Withheld;
 use aven_db_store::{Hash, RefName};
+use aven_gen1::chain::{self, Answer, Body, Held, Keeper, Line, Retraction, Settled};
+use aven_gen1::files::Announcement;
+use aven_gen1::timeline;
+use aven_gen1::wire::{Frame, Have, Head, MAX_FRAME, catch_up_pages, heads_pages};
 use bytes::Bytes;
 use iroh::{PublicKey, SecretKey};
 use serde_json::json;

@@ -1,17 +1,17 @@
-//! aven-db-core against Lean's vectors (README rule 10): every expected value here comes from `db/spec`, written by
+//! aven-gen1 against Lean's vectors (README rule 10): every expected value here comes from `db/spec`, written by
 //! `lake exe vectors`; this file writes none of its own.
 
 use std::path::PathBuf;
 
-use aven_db_core::presence::Presence;
-use aven_db_core::status::{Event, Status};
-use aven_db_core::timeline;
-use aven_db_core::wire::{self, Decoder, Frame, Greeting, Incoming, WireError, encode};
+use aven_gen1::presence::Presence;
+use aven_gen1::status::{Event, Status};
+use aven_gen1::timeline;
+use aven_gen1::wire::{self, Decoder, Frame, Greeting, Incoming, WireError, encode};
 use serde_json::{Map, Value, json};
 
 fn vectors(file: &str) -> Vec<Value> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../spec/vectors")
+        .join("../db/spec/vectors")
         .join(file);
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     serde_json::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))

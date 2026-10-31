@@ -36,7 +36,7 @@ from the Aven Peer, so it never forks itself (`learned_never_forks`), unless its
 store is its truth, and it writes at once, offline too (`own_store_never_forks`).
 
 The model names a line by its `id`, the hash of its blob, and takes the signature as sound, as `Aven.DB.Chat` does.
-aven-db-core's `chain` module implements it; its tests replay the traces in `vectors/chats.json` with real signed
+aven-gen1's `chain` module implements it; its tests replay the traces in `vectors/chats.json` with real signed
 blobs and their real hashes in place of the names.
 -/
 

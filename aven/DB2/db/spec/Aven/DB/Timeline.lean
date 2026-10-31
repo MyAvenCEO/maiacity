@@ -5,7 +5,7 @@ import Lean.Data.Json
 
 Every peer writes its events as JSON lines of one shape (SANDBOX.md, "The Control Room"): when (milliseconds since the
 epoch), which peer, what, then the event's own fields. The three come first and always hold: a field of the same
-name never takes their place. `aven-db-core`'s `timeline` module writes these lines.
+name never takes their place. `aven-gen1`'s `timeline` module writes these lines.
 -/
 
 open Lean

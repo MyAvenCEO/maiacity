@@ -37,11 +37,11 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 
-use aven_db_core::chat::Message;
-use aven_db_core::timeline;
-use aven_db_core::wire::{ALPN, Frame};
 use aven_db_store::blobs::{Blobs, FetchError, Fetched, Shared};
 use aven_db_store::{Hash, backend, files};
+use aven_gen1::chat::Message;
+use aven_gen1::timeline;
+use aven_gen1::wire::{ALPN, Frame};
 use aven_peer::chats::Chats;
 use aven_peer::iroh_gossip::{self, Gossip};
 use aven_peer::members::{Gate, Hook};
@@ -454,7 +454,7 @@ pub async fn share(
             file,
         )
         .await;
-    room.share(aven_db_core::files::Announcement {
+    room.share(aven_gen1::files::Announcement {
         file: file.to_hex(),
         size: size as u64,
         name,
