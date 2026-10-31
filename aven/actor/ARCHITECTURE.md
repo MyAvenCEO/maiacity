@@ -643,8 +643,10 @@ Decided here, on those grounds:
   the hosted actors' standing caps and only the outer bound. A host device writes only by chain, never as its
   vault's own; every envelope names the acting actor and the chain its handled message carried, narrowed. The Aven
   Peer signs as Aven's device under a chain the owner issued and approved, not as a device of the owner's vault.
-  The actor half is `Aven.Actor.Signing` (`host_never_own`, `write_names_actor`, `actor_within_chain`); the device
-  half (`actor_within_device`, `host_never_beyond`) is avenID's.
+  An actor's narrowing for one message is never appended as a link (it is no grant):
+  it is the write's footprint, checked against the chain. The actor half is `Aven.Actor.Signing` (`signs_by_chain`,
+  `write_names_actor`, `write_keeps_chain`, `actor_within_chain`, `actor_steps_within`); the reader's half
+  (`host_chain_only`, `actor_within_device`, `host_never_beyond`) is avenID's.
 
 Open, none of it blocking version 1 (the audit's findings, mostly avenDB's proposal A17, awaiting Samuel):
 
