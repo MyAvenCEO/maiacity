@@ -639,8 +639,16 @@ Decided here, on those grounds:
   adapters (section 6; Samuel, 30 Oct 2026).
 - Values are integers only in version 1, in avenDB's one codec (section 2): deterministic CBOR (Samuel, 30 Oct 2026).
 
+- How a host signs its actors' writes (Samuel, 31 Oct 2026): one device per host, whose device cap is the union of
+  the hosted actors' standing caps and only the outer bound. A host device writes only by chain, never as its
+  vault's own; every envelope names the acting actor and the chain its handled message carried, narrowed. The Aven
+  Peer signs as Aven's device under a chain the owner issued and approved, not as a device of the owner's vault.
+  An actor's narrowing for one message is never appended as a link (it is no grant):
+  it is the write's footprint, checked against the chain. The actor half is `Aven.Actor.Signing` (`signs_by_chain`,
+  `write_names_actor`, `write_keeps_chain`, `actor_within_chain`, `actor_steps_within`); the reader's half
+  (`host_chain_only`, `actor_within_device`, `host_never_beyond`) is avenID's.
+
 Open, none of it blocking version 1 (the audit's findings, mostly avenDB's proposal A17, awaiting Samuel):
 
-- **The kernel's authority:** a narrow device vault for the actor host; click caps scoped to what the placer wired;
-  who may spawn, and a bound on placement depth; a budget per run, and backpressure.
+- **The kernel's authority:** click caps scoped to what the placer wired; who may spawn, and a bound on placement depth; a budget per run, and backpressure.
 - **Performance gates** for wasm inside wasm, fuel across engines, and a shadow root per face.
