@@ -1,5 +1,5 @@
 // avenID's slides, laid out as an illustrated asset sheet: `bun brain/art/slides.mjs` writes id/slides/<id>.html and
-// .css. Coordinates are in cqw on both axes: the frame is 100 wide and 56.25 high. Objects are the drawings
+// .css. Coordinates are in cqw on both axes: a slide is 100 wide and 56.25 high. Objects are the drawings
 // (objects.mjs), placed by their hash (images.json) as `<img src="/files/<hash>">`, the way the network names files.
 // Each slide's text (<id>.md) is written by hand.
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -66,13 +66,13 @@ function slide(id, title, aria) {
 	return s;
 }
 
-slide('sign', 'A key signs', "Alice's key, a signet stamp. A dotted path labelled signs runs to a letter: Share the photos with Bob, with her red wax seal pressed on it.")
+slide('sign', 'A key signs', "Alice's key, a signet stamp. A dotted path labelled signs runs to a letter: Share the photos with Bob, with her signature mark pressed on it in red wax.")
 	.put('signet', 'key', 9, 12, 28, 'Alice’s key')
 	.path('signs', [36, 30], [58, 30], 8, 'signs')
 	.put('letter', 'words', 58, 10, 32, 'Words + signature')
 	.write();
 
-slide('check', 'Anyone can check a signature', "The sealed letter, plus a card with Alice's public imprint. A dotted path labelled checks runs to a magnifying glass, and on to a green tick: it fits.")
+slide('check', 'Anyone can check a signature', "The signed letter, plus a card with Alice's public imprint. A dotted path labelled checks runs to a magnifying glass, and on to a green tick: it fits.")
 	.put('letter', 'words', 2, 14, 25, 'Signed letter')
 	.label('plus', '+', 28.5, 26)
 	.put('imprint', 'public', 30, 14, 25, 'Her public key')
@@ -97,7 +97,7 @@ slide('owns', 'A key owns a vault', "Alice's key, the signet. A dotted path labe
 	.note('plate-note', 'Its plate bears her key’s mark: the owner', 55.5, 46.5, 40)
 	.write();
 
-slide('device', 'A device keeps its own key', "Alice's phone, a small signet sealed in a glass case on its screen: its own key, made on the phone, never leaving it.")
+slide('device', 'A device keeps its own key', "Alice's phone, a small signet shut in a glass case on its screen: its own key, made on the phone, never leaving it.")
 	.put('phone-key', 'phone', 12, 7, 37, 'Alice’s phone')
 	.note('keep-note', 'Its own key: made on the phone, never leaving it', 56, 24, 38)
 	.write();
@@ -124,7 +124,7 @@ slide('vaults-own', 'Vaults own vaults', "Alice's strongbox, a dotted path label
 	.note('down-note', 'Alice’s vault governs everything below it. Authority runs only down.', 4, 46.5, 64)
 	.write();
 
-slide('cap', 'A cap', "Alice's strongbox. A dotted path labelled grants runs to a pass sealed with her wax: Bob may read her photos until 31 Dec 2026. Another path labelled held by runs to Bob's teal strongbox.")
+slide('cap', 'A cap', "Alice's strongbox. A dotted path labelled grants runs to a pass bearing her signature mark: Bob may read her photos until 31 Dec 2026. Another path labelled held by runs to Bob's teal strongbox.")
 	.put('chest', 'alice', 2, 13, 25, 'Alice · issuer')
 	.path('grants', [26, 30], [36, 30], 6, 'grants')
 	.put('pass', 'pass', 35, 10, 30)

@@ -22,7 +22,7 @@
 	const story = $derived(part?.page && part.id !== 'glossary' ? page(part.page) : []);
 	const slides = $derived(part?.page ? (part.slides ?? []).map((id) => slide(part.id, id)) : []);
 	const textOf = (node) => (typeof node === 'string' ? node : node[2].map(textOf).join(''));
-	// the index on the left: this page's sections, then the other docs
+	// the contents on the left: this page's sections, then the other docs
 	const sections = $derived(
 		route[0] === 'glossary'
 			? words.tree.filter((n) => n[0] === 'h2').map((n) => ({ href: `#/docs/glossary/${n[1][0][1]}`, id: n[1][0][1], name: textOf(n) }))
@@ -71,7 +71,7 @@
 			<ul class="grid">
 				{#each packages as item (item.id)}
 					<li class="item" data-testid={`doc-${item.id}`}>
-						<svelte:element this={item.page ? 'a' : 'div'} class={item.page ? 'tile live' : 'tile off'} href={item.page ? `#/docs/${item.id}` : undefined}>
+						<svelte:element this={item.page ? 'a' : 'div'} class={item.page ? 'tile open' : 'tile off'} href={item.page ? `#/docs/${item.id}` : undefined}>
 							<img class="art" src={art(item.art)} alt="" width="440" height="440" />
 							<strong>{item.name}</strong>
 							<span class="state">{item.page ? (item.slides ? `${item.slides.length} slides` : 'Read') : 'Coming'}</span>
@@ -83,16 +83,16 @@
 		</main>
 	{:else if part?.page}
 		<div class="layout">
-			<aside class="index" aria-label="Contents">
+			<aside class="contents" aria-label="Contents">
 				<details open={wide}>
 					<summary>Contents</summary>
-					<p class="index-head">{part.name}</p>
+					<p class="contents-head">{part.name}</p>
 					<ol class:numbered={route[0] !== 'glossary'}>
 						{#each sections as item (item.id)}
 							<li><a href={item.href} aria-current={route[1] === item.id ? 'true' : undefined}>{item.name}</a></li>
 						{/each}
 					</ol>
-					<p class="index-head">Docs</p>
+					<p class="contents-head">Docs</p>
 					<ul>
 						<li><a href="#/docs">All docs</a></li>
 						{#each others as other (other.id)}
@@ -200,7 +200,7 @@
 		transition: background 0.15s;
 	}
 
-	.tile.live:hover {
+	.tile.open:hover {
 		background: var(--brain-card);
 	}
 
@@ -234,7 +234,7 @@
 		font-size: 14px;
 	}
 
-	/* a page with its index: the index on the left, the page centred, a matching gutter on the right */
+	/* a page with its contents: the contents on the left, the page centred, a matching gutter on the right */
 	.layout {
 		display: grid;
 		grid-template-columns: minmax(240px, 1fr) minmax(0, 860px) minmax(240px, 1fr);
@@ -248,7 +248,7 @@
 		margin: 0;
 	}
 
-	.index {
+	.contents {
 		grid-column: 1;
 		justify-self: end;
 		width: min(240px, 100%);
@@ -261,12 +261,12 @@
 		font-size: 14px;
 	}
 
-	.index summary {
+	.contents summary {
 		display: none;
 		cursor: pointer;
 	}
 
-	.index-head {
+	.contents-head {
 		margin: 0 0 8px;
 		padding-left: 10px;
 		font: 800 12px/1.3 var(--brain-sans);
@@ -274,8 +274,8 @@
 		text-transform: uppercase;
 	}
 
-	.index ol,
-	.index ul {
+	.contents ol,
+	.contents ul {
 		display: grid;
 		gap: 2px;
 		margin: 0 0 24px;
@@ -283,15 +283,15 @@
 		list-style: none;
 	}
 
-	.index ol.numbered {
+	.contents ol.numbered {
 		counter-reset: slide;
 	}
 
-	.index ol.numbered li {
+	.contents ol.numbered li {
 		counter-increment: slide;
 	}
 
-	.index a {
+	.contents a {
 		display: flex;
 		gap: 8px;
 		padding: 6px 10px;
@@ -301,23 +301,23 @@
 		border-radius: 10px;
 	}
 
-	.index ol.numbered a::before {
+	.contents ol.numbered a::before {
 		content: counter(slide);
 		min-width: 1.2em;
 		color: var(--brain-ochre-ink);
 		font-weight: 700;
 	}
 
-	.index a:hover {
+	.contents a:hover {
 		background: var(--brain-card);
 	}
 
-	.index a[aria-current] {
+	.contents a[aria-current] {
 		font-weight: 700;
 		background: var(--brain-card);
 	}
 
-	/* narrower than both columns: the index is a folded list above the page */
+	/* narrower than both columns: the contents are a folded list above the page */
 	@media (max-width: 1199px) {
 		.layout {
 			display: block;
@@ -331,7 +331,7 @@
 			padding-right: 0;
 		}
 
-		.index {
+		.contents {
 			position: static;
 			justify-self: stretch;
 			width: auto;
@@ -339,20 +339,20 @@
 			padding: 20px 0 0;
 		}
 
-		.index details {
+		.contents details {
 			padding: 12px 16px;
 			background: var(--brain-card);
 			border-radius: var(--brain-radius);
 		}
 
-		.index summary {
+		.contents summary {
 			display: list-item;
 			font: 800 13px/1.6 var(--brain-sans);
 			letter-spacing: 0.08em;
 			text-transform: uppercase;
 		}
 
-		.index details[open] summary {
+		.contents details[open] summary {
 			margin-bottom: 10px;
 		}
 	}

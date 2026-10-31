@@ -1,4 +1,4 @@
-// avenID's objects, drawn with the paint kit (paint.mjs), one per metaphor (VOICE.md): a signet stamp, a sealed letter,
+// avenID's objects, drawn with the paint kit (paint.mjs), one per metaphor (VOICE.md): a signet stamp, a signed letter,
 // a public imprint card, a magnifying glass, strongboxes, phones, a permit badge, a robot helper, a pass, a tick.
 import { INK, arc, blob, drawing, ellipse, grad, line, shape } from './paint.mjs';
 
@@ -6,7 +6,7 @@ const WOOD = [[0, '#d39a68'], [0.5, '#a8683f'], [1, '#6e4128']];
 const BRASS = [[0, '#f7dc92'], [0.45, '#e2b14f'], [1, '#a67426']];
 const WAX = [[0, '#ea7a64'], [0.5, '#c4473a'], [1, '#8a2a21']];
 
-// the emblem pressed into a seal: an A over a bar
+// the emblem pressed into a signature mark: an A over a bar
 const emblem = (cx, cy, s, color) =>
 	line(`M${cx - 5 * s},${cy + 5 * s} L${cx},${cy - 6 * s} L${cx + 5 * s},${cy + 5 * s} M${cx - 2.6 * s},${cy + 1.2 * s} L${cx + 2.6 * s},${cy + 1.2 * s}`, color, 2.2 * s);
 
@@ -33,7 +33,7 @@ export function signet() {
 	return drawing(220, 220, defs, [128, 196, 60, 12], body);
 }
 
-// a letter, sealed: a sheet of words with a red wax seal pressed on it
+// a signed letter: a sheet of words with a signature mark pressed on it in red wax
 export function letter() {
 	const defs = [];
 	const [d1, paper] = grad([[0, '#fffaf0'], [0.6, '#f4ead7'], [1, '#e2d2b6']], { x1: 0, y1: 0, x2: 1, y2: 1 });
@@ -43,7 +43,7 @@ export function letter() {
 		shape(blob([[40, 46], [176, 34], [186, 170], [48, 182]], { wobble: 1.2, seed: 11 }), paper),
 		line('M176,34 C182,60 180,110 186,170', '#d9c7a6', 3, 0.6),
 		...[62, 80, 98, 116].map((y, i) => line(blob([[62, y + 4 - i], [100, y + 1 - i], [140 - i * 12, y - 1 - i]], { closed: false, wobble: 0.8, seed: 20 + i }), '#8d7b68', 3.2, 0.75)),
-		// the seal: a blob of wax, its emblem pressed in
+		// the signature mark: a blob of wax, its emblem pressed in
 		shape(blob(ellipse(134, 146, 26, 24, 13), { wobble: 2.6, seed: 31 }), wax),
 		shape(blob(ellipse(134, 146, 15, 14, 12), { wobble: 0.8, seed: 32 }), '#b13d31', { width: 1.4, stroke: '#7a241c' }),
 		emblem(134, 146, 1.4, '#f19a85'),
@@ -52,7 +52,7 @@ export function letter() {
 	return drawing(220, 220, defs, [124, 192, 74, 12], body);
 }
 
-// a public imprint card: a card with the seal's imprint in teal ink, for anyone to hold a seal against
+// a public imprint card: a card with the mark's imprint in teal ink, for anyone to hold a mark against
 export function imprint() {
 	const defs = [];
 	const [d1, card] = grad([[0, '#fbf6ea'], [1, '#e6dac2']], { x1: 0, y1: 0, x2: 1, y2: 1 });
@@ -165,7 +165,7 @@ export function phone(screen = []) {
 	return drawing(220, 220, defs, [124, 204, 62, 9], body);
 }
 
-// a phone keeping its own key: a little signet sealed in a glass case on its screen
+// a phone keeping its own key: a little signet shut in a glass case on its screen
 export const phoneKey = () =>
 	phone([
 		shape(blob([[84, 74], [134, 72], [136, 150], [86, 152]], { wobble: 0.6, seed: 111 }), '#d6ecef', { stroke: '#3f7f86', width: 2.4, extra: 'opacity="0.95"' }),
@@ -183,7 +183,7 @@ export const phonePrint = () =>
 		shape(blob(ellipse(110, 118, 3, 3, 6), { wobble: 0.1, seed: 125 }), '#2f6f78', { width: 0 }),
 	]);
 
-// a permit badge on a lanyard: what its holder may do, sealed by who allows it
+// a permit badge on a lanyard: what its holder may do, with the signature mark of who allows it
 export function badge() {
 	const defs = [];
 	const [d1, card] = grad([[0, '#fbf6ea'], [1, '#e2d5bc']], { x1: 0, y1: 0, x2: 1, y2: 1 });
@@ -201,7 +201,7 @@ export function badge() {
 	return drawing(220, 220, defs, [120, 204, 56, 9], body);
 }
 
-// a pass: a ticket with its stub, its lines, and the issuer's seal
+// a pass: a ticket with its stub, its lines, and the issuer's signature mark
 export function pass() {
 	const defs = [];
 	const [d1, card] = grad([[0, '#fff8ea'], [0.6, '#f3e3c4'], [1, '#dcc59c']], { x1: 0, y1: 0, x2: 1, y2: 1 });

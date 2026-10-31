@@ -11,11 +11,11 @@ every term in [`GLOSSARY.md`](GLOSSARY.md).
 
 | Path | What |
 |---|---|
-| [`docs.json`](docs.json) | The catalogue: one item per package on the docs dashboard, its page and its slides |
+| [`docs.json`](docs.json) | The package list: one item per package on the docs dashboard, its page and its slides |
 | [`GLOSSARY.md`](GLOSSARY.md) | The one glossary, every term with its one meaning (moved here from `aven/DB2`) |
 | [`STYLE.md`](STYLE.md), [`VOICE.md`](VOICE.md) | The look and the language |
 | [`style/tokens.css`](style/tokens.css) | The palette, type and chrome as tokens, sampled from the references |
-| [`style/slide.css`](style/slide.css) | The frame and the parts every illustration is drawn from |
+| [`style/slide.css`](style/slide.css) | The slide: its ground, its type, its labels and dotted paths |
 | [`style/reference/`](style/reference/) | The first references, from the game |
 | [`id/`](id/README.md) | avenID's page: its story, and its slides in `id/slides/` |
 | [`render/`](render/) | Markdown and slide markup to a checked node tree, links, contrast, and their tests |
@@ -33,12 +33,12 @@ The first references, from the game (the look has since moved to the brand's UI,
 
 One concept, in three files under `<package>/slides/`, named by the slide's id:
 
-- **`<id>.html`, the still.** A 16:9 frame of allowlisted HTML: the face-runtime's node-tree allowlist
+- **`<id>.html`, the picture.** A 16:9 slide of allowlisted HTML: the face-runtime's node-tree allowlist
   (`aven/runtimes/spec/Aven/Runtime/Tree.lean`), so no `svg`, `style` or `script` and no inline `style`, and
   classes only. Every element is a layer with a stable class, so a motion version can move each one later.
-- **`<id>.css`, where each layer stands.** Class rules only, every length in `cqw` (a hundredth of the frame's width).
+- **`<id>.css`, where each layer stands.** Class rules only, every length in `cqw` (a hundredth of the slide's width).
   The objects are images by hash (`art/img/`), drawn in code (`art/objects.mjs`).
-- **`<id>.md`, its text.** Markdown, shown on the page under the still. `[vault](glossary:vault)` links a term to the
+- **`<id>.md`, its text.** Markdown, shown on the page under the slide. `[vault](glossary:vault)` links a term to the
   glossary.
 
 A slide is listed in `docs.json` under its package, in its place in the story. `render/tree.test.js` checks every
@@ -67,10 +67,10 @@ and tag selectors, plain values, no custom properties and no `url()`. Beyond col
 | Property | Used for |
 |---|---|
 | `position`, `inset`, `left`, `top`, `width`, `height` | where each layer stands |
-| `container-type: inline-size` and `cqw` lengths | a still that scales as one picture |
-| `aspect-ratio` | the 16:9 frame |
+| `container-type: inline-size` and `cqw` lengths | a slide that scales as one picture |
+| `aspect-ratio` | the 16:9 slide |
 | `transform` (`rotate`, `translateX`) and `transform-origin` | dotted path segments, arrowheads, centred labels |
-| `border` (`dotted`), `border-radius` | dotted paths, the frame |
+| `border` (`dotted`), `border-radius` | dotted paths, the slide's corners |
 | `clip-path: polygon(…)` | an arrowhead |
 | `font-family`, `font-size`, `font-weight`, `line-height`, `letter-spacing`, `text-transform`, `text-align`, `white-space` | labels and titles; no text under 2.6cqw |
 | `animation`, `@keyframes` | not used yet: the motion version will move the layers |

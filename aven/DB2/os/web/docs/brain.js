@@ -1,7 +1,7 @@
-// avenBRAIN in avenOS (aven/DB2/brain): its catalogue, pages, slides and glossary, bundled from the repo at build time.
+// avenBRAIN in avenOS (aven/DB2/brain): its package list, pages, slides and glossary, bundled from the repo at build time.
 // Text comes in as Markdown and markup and leaves as node trees (brain/render), which Node.svelte draws: the shape the
 // markdown-runtime and the face-runtime will hand over once they exist.
-import catalogue from '../../../brain/docs.json';
+import list from '../../../brain/docs.json';
 import { blocks, slug } from '../../../brain/render/markdown.js';
 import { rewriteLinks } from '../../../brain/render/links.js';
 import { check, parse } from '../../../brain/render/tree.js';
@@ -13,7 +13,7 @@ const files = import.meta.glob('../../../brain/**/*.{md,html}', { query: '?raw',
 import.meta.glob('../../../brain/*/slides/*.css', { eager: true });
 const file = (path) => files[`../../../brain/${path}`];
 
-export const packages = catalogue.packages;
+export const packages = list.packages;
 
 const repo = 'https://github.com/myavenceo/maiacity/blob/main/aven/DB2/brain/';
 // a link in the brain's Markdown: a term (`glossary:vault`) goes to the glossary, a package's page to its page, any

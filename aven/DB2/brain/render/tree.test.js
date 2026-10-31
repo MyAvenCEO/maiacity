@@ -106,7 +106,7 @@ describe('the slides', () => {
 	});
 });
 
-// no text on a slide under 2.6cqw (STYLE.md, "A slide"): 9 px where a phone shows the frame 356 px wide
+// no text on a slide under 2.6cqw (STYLE.md, "A slide"): 9 px where a phone shows a slide 356 px wide
 test('every font size in the slides\' CSS is at least 2.6cqw', () => {
 	const sheets = ['style/slide.css', ...readdirSync(`${brain}id/slides`).filter((f) => f.endsWith('.css')).map((f) => `id/slides/${f}`)];
 	const small = [];

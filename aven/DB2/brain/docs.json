@@ -1,5 +1,5 @@
 {
-	"about": "avenBRAIN's catalogue (README.md): one item per package on avenOS's docs dashboard, in the order a reader meets them. A package with a page is live; its slides are shown in their place in its story, by the file name under <package>/slides/. `art` is the object (art/objects.mjs) drawn on its card.",
+	"about": "avenBRAIN's package list (README.md): one item per package on avenOS's docs dashboard, in the order a reader meets them. A package with a page is open; its slides are shown in their place in its story, by the file name under <package>/slides/. `art` is the object (art/objects.mjs) drawn on its card.",
 	"packages": [
 		{
 			"id": "id",
@@ -22,7 +22,7 @@
 		{
 			"id": "db",
 			"name": "avenDB",
-			"what": "Data: Values, Docs, records and the store",
+			"what": "Data: Values, Docs, Records and the store",
 			"art": "chest-bob"
 		},
 		{

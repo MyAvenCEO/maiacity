@@ -1,8 +1,8 @@
 // avenOS's docs (aven/DB2/brain, os/web/docs), in all three of Playwright's engines, in the browsers' container (`bun
 // run up --check`). Read on production's stand-in (localhost:5174) by a browser that never signed in, as anyone reads
 // them, and on the box's own view (localhost:5173). Checked, at a desktop's 1280 px and a phone's 390 px:
-//   1. the dashboard has an item per package, avenID's live and the rest coming; the main nav reaches it;
-//   2. avenID's page draws its slide as a 16:9 frame; the glossary draws, and #/docs/glossary/vault marks that term;
+//   1. the dashboard has an item per package, avenID's open and the rest coming; the main nav reaches it;
+//   2. avenID's page draws its slide as 16:9; the glossary draws, and #/docs/glossary/vault marks that term;
 //   3. no page scrolls sideways;
 //   4. every text has 4.5:1 against the background under it (3:1 when large), as WCAG has it, and no text on a slide is
 //      under 9 px at a phone's width (brain/STYLE.md, "A slide");
@@ -82,9 +82,9 @@ async function read(engine) {
 					const seen = {};
 					if (view === 'dashboard') {
 						seen.items = await page.locator('[data-testid^="doc-"]').count();
-						seen.live = await page.locator('[data-testid^="doc-"] a').count();
+						seen.open = await page.locator('[data-testid^="doc-"] a').count();
 						if (seen.items !== 9) say(`${seen.items} items, not 9`);
-						if (!(await page.locator('[data-testid="doc-id"] a').count())) say('avenID is not live');
+						if (!(await page.locator('[data-testid="doc-id"] a').count())) say('avenID is not open');
 					}
 					if (view === 'id') {
 						const box = await page.locator('.slide').first().boundingBox();

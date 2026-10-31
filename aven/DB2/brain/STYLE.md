@@ -20,21 +20,22 @@ and rendered to images, so every one is reproducible and its own layer. The toke
 ## Metaphors
 
 Each concept gets the object that explains it. A metaphor is never the claim: the claim is in the text, exact to the
-spec.
+spec. Its words keep to the glossary's senses too: a signature is a **signature mark**, never a seal (sealed means
+encrypted), and a thing on a slide is drawn as a **card**, never a record (a Record is avenDB's).
 
 | Concept | Object |
 |---|---|
-| a key | a signet stamp: only its keeper can press its seal |
-| a signature | a red wax seal pressed on a letter |
-| a public key | a card with the seal's imprint, for anyone to hold a seal against |
+| a key | a signet stamp: only the one who keeps it can press its mark |
+| a signature | a signature mark pressed in red wax on a letter |
+| a public key | a card with the mark's imprint, for anyone to hold a mark against |
 | checking | a magnifying glass, then a green tick |
 | a vault | a strongbox with a brass nameplate; its owner's mark on the plate |
 | a coop's vault (Maia City) | a green guild chest |
 | an agent's vault (Aven) | a robot helper |
-| a device | a phone; its own key a little signet sealed in a glass case on its screen |
+| a device | a phone; its own key a little signet shut in a glass case on its screen |
 | a passkey | a fingerprint glowing on the phone |
-| a device cap | a permit badge on a lanyard, sealed by the vault |
-| a cap | a pass with its stub, sealed by its issuer |
+| a device cap | a permit badge on a lanyard, bearing the vault's signature mark |
+| a cap | a pass with its stub, bearing its issuer's signature mark |
 
 ## The palette
 
@@ -48,10 +49,10 @@ spec.
 
 ## A slide
 
-- A **16:9 still**: one concept, its title in bold navy at the top left, few words.
+- A **16:9 slide** that reads as one picture: one concept, its title in bold navy at the top left, few words.
 - **Objects** with their names under them, bold uppercase navy. **A dotted ochre path** with an arrowhead is a
   relation, its name over it.
-- **No text under 2.6 % of the frame's width** (2.6cqw): about 9 px on a phone, where the frame is about 356 px wide.
+- **No text under 2.6 % of the slide's width** (2.6cqw): about 9 px on a phone, where a slide is about 356 px wide.
   The box checks it at 390 px (`sandbox/docs.mjs`), and a test checks the CSS (`render/tree.test.js`).
 - Text has 4.5:1 against what is under it, and sits on the ground, never on a drawing.
 - **Every element a layer** with a stable class, so a motion version can move each one.
