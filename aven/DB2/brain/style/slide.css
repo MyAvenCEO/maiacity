@@ -82,7 +82,7 @@
 	position: relative;
 }
 
-/* an arrow: a relation from one thing to another, drawn in ink, its name above it */
+/* an arrow: a relation from one thing to another, drawn in ink, its name above it. `down` points down */
 .slide .arrow {
 	height: 2cqw;
 }
@@ -105,30 +105,56 @@
 	background: var(--brain-ink);
 }
 
+.slide .arrow.down {
+	transform: rotate(90deg);
+	transform-origin: 0 1cqw;
+}
+
 .slide .relation {
 	font-weight: 700;
 	letter-spacing: 0.14em;
 }
 
-/* a vault: a record of who it is and who owns it, on a low-poly slab lit from the top left */
-.slide .vault-base {
+/* a record: a thing the system keeps (a vault, a cap), as a card on a low-poly slab lit from the top left. Its tone
+   is the slab's colour; `small` is a record among several */
+.slide .record {
+	--tone: var(--brain-teal);
+	--tone-deep: var(--brain-teal-deep);
+}
+
+.slide .record.terracotta {
+	--tone: var(--brain-terracotta);
+	--tone-deep: var(--brain-terracotta-deep);
+}
+
+.slide .record.conifer {
+	--tone: var(--brain-conifer);
+	--tone-deep: var(--brain-conifer-deep);
+}
+
+.slide .record.ochre {
+	--tone: var(--brain-ochre);
+	--tone-deep: var(--brain-ochre-deep);
+}
+
+.slide .record-base {
 	left: 1.2cqw;
 	top: 1.2cqw;
 	right: -1.2cqw;
 	bottom: -1.2cqw;
-	background: linear-gradient(135deg, var(--brain-teal) 0 60%, var(--brain-teal-deep) 60%);
+	background: linear-gradient(135deg, var(--tone) 0 60%, var(--tone-deep) 60%);
 	border-radius: 1.6cqw;
 }
 
-.slide .vault-card {
+.slide .record-card {
 	inset: 0;
 	padding: 2.2cqw 2.6cqw;
 	background: linear-gradient(135deg, var(--brain-panel) 0 55%, var(--brain-facet) 55%);
 	border-radius: 1.6cqw;
 }
 
-.slide .vault-kind,
-.slide .vault-section {
+.slide .record-kind,
+.slide .record-section {
 	margin: 0;
 	color: var(--brain-quiet);
 	font: 600 1.1cqw/1.3 var(--brain-sans);
@@ -136,22 +162,49 @@
 	text-transform: uppercase;
 }
 
-.slide .vault-name {
-	margin: 0.4cqw 0 2.4cqw;
+.slide .record-name {
+	margin: 0.4cqw 0 2cqw;
 	font: 500 3cqw/1.1 var(--brain-serif);
 }
 
-.slide .vault-section {
-	padding-top: 1.6cqw;
+.slide .record-section {
+	padding-top: 1.4cqw;
 	border-top: 0.14cqw solid var(--brain-gold);
 }
 
-.slide .owner {
+.slide .record-field {
+	margin: 0.9cqw 0 0;
+	font: 500 1.5cqw/1.3 var(--brain-sans);
+}
+
+.slide .field-name {
+	display: inline-block;
+	width: 7.5cqw;
+	color: var(--brain-quiet);
+	font: 600 1.05cqw/1.3 var(--brain-sans);
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+}
+
+.slide .record.small .record-card {
+	padding: 1.6cqw 1.9cqw;
+}
+
+.slide .record.small .record-kind {
+	font-size: 0.95cqw;
+}
+
+.slide .record.small .record-name {
+	margin-bottom: 0;
+	font-size: 2.2cqw;
+}
+
+.slide .record-row {
 	height: 4.6cqw;
 	margin-top: 1.4cqw;
 }
 
-.slide .owner-name {
+.slide .record-row-text {
 	margin: 0;
 	padding: 1.3cqw 0 0 9.4cqw;
 	font: 600 1.6cqw/1.3 var(--brain-sans);
@@ -164,6 +217,157 @@
 	height: 5cqw;
 	transform: scale(0.62);
 	transform-origin: 0 0;
+}
+
+/* a sheet: some words on paper, and the signature under them */
+.slide .sheet-paper {
+	inset: 0;
+	padding: 2.2cqw 2.4cqw;
+	background: linear-gradient(160deg, #fffdf8 0 62%, var(--brain-panel) 62%);
+	border-radius: 0.6cqw;
+}
+
+.slide .sheet-words {
+	margin: 0;
+	font: 500 1.9cqw/1.35 var(--brain-serif);
+}
+
+.slide .sheet-sign {
+	margin: 0;
+	padding: 0.9cqw 0 0 5cqw;
+	color: var(--brain-quiet);
+	font: 600 1cqw/1.3 var(--brain-sans);
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+}
+
+.slide .sheet-foot {
+	left: 2.4cqw;
+	right: 2.4cqw;
+	bottom: 2cqw;
+	height: 4cqw;
+	border-top: 0.14cqw solid var(--brain-gold);
+}
+
+/* a seal: a signature, an octagon in terracotta */
+.slide .seal {
+	width: 3.8cqw;
+	height: 3.8cqw;
+	clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%);
+	background: linear-gradient(135deg, var(--brain-terracotta-light) 0 45%, var(--brain-terracotta) 45% 70%, var(--brain-terracotta-deep) 70%);
+}
+
+.slide .sheet-foot .seal {
+	left: 0;
+	top: 0.5cqw;
+}
+
+/* a tick: checked and found good, in conifer green */
+.slide .tick {
+	width: 9cqw;
+	height: 9cqw;
+	clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%);
+	background: linear-gradient(135deg, var(--brain-conifer-light) 0 45%, var(--brain-conifer) 45% 70%, var(--brain-conifer-deep) 70%);
+}
+
+.slide .tick-short,
+.slide .tick-long {
+	height: 1.1cqw;
+	background: var(--brain-panel);
+	border-radius: 0.5cqw;
+	transform-origin: 0 50%;
+}
+
+.slide .tick-short {
+	left: 2.2cqw;
+	top: 4.2cqw;
+	width: 2.6cqw;
+	transform: rotate(45deg);
+}
+
+.slide .tick-long {
+	left: 3.6cqw;
+	top: 6.1cqw;
+	width: 4.4cqw;
+	transform: rotate(-50deg);
+}
+
+/* a device: a phone, its glass lit from the top left */
+.slide .phone-body {
+	inset: 0;
+	background: linear-gradient(120deg, #5d6670 0 50%, #464d55 50%);
+	border-radius: 2cqw;
+}
+
+.slide .phone-screen {
+	left: 1cqw;
+	top: 2.2cqw;
+	right: 1cqw;
+	bottom: 2.2cqw;
+	background: linear-gradient(135deg, #e3eef3 0 46%, var(--brain-glass) 46% 72%, #95b4c8 72%);
+	border-radius: 0.8cqw;
+}
+
+/* a fingerprint: rings round one point */
+.slide .print {
+	width: 6cqw;
+	height: 6cqw;
+}
+
+.slide .ring {
+	border: 0.35cqw solid var(--brain-ink);
+	border-radius: 50%;
+	clip-path: inset(0 0 30% 0);
+}
+
+.slide .ring-1 { inset: 0; }
+.slide .ring-2 { inset: 0.9cqw; }
+.slide .ring-3 { inset: 1.8cqw; }
+.slide .ring-4 { inset: 2.6cqw; clip-path: none; }
+
+/* a chip: one word in a row of them, `on` the one meant */
+.slide .chips {
+	display: flex;
+	gap: 1cqw;
+}
+
+.slide .chip {
+	position: static;
+	display: inline-block;
+	margin: 0;
+	padding: 0.6cqw 1.4cqw;
+	font: 600 1.2cqw/1 var(--brain-sans);
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	background: var(--brain-panel);
+	border: 0.14cqw solid var(--brain-gold);
+	border-radius: 2cqw;
+}
+
+.slide .chip.on {
+	color: var(--brain-panel);
+	background: var(--brain-teal-deep);
+	border-color: var(--brain-teal-deep);
+}
+
+/* a note: a quiet line of text in the frame */
+.slide .note {
+	position: absolute;
+	margin: 0;
+	color: var(--brain-quiet);
+	font: 500 1.3cqw/1.35 var(--brain-sans);
+	transform: translateX(-50%);
+	text-align: center;
+}
+
+/* a public key: a key's half that anyone may see, in teal */
+.slide .key.public .bow {
+	background: linear-gradient(135deg, var(--brain-teal-light) 0 46%, var(--brain-teal) 46% 70%, var(--brain-teal-deep) 70%);
+}
+
+.slide .key.public .shaft,
+.slide .key.public .bit {
+	background: linear-gradient(180deg, var(--brain-teal-light) 0 45%, var(--brain-teal-deep) 45%);
 }
 
 /* a key: a hexagonal bow, a shaft and two bits, in ochre */

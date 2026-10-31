@@ -1,0 +1,16 @@
+/* "A passkey" (passkey.html): Alice's passkey, kept by her phone and unlocked by her finger, gives her owner key */
+.passkey .facet-1 { clip-path: polygon(0 0, 34% 0, 20% 30%, 0 44%); }
+.passkey .facet-2 { clip-path: polygon(34% 0, 52% 0, 20% 30%); }
+.passkey .facet-3 { clip-path: polygon(64% 0, 100% 0, 100% 34%, 86% 18%); }
+.passkey .facet-4 { clip-path: polygon(0 70%, 14% 60%, 28% 100%, 0 100%); }
+.passkey .facet-5 { clip-path: polygon(72% 100%, 90% 76%, 100% 84%, 100% 100%); }
+.passkey .title { left: 3.5%; top: 6%; }
+.passkey .key .bit-1 { left: 8.6cqw; height: 1.6cqw; }
+.passkey .key .bit-2 { left: 10.4cqw; height: 2.2cqw; }
+.passkey .alice-phone { left: 16%; top: 26%; width: 13cqw; height: 25cqw; }
+.passkey .print { left: 3.5cqw; top: 9.5cqw; }
+.passkey .phone-label { left: 22.5%; top: 75%; }
+.passkey .unlock-arrow { left: 38%; top: 50.5%; width: 17cqw; }
+.passkey .unlock-label { left: 46.5%; top: 44%; }
+.passkey .key:not(.mini) { left: 62%; top: 45%; transform: rotate(-12deg) scale(1.35); transform-origin: 0 50%; width: 16cqw; height: 6cqw; }
+.passkey .key-label { left: 73.5%; top: 64%; }

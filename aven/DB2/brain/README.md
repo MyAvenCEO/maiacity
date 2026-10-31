@@ -4,7 +4,7 @@ The documentation of the whole system, told from first principles for a reader w
 each built from slides that explain one concept at a time, and the one global glossary. avenOS shows it under **Docs**
 (`#/docs`), to anyone, signed in or not: it is as public as the repo.
 
-Samuel started it on 31 Oct 2026. Its look is in [`STYLE.md`](STYLE.md), its language in [`VOICE.md`](VOICE.md), and
+Its look is in [`STYLE.md`](STYLE.md), its language in [`VOICE.md`](VOICE.md), and
 every term in [`GLOSSARY.md`](GLOSSARY.md).
 
 ## What is here
@@ -13,14 +13,14 @@ every term in [`GLOSSARY.md`](GLOSSARY.md).
 |---|---|
 | [`docs.json`](docs.json) | The catalogue: one item per package on the docs dashboard, its page and its slides |
 | [`GLOSSARY.md`](GLOSSARY.md) | The one glossary, every term with its one meaning (moved here from `aven/DB2`) |
-| [`STYLE.md`](STYLE.md), [`VOICE.md`](VOICE.md) | The look and the language, as Samuel agrees them |
+| [`STYLE.md`](STYLE.md), [`VOICE.md`](VOICE.md) | The look and the language |
 | [`style/tokens.css`](style/tokens.css) | The palette, type and chrome as tokens, sampled from the references |
 | [`style/slide.css`](style/slide.css) | The frame and the parts every illustration is drawn from |
-| [`style/reference/`](style/reference/) | Samuel's references, the maiaCITY look |
+| [`style/reference/`](style/reference/) | The references for the maiaCITY look |
 | [`id/`](id/README.md) | avenID's page: its story, and its slides in `id/slides/` |
 | [`render/`](render/) | Markdown and slide markup to a checked node tree, and its tests |
 
-Samuel's references:
+The references:
 - `scenes.webp`: First Settlers, Mountain Quarry Outpost, Coastal Solar Village, Thriving Abundance City;
 - `places-and-domes.webp`: Desert Oasis Settlement, Alpine Forest Valley, inside the Food Forest Dome, inside the
   Solar Factory Dome;

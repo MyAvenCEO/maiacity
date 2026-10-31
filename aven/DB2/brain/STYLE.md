@@ -1,11 +1,11 @@
 # The look
 
-The maiaCITY look, from Samuel's references in [`style/reference/`](style/reference/). They set the look only:
-**no metaphors from the game** (Samuel, 31 Oct 2026). A slide draws the concept itself (a key, a vault and its list of
+The maiaCITY look, from the references in [`style/reference/`](style/reference/). They set the look only:
+**no metaphors from the game**. A slide draws the concept itself (a key, a vault and its list of
 owners, an arrow for a relation), never a dome, a settler or a settlement standing for it.
 
 The tokens are in [`style/tokens.css`](style/tokens.css); the parts every slide is drawn from in
-[`style/slide.css`](style/slide.css). What Samuel agrees is marked with his name and the date; the rest is a proposal.
+[`style/slide.css`](style/slide.css).
 
 ## The ground
 

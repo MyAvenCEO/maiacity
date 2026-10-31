@@ -1,0 +1,12 @@
+/* "A vault" (vault.html): Alice's vault as a record, and the four kinds a vault can be */
+.vault .facet-1 { clip-path: polygon(0 0, 34% 0, 20% 30%, 0 44%); }
+.vault .facet-2 { clip-path: polygon(34% 0, 52% 0, 20% 30%); }
+.vault .facet-3 { clip-path: polygon(64% 0, 100% 0, 100% 34%, 86% 18%); }
+.vault .facet-4 { clip-path: polygon(0 70%, 14% 60%, 28% 100%, 0 100%); }
+.vault .facet-5 { clip-path: polygon(72% 100%, 90% 76%, 100% 84%, 100% 100%); }
+.vault .title { left: 3.5%; top: 6%; }
+.vault .key .bit-1 { left: 8.6cqw; height: 1.6cqw; }
+.vault .key .bit-2 { left: 10.4cqw; height: 2.2cqw; }
+.vault .alice { left: 32%; top: 28%; width: 36cqw; height: 17cqw; }
+.vault .kinds { left: 50%; top: 72%; transform: translateX(-50%); }
+.vault .kinds-note { left: 50%; top: 82%; }

@@ -1,0 +1,18 @@
+/* "A device acts for a vault" (acts-for.html): The device key signs for the phone; the phone acts for Alice's vault */
+.acts-for .facet-1 { clip-path: polygon(0 0, 34% 0, 20% 30%, 0 44%); }
+.acts-for .facet-2 { clip-path: polygon(34% 0, 52% 0, 20% 30%); }
+.acts-for .facet-3 { clip-path: polygon(64% 0, 100% 0, 100% 34%, 86% 18%); }
+.acts-for .facet-4 { clip-path: polygon(0 70%, 14% 60%, 28% 100%, 0 100%); }
+.acts-for .facet-5 { clip-path: polygon(72% 100%, 90% 76%, 100% 84%, 100% 100%); }
+.acts-for .title { left: 3.5%; top: 6%; }
+.acts-for .key .bit-1 { left: 8.6cqw; height: 1.6cqw; }
+.acts-for .key .bit-2 { left: 10.4cqw; height: 2.2cqw; }
+.acts-for .key:not(.mini) { left: 3%; top: 47%; transform: rotate(-12deg) scale(0.9); transform-origin: 0 50%; width: 13cqw; height: 5cqw; }
+.acts-for .key-label { left: 10%; top: 62%; }
+.acts-for .signs-arrow { left: 18%; top: 50.5%; width: 10cqw; }
+.acts-for .signs-label { left: 23%; top: 44%; }
+.acts-for .phone-vault { left: 31%; top: 41%; width: 24cqw; height: 10cqw; }
+.acts-for .acts-arrow { left: 58.5%; top: 50.5%; width: 10cqw; }
+.acts-for .acts-label { left: 63.5%; top: 44%; }
+.acts-for .alice { left: 72%; top: 41%; width: 24cqw; height: 10cqw; }
+.acts-for .cap-note { left: 63.5%; top: 59%; }
