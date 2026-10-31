@@ -48,7 +48,7 @@ Only what this plan names gets built. Three task threads, in parallel, each in i
 
 ## Thread A: the door and gossip (Lean and Rust)
 
-`id/spec`, `id/core`, `db/spec`, `db/core`, `peer/native`, `peer/light`.
+`id/spec`, `id/core`, `db/spec`, `gen1` (then `db/core`), `peer/native`, `peer/light`.
 
 - **Lean (`Aven.ID`):** invites, withdrawal, joins and membership. Theorems: only the admin invites; an invite
   is used at most once, and not after it is withdrawn; a join founds a person's vault owned by its passkey (and the

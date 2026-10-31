@@ -5,7 +5,7 @@
 !Cargo.toml
 !Cargo.lock
 !core
-!db/core
+!gen1
 !db/docs
 !store
 !id/core

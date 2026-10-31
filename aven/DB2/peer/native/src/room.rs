@@ -1,6 +1,6 @@
 //! The chat's room (MILESTONE2.md, `Aven.DB.Chat`): one iroh-gossip topic per network, derived from its id, on the
 //! peer's shared `Router` beside `aven/db/1` (README, rule 9). A peer joins it through the Aven Peer, a member; every
-//! message it sends is signed by its device key, and every message it hears is checked by `aven_db_core::chat` against
+//! message it sends is signed by its device key, and every message it hears is checked by `aven_gen1::chat` against
 //! the door as this peer knows it (`Gate`), so a message whose sender is no member's device is dropped. Each peer says
 //! `here` every `EVERY_MS`, and `bye` when it stops. Presence is in memory only.
 //!
@@ -13,11 +13,11 @@
 
 use std::sync::{Arc, Mutex};
 
-use aven_db_core::chain::{Body, Line};
-use aven_db_core::chat::{self, EVERY_MS, Kind, Message};
-use aven_db_core::files::Announcement;
-use aven_db_core::{timeline, wire};
 use aven_db_store::Hash;
+use aven_gen1::chain::{Body, Line};
+use aven_gen1::chat::{self, EVERY_MS, Kind, Message};
+use aven_gen1::files::Announcement;
+use aven_gen1::{timeline, wire};
 use bytes::Bytes;
 use iroh::{PublicKey, SecretKey};
 use iroh_gossip::api::{Event, GossipSender};

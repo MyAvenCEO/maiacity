@@ -25,7 +25,7 @@ Targets, measured in this milestone and reported on every run:
 
 Smaller steps, measured by the threads: `lake build` warm 0.15 s each (cold, programs included, 6.1 s for `Aven.ID`,
 5.2 s for `Aven.DB`); `sandbox/vectors.sh --check`, both specs, 0.8–0.9 s warm; `cargo test -p aven-id` warm 4.4 s,
-2000 model cases; `cargo test -p aven-db-core` 1.1 s, 1000 traces; the store against the running model, 500 traces,
+2000 model cases; `cargo test -p aven-gen1` 1.1 s, 1000 traces; the store against the running model, 500 traces,
 1 s; `cargo test --workspace` 9.1–9.6 s warm (14 s before its dependencies were optimised); `store/check.sh`, all four backends, 11–12 s warm; an incremental `cargo build -p aven-peer` 1.3–2.4 s; aven-id's wasm 1.0 s incremental, 126 KB; the Peer-Light's
 debug wasm 8 MB, wasm-bindgen 1.1 s of every change to it (21.5 MB and 2.5–2.9 s before its dependencies were
 optimised, [Open questions](#open-questions), 2).
@@ -518,12 +518,12 @@ expected}` per line, committed beside the spec:
 | `id/spec/vectors/statements.json` | the cast's devices signing, changed statements, what each acts on | aven-id's tests, with real keys |
 | `id/spec/vectors/keys.json` | each cast key's seed and Ed25519 public half, derived in Lean | aven-id's tests, against `cast.json` |
 | `id/spec/vectors/avenos.json` | whom each host may act as, each Control Room, each Vault view, whom each Peer-Light serves | `sandbox/check.mjs` |
-| `db/spec/vectors/status.json`, `presence.json` | example and generated traces, with every state | aven-db-core's tests |
-| `db/spec/vectors/timeline.json`, `wire.json` | timeline lines; streams in chunks and the frames each completes | aven-db-core's tests |
+| `db/spec/vectors/status.json`, `presence.json` | example and generated traces, with every state | aven-gen1's tests |
+| `db/spec/vectors/timeline.json`, `wire.json` | timeline lines; streams in chunks and the frames each completes | aven-gen1's tests |
 | `db/spec/vectors/store.json`, `hashes.json` | store traces with every result; spellings of a hash | the conformance suite on all four backends; aven-db-store's tests |
 
 The model runs, too: aven-id's property test holds 2000 random trees to `aven-id-model`, the rule a tree breaks
-included; aven-db-core's 1000 status and presence traces to `aven-db-model`; the memory store 500 traces. Only
+included; aven-gen1's 1000 status and presence traces to `aven-db-model`; the memory store 500 traces. Only
 mechanics stay outside Lean: crash safety and torn reads in the store, Ed25519's own checks, the peers' persistence,
 what a live box shows (its status lines and paths).
 
@@ -542,7 +542,8 @@ aven/DB2/
                    Vault and Control Room (Svelte 5 + Vite); it reads the tree through aven-id's wasm (os/web/id.js)
   peer/native/     aven-peer: avenPEER's native Peer, one binary; --relay makes it the Aven Peer
   peer/light/      aven-peer-light: avenPEER's Peer-Light, the same core as wasm in a worker
-  db/core/         aven-db-core: the pure core every peer runs, without I/O
+  gen1/            aven-gen1: avenDB's first generation every peer runs, without I/O (the wire, the chat's
+                   chains, status, presence): it splits up as Docs arrive
   store/           aven-db-store: the Store contract, its backends and their conformance suite
   db/spec/         Lean: Aven.DB, with its vectors in db/spec/vectors
   id/core/         aven-id: avenID, who may act for a vault, pure
@@ -619,7 +620,7 @@ Made in milestone 1's threads and its integration (29–30 Oct 2026).
   add the other branch's packages. Every version the branches resolved is kept.
 - **Tests compare JSON as values, never as text.** aven-id turns on serde_json's `preserve_order`, and Cargo unifies
   features across the workspace, so after the merge every crate's maps keep insertion order. One test of
-  `aven-db-core` had compared a line's text with sorted keys.
+  `aven-gen1` had compared a line's text with sorted keys.
 - **rustfmt's default width (100)** stays for Rust; the prose wraps at 120. No `rustfmt.toml`.
 
 ## Open questions
@@ -687,7 +688,7 @@ its PR's body.
 
 | Thread, branch | Builds | Its own check |
 |---|---|---|
-| **Peers** (Rust and Lean), `claude/avendb-peers` | `db/core`: the status phases, presence and progress counters, pure. `db/spec/`: `Aven.DB`, their model. `peer/native`: the Peer, with the iroh endpoint, the `Router`, our ALPN `aven/db/1` (hello and presence) and `--relay`; its endpoint key is its device key from the cast. `peer/light`: the Peer-Light, the core as wasm in a worker, relay-only. The box's wiring for them (`compose.yml`, `up.mjs`, the check) and avenOS's live parts: the status line, the Control Room's panes, the timeline. State in memory until the store lands. | `lake build`; Rust tests against the model; `bun run up --check` waits for all four peers live, Alice Peer direct over UDP, "4 peers" on each Peer-Light |
+| **Peers** (Rust and Lean), `claude/avendb-peers` | `gen1`: the status phases, presence and progress counters, pure. `db/spec/`: `Aven.DB`, their model. `peer/native`: the Peer, with the iroh endpoint, the `Router`, our ALPN `aven/db/1` (hello and presence) and `--relay`; its endpoint key is its device key from the cast. `peer/light`: the Peer-Light, the core as wasm in a worker, relay-only. The box's wiring for them (`compose.yml`, `up.mjs`, the check) and avenOS's live parts: the status line, the Control Room's panes, the timeline. State in memory until the store lands. | `lake build`; Rust tests against the model; `bun run up --check` waits for all four peers live, Alice Peer direct over UDP, "4 peers" on each Peer-Light |
 | **avenID** (Lean and Rust), `claude/avendb-id` | `id/spec/`: `Aven.ID`, vaults owning vaults, what a vault governs, whom a device acts for and may act on, whom a host may act as; theorems that authority never runs up the tree, a device governs nothing, and no person acts as a network. `id/core/`: `aven-id`, pure, with the cast's keys derived and checked, and a wasm build of its queries for avenOS. | `lake build` without `sorry`; `cargo test`, its property tests checked against the running Lean model |
 | **Store** (Rust), `claude/avendb-store` | `store`: the conformance suite first, then the `Store` contract (blobs and refs) and its backends through OpenDAL (memory, fs, s3, opfs), with an S3-compatible server in the box | the suite passes on all four backends in the box |
 
