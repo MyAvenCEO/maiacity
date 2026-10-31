@@ -1353,7 +1353,7 @@ def fetchCases : List Json :=
    fetchVector "nothing held: all missing" fetchTable ["d1"] "d1" [5, 6],
    vector "what a fetch proof signs" (Json.mkObj [("doc", hexJson ((List.range 32).map (·.toUInt8))),
        ("exporter", hexJson ((List.range 32).map fun i => (200 + i).toUInt8)),
-       ("exporterLabel", Json.str "avenDB fetch exporter 1"), ("exporterLength", toJson Aven.Peer.Fetch.exporterLength)])
+       ("exporterLabel", Json.str "EXPORTER-avenDB-fetch-1"), ("exporterLength", toJson Aven.Peer.Fetch.exporterLength)])
      (hexJson (Aven.Peer.Fetch.proofBytes ((List.range 32).map (·.toUInt8)) ((List.range 32).map fun i => (200 + i).toUInt8))),
    fetchVector "once one waits, nothing after it is served, not even an empty item"
      (fetchTable ++ [(4, "d1", 0)]) ["d1"] "d1" [1, 2, 4]] ++

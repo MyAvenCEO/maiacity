@@ -88,13 +88,13 @@ theorem parts_bounded (h : Nat) (b : Bytes) :
 
 A device proves a Doc on a connection by signing, with the Doc's fetch key, `["avenDB fetch 1", {doc, exporter}]`: a
 label and a Value as every signed thing is (A30, Core's `signingBytes`), `doc` the Doc's 32-byte id and `exporter` the
-connection's TLS exporter, `exporterLength` bytes under the label `exporterLabel` with no context, which both ends
-compute and no other connection shares (the architect, 31 Oct 2026). Whether the key is the Doc's current fetch key
-is avenID's (`Keep.serves`). -/
+connection's TLS exporter, `exporterLength` bytes under the label `exporterLabel` (RFC 5705's prefix) with an empty
+context, which both ends compute and no other connection shares (the architect, 31 Oct 2026). Whether the key is the
+Doc's current fetch key is avenID's (`Keep.serves`). -/
 
 def fetchLabel : Bytes := "avenDB fetch 1".toUTF8.toList
 /-- The TLS exporter's label, and its length in bytes. -/
-def exporterLabel : Bytes := "avenDB fetch exporter 1".toUTF8.toList
+def exporterLabel : Bytes := "EXPORTER-avenDB-fetch-1".toUTF8.toList
 def exporterLength : Nat := 32
 
 /-- What a fetch proof signs, its keys in the codec's order. -/
