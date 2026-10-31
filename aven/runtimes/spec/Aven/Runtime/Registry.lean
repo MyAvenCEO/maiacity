@@ -316,6 +316,11 @@ def registry : List Entry :=
 
 def entry (t : FileType) : Entry := (registry.find? (·.type == t)).getD ⟨t, .download, 0, 0⟩
 
+/-- The type a claimed media type names, by its essence; `unknown` for any other. Only for what a claim may label
+(the chat's card before the bytes are read): a decision never takes it, since the bytes decide. -/
+def FileType.ofMime (m : String) : FileType :=
+  ((registry.find? (·.type.mime == essence m)).map (·.type)).getD .unknown
+
 /-- Where the registry stands: whether the files origin runs file runtimes yet (decision 3). -/
 structure Stage where
   runtimes : Bool

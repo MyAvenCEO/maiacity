@@ -15,7 +15,7 @@ every term in [`GLOSSARY.md`](GLOSSARY.md).
 | [`GLOSSARY.md`](GLOSSARY.md) | The one glossary, every term with its one meaning (moved here from `aven/DB2`) |
 | [`STYLE.md`](STYLE.md), [`VOICE.md`](VOICE.md) | The look and the language |
 | [`style/tokens.css`](style/tokens.css) | The palette, type and chrome as tokens, sampled from the references |
-| [`style/slide.css`](style/slide.css) | The slide: its ground, its type, its labels and dotted paths |
+| [`style/slide.style.json`](style/slide.style.json) | The slide as style data: its ground, its type, its labels and dotted paths |
 | [`style/reference/`](style/reference/) | The first references, from the game |
 | [`id/`](id/README.md) | avenID's page: its story, and its slides in `id/slides/` |
 | [`render/`](render/) | Markdown and slide markup to a checked node tree, links, contrast, and their tests |
@@ -31,13 +31,17 @@ The first references, from the game (the look has since moved to the brand's UI,
 
 ## A slide
 
-One concept, in three files under `<package>/slides/`, named by the slide's id:
+One concept, in files under `<package>/slides/`, named by the slide's id:
 
 - **`<id>.html`, the picture.** A 16:9 slide of allowlisted HTML: the face-runtime's node-tree allowlist
   (`aven/runtimes/spec/Aven/Runtime/Tree.lean`), so no `svg`, `style` or `script` and no inline `style`, and
   classes only. Every element is a layer with a stable class, so a motion version can move each one later.
-- **`<id>.css`, where each layer stands.** Class rules only, every length in `cqw` (a hundredth of the slide's width).
-  The objects are images by hash (`art/img/`), drawn in code (`art/objects.mjs`).
+- **`<id>.style.json`, where each layer stands.** The face-runtime's style data (`Style.lean`), one rule per line:
+  classes only, every length in `cqw` or `%`, a colour as `{ "bytes": "rrggbb" }`. It is the only source of the
+  slide's style: avenOS checks each rule with the drawer's `ruleOk` and writes its CSS with `ruleCss`
+  (`os/web/runtimes/draw.js`). The objects are images by hash (`art/img/`), drawn in code (`art/objects.mjs`).
+- **`<id>.part.json`, the whole face part.** Its markup in `FaceRuntime.lean`'s forms and every rule it needs,
+  `style/slide.style.json`'s first: what the face-runtime takes.
 - **`<id>.md`, its text.** Markdown, shown on the page under the slide. `[vault](glossary:vault)` links a term to the
   glossary.
 
@@ -83,9 +87,12 @@ The node tree needs the allowlist's `img`, by hash: `figure`, `img`, `div`, `p`,
 The objects are drawn in code: [`art/objects.mjs`](art/objects.mjs), with the paint kit in
 [`art/paint.mjs`](art/paint.mjs). `AVEN_CHROMIUM=<a Chromium> bun brain/art/render.mjs` renders each to a transparent
 PNG in `art/img/`, named by the BLAKE3 hash of its bytes, as the network names its files, and lists them in
-`art/images.json`. `bun brain/art/slides.mjs` lays out avenID's slides and writes their markup and CSS. A slide shows
+`art/images.json`. `bun brain/art/slides.mjs` lays out avenID's slides and writes, for each, its markup, its style data and its face
+part; the rules every slide shares, `style/slide.style.json`, are written by hand. A test holds every rule to `ruleOk`,
+every font size to 2.6cqw or more, each part to its markup and style, and the runtimes' vector for "A key signs"
+(`face.json`) to the CSS the drawer writes from the brain's own rules. A slide shows
 a drawing as `<img src="/files/<hash>">`, the only image the allowlist takes; avenOS resolves the brain's own from its
-bundle (`os/web/brain/brain.js`). Both outputs are generated: edit the objects and the layouts, then run them.
+bundle (`os/web/brain/brain.js`). The images and the slides' files are generated: edit the objects and the layouts, then run them.
 
 ## Releases
 

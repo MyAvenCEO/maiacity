@@ -3,18 +3,30 @@
 //! (PRODUCTION.md, Part A); milestone 2 its invites, withdrawals and joins; the store upgrade catching up on the chat's
 //! chains (`Heads`, `CatchUp`, `Lines`), each in pages that stay under the frame's limit however many devices there are. The Aven Peer beats once per clock step, so a quiet link still moves, and a
 //! link that doesn't is stalled.
+//!
+//! Every connection's first frame, the hello, names the wire version its peer speaks ([`VERSION`], PEERS.md §7). A peer
+//! answers any other version with [`Frame::Update`] and closes ([`meet`]): no fallback for older peers. The older of
+//! the two follows ([`follows`]): a tab switches to the newer release, a native Peer says `update` to its owner.
 
 use serde::{Deserialize, Serialize};
 
 pub const ALPN: &[u8] = b"aven/db/1";
 /// A frame longer than this is refused: no peer needs one.
 pub const MAX_FRAME: usize = 64 * 1024;
+/// The wire version this peer speaks (`Aven.DB.Wire.wireVersion`): a number of its own, changed only when a frame's
+/// meaning changes, never with an ordinary release. Version 0 is the wire before it had versions.
+pub const VERSION: u64 = 1;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "frame", rename_all = "snake_case")]
 pub enum Frame {
-    /// The first frame each side sends: the cast's id of the peer it is.
-    Hello { peer: String },
+    /// The first frame each side sends: the cast's id of the peer it is, and the wire version it speaks. A hello
+    /// without one is from before the wire had versions: version 0, which no peer speaks any more.
+    Hello {
+        peer: String,
+        #[serde(default)]
+        wire: u64,
+    },
     /// The Aven Peer tells each peer who is connected, itself included, on every change.
     Presence { peers: Vec<String> },
     /// The Aven Peer's clock, once per step.
@@ -61,6 +73,27 @@ pub enum Frame {
     /// links of the device that shared it; and on each link the files of that peer's own chain it has kept, in pages
     /// ([`kept_pages`]). A sender says "Kept by the network" only then.
     Kept { files: Vec<String> },
+    /// The answer to a hello of another wire version ([`meet`]): update, and the version this peer speaks. It closes
+    /// then.
+    Update { wire: u64 },
+}
+
+/// What a peer speaking `mine` answers a hello of version `theirs` with (`Aven.DB.Wire.meet`): nothing, and the
+/// connection carries on; or `update` with its own version, and the connection closes. No fallback (README rule 9).
+pub fn meet(mine: u64, theirs: u64) -> Option<Frame> {
+    (theirs != mine).then_some(Frame::Update { wire: mine })
+}
+
+/// Whether a peer speaking `mine`, refused by one speaking `theirs`, updates (`Aven.DB.Wire.follows`): only when that
+/// one is ahead. Of two peers that differ, exactly one follows, and nobody ever goes back.
+pub fn follows(mine: u64, theirs: u64) -> bool {
+    mine < theirs
+}
+
+/// The gossip topic's name for a network on a wire version (`Aven.DB.Wire.topicName`): a peer on another version is
+/// in another room.
+pub fn topic_name(wire: u64, network: &str) -> String {
+    format!("avenDB chat 1\nwire {wire}\nnetwork {network}")
 }
 
 /// A device's chain as a peer holds it: the device's key, its newest line's name, and that line's number.

@@ -12,6 +12,11 @@ import Aven.DB.Docs
 - `presence.json`: connections joining and leaving; what every peer is told after each (`Aven.DB.Presence`).
 - `timeline.json`: a timeline line's parts; the line (`Aven.DB.Timeline`).
 - `wire.json`: chunks of a stream; the frames each completes, and the error that ends it (`Aven.DB.Wire`).
+- `frames.json`: the frames after the hello from wire version 2 (A29): each as its bytes on the stream, hex, and
+  streams that are refused, with what each gives (`Aven.DB.WireCbor`).
+- `upgrades.json`: a peer's wire version and the version a hello names; its answer (none, or `update` and its own
+  version) and whether the hello's peer follows that refusal; and the gossip topic's name for a wire version and a
+  network (`Aven.DB.Wire`, "The wire version").
 - `store.json`: traces of store calls from an empty store; the result of each (`Aven.DB.Store`). Every backend
   replays them in the conformance suite.
 - `hashes.json`: spellings of a hash; whether the store reads each as one.
@@ -157,6 +162,31 @@ def wire : List Json :=
     vector name (Json.mkObj [("chunks", Json.arr (chunks.map chunkJson).toArray)])
       (Json.mkObj [("frames", Json.arr (frames.map fun fs => Json.arr (fs.map Frame.json).toArray).toArray),
         ("error", toJson (err.map WireError.name))])
+
+open WireCbor in
+def frames : List Json :=
+  let result (bs : List UInt8) := let (fs, err) := WireCbor.decode [bs]
+    Json.mkObj [("frames", Json.arr (fs.flatten.map Frame.json).toArray), ("error", toJson (err.map WireError.name))]
+  (frameExamples.filterMap fun f => (frameBytes f).map fun bs =>
+    vector s!"a frame: {(Frame.json f).compress}" (Json.mkObj [("bytes", Aven.Core.hex bs)]) (result bs)) ++
+  [("a key missing", framed (obj [("frame", txt "heads"), ("heads", .array [])])),
+   ("a key extra", framed (obj [("frame", txt "beat"), ("n", .uint 1), ("extra", .null)])),
+   ("a key of the wrong kind", framed (obj [("frame", txt "beat"), ("n", txt "1")])),
+   ("a frame no peer sends", framed (obj [("frame", txt "shout")])),
+   ("a number longer than it needs", Aven.Core.be 4 4 ++ [0xA1, 0x61, 0x6E, 0x18]),
+   ("a length of none", [0, 0, 0, 0]),
+   ("a length over the limit", Aven.Core.be 4 (maxFrame + 1)),
+   ("all frames in one stream", bytesOf frameExamples)].map fun (name, bs) =>
+    vector name (Json.mkObj [("bytes", Aven.Core.hex bs)]) (result bs)
+
+def upgrades : List Json :=
+  (meetExamples.map fun (name, mine, theirs) =>
+    vector name (Json.mkObj [("mine", toJson mine), ("theirs", toJson theirs)])
+      (Json.mkObj [("answer", match meet mine theirs with | some f => f.json | none => Json.null),
+        ("follows", toJson (follows theirs mine))])) ++
+  ([(wireVersion, "aven"), (wireVersion, "maia.city"), (2, "aven")].map fun (w, n) =>
+    vector s!"the topic of {n} on wire {w}" (Json.mkObj [("wire", toJson w), ("network", toJson n)])
+      (Json.mkObj [("topic", toJson (topicName w n))]))
 
 /-! ## The store -/
 
@@ -1202,7 +1232,7 @@ def main (args : List String) : IO Unit := do
   let dir : System.FilePath := args.headD "vectors"
   IO.FS.createDirAll dir
   for (file, vs) in [("status.json", status), ("presence.json", presence), ("timeline.json", timeline),
-      ("wire.json", wire), ("store.json", store), ("hashes.json", hashes), ("refs.json", refs),
+      ("wire.json", wire), ("frames.json", frames), ("upgrades.json", upgrades), ("store.json", store), ("hashes.json", hashes), ("refs.json", refs),
       ("chat.json", chat), ("files.json", files), ("chats.json", chats), ("queries.json", queries),
       ("wants.json", wants), ("mutations.json", mutations), ("merges.json", merges), ("lenses.json", lenses),
       ("indexes.json", indexes), ("trees.json", trees), ("lookups.json", lookups), ("keys.json", keys), ("writers.json", writers), ("envelopes.json", envelopes),

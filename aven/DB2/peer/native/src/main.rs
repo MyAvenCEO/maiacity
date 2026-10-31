@@ -41,6 +41,8 @@
 //!                            person's vault founded
 //!     --admin-coop NAME      with --rp-id: the name of the admin coop the claim founds, which owns Aven, the agent
 //!                            (Maia City); read at every start, so a restart with another renames it
+//!     --wire-version N       say wire version N instead of this build's (PEERS.md §7), only to rehearse an upgrade
+//!                            in the box: a peer a version ahead or one left behind (sandbox/upgrade.mjs)
 //!
 //! The door is members only (MILESTONE2.md): the relay and every connection's `after_handshake` admit the cast's
 //! members, or the devices of the admin coop's members and people, and the Aven Peer, the device of Aven, the agent
@@ -187,6 +189,9 @@ async fn main() -> Result<(), Error> {
         _ => return Err("give exactly one of --secret and --secret-file".into()),
     })?;
     let members = Members::parse(&config.or("members", ""))?;
+    if let Some(v) = config.get("wire-version") {
+        aven_peer::speak(v.parse().map_err(|e| format!("--wire-version {v}: {e}"))?);
+    }
     let notes = notes(&me, config.get("events"))?;
     let relay = config.get("relay").is_some_and(|v| v != "false");
     let listen = config.or("listen", "0.0.0.0:4433");
