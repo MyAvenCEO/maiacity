@@ -569,8 +569,8 @@
     }
    ],
    "slides": [
-    "sync-11",
-    "sync-12",
+    "sync-13",
+    "sync-14",
     "data-17"
    ],
    "date": "2026-10-31"
@@ -646,10 +646,10 @@
   },
   {
    "id": "D31",
-   "title": "One device, one key: signer and address together",
+   "title": "Signers: a random key per device, registered by a passkey",
    "status": "proposed",
-   "decision": "Each device makes its own random key pair. It signs for its identity and is also its iroh address. The passkey registers it by signing \"this device key belongs to me\" into the identity's history. Each device also publishes its own lock.",
-   "why": "Fewer keys to explain. Not derived from the passkey alone, because synced passkeys give two devices the same secret, and two devices would then share one address.",
+   "decision": "A signer is a random signing key made on a device and registered once by a passkey (which needs a tap per signature, too slow for every change). The signer signs every change, and its public key is also the device's iroh address. Loro's peer ID stays a plain number, bound to the signer in each chunk's signed header. Each device also publishes its own lock.",
+   "why": "Not derived from the passkey: synced passkeys give two devices the same secret, so they would share one key and one address and could not be locked out separately.",
    "supersedes": "the separate iroh key in D28",
    "sources": [
     {
@@ -666,10 +666,10 @@
   },
   {
    "id": "D32",
-   "title": "Words: device, identity, role, data",
+   "title": "Words: signer, identity, role, data; address identities",
    "status": "proposed",
-   "decision": "Things that act: devices and identities (human or coop). Things acted upon: roles and data. Everything has an ID nobody hands out. The words \"signer\" and \"endpoint ID\" leave the slides; a device is simply a device.",
-   "why": "One word per thing, and a clean line between who acts and what is acted upon.",
+   "decision": "A human identity's members are signers; a coop's members are identities; roles are sets of identities; data is acted upon. \"Device\" is only where a signer lives. Peers dial identities: each identity publishes a signed record of the signers it can be reached through, and the connection goes to whichever is online.",
+   "why": "One word per thing, matching the Safe analogy (a Safe's members are signers). Addressing identities keeps the address stable while signers change, like a phone number and its SIM.",
    "sources": [],
    "slides": [],
    "date": "2026-10-31"
@@ -677,7 +677,7 @@
   {
    "id": "D33",
    "title": "Sealed chunks settle in layers (sedimentree)",
-   "status": "proposed",
+   "status": "decided",
    "decision": "Each sealed change is hashed (BLAKE3). Its leading zero bytes give its depth; a change of depth 1 or more closes a chunk with everything since the last one at that depth. Deeper chunks hold shallower ones. Equal content gives an equal minimal hash.",
    "why": "Every peer, even one that reads nothing, cuts the same chunks; old history becomes a few big chunks; equality is one hash.",
    "supersedes": "refines D26",
@@ -714,7 +714,9 @@
     }
    ],
    "slides": [
-    "sync-8"
+    "sync-8",
+    "sync-9",
+    "sync-10"
    ],
    "date": "2026-10-31"
   },
