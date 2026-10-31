@@ -402,7 +402,7 @@ seed.
 | Hosting (A16) | `Hosting` (#1565) | — | — | Lean only |
 | Actor hosts and chains (A27, kernel half) | `Signing` (#1617, #1623, #1681), `Messaging` (#1628) | — | — | Lean only; the reader's half is avenCAPS' (#1619, #1624, #1626) |
 | Turns as steps (A37) | `Runtimes`, with state-runtime's `State` (#1676) | — | — | Lean only |
-| Addresses as Doc ids (A201) | `Address` (#1756) | — | — | Lean only; the router resolving `[vault, doc]` and state-runtime's `[bytes32, bytes32]` address shape: next, waits for the actor code's go |
+| Addresses as Doc ids (A201) | `Address` (#1756) | — | — | Lean only; the router resolving `[vault, doc]` and state-runtime's `[bytes32, bytes32]` address shape: next, waits for the actor code's go. The actor spec's other vault ids, its tree's, stay text until then (A214) |
 | Moving an actor's home (A202) | `Handover` (this PR) | — | — | Lean only, beside the kernel: version 1 has one home |
 | Carrier Doc (A33) | — | — | — | written down (#1685); for milestone 3 |
 | Version 1: the todo app in memory | — | — | — | not started; actor code waits for its go |
@@ -413,7 +413,8 @@ an open/done machine) and the components `field` and `checkbox`. The order: laye
 in-memory Doc, messages) with the vectors; then `state-runtime`, then `js-runtime`, each with hostile parts that must
 fail; the kernel; faces (face-runtime, the drawer, events as tells); the app, its kernel in a worker. Version 1 refuses
 every Value that sets a field kept for later (a message's `cap`, the `now` tier, `loads`, a Doc's `schema` and
-`branch`, the address's vault scope), so nothing depends on it missing; its scope is `local`.
+`branch`), so nothing depends on it missing; every address's vault is the one fixed local vault, 32 bytes of `01`
+(A201).
 
 **Known gaps (code and Lean):**
 - The carrier Doc, receipts by hash and the journal as an avenDB Doc's log aren't modelled: the Lean's inboxes are one
