@@ -5,10 +5,10 @@
 avenDB's architecture lives in one place, avenBRAIN (`brain/`), with the Lean: [the index](brain/ARCHITECTURE.md),
 one page per package (`brain/<package>/README.md`), [the decision log](brain/DECISIONS.md) and
 [the glossary](brain/GLOSSARY.md). Brain in avenOS shows these files. A decision that isn't there isn't decided.
-- **Two documents.** The log is the history: it only grows, an entry is never edited, and a change of mind is a new
-  entry that names the one it supersedes (`bun aven/ops/devx/decisions.mjs` checks it). The pages are the latest
-  truth: each concept is stated once, on its owner's page, as it is now, with the decisions it rests on and the Lean
-  that proves it.
+- **Two documents.** The log is the history: one table, the newest decision on top. It only grows: a new decision is a
+  new row at the top, a row is never edited, and a change of mind is a new row that names the one it supersedes
+  (`bun aven/ops/devx/decisions.mjs` checks it). The pages are the latest truth: each concept is stated once, on its
+  owner's page, as it is now, with the decisions it rests on and the Lean that proves it.
 - **The architect writes both.** A thread never adds an A-number or architecture prose (A171). Every decision, whether
   Samuel's or agreed between threads in messages or a PR body, goes to the architect, who logs it and rewrites the
   page that owns the concept. A decision that lives only in a message, a PR body or a README is drift. A thread may
