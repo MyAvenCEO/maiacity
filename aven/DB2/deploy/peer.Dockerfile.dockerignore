@@ -11,6 +11,7 @@
 !db/engine
 !store
 !id/core
+!peer/wire
 !peer/native
 !peer/light
 !peer/keeper

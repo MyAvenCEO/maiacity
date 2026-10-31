@@ -343,6 +343,7 @@ name = "aven-gen1"
 version = "0.0.0"
 dependencies = [
  "aven-core",
+ "aven-peer-wire",
  "blake3",
  "serde",
  "serde_json",
@@ -375,6 +376,7 @@ dependencies = [
  "aven-db-store",
  "aven-gen1",
  "aven-id",
+ "aven-peer-wire",
  "aven-runtimes-registry",
  "blake3",
  "bytes",
@@ -410,6 +412,7 @@ dependencies = [
  "aven-gen1",
  "aven-id",
  "aven-peer",
+ "aven-peer-wire",
  "aven-runtimes-registry",
  "bytes",
  "futures-channel",
@@ -419,6 +422,15 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "zeroize",
+]
+
+[[package]]
+name = "aven-peer-wire"
+version = "0.0.0"
+dependencies = [
+ "aven-core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

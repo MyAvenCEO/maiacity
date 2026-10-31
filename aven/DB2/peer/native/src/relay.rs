@@ -10,7 +10,7 @@
 use std::sync::Arc;
 
 use aven_gen1::timeline;
-use aven_gen1::wire::Frame;
+use aven_peer_wire::wire::Frame;
 use iroh_relay::server::{Access, AccessControl, ClientRequest};
 use serde_json::json;
 

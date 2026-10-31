@@ -201,8 +201,8 @@ also carries `frame`, in its place in the codec's order.
 The keepers' frames' keys, and those of `missing` and `fetched`, are fixed in the frames' Lean. `keep_cap`,
 `keep_order`, `keep_choice` and `keep_link`, which carry a keeper's Books, come after them.
 
-**Decided:** rule 1, rule 14, A29, A42, A45, A118, A133, A134, A143 · **Lean:** `Aven.DB.Wire` — `pages_ne_nil`,
-`headsPages_heads`, `answer_pages`; `Aven.DB.WireCbor` — `frameOf_value`, `frameValue_canon`, `decodeAll_frame`,
+**Decided:** rule 1, rule 14, A29, A42, A45, A118, A133, A134, A143 · **Lean:** `Aven.Peer.Wire` — `pages_ne_nil`,
+`headsPages_heads`, `answer_pages`; `Aven.Peer.WireCbor` — `frameOf_value`, `frameValue_canon`, `decodeAll_frame`,
 `push_tooLong`; wire 3's frames pending, after the move
 
 ## The Doc host
@@ -475,7 +475,7 @@ every later release, forever.
   check alone.
 
 **Decided:** README rule 9, A29, A36, A42, A186, A206, peers 11 · **Lean:**
-`Aven.DB.Wire` — `meet_speaks`, `meet_refuses`, `follows_newer`, `follows_one`, `follows_same`
+`Aven.Peer.Wire` — `meet_speaks`, `meet_refuses`, `follows_newer`, `follows_one`, `follows_same`
 
 ## The Aven Peer is just a peer
 
@@ -534,12 +534,12 @@ what runs.
 
 | Part | Lean | Rust | In the browser | Pending |
 |---|---|---|---|---|
-| The wire, version 2 | `Aven.DB.Wire`, `Aven.DB.WireCbor` | the first generation's `wire` (`aven-gen1`) | the Peer-Light speaks it | the move to `peer/spec` (`Aven.Peer.Wire`, `Aven.Peer.WireCbor`, `Aven.Peer.Presence`) and `peer/wire` (`aven-peer-wire`): draft #1745 |
+| The wire, version 2 | `Aven.Peer.Wire`, `Aven.Peer.WireCbor`, `Aven.Peer.Presence` in `peer/spec` (#1745) | `aven-peer-wire` in `peer/wire` (#1745); `aven-gen1` re-exports it until the cutover | the Peer-Light speaks it | the first generation's own imports of `aven_gen1::wire`, until the cutover |
 | Wire 3's frames | the fetch gate's and keepers' frames written over the move, reviewed by thread E (`keep_put` and `keep_part`, reasons of at most 64 bytes): after #1722 | the same, in `aven-peer-wire` | after the move | #1727; stage 5's after #1722 |
 | Group topics, `Live`, sync by version | `Aven.Peer.DocSync`, #1727 | `aven-peer`'s `docs`, #1727 | not started | #1727 |
 | The Doc host and sifting | `Aven.Peer.Judge`, #1727 | the native host and sifting's state machine, #1727; the `Authorize` adapter: not started | the docs worker, and a new browser reading its keyring first (A187): not started | #1727; the keyring's plain path, avenDOCS' (A187) |
 | The fetch gate | `Aven.Peer.Fetch`, #1722 | `aven-peer-keeper`'s `fetch`, #1722; caps' half in aven-id's `keep` (#1734) | not started | #1722 |
-| Keepers and catch-up from them | `Aven.Peer.Keeper`, `Aven.Peer.Serve`, #1722 (in `db/spec`, moving to `peer/spec`) | `aven-peer-keeper`, #1722, with catch-up end to end natively over avenDOCS' sealed pages (`tests/catchup.rs`: 500 envelopes, about 0.5 s in a debug build); the `Gate` adapter over aven-id's `keep`, and the native keeper (`--keep`, the keeper's store): not started | the catch-up client: not started | #1722 |
+| Keepers and catch-up from them | `Aven.Peer.Keeper`, `Aven.Peer.Serve` in `peer/spec`, #1722, #1745 | `aven-peer-keeper`, #1722, with catch-up end to end natively over avenDOCS' sealed pages (`tests/catchup.rs`: 500 envelopes, about 0.5 s in a debug build); the `Gate` adapter over aven-id's `keep`, and the native keeper (`--keep`, the keeper's store): not started | the catch-up client: not started | #1722 |
 | The door | `settle_door` | the first generation's door, from stored refs | the same | the door from the register, with stage 4 |
 | Relays, address entries, bootstrap, links | `Aven.ID.Node`, `Aven.ID.Records` | not started: one relay in the Aven Peer, `--aven`, `--aven-key` | one relay URL | history: `Aven.ID.Records` to `peer/spec` as `Aven.Peer.History`, `records.json` as `history.json` (A193, A194): thread E, stacked on the wire split (#1745); the rest: no stage named yet |
 | Presence by signed beats | `Aven.ID.CatchUp` | not started: the hub counts connections | — | `Aven.ID.CatchUp` to `Aven.Peer.CatchUp`, with the history (A194); the rest: no stage named yet |
@@ -550,8 +550,7 @@ Known gaps, code and Lean:
 - `Aven.ID.CatchUp`'s catch-up from members by signed log tips retires in favour of `Aven.Peer.DocSync` and
   `Aven.Peer.Keeper`; its presence moves into `Aven.Peer.CatchUp` with the history (A194).
 - `Aven.ID.Records.speaks_same` restates `meet_speaks`; `speaks` moves into `Aven.Peer.Wire` with the history (A194).
-- `Aven.DB.Presence` models the hub's count, and retires with the first generation.
-- `Aven.Peer.Keeper` imports `Aven.DB.Wire` for `pages`; it imports `Aven.Peer.Wire` after the move.
+- `Aven.Peer.Presence` models the hub's count, and retires with the first generation.
 - `rule10_quota` is still to be composed over `Aven.Peer.Serve`'s `admitted_within` and `over_quota_sheds` with caps'
   quota, once #1722 lands; caps' `Keep` still holds a bill of its own (`uploader_pays`, `quota_holds`), which leaves it
   then.

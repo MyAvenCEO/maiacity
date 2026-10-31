@@ -10,10 +10,10 @@ use std::sync::{Arc, Mutex};
 
 use aven_db_store::{RefName, backend};
 use aven_gen1::chain::{Answer, Body};
-use aven_gen1::wire::Frame;
 use aven_peer::Notes;
 use aven_peer::chats::{self, Chats};
 use aven_peer::members::Gate;
+use aven_peer_wire::wire::Frame;
 use iroh::SecretKey;
 use serde_json::Value;
 
