@@ -14,7 +14,7 @@
 
 #![forbid(unsafe_code)]
 
-use aven_core::Value;
+use aven_codec::Value;
 use aven_runtimes_contract::Failure;
 use aven_runtimes_tree::{Node, TREE_LIMITS, TreeLimits, check, is_file_url, is_link};
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};

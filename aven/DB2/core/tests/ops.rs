@@ -12,7 +12,7 @@ fn ops() {
     for v in vectors("ops.json") {
         let name = v["name"].as_str().unwrap();
         let (i, x) = (&v["input"], &v["expected"]);
-        if name.starts_with("core/1's ") {
+        if name.starts_with("core/1's ") && name != "core/1's write params" {
             let o = CoreOp::ALL
                 .into_iter()
                 .find(|o| o.name() == i["op"].as_str().unwrap())
@@ -97,6 +97,32 @@ fn ops() {
             let (a, b) = (bound(&i[0]), bound(&i[1]));
             assert_eq!(a.within(&b), x.as_bool().unwrap(), "{name}");
             within += 1;
+        } else if name.starts_with("a plugin's op: ") {
+            let (plugin, op) = (i["plugin"].as_str().unwrap(), i["op"].as_str().unwrap());
+            assert_eq!(
+                hex(&encode(&aven_core::stored_op(plugin, op))),
+                x["cbor"].as_str().unwrap(),
+                "{name}"
+            );
+            assert_eq!(
+                aven_core::op_id(plugin, op).text(),
+                x["id"].as_str().unwrap(),
+                "{name}"
+            );
+            types += 1;
+        } else if name == "core/1's write params" {
+            assert_eq!(
+                (aven_core::TYPE_PARAM, aven_core::FIELDS_PARAM),
+                (x["type"].as_str().unwrap(), x["fields"].as_str().unwrap())
+            );
+            types += 1;
+        } else if name.starts_with("a built-in type: ") {
+            let t = aven_core::builtin_type(
+                i["namespace"].as_str().unwrap(),
+                i["name"].as_str().unwrap(),
+            );
+            assert_eq!(t.text(), x.as_str().unwrap(), "{name}");
+            types += 1;
         } else if name == "the type of types" {
             assert_eq!(aven_core::name_of(&value(i)), type_of_types().0, "{name}");
             assert_eq!(type_of_types().text(), x.as_str().unwrap(), "{name}: id");
@@ -109,7 +135,7 @@ fn ops() {
             panic!("{name}: no reader for it");
         }
     }
-    assert_eq!((core, calls, types, bounds), (8, 3, 1, 5));
+    assert_eq!((core, calls, types, bounds), (8, 3, 5, 5));
     assert!(allows >= 5 && within >= 4);
 }
 

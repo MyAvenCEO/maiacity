@@ -1,7 +1,7 @@
 //! What markdown-runtime makes of documents, ordinary and hostile. Every answer must pass the applier's check; a
 //! document that can't be drawn within the tree's limits is refused, never built past them.
 
-use aven_core::Value;
+use aven_codec::Value;
 use aven_runtimes_contract::Failure;
 use aven_runtimes_markdown::{MAX_PART, Params, eval, render};
 use aven_runtimes_tree::{Node, TREE_LIMITS, check};
@@ -313,7 +313,7 @@ fn eval_under_the_contract() {
         ])]),
     )]);
     let o = eval(&part("[v](glossary:vault)"), &rules).unwrap();
-    assert!(aven_core::encode(&o).windows(8).any(|w| w == b"#/g/vaul"));
+    assert!(aven_codec::encode(&o).windows(8).any(|w| w == b"#/g/vaul"));
     assert_eq!(
         eval(&Value::Bytes(vec![0xC3, 0x28]), &none),
         Err(Failure::Refused)

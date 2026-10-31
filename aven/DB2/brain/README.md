@@ -18,7 +18,7 @@ every term in [`GLOSSARY.md`](GLOSSARY.md).
 | [`style/slide.style.json`](style/slide.style.json) | The slide as style data: its ground, its type, its labels and dotted paths |
 | [`style/reference/`](style/reference/) | The first references, from the game |
 | [`id/`](id/README.md) | avenID's page: its story, and its slides in `id/slides/` |
-| [`render/`](render/) | Slide markup to a checked node tree, contrast, and their tests |
+| [`render/`](render/) | Contrast, as Face.lean computes it, and its test |
 | [`art/`](art/) | The objects drawn in code, their images by hash, and the slide layouts |
 
 The first references, from the game (the look has since moved to the brand's UI, [`STYLE.md`](STYLE.md)):
@@ -45,19 +45,18 @@ One concept, in files under `<package>/slides/`, named by the slide's id:
 - **`<id>.md`, its text.** Markdown, shown on the page under the slide. `[vault](glossary:vault)` links a term to the
   glossary.
 
-A slide is listed in `packages.json` under its package, in its place in the story. `render/tree.test.js` checks every
-slide against the allowlist and that every element has a class (`bun test brain/render`).
+A slide is listed in `packages.json` under its package, in its place in the story. `art/slides.mjs` builds each
+slide's tree itself (`art/face.mjs`), so nothing parses its `.html`. `art/slides.test.js` reads every part: one
+figure, every element a named layer, its rules of Style and none under 2.6cqw, its images drawings by hash, its
+`.html` a preview of its tree (`bun test brain`). Whether the face-runtime takes it is the host test `slides`.
 
 ## How avenOS draws it
 
 The content is first-party, from the repo, bundled at build time (`os/web/brain`), and none of it is parsed as HTML
 on the page:
 
-- **Markdown** goes through the frozen markdown-runtime, in the same worker: GitHub's Markdown, raw HTML as text, its
-  tree checked against the allowlist. Each document resolves its links against its own path in the repository, and
-  the brain's rules turn them into links: a term (`glossary:vault`) to the glossary, a package's page to its page, any
-  other file of the repository to GitHub; a link no rule makes one the allowlist takes keeps only its text. The
-  glossary's headings carry `g-`. `Node.svelte` draws the tree.
+- **Markdown** goes through the frozen markdown-runtime, in the same worker, with the brain's link rules
+  (`os/web/brain/brain.js`), and `Node.svelte` draws its tree.
 - **A slide is a face.** Its part, `<id>.part.json`, goes through the frozen face-runtime, loaded by its hash in
   avenOS's runtimes worker, a worker of its own (`aven/runtimes`, README, "The browser host"). face-runtime checks the
   tree against the allowlist, every rule's range, the text's size and contrast, and that it can be read aloud, and answers the tree and

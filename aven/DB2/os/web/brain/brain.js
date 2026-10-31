@@ -6,7 +6,7 @@
 import list from '../../../brain/packages.json';
 import '../../../brain/style/tokens.css';
 import images from '../../../brain/art/images.json';
-import { draw } from '../runtimes/draw.js';
+import { checkTree, draw } from '../runtimes/draw.js';
 import { fromJson, runtime } from '../runtimes/runtimes.js';
 
 const files = import.meta.glob('../../../brain/**/*.md', { query: '?raw', import: 'default', eager: true });
@@ -36,7 +36,12 @@ const trees = new Map();
 function markdown(path, idPrefix = '') {
 	if (!trees.has(path)) {
 		const input = { links: rules, base: `${home}${path}`, idPrefix };
-		const tree = runtime('markdown-runtime', { bytes: hex(file(path) ?? '') }, input).then((root) => root[2]);
+		// the runtime's tree, checked again by the drawer's own check before the page draws it, as a face's is
+		const tree = runtime('markdown-runtime', { bytes: hex(file(path) ?? '') }, input).then((root) => {
+			const bad = root[2].find((node) => !checkTree(node));
+			if (bad) throw new Error(`${path}: a node outside the allowlist: ${JSON.stringify(bad).slice(0, 120)}`);
+			return root[2];
+		});
 		// a refusal isn't kept: the next ask runs it again
 		tree.catch(() => trees.delete(path));
 		trees.set(path, tree);

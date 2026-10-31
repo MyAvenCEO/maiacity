@@ -1,7 +1,7 @@
 //! The contract against Lean's vectors (`spec/vectors/contract.json`): every failure and an answer as the Value the
 //! host hands on, and render keys with their names under BLAKE3.
 
-use aven_core::{Hash, decode, encode};
+use aven_codec::{Hash, decode, encode};
 use aven_runtimes_contract::{Failure, RenderKey, result};
 use serde_json::Value as Json;
 

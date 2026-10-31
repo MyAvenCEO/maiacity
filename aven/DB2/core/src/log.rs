@@ -13,13 +13,11 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use crate::cbor::{Value, decode, encode};
-use crate::limits::{
-    MAX_BRANCH_BYTES, MAX_DEPS, MAX_ENVELOPE_BYTES, MAX_SIG_BYTES, MAX_SIGNER_BYTES,
-};
-use crate::names::{DocId, Hash, blake3};
+use crate::limits::{MAX_BRANCH_BYTES, MAX_DEPS, MAX_ENVELOPE_BYTES};
 use crate::past::{self, Parents};
-use crate::signed::{Verify, signing_bytes};
+use crate::signed::{Sig, Verify, add_sig, signing_bytes, sigs_of, sigs_value, sigs_within};
+use aven_codec::{DocId, Hash, blake3};
+use aven_codec::{Value, decode, encode};
 
 /// What an envelope's writer signs it under (`envelopeLabel`).
 pub const ENVELOPE_LABEL: &str = "avenDB envelope 1";
@@ -34,8 +32,9 @@ pub struct Envelope {
     pub prev: Option<Hash>,
     pub deps: Vec<Hash>,
     pub body: Value,
-    pub signer: Vec<u8>,
-    pub sig: Vec<u8>,
+    /// The signatures beside its name, a set in its one form (sorted by signer, one each): the writer's, which places
+    /// it in its log, and approvals.
+    pub sigs: Vec<Sig>,
 }
 
 /// One log: one Doc, one branch, one writer id (`SameLog`).
@@ -62,7 +61,7 @@ impl Envelope {
         Value::Array(self.deps.iter().map(Hash::value).collect())
     }
 
-    /// What the writer signs: everything but the signature, keys in the codec's order (`Envelope.unsigned`).
+    /// What its signers sign: everything but the signatures, keys in the codec's order (`Envelope.unsigned`).
     pub fn unsigned(&self) -> Value {
         Value::Map(vec![
             ("doc".into(), self.doc.0.value()),
@@ -71,39 +70,55 @@ impl Envelope {
             ("deps".into(), self.deps_value()),
             ("prev".into(), opt_hash(&self.prev)),
             ("branch".into(), Value::Text(self.branch.clone())),
-            ("signer".into(), Value::Bytes(self.signer.clone())),
             ("writer".into(), Value::Uint(self.writer)),
         ])
     }
 
-    /// The whole envelope, signature included, as it travels (`Envelope.value`).
+    /// The whole envelope, its signatures beside it, as it travels (`Envelope.value`).
     pub fn value(&self) -> Value {
         Value::Map(vec![
             ("doc".into(), self.doc.0.value()),
             ("seq".into(), Value::Uint(self.seq)),
-            ("sig".into(), Value::Bytes(self.sig.clone())),
             ("body".into(), self.body.clone()),
             ("deps".into(), self.deps_value()),
             ("prev".into(), opt_hash(&self.prev)),
+            ("sigs".into(), sigs_value(&self.sigs)),
             ("branch".into(), Value::Text(self.branch.clone())),
-            ("signer".into(), Value::Bytes(self.signer.clone())),
             ("writer".into(), Value::Uint(self.writer)),
         ])
     }
 
-    /// What its writer signs: `[ENVELOPE_LABEL, unsigned]` encoded (`Envelope.signing`).
+    /// What its signers sign: `[ENVELOPE_LABEL, unsigned]` encoded (`Envelope.signing`).
     pub fn signing(&self) -> Vec<u8> {
         signing_bytes(ENVELOPE_LABEL, &self.unsigned())
     }
 
-    /// Its name: the hash of exactly what its writer signs, so signing it again never makes a second name (A30).
+    /// Its name: the hash of exactly what its signers sign, so signing it again, by anyone, never makes a second name
+    /// (A30).
     pub fn name(&self) -> Hash {
         blake3(&self.signing())
     }
 
-    /// Whether the signature is the signer's over [`Envelope::signing`] (`Envelope.valid`).
-    pub fn valid(&self, verify: &impl Verify) -> bool {
-        verify.verify(&self.signer, &self.signing(), &self.sig)
+    /// Placed in its log (`Envelope.placed`): a key that `writes` this envelope's log signed it. `writes(key, e)` is a
+    /// parameter, as `verify` is: the docs layer derives it from the writer id, and caps checks the key against the
+    /// device cap. An envelope that isn't placed is nothing: a reader refuses it, so it is never held, never counts and
+    /// is never half of a split.
+    pub fn placed(&self, verify: &impl Verify, writes: impl Fn(&[u8], &Envelope) -> bool) -> bool {
+        let msg = self.signing();
+        self.sigs
+            .iter()
+            .any(|x| writes(&x.signer, self) && x.valid(verify, &msg))
+    }
+
+    /// The signatures beside it that verify, the writer's among them (`Envelope.approvals`).
+    pub fn approvals(&self, verify: &impl Verify) -> Vec<&Sig> {
+        let msg = self.signing();
+        self.sigs.iter().filter(|x| x.valid(verify, &msg)).collect()
+    }
+
+    /// Adds a signature beside it (`addSig`): never renames it, never a split.
+    pub fn add_sig(&mut self, x: Sig) {
+        add_sig(&mut self.sigs, x);
     }
 
     pub fn log(&self) -> LogId {
@@ -114,35 +129,32 @@ impl Envelope {
         }
     }
 
-    /// Read back from [`Envelope::value`]: exactly its nine keys in the codec's order, each in its form and within its
-    /// limit (rule 10).
+    /// Read back from [`Envelope::value`]: exactly its eight keys in the codec's order, each in its form and within
+    /// its limit, its signatures a set in its one form (`Envelope.ofValue?`, `Envelope.withinLimits`, rule 10).
     pub fn of_value(v: Value) -> Option<Envelope> {
-        const KEYS: [&str; 9] = [
-            "doc", "seq", "sig", "body", "deps", "prev", "branch", "signer", "writer",
+        const KEYS: [&str; 8] = [
+            "doc", "seq", "body", "deps", "prev", "sigs", "branch", "writer",
         ];
         let Value::Map(kvs) = v else { return None };
         if kvs.len() != KEYS.len() || kvs.iter().zip(KEYS).any(|((k, _), want)| k != want) {
             return None;
         }
-        let [doc, seq, sig, body, deps, prev, branch, signer, writer]: [Value; 9] = kvs
+        let [doc, seq, body, deps, prev, sigs, branch, writer]: [Value; 8] = kvs
             .into_iter()
             .map(|(_, v)| v)
             .collect::<Vec<_>>()
             .try_into()
             .ok()?;
-        let (Value::Uint(seq), Value::Bytes(sig), Value::Array(deps), Value::Text(branch)) =
-            (seq, sig, deps, branch)
+        let (Value::Uint(seq), Value::Array(deps), Value::Text(branch), Value::Uint(writer)) =
+            (seq, deps, branch, writer)
         else {
             return None;
         };
-        let (Value::Bytes(signer), Value::Uint(writer)) = (signer, writer) else {
+        if deps.len() > MAX_DEPS || branch.len() > MAX_BRANCH_BYTES {
             return None;
-        };
-        if deps.len() > MAX_DEPS
-            || branch.len() > MAX_BRANCH_BYTES
-            || signer.len() > MAX_SIGNER_BYTES
-            || sig.len() > MAX_SIG_BYTES
-        {
+        }
+        let sigs = sigs_of(sigs)?;
+        if !sigs_within(&sigs) {
             return None;
         }
         let prev = match prev {
@@ -157,8 +169,7 @@ impl Envelope {
             prev,
             deps: deps.into_iter().map(hash_of).collect::<Option<_>>()?,
             body,
-            signer,
-            sig,
+            sigs,
         })
     }
 
@@ -198,6 +209,8 @@ pub struct Held<'a> {
     names: Vec<Hash>,
     /// Each place, `(log, seq)`, and the names held there: more than one is a split.
     places: BTreeMap<(LogId, u64), BTreeSet<Hash>>,
+    /// Every held name.
+    by_name: BTreeSet<Hash>,
 }
 
 impl<'a> Held<'a> {
@@ -207,10 +220,12 @@ impl<'a> Held<'a> {
         for (e, n) in envelopes.iter().zip(&names) {
             places.entry((e.log(), e.seq)).or_default().insert(*n);
         }
+        let by_name = names.iter().copied().collect();
         Held {
             envelopes,
             names,
             places,
+            by_name,
         }
     }
 
@@ -245,9 +260,29 @@ impl<'a> Held<'a> {
         self.split_with(e, &e.name()) || self.reached(e).any(|(x, n)| self.split_with(x, &n))
     }
 
-    /// It counts: everything it reaches passes `ok` (fit and authorized) and none of it is half of a split (`Counts`).
-    pub fn counts(&self, e: &Envelope, ok: impl Fn(&Envelope) -> bool) -> bool {
-        ok(e)
+    /// Every parent `x` names is held (`parentsHeld`).
+    fn parents_held(&self, x: &Envelope) -> bool {
+        x.parents().iter().all(|h| self.by_name.contains(h))
+    }
+
+    /// Its whole past is held (`Closed`, rule 11): it and everything it reaches name only held envelopes as their
+    /// prev and deps. Built on a parent the reader lacks, it waits.
+    pub fn closed(&self, e: &Envelope) -> bool {
+        self.parents_held(e) && self.reached(e).all(|(x, _)| self.parents_held(x))
+    }
+
+    /// It counts (`Counts`, the one counting rule, A45): its whole past is held, everything it reaches is `fit` and
+    /// `authorized`, and none of it is half of a split. The docs layer supplies `fit`, avenID `authorized`. Not
+    /// monotone in what is held, by design: a split learned later discounts (A4).
+    pub fn counts(
+        &self,
+        e: &Envelope,
+        fit: impl Fn(&Envelope) -> bool,
+        authorized: impl Fn(&Envelope) -> bool,
+    ) -> bool {
+        let ok = |x: &Envelope| fit(x) && authorized(x);
+        self.closed(e)
+            && ok(e)
             && !self.split_with(e, &e.name())
             && self
                 .reached(e)
@@ -332,7 +367,7 @@ impl Log {
         self.chain.len() as u64 + 1
     }
 
-    /// Adds the next envelope. One it already holds is no change; another at a place it holds is a split.
+    /// Adds the next envelope. One it already holds adds only its signatures; another at a place it holds is a split.
     pub fn push(&mut self, e: Envelope) -> Result<(), Refused> {
         if e.log() != self.id {
             return Err(Refused::OtherLog);
@@ -340,13 +375,16 @@ impl Log {
         if let Some(held) = e
             .seq
             .checked_sub(1)
-            .and_then(|i| self.chain.get(i as usize))
+            .and_then(|i| self.chain.get_mut(i as usize))
         {
-            return if held.name() == e.name() {
-                Ok(())
-            } else {
-                Err(Refused::Split)
-            };
+            if held.name() != e.name() {
+                return Err(Refused::Split);
+            }
+            // the same envelope again: its signatures join the set, which only grows (`addSig`)
+            for x in e.sigs {
+                held.add_sig(x);
+            }
+            return Ok(());
         }
         if e.seq != self.next_seq() {
             return Err(Refused::NotNext);
