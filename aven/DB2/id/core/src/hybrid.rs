@@ -164,8 +164,9 @@ pub fn hybrid_verify(key: &[u8], msg: &[u8], sig: &[u8]) -> bool {
     }
 }
 
-/// The hybrid scheme as aven-core's [`Verify`](aven_core::Verify), for any `Signed` thing whose signer and signature
-/// are hybrid: `signed.valid(&Hybrid)` holds only when both halves verify its signing bytes (`Signed.hybrid_valid`).
+/// The hybrid scheme as aven-core's [`Verify`](aven_core::Verify), for any signed thing whose signatures are hybrid:
+/// `signed.valid(&Hybrid)` holds only when, for each signature beside it, both halves verify its signing bytes
+/// (`Signed.hybrid_valid`).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Hybrid;
 
@@ -182,8 +183,10 @@ impl HybridKey {
         aven_core::Signed {
             label: label.into(),
             body,
-            signer: self.public().to_bytes(),
-            sig: self.sign(&msg).to_bytes(),
+            sigs: vec![aven_core::Sig {
+                signer: self.public().to_bytes(),
+                sig: self.sign(&msg).to_bytes(),
+            }],
         }
     }
 }

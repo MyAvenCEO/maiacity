@@ -30,12 +30,13 @@ impl Device {
         self.hybrid.public()
     }
 
-    /// Signs a Core envelope as this device: its signer becomes this device's key, its signature is over exactly what
-    /// it signs. A [`crate::Doc`]'s commit signs this way; it is public so a test or a tool can build an envelope by
+    /// Signs a Core envelope as this device: this device's signature, over exactly what it signs, joins those beside
+    /// it (Core's `addSig`: its name never changes), in place of one this device made before. A [`crate::Doc`]'s commit signs this way; it is public so a test or a tool can build an envelope by
     /// hand, which every reader still checks in full.
     pub fn sign_envelope(&self, e: &mut aven_core::Envelope) {
-        e.signer = self.public().to_vec();
-        e.sig = self.sign(&e.signing()).to_vec();
+        let (signer, sig) = (self.public().to_vec(), self.sign(&e.signing()).to_vec());
+        e.sigs.retain(|x| x.signer != signer);
+        e.add_sig(aven_core::Sig { signer, sig });
     }
 
     pub(crate) fn sign(&self, msg: &[u8]) -> [u8; 64] {

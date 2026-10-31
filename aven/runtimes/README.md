@@ -135,7 +135,7 @@ A runtime is code that runs on every member's device, so it arrives only the way
 - **frozen** by a reproducible build: the box builds the module, and the check fails when its hash differs from the
   manifest's. The manifest is append-only, and the check refuses an edit to a frozen entry. The bytes are kept beside
   it, `frozen/<hex>.wasm`: a frozen version stays loadable by its hash after its source has moved on (a change to
-  aven-core's codec moves every module's build). The check holds each runtime's newest build to its newest kept bytes,
+  aven-codec moves every module's build). The check holds each runtime's newest build to its newest kept bytes,
   every kept file to its name, and keeps nothing the manifest doesn't name. Runtimes live with their owners (ARCHITECTURE A45):
   a module is a blob and its manifest a typed Doc, owned by the vault that publishes it (Aven's for the built-ins),
   kept where that vault's keep caps say (A44) and fetched by hash. `manifest.json`, the bootstrap manifest, and
