@@ -1,0 +1,745 @@
+{
+ "title": "theAUDIT",
+ "date": "2026-10-31",
+ "note": "Every chapter's concepts held against the decided design (D1–D68) and against what others run in the wild: Ink & Switch, p2panda, Anytype, NextGraph, DXOS, Keybase, Matrix, MLS, Peergos, Willow, Holepunch, Secure Scuttlebutt, Urbit, Tlon, Holochain, Jazz and iroh. Proposals are not decisions yet; each needs a yes.",
+ "chapters": [
+  {
+   "n": 1,
+   "id": "identity",
+   "title": "Identity",
+   "rows": [
+    {
+     "concept": "Agents: who it is, and what it may do",
+     "refs": [
+      "D58",
+      "D3",
+      "D44"
+     ],
+     "severity": "high",
+     "strengths": [
+      "Every device is its own identity with its own scope; most systems give all devices one key (Classic Jazz shares one agent secret, Holochain has one key per app, Keet attests devices without scopes)."
+     ],
+     "weaknesses": [
+      "Restoring a device from a backup reuses its running number and CRDT op IDs, so an honest restore looks like a lying signer (D61, D63); Holochain lists the same case as unsolved.",
+      "Records don't carry which key revision of the agent signed them.",
+      "Adding an agent needs another agent of yours online and a manual exchange."
+     ],
+     "elsewhere": [
+      "Urbit: every point carries a key revision (life) and a continuity number (rift); traffic under an old revision fails.",
+      "Holepunch blind-pairing and Autopass: a one-time invite key with an expiry, answered by any online member.",
+      "Keet: a root key re-bootstraps with a new epoch; verifiers reject proofs from older epochs."
+     ],
+     "proposal": [
+      "Every agent record header names its signer revision and a continuity epoch; a restored or reinstalled device starts a new epoch, so it never reuses a running number or op ID.",
+      "Invite records for pairing: a one-time key, an expiry and the agent policy it will create, written into your history so any of your agents with govern can answer."
+     ]
+    },
+    {
+     "concept": "One top: one governor per coop",
+     "refs": [
+      "D59",
+      "D49",
+      "D51"
+     ],
+     "severity": "medium",
+     "strengths": [
+      "No two equals at the top, so no mutual destruction (Keyhive's Keyline: a single-owner root role has no duel).",
+      "Matches Matrix room version 12, where creators cannot be demoted, and avoids the coin flips of Autopass and Secure Scuttlebutt."
+     ],
+     "weaknesses": [
+      "Every change of roles or governance waits for one person's devices.",
+      "With stolen devices out of scope, a governor's phone in the wrong hands owns the coop."
+     ],
+     "elsewhere": [
+      "NextGraph puts removals behind a threshold signature of a quorum.",
+      "Hypercore manifests name signers and a quorum.",
+      "Gnosis Safe: k of n owners, ordered by a chain."
+     ],
+     "proposal": [
+      "Keep one top object (the governor role); when signature counts arrive (D49), govern becomes k of n inside it, so the rule stays “one top”.",
+      "A signed succession record: the governor names the next governor before leaving."
+     ]
+    }
+   ]
+  },
+  {
+   "n": 2,
+   "id": "data",
+   "title": "Data",
+   "rows": [
+    {
+     "concept": "Data named by the hash of its birth record",
+     "refs": [
+      "D64",
+      "D50"
+     ],
+     "severity": "low",
+     "strengths": [
+      "Self-certifying, with no key to keep or destroy; Matrix v12 names rooms the same way, and a Hypercore's key is the hash of its manifest."
+     ],
+     "weaknesses": [
+      "No way to continue data under a new birth record: a total schema break or a future hand-over has no successor link."
+     ],
+     "elsewhere": [
+      "Hypercore's prologue lets a log under new signers continue verifiable history.",
+      "Holochain's CloseChain and OpenChain link an old chain to its successor."
+     ],
+     "proposal": [
+      "A successor pair: the new birth record names its predecessor (data ID and frontier hash), and the old data gets a signed forward link."
+     ]
+    },
+    {
+     "concept": "Values named by the hash of their plaintext",
+     "refs": [
+      "D21"
+     ],
+     "severity": "medium",
+     "strengths": [
+      "Global deduplication; streams in verified ranges."
+     ],
+     "weaknesses": [
+      "Carriers hold ciphertext, so they cannot check a plaintext hash.",
+      "Anyone who sees the name can confirm that you hold a file they know."
+     ],
+     "elsewhere": [
+      "Hypercore builds its Merkle tree over ciphertext; iroh-blobs verifies BLAKE3 of the stored bytes."
+     ],
+     "proposal": [
+      "Store and name sealed Values by the hash of their ciphertext; keep the plaintext hash only inside the sealed metadata Doc.",
+      "Encrypt in segments aligned to iroh-blobs' 16 KiB groups, so ranges stay decryptable."
+     ]
+    }
+   ]
+  },
+  {
+   "n": 3,
+   "id": "merge",
+   "title": "Merging",
+   "rows": [
+    {
+     "concept": "History keeps everything; the view is computed",
+     "refs": [
+      "D62",
+      "D63"
+     ],
+     "severity": "medium",
+     "strengths": [
+      "The same shape as Autobase: a deterministic view over a causal graph, rebuilt when it reorders, but without a quorum of indexers."
+     ],
+     "weaknesses": [
+      "No finality: a late ending can unwind arbitrarily old changes that were built on the ended holder's.",
+      "Editing on a checked-out version renews Loro's peer ID on every checkout, so D63's derived peer ID must be set again each time.",
+      "Two peers creating a child container at the same key can hide one side."
+     ],
+     "elsewhere": [
+      "Autobase: order becomes final once a majority of indexers has signed it (signedLength).",
+      "Loro's mergeable containers converge on one ID for containers created at a fixed key.",
+      "Urbit Clay's join and mash: re-apply cleanly where possible, annotate otherwise."
+     ],
+     "proposal": [
+      "Owner checkpoints: the owner's agents sign “valid up to frontier F”; nothing before a checkpoint is evaluated again. The owner is the only one who writes endings, so its checkpoint is final.",
+      "Use mergeable containers for objects at fixed keys; build the conflict view as a clean re-apply, annotated where that fails."
+     ]
+    }
+   ]
+  },
+  {
+   "n": 4,
+   "id": "schema",
+   "title": "Schemas",
+   "rows": [
+    {
+     "concept": "Frozen versions, lenses, breaking changes through a branch",
+     "refs": [
+      "D66",
+      "D67",
+      "D68"
+     ],
+     "severity": "low",
+     "strengths": [
+      "Goes further than the others: Jazz 2's lenses rely on one central sequencer and an admin-only catalogue; Cambria's op-by-op translation on Automerge was abandoned; Hyperschema allows only additive changes; Holochain starts a new network for every rule change; Urbit marks convert per ship."
+     ],
+     "weaknesses": [
+      "Peers must carry every version still in use, and there is no rule yet for retiring one.",
+      "Peers don't negotiate which versions they speak before syncing.",
+      "Lens correctness for conversions rests on a registry of two-way functions."
+     ],
+     "elsewhere": [
+      "Jazz 2: translate-then-apply must equal apply-then-translate (INV-LENS-14).",
+      "Hyperschema: an additive-only rule, checked mechanically.",
+      "Urbit: a published mark's type never changes (discipline); peers negotiate versions."
+     ],
+     "proposal": [
+      "Property tests for every lens in the shape of INV-LENS-14.",
+      "An additive-only check for versions that need no rewrite.",
+      "Version negotiation at the start of sync; retiring a version is an owner ending."
+     ]
+    }
+   ]
+  },
+  {
+   "n": 5,
+   "id": "ops",
+   "title": "Operations",
+   "rows": [
+    {
+     "concept": "Local, typed engine operations; limits across changes",
+     "refs": [
+      "D53",
+      "D56",
+      "D63"
+     ],
+     "severity": "medium",
+     "strengths": [
+      "Peers never answer each other's queries (D24): no remote answerer to trust."
+     ],
+     "weaknesses": [
+      "A limit (say 20 items) is settled when the view is built; a late change that sorts earlier can flip changes that were already accepted.",
+      "iroh-blobs' Observe (which ranges do you hold?) is a query, against D24."
+     ],
+     "elsewhere": [
+      "Holochain rate-limits along the author's own chain, checkable on arrival.",
+      "Jazz caches query results per schema version."
+     ],
+     "proposal": [
+      "Count limits along each author's own running number, so they are checked on arrival and never flip.",
+      "Disable Observe except for the owner's agents; cache query results per schema version."
+     ]
+    }
+   ]
+  },
+  {
+   "n": 6,
+   "id": "policies",
+   "title": "Policies",
+   "rows": [
+    {
+     "concept": "Owner-only policies and roles",
+     "refs": [
+      "D54",
+      "D56",
+      "D30"
+     ],
+     "severity": "high",
+     "strengths": [
+      "No delegation, so no cascades and no backdating by a removed delegate, the problems Keyhive and p2panda solve with heavy machinery."
+     ],
+     "weaknesses": [
+      "Role records as full lists: intersecting concurrent versions drops an unrelated add made at the same time.",
+      "A revoke concurrent with a renewal is unspecified.",
+      "Every join needs one of the owner's agents online, like a Tlon host.",
+      "Create, update and delete without read are impossible in practice: without the data key a writer can't encrypt or build CRDT ops."
+     ],
+     "elsewhere": [
+      "p2panda: membership as add and remove operations; a removal beats a concurrent re-add of the same member only.",
+      "Tlon: invite tokens with an expiry and limited claims.",
+      "Classic Jazz: a writeOnly role with per-writer write keys sealed to readers.",
+      "Meadowcap: a capability names a receiver key whose possession is proven per session."
+     ],
+     "proposal": [
+      "Role records become add and remove deltas; a removal beats a concurrent add of the same identity, and nothing else.",
+      "A revoke beats a concurrent renewal of the same policy.",
+      "Invite records: the owner signs “whoever presents this one-time key may join role R until T”, so joining needs no owner online.",
+      "State the rule: content writes require read; write-only comes later with write keys."
+     ]
+    }
+   ]
+  },
+  {
+   "n": 7,
+   "id": "check",
+   "title": "Checking",
+   "rows": [
+    {
+     "concept": "Backdating across histories",
+     "refs": [
+      "D61",
+      "D60",
+      "D44"
+     ],
+     "severity": "critical",
+     "strengths": [
+      "Within one piece of data, “never saw it” is now defined and checked (D61)."
+     ],
+     "weaknesses": [
+      "An ending in another history can't be listed by the data's records: an agent revoked on its human, or Mia removed from the home while acting on street data, can still slip in changes that claim to predate it.",
+      "Only a peer that sees both of a lying signer's records catches it; records of different data have different readers."
+     ],
+     "elsewhere": [
+      "Keybase orders all chains through the server's Merkle root; Anytype through a consensus node; NextGraph through a quorum; Peergos through a pointer server. No system reviewed stops cross-history backdating without such a point.",
+      "KERI and Keybase: each signer's records form a hash chain (running number plus previous hash)."
+     ],
+     "proposal": [
+      "Every signer's records form a hash chain; the chain headers (hash, number, previous) travel without content.",
+      "Every ending or removal names the ended signer's chain head; records that are not ancestors of that head are dropped on all data. The owner, the one top, is the linearisation point for its own authority."
+     ]
+    },
+    {
+     "concept": "Lying signers and their proof",
+     "refs": [
+      "D61",
+      "D63"
+     ],
+     "severity": "high",
+     "strengths": [
+      "Two records with the same signer and number are caught."
+     ],
+     "weaknesses": [
+      "As written, both records become invalid: a signer could use that to void a record it regrets.",
+      "An honest restore looks the same (chapter 1)."
+     ],
+     "elsewhere": [
+      "Hypercore: two signed roots for one length freeze the log and are a proof anyone can pass on.",
+      "Holochain: signed warrants, re-checked and gossiped, block the author.",
+      "p2panda's resolver tests cover mutual and nested removals."
+     ],
+     "proposal": [
+      "A lie never voids an ending; it freezes the signer from the earliest lied-about number.",
+      "Warrants: a signed record carrying both conflicting records, sent on the signer's identity topic; carriers check it and refuse the signer's chunks.",
+      "Adopt p2panda's resolver cases as test fixtures."
+     ]
+    }
+   ]
+  },
+  {
+   "n": 8,
+   "id": "keys",
+   "title": "Keys",
+   "rows": [
+    {
+     "concept": "Keys follow agents; any current reader may turn a key",
+     "refs": [
+      "D57",
+      "D19",
+      "D20"
+     ],
+     "severity": "high",
+     "strengths": [
+      "Read follows the same two layers as write, and removal turns keys; Urbit, Holochain and Autopass don't turn group keys at all."
+     ],
+     "weaknesses": [
+      "Concurrent key turns fork like Secure Scuttlebutt's epochs; picking “the” current key needs a rule that can't be gamed.",
+      "Interim leak: a turner that hasn't seen a removal seals its key to the removed reader, and writers may use that key.",
+      "Nobody checks that every current reader actually got an envelope.",
+      "Chunks don't name their key generation (devices must try keys); the encryption doesn't bind data ID, generation and signer."
+     ],
+     "elsewhere": [
+      "p2panda's DCGKA picks the latest secret by timestamp, and Secure Scuttlebutt by smallest key, which can be ground.",
+      "BeeKEM keeps conflict keys; Distributed MLS gives each member its own sending group, so commits never collide.",
+      "Keybase audits that key boxes went to exactly the right members.",
+      "Autobase puts the key ID in each block header; Urbit binds key revisions into the encryption."
+     ],
+     "proposal": [
+      "A writer encrypts only under a key whose recipients are all among its current readers; otherwise it turns the key first.",
+      "Among concurrent valid keys, the owner's agent's turn wins, otherwise the lowest (signer, number); never time or the smallest key.",
+      "An envelope-completeness check on every key turn.",
+      "Chunk headers name the key generation; the AEAD binds data ID, generation, signer and chunk hash. Later: per-agent sender keys."
+     ]
+    }
+   ]
+  },
+  {
+   "n": 9,
+   "id": "end",
+   "title": "Endings",
+   "rows": [
+    {
+     "concept": "Owner-only endings; time checked on every change",
+     "refs": [
+      "D60",
+      "D61",
+      "D62"
+     ],
+     "severity": "high",
+     "strengths": [
+      "Readers can no longer end anyone's policy; drops are limited to the ended holder. Stronger than Autobase, where position decides, and Secure Scuttlebutt, which leaves a posting window."
+     ],
+     "weaknesses": [
+      "A holder whose policy expired can sign a time just before expiry and send it later; it counts until the owner's lapse arrives, unboundedly while the owner is away. Willow names the same caveat.",
+      "Owner offline in the renewal week: every policy expires and the household is locked out.",
+      "No iroh layer revokes anything: connections, gossip neighbours and transfers outlive an ending."
+     ],
+     "elsewhere": [
+      "Holochain: an author's times never go backwards along its chain.",
+      "Willow: peers reject entries further in the future than the longest capability lifetime.",
+      "Matrix: soft fail, not shown or built on, but still part of resolution.",
+      "Tlon: the ending is delivered before the session is closed."
+     ],
+     "proposal": [
+      "A change's signed time must be at least every time in its after, and never fall per signer; a backdater then has to look concurrent with everything after the expiry, and the lapse cuts it.",
+      "An always-on owner agent that may only renew and lapse.",
+      "Quarantine far-future records instead of rejecting them for good.",
+      "An ending closes the ended agent's connections, drops it as a neighbour and aborts its transfers, after delivering the ending."
+     ]
+    }
+   ]
+  },
+  {
+   "n": 10,
+   "id": "time",
+   "title": "Time",
+   "rows": [
+    {
+     "concept": "Hot, cold, erased, retained",
+     "refs": [
+      "D39",
+      "D40",
+      "D41",
+      "D42",
+      "D43"
+     ],
+     "severity": "medium",
+     "strengths": [
+      "Crypto-shredding goes further than Holochain (never deletes) and Urbit Clay (local tombstones only)."
+     ],
+     "weaknesses": [
+      "It rests on honest devices, like everyone else's.",
+      "Back-links stay for 30 days whether or not readers have moved on.",
+      "QUIC 0-RTT data can be replayed."
+     ],
+     "elsewhere": [
+      "Decentralised MLS deletes an epoch once every member has committed past it.",
+      "Clay's tomb and seek: garbage-collect unreferenced data, fetch it again when needed.",
+      "Holochain: validation receipts from the peers that store data."
+     ],
+     "proposal": [
+      "Delete back-links once every reader has acknowledged the newer generation.",
+      "Garbage-collect Values the live state no longer references, within retain rules.",
+      "Refuse wants and changes on 0-RTT streams.",
+      "A keep-carrier receipt for each stored chunk before any cut."
+     ]
+    }
+   ]
+  },
+  {
+   "n": 11,
+   "id": "net",
+   "title": "Network",
+   "rows": [
+    {
+     "concept": "Address = signer key; gossip topic = data ID",
+     "refs": [
+      "D28",
+      "D31",
+      "D32",
+      "D65"
+     ],
+     "severity": "high",
+     "strengths": [
+      "iroh 1.4 is stable: mutual authentication with raw public keys, hole punching, relays with access control."
+     ],
+     "weaknesses": [
+      "iroh needs the raw Ed25519 secret in memory, so the signer cannot live in an HSM or a Secure Enclave (P-256 only), and Endpoint::secret_key() hands it to any code with the endpoint.",
+      "Relays, pkarr and mDNS link every conversation to a stable agent ID; the relay also sees the ALPN.",
+      "iroh-gossip can't restrict who joins a topic, spreads members' addresses and carries unsigned messages; with topic = data ID anyone who knows the ID can watch and inject news."
+     ],
+     "elsewhere": [
+      "Autopass runs its swarm on a separate key pair; Subduction signs its own challenge because its key “may differ from the iroh node identity”.",
+      "NextGraph turns topic IDs when it refreshes keys.",
+      "iroh-relay's HTTP access callback; iroh's export_keying_material for channel binding."
+     ],
+     "proposal": [
+      "A separate network key per agent, certified in its history by its signer (“endpoint E acts for agent A until T”) and rotatable on its own.",
+      "Our own relay, its access callback running theOS checks; address lookup filled from directory records; mDNS advertising off or renamed.",
+      "Replace gossip topics with direct subscriptions after a want check; any remaining topic is a keyed hash of data ID and key generation."
+     ]
+    }
+   ]
+  },
+  {
+   "n": 12,
+   "id": "sync",
+   "title": "Sync",
+   "rows": [
+    {
+     "concept": "Sealed chunks, layers, fingerprints and summaries",
+     "refs": [
+      "D26",
+      "D33",
+      "D34"
+     ],
+     "severity": "medium",
+     "strengths": [
+      "Cost grows with the difference, not the total; compatible with Subduction."
+     ],
+     "weaknesses": [
+      "Chunk headers don't commit to what they contain: a merged chunk can leave a change out, and carriers can't tell.",
+      "Without policy-first sync, a peer builds on changes it will drop later.",
+      "Subduction is at 0.12 and “not for production”; iroh-docs' reconciliation needs plaintext keys."
+     ],
+     "elsewhere": [
+      "Hypercore: each writer signs a Merkle root over its own log; Autobase syncs by (writer, length) clocks.",
+      "Holochain: peers that store data return signed receipts."
+     ],
+     "proposal": [
+      "Each chunk header carries a signed Merkle root over that signer's chunks for this data, so carriers check gaps and lies without keys.",
+      "Exchange policy, role and ending heads before chunks; forward warrant pairs first.",
+      "iroh-blobs for the bytes behind its request intercept; our own ALPN for fingerprints and summaries."
+     ]
+    }
+   ]
+  },
+  {
+   "n": 13,
+   "id": "carry",
+   "title": "Carriers",
+   "rows": [
+    {
+     "concept": "Carriers see authority, never content",
+     "refs": [
+      "D65",
+      "D27"
+     ],
+     "severity": "medium",
+     "strengths": [
+      "Stronger than blind peers, which serve anyone who knows a key, forever, and than iroh-blobs, whose requests carry no proof."
+     ],
+     "weaknesses": [
+      "Carriers see every role record, and stable pseudonymous IDs link a person across all the data a carrier holds.",
+      "A carrier that hasn't heard an ending keeps serving the removed holder (ciphertext only, after the key turned).",
+      "iroh-blobs requests carry no proof, so wants must go on a separate ALPN and be matched by endpoint ID, once per provider."
+     ],
+     "elsewhere": [
+      "Tlon shows join requests and invites only to admins.",
+      "Holepunch blind-peering: at least two mirrors chosen by distance to the key, from different operators; quotas and push wake-ups.",
+      "iroh-relay binds client auth to the TLS keying material."
+     ],
+     "proposal": [
+      "A want is the signer's signature over export_keying_material(\"theos/want/1\", data ID): fresh, bound to the connection, no extra round trip.",
+      "Per-data pseudonyms in every record a carrier sees.",
+      "Freshness: a carrier serves only while its newest record from the owner is younger than its own policy's lifetime.",
+      "Place each piece of data on at least two carriers from different operators; quotas and priorities as conditions on keep."
+     ]
+    }
+   ]
+  }
+ ],
+ "endings": {
+  "title": "Do endings hold?",
+  "note": "Scenarios against the design as decided, in a purely peer-to-peer system with no server and no total order.",
+  "rows": [
+   {
+    "scenario": "A revoked writer, offline, on the same data",
+    "verdict": "holds",
+    "why": "Its changes never listed the ending as seen, so they are dropped everywhere (D60–D62). Until a peer hears the ending, it shows them and may build on them.",
+    "fix": "Policy-first sync, so peers learn endings before chunks."
+   },
+   {
+    "scenario": "A backdated write in the same history",
+    "verdict": "holds",
+    "why": "A change that leaves the ending out of after counts as concurrent with it, and the ending wins over the ended holder.",
+    "fix": ""
+   },
+   {
+    "scenario": "A backdated write across histories (an agent revoked on its human; a member removed from the home, writing on street data)",
+    "verdict": "breaks",
+    "why": "The data's records can't list an ending that lives in another history, so a change citing the old identity head passes.",
+    "fix": "Signer hash chains; every ending names the ended signer's chain head; non-ancestors drop on all data."
+   },
+   {
+    "scenario": "A signed time just before the expiry, sent later",
+    "verdict": "partly",
+    "why": "Counts until the owner's lapse arrives; unbounded while the owner is away.",
+    "fix": "Times never fall per signer and must be at least every time in after; a renew-and-lapse-only owner agent."
+   },
+   {
+    "scenario": "The owner is offline in the renewal week",
+    "verdict": "breaks",
+    "why": "Policies expire; honest writes no longer count and the household is locked out.",
+    "fix": "An always-on owner agent that may only renew and lapse."
+   },
+   {
+    "scenario": "Removal and re-add at the same moment",
+    "verdict": "holds",
+    "why": "Removal wins (D14). With role records as full lists, an unrelated add at the same moment is lost too.",
+    "fix": "Role records as add and remove deltas; a removal beats a concurrent add of the same identity only."
+   },
+   {
+    "scenario": "Two members below the top remove each other",
+    "verdict": "holds",
+    "why": "Both removals stand; the top repairs, but must come online.",
+    "fix": ""
+   },
+   {
+    "scenario": "A signer that lies (two records, one number)",
+    "verdict": "partly",
+    "why": "Caught only where both records meet; if both become invalid, a signer could void a record it regrets; an honest restore looks the same.",
+    "fix": "Warrants carried by carriers; a lie never voids an ending; a restore starts a new epoch."
+   },
+   {
+    "scenario": "A carrier that hasn't heard an ending",
+    "verdict": "partly",
+    "why": "It keeps serving ciphertext and news to the removed holder; content is safe once the key has turned.",
+    "fix": "A freshness bound carried by renewals; endings close connections."
+   },
+   {
+    "scenario": "Two key turns at the same moment",
+    "verdict": "partly",
+    "why": "Future keys reach only readers both allowed, but writers may meanwhile use a key that was sealed to a removed reader.",
+    "fix": "Encrypt only under keys whose recipients are all current readers; otherwise turn first."
+   },
+   {
+    "scenario": "A revoke at the same moment as a renewal",
+    "verdict": "breaks",
+    "why": "Unspecified: the renewal is a new policy the revoke doesn't name.",
+    "fix": "A revoke beats a concurrent renewal of the same policy; a renewal names what it renews (D60)."
+   },
+   {
+    "scenario": "Nested coops (agent, home, street)",
+    "verdict": "partly",
+    "why": "A proof crosses three histories; the same gap as backdating across histories.",
+    "fix": "As above: chain heads in every ending."
+   }
+  ]
+ },
+ "sources": [
+  {
+   "label": "Keyhive: threat model",
+   "url": "https://github.com/inkandswitch/keyhive/blob/main/design/threat_model.md"
+  },
+  {
+   "label": "Keyhive: Keyline",
+   "url": "https://github.com/inkandswitch/keyhive/blob/main/design/keyline/README.md"
+  },
+  {
+   "label": "Keyhive: convergent capabilities",
+   "url": "https://github.com/inkandswitch/keyhive/blob/main/design/convergent_capabilities.md"
+  },
+  {
+   "label": "Subduction",
+   "url": "https://github.com/inkandswitch/subduction"
+  },
+  {
+   "label": "Cambria",
+   "url": "https://github.com/inkandswitch/cambria-project"
+  },
+  {
+   "label": "local-first-web/auth: CRDX",
+   "url": "https://github.com/local-first-web/auth/blob/main/packages/crdx/README.md"
+  },
+  {
+   "label": "p2panda: group resolver",
+   "url": "https://github.com/p2panda/p2panda/blob/main/p2panda-auth/src/group/resolver.rs"
+  },
+  {
+   "label": "p2panda: encryption",
+   "url": "https://github.com/p2panda/p2panda/blob/main/p2panda-encryption/README.md"
+  },
+  {
+   "label": "Anytype any-sync: ACL",
+   "url": "https://github.com/anyproto/any-sync/blob/main/commonspace/object/acl/list/aclstate.go"
+  },
+  {
+   "label": "NextGraph: types",
+   "url": "https://github.com/nextgraph-org/nextgraph-rs/blob/main/engine/repo/src/types.rs"
+  },
+  {
+   "label": "DXOS HALO: credential graph",
+   "url": "https://github.com/dxos/dxos/blob/main/packages/core/halo/credentials/src/graph/credential-graph.ts"
+  },
+  {
+   "label": "Keybase teams: loader",
+   "url": "https://github.com/keybase/client/blob/master/go/teams/loader2.go"
+  },
+  {
+   "label": "Matrix: room version 12",
+   "url": "https://github.com/matrix-org/matrix-spec/blob/main/content/rooms/v12.md"
+  },
+  {
+   "label": "MLS: RFC 9420",
+   "url": "https://github.com/mlswg/mls-protocol/blob/main/rfc9420.md"
+  },
+  {
+   "label": "Decentralised MLS (draft)",
+   "url": "https://github.com/phnx-im/dmls-spec/blob/main/draft-kohbrok-mls-dmls.md"
+  },
+  {
+   "label": "Distributed MLS (draft)",
+   "url": "https://github.com/germ-mark/distributed-mls-id/blob/main/draft-xue-distributed-mls.md"
+  },
+  {
+   "label": "Peergos",
+   "url": "https://github.com/Peergos/Peergos/blob/master/src/peergos/shared/user/UserContext.java"
+  },
+  {
+   "label": "Willow: Timestamps, really?",
+   "url": "https://github.com/earthstar-project/willowprotocol.org/blob/main/src/pages/more/timestamps_really.tsx"
+  },
+  {
+   "label": "Meadowcap",
+   "url": "https://github.com/earthstar-project/willowprotocol.org/blob/main/src/pages/specs/meadowcap.tsx"
+  },
+  {
+   "label": "Hypercore",
+   "url": "https://github.com/holepunchto/hypercore"
+  },
+  {
+   "label": "Autobase: design",
+   "url": "https://github.com/holepunchto/autobase/blob/main/DESIGN.md"
+  },
+  {
+   "label": "Holepunch blind-pairing",
+   "url": "https://github.com/holepunchto/blind-pairing"
+  },
+  {
+   "label": "Holepunch blind-peer",
+   "url": "https://github.com/holepunchto/blind-peer"
+  },
+  {
+   "label": "Hyperschema",
+   "url": "https://github.com/holepunchto/hyperschema"
+  },
+  {
+   "label": "Keet identity key",
+   "url": "https://github.com/holepunchto/keet-identity-key"
+  },
+  {
+   "label": "Secure Scuttlebutt: group exclusion",
+   "url": "https://github.com/ssbc/ssb-group-exclusion-spec"
+  },
+  {
+   "label": "Urbit: life and rift",
+   "url": "https://github.com/urbit/docs.urbit.org/blob/master/content/urbit-id/life-and-rift.md"
+  },
+  {
+   "label": "Tlon: groups",
+   "url": "https://github.com/tloncorp/tlon-apps/blob/develop/desk/app/groups.hoon"
+  },
+  {
+   "label": "Holochain: validation",
+   "url": "https://github.com/holochain/docs-pages/blob/main/src/pages/concepts/7_validation.md"
+  },
+  {
+   "label": "Holochain: capabilities",
+   "url": "https://github.com/holochain/docs-pages/blob/main/src/pages/concepts/8_calls_capabilities.md"
+  },
+  {
+   "label": "Jazz 2: lenses and migrations",
+   "url": "https://github.com/garden-co/jazz/blob/main/crates/jazz/SPEC/10_lenses_migrations.md"
+  },
+  {
+   "label": "Jazz: what we learned from Classic Jazz",
+   "url": "https://github.com/garden-co/jazz/blob/main/docs/content/blog/what-we-learned-from-classic-jazz.mdx"
+  },
+  {
+   "label": "Loro",
+   "url": "https://github.com/loro-dev/loro"
+  },
+  {
+   "label": "iroh",
+   "url": "https://github.com/n0-computer/iroh"
+  },
+  {
+   "label": "iroh-blobs",
+   "url": "https://github.com/n0-computer/iroh-blobs"
+  },
+  {
+   "label": "iroh-gossip",
+   "url": "https://github.com/n0-computer/iroh-gossip"
+  },
+  {
+   "label": "iroh-docs",
+   "url": "https://github.com/n0-computer/iroh-docs"
+  }
+ ]
+}

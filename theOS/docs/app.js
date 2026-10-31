@@ -68,9 +68,9 @@ function fromHash() {
   return [st, st.kind ? n : Math.max(0, n - 1)];
 }
 async function open(st, i) {
-  const list = st.kind === 'decisions';
+  const list = Boolean(st.kind);
   document.body.classList.toggle('show-decisions', list);
-  if (list) return openDecisions(st, i);
+  if (list) return st.kind === 'audit' ? openAudit(st, i) : openDecisions(st, i);
   if (story !== st) {
     story = st;
     deck = (await (await fetch(st.file)).json()).slides;
@@ -111,6 +111,36 @@ async function openDecisions(st, i) {
   if (location.hash !== h) history.replaceState(null, '', h);
 }
 
+// theAUDIT: each chapter's concepts with their strengths, weaknesses, what others do and a proposed fix, the most
+// severe first; then whether endings hold, scenario by scenario, and the sources read. #audit-<chapter number>.
+let audit = null;
+async function openAudit(st, i) {
+  story = st;
+  document.querySelectorAll('#stories button').forEach((b) => b.classList.toggle('on', b.dataset.story === st.id));
+  if (!audit) audit = await (await fetch(st.file)).json();
+  const ul = (xs) => `<ul>${xs.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`;
+  const sev = (s) => `<span class="sev ${s}">${s}</span>`;
+  const nn = (n) => String(n).padStart(2, '0');
+  const rank = { critical: 0, high: 1, medium: 2, low: 3 };
+  const top = audit.chapters.flatMap((c) => c.rows.map((r) => ({ ...r, c }))).filter((r) => rank[r.severity] < 2)
+    .sort((a, b) => rank[a.severity] - rank[b.severity] || a.c.n - b.c.n);
+  $('#decisions').innerHTML = `<header class="dhead"><h1>${esc(audit.title)}</h1><p>${esc(audit.note)}</p></header>
+    <article class="dcard"><h2>Most severe first</h2><ol class="atop">${top.map((r) =>
+      `<li>${sev(r.severity)}<a href="#audit-${r.c.n}">${nn(r.c.n)} ${esc(r.c.title)}: ${esc(r.concept)}</a></li>`).join('')}</ol></article>
+    <article class="dcard" id="A0"><h2>${esc(audit.endings.title)}</h2><p class="dwhy">${esc(audit.endings.note)}</p>
+      <table class="atable ends"><thead><tr><th>Scenario</th><th>Verdict</th><th>Why</th><th>Fix</th></tr></thead><tbody>${audit.endings.rows.map((r) =>
+        `<tr><td>${esc(r.scenario)}</td><td><span class="verdict ${r.verdict}">${r.verdict}</span></td><td>${esc(r.why)}</td><td>${esc(r.fix || '–')}</td></tr>`).join('')}</tbody></table></article>` +
+    audit.chapters.map((c) => `<article class="dcard" id="A${c.n}"><div class="dtop"><span class="did">${nn(c.n)}</span><a class="achap" href="#${c.id}-1">${esc(c.title)}</a></div>
+      <table class="atable concepts"><thead><tr><th>Concept</th><th>Strengths</th><th>Weaknesses</th><th>Elsewhere</th><th>Proposal</th></tr></thead><tbody>${c.rows.map((r) => `<tr>
+        <td><b>${esc(r.concept)}</b>${sev(r.severity)}<span class="arefs">${r.refs.map((d) => `<a href="#decisions-${d.slice(1)}">${d}</a>`).join('')}</span></td>
+        <td>${ul(r.strengths)}</td><td>${ul(r.weaknesses)}</td><td>${ul(r.elsewhere)}</td><td>${ul(r.proposal)}</td></tr>`).join('')}</tbody></table></article>`).join('') +
+    `<article class="dcard"><h2>Sources read</h2><ul class="dsrc">${audit.sources.map((x) => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.label)}</a></li>`).join('')}</ul></article>`;
+  const target = i > 0 && document.getElementById(`A${i}`);
+  if (target) target.scrollIntoView({ block: 'start' }); else $('#decisions').scrollTo?.(0, 0);
+  const h = `#audit-${i}`;
+  if (location.hash !== h) history.replaceState(null, '', h);
+}
+
 async function start() {
   stories = (await (await fetch('stories.json')).json()).stories;
   const counts = await Promise.all(stories.map(async (x) => (x.kind ? null : (await (await fetch(x.file)).json()).slides.length)));
@@ -125,7 +155,7 @@ async function start() {
   $('#card').addEventListener('click', (e) => { if (!e.target.closest('pre')) go(at + 1); });
   // Arrows always move, wherever focus is; space and Enter leave a focused button to do its own job.
   addEventListener('keydown', (e) => {
-    if (e.metaKey || e.ctrlKey || e.altKey || story?.kind === 'decisions') return;
+    if (e.metaKey || e.ctrlKey || e.altKey || story?.kind) return;
     const onButton = e.target instanceof Element && e.target.closest('button');
     if (e.key === 'ArrowRight' || e.key === 'PageDown' || ((e.key === ' ' || e.key === 'Enter') && !onButton)) { e.preventDefault(); go(at + 1); }
     if ((e.key === 'ArrowLeft' || e.key === 'PageUp') && at > 0) { e.preventDefault(); go(at - 1); }
@@ -133,7 +163,7 @@ async function start() {
   let x0 = null;
   addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });
   addEventListener('touchend', (e) => {
-    if (x0 === null || story?.kind === 'decisions') return;
+    if (x0 === null || story?.kind) return;
     const dx = e.changedTouches[0].clientX - x0;
     if (Math.abs(dx) > 50) { if (dx < 0) go(at + 1); else if (at > 0) go(at - 1); }
     x0 = null;

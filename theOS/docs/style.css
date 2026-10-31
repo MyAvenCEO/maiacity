@@ -192,3 +192,35 @@ body {
 
 /* Long JSON lines wrap instead of running off the panel, at any window width. */
 .code { white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: hidden; }
+
+/* theAUDIT: one table per chapter (concept, strengths, weaknesses, elsewhere, proposal), most severe first. */
+.achap { color: var(--ink); font: 500 15px var(--display); text-decoration: none; }
+.atop { margin: 0; padding-left: 22px; font-size: 14px; line-height: 1.5; display: grid; gap: 4px; }
+.atop a { color: var(--ink); }
+.atable { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 1.45; }
+.atable th { text-align: left; font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); padding: 6px 8px; border-bottom: 1px solid #d9ccb4; }
+.atable td { vertical-align: top; padding: 10px 8px; border-top: 1px solid #e6dbc7; }
+.atable td:first-child { width: 15%; }
+.atable td > b { display: block; font-weight: 500; font-size: 14px; }
+.atable ul { margin: 0; padding-left: 16px; }
+.atable li + li { margin-top: 5px; }
+.sev, .verdict { display: inline-block; font: 500 10.5px var(--mono); letter-spacing: .04em; border-radius: 999px; padding: 1px 8px; margin: 6px 6px 0 0; }
+.sev.critical, .verdict.breaks { background: #9e3f2b; color: var(--paper); }
+.sev.high { background: var(--clay); color: var(--ink); }
+.sev.medium, .verdict.partly { background: var(--ochre); color: var(--ink); }
+.sev.low, .verdict.holds { background: #a9b79a; color: var(--ink); }
+.arefs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.arefs a { font: 500 11px var(--mono); color: var(--ink); background: #ece2cf; border-radius: 4px; padding: 2px 6px; text-decoration: none; }
+@media (max-width: 900px) {
+  .atable thead { display: none; }
+  .atable tr, .atable td { display: block; width: auto !important; }
+  .atable td { border-top: 0; padding: 4px 0; }
+  .atable tr { border-top: 1px solid #d9ccb4; padding: 10px 0; }
+  .atable td:not(:first-child)::before { display: block; font: 500 10.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); margin: 6px 0 2px; }
+  .concepts td:nth-child(2)::before { content: "Strengths"; }
+  .concepts td:nth-child(3)::before { content: "Weaknesses"; }
+  .concepts td:nth-child(4)::before { content: "Elsewhere"; }
+  .concepts td:nth-child(5)::before { content: "Proposal"; }
+  .ends td:nth-child(3)::before { content: "Why"; }
+  .ends td:nth-child(4)::before { content: "Fix"; }
+}

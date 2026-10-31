@@ -65,31 +65,122 @@
      }
     }
    },
-   "deep": "Schemas are written in JSON Schema and stored as a Loro Doc like any other data, so they sync, merge and carry policies. Reading a schema needs read on the schema Doc."
+   "deep": "Schemas are written in JSON Schema and edited as a Loro Doc like any other data, so they sync, merge and carry policies. Each published version is frozen: its canonical CBOR is hashed, and that frozen version travels with every piece of data that pins it (D66)."
   },
   {
    "title": "Data pins a version.",
-   "text": "A schema can change over time. So data names the exact version it follows, written after an @. Moving to a newer version is a change the data's owner makes, like a migration; until then, nothing changes under the data's feet.",
+   "text": "A schema can change over time. So data names the exact version it follows, written after an @: the hash of that version. The version itself travels with the data, so nobody, not even the schema's owner, can take it away from your list.",
    "code": {
     "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
-    "@": "b3:1f0…, the schema Doc's state",
-    "next": "data:b3:Sc4…@b3:7a2…#todo-list",
-    "moved_by": "owner's change"
+    "@": "b3:1f0…: BLAKE3 of this version as canonical CBOR",
+    "carried": "value:b3:1f0…#todo-list-v1"
    },
-   "deep": "A version is the hash of the schema Doc's state (its frontier). Old versions stay valid for the data that names them."
+   "deep": "A version is the BLAKE3 hash of the schema's canonical CBOR, not of the Loro Doc's state, which has no content hash. The frozen version is a Value carried with the data (D66)."
   },
   {
    "title": "Every change must fit.",
-   "text": "Before a device merges a change, it checks it against the schema, the same way it will check policies later. A tick must be true or false; an item without a text is not an item. A change that doesn't fit is dropped on every device.",
+   "text": "Every change names the version it was written in, and before a device merges it, the device checks it against that version. A tick must be true or false; an item without a text is not an item. A change that doesn't fit is dropped on every device.",
    "code": {
     "change": {
+     "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
      "set": "/items/0/done",
      "value": "yes"
     },
     "schema_says": "boolean",
     "result": "dropped"
    },
-   "deep": "Validation is deterministic, so every peer reaches the same verdict. It runs on the merged state after the change, and on the change's own values."
+   "deep": "Validation is deterministic, so every peer reaches the same verdict. Each change is checked on its own against the version it names (D63); rules that span the merged list are settled when the view is built. A change naming a version or a lens a device doesn't have yet waits until it arrives."
+  },
+  {
+   "title": "A new version comes with a lens.",
+   "text": "When a schema changes, its author also writes a {lens}: how to read the old shape as the new one, and back. Here, text becomes title, a new priority starts at 0, and an old phone that asks for the removed link gets an empty one. Anyone can check a lens: applied to the old version, it must give exactly the new one.",
+   "code": {
+    "type": "theos/lens@1",
+    "from": "data:b3:Sc4…@b3:1f0…#todo-list",
+    "to": "data:b3:Sc4…@b3:7a2…#todo-list",
+    "ops": [
+     {
+      "rename": {
+       "at": "/items/*/text",
+       "to": "title"
+      }
+     },
+     {
+      "add": {
+       "at": "/items/*/priority",
+       "type": "integer",
+       "default": 0
+      }
+     },
+     {
+      "remove": {
+       "at": "/items/*/link",
+       "back": ""
+      }
+     }
+    ],
+    "sig": {
+     "by": "agent:b3:s2k…#schema-laptop",
+     "key": "ed25519:Sk2…",
+     "value": "…"
+    }
+   },
+   "deep": "Lens operations: rename, add (with a default), remove (with a value for old readers), copy, convert (only registered two-way conversions), wrap and hoist. Every lens runs both ways and is named by its hash (D67). An ambiguous change, a removed field and an added one that might be a rename, is refused until its author says which. Inspired by Ink & Switch's Cambria and the lenses of Jazz."
+  },
+  {
+   "title": "Moving on rewrites nothing.",
+   "text": "The owner signs one {migration}: this list now follows version 2, through this lens. Nothing in the list is rewritten. Each field keeps the name it is stored under, and every device reads the list in the version its app knows: yours in version 2, Mia's old phone still in version 1.",
+   "code": {
+    "type": "theos/migration@1",
+    "on": "data:b3:7Hq…#house-list",
+    "from": "data:b3:Sc4…@b3:1f0…#todo-list",
+    "to": "data:b3:Sc4…@b3:7a2…#todo-list",
+    "lenses": [
+     "lens:b3:L7q…#v1-v2"
+    ],
+    "proof": [
+     "human:b3:q4x7…#you"
+    ],
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
+   },
+   "deep": "Moving the pin is an ownership act, like writing policies (D30). The list then accepts changes in every version along its lenses; the owner can retire an old version later, like ending a policy. If two of the owner's agents migrate at once, both stand and the list stays readable in both versions until the owner writes one version with a lens from each (D67)."
+  },
+  {
+   "title": "Old and new phones write together.",
+   "text": "Mia's phone, still on version 1, ticks an item while yours, on version 2, renames it. Both changes land on the same stored fields, because a renamed field keeps its stored name, so they merge like any other changes. Then each device reads the merged item through the lens, in its own version.",
+   "code": {
+    "stored": {
+     "text": "Fix the kitchen tap",
+     "done": true,
+     "priority~a41": 2
+    },
+    "version 1 sees": {
+     "text": "Fix the kitchen tap",
+     "done": true,
+     "link": ""
+    },
+    "version 2 sees": {
+     "title": "Fix the kitchen tap",
+     "done": true,
+     "priority": 2
+    }
+   },
+   "deep": "Each version maps its paths to stored keys: a rename keeps the key, an added field gets a new one, a removed field's key stays, so old phones never erase new fields. Merging happens first; then each device projects the merged state along the lens path (the shortest, ties to the smaller lens ID), so every device sees the same thing in the same version (D67)."
+  },
+  {
+   "title": "Breaking changes go through a branch.",
+   "text": "Some changes can't be read both ways, like splitting a name into first and last. Then the owner's device branches the list at its current version, rewrites the branch through the lens, and merges the result back as one change. Every device checks it by doing the same on its own branch. Edits from old phones that never saw it go back to their authors, who apply them again through the lens.",
+   "flow": [
+    "branch at the current version",
+    "rewrite through the lens",
+    "merge back as one change",
+    "every device repeats and compares"
+   ],
+   "deep": "On Loro: fork_at(F) at the frontier F of the valid view, apply the lens, take the diff; then on the main Doc check out F, edit detached under the derived peer ID (D63), apply the diff and commit one change that depends on F. Ops made on the fork are never signed. Peers verify by repeating the rewrite at F and dropping a mismatch. Old-version changes that never saw it are re-applied by their authors (D62, D68). A total break can instead start new data with its own birth record."
   },
   {
    "title": "Values have schemas too.",
@@ -111,17 +202,19 @@
     "/items/*/done": "every item's done flag",
     "/title": "the list's title"
    },
-   "deep": "Paths are JSON Pointers into the schema's shape; a * matches any list index or map key. Policies (at) and operations (at) use them."
+   "deep": "Paths are JSON Pointers into the schema's shape; a * matches any list index or map key. Policies (at) and operations (at) use them. A policy names the version its paths use, and the data is projected into that version for checking, so policies never need translating (D67)."
   },
   {
    "title": "Schemas, in short.",
    "list": [
     "No piece of data without a schema.",
-    "A schema is a Doc too, reusable by anyone who can read it.",
-    "Data pins the exact version it follows; moving on is an owner's change.",
-    "Every change is checked against the schema; paths give every part an address."
+    "A schema is a Doc; each version is frozen, hashed and carried with the data.",
+    "Every change names its version and is checked against it.",
+    "New versions come with lenses; moving on rewrites nothing.",
+    "Breaking changes go through a branch that every device checks.",
+    "Paths give every part an address."
    ],
-   "deep": "JSON Schema in Loro Docs, versioned by state hash, validated by every peer."
+   "deep": "JSON Schema edited in Loro Docs, versions frozen by hash, lenses between versions, validated by every peer."
   }
  ]
 }

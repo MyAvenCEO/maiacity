@@ -70,6 +70,12 @@
    "title": "theDECISIONS",
    "file": "theDECISIONS.json",
    "kind": "decisions"
+  },
+  {
+   "id": "audit",
+   "title": "theAUDIT",
+   "file": "theAUDIT.json",
+   "kind": "audit"
   }
  ]
 }
