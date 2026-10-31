@@ -7,7 +7,7 @@
    "code": {
     "type": "theos/chunk@1",
     "id": "chunk:b3:a91f…",
-    "on": "data:ed25519:7Hq…#house-list",
+    "on": "data:b3:7Hq…#house-list",
     "peer": "a17e02",
     "ops": "a17e02:18 – a17e02:40",
     "after": [
@@ -44,7 +44,7 @@
    "text": "Two devices may hold the same data and differ by only a little. They never list everything. Inside one piece of data they compare {fingerprints}, short keyed hashes of each layer; across thousands of pieces of data they swap a few tiny {summaries}. Both cost about as much as the difference, not the whole.",
    "code": {
     "inside_one": {
-     "on": "data:ed25519:7Hq…#house-list",
+     "on": "data:b3:7Hq…#house-list",
      "send": "8-byte fingerprint per layer"
     },
     "across_many": {
@@ -52,7 +52,7 @@
      "send": "RIBLT summaries until all peel"
     }
    },
-   "deep": "Two levels (D34): fingerprints within one piece of data, RIBLT set reconciliation across many. Both cost roughly in proportion to the difference."
+   "deep": "Two levels (D34): fingerprints within one piece of data, RIBLT set reconciliation across many. Both cost roughly in proportion to the difference. Summaries cover only data both sides may want, so a peer learns nothing about the rest (D65)."
   },
   {
    "title": "Fingerprints, step by step.",
@@ -114,7 +114,7 @@
      "agent:b3:k8b…#backup"
     ],
     "proof": [
-     "policy:b3:z1m…#first",
+     "data:b3:Mm3…#movie-meta",
      "policy:b3:m4r…#household",
      "role:b3:k1m…#household",
      "policy:b3:b5l…#bob-laptop"
@@ -132,12 +132,12 @@
    "text": "News travels by {gossip}: each peer passes it on to a few others. When Alice changes the list, her device tells the peers interested in it: “house-list has something new.” Whoever wants it fetches the new sealed chunks.",
    "code": {
     "type": "theos/news@1",
-    "topic": "data:ed25519:7Hq…#house-list",
+    "topic": "data:b3:7Hq…#house-list",
     "chunks": [
      "chunk:b3:e40d…"
     ]
    },
-   "deep": "Gossip topic = data ID. Announcements carry only new chunk hashes, so carriers learn no author or content."
+   "deep": "Gossip topic = data ID. Announcements carry only new chunk hashes, never content, and peers pass news only to peers that showed want (D65)."
   },
   {
    "title": "Peers sync. They never ask.",
@@ -154,8 +154,8 @@
    "title": "Sharing an answer is sharing data.",
    "text": "The street wants to know how many tasks are open in your home. It can't ask. Instead, your device counts and writes the number into a small piece of data of your home's, with a policy that lets the street read it. The street sees the number and nothing else.",
    "code": {
-    "on": "data:ed25519:8Rs…#home-stats",
-    "schema": "data:ed25519:St2…@b3:5e8…#count",
+    "on": "data:b3:8Rs…#home-stats",
+    "schema": "data:b3:St2…@b3:5e8…#count",
     "owner": "coop:b3:c7n2…#home",
     "content": {
      "open_tasks": 4
@@ -163,15 +163,15 @@
     "policy": {
      "type": "theos/policy@1",
      "to": "role:b3:s9m…#street/members",
-     "on": "data:ed25519:8Rs…#home-stats",
+     "on": "data:b3:8Rs…#home-stats",
      "operations": {
       "read": {}
      },
      "proof": [
-      "policy:b3:z2h…#first",
+      "data:b3:8Rs…#home-stats",
       "policy:b3:h0g…#home-members",
       "role:b3:h8m…#home/members",
-      "policy:b3:a0p…#your-phone"
+      "human:b3:q4x7…#you"
      ],
      "sig": {
       "by": "agent:b3:f2p…#your-phone",

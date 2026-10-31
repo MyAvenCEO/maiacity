@@ -7,7 +7,7 @@
    "code": {
     "type": "theos/policy@1",
     "to": "role:b3:r4p…#plumber",
-    "on": "data:ed25519:3Tk…#fix-tap",
+    "on": "data:b3:3Tk…#fix-tap",
     "operations": {
      "read": {},
      "update": {}
@@ -19,17 +19,17 @@
      "value": "…"
     }
    },
-   "deep": "The default expiry is 30 days. Expiry is enforced through endings in the history (lapses), never by a verifier's clock."
+   "deep": "The default expiry is 30 days. Every change carries the time its author signed it and counts only if that time is before the expiry; devices reject times far ahead of their own clock. The owner's lapse makes it final (D60)."
   },
   {
    "title": "Unchanged policies renew themselves.",
-   "text": "You don't want your family locked out every month. So the owner quietly renews every policy that hasn't changed, a week before it ends, under its own policies (a coop can let one agent do renewals). Policies you changed or removed simply run out.",
+   "text": "You don't want your family locked out every month. So the owner quietly renews every policy that hasn't changed, a week before it ends. A coop can give one always-on agent just this job: renew, nothing else. Policies you changed or removed simply run out.",
    "flow": [
     "policy still the same?",
     "renew for 30 days",
     "else: let it run out"
    ],
-   "deep": "Renewal is a new certificate with the same content and a later expiry, signed under the owner's own policy for renewals. Changed or removed policies are simply not renewed."
+   "deep": "A renewal is a new certificate with the same content and a later expiry. It names the policy it renews, so ending one ends the whole chain. renew is its own operation, so a renewal agent can't write any other policy (D60)."
   },
   {
    "title": "The job is done.",
@@ -52,24 +52,29 @@
    "deep": "A revoke is a signed certificate in the policy set (a grow-only set). It cannot be undone; access returns only through a new policy."
   },
   {
-   "title": "When time runs out, anyone may say so.",
-   "text": "Devices are often offline, and a device can lie about its time, so no clock decides. Once a policy's date has passed for it, any peer that can read the policies writes a {lapse}: the same kind of event as a revoke. It can only end a policy, never grant anything. From then on, the history decides.",
+   "title": "When time runs out, the owner says so.",
+   "text": "Devices are often offline, and a device can lie about its time, so two things work together. Every change carries the time its author signed it, and counts only if it was made before the policy's expiry. And once the date has passed, the owner's agent that renews policies writes a {lapse} instead: the same kind of event as a revoke. Nobody else can end your policies.",
    "code": {
     "type": "theos/ending@1",
     "kind": "lapse",
     "ends": "policy:b3:p3q…#plumber",
     "expired": "2026-11-07T00:00:00Z",
+    "after": {
+     "data": [
+      "6b2f58:11"
+     ]
+    },
     "sig": {
-     "by": "agent:b3:p9c…#mia-phone",
-     "key": "ed25519:Mk7…",
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
      "value": "…"
     }
    },
-   "deep": "A lapse may be written by any peer that can read the policies, once the date has passed for it. It can only end a policy, never grant one. From then on the causal history decides."
+   "deep": "Only the owner's agents write endings (D60). Other peers may stop handing out keys and chunks on their own once the date has passed by their clock: a local choice, never written into the history. A holder who signs a false early time is caught by the lapse: its changes the lapse didn't list as seen are dropped."
   },
   {
    "title": "Revoke or lapse: one ending, same effect.",
-   "text": "Whoever wrote it, an {ending} does the same things on every device. Changes that never saw it are dropped, because the ending wins. If the policy gave read, the data key turns. And every honest device wipes the keys and copies the policy gave it. Validity follows from the history alone, so every copy agrees.",
+   "text": "Revoke or lapse, an {ending} does the same things on every device. The ended holder's changes that it never saw are dropped, because the ending wins; nobody else's are. If the policy gave read, the data key turns. And every honest device wipes the keys and copies the policy gave it. Validity follows from the history alone, so every copy agrees.",
    "code": {
     "ending": {
      "type": "theos/ending@1",
@@ -91,7 +96,7 @@
      "wipe keys and copies"
     ]
    },
-   "deep": "One ending type, two authors. Effects: concurrent changes that never saw it are dropped, the data key turns if the policy gave read, and the delete trigger runs on honest devices."
+   "deep": "One ending type, written only by the owner. The ended holder's changes it didn't list as seen leave what you see, but stay in the sealed history: what you see is the newest complete version of valid changes. Honest changes that built on a dropped one go back to their authors as a conflict view and are applied again (D62). The data key turns if the policy gave read; the delete trigger runs on honest devices."
   },
   {
    "title": "Bob loses update.",
@@ -118,10 +123,10 @@
   },
   {
    "title": "Ended means forgotten.",
-   "text": "The moment a device meets any peer that holds an ending, either a revoke by the owner or a lapse written once a policy's date has passed, it applies it like a {delete trigger}: it wipes the keys and the plaintext copies of everything it may no longer read. It happens offline-first and without a server, on every honest device, the plumber's included.",
+   "text": "The moment a device meets any peer that holds an ending, a revoke or a lapse, both written by the owner, it applies it like a {delete trigger}: it wipes the keys and the plaintext copies of everything it may no longer read. It happens offline-first and without a server, on every honest device, the plumber's included.",
    "code": {
     "on": "ending:b3:e5d…#plumber",
-    "data": "data:ed25519:3Tk…#fix-tap",
+    "data": "data:b3:3Tk…#fix-tap",
     "wipe": [
      "datakey:fix-tap/1",
      "datakey:fix-tap/2",
@@ -143,11 +148,12 @@
    "title": "Endings, in short.",
    "list": [
     "Every policy expires and renews itself while unchanged.",
-    "The owner can revoke; any peer that can read the policies may write a lapse once the date has passed.",
-    "An ending wins over changes that never saw it.",
+    "Only the owner ends policies: a revoke early, a lapse on the date.",
+    "Every change carries its author's time and counts only before the expiry.",
+    "An ending wins over the ended holder's changes that never saw it.",
     "Honest devices forget what an ended policy gave them."
    ],
-   "deep": "Endings are events in the causal history, so no clock has to be trusted."
+   "deep": "Endings are owner-signed events in the causal history, so no shared clock has to be trusted."
   }
  ]
 }

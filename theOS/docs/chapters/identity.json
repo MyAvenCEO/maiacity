@@ -16,15 +16,17 @@
    "text": "When you start, your phone's agent makes its signer and signs one record: your birth, its own birth, and its first {policy}, a signed statement of what an agent may do: “this agent may act for you.” From then on, you exist, and you own it. Nothing has to come first.",
    "code": {
     "type": "theos/genesis@1",
-    "human": "human:b3:q4x7…#you",
+    "creates": [
+     "human",
+     "agent"
+    ],
     "agent": {
-     "id": "agent:b3:f2p…#your-phone",
      "signer": "ed25519:Fp2…",
      "next": "b3:9xk…"
     },
     "policy": {
-     "to": "agent:b3:f2p…#your-phone",
-     "on": "human:b3:q4x7…#you",
+     "to": "this agent",
+     "on": "this human",
      "operations": {
       "act": {},
       "own": {},
@@ -37,24 +39,22 @@
      "value": "…"
     }
    },
-   "deep": "One genesis record creates the human identity and its first agent together, so there is no chicken-and-egg problem. The record already commits to the next keys in advance (KERI-style pre-rotation). Both IDs come from this one record: its hash, typed once as human and once as agent (D50)."
+   "deep": "One genesis record creates the human identity and its first agent together, so there is no chicken-and-egg problem. The record already commits to the next keys in advance (KERI-style pre-rotation). Both IDs come from this one record: its hash, typed once as human and once as agent (D50). A record can't contain its own hash, so inside it the two are named “this human” and “this agent”."
   },
   {
    "title": "Each agent gets only what you give it.",
-   "text": "You can have many agents: your laptop, your watch, a server, even an AI assistant. Each gets its own policy from you, saying what it may do for you. Your phone may do everything; your watch only what concerns your health; your assistant only your shopping list.",
+   "text": "You can have many agents: your laptop, your watch, a server, even an AI assistant. Each gets its own policy from you, saying what it may do for you. Your phone may do everything; your watch only what concerns your health; your assistant only your shopping list. What an agent may not touch, it gets no keys for either.",
    "code": {
     "type": "theos/policy@1",
     "to": "agent:b3:w3t…#watch",
     "on": "human:b3:q4x7…#you",
     "operations": {
      "act": {
-      "where": {
-       "data": "data:ed25519:4Hb…#health"
-      }
+      "data": "data:b3:4Hb…#health"
      }
     },
     "proof": [
-     "policy:b3:a0p…#your-phone"
+     "human:b3:q4x7…#you"
     ],
     "sig": {
      "by": "agent:b3:f2p…#your-phone",
@@ -62,7 +62,7 @@
      "value": "…"
     }
    },
-   "deep": "An agent's policy has the same shape as every policy in theOS: who (the agent), on what (its owner), operations (act, own, govern), conditions (which data, limits, expiry). Adding an agent needs its own signature and a policy from its owner."
+   "deep": "An agent has two parts. Who it is: its own identity, owned by exactly one human or coop, with its own signer. What it may do: only what policies from the identity it acts for say, here act for you on your health data. Owning an agent gives it nothing. The same policy decides which keys it gets (Keys chapter, D57, D58)."
   },
   {
    "title": "You and Mia start a home.",
@@ -85,19 +85,16 @@
   },
   {
    "title": "A coop decides by its own policies.",
-   "text": "A policy on the coop says what its “members” role may do for it. Three operations exist here. Act: ordinary changes for the coop. Own: what an owner does with the coop's data, writing and ending its policies. Govern: changing the coop's own roles and policies. For now, one signature from an agent of any member is enough.",
+   "text": "A policy on the coop says what its “members” role may do for it: act, ordinary changes for the coop, and own, writing and ending the policies on the coop's data. The third kind, govern, changing the coop's own roles and policies, goes to a {governor}: a role with exactly one identity, for now you. One top, so nobody can remove each other at the same moment. Before you step down, you hand govern on.",
    "code": {
     "type": "theos/policy@1",
-    "to": "role:b3:h8m…#home/members",
+    "to": "role:b3:h9g…#home/governor",
     "on": "coop:b3:c7n2…#home",
     "operations": {
-     "act": {},
-     "own": {},
      "govern": {}
     },
     "proof": [
-     "coop:b3:c7n2…#home",
-     "policy:b3:a0p…#your-phone"
+     "coop:b3:c7n2…#home"
     ],
     "sig": {
      "by": "agent:b3:f2p…#your-phone",
@@ -105,7 +102,7 @@
      "value": "…"
     }
    },
-   "deep": "Same shape as every policy: who (a role or an agent), on what (here the coop itself), operations (act, own, govern), conditions. The default condition is one signature (1 of 1). Counts like 2 of 3 can be plugged in later as condition plugins; an unknown one counts as not satisfied."
+   "deep": "Same shape as every policy. The members role gets act and own, one signature each (1 of 1, D49). Govern goes only to the governor role, which holds exactly one identity (D59). Below the top, if two members undo each other at the same moment, both stand and the governor repairs. Counts like 2 of 3 come later as condition plugins."
   },
   {
    "title": "Coops can hold coops.",
@@ -118,8 +115,7 @@
      "act": {}
     },
     "proof": [
-     "coop:b3:s5t8…#street",
-     "policy:b3:s1g…#street-govern"
+     "coop:b3:s5t8…#street"
     ],
     "sig": {
      "by": "agent:b3:f2p…#your-phone",
@@ -127,14 +123,14 @@
      "value": "…"
     }
    },
-   "deep": "The street's members role (theos/role@1) lists home coops; this policy gives that role act on the street. An agent of yours acts for the street through the chain: your agent's policy on you, the home's policy for its members role, the street's policy for its members role. Roles are checked whenever they change; a change that would close a circle of identities is rejected."
+   "deep": "The street's members role lists home coops; this policy gives that role act on the street, and the street's governor keeps govern. An agent of yours acts for the street through the chain: your agent's policy on you, the home's policy for its members role, the street's policy for its members role. Roles are checked whenever they change; loops of coops are settled when the view is built (D63)."
   },
   {
    "title": "Losing your phone.",
    "text": "Your phone is gone. From another of your agents, you revoke the lost phone's policy, and from then on it can do nothing for you. What it could still read, and which keys turn, comes in the Keys chapter.",
    "flow": [
     "revoke the phone's policy from another agent",
-    "turn your identity key",
+    "turn the keys it could open",
     "the phone acts for no one"
    ],
    "deep": "Pre-rotation belongs to agents: each agent's history commits to the hash of its next signer, so a leaked key can be replaced. Revoking an agent's policy is an ending like any other (Endings chapter)."
@@ -143,8 +139,9 @@
    "title": "Identity, in short.",
    "list": [
     "Humans and coops are identities that own and decide.",
-    "Agents act for exactly one owner, each with its own signer.",
+    "Agents act for exactly one owner, each with its own signer, and only by its policies.",
     "A role is a named set of identities; a coop's members are its “members” role.",
+    "A coop's members act and own; one governor governs, for now.",
     "Policies say what a role or an agent may do for an identity: act, own, govern."
    ],
    "deep": "Three identity types: human, coop, agent. Ownership points from humans and coops to agents and data; authority to act flows back only through policies."

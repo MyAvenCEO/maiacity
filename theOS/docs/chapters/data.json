@@ -8,12 +8,12 @@
   },
   {
    "title": "The list starts from itself.",
-   "text": "When data is born, it gets a {seal}: a key used exactly once, to sign the data's first policy, naming its owner, and then destroyed. Nobody holds the seal, so nobody can share it, lose it or steal it. The list doesn't come from any account; its authority starts with itself.",
-   "deep": "The seal is a fresh Ed25519 key pair. Its public key is the data ID. It signs one record, the data's genesis, which names its schema and holds the first policy naming the owner; then the private key is zeroised. Keyhive calls the same pattern the genesis key.",
+   "text": "When data is born, your agent signs its {birth record}: which schema it follows, and its first policy, naming its owner. The data's ID is the hash of that record. So the list is named by its own birth: it doesn't come from any account, and nobody can make a second birth for the same ID.",
+   "deep": "The data ID is data:b3: and the BLAKE3 hash of this record without its signature (D50, D64). An agent acting for the owner with own signs it, and a random nonce keeps two births apart. A second birth record would simply be different data, so no key has to be kept secret or destroyed.",
    "code": {
     "type": "theos/genesis@1",
-    "data": "data:ed25519:7Hq…#house-list",
-    "schema": "data:ed25519:Sc4…@b3:1f0…#todo-list",
+    "nonce": "b3:4f1…",
+    "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
     "policy": {
      "to": "human:b3:q4x7…#you",
      "operations": {
@@ -21,22 +21,25 @@
      },
      "expires": null
     },
+    "proof": [
+     "human:b3:q4x7…#you"
+    ],
     "sig": {
-     "by": "data:ed25519:7Hq…#house-list",
-     "key": "ed25519:7Hq…",
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
      "value": "…"
     }
    },
    "flow": [
-    "new seal",
-    "sign first policy",
-    "wipe seal"
+    "write the birth record",
+    "sign it",
+    "its hash is the data ID"
    ]
   },
   {
    "title": "Its first policy makes you the owner.",
-   "text": "The seal's one signature names a single owner: you. The owner may do everything, for good, including writing the policies for everyone else. There is always exactly one owner: one identity, a person or a coop, never a list of people.",
-   "deep": "The owner is an identity ID inside the first certificate. Its authority never expires and never moves: there is no hand-over. Ownership is never a set, so there is no removing someone from it. (D5, D30)"
+   "text": "The birth record names a single owner: you. The owner may do everything, for good, including writing the policies for everyone else. There is always exactly one owner: one identity, a person or a coop, never a list of people.",
+   "deep": "The owner is an identity ID inside the birth record. Its authority never expires and never moves: there is no hand-over. Ownership is never a set, so there is no removing someone from it. (D5, D30)"
   },
   {
    "title": "Data comes in two kinds.",
@@ -83,9 +86,9 @@
    "text": "The movie never changes, but its name, its notes and who may see it do. So every Value comes with a small Doc: its metadata. Whoever may read that Doc can open the Value; how, comes in the Keys chapter.",
    "code": {
     "type": "theos/meta@1",
-    "id": "data:ed25519:Mm3…#movie-meta",
+    "id": "data:b3:Mm3…#movie-meta",
     "value": "value:b3:9f2c…#movie",
-    "schema": "data:ed25519:Mt7…@b3:4c2…#media-meta",
+    "schema": "data:b3:Mt7…@b3:4c2…#media-meta",
     "name": "Our summer",
     "notes": "For grandma"
    },
@@ -95,11 +98,11 @@
    "title": "Data, in short.",
    "list": [
     "Everything you keep is data, and every piece of data starts from itself.",
-    "Its seal names exactly one owner, an identity.",
+    "Its birth record names exactly one owner, an identity.",
     "A Doc is JSON that changes; a Value is bytes that never change.",
     "Every Value has a Doc for its metadata and its key."
    ],
-   "deep": "Data IDs are seal public keys; Value names are BLAKE3 hashes; Docs are CRDT documents."
+   "deep": "Data IDs are hashes of birth records; Value names are BLAKE3 hashes; Docs are CRDT documents."
   }
  ]
 }

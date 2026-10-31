@@ -42,7 +42,7 @@
     "punch a hole",
     "else: relay"
    ],
-   "deep": "UDP hole punching from both sides at once. If that fails, a relay forwards encrypted QUIC packets it cannot read. Connections upgrade to direct when possible."
+   "deep": "UDP hole punching from both sides at once. If that fails, a relay forwards encrypted QUIC packets it cannot read. Connections upgrade to direct when possible. A relay is not a carrier: it holds nothing and checks nothing."
   },
   {
    "title": "Both sides know who they talk to.",

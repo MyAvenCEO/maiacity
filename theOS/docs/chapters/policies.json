@@ -10,17 +10,17 @@
     "update",
     "delete"
    ],
-   "deep": "A policy is a signed certificate: role, data, operations keyed by name, conditions, expiry, plus the proof chain back to the seal. Only the owner writes them, through its own agents (D54). Conditions come later in this chapter, proofs in Checking, expiry in Endings."
+   "deep": "A policy is a signed certificate: role, data, operations keyed by name, conditions, expiry, plus the proof chain back to the data's birth record. Only the owner writes them, through its own agents (D54). Conditions come later in this chapter, proofs in Checking, expiry in Endings."
   },
   {
    "title": "Mia, Alice and Bob get the list.",
    "text": "You make a role “household”, give it read, create and update on the list, and add Mia, Alice and Bob. They can see the list, add things and tick them off. They can't delete it, and they can't write policies.",
-   "deep": "Mia, Alice and Bob are added to the role “household”. Technically: the owner signs a new role record (theos/role@1) with them in it and wraps the role key for each one's identity key (both explained in the Keys chapter). The data's policies don't change at all."
+   "deep": "Mia, Alice and Bob are added to the role “household”. Technically: the owner signs a new role record (theos/role@1) with them in it and seals the role key to each one's reading agents (both explained in the Keys chapter). The data's policies don't change at all."
   },
   {
    "title": "The plumber gets one item.",
    "text": "“Fix the tap” is its own little piece of data, linked from the list. Born inside the list, it starts with the list's policies. You add one more: the role “plumber” may read and update this item, and nothing else.",
-   "deep": "Read opens a whole piece of data, because the data key does. So an item shared on its own is its own piece of data, with its own data key and its own schema (a to-do item), linked from the list. New data born inside the list copies the list's policies once, at birth."
+   "deep": "Read opens a whole piece of data, because the data key does. So an item shared on its own is its own piece of data, with its own data key and its own schema (a to-do item), linked from the list. Data born inside the list follows the list's owner and policies by link (D64); the plumber's policy is added on top."
   },
   {
    "title": "Every policy is one sentence.",
@@ -28,7 +28,7 @@
    "code": {
     "type": "theos/policy@1",
     "to": "role:b3:k1m…#household",
-    "on": "data:ed25519:7Hq…#house-list",
+    "on": "data:b3:7Hq…#house-list",
     "operations": {
      "create": {},
      "read": {},
@@ -36,8 +36,8 @@
     },
     "expires": "2026-12-01T00:00:00Z",
     "proof": [
-     "policy:b3:z0e…#first",
-     "policy:b3:a0p…#your-phone"
+     "data:b3:7Hq…#house-list",
+     "human:b3:q4x7…#you"
     ],
     "sig": {
      "by": "agent:b3:f2p…#your-phone",
@@ -45,7 +45,7 @@
      "value": "…"
     }
    },
-   "deep": "A policy is a signed certificate with one shape everywhere: who (a role), on what (this data), operations (each optionally narrowed by at, where or a limit), expiry, and a proof chain back to the seal. An identity's own policies use the same shape (Identity chapter). People see “policy”; underneath it is a capability."
+   "deep": "A policy is a signed certificate with one shape everywhere: who (a role), on what (this data), operations (each optionally narrowed by at, where or a limit), expiry, and a proof chain back to the data's birth record. An identity's own policies use the same shape (Identity chapter). People see “policy”; underneath it is a capability."
   },
   {
    "title": "What a policy can allow.",
@@ -62,7 +62,7 @@
    "title": "Every operation looks the same.",
    "text": "Every policy writes its operations the same way: each operation by name, with where it applies. “at” is a path into the data, or a list of paths; leave it out and it means the whole thing. Read too: read what? “at” answers it.",
    "code": {
-    "$id": "data:ed25519:Op7…@b3:2c4…#operations",
+    "$id": "data:b3:Op7…@b3:2c4…#operations",
     "type": "object",
     "propertyNames": {
      "enum": [
@@ -107,7 +107,7 @@
    "code": {
     "type": "theos/policy@1",
     "to": "role:b3:d5k…#kids",
-    "on": "data:ed25519:7Hq…#house-list",
+    "on": "data:b3:7Hq…#house-list",
     "operations": {
      "read": {
       "at": "/items"
@@ -124,8 +124,8 @@
      }
     },
     "proof": [
-     "policy:b3:z0e…#first",
-     "policy:b3:a0p…#your-phone"
+     "data:b3:7Hq…#house-list",
+     "human:b3:q4x7…#you"
     ],
     "sig": {
      "by": "agent:b3:f2p…#your-phone",
@@ -137,9 +137,9 @@
   },
   {
    "title": "Owning means writing the policies.",
-   "text": "Owning is not an operation you give to someone. It is the one policy the seal signed at birth, and it does what no other policy can: write policies and end them, keep data longer, erase it, open its archive. The owner's agents do this for it, through the owner's own policies (Identity chapter).",
+   "text": "Owning is not an operation you give to someone. It is the one policy in the data's birth record, and it does what no other policy can: write policies and end them, keep data longer, erase it, open its archive. The owner's agents do this for it, through the owner's own policies (Identity chapter).",
    "flow": [
-    "seal",
+    "birth record",
     "owner",
     "owner's agent",
     "policies for roles"
@@ -148,11 +148,11 @@
   },
   {
    "title": "Only the owner never expires.",
-   "text": "The policy the seal signed at birth names the owner. It has no expiry, so data can never end up with nobody allowed to look after it. Every other policy expires.",
+   "text": "The policy in the birth record names the owner. It has no expiry, so data can never end up with nobody allowed to look after it. Every other policy expires.",
    "code": {
     "type": "theos/genesis@1",
-    "data": "data:ed25519:7Hq…#house-list",
-    "schema": "data:ed25519:Sc4…@b3:1f0…#todo-list",
+    "nonce": "b3:4f1…",
+    "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
     "policy": {
      "to": "human:b3:q4x7…#you",
      "operations": {
@@ -160,13 +160,16 @@
      },
      "expires": null
     },
+    "proof": [
+     "human:b3:q4x7…#you"
+    ],
     "sig": {
-     "by": "data:ed25519:7Hq…#house-list",
-     "key": "ed25519:7Hq…",
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
      "value": "…"
     }
    },
-   "deep": "The genesis certificate has no expiry, and ownership does not move: there is no hand-over. Whoever else needs to work on the data gets a policy."
+   "deep": "The birth record's policy has no expiry, and ownership does not move: there is no hand-over. Whoever else needs to work on the data gets a policy."
   },
   {
    "title": "Policies, in short.",

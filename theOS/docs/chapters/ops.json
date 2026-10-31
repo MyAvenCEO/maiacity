@@ -7,8 +7,8 @@
    "code": {
     "type": "theos/operation@1",
     "operation": "get",
-    "on": "data:ed25519:7Hq…#house-list",
-    "schema": "data:ed25519:Sc4…@b3:1f0…#todo-list",
+    "on": "data:b3:7Hq…#house-list",
+    "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
     "at": ""
    },
    "deep": "An operation is JSON: {operation, on, schema, at, …arguments}, the record theos/operation@1. One engine parses it, validates it against the schema, runs it locally and returns a result or a set of CRDT ops."
@@ -19,8 +19,8 @@
    "code": {
     "type": "theos/operation@1",
     "operation": "find",
-    "on": "data:ed25519:7Hq…#house-list",
-    "schema": "data:ed25519:Sc4…@b3:1f0…#todo-list",
+    "on": "data:b3:7Hq…#house-list",
+    "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
     "at": "/items",
     "where": {
      "done": false
@@ -36,8 +36,8 @@
    "code": {
     "type": "theos/operation@1",
     "operation": "set",
-    "on": "data:ed25519:7Hq…#house-list",
-    "schema": "data:ed25519:Sc4…@b3:1f0…#todo-list",
+    "on": "data:b3:7Hq…#house-list",
+    "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
     "at": "/items/0/done",
     "value": true
    },
@@ -56,8 +56,8 @@
    "code": {
     "type": "theos/operation@1",
     "operation": "set",
-    "on": "data:ed25519:7Hq…#house-list",
-    "schema": "data:ed25519:Sc4…@b3:1f0…#todo-list",
+    "on": "data:b3:7Hq…#house-list",
+    "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
     "at": "/items/0/done",
     "value": "yes",
     "result": "refused: boolean expected"
@@ -70,8 +70,8 @@
    "code": {
     "type": "theos/operation@1",
     "operation": "walk",
-    "on": "data:ed25519:1Pf…#your-profile",
-    "schema": "data:ed25519:Pf3…@b3:2d9…#profile",
+    "on": "data:b3:1Pf…#your-profile",
+    "schema": "data:b3:Pf3…@b3:2d9…#profile",
     "at": "/friends",
     "follow": [
      "lists",
@@ -90,8 +90,8 @@
    "code": {
     "type": "theos/operation@1",
     "operation": "search",
-    "on": "data:ed25519:5Wn…#notes",
-    "schema": "data:ed25519:Nt2…@b3:6b1…#note",
+    "on": "data:b3:5Wn…#notes",
+    "schema": "data:b3:Nt2…@b3:6b1…#note",
     "at": [
      "/title",
      "/body"
@@ -110,8 +110,8 @@
     "steps": [
      {
       "operation": "near",
-      "on": "data:ed25519:7Hq…#house-list",
-      "schema": "data:ed25519:Sc4…@b3:1f0…#todo-list",
+      "on": "data:b3:7Hq…#house-list",
+      "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
       "at": "/items",
       "text": "plumbing",
       "k": 20
