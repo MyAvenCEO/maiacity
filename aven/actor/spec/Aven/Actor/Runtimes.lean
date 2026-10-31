@@ -27,12 +27,12 @@ open Aven.Runtime (FacePart Placement FaceOut faceRun treeLimits StatePart State
 
 /-! ## state-runtime -/
 
-/-- An address as the runtimes see it: `[scope, id, n]`. -/
-def addrValue (a : Addr) : Value := .array [.text (ascii a.scope), .text (ascii a.id), .uint a.n]
+/-- An address as the runtimes see it: its genesis inputs `[vault, id, n]`, bytes, bytes and a number. Until the
+router resolves Doc ids (A201's second step), this is the form state-runtime is handed and gives back. -/
+def addrValue (a : Addr) : Value := .array [.bytes a.vault, .bytes a.id, .uint a.n]
 
 def addrOf? : Value → Option Addr
-  | .array [.text s, .text i, .uint n] =>
-    (String.fromUTF8? ⟨s.toArray⟩).bind fun s => (String.fromUTF8? ⟨i.toArray⟩).map fun i => ⟨s, i, n⟩
+  | .array [.bytes v, .bytes i, .uint n] => some ⟨v, i, n⟩
   | _ => none
 
 /-- A message's name as the runtimes see it: `[sender, to, seq]`. -/
