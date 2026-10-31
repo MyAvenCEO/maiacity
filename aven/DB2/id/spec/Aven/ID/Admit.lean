@@ -1,12 +1,12 @@
 import Aven.ID.Network
 
-/-! # Acks and newcomers on the settled tree (PEERS.md, Thread B; B1 and B2)
+/-! # Confirmations and newcomers on the settled tree (B1 and B2)
 
-**Honest acks (B1).** An admin device acks a claim on its own when it syncs one, by a policy (PEERS §5, rule 3): ack
-only a claim that stands in its own view, and never a claim of a ticket that already has another final claim there.
-A device holds what it signed, so its later views hold its earlier acks. Then no device, following the policy, acks
-two claims of one ticket (`honest_confirm_once`): only two devices' acks that never saw each other can make a ticket
-`contested`.
+**Honest confirmations (B1).** A confirmer's device confirms a claim on its own when it syncs one, by a policy (A38):
+confirm only a claim that stands in its own view and names the current guardian vault, and never a claim of a ticket
+that already has another final claim there. A device holds what it signed, so its later views hold its earlier
+confirmations. Then no device, following the policy, confirms two claims of one ticket (`honest_confirm_once`): only
+two devices' confirmations that never saw each other can make a ticket `contested`.
 
 **Newcomers (B2).** Every relay on the list and every peer's hook let a key in when the settled tree admits it, or
 when it brings a statement, its claim or a sign-in naming it as the device, after which the tree would admit it
@@ -42,17 +42,18 @@ def confirmPolicy (V : List TreeStatement) (a : TreeStatement) : Bool :=
       (view pinned V).all fun f => !(final (view pinned V) f && sameTicket f c && f.name != c.name)
   | _ => true
 
-/-- **`honest_confirm_once`:** a claim `c₁` final among statements a device held (`V₁`, its own earlier ack among them)
-stays final in every later view `V₂ ⊇ V₁`, so the policy refuses an ack there of any other claim `c₂` of its ticket.
+/-- **`honest_confirm_once`:** a claim `c₁` final among statements a device held (`V₁`, its own earlier confirmation
+among them) stays final in every later view `V₂ ⊇ V₁`, so the policy refuses to confirm there any other claim `c₂` of
+its ticket.
 Names are hashes, so one name is one statement (`uniq`). -/
 theorem honest_confirm_once {V₁ V₂ : List TreeStatement} (sub : ∀ x ∈ V₁, x ∈ V₂)
     (uniq : ∀ x ∈ V₂, ∀ y ∈ V₂, x.name = y.name → x = y) {c₁ c₂ a : TreeStatement} (m₁ : c₁ ∈ V₁)
     (f₁ : final (view pinned V₁) c₁ = true) (same : sameTicket c₁ c₂ = true) (other : c₁.name ≠ c₂.name)
-    (m₂ : c₂ ∈ V₂) (acks : a.says = .confirm c₂.name) : confirmPolicy pinned V₂ a = false := by
+    (m₂ : c₂ ∈ V₂) (confirms : a.says = .confirm c₂.name) : confirmPolicy pinned V₂ a = false := by
   have f₂ : final (view pinned V₂) c₁ = true := final_mono pinned sub uniq f₁
   have cnt : counted pinned V₂ c₁ = true := claimOk_counted pinned (final_claimOk f₂)
   unfold confirmPolicy
-  rw [acks]
+  rw [confirms]
   simp only
   cases e : (view pinned V₂).any fun c => c.name == c₂.name && standing (view pinned V₂) c &&
       (match c.says with
