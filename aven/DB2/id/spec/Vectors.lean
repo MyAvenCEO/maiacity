@@ -9,6 +9,8 @@ import Aven.ID.CapsJson
 import Aven.ID.SettleJson
 import Aven.ID.FailJson
 import Aven.ID.Expiry
+import Aven.ID.Collections
+import Aven.ID.KeyFormatsJson
 
 /-! # The test vectors (README, rule 10)
 
@@ -30,8 +32,12 @@ import Aven.ID.Expiry
   examples and generated ones. aven-id's tests replay them with real keys, a restart reading the tree back.
 - `invites.json`: invite, withdrawal and join traces (`Aven.ID.InviteTrace`), with every answer, the tree, the
   members, the invites' states and what the door says of each key after every step. aven-id's tests replay them.
-- `caps.json`: cap chains on the cast, with the first rule each breaks or none (`Aven.ID.Caps`), how avenOS shows a cap
-  for a passkey tap, and generated chains (`Aven.ID.CapsJson`).
+- `caps.json`: cap chains on the cast, each cap with its lines of ops (A32), its CBOR bytes and its hash, with the first
+  rule each chain breaks or none (`Aven.ID.Caps`); who keeps a Doc (`Aven.ID.Keeping`); how avenOS shows a cap for a
+  passkey tap; and generated chains (`Aven.ID.CapsJson`).
+- `collections.json`: a collection's envelopes, the Docs a reader knows, who signs for and governs which vault, and
+  whether the collection lists a Doc (`Aven.ID.Collections`, A32): removals, strangers' listings, a Doc out of reach,
+  nesting, and the depth.
 - `revocations.json`: Docs of Core envelopes, each with its name and what caps reads of it, the revocations a reader
   holds, and each envelope's verdict (`Aven.ID.Revoke`), hand-written and generated; and a Doc its vault deleted, with
   whether each envelope survives the delete (`survives`; a delete Record carries `delete: true` in its body).
@@ -54,6 +60,11 @@ import Aven.ID.Expiry
   (`Aven.ID.Node`, R7). `catchup.json`: sources offered against a signed log tip, the one chosen and the ones caught,
   and presence from signed beats (`Aven.ID.CatchUp`). `failures.json`: the nine checks the box runs with the Aven Peer
   stopped, each with what the models say it must see (`Aven.ID.FailJson`, PEERS.md).
+
+- `derivations.json` and `stanzas.json`: avenID's key formats (`Aven.ID.KeyFormats`, A43): BLAKE3's keyed and
+  extendable modes, the PRF step's input, salt and seeds, a stanza's AAD, keys and commitment, an epoch's subkeys and
+  tags; and the bytes of stanzas, keyring and Doc epochs with their names, and hybrid keys and signatures. aven-id
+  derives and encodes each and compares.
 
 `bun run up --check` runs it again and fails when the files differ from what is committed. -/
 
@@ -152,10 +163,10 @@ def invites : List Json :=
 def capsVectors : List Json :=
   let chain (cs : List Cap) := Json.mkObj [("context", castCtxJson), ("chain", Json.arr (cs.map Cap.json).toArray)]
   (chainExamples.map fun (name, cs, _) => vector name (chain cs) (chainResult cs)) ++
-  (placementExamples.map fun (name, caps, f, _) =>
+  (keepingExamples.map fun (name, caps, f, _) =>
     vector s!"who keeps it? {name}"
       (Json.mkObj [("context", castCtxJson), ("caps", Json.arr (caps.map Cap.json).toArray), ("doc", factsJson f)])
-      (Json.mkObj [("keepers", toJson (keepersOf noGov noSpawn castCtx.roles caps f))])) ++
+      (Json.mkObj [("keepers", toJson (keepersOf noGov noSpawn noLists castCtx.roles caps f))])) ++
   ([capA, capB, capPublic, attRead].map fun c =>
     vector s!"how avenOS shows {c.id}" (Json.mkObj [("show", c.json)]) (Json.mkObj [("text", c.text castCtx.roles)])) ++
   (branchExamples.map fun (b, br, _) =>
@@ -165,6 +176,52 @@ def capsVectors : List Json :=
   (List.range generatedChains).map fun i =>
     let cs := genChain (i + 1)
     vector s!"generated chain, seed {i + 1}" (chain cs) (chainResult cs)
+
+open CollectionExamples in
+/-- Whether collection `c` lists `d` among envelopes `S`, with everything a reader needs to decide it. -/
+def collectionVector (name : String) (S : List Aven.Core.Envelope) (c d : Aven.Core.Facts) : Json :=
+  vector name
+    (Json.mkObj [("known", Json.arr (known.map factsJson).toArray),
+      ("signs", Json.arr #[Json.mkObj [("key", Aven.Core.hex mac), ("vault", Aven.Core.utf8Text samuel)]]),
+      ("governs",
+        Json.arr #[Json.mkObj [("vault", Aven.Core.utf8Text samuel), ("governed", Aven.Core.utf8Text garden)]]),
+      ("depth", toJson collectionDepth),
+      ("envelopes", Json.arr (S.map fun e => Json.mkObj [("name", (nm e).text), ("doc", e.doc.text),
+        ("branch", Aven.Core.utf8Text e.branch), ("writer", toJson e.writer), ("seq", toJson e.seq),
+        ("body", e.body.json), ("signer", Aven.Core.hex e.signer)]).toArray),
+      ("collection", c.id.text), ("doc", d.id.text)])
+    (Json.mkObj [("lists", toJson (listed S c d))])
+
+open CollectionExamples in
+/-- Whether a write to `d` counts under a cap through collection `c`: `d` listed in the write's own past (A42). -/
+def writeVector (name : String) (S : List Aven.Core.Envelope) (w : Aven.Core.Envelope) (c d : Aven.Core.Facts) :
+    Json :=
+  vector name
+    (Json.mkObj [("known", Json.arr (known.map factsJson).toArray),
+      ("signs", Json.arr #[Json.mkObj [("key", Aven.Core.hex mac), ("vault", Aven.Core.utf8Text samuel)]]),
+      ("depth", toJson collectionDepth),
+      ("envelopes", Json.arr (S.map fun e => Json.mkObj [("name", (nm e).text), ("doc", e.doc.text),
+        ("seq", toJson e.seq), ("prev", toJson (e.prev.map (·.text))), ("deps", toJson (e.deps.map (·.text))),
+        ("body", e.body.json), ("signer", Aven.Core.hex e.signer)]).toArray),
+      ("write", (nm w).text), ("collection", c.id.text), ("doc", d.id.text)])
+    (Json.mkObj [("listedInItsPast", toJson (listedAt S w c d))])
+
+open CollectionExamples in
+def collectionVectors : List Json := [
+  collectionVector "Samuel's Mac lists p1 in the beach album" beachLog beach p1,
+  collectionVector "an entry Samuel's Mac removed leaves the list" beachLog beach p2,
+  collectionVector "p2 before its removal" [a1, a2] beach p2,
+  collectionVector "Mallory's phone signs for no vault of Samuel's" beachLog beach p3,
+  collectionVector "a photo of Ana's vault, which Samuel's doesn't govern" beachLog beach q1,
+  collectionVector "a photo of the garden, which Samuel's vault governs" beachLog beach g1,
+  collectionVector "trips lists the album, so what the album lists" beachLog trips p1,
+  collectionVector "and not what the album no longer lists" beachLog trips p2,
+  collectionVector "trips lists the album itself" beachLog trips beach,
+  collectionVector "eight collections deep" (chain 7) (link 0) p1,
+  collectionVector "nine collections deep: past the depth" (chain 8) (link 0) p1,
+  writeVector "Bob's write built on p2's entry counts, whatever the reader caught up on" (beachLog ++ [w1, w2]) w1
+    beach p2,
+  writeVector "Bob's write built on p2's removal doesn't" (beachLog ++ [w1, w2]) w2 beach p2]
 
 open RevokeExamples in
 def revocationVectors : List Json :=
@@ -270,6 +327,7 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "claims.json") (render claims)
   IO.FS.writeFile (dir / "invites.json") (render invites)
   IO.FS.writeFile (dir / "caps.json") (render capsVectors)
+  IO.FS.writeFile (dir / "collections.json") (render collectionVectors)
   IO.FS.writeFile (dir / "revocations.json") (render revocationVectors)
   IO.FS.writeFile (dir / "epochs.json") (render epochVectors)
   IO.FS.writeFile (dir / "approvals.json") (render approvalVectors)
@@ -282,3 +340,5 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "node.json") (render SettleJson.nodeVectors)
   IO.FS.writeFile (dir / "catchup.json") (render SettleJson.catchUpVectors)
   IO.FS.writeFile (dir / "failures.json") (render FailJson.failureVectors)
+  IO.FS.writeFile (dir / "derivations.json") (render KeyFormats.derivationVectors)
+  IO.FS.writeFile (dir / "stanzas.json") (render KeyFormats.stanzaVectors)

@@ -24,7 +24,7 @@ past of" is decidable (`InPast`, decided by `inPast`, `inPast_iff`). `settle` is
    `contested`;
 5. a list's remove wins over every add that hadn't seen it. Tickets, withdrawals and the lists count only with Maia
    City's owners' approval (`byAdmin`, `Tree.approves`): the admin is a vault, never a key (rule 15, A28). A device of
-   a vault that owns Maia City acks for it, within its device cap (`acker`);
+   a vault that owns Maia City acks for it, within its device cap (`confirmer`);
 6. the door admits the member vaults' devices (K12).
 
 The theorems:
@@ -154,6 +154,8 @@ structure Genesis where
   guardian : GuardianKeys
   /-- MaiaCityGuardian's vault: its key is that vault's owner, and the vault owns each person's vault (rule 15, A28) -/
   guardianVault : String
+  /-- the vaults holding Maia City's standing confirm cap (A38): Aven's, so the Aven Peer confirms on its own -/
+  confirmers : List String
   signedBy : List String
   deriving DecidableEq, Repr
 
@@ -225,8 +227,9 @@ inductive TreeSays where
   /-- A claim of a ticket, signed by its one-time key: it founds `vault` with its passkey and first device, and names
   the guardian it consents to. -/
   | claim (ticket : Nat) (vault passkey device : String) (guardian : GuardianKeys)
-  /-- An admin device acks the claim it names, which makes it final. -/
-  | ack (claim : Nat)
+  /-- The confirm op (A38): a device of a vault holding Maia City's standing confirm cap confirms the claim it names,
+  which issues the claim's vault its member cap. -/
+  | confirm (claim : Nat)
   /-- The relay and keeper lists name vaults, never devices (rule 15, A28): a vault on the relay list runs a relay on
   its devices, one on the keeper list keeps on them. -/
   | relayAdd (vault : String)
@@ -527,15 +530,19 @@ withdrawals and the relay and keeper lists count only so. A device's key owns no
 def byAdmin (v : View) (k : String) : Bool :=
   gen v (fun g => g.tree.approves (fun _ => 1) g.coop stmtDigest [⟨k, stmtDigest⟩])
 
-/-- An ack's signer: a device of a vault that owns Maia City, acting for it within its device cap (rule 15). The coop
-holds no devices of its own, so its owners' devices ack for it: the claimant's first devices when the claimant's vault
-owns the coop, or a device a coop owner's owners signed in (its device cap, `Tree.approves` on that vault). -/
-def acker (v : View) (k : String) : Bool :=
-  gen v (fun g => g.coopOwners.contains g.claimant && g.devices.contains k) ||
+/-- A confirmation's signer (A38): Maia City's owners themselves, or a device of a vault holding Maia City's standing
+confirm cap, which the genesis grants with its owners' approval (rule 15): the claimant's first devices or the Aven
+Peer when the claimant's vault or Aven's holds it, or a device that vault's owners signed in (its device cap,
+`Tree.approves` on that vault). The confirm op is bounded by what it confirms: only a claim of a ticket Maia City
+issued, standing (not withdrawn, not beaten). -/
+def confirmer (v : View) (k : String) : Bool :=
+  byAdmin v k ||
+    gen v (fun g => (g.confirmers.contains g.claimant && g.devices.contains k) ||
+      (g.confirmers.contains g.agent && k == g.avenPeer)) ||
     v.any fun s =>
       match s.says with
       | .signIn vault d =>
-        d == k && gen v (fun g => g.coopOwners.contains vault &&
+        d == k && gen v (fun g => g.confirmers.contains vault &&
           g.tree.approves (fun _ => 1) vault stmtDigest [⟨s.signer, stmtDigest⟩])
       | _ => false
 
@@ -551,9 +558,9 @@ def claimOk (v : View) (c : TreeStatement) : Bool :=
 /-- Two claims of one ticket. -/
 def sameTicket (c d : TreeStatement) : Bool := c.ticketOf.isSome && c.ticketOf == d.ticketOf
 
-/-- A claim is final once an admin key's ack that names it has it in its past. -/
+/-- A claim is final once a confirmation that names it has it in its past: its vault holds a member cap (A38). -/
 def final (v : View) (c : TreeStatement) : Bool :=
-  claimOk v c && v.any fun a => acker v a.signer && a.says == .ack c.name && v.past a c
+  claimOk v c && v.any fun a => confirmer v a.signer && a.says == .confirm c.name && v.past a c
 
 /-- `w` wins over claim `c`: an admin passkey's withdrawal of its ticket that didn't have it in its past. -/
 def beats (v : View) (w c : TreeStatement) : Bool :=
@@ -571,11 +578,12 @@ def standing (v : View) (c : TreeStatement) : Bool :=
       !(v.any fun w => beats v w c) &&
         v.all fun d => !(claimOk v d && sameTicket d c && !(v.any fun w => beats v w d)) || decide (c.name ≤ d.name)
 
-/-- A member vault: the claimant's, the admin coop, the agent, and every vault a standing claim founds. -/
+/-- A member vault: the claimant's, the admin coop, the agent, and every vault a standing claim founds once it is
+confirmed, which is its member cap (A38). -/
 def member (v : View) (vault : String) : Bool :=
   gen v (fun g => vault == g.claimant || vault == g.coop || vault == g.agent) ||
     v.any fun c =>
-      standing v c &&
+      standing v c && final v c &&
         match c.says with
         | .claim _ founded _ _ _ => founded == vault
         | _ => false
@@ -585,7 +593,7 @@ for the claimant's vault, or a standing claim's passkey or the guardian it names
 def ownerKeyOf (v : View) (vault p : String) : Bool :=
   gen v (fun g => vault == g.claimant && (p == g.passkey || p == g.guardian.ed25519)) ||
     v.any fun c =>
-      standing v c &&
+      standing v c && final v c &&
         match c.says with
         | .claim _ founded pk _ gu => founded == vault && (pk == p || gu.ed25519 == p)
         | _ => false
@@ -616,7 +624,7 @@ or a device the vault's passkey signed in. -/
 def deviceOf (v : View) (vault d : String) : Bool :=
   (gen v (fun g => vault == g.claimant && g.devices.contains d) || (gen v (fun g => vault == g.agent) && peerIs v d)) ||
     (v.any fun c =>
-      standing v c &&
+      standing v c && final v c &&
         match c.says with
         | .claim _ founded _ dev _ => founded == vault && dev == d
         | _ => false) ||
@@ -629,7 +637,7 @@ def deviceOf (v : View) (vault d : String) : Bool :=
 def admits (v : View) (d : String) : Bool :=
   (gen v (fun g => g.devices.contains d) || peerIs v d) ||
     (v.any fun c =>
-      standing v c &&
+      standing v c && final v c &&
         match c.says with
         | .claim _ _ _ dev _ => dev == d
         | _ => false) ||
@@ -978,12 +986,13 @@ theorem gen_mono (sub : ∀ x ∈ S, x ∈ S') {P : Genesis → Bool} (h : gen (
     gen (view ok pinned S') P = true :=
   any_mono ok pinned sub (fun _ hx => hx) h
 
-theorem acker_mono (sub : ∀ x ∈ S, x ∈ S') {k : String} (h : acker (view ok pinned S) k = true) :
-    acker (view ok pinned S') k = true := by
-  unfold acker at h ⊢
+theorem confirmer_mono (sub : ∀ x ∈ S, x ∈ S') {k : String} (h : confirmer (view ok pinned S) k = true) :
+    confirmer (view ok pinned S') k = true := by
+  unfold confirmer at h ⊢
   simp only [Bool.or_eq_true] at h ⊢
-  rcases h with h | h
-  · exact .inl (gen_mono ok pinned sub h)
+  rcases h with (h | h) | h
+  · exact .inl (.inl (gen_mono ok pinned sub h))
+  · exact .inl (.inr (gen_mono ok pinned sub h))
   · refine .inr (any_mono ok pinned sub (fun x hx => ?_) h)
     split at hx
     · simp only [Bool.and_eq_true] at hx ⊢
@@ -1005,7 +1014,7 @@ theorem final_mono (sub : ∀ x ∈ S, x ∈ S') (h : final (view ok pinned S) c
   simp only [final, Bool.and_eq_true] at h ⊢
   refine ⟨claimOk_mono ok pinned sub h.1, any_mono ok pinned sub (fun x hx => ?_) h.2⟩
   simp only [Bool.and_eq_true] at hx ⊢
-  exact ⟨⟨acker_mono ok pinned sub hx.1.1, hx.1.2⟩, past_mono ok pinned sub hx.2⟩
+  exact ⟨⟨confirmer_mono ok pinned sub hx.1.1, hx.1.2⟩, past_mono ok pinned sub hx.2⟩
 
 /-- A final claim stays final whatever is added, and stands unless what is added makes another claim of its ticket
 with a smaller hash final: only an admin's ack that never saw the first ack can. -/
@@ -1223,7 +1232,7 @@ def TreeStatement.mentions (s : TreeStatement) : List String × List String :=
   match s.says with
   | .genesis g => ([g.claimant, g.coop, g.agent, g.guardianVault], g.avenPeer :: g.devices)
   | .signIn vault device => ([vault], [device])
-  | .ticket _ | .withdrawal _ | .ack _ => ([], [])
+  | .ticket _ | .withdrawal _ | .confirm _ => ([], [])
   | .claim _ vault _ device _ => ([vault], [device])
   | .relayAdd v | .relayRemove v | .keeperAdd v | .keeperRemove v | .setGuardian v => ([v], [])
   | .setAvenPeer k => ([], [k])
@@ -1257,7 +1266,7 @@ def guardian : GuardianKeys := ⟨"guardian-ed25519", "guardian-ml-dsa", "guardi
 def alicesGenesis : Genesis :=
   { rpId := "maia.city", origins := ["https://maia.city"], claimant := "alice", passkey := "alice-passkey",
     devices := ["alice-peer"], coop := "maia-city", coopOwners := ["alice"], agent := "aven", avenPeer := "aven-peer",
-    guardian, guardianVault := "maia-city-guardian",
+    guardian, guardianVault := "maia-city-guardian", confirmers := ["aven", "alice"],
     signedBy := ["alice-passkey", "guardian-ed25519", "guardian-ml-dsa"] }
 
 def statements : List TreeStatement :=
@@ -1265,7 +1274,7 @@ def statements : List TreeStatement :=
    ⟨110, "alice-passkey", [100], .signIn "alice" "alice-peer-light"⟩,
    ⟨120, "alice-passkey", [110], .ticket "t-bob"⟩,
    ⟨500, "t-bob", [120], .claim 120 "bob" "bob-passkey" "bob-peer-light" guardian⟩,
-   ⟨510, "alice-peer", [500], .ack 500⟩,
+   ⟨510, "alice-peer", [500], .confirm 500⟩,
    ⟨300, "t-bob", [120], .claim 120 "mallory" "mallory-passkey" "mallory-peer" guardian⟩,
    ⟨310, "mallory-passkey", [300], .signIn "mallory" "mallory-peer-2"⟩,
    ⟨520, "bob-passkey", [510], .signIn "bob" "bob-peer"⟩,
@@ -1277,8 +1286,8 @@ def statements : List TreeStatement :=
    ⟨160, "alice-passkey", [100], .ticket "t-eve"⟩,
    ⟨800, "t-eve", [160], .claim 160 "eve" "eve-passkey" "eve-peer" guardian⟩,
    ⟨790, "t-eve", [160], .claim 160 "eve2" "eve2-passkey" "eve2-peer" guardian⟩,
-   ⟨810, "alice-peer", [800], .ack 800⟩,
-   ⟨811, "alice-peer-light", [790], .ack 790⟩,
+   ⟨810, "alice-peer", [800], .confirm 800⟩,
+   ⟨811, "alice-peer-light", [790], .confirm 790⟩,
    ⟨700, "alice-passkey", [100], .relayAdd "aven"⟩,
    ⟨740, "alice-passkey", [700], .relayRemove "aven"⟩,
    ⟨750, "alice-passkey", [740], .relayAdd "aven"⟩,

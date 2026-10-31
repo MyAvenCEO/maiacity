@@ -817,6 +817,15 @@ the spec that owns it.
   Doc (the old chains stay stored, never wiped); then catch-up, keepers and the failures. Thread E's wire runs beside.
   *Decided: yes.*
 
+- **A44. Placement has one source: the owner's vault** (Samuel, 31 Oct 2026: "we can't have two sources of truth
+  for who keeps what; it's always co-located with the owner's data and vaults"). A vault's keep caps say which keeper
+  holds which of its Docs and Values, issued and kept by the owner's vault beside its data (A22). A keeper decides only
+  about its own resources: its vault issues **offer caps** to a vault or a group, how much may be stored there and how
+  fast (quota, rate limits). A keeper keeps a Doc only where both hold: the owner's keep cap names it, and the
+  keeper's offer covers that owner (keep caps ∩ offers, as wants ∩ caps). The admin's keeper list goes: the offers
+  Maia City's members hold are the list. The relay list stays Maia City's: it is about who sees members' connections,
+  not about data. *Decided: yes.*
+
 **The engine and actors**
 - **A9. The want queue** as in [Massive data](#massive-data-wants-decide-what-moves). Its laws go into Lean before
   any code: tiers only order, each key once at its highest tier, prerequisites inherit priority, every round moves,

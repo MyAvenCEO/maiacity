@@ -7,17 +7,19 @@ A cap is a Value, encoded by `Aven.Core`'s deterministic CBOR, its targets as `A
 **body** is everything but its signature and approvals:
 
 ```
-{"kind": "grant" or "attenuate", "role": role or null, "grant": [line…], "share": n, "holder": holder,
+{"form": "grant" or "attenuate", "role": role or null, "grant": [line…], "share": n, "holder": holder,
  "issuer": vault, "parent": cap or null, "conditions": {"own", "uses", "approve", "expires", "history", "branches",
  "notBefore"}}
-line:    {"verb": "read", "target": target, "footprint": [{"type": Doc, "verb": "put-new", "fields": [field…] or null}]}
-holder:  {"vault": v}   {"group": g}   "public"   {"ticket": key}
+line:    {"op": op id, "doc": target, "params": {param: [value…] or null, …}}
+holder:  {"vault": v}   {"group": Doc}   "public"   {"ticket": key}
 ```
 
-Keys sort as the codec sorts them: shorter first, then by their bytes. A cap's id is the BLAKE3 hash of its body's
-encoding (`Cap.digest`), which its issuer's owners approve, unless it attenuates. Its kind is in its body, so a
-signature over an attenuation is never one over a grant. Its issuing device signs the body under the label
-`avenID cap 1` (`Cap.signing`), so the signature can't be read as anything else's (Core's `signing_separates`).
+Keys sort as the codec sorts them: shorter first, then by their bytes. An op id and a Doc id are byte strings of their
+hash; a bound is null for any value or the values it allows (A32). A line's parameters are a map, so a line whose
+parameters aren't sorted, or name one twice, isn't canonical. A cap's id is the BLAKE3 hash of its body's encoding
+(`Cap.digest`), which its issuer's owners approve, unless it attenuates. Its form is in its body, so a signature over
+an attenuation is never one over a grant. Its issuing device signs the body under the label `avenID cap 1`
+(`Cap.signing`), so the signature can't be read as anything else's (Core's `signing_separates`).
 
 The cast's caps go by readable names, so here a parent and a role are text; with R5 they become hashes, as every
 Doc id already is. -/
@@ -37,18 +39,13 @@ def optNat : Option Nat → Value
   | none => .null
   | some n => .uint n
 
-/-- A footprint grant: its type Doc, its step verb, and the fields it allows, or every field. -/
-def fpValue (g : Core.Grant) : Value :=
-  .map [(key "type", .bytes g.type.hash.bytes), (key "verb", txt g.verb.name),
-    (key "fields", match g.fields with | some fs => .array (fs.map .text) | none => .null)]
-
 def Line.value (l : Line) : Value :=
-  .map [(key "verb", txt (verbName l.verb)), (key "target", l.target.value),
-    (key "footprint", .array (l.footprint.map fpValue))]
+  .map [(key "op", .bytes l.op.bytes), (key "doc", l.doc.value),
+    (key "params", .map (l.params.map fun (p, b) => (p, Bound.value b)))]
 
 def Holder.value : Holder → Value
   | .vault v => .map [(key "vault", txt v)]
-  | .group g => .map [(key "group", txt g)]
+  | .group g => .map [(key "group", .bytes g.hash.bytes)]
   | .«public» => txt "public"
   | .ticket k => .map [(key "ticket", txt k)]
 
@@ -69,7 +66,7 @@ def Conditions.value (c : Conditions) : Value :=
 
 /-- What a cap says, without its signature and approvals. -/
 def Cap.body (c : Cap) : Value :=
-  .map [(key "kind", txt c.kind.name), (key "role", optText c.role), (key "grant", .array (c.grant.map Line.value)),
+  .map [(key "form", txt c.form.name), (key "role", optText c.role), (key "grant", .array (c.grant.map Line.value)),
     (key "share", .uint c.share), (key "holder", c.holder.value), (key "issuer", txt c.issuer),
     (key "parent", optText c.parent), (key "conditions", c.conditions.value)]
 
