@@ -1,7 +1,7 @@
 # First principles: one job, one mechanism (31 Oct 2026)
 
 At main `17880922`, independent of the architect. Every item marked **checked** was confirmed against the code by
-the architect the same day. What follows from each is in [`ARCHITECTURE.md`](../ARCHITECTURE.md) (A28 to A38).
+the architect the same day. What follows from each is in [`ARCHITECTURE.md`](https://github.com/MyAvenCEO/maiacity/blob/dd5bfebad2f41ef4dff535b6c446953c55769a9d/aven/DB2/ARCHITECTURE.md) (A28 to A38).
 
 ## 1. The tree's admin is fixed at genesis, not governed (checked)
 `Network.lean` `admin` and `adminPasskey` are the genesis claimant's passkey. Running code (`members.rs` `admin_key`)

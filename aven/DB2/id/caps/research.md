@@ -349,7 +349,7 @@ broke the first claim and was reverted.
 ## 4. Outside
 
 What each system teaches this design. The rules it became are in the spec's
-[first table](README.md#what-it-takes-from-before).
+[first table](https://github.com/MyAvenCEO/maiacity/blob/dd5bfebad2f41ef4dff535b6c446953c55769a9d/aven/DB2/id/caps/README.md#what-it-takes-from-before).
 
 - **Signal.**
   - PQXDH puts a hybrid KEM (X25519 and ML-KEM) into first contact, so a recording stays sealed while either holds; its
