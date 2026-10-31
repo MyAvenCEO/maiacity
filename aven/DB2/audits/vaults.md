@@ -1,6 +1,6 @@
 # Vaults own; signers only sign (31 Oct 2026)
 
-At main `f5a6fd3d`. What follows is fixed Lean-first, before its code ([`ARCHITECTURE.md`](../ARCHITECTURE.md), rule 15, A28).
+At main `f5a6fd3d`. What follows is fixed Lean-first, before its code ([`ARCHITECTURE.md`](https://github.com/MyAvenCEO/maiacity/blob/dd5bfebad2f41ef4dff535b6c446953c55769a9d/aven/DB2/ARCHITECTURE.md), rule 15, A28).
 
 The rules applied:
 - caps rule 1: "Keys sign; vaults hold"; rule 2: "Governing is ownership, never a cap";

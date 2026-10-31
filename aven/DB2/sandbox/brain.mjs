@@ -8,9 +8,12 @@
 //   4. every text has 4.5:1 against the background under it (3:1 when large), as WCAG has it, and no text on a slide is
 //      under 9 px at a phone's width (brain/STYLE.md, "A slide");
 //   5. a screenshot of each, in the run's folder.
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { chromium, firefox, webkit } from 'playwright';
 import { linear } from '../brain/render/contrast.js';
+
+// Brain's dashboard shows one tile per entry of its list
+const { packages } = JSON.parse(readFileSync(new URL('../brain/packages.json', import.meta.url), 'utf8'));
 
 const run = process.argv[2] ?? 'runs/latest';
 mkdirSync(run, { recursive: true });
@@ -94,7 +97,7 @@ async function read(engine) {
 					if (view === 'dashboard') {
 						seen.items = await page.locator('[data-testid^="brain-"]').count();
 						seen.open = await page.locator('[data-testid^="brain-"] a').count();
-						if (seen.items !== 9) say(`${seen.items} items, not 9`);
+						if (seen.items !== packages.length) say(`${seen.items} items, not ${packages.length}`);
 						if (!(await page.locator('[data-testid="brain-id"] a').count())) say('avenID is not open');
 					}
 					if (view === 'id') {
