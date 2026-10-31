@@ -11,7 +11,7 @@
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
-use crate::names::Hash;
+use aven_codec::Hash;
 
 /// The names a thing builds on, its parents (Lean's `Parents`).
 pub trait Parents {

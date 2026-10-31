@@ -71,8 +71,10 @@ fn op_env(writer: u64, seq: u64, prev: Option<Hash>, deps: Vec<Hash>, post: &str
         prev,
         deps,
         body: Value::Map(vec![("post".into(), Value::Text(post.into()))]),
-        signer: vec![7; 32],
-        sig: vec![9; 64],
+        sigs: vec![aven_core::Sig {
+            signer: vec![7; 32],
+            sig: vec![9; 64],
+        }],
     }
 }
 
@@ -197,7 +199,7 @@ fn logs() {
             for (label, want) in v["expected"][reader].as_object().unwrap() {
                 let e = &by[label.as_str()];
                 assert_eq!(
-                    h.counts(e, |_| true),
+                    h.counts(e, |_| true, |_| true),
                     want["counts"].as_bool().unwrap(),
                     "{case}: {reader} {label} counts"
                 );
@@ -231,7 +233,7 @@ fn counts() {
         let h = Held::new(&held);
         let counted: Vec<&Envelope> = held
             .iter()
-            .filter(|e| h.counts(e, |x| ok[&x.name()]))
+            .filter(|e| h.counts(e, |x| ok[&x.name()], |_| true))
             .collect();
         let labels: Vec<&str> = counted
             .iter()
