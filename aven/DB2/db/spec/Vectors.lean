@@ -69,6 +69,8 @@ import Aven.DB.Docs
 - `placements.json`: envelopes with and without the genesis; whether each is its log's first, and whether the
   genesis sits where it must (`genesis_iff_first`).
 - `builtins.json`: Records of the docs layer's built-in types; which their shapes take (`docsBuiltinFit`).
+- `schemas.json`: schemas' one form: which Values a reader takes as a schema, and a taken one's hash
+  (`Aven.DB.Docs.Schema`).
 - `keys.json`: tuples and their keys in hex; pairs of tuples and whether the first key sorts before the second
   (`Aven.DB.Docs.Key`).
 
@@ -1273,6 +1275,40 @@ def builtinVectors : List Json :=
   [vector "another Doc's type is no docs built-in" (Json.mkObj [("type", Json.str todoType.text)])
     (toJson (Docs.docsBuiltinFit blake3 todoType).isSome)]
 
+open Docs in
+def schemaCases : List (String × Value) :=
+  let todo : Schema := ⟨tb "todo", [(tb "title", .text, true), (tb "done", .bool, false),
+    (tb "tags", .array .text, false), (tb "count", .uint 100, false), (tb "owner", .hash, false),
+    (tb "blob", .bytes, false), (tb "extra", .any, false)], true⟩
+  let field (n : String) (kind : Value) (r : Bool) : Value := .array [.text (tb n), kind, .bool r]
+  let form (fs : List Value) : Value :=
+    .map [(tb "title", .text (tb "t")), (tb "closed", .bool false), (tb "fields", .array fs)]
+  [("a todo, every kind", todo.value),
+   ("an open schema with no fields", (⟨tb "anything", [], false⟩ : Schema).value),
+   ("lists of lists of bounded numbers",
+      (⟨tb "grid", [(tb "rows", .array (.array (.uint 9)), true)], true⟩ : Schema).value),
+   ("refused: a field named twice", form [field "a" (.text (tb "text")) true, field "a" (.text (tb "bool")) false]),
+   ("refused: a kind it doesn't have", form [field "a" (.text (tb "float")) true]),
+   ("refused: a bound that isn't a number", form [field "a" (.array [.text (tb "uint"), .text (tb "9")]) true]),
+   ("refused: uint without its bound", form [field "a" (.array [.text (tb "uint")]) true]),
+   ("refused: a field without required", form [.array [.text (tb "a"), .text (tb "text")]]),
+   ("refused: required that isn't a bool", form [.array [.text (tb "a"), .text (tb "text"), .text (tb "yes")]]),
+   ("refused: a key it doesn't have",
+      .map [(tb "title", .text (tb "t")), (tb "closed", .bool false), (tb "fields", .array []), (tb "lenses", .array [])]),
+   ("refused: no title", .map [(tb "closed", .bool false), (tb "fields", .array [])]),
+   ("refused: not a map", .array [])]
+
+#guard schemaCases.all fun (_, v) => decodeAll (encode v) == some v
+
+/-- Schemas' one form: which Values a reader takes (`Schema.ofValue?`), and a taken one's hash, the schema half of a
+type id. -/
+def schemaVectors : List Json :=
+  schemaCases.map fun (name, v) =>
+    vector s!"schema: {name}" (Json.mkObj [("value", hexJson (encode v))])
+      (match Docs.Schema.ofValue? v with
+        | some s => Json.mkObj [("ok", true), ("hash", hexJson (Docs.Schema.hash blake3 s).bytes)]
+        | none => Json.mkObj [("ok", false)])
+
 end DocsVectors
 
 /-- One vector per line, so a change reads as a diff of lines. -/
@@ -1290,5 +1326,6 @@ def main (args : List String) : IO Unit := do
       ("checkpoints.json", checkpoints), ("fit.json", fit), ("logs.json", logs),
       ("counts.json", counts), ("genesis.json", genesisVectors), ("bodies.json", bodyVectors),
       ("segments.json", segmentVectors), ("heads.json", headVectors), ("loro.json", loroVectors),
-      ("placements.json", placementVectors), ("held.json", heldVectors), ("builtins.json", builtinVectors)] do
+      ("placements.json", placementVectors), ("held.json", heldVectors), ("builtins.json", builtinVectors),
+      ("schemas.json", schemaVectors)] do
     IO.FS.writeFile (dir / file) (render vs)

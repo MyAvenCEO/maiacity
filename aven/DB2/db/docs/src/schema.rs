@@ -35,6 +35,28 @@ impl Kind {
         }
     }
 
+    /// A kind back from its one form, `None` for anything else (`FieldKind.ofValue?`).
+    pub fn of_value(v: &Value) -> Option<Kind> {
+        match v {
+            Value::Text(t) => match t.as_str() {
+                "any" => Some(Kind::Any),
+                "bool" => Some(Kind::Bool),
+                "text" => Some(Kind::Text),
+                "bytes" => Some(Kind::Bytes),
+                "hash" => Some(Kind::Hash),
+                _ => None,
+            },
+            Value::Array(xs) => match xs.as_slice() {
+                [Value::Text(t), Value::Uint(max)] if t == "uint" => Some(Kind::Uint(*max)),
+                [Value::Text(t), of] if t == "array" => {
+                    Kind::of_value(of).map(|k| Kind::Array(Box::new(k)))
+                }
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     fn value(&self) -> Value {
         match self {
             Kind::Any => Value::Text("any".into()),
@@ -75,6 +97,40 @@ impl Schema {
                 ),
             ),
         ])
+    }
+
+    /// A schema back from its one form (`Schema.ofValue?`): exactly `title`, `closed` and `fields` in the codec's
+    /// order, every field `[name, kind, required]`, no field named twice; `None` for anything else. What it reads is
+    /// the schema whose hash was pinned (`ofValue_value`, `value_ofValue`).
+    pub fn of_value(v: &Value) -> Option<Schema> {
+        let Value::Map(kvs) = v else { return None };
+        let [
+            (t, Value::Text(title)),
+            (c, Value::Bool(closed)),
+            (f, Value::Array(fs)),
+        ] = kvs.as_slice()
+        else {
+            return None;
+        };
+        if (t.as_str(), c.as_str(), f.as_str()) != ("title", "closed", "fields") {
+            return None;
+        }
+        let mut fields: Vec<(String, Kind, bool)> = Vec::with_capacity(fs.len());
+        for x in fs {
+            let Value::Array(parts) = x else { return None };
+            let [Value::Text(name), kind, Value::Bool(required)] = parts.as_slice() else {
+                return None;
+            };
+            if fields.iter().any(|(n, _, _)| n == name) {
+                return None;
+            }
+            fields.push((name.clone(), Kind::of_value(kind)?, *required));
+        }
+        Some(Schema {
+            title: title.clone(),
+            fields,
+            closed: *closed,
+        })
     }
 
     /// Its hash, the schema half of its type id.

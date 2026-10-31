@@ -332,6 +332,39 @@ fn a_mixed_sealed_page_lands_in_one_batch() {
         &Allow,
     );
     assert_eq!(r, vec![Err(Unopened::Seal), Err(Unopened::Seal)]);
+    // the opening half alone, with no Doc, as the Peer-Light runs it beside the keys: the same envelopes, which import
+    // to the same state
+    let page: [&[u8]; 3] = [&later, &seg, &unknown];
+    let plain = aven_db_docs::open_sealed_page(
+        &g.id(),
+        &page,
+        |n| keys.iter().copied().find(|k| k.name == *n),
+        &Limits::DEFAULTS,
+    );
+    assert_eq!(plain[0].as_ref().map(Vec::len), Ok(1));
+    assert_eq!(plain[1].as_ref().map(Vec::len), Ok(4));
+    assert!(matches!(plain[2], Err(Unopened::Epoch(_))));
+    let mut split = open(&g);
+    let envs: Vec<&[u8]> = plain
+        .iter()
+        .flatten()
+        .flatten()
+        .map(Vec::as_slice)
+        .collect();
+    assert!(
+        split
+            .import_page(&envs, &Allow)
+            .iter()
+            .all(|x| *x == Ok(Imported::Counts))
+    );
+    assert_eq!(split.snapshot(), writer.snapshot());
+    let other = aven_db_docs::open_sealed_page(
+        &aven_core::DocId(blake3(b"another Doc")),
+        &page[..1],
+        |n| keys.iter().copied().find(|k| k.name == *n),
+        &Limits::DEFAULTS,
+    );
+    assert_eq!(other, vec![Err(Unopened::Doc)]);
     // a kind found by the commitment alone, and none under another epoch's key
     assert_eq!(
         aven_db_docs::seal::kind_of(&e1, &seg, 1 << 21),

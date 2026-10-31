@@ -433,6 +433,42 @@ fn changes_of(
     Ok(out)
 }
 
+/// Opens a page of sealed things as catch-up fetches them, loose envelopes and segments mixed, without a [`Doc`]: what
+/// holds the epoch keys opens, and only plaintext envelopes go on to be imported. A keeper serves them by hash and the
+/// reader doesn't know their kinds (the kind is in the AAD, D13), so each is opened under its epoch's key (found by the
+/// epoch its outside names) as the kind whose commitment it carries ([`crate::seal::kind_of`],
+/// `Aven.ID.Seal.kind_by_commit`), checked before anything is decrypted. Per item, its envelopes' bytes in order (a
+/// segment's flattened), or why it didn't open.
+pub fn open_sealed_page<'k>(
+    doc: &DocId,
+    items: &[&[u8]],
+    epochs: impl Fn(&Hash) -> Option<&'k EpochKey>,
+    limits: &Limits,
+) -> Vec<Result<Vec<Vec<u8>>, Unopened>> {
+    let limit = limits.sealed + limits.sealed / 8 + 256;
+    let seg_limit = limits.segment_bytes + limits.segment_bytes / 8 + 256;
+    items
+        .iter()
+        .map(|&b| {
+            let out = crate::seal::outside(b, limit.max(seg_limit)).ok_or(Unopened::Form)?;
+            if out.doc != *doc {
+                return Err(Unopened::Doc);
+            }
+            let epoch = epochs(&out.epoch).ok_or(Unopened::Epoch(out.epoch))?;
+            match crate::seal::kind_of(epoch, b, limit.max(seg_limit)) {
+                Some(Kind::Envelope) => match open(Kind::Envelope, epoch, b, limit) {
+                    Some((d, pt)) if d == *doc => Ok(vec![pt]),
+                    _ => Err(Unopened::Seal),
+                },
+                Some(Kind::Segment) => Segment::open(b, doc, epoch, limits)
+                    .map(|(s, _)| s.envelopes)
+                    .map_err(Unopened::Segment),
+                Some(Kind::Snapshot) | None => Err(Unopened::Seal),
+            }
+        })
+        .collect()
+}
+
 /// Why a sealed thing in a page didn't open.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Unopened {
@@ -647,40 +683,16 @@ impl Doc {
         Ok(self.import_page(&page, auth))
     }
 
-    /// Imports a page of sealed things as catch-up fetches them, loose envelopes and segments mixed, in one batch. A
-    /// keeper serves them by hash and the reader doesn't know their kinds (the kind is in the AAD, D13), so each is
-    /// opened under its epoch's key (found by the epoch its outside names) as the kind whose commitment it carries
-    /// ([`crate::seal::kind_of`], `Aven.ID.Seal.kind_by_commit`), all before decrypting. Segments are flattened in
-    /// order, and the whole goes through [`Doc::import_page`]: one judge, one `import_batch`, one snapshot. Per item,
-    /// the results of its envelopes in order, or why it didn't open.
+    /// Imports a page of sealed things as catch-up fetches them, loose envelopes and segments mixed, in one batch:
+    /// [`open_sealed_page`], then [`Doc::import_page`] over what opened (one judge, one `import_batch`, one
+    /// snapshot). Per item, the results of its envelopes in order, or why it didn't open.
     pub fn import_sealed_page<'k>(
         &mut self,
         items: &[&[u8]],
         epochs: impl Fn(&Hash) -> Option<&'k EpochKey>,
         auth: &impl Authorize,
     ) -> Vec<Result<Vec<Result<Imported, Refused>>, Unopened>> {
-        let limit = self.limits.sealed + self.limits.sealed / 8 + 256;
-        let seg_limit = self.limits.segment_bytes + self.limits.segment_bytes / 8 + 256;
-        let opened: Vec<Result<Vec<Vec<u8>>, Unopened>> = items
-            .iter()
-            .map(|&b| {
-                let out = crate::seal::outside(b, limit.max(seg_limit)).ok_or(Unopened::Form)?;
-                if out.doc != self.id {
-                    return Err(Unopened::Doc);
-                }
-                let epoch = epochs(&out.epoch).ok_or(Unopened::Epoch(out.epoch))?;
-                match crate::seal::kind_of(epoch, b, limit.max(seg_limit)) {
-                    Some(Kind::Envelope) => match open(Kind::Envelope, epoch, b, limit) {
-                        Some((d, pt)) if d == self.id => Ok(vec![pt]),
-                        _ => Err(Unopened::Seal),
-                    },
-                    Some(Kind::Segment) => Segment::open(b, &self.id, epoch, &self.limits)
-                        .map(|(s, _)| s.envelopes)
-                        .map_err(Unopened::Segment),
-                    Some(Kind::Snapshot) | None => Err(Unopened::Seal),
-                }
-            })
-            .collect();
+        let opened = open_sealed_page(&self.id, items, epochs, &self.limits);
         let page: Vec<&[u8]> = opened
             .iter()
             .flatten()

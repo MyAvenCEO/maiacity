@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 use aven_core::{DocId, Envelope, Hash, Value, decode, encode};
-use aven_db_docs::schema::{BUILTIN_NAMES, builtin_type, is_builtin};
+use aven_db_docs::schema::{BUILTIN_NAMES, Schema, builtin_type, is_builtin};
 use aven_db_docs::seal::{
     Kind, Sealed, aad, cipher_key, commit, kind_of, open, pad, padme, seal_with_nonce, unpad,
 };
@@ -401,5 +401,20 @@ fn held() {
             x["reads"].as_bool().unwrap(),
             "{name}"
         );
+    }
+}
+
+#[test]
+fn schemas() {
+    for v in vectors("db/spec/vectors/schemas.json") {
+        let (name, i, x) = (s(&v["name"]), &v["input"], &v["expected"]);
+        let bytes = unhex(s(&i["value"]));
+        let got = decode(&bytes).and_then(|v| Schema::of_value(&v));
+        assert_eq!(got.is_some(), x["ok"].as_bool().unwrap(), "{name}");
+        if let Some(schema) = got {
+            // one form: read back, it is the same Value, and its hash is the one pinned
+            assert_eq!(encode(&schema.value()), bytes, "{name}: its one form");
+            assert_eq!(schema.hash(), Hash(h32(&x["hash"])), "{name}: hash");
+        }
     }
 }
