@@ -60,6 +60,9 @@ import Aven.DB.Docs
 - `heads.json`: a head's encoding (`Aven.DB.Docs.Head`).
 - `loro.json`: rule 7 on Loro commits: the deps a change carries, read with its writer's previous op, and the verdict
   (`Aven.DB.Docs.loroAgrees`).
+- `placements.json`: envelopes with and without the genesis; whether each is its log's first, and whether the
+  genesis sits where it must (`genesis_iff_first`).
+- `builtins.json`: Records of the docs layer's built-in types; which their shapes take (`docsBuiltinFit`).
 - `keys.json`: tuples and their keys in hex; pairs of tuples and whether the first key sorts before the second
   (`Aven.DB.Docs.Key`).
 
@@ -1145,6 +1148,48 @@ def loroVectors : List Json :=
           | some c => Json.arr (c.map opJson).toArray | none => Json.null),
         ("verdict", Json.str (Docs.loroAgrees (Envelope.name blake3) lastOf [a1, b1] e 4 frontier).text)])
 
+/-- Where the genesis rides: exactly in a log's first envelope. -/
+def placementCases : List (String × Envelope × Bool) := [
+  ("a log's first envelope with the genesis", a1, true),
+  ("a log's first envelope without it", a1, false),
+  ("a later envelope with the genesis", a2, true),
+  ("a later envelope without it", a2, false),
+  ("a first sequence number that builds on another log, with the genesis", ly1, true),
+  ("a first sequence number that builds on another log, without it", ly1, false)]
+
+def placementVectors : List Json :=
+  placementCases.map fun (name, e, carries) =>
+    let b : Docs.Body := { firstBody with genesis := if carries then some todoGenesis else none }
+    vector name (Json.mkObj [("seq", toJson e.seq), ("prev", toJson e.prev.isSome), ("deps", toJson e.deps.length),
+        ("genesis", toJson carries)])
+      (Json.mkObj [("first", toJson (Docs.isFirst e)), ("placed", toJson (Docs.genesisPlaced e b))])
+
+def builtinCases : List (String × String × Value) :=
+  let h := Value.bytes (blake3 (tb "a tip")).bytes
+  [("version", "a named version", .map [(tb "at", .array [h]), (tb "name", .text (tb "v1"))]),
+   ("version", "refused: no name", .map [(tb "at", .array [h])]),
+   ("version", "refused: a field it doesn't have", .map [(tb "at", .array [h]), (tb "name", .text (tb "v1")), (tb "x", .null)]),
+   ("version", "refused: a tip that isn't a hash", .map [(tb "at", .array [.bytes [1]]), (tb "name", .text (tb "v1"))]),
+   ("branch", "a proposal", .map [(tb "base", .array [h]), (tb "name", .text (tb "seeds")), (tb "nonce", h)]),
+   ("branch", "a variant that follows main", .map [(tb "base", .array [h]), (tb "name", .text (tb "v")), (tb "nonce", h),
+      (tb "follows", .text (tb "main"))]),
+   ("branch", "refused: no nonce", .map [(tb "base", .array [h]), (tb "name", .text (tb "seeds"))]),
+   ("closed", "closed, with nothing more", .map []),
+   ("closed", "closed at its tips", .map [(tb "at", .array [h])]),
+   ("split", "a writer's split", .map [(tb "after", h), (tb "writer", .uint 7)]),
+   ("split", "refused: a writer that isn't a number", .map [(tb "after", h), (tb "writer", .text (tb "7"))]),
+   ("split", "refused: not a map", .array [])]
+
+def builtinVectors : List Json :=
+  (builtinCases.map fun (ty, name, v) =>
+    let t := Docs.builtinType blake3 ty
+    vector s!"{ty}: {name}" (Json.mkObj [("type", Json.str t.text), ("record", hexJson (encode v))])
+      (Json.mkObj [("new", toJson (Docs.builtinFits (Docs.docsBuiltinFit blake3) t .new
+          (match v with | .map fs => fs | _ => []))),
+        ("fits", toJson ((Docs.docsBuiltinFit blake3 t).map (· v)))])) ++
+  [vector "another Doc's type is no docs built-in" (Json.mkObj [("type", Json.str todoType.text)])
+    (toJson (Docs.docsBuiltinFit blake3 todoType).isSome)]
+
 end DocsVectors
 
 /-- One vector per line, so a change reads as a diff of lines. -/
@@ -1161,5 +1206,6 @@ def main (args : List String) : IO Unit := do
       ("indexes.json", indexes), ("trees.json", trees), ("lookups.json", lookups), ("keys.json", keys), ("writers.json", writers), ("envelopes.json", envelopes),
       ("checkpoints.json", checkpoints), ("fit.json", fit), ("logs.json", logs),
       ("counts.json", counts), ("genesis.json", genesisVectors), ("bodies.json", bodyVectors),
-      ("segments.json", segmentVectors), ("heads.json", headVectors), ("loro.json", loroVectors)] do
+      ("segments.json", segmentVectors), ("heads.json", headVectors), ("loro.json", loroVectors),
+      ("placements.json", placementVectors), ("builtins.json", builtinVectors)] do
     IO.FS.writeFile (dir / file) (render vs)

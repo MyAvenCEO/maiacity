@@ -16,6 +16,7 @@ import Aven.DB.Docs.Genesis
 import Aven.DB.Docs.Body
 import Aven.DB.Docs.Segment
 import Aven.DB.Docs.Head
+import Aven.DB.Docs.Builtins
 
 /-!
 # Aven.DB.Docs: the docs layer's model
@@ -43,6 +44,7 @@ On top of the shared core (`Aven.Core`: Values, the codec, envelopes, logs, spli
 - `Body`: what a docs envelope carries inside Core's, its ops half-open, so a log's ops never overlap;
 - `Segment`: a writer's closed run of one log, signed and sealed;
 - `Head`: a peer's own record of what it holds of a Doc;
+- `Builtins`: built-in types' fit, supplied by whoever defines them, and the docs layer's four;
 - `Directory`: every Doc listed now was listed at the last fold or is unfolded, and one that isn't unfolded has the
   entries it had then.
 -/

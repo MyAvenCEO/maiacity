@@ -17,7 +17,8 @@ the codec's order:
   one log an envelope's `from` is the one before's `to` (`log_ops_disjoint`);
 - `records`: every Record the commit touches, by id, with the version it was written under: `[type Doc, schema hash]`
   for a user type, `[type Doc]` for a built-in type, which is versioned by its label;
-- `genesis`: only in the Doc's first envelope, which carries it (`Aven.DB.Docs.Genesis`); absent everywhere else.
+- `genesis`: exactly in a log's first envelope (sequence number 1, no `prev`, no `deps`), absent everywhere else
+  (`genesis_iff_first`); a reader refuses either mismatch, and a genesis that isn't the Doc's.
 
 The commit's Loro message is the lowercase hex of BLAKE3 over the canonical CBOR of `records` (`message`).
 
@@ -124,6 +125,20 @@ def Body.ofValue? (v : Value) : Option Body := do
   let calls ← calls.mapM call?
   let records ← rs.mapM fun (i, x) => (Version.ofValue? x).map (i, ·)
   some { acks, time, calls, cap, changes, generation, opsFrom := fr, opsTo := to, records, genesis }
+
+/-! ## Where the genesis rides -/
+
+/-- An envelope is its log's first: sequence number 1, nothing before it, nothing it builds on. -/
+def isFirst (e : Envelope) : Bool := e.seq == 1 && e.prev.isNone && e.deps.isEmpty
+
+/-- The genesis rides exactly in a log's first envelope: present there, absent everywhere else, no default. A reader
+refuses either mismatch. -/
+def genesisPlaced (e : Envelope) (b : Body) : Bool := b.genesis.isSome == isFirst e
+
+theorem genesis_iff_first {e : Envelope} {b : Body} (h : genesisPlaced e b = true) :
+    b.genesis.isSome = true ↔ isFirst e = true := by
+  simp only [genesisPlaced, beq_iff_eq] at h
+  rw [h]
 
 /-! ## Ops in one log -/
 
