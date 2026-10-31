@@ -20,7 +20,6 @@ open Aven.Core History History.Examples
 
 def Says.json : Says → Json
   | .address n => Json.mkObj [("address", toJson n)]
-  | .tip n => Json.mkObj [("tip", toJson n)]
   | .release l n => Json.mkObj [("release", Json.mkObj [("body", toJson n), ("about", l)])]
 
 def Entry.json (n : Entry) : Json :=
@@ -37,8 +36,7 @@ def Beat.json (b : Beat) : Json :=
 def Heard.json (h : CatchUp.Heard) : Json := Json.mkObj [("beat", Beat.json h.beat), ("heardAt", toJson h.at_)]
 
 def asks : List (Which × String) :=
-  [(.address, "alice-peer"), (.tip, "alice-peer"), (.address, "bob-peer"), (.tip, "bob-peer"), (.release, "aven"),
-   (.address, "aven-peer")]
+  [(.address, "alice-peer"), (.address, "bob-peer"), (.release, "aven"), (.address, "aven-peer")]
 
 def history (label : String) (S : List Envelope) : Json :=
   Json.mkObj [("name", s!"history, {label}"),

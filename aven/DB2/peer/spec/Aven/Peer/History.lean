@@ -1,24 +1,23 @@
 import Aven.Core
 
-/-! # History: what a peer says of itself, signed, never a peer's word (A193, A194; PEERS.md §6 and §7)
+/-! # History: what a peer says of itself, signed, never a peer's word (A193, A194, A197; PEERS.md §6 and §7)
 
 What peers tell each other about themselves travels as history entries, each signed by the one it is about, so who
 passed it on never matters:
 
 - **address:** how to reach a device: its home relay and direct addresses;
-- **tip:** the newest post of a device's own log, by hash and number;
 - **release:** a release's version, its wire version and the hashes of what it ships, signed by a release signer
   (A15), about its release line.
 
 What an entry says is opaque here, named by its hash as a number (`body`): only which entry is newest matters to the
 rules. Its body is a map with exactly one key, naming what it is (`Says.value`, A194), so an entry of one is never read
-as another.
+as the other. There are no log-tip entries: a reader learns a Doc's tips from `doc_tips` (A197).
 
 **History is a Core log** (A193, A31, A42). Each entry is a Core envelope (`Aven.Core.Envelope`) in its signer's own
 history log: the docs layer derives the log's writer id from the signer and a generation, so each generation is a log
 of its own, and a reader knows whose log a Doc and writer id are (`Logs.owner`). The entry's place in it is its
 sequence number, and it names the entry before it (`chained`). It counts by Core's one counting rule
-(`Aven.Core.Counts`, A45), with this layer's verdicts: it is `fit` when its body is one of the three shapes in its
+(`Aven.Core.Counts`, A45), with this layer's verdicts: it is `fit` when its body is one of the two shapes in its
 signer's history log, and `authorized` when it is the signer's to give (`takes`: a device about itself, admitted by the
 door; a release by a release signer) and the entry is chained. The newest is the counting entry of the latest
 generation at the latest place. Its signature was checked as it came (`Aven.Core.Envelope.placed`): a reader holds no
@@ -52,40 +51,35 @@ open Aven.Core
 
 /-! ## Entries -/
 
-/-- What an entry says: one of three, each by the hash of what it says. -/
+/-- What an entry says: one of two, each by the hash of what it says. -/
 inductive Says where
   | address (body : Nat)
-  | tip (body : Nat)
   /-- about a release line -/
   | release (line : String) (body : Nat)
   deriving DecidableEq, Repr
 
-/-- Which of the three an entry is: the one key of its body. -/
+/-- Which of the two an entry is: the one key of its body. -/
 inductive Which where
   | address
-  | tip
   | release
   deriving DecidableEq, Repr
 
 def Which.key : Which → String
   | .address => "address"
-  | .tip => "tip"
   | .release => "release"
 
 def Says.which : Says → Which
   | .address _ => .address
-  | .tip _ => .tip
   | .release _ _ => .release
 
 def Says.body : Says → Nat
-  | .address n | .tip n | .release _ n => n
+  | .address n | .release _ n => n
 
 private def k (s : String) : Bytes := text s
 
 /-- An entry's body: a map with exactly one key, naming what it is (A194); a release's value also names its line. -/
 def Says.value : Says → Value
   | .address n => .map [(k "address", .uint n)]
-  | .tip n => .map [(k "tip", .uint n)]
   | .release l n => .map [(k "release", .map [(k "body", .uint n), (k "about", .text (text l))])]
 
 #guard keysSorted [(k "body", Value.uint 0), (k "about", .text [])]
@@ -96,7 +90,6 @@ def str? (b : Bytes) : Option String := String.fromUTF8? ⟨b.toArray⟩
 def Says.read? : Value → Option Says
   | .map [(key, v)] =>
     if key = k "address" then match v with | .uint n => some (.address n) | _ => none
-    else if key = k "tip" then match v with | .uint n => some (.tip n) | _ => none
     else if key = k "release" then match v with
       | .map [(kb, .uint n), (ka, .text l)] =>
         if kb = k "body" ∧ ka = k "about" then (str? l).map (.release · n) else none
@@ -106,14 +99,12 @@ def Says.read? : Value → Option Says
 
 theorem str_text (s : String) : str? (text s) = some s := fromUTF8_text s
 
-theorem tip_ne_address : k "tip" ≠ k "address" := by decide +kernel
 theorem release_ne_address : k "release" ≠ k "address" := by decide +kernel
-theorem release_ne_tip : k "release" ≠ k "tip" := by decide +kernel
 
 /-- **`read_value`:** an entry's body reads back as what it says. -/
 theorem read_value (s : Says) : Says.read? s.value = some s := by
   cases s <;>
-    simp [Says.value, Says.read?, str_text, tip_ne_address, release_ne_address, release_ne_tip]
+    simp [Says.value, Says.read?, str_text, release_ne_address]
 
 /-- Where history lives: whose history log a Doc and a writer id are, and which generation of it, as the docs layer
 derives a writer id from the signer's key, the Doc, the branch and the generation. -/
@@ -144,7 +135,7 @@ def Entry.about (n : Entry) : String :=
 variable (R : Reader)
 
 /-- The entry an envelope is, when it is one: in a signer's history log, on no branch, building on nothing but the
-entry before it, and saying one of the three. -/
+entry before it, and saying one of the two. -/
 def entryOf (e : Envelope) : Option Entry :=
   match R.logs.owner e.doc e.writer, Says.read? e.body with
   | some (s, g), some w => if e.branch = [] ∧ e.deps = [] then some ⟨w, s, g⟩ else none
@@ -460,9 +451,9 @@ theorem reaches_seq_le (hnm : ∀ a b, R.nm a = R.nm b → a = b)
 counts and after every address it signed before, and every peer takes it as newest, as long as nothing splits it
 (A4, A31). Names never collide, as `Aven.Core.Envelope.name_inj` gives for well-formed envelopes under an injective
 hash. -/
-theorem rehome_newest (hnm : ∀ a b, R.nm a = R.nm b → a = b) {tip : Envelope} {b : String} {g body : Nat}
-    (en : entryOf R e = some ⟨.address body, b, g⟩) (ad : R.admits b = true) (mt : tip ∈ S)
-    (ct : counts R S tip = true) (pt : e.prev = some (R.nm tip)) (lt : SameLog tip e) (st : tip.seq + 1 = e.seq)
+theorem rehome_newest (hnm : ∀ a b, R.nm a = R.nm b → a = b) {last : Envelope} {b : String} {g body : Nat}
+    (en : entryOf R e = some ⟨.address body, b, g⟩) (ad : R.admits b = true) (mt : last ∈ S)
+    (ct : counts R S last = true) (pt : e.prev = some (R.nm last)) (lt : SameLog last e) (st : last.seq + 1 = e.seq)
     (alone : ∀ y ∈ S, ¬ Split R.nm e y)
     (older : ∀ f ∈ S, ∀ m, entryOf R f = some m → m.says.which = .address → m.about = b →
       m.generation < g ∨ (m.generation = g ∧ f.seq < e.seq)) :
@@ -471,8 +462,8 @@ theorem rehome_newest (hnm : ∀ a b, R.nm a = R.nm b → a = b) {tip : Envelope
   have nd := entryOf_deps en
   have c := counts_iff.mp ct
   have sub : ∀ x ∈ S, x ∈ e :: S := fun x m => List.mem_cons_of_mem _ m
-  -- what `e` reaches: itself, or what the tip reaches among `S`
-  have via : ∀ {x}, Reaches R.nm (e :: S) e x → x = e ∨ Reaches R.nm S tip x := by
+  -- what `e` reaches: itself, or what the last reaches among `S`
+  have via : ∀ {x}, Reaches R.nm (e :: S) e x → x = e ∨ Reaches R.nm S last x := by
     intro x h
     cases h with
     | refl => exact .inl rfl
@@ -498,7 +489,7 @@ theorem rehome_newest (hnm : ∀ a b, R.nm a = R.nm b → a = b) {tip : Envelope
     · rcases via rx with rfl | rx
       · rw [pt] at hp
         rcases hp with hp | hp
-        · exact ⟨tip, sub tip mt, (Option.some.inj hp).symm⟩
+        · exact ⟨last, sub last mt, (Option.some.inj hp).symm⟩
         · simp [nd] at hp
       · obtain ⟨y, my, ny⟩ := c.1 x rx p hp
         exact ⟨y, sub y my, ny⟩
@@ -506,7 +497,7 @@ theorem rehome_newest (hnm : ∀ a b, R.nm a = R.nm b → a = b) {tip : Envelope
       · refine ⟨⟨by simp [fit, en], ?_⟩, fun y my => ?_⟩
         · simp only [authorized, en, t, Bool.true_and, chained, pt, List.any_eq_true, Bool.and_eq_true,
             beq_iff_eq, decide_eq_true_eq]
-          exact ⟨tip, sub tip mt, ⟨rfl, lt⟩, st⟩
+          exact ⟨last, sub last mt, ⟨rfl, lt⟩, st⟩
         · rcases List.mem_cons.mp my with rfl | my
           · exact fun sp => sp.2.2 rfl
           · exact alone y my
@@ -582,25 +573,25 @@ def entry (signer : String) (generation seq : Nat) (prev : Option Envelope) (say
   { doc := ⟨⟨text signer⟩⟩, branch := [], writer := generation, seq, prev := prev.map (·.name blake3),
     deps := [], body := says.value, sigs := [] }
 
--- Alice's Peer: an address, a tip, then a split at place 3 (two addresses); after it, an address chained to one half
--- and one that skips the split by naming place 2: neither counts, so its address is its first (A4)
+-- Alice's Peer: two addresses, then a split at place 3 (two more); after it, an address chained to one half and one
+-- that skips the split by naming place 2: neither counts, so its address is its second (A4)
 def a1 := entry "alice-peer" 0 1 none (.address 10)
-def a2 := entry "alice-peer" 0 2 (some a1) (.tip 22)
+def a2 := entry "alice-peer" 0 2 (some a1) (.address 22)
 def a3 := entry "alice-peer" 0 3 (some a2) (.address 30)
 def a3' := entry "alice-peer" 0 3 (some a2) (.address 20)
 def a4 := entry "alice-peer" 0 4 (some a3) (.address 40)
 def a4skip := entry "alice-peer" 0 4 (some a2) (.address 41)
 -- the Aven Peer's own address, in its own log, and nothing it says about Alice
 def v1 := entry "aven-peer" 0 1 none (.address 90)
--- Bob's Peer split its first generation and re-homed in its second: the second's address counts (A42); its tips
--- split at place 3, which leaves the tip before it
+-- Bob's Peer split its first generation and re-homed in its second: the second's address counts (A42); there it
+-- split again at place 3, which leaves the address before it
 def b1 := entry "bob-peer" 0 1 none (.address 12)
 def b2 := entry "bob-peer" 0 2 (some b1) (.address 21)
 def b2' := entry "bob-peer" 0 2 (some b1) (.address 22)
 def c1 := entry "bob-peer" 1 1 none (.address 100)
-def c2 := entry "bob-peer" 1 2 (some c1) (.tip 33)
-def c3 := entry "bob-peer" 1 3 (some c2) (.tip 44)
-def c3' := entry "bob-peer" 1 3 (some c2) (.tip 45)
+def c2 := entry "bob-peer" 1 2 (some c1) (.address 33)
+def c3 := entry "bob-peer" 1 3 (some c2) (.address 44)
+def c3' := entry "bob-peer" 1 3 (some c2) (.address 45)
 -- a release by the release signer, and one Bob's Peer signed: not a release signer's
 def r1 := entry "release-signer" 0 1 none (.release "aven" 202)
 def d1 := entry "bob-peer" 2 1 none (.release "aven" 505)
@@ -621,11 +612,9 @@ def nm (e : Envelope) : Hash :=
 
 def reader : Reader := ⟨logs, nm, admitted, releaseSigners⟩
 
-#guard newest reader .address "alice-peer" entries == some a1
-#guard newest reader .address "alice-peer" entries.reverse == some a1
-#guard newest reader .tip "alice-peer" entries == some a2
-#guard newest reader .address "bob-peer" entries == some c1
-#guard newest reader .tip "bob-peer" entries == some c2
+#guard newest reader .address "alice-peer" entries == some a2
+#guard newest reader .address "alice-peer" entries.reverse == some a2
+#guard newest reader .address "bob-peer" entries == some c2
 #guard newest reader .release "aven" entries == some r1
 #guard newest reader .address "aven-peer" entries == none
 #guard !counts reader entries a4 && !counts reader entries a4skip && !counts reader entries e2

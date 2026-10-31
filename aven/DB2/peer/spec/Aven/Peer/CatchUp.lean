@@ -2,14 +2,13 @@ import Aven.Peer.History
 
 /-! # Catch-up from whoever holds the posts, and presence from beats (PEERS.md §2 and §3; Thread C, C1 and C2)
 
-**Whom to ask (C1).** A peer catches up a device's log from any member that holds it, not from the Aven Peer first.
-What it trusts is the device's own signed log tip (`Aven.Peer.History`, `.tip`): the tip's number and the hash of the
-post at that number. A source offers its copy of the log, the posts' hashes in order. A copy that falls short of the
-tip, or holds another post at the tip's place, is caught (`caught`): a source can't hide posts behind a newer tip it
-has seen signed, nor pass off a forged or split log. The peer asks its sources in order and takes the first that
-isn't caught (`choose`); that one's copy reaches the tip (`chosen_reaches`), and when every source is caught, the peer
-knows each one fell short or differs (`none_chosen`). Every post is still checked by its receiver as before; this
-only decides whom to ask.
+**Whom to ask (C1).** A peer catches up a device's log from any member that holds it, not from the Aven Peer first. What
+it trusts is the device's own signed log tip: the tip's number and the hash of the post at that number. A source offers
+its copy of the log, the posts' hashes in order. A copy that falls short of the tip, or holds another post at the tip's
+place, is caught (`caught`): a source can't hide posts behind a newer tip it has seen signed, nor pass off a forged or
+split log. The peer asks its sources in order and takes the first that isn't caught (`choose`); that one's copy reaches
+the tip (`chosen_reaches`), and when every source is caught, the peer knows each one fell short or differs
+(`none_chosen`). Every post is still checked by its receiver as before; this only decides whom to ask.
 
 **Presence (C2, A35, A42).** A device is present while its newest signed beat (`History.Beat`) was heard at most
 `window` steps ago, by the clock of the peer that heard it (`present`). The beat's counter only orders the device's
