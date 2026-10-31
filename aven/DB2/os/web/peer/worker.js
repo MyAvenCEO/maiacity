@@ -184,6 +184,7 @@ const channel = new BroadcastChannel(self.name);
 const tabs = new Map();
 channel.onmessage = ({ data }) => {
 	if (data?.read && data.id !== undefined) return read(data);
+	if (data?.release && data.id !== undefined) return judge(data);
 	if (!data?.tab) return;
 	if (data.bye) {
 		pages.delete(tabs.get(data.tab));
@@ -199,6 +200,18 @@ channel.onmessage = ({ data }) => {
 	if (data.data !== undefined) port.onmessage({ data: data.data });
 };
 channel.postMessage({ leader: true });
+
+// A newer release, checked for the Service Worker (public/files-sw.js, PEERS.md §7): its record, the counter of the
+// release this origin runs and the files the worker fetched, answered `{id, verdict}` by the Peer-Light this device runs
+// now (`releaseCheck`, `Aven.ID.Release.check`), so the code it trusts checks the code that would replace it.
+async function judge({ id, release: { record, running, fetched } }) {
+	try {
+		await load();
+		channel.postMessage({ id, verdict: JSON.parse(light.releaseCheck(record, running ?? undefined, fetched)) });
+	} catch (error) {
+		channel.postMessage({ id, verdict: { verdict: 'refuse', why: String(error?.message ?? error) } });
+	}
+}
 
 // A file's bytes for the Service Worker (public/files-sw.js, peer/bridge.js): `{id, read: {file, start, end}}`, `end`
 // exclusive, answered `{id, size, type, bytes}` with at most 1 MiB, clamped to the file's length (`size`, for

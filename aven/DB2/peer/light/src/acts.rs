@@ -101,3 +101,21 @@ pub fn one_time_public(secret: &str) -> Result<String, JsError> {
 pub fn sign_join(secret: &str, text: &str) -> Result<String, JsError> {
     id::sign_join(secret, text).ok_or_else(|| JsError::new("a one-time secret is 64 hex digits"))
 }
+
+/// What this device does with a newer release (`aven_id::release::check`, PEERS.md §7): its record as `release.json`
+/// says it, the counter of the release it runs, and the files the Service Worker fetched, `[{path, sha256}]`. As every
+/// device today, it trusts no release signer yet and checks integrity only (`Device::today`). The verdict as JSON:
+/// `{"verdict": "stay"}`, `{"verdict": "refuse", "why"}` or `{"verdict": "ready", "signed"}`.
+#[wasm_bindgen(js_name = releaseCheck)]
+pub fn release_check(record: &str, running: Option<f64>, fetched: &str) -> Result<String, JsError> {
+    let js = |e: String| JsError::new(&e);
+    let record: serde_json::Value = serde_json::from_str(record).map_err(|e| js(e.to_string()))?;
+    let fetched: serde_json::Value =
+        serde_json::from_str(fetched).map_err(|e| js(e.to_string()))?;
+    let record = id::release::Release::parse(&record).map_err(js)?;
+    let fetched = id::release::parse_files(&fetched).map_err(js)?;
+    let device = id::release::Device::today(running.map(|c| c as u64));
+    Ok(id::release::check(&device, &record, &[], &fetched)
+        .json()
+        .to_string())
+}

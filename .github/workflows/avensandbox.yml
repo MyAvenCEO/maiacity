@@ -159,23 +159,40 @@ jobs:
           }
           released=()
 
+          # The Peer's binary per platform, hashed for avenOS's release record (PEERS.md §7): copied out of the image
+          # this commit's peer job published, never run
+          peer_hashes=()
+          for platform in linux/amd64 linux/arm64; do
+            id=$(docker create --platform "$platform" "$PEER_IMAGE")
+            docker cp "$id:/usr/local/bin/aven-peer" aven-peer.bin
+            docker rm "$id" > /dev/null
+            peer_hashes+=("$platform=$(sha256sum aven-peer.bin | cut -c1-64)")
+            rm aven-peer.bin
+          done
+
           # avenOS for the browser: released when its sources changed, the Peer-Light it carries at /peer-light/ included
           os_paths=(aven/DB2/os aven/DB2/vite.config.js aven/DB2/package.json aven/DB2/bun.lock aven/DB2/sandbox/cast.json aven/DB2/id/core aven/DB2/peer aven/DB2/db aven/DB2/Cargo.toml aven/DB2/Cargo.lock)
           prev=$(latest os)
           if [ -z "$prev" ] || ! git diff --quiet "$prev" "$SHA" -- "${os_paths[@]}"; then
             v=$(next os)
             file="aven-os-web-$v.tar.gz"
-            mv deliverables/aven-os-web.tar.gz "deliverables/$file"
-            (cd deliverables && sha256sum "$file" > SHA256SUMS)
+            # its release record, written into the build as /release.json and published beside it: the version, the
+            # wire version, every file's SHA-256 and the Peer's per platform. Unsigned until A15's signers are agreed
+            mkdir web && tar -xzf deliverables/aven-os-web.tar.gz -C web
+            node aven/DB2/deploy/release.mjs web "$v" "$(date +%s)" "${peer_hashes[@]}"
+            tar -czf "deliverables/$file" -C web .
+            cp web/release.json deliverables/release.json
+            rm deliverables/aven-os-web.tar.gz
+            (cd deliverables && sha256sum "$file" release.json > SHA256SUMS)
             {
-              echo "**avenOS** for the browser: \`$file\` below, checksum in \`SHA256SUMS\`."
+              echo "**avenOS** for the browser: \`$file\` below, its release record \`release.json\` (unsigned), checksums in \`SHA256SUMS\`."
               echo
               echo "## Changes"
               echo
               changes "$prev" "${os_paths[@]}"
             } > os.md
             gh release create "@aven/os@$v" --repo "$REPO" --target "$SHA" --title "avenOS $v" --notes-file os.md \
-              "deliverables/$file" deliverables/SHA256SUMS
+              "deliverables/$file" deliverables/release.json deliverables/SHA256SUMS
             released+=("avenOS $v")
           fi
 

@@ -265,7 +265,7 @@ jobs:
           name="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/aven/peer"
           digest=$(docker buildx imagetools inspect "$name:$peer" --format '{{json .Manifest}}' | jq -r '.digest // empty')
           [ -n "$digest" ] || { echo "::error::$name:$peer is not in the registry"; exit 1; }
-          mkdir os && gh release download "@aven/os@$os" --repo "$GITHUB_REPOSITORY" --dir os --pattern 'aven-os-web-*.tar.gz' --pattern SHA256SUMS
+          mkdir os && gh release download "@aven/os@$os" --repo "$GITHUB_REPOSITORY" --dir os --pattern 'aven-os-web-*.tar.gz' --pattern release.json --pattern SHA256SUMS
           (cd os && sha256sum -c SHA256SUMS)
           # No deploy without MaiaCityGuardian (Samuel, 30 Oct 2026): every person's vault founded here must have it.
           # This step runs before anything on the server is touched

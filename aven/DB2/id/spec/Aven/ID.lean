@@ -32,6 +32,7 @@ import Aven.ID.Recover
 import Aven.ID.Network
 import Aven.ID.Restore
 import Aven.ID.Records
+import Aven.ID.Release
 import Aven.ID.Node
 import Aven.ID.Keep
 import Aven.ID.Safe

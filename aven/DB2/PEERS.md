@@ -315,8 +315,42 @@ How it is built (thread E, 31 Oct 2026):
   timeline until the Peer starts again, upgraded by its owner. It never upgrades itself.
 - **The box rehearses it** with `--wire-version` (`AVEN_PEER_WIRE_VERSION`), which makes a Peer say another version,
   and only for that: `sandbox/upgrade.mjs` in `bun run up --check`.
+- **The release record** is `Aven.ID.Release` (`ready_newer`, `ready_os`, `ready_files`, `ready_signed`;
+  `releases.json`), `aven_id::release` in Rust. The release workflow writes it into avenOS's build as `/release.json`
+  and publishes it beside the release (`deploy/release.mjs`): the version, a counter, the wire version (the model's),
+  every file's SHA-256 with `os`, their listing's hash, and the Peer's binary per platform, copied out of the Peer's
+  image and hashed. The deploy downloads it with the tarball and checks it in `SHA256SUMS`.
+- **The Service Worker** checks `/release.json` when the app opens and every hour, downloads a newer release into a
+  cache of its own, hashing each file, and asks this origin's Peer-Light, the code the device trusts now, for the
+  verdict (`releaseCheck`). A ready release waits until a tab is at a safe point: its draft on disk, no line it said
+  still on its way into the store, no file half shared, and the tab hidden or idle a minute. Then it becomes the
+  shell and every tab reloads, showing "Updating…" (`os/web/release.svelte.js`). A refused one is dropped and the tabs
+  are told why. A device's first record is taken as the release it runs. `sandbox/release.mjs` checks it in three
+  engines, a tampered page included.
 - **The last manual reload:** the first release with the wire version refuses today's unversioned tabs, which can't
   read `update`. They drop and redial until a person reloads them once; every release after that is followed by itself.
+
+### The release record's signers: a proposal (A15, for the architect and Samuel)
+
+Nothing signs a release yet, and no key is in CI or any secret. Every device runs `Device::today`: it trusts no
+release signer, checks a release's hashes against what it fetched, switches, and knows the release is unsigned. That
+catches a broken or half-served release, not a host that serves other code with a matching record. The proposal:
+
+- **Who holds the key:** the admin's passkey, as for tickets and the relay list (decision 12). No new key exists
+  anywhere: a release is signed on Samuel's device with a tap, never by CI, a runner or a server. An admin statement
+  names the release signers in the tree (at first Samuel's passkey); later the network's owners grant it as a cap,
+  and a second signer (k of n) when there is a second person to hold one.
+- **How a release gets signed:** CI builds and publishes the unsigned record as today. avenOS's Control Room shows the
+  admin "Sign release 26.10.31", with its version, wire version and `os` hash, and the GitHub release it came from.
+  The tap signs the record's body under `aven/peer/release/1` (`RecordKind.release`), and the signed record goes on
+  gossip as a release record (§6), kept by every peer that has it. Nothing is uploaded back to GitHub, so CI needs no
+  write access to anything new.
+- **What a device does with an unsigned one,** once a signer is named: `Unsigned.refuse`. The Service Worker keeps
+  the release it runs, and the Control Room says "a release is waiting for its signature". A device with no record yet
+  takes the first one it sees. A tab refused with `update` still reloads: the browser fetches the page and the worker
+  from the host, so a Service Worker only raises the bar (A15). The trusted path that needs no origin is the Mac app.
+- **Native Peers** read the same record, from gossip, and say `update` on their timeline when a signed release names
+  a newer wire version or binary for their platform. Their owner upgrades them.
 
 ## 8. What stays special
 
