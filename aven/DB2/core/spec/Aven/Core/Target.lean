@@ -23,7 +23,8 @@ namespace Aven.Core
 /-- What a Doc's genesis fixes, which is all a target reads. -/
 structure Facts where
   id : DocId
-  vault : Bytes
+  /-- Its vault, by the vault's 32-byte name (avenID's `VaultName`): a vault in any format is its name, never text. -/
+  vault : Hash
   type : DocId
 
 /-- What a Doc target reaches besides the Doc itself: nothing more, every actor it spawned, or every Doc it lists, a
@@ -38,14 +39,14 @@ inductive Target where
   /-- One Doc, and with its reach the actors it spawned or the Docs it lists. -/
   | doc (d : DocId) (reach : Reach)
   /-- Every Doc of a vault, and with `below` every Doc of the vaults it governs. -/
-  | vault (v : Bytes) (below : Bool)
+  | vault (v : Hash) (below : Bool)
   /-- A vault's Docs of one root type, a type Doc. -/
-  | vaultType (v : Bytes) (t : DocId) (below : Bool)
+  | vaultType (v : Hash) (t : DocId) (below : Bool)
   deriving DecidableEq, Repr
 
 /-- `gov v w`: vault `v` governs vault `w` (avenID). `spawned a b`: actor `a` spawned actor `b`, directly or not.
 `lists c d`: the collection `c` lists the Doc `d`, by its issuer's signed listings, nested at most a bounded depth. -/
-def Target.covers (gov : Bytes → Bytes → Prop) (spawned lists : DocId → DocId → Prop) : Target → Facts → Prop
+def Target.covers (gov : Hash → Hash → Prop) (spawned lists : DocId → DocId → Prop) : Target → Facts → Prop
   | .doc d .self, f => f.id = d
   | .doc d .spawned, f => f.id = d ∨ spawned d f.id
   | .doc d .lists, f => f.id = d ∨ lists d f.id
@@ -54,14 +55,14 @@ def Target.covers (gov : Bytes → Bytes → Prop) (spawned lists : DocId → Do
 
 /-- `Target.covers`, decided, with who governs whom, which actor spawned which and what a collection lists given as
 tests, as a device evaluates them. -/
-def Target.coversB (gov : Bytes → Bytes → Bool) (spawned lists : DocId → DocId → Bool) : Target → Facts → Bool
+def Target.coversB (gov : Hash → Hash → Bool) (spawned lists : DocId → DocId → Bool) : Target → Facts → Bool
   | .doc d .self, f => f.id == d
   | .doc d .spawned, f => f.id == d || spawned d f.id
   | .doc d .lists, f => f.id == d || lists d f.id
   | .vault v b, f => f.vault == v || (b && gov v f.vault)
   | .vaultType v t b, f => f.type == t && (f.vault == v || (b && gov v f.vault))
 
-theorem Target.coversB_iff {gov : Bytes → Bytes → Bool} {spawned lists : DocId → DocId → Bool} {t : Target}
+theorem Target.coversB_iff {gov : Hash → Hash → Bool} {spawned lists : DocId → DocId → Bool} {t : Target}
     {f : Facts} :
     t.coversB gov spawned lists f = true ↔ t.covers (gov · · = true) (spawned · · = true) (lists · · = true) f := by
   cases t with
@@ -89,7 +90,7 @@ def Target.le : Target → Target → Bool
   | .doc d r, .doc e s => d == e && r.le s
   | _, _ => false
 
-theorem Target.le_sound {gov : Bytes → Bytes → Prop} {spawned lists : DocId → DocId → Prop} :
+theorem Target.le_sound {gov : Hash → Hash → Prop} {spawned lists : DocId → DocId → Prop} :
     ∀ {a b : Target} {f : Facts}, a.le b = true → a.covers gov spawned lists f → b.covers gov spawned lists f
   | .vault v b, .vault w c, f, h, hc => by
     simp only [Target.le, Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true, Bool.not_eq_true'] at h
