@@ -2,10 +2,10 @@
  "title": "Endings",
  "slides": [
   {
-   "title": "Every rule expires.",
-   "text": "No rule lasts forever by accident. Each one has an expiry, 30 days unless you choose otherwise. A forgotten share closes by itself.",
+   "title": "Every policy expires.",
+   "text": "No policy lasts forever by accident. Each one has an expiry, 30 days unless you choose otherwise. A forgotten share closes by itself.",
    "code": {
-    "type": "theos/rule@1",
+    "type": "theos/policy@1",
     "to": "role:b3:r4p…#plumber",
     "on": "data:ed25519:3Tk…#fix-tap",
     "operations": [
@@ -22,27 +22,27 @@
    "deep": "The default expiry is 30 days. Expiry is enforced through endings in the history (lapses), never by a verifier's clock."
   },
   {
-   "title": "Unchanged rules renew themselves.",
-   "text": "You don't want your family locked out every month. So the owner quietly renews every rule that hasn't changed, a week before it ends, under its own rules (a coop can let one member do renewals). Rules you changed or removed simply run out.",
+   "title": "Unchanged policies renew themselves.",
+   "text": "You don't want your family locked out every month. So the owner quietly renews every policy that hasn't changed, a week before it ends, under its own policies (a coop can let one agent do renewals). Policies you changed or removed simply run out.",
    "flow": [
-    "rule still the same?",
+    "policy still the same?",
     "renew for 30 days",
     "else: let it run out"
    ],
-   "deep": "Renewal is a new certificate with the same content and a later expiry, signed under the owner's own rule for renewals. Changed or removed rules are simply not renewed."
+   "deep": "Renewal is a new certificate with the same content and a later expiry, signed under the owner's own policy for renewals. Changed or removed policies are simply not renewed."
   },
   {
    "title": "The job is done.",
    "text": "You take the plumber out of his role. He sees nothing new, and his devices, if they're honest, forget what he saw. The role stays, ready for the next plumber.",
-   "deep": "Removing a member is an ending: the role key turns, data keys turn on the next write, and honest devices that learn of it wipe the keys and plaintext the rule gave them."
+   "deep": "Removing someone from a role is a new role record; it then works like an ending: the role key turns, data keys turn on the next write, and honest devices that learn of it wipe the keys and plaintext the policy gave them."
   },
   {
-   "title": "Ending a rule early.",
-   "text": "You don't have to wait for the expiry. The owner writes a {revoke}: a signed event in the history that says “this rule is over”. It travels like any other change.",
+   "title": "Ending a policy early.",
+   "text": "You don't have to wait for the expiry. The owner, or whoever issued a shared policy, writes a {revoke}: a signed event in the history that says “this policy is over”. It travels like any other change.",
    "code": {
     "type": "theos/ending@1",
     "kind": "revoke",
-    "ends": "rule:b3:p3q…#plumber",
+    "ends": "policy:b3:p3q…#plumber",
     "issuer": "human:b3:q4x7…#you",
     "sig": {
      "by": "agent:b3:f2p…#your-phone",
@@ -50,15 +50,15 @@
      "value": "…"
     }
    },
-   "deep": "A revoke is a signed certificate in the rule set (a grow-only set). It cannot be undone; access returns only through a new rule."
+   "deep": "A revoke is a signed certificate in the policy set (a grow-only set). It cannot be undone; access returns only through a new policy."
   },
   {
    "title": "When time runs out, anyone may say so.",
-   "text": "Devices are often offline, and a device can lie about its time, so no clock decides. Once a rule's date has passed for it, any peer that can read the rules writes a {lapse}: the same kind of event as a revoke. It can only end a rule, never grant anything. From then on, the history decides.",
+   "text": "Devices are often offline, and a device can lie about its time, so no clock decides. Once a policy's date has passed for it, any peer that can read the policies writes a {lapse}: the same kind of event as a revoke. It can only end a policy, never grant anything. From then on, the history decides.",
    "code": {
     "type": "theos/ending@1",
     "kind": "lapse",
-    "ends": "rule:b3:p3q…#plumber",
+    "ends": "policy:b3:p3q…#plumber",
     "expired": "2026-11-07T00:00:00Z",
     "sig": {
      "by": "agent:b3:p9c…#mia-phone",
@@ -66,16 +66,16 @@
      "value": "…"
     }
    },
-   "deep": "A lapse may be written by any peer that can read the rules, once the date has passed for it. It can only end a rule, never grant one. From then on the causal history decides."
+   "deep": "A lapse may be written by any peer that can read the policies, once the date has passed for it. It can only end a policy, never grant one. From then on the causal history decides."
   },
   {
    "title": "Revoke or lapse: one ending, same effect.",
-   "text": "Whoever wrote it, an {ending} does the same things on every device. Changes that never saw it are dropped, because the ending wins. If the rule gave read, the data key turns. And every honest device wipes the keys and copies the rule gave it. Validity follows from the history alone, so every copy agrees.",
+   "text": "Whoever wrote it, an {ending} does the same things on every device. Changes that never saw it are dropped, because the ending wins. If the policy gave read, the data key turns. And every honest device wipes the keys and copies the policy gave it. Validity follows from the history alone, so every copy agrees.",
    "code": {
     "ending": {
      "type": "theos/ending@1",
      "kind": "lapse",
-     "ends": "rule:b3:p3q…#plumber"
+     "ends": "policy:b3:p3q…#plumber"
     },
     "change": {
      "type": "theos/change@1",
@@ -92,16 +92,16 @@
      "wipe keys and copies"
     ]
    },
-   "deep": "One ending type, two authors. Effects: concurrent changes that never saw it are dropped, the data key turns if the rule gave read, and the delete trigger runs on honest devices."
+   "deep": "One ending type, two authors. Effects: concurrent changes that never saw it are dropped, the data key turns if the policy gave read, and the delete trigger runs on honest devices."
   },
   {
    "title": "Bob loses update.",
-   "text": "You take update away from “home”. A revoke is a signed event, not a CRDT op, and it syncs like everything else. Bob's CRDT op had not seen it, so the ending wins: it is dropped on every device. His earlier CRDT ops stay.",
+   "text": "You take update away from “household”: you revoke its policy and give it a new one with only create and read. A revoke is a signed event, not a CRDT op, and it syncs like everything else. Bob's CRDT op had not seen it, so the ending wins: it is dropped on every device. His earlier CRDT ops stay. Because the ended policy gave read, the data key turns.",
    "code": {
     "ending": {
      "type": "theos/ending@1",
      "kind": "revoke",
-     "ends": "rule:b3:h7r…#home"
+     "ends": "policy:b3:h7r…#household"
     },
     "dropped": {
      "id": "a17e02:21",
@@ -115,11 +115,11 @@
      "a17e02:20"
     ]
    },
-   "deep": "A revoke is a certificate in the rule set, not a CRDT op. A CRDT op whose dependencies don't include the revoke counts as concurrent with it, and the ending wins."
+   "deep": "A revoke is a certificate in the policy set, not a CRDT op. A CRDT op whose dependencies don't include the revoke counts as concurrent with it, and the ending wins."
   },
   {
    "title": "Ended means forgotten.",
-   "text": "The moment a device meets any peer that holds an ending, either a revoke by the owner or a lapse written once a rule's date has passed, it applies it like a {delete trigger}: it wipes the keys and the plaintext copies of everything it may no longer read. It happens offline-first and without a server, on every honest device, the plumber's included.",
+   "text": "The moment a device meets any peer that holds an ending, either a revoke by the owner or a policy's issuer, or a lapse written once a policy's date has passed, it applies it like a {delete trigger}: it wipes the keys and the plaintext copies of everything it may no longer read. It happens offline-first and without a server, on every honest device, the plumber's included.",
    "code": {
     "on": "ending:b3:e5d…#plumber",
     "data": "data:ed25519:3Tk…#fix-tap",
@@ -129,7 +129,7 @@
      "plaintext"
     ],
     "keep": [
-     "chunk:b3:a91f…",
+     "chunk:b3:f1t…",
      "…"
     ]
    },
@@ -143,13 +143,12 @@
   {
    "title": "Endings, in short.",
    "list": [
-    "Every rule expires and renews itself while unchanged.",
-    "The owner can revoke; anyone may write a lapse once the date has passed.",
+    "Every policy expires and renews itself while unchanged.",
+    "The owner, or a shared policy's issuer, can revoke; any peer that can read the policies may write a lapse once the date has passed.",
     "An ending wins over changes that never saw it.",
-    "Honest devices forget what an ended rule gave them."
+    "Honest devices forget what an ended policy gave them."
    ],
-   "deep": "Endings are events in the causal history, so no clock has to be trusted.",
-   "text": ""
+   "deep": "Endings are events in the causal history, so no clock has to be trusted."
   }
  ]
 }

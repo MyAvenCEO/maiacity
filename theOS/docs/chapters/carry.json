@@ -3,24 +3,25 @@
  "slides": [
   {
    "title": "Who may even get the bytes?",
-   "text": "Read decides who can open data. Three more things a rule can allow decide who can carry it: {want}, {keep} and {sync}. Carriers never see the rules themselves: those are sealed for readers. Whoever asks shows their own proof.",
+   "text": "Read decides who can open data. Three more things a policy can allow decide who can carry it: {want}, {keep} and {sync}. Carriers never see the policies themselves: those are sealed for readers. Whoever asks shows their own proof.",
    "list": [
     "want: may ask for this data and receive it, sealed.",
     "keep: may store it for good.",
-    "sync: may pass it on to others whose rules say want."
+    "sync: may pass it on to others whose policies say want."
    ],
-   "deep": "want, keep and sync are operations in rules, like any other. Rules are sealed for readers; a carrier only checks the proof chain that the asker presents."
+   "deep": "want, keep and sync are operations in policies, like any other. Policies are sealed for readers; a carrier only checks the proof chain that the asker presents."
   },
   {
    "title": "want",
-   "text": "Before a device sends anything, even sealed chunks, the asker shows a proof that a rule gives them want. The carrier checks the signatures and nothing else. A stranger gets nothing at all, not even ciphertext to count or keep. Read includes want.",
+   "text": "Before a device sends anything, even sealed chunks, the asker shows a proof that a policy gives them want. The carrier checks the signatures and nothing else. A stranger gets nothing at all, not even ciphertext to count or keep. Read includes want.",
    "code": {
     "type": "theos/want@1",
     "on": "data:ed25519:7Hq…#house-list",
     "proof": [
-     "rule:b3:z0e…#first",
-     "rule:b3:h7r…#home",
-     "role:b3:k1m…#home"
+     "policy:b3:z0e…#first",
+     "policy:b3:h7r…#household",
+     "role:b3:k1m…#household",
+     "policy:b3:b5l…#bob-laptop"
     ],
     "sig": {
      "by": "agent:b3:b4l…#bob-laptop",
@@ -28,51 +29,65 @@
      "value": "…"
     }
    },
-   "deep": "The asker presents a proof chain: seal → owner → rule granting want to a role → the asker's identity in that role → the asker's registered signer. Valid chain: sealed chunks are sent. No chain: nothing, not even ciphertext."
+   "deep": "The asker presents a proof chain: seal → owner → policy granting want to a role → the asker's identity in that role → the asker's agent policy. Valid chain: sealed chunks are sent. No chain: nothing, not even ciphertext."
   },
   {
    "title": "keep",
-   "text": "Your backup gets want and keep. It holds every sealed chunk, for good, and gives them back to your new phone. It has no read, so to it they're just sealed bytes.",
+   "text": "Your backup is one of your agents. Your policy lets it want and keep the list for you. It holds every sealed chunk, for good, and gives them back to your new phone. It has no read, so to it they're just sealed bytes.",
    "code": {
-    "type": "theos/rule@1",
-    "to": "role:b3:j2b…#backup",
-    "on": "data:ed25519:7Hq…#house-list",
+    "type": "theos/policy@1",
+    "to": "agent:b3:k8b…#backup",
+    "on": "human:b3:q4x7…#you",
     "operations": [
-     "want",
-     "keep"
+     {
+      "operation": "act",
+      "where": {
+       "data": "data:ed25519:7Hq…#house-list",
+       "operations": [
+        "want",
+        "keep"
+       ]
+      }
+     }
     ],
-    "expires": "2026-12-01T00:00:00Z",
+    "proof": [
+     "policy:b3:a0p…#your-phone"
+    ],
     "sig": {
      "by": "agent:b3:f2p…#your-phone",
      "key": "ed25519:Fp2…",
      "value": "…"
     }
    },
-   "deep": "keep means the carrier stores sealed chunks durably and serves them to askers holding want. It never holds a data key."
+   "deep": "keep means the carrier stores sealed chunks durably and serves them to askers holding want. It never holds a data key. Your own agents get carrying rights like any other act: through your policy to them."
   },
   {
    "title": "sync",
-   "text": "The street's always-on peer gets sync. It passes your changes between Alice and Bob when they're never online at the same time. It keeps them only as long as it has to.",
+   "text": "The street's always-on peer gets sync. Your policy gives it to a role that holds the street coop, and the street lets its always-on agent act for it. It passes your changes between Alice and Bob when they're never online at the same time. It keeps them only as long as it has to.",
    "code": {
-    "type": "theos/rule@1",
-    "to": "role:b3:e9s…#street",
+    "type": "theos/policy@1",
+    "to": "role:b3:e9s…#street-carrier",
     "on": "data:ed25519:7Hq…#house-list",
     "operations": [
      "want",
      "sync"
     ],
     "expires": "2026-12-01T00:00:00Z",
+    "proof": [
+     "policy:b3:z0e…#first",
+     "policy:b3:a0p…#your-phone"
+    ],
     "sig": {
      "by": "agent:b3:f2p…#your-phone",
      "key": "ed25519:Fp2…",
      "value": "…"
     }
    },
-   "deep": "sync means the peer may forward sealed chunks to others whose rules give them want, which bridges devices that are never online at the same time."
+   "deep": "sync means the peer may forward sealed chunks to others whose policies give them want, which bridges devices that are never online at the same time. The role “street-carrier” is yours and holds the street coop (coop:b3:s5t8…#street)."
   },
   {
    "title": "What a carrier sees.",
-   "text": "Sealed chunks, the hashes that link them, and the proofs it needs to decide whom to give them to. It can store, count and forward them. It can't read a title, a tick, a rule or a frame of the movie.",
+   "text": "Sealed chunks, the hashes that link them, and the proofs it needs to decide whom to give them to. It can store, count and forward them. It can't read a title, a tick, a policy or a frame of the movie.",
    "code": {
     "type": "theos/chunk@1",
     "id": "chunk:b3:a91f…",
@@ -82,36 +97,46 @@
     "size": 18342,
     "bytes": "e4 1a 9c 07 …",
     "sig": {
-     "by": "agent:b3:7xq…",
+     "by": "agent:b3:b4l…#bob-laptop",
      "key": "ed25519:Bq3…",
      "value": "…"
     }
    },
-   "deep": "Visible to a carrier: chunk hashes, sizes, links between chunks, and the proofs needed to decide whom to serve. Invisible: content, rules and keys."
+   "deep": "Visible to a carrier: chunk hashes, sizes, links between chunks, and the proofs needed to decide whom to serve. Invisible: content, policies and keys."
   },
   {
-   "title": "All the rules on one list.",
-   "text": "One piece of data, one owner, three roles, each with exactly what it needs.",
+   "title": "All the policies on one list.",
+   "text": "One piece of data, one owner, four roles and one agent, each with exactly what it needs.",
    "code": {
     "on": "data:ed25519:7Hq…#house-list",
+    "schema": "data:ed25519:Sc4…@b3:1f0…#todo-list",
     "owner": "human:b3:q4x7…#you",
-    "rules": {
-     "#home": [
+    "policies": {
+     "role:b3:k1m…#household": [
       "create",
       "read",
       "update"
      ],
-     "#backup": [
-      "want",
-      "keep"
+     "role:b3:d5k…#kids": [
+      "create",
+      "update"
      ],
-     "#street": [
+     "role:b3:g6m…#grandma": [
+      "read (via Mia)"
+     ],
+     "role:b3:e9s…#street-carrier": [
       "want",
       "sync"
      ]
+    },
+    "agents": {
+     "agent:b3:k8b…#backup": [
+      "want",
+      "keep"
+     ]
     }
    },
-   "deep": "One owner, three roles: readers and writers (home), a durable carrier (backup) and a forwarding carrier (street). Each role holds exactly the operations it needs."
+   "deep": "One owner, four roles and one agent: readers and writers (household), children who add and tick (kids), a reader Mia shared with (grandma), a forwarding carrier (street-carrier), and your backup agent, a durable carrier."
   },
   {
    "title": "Alice and Bob, never online together.",

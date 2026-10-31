@@ -3,7 +3,7 @@
  "slides": [
   {
    "title": "Writing is a chain of signatures.",
-   "text": "Mia ticks “buy milk”. Her phone's signer signs the change. Every {peer}, any device holding a copy, checks the links before merging: the signer belongs to Mia's phone, the phone belongs to Mia, Mia is in “home”, and “home” has update on this list. One broken link, and the change is dropped.",
+   "text": "Mia ticks “buy milk”. Her phone's signer signs the change. Every {peer}, any device holding a copy, checks the links before merging: the signer is her phone agent's key, Mia's policy lets the phone act for her, Mia is in “household”, and “household” has update on this list. One broken link, and the change is dropped.",
    "code": {
     "type": "theos/change@1",
     "on": "data:ed25519:7Hq…#house-list",
@@ -11,9 +11,10 @@
      "c40b11:7"
     ],
     "proof": [
-     "rule:b3:m3a…#mia-phone",
-     "role:b3:k1m…#home",
-     "rule:b3:h7r…#home"
+     "policy:b3:z0e…#first",
+     "policy:b3:h7r…#household",
+     "role:b3:k1m…#household",
+     "policy:b3:m3a…#mia-phone"
     ],
     "sig": {
      "by": "agent:b3:p9c…#mia-phone",
@@ -21,25 +22,25 @@
      "value": "…"
     }
    },
-   "deep": "Every peer checks a change before merging: the signature, the signer's registration in the identity's history, the identity's role membership, and a rule covering this operation on this data. Any broken link: dropped."
+   "deep": "Every peer checks a change before merging: the signature, the signer's registration in the agent's history, the agent's policy from its owner, the owner's place in the role, and a policy covering this operation on this data. Any broken link: dropped."
   },
   {
    "title": "Two questions, every time.",
-   "text": "Every change has to pass two checks. Does it really come from the coop? The coop's own rules decide. May the coop do this to this data? The data's rules decide. Only both together let a change in.",
+   "text": "Every change has to pass two checks. Does it really come from Mia? Her own policies decide. May Mia do this to this data? The data's policies decide. Only both together let a change in.",
    "flow": [
     "signatures",
-    "own rules: who speaks?",
-    "the data's rules: may it?",
+    "own policies: who speaks?",
+    "the data's policies: may it?",
     "accepted"
    ],
-   "deep": "Agency and access stay apart. The chain signer → agent → owner (human or coop) only answers who is acting; rules on data only answer what that identity may do. Both use the same small policy language and are checked offline by every peer."
+   "deep": "Agency and access stay apart. The chain signer → agent → owner (human or coop) only answers who is acting; policies on data only answer what that identity may do. Both use the same small policy language and are checked offline by every peer."
   },
   {
-   "title": "Under the hood, a rule is a capability.",
-   "text": "Each rule is a signed token, a {capability}. It carries its own {proof}: who signed it, and why they were allowed to, all the way back to the seal. Any device can check it offline. Nobody can forge it.",
+   "title": "Under the hood, a policy is a capability.",
+   "text": "Each policy is a signed token, a {capability}. It carries its own {proof}: who signed it, and why they were allowed to, all the way back to the seal. Any device can check it offline. Nobody can forge it.",
    "code": {
-    "type": "theos/rule@1",
-    "to": "role:b3:k1m…#home",
+    "type": "theos/policy@1",
+    "to": "role:b3:k1m…#household",
     "on": "data:ed25519:7Hq…#house-list",
     "operations": [
      "create",
@@ -48,8 +49,8 @@
     ],
     "expires": "2026-12-01T00:00:00Z",
     "proof": [
-     "rule:b3:z0e…#first",
-     "rule:b3:a0p…#your-phone"
+     "policy:b3:z0e…#first",
+     "policy:b3:a0p…#your-phone"
     ],
     "sig": {
      "by": "agent:b3:f2p…#your-phone",
@@ -57,22 +58,22 @@
      "value": "…"
     }
    },
-   "deep": "Like a Biscuit or UCAN token: a chain of signed blocks, each signed by the holder of the previous one, verifiable offline without any server. Like every signed or hashed thing, it is encoded as canonical CBOR, so the same rule always gives the same bytes."
+   "deep": "Like a Biscuit or UCAN token: a chain of signed blocks, each signed by the holder of the previous one, verifiable offline without any server. Like every signed or hashed thing, it is encoded as canonical CBOR, so the same policy always gives the same bytes."
   },
   {
    "title": "Every device checks the same four things.",
-   "text": "Before a change goes in, or before a single byte goes out, a device checks the rule behind it.",
+   "text": "Before a change goes in, or before a single byte goes out, a device checks the policy behind it.",
    "list": [
     "Every signature in the proof is valid, back to the seal.",
-    "The rule hasn't ended (expired or revoked: Endings chapter).",
-    "The operation is listed in the rule.",
+    "The policy hasn't ended (expired or revoked: Endings chapter).",
+    "The operation is listed in the policy.",
     "Every condition holds."
    ],
    "deep": "Verification order: signatures along the chain, no ending in the causal past, operation covered, conditions hold. All deterministic, so every peer reaches the same verdict."
   },
   {
    "title": "Every change is checked on arrival.",
-   "text": "Before Alice's device merges Bob's CRDT ops, it checks each one against the rules in the Doc's own history. Bob's role has update, so his CRDT ops go in. A stranger's CRDT op on the same list is dropped, quietly, everywhere.",
+   "text": "Before Alice's device merges Bob's CRDT ops, it checks each one against the policies in the Doc's own history. Bob's role has update, so his CRDT ops go in. A stranger's CRDT op on the same list is dropped, quietly, everywhere.",
    "code": {
     "type": "theos/change@1",
     "on": "data:ed25519:7Hq…#house-list",
@@ -81,9 +82,10 @@
      "a17e02:19"
     ],
     "proof": [
-     "rule:b3:b5l…#bob-laptop",
-     "role:b3:k1m…#home",
-     "rule:b3:h7r…#home"
+     "policy:b3:z0e…#first",
+     "policy:b3:h7r…#household",
+     "role:b3:k1m…#household",
+     "policy:b3:b5l…#bob-laptop"
     ],
     "sig": {
      "by": "agent:b3:b4l…#bob-laptop",
@@ -91,20 +93,23 @@
      "value": "…"
     }
    },
-   "deep": "Verification happens before merge: signature, signer registration, role membership and covering rule, evaluated against the rules known in the change's causal history."
+   "deep": "Verification happens before merge: signature, signer registration, the agent's policy, the role and the covering policy, evaluated against the policies known in the change's causal history."
   },
   {
    "title": "Two things at once.",
    "text": "Mia edits the list on a train, offline, at the same moment you remove her. When both devices meet, the removal wins: her edit is dropped everywhere. Every device decides the same way, so they all end up agreeing.",
    "code": {
-    "ending": {
-     "type": "theos/ending@1",
-     "kind": "revoke",
-     "member": "human:b3:m2a9…#mia",
-     "of": "role:b3:k1m…#home"
+    "removal": {
+     "type": "theos/role@1",
+     "id": "role:b3:k1m…#household",
+     "identities": [
+      "human:b3:a8f3…#alice",
+      "human:b3:b0b…#bob"
+     ]
     },
     "change": {
      "type": "theos/change@1",
+     "on": "data:ed25519:7Hq…#house-list",
      "ops": [
       "c40b11:9"
      ],
@@ -112,16 +117,16 @@
       "c40b11:8"
      ]
     },
-    "result": "ending wins, c40b11:9 dropped"
+    "result": "removal wins, c40b11:9 dropped"
    },
-   "deep": "Concurrency is resolved toward less authority: a removal and a change made without seeing it count as concurrent, and the removal wins. Every peer applies the same deterministic rule, so all copies converge."
+   "deep": "Concurrency is resolved toward less authority: a removal and a change made without seeing it count as concurrent, and the removal wins. Every peer applies the same deterministic logic, so all copies converge."
   },
   {
    "title": "Checking, in short.",
    "list": [
     "Every peer checks every change before merging it.",
-    "Signing rules answer who speaks; the data's rules answer what may be done.",
-    "Rules carry their own proof, checked offline.",
+    "An identity's own policies answer who speaks for it; the data's policies answer what may be done.",
+    "Policies carry their own proof, checked offline.",
     "When it's unclear, less authority wins."
    ],
    "deep": "Verification is deterministic, so every peer reaches the same verdict without asking anyone."

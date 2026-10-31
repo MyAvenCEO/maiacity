@@ -11,7 +11,7 @@
      "a17e02:17"
     ],
     "op": "set",
-    "at": "items/milk/done",
+    "at": "/items/0/done",
     "value": true
    },
    "deep": "Every CRDT op has an ID (peer, counter) and depends on the frontier it was made on. Replaying the ops in causal order gives the same state everywhere."
@@ -28,20 +28,23 @@
     "alice-phone": [
      {
       "id": "5f3a9c:41",
-      "set": "items/milk/done",
+      "set": "/items/0/done",
       "value": true
      }
     ],
     "bob-laptop": [
      {
       "id": "a17e02:18",
-      "set": "title",
+      "set": "/title",
       "value": "Home"
      },
      {
       "id": "a17e02:19",
-      "insert": "items/2",
-      "value": "Call grandma"
+      "insert": "/items/2",
+      "value": {
+       "text": "Call grandma",
+       "done": false
+      }
      }
     ]
    },
@@ -99,12 +102,12 @@
    "code": {
     "5f3a9c:42": {
      "lamport": 61,
-     "set": "title",
+     "set": "/title",
      "value": "Our home"
     },
     "a17e02:20": {
      "lamport": 61,
-     "set": "title",
+     "set": "/title",
      "value": "Home"
     },
     "winner": "a17e02:20 (same clock, higher peer)"

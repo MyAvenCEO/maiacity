@@ -14,7 +14,7 @@
   },
   {
    "id": "D2",
-   "title": "Signers act, identities own",
+   "title": "Agents act; humans and coops own",
    "status": "decided",
    "decision": "A signer is a key that signs for an agent. Agents act; only humans and coops own data and agents.",
    "why": "Devices come and go; ownership must not move with them.",
@@ -35,9 +35,9 @@
   },
   {
    "id": "D3",
-   "title": "Two kinds of identity: human and coop",
+   "title": "Three kinds of identity: human, coop, agent",
    "status": "decided",
-   "decision": "Identity types: human, coop, agent. Humans and coops own and decide. A coop's members are its “members” role, which holds humans or coops, never agents or signers; coops may be inside coops, never in a circle. Agents are owned, never in roles of other identities.",
+   "decision": "Identity types: human, coop, agent. Humans and coops own and decide. A coop's members are its “members” role, which holds humans or coops, never agents or signers; coops may be inside coops, never in a circle. Agents are owned and never in any role; they get policies directly from their owner.",
    "why": "Families, teams and organisations are identities of identities; one model covers all of them.",
    "sources": [
     {
@@ -61,7 +61,7 @@
    "id": "D4",
    "title": "Data owns itself: the seal",
    "status": "decided",
-   "decision": "Data is born with a fresh key pair, the seal. Its public key is the data ID. It signs exactly one thing, the first rule, and the private key is wiped.",
+   "decision": "Data is born with a fresh key pair, the seal. Its public key is the data ID. It signs exactly one thing, the first policy, and the private key is wiped.",
    "why": "Nobody holds the seal, so it cannot be shared, lost or stolen. Keyhive does the same with its genesis key.",
    "sources": [
     {
@@ -82,7 +82,7 @@
    "id": "D5",
    "title": "One owner per piece of data, and it is an identity",
    "status": "decided",
-   "decision": "The seal's first rule names exactly one owner: an identity, human or coop. The owner may do everything, its rule never expires, and only the owner can hand ownership to another identity. The owner is not a role.",
+   "decision": "The seal's first policy names exactly one owner: an identity, human or coop. The owner may do everything, its policy never expires, and only the owner can hand ownership to another identity. The owner is not a role.",
    "why": "A role of owners cannot shrink durably: any past owner could revoke the others for good (Keyline's warning). With one owner identity, people change inside the coop, not in the data.",
    "rejected": "An \"owners\" role holding admin.",
    "supersedes": "D4 as first drafted (owners role)",
@@ -98,16 +98,16 @@
    ],
    "slides": [
     "data-3",
-    "rules-8"
+    "policies-8"
    ],
    "date": "2026-10-31"
   },
   {
    "id": "D6",
-   "title": "Rules go to roles, never to identities",
+   "title": "Policies go to roles, never to people directly",
    "status": "decided",
-   "decision": "Everyone except the owner gets access through rules. A rule is given to a role (a named set of identities) or, for an identity's own agents, to an agent directly.",
-   "why": "People come and go; roles stay. Changing who is in a role never touches the data's rules.",
+   "decision": "Everyone except the owner gets access through policies. A policy is given to a role (a named set of identities) or, for an identity's own agents, to an agent directly.",
+   "why": "People come and go; roles stay. Changing who is in a role never touches the data's policies.",
    "sources": [
     {
      "label": "Jazz: groups and roles",
@@ -119,17 +119,17 @@
     }
    ],
    "slides": [
-    "rules-1",
-    "rules-2"
+    "policies-1",
+    "policies-2"
    ],
    "date": "2026-10-31"
   },
   {
    "id": "D7",
-   "title": "People see \"rules\"; underneath they are capabilities",
+   "title": "People see \"policies\"; underneath they are capabilities",
    "status": "decided",
-   "decision": "The word everyone sees is \"rule\". Underneath, each rule is a signed capability token that carries its own proof back to the seal and is checked offline.",
-   "why": "\"Rule\" is the word ordinary people understand; capabilities are what makes it hold without a server.",
+   "decision": "The word everyone sees is \"policy\". Underneath, each policy is a signed capability token that carries its own proof back to the seal and is checked offline.",
+   "why": "\"Policy\" is the word ordinary people understand; capabilities are what makes it hold without a server.",
    "sources": [
     {
      "label": "Biscuit authorization tokens",
@@ -151,10 +151,10 @@
   },
   {
    "id": "D8",
-   "title": "A rule: role, data, operations, conditions, expiry, proof",
+   "title": "A policy: role, data, operations, conditions, expiry, proof",
    "status": "decided",
-   "decision": "A rule is a signed certificate with: the role it is given to; the data it applies to; a list of operations (create, read, update, delete, share, want, keep, sync), each optionally narrowed by at (a path), where (matching entries) or a limit; an expiry; the owner's signature; and the proof chain back to the seal. Writing rules is not an operation: it belongs to the owner (D30).",
-   "why": "One small vocabulary for content, carrying and the rules themselves. Keyhive's Relay, Read, Edit and Admin map onto it; ours is finer.",
+   "decision": "A policy is a signed certificate with: the role it is given to; the data it applies to; a list of operations (create, read, update, delete, share, want, keep, sync), each optionally narrowed by at (a path), where (matching entries) or a limit; an expiry; the signature of the issuer's agent (the owner's, or a sharer's under D47); and the proof chain back to the seal. Identity policies use the same shape with act, own and govern (D48). Writing policies is not an operation: it belongs to the owner (D30).",
+   "why": "One small vocabulary for content, carrying and the policies themselves. Keyhive's Relay, Read, Edit and Admin map onto it; ours is finer.",
    "sources": [
     {
      "label": "Keyhive design: convergent capabilities",
@@ -166,9 +166,9 @@
     }
    ],
    "slides": [
-    "rules-4",
-    "rules-5",
-    "rules-6"
+    "policies-4",
+    "policies-5",
+    "policies-6"
    ],
    "date": "2026-10-31"
   },
@@ -176,7 +176,7 @@
    "id": "D9",
    "title": "Sharing only narrows",
    "status": "decided",
-   "decision": "Whoever may share hands on a rule that is the same or smaller: fewer dos, shorter expiry, more conditions. Never more.",
+   "decision": "Whoever may share hands on a policy that is the same or smaller: fewer operations, shorter expiry, more conditions. Never more.",
    "why": "Attenuation keeps delegation safe without asking anyone. Meadowcap and Biscuit both require each step to sit inside the previous one.",
    "sources": [
     {
@@ -193,7 +193,7 @@
     }
    ],
    "slides": [
-    "rules-7"
+    "policies-7"
    ],
    "date": "2026-10-31"
   },
@@ -201,7 +201,7 @@
    "id": "D10",
    "title": "Read is encryption, everything else is verification",
    "status": "decided",
-   "decision": "Reading is enforced by keys. Every other do is enforced by every peer checking each signed change against the rules in the history.",
+   "decision": "Reading is enforced by keys. Every other operation is enforced by every peer checking each signed change against the policies in the history.",
    "why": "Encryption can only be all or nothing per key; signature checks can be as fine as needed.",
    "sources": [
     {
@@ -229,15 +229,15 @@
    "slides": [
     "ops-9",
     "time-5",
-    "rules-3"
+    "policies-3"
    ],
    "date": "2026-10-31"
   },
   {
    "id": "D12",
-   "title": "Every rule expires and renews itself",
+   "title": "Every policy expires and renews itself",
    "status": "decided",
-   "decision": "Rules expire after 30 days unless set otherwise. The owner renews unchanged rules a week before they end, under its own signing rules (a coop can let one member do renewals). The owner's first rule never expires.",
+   "decision": "Policies expire after 30 days unless set otherwise. The owner renews unchanged policies a week before they end, under its own policies (a coop can let one agent do renewals). The owner's first policy never expires.",
    "why": "Forgotten shares close by themselves; families are never locked out.",
    "sources": [],
    "slides": [
@@ -250,7 +250,7 @@
    "id": "D13",
    "title": "Endings: revoke and lapse",
    "status": "decided",
-   "decision": "A revoke (by the owner) and a lapse (by any peer that can read the rules, once the date has passed) are the same kind of event in the history. An ending wins over every change that never saw it, turns the data key if the ended rule gave read, and is the delete trigger on honest devices.",
+   "decision": "A revoke (by the owner, or by the issuer of a shared policy) and a lapse (by any peer that can read the policies, once the date has passed) are the same kind of event in the history. An ending wins over every change that never saw it, turns the data key if the ended policy gave read, and is the delete trigger on honest devices.",
    "why": "Validity follows from the history alone, so all copies agree. No clock is trusted.",
    "rejected": "Checking expiry against each device's own clock (copies would disagree).",
    "sources": [
@@ -279,8 +279,8 @@
    "id": "D14",
    "title": "Ambiguity resolves toward less authority",
    "status": "decided",
-   "decision": "When rule changes and other changes are concurrent, the result with less authority wins.",
-   "why": "The safe default without a central order. Keyhive's guiding rule.",
+   "decision": "When policy changes and other changes are concurrent, the result with less authority wins.",
+   "why": "The safe default without a central order. Keyhive's guiding principle.",
    "sources": [
     {
      "label": "Keyhive design: convergent capabilities",
@@ -351,7 +351,7 @@
    "id": "D17",
    "title": "The keyring travels with the data",
    "status": "decided",
-   "decision": "Each piece of data carries its keyring (envelopes, generation, back-links) next to its rules, sealed. An envelope is addressed either to a lock or to another data key (a Value bound to its metadata Doc).",
+   "decision": "Each piece of data carries its keyring (envelopes, generation, back-links) next to its policies, sealed. An envelope is addressed either to a lock or to another data key (a Value bound to its metadata Doc).",
    "why": "No one keeps keys for the data; it is self-contained wherever it goes.",
    "sources": [
     {
@@ -369,8 +369,8 @@
    "id": "D18",
    "title": "Which key turns when",
    "status": "decided",
-   "decision": "Adding a member or giving read: nothing turns. Removing a member: new role key, data keys on next write. Taking read: new data key now. Stolen device: identity key and every role it is in. Concurrent rotations are both kept until the next one.",
-   "why": "Only read touches keys; the rest is signed rules.",
+   "decision": "Adding a member or giving read: nothing turns. Removing a member: new role key, data keys on next write. Taking read: new data key now. An agent's device stolen: identity key and every role it is in. Concurrent rotations are both kept until the next one.",
+   "why": "Only read touches keys; the rest is signed policies.",
    "sources": [
     {
      "label": "Keyhive notebook 02: BeeKEM",
@@ -390,7 +390,7 @@
    "id": "D19",
    "title": "Envelopes only for published, signed locks",
    "status": "decided",
-   "decision": "Each device publishes its own lock (encryption key) in its identity's history, signed by its signer. Envelopes are made only for locks found there, and only by someone a rule allows.",
+   "decision": "Each agent publishes its own lock (encryption key) in its own history, signed by its signer. Envelopes are made only for locks found there, and only by someone a policy allows.",
    "why": "Stops an attacker from slipping in a lock of their own. Closes the gap Keyhive lists as G2.",
    "sources": [
     {
@@ -468,7 +468,7 @@
    "id": "D22",
    "title": "Words: operation, CRDT op",
    "status": "decided",
-   "decision": "An operation is anything you do: what a rule allows and what the engine runs (find, update, want …). A CRDT op is Loro's low-level change, always called “CRDT op”. The slides name CRDT data types, not Loro.",
+   "decision": "An operation is anything you do: what a policy allows and what the engine runs (find, update, want …). A CRDT op is Loro's low-level change, always called “CRDT op”. The slides name CRDT data types, not Loro.",
    "why": "One meaning per word.",
    "sources": [
     {
@@ -477,7 +477,7 @@
     }
    ],
    "slides": [
-    "rules-1",
+    "policies-1",
     "merge-1",
     "ops-3"
    ],
@@ -487,7 +487,7 @@
    "id": "D23",
    "title": "The engine: JSON operations, pluggable, local",
    "status": "decided",
-   "decision": "Every read, change, search and sync is a JSON operation (find, walk, search, near, chain …). New kinds plug in and name what a rule must allow. Operations run only on your own device, over what you can read.",
+   "decision": "Every read, change, search and sync is a JSON operation (find, walk, search, near …, and chain, which runs each step under that step's own operation). New kinds plug in and name what a policy must allow. Operations run only on your own device, over what you can read.",
    "why": "One engine for everything, with no server in the loop.",
    "sources": [],
    "slides": [
@@ -502,7 +502,7 @@
    "id": "D24",
    "title": "Peers sync, they never ask",
    "status": "decided",
-   "decision": "No peer ever answers questions about its data for another peer. Peers only carry what rules allow. A shared answer is its own data with its own rule.",
+   "decision": "No peer ever answers questions about its data for another peer. Peers only carry what policies allow. A shared answer is its own data with its own policy.",
    "why": "Removes the trust in the answering device, and the risk of asking one's way to the content.",
    "sources": [
     {
@@ -518,10 +518,10 @@
   },
   {
    "id": "D25",
-   "title": "Rules are their own signed set, not a Loro doc",
+   "title": "Policies are their own signed set, not a Loro doc",
    "status": "decided",
-   "decision": "Rules, role memberships and endings are a grow-only set of signed certificates, merged by union and evaluated by our own logic.",
-   "why": "Rule conflicts need \"less authority wins\"; Loro's last-writer-wins would resolve them wrongly. Keyhive does the same.",
+   "decision": "Policies, roles and endings are a grow-only set of signed certificates, merged by union and evaluated by our own logic.",
+   "why": "Policy conflicts need \"less authority wins\"; Loro's last-writer-wins would resolve them wrongly. Keyhive does the same.",
    "sources": [
     {
      "label": "Keyhive design: convergent capabilities",
@@ -562,9 +562,9 @@
   },
   {
    "id": "D27",
-   "title": "Carriers see sealed chunks and proofs, never rules",
+   "title": "Carriers see sealed chunks and proofs, never policies",
    "status": "decided",
-   "decision": "Rules are sealed for readers. A carrier checks only proofs: the asker's want proof, and each change author's proof. IDs in proofs are pseudonymous.",
+   "decision": "Policies are sealed for readers. A carrier checks only proofs: the asker's want proof, and each change author's proof. IDs in proofs are pseudonymous.",
    "why": "Keyhive syncs its membership graph to servers in plain text; we keep that private too.",
    "sources": [
     {
@@ -587,7 +587,7 @@
    "id": "D28",
    "title": "Peer to peer over iroh",
    "status": "decided",
-   "decision": "Devices connect directly over iroh: the address is the device's signer key (D31), relays see only sealed traffic.",
+   "decision": "Devices connect directly over iroh: the address is the agent's signer key (D31), relays see only sealed traffic.",
    "why": "No cloud in the middle; the address can change without touching the identity.",
    "sources": [
     {
@@ -635,10 +635,10 @@
   },
   {
    "id": "D30",
-   "title": "Only the owner changes rules",
+   "title": "Only the owner changes policies",
    "status": "decided",
-   "decision": "The owner writes the first rules on its data; ownership acts (hand over, retain, erase, open the archive) stay with the owner alone. A role may write rules for other roles only through share, within the limits of D47.",
-   "why": "Identities work like Gnosis Safes: members sign by the identity's own rules (1 of 2, 2 of 3, per action). So one owner covers several managers, and there is no removed admin who could backdate a revoke.",
+   "decision": "The owner writes the first policies on its data; ownership acts (hand over, retain, erase, open the archive) stay with the owner alone. A role may write policies for other roles only through share, within the limits of D47.",
+   "why": "Identities work like Gnosis Safes: agents of its members sign under the identity's own policies (one signature for now, D49). So one owner covers several managers, and there is no removed admin who could backdate a revoke.",
    "supersedes": "D15; removes admin from the role do-list in D8",
    "sources": [
     {
@@ -647,9 +647,9 @@
     }
    ],
    "slides": [
-    "rules-1",
-    "rules-5",
-    "rules-8",
+    "policies-1",
+    "policies-5",
+    "policies-8",
     "time-4",
     "identity-7"
    ],
@@ -686,8 +686,8 @@
    "id": "D32",
    "title": "Words, and dialing identities",
    "status": "decided",
-   "decision": "Devices sign for identities; human identities' members are devices; coops' members are identities; roles are sets of identities; data is acted upon. Peers dial identities: each identity publishes a signed record of its devices, each device's history holds its current address (its signer's public key), and the connection goes to whichever device is online.",
-   "why": "One word per thing, matching the Safe analogy (a Safe's members are signers). Addressing identities keeps the address stable while signers change, like a phone number and its SIM.",
+   "decision": "Agents sign for the identity that owns them; a coop's members are its “members” role; roles are sets of identities; data is acted upon. Peers dial identities: each identity publishes a signed record of its agents, each agent's history holds its current address (its signer's public key), and the connection goes to whichever agent is online.",
+   "why": "One word per thing. Addressing identities keeps the address stable while signers change, like a phone number and its SIM.",
    "sources": [],
    "slides": [
     "net-2",
@@ -766,7 +766,7 @@
    "title": "Heal: keys turn regularly",
    "status": "decided",
    "date": "2026-10-31",
-   "decision": "Role keys and data keys turn regularly, not only when someone leaves, so a stolen key soon opens nothing new (post-compromise security). Forgetting the past is D35; locking older keys away is D37.",
+   "decision": "Role keys and data keys turn regularly, not only when someone leaves, so a stolen key soon opens nothing new (post-compromise security). Forgetting the past is D39; the archive is D40.",
    "why": "Full forward secrecy for live CRDT history is impossible: a late op may need any old state. Keyhive gave forward secrecy up; BeeKEM's κ parameter shows the trade-off. These three layers get as close as the setting allows.",
    "sources": [
     {
@@ -808,10 +808,10 @@
   },
   {
    "id": "D38",
-   "title": "Signing rules are pluggable policies",
+   "title": "Signing policies are pluggable",
    "status": "superseded",
-   "decision": "Each identity's signing rules are a policy per action, built from kinds: threshold (k of n), weights, all-of / any-of, time lock with objection window. A policy kind is identified by the hash of its specification and is declarative data, not code. A device that does not know a kind treats the policy as not satisfied. Changing the signing rules needs the policy for that action.",
-   "why": "New kinds of signing rules can be added over time without old devices ever wrongly accepting something.",
+   "decision": "Each identity's signing policies hold one entry per action, built from kinds: threshold (k of n), weights, all-of / any-of, time lock with objection window. A policy kind is identified by the hash of its specification and is declarative data, not code. A device that does not know a kind treats the policy as not satisfied. Changing the signing policies needs the policy for that action.",
+   "why": "New kinds of signing policies can be added over time without old devices ever wrongly accepting something.",
    "sources": [
     {
      "label": "KERI specification (weighted thresholds)",
@@ -826,7 +826,7 @@
    "id": "D39",
    "title": "Keys live hot, then cold, and can be erased",
    "status": "decided",
-   "decision": "Hot: the newest keys, linked by back-links and ready on readers' devices; they turn regularly (D36). Cold: at rotation boundaries older than the hot window, the chain is cut; older keys leave the chain and go to the owner's archive. Erased: on request, keys are shredded everywhere. Late writers from before a cut lose and get a conflict view of what was not adopted. The hot window is 30 days, equal to a rule's lifetime.",
+   "decision": "Hot: the newest keys, linked by back-links and ready on readers' devices; they turn regularly (D36). Cold: at rotation boundaries older than the hot window, the chain is cut; older keys leave the chain and go to the owner's archive. Erased: on request, keys are shredded everywhere. Late writers from before a cut lose and get a conflict view of what was not adopted. The hot window is 30 days, equal to a policy's lifetime.",
    "why": "Back-links and an archive cannot coexist for the same keys: a stolen current key would open the whole past. Splitting by age gives heal, archive and erasure one consistent lifecycle.",
    "supersedes": "D35",
    "sources": [
@@ -849,8 +849,8 @@
    "id": "D40",
    "title": "The archive belongs to the owner identity",
    "status": "decided",
-   "decision": "Cold keys are sealed for the owner identity's archive key. Opening the archive follows the owner's own signing rules; for a coop, the archive key is split among its members so it can only be rebuilt under that rule. Never bound to a passkey or a signer. A device may add a local tap as convenience, not as protection.",
-   "why": "The identity owns, never a signer (D2). Ownership of the past follows the same rules as ownership of the present.",
+   "decision": "Cold keys are sealed for the owner identity's archive key. Opening the archive follows the owner's own policies; for a coop, the archive key is split among its members so it can only be rebuilt under that policy. Never bound to a passkey or a signer. A device may add a local tap as convenience, not as protection.",
+   "why": "The identity owns, never a signer (D2). Ownership of the past follows the same policies as ownership of the present.",
    "supersedes": "D37",
    "sources": [],
    "slides": [
@@ -916,9 +916,9 @@
   },
   {
    "id": "D44",
-   "title": "Signing rules and data rules never overlap",
+   "title": "An identity's policies and data policies never overlap",
    "status": "decided",
-   "decision": "Signing rules belong to an identity and answer who speaks for it: its members and agents (one signature by default, D49), for three kinds of act only (act, own, govern). The data's rules belong to a piece of data and answer what an identity may do with it, through roles. Signing rules never mention data or roles; data rules never mention signature counts. A change is valid only if both hold. Both use the same policy language (D38). A coop is like a small DAO: members, governance, assets, nesting.",
+   "decision": "An identity's own policies answer who speaks for it: policies on the identity, given to its members role or its own agents, with act, own and govern; conditions may name which data an agent acts on. A piece of data's policies answer what an identity may do with it: policies on the data, given to roles, with data operations. Signature counts appear only on identity policies (D48, D49). A change is valid only if both hold. A coop is like a small DAO: members, governance, assets, nesting.",
    "why": "Agency and access are different questions; mixing them made the coop example ambiguous.",
    "sources": [],
    "slides": [
@@ -950,10 +950,10 @@
   },
   {
    "id": "D46",
-   "title": "Agents: owned by one human or coop, acting by its rules",
+   "title": "Agents: owned by one human or coop, acting by its policies",
    "status": "decided",
-   "decision": "An agent identity (phone, laptop, watch, server, AI assistant) is owned by exactly one human or coop and acts only through rules its owner gives it: who = the agent, on what = the owner, operations act / own / govern, with conditions (which data, limits, expiry). The owner and its first agent are born together in one record signed by the agent's key. Losing a device means revoking its agent's rule.",
-   "why": "Devices are owned, not members; acting on behalf is delegation by rules (D48). One genesis record removes the chicken-and-egg problem.",
+   "decision": "An agent identity (phone, laptop, watch, server, AI assistant) is owned by exactly one human or coop and acts only through policies its owner gives it: who = the agent, on what = the owner, operations act / own / govern, with conditions (which data, limits, expiry). The owner and its first agent are born together in one record signed by the agent's key. Losing a device means revoking its agent's policy.",
+   "why": "Devices are owned, not members; acting on behalf is delegation by policies (D48). One genesis record removes the chicken-and-egg problem.",
    "sources": [],
    "slides": [
     "identity-2",
@@ -966,11 +966,11 @@
   },
   {
    "id": "D47",
-   "title": "Rule-writing is delegated through share, narrowing only",
+   "title": "Policy-writing is delegated through share, narrowing only",
    "status": "decided",
    "date": "2026-10-31",
-   "decision": "A role holding share may write rules for other roles, but only within its own operations, conditions and expiry; it may end only rules it issued itself; when its own rule ends, every rule issued under it ends too (cascade); writes by a removed delegate that never saw the ending are dropped. The owner's rules are the root and never fall this way.",
-   "why": "Gives teams day-to-day delegation without the problems of admin roles: no granting more than you hold, no rule wars between delegates, no backdated revokes.",
+   "decision": "A role holding share may write policies for other roles, but only within its own operations, conditions and expiry; it may end only policies it issued itself; when its own policy ends, every policy issued under it ends too (cascade); writes by a removed delegate that never saw the ending are dropped. The owner's policies are the root and never fall this way.",
+   "why": "Gives teams day-to-day delegation without the problems of admin roles: no granting more than you hold, no policy wars between delegates, no backdated revokes.",
    "sources": [
     {
      "label": "UCAN specification (delegation and attenuation)",
@@ -982,23 +982,23 @@
     }
    ],
    "slides": [
-    "rules-7",
-    "rules-5"
+    "policies-7",
+    "policies-5"
    ]
   },
   {
    "id": "D48",
-   "title": "One rule shape, one plugin system",
+   "title": "One policy shape, one plugin system",
    "status": "decided",
    "date": "2026-10-31",
-   "decision": "Every rule has one shape: who, on what, operations, conditions, expiry. An identity's rules have its members as who and the identity itself as target, with operations act, own and govern. A piece of data's rules have a role as who and the data as target. Operations and conditions (at, where, limit …; later signature counts, D49) are plugins in one registry, each named by the hash of its specification, declarative, failing closed when unknown. Each condition plugin declares which target it may be used on, so signature conditions stay on identities (D44).",
-   "why": "One language and one engine for all rules, with the separation between agency and access kept by the target.",
+   "decision": "Every policy has one shape: who, on what, operations, conditions, expiry. An identity's policies have its members role or its own agents as who and the identity itself as target, with operations act, own and govern. A piece of data's policies have a role as who and the data as target. Operations and conditions (at, where, limit …; later signature counts, D49) are plugins in one registry, each named by the hash of its specification, declarative, failing closed when unknown. Each condition plugin declares which target it may be used on, so signature conditions stay on identities (D44).",
+   "why": "One language and one engine for all policies, with the separation between agency and access kept by the target.",
    "supersedes": "D38",
    "sources": [],
    "slides": [
     "identity-4",
     "identity-7",
-    "rules-4",
+    "policies-4",
     "ops-8"
    ]
   },
@@ -1007,7 +1007,7 @@
    "title": "One signature by default; counts come later as plugins",
    "status": "decided",
    "date": "2026-10-31",
-   "decision": "For now, every act, own and govern of an identity needs one signature from an agent or member its rules allow (1 of 1). Signature counts (k of n), weights and waiting times are not part of the first version; they are added later as condition plugins (D48), and devices that do not know them treat them as not satisfied.",
+   "decision": "For now, every act, own and govern of an identity needs one signature from an agent acting under the identity's policies: its own agent, or an agent of a member (1 of 1). Signature counts (k of n), weights and waiting times are not part of the first version; they are added later as condition plugins (D48), and devices that do not know them treat them as not satisfied.",
    "why": "Keeps the first version simple while the plugin system leaves room to grow.",
    "sources": [],
    "slides": [
@@ -1020,7 +1020,7 @@
    "title": "Record conventions",
    "status": "decided",
    "date": "2026-10-31",
-   "decision": "Every stored or sent thing is a record: {\"type\": \"theos/<kind>@<version>\", …fields, \"sig\"} in canonical CBOR (shown as JSON). IDs are typed: human:, coop:, agent:, role:, rule:, ending: and chunk: followed by b3: and the BLAKE3 hash of the record; data: followed by the seal's ed25519 public key; value: b3: hash of the bytes. A #label after an ID is only for people (human:b3:q4x7…#you). Public keys: ed25519:… (signers, seals), x25519:… (locks). Secret keys never appear; they are named, for example datakey:house-list/3. CRDT op IDs are Loro's peer and counter (5f3a9c:41). Times are RFC 3339 in UTC. Signatures: \"sig\": {\"by\": agent ID, \"key\": ed25519 public key, \"value\": …}. Record kinds: genesis, identity, role, rule, renewal, ending, envelope, keyring, change, chunk, value, meta, retain, erase, record, proof, want, news, operation. An ending ends a rule; role changes are role records signed under the owner's rules. A data's first rule gives its owner the operation own (everything, including writing rules) and is signed by the seal, the only signer that is not an agent. A proof is the ordered list of record IDs from the seal or an identity's genesis to the acting agent. Identity rules do not expire unless they say so.",
+   "decision": "Every stored or sent thing is a record: {\"type\": \"theos/<kind>@<version>\", …fields, \"sig\"} in canonical CBOR (shown as JSON). IDs are typed: human:, coop:, agent:, role:, policy:, ending: and chunk: followed by b3: and the BLAKE3 hash of the record; data: followed by the seal's ed25519 public key; value: b3: hash of the bytes. A #label after an ID is only for people (human:b3:q4x7…#you). One genesis record can create a human or coop and its first agent: both IDs are the BLAKE3 hash of that record without its sig, typed by prefix (human:b3:… and agent:b3:… differ because the type is hashed in: b3(\"human\" ‖ record), b3(\"agent\" ‖ record)). A schema is pinned as its data ID, @ and the hash of the schema Doc's state: data:ed25519:Sc4…@b3:1f0…#todo-list. Public keys: ed25519:… (signers, seals), x25519:… (locks). Secret keys never appear; they are named, for example datakey:house-list/3. CRDT op IDs are Loro's peer and counter (5f3a9c:41). Times are RFC 3339 in UTC. Signatures: \"sig\": {\"by\": agent ID, \"key\": ed25519 public key, \"value\": …}. Record kinds: genesis, identity, role, policy, renewal, ending, envelope, keyring, change, chunk, value, meta, retain, erase, directory, proof, want, news, operation. An ending ends a policy; role changes are role records signed under the owner's policies. A data's genesis record names its pinned schema and holds its first policy, which gives its owner the operation own (everything, including writing policies); it is signed by the seal, the only signer that is not an agent. A proof is the ordered list of record IDs from the seal or an identity's genesis to the acting agent; examples always show a policy's proof, and a shared policy's issuer. Identity policies do not expire unless they say so.",
    "why": "Slides and code use the same shapes and names, so the examples are drafts of the real schema, not illustrations.",
    "sources": [
     {
@@ -1036,10 +1036,10 @@
   },
   {
    "id": "D51",
-   "title": "Only roles and rules",
+   "title": "Only roles and policies",
    "status": "decided",
-   "decision": "There are no membership records. A role is a named set of identities; a rule says what a role (or an agent) may do on an identity or a piece of data. A coop's members are its “members” role, with a rule giving that role act, own and govern on the coop.",
-   "why": "One mechanism for everything: who is in which group (roles) and what that group may do (rules).",
+   "decision": "There are no membership records. A role is a named set of identities; a policy says what a role (or an agent) may do on an identity or a piece of data. A coop's members are its “members” role, with a policy giving that role act, own and govern on the coop.",
+   "why": "One mechanism for everything: who is in which group (roles) and what that group may do (policies).",
    "supersedes": "membership as its own record kind",
    "sources": [],
    "slides": [
@@ -1053,8 +1053,8 @@
    "id": "D52",
    "title": "No data without a schema",
    "status": "decided",
-   "decision": "Every piece of data names a schema in its genesis; a Value's metadata Doc names one for the Value and one for itself. A schema is a JSON Schema stored as a Loro Doc with its own seal, owner and rules. Data pins an exact schema version (the hash of the schema Doc's state); moving to a new version is an owner's change. Every peer validates every change against the schema and drops what does not fit. Paths (JSON Pointer, * for any index or key) give every part of the data an address for rules and operations.",
-   "why": "Typed data makes rules and operations precise and keeps every copy well-formed without a server.",
+   "decision": "Every piece of data names a schema in its genesis; a Value's metadata Doc names one for the Value and one for itself. A schema is a JSON Schema stored as a Loro Doc with its own seal, owner and policies. Data pins an exact schema version (the hash of the schema Doc's state); moving to a new version is an owner's change. Every peer validates every change against the schema and drops what does not fit. Paths (JSON Pointer, * for any index or key) give every part of the data an address for policies and operations.",
+   "why": "Typed data makes policies and operations precise and keeps every copy well-formed without a server.",
    "sources": [
     {
      "label": "JSON Schema",
@@ -1080,8 +1080,8 @@
    "id": "D53",
    "title": "Engine operations are specific and typed",
    "status": "decided",
-   "decision": "Rules name broad operations (read, create, update, delete, share, want, keep, sync). Engine operations are specific and each belongs to one: read → get, find, walk, search, near, count; create → create, insert; update → set, move, splice; delete → remove, delete. Every operation names data, schema version and path; the engine validates its input against the plugin's shape and the schema before running it.",
-   "why": "Precise, checkable operations, with rules that stay short and readable.",
+   "decision": "Policies name broad operations (read, create, update, delete, share, want, keep, sync). Engine operations are specific and each belongs to one: read → get, find, walk, search, near, count; create → create, insert; update → set, move, splice; delete → remove, delete; chain runs each step under that step's own operation. Every operation names data, schema version and path; the engine validates its input against the plugin's shape and the schema before running it.",
+   "why": "Precise, checkable operations, with policies that stay short and readable.",
    "sources": [],
    "slides": [
     "ops-4",

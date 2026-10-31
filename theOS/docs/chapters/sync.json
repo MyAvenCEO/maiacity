@@ -107,11 +107,17 @@
    "text": "Bob asks for a Value by its hash. Every range is checked against that hash as it arrives, so nobody can slip in a wrong byte. He can ask for just a range, and from several devices at once.",
    "code": {
     "type": "theos/want@1",
-    "value": "value:b3:9f2c…#movie",
+    "on": "value:b3:9f2c…#movie",
     "range": "bytes 0–64 MiB",
     "from": [
      "agent:b3:a1p…#alice-phone",
      "agent:b3:k8b…#backup"
+    ],
+    "proof": [
+     "policy:b3:z1m…#first",
+     "policy:b3:m4r…#household",
+     "role:b3:k1m…#household",
+     "policy:b3:b5l…#bob-laptop"
     ],
     "sig": {
      "by": "agent:b3:b4l…#bob-laptop",
@@ -119,7 +125,7 @@
      "value": "…"
     }
    },
-   "deep": "BLAKE3 verified streaming: every received range is checked against the root hash before use. Ranges can come from several peers at once."
+   "deep": "BLAKE3 verified streaming: every received range is checked against the root hash before use. Ranges can come from several peers at once. The proof runs through the movie's metadata Doc, since a Value has no policies of its own."
   },
   {
    "title": "News travels by gossip.",

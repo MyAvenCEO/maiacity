@@ -3,15 +3,15 @@
  "slides": [
   {
    "title": "Can this really work?",
-   "text": "Rules are promises. This story shows the cryptography that keeps them: which keys exist, what each step does to them, and the few things no cryptography can do.",
+   "text": "Policies are promises. This story shows the cryptography that keeps them: which keys exist, what each step does to them, and the few things no cryptography can do.",
    "deep": "Two mechanisms carry everything: encryption for read (keys you hold or don't) and signature verification for every other operation (checked by each peer on every change). The limits are listed honestly at the end."
   },
   {
    "title": "Four kinds of keys.",
-   "text": "Besides the seal, three kinds of keys. Your {identity key} is your {lock}: a public key anyone can seal something to, which only you can open; it sits in an envelope for each of your devices' own locks, so every device of yours can open it. A {role key} is a lock all members of a role share. A {data key} encrypts the data itself.",
+   "text": "Besides the seal, three kinds of keys. Your {identity key} is your {lock}: a public key anyone can seal something to, which only you can open; it sits in an {envelope}, sealed to each of your agents' own locks, so every agent of yours can open it. A {role key} is a lock all members of a role share. A {data key} encrypts the data itself.",
    "list": [
-    "Seal: signs a piece of data's first rule, then is destroyed.",
-    "Identity key: your lock. Each of your devices also publishes a lock of its own.",
+    "Seal: signs a piece of data's first policy, then is destroyed.",
+    "Identity key: your lock. Each of your agents also publishes a lock of its own.",
     "Role key: a lock all members of a role can open.",
     "Data key: the key the data itself is encrypted with."
    ],
@@ -19,7 +19,7 @@
   },
   {
    "title": "Reading is a chain of envelopes.",
-   "text": "The content is encrypted with the data key. The data key sits in an {envelope} for the owner and for every role that may read. The role key sits in an envelope for every member. Your identity key opens the first envelope, and the chain opens the rest.",
+   "text": "The content is encrypted with the data key. The data key sits in an envelope for the owner and for every role that may read. The role key sits in an envelope for every member. Your identity key opens the first envelope, and the chain opens the rest.",
    "flow": [
     "identity key",
     "role key",
@@ -30,7 +30,7 @@
   },
   {
    "title": "Envelopes only for keys you can trust.",
-   "text": "Each device publishes its lock, an encryption key, in its identity's history, signed by its own signer. Envelopes may only be made for locks found there, and only by someone a rule allows. Otherwise an attacker could slip in a lock of their own, and writers would quietly encrypt to them.",
+   "text": "Each agent publishes its lock, an encryption key, in its own history, signed by its signer. Envelopes may only be made for locks found there, and only by someone a policy allows. Otherwise an attacker could slip in a lock of their own, and writers would quietly encrypt to them.",
    "code": {
     "type": "theos/identity@1",
     "id": "agent:b3:p9c…#mia-phone",
@@ -43,14 +43,14 @@
      "value": "…"
     }
    },
-   "deep": "Each device's lock is published in its identity's history, signed by its registered signer. Envelopes go only to locks found there, so nobody can inject a key of their own (Keyhive's open gap G2)."
+   "deep": "Each agent's lock is published in its own history, signed by its registered signer. Envelopes go only to locks found there, so nobody can inject a key of their own (Keyhive's open gap G2)."
   },
   {
    "title": "Adding Mia to a role: one envelope.",
-   "text": "The owner puts the role key in an envelope for Mia's identity key. That's all. Mia can now read everything the role can read, including recent history. How older history is kept comes in the Time chapter.",
+   "text": "The owner adds Mia to the role record and puts the role key in an envelope for her identity key. Mia can now read everything the role can read, including recent history. How older history is kept comes in the Time chapter.",
    "code": {
     "type": "theos/envelope@1",
-    "key": "rolekey:home/2",
+    "key": "rolekey:household/2",
     "for": "human:b3:m2a9…#mia",
     "lock": "x25519:Qm4…",
     "sealed": "hpke:…",
@@ -63,11 +63,11 @@
    "deep": "One HPKE envelope of the current role key to Mia's identity key, signed by the owner. Older keys inside the hot window are reachable through back-links; anything older stays in the owner's archive."
   },
   {
-   "title": "Giving a rule: read needs a key, everything else needs only a signature.",
-   "text": "Giving “plumber” read on the tap item puts the item's data key in an envelope for the plumber role. Giving update needs no key at all: it's a signed rule change in the item's history, and every device enforces it.",
+   "title": "Giving a policy: read needs a key, everything else needs only a signature.",
+   "text": "Giving “plumber” read on the tap item puts the item's data key in an envelope for the plumber role. Giving update needs no key at all: it's a signed policy change in the item's history, and every device enforces it.",
    "code": {
-    "rule": {
-     "type": "theos/rule@1",
+    "policy": {
+     "type": "theos/policy@1",
      "to": "role:b3:r4p…#plumber",
      "on": "data:ed25519:3Tk…#fix-tap",
      "operations": [
@@ -82,7 +82,7 @@
      "sealed": "hpke:…"
     }
    },
-   "deep": "Read needs the data key wrapped for the role key. Every other operation needs only a signed rule. That rule sits in the data's rule set, a grow-only set of signed certificates merged by union."
+   "deep": "Read needs the data key wrapped for the role key. Every other operation needs only a signed policy. That policy sits in the data's policy set, a grow-only set of signed certificates merged by union."
   },
   {
    "title": "Removing someone means new keys.",
@@ -95,38 +95,42 @@
    "deep": "The role key rotates and is wrapped for the remaining members. Each piece of data the role reads gets a new data key on its next write (lazy rotation), because the old one is known to the removed member."
   },
   {
-   "title": "Taking a rule away.",
-   "text": "Taking update away is just a signed rule change. Taking read away rotates the data key, and the new one goes to the owner and every reading role except that one.",
+   "title": "Taking a policy away.",
+   "text": "Taking update away is just a signed policy change. Taking read away means ending the policy and giving a new one without read. The data key turns, and the new one goes to the owner and every reading role except that one.",
    "code": {
     "ending": {
      "type": "theos/ending@1",
      "kind": "revoke",
-     "ends": "rule:b3:d6r…#kids-read"
+     "ends": "policy:b3:d6r…#kids"
     },
     "keyring": {
      "type": "theos/keyring@1",
-     "key": "datakey:house-list/4",
-     "for": [
-      "human:b3:q4x7…#you",
-      "role:b3:k1m…#home"
-     ]
+     "on": "data:ed25519:7Hq…#house-list",
+     "generation": 3,
+     "key": "datakey:house-list/3",
+     "envelopes": {
+      "human:b3:q4x7…#you": "hpke:…",
+      "role:b3:k1m…#household": "hpke:…",
+      "role:b3:g6m…#grandma": "hpke:…"
+     }
     }
    },
-   "deep": "Taking read from a role rotates that data key immediately; the new key is wrapped for the owner and the remaining reading roles. Taking any other operation is only a signed rule change; no key turns."
+   "deep": "Taking read from a role rotates that data key immediately; the new key is wrapped for the owner and the remaining reading roles. Taking any other operation is only a signed policy change; no key turns."
   },
   {
    "title": "Where does the data key live?",
-   "text": "Nobody holds it for the data. It travels with the data itself: every piece of data carries a small {keyring} next to its rules. Its generation counts how often the data key has turned. The keyring holds the data key in envelopes: one for the owner, one for each role that may read. {Carriers}, devices that store or forward data they can't read, like a backup, store it like everything else, sealed and unreadable.",
+   "text": "Nobody holds it for the data. It travels with the data itself: every piece of data carries a small {keyring} next to its policies. Its generation counts how often the data key has turned. The keyring holds the data key in envelopes: one for the owner, one for each role that may read. {Carriers}, peers that store or forward data they can't read, like a backup, store it like everything else, sealed and unreadable.",
    "code": {
     "type": "theos/keyring@1",
     "on": "data:ed25519:7Hq…#house-list",
-    "generation": 2,
-    "key": "datakey:house-list/2",
+    "generation": 3,
+    "key": "datakey:house-list/3",
     "envelopes": {
      "human:b3:q4x7…#you": "hpke:…",
-     "role:b3:k1m…#home": "hpke:…"
+     "role:b3:k1m…#household": "hpke:…",
+     "role:b3:g6m…#grandma": "hpke:…"
     },
-    "back": "datakey:house-list/1",
+    "back": "datakey:house-list/2",
     "sig": {
      "by": "agent:b3:f2p…#your-phone",
      "key": "ed25519:Fp2…",
@@ -137,7 +141,7 @@
   },
   {
    "title": "A Value's key rides with its Doc.",
-   "text": "A Value has a keyring too, with just one envelope: the Value's key, sealed under its metadata Doc's data key. So whoever can open the Doc can open the Value, and the Value needs no rules of its own. Because a Value never changes, its key never turns: someone who already opened it keeps what they saw.",
+   "text": "A Value has a keyring too, with just one envelope: the Value's key, sealed under its metadata Doc's data key. So whoever can open the Doc can open the Value, and the Value needs no policies of its own. Because a Value never changes, its key never turns: someone who already opened it keeps what they saw.",
    "code": {
     "type": "theos/keyring@1",
     "on": "value:b3:9f2c…#movie",
@@ -193,13 +197,13 @@
       "–"
      ],
      [
-      "A device is stolen",
+      "An agent's device is stolen",
       "new",
       "new, for every role",
       "new on next write"
      ],
      [
-      "Two of the owner's devices rotate at once",
+      "Two of the owner's agents rotate at once",
       "–",
       "both kept, until the next rotation",
       "–"
@@ -216,7 +220,7 @@
     "Everything else is a chain of signatures, checked by every peer.",
     "How keys age, and how they are archived or erased, comes in the Time chapter."
    ],
-   "deep": "Seal → owner → rules for roles. Read: identity key → role key → data key. Everything else: signature chains checked by every peer. Endings win, rotate keys and wipe copies."
+   "deep": "Seal → owner → policies for roles. Read: identity key → role key → data key. Everything else: signature chains checked by every peer. Endings win, rotate keys and wipe copies."
   }
  ]
 }

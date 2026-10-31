@@ -3,8 +3,8 @@
  "slides": [
   {
    "title": "Every key lives through three windows.",
-   "text": "A key is {hot} for 30 days: ready on every reader's device, and each new key opens the one before. Keys also turn regularly, so they {heal}: a stolen key soon opens nothing new. Then a key goes {cold}: out of the chain, so today's key no longer opens it, and into the owner's {archive}, a sealed store of old keys, opened only by the owner's own rules. On request, keys are {erased} everywhere.",
-   "deep": "Hot: back-links within the window, keys turn regularly (post-compromise security). Cold: at each rotation boundary older than the window, the chain is cut; old keys are sealed for the owner identity's archive key, split among its members by its own rules. Late writers from before a cut lose and get a conflict view.",
+   "text": "A key is {hot} for 30 days: ready on every reader's device, and each new key opens the one before. Keys also turn regularly, so they {heal}: a stolen key soon opens nothing new. Then a key goes {cold}: out of the chain, so today's key no longer opens it, and into the owner's {archive}, a sealed store of old keys, opened only by the owner's own policies. On request, keys are {erased} everywhere.",
+   "deep": "Hot: back-links within the window, keys turn regularly (post-compromise security). Cold: at each rotation boundary older than the window, the chain is cut; old keys are sealed for the owner identity's archive key, opened under the owner's own policies; for a coop, split among its members. Late writers from before a cut lose and get a conflict view.",
    "table": {
     "head": [
      "Window",

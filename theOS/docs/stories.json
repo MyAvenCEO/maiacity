@@ -21,9 +21,9 @@
    "file": "chapters/schema.json"
   },
   {
-   "id": "rules",
-   "title": "Rules",
-   "file": "chapters/rules.json"
+   "id": "policies",
+   "title": "Policies",
+   "file": "chapters/policies.json"
   },
   {
    "id": "check",

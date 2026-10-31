@@ -3,21 +3,35 @@
  "slides": [
   {
    "title": "Nothing without a schema.",
-   "text": "Every piece of data names its {schema}: the shape its content must have. Your to-do list says it holds items, and each item has a text and a done flag. No piece of data exists without one.",
+   "text": "Every piece of data names its {schema}: the shape its content must have. Your to-do list says it has a title and items, and each item has a text and a done flag. No piece of data exists without one.",
    "code": {
     "type": "theos/genesis@1",
     "data": "data:ed25519:7Hq…#house-list",
-    "schema": "data:ed25519:Sc4…#todo-list@2",
-    "owner": "human:b3:q4x7…#you"
+    "schema": "data:ed25519:Sc4…@b3:1f0…#todo-list",
+    "policy": {
+     "to": "human:b3:q4x7…#you",
+     "operations": [
+      "own"
+     ],
+     "expires": null
+    },
+    "sig": {
+     "by": "data:ed25519:7Hq…#house-list",
+     "key": "ed25519:7Hq…",
+     "value": "…"
+    }
    },
    "deep": "The schema reference is part of the data's genesis, signed by the seal. Docs name a schema for their content; a Value's metadata Doc names one for the Value too."
   },
   {
    "title": "A schema is data too.",
-   "text": "A schema is itself a Doc: a JSON Schema with its own seal, its own owner and its own rules. Anyone may use a schema they can read, so many lists can share one to-do schema.",
+   "text": "A schema is itself a Doc: a JSON Schema with its own seal, its own owner and its own policies. Anyone may use a schema they can read, so many lists can share one to-do schema.",
    "code": {
     "type": "object",
     "properties": {
+     "title": {
+      "type": "string"
+     },
      "items": {
       "type": "array",
       "items": {
@@ -28,6 +42,16 @@
         },
         "done": {
          "type": "boolean"
+        },
+        "due": {
+         "type": "string",
+         "format": "date-time"
+        },
+        "assignee": {
+         "type": "string"
+        },
+        "link": {
+         "type": "string"
         }
        },
        "required": [
@@ -38,26 +62,26 @@
      }
     }
    },
-   "deep": "Schemas are written in JSON Schema and stored as a Loro Doc like any other data, so they sync, merge and carry rules. Reading a schema needs read on the schema Doc."
+   "deep": "Schemas are written in JSON Schema and stored as a Loro Doc like any other data, so they sync, merge and carry policies. Reading a schema needs read on the schema Doc."
   },
   {
    "title": "Data pins a version.",
    "text": "A schema can change over time. So data names the exact version it follows, written after an @. Moving to a newer version is a change the data's owner makes, like a migration; until then, nothing changes under the data's feet.",
    "code": {
-    "schema": "data:ed25519:Sc4…#todo-list@2",
-    "version": "b3:1f0… (state of the schema Doc)",
-    "next": "data:ed25519:Sc4…#todo-list@3",
+    "schema": "data:ed25519:Sc4…@b3:1f0…#todo-list",
+    "@": "b3:1f0…, the schema Doc's state",
+    "next": "data:ed25519:Sc4…@b3:7a2…#todo-list",
     "moved_by": "owner's change"
    },
    "deep": "A version is the hash of the schema Doc's state (its frontier). Old versions stay valid for the data that names them."
   },
   {
    "title": "Every change must fit.",
-   "text": "Before a device merges a change, it checks it against the schema, the same way it will check rules later. A tick must be true or false; an item without a text is not an item. A change that doesn't fit is dropped on every device.",
+   "text": "Before a device merges a change, it checks it against the schema, the same way it will check policies later. A tick must be true or false; an item without a text is not an item. A change that doesn't fit is dropped on every device.",
    "code": {
     "change": {
      "set": "/items/0/done",
-     "to": "yes"
+     "value": "yes"
     },
     "schema_says": "boolean",
     "result": "dropped"
@@ -69,21 +93,22 @@
    "text": "A photo or a PDF never changes, but it still has a shape: its type and its size. A Value's metadata Doc names a schema for the Value and one for itself, so even a file is never just loose bytes.",
    "code": {
     "type": "theos/meta@1",
+    "id": "data:ed25519:Mm3…#movie-meta",
     "value": "value:b3:9f2c…#movie",
-    "value_schema": "data:ed25519:Vd1…#video@1",
-    "schema": "data:ed25519:Mt7…#media-meta@4"
+    "value_schema": "data:ed25519:Vd1…@b3:8e5…#video",
+    "schema": "data:ed25519:Mt7…@b3:4c2…#media-meta"
    },
    "deep": "A value schema can require a media type, a size limit or a hash algorithm; the metadata Doc is validated like any Doc."
   },
   {
    "title": "Schemas give everything an address.",
-   "text": "Because every piece of data has a known shape, every part of it has a {path}: /items, /items/0/done. Rules and operations will point at these paths, so they can be as precise as one field.",
+   "text": "Because every piece of data has a known shape, every part of it has a {path}: /items, /items/0/done. Policies will point at these paths, so they can be as precise as one field.",
    "code": {
     "/items": "the list of items",
     "/items/*/done": "every item's done flag",
     "/title": "the list's title"
    },
-   "deep": "Paths are JSON Pointers into the schema's shape; a * matches any list index or map key. Rules (at) and operations (at) use them."
+   "deep": "Paths are JSON Pointers into the schema's shape; a * matches any list index or map key. Policies (at) and operations (at) use them."
   },
   {
    "title": "Schemas, in short.",

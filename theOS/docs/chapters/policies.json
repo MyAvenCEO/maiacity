@@ -1,0 +1,154 @@
+{
+ "title": "Policies",
+ "slides": [
+  {
+   "title": "Four things to start with.",
+   "text": "Create, read, update and delete are {operations}: things you can do with data. A policy gives a role some operations on one piece of data. Never a person directly: always a role, or, for your own agents, the agent itself (Identity chapter). The owner writes the first policies; later we'll see how a role can be allowed to pass its own on.",
+   "list": [
+    "create",
+    "read",
+    "update",
+    "delete"
+   ],
+   "deep": "A policy is a signed certificate: role, data, list of operations, conditions, expiry, plus the proof chain back to the seal. The first policies are written by the owner; roles with share may issue narrower ones (D30, D47). Conditions come later in this chapter, proofs in Checking, expiry in Endings."
+  },
+  {
+   "title": "You share the list with Mia.",
+   "text": "You make a role “household”, give it read, create and update on the list, and add Mia, Alice and Bob. They can see the list, add things and tick them off. They can't delete it, and they can't change the policies.",
+   "deep": "Mia, Alice and Bob are added to the role “household”. Technically: the owner signs a new role record (theos/role@1) with them in it and wraps the role key for each one's identity key (both explained in the Keys chapter). The data's policies don't change at all."
+  },
+  {
+   "title": "The plumber gets one item.",
+   "text": "“Fix the tap” is its own little piece of data, linked from the list. Born inside the list, it starts with the list's policies. You add one more: the role “plumber” may read and update this item, and nothing else.",
+   "deep": "Read access can only be as fine as a key. So an item shared on its own is its own piece of data, with its own data key and its own schema (a to-do item), linked from the list. New data born inside the list copies the list's policies once, at birth."
+  },
+  {
+   "title": "Every policy is one sentence.",
+   "text": "A policy says: this role may perform these operations, on this data, until a date: its {expiry}. Nothing more. Everything anyone may ever do with your data is written in policies like this one.",
+   "code": {
+    "type": "theos/policy@1",
+    "to": "role:b3:k1m…#household",
+    "on": "data:ed25519:7Hq…#house-list",
+    "operations": [
+     "create",
+     "read",
+     "update"
+    ],
+    "expires": "2026-12-01T00:00:00Z",
+    "proof": [
+     "policy:b3:z0e…#first",
+     "policy:b3:a0p…#your-phone"
+    ],
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
+   },
+   "deep": "A policy is a signed certificate with one shape everywhere: who (a role), on what (this data), operations (each optionally narrowed by at, where or a limit), expiry, and a proof chain back to the seal. An identity's own policies use the same shape (Identity chapter). People see “policy”; underneath it is a capability."
+  },
+  {
+   "title": "What a policy can allow.",
+   "text": "Each operation is one thing a role may do. Some are about the content, and one, {share}, passes a narrower copy of a policy on. Want, keep and sync are about carrying data; they come in the Carriers chapter.",
+   "list": [
+    "Content: create, read, update, delete.",
+    "Carrying: want, keep, sync.",
+    "Passing on: share, giving other roles a narrower copy, which you can end again.",
+    "Operations that only look at data, like searching, need only read.",
+    "Writing policies is not on the list: only the owner does that."
+   ],
+   "deep": "The full list of operations: create, read, update, delete, share, want, keep, sync. Writing policies is not an operation anyone can be given; it belongs to the owner (D30). Engine operations that only read need read."
+  },
+  {
+   "title": "Conditions make a policy narrower.",
+   "text": "Each operation can carry {conditions}: only this part of the data, only entries that match, only so many times.",
+   "code": {
+    "type": "theos/policy@1",
+    "to": "role:b3:d5k…#kids",
+    "on": "data:ed25519:7Hq…#house-list",
+    "operations": [
+     "read",
+     {
+      "operation": "create",
+      "at": "/items",
+      "limit": 20
+     },
+     {
+      "operation": "update",
+      "at": "/items/*/done",
+      "where": {
+       "author": "$self"
+      }
+     }
+    ],
+    "proof": [
+     "policy:b3:z0e…#first",
+     "policy:b3:a0p…#your-phone"
+    ],
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
+   },
+   "deep": "Conditions are evaluated by every verifying peer: at (a path prefix), where (matching entries, for example author = $self), limits. Like Meadowcap's areas, each condition can only narrow."
+  },
+  {
+   "title": "Passing a policy on only narrows it.",
+   "text": "If you add share to household's policy, Mia can give other roles a narrower copy: “grandma” may read, the plumber may read and update one item. She can end what she gave, but no one else's. And if her own policy ends, everything she passed on ends with it. Only the owner's policies never fall this way.",
+   "code": {
+    "type": "theos/policy@1",
+    "to": "role:b3:g6m…#grandma",
+    "on": "data:ed25519:7Hq…#house-list",
+    "operations": [
+     "read"
+    ],
+    "expires": "2026-11-15T00:00:00Z",
+    "issuer": "human:b3:m2a9…#mia",
+    "proof": [
+     "policy:b3:z0e…#first",
+     "policy:b3:h7r…#household",
+     "role:b3:k1m…#household",
+     "policy:b3:m3a…#mia-phone"
+    ],
+    "sig": {
+     "by": "agent:b3:p9c…#mia-phone",
+     "key": "ed25519:Mk7…",
+     "value": "…"
+    }
+   },
+   "deep": "Attenuation: each appended block can only remove operations, shorten the expiry or add conditions; a verifier intersects all blocks. A delegate may end only policies it issued. When a policy ends, every policy issued under it ends too (cascade); the owner's policies are the root. Writes by a removed delegate that never saw the ending are dropped."
+  },
+  {
+   "title": "Only the owner never expires.",
+   "text": "The policy the seal signed at birth names the owner. It has no expiry, so data can never end up with nobody allowed to look after it. Only the owner can hand it over to another identity. Every other policy expires.",
+   "code": {
+    "type": "theos/genesis@1",
+    "data": "data:ed25519:7Hq…#house-list",
+    "schema": "data:ed25519:Sc4…@b3:1f0…#todo-list",
+    "policy": {
+     "to": "human:b3:q4x7…#you",
+     "operations": [
+      "own"
+     ],
+     "expires": null
+    },
+    "sig": {
+     "by": "data:ed25519:7Hq…#house-list",
+     "key": "ed25519:7Hq…",
+     "value": "…"
+    }
+   },
+   "deep": "The genesis certificate has no expiry. Ownership moves only through a hand-over signed by the owner under its own policies."
+  },
+  {
+   "title": "Policies, in short.",
+   "list": [
+    "A policy: this role may perform these operations, on this data, until then.",
+    "The owner writes the first policies; roles with share pass narrower copies on.",
+    "Conditions narrow a policy; nothing can widen it."
+   ],
+   "deep": "Policies are capabilities attached to roles, granted by the owner, or narrower through share, narrowable, expiring by default, ended by events, and checked offline by every peer."
+  }
+ ]
+}
