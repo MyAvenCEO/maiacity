@@ -1,4 +1,4 @@
-//! A Doc held by two readers' peers (`aven_peer::doc_host::Host`), natively, each on its own shelf: a commit at one is
+//! A Doc held by two readers' peers (`aven_peer::doc_host::Reader`), natively, each on its own shelf: a commit at one is
 //! taken at the other from what gossip carries; commits made apart sync by version, each answering the other's tips
 //! with the sealed values beyond them; a peer reopens from its shelf as it was; a writer's quiet closes its loose
 //! envelopes into a segment a new reader takes whole; and a stranger's envelope is refused at every reader, before
@@ -18,7 +18,7 @@ use aven_db_docs::{
 use aven_db_store::backend;
 use aven_id::{Secret, TestEntropy};
 use aven_peer::doc_host::DynStore;
-use aven_peer::doc_host::{Committed, Host, Taken};
+use aven_peer::doc_host::{Committed, Reader, Taken};
 use aven_peer::docs::{Closing, Live, QUIET_MS, seal_segment};
 use iroh::SecretKey;
 
@@ -103,12 +103,12 @@ fn key(seed: u8) -> SecretKey {
     SecretKey::from_bytes(&[seed; 32])
 }
 
-async fn host(shelf: Shelf<DynStore>) -> Host<Readers> {
+async fn host(shelf: Shelf<DynStore>) -> Reader<Readers> {
     let readers = [key(1), key(2)]
         .iter()
         .map(|k| *k.public().as_bytes())
         .collect();
-    Host::open(
+    Reader::open(
         shelf,
         genesis(),
         types,
@@ -125,7 +125,7 @@ fn shelf() -> Shelf<DynStore> {
     Shelf::new(Arc::new(backend::memory().unwrap()))
 }
 
-fn titles(h: &Host<Readers>) -> Vec<String> {
+fn titles(h: &Reader<Readers>) -> Vec<String> {
     h.snapshot()
         .records
         .values()
@@ -137,7 +137,7 @@ fn titles(h: &Host<Readers>) -> Vec<String> {
 }
 
 async fn commit(
-    h: &mut Host<Readers>,
+    h: &mut Reader<Readers>,
     device: &SecretKey,
     id: &str,
     title: &str,
@@ -156,11 +156,11 @@ async fn commit(
 }
 
 /// What `from` answers `to`'s tips with, fetched and taken in at `to`, as `doc_have` and the fetch gate carry it.
-async fn sync(from: &mut Host<Readers>, to: &mut Host<Readers>, e: &mut TestEntropy) {
+async fn sync(from: &mut Reader<Readers>, to: &mut Reader<Readers>, e: &mut TestEntropy) {
     let hashes = from.answer(&to.tips(), e).await.unwrap();
     let mut items = vec![];
     for h in hashes {
-        items.push(from.sealed(&h).await.unwrap().expect("served"));
+        items.push(from.sealer.get(&h).await.unwrap().expect("served"));
     }
     to.take(&items).await.unwrap();
 }
@@ -219,6 +219,7 @@ async fn a_strangers_envelope_is_refused_at_every_reader() {
     let mut eves = host(shelf()).await;
     sync(&mut a, &mut eves, &mut e).await;
     let p = eves
+        .host
         .prepare(
             *eve.public().as_bytes(),
             0,
@@ -229,10 +230,11 @@ async fn a_strangers_envelope_is_refused_at_every_reader() {
         .unwrap();
     let sig = eve.sign(&p.signing()).to_bytes();
     // her own peer refuses it too: her signer reaches nothing here
-    assert!(eves.finish(p, sig, &mut e).await.is_err());
+    assert!(eves.host.finish(p, sig).await.is_err());
 
     // sealed by hand and gossiped as if it were a reader's
     let p = eves
+        .host
         .prepare(
             *eve.public().as_bytes(),
             0,
@@ -280,7 +282,12 @@ async fn a_quiet_writer_closes_a_segment_a_new_reader_takes() {
         let cl = closing.get_or_insert_with(|| {
             Closing::new(a.doc().id(), c.envelope.writer, 0, Limits::DEFAULTS)
         });
-        closed.extend(cl.add(c.epoch, c.envelope, c.sealed, 1_000 + i as u64));
+        closed.extend(cl.add(
+            c.out.epoch.expect("sealed"),
+            c.envelope,
+            c.out.hash,
+            1_000 + i as u64,
+        ));
     }
     let mut cl = closing.unwrap();
     // nothing closes while the writer writes, nor before it has been quiet long enough
@@ -301,4 +308,97 @@ async fn a_quiet_writer_closes_a_segment_a_new_reader_takes() {
     );
     assert_eq!(carol.version(), a.version());
     assert_eq!(titles(&carol).len(), 3);
+}
+
+/// The keyring travels plain (A187): its first Record, written by the vault's device, leaves the device as its own bytes,
+/// its commit is announced on the group's topic by its version (A195), and another of the vault's devices takes it from
+/// those bytes with no key at all.
+#[tokio::test]
+async fn the_keyring_travels_plain() {
+    let alice = key(1);
+    let mut e = TestEntropy::new("the keyring test");
+    let keyring = Genesis::new(
+        b"alice's vault",
+        aven_id::caps::builtin_type("keyring"),
+        &[],
+        [6; 32],
+    );
+    let open = |s: Shelf<DynStore>| {
+        let readers = [key(1), key(2)]
+            .iter()
+            .map(|k| *k.public().as_bytes())
+            .collect();
+        Reader::open(
+            s,
+            keyring.clone(),
+            types,
+            Limits::DEFAULTS,
+            vec![],
+            Readers(readers),
+            BTreeSet::new(),
+        )
+    };
+    let mut a = open(shelf()).await.unwrap();
+    let mut b = open(shelf()).await.unwrap();
+    assert!(a.sealer.plain());
+
+    let device = aven_id::SealKey::generate(&mut e);
+    let vault_key = aven_id::SealKey::generate(&mut e);
+    let (epoch1, _) =
+        aven_id::keyring::genesis("alice", &vault_key, &[device.public()], &mut e).unwrap();
+    let record = aven_id::caps::EpochRecord {
+        epoch: epoch1,
+        sigs: vec![],
+    };
+    let Value::Map(fields) = record.value() else {
+        panic!("a Record is a map")
+    };
+    let id: String = blake3(&record.epoch.to_bytes())
+        .0
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let write = RecordWrite {
+        id: id.clone(),
+        version: Version {
+            r#type: aven_id::caps::builtin_type("epoch"),
+            schema: None,
+        },
+        set: fields,
+        unset: vec![],
+        gone: false,
+    };
+    let c = a
+        .commit(
+            &alice,
+            0,
+            &[write],
+            "2026-10-31T12:00:00Z",
+            Act::default(),
+            &mut e,
+        )
+        .await
+        .unwrap();
+    // plain: no epoch, its bytes are the envelope's own, and gossip carries only the version
+    assert_eq!(c.out.epoch, None);
+    assert_eq!(c.out.bytes, c.envelope.encode());
+    assert!(matches!(c.live, Live::Version { version, .. } if version == a.version()));
+
+    // the other device fetches it by hash and takes it, plain
+    let got = a
+        .sealer
+        .get(&c.out.hash)
+        .await
+        .unwrap()
+        .expect("kept for the gate");
+    assert_eq!(
+        b.take(&[got]).await.unwrap(),
+        vec![Taken::Imported(vec![Ok(Imported::Counts)])]
+    );
+    assert_eq!(b.version(), a.version());
+    let held = b.snapshot();
+    let r = held.records.get(&id).expect("the epoch Record");
+    let back =
+        aven_id::caps::EpochRecord::of_value(&Value::Map(r.fields.clone().into_iter().collect()));
+    assert_eq!(back.map(|r| r.epoch.name()), Some(record.epoch.name()));
 }
