@@ -334,10 +334,12 @@ def generatedDocs : Nat := 30
 def generatedKeeps : Nat := 30
 
 /-- What caps reads of a body's `authority` Value (`Authority.ofValue?`), as `authority.json` writes it:
-`{"reads": false}`, or `{"reads": true, "caps": [name…], "acks": [name…]}`. -/
+`{"reads": false}`, or `{"reads": true, "caps": [name…], "acks": [name…], "actor": Doc or null}`. -/
 def Authority.readJson : Option Authority → Json
   | some a => Json.mkObj [("reads", toJson true), ("caps", toJson (a.caps.map (·.text))),
-      ("acks", toJson (a.acks.map (·.text)))]
+      ("acks", toJson (a.acks.map (·.text))), ("actor", match a.actor with
+        | some d => Json.str d.text
+        | none => Json.null)]
   | none => Json.mkObj [("reads", toJson false)]
 
 end Aven.ID

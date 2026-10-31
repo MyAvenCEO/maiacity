@@ -51,8 +51,9 @@ import Aven.ID.SealJson
   root over a coop's Docs needs the coop's own owners, a vault without devices issues by its owners' approval alone,
   and Maia City's confirm cap (A38). The context's tree is written out, and its `thresholds` give each vault's quorum
   that isn't the one `threshold` gives every other.
-- `authority.json`: Values an envelope's body carries under `authority` (`Aven.ID.Authority`, A45), each in its
-  readable form and as CBOR, and what caps reads of it: the caps and acks by name, or nothing.
+- `authority.json`: Values an envelope's body carries under `authority` (`Aven.ID.Authority`, A45, A188), each in its
+  readable form and as CBOR, and what caps reads of it: the caps and acks by name and an actor host's actor, or
+  nothing.
 - `member.json`: the member caps a confirm issues (A38), each with its CBOR bytes and its name, under the tree Doc, the
   chat Doc and the chat message's type they name; and envelopes on Maia City's tree Doc, in `authorized.json`'s form
   with the tree Doc and the claims the tree says each founded, with whether caps authorizes each and the vaults it

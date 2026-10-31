@@ -23,8 +23,8 @@ come from (README, rule 10). Each case is one JSON object, read in the form its 
 - The same with `"tree"` and `"founded": [{"claim", "vault"}]`, as `member.json` writes a case, answers
   `{"authorized", "members"}`: whether caps authorizes it and the vaults it makes members (`Reader.membersB`, A38).
 - `{"authority": Value}`, the Value in its readable form as `authority.json` writes a case, answers what caps reads of
-  an envelope's authority: `{"reads": false}`, or `{"reads": true, "caps": [name…], "acks": [name…]}`
-  (`Authority.ofValue?`, A45).
+  an envelope's authority: `{"reads": false}`, or `{"reads": true, "caps": [name…], "acks": [name…], "actor"}`, the
+  actor a Doc on an actor host's envelope and null on any other (`Authority.ofValue?`, A45, A188).
 
 A Doc's names are taken as each entry gives them, with the vault, caps and acks it lists and the envelope's `prev`
 and `deps`; aven-core's tests own the hashing. -/
