@@ -37,7 +37,6 @@ What it proves:
 namespace Aven.Peer.Serve
 
 open Aven.Peer.Keeper Aven.Peer.Fetch
-open Aven.DB (pageSize)
 
 /-- avenID's gate, by its verdicts. -/
 structure Gate where
@@ -137,7 +136,7 @@ def step (g : Gate) (k : Keeper) (c : Conn) : Ask → Keeper × Conn × Reply
     | some _ =>
       let s := k.store doc
       let held : Held := fun h => (s.items.find? (·.hash == h)).map fun i => (doc, List.replicate i.bytes 0)
-      match answer [doc] held doc hs with
+      match Fetch.answer [doc] held doc hs with
       | some a => (k, c, .fetched doc (a.served.map (·.1)) a.missing a.later)
       | none => (k, c, .refused doc)
 

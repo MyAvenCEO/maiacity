@@ -69,7 +69,7 @@ def rules : List RuleStatus := [
   { rule := 10, title := "Every input has a limit",
     theorems := ["rule10_limits", "rule10_inputs", "rule10_pages", "rule10_quota"],
     restsOn := ["Aven.DB.Engine.length_le_bound", "Aven.DB.Engine.work_le_cost", "Aven.Runtime.run_ok_fits",
-      "Aven.DB.Docs.Index.chunks_size", "Aven.DB.Wire.maxFrame", "Aven.DB.Docs.capped_holds",
+      "Aven.DB.Docs.Index.chunks_size", "Aven.Peer.Wire.maxFrame", "Aven.DB.Docs.capped_holds",
       "Aven.DB.Docs.capped_within", "Aven.DB.Docs.admitted_bounded", "Aven.DB.Docs.segment_records",
       "Aven.DB.Docs.blob_bounded", "Aven.DB.Engine.page_bounded", "Aven.ID.Books.quota",
       "Aven.Peer.Serve.Keeper.admitted_within", "Aven.Peer.Serve.Keeper.over_quota_sheds"],
@@ -88,7 +88,7 @@ def rules : List RuleStatus := [
     missing := [] },
   { rule := 14, title := "One protocol of ours",
     theorems := [], restsOn := [],
-    missing := ["a property of the node, not a theorem: held by every format's vectors and the box's check; aven/db/1's messages beyond Aven.DB.Wire are unmodelled"] }]
+    missing := ["a property of the node, not a theorem: held by every format's vectors and the box's check; aven/db/1's messages beyond Aven.Peer.Wire are unmodelled"] }]
 
 #guard rules.length = 14
 

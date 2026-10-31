@@ -7,8 +7,8 @@ import Aven.DB.Json
 object per line on stdout (`Aven.DB.Json`). `aven-gen1`'s tests generate random traces and compare the Rust machines
 with this; `aven-db-store`'s compare its memory store, call by call, when a line has `store`.
 
-    in:  {"limit": 3, "status": ["dial", "frame", "tick", "lost"], "presence": [["join", 1], ["leave", 1]]}
-    out: {"status": [{"phase": "connecting", "moved": 0, "idle": 0}, …], "presence": [[1], []]}
+    in:  {"limit": 3, "status": ["dial", "frame", "tick", "lost"]}
+    out: {"status": [{"phase": "connecting", "moved": 0, "idle": 0}, …]}
     in:  {"store": [["put", "6162"], ["list"]]}
     out: {"store": [{"ok": "<hash>"}, {"ok": ["<hash>"]}]}
 -/
@@ -19,13 +19,10 @@ def replay (line : String) : Except String Json := do
   let j ← Json.parse line
   let limit := (j.getObjValAs? Nat "limit").toOption.getD 1
   let events ← ((j.getObjValD "status").getArr?.toOption.getD #[]).toList.mapM fun e => do parseEvent (← e.getStr?)
-  let changes ← ((j.getObjValD "presence").getArr?.toOption.getD #[]).toList.mapM parseChange
   let ops ← ((j.getObjValD "store").getArr?.toOption.getD #[]).toList.mapM Store.parseOp
   let statuses := trail (Status.step limit) Status.start events
-  let presences := trail Presence.step Presence.empty changes
   pure <| Json.mkObj [
     ("status", Json.arr (statuses.map Status.json).toArray),
-    ("presence", Json.arr (presences.map fun p => toJson p.told).toArray),
     ("store", Store.replay ops)]
 
 partial def loop (stdin : IO.FS.Stream) (stdout : IO.FS.Stream) : IO UInt32 := do

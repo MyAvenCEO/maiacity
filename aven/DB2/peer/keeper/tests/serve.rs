@@ -1,4 +1,4 @@
-//! A keeper serving a connection against Lean's traces (`db/spec/vectors/serve.json`, README rule 10): a gate given by
+//! A keeper serving a connection against Lean's traces (`peer/spec/vectors/serve.json`, README rule 10): a gate given by
 //! its verdicts (which proof of which Doc it serves, for which vault; each vault's quota) and asks on one connection;
 //! each reply is the model's. avenID's gate (`Aven.ID.Keep`) implements [`Gate`] for real; this one is its verdicts.
 
@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 
 fn vectors(file: &str) -> Vec<Value> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../db/spec/vectors")
+        .join("../../peer/spec/vectors")
         .join(file);
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     serde_json::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))

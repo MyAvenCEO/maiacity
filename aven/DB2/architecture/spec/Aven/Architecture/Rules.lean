@@ -1,6 +1,7 @@
 import Aven.Core
 import Aven.ID
 import Aven.DB
+import Aven.Peer.Serve
 import Aven.Runtime.Contract
 import Aven.Architecture.Sealed
 import Aven.Actor.Hosting

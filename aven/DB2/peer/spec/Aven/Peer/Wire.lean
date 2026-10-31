@@ -5,7 +5,7 @@ import Aven.Core.Bytes
 # The wire
 
 Our one protocol (README, rule 9), on ALPN `aven/db/1`, a frozen name: one stream each way. It opens with a greeting,
-a JSON line, and every frame after it is a Value in Core's one codec (`Aven.DB.WireCbor`, A29).
+a JSON line, and every frame after it is a Value in Core's one codec (`Aven.Peer.WireCbor`, A29).
 
 The greeting is the one exception to rule 1's one codec, and it is frozen (A29): its form never changes with the wire
 version, so a peer of any version reads another's and refuses it with `update` (PEERS.md §7). It is a JSON object on
@@ -16,7 +16,7 @@ sends nothing after its hello until the other's has come, so a peer on another v
 
 open Lean
 
-namespace Aven.DB
+namespace Aven.Peer
 
 open Aven.Core (Bytes)
 
@@ -63,7 +63,7 @@ def Greeting.parse (line : String) : Option Greeting := do
     pure (.update (← (j.getObjValAs? Nat "wire").toOption))
   | _ => none
 
-/-- The frames after the greeting, each a Value in the one codec (`Aven.DB.WireCbor`). -/
+/-- The frames after the greeting, each a Value in the one codec (`Aven.Peer.WireCbor`). -/
 inductive Frame where
   /-- the Aven Peer tells each peer who is connected, itself included, on every change -/
   | presence (peers : List String)
@@ -286,7 +286,7 @@ def heads300 : List Head := (List.range 300).map fun i => ⟨toString i, "id", i
 
 A peer that shared many files is told the ones kept in pages of at most `pageSize` names, as the heads are: together
 they are every file (`keptPages_files`), none is empty (`pages_ne_nil`), and a page of the longest names fits a frame
-(`Aven.DB.WireCbor`). -/
+(`Aven.Peer.WireCbor`). -/
 
 def keptPages (fs : List String) : List Frame := (pages pageSize fs).map .kept
 
@@ -373,4 +373,4 @@ def meetExamples : List (String × Nat × Nat) := [
   ("a newer peer: refused, and it waits for this one", 2, 3),
   ("far apart: refused", 2, 9)]
 
-end Aven.DB
+end Aven.Peer

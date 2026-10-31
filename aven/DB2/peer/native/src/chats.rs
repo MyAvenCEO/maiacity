@@ -24,7 +24,7 @@ use aven_db_store::{Hash, RefName};
 use aven_gen1::chain::{self, Answer, Body, Held, Keeper, Line, Retraction, Settled};
 use aven_gen1::files::Announcement;
 use aven_gen1::timeline;
-use aven_gen1::wire::{Frame, Have, Head, MAX_FRAME, catch_up_pages, heads_pages};
+use aven_peer_wire::wire::{Frame, Have, Head, MAX_FRAME, catch_up_pages, heads_pages};
 use bytes::Bytes;
 use iroh::{PublicKey, SecretKey};
 use serde_json::json;

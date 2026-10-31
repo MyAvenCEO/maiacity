@@ -1,4 +1,4 @@
-import Aven.DB.Wire
+import Aven.Peer.Wire
 
 /-!
 # A keeper's arrivals: what it holds of one Doc, numbered as it came (PEERS.md §3 and §4; docs, "Catching up")
@@ -48,8 +48,7 @@ came after it and so has a higher number.
 
 namespace Aven.Peer.Keeper
 
--- the wire's paging, the Peers' own: `Aven.DB.Wire` moves into `Aven.Peer` with thread E (A45)
-open Aven.DB (pages pageSize pages_flatten pages_ne_nil)
+-- the wire's paging (`Aven.Peer.pages`, `pageSize`), the Peers' own (A45)
 
 /-- An item a keeper holds of one Doc: its arrival number, the hash of its sealed bytes, their length, and the devices
 that uploaded it and haven't covered it since. -/

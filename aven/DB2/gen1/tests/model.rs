@@ -1,4 +1,4 @@
-//! The Lean model runs (README, rule 10): random traces through the Rust machines and through `aven-db-model`
+//! The Lean model runs (README, rule 10): random status traces through the Rust machine and through `aven-db-model`
 //! (`db/spec/Main.lean`), compared state by state. The test builds the model with `lake build` first, so it needs the
 //! box: `bun run box cargo test -p aven-gen1`.
 
@@ -6,7 +6,6 @@ use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use aven_gen1::presence::Presence;
 use aven_gen1::status::{Event, Status};
 use serde_json::{Value, json};
 
@@ -30,7 +29,6 @@ impl Rng {
 struct Trace {
     limit: u32,
     events: Vec<Event>,
-    changes: Vec<(bool, u32)>,
 }
 
 fn trace(seed: u64) -> Trace {
@@ -46,14 +44,7 @@ fn trace(seed: u64) -> Trace {
             _ => Event::Tick,
         })
         .collect();
-    let changes = (0..rng.below(60))
-        .map(|_| (rng.below(3) != 0, rng.below(6) as u32))
-        .collect();
-    Trace {
-        limit,
-        events,
-        changes,
-    }
+    Trace { limit, events }
 }
 
 fn rust(t: &Trace) -> Value {
@@ -66,30 +57,12 @@ fn rust(t: &Trace) -> Value {
             json!({ "phase": status.phase.name(), "moved": status.moved, "idle": status.idle })
         })
         .collect();
-    let mut presence = Presence::default();
-    let presences: Vec<Value> = t
-        .changes
-        .iter()
-        .map(|&(join, p)| {
-            if join {
-                presence.join(p)
-            } else {
-                presence.leave(&p)
-            }
-            json!(presence.present().copied().collect::<Vec<_>>())
-        })
-        .collect();
-    json!({ "status": statuses, "presence": presences })
+    json!({ "status": statuses })
 }
 
 fn input(t: &Trace) -> String {
     let events: Vec<&str> = t.events.iter().map(|e| e.name()).collect();
-    let changes: Vec<Value> = t
-        .changes
-        .iter()
-        .map(|&(join, p)| json!([if join { "join" } else { "leave" }, p]))
-        .collect();
-    json!({ "limit": t.limit, "status": events, "presence": changes }).to_string()
+    json!({ "limit": t.limit, "status": events }).to_string()
 }
 
 fn model() -> std::path::PathBuf {
