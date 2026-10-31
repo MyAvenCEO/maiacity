@@ -17,9 +17,10 @@ their group headings) and its rules 7, 15 and 16, which name Samuel's decisions;
 (`caps D1` to `caps D24`, and `caps E1` to `caps E3`, agreed with the engine thread); the "Decisions" of the docs,
 engine and runtimes READMEs (`docs 1` to `docs 24`, `engine 1` to `engine 13`, `runtimes 1` to `runtimes 12`) and of
 PEERS.md (`peers 1` to `peers 12`); the store README, which has no list, by its two sections marked "(decided)" and its
-one decision in line; and the unnumbered "Decisions" of MILESTONE2.md and SANDBOX.md, cited by their bold words.
-PRODUCTION.md has no decision list, so nothing of it is imported, and ARCHITECTURE.md's table "Caps, bulletproof" marks
-rows decided only by citing A-numbers, which are here already.
+one decision in line; the unnumbered "Decisions" of MILESTONE2.md and SANDBOX.md, cited by their bold words; and section
+15, "Decisions", of the actors' `aven/actor/ARCHITECTURE.md`, cited as `actors §15`. PRODUCTION.md has no decision list,
+so nothing of it is imported, and ARCHITECTURE.md's table "Caps, bulletproof" marks rows decided only by citing
+A-numbers, which are here already.
 
 ### From ARCHITECTURE.md
 
@@ -887,6 +888,90 @@ Made in milestone 1's threads and its integration (29–30 Oct 2026).
   features across the workspace, so after the merge every crate's maps keep insertion order. One test of
   `aven-db-core` had compared a line's text with sorted keys.
 - **rustfmt's default width (100)** stays for Rust; the prose wraps at 120. No `rustfmt.toml`.
+
+### From the actors' ARCHITECTURE.md
+
+Decided (Samuel, 30 Oct 2026):
+
+- Its own package, `aven/actor`, in Rust only, compiled to WebAssembly, with its own Cargo workspace: the actor is
+  universal and depends on no storage backend, avenDB included (section 13).
+- Actors are mostly JSON, with JavaScript where code is needed, run by on-demand runtimes such as QuickJS.
+- The runtimes are rewritten from scratch and named `<job>-runtime` after what their part does (every part is JSON, so `json-runtime` named nothing; the declarative turn runs on `state-runtime`, code on `js-runtime`, and a face, its markup and its style, on
+  one `face-runtime`, which never takes CSS and only gives it; "view" keeps the engine's sense). They run untrusted parts securely and never
+  reach the host.
+- Version 1 is a standalone, in-memory todo app: no network, no avenDB, no capabilities.
+- Frames in Core's canonical CBOR when the network comes, the one codec (Samuel, 31 Oct 2026, replacing "JSON lines";
+  ARCHITECTURE A29); ids derived from definition, spawner and count; only definitions from the repository are spawned.
+- Everything about an actor lives in its own Doc, shaped for Loro, and everything is kept.
+
+Decided here, on those grounds:
+
+- Order is per pair of actors, and the receiver's journal fixes the order of handling (section 4).
+- Inboxes are documents of their own, one per sender and receiver, each written only by the sender, so every document
+  keeps one writer and one key; the actor's journal keeps each handled message whole (section 3). Taken from the
+  avenDB engine thread's review of this design.
+- Asks default to 30 s, at most 10 minutes. Machines are in version 1. One person actor per device. The first app is
+  the todo app (section 9).
+- Runtimes run inside the kernel in a pure-Rust WebAssembly interpreter with fuel. If one proves too slow there, it
+  moves to the host's own WebAssembly engine, with fuel counters added when it is frozen.
+- The in-memory Doc is plain Rust behind the Doc interface, simple to model in Lean. Loro comes with
+  avenDB's documents.
+- Faces render into shadow roots through the applier. Opaque frames are for runtimes that run scripts in the page,
+  which version 1 has none of.
+
+- A component is a definition, its class; every placed component is a face actor, with a mounted lifetime
+  (Samuel, 30 Oct 2026). Faces follow the rules of aven-brands' component library and avenVIBES (section 5).
+
+- The caps seam (section 11), agreed with avenID's caps thread: actors hold no keys and the kernel holds them; a
+  `cap` beside `run` that only narrows per hop, never mixed with an actor's standing cap; tell caps on message names;
+  the inbox Doc A→B in A's vault; a definition names the one it `replaces` (Samuel, 30 Oct 2026; caps D16).
+
+- Every address carries an incarnation; `seq` counts per pair of actors; only an ask gets a `fail`, and every refusal
+  and error is journaled; a journal entry pins the definition, the runtime that ran and the fuel schedule (sections 4,
+  6 and 7). From the first-principles audit (`aven/DB2/ARCHITECTURE.md`).
+
+- Hosting an actor on the Aven Peer is an explicit read cap per actor, shown to its owner; a member's own Peer is the
+  default home (avenDB A16). Modelled in `Aven.Actor.Hosting`, a hosting cap being one of avenID's caps
+  (issuer the owner, holder the host, `read` on the actor or its loads): a host reads exactly what its hosting caps,
+  shown to the actor's owner, reach (`hosting_explicit`), nothing without one (`no_hosting_without_cap`), and one
+  load's cap reads only that load (`per_target`). Every runtime lives in `aven/runtimes` (section 13). (Samuel, 30 Oct 2026.)
+
+- avenDB's A17, parts 1, 2 and 4 (Samuel, 30 Oct 2026): an address names a vault-scoped id and an incarnation, never
+  a device, and the home is only where to route; a message is stored once and referenced by its hash; an actor's
+  history is its Doc's own Loro history, each turn one commit of Loro operations, with Loro's snapshots as its
+  checkpoints, and loads journaled as (Doc, version, query hash). Version 1 keeps the same shape in memory: an
+  operation log and snapshots behind the Doc interface.
+- avenDB's A17, part 3 (Samuel, 30 Oct 2026): every actor keeps its own inbox, its own queue, read position and order
+  of handling. Between devices, messages are carried in one Doc per pair of vaults, written only by the sending
+  vault's home device, holding the messages of all its actors, each addressed to one actor; within one home, none.
+  The order from one actor to another stays the order sent (section 4). In version 1, in memory, the carrier is not
+  modelled: each pair of actors is one inbox log.
+- avenDB's A17, part 5 (Samuel, 30 Oct 2026): a definition is a version of an actor type; `replaces` names the
+  version before it, and a lens carries the actor's state from the old version's shape into the new one's (K5).
+- Machines are data, merged with the interface; no Prolog runtime; their checker proven in Lean, and deeper
+  properties of a definition proven in Lean in the repository (section 6).
+- Every actor answers a built-in `describe` ask with its tool specs; definitions declare `sends`, enforced by the
+  kernel; edges between actors are derived by type id, never by name or prose (section 6; Samuel, 30 Oct 2026).
+- Lenses, universally: one concept joining versions of one type and of different type Docs, kept a forest so paths
+  stay unique; actors' messages cross types through them, and they replace Abject's negotiator and self-healing
+  adapters (section 6; Samuel, 30 Oct 2026).
+- Values are integers only in version 1, in avenDB's one codec (section 2): deterministic CBOR (Samuel, 30 Oct 2026).
+
+- How a host signs its actors' writes (Samuel, 31 Oct 2026): one device per host, whose device cap is the union of
+  the hosted actors' standing caps and only the outer bound. A host device writes only by chain, never as its
+  vault's own; every envelope names the acting actor and carries the chain its handled message carried, as it
+  came. The Aven Peer signs as Aven's device under a chain the owner issued and approved, not as a device of the
+  owner's vault. For a write, an actor's narrowing is never a link (it is no grant): it is the write's footprint,
+  checked against the chain. The actor half is `Aven.Actor.Signing` (`signs_by_chain`, `write_names_actor`,
+  `write_keeps_chain`, `actor_within_chain`, `actor_calls_within`); the reader's half (`Aven.ID.host_chain_only`,
+  `actor_within_device`, `host_never_beyond`) is avenID's. A cap that travels on in a message narrows instead by
+  caps' attenuation link (no approval, within its parent, the same holder, only after an approved grant): the
+  chain a message carries is its handled message's chain plus at most one attenuation (avenDB ARCHITECTURE.md).
+
+Open, none of it blocking version 1 (the audit's findings, mostly avenDB's proposal A17, awaiting Samuel):
+
+- **The kernel's authority:** click caps scoped to what the placer wired; who may spawn, and a bound on placement depth; a budget per run, and backpressure.
+- **Performance gates** for wasm inside wasm, fuel across engines, and a shadow root per face.
 
 ## 31 Oct 2026
 
