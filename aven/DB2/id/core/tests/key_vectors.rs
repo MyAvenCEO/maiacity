@@ -49,6 +49,19 @@ fn derive(input: &Value) -> Value {
         hasher.finalize_xof().fill(&mut out);
         return hex(&out);
     }
+    if let Some(seed) = input.get("ed25519Seed") {
+        let seed = secret(seed);
+        let device = aven_id::HybridKey::from_device_seed(&seed);
+        let ml = aven_id::device_ml_dsa_seed(&seed);
+        // the device's hybrid key is exactly the one its two seeds make
+        assert_eq!(
+            device.public(),
+            aven_id::HybridKey::from_seeds(&seed, &ml).public()
+        );
+        let seal = aven_id::device_seal_key(&seed);
+        return json!({ "ed25519Public": hex(&device.public().ed25519), "mlDsaSeed": hex(ml.expose()),
+            "sealSeed": hex(seal.seed().expose()) });
+    }
     if let Some(readers) = input.get("readers") {
         return json!(padded(readers.as_u64().unwrap() as usize));
     }
