@@ -108,7 +108,7 @@ impl Actor {
     /// Keeps a blob that may be an index: at most `INDEX_MAX` bytes, a list of hashes. A small blob that isn't one
     /// costs only memory while it is kept.
     fn keep_index(&self, hash: Hash, bytes: &Bytes) {
-        if bytes.len() > INDEX_MAX || bytes.len() % 32 != 0 {
+        if bytes.len() > INDEX_MAX || !bytes.len().is_multiple_of(32) {
             return;
         }
         let mut indexes = self.indexes.lock().unwrap();
@@ -121,7 +121,11 @@ impl Actor {
     fn next_chunk(&self, hash: &Hash) -> Option<Hash> {
         let indexes = self.indexes.lock().unwrap();
         indexes.iter().find_map(|(_, index)| {
-            let at = index.chunks_exact(32).position(|h| h == hash.as_bytes())?;
+            let at = index
+                .as_chunks::<32>()
+                .0
+                .iter()
+                .position(|h| h == hash.as_bytes())?;
             let next = index.get((at + 1) * 32..(at + 2) * 32)?;
             Some(Hash::from_bytes(next.try_into().ok()?))
         })

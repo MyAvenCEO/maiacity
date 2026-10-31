@@ -49,14 +49,16 @@ pub fn split(bytes: Bytes) -> impl Iterator<Item = Bytes> {
 
 /// The chunks an index lists, or `Corrupt` for bytes that are no index.
 pub fn chunks(index: &[u8]) -> Result<Vec<Hash>> {
-    if index.len() % 32 != 0 {
+    if !index.len().is_multiple_of(32) {
         return Err(Error::Corrupt(
             "an index is a list of 32-byte hashes".into(),
         ));
     }
     Ok(index
-        .chunks_exact(32)
-        .map(|h| Hash::from_bytes(h.try_into().expect("32 bytes")))
+        .as_chunks::<32>()
+        .0
+        .iter()
+        .map(|h| Hash::from_bytes(*h))
         .collect())
 }
 
