@@ -178,7 +178,9 @@ is a Value in Core's one codec.
   - its keys are written in the codec's order;
   - bytes are CBOR bytes, never hex text;
   - a list goes in pages of at most `pageSize`, 128, and a page of the longest entries fits `maxFrame`; every page but
-    the last says `more`, and no page is empty, so each moves its receiver (`pages_ne_nil`);
+    the last says `more`, and only the last says it's done, so the receiver hears the telling end. No page is empty, so
+    each moves its receiver (`pages_ne_nil`), except that a telling with nothing in it is one page with no entries and
+    `more` false (A215);
   - its examples and refusals are vectors (`frames.json`).
 - **A Doc is named by its id,** 32 bytes, in every frame.
 - **Its home** is avenPEERS's own: the Lean in `peer/spec` (namespace `Aven.Peer`), the Rust in `peer/wire`
@@ -204,7 +206,7 @@ Every `why` is at most 64 bytes (`whyMax`). An upload is at most 128 items (`put
 most 256 (`coversMax`). `keep_cap`, `keep_order`, `keep_choice` and `keep_link`, which carry a keeper's Books, come
 after these.
 
-**Decided:** rule 1, rule 14, A29, A42, A45, A118, A133, A134, A143 · **Lean:** `Aven.Peer.Wire` — `pages_ne_nil`,
+**Decided:** rule 1, rule 14, A29, A42, A45, A118, A133, A134, A143, A215 · **Lean:** `Aven.Peer.Wire` — `pages_ne_nil`,
 `headsPages_heads`, `answer_pages`; `Aven.Peer.WireCbor` — `frameOf_value`, `frameValue_canon`, `decodeAll_frame`,
 `push_tooLong`; wire 3's gate and keeper frames in stage 5's PR 1 (#1765)
 
