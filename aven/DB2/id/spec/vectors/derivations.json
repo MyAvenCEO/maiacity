@@ -51,5 +51,16 @@
 {"expected":4352,"input":{"sealedBytes":4097},"name":"the padded length of 4097 sealed bytes"},
 {"expected":5120,"input":{"sealedBytes":5000},"name":"the padded length of 5000 sealed bytes"},
 {"expected":67584,"input":{"sealedBytes":65537},"name":"the padded length of 65537 sealed bytes"},
-{"expected":1081344,"input":{"sealedBytes":1048577},"name":"the padded length of 1048577 sealed bytes"}
+{"expected":1081344,"input":{"sealedBytes":1048577},"name":"the padded length of 1048577 sealed bytes"},
+{"expected":0,"input":{"padme":0},"name":"Padmé of 0"},
+{"expected":1,"input":{"padme":1},"name":"Padmé of 1"},
+{"expected":7,"input":{"padme":7},"name":"Padmé of 7"},
+{"expected":8,"input":{"padme":8},"name":"Padmé of 8"},
+{"expected":10,"input":{"padme":9},"name":"Padmé of 9"},
+{"expected":18,"input":{"padme":17},"name":"Padmé of 17"},
+{"expected":144,"input":{"padme":129},"name":"Padmé of 129"},
+{"expected":1024,"input":{"padme":1000},"name":"Padmé of 1000"},
+{"expected":4352,"input":{"padme":4097},"name":"Padmé of 4097"},
+{"expected":67584,"input":{"padme":65537},"name":"Padmé of 65537"},
+{"expected":1081344,"input":{"padme":1048577},"name":"Padmé of 1048577"}
 ]
