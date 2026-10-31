@@ -676,6 +676,18 @@ the spec that owns it.
   - loads are journaled as versions, not as data: *decided, yes* ("do as you believe");
   - a definition is a version of an actor type, `replaces` names the version before, and a lens carries the state:
     *decided, yes*.
+- **A27. An actor host writes only under its actors' chains** (proposed by caps and avenACTORS, 30 Oct 2026):
+  - one device key per host, in a narrow device vault of its own, never a member's personal device. Its device cap is
+    the union of its hosted actors' standing caps: an outer bound a misbehaving runtime can't exceed;
+  - a host device never writes on its vault's own authority, only under a chain. Each envelope names the acting actor
+    and the chain its message acts under (narrowed per hop, D16), so each actor is bounded by its own chain;
+  - the Aven Peer signs with Aven's own device, under a chain the owner issued to Aven's vault for that actor's Docs and
+    the owners approved (D14), never as a device of the owner's vault. Its writes stay attributable to the host and
+    revocable as one cap, beside A16's read caps.
+
+  *Open, for Samuel. The architect recommends yes:* a host gets only the caps its owners give it. Once decided, caps
+  proves `host_never_own`, `actor_within_device` and `host_never_beyond`, and avenACTORS `actor_within_chain`. Version 1
+  (no caps, in memory) is unaffected.
 - **A18. Plugins are runtimes.** A lowering is pinned by its runtime's hash, and an envelope carries the lowered hash.
   *Decided: yes (Samuel, 30 Oct 2026: "do as you believe").*
 - **A19. One update grammar:** put, patch, remove and a new `edit` for text, lists and trees, each with a verb and a
