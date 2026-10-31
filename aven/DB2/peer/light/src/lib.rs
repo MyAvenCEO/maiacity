@@ -37,11 +37,11 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 
-use aven_db_core::chat::Message;
-use aven_db_core::timeline;
-use aven_db_core::wire::{ALPN, Frame};
 use aven_db_store::blobs::{Blobs, FetchError, Fetched, Shared};
 use aven_db_store::{Hash, backend, files};
+use aven_gen1::chat::Message;
+use aven_gen1::timeline;
+use aven_gen1::wire::{ALPN, Frame};
 use aven_peer::chats::Chats;
 use aven_peer::iroh_gossip::{self, Gossip};
 use aven_peer::members::{Gate, Hook};
@@ -454,7 +454,7 @@ pub async fn share(
             file,
         )
         .await;
-    room.share(aven_db_core::files::Announcement {
+    room.share(aven_gen1::files::Announcement {
         file: file.to_hex(),
         size: size as u64,
         name,
@@ -662,6 +662,57 @@ fn unhex(s: &str) -> Option<Vec<u8>> {
     (0..s.len() / 2)
         .map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).ok())
         .collect()
+}
+
+/// This device's seed (`device-key`), read from its store for a derivation and wiped by the caller's `Secret`.
+async fn device_seed() -> Result<aven_id::Secret, JsError> {
+    use aven_db_store::RefName;
+    use zeroize::Zeroize;
+    let (store, _) = store().await?;
+    let name = RefName::new("device-key").map_err(js)?;
+    let blob = store
+        .get_ref(&name)
+        .await
+        .map_err(js)?
+        .ok_or_else(|| JsError::new("this browser has no device key yet"))?;
+    let mut text = String::from_utf8(
+        store
+            .get(&blob)
+            .await
+            .map_err(js)?
+            .ok_or_else(|| JsError::new("device-key points at a missing blob"))?
+            .to_vec(),
+    )
+    .map_err(js)?;
+    let seed = unhex(text.trim()).and_then(|b| <[u8; 32]>::try_from(b).ok());
+    text.zeroize();
+    let mut seed = seed.ok_or_else(|| JsError::new("device-key is no 32-byte seed"))?;
+    Ok(aven_id::Secret::take(&mut seed))
+}
+
+fn hex_of(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// This device's hybrid public half (its Value's bytes, hex), for its vault owner's hybrid signature to bind
+/// (`device_hybrid_bound`); nothing trusts it before. Derived in this process from the device's own seed (`device-key`):
+/// Ed25519 from the seed, ML-DSA-65 from `avenID device ml-dsa 1` (A43). The seed never leaves, and is wiped after.
+#[wasm_bindgen(js_name = deviceHybrid)]
+pub async fn device_hybrid() -> Result<String, JsError> {
+    let seed = device_seed().await?;
+    Ok(hex_of(
+        &aven_id::HybridKey::from_device_seed(&seed)
+            .public()
+            .to_bytes(),
+    ))
+}
+
+/// This device's seal key's public half (X-Wing, hex), which its vault's keyring is sealed to: derived in this process
+/// from the device's own seed (`avenID device seal 1`, A43).
+#[wasm_bindgen(js_name = deviceSeal)]
+pub async fn device_seal() -> Result<String, JsError> {
+    let seed = device_seed().await?;
+    Ok(hex_of(&aven_id::device_seal_key(&seed).public().to_bytes()))
 }
 
 /// Starts the Peer-Light `name` with its secret seed (hex), linking through `relay` to the Aven Peer (`aven_key`,

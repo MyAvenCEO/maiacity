@@ -498,7 +498,7 @@ impl aven_db_docs::Authorize for NotMallory {
         signer != self.0.as_slice()
     }
 
-    fn authorized(&self, _: &Genesis, _: &Envelope, _: &Body) -> bool {
+    fn authorized(&self, _: &Genesis, _: &Envelope, _: &Body, _: &aven_db_docs::Past<'_>) -> bool {
         true
     }
 }
@@ -598,4 +598,169 @@ fn avenids_built_in_types_dont_fit_until_caps_supplies_them() {
         matches!(r, Err(CommitError::Unfit(Unfit::Version(_)))),
         "{r:?}"
     );
+}
+
+#[test]
+fn prepare_sign_finish_with_the_key_elsewhere() {
+    let a = device("alice");
+    let g = genesis(&a);
+    let mut doc = open(&g);
+    let p = doc
+        .prepare(
+            a.public(),
+            0,
+            &[todo_put("t1", "keys in another worker")],
+            "now",
+            Act::default(),
+        )
+        .unwrap();
+    // the device signs elsewhere: here, with its own key over exactly the bytes prepare hands out
+    let mut e = p.envelope().clone();
+    a.sign_envelope(&mut e);
+    let sig: [u8; 64] = e.sigs[0].sig.clone().try_into().unwrap();
+    let bytes = doc.finish(p, sig, &Allow).unwrap();
+    assert!(doc.snapshot().records.contains_key("t1"));
+    assert_eq!(
+        Envelope::decode(&bytes).unwrap().name(),
+        doc.held().last().unwrap().0
+    );
+    // a prepared commit is refused once the Doc moved on, and a bad signature never counts
+    let p = doc
+        .prepare(a.public(), 0, &[todo_put("t2", "x")], "now", Act::default())
+        .unwrap();
+    commit(&mut doc, &a, &[todo_put("t3", "in between")]);
+    assert_eq!(doc.finish(p, [0; 64], &Allow), Err(CommitError::Moved));
+    let p = doc
+        .prepare(a.public(), 0, &[todo_put("t2", "x")], "now", Act::default())
+        .unwrap();
+    assert!(matches!(
+        doc.finish(p, [0; 64], &Allow),
+        Err(CommitError::NotCounted(_))
+    ));
+    assert!(!doc.snapshot().records.contains_key("t2"));
+}
+
+#[test]
+fn a_doc_reopens_from_what_it_holds() {
+    let (a, b) = (device("alice"), device("bob"));
+    let g = genesis(&a);
+    let mut doc = open(&g);
+    let mut store: std::collections::BTreeMap<aven_core::Hash, Vec<u8>> = Default::default();
+    let x1 = commit(&mut doc, &a, &[todo_put("t1", "one")]);
+    let mut db = open(&g);
+    db.import(&x1, &Allow).unwrap();
+    let y1 = commit(&mut db, &b, &[todo_put("t2", "two")]);
+    doc.import(&y1, &Allow).unwrap();
+    commit(&mut doc, &a, &[todo_put("t3", "three")]);
+    for (_, e) in doc.held() {
+        let bytes = e.encode();
+        store.insert(aven_core::blake3(&bytes), bytes);
+    }
+    let page = doc.held_page();
+    let back = aven_db_docs::HeldPage::of_value(
+        &aven_core::decode(&aven_core::encode(&page.value())).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(back, page);
+    let mut reopened = open(&g);
+    let blobs: Vec<&[u8]> = back
+        .envelopes
+        .iter()
+        .map(|(_, b)| store[b].as_slice())
+        .collect();
+    assert!(
+        reopened
+            .import_page(&blobs, &Allow)
+            .iter()
+            .all(|r| *r == Ok(Imported::Counts))
+    );
+    assert_eq!(reopened.snapshot(), doc.snapshot());
+    assert_eq!(reopened.held_page(), page);
+}
+
+#[test]
+fn an_envelope_the_judge_crashed_on_is_marked_unfit() {
+    let (a, b) = (device("alice"), device("bob"));
+    let g = genesis(&a);
+    let mut doc = open(&g);
+    let x1 = commit(&mut doc, &a, &[todo_put("t1", "one")]);
+    let mut db = open(&g);
+    db.import(&x1, &Allow).unwrap();
+    let y1 = commit(&mut db, &b, &[todo_put("t2", "two")]);
+    let y1_name = Envelope::decode(&y1).unwrap().name();
+    // marked before it arrives: it is held, never judged, never counts
+    let mut before = open(&g);
+    before.mark_unfit(y1_name);
+    before.import(&x1, &Allow).unwrap();
+    assert!(matches!(
+        before.import(&y1, &Allow),
+        Ok(Imported::NotCounted(Why::Unfit(_)))
+    ));
+    assert!(!before.snapshot().records.contains_key("t2"));
+    // marked after it counted: the live state rebuilds without it
+    doc.import(&y1, &Allow).unwrap();
+    assert!(doc.snapshot().records.contains_key("t2"));
+    doc.mark_unfit(y1_name);
+    assert!(!doc.counts(&y1_name) && !doc.snapshot().records.contains_key("t2"));
+    assert_eq!(doc.feed(0).last(), Some(&Feed::Rebuilt));
+}
+
+/// Bob may write only on top of alice's grant: authorized when the grant is in the envelope's own past.
+struct GrantInPast {
+    alice: Vec<u8>,
+    grant: aven_core::Hash,
+}
+
+impl aven_db_docs::Authorize for GrantInPast {
+    fn reaches(&self, _: &Genesis, _: &[u8]) -> bool {
+        true
+    }
+
+    fn authorized(
+        &self,
+        _: &Genesis,
+        e: &Envelope,
+        _: &Body,
+        past: &aven_db_docs::Past<'_>,
+    ) -> bool {
+        e.sigs.iter().any(|x| x.signer == self.alice) || past.contains(&self.grant)
+    }
+}
+
+#[test]
+fn authority_is_judged_on_the_envelopes_own_past_in_any_order() {
+    let (a, b) = (device("alice"), device("bob"));
+    let g = genesis(&a);
+    let mut da = open(&g);
+    let grant = commit(&mut da, &a, &[todo_put("grant", "bob may write")]);
+    let mut on_grant = open(&g);
+    on_grant.import(&grant, &Allow).unwrap();
+    let y1 = commit(&mut on_grant, &b, &[todo_put("t1", "on the grant")]);
+    let mut alone = open(&g);
+    let z1 = commit(
+        &mut alone,
+        &device("bob's other device"),
+        &[todo_put("t2", "without it")],
+    );
+    let caps = GrantInPast {
+        alice: a.public().to_vec(),
+        grant: Envelope::decode(&grant).unwrap().name(),
+    };
+    let mut snaps = vec![];
+    for order in [[&grant, &y1, &z1], [&z1, &y1, &grant]] {
+        let mut r = open(&g);
+        for x in order {
+            r.import(x, &caps).unwrap();
+        }
+        assert!(
+            r.counts(&Envelope::decode(&y1).unwrap().name()),
+            "on the grant: authorized"
+        );
+        assert!(
+            !r.counts(&Envelope::decode(&z1).unwrap().name()),
+            "without it in its past: not"
+        );
+        snaps.push(r.snapshot());
+    }
+    assert_eq!(snaps[0], snaps[1], "any order, one verdict");
 }

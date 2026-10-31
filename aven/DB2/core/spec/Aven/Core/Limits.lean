@@ -48,18 +48,13 @@ def sigsWithin (xs : List Sig) : Bool :=
 def Envelope.withinLimits (e : Envelope) : Bool :=
   decide (e.deps.length ≤ maxDeps) && decide (e.branch.length ≤ maxBranchBytes) && sigsWithin e.sigs
 
-/-- A hash from its CBOR: a byte string of 32 bytes. -/
-def hashOf? : Value → Option Hash
-  | .bytes b => if b.length = 32 then some ⟨b⟩ else none
-  | _ => none
-
 def optHashOf? : Value → Option (Option Hash)
   | .null => some none
-  | v => (hashOf? v).map some
+  | v => (Hash.ofValue? v).map some
 
 def hashesOf? : List Value → Option (List Hash)
   | [] => some []
-  | v :: vs => do let h ← hashOf? v; let hs ← hashesOf? vs; some (h :: hs)
+  | v :: vs => do let h ← Hash.ofValue? v; let hs ← hashesOf? vs; some (h :: hs)
 
 /-- A signature from `Sig.value`'s shape. -/
 def sigOf? : Value → Option Sig
@@ -78,7 +73,7 @@ def Envelope.ofValue? : Value → Option Envelope
   | .map [(k₁, .bytes d), (k₂, .uint seq), (k₃, body), (k₄, .array deps), (k₅, prev), (k₆, .array sigs),
       (k₇, .text branch), (k₈, .uint writer)] =>
     if [k₁, k₂, k₃, k₄, k₅, k₆, k₇, k₈] = envelopeKeys then do
-      let doc ← hashOf? (.bytes d)
+      let doc ← Hash.ofValue? (.bytes d)
       let prev ← optHashOf? prev
       let deps ← hashesOf? deps
       let sigs ← sigsOf? sigs
@@ -95,28 +90,20 @@ def Envelope.accept (bs : Bytes) : Option Envelope :=
     | none => none
   else none
 
-theorem hashOf?_value {v : Value} {h : Hash} (e : hashOf? v = some h) : h.value = v := by
-  unfold hashOf? at e
-  split at e
-  · split at e
-    · cases e; rfl
-    · cases e
-  · cases e
-
 theorem optHashOf?_value {v : Value} {h : Option Hash} (e : optHashOf? v = some h) : optHash h = v := by
   unfold optHashOf? at e
   split at e
   · cases e; rfl
-  · cases hv : hashOf? v with
+  · cases hv : Hash.ofValue? v with
     | none => simp [hv] at e
-    | some x => simp [hv] at e; subst e; exact hashOf?_value hv
+    | some x => simp [hv] at e; subst e; exact Hash.ofValue?_value hv
 
 theorem hashesOf?_value : ∀ {vs : List Value} {hs : List Hash}, hashesOf? vs = some hs → hs.map Hash.value = vs
   | [], hs, e => by simp [hashesOf?] at e; subst e; rfl
   | v :: vs, hs, e => by
     simp only [hashesOf?, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.some.injEq] at e
     obtain ⟨h, hh, t, ht, rfl⟩ := e
-    simp [hashOf?_value hh, hashesOf?_value ht]
+    simp [Hash.ofValue?_value hh, hashesOf?_value ht]
 
 theorem sigOf?_value {v : Value} {x : Sig} (e : sigOf? v = some x) : x.value = v := by
   unfold sigOf? at e
@@ -146,7 +133,7 @@ theorem Envelope.ofValue?_value {v : Value} {e : Envelope} (h : Envelope.ofValue
       simp only [Option.bind_eq_bind, Option.bind_eq_some_iff, Option.some.injEq] at h
       obtain ⟨doc, hd, p, hp, ds, hds, xs, hxs, rfl⟩ := h
       simp only [Envelope.value]
-      rw [← hashOf?_value hd, optHashOf?_value hp, hashesOf?_value hds, sigsOf?_value hxs]
+      rw [← Hash.ofValue?_value hd, optHashOf?_value hp, hashesOf?_value hds, sigsOf?_value hxs]
       rfl
     · cases h
   · cases h

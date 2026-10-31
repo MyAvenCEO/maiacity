@@ -19,6 +19,19 @@ use crate::signed::{Sig, Verify, add_sig, signing_bytes, sigs_of, sigs_value, si
 use aven_codec::{DocId, Hash, blake3};
 use aven_codec::{Value, decode, encode};
 
+/// Which keys write which envelope's log (Lean's `Writes`): a parameter, as [`Verify`] is. The docs layer implements it
+/// once, from how it derives a writer id, and caps checks the key against the device cap. Any
+/// `Fn(&[u8], &Envelope) -> bool` is one.
+pub trait Writes {
+    fn writes(&self, key: &[u8], e: &Envelope) -> bool;
+}
+
+impl<F: Fn(&[u8], &Envelope) -> bool> Writes for F {
+    fn writes(&self, key: &[u8], e: &Envelope) -> bool {
+        self(key, e)
+    }
+}
+
 /// What an envelope's writer signs it under (`envelopeLabel`).
 pub const ENVELOPE_LABEL: &str = "avenDB envelope 1";
 
@@ -50,10 +63,7 @@ fn opt_hash(h: &Option<Hash>) -> Value {
 }
 
 fn hash_of(v: Value) -> Option<Hash> {
-    match v {
-        Value::Bytes(b) => Some(Hash(b.as_slice().try_into().ok()?)),
-        _ => None,
-    }
+    Hash::of_value(&v)
 }
 
 impl Envelope {
@@ -99,15 +109,15 @@ impl Envelope {
         blake3(&self.signing())
     }
 
-    /// Placed in its log (`Envelope.placed`): a key that `writes` this envelope's log signed it. `writes(key, e)` is a
+    /// Placed in its log (`Envelope.placed`): a key that [`Writes`] this envelope's log signed it. Who writes is a
     /// parameter, as `verify` is: the docs layer derives it from the writer id, and caps checks the key against the
     /// device cap. An envelope that isn't placed is nothing: a reader refuses it, so it is never held, never counts and
     /// is never half of a split.
-    pub fn placed(&self, verify: &impl Verify, writes: impl Fn(&[u8], &Envelope) -> bool) -> bool {
+    pub fn placed(&self, verify: &impl Verify, writes: &impl Writes) -> bool {
         let msg = self.signing();
         self.sigs
             .iter()
-            .any(|x| writes(&x.signer, self) && x.valid(verify, &msg))
+            .any(|x| writes.writes(&x.signer, self) && x.valid(verify, &msg))
     }
 
     /// The signatures beside it that verify, the writer's among them (`Envelope.approvals`).

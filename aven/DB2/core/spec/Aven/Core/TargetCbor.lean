@@ -53,11 +53,13 @@ def Target.value : Target → Value
 
 def Target.ofValue? : Value → Option Target
   | .map [(a, .bytes d), (c, .text r)] =>
-    if a = keyDoc ∧ c = keyReach ∧ d.length = 32 then (Reach.ofBytes? r).map (.doc ⟨⟨d⟩⟩ ·) else none
+    if a = keyDoc ∧ c = keyReach then
+      (Hash.ofValue? (.bytes d)).bind fun h => (Reach.ofBytes? r).map (.doc ⟨h⟩ ·)
+    else none
   | .map [(a, .bool b), (c, .text v)] =>
     if a = keyBelow ∧ c = keyVault then some (.vault v b) else none
   | .map [(a, .bytes t), (c, .bool b), (e, .text v)] =>
-    if a = keyType ∧ c = keyBelow ∧ e = keyVault ∧ t.length = 32 then some (.vaultType v ⟨⟨t⟩⟩ b)
+    if a = keyType ∧ c = keyBelow ∧ e = keyVault then (Hash.ofValue? (.bytes t)).map (.vaultType v ⟨·⟩ b)
     else none
   | _ => none
 
@@ -72,11 +74,11 @@ theorem Target.ofValue_value (t : Target) (h : t.idsOk = true) : Target.ofValue?
   cases t with
   | doc d r =>
     simp only [Target.idsOk, Hash.ok, beq_iff_eq] at h
-    cases r <;> simp [Target.value, Target.ofValue?, Reach.ofBytes_bytes, h]
+    cases r <;> simp [Target.value, Target.ofValue?, Reach.ofBytes_bytes, Hash.ofValue?, h]
   | vault v b => simp [Target.value, Target.ofValue?, keyBelow, keyVault]
   | vaultType v t b =>
     simp only [Target.idsOk, Hash.ok, beq_iff_eq] at h
-    simp [Target.value, Target.ofValue?, keyType, keyBelow, keyVault, h]
+    simp [Target.value, Target.ofValue?, keyType, keyBelow, keyVault, Hash.ofValue?, h]
 
 /-- A target the profile allows: its vault, if it has one, is text the codec takes. -/
 def Target.ok : Target → Bool
