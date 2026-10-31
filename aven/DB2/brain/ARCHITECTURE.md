@@ -86,11 +86,11 @@ Production moves from the first generation to this architecture in seven stages 
 
 | Stage | What | State |
 |---|---|---|
-| 1. The Doc foundation | avenCORE, avenID's keys, minimal avenCAPS, avenDOCS, avenOPS | merged, except avenOPS' engine (#1697, next) |
-| 2. Authority in Lean | vault authority, member caps, the tree's passkey records and migration snapshot, k of n | merged (#1717, #1718, #1735); envelope authority (#1741) and caps on Core's op ids (#1744) in review; k of n by stored thresholds in progress |
-| 3. Docs in the Peers | the Doc host, gossip per group, sync by version, the docs worker | native host built (#1727); the docs API for it (#1742), the wire split (#1745) and the keyring Doc (#1743) in review; the browser and the frames in progress |
-| 4. The tree as the first Doc | the register on Core's counting, its setup as the root Record, sign-in keys bound | in progress: k of n (PR 1), then owner changes on `Closed` (A191) and the vault-name switch (A190) |
-| 5. Catch-up and keepers | arrivals, covers, bills, the fetch gate, catch-up by arrival number | native catch-up built (#1722); caps' half merged (#1734); the keeper's byte forms (#1739) and their Rust (#1740) in review |
+| 1. The Doc foundation | avenCORE, avenID's keys, minimal avenCAPS, avenDOCS, avenOPS | merged: the ops engine's pure core is in (#1697) |
+| 2. Authority in Lean | vault authority, member caps, the tree's passkey records and migration snapshot, k of n | merged (#1717, #1718, #1735, #1741, #1744, #1748, #1751); approvals as Core `Sig`s (A189 part 2) after vault names (#1746) |
+| 3. Docs in the Peers | the Doc host, gossip per group, sync by version, the docs worker | native host (#1727) and the keyring Doc (#1743) merged; the docs API for it (#1742) and the wire split (#1745) in review; then host keyless with the Authorize adapter, frames and sync over the gate, the browser's docs worker, the box check |
+| 4. The tree as the first Doc | the register on Core's counting, its setup as the root Record, sign-in keys bound | k of n merged (#1747); the vault-name switch (A190, #1746) in review; then owner changes on `Closed` (A191, PR 2) |
+| 5. Catch-up and keepers | arrivals, covers, bills, the fetch gate, catch-up by arrival number | native catch-up (#1722), caps' half (#1734), the keeper's byte forms (#1739) and their Rust (#1740) merged; then wire 3's gate frames, the Gate adapter with the native keeper, the Peer-Light's catch-up client, the box check |
 | 6. The chat as a fresh Doc | messages as Records, the screen on avenOPS queries, files behind the gate | not started |
 | 7. Rehearsal and cutover | production's snapshot replayed in the box, then release, deploy, delete `aven-gen1` | not started |
 
@@ -131,6 +131,7 @@ decision's own text, reasons and Lean are its row there.
 
 | Decision | What | Page | Holds |
 |---|---|---|---|
+| [A208](DECISIONS.md) | How avenCAPS splits out of avenID: `caps/spec` as `Aven.Caps`, and the crate `aven-caps` | [caps](caps/README.md) | yes |
 | [A207](DECISIONS.md) | A type's version is a `schema` Record; a named version stays `version` | [docs](docs/README.md) | yes |
 | [A206](DECISIONS.md) | Runtimes stay files in this repository; publishing runtimes and the release vault parked (Samuel) | [runtime](runtime/README.md) | yes |
 | [A205](DECISIONS.md) | No compaction: everything about an actor is kept (Samuel) | [actors](actors/README.md) | yes |
