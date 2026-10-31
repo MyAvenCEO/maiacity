@@ -51,6 +51,12 @@ def Target.covers (gov : Bytes → Bytes → Prop) (spawned lists : DocId → Do
   | .vault v b, f => f.vault = v ∨ (b = true ∧ gov v f.vault)
   | .vaultType v t b, f => f.type = t ∧ (f.vault = v ∨ (b = true ∧ gov v f.vault))
 
+/-- As caps writes it. -/
+def Reach.name : Reach → String
+  | .self => "self"
+  | .spawned => "spawned"
+  | .lists => "lists"
+
 /-- A reach within another: the Doc alone is within either. -/
 def Reach.le : Reach → Reach → Bool
   | .self, _ => true

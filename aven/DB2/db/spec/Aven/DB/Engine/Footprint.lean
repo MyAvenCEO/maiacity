@@ -3,9 +3,10 @@ import Aven.DB.Engine.Mutate
 /-!
 # Footprints, and every reader's check of a diff (caps, "Footprints"; ARCHITECTURE.md, A18 and A19)
 
-Every lowered op has a **footprint** step (`Aven.Core.Step`): the type it writes, its verb and its fields. A writer's
-caps must cover its commit's footprint (`Aven.Core.covers`). An envelope carries its lowered operation, so every reader
-can work out the same footprint, and then checks what the envelope actually changed against it:
+Every lowered op has a **footprint** step (`Aven.Core.Step`): the type it writes, its verb and its fields. A cap names
+the ops a holder may call, never steps (A32): the steps are the op's lowering, which every reader computes from the call
+an envelope names, so every reader works out the same footprint, and then checks what the envelope actually changed
+against it:
 
 - a Record that is new: a `put-new` of its type is in the footprint, and every field it carries is a field the
   footprint writes for its type;
@@ -13,9 +14,9 @@ can work out the same footprint, and then checks what the envelope actually chan
   for its type;
 - a Record that is gone: a `remove` of its type is in the footprint.
 
-What it proves: a commit that ran as its ops say always passes that check (`commit_within`), so an honest writer whose
-caps cover its footprint is accepted by every reader (`honest_passes`); and a diff that passes is one whose every
-change is a step some grant allows (`check_sound`). -/
+What it proves: a commit that ran as its ops say always passes that check (`commit_within`), so an honest writer is
+accepted by every reader (`honest_passes`); whether its caps let it call those ops is caps' part of the verdict
+(`Aven.ID.Authorized`). -/
 
 namespace Aven.DB.Engine
 
@@ -58,9 +59,9 @@ def diffWithin (eq : Val → Val → Bool) (fp : List Step) (s s' : List (Record
   s'.all (fun r => s.any (changedOk eq fp · r) || newOk fp r) &&
     s.all fun r0 => s'.any (fun r => r.id == r0.id && r.type == r0.type) || hasVerb fp r0.type .remove
 
-/-- A reader accepts a commit when the writer's grants cover its footprint and the diff stays within it. -/
-def check (eq : Val → Val → Bool) (grants : List Grant) (ops : List (Op Val)) (s s' : List (Record Val)) : Bool :=
-  covers grants (footprint ops) && diffWithin eq (footprint ops) s s'
+/-- A reader accepts a commit's diff when it stays within the footprint of the ops it lowers to. -/
+def check (eq : Val → Val → Bool) (ops : List (Op Val)) (s s' : List (Record Val)) : Bool :=
+  diffWithin eq (footprint ops) s s'
 
 /-! ## Lemmas on fields -/
 
@@ -283,22 +284,10 @@ theorem commit_within (eq : Val → Val → Bool) (heq : ∀ x, eq x x = true) (
       (fun op hop => List.mem_map.mpr ⟨op, hop, rfl⟩) (within_refl eq heq _ s) h)
   · cases h
 
-/-- **An honest writer is accepted by every reader:** its caps cover its footprint and its commit ran as its ops say. -/
+/-- **An honest writer is accepted by every reader:** its commit ran as its ops say. -/
 theorem honest_passes (eq : Val → Val → Bool) (heq : ∀ x, eq x x = true) (ofId : NewId → Val) (w c : Nat)
-    (grants : List Grant) (s s' : List (Record Val)) (ops : List (Op Val))
-    (hg : covers grants (footprint ops) = true) (h : commit eq ofId w c s ops = .ok s') :
-    check eq grants ops s s' = true := by
-  simp [check, hg, commit_within eq heq ofId w c s s' ops h]
-
-/-- **What passes is granted:** every step of the footprint is one some grant allows, and the diff stays within the
-footprint, Record by Record. -/
-theorem check_sound (eq : Val → Val → Bool) (grants : List Grant) (ops : List (Op Val)) (s s' : List (Record Val))
-    (h : check eq grants ops s s' = true) :
-    (∀ st ∈ footprint ops, ∃ g ∈ grants, g.allows st = true) ∧ diffWithin eq (footprint ops) s s' = true := by
-  simp only [check, Bool.and_eq_true] at h
-  refine ⟨fun st hst => ?_, h.2⟩
-  have := h.1
-  simp only [covers, List.all_eq_true, List.any_eq_true] at this
-  exact this st hst
+    (s s' : List (Record Val)) (ops : List (Op Val)) (h : commit eq ofId w c s ops = .ok s') :
+    check eq ops s s' = true :=
+  commit_within eq heq ofId w c s s' ops h
 
 end Aven.DB.Engine

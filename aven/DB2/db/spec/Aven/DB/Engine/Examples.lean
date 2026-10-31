@@ -63,11 +63,9 @@ def queryJson : Query Value → Json
   | .limit n q => Json.mkObj [("limit", Json.mkObj [("n", toJson n), ("query", queryJson q)])]
 
 def targetJson : Target → Json
-  | .doc d => Json.mkObj [("doc", docJson d)]
+  | .doc d r => Json.mkObj [("doc", docJson d), ("reach", toJson r.name)]
   | .vault v b => Json.mkObj [("vault", toJson (utf8Text v)), ("below", toJson b)]
   | .vaultType v t b => Json.mkObj [("vault", toJson (utf8Text v)), ("type", docJson t), ("below", toJson b)]
-  | .actor a b => Json.mkObj [("actor", docJson a), ("below", toJson b)]
-  | .vaultDef v d => Json.mkObj [("vault", toJson (utf8Text v)), ("def", docJson d)]
 
 def factsJson (f : Facts) : Json :=
   Json.mkObj [("id", docJson f.id), ("vault", toJson (utf8Text f.vault)), ("type", docJson f.type)]
@@ -86,17 +84,18 @@ def recJson (r : Rec Value) : Json :=
 /-- How many Records of each type the database has at all: the counts a query's bound and cost come from. -/
 def counts (db : List (Rec Value)) (ty : DocId) : Nat := (db.filter (·.type == ty)).length
 
-/-- No vault governs another, and no actor spawned another, in these examples. -/
+/-- No vault governs another, no actor spawned another and no collection lists a Doc, in these examples. -/
 def noGov : Bytes → Bytes → Bool := fun _ _ => false
 def noSpawn : DocId → DocId → Bool := fun _ _ => false
+def noLists : DocId → DocId → Bool := fun _ _ => false
 
 /-- A query vector: the directory's genesis facts, Records, the Docs held, a stored query; the answer (refused,
 complete, or short with the Docs missing), the query's bound and cost, and the work it did. -/
 def queryVector (name : String) (dir : List Facts) (db : List (Rec Value)) (held : List DocId) (s : Spec Value) :
     Json :=
   let heldF := fun d => held.contains d
-  let answer := run vals noGov noSpawn dir heldF db s
-  let docs := match s.target with | some t => resolve noGov noSpawn dir t | none => []
+  let answer := run vals noGov noSpawn noLists dir heldF db s
+  let docs := match s.target with | some t => resolve noGov noSpawn noLists dir t | none => []
   Json.mkObj [("name", toJson name),
     ("input", Json.mkObj [("directory", Json.arr (dir.map factsJson).toArray),
       ("records", Json.arr (db.map recJson).toArray), ("held", Json.arr (held.map docJson).toArray),
@@ -132,19 +131,19 @@ def openByDue : Query Value :=
       (utf8 "id") (utf8 "x2")
 
 -- Samuel's vault: the household and the garden books. The coop's Doc is outside it.
-#guard answerJson (run vals noGov noSpawn dir (· == home) tasks ⟨some (.vault (vault "samuel") false), openByDue⟩) ==
+#guard answerJson (run vals noGov noSpawn noLists dir (· == home) tasks ⟨some (.vault (vault "samuel") false), openByDue⟩) ==
   answerJson (.rows (.short [garden]) [
     rows [("id", text "t3"), ("x2", text "Prune the apple"), ("x1", text "2026-11-01")],
     rows [("id", text "t1"), ("x2", text "Order seeds"), ("x1", text "2026-11-02")]])
 
 -- One Doc as the target, held: complete.
-#guard answerJson (run vals noGov noSpawn dir (· == home) tasks ⟨some (.doc home), openByDue⟩) ==
+#guard answerJson (run vals noGov noSpawn noLists dir (· == home) tasks ⟨some (.doc home .self), openByDue⟩) ==
   answerJson (.rows .complete [
     rows [("id", text "t3"), ("x2", text "Prune the apple"), ("x1", text "2026-11-01")],
     rows [("id", text "t1"), ("x2", text "Order seeds"), ("x1", text "2026-11-02")]])
 
 -- A query without a target is refused.
-#guard answerJson (run vals noGov noSpawn dir (fun _ => true) tasks ⟨none, openByDue⟩) == toJson "refused"
+#guard answerJson (run vals noGov noSpawn noLists dir (fun _ => true) tasks ⟨none, openByDue⟩) == toJson "refused"
 
 def projects : List (Rec Value) :=
   (["ana", "ben", "cai", "dee"].map fun p => ⟨coop, memberOf, rows [("x1", text p), ("x2", text "garden")]⟩) ++
@@ -155,17 +154,17 @@ def crowded : Query Value :=
   .anti (.group (utf8 "x2") (.scan memberOf))
     (.filter (utf8 "count") .lt (.uint 4) (.group (utf8 "x2") (.scan memberOf))) (utf8 "x2") (utf8 "x2")
 
-#guard answerJson (run vals noGov noSpawn dir (fun _ => true) projects ⟨some (.doc coop), crowded⟩) ==
+#guard answerJson (run vals noGov noSpawn noLists dir (fun _ => true) projects ⟨some (.doc coop .self), crowded⟩) ==
   answerJson (.rows .complete [rows [("x2", text "garden"), ("count", .uint 4)]])
 
 def queryExamples : List Json := [
-  queryVector "open tasks by due date, one Doc" dir tasks [home] ⟨some (.doc home), openByDue⟩,
+  queryVector "open tasks by due date, one Doc" dir tasks [home] ⟨some (.doc home .self), openByDue⟩,
   queryVector "open tasks in a vault, one Doc not held: short" dir tasks [home]
     ⟨some (.vault (vault "samuel") false), openByDue⟩,
   queryVector "no target: refused" dir tasks [home] ⟨none, openByDue⟩,
-  queryVector "projects with more than three members" dir projects [coop] ⟨some (.doc coop), crowded⟩,
+  queryVector "projects with more than three members" dir projects [coop] ⟨some (.doc coop .self), crowded⟩,
   queryVector "the first two tasks" dir tasks [home, coop] ⟨some (.vault (vault "samuel") false), .limit 2 (.scan task)⟩,
-  queryVector "every task with its due date" dir tasks [home] ⟨some (.doc home),
+  queryVector "every task with its due date" dir tasks [home] ⟨some (.doc home .self),
     .join (.scan task) (.scan due) (utf8 "id") (utf8 "x2")⟩]
 
 /-! ## Wants -/
@@ -310,23 +309,17 @@ def refusedJson : Refused → Json
 def stepJson (s : Step) : Json :=
   Json.mkObj [("type", docJson s.type), ("verb", toJson s.verb.name), ("fields", toJson (s.fields.map utf8Text))]
 
-def grantJson (g : Grant) : Json :=
-  Json.mkObj [("type", docJson g.type), ("verb", toJson g.verb.name),
-    ("fields", match g.fields with | some fs => toJson (fs.map utf8Text) | none => Json.null)]
-
-/-- A mutation vector: the writer id, its counter, its grants, a Doc's Records and core operations; the footprint, the
-Records after the commit or why it was refused (and then the Doc is as it was), and every reader's check. -/
-def mutationVector (name : String) (w c : Nat) (grants : List Grant) (s : List (Record Value)) (ops : List (Op Value)) :
-    Json :=
+/-- A mutation vector: the writer id, its counter, a Doc's Records and core operations; the footprint, the Records after
+the commit or why it was refused (and then the Doc is as it was), and every reader's check. Whether the writer may call
+those ops is caps' (A32). -/
+def mutationVector (name : String) (w c : Nat) (s : List (Record Value)) (ops : List (Op Value)) : Json :=
   Json.mkObj [("name", toJson name),
     ("input", Json.mkObj [("writer", toJson w), ("counter", toJson c),
-      ("grants", Json.arr (grants.map grantJson).toArray),
       ("records", Json.arr (s.map recordJson).toArray), ("ops", Json.arr (ops.map opJson).toArray)]),
     ("expected", Json.mkObj [("footprint", Json.arr ((footprint ops).map stepJson).toArray),
-      ("covered", toJson (covers grants (footprint ops))),
       ("commit", match commit vals.eq ofId w c s ops with
         | .ok s' => Json.mkObj [("ok", Json.arr (s'.map recordJson).toArray),
-            ("check", toJson (check vals.eq grants ops s s'))]
+            ("check", toJson (check vals.eq ops s s'))]
         | .error e => Json.mkObj [("refused", refusedJson e)])])]
 
 def banana : DocId := doc "type:banana"
@@ -339,9 +332,6 @@ def bananas : List (Op Value) := [
   .put banana [],
   .put quantity [(utf8 "x1", .ref 0), (utf8 "x2", .lit (.uint 2))],
   .put eat [(utf8 "x1", .lit (text "samuel")), (utf8 "x2", .ref 0)]]
-
-def everything (tys : List DocId) : List Grant :=
-  tys.flatMap fun ty => [StepVerb.putNew, .patch, .remove, .edit].map fun v => ⟨ty, v, none⟩
 
 #guard (match commit vals.eq ofId 1 7 [] bananas with
   | .ok s => s.map fun r => (r.type, tupleJson r.fields)
@@ -360,52 +350,50 @@ def todo : List (Record Value) := [
 
 def tick : List (Op Value) := [.patch task (rows [("x2", text "Order seeds")]) (rows [("done", .uint 1)])]
 
--- A grant to tick tasks done, field `done` only, covers ticking; the diff passes every reader's check.
+-- Ticking a task done passes every reader's check of its diff.
 #guard (match commit vals.eq ofId 1 8 todo tick with
-  | .ok s' => check vals.eq [⟨task, .patch, some [utf8 "done"]⟩] tick todo s'
+  | .ok s' => check vals.eq tick todo s'
   | .error _ => false)
 
--- The same grant doesn't cover renaming a task.
-#guard covers [⟨task, .patch, some [utf8 "done"]⟩]
-  (footprint [.patch task (rows [("x2", text "Order seeds")]) (rows [("x2", text "Order bean seeds")])]) == false
+-- A diff that also renames the task is not within the tick's footprint.
+#guard diffWithin vals.eq (footprint tick) todo (todo.map fun r =>
+  if r.id == ⟨1, 1, 0⟩ then { r with fields := rows [("x2", text "Order bean seeds"), ("done", .uint 1)] } else r) ==
+  false
 
 /-- Every type Doc written under one schema version in these examples. -/
 def ver (t : DocId) : TypeId := ⟨t, blake3 (utf8 "schema:v1")⟩
 
--- Ticking a task done is one edited Record whose one field is `done`, and the untouched task is no change; the grant to patch `done` passes the verdict's
--- footprint part on it.
+-- Ticking a task done is one edited Record whose one field is `done`, and the untouched task is no change; it passes the
+-- verdict's footprint part.
 #guard (match commit valEq ofId 1 8 todo tick with
   | .ok s' => ((changesFrom ver todo s').map fun c => (c.kind, c.names.map utf8Text),
-      verdictFootprint [⟨task, .patch, some [utf8 "done"]⟩] (footprint tick) (changesFrom ver todo s'))
+      verdictFootprint (footprint tick) (changesFrom ver todo s'))
   | .error _ => ([], false)) ==
   ([(Aven.DB.Docs.ChangeKind.edited, ["done"])], true)
 
--- A merge into main is judged on the whole merge. A proposal renamed the task; the merger, granted only to tick
--- tasks done, settles the merge by ticking it. The settling commit's own changes are only `done`, which the narrow
--- grant covers; the whole merge also renames the task on main, which it doesn't.
+-- A merge into main is judged on the whole merge. A proposal renamed the task; the merger, whose cap lets it only tick
+-- tasks done, settles the merge by ticking it. The settling commit's own changes are only `done`, within the tick's
+-- footprint; the whole merge also renames the task on main, which isn't, so the merge's footprint must hold the
+-- rename's call too, and caps checks the merger may call it (`Aven.ID.merge_covered`).
 def mainBefore : List (Record Value) := [⟨⟨1, 1, 0⟩, task, rows [("x2", text "Order seeds"), ("done", .uint 0)]⟩]
 def proposal : List (Record Value) := [⟨⟨1, 1, 0⟩, task, rows [("x2", text "Order bean seeds"), ("done", .uint 0)]⟩]
 def merged : List (Record Value) := [⟨⟨1, 1, 0⟩, task, rows [("done", .uint 1), ("x2", text "Order bean seeds")]⟩]
-def tickOnly : List Grant := [⟨task, .patch, some [utf8 "done"]⟩]
 def settle : List (Op Value) := [.patch task [] (rows [("done", .uint 1)])]
 
-#guard verdictFootprint tickOnly (footprint settle) (changesFrom ver proposal merged) == true
-#guard verdictFootprint tickOnly (footprint settle) (changesFrom ver mainBefore merged) == false
+#guard verdictFootprint (footprint settle) (changesFrom ver proposal merged) == true
+#guard verdictFootprint (footprint settle) (changesFrom ver mainBefore merged) == false
 
 def mutationExamples : List Json := [
-  mutationVector "I ate 2 bananas" 1 7 (everything [banana, quantity, eat]) [] bananas,
-  mutationVector "a reference forward: refused" 1 7 (everything [banana, eat]) []
-    [.put eat [(utf8 "x2", .ref 1)], .put banana []],
-  mutationVector "a reference to a patch: refused" 1 7 (everything [task, note]) todo
+  mutationVector "I ate 2 bananas" 1 7 [] bananas,
+  mutationVector "a reference forward: refused" 1 7 [] [.put eat [(utf8 "x2", .ref 1)], .put banana []],
+  mutationVector "a reference to a patch: refused" 1 7 todo
     [.patch task [] (rows [("done", .uint 1)]), .put note [(utf8 "x1", .ref 0)]],
-  mutationVector "tick one task done, granted the done field" 1 8 [⟨task, .patch, some [utf8 "done"]⟩] todo tick,
-  mutationVector "rename a task, granted only the done field: not covered" 1 8 [⟨task, .patch, some [utf8 "done"]⟩]
-    todo [.patch task (rows [("x2", text "Order seeds")]) (rows [("x2", text "Order bean seeds")])],
-  mutationVector "remove done tasks" 1 9 (everything [task]) todo
-    (tick ++ [.remove task (rows [("done", .uint 1)])]),
-  mutationVector "edit a title" 2 5 [⟨task, .edit, some [utf8 "x2"]⟩] todo
-    [.edit task ⟨2, 4, 0⟩ (utf8 "x2") (text "Water the beans at dawn")],
-  mutationVector "edit a Record that isn't there: refused" 2 5 (everything [task]) todo
+  mutationVector "tick one task done" 1 8 todo tick,
+  mutationVector "rename a task" 1 8 todo
+    [.patch task (rows [("x2", text "Order seeds")]) (rows [("x2", text "Order bean seeds")])],
+  mutationVector "remove done tasks" 1 9 todo (tick ++ [.remove task (rows [("done", .uint 1)])]),
+  mutationVector "edit a title" 2 5 todo [.edit task ⟨2, 4, 0⟩ (utf8 "x2") (text "Water the beans at dawn")],
+  mutationVector "edit a Record that isn't there: refused" 2 5 todo
     [.patch task [] (rows [("done", .uint 1)]), .edit task ⟨3, 1, 0⟩ (utf8 "x2") (text "?")]]
 
 /-! ## Sealed indexes -/

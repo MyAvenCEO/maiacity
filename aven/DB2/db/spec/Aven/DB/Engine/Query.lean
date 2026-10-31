@@ -125,22 +125,25 @@ def eval (V : Vals Val) (src : DocId → List (Tuple Val)) : Query Val → List 
 
 /-! ## Scope (A8) -/
 
-/-- `Aven.Core.Target.covers`, decided: who governs whom and which actor spawned which are given as tests. -/
-def inTarget (gov : Bytes → Bytes → Bool) (spawned : DocId → DocId → Bool) : Target → Facts → Bool
-  | .doc d, f => f.id == d
+/-- `Aven.Core.Target.covers`, decided: who governs whom, which actor spawned which and what a collection lists are
+given as tests. -/
+def inTarget (gov : Bytes → Bytes → Bool) (spawned lists : DocId → DocId → Bool) : Target → Facts → Bool
+  | .doc d .self, f => f.id == d
+  | .doc d .spawned, f => f.id == d || spawned d f.id
+  | .doc d .lists, f => f.id == d || lists d f.id
   | .vault v b, f => f.vault == v || (b && gov v f.vault)
   | .vaultType v t b, f => f.type == t && (f.vault == v || (b && gov v f.vault))
-  | .actor a b, f => f.id == a || (b && spawned a f.id)
-  | .vaultDef v d, f => f.vault == v && f.type == d
 
-theorem inTarget_iff (gov : Bytes → Bytes → Bool) (spawned : DocId → DocId → Bool) (t : Target) (f : Facts) :
-    inTarget gov spawned t f = true ↔ t.covers (gov · · = true) (spawned · · = true) f := by
-  cases t <;> simp [inTarget, Target.covers]
+theorem inTarget_iff (gov : Bytes → Bytes → Bool) (spawned lists : DocId → DocId → Bool) (t : Target) (f : Facts) :
+    inTarget gov spawned lists t f = true ↔ t.covers (gov · · = true) (spawned · · = true) (lists · · = true) f := by
+  cases t with
+  | doc d r => cases r <;> simp [inTarget, Target.covers]
+  | _ => simp [inTarget, Target.covers]
 
 /-- The Docs a target resolves to, among those a directory lists. -/
-def resolve (gov : Bytes → Bytes → Bool) (spawned : DocId → DocId → Bool) (dir : List Facts) (t : Target) :
+def resolve (gov : Bytes → Bytes → Bool) (spawned lists : DocId → DocId → Bool) (dir : List Facts) (t : Target) :
     List DocId :=
-  (dir.filter (inTarget gov spawned t)).map (·.id)
+  (dir.filter (inTarget gov spawned lists t)).map (·.id)
 
 /-- How complete an answer is: every Doc of the target held, or the ones still missing. -/
 inductive Completeness where
@@ -164,15 +167,15 @@ def answerOver (V : Vals Val) (docs : List DocId) (held : DocId → Bool) (db : 
   .rows (if missing = [] then .complete else .short missing) (eval V (inScope db docs held) q)
 
 /-- Run a stored query over the Docs its target resolves to in a directory. -/
-def run (V : Vals Val) (gov : Bytes → Bytes → Bool) (spawned : DocId → DocId → Bool) (dir : List Facts)
+def run (V : Vals Val) (gov : Bytes → Bytes → Bool) (spawned lists : DocId → DocId → Bool) (dir : List Facts)
     (held : DocId → Bool) (db : List (Rec Val)) (s : Spec Val) : Answer Val :=
   match s.target with
   | none => .refused
-  | some t => answerOver V (resolve gov spawned dir t) held db s.body
+  | some t => answerOver V (resolve gov spawned lists dir t) held db s.body
 
-theorem run_refused_without_target (V : Vals Val) (gov : Bytes → Bytes → Bool) (spawned : DocId → DocId → Bool)
+theorem run_refused_without_target (V : Vals Val) (gov : Bytes → Bytes → Bool) (spawned lists : DocId → DocId → Bool)
     (dir : List Facts) (held : DocId → Bool) (db : List (Rec Val)) (q : Query Val) :
-    run V gov spawned dir held db ⟨none, q⟩ = .refused := rfl
+    run V gov spawned lists dir held db ⟨none, q⟩ = .refused := rfl
 
 /-- An answer over some Docs is `complete` exactly when every one of them is held. -/
 theorem answerOver_complete_iff (V : Vals Val) (docs : List DocId) (held : DocId → Bool) (db : List (Rec Val))
@@ -195,18 +198,18 @@ theorem answerOver_complete_iff (V : Vals Val) (docs : List DocId) (held : DocId
     simp [this]
 
 /-- **`complete` means exactly that every Doc the target resolves to is held** (A8). -/
-theorem complete_iff (V : Vals Val) (gov : Bytes → Bytes → Bool) (spawned : DocId → DocId → Bool)
+theorem complete_iff (V : Vals Val) (gov : Bytes → Bytes → Bool) (spawned lists : DocId → DocId → Bool)
     (dir : List Facts) (held : DocId → Bool) (db : List (Rec Val)) (t : Target) (q : Query Val) :
-    (∃ rs, run V gov spawned dir held db ⟨some t, q⟩ = .rows .complete rs) ↔
-      ∀ f ∈ dir, t.covers (gov · · = true) (spawned · · = true) f → held f.id = true := by
+    (∃ rs, run V gov spawned lists dir held db ⟨some t, q⟩ = .rows .complete rs) ↔
+      ∀ f ∈ dir, t.covers (gov · · = true) (spawned · · = true) (lists · · = true) f → held f.id = true := by
   simp only [run]
   rw [answerOver_complete_iff]
   simp only [resolve, List.mem_map, List.mem_filter]
   constructor
   · intro h f hf hc
-    exact h f.id ⟨f, ⟨hf, (inTarget_iff gov spawned t f).mpr hc⟩, rfl⟩
+    exact h f.id ⟨f, ⟨hf, (inTarget_iff gov spawned lists t f).mpr hc⟩, rfl⟩
   · rintro h d ⟨f, ⟨hf, hc⟩, rfl⟩
-    exact h f hf ((inTarget_iff gov spawned t f).mp hc)
+    exact h f hf ((inTarget_iff gov spawned lists t f).mp hc)
 
 /-- A Record outside the scope, or in a Doc not held, changes no answer: rows come from the scope alone. -/
 theorem scoped_only (db : List (Rec Val)) (docs : List DocId) (held : DocId → Bool) (ty : DocId) :

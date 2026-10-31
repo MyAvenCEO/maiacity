@@ -224,11 +224,6 @@ def logs : List Json :=
 
 /-! ## Targets and footprints -/
 
-def Aven.Core.Reach.name : Reach → String
-  | .self => "self"
-  | .spawned => "spawned"
-  | .lists => "lists"
-
 def Aven.Core.Target.json : Target → Json
   | .doc d r => Json.mkObj [("doc", d.text), ("reach", r.name)]
   | .vault v b => Json.mkObj [("vault", utf8Text v), ("below", toJson b)]
