@@ -402,3 +402,204 @@ async fn the_keyring_travels_plain() {
         aven_id::caps::EpochRecord::of_value(&Value::Map(r.fields.clone().into_iter().collect()));
     assert_eq!(back.map(|r| r.epoch.name()), Some(record.epoch.name()));
 }
+
+/// A peer's view as caps reads it: who each device serves, which devices hold a device cap, and the cap Records the
+/// peer holds. The test Doc is Alice's vault's.
+struct Peer {
+    devices: Vec<([u8; 32], &'static str, bool)>,
+    held: Vec<aven_id::caps::Cap>,
+    tree: aven_id::Tree,
+}
+
+impl aven_peer::joined::Holding for Peer {
+    fn judge<R>(&self, f: impl FnOnce(&aven_id::caps::Reader, &[aven_id::caps::Cap]) -> R) -> R {
+        use aven_id::caps::{Branches, Ctx, DeviceCap, Reader, World, vault_id};
+        let doc = genesis().id();
+        let facts = |d: &DocId| {
+            (*d == doc).then(|| aven_core::Facts {
+                id: doc,
+                vault: vault_id("alice"),
+                r#type: todo_type().r#type,
+            })
+        };
+        let device = |k: &[u8]| self.devices.iter().find(|d| d.0 == k);
+        let vault_of = |k: &[u8]| device(k).map(|d| d.1.to_string());
+        let device_cap = |k: &[u8]| {
+            device(k).filter(|d| d.2).map(|d| DeviceCap {
+                device: format!("{}-device", d.1),
+                vault: d.1.into(),
+                grants: None,
+                branches: Branches::Any,
+                host: false,
+            })
+        };
+        let reader = Reader {
+            ctx: Ctx {
+                tree: &self.tree,
+                threshold: &|_| 1,
+                in_group: &|_, _| false,
+                roles: &[],
+                facts: &facts,
+            },
+            world: World {
+                gov: &|_, _| false,
+                spawned: &|_, _| false,
+                lists: &|_, _| false,
+            },
+            member: &|_| false,
+            vault_of: &vault_of,
+            device_cap: &device_cap,
+        };
+        f(&reader, &self.held)
+    }
+}
+
+/// A cap that names Bob's vault as holder of a line on the test Doc, issued by nobody: it reaches, it authorizes
+/// nothing.
+fn unissued_cap() -> aven_id::caps::Cap {
+    use aven_id::caps::{Cap, Conditions, Form, Holder, Line};
+    Cap {
+        id: "unissued".into(),
+        issuer: "alice".into(),
+        holder: Holder::Vault("bob".into()),
+        parent: None,
+        form: Form::Grant,
+        grant: vec![Line {
+            op: blake3(b"any op"),
+            doc: aven_core::Target::Doc {
+                doc: genesis().id(),
+                reach: aven_core::Reach::Itself,
+            },
+            params: vec![],
+        }],
+        role: None,
+        share: 0,
+        conditions: Conditions::default(),
+        signer: None,
+        approvals: vec![],
+    }
+}
+
+#[tokio::test]
+async fn caps_judges_every_envelope() {
+    use aven_id::caps::{Path, Refusal, Refused as CapsRefused};
+    use aven_peer::joined::Caps;
+    let (alice, bob, alices_new, eve) = (key(1), key(2), key(3), key(9));
+    let peer = || {
+        Caps(Peer {
+            devices: vec![
+                (*alice.public().as_bytes(), "alice", true),
+                (*bob.public().as_bytes(), "bob", true),
+                (*alices_new.public().as_bytes(), "alice", false),
+            ],
+            held: vec![unissued_cap()],
+            tree: aven_id::Tree::new(vec![], vec![]).unwrap(),
+        })
+    };
+    let open = |s: Shelf<DynStore>| {
+        Reader::open(
+            s,
+            genesis(),
+            types,
+            Limits::DEFAULTS,
+            vec![epoch()],
+            peer(),
+            BTreeSet::new(),
+        )
+    };
+    let mut e = TestEntropy::new("the caps test");
+    let mut a = open(shelf()).await.unwrap();
+    let mut b = open(shelf()).await.unwrap();
+
+    // Alice's device writes on her vault's own authority, and the other reader takes it
+    let c = a
+        .commit(
+            &alice,
+            0,
+            &put("t1", "milk"),
+            "2026-10-31T12:00:00Z",
+            Act::default(),
+            &mut e,
+        )
+        .await
+        .unwrap();
+    let body = Body::of_value(&c.envelope.body).unwrap();
+    assert_eq!(peer().verdict(&c.envelope, &body), Ok(Path::Own));
+    let Live::Sealed(sealed) = c.live else {
+        panic!("a small commit gossips whole")
+    };
+    assert_eq!(
+        b.take(&[sealed]).await.unwrap(),
+        vec![Taken::Imported(vec![Ok(Imported::Counts)])]
+    );
+
+    // what each would write, judged by caps before it is signed
+    let judged = |device: &SecretKey, act: Act| {
+        let p = a
+            .host
+            .prepare(
+                *device.public().as_bytes(),
+                0,
+                &put("t2", "eggs"),
+                "2026-10-31T12:00:00Z",
+                act,
+            )
+            .unwrap();
+        let mut env = p.envelope().clone();
+        env.add_sig(aven_core::Sig {
+            signer: device.public().as_bytes().to_vec(),
+            sig: device.sign(&p.signing()).to_bytes().to_vec(),
+        });
+        let body = Body::of_value(&env.body).unwrap();
+        peer().verdict(&env, &body)
+    };
+    // a device of Alice's vault without a device cap
+    assert_eq!(
+        judged(&alices_new, Act::default()),
+        Err(Some(CapsRefused::Reader(Refusal::Device)))
+    );
+    // Bob on no authority: his vault isn't the Doc's
+    assert_eq!(
+        judged(&bob, Act::default()),
+        Err(Some(CapsRefused::Reader(Refusal::NoAuthority)))
+    );
+    // Bob under a cap nobody issued: held, so it reaches, but its chain is refused
+    let forged = Act {
+        cap: Some(unissued_cap().digest()),
+        ..Act::default()
+    };
+    assert!(matches!(
+        judged(&bob, forged),
+        Err(Some(CapsRefused::Reader(Refusal::Chain(_))))
+    ));
+    // Bob under a cap no reader holds
+    let unknown = blake3(b"a cap nobody holds");
+    assert_eq!(
+        judged(
+            &bob,
+            Act {
+                cap: Some(unknown),
+                ..Act::default()
+            }
+        ),
+        Err(Some(CapsRefused::UnknownCap(unknown)))
+    );
+
+    // at the gate: Bob reaches through the cap he holds, Eve through nothing
+    let auth = peer();
+    assert!(auth.reaches(&genesis(), bob.public().as_bytes()));
+    assert!(!auth.reaches(&genesis(), eve.public().as_bytes()));
+    // and a reader refuses to sign what caps refuses
+    let p = a
+        .host
+        .prepare(
+            *bob.public().as_bytes(),
+            0,
+            &put("t3", "tea"),
+            "2026-10-31T12:00:00Z",
+            Act::default(),
+        )
+        .unwrap();
+    let sig = bob.sign(&p.signing()).to_bytes();
+    assert!(a.host.finish(p, sig).await.is_err());
+}
