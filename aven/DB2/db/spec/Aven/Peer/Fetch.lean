@@ -6,7 +6,9 @@ import Aven.Core.Signed
 One gate serves every sealed Value a peer hands out for a Doc: a keeper's by arrival number (`Aven.Peer.Keeper`) and a
 reader's by version ("Docs in the Peers"). It runs on our own ALPN, `aven/db/1`, because a fetch proof signs the TLS
 exporter of the connection that serves (`Aven.ID.Keep`, `served_current`), and iroh opens one connection per ALPN
-(the architect, 31 Oct 2026). iroh-blobs stays for files.
+(the architect, 31 Oct 2026). Every Docs frame names a Doc by its id (A9). iroh-blobs carries the first
+generation's chat files until the cutover; after it a file's chunks are Values a file Record names, fetched through
+this gate like any sealed Value (A22).
 
 - **`prove`:** a device proves a Doc's fetch key on this connection, and only to a peer it knows holds the Doc
   (`prove_only_to_holders`); whether the proof holds is `Keep.serves`. The
