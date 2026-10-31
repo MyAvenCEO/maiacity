@@ -145,6 +145,14 @@ thread's recommendation. Samuel may overrule any.
 - **Files are no special case:** a file's chunks and its chunk list are Values that a file Record in a Doc names
   (`db/docs`), kept and read as that Doc is. Until Docs come (milestone 4), the chat's `file` posts stand for that
   Record, and a keeper keeps a file under the keep caps of the vault whose device posted it.
+- **An option for later** (the architect, 31 Oct 2026; Samuel's call): the default keep cap could name "Maia City's
+  keepers", served by every keeper Peer Maia City runs, rather than the Aven Peer alone. A second Maia City keeper
+  would then give every vault two keepers without each vault acting.
+- **Forgetting** (`Aven.ID.Forget`, D5): a key rotation shuts a removed reader out of every epoch after it
+  (`rotation_shuts_out`); once no party holds a Doc's keys, no sealed copy any keeper still holds is readable by
+  anyone (`forgotten`, `forgotten_unreadable`), with sealing taken as sound. What a reader copied before stays its own,
+  and nothing takes it back (`copied_stays`). Keepers dropping the bytes themselves, on a withdrawn keep cap or a
+  delete, is the caps thread's (D2, D3).
 - **The chat's logs:** every native Peer keeps every log it hears, as the Aven Peer does today. They are small.
 - **A keeper leaves** when its `keeper-remove` settles, or when it hasn't beaten for 7 days. Its keep caps then name
   a keeper that isn't there: avenOS tells the vault's owners, and the default keeper still holds what it covers. A
