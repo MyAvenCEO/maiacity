@@ -321,7 +321,22 @@ fn any_bytes_case() -> impl Strategy<Value = Vec<u8>> {
         e.encode()
     });
     let target = any_target().prop_map(|t| encode(&t.value()));
-    let base = prop_oneof![4 => envelope, 4 => signed, 1 => wide, 3 => target];
+    // a Doc or type id that isn't 32 bytes: refused by both
+    let short = (30usize..35, any::<bool>()).prop_map(|(n, doc)| {
+        encode(&if doc {
+            Value::Map(vec![
+                ("doc".into(), Value::Bytes(vec![1; n])),
+                ("reach".into(), Value::Text("self".into())),
+            ])
+        } else {
+            Value::Map(vec![
+                ("type".into(), Value::Bytes(vec![1; n])),
+                ("below".into(), Value::Bool(true)),
+                ("vault".into(), Value::Text("v:alice".into())),
+            ])
+        })
+    });
+    let base = prop_oneof![4 => envelope, 4 => signed, 1 => wide, 3 => target, 1 => short];
     // now and then broken: a byte changed, cut short, or a byte added
     (base, 0u8..4, any::<prop::sample::Index>(), any::<u8>()).prop_map(|(mut bs, how, at, b)| {
         let i = at.index(bs.len());
@@ -420,8 +435,8 @@ proptest! {
         for (i, _) in c.targets.iter().enumerate() {
             for (j, _) in c.targets.iter().enumerate() {
                 if le[i][j] {
-                    for k in 0..c.facts.len() {
-                        prop_assert!(!covers[i][k] || covers[j][k]);
+                    for (a, b) in covers[i].iter().zip(&covers[j]) {
+                        prop_assert!(!a || *b);
                     }
                 }
             }
