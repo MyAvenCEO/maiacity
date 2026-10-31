@@ -116,11 +116,13 @@ admin; a key only signs for one. A vault is its owners, how many of them must ag
   `check` names the first rule a tree breaks.
 - **In Lean,** `Tree`, its checks and caps' model are generic in the vault id (A210): every theorem holds for any id
   with decidable equality, and the cast's tables, which the kernel decides, use readable handles as test fixtures.
-  Formats and vectors take the 32-byte name, each cast vault named by a fixed genesis that only compiled code computes.
+  Formats and vectors take the 32-byte name, each cast vault named by a fixed genesis that only compiled code computes,
+  its nonce `VaultName.castNonce` (A214). A vector's case description may name a cast vault by its handle; every byte
+  form and every readable form of a Value carries the name. A device vault has `key` and no other kind has one.
 - **A vault fingerprint** lets two people compare a vault once, as Signal's safety numbers do, so a host that invents a
   vault looking like Bob's is caught.
 
-**Decided:** rule 15, A1, A28, A42, A162, A164, A178, A190, A210, A211  ·  **Lean:** `Aven.ID.Tree`, `Aven.ID.WF`;
+**Decided:** rule 15, A1, A28, A42, A162, A164, A178, A190, A210, A211, A214  ·  **Lean:** `Aven.ID.Tree`, `Aven.ID.WF`;
 `Aven.ID.Check` — `check_iff`; `Aven.ID.Name` — `name_examples`, `person_name_examples`; `Aven.ID.VaultName` —
 `vaultName_inj`, `vaultName_len`, `name_ignores_owners` (#1738)
 
