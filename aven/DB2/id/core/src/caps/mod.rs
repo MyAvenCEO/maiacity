@@ -13,6 +13,7 @@ mod member;
 mod records;
 mod revoke;
 mod types;
+mod verdict;
 
 pub use approve::Sig;
 pub use authority::Authority;
@@ -28,3 +29,4 @@ pub use member::{
 pub use records::{CapRecord, EpochRecord, IdRecord, REVOKE_LABEL, RevokeRecord, id_builtin_fit};
 pub use revoke::{Doc, Reads, Revocation, Verdict};
 pub use types::{BUILTIN_TYPES, builtin_type, group_type};
+pub use verdict::{PastReads, Refused, Written, authorized, revoked};

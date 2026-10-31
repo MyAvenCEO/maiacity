@@ -421,7 +421,7 @@ fn verdict(r: &aven_id::caps::Reader, reading: &aven_id::caps::Reading) -> Value
 }
 
 /// A reader and the reading of an `authorized.json`-form input, handed to `f`.
-fn with_reader<T>(
+pub fn with_reader<T>(
     input: &Value,
     f: impl FnOnce(&aven_id::caps::Reader, &aven_id::caps::Reading, &Names) -> T,
 ) -> T {
