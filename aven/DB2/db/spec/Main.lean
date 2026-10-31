@@ -4,7 +4,7 @@ import Aven.DB.Json
 # The model runs (README, rule 10)
 
 `aven-db-model` replays traces, one JSON object per line on stdin, and writes the state after every event, one JSON
-object per line on stdout (`Aven.DB.Json`). `aven-db-core`'s tests generate random traces and compare the Rust machines
+object per line on stdout (`Aven.DB.Json`). `aven-gen1`'s tests generate random traces and compare the Rust machines
 with this; `aven-db-store`'s compare its memory store, call by call, when a line has `store`.
 
     in:  {"limit": 3, "status": ["dial", "frame", "tick", "lost"], "presence": [["join", 1], ["leave", 1]]}

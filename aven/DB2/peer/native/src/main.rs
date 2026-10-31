@@ -56,11 +56,11 @@ use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use aven_db_core::files::Announcement;
-use aven_db_core::timeline;
-use aven_db_core::wire::ALPN;
 use aven_db_store::backend::{self, DalStore};
 use aven_db_store::blobs::Blobs;
+use aven_gen1::files::Announcement;
+use aven_gen1::timeline;
+use aven_gen1::wire::ALPN;
 use aven_id::Relying;
 use aven_peer::chats::{self, Chats};
 use aven_peer::keys::{self, Members};

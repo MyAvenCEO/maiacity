@@ -6,7 +6,7 @@ sees connections, not peers: one peer may hold two (a page open in two tabs, a r
 state is one entry per open connection, and presence is the peers with at least one. Presence counts each connected
 peer once: no peer twice, and none that is gone.
 
-`aven-db-core`'s `presence` module implements this machine, and its tests replay random traces against `Main.lean`.
+`aven-gen1`'s `presence` module implements this machine, and its tests replay random traces against `Main.lean`.
 -/
 
 namespace Aven.DB

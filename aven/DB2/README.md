@@ -80,7 +80,7 @@ avenPEER is the edge: it does all the I/O and runs avenDB's pure cores, and noth
 |---|---|
 | avenOS | the client app over everything below it: a dashboard of apps, the first two Vault and Control Room, and an account switcher for the people you may act as. Off the box, its browser client shows "avenOS · coming soon" for now; a Mac app with Tauri follows |
 | avenPEER | the node: the network, installing and running a node, and the one writer, on avenDB. The native Peer and the Peer-Light, one core in two builds |
-| avenDB | the database: this rebuild. Its core (`db/core`) holds the rules for documents, caps and sync without I/O; its store (`store`) is the one contract of blobs and refs, with a backend per place: S3, a folder, OPFS, memory |
+| avenDB | the database: this rebuild. Its first generation (`gen1`, `aven-gen1`) holds the wire, the chat's chains, status and presence without I/O; its store (`store`) is the one contract of blobs and refs, with a backend per place: S3, a folder, OPFS, memory |
 | avenID | identity, a package of its own: keys and their suites, vaults that own vaults, owners acting k of n, recovery and rotation. avenDB asks it who may act for a vault, avenPEER whom to let in, and avenOS shows it |
 | avenDB-old | the old database, in `aven/db/`: the testing and learning battleground until avenDB is ready, then deprecated. "v1" still names the whole old stack (its site, API and peer) |
 | `aven/DB2` | the new avenDB's folder while avenDB-old still lives in `aven/db`. A Mac's disk ignores case, so `aven/DB` couldn't sit beside `aven/db`, and a path spelled `aven/db2` works on a Mac and fails on Linux and CI; a check will reject any other spelling. When avenDB-old is deprecated, the new avenDB moves into `aven/db` |
@@ -145,7 +145,7 @@ repository: an id names a product, not a separate repository.
 | Where | avenOS | avenPEER | avenDB | avenID | avenSANDBOX |
 |---|---|---|---|---|---|
 | JS packages (npm scope `@aven`) | `@aven/os` (`aven/DB2/package.json`) | `@aven/peer`, the Peer-Light for pages (later) | | none: it runs inside the Peer-Light | none: tooling of this repository |
-| Rust crates | | `aven-peer` (native), `aven-peer-light` (wasm) | `aven-db-core`, `aven-db-store` | `aven-id` | |
+| Rust crates | | `aven-peer` (native), `aven-peer-light` (wasm) | `aven-gen1`, `aven-db-store` | `aven-id` | |
 | Container images | | `ghcr.io/myavenceo/aven/peer` (later): the node, the `aven-peer` binary on a minimal base, run in production and by the box's peers alike | | | `ghcr.io/myavenceo/aven/sandbox`, the box built from this repository's Dockerfile so machines can download it |
 | Lean | | | `Aven.DB` | `Aven.ID` | |
 | Protocol (ALPN) | | | `aven/db/1`, which avenPEER carries | | |

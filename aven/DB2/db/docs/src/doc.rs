@@ -57,8 +57,35 @@ pub trait Authorize {
     /// stranger's envelope is refused here, before any of its bytes reaches Loro, and is never held.
     fn reaches(&self, genesis: &Genesis, signer: &[u8]) -> bool;
 
-    /// Step 7: the cap chain is valid, live and covering. This verdict can turn by a later revocation.
-    fn authorized(&self, genesis: &Genesis, e: &Envelope, body: &Body) -> bool;
+    /// Step 7: the cap chain is valid, live and covering, judged against the envelope's own past, so every reader
+    /// reaches the same verdict whatever order it imported in. This verdict can turn by a later revocation.
+    fn authorized(&self, genesis: &Genesis, e: &Envelope, body: &Body, past: &Past<'_>) -> bool;
+}
+
+/// An envelope's past as a reader holds it: every held envelope it reaches through `prev` and `deps`, in the order
+/// they were held, each with its name and body. Import holds the whole past before it asks (step 6), so every reader
+/// sees the same past. Whether those envelopes count is decided after: if any doesn't, neither does this one, so a
+/// verdict on the past only matters where all of it counts.
+pub struct Past<'a> {
+    items: Vec<(Hash, &'a Envelope, &'a Body)>,
+}
+
+impl<'a> Past<'a> {
+    pub fn iter(&self) -> impl Iterator<Item = (Hash, &'a Envelope, &'a Body)> + '_ {
+        self.items.iter().copied()
+    }
+
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
+    pub fn contains(&self, name: &Hash) -> bool {
+        self.items.iter().any(|x| x.0 == *name)
+    }
 }
 
 /// One Record at a version: its type Doc and its fields.
@@ -174,6 +201,8 @@ pub enum CommitError {
     Stuck,
     /// It was refused or didn't count as its own reader judged it.
     NotCounted(String),
+    /// The Doc moved on between prepare and finish: prepare again.
+    Moved,
 }
 
 /// One Record's writes in a commit, under the schema version the app writes through.
@@ -228,6 +257,8 @@ pub struct Doc {
     head: Head,
     snapshot: Arc<Snapshot>,
     feed: Vec<Feed>,
+    /// Envelopes the caller marked unfit: the judge crashed on them alone.
+    crashed: BTreeSet<Hash>,
 }
 
 fn fresh() -> LoroDoc {
@@ -402,6 +433,27 @@ fn changes_of(
     Ok(out)
 }
 
+/// A sealed thing catch-up fetched: a loose envelope, or a segment.
+#[derive(Clone, Copy, Debug)]
+pub enum SealedItem<'a> {
+    Loose(&'a [u8]),
+    Segment(&'a [u8]),
+}
+
+/// Why a sealed thing in a page didn't open.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Unopened {
+    /// Not a sealed thing within the limits.
+    Form,
+    /// Sealed for another Doc.
+    Doc,
+    /// An epoch the reader holds no key for.
+    Epoch(Hash),
+    /// It doesn't open under its epoch's key.
+    Seal,
+    Segment(BadSegment),
+}
+
 /// What steps 1 to 8 made of an envelope: held (with whether it is half of a split), or a verdict already.
 enum Checked {
     Held(usize, bool),
@@ -516,6 +568,7 @@ impl Doc {
             },
             snapshot: Arc::new(Snapshot::default()),
             feed: vec![],
+            crashed: BTreeSet::new(),
         })
     }
 
@@ -600,6 +653,58 @@ impl Doc {
         Ok(self.import_page(&page, auth))
     }
 
+    /// Imports a page of sealed things as catch-up fetches them, loose envelopes and segments mixed, in one batch: each
+    /// is opened under its epoch's key (found by the epoch its outside names), segments are flattened in order, and the
+    /// whole goes through [`Doc::import_page`]: one judge, one `import_batch`, one snapshot. Per item, the results of its
+    /// envelopes in order, or why it didn't open.
+    pub fn import_sealed_page<'k>(
+        &mut self,
+        items: &[SealedItem<'_>],
+        epochs: impl Fn(&Hash) -> Option<&'k EpochKey>,
+        auth: &impl Authorize,
+    ) -> Vec<Result<Vec<Result<Imported, Refused>>, Unopened>> {
+        let limit = self.limits.sealed + self.limits.sealed / 8 + 256;
+        let seg_limit = self.limits.segment_bytes + self.limits.segment_bytes / 8 + 256;
+        let mut opened: Vec<Result<Vec<Vec<u8>>, Unopened>> = Vec::with_capacity(items.len());
+        for item in items {
+            let bytes = match item {
+                SealedItem::Loose(b) | SealedItem::Segment(b) => *b,
+            };
+            let Some(out) = crate::seal::outside(bytes, limit.max(seg_limit)) else {
+                opened.push(Err(Unopened::Form));
+                continue;
+            };
+            if out.doc != self.id {
+                opened.push(Err(Unopened::Doc));
+                continue;
+            }
+            let Some(epoch) = epochs(&out.epoch) else {
+                opened.push(Err(Unopened::Epoch(out.epoch)));
+                continue;
+            };
+            opened.push(match item {
+                SealedItem::Loose(b) => match open(Kind::Envelope, epoch, b, limit) {
+                    Some((d, pt)) if d == self.id => Ok(vec![pt]),
+                    _ => Err(Unopened::Seal),
+                },
+                SealedItem::Segment(b) => Segment::open(b, &self.id, epoch, &self.limits)
+                    .map(|(s, _)| s.envelopes)
+                    .map_err(Unopened::Segment),
+            });
+        }
+        let page: Vec<&[u8]> = opened
+            .iter()
+            .flatten()
+            .flatten()
+            .map(Vec::as_slice)
+            .collect();
+        let mut results = self.import_page(&page, auth).into_iter();
+        opened
+            .into_iter()
+            .map(|o| o.map(|envs| results.by_ref().take(envs.len()).collect()))
+            .collect()
+    }
+
     /// Imports one envelope's bytes, then whatever waited on it: a page of one.
     pub fn import(&mut self, bytes: &[u8], auth: &impl Authorize) -> Result<Imported, Refused> {
         self.import_page(&[bytes], auth)
@@ -633,10 +738,22 @@ impl Doc {
         loop {
             let before = self.waiting.len();
             for w in std::mem::take(&mut self.waiting) {
-                // a refusal now is final: the bytes are dropped
-                if let Ok(Checked::Held(i, sp)) = self.import_one(&w, auth) {
-                    split |= sp;
-                    fresh_held.push((i, None));
+                // a refusal now is final: the bytes are dropped; one of this page's own that waited takes its verdict
+                let mine = page
+                    .iter()
+                    .position(|b| *b == w.as_slice())
+                    .filter(|&k| results[k] == Ok(Imported::Waits));
+                match self.import_one(&w, auth) {
+                    Ok(Checked::Held(i, sp)) => {
+                        split |= sp;
+                        fresh_held.push((i, mine));
+                    }
+                    Err(e) => {
+                        if let Some(k) = mine {
+                            results[k] = Err(e);
+                        }
+                    }
+                    Ok(Checked::Done(_)) => {}
                 }
             }
             if self.waiting.len() >= before {
@@ -784,7 +901,10 @@ impl Doc {
             OpsVerdict::Disagree | OpsVerdict::UsedTwice => return Err(Refused::OpIds),
         }
         // 7. authority, by caps
-        let authorized = auth.authorized(&self.genesis, &e, &body);
+        let authorized = {
+            let past = self.past_of(e.prev.iter().chain(&e.deps));
+            auth.authorized(&self.genesis, &e, &body, &past)
+        };
         // held: from here on it is a proof, split or not
         let place = (e.writer, e.seq);
         let split = self.places.get(&place).is_some_and(|ns| !ns.is_empty());
@@ -798,6 +918,32 @@ impl Doc {
             fit: None,
         });
         Ok(Checked::Held(self.held.len() - 1, split))
+    }
+
+    /// The held envelopes reached from `parents`, in the order held.
+    fn past_of<'n>(&self, parents: impl Iterator<Item = &'n Hash>) -> Past<'_> {
+        let mut seen: BTreeSet<usize> = BTreeSet::new();
+        let mut todo: Vec<Hash> = parents.copied().collect();
+        while let Some(n) = todo.pop() {
+            if let Some(&i) = self.by_name.get(&n)
+                && seen.insert(i)
+            {
+                todo.extend(
+                    self.held[i]
+                        .e
+                        .prev
+                        .iter()
+                        .chain(&self.held[i].e.deps)
+                        .copied(),
+                );
+            }
+        }
+        Past {
+            items: seen
+                .into_iter()
+                .map(|i| (self.held[i].name, &self.held[i].e, &self.held[i].body))
+                .collect(),
+        }
     }
 
     /// Whether a held envelope's place in its log is half of a split.
@@ -830,7 +976,9 @@ impl Doc {
             } else if !h.authorized {
                 Some(Why::Unauthorized)
             } else {
-                if h.fit.is_none() {
+                if h.fit.is_none() && self.crashed.contains(&h.name) {
+                    self.held[i].fit = Some(Err(Unfit::Op("the judge crashed on it".into())));
+                } else if h.fit.is_none() {
                     let sc = scratch.get_or_insert_with(|| {
                         let sc = self.live.fork();
                         sc.set_record_timestamp(false);
@@ -926,8 +1074,14 @@ impl Doc {
     /// live state; a revocation only narrows (`revocation_narrows`).
     pub fn reauthorize(&mut self, auth: &impl Authorize) {
         let mut turned = false;
-        for h in &mut self.held {
-            let a = h.authorized && auth.authorized(&self.genesis, &h.e, &h.body);
+        let verdicts: Vec<bool> = (0..self.held.len())
+            .map(|i| {
+                let h = &self.held[i];
+                let past = self.past_of(h.e.prev.iter().chain(&h.e.deps));
+                h.authorized && auth.authorized(&self.genesis, &h.e, &h.body, &past)
+            })
+            .collect();
+        for (h, a) in self.held.iter_mut().zip(verdicts) {
             turned |= a != h.authorized;
             h.authorized = a;
         }
@@ -941,8 +1095,9 @@ impl Doc {
         writer(&device.public(), &self.id, MAIN, generation)
     }
 
-    /// A local write: one batch of Record writes, as one envelope (docs, "A commit"). Returns the envelope's bytes,
-    /// already counted here, to put in the store and hand to sync.
+    /// A local write: one batch of Record writes, as one envelope (docs, "A commit"), signed by `device`. Returns the
+    /// envelope's bytes, already counted here, to put in the store and hand to sync. It is [`Doc::prepare`], the
+    /// device's signature over [`Prepared::signing`], and [`Doc::finish`].
     pub fn commit(
         &mut self,
         device: &Device,
@@ -952,7 +1107,23 @@ impl Doc {
         act: Act,
         auth: &impl Authorize,
     ) -> Result<Vec<u8>, CommitError> {
-        let w = self.writer_of(device, generation);
+        let p = self.prepare(device.public(), generation, batch, at, act)?;
+        let sig = device.sign(&p.signing());
+        self.finish(p, sig, auth)
+    }
+
+    /// Everything a commit does before its signature, for a device whose key lives elsewhere (the Peer-Light keeps keys
+    /// in a worker of their own): the scratch copy, fit, the op range, the body and the unsigned envelope. Nothing in
+    /// the Doc changes until [`Doc::finish`].
+    pub fn prepare(
+        &self,
+        signer: [u8; 32],
+        generation: u64,
+        batch: &[RecordWrite],
+        at: &str,
+        act: Act,
+    ) -> Result<Prepared, CommitError> {
+        let w = writer(&signer, &self.id, MAIN, generation);
         let own = self
             .held
             .iter()
@@ -1052,7 +1223,7 @@ impl Doc {
         judged.map_err(CommitError::Unfit)?;
         // the genesis rides exactly in a log's first envelope
         body.genesis = (seq == 1 && deps.is_empty()).then(|| self.genesis.clone());
-        let mut e = Envelope {
+        let e = Envelope {
             doc: self.id,
             branch: MAIN.into(),
             writer: w,
@@ -1062,12 +1233,144 @@ impl Doc {
             body: body.value(),
             sigs: vec![],
         };
-        device.sign_envelope(&mut e);
+        Ok(Prepared {
+            envelope: e,
+            signer,
+            base: self.held.len(),
+            version: self.snapshot.version.clone(),
+        })
+    }
+
+    /// Attaches the device's signature to a prepared commit and imports it through every check a reader runs. Refused
+    /// when the Doc moved on since [`Doc::prepare`] (another import or commit in between): prepare again.
+    pub fn finish(
+        &mut self,
+        prepared: Prepared,
+        sig: [u8; 64],
+        auth: &impl Authorize,
+    ) -> Result<Vec<u8>, CommitError> {
+        if prepared.base != self.held.len() || prepared.version != self.snapshot.version {
+            return Err(CommitError::Moved);
+        }
+        let mut e = prepared.envelope;
+        // the log writer's own entry in `sigs` (Core's `addSig`): its name never changes
+        e.add_sig(aven_core::Sig {
+            signer: prepared.signer.to_vec(),
+            sig: sig.to_vec(),
+        });
         let bytes = e.encode();
         match self.import(&bytes, auth) {
             Ok(Imported::Counts) => Ok(bytes),
             other => Err(CommitError::NotCounted(format!("{other:?}"))),
         }
+    }
+
+    /// Every envelope held, counted or not, with its name, in the order it was held.
+    pub fn held(&self) -> impl Iterator<Item = (Hash, &Envelope)> {
+        self.held.iter().map(|h| (h.name, &h.e))
+    }
+
+    /// What this peer holds of the Doc (`Docs.Held`): each envelope's name and the hash of its encoded bytes, in the
+    /// order held, to keep beside the head. Reopening is [`Doc::open`], then [`Doc::import_page`] of those bytes.
+    pub fn held_page(&self) -> HeldPage {
+        HeldPage {
+            doc: self.id,
+            envelopes: self
+                .held
+                .iter()
+                .map(|h| (h.name, aven_core::blake3(&h.e.encode())))
+                .collect(),
+        }
+    }
+
+    /// Marks an envelope unfit by its name, before or after it is held: the judge crashed on it alone (the Peer-Light's
+    /// docs worker, `db/docs/README.md`, "Importing", (c)). It never counts; if it counted, the live state rebuilds. The
+    /// mark is the caller's own, never stored or sent by the docs layer.
+    pub fn mark_unfit(&mut self, name: Hash) {
+        self.crashed.insert(name);
+        if let Some(&i) = self.by_name.get(&name) {
+            let was = self.counted.contains(&name);
+            self.held[i].fit = Some(Err(Unfit::Op("the judge crashed on it".into())));
+            if was {
+                let _ = self.rebuild();
+            }
+        }
+    }
+}
+
+/// A commit prepared and not yet signed: what the device signs, and the Doc as it was.
+#[derive(Clone, Debug)]
+pub struct Prepared {
+    envelope: Envelope,
+    signer: [u8; 32],
+    base: usize,
+    version: Vec<Hash>,
+}
+
+impl Prepared {
+    /// The bytes the device signs: Core's `["avenDB envelope 1", unsigned envelope]`.
+    pub fn signing(&self) -> Vec<u8> {
+        self.envelope.signing()
+    }
+
+    /// The envelope it will be, unsigned.
+    pub fn envelope(&self) -> &Envelope {
+        &self.envelope
+    }
+}
+
+/// What a peer holds of a Doc (`Aven.DB.Docs.Held`, `held.json`): every envelope by its name and the hash of its encoded
+/// bytes, in the order held. The head's companion, kept beside it, never travelling.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HeldPage {
+    pub doc: DocId,
+    pub envelopes: Vec<(Hash, Hash)>,
+}
+
+impl HeldPage {
+    pub fn value(&self) -> Value {
+        Value::Map(vec![
+            ("doc".into(), self.doc.0.value()),
+            (
+                "envelopes".into(),
+                Value::Array(
+                    self.envelopes
+                        .iter()
+                        .map(|(n, b)| Value::Array(vec![n.value(), b.value()]))
+                        .collect(),
+                ),
+            ),
+        ])
+    }
+
+    /// `Held.ofValue?`: exactly its two keys, each pair two 32-byte hashes, no envelope named twice.
+    pub fn of_value(v: &Value) -> Option<HeldPage> {
+        let h = |v: &Value| match v {
+            Value::Bytes(b) => Some(Hash(b.as_slice().try_into().ok()?)),
+            _ => None,
+        };
+        let Value::Map(kvs) = v else { return None };
+        let [(d, doc), (e, Value::Array(es))] = kvs.as_slice() else {
+            return None;
+        };
+        if d != "doc" || e != "envelopes" {
+            return None;
+        }
+        let envelopes: Vec<(Hash, Hash)> = es
+            .iter()
+            .map(|p| match p {
+                Value::Array(p) => match p.as_slice() {
+                    [n, b] => Some((h(n)?, h(b)?)),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect::<Option<_>>()?;
+        let names: BTreeSet<Hash> = envelopes.iter().map(|x| x.0).collect();
+        (names.len() == envelopes.len()).then_some(HeldPage {
+            doc: DocId(h(doc)?),
+            envelopes,
+        })
     }
 }
 

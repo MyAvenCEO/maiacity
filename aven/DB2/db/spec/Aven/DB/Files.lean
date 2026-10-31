@@ -24,7 +24,7 @@ A range read (a browser seeking in a movie) takes exactly the chunks the range t
   is short is malformed, never a crash; every file cut by `split` passes (`split_fits`).
 
 The size is a parameter, so the examples cut small files into small chunks; the city-dome cuts at `chunkSize`.
-`lake exe vectors` exports both (`vectors/files.json`), and aven-db-core's `files` module replays them.
+`lake exe vectors` exports both (`vectors/files.json`), and aven-gen1's `files` module replays them.
 -/
 
 namespace Aven.DB.Files

@@ -12,6 +12,7 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use crate::limits::{MAX_BOUND_VALUES, MAX_PARAMS};
 use crate::target::Facts;
 use aven_codec::Value;
 use aven_codec::{DocId, Hash, name_of};
@@ -117,7 +118,7 @@ impl Bound {
     pub fn of_value(v: Value) -> Option<Bound> {
         match v {
             Value::Null => Some(Bound::Any),
-            Value::Array(vs) => Some(Bound::OneOf(vs)),
+            Value::Array(vs) if vs.len() <= MAX_BOUND_VALUES => Some(Bound::OneOf(vs)),
             _ => None,
         }
     }
@@ -175,11 +176,11 @@ impl Call {
         else {
             return None;
         };
-        if ko != "op" || kp != "params" {
+        if ko != "op" || kp != "params" || params.len() > MAX_PARAMS {
             return None;
         }
         Some(Call {
-            op: Hash(op.as_slice().try_into().ok()?),
+            op: Hash::of_value(&Value::Bytes(op))?,
             params,
         })
     }

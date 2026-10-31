@@ -20,6 +20,7 @@ mod epoch;
 mod hex;
 mod hybrid;
 mod invite;
+pub mod keep;
 mod keys;
 mod members;
 mod network;
@@ -34,6 +35,7 @@ mod sign;
 mod statements;
 mod tree;
 mod value;
+mod vault_name;
 
 pub use cast::CastError;
 pub use claim::{
@@ -43,7 +45,11 @@ pub use epoch::{
     BACK_LABEL, COMMIT_LABEL, Epoch, History, KeyError, SCHEME, TAG_SEED_LABEL, VAULT_LABEL,
     commit, subkey, tag, tag_seed,
 };
-pub use hybrid::{HYBRID_SUITE, Hybrid, HybridKey, HybridPublic, HybridSignature, hybrid_verify};
+pub use hybrid::{
+    DEVICE_ML_DSA_LABEL, HYBRID_SUITE, Hybrid, HybridKey, HybridPublic, HybridSignature,
+    device_ml_dsa_seed, hybrid_verify,
+};
+pub use hybrid::{DEVICE_SEAL_LABEL, device_seal_key};
 pub use invite::{
     Invite, Join, Withdrawal, invite_id, invite_text, join_text, one_time_public, sign_join,
     withdraw_text,
@@ -63,3 +69,4 @@ pub use sign::{SignError, Statement};
 pub use tree::{
     Invalid, Kind, MAX_NAME, MAX_PERSON_NAME, Owner, Tree, Vault, valid_name, valid_person_name,
 };
+pub use vault_name::{VAULT_LABEL_TEXT, VAULT_NONCE_LEN, VaultGenesis};
