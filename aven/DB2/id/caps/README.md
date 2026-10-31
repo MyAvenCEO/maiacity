@@ -1342,8 +1342,9 @@ One smaller gap:
 
 A cap's bytes are its body in Core's deterministic CBOR, its targets as `Aven.Core.TargetCbor` writes them; its id is
 their BLAKE3 hash, and its device signs them under the label `avenID cap 1` (`Aven.ID.CapsCbor`). The cast's caps go by
-readable names, so a parent and a role are text until R5 makes them hashes. `derivations.json` follows once Core's
-BLAKE3 gains its keyed and key-derivation modes. The primitives themselves (X-Wing, ML-DSA, Ed25519, the AEAD)
+readable names, so a parent and a role are text until R5 makes them hashes. Core's BLAKE3 has its keyed and
+extendable modes, and `Aven.ID.KeyFormats` fixes the PRF step's, the stanzas' and the epochs' bytes (`derivations.json`,
+`stanzas.json`); hybrid signatures are `Aven.Core.Hybrid`. The primitives themselves (X-Wing, ML-DSA, Ed25519, the AEAD)
 stay outside Lean, as Ed25519 does today. They are tested against their standards' known answers and Wycheproof.
 
 ## Order of work

@@ -9,6 +9,7 @@ import Aven.ID.CapsJson
 import Aven.ID.SettleJson
 import Aven.ID.FailJson
 import Aven.ID.Expiry
+import Aven.ID.KeyFormatsJson
 
 /-! # The test vectors (README, rule 10)
 
@@ -54,6 +55,11 @@ import Aven.ID.Expiry
   (`Aven.ID.Node`, R7). `catchup.json`: sources offered against a signed log tip, the one chosen and the ones caught,
   and presence from signed beats (`Aven.ID.CatchUp`). `failures.json`: the nine checks the box runs with the Aven Peer
   stopped, each with what the models say it must see (`Aven.ID.FailJson`, PEERS.md).
+
+- `derivations.json` and `stanzas.json`: avenID's key formats (`Aven.ID.KeyFormats`, A43): BLAKE3's keyed and
+  extendable modes, the PRF step's input, salt and seeds, a stanza's AAD, keys and commitment, an epoch's subkeys and
+  tags; and the bytes of stanzas, keyring and Doc epochs with their names, and hybrid keys and signatures. aven-id
+  derives and encodes each and compares.
 
 `bun run up --check` runs it again and fails when the files differ from what is committed. -/
 
@@ -282,3 +288,5 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "node.json") (render SettleJson.nodeVectors)
   IO.FS.writeFile (dir / "catchup.json") (render SettleJson.catchUpVectors)
   IO.FS.writeFile (dir / "failures.json") (render FailJson.failureVectors)
+  IO.FS.writeFile (dir / "derivations.json") (render KeyFormats.derivationVectors)
+  IO.FS.writeFile (dir / "stanzas.json") (render KeyFormats.stanzaVectors)
