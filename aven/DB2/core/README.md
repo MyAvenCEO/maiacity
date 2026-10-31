@@ -16,6 +16,9 @@ primitives everything shares" and rules 1 to 3). It is one Lean package, in [`sp
 | `Signed` | a label plus a Value, signed over exactly its encoding, and named by the hash of those bytes, its signatures beside it (A30) | a signing input names its label and body; signing again keeps the name (`Signed.name_resign`); one name is one label and body (`Signed.name_inj`) |
 | `Log` | envelopes, named by what their writer signs (A30); logs, splits, versions | one name is one envelope but for its signature (`Envelope.name_inj`), and an envelope signed twice is no split (`resign_no_split`); a chain holds no split; two readers' chains agree unless split; splits are final; what counts builds on what counts; versions only grow |
 | `Past` | an envelope's past among those a reader holds, decided | `reaches_iff`: `Reaches` is the envelope itself and what is `Before` it; `found_iff`, `inPast_iff`: the rounds find exactly that |
+| `Limits` | every input's limit (rule 10): 1 MiB an envelope or signed thing, 256 deps, 256 bytes a branch or label, 4 KiB a signer, 16 KiB a signature; what a reader accepts from bytes (`Envelope.accept`, `Signed.accept`) | what is accepted is within every limit (`accept_limits`) and encodes back to exactly its bytes (`accept_encode`) |
+| `Verdicts` | `Split`, `Discounted`, `Counts` and `Version.holds`, decided for what a reader holds | each decision is its proposition (`splitB_iff`, `discountedB_iff`, `countsB_iff`, `holdsB_iff`) |
+| `Model` | what the running model `aven-core-model` and the vectors answer: worlds of envelopes, and bytes to accept | — |
 | `Target`, `TargetCbor` | the one target grammar (A8), its CBOR, verbs, footprints | a narrower target covers only what the wider one does; a target reads back from its CBOR, which is canonical; footprint coverage grows with grants and composes |
 
 The hash and signatures are parameters: a theorem that needs the hash collision-free assumes it (`Injective`), and
@@ -36,14 +39,14 @@ wasm32, so the runtimes in aven/runtimes use it by path.
   decides `discounted`, `counts` and a version's `holds`; `is_chain`, and `Log`, a writer's log that grows only at its
   head and refuses a split. Held to `envelopes.json` and `logs.json` byte for byte.
 - **The past** (`past.rs`): `Parents`, and `past` and `in_past` for anything named that names its parents.
-- **Limits** (`limits.rs`, rule 10): an envelope or signed thing is at most 1 MiB, at most 256 deps, a branch or label
-  256 bytes, a signer 4 KiB and a signature 16 KiB, each refused before it is kept. These are Rust's alone for now;
-  Lean states none of them yet.
+- **Limits** (`limits.rs`, rule 10): Lean's `Aven.Core.Limits`, the same numbers, held to `limits.json`, which has
+  an envelope and a signed thing exactly at each limit and one past it.
 
-`tests/log.rs` transcribes Lean's definitions as they read (`pastNames` in rounds, `Before`, `Reaches`, `Split`,
-`Discounted`, `Counts`, `Version.holds`) and checks the crate against them on random envelopes, with the theorems
-(`split_final`, `counts_past`, `resign_no_split`, `chain_no_split`, `chains_agree`, `Version.holds_mono`) and round
-trips of every encoding.
+`tests/log.rs` holds the crate to `envelopes.json`, `logs.json`, `signed.json`, `limits.json`, `past.json` and
+`counts.json` byte for byte, with round trips of every encoding and a writer's log. `tests/model.rs` asks the running
+model, `aven-core-model` (`lake build aven-core-model` in `spec`, or `AVEN_CORE_MODEL` set to a built one), on random
+worlds of envelopes and random bytes: names, the past, splits, discounting, counting, versions and what a reader
+accepts must all be its answers, and `split_final`, `counts_past` and `Version.holds_mono` must hold of the crate.
 
 **Run it in the box,** from `aven/DB2`: `bun run box sh -c 'cd core/spec && lake build'`; `bun run box sh
 sandbox/vectors.sh` writes the vectors in [`spec/vectors`](spec/vectors), and `--check` compares them with what's

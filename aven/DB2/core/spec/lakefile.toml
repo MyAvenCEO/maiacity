@@ -1,13 +1,18 @@
 # Aven.Core: what every part of avenDB shares (ARCHITECTURE.md, "The primitives everything shares", rules 1 to 3), as
 # one Lean package that Aven.DB, Aven.ID, Aven.Actor and Aven.Runtime require by path. Core Lean only: the box has no
-# network for Lean packages. `lake build` proves every theorem and checks every example; `vectors` exports them.
+# network for Lean packages. `lake build` proves every theorem and checks every example; `aven-core-model` runs the
+# model for aven-core's property tests, and `vectors` exports the examples and generated cases (README rule 10).
 name = "aven-core-spec"
 version = "0.1.0"
-defaultTargets = ["AvenCore", "vectors"]
+defaultTargets = ["AvenCore", "aven-core-model", "vectors"]
 
 [[lean_lib]]
 name = "AvenCore"
 roots = ["Aven.Core"]
+
+[[lean_exe]]
+name = "aven-core-model"
+root = "Model"
 
 [[lean_exe]]
 name = "vectors"

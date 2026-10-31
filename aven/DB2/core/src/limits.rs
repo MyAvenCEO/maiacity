@@ -1,4 +1,5 @@
-//! Every input has a limit before it costs memory or time (ARCHITECTURE.md rule 10). A reader refuses an envelope or a
+//! Every input has a limit before it costs memory or time (ARCHITECTURE.md rule 10), as `Aven.Core.Limits` states
+//! them; `limits.json` holds these numbers to Lean's, and each limit from both sides. A reader refuses an envelope or a
 //! signed thing past these before it decodes or keeps it; the past and the verdicts run over what a reader already
 //! holds, so their cost is bounded by these times the envelopes held. Nesting is bounded by the codec's
 //! [`MAX_DEPTH`](crate::MAX_DEPTH).
