@@ -5,7 +5,7 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 import { check, classes, parse } from './tree.js';
 import { contrastOk, linear, luminance, rgb } from './contrast.js';
 import { rewriteLinks } from './links.js';
-import { toCss, toStyle } from './style.js';
+import { ruleCss, ruleOk } from '../../os/web/runtimes/draw.js';
 import { blocks, inline } from './markdown.js';
 
 // the runtimes' spec vectors (aven/runtimes/spec/vectors): what Lean computes, replayed here
@@ -107,41 +107,39 @@ describe('the slides', () => {
 	});
 });
 
-// no text on a slide under 2.6cqw (STYLE.md, "A slide"): 9 px where a phone shows a slide 356 px wide
-test('every font size in the slides\' CSS is at least 2.6cqw', () => {
-	const sheets = ['style/slide.css', ...readdirSync(`${brain}id/slides`).filter((f) => f.endsWith('.css')).map((f) => `id/slides/${f}`)];
-	const small = [];
-	for (const sheet of sheets) {
-		const css = readFileSync(`${brain}${sheet}`, 'utf8');
-		for (const [, size] of css.matchAll(/font(?:-size)?:[^;]*?([\d.]+)cqw/g)) if (Number(size) < 2.6) small.push(`${sheet}: ${size}cqw`);
-	}
-	expect(small).toEqual([]);
-});
+// the slides' style is the face-runtime's style data (STYLE.md, "A slide"): style/slide.style.json by hand, each slide's
+// <id>.style.json from art/slides.mjs. A colour is a Value's JSON, `{ bytes }`; the drawer takes it as its 3 bytes.
+const value = (v) =>
+	Array.isArray(v) ? v.map(value) : v && typeof v === 'object' && 'bytes' in v ? Uint8Array.from(v.bytes.match(/../g), (b) => parseInt(b, 16)) : v;
+const read = (path) => JSON.parse(readFileSync(`${brain}${path}`, 'utf8'));
+const sheets = ['style/slide.style.json', ...readdirSync(`${brain}id/slides`).filter((f) => f.endsWith('.style.json')).map((f) => `id/slides/${f}`)];
 
-// the slides' CSS stays in the subset the face-runtime compiles into typed style rules (README, "What the runtimes
-// plan lacks"): these properties only, no custom properties, no url(), no :where or other pseudo-classes
-const subset = new Set([
-	'position', 'inset', 'left', 'top', 'right', 'bottom', 'width', 'height', 'display', 'aspect-ratio', 'container-type',
-	'overflow', 'margin', 'margin-top', 'margin-bottom', 'padding', 'padding-top', 'clip-path', 'border-radius', 'border',
-	'border-top', 'border-right', 'border-bottom', 'border-left', 'background', 'filter', 'box-shadow', 'transform', 'transform-origin', 'font-family', 'font-size',
-	'font-weight', 'line-height', 'letter-spacing', 'text-transform', 'white-space', 'text-align', 'color', 'gap',
-]);
-test('the slides\' CSS is in the face-runtime\'s subset', () => {
-	const sheets = ['style/slide.css', ...readdirSync(`${brain}id/slides`).filter((f) => f.endsWith('.css')).map((f) => `id/slides/${f}`)];
-	const outside = [];
-	for (const sheet of sheets) {
-		const css = readFileSync(`${brain}${sheet}`, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
-		for (const [, selectors, body] of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
-			if (/:/.test(selectors)) outside.push(`${sheet}: the selector ${selectors.trim()}`);
-			for (const decl of body.split(';').map((d) => d.trim()).filter(Boolean)) {
-				const [name, ...rest] = decl.split(':');
-				const value = rest.join(':');
-				if (!subset.has(name.trim())) outside.push(`${sheet}: ${name.trim()}`);
-				if (/var\(|url\(/.test(value) || name.trim().startsWith('--')) outside.push(`${sheet}: ${decl}`);
-			}
-		}
+describe('style data', () => {
+	// every rule is one the drawer (os/web/runtimes/draw.js) takes, as Style.lean types it
+	for (const sheet of sheets)
+		test(`${sheet} is in Style`, () => expect(read(sheet).filter((r) => !ruleOk(value(r)))).toEqual([]));
+	// no text on a slide under 2.6cqw: 9 px where a phone shows a slide 356 px wide
+	test('every font size is at least 2.6cqw', () => {
+		const small = [];
+		for (const sheet of sheets)
+			for (const [, decls] of read(sheet))
+				for (const d of decls) if (d[0] === 'font-size' && (d[1][1] !== 'cqw' || d[1][0] < 260)) small.push(`${sheet}: ${JSON.stringify(d)}`);
+		expect(small).toEqual([]);
+	});
+	// the face part the face-runtime takes: the slide's markup, as FaceRuntime.lean's forms, and every rule, shared first
+	const markup = (n) =>
+		typeof n === 'string' ? ['text', ['lit', n]] : ['el', n[0], n[1].map(([k, v]) => [k, ['lit', v]]), null, n[2].map(markup)];
+	for (const f of readdirSync(`${brain}id/slides`).filter((f) => f.endsWith('.part.json'))) {
+		const id = f.slice(0, -'.part.json'.length);
+		test(`id/slides/${f} is its markup and its style`, () =>
+			expect(read(`id/slides/${f}`)).toEqual([markup(parse(readFileSync(`${brain}id/slides/${id}.html`, 'utf8'))[0]), [...read('style/slide.style.json'), ...read(`id/slides/${id}.style.json`)]]));
 	}
-	expect(outside).toEqual([]);
+	// the runtimes' own vector for "A key signs" (face.json): its CSS, as Style.lean writes it, is what the drawer writes from ours
+	test('face.json: the slide "A key signs" is the brain\'s', () => {
+		const vector = vectors('face.json').find((v) => v.name === 'the slide "A key signs"');
+		const ours = new Set([...read('style/slide.style.json'), ...read('id/slides/sign.style.json')].map((r) => ruleCss(value(r))));
+		expect(vector.expected.css.filter((rule) => !ours.has(rule))).toEqual([]);
+	});
 });
 
 // every drawing a slide shows is a file of the brain named by its own BLAKE3 hash, as the network names files
@@ -160,23 +158,4 @@ test('every image on a slide is a drawing, named by its BLAKE3 hash', () => {
 		}
 	}
 	expect(wrong).toEqual([]);
-});
-
-// the slides' CSS as the face-runtime's style data (render/style.js), kept beside each sheet as <name>.style.json
-describe('style data', () => {
-	const sheets = [['style/slide.css', 'style/slide.style.json'], ...readdirSync(`${brain}id/slides`).filter((f) => f.endsWith('.css')).map((f) => [`id/slides/${f}`, `id/slides/${f.replace(/\.css$/, '.style.json')}`])];
-	for (const [css, json] of sheets)
-		test(`${json} is ${css}, as data`, () => expect(JSON.parse(readFileSync(`${brain}${json}`, 'utf8'))).toEqual(toStyle(readFileSync(`${brain}${css}`, 'utf8'))));
-	test('a declaration outside the face-runtime\'s style throws', () => {
-		expect(() => toStyle('.a { filter: blur(1px); }')).toThrow();
-		expect(() => toStyle('.a:hover { color: #000000; }')).toThrow();
-		expect(() => toStyle('.a { color: red; }')).toThrow();
-		expect(() => toStyle('.a { margin: 0 1px; }')).toThrow();
-	});
-	// the runtimes' own vector for "A key signs": its CSS, as Style.lean writes it, is ours
-	test('style.json: the slide "A key signs" is the brain\'s', () => {
-		const vector = vectors('style.json').find((v) => v.name === 'the slide "A key signs"');
-		const ours = new Set([...toCss(JSON.parse(readFileSync(`${brain}style/slide.style.json`, 'utf8'))), ...toCss(JSON.parse(readFileSync(`${brain}id/slides/sign.style.json`, 'utf8')))]);
-		expect(vector.expected.css.filter((rule) => !ours.has(rule))).toEqual([]);
-	});
 });
