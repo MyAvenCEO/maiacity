@@ -594,7 +594,11 @@ the spec that owns it.
 
 **Before any docs or engine code**
 - **A1. One vocabulary:** this document and [`GLOSSARY.md`](brain/GLOSSARY.md) are the single source for shared words and
-  cross-part rules, and every spec uses them in this sense. *Decided: yes (Samuel, 30 Oct 2026).*
+  cross-part rules, and every spec uses them in this sense. *Decided: yes (Samuel, 30 Oct 2026).* **Its verdicts are
+  decided too** (Samuel, 31 Oct 2026: "yes for all the glossary"), with two of them corrected by the terminology audit:
+  `Gate` → `Admission` (a `Door` type exists) and the engine's part → level (caps has a share depth). They apply in
+  specs and Lean now, each by the thread that owns the file, and in code only when that code is rewritten anyway
+  (rule 16). Stored formats keep their names: the `claim` ref, the chat's frozen lines and the `network` field.
 - **A2. One codec and signing rule** for everything signed (K1, rule 1). It started with the chat's lines in the
   security fixes (#1493). Samuel asked for "the best-practice encoding possible", shared by avenDB and the actors
   (30 Oct 2026). The recommendation is **deterministic CBOR**, RFC 8949's core deterministic encoding, in a strict

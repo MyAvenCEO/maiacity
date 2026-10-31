@@ -415,6 +415,26 @@ theorem ownerKeyOf_join (hc : r.founding.claim = some c) (signed : (genesisOf r.
   rw [standing_join hc signed cl hk e]
   simp [step, Old.says]
 
+/-- A migrated store changes no setting: its Aven Peer is the genesis's, production's peer key. -/
+theorem peerIs_eq (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true)
+    (key : String) : peerIs (view restored 1 (migrate r g)) key = (key == r.founding.peerKey) := by
+  have none : (view restored 1 (migrate r g)).any (configBy (view restored 1 (migrate r g)) isPeerSet) = false := by
+    cases e : (view restored 1 (migrate r g)).any (configBy (view restored 1 (migrate r g)) isPeerSet)
+    · rfl
+    · exfalso
+      obtain ⟨s, ms, h⟩ := (vany hc signed).mp e
+      simp only [configBy, Bool.and_eq_true] at h
+      rw [migrate_eq hc] at ms
+      rcases List.mem_cons.mp ms with es | ms
+      · subst es; simp [genesisStatement, isPeerSet] at h
+      · obtain ⟨k, _, es⟩ := mem_steps.mp ms
+        subst es
+        cases o : (refOrder r)[k] <;> simp [o, step, Old.says, isPeerSet] at h
+  unfold peerIs setting
+  rw [none]
+  simp only [Bool.false_eq_true, ↓reduceIte, gen_eq hc signed, genesisOf]
+  cases e : (key == r.founding.peerKey) <;> cases e' : (r.founding.peerKey == key) <;> simp_all
+
 /-- **`settle_restore_door`**, the settled side of `restore_agrees` for every clean store: the settled tree of
 production's migrated store admits exactly the store's device keys. -/
 theorem settle_restore_door (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true)
@@ -422,6 +442,7 @@ theorem settle_restore_door (hc : r.founding.claim = some c) (signed : (genesisO
     (settle restored 1 (migrate r g)).admits key = true ↔ key ∈ restoredKeys r c := by
   simp only [settle, settleView]
   unfold admits
+  rw [peerIs_eq hc signed]
   simp only [Bool.or_eq_true, gen_eq hc signed, genesisOf, List.contains_cons, List.contains_nil, Bool.or_false,
     beq_iff_eq, restoredKeys, List.mem_cons, List.mem_append, List.mem_map]
   constructor

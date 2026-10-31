@@ -152,6 +152,8 @@ structure Genesis where
   agent : String
   avenPeer : String
   guardian : GuardianKeys
+  /-- MaiaCityGuardian's vault: its key is that vault's owner, and the vault owns each person's vault (rule 15, A28) -/
+  guardianVault : String
   signedBy : List String
   deriving DecidableEq, Repr
 
@@ -160,11 +162,13 @@ def Genesis.consented (g : Genesis) : Bool :=
   g.signedBy.contains g.passkey && g.signedBy.contains g.guardian.ed25519 && g.signedBy.contains g.guardian.mlDsa
 
 /-- The vaults the genesis founds, as `Aven.ID.Approve` reads them: the claimant's vault, owned by its passkey and
-MaiaCityGuardian; the admin coop, owned by the vaults the genesis names; the agent, owned by the coop. -/
+MaiaCityGuardian's vault; the admin coop, owned by the vaults the genesis names; the agent, owned by the coop; and
+MaiaCityGuardian's vault, owned by its key. -/
 def Genesis.tree (g : Genesis) : Tree :=
   { keys := [g.passkey, g.guardian.ed25519]
-    vaults := [⟨g.claimant, "", .person, [.key g.passkey, .key g.guardian.ed25519]⟩,
-      ⟨g.coop, "", .coop, g.coopOwners.map .vault⟩, ⟨g.agent, "", .agent, [.vault g.coop]⟩] }
+    vaults := [⟨g.claimant, "", .person, [.key g.passkey, .vault g.guardianVault]⟩,
+      ⟨g.coop, "", .coop, g.coopOwners.map .vault⟩, ⟨g.agent, "", .agent, [.vault g.coop]⟩,
+      ⟨g.guardianVault, "", .agent, [.key g.guardian.ed25519]⟩] }
 
 /-- What every tree statement's signer signs, as `Aven.ID.Approve` names a digest: the statement itself. -/
 def stmtDigest : String := "tree statement"
@@ -178,9 +182,10 @@ theorem Genesis.keyAbove {g : Genesis} {k b : String} (h : g.tree.KeyAbove k b) 
     obtain ⟨v, hv, mk⟩ := ko
     have mv : v ∈ g.tree.vaults := List.mem_of_find?_eq_some hv
     simp only [Genesis.tree, List.mem_cons, List.not_mem_nil, or_false] at mv
-    rcases mv with rfl | rfl | rfl <;>
+    rcases mv with rfl | rfl | rfl | rfl <;>
       simp [Vault.ownerKeys, Owner.key?, List.filterMap_map] at mk
-    exact mk
+    · exact .inl mk
+    · exact .inr mk
   | up _ _ ih => exact ih
 
 /-- The claimant's passkey alone approves for Maia City when the claimant's vault owns it: one tap today. -/
@@ -190,7 +195,7 @@ theorem Genesis.approves_claimant (g : Genesis) (hc : g.claimant ∈ g.coopOwner
     intro f
     unfold Tree.approvesF
     have e : g.tree.get? g.claimant =
-        some ⟨g.claimant, "", .person, [.key g.passkey, .key g.guardian.ed25519]⟩ := by
+        some ⟨g.claimant, "", .person, [.key g.passkey, .vault g.guardianVault]⟩ := by
       simp [Tree.get?, Genesis.tree]
     rw [e]
     simp only [decide_eq_true_eq]
@@ -206,7 +211,7 @@ theorem Genesis.approves_claimant (g : Genesis) (hc : g.claimant ∈ g.coopOwner
     simp only [decide_eq_true_eq]
     exact List.length_pos_iff_exists_mem.mpr
       ⟨.vault g.claimant, List.mem_filter.mpr ⟨mem_ownersOnce.mpr (by simp [hc]),
-        by simp only [Tree.ownerApproves]; exact key 2⟩⟩
+        by simp only [Tree.ownerApproves]; exact key 3⟩⟩
 
 /-- What a tree statement says. -/
 inductive TreeSays where
@@ -222,10 +227,17 @@ inductive TreeSays where
   | claim (ticket : Nat) (vault passkey device : String) (guardian : GuardianKeys)
   /-- An admin device acks the claim it names, which makes it final. -/
   | ack (claim : Nat)
-  | relayAdd (device : String)
-  | relayRemove (device : String)
-  | keeperAdd (device : String)
-  | keeperRemove (device : String)
+  /-- The relay and keeper lists name vaults, never devices (rule 15, A28): a vault on the relay list runs a relay on
+  its devices, one on the keeper list keeps on them. -/
+  | relayAdd (vault : String)
+  | relayRemove (vault : String)
+  | keeperAdd (vault : String)
+  | keeperRemove (vault : String)
+  /-- Maia City's changes to what the genesis named (rule 15, A28): the Aven Peer's device key, avenOS's origins, and
+  MaiaCityGuardian's vault. Each counts only with its owners' approval; the latest settles it. -/
+  | setAvenPeer (key : String)
+  | setOrigins (origins : List String)
+  | setGuardian (vault : String)
   deriving DecidableEq, Repr
 
 /-- A tree statement: its name (its hash, `hashNum`), the key that signed it, the names of the tree's newest
@@ -255,6 +267,12 @@ structure Settled where
   admits : String → Bool
   relay : String → Bool
   keeper : String → Bool
+  /-- the Aven Peer's device key now: the genesis's, or Maia City's latest change of it -/
+  avenPeer : String → Bool
+  /-- avenOS's origins now -/
+  origin : String → Bool
+  /-- MaiaCityGuardian's vault now -/
+  guardianVault : String → Bool
 
 namespace Settle
 
@@ -572,10 +590,31 @@ def ownerKeyOf (v : View) (vault p : String) : Bool :=
         | .claim _ founded pk _ gu => founded == vault && (pk == p || gu.ed25519 == p)
         | _ => false
 
+/-- A change Maia City's owners approved (rule 15, A28): `sel` picks which setting it changes. -/
+def configBy (v : View) (sel : TreeSays → Bool) (s : TreeStatement) : Bool := byAdmin v s.signer && sel s.says
+
+/-- The latest such change: no approved change of the same setting has it in its past, and of the changes nothing
+came after, it has the smallest name. Concurrent changes settle the same everywhere. -/
+def latest (v : View) (sel : TreeSays → Bool) (s : TreeStatement) : Bool :=
+  configBy v sel s && (v.all fun t => !(configBy v sel t && v.past t s)) &&
+    v.all fun t => !(configBy v sel t && (v.all fun u => !(configBy v sel u && v.past u t)) && decide (t.name < s.name))
+
+def isPeerSet : TreeSays → Bool | .setAvenPeer _ => true | _ => false
+def isOriginsSet : TreeSays → Bool | .setOrigins _ => true | _ => false
+def isGuardianSet : TreeSays → Bool | .setGuardian _ => true | _ => false
+
+/-- A setting now: the latest approved change's, or the genesis's while there is none. -/
+def setting (v : View) (sel : TreeSays → Bool) (now : TreeSays → Bool) (genesis : Genesis → Bool) : Bool :=
+  if v.any (configBy v sel) then v.any fun s => latest v sel s && now s.says else gen v genesis
+
+/-- The Aven Peer's device key now. -/
+def peerIs (v : View) (d : String) : Bool :=
+  setting v isPeerSet (· == .setAvenPeer d) (fun g => g.avenPeer == d)
+
 /-- `d` is a device of `vault`: the claimant's first devices, the agent's Aven Peer, a standing claim's first device,
 or a device the vault's passkey signed in. -/
 def deviceOf (v : View) (vault d : String) : Bool :=
-  gen v (fun g => (vault == g.claimant && g.devices.contains d) || (vault == g.agent && d == g.avenPeer)) ||
+  (gen v (fun g => vault == g.claimant && g.devices.contains d) || (gen v (fun g => vault == g.agent) && peerIs v d)) ||
     (v.any fun c =>
       standing v c &&
         match c.says with
@@ -588,7 +627,7 @@ def deviceOf (v : View) (vault d : String) : Bool :=
 
 /-- The door admits the devices of the member vaults (K12). -/
 def admits (v : View) (d : String) : Bool :=
-  gen v (fun g => g.devices.contains d || d == g.avenPeer) ||
+  (gen v (fun g => g.devices.contains d) || peerIs v d) ||
     (v.any fun c =>
       standing v c &&
         match c.says with
@@ -690,6 +729,10 @@ def settleView (v : View) : Settled where
   admits := admits v
   relay := listed v .relayAdd .relayRemove
   keeper := listed v .keeperAdd .keeperRemove
+  avenPeer := peerIs v
+  origin o := setting v isOriginsSet (fun x => match x with | .setOrigins os => os.contains o | _ => false)
+    (fun g => g.origins.contains o)
+  guardianVault x := setting v isGuardianSet (· == .setGuardian x) (fun g => g.guardianVault == x)
 
 end Settle
 
@@ -1004,6 +1047,29 @@ theorem gen_intro {g : TreeStatement} {gs : Genesis} {P : Genesis → Bool} (mg 
     (hp : P gs = true) : gen (view ok pinned S) P = true :=
   (view_any ok pinned).mpr ⟨g, mg, cg, by simp [n, e, c, hp, view]⟩
 
+/-- The Aven Peer's key is set only where there is a pinned genesis. -/
+theorem peerIs_gen {d : String} (h : peerIs (view ok pinned S) d = true) :
+    gen (view ok pinned S) (fun _ => true) = true := by
+  unfold peerIs setting at h
+  split at h
+  · obtain ⟨s, _, _, hs⟩ := (view_any ok pinned).mp h
+    simp only [latest, configBy, byAdmin, Bool.and_eq_true] at hs
+    obtain ⟨g, mg, cg, n, gs, e, c, _⟩ := gen_elim ok pinned hs.1.1.1.1
+    exact gen_intro ok pinned mg cg n e c rfl
+  · obtain ⟨g, mg, cg, n, gs, e, c, _⟩ := gen_elim ok pinned h
+    exact gen_intro ok pinned mg cg n e c rfl
+
+/-- **`config_by_admin`:** a setting changed from the genesis's only by a change Maia City's owners approved. -/
+theorem config_by_admin {sel now : TreeSays → Bool} {genesis : Genesis → Bool}
+    (h : setting (view ok pinned S) sel now genesis = true)
+    (changed : (view ok pinned S).any (configBy (view ok pinned S) sel) = true) :
+    ∃ s ∈ S, byAdmin (view ok pinned S) s.signer = true ∧ sel s.says = true ∧ now s.says = true := by
+  unfold setting at h
+  simp only [changed, ↓reduceIte] at h
+  obtain ⟨s, ms, _, hs⟩ := (view_any ok pinned).mp h
+  simp only [latest, configBy, Bool.and_eq_true] at hs
+  exact ⟨s, ms, hs.1.1.1.1, hs.1.1.1.2, hs.2⟩
+
 /-- The door admits exactly the devices of the member vaults (K12): the claimant's first devices, the Aven Peer, the
 first device of each vault a standing claim founds, and the devices a member's passkey signs in. So it is a function of
 the settled tree alone (`door_from_tree`), and no position opens it. -/
@@ -1014,24 +1080,23 @@ theorem settle_door {d : String} :
   · intro h
     unfold admits at h
     simp only [Bool.or_eq_true] at h
-    rcases h with (h | h) | h
+    rcases h with ((h | h) | h) | h
     · obtain ⟨g, mg, cg, n, gs, e, c, hp⟩ := gen_elim ok pinned h
-      simp only [Bool.or_eq_true, beq_iff_eq] at hp
-      rcases hp with hp | hp
-      · refine ⟨gs.claimant, ?_, ?_⟩
-        · unfold member
-          simp only [Bool.or_eq_true]
-          exact .inl (gen_intro ok pinned mg cg n e c (by simp))
-        · unfold deviceOf
-          simp only [Bool.or_eq_true]
-          exact .inl (.inl (gen_intro ok pinned mg cg n e c (by simp [List.contains_iff_mem.mp hp])))
-      · refine ⟨gs.agent, ?_, ?_⟩
-        · unfold member
-          simp only [Bool.or_eq_true]
-          exact .inl (gen_intro ok pinned mg cg n e c (by simp))
-        · unfold deviceOf
-          simp only [Bool.or_eq_true]
-          exact .inl (.inl (gen_intro ok pinned mg cg n e c (by simp [hp])))
+      refine ⟨gs.claimant, ?_, ?_⟩
+      · unfold member
+        simp only [Bool.or_eq_true]
+        exact .inl (gen_intro ok pinned mg cg n e c (by simp))
+      · unfold deviceOf
+        simp only [Bool.or_eq_true]
+        exact .inl (.inl (.inl (gen_intro ok pinned mg cg n e c (by simp [List.contains_iff_mem.mp hp]))))
+    · obtain ⟨g, mg, cg, n, gs, e, c, _⟩ := gen_elim ok pinned (peerIs_gen ok pinned h)
+      refine ⟨gs.agent, ?_, ?_⟩
+      · unfold member
+        simp only [Bool.or_eq_true]
+        exact .inl (gen_intro ok pinned mg cg n e c (by simp))
+      · unfold deviceOf
+        simp only [Bool.or_eq_true, Bool.and_eq_true]
+        exact .inl (.inl (.inr ⟨gen_intro ok pinned mg cg n e c (by simp), h⟩))
     · obtain ⟨c, mc, cc, hc⟩ := (view_any ok pinned).mp h
       simp only [Bool.and_eq_true] at hc
       obtain ⟨st, hc⟩ := hc
@@ -1067,18 +1132,16 @@ theorem settle_door {d : String} :
   · rintro ⟨vault, _, h⟩
     unfold deviceOf at h
     unfold admits
-    simp only [Bool.or_eq_true] at h ⊢
-    rcases h with (h | h) | h
-    · refine .inl (.inl (any_mono ok pinned (fun _ m => m) (fun x hx => ?_) h))
+    simp only [Bool.or_eq_true, Bool.and_eq_true] at h ⊢
+    rcases h with ((h | ⟨_, h⟩) | h) | h
+    · refine .inl (.inl (.inl (any_mono ok pinned (fun _ m => m) (fun x hx => ?_) h)))
       cases hx' : x.says
       case genesis gs =>
-        simp only [hx', Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hx ⊢
-        obtain ⟨n, c, hp⟩ := hx
-        refine ⟨n, c, ?_⟩
-        rcases hp with ⟨_, hp⟩ | ⟨_, hp⟩
-        · exact .inl hp
-        · exact .inr hp
+        simp only [hx', Bool.and_eq_true, beq_iff_eq] at hx ⊢
+        obtain ⟨n, c, _, hp⟩ := hx
+        exact ⟨n, c, hp⟩
       all_goals simp [hx'] at hx
+    · exact .inl (.inl (.inr h))
     · refine .inl (.inr (any_mono ok pinned (fun _ m => m) (fun x hx => ?_) h))
       cases hx' : x.says <;> simp_all
     · refine .inr (any_mono ok pinned (fun _ m => m) (fun x hx => ?_) h)
@@ -1143,16 +1206,28 @@ structure Listed where
   admitted : List String
   relays : List String
   keepers : List String
+  avenPeer : List String
+  origins : List String
+  guardianVault : List String
   deriving DecidableEq, Repr
+
+/-- The origins a statement names. -/
+def TreeStatement.originsNamed (s : TreeStatement) : List String :=
+  match s.says with
+  | .genesis g => g.origins
+  | .setOrigins os => os
+  | _ => []
 
 /-- The vaults and the keys a statement names. -/
 def TreeStatement.mentions (s : TreeStatement) : List String × List String :=
   match s.says with
-  | .genesis g => ([g.claimant, g.coop, g.agent], g.avenPeer :: g.devices)
+  | .genesis g => ([g.claimant, g.coop, g.agent, g.guardianVault], g.avenPeer :: g.devices)
   | .signIn vault device => ([vault], [device])
   | .ticket _ | .withdrawal _ | .ack _ => ([], [])
   | .claim _ vault _ device _ => ([vault], [device])
-  | .relayAdd d | .relayRemove d | .keeperAdd d | .keeperRemove d => ([], [d])
+  | .relayAdd v | .relayRemove v | .keeperAdd v | .keeperRemove v | .setGuardian v => ([v], [])
+  | .setAvenPeer k => ([], [k])
+  | .setOrigins _ => ([], [])
 
 def Settled.listed (t : Settled) (S : List TreeStatement) : Listed :=
   let nats (l : List Nat) := l.eraseDups.mergeSort (· ≤ ·)
@@ -1162,7 +1237,9 @@ def Settled.listed (t : Settled) (S : List TreeStatement) : Listed :=
   let keys := strs (S.flatMap (·.mentions.2))
   { counted := names.filter t.counted, final := names.filter t.final, standing := names.filter t.standing
     contested := (nats (S.filterMap (·.ticketOf))).filter t.contested, members := vaults.filter t.member
-    admitted := keys.filter t.admits, relays := keys.filter t.relay, keepers := keys.filter t.keeper }
+    admitted := keys.filter t.admits, relays := vaults.filter t.relay, keepers := vaults.filter t.keeper
+    avenPeer := keys.filter t.avenPeer, origins := (strs (S.flatMap (·.originsNamed))).filter t.origin
+    guardianVault := vaults.filter t.guardianVault }
 
 /-! ### An example tree
 
@@ -1180,7 +1257,7 @@ def guardian : GuardianKeys := ⟨"guardian-ed25519", "guardian-ml-dsa", "guardi
 def alicesGenesis : Genesis :=
   { rpId := "maia.city", origins := ["https://maia.city"], claimant := "alice", passkey := "alice-passkey",
     devices := ["alice-peer"], coop := "maia-city", coopOwners := ["alice"], agent := "aven", avenPeer := "aven-peer",
-    guardian,
+    guardian, guardianVault := "maia-city-guardian",
     signedBy := ["alice-passkey", "guardian-ed25519", "guardian-ml-dsa"] }
 
 def statements : List TreeStatement :=
@@ -1202,12 +1279,12 @@ def statements : List TreeStatement :=
    ⟨790, "t-eve", [160], .claim 160 "eve2" "eve2-passkey" "eve2-peer" guardian⟩,
    ⟨810, "alice-peer", [800], .ack 800⟩,
    ⟨811, "alice-peer-light", [790], .ack 790⟩,
-   ⟨700, "alice-passkey", [100], .relayAdd "aven-peer"⟩,
-   ⟨740, "alice-passkey", [700], .relayRemove "aven-peer"⟩,
-   ⟨750, "alice-passkey", [740], .relayAdd "aven-peer"⟩,
-   ⟨710, "alice-passkey", [520], .relayAdd "bob-peer"⟩,
-   ⟨720, "alice-passkey", [100], .relayRemove "bob-peer"⟩,
-   ⟨730, "alice-passkey", [100], .keeperAdd "alice-peer"⟩,
+   ⟨700, "alice-passkey", [100], .relayAdd "aven"⟩,
+   ⟨740, "alice-passkey", [700], .relayRemove "aven"⟩,
+   ⟨750, "alice-passkey", [740], .relayAdd "aven"⟩,
+   ⟨710, "alice-passkey", [520], .relayAdd "bob"⟩,
+   ⟨720, "alice-passkey", [100], .relayRemove "bob"⟩,
+   ⟨730, "alice-passkey", [100], .keeperAdd "alice"⟩,
    ⟨50, "eve-passkey", [], .genesis { alicesGenesis with
      claimant := "eve", passkey := "eve-passkey", coopOwners := ["eve"],
      signedBy := ["eve-passkey", "guardian-ed25519", "guardian-ml-dsa"] }⟩,
@@ -1224,7 +1301,8 @@ def expected : Listed :=
     final := [500, 790, 800], standing := [500, 790], contested := [160]
     members := ["alice", "aven", "bob", "eve2", "maia-city"]
     admitted := ["alice-peer", "alice-peer-light", "aven-peer", "bob-peer", "bob-peer-light", "eve2-peer"]
-    relays := ["aven-peer"], keepers := ["alice-peer"] }
+    relays := ["aven"], keepers := ["alice"], avenPeer := ["aven-peer"], origins := ["https://maia.city"]
+    guardianVault := ["maia-city-guardian"] }
 
 #guard (settle ok 100 statements).listed statements == expected
 #guard (settle ok 100 statements.reverse).listed statements == expected

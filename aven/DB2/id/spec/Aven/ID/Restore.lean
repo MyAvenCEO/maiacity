@@ -61,7 +61,7 @@ def ticketName (olds : List Old) (key : String) : Nat :=
 claiming browser, the admin coop, the agent and the Aven Peer's key, and the guardian's hybrid keys (A13). -/
 def genesisOf (s : Founding) (c : Claim) (g : GuardianKeys) : Genesis :=
   { rpId := s.rp.rpId, origins := s.rp.origins, claimant := c.person, passkey := c.passkey, devices := [c.deviceKey],
-    coop := s.coop, coopOwners := [c.person], agent := s.network, avenPeer := s.peerKey, guardian := g,
+    coop := s.coop, coopOwners := [c.person], agent := s.network, avenPeer := s.peerKey, guardian := g, guardianVault := guardianId,
     signedBy := [c.passkey, g.ed25519, g.mlDsa] }
 
 /-- An old statement's signer and what it says as a tree statement. Devices go by their keys, as the door does. -/
