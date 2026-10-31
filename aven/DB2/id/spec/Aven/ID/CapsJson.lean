@@ -64,7 +64,6 @@ def Holder.json : Holder → Json
   | .vault v => Json.mkObj [("vault", v)]
   | .group g => Json.mkObj [("group", g.text)]
   | .«public» => "public"
-  | .ticket k => Json.mkObj [("ticket", k)]
 
 def Sig.json (s : Sig) : Json := Json.mkObj [("key", s.key), ("digest", s.digest)]
 
@@ -201,8 +200,9 @@ def genLines (v : String) : List Line :=
   else if v = "maia-city" then [readOn cityDome] else [readOn (docOf "a1")]
 
 /-- A random cap after `parent`: mostly a fair narrowing by the parent's holder, now and then wider, longer, unsigned,
-unapproved, or issued by someone else. A quarter of the links attenuate: by the parent's holder, keeping it, with no
-approval, now and then handing the cap to another holder or sharing further; now and then a chain starts with one. -/
+unapproved, issued by someone else, or held by a group the reader doesn't know. A quarter of the links attenuate: by
+the parent's holder, keeping it, with no approval, now and then handing the cap to another holder or sharing further;
+now and then a chain starts with one. -/
 def genCap (r : Rng) (id : String) (parent : Option Cap) : Cap × Rng := Id.run do
   let mut r := r
   let (k, r1) := r.below 20; r := r1
@@ -215,7 +215,7 @@ def genCap (r : Rng) (id : String) (parent : Option Cap) : Cap × Rng := Id.run 
   let (h, r3) := r.below 20; r := r3
   let (hv, r4) := pick r (if h < 11 then ["alice", "bob"] else genVaults); r := r4
   let holder : Holder := if h < 14 then .vault hv else if h < 17 then .group gGarden else if h < 19 then .«public»
-    else .ticket "t-1"
+    else .group (docOf "g-unknown")
   let (w, r5) := r.below 2; r := r5
   let (wv, r6) := pick r (issuer :: genVaults); r := r6
   let (li, r7) := r.below 3; r := r7

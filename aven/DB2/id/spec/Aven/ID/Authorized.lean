@@ -104,14 +104,12 @@ structure Reader where
   /-- The acting actor an envelope names inside its seal, when an actor host signed it (A27). -/
   actorOf : Envelope → Option DocId
 
-/-- `v` holds `c`: it is `c`'s vault, in `c`'s group now, or, for the public, a member of the network. A ticket is
-claimed by a vault before it writes. -/
+/-- `v` holds `c`: it is `c`'s vault, in `c`'s group now, or, for the public, a member of the network. -/
 def Reader.holdsAt (r : Reader) (c : Cap) (v : String) : Bool :=
   match c.holder with
   | .vault w => w == v
   | .group g => r.ctx.inGroup g v
   | .«public» => r.member v
-  | .ticket _ => false
 
 /-- An envelope's footprint: the steps its calls lower to, which the engine checks what it changed against. -/
 def Reader.footprint (r : Reader) (e : Envelope) : List Step := (r.calls e).flatMap r.lower

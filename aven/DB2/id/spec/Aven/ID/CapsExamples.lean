@@ -400,7 +400,6 @@ def Holder.text : Holder → String
   | .vault v => v
   | .group g => s!"everyone in {castName g}"
   | .«public» => "every member of the network"
-  | .ticket k => s!"whoever claims the ticket {k}"
 
 /-- A target as avenOS shows it, the Docs and vaults by the names `name` gives them. -/
 def targetText (name : Core.DocId → String) (vault : Core.Bytes → String) : Core.Target → String
