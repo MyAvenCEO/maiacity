@@ -1,8 +1,15 @@
 # avenBRAIN
 
-The documentation of the whole system, told from first principles for a reader with no background: a wiki of pages,
-each built from slides that explain one concept at a time, and the one global glossary. avenOS shows it as **Brain**
-(`#/brain`), to anyone, signed in or not: it is as public as the repo.
+The documentation of the whole system, told from first principles for a reader with no background: the architecture,
+the decisions, the one glossary, and a page per package built from slides that explain one concept at a time. avenOS
+shows it as **Brain** (`#/brain`), to anyone, signed in or not, as the repository is ([avenOS](os/README.md)).
+
+**avenBRAIN is the architecture's one location,** in the repository and in the UI. It holds
+[`ARCHITECTURE.md`](ARCHITECTURE.md), the index: the whole on one page, the rules, the packages and their owners, and
+every decision with its status; [`DECISIONS.md`](DECISIONS.md), the append-only audit trail of every decision;
+[`GLOSSARY.md`](GLOSSARY.md), the one vocabulary; and one page per package, `<id>/README.md`: its story with its
+slides, then its architecture, each concept stated once, with the decisions it rests on and the Lean that proves it.
+Brain renders these files themselves, never copies of them. The Lean stays in each package, and every page names it.
 
 Its look is in [`STYLE.md`](STYLE.md), its language in [`VOICE.md`](VOICE.md), and
 every term in [`GLOSSARY.md`](GLOSSARY.md).
@@ -11,14 +18,26 @@ every term in [`GLOSSARY.md`](GLOSSARY.md).
 
 | Path | What |
 |---|---|
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | The architecture's index: the whole on one page, the rules, the packages and their owners, every decision's status |
+| [`DECISIONS.md`](DECISIONS.md) | Every decision, appended in the order it was made, never edited |
+| [`GLOSSARY.md`](GLOSSARY.md) | The one glossary, every term with its one meaning |
 | [`packages.json`](packages.json) | The package list: one item per package on Brain's dashboard, its page and its slides |
-| [`GLOSSARY.md`](GLOSSARY.md) | The one glossary, every term with its one meaning (moved here from `aven/DB2`) |
+| [`core/`](core/README.md) | avenCORE's page: the primitives every package shares |
+| [`id/`](id/README.md) | avenID's page: its story, its slides in `id/slides/`, and who is who |
+| [`caps/`](caps/README.md) | avenCAPS's page: who may do what, and Maia City's register |
+| [`docs/`](docs/README.md) | avenDOCS's page: Docs, Records, types and lenses |
+| [`ops/`](ops/README.md) | avenOPS's page: ops, queries and wants |
+| [`store/`](store/README.md) | avenSTORE's page: blobs, refs and files |
+| [`peers/`](peers/README.md) | avenPEERS's page: the Peer, the Peer-Light, the wire, keepers and relays |
+| [`runtime/`](runtime/README.md) | avenRUNTIME's page: frozen modules, the host and the file registry |
+| [`actors/`](actors/README.md) | avenACTORS's page: programs that live in a Doc and take turns |
+| [`os/`](os/README.md) | avenOS's page: the page and its workers, the apps, and Brain |
+| [`sandbox/`](sandbox/README.md) | avenSANDBOX's page: the box and its check |
 | [`STYLE.md`](STYLE.md), [`VOICE.md`](VOICE.md) | The look and the language |
 | [`style/tokens.css`](style/tokens.css) | The palette, type and chrome as tokens, sampled from the references |
 | [`style/slide.style.json`](style/slide.style.json) | The slide as style data: its ground, its type, its labels and dotted paths |
 | [`style/reference/`](style/reference/) | The first references, from the game |
-| [`id/`](id/README.md) | avenID's page: its story, and its slides in `id/slides/` |
-| [`render/`](render/) | Markdown and slide markup to a checked node tree, links, contrast, and their tests |
+| [`render/`](render/) | Contrast, and Markdown until markdown-runtime takes it, with their tests |
 | [`art/`](art/) | The objects drawn in code, their images by hash, and the slide layouts |
 
 The first references, from the game (the look has since moved to the brand's UI, [`STYLE.md`](STYLE.md)):
@@ -60,11 +79,11 @@ on the page:
   `Node.svelte` draws it.
 - **A slide is a face.** Its part, `<id>.part.json`, goes through the frozen face-runtime, loaded by its hash in
   avenOS's runtimes worker, a worker of its own (`aven/runtimes`, README, "The browser host"). face-runtime checks the
-  tree against the allowlist, every rule's range, the text's size and contrast, and that it can be read aloud, and answers the tree and
-  the style; a part it refuses draws nothing, and the slide says why (`data-refused`). The drawer
-  (`os/web/runtimes/draw.js`) checks both again, builds the slide node by node into a shadow root of its own and
-  writes its CSS there from the rules. No slide style is in avenOS's own sheets, and none of avenOS's reaches a slide.
-  The drawer asks avenOS where each `/files/<hash>` drawing is, and avenOS serves the brain's own from its bundle.
+  tree against the allowlist, every rule's range, the text's size and contrast, and that it can be read aloud, and
+  answers the tree and the style; a part it refuses draws nothing, and the slide says why (`data-refused`). The drawer
+  (`os/web/runtimes/draw.js`) checks both again, builds the slide node by node into a shadow root of its own and writes
+  its CSS there from the rules. No slide style is in avenOS's own sheets, and none of avenOS's reaches a slide. The
+  drawer asks avenOS where each `/files/<hash>` drawing is, and avenOS serves the brain's own from its bundle.
 
 Markdown goes the same way next: through markdown-runtime, held to `render/markdown.js`'s tree, links included, and
 then `render/` goes.
@@ -74,11 +93,12 @@ then `render/` goes.
 The objects are drawn in code: [`art/objects.mjs`](art/objects.mjs), with the paint kit in
 [`art/paint.mjs`](art/paint.mjs). `AVEN_CHROMIUM=<a Chromium> bun brain/art/render.mjs` renders each to a transparent
 PNG in `art/img/`, named by the BLAKE3 hash of its bytes, as the network names its files, and lists them in
-`art/images.json`. `bun brain/art/slides.mjs` lays out avenID's slides and writes, for each, its markup, its style data and its face
-part; the rules every slide shares, `style/slide.style.json`, are written by hand. A test holds every rule to `ruleOk`,
-every font size to 2.6cqw or more, each part to its markup and style, and the runtimes' vector for "A key signs"
-(`face.json`) to the CSS the drawer writes from the brain's own rules. A slide shows
-a drawing as `<img src="/files/<hash>">`, the only image the allowlist takes. The images and the slides' files are generated: edit the objects and the layouts, then run them.
+`art/images.json`. `bun brain/art/slides.mjs` lays out avenID's slides and writes, for each, its markup, its style data
+and its face part; the rules every slide shares, `style/slide.style.json`, are written by hand. A test holds every rule
+to `ruleOk`, every font size to 2.6cqw or more, each part to its markup and style, and the runtimes' vector for "A key
+signs" (`face.json`) to the CSS the drawer writes from the brain's own rules. A slide shows a drawing as
+`<img src="/files/<hash>">`, the only image the allowlist takes. The images and the slides' files are generated: edit
+the objects and the layouts, then run them.
 
 ## Releases
 
