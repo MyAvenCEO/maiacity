@@ -1,197 +1,55 @@
 {
- "title": "Rules",
- "slides": [
-  {
-   "title": "Every rule is one sentence.",
-   "text": "A {rule} says: this role may do these ops, on this data, until then. Nothing more. Everything anyone may ever do with your data is written in rules like this one.",
-   "code": {
-    "role": "home",
-    "data": "house-list",
-    "ops": [
-     "create",
-     "read",
-     "update"
-    ],
-    "expires": "2026-12-01"
-   },
-   "action": "What can a rule allow?"
-  },
-  {
-   "title": "A rule is a list of ops.",
-   "text": "Each op is one thing a role may do. Some are about the content, some about carrying it.",
-   "list": [
-    "Content: create, read, update, delete.",
-    "Carrying: want, keep, sync.",
-    "Rules themselves: admin (write any rule), share (pass on a narrower one)."
-   ],
-   "action": "Make it narrower"
-  },
-  {
-   "title": "Conditions make a rule narrower.",
-   "text": "An op can carry {conditions}: only this part of the data, only entries that match, only with two signatures, only so many times.",
-   "code": {
-    "role": "kids",
-    "data": "house-list",
-    "ops": [
-     "read",
-     {
-      "op": "create",
-      "at": "items"
-     },
-     {
-      "op": "update",
-      "at": "items/*/done",
-      "where": {
-       "author": "$self"
-      }
-     }
-    ]
-   },
-   "action": "Every rule ends"
-  },
-  {
-   "title": "Every rule expires.",
-   "text": "No rule lasts forever by accident. Each one has an {expiry}, 30 days unless you choose otherwise. A forgotten share closes by itself.",
-   "code": {
-    "role": "plumber",
-    "data": "fix-tap",
-    "ops": [
-     "read",
-     "update"
-    ],
-    "expires": "2026-11-07"
-   },
-   "action": "But my family?"
-  },
-  {
-   "title": "Unchanged rules renew themselves.",
-   "text": "You don't want your family locked out every month. So a device of an admin quietly renews every rule that hasn't changed, a week before it ends. Rules you changed or removed simply run out.",
-   "flow": [
-    "rule still the same?",
-    "renew for 30 days",
-    "else: let it run out"
-   ],
-   "action": "And the first rule?"
-  },
-  {
-   "title": "Only the first rule never expires.",
-   "text": "The rule the seal signed at birth names the owners. It has no expiry, so data can never end up with nobody allowed to look after it. Every rule after it expires.",
-   "code": {
-    "data": "house-list",
-    "first_rule": {
-     "role": "owners",
-     "ops": [
-      "admin",
-      "create",
-      "read",
-      "update",
-      "delete",
-      "keep",
-      "sync"
-     ]
-    },
-    "signed_by": "seal",
-    "expires": "never"
-   },
-   "action": "What is a rule, really?"
-  },
-  {
-   "title": "Under the hood, a rule is a capability.",
-   "text": "Each rule is a signed token, a {capability}, like a Biscuit. It carries its own proof: who signed it, and why they were allowed to, all the way back to the seal. Any device can check it offline. Nobody can forge it.",
-   "code": {
-    "rule": {
-     "role": "home",
-     "ops": [
-      "create",
-      "read",
-      "update"
-     ],
-     "expires": "2026-12-01"
-    },
-    "signed_by": "you (owners)",
-    "proof": [
-     "seal → owners: admin",
-     "owners → home: create, read, update"
-    ]
-   },
-   "action": "Pass it on"
-  },
-  {
-   "title": "Passing a rule on only narrows it.",
-   "text": "If Mia's rule lets her share, she can hand Grandma a rule of her own: she adds a block to the token. A block can only take ops away, shorten the expiry or add conditions. It can never add.",
-   "code": {
-    "blocks": [
-     {
-      "by": "you",
-      "role": "home",
-      "ops": [
-       "read",
-       "update",
-       "share"
-      ],
-      "expires": "2026-12-01"
-     },
-     {
-      "by": "mia",
-      "to": "grandma",
-      "ops": [
-       "read"
-      ],
-      "expires": "2026-11-15"
-     }
-    ]
-   },
-   "action": "Check a rule"
-  },
-  {
-   "title": "Every device checks the same four things.",
-   "text": "Before a change goes in, or before a single byte goes out, a device checks the rule behind it.",
-   "list": [
-    "Every signature in the proof is valid, back to the seal.",
-    "It hasn't expired.",
-    "The op is listed.",
-    "Every condition holds."
-   ],
-   "action": "End one early"
-  },
-  {
-   "title": "Ending a rule early.",
-   "text": "You don't have to wait for the expiry. A {revoke} is a signed op that travels like any other. Every device that learns of it stops accepting the rule and wipes what the rule gave it.",
-   "code": {
-    "op": "revoke",
-    "rule": "home → plumber",
-    "by": "you (owners)",
-    "then": [
-     "drop new changes",
-     "rotate the data key",
-     "wipe on honest devices"
-    ]
-   },
-   "action": "What about clocks?"
-  },
-  {
-   "title": "Time without a central clock.",
-   "text": "Devices are often offline, so a change carries its own time. It can't claim a time earlier than the changes it has already seen. A change dated after its rule expired is dropped.",
-   "code": {
-    "change": "mia:52",
-    "time": "2026-12-03",
-    "seen": [
-     "you:90 @ 2026-12-02"
-    ],
-    "rule_expires": "2026-12-01",
-    "result": "dropped"
-   },
-   "action": "Sum it up"
-  },
-  {
-   "title": "Rules, in short.",
-   "list": [
-    "A rule: a role may do these ops, on this data, until then.",
-    "Conditions narrow it; nothing can widen it.",
-    "Every rule expires, and renews itself while it stays the same.",
-    "Under the hood it's a signed capability that any device checks offline."
-   ],
-   "action": ""
-  }
- ]
+  "title": "Rules",
+  "slides": [
+    { "title": "Every rule is one sentence.",
+      "text": "A {rule} says: this role may do these things, on this data, until then. Nothing more. Everything anyone may ever do with your data is written in rules like this one.",
+      "code": { "role": "home", "data": "house-list", "do": ["create", "read", "update"], "expires": "2026-12-01" },
+      "action": "What can a rule allow?" },
+    { "title": "What a rule can allow.",
+      "text": "Each entry in “do” is one thing a role may do. Some are about the content, some about carrying it, and two are about rules themselves.",
+      "list": ["Content: create, read, update, delete.", "Carrying: want, keep, sync.", "Rules: admin (write any rule), share (pass on a narrower one).", "And any engine do, like find or search, that only needs read."],
+      "action": "Make it narrower" },
+    { "title": "Conditions make a rule narrower.",
+      "text": "Each “do” can carry {conditions}: only this part of the data, only entries that match, only with two signatures, only so many times.",
+      "code": { "role": "kids", "data": "house-list", "do": ["read", { "do": "create", "at": "items" }, { "do": "update", "at": "items/*/done", "where": { "author": "$self" } }] },
+      "action": "Every rule ends" },
+    { "title": "Every rule expires.",
+      "text": "No rule lasts forever by accident. Each one has an {expiry}, 30 days unless you choose otherwise. A forgotten share closes by itself.",
+      "code": { "role": "plumber", "data": "fix-tap", "do": ["read", "update"], "expires": "2026-11-07" },
+      "action": "But my family?" },
+    { "title": "Unchanged rules renew themselves.",
+      "text": "You don't want your family locked out every month. So a device of an admin quietly renews every rule that hasn't changed, a week before it ends. Rules you changed or removed simply run out.",
+      "flow": ["rule still the same?", "renew for 30 days", "else: let it run out"],
+      "action": "And the first rule?" },
+    { "title": "Only the first rule never expires.",
+      "text": "The rule the seal signed at birth names the owners. It has no expiry, so data can never end up with nobody allowed to look after it. Every rule after it expires.",
+      "code": { "data": "house-list", "first_rule": { "role": "owners", "do": ["admin", "create", "read", "update", "delete", "keep", "sync"] }, "signed_by": "seal", "expires": "never" },
+      "action": "What is a rule, really?" },
+    { "title": "Under the hood, a rule is a capability.",
+      "text": "Each rule is a signed token, a {capability}, like a Biscuit. It carries its own proof: who signed it, and why they were allowed to, all the way back to the seal. Any device can check it offline. Nobody can forge it.",
+      "code": { "rule": { "role": "home", "do": ["create", "read", "update"], "expires": "2026-12-01" }, "signed_by": "you (owners)", "proof": ["seal → owners: admin", "owners → home"] },
+      "action": "Pass it on" },
+    { "title": "Passing a rule on only narrows it.",
+      "text": "If Mia's rule lets her share, she can hand Grandma a rule of her own: she adds a block to the token. A block can only take things away, shorten the expiry or add conditions. It can never add.",
+      "code": { "blocks": [{ "by": "you", "role": "home", "do": ["read", "update", "share"], "expires": "2026-12-01" }, { "by": "mia", "to": "grandma", "do": ["read"], "expires": "2026-11-15" }] },
+      "action": "Check a rule" },
+    { "title": "Every device checks the same four things.",
+      "text": "Before a change goes in, or before a single byte goes out, a device checks the rule behind it.",
+      "list": ["Every signature in the proof is valid, back to the seal.", "The rule hasn't ended.", "What's being done is listed in its “do”.", "Every condition holds."],
+      "action": "End one early" },
+    { "title": "Ending a rule early.",
+      "text": "You don't have to wait for the expiry. A {revoke} is signed and travels like any other change. Every device that learns of it stops accepting the rule and wipes what the rule gave it.",
+      "code": { "do": "revoke", "rule": "home → plumber", "by": "you (owners)", "then": ["drop new changes", "rotate the data key", "wipe on honest devices"] },
+      "action": "What about clocks?" },
+    { "title": "Expiry is an event, not a clock.",
+      "text": "Devices are often offline, and a device can lie about its time. So clocks don't decide. When a rule's date has passed, an admin's device writes a {lapse} into the history, like a revoke. Every device then asks only: did this change see the lapse? A change made without having seen it counts as made at the same time, and the lapse wins.",
+      "code": { "lapse": { "rule": "home → plumber", "at": "you:95" }, "change": { "id": "plumber:12", "claims": "2026-11-06", "seen": ["you:80"] }, "result": "dropped: lapse wins" },
+      "action": "And if nobody's online?" },
+    { "title": "The one gap.",
+      "text": "A lapse needs one admin device to come online and write it. Until then, the date on the rule is the only thing that stops it, and a device offline for weeks could claim an old date. Owners' devices come online often, so in practice the gap is short.",
+      "action": "Sum it up" },
+    { "title": "Rules, in short.",
+      "list": ["A rule: this role may do these things, on this data, until then.", "Conditions narrow it; nothing can widen it.", "Every rule expires, and renews itself while it stays the same.", "Endings are events in the history, so no clock has to be trusted.", "Under the hood it's a signed capability that any device checks offline."],
+      "action": "" }
+  ]
 }

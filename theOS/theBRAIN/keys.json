@@ -24,7 +24,7 @@
     "id": "ed25519:7Hq…",
     "rules": {
      "role": "owners",
-     "ops": [
+     "do": [
       "admin",
       "create",
       "read",
@@ -59,7 +59,7 @@
    "code": {
     "change": {
      "data": "house-list",
-     "op": "update",
+     "do": "update",
      "by": "mia/phone",
      "sig": "…"
     },
@@ -76,21 +76,21 @@
    "text": "An admin of the role puts the role key in an envelope for Mia's identity key. That's all. Mia can now read everything the role can read, including what came before she joined.",
    "code": {
     "role": "home",
-    "op": "add",
+    "do": "add",
     "who": "mia",
     "envelope": "role key → mia's identity key"
    },
    "action": "Give a rule"
   },
   {
-   "title": "Giving a rule: read needs a key, the other ops need only a signature.",
+   "title": "Giving a rule: read needs a key, everything else needs only a signature.",
    "text": "Giving “plumber” read on the tap item puts the item's data key in an envelope for the plumber role. Giving update needs no key at all: it's a signed rule change in the item's history, and every device enforces it.",
    "code": {
     "data": "fix-tap",
-    "op": "admin",
+    "do": "admin",
     "grant": {
      "role": "plumber",
-     "ops": [
+     "do": [
       "read",
       "update"
      ]
@@ -114,10 +114,10 @@
    "text": "Taking update away is just a signed rule change. Taking read away rotates the data key, and the new one goes to every reading role except that one.",
    "code": {
     "data": "house-list",
-    "op": "admin",
+    "do": "admin",
     "revoke": {
      "role": "kids",
-     "ops": [
+     "do": [
       "read"
      ]
     },
@@ -233,7 +233,7 @@
       "new now"
      ],
      [
-      "Change any other op",
+      "Change anything but read",
       "–",
       "–",
       "–"
@@ -253,7 +253,7 @@
    "list": [
     "Data is born with a seal that is used once and destroyed.",
     "Read is a chain of envelopes: identity key, role key, data key.",
-    "Every other op is a chain of signatures, checked by every device.",
+    "Everything else is a chain of signatures, checked by every device.",
     "Removing someone rotates keys: they keep the past and lose the future."
    ],
    "action": ""

@@ -1,39 +1,72 @@
 {
-  "title": "Owning and sharing",
-  "slides": [
-    { "title": "It starts with your phone.",
-      "text": "Your phone holds a {signer}. It can say one thing: “this is really me.” It never owns anything.",
-      "action": "Go on" },
-    { "title": "The signer acts for you.",
-      "text": "You are an {identity}: a human. Your phone, laptop and watch are your signers, your hands. Lose one, add another, and you're still you.",
-      "action": "Write something" },
-    { "title": "You write a to-do list.",
-      "text": "Everything you keep is {data}. Your list keeps changing; the photo of the leaking tap you attach never will. Both are data.",
-      "action": "Who owns it?" },
-    { "title": "The list owns itself.",
-      "text": "When data is born, it gets a {seal}: a key used exactly once, to sign the data's first rule, and then destroyed. Nobody holds it, so nobody can share it, lose it or steal it. The list belongs to no one but itself.",
-      "action": "Read its first rule" },
-    { "title": "Its first rule names you.",
-      "text": "The seal's one signature gives the role “owners” a rule with every op. A {role} is a name for a set of identities. You're its only member.",
-      "action": "What is everything?" },
-    { "title": "Five things you can do with data.",
-      "text": "Create, read, update, delete, and admin: change the rules themselves. Each is an op. A {rule} gives a role a set of ops on one piece of data. Never to a person directly, always to a role.",
-      "list": ["create", "read", "update", "delete", "admin"],
-      "action": "Share the list" },
-    { "title": "You share the list with Mia.",
-      "text": "You make a role “home”, give it read, create and update on the list, and add Mia. She can see the list, add things and tick them off. She can't delete it, and she can't change the rules.",
-      "action": "Call the plumber" },
-    { "title": "The plumber gets one item.",
-      "text": "“Fix the tap” is its own little piece of data, linked from the list. Born inside the list, it starts with the list's rules. You add one more: the role “plumber” may read and update this item, and nothing else.",
-      "action": "The tap is fixed" },
-    { "title": "The job is done.",
-      "text": "You take the plumber out of his role. He keeps what he already saw, and sees nothing new. The role stays, ready for the next plumber.",
-      "action": "Move in together" },
-    { "title": "You and Mia start a home.",
-      "text": "Together you form a {coop}: an identity made of identities. You make the coop the only member of “owners”. Now neither of you owns the list alone, and neither of you can lose it.",
-      "action": "Sum it up" },
-    { "title": "That's all there is.",
-      "list": ["Signers act for identities.", "Identities, human or coop, are members of roles.", "Roles hold rules: create, read, update, delete, admin.", "Data owns itself and only ever hands out rules."],
-      "action": "" }
-  ]
+ "title": "Owning and sharing",
+ "slides": [
+  {
+   "title": "It starts with your phone.",
+   "text": "Your phone holds a {signer}. It can say one thing: “this is really me.” It never owns anything.",
+   "action": "Go on"
+  },
+  {
+   "title": "The signer acts for you.",
+   "text": "You are an {identity}: a human. Your phone, laptop and watch are your signers, your hands. Lose one, add another, and you're still you.",
+   "action": "Write something"
+  },
+  {
+   "title": "You write a to-do list.",
+   "text": "Everything you keep is {data}. Your list keeps changing; the photo of the leaking tap you attach never will. Both are data.",
+   "action": "Who owns it?"
+  },
+  {
+   "title": "The list owns itself.",
+   "text": "When data is born, it gets a {seal}: a key used exactly once, to sign the data's first rule, and then destroyed. Nobody holds it, so nobody can share it, lose it or steal it. The list belongs to no one but itself.",
+   "action": "Read its first rule"
+  },
+  {
+   "title": "Its first rule names you.",
+   "text": "The seal's one signature gives the role “owners” a rule that may do everything. A {role} is a name for a set of identities. You're its only member.",
+   "action": "What is everything?"
+  },
+  {
+   "title": "Five things you can do with data.",
+   "text": "Create, read, update, delete, and admin: change the rules themselves. A {rule} says which of them a role may do, on one piece of data. Never to a person directly, always to a role.",
+   "list": [
+    "create",
+    "read",
+    "update",
+    "delete",
+    "admin"
+   ],
+   "action": "Share the list"
+  },
+  {
+   "title": "You share the list with Mia.",
+   "text": "You make a role “home”, give it read, create and update on the list, and add Mia. She can see the list, add things and tick them off. She can't delete it, and she can't change the rules.",
+   "action": "Call the plumber"
+  },
+  {
+   "title": "The plumber gets one item.",
+   "text": "“Fix the tap” is its own little piece of data, linked from the list. Born inside the list, it starts with the list's rules. You add one more: the role “plumber” may read and update this item, and nothing else.",
+   "action": "The tap is fixed"
+  },
+  {
+   "title": "The job is done.",
+   "text": "You take the plumber out of his role. He keeps what he already saw, and sees nothing new. The role stays, ready for the next plumber.",
+   "action": "Move in together"
+  },
+  {
+   "title": "You and Mia start a home.",
+   "text": "Together you form a {coop}: an identity made of identities. You make the coop the only member of “owners”. Now neither of you owns the list alone, and neither of you can lose it.",
+   "action": "Sum it up"
+  },
+  {
+   "title": "That's all there is.",
+   "list": [
+    "Signers act for identities.",
+    "Identities, human or coop, are members of roles.",
+    "Roles hold rules: create, read, update, delete, admin.",
+    "Data owns itself and only ever hands out rules."
+   ],
+   "action": ""
+  }
+ ]
 }
