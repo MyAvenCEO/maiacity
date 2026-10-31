@@ -62,8 +62,8 @@ verb and a footprint. A mutation is a list of them applied to one Doc as one com
 - **Every grammar above it lowers to these:** the ontology's `assert`, `set` and `retract`, and state-runtime's steps
   ([avenRUNTIME](../runtime/README.md#state-runtime)).
 
-**Decided:** A19, K8, A37, engine D11, engine rule 12 · **Lean:** `Aven.DB.Engine.Mutate` — `refused_changes_nothing`,
-`refs_point_backward`, `created_distinct`, `ids_differ_across`
+**Decided:** A19, K8, A37, engine D11, engine rule 12 · **Lean:** `Aven.DB.Engine.Mutate` —
+`refused_changes_nothing`, `refs_point_backward`, `created_distinct`, `ids_differ_across`
 
 ## Lowering a call to steps
 
@@ -307,8 +307,8 @@ Wants are computed from definitions and bound slots, never by reading data first
    that root type; a collection through what it lists.
 4. **Prerequisites inherit priority.** A key needs, in order: its Doc id resolved; the key blob and the epoch key,
    through the keyring and its groups; the fetch key; the newest checkpoint, once there are checkpoints (P24); the
-   segments after it; then follows and files.
-   Each runs at the highest priority of anything waiting on it, so a `now` want never waits behind an `idle` key fetch.
+   segments after it; then follows and files. Each runs at the highest priority of anything waiting on it, so a `now`
+   want never waits behind an `idle` key fetch.
 5. **Uploads first.** A device's own unsent envelopes and segments go out before any pull.
 6. **Fair and preemptive.** Work goes a page or a chunk at a time, and the queue picks again between pages. Within a
    tier, Docs take turns. Durable tiers keep a fixed share, so they never starve.
@@ -324,9 +324,10 @@ Wants are computed from definitions and bound slots, never by reading data first
 11. **Privacy.** Wants stay on the device. A keeper learns which Docs a device fetches, in what order and when, and
     nothing else.
 
-**Decided:** A9, K4, A8, A1, rule 6, rule 11, engine D3, engine D4, engine D5 · **Lean:** `Aven.DB.Engine.Wants` —
-`served_eq_wants_caps`, `keys_once`, `queued_highest`, `tiers_only_order`, `prerequisites_inherit`, `uploads_first`,
-`page_bounded`, `round_moves`, `roundP_moves`, `waits_isolated`, `stall_raised`, `now_never_evicted`, `evict_fits`
+**Decided:** A9, K4, A8, A1, rule 6, rule 11, engine D3, engine D4, engine D5, P24 · **Lean:**
+`Aven.DB.Engine.Wants` — `served_eq_wants_caps`, `keys_once`, `queued_highest`, `tiers_only_order`,
+`prerequisites_inherit`, `uploads_first`, `page_bounded`, `round_moves`, `roundP_moves`, `waits_isolated`,
+`stall_raised`, `now_never_evicted`, `evict_fits`
 
 ## Search, local first
 
@@ -381,7 +382,7 @@ is how the engine derives an index and looks a query up in it.
 | The update grammar | `Engine.Mutate`, `mutations.json` (#1530) | `mutate`, pending in #1697 | — |
 | Lowering a call to steps | `Engine.Lower`, `lower.json`, pending in #1697 | `lower`, pending in #1697 | — |
 | Plugins are runtimes | `readers_agree` (#1530); the ontology's lowering not yet | `core/1` only, pending in #1697; the ontology not started | — |
-| Footprints and the merge check | `Engine.Footprint`, `Engine.Changes` (#1530, #1712); `Fresh`, removed fields, `Docs.Version`, `changes.json` and `merge-check.json` pending in #1697 | `footprint`, `changes`, pending in #1697 | — |
+| Footprints and the merge check | `Engine.Footprint`, `Engine.Changes` (`typesKept` in #1712); `Fresh`, removed fields, `Docs.Version`, `changes.json` and `merge-check.json` pending in #1697 | `footprint`, `changes`, pending in #1697 | — |
 | A Record id as a key | `idKey`, pending in #1697 | `id_key`, `id_of_key`, pending in #1697 | — |
 | Facts and Records | not yet | not started | — |
 | Queries | `Engine.Query`, `queries.json` (#1530) | `query`, `value`, pending in #1697 | — |

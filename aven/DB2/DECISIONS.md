@@ -2016,7 +2016,8 @@ changed. A refinement names what it refines; a change of mind names what it supe
 - **Lean or code then:** `aven-db-docs` on `claude/aven-docs` (`e7dd0910`).
 
 ### A138 · The decision log is append-only
-- **Decided by:** Samuel (31 Oct 2026, after 11:06; his words aren't in the ledgers, which end at 11:06), with the
+- **Decided by:** Samuel (about 11:12: "Let's do it like that. Have a decision audit trial log markdown that just keeps
+  the history trace immutable + plus a mutable architecture doc that is always update to its latest truth"), with the
   architect as the log's only writer (11:15, the check)
 - **Decision:** `aven/DB2/DECISIONS.md` is avenDB's decision audit trail, beside a mutable architecture document: the
   log keeps the history immutable, and ARCHITECTURE.md with its chapters and the Lean is always the latest truth. The
@@ -2102,7 +2103,7 @@ changed. A refinement names what it refines; a change of mind names what it supe
   a built-in type whose fit takes it whole at birth and refuses edits. A change of a setting is a later `tree/1` op,
   settled by latest.
 - **Why:** a genesis has exact keys (A81), so the setup isn't a genesis field.
-- **Supersedes:** — (refines A11 and A68)
+- **Supersedes:** A11 (in part: the setup is no longer a field of the signed genesis statement); refines A68
 - **Lean or code then:** none yet.
 
 ### A147 · Authorize is a function of the envelope and its counted past
@@ -2142,3 +2143,262 @@ changed. A refinement names what it refines; a change of mind names what it supe
   AAD.
 - **Supersedes:** — (refines A5)
 - **Lean or code then:** none yet.
+
+### A151 · A peer's Doc shelf
+- **Decided by:** the architect with Docs in the Peers (11:29)
+- **Decision:** a peer keeps a Doc's envelope bytes as blobs by hash, and two refs per Doc, each a Value's blob moved by
+  compare-and-set: `doc-<id hex>-held` (the docs layer's held page) and `doc-<id hex>` (the head). The held page moves
+  first, since the head is what it reopens to. A ref moved by a second writer is refused, never retried over.
+- **Why:** one writer per ref, and a crash between the two moves leaves a Doc that still reopens.
+- **Supersedes:** — (refines A128)
+- **Lean or code then:** `docs::Shelf`, tests/doc_shelf.rs (#1727).
+
+### A152 · A live gossip message
+- **Decided by:** the architect with Docs in the Peers (11:29)
+- **Decision:** a live gossip message is `{sealed: bytes}`, or `{hash: 32 bytes}` when the sealed envelope doesn't fit a
+  gossip message (4096 bytes, iroh-gossip's default; up to 4085 sealed bytes go whole), read from exactly its one key.
+- **Why:** an oversize envelope is fetched through the one gate instead.
+- **Supersedes:** —
+- **Lean or code then:** `Live.ofValue_value`, `Live.of_fits`, live.json, `docs::Live` (#1727).
+
+### A153 · A keeper takes an upload when the bill doesn't grow
+- **Decided by:** the architect with the keepers thread (11:31)
+- **Decision:** a keeper takes an upload when the vault's bill after it is no more than its quota, or no larger than
+  before. A vault pushed over its quota by a moved bill can always shed bytes (a covering segment) and never grow. The
+  keeper computes the bill after the upload on a copy before committing.
+- **Why:** with admission only on bill + new bytes ≤ quota, a vault over its quota could never upload the segment that
+  shrinks its bill.
+- **Supersedes:** — (refines A141)
+- **Lean or code then:** `Aven.Peer.Serve`: `admitted_within`, `over_quota_sheds`; serve.json (#1722).
+
+### A154 · Group topics, and what a group's topic carries
+- **Decided by:** the architect with Docs in the Peers (11:33)
+- **Decision:** a group's topic is `groupTopic wire key` = the BLAKE3 of the codec's `{key, wire}`, where `key` =
+  `derive_key("avenDB topic 1", the group's epoch key)`. A group's topic carries `Live`, each read from exactly its
+  keys: `{sealed}`, a loose envelope; `{doc, hash}`, an oversize envelope fetched through the one gate;
+  `{doc, version}`, the BLAKE3 of the sender's tips sorted by their encodings. A member whose version differs runs
+  `doc_tips {doc, tips, more}` and `doc_have {doc, values, more}` over aven/db/1, paged; no heads go on gossip. At the
+  cutover the groups are Maia City's members, whose topic is `groupTopic(wire, the tree Doc's epoch key)` (the register
+  is sealed to the members), and each vault's devices, with `groupTopic(wire, its keyring epoch key)`. When caps' groups
+  exist, the members' group key replaces the tree's epoch key. A device joins the newest and the previous epoch's
+  topics. The first generation's JSON room carries no Docs traffic.
+- **Why:** one topic per group scales (A9's "Massive data" item 13), and mixing the new traffic into the first
+  generation's room would tie the new path to the old.
+- **Supersedes:** A152 (in part: `Live`'s form); refines A143
+- **Lean or code then:** `group_topic`, `Live`, `version`, `GroupTopic`; topics.json (#1727).
+
+### A155 · A sealed live message names its Doc once
+- **Decided by:** the architect with Docs in the Peers (11:33)
+- **Decision:** `{sealed}` carries no separate `doc`: the seal's outside names the Doc, and the docs layer refuses a
+  seal whose `doc` isn't the Doc's (`Refused::Doc`). `{doc, hash}` and `{doc, version}` carry `doc`, because nothing
+  else names it there.
+- **Why:** a second `doc` beside the seal's would be a second source that could disagree.
+- **Supersedes:** — (refines A154)
+- **Lean or code then:** #1727.
+
+### A156 · A device's keys, as built
+- **Decided by:** the keys thread, merged by the architect (#1731, 11:33)
+- **Decision:** a device's ML-DSA-65 ξ is `derive_key("avenID device ml-dsa 1", its Ed25519 seed)`, and its X-Wing seed
+  is `derive_key("avenID device seal 1", its Ed25519 seed)`. Both are made in the device's own process, wiped after use
+  and never exported, and nothing else is derived from the seed. They rotate together with the device key (D19), and a
+  rotation reseals the keyring. Nothing trusts them until `device_hybrid_bound` holds.
+- **Why:** a quantum attacker recovers the Ed25519 scalar, never the seed it was hashed from.
+- **Supersedes:** A120 (the ML-DSA key generated); refines A130 and A132
+- **Lean or code then:** `deviceMlDsaSeed`, `deviceSealSeed`, derivations.json; `HybridKey::from_device_seed`,
+  `device_ml_dsa_seed`, `device_seal_key`; the Peer-Light's `deviceHybrid()`/`deviceSeal()`, the Peer's
+  `keys::hybrid_public`/`seal_public` (#1731).
+
+### A157 · Package names
+- **Decided by:** Samuel (11:36: "regarding naming convention call them all like that avenDB, avenOS, avenSTORE,
+  avenPEERS, avenOPS, aevnID, avenRUNTIME, avenDOCS etc ... avenACTORS")
+- **Decision:** a package is named "aven" plus its name in capitals, in docs, in the brain and in talk. avenDB is the
+  umbrella (`aven/DB2`); avenCORE (`core`, `codec`); avenID (`id`); avenCAPS (A160); avenDOCS (`db/docs`); avenOPS
+  (`db/engine`); avenSTORE (`store`); avenPEERS (`peer`: Peer, Peer-Light, wire, gossip, keepers); avenRUNTIME
+  (`aven/runtimes`); avenACTORS (`aven/actor`); avenOS (`os`); avenBRAIN (`brain`); avenSANDBOX (`sandbox`). Crate and
+  folder names stay. The first generation (`aven-gen1`) gets no brand name; it goes at the cutover. Release artifacts
+  keep their names (avenOS, the avenPEER image, avenSANDBOX).
+- **Why:** one naming for every package.
+- **Supersedes:** —
+- **Lean or code then:** none.
+
+### A158 · avenBRAIN is the architecture's one location
+- **Decided by:** Samuel (11:36: "visualize all the architecture docs incl. the decisions logs into our brain in the UI
+  as well. so BRAIN becomes the SSOT location where everything comes together")
+- **Decision:** the architecture lives in `aven/DB2/brain/`, in the repo and in the UI (avenOS's Brain):
+  `ARCHITECTURE.md` (the index: the whole on one page, the rules, packages and owners, the decision index with status),
+  `DECISIONS.md` (this log), `GLOSSARY.md` (the one vocabulary), and one page per package, `<package>/README.md` (its
+  story with slides, then its architecture, each concept once, with its decisions and its Lean). The brain renders these
+  files themselves, never copies. The Lean stays with its packages, and every page names it.
+- **Why:** one place to read everything, so nothing drifts into a second copy.
+- **Supersedes:** A126 (in part: the chapters' location and the paths `aven/DB2/ARCHITECTURE.md` and
+  `aven/DB2/DECISIONS.md`)
+- **Lean or code then:** none yet.
+
+### A159 · avenCAPS is its own package
+- **Decided by:** Samuel (11:38: "also pull out avenCAPS from avenID as its own package ... CAPS should use the crypto
+  signing primitives from avenID, but are standalone elsewise right?"), with the architect's reading
+- **Decision:** avenID owns who is who: keys and signatures (hybrid, passkeys and the PRF, device keys), sealing
+  (X-Wing, the seal, Padmé, epochs, the keyring), and vaults with their owners (k of n, governs). avenCAPS owns who may
+  do what: the cap's form over ops and targets, chains and narrowing, revocation, collections, device, member, keep and
+  offer caps, the gate's authority half, and the reader's `authorized`. avenCAPS uses avenID's signatures, vaults and
+  owners' approval, and avenCORE's ops, targets and calls; nothing in avenID uses caps. The code split (`caps/spec`,
+  `Aven.Caps`, crate `aven-caps`) comes later.
+- **Why:** caps stand alone on identity's primitives.
+- **Supersedes:** A45 (in part: "the tree … is avenID's")
+- **Lean or code then:** none yet; the split is planned by the caps threads.
+
+### A160 · The register is avenCAPS's
+- **Decided by:** Samuel (11:40: "into avenCAPS, since almost every register act is a cap act")
+- **Decision:** the register (`tree/1`: tickets, claims, confirms, sign-ins, settings) is part of avenCAPS.
+- **Why:** almost every register act is a cap act (a ticket is a cap, a confirm issues a member cap, a claim carries a
+  keep cap), and in avenID it would make avenID and avenCAPS depend on each other.
+- **Supersedes:** — (completes A159)
+- **Lean or code then:** today in `id/spec` (Network, TreeDoc, Restore, Admit); it moves with the split.
+
+### A161 · Keepers' fetch keys and records
+- **Decided by:** the architect, for minimal caps' keep module (11:42)
+- **Decision:** fetch keys are Ed25519, with seed `derive_key("avenDB fetch key 1", the Doc epoch's key)`, so every
+  reader of the epoch derives it. A forged proof yields only ciphertext sealed post-quantum; the risk that a quantum
+  forger spends a vault's keeper quota is accepted. The proof's form, `["avenDB fetch 1", {doc, exporter}]`, is caps'
+  (`fetchLabel`, `proofBody`), and `Aven.Peer.Fetch` cites it. Labels are frozen format strings, not package names, so
+  caps' keep their "avenID …" prefix under avenCAPS. In Rust, aven-id's keep module is generic over the key and the
+  verifier, and the `Gate` trait and its adapter live in aven-peer-keeper.
+- **Why:** a keeper reads no caps, so it checks key proofs alone (A22).
+- **Supersedes:** —
+- **Lean or code then:** `aven_id::keep` (#1734), generic.
+
+### A162 · A vault is named by 32 bytes
+- **Decided by:** the architect, from Core's report (11:42)
+- **Decision:** a vault is named by 32 bytes in every format, never by text: "v:alice" is a Lean example's convenience
+  that leaked into Target, Facts and TargetCbor. avenID defines how a vault's name is made, and then Core, avenCAPS and
+  the register switch in one step.
+- **Why:** a name is a hash (A30).
+- **Supersedes:** —
+- **Lean or code then:** none yet.
+
+### A163 · Who signs the keeper's records, and their exact shapes
+- **Decided by:** the architect with caps Lean (11:41–11:42)
+- **Decision:** the listing names each Doc's first fetch key, number 0. It is signed by a device acting for the keep
+  cap's issuer vault, or by its owners k of n. A fetch link n ≥ 1 is
+  `["avenDB fetch link 1", {doc, epoch, key, n, prev}]`: it names key n and is signed by key n−1; `epoch` is the epoch's
+  name, and `prev` is the previous link's name, or for link 1 the listing's name, so the chain starts at the listing and
+  holds no null. Caps' records are Signed things beside their sigs:
+  - the listing: `["avenID keep listing 1", {cap, docs: [{doc, key}]}]`;
+  - an order: `["avenID keep order 1", {act: "withdraw", cap}]` or `{act: "delete", doc}`, two exact shapes, by the same
+    signers as the listing;
+  - a choice: `["avenID keep choice 1", {branch, doc, fork}]`, by a device of the vault that issued the keep cap (A22).
+  The proof is signed by the Doc's current fetch key. No record has a null or an optional key (A42).
+- **Why:** exact forms with no optional keys.
+- **Supersedes:** — (refines A161)
+- **Lean or code then:** to come in caps' Keep PR, with keep-bytes.json.
+
+### A164 · A vault's name comes from its own genesis
+- **Decided by:** the architect with the keys thread (11:43)
+- **Decision:** a vault's name is the A30 name of `["avenID vault 1", {kind, nonce}]`: 32 bytes, with a 32-byte random
+  nonce. Its kind is exactly one of person, coop, agent or device; the guardian's vault is an agent; an unknown kind is
+  refused. Nothing that changes is in it (owners, keys, epochs, the founding statement), so a vault's name never
+  changes. Where each genesis is born:
+  - the network's own vaults (Maia City's coop, Aven's vault, the guardian's vault): in the tree's root Record, with
+    fresh nonces in production and fixed nonces in the cast;
+  - a person's vault and their claiming browser's device vault: in their claim;
+  - a device's own vault: in the sign-in that adds it;
+  - a later vault: in its governing vault's statement.
+  At the cutover, production's claimant signs the setup with fresh nonces. Display names stay a separate field.
+- **Why:** one Value per vault, named by what it says; a statement that founds several vaults can't name them all.
+- **Supersedes:** — (settles A162)
+- **Lean or code then:** `Aven.ID.VaultName` (`vaultName_inj`, `vaultName_len`, `name_ignores_owners`), vaults.json;
+  `aven_id::VaultGenesis` (#1738).
+
+### A165 · The Claude Doc is superseded
+- **Decided by:** Samuel (11:46: "this should be replaced by the new brain SSOT, right?")
+- **Decision:** the Claude Doc "avenDB Full-Stack Architecture" (claude.ai/artifact/78u53Ds5HxnbRtr2Yqktmc) is
+  superseded by avenBRAIN. It is frozen with a banner at its top, no longer updated, and deleted, with Samuel's OK, once
+  Brain shows the architecture.
+- **Why:** one source of truth (A158).
+- **Supersedes:** —
+- **Lean or code then:** none.
+
+### A166 · A reader finds a keeper's item's kind by commitment
+- **Decided by:** the architect with the keepers thread (11:47)
+- **Decision:** a reader learns whether a keeper's sealed item is a loose envelope or a segment (the kind is in the AAD,
+  D13) by commitment: the docs layer computes the commitment for each kind over `{aad, nonce}` in constant time, takes
+  the one that matches, and refuses one matching none, all before decrypting. A keeper never carries a kind.
+- **Why:** a keeper's word would be a second source the reader must check anyway.
+- **Supersedes:** —
+- **Lean or code then:** `Aven.ID.Seal`: `Distinct`, `kind_by_commit`, `kindOf_complete`, `kindOf_seal`; seals.json;
+  `seal::kind_of`; `import_sealed_page` takes bare sealed bytes (claude/aven-docs).
+
+### A167 · Rule 10 stays composed
+- **Decided by:** the architect with caps Lean (11:47)
+- **Decision:** Aven.Architecture's `rule10_quota` is restated over caps' `Books.quota` and the keeper's
+  `admitted_within` and `over_quota_sheds`, and Gaps' rule 10 rests on them. When `Aven.Peer.*` moves into peer/spec,
+  the architecture spec requires peer/spec. A composed rule never becomes uncomposed in a move.
+- **Why:** the rules stay proven across the packages.
+- **Supersedes:** —
+- **Lean or code then:** in caps' Keep PR.
+
+### A168 · Box checks run the real path
+- **Decided by:** the architect (11:51)
+- **Decision:** a box check never takes keys from cast config, and product code has no fixture path. Stage 3's box check
+  signs Alice up with the box's PRF passkey stand-in (#1700) and makes her keyring Doc. It seals the test Doc (in
+  Alice's vault, typed by a user type the cast defines) to Alice's and Bob's vaults through their keyrings, and carries
+  it on the members' group topic from the tree Doc's epoch key. So it waits for the keyring Doc and the tree Doc.
+- **Why:** a check that skips the real path proves nothing about it.
+- **Supersedes:** —
+- **Lean or code then:** none yet.
+
+### A169 · Who implements Authorize
+- **Decided by:** the architect with Docs in the Peers (11:54)
+- **Decision:** avenDOCS defines the `Authorize` trait, `authorized(genesis, e, body, past)`. avenCAPS exposes one pure
+  verdict over Core types (the genesis vault, the envelope with its sigs, its authority part `{acks, caps}`, the past
+  view), held to authorized.json and member.json, and never implements docs' trait. avenPEERS writes the thin
+  `impl Authorize` adapter in aven-peer. avenDOCS adds a minimal schema reader and `open_sealed_page`, the opening half
+  of `import_sealed_page`, so the Peer-Light opens seals beside the keys and the docs worker sees only plaintext. The
+  docs worker's unfit set is the ref `docs-unfit` in the Peer-Light's store, local only; the Peer-Light's store is the
+  one writer.
+- **Why:** if caps implemented docs' trait, avenCAPS would depend on avenDOCS, inverting the layers.
+- **Supersedes:** —
+- **Lean or code then:** none yet.
+
+### A170 · The keyring's Records are write-once
+- **Decided by:** the architect with the keys thread (11:56)
+- **Decision:** built-in Records are write-once. The keyring Doc (`builtinType "avenID" "keyring"`) holds caps' built-in
+  `epoch` Records. A rotation writes epoch n+1, with `prev` naming the old Record. A reseal, for a new device or
+  passkey, writes another `epoch` Record of the same epoch, carrying only the new reader's stanza and padded to 4, with
+  the same header and so the same `Epoch.name`. Opening an epoch tries every Record sharing its name. Adding a Record
+  never removes an opening, and Records sharing a name share a header. The current epoch is the highest n reachable by
+  `prev`, with the smaller name at a fork. Removing a reader is a rotation, never an edit. At sign-up, the Peer-Light
+  computes the first `epoch` Record (n = 1, a fresh vault key, sealed to the device's derived seal key and the passkey's
+  PRF seal key), and stage 3's Doc writer makes the keyring Doc.
+- **Why:** a built-in Record can't be edited (`Aven.DB.Docs.Builtins`).
+- **Supersedes:** A131 (in part: "a reseal rewrites the same Record")
+- **Lean or code then:** to come: `Aven.ID.Keyring`, aven-id `keyring`.
+
+### A171 · Threads never add A-numbers
+- **Decided by:** the architect (11:58)
+- **Decision:** a thread never adds an A-number or architecture prose. It sends its decision to the architect, who
+  records it in this log and on its brain page.
+- **Why:** the log has one writer (A138).
+- **Supersedes:** —
+- **Lean or code then:** none.
+
+### A172 · A pinned schema lives in its type Doc's version Record
+- **Decided by:** the architect with the docs thread (11:59)
+- **Decision:** a type Doc's version Record is exactly `{at, name, schema}`, with `schema` = `Schema.value()` whole,
+  passing `Schema.ofValue?`. A pin `(type Doc, h)` resolves to the version Record whose `blake3(encode(schema))` is `h`.
+  Version Records are write-once built-ins, so a pinned schema never changes, and two version Records with one schema
+  hash are one version. `Doc::open` keeps the version Records a pin names, and refuses a pin that resolves to nothing,
+  by name.
+- **Why:** a type Doc's Records are its versions, named by their schema's hash (A39).
+- **Supersedes:** —
+- **Lean or code then:** to come: `Aven/DB/Docs/Schema.lean`, `pin_resolves_one`, schemas.json.
+
+### A173 · The keeper's byte forms, as built
+- **Decided by:** caps Lean, recorded by the architect (12:01)
+- **Decision:** the forms of A163, built as Core signed things (A30) with frozen labels. The byte vectors are in
+  `id/spec/vectors/keep-bytes.json`, and keep.json keeps the model cases. Caps' half of the gate is exactly the
+  fetch-key chain, `Keep.serves`/`served_current`, `Books.keeps` and `Books.quota`. Who pays, and admission, are the
+  keeper's (`Aven.Peer.Serve`), and caps' bill, `spent` and admission leave Keep.
+- **Why:** one owner per concept (A45).
+- **Supersedes:** — (realizes A161 and A163)
+- **Lean or code then:** caps' Keep PR, stacked on #1722.
