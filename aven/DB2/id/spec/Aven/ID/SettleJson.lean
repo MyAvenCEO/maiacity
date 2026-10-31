@@ -24,7 +24,8 @@ def GuardianKeys.json (g : GuardianKeys) : Json :=
 
 def Genesis.json (g : Genesis) : Json :=
   Json.mkObj [("rpId", g.rpId), ("origins", toJson g.origins), ("claimant", g.claimant), ("passkey", g.passkey),
-    ("devices", toJson g.devices), ("coop", g.coop), ("agent", g.agent), ("avenPeer", g.avenPeer),
+    ("devices", toJson g.devices), ("coop", g.coop), ("coopOwners", toJson g.coopOwners), ("agent", g.agent),
+    ("avenPeer", g.avenPeer),
     ("guardian", GuardianKeys.json g.guardian), ("signedBy", toJson g.signedBy)]
 
 def TreeSays.json : TreeSays → Json
