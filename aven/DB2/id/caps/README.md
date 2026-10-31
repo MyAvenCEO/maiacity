@@ -372,6 +372,10 @@ core operations, and per lowered step it says:
   or written once by `put-new` (an owner field set to `$actor`). Those read the same at the envelope's base and now, so
   the check is a lookup of the touched Records. Anything else narrows by type and field only.
 
+A footprint sits only on a line that writes: `put`, `patch`, `remove` or `edit` (A19). A line that reads, queries,
+tells, keeps or shares allows no step, so what an owner approves as reading never writes (A2; `no_step_without_write`,
+`footprint_writes`). The footprint grant names each step's verb exactly, so the line's verb only says that it writes.
+
 A cap names the hash of the **lowered** core operation (E3), which a plugin upgrade can't widen. The operation's own
 hash may ride along for display and grants nothing. An envelope made by an operation carries the operation's hash and
 its params inside the seal, so a reader re-lowers it and checks the change is exactly what it produces.
@@ -789,7 +793,7 @@ issuer's device hands it the Docs the cap's target covers, each with its first f
    (`deleted_final`).
 
 Withdrawals and deletes only take away, so a device signs them alone, as it signs a revocation. Readers see a delete
-too, as a Record in the Doc; that half is the docs layer's and `Revoke`'s.
+too, as a Record in the Doc ([revocation](#revocation), `delete_ends`).
 
 Key blobs and letters are served to any member, since they are useless without the keys they're sealed to. A device
 whose proof is refused because a newer epoch came fetches that epoch's key blob, opens its stanza and proves again.
@@ -843,6 +847,14 @@ whole chain from genesis for every removal.
 **Expiry** is a revocation made by the clock. It is acked by the first writer whose clock has passed it, and from that
 ack on it is final like any other: a write the ack hadn't seen doesn't count, whatever time it claims (`time_acked`).
 Until the first ack, a write is judged by the time it claims (`before_ack`).
+
+**A delete** (A22, Samuel, 31 Oct 2026: the right to be forgotten) ends a Doc. The Doc's vault writes a delete Record
+in it, on its own authority. A delete by anyone else is no delete, and until a reader holds one it changes nothing
+(`undeleted_survive`). Once a reader holds it, an envelope counts only if it is the delete or in its past: nothing
+written after it or beside it counts, whatever cap it writes under (`delete_ends`). It depends on the envelopes named,
+not on the order they came in, so readers holding the same deletes and the same past of each agree (`deleted_agree`).
+Keepers drop the bytes ([blind keepers](#blind-keepers), `Books.deleted_gone`), and each device drops the Doc's keys
+and bytes. What a reader had seen can't be unseen (rule 15).
 
 **Lost and stolen devices.** Owners remove the device. A device that may have been copied gets the heal.
 
@@ -1234,6 +1246,7 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `host_chain_only`, `actor_within_device`, `host_never_beyond` | An authorized envelope an actor host's device signed rests on a chain, the one the acting actor's message carried, and names that actor; every step of it is allowed both by that chain's last cap and by the host's device cap, the union of its hosted actors' standing caps (A27) |
 | `Caps` | `narrow_chain`, `narrow_steps` | No cap in a chain lets a verb reach a Doc, or allows a write step, that its root doesn't |
 | | `root_authority` | Every line a chain grants lies in its root issuer's authority: its own vault, one it governs, or a Doc of one |
+| | `no_step_without_write`, `footprint_writes` | Only a line that writes (put, patch, remove, edit) allows a step, and in a valid chain a footprint sits only on such a line: a cap shown as reading never writes (A2) |
 | | `chain_short` | A chain passes its root on no more often than its root may be shared: every grant lowers the share depth, and an attenuation never raises it |
 | | `grant_approved` | Every cap in a chain was signed by a device of its issuer, and every grant in it approved by its issuer's owners, an owner vault by its own quorum (D14) |
 | | `child_live` | A cap issued from a group's cap holds only while its issuer is in the group |
@@ -1259,6 +1272,7 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `elsewhere_kept` | Elsewhere, once the revocation reaches the Doc, only what its kept list or another writer's ack had seen counts |
 | | `revocation_wins` | The three together (rule 14). An envelope lists its whole chain, so revoking any link reaches it: the cascade |
 | | `waits_named` | A wait names only what the envelope builds on and the reader lacks, by hash |
+| | `delete_ends`, `undeleted_survive`, `deleted_agree`, `liveWith_iff` | Once a reader holds a delete its Doc's vault wrote, only the delete and its past count; a delete by anyone else changes nothing; and readers holding the same deletes and the same past of each agree (A22). Liveness with deletes is the revocations' verdict and survival of every delete |
 | `Epochs` | `confidential` | A key is learned only as one's own or by opening a seal with a key already known. Keys are any type with an equality (`WorldOf κ`): names in the examples (`World`), Core's bytes in `Aven.Architecture` (R5) |
 | | `unknowable` | Keys of a closed set a party owns none of stay unknown to it; the next three are its instances |
 | | `removal_next_epoch` | A new epoch sealed only to the remaining readers stays closed to a removed one |

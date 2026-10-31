@@ -126,6 +126,23 @@ def refusalExamples : List (String × Bytes) := [
 
 def encodes (v : Value) : Json := hex (encode v)
 
+/-- `v` inside `n` arrays. -/
+def wrap : Nat → Value → Value
+  | 0, v => v
+  | n + 1, v => .array [wrap n v]
+
+/-- `v` inside `n` maps, each under the key "a". -/
+def wrapMap : Nat → Value → Value
+  | 0, v => v
+  | n + 1, v => .map [(k "a", wrapMap n v)]
+
+/-- The depth limit from both sides: Values as deep as allowed, read back, and one deeper, refused. -/
+def deepExamples (n : Nat) : List (String × Value) :=
+  [(s!"arrays {n} deep", wrap (n - 1) (.array [])), (s!"maps {n} deep", wrapMap (n - 1) (.map [])),
+    (s!"an integer {n} deep", wrap (n - 1) (.uint 1))]
+
+def tooDeep : List (String × Bytes) := (deepExamples (maxDepth + 1)).map fun (name, v) => (name, encode v)
+
 def decodes (bs : Bytes) : Json := match decodeAll bs with
   | some v => v.json
   | none => Json.null
@@ -159,7 +176,8 @@ def generatedRefusals : List (String × Bytes) := Id.run do
 def cbor : List Json :=
   valueExamples.map (fun (name, v) => vector name v.json (encodes v)) ++
   (randomValues.zipIdx.map fun (v, i) => vector s!"seed {i + 1}" v.json (encodes v)) ++
-  (refusalExamples ++ generatedRefusals).map fun (name, bs) => vector name (hex bs) (decodes bs)
+  (deepExamples maxDepth).map (fun (name, v) => vector name v.json (encodes v)) ++
+  (refusalExamples ++ generatedRefusals ++ tooDeep).map fun (name, bs) => vector name (hex bs) (decodes bs)
 
 /-! ## Names -/
 
@@ -268,6 +286,11 @@ def footprints : List Json :=
 #guard randomValues.all fun v => Canon v && (decodeAll (encode v)).map encode == some (encode v)
 #guard (refusalExamples ++ generatedRefusals).all fun (_, bs) => (decodeAll bs).isNone
 #guard valueExamples.all fun (_, v) => Canon v
+-- the limit: 512 deep is allowed and reads back, 513 is neither, though its forms are the profile's
+#guard (deepExamples maxDepth).all fun (_, v) => depth v == maxDepth && Canon v &&
+  (decodeAll (encode v)).map encode == some (encode v)
+#guard (deepExamples (maxDepth + 1)).all fun (_, v) => depth v == maxDepth + 1 && Shape v && !Canon v
+#guard tooDeep.all fun (_, bs) => (decodeAll bs).isNone
 #guard [e1, e2, e2', other].all fun e => Canon e.value
 #guard splitB e2 e2' && !splitB e1 e2 && !splitB e2 e2 && !splitB e2 other
 

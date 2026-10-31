@@ -8,7 +8,7 @@ primitives everything shares" and rules 1 to 3). It is one Lean package, in [`sp
 | Module | What | What it proves |
 |---|---|---|
 | `Bytes` | bytes, numbers big-endian, the bytewise order | reading back what was written, in every width |
-| `Cbor`, `CborLaws` | a Value and the one codec: deterministic CBOR in A2's strict profile | `decode_encode`, `encode_decode` (bytes that don't encode back to themselves are refused), `encode_inj` |
+| `Cbor`, `CborLaws` | a Value and the one codec: deterministic CBOR in A2's strict profile | `decode_encode`, `encode_decode` (bytes that don't encode back to themselves are refused), `encode_inj`; `decodeAll_deep`: nothing nests deeper than 512 |
 | `Blake3` | BLAKE3, in core Lean | the specification's known answers |
 | `Json` | the readable form of a Value, which every spec's vectors import | — |
 | `ValueEq` | `DecidableEq`, `BEq` and `LawfulBEq` for Values, by structural recursion | `Value.beq_iff`: the equality is lawful |
@@ -20,6 +20,14 @@ primitives everything shares" and rules 1 to 3). It is one Lean package, in [`sp
 
 The hash and signatures are parameters: a theorem that needs the hash collision-free assumes it (`Injective`), and
 signatures are taken as sound, as in every Aven model. `Blake3` is the hash the examples and vectors use.
+
+**In Rust: `aven-core`** (this folder, a member of aven/DB2's workspace). For now the codec and names: `Value`,
+`encode` and `decode` in the strict profile, held to `spec/vectors/cbor.json` both ways (every encoding written and
+read back, every refusal refused), and BLAKE3 names, Doc ids and type ids, held to `names.json`. `no_std`, no
+`unsafe`; it builds for wasm32, so the runtimes in aven/runtimes use it by path. Nothing deeper than 512 is read
+(`MAX_DEPTH`, Lean's `maxDepth`, a scalar counting as 1), so a hostile input can't exhaust the stack (ARCHITECTURE
+rule 10); `cbor.json` holds it at 512 and 513 deep. Other threads extend the crate (envelopes, logs) Lean-first, as
+here.
 
 **Run it in the box,** from `aven/DB2`: `bun run box sh -c 'cd core/spec && lake build'`; `bun run box sh
 sandbox/vectors.sh` writes the vectors in [`spec/vectors`](spec/vectors), and `--check` compares them with what's
