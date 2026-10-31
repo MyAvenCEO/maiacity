@@ -58,7 +58,9 @@ The theorems:
 - `counts_iff`: an envelope counts exactly when everything in its past is signed, fresh, authorized, live and fit, and
   none of it is half of a split (the docs layer's rule 13, over Core's `Counts`);
 - `readers_agree`: two readers that hold the same past of an envelope, and the same splits in it, give it the same
-  verdict, whatever else each holds. -/
+  verdict, whatever else each holds;
+- `authorizedB_iff`: the verdict a reader computes, with its tests for who governs whom, spawned and lists, is
+  `Authorized`. -/
 
 namespace Aven.ID
 
@@ -104,14 +106,12 @@ structure Reader where
   /-- The acting actor an envelope names inside its seal, when an actor host signed it (A27). -/
   actorOf : Envelope → Option DocId
 
-/-- `v` holds `c`: it is `c`'s vault, in `c`'s group now, or, for the public, a member of the network. A ticket is
-claimed by a vault before it writes. -/
+/-- `v` holds `c`: it is `c`'s vault, in `c`'s group now, or, for the public, a member of the network. -/
 def Reader.holdsAt (r : Reader) (c : Cap) (v : String) : Bool :=
   match c.holder with
   | .vault w => w == v
   | .group g => r.ctx.inGroup g v
   | .«public» => r.member v
-  | .ticket _ => false
 
 /-- An envelope's footprint: the steps its calls lower to, which the engine checks what it changed against. -/
 def Reader.footprint (r : Reader) (e : Envelope) : List Step := (r.calls e).flatMap r.lower
@@ -320,6 +320,121 @@ theorem host_never_beyond {e : Envelope} (h : r.Authorized gov spawned lists e) 
   rw [hd] at hd'
   cases hd'
   exact ⟨named, dc, last, f, hd, ht, hl, hf, calls⟩
+
+/-! ## Decided
+
+A reader computes its verdict: who governs whom, which actor spawned which and what a collection lists are tests, as
+a device evaluates them (`Target.coversB`). Each `…B` is its proposition, decided (`authorizedB_iff`), and
+`authorized.json` and `aven-id-model` answer from them. -/
+
+section Decided
+
+variable (gov : Bytes → Bytes → Bool) (spawned lists : DocId → DocId → Bool)
+
+/-- `Grant.allows`, decided. -/
+def Grant.allowsB (g : Grant) (f : Facts) (c : Call) : Bool :=
+  g.any fun l => l.op == c.op && l.doc.coversB gov spawned lists f && l.admits c
+
+theorem Grant.allowsB_iff {g : Grant} {f : Facts} {c : Call} :
+    g.allowsB gov spawned lists f c = true ↔ g.allows (gov · · = true) (spawned · · = true) (lists · · = true) f c := by
+  simp only [Grant.allowsB, Grant.allows, List.any_eq_true, Bool.and_eq_true, beq_iff_eq, Target.coversB_iff,
+    and_assoc]
+
+def DeviceCap.allowsB (dc : DeviceCap) (f : Facts) (c : Call) : Bool :=
+  match dc.grants with
+  | none => true
+  | some g => g.allowsB gov spawned lists f c
+
+theorem DeviceCap.allowsB_iff {dc : DeviceCap} {f : Facts} {c : Call} :
+    dc.allowsB gov spawned lists f c = true ↔
+      dc.allows (gov · · = true) (spawned · · = true) (lists · · = true) f c := by
+  unfold DeviceCap.allowsB DeviceCap.allows
+  cases dc.grants with
+  | none => simp
+  | some g => exact Grant.allowsB_iff gov spawned lists
+
+variable (r : Reader)
+
+def Reader.withinDeviceB (e : Envelope) : Bool :=
+  match r.deviceCap e.signer, r.facts e.doc with
+  | some dc, some f => r.vaultOf e.signer == some dc.vault && dc.branches.allows e.branch &&
+      (r.calls e).all (dc.allowsB gov spawned lists f)
+  | _, _ => false
+
+def Reader.ownB (e : Envelope) : Bool :=
+  match r.vaultOf e.signer, r.facts e.doc with
+  | some v, some f => f.vault == vaultId v || gov (vaultId v) f.vault
+  | _, _ => false
+
+def Reader.byChainB (e : Envelope) : Bool :=
+  chainOk r.ctx (r.chain e) &&
+    match (r.chain e).getLast?, r.vaultOf e.signer, r.facts e.doc with
+    | some last, some v, some f => r.holdsAt last v && last.conditions.branches.allows e.branch &&
+        (r.calls e).all ((last.grants r.ctx.roles).allowsB gov spawned lists f)
+    | _, _, _ => false
+
+def Reader.hostSignedB (e : Envelope) : Bool :=
+  match r.deviceCap e.signer with
+  | some dc => dc.host
+  | none => false
+
+def Reader.authorizedB (e : Envelope) : Bool :=
+  r.withinDeviceB gov spawned lists e &&
+    ((r.ownB gov e && !r.hostSignedB e) ||
+      (r.byChainB gov spawned lists e && (!r.hostSignedB e || (r.actorOf e).isSome)))
+
+variable {r} {e : Envelope}
+
+theorem Reader.withinDeviceB_iff :
+    r.withinDeviceB gov spawned lists e = true ↔
+      r.WithinDevice (gov · · = true) (spawned · · = true) (lists · · = true) e := by
+  unfold Reader.withinDeviceB Reader.WithinDevice
+  cases hd : r.deviceCap e.signer <;> cases hf : r.facts e.doc <;>
+    simp [List.all_eq_true, DeviceCap.allowsB_iff, and_assoc]
+
+theorem Reader.ownB_iff : r.ownB gov e = true ↔ r.Own (gov · · = true) e := by
+  unfold Reader.ownB Reader.Own
+  cases hv : r.vaultOf e.signer <;> cases hf : r.facts e.doc <;> simp
+
+theorem Reader.byChainB_iff :
+    r.byChainB gov spawned lists e = true ↔
+      r.ByChain (gov · · = true) (spawned · · = true) (lists · · = true) e := by
+  unfold Reader.byChainB Reader.ByChain
+  cases hl : (r.chain e).getLast? <;> cases hv : r.vaultOf e.signer <;> cases hf : r.facts e.doc <;>
+    simp [List.all_eq_true, Grant.allowsB_iff, and_assoc]
+
+theorem Reader.hostSignedB_iff : r.hostSignedB e = true ↔ r.HostSigned e := by
+  unfold Reader.hostSignedB Reader.HostSigned
+  cases h : r.deviceCap e.signer <;> simp
+
+/-- **The verdict a reader computes is caps' verdict** (`Authorized`, decided). -/
+theorem Reader.authorizedB_iff :
+    r.authorizedB gov spawned lists e = true ↔
+      r.Authorized (gov · · = true) (spawned · · = true) (lists · · = true) e := by
+  unfold Reader.authorizedB Reader.Authorized
+  simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true', Reader.withinDeviceB_iff, Reader.ownB_iff,
+    Reader.byChainB_iff, Option.isSome_iff_exists]
+  constructor
+  · rintro ⟨w, (⟨o, nh⟩ | ⟨c, hh⟩)⟩
+    · refine ⟨w, .inl ⟨o, fun h => ?_⟩⟩
+      rw [← Reader.hostSignedB_iff] at h
+      simp [h] at nh
+    · refine ⟨w, .inr ⟨c, fun h => ?_⟩⟩
+      rw [← Reader.hostSignedB_iff] at h
+      rcases hh with n | a
+      · simp [h] at n
+      · simpa using a
+  · rintro ⟨w, (⟨o, nh⟩ | ⟨c, hh⟩)⟩
+    · refine ⟨w, .inl ⟨o, ?_⟩⟩
+      cases h : r.hostSignedB e
+      · rfl
+      · exact absurd (Reader.hostSignedB_iff.mp h) nh
+    · refine ⟨w, .inr ⟨c, ?_⟩⟩
+      cases h : r.hostSignedB e
+      · exact .inl rfl
+      · exact .inr (by simpa using hh (Reader.hostSignedB_iff.mp h))
+
+end Decided
 
 /-- One reader verdict: signed, fresh, authorized, live and fit. The other parts are the other layers'. -/
 def Reader.Verdict (signed fresh live fit : Envelope → Prop) (e : Envelope) : Prop :=

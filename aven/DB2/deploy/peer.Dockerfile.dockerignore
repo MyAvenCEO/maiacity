@@ -6,6 +6,7 @@
 !Cargo.lock
 !core
 !db/core
+!db/docs
 !store
 !id/core
 !peer/native

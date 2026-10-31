@@ -1,17 +1,30 @@
 // avenBRAIN in avenOS (aven/DB2/brain): its package list, pages, slides and glossary, bundled from the repo at build time.
-// Text comes in as Markdown and markup and leaves as node trees (brain/render), which Node.svelte draws: the shape the
-// markdown-runtime and the face-runtime will hand over once they exist.
+// Text comes in as Markdown and leaves as a node tree (brain/render), which Node.svelte draws. A slide is a face: its
+// tree and its style data, which the face-runtime's drawer (os/web/runtimes/draw.js) draws into a shadow root of its own.
 import list from '../../../brain/packages.json';
 import { blocks, slug } from '../../../brain/render/markdown.js';
 import { rewriteLinks } from '../../../brain/render/links.js';
 import { check, parse } from '../../../brain/render/tree.js';
 import '../../../brain/style/tokens.css';
-import '../../../brain/style/slide.css';
 import images from '../../../brain/art/images.json';
+import { draw, ruleOk } from '../runtimes/draw.js';
 
 const files = import.meta.glob('../../../brain/**/*.{md,html}', { query: '?raw', import: 'default', eager: true });
-import.meta.glob('../../../brain/*/slides/*.css', { eager: true });
 const file = (path) => files[`../../../brain/${path}`];
+
+// The slides' style is data, the face-runtime's (brain/style/slide.style.json, then each slide's <id>.style.json): rules
+// in the JSON form of a Value, a colour `{ bytes }`, which the drawer takes as its 3 bytes. Checked here as the drawer
+// checks them, so a rule outside Style fails the build's first page, not one slide.
+const sheets = import.meta.glob(['../../../brain/style/slide.style.json', '../../../brain/*/slides/*.style.json'], { import: 'default', eager: true });
+const value = (v) =>
+	Array.isArray(v) ? v.map(value) : v && typeof v === 'object' && 'bytes' in v ? Uint8Array.from(v.bytes.match(/../g), (b) => parseInt(b, 16)) : v;
+const style = (path) => {
+	const rules = value(sheets[`../../../brain/${path}`] ?? []);
+	const bad = rules.find((r) => !ruleOk(r));
+	if (bad) throw new Error(`${path}: a rule outside Style: ${JSON.stringify(bad)}`);
+	return rules;
+};
+const shared = style('style/slide.style.json');
 
 export const packages = list.packages;
 
@@ -43,15 +56,18 @@ const markdown = (path, options = {}) => checked(path, rewriteLinks(blocks(file(
 
 export const page = (path) => markdown(path);
 
-// a slide: its markup as a tree, checked against the face-runtime's allowlist, and its text
+// a slide: a face, its markup as one tree and its rules, every slide's first; and its text
 export function slide(pkg, id) {
-	const text = `${pkg}/slides/${id}.md`;
-	return {
-		id,
-		tree: checked(`${pkg}/slides/${id}.html`, parse(file(`${pkg}/slides/${id}.html`) ?? '')).map(resolve),
-		text: markdown(text),
-	};
+	const [tree, ...more] = checked(`${pkg}/slides/${id}.html`, parse(file(`${pkg}/slides/${id}.html`) ?? ''));
+	if (!tree || more.length) throw new Error(`${pkg}/slides/${id}.html: a slide is one element`);
+	return { id, face: { tree, style: [...shared, ...style(`${pkg}/slides/${id}.style.json`)] }, text: markdown(`${pkg}/slides/${id}.md`) };
 }
+
+// a Svelte action: the drawer draws the face into the node's own shadow root, its images from the bundle
+export const face = (node, part) => {
+	draw(node, part, { file: fileOf });
+	return { update: (next) => draw(node, next, { file: fileOf }) };
+};
 
 // the glossary: its tree, every term's entry with an id (`term-<word>`), and each word it defines, for #/brain/glossary/<word>
 export function glossary() {
@@ -77,15 +93,10 @@ export function glossary() {
 	return { tree: checked('GLOSSARY.md', tree), terms };
 }
 
-// The drawings (brain/art), bundled. A slide names one as the network names a file, `/files/<BLAKE3 hash>`, and that is
-// what the allowlist takes; avenOS serves the brain's own from its bundle, so the hash is resolved here, after the
-// check, to the bundled file
+// The drawings (brain/art), bundled. A slide names one as the network names a file, `/files/<BLAKE3 hash>`, the only
+// image the allowlist takes; the drawer asks here where that file is, and avenOS serves the brain's own from its bundle
 const drawn = import.meta.glob('../../../brain/art/img/*.png', { query: '?url', import: 'default', eager: true });
-const fileOf = (hash) => drawn[`../../../brain/art/img/${hash}.png`];
-const resolve = (node) =>
-	typeof node === 'string'
-		? node
-		: [node[0], node[1].map(([k, v]) => (k === 'src' && v.startsWith('/files/') && fileOf(v.slice(7)) ? [k, fileOf(v.slice(7))] : [k, v])), node[2].map(resolve)];
+const fileOf = (hash) => drawn[`../../../brain/art/img/${hash}.png`] ?? null;
 
 // an object's picture, for a card
 export const art = (name) => fileOf(images[name]);

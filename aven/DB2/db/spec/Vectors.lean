@@ -12,6 +12,8 @@ import Aven.DB.Docs
 - `presence.json`: connections joining and leaving; what every peer is told after each (`Aven.DB.Presence`).
 - `timeline.json`: a timeline line's parts; the line (`Aven.DB.Timeline`).
 - `wire.json`: chunks of a stream; the frames each completes, and the error that ends it (`Aven.DB.Wire`).
+- `frames.json`: the frames after the hello from wire version 2 (A29): each as its bytes on the stream, hex, and
+  streams that are refused, with what each gives (`Aven.DB.WireCbor`).
 - `upgrades.json`: a peer's wire version and the version a hello names; its answer (none, or `update` and its own
   version) and whether the hello's peer follows that refusal; and the gossip topic's name for a wire version and a
   network (`Aven.DB.Wire`, "The wire version").
@@ -63,6 +65,16 @@ import Aven.DB.Docs
 - `logs.json`: two readers holding each side of a split, then both, then a stuck log's next envelope; what each sees of
   each envelope: whether it counts, and whether it is half of a split (`Aven.DB.Docs.countsB`, Core's `Past`).
 - `counts.json`: envelopes with their fit and authorized verdicts; which count, and the live state over them.
+- `genesis.json`: geneses, their encodings and Doc ids, and the built-in types' ids (`Aven.DB.Docs.Genesis`).
+- `bodies.json`: docs envelope bodies, their encodings and commit messages, and Values a reader refuses as one
+  (`Aven.DB.Docs.Body`).
+- `segments.json`: segments' bodies and names, and which a reader takes (`Aven.DB.Docs.Segment`).
+- `heads.json`: a head's encoding (`Aven.DB.Docs.Head`).
+- `loro.json`: rule 7 on Loro commits: the deps a change carries, read with its writer's previous op, and the verdict
+  (`Aven.DB.Docs.loroAgrees`).
+- `placements.json`: envelopes with and without the genesis; whether each is its log's first, and whether the
+  genesis sits where it must (`genesis_iff_first`).
+- `builtins.json`: Records of the docs layer's built-in types; which their shapes take (`docsBuiltinFit`).
 - `keys.json`: tuples and their keys in hex; pairs of tuples and whether the first key sorts before the second
   (`Aven.DB.Docs.Key`).
 
@@ -157,6 +169,22 @@ def wire : List Json :=
     vector name (Json.mkObj [("chunks", Json.arr (chunks.map chunkJson).toArray)])
       (Json.mkObj [("frames", Json.arr (frames.map fun fs => Json.arr (fs.map Frame.json).toArray).toArray),
         ("error", toJson (err.map WireError.name))])
+
+open WireCbor in
+def frames : List Json :=
+  let result (bs : List UInt8) := let (fs, err) := WireCbor.decode [bs]
+    Json.mkObj [("frames", Json.arr (fs.flatten.map Frame.json).toArray), ("error", toJson (err.map WireError.name))]
+  (frameExamples.filterMap fun f => (frameBytes f).map fun bs =>
+    vector s!"a frame: {(Frame.json f).compress}" (Json.mkObj [("bytes", Aven.Core.hex bs)]) (result bs)) ++
+  [("a key missing", framed (obj [("frame", txt "heads"), ("heads", .array [])])),
+   ("a key extra", framed (obj [("frame", txt "beat"), ("n", .uint 1), ("extra", .null)])),
+   ("a key of the wrong kind", framed (obj [("frame", txt "beat"), ("n", txt "1")])),
+   ("a frame no peer sends", framed (obj [("frame", txt "shout")])),
+   ("a number longer than it needs", Aven.Core.be 4 4 ++ [0xA1, 0x61, 0x6E, 0x18]),
+   ("a length of none", [0, 0, 0, 0]),
+   ("a length over the limit", Aven.Core.be 4 (maxFrame + 1)),
+   ("all frames in one stream", bytesOf frameExamples)].map fun (name, bs) =>
+    vector name (Json.mkObj [("bytes", Aven.Core.hex bs)]) (result bs)
 
 def upgrades : List Json :=
   (meetExamples.map fun (name, mine, theirs) =>
@@ -1164,6 +1192,188 @@ def counts : List Json :=
       (Json.mkObj [("counts", Json.arr (counted.map fun e => Json.str (labelOf e)).toArray),
         ("live", toJson (sumLoro.replay counted))])
 
+
+/-! ### The formats: genesis, bodies, segments, heads, and rule 7 in Loro's terms -/
+
+def tb (s : String) : List UInt8 := s.toUTF8.toList
+
+def todoType : DocId := docOf "a todo type"
+
+def todoGenesis : Docs.Genesis :=
+  ⟨[(todoType, [blake3 (tb "todo v1")])], todoType, List.replicate 32 5, tb "alice's vault"⟩
+
+def genesisCases : List (String × Docs.Genesis) := [
+  ("a todo Doc, its type pinned at one version", todoGenesis),
+  ("the same, another nonce", ⟨[(todoType, [blake3 (tb "todo v1")])], todoType, List.replicate 32 6,
+    tb "alice's vault"⟩),
+  ("two versions of two types pinned", ⟨[(docOf "a line type", [blake3 (tb "line v1")]),
+    (todoType, [blake3 (tb "todo v1"), blake3 (tb "todo v2")].mergeSort (fun a b => !Aven.Core.lexLt b.bytes a.bytes))].mergeSort
+      (fun a b => !Aven.Core.lexLt b.1.hash.bytes a.1.hash.bytes),
+    todoType, List.replicate 32 7, tb "bob's vault"⟩),
+  ("nothing pinned", ⟨[], todoType, List.replicate 32 8, tb "alice's vault"⟩)]
+
+def genesisJson (g : Docs.Genesis) : Json :=
+  Json.mkObj [("vault", hexJson g.vault), ("type", Json.str g.type.text), ("nonce", hexJson g.nonce),
+    ("pins", Json.arr (g.pins.map fun (t, hs) => Json.arr #[Json.str t.text,
+      Json.arr (hs.map fun h => Json.str h.text).toArray]).toArray)]
+
+def genesisVectors : List Json :=
+  (genesisCases.map fun (name, g) =>
+    vector name (genesisJson g)
+      (Json.mkObj [("value", hexJson (encode g.value)), ("id", Json.str (g.id blake3).text),
+        ("ok", toJson (g.ok (Docs.isBuiltin blake3)))])) ++
+  [vector "the built-in types" (Json.arr (Docs.builtinNames.map Json.str).toArray)
+    (Json.arr (Docs.builtinNames.map fun n => Json.str (Docs.builtinType blake3 n).text).toArray)]
+
+#guard genesisCases.all fun (_, g) => Docs.genesis? g.value == some g
+#guard genesisCases.all fun (_, g) => g.ok (Docs.isBuiltin blake3)
+
+def userVersion : Docs.Version := ⟨todoType, some (blake3 (tb "todo v1"))⟩
+def builtinVersion : Docs.Version := ⟨Docs.builtinType blake3 "version", none⟩
+
+def firstBody : Docs.Body :=
+  { acks := [], time := tb "2026-10-31T12:00:00Z", calls := [⟨CoreOp.patch.id blake3, []⟩],
+    cap := some (blake3 (tb "a cap")), changes := [1, 2, 3], generation := 0, opsFrom := 4, opsTo := 9,
+    records := [(tb "t1", userVersion)] }
+
+def genesisBody : Docs.Body :=
+  { acks := [], time := tb "2026-10-31T12:00:00Z", calls := [⟨CoreOp.put.id blake3, [(tb "title", .text (tb "Order seeds"))]⟩],
+    cap := none, changes := [9], generation := 0, opsFrom := 0, opsTo := 3, records := [(tb "root", userVersion)],
+    genesis := some todoGenesis }
+
+def builtinBody : Docs.Body :=
+  { acks := [blake3 (tb "a revocation")], time := [], calls := [], cap := none, changes := [], generation := 2,
+    opsFrom := 17, opsTo := 18, records := [(tb "v1", builtinVersion), (tb "t22", userVersion)] }
+
+def bodyCases : List (String × Docs.Body) := [
+  ("one Record, one call", firstBody),
+  ("the Doc's first envelope carries its genesis", genesisBody),
+  ("a built-in type's Record, an acknowledged revocation, a later generation", builtinBody)]
+
+def bodyJson (b : Docs.Body) : Json :=
+  Json.mkObj [("acks", Json.arr (b.acks.map fun h => Json.str h.text).toArray), ("at", Json.str (String.fromUTF8! ⟨b.time.toArray⟩)),
+    ("calls", Json.arr (b.calls.map fun c => hexJson (encode c.value)).toArray),
+    ("cap", match b.cap with | some h => Json.str h.text | none => Json.null), ("changes", hexJson b.changes),
+    ("generation", toJson b.generation), ("from", toJson b.opsFrom), ("to", toJson b.opsTo),
+    ("records", Json.arr (b.records.map fun (i, v) => Json.arr #[Json.str (String.fromUTF8! ⟨i.toArray⟩),
+      Json.str v.type.text, match v.schema with | some h => Json.str h.text | none => Json.null]).toArray),
+    ("genesis", match b.genesis with | some g => hexJson (encode g.value) | none => Json.null)]
+
+/-- Values a reader must refuse as a body. -/
+def badBodies : List (String × Value) :=
+  let edit (f : List (List UInt8 × Value) → List (List UInt8 × Value)) : Value :=
+    match firstBody.value with
+    | Value.map kvs => Value.map (f kvs)
+    | v => v
+  [("ops running backwards", { firstBody with opsFrom := 10 }.value),
+   ("a key it doesn't have", edit fun kvs => kvs ++ [(tb "zzzzzzzzzzzzzzz", .null)]),
+   ("a key missing", edit fun kvs => kvs.filter (·.1 != tb "acks")),
+   ("a cap that isn't a hash", edit fun kvs => kvs.map fun (k, v) => if k == tb "cap" then (k, .bytes [1, 2]) else (k, v)),
+   ("a version with a short type", edit fun kvs => kvs.map fun (k, v) =>
+      if k == tb "records" then (k, .map [(tb "t1", .array [.bytes [1]])]) else (k, v))]
+
+def bodyVectors : List Json :=
+  (bodyCases.map fun (name, b) =>
+    vector name (bodyJson b) (Json.mkObj [("value", hexJson (encode b.value)), ("message", Json.str b.message)])) ++
+  badBodies.map fun (name, v) =>
+    vector s!"refused: {name}" (hexJson (encode v)) (toJson (Docs.Body.ofValue? v).isSome)
+
+#guard bodyCases.all fun (_, b) => (Docs.Body.ofValue? b.value).map (·.value) == some b.value
+#guard badBodies.all fun (_, v) => (Docs.Body.ofValue? v).isNone
+
+def segEnvs : List Envelope := [a1, opEnv 1 2 (some (a1.name blake3)) [] "second"]
+
+def segmentCases : List (String × Docs.Segment) := [
+  ("two envelopes of writer 1, the log's first segment", ⟨tb "main", 1, 0, 1, 3, none, segEnvs⟩),
+  ("a later segment names the one before", ⟨tb "main", 1, 0, 1, 3,
+    some ((Docs.Segment.mk (tb "main") 1 0 1 3 none segEnvs).name blake3), segEnvs⟩),
+  ("refused: `to` isn't past its last envelope", ⟨tb "main", 1, 0, 1, 4, none, segEnvs⟩),
+  ("refused: it doesn't start where it says", ⟨tb "main", 1, 0, 2, 4, none, segEnvs⟩),
+  ("refused: another writer's envelope", ⟨tb "main", 1, 0, 1, 3, none, [a1, b1]⟩),
+  ("refused: empty", ⟨tb "main", 1, 0, 1, 1, none, []⟩)]
+
+def segmentVectors : List Json :=
+  segmentCases.map fun (name, sg) =>
+    vector name (Json.mkObj [("branch", Json.str "main"), ("writer", toJson sg.writer),
+        ("generation", toJson sg.generation), ("from", toJson sg.segFrom), ("to", toJson sg.segTo),
+        ("prev", match sg.prev with | some h => Json.str h.text | none => Json.null),
+        ("envelopes", Json.arr (sg.envelopes.map fun e => hexJson (encode e.value)).toArray)])
+      (Json.mkObj [("value", hexJson (encode sg.value)), ("name", Json.str (sg.name blake3).text),
+        ("ok", toJson (sg.ok Docs.Limits.defaults (Envelope.name blake3)))])
+
+def headVectors : List Json :=
+  let h : Docs.Head := ⟨docOf "a Doc's genesis", [(tb "main", [(1, a2.name blake3), (2, b1.name blake3)])]⟩
+  [vector "two logs of main" (Json.mkObj [("doc", Json.str h.doc.text),
+      ("logs", Json.arr #[Json.arr #[toJson 1, Json.str (a2.name blake3).text],
+        Json.arr #[toJson 2, Json.str (b1.name blake3).text]])])
+    (Json.mkObj [("value", hexJson (encode h.value)), ("ok", toJson h.ok)])]
+
+/-- Rule 7 on Loro commits: `a2` is writer 1's second commit, its first counter 4, naming `a1` (last op 1@3) and `b1`
+(last op 2@0). -/
+def loroCases : List (String × Envelope × List Docs.OpId) := [
+  ("the writer's own previous op is dominated, so Loro leaves it out", a2, [(2, 0)]),
+  ("the writer's own previous op is in the change's deps", a2, [(1, 3), (2, 0)]),
+  ("the change's deps in another order", a2, [(2, 0), (1, 3)]),
+  ("an older op of its own writer", a2, [(1, 2), (2, 0)]),
+  ("a dependency it names isn't in the change", a2, []),
+  ("it names what the reader doesn't hold", a2gone, [(2, 0)])]
+
+def loroVectors : List Json :=
+  loroCases.map fun (name, e, frontier) =>
+    let opJson (o : Docs.OpId) : Json := Json.arr #[toJson o.1, toJson o.2]
+    vector name (Json.mkObj [("held", Json.arr ([a1, b1].map fun x =>
+          Json.mkObj [("name", Json.str (x.name blake3).text), ("last", opJson (lastOf x))]).toArray),
+        ("writer", toJson e.writer), ("start", toJson 4),
+        ("named", Json.arr ((Docs.namedPast e).map fun h => Json.str h.text).toArray),
+        ("frontier", Json.arr (frontier.map opJson).toArray)])
+      (Json.mkObj [("carried", match Docs.carriedDeps e.writer 4 frontier with
+          | some c => Json.arr (c.map opJson).toArray | none => Json.null),
+        ("verdict", Json.str (Docs.loroAgrees (Envelope.name blake3) lastOf [a1, b1] e 4 frontier).text)])
+
+/-- Where the genesis rides: exactly in a log's first envelope. -/
+def placementCases : List (String × Envelope × Bool) := [
+  ("a log's first envelope with the genesis", a1, true),
+  ("a log's first envelope without it", a1, false),
+  ("a later envelope with the genesis", a2, true),
+  ("a later envelope without it", a2, false),
+  ("a first sequence number that builds on another log, with the genesis", ly1, true),
+  ("a first sequence number that builds on another log, without it", ly1, false)]
+
+def placementVectors : List Json :=
+  placementCases.map fun (name, e, carries) =>
+    let b : Docs.Body := { firstBody with genesis := if carries then some todoGenesis else none }
+    vector name (Json.mkObj [("seq", toJson e.seq), ("prev", toJson e.prev.isSome), ("deps", toJson e.deps.length),
+        ("genesis", toJson carries)])
+      (Json.mkObj [("first", toJson (Docs.isFirst e)), ("placed", toJson (Docs.genesisPlaced e b))])
+
+def builtinCases : List (String × String × Value) :=
+  let h := Value.bytes (blake3 (tb "a tip")).bytes
+  [("version", "a named version", .map [(tb "at", .array [h]), (tb "name", .text (tb "v1"))]),
+   ("version", "refused: no name", .map [(tb "at", .array [h])]),
+   ("version", "refused: a field it doesn't have", .map [(tb "x", .null), (tb "at", .array [h]), (tb "name", .text (tb "v1"))]),
+   ("version", "refused: a tip that isn't a hash", .map [(tb "at", .array [.bytes [1]]), (tb "name", .text (tb "v1"))]),
+   ("branch", "a proposal", .map [(tb "base", .array [h]), (tb "name", .text (tb "seeds")), (tb "nonce", h)]),
+   ("branch", "a variant that follows main", .map [(tb "base", .array [h]), (tb "name", .text (tb "v")), (tb "nonce", h),
+      (tb "follows", .text (tb "main"))]),
+   ("branch", "refused: no nonce", .map [(tb "base", .array [h]), (tb "name", .text (tb "seeds"))]),
+   ("closed", "closed, with nothing more", .map []),
+   ("closed", "closed at its tips", .map [(tb "at", .array [h])]),
+   ("split", "a writer's split", .map [(tb "after", h), (tb "writer", .uint 7)]),
+   ("split", "refused: a writer that isn't a number", .map [(tb "after", h), (tb "writer", .text (tb "7"))]),
+   ("split", "refused: not a map", .array [])]
+
+#guard builtinCases.all fun (_, _, v) => decodeAll (encode v) == some v
+
+def builtinVectors : List Json :=
+  (builtinCases.map fun (ty, name, v) =>
+    let t := Docs.builtinType blake3 ty
+    vector s!"{ty}: {name}" (Json.mkObj [("type", Json.str t.text), ("record", hexJson (encode v))])
+      (Json.mkObj [("new", toJson (Docs.builtinFits (Docs.docsBuiltinFit blake3) t .new
+          (match v with | .map fs => fs | _ => []))),
+        ("fits", toJson ((Docs.docsBuiltinFit blake3 t).map (· v)))])) ++
+  [vector "another Doc's type is no docs built-in" (Json.mkObj [("type", Json.str todoType.text)])
+    (toJson (Docs.docsBuiltinFit blake3 todoType).isSome)]
+
 end DocsVectors
 
 /-- One vector per line, so a change reads as a diff of lines. -/
@@ -1174,11 +1384,13 @@ def main (args : List String) : IO Unit := do
   let dir : System.FilePath := args.headD "vectors"
   IO.FS.createDirAll dir
   for (file, vs) in [("status.json", status), ("presence.json", presence), ("timeline.json", timeline),
-      ("wire.json", wire), ("upgrades.json", upgrades), ("store.json", store), ("hashes.json", hashes), ("refs.json", refs),
+      ("wire.json", wire), ("frames.json", frames), ("upgrades.json", upgrades), ("store.json", store), ("hashes.json", hashes), ("refs.json", refs),
       ("chat.json", chat), ("files.json", files), ("chats.json", chats), ("queries.json", queries),
       ("wants.json", wants), ("mutations.json", mutations), ("merges.json", merges), ("lenses.json", lenses),
       ("indexes.json", indexes), ("trees.json", trees), ("lookups.json", lookups), ("keys.json", keys), ("writers.json", writers), ("envelopes.json", envelopes),
       ("checkpoints.json", checkpoints), ("fit.json", fit), ("logs.json", logs),
       ("counts.json", counts), ("lower.json", lowerVectors), ("changes.json", changeVectors),
-      ("merge-check.json", mergeChecks)] do
+      ("merge-check.json", mergeChecks), ("genesis.json", genesisVectors), ("bodies.json", bodyVectors),
+      ("segments.json", segmentVectors), ("heads.json", headVectors), ("loro.json", loroVectors),
+      ("placements.json", placementVectors), ("builtins.json", builtinVectors)] do
     IO.FS.writeFile (dir / file) (render vs)

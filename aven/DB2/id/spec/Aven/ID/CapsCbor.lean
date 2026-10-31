@@ -11,7 +11,7 @@ A cap is a Value, encoded by `Aven.Core`'s deterministic CBOR, its targets as `A
  "issuer": vault, "parent": cap or null, "conditions": {"own", "uses", "approve", "expires", "history", "branches",
  "notBefore"}}
 line:    {"op": op id, "doc": target, "params": {param: [value…] or null, …}}
-holder:  {"vault": v}   {"group": Doc}   "public"   {"ticket": key}
+holder:  {"vault": v}   {"group": Doc}   "public"
 ```
 
 Keys sort as the codec sorts them: shorter first, then by their bytes. An op id and a Doc id are byte strings of their
@@ -47,7 +47,6 @@ def Holder.value : Holder → Value
   | .vault v => .map [(key "vault", txt v)]
   | .group g => .map [(key "group", .bytes g.hash.bytes)]
   | .«public» => txt "public"
-  | .ticket k => .map [(key "ticket", txt k)]
 
 def Branches.value : Branches → Value
   | .any => txt "any"
