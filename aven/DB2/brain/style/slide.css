@@ -1,0 +1,96 @@
+/* A slide (STYLE.md, "A slide"): a 16:9 picture in the style of an illustrated asset sheet. A warm cream ground, its
+   title in bold navy at the top left, hand-drawn objects (art/objects.mjs, placed as image layers) with bold
+   uppercase navy labels under them, and dotted ochre paths for how they relate, each named. Every length inside is in
+   cqw, a hundredth of the slide's width, so the slide scales as one picture. No text is smaller than 2.6cqw: about
+   9 px on a phone (sandbox/brain.mjs). Every element is a layer with a stable class, so a motion version can move
+   each one.
+   Written in the subset the face-runtime takes as typed style rules: class and tag selectors, the properties
+   render/tree.test.js lists, plain values. No custom properties and no url(). */
+.slide {
+	position: relative;
+	width: 100%;
+	aspect-ratio: 16 / 9;
+	margin: 0;
+	overflow: hidden;
+	container-type: inline-size;
+	color: #23324a;
+	background: #fcf5ea;
+	border: 1px solid #e6d8c4;
+	border-radius: 1.6cqw;
+}
+
+.slide div,
+.slide span,
+.slide img {
+	position: absolute;
+	display: block;
+}
+
+/* the title: bold navy, at the top left */
+.slide .title {
+	position: absolute;
+	left: 4%;
+	top: 6%;
+	margin: 0;
+}
+
+.slide .headline {
+	margin: 0;
+	font-family: 'Inter Variable', system-ui, sans-serif;
+	font-size: 4.2cqw;
+	font-weight: 800;
+	line-height: 1;
+	letter-spacing: -0.01em;
+	white-space: nowrap;
+}
+
+/* a label: a thing's name, bold uppercase navy, centred under it */
+.slide .label {
+	position: absolute;
+	margin: 0;
+	font-family: 'Inter Variable', system-ui, sans-serif;
+	font-size: 2.6cqw;
+	font-weight: 700;
+	line-height: 1.15;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	text-align: center;
+	white-space: nowrap;
+	transform: translateX(-50%);
+}
+
+/* a relation's name, over its path, in the path's dark ochre */
+.slide .relation {
+	color: #7d4f12;
+	font-weight: 800;
+}
+
+/* a note: a quiet sentence on the ground */
+.slide .note {
+	position: absolute;
+	margin: 0;
+	color: #4a5468;
+	font-family: 'Inter Variable', system-ui, sans-serif;
+	font-size: 2.8cqw;
+	font-weight: 500;
+	line-height: 1.3;
+}
+
+/* a path: a relation, dotted in ochre, its segments turned from their start, an arrowhead at its end */
+.slide .path {
+	inset: 0;
+}
+
+.slide .dots {
+	height: 0;
+	border-top: 0.6cqw dotted #c4923f;
+	transform-origin: 0 0;
+}
+
+.slide .head {
+	width: 2.4cqw;
+	height: 2.4cqw;
+	background: #c4923f;
+	clip-path: polygon(0 0, 100% 50%, 0 100%, 25% 50%);
+	transform-origin: 50% 50%;
+}

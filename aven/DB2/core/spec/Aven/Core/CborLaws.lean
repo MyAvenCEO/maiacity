@@ -5,8 +5,9 @@ import Aven.Core.Cbor
 
 - `decode_encode`: an allowed Value's encoding decodes to it, whatever follows.
 - `encode_decode`: whatever the decoder accepts is allowed, and is exactly the encoding of what it decoded.
-- `decodeAll_encode`, `encode_decodeAll`: the same for a whole byte string.
-- `encode_inj`: two allowed Values with one encoding are one Value.
+- `decodeAll_encode`, `encode_decodeAll`: the same for a whole byte string, where an allowed Value nests at most
+  `maxDepth` (512) deep; `decodeAll_deep`: nothing deeper is read.
+- `encode_inj`: two allowed Values with one encoding are one Value (`encode_inj_shape`: at any depth).
 -/
 
 namespace Aven.Core
@@ -138,22 +139,6 @@ theorem head_readHead {bs : Bytes} {m n : Nat} {r : Bytes} (h : readHead bs = so
 
 /-! ## Values -/
 
-mutual
-/-- How deeply a Value nests: the fuel its decoding needs. -/
-def depth : Value → Nat
-  | .array xs => depthList xs + 1
-  | .map kvs => depthMap kvs + 1
-  | _ => 1
-
-def depthList : List Value → Nat
-  | [] => 0
-  | v :: vs => max (depth v) (depthList vs)
-
-def depthMap : List (Bytes × Value) → Nat
-  | [] => 0
-  | (_, v) :: kvs => max (depth v) (depthMap kvs)
-end
-
 theorem one_le_depth (v : Value) : 1 ≤ depth v := by
   cases v <;> simp [depth]
 
@@ -164,32 +149,32 @@ theorem decode_text (fuel : Nat) (k rest : Bytes) (h : textOk k = true) :
   simp [keyBytes, decode, List.append_assoc, hh, h.2]
 
 mutual
-theorem decode_encode : ∀ (v : Value) (fuel : Nat) (rest : Bytes), Canon v = true → depth v ≤ fuel →
+theorem decode_encode : ∀ (v : Value) (fuel : Nat) (rest : Bytes), Shape v = true → depth v ≤ fuel →
     decode fuel (encode v ++ rest) = some (v, rest)
   | .uint n, fuel, rest, h, hd => by
     obtain ⟨f, rfl⟩ : ∃ f, fuel = f + 1 := ⟨fuel - 1, by simp [depth] at hd; omega⟩
-    simp only [Canon, decide_eq_true_eq] at h
+    simp only [Shape, decide_eq_true_eq] at h
     simp [encode, decode, readHead_head 0 n rest (by omega) h]
   | .nint n, fuel, rest, h, hd => by
     obtain ⟨f, rfl⟩ : ∃ f, fuel = f + 1 := ⟨fuel - 1, by simp [depth] at hd; omega⟩
-    simp only [Canon, decide_eq_true_eq] at h
+    simp only [Shape, decide_eq_true_eq] at h
     simp [encode, decode, readHead_head 1 n rest (by omega) h]
   | .bytes b, fuel, rest, h, hd => by
     obtain ⟨f, rfl⟩ : ∃ f, fuel = f + 1 := ⟨fuel - 1, by simp [depth] at hd; omega⟩
-    simp only [Canon, decide_eq_true_eq] at h
+    simp only [Shape, decide_eq_true_eq] at h
     simp [encode, decode, List.append_assoc, readHead_head 2 b.length (b ++ rest) (by omega) h]
   | .text b, fuel, rest, h, hd => by
     obtain ⟨f, rfl⟩ : ∃ f, fuel = f + 1 := ⟨fuel - 1, by simp [depth] at hd; omega⟩
     exact decode_text f b rest h
   | .array xs, fuel, rest, h, hd => by
     obtain ⟨f, rfl⟩ : ∃ f, fuel = f + 1 := ⟨fuel - 1, by simp [depth] at hd; omega⟩
-    simp only [Canon, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp only [Shape, Bool.and_eq_true, decide_eq_true_eq] at h
     simp only [depth] at hd
     have hl := decodeList_encodeList xs f rest h.2 (by omega)
     simp [encode, decode, List.append_assoc, readHead_head 4 xs.length (encodeList xs ++ rest) (by omega) h.1, hl]
   | .map kvs, fuel, rest, h, hd => by
     obtain ⟨f, rfl⟩ : ∃ f, fuel = f + 1 := ⟨fuel - 1, by simp [depth] at hd; omega⟩
-    simp only [Canon, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp only [Shape, Bool.and_eq_true, decide_eq_true_eq] at h
     simp only [depth] at hd
     have hm := decodeMap_encodeMap kvs f rest h.2 (by omega)
     simp [encode, decode, List.append_assoc, readHead_head 5 kvs.length (encodeMap kvs ++ rest) (by omega) h.1.1,
@@ -204,21 +189,21 @@ theorem decode_encode : ∀ (v : Value) (fuel : Nat) (rest : Bytes), Canon v = t
     obtain ⟨f, rfl⟩ : ∃ f, fuel = f + 1 := ⟨fuel - 1, by simp [depth] at hd; omega⟩
     simp [encode, decode, readHead]
 
-theorem decodeList_encodeList : ∀ (xs : List Value) (fuel : Nat) (rest : Bytes), CanonList xs = true →
+theorem decodeList_encodeList : ∀ (xs : List Value) (fuel : Nat) (rest : Bytes), ShapeList xs = true →
     depthList xs ≤ fuel → decodeList fuel xs.length (encodeList xs ++ rest) = some (xs, rest)
   | [], _, rest, _, _ => by simp [encodeList, decodeList]
   | v :: vs, fuel, rest, h, hd => by
-    simp only [CanonList, Bool.and_eq_true] at h
+    simp only [ShapeList, Bool.and_eq_true] at h
     simp only [depthList] at hd
     have h1 := decode_encode v fuel (encodeList vs ++ rest) h.1 (by omega)
     have h2 := decodeList_encodeList vs fuel rest h.2 (by omega)
     simp [encodeList, decodeList, List.append_assoc, h1, h2]
 
-theorem decodeMap_encodeMap : ∀ (kvs : List (Bytes × Value)) (fuel : Nat) (rest : Bytes), CanonMap kvs = true →
+theorem decodeMap_encodeMap : ∀ (kvs : List (Bytes × Value)) (fuel : Nat) (rest : Bytes), ShapeMap kvs = true →
     depthMap kvs ≤ fuel → decodeMap fuel kvs.length (encodeMap kvs ++ rest) = some (kvs, rest)
   | [], _, rest, _, _ => by simp [encodeMap, decodeMap]
   | (k, v) :: kvs, fuel, rest, h, hd => by
-    simp only [CanonMap, Bool.and_eq_true] at h
+    simp only [ShapeMap, Bool.and_eq_true] at h
     simp only [depthMap] at hd
     obtain ⟨f, rfl⟩ : ∃ f, fuel = f + 1 := ⟨fuel - 1, by have := one_le_depth v; omega⟩
     have h0 := decode_text f k (encode v ++ encodeMap kvs ++ rest) h.1.1
@@ -233,7 +218,7 @@ theorem take_drop_ok {n : Nat} {r : Bytes} (h : n ≤ r.length) : (r.take n).len
 
 mutual
 theorem encode_decode : ∀ (fuel : Nat) (bs : Bytes) (v : Value) (rest : Bytes),
-    decode fuel bs = some (v, rest) → Canon v = true ∧ encode v ++ rest = bs
+    decode fuel bs = some (v, rest) → Shape v = true ∧ depth v ≤ fuel ∧ encode v ++ rest = bs
   | 0, _, _, _, h => by simp [decode] at h
   | fuel + 1, bs, v, rest, h => by
     unfold decode at h
@@ -244,11 +229,11 @@ theorem encode_decode : ∀ (fuel : Nat) (bs : Bytes) (v : Value) (rest : Bytes)
       by_cases m0 : major = 0
       · subst m0; simp only [ite_true, Option.some.injEq, Prod.mk.injEq] at h
         obtain ⟨rfl, rfl⟩ := h
-        exact ⟨by simpa [Canon] using hn, by simpa [encode] using he⟩
+        exact ⟨by simpa [Shape] using hn, by simp [depth], by simpa [encode] using he⟩
       by_cases m1 : major = 1
       · subst m1; simp only [m0, ite_true, ite_false, Option.some.injEq, Prod.mk.injEq] at h
         obtain ⟨rfl, rfl⟩ := h
-        exact ⟨by simpa [Canon] using hn, by simpa [encode] using he⟩
+        exact ⟨by simpa [Shape] using hn, by simp [depth], by simpa [encode] using he⟩
       by_cases m2 : major = 2
       · subst m2; simp only [m0, m1, ite_true, ite_false] at h
         split at h
@@ -256,7 +241,7 @@ theorem encode_decode : ∀ (fuel : Nat) (bs : Bytes) (v : Value) (rest : Bytes)
           simp only [Option.some.injEq, Prod.mk.injEq] at h
           obtain ⟨rfl, rfl⟩ := h
           have hl' := take_drop_ok hl
-          refine ⟨by simp [Canon, hl']; omega, ?_⟩
+          refine ⟨by simp [Shape, hl']; omega, by simp [depth], ?_⟩
           simp [encode, hl', ← he, List.take_append_drop]
         · simp at h
       by_cases m3 : major = 3
@@ -266,7 +251,7 @@ theorem encode_decode : ∀ (fuel : Nat) (bs : Bytes) (v : Value) (rest : Bytes)
           simp only [Option.some.injEq, Prod.mk.injEq] at h
           obtain ⟨rfl, rfl⟩ := h
           have hl' := take_drop_ok hl.1
-          refine ⟨by simp [Canon, textOk, hl', hl.2]; omega, ?_⟩
+          refine ⟨by simp [Shape, textOk, hl', hl.2]; omega, by simp [depth], ?_⟩
           simp [encode, hl', ← he, List.take_append_drop]
         · simp at h
       by_cases m4 : major = 4
@@ -275,8 +260,8 @@ theorem encode_decode : ∀ (fuel : Nat) (bs : Bytes) (v : Value) (rest : Bytes)
         · rename_i xs r' hd
           simp only [Option.some.injEq, Prod.mk.injEq] at h
           obtain ⟨rfl, rfl⟩ := h
-          obtain ⟨hc, hlen, hel⟩ := encodeList_decodeList fuel n r xs r' hd
-          refine ⟨by simp [Canon, hc, hlen]; omega, ?_⟩
+          obtain ⟨hc, hdl, hlen, hel⟩ := encodeList_decodeList fuel n r xs r' hd
+          refine ⟨by simp [Shape, hc, hlen]; omega, by simp [depth]; omega, ?_⟩
           simp [encode, hlen, List.append_assoc, hel, he]
         · simp at h
       by_cases m5 : major = 5
@@ -287,8 +272,8 @@ theorem encode_decode : ∀ (fuel : Nat) (bs : Bytes) (v : Value) (rest : Bytes)
           · rename_i hs
             simp only [Option.some.injEq, Prod.mk.injEq] at h
             obtain ⟨rfl, rfl⟩ := h
-            obtain ⟨hc, hlen, hem⟩ := encodeMap_decodeMap fuel n r kvs r' hd
-            refine ⟨by simp [Canon, hc, hlen, hs]; omega, ?_⟩
+            obtain ⟨hc, hdm, hlen, hem⟩ := encodeMap_decodeMap fuel n r kvs r' hd
+            refine ⟨by simp [Shape, hc, hlen, hs]; omega, by simp [depth]; omega, ?_⟩
             simp [encode, hlen, List.append_assoc, hem, he]
           · simp at h
         · simp at h
@@ -297,25 +282,25 @@ theorem encode_decode : ∀ (fuel : Nat) (bs : Bytes) (v : Value) (rest : Bytes)
         by_cases n20 : n = 20
         · subst n20; simp only [ite_true, Option.some.injEq, Prod.mk.injEq] at h
           obtain ⟨rfl, rfl⟩ := h
-          exact ⟨rfl, by simpa [encode, head] using he⟩
+          exact ⟨rfl, by simp [depth], by simpa [encode, head] using he⟩
         by_cases n21 : n = 21
         · subst n21; simp only [n20, ite_true, ite_false, Option.some.injEq, Prod.mk.injEq] at h
           obtain ⟨rfl, rfl⟩ := h
-          exact ⟨rfl, by simpa [encode, head] using he⟩
+          exact ⟨rfl, by simp [depth], by simpa [encode, head] using he⟩
         by_cases n22 : n = 22
         · subst n22; simp only [n20, n21, ite_true, ite_false, Option.some.injEq, Prod.mk.injEq] at h
           obtain ⟨rfl, rfl⟩ := h
-          exact ⟨rfl, by simpa [encode, head] using he⟩
+          exact ⟨rfl, by simp [depth], by simpa [encode, head] using he⟩
         simp [n20, n21, n22] at h
       simp [m0, m1, m2, m3, m4, m5, m7] at h
   termination_by fuel _ _ _ _ => (fuel, 0)
 
 theorem encodeList_decodeList : ∀ (fuel n : Nat) (bs : Bytes) (xs : List Value) (rest : Bytes),
-    decodeList fuel n bs = some (xs, rest) → CanonList xs = true ∧ xs.length = n ∧ encodeList xs ++ rest = bs
+    decodeList fuel n bs = some (xs, rest) → ShapeList xs = true ∧ depthList xs ≤ fuel ∧ xs.length = n ∧ encodeList xs ++ rest = bs
   | _, 0, bs, xs, rest, h => by
     simp only [decodeList, Option.some.injEq, Prod.mk.injEq] at h
     obtain ⟨rfl, rfl⟩ := h
-    simp [CanonList, encodeList]
+    simp [ShapeList, depthList, encodeList]
   | fuel, n + 1, bs, xs, rest, h => by
     unfold decodeList at h
     split at h
@@ -324,20 +309,20 @@ theorem encodeList_decodeList : ∀ (fuel n : Nat) (bs : Bytes) (xs : List Value
       · rename_i vs r' hvs
         simp only [Option.some.injEq, Prod.mk.injEq] at h
         obtain ⟨rfl, rfl⟩ := h
-        obtain ⟨c1, e1⟩ := encode_decode fuel bs v r hv
-        obtain ⟨c2, l2, e2⟩ := encodeList_decodeList fuel n r vs r' hvs
-        refine ⟨by simp [CanonList, c1, c2], by simp [l2], ?_⟩
+        obtain ⟨c1, d1, e1⟩ := encode_decode fuel bs v r hv
+        obtain ⟨c2, d2, l2, e2⟩ := encodeList_decodeList fuel n r vs r' hvs
+        refine ⟨by simp [ShapeList, c1, c2], by simp [depthList]; omega, by simp [l2], ?_⟩
         simp [encodeList, List.append_assoc, e2, e1]
       · simp at h
     · simp at h
   termination_by fuel n _ _ _ => (fuel, n + 1)
 
 theorem encodeMap_decodeMap : ∀ (fuel n : Nat) (bs : Bytes) (kvs : List (Bytes × Value)) (rest : Bytes),
-    decodeMap fuel n bs = some (kvs, rest) → CanonMap kvs = true ∧ kvs.length = n ∧ encodeMap kvs ++ rest = bs
+    decodeMap fuel n bs = some (kvs, rest) → ShapeMap kvs = true ∧ depthMap kvs ≤ fuel ∧ kvs.length = n ∧ encodeMap kvs ++ rest = bs
   | _, 0, bs, kvs, rest, h => by
     simp only [decodeMap, Option.some.injEq, Prod.mk.injEq] at h
     obtain ⟨rfl, rfl⟩ := h
-    simp [CanonMap, encodeMap]
+    simp [ShapeMap, depthMap, encodeMap]
   | fuel, n + 1, bs, kvs, rest, h => by
     unfold decodeMap at h
     split at h
@@ -348,11 +333,11 @@ theorem encodeMap_decodeMap : ∀ (fuel n : Nat) (bs : Bytes) (kvs : List (Bytes
         · rename_i kvs' r'' hkvs
           simp only [Option.some.injEq, Prod.mk.injEq] at h
           obtain ⟨rfl, rfl⟩ := h
-          obtain ⟨c0, e0⟩ := encode_decode fuel bs (.text k) r hk
-          obtain ⟨c1, e1⟩ := encode_decode fuel r v r' hv
-          obtain ⟨c2, l2, e2⟩ := encodeMap_decodeMap fuel n r' kvs' r'' hkvs
-          simp only [Canon] at c0
-          refine ⟨by simp [CanonMap, c0, c1, c2], by simp [l2], ?_⟩
+          obtain ⟨c0, _, e0⟩ := encode_decode fuel bs (.text k) r hk
+          obtain ⟨c1, d1, e1⟩ := encode_decode fuel r v r' hv
+          obtain ⟨c2, d2, l2, e2⟩ := encodeMap_decodeMap fuel n r' kvs' r'' hkvs
+          simp only [Shape] at c0
+          refine ⟨by simp [ShapeMap, c0, c1, c2], by simp [depthMap]; omega, by simp [l2], ?_⟩
           simp only [encode] at e0
           simp only [encodeMap, keyBytes, List.append_assoc, e2, e1]
           simpa [List.append_assoc] using e0
@@ -388,9 +373,13 @@ theorem depthMap_le : ∀ (kvs : List (Bytes × Value)), depthMap kvs ≤ (encod
   | (_, v) :: kvs => by have := depth_le v; have := depthMap_le kvs; simp [depthMap, encodeMap]; omega
 end
 
+theorem Canon.shape {v : Value} (h : Canon v = true) : Shape v = true := by
+  simp only [Canon, Bool.and_eq_true] at h; exact h.1
+
 /-- An allowed Value's encoding decodes to it, alone. -/
 theorem decodeAll_encode (v : Value) (h : Canon v = true) : decodeAll (encode v) = some v := by
-  have := decode_encode v ((encode v).length + 1) [] h (by have := depth_le v; omega)
+  simp only [Canon, Bool.and_eq_true, decide_eq_true_eq] at h
+  have := decode_encode v maxDepth [] h.1 h.2
   simp only [List.append_nil] at this
   simp [decodeAll, this]
 
@@ -401,16 +390,27 @@ theorem encode_decodeAll {bs : Bytes} {v : Value} (h : decodeAll bs = some v) : 
   · rename_i v' hv
     simp only [Option.some.injEq] at h
     subst h
-    have := encode_decode _ bs v' [] hv
-    simpa using this
+    obtain ⟨c, d, e⟩ := encode_decode _ bs v' [] hv
+    exact ⟨by simp [Canon, c, d], by simpa using e⟩
   · simp at h
 
-/-- Two allowed Values with one encoding are one Value. -/
-theorem encode_inj {a b : Value} (ha : Canon a = true) (hb : Canon b = true) (h : encode a = encode b) : a = b := by
-  have h1 := decodeAll_encode a ha
-  have h2 := decodeAll_encode b hb
+/-- A Value too deep is refused, however it is written. -/
+theorem decodeAll_deep {bs : Bytes} {v : Value} (h : decodeAll bs = some v) : depth v ≤ maxDepth := by
+  have := (encode_decodeAll h).1
+  simp only [Canon, Bool.and_eq_true, decide_eq_true_eq] at this
+  exact this.2
+
+/-- Two Values in the profile's forms with one encoding are one Value, at any depth. -/
+theorem encode_inj_shape {a b : Value} (ha : Shape a = true) (hb : Shape b = true) (h : encode a = encode b) :
+    a = b := by
+  have h1 := decode_encode a (depth a + depth b) [] ha (by omega)
+  have h2 := decode_encode b (depth a + depth b) [] hb (by omega)
   rw [h] at h1
   rw [h1] at h2
   simpa using h2
+
+/-- Two allowed Values with one encoding are one Value. -/
+theorem encode_inj {a b : Value} (ha : Canon a = true) (hb : Canon b = true) (h : encode a = encode b) : a = b :=
+  encode_inj_shape (Canon.shape ha) (Canon.shape hb) h
 
 end Aven.Core

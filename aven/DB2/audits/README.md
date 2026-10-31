@@ -13,3 +13,15 @@ settled now.
 | [`engine.md`](engine.md) | The engine: operations, wants, views, plugins |
 | [`caps.md`](caps.md) | avenID caps, attack by attack, before decisions 13 to 20 |
 | [`actors.md`](actors.md) | The actor engine, from its branch before #1488 |
+
+## The audits of 31 Oct 2026
+
+Three audits across all parts that Samuel asked for on 31 Oct 2026: whether any word means two things, whether any job
+has two mechanisms, and whether any key holds authority a vault should. Each cites the main of its day. What follows
+from them is in [`ARCHITECTURE.md`](../ARCHITECTURE.md): rule 15 and A28 to A38.
+
+| Audit | Question |
+|---|---|
+| [`terms.md`](terms.md) | One word, one meaning: new terms, collisions, renames not yet applied, the glossary against the specs |
+| [`principles.md`](principles.md) | One job, one mechanism: fifteen places where two mechanisms do one job, and the decisions that pulled apart |
+| [`vaults.md`](vaults.md) | Vaults own; signers only sign: every place a key holds authority itself, and its vault form |

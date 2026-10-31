@@ -6,6 +6,8 @@ import Aven.Runtime.Face
 import Aven.Runtime.State
 import Aven.Runtime.StateExamples
 import Aven.Runtime.Markup
+import Aven.Runtime.Markdown
+import Aven.Runtime.FaceRuntime
 
 /-!
 # Aven.Runtime

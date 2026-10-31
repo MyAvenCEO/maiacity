@@ -1,0 +1,15 @@
+[package]
+name = "aven-runtimes-tree"
+version = "0.0.0"
+description = "The node-tree allowlist every runtime's tree and the applier are held to (Aven.Runtime.Tree)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+aven-core = { path = "../../DB2/core" }
+
+[dev-dependencies]
+serde = "=1.0.229"
+serde_json = { version = "=1.0.154", features = ["unbounded_depth"] }

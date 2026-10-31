@@ -582,8 +582,8 @@ Decided (Samuel, 30 Oct 2026):
   one `face-runtime`, which never takes CSS and only gives it; "view" keeps the engine's sense). They run untrusted parts securely and never
   reach the host.
 - Version 1 is a standalone, in-memory todo app: no network, no avenDB, no capabilities.
-- Frames as JSON lines when the network comes; ids derived from definition, spawner and count; only definitions from
-  the repository are spawned.
+- Frames in Core's canonical CBOR when the network comes, the one codec (Samuel, 31 Oct 2026, replacing "JSON lines";
+  ARCHITECTURE A29); ids derived from definition, spawner and count; only definitions from the repository are spawned.
 - Everything about an actor lives in its own Doc, shaped for Loro, and everything is kept.
 
 Decided here, on those grounds:

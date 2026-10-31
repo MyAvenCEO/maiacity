@@ -46,9 +46,14 @@ def indexWhere {α : Type} (p : α → Bool) : List α → Option Nat
 /-- The name `migrate` gives the `k`-th old statement: the genesis is 1. -/
 def nameAt (k : Nat) : Nat := k + 2
 
+/-- Whether an old statement is the invite with this key. -/
+def isInvite (key : String) : Old → Bool
+  | .invite i => i.key == key
+  | _ => false
+
 /-- The name of the ticket statement for an invite's one-time key; 0, which names nothing, if there is none. -/
 def ticketName (olds : List Old) (key : String) : Nat :=
-  match indexWhere (fun o => match o with | .invite i => i.key == key | _ => false) olds with
+  match indexWhere (isInvite key) olds with
   | some k => nameAt k
   | none => 0
 
@@ -56,7 +61,7 @@ def ticketName (olds : List Old) (key : String) : Nat :=
 claiming browser, the admin coop, the agent and the Aven Peer's key, and the guardian's hybrid keys (A13). -/
 def genesisOf (s : Founding) (c : Claim) (g : GuardianKeys) : Genesis :=
   { rpId := s.rp.rpId, origins := s.rp.origins, claimant := c.person, passkey := c.passkey, devices := [c.deviceKey],
-    coop := s.coop, agent := s.network, avenPeer := s.peerKey, guardian := g,
+    coop := s.coop, coopOwners := [c.person], agent := s.network, avenPeer := s.peerKey, guardian := g, guardianVault := guardianId,
     signedBy := [c.passkey, g.ed25519, g.mlDsa] }
 
 /-- An old statement's signer and what it says as a tree statement. Devices go by their keys, as the door does. -/
@@ -71,13 +76,18 @@ def Old.says (olds : List Old) (c : Claim) (g : GuardianKeys) : Old → String �
 def genesisStatement (m : Members) (c : Claim) (g : GuardianKeys) : TreeStatement :=
   ⟨1, c.passkey, [], .genesis (genesisOf m.founding c g)⟩
 
-/-- The `k`-th old statement as a tree statement: named `nameAt k`, naming the one before it. -/
+/-- What an old statement names besides the one before it: a join, its invite's ticket. -/
+def Old.tips (olds : List Old) : Old → List Nat
+  | .join j => [ticketName olds j.invite]
+  | _ => []
+
+/-- The `k`-th old statement as a tree statement: named `nameAt k`, naming the one before it, and a join its ticket. -/
 def step (m : Members) (c : Claim) (g : GuardianKeys) (k : Nat) (o : Old) : TreeStatement :=
   let (signer, says) := o.says (refOrder m) c g
-  ⟨nameAt k, signer, [k + 1], says⟩
+  ⟨nameAt k, signer, (k + 1) :: o.tips (refOrder m), says⟩
 
 /-- Production's store as tree statements: the genesis, then every old statement in ref order, each naming the one
-before it. An unclaimed store has none. -/
+before it (a join its ticket too). An unclaimed store has none. -/
 def migrate (m : Members) (g : GuardianKeys) : List TreeStatement :=
   match m.founding.claim with
   | none => []
@@ -89,7 +99,7 @@ def restored (_ : TreeStatement) : Bool := true
 /-! ## Every migrated statement counts -/
 
 theorem step_name (m : Members) (c : Claim) (g : GuardianKeys) (k : Nat) (o : Old) :
-    (step m c g k o).name = nameAt k ∧ (step m c g k o).tips = [k + 1] := by
+    (step m c g k o).name = nameAt k ∧ (step m c g k o).tips = (k + 1) :: o.tips (refOrder m) := by
   simp [step]
 
 /-- Each migrated old statement has the genesis in its past: its tip is the one before it, down to the genesis. -/
