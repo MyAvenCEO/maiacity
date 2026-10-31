@@ -131,6 +131,10 @@ decision's own text, reasons and Lean are its row there.
 
 | Decision | What | Page | Holds |
 |---|---|---|---|
+| [A212](DECISIONS.md) | A built-in type's label never follows its module: the tree's type is `avenID tree 1` | [id](id/README.md) | yes |
+| [A211](DECISIONS.md) | A device's vault names its key in a field `key` | [id](id/README.md) | yes |
+| [A210](DECISIONS.md) | avenID's Lean is generic in the vault id; the cast stays readable fixtures | [id](id/README.md) | yes |
+| [A209](DECISIONS.md) | A keeper knows a keyring by its genesis: type `keyring`, a vault it keeps for | [peers](peers/README.md) | yes |
 | [A208](DECISIONS.md) | How avenCAPS splits out of avenID: `caps/spec` as `Aven.Caps`, and the crate `aven-caps` | [caps](caps/README.md) | yes |
 | [A207](DECISIONS.md) | A type's version is a `schema` Record; a named version stays `version` | [docs](docs/README.md) | yes |
 | [A206](DECISIONS.md) | Runtimes stay files in this repository; publishing runtimes and the release vault parked (Samuel) | [runtime](runtime/README.md) | yes |
