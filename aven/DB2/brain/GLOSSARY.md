@@ -3,7 +3,10 @@
 The one glossary of the whole system, kept in avenBRAIN and shown in avenOS's Brain: every term the specs use,
 part by part, with its one meaning and a verdict. The shared primitives (Value, envelope, log, Doc, cap, want and the
 rest) are defined once, in [`ARCHITECTURE.md`](../ARCHITECTURE.md#the-primitives-everything-shares). This file maps
-every other term onto them. The verdicts are proposals until they are decided (**A1**).
+every other term onto them. The verdicts are decided (**A1**): every rename and merge below stands.
+
+**How they apply.** In the specs and the Lean now, by each file's owner. In code only when it is rewritten anyway.
+Stored formats keep their names: the `claim` ref, the chat's frozen lines and the `network` field stay as they are.
 
 **Verdicts.** No mark: keep as is. **→ x:** rename to x. **= x:** the same thing as x; use x. **⚠:** the same word
 means something else in another part, and that part's meaning is named.
@@ -119,7 +122,7 @@ means something else in another part, and that part's meaning is named.
 - **loose lines, offline queue**: lines waiting for what they build on; writes waiting for a connection.
 - **temp file, roll forward, sweep, marker** (`meta/version`): the opfs crash protocol and format version.
 - **gate**: a time limit per browser engine. **provider gate → the door** at the blob provider. ⚠ The code's `Gate`
-  is the door's set of keys: **→ `Door`**.
+  is the door's set of keys: **→ `Admission`** (a `Door` type exists).
 - **pack, pack record → pack entry, refs log, tombstone, compaction, torn tail**: the next opfs layout.
 - **relay**: iroh's relay; every Peer-Light byte crosses one.
 - **spike**: the measured choice of iroh-blobs over bao-tree.
@@ -180,7 +183,7 @@ means something else in another part, and that part's meaning is named.
 - **slot id**: the id of an at-most-one trait, so concurrent writes meet on one key.
 - **catalogue = vocabulary**: a vault's names for Values (types, operations, runtimes, definitions);
   vault, then network, then built in.
-- **want, target, window, follow, tier, signal, lifetime**: shared primitive and its parts. **part → depth** (`head`,
+- **want, target, window, follow, tier, signal, lifetime**: shared primitive and its parts. **part → level** (`head`,
   `records`, `files`). Tiers are `now`, `next`, `later`, `idle`. A lifetime is `mounted` or `durable`, with the same
   meaning as an actor's.
 - **durable want = keep. mounted want, open**: imported while shown or running.
@@ -232,7 +235,7 @@ means something else in another part, and that part's meaning is named.
 ## actors
 
 - **Value**: JSON only: null, bool, finite number, string, array, map. **= Value**.
-- **part**: code or data in one format, for one runtime. ⚠ A want has a **depth**.
+- **part**: code or data in one format, for one runtime. ⚠ A want has a **level** (caps have a share depth).
 - **runtime**: shared primitive. Actors' runtimes are named after their job: **state-runtime**
   (not json-runtime), **js-runtime** and **face-runtime**: one runtime draws a face from its data, `markup` and
   `style`, checking a11y across both (it replaces view-, markup-, css- and style-runtime). There
@@ -375,10 +378,10 @@ means something else in another part, and that part's meaning is named.
   what it lists, so what the cap covers changes only by its issuer's signed act, never because someone edited a tag;
   a Doc that leaves the list is dropped at the holders' next sync (A40).
 
-## New terms (proposals)
+## New terms
 
-From the terminology audit ([`audits/terms.md`](../audits/terms.md), section a). Terms the specs use that this
-glossary did not have; each verdict is a proposal until Samuel decides (**A1**).
+From the terminology audit ([`audits/terms.md`](../audits/terms.md), section a): terms the specs use that this
+glossary did not have, each with its verdict (**A1**).
 
 - **tip**: the newest point of something signed: a device's **log tip** (its newest post's number and hash), a **tree
   tip**. **→ `Past.tips` becomes `parents`**; the wire's `Head` **= tip**, renamed at the next wire version.
@@ -409,12 +412,12 @@ glossary did not have; each verdict is a proposal until Samuel decides (**A1**).
 - **migration guarantee, clean store, old side**: how production's tree moves to a new release without losing a device.
 - **forgetting**: once no one holds a Doc's keys, no sealed copy of it is readable (`Aven.ID.Forget`).
 
-## New collisions (proposals)
+## New collisions
 
-From the audit's ranking ([`audits/terms.md`](../audits/terms.md), "Ranked"), most likely to confuse first. Each
-resolution is a proposal (**A1**); nothing is renamed in the specs or the code until Samuel decides.
+From the audit's ranking ([`audits/terms.md`](../audits/terms.md), "Ranked"), most likely to confuse first, each with
+its verdict (**A1**). Where a verdict offers two names, the part's owner picks one.
 
-| Word | Its meanings | Proposed |
+| Word | Its meanings | Verdict |
 |---|---|---|
 | settle | the tree's one rule; merges resolving; the issuer choosing a fetch key; owner removals; the chat keeper | settle only for the tree; merges "resolve"; fetch keys "the issuer chooses"; `settleRemovals` → `resolveRemovals` |
 | docs, Docs | the document layer; the plural of Doc; avenOS's documentation tab | decided (**A41**): the documentation is **Brain**; "docs" only for the document layer |
@@ -432,9 +435,9 @@ resolution is a proposal (**A1**); nothing is renamed in the specs or the code u
 | kept, keep, keeper | what a keeper holds; a lens's parked data; caps' kept list; the wire's `kept`; `Keep` | "kept" only for what a keeper holds; the lens's **→ parked**; caps' **→ last-seen list**; `Keep` **→ `KeeperState`** |
 | tip, head | an envelope's parents; a version's tips; a log tip; a tree tip; the wire's `Head` | add **tip**; `Past.tips` **→ `parents`**; wire `Head` **→ `Tip`** |
 
-Close behind, each still with more than one meaning: **beat**, **presence**, **kind** (vaults only, yet five new
+Close behind, each with more than one meaning still to settle, part by part: **beat**, **presence**, **kind** (vaults only, yet five new
 enums), **link**, **version** (v1), **join** (only the network join: a browser signing in is *added* to a vault),
-**index**, **network**, **address**, **fit**, **gate** and **door**, **safe runtime**, **layer**, **part** and
+**index**, **network**, **address**, **fit**, **gate** and **door** (the code's `Gate` **→ `Admission`**), **safe runtime**, **layer**, **part** and
 **package**, **standing**, **order**, **withdraw** and **delete**, **verdict**, **admin**, **member**, and decision
 labels that mean caps decisions in one file and thread tasks in another.
 
@@ -450,7 +453,7 @@ Which part keeps each word.
 | envelope | docs | call (engine) |
 | operation | engine | verb (caps) |
 | keep / keeper | engine (keep), caps (keeper) | `Logs` (code); keep cap (the store's rule) |
-| part | actors | depth (wants) |
+| part | actors | level (wants) |
 | head / heads | store, docs | version (engine) |
 | ref | store | link (engine, ontology, `x-link`) |
 | snapshot | docs (local) | checkpoint (what travels) |
@@ -463,7 +466,7 @@ Which part keeps each word.
 | epoch | caps | generation (docs) |
 | partial | engine | unchecked (milestone-4 notes) |
 | index | engine | chunk list (files), pack table |
-| gate | the box's time limits | door (access); `Door` (code) |
+| gate | the box's time limits | door (access); `Admission` (code) |
 | network | the members group | the agent; the genesis hash; `Genesis` |
 | claim | caps (tickets) | genesis (the network) |
 | member | the network's group | `member_of` stays a predicate |
