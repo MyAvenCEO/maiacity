@@ -1,6 +1,6 @@
 [
-{"expected":{"frame":"hello","peer":"alice-peer","wire":2},"input":{"line":"{\"frame\":\"hello\",\"peer\":\"alice-peer\",\"wire\":2}"},"name":"a hello"},
-{"expected":{"frame":"update","wire":2},"input":{"line":"{\"frame\":\"update\",\"wire\":2}"},"name":"an update"},
+{"expected":{"frame":"hello","peer":"alice-peer","wire":3},"input":{"line":"{\"frame\":\"hello\",\"peer\":\"alice-peer\",\"wire\":3}"},"name":"a hello"},
+{"expected":{"frame":"update","wire":3},"input":{"line":"{\"frame\":\"update\",\"wire\":3}"},"name":"an update"},
 {"expected":{"frame":"hello","peer":"alice-peer","wire":1},"input":{"line":"{\"frame\":\"hello\",\"peer\":\"alice-peer\",\"wire\":1}"},"name":"a hello of version 1"},
 {"expected":null,"input":{"line":"{\"frame\":\"hello\",\"peer\":\"a\"}"},"name":"a hello without its version, as version 0 sent it"},
 {"expected":null,"input":{"line":"{\"frame\":\"hello\",\"peer\":\"a\",\"wire\":2,\"x\":1}"},"name":"a hello with a key extra"},

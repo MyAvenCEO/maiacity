@@ -144,13 +144,8 @@ impl Entry {
     }
 }
 
-/// A log's head, as a tip tells it (`Tip`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Tip {
-    pub writer: u64,
-    pub seq: u64,
-    pub name: Hash,
-}
+/// A log's head, as a tip tells it (`Tip`): the wire's, since `doc_tips` carries it.
+pub use aven_peer_wire::wire::Tip;
 
 /// A reader's tips: each held envelope that nothing held names as its `prev`, in the order held (`tips`).
 pub fn tips(held: &[Entry]) -> Vec<Tip> {
@@ -159,17 +154,6 @@ pub fn tips(held: &[Entry]) -> Vec<Tip> {
         .filter(|e| !named.contains(&e.name))
         .map(Entry::tip)
         .collect()
-}
-
-impl Tip {
-    /// A tip as a Value, its keys in the codec's order (`Tip.value`).
-    pub fn value(&self) -> Value {
-        Value::Map(vec![
-            ("seq".into(), Value::Uint(self.seq)),
-            ("name".into(), Value::Bytes(self.name.0.to_vec())),
-            ("writer".into(), Value::Uint(self.writer)),
-        ])
-    }
 }
 
 /// A Doc's version as a reader holds it (`version`): the BLAKE3 of its tips sorted by their encodings, one hash

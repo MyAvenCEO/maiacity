@@ -81,6 +81,14 @@ fn frame_json(f: &Frame) -> Value {
             json!({ "frame": "lines", "lines": lines.iter().map(|l| hex(l)).collect::<Vec<_>>() })
         }
         Frame::Kept { files } => json!({ "frame": "kept", "files": files }),
+        Frame::DocTips { doc, tips, more } => json!({
+            "frame": "doc_tips", "doc": doc.text(), "more": more,
+            "tips": tips.iter().map(|t| json!({ "writer": t.writer, "seq": t.seq, "name": t.name.text() })).collect::<Vec<_>>(),
+        }),
+        Frame::DocHave { doc, values, more } => json!({
+            "frame": "doc_have", "doc": doc.text(), "more": more,
+            "values": values.iter().map(|v| v.text()).collect::<Vec<_>>(),
+        }),
     }
 }
 

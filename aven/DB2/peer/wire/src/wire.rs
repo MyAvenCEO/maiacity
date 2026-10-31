@@ -9,7 +9,7 @@
 //! Catching up goes in pages that stay under [`MAX_FRAME`] however many devices there are. The Aven Peer beats once
 //! per clock step, so a quiet link still moves, and a link that doesn't is stalled.
 
-use aven_core::Value;
+use aven_core::{Hash, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -19,7 +19,7 @@ pub const MAX_FRAME: usize = 64 * 1024;
 /// The wire version this peer speaks (`Aven.Peer.Wire.wireVersion`): a number of its own, changed only when a frame's
 /// meaning changes, never with an ordinary release. 2: frames in CBOR (A29); 1 was frames as JSON lines, 0 the wire
 /// before it had versions.
-pub const VERSION: u64 = 2;
+pub const VERSION: u64 = 3;
 
 /// The first line each side sends (`Aven.Peer.Wire.Greeting`).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -102,6 +102,63 @@ pub enum Frame {
     /// links of the device that shared it; and on each link the files of that peer's own chain it has kept, in pages
     /// ([`kept_pages`]). A sender says "Kept by the network" only then.
     Kept { files: Vec<String> },
+    /// A reader tells another reader of a Doc, named by its id (A9), its tips: the head of each of its logs
+    /// (`Aven.Peer.DocSync`), in pages ([`doc_tips_pages`]), `more` until the last page of one telling. Only to a peer
+    /// met on the Doc's group's topic.
+    DocTips {
+        doc: Hash,
+        tips: Vec<Tip>,
+        more: bool,
+    },
+    /// A reader's answer to another's whole telling: the sealed values beyond its tips, by their store hashes, in pages
+    /// ([`doc_have_pages`]); the other fetches them through the fetch gate.
+    DocHave {
+        doc: Hash,
+        values: Vec<Hash>,
+        more: bool,
+    },
+}
+
+/// A log's head, as a reader tells it (`Aven.Peer.DocSync.Tip`): its writer, its place, and the newest envelope's name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Tip {
+    pub writer: u64,
+    pub seq: u64,
+    pub name: Hash,
+}
+
+impl Tip {
+    /// A tip as a Value, its keys in the codec's order (`Aven.Peer.DocSync.Tip.value`).
+    pub fn value(&self) -> Value {
+        map(vec![
+            ("seq", Value::Uint(self.seq)),
+            ("name", hash(&self.name)),
+            ("writer", Value::Uint(self.writer)),
+        ])
+    }
+
+    /// A tip read from exactly its keys (`Aven.Peer.WireCbor.tipOf`).
+    pub fn of_value(v: &Value) -> Option<Tip> {
+        let Value::Map(kvs) = v else { return None };
+        let f = Fields::exactly(kvs, &["seq", "name", "writer"])?;
+        Some(Tip {
+            writer: f.nat("writer")?,
+            seq: f.nat("seq")?,
+            name: read_hash(f.get("name")?)?,
+        })
+    }
+}
+
+fn hash(h: &Hash) -> Value {
+    Value::Bytes(h.0.to_vec())
+}
+
+/// A hash read back (`Aven.Peer.WireCbor.hashOf`): BLAKE3's 32 bytes, nothing else.
+fn read_hash(v: &Value) -> Option<Hash> {
+    match v {
+        Value::Bytes(b) => Some(Hash(b.as_slice().try_into().ok()?)),
+        _ => None,
+    }
 }
 
 /// A device's chain as a peer holds it: the device's key, its newest line's name, and that line's number.
@@ -283,6 +340,18 @@ impl Frame {
                 ),
             ]),
             Frame::Kept { files } => map(vec![("files", texts(files)), named("kept")]),
+            Frame::DocTips { doc, tips, more } => map(vec![
+                ("doc", hash(doc)),
+                ("more", Value::Bool(*more)),
+                ("tips", Value::Array(tips.iter().map(Tip::value).collect())),
+                named("doc_tips"),
+            ]),
+            Frame::DocHave { doc, values, more } => map(vec![
+                ("doc", hash(doc)),
+                ("more", Value::Bool(*more)),
+                named("doc_have"),
+                ("values", Value::Array(values.iter().map(hash).collect())),
+            ]),
         }
     }
 
@@ -351,6 +420,22 @@ impl Frame {
             "kept" => Frame::Kept {
                 files: with(&["frame", "files"])?.list("files", read_text)?,
             },
+            "doc_tips" => {
+                let f = with(&["frame", "doc", "tips", "more"])?;
+                Frame::DocTips {
+                    doc: read_hash(f.get("doc")?)?,
+                    tips: f.list("tips", Tip::of_value)?,
+                    more: f.bool("more")?,
+                }
+            }
+            "doc_have" => {
+                let f = with(&["frame", "doc", "values", "more"])?;
+                Frame::DocHave {
+                    doc: read_hash(f.get("doc")?)?,
+                    values: f.list("values", read_hash)?,
+                    more: f.bool("more")?,
+                }
+            }
             _ => return None,
         })
     }
@@ -404,6 +489,28 @@ pub fn catch_up_pages(holds: Vec<Have>) -> Vec<Frame> {
             holds: page.to_vec(),
             only: true,
         })
+        .collect()
+}
+
+/// One telling of a reader's tips of `doc` (`Aven.Peer.Wire.docTipsPages`): pages of at most [`PAGE`], every one but
+/// the last with `more`; no tips is one empty page, so the other hears the end of a telling.
+pub fn doc_tips_pages(doc: Hash, tips: Vec<Tip>) -> Vec<Frame> {
+    told(tips, |tips, more| Frame::DocTips { doc, tips, more })
+}
+
+/// One answer about `doc` (`Aven.Peer.Wire.docHavePages`): the sealed values' hashes in pages, as tips go.
+pub fn doc_have_pages(doc: Hash, values: Vec<Hash>) -> Vec<Frame> {
+    told(values, |values, more| Frame::DocHave { doc, values, more })
+}
+
+fn told<T: Clone>(xs: Vec<T>, mk: impl Fn(Vec<T>, bool) -> Frame) -> Vec<Frame> {
+    if xs.is_empty() {
+        return vec![mk(xs, false)];
+    }
+    let n = xs.len().div_ceil(PAGE);
+    xs.chunks(PAGE)
+        .enumerate()
+        .map(|(i, page)| mk(page.to_vec(), i + 1 < n))
         .collect()
 }
 

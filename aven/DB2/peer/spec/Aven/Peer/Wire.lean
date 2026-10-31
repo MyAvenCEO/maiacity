@@ -1,5 +1,6 @@
 import Lean.Data.Json
 import Aven.Core.Bytes
+import Aven.Peer.DocSync
 
 /-!
 # The wire
@@ -97,6 +98,13 @@ inductive Frame where
   it keeps it, to the links of the device that shared it; and on each link the files of that peer's own chain it has
   kept, in pages (`keptPages`). A sender says "Kept by the network" only then -/
   | kept (files : List String)
+  /-- a reader tells another reader of a Doc, named by its id (A9), its tips: the head of each of its logs
+  (`Aven.Peer.DocSync`), in pages (`docTipsPages`), `more` until the last page of one telling. Only to a peer met on
+  the Doc's group's topic -/
+  | docTips (doc : Aven.Core.Hash) (tips : List DocSync.Tip) (more : Bool)
+  /-- a reader's answer to another's whole telling: the sealed values beyond its tips (`DocSync.beyond`), by their
+  store hashes, in pages (`docHavePages`); the other fetches them through the fetch gate -/
+  | docHave (doc : Aven.Core.Hash) (values : List Aven.Core.Hash) (more : Bool)
   deriving DecidableEq, Repr
 
 /-- A greeting longer than this without its newline, or a frame longer than this, is refused: no peer needs one. -/
@@ -203,6 +211,8 @@ def Frame.heads? : Frame → List Head
 
 def Frame.more? : Frame → Bool
   | .heads _ m => m
+  | .docTips _ _ m => m
+  | .docHave _ _ m => m
   | _ => false
 
 theorem heads?_told (ps : List (List Head)) :
@@ -282,6 +292,83 @@ def heads300 : List Head := (List.range 300).map fun i => ⟨toString i, "id", i
 #guard (catchUpPages ((List.range 129).map fun i => ⟨toString i, i⟩)).map (fun | .catchUp h o => (h.length, o) | _ => (0, false))
   = [(128, true), (1, true)]
 
+/-! ## A Doc's sync, in pages
+
+A reader tells its tips and answers a telling in pages of at most `pageSize`, as the heads go: together the pages are
+the whole (`docTipsPages_tips`, `docHavePages_values`), none is empty but a telling of nothing, which is one empty page
+so the other hears its end, and a page of the longest entries fits a frame (`Aven.Peer.WireCbor`). A reader answers a
+telling once its last page, the one without `more`, is in (`DocSync.beyond` answers a whole telling). -/
+
+/-- One telling of a reader's tips of `doc`: its pages, every one but the last with `more`. -/
+def docTipsPages (doc : Aven.Core.Hash) (ts : List DocSync.Tip) : List Frame :=
+  let ps := pages pageSize ts
+  if ps = [] then [.docTips doc [] false] else ps.zipIdx.map fun (p, i) => .docTips doc p (i + 1 < ps.length)
+
+/-- One answer of a reader about `doc`: the sealed values' hashes in pages, every one but the last with `more`. -/
+def docHavePages (doc : Aven.Core.Hash) (vs : List Aven.Core.Hash) : List Frame :=
+  let ps := pages pageSize vs
+  if ps = [] then [.docHave doc [] false] else ps.zipIdx.map fun (p, i) => .docHave doc p (i + 1 < ps.length)
+
+def Frame.docTips? : Frame → List DocSync.Tip
+  | .docTips _ ts _ => ts
+  | _ => []
+
+def Frame.docHave? : Frame → List Aven.Core.Hash
+  | .docHave _ vs _ => vs
+  | _ => []
+
+theorem docTips?_told (doc : Aven.Core.Hash) (ps : List (List DocSync.Tip)) :
+    (ps.zipIdx.map fun (p, i) => Frame.docTips doc p (i + 1 < ps.length)).flatMap Frame.docTips? = ps.flatten := by
+  rw [List.flatMap_map]
+  show (ps.zipIdx.map Prod.fst).flatten = ps.flatten
+  rw [List.zipIdx_map_fst]
+
+theorem docHave?_told (doc : Aven.Core.Hash) (ps : List (List Aven.Core.Hash)) :
+    (ps.zipIdx.map fun (p, i) => Frame.docHave doc p (i + 1 < ps.length)).flatMap Frame.docHave? = ps.flatten := by
+  rw [List.flatMap_map]
+  show (ps.zipIdx.map Prod.fst).flatten = ps.flatten
+  rw [List.zipIdx_map_fst]
+
+/-- **The pages are the tips.** -/
+theorem docTipsPages_tips (doc : Aven.Core.Hash) (ts : List DocSync.Tip) :
+    (docTipsPages doc ts).flatMap Frame.docTips? = ts := by
+  have whole := pages_flatten (n := pageSize) (by decide) ts.length ts (Nat.le_refl _)
+  unfold docTipsPages
+  simp only
+  split
+  · next e => rw [e] at whole; simp [Frame.docTips?, ← whole]
+  · rw [docTips?_told, whole]
+
+/-- **The pages are the answer.** -/
+theorem docHavePages_values (doc : Aven.Core.Hash) (vs : List Aven.Core.Hash) :
+    (docHavePages doc vs).flatMap Frame.docHave? = vs := by
+  have whole := pages_flatten (n := pageSize) (by decide) vs.length vs (Nat.le_refl _)
+  unfold docHavePages
+  simp only
+  split
+  · next e => rw [e] at whole; simp [Frame.docHave?, ← whole]
+  · rw [docHave?_told, whole]
+
+/-- **The last page ends the telling:** only it says nothing more is coming. -/
+theorem docTipsPages_last (doc : Aven.Core.Hash) (ts : List DocSync.Tip) :
+    ((docTipsPages doc ts).map Frame.more?).getLast? = some false := by
+  unfold docTipsPages
+  simp only
+  split
+  · simp [Frame.more?]
+  · next h =>
+    generalize e : pages pageSize ts = ps at h ⊢
+    rw [List.getLast?_eq_some_getLast (by simpa using h)]
+    simp only [List.getLast_map, Frame.more?]
+    rw [List.getLast_eq_getElem]
+    have : 0 < ps.length := List.length_pos_iff.mpr h
+    simp [List.getElem_zipIdx]
+    omega
+
+#guard (docTipsPages (Aven.Core.blake3 [1]) []).length = 1
+#guard (docHavePages (Aven.Core.blake3 [1]) ((List.range 300).map fun i => Aven.Core.blake3 [i.toUInt8])).map
+  Frame.more? = [true, true, false]
+
 /-! ## The files kept, in pages
 
 A peer that shared many files is told the ones kept in pages of at most `pageSize` names, as the heads are: together
@@ -320,9 +407,9 @@ rarely, and never with an ordinary release (PEERS.md §7, decision 11). Two peer
 - **the gossip topic is per version**: a peer on another version is in another room, so no message of another meaning
   ever reaches it (`topicName`). -/
 
-/-- The wire version this model speaks: 2, frames in CBOR (A29). Version 1 was frames as JSON lines, version 0 the wire
-before it had versions. -/
-def wireVersion : Nat := 2
+/-- The wire version this model speaks: 3, with a Doc's sync between readers (`docTips`, `docHave`). Version 2 was frames
+in CBOR (A29), version 1 frames as JSON lines, version 0 the wire before it had versions. -/
+def wireVersion : Nat := 3
 
 /-- What a peer answers a hello of version `theirs` with, speaking `mine`: nothing, and the connection carries on; or
 `update` with its own version, and the connection closes. -/

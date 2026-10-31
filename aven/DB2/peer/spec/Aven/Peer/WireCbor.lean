@@ -32,7 +32,7 @@ namespace WireCbor
 open Aven.Core
 
 /-- The wire version whose frames this module writes. -/
-def version : Nat := 2
+def version : Nat := 3
 
 /-- Text as the codec holds it: its UTF-8 bytes (`Aven.Core.text`). -/
 def txt (s : String) : Value := .text (text s)
@@ -95,6 +95,22 @@ def haveOf : Value → Option Have
     pure ⟨← readText (← field kvs "device"), ← readNat (← field kvs "seq")⟩
   | _ => none
 
+/-- A hash as its Value: its bytes. -/
+def hashValue (h : Hash) : Value := .bytes h.bytes
+
+/-- A hash read back: BLAKE3's 32 bytes, nothing else. -/
+def hashOf (v : Value) : Option Hash := do
+  let b ← readBytes v
+  guard (b.length == 32)
+  pure ⟨b⟩
+
+/-- A Doc's tip read from exactly its keys, `{seq, name, writer}` (`Aven.Peer.DocSync.Tip.value`). -/
+def tipOf : Value → Option DocSync.Tip
+  | .map kvs => do
+    guard (exactly kvs ["seq", "name", "writer"])
+    pure ⟨← readNat (← field kvs "writer"), ← readNat (← field kvs "seq"), ← hashOf (← field kvs "name")⟩
+  | _ => none
+
 /-- A frame as its Value. -/
 def frameValue : Frame → Value
   | .presence ps => obj [("frame", txt "presence"), ("peers", .array (ps.map txt))]
@@ -111,6 +127,10 @@ def frameValue : Frame → Value
   | .catchUp hs only => obj [("have", .array (hs.map haveValue)), ("only", .bool only), ("frame", txt "catch_up")]
   | .lines ls => obj [("frame", txt "lines"), ("lines", .array (ls.map .bytes))]
   | .kept fs => obj [("files", .array (fs.map txt)), ("frame", txt "kept")]
+  | .docTips d ts more => obj [("doc", hashValue d), ("more", .bool more), ("tips", .array (ts.map DocSync.Tip.value)),
+      ("frame", txt "doc_tips")]
+  | .docHave d vs more => obj [("doc", hashValue d), ("more", .bool more), ("frame", txt "doc_have"),
+      ("values", .array (vs.map hashValue))]
 
 /-- A frame read from exactly its keys. -/
 def frameOf : Value → Option Frame
@@ -139,6 +159,12 @@ def frameOf : Value → Option Frame
       pure (.catchUp (← one "have" (readList haveOf)) (← one "only" readBool))
     | "lines" => guard (exactly kvs ["frame", "lines"]) *> (.lines <$> one "lines" (readList readBytes))
     | "kept" => guard (exactly kvs ["frame", "files"]) *> (.kept <$> one "files" (readList readText))
+    | "doc_tips" => do
+      guard (exactly kvs ["frame", "doc", "tips", "more"])
+      pure (.docTips (← one "doc" hashOf) (← one "tips" (readList tipOf)) (← one "more" readBool))
+    | "doc_have" => do
+      guard (exactly kvs ["frame", "doc", "values", "more"])
+      pure (.docHave (← one "doc" hashOf) (← one "values" (readList hashOf)) (← one "more" readBool))
     | _ => none
   | _ => none
 
@@ -266,9 +292,42 @@ theorem readBytes_bytes (b : Bytes) : readBytes (.bytes b) = some b := rfl
   | none => rfl
   | some s => exact congrArg (Option.map some) (readText_txt s)
 
+theorem readList_map_of {f : α → Value} {g : Value → Option α} :
+    ∀ (xs : List α), (∀ a ∈ xs, g (f a) = some a) → readList g (.array (xs.map f)) = some xs
+  | [], _ => rfl
+  | x :: xs, h => by
+    have := readList_map_of xs fun a m => h a (List.mem_cons_of_mem _ m)
+    simp only [readList, List.map_cons, List.mapM_cons, h x (List.mem_cons_self ..)] at this ⊢
+    rw [this]; rfl
+
+theorem hashOf_hashValue {h : Hash} (ok : h.bytes.length = 32) : hashOf (hashValue h) = some h := by
+  cases h
+  simp_all [hashOf, hashValue, readBytes, guard]
+
+theorem tipOf_value {t : DocSync.Tip} (ok : t.name.bytes.length = 32) : tipOf t.value = some t := by
+  obtain ⟨w, s, ⟨n⟩⟩ := t
+  simp_all [tipOf, DocSync.Tip.value, exactly, keys, field, List.lookup, guard, readNat, hashOf, readBytes]
+
+/-- A frame's hashes are BLAKE3's 32 bytes, as every peer writes them; the reader refuses any other. -/
+def HashesOk : Frame → Prop
+  | .docTips d ts _ => d.bytes.length = 32 ∧ ∀ t ∈ ts, t.name.bytes.length = 32
+  | .docHave d vs _ => d.bytes.length = 32 ∧ ∀ v ∈ vs, v.bytes.length = 32
+  | _ => True
+
 /-- **One form per frame:** a frame reads back from the Value it is written as. -/
-theorem frameOf_value (f : Frame) : frameOf (frameValue f) = some f := by
-  cases f <;> simp only [frameValue] <;>
+theorem frameOf_value (f : Frame) (ok : HashesOk f) : frameOf (frameValue f) = some f := by
+  cases f
+  case docTips d ts m =>
+    obtain ⟨hd, ht⟩ := ok
+    have r : readList tipOf (.array (ts.map DocSync.Tip.value)) = some ts :=
+      readList_map_of ts fun t m => tipOf_value (ht t m)
+    simp [frameValue, frameOf, obj, exactly, keys, field, List.lookup, guard, readBool, r, hashOf_hashValue hd]
+  case docHave d vs m =>
+    obtain ⟨hd, hv⟩ := ok
+    have r : readList hashOf (.array (vs.map hashValue)) = some vs :=
+      readList_map_of vs fun v m => hashOf_hashValue (hv v m)
+    simp [frameValue, frameOf, obj, exactly, keys, field, List.lookup, guard, readBool, r, hashOf_hashValue hd]
+  all_goals simp only [frameValue] <;>
     simp [frameOf, obj, exactly, keys, field, List.lookup, readList_map headOf_headValue,
       readList_map haveOf_haveValue, readList_map readBytes_bytes, guard, readNat, readBool]
 
@@ -287,6 +346,9 @@ def Fits : Frame → Prop
   | .network _ t st => (∀ s, t = some s → Short s) ∧ (∀ s, st = some s → Short s)
   | .heads hs _ => hs.length < limit ∧ ∀ h ∈ hs, Short h.device ∧ Short h.id ∧ h.seq < limit
   | .catchUp hs _ => hs.length < limit ∧ ∀ h ∈ hs, Short h.device ∧ h.seq < limit
+  | .docTips d ts _ => d.bytes.length < limit ∧ ts.length < limit ∧
+      ∀ t ∈ ts, t.seq < limit ∧ t.writer < limit ∧ t.name.bytes.length < limit
+  | .docHave d vs _ => d.bytes.length < limit ∧ vs.length < limit ∧ ∀ v ∈ vs, v.bytes.length < limit
 
 theorem shape_txt {s : String} (h : Short s) : Shape (txt s) = true := by
   simp [txt, Shape, textOk, utf8_text, show (text _).length < limit from h]
@@ -321,12 +383,18 @@ theorem haveShape {h : Have} (f : Short h.device ∧ h.seq < limit) : Shape (hav
     show Short "seq" by decide, show Short "device" by decide]
   decide
 
+theorem tipShape {t : DocSync.Tip} (f : t.seq < limit ∧ t.writer < limit ∧ t.name.bytes.length < limit) :
+    Shape t.value = true := by
+  simp [DocSync.Tip.value, Shape, ShapeMap, keysSorted, f.1, f.2.1, f.2.2, textOk_key,
+    show Short "seq" by decide, show Short "name" by decide, show Short "writer" by decide]
+  decide
+
 /-- **One encoding per frame:** a frame that fits is a canonical Value, so its bytes are the one encoding of it and
 every reader decodes them to it (`Aven.Core.decodeAll_encode`). -/
 theorem frameValue_canon {f : Frame} (fits : Fits f) : Canon (frameValue f) = true := by
   cases f <;> simp only [frameValue] <;> simp only [Fits] at fits <;>
     simp (config := { decide := true }) [Canon, obj, Shape, ShapeMap, keysSorted, depth, depthMap, txt, textOk,
-      utf8_text, optVal]
+      utf8_text, optVal, hashValue]
   case beat => exact fits
   case claim | signIn | invite | withdraw | join | refused => exact fits
   case lines =>
@@ -347,15 +415,28 @@ theorem frameValue_canon {f : Frame} (fits : Fits f) : Canon (frameValue f) = tr
     have := depthList_map (f := haveValue) (d := 2) (fun _ => by simp [haveValue, obj, depth, depthMap, txt])
       ‹List Have›
     simp only [maxDepth]; omega
+  case docTips =>
+    obtain ⟨hd, hl, ht⟩ := fits
+    refine ⟨⟨hd, hl, shapeList_map _ (fun _ h => tipShape h) ht⟩, ?_⟩
+    have := depthList_map (f := DocSync.Tip.value) (d := 2)
+      (fun _ => by simp [DocSync.Tip.value, depth, depthMap]) ‹List DocSync.Tip›
+    simp only [maxDepth]; omega
+  case docHave =>
+    obtain ⟨hd, hl, hv⟩ := fits
+    refine ⟨⟨hd, hl, shapeList_map (fun v : Hash => v.bytes.length < limit)
+      (fun _ h => by simp [hashValue, Shape, h]) hv⟩, ?_⟩
+    have := depthList_map (f := hashValue) (d := 1) (fun _ => by simp [hashValue, depth]) ‹List Hash›
+    simp only [maxDepth]; omega
   case network =>
     rename_i t st
     obtain ⟨ht, hs⟩ := fits
     cases t <;> cases st <;> simp_all [Shape, textOk, utf8_text, depth, maxDepth]
 
 /-- **A frame's bytes are read back as it:** whatever fits, written to the stream, is read as itself. -/
-theorem decodeAll_frame {f : Frame} (fits : Fits f) : (decodeAll (encode (frameValue f)) >>= frameOf) = some f := by
+theorem decodeAll_frame {f : Frame} (fits : Fits f) (ok : HashesOk f) :
+    (decodeAll (encode (frameValue f)) >>= frameOf) = some f := by
   rw [decodeAll_encode _ (frameValue_canon fits)]
-  exact frameOf_value f
+  exact frameOf_value f ok
 
 /-! ## Examples -/
 
@@ -365,7 +446,9 @@ def frameExamples : List Frame := [
   .presence ["alice-peer", "aven-peer"], .presence [], .beat 7, .beat (2 ^ 64 - 1), .claim "{}", .signIn "{\"a\":1}",
   .invite "{}", .withdraw "{}", .join "{}", .network false none none, .network true (some "{}") (some "[]"),
   .refused "taken", .heads heads2 true, .heads [] false, .catchUp [⟨"ab", 1⟩] true, .catchUp [] false,
-  .lines [[0x78], [], [0, 255]], .kept ["ab", "cd"], .refused "café ✓"]
+  .lines [[0x78], [], [0, 255]], .kept ["ab", "cd"], .refused "café ✓",
+  .docTips (blake3 [1]) [⟨1, 3, blake3 [2]⟩, ⟨2, 1, blake3 [3]⟩] true, .docTips (blake3 [1]) [] false,
+  .docHave (blake3 [1]) [blake3 [4], blake3 [5]] false, .docHave (blake3 [1]) [] true]
 
 -- **One form per frame:** every frame reads back from its Value.
 #guard frameExamples.all fun f => frameOf (frameValue f) == some f
@@ -386,6 +469,14 @@ def framed (v : Value) : Bytes := let e := encode v; be 4 e.length ++ e
 #guard decode [framed (obj [("n", .uint 1), ("extra", .null), ("frame", txt "beat")])] == ([], some .bad)
 #guard decode [framed (obj [("n", txt "1"), ("frame", txt "beat")])] == ([], some .bad)
 #guard decode [framed (obj [("frame", txt "shout")])] == ([], some .bad)
+-- a Doc's id that isn't 32 bytes, a tip with a key extra, a hash that isn't bytes: refused
+#guard decode [framed (obj [("doc", .bytes [1]), ("more", .bool false), ("frame", txt "doc_have"),
+  ("values", .array [])])] == ([], some .bad)
+#guard decode [framed (obj [("doc", hashValue (blake3 [1])), ("more", .bool false),
+  ("tips", .array [obj [("x", .null), ("seq", .uint 1), ("name", hashValue (blake3 [2])), ("writer", .uint 1)]]),
+  ("frame", txt "doc_tips")])] == ([], some .bad)
+#guard decode [framed (obj [("doc", hashValue (blake3 [1])), ("more", .bool false), ("frame", txt "doc_have"),
+  ("values", .array [txt "x"])])] == ([], some .bad)
 -- bytes that aren't the canonical encoding: a number in a longer form than it needs
 #guard decode [be 4 4 ++ [0xA1, 0x61, 0x6E, 0x18]] == ([], some .bad)
 -- a length of none, of more than the limit, and of exactly the limit, waiting
@@ -401,6 +492,9 @@ def longest : List Head := List.replicate pageSize ⟨String.ofList (List.replic
   String.ofList (List.replicate 64 'e'), 2 ^ 64 - 1⟩
 #guard (frameBytes (.heads longest true)).length * 2 < maxFrame
 #guard (frameBytes (.kept (List.replicate pageSize (String.ofList (List.replicate 64 'f'))))).length * 2 < maxFrame
+#guard (frameBytes (.docTips (blake3 [1]) (List.replicate pageSize ⟨2 ^ 64 - 1, 2 ^ 64 - 1, blake3 [2]⟩) true)).length * 2
+  < maxFrame
+#guard (frameBytes (.docHave (blake3 [1]) (List.replicate pageSize (blake3 [2])) true)).length * 2 < maxFrame
 
 -- a stream: the greeting's line, then frames; cut anywhere, the same
 def stream : Bytes := greetingBytes (.hello "alice-peer" 2) ++ bytesOf (frameExamples.take 3)

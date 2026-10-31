@@ -535,7 +535,7 @@ what runs.
 | Part | Lean | Rust | In the browser | Pending |
 |---|---|---|---|---|
 | The wire, version 2 | `Aven.Peer.Wire`, `Aven.Peer.WireCbor`, `Aven.Peer.Presence` in `peer/spec` (#1745) | `aven-peer-wire` in `peer/wire` (#1745); `aven-gen1` re-exports it until the cutover | the Peer-Light speaks it | the first generation's own imports of `aven_gen1::wire`, until the cutover |
-| Wire 3's frames | the fetch gate's and keepers' frames written over the move, reviewed by thread E (`keep_put` and `keep_part`, reasons of at most 64 bytes): after #1722 | the same, in `aven-peer-wire` | after the move | #1727; stage 5's after #1722 |
+| Wire 3's frames | `doc_tips`, `doc_have` in `Aven.Peer.Wire` and `Aven.Peer.WireCbor` (`docTipsPages_tips`, `docHavePages_values`, `docTipsPages_last`; `wireVersion` 3); the fetch gate's and keepers' frames, reviewed by thread E (`keep_put` and `keep_part`, reasons of at most 64 bytes): after #1722 | `doc_tips`, `doc_have` in `aven-peer-wire`, held to `frames.json`; the gate's and keepers' the same, after #1722 | the Peer-Light speaks wire 3 | sync over the gate (stage 3's next PR); stage 5's frames after #1722 |
 | Group topics, `Live`, sync by version | `Aven.Peer.DocSync`, #1727 | `aven-peer`'s `docs`, #1727 | not started | #1727 |
 | The Doc host and sifting | `Aven.Peer.Judge`, #1727 | the native host and sifting's state machine, #1727; the `Authorize` adapter: not started | the docs worker, and a new browser reading its keyring first (A187): not started | #1727; the keyring's plain path, avenDOCS' (A187) |
 | The fetch gate | `Aven.Peer.Fetch`, #1722 | `aven-peer-keeper`'s `fetch`, #1722; caps' half in aven-id's `keep` (#1734) | not started | #1722 |

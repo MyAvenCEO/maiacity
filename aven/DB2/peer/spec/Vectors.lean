@@ -244,6 +244,11 @@ def Frame.json : Frame → Json
   | .catchUp hs only => Json.mkObj [("frame", "catch_up"), ("have", toJson hs), ("only", toJson only)]
   | .lines ls => Json.mkObj [("frame", "lines"), ("lines", toJson (ls.map Aven.Core.hex))]
   | .kept fs => Json.mkObj [("frame", "kept"), ("files", toJson fs)]
+  | .docTips d ts more => Json.mkObj [("frame", "doc_tips"), ("doc", d.text),
+      ("tips", Json.arr (ts.map fun t => Json.mkObj [("writer", toJson t.writer), ("seq", toJson t.seq),
+        ("name", t.name.text)]).toArray), ("more", toJson more)]
+  | .docHave d vs more => Json.mkObj [("frame", "doc_have"), ("doc", d.text), ("values", toJson (vs.map (·.text))),
+      ("more", toJson more)]
 
 /-- The greetings: a line, and the greeting it is, or none. -/
 def wire : List Json :=
