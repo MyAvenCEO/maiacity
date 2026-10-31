@@ -3,10 +3,20 @@
 // makes no vault (Samuel, 31 Oct 2026). So the box stands in for a provider that has one: a ceremony's
 // `prf.eval.first` is answered with SHA-256 of a label, the credential's id and WebAuthn's salt, the same for the same
 // passkey on any engine and in any context. Only the box does this: the page's code is the one that runs everywhere,
-// and the PRF itself is checked against Chromium's own virtual authenticator (claim.mjs).
+// and the PRF itself is checked against Chromium's own virtual authenticator (claim.mjs). Chromium's carries its PRF
+// secret only on the profile that made the passkey: a passkey copied to another profile over CDP answers no PRF, so a
+// synced passkey's second browser stands in this way too.
 
 export async function withPrf(context) {
 	await context.addInitScript(prfStandIn);
+}
+
+// The owner and seal keys' public halves this session's Peer-Light derived, as the page shows them for checks
+// (`owner-keys`), or null: the same on the dev server and the release build.
+export async function ownerKeys(page) {
+	const shown = page.getByTestId('owner-keys');
+	if (!(await shown.waitFor({ state: 'attached', timeout: 10_000 }).then(() => true, () => false))) return null;
+	return { owner: await shown.getAttribute('data-owner'), seal: await shown.getAttribute('data-seal') };
 }
 
 function prfStandIn() {

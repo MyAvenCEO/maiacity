@@ -11,8 +11,8 @@
 //                                           profile with the same passkey, which becomes a second device; that
 //                                           browser's local data then made an older avenOS's, which it resets, and
 //                                           a sign-in with the passkey makes it a device again. With PRF, the claim
-//                                           opens the vault's keys, the second browser's one sign-in tap opens them,
-//                                           and both derive the same public halves
+//                                           opens the vault's keys, and the second browser's one sign-in tap opens
+//                                           them
 //   node sandbox/claim.mjs restarted <run>  after the Aven Peer restarted: both browsers on the same tree
 //   node sandbox/claim.mjs wiped <run>      after its store was wiped: the network unclaimed again
 //
@@ -25,6 +25,7 @@ import { createHash, createPrivateKey, createPublicKey } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { lines } from './records.mjs';
+import { ownerKeys, withPrf } from './prf.mjs';
 
 const [phase, run = 'runs/latest'] = process.argv.slice(2);
 const origin = 'http://localhost:5174';
@@ -53,12 +54,6 @@ async function open(name, { prf = true } = {}) {
 	});
 	await page.goto(`${origin}/`);
 	return { context, page, cdp, authenticatorId };
-}
-
-// the owner and seal keys' public halves the page's Peer-Light keeps, or null (peer/light, `ownerKeys`)
-async function ownerKeys(page) {
-	const kept = await page.evaluate(async () => (await import('/id.svelte.js')).ownerKeys()).catch(() => null);
-	return kept ? JSON.parse(kept) : null;
 }
 
 // the view a page shows once the Aven Peer has spoken: claim, invite-only, or the dashboard of the vault it acts as
@@ -133,7 +128,8 @@ if (phase === 'claim') {
 		await noPrf.page.screenshot({ path: `${run}/claim-no-prf.png` });
 		await wait(1000);
 		if (said('claimed', since)) problems.push('a passkey without PRF claimed the network');
-		if (await ownerKeys(noPrf.page)) problems.push('a passkey without PRF left owner keys in the store');
+		const kept = await noPrf.page.evaluate(async () => (await import('/id.svelte.js')).ownerKeys()).catch((e) => `unread: ${e}`);
+		if (kept !== null) problems.push(`a passkey without PRF left owner keys in the Peer-Light's store: ${kept}`);
 	} else problems.push('an unclaimed network shows the no-PRF browser no claim screen');
 	await noPrf.context.close();
 	const first = await open('first');
@@ -204,6 +200,8 @@ if (phase === 'claim') {
 	// the refused signup made a passkey on the second profile: a person's other browser holds only their own
 	await second.cdp.send('WebAuthn.clearCredentials', { authenticatorId: second.authenticatorId });
 	await second.cdp.send('WebAuthn.addCredential', { authenticatorId: second.authenticatorId, credential: passkey });
+	// Chromium's copy carries no PRF secret, as a synced passkey's would: the box stands in for its PRF (prf.mjs)
+	await withPrf(second.context);
 	await second.page.goto(`${origin}/`);
 	await view(second.page, 'invite-only');
 	const signedAt = Date.now();
@@ -212,13 +210,11 @@ if (phase === 'claim') {
 	report.signInMs = Date.now() - signedAt;
 	const signedIn = await second.page.locator('[data-view="dashboard"]').first().getAttribute('data-account').catch(() => null);
 	if (signedIn !== report.admin) problems.push(`the second browser acts as ${signedIn}, not ${report.admin}`);
-	// a new browser opens its vault with the passkey alone, in its one sign-in tap, which asked the PRF too (A43); the
-	// same passkey derives the same owner and seal keys there
+	// a new browser opens its vault with the passkey alone, in its one sign-in tap, which asked the PRF too (A43). That
+	// the same passkey derives the same keys on two browsers is the engines step's (its PRF stand-in on both)
 	if (await second.page.getByTestId('open-vault').count()) problems.push("the sign-in's one tap did not open the vault's keys");
+	if (!(await ownerKeys(second.page))?.owner) problems.push('the signed-in browser keeps no owner public half');
 	await second.page.screenshot({ path: `${run}/claim-opened.png` });
-	const secondKeys = await ownerKeys(second.page);
-	if (secondKeys?.owner !== report.ownerKeys?.owner || secondKeys?.seal !== report.ownerKeys?.seal)
-		problems.push('the same passkey derived other owner or seal keys on the second browser');
 	await wait(300);
 	report.tree = network(since)?.tree;
 	if (devices(network()) !== 3) problems.push(`after the sign-in the tree has ${devices(network())} devices, not 3`);

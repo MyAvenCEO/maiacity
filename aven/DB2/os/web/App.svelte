@@ -113,6 +113,11 @@
 	</div>
 </header>
 
+{#if net.ownerPublic}
+	<!-- this session's owner and seal public halves, for the box's checks; nothing secret -->
+	<span hidden data-testid="owner-keys" data-owner={net.ownerPublic.owner} data-seal={net.ownerPublic.seal}></span>
+{/if}
+
 {#if config && ready() && device && !net.opened}
 	<!-- the passkey's PRF step (id/caps/README.md): each later session's first tap opens the vault's owner and seal keys
 	     in the Peer-Light again; nothing secret comes back to this page -->

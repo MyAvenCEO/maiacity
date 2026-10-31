@@ -26,7 +26,7 @@ import { served } from './prod.mjs';
 import { narrow } from './narrow.mjs';
 import { lines } from './records.mjs';
 import { walkViews } from './views.mjs';
-import { withPrf } from './prf.mjs';
+import { ownerKeys, withPrf } from './prf.mjs';
 
 const run = process.argv[2] ?? 'runs/latest';
 mkdirSync(run, { recursive: true });
@@ -221,6 +221,9 @@ async function passkeys() {
 	const admin = await first.page.locator('[data-view="dashboard"]').first().getAttribute('data-account').catch(() => null);
 	if (!admin?.startsWith('person-')) problems.push(`WebKit's dashboard acts as ${admin}, not the admin's vault`);
 	await first.page.screenshot({ path: `${run}/webkit-signed-up.png` });
+	// the signup opened the vault's keys through the passkey's PRF: the Peer-Light keeps their public halves
+	const adminKeys = await ownerKeys(first.page);
+	if (!adminKeys?.owner || !adminKeys?.seal) problems.push("WebKit's signup kept no owner and seal public halves");
 	// the admin's line in the network's room comes back and is shown
 	await first.page.goto(`${origin}/#/${admin}/chat`);
 	await first.page.getByTestId('line').fill('hello from WebKit');
@@ -266,6 +269,10 @@ async function passkeys() {
 	const acting = await page.locator('[data-view="dashboard"]').first().getAttribute('data-account').catch(() => null);
 	if (acting !== admin) problems.push(`Firefox acts as ${acting} after its sign-in, not ${admin}`);
 	await page.screenshot({ path: `${run}/firefox-signed-in.png` });
+	// the same passkey, synced, derives the same owner and seal keys in its one sign-in tap on another engine
+	const signedInKeys = await ownerKeys(page);
+	if (!adminKeys || signedInKeys?.owner !== adminKeys.owner || signedInKeys?.seal !== adminKeys.seal)
+		problems.push("Firefox's sign-in with WebKit's passkey derived other owner or seal keys");
 	await third.close();
 	report.passkeys.ms = timed(since);
 }

@@ -46,6 +46,8 @@ export const net = $state({
 	// whether the passkey answered; `opened`: whether this session derived the owner and seal keys
 	prf: null,
 	opened: false,
+	// the public halves the Peer-Light derived this session, `{owner, seal}` hex: public, shown for checks
+	ownerPublic: null,
 });
 
 // A passkey without PRF never makes a vault (Samuel, 31 Oct 2026; id/caps/README.md, "Passkeys and the PRF step"):
@@ -168,7 +170,7 @@ async function openWith(credential, epoch) {
 	if (!first) return;
 	const output = new Uint8Array(first);
 	try {
-		await prfKeys(epoch, base64url(credential.rawId), output);
+		net.ownerPublic = await prfKeys(epoch, base64url(credential.rawId), output);
 		net.opened = true;
 	} finally {
 		output.fill(0);
