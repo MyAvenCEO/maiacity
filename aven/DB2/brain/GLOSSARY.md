@@ -1,9 +1,9 @@
-# avenDB glossary
+# The glossary
 
-Every term the avenDB specs use, part by part, with its one meaning and a verdict. The shared primitives (Value,
-envelope, log, Doc, cap, want and the rest) are defined once, in
-[`ARCHITECTURE.md`](ARCHITECTURE.md#the-primitives-everything-shares). This file maps every other term onto them.
-The verdicts are proposals until Samuel decides (**A1**).
+The one glossary of the whole system, kept in avenBRAIN and shown in avenOS under Docs: every term the specs use,
+part by part, with its one meaning and a verdict. The shared primitives (Value, envelope, log, Doc, cap, want and the
+rest) are defined once, in [`ARCHITECTURE.md`](../ARCHITECTURE.md#the-primitives-everything-shares). This file maps
+every other term onto them. The verdicts are proposals until they are decided (**A1**).
 
 **Verdicts.** No mark: keep as is. **→ x:** rename to x. **= x:** the same thing as x; use x. **⚠:** the same word
 means something else in another part, and that part's meaning is named.
@@ -133,17 +133,17 @@ means something else in another part, and that part's meaning is named.
 - **type, schema**: shared primitive; one version of a Record's shape.
 - **`x-loro`, `x-link`**: the container a field uses; **`x-link` = link**.
 - **lens**: two-way steps between two schema versions: add, rename, convert, in, wrap, unwrap, move, container.
-  Universal (Samuel, 30 Oct 2026): a lens joins versions inside one type Doc or of two type Docs. A reader uses only
-  the lenses pinned where it reads, and those form a forest ([A7](ARCHITECTURE.md#proposals-for-samuel)).
+  Universal: a lens joins versions inside one type Doc or of two type Docs. A reader uses only
+  the lenses pinned where it reads, and those form a forest ([A7](../ARCHITECTURE.md#proposals-for-samuel)).
 - **kept, unseen**: where a dropped field's data goes.
-- **lane → vocabulary** (Samuel); largely retired by D8 and type Docs.
+- **lane → vocabulary**; largely retired by D8 and type Docs.
 - **view**: an app's schema and lenses. **= the input of a view** (one meaning, shared with the engine).
 - **fit, kin**: whether an envelope's changes fit the schemas it names; one kind or kinds a lens joins.
 - **envelope, segment, genesis envelope**: shared primitives; a Doc's first envelope, whose hash is its id.
 - **snapshot, checkpoint, head**: shared primitives.
 - **peer** (Loro) **→ writer id**. ⚠ A Peer is a node.
 - **counter range**: a writer's op counters in a segment; inside the seal (D13).
-- **epoch** (a device's next peer) **→ generation** (Samuel): a device's fresh start after a split. ⚠ Epochs are
+- **epoch** (a device's next peer) **→ generation**: a device's fresh start after a split. ⚠ Epochs are
   keys.
 - **line → branch**: **main**, **proposal**, **variant**; **draft** dropped. ⚠ The face's variant is an axis of
   a face.
@@ -177,7 +177,7 @@ means something else in another part, and that part's meaning is named.
   writer's time.
 - **walk**: a bounded step over a link column, at most N hops.
 - **slot id**: the id of an at-most-one trait, so concurrent writes meet on one key.
-- **catalogue = vocabulary** (Samuel's word): a vault's names for Values (types, operations, runtimes, definitions);
+- **catalogue = vocabulary**: a vault's names for Values (types, operations, runtimes, definitions);
   vault, then network, then built in.
 - **want, target, window, follow, tier, signal, lifetime**: shared primitive and its parts. **part → depth** (`head`,
   `records`, `files`). Tiers are `now`, `next`, `later`, `idle`. A lifetime is `mounted` or `durable`, with the same
@@ -202,11 +202,11 @@ means something else in another part, and that part's meaning is named.
 - **line** (chat) **→ post**. **chain** (chat) **→ log**. **fork** (chat) **→ split**.
 - **stall alarm**: raised when a step moves no version.
 - **directory**: the index of a vault's Docs of one root type, by Doc id: sealed Values, with recent entries in a small
-  Doc ([A26](ARCHITECTURE.md#a-handful-among-millions-sealed-indexes)).
+  Doc ([A26](../ARCHITECTURE.md#a-handful-among-millions-sealed-indexes)).
 - **index**: a derived map that must equal a scan: a device's own cache, or a **sealed index** its readers share, a
   search tree of sealed Values derived from a query's shape, kept current by folds, which are checkpoints (A26).
   **blind index**: tokens another peer could match; not used, since search is local
-  ([A21](ARCHITECTURE.md#search-local-first)).
+  ([A21](../ARCHITECTURE.md#search-local-first)).
 - **door, provider events, RBSR**: admission; iroh-blobs' hooks; range-based set reconciliation.
 - **run, journal**: as in actors.
 
@@ -216,7 +216,7 @@ means something else in another part, and that part's meaning is named.
 - **predicate**: **= a type** of facts, with an English name, a gismu, a gloss and typed places.
 - **place** (x1 to x5): a **value place** (closed types) or a **ref place → link place**.
 - **gismu, gismu table, coined**: Lojban roots with place structures; 1341 typed; a predicate without one.
-- **vocabulary**: a vault's named types, operations, runtimes and definitions (Samuel's word for lanes and the
+- **vocabulary**: a vault's named types, operations, runtimes and definitions (the word for lanes and the
   engine's catalogue). **category**: an entity standing for a kind of thing.
 - **kind → type** (a type composed of traits). ⚠ "kind" stays only for vaults.
 - **trait**: one predicate around an entity, at most one or many.
@@ -226,17 +226,17 @@ means something else in another part, and that part's meaning is named.
   vault.
 - **definition** (of a predicate) **→ gloss**. ⚠ A definition is an actor's.
 - **shortlist, alignment lens**: candidate gismu chosen by a model; a lens across vocabularies. **= a lens** between
-  two type Docs, now that lenses are universal (Samuel, 30 Oct 2026).
+  two type Docs, now that lenses are universal.
 
 ## actors
 
 - **Value**: JSON only: null, bool, finite number, string, array, map. **= Value**.
 - **part**: code or data in one format, for one runtime. ⚠ A want has a **depth**.
-- **runtime**: shared primitive. Actors' runtimes are named after their job (Samuel, 30 Oct 2026): **state-runtime**
+- **runtime**: shared primitive. Actors' runtimes are named after their job: **state-runtime**
   (not json-runtime), **js-runtime** and **face-runtime**: one runtime draws a face from its data, `markup` and
-  `style`, checking a11y across both (Samuel, 30 Oct 2026; it replaces view-, markup-, css- and style-runtime). There
+  `style`, checking a11y across both (it replaces view-, markup-, css- and style-runtime). There
   is no prolog-runtime. Their home is
-  [`aven/runtimes`](../runtimes/README.md).
+  [`aven/runtimes`](../../runtimes/README.md).
 - **floor, fuel, shim, hostile parts**: the oldest runtime still run; work counted per instruction; the deterministic
   answer to clock and random calls; test parts that try to escape.
 - **definition**: the class: `interface`, `machine`, `turn`, `faces`, `init`, `lifetime`, `replaces`, `loads`.
@@ -263,8 +263,7 @@ means something else in another part, and that part's meaning is named.
   messages it sends.
 - **journal, journal entry**: **= the actor Doc's log; an entry is a turn's envelope** (K9).
 - **state, phase, machine, transition**: the actor's data; the machine's current phase; a machine is data, a table of
-  phases and transitions in the interface, checked by the kernel's admission checker, proven in Lean (Samuel, 30 Oct
-  2026: no Prolog).
+  phases and transitions in the interface, checked by the kernel's admission checker, proven in Lean (no Prolog).
 - **present, view model, node tree**: state to a view model to an allowlisted tree.
 - **kernel, router, scheduler, clock** (`tick`, `at`): routing, laws, one turn per actor at a time, time. ⚠
   "scheduler" in the engine is the want queue.
@@ -274,13 +273,12 @@ means something else in another part, and that part's meaning is named.
 - **door actors**: the model, store, HTTP, files and push. ⚠ The door is admission.
 - **composite, skill**: an actor whose turn tells others; a product word for one.
 - **describe**: the ask every actor answers, from its definition, its current phase and the asker's caps: its tool
-  specs (Samuel, 30 Oct 2026).
+  specs.
 - **tool**: a message from `describe` that the caller's caps allow. A model's tool list is a projection of `describe`
   and is never configured apart.
 - **sends**: the messages a definition declares it may send; the kernel enforces them.
 - **contracts** (requires, produces) **= interface types and `sends`**.
-- **type id**: `<type Doc>/<schema hash>`, the address of a version Record in a type Doc, from version 1 on (Samuel,
-  30 Oct 2026). It names a version everywhere: an envelope's `records`, a fact's `p`, an actor message's payload.
+- **type id**: `<type Doc>/<schema hash>`, the address of a version Record in a type Doc, from version 1 on. It names a version everywhere: an envelope's `records`, a fact's `p`, an actor message's payload.
   Equal schema bytes in two type Docs are two type ids; type ids a lens path joins are compatible, in one type Doc or
   across two.
   Edges between actors are derived by type id, never by name or prose.
@@ -291,7 +289,7 @@ means something else in another part, and that part's meaning is named.
 
 ## runtimes
 
-[`aven/runtimes`](../runtimes/README.md), the one home of every runtime.
+[`aven/runtimes`](../../runtimes/README.md), the one home of every runtime.
 
 - **runtime name**: `<job>-runtime` for actors (above), `<format>-runtime` for files (**svg-runtime**,
   **markdown-runtime**, **text-runtime**, **csv-runtime**, **json-runtime**, **pdf-runtime**), and after its plugin for
@@ -333,6 +331,17 @@ means something else in another part, and that part's meaning is named.
 - **lane** (iroh) **→ topology**: a NAT or UDP test setup in the box. ⚠ docs' lane retires.
 - **record** (a peer's status, `first-start`) **→ status**, **first-start ref**.
 - **`aven/db/1`, `Router`, `ProtocolHandler`, `after_handshake`**: our ALPN; iroh's dispatch and hook.
+
+## avenBRAIN: the docs
+
+- **avenBRAIN**: the package that holds all the documentation (`aven/DB2/brain`): the wiki, its slides, the style,
+  the voice and this glossary. avenOS shows it under **Docs**.
+- **page**: one package's part of the wiki, in Markdown: its story, then its slides in order.
+- **story**: a page's concepts in the order a reader meets them, from first principles; never a term before its slide.
+- **slide**: one concept on one 16:9 still: an illustration and its text in Markdown. Its markup is allowlisted HTML
+  with classes only, so the face-runtime can draw it later.
+- **layer**: one visual element of a slide, with a stable class, so a motion version can move it.
+- **arrow** (on a slide): a relation from one thing to another, its name above it.
 
 ## Words with two meanings
 

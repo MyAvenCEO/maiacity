@@ -1,0 +1,28 @@
+/* avenBRAIN's tokens (STYLE.md): the brand. Deep forest green, sage, a warm off-white ground, soft white cards, a
+   touch of lime. Scoped to `.brain`, the root of every docs view, beside avenOS's own tokens (os/web/style.css),
+   whose forest green and sage it shares. Components read these and define none. */
+.brain {
+	/* surfaces */
+	--brain-ground: #f3efe7;
+	--brain-card: #fffdf9;
+	--brain-sage-soft: #e2e6d3;
+	--brain-sage: #c9d0b0;
+	--brain-blush: #f4e4d7;
+	/* the greens */
+	--brain-forest: #1f3d2b;
+	--brain-forest-light: #3a5a44;
+	--brain-olive: #4a5a3a;
+	--brain-moss: #8fa27c;
+	--brain-lime: #d9e27a;
+	/* text: ink 13:1 and quiet 5.6:1 on the ground; cream on forest 10.9:1 */
+	--brain-ink: #1d2a21;
+	--brain-quiet: #56634f;
+	--brain-on-forest: #f7f4ec;
+	--brain-line: #e4ded2;
+	--brain-shadow: 0 2px 4px rgb(31 61 43 / 0.04), 0 14px 36px rgb(31 61 43 / 0.08);
+
+	/* type: an elegant serif for headlines, a clean sans for the rest, both bundled (os/web/main.js) */
+	--brain-serif: 'Fraunces Variable', Georgia, serif;
+	--brain-sans: 'Inter Variable', system-ui, sans-serif;
+	--brain-radius: 24px;
+}

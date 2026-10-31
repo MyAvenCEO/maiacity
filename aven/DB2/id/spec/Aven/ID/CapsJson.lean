@@ -75,7 +75,26 @@ def Cap.json (c : Cap) : Json :=
     ("kind", c.kind.name), ("grant", Json.arr (c.grant.map Line.json).toArray), ("role", toJson c.role),
     ("share", toJson c.share), ("conditions", c.conditions.json), ("signer", c.signer),
     ("approvals", Json.arr (c.approvals.map Sig.json).toArray),
-    ("cbor", Core.hex c.bytes), ("id", (c.digest Core.blake3).text), ("signs", Core.hex c.signing)]
+    ("cbor", Core.hex c.bytes), ("hash", (c.digest Core.blake3).text), ("signs", Core.hex c.signing)]
+
+/-- A Doc's facts, as its genesis fixes them: its id, its vault and its root type. -/
+def factsJson (f : Core.Facts) : Json :=
+  Json.mkObj [("id", f.id.text), ("vault", Core.utf8Text f.vault), ("type", f.type.text)]
+
+def Listing.json (l : Listing) : Json :=
+  Json.mkObj [("cap", l.cap.json),
+    ("docs", Json.arr (l.docs.map fun (d, k) => Json.mkObj [("doc", d.text), ("fetchKey", toJson k)]).toArray)]
+
+def Signed.json (o : Signed) : Json :=
+  match o.order with
+  | .withdraw c => Json.mkObj [("withdraw", c), ("signer", o.signer)]
+  | .delete d => Json.mkObj [("delete", d.text), ("signer", o.signer)]
+
+/-- A keeper's books on the cast's tree, one owner per approval. -/
+def Books.json (b : Books) : Json :=
+  Json.mkObj [("keeper", b.keeper), ("tree", "cast"), ("threshold", toJson (1 : Nat)),
+    ("listings", Json.arr (b.listings.map Listing.json).toArray),
+    ("orders", Json.arr (b.orders.map Signed.json).toArray)]
 
 def Role.json (r : Role) : Json :=
   Json.mkObj [("id", r.id), ("name", r.name), ("grant", Json.arr (r.grant.map Line.json).toArray)]
@@ -87,6 +106,8 @@ def ChainError.json : ChainError → Json
   | .signer c => Json.mkObj [("rule", "signer"), ("cap", c)]
   | .approval c => Json.mkObj [("rule", "approval"), ("cap", c)]
   | .publicShares c => Json.mkObj [("rule", "publicShares"), ("cap", c)]
+  | .keepShares c => Json.mkObj [("rule", "keepShares"), ("cap", c)]
+  | .footprint c => Json.mkObj [("rule", "footprint"), ("cap", c)]
   | .parent c => Json.mkObj [("rule", "parent"), ("cap", c)]
   | .issuer c => Json.mkObj [("rule", "issuer"), ("cap", c)]
   | .holder c => Json.mkObj [("rule", "holder"), ("cap", c)]

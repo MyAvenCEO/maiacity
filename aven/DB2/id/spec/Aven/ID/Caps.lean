@@ -22,8 +22,8 @@ no more often than its root may be shared (`chain_short`); every grant in it car
 keeps its parent's holder, a device of that holder signs it, and it lies within its parent (`attenuate_within`,
 `attenuate_signed`); every holder in a chain got there by an approved grant in it, so a chain starts from authority
 (`holder_granted`); a cap issued from a group's cap lives only while its issuer is in the group (`child_live`); the
-public never passes a cap on and may not share (`public_bounded`, D15); and a role is pinned by its id (`role_pinned`,
-D6). -/
+public never passes a cap on and may not share (`public_bounded`, D15), nor may a keep cap, so no keeper passes a
+vault's data on (A22, `Aven.ID.Placement`); and a role is pinned by its id (`role_pinned`, D6). -/
 
 namespace Aven.ID
 
@@ -65,10 +65,27 @@ def Grant.reaches (gov : Core.Bytes → Core.Bytes → Prop) (spawned : Core.Doc
     (f : Core.Facts) (v : Core.Verb) : Prop :=
   ∃ l ∈ g, l.verb = v ∧ l.target.covers gov spawned f
 
-/-- A grant allows write step `s` on the Doc `f`: one of its lines covers the Doc, with a footprint grant for it. -/
+/-- A line writes: its verb is put, patch, remove or edit, which lower to the steps a footprint names (A19). Read,
+query, tell, keep and share lower to no step, so a line with one of them carries no footprint (`capRules`). -/
+def Line.writes (l : Line) : Bool :=
+  match l.verb with
+  | .put | .patch | .remove | .edit => true
+  | .read | .query | .tell | .keep | .share => false
+
+/-- A grant allows write step `s` on the Doc `f`: one of its lines writes, covers the Doc, and has a footprint grant
+for it. The footprint grant names the step's verb exactly, so the line's verb only says that it writes: what an owner
+approves as "read" never writes (A2). -/
 def Grant.allows (gov : Core.Bytes → Core.Bytes → Prop) (spawned : Core.DocId → Core.DocId → Prop) (g : Grant)
     (f : Core.Facts) (s : Core.Step) : Prop :=
-  ∃ l ∈ g, l.target.covers gov spawned f ∧ ∃ fg ∈ l.footprint, fg.allows s = true
+  ∃ l ∈ g, l.writes = true ∧ l.target.covers gov spawned f ∧ ∃ fg ∈ l.footprint, fg.allows s = true
+
+/-- **A grant that doesn't write allows no step** (A2): a cap whose lines all read, query, tell, keep or share allows no
+write, whatever footprint its lines carry. -/
+theorem no_step_without_write {gov : Core.Bytes → Core.Bytes → Prop} {spawned : Core.DocId → Core.DocId → Prop}
+    {g : Grant} (h : ∀ l ∈ g, l.writes = false) {f : Core.Facts} {s : Core.Step} : ¬ g.allows gov spawned f s := by
+  rintro ⟨l, ml, lw, _⟩
+  rw [h l ml] at lw
+  cases lw
 
 theorem fpWithin_allows {g h : Core.Grant} {s : Core.Step} (w : fpWithin g h = true) (a : g.allows s = true) :
     h.allows s = true := by
@@ -99,12 +116,16 @@ theorem Grant.within_reaches {gov : Core.Bytes → Core.Bytes → Prop} {spawned
 theorem Grant.within_allows {gov : Core.Bytes → Core.Bytes → Prop} {spawned : Core.DocId → Core.DocId → Prop}
     {g h : Grant} {f : Core.Facts} {s : Core.Step} (w : g.within h = true) (a : g.allows gov spawned f s) :
     h.allows gov spawned f s := by
-  obtain ⟨l, ml, lc, fg, mf, fa⟩ := a
+  obtain ⟨l, ml, lw, lc, fg, mf, fa⟩ := a
   simp only [Grant.within, List.all_eq_true, List.any_eq_true] at w
   obtain ⟨m, mm, lm⟩ := w l ml
   simp only [Line.within, Bool.and_eq_true, List.all_eq_true, List.any_eq_true] at lm
   obtain ⟨fg', mf', fw⟩ := lm.2 fg mf
-  exact ⟨m, mm, Core.Target.le_sound lm.1.1 lc, fg', mf', fpWithin_allows fw fa⟩
+  have mw : m.writes = true := by
+    unfold Line.writes at lw ⊢
+    rw [← beq_iff_eq.mp lm.1.2]
+    exact lw
+  exact ⟨m, mm, mw, Core.Target.le_sound lm.1.1 lc, fg', mf', fpWithin_allows fw fa⟩
 
 /-- Which branches a cap may write: any, main only, proposals only, or one branch by its hash (never main). -/
 inductive Branches where
@@ -281,6 +302,8 @@ inductive ChainError where
   | signer (cap : String)
   | approval (cap : String)
   | publicShares (cap : String)
+  | keepShares (cap : String)
+  | footprint (cap : String)
   | parent (cap : String)
   | issuer (cap : String)
   | holder (cap : String)
@@ -328,11 +351,14 @@ def holds (x : Ctx) (p : Cap) (issuer : String) : Bool :=
   | .ticket _ => false
 
 /-- What every cap must keep: a device of its issuer signed it, its issuer's owners approved it, an owner vault by its
-own quorum (D14), unless it only attenuates, and a public cap may not share. -/
+own quorum (D14), unless it only attenuates; a public cap may not share, and nor may a keep cap, so no keeper passes a
+vault's data on (A22); and a footprint sits only on a line that writes, so a cap shown as reading never writes (A2). -/
 def capRules (x : Ctx) (c : Cap) : List (Bool × ChainError) :=
   [(x.tree.actsFor c.signer == some c.issuer, .signer c.id),
    (c.kind == .attenuate || x.tree.approves x.threshold c.issuer c.id c.approvals, .approval c.id),
-   (c.holder != .«public» || c.share == 0, .publicShares c.id)]
+   (c.holder != .«public» || c.share == 0, .publicShares c.id),
+   (c.share == 0 || (c.grants x.roles).all (·.verb != .keep), .keepShares c.id),
+   ((c.grants x.roles).all fun l => l.writes || l.footprint.isEmpty, .footprint c.id)]
 
 /-- A root names no parent and is a grant, so a chain starts from authority, and every atom it grants lies in its
 issuer's authority. -/
@@ -377,11 +403,13 @@ theorem rules_all {l m : List (Bool × ChainError)} :
 theorem capRules_ok {c : Cap} (h : (capRules x c).all (·.1) = true) :
     x.tree.actsFor c.signer = some c.issuer ∧
       (c.kind = .grant → x.tree.approves x.threshold c.issuer c.id c.approvals = true) ∧
-      (c.holder = .«public» → c.share = 0) := by
+      (c.holder = .«public» → c.share = 0) ∧ (∀ l ∈ c.grants x.roles, l.verb = .keep → c.share = 0) ∧
+      ∀ l ∈ c.grants x.roles, l.writes = true ∨ l.footprint = [] := by
   simp only [capRules, List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true,
-    bne_iff_ne, ne_eq] at h
-  obtain ⟨s, a, p⟩ := h
-  exact ⟨s, fun g => a.resolve_left (by simp [g]), fun e => by simp_all⟩
+    bne_iff_ne, ne_eq, List.all_eq_true, List.isEmpty_iff] at h
+  obtain ⟨s, a, p, k, fw⟩ := h
+  exact ⟨s, fun g => a.resolve_left (by simp [g]), fun e => by simp_all, fun l ml lk => k.resolve_right fun n =>
+    n l ml lk, fw⟩
 
 theorem linkRules_ok {p c : Cap} (h : (linkRules x p c).all (·.1) = true) :
     c.parent = some p.id ∧ holds x p c.issuer = true ∧ (c.kind = .grant ∨ c.holder = p.holder) ∧
@@ -614,12 +642,24 @@ theorem public_bounded {p c : Cap} (h : (linkRules x p c).all (·.1) = true) : p
   have := (linkRules_ok h).2.1
   simp [holds, e] at this
 
+/-- **In a valid chain a footprint sits only on a line that writes** (A2): what an owner approves as reading carries no
+write. -/
+theorem footprint_writes {r : Cap} {cs : List Cap} (h : chainOk x (r :: cs) = true) :
+    ∀ c ∈ r :: cs, ∀ l ∈ c.grants x.roles, l.footprint ≠ [] → l.writes = true := by
+  rw [chainOk, chainRules, rules_all] at h
+  intro c m l ml ne
+  have caps : (capRules x c).all (·.1) = true := by
+    rcases List.mem_cons.mp m with e | m
+    · exact e ▸ (rootRules_ok h.1).2.2.2
+    · exact links_caps h.2 c m
+  exact ((capRules_ok caps).2.2.2.2 l ml).resolve_right ne
+
 theorem public_no_share {r : Cap} {cs : List Cap} (h : chainOk x (r :: cs) = true) :
     ∀ c ∈ r :: cs, c.holder = .«public» → c.share = 0 := by
   rw [chainOk, chainRules, rules_all] at h
   intro c m
   rcases List.mem_cons.mp m with e | m
-  · exact e ▸ (capRules_ok (rootRules_ok h.1).2.2.2).2.2
-  · exact (capRules_ok (links_caps h.2 c m)).2.2
+  · exact e ▸ (capRules_ok (rootRules_ok h.1).2.2.2).2.2.1
+  · exact (capRules_ok (links_caps h.2 c m)).2.2.1
 
 end Aven.ID

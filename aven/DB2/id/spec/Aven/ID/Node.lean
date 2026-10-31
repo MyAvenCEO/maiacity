@@ -1,5 +1,6 @@
 import Aven.Core
 import Aven.ID.Records
+import Aven.ID.Placement
 
 /-! # What a node guarantees (PEERS.md; `Aven.Architecture`'s R3, R7 and R9)
 
@@ -14,9 +15,11 @@ the split counts there (`split_spreads`).
 at the home relay each one's newest address record names (§2). The admin lists only relays every member can use. With
 two relays listed, losing any one peer leaves every member reachable by every other (`no_only_relay`); with one, losing
 it leaves nobody reachable through a relay (`one_relay_only_source`). A device that re-homes signs a newer address
-record, which every peer takes as newest (`rehome_newest`). Each file goes to two keepers by rendezvous
-(`keepers_two`), so a Doc held by two members stays fetchable by every member when any one peer is lost
-(`no_only_holder`).
+record, which every peer takes as newest (`rehome_newest`). A Doc held by two members stays fetchable by every member
+when any one peer is lost (`no_only_holder`). Who keeps a Doc is its vault's choice, by keep caps
+(`Aven.ID.Placement`): every new vault starts with one for everything of its own to Maia City's keeper, approved by its
+owner (`default_kept`), and a second keeper of its own choice makes the Doc survive the Aven Peer's loss
+(`kept_fetchable`).
 
 **R9, what leaves a device.** A device sends a Doc's plain bytes only to a reader of it, by caps' verdict, and sealed
 bytes otherwise (`no_plain_to_nonreader`). A relay on the way carries the connection's ciphertext, and a keeper that
@@ -191,28 +194,20 @@ theorem no_only_holder {n : Net} (hl : n.Listed) {r₁ r₂ : String} (m₁ : r�
   simp only [fetchable, List.any_eq_true, Bool.or_eq_true, beq_iff_eq]
   exact ⟨h, mh, .inr (no_only_relay hl m₁ m₂ ne gone ma memh ha hg)⟩
 
-/-- A file's keepers: the two on the keeper list whose rank for the file is smallest (rendezvous hashing, PEERS §4).
-Every peer computes the same two from the same list. -/
-def keepersFor (rank : String → Nat) (keepers : List String) : List String :=
-  (keepers.mergeSort fun a b => decide (rank a ≤ rank b)).take 2
-
-/-- **`keepers_two`:** a keeper list of two or more distinct keepers gives every file two distinct keepers from it. -/
-theorem keepers_two {rank : String → Nat} {keepers : List String} (nd : keepers.Nodup) (two : 2 ≤ keepers.length) :
-    ∃ k₁ k₂, keepersFor rank keepers = [k₁, k₂] ∧ k₁ ≠ k₂ ∧ k₁ ∈ keepers ∧ k₂ ∈ keepers := by
-  have perm := List.mergeSort_perm keepers (fun a b => decide (rank a ≤ rank b))
-  have snd := perm.nodup_iff.mpr nd
-  have slen : 2 ≤ (keepers.mergeSort fun a b => decide (rank a ≤ rank b)).length := by
-    rw [perm.length_eq]; exact two
-  unfold keepersFor
-  generalize keepers.mergeSort (fun a b => decide (rank a ≤ rank b)) = sorted at perm snd slen ⊢
-  match sorted, perm, snd, slen with
-  | [], _, _, h => simp at h
-  | [_], _, _, h => simp at h
-  | k₁ :: k₂ :: _, perm, snd, _ =>
-    refine ⟨k₁, k₂, rfl, ?_, perm.mem_iff.mp (by simp), perm.mem_iff.mp (by simp)⟩
-    intro eq
-    subst eq
-    simp at snd
+/-- **`kept_fetchable`:** a Doc its vault keeps with the default keep cap and one keep cap of its own choice naming
+another keeper stays fetchable by every member when any one peer is lost, the Aven Peer included. Keep caps are caps'
+(`Aven.ID.Placement`), and a Doc's keepers are the vaults its keep caps name for its facts `f`. With the default alone,
+the Aven Peer is its one keeper, and only the writer's own devices hold it besides. -/
+theorem kept_fetchable {n : Net} (hl : n.Listed) {r₁ r₂ : String} (m₁ : r₁ ∈ n.relays) (m₂ : r₂ ∈ n.relays)
+    (ne : r₁ ≠ r₂) {gov : Bytes → Bytes → Bool} {spawned : DocId → DocId → Bool} {roles : List Role}
+    {caps : List Cap} {doc : String} {f : Facts} {v k s : String} {approvals : List Sig}
+    (hk : defaultKeep v k s approvals ∈ caps) (own : f.vault = vaultId v) {c : Cap} {k' : String} (hc : c ∈ caps)
+    (cov : c.keeps gov spawned roles f = true) (held : c.holder = .vault k') (other : k' ≠ k)
+    (holds : ∀ x ∈ keepersOf gov spawned roles caps f, x ∈ n.holders doc) (mk : k ∈ n.members)
+    (mk' : k' ∈ n.members) (gone : String) {a : String} (ma : a ∈ n.members) (ha : a ≠ gone) :
+    fetchable n gone a doc = true :=
+  no_only_holder hl m₁ m₂ ne (holds _ (default_kept gov spawned hk own))
+    (holds _ (holder_keeps gov spawned hc cov held)) (Ne.symm other) mk mk' gone ma ha
 
 /-! ## R9: what leaves a device -/
 
@@ -264,13 +259,26 @@ def net : Net :=
     usable := fun _ _ => true
     holders := fun d => if d == "chat" then ["bob-light", "aven-peer", "alice-peer"] else [] }
 
+/-- The chat and Bob's notes, Docs of Bob's vault, as their genesis fixes them. -/
+def chat : Facts := ⟨⟨⟨"chat".toUTF8.toList⟩⟩, vaultId "bob", ⟨⟨"chat-type".toUTF8.toList⟩⟩⟩
+def notes : Facts := ⟨⟨⟨"notes".toUTF8.toList⟩⟩, vaultId "bob", ⟨⟨"notes-type".toUTF8.toList⟩⟩⟩
+
+/-- Bob's keep cap for the chat at Bob's Peer. -/
+def keepChat : Cap :=
+  { id := "keep-chat", issuer := "bob", holder := .vault "bob-peer", signer := "bob-light",
+    grant := [⟨.doc chat.id, .keep, []⟩] }
+
 -- the Aven Peer stopped: Bob's and Carol's browsers still reach each other, at Alice's relay, and fetch the chat
 #guard reaches net "aven-peer" "bob-light" "carol-light"
 #guard home net "aven-peer" "carol-light" == some "alice-peer"
 #guard fetchable net "aven-peer" "carol-light" "chat"
 -- with the Aven Peer's relay alone, its loss leaves the browsers unreachable
 #guard !reaches { net with relays := ["aven-peer"] } "aven-peer" "bob-light" "carol-light"
-#guard keepersFor String.length ["aven-peer", "alice-peer", "bob-peer"] == ["bob-peer", "aven-peer"]
+-- Bob's vault keeps everything at the Aven Peer by default, and the chat at Bob's Peer as well
+#guard keepersOf (fun _ _ => false) (fun _ _ => false) [] [defaultKeep "bob" "aven-peer" "bob-light" [], keepChat]
+  chat == ["aven-peer", "bob-peer"]
+#guard keepersOf (fun _ _ => false) (fun _ _ => false) [] [defaultKeep "bob" "aven-peer" "bob-light" [], keepChat]
+  notes == ["aven-peer"]
 #guard outgoing (fun to _ => to == "bob-light") "aven-peer" "chat" == .sealed "chat"
 #guard seenBy (fun to _ => to == "bob-light") "bob-light" ["aven-peer"] "chat" "aven-peer" == some (.sealed "chat")
 

@@ -13,8 +13,8 @@ the theorem states the part that can, and `Aven.Architecture.Gaps` names what is
 ARCHITECTURE.md from those.
 
 The view that joins the parts is defined here, once: `served`, what a reader sends, the engine's want queue over caps'
-read grants (rule 6). Caps' revocation verdict reads Core's envelopes itself, its past Core's `Reaches`
-(`Aven.Core.Past.reaches_iff`, rules 2, 4 and 11).
+read grants (rule 6). Caps' revocation verdict, and the deletes a reader holds, read Core's envelopes themselves, their
+past Core's `Reaches` (`Aven.Core.Past.reaches_iff`, rules 2, 4 and 11).
 -/
 
 namespace Aven.Architecture
@@ -131,23 +131,42 @@ def contentOk (ver : DocId → TypeId) (grants : Envelope → List Grant) (fp : 
   DB.Engine.verdictFootprint (grants e) (fp e) (DB.Engine.changesFrom ver (before e) (step (before e) e)) = true ∧
     DB.Docs.FitsAll rule (DB.Engine.changesFrom ver (before e) (step (before e) e))
 
-/-- One reader verdict (rule 4): caps' `Verdict`, with fresh the epoch check, live the revocation verdict, and fit
-the content check. An envelope counts exactly when everything in its past is signed, in a fresh epoch, authorized by
-its cap chain, not revoked, within its footprint and fit, and none of it is half of a split. -/
+/-- One reader verdict (rule 4): caps' `Verdict`, with fresh the epoch check, live the revocation verdict and the
+deletes the reader holds (`ID.liveWith`), and fit the content check. An envelope counts exactly when everything in its
+past is signed, in a fresh epoch, authorized by its cap chain, not revoked, not ended by a delete, within its footprint
+and fit, and none of it is half of a split. -/
 theorem rule4_one_verdict (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spawned : DocId → DocId → Prop)
     (signed : Envelope → Prop) (H : Bytes → Hash) (epochOf : Envelope → Nat) (rd : ID.Reads)
-    (rs : List ID.Revocation) (ver : DocId → TypeId) (grants : Envelope → List Grant) (fp : Envelope → List Step)
-    (rule : TypeId → Bytes → Value → Prop) (before : Envelope → List (DB.Engine.Record Value))
+    (rs : List ID.Revocation) (isDelete byOwner : Envelope → Bool) (ver : DocId → TypeId)
+    (grants : Envelope → List Grant) (fp : Envelope → List Step) (rule : TypeId → Bytes → Value → Prop)
+    (before : Envelope → List (DB.Engine.Record Value))
     (step : List (DB.Engine.Record Value) → Envelope → List (DB.Engine.Record Value)) (S : List Envelope)
     (e : Envelope) :
     Counts (Envelope.name H)
         (r.Verdict gov spawned signed (fun x => ID.freshEpoch (Envelope.name H) epochOf S x = true)
-          (fun x => ID.verdict (Envelope.name H) rd S rs x = .counts) (contentOk ver grants fp rule before step)) S e ↔
+          (fun x => ID.liveWith (Envelope.name H) rd isDelete byOwner S rs x = true)
+          (contentOk ver grants fp rule before step)) S e ↔
       ∀ x, Reaches (Envelope.name H) S e x →
         (signed x ∧ ID.freshEpoch (Envelope.name H) epochOf S x = true ∧ r.Authorized gov spawned x ∧
-          ID.verdict (Envelope.name H) rd S rs x = .counts ∧ contentOk ver grants fp rule before step x) ∧
+          ID.liveWith (Envelope.name H) rd isDelete byOwner S rs x = true ∧
+          contentOk ver grants fp rule before step x) ∧
         ∀ y ∈ S, ¬ Split (Envelope.name H) x y :=
   ID.counts_iff r gov spawned (Envelope.name H) _ _ _ _ S e
+
+/-- A delete ends a Doc for every reader (A22): once a reader holds a delete its Doc's vault wrote, an envelope that
+counts is the delete or in its past, whatever cap it writes under. Readers holding the same deletes, and the same past
+of each, agree on it (`ID.deleted_agree`). -/
+theorem rule4_delete_ends (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spawned : DocId → DocId → Prop)
+    (signed : Envelope → Prop) (H : Bytes → Hash) (epochOf : Envelope → Nat) (rd : ID.Reads)
+    (rs : List ID.Revocation) (isDelete byOwner : Envelope → Bool) (fit : Envelope → Prop) {S : List Envelope}
+    {d e : Envelope} (hd : d ∈ S) (del : isDelete d = true) (own : byOwner d = true) (he : e ∈ S)
+    (h : Counts (Envelope.name H)
+      (r.Verdict gov spawned signed (fun x => ID.freshEpoch (Envelope.name H) epochOf S x = true)
+        (fun x => ID.liveWith (Envelope.name H) rd isDelete byOwner S rs x = true) fit) S e) :
+    Envelope.name H d = Envelope.name H e ∨ Past.Before (Envelope.name H) S d e := by
+  have live := ((h e (.refl e)).1).2.2.2.1
+  simp only [ID.liveWith, Bool.and_eq_true] at live
+  exact ID.delete_ends hd del own he live.2
 
 /-- Two readers that hold the same past of an envelope, and the same splits in it, give it the same verdict, whatever
 else each holds. -/
