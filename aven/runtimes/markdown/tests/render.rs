@@ -34,7 +34,7 @@ fn md(s: &str) -> Node {
 fn brain() -> Params {
     Params {
         links: vec![
-            ("glossary:".into(), "#/docs/glossary/".into()),
+            ("glossary:".into(), "#/brain/glossary/".into()),
             (
                 "aven/".into(),
                 "https://github.com/MyAvenCEO/maiacity/blob/main/aven/".into(),
@@ -211,7 +211,7 @@ fn links_under_rules() {
             vec![
                 el(
                     "a",
-                    &[("href", "#/docs/glossary/vault")],
+                    &[("href", "#/brain/glossary/vault")],
                     vec![t("the glossary")]
                 ),
                 t(", "),

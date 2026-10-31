@@ -12,7 +12,7 @@ replays it:
   `-`, ASCII punctuation goes, and a heading whose slug came before gets `-1`, `-2`, …. Letters beyond ASCII are kept
   as they are; punctuation beyond ASCII (general punctuation, Latin-1's signs, CJK's) goes.
 - **Links** (`rewrite`): a link the allowlist takes (`https:`, `mailto:`, `#…`) stays; any other is rewritten by the
-  first rule whose prefix it starts with (`glossary:` → `#/docs/glossary/`, say), and kept only if the result is a
+  first rule whose prefix it starts with (`glossary:` → `#/brain/glossary/`, say), and kept only if the result is a
   link the allowlist takes. Otherwise the link's text stays, without a link (`rewrite_link`).
 - **The runtime** (`markdownRuntime`), stated for any parser: its part is the file's bytes, its input the link rules,
   and an answer is a tree that passed the applier's check (`markdown_ok`). A parser bug can make a file download; it
@@ -129,13 +129,13 @@ def headingExamples : List (String × List String × List String) :=
 #guard headingExamples.all fun (_, hs, ids) => slugs hs == ids
 
 def avenBrainRules : List (String × String) :=
-  [("glossary:", "#/docs/glossary/"), ("aven/", "https://github.com/MyAvenCEO/maiacity/blob/main/aven/")]
+  [("glossary:", "#/brain/glossary/"), ("aven/", "https://github.com/MyAvenCEO/maiacity/blob/main/aven/")]
 
 def linkExamples : List (String × String × Option String) :=
   [("an https link stays", "https://maia.city", some "https://maia.city"),
    ("a fragment stays", "#vault", some "#vault"),
    ("a mail link stays", "mailto:hi@maia.city", some "mailto:hi@maia.city"),
-   ("a glossary link is rewritten", "glossary:vault", some "#/docs/glossary/vault"),
+   ("a glossary link is rewritten", "glossary:vault", some "#/brain/glossary/vault"),
    ("a repository path is rewritten", "aven/DB2/README.md", some "https://github.com/MyAvenCEO/maiacity/blob/main/aven/DB2/README.md"),
    ("javascript: goes", "javascript:steal()", none),
    ("plain http goes", "http://maia.city", none),
