@@ -342,7 +342,8 @@ first and survives a crash.
 
 `writer(device, doc, branch, generation)` is the first 64 bits of BLAKE3's key derivation under the context
 `avenDB writer 1` over the canonical CBOR array `[device's public key, the Doc's id, the branch, the generation]`, read
-little-endian, skipping the one value Loro reserves (`2⁶⁴ - 1`: then the next 64 bits). It is defined once in `Aven.DB`, exported as vectors, and never stored as an identity: the
+little-endian: the first of the output's four 64-bit windows that isn't the one value Loro reserves (`2⁶⁴ - 1`), and 0
+when all four are, a chance of 2⁻²⁵⁶; so no writer id is the reserved value (Lean: `writer_ne_reserved`). It is defined once in `Aven.DB`, exported as vectors, and never stored as an identity: the
 identity is the avenID device, and blame maps an op straight back to it.
 
 Each part earns its place:
@@ -850,7 +851,7 @@ against the Rust's Loro on random ops, so it can never be simpler than the code.
 
 - **Writer ids** (`Aven.DB.Docs.Writers`): `writer` is defined once, BLAKE3's `derive_key` (`Aven.Core.Blake3.deriveKey`,
   checked against the `blake3` crate) over the CBOR of the inputs; distinct (device, Doc, branch, generation) give
-  distinct writer ids under the hash assumption; every writer id is a 64-bit peer (`writer_lt`); an envelope holding
+  distinct writer ids under the hash assumption; every writer id is a 64-bit peer, never the one Loro reserves (`writer_lt`, `writer_ne_reserved`); an envelope holding
   another writer id's op is refused. Vectors `writers.json`: the inputs, their CBOR, the derived bytes and the id.
 - **Envelopes:** decoding and encoding are inverse on everything accepted; hashes and op ids agree or the envelope is
   refused, and among envelopes that pass, the same hashes name the same past exactly when the same op ids do
