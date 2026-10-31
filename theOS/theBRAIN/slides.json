@@ -1,0 +1,31 @@
+{
+  "title": "theID",
+  "slides": [
+    { "art": "intro", "title": "theID", "lead": "Who is acting?",
+      "more": "theID answers one question: who is acting? We build it one piece at a time, from the key in your hand to the data you share." },
+    { "art": "passkey", "term": "Passkey", "title": "The Passkey", "lead": "The key you carry.",
+      "more": "A passkey lives on your phone or on a hardware key. One tap proves it's you to theOS. No password, nothing to type." },
+    { "art": "secret", "term": "Secret", "title": "The Secret", "lead": "A whisper only theOS hears.",
+      "more": "With every tap the passkey also hands theOS a 32-byte secret. Same passkey, same secret, every time. It is never written down: the next tap brings it back." },
+    { "art": "pen", "term": "Pen", "title": "The Pen", "lead": "Everything you write, you sign.",
+      "more": "From the secret, theOS makes your pen: a signing key. A signature proves you approved exactly these bytes. Change one byte and it no longer checks out." },
+    { "art": "padlock", "term": "Padlock", "title": "The Padlock", "lead": "Anyone can lock. Only you can open.",
+      "more": "From the same secret comes your padlock: an encryption key pair. You hand out open copies freely. Whatever someone locks with it, only you can open." },
+    { "art": "birth", "term": "Birth", "title": "The Birth Page", "lead": "The first page you sign.",
+      "more": "Your identity starts with one signed page: “this is my pen, and this is the fingerprint of my next pen.” Naming the next pen now lets you switch pens later, and a thief with today's pen still can't take over." },
+    { "art": "id", "term": "ID", "title": "Your ID", "lead": "Your name, made from your birth page.",
+      "more": "Your ID is the fingerprint of your birth page: 32 bytes nobody can fake, because nobody else could have signed that page. It stays the same when your pen changes. The ID is who you are; the pen is only how you act." },
+    { "art": "entry", "term": "Entry", "title": "An Entry", "lead": "Each piece of data is its own box.",
+      "more": "A note, a message, a photo: each is an entry, signed with your pen. So every entry provably comes from your ID." },
+    { "art": "entrykey", "term": "Entry key", "title": "The Entry Key", "lead": "One box, one key.",
+      "more": "Each entry is locked with its own fresh, random key. If one entry key ever leaked, it would open that one box and nothing else." },
+    { "art": "envelope", "term": "Envelope", "title": "The Envelope", "lead": "The small key travels locked.",
+      "more": "The entry key goes into an envelope locked with your padlock. Only you can open the envelope, take out the key, and open the box." },
+    { "art": "share", "term": "Share", "title": "Sharing", "lead": "One box, many envelopes.",
+      "more": "To share an entry, add a second envelope, locked with your friend's padlock. The box never changes. To stop sharing, new entries simply get no envelope for them." },
+    { "art": "world", "title": "What the World Sees", "lead": "Locked boxes. Nothing more.",
+      "more": "Servers, peers and storage only ever hold locked boxes and locked envelopes. They can keep them, copy them and pass them on, but never read them, and never forge one in your name." },
+    { "art": "chain", "title": "The Whole Chain", "lead": "Passkey, secret, pen and padlock, ID, entries.",
+      "more": "Tap your passkey to get your secret, and from it your pen and padlock. Your pen signs your birth page, and its fingerprint is your ID. Every entry gets its own key, locked into an envelope for each reader." }
+  ]
+}
