@@ -2536,3 +2536,12 @@ changed. A refinement names what it refines; a change of mind names what it supe
   serves.
 - **Supersedes:** rule 15 (in part: "which its key owns")
 - **Lean or code then:** `device_key_governs_nothing`, done.
+
+### A179 · Threads keep their page's Status table current
+- **Decided by:** the architect, writing avenBRAIN's working rule (12:31)
+- **Decision:** a thread whose PR builds what a row of its package page's Status table lists updates that row in the
+  same PR. Everything else on a page, and every log entry, stays the architect's (A171).
+- **Why:** a page is the latest truth only if what is built shows the moment it lands; a row changed by the PR that
+  builds it can't drift from the code.
+- **Supersedes:** — (refines A171)
+- **Lean or code then:** none; the rule is in `aven/DB2/CLAUDE.md`.

@@ -1,22 +1,25 @@
 # Working in avenDB
 
-## Every decision lives in ARCHITECTURE.md (Samuel, 31 Oct 2026)
+## Every decision lives in avenBRAIN (Samuel, 31 Oct 2026)
 
-[`ARCHITECTURE.md`](ARCHITECTURE.md) and the Lean specs are avenDB's single source of truth. A decision that isn't
-there isn't decided.
-- **Record it before building on it.** Every decision, whether Samuel's, the architect's, or agreed between threads in
-  messages or a PR body, goes into ARCHITECTURE.md. It is either folded into the section that owns the concept or added
-  as an A-number. The architect records it, or the thread does in the same PR that first relies on it. A decision that
-  lives only in a message, a PR body or a spec README is drift.
-- **Specs cite, they don't decide.** A package's README and its Lean explain and prove what ARCHITECTURE.md decides,
-  and cite the A-number. Where a spec and ARCHITECTURE.md disagree, ARCHITECTURE.md wins, and the spec is fixed in its
-  owner's next PR. If you find a disagreement, tell the architect.
-- **Replace, don't append.** A later decision rewrites the text it changes, in ARCHITECTURE.md and in the specs that
-  repeat it. It is never added below the old text as "what follows". The old text's history stays in git.
-- **Done means recorded, proven and built.** A decision is done when ARCHITECTURE.md states it, the Lean names it cites
-  exist on main, and the code follows. Until then, its status says what is pending and in which PR.
-- **Before you start,** read the A-numbers your package's README cites, and check ARCHITECTURE.md for decisions newer
-  than your spec.
+avenDB's architecture lives in one place, avenBRAIN (`brain/`), with the Lean: [the index](brain/ARCHITECTURE.md),
+one page per package (`brain/<package>/README.md`), [the decision log](brain/DECISIONS.md) and
+[the glossary](brain/GLOSSARY.md). Brain in avenOS shows these files. A decision that isn't there isn't decided.
+- **Two documents.** The log is the history: it only grows, an entry is never edited, and a change of mind is a new
+  entry that names the one it supersedes (`bun aven/ops/devx/decisions.mjs` checks it). The pages are the latest
+  truth: each concept is stated once, on its owner's page, as it is now, with the decisions it rests on and the Lean
+  that proves it.
+- **The architect writes both.** A thread never adds an A-number or architecture prose (A171). Every decision, whether
+  Samuel's or agreed between threads in messages or a PR body, goes to the architect, who logs it and rewrites the
+  page that owns the concept. A decision that lives only in a message, a PR body or a README is drift. A thread may
+  update its page's Status table in the PR that builds what a row lists.
+- **Replace, don't append.** A later decision rewrites the page text it changes. The log keeps what it replaced.
+- **READMEs and Lean don't decide.** A package's README says what the package is, links its page, and gives its
+  commands and file map. Its Lean proves what the page states and cites the A-number. Where code, Lean or a README
+  disagrees with the page, the page wins: the owner fixes theirs in its next PR and tells the architect.
+- **Done means recorded, proven and built.** A decision is done when its page states it, the Lean names the page cites
+  exist on main, and the code follows. Until then, the page's Status says what is pending and where.
+- **Before you start,** read your package's page and the log's entries newer than your branch.
 
 ## The rules of the work
 
