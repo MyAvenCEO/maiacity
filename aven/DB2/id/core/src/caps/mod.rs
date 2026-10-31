@@ -3,6 +3,7 @@
 //! ops with bounds, chains that only narrow, revocation, and the reader's verdict on an envelope's calls.
 
 mod approve;
+mod authority;
 mod authorized;
 mod cbor;
 mod chain;
@@ -14,7 +15,8 @@ mod revoke;
 mod types;
 
 pub use approve::Sig;
-pub use authorized::{Authority, DeviceCap, Reader, Reading, Refusal};
+pub use authority::Authority;
+pub use authorized::{DeviceCap, Path, Reader, Reading, Refusal};
 pub use cbor::CAP_LABEL;
 pub use chain::{Cap, ChainError, Ctx, Role, authority_over_vault, issued, vault_id};
 pub use conditions::{Branches, Conditions, Form, History, Holder, MAIN};

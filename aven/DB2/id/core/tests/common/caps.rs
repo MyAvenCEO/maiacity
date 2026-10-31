@@ -367,7 +367,7 @@ pub fn judge_members(input: &Value) -> Value {
 }
 
 fn verdict(r: &aven_id::caps::Reader, reading: &aven_id::caps::Reading) -> Value {
-    use aven_id::caps::{Authority, Refusal};
+    use aven_id::caps::{Path, Refusal};
     let verdict = r.authorized(reading);
     let mut out = json!({
         "withinDevice": r.within_device(reading).is_ok(),
@@ -376,8 +376,8 @@ fn verdict(r: &aven_id::caps::Reader, reading: &aven_id::caps::Reading) -> Value
         "hostSigned": (r.device_cap)(reading.signer).is_some_and(|d| d.host),
         "authorized": verdict.is_ok(),
         "path": match verdict {
-            Ok(Authority::Own) => "own",
-            Ok(Authority::Chain) => "chain",
+            Ok(Path::Own) => "own",
+            Ok(Path::Chain) => "chain",
             Err(_) => "refused",
         },
     });

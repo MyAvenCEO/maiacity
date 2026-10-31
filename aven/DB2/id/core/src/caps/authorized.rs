@@ -97,7 +97,7 @@ pub enum Refusal {
 
 /// The path an authorized envelope took.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Authority {
+pub enum Path {
     /// Its vault's own authority: the Doc's vault, or one that governs it.
     Own,
     /// A chain, held by its signer's vault.
@@ -184,10 +184,10 @@ impl Reader<'_> {
 
     /// Caps' verdict (`Authorized`): its device acts within its device cap, and it writes on its vault's own
     /// authority (never an actor host's) or under a chain (an actor host's naming its actor).
-    pub fn authorized(&self, e: &Reading) -> Result<Authority, Refusal> {
+    pub fn authorized(&self, e: &Reading) -> Result<Path, Refusal> {
         let dc = self.within_device(e)?;
         if !dc.host && self.own(e) {
-            return Ok(Authority::Own);
+            return Ok(Path::Own);
         }
         if e.chain.is_empty() {
             return Err(Refusal::NoAuthority);
@@ -196,6 +196,6 @@ impl Reader<'_> {
         if dc.host && e.actor.is_none() {
             return Err(Refusal::NoActor);
         }
-        Ok(Authority::Chain)
+        Ok(Path::Chain)
     }
 }
