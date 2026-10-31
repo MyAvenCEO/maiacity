@@ -473,8 +473,8 @@ export async function upgrades(run) {
 		await $`${compose} restart prod`.env(env).quiet();
 	};
 	await wipe();
-	// a version ahead of this build's, and one behind, from the model's own (db/spec/vectors/upgrades.json)
-	const wire = JSON.parse(readFileSync(join(db2, 'db/spec/vectors/upgrades.json'), 'utf8')).find((v) => v.expected.answer === null).input.mine;
+	// a version ahead of this build's, and one behind, from the model's own (peer/spec/vectors/upgrades.json)
+	const wire = JSON.parse(readFileSync(join(db2, 'peer/spec/vectors/upgrades.json'), 'utf8')).find((v) => v.expected.answer === null).input.mine;
 	const asks = {
 		'prod-ahead': () => restart('prod', String(wire + 1)),
 		'prod-back': () => restart('prod', ''),

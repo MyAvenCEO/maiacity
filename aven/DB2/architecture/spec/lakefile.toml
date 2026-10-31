@@ -26,6 +26,10 @@ name = "aven-db-spec"
 path = "../../db/spec"
 
 [[require]]
+name = "aven-peer-spec"
+path = "../../peer/spec"
+
+[[require]]
 name = "aven-runtimes-spec"
 path = "../../../runtimes/spec"
 

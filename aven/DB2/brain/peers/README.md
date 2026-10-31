@@ -193,17 +193,20 @@ also carries `frame`, in its place in the codec's order.
 | `doc_tips` | `doc`, `more`, `tips` | the other's `doc_tips`, then `doc_have` | a reader's log heads, paged ([catch-up](#by-version-between-readers)) |
 | `doc_have` | `doc`, `more`, `values` | `fetch` | the sealed values beyond the other's tips, by hash |
 | `prove` | `doc`, `key`, `sig` | `proven {doc}` or `prove_refused {doc, why}` | proves the Doc's current fetch key on this connection ([the gate](#the-fetch-gate)) |
-| `fetch` | `doc`, `hashes` | `items`, `missing`, `fetched` | sealed values by hash, at most 128 |
+| `fetch` | `doc`, `hashes` | `items` for each held, `missing {doc, hashes}`, then `fetched {doc, later}`; or `fetch_refused {doc, why}` | sealed values by hash, at most 128; `fetched` closes each answer |
 | `items` | `at`, `doc`, `hash`, `bytes`, `total` | — | a part of one item, at most 48 KiB |
-| `keep_put`, `keep_took` | | | an upload of sealed items with their covers, and the keeper's answer ([keepers](#keepers)) |
-| `keep_after`, `keep_arrived`, `keep_end` | | | catch-up by arrival number ([catch-up](#by-arrival-number-from-keepers)) |
+| `keep_put` | `doc`, `hash`, `bytes`, `total`, `covers` | — | an upload's item, its first part, with its covers ([keepers](#keepers)) |
+| `keep_part` | `at`, `doc`, `hash`, `bytes`, `total` | — | a later part of that item |
+| `keep_end` | `doc` | `keep_took {doc, numbers}` or `keep_refused {doc, why}` | ends the upload; `numbers` gives each new item's `{n, hash}` |
+| `keep_after` | `n`, `doc` | `keep_arrived {doc, more, entries}` | the items held above `n`, each `{n, hash}`, paged ([catch-up](#by-arrival-number-from-keepers)) |
 
-The keepers' frames' keys, and those of `missing` and `fetched`, are fixed in the frames' Lean. `keep_cap`,
-`keep_order`, `keep_choice` and `keep_link`, which carry a keeper's Books, come after them.
+Every `why` is at most 64 bytes (`whyMax`). An upload is at most 128 items (`putsPerUpload`), and an item's covers at
+most 256 (`coversMax`). `keep_cap`, `keep_order`, `keep_choice` and `keep_link`, which carry a keeper's Books, come
+after these.
 
-**Decided:** rule 1, rule 14, A29, A42, A45, A118, A133, A134, A143 · **Lean:** `Aven.DB.Wire` — `pages_ne_nil`,
-`headsPages_heads`, `answer_pages`; `Aven.DB.WireCbor` — `frameOf_value`, `frameValue_canon`, `decodeAll_frame`,
-`push_tooLong`; wire 3's frames pending, after the move
+**Decided:** rule 1, rule 14, A29, A42, A45, A118, A133, A134, A143 · **Lean:** `Aven.Peer.Wire` — `pages_ne_nil`,
+`headsPages_heads`, `answer_pages`; `Aven.Peer.WireCbor` — `frameOf_value`, `frameValue_canon`, `decodeAll_frame`,
+`push_tooLong`; wire 3's gate and keeper frames in stage 5's PR 1 (#1765)
 
 ## The Doc host
 
@@ -412,7 +415,7 @@ Two readers of a Doc compare what they hold by their logs' heads, and each sends
 A device asks a keeper "what came after your number n?" and gets hashes in the order they arrived. It fetches the ones
 it lacks. The keeper needs to know nothing about writers.
 
-- **`keep_after {doc, n}`** is answered with exactly the items held above `n`, by number and hash, oldest first
+- **`keep_after {n, doc}`** is answered with exactly the items held above `n`, by number and hash, oldest first
   (`after_complete`, `after_sorted`), in pages of at most `pageSize`, none empty (`after_pages`), each with `more`.
 - **The device fetches** the hashes it lacks, lands each page in one write (one Value and one ref move), imports it as
   a sealed page ([avenDOCS](../docs/README.md#sealing-and-sealed-pages)), and then stands at the page's largest number
@@ -475,7 +478,7 @@ every later release, forever.
   check alone.
 
 **Decided:** README rule 9, A29, A36, A42, A186, A206, peers 11 · **Lean:**
-`Aven.DB.Wire` — `meet_speaks`, `meet_refuses`, `follows_newer`, `follows_one`, `follows_same`
+`Aven.Peer.Wire` — `meet_speaks`, `meet_refuses`, `follows_newer`, `follows_one`, `follows_same`
 
 ## The Aven Peer is just a peer
 
@@ -534,12 +537,12 @@ what runs.
 
 | Part | Lean | Rust | In the browser | Pending |
 |---|---|---|---|---|
-| The wire, version 2 | `Aven.DB.Wire`, `Aven.DB.WireCbor` | the first generation's `wire` (`aven-gen1`) | the Peer-Light speaks it | the move to `peer/spec` (`Aven.Peer.Wire`, `Aven.Peer.WireCbor`, `Aven.Peer.Presence`) and `peer/wire` (`aven-peer-wire`): draft #1745 |
+| The wire, version 2 | `Aven.Peer.Wire`, `Aven.Peer.WireCbor`, `Aven.Peer.Presence` in `peer/spec` (#1745) | `aven-peer-wire` in `peer/wire` (#1745); `aven-gen1` re-exports it until the cutover | the Peer-Light speaks it | the first generation's own imports of `aven_gen1::wire`, until the cutover |
 | Wire 3's frames | the fetch gate's and keepers' frames written over the move, reviewed by thread E (`keep_put` and `keep_part`, reasons of at most 64 bytes): after #1722 | the same, in `aven-peer-wire` | after the move | #1727; stage 5's after #1722 |
 | Group topics, `Live`, sync by version | `Aven.Peer.DocSync`, #1727 | `aven-peer`'s `docs`, #1727 | not started | #1727 |
 | The Doc host and sifting | `Aven.Peer.Judge`, #1727 | the native host and sifting's state machine, #1727; the `Authorize` adapter: not started | the docs worker, and a new browser reading its keyring first (A187): not started | #1727; the keyring's plain path, avenDOCS' (A187) |
 | The fetch gate | `Aven.Peer.Fetch`, #1722 | `aven-peer-keeper`'s `fetch`, #1722; caps' half in aven-id's `keep` (#1734) | not started | #1722 |
-| Keepers and catch-up from them | `Aven.Peer.Keeper`, `Aven.Peer.Serve`, #1722 (in `db/spec`, moving to `peer/spec`) | `aven-peer-keeper`, #1722, with catch-up end to end natively over avenDOCS' sealed pages (`tests/catchup.rs`: 500 envelopes, about 0.5 s in a debug build); the `Gate` adapter over aven-id's `keep`, and the native keeper (`--keep`, the keeper's store): not started | the catch-up client: not started | #1722 |
+| Keepers and catch-up from them | `Aven.Peer.Keeper`, `Aven.Peer.Serve` in `peer/spec`, #1722, #1745 | `aven-peer-keeper`, #1722, with catch-up end to end natively over avenDOCS' sealed pages (`tests/catchup.rs`: 500 envelopes, about 0.5 s in a debug build); the `Gate` adapter over aven-id's `keep`, and the native keeper (`--keep`, the keeper's store): not started | the catch-up client: not started | #1722 |
 | The door | `settle_door` | the first generation's door, from stored refs | the same | the door from the register, with stage 4 |
 | Relays, address entries, bootstrap, links | `Aven.ID.Node`, `Aven.ID.Records` | not started: one relay in the Aven Peer, `--aven`, `--aven-key` | one relay URL | history: `Aven.ID.Records` to `peer/spec` as `Aven.Peer.History`, `records.json` as `history.json` (A193, A194): thread E, stacked on the wire split (#1745); the rest: no stage named yet |
 | Presence by signed beats | `Aven.ID.CatchUp` | not started: the hub counts connections | — | `Aven.ID.CatchUp` to `Aven.Peer.CatchUp`, with the history (A194); the rest: no stage named yet |
@@ -550,8 +553,7 @@ Known gaps, code and Lean:
 - `Aven.ID.CatchUp`'s catch-up from members by signed log tips retires in favour of `Aven.Peer.DocSync` and
   `Aven.Peer.Keeper`; its presence moves into `Aven.Peer.CatchUp` with the history (A194).
 - `Aven.ID.Records.speaks_same` restates `meet_speaks`; `speaks` moves into `Aven.Peer.Wire` with the history (A194).
-- `Aven.DB.Presence` models the hub's count, and retires with the first generation.
-- `Aven.Peer.Keeper` imports `Aven.DB.Wire` for `pages`; it imports `Aven.Peer.Wire` after the move.
+- `Aven.Peer.Presence` models the hub's count, and retires with the first generation.
 - `rule10_quota` is still to be composed over `Aven.Peer.Serve`'s `admitted_within` and `over_quota_sheds` with caps'
   quota, once #1722 lands; caps' `Keep` still holds a bill of its own (`uploader_pays`, `quota_holds`), which leaves it
   then.

@@ -9,10 +9,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use aven_db_store::backend::{self, DalStore};
-use aven_gen1::wire::Frame;
 use aven_id::{Members, Relying};
 use aven_peer::door::Door;
 use aven_peer::door::Statement;
+use aven_peer_wire::wire::Frame;
 use p256::ecdsa::signature::Signer;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -282,13 +282,14 @@ async fn the_door_reads_what_production_stored_before_the_agent() {
     let door = open(&store, &old["server"]).await;
     let m = door.members();
 
-    // the same tree but for the agent's kind, read from its old name; each vault takes one owner (A28), and a device's
-    // key is its id, as a tree written before A211 reads
+    // the same tree but for the agent's kind, read from its old name
     let mut want = old["tree"].clone();
     for v in want["vaults"].as_array_mut().unwrap() {
         let kind = aven_id::Kind::parse(v["kind"].as_str().unwrap()).unwrap();
         v["kind"] = json!(kind.as_str());
+        // stored before thresholds: each vault reads as taking one owner
         v["threshold"] = json!(1);
+        // and a device's key is its id, as its sign-in made it (A211)
         if kind == aven_id::Kind::Device {
             v["key"] = v["id"].clone();
         }

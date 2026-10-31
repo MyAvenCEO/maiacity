@@ -47,7 +47,7 @@ clean-slate cutover, and is deleted after it.
 | avenDOCS | a Doc's genesis, types and fit, bodies, writer ids, commit, the head, import, segments, the seal's use, branches, lenses, directories | [docs](docs/README.md) | `db/docs` | `Aven.DB.Docs` |
 | avenOPS | lowering calls to steps, footprints, queries, the want queue, search, sealed indexes' queries | [ops](ops/README.md) | `db/engine` | `Aven.DB.Engine` |
 | avenSTORE | Values and refs, compare-and-set, backends | [store](store/README.md) | `store` | `Aven.DB.Store` |
-| avenPEERS | the Peer and Peer-Light, the wire, gossip per group, sync, catch-up, keepers, the fetch gate, relays, presence, upgrades, deploy | [peers](peers/README.md) | `peer` | `Aven.DB.Wire`, `Aven.Peer` |
+| avenPEERS | the Peer and Peer-Light, the wire, gossip per group, sync, catch-up, keepers, the fetch gate, relays, presence, upgrades, deploy | [peers](peers/README.md) | `peer` | `Aven.Peer` |
 | avenRUNTIME | modules by hash, the manifest, hosts, the drawer, the markdown and face runtimes | [runtime](runtime/README.md) | `aven/runtimes` | `Aven.Runtime` |
 | avenACTORS | actors, inboxes, turns, hosts under chains | [actors](actors/README.md) | `aven/actor` | `Aven.Actor` |
 | avenOS | the page, its workers, sign-up and sign-in, the chat screen, Brain | [os](os/README.md) | `os` | — |
