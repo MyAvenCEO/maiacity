@@ -94,10 +94,10 @@ theorem write_chain {d : Device} {e : Envelope} (c : IsChain nm d.own) (f : Fits
 
 /-- **`split_spreads`:** peers that synced one after another, each holding at least what the one before held: a split
 the first held reaches the last, and there nothing whose past holds its half counts, whatever else it learns. -/
-theorem split_spreads {ok : Envelope → Prop} (held : Nat → List Envelope)
+theorem split_spreads {fit authorized : Envelope → Prop} (held : Nat → List Envelope)
     (synced : ∀ i, ∀ x ∈ held i, x ∈ held (i + 1)) {x y : Envelope} (hx : x ∈ held 0) (hy : y ∈ held 0)
     (sp : Split nm x y) (k : Nat) :
-    x ∈ held k ∧ y ∈ held k ∧ ∀ e, Reaches nm (held k) e x → ¬ Counts nm ok (held k) e := by
+    x ∈ held k ∧ y ∈ held k ∧ ∀ e, Reaches nm (held k) e x → ¬ Counts nm fit authorized (held k) e := by
   have carried : ∀ z ∈ held 0, ∀ k, z ∈ held k := by
     intro z hz k
     induction k with

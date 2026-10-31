@@ -33,8 +33,7 @@ fuzz_target!(|data: &[u8]| {
         prev: None,
         deps: vec![],
         body: body.value(),
-        signer: vec![],
-        sig: vec![],
+        sigs: vec![],
     };
     w.device.sign_envelope(&mut e);
     let _ = doc.import(&e.encode(), &common::Allow);

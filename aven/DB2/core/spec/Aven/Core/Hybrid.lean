@@ -6,8 +6,8 @@ import Aven.Core.Signed
 Where authority lasts, a signer signs with Ed25519 and ML-DSA-65 together, over the same bytes, and a signature holds
 only when both halves verify: a quantum computer that breaks Ed25519 still meets ML-DSA-65, and a flaw in the newer
 lattice scheme still meets Ed25519. A hybrid key and a hybrid signature are each a Value with exactly three keys, its
-suite and its two halves (rule 29: every seal and signature names its suite), so they travel as the `signer` and
-`sig` bytes of any `Signed` thing, and `hybridVerify` is a `Verify` like any other.
+suite and its two halves (rule 29: every seal and signature names its suite), so they travel as a `Sig`'s `signer` and
+`sig` bytes beside any signed thing, and `hybridVerify` is a `Verify` like any other.
 
 The primitives stay outside Lean, held to their standards' known answers (RFC 8032, FIPS 204) and Wycheproof: the
 model is parametric in each half's `verify`, as `Signed` is.
@@ -60,11 +60,13 @@ theorem hybrid_needs_both {ed mlDsa : Verify} {key msg sig : Bytes} (h : hybridV
   · next k s _ _ => exact ⟨k, s, by simpa using h⟩
   · simp at h
 
-/-- A hybrid `Signed` thing holds only when both halves verify its signing bytes. -/
+/-- A hybrid `Signed` thing holds only when, for each signature beside it, both halves verify its signing bytes. -/
 theorem Signed.hybrid_valid {ed mlDsa : Verify} {s : Signed} (h : s.valid (hybridVerify ed mlDsa) = true) :
-    ∃ k g : Hybrid, ed k.ed25519 (signingBytes s.label s.body) g.ed25519 = true ∧
-      mlDsa k.mlDsa (signingBytes s.label s.body) g.mlDsa = true :=
-  hybrid_needs_both h
+    ∀ x ∈ s.sigs, ∃ k g : Hybrid, ed k.ed25519 (signingBytes s.label s.body) g.ed25519 = true ∧
+      mlDsa k.mlDsa (signingBytes s.label s.body) g.mlDsa = true := by
+  intro x m
+  simp only [Signed.valid, Bool.and_eq_true, List.all_eq_true] at h
+  exact hybrid_needs_both (h.2 x m)
 
 #guard keysSorted (Hybrid.value ⟨[], []⟩ |> fun | .map kvs => kvs | _ => [])
 #guard Canon (Hybrid.value ⟨List.replicate 32 1, List.replicate 1952 2⟩)

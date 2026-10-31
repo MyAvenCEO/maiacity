@@ -293,8 +293,7 @@ fn unchecked(
         prev: None,
         deps: vec![],
         body: body.value(),
-        signer: vec![],
-        sig: vec![],
+        sigs: vec![],
     };
     d.sign_envelope(&mut e);
     e.encode()
@@ -385,8 +384,9 @@ fn refused_before_loro() {
     let mut od = Doc::open(other, &[todo()], Limits::DEFAULTS).unwrap();
     let y = commit(&mut od, &a, &[todo_put("t1", "x")]);
     assert_eq!(doc.import(&y, &Allow), Err(Refused::Doc));
-    // re-signed by another device: its writer id isn't the signer's
+    // signed by another device alone: no signature is by the device its writer id names
     let mut e = Envelope::decode(&x1).unwrap();
+    e.sigs.clear();
     b.sign_envelope(&mut e);
     assert_eq!(doc.import(&e.encode(), &Allow), Err(Refused::Writer));
     // rule 7: an envelope that names a past its Loro dependencies don't hold
@@ -438,7 +438,7 @@ fn a_split_is_final_and_matches_the_model() {
     for e in &envs {
         assert_eq!(
             reader.counts(&e.name()),
-            held.counts(e, |_| true),
+            held.counts(e, |_| true, |_| true),
             "seq {} of {}",
             e.seq,
             e.writer
@@ -479,7 +479,9 @@ fn a_revocation_rebuilds() {
     commit(&mut doc, &a, &[todo_put("t3", "on bob's")]);
     assert_eq!(doc.snapshot().records.len(), 3);
     let bob = b.public().to_vec();
-    doc.reauthorize(&When(move |e: &Envelope, _: &Body| e.signer != bob));
+    doc.reauthorize(&When(move |e: &Envelope, _: &Body| {
+        !e.sigs.iter().any(|x| x.signer == bob)
+    }));
     assert_eq!(
         doc.snapshot().records.keys().collect::<Vec<_>>(),
         ["t1"],
@@ -615,7 +617,7 @@ fn prepare_sign_finish_with_the_key_elsewhere() {
     // the device signs elsewhere: here, with its own key over exactly the bytes prepare hands out
     let mut e = p.envelope().clone();
     a.sign_envelope(&mut e);
-    let sig: [u8; 64] = e.sig.clone().try_into().unwrap();
+    let sig: [u8; 64] = e.sigs[0].sig.clone().try_into().unwrap();
     let bytes = doc.finish(p, sig, &Allow).unwrap();
     assert!(doc.snapshot().records.contains_key("t1"));
     assert_eq!(
@@ -721,7 +723,7 @@ impl aven_db_docs::Authorize for GrantInPast {
         _: &Body,
         past: &aven_db_docs::Past<'_>,
     ) -> bool {
-        e.signer == self.alice || past.contains(&self.grant)
+        e.sigs.iter().any(|x| x.signer == self.alice) || past.contains(&self.grant)
     }
 }
 

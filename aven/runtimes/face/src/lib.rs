@@ -12,7 +12,7 @@ pub mod face;
 pub mod markup;
 pub mod style;
 
-use aven_core::Value;
+use aven_codec::Value;
 use aven_runtimes_contract::Failure;
 use aven_runtimes_tree::{Node, TREE_LIMITS};
 
