@@ -14,6 +14,9 @@ by default), where they are committed. Every vector is `{"name", "input", "expec
 - `tree.json`: a node tree and its encoding; whether the applier's check passes it (`Aven.Runtime.Tree`).
 - `face.json`: a face's tree, style and encoding; whether it is accepted, what is wrong with it, and its CSS text
   (`Aven.Runtime.Face`).
+- `style.json`: a styled face's tree and encoding, its rules typed (`Aven.Runtime.Style`); whether it is accepted,
+  which rules are out of range, every text with its colour, what it is drawn on, its size in pixels where the slide
+  is narrowest and its weight, and the CSS text. avenBRAIN's slide "A key signs", and what the checks refuse.
 - `contract.json`: each failure and an answer as the Value the host hands on, encoded; render keys and their names
   under BLAKE3 (`Aven.Runtime.Contract`).
 - `state.json`: a state part, a turn's input and limits, in the one codec; the result the host hands on
@@ -161,6 +164,24 @@ def faceVectors : List Json :=
         ("lowContrast", Json.arr (i.lowContrast.map fun (c, s) => Json.arr #[c.json, s]).toArray),
         ("badClass", i.badClass.length), ("css", Json.arr (o.style.map fun r => Json.str r.css).toArray)])
 
+namespace Aven.Runtime
+
+def Look.json (l : Look) : Json :=
+  Json.mkObj [("fg", l.fg.json), ("bg", l.bg.json), ("px", toJson l.size.pxAt), ("weight", l.weight)]
+
+end Aven.Runtime
+
+/-- A styled face is given as its Value only: the rules' JSON form would be a second encoding to keep in step. -/
+def styleVectors : List Json :=
+  styleExamples.map fun (name, o, _) =>
+    let i := styleIssues o
+    vector name (Json.mkObj [("tree", o.tree.json), ("cbor", hex (encode o.value))])
+      (Json.mkObj [("ok", styledOk treeLimits o), ("check", check treeLimits o.tree),
+        ("badRules", Json.arr (o.style.zipIdx.filterMap fun (r, n) => if r.ok then none else some (toJson n)).toArray),
+        ("texts", Json.arr (o.texts.map fun (l, s) => Json.arr #[l.json, s]).toArray),
+        ("small", i.small.length), ("lowContrast", i.lowContrast.length),
+        ("css", Json.arr (o.style.map fun r => Json.str r.css).toArray)])
+
 def contrastVectors : List Json :=
   let pair (a b : RGB) : Json :=
     vector s!"{a.css} on {b.css}" (Json.mkObj [("fg", a.json), ("bg", b.json)])
@@ -306,7 +327,8 @@ def main (args : List String) : IO Unit := do
   let dir : System.FilePath := args.headD "vectors"
   IO.FS.createDirAll dir
   for (file, vs) in [("table.json", table), ("registry.json", registryVectors), ("tree.json", treeVectors),
-      ("face.json", faceVectors), ("contrast.json", contrastVectors), ("contract.json", contractVectors),
+      ("face.json", faceVectors), ("style.json", styleVectors), ("contrast.json", contrastVectors),
+      ("contract.json", contractVectors),
       ("state.json", stateVectors), ("markup.json", markupVectors),
       ("markdown.json", markdownVectors), ("face-runtime.json", faceRuntimeVectors)] do
     IO.FS.writeFile (dir / file) (render vs)

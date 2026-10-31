@@ -92,7 +92,7 @@ inductive Verdict where
 
 /-- What `e` builds on that isn't here, by name. -/
 def missing (doc : List Envelope) (e : Envelope) : List Hash :=
-  (tips e).filter fun d => !doc.any (nm · == d)
+  (parents e).filter fun d => !doc.any (nm · == d)
 
 /-- The authorized verdict of `e`, with the revocations `rs` the reader holds. -/
 def verdict (doc : List Envelope) (rs : List Revocation) (e : Envelope) : Verdict :=
@@ -184,7 +184,7 @@ theorem revocation_wins {r : Revocation} (m : r ∈ rs) (hit : r.cap ∈ rd.caps
 
 /-- A wait names only what the envelope builds on and the reader lacks, by hash, so it can end. -/
 theorem waits_named {ms : List Hash} (h : verdict nm rd doc rs e = .waits ms) :
-    ms ≠ [] ∧ ∀ d ∈ ms, d ∈ tips e ∧ ∀ y ∈ doc, nm y ≠ d := by
+    ms ≠ [] ∧ ∀ d ∈ ms, d ∈ parents e ∧ ∀ y ∈ doc, nm y ≠ d := by
   unfold verdict at h
   split at h
   · split at h <;> contradiction

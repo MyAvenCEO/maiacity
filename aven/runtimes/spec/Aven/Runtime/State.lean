@@ -15,8 +15,8 @@ each for one message:
 
 A runtime is a pure `run(part, input)` that the kernel calls, so this file names nothing of the actors': a message is
 its sender's address, its name, its payload and, for an ask, the ask's id, all Values; what a step gives back is the
-new state, its sends as data and the phase it moved to. `Aven.Actor` maps them to its messages and effects and joins
-the step to its kernel.
+writes it commits, its sends as data and the phase it moved to. `Aven.Actor` maps them to its messages and effects
+and joins the step to its kernel.
 
 `step` is total and deterministic. Under the contract (`stateRuntime`) the part and the input are Values of the one
 codec, its fuel is a count of the part's work, and its output is the step's output as a Value. What it guarantees:
@@ -28,6 +28,11 @@ codec, its fuel is a count of the part's work, and its output is the step's outp
   apart from it holds what it held), `get_remove` (after removing a field nothing is there), with `modify_get` and
   `modify_other` beneath them, and the same for each update (`set_get`, `merge_get`, `append_get`, `remove_get`,
   `update_other`).
+- **A turn commits K8's steps, never a whole new state (A37):** a step answers with writes, `put`, `patch`, `remove`
+  and an `edit` that pushes onto a list, each at a path. `set`, `merge`, `append` and `remove` lower to them
+  (`Update.lower`); `lower_apply` and `lowerAll_apply` prove the writes, applied in order, give exactly the state the
+  updates make, and `step_writes` that a step's writes are its handler's updates and apply. `Write.footprint` is what
+  the caps check: the field each write's path starts with, and its verb.
 - `state_output_fits` and `state_never_badOutput`: every answer has the output's shape.
 - `state_more_room`: more fuel never changes an answer. `state_run_moves`: what the host hands on is a step.
 -/
@@ -109,9 +114,27 @@ inductive Out where
   | reply (re : Value) (payload : Value)
   deriving Repr, Inhabited
 
-/-- What a step gives back: the new state, its sends and the phase it moved to. -/
+/-- An edit of a list: its value pushed at the end. -/
+inductive ListEdit where
+  | push (v : Value)
+  deriving Repr, Inhabited
+
+/-- One of K8's steps at a path of the state: `put` a value, `patch` fields into a map, `remove`, or `edit` a list. A
+turn's answer is these, never a whole new state: they are what the turn commits, and what the caps check. -/
+inductive Write where
+  | put (p : Path) (v : Value)
+  | patch (p : Path) (kvs : List (Bytes × Value))
+  | remove (p : Path)
+  | edit (p : Path) (e : ListEdit)
+  deriving Repr, Inhabited
+
+def Write.path : Write → Path
+  | .put p _ | .patch p _ | .remove p | .edit p _ => p
+
+/-- What a step gives back: the writes it commits, its sends and the phase it moved to. Never a whole new state
+(A37). -/
 structure StateOut where
-  state : Value
+  writes : List Write
   sends : List Out
   phase : String
   deriving Repr, Inhabited
@@ -482,6 +505,119 @@ theorem update_other {inp : StateInput} {st st' : Value} {u : Update} {q : Path}
     | some x => simp only [hx, Option.bind_some] at h; exact modify_other _ p q st st' ha h
   | remove p => exact absurd rfl (hu p)
 
+/-! ## Writes: what a turn commits (A37) -/
+
+def foldM {α β : Type} (f : β → α → Option β) : β → List α → Option β
+  | b, [] => some b
+  | b, a :: as => (f b a).bind (foldM f · as)
+
+def mapM {α β : Type} (f : α → Option β) : List α → Option (List β)
+  | [] => some []
+  | a :: as => do return (← f a) :: (← mapM f as)
+
+
+/-- A write applied to the state; `none` when its path doesn't fit. A patch on nothing makes the map. -/
+def Write.apply (st : Value) : Write → Option Value
+  | .put p v => modify (setTo v) st p
+  | .patch p kvs => modify (mergeIn (.map kvs)) st p
+  | .remove p => removeAt st p
+  | .edit p (.push v) => modify (appendTo v) st p
+
+/-- The writes in order. -/
+def applyAll (st : Value) (ws : List Write) : Option Value := foldM Write.apply st ws
+
+/-- An update as the write it commits, on the state it meets: `set` is a put, `merge` a patch of a map's fields (a
+put of anything else, which a merge replaces), `append` an edit that pushes, `remove` a remove. -/
+def Update.lower (inp : StateInput) : Update → Option Write
+  | .set p e => (e.eval inp).map (.put p)
+  | .merge p e => (e.eval inp).map fun x => match x with
+    | .map kvs => .patch p kvs
+    | x => .put p x
+  | .append p e => (e.eval inp).map fun x => .edit p (.push x)
+  | .remove p => some (.remove p)
+
+theorem mergeIn_other {x : Value} (hx : ∀ kvs, x ≠ .map kvs) : mergeIn x = setTo x := by
+  funext c
+  cases c with
+  | none => rfl
+  | some c =>
+    cases x with
+    | map kvs => exact absurd rfl (hx kvs)
+    | _ => cases c <;> rfl
+
+/-- **An update's write does exactly what the update does.** -/
+theorem lower_apply (inp : StateInput) (st : Value) (u : Update) :
+    (u.lower inp).bind (·.apply st) = u.apply inp st := by
+  cases u with
+  | set p e => cases hx : e.eval inp <;> simp [Update.lower, Update.apply, Write.apply, hx]
+  | merge p e =>
+    cases hx : e.eval inp with
+    | none => simp [Update.lower, Update.apply, hx]
+    | some x =>
+      cases x with
+      | map kvs => simp [Update.lower, Update.apply, Write.apply, hx]
+      | _ => simp [Update.lower, Update.apply, Write.apply, hx, mergeIn_other]
+  | append p e => cases hx : e.eval inp <;> simp [Update.lower, Update.apply, Write.apply, hx]
+  | remove p => simp [Update.lower, Update.apply, Write.apply]
+
+/-- A write's footprint, which the caps check (`Aven.Core.covers`): on the actor's state, a Record of type `type`, a
+put or remove of the whole state is a put-replace or a remove, an edit is an edit, and every other write patches the
+field its path starts with. -/
+def Write.footprint (type : Aven.Core.DocId) (w : Write) : Aven.Core.Step :=
+  let verb : Aven.Core.StepVerb := match w with
+    | .put [] _ => .putReplace
+    | .remove [] => .remove
+    | .edit .. => .edit
+    | _ => .patch
+  ⟨type, verb, match w.path with
+    | .field k :: _ => [k]
+    | _ => []⟩
+
+/-- A handler's updates as writes, each on the state the ones before it left. -/
+def lowerAll (inp : StateInput) : Value → List Update → Option (List Write)
+  | _, [] => some []
+  | st, u :: us => (u.lower inp).bind fun w => (w.apply st).bind fun st' => (lowerAll inp st' us).map (w :: ·)
+
+/-- **The writes a turn commits, applied to the state it was handed, give exactly the state its updates make.** -/
+theorem lowerAll_apply (inp : StateInput) : ∀ (st : Value) (us : List Update),
+    (lowerAll inp st us).bind (applyAll st) = foldM (Update.apply inp) st us
+  | st, [] => by simp [lowerAll, applyAll, foldM]
+  | st, u :: us => by
+    have hl := lower_apply inp st u
+    simp only [lowerAll, foldM]
+    cases hw : u.lower inp with
+    | none => simp [hw] at hl ⊢; rw [← hl]; rfl
+    | some w =>
+      simp only [hw, Option.bind_some] at hl ⊢
+      rw [← hl]
+      cases ha : w.apply st with
+      | none => simp
+      | some st' =>
+        have ih := lowerAll_apply inp st' us
+        cases hr : lowerAll inp st' us with
+        | none => simp [hr] at ih ⊢; exact ih
+        | some ws => simp [hr, applyAll, foldM, ha] at ih ⊢; exact ih
+
+/-- Writes a handler's updates lowered to apply, in order. -/
+theorem lowerAll_applies {inp : StateInput} : ∀ {st : Value} {us : List Update} {ws : List Write},
+    lowerAll inp st us = some ws → (applyAll st ws).isSome
+  | st, [], ws, h => by simp [lowerAll] at h; subst h; simp [applyAll, foldM]
+  | st, u :: us, ws, h => by
+    simp only [lowerAll] at h
+    cases hw : u.lower inp with
+    | none => simp [hw] at h
+    | some w =>
+      cases ha : w.apply st with
+      | none => simp [hw, ha] at h
+      | some st' =>
+        cases hr : lowerAll inp st' us with
+        | none => simp [hw, ha, hr] at h
+        | some ws' =>
+          simp [hw, ha, hr] at h
+          subst h
+          have := lowerAll_applies hr
+          simpa [applyAll, foldM, ha] using this
+
 /-! ## A step -/
 
 /-- An address's shape, `[scope, id, n]`: what a tell or an ask may go to. -/
@@ -503,22 +639,15 @@ def StatePart.select (sp : StatePart) (name phase : String) : Option (Handler ×
   (sp.handlers.find? fun h => h.on == name && h.moves.any (·.1 == phase)).bind fun h =>
     (h.moves.find? (·.1 == phase)).map fun mv => (h, mv.2)
 
-def foldM {α β : Type} (f : β → α → Option β) : β → List α → Option β
-  | b, [] => some b
-  | b, a :: as => (f b a).bind (foldM f · as)
-
-def mapM {α β : Type} (f : α → Option β) : List α → Option (List β)
-  | [] => some []
-  | a :: as => do return (← f a) :: (← mapM f as)
-
-/-- One turn: the handler, its updates in order, its sends, and the phase it moves to. A message no handler takes in
-this phase, an update whose path doesn't fit the state, or a send that can't be made refuses. -/
+/-- One turn: the handler, its updates in order as the writes they commit, its sends, and the phase it moves to. A
+message no handler takes in this phase, an update whose path doesn't fit the state, or a send that can't be made
+refuses. -/
 def step (sp : StatePart) (inp : StateInput) : Except Failure StateOut :=
   match sp.select inp.msg.name inp.phase with
   | none => .error .refused
   | some (h, to) =>
-    match foldM (Update.apply inp) inp.state h.updates, mapM (Send.out inp) h.sends with
-    | some st, some fx => .ok ⟨st, fx, to⟩
+    match lowerAll inp inp.state h.updates, mapM (Send.out inp) h.sends with
+    | some ws, some fx => .ok ⟨ws, fx, to⟩
     | _, _ => .error .refused
 
 /-- A step that fails refuses: state-runtime has no other failure of its own. -/
@@ -576,6 +705,26 @@ theorem step_allowed {sp : StatePart} {allows : String → String → String →
   have := List.all_eq_true.mp hfit _ (step_moves h)
   simpa using this
 
+/-- **What a step commits is its handler's updates:** its writes, applied in order to the state it was handed, give
+exactly the state those updates make, and they apply. -/
+theorem step_writes {sp : StatePart} {inp : StateInput} {o : StateOut} (h : step sp inp = .ok o) :
+    ∃ hd to, sp.select inp.msg.name inp.phase = some (hd, to) ∧
+      applyAll inp.state o.writes = foldM (Update.apply inp) inp.state hd.updates ∧
+      (applyAll inp.state o.writes).isSome := by
+  unfold step at h
+  split at h
+  · cases h
+  · rename_i hd to hs
+    split at h
+    · rename_i ws fx hws _
+      cases h
+      have := lowerAll_apply inp inp.state hd.updates
+      rw [hws, Option.bind_some] at this
+      refine ⟨hd, to, hs, this, ?_⟩
+      -- every write applied when it was lowered
+      exact lowerAll_applies hws
+    · cases h
+
 /-! ## Under the contract -/
 
 def Out.value : Out → Value
@@ -583,9 +732,23 @@ def Out.value : Out → Value
   | .ask to n p w => .array [.text (ascii "ask"), to, .text (ascii n), p, .uint w]
   | .reply re p => .array [.text (ascii "reply"), re, p]
 
-/-- A step's output as a Value: `[state, [send, …], phase]`. -/
+def Key.value : Key → Value
+  | .field b => .text b
+  | .index n => .uint n
+
+def pathValue (p : Path) : Value := .array (p.map Key.value)
+
+/-- A write as a Value: `["put", path, value]`, `["patch", path, {fields}]`, `["remove", path]`,
+`["edit", path, ["push", value]]`. -/
+def Write.value : Write → Value
+  | .put p v => .array [.text (ascii "put"), pathValue p, v]
+  | .patch p kvs => .array [.text (ascii "patch"), pathValue p, .map kvs]
+  | .remove p => .array [.text (ascii "remove"), pathValue p]
+  | .edit p (.push v) => .array [.text (ascii "edit"), pathValue p, .array [.text (ascii "push"), v]]
+
+/-- A step's output as a Value: `[[write, …], [send, …], phase]`. -/
 def StateOut.value (o : StateOut) : Value :=
-  .array [o.state, .array (o.sends.map Out.value), .text (ascii o.phase)]
+  .array [.array (o.writes.map Write.value), .array (o.sends.map Out.value), .text (ascii o.phase)]
 
 def isText : Value → Bool
   | .text _ => true
@@ -597,9 +760,19 @@ def outShape : Value → Bool
   | .array [.text t, _, _] => t == ascii "reply"
   | _ => false
 
-/-- The output's schema: a state, sends of their shapes, and a phase. -/
+def writeShape : Value → Bool
+  | .array [.text t, .array _, _] => t == ascii "put" || t == ascii "patch" || t == ascii "edit"
+  | .array [.text t, .array _] => t == ascii "remove"
+  | _ => false
+
+theorem write_shape (w : Write) : writeShape w.value = true := by
+  cases w with
+  | edit p e => cases e; simp [Write.value, writeShape, pathValue]
+  | _ => simp [Write.value, writeShape, pathValue]
+
+/-- The output's schema: writes and sends of their shapes, and a phase. -/
 def outputShape : Value → Bool
-  | .array [_, .array fx, p] => fx.all outShape && isText p
+  | .array [.array ws, .array fx, p] => ws.all writeShape && fx.all outShape && isText p
   | _ => false
 
 /-- What `step` sends goes to addresses of their shape. -/
@@ -672,10 +845,11 @@ theorem step_shape {sp : StatePart} {inp : StateInput} {o : StateOut} (h : step 
   split at h
   · cases h
   · split at h
-    · rename_i st fx _ hfx
+    · rename_i ws fx _ hfx
       cases h
-      simp only [StateOut.value, outputShape, isText, Bool.and_true, List.all_map, List.all_eq_true]
-      intro s hs
+      simp only [StateOut.value, outputShape, isText, Bool.and_true, List.all_map, Bool.and_eq_true,
+        List.all_eq_true]
+      refine ⟨fun w _ => by simpa using write_shape w, fun s hs => ?_⟩
       obtain ⟨snd, _, hout⟩ := mapM_mem hfx s hs
       simpa using out_shape hout
     · cases h

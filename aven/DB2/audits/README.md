@@ -16,8 +16,8 @@ settled now.
 
 ## The audits of 31 Oct 2026
 
-Three audits across all parts that Samuel asked for on 31 Oct 2026: whether any word means two things, whether any job
-has two mechanisms, and whether any key holds authority a vault should. Each cites the main of its day. What follows
+Four audits across all parts that Samuel asked for on 31 Oct 2026: whether any word means two things, whether any job
+has two mechanisms, whether any key holds authority a vault should, and whether any two statements contradict each other. Each cites the main of its day. What follows
 from them is in [`ARCHITECTURE.md`](../ARCHITECTURE.md): rule 15 and A28 to A38.
 
 | Audit | Question |
@@ -25,3 +25,4 @@ from them is in [`ARCHITECTURE.md`](../ARCHITECTURE.md): rule 15 and A28 to A38.
 | [`terms.md`](terms.md) | One word, one meaning: new terms, collisions, renames not yet applied, the glossary against the specs |
 | [`principles.md`](principles.md) | One job, one mechanism: fifteen places where two mechanisms do one job, and the decisions that pulled apart |
 | [`vaults.md`](vaults.md) | Vaults own; signers only sign: every place a key holds authority itself, and its vault form |
+| [`contradictions.md`](contradictions.md) | Global contradictions: decision against decision, spec against spec, spec against Lean, Lean against code, and the resolution of each |
