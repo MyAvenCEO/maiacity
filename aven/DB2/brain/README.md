@@ -83,7 +83,10 @@ The node tree needs the allowlist's `img`, by hash: `figure`, `img`, `div`, `p`,
 The objects are drawn in code: [`art/objects.mjs`](art/objects.mjs), with the paint kit in
 [`art/paint.mjs`](art/paint.mjs). `AVEN_CHROMIUM=<a Chromium> bun brain/art/render.mjs` renders each to a transparent
 PNG in `art/img/`, named by the BLAKE3 hash of its bytes, as the network names its files, and lists them in
-`art/images.json`. `bun brain/art/slides.mjs` lays out avenID's slides and writes their markup and CSS. A slide shows
+`art/images.json`. `bun brain/art/slides.mjs` lays out avenID's slides and writes their markup and CSS, and each sheet again as
+the face-runtime's style data (`<id>.style.json`, `style/slide.style.json`, by `render/style.js`, which reads only the
+agreed subset and throws on anything else). A test holds each `.style.json` to its sheet, and the runtimes' vector for
+"A key signs" to the brain's own rules. A slide shows
 a drawing as `<img src="/files/<hash>">`, the only image the allowlist takes; avenOS resolves the brain's own from its
 bundle (`os/web/brain/brain.js`). Both outputs are generated: edit the objects and the layouts, then run them.
 

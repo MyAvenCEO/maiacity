@@ -5,6 +5,7 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 import { check, classes, parse } from './tree.js';
 import { contrastOk, linear, luminance, rgb } from './contrast.js';
 import { rewriteLinks } from './links.js';
+import { toCss, toStyle } from './style.js';
 import { blocks, inline } from './markdown.js';
 
 // the runtimes' spec vectors (aven/runtimes/spec/vectors): what Lean computes, replayed here
@@ -159,4 +160,23 @@ test('every image on a slide is a drawing, named by its BLAKE3 hash', () => {
 		}
 	}
 	expect(wrong).toEqual([]);
+});
+
+// the slides' CSS as the face-runtime's style data (render/style.js), kept beside each sheet as <name>.style.json
+describe('style data', () => {
+	const sheets = [['style/slide.css', 'style/slide.style.json'], ...readdirSync(`${brain}id/slides`).filter((f) => f.endsWith('.css')).map((f) => [`id/slides/${f}`, `id/slides/${f.replace(/\.css$/, '.style.json')}`])];
+	for (const [css, json] of sheets)
+		test(`${json} is ${css}, as data`, () => expect(JSON.parse(readFileSync(`${brain}${json}`, 'utf8'))).toEqual(toStyle(readFileSync(`${brain}${css}`, 'utf8'))));
+	test('a declaration outside the face-runtime\'s style throws', () => {
+		expect(() => toStyle('.a { filter: blur(1px); }')).toThrow();
+		expect(() => toStyle('.a:hover { color: #000000; }')).toThrow();
+		expect(() => toStyle('.a { color: red; }')).toThrow();
+		expect(() => toStyle('.a { margin: 0 1px; }')).toThrow();
+	});
+	// the runtimes' own vector for "A key signs": its CSS, as Style.lean writes it, is ours
+	test('style.json: the slide "A key signs" is the brain\'s', () => {
+		const vector = vectors('style.json').find((v) => v.name === 'the slide "A key signs"');
+		const ours = new Set([...toCss(JSON.parse(readFileSync(`${brain}style/slide.style.json`, 'utf8'))), ...toCss(JSON.parse(readFileSync(`${brain}id/slides/sign.style.json`, 'utf8')))]);
+		expect(vector.expected.css.filter((rule) => !ours.has(rule))).toEqual([]);
+	});
 });
