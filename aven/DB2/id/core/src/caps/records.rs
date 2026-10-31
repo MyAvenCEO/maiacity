@@ -1,56 +1,26 @@
 //! avenID's Records in a Doc (`Aven.ID.AccessRecords`, A39, A30): a Doc's access map holds Records of avenID's
-//! built-in types `cap`, `revoke` and `epoch`. Each is its body with its signatures beside it under `sigs`, each
-//! signature `{"sig", "signer"}` over the Record's one name, the label implied by its type and never stored.
+//! built-in types `cap`, `revoke` and `epoch`. Each is its body with Core's signatures beside it under `sigs`, sorted by
+//! signer within Core's limits, over the Record's one name, the label implied by its type and never stored.
 //!
 //! Each reader keeps a Value only if writing the Record back gives the very same Value, so a Record has one form
 //! (`CapRecord.ofValue?_value` and the others). [`id_builtin_fit`] is the check the docs layer asks for each of the
 //! three types, and none for any other.
 
-use aven_core::{DocId, Hash, Value, encode, name_of};
+use aven_core::limits::{MAX_SIG_BYTES, MAX_SIGNER_BYTES, MAX_SIGS};
+use aven_core::{DocId, Hash, Sig, Value, encode, name_of, sigs_ok};
 
 use super::chain::Cap;
 use super::revoke::Revocation;
 use super::types::builtin_type;
 use crate::epoch::Epoch;
 
-/// One signature beside a Record (A30): the key that made it, and the signature, both as bytes.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SigEntry {
-    pub signer: Vec<u8>,
-    pub sig: Vec<u8>,
-}
-
-impl SigEntry {
-    pub fn value(&self) -> Value {
-        Value::Map(vec![
-            ("sig".into(), Value::Bytes(self.sig.clone())),
-            ("signer".into(), Value::Bytes(self.signer.clone())),
-        ])
-    }
-
-    pub fn of_value(v: &Value) -> Option<SigEntry> {
-        match v {
-            Value::Map(kvs) => match kvs.as_slice() {
-                [(a, Value::Bytes(sig)), (b, Value::Bytes(signer))] if a == "sig" && b == "signer" => {
-                    Some(SigEntry {
-                        signer: signer.clone(),
-                        sig: sig.clone(),
-                    })
-                }
-                _ => None,
-            },
-            _ => None,
-        }
-    }
-}
-
 /// A body with its signatures beside it, under `sigs` (`withSigs`).
-fn with_sigs(body: Value, sigs: &[SigEntry]) -> Value {
+fn with_sigs(body: Value, sigs: &[Sig]) -> Value {
     match body {
         Value::Map(mut kvs) => {
             kvs.push((
                 "sigs".into(),
-                Value::Array(sigs.iter().map(SigEntry::value).collect()),
+                Value::Array(sigs.iter().map(Sig::value).collect()),
             ));
             Value::Map(kvs)
         }
@@ -59,14 +29,30 @@ fn with_sigs(body: Value, sigs: &[SigEntry]) -> Value {
 }
 
 /// A Record's fields without its signatures, and its signatures (`splitSigs`).
-fn split_sigs(v: &Value) -> Option<(Value, Vec<SigEntry>)> {
+fn split_sigs(v: &Value) -> Option<(Value, Vec<Sig>)> {
     let Value::Map(kvs) = v else { return None };
     let sigs = match kvs.iter().find(|(k, _)| k == "sigs")? {
-        (_, Value::Array(ss)) => ss.iter().map(SigEntry::of_value).collect::<Option<_>>()?,
+        (_, Value::Array(ss)) => ss
+            .iter()
+            .map(|x| Sig::of_value(x.clone()))
+            .collect::<Option<Vec<Sig>>>()?,
         _ => return None,
     };
+    if !sigs_within(&sigs) {
+        return None;
+    }
     let body = kvs.iter().filter(|(k, _)| k != "sigs").cloned().collect();
     Some((Value::Map(body), sigs))
+}
+
+/// Core's limits on the signatures beside one name (`sigsWithin`): sorted by signer, one each, at most
+/// [`MAX_SIGS`], each within its lengths.
+fn sigs_within(sigs: &[Sig]) -> bool {
+    sigs.len() <= MAX_SIGS
+        && sigs_ok(sigs)
+        && sigs
+            .iter()
+            .all(|x| x.signer.len() <= MAX_SIGNER_BYTES && x.sig.len() <= MAX_SIG_BYTES)
 }
 
 /// Writing it back gives the same Value: the codec writes maps in its own order, so the same encoding.
@@ -78,7 +64,7 @@ fn same(a: &Value, b: &Value) -> bool {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CapRecord {
     pub cap: Cap,
-    pub sigs: Vec<SigEntry>,
+    pub sigs: Vec<Sig>,
 }
 
 impl CapRecord {
@@ -155,7 +141,7 @@ impl Revocation {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RevokeRecord {
     pub revocation: Revocation,
-    pub sigs: Vec<SigEntry>,
+    pub sigs: Vec<Sig>,
 }
 
 impl RevokeRecord {
@@ -178,7 +164,7 @@ impl RevokeRecord {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EpochRecord {
     pub epoch: Epoch,
-    pub sigs: Vec<SigEntry>,
+    pub sigs: Vec<Sig>,
 }
 
 impl EpochRecord {

@@ -18,6 +18,6 @@ pub use cbor::CAP_LABEL;
 pub use chain::{Cap, ChainError, Ctx, Role, authority_over_vault, vault_id};
 pub use conditions::{Branches, Conditions, Form, History, Holder, MAIN};
 pub use line::{Grant, Line, World, grant_allows, grant_reaches, grant_within};
-pub use records::{CapRecord, EpochRecord, IdRecord, RevokeRecord, SigEntry, id_builtin_fit};
+pub use records::{CapRecord, EpochRecord, IdRecord, RevokeRecord, id_builtin_fit};
 pub use revoke::{Doc, Reads, Revocation, Verdict};
 pub use types::{BUILTIN_TYPES, builtin_type, group_type};

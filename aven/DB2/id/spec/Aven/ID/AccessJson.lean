@@ -24,7 +24,7 @@ def vec (name : String) (input expected : Json) : Json :=
   Json.mkObj [("name", name), ("input", input), ("expected", expected)]
 
 /-- Two signatures as they lie beside a Record: a device's and an owner's, of made-up bytes. -/
-def sigs : List SigEntry :=
+def sigs : List Core.Sig :=
   [⟨(List.range 32).map (·.toUInt8), (List.range 64).map fun i => (i + 1).toUInt8⟩,
    ⟨(List.range 32).map fun i => (i + 7).toUInt8, (List.range 64).map fun i => (i + 9).toUInt8⟩]
 
@@ -86,6 +86,10 @@ def accessVectors : List Json :=
    case "a cap Record whose signer is text" capType
      (setField (capRecord capA) "sigs" (.array [.map [(recKey "sig", .bytes [1]), (recKey "signer", .text [2])]])),
    case "a cap Record whose sigs is no list" capType (setField (capRecord capA) "sigs" .null),
+   case "a cap Record whose signatures aren't sorted by signer" capType
+     (setField (capRecord capA) "sigs" (.array (sigs.reverse.map Core.Sig.value))),
+   case "a cap Record signed twice by one key" capType
+     (setField (capRecord capA) "sigs" (.array ((sigs.take 1 ++ sigs.take 1).map Core.Sig.value))),
    case "a cap Record checked as a revocation" revokeType (capRecord capA),
    case "a revoke Record whose cap is 31 bytes" revokeType
      (setField (revokeRecord ⟨RevokeExamples.revA, RevokeExamples.capA, none, none⟩) "cap" (.bytes (RevokeExamples.capA.bytes.take 31))),

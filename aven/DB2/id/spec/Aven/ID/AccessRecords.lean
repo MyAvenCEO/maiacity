@@ -11,8 +11,9 @@ says what each looks like, so the docs layer can check a Record against its type
 - a **revoke Record** is a revocation's body (`Revocation.body`, given here) with its signatures;
 - an **epoch Record** is the epoch's key blob (`KeyFormats.Epoch.value`) with its signatures.
 
-A signature is `{"sig": bytes, "signer": bytes}`, the key that made it and what it made, over the Record's one name:
-the hash of `[label, body]`, the label implied by the Record's type and never stored (A30). Each Record is a map whose
+A signature is Core's `Sig`, `{"sig": bytes, "signer": bytes}`, over the Record's one name: the hash of
+`[label, body]`, the label implied by the Record's type and never stored (A30). The signatures are sorted by signer,
+one each, within Core's limits (`sigsWithin`). Each Record is a map whose
 keys sort as the codec sorts them, `sigs` among them.
 
 Each reader (`CapRecord.ofValue?`, `RevokeRecord.ofValue?`, `EpochRecord.ofValue?`) reads a Value field by field and
@@ -31,18 +32,6 @@ open Aven.Core
 /-- A key as the codec stores it. -/
 def recKey (s : String) : Bytes := s.toUTF8.toList
 
-/-- One signature beside a Record (A30): the key that made it and the signature, both as bytes. -/
-structure SigEntry where
-  signer : Bytes
-  sig : Bytes
-  deriving DecidableEq, Repr
-
-def SigEntry.value (s : SigEntry) : Value := .map [(recKey "sig", .bytes s.sig), (recKey "signer", .bytes s.signer)]
-
-def SigEntry.ofValue? : Value → Option SigEntry
-  | .map [(a, .bytes sig), (b, .bytes signer)] => if a = recKey "sig" ∧ b = recKey "signer" then some ⟨signer, sig⟩ else none
-  | _ => none
-
 /-- Map keys in the codec's order: shorter first, then by their bytes. -/
 def keyBefore (a b : Bytes) : Bool :=
   a.length < b.length || (a.length == b.length && decide (a.map (·.toNat) < b.map (·.toNat)))
@@ -53,19 +42,20 @@ def insertKey (e : Bytes × Value) : List (Bytes × Value) → List (Bytes × Va
   | x :: xs => if keyBefore e.1 x.1 then e :: x :: xs else x :: insertKey e xs
 
 /-- A body with its signatures beside it, under `sigs`. -/
-def withSigs (body : Value) (sigs : List SigEntry) : Value :=
+def withSigs (body : Value) (sigs : List Core.Sig) : Value :=
   match body with
-  | .map kvs => .map (insertKey (recKey "sigs", .array (sigs.map SigEntry.value)) kvs)
+  | .map kvs => .map (insertKey (recKey "sigs", .array (sigs.map Core.Sig.value)) kvs)
   | v => v
 
 /-- A field of a map, by its key. -/
 def recField (kvs : List (Bytes × Value)) (k : String) : Option Value := (kvs.find? (·.1 == recKey k)).map (·.2)
 
 /-- A map's fields and its signatures, apart. -/
-def splitSigs : Value → Option (List (Bytes × Value) × List SigEntry)
+def splitSigs : Value → Option (List (Bytes × Value) × List Core.Sig)
   | .map kvs => do
     let .array ss ← recField kvs "sigs" | none
-    let sigs ← ss.mapM SigEntry.ofValue?
+    let sigs ← sigsOf? ss
+    guard (sigsWithin sigs)
     some (kvs.filter (·.1 != recKey "sigs"), sigs)
   | _ => none
 
@@ -149,7 +139,7 @@ def Cap.ofFields? (kvs : List (Bytes × Value)) : Option Cap := do
 /-- A cap Record: a cap and its signatures. -/
 structure CapRecord where
   cap : Cap
-  sigs : List SigEntry
+  sigs : List Core.Sig
 
 def CapRecord.value (r : CapRecord) : Value := withSigs r.cap.body r.sigs
 
@@ -197,7 +187,7 @@ def Revocation.ofFields? (kvs : List (Bytes × Value)) : Option Revocation := do
 
 structure RevokeRecord where
   revocation : Revocation
-  sigs : List SigEntry
+  sigs : List Core.Sig
 
 def RevokeRecord.value (r : RevokeRecord) : Value := withSigs r.revocation.body r.sigs
 
@@ -253,7 +243,7 @@ end KeyFormats
 
 structure EpochRecord where
   epoch : KeyFormats.Epoch
-  sigs : List SigEntry
+  sigs : List Core.Sig
 
 def EpochRecord.value (r : EpochRecord) : Value := withSigs r.epoch.value r.sigs
 
