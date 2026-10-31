@@ -8,10 +8,13 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+# the gate's authority half: fetch keys, links, proofs and placement are avenCAPS' (aven_id::keep, Aven.ID.Keep)
+aven-core = { path = "../../core" }
+aven-id = { path = "../../id/core" }
 
 [dev-dependencies]
 # catching up end to end: a writer's sealed envelopes and segments through a keeper into a reader's Doc
-aven-core = { path = "../../core" }
 aven-db-docs = { path = "../../db/docs" }
-aven-id = { path = "../../id/core" }
+# signing with a fetch key in the gate tests, as aven-id pins it
+ed25519-dalek = "=3.0.0"
 serde_json = "=1.0.154"

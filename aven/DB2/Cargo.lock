@@ -397,6 +397,7 @@ dependencies = [
  "aven-core",
  "aven-db-docs",
  "aven-id",
+ "ed25519-dalek",
  "serde_json",
 ]
 
