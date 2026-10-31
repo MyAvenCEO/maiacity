@@ -12,6 +12,10 @@ import Aven.DB.Docs.Index
 import Aven.DB.Docs.Walk
 import Aven.DB.Docs.Key
 import Aven.DB.Docs.Directory
+import Aven.DB.Docs.Genesis
+import Aven.DB.Docs.Body
+import Aven.DB.Docs.Segment
+import Aven.DB.Docs.Head
 
 /-!
 # Aven.DB.Docs: the docs layer's model
@@ -35,6 +39,10 @@ On top of the shared core (`Aven.Core`: Values, the codec, envelopes, logs, spli
 - `Walk`: a lookup walks down from the root through the store, opening only the children whose span meets the range,
   and finds exactly the fold's entries in the range; a fold is a checkpoint;
 - `Key`: index keys in an order-preserving encoding: comparing keys bytewise is comparing their tuples;
+- `Genesis`: a Doc's genesis, named by A30, and the built-in types named by their labels;
+- `Body`: what a docs envelope carries inside Core's, its ops half-open, so a log's ops never overlap;
+- `Segment`: a writer's closed run of one log, signed and sealed;
+- `Head`: a peer's own record of what it holds of a Doc;
 - `Directory`: every Doc listed now was listed at the last fold or is unfolded, and one that isn't unfolded has the
   entries it had then.
 -/
