@@ -8,7 +8,7 @@ A Doc's access map holds Records of avenID's built-in types `cap`, `revoke` and 
 says what each looks like, so the docs layer can check a Record against its type (its `BuiltinFit`):
 
 - a **cap Record** is the cap's body (`Cap.body`, `Aven.ID.CapsCbor`) with its signatures beside it under `sigs`;
-- a **revoke Record** is a revocation's body (`Revocation.body`, given here) with its signatures;
+- a **revoke Record** is a revocation's Value (`Revocation.value`, `Aven.ID.Revoke`) with its signatures;
 - an **epoch Record** is the epoch's key blob (`KeyFormats.Epoch.value`) with its signatures.
 
 A signature is Core's `Sig`, `{"sig": bytes, "signer": bytes}`, over the Record's one name: the hash of
@@ -158,42 +158,15 @@ theorem CapRecord.ofValue?_value {v : Value} {r : CapRecord} (h : CapRecord.ofVa
 
 /-! ## A revoke Record -/
 
-def optHashValue : Option Hash → Value
-  | none => .null
-  | some h => .bytes h.bytes
-
-/-- What a revocation says: the cap it ends, the envelope it lives as in the Doc, or the names it keeps there when it
-lives elsewhere. Its id is the name of this body. -/
-def Revocation.body (r : Revocation) : Value :=
-  .map [(recKey "cap", .bytes r.cap.bytes),
-    (recKey "kept", match r.kept with | none => .null | some ks => .array (ks.map (.bytes ·.bytes))),
-    (recKey "envelope", optHashValue r.envelope)]
-
-def Revocation.digest (H : Bytes → Hash) (r : Revocation) : Hash := nameOf H r.body
-
-def recOptHash? : Value → Option (Option Hash)
-  | .null => some none
-  | v => (recBytes? 32 v).map fun b => some ⟨b⟩
-
-def Revocation.ofFields? (kvs : List (Bytes × Value)) : Option Revocation := do
-  let cap ← recBytes? 32 (← recField kvs "cap")
-  let envelope ← recOptHash? (← recField kvs "envelope")
-  let kept ← match ← recField kvs "kept" with
-    | .null => some none
-    | .array ks => (ks.mapM (recBytes? 32)).map fun bs => some (bs.map (⟨·⟩))
-    | _ => none
-  let r : Revocation := { id := ⟨[]⟩, cap := ⟨cap⟩, envelope, kept }
-  some { r with id := r.digest blake3 }
-
 structure RevokeRecord where
   revocation : Revocation
   sigs : List Core.Sig
 
-def RevokeRecord.value (r : RevokeRecord) : Value := withSigs r.revocation.body r.sigs
+def RevokeRecord.value (r : RevokeRecord) : Value := withSigs r.revocation.value r.sigs
 
 def RevokeRecord.ofValue? (v : Value) : Option RevokeRecord := do
   let (kvs, sigs) ← splitSigs v
-  let r : RevokeRecord := ⟨← Revocation.ofFields? kvs, sigs⟩
+  let r : RevokeRecord := ⟨← Revocation.ofValue? (.map kvs), sigs⟩
   if r.value = v then some r else none
 
 theorem RevokeRecord.ofValue?_value {v : Value} {r : RevokeRecord} (h : RevokeRecord.ofValue? v = some r) :

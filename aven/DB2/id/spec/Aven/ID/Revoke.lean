@@ -53,6 +53,53 @@ structure Revocation where
   kept : Option (List Hash) := none
   deriving DecidableEq, Repr
 
+/-! ### A revocation's encoding -/
+
+private def rkey (s : String) : Bytes := s.toUTF8.toList
+
+private def hashValue (h : Hash) : Value := .bytes h.bytes
+
+/-- What a revocation says, as a Value: the cap it ends, the names it keeps in the Doc when it lives elsewhere, and the
+envelope it lives as in the Doc, its keys in the codec's order. Its id is the name of this Value
+(`Revocation.digest`), so the id itself is never written. -/
+def Revocation.value (r : Revocation) : Value :=
+  .map [(rkey "cap", hashValue r.cap),
+    (rkey "kept", match r.kept with | none => .null | some ks => .array (ks.map hashValue)),
+    (rkey "envelope", match r.envelope with | none => .null | some h => hashValue h)]
+
+def Revocation.digest (H : Bytes → Hash) (r : Revocation) : Hash := nameOf H r.value
+
+private def hash32? : Value → Option Hash
+  | .bytes b => if b.length = 32 then some ⟨b⟩ else none
+  | _ => none
+
+/-- A revocation read back from its Value, its id the BLAKE3 name of that Value; anything but the one form
+`Revocation.value` writes is none. -/
+def Revocation.ofValue? (v : Value) : Option Revocation := do
+  let .map [(_, cap), (_, kept), (_, envelope)] := v | none
+  let kept ← match kept with
+    | .null => some none
+    | .array ks => (ks.mapM hash32?).map some
+    | _ => none
+  let envelope ← match envelope with
+    | .null => some none
+    | x => (hash32? x).map some
+  let r : Revocation := { id := ⟨[]⟩, cap := ← hash32? cap, envelope, kept }
+  let r := { r with id := r.digest blake3 }
+  if r.value = v then some r else none
+
+/-- What `Revocation.ofValue?` reads is what `Revocation.value` writes. -/
+theorem Revocation.ofValue?_value {v : Value} {r : Revocation} (h : Revocation.ofValue? v = some r) :
+    r.value = v := by
+  unfold Revocation.ofValue? at h
+  split at h
+  · simp only [Option.bind_eq_bind, Option.bind_eq_some_iff] at h
+    obtain ⟨_, _, _, _, _, _, h⟩ := h
+    split at h
+    · cases h; assumption
+    · cases h
+  · cases h
+
 section
 
 variable (nm : Envelope → Hash) (rd : Reads)

@@ -95,8 +95,8 @@ fn hash_of(v: &Value) -> Option<Hash> {
 
 impl Revocation {
     /// What a revocation says: the cap it ends, the envelope it lives as in the Doc, or the names it keeps there when
-    /// it lives elsewhere (`Revocation.body`). Its id is this body's name.
-    pub fn body(&self) -> Value {
+    /// it lives elsewhere (`Revocation.value`). Its id is this Value's name.
+    pub fn value(&self) -> Value {
         Value::Map(vec![
             ("cap".into(), Value::Bytes(self.cap.0.to_vec())),
             (
@@ -111,10 +111,12 @@ impl Revocation {
 
     /// Its id: the name of its body (`Revocation.digest`).
     pub fn digest(&self) -> Hash {
-        name_of(&self.body())
+        name_of(&self.value())
     }
 
-    fn of_body(body: &Value) -> Option<Revocation> {
+    /// Read back from [`Revocation::value`], its id the name of that Value (`Revocation.ofValue?`); the caller checks
+    /// it writes back as itself.
+    pub fn of_value(body: &Value) -> Option<Revocation> {
         let Value::Map(kvs) = body else { return None };
         let get = |k: &str| kvs.iter().find(|(x, _)| x == k).map(|(_, v)| v);
         let envelope = match get("envelope")? {
@@ -146,14 +148,14 @@ pub struct RevokeRecord {
 
 impl RevokeRecord {
     pub fn value(&self) -> Value {
-        with_sigs(self.revocation.body(), &self.sigs)
+        with_sigs(self.revocation.value(), &self.sigs)
     }
 
     /// Only a revoke Record's one form; the revocation's id is its digest (`RevokeRecord.ofValue?`).
     pub fn of_value(v: &Value) -> Option<RevokeRecord> {
         let (body, sigs) = split_sigs(v)?;
         let r = RevokeRecord {
-            revocation: Revocation::of_body(&body)?,
+            revocation: Revocation::of_value(&body)?,
             sigs,
         };
         same(&r.value(), v).then_some(r)
