@@ -57,9 +57,9 @@ thread's recommendation. Samuel may overrule any.
    open question 1.
 8. **Each vault chooses its keepers, by keep caps** (Samuel, 31 Oct 2026; A22). The admin's keeper list says who
    offers to keep. A vault's keep caps say which keeper holds which of its Docs and Values. A new vault starts with one
-   keep cap for everything to Maia City's keeper (the Aven Peer, acting for Aven), and changes it or adds others as it
-   likes. Keepers stay blind. Files are no special case: a file's chunks are Values that a file Record in its Doc names,
-   kept as that Doc is. Every native Peer also keeps the chat's logs it hears. Any peer may keep, and none is
+   keep cap for everything to Maia City's keeper (the Aven Peer, acting for Aven), approved by its owner with their
+   join, and only its owner changes it or adds others (Samuel, 31 Oct 2026). Keepers stay blind. Files are no special
+   case: a file's chunks are Values that a file Record in its Doc names, kept as that Doc is. Every native Peer also keeps the chat's logs it hears. Any peer may keep, and none is
    special.
 9. **What stays special is named, signed or on its way out** ([8](#8-what-stays-special)). The claim becomes the
    signed genesis that every member pins (A11). The guardian is named in what people sign (A13). The `maia.city` origin
@@ -136,8 +136,9 @@ thread's recommendation. Samuel may overrule any.
   accept. Being on the list keeps nothing by itself.
 - **Who keeps what:** a vault's keep caps (A22), each naming a keeper from the list and a target, which may be a query
   (A8). Samuel, 31 Oct 2026: caps decide which vault gets which Docs and Values, and each vault decides itself.
-- **The default:** every new vault issues one keep cap for everything to Maia City's keeper, the Aven Peer acting for
-  Aven (`default_kept`). The vault can change it or add others in avenOS.
+- **The default:** every new vault's owner approves one keep cap for everything to Maia City's keeper, the Aven Peer
+  acting for Aven, as part of what they sign to join (`default_kept`). The owner can change it or add others in
+  avenOS; no one else can.
 - **Two holders, the vault's choice:** a Doc is held by its writers' own devices and by the keepers its vault's keep
   caps name. With the default alone, the Aven Peer is its one keeper: a Doc whose writer's devices are all offline is
   then fetchable only while the Aven Peer is up. A vault that adds a keep cap naming a second keeper keeps its Docs
@@ -145,9 +146,11 @@ thread's recommendation. Samuel may overrule any.
 - **Files are no special case:** a file's chunks and its chunk list are Values that a file Record in a Doc names
   (`db/docs`), kept and read as that Doc is. Until Docs come (milestone 4), the chat's `file` posts stand for that
   Record, and a keeper keeps a file under the keep caps of the vault whose device posted it.
-- **An option for later** (the architect, 31 Oct 2026; Samuel's call): the default keep cap could name "Maia City's
-  keepers", served by every keeper Peer Maia City runs, rather than the Aven Peer alone. A second Maia City keeper
-  would then give every vault two keepers without each vault acting.
+- **The vault's owner decides** (Samuel, 31 Oct 2026: "a Vault owner always decides, where its data gets shared
+  to"; A22, #1636). The default keep cap is the owner's own: approved as part of what the owner signs to join, and
+  naming its keeper. No one else can extend it, not Maia City and not a keeper passing data on. A new keeper needs a
+  new keep cap from the owner. A member who joined before the default existed approves it at their next sign-in, where
+  avenOS shows what it covers and to whom.
 - **Forgetting** (`Aven.ID.Forget`, D5): a key rotation shuts a removed reader out of every epoch after it
   (`rotation_shuts_out`); once no party holds a Doc's keys, no sealed copy any keeper still holds is readable by
   anyone (`forgotten`, `forgotten_unreadable`), with sealing taken as sound. What a reader copied before stays its own,
