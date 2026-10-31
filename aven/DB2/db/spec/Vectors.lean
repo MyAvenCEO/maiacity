@@ -1,5 +1,6 @@
 import Aven.DB.Json
 import Aven.DB.Engine
+import Aven.DB.Docs
 
 /-!
 # The test vectors (README, rule 10)
@@ -41,6 +42,14 @@ import Aven.DB.Engine
 - `trees.json`: a fold's entries in hex, a size limit and a range; every level's nodes as their CBOR in hex, leaves
   first (a leaf an array of entries, an inner node an array of `[first, last, child]`), the root, and what a walk from
   the root through those nodes finds (`Aven.DB.Docs.Walk`).
+- `writers.json`: devices, Docs, branches and generations; their CBOR, the derived bytes and the writer id
+  (`Aven.DB.Docs.Writers`).
+- `envelopes.json`: what a reader holds, an envelope's names and its Loro dependencies; whether it agrees, waits or is
+  refused (`Aven.DB.Docs.OpIds`).
+- `checkpoints.json`: checkpoints over a toy CRDT (the sum of sequence numbers); whether each is taken, checks and is
+  accepted (`Aven.DB.Docs.Checkpoint`).
+- `fit.json`: envelopes under two schemas writing one field; which fit, and the merged value with its schema
+  (`Aven.DB.Docs.Fit`).
 - `keys.json`: tuples and their keys in hex; pairs of tuples and whether the first key sorts before the second
   (`Aven.DB.Docs.Key`).
 
@@ -803,6 +812,130 @@ def treesForged : Bool :=
 
 #guard treesForged
 
+/-! ## Docs: writer ids, envelopes' op ids, checkpoints, fit -/
+
+section DocsVectors
+
+open Aven.Core
+
+def docOf (s : String) : DocId := ⟨blake3 s.toUTF8.toList⟩
+
+def natJson (n : Nat) : Json := Json.str (toString n)
+
+/-- Writer ids: the derivation's input, its output and the id, for devices, Docs, branches and generations. -/
+def writerCases : List (String × Docs.WriterIn) := [
+  ("a device on main", ⟨List.replicate 32 7, docOf "a Doc's genesis", "main".toUTF8.toList, 0⟩),
+  ("the same device, another Doc", ⟨List.replicate 32 7, docOf "another Doc's genesis", "main".toUTF8.toList, 0⟩),
+  ("the same device, a proposal", ⟨List.replicate 32 7, docOf "a Doc's genesis", "proposal/1".toUTF8.toList, 0⟩),
+  ("the same device, its next generation", ⟨List.replicate 32 7, docOf "a Doc's genesis", "main".toUTF8.toList, 1⟩),
+  ("another device", ⟨List.replicate 32 8, docOf "a Doc's genesis", "main".toUTF8.toList, 0⟩)]
+
+def writers : List Json :=
+  writerCases.map fun (name, w) =>
+    vector name (Json.mkObj [("device", hexJson w.device), ("doc", Json.str w.doc.text),
+        ("branch", Json.str (String.fromUTF8! ⟨w.branch.toArray⟩)), ("generation", toJson w.generation)])
+      (Json.mkObj [("input", hexJson (Docs.writerInput w)),
+        ("derived", hexJson (Blake3.deriveKey "avenDB writer 1" (Docs.writerInput w))),
+        ("writer", natJson (Docs.writer w))])
+
+#guard (writerCases.map fun (_, w) => Docs.writer w).Nodup
+
+/-- Envelopes of one Doc, with the op ids a reader learns of each: its last op, and the Loro dependencies it carries. -/
+def opEnv (writer seq : Nat) (prev : Option Hash) (deps : List Hash) (post : String) : Envelope :=
+  ⟨docOf "a Doc's genesis", "main".toUTF8.toList, writer, seq, prev, deps,
+    .map [("post".toUTF8.toList, .text post.toUTF8.toList)], List.replicate 32 7, List.replicate 64 9⟩
+
+def a1 : Envelope := opEnv 1 1 none [] "first"
+def b1 : Envelope := opEnv 2 1 none [] "another writer's first"
+def a2 : Envelope := opEnv 1 2 (some (a1.name blake3)) [b1.name blake3] "builds on both"
+def a2gone : Envelope := opEnv 1 2 (some (a1.name blake3)) [blake3 "nothing held".toUTF8.toList] "names what isn't held"
+
+/-- Each envelope's last op id, (writer id, counter). -/
+def lastOf (e : Envelope) : Docs.OpId :=
+  let n := e.name blake3
+  if n = a1.name blake3 then (1, 3) else if n = b1.name blake3 then (2, 0) else if n = a2.name blake3 then (1, 5)
+  else (1, 9)
+
+def opCases : List (String × List Envelope × Envelope × List Docs.OpId × List (Envelope × Docs.OpId)) := [
+  ("deps are the last ops of what it names", [a1, b1], a2, [(1, 3), (2, 0)], []),
+  ("a dep that isn't the last op of what it names", [a1, b1], a2, [(1, 2), (2, 0)], []),
+  ("deps in another order than the names", [a1, b1], a2, [(2, 0), (1, 3)], []),
+  ("names an envelope the reader doesn't hold", [a1, b1], a2gone, [(1, 3)], []),
+  ("two envelopes held with one last op id", [a1, b1], a2, [(1, 3), (2, 0)], [(b1, (1, 3))])]
+
+def envelopes : List Json :=
+  opCases.map fun (name, held, e, deps, clash) =>
+    let last := fun x => match clash.find? (fun c => c.1.name blake3 == x.name blake3) with
+      | some (_, o) => o
+      | none => lastOf x
+    let O : Docs.Ops := ⟨last, fun x => if x.name blake3 = e.name blake3 then deps else []⟩
+    let opJson (o : Docs.OpId) : Json := Json.arr #[toJson o.1, toJson o.2]
+    let envJson (x : Envelope) : Json := Json.mkObj [("name", Json.str (x.name blake3).text),
+      ("named", Json.arr ((Docs.namedPast x).map fun h => Json.str h.text).toArray), ("last", opJson (last x))]
+    let verdict := if !Docs.usedOk O (held ++ [e]) then "refused: an op id used twice"
+      else if (Docs.resolveAll (Envelope.name blake3) held (Docs.namedPast e)).isNone then "waits: names what isn't held"
+      else if Docs.opsAgreeB (Envelope.name blake3) O held e then "agrees" else "refused: op ids and hashes disagree"
+    vector name (Json.mkObj [("held", Json.arr (held.map envJson).toArray), ("envelope", envJson e),
+        ("deps", Json.arr (deps.map opJson).toArray)])
+      (Json.str verdict)
+
+/-- A toy CRDT for the checkpoint vectors: the state is the sum of the envelopes' sequence numbers, in any order. -/
+def sumLoro : Docs.Loro Nat := ⟨0, fun s e => s + e.seq, fun s a b => Nat.add_right_comm s a.seq b.seq⟩
+
+def runtimeA : Hash := blake3 "runtime a".toUTF8.toList
+def vaultW : List UInt8 := "writer's vault".toUTF8.toList
+def mayWrite (v : List UInt8) (_ : List Hash) : Bool := v == vaultW
+
+def honestCp : Docs.Checkpoint :=
+  ⟨[a2.name blake3], [a1, b1, a2], nameOf blake3 (.uint (sumLoro.replay [a1, b1, a2])), runtimeA, vaultW⟩
+
+def cpCases : List (String × Docs.Checkpoint) := [
+  ("honest: its tips covered, its state the replay, by the reader's runtime, from a writer", honestCp),
+  ("a state that isn't the replay", { honestCp with state := nameOf blake3 (.uint 99) }),
+  ("made by another runtime", { honestCp with runtime := blake3 "runtime b".toUTF8.toList }),
+  ("a tip it doesn't cover", { honestCp with version := [blake3 "elsewhere".toUTF8.toList] }),
+  ("signed by a vault that may not write the Doc", { honestCp with vault := "a reader's vault".toUTF8.toList })]
+
+def checkpoints : List Json :=
+  cpCases.map fun (name, cp) =>
+    let checks := cp.check sumLoro (fun s => .uint s) blake3 runtimeA
+    let taken := !(Docs.takenCheckpoints mayWrite [cp]).isEmpty
+    vector name (Json.mkObj [("version", Json.arr (cp.version.map fun h => Json.str h.text).toArray),
+        ("covers", Json.arr (cp.covers.map fun x => Json.str (x.name blake3).text).toArray),
+        ("state", Json.str cp.state.text), ("runtime", Json.str cp.runtime.text),
+        ("vault", Json.str (String.fromUTF8! ⟨cp.vault.toArray⟩)),
+        ("readerRuntime", Json.str runtimeA.text), ("writers", Json.arr #[Json.str "writer's vault"])])
+      (Json.mkObj [("taken", toJson taken), ("checks", toJson checks), ("accepted", toJson (taken && checks))])
+
+/-- Fit: each envelope names its schema; `v1` allows totals up to 100, `v2` up to 1000. -/
+def fitRule (schema : String) (_ : String) (v : Nat) : Bool := if schema == "v1" then v ≤ 100 else v ≤ 1000
+
+def fitCases : List (String × List (Docs.Changes String String Nat)) := [
+  ("two writers, one schema: the later write wins and fits",
+    [⟨"v1", [⟨"total", ⟨1, 40⟩⟩]⟩, ⟨"v1", [⟨"total", ⟨2, 90⟩⟩]⟩]),
+  ("a v2 writer and a v1 writer: the value fits the schema of the envelope that wrote it",
+    [⟨"v1", [⟨"total", ⟨1, 40⟩⟩]⟩, ⟨"v2", [⟨"total", ⟨2, 500⟩⟩]⟩]),
+  ("an envelope that doesn't fit its schema is refused, and its write never merges",
+    [⟨"v1", [⟨"total", ⟨1, 40⟩⟩]⟩, ⟨"v1", [⟨"total", ⟨2, 500⟩⟩]⟩])]
+
+def fit : List Json :=
+  fitCases.map fun (name, es) =>
+    let fits (e : Docs.Changes String String Nat) : Bool := e.changes.all fun c => fitRule e.schema c.field c.write.value
+    let kept := es.filter fits
+    let merged := Docs.latest (Docs.writesOf "total" kept)
+    let chJson (e : Docs.Changes String String Nat) : Json := Json.mkObj [("schema", Json.str e.schema),
+      ("writes", Json.arr (e.changes.map fun c => Json.mkObj [("field", Json.str c.field),
+        ("stamp", toJson c.write.stamp), ("value", toJson c.write.value)]).toArray)]
+    vector name (Json.mkObj [("envelopes", Json.arr (es.map chJson).toArray),
+        ("rules", Json.mkObj [("v1", Json.str "total ≤ 100"), ("v2", Json.str "total ≤ 1000")])])
+      (Json.mkObj [("fits", Json.arr (es.map fun e => toJson (fits e)).toArray),
+        ("total", match merged with
+          | some w => Json.mkObj [("value", toJson w.value.2), ("schema", Json.str w.value.1),
+              ("fits", toJson (fitRule w.value.1 "total" w.value.2))]
+          | none => Json.null)])
+
+end DocsVectors
+
 /-- One vector per line, so a change reads as a diff of lines. -/
 def render (vs : List Json) : String :=
   "[\n" ++ ",\n".intercalate (vs.map Json.compress) ++ "\n]\n"
@@ -814,5 +947,6 @@ def main (args : List String) : IO Unit := do
       ("wire.json", wire), ("store.json", store), ("hashes.json", hashes), ("refs.json", refs),
       ("chat.json", chat), ("files.json", files), ("chats.json", chats), ("queries.json", queries),
       ("wants.json", wants), ("mutations.json", mutations), ("merges.json", merges), ("lenses.json", lenses),
-      ("indexes.json", indexes), ("trees.json", trees), ("lookups.json", lookups), ("keys.json", keys)] do
+      ("indexes.json", indexes), ("trees.json", trees), ("lookups.json", lookups), ("keys.json", keys), ("writers.json", writers), ("envelopes.json", envelopes),
+      ("checkpoints.json", checkpoints), ("fit.json", fit)] do
     IO.FS.writeFile (dir / file) (render vs)
