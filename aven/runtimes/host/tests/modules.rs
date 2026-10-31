@@ -1,7 +1,8 @@
 //! The host against the frozen modules (`modules/`, built for wasm32 by `freeze.sh` before these run): every module
 //! has the hash the manifest froze, loads only by it, and answers as its crate does natively and as the model's vectors
 //! say; and the host refuses what it must (an unlisted hash, bytes that aren't the hash's, a module that imports or
-//! declares no maximum memory) and holds every run to its fuel, memory and output.
+//! declares no maximum memory) and holds every run to its fuel, memory and output. avenBRAIN's slides are faces in
+//! use: each one's part (`brain/*/slides/<id>.part.json`) is accepted by the frozen face-runtime, as natively.
 
 use aven_core::{Hash, Value, blake3, decode, encode};
 use aven_runtimes_contract::{Failure, Limits, result};
@@ -288,4 +289,51 @@ fn refusals() {
         Some(LoadError::NotListed)
     );
     assert!(load(&m, &listed_hash(&m, "face-runtime"), &face).is_ok());
+}
+
+/// A Value in the one JSON form of a Value (`Aven.Core.Json`), as a part is written: bytes as `{"bytes": hex}`,
+/// integers of either sign.
+fn jvalue(j: &Json) -> Value {
+    match j {
+        Json::Null => Value::Null,
+        Json::Bool(b) => Value::Bool(*b),
+        Json::Number(n) => match n.as_u64() {
+            Some(u) => Value::Uint(u),
+            None => Value::Nint((-1 - n.as_i64().unwrap()) as u64),
+        },
+        Json::String(s) => Value::Text(s.clone()),
+        Json::Array(xs) => Value::Array(xs.iter().map(jvalue).collect()),
+        Json::Object(o) if o.len() == 1 && o.contains_key("bytes") => {
+            Value::Bytes(unhex(o["bytes"].as_str().unwrap()))
+        }
+        Json::Object(o) => Value::Map(o.iter().map(|(k, v)| (k.clone(), jvalue(v))).collect()),
+    }
+}
+
+/// Every slide avenBRAIN draws is a face the frozen face-runtime accepts, with the answer the crate gives natively.
+#[test]
+fn slides() {
+    let m = module("face-runtime", "face");
+    let brain = here("../DB2/brain");
+    let mut parts: Vec<String> = std::fs::read_dir(&brain)
+        .unwrap_or_else(|e| panic!("{brain}: {e}"))
+        .filter_map(|pkg| std::fs::read_dir(pkg.ok()?.path().join("slides")).ok())
+        .flatten()
+        .filter_map(|f| {
+            let p = f.ok()?.path();
+            p.to_str()?
+                .ends_with(".part.json")
+                .then(|| p.to_string_lossy().into_owned())
+        })
+        .collect();
+    parts.sort();
+    assert!(parts.len() >= 9, "avenBRAIN's slides: {parts:?}");
+    let data = Value::Map(vec![]);
+    for path in parts {
+        let j: Json = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let part = jvalue(&j);
+        let native = aven_runtimes_face::eval(&part, &data);
+        assert!(native.is_ok(), "{path}: refused natively: {native:?}");
+        assert_eq!(run(&m, ROOMY, &part, &data), native, "{path}");
+    }
 }

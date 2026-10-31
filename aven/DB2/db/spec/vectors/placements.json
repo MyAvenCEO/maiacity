@@ -1,0 +1,8 @@
+[
+{"expected":{"first":true,"placed":true},"input":{"deps":0,"genesis":true,"prev":false,"seq":1},"name":"a log's first envelope with the genesis"},
+{"expected":{"first":true,"placed":false},"input":{"deps":0,"genesis":false,"prev":false,"seq":1},"name":"a log's first envelope without it"},
+{"expected":{"first":false,"placed":false},"input":{"deps":1,"genesis":true,"prev":true,"seq":2},"name":"a later envelope with the genesis"},
+{"expected":{"first":false,"placed":true},"input":{"deps":1,"genesis":false,"prev":true,"seq":2},"name":"a later envelope without it"},
+{"expected":{"first":false,"placed":false},"input":{"deps":1,"genesis":true,"prev":false,"seq":1},"name":"a first sequence number that builds on another log, with the genesis"},
+{"expected":{"first":false,"placed":true},"input":{"deps":1,"genesis":false,"prev":false,"seq":1},"name":"a first sequence number that builds on another log, without it"}
+]

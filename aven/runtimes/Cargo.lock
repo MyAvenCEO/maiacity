@@ -47,6 +47,7 @@ version = "0.0.0"
 dependencies = [
  "aven-core",
  "aven-runtimes-contract",
+ "aven-runtimes-face",
  "aven-runtimes-markdown",
  "serde_json",
  "wasmi",
