@@ -4,6 +4,7 @@ import Aven.ID.Epochs
 import Aven.ID.Recover
 import Aven.ID.Network
 import Aven.ID.CapsCbor
+import Aven.ID.Placement
 
 /-! # Caps on the cast
 
@@ -99,6 +100,10 @@ def capHostBob : Cap :=
   { id := "cap-hb", issuer := "aven", holder := .vault "bob", parent := "att-pass", signer := "aven-peer",
     grant := [readOn d1] }
 
+/-- Bob's default keep cap: everything of his own, to Maia City's keeper, the Aven Peer acting for Aven, approved as he
+joins (A22). -/
+def keepBob : Cap := defaultKeep "bob" "aven" "bob-peer-light" [⟨"bob-owner", "keep-bob"⟩]
+
 /-- Chains, each with the first rule it breaks, or none. -/
 def chainExamples : List (String × List Cap × Option ChainError) := [
   ("Alice gives Bob read and task writing on d1", [capA], none),
@@ -193,6 +198,22 @@ def chainExamples : List (String × List Cap × Option ChainError) := [
     [capA2, capG,
      { id := "att-g", issuer := "alice", holder := .group "g-garden", parent := "cap-g", kind := .attenuate,
        signer := "alice-peer", grant := [readOn d1] }], none),
+  ("Bob's default keep cap: everything of his, to the Aven Peer", [keepBob], none),
+  ("Maia City keeping Bob's Docs at its own keeper: no authority over his vault",
+    [{ keepBob with
+       id := "keep-mc", issuer := "maia-city", signer := "alice-peer", approvals := [⟨"alice-owner", "keep-mc"⟩] }],
+    some (.authority "keep-mc" ⟨.vault (vaultId "bob") false, .keep, []⟩)),
+  ("a keep cap that may share", [recap keepBob "keep-bob-1" "bob-owner" fun c => { c with share := 1 }],
+    some (.keepShares "keep-bob-1")),
+  ("the keeper passing Bob's Docs on to Alice",
+    [keepBob,
+     { id := "keep-pass", issuer := "aven", holder := .vault "alice", parent := "keep-bob", signer := "aven-peer",
+       grant := [⟨.vault (vaultId "bob") false, .keep, []⟩], approvals := [⟨"alice-owner", "keep-pass"⟩] }],
+    some (.share "keep-pass")),
+  ("the keeper narrowing it to Bob's tasks",
+    [keepBob,
+     { id := "keep-tasks", issuer := "aven", holder := .vault "aven", parent := "keep-bob", kind := .attenuate,
+       signer := "aven-peer", grant := [⟨.vaultType (vaultId "bob") tasks false, .keep, []⟩] }], none),
   ("the public narrows nothing",
     [capPublic,
      { id := "att-pub", issuer := "alice", holder := .«public», parent := "cap-public", kind := .attenuate,
@@ -200,6 +221,34 @@ def chainExamples : List (String × List Cap × Option ChainError) := [
 
 -- Vault ids are UTF-8 bytes, which the kernel doesn't compute, so the chains are checked as the module builds.
 #guard chainExamples.all fun (_, cs, e) => chainError castCtx cs == e
+
+/-- The facts of some of the cast's Docs, as their genesis fixes them: `b1` holds Bob's tasks, `b2` his notes. -/
+def factsOf (d : Core.DocId) (v : String) (t : Core.DocId) : Core.Facts := ⟨d, vaultId v, t⟩
+
+def notes : Core.DocId := docOf "notes"
+def b2 : Core.DocId := docOf "b2"
+
+/-- Bob also keeps his tasks at Alice's Peer, a member's own keeper. -/
+def keepBobTasks : Cap :=
+  { id := "keep-bob-tasks", issuer := "bob", holder := .vault "alice", signer := "bob-peer-light",
+    grant := [⟨.vaultType (vaultId "bob") tasks false, .keep, []⟩], approvals := [⟨"bob-owner", "keep-bob-tasks"⟩] }
+
+/-- Who keeps a Doc, each answer written out by hand. No keep cap here reaches below, so who governs whom and which
+actor spawned which never matter. -/
+def placementExamples : List (String × List Cap × Core.Facts × List String) := [
+  ("Bob's default: the Aven Peer keeps his tasks", [keepBob], factsOf b1 "bob" tasks, ["aven"]),
+  ("Bob's default keeps nothing of Alice's", [keepBob], factsOf d1 "alice" notes, []),
+  ("Bob's tasks at Alice's Peer as well", [keepBob, keepBobTasks], factsOf b1 "bob" tasks, ["aven", "alice"]),
+  ("his notes only at the Aven Peer", [keepBob, keepBobTasks], factsOf b2 "bob" notes, ["aven"]),
+  ("Bob withdrew his default: his tasks only at Alice's Peer", [keepBobTasks], factsOf b1 "bob" tasks, ["alice"]),
+  ("Maia City's default keeps nothing of Bob's", [defaultKeep "maia-city" "aven" "alice-peer" []],
+    factsOf b1 "bob" tasks, [])]
+
+/-- Who governs whom and which actor spawned which, for the placement examples: no one, since nothing reaches below. -/
+def noGov (_ _ : Core.Bytes) : Bool := false
+def noSpawn (_ _ : Core.DocId) : Bool := false
+
+#guard placementExamples.all fun (_, caps, f, ks) => keepersOf noGov noSpawn castCtx.roles caps f == ks
 
 /-- Which branches a cap writes on, each answer written out by hand: main only on main, proposals on every branch but
 main, one branch only on it. -/

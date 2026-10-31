@@ -484,6 +484,7 @@ messages and queries. For people with keys, reading is whole Docs; for actors an
 |---|---|
 | Every grant: a root cap, a child cap, a ticket, a group's new reader | The granting vault's owners, k of n (an approval). Today that is one passkey tap, since any one owner suffices (Samuel, 30 Oct 2026, for now) |
 | A public cap | The granting vault's owners, k of n |
+| A new vault's default keep cap | Its owner, with what they sign to join (D14, A22) |
 | Governance | Owners, k of n (avenID) |
 | A new device's device cap | The passkey sign-in that adds the device, which is already an owner's act |
 | An actor's narrower cap, message by message: an attenuation | A device of its holder, the host's (A27). It grants nothing new, so no approval |
@@ -729,6 +730,20 @@ at once, until a later update folds them together.
 
 Keeping is a role any peer can take (D21). Phones and browsers are rarely online at the same time, so some peers keep
 a Doc's sealed bytes for its readers: any member's own Peer, or the Aven Peer. None is special.
+
+**Who keeps what is each vault's own decision** (A22, Samuel, 31 Oct 2026). A vault decides who keeps its data and who
+sees it, by its caps: keep caps for keepers, keys and read caps for readers. A keep cap is a grant like any other, from
+the vault to a keeper's vault. Its lines `keep` targets in Core's grammar, so a target may be a query: every Doc of the
+vault, or of one type (`keepersOf`, `keepers_by_caps`). The issuing vault's devices resolve it to the Doc ids they hand
+the keeper, which can't read a Doc's facts. The Values a Doc's Records name, a file's chunks among them, are kept with
+it.
+- **By default** a new vault's keep cap covers everything of its own, to Maia City's keeper, the Aven Peer acting for
+  Aven. Its owner approves it with what they sign to join (`defaultKeep`, `default_kept`), and the vault can withdraw
+  it or issue others. It doesn't reach below, so a vault it governs keeps its own default.
+- **The owner always decides where its data goes.** A keep cap may not share, so no keeper passes data on: a chain
+  that keeps has one holder, and every link after its root only attenuates (`keep_one_holder`). A cap keeps a Doc only
+  as its root does, a grant by a vault with authority over it, its own or one it governs (`keeper_named_by_owner`).
+  Neither Maia City nor a keeper can extend it; a new keeper needs a new keep cap from the owner.
 
 A keep cap tells a keeper what to keep and nothing about what it is:
 - the Doc ids, or the group whose Docs to keep;
@@ -1203,6 +1218,10 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `new_holder_granted`, `holder_granted` | A cap reaches a new holder only by a grant its issuer's owners approved (D14), and every cap of a chain is held by a holder an approved grant in it reached: a chain starts from authority, and an attenuation only follows an approved grant |
 | | `role_pinned` | A new version of a role changes nothing a cap naming the old one grants (D6) |
 | | `chainError_none` | The first rule a chain breaks is none exactly when it keeps them all |
+| `Placement` | `coversB_iff`, `keeps_iff` | Coverage as a device computes it is Core's `Target.covers`, and a cap keeps a Doc exactly when one of its `keep` lines reaches it |
+| | `keepers_by_caps`, `default_kept` | A Doc's keepers are the vaults holding the caps that keep it; a new vault's default keep cap has every Doc of its own kept by Maia City's keeper (A22) |
+| | `keep_one_holder` | No keeper passes a vault's data on: a keep cap may not share, so a chain that keeps has one holder, and every link after its root only attenuates |
+| | `keeper_named_by_owner` | A cap keeps a Doc only as its chain's root does, a grant by a vault with authority over every line, its own or one it governs: the owner decides who keeps (A22) |
 | `Approve` | `approval_exact` | An approval holds only with k distinct owners, each having signed exactly its digest |
 | | `approvesF_exact`, `approves_signed` | An owner that is a vault approves by its own quorum, recursively: a vault approves only with its threshold of distinct owners, each a key that signed exactly the digest or a vault that approves it, and with every threshold at least one, an approval rests on such a signature by a key above the vault |
 | | `approves_iff` | In a well-formed tree, looking as many levels up as the tree has vaults finds every approval: a vault's owners stand lower than it |

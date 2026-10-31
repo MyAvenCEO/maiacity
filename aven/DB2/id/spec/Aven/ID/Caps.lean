@@ -22,8 +22,8 @@ no more often than its root may be shared (`chain_short`); every grant in it car
 keeps its parent's holder, a device of that holder signs it, and it lies within its parent (`attenuate_within`,
 `attenuate_signed`); every holder in a chain got there by an approved grant in it, so a chain starts from authority
 (`holder_granted`); a cap issued from a group's cap lives only while its issuer is in the group (`child_live`); the
-public never passes a cap on and may not share (`public_bounded`, D15); and a role is pinned by its id (`role_pinned`,
-D6). -/
+public never passes a cap on and may not share (`public_bounded`, D15), nor may a keep cap, so no keeper passes a
+vault's data on (A22, `Aven.ID.Placement`); and a role is pinned by its id (`role_pinned`, D6). -/
 
 namespace Aven.ID
 
@@ -281,6 +281,7 @@ inductive ChainError where
   | signer (cap : String)
   | approval (cap : String)
   | publicShares (cap : String)
+  | keepShares (cap : String)
   | parent (cap : String)
   | issuer (cap : String)
   | holder (cap : String)
@@ -328,11 +329,13 @@ def holds (x : Ctx) (p : Cap) (issuer : String) : Bool :=
   | .ticket _ => false
 
 /-- What every cap must keep: a device of its issuer signed it, its issuer's owners approved it, an owner vault by its
-own quorum (D14), unless it only attenuates, and a public cap may not share. -/
+own quorum (D14), unless it only attenuates; a public cap may not share, and nor may a keep cap, so no keeper passes a
+vault's data on (A22). -/
 def capRules (x : Ctx) (c : Cap) : List (Bool × ChainError) :=
   [(x.tree.actsFor c.signer == some c.issuer, .signer c.id),
    (c.kind == .attenuate || x.tree.approves x.threshold c.issuer c.id c.approvals, .approval c.id),
-   (c.holder != .«public» || c.share == 0, .publicShares c.id)]
+   (c.holder != .«public» || c.share == 0, .publicShares c.id),
+   (c.share == 0 || (c.grants x.roles).all (·.verb != .keep), .keepShares c.id)]
 
 /-- A root names no parent and is a grant, so a chain starts from authority, and every atom it grants lies in its
 issuer's authority. -/
@@ -377,11 +380,12 @@ theorem rules_all {l m : List (Bool × ChainError)} :
 theorem capRules_ok {c : Cap} (h : (capRules x c).all (·.1) = true) :
     x.tree.actsFor c.signer = some c.issuer ∧
       (c.kind = .grant → x.tree.approves x.threshold c.issuer c.id c.approvals = true) ∧
-      (c.holder = .«public» → c.share = 0) := by
+      (c.holder = .«public» → c.share = 0) ∧ (∀ l ∈ c.grants x.roles, l.verb = .keep → c.share = 0) := by
   simp only [capRules, List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true,
-    bne_iff_ne, ne_eq] at h
-  obtain ⟨s, a, p⟩ := h
-  exact ⟨s, fun g => a.resolve_left (by simp [g]), fun e => by simp_all⟩
+    bne_iff_ne, ne_eq, List.all_eq_true] at h
+  obtain ⟨s, a, p, k⟩ := h
+  exact ⟨s, fun g => a.resolve_left (by simp [g]), fun e => by simp_all, fun l ml lk => k.resolve_right fun n =>
+    n l ml lk⟩
 
 theorem linkRules_ok {p c : Cap} (h : (linkRules x p c).all (·.1) = true) :
     c.parent = some p.id ∧ holds x p c.issuer = true ∧ (c.kind = .grant ∨ c.holder = p.holder) ∧
@@ -619,7 +623,7 @@ theorem public_no_share {r : Cap} {cs : List Cap} (h : chainOk x (r :: cs) = tru
   rw [chainOk, chainRules, rules_all] at h
   intro c m
   rcases List.mem_cons.mp m with e | m
-  · exact e ▸ (capRules_ok (rootRules_ok h.1).2.2.2).2.2
-  · exact (capRules_ok (links_caps h.2 c m)).2.2
+  · exact e ▸ (capRules_ok (rootRules_ok h.1).2.2.2).2.2.1
+  · exact (capRules_ok (links_caps h.2 c m)).2.2.1
 
 end Aven.ID

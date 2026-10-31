@@ -77,6 +77,10 @@ def Cap.json (c : Cap) : Json :=
     ("approvals", Json.arr (c.approvals.map Sig.json).toArray),
     ("cbor", Core.hex c.bytes), ("id", (c.digest Core.blake3).text), ("signs", Core.hex c.signing)]
 
+/-- A Doc's facts, as its genesis fixes them: its id, its vault and its root type. -/
+def factsJson (f : Core.Facts) : Json :=
+  Json.mkObj [("id", f.id.text), ("vault", Core.utf8Text f.vault), ("type", f.type.text)]
+
 def Role.json (r : Role) : Json :=
   Json.mkObj [("id", r.id), ("name", r.name), ("grant", Json.arr (r.grant.map Line.json).toArray)]
 
@@ -87,6 +91,7 @@ def ChainError.json : ChainError → Json
   | .signer c => Json.mkObj [("rule", "signer"), ("cap", c)]
   | .approval c => Json.mkObj [("rule", "approval"), ("cap", c)]
   | .publicShares c => Json.mkObj [("rule", "publicShares"), ("cap", c)]
+  | .keepShares c => Json.mkObj [("rule", "keepShares"), ("cap", c)]
   | .parent c => Json.mkObj [("rule", "parent"), ("cap", c)]
   | .issuer c => Json.mkObj [("rule", "issuer"), ("cap", c)]
   | .holder c => Json.mkObj [("rule", "holder"), ("cap", c)]
