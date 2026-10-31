@@ -9,7 +9,7 @@ plaintext, and the outside's encoding with a fixture ciphertext (bytes in a patt
 16-byte tag, as aven-id's stanza fixtures are). aven-db-docs checks every byte, and seals and opens through
 XChaCha20-Poly1305 itself. Then Padmé's lengths, and paddings a reader must refuse. Bytes are lowercase hex. -/
 
-open Lean Aven.Core
+open Lean Aven.Core Aven.ID.Padme
 
 namespace Aven.ID.Seal
 

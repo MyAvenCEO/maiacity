@@ -1,4 +1,5 @@
 import Aven.Core
+import Aven.ID.Padme
 
 /-! # The seal (A43; id/caps/README.md, "Sealing"; D13, D18)
 
@@ -13,19 +14,19 @@ keeper sees of each only its Doc, its epoch and its padded length (D13). It foll
 - **The AAD** is `encode({doc, kind, epoch})`, binding the ciphertext to its Doc, its kind and its epoch.
 - **The commitment** is the commitment key's keyed BLAKE3 over `encode({aad, nonce})`. A reader checks it in constant
   time before it decrypts, so a sealed thing opens under one key only (`open_checks_commit`).
-- **The plaintext** is padded before sealing: a `0x80` byte, then zeros, to Padmé's length (PURBs) of its length plus
-  one. Padmé adds at most an eighth (`padme_le`), about 12 %, and a padded length pads to itself (`padme_idem`, checked to 2¹⁶).
+- **The plaintext** is padded before sealing: a `0x80` byte, then zeros, to Padmé's length (`Aven.ID.Padme`) of its
+  length plus one.
 - **Outside:** `encode({ct, doc, epoch, nonce, commit})` and nothing else (D13).
 
 XChaCha20-Poly1305 stays outside Lean, held to its standard's known answers, as the stanzas' is: the model takes it as
 a parameter with its one law, that opening what was sealed under the same key, nonce and AAD gives it back
 (`Aead.correct`). What goes into it and what comes out around it is fixed here, byte for byte (`seals.json`).
 
-What it proves: `padme_ge`, `padme_le`, `unpad_pad`, `open_seal`, `open_checks_commit`. -/
+What it proves: `unpad_pad`, `open_seal`, `open_checks_commit`. -/
 
 namespace Aven.ID.Seal
 
-open Aven.Core
+open Aven.Core Aven.ID.Padme
 
 def t (s : String) : Bytes := s.toUTF8.toList
 
@@ -63,54 +64,6 @@ def commit (k : Kind) (epochKey : Bytes) (aad nonce : Bytes) : Bytes :=
 #guard keysSorted [(t "doc", .null), (t "kind", .null), (t "epoch", .null)] = true
 #guard keysSorted [(t "aad", .null), (t "nonce", .null)] = true
 #guard keysSorted [(t "ct", .null), (t "doc", .null), (t "epoch", .null), (t "nonce", .null), (t "commit", .null)] = true
-
-/-! ## Padmé -/
-
-/-- Padmé's length for `l`: the low bits of `l` rounded up, keeping `⌊log₂ ⌊log₂ l⌋⌋ + 1` significant bits. -/
-def zeroBits (l : Nat) : Nat := l.log2 - (l.log2.log2 + 1)
-
-def padme (l : Nat) : Nat :=
-  if l < 2 then l else (l + 2 ^ zeroBits l - 1) / 2 ^ zeroBits l * 2 ^ zeroBits l
-
-theorem padme_ge (l : Nat) : l ≤ padme l := by
-  unfold padme
-  split
-  · exact Nat.le_refl _
-  · have hp : 0 < 2 ^ zeroBits l := Nat.two_pow_pos _
-    have := Nat.div_add_mod (l + 2 ^ zeroBits l - 1) (2 ^ zeroBits l)
-    have := Nat.mod_lt (l + 2 ^ zeroBits l - 1) hp
-    have : (l + 2 ^ zeroBits l - 1) / 2 ^ zeroBits l * 2 ^ zeroBits l =
-        2 ^ zeroBits l * ((l + 2 ^ zeroBits l - 1) / 2 ^ zeroBits l) := Nat.mul_comm _ _
-    omega
-
-/-- Rounding up adds less than one unit. -/
-theorem padme_lt (l : Nat) (h : 2 ≤ l) : padme l < l + 2 ^ zeroBits l := by
-  unfold padme
-  simp only [show ¬ l < 2 from by omega, ↓reduceIte]
-  have hp : 0 < 2 ^ zeroBits l := Nat.two_pow_pos _
-  have := Nat.div_mul_le_self (l + 2 ^ zeroBits l - 1) (2 ^ zeroBits l)
-  omega
-
-/-- From 16 up, a unit is at most an eighth of the length. -/
-theorem unit_le (l : Nat) (h : 16 ≤ l) : 8 * 2 ^ zeroBits l ≤ l := by
-  have hl : l ≠ 0 := by omega
-  have he : 4 ≤ l.log2 := (Nat.le_log2 hl).mpr (by simpa using h)
-  have hs : 2 ≤ l.log2.log2 := (Nat.le_log2 (by omega)).mpr (by simpa using he)
-  have hz : zeroBits l + 3 ≤ l.log2 := by unfold zeroBits; omega
-  calc 8 * 2 ^ zeroBits l = 2 ^ (zeroBits l + 3) := by rw [Nat.pow_add]; omega
-    _ ≤ 2 ^ l.log2 := Nat.pow_le_pow_right (by decide) hz
-    _ ≤ l := Nat.log2_self_le hl
-
-/-- Padmé adds at most an eighth: about 12 %. -/
-theorem padme_le (l : Nat) : padme l ≤ l + l / 8 := by
-  by_cases h : 16 ≤ l
-  · have := padme_lt l (by omega)
-    have := unit_le l h
-    omega
-  · exact (by decide : ∀ m, m < 16 → padme m ≤ m + m / 8) l (by omega)
-
--- A padded length pads to itself, checked for every length up to 2¹⁶.
-#guard (List.range 65536).all fun l => padme (padme l) == padme l
 
 /-! ## The padded plaintext -/
 
@@ -191,6 +144,5 @@ theorem open_checks_commit {A : Aead} {k : Kind} {key : Bytes} {s : Sealed} {pt 
   · exact hc
   · simp [hc] at h
 
-#guard padme 0 = 0 ∧ padme 1 = 1 ∧ padme 9 = 10 ∧ padme 17 = 18 ∧ padme 129 = 144 ∧ padme 1000 = 1024
 
 end Aven.ID.Seal
