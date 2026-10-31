@@ -105,8 +105,9 @@ thread's recommendation. Samuel may overrule any.
 ## 2. Entry through any member
 
 - **Address records.** Each device signs a record of how to reach it: its key, its home relay URL, its direct addresses
-  and a counter. A newer counter replaces an older record. Records travel on gossip, every peer keeps the newest one per
-  device, and the records feed `MemoryLookup`. A record from a device the door doesn't admit is dropped.
+  and a counter, its place in the device's own log (A31). The latest place replaces an older record; two records at one
+  place are a split, and a split is final (A4). Records travel on gossip, every peer keeps the newest one per device,
+  and the records feed `MemoryLookup`. A record from a device the door doesn't admit is dropped.
 - **Gossip bootstrap.** A peer joins the room through up to 3 members it holds an address for: the Aven Peer is one
   candidate, not the default. It tries the members it last heard from first. `--aven` and `--aven-key` become
   `--bootstrap KEY@ADDR` (repeatable), for a first start with an empty store.
@@ -235,8 +236,9 @@ In `Aven.ID.Network`, with the caps thread (`ticket_once` is there since #1531),
   same (`restore_agrees`). A proof of that agreement for every store is open.
 - **Records** (`Aven.ID.Records`): the record kinds of [6](#6-signed-records-not-a-peers-word), each under its own
   label, and which is newest: `newest_set` (no order is an input), `newest_signed` (only the device it is about, or a
-  release signer), `newest_agree` (two newest say the same; a split takes the smaller body), `newest_grows`, and
-  `speaks_same` for the wire version ([7](#7-upgrades)).
+  release signer), `newest_agree` (two newest say the same), `split_final` (address and release records are history in
+  their signer's own log, A31: once a split is held, nothing at or after it counts), `newest_grows`, and `speaks_same`
+  for the wire version ([7](#7-upgrades)).
 - **Node** (`Aven.ID.Node`, the architecture's R3, R7 and R9; the architect, 30 Oct 2026): a write fits on the
   device's own log alone (`write_fits`, `write_chain`), and a split's proof reaches every reader that syncs with a peer
   holding it (`split_spreads`); with two relays every member can use, losing any one peer leaves every member reachable

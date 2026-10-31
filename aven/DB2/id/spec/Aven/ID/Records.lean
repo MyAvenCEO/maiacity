@@ -16,13 +16,18 @@ Each carries a counter, and a newer one replaces an older one. What a record say
 a number (`body`): only which record is newest matters to the rules. Each kind signs under a label of its own
 (`RecordKind.label`, `Aven.Core.signingBytes`), so a record of one kind is never read as another's.
 
+**Two kinds of signed thing** (A31). An address or a release record is history: an entry in its signer's own log,
+its counter its place there, so the newest is the latest in that log. Two different records at one place are a split,
+and a split is final (A4): nothing at or after it counts, for any reader, however much more it learns (`split_final`).
+Presence and tips are beats: they decide nothing, and the latest counter is all that matters.
+
 The theorems:
 - `newest_set`: which record is newest depends only on the set of records a peer holds, not their order;
 - `newest_signed`: the newest record about a device was signed by that device (a release's by a release signer), so
   no peer's word stands in for it;
-- `newest_agree`: two records that are both newest say the same thing. Two records with the same counter and
-  different bodies are a split (A4), and the smaller body is taken everywhere;
-- `newest_grows`: holding more records never makes the newest one older;
+- `newest_agree`: two records that are both newest say the same thing;
+- `split_final`: once a peer holds a split in a signer's history, nothing at or after it is ever newest there;
+- `newest_grows`: holding more records never makes the newest one older, while what was newest still counts;
 - `speaks_same`: a peer speaks only its own wire version, with no fallback (README rule 9). -/
 
 namespace Aven.ID
@@ -64,7 +69,13 @@ def takes (admits releasers : String → Bool) (r : PeerRecord) : Bool :=
   | .release => releasers r.signer
   | _ => r.signer == r.about && admits r.signer
 
-/-- `a` is newer than `b`: a larger counter, or the same counter and a smaller body. -/
+/-- History, an entry in its signer's own log (A31): an address or a release record. Presence and tips are beats. -/
+def RecordKind.history : RecordKind → Bool
+  | .address | .release => true
+  | _ => false
+
+/-- `a` is newer than `b`: a larger counter, or the same counter and a smaller body (which, in history, is a split and
+never counts). -/
 def newer (a b : PeerRecord) : Bool := b.counter < a.counter || (a.counter == b.counter && a.body < b.body)
 
 /-- The records a peer takes of one kind about one device. -/
@@ -72,10 +83,18 @@ def candidates (admits releasers : String → Bool) (k : RecordKind) (about : St
     List PeerRecord :=
   rs.filter fun r => takes admits releasers r && r.kind == k && r.about == about
 
-/-- `r` is the newest record of its kind about its device among `rs`: no other one taken is newer. -/
+/-- `r` counts: a beat always; history only while no split in its signer's log lies at or before its place. -/
+def counts (admits releasers : String → Bool) (rs : List PeerRecord) (r : PeerRecord) : Bool :=
+  !r.kind.history ||
+    (candidates admits releasers r.kind r.about rs).all fun s =>
+      (candidates admits releasers r.kind r.about rs).all fun t =>
+        !(s.counter == t.counter && decide (s.counter ≤ r.counter) && s.body != t.body)
+
+/-- `r` is the newest record of its kind about its device among `rs`: it counts, and no other one taken that counts
+is newer. -/
 def isNewest (admits releasers : String → Bool) (rs : List PeerRecord) (r : PeerRecord) : Bool :=
-  (candidates admits releasers r.kind r.about rs).contains r &&
-    (candidates admits releasers r.kind r.about rs).all fun s => !newer s r
+  (candidates admits releasers r.kind r.about rs).contains r && counts admits releasers rs r &&
+    (candidates admits releasers r.kind r.about rs).all fun s => !(counts admits releasers rs s && newer s r)
 
 /-- The newest record of a kind about a device, if a peer holds any. -/
 def newest (admits releasers : String → Bool) (k : RecordKind) (about : String) (rs : List PeerRecord) :
@@ -90,42 +109,79 @@ theorem mem_candidates {k : RecordKind} {about : String} :
   simp [candidates, and_assoc]
 
 theorem isNewest_iff : isNewest admits releasers rs r = true ↔
-    (r ∈ rs ∧ takes admits releasers r = true) ∧
+    ((r ∈ rs ∧ takes admits releasers r = true) ∧ counts admits releasers rs r = true) ∧
       ∀ s ∈ rs, takes admits releasers s = true → s.kind = r.kind → s.about = r.about →
-        newer s r = false := by
+        counts admits releasers rs s = true → newer s r = false := by
   simp only [isNewest, Bool.and_eq_true, List.contains_iff_mem, mem_candidates, List.all_eq_true,
-    Bool.not_eq_true', and_true, and_imp]
+    Bool.not_eq_true', and_true, and_imp, Bool.and_eq_false_iff]
+  constructor
+  · rintro ⟨a, b⟩
+    refine ⟨a, fun s ms ts ks as cs => ?_⟩
+    rcases b s ms ts ks as with h | h
+    · simp [cs] at h
+    · exact h
+  · rintro ⟨a, b⟩
+    exact ⟨a, fun s ms ts ks as => by
+      cases cs : counts admits releasers rs s
+      · exact .inl rfl
+      · exact .inr (b s ms ts ks as cs)⟩
+
+theorem counts_set (h : ∀ x, x ∈ rs ↔ x ∈ rs') : counts admits releasers rs = counts admits releasers rs' := by
+  funext r
+  apply Bool.eq_iff_iff.mpr
+  simp only [counts, Bool.or_eq_true, List.all_eq_true, mem_candidates, h]
 
 /-- **`newest_set`:** holding the same records, in any order, gives the same newest one. -/
 theorem newest_set (h : ∀ x, x ∈ rs ↔ x ∈ rs') :
     isNewest admits releasers rs = isNewest admits releasers rs' := by
   funext r
   apply Bool.eq_iff_iff.mpr
-  simp only [isNewest_iff, h]
+  simp only [isNewest_iff, h, counts_set h]
 
 /-- **`newest_signed`:** the newest record about a device was signed by it; a release's by a release signer. -/
 theorem newest_signed (h : isNewest admits releasers rs r = true) :
     (r.kind = .release ∧ releasers r.signer = true) ∨ (r.kind ≠ .release ∧ r.signer = r.about) := by
-  have t := ((isNewest_iff.mp h).1).2
+  have t := ((isNewest_iff.mp h).1).1.2
   unfold takes at t
   cases e : r.kind <;> simp_all
 
 /-- **`newest_agree`:** two newest records of one kind about one device say the same thing, with the same counter. -/
 theorem newest_agree (h : isNewest admits releasers rs r = true) (h' : isNewest admits releasers rs r' = true)
     (k : r'.kind = r.kind) (a : r'.about = r.about) : r.counter = r'.counter ∧ r.body = r'.body := by
-  have n₁ := (isNewest_iff.mp h).2 r' (isNewest_iff.mp h').1.1 (isNewest_iff.mp h').1.2 k a
-  have n₂ := (isNewest_iff.mp h').2 r (isNewest_iff.mp h).1.1 (isNewest_iff.mp h).1.2 k.symm a.symm
+  have n₁ := (isNewest_iff.mp h).2 r' (isNewest_iff.mp h').1.1.1 (isNewest_iff.mp h').1.1.2 k a
+    (isNewest_iff.mp h').1.2
+  have n₂ := (isNewest_iff.mp h').2 r (isNewest_iff.mp h).1.1.1 (isNewest_iff.mp h).1.1.2 k.symm a.symm
+    (isNewest_iff.mp h).1.2
   simp only [newer, Bool.or_eq_false_iff, decide_eq_false_iff_not, Bool.and_eq_false_iff, beq_eq_false_iff_ne,
     ne_eq] at n₁ n₂
   omega
 
-/-- **`newest_grows`:** a record newest among more records is no older than one newest among fewer. -/
+/-- **`newest_grows`:** a record newest among more records is no older than one newest among fewer, while the one
+newest among fewer still counts among more: a split arriving later is the only thing that takes it back (A4). -/
 theorem newest_grows (sub : ∀ x ∈ rs, x ∈ rs') (h : isNewest admits releasers rs r = true)
+    (still : counts admits releasers rs' r = true)
     (h' : isNewest admits releasers rs' r' = true) (k : r'.kind = r.kind) (a : r'.about = r.about) :
     r.counter ≤ r'.counter := by
-  have n := (isNewest_iff.mp h').2 r (sub r (isNewest_iff.mp h).1.1) (isNewest_iff.mp h).1.2 k.symm a.symm
+  have n := (isNewest_iff.mp h').2 r (sub r (isNewest_iff.mp h).1.1.1) (isNewest_iff.mp h).1.1.2 k.symm a.symm
+    still
   simp only [newer, Bool.or_eq_false_iff, decide_eq_false_iff_not] at n
   omega
+
+/-- **`split_final`:** two different history records of one signer at one place, held by a peer: no record at or after
+that place is ever newest for it, however many more records it learns. -/
+theorem split_final {s t : PeerRecord} (hist : s.kind.history = true) (ms : s ∈ rs) (mt : t ∈ rs)
+    (ts : takes admits releasers s = true) (tt : takes admits releasers t = true) (kt : t.kind = s.kind)
+    (at_ : t.about = s.about) (place : s.counter = t.counter) (differ : s.body ≠ t.body)
+    (sub : ∀ x ∈ rs, x ∈ rs') {r : PeerRecord} (kr : r.kind = s.kind) (ar : r.about = s.about)
+    (late : s.counter ≤ r.counter) : isNewest admits releasers rs' r = false := by
+  cases e : isNewest admits releasers rs' r
+  · rfl
+  · exfalso
+    have c := (isNewest_iff.mp e).1.2
+    simp only [counts, kr, hist, Bool.not_true, Bool.false_or, List.all_eq_true, mem_candidates, ar] at c
+    have := c s ⟨sub s ms, ts, rfl, rfl⟩ t ⟨sub t mt, tt, kt, at_⟩
+    simp [place, differ] at this
+    omega
 
 /-- `newest` finds the newest record when there is one. -/
 theorem newest_isNewest {k : RecordKind} {about : String}
@@ -157,7 +213,8 @@ def records : List PeerRecord :=
    ⟨.address, "alice-peer", "alice-peer", 3, 30⟩,
    -- the Aven Peer passing on its own word about Alice: not taken
    ⟨.address, "alice-peer", "aven-peer", 9, 90⟩,
-   -- a split: Alice's Peer signed two addresses with one counter; the smaller body is taken everywhere
+   -- a split: Alice's Peer signed two addresses at one place in its log; from there on nothing counts (A4), so its
+   -- address is the one before
    ⟨.address, "alice-peer", "alice-peer", 3, 20⟩,
    -- a stranger's beat: not taken
    ⟨.presence, "mallory-peer", "mallory-peer", 5, 1⟩,
@@ -167,9 +224,9 @@ def records : List PeerRecord :=
    ⟨.release, "aven", "bob-peer", 5, 505⟩]
 
 #guard newest admitted releaseSigners .address "alice-peer" records ==
-  some ⟨.address, "alice-peer", "alice-peer", 3, 20⟩
+  some ⟨.address, "alice-peer", "alice-peer", 1, 10⟩
 #guard newest admitted releaseSigners .address "alice-peer" records.reverse ==
-  some ⟨.address, "alice-peer", "alice-peer", 3, 20⟩
+  some ⟨.address, "alice-peer", "alice-peer", 1, 10⟩
 #guard newest admitted releaseSigners .presence "mallory-peer" records == none
 #guard newest admitted releaseSigners .presence "bob-peer" records == some ⟨.presence, "bob-peer", "bob-peer", 7, 1⟩
 #guard newest admitted releaseSigners .release "aven" records == some ⟨.release, "aven", "release-signer", 2, 202⟩

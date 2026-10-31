@@ -161,14 +161,30 @@ theorem one_relay_only_source {n : Net} {r : String} (one : n.relays = [r]) (a b
     reaches n r a b = false := by
   simp [reaches, home, one]
 
-/-- **`rehome_newest`:** a device that re-homes signs an address record with a larger counter than any it signed
-before, and every peer takes it as newest (`Aven.ID.Records`). -/
+/-- **`rehome_newest`:** a device that re-homes signs an address record at the next place of its own log, after
+every one it signed before, and every peer takes it as newest (`Aven.ID.Records`), as long as the device never split
+its log (A4, A31). -/
 theorem rehome_newest {admits releasers : String → Bool} {rs : List Records.PeerRecord} {b : String} {c body : Nat}
     (ad : admits b = true)
-    (older : ∀ s ∈ rs, s.kind = .address → s.about = b → s.counter < c) :
+    (older : ∀ s ∈ rs, s.kind = .address → s.about = b → s.counter < c)
+    (honest : ∀ s ∈ rs, ∀ t ∈ rs, s.kind = .address → s.about = b → t.kind = .address → t.about = b →
+      s.counter = t.counter → s.body = t.body) :
     Records.isNewest admits releasers (⟨.address, b, b, c, body⟩ :: rs) ⟨.address, b, b, c, body⟩ = true := by
-  refine Records.isNewest_iff.mpr ⟨⟨List.mem_cons_self .., by simp [Records.takes, ad]⟩, ?_⟩
-  intro s ms _ k a
+  have cnt : Records.counts admits releasers (⟨.address, b, b, c, body⟩ :: rs) ⟨.address, b, b, c, body⟩ = true := by
+    simp only [Records.counts, Records.RecordKind.history, Bool.not_true, Bool.false_or, List.all_eq_true,
+      Records.mem_candidates, List.mem_cons]
+    rintro s ⟨ms, _, ks, as⟩ t ⟨mt, _, kt, at_⟩
+    simp only [Bool.not_eq_true', Bool.and_eq_false_iff, beq_eq_false_iff_ne, ne_eq, decide_eq_false_iff_not,
+      bne_eq_false_iff_eq]
+    rcases ms with rfl | ms <;> rcases mt with rfl | mt
+    · exact .inr rfl
+    · have := older t mt kt at_; left; left; simp; omega
+    · have := older s ms ks as; left; left; simp; omega
+    · by_cases e : s.counter = t.counter
+      · exact .inr (honest s ms t mt ks as kt at_ e)
+      · left; left; simpa using e
+  refine Records.isNewest_iff.mpr ⟨⟨⟨List.mem_cons_self .., by simp [Records.takes, ad]⟩, cnt⟩, ?_⟩
+  intro s ms _ k a _
   rcases List.mem_cons.mp ms with e | ms
   · subst e; simp [Records.newer]
   · have := older s ms k a
