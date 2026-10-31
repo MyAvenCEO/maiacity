@@ -3,12 +3,12 @@
 
 mod common;
 
-use aven_core::{Call, CoreOp, Target, Value, decode, encode, type_of_types};
+use aven_core::{Bound, Call, CoreOp, Target, Value, decode, encode, type_of_types};
 use common::{bound, hex, target, unhex, value, vectors};
 
 #[test]
 fn ops() {
-    let (mut core, mut calls, mut allows, mut within, mut types) = (0, 0, 0, 0, 0);
+    let (mut core, mut calls, mut allows, mut within, mut types, mut bounds) = (0, 0, 0, 0, 0, 0);
     for v in vectors("ops.json") {
         let name = v["name"].as_str().unwrap();
         let (i, x) = (&v["input"], &v["expected"]);
@@ -26,6 +26,36 @@ fn ops() {
             assert_eq!(o.id().text(), x["id"].as_str().unwrap(), "{name}: id");
             assert_eq!(o.writes(), x["writes"].as_bool().unwrap(), "{name}: writes");
             core += 1;
+        } else if name.starts_with("a call") && x.is_null() {
+            let bytes = unhex(i.as_str().unwrap());
+            assert_eq!(
+                decode(&bytes).and_then(Call::of_value),
+                None,
+                "{name}: refused"
+            );
+            calls += 1;
+        } else if name.starts_with("a bound: ") {
+            let bytes = unhex(i.as_str().unwrap());
+            let b = bound(x);
+            assert_eq!(
+                hex(&encode(&b.value())),
+                i.as_str().unwrap(),
+                "{name}: cbor"
+            );
+            assert_eq!(
+                decode(&bytes).and_then(Bound::of_value),
+                Some(b),
+                "{name}: read back"
+            );
+            bounds += 1;
+        } else if name.starts_with("no bound: ") {
+            assert!(x.is_null(), "{name}");
+            assert_eq!(
+                decode(&unhex(i.as_str().unwrap())).and_then(Bound::of_value),
+                None,
+                "{name}"
+            );
+            bounds += 1;
         } else if name.starts_with("a call") {
             let Value::Bytes(op) = value(&i["op"]) else {
                 panic!("{name}")
@@ -79,7 +109,7 @@ fn ops() {
             panic!("{name}: no reader for it");
         }
     }
-    assert_eq!((core, calls, types), (8, 1, 1));
+    assert_eq!((core, calls, types, bounds), (8, 3, 1, 5));
     assert!(allows >= 5 && within >= 4);
 }
 
@@ -97,9 +127,16 @@ fn targets() {
 
 #[test]
 fn target_bytes() {
-    let mut n = 0;
+    let (mut n, mut refused) = (0, 0);
     for v in vectors("target-bytes.json") {
         let name = v["name"].as_str().unwrap();
+        if v["expected"].is_null() {
+            let bytes = unhex(v["input"].as_str().unwrap());
+            let value = decode(&bytes).unwrap_or_else(|| panic!("{name}: canonical"));
+            assert_eq!(Target::of_value(value), None, "{name}");
+            refused += 1;
+            continue;
+        }
         let t = target(&v["input"]);
         let bytes = v["expected"].as_str().unwrap();
         assert_eq!(hex(&encode(&t.value())), bytes, "{name}: cbor");
@@ -110,5 +147,5 @@ fn target_bytes() {
         );
         n += 1;
     }
-    assert!(n >= 6);
+    assert!(n >= 6 && refused >= 4);
 }

@@ -17,7 +17,7 @@ use std::sync::OnceLock;
 use aven_core::limits::{MAX_DEPS, MAX_SIG_BYTES};
 use aven_core::past::in_past;
 use aven_core::{
-    Bound, DocId, Envelope, Facts, Hash, Held, Reach, Signed, Target, Value, blake3, decode,
+    Bound, Call, DocId, Envelope, Facts, Hash, Held, Reach, Signed, Target, Value, blake3, decode,
     encode, split,
 };
 use common::{bools, hex, names};
@@ -321,7 +321,36 @@ fn any_bytes_case() -> impl Strategy<Value = Vec<u8>> {
         e.encode()
     });
     let target = any_target().prop_map(|t| encode(&t.value()));
-    let base = prop_oneof![4 => envelope, 4 => signed, 1 => wide, 3 => target];
+    // a Doc or type id that isn't 32 bytes: refused by both
+    let short = (30usize..35, any::<bool>()).prop_map(|(n, doc)| {
+        encode(&if doc {
+            Value::Map(vec![
+                ("doc".into(), Value::Bytes(vec![1; n])),
+                ("reach".into(), Value::Text("self".into())),
+            ])
+        } else {
+            Value::Map(vec![
+                ("type".into(), Value::Bytes(vec![1; n])),
+                ("below".into(), Value::Bool(true)),
+                ("vault".into(), Value::Text("v:alice".into())),
+            ])
+        })
+    });
+    // calls with sorted params (the only canonical ones) and ops of 32 bytes or not, and bounds
+    let call = (
+        proptest::collection::btree_map("[a-z]{1,6}", any_param(), 0..3),
+        31usize..34,
+    )
+        .prop_map(|(ps, n)| {
+            let mut params: Vec<(String, Value)> = ps.into_iter().collect();
+            params.sort_by(|a, b| a.0.len().cmp(&b.0.len()).then_with(|| a.0.cmp(&b.0)));
+            encode(&Value::Map(vec![
+                ("op".into(), Value::Bytes(vec![2; n])),
+                ("params".into(), Value::Map(params)),
+            ]))
+        });
+    let bound = any_bound().prop_map(|b| encode(&b.value()));
+    let base = prop_oneof![4 => envelope, 4 => signed, 1 => wide, 3 => target, 1 => short, 3 => call, 2 => bound];
     // now and then broken: a byte changed, cut short, or a byte added
     (base, 0u8..4, any::<prop::sample::Index>(), any::<u8>()).prop_map(|(mut bs, how, at, b)| {
         let i = at.index(bs.len());
@@ -402,6 +431,11 @@ proptest! {
         prop_assert!(e.is_none_or(|e| e == bs) && s.is_none_or(|s| s == bs));
         let t = decode(&bs).and_then(Target::of_value).map(|t| encode(&t.value()));
         prop_assert_eq!(t.as_ref().map(|b| hex(b)), a["target"].as_str().map(String::from));
+        let c = decode(&bs).and_then(Call::of_value).map(|c| encode(&c.value()));
+        prop_assert_eq!(c.as_ref().map(|b| hex(b)), a["call"].as_str().map(String::from));
+        let b = decode(&bs).and_then(Bound::of_value).map(|b| encode(&b.value()));
+        prop_assert_eq!(b.as_ref().map(|b| hex(b)), a["bound"].as_str().map(String::from));
+        prop_assert!([t, c, b].iter().flatten().all(|x| *x == bs));
     }
 
     /// Coverage and narrowing are the model's (`Target.coversB`, `Target.le`), and a narrower target covers only
@@ -420,8 +454,8 @@ proptest! {
         for (i, _) in c.targets.iter().enumerate() {
             for (j, _) in c.targets.iter().enumerate() {
                 if le[i][j] {
-                    for k in 0..c.facts.len() {
-                        prop_assert!(!covers[i][k] || covers[j][k]);
+                    for (a, b) in covers[i].iter().zip(&covers[j]) {
+                        prop_assert!(!a || *b);
                     }
                 }
             }

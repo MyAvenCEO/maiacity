@@ -22,8 +22,11 @@ import Lean.Data.Json
 - `counts.json`: the same worlds with bad envelopes and a version's tips; for each envelope, whether it is discounted,
   counts and is held by the version.
 - `targets.json`: pairs of targets; whether the first narrows the second, and which Docs each covers.
-- `target-bytes.json`: each target form, readable, and its CBOR in hex (`Aven.Core.TargetCbor`).
-- `ops.json`: `core/1`'s ops, each with its stored form and its id; a call as an envelope's body carries it; and
+- `target-bytes.json`: each target form, readable, and its CBOR in hex (`Aven.Core.TargetCbor`); and the CBOR of
+  targets whose Doc or type id isn't 32 bytes, refused on read (`expected` null).
+- `ops.json`: `core/1`'s ops, each with its stored form and its id; a call as an envelope's body carries it, and one
+  whose params are out of order or whose op isn't 32 bytes, refused on read (`expected` null); the type of types'
+  id; bounds in CBOR, read back, and Values that are no bound, refused; and
   bounds on a parameter, whether a value is within one, and whether one is within another (`Aven.Core.Op`, A32).
 
 Values are shown in their readable form (`Aven.Core.Json`).
@@ -390,10 +393,20 @@ def targetForms : List (String × Target) := [
   ("a collection and what it lists", .doc invoice .lists), ("a vault's Docs", .vault alice false),
   ("and below", .vault alice true), ("a vault's Docs of one type", .vaultType alice invoice false)]
 
-def targetBytes : List Json :=
-  targetForms.map fun (name, t) => vector name t.json (encodes t.value)
+/-- Targets whose ids aren't hashes: their CBOR, refused on read (`expected` null). -/
+def badTargets : List (String × Target) := [
+  ("a Doc id of 31 bytes", .doc ⟨⟨List.replicate 31 1⟩⟩ .self),
+  ("a Doc id of 33 bytes", .doc ⟨⟨List.replicate 33 1⟩⟩ .spawned),
+  ("a type id of 31 bytes", .vaultType alice ⟨⟨List.replicate 31 1⟩⟩ false),
+  ("a type id of 33 bytes", .vaultType alice ⟨⟨List.replicate 33 1⟩⟩ true)]
 
-#guard targetForms.all fun (_, t) => Canon t.value && Target.ofValue? t.value == some t
+#guard badTargets.all fun (_, t) => Canon t.value && Target.ofValue? t.value == none
+
+def targetBytes : List Json :=
+  targetForms.map (fun (name, t) => vector name t.json (encodes t.value)) ++
+  badTargets.map fun (name, t) => vector s!"refused: {name}" (encodes t.value) Json.null
+
+#guard targetForms.all fun (_, t) => Canon t.value && t.idsOk && Target.ofValue? t.value == some t
 
 def targets : List Json :=
   targetPairs.map fun (name, a, b) => vector name (Json.arr #[a.json, b.json]) (toJson (a.le b))
@@ -437,9 +450,29 @@ def patchCall : Call :=
 
 #guard Canon patchCall.value
 
+/-- The same call with its params out of the codec's order: not canonical, so no call; its bytes are refused. -/
+def unsortedCall : Call := { patchCall with params := patchCall.params.reverse }
+
+#guard !Canon unsortedCall.value && (decodeAll (encode unsortedCall.value)).isNone
+
 def calls : List Json :=
   [vector "a call to core/1's patch: a type and the fields it sets" patchCall.value.json
-    (Json.mkObj [("cbor", hex (encode patchCall.value)), ("op", (CoreOp.patch.id blake3).text)])]
+    (Json.mkObj [("cbor", hex (encode patchCall.value)), ("op", (CoreOp.patch.id blake3).text)]),
+   vector "a call with its params out of order: refused on read" (hex (encode unsortedCall.value)) Json.null,
+   vector "a call whose op isn't 32 bytes: refused on read"
+     (hex (encode (Call.value { patchCall with op := ⟨List.replicate 31 1⟩ }))) Json.null]
+
+#guard Call.ofValue? patchCall.value == some patchCall
+#guard Call.ofValue? (Call.value { patchCall with op := ⟨List.replicate 31 1⟩ }) == none
+
+/-- Bounds in CBOR: each read back, and Values that are no bound, refused (`expected` null). -/
+def boundBytes : List Json :=
+  ([("any value", (none : Bound)), ("one of these", some [status, total]), ("none at all", some [])].map
+    fun (name, b) => vector s!"a bound: {name}" (hex (encode (Bound.value b))) (Bound.json b)) ++
+  ([("text", status), ("a map", .map [(k "a", status)])].map fun (name, v) =>
+    vector s!"no bound: {name}" (hex (encode v)) Json.null)
+
+#guard [status, .map [(k "a", status)]].all fun v => (Bound.ofValue? v).isNone
 
 def ops : List Json :=
   coreOps ++ calls ++
@@ -447,7 +480,8 @@ def ops : List Json :=
   (boundAllows.map fun (name, b, v, _) =>
     vector s!"does it allow? {name}" (Json.mkObj [("bound", b.json), ("value", v.json)]) (toJson (b.allows v))) ++
   (boundWithin.map fun (name, a, b, _) =>
-    vector s!"is it within? {name}" (Json.arr #[a.json, b.json]) (toJson (a.within b)))
+    vector s!"is it within? {name}" (Json.arr #[a.json, b.json]) (toJson (a.within b))) ++
+  boundBytes
 
 /-! ## Checks before writing -/
 
