@@ -130,6 +130,10 @@ if (phase === 'claim') {
 		if (said('claimed', since)) problems.push('a passkey without PRF claimed the network');
 		const kept = await noPrf.page.evaluate(async () => (await import('/id.svelte.js')).ownerKeys()).catch((e) => `unread: ${e}`);
 		if (kept !== null) problems.push(`a passkey without PRF left owner keys in the Peer-Light's store: ${kept}`);
+		// the passkey its signup made is dropped from the passkey manager, where the browser has the Signal API (Chromium)
+		const signals = await noPrf.page.evaluate(() => !!PublicKeyCredential.signalUnknownCredential);
+		const left = (await noPrf.cdp.send('WebAuthn.getCredentials', { authenticatorId: noPrf.authenticatorId })).credentials.length;
+		if (signals && left) problems.push(`the refused signup's passkey stayed in the passkey manager (${left} left)`);
 	} else problems.push('an unclaimed network shows the no-PRF browser no claim screen');
 	await noPrf.context.close();
 	const first = await open('first');

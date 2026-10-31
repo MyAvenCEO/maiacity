@@ -211,6 +211,7 @@ export async function claim(config, { name, deliberate = false }) {
 	const prf = created.getClientExtensionResults?.().prf;
 	if (prf?.enabled === false) {
 		net.prf = false;
+		await forget(config, created);
 		throw new Error(NO_PRF_MESSAGE);
 	}
 	if (prf?.results?.first) await openWith(created, 1);
@@ -226,7 +227,10 @@ export async function claim(config, { name, deliberate = false }) {
 		});
 		await openWith(got, 1);
 	}
-	if (!net.prf) throw new Error(NO_PRF_MESSAGE);
+	if (!net.prf) {
+		await forget(config, created);
+		throw new Error(NO_PRF_MESSAGE);
+	}
 	if (created.response.getPublicKeyAlgorithm() !== -7) throw new Error('the passkey is not ES256');
 	const spki = hex(created.response.getPublicKey());
 	const statement = {
@@ -244,7 +248,15 @@ export async function claim(config, { name, deliberate = false }) {
 // Sign in with your passkey, the admin's or a member's: this browser becomes one more device of the vault it owns. The
 // page asks for any passkey of this RP ID and needn't know whose: the Aven Peer finds the vault by the assertion
 // (Aven.ID.SignIn), and a passkey that owns none is refused with a word to ask for an invite.
-// A new browser opens its keys in its one sign-in tap: the same assertion asks the passkey's PRF (A43).
+// A refused signup's passkey will never own anything: the browser tells its passkey manager, which drops it, where
+// it supports the Signal API. Feature-detected, with no fallback.
+async function forget(config, created) {
+	await PublicKeyCredential.signalUnknownCredential?.({ rpId: config.rpId, credentialId: base64url(created.rawId) }).catch(() => {});
+}
+
+// A new browser opens its keys in its one sign-in tap: the same assertion asks the passkey's PRF (A43). A passkey
+// without PRF still signs in: existing vaults predate the owner key, and their move to owner keys, and what a passkey
+// without PRF does then, is decided when the tree becomes the first Doc, not here.
 export async function signIn(config) {
 	const statement = { network: config.network, device: { id: await deviceId(net.key), key: net.key } };
 	statement.assertion = await assertion(config, await signInText(config.network, statement.device.id, net.key), null, { prf: true });
