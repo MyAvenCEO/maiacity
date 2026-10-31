@@ -153,3 +153,23 @@ body {
 /* "Under the hood": the technical deep dive, pinned to the bottom of every slide. */
 .deep { margin: 0; padding-top: 14px; border-top: 1px solid #e2d6c0; font-size: 13px; line-height: 1.55; color: var(--ink-soft); max-width: 110ch; }
 .deep b { display: block; font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink); margin-bottom: 4px; }
+
+/* One screen, no page scroll: the card takes the free height, one bottom bar. */
+@media (min-width: 901px) {
+  html, body { overflow: hidden; }
+  .stage { height: 100vh; box-sizing: border-box; padding-block: 20px; }
+  .stage > .main { height: 100%; grid-template-rows: minmax(0, 1fr) auto; gap: 14px; }
+  .stories { max-height: 100%; overflow-y: auto; }
+  .card { min-height: 0; overflow-y: auto; }
+  .show-decisions .stage > .main { grid-template-rows: minmax(0, 1fr); }
+  .decisions { min-height: 0; overflow-y: auto; align-content: start; padding-right: 4px; }
+}
+.card { position: relative; }
+.card .terms { position: absolute; top: 18px; right: 22px; max-width: 55%; justify-content: flex-end; min-height: 0; z-index: 1; }
+.card .terms span { padding: 3px 9px; font-size: 11px; border-color: #e2d6c0; color: var(--ink-soft); background: var(--paper); }
+.card .terms span.new { border-color: var(--clay); color: var(--ink); }
+.nav { display: flex; align-items: center; gap: 18px; }
+.nav .track { flex: 1; min-width: 0; }
+.nav button { flex: none; white-space: nowrap; }
+#next { max-width: 42%; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 900px) { .card .terms { position: static; max-width: none; justify-content: flex-start; } }
