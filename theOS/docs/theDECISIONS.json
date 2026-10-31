@@ -1412,6 +1412,493 @@
    ],
    "status": "decided",
    "date": "2026-10-31"
+  },
+  {
+   "id": "D69",
+   "title": "Pairing by invite; agent epochs",
+   "status": "proposed",
+   "date": "2026-10-31",
+   "decision": "Every agent record header names its signer revision and a continuity epoch; a restored or reinstalled device starts a new epoch, so it never reuses a running number or a CRDT op ID. New agents pair through invite records: a one-time key, an expiry and the agent policy it will create, written into the identity's history so any of its agents with govern can answer.",
+   "why": "An honest restore from a backup currently looks like a lying signer (D61, D63), and pairing needs a manual exchange with one specific agent online.",
+   "sources": [
+    {
+     "label": "Urbit: life and rift",
+     "url": "https://github.com/urbit/docs.urbit.org/blob/master/content/urbit-id/life-and-rift.md"
+    },
+    {
+     "label": "Holepunch blind-pairing",
+     "url": "https://github.com/holepunchto/blind-pairing"
+    },
+    {
+     "label": "Keet identity key",
+     "url": "https://github.com/holepunchto/keet-identity-key"
+    }
+   ],
+   "slides": [
+    "identity-2",
+    "identity-3",
+    "identity-4"
+   ]
+  },
+  {
+   "id": "D70",
+   "title": "Govern becomes k of n inside the one governor role",
+   "status": "proposed",
+   "date": "2026-10-31",
+   "decision": "The governor role stays the one top (D59). When signature counts arrive (D49), govern becomes k of n inside that role, so the rule stays “one top”. Until then a governor names its successor in a signed succession record before leaving.",
+   "why": "With one governor, every change of roles or governance waits for one person's devices.",
+   "sources": [
+    {
+     "label": "NextGraph: types",
+     "url": "https://github.com/nextgraph-org/nextgraph-rs/blob/main/engine/repo/src/types.rs"
+    }
+   ],
+   "slides": [
+    "identity-6"
+   ]
+  },
+  {
+   "id": "D71",
+   "title": "Successor records for data",
+   "status": "proposed",
+   "date": "2026-10-31",
+   "decision": "New data may name a predecessor in its birth record (data ID and frontier hash), and the old data gets a signed forward link from its owner. This is the path for total schema breaks and any future change of owner.",
+   "why": "Data named by its birth record has no way to continue under a new one.",
+   "sources": [
+    {
+     "label": "Hypercore",
+     "url": "https://github.com/holepunchto/hypercore"
+    },
+    {
+     "label": "Holochain: validation",
+     "url": "https://github.com/holochain/docs-pages/blob/main/src/pages/concepts/7_validation.md"
+    }
+   ],
+   "slides": [
+    "data-2"
+   ]
+  },
+  {
+   "id": "D72",
+   "title": "Values named by the hash of their ciphertext",
+   "status": "proposed",
+   "date": "2026-10-31",
+   "decision": "Sealed Values are stored and named by the BLAKE3 hash of their ciphertext; the plaintext hash appears only inside the sealed metadata Doc. Encryption runs in segments aligned to iroh-blobs' 16 KiB groups, so ranges stay decryptable.",
+   "why": "Carriers can't check a plaintext hash, and the name lets anyone confirm that you hold a file they know.",
+   "sources": [
+    {
+     "label": "Hypercore",
+     "url": "https://github.com/holepunchto/hypercore"
+    },
+    {
+     "label": "iroh-blobs",
+     "url": "https://github.com/n0-computer/iroh-blobs"
+    }
+   ],
+   "slides": [
+    "data-6",
+    "sync-6"
+   ]
+  },
+  {
+   "id": "D73",
+   "title": "Acknowledged finality and owner checkpoints",
+   "status": "proposed",
+   "date": "2026-10-31",
+   "decision": "Every record's after is an acknowledgement. Once every current reader, or the owner in a signed checkpoint, has acknowledged a frontier, it is final: nothing before it is evaluated again, cuts and compaction start there instead of at a clock age, and a record that claims to change the final past proves its signer lied.",
+   "why": "Without finality, a late ending can unwind arbitrarily old changes built on the ended holder's.",
+   "sources": [
+    {
+     "label": "Autobase: design",
+     "url": "https://github.com/holepunchto/autobase/blob/main/DESIGN.md"
+    },
+    {
+     "label": "p2panda: access control",
+     "url": "https://p2panda.org/2025/07/28/access-control.html"
+    }
+   ],
+   "slides": [
+    "merge-1",
+    "time-2",
+    "end-6"
+   ]
+  },
+  {
+   "id": "D74",
+   "title": "Lens properties, version negotiation, retiring versions",
+   "status": "proposed",
+   "date": "2026-10-31",
+   "decision": "Every lens gets property tests in the shape of Jazz's INV-LENS-14 (translate then apply equals apply then translate). Versions that need no rewrite pass an additive-only check. Peers exchange the versions they speak at the start of sync. The owner retires a version with an ending.",
+   "why": "Peers must carry every version in use, with no way to retire one, and nothing checks lenses beyond their shape.",
+   "sources": [
+    {
+     "label": "Jazz 2: lenses and migrations",
+     "url": "https://github.com/garden-co/jazz/blob/main/crates/jazz/SPEC/10_lenses_migrations.md"
+    },
+    {
+     "label": "Hyperschema",
+     "url": "https://github.com/holepunchto/hyperschema"
+    }
+   ],
+   "slides": [
+    "schema-5",
+    "schema-6"
+   ]
+  },
+  {
+   "id": "D75",
+   "title": "Limits counted per author; no remote queries in iroh-blobs",
+   "status": "proposed",
+   "date": "2026-10-31",
+   "decision": "Limits such as “20 items” count along each author's own running number, so they are checked on arrival and never flip. iroh-blobs' Observe is disabled except for the owner's agents. Query results are cached per schema version.",
+   "why": "A limit settled when the view is built can flip changes that were already accepted, and Observe is a remote query against D24.",
+   "sources": [
+    {
+     "label": "Holochain: validation",
+     "url": "https://github.com/holochain/docs-pages/blob/main/src/pages/concepts/7_validation.md"
+    },
+    {
+     "label": "iroh-blobs",
+     "url": "https://github.com/n0-computer/iroh-blobs"
+    }
+   ],
+   "slides": [
+    "policies-7",
+    "ops-8"
+   ]
+  },
+  {
+   "id": "D76",
+   "title": "Role deltas, invites, and writes imply read",
+   "status": "proposed",
+   "date": "2026-10-31",
+   "decision": "Role records become add and remove deltas; a removal beats a concurrent add of the same identity, and nothing else. A revoke beats a concurrent renewal of the same policy. The owner can sign invite records (“whoever presents this one-time key may join role R until T”), so joining needs no owner online. Create, update and delete on content require read; write-only comes later with write keys.",
+   "why": "Full role lists lose unrelated concurrent adds, a revoke concurrent with a renewal is unspecified, every join needs the owner online, and a writer without the data key can't encrypt.",
+   "sources": [
+    {
+     "label": "p2panda: group resolver",
+     "url": "https://github.com/p2panda/p2panda/blob/main/p2panda-auth/src/group/resolver.rs"
+    },
+    {
+     "label": "Holepunch blind-pairing",
+     "url": "https://github.com/holepunchto/blind-pairing"
+    },
+    {
+     "label": "p2panda: access control",
+     "url": "https://p2panda.org/2025/07/28/access-control.html"
+    }
+   ],
+   "slides": [
+    "policies-2",
+    "end-2",
+    "identity-5"
+   ]
+  },
+  {
+   "id": "D77",
+   "title": "Signer hash chains; endings name chain heads",
+   "status": "proposed",
+   "date": "2026-10-31",
+   "decision": "Every signer's records form a hash chain (running number plus previous hash); chain headers travel without content. Every ending or removal names the ended signer's chain head, and records that are not ancestors of that head are dropped on all data. The owner, the one top, is the linearisation point for its own authority.",
+   "why": "Critical: an ending in another history (an agent revoked on its human, a member removed from a coop) can't be listed by the data's records, so backdated changes slip in.",
+   "sources": [
+    {
+     "label": "Keybase teams: loader",
+     "url": "https://github.com/keybase/client/blob/master/go/teams/loader2.go"
+    }
+   ],
+   "slides": [
+    "check-6",
+    "end-6"
+   ]
+  },
+  {
+   "id": "D78",
+   "title": "Lies freeze the signer; warrants",
+   "status": "proposed",
+   "date": "2026-10-31",
+   "decision": "Two records with one signer and one running number freeze that signer from the earliest lied-about number; a lie never voids an ending. A warrant (a signed record carrying both conflicting records) travels on the signer's identity topic; carriers check it and refuse the signer's chunks. p2panda's resolver cases become test fixtures.",
+   "why": "As written, both conflicting records become invalid, which a signer could use to void a record it regrets.",
+   "sources": [
+    {
+     "label": "Hypercore",
+     "url": "https://github.com/holepunchto/hypercore"
+    },
+    {
+     "label": "Holochain: validation",
+     "url": "https://github.com/holochain/docs-pages/blob/main/src/pages/concepts/7_validation.md"
+    },
+    {
+     "label": "p2panda: group resolver",
+     "url": "https://github.com/p2panda/p2panda/blob/main/p2panda-auth/src/group/resolver.rs"
+    }
+   ],
+   "slides": [
+    "check-6"
+   ]
+  },
+  {
+   "id": "D79",
+   "title": "Safe key turns",
+   "status": "proposed",
+   "date": "2026-10-31",
+   "decision": "A writer encrypts only under a key whose recipients are all among its current readers, otherwise it turns the key first. Among concurrent valid key turns the owner's agent's wins, otherwise the lowest (signer, running number). Key generations are named by a hash of the key turn, with the counter only as a hint. Every key turn is checked for envelope completeness. Chunk headers name the key generation, and the AEAD binds data ID, generation, signer and chunk hash.",
+   "why": "Concurrent key turns fork, a counter can't tell them apart, and a turner that hasn't seen a removal leaks its key to the removed reader.",
+   "sources": [
+    {
+     "label": "Decentralised MLS (draft)",
+     "url": "https://github.com/phnx-im/dmls-spec/blob/main/draft-kohbrok-mls-dmls.md"
+    },
+    {
+     "label": "Keybase teams: loader",
+     "url": "https://github.com/keybase/client/blob/master/go/teams/loader2.go"
+    },
+    {
+     "label": "Autobase: design",
+     "url": "https://github.com/holepunchto/autobase/blob/main/DESIGN.md"
+    },
+    {
+     "label": "p2panda: group encryption",
+     "url": "https://p2panda.org/2025/02/24/group-encryption.html"
+    }
+   ],
+   "slides": [
+    "keys-8",
+    "keys-9",
+    "keys-11"
+   ]
+  },
+  {
+   "id": "D80",
+   "title": "Forward-secure envelopes",
+   "status": "proposed",
+   "date": "2026-10-31",
+   "decision": "Agent locks become rotating signed pre-keys with a lifetime, published in the agent's history (as in X3DH). Each envelope also carries fresh key material for the next envelope to that recipient (2SM, from the DCGKA paper), so every lock key is used once.",
+   "why": "Today a stolen agent lock opens every envelope ever sealed to it, meaning all past role keys.",
+   "sources": [
+    {
+     "label": "p2panda: group encryption",
+     "url": "https://p2panda.org/2025/02/24/group-encryption.html"
+    },
+    {
+     "label": "DCGKA paper (Weidner, Kleppmann et al.)",
+     "url": "https://eprint.iacr.org/2020/1281.pdf"
+    }
+   ],
+   "slides": [
+    "keys-2",
+    "keys-4"
+   ]
+  },
+  {
+   "id": "D81",
+   "title": "An invalid add turns keys; envelopes after acknowledgement",
+   "status": "proposed",
+   "date": "2026-10-31",
+   "decision": "An add that ends up invalid (made by an agent whose policy was ended at the same moment) counts as a removal for keys: the keys it handed out turn. Newcomers receive envelopes only once their add is acknowledged by the owner's agents.",
+   "why": "p2panda's leak case at the agent level: the add is dropped, but the newcomer already holds the keys and nothing turns them.",
+   "sources": [
+    {
+     "label": "p2panda: access control",
+     "url": "https://p2panda.org/2025/07/28/access-control.html"
+    },
+    {
+     "label": "p2panda: group encryption",
+     "url": "https://p2panda.org/2025/02/24/group-encryption.html"
+    }
+   ],
+   "slides": [
+    "keys-5",
+    "keys-7"
+   ]
+  },
+  {
+   "id": "D82",
+   "title": "Endings that hold in time",
+   "status": "proposed",
+   "date": "2026-10-31",
+   "decision": "A change's signed time must be at least every time in its after and must never fall per signer. An always-on owner agent may only renew and lapse. Far-future records wait instead of being rejected for good. An ending is delivered to the ended agent, then its connections are closed, it is dropped as a neighbour and its transfers are aborted.",
+   "why": "A holder can sign a time just before expiry and send it later; an owner away in the renewal week locks the household out; no iroh layer revokes anything.",
+   "sources": [
+    {
+     "label": "Willow: Timestamps, really?",
+     "url": "https://github.com/earthstar-project/willowprotocol.org/blob/main/src/pages/more/timestamps_really.tsx"
+    },
+    {
+     "label": "Holochain: validation",
+     "url": "https://github.com/holochain/docs-pages/blob/main/src/pages/concepts/7_validation.md"
+    },
+    {
+     "label": "Tlon: groups",
+     "url": "https://github.com/tloncorp/tlon-apps/blob/develop/desk/app/groups.hoon"
+    }
+   ],
+   "slides": [
+    "end-1",
+    "end-2",
+    "end-5"
+   ]
+  },
+  {
+   "id": "D83",
+   "title": "Forgetting safely",
+   "status": "proposed",
+   "date": "2026-10-31",
+   "decision": "Back-links to older keys are deleted once every reader has acknowledged the newer generation. Values the live state no longer references are garbage-collected within retain rules. Wants and changes on QUIC 0-RTT streams are refused. A keep carrier signs a receipt for each stored chunk before any cut.",
+   "why": "Back-links stay for 30 days whatever readers have done, and 0-RTT data can be replayed.",
+   "sources": [
+    {
+     "label": "Decentralised MLS (draft)",
+     "url": "https://github.com/phnx-im/dmls-spec/blob/main/draft-kohbrok-mls-dmls.md"
+    },
+    {
+     "label": "Holochain: validation",
+     "url": "https://github.com/holochain/docs-pages/blob/main/src/pages/concepts/7_validation.md"
+    }
+   ],
+   "slides": [
+    "time-1",
+    "time-2"
+   ]
+  },
+  {
+   "id": "D84",
+   "title": "A separate network key; no open gossip",
+   "status": "proposed",
+   "date": "2026-10-31",
+   "decision": "Each agent gets a network key separate from its signer, certified in its history (“endpoint E acts for agent A until T”) and rotatable on its own. We run our own relay, whose access callback runs theOS checks; address lookup is filled from directory records; mDNS advertising is off or renamed. Gossip topics are replaced by direct subscriptions after a want check; any remaining topic is a keyed hash of data ID and key generation.",
+   "why": "iroh needs the raw secret in memory and hands it out, so the signer can't live in an HSM; relays and lookups link every conversation to one ID; iroh-gossip lets anyone who knows a topic join, watch and inject news.",
+   "sources": [
+    {
+     "label": "iroh",
+     "url": "https://github.com/n0-computer/iroh"
+    },
+    {
+     "label": "iroh-gossip",
+     "url": "https://github.com/n0-computer/iroh-gossip"
+    }
+   ],
+   "slides": [
+    "net-2",
+    "net-3",
+    "net-5",
+    "sync-7"
+   ]
+  },
+  {
+   "id": "D85",
+   "title": "Chunk commitments and policy-first sync",
+   "status": "proposed",
+   "date": "2026-10-31",
+   "decision": "Each chunk header carries a signed Merkle root over that signer's chunks for the data, so carriers can check gaps and lies without keys. Peers exchange policy, role and ending heads before chunks, and forward warrant pairs first. iroh-blobs moves the bytes behind its request intercept; fingerprints and summaries run on our own ALPN.",
+   "why": "A merged chunk can leave a change out unnoticed, and peers build on changes they will drop later.",
+   "sources": [
+    {
+     "label": "Hypercore",
+     "url": "https://github.com/holepunchto/hypercore"
+    },
+    {
+     "label": "Subduction",
+     "url": "https://github.com/inkandswitch/subduction"
+    },
+    {
+     "label": "iroh-blobs",
+     "url": "https://github.com/n0-computer/iroh-blobs"
+    }
+   ],
+   "slides": [
+    "sync-1",
+    "sync-2",
+    "sync-3"
+   ]
+  },
+  {
+   "id": "D86",
+   "title": "Connection-bound wants and carrier freshness",
+   "status": "proposed",
+   "date": "2026-10-31",
+   "decision": "A want is the signer's signature over the connection's exported keying material (label theos/want/1, context the data ID): fresh, bound to the connection, no extra round trip. Records a carrier sees use per-data pseudonyms. A carrier serves only while its newest record from the owner is younger than its own policy's lifetime. Each piece of data lives on at least two carriers from different operators, with quotas and priorities as conditions on keep.",
+   "why": "Stable IDs let a carrier link a person across data; a carrier that hasn't heard an ending keeps serving.",
+   "sources": [
+    {
+     "label": "iroh",
+     "url": "https://github.com/n0-computer/iroh"
+    },
+    {
+     "label": "Holepunch blind-peer",
+     "url": "https://github.com/holepunchto/blind-peer"
+    },
+    {
+     "label": "Tlon: groups",
+     "url": "https://github.com/tloncorp/tlon-apps/blob/develop/desk/app/groups.hoon"
+    }
+   ],
+   "slides": [
+    "carry-2",
+    "carry-5",
+    "carry-6"
+   ]
+  },
+  {
+   "id": "D87",
+   "title": "Ending events and two ways to drop",
+   "status": "proposed",
+   "date": "2026-10-31",
+   "decision": "For every ending the engine emits the IDs of the changes it invalidates, so apps can show moderation and the conflict view. A schema says how its data drops invalid changes: replayed without them (text, D62) or removed by ID (messages, posts); both converge.",
+   "why": "Apps would otherwise recompute what an ending removed, and replaying is costly for simple append-only data.",
+   "sources": [
+    {
+     "label": "p2panda: access control",
+     "url": "https://p2panda.org/2025/07/28/access-control.html"
+    }
+   ],
+   "slides": [
+    "end-6",
+    "schema-4"
+   ]
+  },
+  {
+   "id": "D88",
+   "title": "One ordering pipeline; delivery apart from processing",
+   "status": "proposed",
+   "date": "2026-10-31",
+   "decision": "One buffer orders every record kind (policies, endings, key turns, changes) and releases each once its dependencies are in; a logical depth next to the hashes makes concurrency checks cheap. Checking, ordering, decrypting and applying form one pipeline; delivery is pluggable: iroh, carriers, LAN broadcast, or a sealed bundle on a USB stick.",
+   "why": "Today each record kind waits in its own way, and delivery is tied to iroh.",
+   "sources": [
+    {
+     "label": "p2panda: access control",
+     "url": "https://p2panda.org/2025/07/28/access-control.html"
+    },
+    {
+     "label": "p2panda",
+     "url": "https://p2panda.org/"
+    }
+   ],
+   "slides": [
+    "sync-1",
+    "carry-8"
+   ]
+  },
+  {
+   "id": "D89",
+   "title": "A message mode with forward secrecy, later",
+   "status": "proposed",
+   "date": "2026-10-31",
+   "decision": "Alongside data keys, where a newcomer may read history, a second mode for chat-like data uses a fresh key per message (a Double Ratchet over the same key agreement), chosen per piece of data.",
+   "why": "Data keys give no forward secrecy for content; chats may want it.",
+   "sources": [
+    {
+     "label": "p2panda: group encryption",
+     "url": "https://p2panda.org/2025/02/24/group-encryption.html"
+    },
+    {
+     "label": "DCGKA paper (Weidner, Kleppmann et al.)",
+     "url": "https://eprint.iacr.org/2020/1281.pdf"
+    }
+   ],
+   "slides": [
+    "keys-3"
+   ]
   }
  ]
 }

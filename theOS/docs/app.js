@@ -134,7 +134,7 @@ async function openAudit(st, i) {
         `<tr><td>${esc(r.scenario)}</td><td><span class="verdict ${r.verdict}">${r.verdict}</span></td><td>${esc(r.why)}</td><td>${esc(r.fix || '–')}</td></tr>`).join('')}</tbody></table></article>` +
     audit.chapters.map((c) => `<article class="dcard" id="A${c.n}"><div class="dtop"><span class="did">${nn(c.n)}</span><a class="achap" href="#${c.id}-1">${esc(c.title)}</a></div>
       <table class="atable concepts"><thead><tr><th>Concept</th><th>Strengths</th><th>Weaknesses</th><th>Elsewhere</th><th>Proposal</th></tr></thead><tbody>${c.rows.map((r) => `<tr>
-        <td><b>${esc(r.concept)}</b>${sev(r.severity)}<span class="arefs">${r.refs.map((d) => `<a href="#decisions-${d.slice(1)}">${d}</a>`).join('')}</span></td>
+        <td><b>${esc(r.concept)}</b>${sev(r.severity)}<span class="arefs">${r.refs.map((d) => `<a href="#decisions-${d.slice(1)}">${d}</a>`).join('')}${(r.proposals || []).map((d) => `<a class="prop" href="#decisions-${d.slice(1)}">${d} proposed</a>`).join('')}</span></td>
         <td>${ul(r.strengths)}</td><td>${ul(r.weaknesses)}</td><td>${ul(r.elsewhere)}</td><td>${ul(r.proposal)}</td></tr>`).join('')}</tbody></table></article>`).join('') +
     `<article class="dcard"><h2>Sources read</h2><ul class="dsrc">${audit.sources.map((x) => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.label)}</a></li>`).join('')}</ul></article>`;
   const target = i > 0 && document.getElementById(`A${i}`);

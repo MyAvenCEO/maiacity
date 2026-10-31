@@ -32,6 +32,9 @@
      "proposal": [
       "Every agent record header names its signer revision and a continuity epoch; a restored or reinstalled device starts a new epoch, so it never reuses a running number or op ID.",
       "Invite records for pairing: a one-time key, an expiry and the agent policy it will create, written into your history so any of your agents with govern can answer."
+     ],
+     "proposals": [
+      "D69"
      ]
     },
     {
@@ -58,6 +61,9 @@
      "proposal": [
       "Keep one top object (the governor role); when signature counts arrive (D49), govern becomes k of n inside it, so the rule stays “one top”.",
       "A signed succession record: the governor names the next governor before leaving."
+     ],
+     "proposals": [
+      "D70"
      ]
     }
    ]
@@ -86,6 +92,9 @@
      ],
      "proposal": [
       "A successor pair: the new birth record names its predecessor (data ID and frontier hash), and the old data gets a signed forward link."
+     ],
+     "proposals": [
+      "D71"
      ]
     },
     {
@@ -107,6 +116,9 @@
      "proposal": [
       "Store and name sealed Values by the hash of their ciphertext; keep the plaintext hash only inside the sealed metadata Doc.",
       "Encrypt in segments aligned to iroh-blobs' 16 KiB groups, so ranges stay decryptable."
+     ],
+     "proposals": [
+      "D72"
      ]
     }
    ]
@@ -139,6 +151,9 @@
      "proposal": [
       "Owner checkpoints: the owner's agents sign “valid up to frontier F”; nothing before a checkpoint is evaluated again. The owner is the only one who writes endings, so its checkpoint is final.",
       "Use mergeable containers for objects at fixed keys; build the conflict view as a clean re-apply, annotated where that fails."
+     ],
+     "proposals": [
+      "D73"
      ]
     }
    ]
@@ -173,6 +188,9 @@
       "Property tests for every lens in the shape of INV-LENS-14.",
       "An additive-only check for versions that need no rewrite.",
       "Version negotiation at the start of sync; retiring a version is an owner ending."
+     ],
+     "proposals": [
+      "D74"
      ]
     }
    ]
@@ -204,6 +222,9 @@
      "proposal": [
       "Count limits along each author's own running number, so they are checked on arrival and never flip.",
       "Disable Observe except for the owner's agents; cache query results per schema version."
+     ],
+     "proposals": [
+      "D75"
      ]
     }
    ]
@@ -241,6 +262,9 @@
       "A revoke beats a concurrent renewal of the same policy.",
       "Invite records: the owner signs “whoever presents this one-time key may join role R until T”, so joining needs no owner online.",
       "State the rule: content writes require read; write-only comes later with write keys."
+     ],
+     "proposals": [
+      "D76"
      ]
     }
    ]
@@ -272,6 +296,9 @@
      "proposal": [
       "Every signer's records form a hash chain; the chain headers (hash, number, previous) travel without content.",
       "Every ending or removal names the ended signer's chain head; records that are not ancestors of that head are dropped on all data. The owner, the one top, is the linearisation point for its own authority."
+     ],
+     "proposals": [
+      "D77"
      ]
     },
     {
@@ -297,6 +324,9 @@
       "A lie never voids an ending; it freezes the signer from the earliest lied-about number.",
       "Warrants: a signed record carrying both conflicting records, sent on the signer's identity topic; carriers check it and refuse the signer's chunks.",
       "Adopt p2panda's resolver cases as test fixtures."
+     ],
+     "proposals": [
+      "D78"
      ]
     }
    ]
@@ -334,6 +364,12 @@
       "Among concurrent valid keys, the owner's agent's turn wins, otherwise the lowest (signer, number); never time or the smallest key.",
       "An envelope-completeness check on every key turn.",
       "Chunk headers name the key generation; the AEAD binds data ID, generation, signer and chunk hash. Later: per-agent sender keys."
+     ],
+     "proposals": [
+      "D79",
+      "D80",
+      "D81",
+      "D89"
      ]
     }
    ]
@@ -370,6 +406,10 @@
       "An always-on owner agent that may only renew and lapse.",
       "Quarantine far-future records instead of rejecting them for good.",
       "An ending closes the ended agent's connections, drops it as a neighbour and aborts its transfers, after delivering the ending."
+     ],
+     "proposals": [
+      "D82",
+      "D87"
      ]
     }
    ]
@@ -407,6 +447,9 @@
       "Garbage-collect Values the live state no longer references, within retain rules.",
       "Refuse wants and changes on 0-RTT streams.",
       "A keep-carrier receipt for each stored chunk before any cut."
+     ],
+     "proposals": [
+      "D83"
      ]
     }
    ]
@@ -442,6 +485,9 @@
       "A separate network key per agent, certified in its history by its signer (“endpoint E acts for agent A until T”) and rotatable on its own.",
       "Our own relay, its access callback running theOS checks; address lookup filled from directory records; mDNS advertising off or renamed.",
       "Replace gossip topics with direct subscriptions after a want check; any remaining topic is a keyed hash of data ID and key generation."
+     ],
+     "proposals": [
+      "D84"
      ]
     }
    ]
@@ -475,6 +521,10 @@
       "Each chunk header carries a signed Merkle root over that signer's chunks for this data, so carriers check gaps and lies without keys.",
       "Exchange policy, role and ending heads before chunks; forward warrant pairs first.",
       "iroh-blobs for the bytes behind its request intercept; our own ALPN for fingerprints and summaries."
+     ],
+     "proposals": [
+      "D85",
+      "D88"
      ]
     }
    ]
@@ -509,6 +559,9 @@
       "Per-data pseudonyms in every record a carrier sees.",
       "Freshness: a carrier serves only while its newest record from the owner is younger than its own policy's lifetime.",
       "Place each piece of data on at least two carriers from different operators; quotas and priorities as conditions on keep."
+     ],
+     "proposals": [
+      "D86"
      ]
     }
    ]
@@ -740,6 +793,18 @@
   {
    "label": "iroh-docs",
    "url": "https://github.com/n0-computer/iroh-docs"
+  },
+  {
+   "label": "p2panda: access control",
+   "url": "https://p2panda.org/2025/07/28/access-control.html"
+  },
+  {
+   "label": "p2panda: group encryption",
+   "url": "https://p2panda.org/2025/02/24/group-encryption.html"
+  },
+  {
+   "label": "DCGKA paper (Weidner, Kleppmann et al.)",
+   "url": "https://eprint.iacr.org/2020/1281.pdf"
   }
  ]
 }

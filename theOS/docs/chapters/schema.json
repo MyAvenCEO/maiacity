@@ -93,7 +93,7 @@
   },
   {
    "title": "A new version comes with a lens.",
-   "text": "When a schema changes, its author also writes a {lens}: how to read the old shape as the new one, and back. Here text becomes title, a new priority starts at 0, and an old phone asking for the removed link gets an empty one. Anyone can check a lens: applied to the old version, it must give exactly the new one.",
+   "text": "When a schema changes, its author writes a {lens}: how to read the old shape as the new one, and back. Here text becomes title, priority starts at 0, and an old phone sees an empty link. Anyone can check a lens: applied to the old version, it must give exactly the new one.",
    "code": {
     "type": "theos/lens@1",
     "from": "data:b3:Sc4…@b3:1f0…#todo-list",
@@ -108,7 +108,6 @@
      {
       "add": {
        "at": "/items/*/priority",
-       "type": "integer",
        "default": 0
       }
      },
@@ -120,7 +119,7 @@
      }
     ]
    },
-   "deep": "Lens operations: rename, add (with a default), remove (with a value for old readers), copy, convert (registered two-way conversions only), wrap, hoist. Every lens runs both ways and is named by its hash (D67); an ambiguous lens is refused. Inspired by Ink & Switch's Cambria and the lenses of Jazz."
+   "deep": "Lens operations: rename, add (with a default), remove (with a value for old readers), copy, convert (registered two-way conversions only), wrap, hoist. Every lens runs both ways and is named by its hash; an ambiguous lens is refused (D67). After Ink & Switch's Cambria and Jazz's lenses."
   },
   {
    "title": "Moving on rewrites nothing.",

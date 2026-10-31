@@ -211,6 +211,7 @@ body {
 .sev.low, .verdict.holds { background: #a9b79a; color: var(--ink); }
 .arefs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .arefs a { font: 500 11px var(--mono); color: var(--ink); background: #ece2cf; border-radius: 4px; padding: 2px 6px; text-decoration: none; }
+.arefs a.prop { background: var(--ochre); }
 @media (max-width: 900px) {
   .atable thead { display: none; }
   .atable tr, .atable td { display: block; width: auto !important; }
