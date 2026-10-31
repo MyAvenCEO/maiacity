@@ -1,5 +1,5 @@
-# The docs layer's import under cargo-fuzz (db/docs/README.md, "Importing"): `cargo +nightly fuzz run import`, from
-# db/docs. Its own workspace, so the main one never builds libFuzzer; tests/hostile.rs runs the same inputs on stable.
+# The docs layer's import under cargo-fuzz (db/docs/README.md, "Importing"), one target per input: in the box,
+# `bun run box sh sandbox/fuzz.sh [target] [seconds]`. Its own workspace, so the main one never builds libFuzzer; tests/hostile.rs runs the same inputs on stable.
 [package]
 name = "aven-db-docs-fuzz"
 version = "0.0.0"
@@ -18,8 +18,22 @@ libfuzzer-sys = "=0.4.13"
 loro = "=1.17.1"
 
 [[bin]]
-name = "import"
-path = "fuzz_targets/import.rs"
+name = "envelope"
+path = "fuzz_targets/envelope.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "changes"
+path = "fuzz_targets/changes.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "segment"
+path = "fuzz_targets/segment.rs"
 test = false
 doc = false
 bench = false

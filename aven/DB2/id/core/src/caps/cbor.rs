@@ -8,11 +8,12 @@
 //! holder: {"vault": v}   {"group": Doc}   "public"
 //! ```
 //!
-//! A cap's id is the BLAKE3 name of its body ([`Cap::digest`]), which its issuer's owners approve. Its issuing device
+//! A cap's id is Core's name of it as a signed thing, the BLAKE3 hash of `[label, body]` ([`Cap::digest`], A30), which
+//! its issuer's owners approve. Its issuing device
 //! signs the body under the label `avenID cap 1` ([`Cap::signing`]), so the signature can't be read as anything
 //! else's, and since the form is in the body, a signature over an attenuation is never one over a grant.
 
-use aven_core::{Hash, Value, encode, name_of, signing_bytes};
+use aven_core::{Hash, Value, encode};
 
 use super::chain::Cap;
 use super::conditions::{Branches, Conditions, Holder};
@@ -117,14 +118,24 @@ impl Cap {
         encode(&self.body())
     }
 
-    /// Its id: the name of its body, which its issuer's owners approve (`Cap.digest`).
+    /// The cap as Core's signed thing, its label and body (`Cap.signed`, A30), with these signatures beside it.
+    pub fn signed(&self, sigs: Vec<aven_core::Sig>) -> aven_core::Signed {
+        aven_core::Signed {
+            label: CAP_LABEL.into(),
+            body: self.body(),
+            sigs,
+        }
+    }
+
+    /// Its id: Core's name of the signed thing, the hash of `[label, body]`, exactly what its signers sign
+    /// (`Cap.digest`, A30). Signatures never touch it.
     pub fn digest(&self) -> Hash {
-        name_of(&self.body())
+        self.signed(vec![]).name()
     }
 
     /// What its issuing device signs (`Cap.signing`).
     pub fn signing(&self) -> Vec<u8> {
-        signing_bytes(CAP_LABEL, &self.body())
+        self.signed(vec![]).signing()
     }
 }
 
@@ -270,11 +281,22 @@ impl Cap {
     pub fn from_bytes(
         bytes: &[u8],
         id: String,
-        signer: String,
+        signer: Option<String>,
         approvals: Vec<super::approve::Sig>,
     ) -> Option<Cap> {
-        let body = aven_core::decode(bytes)?;
-        let kvs = as_map(&body)?;
+        let cap = Cap::of_body(&aven_core::decode(bytes)?, id, signer, approvals)?;
+        (cap.bytes() == bytes).then_some(cap)
+    }
+
+    /// A cap read from its body's Value, exactly its keys, each in its form; the caller checks it writes back as
+    /// itself.
+    pub fn of_body(
+        body: &Value,
+        id: String,
+        signer: Option<String>,
+        approvals: Vec<super::approve::Sig>,
+    ) -> Option<Cap> {
+        let kvs = as_map(body)?;
         let keys = [
             "form",
             "role",
@@ -292,7 +314,7 @@ impl Cap {
             Value::Array(ls) => ls.iter().map(Line::of_value).collect::<Option<_>>()?,
             _ => return None,
         };
-        let cap = Cap {
+        Some(Cap {
             id,
             issuer: as_text(field(kvs, "issuer")?)?.into(),
             holder: Holder::of_value(field(kvs, "holder")?)?,
@@ -304,7 +326,6 @@ impl Cap {
             conditions: Conditions::of_value(field(kvs, "conditions")?)?,
             signer,
             approvals,
-        };
-        (cap.bytes() == bytes).then_some(cap)
+        })
     }
 }
