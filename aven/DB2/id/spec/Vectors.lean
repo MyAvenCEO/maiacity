@@ -7,6 +7,7 @@ import Aven.ID.InviteJson
 import Aven.ID.Before
 import Aven.ID.CapsJson
 import Aven.ID.AuthorizedExamples
+import Aven.ID.IssuerExamples
 import Aven.ID.SettleJson
 import Aven.ID.FailJson
 import Aven.ID.Expiry
@@ -42,6 +43,11 @@ import Aven.ID.SealJson
   chain it names, and what the reader knows: its context, each signing key's vault, each device's cap and the
   network's members; with each check's verdict, the path, own or chain, and the first check that refuses it
   (`Aven.ID.Authorized`, `Aven.ID.AuthorizedExamples`).
+- `issuers.json`: chains on the cast with the garden, a coop Alice and Bob own whose quorum each case gives, and its
+  helper, an agent the coop owns, with the first rule each chain breaks or none (`Aven.ID.IssuerExamples`, A28): a
+  root over a coop's Docs needs the coop's own owners, a vault without devices issues by its owners' approval alone,
+  and Maia City's confirm cap (A38). The context's tree is written out, and its `thresholds` give each vault's quorum
+  that isn't the one `threshold` gives every other.
 - `collections.json`: a collection's envelopes, the Docs a reader knows, who signs for and governs which vault, and
   whether the collection lists a Doc (`Aven.ID.Collections`, A32): removals, strangers' listings, a Doc out of reach,
   nesting, and the depth.
@@ -212,6 +218,23 @@ def authorizedVectors : List Json :=
         ("members", toJson castMembers), ("actor", toJson (c.actor.map (·.text)))])
       (readerVerdictJson c.answer)
 
+open IssuerExamples in
+/-- Chains on the cast with the garden, a coop of two owners whose quorum each case gives (A28). -/
+def issuerVectors : List Json :=
+  issuerExamples.map fun (name, k, cs, _) =>
+    let x := coopCtx k
+    vector name
+      (Json.mkObj [("context", Json.mkObj [("tree", coopTree.json), ("threshold", toJson (1 : Nat)),
+          ("thresholds", Json.mkObj [("garden", toJson k)]),
+          ("groups", Json.arr #[Json.mkObj [("group", gGarden.text), ("members", toJson ["alice", "bob"])]]),
+          ("roles", Json.arr (x.roles.map Role.json).toArray),
+          ("docs", Json.arr ([d1, d2, b1, cityNotes, cityDome, gGarden, album, avenNotes, gardenPlan, helperLog,
+            maiaTree].filterMap fun d => (coopFacts d).map factsJson).toArray)]),
+        ("chain", Json.arr (cs.map Cap.json).toArray)])
+      (match chainError x cs with
+        | none => Json.mkObj [("ok", true)]
+        | some e => Json.mkObj [("ok", false), ("error", e.json)])
+
 open CollectionExamples in
 /-- Whether collection `c` lists `d` among envelopes `S`, with everything a reader needs to decide it. -/
 def collectionVector (name : String) (S : List Aven.Core.Envelope) (c d : Aven.Core.Facts) : Json :=
@@ -363,6 +386,7 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "invites.json") (render invites)
   IO.FS.writeFile (dir / "caps.json") (render capsVectors)
   IO.FS.writeFile (dir / "authorized.json") (render authorizedVectors)
+  IO.FS.writeFile (dir / "issuers.json") (render issuerVectors)
   IO.FS.writeFile (dir / "collections.json") (render collectionVectors)
   IO.FS.writeFile (dir / "revocations.json") (render revocationVectors)
   IO.FS.writeFile (dir / "epochs.json") (render epochVectors)

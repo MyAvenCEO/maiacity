@@ -571,8 +571,8 @@ inductive Order where
   | delete (doc : Core.DocId)
   deriving DecidableEq, Repr
 
-/-- An order and the device that signed it. -/
-structure Signed where
+/-- A keeper's order, a withdrawal or a delete, and the device that sent it (A45: "signed" is only Core's). -/
+structure KeepOrder where
   order : Order
   signer : String
   deriving DecidableEq, Repr
@@ -584,7 +584,7 @@ structure Books where
   tree : Tree
   threshold : String → Nat := fun _ => 1
   listings : List Listing
-  orders : List Signed := []
+  orders : List KeepOrder := []
   offers : List Cap := []
   inGroup : Core.DocId → String → Bool := fun _ _ => false
 
@@ -592,14 +592,14 @@ namespace Books
 
 variable (b : Books)
 
-/-- A keep cap the keeper takes: a grant to the keeper's vault, signed by a device of its issuer, which its issuer's
-owners approved, an owner vault by its own quorum (D14). -/
+/-- A keep cap the keeper takes: a grant to the keeper's vault, signed by its issuer, by a device or its owners (A28),
+which its issuer's owners approved, an owner vault by its own quorum (D14). -/
 def valid (c : Cap) : Bool :=
-  c.form == .grant && c.holder == .vault b.keeper && b.tree.actsFor c.signer == some c.issuer &&
+  c.form == .grant && c.holder == .vault b.keeper && b.tree.issued b.threshold c &&
     b.tree.approves b.threshold c.issuer c.id c.approvals
 
 /-- An order a device of vault `v` signed, as the tree says. -/
-def signedBy (v : String) (o : Signed) : Bool := b.tree.actsFor o.signer == some v
+def signedBy (v : String) (o : KeepOrder) : Bool := b.tree.actsFor o.signer == some v
 
 /-- A keep cap a device of its issuer withdrew. -/
 def withdrawn (c : Cap) : Bool := b.orders.any fun o => o.order == .withdraw c.id && b.signedBy c.issuer o
@@ -607,10 +607,10 @@ def withdrawn (c : Cap) : Bool := b.orders.any fun o => o.order == .withdraw c.i
 /-- A Doc a device of vault `v` deleted. -/
 def deleted (v : String) (d : Core.DocId) : Bool := b.orders.any fun o => o.order == .delete d && b.signedBy v o
 
-/-- An offer the keeper stands by (A44): a grant of its own vault, signed by one of its devices and approved by its
-owners (D14), not withdrawn, that offers storage (`keepOffer`). -/
+/-- An offer the keeper stands by (A44): a grant of its own vault, signed by it and approved by its owners (D14), not
+withdrawn, that offers storage (`keepOffer`). -/
 def offerValid (o : Cap) : Bool :=
-  o.form == .grant && o.issuer == b.keeper && b.tree.actsFor o.signer == some o.issuer &&
+  o.form == .grant && o.issuer == b.keeper && b.tree.issued b.threshold o &&
     b.tree.approves b.threshold o.issuer o.id o.approvals && !b.withdrawn o && o.grant.any (·.op == keepOffer)
 
 /-- Whom an offer covers: the vault it names, or every vault in the group it names. -/
@@ -670,12 +670,12 @@ theorem kept_only_offered {d : Core.DocId} (h : b.keeps d = true) :
   exact ⟨l, m, ld, o, mo, v, t⟩
 
 /-- **A keeper holds a vault's data only under a keep cap that vault's owners approved** (A22): whatever it keeps, a
-keep cap lists that names the keeper, that a device of its issuer signed, and that its issuer's owners approved. That
+keep cap lists that names the keeper, that its issuer signed, and that its issuer's owners approved. That
 its issuer is the Doc's own vault, or one that governs it, is the issuer's check and every reader's
 (`kept_by_owner`). -/
 theorem kept_only_by_owner {d : Core.DocId} (h : b.keeps d = true) :
     ∃ l ∈ b.listings, (∃ k, (d, k) ∈ l.docs) ∧ l.cap.form = .grant ∧ l.cap.holder = .vault b.keeper ∧
-      b.tree.actsFor l.cap.signer = some l.cap.issuer ∧
+      b.tree.issued b.threshold l.cap = true ∧
       b.tree.approves b.threshold l.cap.issuer l.cap.id l.cap.approvals = true := by
   obtain ⟨l, m, v, _, ld, _, _⟩ := b.kept_only_covered h
   simp only [valid, Bool.and_eq_true, beq_iff_eq] at v

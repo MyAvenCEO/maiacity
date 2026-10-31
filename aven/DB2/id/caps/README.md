@@ -148,8 +148,10 @@ same day, and what they agreed is marked where it applies. Nothing in this spec 
 
 Each rule is held by a Lean theorem or a check once there is code to hold.
 
-1. **Keys sign; vaults hold.** Only a key signs, and only a vault, a group of vaults (rule 13), a ticket or the public
-   (rule 33) holds a cap. A device signs for the vault it serves, within its device cap (`device_within_cap`).
+1. **Keys sign; vaults hold.** Only a key signs, and only a vault, a group of vaults (rule 13) or the public (rule 33)
+   holds a cap. A device signs for the vault it serves, within its device cap (`device_within_cap`). A cap's issuer is
+   a vault, proven by one of its devices or by its owners' approval, k of n: a vault without devices, such as a coop,
+   issues by its owners' approval alone (A28).
 2. **Governing is ownership, never a cap.** A vault's owners change its owners, devices, thresholds and recovery, k of
    n. No cap governs, and no device governs (`Aven.ID.Governs`).
 3. **Every cap narrows what it rests on.** A root cap rests on its issuer's authority over the target's vault. Every
@@ -519,6 +521,16 @@ messages and queries. For people with keys, reading is whole Docs; for actors an
   - the door admits exactly the member vaults' devices (`settle_door`), the same at every peer (`settle_perm`).
 - **The public** is every member of the network, as the door admits them (`memberOf` the admin coop), and never
   anyone outside it (Samuel, 30 Oct 2026). There is no open, IPFS-style publishing.
+  - **Membership is a cap** (A38, `Aven.ID.Member`). Maia City's vault grants each member's vault a member cap,
+    which is what a join is: reading the chat and putting its messages, and signing in its own devices on the tree
+    Doc. The confirm op Aven holds under Maia City's confirm cap issues it, for a claim of a ticket Maia City issued.
+    The confirm envelope is the issuance (the architect and avenPEER, 31 Oct 2026). So a member cap is Maia City's
+    act under the cap its owners approved, not the confirmer's own grant: D14 asks the confirmer's owners nothing for
+    each member, and there is no second cap object to keep in step. A ticket is a cap from Maia City to the vault its
+    claim founds; its one-time key only authorizes the claim and holds nothing (A28, A42). A member shows its chain
+    and anyone checks it (rule 4): the confirm cap allows nothing but a confirm on the tree Doc (`confirm_only`), and a
+    reader counts a member only by an authorized confirm of a claim that founded it (`member_by_confirm`). Which
+    claims stand is the tree's (`Settled.member`, avenPEER).
   - A Doc the public reads is sealed to the network's members group, which a member joins when they join and leaves
     when they are removed.
   - The public may write, mutate and tell where the cap says. The city-dome is such a Doc: every member reads and
@@ -537,13 +549,18 @@ messages and queries. For people with keys, reading is whole Docs; for actors an
 | A keeper's offer | The keeper's vault's owners, k of n (A44) |
 | Governance | Owners, k of n (avenID) |
 | A new device's device cap | The passkey sign-in that adds the device, which is already an owner's act |
-| An actor's narrower cap, message by message: an attenuation | A device of its holder, the host's (A27). It grants nothing new, so no approval |
+| A cap from a vault without devices, such as a coop | Its owners, k of n, and no device (A28) |
+| An actor's narrower cap, message by message: an attenuation | A device of its holder, the host's (A27). It grants nothing new, so no approval; with no device signing, its holder's owners approve it |
 | A revocation | Any device of a vault that may revoke. It only takes away, so a lost passkey never stops it |
 
 Approvals bind what others check: writes, `share` and `tell`. Reading is holding a key, and anyone holding a Doc's key
 can pass it on without an approval. No approval stops that, as no system stops a reader from leaking (rule 15).
 
-A root cap is issued by the target's vault or by a vault that governs it: authority runs down the tree.
+A root cap is issued by the target's vault, or by a vault that governs it and meets its quorum alone: authority runs
+down the tree only through quorums (A28). Over a coop whose owners approve k of n with k > 1, no one owner vault has
+it, so the coop issues as itself, approved by k of its owners, and every vault a kept root grants over approves it by
+its own quorum (`root_quorum`). The same relation is who governs whom for a target that reaches below a vault and for
+writing on a vault's own authority.
 
 **Delegating needs no one online.** The holder signs a child cap that narrows its own and writes it where its target's
 caps live. Readers check it when they meet it, as Biscuit's offline attenuation does without Datalog.
@@ -682,9 +699,15 @@ An epoch is named by the BLAKE3 hash of its key blob:
 ```
 
 - **`stanzas`:** the epoch's key sealed with X-Wing to each reader's vault or group key. Each stanza is found by a
-  **tag**, a keyed BLAKE3 of the reader's tag seed, the Doc's id and the epoch number. Only readers and writers of the
-  Doc can compute a tag, so the keeper can't link a reader, or the Docs of one group, across Docs or epochs. The list's
-  length is padded with Padmé, at most about 12 % (D18).
+  **tag**, a keyed BLAKE3 of the reader's tag seed, the Doc's id and the epoch number. **A tag seed lives in the epoch
+  before:** it is the keyed hash of the reader's X-Wing public key under `derive_key("avenID tag seed 1", previous
+  epoch's key)`, so the writer who rotates and every reader of the previous epoch can compute it, and the keeper, which
+  holds no key, can't link a reader, or the Docs of one group, across Docs or epochs. A first epoch's stanzas, and a
+  reader resealed into an epoch, carry no tag: their reader finds them by opening (`Aven.ID.KeyFormats.tagSeed`).
+- **Padding** (D18): the list holds at least four stanzas, so a lone reader doesn't show, then Padmé's at most an
+  eighth more (`Aven.ID.Padme`, the one Padmé segments use too). The extra stanzas are random bytes of a stanza's
+  lengths that open for no one, and nobody, the writer included, can tell them from a reader's
+  (`Aven.ID.KeyFormats.padded`).
 - **`commit`:** a commitment to the key. A reader opening a stanza checks it, so a stanza with a wrong key is found at
   once (avenDB-old never checked what its boxes held).
 - **`back`:** the previous epoch's key, sealed under this one. With it, the newest key opens all of history, for a
@@ -973,9 +996,12 @@ which makes it a passkey without a device.
 The WebAuthn PRF extension (CTAP2's hmac-secret) returns 32 bytes that only the authenticator can make, for a given
 input. avenID uses it so that **a new browser signing in with a passkey opens its vault with no other device online.**
 
-**Derivations.**
-- The input is `avenID prf 1`, the vault's id and the owner's epoch. The browser hashes it into the authenticator's
-  salt.
+**Derivations** (`Aven.ID.KeyFormats`, `derivations.json`).
+- The input is `encode(["avenID prf 1", {epoch}])`: the owner's epoch, and no vault (A43, 31 Oct 2026). The
+  authenticator's PRF secret is already its credential's own, and a passkey belongs to one vault (rule 15), so the
+  vault would separate nothing; the label separates this use from any other on the RP ID. Without it, the claim's keys
+  exist before the assertion that signs them, and a new browser asks the PRF in its one sign-in tap. The browser hashes
+  the input into the authenticator's salt.
 - **The owner key is derived, never stored** (A42, Samuel, 31 Oct 2026: the more secure way). Each ceremony derives
   it from the PRF output, signs, and drops it; no safe, keyring or page keeps it.
 - **Its boundary is every origin under `maia.city`.** The input can be guessed and the passkey answers any origin its
@@ -983,20 +1009,30 @@ input. avenID uses it so that **a new browser signing in with a passkey opens it
   rule 13 (keys live only in the safe) holds within that boundary. A dedicated RP ID for avenOS, with a secret mixed
   into the input (A14), is not yet (Samuel, 30 Oct 2026).
 - From the output, BLAKE3's key derivation makes:
-  - `avenID owner 1`: the Ed25519 and ML-DSA-65 seeds of the passkey's **hybrid owner key**;
+  - `avenID owner 1`, read for 64 bytes: the Ed25519 seed and the ML-DSA-65 ξ of the passkey's **hybrid owner key**;
   - `avenID seal 1`: the X-Wing seed of its **seal key**.
-- Both public halves go into the vault's statement with the passkey's own (ES256) key.
+- Both public halves go into the vault's register with the passkey's own (ES256) key: the register maps a credential
+  id to its passkey's record (its vault, SPKI, owner and seal public halves and owner epoch), params of `tree/1`'s
+  claim and join.
 - Device keys are never derived from it (D11), so devices rotate on their own.
 
 **Signing up:**
-1. `create()` asks for `prf`. Some platforms only say it's enabled, so a `get()` follows at once.
-2. The keyring is made and sealed to the device and to the passkey's seal key.
+1. `create()` asks the PRF for owner epoch 1. Where the platform answers there, the owner and seal keys come at once;
+   where it only says the PRF is enabled, a `get()` asks it, one tap more at sign-up only. A passkey without PRF stops
+   here (below).
+2. The claim's assertion signs the claim, the owner and seal public halves among its params, and the owner key signs
+   the same name (A30): two taps, three where the platform only says `enabled`.
+3. The keyring is made and sealed to the device and to the passkey's seal key.
 
-**Signing in on a new browser:**
-1. `get()` with the PRF input returns the assertion and the output.
-2. The sign-in statement carries both proofs (rule 21) and adds the browser as a device, so the door opens.
-3. The browser fetches the keyring's stanza for this passkey from the keeper.
-4. It opens the stanza with the seal key, seals the keyring to itself, and reads everything its vault can.
+**Signing in on a new browser, one tap:**
+1. One discoverable `get()`: its challenge the sign-in op's name, and the PRF for the owner epoch the browser expects
+   (1 when it knows nothing). The sign-in names the network, this device and its key, not the vault: the vault is the
+   one of the passkey that signed, found by its credential id, sent beside the signature as an unsigned hint. The owner
+   key signs the same name.
+2. If the register says that passkey's owner epoch has moved on, the derived key doesn't match: the browser reads the
+   epoch from the register and asks once more, two taps only after a rotation.
+3. The door opens, the browser fetches the keyring's stanza for this passkey from the keeper, opens it with the seal
+   key, seals the keyring to itself, and reads everything its vault can.
 
 **Rotating the keyring needs no ceremony:** it seals to the seal key's public half. Only opening it needs the passkey.
 
@@ -1014,11 +1050,17 @@ and avenOS learns at sign-up whether PRF answered, never by guessing from the br
 | 1Password | Its output isn't spec-compliant | |
 | Bitwarden, Dashlane | No (June 2026) | |
 
-**Without PRF:**
-- **Pairing** from a device already in: the new browser shows a QR with a one-time X-Wing key, both screens show a short
-  code, and the old device seals the keyring to it after the person confirms (Matrix's and Signal's device linking).
-- **A recovery kit**, or **MaiaCityGuardian** for now.
-- Without PRF, that passkey's owner signatures are ES256 only, so classical.
+**Without PRF, no vault** (Samuel, 31 Oct 2026). A passkey whose provider has no PRF never makes a vault: sign-up
+refuses and says plainly to use a passkey provider that can open the vault on any device. There is no ES256-only owner
+path, no record of a passkey without PRF and no second kind of vault, so every vault is post-quantum and opens
+anywhere.
+- avenOS learns it from the ceremony: `create()`'s `prf.enabled` saying no, or no PRF output from the claim's first
+  `get()`. Never from the user agent.
+- Nothing is sent or kept before the PRF has answered: no claim, no statement in the store.
+- **Pairing** from a device already in (the new browser shows a QR with a one-time X-Wing key, both screens show a
+  short code, and the old device seals the keyring to it after the person confirms; Matrix's and Signal's device
+  linking), **a recovery kit**, and **MaiaCityGuardian** for now, still cover a lost passkey or a new device whose
+  passkey can't answer.
 
 **Caveats:**
 - Deleting a passkey loses its PRF, so every vault keeps at least two ways in: its devices and the keyring's other
@@ -1102,8 +1144,8 @@ the suite byte, and each rotation moves to it.
 - an ML-DSA-65 public key is 1,952 bytes, a signature 3,309.
 
 **Passkeys, honestly.** ES256 falls to a quantum computer; the PRF-derived hybrid key doesn't. An owner's act needs
-both, so a quantum attacker would also need the PRF output. A passkey without PRF is classical until authenticators sign
-with ML-DSA, which COSE is standardising and no authenticator we know of ships.
+both, so a quantum attacker would also need the PRF output. A passkey without PRF makes no vault (Samuel, 31 Oct 2026),
+so no owner is classical only.
 
 ## Metadata: what hosts still see
 
@@ -1330,8 +1372,11 @@ Values, hashes, ops or targets of its own; its built-in types are `Aven.ID.Types
 | | `device_proposals_never_main`, `merge_within_device` | A device whose cap is for proposals, as an agent's removals go, never writes on main whatever chain it names; a merge into main read whole stays within the merging device's cap |
 | | `host_chain_only`, `actor_within_device`, `host_never_beyond` | An authorized envelope an actor host's device signed rests on a chain, the one the acting actor's message carried, and names that actor; every call of it is allowed both by that chain's last cap and by the host's device cap, the union of its hosted actors' standing caps (A27) |
 | | `authorizedB_iff` | The verdict a reader computes, with its tests for who governs whom, spawned and lists, is `Authorized`; `aven-id-model` answers `authorized.json`'s cases with it |
+| `Member` | `confirm_only` | Maia City's confirm cap allows nothing but `tree/1`'s confirm, on the tree Doc (A38) |
+| | `member_by_confirm` | A reader counts a vault as a member only by an authorized confirm on the tree Doc, naming a claim that founded it, written on its signer's vault's own authority or under a chain whose root allows that confirm: the confirm envelope is the member cap's issuance (A38, A28) |
 | `Caps` | `narrow_chain`, `narrow_ops` | No cap in a chain lets an op reach a Doc, or allows a call (an op, on a Doc, with parameters), that its root doesn't (A32) |
-| | `root_authority` | Every line a chain grants lies in its root issuer's authority: its own vault, one it governs, or a Doc of one |
+| | `root_authority` | Every line a chain grants lies in its root issuer's authority: its own vault, one it governs whose quorum it meets alone, or a Doc of one |
+| | `root_quorum` | In a well-formed tree, every vault a kept root grants over approves the root by its own quorum, k of n: a root over a coop's Docs needs the coop's own owners, and no one owner vault issues it alone (A28) |
 | | `no_step_without_write` | A grant whose ops all lower to no step, as `core/1`'s read, tell, keep and share do, lets no call write a step (A2) |
 | | `group_typed` | A group that holds a cap in a valid chain is a Doc of avenID's type `group`, a type Doc (A39) |
 | | `chain_short` | A chain passes its root on no more often than its root may be shared: every grant lowers the share depth, and an attenuation never raises it |
@@ -1359,6 +1404,7 @@ Values, hashes, ops or targets of its own; its built-in types are `Aven.ID.Types
 | `Approve` | `approval_exact` | An approval holds only with k distinct owners, each having signed exactly its digest |
 | | `approvesF_exact`, `approves_signed` | An owner that is a vault approves by its own quorum, recursively: a vault approves only with its threshold of distinct owners, each a key that signed exactly the digest or a vault that approves it, and with every threshold at least one, an approval rests on such a signature by a key above the vault |
 | | `approves_iff` | In a well-formed tree, looking as many levels up as the tree has vaults finds every approval: a vault's owners stand lower than it |
+| | `alone_approves` | In a well-formed tree, whatever a vault approves, a vault whose quorum it meets alone approves too: authority that runs down only through such quorums speaks for each vault's own owners (A28) |
 | | `shown_is_signed` | What avenOS shows for a passkey tap is decoded from the exact bytes signed (A2, rule 25) |
 | `Revoke` | `seen_never_counts` | A revoked holder's envelope with the revocation in its own past never counts: no laundering. Envelopes are Core's, and caps reads the vault, the cap chain and the acks of each from inside its seal; their past is Core's `Reaches`, which `Aven.Core.Past` decides |
 | | `saw_iff` | Having seen a revocation, in Core's past: its envelope is before the envelope, or the envelope or something it reaches acknowledges it |
@@ -1427,6 +1473,7 @@ One smaller gap:
 | `epochs.json` | Who learns which key after Bob's removal and after Alice's heal, and what Bob learns holding Maia City's `below` group |
 | `safe.json` | Requests to Alice's safe from her agent and from Mallory, on her Mac and on a host that keeps Doc keys inside, with what each gives back |
 | `approvals.json` | Signatures, thresholds and digests on the cast, and whether each approval holds; approvals where an owner is a vault, with a coop of two vaults added |
+| `issuers.json` | Chains on the cast with the garden, a coop Alice and Bob own whose quorum each case gives, and its helper: a root over a coop's Docs needs the coop's own owners, a vault without devices issues by its owners' approval alone, an attenuation with no device needs its holder's owners, and Maia City's confirm cap (A28, A38). The context writes the tree out and gives per-vault quorums |
 | `expiry.json` | Writes under a cap that expires, with each envelope's signed time, and whether each counts for the clock |
 | `network.json` | A ticket's claims in two orders (A12), removals that clash, MaiaCityGuardian's exit |
 | `keep.json` | Fetch-key links in the order they came, with the keys a keeper takes, its current key and its flags; proofs and whether they're served; what each vault pays; what a keeper keeps under the keep caps it holds and its own offers (A44); 30 generated keepers |
@@ -1473,11 +1520,8 @@ A proposal for milestone 3's plan, for the architect:
 ## Open questions
 
 What is open (A42: the status lists say so):
-- **Rule 15, A28's caps items:**
-  - a root cap over a coop's Docs needs the coop's own owners, k of n;
-  - a vault without devices, such as a coop, issues by its owners' approval alone;
-  - a ticket becomes a cap from Maia City to the vault its claim founds, its one-time key proving the claim;
-  - each vault stores its own threshold (`Ctx.threshold` is 1 today).
+- **Rule 15, A28: each vault stores its own threshold.** avenPEER adds `threshold` to the vault record, with k ≥ 1
+  in WF and the owner-change op that sets it; `Ctx.threshold` reads it then. Until then a context gives its quorums.
 - **Rule 4:** `rule4_reading_writes_nothing` concludes that no Record changes once the engine refuses a change of a
   Record's type (`typesKept`, with the docs thread).
 - **The safe's vectors** tag their unions with `kind`, which is only a vault's (A1); they get another word.

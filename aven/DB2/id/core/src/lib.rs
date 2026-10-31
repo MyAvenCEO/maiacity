@@ -23,6 +23,7 @@ mod invite;
 mod keys;
 mod members;
 mod network;
+mod padme;
 mod passkey;
 mod prf;
 mod query;
@@ -39,7 +40,8 @@ pub use claim::{
     Claim, SignIn, browser_name, claim_text, device_id, passkey_id, person_id, sign_in_text,
 };
 pub use epoch::{
-    BACK_LABEL, COMMIT_LABEL, Epoch, History, KeyError, SCHEME, VAULT_LABEL, commit, subkey, tag,
+    BACK_LABEL, COMMIT_LABEL, Epoch, History, KeyError, SCHEME, TAG_SEED_LABEL, VAULT_LABEL,
+    commit, subkey, tag, tag_seed,
 };
 pub use hybrid::{HYBRID_SUITE, Hybrid, HybridKey, HybridPublic, HybridSignature, hybrid_verify};
 pub use invite::{
@@ -49,11 +51,12 @@ pub use invite::{
 pub use keys::{public_hex, test_signer};
 pub use members::{MemberError, MemberSignIn, Members, Pending};
 pub use network::{COOP, COOP_NAME, ClaimError, GUARDIAN, Network};
+pub use padme::{MIN_STANZAS, padded, padme};
 pub use passkey::{Assertion, AssertionError, Passkey, Relying, base64url, challenge};
 pub use prf::{OWNER_LABEL, PRF_LABEL, PrfOutput, SEAL_LABEL, prf_input, prf_salt};
 pub use seal::{
-    Context, STANZA_COMMIT_LABEL, STANZA_KEY_LABEL, STANZA_SUITE, Scope, SealKey, SealPublic,
-    Stanza, stanza_commit, stanza_keys,
+    CIPHERTEXT_LEN, Context, HASH_LEN, SEALED_LEN, STANZA_COMMIT_LABEL, STANZA_KEY_LABEL,
+    STANZA_SUITE, Scope, SealKey, SealPublic, Stanza, stanza_commit, stanza_keys,
 };
 pub use secret::{Entropy, Secret, TestEntropy};
 pub use sign::{SignError, Statement};

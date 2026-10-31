@@ -6,6 +6,7 @@
 
 use aven_core::{Hash, Value, blake3, decode, encode};
 use aven_runtimes_contract::{Failure, Limits, result};
+use aven_runtimes_host::json::{of_json, to_json};
 use aven_runtimes_host::{Entry, Frozen, LoadError, Loaded, listed, load, run};
 use serde_json::Value as Json;
 
@@ -13,29 +14,9 @@ fn here(rel: &str) -> String {
     format!("{}/../{rel}", env!("CARGO_MANIFEST_DIR"))
 }
 
-/// The manifest's entries: `{name, version, hash, limits, users}` frozen, or `{"withdrawn": hash}`.
+/// The manifest as the host reads it.
 fn manifest() -> Vec<Entry> {
-    let text = std::fs::read_to_string(here("manifest.json")).unwrap();
-    let j: Json = serde_json::from_str(&text).unwrap();
-    j["runtimes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|e| match e.get("withdrawn") {
-            Some(h) => Entry::Withdrawn(Hash::parse(h.as_str().unwrap()).unwrap()),
-            None => Entry::Frozen(Frozen {
-                name: e["name"].as_str().unwrap().into(),
-                version: e["version"].as_u64().unwrap(),
-                hash: Hash::parse(e["hash"].as_str().unwrap()).unwrap(),
-                users: e["users"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .map(|u| u.as_str().unwrap().into())
-                    .collect(),
-            }),
-        })
-        .collect()
+    aven_runtimes_host::manifest(&std::fs::read_to_string(here("manifest.json")).unwrap()).unwrap()
 }
 
 fn listed_hash(m: &[Entry], runtime: &str) -> Hash {
@@ -44,13 +25,7 @@ fn listed_hash(m: &[Entry], runtime: &str) -> Hash {
 
 /// A runtime's newest frozen module.
 fn latest(m: &[Entry], runtime: &str) -> Frozen {
-    m.iter()
-        .filter_map(|e| match e {
-            Entry::Frozen(f) if f.name == runtime => Some(f.clone()),
-            _ => None,
-        })
-        .max_by_key(|f| f.version)
-        .unwrap()
+    aven_runtimes_host::latest(m, runtime).unwrap()
 }
 
 /// A module as `freeze.sh` built it.
@@ -61,10 +36,17 @@ fn built(name: &str) -> Vec<u8> {
         .unwrap_or_else(|e| panic!("{path}: {e}; build the modules first (freeze.sh)"))
 }
 
-fn module(runtime: &str, crate_name: &str) -> Loaded {
+/// A frozen module's bytes, as `frozen/` keeps them by their hash.
+fn kept(h: &Hash) -> Vec<u8> {
+    let path = here(&format!("frozen/{}.wasm", &h.text()[3..]));
+    std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
+}
+
+/// A runtime's newest frozen module, loaded from its kept bytes by its hash.
+fn module(runtime: &str) -> Loaded {
     let m = manifest();
     let e = latest(&m, runtime);
-    load(&m, &e.hash, &built(crate_name)).unwrap_or_else(|err| panic!("{runtime}: {err:?}"))
+    load(&m, &e.hash, &kept(&e.hash)).unwrap_or_else(|err| panic!("{runtime}: {err:?}"))
 }
 
 const ROOMY: Limits = Limits {
@@ -80,16 +62,41 @@ fn unhex(s: &str) -> Vec<u8> {
         .collect()
 }
 
-/// Every module in the manifest is what the source builds today, byte for byte: a frozen entry never changes.
+/// Every frozen module's bytes are kept in `frozen/`, under their hash, and nothing else is: a frozen version stays
+/// loadable after its source moves on. Each runtime's newest version is what the source builds today, byte for byte,
+/// so a change to a runtime is its next version, appended.
 #[test]
 fn frozen() {
+    let m = manifest();
+    for e in &m {
+        if let Entry::Frozen(f) = e {
+            assert_eq!(
+                blake3(&kept(&f.hash)),
+                f.hash,
+                "{}@{}: frozen/ keeps other bytes",
+                f.name,
+                f.version
+            );
+        }
+    }
+    let mut files: Vec<String> = std::fs::read_dir(here("frozen"))
+        .unwrap()
+        .map(|f| f.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    files.sort();
+    let mut named: Vec<String> = m
+        .iter()
+        .map(|e| format!("{}.wasm", &e.hash().text()[3..]))
+        .collect();
+    named.sort();
+    named.dedup();
+    assert_eq!(files, named, "frozen/ keeps exactly the manifest's modules");
     for (runtime, crate_name) in [("markdown-runtime", "markdown"), ("face-runtime", "face")] {
-        let m = manifest();
         let e = latest(&m, runtime);
         assert_eq!(
             blake3(&built(crate_name)),
             e.hash,
-            "{runtime}@{}: the build isn't the frozen module",
+            "{runtime}@{}: the build isn't the newest frozen module",
             e.version
         );
     }
@@ -98,7 +105,7 @@ fn frozen() {
 /// face-runtime's vectors through its module: the result, byte for byte, as the model has it.
 #[test]
 fn face_runtime_vectors() {
-    let m = module("face-runtime", "face");
+    let m = module("face-runtime");
     let vs: Vec<Json> = serde_json::from_str(
         &std::fs::read_to_string(here("spec/vectors/face-runtime.json")).unwrap(),
     )
@@ -120,7 +127,7 @@ fn face_runtime_vectors() {
 /// markdown-runtime's module answers as the crate does natively, this package's own README among the documents.
 #[test]
 fn markdown_as_native() {
-    let m = module("markdown-runtime", "markdown");
+    let m = module("markdown-runtime");
     let rules = Value::Map(vec![(
         "links".into(),
         Value::Array(vec![Value::Array(vec![
@@ -150,7 +157,7 @@ fn markdown_as_native() {
 /// The limits hold: too little fuel, too little memory, too little room for the output.
 #[test]
 fn limits() {
-    let m = module("markdown-runtime", "markdown");
+    let m = module("markdown-runtime");
     let part = Value::Bytes("# A heading\n\nSome text.\n".repeat(200).into_bytes());
     let input = Value::Map(vec![]);
     assert!(run(&m, ROOMY, &part, &input).is_ok());
@@ -254,6 +261,7 @@ fn refusals() {
             name: "x".into(),
             version: 1,
             hash: blake3(b),
+            limits: ROOMY,
             users: vec![],
         })
     };
@@ -291,29 +299,10 @@ fn refusals() {
     assert!(load(&m, &listed_hash(&m, "face-runtime"), &face).is_ok());
 }
 
-/// A Value in the one JSON form of a Value (`Aven.Core.Json`), as a part is written: bytes as `{"bytes": hex}`,
-/// integers of either sign.
-fn jvalue(j: &Json) -> Value {
-    match j {
-        Json::Null => Value::Null,
-        Json::Bool(b) => Value::Bool(*b),
-        Json::Number(n) => match n.as_u64() {
-            Some(u) => Value::Uint(u),
-            None => Value::Nint((-1 - n.as_i64().unwrap()) as u64),
-        },
-        Json::String(s) => Value::Text(s.clone()),
-        Json::Array(xs) => Value::Array(xs.iter().map(jvalue).collect()),
-        Json::Object(o) if o.len() == 1 && o.contains_key("bytes") => {
-            Value::Bytes(unhex(o["bytes"].as_str().unwrap()))
-        }
-        Json::Object(o) => Value::Map(o.iter().map(|(k, v)| (k.clone(), jvalue(v))).collect()),
-    }
-}
-
 /// Every slide avenBRAIN draws is a face the frozen face-runtime accepts, with the answer the crate gives natively.
 #[test]
 fn slides() {
-    let m = module("face-runtime", "face");
+    let m = module("face-runtime");
     let brain = here("../DB2/brain");
     let mut parts: Vec<String> = std::fs::read_dir(&brain)
         .unwrap_or_else(|e| panic!("{brain}: {e}"))
@@ -331,7 +320,12 @@ fn slides() {
     let data = Value::Map(vec![]);
     for path in parts {
         let j: Json = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        let part = jvalue(&j);
+        let part = of_json(&j).unwrap();
+        assert_eq!(
+            to_json(&part).as_ref(),
+            Some(&j),
+            "{path}: the JSON form reads back"
+        );
         let native = aven_runtimes_face::eval(&part, &data);
         assert!(native.is_ok(), "{path}: refused natively: {native:?}");
         assert_eq!(run(&m, ROOMY, &part, &data), native, "{path}");

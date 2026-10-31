@@ -19,10 +19,11 @@ pub const ED25519_SIG_LEN: usize = 64;
 pub const ML_DSA_KEY_LEN: usize = 1952;
 pub const ML_DSA_SIG_LEN: usize = 3309;
 
-/// A hybrid signing key. Both halves' seeds are wiped when it drops.
+/// A hybrid signing key. Both halves' seeds are wiped when it drops. ML-DSA-65's expanded key is tens of KB, so it
+/// lives on the heap: a wasm worker's stack is small, and a debug build copies what it moves.
 pub struct HybridKey {
     ed25519: ed25519_dalek::SigningKey,
-    ml_dsa: ml_dsa::SigningKey<MlDsa65>,
+    ml_dsa: Box<ml_dsa::SigningKey<MlDsa65>>,
 }
 
 impl HybridKey {
@@ -30,7 +31,7 @@ impl HybridKey {
     pub fn from_seeds(ed25519: &Secret, ml_dsa: &Secret) -> HybridKey {
         HybridKey {
             ed25519: ed25519_dalek::SigningKey::from_bytes(ed25519.expose()),
-            ml_dsa: ml_dsa::SigningKey::from_seed(ml_dsa.expose().into()),
+            ml_dsa: Box::new(ml_dsa::SigningKey::from_seed(ml_dsa.expose().into())),
         }
     }
 
