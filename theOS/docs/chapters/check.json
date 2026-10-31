@@ -119,7 +119,7 @@
     },
     "result": "removal wins, c40b11:9 dropped"
    },
-   "deep": "Concurrency is resolved toward less authority (D14): a removal and a change made without seeing it count as concurrent, and the removal wins, even if the change claims an older place in the history. Two concurrent versions of a role count only the identities in both. Nothing wins by being latest. Every peer applies the same deterministic logic, so all copies converge."
+   "deep": "Concurrency is resolved toward less authority (D14): a removal and a change made without seeing it count as concurrent, and the removal wins, even if the change claims an older place in the history. Nothing wins by being latest. Every peer applies the same deterministic logic, so all copies converge."
   },
   {
    "title": "Checking, in short.",
