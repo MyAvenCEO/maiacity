@@ -29,11 +29,10 @@ pub mod tls;
 /// Where a peer's events go: the timeline's lines (`aven_db_core::timeline`), already shaped.
 pub type Notes = std::sync::Arc<dyn Fn(String) + Send + Sync>;
 
-/// A newcomer's relay token: the frame that carries its statement, as hex, so it travels in a URL's query. The Aven
-/// Peer's relay reads it (`relay`).
+/// A newcomer's relay token: the frame that carries its statement, its Value's one encoding (`aven_core`) as hex, so
+/// it travels in a URL's query. The Aven Peer's relay reads it (`relay`).
 pub fn token(frame: &aven_db_core::wire::Frame) -> String {
-    let line = aven_db_core::wire::encode(frame);
-    line[..line.len() - 1]
+    aven_core::encode(&frame.value())
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect()

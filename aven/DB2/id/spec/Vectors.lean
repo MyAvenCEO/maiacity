@@ -67,7 +67,8 @@ import Aven.ID.SealJson
   inside, with what each request gives back (`Aven.ID.Safe`, R13).
 - `settled.json`: sets of tree statements, each in several orders, and the tree `settle` gives (`Aven.ID.Network`,
   PEERS.md §5): `TreeExamples`, the races one by one, generated sets, and production's store migrated from every
-  invite trace (`Aven.ID.Restore`). `records.json`: signed records and the newest of each (`Aven.ID.Records`, §6).
+  invite trace (`Aven.ID.Restore`). `tree-ops.json`: `tree/1`'s op ids and a call of each (A32). `records.json`:
+  signed records and the newest of each (`Aven.ID.Records`, §6).
   `node.json`: networks losing each peer in turn, with every home relay, who reaches whom and who can fetch the chat
   (`Aven.ID.Node`, R7). `catchup.json`: sources offered against a signed log tip, the one chosen and the ones caught,
   and presence from signed beats (`Aven.ID.CatchUp`). `failures.json`: the nine checks the box runs with the Aven Peer
@@ -392,6 +393,7 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "safe.json") (render Safe.safeVectors)
   IO.FS.writeFile (dir / "settled.json") (render SettleJson.settledVectors)
   IO.FS.writeFile (dir / "records.json") (render SettleJson.recordVectors)
+  IO.FS.writeFile (dir / "tree-ops.json") (render SettleJson.treeOpVectors)
   IO.FS.writeFile (dir / "node.json") (render SettleJson.nodeVectors)
   IO.FS.writeFile (dir / "catchup.json") (render SettleJson.catchUpVectors)
   IO.FS.writeFile (dir / "failures.json") (render FailJson.failureVectors)
