@@ -145,6 +145,11 @@ proptest! {
         prop_assert!(public.verify(&msg, &signature));
         prop_assert!(hybrid_verify(&public.to_bytes(), &msg, &signature.to_bytes()));
         prop_assert!(!hybrid_verify(&signature.to_bytes(), &msg, &public.to_bytes()), "a signature is no key");
+        let signed = key.sign_value("avenID test 1", aven_core::Value::Bytes(msg.clone()));
+        prop_assert!(signed.valid(&aven_id::Hybrid));
+        let mut other = signed.clone();
+        other.label = "avenID test 2".into();
+        prop_assert!(!other.valid(&aven_id::Hybrid), "a signature for one label is no other's");
         let device = HybridKey::generate(&mut TestEntropy::new(&seed));
         prop_assert!(device.public().verify(&msg, &device.sign(&msg)));
         prop_assert!(!device.public().verify(&msg, &signature));

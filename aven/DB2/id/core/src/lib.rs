@@ -40,7 +40,7 @@ pub use claim::{
 pub use epoch::{
     BACK_LABEL, COMMIT_LABEL, Epoch, History, KeyError, SCHEME, VAULT_LABEL, commit, subkey, tag,
 };
-pub use hybrid::{HYBRID_SUITE, HybridKey, HybridPublic, HybridSignature, hybrid_verify};
+pub use hybrid::{HYBRID_SUITE, Hybrid, HybridKey, HybridPublic, HybridSignature, hybrid_verify};
 pub use invite::{
     Invite, Join, Withdrawal, invite_id, invite_text, join_text, one_time_public, sign_join,
     withdraw_text,
