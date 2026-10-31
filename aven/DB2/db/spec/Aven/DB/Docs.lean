@@ -1,6 +1,7 @@
 import Aven.DB.Docs.Loro
 import Aven.DB.Docs.OpIds
 import Aven.DB.Docs.Counts
+import Aven.DB.Docs.Writers
 import Aven.DB.Docs.Checkpoint
 import Aven.DB.Docs.Fit
 import Aven.DB.Docs.Changes
@@ -21,6 +22,8 @@ On top of the shared core (`Aven.Core`: Values, the codec, envelopes, logs, spli
 - `Loro`: Loro by its stated properties: convergence, and a snapshot as a cache;
 - `OpIds`: an envelope's Loro dependencies and its hashes name the same past;
 - `Counts`: what counts is fit, authorized and not a split; revocations only narrow it; splits are final; writer ids;
+- `Writers`: the writer id, defined once: BLAKE3's key derivation over the device, the Doc, the branch and the
+  generation;
 - `Checkpoint`: a checkpoint that checks is the replay of what it covers;
 - `Fit`: rules on single values survive a merge, judged per envelope, and size rules don't;
 - `Changes`: what an envelope does to a Doc's Records, the view fit and the engine's footprint both read;

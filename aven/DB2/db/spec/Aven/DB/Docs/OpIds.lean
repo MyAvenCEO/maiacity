@@ -13,7 +13,8 @@ refuses an import that reuses an op id with other content (`UsedOpID`), so no tw
 last op id, and the hashes are fixed by the op ids (`hashes_fixed`). So when two envelopes agree on either, they name
 the same past (`same_past`).
 
-What it proves: `ops_fixed`, `hashes_fixed`, `same_past`.
+What it proves: `ops_fixed`, `hashes_fixed`, `same_past`; and the check as a reader runs it, `opsAgreeB`, is sound
+(`opsAgreeB_sound`).
 -/
 
 namespace Aven.DB.Docs
@@ -72,5 +73,52 @@ theorem same_past {nm : Envelope → Hash} {O : Ops} {held : List Envelope}
     have : p = p' := map_inj_on inj h.1 h'.1 (h.2.1.trans (same.trans h'.2.1.symm))
     rw [h.2.2, h'.2.2, this]
   · exact hashes_fixed used h h'
+
+/-! ## The check, decided -/
+
+/-- Resolve every name to an envelope the reader holds, or `none` when one is missing (the envelope waits). -/
+def resolveAll (nm : Envelope → Hash) (held : List Envelope) : List Hash → Option (List Envelope)
+  | [] => some []
+  | h :: hs => match held.find? (fun x => nm x == h), resolveAll nm held hs with
+    | some x, some xs => some (x :: xs)
+    | _, _ => none
+
+/-- Rule 7's check as a reader runs it: the names resolve, and the Loro dependencies are their last op ids. -/
+def opsAgreeB (nm : Envelope → Hash) (O : Ops) (held : List Envelope) (e : Envelope) : Bool :=
+  match resolveAll nm held (namedPast e) with
+  | some past => O.deps e == past.map O.last
+  | none => false
+
+theorem resolveAll_sound {nm : Envelope → Hash} {held : List Envelope} :
+    ∀ {hs : List Hash} {past : List Envelope}, resolveAll nm held hs = some past →
+      (∀ p ∈ past, p ∈ held) ∧ past.map nm = hs
+  | [], past, h => by simp only [resolveAll, Option.some.injEq] at h; subst h; simp
+  | x :: hs, past, h => by
+    simp only [resolveAll] at h
+    split at h
+    · next y ys hy hys =>
+      simp only [Option.some.injEq] at h; subst h
+      have m := List.find?_some hy
+      have e := List.mem_of_find?_eq_some hy
+      have ih := resolveAll_sound hys
+      simp only [beq_iff_eq] at m
+      refine ⟨fun p hp => ?_, by simp [m, ih.2]⟩
+      rcases List.mem_cons.mp hp with rfl | hp
+      · exact e
+      · exact ih.1 p hp
+    · simp at h
+
+/-- The decided check passes exactly when rule 7's check does, for the envelopes it resolves. -/
+theorem opsAgreeB_sound {nm : Envelope → Hash} {O : Ops} {held : List Envelope} {e : Envelope}
+    (h : opsAgreeB nm O held e = true) : ∃ past, OpsAgree nm O held e past := by
+  unfold opsAgreeB at h
+  split at h
+  · next past hr =>
+    have ⟨m, n⟩ := resolveAll_sound hr
+    exact ⟨past, m, n, beq_iff_eq.mp h⟩
+  · cases h
+
+/-- Loro's `UsedOpID`, decided: no two envelopes a reader holds share their last op id. -/
+def usedOk (O : Ops) (held : List Envelope) : Bool := (held.map O.last).Nodup
 
 end Aven.DB.Docs

@@ -1,0 +1,5 @@
+[
+{"expected":{"fits":[true,true],"total":{"fits":true,"schema":"v1","value":90}},"input":{"envelopes":[{"schema":"v1","writes":[{"field":"total","stamp":1,"value":40}]},{"schema":"v1","writes":[{"field":"total","stamp":2,"value":90}]}],"rules":{"v1":"total ≤ 100","v2":"total ≤ 1000"}},"name":"two writers, one schema: the later write wins and fits"},
+{"expected":{"fits":[true,true],"total":{"fits":true,"schema":"v2","value":500}},"input":{"envelopes":[{"schema":"v1","writes":[{"field":"total","stamp":1,"value":40}]},{"schema":"v2","writes":[{"field":"total","stamp":2,"value":500}]}],"rules":{"v1":"total ≤ 100","v2":"total ≤ 1000"}},"name":"a v2 writer and a v1 writer: the value fits the schema of the envelope that wrote it"},
+{"expected":{"fits":[true,false],"total":{"fits":true,"schema":"v1","value":40}},"input":{"envelopes":[{"schema":"v1","writes":[{"field":"total","stamp":1,"value":40}]},{"schema":"v1","writes":[{"field":"total","stamp":2,"value":500}]}],"rules":{"v1":"total ≤ 100","v2":"total ≤ 1000"}},"name":"an envelope that doesn't fit its schema is refused, and its write never merges"}
+]
