@@ -126,7 +126,7 @@ def eval (V : Vals Val) (src : DocId → List (Tuple Val)) : Query Val → List 
 /-! ## Scope (A8) -/
 
 /-- The Docs a target resolves to, among those a directory lists. -/
-def resolve (gov : Bytes → Bytes → Bool) (spawned lists : DocId → DocId → Bool) (dir : List Facts) (t : Target) :
+def resolve (gov : Hash → Hash → Bool) (spawned lists : DocId → DocId → Bool) (dir : List Facts) (t : Target) :
     List DocId :=
   (dir.filter (t.coversB gov spawned lists)).map (·.id)
 
@@ -152,13 +152,13 @@ def answerOver (V : Vals Val) (docs : List DocId) (held : DocId → Bool) (db : 
   .rows (if missing = [] then .complete else .short missing) (eval V (inScope db docs held) q)
 
 /-- Run a stored query over the Docs its target resolves to in a directory. -/
-def run (V : Vals Val) (gov : Bytes → Bytes → Bool) (spawned lists : DocId → DocId → Bool) (dir : List Facts)
+def run (V : Vals Val) (gov : Hash → Hash → Bool) (spawned lists : DocId → DocId → Bool) (dir : List Facts)
     (held : DocId → Bool) (db : List (Rec Val)) (s : Spec Val) : Answer Val :=
   match s.target with
   | none => .refused
   | some t => answerOver V (resolve gov spawned lists dir t) held db s.body
 
-theorem run_refused_without_target (V : Vals Val) (gov : Bytes → Bytes → Bool) (spawned lists : DocId → DocId → Bool)
+theorem run_refused_without_target (V : Vals Val) (gov : Hash → Hash → Bool) (spawned lists : DocId → DocId → Bool)
     (dir : List Facts) (held : DocId → Bool) (db : List (Rec Val)) (q : Query Val) :
     run V gov spawned lists dir held db ⟨none, q⟩ = .refused := rfl
 
@@ -183,7 +183,7 @@ theorem answerOver_complete_iff (V : Vals Val) (docs : List DocId) (held : DocId
     simp [this]
 
 /-- **`complete` means exactly that every Doc the target resolves to is held** (A8). -/
-theorem complete_iff (V : Vals Val) (gov : Bytes → Bytes → Bool) (spawned lists : DocId → DocId → Bool)
+theorem complete_iff (V : Vals Val) (gov : Hash → Hash → Bool) (spawned lists : DocId → DocId → Bool)
     (dir : List Facts) (held : DocId → Bool) (db : List (Rec Val)) (t : Target) (q : Query Val) :
     (∃ rs, run V gov spawned lists dir held db ⟨some t, q⟩ = .rows .complete rs) ↔
       ∀ f ∈ dir, t.covers (gov · · = true) (spawned · · = true) (lists · · = true) f → held f.id = true := by

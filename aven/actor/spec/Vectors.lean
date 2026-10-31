@@ -22,7 +22,8 @@ The traces run four test definitions, which the Rust tests implement natively, e
 
 An event is `["spawn", id, definition]`, `["handle", receiver, sender]`, `["tick", t]`, `["retire", address]`, or a
 send from the person, `["tell", to, name, payload]` or `["ask", to, name, payload, within]`. An address is
-`scope/id/n`. A Value's readable form is `Aven.Core`'s: integers as numbers, text as strings, arrays, maps as objects,
+`<vault hex>/<doc hex>`, its Doc id: the BLAKE3 name of its genesis `{n, id, vault}` (A201); version 1's vault is 32
+bytes of `01`. A spawn's id is its bytes, `{"bytes": hex}`. A Value's readable form is `Aven.Core`'s: integers as numbers, text as strings, arrays, maps as objects,
 a byte string as `{"bytes": hex}`; a type id is its text, `d:<hex>/b3:<hex>`.
 -/
 
@@ -31,7 +32,7 @@ open Lean Aven.Core Aven.Actor
 def vector (name : String) (input expected : Json) : Json :=
   Json.mkObj [("name", name), ("input", input), ("expected", expected)]
 
-def Aven.Actor.Addr.text (a : Addr) : String := s!"{a.scope}/{a.id}/{a.n}"
+def Aven.Actor.Addr.text (a : Addr) : String := hex a.vault ++ "/" ++ hex (a.doc blake3).hash.bytes
 
 def Aven.Actor.MsgId.json (i : MsgId) : Json :=
   Json.mkObj [("from", i.sender.text), ("to", i.to.text), ("seq", i.seq)]
@@ -73,7 +74,7 @@ def tCount : TypeId := tid "counter" "count"
 def tGo : TypeId := tid "asker" "go"
 def tStep : TypeId := tid "task" "step"
 
-def counterAddr : Addr := ⟨"local", "c", 1⟩
+def counterAddr : Addr := ⟨localVault, "c".toUTF8.toList, 1⟩
 
 def counter : Def where
   name := "counter"
@@ -136,10 +137,13 @@ def lib : Library
 
 /-! ## Traces -/
 
-def addr (id : String) (n : Nat := 1) : Addr := ⟨"local", id, n⟩
+def addr (id : String) (n : Nat := 1) : Addr := ⟨localVault, id.toUTF8.toList, n⟩
+
+/-- A spawn under an id given as text. -/
+def sp (id dn : String) : Event := .spawn id.toUTF8.toList dn
 
 def Aven.Actor.Event.json : Event → Json
-  | .spawn id dn => Json.arr #["spawn", id, dn]
+  | .spawn id dn => Json.arr #["spawn", Value.json (.bytes id), dn]
   | .handle r s => Json.arr #["handle", r.text, s.text]
   | .tick t => Json.arr #["tick", t]
   | .retire a => Json.arr #["retire", a.text]
@@ -149,38 +153,38 @@ def Aven.Actor.Event.json : Event → Json
 
 def traces : List (String × List Event) := [
   ("a counter counts, and answers an ask",
-    [.spawn "c" "counter", .send (.tell counterAddr "inc" .null), .send (.tell counterAddr "inc" .null),
+    [sp "c" "counter", .send (.tell counterAddr "inc" .null), .send (.tell counterAddr "inc" .null),
      .handle counterAddr person, .handle counterAddr person, .send (.ask counterAddr "get" .null 500),
      .handle counterAddr person]),
   ("messages from one sender are handled in the order sent",
-    [.spawn "c" "counter", .send (.tell counterAddr "inc" .null), .send (.ask counterAddr "get" .null 500),
+    [sp "c" "counter", .send (.tell counterAddr "inc" .null), .send (.ask counterAddr "get" .null 500),
      .send (.tell counterAddr "inc" .null), .handle counterAddr person, .handle counterAddr person,
      .handle counterAddr person]),
   ("a machine allows finish, refuses it twice, then reopens",
-    [.spawn "t" "task", .send (.tell (addr "t") "finish" .null), .handle (addr "t") person,
+    [sp "t" "task", .send (.tell (addr "t") "finish" .null), .handle (addr "t") person,
      .send (.tell (addr "t") "finish" .null), .handle (addr "t") person,
      .send (.tell (addr "t") "reopen" .null), .handle (addr "t") person]),
   ("an ask past its deadline fails with timeout, and the late reply is dropped",
-    [.spawn "c" "counter", .send (.ask counterAddr "get" .null 100), .tick 200, .handle counterAddr person]),
+    [sp "c" "counter", .send (.ask counterAddr "get" .null 100), .tick 200, .handle counterAddr person]),
   ("an ask to no live actor fails at once, from the kernel, at seq 0",
     [.send (.ask (addr "nobody") "get" .null 100)]),
   ("an actor asks another; an undeclared tell is refused by the router",
-    [.spawn "c" "counter", .spawn "a" "asker", .send (.tell (addr "a") "go" .null), .handle (addr "a") person,
+    [sp "c" "counter", sp "a" "asker", .send (.tell (addr "a") "go" .null), .handle (addr "a") person,
      .handle counterAddr (addr "a"), .handle (addr "a") counterAddr]),
   ("describe lists what the phase allows",
-    [.spawn "t" "task", .send (.ask (addr "t") "describe" .null 100), .handle (addr "t") person,
+    [sp "t" "task", .send (.ask (addr "t") "describe" .null 100), .handle (addr "t") person,
      .send (.tell (addr "t") "finish" .null), .handle (addr "t") person,
      .send (.ask (addr "t") "describe" .null 100), .handle (addr "t") person]),
   ("a face placed again is a new incarnation; the old address takes nothing",
-    [.spawn "t" "task", .retire (addr "t"), .spawn "t" "task", .send (.tell (addr "t") "finish" .null),
+    [sp "t" "task", .retire (addr "t"), sp "t" "task", .send (.tell (addr "t") "finish" .null),
      .send (.tell (addr "t" 2) "finish" .null), .handle (addr "t" 2) person]),
   ("admission refuses a machine that leads to an undeclared phase",
-    [.spawn "b" "broken", .send (.tell (addr "b") "go" .null)])]
+    [sp "b" "broken", .send (.tell (addr "b") "go" .null)])]
 
 /-- Every address a trace touches: the person, the kernel, and every incarnation it spawned. -/
 def addrsOf (kn : Kernel) (es : List Event) : List Addr :=
   let ids := (es.filterMap fun | .spawn id _ => some id | _ => none).eraseDups
-  let spawned := ids.flatMap fun id => (List.range (kn.spawned id)).map fun i => addr id (i + 1)
+  let spawned := ids.flatMap fun id => (List.range (kn.spawned id)).map fun i => (⟨localVault, id, i + 1⟩ : Addr)
   let named := es.flatMap fun
     | .handle r s => [r, s]
     | .retire a => [a]
@@ -235,7 +239,7 @@ def names : List String := ["inc", "get", "finish", "reopen", "go", "describe", 
 def Rng.event (r : Rng) (kn : Kernel) : Event × Rng :=
   let (kind, r) := r.below 10
   match kind with
-  | 0 => let (d, r) := r.pick [("c", "counter"), ("t", "task"), ("a", "asker"), ("b", "broken")]; (.spawn d.1 d.2, r)
+  | 0 => let (d, r) := r.pick [("c", "counter"), ("t", "task"), ("a", "asker"), ("b", "broken")]; (sp d.1 d.2, r)
   | 1 => let (a, r) := r.pick pool; (.retire a, r)
   | 2 => let (t, r) := r.below 400; (.tick (kn.now + t), r)
   | 3 | 4 =>
@@ -257,7 +261,7 @@ def Rng.event (r : Rng) (kn : Kernel) : Event × Rng :=
 
 /-- A drawn trace: the three test actors spawned first, then `n` drawn events, each drawn against the kernel so far. -/
 def Rng.trace (r : Rng) (n : Nat) : List Event × Rng := Id.run do
-  let start : List Event := [.spawn "c" "counter", .spawn "t" "task", .spawn "a" "asker"]
+  let start : List Event := [sp "c" "counter", sp "t" "task", sp "a" "asker"]
   let mut r := r
   let mut kn := Kernel.empty.run lib start
   let mut out := start.toArray

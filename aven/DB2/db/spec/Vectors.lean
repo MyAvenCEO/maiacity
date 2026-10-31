@@ -9,14 +9,7 @@ import Aven.DB.Docs
 (`vectors/` by default), where they are committed. Every vector is `{"name", "input", "expected"}`:
 
 - `status.json`: a limit and status events; the state after each (`Aven.DB.Status`).
-- `presence.json`: connections joining and leaving; what every peer is told after each (`Aven.DB.Presence`).
 - `timeline.json`: a timeline line's parts; the line (`Aven.DB.Timeline`).
-- `wire.json`: greeting lines, and the greeting each is or none (`Aven.DB.Wire.Greeting`).
-- `frames.json`: streams as chunks of hex: the greeting read, the frames each chunk completes in Core's CBOR, and the
-  error that ends it (`Aven.DB.WireCbor`, A29). A line's bytes are hex in the readable form.
-- `upgrades.json`: a peer's wire version and the version a hello names; its answer (none, or `update` and its own
-  version) and whether the hello's peer follows that refusal; and the gossip topic's name for a wire version and a
-  network (`Aven.DB.Wire`, "The wire version").
 - `store.json`: traces of store calls from an empty store; the result of each (`Aven.DB.Store`). Every backend
   replays them in the conformance suite.
 - `hashes.json`: spellings of a hash; whether the store reads each as one.
@@ -76,16 +69,10 @@ import Aven.DB.Docs
 - `placements.json`: envelopes with and without the genesis; whether each is its log's first, and whether the
   genesis sits where it must (`genesis_iff_first`).
 - `builtins.json`: Records of the docs layer's built-in types; which their shapes take (`docsBuiltinFit`).
+- `schemas.json`: schemas' one form: which Values a reader takes as a schema, and a taken one's hash
+  (`Aven.DB.Docs.Schema`).
 - `keys.json`: tuples and their keys in hex; pairs of tuples and whether the first key sorts before the second
   (`Aven.DB.Docs.Key`).
-- `keeper.json`: uploads from devices to a keeper, one Doc, from an empty store; after each, the items held (number,
-  hash, uploaders) and the next number, the pages of what came after each asked number, and where a device at that
-  number holding 11 and 12 is after catching up, with what it holds (`Aven.Peer.Keeper`).
-- `fetch.json`: what a peer holds for which Doc and each item's length, the Docs proven on a connection, a fetch; the
-  answer (refused, or the hashes served, missing and later); and items' lengths with their parts' offsets and lengths
-  (`Aven.Peer.Fetch`).
-- `serve.json`: a gate's verdicts (which proof of which Doc it serves, for which vault; each vault's quota) and asks,
-  each on its device's connection; the keeper's reply to each, and each vault's bill at the end (`Aven.Peer.Serve`).
 
 `aven-gen1`'s and `aven-db-store`'s tests load them. `bun run up --check` runs this again and fails when the files
 differ from what is committed. -/
@@ -119,7 +106,7 @@ def Rng.many {α : Type} (r : Rng) (n : Nat) (f : Rng → α × Rng) : List α �
 
 def generated : Nat := 60
 
-/-! ## Status and presence -/
+/-! ## Status -/
 
 def statusVector (name : String) (limit : Nat) (es : List Event) : Json :=
   vector name (Json.mkObj [("limit", toJson limit), ("events", toJson (es.map Event.name))])
@@ -138,101 +125,12 @@ def status : List Json :=
   statusExamples.map (fun (name, es, _) => statusVector name 3 es) ++
   (List.range generated).map fun i => let (limit, es) := randomEvents (i + 1); statusVector s!"seed {i + 1}" limit es
 
-def presenceVector (name : String) (cs : List Change) : Json :=
-  vector name (Json.mkObj [("changes", Json.arr (cs.map Change.json).toArray)])
-    (Json.arr ((trail Presence.step Presence.empty cs).map fun p => toJson p.told).toArray)
-
-def randomChanges (seed : Nat) : List Change := Id.run do
-  let (len, r) := (Rng.seed seed).below 60
-  let (cs, _) := r.many len fun r =>
-    let (j, r) := r.below 3
-    let (p, r) := r.below 6
-    ((if j ≠ 0 then .join p else .leave p), r)
-  return cs
-
-def presence : List Json :=
-  presenceExamples.map (fun (name, cs, _) => presenceVector name cs) ++
-  (List.range generated).map fun i => presenceVector s!"seed {i + 1}" (randomChanges (i + 1))
-
-/-! ## The timeline and the wire -/
+/-! ## The timeline -/
 
 def timeline : List Json :=
   lineExamples.map fun (name, (t, peer, event, fields), _) =>
     vector name (Json.mkObj [("t", toJson t), ("peer", peer), ("event", event),
       ("fields", Json.arr (fields.map fun (k, v) => Json.arr #[k, v]).toArray)]) (line t peer event fields)
-
-/-- A long run of one character is written as `{"fill", "len"}`, so the file stays small. -/
-def WireError.name : WireError → String
-  | .bad => "bad"
-  | .tooLong => "tooLong"
-
-/-- A frame in the vectors' readable form: its Value's keys as JSON, a line's bytes in hex. -/
-def Frame.json : Frame → Json
-  | .presence ps => Json.mkObj [("frame", "presence"), ("peers", toJson ps)]
-  | .beat n => Json.mkObj [("frame", "beat"), ("n", toJson n)]
-  | .claim st => Json.mkObj [("frame", "claim"), ("statement", st)]
-  | .signIn st => Json.mkObj [("frame", "sign_in"), ("statement", st)]
-  | .invite st => Json.mkObj [("frame", "invite"), ("statement", st)]
-  | .withdraw st => Json.mkObj [("frame", "withdraw"), ("statement", st)]
-  | .join st => Json.mkObj [("frame", "join"), ("statement", st)]
-  | .network c t st => Json.mkObj [("frame", "network"), ("claimed", toJson c), ("tree", toJson t),
-      ("statements", toJson st)]
-  | .refused w => Json.mkObj [("frame", "refused"), ("why", w)]
-  | .heads hs more => Json.mkObj [("frame", "heads"), ("heads", toJson hs), ("more", toJson more)]
-  | .catchUp hs only => Json.mkObj [("frame", "catch_up"), ("have", toJson hs), ("only", toJson only)]
-  | .lines ls => Json.mkObj [("frame", "lines"), ("lines", toJson (ls.map Aven.Core.hex))]
-  | .kept fs => Json.mkObj [("frame", "kept"), ("files", toJson fs)]
-
-/-- The greetings: a line, and the greeting it is, or none. -/
-def wire : List Json :=
-  let lines : List (String × String) := [
-    ("a hello", (Greeting.hello "alice-peer" wireVersion).json.compress),
-    ("an update", (Greeting.update wireVersion).json.compress),
-    ("a hello of version 1", (Greeting.hello "alice-peer" 1).json.compress),
-    ("a hello without its version, as version 0 sent it", "{\"frame\":\"hello\",\"peer\":\"a\"}"),
-    ("a hello with a key extra", "{\"frame\":\"hello\",\"peer\":\"a\",\"wire\":2,\"x\":1}"),
-    ("a hello whose version is text", "{\"frame\":\"hello\",\"peer\":\"a\",\"wire\":\"2\"}"),
-    ("an update without its version", "{\"frame\":\"update\"}"),
-    ("a frame, which is no greeting", "{\"frame\":\"beat\",\"n\":1}"),
-    ("not JSON", "nope")]
-  lines.map fun (name, line) =>
-    vector name (Json.mkObj [("line", line)]) ((Greeting.parse line).elim Json.null Greeting.json)
-
-open WireCbor in
-/-- Streams as hex: the greeting read, the frames each chunk completes, and the error that ends it. -/
-def frames : List Json :=
-  let hello := greetingBytes (.hello "alice-peer" wireVersion)
-  let result (chunks : List (List UInt8)) := let (g, fs, err) := WireCbor.read chunks
-    Json.mkObj [("greeting", g.elim Json.null Greeting.json),
-      ("frames", Json.arr (fs.map fun f => Json.arr (f.map Frame.json).toArray).toArray),
-      ("error", toJson (err.map WireError.name))]
-  let one (name : String) (chunks : List (List UInt8)) :=
-    vector name (Json.mkObj [("chunks", toJson (chunks.map Aven.Core.hex))]) (result chunks)
-  (frameExamples.map fun f => one s!"a frame: {(Frame.json f).compress}" [hello ++ frameBytes f]) ++
-  [one "every frame, the greeting in a chunk of its own" [hello, bytesOf frameExamples],
-   one "cut in the greeting and in a frame" [hello.take 9, hello.drop 9 ++ (bytesOf (frameExamples.take 2)).take 5,
-     (bytesOf (frameExamples.take 2)).drop 5],
-   one "an update, and nothing after it" [greetingBytes (.update wireVersion)],
-   one "version 0's hello, without its version" [Aven.Core.text "{\"frame\":\"hello\",\"peer\":\"a\"}\n"],
-   one "a greeting past the limit, without its newline" [List.replicate (maxFrame + 1) 0x61],
-   one "a key missing" [hello ++ framed (obj [("frame", txt "heads"), ("heads", .array [])])],
-   one "a key extra" [hello ++ framed (obj [("n", .uint 1), ("extra", .null), ("frame", txt "beat")])],
-   one "a key of the wrong kind" [hello ++ framed (obj [("n", txt "1"), ("frame", txt "beat")])],
-   one "a line as text, not bytes" [hello ++ framed (obj [("frame", txt "lines"), ("lines", .array [txt "x"])])],
-   one "a frame no peer sends" [hello ++ framed (obj [("frame", txt "shout")])],
-   one "a number longer than it needs" [hello ++ Aven.Core.be 4 4 ++ [0xA1, 0x61, 0x6E, 0x18]],
-   one "a length of none" [hello ++ [0, 0, 0, 0]],
-   one "a length over the limit" [hello ++ Aven.Core.be 4 (maxFrame + 1)],
-   one "a frame half in" [hello ++ (frameBytes (.beat 7)).take 6]]
-
-def upgrades : List Json :=
-  (meetExamples.map fun (name, mine, theirs) =>
-    vector name (Json.mkObj [("mine", toJson mine), ("theirs", toJson theirs)])
-      (Json.mkObj [("answer", match meet mine theirs with | some f => f.json | none => Json.null),
-        ("follows", toJson (follows theirs mine))])) ++
-  ([(wireVersion, "aven"), (wireVersion, "maia.city"), (3, "aven")].map fun (w, n) =>
-    vector s!"the topic of {n} on wire {w}" (Json.mkObj [("wire", toJson w), ("network", toJson n)])
-      (Json.mkObj [("topic", toJson (topicName w n))]))
 
 /-! ## The store -/
 
@@ -1334,10 +1232,10 @@ def segmentCases : List (String × Docs.Segment) := [
 
 def segmentVectors : List Json :=
   segmentCases.map fun (name, sg) =>
-    vector name (Json.mkObj [("branch", Json.str "main"), ("writer", toJson sg.writer),
-        ("generation", toJson sg.generation), ("from", toJson sg.segFrom), ("to", toJson sg.segTo),
-        ("prev", match sg.prev with | some h => Json.str h.text | none => Json.null),
-        ("envelopes", Json.arr (sg.envelopes.map fun e => hexJson (encode e.value)).toArray)])
+    vector name (Json.mkObj ([("branch", Json.str "main"), ("writer", toJson sg.writer),
+        ("generation", toJson sg.generation), ("from", toJson sg.segFrom), ("to", toJson sg.segTo)] ++
+        (match sg.prev with | some h => [("prev", Json.str h.text)] | none => []) ++
+        [("envelopes", Json.arr (sg.envelopes.map fun e => hexJson (encode e.value)).toArray)]))
       (Json.mkObj [("value", hexJson (encode sg.value)), ("name", Json.str (sg.name blake3).text),
         ("ok", toJson (sg.ok Docs.Limits.defaults (Envelope.name blake3)))])
 
@@ -1408,10 +1306,18 @@ def placementVectors : List Json :=
 
 def builtinCases : List (String × String × Value) :=
   let h := Value.bytes (blake3 (tb "a tip")).bytes
+  let sc := (⟨tb "todo", [(tb "title", .text, true)], true⟩ : Docs.Schema).value
   [("version", "a named version", .map [(tb "at", .array [h]), (tb "name", .text (tb "v1"))]),
    ("version", "refused: no name", .map [(tb "at", .array [h])]),
    ("version", "refused: a field it doesn't have", .map [(tb "x", .null), (tb "at", .array [h]), (tb "name", .text (tb "v1"))]),
    ("version", "refused: a tip that isn't a hash", .map [(tb "at", .array [.bytes [1]]), (tb "name", .text (tb "v1"))]),
+   ("version", "refused: a schema, which only a type Doc's version carries",
+      .map [(tb "at", .array [h]), (tb "name", .text (tb "v1")), (tb "schema", sc)]),
+   ("schema", "a type Doc's version with its schema", .map [(tb "at", .array [h]), (tb "name", .text (tb "v1")), (tb "schema", sc)]),
+   ("schema", "refused: no schema", .map [(tb "at", .array [h]), (tb "name", .text (tb "v1"))]),
+   ("schema", "refused: a schema not in its one form", .map [(tb "at", .array [h]), (tb "name", .text (tb "v1")),
+      (tb "schema", .map [(tb "title", .text (tb "todo"))])]),
+   ("schema", "refused: no name", .map [(tb "at", .array [h]), (tb "schema", sc)]),
    ("branch", "a proposal", .map [(tb "base", .array [h]), (tb "name", .text (tb "seeds")), (tb "nonce", h)]),
    ("branch", "a variant that follows main", .map [(tb "base", .array [h]), (tb "name", .text (tb "v")), (tb "nonce", h),
       (tb "follows", .text (tb "main"))]),
@@ -1434,206 +1340,51 @@ def builtinVectors : List Json :=
   [vector "another Doc's type is no docs built-in" (Json.mkObj [("type", Json.str todoType.text)])
     (toJson (Docs.docsBuiltinFit blake3 todoType).isSome)]
 
+open Docs in
+def schemaCases : List (String × Value) :=
+  let todo : Schema := ⟨tb "todo", [(tb "title", .text, true), (tb "done", .bool, false),
+    (tb "tags", .array .text, false), (tb "count", .uint 100, false), (tb "owner", .hash, false),
+    (tb "blob", .bytes, false), (tb "extra", .any, false)], true⟩
+  let field (n : String) (kind : Value) (r : Bool) : Value := .array [.text (tb n), kind, .bool r]
+  let form (fs : List Value) : Value :=
+    .map [(tb "title", .text (tb "t")), (tb "closed", .bool false), (tb "fields", .array fs)]
+  [("a todo, every kind", todo.value),
+   ("an open schema with no fields", (⟨tb "anything", [], false⟩ : Schema).value),
+   ("lists of lists of bounded numbers",
+      (⟨tb "grid", [(tb "rows", .array (.array (.uint 9)), true)], true⟩ : Schema).value),
+   ("refused: a field named twice", form [field "a" (.text (tb "text")) true, field "a" (.text (tb "bool")) false]),
+   ("refused: a kind it doesn't have", form [field "a" (.text (tb "float")) true]),
+   ("refused: a bound that isn't a number", form [field "a" (.array [.text (tb "uint"), .text (tb "9")]) true]),
+   ("refused: uint without its bound", form [field "a" (.array [.text (tb "uint")]) true]),
+   ("refused: a field without required", form [.array [.text (tb "a"), .text (tb "text")]]),
+   ("refused: required that isn't a bool", form [.array [.text (tb "a"), .text (tb "text"), .text (tb "yes")]]),
+   ("refused: a key it doesn't have",
+      .map [(tb "title", .text (tb "t")), (tb "closed", .bool false), (tb "fields", .array []), (tb "lenses", .array [])]),
+   ("refused: no title", .map [(tb "closed", .bool false), (tb "fields", .array [])]),
+   ("refused: not a map", .array [])]
+
+#guard schemaCases.all fun (_, v) => decodeAll (encode v) == some v
+
+/-- Schemas' one form: which Values a reader takes (`Schema.ofValue?`), and a taken one's hash, the schema half of a
+type id. -/
+def schemaVectors : List Json :=
+  schemaCases.map fun (name, v) =>
+    vector s!"schema: {name}" (Json.mkObj [("value", hexJson (encode v))])
+      (match Docs.Schema.ofValue? v with
+        | some s => Json.mkObj [("ok", true), ("hash", Json.str (Docs.Schema.hash blake3 s).text)]
+        | none => Json.mkObj [("ok", false)])
+
 end DocsVectors
 
 /-- One vector per line, so a change reads as a diff of lines. -/
 def render (vs : List Json) : String :=
   "[\n" ++ ",\n".intercalate (vs.map Json.compress) ++ "\n]\n"
 
-/-! ## A keeper's arrivals -/
-
-open Aven.Peer.Keeper in
-def keeperPut (p : Put) : Json :=
-  Json.mkObj [("hash", toJson p.hash), ("bytes", toJson p.bytes), ("covers", toJson p.covers)]
-
-open Aven.Peer.Keeper in
-def keeperVector (name : String) (ups : List (String × List Put)) (asks : List Nat) : Json :=
-  let states := (ups.foldl (fun (acc : List Aven.Peer.Keeper.Store × Aven.Peer.Keeper.Store) u =>
-    let s := acc.2.upload u.1 u.2; (acc.1 ++ [s], s)) ([], ({} : Aven.Peer.Keeper.Store))).1
-  vector name
-    (Json.mkObj [("uploads", Json.arr (ups.map fun (d, ps) =>
-        Json.mkObj [("device", Json.str d), ("puts", Json.arr (ps.map keeperPut).toArray)]).toArray),
-      ("after", toJson asks)])
-    (Json.arr (states.map fun s => Json.mkObj [("next", toJson s.next),
-        ("items", Json.arr (s.items.map fun i => Json.mkObj [("n", toJson i.n), ("hash", toJson i.hash),
-          ("bytes", toJson i.bytes), ("uploaders", toJson i.uploaders)]).toArray),
-        ("after", Json.arr (asks.map fun n => Json.arr ((s.after n).map fun q =>
-          Json.arr (q.map fun (m, h) => Json.arr #[toJson m, toJson h]).toArray).toArray).toArray),
-        ("caughtUp", Json.arr (asks.map fun n =>
-          let r := ({ at_ := n, held := [11, 12] } : Reader).catchUp s
-          Json.mkObj [("at", toJson r.at_), ("held", toJson r.held)]).toArray)]).toArray)
-
-open Aven.Peer.Keeper in
-def keeperExamples : List (String × List (String × List Put) × List Nat) := [
-  ("a reader's covers take only itself off; the writer's segment drops its loose envelopes",
-    [("bob", [⟨11, 900, []⟩, ⟨12, 900, []⟩, ⟨13, 900, []⟩]), ("carol", [⟨12, 900, []⟩, ⟨99, 100, [11, 12]⟩]),
-     ("bob", [⟨50, 3000, [11, 12, 13]⟩])], [0, 2, 5]),
-  ("a writer that never comes back keeps its loose envelopes", [("dave", [⟨21, 900, []⟩]), ("bob", [⟨51, 3000, [21]⟩])],
-    [0]),
-  ("a segment can't cover itself", [("bob", [⟨60, 3000, [60]⟩])], [0]),
-  ("the same bytes twice get one number", [("bob", [⟨70, 900, []⟩, ⟨70, 900, []⟩]), ("bob", [⟨70, 900, []⟩])], [0]),
-  ("500 loose envelopes, then their two segments", [("alice", (List.range 500).map fun i => ⟨1000 + i, 900, []⟩),
-     ("alice", [⟨2000, 200000, (List.range 256).map (1000 + ·)⟩, ⟨2001, 200000, (List.range 244).map (1256 + ·)⟩])],
-    [0, 200, 499, 500, 501])]
-
-open Aven.Peer.Keeper in
-def randomUploads (seed : Nat) : List (String × List Put) := Id.run do
-  let (len, r) := (Rng.seed seed).below 12
-  let (ups, _) := r.many (len + 1) fun r =>
-    let (d, r) := r.below 3
-    let (k, r) := r.below 5
-    let (ps, r) := r.many (k + 1) fun r =>
-      let (h, r) := r.below 16
-      let (c, r) := r.below 3
-      let (cs, r) := r.many (if c = 0 then 3 else 0) fun r => r.below 16
-      (⟨h, h * 10 + 1, cs⟩, r)
-    ((["alice", "bob", "carol"].getD d "alice", ps), r)
-  return ups
-
-def keeper : List Json :=
-  keeperExamples.map (fun (name, ups, asks) => keeperVector name ups asks) ++
-  (List.range generated).map fun i => keeperVector s!"seed {i + 1}" (randomUploads (i + 1)) [0, 3, 8]
-
-/-! ## The fetch gate -/
-
-open Aven.Peer.Fetch in
-def fetchVector (name : String) (table : List (Nat × String × Nat)) (proven : List String) (doc : String)
-    (hs : List Nat) : Json :=
-  let held : Held := fun h => (table.find? (·.1 == h)).map fun (_, d, n) => (d, List.replicate n 0)
-  vector name
-    (Json.mkObj [("held", Json.arr (table.map fun (h, d, n) =>
-        Json.mkObj [("hash", toJson h), ("doc", Json.str d), ("bytes", toJson n)]).toArray),
-      ("proven", toJson proven), ("doc", Json.str doc), ("hashes", toJson hs)])
-    (match answer proven held doc hs with
-     | none => Json.mkObj [("refused", toJson true)]
-     | some a => Json.mkObj [("served", toJson (a.served.map (·.1))), ("missing", toJson a.missing),
-        ("later", toJson a.later)])
-
-open Aven.Peer.Fetch in
-def partsVector (n : Nat) : Json :=
-  vector s!"an item of {n} bytes in parts" (Json.mkObj [("bytes", toJson n)])
-    (Json.arr ((parts 1 (List.replicate n 0)).map fun p =>
-      Json.arr #[toJson p.at_, toJson p.bytes.length]).toArray)
-
-def fetchTable : List (Nat × String × Nat) :=
-  [(1, "d1", 500 * 1024), (2, "d1", 600 * 1024), (3, "d1", 1024), (9, "d2", 10)]
-
-def fetchCases : List Json :=
-  [fetchVector "another Doc's hash is missing; what doesn't fit waits, in order" fetchTable ["d1"] "d1" [9, 1, 2, 3, 7],
-   fetchVector "one item larger than the bytes in flight is served alone" fetchTable ["d1"] "d1" [2],
-   fetchVector "a Doc not proven gets nothing" fetchTable ["d2"] "d1" [1],
-   fetchVector "too many hashes get nothing" fetchTable ["d1"] "d1" (List.replicate 129 1),
-   fetchVector "128 hashes are answered" fetchTable ["d1", "d2"] "d2" ((List.range 127).map (· + 100) ++ [9]),
-   fetchVector "nothing held: all missing" fetchTable ["d1"] "d1" [5, 6],
-   fetchVector "once one waits, nothing after it is served, not even an empty item"
-     (fetchTable ++ [(4, "d1", 0)]) ["d1"] "d1" [1, 2, 4]] ++
-  [0, 1, 49151, 49152, 49153, 100 * 1024, 1024 * 1024 + 3].map partsVector ++
-  (List.range generated).map fun i => Id.run do
-    let (k, r) := (Rng.seed (i + 1)).below 12
-    let (table, r) := r.many (k + 1) fun r =>
-      let (h, r) := r.below 20
-      let (d, r) := r.below 2
-      let (n, r) := r.below (400 * 1024)
-      ((h, if d = 0 then "d1" else "d2", n), r)
-    let (len, r) := r.below 10
-    let (hs, r) := r.many (len + 1) fun r => r.below 24
-    let (p, _) := r.below 3
-    return fetchVector s!"seed {i + 1}" table (if p = 0 then [] else if p = 1 then ["d1"] else ["d1", "d2"]) "d1" hs
-
-/-! ## A keeper serving a connection -/
-
-open Aven.Peer.Keeper Aven.Peer.Serve in
-def askJson : Ask → Json
-  | .prove d p => Json.mkObj [("ask", "prove"), ("doc", Json.str d), ("proof", toJson p)]
-  | .upload d ps => Json.mkObj [("ask", "upload"), ("doc", Json.str d), ("puts", Json.arr (ps.map keeperPut).toArray)]
-  | .after d n => Json.mkObj [("ask", "after"), ("doc", Json.str d), ("n", toJson n)]
-  | .fetch d hs => Json.mkObj [("ask", "fetch"), ("doc", Json.str d), ("hashes", toJson hs)]
-
-open Aven.Peer.Serve in
-def replyJson : Reply → Json
-  | .proven d => Json.mkObj [("reply", "proven"), ("doc", Json.str d)]
-  | .proveRefused d => Json.mkObj [("reply", "prove_refused"), ("doc", Json.str d)]
-  | .took d ns => Json.mkObj [("reply", "took"), ("doc", Json.str d),
-      ("numbers", Json.arr (ns.map fun (h, n) => Json.arr #[toJson h, toJson n]).toArray)]
-  | .uploadRefused d why => Json.mkObj [("reply", "upload_refused"), ("doc", Json.str d), ("why", Json.str why)]
-  | .arrived d es more => Json.mkObj [("reply", "arrived"), ("doc", Json.str d),
-      ("entries", Json.arr (es.map fun (n, h) => Json.arr #[toJson n, toJson h]).toArray), ("more", toJson more)]
-  | .fetched d s m l => Json.mkObj [("reply", "fetched"), ("doc", Json.str d), ("served", toJson s),
-      ("missing", toJson m), ("later", toJson l)]
-  | .refused d => Json.mkObj [("reply", "refused"), ("doc", Json.str d)]
-
-open Aven.Peer.Serve in
-def serveVector (name : String) (serves : List (String × Nat × String)) (quotas : List (String × Nat))
-    (as : List (String × Ask)) : Json :=
-  let g : Gate := { serves := fun d p => (serves.find? fun (d', p', _) => d' == d && p' == p).map (·.2.2),
-                    quota := fun v => ((quotas.find? (·.1 == v)).map (·.2)).getD 0 }
-  let (k, rs) := Keeper.run g {} [] as
-  vector name
-    (Json.mkObj [("serves", Json.arr (serves.map fun (d, p, v) =>
-        Json.mkObj [("doc", Json.str d), ("proof", toJson p), ("vault", Json.str v)]).toArray),
-      ("quotas", Json.arr (quotas.map fun (v, q) => Json.mkObj [("vault", Json.str v), ("quota", toJson q)]).toArray),
-      ("asks", Json.arr (as.map fun (d, a) => (askJson a).setObjVal! "device" (Json.str d)).toArray)])
-    (Json.mkObj [("replies", Json.arr (rs.map replyJson).toArray),
-      ("bills", Json.mkObj (quotas.map fun (v, _) => (v, toJson (k.bill v))))])
-
-def on (d : String) (as : List Aven.Peer.Serve.Ask) : List (String × Aven.Peer.Serve.Ask) := as.map (d, ·)
-
-open Aven.Peer.Keeper Aven.Peer.Serve in
-def serveCases : List Json :=
-  [serveVector "refused before proving, by an old key, and for a Doc no keep cap names"
-     [("d1", 1, "alice")] [("alice", 3000)] (on "alice-peer-light"
-     [.upload "d1" [⟨11, 900, []⟩], .prove "d1" 2, .prove "d9" 1, .upload "d9" [⟨11, 900, []⟩], .after "d9" 0,
-      .fetch "d9" [11]]),
-   serveVector "taken within the quota, refused whole past it, covered by a segment"
-     [("d1", 1, "alice")] [("alice", 3000)] (on "alice-peer-light"
-     [.prove "d1" 1, .upload "d1" [⟨11, 900, []⟩, ⟨12, 900, []⟩], .upload "d1" [⟨13, 900, []⟩, ⟨14, 900, []⟩],
-      .upload "d1" [⟨13, 900, []⟩], .after "d1" 0, .fetch "d1" [11, 99], .upload "d1" [⟨50, 300, [11, 12, 13]⟩],
-      .after "d1" 1, .fetch "d1" [11, 50], .upload "d1" [⟨20, 2500, []⟩]]),
-   serveVector "an item dropped and put again in one upload stays on its bill"
-     [("d1", 1, "alice")] [("alice", 3000)] (on "alice-peer-light"
-     [.prove "d1" 1, .upload "d1" [⟨11, 900, []⟩], .upload "d1" [⟨50, 300, [11]⟩, ⟨11, 900, []⟩],
-      .upload "d1" [⟨20, 1900, []⟩], .after "d1" 0]),
-   serveVector "a drop frees its payer's bill: the quota counts what is held"
-     [("d1", 1, "alice")] [("alice", 3000)] (on "alice-peer-light"
-     [.prove "d1" 1, .upload "d1" [⟨11, 900, []⟩, ⟨12, 900, []⟩, ⟨13, 900, []⟩], .upload "d1" [⟨20, 2500, []⟩],
-      .upload "d1" [⟨50, 300, [11, 12, 13]⟩], .upload "d1" [⟨20, 2500, []⟩]]),
-   serveVector "the bill follows the uploaders: covered by its first, it moves to the next, past her quota"
-     [("d1", 3, "bob"), ("d1", 4, "carol")] [("bob", 3000), ("carol", 500)]
-     [("bob-peer-light", .prove "d1" 3), ("carol-peer", .prove "d1" 4), ("bob-peer-light", .upload "d1" [⟨12, 900, []⟩]),
-      ("carol-peer", .upload "d1" [⟨12, 900, []⟩]), ("bob-peer-light", .upload "d1" [⟨50, 300, [12]⟩]),
-      ("carol-peer", .upload "d1" [⟨77, 10, []⟩]), ("carol-peer", .after "d1" 0),
-      ("carol-peer", .upload "d1" [⟨60, 10, [12]⟩]), ("carol-peer", .upload "d1" [⟨77, 10, []⟩])],
-   serveVector "500 envelopes, after 0 in pages"
-     [("d1", 1, "alice")] [("alice", 1000000)] (on "alice-peer"
-     [.prove "d1" 1, .upload "d1" ((List.range 500).map fun i => ⟨1000 + i, 900, []⟩), .after "d1" 0,
-      .after "d1" 128, .after "d1" 384, .after "d1" 500])] ++
-  (List.range generated).map fun i => Id.run do
-    let (len, r) := (Rng.seed (i + 1)).below 16
-    let (as, _) := r.many (len + 1) fun r =>
-      let (who, r) := r.below 3
-      let dev := ["a-device", "b-device", "c-device"].getD who "a-device"
-      let (k, r) := r.below 4
-      let (d, r) := r.below 2
-      let doc := if d = 0 then "d1" else "d2"
-      if k = 0 then let (p, r) := r.below 4; ((dev, Ask.prove doc p), r)
-      else if k = 1 then
-        let (n, r) := r.below 4
-        let (ps, r) := r.many (n + 1) fun r =>
-          let (h, r) := r.below 12
-          let (c, r) := r.below 3
-          let (cs, r) := r.many (if c = 0 then 2 else 0) fun r => r.below 12
-          (⟨h, 100 * (h + 1), cs⟩, r)
-        ((dev, Ask.upload doc ps), r)
-      else if k = 2 then let (n, r) := r.below 6; ((dev, Ask.after doc n), r)
-      else let (n, r) := r.below 4; let (hs, r) := r.many (n + 1) fun r => r.below 14; ((dev, Ask.fetch doc hs), r)
-    return serveVector s!"seed {i + 1}" [("d1", 1, "alice"), ("d2", 2, "bob"), ("d1", 3, "carol"), ("d2", 3, "carol")]
-      [("alice", 2500), ("bob", 1000), ("carol", 1500)] as
-
 def main (args : List String) : IO Unit := do
   let dir : System.FilePath := args.headD "vectors"
   IO.FS.createDirAll dir
-  for (file, vs) in [("status.json", status), ("presence.json", presence), ("timeline.json", timeline),
-      ("wire.json", wire), ("frames.json", frames), ("upgrades.json", upgrades), ("store.json", store), ("hashes.json", hashes), ("refs.json", refs),
+  for (file, vs) in [("status.json", status), ("timeline.json", timeline),
+      ("store.json", store), ("hashes.json", hashes), ("refs.json", refs),
       ("chat.json", chat), ("files.json", files), ("chats.json", chats), ("queries.json", queries),
       ("wants.json", wants), ("mutations.json", mutations), ("merges.json", merges), ("lenses.json", lenses),
       ("indexes.json", indexes), ("trees.json", trees), ("lookups.json", lookups), ("keys.json", keys), ("writers.json", writers), ("envelopes.json", envelopes),
@@ -1642,5 +1393,5 @@ def main (args : List String) : IO Unit := do
       ("merge-check.json", mergeChecks), ("genesis.json", genesisVectors), ("bodies.json", bodyVectors),
       ("segments.json", segmentVectors), ("heads.json", headVectors), ("loro.json", loroVectors),
       ("placements.json", placementVectors), ("held.json", heldVectors), ("builtins.json", builtinVectors),
-      ("keeper.json", keeper), ("fetch.json", fetchCases), ("serve.json", serveCases)] do
+      ("schemas.json", schemaVectors)] do
     IO.FS.writeFile (dir / file) (render vs)

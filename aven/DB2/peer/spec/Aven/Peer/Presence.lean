@@ -9,7 +9,7 @@ peer once: no peer twice, and none that is gone.
 `aven-gen1`'s `presence` module implements this machine, and its tests replay random traces against `Main.lean`.
 -/
 
-namespace Aven.DB
+namespace Aven.Peer
 
 /-- A peer, by its index in the cast. -/
 abbrev PeerId := Nat
@@ -147,4 +147,4 @@ def presenceExamples : List (String × List Change × List PeerId) := [
 theorem presence_examples :
     presenceExamples.all (fun (_, cs, ps) => decide ((Presence.empty.run cs).told = ps)) = true := by decide
 
-end Aven.DB
+end Aven.Peer

@@ -47,7 +47,7 @@ clean-slate cutover, and is deleted after it.
 | avenDOCS | a Doc's genesis, types and fit, bodies, writer ids, commit, the head, import, segments, the seal's use, branches, lenses, directories | [docs](docs/README.md) | `db/docs` | `Aven.DB.Docs` |
 | avenOPS | lowering calls to steps, footprints, queries, the want queue, search, sealed indexes' queries | [ops](ops/README.md) | `db/engine` | `Aven.DB.Engine` |
 | avenSTORE | Values and refs, compare-and-set, backends | [store](store/README.md) | `store` | `Aven.DB.Store` |
-| avenPEERS | the Peer and Peer-Light, the wire, gossip per group, sync, catch-up, keepers, the fetch gate, relays, presence, upgrades, deploy | [peers](peers/README.md) | `peer` | `Aven.DB.Wire`, `Aven.Peer` |
+| avenPEERS | the Peer and Peer-Light, the wire, gossip per group, sync, catch-up, keepers, the fetch gate, relays, presence, upgrades, deploy | [peers](peers/README.md) | `peer` | `Aven.Peer` |
 | avenRUNTIME | modules by hash, the manifest, hosts, the drawer, the markdown and face runtimes | [runtime](runtime/README.md) | `aven/runtimes` | `Aven.Runtime` |
 | avenACTORS | actors, inboxes, turns, hosts under chains | [actors](actors/README.md) | `aven/actor` | `Aven.Actor` |
 | avenOS | the page, its workers, sign-up and sign-in, the chat screen, Brain | [os](os/README.md) | `os` | — |
@@ -87,10 +87,10 @@ Production moves from the first generation to this architecture in seven stages 
 | Stage | What | State |
 |---|---|---|
 | 1. The Doc foundation | avenCORE, avenID's keys, minimal avenCAPS, avenDOCS, avenOPS | merged: the ops engine's pure core is in (#1697) |
-| 2. Authority in Lean | vault authority, member caps, the tree's passkey records and migration snapshot, k of n | merged (#1717, #1718, #1735, #1741, #1744, #1748, #1751); approvals as Core `Sig`s (A189 part 2) after vault names (#1746) |
-| 3. Docs in the Peers | the Doc host, gossip per group, sync by version, the docs worker | native host (#1727) and the keyring Doc (#1743) merged; the docs API for it (#1742) and the wire split (#1745) in review; then host keyless with the Authorize adapter, frames and sync over the gate, the browser's docs worker, the box check |
-| 4. The tree as the first Doc | the register on Core's counting, its setup as the root Record, sign-in keys bound | k of n merged (#1747); the vault-name switch (A190, #1746) in review; then owner changes on `Closed` (A191, PR 2) |
-| 5. Catch-up and keepers | arrivals, covers, bills, the fetch gate, catch-up by arrival number | native catch-up (#1722), caps' half (#1734), the keeper's byte forms (#1739) and their Rust (#1740) merged; then wire 3's gate frames, the Gate adapter with the native keeper, the Peer-Light's catch-up client, the box check |
+| 2. Authority in Lean | vault authority, member caps, the tree's passkey records and migration snapshot, k of n | merged (#1717, #1718, #1735, #1741, #1744, #1748, #1751, #1746); approvals as Core `Sig`s (A189 part 2), caps' next PR |
+| 3. Docs in the Peers | the Doc host, gossip per group, sync by version, the docs worker | native host (#1727), the keyring Doc (#1743), the docs API (#1742) and the wire split (#1745) merged; then frames and sync over the gate (after #1765), host keyless with the Authorize adapter (after A182), the browser's docs worker with the keyring read first (after avenDOCS' `Item::Plain`), the box check |
+| 4. The tree as the first Doc | the register on Core's counting, its setup as the root Record, sign-in keys bound | k of n (#1747, #1768) and vaults as 32-byte names in Core (#1746) merged; avenID's vault ids (#1769) in review; then owner changes on `Closed` with the setup as the root Record (A191, A213, PR 2), the register's vault ids (PR B); then the sign-in as the device cap's issuance, the hybrid key bound by its owner, the claim's keep caps, belonging by Core's `Counts`, the door from the register |
+| 5. Catch-up and keepers | arrivals, covers, bills, the fetch gate, catch-up by arrival number | native catch-up (#1722), caps' half (#1734), the keeper's byte forms (#1739, #1740) merged; wire 3's gate and keeper frames with the Gate adapter (#1765) in review; then the native keeper (keyrings by their genesis, A209; the empty page, A215), the Peer-Light's catch-up client, the box check; `rule10_quota` over `Serve`, and caps' `Keep` without its own bill |
 | 6. The chat as a fresh Doc | messages as Records, the screen on avenOPS queries, files behind the gate | not started |
 | 7. Rehearsal and cutover | production's snapshot replayed in the box, then release, deploy, delete `aven-gen1` | not started |
 
@@ -131,9 +131,12 @@ decision's own text, reasons and Lean are its row there.
 
 | Decision | What | Page | Holds |
 |---|---|---|---|
+| [A215](DECISIONS.md) | A telling ends with one page that says no more; an empty telling is that page alone | [peers](peers/README.md) | yes |
+| [A214](DECISIONS.md) | The cast's vault nonces are #1738's; vectors name cast vaults by handle only in case descriptions | [id](id/README.md) | yes |
+| [A213](DECISIONS.md) | The tree starts from its setup's Value, never from a body; the `genesis` op goes | [caps](caps/README.md) | yes |
 | [A212](DECISIONS.md) | A built-in type's label never follows its module: the tree's type is `avenID tree 1` | [id](id/README.md) | yes |
 | [A211](DECISIONS.md) | A device's vault names its key in a field `key` | [id](id/README.md) | yes |
-| [A210](DECISIONS.md) | avenID's Lean is generic in the vault id; the cast stays readable fixtures | [id](id/README.md) | yes |
+| [A210](DECISIONS.md) | avenID's Lean is generic in the vault id; the cast stays readable fixtures | [id](id/README.md) | superseded by [A214](DECISIONS.md) in part |
 | [A209](DECISIONS.md) | A keeper knows a keyring by its genesis: type `keyring`, a vault it keeps for | [peers](peers/README.md) | yes |
 | [A208](DECISIONS.md) | How avenCAPS splits out of avenID: `caps/spec` as `Aven.Caps`, and the crate `aven-caps` | [caps](caps/README.md) | yes |
 | [A207](DECISIONS.md) | A type's version is a `schema` Record; a named version stays `version` | [docs](docs/README.md) | yes |

@@ -91,7 +91,7 @@ def memberCap (v : String) : Cap :=
   { id := "member-" ++ v, issuer := "maia-city", holder := .vault v, grant := memberLines tree chat message }
 
 /-- **The confirm cap only confirms**: whatever call it allows is a confirm, on the tree Doc. -/
-theorem confirm_only (gov : Bytes → Bytes → Prop) (spawned lists : DocId → DocId → Prop) {v : String}
+theorem confirm_only (gov : Hash → Hash → Prop) (spawned lists : DocId → DocId → Prop) {v : String}
     {a : List Sig} {roles : List Role} {f : Facts} {c : Call}
     (h : ((confirmCap tree v a).grants roles).allows gov spawned lists f c) : c.op = confirmOp ∧ f.id = tree := by
   obtain ⟨l, ml, op, cov, _⟩ := h
@@ -99,7 +99,7 @@ theorem confirm_only (gov : Bytes → Bytes → Prop) (spawned lists : DocId →
   subst ml
   exact ⟨op.symm, cov⟩
 
-variable (r : Reader) (gov : Bytes → Bytes → Prop) (spawned lists : DocId → DocId → Prop)
+variable (r : Reader) (gov : Hash → Hash → Prop) (spawned lists : DocId → DocId → Prop)
 
 /-- A confirmation a reader counts: an envelope caps authorizes, on the tree Doc, calling `tree/1`'s confirm for
 claim `c`. -/
@@ -128,7 +128,7 @@ theorem member_by_confirm {founded : Hash → Option String} {v : String}
 end
 
 section Decided
-variable (tree : DocId) (r : Reader) (gov : Bytes → Bytes → Bool) (spawned lists : DocId → DocId → Bool)
+variable (tree : DocId) (r : Reader) (gov : Hash → Hash → Bool) (spawned lists : DocId → DocId → Bool)
 
 /-- The members a reader counts from one envelope: when caps authorizes it and it is on the tree Doc, the vaults the
 claims its confirms name founded (`founded`, the tree's). -/

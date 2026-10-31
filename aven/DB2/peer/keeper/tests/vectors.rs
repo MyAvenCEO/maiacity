@@ -1,4 +1,4 @@
-//! A keeper's arrivals against Lean's traces (`db/spec/vectors/keeper.json`, README rule 10): uploads from devices to
+//! A keeper's arrivals against Lean's traces (`peer/spec/vectors/keeper.json`, README rule 10): uploads from devices to
 //! a keeper, one Doc, from an empty store; after each, the items held, the next number and the pages of what came after
 //! each asked number are the model's. Every state is also stored and restored, as a keeper reads its ref back.
 
@@ -11,7 +11,7 @@ use serde_json::Value;
 
 fn vectors(file: &str) -> Vec<Value> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../db/spec/vectors")
+        .join("../../peer/spec/vectors")
         .join(file);
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     serde_json::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))

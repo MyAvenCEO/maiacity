@@ -13,7 +13,7 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use aven_core::{DocId, Facts, Target, Value};
+use aven_core::{DocId, Facts, Hash, Target, Value};
 
 use crate::value;
 
@@ -314,7 +314,7 @@ pub struct Spec {
 /// Who governs whom, which actor spawned which and what a collection lists: avenID's, the actors' and the
 /// collections' own signed listings, given as tests (`Target.coversB`'s parameters).
 pub struct Relations<'a> {
-    pub gov: &'a dyn Fn(&str, &str) -> bool,
+    pub gov: &'a dyn Fn(&Hash, &Hash) -> bool,
     pub spawned: &'a dyn Fn(&DocId, &DocId) -> bool,
     pub lists: &'a dyn Fn(&DocId, &DocId) -> bool,
 }

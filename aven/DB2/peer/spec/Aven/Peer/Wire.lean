@@ -5,7 +5,7 @@ import Aven.Core.Bytes
 # The wire
 
 Our one protocol (README, rule 9), on ALPN `aven/db/1`, a frozen name: one stream each way. It opens with a greeting,
-a JSON line, and every frame after it is a Value in Core's one codec (`Aven.DB.WireCbor`, A29).
+a JSON line, and every frame after it is a Value in Core's one codec (`Aven.Peer.WireCbor`, A29).
 
 The greeting is the one exception to rule 1's one codec, and it is frozen (A29): its form never changes with the wire
 version, so a peer of any version reads another's and refuses it with `update` (PEERS.md §7). It is a JSON object on
@@ -16,7 +16,7 @@ sends nothing after its hello until the other's has come, so a peer on another v
 
 open Lean
 
-namespace Aven.DB
+namespace Aven.Peer
 
 open Aven.Core (Bytes)
 
@@ -63,7 +63,7 @@ def Greeting.parse (line : String) : Option Greeting := do
     pure (.update (← (j.getObjValAs? Nat "wire").toOption))
   | _ => none
 
-/-- The frames after the greeting, each a Value in the one codec (`Aven.DB.WireCbor`). -/
+/-- The frames after the greeting, each a Value in the one codec (`Aven.Peer.WireCbor`). -/
 inductive Frame where
   /-- the Aven Peer tells each peer who is connected, itself included, on every change -/
   | presence (peers : List String)
@@ -286,7 +286,7 @@ def heads300 : List Head := (List.range 300).map fun i => ⟨toString i, "id", i
 
 A peer that shared many files is told the ones kept in pages of at most `pageSize` names, as the heads are: together
 they are every file (`keptPages_files`), none is empty (`pages_ne_nil`), and a page of the longest names fits a frame
-(`Aven.DB.WireCbor`). -/
+(`Aven.Peer.WireCbor`). -/
 
 def keptPages (fs : List String) : List Frame := (pages pageSize fs).map .kept
 
@@ -311,9 +311,9 @@ Every connection's greeting, the hello, names the wire version its peer speaks, 
 rarely, and never with an ordinary release (PEERS.md §7, decision 11). Two peers meet only on one version:
 
 - **no fallback** (README rule 9): a peer speaks to another only when their versions are equal (`meet_speaks`, as
-  `Aven.ID.Records.speaks_same` says of every peer); any other hello is answered with `update` and the version it speaks,
-  and the connection closes (`meet_refuses`). A line that is no greeting, such as version 0's hello without its
-  version, is refused as `bad`: version 1, the first to carry a version, made those tabs reload once by hand;
+  `speaks_same` says of every peer); any other hello is answered with `update` and the version it speaks, and the
+  connection closes (`meet_refuses`). A line that is no greeting, such as version 0's hello without its version, is
+  refused as `bad`: version 1, the first to carry a version, made those tabs reload once by hand;
 - **the older one follows**: of two peers that differ, exactly one is behind (`follows_one`), and only it updates
   (`follows_newer`): an open tab switches to the newer release at once, a native Peer says `update` until its owner
   upgrades it. A peer that is ahead never goes back, so a tab never reloads for an older peer;
@@ -331,6 +331,14 @@ def meet (mine theirs : Nat) : Option Greeting := if theirs = mine then none els
 /-- **No fallback:** a connection carries on only between peers of one wire version. -/
 theorem meet_speaks {mine theirs : Nat} : meet mine theirs = none ↔ theirs = mine := by
   unfold meet; split <;> simp_all
+
+/-- A peer speaks to another only on its own wire version. -/
+def speaks (mine theirs : Nat) : Bool := mine == theirs
+
+/-- **`speaks_same`:** no fallback: a peer speaks exactly one wire version, the one `meet` carries on with. -/
+theorem speaks_same {mine theirs : Nat} : speaks mine theirs = true ↔ theirs = mine ∧ meet mine theirs = none := by
+  simp only [speaks, beq_iff_eq, meet_speaks]
+  exact ⟨fun h => ⟨h.symm, h.symm⟩, fun h => h.1.symm⟩
 
 /-- **Any other version is refused with `update`,** and the version spoken. -/
 theorem meet_refuses {mine theirs : Nat} (h : theirs ≠ mine) : meet mine theirs = some (.update mine) := by
@@ -373,4 +381,4 @@ def meetExamples : List (String × Nat × Nat) := [
   ("a newer peer: refused, and it waits for this one", 2, 3),
   ("far apart: refused", 2, 9)]
 
-end Aven.DB
+end Aven.Peer

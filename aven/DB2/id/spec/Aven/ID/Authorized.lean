@@ -82,7 +82,7 @@ structure DeviceCap where
 
 /-- A call a device cap lets its device make on a Doc. With no grants listed, every call: governing is never an op,
 since owners govern k of n and no cap and no device does (rule 2), so this never lets a device govern. -/
-def DeviceCap.allows (gov : Bytes → Bytes → Prop) (spawned lists : DocId → DocId → Prop) (dc : DeviceCap) (f : Facts)
+def DeviceCap.allows (gov : Hash → Hash → Prop) (spawned lists : DocId → DocId → Prop) (dc : DeviceCap) (f : Facts)
     (c : Call) : Prop :=
   match dc.grants with
   | none => True
@@ -122,7 +122,7 @@ def Reader.holdsAt (r : Reader) (c : Cap) (v : String) : Bool :=
 /-- An envelope's footprint: the steps its calls lower to, which the engine checks what it changed against. -/
 def Reader.footprint (r : Reader) (e : Envelope) : List Step := (r.calls e).flatMap r.lower
 
-variable (r : Reader) (gov : Bytes → Bytes → Prop) (spawned lists : DocId → DocId → Prop)
+variable (r : Reader) (gov : Hash → Hash → Prop) (spawned lists : DocId → DocId → Prop)
 
 /-- The signing device acts within its device cap: the cap is from the vault the device serves, lets it write on the
 envelope's branch, and allows every call the envelope makes on its Doc. -/
@@ -360,7 +360,7 @@ a device evaluates them (`Target.coversB`). Each `…B` is its proposition, deci
 
 section Decided
 
-variable (gov : Bytes → Bytes → Bool) (spawned lists : DocId → DocId → Bool)
+variable (gov : Hash → Hash → Bool) (spawned lists : DocId → DocId → Bool)
 
 /-- `Grant.allows`, decided. -/
 def Grant.allowsB (g : Grant) (f : Facts) (c : Call) : Bool :=

@@ -1,4 +1,4 @@
-//! Presence (`Aven.DB.Presence`): who is connected, as the Aven Peer counts it and tells each peer. It sees
+//! Presence (`Aven.Peer.Presence`): who is connected, as the Aven Peer counts it and tells each peer. It sees
 //! connections, not peers, so it keeps a count of open connections per peer, and presence is the peers with at least
 //! one: each connected peer counted once.
 

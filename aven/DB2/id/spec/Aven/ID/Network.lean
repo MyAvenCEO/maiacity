@@ -51,8 +51,8 @@ The theorems:
 - `removal_beats`, `removal_keeps_past`, `removal_keeps_kept`: a removal beats an owner's concurrent act, never one in
   its past or one a counted confirmation rests on (A191).
 
-`settle_restore`, production's ref order, the record kinds and `settled.json` are avenPEER's (`Aven.ID.Restore`,
-`Aven.ID.Records`; PEERS.md, Thread A). -/
+`settle_restore`, production's ref order, the history entries and `settled.json` are avenPEER's (`Aven.ID.Restore`,
+`Aven.Peer.History`; PEERS.md, Thread A). -/
 
 namespace Aven.ID
 

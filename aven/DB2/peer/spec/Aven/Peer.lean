@@ -1,2 +1,13 @@
 import Aven.Peer.DocSync
 import Aven.Peer.Judge
+import Aven.Peer.Presence
+import Aven.Peer.Wire
+import Aven.Peer.WireCbor
+import Aven.Peer.Json
+import Aven.Peer.Keeper
+import Aven.Peer.Fetch
+import Aven.Peer.Serve
+import Aven.Peer.History
+import Aven.Peer.CatchUp
+import Aven.Peer.HistoryJson
+import Aven.Peer.Failures

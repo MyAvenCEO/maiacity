@@ -35,8 +35,9 @@ keeper passes a vault's data on (A22, `Aven.ID.Keeping`); a grant whose ops writ
 
 namespace Aven.ID
 
-/-- A vault's id as Core's targets name it: the bytes of `v:` and its name, as Core's vectors write them. -/
-def vaultId (v : String) : Core.Bytes := ("v:" ++ v).toUTF8.toList
+/-- A vault's id as Core's targets name it: a 32-byte name (A190). Until avenID's PR A names the tree's vaults by
+their geneses (`Aven.ID.VaultName`, A164), the models stand a vault's text id in by the BLAKE3 name of `v:` and it. -/
+def vaultId (v : String) : Core.Hash := Core.blake3 ("v:" ++ v).toUTF8.toList
 
 /-- `core/1`'s op, by its id: the BLAKE3 name of its stored form. -/
 def coreOp (o : Core.CoreOp) : Core.OpId := o.id Core.blake3
@@ -75,18 +76,18 @@ def Grant.within (g h : Grant) : Bool := g.all fun l => h.any l.within
 /-- A grant lets op `o` reach the Doc whose genesis fixed `f`: one of its lines names the op and covers the Doc. Who
 governs whom, which actor spawned which and what a collection lists are avenID's, the actors' and the collections'
 (`Aven.ID.Collections`), so they are parameters, as in Core. -/
-def Grant.reaches (gov : Core.Bytes → Core.Bytes → Prop) (spawned lists : Core.DocId → Core.DocId → Prop) (g : Grant)
+def Grant.reaches (gov : Core.Hash → Core.Hash → Prop) (spawned lists : Core.DocId → Core.DocId → Prop) (g : Grant)
     (f : Core.Facts) (o : Core.OpId) : Prop :=
   ∃ l ∈ g, l.op = o ∧ l.doc.covers gov spawned lists f
 
 /-- A grant allows a call on the Doc `f`: one of its lines names the call's op, covers the Doc, and its bounds hold
 for the call's parameters. -/
-def Grant.allows (gov : Core.Bytes → Core.Bytes → Prop) (spawned lists : Core.DocId → Core.DocId → Prop) (g : Grant)
+def Grant.allows (gov : Core.Hash → Core.Hash → Prop) (spawned lists : Core.DocId → Core.DocId → Prop) (g : Grant)
     (f : Core.Facts) (c : Core.Call) : Prop :=
   ∃ l ∈ g, l.op = c.op ∧ l.doc.covers gov spawned lists f ∧ l.admits c = true
 
 /-- A call a grant allows reaches its Doc by its op. -/
-theorem Grant.allows_reaches {gov : Core.Bytes → Core.Bytes → Prop} {spawned lists : Core.DocId → Core.DocId → Prop}
+theorem Grant.allows_reaches {gov : Core.Hash → Core.Hash → Prop} {spawned lists : Core.DocId → Core.DocId → Prop}
     {g : Grant} {f : Core.Facts} {c : Core.Call} (a : g.allows gov spawned lists f c) :
     g.reaches gov spawned lists f c.op := by
   obtain ⟨l, ml, lo, lc, _⟩ := a
@@ -95,7 +96,7 @@ theorem Grant.allows_reaches {gov : Core.Bytes → Core.Bytes → Prop} {spawned
 /-- **A grant whose ops write nothing lets a call write nothing** (A2): when every op a grant names lowers to no step,
 every call it allows lowers to none, so the verdict's footprint part lets its envelope bring, change or remove no
 Record (the engine's `footprint_steps`). `core/1`'s read, tell, keep and share are such ops (`CoreOp.writes`). -/
-theorem no_step_without_write {gov : Core.Bytes → Core.Bytes → Prop} {spawned lists : Core.DocId → Core.DocId → Prop}
+theorem no_step_without_write {gov : Core.Hash → Core.Hash → Prop} {spawned lists : Core.DocId → Core.DocId → Prop}
     {steps : Core.Call → List Core.Step} {g : Grant} (h : ∀ l ∈ g, ∀ c : Core.Call, c.op = l.op → steps c = [])
     {f : Core.Facts} {c : Core.Call} (a : g.allows gov spawned lists f c) : steps c = [] := by
   obtain ⟨l, ml, lo, _⟩ := a
@@ -119,7 +120,7 @@ theorem Line.within_admits {l m : Line} {c : Core.Call} (w : l.within m = true) 
     | none => rfl
     | some _ => simp [Core.Bound.within] at wb
 
-theorem Grant.within_reaches {gov : Core.Bytes → Core.Bytes → Prop} {spawned lists : Core.DocId → Core.DocId → Prop}
+theorem Grant.within_reaches {gov : Core.Hash → Core.Hash → Prop} {spawned lists : Core.DocId → Core.DocId → Prop}
     {g h : Grant} {f : Core.Facts} {o : Core.OpId} (w : g.within h = true) (r : g.reaches gov spawned lists f o) :
     h.reaches gov spawned lists f o := by
   obtain ⟨l, ml, lo, lc⟩ := r
@@ -128,7 +129,7 @@ theorem Grant.within_reaches {gov : Core.Bytes → Core.Bytes → Prop} {spawned
   simp only [Line.within, Bool.and_eq_true, beq_iff_eq] at lm
   exact ⟨m, mm, lm.1.1 ▸ lo, Core.Target.le_sound lm.1.2 lc⟩
 
-theorem Grant.within_allows {gov : Core.Bytes → Core.Bytes → Prop} {spawned lists : Core.DocId → Core.DocId → Prop}
+theorem Grant.within_allows {gov : Core.Hash → Core.Hash → Prop} {spawned lists : Core.DocId → Core.DocId → Prop}
     {g h : Grant} {f : Core.Facts} {c : Core.Call} (w : g.within h = true) (a : g.allows gov spawned lists f c) :
     h.allows gov spawned lists f c := by
   obtain ⟨l, ml, lo, lc, la⟩ := a
@@ -335,17 +336,17 @@ def Tree.issued (t : Tree) (th : String → Nat) (c : Cap) : Bool :=
 /-- `issuer` has authority over vault `v`'s Docs: `v` is its own, or one it governs whose quorum it meets alone (A28).
 Authority runs down the tree only through quorums: over a coop whose owners approve k of n with k > 1, no one owner
 vault has it, and the coop issues as itself. -/
-def authorityOverVault (t : Tree) (th : String → Nat) (issuer : String) (v : Core.Bytes) : Bool :=
+def authorityOverVault (t : Tree) (th : String → Nat) (issuer : String) (v : Core.Hash) : Bool :=
   v == vaultId issuer || (t.governs issuer).any fun w => vaultId w == v && t.alone th issuer w
 
 /-- Who governs whom as authority runs (A28), by vault ids: `v` governs `w` when `w` is below it and `v` meets its
 quorum alone. It is the `gov` a reader gives targets that reach below a vault and its own-authority check. -/
-def Ctx.governs (x : Ctx) (v w : Core.Bytes) : Bool :=
+def Ctx.governs (x : Ctx) (v w : Core.Hash) : Bool :=
   x.tree.vaults.any fun a => vaultId a.id == v && (x.tree.governs a.id).any fun b =>
     vaultId b == w && x.tree.alone x.threshold a.id b
 
 /-- What a target is anchored to: the vault it names, or the Doc (an actor or a collection is a Doc). -/
-def anchor : Core.Target → Core.Bytes ⊕ Core.DocId
+def anchor : Core.Target → Core.Hash ⊕ Core.DocId
   | .vault v _ | .vaultType v _ _ => .inl v
   | .doc d _ => .inr d
 
@@ -355,7 +356,7 @@ theorem anchor_le {a b : Core.Target} (h : a.le b = true) : anchor a = anchor b 
 
 /-- The vault a line lies in: the vault its target names, or the vault of the Doc, actor or collection it names, as
 its genesis fixed. A Doc the reader doesn't know gives none. -/
-def lineVault (x : Ctx) (l : Line) : Option Core.Bytes :=
+def lineVault (x : Ctx) (l : Line) : Option Core.Hash :=
   match anchor l.doc with
   | .inl v => some v
   | .inr d => (x.facts d).map (·.vault)
@@ -473,7 +474,7 @@ theorem linksRules_cons {p c : Cap} {cs : List Cap} :
   rw [linksRules, rules_all]
 
 /-- Every cap after `p` in a chain reaches nothing `p` doesn't. -/
-theorem links_reach (gov : Core.Bytes → Core.Bytes → Prop) (spawned lists : Core.DocId → Core.DocId → Prop) :
+theorem links_reach (gov : Core.Hash → Core.Hash → Prop) (spawned lists : Core.DocId → Core.DocId → Prop) :
     ∀ {p : Cap} {cs : List Cap}, (linksRules x p cs).all (·.1) = true → ∀ c ∈ cs, ∀ f v,
       (c.grants x.roles).reaches gov spawned lists f v → (p.grants x.roles).reaches gov spawned lists f v
   | _, [], _, _, m => nomatch m
@@ -486,7 +487,7 @@ theorem links_reach (gov : Core.Bytes → Core.Bytes → Prop) (spawned lists : 
     · exact Grant.within_reaches w (links_reach gov spawned lists rest d m f v r)
 
 /-- Every cap after `p` in a chain allows no call `p` doesn't. -/
-theorem links_allow (gov : Core.Bytes → Core.Bytes → Prop) (spawned lists : Core.DocId → Core.DocId → Prop) :
+theorem links_allow (gov : Core.Hash → Core.Hash → Prop) (spawned lists : Core.DocId → Core.DocId → Prop) :
     ∀ {p : Cap} {cs : List Cap}, (linksRules x p cs).all (·.1) = true → ∀ c ∈ cs, ∀ f s,
       (c.grants x.roles).allows gov spawned lists f s → (p.grants x.roles).allows gov spawned lists f s
   | _, [], _, _, m => nomatch m
@@ -499,7 +500,7 @@ theorem links_allow (gov : Core.Bytes → Core.Bytes → Prop) (spawned lists : 
     · exact Grant.within_allows w (links_allow gov spawned lists rest d m f s a)
 
 /-- A chain only narrows: no cap in it lets an op reach a Doc its root doesn't. -/
-theorem narrow_chain (gov : Core.Bytes → Core.Bytes → Prop) (spawned lists : Core.DocId → Core.DocId → Prop) {r : Cap}
+theorem narrow_chain (gov : Core.Hash → Core.Hash → Prop) (spawned lists : Core.DocId → Core.DocId → Prop) {r : Cap}
     {cs : List Cap} (h : chainOk x (r :: cs) = true) : ∀ c ∈ r :: cs, ∀ f v,
       (c.grants x.roles).reaches gov spawned lists f v → (r.grants x.roles).reaches gov spawned lists f v := by
   rw [chainOk, chainRules, rules_all] at h
@@ -510,7 +511,7 @@ theorem narrow_chain (gov : Core.Bytes → Core.Bytes → Prop) (spawned lists :
 
 /-- **And no cap in it allows a call its root doesn't** (A32): the same op, on a Doc the root covers, with parameters
 the root's bounds allow. Bounds narrow too. -/
-theorem narrow_ops (gov : Core.Bytes → Core.Bytes → Prop) (spawned lists : Core.DocId → Core.DocId → Prop) {r : Cap}
+theorem narrow_ops (gov : Core.Hash → Core.Hash → Prop) (spawned lists : Core.DocId → Core.DocId → Prop) {r : Cap}
     {cs : List Cap} (h : chainOk x (r :: cs) = true) : ∀ c ∈ r :: cs, ∀ f s,
       (c.grants x.roles).allows gov spawned lists f s → (r.grants x.roles).allows gov spawned lists f s := by
   rw [chainOk, chainRules, rules_all] at h
@@ -632,7 +633,7 @@ theorem new_holder_granted {p c : Cap} (h : (linkRules x p c).all (·.1) = true)
 
 /-- **An attenuation grants nothing new** (A27): it keeps its parent's holder, reaches and allows nothing its parent
 doesn't, shares no further, and its conditions are at least as strict: no later expiry, no other branches. -/
-theorem attenuate_within (gov : Core.Bytes → Core.Bytes → Prop) (spawned lists : Core.DocId → Core.DocId → Prop)
+theorem attenuate_within (gov : Core.Hash → Core.Hash → Prop) (spawned lists : Core.DocId → Core.DocId → Prop)
     {p c : Cap} (h : (linkRules x p c).all (·.1) = true) (att : c.form = .attenuate) :
     c.holder = p.holder ∧
       (∀ f v, (c.grants x.roles).reaches gov spawned lists f v → (p.grants x.roles).reaches gov spawned lists f v) ∧
