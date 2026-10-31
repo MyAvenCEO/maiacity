@@ -16,6 +16,10 @@ attenuates (`keep_one_holder`). A cap keeps a Doc only as the chain's root does,
 over every line, its own vault or one it governs (`keeper_named_by_owner`). So no one else extends it, not Maia City
 adding servers and not a keeper: a new keeper needs a new keep cap from the owner.
 
+**A keeper decides only about its own resources** (A44): its vault offers storage to a vault or a group, as an op
+`keep-offer` bounded by quota and rate (`keepOffer`, `offerLine`), and it keeps a Doc only where the owner's keep cap
+names it and its own offer covers that owner (`Aven.ID.Keep`, `kept_only_offered`): keep caps ∩ offers.
+
 **By default** a new vault issues a keep cap for everything of its own to Maia City's keeper, the Aven Peer acting for
 Aven (`defaultKeep`, `default_kept`). It is an ordinary grant: it holds only with its owners' approval (D14), however
 the join collects it, and without one it breaks `.approval` (`default_approved`, `default_needs_owner`). The vault can
@@ -42,6 +46,33 @@ theorem keeps_iff {roles : List Role} {c : Cap} {f : Facts} :
     c.keeps gov spawned lists roles f = true ↔
       (c.grants roles).reaches (gov · · = true) (spawned · · = true) (lists · · = true) f (coreOp .keep) := by
   simp only [Cap.keeps, List.any_eq_true, Bool.and_eq_true, beq_iff_eq, Target.coversB_iff, Grant.reaches]
+
+/-- avenID's own op, by its id: the name of its stored form `{"op": name, "plugin": "id/1"}`, as `core/1`'s are
+named. -/
+def idOp (name : String) : OpId :=
+  nameOf blake3
+    (.map [("op".toUTF8.toList, .text name.toUTF8.toList), ("plugin".toUTF8.toList, .text "id/1".toUTF8.toList)])
+
+/-- **A keeper's offer** (A44): its vault offers its storage to a vault or a group, as much as the `quota` bound, in
+bytes, and as fast as the `rate` bound, in bytes a second. Placement has one source, the owner's keep caps; a keeper
+decides only about its own resources. -/
+def keepOffer : OpId := idOp "keep-offer"
+
+def rateParam : Bytes := "rate".toUTF8.toList
+def quotaParam : Bytes := "quota".toUTF8.toList
+
+/-- An offer's line: `keep-offer` on the keeper's vault, its rate and quota each bounded to one value. -/
+def offerLine (keeper : String) (rate quota : Nat) : Line :=
+  ⟨keepOffer, .vault (vaultId keeper) false, [(rateParam, some [.uint rate]), (quotaParam, some [.uint quota])]⟩
+
+/-- The quota an offer gives: the largest its `keep-offer` lines bound. -/
+def Cap.offerQuota (o : Cap) : Nat :=
+  (o.grant.filterMap fun l =>
+    if l.op == keepOffer then
+      match l.bound quotaParam with
+      | some [.uint q] => some q
+      | _ => none
+    else none).foldr max 0
 
 /-- A keep cap's keeper: the vault that holds it. Only a vault keeps. -/
 def Cap.keeper (c : Cap) : Option String :=

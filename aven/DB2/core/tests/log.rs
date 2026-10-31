@@ -391,7 +391,8 @@ proptest! {
 
     /// A signed thing reads back too, and its name is its label's and body's alone.
     #[test]
-    fn signed_round_trip(label in ".{0,12}", body in any_value(), signer in proptest::collection::vec(any::<u8>(), 0..40),
+    fn signed_round_trip(label in ".{0,12}", body in any_value(),
+        signer in proptest::collection::vec(any::<u8>(), 0..40),
         sig in proptest::collection::vec(any::<u8>(), 0..80), sig2 in proptest::collection::vec(any::<u8>(), 0..80)) {
         let s = Signed { label, body: canonical(body), signer, sig };
         prop_assert_eq!(Signed::decode(&s.encode()), Some(s.clone()));
