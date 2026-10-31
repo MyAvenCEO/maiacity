@@ -789,7 +789,7 @@ issuer's device hands it the Docs the cap's target covers, each with its first f
    (`deleted_final`).
 
 Withdrawals and deletes only take away, so a device signs them alone, as it signs a revocation. Readers see a delete
-too, as a Record in the Doc; that half is the docs layer's and `Revoke`'s.
+too, as a Record in the Doc ([revocation](#revocation), `delete_ends`).
 
 Key blobs and letters are served to any member, since they are useless without the keys they're sealed to. A device
 whose proof is refused because a newer epoch came fetches that epoch's key blob, opens its stanza and proves again.
@@ -843,6 +843,14 @@ whole chain from genesis for every removal.
 **Expiry** is a revocation made by the clock. It is acked by the first writer whose clock has passed it, and from that
 ack on it is final like any other: a write the ack hadn't seen doesn't count, whatever time it claims (`time_acked`).
 Until the first ack, a write is judged by the time it claims (`before_ack`).
+
+**A delete** (A22, Samuel, 31 Oct 2026: the right to be forgotten) ends a Doc. The Doc's vault writes a delete Record
+in it, on its own authority. A delete by anyone else is no delete, and until a reader holds one it changes nothing
+(`undeleted_survive`). Once a reader holds it, an envelope counts only if it is the delete or in its past: nothing
+written after it or beside it counts, whatever cap it writes under (`delete_ends`). It depends on the envelopes named,
+not on the order they came in, so readers holding the same deletes and the same past of each agree (`deleted_agree`).
+Keepers drop the bytes ([blind keepers](#blind-keepers), `Books.deleted_gone`), and each device drops the Doc's keys
+and bytes. What a reader had seen can't be unseen (rule 15).
 
 **Lost and stolen devices.** Owners remove the device. A device that may have been copied gets the heal.
 
@@ -1259,6 +1267,7 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `elsewhere_kept` | Elsewhere, once the revocation reaches the Doc, only what its kept list or another writer's ack had seen counts |
 | | `revocation_wins` | The three together (rule 14). An envelope lists its whole chain, so revoking any link reaches it: the cascade |
 | | `waits_named` | A wait names only what the envelope builds on and the reader lacks, by hash |
+| | `delete_ends`, `undeleted_survive`, `deleted_agree` | Once a reader holds a delete its Doc's vault wrote, only the delete and its past count; a delete by anyone else changes nothing; and readers holding the same deletes and the same past of each agree (A22) |
 | `Epochs` | `confidential` | A key is learned only as one's own or by opening a seal with a key already known. Keys are any type with an equality (`WorldOf κ`): names in the examples (`World`), Core's bytes in `Aven.Architecture` (R5) |
 | | `unknowable` | Keys of a closed set a party owns none of stay unknown to it; the next three are its instances |
 | | `removal_next_epoch` | A new epoch sealed only to the remaining readers stays closed to a removed one |
