@@ -296,7 +296,8 @@ def heads300 : List Head := (List.range 300).map fun i => ⟨toString i, "id", i
 
 A reader tells its tips and answers a telling in pages of at most `pageSize`, as the heads go: together the pages are
 the whole (`docTipsPages_tips`, `docHavePages_values`), none is empty but a telling of nothing, which is one empty page
-so the other hears its end, and a page of the longest entries fits a frame (`Aven.Peer.WireCbor`). A reader answers a
+so the other hears its end (`docTipsPages_shape`, `docHavePages_shape`), the last alone says nothing more comes
+(`docTipsPages_last`, `docHavePages_last`), and a page of the longest entries fits a frame (`Aven.Peer.WireCbor`). A reader answers a
 telling once its last page, the one without `more`, is in (`DocSync.beyond` answers a whole telling). -/
 
 /-- One telling of a reader's tips of `doc`: its pages, every one but the last with `more`. -/
@@ -364,6 +365,55 @@ theorem docTipsPages_last (doc : Aven.Core.Hash) (ts : List DocSync.Tip) :
     have : 0 < ps.length := List.length_pos_iff.mpr h
     simp [List.getElem_zipIdx]
     omega
+
+/-- The last page of an answer ends it, as a telling's does. -/
+theorem docHavePages_last (doc : Aven.Core.Hash) (vs : List Aven.Core.Hash) :
+    ((docHavePages doc vs).map Frame.more?).getLast? = some false := by
+  unfold docHavePages
+  simp only
+  split
+  · simp [Frame.more?]
+  · next h =>
+    generalize e : pages pageSize vs = ps at h ⊢
+    rw [List.getLast?_eq_some_getLast (by simpa using h)]
+    simp only [List.getLast_map, Frame.more?]
+    rw [List.getLast_eq_getElem]
+    have : 0 < ps.length := List.length_pos_iff.mpr h
+    simp [List.getElem_zipIdx]
+    omega
+
+/-- **No page is empty, but the telling of nothing:** that is one empty page, so the other hears its end; otherwise
+every page holds between one and `pageSize` tips. The one exception to `pages_ne_nil`. -/
+theorem docTipsPages_shape (doc : Aven.Core.Hash) (ts : List DocSync.Tip) :
+    (ts = [] ∧ docTipsPages doc ts = [.docTips doc [] false]) ∨
+      ∀ f ∈ docTipsPages doc ts, f.docTips? ≠ [] ∧ f.docTips?.length ≤ pageSize := by
+  have whole := pages_flatten (n := pageSize) (by decide) ts.length ts (Nat.le_refl _)
+  unfold docTipsPages
+  simp only
+  split
+  · next e => rw [e] at whole; exact .inl ⟨by simpa using whole.symm, rfl⟩
+  · right
+    intro f mf
+    obtain ⟨⟨p, i⟩, mpi, rfl⟩ := List.mem_map.mp mf
+    have mp : p ∈ (pages pageSize ts).zipIdx.map Prod.fst := List.mem_map_of_mem (f := Prod.fst) mpi
+    rw [List.zipIdx_map_fst] at mp
+    exact pages_ne_nil (by decide) ts.length ts (Nat.le_refl _) p mp
+
+/-- **No page is empty, but the answer of nothing**, as for tips. -/
+theorem docHavePages_shape (doc : Aven.Core.Hash) (vs : List Aven.Core.Hash) :
+    (vs = [] ∧ docHavePages doc vs = [.docHave doc [] false]) ∨
+      ∀ f ∈ docHavePages doc vs, f.docHave? ≠ [] ∧ f.docHave?.length ≤ pageSize := by
+  have whole := pages_flatten (n := pageSize) (by decide) vs.length vs (Nat.le_refl _)
+  unfold docHavePages
+  simp only
+  split
+  · next e => rw [e] at whole; exact .inl ⟨by simpa using whole.symm, rfl⟩
+  · right
+    intro f mf
+    obtain ⟨⟨p, i⟩, mpi, rfl⟩ := List.mem_map.mp mf
+    have mp : p ∈ (pages pageSize vs).zipIdx.map Prod.fst := List.mem_map_of_mem (f := Prod.fst) mpi
+    rw [List.zipIdx_map_fst] at mp
+    exact pages_ne_nil (by decide) vs.length vs (Nat.le_refl _) p mp
 
 #guard (docTipsPages (Aven.Core.blake3 [1]) []).length = 1
 #guard (docHavePages (Aven.Core.blake3 [1]) ((List.range 300).map fun i => Aven.Core.blake3 [i.toUInt8])).map

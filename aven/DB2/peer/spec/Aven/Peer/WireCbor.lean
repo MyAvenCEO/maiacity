@@ -5,7 +5,7 @@ import Aven.Core.Text
 import Aven.Peer.Wire
 
 /-!
-# The wire's frames in CBOR (A29, wire version 2)
+# The wire's frames in CBOR (A29, from wire version 2)
 
 From wire version 2, every frame after the greeting is a Value in Core's one codec (rule 1, `Aven.Core.Cbor`): a map
 with text keys in the codec's order, sent as its canonical encoding behind a 4-byte big-endian length. The greeting
@@ -497,13 +497,13 @@ def longest : List Head := List.replicate pageSize ⟨String.ofList (List.replic
 #guard (frameBytes (.docHave (blake3 [1]) (List.replicate pageSize (blake3 [2])) true)).length * 2 < maxFrame
 
 -- a stream: the greeting's line, then frames; cut anywhere, the same
-def stream : Bytes := greetingBytes (.hello "alice-peer" 2) ++ bytesOf (frameExamples.take 3)
-#guard read [stream] == (some (.hello "alice-peer" 2), [frameExamples.take 3], none)
+def stream : Bytes := greetingBytes (.hello "alice-peer" wireVersion) ++ bytesOf (frameExamples.take 3)
+#guard read [stream] == (some (.hello "alice-peer" wireVersion), [frameExamples.take 3], none)
 #guard (List.range stream.length).all fun i =>
   let (g, fs, e) := read ([stream.take i, stream.drop i] : List Bytes)
-  g == some (.hello "alice-peer" 2) && fs.flatten == frameExamples.take 3 && e.isNone
+  g == some (.hello "alice-peer" wireVersion) && fs.flatten == frameExamples.take 3 && e.isNone
 -- an update in the hello's place, then nothing
-#guard read [greetingBytes (.update 2)] == (some (.update 2), [[]], none)
+#guard read [greetingBytes (.update wireVersion)] == (some (.update wireVersion), [[]], none)
 -- version 0's hello, without its version: no greeting
 #guard read [text "{\"frame\":\"hello\",\"peer\":\"a\"}\n"] == (none, [], some .bad)
 -- a line without its newline, past the limit

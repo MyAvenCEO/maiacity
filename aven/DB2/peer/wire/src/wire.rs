@@ -17,8 +17,8 @@ pub const ALPN: &[u8] = b"aven/db/1";
 /// A frame or a greeting longer than this is refused: no peer needs one.
 pub const MAX_FRAME: usize = 64 * 1024;
 /// The wire version this peer speaks (`Aven.Peer.Wire.wireVersion`): a number of its own, changed only when a frame's
-/// meaning changes, never with an ordinary release. 2: frames in CBOR (A29); 1 was frames as JSON lines, 0 the wire
-/// before it had versions.
+/// meaning changes, never with an ordinary release. 3: a Doc's sync between readers (`doc_tips`, `doc_have`); 2 was
+/// frames in CBOR (A29), 1 frames as JSON lines, 0 the wire before it had versions.
 pub const VERSION: u64 = 3;
 
 /// The first line each side sends (`Aven.Peer.Wire.Greeting`).
