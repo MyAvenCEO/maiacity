@@ -4,11 +4,11 @@ import Aven.Core.ValueEq
 /-!
 # Splits, discounting, counting and versions, decided
 
-`Log` states `Split`, `Discounted`, `Counts` and `Version.holds` as propositions; `Past` decides `Before` for what a
+`Log` states `Split`, `Closed`, `Discounted`, `Counts` and `Version.holds` as propositions; `Past` decides `Before` for what a
 reader holds. This module decides the four for a reader holding `S`, so the running model (`aven-core-model`) and the
 vectors (`counts.json`) answer exactly them:
 
-- `splitB_iff`, `discountedB_iff`, `countsB_iff`, `holdsB_iff`: each decision is its proposition.
+- `splitB_iff`, `closedB_iff`, `discountedB_iff`, `countsB_iff`, `holdsB_iff`: each decision is its proposition.
 -/
 
 namespace Aven.Core
@@ -31,8 +31,17 @@ def splitIn (S : List Envelope) (x : Envelope) : Bool := S.any (splitB nm x)
 def discountedB (S : List Envelope) (e : Envelope) : Bool :=
   splitIn nm S e || S.any fun x => inPast nm S e x && splitIn nm S x
 
-def countsB (ok : Envelope → Bool) (S : List Envelope) (e : Envelope) : Bool :=
-  ok e && !splitIn nm S e && S.all fun x => !inPast nm S e x || (ok x && !splitIn nm S x)
+/-- Every parent `x` names is the name of an envelope of `S`. -/
+def parentsHeld (S : List Envelope) (x : Envelope) : Bool :=
+  (x.prev.toList ++ x.deps).all fun h => S.any fun y => nm y == h
+
+/-- `e`'s whole past is held. -/
+def closedB (S : List Envelope) (e : Envelope) : Bool :=
+  parentsHeld nm S e && S.all fun x => !inPast nm S e x || parentsHeld nm S x
+
+def countsB (fit authorized : Envelope → Bool) (S : List Envelope) (e : Envelope) : Bool :=
+  closedB nm S e && (fit e && authorized e) && !splitIn nm S e &&
+    S.all fun x => !inPast nm S e x || ((fit x && authorized x) && !splitIn nm S x)
 
 def holdsB (S : List Envelope) (v : Version) (e : Envelope) : Bool :=
   S.any fun t => v.contains (nm t) && (decide (t = e) || (S.contains e && inPast nm S t e))
@@ -70,23 +79,45 @@ theorem discountedB_iff {S : List Envelope} {e : Envelope} : discountedB nm S e 
     · exact .inl ⟨y, hy, hs⟩
     · exact .inr ⟨x, hx, hp, y, hy, hs⟩
 
-theorem countsB_iff {ok : Envelope → Bool} {S : List Envelope} {e : Envelope} :
-    countsB nm ok S e = true ↔ Counts nm (fun x => ok x = true) S e := by
-  simp only [countsB, Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true, Bool.or_eq_true, splitIn_false]
+theorem parentsHeld_iff {S : List Envelope} {x : Envelope} :
+    parentsHeld nm S x = true ↔ ∀ h, (x.prev = some h ∨ h ∈ x.deps) → ∃ y ∈ S, nm y = h := by
+  simp only [parentsHeld, List.all_eq_true, List.mem_append, Option.mem_toList, List.any_eq_true, beq_iff_eq]
+
+theorem closedB_iff {S : List Envelope} {e : Envelope} : closedB nm S e = true ↔ Closed nm S e := by
+  simp only [closedB, Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true, Bool.not_eq_true', parentsHeld_iff]
   constructor
-  · rintro ⟨⟨hok, hs⟩, hall⟩ x hr
+  · rintro ⟨he, hall⟩ x hr
     rcases reaches_decided.mp hr with rfl | ⟨hx, hp⟩
-    · exact ⟨hok, hs⟩
-    · rcases hall x hx with h | ⟨h₁, h₂⟩
+    · exact he
+    · rcases hall x hx with h | h
       · simp [hp] at h
-      · exact ⟨h₁, h₂⟩
+      · exact h
   · intro h
     refine ⟨h e (.refl _), fun x hx => ?_⟩
     cases hp : inPast nm S e x
     · exact .inl rfl
     · exact .inr (h x (reaches_decided.mpr (.inr ⟨hx, hp⟩)))
 
-theorem holdsB_iff {S : List Envelope} {v : Version} {e : Envelope} : holdsB nm S v e = true ↔ Version.holds nm S v e := by
+theorem countsB_iff {fit authorized : Envelope → Bool} {S : List Envelope} {e : Envelope} :
+    countsB nm fit authorized S e = true ↔ Counts nm (fun x => fit x = true) (fun x => authorized x = true) S e := by
+  simp only [countsB, Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true, Bool.or_eq_true, splitIn_false,
+    closedB_iff]
+  constructor
+  · rintro ⟨⟨⟨hc, hok⟩, hs⟩, hall⟩
+    refine ⟨hc, fun x hr => ?_⟩
+    rcases reaches_decided.mp hr with rfl | ⟨hx, hp⟩
+    · exact ⟨hok, hs⟩
+    · rcases hall x hx with h | ⟨h₁, h₂⟩
+      · simp [hp] at h
+      · exact ⟨h₁, h₂⟩
+  · rintro ⟨hc, h⟩
+    refine ⟨⟨⟨hc, (h e (.refl _)).1⟩, (h e (.refl _)).2⟩, fun x hx => ?_⟩
+    cases hp : inPast nm S e x
+    · exact .inl rfl
+    · exact .inr (h x (reaches_decided.mpr (.inr ⟨hx, hp⟩)))
+
+theorem holdsB_iff {S : List Envelope} {v : Version} {e : Envelope} :
+    holdsB nm S v e = true ↔ Version.holds nm S v e := by
   simp only [holdsB, List.any_eq_true, Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq, List.contains_iff_mem,
     Version.holds]
   constructor

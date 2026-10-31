@@ -1,12 +1,14 @@
 //! avenPEER's core, the same in every peer: its keys, the link to the Aven Peer that says how it is, the record it keeps
 //! through its store, the members-only door (`members`), the chat's room (`room`) and its history (`chats`), iroh-blobs'
 //! provider behind the door (`blobs`), and (in the Peer, `native`) the files it shares and keeps (`keep`), presence as
-//! the Aven Peer counts it and its relay's allow-list. The protocol's rules live in `aven-db-core`; this is the edge
+//! the Aven Peer counts it and its relay's allow-list. The protocol's rules live in `aven-gen1`; this is the edge
 //! where iroh and the clock meet them (README, rule 2). What ships is the node, never the box: sandbox or live is
 //! configuration only (keys, members, the relay, the addresses), and nothing here knows which it is.
 
 pub mod blobs;
 pub mod chats;
+pub mod doc_host;
+pub mod docs;
 #[cfg(feature = "native")]
 pub mod door;
 #[cfg(feature = "native")]
@@ -26,14 +28,13 @@ pub mod room;
 #[cfg(feature = "native")]
 pub mod tls;
 
-/// Where a peer's events go: the timeline's lines (`aven_db_core::timeline`), already shaped.
+/// Where a peer's events go: the timeline's lines (`aven_gen1::timeline`), already shaped.
 pub type Notes = std::sync::Arc<dyn Fn(String) + Send + Sync>;
 
-/// A newcomer's relay token: the frame that carries its statement, as hex, so it travels in a URL's query. The Aven
-/// Peer's relay reads it (`relay`).
-pub fn token(frame: &aven_db_core::wire::Frame) -> String {
-    let line = aven_db_core::wire::encode(frame);
-    line[..line.len() - 1]
+/// A newcomer's relay token: the frame that carries its statement, its Value's one encoding (`aven_core`) as hex, so
+/// it travels in a URL's query. The Aven Peer's relay reads it (`relay`).
+pub fn token(frame: &aven_gen1::wire::Frame) -> String {
+    aven_core::encode(&frame.value())
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect()
@@ -50,7 +51,7 @@ pub fn know(endpoint: &iroh::Endpoint, addr: iroh::EndpointAddr) {
 
 /// The wire version this peer says it speaks (PEERS.md §7): `wire::VERSION`, unless [`speak`] set another.
 static WIRE: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(aven_db_core::wire::VERSION);
+    std::sync::atomic::AtomicU64::new(aven_gen1::wire::VERSION);
 
 /// The wire version this peer's hellos and gossip topic name, and the only one it accepts.
 pub fn wire_version() -> u64 {

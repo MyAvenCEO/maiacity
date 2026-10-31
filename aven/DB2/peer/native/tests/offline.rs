@@ -8,9 +8,9 @@
 
 use std::sync::{Arc, Mutex};
 
-use aven_db_core::chain::{Answer, Body};
-use aven_db_core::wire::Frame;
 use aven_db_store::{RefName, backend};
+use aven_gen1::chain::{Answer, Body};
+use aven_gen1::wire::Frame;
 use aven_peer::Notes;
 use aven_peer::chats::{self, Chats};
 use aven_peer::members::Gate;
@@ -85,7 +85,7 @@ async fn catch_up(to: &Chats, from: &Chats) {
                 panic!()
             };
             for line in lines {
-                to.take(line.as_bytes()).await;
+                to.take(&line).await;
             }
         }
     }
@@ -98,7 +98,7 @@ async fn upload(from: &Chats, to: &Chats) {
             panic!()
         };
         for line in lines {
-            assert!(matches!(to.take(line.as_bytes()).await, Answer::Moved(_)));
+            assert!(matches!(to.take(&line).await, Answer::Moved(_)));
         }
     }
 }

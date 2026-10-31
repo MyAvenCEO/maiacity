@@ -5,7 +5,7 @@
 	// route, so no vault is ever named `brain`.
 	import MainNav from './MainNav.svelte';
 	import Node from './Node.svelte';
-	import { art, glossary, packages, page, slide } from './brain.js';
+	import { art, face, glossary, packages, page, slide } from './brain.js';
 
 	let { home = '#/' } = $props();
 
@@ -18,9 +18,25 @@
 	});
 
 	const part = $derived(packages.find((p) => p.id === route[0]));
-	const words = glossary();
-	const story = $derived(part?.page && part.id !== 'glossary' ? page(part.page) : []);
-	const slides = $derived(part?.page ? (part.slides ?? []).map((id) => slide(part.id, id)) : []);
+	// The trees come from markdown-runtime, in the runtimes worker: each page shows once its own are drawn. A page
+	// markdown-runtime refused says so.
+	let words = $state({ tree: [], terms: new Map() });
+	let story = $state([]);
+	let slides = $state([]);
+	let refused = $state(null);
+	$effect(() => {
+		const p = part;
+		story = [];
+		slides = [];
+		refused = null;
+		if (!p?.page) return;
+		const asked = p.id === 'glossary' ? glossary().then((g) => (words = g)) : Promise.all([page(p.page), Promise.all((p.slides ?? []).map((id) => slide(p.id, id)))]).then(([s, ss]) => {
+			if (part !== p) return;
+			story = s;
+			slides = ss;
+		});
+		asked.catch((error) => part === p && (refused = String(error?.message ?? error)));
+	});
 	const textOf = (node) => (typeof node === 'string' ? node : node[2].map(textOf).join(''));
 	// the contents on the left: this page's sections, then the other packages
 	const sections = $derived(
@@ -49,9 +65,9 @@
 			entry.scrollIntoView({ block: id.startsWith('g-') ? 'start' : 'center' });
 		} else scrollTo(0, 0);
 	});
-	// a slide asked for by name: scroll to it; any other page opens at its top
+	// a slide asked for by name: scroll to it, once its page is drawn; any other page opens at its top
 	$effect(() => {
-		if (route[0] === 'glossary') return;
+		if (route[0] === 'glossary' || (part?.slides?.length && !slides.length)) return;
 		const entry = route[1] && document.getElementById(`slide-${route[1]}`);
 		if (entry) entry.scrollIntoView({ block: 'start' });
 		else scrollTo(0, 0);
@@ -101,7 +117,12 @@
 					</ul>
 				</details>
 			</aside>
-			{#if route[0] === 'glossary'}
+			{#if refused}
+				<main class="prose" data-testid="refused">
+					<h1>{part.name}</h1>
+					<p>This page wasn't drawn: {refused}</p>
+				</main>
+			{:else if route[0] === 'glossary'}
 				<main class="prose glossary" data-testid="glossary">
 					{#each words.tree as node, i (i)}<Node {node} />{/each}
 				</main>
@@ -112,7 +133,7 @@
 					</div>
 					{#each slides as s (s.id)}
 						<section class="slide-page" id={`slide-${s.id}`} data-testid={`slide-${s.id}`}>
-							{#each s.tree as node, i (i)}<Node {node} />{/each}
+							<div class="face" use:face={s.part}></div>
 							<div class="prose">
 								<!-- the slide's own headline stands for its text's title -->
 								{#each s.text[0]?.[0] === 'h1' ? s.text.slice(1) : s.text as node, i (i)}<Node {node} />{/each}
@@ -360,6 +381,11 @@
 	.slide-page {
 		margin: 40px 0 0;
 		scroll-margin-top: 16px;
+	}
+
+	/* a slide's place, kept while face-runtime runs its part, so the page doesn't move when it is drawn */
+	.slide-page .face {
+		aspect-ratio: 16 / 9;
 	}
 
 	.slide-page .prose {

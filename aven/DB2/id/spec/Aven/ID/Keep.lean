@@ -1,6 +1,6 @@
 import Aven.ID.Keeping
 
-/-! # Keepers: fetch keys that chain, proofs, who pays, and what a keeper keeps for whom
+/-! # Keepers: fetch keys that chain, proofs, and what a keeper keeps for whom
 
 Keeping is a role any peer can take (A22, Samuel, 30 Oct 2026). A member's own Peer, or the Aven Peer, keeps a Doc's
 sealed bytes for its readers under a keep cap, and none is special. A keeper reads no caps, so it checks who may add
@@ -12,12 +12,16 @@ or fetch by key proofs alone:
   (`current_agrees`), and it is a key that chains (`current_chained`);
 - it flags every fork (`fork_flagged`);
 - it serves a fetch, and takes an upload, only from a device that signs the connection's TLS exporter with the current
-  fetch key (`served_current`). The uploading vault pays, and only for what the keeper took from it
-  (`uploader_pays`).
+  fetch key (`served_current`).
+
+Caps' half of a keeper's gate answers two things: who may fetch or upload (the fetch-key chain and its proof), and how
+much the keeper keeps for a vault (`Books.quota`, from its own offers). Who pays, and what a keeper takes within the
+quota, are the keeper's own, since only it sees each item's uploaders (`Aven.Peer.Serve`, A44, A45).
 
 Hashes and keys are numbers, as `Network`'s ticket hashes are: `Aven.Core`'s 32-byte values, read big-endian. Two
 links with one epoch hash and different keys can only be forged, and the smaller key goes first. A link's `n` is its
-key blob's `n`, the epoch's depth from the genesis.
+key blob's `n`, the epoch's depth from the genesis. The bytes a backend signs and checks, each a Core signed thing, are
+`Aven.ID.KeepCbor`'s (A30).
 
 **How a ground fork settles** (A22, the architect's answer, 30 Oct 2026). A reader of an earlier epoch still holds that
 epoch's fetch key, so it can fork the chain there and grind its epoch hash below the writers' (`grind_example`).
@@ -477,84 +481,6 @@ theorem grind_settled {s : Keep} {i k c : Nat} {X : List FetchLink}
   unfold next
   rw [ch]
 
-/-- An upload: its proof, the connection's exporter, and its padded size. -/
-structure Upload where
-  proof : Proof
-  exporter : String
-  bytes : Nat
-  deriving DecidableEq, Repr
-
-/-- What a vault pays: the bytes of the uploads the keeper took from its devices. -/
-def bill (s : Keep) (ups : List Upload) (vault : String) : Nat :=
-  ups.foldr (fun u b => (if s.serves u.exporter u.proof && u.proof.vault == vault then u.bytes else 0) + b) 0
-
-/-- The uploading vault pays: one more upload adds its bytes to its own vault's bill if the keeper took it, and
-nothing to anyone else's. -/
-theorem uploader_pays (s : Keep) (ups : List Upload) (u : Upload) (vault : String) :
-    s.bill (u :: ups) vault =
-      s.bill ups vault + if s.serves u.exporter u.proof && u.proof.vault == vault then u.bytes else 0 := by
-  simp only [bill, List.foldr_cons]
-  exact Nat.add_comm _ _
-
-/-- What a vault's taken uploads add up to. -/
-def spent (taken : List Upload) (vault : String) : Nat :=
-  taken.foldr (fun u b => (if u.proof.vault == vault then u.bytes else 0) + b) 0
-
-/-- The uploads a keeper takes, in the order they come (R10): each one it serves, while its vault's spending stays
-within the quota its keep cap gives that vault. One that would pass the quota is refused; what came before stays. -/
-def admit (s : Keep) (quota : String → Nat) : List Upload → List Upload → List Upload
-  | taken, [] => taken
-  | taken, u :: us =>
-    if s.serves u.exporter u.proof && decide (spent taken u.proof.vault + u.bytes ≤ quota u.proof.vault) then
-      s.admit quota (taken ++ [u]) us
-    else s.admit quota taken us
-
-theorem spent_append (taken : List Upload) (u : Upload) (v : String) :
-    spent (taken ++ [u]) v = spent taken v + if u.proof.vault == v then u.bytes else 0 := by
-  induction taken with
-  | nil => simp [spent]
-  | cons x xs ih =>
-    simp only [List.cons_append, spent, List.foldr_cons] at ih ⊢
-    rw [ih]
-    omega
-
-/-- No vault's spending ever passes its quota, whatever comes, in whatever order. -/
-theorem quota_holds (s : Keep) (quota : String → Nat) :
-    ∀ (us taken : List Upload), (∀ v, spent taken v ≤ quota v) → ∀ v, spent (s.admit quota taken us) v ≤ quota v
-  | [], _, h, v => h v
-  | u :: us, taken, h, v => by
-    simp only [admit]
-    split
-    · rename_i c
-      simp only [Bool.and_eq_true, decide_eq_true_eq] at c
-      refine quota_holds s quota us _ (fun w => ?_) v
-      rw [spent_append]
-      by_cases e : u.proof.vault = w
-      · subst e
-        simpa using c.2
-      · have : (u.proof.vault == w) = false := by simpa using e
-        simp only [this]
-        simpa using h w
-    · exact quota_holds s quota us taken h v
-
-/-- Everything a keeper takes it also serves: a proof by the current fetch key, or a branch's newest while a fork is
-unsettled, on that upload's connection. -/
-theorem admitted_served (s : Keep) (quota : String → Nat) :
-    ∀ (us taken : List Upload), (∀ u ∈ taken, s.serves u.exporter u.proof = true) →
-      ∀ u ∈ s.admit quota taken us, s.serves u.exporter u.proof = true
-  | [], _, h, u, m => h u m
-  | x :: us, taken, h, u, m => by
-    simp only [admit] at m
-    split at m
-    · rename_i c
-      simp only [Bool.and_eq_true] at c
-      refine admitted_served s quota us _ (fun y my => ?_) u m
-      rcases List.mem_append.mp my with my | my
-      · exact h y my
-      · simp only [List.mem_singleton] at my
-        exact my ▸ c.1
-    · exact admitted_served s quota us taken h u m
-
 end Keep
 
 /-! ## What a keeper keeps, and for whom (A22) -/
@@ -571,33 +497,35 @@ inductive Order where
   | delete (doc : Core.DocId)
   deriving DecidableEq, Repr
 
-/-- An order and the device that signed it. -/
-structure Signed where
+/-- A keeper's order, a withdrawal or a delete, and the device that sent it (A45: "signed" is only Core's). -/
+structure KeepOrder where
   order : Order
   signer : String
   deriving DecidableEq, Repr
 
 /-- A keeper's books: its own vault, the tree as it holds it, how many owners each vault needs, the keep caps it was
-handed, and the orders that came. -/
+handed, the orders that came, the offers its own vault issued (A44), and who is in each group they name. -/
 structure Books where
   keeper : String
   tree : Tree
   threshold : String → Nat := fun _ => 1
   listings : List Listing
-  orders : List Signed := []
+  orders : List KeepOrder := []
+  offers : List Cap := []
+  inGroup : Core.DocId → String → Bool := fun _ _ => false
 
 namespace Books
 
 variable (b : Books)
 
-/-- A keep cap the keeper takes: a grant to the keeper's vault, signed by a device of its issuer, which its issuer's
-owners approved, an owner vault by its own quorum (D14). -/
+/-- A keep cap the keeper takes: a grant to the keeper's vault, signed by its issuer, by a device or its owners (A28),
+which its issuer's owners approved, an owner vault by its own quorum (D14). -/
 def valid (c : Cap) : Bool :=
-  c.form == .grant && c.holder == .vault b.keeper && b.tree.actsFor c.signer == some c.issuer &&
+  c.form == .grant && c.holder == .vault b.keeper && b.tree.issued b.threshold c &&
     b.tree.approves b.threshold c.issuer c.id c.approvals
 
 /-- An order a device of vault `v` signed, as the tree says. -/
-def signedBy (v : String) (o : Signed) : Bool := b.tree.actsFor o.signer == some v
+def signedBy (v : String) (o : KeepOrder) : Bool := b.tree.actsFor o.signer == some v
 
 /-- A keep cap a device of its issuer withdrew. -/
 def withdrawn (c : Cap) : Bool := b.orders.any fun o => o.order == .withdraw c.id && b.signedBy c.issuer o
@@ -605,10 +533,31 @@ def withdrawn (c : Cap) : Bool := b.orders.any fun o => o.order == .withdraw c.i
 /-- A Doc a device of vault `v` deleted. -/
 def deleted (v : String) (d : Core.DocId) : Bool := b.orders.any fun o => o.order == .delete d && b.signedBy v o
 
-/-- The keeper keeps `d` under the keep cap `l`: the cap is valid and not withdrawn, it lists `d`, and its issuer
-hasn't deleted `d`. -/
+/-- An offer the keeper stands by (A44): a grant of its own vault, signed by it and approved by its owners (D14), not
+withdrawn, that offers storage (`keepOffer`). -/
+def offerValid (o : Cap) : Bool :=
+  o.form == .grant && o.issuer == b.keeper && b.tree.issued b.threshold o &&
+    b.tree.approves b.threshold o.issuer o.id o.approvals && !b.withdrawn o && o.grant.any (·.op == keepOffer)
+
+/-- Whom an offer covers: the vault it names, or every vault in the group it names. -/
+def offeredTo (o : Cap) (v : String) : Bool :=
+  match o.holder with
+  | .vault w => w == v
+  | .group g => b.inGroup g v
+  | .«public» => false
+
+/-- The keeper's own offers cover vault `v`. -/
+def offered (v : String) : Bool := b.offers.any fun o => b.offerValid o && b.offeredTo o v
+
+/-- How much the keeper keeps for vault `v`: the largest quota of the offers that cover it. The keeper takes uploads
+within it (`Aven.Peer.Serve`). -/
+def quota (v : String) : Nat :=
+  ((b.offers.filter fun o => b.offerValid o && b.offeredTo o v).map (·.offerQuota)).foldr max 0
+
+/-- The keeper keeps `d` under the keep cap `l`: the cap is valid and not withdrawn, it lists `d`, its issuer hasn't
+deleted `d`, and the keeper's own offer covers that issuer (A44). -/
 def keepsUnder (l : Listing) (d : Core.DocId) : Bool :=
-  b.valid l.cap && !b.withdrawn l.cap && l.docs.any (·.1 == d) && !b.deleted l.cap.issuer d
+  b.valid l.cap && !b.withdrawn l.cap && l.docs.any (·.1 == d) && !b.deleted l.cap.issuer d && b.offered l.cap.issuer
 
 /-- The keeper keeps `d`: under one of its keep caps. -/
 def keeps (d : Core.DocId) : Bool := b.listings.any (b.keepsUnder · d)
@@ -619,32 +568,42 @@ def serves (k : Keep) (d : Core.DocId) (exporter : String) (p : Keep.Proof) : Bo
 
 theorem keepsUnder_iff {l : Listing} {d : Core.DocId} :
     b.keepsUnder l d = true ↔ b.valid l.cap = true ∧ b.withdrawn l.cap = false ∧ (∃ k, (d, k) ∈ l.docs) ∧
-      b.deleted l.cap.issuer d = false := by
+      b.deleted l.cap.issuer d = false ∧ b.offered l.cap.issuer = true := by
   simp only [keepsUnder, Bool.and_eq_true, Bool.not_eq_true', List.any_eq_true, beq_iff_eq, Prod.exists]
   constructor
-  · rintro ⟨⟨⟨v, w⟩, d', k, m, rfl⟩, nd⟩
-    exact ⟨v, w, ⟨k, m⟩, nd⟩
-  · rintro ⟨v, w, ⟨k, m⟩, nd⟩
-    exact ⟨⟨⟨v, w⟩, d, k, m, rfl⟩, nd⟩
+  · rintro ⟨⟨⟨⟨v, w⟩, d', k, m, rfl⟩, nd⟩, o⟩
+    exact ⟨v, w, ⟨k, m⟩, nd, o⟩
+  · rintro ⟨v, w, ⟨k, m⟩, nd, o⟩
+    exact ⟨⟨⟨⟨v, w⟩, d, k, m, rfl⟩, nd⟩, o⟩
 
 /-- **A keeper keeps only what a keep cap covers** (D1): whatever it keeps, a valid keep cap lists, one its issuer
 hasn't withdrawn, with the Doc not deleted. -/
 theorem kept_only_covered {d : Core.DocId} (h : b.keeps d = true) :
     ∃ l ∈ b.listings, b.valid l.cap = true ∧ b.withdrawn l.cap = false ∧ (∃ k, (d, k) ∈ l.docs) ∧
-      b.deleted l.cap.issuer d = false := by
+      b.deleted l.cap.issuer d = false ∧ b.offered l.cap.issuer = true := by
   simp only [keeps, List.any_eq_true] at h
   obtain ⟨l, m, k⟩ := h
   exact ⟨l, m, (b.keepsUnder_iff).mp k⟩
 
+/-- **A keeper keeps only what it offered** (A44): whatever it keeps, the owner's keep cap lists, and one of the
+keeper's own offers, valid and not withdrawn, covers that owner: keep caps ∩ offers. -/
+theorem kept_only_offered {d : Core.DocId} (h : b.keeps d = true) :
+    ∃ l ∈ b.listings, (∃ k, (d, k) ∈ l.docs) ∧
+      ∃ o ∈ b.offers, b.offerValid o = true ∧ b.offeredTo o l.cap.issuer = true := by
+  obtain ⟨l, m, _, _, ld, _, off⟩ := b.kept_only_covered h
+  simp only [offered, List.any_eq_true, Bool.and_eq_true] at off
+  obtain ⟨o, mo, v, t⟩ := off
+  exact ⟨l, m, ld, o, mo, v, t⟩
+
 /-- **A keeper holds a vault's data only under a keep cap that vault's owners approved** (A22): whatever it keeps, a
-keep cap lists that names the keeper, that a device of its issuer signed, and that its issuer's owners approved. That
+keep cap lists that names the keeper, that its issuer signed, and that its issuer's owners approved. That
 its issuer is the Doc's own vault, or one that governs it, is the issuer's check and every reader's
 (`kept_by_owner`). -/
 theorem kept_only_by_owner {d : Core.DocId} (h : b.keeps d = true) :
     ∃ l ∈ b.listings, (∃ k, (d, k) ∈ l.docs) ∧ l.cap.form = .grant ∧ l.cap.holder = .vault b.keeper ∧
-      b.tree.actsFor l.cap.signer = some l.cap.issuer ∧
+      b.tree.issued b.threshold l.cap = true ∧
       b.tree.approves b.threshold l.cap.issuer l.cap.id l.cap.approvals = true := by
-  obtain ⟨l, m, v, _, ld, _⟩ := b.kept_only_covered h
+  obtain ⟨l, m, v, _, ld, _, _⟩ := b.kept_only_covered h
   simp only [valid, Bool.and_eq_true, beq_iff_eq] at v
   obtain ⟨⟨⟨g, ho⟩, s⟩, a⟩ := v
   exact ⟨l, m, ld, g, ho, s, a⟩
@@ -670,7 +629,7 @@ theorem withdrawn_dropped {d : Core.DocId}
     (w : ∀ l ∈ b.listings, (∃ k, (d, k) ∈ l.docs) → b.withdrawn l.cap = true) : b.keeps d = false := by
   cases h : b.keeps d
   · rfl
-  · obtain ⟨l, m, _, nw, ld, _⟩ := b.kept_only_covered h
+  · obtain ⟨l, m, _, nw, ld, _, _⟩ := b.kept_only_covered h
     rw [w l m ld] at nw
     exact absurd nw (by decide)
 
@@ -680,18 +639,40 @@ theorem withdrawn_not_served {d : Core.DocId}
     b.serves k d e p = false := by
   simp [serves, b.withdrawn_dropped w]
 
-/-- **Withdrawing one keep cap leaves the others** (D2): a Doc the keeper keeps under another keep cap, it keeps. -/
+theorem any_congr_mem {α : Type} {p q : α → Bool} : ∀ {l : List α}, (∀ a ∈ l, p a = q a) → l.any p = l.any q
+  | [], _ => rfl
+  | a :: l, h => by
+    simp only [List.any_cons, h a List.mem_cons_self, any_congr_mem fun x m => h x (List.mem_cons_of_mem _ m)]
+
+/-- Withdrawing a cap changes no other cap's standing. -/
+theorem withdrawn_other {c s : String} {x : Cap} (ne : x.id ≠ c) :
+    ({ b with orders := b.orders ++ [⟨.withdraw c, s⟩] } : Books).withdrawn x = b.withdrawn x := by
+  have : (Order.withdraw c == Order.withdraw x.id) = false := by simp [Ne.symm ne]
+  simp [withdrawn, signedBy, this]
+
+/-- Nor deletes anything. -/
+theorem deleted_withdraw {c s v : String} {d : Core.DocId} :
+    ({ b with orders := b.orders ++ [⟨.withdraw c, s⟩] } : Books).deleted v d = b.deleted v d := by
+  simp [deleted, signedBy]
+
+/-- Nor changes whom the keeper's offers cover, when it is no offer. -/
+theorem offered_withdraw_other {c s v : String} (notOffer : ∀ o ∈ b.offers, o.id ≠ c) :
+    ({ b with orders := b.orders ++ [⟨.withdraw c, s⟩] } : Books).offered v = b.offered v := by
+  unfold offered
+  exact any_congr_mem fun o mo => by simp only [offerValid, offeredTo, b.withdrawn_other (notOffer o mo)]
+
+/-- **Withdrawing one keep cap leaves the others** (D2): a Doc the keeper keeps under another keep cap, it keeps, and
+its offers stand. -/
 theorem others_kept {l : Listing} {d : Core.DocId} (m : l ∈ b.listings) (k : b.keepsUnder l d = true) {c : String}
-    (other : l.cap.id ≠ c) (s : String) :
+    (other : l.cap.id ≠ c) (notOffer : ∀ o ∈ b.offers, o.id ≠ c) (s : String) :
     ({ b with orders := b.orders ++ [⟨.withdraw c, s⟩] } : Books).keeps d = true := by
   simp only [keeps, List.any_eq_true]
   refine ⟨l, m, ?_⟩
-  simp only [keepsUnder, valid, withdrawn, deleted, signedBy, List.any_append, List.any_cons, List.any_nil,
-    Bool.or_false] at k ⊢
-  simp only [Bool.and_eq_true, Bool.not_eq_true', Bool.or_eq_false_iff] at k ⊢
-  have h1 : (Order.withdraw c == Order.withdraw l.cap.id) = false := by simp [Ne.symm other]
-  have h2 : (Order.withdraw c == Order.delete d) = false := by simp
-  exact ⟨⟨⟨k.1.1.1, k.1.1.2, by rw [h1]; rfl⟩, k.1.2⟩, k.2, by rw [h2]; rfl⟩
+  obtain ⟨v, w, ld, nd, off⟩ := (b.keepsUnder_iff).mp k
+  refine (Books.keepsUnder_iff _).mpr ⟨v, ?_, ld, ?_, ?_⟩
+  · rw [b.withdrawn_other other]; exact w
+  · rw [b.deleted_withdraw]; exact nd
+  · rw [b.offered_withdraw_other notOffer]; exact off
 
 /-- **A delete drops the bytes** (D3): once a device of a Doc's vault deletes it, the keeper keeps it under none of
 that vault's keep caps, and, a vault's keep caps listing only its own Docs (`kept_by_owner`), under none at all: it
@@ -703,7 +684,7 @@ theorem deleted_gone {d : Core.DocId} {v : String}
   have gone : b.keeps d = false := by
     cases h : b.keeps d
     · rfl
-    · obtain ⟨l, m, _, _, ld, nd⟩ := b.kept_only_covered h
+    · obtain ⟨l, m, _, _, ld, nd, _⟩ := b.kept_only_covered h
       obtain ⟨o, mo, od, sv⟩ := del
       have : b.deleted l.cap.issuer d = true := by
         simp only [deleted, signedBy, List.any_eq_true, Bool.and_eq_true, beq_iff_eq]
@@ -792,28 +773,9 @@ def proofCases : List (String × Keep × String × Proof × Bool) :=
    ("a second grind after the choice, the forker's new key", keepSettledAgain, "x-5",
      ⟨"bob-peer-light", "bob", 402, "x-5"⟩, false)]
 
-/-- Uploads at the keeper of `d1`: Alice's taken, Bob's under an older key and Alice's replayed proof refused. -/
-def uploads : List Upload :=
-  [⟨alicesPhone, "x-1", 4096⟩, ⟨⟨"bob-peer-light", "bob", 201, "x-5"⟩, "x-5", 1024⟩,
-   ⟨alicesPhone, "x-2", 512⟩]
-
-def billCases : List (String × Nat) := [("alice", 4096), ("bob", 0)]
-
-/-- Alice's quota at the keeper of `d1` is 5000 bytes. Her 4096 bytes are taken, 1024 more would pass it and are
-refused, and 512 after that still fit. -/
-def quotaUploads : List Upload :=
-  [⟨alicesPhone, "x-1", 4096⟩, ⟨alicesPhone, "x-1", 1024⟩, ⟨alicesPhone, "x-1", 512⟩]
-
-def aliceQuota (v : String) : Nat := if v = "alice" then 5000 else 0
-
-theorem quota_example :
-    (keepD1.admit aliceQuota [] quotaUploads).map (·.bytes) = [4096, 512] ∧
-      Keep.spent (keepD1.admit aliceQuota [] quotaUploads) "alice" = 4608 := by decide
-
 theorem keep_examples :
     (keepCases.all fun (_, s, c, f) => s.current == c && s.flags == f) &&
-    (proofCases.all fun (_, s, e, p, b) => s.serves e p == b) &&
-    (billCases.all fun (v, b) => keepD1.bill uploads v == b) = true := by decide
+    (proofCases.all fun (_, s, e, p, b) => s.serves e p == b) = true := by decide
 
 /-- What a keeper can't tell: Bob, removed, forks from the key he still holds, and his smaller hash becomes current.
 The keeper flags the fork, and while it is unsettled still serves Alice's readers by their branch's newest key. -/

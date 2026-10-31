@@ -16,9 +16,10 @@ group `g-garden`. `Aven.ID.CapsJson` exports them as vectors. -/
 
 namespace Aven.ID
 
-/-- The cast's Docs, named by short bytes rather than 32-byte hashes so that `decide` stays quick. `tasks` and `notes`
-are type Docs, `g-garden` is the group of Alice's and Bob's vaults, and `album` is a collection of Alice's. -/
-def docOf (s : String) : Core.DocId := ⟨⟨s.toUTF8.toList⟩⟩
+/-- The cast's Docs, each named by the BLAKE3 hash of a label, so every id is 32 bytes as Core's are and Rust can read
+it. `tasks` and `notes` are type Docs, `g-garden` is the group of Alice's and Bob's vaults, and `album` is a collection
+of Alice's. -/
+def docOf (s : String) : Core.DocId := ⟨Core.blake3 s.toUTF8.toList⟩
 
 def d1 : Core.DocId := docOf "d1"
 def d2 : Core.DocId := docOf "d2"
@@ -29,14 +30,7 @@ def tasks : Core.DocId := docOf "tasks"
 def notes : Core.DocId := docOf "notes"
 def gGarden : Core.DocId := docOf "g-garden"
 def album : Core.DocId := docOf "album"
-
-/-- The parameters caps bounds on `core/1`'s writes: the type a step writes, and the fields it writes. -/
-def typeParam : Core.Bytes := "type".toUTF8.toList
-def fieldsParam : Core.Bytes := "fields".toUTF8.toList
-
-/-- A Doc, and a field, as a parameter's value. -/
-def docValue (d : Core.DocId) : Core.Value := .bytes d.hash.bytes
-def fieldValue (f : String) : Core.Value := .text f.toUTF8.toList
+def avenNotes : Core.DocId := docOf "aven-notes"
 
 /-- Reading a Doc. -/
 def readOn (d : Core.DocId) : Line := ⟨coreOp .read, .doc d .self, []⟩
@@ -44,7 +38,7 @@ def readOn (d : Core.DocId) : Line := ⟨coreOp .read, .doc d .self, []⟩
 /-- A `core/1` write on a Doc, of one type, and of some fields or any. -/
 def writeOn (o : Core.CoreOp) (d t : Core.DocId) (fields : Option (List String) := none) : Line :=
   ⟨coreOp o, .doc d .self,
-    (typeParam, some [docValue t]) :: (fields.map fun fs => (fieldsParam, some (fs.map fieldValue))).toList⟩
+    (Core.typeParam, some [docValue t]) :: (fields.map fun fs => (Core.fieldsParam, some (fs.map fieldValue))).toList⟩
 
 /-- Writing tasks into a Doc: new ones, and patches to any field. -/
 def tasksOn (d : Core.DocId) : Grant := [writeOn .put d tasks, writeOn .patch d tasks]
@@ -59,6 +53,7 @@ def castFacts (d : Core.DocId) : Option Core.Facts :=
   else if d == cityDome then some ⟨d, vaultId "maia-city", notes⟩
   else if d == gGarden then some ⟨d, vaultId "alice", groupType⟩
   else if d == album then some ⟨d, vaultId "alice", collectionType⟩
+  else if d == avenNotes then some ⟨d, vaultId "aven", notes⟩
   else none
 
 /-- What a reader of the cast knows: the tree, one owner per approval, who is in `g-garden`, one role, and what each
@@ -288,12 +283,14 @@ def noLists (_ _ : Core.DocId) : Bool := false
 
 #guard keepingExamples.all fun (_, caps, f, ks) => keepersOf noGov noSpawn noLists castCtx.roles caps f == ks
 
-/-! ### What a keeper keeps (A22)
+/-! ### What a keeper keeps (A22, A44)
 
-The Aven Peer keeps for Aven's vault. Bob's default keep cap comes with Bob's Docs `b1` and `b2`, which Bob's device
-resolved it to; Alice's keep cap with Alice's `d1`. Three keep caps it must not take come too: Bob's for Alice's Peer,
-one of Bob's without an owner's approval, and one for Maia City signed by a device of Alice's vault. Then Bob withdraws
-the default, Bob's device tries to withdraw Alice's keep cap, and Alice deletes `d1`, then lists it again. -/
+The Aven Peer keeps for Aven's vault, which offers storage to Maia City's members, Alice and Bob. Bob's default keep cap
+comes with Bob's Docs `b1` and `b2`, which Bob's device resolved it to; Alice's keep cap with Alice's `d1`. Three keep
+caps it must not take come too: Bob's for Alice's Peer, one of Bob's without an owner's approval, and one for Maia City
+signed by a device of Alice's vault. Then Bob withdraws the default, Bob's device tries to withdraw Alice's keep cap,
+and Alice deletes `d1`, then lists it again. Last, Aven's offers change: to Alice alone, withdrawn, unapproved, or
+another vault's. -/
 
 def b3 : Core.DocId := docOf "b3"
 def b4 : Core.DocId := docOf "b4"
@@ -311,8 +308,18 @@ def listCity : Listing :=
      grant := [keepOn (.vault (vaultId "maia-city") false)], approvals := [⟨"alice-owner", "keep-city"⟩] },
    [(cityDome, 600)]⟩
 
+/-- Maia City's members, Alice's and Bob's vaults, as a group. -/
+def gMembers : Core.DocId := docOf "g-members"
+
+/-- Aven's offer to Maia City's members (A44): up to 10 GB each, at 1 MB a second, approved by Aven's owner Maia City,
+through Alice's key. -/
+def avenOffer : Cap :=
+  { id := "offer-members", issuer := "aven", holder := .group gMembers, signer := "aven-peer",
+    grant := [offerLine "aven" 1000000 10000000000], approvals := [⟨"alice-owner", "offer-members"⟩] }
+
 def avenBooks : Books :=
-  { keeper := "aven", tree := cast, listings := [listBob, listAlice, listForAlicesPeer, listUnapproved, listCity] }
+  { keeper := "aven", tree := cast, listings := [listBob, listAlice, listForAlicesPeer, listUnapproved, listCity],
+    offers := [avenOffer], inGroup := fun g v => g == gMembers && (v == "alice" || v == "bob") }
 
 /-- The Docs the examples ask about. -/
 def bookDocs : List Core.DocId := [b1, b2, d1, b3, b4, cityDome]
@@ -327,9 +334,35 @@ def bookCases : List (String × Books × List Core.DocId) := [
   ("and lists it again under a new keep cap: still gone",
     { avenBooks with
       listings := avenBooks.listings ++ [⟨recap keepAlice "keep-alice-2" "alice-owner", [(d1, 100)]⟩],
-      orders := [⟨.delete d1, "alice-peer-light"⟩] }, [b1, b2])]
+      orders := [⟨.delete d1, "alice-peer-light"⟩] }, [b1, b2]),
+  ("Aven offers storage to Alice alone: Bob's keep cap names it, but no offer covers Bob (A44)",
+    { avenBooks with
+      offers := [recap avenOffer "offer-alice" "alice-owner" fun c => { c with holder := .vault "alice" }] }, [d1]),
+  ("Aven withdraws its offer: nothing is kept",
+    { avenBooks with orders := [⟨.withdraw "offer-members", "aven-peer"⟩] }, []),
+  ("an offer Aven's owners didn't approve covers no one",
+    { avenBooks with offers := [{ avenOffer with approvals := [] }] }, []),
+  ("an offer from another vault isn't Aven's to stand by",
+    { avenBooks with offers := [recap avenOffer "offer-bob" "bob-owner" fun c =>
+      { c with issuer := "bob", signer := "bob-peer-light" }] }, [])]
 
 #guard bookCases.all fun (_, b, ks) => bookDocs.filter b.keeps == ks
+-- Bob's keep cap is his default at the Aven Peer; one that may share, or is another vault's, is not.
+#guard keepBob.isDefaultKeep "bob" "aven" && !{ keepBob with share := 1 }.isDefaultKeep "bob" "aven" &&
+  !keepBob.isDefaultKeep "alice" "aven" &&
+  (defaultKeep "carol" "aven" none [⟨"carol-owner", "keep-carol"⟩]).isDefaultKeep "carol" "aven"
+-- The quota Aven keeps for a member is its offer's, and nothing for anyone the offer doesn't cover.
+#guard avenBooks.quota "bob" == 10000000000 && avenBooks.quota "maia-city" == 0
+
+/-- Aven offers Alice alone 5000 bytes, at 1000 bytes a second (A44). -/
+def smallOffer : Cap :=
+  recap avenOffer "offer-small" "alice-owner" fun c =>
+    { c with holder := .vault "alice", grant := [offerLine "aven" 1000 5000] }
+
+def smallBooks : Books := { avenBooks with offers := [smallOffer] }
+
+-- The quota Aven's offer to Alice alone gives: hers, and nothing for Bob.
+#guard smallBooks.quota "alice" == 5000 && smallBooks.quota "bob" == 0
 
 /-- Which branches a cap writes on, each answer written out by hand: main only on main, proposals on every branch but
 main, one branch only on it. -/
@@ -353,7 +386,7 @@ theorem approval_examples :
     approvalExamples.all (fun (_, sigs, k, v, d, b) => cast.approved k v d sigs == b) = true := by decide
 
 /-- The cast with the garden, a coop of Alice's and Bob's vaults that needs both. -/
-def garden : Vault := ⟨"garden", "The garden", .coop, [.vault "alice", .vault "bob"]⟩
+def garden : Vault := ⟨"garden", "The garden", .coop, [.vault "alice", .vault "bob"], 1⟩
 
 def gardenCast : Tree := { cast with vaults := cast.vaults ++ [garden] }
 
@@ -388,9 +421,9 @@ theorem recover_examples :
 
 /-- The cast's names for its Docs and vaults. -/
 def castName (d : Core.DocId) : String :=
-  ((([d1, d2, b1, cityNotes, cityDome, tasks, notes, gGarden, album].zip
-    ["d1", "d2", "b1", "city-notes", "city-dome", "tasks", "notes", "g-garden", "album"]).find? (·.1 == d)).map
-    (·.2)).getD "a Doc"
+  ((([d1, d2, b1, cityNotes, cityDome, tasks, notes, gGarden, album, avenNotes].zip
+    ["d1", "d2", "b1", "city-notes", "city-dome", "tasks", "notes", "g-garden", "album", "aven-notes"]).find?
+    (·.1 == d)).map (·.2)).getD "a Doc"
 
 def castVault (v : Core.Bytes) : String :=
   ((["alice", "bob", "maia-city", "aven"].find? (vaultId · == v))).getD "a vault"
@@ -400,7 +433,6 @@ def Holder.text : Holder → String
   | .vault v => v
   | .group g => s!"everyone in {castName g}"
   | .«public» => "every member of the network"
-  | .ticket k => s!"whoever claims the ticket {k}"
 
 /-- A target as avenOS shows it, the Docs and vaults by the names `name` gives them. -/
 def targetText (name : Core.DocId → String) (vault : Core.Bytes → String) : Core.Target → String

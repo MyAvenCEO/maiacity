@@ -12,12 +12,31 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use crate::cbor::Value;
-use crate::names::{DocId, Hash, name_of};
+use crate::limits::{MAX_BOUND_VALUES, MAX_PARAMS};
 use crate::target::Facts;
+use aven_codec::Value;
+use aven_codec::{DocId, Hash, name_of};
 
 /// An operation, named by the hash of its stored form.
 pub type OpId = Hash;
+
+/// A plugin's built-in op in its stored form, `{"op": name, "plugin": plugin}` (`OpId.stored`).
+pub fn stored_op(plugin: &str, name: &str) -> Value {
+    Value::Map(vec![
+        ("op".into(), Value::Text(name.into())),
+        ("plugin".into(), Value::Text(plugin.into())),
+    ])
+}
+
+/// Any plugin's built-in op id: the name of its stored form (`OpId.ofPlugin`), the one way an op of `core/1`,
+/// `tree/1` or any other plugin is named (A45).
+pub fn op_id(plugin: &str, name: &str) -> OpId {
+    name_of(&stored_op(plugin, name))
+}
+
+/// `core/1`'s write params: the type a write is on (`typeParam`) and the fields it sets (`fieldsParam`).
+pub const TYPE_PARAM: &str = "type";
+pub const FIELDS_PARAM: &str = "fields";
 
 /// `core/1`'s operations, the core verbs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -68,15 +87,12 @@ impl CoreOp {
 
     /// Its stored form, `{"op": name, "plugin": "core/1"}`.
     pub fn value(self) -> Value {
-        Value::Map(vec![
-            ("op".into(), Value::Text(self.name().into())),
-            ("plugin".into(), Value::Text("core/1".into())),
-        ])
+        stored_op("core/1", self.name())
     }
 
-    /// Its id: the name of its stored form.
+    /// Its id: `core/1`'s op of its name ([`op_id`]).
     pub fn id(self) -> OpId {
-        name_of(&self.value())
+        op_id("core/1", self.name())
     }
 }
 
@@ -95,6 +111,15 @@ impl Bound {
             (Bound::Any, _) => true,
             (Bound::OneOf(vs), Value::Array(xs)) => xs.iter().all(|x| vs.contains(x)),
             (Bound::OneOf(vs), v) => vs.contains(v),
+        }
+    }
+
+    /// Read back from [`Bound::value`] (`Bound.ofValue?`): null for any value, an array for the values it allows.
+    pub fn of_value(v: Value) -> Option<Bound> {
+        match v {
+            Value::Null => Some(Bound::Any),
+            Value::Array(vs) if vs.len() <= MAX_BOUND_VALUES => Some(Bound::OneOf(vs)),
+            _ => None,
         }
     }
 
@@ -141,11 +166,37 @@ impl Call {
             ("params".into(), Value::Map(self.params.clone())),
         ])
     }
+
+    /// Read back from [`Call::value`] (`Call.ofValue?`): its op a hash of 32 bytes, its params a map. Bytes that aren't
+    /// canonical never reach it: `decode` refuses them, a call's params out of order among them.
+    pub fn of_value(v: Value) -> Option<Call> {
+        let Value::Map(kvs) = v else { return None };
+        let [(ko, Value::Bytes(op)), (kp, Value::Map(params))]: [(String, Value); 2] =
+            kvs.try_into().ok()?
+        else {
+            return None;
+        };
+        if ko != "op" || kp != "params" || params.len() > MAX_PARAMS {
+            return None;
+        }
+        Some(Call {
+            op: Hash::of_value(&Value::Bytes(op))?,
+            params,
+        })
+    }
 }
 
-/// The built-in type of types: the root type of every type Doc, and its own. Its id is the name of a fixed label.
+/// A built-in type (`builtinType`): no Doc's genesis, its id the name of the label `<namespace> <name> 1`. The one
+/// way a part names its built-in types (A45).
+pub fn builtin_type(namespace: &str, name: &str) -> DocId {
+    DocId(name_of(&Value::Text(alloc::format!(
+        "{namespace} {name} 1"
+    ))))
+}
+
+/// The built-in type of types: the root type of every type Doc, and its own, `avenDB type of types 1`.
 pub fn type_of_types() -> DocId {
-    DocId(name_of(&Value::Text("avenDB type of types 1".into())))
+    builtin_type("avenDB", "type of types")
 }
 
 impl Facts {

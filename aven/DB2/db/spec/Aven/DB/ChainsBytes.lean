@@ -16,7 +16,7 @@ network on one line. Anything else is refused as `notCanonical`. Then:
 - **the signature covers exactly those bytes:** two blobs whose lines sign the same bytes with the same signature are
   the same bytes (`signed_one_id`), so a signature names one blob.
 
-aven-db-core's `chain::Line::parse` implements `read`; its tests replay the vectors in `vectors/chats.json` (`read`).
+aven-gen1's `chain::Line::parse` implements `read`; its tests replay the vectors in `vectors/chats.json` (`read`).
 -/
 
 namespace Aven.DB.Chains

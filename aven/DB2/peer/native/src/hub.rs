@@ -1,4 +1,4 @@
-//! Presence as the Aven Peer counts it (`aven_db_core::presence`): every peer that says hello on `aven/db/1` joins,
+//! Presence as the Aven Peer counts it (`aven_gen1::presence`): every peer that says hello on `aven/db/1` joins,
 //! each of its connections counted, and every connected peer is told who is there, itself included, on every change.
 //! The Aven Peer beats once per clock step on every link, so a quiet link still moves. An Aven Peer that keeps its tree
 //! (`door`) also tells every link whether its network is claimed and, to the devices its door admits, its tree and
@@ -9,10 +9,10 @@
 
 use std::sync::{Arc, Mutex, OnceLock};
 
-use aven_db_core::presence::Presence;
-use aven_db_core::status::TICK_MS;
-use aven_db_core::timeline;
-use aven_db_core::wire::{self, Decoder, Frame, encode, heads_pages, kept_pages};
+use aven_gen1::presence::Presence;
+use aven_gen1::status::TICK_MS;
+use aven_gen1::timeline;
+use aven_gen1::wire::{self, Decoder, Frame, Greeting, encode, heads_pages, kept_pages};
 use iroh::PublicKey;
 use iroh::endpoint::Connection;
 use iroh::protocol::{AcceptError, ProtocolHandler};
@@ -20,7 +20,7 @@ use serde_json::json;
 use tokio::sync::watch;
 use tokio::time::{Duration, interval};
 
-use aven_db_core::chain::Answer;
+use aven_gen1::chain::Answer;
 
 use crate::chats::Chats;
 use crate::door::{Door, Statement};
@@ -127,10 +127,10 @@ impl Hub {
             Frame::CatchUp { holds, only } => Some(chats.answer(holds, *only).await),
             Frame::Lines { lines } => {
                 for line in lines {
-                    if let Answer::Moved(_) = chats.take(line.as_bytes()).await
+                    if let Answer::Moved(_) = chats.take(line).await
                         && let Some(room) = self.room.get()
                     {
-                        room.gossip_line(line.as_bytes()).await;
+                        room.gossip_line(line).await;
                     }
                 }
                 Some(vec![])
@@ -174,27 +174,31 @@ impl Hub {
         let (mut send, mut recv) = conn.accept_bi().await?;
         let mut decoder = Decoder::default();
         let mut buf = vec![0u8; 16 * 1024];
-        // the first frame is a hello; what came with it, a newcomer's statement, is taken once it is answered
-        let (said, early) = loop {
+        // the greeting first, alone: what came after it is read only once its version is met
+        let said = loop {
             let n = recv
                 .read(&mut buf)
                 .await
                 .map_err(fail)?
                 .ok_or_else(|| fail("closed before hello"))?;
-            let mut frames = decoder
-                .push(&buf[..n])
-                .map_err(|e| fail(format!("{e:?}")))?;
-            if !frames.is_empty() {
-                let first = frames.remove(0);
-                break (first, frames);
+            if let Some(greeting) = decoder
+                .greeting(&buf[..n])
+                .map_err(|e| fail(format!("{e:?}")))?
+            {
+                break greeting;
             }
         };
-        // the first frame names the wire version: any other than this peer's is answered `update` and closed, before
+        let Greeting::Hello {
+            peer: named,
+            wire: theirs,
+        } = &said
+        else {
+            return Err(fail(format!("{peer} said {said:?}")));
+        };
+        // the greeting names the wire version: any other than this peer's is answered `update` and closed, before
         // anything else it says is read (PEERS.md §7: no fallback)
-        if let Frame::Hello { wire: theirs, .. } = &said
-            && let Some(answer) = wire::meet(crate::wire_version(), *theirs)
-        {
-            send.write_all(&encode(&answer)).await.map_err(fail)?;
+        if let Some(answer) = wire::meet(crate::wire_version(), *theirs) {
+            send.write_all(&answer.line()).await.map_err(fail)?;
             let _ = send.finish();
             // the refusal reaches the peer before the connection goes, or a moment passes
             let _ = tokio::time::timeout(Duration::from_secs(2), send.stopped()).await;
@@ -208,18 +212,21 @@ impl Hub {
                 crate::wire_version()
             )));
         }
-        // the first frame names the peer; a member must name itself
-        let named = matches!(&said, Frame::Hello { peer: name, .. } if name == peer);
-        if !named && (self.members.knows(&conn.remote_id()) || !matches!(said, Frame::Hello { .. }))
-        {
+        // the greeting names the peer; a member must name itself
+        if named != peer && self.members.knows(&conn.remote_id()) {
             return Err(fail(format!("{peer} said {said:?}")));
         }
-        send.write_all(&encode(&Frame::Hello {
-            peer: self.me.clone(),
-            wire: crate::wire_version(),
-        }))
+        send.write_all(
+            &Greeting::Hello {
+                peer: self.me.clone(),
+                wire: crate::wire_version(),
+            }
+            .line(),
+        )
         .await
         .map_err(fail)?;
+        // anything a peer sent before this hello (a peer sends nothing until it has one)
+        let early = decoder.frames(&[]).map_err(|e| fail(format!("{e:?}")))?;
         if let Some(chats) = &self.chats {
             for page in chats.heads_frames() {
                 send.write_all(&encode(&page)).await.map_err(fail)?;
@@ -298,7 +305,7 @@ impl Hub {
                 }
                 read = recv.read(&mut buf) => match read.map_err(fail)? {
                     Some(m) => {
-                        for frame in decoder.push(&buf[..m]).map_err(|e| fail(format!("{e:?}")))? {
+                        for frame in decoder.frames(&buf[..m]).map_err(|e| fail(format!("{e:?}")))? {
                             if let Some(answer) = self.chat(&frame).await {
                                 for frame in answer {
                                     send.write_all(&encode(&frame)).await.map_err(fail)?;

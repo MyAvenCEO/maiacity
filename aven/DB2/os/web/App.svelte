@@ -12,10 +12,23 @@
 	import Vault from './apps/Vault.svelte';
 	import { ownerName, owners, ready, tree, vaultName } from './id.svelte.js';
 	import { mayInvite } from './invites.js';
-	import { signOut } from './network.svelte.js';
+	import { NO_PRF_MESSAGE, net, openVault, signOut } from './network.svelte.js';
 
 	// `config`: the host's network (network.svelte.js), on an Aven Peer's host without a cast
 	let { cast, device, config = null } = $props();
+
+	const opening = $state({ busy: false, error: null });
+	async function openKeys() {
+		opening.busy = true;
+		opening.error = null;
+		try {
+			await openVault(config);
+		} catch (error) {
+			opening.error = error?.name === 'NotAllowedError' ? 'The passkey was not used.' : (error?.message ?? NO_PRF_MESSAGE);
+		} finally {
+			opening.busy = false;
+		}
+	}
 
 	// whom this host may act as, as its Peer-Light's views say; a visitor's host has none and may act as no one
 	const viewed = $derived(Boolean(device) || location.hostname === 'localhost');
@@ -100,6 +113,20 @@
 	</div>
 </header>
 
+{#if net.ownerPublic}
+	<!-- this session's owner and seal public halves, for the box's checks; nothing secret -->
+	<span hidden data-testid="owner-keys" data-owner={net.ownerPublic.owner} data-seal={net.ownerPublic.seal}></span>
+{/if}
+
+{#if config && ready() && device && !net.opened}
+	<!-- the passkey's PRF step (id/caps/README.md): each later session's first tap opens the vault's owner and seal keys
+	     in the Peer-Light again; nothing secret comes back to this page -->
+	<aside class="open-vault card" data-testid="open-vault">
+		<p class="hint">{opening.error ?? 'Your passkey opens this vault\'s keys on this browser.'}</p>
+		<button disabled={opening.busy} onclick={openKeys}>{opening.busy ? 'Opening…' : 'Open your vault with your passkey'}</button>
+	</aside>
+{/if}
+
 {#if viewed && !ready()}
 	<main data-view="starting"><p class="hint">Starting this device's Peer-Light…</p></main>
 {:else if open}
@@ -110,6 +137,15 @@
 {/if}
 
 <style>
+	.open-vault {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		margin: 1rem auto 0;
+		max-width: 60rem;
+	}
+
 	header {
 		display: flex;
 		align-items: center;

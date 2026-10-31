@@ -7,7 +7,8 @@ mod common;
 use aven_core::encode;
 use aven_id::{
     BACK_LABEL, Context, Epoch, HybridPublic, HybridSignature, PrfOutput, Scope, Secret, Stanza,
-    VAULT_LABEL, commit, prf_input, prf_salt, stanza_commit, stanza_keys, subkey, tag,
+    VAULT_LABEL, commit, padded, padme, prf_input, prf_salt, stanza_commit, stanza_keys, subkey,
+    tag, tag_seed,
 };
 use serde_json::{Value, json};
 
@@ -48,9 +49,39 @@ fn derive(input: &Value) -> Value {
         hasher.finalize_xof().fill(&mut out);
         return hex(&out);
     }
-    if let Some(vault) = input.get("vault") {
-        let (vault, epoch) = (vault.as_str().unwrap(), input["epoch"].as_u64().unwrap());
-        return json!({ "input": hex(&prf_input(vault, epoch)), "salt": hex(&prf_salt(vault, epoch)) });
+    if let Some(seed) = input.get("ed25519Seed") {
+        let seed = secret(seed);
+        let device = aven_id::HybridKey::from_device_seed(&seed);
+        let ml = aven_id::device_ml_dsa_seed(&seed);
+        // the device's hybrid key is exactly the one its two seeds make
+        assert_eq!(
+            device.public(),
+            aven_id::HybridKey::from_seeds(&seed, &ml).public()
+        );
+        let seal = aven_id::device_seal_key(&seed);
+        return json!({ "ed25519Public": hex(&device.public().ed25519), "mlDsaSeed": hex(ml.expose()),
+            "sealSeed": hex(seal.seed().expose()) });
+    }
+    if let Some(l) = input.get("padme") {
+        return json!(padme(l.as_u64().unwrap() as usize));
+    }
+    if let Some(l) = input.get("sealedBytes") {
+        return json!(aven_id::pad_sealed(l.as_u64().unwrap() as usize));
+    }
+    if let Some(readers) = input.get("readers") {
+        return json!(padded(readers.as_u64().unwrap() as usize));
+    }
+    if let Some(prev) = input.get("prevKey") {
+        let seed = tag_seed(&secret(prev), &array(&input["recipient"]));
+        let (id, n) = (
+            input["id"].as_str().unwrap(),
+            input["epoch"].as_u64().unwrap(),
+        );
+        return json!({ "seed": hex(seed.expose()), "tag": hex(&tag(&seed, id, n)) });
+    }
+    if input.as_object().unwrap().len() == 1 && input.get("epoch").is_some() {
+        let epoch = input["epoch"].as_u64().unwrap();
+        return json!({ "input": hex(&prf_input(epoch)), "salt": hex(&prf_salt(epoch)) });
     }
     if let Some(prf) = input.get("prf") {
         let prf = PrfOutput::new(secret(prf));
@@ -133,7 +164,9 @@ fn every_layout_is_the_models() {
     assert!(all.len() >= 7, "{} layout vectors", all.len());
     for v in &all {
         let (input, name) = (&v["input"], v["name"].as_str().unwrap());
-        let got = if input.get("ct").is_some() {
+        let got = if name.starts_with("read back") {
+            json!({ "reads": Epoch::from_bytes(&unhex(&input["bytes"])).is_some() })
+        } else if input.get("ct").is_some() {
             let s = stanza(input);
             assert_eq!(Stanza::of_value(&s.value()), Some(s.clone()), "{name}");
             json!({ "bytes": hex(&encode(&s.value())) })

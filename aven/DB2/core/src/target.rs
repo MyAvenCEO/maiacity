@@ -12,8 +12,8 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use crate::cbor::Value;
-use crate::names::{DocId, Hash};
+use aven_codec::Value;
+use aven_codec::{DocId, Hash};
 
 /// What a Doc's genesis fixes, which is all a target reads.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -75,10 +75,7 @@ pub enum Target {
 }
 
 fn doc_id(v: Value) -> Option<DocId> {
-    match v {
-        Value::Bytes(b) => Some(DocId(Hash(b.as_slice().try_into().ok()?))),
-        _ => None,
-    }
+    Hash::of_value(&v).map(DocId)
 }
 
 impl Target {

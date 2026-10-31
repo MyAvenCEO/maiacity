@@ -11,7 +11,7 @@
 //! - **limits** on depth, nodes and text.
 //!
 //! Every function here is the Lean definition of the same name, and the tests replay the model's vectors
-//! (`spec/vectors/tree.json`, `face.json`). A tree crosses as a Value (`Node::value`), written by aven-core's one codec;
+//! (`spec/vectors/tree.json`, `face.json`). A tree crosses as a Value (`Node::value`), written by aven-codec's one codec;
 //! no allocation beyond the tree itself, no imports: it builds for wasm32.
 
 #![no_std]
@@ -22,7 +22,7 @@ extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use aven_core::Value;
+use aven_codec::Value;
 
 /// A node: text, or an element with attributes and children.
 #[derive(Clone, Debug, PartialEq, Eq)]

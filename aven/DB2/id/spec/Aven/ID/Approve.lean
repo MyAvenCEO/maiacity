@@ -11,7 +11,9 @@ on up to keys (`approves`):
 - `approvesF_exact`: a vault approves only with its threshold of distinct owners, each a key that signed exactly the
   digest or a vault that approves it;
 - `approves_signed`: with every threshold at least one, an approval rests on such a signature by a key above the vault;
-- `approves_iff`: in a well-formed tree, looking as many levels up as the tree has vaults finds every approval.
+- `approves_iff`: in a well-formed tree, looking as many levels up as the tree has vaults finds every approval;
+- `alone_approves`: whatever a vault approves, a vault whose quorum it meets alone approves too (A28), so authority that
+  runs down the tree only through such quorums speaks for each vault's own owners, k of n.
 
 What a person approves is shown from the exact bytes they sign (rule 25, A2): `shown` decodes those bytes and renders
 what they hold, never a copy kept beside them. The codec is `Aven.Core`'s deterministic CBOR; here it is any encoding
@@ -214,6 +216,56 @@ it. -/
 theorem approves_signed (pos : ∀ x, 1 ≤ th x) {vault : String} (h : t.approves th vault digest sigs = true) :
     ∃ k, t.KeyAbove k vault ∧ ⟨k, digest⟩ ∈ sigs :=
   approvesF_signed pos h
+
+/-! ### A quorum one vault meets alone (A28)
+
+Vault `a` meets vault `w`'s quorum alone when `w` is `a`, or at least `w`'s threshold of its owners, each once, are
+vaults `a` meets alone. An owner key never counts, being no vault's. With every threshold one, `a` meets the quorum of
+every vault below it; over a coop whose owners approve k of n with k > 1, no one owner vault does. -/
+
+/-- `a` meets `w`'s quorum alone, looking `f` levels of owners up. -/
+def aloneF (t : Tree) (th : String → Nat) (a : String) : Nat → String → Bool
+  | 0, w => w == a
+  | f + 1, w => w == a ||
+    match t.get? w with
+    | none => false
+    | some v => decide (th w ≤ ((ownersOnce v.owners).filter fun
+        | .vault b => t.aloneF th a f b
+        | .key _ => false).length)
+
+/-- `a` meets `w`'s quorum alone, looking as many levels up as the tree has vaults. -/
+def alone (t : Tree) (th : String → Nat) (a w : String) : Bool := t.aloneF th a (t.vaults.length + 1) w
+
+/-- Whatever `a` approves, looking `g` levels up, a vault whose quorum `a` meets alone approves, looking `f` more. -/
+theorem aloneF_approves {a : String} {g : Nat} (ha : t.approvesF th digest sigs g a = true) :
+    ∀ {f : Nat} {w : String}, t.aloneF th a f w = true → t.approvesF th digest sigs (f + g) w = true
+  | 0, w, h => by
+    simp only [aloneF, beq_iff_eq] at h
+    subst h
+    simpa using ha
+  | f + 1, w, h => by
+    unfold aloneF at h
+    rcases Bool.or_eq_true_iff.mp h with e | q
+    · simp only [beq_iff_eq] at e
+      subst e
+      exact approvesF_mono (by omega) ha
+    · rw [show f + 1 + g = f + g + 1 by omega]
+      unfold approvesF
+      cases hv : t.get? w with
+      | none => simp [hv] at q
+      | some v =>
+        simp only [hv, decide_eq_true_eq] at q ⊢
+        refine Nat.le_trans q (length_filter_le fun o _ p => ?_)
+        cases o with
+        | key k => simp at p
+        | vault b => exact aloneF_approves ha p
+
+/-- **Authority runs down only through quorums** (A28): in a well-formed tree, whatever `a`'s owners approve, the owners
+of a vault whose quorum `a` meets alone approve too. So what `a` grants over that vault's Docs speaks for its owners, k
+of n: over a coop with k > 1, no one owner vault speaks alone, and the coop issues as itself. -/
+theorem alone_approves (w : t.WF) {a v : String} (al : t.alone th a v = true)
+    (ha : t.approves th a digest sigs = true) : t.approves th v digest sigs = true :=
+  (approves_iff w).mpr ⟨_, aloneF_approves ha al⟩
 
 end Tree
 

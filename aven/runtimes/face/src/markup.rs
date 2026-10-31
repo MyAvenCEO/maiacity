@@ -3,7 +3,7 @@
 //! `$use`, a placement. Drawing it gives nodes and placements: a tag the allowlist refuses is dropped with what is
 //! under it, an attribute it refuses is dropped, and `data-on` and `data-place` are the runtime's alone.
 
-use aven_core::Value;
+use aven_codec::Value;
 use aven_runtimes_tree::{Node, attr_ok, tag_ok};
 
 /// A key of a path: a map field or an array index (`Aven.Runtime.Key`).

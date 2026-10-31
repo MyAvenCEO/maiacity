@@ -138,11 +138,16 @@ const specVolumes = () => {
 	return out.concat(['-v', `${db2}:/aven/DB2`]);
 };
 
+// aven/runtimes whole, read-only, beside /work as it sits beside aven/DB2 in a checkout: what avenDB's own tests read
+// by its path there (the brain's tests read the runtimes' vectors at ../../../runtimes). The Peers' builds take only its
+// registry there (`rustVolumes`), which this covers.
+const besideWork = () => (existsSync(join(db2, '..', 'runtimes')) ? ['-v', `${join(db2, '..', 'runtimes')}:/runtimes:ro`] : []);
+
 export async function inBox(args) {
 	await ensureDocker();
 	await ensureImages();
 	const tty = process.stdout.isTTY ? ['-t'] : [];
-	const volumes = ['-v', `${db2}:/work`, '-v', 'avensandbox_node_modules:/work/node_modules', ...rustVolumes, ...specVolumes()];
+	const volumes = ['-v', `${db2}:/work`, '-v', 'avensandbox_node_modules:/work/node_modules', ...besideWork(), ...rustVolumes, ...specVolumes()];
 	return (await $`docker run --rm -i ${tty} ${network()} ${volumes} -w /work ${image} ${args}`.env(env).nothrow()).exitCode;
 }
 
@@ -178,6 +183,22 @@ const buildPeers = [
 	`sha256sum ${peerBinary} | cut -c1-16`,
 ].join(' && ');
 
+// The runtime host for the browser (aven/runtimes, README, "The browser host"), avenOS's second WebAssembly module:
+// aven-runtimes-web, built in aven/runtimes' own workspace and bound by the same wasm-bindgen, into `out` with every
+// frozen module beside it (frozen/<hex>.wasm), which the runtimes worker fetches by hash. Vite serves the box's build at
+// /runtimes/ (sandbox/peers.mjs); the release puts its own in dist/runtimes. `dir` is the build folder, `env` the
+// release's profile.
+const runtimesWasm = (dir) => `${dir}/wasm32-unknown-unknown/release/aven_runtimes_web.wasm`;
+const buildRuntimes = (out, { dir = 'target', env = '' } = {}) =>
+	[
+		'set -e',
+		'cd /aven/runtimes',
+		`${env} cargo build -q --release --locked -p aven-runtimes-web --target wasm32-unknown-unknown --target-dir ${dir}`,
+		`src=$(sha256sum ${runtimesWasm(dir)} | cut -c1-64)`,
+		`if [ "$src" != "$(cat ${out}/.source 2>/dev/null)" ]; then rm -rf ${out}.next && wasm-bindgen --target web --no-typescript --out-dir ${out}.next ${runtimesWasm(dir)} && echo "$src" > ${out}.next/.source && rm -rf ${out} && mv ${out}.next ${out}; fi`,
+		`rm -rf ${out}/frozen && cp -r frozen ${out}/frozen`,
+	].join(' && ');
+
 export async function build() {
 	await $`docker volume create avensandbox_target`.quiet();
 	const started = Date.now();
@@ -185,6 +206,10 @@ export async function build() {
 	const volumes = ['-v', `${db2}:/work`, ...rustVolumes];
 	const out = await $`docker run --rm ${tty} ${network()} ${volumes} -w /work ${image} sh -c ${buildPeers}`.env(env).nothrow();
 	if (out.exitCode !== 0) throw new Error('the peers did not build');
+	const runtimes = await $`docker run --rm ${tty} ${network()} ${[...volumes, ...specVolumes()]} -w /aven/runtimes ${image} sh -c ${buildRuntimes('/work/target/runtimes')}`
+		.env(env)
+		.nothrow();
+	if (runtimes.exitCode !== 0) throw new Error('the runtime host did not build');
 	say(`peers built in ${((Date.now() - started) / 1000).toFixed(1)} s`);
 	return out.stdout.toString().trim().split('\n').at(-1);
 }
@@ -207,17 +232,24 @@ async function check() {
 	const vectorsStarted = Date.now();
 	const fresh = (await inBox(['sh', 'sandbox/vectors.sh', '--check'])) === 0;
 	say(`vectors ${fresh ? 'fresh' : 'STALE'} (${((Date.now() - vectorsStarted) / 1000).toFixed(1)} s)`);
+	// aven/runtimes' modules are what the manifest froze: rebuilt in the box, hashed, and run by the host under fuel
+	// (aven/runtimes/freeze.sh)
+	const frozenStarted = Date.now();
+	const frozen = (await inBox(['sh', '-c', 'cd /aven/runtimes && sh freeze.sh --check'])) === 0;
+	say(`runtime modules ${frozen ? 'as frozen' : 'NOT as frozen'} (${((Date.now() - frozenStarted) / 1000).toFixed(1)} s)`);
 	const run = `runs/${new Date().toISOString().replace(/[:.]/g, '-')}`;
 	const result = await $`${compose} exec -T browsers node sandbox/check.mjs ${run}`.env(env).nothrow();
 	const passed =
 		fenced.length === 0 &&
 		fresh &&
+		frozen &&
 		result.exitCode === 0 &&
 		(await keeps(run)) &&
 		(await inEngines(run)) &&
 		(await inlines(run)) &&
 		(await drawers(run)) &&
 		(await brains(run)) &&
+		(await hosts(run)) &&
 		(await claims(run)) &&
 		(await members(run)) &&
 		(await chats(run)) &&
@@ -441,11 +473,12 @@ export async function upgrades(run) {
 		await $`${compose} restart prod`.env(env).quiet();
 	};
 	await wipe();
+	// a version ahead of this build's, and one behind, from the model's own (db/spec/vectors/upgrades.json)
+	const wire = JSON.parse(readFileSync(join(db2, 'db/spec/vectors/upgrades.json'), 'utf8')).find((v) => v.expected.answer === null).input.mine;
 	const asks = {
-		// a version ahead of this build's, and one behind: version 0 is the wire before it had versions
-		'prod-ahead': () => restart('prod', '2'),
+		'prod-ahead': () => restart('prod', String(wire + 1)),
 		'prod-back': () => restart('prod', ''),
-		'alice-behind': () => restart('alice', '0'),
+		'alice-behind': () => restart('alice', String(wire - 1)),
 		'alice-back': () => restart('alice', ''),
 	};
 	const script = $`${compose} exec -T browsers node sandbox/upgrade.mjs ${run}`.env(env).nothrow();
@@ -467,6 +500,14 @@ export async function upgrades(run) {
 	say(`${ok ? 'a peer of another wire version is refused with update, and the one behind follows' : 'the upgrade step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s)`);
 	return ok;
 }
+// The runtime host in the browser, the runtimes worker's, in three engines: sandbox/runtimes.mjs
+async function hosts(run) {
+	const timed = Date.now();
+	const ok = (await $`${compose} exec -T browsers node sandbox/runtimes.mjs ${run}`.env(env).nothrow()).exitCode === 0;
+	say(`${ok ? 'the browser host runs face-runtime and markdown-runtime by their hashes and refuses what it must, in Chromium, WebKit and Firefox' : 'the runtimes step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s)`);
+	return ok;
+}
+
 // Brain, avenBRAIN in avenOS, in three engines at a desktop's and a phone's width: sandbox/brain.mjs
 const brains = async (run) => (await $`${compose} exec -T browsers node sandbox/brain.mjs ${run}`.env(env).nothrow()).exitCode === 0;
 const chats = async (run) => (await $`${compose} exec -T browsers node sandbox/chat.mjs ${run}`.env(env).nothrow()).exitCode === 0;
@@ -517,6 +558,10 @@ async function buildPage() {
 		'cp target/light-release/aven_peer_light.js target/light-release/aven_peer_light_bg.wasm dist/peer-light/',
 	].join(' && ');
 	await $`docker run --rm ${network()} ${volumes} -w /work ${image} sh -c ${script}`.env(env);
+	// the runtime host, sized as the Peer-Light is, in a build folder of its own, and the frozen modules: dist/runtimes
+	const sized = 'CARGO_PROFILE_RELEASE_OPT_LEVEL=s CARGO_PROFILE_RELEASE_LTO=true CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 CARGO_PROFILE_RELEASE_STRIP=symbols';
+	const runtimes = buildRuntimes('/work/target/runtimes-release', { dir: 'target/release-web', env: sized });
+	await $`docker run --rm ${network()} ${[...volumes, ...specVolumes()]} -w /aven/runtimes ${image} sh -c ${`${runtimes} && rm -rf /work/dist/runtimes && mkdir -p /work/dist/runtimes && cp /work/target/runtimes-release/aven_runtimes_web.js /work/target/runtimes-release/aven_runtimes_web_bg.wasm /work/dist/runtimes/ && cp -r /work/target/runtimes-release/frozen /work/dist/runtimes/frozen`}`.env(env);
 }
 
 async function deliverables() {

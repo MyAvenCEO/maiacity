@@ -1,0 +1,12 @@
+[package]
+name = "aven-runtimes-abi"
+version = "0.0.0"
+description = "The module ABI every runtime exports: alloc and run over the one codec's bytes (README, \"The runtime contract\")"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+aven-codec = { path = "../../DB2/codec" }
+aven-runtimes-contract = { path = "../contract" }

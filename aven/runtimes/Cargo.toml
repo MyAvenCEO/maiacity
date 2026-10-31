@@ -3,10 +3,32 @@
 # repository's root workspace excludes this folder, as it excludes aven/DB2.
 [workspace]
 resolver = "3"
-members = ["tree", "contract", "markdown", "face", "registry"]
+members = ["tree", "contract", "markdown", "face", "registry", "abi", "modules/markdown", "modules/face", "host", "web"]
 
 [workspace.package]
 edition = "2024"
 rust-version = "1.99"
 license = "UNLICENSED"
 publish = false
+
+# wasmi builds optimised in tests too, as it ships: an interpreter built for debugging runs the host's tests a
+# hundred times slower (6.3 s, where these give 0.06 s)
+[profile.dev.package.wasmi]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+
+[profile.dev.package.wasmi_core]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+
+[profile.dev.package.wasmi_ir]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+
+[profile.dev.package.wasmparser]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false

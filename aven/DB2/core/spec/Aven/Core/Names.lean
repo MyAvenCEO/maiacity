@@ -27,6 +27,27 @@ def Hash.ok (h : Hash) : Bool := h.bytes.length == 32
 
 def Hash.value (h : Hash) : Value := .bytes h.bytes
 
+/-- A hash read back from its CBOR: a byte string of exactly 32 bytes; anything else is no hash. The one reader of a
+hash in CBOR (A45): every id, prev, dep and op is read through it. -/
+def Hash.ofValue? : Value → Option Hash
+  | .bytes b => if b.length = 32 then some ⟨b⟩ else none
+  | _ => none
+
+/-- What `Hash.ofValue?` reads is what `Hash.value` writes. -/
+theorem Hash.ofValue?_value {v : Value} {h : Hash} (e : Hash.ofValue? v = some h) : h.value = v := by
+  unfold Hash.ofValue? at e
+  split at e
+  · split at e
+    · cases e; rfl
+    · cases e
+  · cases e
+
+/-- A hash of 32 bytes reads back as itself. -/
+theorem Hash.ofValue_value (h : Hash) (ok : h.ok = true) : Hash.ofValue? h.value = some h := by
+  obtain ⟨b⟩ := h
+  simp only [Hash.ok, beq_iff_eq] at ok
+  simp [Hash.ofValue?, Hash.value, ok]
+
 def Hash.text (h : Hash) : String := "b3:" ++ hex h.bytes
 
 /-- BLAKE3 itself, the hash every example and vector uses. -/
@@ -59,10 +80,21 @@ def TypeId.text (t : TypeId) : String := t.type.text ++ "/" ++ t.schema.text
 def TypeId.value (t : TypeId) : Value := .array [.bytes t.type.hash.bytes, .bytes t.schema.bytes]
 
 def TypeId.ofValue? : Value → Option TypeId
-  | .array [.bytes d, .bytes s] => some ⟨⟨⟨d⟩⟩, ⟨s⟩⟩
+  | .array [d, s] => do
+    let d ← Hash.ofValue? d
+    let s ← Hash.ofValue? s
+    some ⟨⟨d⟩, s⟩
   | _ => none
 
-theorem TypeId.ofValue_value (t : TypeId) : TypeId.ofValue? t.value = some t := by
-  cases t; rfl
+/-- A type id whose two hashes are 32 bytes reads back as itself; any other length is refused. -/
+theorem TypeId.ofValue_value (t : TypeId) (hd : t.type.hash.ok = true) (hs : t.schema.ok = true) :
+    TypeId.ofValue? t.value = some t := by
+  obtain ⟨⟨d⟩, s⟩ := t
+  have hd' := Hash.ofValue_value d hd
+  have hs' := Hash.ofValue_value s hs
+  simp only [Hash.value] at hd' hs'
+  simp [TypeId.ofValue?, TypeId.value, hd', hs']
+
+#guard TypeId.ofValue? (.array [.bytes (List.replicate 31 1), .bytes (List.replicate 32 1)]) == none
 
 end Aven.Core

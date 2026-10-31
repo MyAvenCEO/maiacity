@@ -1,0 +1,20 @@
+[package]
+name = "aven-runtimes-host"
+version = "0.0.0"
+description = "The runtime host: loads a module only by a hash the manifest lists, admits it, and runs it under fuel (Aven.Runtime.Contract)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+aven-codec = { path = "../../DB2/codec" }
+aven-runtimes-contract = { path = "../contract" }
+serde_json = "=1.0.154"
+# auto-dispatch: wasmi's threaded dispatch needs the target's tail calls and an optimised build; elsewhere (wasm32 in a
+# browser, a debug build) it dispatches in a loop, or every instruction it runs would take a frame of the stack
+wasmi = { version = "=2.0.0", default-features = false, features = ["std", "validate", "deterministic", "auto-dispatch"] }
+
+[dev-dependencies]
+aven-runtimes-markdown = { path = "../markdown" }
+aven-runtimes-face = { path = "../face" }

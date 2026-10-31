@@ -22,3 +22,13 @@ pub const MAX_SIGNER_BYTES: usize = 4096;
 
 /// The longest signature: room for a hybrid one (Ed25519 with ML-DSA-65's 3309 bytes) or a passkey's assertion.
 pub const MAX_SIG_BYTES: usize = 16384;
+
+/// The most signatures beside one name: the writer's and approvals, k of a vault's owners.
+pub const MAX_SIGS: usize = 16;
+
+/// The most values one bound allows (`maxBoundValues`): room for every field of a schema, every type of a vault or
+/// every op of a plugin a cap line names.
+pub const MAX_BOUND_VALUES: usize = 256;
+
+/// The most params one call names (`maxParams`): `core/1`'s take two, a plugin's op a handful.
+pub const MAX_PARAMS: usize = 64;

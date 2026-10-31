@@ -1,5 +1,5 @@
 //! Deleting a line at a peer's edge (`aven_peer::chats`, `Aven.DB.Chains` "Deleting a line"), without a network: what
-//! counts is `aven_db_core::chain`'s, tested against Lean's traces; here the store and the page. A delete is a
+//! counts is `aven_gen1::chain`'s, tested against Lean's traces; here the store and the page. A delete is a
 //! retraction on the deleting device's chain; the deleted line's blob leaves the store, `gone-<id>` names the retraction,
 //! a reload walks the chain past it and shows the line deleted in place, and catching up sends the retraction in its
 //! place. A file no line names any more leaves the store. Only the line's own vault deletes it, from any of its devices.
@@ -7,11 +7,11 @@
 
 use std::sync::{Arc, Mutex};
 
-use aven_db_core::chain::{Answer, Body, Retraction};
-use aven_db_core::files::Announcement;
-use aven_db_core::wire::Frame;
 use aven_db_store::withhold::Withholding;
 use aven_db_store::{Hash, RefName, backend, files};
+use aven_gen1::chain::{Answer, Body, Retraction};
+use aven_gen1::files::Announcement;
+use aven_gen1::wire::Frame;
 use aven_peer::Notes;
 use aven_peer::chats::{self, Chats};
 use aven_peer::members::Gate;
@@ -98,13 +98,13 @@ async fn catch_up(to: &Chats, from: &Chats) {
                 panic!()
             };
             for line in lines {
-                to.take(line.as_bytes()).await;
+                to.take(&line).await;
             }
         }
     }
 }
 
-fn id(line: &aven_db_core::chain::Line) -> String {
+fn id(line: &aven_gen1::chain::Line) -> String {
     Hash::of(&line.blob()).to_hex()
 }
 
@@ -191,7 +191,7 @@ async fn a_delete_takes_the_text_out_of_every_store_and_keeps_the_chain() {
     let Frame::Lines { lines: answered } = &hub.answer(&[], false).await[0] else {
         panic!()
     };
-    let first = aven_db_core::chain::Line::parse(answered[0].as_bytes()).unwrap();
+    let first = aven_gen1::chain::Line::parse(&answered[0]).unwrap();
     assert!(matches!(first.body, Body::Retract(_)), "{answered:?}");
 
     // from her second device Alice deletes another of her lines; Bob's peer, holding it, drops it too

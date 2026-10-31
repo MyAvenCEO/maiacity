@@ -6,7 +6,7 @@ around them share it.
 
 The objects are drawn in code ([`art/objects.mjs`](art/objects.mjs), with the kit in [`art/paint.mjs`](art/paint.mjs))
 and rendered to images, so every one is reproducible and its own layer. The tokens are in
-[`style/tokens.css`](style/tokens.css), the slide in [`style/slide.css`](style/slide.css).
+[`style/tokens.css`](style/tokens.css), the slide in [`style/slide.style.json`](style/slide.style.json), the face-runtime's style data.
 
 ## The objects
 
@@ -53,7 +53,7 @@ encrypted), and a thing on a slide is drawn as a **card**, never a record (a Rec
 - **Objects** with their names under them, bold uppercase navy. **A dotted ochre path** with an arrowhead is a
   relation, its name over it.
 - **No text under 2.6 % of the slide's width** (2.6cqw): about 9 px on a phone, where a slide is about 356 px wide.
-  The box checks it at 390 px (`sandbox/brain.mjs`), and a test checks the CSS (`render/tree.test.js`).
+  The box checks it at 390 px (`sandbox/brain.mjs`), and a test checks the style data (`art/slides.test.js`).
 - Text has 4.5:1 against what is under it, and sits on the ground, never on a drawing.
 - **Every element a layer** with a stable class, so a motion version can move each one.
 - The text that explains it is on the page under the slide, in Markdown.

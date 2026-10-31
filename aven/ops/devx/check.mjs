@@ -10,6 +10,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { impact } from '../ci/impact.mjs';
+import { LOG } from './decisions.mjs';
 import { inventory, matches, suites } from '../ci/test.mjs';
 
 const git = (...a) => execFileSync('git', a, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
@@ -26,6 +27,8 @@ export function plan(files, { wide = false, merge = false } = {}) {
  const steps = [], hit = impact(files);
  // a workflow file GitHub rejects never runs and shows no red job (batch 5): lint them first, it takes a second
  if (files.some(f => f.startsWith('.github/workflows/'))) steps.push({ why: 'workflow files GitHub will accept', cmd: ['bun', 'aven/ops/ci/workflows.mjs'] });
+ // avenDB's decision log only ever grows (aven/DB2/CLAUDE.md): no entry is edited or deleted
+ if (files.includes(LOG)) steps.push({ why: 'the decision log is append-only', cmd: ['bun', 'aven/ops/devx/decisions.mjs'] });
  const js = files.filter(f => /\.(m?[jt]s|svelte)$/.test(f));
  // JS tests: each owned suite the change selects, narrowed to its test files in a touched folder (or the whole suite).
  const dirs = new Set(files.map(f => dirname(f) + '/'));

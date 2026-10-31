@@ -16,6 +16,10 @@ attenuates (`keep_one_holder`). A cap keeps a Doc only as the chain's root does,
 over every line, its own vault or one it governs (`keeper_named_by_owner`). So no one else extends it, not Maia City
 adding servers and not a keeper: a new keeper needs a new keep cap from the owner.
 
+**A keeper decides only about its own resources** (A44): its vault offers storage to a vault or a group, as an op
+`keep-offer` bounded by quota and rate (`keepOffer`, `offerLine`), and it keeps a Doc only where the owner's keep cap
+names it and its own offer covers that owner (`Aven.ID.Keep`, `kept_only_offered`): keep caps ∩ offers.
+
 **By default** a new vault issues a keep cap for everything of its own to Maia City's keeper, the Aven Peer acting for
 Aven (`defaultKeep`, `default_kept`). It is an ordinary grant: it holds only with its owners' approval (D14), however
 the join collects it, and without one it breaks `.approval` (`default_approved`, `default_needs_owner`). The vault can
@@ -42,6 +46,30 @@ theorem keeps_iff {roles : List Role} {c : Cap} {f : Facts} :
     c.keeps gov spawned lists roles f = true ↔
       (c.grants roles).reaches (gov · · = true) (spawned · · = true) (lists · · = true) f (coreOp .keep) := by
   simp only [Cap.keeps, List.any_eq_true, Bool.and_eq_true, beq_iff_eq, Target.coversB_iff, Grant.reaches]
+
+/-- avenID's own op, by its id: the name of its stored form `{"op": name, "plugin": "id/1"}`. -/
+def idOp (name : String) : OpId := OpId.ofPlugin blake3 "id/1" name
+
+/-- **A keeper's offer** (A44): its vault offers its storage to a vault or a group, as much as the `quota` bound, in
+bytes, and as fast as the `rate` bound, in bytes a second. Placement has one source, the owner's keep caps; a keeper
+decides only about its own resources. -/
+def keepOffer : OpId := idOp "keep-offer"
+
+def rateParam : Bytes := "rate".toUTF8.toList
+def quotaParam : Bytes := "quota".toUTF8.toList
+
+/-- An offer's line: `keep-offer` on the keeper's vault, its rate and quota each bounded to one value. -/
+def offerLine (keeper : String) (rate quota : Nat) : Line :=
+  ⟨keepOffer, .vault (vaultId keeper) false, [(rateParam, some [.uint rate]), (quotaParam, some [.uint quota])]⟩
+
+/-- The quota an offer gives: the largest its `keep-offer` lines bound. -/
+def Cap.offerQuota (o : Cap) : Nat :=
+  (o.grant.filterMap fun l =>
+    if l.op == keepOffer then
+      match l.bound quotaParam with
+      | some [.uint q] => some q
+      | _ => none
+    else none).foldr max 0
 
 /-- A keep cap's keeper: the vault that holds it. Only a vault keeps. -/
 def Cap.keeper (c : Cap) : Option String :=
@@ -88,17 +116,39 @@ theorem resolve_exact {roles : List Role} {c : Cap} {held : List (Facts × Nat)}
     exact ⟨f, k, ⟨m, kf⟩, rfl, rfl⟩
 
 /-- The keep cap a new vault `v` starts with: every Doc of its own, to Maia City's keeper `k`, the Aven Peer acting for
-Aven. Its owner approves it with what they sign to join (D14). It may not share, and the vault can withdraw it. -/
-def defaultKeep (v k signer : String) (approvals : List Sig) : Cap :=
+Aven. Its owner approves it as they join (D14, A44): the tree's claim carries it, and a vault migrated from production
+approves it at its next sign-in. It may not share, and the vault can withdraw it. No device need sign it: its owner's
+approval proves its issuer (A28). -/
+def defaultKeep (v k : String) (signer : Option String) (approvals : List Sig) : Cap :=
   { id := "keep-" ++ v, issuer := v, holder := .vault k, signer, approvals,
     grant := [⟨coreOp .keep, .vault (vaultId v) false, []⟩] }
 
+/-- A cap is vault `v`'s default keep cap at keeper `k`: it says exactly what the default says, whatever its id and
+signatures. The tree's claim checks the keep cap it carries with this (A44). -/
+def Cap.isDefaultKeep (v k : String) (c : Cap) : Bool :=
+  c.form == .grant && c.issuer == v && c.holder == .vault k && c.parent == none && c.role == none &&
+    c.share == 0 && c.grant == (defaultKeep v k none []).grant && c.conditions == {}
+
+theorem isDefaultKeep_iff {v k : String} {c : Cap} :
+    c.isDefaultKeep v k = true ↔ c.form = .grant ∧ c.issuer = v ∧ c.holder = .vault k ∧ c.parent = none ∧
+      c.role = none ∧ c.share = 0 ∧ c.grant = [⟨coreOp .keep, .vault (vaultId v) false, []⟩] ∧ c.conditions = {} := by
+  simp [Cap.isDefaultKeep, defaultKeep, and_assoc]
+
 /-- A vault with its default keep cap has every Doc of its own kept by Maia City's keeper. -/
-theorem default_kept {roles : List Role} {caps : List Cap} {v k signer : String} {approvals : List Sig} {f : Facts}
-    (h : defaultKeep v k signer approvals ∈ caps) (own : f.vault = vaultId v) :
+theorem default_kept {roles : List Role} {caps : List Cap} {v k : String} {signer : Option String}
+    {approvals : List Sig} {f : Facts} (h : defaultKeep v k signer approvals ∈ caps) (own : f.vault = vaultId v) :
     k ∈ keepersOf gov spawned lists roles caps f := by
   simp only [keepersOf, List.mem_filterMap, List.mem_filter]
   exact ⟨_, ⟨h, by simp [Cap.keeps, Cap.grants, defaultKeep, Target.coversB, own]⟩, rfl⟩
+
+/-- **The claim's keep cap keeps the new vault** (A44): any cap that says what the default says has its keeper keep
+every Doc of the vault, whoever wrote it out. -/
+theorem isDefaultKeep_kept {roles : List Role} {caps : List Cap} {c : Cap} {v k : String} {f : Facts}
+    (h : c.isDefaultKeep v k = true) (m : c ∈ caps) (own : f.vault = vaultId v) :
+    k ∈ keepersOf gov spawned lists roles caps f := by
+  obtain ⟨_, _, ho, _, hr, _, hg, _⟩ := isDefaultKeep_iff.mp h
+  simp only [keepersOf, List.mem_filterMap, List.mem_filter]
+  exact ⟨c, ⟨m, by simp [Cap.keeps, Cap.grants, hr, hg, Target.coversB, own]⟩, by simp [Cap.keeper, ho]⟩
 
 end
 
@@ -208,9 +258,17 @@ theorem keepers_by_owner (gov : Bytes → Bytes → Bool) (spawned lists : DocId
     root_authority ok c (List.mem_singleton_self c) l ml⟩
 
 /-- A default keep cap holds as a chain only with its owners' approval (D14). -/
-theorem default_approved {v k s : String} {a : List Sig} (h : chainOk x [defaultKeep v k s a] = true) :
-    x.tree.approves x.threshold v ("keep-" ++ v) a = true :=
+theorem default_approved {v k : String} {s : Option String} {a : List Sig}
+    (h : chainOk x [defaultKeep v k s a] = true) : x.tree.approves x.threshold v ("keep-" ++ v) a = true :=
   (grant_approved h _ (List.mem_singleton_self _)).2 rfl
+
+/-- **A claim's keep cap needs its vault's owners** (A44, D14): a cap that says what the default says holds as a chain
+only with the approval of the vault it keeps, by its own quorum. -/
+theorem isDefaultKeep_approved {c : Cap} {v k : String} (h : c.isDefaultKeep v k = true) (ok : chainOk x [c] = true) :
+    x.tree.approves x.threshold v c.id c.approvals = true := by
+  obtain ⟨hf, hi, _⟩ := isDefaultKeep_iff.mp h
+  have a := (grant_approved ok c (List.mem_singleton_self c)).2 hf
+  rwa [hi] at a
 
 /-- **The default needs its owner** (A22, D14): a default keep cap is an ordinary grant, however the join collects its
 approval. Signed by a device of its vault but with no approval, it breaks `.approval`, every threshold being one or
@@ -222,7 +280,7 @@ theorem default_needs_owner {v k s : String} (pos : ∀ w, 1 ≤ x.threshold w) 
     · rfl
     · obtain ⟨_, _, m⟩ := Tree.approves_signed pos h
       simp at m
-  simp [chainError, chainRules, rootRules, capRules, linksRules, defaultKeep, Cap.grants, authorityOver, anchor,
-    authorityOverVault, Holder.typed, dev, none]
+  simp [chainError, chainRules, rootRules, capRules, linksRules, defaultKeep, Cap.grants, authorityOver, lineVault,
+    anchor, authorityOverVault, Tree.issued, Holder.typed, dev, none]
 
 end Aven.ID

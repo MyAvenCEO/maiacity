@@ -10,6 +10,14 @@ its schema. Nothing else goes in: no clock, no randomness, no host state. Determ
 
 A runtime is named by the hash of its module's bytes, a render's cache key by the name of a Value, and the manifest
 lists modules by hash: all `Aven.Core`'s hashes.
+
+**The module's ABI** (the host crate holds it; no theorem is needed, since only this file's Values cross it): a module
+exports one memory and two functions. `alloc(len) → ptr` gives `len` bytes for the host to write into. `run(part_ptr,
+part_len, input_ptr, input_len) → ptr` reads the part and the input from buffers `alloc` gave, each the one codec's
+encoding of a Value, and answers `ptr` to eight bytes: the result's pointer and length, little-endian 32-bit. The
+result is `result`'s Value, `{"ok": output}` or `{"failure": name}`, encoded. The host reads the eight bytes and then
+the result only within the module's memory: anything out of bounds, not the encoding of a Value, or not a result is
+`badOutput`; a result longer than the output limit plus its few bytes of wrapping is `outputTooLarge` unread.
 -/
 
 namespace Aven.Runtime
@@ -124,7 +132,7 @@ def runOn (_d : Device) (r : Runtime) (l : Limits) (p i : Value) : Except Failur
 theorem deterministic (d d' : Device) (r : Runtime) (l : Limits) (p i : Value) :
     runOn d r l p i = runOn d' r l p i := rfl
 
-/-! ## Pins, withdrawals and floors (README, "Names, versions, hashes and floors"; A7, A42) -/
+/-! ## Pins and withdrawals (README, "Names, versions, hashes and pins"; A7, A42) -/
 
 /-- What a Doc's or a vault's owners did to a runtime, in its history (A7): pinned it, or withdrew the pin, by its
 hash. A hole in a runtime is closed by withdrawing its pin, never by a floor that rises with releases. -/
@@ -168,13 +176,6 @@ theorem readers_agree_pins (past later later' : List PinAct) (named : Hash) :
       verdictRuntime ((past ++ later').take past.length) named := by
   simp
 
-/-- **A floor binds only what a device runs for itself:** its renders and their cache. A file render runs the newest
-version the registry names; a cached render below the runtime's floor is dropped. -/
-def cacheKeeps (floor version : Nat) : Bool := decide (floor ≤ version)
-
-theorem cache_drops {floor version : Nat} (h : version < floor) : cacheKeeps floor version = false := by
-  simp [cacheKeeps]; omega
-
 /-! ## The module a host admits (README, "The runtime contract") -/
 
 /-- What the host reads from a module's bytes before it compiles one: its imports, whether it declares a maximum
@@ -204,36 +205,81 @@ theorem admit_memory {pages : Nat} {m : Module} (h : admit pages m = true) : ∃
   | none => simp [hp] at h
   | some p => simp [hp] at h; exact ⟨p, rfl, h.2⟩
 
-/-! ## The manifest (README, "Only from the repository") -/
+/-! ## The manifest (README, "Only from the repository")
+
+A runtime lives with its owner (ARCHITECTURE A45): its module is a blob and its manifest a typed Doc, owned by the
+vault that publishes it, Aven's for the built-ins, kept where that vault's keep caps say (A44) and fetched by hash.
+Until Docs run, the bootstrap manifest (`manifest.json`) and the frozen bytes (`frozen/<hex>.wasm`) are in git. Either
+way the laws below hold: the manifest only appends, and a host loads only bytes whose hash it lists. A runtime runs on
+the reader's device, in a worker of its own. -/
 
 /-- One frozen runtime, named by its module's hash. -/
 structure Frozen where
   name : String
   version : Nat
   hash : Hash
-  floor : Nat
   deriving DecidableEq, Repr
 
-/-- A new manifest only appends to the old one. -/
-def Manifest.extends (old new : List Frozen) : Prop := old <+: new
+/-- An entry of the manifest: a module frozen, or a frozen module withdrawn, by its hash. A withdrawal is appended,
+never an edit, as A7's pins are; there are no floors. -/
+inductive ManifestEntry where
+  | frozen (f : Frozen)
+  | withdrawn (h : Hash)
+  deriving DecidableEq, Repr
 
-/-- A frozen entry never changes: whatever stood at a place in the old manifest stands there in the new one. -/
-theorem frozen {old new : List Frozen} (h : Manifest.extends old new) {n : Nat} {e : Frozen}
+def ManifestEntry.hash : ManifestEntry → Hash
+  | .frozen f => f.hash
+  | .withdrawn h => h
+
+/-- A new manifest only appends to the old one. -/
+def Manifest.extends (old new : List ManifestEntry) : Prop := old <+: new
+
+/-- An entry never changes: whatever stood at a place in the old manifest stands there in the new one. -/
+theorem frozen {old new : List ManifestEntry} (h : Manifest.extends old new) {n : Nat} {e : ManifestEntry}
     (he : old[n]? = some e) : new[n]? = some e := by
   obtain ⟨rest, rfl⟩ := h
   rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp he).1]
   exact he
 
-/-- A host loads bytes only by a hash the manifest lists, and only when `H` names the bytes by it. -/
-def loads (H : Bytes → Hash) (manifest : List Frozen) (want : Hash) (bytes : Bytes) : Bool :=
-  manifest.any (·.hash == want) && H bytes == want
+/-- Whether the manifest lists `h` now: the last entry for it froze it, no withdrawal came after. -/
+def listed (manifest : List ManifestEntry) (h : Hash) : Bool :=
+  match manifest.reverse.find? (·.hash == h) with
+  | some (.frozen _) => true
+  | _ => false
 
-theorem loads_listed {H : Bytes → Hash} {manifest : List Frozen} {want : Hash} {bytes : Bytes}
-    (h : loads H manifest want bytes = true) : ∃ e ∈ manifest, e.hash = H bytes := by
-  unfold loads at h
-  simp only [Bool.and_eq_true, List.any_eq_true, beq_iff_eq] at h
-  obtain ⟨⟨e, he, rfl⟩, hb⟩ := h
-  exact ⟨e, he, hb.symm⟩
+/-- A withdrawal unlists the hash. -/
+theorem withdrawn_unlisted (manifest : List ManifestEntry) (h : Hash) : listed (manifest ++ [.withdrawn h]) h = false := by
+  simp [listed, ManifestEntry.hash]
+
+/-- A host loads bytes only by a hash the manifest lists, and only when `H` names the bytes by it. -/
+def loads (H : Bytes → Hash) (manifest : List ManifestEntry) (want : Hash) (bytes : Bytes) : Bool :=
+  listed manifest want && H bytes == want
+
+theorem loads_listed {H : Bytes → Hash} {manifest : List ManifestEntry} {want : Hash} {bytes : Bytes}
+    (h : loads H manifest want bytes = true) : ∃ f, .frozen f ∈ manifest ∧ f.hash = H bytes := by
+  unfold loads listed at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨hl, hb⟩ := h
+  split at hl
+  · rename_i f hf
+    have hm := List.mem_reverse.mp (List.mem_of_find?_eq_some hf)
+    have hh := List.find?_some hf
+    simp only [ManifestEntry.hash, beq_iff_eq] at hh
+    exact ⟨f, hm, hh.trans hb.symm⟩
+  · cases hl
+
+/-- A withdrawn module is never loaded again. -/
+theorem withdrawn_not_loaded (H : Bytes → Hash) (manifest : List ManifestEntry) (h : Hash) (bytes : Bytes) :
+    loads H (manifest ++ [.withdrawn h]) h bytes = false := by
+  simp [loads, withdrawn_unlisted]
+
+/-- **A device's own renders follow the manifest:** a cached render is kept only while its runtime is listed; once
+the module is withdrawn, the render is dropped. Nothing that others wrote is judged by this (verdicts run the hash an
+envelope names, pinned in its past). -/
+def cacheKeeps (manifest : List ManifestEntry) (runtime : Hash) : Bool := listed manifest runtime
+
+theorem cache_drops (manifest : List ManifestEntry) (h : Hash) : cacheKeeps (manifest ++ [.withdrawn h]) h = false :=
+  withdrawn_unlisted manifest h
 
 /-! ## A render's cache key (README, "The file registry", 5) -/
 
