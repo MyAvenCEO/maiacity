@@ -1,13 +1,13 @@
-// avenDB's decision log is append-only (aven/DB2/CLAUDE.md, Samuel 31 Oct 2026): DECISIONS.md keeps the history trace
-// immutable, and ARCHITECTURE.md is the mutable, latest truth. This check fails when a branch edits or deletes anything
-// the log already held: the log at the branch's merge base must be an exact prefix of the log now. A change of mind is
-// a new entry that names the one it supersedes, never an edit.
+// avenDB's decision log is append-only (aven/DB2/CLAUDE.md, Samuel 31 Oct 2026): avenBRAIN's DECISIONS.md keeps the
+// history trace immutable, and its ARCHITECTURE.md and package pages are the mutable, latest truth. This check fails
+// when a branch edits or deletes anything the log already held: the log at the branch's merge base must be an exact
+// prefix of the log now. A change of mind is a new entry that names the one it supersedes, never an edit.
 //   bun aven/ops/devx/decisions.mjs              against origin/main
 //   bun aven/ops/devx/decisions.mjs --base <ref> against another ref
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 
-export const LOG = 'aven/DB2/DECISIONS.md';
+export const LOG = 'aven/DB2/brain/DECISIONS.md';
 
 const git = (...a) => execFileSync('git', a, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
 

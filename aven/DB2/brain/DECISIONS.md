@@ -3,7 +3,7 @@
 The audit trail of every avenDB decision, as it was made. It only grows: an entry is never edited or deleted, and a
 change of mind is a new entry that names the one it supersedes (checked by `aven/ops/devx/decisions.mjs`). The
 current truth is [ARCHITECTURE.md](ARCHITECTURE.md) and its chapters, with the Lean; this is their history. The
-architect is its only writer: threads send their decisions to the architect ([CLAUDE.md](CLAUDE.md)).
+architect is its only writer: threads send their decisions to the architect ([CLAUDE.md](../CLAUDE.md)).
 
 Ids: `A<n>` is avenDB's one sequence. Entries imported from a package's own list keep that list's id (`caps D14`,
 `docs 13`, `peers 8`, …), so old references still resolve.
@@ -11,20 +11,20 @@ Ids: `A<n>` is avenDB's one sequence. Entries imported from a package's own list
 ## Imported on 31 Oct 2026
 
 Before this log, avenDB's decisions lived in lists inside its documents. Each list below is copied verbatim from main at
-commit `f7e1775b`, with its own ids, wording and markdown; its links resolve from the file it came from, and each
-entry's status is as it stood then. The lists are: ARCHITECTURE.md's "Proposals for Samuel" (A1 to A45, with their group
-headings) and its rules 7, 15 and 16, which name Samuel's decisions; the caps README's "Decisions" (`caps D1` to
-`caps D24`, and `caps E1` to `caps E3`, agreed with the engine thread); the "Decisions" of the docs, engine and runtimes
-READMEs (`docs 1` to `docs 24`, `engine 1` to `engine 13`, `runtimes 1` to `runtimes 12`) and of PEERS.md (`peers 1` to
-`peers 12`); the store README, which has no list, by its two sections marked "(decided)" and its one decision in line;
-and the unnumbered "Decisions" of MILESTONE2.md and SANDBOX.md, cited by their bold words. PRODUCTION.md has no decision
-list, so nothing of it is imported, and ARCHITECTURE.md's table "Caps, bulletproof" marks rows decided only by citing
-A-numbers, which are here already.
+commit `f7e1775b`, with its own ids, wording and markdown; its links point at the files as they stood at that commit,
+and each entry's status is as it stood then. The lists are: ARCHITECTURE.md's "Proposals for Samuel" (A1 to A45, with
+their group headings) and its rules 7, 15 and 16, which name Samuel's decisions; the caps README's "Decisions"
+(`caps D1` to `caps D24`, and `caps E1` to `caps E3`, agreed with the engine thread); the "Decisions" of the docs,
+engine and runtimes READMEs (`docs 1` to `docs 24`, `engine 1` to `engine 13`, `runtimes 1` to `runtimes 12`) and of
+PEERS.md (`peers 1` to `peers 12`); the store README, which has no list, by its two sections marked "(decided)" and its
+one decision in line; and the unnumbered "Decisions" of MILESTONE2.md and SANDBOX.md, cited by their bold words.
+PRODUCTION.md has no decision list, so nothing of it is imported, and ARCHITECTURE.md's table "Caps, bulletproof" marks
+rows decided only by citing A-numbers, which are here already.
 
 ### From ARCHITECTURE.md
 
 **Before any docs or engine code**
-- **A1. One vocabulary:** this document and [`GLOSSARY.md`](brain/GLOSSARY.md) are the single source for shared words and
+- **A1. One vocabulary:** this document and [`GLOSSARY.md`](https://github.com/MyAvenCEO/maiacity/blob/f7e1775bc687f8ac00ba23f475475b0a616c23ce/aven/DB2/brain/GLOSSARY.md) are the single source for shared words and
   cross-part rules, and every spec uses them in this sense. *Decided: yes (Samuel, 30 Oct 2026).* **Its verdicts are
   decided too** (Samuel, 31 Oct 2026: "yes for all the glossary"), with two of them corrected by the terminology audit:
   `Gate` → `Admission` (a `Door` type exists) and the engine's part → level (caps has a share depth). They apply in
@@ -120,7 +120,7 @@ A-numbers, which are here already.
   - **Release keys and the guardian** become vaults' signers, named by the genesis as vaults and changed by their
     owners' approval. avenPEER's `settle` takes the admin's approval from each statement's own past, so settling stays
     order-free.
-  - **Every place a key still holds authority** is in [`audits/vaults.md`](audits/vaults.md), each fixed Lean-first
+  - **Every place a key still holds authority** is in [`audits/vaults.md`](https://github.com/MyAvenCEO/maiacity/blob/f7e1775bc687f8ac00ba23f475475b0a616c23ce/aven/DB2/audits/vaults.md), each fixed Lean-first
     before its code:
     - the guardian, one key owning every person's vault, becomes the guardian's vault, its key that vault's owner;
     - the genesis's `origins`, `avenPeer` and guardian become Maia City's to change, by its owners' approval;
@@ -209,7 +209,7 @@ A-numbers, which are here already.
 - **A41. avenOS's documentation is "Brain"** (the tab and `#/brain`), so "Docs" means only avenDB's Docs. *Decided:
   yes (Samuel, 31 Oct 2026).*
 
-- **A42. The contradictions of 31 Oct** ([`audits/contradictions.md`](audits/contradictions.md)). Samuel decided four
+- **A42. The contradictions of 31 Oct** ([`audits/contradictions.md`](https://github.com/MyAvenCEO/maiacity/blob/f7e1775bc687f8ac00ba23f475475b0a616c23ce/aven/DB2/audits/contradictions.md)). Samuel decided four
   (31 Oct 2026):
   - **MaiaCityGuardian stays a super admin for now:** a full owner of every person's vault, as caps D12 has it. Specs
     that call it recovery say so: recovery only comes later.
@@ -326,7 +326,7 @@ A-numbers, which are here already.
   *Decided: yes.*
 
 **The engine and actors**
-- **A9. The want queue** as in [Massive data](#massive-data-wants-decide-what-moves). Its laws go into Lean before
+- **A9. The want queue** as in [Massive data](https://github.com/MyAvenCEO/maiacity/blob/f7e1775bc687f8ac00ba23f475475b0a616c23ce/aven/DB2/ARCHITECTURE.md#massive-data-wants-decide-what-moves). Its laws go into Lean before
   any code: tiers only order, each key once at its highest tier, prerequisites inherit priority, every round moves,
   `now` is never evicted. Older periods are reached by a bounded `follow` of the link to the period before. *Decided:
   yes (Samuel, 30 Oct 2026: "do as you believe"); its laws are proven in Lean (#1530).*
@@ -374,9 +374,9 @@ A-numbers, which are here already.
 - **A19. One update grammar:** put, patch, remove and a new `edit` for text, lists and trees, each with a verb and a
   footprint. *Decided: yes (Samuel, 30 Oct 2026: "do as you believe").*
 - **A20. Facts for relations, Records for documents.** *Decided: yes (Samuel, 30 Oct 2026: "do as you believe").*
-- **A21. Search is local first,** as [above](#search-local-first): a device searches what it holds, and its wants sync
+- **A21. Search is local first,** as [above](https://github.com/MyAvenCEO/maiacity/blob/f7e1775bc687f8ac00ba23f475475b0a616c23ce/aven/DB2/ARCHITECTURE.md#search-local-first): a device searches what it holds, and its wants sync
   what it wants to search. *Decided (Samuel, 30 Oct 2026).*
-- **A26. Sealed indexes,** as [above](#a-handful-among-millions-sealed-indexes): directories and indexes are one
+- **A26. Sealed indexes,** as [above](https://github.com/MyAvenCEO/maiacity/blob/f7e1775bc687f8ac00ba23f475475b0a616c23ce/aven/DB2/ARCHITECTURE.md#a-handful-among-millions-sealed-indexes): directories and indexes are one
   structure of sealed Values; the engine derives an index from each query's shape; a lookup reads a few Values, then
   only the Docs they point to, and the query runs on the device. *Decided: yes (Samuel, 30 Oct 2026: "A26 is what we
   want").* The docs model has the tree (#1540, a Prolly tree: a lookup finds exactly the entries in range, and every
@@ -421,8 +421,8 @@ A-numbers, which are here already.
   caps (#1499), as what D8 meant.*
 
 **Housekeeping**
-- **A24. The layers** as drawn [above](#the-whole-on-one-page). *Decided: yes (Samuel, 30 Oct 2026).*
-- **A25. Publish the six audits** under [`audits/`](audits/README.md) now that the security fixes are live. *Decided:
+- **A24. The layers** as drawn [above](https://github.com/MyAvenCEO/maiacity/blob/f7e1775bc687f8ac00ba23f475475b0a616c23ce/aven/DB2/ARCHITECTURE.md#the-whole-on-one-page). *Decided: yes (Samuel, 30 Oct 2026).*
+- **A25. Publish the six audits** under [`audits/`](https://github.com/MyAvenCEO/maiacity/blob/f7e1775bc687f8ac00ba23f475475b0a616c23ce/aven/DB2/audits/README.md) now that the security fixes are live. *Decided:
   yes (Samuel, 30 Oct 2026), done.*
 
 #### Rules 7, 15 and 16, which name Samuel's decisions
@@ -449,7 +449,7 @@ A-numbers, which are here already.
 
 1. **This folder is the one caps spec** (Samuel, 30 Oct 2026). It lives beside `id/spec` and `id/core`. avenACTOR's
    discovery document folds in: its rules learned and first principles became the rules and the model here, and its
-   survey moved whole to [`research.md`](research.md). Its old path becomes a pointer on its branch.
+   survey moved whole to [`research.md`](https://github.com/MyAvenCEO/maiacity/blob/f7e1775bc687f8ac00ba23f475475b0a616c23ce/aven/DB2/id/caps/research.md). Its old path becomes a pointer on its branch.
 2. **Vaults issue and hold caps** (Samuel, 30 Oct 2026). A device is a vault, so "a narrower cap for one device" is a
    cap its device vault holds. Actors hold no keys. (A ticket held one until a vault claimed it; since A42 a bearer key
    only proves a condition, and a ticket's key proves its claim.)
@@ -615,7 +615,7 @@ Agreed with the engine thread (30 Oct 2026):
 11. **Mutations atomic per document.** A promise across documents would need coordination the network doesn't have.
 12. **Sync by version, not by budget,** and **iroh before our own:** gossip for live changes and heads, iroh-blobs for
     bytes, irpc for our messages.
-13. **avenACTORS' engine notes are research,** moved to [`../research/E1-avendb-old-engine.md`](../research/E1-avendb-old-engine.md)
+13. **avenACTORS' engine notes are research,** moved to [`../research/E1-avendb-old-engine.md`](https://github.com/MyAvenCEO/maiacity/blob/f7e1775bc687f8ac00ba23f475475b0a616c23ce/aven/DB2/db/research/E1-avendb-old-engine.md)
     with nothing cut, so avenDB has one engine spec (Samuel, 30 Oct 2026).
 
 ### From the runtimes README
@@ -707,7 +707,7 @@ proposal kept the contract and split big files. **We split** (the architect, 30 
 #### iroh-blobs on the store (decided)
 
 **The spike decided** (the architect, 30 Oct 2026): iroh-blobs on our store, through one adapter
-([`src/blobs`](src/blobs)), over `bao-tree` directly with our own range requests. Both were measured in the box on one
+([`src/blobs`](https://github.com/MyAvenCEO/maiacity/blob/f7e1775bc687f8ac00ba23f475475b0a616c23ce/aven/DB2/store/src/blobs)), over `bao-tree` directly with our own range requests. Both were measured in the box on one
 task: a 1 GiB file of 1024 chunks moving from Alice Peer's endpoint to a relay-only endpoint with Bob's Peer-Light's
 key, through the Aven Peer's relay and nothing else, then a seek to its middle. Our crates at the box's dev profile.
 
@@ -774,7 +774,7 @@ thread's recommendation. Samuel may overrule any.
    join, and only its owner changes it or adds others (Samuel, 31 Oct 2026). Keepers stay blind. Files are no special
    case: a file's chunks are Values that a file Record in its Doc names, kept as that Doc is. Every native Peer also
    keeps the chat's logs it hears. Any peer may keep, and none is special.
-9. **What stays special is named, signed or on its way out** ([8](#8-what-stays-special)). The claim becomes the
+9. **What stays special is named, signed or on its way out** ([8](https://github.com/MyAvenCEO/maiacity/blob/f7e1775bc687f8ac00ba23f475475b0a616c23ce/aven/DB2/PEERS.md#8-what-stays-special)). The claim becomes the
    signed genesis that every member pins (A11). The guardian is named in what people sign (A13). The `maia.city` origin
    stays special until Samuel takes up A14.
 10. **Milestone 2b, Lean first,** after milestone 2 and the store upgrade. The tree's Lean lives in `Aven.ID`'s
@@ -782,7 +782,7 @@ thread's recommendation. Samuel may overrule any.
 11. **Upgrades are a clean refusal.** Every connection's first frame carries a wire version, separate from the release
     and changed rarely. A peer refuses any other wire version with "update to join", and never falls back (README rule
     9). The Service Worker and native Peers read one signed release record. Stored formats stay readable forever,
-    tested against frozen vectors, because production is never wiped ([7](#7-upgrades)).
+    tested against frozen vectors, because production is never wiped ([7](https://github.com/MyAvenCEO/maiacity/blob/f7e1775bc687f8ac00ba23f475475b0a616c23ce/aven/DB2/PEERS.md#7-upgrades)).
 12. **Maia City's vault is the admin; its owners approve what changes who is in or who sees whom** (rule 15, A28;
     Samuel, 31 Oct 2026: "a tree admin should always be a VAULT, never an individual signer"). Tickets, withdrawals, and
     the relay list count only with the approval of Maia City's owners, k of n through the vaults that own it
@@ -795,7 +795,7 @@ thread's recommendation. Samuel may overrule any.
 ### From MILESTONE2.md
 
 - **Only the admin invites** (Samuel, 30 Oct 2026): the admin coop, Maia City by default
-  ([`PRODUCTION.md`](PRODUCTION.md#part-c-maia-city-the-admin-coop)). An invite is an owner's act on Aven, so it is
+  ([`PRODUCTION.md`](https://github.com/MyAvenCEO/maiacity/blob/f7e1775bc687f8ac00ba23f475475b0a616c23ce/aven/DB2/PRODUCTION.md#part-c-maia-city-the-admin-coop)). An invite is an owner's act on Aven, so it is
   signed as the claim is: by the passkey of a person whose vault owns the admin coop, a WebAuthn assertion over the
   invite's statement. No member invites anyone. Lean and the code define the admin as the owner of the network's
   vault, whatever its kind, so the rule holds before and after the coop lands.
@@ -812,7 +812,7 @@ thread's recommendation. Samuel may overrule any.
 - **Members-only gossip:** one iroh-gossip topic per network, derived from the network's id. Peers join it only
   through members, and drop any message whose sender is not a member's device. Each message is signed by its device.
 - **The chat is in memory:** messages live in each peer's memory and nowhere else. No store, no Loro, no history.
-  The store upgrade that follows gives it its history and files ([`store`](store/README.md)).
+  The store upgrade that follows gives it its history and files ([`store`](https://github.com/MyAvenCEO/maiacity/blob/f7e1775bc687f8ac00ba23f475475b0a616c23ce/aven/DB2/store/README.md)).
 - **The Aven Peer is in the room:** it joins the topic, keeps it alive for the Peer-Lights, and says once who joined.
 - **No new protocol of our own:** invites, joins and the tree travel on `aven/db/1`; the chat is iroh-gossip beside it
   on the same `Router` (README rule 9).
