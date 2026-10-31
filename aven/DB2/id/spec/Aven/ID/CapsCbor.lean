@@ -7,14 +7,16 @@ A cap is a Value, encoded by `Aven.Core`'s deterministic CBOR, its targets as `A
 **body** is everything but its signature and approvals:
 
 ```
-{"role": role or null, "grant": [line…], "share": n, "holder": holder, "issuer": vault, "parent": cap or null,
- "conditions": {"own", "uses", "approve", "expires", "history", "branches", "notBefore"}}
+{"kind": "grant" or "attenuate", "role": role or null, "grant": [line…], "share": n, "holder": holder,
+ "issuer": vault, "parent": cap or null, "conditions": {"own", "uses", "approve", "expires", "history", "branches",
+ "notBefore"}}
 line:    {"verb": "read", "target": target, "footprint": [{"type": Doc, "verb": "put-new", "fields": [field…] or null}]}
 holder:  {"vault": v}   {"group": g}   "public"   {"ticket": key}
 ```
 
 Keys sort as the codec sorts them: shorter first, then by their bytes. A cap's id is the BLAKE3 hash of its body's
-encoding (`Cap.digest`), which its issuer's owners approve. Its issuing device signs the body under the label
+encoding (`Cap.digest`), which its issuer's owners approve, unless it attenuates. Its kind is in its body, so a
+signature over an attenuation is never one over a grant. Its issuing device signs the body under the label
 `avenID cap 1` (`Cap.signing`), so the signature can't be read as anything else's (Core's `signing_separates`).
 
 The cast's caps go by readable names, so here a parent and a role are text; with R5 they become hashes, as every
@@ -67,9 +69,9 @@ def Conditions.value (c : Conditions) : Value :=
 
 /-- What a cap says, without its signature and approvals. -/
 def Cap.body (c : Cap) : Value :=
-  .map [(key "role", optText c.role), (key "grant", .array (c.grant.map Line.value)), (key "share", .uint c.share),
-    (key "holder", c.holder.value), (key "issuer", txt c.issuer), (key "parent", optText c.parent),
-    (key "conditions", c.conditions.value)]
+  .map [(key "kind", txt c.kind.name), (key "role", optText c.role), (key "grant", .array (c.grant.map Line.value)),
+    (key "share", .uint c.share), (key "holder", c.holder.value), (key "issuer", txt c.issuer),
+    (key "parent", optText c.parent), (key "conditions", c.conditions.value)]
 
 /-- A cap's bytes: its body's one encoding. -/
 def Cap.bytes (c : Cap) : Bytes := encode c.body

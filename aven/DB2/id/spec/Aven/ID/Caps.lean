@@ -10,14 +10,20 @@ A grant is a list of lines. One grant lies within another when each of its lines
 narrower target (`Target.le`), the same verb, and footprint grants no wider. That is the check every link of a chain
 must pass (rule 3).
 
-A chain is written root first. `chainRules` lists every rule each cap of it must keep, in the order a reader checks
-them, so `chainError` names the first one a bad chain breaks, and `chainOk` holds exactly when none is broken. The
-theorems: a chain only narrows, so no cap in it reaches a Doc or allows a step its root doesn't (`narrow_chain`,
-`narrow_steps`, through Core's `Target.le_sound`); every line it grants lies in its root issuer's authority
-(`root_authority`); it is no longer than its root may be shared (`chain_short`); every cap in it carries its issuer's
-owners' approval (`grant_approved`, D14); a cap issued from a group's cap lives only while its issuer is in the group
-(`child_live`); the public never passes a cap on and may not share (`public_bounded`, D15); and a role is pinned by its
-id (`role_pinned`, D6). -/
+A chain is written root first. Each link after the root is a **grant**, which passes its parent on to a holder with
+its issuer's owners' approval (D14), or an **attenuation**, which narrows its parent for the same holder, as a cap that
+travels on in a message narrows per hop (D16). An attenuation grants nothing new, so it needs no approval (A27).
+`chainRules` lists every rule each cap of it must keep, in the order a reader checks them, so `chainError` names the
+first one a bad chain breaks, and `chainOk` holds exactly when none is broken. The theorems: a chain only narrows, so no
+cap in it reaches a Doc or allows a step its root doesn't (`narrow_chain`, `narrow_steps`, through Core's
+`Target.le_sound`); every line it grants lies in its root issuer's authority (`root_authority`); it passes its root on
+no more often than its root may be shared (`chain_short`); every grant in it carries its issuer's owners' approval
+(`grant_approved`, D14), so a cap reaches a new holder only by an approved grant (`new_holder_granted`); an attenuation
+keeps its parent's holder, a device of that holder signs it, and it lies within its parent (`attenuate_within`,
+`attenuate_signed`); every holder in a chain got there by an approved grant in it, so a chain starts from authority
+(`holder_granted`); a cap issued from a group's cap lives only while its issuer is in the group (`child_live`); the
+public never passes a cap on and may not share (`public_bounded`, D15); and a role is pinned by its id (`role_pinned`,
+D6). -/
 
 namespace Aven.ID
 
@@ -208,13 +214,32 @@ structure Role where
   grant : Grant
   deriving DecidableEq, Repr
 
+/-- What a cap does: a **grant** starts a chain or passes its parent on to a holder, with its issuer's owners' approval
+(D14); an **attenuation** narrows its parent for the same holder, as a cap that travels on in a message narrows per hop
+(D16). It grants nothing new, so it needs no approval (A27). -/
+inductive CapKind where
+  | grant
+  | attenuate
+  deriving DecidableEq, Repr
+
+/-- How many hops a link passes its parent on: a grant one, an attenuation none, since its holder stays. -/
+def CapKind.hops : CapKind → Nat
+  | .grant => 1
+  | .attenuate => 0
+
+/-- A kind as a cap's bytes and the vectors write it. -/
+def CapKind.name : CapKind → String
+  | .grant => "grant"
+  | .attenuate => "attenuate"
+
 /-- A cap. Its id is its hash, once `Aven.Core` names Values; its signature travels beside it, by its issuer's device,
-with its issuer's owners' approvals over its id. -/
+with its issuer's owners' approvals over its id. An attenuation carries none. -/
 structure Cap where
   id : String
   issuer : String
   holder : Holder
   parent : Option String := none
+  kind : CapKind := .grant
   grant : Grant := []
   role : Option String := none
   share : Nat := 0
@@ -258,6 +283,7 @@ inductive ChainError where
   | publicShares (cap : String)
   | parent (cap : String)
   | issuer (cap : String)
+  | holder (cap : String)
   | wider (cap : String)
   | share (cap : String)
   | conditions (cap : String)
@@ -302,23 +328,27 @@ def holds (x : Ctx) (p : Cap) (issuer : String) : Bool :=
   | .ticket _ => false
 
 /-- What every cap must keep: a device of its issuer signed it, its issuer's owners approved it, an owner vault by its
-own quorum (D14), and a public cap may not share. -/
+own quorum (D14), unless it only attenuates, and a public cap may not share. -/
 def capRules (x : Ctx) (c : Cap) : List (Bool × ChainError) :=
   [(x.tree.actsFor c.signer == some c.issuer, .signer c.id),
-   (x.tree.approves x.threshold c.issuer c.id c.approvals, .approval c.id),
+   (c.kind == .attenuate || x.tree.approves x.threshold c.issuer c.id c.approvals, .approval c.id),
    (c.holder != .«public» || c.share == 0, .publicShares c.id)]
 
-/-- A root names no parent, and every atom it grants lies in its issuer's authority. -/
+/-- A root names no parent and is a grant, so a chain starts from authority, and every atom it grants lies in its
+issuer's authority. -/
 def rootRules (x : Ctx) (r : Cap) : List (Bool × ChainError) :=
-  [(r.parent.isNone, .notRoot r.id)] ++
+  [(r.parent.isNone && r.kind == .grant, .notRoot r.id)] ++
     ((r.grants x.roles).map fun l => (authorityOver x r.issuer l, .authority r.id l)) ++ capRules x r
 
-/-- A link names its parent, is issued by its parent's holder, and narrows it: its grant within, its share depth lower,
-its conditions at least as strict. -/
+/-- A link names its parent, is issued by a holder of its parent, and narrows it: its grant within, its conditions at
+least as strict. A grant passes it on one hop, so its share depth is lower; an attenuation keeps its parent's holder,
+and its share depth is no deeper. -/
 def linkRules (x : Ctx) (p c : Cap) : List (Bool × ChainError) :=
   [(c.parent == some p.id, .parent c.id), (holds x p c.issuer, .issuer c.id),
-   ((c.grants x.roles).within (p.grants x.roles), .wider c.id), (decide (c.share + 1 ≤ p.share), .share c.id),
-   (c.conditions.narrows p.conditions, .conditions c.id)] ++ capRules x c
+   (c.kind == .grant || c.holder == p.holder, .holder c.id),
+   ((c.grants x.roles).within (p.grants x.roles), .wider c.id),
+   (decide (c.share + c.kind.hops ≤ p.share), .share c.id), (c.conditions.narrows p.conditions, .conditions c.id)] ++
+    capRules x c
 
 def linksRules (x : Ctx) : Cap → List Cap → List (Bool × ChainError)
   | _, [] => []
@@ -345,29 +375,33 @@ theorem rules_all {l m : List (Bool × ChainError)} :
   simp only [List.all_append, Bool.and_eq_true]
 
 theorem capRules_ok {c : Cap} (h : (capRules x c).all (·.1) = true) :
-    x.tree.actsFor c.signer = some c.issuer ∧ x.tree.approves x.threshold c.issuer c.id c.approvals = true ∧
+    x.tree.actsFor c.signer = some c.issuer ∧
+      (c.kind = .grant → x.tree.approves x.threshold c.issuer c.id c.approvals = true) ∧
       (c.holder = .«public» → c.share = 0) := by
   simp only [capRules, List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true,
     bne_iff_ne, ne_eq] at h
   obtain ⟨s, a, p⟩ := h
-  exact ⟨s, a, fun e => by simp_all⟩
+  exact ⟨s, fun g => a.resolve_left (by simp [g]), fun e => by simp_all⟩
 
 theorem linkRules_ok {p c : Cap} (h : (linkRules x p c).all (·.1) = true) :
-    c.parent = some p.id ∧ holds x p c.issuer = true ∧ (c.grants x.roles).within (p.grants x.roles) = true ∧
-      c.share + 1 ≤ p.share ∧ c.conditions.narrows p.conditions = true ∧ (capRules x c).all (·.1) = true := by
+    c.parent = some p.id ∧ holds x p c.issuer = true ∧ (c.kind = .grant ∨ c.holder = p.holder) ∧
+      (c.grants x.roles).within (p.grants x.roles) = true ∧ c.share + c.kind.hops ≤ p.share ∧
+      c.conditions.narrows p.conditions = true ∧ (capRules x c).all (·.1) = true := by
   rw [linkRules, rules_all] at h
   obtain ⟨h, k⟩ := h
-  simp only [List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
-  obtain ⟨a, b, c', d, e⟩ := h
-  exact ⟨a, b, c', d, e, k⟩
+  simp only [List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq,
+    decide_eq_true_eq] at h
+  obtain ⟨a, b, o, c', d, e⟩ := h
+  exact ⟨a, b, o, c', d, e, k⟩
 
 theorem rootRules_ok {r : Cap} (h : (rootRules x r).all (·.1) = true) :
-    r.parent = none ∧ (∀ l ∈ r.grants x.roles, authorityOver x r.issuer l = true) ∧
+    r.parent = none ∧ r.kind = .grant ∧ (∀ l ∈ r.grants x.roles, authorityOver x r.issuer l = true) ∧
       (capRules x r).all (·.1) = true := by
   rw [rootRules, rules_all, rules_all] at h
   obtain ⟨⟨h, m⟩, k⟩ := h
-  simp only [List.all_cons, List.all_nil, Bool.and_true, Option.isNone_iff_eq_none] at h
-  refine ⟨h, fun a ma => ?_, k⟩
+  simp only [List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true, Option.isNone_iff_eq_none,
+    beq_iff_eq] at h
+  refine ⟨h.1, h.2, fun a ma => ?_, k⟩
   simp only [List.all_map, List.all_eq_true, Function.comp_apply] at m
   exact m a ma
 
@@ -383,7 +417,7 @@ theorem links_reach (gov : Core.Bytes → Core.Bytes → Prop) (spawned : Core.D
   | _, [], _, _, m => nomatch m
   | p, c :: cs, h, d, m => by
     obtain ⟨l, rest⟩ := linksRules_cons.mp h
-    have w := (linkRules_ok l).2.2.1
+    obtain ⟨_, _, _, w, _⟩ := linkRules_ok l
     intro f v r
     rcases List.mem_cons.mp m with e | m
     · exact Grant.within_reaches w (e ▸ r)
@@ -396,7 +430,7 @@ theorem links_allow (gov : Core.Bytes → Core.Bytes → Prop) (spawned : Core.D
   | _, [], _, _, m => nomatch m
   | p, c :: cs, h, d, m => by
     obtain ⟨l, rest⟩ := linksRules_cons.mp h
-    have w := (linkRules_ok l).2.2.1
+    obtain ⟨_, _, _, w, _⟩ := linkRules_ok l
     intro f s a
     rcases List.mem_cons.mp m with e | m
     · exact Grant.within_allows w (e ▸ a)
@@ -428,7 +462,7 @@ theorem links_authority {i : String} : ∀ {p : Cap} {cs : List Cap},
   | _, [], _, _, _, m => nomatch m
   | p, c :: cs, hp, h, d, m => by
     obtain ⟨lk, rest⟩ := linksRules_cons.mp h
-    have w := (linkRules_ok lk).2.2.1
+    obtain ⟨_, _, _, w, _⟩ := linkRules_ok lk
     have hc : ∀ l ∈ c.grants x.roles, authorityOver x i l = true := by
       intro l ml
       simp only [Grant.within, List.all_eq_true, List.any_eq_true] at w
@@ -444,23 +478,26 @@ governs. -/
 theorem root_authority {r : Cap} {cs : List Cap} (h : chainOk x (r :: cs) = true) :
     ∀ c ∈ r :: cs, ∀ l ∈ c.grants x.roles, authorityOver x r.issuer l = true := by
   rw [chainOk, chainRules, rules_all] at h
-  have root := (rootRules_ok h.1).2.1
+  have root := (rootRules_ok h.1).2.2.1
   intro c m
   rcases List.mem_cons.mp m with e | m
   · exact e ▸ root
   · exact links_authority root h.2 c m
 
-/-- A chain is no longer than its root may be shared: every link lowers the share depth. -/
-theorem links_short : ∀ {p : Cap} {cs : List Cap}, (linksRules x p cs).all (·.1) = true → cs.length ≤ p.share
+/-- Links pass `p` on no more often than it may be shared: every grant lowers the share depth, and an attenuation, which
+keeps its holder, never raises it. -/
+theorem links_short : ∀ {p : Cap} {cs : List Cap}, (linksRules x p cs).all (·.1) = true →
+    (cs.filter (·.kind == .grant)).length ≤ p.share
   | _, [], _ => Nat.zero_le _
   | p, c :: cs, h => by
     obtain ⟨l, rest⟩ := linksRules_cons.mp h
     have := links_short rest
-    have := (linkRules_ok l).2.2.2.1
-    simp only [List.length_cons]
-    omega
+    obtain ⟨_, _, _, _, sh, _⟩ := linkRules_ok l
+    cases k : c.kind <;> simp only [k, CapKind.hops] at sh <;> simp [k] <;> omega
 
-theorem chain_short {r : Cap} {cs : List Cap} (h : chainOk x (r :: cs) = true) : cs.length ≤ r.share := by
+/-- A chain passes its root on no more often than its root may be shared. -/
+theorem chain_short {r : Cap} {cs : List Cap} (h : chainOk x (r :: cs) = true) :
+    (cs.filter (·.kind == .grant)).length ≤ r.share := by
   rw [chainOk, chainRules, rules_all] at h
   exact links_short h.2
 
@@ -470,7 +507,7 @@ theorem links_caps : ∀ {p : Cap} {cs : List Cap}, (linksRules x p cs).all (·.
   | _, c :: _, h, d, m => by
     obtain ⟨l, rest⟩ := linksRules_cons.mp h
     rcases List.mem_cons.mp m with e | m
-    · exact e ▸ (linkRules_ok l).2.2.2.2.2
+    · exact e ▸ (linkRules_ok l).2.2.2.2.2.2
     · exact links_caps rest d m
 
 /-- A branch the last cap of valid links allows, every cap above it allows: conditions narrow down a chain. -/
@@ -486,28 +523,92 @@ theorem links_branch {br : Core.Bytes} : ∀ {p : Cap} {cs : List Cap} {last : C
     obtain ⟨lk, rest⟩ := linksRules_cons.mp h
     have ih := links_branch rest (by simpa only [List.getLast?_cons_cons] using hl) al
     rcases List.mem_cons.mp m with e | m
-    · exact e ▸ Branches.allows_within (Conditions.narrows_branches (linkRules_ok lk).2.2.2.2.1)
+    · exact e ▸ Branches.allows_within (Conditions.narrows_branches (linkRules_ok lk).2.2.2.2.2.1)
         (ih c' (List.mem_cons_self ..))
     · exact ih c m
 
-/-- Every grant carries its issuer's owners' approval, an owner vault's by its own quorum, and a device of its issuer
-signed it (D14). -/
+/-- A device of its issuer signed every cap of a chain, and every grant in it carries its issuer's owners' approval, an
+owner vault's by its own quorum (D14). An attenuation grants nothing new and carries none. -/
 theorem grant_approved {r : Cap} {cs : List Cap} (h : chainOk x (r :: cs) = true) :
     ∀ c ∈ r :: cs, x.tree.actsFor c.signer = some c.issuer ∧
-      x.tree.approves x.threshold c.issuer c.id c.approvals = true := by
+      (c.kind = .grant → x.tree.approves x.threshold c.issuer c.id c.approvals = true) := by
   rw [chainOk, chainRules, rules_all] at h
   intro c m
   rcases List.mem_cons.mp m with e | m
-  · exact e ▸ (capRules_ok (rootRules_ok h.1).2.2).imp id (·.1)
+  · exact e ▸ (capRules_ok (rootRules_ok h.1).2.2.2).imp id (·.1)
   · exact (capRules_ok (links_caps h.2 c m)).imp id (·.1)
 
-/-- A cap issued from a group's cap lives only while its issuer is in the group. -/
+/-- A cap reaches a new holder only by a grant its issuer's owners approved (D14): an attenuation keeps its parent's
+holder. -/
+theorem new_holder_granted {p c : Cap} (h : (linkRules x p c).all (·.1) = true) (other : c.holder ≠ p.holder) :
+    c.kind = .grant ∧ x.tree.approves x.threshold c.issuer c.id c.approvals = true := by
+  obtain ⟨_, _, o, _, _, _, k⟩ := linkRules_ok h
+  have g := o.resolve_right other
+  exact ⟨g, (capRules_ok k).2.1 g⟩
+
+/-- **An attenuation grants nothing new** (A27): it keeps its parent's holder, reaches and allows nothing its parent
+doesn't, shares no further, and its conditions are at least as strict: no later expiry, no other branches. -/
+theorem attenuate_within (gov : Core.Bytes → Core.Bytes → Prop) (spawned : Core.DocId → Core.DocId → Prop)
+    {p c : Cap} (h : (linkRules x p c).all (·.1) = true) (att : c.kind = .attenuate) :
+    c.holder = p.holder ∧
+      (∀ f v, (c.grants x.roles).reaches gov spawned f v → (p.grants x.roles).reaches gov spawned f v) ∧
+      (∀ f s, (c.grants x.roles).allows gov spawned f s → (p.grants x.roles).allows gov spawned f s) ∧
+      c.share ≤ p.share ∧ c.conditions.narrows p.conditions = true := by
+  obtain ⟨_, _, o, w, sh, n, _⟩ := linkRules_ok h
+  rw [att, CapKind.hops, Nat.add_zero] at sh
+  exact ⟨o.resolve_left (by simp [att]), fun f v => Grant.within_reaches w, fun f s => Grant.within_allows w, sh, n⟩
+
+/-- A device of its holder signs an attenuation: the signer acts for a vault that holds it, the parent's own vault for a
+vault's cap, or a vault in the group now for a group's. -/
+theorem attenuate_signed {p c : Cap} (h : (linkRules x p c).all (·.1) = true) (att : c.kind = .attenuate) :
+    x.tree.actsFor c.signer = some c.issuer ∧ holds x c c.issuer = true := by
+  obtain ⟨_, hp, o, _, _, _, k⟩ := linkRules_ok h
+  have same : c.holder = p.holder := o.resolve_left (by simp [att])
+  refine ⟨(capRules_ok k).1, ?_⟩
+  unfold holds at hp ⊢
+  rw [same]
+  exact hp
+
+/-- An approved grant: the caps that start a chain or pass it to a new holder. -/
+def Granted (x : Ctx) (g : Cap) : Prop :=
+  g.kind = .grant ∧ x.tree.approves x.threshold g.issuer g.id g.approvals = true
+
+theorem links_granted {L : List Cap} : ∀ {p : Cap} {cs : List Cap}, (linksRules x p cs).all (·.1) = true →
+    (∀ c ∈ cs, c ∈ L) → (∃ g ∈ L, Granted x g ∧ g.holder = p.holder) →
+      ∀ c ∈ cs, ∃ g ∈ L, Granted x g ∧ g.holder = c.holder
+  | _, [], _, _, _, _, m => nomatch m
+  | p, c :: cs, h, sub, hp, d, m => by
+    obtain ⟨lk, rest⟩ := linksRules_cons.mp h
+    obtain ⟨_, _, o, _, _, _, k⟩ := linkRules_ok lk
+    have hc : ∃ g ∈ L, Granted x g ∧ g.holder = c.holder := by
+      cases kc : c.kind
+      · exact ⟨c, sub c (List.mem_cons_self ..), ⟨kc, (capRules_ok k).2.1 kc⟩, rfl⟩
+      · obtain ⟨g, mg, gg, gh⟩ := hp
+        exact ⟨g, mg, gg, gh.trans (o.resolve_left (by simp [kc])).symm⟩
+    rcases List.mem_cons.mp m with e | m
+    · exact e ▸ hc
+    · exact links_granted rest (fun c' m' => sub c' (List.mem_cons_of_mem _ m')) hc d m
+
+/-- **A chain starts from authority** (A27, D14): every cap of it is held by a holder an approved grant in it reached.
+Its root is one, and an attenuation only follows an approved grant, directly or through other attenuations. -/
+theorem holder_granted {r : Cap} {cs : List Cap} (h : chainOk x (r :: cs) = true) :
+    ∀ c ∈ r :: cs, ∃ g ∈ r :: cs, Granted x g ∧ g.holder = c.holder := by
+  rw [chainOk, chainRules, rules_all] at h
+  obtain ⟨_, kr, _, k⟩ := rootRules_ok h.1
+  have hr : ∃ g ∈ r :: cs, Granted x g ∧ g.holder = r.holder :=
+    ⟨r, List.mem_cons_self .., ⟨kr, (capRules_ok k).2.1 kr⟩, rfl⟩
+  intro c m
+  rcases List.mem_cons.mp m with e | m
+  · exact e ▸ hr
+  · exact links_granted h.2 (fun c' m' => List.mem_cons_of_mem _ m') hr c m
+
+/-- A cap issued from a group's cap, a grant or an attenuation, lives only while its issuer is in the group. -/
 theorem child_live {p c : Cap} {g : String} (h : (linkRules x p c).all (·.1) = true) (held : p.holder = .group g) :
     x.inGroup g c.issuer = true := by
   have := (linkRules_ok h).2.1
   simpa [holds, held] using this
 
-/-- The public passes nothing on, and a public cap may not share (D15). -/
+/-- The public passes nothing on, nor narrows it, and a public cap may not share (D15). -/
 theorem public_bounded {p c : Cap} (h : (linkRules x p c).all (·.1) = true) : p.holder ≠ .«public» := by
   intro e
   have := (linkRules_ok h).2.1
@@ -518,7 +619,7 @@ theorem public_no_share {r : Cap} {cs : List Cap} (h : chainOk x (r :: cs) = tru
   rw [chainOk, chainRules, rules_all] at h
   intro c m
   rcases List.mem_cons.mp m with e | m
-  · exact e ▸ (capRules_ok (rootRules_ok h.1).2.2).2.2
+  · exact e ▸ (capRules_ok (rootRules_ok h.1).2.2.2).2.2
   · exact (capRules_ok (links_caps h.2 c m)).2.2
 
 end Aven.ID

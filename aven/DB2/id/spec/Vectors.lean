@@ -147,7 +147,7 @@ def invites : List Json :=
 def capsVectors : List Json :=
   let chain (cs : List Cap) := Json.mkObj [("context", castCtxJson), ("chain", Json.arr (cs.map Cap.json).toArray)]
   (chainExamples.map fun (name, cs, _) => vector name (chain cs) (chainResult cs)) ++
-  ([capA, capB, capPublic].map fun c =>
+  ([capA, capB, capPublic, attRead].map fun c =>
     vector s!"how avenOS shows {c.id}" (Json.mkObj [("show", c.json)]) (Json.mkObj [("text", c.text castCtx.roles)])) ++
   (branchExamples.map fun (b, br, _) =>
     vector s!"does a cap for branches {b.json.compress} write on {br}?"

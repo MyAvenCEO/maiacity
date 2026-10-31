@@ -7,17 +7,18 @@ import Lean.Data.Json
 /-! # Caps as JSON, and generated cases
 
 The form of `vectors/caps.json`, `revocations.json`, `epochs.json`, `approvals.json`, `network.json` and `keep.json`
-(`Vectors.lean`). Caps' readable form is JSON. A line's target, verb and footprint grants are written as Core's vectors write them
-(`targets.json`, `footprints.json`): Docs as `d:` and hex, vaults as their UTF-8 ids. The vectors add each cap's CBOR
-bytes and hash once Core encodes targets (A8). A context names the cast's tree, which `trees.json` carries, and lists
-who is in each group and which vault each Doc belongs to.
+(`Vectors.lean`). Caps' readable form is JSON. A line's target, verb and footprint grants are written as Core's vectors
+write them (`targets.json`, `footprints.json`): Docs as `d:` and hex, vaults as their UTF-8 ids. The vectors add each
+cap's CBOR bytes and hash once Core encodes targets (A8). A context names the cast's tree, which `trees.json` carries,
+and lists who is in each group and which vault each Doc belongs to.
 
 ```
-cap:      {"id":"cap-a","issuer":"alice","holder":{"vault":"bob"},"parent":null,
+cap:      {"id":"cap-a","issuer":"alice","holder":{"vault":"bob"},"parent":null,"kind":"grant",
            "grant":[{"target":{"doc":"d:6431"},"verb":"read","footprint":[]}],"role":null,"share":1,
            "conditions":{…},
            "signer":"alice-peer","approvals":[{"key":"alice-owner","digest":"cap-a"}]}
-error:    {"rule":"wider","cap":"cap-w"}   {"rule":"authority","cap":"cap-x","line":{…}}   {"rule":"empty"}
+error:    {"rule":"wider","cap":"cap-w"}   {"rule":"holder","cap":"att-bob"}   {"rule":"empty"}
+          {"rule":"authority","cap":"cap-x","line":{…}}
 envelope: {"label":"b1","name":"b3:…","vault":"bob","caps":["b3:…"],"acks":[],
            "envelope":{"doc":"d:…","branch":"main","writer":2,"seq":1,"prev":null,"deps":[],"body":{…},…}}
 verdict:  "counts"   {"revoked":"b3:…"}   {"waits":["b3:…"]}
@@ -71,8 +72,9 @@ def Sig.json (s : Sig) : Json := Json.mkObj [("key", s.key), ("digest", s.digest
 
 def Cap.json (c : Cap) : Json :=
   Json.mkObj [("id", c.id), ("issuer", c.issuer), ("holder", c.holder.json), ("parent", toJson c.parent),
-    ("grant", Json.arr (c.grant.map Line.json).toArray), ("role", toJson c.role), ("share", toJson c.share),
-    ("conditions", c.conditions.json), ("signer", c.signer), ("approvals", Json.arr (c.approvals.map Sig.json).toArray),
+    ("kind", c.kind.name), ("grant", Json.arr (c.grant.map Line.json).toArray), ("role", toJson c.role),
+    ("share", toJson c.share), ("conditions", c.conditions.json), ("signer", c.signer),
+    ("approvals", Json.arr (c.approvals.map Sig.json).toArray),
     ("cbor", Core.hex c.bytes), ("id", (c.digest Core.blake3).text), ("signs", Core.hex c.signing)]
 
 def Role.json (r : Role) : Json :=
@@ -87,6 +89,7 @@ def ChainError.json : ChainError → Json
   | .publicShares c => Json.mkObj [("rule", "publicShares"), ("cap", c)]
   | .parent c => Json.mkObj [("rule", "parent"), ("cap", c)]
   | .issuer c => Json.mkObj [("rule", "issuer"), ("cap", c)]
+  | .holder c => Json.mkObj [("rule", "holder"), ("cap", c)]
   | .wider c => Json.mkObj [("rule", "wider"), ("cap", c)]
   | .share c => Json.mkObj [("rule", "share"), ("cap", c)]
   | .conditions c => Json.mkObj [("rule", "conditions"), ("cap", c)]
@@ -179,7 +182,8 @@ def genLines (v : String) : List Line :=
   else if v = "maia-city" then [readOn cityDome] else [readOn (docOf "a1")]
 
 /-- A random cap after `parent`: mostly a fair narrowing by the parent's holder, now and then wider, longer, unsigned,
-unapproved, or issued by someone else. -/
+unapproved, or issued by someone else. A quarter of the links attenuate: by the parent's holder, keeping it, with no
+approval, now and then handing the cap to another holder or sharing further; now and then a chain starts with one. -/
 def genCap (r : Rng) (id : String) (parent : Option Cap) : Cap × Rng := Id.run do
   let mut r := r
   let (k, r1) := r.below 20; r := r1
@@ -212,8 +216,14 @@ def genCap (r : Rng) (id : String) (parent : Option Cap) : Cap × Rng := Id.run 
   let expires := match parent with
     | some p => if k == 6 then none else p.conditions.expires
     | none => if k == 0 then some 100 else none
-  pure ({ id, issuer, holder, parent := if k == 19 then some "cap-z" else parent.map (·.id), grant, share, signer,
-          approvals, conditions := { expires } }, r)
+  let (a, r10) := r.below 4; r := r10
+  let kind : CapKind := if a == 0 && (parent.isSome || k < 4) then .attenuate else .grant
+  let (holder, share, approvals) := match kind, parent with
+    | .attenuate, some p =>
+      (if k == 4 then holder else p.holder, if k == 5 then p.share + 1 else p.share, ([] : List Sig))
+    | _, _ => (holder, share, approvals)
+  pure ({ id, issuer, holder, parent := if k == 19 then some "cap-z" else parent.map (·.id), kind, grant, share,
+          signer, approvals, conditions := { expires } }, r)
 
 def genChain (seed : Nat) : List Cap := Id.run do
   let mut r := Rng.seed seed
