@@ -153,20 +153,20 @@ theorem rule4_one_verdict (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spaw
         ∀ y ∈ S, ¬ Split (Envelope.name H) x y :=
   ID.counts_iff r gov spawned (Envelope.name H) _ _ _ _ S e
 
-/-- A delete ends a Doc for every reader (A22): once a reader holds a delete its Doc's vault wrote, an envelope that
-counts is the delete or in its past, whatever cap it writes under. Readers holding the same deletes, and the same past
-of each, agree on it (`ID.deleted_agree`). -/
+/-- A delete ends a Doc for every reader (A22): `byOwner` is caps' own-authority path (`ID.Reader.Own`, never an actor
+host's), so the delete is written by a device of the Doc's vault or of one that governs it; and once a reader holds
+it, an envelope that counts is the delete or in its past, whatever cap it writes under. Readers holding the same
+deletes, and the same past of each, agree on it (`ID.deleted_agree`). -/
 theorem rule4_delete_ends (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spawned : DocId → DocId → Prop)
     (signed : Envelope → Prop) (H : Bytes → Hash) (epochOf : Envelope → Nat) (rd : ID.Reads)
-    (rs : List ID.Revocation) (isDelete byOwner : Envelope → Bool) (fit : Envelope → Prop) {S : List Envelope}
+    (rs : List ID.Revocation) (isDelete byOwner : Envelope → Bool)
+    (owner : ∀ x, byOwner x = true → r.Own gov x ∧ ¬ r.HostSigned x) (fit : Envelope → Prop) {S : List Envelope}
     {d e : Envelope} (hd : d ∈ S) (del : isDelete d = true) (own : byOwner d = true) (he : e ∈ S)
     (h : Counts (Envelope.name H)
       (r.Verdict gov spawned signed (fun x => ID.freshEpoch (Envelope.name H) epochOf S x = true)
         (fun x => ID.liveWith (Envelope.name H) rd isDelete byOwner S rs x = true) fit) S e) :
-    Envelope.name H d = Envelope.name H e ∨ Past.Before (Envelope.name H) S d e := by
-  have live := ((h e (.refl e)).1).2.2.2.1
-  simp only [ID.liveWith, Bool.and_eq_true] at live
-  exact ID.delete_ends hd del own he live.2
+    r.Own gov d ∧ (Envelope.name H d = Envelope.name H e ∨ Past.Before (Envelope.name H) S d e) :=
+  ⟨(owner d own).1, ID.delete_ends hd del own he (ID.liveWith_iff.mp ((h e (.refl e)).1).2.2.2.1).2⟩
 
 /-- Two readers that hold the same past of an envelope, and the same splits in it, give it the same verdict, whatever
 else each holds. -/

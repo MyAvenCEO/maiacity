@@ -1272,7 +1272,7 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `elsewhere_kept` | Elsewhere, once the revocation reaches the Doc, only what its kept list or another writer's ack had seen counts |
 | | `revocation_wins` | The three together (rule 14). An envelope lists its whole chain, so revoking any link reaches it: the cascade |
 | | `waits_named` | A wait names only what the envelope builds on and the reader lacks, by hash |
-| | `delete_ends`, `undeleted_survive`, `deleted_agree` | Once a reader holds a delete its Doc's vault wrote, only the delete and its past count; a delete by anyone else changes nothing; and readers holding the same deletes and the same past of each agree (A22) |
+| | `delete_ends`, `undeleted_survive`, `deleted_agree`, `liveWith_iff` | Once a reader holds a delete its Doc's vault wrote, only the delete and its past count; a delete by anyone else changes nothing; and readers holding the same deletes and the same past of each agree (A22). Liveness with deletes is the revocations' verdict and survival of every delete |
 | `Epochs` | `confidential` | A key is learned only as one's own or by opening a seal with a key already known. Keys are any type with an equality (`WorldOf κ`): names in the examples (`World`), Core's bytes in `Aven.Architecture` (R5) |
 | | `unknowable` | Keys of a closed set a party owns none of stay unknown to it; the next three are its instances |
 | | `removal_next_epoch` | A new epoch sealed only to the remaining readers stays closed to a removed one |

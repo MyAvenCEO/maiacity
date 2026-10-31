@@ -35,7 +35,7 @@ def rules : List RuleStatus := [
     theorems := ["rule4_order_free", "rule4_lowered_alike", "rule4_fit_merges", "authorized", "contentOk",
       "rule4_one_verdict", "rule4_readers_agree", "rule4_content", "rule4_merge_whole", "rule4_delete_ends"],
     restsOn := ["Aven.Core.reaches_mono", "Aven.DB.Engine.readers_agree", "Aven.DB.Docs.fit_envelopes", "Aven.ID.verdict",
-      "Aven.ID.liveWith", "Aven.ID.delete_ends", "Aven.ID.deleted_agree",
+      "Aven.ID.liveWith_iff", "Aven.ID.delete_ends", "Aven.ID.deleted_agree", "Aven.ID.Reader.Own",
       "Aven.ID.counts_iff", "Aven.ID.readers_agree", "Aven.ID.freshEpoch", "Aven.DB.Engine.footprint_granted",
       "Aven.DB.Engine.diff_footprint", "Aven.DB.Docs.fit_diff", "Aven.ID.merge_covered",
       "Aven.ID.merge_within_device", "Aven.DB.Engine.merge_granted"],

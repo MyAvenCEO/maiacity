@@ -216,7 +216,14 @@ def liveWith (isDelete byOwner : Envelope → Bool) (doc : List Envelope) (rs : 
     Bool :=
   verdict nm rd doc rs e == .counts && survives nm isDelete byOwner doc e
 
-variable {nm} {isDelete byOwner : Envelope → Bool} {doc doc' : List Envelope} {d e : Envelope}
+variable {nm rd} {isDelete byOwner : Envelope → Bool} {doc doc' : List Envelope} {d e : Envelope}
+
+/-- What `liveWith` says, read through this lemma rather than its definition: the revocations' verdict counts it, and it
+survives every delete the reader holds. -/
+theorem liveWith_iff {rs : List Revocation} :
+    liveWith nm rd isDelete byOwner doc rs e = true ↔
+      verdict nm rd doc rs e = .counts ∧ survives nm isDelete byOwner doc e = true := by
+  simp only [liveWith, Bool.and_eq_true, beq_iff_eq]
 
 /-- **A delete ends the Doc** (A22): once a reader holds a delete its vault wrote, an envelope survives only if it is
 the delete, or in its past. Nothing written after it, or beside it, counts, whatever cap it writes under. -/
