@@ -13,11 +13,11 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use crate::cbor::{Value, decode, encode};
 use crate::limits::{MAX_BRANCH_BYTES, MAX_DEPS, MAX_ENVELOPE_BYTES};
-use crate::names::{DocId, Hash, blake3};
 use crate::past::{self, Parents};
 use crate::signed::{Sig, Verify, add_sig, signing_bytes, sigs_of, sigs_value, sigs_within};
+use aven_codec::{DocId, Hash, blake3};
+use aven_codec::{Value, decode, encode};
 
 /// What an envelope's writer signs it under (`envelopeLabel`).
 pub const ENVELOPE_LABEL: &str = "avenDB envelope 1";
@@ -271,9 +271,16 @@ impl<'a> Held<'a> {
         self.parents_held(e) && self.reached(e).all(|(x, _)| self.parents_held(x))
     }
 
-    /// It counts (`Counts`): its whole past is held, everything it reaches passes `ok` (fit and authorized) and none of
-    /// it is half of a split. Not monotone in what is held, by design: a split learned later discounts (A4).
-    pub fn counts(&self, e: &Envelope, ok: impl Fn(&Envelope) -> bool) -> bool {
+    /// It counts (`Counts`, the one counting rule, A45): its whole past is held, everything it reaches is `fit` and
+    /// `authorized`, and none of it is half of a split. The docs layer supplies `fit`, avenID `authorized`. Not
+    /// monotone in what is held, by design: a split learned later discounts (A4).
+    pub fn counts(
+        &self,
+        e: &Envelope,
+        fit: impl Fn(&Envelope) -> bool,
+        authorized: impl Fn(&Envelope) -> bool,
+    ) -> bool {
+        let ok = |x: &Envelope| fit(x) && authorized(x);
         self.closed(e)
             && ok(e)
             && !self.split_with(e, &e.name())

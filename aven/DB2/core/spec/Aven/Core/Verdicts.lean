@@ -39,8 +39,9 @@ def parentsHeld (S : List Envelope) (x : Envelope) : Bool :=
 def closedB (S : List Envelope) (e : Envelope) : Bool :=
   parentsHeld nm S e && S.all fun x => !inPast nm S e x || parentsHeld nm S x
 
-def countsB (ok : Envelope → Bool) (S : List Envelope) (e : Envelope) : Bool :=
-  closedB nm S e && ok e && !splitIn nm S e && S.all fun x => !inPast nm S e x || (ok x && !splitIn nm S x)
+def countsB (fit authorized : Envelope → Bool) (S : List Envelope) (e : Envelope) : Bool :=
+  closedB nm S e && (fit e && authorized e) && !splitIn nm S e &&
+    S.all fun x => !inPast nm S e x || ((fit x && authorized x) && !splitIn nm S x)
 
 def holdsB (S : List Envelope) (v : Version) (e : Envelope) : Bool :=
   S.any fun t => v.contains (nm t) && (decide (t = e) || (S.contains e && inPast nm S t e))
@@ -97,8 +98,8 @@ theorem closedB_iff {S : List Envelope} {e : Envelope} : closedB nm S e = true �
     · exact .inl rfl
     · exact .inr (h x (reaches_decided.mpr (.inr ⟨hx, hp⟩)))
 
-theorem countsB_iff {ok : Envelope → Bool} {S : List Envelope} {e : Envelope} :
-    countsB nm ok S e = true ↔ Counts nm (fun x => ok x = true) S e := by
+theorem countsB_iff {fit authorized : Envelope → Bool} {S : List Envelope} {e : Envelope} :
+    countsB nm fit authorized S e = true ↔ Counts nm (fun x => fit x = true) (fun x => authorized x = true) S e := by
   simp only [countsB, Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true, Bool.or_eq_true, splitIn_false,
     closedB_iff]
   constructor

@@ -154,7 +154,8 @@ fn build(draws: &[Draw]) -> Vec<Envelope> {
 struct World {
     all: Vec<Envelope>,
     held: Vec<bool>,
-    bad: Vec<usize>,
+    unfit: Vec<usize>,
+    unauthorized: Vec<usize>,
     tips: Vec<usize>,
 }
 
@@ -163,14 +164,16 @@ fn world() -> impl Strategy<Value = World> {
         proptest::collection::vec((draw(), any::<bool>()), 1..14),
         proptest::collection::vec(any::<prop::sample::Index>(), 0..3),
         proptest::collection::vec(any::<prop::sample::Index>(), 0..3),
+        proptest::collection::vec(any::<prop::sample::Index>(), 0..3),
     )
-        .prop_map(|(ds, bad, tips)| {
+        .prop_map(|(ds, unfit, unauthorized, tips)| {
             let (draws, held): (Vec<Draw>, Vec<bool>) = ds.into_iter().unzip();
             let n = draws.len();
             World {
                 all: build(&draws),
                 held,
-                bad: bad.iter().map(|i| i.index(n)).collect(),
+                unfit: unfit.iter().map(|i| i.index(n)).collect(),
+                unauthorized: unauthorized.iter().map(|i| i.index(n)).collect(),
                 tips: tips.iter().map(|i| i.index(n)).collect(),
             }
         })
@@ -189,7 +192,7 @@ impl World {
     fn case(&self) -> Json {
         json!({
             "envelopes": self.all.iter().map(|e| hex(&e.encode())).collect::<Vec<_>>(),
-            "held": self.held, "bad": self.bad, "tips": self.tips,
+            "held": self.held, "unfit": self.unfit, "unauthorized": self.unauthorized, "tips": self.tips,
         })
     }
 }
@@ -389,9 +392,11 @@ proptest! {
         let a = ask(&w.case());
         let s = w.s();
         let held = Held::new(&s);
-        let bad: Vec<Hash> = w.bad.iter().map(|&i| w.all[i].name()).collect();
+        let unfit: Vec<Hash> = w.unfit.iter().map(|&i| w.all[i].name()).collect();
+        let unauthorized: Vec<Hash> = w.unauthorized.iter().map(|&i| w.all[i].name()).collect();
         let tips: Vec<Hash> = w.tips.iter().map(|&i| w.all[i].name()).collect();
-        let ok = |x: &Envelope| !bad.contains(&x.name());
+        let fit = |x: &Envelope| !unfit.contains(&x.name());
+        let authorized = |x: &Envelope| !unauthorized.contains(&x.name());
         prop_assert_eq!(w.all.iter().map(Envelope::name).collect::<Vec<_>>(), names(&a["names"]));
         for (k, e) in w.all.iter().enumerate() {
             let want: BTreeSet<Hash> = names(&a["past"][k]).into_iter().collect();
@@ -404,7 +409,7 @@ proptest! {
         let got = |f: &dyn Fn(&Envelope) -> bool| w.all.iter().map(f).collect::<Vec<bool>>();
         prop_assert_eq!(got(&|e| held.closed(e)), bools(&a["closed"]));
         prop_assert_eq!(got(&|e| held.discounted(e)), bools(&a["discounted"]));
-        prop_assert_eq!(got(&|e| held.counts(e, ok)), bools(&a["counts"]));
+        prop_assert_eq!(got(&|e| held.counts(e, fit, authorized)), bools(&a["counts"]));
         prop_assert_eq!(got(&|e| held.holds(&tips, e)), bools(&a["holds"]));
     }
 
@@ -416,18 +421,20 @@ proptest! {
     fn splits_are_final(w in world()) {
         let s = w.s();
         let (h, h_all) = (Held::new(&s), Held::new(&w.all));
-        let bad: Vec<Hash> = w.bad.iter().map(|&i| w.all[i].name()).collect();
+        let unfit: Vec<Hash> = w.unfit.iter().map(|&i| w.all[i].name()).collect();
+        let unauthorized: Vec<Hash> = w.unauthorized.iter().map(|&i| w.all[i].name()).collect();
         let tips: Vec<Hash> = w.tips.iter().map(|&i| w.all[i].name()).collect();
-        let ok = |x: &Envelope| !bad.contains(&x.name());
+        let fit = |x: &Envelope| !unfit.contains(&x.name());
+        let authorized = |x: &Envelope| !unauthorized.contains(&x.name());
         for e in &w.all {
             if h.discounted(e) {
                 prop_assert!(h_all.discounted(e));
-                prop_assert!(!h_all.counts(e, |_| true));
+                prop_assert!(!h_all.counts(e, |_| true, |_| true));
             }
-            if h.counts(e, ok) {
+            if h.counts(e, fit, authorized) {
                 let past = h.past(e);
                 for x in s.iter().filter(|x| past.contains(&x.name())) {
-                    prop_assert!(h.counts(x, ok));
+                    prop_assert!(h.counts(x, fit, authorized));
                 }
             }
             // closed_mono: one name is one set of parents under BLAKE3

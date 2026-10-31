@@ -92,7 +92,7 @@ proptest! {
         d.reauthorize(&When(move |e: &Envelope, _: &Body| !dn.contains(&e.name())));
         let held = Held::new(&envs);
         for e in &envs {
-            prop_assert_eq!(d.counts(&e.name()), held.counts(e, |x| !denied.contains(&x.name())));
+            prop_assert_eq!(d.counts(&e.name()), held.counts(e, |_| true, |x| !denied.contains(&x.name())));
         }
         let after: BTreeSet<_> = envs.iter().map(Envelope::name).filter(|n| d.counts(n)).collect();
         prop_assert!(after.is_subset(&before));

@@ -139,9 +139,17 @@ theorem Call.ofValue_value (c : Call) (h : c.op.ok = true) : Call.ofValue? c.val
 
 /-! ## The type of types (A39) -/
 
+/-- A built-in type: no Doc's genesis, its id the name of the label `<namespace> <name> 1`, so every reader knows it
+without fetching anything. The one way a part names its built-in types (A45): avenID's and the docs layer's list
+theirs through it. -/
+def builtinType (H : Bytes → Hash) (ns name : String) : DocId :=
+  ⟨nameOf H (.text (k s!"{ns} {name} 1"))⟩
+
 /-- The built-in type of types: the root type of every type Doc, and its own. It is no Doc's genesis, which couldn't
-name its own hash: its id is the name of a fixed label, so every reader knows it without fetching anything. -/
-def typeOfTypes (H : Bytes → Hash) : DocId := ⟨nameOf H (.text (k "avenDB type of types 1"))⟩
+name its own hash: it is a built-in type, `avenDB type of types 1`. -/
+def typeOfTypes (H : Bytes → Hash) : DocId := builtinType H "avenDB" "type of types"
+
+#guard typeOfTypes blake3 == ⟨nameOf blake3 (.text (k "avenDB type of types 1"))⟩
 
 /-- A type Doc: one whose root type is the type of types. -/
 def Facts.isType (H : Bytes → Hash) (f : Facts) : Bool := f.type == typeOfTypes H

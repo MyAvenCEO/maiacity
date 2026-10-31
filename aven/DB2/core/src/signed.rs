@@ -11,11 +11,11 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use crate::cbor::{Value, decode, encode};
 use crate::limits::{
     MAX_ENVELOPE_BYTES, MAX_LABEL_BYTES, MAX_SIG_BYTES, MAX_SIGNER_BYTES, MAX_SIGS,
 };
-use crate::names::{Hash, blake3};
+use aven_codec::{Hash, blake3};
+use aven_codec::{Value, decode, encode};
 
 /// A signature scheme: whether `sig` is `key`'s signature over `msg` (Lean's `Verify`). Any
 /// `Fn(&[u8], &[u8], &[u8]) -> bool` is one.
@@ -74,7 +74,7 @@ pub fn sigs_ok(sigs: &[Sig]) -> bool {
 }
 
 /// A set of signatures within the limits and in its one form (`sigsWithin`).
-pub(crate) fn sigs_within(sigs: &[Sig]) -> bool {
+pub fn sigs_within(sigs: &[Sig]) -> bool {
     sigs.len() <= MAX_SIGS
         && sigs_ok(sigs)
         && sigs
@@ -90,11 +90,13 @@ pub fn add_sig(sigs: &mut Vec<Sig>, x: Sig) {
     }
 }
 
-pub(crate) fn sigs_value(sigs: &[Sig]) -> Value {
+/// A set of signatures as it travels: an array of [`Sig::value`].
+pub fn sigs_value(sigs: &[Sig]) -> Value {
     Value::Array(sigs.iter().map(Sig::value).collect())
 }
 
-pub(crate) fn sigs_of(v: Value) -> Option<Vec<Sig>> {
+/// Signatures read back from [`sigs_value`] (`sigsOf?`); [`sigs_within`] then checks the set's limits and form.
+pub fn sigs_of(v: Value) -> Option<Vec<Sig>> {
     match v {
         Value::Array(xs) => xs.into_iter().map(Sig::of_value).collect(),
         _ => None,

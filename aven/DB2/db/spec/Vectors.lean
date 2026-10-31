@@ -1032,7 +1032,7 @@ where labelOf' (h : Hash) : String :=
 
 /-- What a reader holding `S` sees of each envelope: whether it counts, and whether it is half of a split it holds. -/
 def readerView (S : List Envelope) (ok : Envelope → Bool) : Json :=
-  Json.mkObj (S.map fun e => (labelOf e, Json.mkObj [("counts", toJson (Docs.countsB (Envelope.name blake3) ok S e)),
+  Json.mkObj (S.map fun e => (labelOf e, Json.mkObj [("counts", toJson (Docs.countsB (Envelope.name blake3) ok (fun _ => true) S e)),
     ("split", toJson (S.any fun y => Docs.splitB (Envelope.name blake3) e y))]))
 
 def logSteps : List (String × List Envelope × List Envelope) := [
@@ -1063,8 +1063,8 @@ def counts : List Json :=
       match overrides.find? (·.1 == labelOf e) with
       | some (_, f, a) => (f, a)
       | none => (true, true)
-    let ok (e : Envelope) : Bool := (verdict e).1 && (verdict e).2
-    let counted := countHeld.filter (Docs.countsB (Envelope.name blake3) ok countHeld)
+    let counted := countHeld.filter
+      (Docs.countsB (Envelope.name blake3) (fun e => (verdict e).1) (fun e => (verdict e).2) countHeld)
     vector name (Json.mkObj [("envelopes", Json.arr (countHeld.map fun e => Json.mkObj [("envelope", envSummary (labelOf e) e),
           ("fit", toJson (verdict e).1), ("authorized", toJson (verdict e).2)]).toArray)])
       (Json.mkObj [("counts", Json.arr (counted.map fun e => Json.str (labelOf e)).toArray),

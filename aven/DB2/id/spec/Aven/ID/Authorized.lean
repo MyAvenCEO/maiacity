@@ -439,28 +439,29 @@ theorem Reader.authorizedB_iff :
 
 end Decided
 
-/-- One reader verdict: signed, fresh, authorized, live and fit. The other parts are the other layers'. -/
-def Reader.Verdict (signed fresh live fit : Envelope → Prop) (e : Envelope) : Prop :=
-  signed e ∧ fresh e ∧ r.Authorized gov spawned lists e ∧ live e ∧ fit e
+/-- avenID's `authorized` verdict, which Core's one counting rule takes beside `fit` (A45): signed, fresh, authorized
+by its caps and live. Fit is the docs layer's. -/
+def Reader.Admits (signed fresh live : Envelope → Prop) (e : Envelope) : Prop :=
+  signed e ∧ fresh e ∧ r.Authorized gov spawned lists e ∧ live e
 
-/-- An envelope counts exactly when its whole past is held (Core's `Closed`) and everything in it is signed, fresh,
-authorized, live and fit, and none of it is half of a split. -/
+/-- An envelope counts exactly when its whole past is held (Core's `Closed`) and everything in it is fit, signed,
+fresh, authorized and live, and none of it is half of a split. -/
 theorem counts_iff (nm : Envelope → Hash) (signed fresh live fit : Envelope → Prop) (S : List Envelope)
     (e : Envelope) :
-    Counts nm (r.Verdict gov spawned lists signed fresh live fit) S e ↔
-      Closed nm S e ∧ ∀ x, Reaches nm S e x → (signed x ∧ fresh x ∧ r.Authorized gov spawned lists x ∧ live x ∧ fit x) ∧
-        ∀ y ∈ S, ¬ Split nm x y :=
+    Counts nm fit (r.Admits gov spawned lists signed fresh live) S e ↔
+      Closed nm S e ∧ ∀ x, Reaches nm S e x →
+        (fit x ∧ signed x ∧ fresh x ∧ r.Authorized gov spawned lists x ∧ live x) ∧ ∀ y ∈ S, ¬ Split nm x y :=
   Iff.rfl
 
 /-- Two readers that hold the same past of an envelope, whole for both or for neither, and the same splits in it, give
-it the same verdict, whatever
-else each holds: a verdict depends only on the envelope, its causal past and what the reader knows of revocations
+it the same verdict, whatever else each holds: a verdict depends only on the envelope, its causal past and what the reader knows of revocations
 (`live`). -/
-theorem readers_agree (nm : Envelope → Hash) (ok : Envelope → Prop) {S S' : List Envelope} {e : Envelope}
+theorem readers_agree (nm : Envelope → Hash) (fit authorized : Envelope → Prop) {S S' : List Envelope}
+    {e : Envelope}
     (closed : Closed nm S e ↔ Closed nm S' e)
     (past : ∀ x, Reaches nm S e x ↔ Reaches nm S' e x)
     (splits : ∀ x, Reaches nm S e x → ((∃ y ∈ S, Split nm x y) ↔ (∃ y ∈ S', Split nm x y))) :
-    Counts nm ok S e ↔ Counts nm ok S' e := by
+    Counts nm fit authorized S e ↔ Counts nm fit authorized S' e := by
   constructor
   · intro h
     refine ⟨closed.mp h.1, fun x hx => ?_⟩

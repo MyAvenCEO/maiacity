@@ -90,20 +90,20 @@ theorem rule3_never_waits (nm : Envelope → Hash) (d d' : ID.Node.Device) (same
   ⟨ID.Node.write_fits nm d d' same e, ID.Node.write_chain nm c⟩
 
 /-- A split is shown to every reader that syncs: its two sides reach each, and nothing built on it counts there. -/
-theorem rule3_split_spreads (nm : Envelope → Hash) {ok : Envelope → Prop} (held : Nat → List Envelope)
+theorem rule3_split_spreads (nm : Envelope → Hash) {fit authorized : Envelope → Prop} (held : Nat → List Envelope)
     (synced : ∀ i, ∀ x ∈ held i, x ∈ held (i + 1)) {x y : Envelope} (hx : x ∈ held 0) (hy : y ∈ held 0)
     (sp : Split nm x y) (k : Nat) :
-    x ∈ held k ∧ y ∈ held k ∧ ∀ e, Reaches nm (held k) e x → ¬ Counts nm ok (held k) e :=
+    x ∈ held k ∧ y ∈ held k ∧ ∀ e, Reaches nm (held k) e x → ¬ Counts nm fit authorized (held k) e :=
   ID.Node.split_spreads nm held synced hx hy sp k
 
 /-! ## Rule 4: readers judge -/
 
 /-- What counts depends only on which envelopes a reader holds, never on the order they came in, nor on anyone's word:
 two readers holding the same envelopes agree on every one. -/
-theorem rule4_order_free {nm : Envelope → Hash} {ok : Envelope → Prop} {S S' : List Envelope}
-    (same : ∀ x, x ∈ S ↔ x ∈ S') {e : Envelope} : Counts nm ok S e ↔ Counts nm ok S' e := by
-  have to : ∀ {A B : List Envelope}, (∀ x, x ∈ A → x ∈ B) → (∀ x, x ∈ B → x ∈ A) → Counts nm ok A e →
-      Counts nm ok B e := by
+theorem rule4_order_free {nm : Envelope → Hash} {fit authorized : Envelope → Prop} {S S' : List Envelope}
+    (same : ∀ x, x ∈ S ↔ x ∈ S') {e : Envelope} : Counts nm fit authorized S e ↔ Counts nm fit authorized S' e := by
+  have to : ∀ {A B : List Envelope}, (∀ x, x ∈ A → x ∈ B) → (∀ x, x ∈ B → x ∈ A) → Counts nm fit authorized A e →
+      Counts nm fit authorized B e := by
     intro A B ab ba h
     refine ⟨fun x hx k hk => ?_, fun x hx => ?_⟩
     · obtain ⟨y, my, ny⟩ := h.1 x (reaches_mono nm ba hx) k hk
@@ -147,14 +147,13 @@ theorem rule4_one_verdict (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spaw
     (rule : TypeId → Bytes → Value → Prop) (before : Envelope → List (DB.Engine.Record Value))
     (step : List (DB.Engine.Record Value) → Envelope → List (DB.Engine.Record Value)) (S : List Envelope)
     (e : Envelope) :
-    Counts (Envelope.name H)
-        (r.Verdict gov spawned lists signed (fun x => ID.freshEpoch (Envelope.name H) epochOf S x = true)
-          (fun x => ID.liveWith (Envelope.name H) rd isDelete byOwner S rs x = true)
-          (contentOk ver r.footprint rule before step)) S e ↔
+    Counts (Envelope.name H) (contentOk ver r.footprint rule before step)
+        (r.Admits gov spawned lists signed (fun x => ID.freshEpoch (Envelope.name H) epochOf S x = true)
+          (fun x => ID.liveWith (Envelope.name H) rd isDelete byOwner S rs x = true)) S e ↔
       Closed (Envelope.name H) S e ∧ ∀ x, Reaches (Envelope.name H) S e x →
-        (signed x ∧ ID.freshEpoch (Envelope.name H) epochOf S x = true ∧ r.Authorized gov spawned lists x ∧
-          ID.liveWith (Envelope.name H) rd isDelete byOwner S rs x = true ∧
-          contentOk ver r.footprint rule before step x) ∧
+        (contentOk ver r.footprint rule before step x ∧ signed x ∧
+          ID.freshEpoch (Envelope.name H) epochOf S x = true ∧ r.Authorized gov spawned lists x ∧
+          ID.liveWith (Envelope.name H) rd isDelete byOwner S rs x = true) ∧
         ∀ y ∈ S, ¬ Split (Envelope.name H) x y :=
   ID.counts_iff r gov spawned lists (Envelope.name H) _ _ _ _ S e
 
@@ -167,20 +166,21 @@ theorem rule4_delete_ends (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spaw
     (rs : List ID.Revocation) (isDelete byOwner : Envelope → Bool)
     (owner : ∀ x, byOwner x = true → r.Own gov x ∧ ¬ r.HostSigned x) (fit : Envelope → Prop) {S : List Envelope}
     {d e : Envelope} (hd : d ∈ S) (del : isDelete d = true) (own : byOwner d = true) (he : e ∈ S)
-    (h : Counts (Envelope.name H)
-      (r.Verdict gov spawned lists signed (fun x => ID.freshEpoch (Envelope.name H) epochOf S x = true)
-        (fun x => ID.liveWith (Envelope.name H) rd isDelete byOwner S rs x = true) fit) S e) :
+    (h : Counts (Envelope.name H) fit
+      (r.Admits gov spawned lists signed (fun x => ID.freshEpoch (Envelope.name H) epochOf S x = true)
+        (fun x => ID.liveWith (Envelope.name H) rd isDelete byOwner S rs x = true)) S e) :
     r.Own gov d ∧ (Envelope.name H d = Envelope.name H e ∨ Past.Before (Envelope.name H) S d e) :=
-  ⟨(owner d own).1, ID.delete_ends hd del own he (ID.liveWith_iff.mp ((h.2 e (.refl e)).1).2.2.2.1).2⟩
+  ⟨(owner d own).1, ID.delete_ends hd del own he (ID.liveWith_iff.mp ((h.2 e (.refl e)).1).2.2.2.2).2⟩
 
 /-- Two readers that hold the same past of an envelope, whole for both or for neither, and the same splits in it, give
 it the same verdict, whatever else each holds. -/
-theorem rule4_readers_agree (nm : Envelope → Hash) (ok : Envelope → Prop) {S S' : List Envelope} {e : Envelope}
+theorem rule4_readers_agree (nm : Envelope → Hash) (fit authorized : Envelope → Prop) {S S' : List Envelope}
+    {e : Envelope}
     (closed : Closed nm S e ↔ Closed nm S' e)
     (past : ∀ x, Reaches nm S e x ↔ Reaches nm S' e x)
     (splits : ∀ x, Reaches nm S e x → ((∃ y ∈ S, Split nm x y) ↔ (∃ y ∈ S', Split nm x y))) :
-    Counts nm ok S e ↔ Counts nm ok S' e :=
-  ID.readers_agree nm ok closed past splits
+    Counts nm fit authorized S e ↔ Counts nm fit authorized S' e :=
+  ID.readers_agree nm fit authorized closed past splits
 
 /-- What the content check gives: every change is one a step of the footprint makes, the footprint being the steps the
 envelope's calls lower to; and where what an envelope says it does is the diff a reader sees (`ChangesAreDiff`, with
