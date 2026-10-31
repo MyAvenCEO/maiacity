@@ -664,6 +664,41 @@ fn unhex(s: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
+/// This device's hybrid public half (its Value's bytes, hex), for its vault owner's hybrid signature to bind
+/// (`device_hybrid_bound`); nothing trusts it before. Derived in this process from the device's own seed (`device-key`):
+/// Ed25519 from the seed, ML-DSA-65 from `avenID device ml-dsa 1` (A43). The seed never leaves, and is wiped after.
+#[wasm_bindgen(js_name = deviceHybrid)]
+pub async fn device_hybrid() -> Result<String, JsError> {
+    use aven_db_store::RefName;
+    use zeroize::Zeroize;
+    let (store, _) = store().await?;
+    let name = RefName::new("device-key").map_err(js)?;
+    let blob = store
+        .get_ref(&name)
+        .await
+        .map_err(js)?
+        .ok_or_else(|| JsError::new("this browser has no device key yet"))?;
+    let mut text = String::from_utf8(
+        store
+            .get(&blob)
+            .await
+            .map_err(js)?
+            .ok_or_else(|| JsError::new("device-key points at a missing blob"))?
+            .to_vec(),
+    )
+    .map_err(js)?;
+    let seed = unhex(text.trim()).and_then(|b| <[u8; 32]>::try_from(b).ok());
+    text.zeroize();
+    let mut seed = seed.ok_or_else(|| JsError::new("device-key is no 32-byte seed"))?;
+    let key = aven_id::HybridKey::from_device_seed(&aven_id::Secret::take(&mut seed));
+    Ok(key
+        .public()
+        .to_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect())
+}
+
 /// Starts the Peer-Light `name` with its secret seed (hex), linking through `relay` to the Aven Peer (`aven_key`,
 /// called `aven_name` in the timeline), and tells `notes` every event. Without a name it goes by its key's device id.
 /// In the box's cast, `members` lists the cast's members (`name=key,…`); without them it learns the members from the

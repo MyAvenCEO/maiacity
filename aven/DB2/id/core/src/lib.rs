@@ -43,7 +43,10 @@ pub use epoch::{
     BACK_LABEL, COMMIT_LABEL, Epoch, History, KeyError, SCHEME, TAG_SEED_LABEL, VAULT_LABEL,
     commit, subkey, tag, tag_seed,
 };
-pub use hybrid::{HYBRID_SUITE, Hybrid, HybridKey, HybridPublic, HybridSignature, hybrid_verify};
+pub use hybrid::{
+    DEVICE_ML_DSA_LABEL, HYBRID_SUITE, Hybrid, HybridKey, HybridPublic, HybridSignature,
+    device_ml_dsa_seed, hybrid_verify,
+};
 pub use invite::{
     Invite, Join, Withdrawal, invite_id, invite_text, join_text, one_time_public, sign_join,
     withdraw_text,

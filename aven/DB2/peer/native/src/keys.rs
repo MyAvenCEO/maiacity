@@ -23,6 +23,13 @@ pub fn secret(hex: &str) -> Result<SecretKey, String> {
     Ok(SecretKey::from_bytes(&bytes(hex)?))
 }
 
+/// The device's hybrid public half, for its vault owner's hybrid signature to bind (`device_hybrid_bound`); nothing
+/// trusts it before. Ed25519 from the seed, ML-DSA-65 derived from it (`avenID device ml-dsa 1`, A43), in this process.
+pub fn hybrid_public(secret: &SecretKey) -> aven_id::HybridPublic {
+    let mut seed = secret.to_bytes();
+    aven_id::HybridKey::from_device_seed(&aven_id::Secret::take(&mut seed)).public()
+}
+
 /// A public key in hex.
 pub fn public(hex: &str) -> Result<PublicKey, String> {
     PublicKey::from_bytes(&bytes(hex)?).map_err(|e| e.to_string())
@@ -78,6 +85,20 @@ mod tests {
         assert_eq!(members.name(&key), "seven");
         assert!(members.knows(&key));
         assert!(Members::parse("nokey").is_err());
+    }
+
+    /// The Peer's hybrid public half is its own Ed25519 key beside the ML-DSA-65 key aven-id derives from its seed, as a
+    /// Peer-Light's is (`device_ml_dsa_seed`, held to Lean's vectors there).
+    #[test]
+    fn hybrid_public_is_the_device_seeds() {
+        let secret = SecretKey::from_bytes(&[7; 32]);
+        let public = hybrid_public(&secret);
+        assert_eq!(public.ed25519, *secret.public().as_bytes());
+        let seed = aven_id::Secret::take(&mut [7; 32]);
+        let ml = aven_id::device_ml_dsa_seed(&seed);
+        assert_eq!(public, aven_id::HybridKey::from_seeds(&seed, &ml).public());
+        let signature = aven_id::HybridKey::from_device_seed(&seed).sign(b"a segment");
+        assert!(public.verify(b"a segment", &signature));
     }
 
     fn hex(b: &[u8]) -> String {

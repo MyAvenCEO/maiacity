@@ -104,6 +104,8 @@ export const prfInput = ask('prfInput');
 export const prfKeys = ask('prfKeys');
 export const ownerSign = ask('ownerSign');
 export const ownerKeys = ask('ownerKeys');
+// this device's hybrid public half, for its vault owner to bind (never a seed)
+export const deviceHybrid = ask('deviceHybrid');
 // a file shared in the chat: its chunks into this origin's store, then its index and its line (room.svelte.js)
 export const putChunk = ask('put_chunk');
 export const shareFile = ask('share');

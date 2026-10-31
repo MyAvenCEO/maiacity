@@ -2,8 +2,13 @@
 //! empty, and a signature holds only when both halves verify. A key and a signature are each a Value with its suite
 //! and its two halves, so they travel as the signer and signature bytes of any signed thing ([`hybrid_verify`]).
 //!
-//! An owner key comes from a passkey's PRF ([`crate::PrfOutput::owner_key`]); a device's is made fresh on the device
-//! ([`HybridKey::generate`]), never derived from a passkey (D11).
+//! An owner key comes from a passkey's PRF ([`crate::PrfOutput::owner_key`]). A device's comes from its own Ed25519
+//! seed ([`HybridKey::from_device_seed`]), never from a passkey (D11): the seed is the Ed25519 half's, and the
+//! ML-DSA-65 ξ is `derive_key("avenID device ml-dsa 1", seed)` (A43, 31 Oct 2026), derived in the device's own process
+//! and wiped after use. The seed is never exported, and nothing else is derived from it; outside this derivation only
+//! Ed25519's scalar signs. A quantum attacker recovers that clamped scalar from the public key, never the seed it was
+//! hashed from (RFC 8032), so the ML-DSA half stays out of reach. Both halves rotate together, with the device key
+//! (D19). Nothing trusts a device's ML-DSA half until its vault owner's hybrid signature binds it.
 
 use aven_core::{Value, decode, encode};
 use ed25519_dalek::Signer as _;
@@ -12,12 +17,23 @@ use ml_dsa::{EncodedSignature, EncodedVerifyingKey, MlDsa65};
 use crate::secret::{Entropy, Secret};
 use crate::value::{bytes, fields};
 
+/// The label of a device's ML-DSA-65 ξ, from its Ed25519 seed (`Aven.ID.KeyFormats.deviceMlDsaLabel`).
+pub const DEVICE_ML_DSA_LABEL: &str = "avenID device ml-dsa 1";
+
 /// The hybrid suite (`Aven.Core.hybridSuite`).
 pub const HYBRID_SUITE: u64 = 1;
 pub const ED25519_KEY_LEN: usize = 32;
 pub const ED25519_SIG_LEN: usize = 64;
 pub const ML_DSA_KEY_LEN: usize = 1952;
 pub const ML_DSA_SIG_LEN: usize = 3309;
+
+/// A device's ML-DSA-65 ξ, from its Ed25519 seed (`Aven.ID.KeyFormats.deviceMlDsaSeed`).
+pub fn device_ml_dsa_seed(ed25519: &Secret) -> Secret {
+    Secret::take(&mut blake3::derive_key(
+        DEVICE_ML_DSA_LABEL,
+        ed25519.expose(),
+    ))
+}
 
 /// A hybrid signing key. Both halves' seeds are wiped when it drops. ML-DSA-65's expanded key is tens of KB, so it
 /// lives on the heap: a wasm worker's stack is small, and a debug build copies what it moves.
@@ -35,7 +51,12 @@ impl HybridKey {
         }
     }
 
-    /// A device's fresh key.
+    /// A device's hybrid key, from its own Ed25519 seed: the seed itself, and the ML-DSA-65 ξ derived from it.
+    pub fn from_device_seed(ed25519: &Secret) -> HybridKey {
+        HybridKey::from_seeds(ed25519, &device_ml_dsa_seed(ed25519))
+    }
+
+    /// A fresh key, for tests and for anything that has no device seed: both halves random.
     pub fn generate(entropy: &mut impl Entropy) -> HybridKey {
         HybridKey::from_seeds(&Secret::generate(entropy), &Secret::generate(entropy))
     }
