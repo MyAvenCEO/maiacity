@@ -1,4 +1,4 @@
-import Aven.Runtime.Face
+import Aven.Runtime.Style
 import Aven.Runtime.State
 
 /-!
@@ -22,7 +22,8 @@ Drawing gives nodes and placements. What it proves, for any markup and any data:
 - `draw_events`: every event a drawn node carries is one the markup names, so the clicks a face can send are known
   from its definition.
 
-The `style` part is the list of `Rule`s in `Face`: style as data, never CSS text.
+The `style` part is the list of `Rule`s in `Style`: selectors and typed declarations, style as data, never CSS
+text.
 -/
 
 namespace Aven.Runtime

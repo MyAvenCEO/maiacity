@@ -1,21 +1,16 @@
 import Aven.Runtime.Tree
 
 /-!
-# The face-runtime's output (README, "Two kinds of output, and the drawers"; aven/actor/ARCHITECTURE.md, section 5)
+# What every face is checked with (README, "Two kinds of output, and the drawers")
 
-The face-runtime draws a face: its markup part and its style part, with the face data, into a node tree and scoped
-CSS. Its output is accepted only when:
+The face-runtime's output is a node tree and a style (`Style`: rules as data, its checks of size and contrast). What
+they share, here:
 
-- **the tree passes the applier's check** (`Tree`);
-- **its style is data:** each rule a class name and typed values (colours, a size, a weight), so no CSS text, no
-  `url()` and no selector of a face's own ever reaches the page; the CSS text is generated from it;
-- **every interactive node has an accessible name,** every non-native interactive node a role and a tab stop, and
-  every image an `alt`;
-- **every text has enough contrast** against the background it is drawn on, as the style resolves it down the tree:
-  WCAG 2.2's 4.5:1, and 3:1 for large text.
-
-Contrast is exact: sRGB's channels are linearized by one table of integers (`linear`, the value × 10⁷, rounded), which
-the vectors export, so the face-runtime, the applier's check and any tool compute the same ratio.
+- **contrast is exact:** sRGB's channels are linearized by one table of integers (`linear`, the value × 10⁷, rounded),
+  which the vectors export, so the face-runtime, the applier's check and any tool compute the same ratio (`reaches`);
+- **a class name** is lowercase letters, digits and `-` (`classOk`), so it can't close a rule or start another;
+- **every interactive node has an accessible name** (`Node.named`), every non-native interactive node a role and a tab
+  stop (`Node.roleOk`), and every image an `alt` (`Node.altOk`).
 -/
 
 namespace Aven.Runtime
@@ -69,28 +64,11 @@ def reaches (a b : RGB) (num den : Nat) : Bool :=
   let lo := min a.luminance b.luminance
   decide (den * (hi + flare) ≥ num * (lo + flare))
 
-/-- One style rule: a class and typed values. -/
-structure Rule where
-  cls : String
-  color : Option RGB := none
-  background : Option RGB := none
-  size : Option Nat := none
-  bold : Option Bool := none
-  deriving DecidableEq, Repr, Inhabited
-
 /-- A class name: lowercase letters, digits and `-`, so it can't close a rule or start another. -/
 def classOk (c : String) : Bool :=
   !c.isEmpty && c.toList.all fun ch => ('a' ≤ ch && ch ≤ 'z') || ('0' ≤ ch && ch ≤ '9') || ch == '-'
 
 def RGB.css (c : RGB) : String := "#" ++ hex [c.r, c.g, c.b]
-
-/-- The CSS text of a rule, generated: the only CSS a face ever gives. -/
-def Rule.css (r : Rule) : String :=
-  let decls := (r.color.map fun c => "color:" ++ c.css).toList ++
-    (r.background.map fun c => "background-color:" ++ c.css).toList ++
-    (r.size.map fun n => "font-size:" ++ toString n ++ "px").toList ++
-    (r.bold.map fun b => "font-weight:" ++ (if b then "700" else "400")).toList
-  "." ++ r.cls ++ "{" ++ ";".intercalate decls ++ "}"
 
 def RGB.value (c : RGB) : Value := .bytes [c.r, c.g, c.b]
 
@@ -98,52 +76,9 @@ def opt {α : Type} (f : α → Value) : Option α → Value
   | some a => f a
   | none => .null
 
-/-- A rule as a Value: `[class, color, background, size, bold]`, each missing value null. -/
-def Rule.value (r : Rule) : Value :=
-  .array [.text (ascii r.cls), opt RGB.value r.color, opt RGB.value r.background, opt Value.uint r.size,
-    opt Value.bool r.bold]
-
-structure FaceOut where
-  tree : Node
-  style : List Rule
-  deriving Repr, Inhabited
-
-/-- A face's output as the Value it crosses in: `{"tree": …, "style": [rule, …]}`, keys in the codec's order. -/
-def FaceOut.value (o : FaceOut) : Value := .map [(ascii "tree", o.tree.value), (ascii "style", .array (o.style.map Rule.value))]
-
-/-- What a text is drawn with: its colour, the background under it, its size in pixels and its weight. -/
-structure Ctx where
-  fg : RGB
-  bg : RGB
-  size : Nat
-  bold : Bool
-  deriving DecidableEq, Repr, Inhabited
-
-/-- The page a face is drawn on, before any rule. -/
-def Ctx.base : Ctx := ⟨black, white, 16, false⟩
-
 def Node.attr (n : Node) (k : String) : Option String := (n.attrs.find? (·.1 == k)).map (·.2)
 
 def Node.classes (n : Node) : List String := ((n.attr "class").getD "").splitOn " " |>.filter (!·.isEmpty)
-
-/-- The rules for a node's classes, in the style's order, the later winning. -/
-def Ctx.apply (c : Ctx) (style : List Rule) (n : Node) : Ctx :=
-  style.foldl (fun c r => if n.classes.contains r.cls then
-    { fg := r.color.getD c.fg, bg := r.background.getD c.bg, size := r.size.getD c.size, bold := r.bold.getD c.bold }
-    else c) c
-
-/-- Every text with what it is drawn with. -/
-def Node.texts (style : List Rule) : Ctx → Node → List (Ctx × String)
-  | c, .text s => if s.trimAscii.isEmpty then [] else [(c, s)]
-  | c, .el tag attrs kids =>
-    let c' := c.apply style (.el tag attrs kids)
-    kids.attach.flatMap fun ⟨k, _⟩ => k.texts style c'
-
-/-- Large text: at least 24 px, or 18.66 px bold (WCAG's 18 pt and 14 pt). -/
-def Ctx.large (c : Ctx) : Bool := c.size ≥ 24 || (c.bold && c.size ≥ 19)
-
-/-- Enough contrast: 4.5:1, or 3:1 for large text. -/
-def Ctx.contrastOk (c : Ctx) : Bool := if c.large then reaches c.fg c.bg 3 1 else reaches c.fg c.bg 9 2
 
 /-- The text inside a node. -/
 def Node.content : Node → String
@@ -176,28 +111,7 @@ def Node.roleOk (n : Node) : Bool :=
 
 def Node.altOk (n : Node) : Bool := n.tag? != some "img" || (n.attr "alt").isSome
 
-/-- What a face's output gets wrong, by kind. -/
-structure Issues where
-  unnamed : List Node
-  noRole : List Node
-  noAlt : List Node
-  lowContrast : List (Ctx × String)
-  badClass : List Rule
-  deriving Repr
-
-def issues (o : FaceOut) : Issues :=
-  ⟨o.tree.all.filter (fun n => n.interactive && !n.named), o.tree.all.filter (!·.roleOk),
-   o.tree.all.filter (!·.altOk), (o.tree.texts o.style Ctx.base).filter (!·.1.contrastOk),
-   o.style.filter (!classOk ·.cls)⟩
-
-/-- The face-runtime's output is accepted. -/
-def faceOk (l : TreeLimits) (o : FaceOut) : Bool :=
-  let i := issues o
-  check l o.tree && i.unnamed.isEmpty && i.noRole.isEmpty && i.noAlt.isEmpty && i.lowContrast.isEmpty &&
-    i.badClass.isEmpty
-
-/-! ## What an accepted face guarantees -/
-
+/-- An empty filter leaves nothing that passes: what every "no issue of this kind" check unfolds to. -/
 theorem filter_empty {α : Type} {p : α → Bool} {l : List α} (h : (l.filter p).isEmpty = true) :
     ∀ x ∈ l, p x = false := by
   intro x hx
@@ -209,50 +123,6 @@ theorem filter_empty {α : Type} {p : α → Bool} {l : List α} (h : (l.filter 
     rw [h] at this
     cases this
 
-theorem faceOk_parts {l : TreeLimits} {o : FaceOut} (h : faceOk l o = true) :
-    check l o.tree = true ∧ (issues o).unnamed.isEmpty = true ∧ (issues o).noRole.isEmpty = true ∧
-    (issues o).noAlt.isEmpty = true ∧ (issues o).lowContrast.isEmpty = true ∧ (issues o).badClass.isEmpty = true := by
-  unfold faceOk at h
-  simp only [Bool.and_eq_true] at h
-  exact ⟨h.1.1.1.1.1, h.1.1.1.1.2, h.1.1.1.2, h.1.1.2, h.1.2, h.2⟩
-
-/-- An accepted face passes the applier's check. -/
-theorem face_passes_check {l : TreeLimits} {o : FaceOut} (h : faceOk l o = true) : check l o.tree = true :=
-  (faceOk_parts h).1
-
-/-- Every interactive node of an accepted face has an accessible name. -/
-theorem face_named {l : TreeLimits} {o : FaceOut} (h : faceOk l o = true) :
-    ∀ n ∈ o.tree.all, n.interactive = true → n.named = true := by
-  intro n hn hi
-  have := filter_empty (faceOk_parts h).2.1 n hn
-  simp only [hi, Bool.true_and, Bool.not_eq_false'] at this
-  exact this
-
-/-- Every node of an accepted face that takes clicks without being a native control has a role and a tab stop. -/
-theorem face_roles {l : TreeLimits} {o : FaceOut} (h : faceOk l o = true) : ∀ n ∈ o.tree.all, n.roleOk = true := by
-  intro n hn
-  have := filter_empty (faceOk_parts h).2.2.1 n hn
-  simpa using this
-
-/-- Every image of an accepted face has an `alt`. -/
-theorem face_alt {l : TreeLimits} {o : FaceOut} (h : faceOk l o = true) : ∀ n ∈ o.tree.all, n.altOk = true := by
-  intro n hn
-  have := filter_empty (faceOk_parts h).2.2.2.1 n hn
-  simpa using this
-
-/-- Every text of an accepted face has enough contrast against what it is drawn on. -/
-theorem face_contrast {l : TreeLimits} {o : FaceOut} (h : faceOk l o = true) :
-    ∀ p ∈ o.tree.texts o.style Ctx.base, p.1.contrastOk = true := by
-  intro p hp
-  have := filter_empty (faceOk_parts h).2.2.2.2.1 p hp
-  simpa using this
-
-/-- Every class of an accepted face's style is a plain name. -/
-theorem face_classes {l : TreeLimits} {o : FaceOut} (h : faceOk l o = true) : ∀ r ∈ o.style, classOk r.cls = true := by
-  intro r hr
-  have := filter_empty (faceOk_parts h).2.2.2.2.2 r hr
-  simpa using this
-
 /-! ## Examples -/
 
 def grey (v : UInt8) : RGB := ⟨v, v, v⟩
@@ -262,43 +132,5 @@ def grey (v : UInt8) : RGB := ⟨v, v, v⟩
 #guard reaches (grey 0x95) white 3 1 == false
 #guard reaches white ⟨0, 0x60, 0xdf⟩ 9 2
 #guard reaches black white 21 1
-#guard (Rule.css { cls := "title", color := some (grey 0x22), size := some 24, bold := some true }) ==
-  ".title{color:#222222;font-size:24px;font-weight:700}"
-
-def task : FaceOut :=
-  ⟨el "li" [("class", "row")]
-    [el "input" [("type", "checkbox"), ("aria-label", "Done"), ("data-on", "toggle")],
-     el "span" [("class", "title")] [txt "Buy bread"],
-     el "button" [("type", "button"), ("data-on", "remove"), ("aria-label", "Remove")] [txt "×"]],
-   [{ cls := "row", background := some white }, { cls := "title", color := some (grey 0x22) }]⟩
-
-def faceExamples : List (String × FaceOut × Bool) :=
-  [("a task row", task, true),
-   ("dark text on a dark card", ⟨el "div" [("class", "card")] [txt "hidden"],
-     [{ cls := "card", color := some (grey 0x33), background := some (grey 0x22) }]⟩, false),
-   ("#777777 on white", ⟨el "p" [("class", "muted")] [txt "almost"], [{ cls := "muted", color := some (grey 0x77) }]⟩,
-     false),
-   ("#767676 on white", ⟨el "p" [("class", "muted")] [txt "just"], [{ cls := "muted", color := some (grey 0x76) }]⟩,
-     true),
-   ("large #959595 on white fails 3:1", ⟨el "h1" [("class", "big")] [txt "Title"],
-     [{ cls := "big", color := some (grey 0x95), size := some 32 }]⟩, false),
-   ("large #949494 on white", ⟨el "h1" [("class", "big")] [txt "Title"],
-     [{ cls := "big", color := some (grey 0x94), size := some 32 }]⟩, true),
-   ("white on a background set above", ⟨el "div" [("class", "brand")] [el "p" [] [txt "on blue"]],
-     [{ cls := "brand", color := some white, background := some ⟨0, 0x60, 0xdf⟩ }]⟩, true),
-   ("a later rule wins", ⟨el "p" [("class", "a b")] [txt "x"],
-     [{ cls := "a", color := some (grey 0xcc) }, { cls := "b", color := some black }]⟩, true),
-   ("a button with no name", ⟨el "button" [("data-on", "go")] [], []⟩, false),
-   ("a button named by its label", ⟨el "button" [("data-on", "go"), ("aria-label", "Go")] [], []⟩, true),
-   ("a clickable div without a role", ⟨el "div" [("data-on", "open")] [txt "Open"], []⟩, false),
-   ("a clickable div with a role and a tab stop", ⟨el "div" [("data-on", "open"), ("role", "button"),
-     ("tabindex", "0")] [txt "Open"], []⟩, true),
-   ("an image without alt", ⟨el "img" [("src", aHash)], []⟩, false),
-   ("a decorative image", ⟨el "img" [("src", aHash), ("alt", "")], []⟩, true),
-   ("a script in a face", ⟨el "div" [] [el "script" [] [txt "x"]], []⟩, false),
-   ("a class that closes its rule", ⟨el "p" [] [txt "x"], [{ cls := "a}body{color:red" }]⟩, false)]
-
-#guard faceExamples.all fun (_, o, ok) => faceOk treeLimits o == ok
-#guard faceExamples.all fun (_, o, _) => Canon o.value
 
 end Aven.Runtime

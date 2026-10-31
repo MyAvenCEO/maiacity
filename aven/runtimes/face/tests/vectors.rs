@@ -1,9 +1,10 @@
 //! face-runtime against Lean's vectors: `face-runtime.json` (the runtime, byte for byte), `face.json` (a face's
-//! checks, issues and CSS), `contrast.json` (the table and the ratios) and `markup.json` (what markup draws).
+//! rules read from their Values, its checks, issues, every text's look and its CSS), `contrast.json` (the table and the ratios) and `markup.json` (what markup draws).
 
 use aven_core::{Value, decode, encode};
 use aven_runtimes_contract::result;
-use aven_runtimes_face::face::{self, BASE, Ctx, LINEAR, issues, reaches};
+use aven_runtimes_face::face::{self, LINEAR, reaches};
+use aven_runtimes_face::style::{BASE, Look, issues};
 use aven_runtimes_face::{FaceOut, Key, Markup, Rgb, Rule, Src, draw, eval, face_ok, face_run};
 use aven_runtimes_tree::{Node, TREE_LIMITS, check};
 use serde_json::Value as Json;
@@ -50,21 +51,36 @@ fn node(v: &Json) -> Node {
     }
 }
 
-fn rule(v: &Json) -> Rule {
-    Rule {
-        cls: v["class"].as_str().unwrap().into(),
-        color: v["color"].as_str().map(rgb),
-        background: v["background"].as_str().map(rgb),
-        size: v["size"].as_u64(),
-        bold: v["bold"].as_bool(),
+/// A Value in the one JSON form of a Value (`Aven.Core.Json`): bytes as `{"bytes": hex}`, integers of either sign.
+fn cvalue(j: &Json) -> Value {
+    match j {
+        Json::Null => Value::Null,
+        Json::Bool(b) => Value::Bool(*b),
+        Json::Number(n) => match n.as_u64() {
+            Some(u) => Value::Uint(u),
+            None => Value::Nint((-1 - n.as_i64().unwrap()) as u64),
+        },
+        Json::String(s) => Value::Text(s.clone()),
+        Json::Array(xs) => Value::Array(xs.iter().map(cvalue).collect()),
+        Json::Object(o) if o.len() == 1 && o.contains_key("bytes") => {
+            Value::Bytes(unhex(o["bytes"].as_str().unwrap()))
+        }
+        Json::Object(o) => Value::Map(o.iter().map(|(k, v)| (k.clone(), cvalue(v))).collect()),
     }
+}
+
+/// A rule from its Value, as the face-runtime reads it.
+fn rule(v: &Json) -> Rule {
+    let r = Rule::of_value(&cvalue(v)).unwrap();
+    assert_eq!(r.value(), cvalue(v), "a rule reads back to its own Value");
+    r
 }
 
 /// The runtime itself, from the bytes of its part and data to the bytes of its result.
 #[test]
 fn runtime() {
     let vs = vectors("face-runtime.json");
-    assert_eq!(vs.len(), 7);
+    assert_eq!(vs.len(), 8);
     for v in vs {
         let name = v["name"].as_str().unwrap();
         let part = decode(&unhex(v["input"]["part"].as_str().unwrap())).unwrap();
@@ -124,27 +140,44 @@ fn faces() {
             e["noAlt"].as_u64().unwrap(),
             "{name}: noAlt"
         );
-        assert_eq!(
-            i.bad_class as u64,
-            e["badClass"].as_u64().unwrap(),
-            "{name}: badClass"
-        );
-        let low: Vec<(Ctx, String)> = e["lowContrast"]
+        let bad: Vec<u64> = e["badRules"]
             .as_array()
             .unwrap()
             .iter()
-            .map(|l| {
-                let c = &l[0];
-                let ctx = Ctx {
-                    fg: rgb(c["fg"].as_str().unwrap()),
-                    bg: rgb(c["bg"].as_str().unwrap()),
-                    size: c["size"].as_u64().unwrap(),
-                    bold: c["bold"].as_bool().unwrap(),
-                };
-                (ctx, l[1].as_str().unwrap().to_string())
-            })
+            .map(|x| x.as_u64().unwrap())
             .collect();
-        assert_eq!(i.low_contrast, low, "{name}: lowContrast");
+        assert_eq!(
+            i.bad_rules.iter().map(|&n| n as u64).collect::<Vec<_>>(),
+            bad,
+            "{name}: badRules"
+        );
+        assert_eq!(
+            i.small as u64,
+            e["small"].as_u64().unwrap(),
+            "{name}: small"
+        );
+        assert_eq!(
+            i.low_contrast as u64,
+            e["lowContrast"].as_u64().unwrap(),
+            "{name}: lowContrast"
+        );
+        let texts: Vec<(Look, String)> = o.texts();
+        let want = e["texts"].as_array().unwrap();
+        assert_eq!(texts.len(), want.len(), "{name}: texts");
+        for ((l, t), w) in texts.iter().zip(want) {
+            let c = &w[0];
+            assert_eq!(
+                (l.fg, l.bg, l.size.px_at(), l.weight, t.as_str()),
+                (
+                    rgb(c["fg"].as_str().unwrap()),
+                    rgb(c["bg"].as_str().unwrap()),
+                    c["px"].as_i64().unwrap(),
+                    c["weight"].as_u64().unwrap(),
+                    w[1].as_str().unwrap()
+                ),
+                "{name}: a text"
+            );
+        }
         let css: Vec<String> = o.style.iter().map(Rule::css).collect();
         let want: Vec<String> = e["css"]
             .as_array()
