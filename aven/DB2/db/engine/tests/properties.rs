@@ -4,12 +4,13 @@
 //! - `refs_point_backward`: in an accepted commit every reference names an earlier `put`;
 //! - `commit_within`, `honest_footprint`: a commit that ran as its ops say passes every reader's check of its diff,
 //!   and the verdict's footprint part on the changes it makes, on a Doc whose Records have distinct ids;
+//! - `lower_call`: an op's call lowers to its own footprint step;
 //! - `created_distinct`, `ids_differ_across`: one commit's new ids differ, and differ from another commit's.
 
 use aven_core::{DocId, Hash, TypeId, Value};
 use aven_db_engine::{
     Cell, Cmp, NewId, Op, Query, Rec, Record, apply, bound, changes_from, check, commit, cost,
-    created, eval, footprint, in_scope, verdict_footprint, work,
+    created, eval, footprint, in_scope, lower_core, verdict_footprint, work,
 };
 use proptest::prelude::*;
 
@@ -170,6 +171,9 @@ proptest! {
                     }
                 }
             }
+        }
+        for o in &ops {
+            prop_assert_eq!(lower_core(&o.call()), Some(vec![o.step()]));
         }
         let ids = created(w, c, &ops);
         for (i, a) in ids.iter().enumerate() {

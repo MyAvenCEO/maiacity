@@ -280,3 +280,33 @@ pub fn answer_json(a: &aven_db_engine::Answer) -> Json {
         }),
     }
 }
+
+pub fn hex_of(b: &[u8]) -> String {
+    hex(b)
+}
+
+pub fn step(j: &Json) -> aven_core::Step {
+    use aven_core::StepVerb;
+    let verb = [
+        StepVerb::PutNew,
+        StepVerb::PutReplace,
+        StepVerb::Patch,
+        StepVerb::Remove,
+        StepVerb::Edit,
+    ]
+    .into_iter()
+    .find(|v| v.name() == j["verb"].as_str().unwrap())
+    .unwrap();
+    aven_core::Step {
+        r#type: doc(&j["type"]),
+        verb,
+        fields: list(&j["fields"], text),
+    }
+}
+
+pub fn call(j: &Json) -> aven_core::Call {
+    aven_core::Call {
+        op: aven_core::Hash::parse(j["op"].as_str().unwrap()).unwrap(),
+        params: list(&j["params"], |p| (text(&p[0]), value(&p[1]))),
+    }
+}

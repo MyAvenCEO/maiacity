@@ -6,6 +6,7 @@ import Aven.DB.Engine.Footprint
 import Aven.DB.Engine.Changes
 import Aven.DB.Engine.Index
 import Aven.DB.Engine.Probe
+import Aven.DB.Engine.Lower
 
 /-!
 # The engine's examples, and how its vectors are written (README, rule 10)
