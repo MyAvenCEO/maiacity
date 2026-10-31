@@ -3,6 +3,7 @@
 // markdown-runtime and the face-runtime will hand over once they exist.
 import catalogue from '../../../brain/docs.json';
 import { blocks, slug } from '../../../brain/render/markdown.js';
+import { rewriteLinks } from '../../../brain/render/links.js';
 import { check, parse } from '../../../brain/render/tree.js';
 import '../../../brain/style/tokens.css';
 import '../../../brain/style/slide.css';
@@ -36,7 +37,10 @@ function checked(where, tree) {
 	return tree;
 }
 
-export const page = (path) => checked(path, blocks(file(path) ?? '', { link: linker(path) }));
+// Markdown to a tree, its links rewritten, checked
+const markdown = (path, options = {}) => checked(path, rewriteLinks(blocks(file(path) ?? '', options), linker(path)));
+
+export const page = (path) => markdown(path);
 
 // a slide: its markup as a tree, checked against the face-runtime's allowlist, and its text
 export function slide(pkg, id) {
@@ -44,13 +48,13 @@ export function slide(pkg, id) {
 	return {
 		id,
 		tree: checked(`${pkg}/slides/${id}.html`, parse(file(`${pkg}/slides/${id}.html`) ?? '')),
-		text: checked(text, blocks(file(text) ?? '', { link: linker(text) })),
+		text: markdown(text),
 	};
 }
 
 // the glossary: its tree, every term's entry with an id (`term-<word>`), and each word it defines, for #/docs/glossary/<word>
 export function glossary() {
-	const tree = blocks(file('GLOSSARY.md'), { link: linker('GLOSSARY.md'), idPrefix: 'g-' });
+	const tree = rewriteLinks(blocks(file('GLOSSARY.md'), { idPrefix: 'g-' }), linker('GLOSSARY.md'));
 	const terms = new Map();
 	const words = (node) => (typeof node === 'string' ? node : node[2].map(words).join(''));
 	const visit = (node) => {

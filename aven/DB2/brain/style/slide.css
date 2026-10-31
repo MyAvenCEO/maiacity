@@ -2,7 +2,10 @@
    length inside is in cqw, a hundredth of the frame's width, so the still scales as one picture. No text is smaller
    than 2.6cqw: about 9 px on a phone, where the frame is about 356 px wide (sandbox/docs.mjs). Every element is a
    layer with a stable class, so a motion version can move each one. The look is the brand's: a soft sage panel, white
-   cards with a soft shadow on it, flat shapes in forest green, no outlines. */
+   cards with a soft shadow on it, flat shapes in forest green, no outlines.
+   Written in the subset the face-runtime takes as typed style rules: class selectors, the properties
+   render/tree.test.js lists, plain values. No custom properties and no url(): the colours are the palette's
+   (STYLE.md, style/tokens.css), written out. */
 .slide {
 	position: relative;
 	width: 100%;
@@ -10,9 +13,9 @@
 	margin: 0;
 	overflow: hidden;
 	container-type: inline-size;
-	color: var(--brain-ink);
-	background: var(--brain-sage-soft);
-	border-radius: var(--brain-radius);
+	color: #1d2a21;
+	background: #e2e6d3;
+	border-radius: 24px;
 }
 
 .slide div,
@@ -36,7 +39,10 @@
 
 .slide .headline {
 	margin: 0;
-	font: 500 4.6cqw/1.05 var(--brain-serif);
+	font-family: 'Fraunces Variable', Georgia, serif;
+	font-size: 4.6cqw;
+	font-weight: 500;
+	line-height: 1.05;
 	letter-spacing: -0.015em;
 }
 
@@ -44,8 +50,11 @@
 .slide .label {
 	position: absolute;
 	margin: 0;
-	color: var(--brain-ink);
-	font: 600 2.6cqw/1 var(--brain-sans);
+	color: #1d2a21;
+	font-family: 'Inter Variable', system-ui, sans-serif;
+	font-size: 2.6cqw;
+	font-weight: 600;
+	line-height: 1;
 	white-space: nowrap;
 	transform: translateX(-50%);
 }
@@ -65,7 +74,7 @@
 	right: 1.6cqw;
 	top: 0.75cqw;
 	height: 0.5cqw;
-	background: var(--brain-forest);
+	background: #1f3d2b;
 	border-radius: 0.3cqw;
 }
 
@@ -75,37 +84,33 @@
 	width: 2cqw;
 	height: 2cqw;
 	clip-path: polygon(0 0, 100% 50%, 0 100%);
-	background: var(--brain-forest);
+	background: #1f3d2b;
 }
 
 .slide .relation {
 	padding: 0.9cqw 1.8cqw;
-	color: var(--brain-on-forest);
-	background: var(--brain-forest);
+	color: #f7f4ec;
+	background: #1f3d2b;
 	border-radius: 3cqw;
 }
 
 /* a record: a thing the system keeps (a vault, a cap), as a soft white card. Its kind is a pill in its tone */
-.slide .record {
-	--tone: var(--brain-ground);
+.slide .record.sage .record-kind {
+	background: #c9d0b0;
 }
 
-.slide .record.sage {
-	--tone: var(--brain-sage);
+.slide .record.blush .record-kind {
+	background: #f4e4d7;
 }
 
-.slide .record.blush {
-	--tone: var(--brain-blush);
-}
-
-.slide .record.lime {
-	--tone: var(--brain-lime);
+.slide .record.lime .record-kind {
+	background: #d9e27a;
 }
 
 .slide .record-card {
 	inset: 0;
 	padding: 2.4cqw 2.8cqw;
-	background: var(--brain-card);
+	background: #fffdf9;
 	border-radius: 2.4cqw;
 }
 
@@ -113,34 +118,49 @@
 	display: inline-block;
 	margin: 0;
 	padding: 0.7cqw 1.6cqw;
-	font: 600 2.6cqw/1 var(--brain-sans);
-	background: var(--tone);
+	font-family: 'Inter Variable', system-ui, sans-serif;
+	font-size: 2.6cqw;
+	font-weight: 600;
+	line-height: 1;
+	background: #f3efe7;
 	border-radius: 3cqw;
 }
 
 .slide .record-name {
 	margin: 1.4cqw 0 1.4cqw;
-	font: 500 4cqw/1.1 var(--brain-serif);
+	font-family: 'Fraunces Variable', Georgia, serif;
+	font-size: 4cqw;
+	font-weight: 500;
+	line-height: 1.1;
 }
 
 .slide .record-section {
 	margin: 0;
 	padding-top: 1.4cqw;
-	color: var(--brain-quiet);
-	font: 600 2.6cqw/1.2 var(--brain-sans);
-	border-top: 0.15cqw solid var(--brain-line);
+	color: #56634f;
+	font-family: 'Inter Variable', system-ui, sans-serif;
+	font-size: 2.6cqw;
+	font-weight: 600;
+	line-height: 1.2;
+	border-top: 0.15cqw solid #e4ded2;
 }
 
 .slide .record-field {
 	margin: 0.8cqw 0 0;
-	font: 500 2.6cqw/1.3 var(--brain-sans);
+	font-family: 'Inter Variable', system-ui, sans-serif;
+	font-size: 2.6cqw;
+	font-weight: 500;
+	line-height: 1.3;
 }
 
 .slide .field-name {
 	display: inline-block;
 	width: 12cqw;
-	color: var(--brain-quiet);
-	font: 600 2.6cqw/1.3 var(--brain-sans);
+	color: #56634f;
+	font-family: 'Inter Variable', system-ui, sans-serif;
+	font-size: 2.6cqw;
+	font-weight: 600;
+	line-height: 1.3;
 }
 
 .slide .record.small .record-card {
@@ -160,7 +180,10 @@
 .slide .record-row-text {
 	margin: 0;
 	padding: 1.1cqw 0 0 10cqw;
-	font: 600 2.8cqw/1.3 var(--brain-sans);
+	font-family: 'Inter Variable', system-ui, sans-serif;
+	font-size: 2.8cqw;
+	font-weight: 600;
+	line-height: 1.3;
 }
 
 .slide .key.mini {
@@ -176,20 +199,26 @@
 .slide .sheet-paper {
 	inset: 0;
 	padding: 2.6cqw 2.8cqw;
-	background: var(--brain-card);
+	background: #fffdf9;
 	border-radius: 2.4cqw;
 }
 
 .slide .sheet-words {
 	margin: 0;
-	font: 500 3.2cqw/1.3 var(--brain-serif);
+	font-family: 'Fraunces Variable', Georgia, serif;
+	font-size: 3.2cqw;
+	font-weight: 500;
+	line-height: 1.3;
 }
 
 .slide .sheet-sign {
 	margin: 0;
 	padding: 1.1cqw 0 0 5.6cqw;
-	color: var(--brain-quiet);
-	font: 600 2.6cqw/1.3 var(--brain-sans);
+	color: #56634f;
+	font-family: 'Inter Variable', system-ui, sans-serif;
+	font-size: 2.6cqw;
+	font-weight: 600;
+	line-height: 1.3;
 }
 
 .slide .sheet-foot {
@@ -197,15 +226,15 @@
 	right: 2.8cqw;
 	bottom: 2.2cqw;
 	height: 5cqw;
-	border-top: 0.15cqw solid var(--brain-line);
+	border-top: 0.15cqw solid #e4ded2;
 }
 
 /* a seal: a signature, a forest-green disc with a lime ring */
 .slide .seal {
 	width: 3.8cqw;
 	height: 3.8cqw;
-	background: var(--brain-forest);
-	border: 0.6cqw solid var(--brain-lime);
+	background: #1f3d2b;
+	border: 0.6cqw solid #d9e27a;
 	border-radius: 50%;
 }
 
@@ -218,14 +247,14 @@
 .slide .tick {
 	width: 9cqw;
 	height: 9cqw;
-	background: var(--brain-lime);
+	background: #d9e27a;
 	border-radius: 50%;
 }
 
 .slide .tick-short,
 .slide .tick-long {
 	height: 1.1cqw;
-	background: var(--brain-forest);
+	background: #1f3d2b;
 	border-radius: 0.5cqw;
 	transform-origin: 0 50%;
 }
@@ -247,7 +276,7 @@
 /* a device: a phone in forest green, its screen sage */
 .slide .phone-body {
 	inset: 0;
-	background: var(--brain-forest);
+	background: #1f3d2b;
 	border-radius: 2.4cqw;
 }
 
@@ -256,7 +285,7 @@
 	top: 2.2cqw;
 	right: 1cqw;
 	bottom: 2.2cqw;
-	background: var(--brain-ground);
+	background: #f3efe7;
 	border-radius: 1.2cqw;
 }
 
@@ -267,7 +296,7 @@
 }
 
 .slide .ring {
-	border: 0.4cqw solid var(--brain-forest);
+	border: 0.4cqw solid #1f3d2b;
 	border-radius: 50%;
 	clip-path: inset(0 0 30% 0);
 }
@@ -288,22 +317,28 @@
 	display: inline-block;
 	margin: 0;
 	padding: 1cqw 2cqw;
-	font: 600 2.6cqw/1 var(--brain-sans);
-	background: var(--brain-card);
+	font-family: 'Inter Variable', system-ui, sans-serif;
+	font-size: 2.6cqw;
+	font-weight: 600;
+	line-height: 1;
+	background: #fffdf9;
 	border-radius: 3cqw;
 }
 
 .slide .chip.on {
-	color: var(--brain-on-forest);
-	background: var(--brain-forest);
+	color: #f7f4ec;
+	background: #1f3d2b;
 }
 
 /* a note: a quiet line of text on the ground */
 .slide .note {
 	position: absolute;
 	margin: 0;
-	color: var(--brain-quiet);
-	font: 500 2.6cqw/1.35 var(--brain-sans);
+	color: #56634f;
+	font-family: 'Inter Variable', system-ui, sans-serif;
+	font-size: 2.6cqw;
+	font-weight: 500;
+	line-height: 1.35;
 	text-align: center;
 	transform: translateX(-50%);
 }
@@ -311,7 +346,7 @@
 /* a span: a soft bracket under a row of things, for what holds across all of them */
 .slide .span {
 	height: 2cqw;
-	border: 0.4cqw solid var(--brain-sage);
+	border: 0.4cqw solid #c9d0b0;
 	border-top: 0;
 	border-radius: 0 0 1.2cqw 1.2cqw;
 }
@@ -322,7 +357,7 @@
 	top: 0;
 	width: 5cqw;
 	height: 5cqw;
-	background: linear-gradient(135deg, var(--brain-forest-light) 0 50%, var(--brain-forest) 50%);
+	background: linear-gradient(135deg, #3a5a44 0 50%, #1f3d2b 50%);
 	border-radius: 50%;
 }
 
@@ -331,13 +366,13 @@
 	top: 1.75cqw;
 	width: 1.5cqw;
 	height: 1.5cqw;
-	background: var(--brain-card);
+	background: #fffdf9;
 	border-radius: 50%;
 }
 
 .slide .key .shaft,
 .slide .key .bit {
-	background: var(--brain-forest);
+	background: #1f3d2b;
 }
 
 .slide .key .shaft {
@@ -356,10 +391,10 @@
 
 /* a public key: the half anyone may see, in olive with a lime bow */
 .slide .key.public .bow {
-	background: linear-gradient(135deg, var(--brain-lime) 0 50%, #c3cd5f 50%);
+	background: linear-gradient(135deg, #d9e27a 0 50%, #c3cd5f 50%);
 }
 
 .slide .key.public .shaft,
 .slide .key.public .bit {
-	background: var(--brain-olive);
+	background: #4a5a3a;
 }
