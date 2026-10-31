@@ -7,12 +7,15 @@
 //! three types, and none for any other.
 
 use aven_core::limits::{MAX_SIG_BYTES, MAX_SIGNER_BYTES, MAX_SIGS};
-use aven_core::{DocId, Hash, Sig, Value, encode, name_of, sigs_ok};
+use aven_core::{DocId, Hash, Sig, Value, encode, sigs_ok};
 
 use super::chain::Cap;
 use super::revoke::Revocation;
 use super::types::builtin_type;
 use crate::epoch::Epoch;
+
+/// What a revocation's signers sign it under (`revokeLabel`).
+pub const REVOKE_LABEL: &str = "avenID revoke 1";
 
 /// A body with its signatures beside it, under `sigs` (`withSigs`).
 fn with_sigs(body: Value, sigs: &[Sig]) -> Value {
@@ -95,7 +98,7 @@ fn hash_of(v: &Value) -> Option<Hash> {
 
 impl Revocation {
     /// What a revocation says: the cap it ends, the envelope it lives as in the Doc, or the names it keeps there when
-    /// it lives elsewhere (`Revocation.value`). Its id is this Value's name.
+    /// it lives elsewhere (`Revocation.value`). Its id is its name as a signed thing ([`Revocation::digest`]).
     pub fn value(&self) -> Value {
         Value::Map(vec![
             ("cap".into(), Value::Bytes(self.cap.0.to_vec())),
@@ -109,9 +112,18 @@ impl Revocation {
         ])
     }
 
-    /// Its id: the name of its body (`Revocation.digest`).
+    /// The revocation as Core's signed thing, its label and Value (`Revocation.signed`, A30), with these signatures.
+    pub fn signed(&self, sigs: Vec<Sig>) -> aven_core::Signed {
+        aven_core::Signed {
+            label: REVOKE_LABEL.into(),
+            body: self.value(),
+            sigs,
+        }
+    }
+
+    /// Its id: Core's name of the signed thing, the hash of `[label, value]` (`Revocation.digest`, A30).
     pub fn digest(&self) -> Hash {
-        name_of(&self.value())
+        self.signed(vec![]).name()
     }
 
     /// Read back from [`Revocation::value`], its id the name of that Value (`Revocation.ofValue?`); the caller checks

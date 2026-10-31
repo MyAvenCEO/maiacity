@@ -60,14 +60,29 @@ private def rkey (s : String) : Bytes := s.toUTF8.toList
 private def hashValue (h : Hash) : Value := .bytes h.bytes
 
 /-- What a revocation says, as a Value: the cap it ends, the names it keeps in the Doc when it lives elsewhere, and the
-envelope it lives as in the Doc, its keys in the codec's order. Its id is the name of this Value
+envelope it lives as in the Doc, its keys in the codec's order. Its id is its name as a signed thing
 (`Revocation.digest`), so the id itself is never written. -/
 def Revocation.value (r : Revocation) : Value :=
   .map [(rkey "cap", hashValue r.cap),
     (rkey "kept", match r.kept with | none => .null | some ks => .array (ks.map hashValue)),
     (rkey "envelope", match r.envelope with | none => .null | some h => hashValue h)]
 
-def Revocation.digest (H : Bytes → Hash) (r : Revocation) : Hash := nameOf H r.value
+/-- What a revocation's signers sign it under. -/
+def revokeLabel : Bytes := rkey "avenID revoke 1"
+
+theorem revokeLabel_ok : textOk revokeLabel = true := by decide +kernel
+
+/-- A revocation as Core's signed thing: its label and Value, its signatures beside it (A30). -/
+def Revocation.signed (r : Revocation) (sigs : List Sig := []) : Signed := { label := revokeLabel, body := r.value, sigs }
+
+/-- A revocation's id: Core's name of the signed thing, the hash of `[label, value]`, exactly what its signers sign
+(A30). Signatures never touch it. -/
+def Revocation.digest (H : Bytes → Hash) (r : Revocation) : Hash := (r.signed).name H
+
+/-- Two allowed revocations with one id say the same thing, under a hash nothing collides under. -/
+theorem Revocation.digest_inj {H : Bytes → Hash} (hH : Injective H) {r s : Revocation} (hr : Canon r.value = true)
+    (hs : Canon s.value = true) (h : r.digest H = s.digest H) : r.value = s.value :=
+  (Signed.name_inj hH revokeLabel_ok revokeLabel_ok hr hs h).2
 
 private def hash32? : Value → Option Hash
   | .bytes b => if b.length = 32 then some ⟨b⟩ else none

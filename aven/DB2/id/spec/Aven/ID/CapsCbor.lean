@@ -16,9 +16,9 @@ holder:  {"vault": v}   {"group": Doc}   "public"
 
 Keys sort as the codec sorts them: shorter first, then by their bytes. An op id and a Doc id are byte strings of their
 hash; a bound is null for any value or the values it allows (A32). A line's parameters are a map, so a line whose
-parameters aren't sorted, or name one twice, isn't canonical. A cap's id is Core's name of it as a signed thing, the BLAKE3
-hash of `[label, body]` (`Cap.digest`, A30), which its issuer's owners approve, unless it attenuates. Its form is in its body, so a signature over
-an attenuation is never one over a grant. Its issuing device signs the body under the label `avenID cap 1`
+parameters aren't sorted, or name one twice, isn't canonical. A cap's id is Core's name of it as a signed thing, the
+BLAKE3 hash of `[label, body]` (`Cap.digest`, A30), which its issuer's owners approve, unless it attenuates. Its form is
+in its body, so a signature over an attenuation is never one over a grant. Its issuing device signs the body under the label `avenID cap 1`
 (`Cap.signing`), so the signature can't be read as anything else's (Core's `signing_separates`).
 
 The cast's caps go by readable names, so here a parent and a role are text; with R5 they become hashes, as every
@@ -95,9 +95,9 @@ theorem Cap.digest_inj {H : Bytes → Hash} (hH : Injective H) {c d : Cap} (hc :
 /-- A key as the codec stores it. -/
 def recKey (s : String) : Bytes := s.toUTF8.toList
 
-/-- Map keys in the codec's order: shorter first, then by their bytes. -/
-def keyBefore (a b : Bytes) : Bool :=
-  a.length < b.length || (a.length == b.length && decide (a.map (·.toNat) < b.map (·.toNat)))
+/-- Map keys in the codec's order, Core's (`keysSorted`): by their encoded bytes, so shorter first, then by their
+bytes. -/
+def keyBefore (a b : Bytes) : Bool := lexLt (keyBytes a) (keyBytes b)
 
 /-- An entry put where the codec's order puts it. -/
 def insertKey (e : Bytes × Value) : List (Bytes × Value) → List (Bytes × Value)
@@ -197,11 +197,12 @@ def Cap.parseBody? (v : Value) : Option Cap := do
                    form := ← CapForm.ofValue? (← recField kvs "form"),
                    grant := ← ls.mapM Line.ofValue?, role := ← recOptText? (← recField kvs "role"),
                    share := ← recNat? (← recField kvs "share"),
-                   conditions := ← Conditions.ofValue? (← recField kvs "conditions"), signer := "" }
+                   conditions := ← Conditions.ofValue? (← recField kvs "conditions"), signer := default }
   some { c with id := (c.digest blake3).text }
 
-/-- A cap read back from its body (`Cap.body`), its id its name (`Cap.digest`); who signed it travels beside it. Only
-the one form `Cap.body` writes reads back. -/
+/-- A cap read back from its body (`Cap.body`), its id its name (`Cap.digest`). No signer is read from the body: who
+signed it travels beside it, as a Record's signatures, so the signer keeps its default. Only the one form `Cap.body`
+writes reads back. -/
 def Cap.ofBody? (v : Value) : Option Cap := do
   let c ← Cap.parseBody? v
   if c.body = v then some c else none
