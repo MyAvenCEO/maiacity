@@ -14,8 +14,10 @@ register of who joined the network and how it is set up.
 - [Chains](#chains): grants and attenuations that only narrow.
 - [Collections](#collections): a Doc that lists Docs, as a cap's flexible target.
 - [Where caps live](#where-caps-live): cap and revoke Records in a Doc, and letters.
-- [The envelope's authority](#the-envelopes-authority): `{acks, caps}` in every envelope's body.
-- [The reader's verdict](#the-readers-verdict): whether an envelope is authorized, judged on its own past.
+- [The envelope's authority](#the-envelopes-authority): `{acks, caps}`, or `{acks, caps, actor}`, in every envelope's
+  body.
+- [The reader's verdict](#the-readers-verdict): whether an envelope is authorized, judged on its own past, and
+  `revoked`.
 - [Revocation and acks](#revocation-and-acks): ending a cap, the race, the cascade and expiry.
 - [Deletes](#deletes): a Doc's vault ends the Doc.
 - [Holdings follow caps](#holdings-follow-caps): a peer holds only what its caps cover.
@@ -30,9 +32,9 @@ register of who joined the network and how it is set up.
 
 - [avenCORE](../core/README.md): Values and the one codec; [signed things](../core/README.md#signed-things), named by
   `[label, body]` with signatures beside them (A30); [envelopes](../core/README.md#envelopes),
-  [the past](../core/README.md#the-past) and [counting](../core/README.md#counting), with caps' verdict as a parameter
-  (A45); [ops and calls](../core/README.md#ops-and-calls) (`OpId.ofPlugin`, `core/1`'s ops, `typeParam`,
-  `fieldsParam`); [targets](../core/README.md#targets-and-steps) and bounds (`Target.le`, `Target.covers`,
+  [the past](../core/README.md#the-past) and [counting](../core/README.md#counting), with caps' verdict and `revoked`
+  as parameters (A45, A182); [ops and calls](../core/README.md#ops-and-calls) (`OpId.ofPlugin`, `core/1`'s ops,
+  `typeParam`, `fieldsParam`); [targets](../core/README.md#targets-and-steps) and bounds (`Target.le`, `Target.covers`,
   `Bound.within`); [built-in type names](../core/README.md#built-in-types).
 - [avenID](../id/README.md): [hybrid signatures](../id/README.md#hybrid-signatures) and
   [passkeys](../id/README.md#passkeys-and-the-prf-step); [vaults](../id/README.md#vaults) and their names;
@@ -42,14 +44,14 @@ register of who joined the network and how it is set up.
 - [avenDOCS](../docs/README.md): [Records](../docs/README.md#records) and a Doc's
   [genesis and root Record](../docs/README.md#a-doc-and-its-genesis), where caps and the register live; its import
   asks for caps' verdict through its `Authorize` trait, which avenPEERS adapts (avenCAPS' code never depends on
-  avenDOCS, L20).
+  avenDOCS, A169).
 - [avenOPS](../ops/README.md): [lowering a call to steps](../ops/README.md#lowering-a-call-to-steps) and
   [footprints](../ops/README.md#footprints-and-the-merge-check), against which a reader checks a change (E1–E3);
   [wants](../ops/README.md#the-want-queue) (served is wants ∩ caps); the dry run.
 - [avenPEERS](../peers/README.md): [the door](../peers/README.md#the-door), which admits the devices the register
   settles; [relays](../peers/README.md#relays); [gossip topics](../peers/README.md#gossip-per-group);
-  [the fetch gate](../peers/README.md#the-fetch-gate); [keepers](../peers/README.md#keepers), their arrivals, covers,
-  bills and admission; and the adapter from caps' verdict to avenDOCS' `Authorize`.
+  [the fetch gate](../peers/README.md#the-fetch-gate) and its TLS exporter; [keepers](../peers/README.md#keepers),
+  their arrivals, covers, bills and admission; and the adapter from caps' verdict to avenDOCS' `Authorize`.
 - [avenACTORS](../actors/README.md): the kernel's narrowing per message, and the receiver's router, which checks
   `tell`.
 - [avenOS](../os/README.md): shows each grant as it is, never only a role's name, and collects the owners'
@@ -62,13 +64,13 @@ grants only what its issuer has: it narrows a parent cap the issuer holds, or re
 its Docs.
 
 A cap never changes. It is named by the hash of what it says, so what it grants is fixed when it is signed. Who signed
-it sits beside it and never changes its name.
+it sits beside it and never changes its name. A cap is its content: it carries no nonce.
 
 **Its body** is a Core Value, keys in the codec's order:
 
 ```
-{"form": "grant" | "attenuate", "role": role or null, "grant": [line…], "share": n,
- "holder": holder, "issuer": vault, "parent": cap or null,
+{"form": "grant" | "attenuate", "role": role, "grant": [line…], "share": n,
+ "holder": holder, "issuer": vault, "parent": cap,
  "conditions": {"own", "uses", "approve", "expires", "history", "branches", "notBefore"}}
 line:    {"op": op id, "doc": target, "params": {param: [value…] or null, …}}
 holder:  {"vault": vault}  |  {"group": Doc id}  |  "public"
@@ -77,22 +79,27 @@ holder:  {"vault": vault}  |  {"group": Doc id}  |  "public"
 | Field | Meaning |
 |---|---|
 | `form` | `grant` passes its parent on to a holder, or starts a chain; `attenuate` narrows its parent for the same holder |
-| `role` | A role by its id, in place of lines ([roles](#conditions-and-roles)) |
+| `role` | A role by its id, in place of lines ([roles](#conditions-and-roles)); left out when it names none |
 | `grant` | Its [lines](#lines-ops-targets-and-bounds) |
 | `share` | How many more hops it may be passed on. A grant lowers it by one; an attenuation by none |
 | `holder` | Who holds it ([holders](#holders)) |
 | `issuer` | The vault that grants |
-| `parent` | The cap it narrows, or null for a root cap |
-| `conditions` | [Conditions](#conditions-and-roles), applied to every line |
+| `parent` | The cap it narrows; left out for a root cap |
+| `conditions` | [Conditions](#conditions-and-roles), applied to every line; `uses` and `expires` left out when unset |
 
-- **Its name** is Core's name of `["avenID cap 1", body]`: 32 bytes. Two caps with equal bodies are one cap. The form
-  is in the body, so a signature over an attenuation is never one over a grant.
+- **Its name** is Core's name of `["avenID cap 1", body]`: 32 bytes. Two grants with the same issuer, holder, lines
+  and conditions are one cap with one name, and revoking it revokes that grant. The form is in the body, so a signature
+  over an attenuation is never one over a grant.
+- **No nulls.** A field that is absent is left out of the body, never written as null, and a reader refuses a null
+  ([avenCORE](../core/README.md#values)).
 - **Its signatures** sit beside the name: a device acting for the issuer, and for a grant the approval of the issuer's
   owners, k of n. A vault without devices, such as a coop, issues by its owners' approval alone. An attenuation needs
   no approval ([who signs what](#authority-and-issuing)).
+- **Approvals** are Core `Sig`s, `[{signer, sig}]`, over the cap's signing bytes: an owner key approves by a valid
+  signature, a vault by its quorum ([avenID](../id/README.md#approvals-k-of-n)).
 - **Labels are frozen formats.** `avenID cap 1` and every other `avenID …` label stays as it is under avenCAPS.
 
-**Decided:** caps D2, D3, D6, D22; A2, A28, A30, A32; L12; ledger 10:17  ·  **Lean:** `Aven.ID.CapsCbor` —
+**Decided:** caps D2, D3, D6, D22; A2, A28, A30, A32, A107, A161, A183, A184, A189  ·  **Lean:** `Aven.ID.CapsCbor` —
 `Cap.digest_inj`
 
 ## Lines: ops, targets and bounds
@@ -147,7 +154,7 @@ until it is granted.
 | A message | The receiver's router | Any sender |
 | Delegation | Every reader of where caps live | Any issuer |
 
-**Decided:** A8, A32; caps D16, D22; E1–E3; ledger 07:46, 09:33  ·  **Lean:** `Aven.ID.Caps` — `narrow_chain`,
+**Decided:** A8, A32, A66, A91; caps D16, D22; E1–E3  ·  **Lean:** `Aven.ID.Caps` — `narrow_chain`,
 `narrow_ops`, `no_step_without_write`; `Aven.ID.Authorized` — `chain_writes_nothing`
 
 ## Conditions and roles
@@ -193,7 +200,7 @@ proves a condition and holds nothing.
   public reads is sealed to the members, so nothing is ever plain. A public cap's writes count only from a member. The
   public never shares, since nobody can delegate for everyone, and granting to it is a grant like any other.
 
-**Decided:** caps D2, D15; A28, A39, A42; P20; rule 15  ·  **Lean:** `Aven.ID.Caps` — `group_typed`, `child_live`,
+**Decided:** caps D2, D15; A28, A39, A42, A148; rule 15  ·  **Lean:** `Aven.ID.Caps` — `group_typed`, `child_live`,
 `public_bounded`, `public_no_share`; `Aven.ID.Network` — `public_member`, `removal_rotates`
 
 ## Device caps and actor hosts
@@ -221,7 +228,7 @@ own, a narrow device vault, never a member's personal device.
   follow.
 - The narrowing per message inside the kernel is [avenACTORS'](../actors/README.md).
 
-**Decided:** A16, A27, A28, A42; caps D14, D16; ledger 07:21  ·  **Lean:** `Aven.ID.Authorized` —
+**Decided:** A16, A27, A28, A42, A60; caps D14, D16  ·  **Lean:** `Aven.ID.Authorized` —
 `device_within_cap`, `device_and_chain`, `device_proposals_never_main`, `merge_within_device`, `host_chain_only`,
 `actor_within_device`, `host_never_beyond`
 
@@ -252,7 +259,7 @@ a vault it governs whose quorum it meets alone.
 Every grant needs its vault's owners' approval. Three things aren't grants and need none: a device's cap at its
 sign-in, an attenuation, and a revocation.
 
-**Decided:** caps D14; A28; ledger 09:57  ·  **Lean:** `Aven.ID.Caps` — `root_authority`, `root_quorum`,
+**Decided:** caps D14; A28, A100  ·  **Lean:** `Aven.ID.Caps` — `root_authority`, `root_quorum`,
 `grant_approved`; `Aven.ID.Authorized` — `own_authorized`, `authorized_vault`
 
 ## Chains
@@ -301,7 +308,7 @@ collections.
   write's past, so a list changes by its vault's own acts, never while a reader catches up on others' envelopes.
 - **A Doc that leaves the list** leaves its holders' devices at their next sync ([holdings](#holdings-follow-caps)).
 
-**Decided:** A32, A40, A42; ledger 07:36, 08:49  ·  **Lean:** `Aven.ID.Collections` — `listed_by_issuer`,
+**Decided:** A32, A40, A42, A62, A76  ·  **Lean:** `Aven.ID.Collections` — `listed_by_issuer`,
 `edit_keeps_coverage`, `content_no_listing`, `stranger_no_listing`, `listed_in_authority`, `listsAt_catch_up`
 
 ## Where caps live
@@ -317,7 +324,7 @@ is a Record in that Doc.
   never stored. A cap Record's body is the [cap's body](#a-cap); a revoke Record's is the
   [revocation](#revocation-and-acks). Each reads back only from its one form, and caps gives avenDOCS the check for
   each type (`idBuiltinFit`).
-- **Built-in Records are write-once:** a cap or revoke Record is never edited; a change is a new Record (L21).
+- **Built-in Records are write-once:** a cap or revoke Record is never edited; a change is a new Record (A170).
 - **A cap on a vault's Docs** lives in the group Doc that opens them.
 - **A tell cap** lives with the receiver's vault, where its router checks it.
 - **The built-in types caps makes** are `group`, `collection`, `cap` and `revoke`, each named by its label
@@ -330,35 +337,40 @@ first letter between two vaults goes to the recipient's letterbox, which takes a
 day; later ones use tags only the pair can compute. A letter only starts the pair's carrier Doc: after it, the two
 talk in that Doc. Sealing, tags and letterbox keys are [avenID's](../id/README.md).
 
-**Decided:** A30, A33, A39, A42, A45; L21; ledger 07:46, 10:17  ·  **Lean:** `Aven.ID.AccessRecords` —
+**Decided:** A30, A33, A39, A42, A45, A67, A104, A107, A170, A185  ·  **Lean:** `Aven.ID.AccessRecords` —
 `CapRecord.ofValue?_value`, `RevokeRecord.ofValue?_value`, `idBuiltinFit_cap`; `Aven.ID.Types` — `builtin_typed`
 
 ## The envelope's authority
 
 Every envelope says on what authority it writes and which revocations its writer has seen. That is the one Value caps
-reads of an envelope's body. avenDOCS carries it without reading it, checking only its canonical form and limits.
+reads of an envelope's body. avenDOCS carries the Value whole and never reads inside it, checking only its canonical
+form and limits.
 
 ```
-authority: {"acks": [name…], "caps": [name…]}
+authority: {"acks": [name…], "caps": [name…]}  |  {"acks": [name…], "caps": [name…], "actor": actor}
   acks:  the revocations its writer acknowledges
   caps:  the caps the envelope rests on, root first; [] on its vault's own authority
+  actor: only when an actor host writes it: the actor whose chain it writes under
 ```
 
-- Keys in the codec's order, `acks` before `caps`; no null.
+- Exactly one of the two shapes: `actor` is there for an [actor host's](#device-caps-and-actor-hosts) envelope, and
+  left out otherwise.
+- Keys in the codec's order, `acks` before `caps` before `actor`; no null.
 - Each name is 32 bytes: a cap's name or a revocation's.
 - The Value has one form: what reads back is written exactly so.
 - A reader takes the chain and the acks from it, so the chain every revocation is checked against is the one the
   envelope names, and nothing about a write's authority is stored twice.
 
-**Decided:** A45; ledger 10:10, 10:43  ·  **Lean:** `Aven.ID.Authority` — `Authority.ofValue?_value`,
-`value_ofValue?`, `ofValue?_names` (pending on `claude/avenid-a45`)
+**Decided:** A27, A45, A106, A188  ·  **Lean:** `Aven.ID.Authority` — `Authority.ofValue?_value`, `value_ofValue?`,
+`ofValue?_names` (in draft #1741; the `actor` shape to come)
 
 ## The reader's verdict
 
 Every reader judges every envelope itself. avenCAPS gives one pure verdict over Core's types: the Doc's genesis vault,
-the envelope with its signatures, its [authority](#the-envelopes-authority) and a view of its past. It depends only on
-those and the revocations the reader holds, so two readers holding the same agree. avenDOCS' import asks for it at two
-of its steps, through its `Authorize` trait, which avenPEERS adapts to this verdict.
+the envelope with its signatures, its [authority](#the-envelopes-authority) and a view of its own past. It depends only
+on those, so two readers holding that past agree. avenDOCS' import asks for it at two of its steps, through its
+`Authorize` trait, which avenPEERS adapts to this verdict. Beside it, avenCAPS gives Core's counting `revoked`, a pure
+function of the envelope and the revocations the reader holds ([revocation](#revocation-and-acks)).
 
 - **Step 4, `reaches(genesis, signer)`:** the signer's device acts for a vault that holds some grant on this Doc. A
   stranger's envelope is refused here, before any of its bytes reaches Loro.
@@ -370,29 +382,31 @@ of its steps, through its `Authorize` trait, which avenPEERS adapts to this verd
     common write: an owner writing its own Docs.
   - **a chain,** named root first in [`authority.caps`](#the-envelopes-authority), which is:
     - **valid:** it keeps every rule of a [chain](#chains);
-    - **live:** kept by every revocation on it that the reader holds ([revocation](#revocation-and-acks));
     - **held:** its last cap is held by the signer's vault, a group it reads, or the members for the public;
     - **covering:** its branches allow the envelope's branch, and for every call the envelope names, a line lists the
       op, covers the Doc and bounds the parameters. A host's envelope names its acting actor.
+- **Revocations the reader holds** aren't part of `authorized`: they judge a write by what the reader holds, not by
+  its own past, so they are `revoked`, which Core's counting takes beside `authorized`.
 - **A merge into main** is judged on every call it brings onto main, not on the fixing commit's alone.
-- **Counting is Core's.** An envelope counts when everything in its past is signed, fresh, authorized, live and fit,
-  and none of it is half of a split. avenDOCS supplies fit, caps supplies authorized.
-- **A verdict can turn.** A revocation the reader learns later can turn "authorized" into "doesn't count"; avenDOCS
-  asks again and rebuilds the Doc's state from its envelopes.
+- **Counting is Core's.** An envelope counts when everything in its past is signed, fresh, authorized and fit, none of
+  it is half of a split, and none of it is revoked. avenDOCS supplies fit, caps supplies `authorized` and `revoked`.
+- **A count can turn.** A revocation the reader learns later discounts, as a split learned later does: the verdict
+  stays, the envelope stops counting, and avenDOCS rebuilds the Doc's state from the envelopes that still count.
 - **What the reader brings:** the register's tree (which device acts for which vault, and each vault's owners and
   threshold), the members, each Doc's birth facts, each device's cap, and the steps each call lowers to.
 
-**Decided:** A27, A45; P11, P19; L20  ·  **Lean:** `Aven.ID.Authorized` — `own_authorized`, `chain_authorized`,
-`authorized_by`, `authorized_vault`, `chain_signer`, `chain_root`, `counts_iff`, `readers_agree`, `merge_covered`,
-`authorizedB_iff`
+**Decided:** A27, A45, A137, A147, A169, A182  ·  **Lean:** `Aven.ID.Authorized` — `own_authorized`,
+`chain_authorized`, `authorized_by`, `authorized_vault`, `chain_signer`, `chain_root`, `counts_iff`, `readers_agree`,
+`merge_covered`, `authorizedB_iff`; to come: `revoked` (A182)
 
 ## Revocation and acks
 
 A revocation ends a cap and every cap resting on it. It keeps what it names and wins over the rest: once readers hold
 it, the revoked holder's writes it hadn't seen stop counting, in any order of arrival.
 
-**A revocation** is a revoke Record, its value `{"cap": name, "kept": [name…] or null, "envelope": name or null}`,
-named `["avenID revoke 1", value]`. `kept` and `envelope` say where it takes effect, below.
+**A revocation** is a revoke Record, its value `{"cap": name, "kept": [name…], "envelope": name}`, named
+`["avenID revoke 1", value]`. `kept` and `envelope` say where it takes effect, below; each is left out when unset,
+never null.
 
 | What ends | Who may end it | Its writes stop counting | Its reading ends |
 |---|---|---|---|
@@ -403,7 +417,11 @@ named `["avenID revoke 1", value]`. `kept` and `envelope` say where it takes eff
 
 Only the revoker must be online. Rotation, which ends reading, is [avenID's](../id/README.md).
 
-**The race.** A revocation and a write can cross. Every reader decides it the same way:
+**The race.** A revocation and a write can cross. The race is a discount in Core's counting, as a split is: avenCAPS
+supplies `revoked`, a pure function, and an envelope is discounted when the reader holds a counted revocation of a cap
+in its chain that has taken effect in that Doc and whose kept past doesn't hold the envelope. A revocation learned
+later discounts, as a split learned later does, and there is no settle order. Every reader holding the same envelopes
+decides it the same way:
 - **No laundering:** a revoked holder's envelope that has the revocation in its own past never counts, whatever anyone
   acknowledges.
 - **A Doc cap** is revoked by a Record in that Doc, and only the revocation's own past is kept.
@@ -425,9 +443,9 @@ someone still holding a cap can apply it again.
 a write the ack hadn't seen doesn't count, whatever time it claims; nor does one claiming a time at or past it. Until
 the first ack, a write is judged by the time it claims: the limit rule 12 accepts.
 
-**Decided:** caps D8; A23; P19; rule 12  ·  **Lean:** `Aven.ID.Revoke` — `seen_never_counts`, `saw_iff`,
+**Decided:** caps D8; A23, A147, A182, A184; rule 12  ·  **Lean:** `Aven.ID.Revoke` — `seen_never_counts`, `saw_iff`,
 `doc_cap_kept`, `elsewhere_kept`, `revocation_wins`, `waits_named`, `Revocation.digest_inj`; `Aven.ID.Expiry` —
-`time_acked`, `claimed_late`, `before_ack`
+`time_acked`, `claimed_late`, `before_ack`; to come: `revoked` for Core's `Counts nm fit authorized revoked`
 
 ## Deletes
 
@@ -478,7 +496,7 @@ shows its chain and anyone checks it, so no device needs a roster.
 - **The public is the members.** "Public" means the network's members everywhere, never everyone or the open
   internet.
 
-**Decided:** caps D15; A28, A38, A42; P20; peers 5; ledger 07:38, 10:10  ·  **Lean:** `Aven.ID.Member` —
+**Decided:** caps D15; A28, A38, A42, A63, A105, A148; peers 5  ·  **Lean:** `Aven.ID.Member` —
 `confirm_only`, `member_by_confirm`, `membersB_sound`, `claimOf?_some`
 
 ## Keep caps, offers and placement
@@ -508,7 +526,7 @@ owner's vault: it says which keeper keeps which of its Docs, and a keeper says o
 - **A keeper learns a Doc's owner from the keep cap's issuer,** never from the Doc, which it can't read.
 - **A second keeper** of the vault's choice keeps its Docs fetchable when any one peer is lost, the Aven Peer included.
 
-**Decided:** caps D21, D24; A22, A44; peers 8; ledger 11:03  ·  **Lean:** `Aven.ID.Keeping` — `keeps_iff`,
+**Decided:** caps D21, D24; A22, A44; peers 8  ·  **Lean:** `Aven.ID.Keeping` — `keeps_iff`,
 `resolve_exact`, `keepers_by_caps`, `holder_keeps`, `keep_one_holder`, `keeper_named_by_owner`, `keepers_by_owner`,
 `default_kept`, `default_approved`, `default_needs_owner`, `isDefaultKeep_kept`, `isDefaultKeep_approved`;
 `Aven.ID.Keep` — `kept_only_offered`; `Aven.ID.Node` — `kept_fetchable`
@@ -551,8 +569,8 @@ optional, in the codec's order. A Doc id and a name are 32 bytes; a key is an Ed
 - **Keep orders** only take away. A withdrawal drops what that keep cap covered and serves it no more; what other keep
   caps cover stays, and a device of another vault can't withdraw it. A delete drops the Doc's bytes for good, whatever
   keep caps and orders come after.
-- **The proof** signs the TLS exporter of the connection that serves
-  ([the fetch gate](../peers/README.md#the-fetch-gate)). A keeper serves a fetch, and takes an upload, only on a proof
+- **The proof** signs the TLS exporter of the connection that serves; the exporter, its length and its label are
+  [the fetch gate's](../peers/README.md#the-fetch-gate). A keeper serves a fetch, and takes an upload, only on a proof
   by the current fetch key, or a branch's newest while a fork is unsettled. The five labels differ, so no signature
   over one record reads as another's.
 - **Signers are checked against the register's tree:** which device acts for which vault, and each vault's owners.
@@ -568,11 +586,11 @@ Bills and admission are the keeper's: what a vault's held items cost, and whethe
 ([avenPEERS](../peers/README.md#keepers)). `Aven.Architecture` composes rule 10's quota from `Books.quota` and the
 keeper's admission.
 
-**Decided:** caps D21; A22, A44; L1, L12, L14, L18, L24; P13, P14  ·  **Lean:** `Aven.ID.Keep` — `fetch_chain`,
-`kept_every`, `current_agrees`, `current_chained`, `fork_flagged`, `served_current`, `fork_served`, `grind_example`,
-`grind_settled`, `settled_example`, `kept_only_covered`, `kept_only_by_owner`, `kept_by_owner`, `withdrawn_dropped`,
-`withdrawn_not_served`, `others_kept`; `Aven.Architecture` — `rule10_quota`; `Aven.ID.KeepCbor` — `labels_distinct`,
-`link_name_inj`, `listing_name_inj` (pending in #1739)
+**Decided:** caps D21; A22, A44, A141, A142, A153, A161, A163, A167, A173, A185  ·  **Lean:** `Aven.ID.Keep` —
+`fetch_chain`, `kept_every`, `current_agrees`, `current_chained`, `fork_flagged`, `served_current`, `fork_served`,
+`grind_example`, `grind_settled`, `settled_example`, `kept_only_covered`, `kept_only_by_owner`, `kept_by_owner`,
+`withdrawn_dropped`, `withdrawn_not_served`, `others_kept`; `Aven.Architecture` — `rule10_quota`; `Aven.ID.KeepCbor` —
+`labels_distinct`, `link_name_inj`, `listing_name_inj` (pending in #1739)
 
 ## The register
 
@@ -588,7 +606,7 @@ Each envelope's calls are `tree/1` calls, `{op, params}`, each op named by the h
 `{"op": name, "plugin": "tree/1"}`. The register supplies the tree type's fit and its verdict as pure functions, which
 avenPEERS hands to avenDOCS, and settles over what counts.
 
-**Decided:** A12, A30, A39, A42, A45; P9, P20; L20; ledger 08:06  ·  **Lean:** `Aven.ID.TreeDoc` —
+**Decided:** A12, A30, A39, A42, A45, A68, A135, A148, A169  ·  **Lean:** `Aven.ID.TreeDoc` —
 `settleDoc_envelopes`; `Aven.ID.Network` — `TreeSays.ofValue_toValue`, `TreeOp.ofId_id`
 
 ### Its setup
@@ -614,7 +632,7 @@ sign-in that adds it, and a later vault in its governing vault's statement. How 
 hybrid keys. Every member pins the tree Doc, and an envelope belongs to it when its signed `doc` is that Doc, with
 avenDOCS' genesis check.
 
-**Decided:** A11, A13, A28, A42; P18, P23; L15; ledger 10:45  ·  **Lean:** `Aven.ID.Network` — `genesis_pinned`,
+**Decided:** A11, A13, A28, A42, A115, A146, A149, A164  ·  **Lean:** `Aven.ID.Network` — `genesis_pinned`,
 `settle_genesis`, `guardian_consented`
 
 ### Its ops
@@ -636,7 +654,7 @@ avenDOCS' genesis check.
   founded before it.
 - **Relays** are [avenPEERS'](../peers/README.md); the register only holds Maia City's list.
 
-**Decided:** A13, A28, A38, A42, A43, A44; peers 12; ledger 08:06  ·  **Lean:** `Aven.ID.Network` —
+**Decided:** A13, A28, A38, A42, A43, A44, A68; peers 12  ·  **Lean:** `Aven.ID.Network` —
 `config_by_admin`, `admin_by_owners`, `device_not_admin`
 
 ### Passkeys and sign-ins
@@ -644,12 +662,12 @@ avenDOCS' genesis check.
 **A passkey record** maps a WebAuthn credential to its vault:
 
 ```
-{"seal": seal key or null, "spki": ES256 key, "epoch": owner epoch,
- "owner": {"mlDsa", "ed25519"} or null, "credential": credential id}
+{"seal": seal key, "spki": ES256 key, "epoch": owner epoch,
+ "owner": {"mlDsa", "ed25519"}, "credential": credential id}
 ```
 
 The owner's hybrid key and the X-Wing seal key come from the passkey's PRF ([avenID](../id/README.md)). A record lives
-in the setup or in a claim, and `ownerEpoch` adds its owner and seal.
+in the setup or in a claim, and `ownerEpoch` adds its owner and seal; until then both are left out, never null.
 
 - **A sign-in names only its device.** The credential id travels beside the signature as an unsigned hint, and the
   device joins the vault of the passkey that signed. It needs that passkey's owner beside the ES256: two signatures
@@ -657,7 +675,7 @@ in the setup or in a claim, and `ownerEpoch` adds its owner and seal.
 - **A passkey without an owner** signs nothing but `ownerEpoch`, which adds one. Only a record migrated from
   production lacks one.
 
-**Decided:** A42, A43; ledger 10:01, 10:12  ·  **Lean:** `Aven.ID.Network` — `signIn_own_vault`,
+**Decided:** A42, A43, A103, A184  ·  **Lean:** `Aven.ID.Network` — `signIn_own_vault`,
 `ownerless_only_adds_owner`
 
 ### Owners, k of n
@@ -668,13 +686,15 @@ never a device's key. A stolen browser can't let anyone in. How owners approve, 
 [avenID's](../id/README.md#approvals-k-of-n); the register holds the acts that change them.
 
 - **An owner change** sets a vault's owners and its threshold k. It is approved by the owners in force in its own
-  past. Concurrent owner changes settle as the settings do, the latest by the past and ties by the smallest name, the
-  same at every peer.
+  past, and judged on Core's `Counts`, its whole past held (`Closed`). Concurrent owner changes settle as the settings
+  do, the latest by the past and ties by the smallest name, the same at every peer.
 - **A removal beats the removed owner's concurrent acts:** an owner change that drops a key beats every act that key
   approved outside the change's own past. An act already in its past stays counted.
+- **A removal never undoes finality.** It beats only acts no final claim rests on: whatever is in the past of a counted
+  confirm stays, as a withdrawal never beats a final claim.
 
-**Decided:** A28, A42; peers 12; ledger 10:45  ·  **Lean:** `Aven.ID.Network` — `admin_by_owners`,
-`device_not_admin`; `removal_beats` not in Lean yet
+**Decided:** A28, A42, A116, A185, A191; peers 12  ·  **Lean:** `Aven.ID.Network` — `admin_by_owners`,
+`device_not_admin`; to come: `setOwners`, `owners_perm` and `removal_beats`
 
 ### Settling
 
@@ -704,8 +724,8 @@ a double tap.
 
 ### Production's register
 
-Production is never wiped. At the switch its stored statements become tree envelopes after the setup, each naming the
-one before it, and every one of them counts.
+Production is never wiped (A186). At the switch its stored statements become tree envelopes after the setup, each naming
+the one before it, and every one of them counts.
 
 - **The snapshot.** Production's sign-ins aren't replayed. The claimant's go into the setup's devices, with the
   claiming browser; each member's go into its join's claim, with the join's browser. The ref order keeps only invites,
@@ -722,7 +742,7 @@ one before it, and every one of them counts.
   claimant then signs the setup. Release N+1 runs them again and switches; if a check fails, it refuses, the deploy
   fails and says why, and production stays on release N.
 
-**Decided:** A42, A43; L15; ledger 06:52, 10:01, 10:12  ·  **Lean:** `Aven.ID.Restore` — `settle_restore`;
+**Decided:** A42, A43, A55, A103, A164, A186  ·  **Lean:** `Aven.ID.Restore` — `settle_restore`;
 `Aven.ID.RestoreDoor` — `settle_restore_door`
 
 ## Attacks and what holds
@@ -742,42 +762,33 @@ one before it, and every one of them counts.
 | Hold the door and the tree | The tree settles the same everywhere from the pinned setup; the door is a function of it | `settle_perm`, `settle_door` | covered in Lean |
 | Let someone in from a stolen browser | Admin acts need Maia City's owners, never a device key | `admin_by_owners`, `device_not_admin` | covered in Lean |
 | Claim one ticket twice | Finality by confirm; the smallest hash wins | `ticket_once`, `settle_ticket_once` | covered |
-| Act with a removed owner's key on an old past | A removal beats every act that key approved outside its past | — | decided; pending |
+| Act with a removed owner's key on an old past | A removal beats every act that key approved outside its past, unless a final claim rests on it | — | decided; pending |
 | Make an actor act as a confused deputy | A turn's effects carry the handled message's cap; hosting is the owner's explicit choice | — | accepted; `no_confused_deputy` pending in `Aven.Architecture` |
 | Flood a letterbox | The signature inside the seal binds the recipient; letterboxes rate-limit first letters | — | covered |
 
-**Decided:** A13, A16, A22, A23, A28; caps D14, D15; L12
+**Decided:** A13, A16, A22, A23, A28, A161, A191; caps D14, D15
 
 ## Status
 
 The Lean is `Aven.ID` in `id/spec`, the Rust the `aven-id` crate in `id/core`, until the split into `caps/spec`
-(`Aven.Caps`) and the crate `aven-caps` (L10, L11).
+(`Aven.Caps`) and the crate `aven-caps` (A159, A160).
 
 | Part | Lean | Rust | Pending and gaps |
 |---|---|---|---|
-| Caps, chains, conditions, roles | `Caps`, `CapsCbor` | `caps` module, held to `caps.json`, `issuers.json` (#1702, #1716) | Approvals still use caps' own `Sig {key, digest}` in `Approve`, not Core's (A45, caps' A45 PR, on no branch); `pluginOp`, `typeParam` and `fieldsParam` repeat Core's (same PR); vaults are named by text in the cap and the context, and switch to 32-byte names in one step now that `Aven.ID.VaultName` is on main (#1738, L13, L15); a parent and a role are text in the cast until R5 |
-| The reader's verdict | `Authorized` | `caps::Reader`, held to `authorized.json` and `member.json` (#1702, #1736) | `Reader` doesn't yet take the envelope's `authority` part or a view of its past (L20); avenPEERS' adapter to avenDOCS' `Authorize` isn't written; no `reaches`; the per-act `approve`, `own` and `uses` conditions aren't in the verdict, and expiry is modelled apart (`Expiry`) |
-| The envelope's authority | `Authority`, on `claude/avenid-a45`, its own PR after the Keep PR (L24) | — | `authority.json` comes with it; avenDOCS' body still carries `acks` and `cap` apart (docs' A45 PR) |
-| Revocation, expiry, deletes | `Revoke`, `Expiry` | `caps::revoke`, held to `revocations.json` | `expiry.json` not replayed in Rust; the model's reader holds one Doc; a group cap's writes (`group_holds`) not in Lean |
+| Caps, chains, conditions, roles | `Caps`, `CapsCbor` | `caps` module, held to `caps.json`, `issuers.json` (#1702, #1716) | Approvals still use caps' own `Sig {key, digest}` in `Approve`, not Core's `Sig`s over the cap's signing bytes (A45, A189); with vectors signed by the cast's test keys, to come in one PR, caps' Lean and vectors with minimal caps' Rust; `pluginOp`, `typeParam` and `fieldsParam` repeat Core's (caps' A45 PR, on no branch); vaults are named by text in the cap and the context, and switch to plain 32-byte names in one step now that `Aven.ID.VaultName` is on main (#1738, A162, A164, A190): avenCORE's `claude/aven-core-logs`, then avenID's PR, back to back; a cap writes `role`, `parent`, `uses` and `expires` as null when unset, and leaves them out and refuses a null (A184): `CapsCbor` and `caps.json` to come, free while nothing stored uses them; a parent and a role are text in the cast until R5 |
+| The reader's verdict | `Authorized` | `caps::Reader`, held to `authorized.json` and `member.json` (#1702, #1736) | `Reader` doesn't yet take the envelope's `authority` part or a view of its past (A169); avenPEERS' adapter to avenDOCS' `Authorize` isn't written; no `reaches`; `counts_iff` folds liveness (`live`) into the `authorized` it hands Core (`Reader.Admits`), and it becomes Core's third parameter, `revoked` (A182); the per-act `approve`, `own` and `uses` conditions aren't in the verdict, and expiry is modelled apart (`Expiry`) |
+| The envelope's authority | `Authority`, in draft #1741 (`claude/avenid-a45`), its own PR after the Keep PR (A173) | — | `authority.json` comes with it; the second shape, `{acks, caps, actor}`, to come in #1741 (A188); avenDOCS' body still carries `acks` and `cap` apart (docs' A45 PR) |
+| Revocation, expiry, deletes | `Revoke`, `Expiry` | `caps::revoke`, held to `revocations.json` | `expiry.json` not replayed in Rust; the model's reader holds one Doc; a group cap's writes (`group_holds`) not in Lean; a revocation writes `kept` and `envelope` as null when unset, and leaves them out and refuses a null (A184), with its vectors: to come |
 | Collections, holdings | `Collections`, `Holdings` | — | `collections.json` not replayed in Rust |
 | Records in a Doc, built-in types | `AccessRecords`, `Types` | `caps::records`, held to `access.json` (#1716) | — |
 | Membership | `Member` (#1674, #1717, #1735) | `caps::member`, held to `member.json` (#1736) | No op or Lean yet for revoking a member cap |
-| Keep caps, offers, the gate | `Keeping`, `Keep` (#1642, #1695, #1725) | `keep` module, held to `keep.json` (#1734) | The records' bytes and the fetch-key derivation: `KeepCbor` and `keep-bytes.json` pending in #1739, their Rust in #1740; `bill`, `uploader_pays`, `quota_holds` and `admitted_served` leave `Keep` in #1739, after #1722 (P13, P21, L24); the keeper calls the gate as `Gate {serves, quota}` in #1722 |
-| The register | `Network`, `TreeDoc`, `Restore`, `RestoreDoor`, `Admit` (#1656, #1671, #1696, #1705, #1718) | The first generation's door in `id/core` (`network.rs`, `members.rs`, `claim.rs`, `invite.rs`) until stage 4 | Stage 4: the setup as the root Record (Lean still has the `genesis` op); stored thresholds (`Vault.threshold`, k ≥ 1 in `WF`, on `claude/aven-peer-k-of-n`, no PR yet), the owner-change op and `removal_beats`; `byAdmin` reads only the setup's tree with k = 1; belonging by the pinned `doc` and Core's `Counts` in place of Network's `counted`; the claim's default keep cap and the sign-in's optional one; the sign-in as the device cap's issuance; `treeType` as `builtinType "tree"`. `settled.json` and `tree-ops.json` not replayed outside Lean. Docstrings still say "admin passkey" (`Network`) and "acks" (`Admit`); `Recover`'s `removals_win` gives way to the owner-change rule |
-| Not caps' | `Records`, `Node`, `CatchUp` sit in `Aven.ID` | — | avenPEERS' (A45); they move to `peer/spec` with the wire |
+| Keep caps, offers, the gate | `Keeping`, `Keep` (#1642, #1695, #1725) | `keep` module, held to `keep.json` (#1734) | The records' bytes and the fetch-key derivation: `KeepCbor` and `keep-bytes.json` pending in #1739, their Rust in #1740; `bill`, `uploader_pays`, `quota_holds` and `admitted_served` leave `Keep` in #1739, after #1722 (A141, A173); the keeper calls the gate as `Gate {serves, quota}` in #1722 |
+| The register | `Network`, `TreeDoc`, `Restore`, `RestoreDoor`, `Admit` (#1656, #1671, #1696, #1705, #1718) | The first generation's door in `id/core` (`network.rs`, `members.rs`, `claim.rs`, `invite.rs`) until stage 4 | Stage 4: the setup as the root Record (Lean still has the `genesis` op); stored thresholds (`Vault.threshold`, k ≥ 1 in `WF`, on `claude/aven-peer-k-of-n`, no PR yet), then the owner-change op judged on Core's `Counts` with `Closed` (`setOwners`, `owners_perm`) and `removal_beats` that never undoes a final claim (`settle_final`), in avenPEER's PR 2 (A191); the passkey record writes `owner` and `seal` as null until `ownerEpoch`, and leaves them out and refuses a null (A184), with its vectors; `byAdmin` reads only the setup's tree with k = 1; belonging by the pinned `doc` and Core's `Counts` in place of Network's `counted`; the claim's default keep cap and the sign-in's optional one; the sign-in as the device cap's issuance; `treeType` as `builtinType "tree"`. `settled.json` and `tree-ops.json` not replayed outside Lean. Docstrings still say "admin passkey" (`Network`) and "acks" (`Admit`); `Recover`'s `removals_win` gives way to the owner-change rule |
+| Not caps' | `Records`, `Node`, `CatchUp` sit in `Aven.ID` | — | avenPEERS' (A45); they move to `peer/spec` with the wire, `Aven.ID.Records` as `Aven.Peer.Records` (A193) |
 | Planned elsewhere | — | — | `no_confused_deputy` and `upgrade_no_wider` in `Aven.Architecture` (they need `Aven.Actor`); `want_grants_nothing` and `one_grammar` with Core's targets |
 
 ## Open questions
 
-- **Where the race runs.** The reader's verdict judges an envelope on its own past, and caps has no concurrency rule
-  (P19). [The race](#revocation-and-acks) (a Doc cap's kept past, a kept list, another writer's ack) judges writes
-  concurrent with a revocation. Does it stay in caps' verdict over the Doc as the reader holds it, as `Revoke` models
-  it, or move into each reader's settle? The architect decides.
-- **Two equal grants are one cap.** A cap's body has no nonce, so two caps that say the same thing have one name and
-  can't be revoked apart. Add a nonce to the body, or keep it so? The caps Lean thread proposes, the architect decides.
-- **Nulls in caps' bodies.** The cap's `role`, `parent`, `uses` and `expires`, the revocation's `kept` and `envelope`,
-  and a passkey record's `owner` and `seal` may be null, while the keeper's records have exact shapes with none (L14).
-  Should they follow? The architect decides.
 - **A vault-wide cap in a one-Doc reader's hands.** `authority.caps` names a chain by its caps' names. A cap on a
   vault's Docs lives in a group Doc that a reader given one Doc can't open. Where that reader finds the cap's body:
   caps and avenDOCS propose, the architect decides.

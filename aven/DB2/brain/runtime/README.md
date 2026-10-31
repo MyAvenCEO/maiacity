@@ -120,7 +120,7 @@ over `abi`).
   Value, or not a result is `badOutput`. A length past the output limit plus the result's few bytes of wrapping is
   `outputTooLarge`, refused before it is read, with the sum checked so it can't wrap.
 
-**Decided:** ledger 09:18 · **Lean:** `Aven.Runtime.Contract` — `admit_imports_nothing`, `admit_memory` (the ABI
+**Decided:** A89 · **Lean:** `Aven.Runtime.Contract` — `admit_imports_nothing`, `admit_memory` (the ABI
 itself needs no theorem: only the contract's Values cross it)
 
 ## The host
@@ -143,7 +143,7 @@ interpreter in safe Rust, the same in tests, natively and in the browser, with n
 
 A runtime too slow under wasmi is made to do less first (a smaller raster, fewer rows, a lazier parse).
 
-**Decided:** runtimes 5; ledger 09:18, 10:38 · **Lean:** `Aven.Runtime.Contract` — `admit_imports_nothing`,
+**Decided:** A89; runtimes 5 · **Lean:** `Aven.Runtime.Contract` — `admit_imports_nothing`,
 `admit_memory`; refusing floats and a second memory is not in Lean yet
 
 ## Where runtimes live
@@ -154,8 +154,8 @@ the reader's device, in a worker of its own, apart from the device key.
 
 Until Docs run, git holds both:
 - **`manifest.json`, the bootstrap manifest:** every frozen module and every withdrawal, append-only;
-- **`frozen/<hex>.wasm`:** each frozen module's bytes, named by its hash. Nothing else sits beside them: no sourcemap,
-  no debug build.
+- **`frozen/<hex>.wasm`:** each frozen module's bytes, committed and named by its hash. Nothing else sits beside them:
+  no sourcemap, no debug build.
 
 **Until Docs run, only from this repository.** A runtime is code that runs on every member's device, so it arrives
 only as the rest of the code does:
@@ -164,8 +164,9 @@ only as the rest of the code does:
 - reviewed in a pull request: its crate, its dependencies' diff, its manifest entry and its hostile parts, through the
   security auditor's checklist (`rust-security`, `fuzz-harness`, `cargo-fuzz`);
 - frozen by a reproducible build in the box;
-- shipped inside the releases that carry it: avenOS's (`@aven/os`: the browser host and `frozen/`) and avenPEER's
-  (the file registry, in the Peer-Light and the native Peer). The package has no release of its own.
+- shipped inside what loads it, never on its own: its committed frozen bytes go out in avenOS's release (`@aven/os`:
+  the browser host and `frozen/`), each named by its hash, and the file registry in the avenPEER image (the Peer-Light
+  and the native Peer). `aven/runtimes` has no dated release of its own; the manifest is its version list.
 
 No member, agent or model adds a runtime at run time, and a peer hands another a module's bytes only by a hash the
 receiver's own release lists. Parts are data and come from anyone; runtimes are code.
@@ -179,7 +180,7 @@ receiver's own release lists. Parts are data and come from anyone; runtimes are 
 
 There are no floors and no schemas in the manifest: each runtime's schemas are its Lean model's.
 
-**Decided:** A44, A45; runtimes 1; ledger 09:18, 10:01, 10:07 · **Lean:** `Aven.Runtime.Contract` — `listed`,
+**Decided:** A44, A45, A89, A102, A180; runtimes 1 · **Lean:** `Aven.Runtime.Contract` — `listed`,
 `loads`
 
 ## Frozen bytes, loading by hash, and versions
@@ -211,7 +212,7 @@ checked before a byte is compiled. A compiled module is a cache keyed by its has
 loaded again, and the device's own renders made by it are dropped. A device's own render uses the newest version the
 manifest still lists.
 
-**Decided:** A42, A45; ledger 09:18, 09:57, 10:01, 10:55 · **Lean:** `Aven.Runtime.Contract` — `frozen`,
+**Decided:** A42, A45, A89, A102 · **Lean:** `Aven.Runtime.Contract` — `frozen`,
 `loads_listed`, `withdrawn_unlisted`, `withdrawn_not_loaded`, `cache_drops`
 
 ## Pins
@@ -261,7 +262,7 @@ Peer-Light's worker, which holds the device key.
   its hash, accepted, the three engines' answers the same byte for byte; a part that isn't a face `refused`; another
   module's bytes, a flipped byte and an unlisted hash refused by the host.
 
-**Decided:** A15, A45; ledger 10:04, 10:38 · **Lean:** not in Lean (the host's walls are mechanics, held by the
+**Decided:** A15, A45 · **Lean:** not in Lean (the host's walls are mechanics, held by the
 three-engine check)
 
 ## The node tree and the drawer
@@ -297,7 +298,7 @@ code that draws what a runtime gives. It trusts nothing it is handed:
 Checked in three engines (`sandbox/drawer.mjs`): the drawer against `tree.json`, and a face with `inset: 0`, a large
 translate and a large size drawn beside a button that still takes its click.
 
-**Decided:** runtimes 9; ledger 09:05, 09:57, 10:39, 10:59 · **Lean:** `Aven.Runtime.Tree` — `check_no_forbidden`,
+**Decided:** A84, A99, A111; runtimes 9 · **Lean:** `Aven.Runtime.Tree` — `check_no_forbidden`,
 `no_script`, `check_no_handlers`, `check_urls`, `check_bounded`; vectors `tree.json`
 
 ## face-runtime
@@ -332,7 +333,7 @@ style. It sits at the package's top level (`face/`), since avenBRAIN's slides us
 
 A part that doesn't read as a face part, or a face that isn't accepted, is `refused`.
 
-**Decided:** runtimes 2, 9; ledger 06:18, 06:50, 08:07 · **Lean:** `Aven.Runtime.FaceRuntime` — `faceRuntime_ok`;
+**Decided:** A51, A54, A69; runtimes 2, 9 · **Lean:** `Aven.Runtime.FaceRuntime` — `faceRuntime_ok`;
 `Aven.Runtime.Style` — `face_passes_check`, `face_named`, `face_roles`, `face_rules`, `face_size`, `face_contrast`;
 `Aven.Runtime.Markup` — `draw_nodes_ok`, `draw_events`, `faceRun_ok`; vectors `face.json`, `face-runtime.json`,
 `markup.json`, `contrast.json`
@@ -355,10 +356,10 @@ has exact answers is in Lean, and the crate replays it.
   Every answer passes the allowlist's check: a parser bug can make a file download, never put an unchecked node on a
   page.
 
-**Versions.** v1 and v2 are frozen; v2 is v1's behaviour, rebuilt on `aven-codec`. Its input is `{}` or `{"links":
-[[prefix, replacement], …]}`.
+**Versions.** v1 and v2 are frozen, and answer as they always did; v2 is v1's behaviour, rebuilt on `aven-codec`.
+Its input is `{}` or `{"links": [[prefix, replacement], …]}`.
 
-**v3** (pending in #1737) makes what a link in a Markdown document points to the runtime's own:
+**v3** (in draft #1737) makes what a link in a Markdown document points to the runtime's own:
 - **its input** is `{"links": [[prefix, replacement], …], "base": path, "idPrefix": prefix}`, each optional, no other
   key: `{}` is no rules, the root and no prefix;
 - **links resolve against their document** before the rules apply: a link with a scheme (`https:`, `glossary:`) is
@@ -372,7 +373,7 @@ has exact answers is in Lean, and the crate replays it.
 The document's owner gives the rules, `base` and `idPrefix` ([avenBRAIN](../README.md) gives its package pages and
 the repository's URL); the runtime knows no repository.
 
-**Decided:** runtimes 2, 12; A45; ledger 10:39, 10:55 · **Lean:** `Aven.Runtime.Markdown` — `markdown_ok`,
+**Decided:** A45, A110, A192; runtimes 2, 12 · **Lean:** `Aven.Runtime.Markdown` — `markdown_ok`,
 `rewrite_link`; v3's `resolve`, `removeDots_no_dots`, `linkTo_link` pending in #1737; vectors `markdown.json`
 
 ## state-runtime
@@ -439,7 +440,7 @@ Only checked data crosses back: a node tree, or a plain Value (pixels `{width, h
 rows, total}`) that a small trusted drawer shows. Until the files origin exists, no shared file runs through a runtime:
 the registry decides only `native`, `frame` or `download`.
 
-**Decided:** A15, A36; runtimes 3, 4, 10, 12; ledger 08:17 · **Lean:** `Aven.Runtime.Registry` — `signatures_apart`,
+**Decided:** A15, A36, A71; runtimes 3, 4, 10, 12 · **Lean:** `Aven.Runtime.Registry` — `signatures_apart`,
 `sniffBinary_unique`, `decide_binary_ignores_claim`, `claim_never_adds`, `scriptable_never_inline`,
 `unknown_downloads`, `over_limit_downloads`, `native_img_dims`, `no_runtime_before_origin`, `serve_inline`;
 `Aven.Runtime.Contract` — `renderKey_inj`, `cache_drops`; vectors `table.json`, `registry.json` (47 examples, then
@@ -478,7 +479,7 @@ Hash, blake3 and name_of. None takes `aven-core`. So a module's bytes move only 
 move, each module gets one new version, appended. The file registry takes no dependency at all. The Lean requires
 `Aven.Core` by path and never defines Values itself.
 
-**Decided:** A45; ledger 09:57, 10:39, 10:55 · **Lean:** `Aven.Core` (avenCORE's)
+**Decided:** A45, A89, A98 · **Lean:** `Aven.Core` (avenCORE's)
 
 ## Status
 
@@ -490,7 +491,7 @@ move, each module gets one new version, appended. The file registry takes no dep
 | Browser host | — | `aven-runtimes-web` | `host.js`, `runtimes.js` | built (#1719), three engines |
 | Node tree and drawer | `Tree` | `aven-runtimes-tree` (#1631) | `draw.js`'s `checkTree` (#1650, #1709, #1723) | built |
 | face-runtime | `Markup`, `Face`, `Style`, `FaceRuntime` | `aven-runtimes-face` (#1643, #1691) | — | v1 and v2 frozen; avenBRAIN's slides drawn by it (#1707, #1719) |
-| markdown-runtime | `Markdown` | `aven-runtimes-markdown` (#1639) | — | v1 and v2 frozen (#1729); v3 pending in #1737, with avenBRAIN's pages and glossary drawn by it |
+| markdown-runtime | `Markdown` | `aven-runtimes-markdown` (#1639) | — | v1 and v2 frozen (#1729); v3 in draft #1737 (A192), with avenBRAIN's pages and glossary drawn by it |
 | state-runtime | `State`, `StateExamples` (#1550, #1676) | — | — | Lean only; no crate until actors start |
 | File registry | `Registry`, `RegistryExamples` | `aven-runtimes-registry` (#1678, #1689) | `files-sw.js` reads its decision | built, in the Peer-Light and the native Peer |
 | On `aven-codec` | — | every crate (#1729) | — | built |

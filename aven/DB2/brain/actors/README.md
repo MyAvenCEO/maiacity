@@ -27,8 +27,8 @@ in pure turns, under caps.
 - [avenDOCS](../docs/README.md#a-doc-and-its-genesis): Docs (an actor's Doc, a carrier Doc);
   [type Docs](../docs/README.md#types-schemas-and-fit) and pins (A7); [lenses](../docs/README.md#lenses);
   [checkpoints](../docs/README.md#checkpoints).
-- [avenID](../id/README.md#devices): device keys and [vaults](../id/README.md#vaults); an actor host's device and its
-  own vault.
+- [avenID](../id/README.md#devices): device keys and [vaults](../id/README.md#vaults); an actor host's device, whose
+  key signs, and its own vault, which the vault it serves owns.
 - [avenCAPS](../caps/README.md#chains): caps, chains and attenuation links;
   [device caps and actor hosts](../caps/README.md#device-caps-and-actor-hosts), the reader's half of A27; letters and
   the letterbox ([where caps live](../caps/README.md#where-caps-live));
@@ -38,7 +38,7 @@ in pure turns, under caps.
   [pins](../runtime/README.md#pins) and [the drawer](../runtime/README.md#the-node-tree-and-the-drawer).
 - [avenOPS](../ops/README.md#the-want-queue): wants (an actor's loads) and `changed`; the engine as a door.
 - [avenPEERS](../peers/README.md#gossip-per-group): delivery of a carrier Doc's envelopes, live on its group's topic
-  and by [sync between readers](../peers/README.md#sync-by-version-between-readers); finding an actor's home.
+  and by [sync between readers](../peers/README.md#by-version-between-readers); finding an actor's home.
 - [avenOS](../os/README.md#the-page-and-its-workers): the page that runs the kernel in a worker and draws faces.
 
 ## An actor
@@ -320,14 +320,16 @@ for the actors it doesn't host.
 
 ## Actor hosts write only under their actors' chains
 
-Actors hold no keys. Every write an actor makes is signed by its actor host's one device, whose device cap is the
-union of its hosted actors' standing caps: only the outer bound. The actor host's device vault, its device cap, the
-Aven Peer's chain, the attenuation link and what a reader checks are avenCAPS'
+Actors hold no keys. Every write an actor makes is signed by its actor host's one device. Its key signs and governs
+nothing; the device's own vault is owned by the vault it serves, and its device cap, the union of its hosted actors'
+standing caps, is only the outer bound. The actor host's device vault, its device cap, the Aven Peer's chain, the
+attenuation link and what a reader checks are avenCAPS'
 ([device caps and actor hosts](../caps/README.md#device-caps-and-actor-hosts), [chains](../caps/README.md#chains)).
 This is the kernel's half: what it hands the device to sign, and the cap a message carries.
 
 **A write.** For each write, the kernel hands the actor host's device a write that:
-- **names the acting actor;**
+- **names the acting actor,** in its envelope's authority, `{acks, caps, actor}`
+  ([avenCAPS](../caps/README.md#the-envelopes-authority));
 - **carries the chain its handled message carried, as it came.** An actor's narrowing for one write is never appended
   as a link, which would need its owners' approval (D14): it is the write's own calls, which the reader checks against
   the chain;
@@ -347,8 +349,8 @@ parent (avenCAPS). The kernel holds each message's narrowing within the handled 
 can't check after a standing delegation to another vault, since there the attenuation's parent in the chain is the
 delegation. A message to an actor on another vault's actor host carries its chain only as provenance (avenCAPS).
 
-**Decided:** A27, A28; caps D14, D16 · **Lean:** `Aven.Actor.Signing` — `signs_by_chain`, `write_names_actor`,
-`write_keeps_chain`, `actor_within_chain`, `actor_calls_within`; `Aven.Actor.Messaging` —
+**Decided:** A27, A28, A178, A188; caps D14, D16 · **Lean:** `Aven.Actor.Signing` — `signs_by_chain`,
+`write_names_actor`, `write_keeps_chain`, `actor_within_chain`, `actor_calls_within`; `Aven.Actor.Messaging` —
 `attenuation_within_message`, `message_within_root`
 
 ## The model in Lean
@@ -405,8 +407,8 @@ every Value that sets a field kept for later (a message's `cap`, the `now` tier,
 
 ## Open questions
 
-- **How an address names its vault:** a vault is named by 32 bytes (L15); how an address and a cap's target encode
-  it. avenACTORS decides, with avenID.
+- **How an address names its vault:** a vault is named by 32 bytes (A164), in every format, never text (A190); how an
+  address and a cap's target encode it. avenACTORS decides, with avenID.
 - **The kernel's own authority:** click caps scoped to what the placer wired; who may spawn, and a bound on placement
   depth; a budget per run, and backpressure. Samuel decides, on avenACTORS' proposal.
 - **Compaction:** which journal and carrier entries may be folded into checkpoints, and whether a mounted face

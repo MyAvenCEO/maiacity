@@ -544,7 +544,7 @@ what runs.
 
 Known gaps, code and Lean:
 - `Aven.ID.CatchUp`'s catch-up from members by signed log tips retires in favour of `Aven.Peer.DocSync` and
-  `Aven.Peer.Keeper`; its presence moves into `Aven.Peer` with the wire.
+  `Aven.Peer.Keeper`; its presence moves into `Aven.Peer.CatchUp` with the history (A194).
 - `Aven.ID.Records.speaks_same` restates `meet_speaks`; `speaks` moves into `Aven.Peer.Wire` with the history (A194).
 - `Aven.DB.Presence` models the hub's count, and retires with the first generation.
 - `Aven.Peer.Keeper` imports `Aven.DB.Wire` for `pages`; it imports `Aven.Peer.Wire` after the move.

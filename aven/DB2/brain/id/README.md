@@ -193,9 +193,9 @@ governs nothing. What it may do for the vault it serves is its device cap ([aven
 - **Removing a device** is its device cap's revocation. Its keyring rotates at once, and each group and Doc it could
   read rotates at its next use.
 
-**Decided:** rule 15, A42, A43, A130, A132, A156, A178, caps D2, caps D11, caps D19, caps rule 17  ·  **Lean:** `Aven.ID.KeyFormats` —
-`deviceMlDsaSeed`, `deviceSealSeed`; `Aven.ID.Sign` — `verify_ok`, `sign_verify`; the binding (`device_hybrid_bound`)
-not in Lean yet
+**Decided:** rule 15, A42, A43, A130, A132, A156, A178, caps D2, caps D11, caps D19, caps rule 17  ·  **Lean:**
+`Aven.ID.KeyFormats` — `deviceMlDsaSeed`, `deviceSealSeed`; `Aven.ID.Sign` — `verify_ok`, `sign_verify`; the binding
+(`device_hybrid_bound`) not in Lean yet
 
 ## Passkeys and the PRF step
 
@@ -378,8 +378,8 @@ exactly these lengths, the flat scheme, stanza suite 1, and a vault key exactly 
 - What a reader read stays read. No cryptography stops a reader from passing on keys or plaintext it kept.
 - Once no one holds a Doc's keys, no sealed copy of it is readable, a keeper's included.
 
-**Decided:** caps D7, caps D13, caps D18, A43, A74, A123, A131, A170, A185, caps rules 15 to 19 and 29  ·  **Lean:** `Aven.ID.KeyFormats` —
-`name_ignores_stanzas`, `Epoch.ofValue_value`, `tagSeed`, `padded_ge`, `padded_min`, `padded_le`;
+**Decided:** caps D7, caps D13, caps D18, A43, A74, A123, A131, A170, A185, caps rules 15 to 19 and 29  ·  **Lean:**
+`Aven.ID.KeyFormats` — `name_ignores_stanzas`, `Epoch.ofValue_value`, `tagSeed`, `padded_ge`, `padded_min`, `padded_le`;
 `Aven.ID.AccessRecords` — `EpochRecord.ofValue?_value`; `Aven.ID.Epochs` — `confidential`, `unknowable`,
 `removal_next_epoch`, `stale_refused`, `authority_down`, `never_above`; `Aven.ID.Forget` — `rotation_shuts_out`,
 `forgotten`, `copied_stays`
@@ -395,6 +395,10 @@ everything sealed to the vault, so adding a device is one seal, and a device the
 - **The current epoch** is the highest number reachable by `prev`, and at a fork the smaller name, as keepers choose.
 - **Sealed to** the vault's devices, through their seal keys; each passkey's seal key; and MaiaCityGuardian's seal key
   while it is an owner. A coop's keyring is sealed to its owners' vault keys.
+- **It travels unsealed.** Its Records are already ciphertext: X-Wing stanzas, commitments, and the vault key sealed
+  under the epoch key, all padded. So its envelopes and segments aren't sealed again, and a keeper sees the keyring's
+  signers, writer ids, epoch numbers, counts and times, and nothing that opens anything. Every other Doc stays sealed;
+  avenDOCS takes this one built-in type by a plain path ([sealing](../docs/README.md#sealing-and-sealed-pages)).
 - **Born at sign-up,** on the real path: the vault's Peer-Light computes the first Record (epoch 1, no `prev`, no
   `back`, a fresh vault key inside, sealed to the device's seal key and the passkey's seal key, padded), and the Doc
   writer makes the keyring Doc and writes it. The vault's other devices sync it as any Doc.
@@ -404,49 +408,58 @@ everything sealed to the vault, so adding a device is one seal, and a device the
 - **Pairing** covers a lost passkey, or a new device whose passkey can't answer: the new browser shows a QR code with a
   one-time X-Wing key, both screens show a short code, and once the person confirms, a device already in seals the
   keyring to it.
-- The topic a vault's own devices gossip on comes from the keyring epoch's key ([avenPEERS](../peers/README.md)).
+- The topic a vault's own devices gossip on comes from the keyring epoch's key ([avenPEERS](../peers/README.md)). So
+  a new browser fetches the keyring's Records through the fetch gate by its Doc id, opens its stanza with its passkey's
+  PRF seal key, and only then joins its vault's group topic.
 
-**Decided:** A43, D11, L4, L7, L19, L21, P5, caps rule 17  ·  **Lean:** `Aven.ID.KeyFormats` —
+**Decided:** A43, A131, A154, A168, A170, A185, A187, caps D11, caps rule 17  ·  **Lean:** `Aven.ID.KeyFormats` —
 `Epoch.ofValue_value`; `Aven.ID.AccessRecords` — `EpochRecord.ofValue?_value`; `Aven.ID.Recover` — `guardian_exit`;
-the keyring as a Doc pending on `claude/avenid-keys`, no PR yet: `Aven.ID.Keyring` — `reseal_name`, `reseal_joins`,
-`stanzas_mono`, `shared_header`, `current_mem`
+the keyring as a Doc in draft #1743: `Aven.ID.Keyring` — `reseal_name`, `reseal_joins`, `stanzas_mono`,
+`shared_header`, `current_mem`
 
 ## The seal
 
 One construction seals a Doc's loose envelopes, its segments and its checkpoints under the Doc's epoch key. A host
 that can't open it sees only the Doc, the epoch and a padded length.
 
-- **Kinds:** `envelope`, `segment`, and `snapshot` for a checkpoint.
-- **Keys:** from the epoch's 32-byte key, `derive_key("avenDB <kind> 1")` is the cipher's key and
-  `derive_key("avenDB <kind> commit 1")` the commitment's, so no two kinds share a key.
+- **What it seals,** its field `seals`: `envelope`, `segment` or `checkpoint`.
+- **Keys:** from the epoch's 32-byte key, `derive_key("avenDB <seals> 1")` is the cipher's key and
+  `derive_key("avenDB <seals> commit 1")` the commitment's, so no two share a key. A checkpoint's are
+  `avenDB checkpoint 1` and `avenDB checkpoint commit 1`.
 - **Nonce:** 24 random bytes, XChaCha20-Poly1305's.
-- **AAD:** `encode({doc, kind, epoch})`, binding the ciphertext to its Doc, its kind and its epoch.
+- **AAD:** `encode({doc, seals, epoch})`, binding the ciphertext to its Doc, what it seals and its epoch.
 - **Commitment:** the commitment key's keyed BLAKE3 over `encode({aad, nonce})`. A reader checks it in constant time
   before it decrypts, so a sealed thing opens under one key only.
-- **Plaintext:** padded before sealing, a `0x80` byte and then zeros, to Padmé's length of its length plus one.
+- **Plaintext:** padded before sealing with [the one padding](#padding), a `0x80` byte and then zeros, to the padded
+  length of its length plus one.
 - **Outside:** `encode({ct, doc, epoch, nonce, commit})`, and nothing else. The signer, its writer id and counters,
   the previous segment and the branch are all inside, so sealed sender holds up to the upload: stored bytes and
   forwarding peers never show the signer.
-- **Its kind is found by commitment.** A reader computes each kind's commitment over `{aad, nonce}`, takes the one
-  that matches and refuses one matching none, before it decrypts; at most one matches. A keeper never carries a kind,
-  and an item a keeper serves opens only as a loose envelope or a segment.
+- **What it seals is found by commitment.** A reader computes the commitment for each value of `seals` over
+  `{aad, nonce}`, takes the one that matches and refuses one matching none, before it decrypts; at most one matches. A
+  keeper never carries `seals`, and an item a keeper serves opens only as a loose envelope or a segment.
 - **What else an epoch key derives** is its owner's: a Doc's fetch keys (`avenDB fetch key 1`,
   [avenCAPS](../caps/README.md)) and a group's gossip topic (`avenDB topic 1`, [avenPEERS](../peers/README.md)).
 
-**Decided:** A43, A45, D13, D18, L17, L23, caps rule 23  ·  **Lean:** `Aven.ID.Seal` — `unpad_pad`, `open_seal`,
-`open_checks_commit` (`seals.json`); `Aven.ID.Epochs` — `keeper_blind`, `outside_blind`; the kind by commitment
-pending on `claude/aven-docs`, no PR yet: `kind_by_commit`, `kindOf_sound`, `kindOf_complete`, `kindOf_seal`
+**Decided:** A43, A45, A82, A166, A176, A177, caps D13, caps D18, caps rule 23  ·  **Lean:** `Aven.ID.Seal` —
+`unpad_pad`, `open_seal`, `open_checks_commit` (`seals.json`); `Aven.ID.Epochs` — `keeper_blind`, `outside_blind`; found
+by commitment, pending on `claude/aven-docs`, no PR yet: `kind_by_commit`, `kindOf_sound`, `kindOf_complete`,
+`kindOf_seal`; to come: the field `seals`, the checkpoint's labels and the one padding
 
 ## Padding
 
-Every size a host sees is padded with one Padmé (PURBs). A length keeps its ⌊log₂ ⌊log₂ l⌋⌋ + 1 most significant bits
-and rounds the rest up, so it leaks O(log log l) bits and grows by at most an eighth, about 12 %. Below 8 it changes
-nothing; 9 becomes 10, 17 becomes 18, 129 becomes 144 and 1000 becomes 1024. A padded length pads to itself.
+One function pads every sealed thing a device sends, before sealing: up to 4 KiB, to the next of 256 B, 1 KiB and
+4 KiB; above that, with Padmé. Padmé alone hides almost nothing in small messages, so small ones go to fixed sizes. The
+seal pads with it, so a live message, which carries a sealed envelope, needs no padding of its own. avenID defines it
+once, beside `Aven.ID.Padme`, and every user imports it. A padded length pads to itself.
 
-There is one definition for every use: the seal's plaintext, in bytes, and an epoch's stanza list, in entries, with
-its floor of four.
+Padmé (PURBs): a length keeps its ⌊log₂ ⌊log₂ l⌋⌋ + 1 most significant bits and rounds the rest up, so it leaks
+O(log log l) bits and grows by at most an eighth, about 12 %. Below 8 it changes nothing; 9 becomes 10, 17 becomes 18,
+129 becomes 144 and 1000 becomes 1024. An epoch's stanza list, counted in entries, is padded with Padmé alone, with its
+floor of four ([epochs](#epochs)).
 
-**Decided:** D18, ledger 09:34  ·  **Lean:** `Aven.ID.Padme` — `padme_ge`, `padme_le`
+**Decided:** caps D18, A93, A123, A176  ·  **Lean:** `Aven.ID.Padme` — `padme_ge`, `padme_le`; to come: the one padding
+function beside it
 
 ## The heal
 
@@ -469,7 +482,7 @@ A stolen key is healed by an act, not by time.
   is in.
 - Without a heal, a key copied in silence stays good, as in every encrypted store.
 
-**Decided:** D19, caps rule 15  ·  **Lean:** `Aven.ID.Epochs` — `heal_evicts`
+**Decided:** caps D19, caps rule 15  ·  **Lean:** `Aven.ID.Epochs` — `heal_evicts`
 
 ## The safe
 
@@ -510,7 +523,7 @@ for each act. The safe works like a password manager, except that its secrets ar
   that raises the bar without closing it; the Mac app, which checks signatures before it runs new code, is the trusted
   path.
 
-**Decided:** D17, A15, A42, rule 13, caps rule 34  ·  **Lean:** `Aven.ID.Safe` — `safe_holds`, `stays_inside`,
+**Decided:** caps D17, A15, A42, rule 13, caps rule 34  ·  **Lean:** `Aven.ID.Safe` — `safe_holds`, `stays_inside`,
 `enroll_admitted`, `kept_inside`, `acts_on_cap`, `locked_refuses` (`safe.json`)
 
 ## Built-in types
@@ -520,37 +533,29 @@ epoch Record. Each is named by Core's `builtinType` in avenID's namespace, the h
 every reader knows them without fetching anything. Each is a type Doc, whose own type is the type of types, and a
 Record of type `epoch` fits only as an epoch Record's one form.
 
-**Decided:** A39, A45  ·  **Lean:** `Aven.ID.Types` — `builtin_typed`; `Aven.ID.AccessRecords` — `idBuiltinFit`
+**Decided:** A39, A45, A185 (the `epoch` Records are avenID's)  ·  **Lean:** `Aven.ID.Types` — `builtin_typed`;
+`Aven.ID.AccessRecords` — `idBuiltinFit`
 
 ## Status
 
 | Concept | Lean | Rust and TS | Open |
 |---|---|---|---|
 | Hybrid signatures | `Aven.Core.Hybrid` (#1680) | aven-id `hybrid.rs`, as aven-core's `Verify`; Ed25519 verified strictly (#1680) | |
-| Vaults, owners, governing | `Tree`, `WF`, `Check`, `Governs`, `Query`, `Correct`, `Name`; `VaultName` (#1738) | aven-id `tree.rs`, `vault_name.rs` (#1738) | Vault ids are text in `Tree`. `Tree`'s ids, avenCORE's `Target`, `Facts` and `TargetCbor`, avenCAPS and the register switch to the name from the genesis in one step (L15) |
-| Approvals, k of n | `Approve` | aven-id `caps/approve.rs` | Stage 4, the tree as the first Doc: `threshold` on each vault with k ≥ 1 in `WF`, the owner-change op, its one-winner settling and `removal_beats`. `Approve`'s own `Sig {key, digest}` gives way to Core's `Sig`. `Recover`'s `settleRemovals` (`never_ownerless`, `removals_win`) states a clash rule this page doesn't have, and goes with the owner-change op |
+| Vaults, owners, governing | `Tree`, `WF`, `Check`, `Governs`, `Query`, `Correct`, `Name`; `VaultName` (#1738) | aven-id `tree.rs`, `vault_name.rs` (#1738) | Vault ids are text in `Tree`. `Tree`'s ids, avenCORE's `Target`, `Facts` and `TargetCbor`, avenCAPS and the register switch to plain 32-byte names in one step (A164, A190): `claude/aven-core-logs`, then avenID's PR, merged back to back |
+| Approvals, k of n | `Approve` | aven-id `caps/approve.rs` | Stage 4, the tree as the first Doc: `threshold` on each vault with k ≥ 1 in `WF`; the owner-change op, its settling and `removal_beats` are avenCAPS' ([its status](../caps/README.md#status)). `Approve`'s own `Sig {key, digest}` gives way to Core's `Sig`s over the signing bytes, with vectors signed by the cast's test keys (A189): to come in one PR, caps' Lean and vectors with minimal caps' Rust. `Recover`'s `settleRemovals` (`never_ownerless`, `removals_win`) goes with the owner-change op |
 | Devices | `KeyFormats` `deviceMlDsaSeed`, `deviceSealSeed` (#1731) | `HybridKey::from_device_seed`, `device_ml_dsa_seed`, `device_seal_key`; Peer-Light `deviceHybrid()`, `deviceSeal()`; Peer `keys::hybrid_public`, `seal_public` (#1731) | `device_hybrid_bound`: the sign-in names the device's hybrid public half under its owner's approval (stage 4). Segments close only once it holds. Monthly rotation isn't built |
 | Passkeys and the PRF step | `Passkey`, `KeyFormats` (#1680, #1700); the passkey record and `ownerless_only_adds_owner` in `Network` (#1718) | aven-id `prf.rs`, `passkey.rs`; Peer-Light `prfKeys`, `ownerSign`; avenOS's ceremonies and the refusal without PRF (#1700) | The owner key's signature beside the passkey's on the register's claim and sign-in (stage 4); `ownerSign` has no caller yet |
 | MaiaCityGuardian | `Recover` `guardian_exit`; the guardian's vault in `Network`'s genesis | | The exit isn't built. `Network`'s `GuardianKeys` text says every claim names the guardian's keys; a claim names its vault |
-| Seal keys, stanzas, epochs, padding | `KeyFormats`, `Padme`, `Epochs`, `Forget` (#1680, #1724) | aven-id `seal.rs`, `epoch.rs`, `padme.rs` (#1680, #1724) | |
+| Seal keys, stanzas, epochs, padding | `KeyFormats`, `Padme`, `Epochs`, `Forget` (#1680, #1724) | aven-id `seal.rs`, `epoch.rs`, `padme.rs` (#1680, #1724) | The one padding (A176): its function beside `Aven.ID.Padme`, the seal's Rust and `seals.json`; to come, free while nothing stored is sealed |
 | Epoch Records | `AccessRecords` (#1716) | aven-id caps `EpochRecord` (#1716) | |
-| The keyring | Its epochs in `KeyFormats`; `Keyring` on `claude/avenid-keys`, no PR yet | `Epoch::keyring`, `rotate_keyring` in aven-id; aven-id `keyring.rs` and the Peer-Light's `keyringGenesis` on `claude/avenid-keys` | Making the keyring Doc and writing and syncing its Records is stage 3's ("Docs in the Peers", L21). aven-id's `Epoch::reseal` and `KeyFormats`' text reseal in place, adding a stanza to the epoch; a reseal is a new Record (L21). Pairing isn't built |
-| The seal | `Seal` (#1694); the kind by commitment on `claude/aven-docs`, no PR yet | aven-db-docs `seal.rs`, with its own Padmé (#1694); `seal::kind_of` on `claude/aven-docs` | The seal is avenID's (A45): its Rust moves into aven-id, and aven-db-docs drops its Padmé |
+| The keyring | Its epochs in `KeyFormats`; `Keyring` in draft #1743 (`claude/avenid-keys`) | `Epoch::keyring`, `rotate_keyring` in aven-id; aven-id `keyring.rs` and the Peer-Light's `keyringGenesis` on `claude/avenid-keys` | Making the keyring Doc and writing and syncing its Records is stage 3's ("Docs in the Peers", A170); draft #1743 holds the keyring Doc. It travels unsealed (A187): avenDOCS' plain path (`Item::Plain`) and the keyring's vectors to come. aven-id's `Epoch::reseal` and `KeyFormats`' text reseal in place, adding a stanza to the epoch; a reseal is a new Record (A170). Pairing isn't built |
+| The seal | `Seal` (#1694); the kind by commitment on `claude/aven-docs`, no PR yet | aven-db-docs `seal.rs`, with its own Padmé (#1694); `seal::kind_of` on `claude/aven-docs` | The seal is avenID's (A45): its Rust moves into aven-id, and aven-db-docs drops its Padmé. `kind` becomes `seals`, `snapshot` becomes `checkpoint` (`avenDB checkpoint 1`, `avenDB checkpoint commit 1`) and the AAD `{doc, seals, epoch}` (A177), in `Seal`, the seal's Rust and `seals.json`, with A176's padding; free while nothing stored is sealed |
 | The heal | `Epochs` `heal_evicts` | | Not built |
 | The safe | `Safe` | aven-id `safe.rs`, held to `safe.json` | No safe runtime yet: the Peer-Light's own-origin worker comes first, native ones with the Mac app. `safe.json` tags its unions with `kind`, which is only a vault's (A1). The safe's own spec, `aven/DB2/id/safe`, comes with its milestone |
 | Built-in types | `Types`, `AccessRecords` (#1716) | aven-id `caps/types.rs` | `Types` also names avenCAPS's `group`, `collection`, `cap` and `revoke` until the split |
-| The package | `id/spec` also holds avenCAPS's Lean (`Caps`, `Revoke`, `Keep`, `Network` and the rest) and avenPEERS' (`Records`' wire version and presence, `Node`, `CatchUp`) | aven-id also holds avenCAPS's `caps` and `keep` modules, and production's text statements (`claim.rs`, `network.rs`, `members.rs`, `invite.rs`, `statements.rs`, `sign.rs`) | The split: `caps/spec` (`Aven.Caps`) and crate aven-caps, planned by the caps Lean thread (L10, L11); the Peers' Lean into `peer/spec` (A45); production's text statements go at the cutover |
+| The package | `id/spec` also holds avenCAPS's Lean (`Caps`, `Revoke`, `Keep`, `Network` and the rest) and avenPEERS' (`Records`' wire version and presence, `Node`, `CatchUp`) | aven-id also holds avenCAPS's `caps` and `keep` modules, and production's text statements (`claim.rs`, `network.rs`, `members.rs`, `invite.rs`, `statements.rs`, `sign.rs`) | The split: `caps/spec` (`Aven.Caps`) and crate aven-caps, planned by the caps Lean thread (A159, A160); the Peers' Lean into `peer/spec` (A45), `Aven.ID.Records` as `Aven.Peer.Records` (A193); production's text statements go at the cutover |
 | Later | | | `tree 1`, once Maia City passes about 150 members; recovery owners with a delay; the recovery kit; a scheduled heal for everyone |
 
 ## Open questions
 
-- **How live messages are padded.** D18 rounds live messages up to 256 B, 1 KiB or 4 KiB and uses Padmé above that;
-  the seal pads every loose envelope with the one Padmé. One of them goes. The architect decides, with Samuel, whose
-  D18 is.
-- **The seal's word "kind" and a checkpoint's label.** "Kind" is only a vault's (A1), and what travels is a
-  checkpoint, never a snapshot, while the seal says `kind` in its AAD and `avenDB snapshot 1` for a checkpoint.
-  Renaming changes `seals.json` and every sealed byte's AAD, so it is free only while nothing stored uses it. The
-  architect decides.
-- **What owns a device's vault.** Rule 15 says a device's vault is owned by its key and by the vault it serves; the
-  Lean has the vault it serves as its one owner, and its key owning nothing (`WF`, `device_key_governs_nothing`). This
-  page follows the Lean. The architect decides.
+None.
