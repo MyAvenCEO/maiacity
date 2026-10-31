@@ -5,9 +5,9 @@
 use std::collections::BTreeMap;
 
 use aven_core::{DocId, Envelope, Hash, Held, Value, blake3};
-use aven_docs::fit::{Write, latest};
-use aven_docs::schema::{Kind, Schema};
-use aven_docs::{OpId, ops_agree, writer, writer_derived, writer_input};
+use aven_db_docs::fit::{Write, latest};
+use aven_db_docs::schema::{Kind, Schema};
+use aven_db_docs::{OpId, ops_agree, writer, writer_derived, writer_input};
 use serde_json::Value as Json;
 
 fn vectors(file: &str) -> Vec<Json> {

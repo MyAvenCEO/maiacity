@@ -1,4 +1,4 @@
-//! `aven-docs`: avenDB's docs layer, step 1 (`db/docs/README.md`, "Order of work"; `Aven.DB.Docs`; ARCHITECTURE.md
+//! `aven-db-docs`: avenDB's docs layer, step 1 (`db/docs/README.md`, "Order of work"; `Aven.DB.Docs`; ARCHITECTURE.md
 //! A43): Loro Docs, the layer the network tree and a fresh chat stand on.
 //!
 //! - [`Genesis`]: a Doc's typed birth (A39); its id is the genesis's name.

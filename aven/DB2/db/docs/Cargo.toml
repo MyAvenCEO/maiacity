@@ -1,5 +1,5 @@
 [package]
-name = "aven-docs"
+name = "aven-db-docs"
 version = "0.0.0"
 description = "avenDB's docs layer, step 1: Loro Docs, their genesis, writer ids, envelopes, sealed segments, the head, commit and the three verdicts on import (Aven.DB.Docs)"
 edition.workspace = true

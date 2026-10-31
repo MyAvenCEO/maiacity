@@ -2,8 +2,8 @@
 #![allow(dead_code)]
 
 use aven_core::{Envelope, Hash, TypeId, Value, blake3};
-use aven_docs::schema::{Kind, Schema, builtin_type, builtins};
-use aven_docs::{Act, Body, Device, Doc, EpochKey, Genesis, Limits, RecordWrite};
+use aven_db_docs::schema::{Kind, Schema, builtin_type, builtins};
+use aven_db_docs::{Act, Body, Device, Doc, EpochKey, Genesis, Limits, RecordWrite};
 use aven_id::{Secret, TestEntropy};
 
 pub fn device(name: &str) -> Device {

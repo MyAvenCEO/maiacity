@@ -6,9 +6,9 @@
 mod common;
 
 use aven_core::{DocId, Envelope, blake3};
-use aven_docs::limits::Limits;
-use aven_docs::seal::{ENVELOPE_SEAL, SEGMENT_SEAL, open as unseal, outside, padme, seal};
-use aven_docs::{BadSegment, Closer, Imported, Segment};
+use aven_db_docs::limits::Limits;
+use aven_db_docs::seal::{ENVELOPE_SEAL, SEGMENT_SEAL, open as unseal, outside, padme, seal};
+use aven_db_docs::{BadSegment, Closer, Imported, Segment};
 use aven_id::TestEntropy;
 use common::*;
 use proptest::prelude::*;
@@ -205,7 +205,7 @@ proptest! {
         let (e, f) = (epoch("k"), epoch("k2"));
         let doc = DocId(blake3(b"d"));
         let s = seal(SEGMENT_SEAL, &e, &doc, &pt, &mut TestEntropy::new("n"));
-        let other = aven_docs::EpochKey { name: e.name, key: f.key };
+        let other = aven_db_docs::EpochKey { name: e.name, key: f.key };
         prop_assert!(unseal(SEGMENT_SEAL, &other, &s, 1 << 20).is_none());
     }
 

@@ -5,7 +5,7 @@
 mod common;
 
 use aven_core::{Envelope, Held, Value};
-use aven_docs::{
+use aven_db_docs::{
     Act, Body, ChangeKind, CommitError, Doc, Feed, Genesis, Imported, Limits, Refused, Unfit, Why,
     envelope_valid,
 };
@@ -229,7 +229,7 @@ fn unfit_writes_never_enter() {
 /// An envelope a broken or hostile device signs without checking fit: built by hand from a Loro commit.
 fn unchecked(
     doc: &Doc,
-    d: &aven_docs::Device,
+    d: &aven_db_docs::Device,
     g: &Genesis,
     id: &str,
     fields: Vec<(&str, loro::LoroValue)>,

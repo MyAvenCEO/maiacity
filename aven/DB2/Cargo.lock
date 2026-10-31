@@ -289,6 +289,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "aven-db-docs"
+version = "0.0.0"
+dependencies = [
+ "aven-core",
+ "aven-id",
+ "blake3",
+ "chacha20poly1305",
+ "ed25519-dalek",
+ "loro",
+ "proptest",
+ "serde_json",
+ "subtle",
+]
+
+[[package]]
 name = "aven-db-store"
 version = "0.0.0"
 dependencies = [
@@ -312,21 +327,6 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
-]
-
-[[package]]
-name = "aven-docs"
-version = "0.0.0"
-dependencies = [
- "aven-core",
- "aven-id",
- "blake3",
- "chacha20poly1305",
- "ed25519-dalek",
- "loro",
- "proptest",
- "serde_json",
- "subtle",
 ]
 
 [[package]]

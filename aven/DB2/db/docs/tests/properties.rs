@@ -7,13 +7,13 @@ mod common;
 use std::collections::BTreeSet;
 
 use aven_core::{Envelope, Held, Value};
-use aven_docs::limits::{Limits, capped};
-use aven_docs::{Body, Doc};
+use aven_db_docs::limits::{Limits, capped};
+use aven_db_docs::{Body, Doc};
 use common::*;
 use proptest::prelude::*;
 
 /// Three devices commit in turn, each after importing a random subset of what the others wrote.
-fn history(steps: &[(usize, u8, u8)]) -> (aven_docs::Genesis, Vec<Vec<u8>>) {
+fn history(steps: &[(usize, u8, u8)]) -> (aven_db_docs::Genesis, Vec<Vec<u8>>) {
     let ds = [device("p0"), device("p1"), device("p2")];
     let g = genesis(&ds[0]);
     let mut docs: Vec<Doc> = (0..3).map(|_| open(&g)).collect();
@@ -117,7 +117,7 @@ fn limits_are_the_models() {
     assert_eq!((l.segment_envelopes, l.segment_bytes), (256, 1 << 20));
     // the Lean's #guards
     assert_eq!(
-        aven_docs::limits::depth(&Value::Array(vec![
+        aven_db_docs::limits::depth(&Value::Array(vec![
             Value::Array(vec![Value::Uint(1)]),
             Value::Map(vec![("a".into(), Value::Null)])
         ])),
