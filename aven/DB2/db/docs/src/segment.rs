@@ -204,6 +204,15 @@ impl Segment {
     }
 }
 
+/// A closed segment, and the loose envelopes it replaces as the writer uploaded them: the hashes of their sealed bytes.
+/// `covers` travels beside the sealed segment, never inside it: a keeper drops loose envelopes only by its uploader's
+/// covers, and only that uploader's own (`Aven.DB.Keeper`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Closed {
+    pub segment: Segment,
+    pub covers: Vec<Hash>,
+}
+
 /// A writer's loose envelopes of one log, closed into segments (docs, rule 11: each writer closes its own).
 #[derive(Debug)]
 pub struct Closer {
@@ -214,6 +223,8 @@ pub struct Closer {
     limits: Limits,
     epoch: Option<Hash>,
     loose: Vec<Envelope>,
+    /// The hash of each loose envelope's sealed bytes, as it was uploaded.
+    sealed: Vec<Hash>,
     prev: Option<Hash>,
 }
 
@@ -227,6 +238,7 @@ impl Closer {
             limits,
             epoch: None,
             loose: vec![],
+            sealed: vec![],
             prev: None,
         }
     }
@@ -236,9 +248,10 @@ impl Closer {
         &self.loose
     }
 
-    /// Adds the writer's next envelope, written under `epoch`. Returns the segment this closes first: the open one, when
-    /// the epoch rotated or the envelope would take it past a limit.
-    pub fn add(&mut self, epoch: Hash, e: Envelope) -> Option<Segment> {
+    /// Adds the writer's next envelope, written under `epoch` and uploaded loose as sealed bytes whose hash is `sealed`.
+    /// Returns the segment this closes first: the open one, when the epoch rotated or the envelope would take it past a
+    /// limit.
+    pub fn add(&mut self, epoch: Hash, e: Envelope, sealed: Hash) -> Option<Closed> {
         assert!(
             e.doc == self.doc && e.branch == self.branch && e.writer == self.writer,
             "one log per closer"
@@ -253,11 +266,12 @@ impl Closer {
         };
         self.epoch = Some(epoch);
         self.loose.push(e);
+        self.sealed.push(sealed);
         closed
     }
 
     /// Closes the open segment, if any: the writer went quiet, or the page hides.
-    pub fn close(&mut self) -> Option<Segment> {
+    pub fn close(&mut self) -> Option<Closed> {
         let first = self.loose.first()?;
         let s = Segment {
             doc: self.doc,
@@ -272,6 +286,9 @@ impl Closer {
         };
         self.prev = Some(s.name());
         self.loose.clear();
-        Some(s)
+        Some(Closed {
+            segment: s,
+            covers: std::mem::take(&mut self.sealed),
+        })
     }
 }

@@ -49,13 +49,13 @@ pub use builtins::{BuiltinFit, DocsBuiltins, Either};
 pub use device::{Device, Ed25519};
 pub use doc::{
     Act, Authorize, CommitError, Doc, Feed, Head, Imported, MAIN, RECORDS, Record, RecordWrite,
-    Refused, Snapshot, TYPE_FIELD, Why, envelope_valid,
+    Refused, SealedItem, Snapshot, TYPE_FIELD, Unopened, Why, envelope_valid,
 };
 pub use fit::{ChangeKind, RecordChange, Rules, Unfit};
 pub use genesis::{GENESIS_LABEL, Genesis};
 pub use limits::Limits;
 pub use opids::{LoroVerdict, OpId, OpsVerdict, carried_deps, loro_agrees, ops_agree};
 pub use seal::EpochKey;
-pub use segment::{BadSegment, Closer, SEGMENT_LABEL, Segment};
+pub use segment::{BadSegment, Closed, Closer, SEGMENT_LABEL, Segment};
 pub use value::{of_loro, to_loro};
 pub use writer::{RESERVED_PEER, WRITER_LABEL, writer, writer_derived, writer_input};

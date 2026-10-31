@@ -402,6 +402,27 @@ fn changes_of(
     Ok(out)
 }
 
+/// A sealed thing catch-up fetched: a loose envelope, or a segment.
+#[derive(Clone, Copy, Debug)]
+pub enum SealedItem<'a> {
+    Loose(&'a [u8]),
+    Segment(&'a [u8]),
+}
+
+/// Why a sealed thing in a page didn't open.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Unopened {
+    /// Not a sealed thing within the limits.
+    Form,
+    /// Sealed for another Doc.
+    Doc,
+    /// An epoch the reader holds no key for.
+    Epoch(Hash),
+    /// It doesn't open under its epoch's key.
+    Seal,
+    Segment(BadSegment),
+}
+
 /// What steps 1 to 8 made of an envelope: held (with whether it is half of a split), or a verdict already.
 enum Checked {
     Held(usize, bool),
@@ -600,6 +621,58 @@ impl Doc {
         Ok(self.import_page(&page, auth))
     }
 
+    /// Imports a page of sealed things as catch-up fetches them, loose envelopes and segments mixed, in one batch: each
+    /// is opened under its epoch's key (found by the epoch its outside names), segments are flattened in order, and the
+    /// whole goes through [`Doc::import_page`]: one judge, one `import_batch`, one snapshot. Per item, the results of its
+    /// envelopes in order, or why it didn't open.
+    pub fn import_sealed_page<'k>(
+        &mut self,
+        items: &[SealedItem<'_>],
+        epochs: impl Fn(&Hash) -> Option<&'k EpochKey>,
+        auth: &impl Authorize,
+    ) -> Vec<Result<Vec<Result<Imported, Refused>>, Unopened>> {
+        let limit = self.limits.sealed + self.limits.sealed / 8 + 256;
+        let seg_limit = self.limits.segment_bytes + self.limits.segment_bytes / 8 + 256;
+        let mut opened: Vec<Result<Vec<Vec<u8>>, Unopened>> = Vec::with_capacity(items.len());
+        for item in items {
+            let bytes = match item {
+                SealedItem::Loose(b) | SealedItem::Segment(b) => *b,
+            };
+            let Some(out) = crate::seal::outside(bytes, limit.max(seg_limit)) else {
+                opened.push(Err(Unopened::Form));
+                continue;
+            };
+            if out.doc != self.id {
+                opened.push(Err(Unopened::Doc));
+                continue;
+            }
+            let Some(epoch) = epochs(&out.epoch) else {
+                opened.push(Err(Unopened::Epoch(out.epoch)));
+                continue;
+            };
+            opened.push(match item {
+                SealedItem::Loose(b) => match open(Kind::Envelope, epoch, b, limit) {
+                    Some((d, pt)) if d == self.id => Ok(vec![pt]),
+                    _ => Err(Unopened::Seal),
+                },
+                SealedItem::Segment(b) => Segment::open(b, &self.id, epoch, &self.limits)
+                    .map(|(s, _)| s.envelopes)
+                    .map_err(Unopened::Segment),
+            });
+        }
+        let page: Vec<&[u8]> = opened
+            .iter()
+            .flatten()
+            .flatten()
+            .map(Vec::as_slice)
+            .collect();
+        let mut results = self.import_page(&page, auth).into_iter();
+        opened
+            .into_iter()
+            .map(|o| o.map(|envs| results.by_ref().take(envs.len()).collect()))
+            .collect()
+    }
+
     /// Imports one envelope's bytes, then whatever waited on it: a page of one.
     pub fn import(&mut self, bytes: &[u8], auth: &impl Authorize) -> Result<Imported, Refused> {
         self.import_page(&[bytes], auth)
@@ -633,10 +706,22 @@ impl Doc {
         loop {
             let before = self.waiting.len();
             for w in std::mem::take(&mut self.waiting) {
-                // a refusal now is final: the bytes are dropped
-                if let Ok(Checked::Held(i, sp)) = self.import_one(&w, auth) {
-                    split |= sp;
-                    fresh_held.push((i, None));
+                // a refusal now is final: the bytes are dropped; one of this page's own that waited takes its verdict
+                let mine = page
+                    .iter()
+                    .position(|b| *b == w.as_slice())
+                    .filter(|&k| results[k] == Ok(Imported::Waits));
+                match self.import_one(&w, auth) {
+                    Ok(Checked::Held(i, sp)) => {
+                        split |= sp;
+                        fresh_held.push((i, mine));
+                    }
+                    Err(e) => {
+                        if let Some(k) = mine {
+                            results[k] = Err(e);
+                        }
+                    }
+                    Ok(Checked::Done(_)) => {}
                 }
             }
             if self.waiting.len() >= before {
