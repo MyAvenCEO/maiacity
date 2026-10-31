@@ -53,16 +53,17 @@
   },
   {
    "title": "Writing is a chain of signatures.",
-   "text": "Mia ticks “buy milk”. Her signer signs the change. Every {peer}, any device holding a copy, checks three links before merging: the signer acts for Mia, Mia is in “home”, and “home” has update on this list. One broken link, and the change is dropped.",
+   "text": "Mia ticks “buy milk”. Her phone's signer signs the change. Every {peer}, any device holding a copy, checks the links before merging: the signer belongs to Mia's phone, the phone belongs to Mia, Mia is in “home”, and “home” has update on this list. One broken link, and the change is dropped.",
    "code": {
     "change": {
      "data": "house-list",
      "operation": "update",
-     "by": "mia/phone",
+     "by": "mia-phone",
      "sig": "…"
     },
     "check": [
-     "mia/phone signs for mia",
+     "signer registered to mia-phone",
+     "mia-phone belongs to mia",
      "mia is in home",
      "home may update house-list"
     ]

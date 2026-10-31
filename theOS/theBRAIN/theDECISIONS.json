@@ -580,7 +580,7 @@
    "id": "D28",
    "title": "Peer to peer over iroh",
    "status": "decided",
-   "decision": "Devices connect directly over iroh: the address is a key, relays see only sealed traffic. Each device's iroh key is separate from its signer and vouched for by it.",
+   "decision": "Devices connect directly over iroh: the address is the device's signer key (D31), relays see only sealed traffic.",
    "why": "No cloud in the middle; the address can change without touching the identity.",
    "sources": [
     {
@@ -647,10 +647,10 @@
   },
   {
    "id": "D31",
-   "title": "A signer is the identity of one device",
-   "status": "proposed",
-   "decision": "Each device is a signer: an identity of its own, the only kind that holds keys directly (signing key, network address, lock). It makes its keys at random and keeps them on the device only; the human's passkey registers it once. Every signer has exactly one owner, a human identity. It rotates its own keys in its own history without touching the human identity. Loro's peer ID stays a number, bound to the signer in each chunk's signed header.",
-   "why": "A passkey needs a tap per signature, too slow for every change. It cannot derive per-device keys: synced passkeys give several devices the same PRF secret, and Apple's Secure Enclave holds only P-256 keys, not Ed25519.",
+   "title": "A signer is a key; devices are identities",
+   "status": "decided",
+   "decision": "Identity types: device, human, coop. A signer is only a key, never an identity; it is held by a device identity and registered in that device's history. How the key is kept is up to the device: derived from the passkey's PRF plus a per-device salt on phones, the keychain on laptops, an environment variable, secret manager or HSM on servers. The device identity's ID is the hash of its birth record, so it survives key changes. Loro's peer ID stays a number, bound to the signer in each chunk's signed header.",
+   "why": "Separates who acts (identities) from what signs (keys). Not derived from the passkey alone: synced passkeys give several devices the same secret, and Apple's Secure Enclave holds only P-256 keys.",
    "supersedes": "the separate iroh key in D28",
    "sources": [
     {
@@ -666,17 +666,23 @@
      "url": "https://www.inkandswitch.com/keyhive/notebook/05/"
     }
    ],
-   "slides": [],
+   "slides": [
+    "own-1",
+    "own-2"
+   ],
    "date": "2026-10-31"
   },
   {
    "id": "D32",
-   "title": "Words: signer, identity, role, data; dial identities",
-   "status": "proposed",
-   "decision": "Signers are device identities, owned by one human identity. Human identities' members are signers; coops' members are identities. Roles are sets of identities; data is acted upon. Peers dial identities: each identity publishes a signed record of its signers, each signer's history holds its current address, and the connection goes to whichever is online.",
+   "title": "Words, and dialing identities",
+   "status": "decided",
+   "decision": "Devices sign for identities; human identities' members are devices; coops' members are identities; roles are sets of identities; data is acted upon. Peers dial identities: each identity publishes a signed record of its devices, each device's history holds its current address (its signer's public key), and the connection goes to whichever device is online.",
    "why": "One word per thing, matching the Safe analogy (a Safe's members are signers). Addressing identities keeps the address stable while signers change, like a phone number and its SIM.",
    "sources": [],
-   "slides": [],
+   "slides": [
+    "sync-2",
+    "sync-5"
+   ],
    "date": "2026-10-31"
   },
   {
@@ -816,7 +822,7 @@
    "id": "D39",
    "title": "Keys live hot, then cold, and can be erased",
    "status": "decided",
-   "decision": "Hot: the newest keys, linked by back-links and ready on readers' devices; they turn regularly (D36). Cold: at rotation boundaries older than the hot window, the chain is cut; older keys leave the chain and go to the owner's archive. Erased: on request, keys are shredded everywhere. Late writers from before a cut lose and get a conflict view of what was not adopted. The hot window is 30 days, equal to a rule's lifetime (parameter still open).",
+   "decision": "Hot: the newest keys, linked by back-links and ready on readers' devices; they turn regularly (D36). Cold: at rotation boundaries older than the hot window, the chain is cut; older keys leave the chain and go to the owner's archive. Erased: on request, keys are shredded everywhere. Late writers from before a cut lose and get a conflict view of what was not adopted. The hot window is 30 days, equal to a rule's lifetime.",
    "why": "Back-links and an archive cannot coexist for the same keys: a stolen current key would open the whole past. Splitting by age gives heal, archive and erasure one consistent lifecycle.",
    "supersedes": "D35",
    "sources": [
@@ -864,7 +870,7 @@
   {
    "id": "D42",
    "title": "Erase: delete, cut, shred",
-   "status": "proposed",
+   "status": "decided",
    "decision": "To erase personal data from any Doc: delete it normally, cut a fresh snapshot without it under a new key, and shred the keys of every chunk before the cut on all honest devices and in the archive; carriers drop those chunks. Works on any text, with no need to plan per piece of data. The history before the cut is lost.",
    "why": "Tombstones keep no content in the live state; the content lives only in old sealed chunks, so destroying their keys erases it (crypto-shredding). Splitting personal data into its own pieces does not scale.",
    "rejected": "Personal data as separate erasable pieces of data (does not work for a text naming ten people).",
@@ -901,6 +907,50 @@
    ],
    "slides": [
     "keys-14"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D44",
+   "title": "Signing rules and data rules never overlap",
+   "status": "proposed",
+   "decision": "Signing rules belong to an identity and answer who speaks for it: members, thresholds, weights, time locks, for three kinds of act only (act, own, govern). The data's rules belong to a piece of data and answer what an identity may do with it, through roles. Signing rules never mention data or roles; data rules never mention signature counts. A change is valid only if both hold. Both use the same policy language (D38). A coop is like a small DAO: members, governance, assets, nesting.",
+   "why": "Agency and access are different questions; mixing them made the coop example ambiguous.",
+   "sources": [],
+   "slides": [
+    "own-11",
+    "own-12"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D45",
+   "title": "Canonical CBOR for everything signed or hashed",
+   "status": "proposed",
+   "decision": "Everything that is signed, hashed or stored uses canonical CBOR (RFC 8949 deterministic encoding). Everything people read is JSON or PDF/A.",
+   "why": "Same data, same bytes, same hash and signature; JSON has no canonical form. CBOR carries keys, hashes and signatures as raw bytes, keeps JSON's data model, and is what WebAuthn and COSE already use.",
+   "sources": [
+    {
+     "label": "RFC 8949: CBOR (deterministic encoding, §4.2)",
+     "url": "https://www.rfc-editor.org/rfc/rfc8949"
+    },
+    {
+     "label": "RFC 9052: COSE",
+     "url": "https://www.rfc-editor.org/rfc/rfc9052"
+    }
+   ],
+   "slides": [],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D46",
+   "title": "A device identity has one owner, human or coop",
+   "status": "proposed",
+   "decision": "Every device identity is owned by exactly one identity: a human for personal devices, or a coop for shared machines such as a company server.",
+   "why": "Servers and shared machines belong to organisations, not to one person. A coop still never contains a signer, because a device is an identity.",
+   "sources": [],
+   "slides": [
+    "own-1"
    ],
    "date": "2026-10-31"
   }

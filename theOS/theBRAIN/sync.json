@@ -8,15 +8,22 @@
    "deep": "iroh: QUIC connections between devices, direct when possible, through a relay otherwise. Every connection is end-to-end encrypted and authenticated with the endpoint keys."
   },
   {
-   "title": "Every device's address is a key.",
-   "text": "Each device has its own key pair, and its public key is its address: its {endpoint ID}. Nobody hands out addresses, and nobody can take yours.",
+   "title": "You dial identities, not devices.",
+   "text": "Every device has an {address} on the network: its signer's public key. But you never need to know it. Each identity publishes a signed record of its devices, and each device's history holds its current address. You dial Alice, and the connection goes to whichever of her devices is online.",
    "code": {
-    "device": "alice-phone",
-    "endpoint": "ed25519:k51q…",
-    "vouched_for_by": "alice-phone signer"
+    "dial": "alice",
+    "record": {
+     "devices": [
+      "alice-phone",
+      "alice-laptop"
+     ]
+    },
+    "alice-phone": {
+     "address": "ed25519:k51q…"
+    }
    },
    "action": "Find each other",
-   "deep": "The iroh endpoint ID is an Ed25519 public key. Today the iroh key is separate from the signer and vouched for by it (D28); merging the two is proposed (D31)."
+   "deep": "An iroh endpoint ID is an Ed25519 public key; here it is the device's signer key. Identity records are signed and published like iroh's own discovery records. A new key changes the device's address, never the identity's."
   },
   {
    "title": "Finding each other.",
@@ -42,15 +49,15 @@
   },
   {
    "title": "Both sides know who they talk to.",
-   "text": "Every connection is encrypted with the two devices' keys. Then the device shows its signer's link to an identity, so the other side knows: this is Alice's phone, acting for Alice.",
+   "text": "Every connection is encrypted with the two devices' keys. Then the device shows that its key is registered in its own history, and who owns it. The other side knows: this is Alice's phone, acting for Alice.",
    "code": {
     "connected": "ed25519:k51q…",
     "device": "alice-phone",
-    "identity": "alice",
-    "proof": "signed by alice's signer"
+    "owned_by": "alice",
+    "proof": "registered in alice-phone's history"
    },
    "action": "Speak",
-   "deep": "The QUIC handshake proves the endpoint key. The device then presents its signer's registration in the identity history, so the peer learns which identity it is talking to."
+   "deep": "The QUIC handshake proves the key. The device identity's history proves the key is its current signer, and its owner's history proves the device belongs to it."
   },
   {
    "title": "One line, three languages.",

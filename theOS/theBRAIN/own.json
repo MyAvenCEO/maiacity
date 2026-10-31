@@ -3,15 +3,15 @@
  "slides": [
   {
    "title": "It starts with your phone.",
-   "text": "Your phone holds a {signer}. It can say one thing: “this is really me.” It never owns anything.",
+   "text": "Your phone is a {device}: an identity of its own. Inside it sits a {signer}, a key that can say one thing: “this really comes from this phone.” A signer is only a key. The device never owns anything.",
    "action": "Go on",
-   "deep": "A passkey is a WebAuthn credential kept in secure hardware (Secure Enclave, TPM). It never leaves the device and needs a tap or face scan for every use. It authorises a signer: a key that signs changes without a tap."
+   "deep": "A device identity's ID is the hash of its birth record, so it outlives its keys. Its signer is a key it holds and registers in its own history. How it is kept is up to the device: on a phone, derived from the passkey's PRF plus a per-device salt; on a laptop, the keychain; on a server, an environment variable, a secret manager or an HSM."
   },
   {
-   "title": "The signer acts for you.",
-   "text": "You are an {identity}: a human. Your phone, laptop and watch are your signers, your hands. Lose one, add another, and you're still you.",
+   "title": "Your devices act for you.",
+   "text": "You are an {identity} too: a human. Your phone, laptop and watch are your devices, your hands, and each signs with its own signer. Lose one, add another, and you're still you.",
    "action": "Write something",
-   "deep": "An identity's ID is the hash of its birth record, not a key, so it outlives every key behind it. Its history lists its current signers and commits to the next ones in advance (KERI-style pre-rotation)."
+   "deep": "A human identity's members are device identities. Its history lists them and commits to the next ones in advance (KERI-style pre-rotation). Identity types: device, human, coop."
   },
   {
    "title": "You write a to-do list.",
@@ -65,11 +65,11 @@
    "title": "You and Mia start a home.",
    "text": "Together you form a {coop}: an identity made of identities. You hand the list over: the coop becomes its owner. Now neither of you owns it alone, the coop's own signing rules decide what it does, and neither of you can lose it.",
    "action": "How does a coop decide?",
-   "deep": "A coop's members are identities, never signers directly, and membership may not form a cycle. Handing the list over is a certificate signed by the current owner under its own signing rules."
+   "deep": "A coop's members are identities, never signers, and membership may not form a cycle. Coops may contain coops. Handing the list over is a certificate signed by the current owner under its own signing rules."
   },
   {
    "title": "A coop decides by its own signing rules.",
-   "text": "A coop has members, and its own {signing rules}: how many of them must sign, for what. Ticking an item needs one of you. Handing the list over or changing who may see it needs both. Your own identity works the same way, with your devices as its members.",
+   "text": "A coop has members, and its own {signing rules}: who must agree for the coop to act. They know only three kinds of act. Acting: ordinary changes. Owning: writing rules, handing data over. Governing: changing its own members and signing rules. Signing rules never mention a piece of data.",
    "code": {
     "coop": "home",
     "members": [
@@ -77,24 +77,36 @@
      "mia"
     ],
     "signing_rules": {
-     "edit content": "1 of 2",
-     "write rules": "2 of 2",
-     "hand over": "2 of 2"
+     "act": "1 of 2",
+     "own": "2 of 2",
+     "govern": "2 of 2, then 7 days to object"
     }
    },
-   "action": "Sum it up",
-   "deep": "Signing rules are a policy per action: threshold (k of n), weights, all-of / any-of, time locks. They live in the identity's own signed history. Changing them needs the policy for “change signing rules”, usually the strictest."
+   "action": "Two questions",
+   "deep": "Policies are built from threshold (k of n), weights, all-of / any-of and time locks. They live in the identity's own signed history. A device that does not know a policy kind treats it as not satisfied."
+  },
+  {
+   "title": "Two questions, every time.",
+   "text": "Every change has to pass two checks. Does it really come from the coop? The coop's signing rules decide. May the coop do this to this data? The data's rules decide. Signing rules are about who speaks for whom; the data's rules are about what may be done. Only both together let a change in.",
+   "flow": [
+    "signatures",
+    "signing rules: who speaks?",
+    "the data's rules: may it?",
+    "accepted"
+   ],
+   "deep": "Agency and access stay apart. The chain signer → device → human → coop only answers who is acting; rules on data only answer what that identity may do. Both use the same small policy language and are checked offline by every peer.",
+   "action": "Sum it up"
   },
   {
    "title": "That's all there is.",
    "list": [
-    "Signers act for identities.",
-    "An identity decides by its own signing rules: which members must sign, for what.",
+    "Devices sign for identities; a signer is only a key.",
+    "An identity's signing rules decide who speaks for it.",
     "Every piece of data has one owner: an identity, human or coop.",
-    "Only the owner writes rules; everyone else gets in through roles."
+    "The data's rules decide what everyone else may do, through roles."
    ],
    "action": "",
-   "deep": "Four objects: signer, identity (human or coop), role, data. Two powers: owning (one identity per piece of data) and rules (operations given to roles). Everything else is how those are kept safe without a server."
+   "deep": "Four objects: identity (device, human or coop), role, data, and the signer keys devices hold. Two kinds of rules: signing rules (who speaks for an identity) and the data's rules (what roles may do). Everything else is how those stay safe without a server."
   }
  ]
 }
