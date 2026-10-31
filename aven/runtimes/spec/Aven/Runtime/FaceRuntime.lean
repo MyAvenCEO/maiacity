@@ -1,5 +1,6 @@
 import Aven.Runtime.Markup
 import Aven.Runtime.StateExamples
+import Aven.Runtime.StyleExamples
 
 /-!
 # face-runtime under the contract (README, "Two kinds of output, and the drawers")
@@ -9,7 +10,7 @@ face part as a Value of the one codec (its markup and its style), its input the 
 tree, the style as typed rules and the placements, as a Value.
 
 The answer carries the style as data, never as CSS text: the drawer, trusted code, writes the CSS itself from rules it
-has checked (`Rule.css`), so no text a runtime makes ever reaches a stylesheet.
+has checked (`Rule.css`, `Aven.Runtime.Style`), so no text a runtime makes ever reaches a stylesheet.
 
 - `faceRuntime_ok`: every answer is the Value of a face that passed `faceOk`: the applier's check, names, roles, alt
   text and contrast.
@@ -20,8 +21,8 @@ Forms, every one an array so it needs no map order:
 - a source: `["lit", text]`, `["$", path]`, `["$$", path]`, a path as state-runtime writes one;
 - markup: `["text", source]`, `["el", tag, [[name, source], …], event or null, [markup, …]]`,
   `["each", path, key path, markup]`, `["use", place, component, [[name, source], …]]`;
-- a rule: `Rule.value`, `[class, colour or null, background or null, size or null, bold or null]`, a colour as three
-  bytes;
+- a rule: `Rule.value`, `[[compound, …], [declaration, …]]`: a compound `[tag or null, [class, …]]`, a declaration
+  its property's name and its values (`Decl.value`), a length `[hundredths, unit]`, a colour three bytes;
 - a face part: `[markup, [rule, …]]`;
 - the answer: `{"tree": tree, "style": [rule, …], "placements": [[place, component, [[name, text], …]], …]}`.
 -/
@@ -85,10 +86,90 @@ def optOf? {α : Type} (f : Value → Option α) : Value → Option (Option α)
   | .null => some none
   | v => (f v).map some
 
+def intOf? : Value → Option Int
+  | .uint n => some n
+  | .nint n => some (-((n : Int) + 1))
+  | _ => none
+
+def LenUnit.ofName? : String → Option LenUnit
+  | "cqw" => some .cqw | "%" => some .pct | "px" => some .px | "em" => some .em | _ => none
+
+def Len.ofValue? : Value → Option Len
+  | .array [v, u] => do return ⟨← intOf? v, ← (text? u).bind LenUnit.ofName?⟩
+  | _ => none
+
+def Step.ofValue? : Value → Option Step
+  | .array [t, a] => match text? t with
+    | some "translateX" => (Len.ofValue? a).map .translateX
+    | some "translateY" => (Len.ofValue? a).map .translateY
+    | some "rotate" => (intOf? a).map .rotate
+    | some "scale" => (intOf? a).map .scale
+    | _ => none
+  | _ => none
+
+/-- The side a property's name ends in: `margin`, `margin-top`, …; `none` for any other. -/
+def sideOf? (base name : String) : Option Side :=
+  [Side.all, .top, .right, .bottom, .left].find? fun s => name == base ++ s.suffix
+
+def Display.ofName? : String → Option Display
+  | "block" => some .block | "inline-block" => some .inlineBlock | "flex" => some .flex | _ => none
+
+def Line.ofName? : String → Option Line
+  | "solid" => some .solid | "dotted" => some .dotted | _ => none
+
+/-- A declaration from its Value (`Decl.value`): its property's name, then its values. -/
+def Decl.ofValue? : Value → Option Decl
+  | .array (t :: args) => do
+    let n ← text? t
+    match n, args with
+    | "position", [v] => match text? v with
+      | some "absolute" => some (.position true)
+      | some "relative" => some (.position false)
+      | _ => none
+    | "inset", [] => some .cover
+    | "width", [l] => (Len.ofValue? l).map .width
+    | "height", [l] => (Len.ofValue? l).map .height
+    | "display", [d] => (text? d).bind Display.ofName? |>.map .display
+    | "aspect-ratio", [.uint w, .uint h] => some (.aspect w h)
+    | "container-type", [] => some .container
+    | "overflow", [] => some .clip
+    | "gap", [l] => (Len.ofValue? l).map .gap
+    | "border-radius", [l] => (Len.ofValue? l).map .radius
+    | "background-color", [c] => (rgb? c).map .background
+    | "color", [c] => (rgb? c).map .color
+    | "font-family", [] => some .sans
+    | "font-size", [l] => (Len.ofValue? l).map .size
+    | "font-weight", [.uint w] => some (.weight w)
+    | "line-height", [h] => (intOf? h).map .leading
+    | "letter-spacing", [l] => (Len.ofValue? l).map .tracking
+    | "text-transform", [] => some .upper
+    | "text-align", [] => some .center
+    | "white-space", [] => some .nowrap
+    | "transform", [.array ss] => (mapM Step.ofValue? ss).map .transform
+    | "transform-origin", [x, y] => do return .origin (← Len.ofValue? x) (← Len.ofValue? y)
+    | "clip-path", [] => some .arrowhead
+    | n, [l] =>
+      match [Side.top, .right, .bottom, .left].find? (·.name == n), sideOf? "margin" n, sideOf? "padding" n with
+      | some s, _, _ => (Len.ofValue? l).map (.place s)
+      | _, some s, _ => (Len.ofValue? l).map (.margin s)
+      | _, _, some s => (Len.ofValue? l).map (.padding s)
+      | _, _, _ => none
+    | n, [w, line, c] => do
+      let s ← sideOf? "border" n
+      return .border s (← Len.ofValue? w) (← (text? line).bind Line.ofName?) (← rgb? c)
+    | _, _ => none
+  | _ => none
+
+/-- A compound from its Value: `[tag or null, [class, …]]`. -/
+def Compound.ofValue? : Value → Option Compound
+  | .array [t, .array cs] => do
+    let tag ← optOf? text? t
+    return ⟨tag, ← mapM text? cs⟩
+  | _ => none
+
+/-- A rule from its Value: `[[compound, …], [declaration, …]]`. -/
 def Rule.ofValue? : Value → Option Rule
-  | .array [c, fg, bg, size, bold] => do
-    return ⟨← text? c, ← optOf? rgb? fg, ← optOf? rgb? bg,
-      ← optOf? (fun | .uint n => some n | _ => none) size, ← optOf? (fun | .bool b => some b | _ => none) bold⟩
+  | .array [.array cs, .array ds] => do return ⟨← mapM Compound.ofValue? cs, ← mapM Decl.ofValue? ds⟩
   | _ => none
 
 /-- How deep a face part's markup may nest: the tree's own limit. -/
@@ -139,7 +220,7 @@ def taskRow : FacePart :=
   ⟨.el "li" [("class", .lit "row")] none
     [.el "input" [("type", .lit "checkbox"), ("aria-label", .data (path ["title"]))] (some "toggle") [],
      .el "span" [("class", .lit "title")] none [.text (.data (path ["title"]))]],
-   [{ cls := "row", background := some white }, { cls := "title", color := some (grey 0x22) }]⟩
+   [rule ["row"] [.background white], rule ["title"] [.color (grey 0x22)]]⟩
 
 def taskList : FacePart :=
   ⟨.el "section" [] none
@@ -155,6 +236,25 @@ def hostileFace : FacePart :=
      .el "iframe" [("src", .lit ("/files/" ++ String.ofList (List.replicate 64 'a')))] none []],
    []⟩
 
+/-- Every declaration's form, once: what a part's rules read back from. -/
+def everyDecl : List Decl :=
+  [.position true, .position false, .cover, .place .top (pct 100), .place .right (cqw (-250)), .place .bottom (px 0),
+   .place .left (px 5), .width (cqw 1250), .height (pct 10000), .display .block, .display .inlineBlock, .display .flex,
+   .aspect 16 9, .container, .clip, .margin .all (px 0), .margin .top (cqw 100), .padding .left (px 800),
+   .padding .all (cqw 50), .gap (cqw 120), .radius (cqw 160), .border .all (px 100) .solid (grey 0xe6),
+   .border .top (cqw 60) .dotted ochre, .background cream, .color navy, .sans, .size (cqw 260), .weight 700,
+   .leading 115, .tracking (em (-1)), .upper, .center, .nowrap,
+   .transform [.translateX (pct (-5000)), .translateY (cqw 20), .rotate (-3247), .scale 150],
+   .origin (pct 5000) (px 0), .arrowhead]
+
+/-- The slide as a face part: its markup is one label, its style every rule of the slide and every declaration's form,
+in two rules (a rule has at most 32). -/
+def slidePart : FacePart :=
+  ⟨.el "figure" [("class", .lit "slide sign"), ("role", .lit "img"), ("aria-label", .lit "A key signs.")] none
+    [.el "p" [("class", .lit "label key-label")] none [.text (.data (path ["label"]))]],
+   slideRules ++ signRules ++ [⟨[{ tag := some "p", classes := ["all"] }, { classes := ["of", "them"] }],
+     everyDecl.take 20⟩, rule ["rest"] (everyDecl.drop 20)]⟩
+
 def faceRuntimeExamples : List (String × Value × Value) :=
   [("a task's row", taskRow.value, obj [("title", str "Buy milk")]),
    ("the list places a field and a row per task", taskList.value,
@@ -164,18 +264,19 @@ def faceRuntimeExamples : List (String × Value × Value) :=
    ("an unnamed checkbox is refused", (FacePart.mk (.el "input" [("type", .lit "checkbox")] (some "toggle") []) []).value,
      obj []),
    ("grey on white is refused", (FacePart.mk (.el "p" [("class", .lit "muted")] none [.text (.lit "almost")])
-     [{ cls := "muted", color := some (grey 0x77) }]).value, obj []),
+     [rule ["muted"] [.color (grey 0x77)]]).value, obj []),
+   ("the slide's label, styled", slidePart.value, obj [("label", str "Alice’s key")]),
    ("a part that isn't one is refused", .array [str "no"], obj []),
    ("markup deeper than a tree may be is refused",
      (FacePart.mk ((List.range 70).foldl (fun m _ => .el "div" [] none [m]) (.text (.lit "deep"))) []).value, obj [])]
 
-#guard [taskRow, taskList, hostileFace].all fun fp =>
+#guard [taskRow, taskList, hostileFace, slidePart].all fun fp =>
   ((FacePart.ofValue? fp.value).map fun q => encode q.value) == some (encode fp.value)
 
 def roomy' : Limits := ⟨10_000_000, 64 * 1048576, 4 * 1048576⟩
 
 #guard (faceRuntimeExamples.map fun (_, p, i) => match run faceRuntime roomy' p i with
   | .ok _ => true
-  | .error _ => false) == [true, true, true, false, false, false, false]
+  | .error _ => false) == [true, true, true, false, false, true, false, false]
 
 end Aven.Runtime

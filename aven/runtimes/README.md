@@ -351,24 +351,22 @@ and the decisions, not the parsers.
   `src` is a file of the network by its hash, every `href` is `https:`, `mailto:` or a fragment), `check_bounded`.
   27 examples, a `javascript:` link, a remote pixel, a `data:` image, an `ONLOAD` and a style attribute's `url()` among
   them.
-- **The face-runtime's output** (`Face`). Markup and style together: the tree, and a style that is data (a class name
-  and typed colours, size and weight per rule), from which the CSS text is generated. `faceOk` accepts it when the tree
-  passes `check`, and a11y holds across both: `face_passes_check`, `face_named` (every interactive node has an
-  accessible name), `face_roles` (a clickable non-control has a role and a tab stop), `face_alt`, `face_contrast` (every
-  text has 4.5:1 against the background the style resolves under it, 3:1 when large) and `face_classes`. Contrast is
-  exact integer arithmetic over one table, `linear` (sRGB to linear light, × 10⁷), which the vectors export: #767676
-  on white passes and #777777 fails, as WCAG has it.
-- **A face's style, typed** (`Style`, its examples in `StyleExamples`). What a slide needs, and avenBRAIN's slides are
-  written in: a rule is a selector, a descendant chain of one to four compounds (an allowlisted tag, up to four
-  classes), and typed declarations: placement, size, aspect, border, colours, the one bundled font, size, weight,
-  leading, tracking, uppercase, centring, a transform of translate, rotate and scale, and the one arrowhead clip-path.
-  No custom properties, no `url()`, no free text: `StyleRule.css` writes the CSS. Which rule reaches a node is CSS's
-  cascade (classes, then tags, then the later rule). `styledOk` accepts a styled face when the tree passes `check`,
-  every rule is in range (`styled_rules`), every text is at least 9 px where a slide is narrowest, 356 px, so 2.6cqw
-  (`styled_size`), every text has enough contrast against what it is drawn on (`styled_contrast`: the nearest
-  background above it, or an earlier sibling layer covering the whole parent), and names and `alt`s are there
-  (`styled_named`). The examples are avenBRAIN's slide "A key signs", its layers and the shared slide rules, and 17
-  faces the checks take or refuse. The face-runtime moves to it next, and its crate and the drawer with it.
+- **The face-runtime's output** (`Style`, its examples in `StyleExamples`; what every face is checked with in `Face`).
+  Markup and style together: the tree, and a style that is data, the subset avenBRAIN's slides are written in. A rule
+  is a selector, a descendant chain of one to four compounds (an allowlisted tag, up to four classes), and typed
+  declarations: placement, size, aspect, margin, padding, gap, border, radius, colours, the one bundled font, size,
+  weight, leading, tracking, uppercase, centring, nowrap, a transform of translate, rotate and scale, its origin, and
+  the one arrowhead clip-path. No custom properties, no `url()`, no free text: the drawer writes the CSS from the data
+  (`Rule.css`). Which rule reaches a node is CSS's cascade (classes, then tags, then the later rule). `faceOk` accepts
+  a face when the tree passes `check` (`face_passes_check`), every interactive node has an accessible name and every
+  image an `alt` (`face_named`), a clickable non-control has a role and a tab stop (`face_roles`), every rule is in
+  range (`face_rules`), every text is at least 9 px where a slide is narrowest, 356 px, so 2.6cqw (`face_size`), and
+  every text has enough contrast against what it is drawn on (`face_contrast`: 4.5:1, 3:1 when large, against the
+  nearest background above it or an earlier sibling layer covering the whole parent). Contrast is exact integer
+  arithmetic over one table, `linear` (sRGB to linear light, × 10⁷), which the vectors export: #767676 on white passes
+  and #777777 fails, as WCAG has it. The examples are the todo app's task row and the a11y cases, then avenBRAIN's
+  slide "A key signs", its layers and the shared slide rules, and what its checks refuse. The face crate and the
+  drawer (avenOS's `os/web/runtimes/draw.js`) are held to the same vectors.
 - **state-runtime** (`State`, its examples in `StateExamples`). The grammar of a state part: a statechart and a
   reducer as data, one handler per message with its moves (`from → to`), its updates (`set`, `merge`, `append`,
   `remove` at a path of fields and indexes) and its sends (`tell`, `ask`, `reply`). A runtime is a pure
@@ -399,7 +397,7 @@ and the decisions, not the parsers.
 
 **The vectors** (`spec/vectors/`, one vector per line): `table.json` (the registry and its signatures, the data the
 registry crate compiles in), `registry.json`, `tree.json` and `face.json` (each tree and face with its encoding, a face
-with each rule's CSS text), `contract.json` (each failure and an answer as encoded, render keys and their BLAKE3 names)
+with its typed rules as Values, its issues, every text's look and each rule's CSS text), `contract.json` (each failure and an answer as encoded, render keys and their BLAKE3 names)
 `state.json` (a part, an input and limits, and the result, all in the one codec) and `contrast.json` (`linear`,
 then pairs of colours). A tree crosses as a Value: text as text, an element as
 `[tag, [[name, value], …], [child, …]]`; a face as `{"tree", "style"}`; every example's is an allowed Value of the

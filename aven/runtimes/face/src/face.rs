@@ -1,9 +1,8 @@
-//! The face-runtime's output (`Aven.Runtime.Face`): a tree and a style that is data, accepted only when the tree
-//! passes the applier's check and a11y holds across markup and style: every interactive node named, every clickable
-//! non-control given a role and a tab stop, every image an `alt`, every text WCAG's contrast against the background
-//! the style resolves under it, and every class a plain name. Contrast is exact: one table of integers (`LINEAR`).
+//! What every face is checked with (`Aven.Runtime.Face`): exact contrast by one table of integers (`LINEAR`), plain
+//! class names, and a11y: every interactive node named, every clickable non-control given a role and a tab stop, every
+//! image an `alt`. The style and its checks are [`crate::style`].
 
-use aven_runtimes_tree::{Node, TreeLimits, check};
+use aven_runtimes_tree::Node;
 
 /// sRGB's 8-bit channel to linear light, × 10⁷, rounded (`linear`).
 pub const LINEAR: [u64; 256] = [
@@ -71,65 +70,12 @@ pub fn reaches(a: Rgb, b: Rgb, num: u64, den: u64) -> bool {
     den * (hi + FLARE) >= num * (lo + FLARE)
 }
 
-/// One style rule: a class and typed values.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Rule {
-    pub cls: String,
-    pub color: Option<Rgb>,
-    pub background: Option<Rgb>,
-    pub size: Option<u64>,
-    pub bold: Option<bool>,
-}
-
 /// A class name: lowercase letters, digits and `-`, so it can't close a rule or start another.
 pub fn class_ok(c: &str) -> bool {
     !c.is_empty()
         && c.chars()
             .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-')
 }
-
-impl Rule {
-    /// The CSS text of a rule, generated: the only CSS a face ever gives (`Rule.css`).
-    pub fn css(&self) -> String {
-        let mut decls = Vec::new();
-        if let Some(c) = self.color {
-            decls.push(format!("color:{}", c.css()));
-        }
-        if let Some(c) = self.background {
-            decls.push(format!("background-color:{}", c.css()));
-        }
-        if let Some(n) = self.size {
-            decls.push(format!("font-size:{n}px"));
-        }
-        if let Some(b) = self.bold {
-            decls.push(format!("font-weight:{}", if b { "700" } else { "400" }));
-        }
-        format!(".{}{{{}}}", self.cls, decls.join(";"))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct FaceOut {
-    pub tree: Node,
-    pub style: Vec<Rule>,
-}
-
-/// What a text is drawn with.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Ctx {
-    pub fg: Rgb,
-    pub bg: Rgb,
-    pub size: u64,
-    pub bold: bool,
-}
-
-/// The page a face is drawn on, before any rule.
-pub const BASE: Ctx = Ctx {
-    fg: BLACK,
-    bg: WHITE,
-    size: 16,
-    bold: false,
-};
 
 fn attr<'a>(n: &'a Node, k: &str) -> Option<&'a str> {
     match n {
@@ -145,66 +91,9 @@ fn tag(n: &Node) -> Option<&str> {
     }
 }
 
-fn classes(n: &Node) -> Vec<&str> {
-    attr(n, "class")
-        .unwrap_or("")
-        .split(' ')
-        .filter(|c| !c.is_empty())
-        .collect()
-}
-
-impl Ctx {
-    /// The rules for a node's classes, in the style's order, the later winning (`Ctx.apply`).
-    pub fn apply(self, style: &[Rule], n: &Node) -> Ctx {
-        let cs = classes(n);
-        style.iter().fold(self, |c, r| {
-            if cs.contains(&r.cls.as_str()) {
-                Ctx {
-                    fg: r.color.unwrap_or(c.fg),
-                    bg: r.background.unwrap_or(c.bg),
-                    size: r.size.unwrap_or(c.size),
-                    bold: r.bold.unwrap_or(c.bold),
-                }
-            } else {
-                c
-            }
-        })
-    }
-
-    /// Large text: at least 24 px, or 19 px bold.
-    pub fn large(self) -> bool {
-        self.size >= 24 || (self.bold && self.size >= 19)
-    }
-
-    /// Enough contrast: 4.5:1, or 3:1 for large text.
-    pub fn contrast_ok(self) -> bool {
-        if self.large() {
-            reaches(self.fg, self.bg, 3, 1)
-        } else {
-            reaches(self.fg, self.bg, 9, 2)
-        }
-    }
-}
-
-/// Lean's `String.trimAscii.isEmpty`: only ASCII white space, or nothing.
+/// Lean's `String.trimAscii.isEmpty`: only white space (`Char.isWhitespace`: space, tab, CR, LF), or nothing.
 fn blank(s: &str) -> bool {
-    s.bytes()
-        .all(|b| matches!(b, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c))
-}
-
-/// Every text with what it is drawn with (`Node.texts`).
-pub fn texts(style: &[Rule], c: Ctx, n: &Node, out: &mut Vec<(Ctx, String)>) {
-    match n {
-        Node::Text(s) => {
-            if !blank(s) {
-                out.push((c, s.clone()));
-            }
-        }
-        Node::El { kids, .. } => {
-            let c = c.apply(style, n);
-            kids.iter().for_each(|k| texts(style, c, k, out));
-        }
-    }
+    s.bytes().all(|b| matches!(b, b' ' | b'\t' | b'\n' | b'\r'))
 }
 
 fn content(n: &Node, out: &mut String) {
@@ -251,49 +140,4 @@ pub fn role_ok(n: &Node) -> bool {
 
 pub fn alt_ok(n: &Node) -> bool {
     tag(n) != Some("img") || attr(n, "alt").is_some()
-}
-
-/// What a face's output gets wrong, by kind (`Issues`).
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Issues {
-    pub unnamed: usize,
-    pub no_role: usize,
-    pub no_alt: usize,
-    pub low_contrast: Vec<(Ctx, String)>,
-    pub bad_class: usize,
-}
-
-fn all<'a>(n: &'a Node, out: &mut Vec<&'a Node>) {
-    out.push(n);
-    if let Node::El { kids, .. } = n {
-        kids.iter().for_each(|k| all(k, out));
-    }
-}
-
-pub fn issues(o: &FaceOut) -> Issues {
-    let mut nodes = Vec::new();
-    all(&o.tree, &mut nodes);
-    let mut ts = Vec::new();
-    texts(&o.style, BASE, &o.tree, &mut ts);
-    Issues {
-        unnamed: nodes.iter().filter(|n| interactive(n) && !named(n)).count(),
-        no_role: nodes.iter().filter(|n| !role_ok(n)).count(),
-        no_alt: nodes.iter().filter(|n| !alt_ok(n)).count(),
-        low_contrast: ts.into_iter().filter(|(c, _)| !c.contrast_ok()).collect(),
-        bad_class: o.style.iter().filter(|r| !class_ok(&r.cls)).count(),
-    }
-}
-
-/// The face-runtime's output is accepted (`faceOk`). The tree is checked first, so the walks for a11y only ever see a
-/// tree within its limits.
-pub fn face_ok(l: TreeLimits, o: &FaceOut) -> bool {
-    if !check(l, &o.tree) {
-        return false;
-    }
-    let i = issues(o);
-    i.unnamed == 0
-        && i.no_role == 0
-        && i.no_alt == 0
-        && i.low_contrast.is_empty()
-        && i.bad_class == 0
 }
