@@ -26,6 +26,7 @@ mod network;
 mod passkey;
 mod prf;
 mod query;
+mod revoke;
 pub mod safe;
 mod seal;
 mod secret;
@@ -52,6 +53,7 @@ pub use members::{MemberError, MemberSignIn, Members, Pending};
 pub use network::{COOP, COOP_NAME, ClaimError, GUARDIAN, Network};
 pub use passkey::{Assertion, AssertionError, Passkey, Relying, base64url, challenge};
 pub use prf::{OWNER_LABEL, PRF_LABEL, PrfOutput, SEAL_LABEL, prf_input, prf_salt};
+pub use revoke::{Doc, Reads, Revocation, Verdict};
 pub use seal::{
     Context, STANZA_COMMIT_LABEL, STANZA_KEY_LABEL, STANZA_SUITE, Scope, SealKey, SealPublic,
     Stanza, stanza_commit, stanza_keys,

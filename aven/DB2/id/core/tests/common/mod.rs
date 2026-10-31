@@ -175,3 +175,42 @@ pub fn assertion(a: &Value) -> aven_id::Assertion {
         signature: signature.to_der().as_bytes().to_vec(),
     }
 }
+
+/// A Core Value as Core's vectors write it (`Aven.Core.Value.json`): byte strings as `{"bytes": hex}`.
+pub fn core_value(v: &Value) -> aven_core::Value {
+    use aven_core::Value as V;
+    match v {
+        Value::Null => V::Null,
+        Value::Bool(b) => V::Bool(*b),
+        Value::Number(n) => match n.as_u64() {
+            Some(u) => V::Uint(u),
+            None => V::Nint((-1 - n.as_i64().unwrap()) as u64),
+        },
+        Value::String(s) => V::Text(s.clone()),
+        Value::Array(xs) => V::Array(xs.iter().map(core_value).collect()),
+        Value::Object(m) => match (m.len(), m.get("bytes").and_then(Value::as_str)) {
+            (1, Some(h)) => V::Bytes(unhex(h)),
+            _ => V::Map(m.iter().map(|(k, x)| (k.clone(), core_value(x))).collect()),
+        },
+    }
+}
+
+/// A hash as Core writes it, `b3:` and hex.
+pub fn hash(v: &Value) -> aven_core::Hash {
+    aven_core::Hash::parse(v.as_str().unwrap()).unwrap()
+}
+
+/// An envelope as Core's vectors write it (`envelopes.json`).
+pub fn envelope(v: &Value) -> aven_core::Envelope {
+    aven_core::Envelope {
+        doc: aven_core::DocId::parse(v["doc"].as_str().unwrap()).unwrap(),
+        branch: v["branch"].as_str().unwrap().into(),
+        writer: v["writer"].as_u64().unwrap(),
+        seq: v["seq"].as_u64().unwrap(),
+        prev: v["prev"].as_str().map(|_| hash(&v["prev"])),
+        deps: v["deps"].as_array().unwrap().iter().map(hash).collect(),
+        body: core_value(&v["body"]),
+        signer: unhex(v["signer"].as_str().unwrap()),
+        sig: unhex(v["sig"].as_str().unwrap()),
+    }
+}
