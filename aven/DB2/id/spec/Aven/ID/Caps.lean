@@ -223,13 +223,13 @@ theorem Conditions.narrows_trans {a b c : Conditions} (h : a.narrows b = true) (
     History.within_trans h1 h2⟩
   cases ha : a.own <;> cases hb : b.own <;> cases hc : c.own <;> simp_all
 
-/-- Who holds a cap: a vault (devices are vaults), everyone in a group (its Doc, of avenID's type `group`), the public
-(every member of the network, D15), or a ticket's one-time key until a vault claims it. -/
+/-- Who holds a cap: a vault (a device is its own vault), everyone in a group of vaults (its Doc, of avenID's type
+`group`), or the public (every member of the network, D15). Nothing else holds one: a bearer key, a ticket's one-time
+key or a fetch key, proves a condition of a cap and never holds it (rule 15, A42). -/
 inductive Holder where
   | vault (id : String)
   | group (doc : Core.DocId)
   | «public»
-  | ticket (key : String)
   deriving DecidableEq, Repr
 
 /-- A role: a named bundle of grants, named by its hash, so it never changes under its holders (D6). -/
@@ -345,13 +345,12 @@ theorem authority_le {x : Ctx} {i : String} {l m : Line} (le : l.doc.le m.doc = 
   rw [anchor_le le]
   exact h
 
-/-- `issuer` holds `p`: it is `p`'s vault, or in `p`'s group now. The public and tickets pass nothing on. -/
+/-- `issuer` holds `p`: it is `p`'s vault, or in `p`'s group now. The public passes nothing on. -/
 def holds (x : Ctx) (p : Cap) (issuer : String) : Bool :=
   match p.holder with
   | .vault v => v == issuer
   | .group g => x.inGroup g issuer
   | .«public» => false
-  | .ticket _ => false
 
 /-- A holder the reader can type: a group that holds a cap is a Doc of avenID's type `group` (A39). -/
 def Holder.typed (x : Ctx) : Holder → Bool
