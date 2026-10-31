@@ -4,6 +4,7 @@
 	// included, lands on your own dashboard. The host decides whom you may act as: a Peer-Light's origin from the cast is
 	// that device, localhost is the box's own view, which holds every test key, and any other host is a visitor.
 	import Avatar from './Avatar.svelte';
+	import MainNav from './docs/MainNav.svelte';
 	import Dashboard from './Dashboard.svelte';
 	import Chat from './apps/Chat.svelte';
 	import ControlRoom from './apps/ControlRoom.svelte';
@@ -59,10 +60,10 @@
 </script>
 
 <header>
-	<nav>
-		<a class="home" href={account ? `#/${account}` : '#/'}>avenOS</a>
+	<div class="nav">
+		<MainNav home={account ? `#/${account}` : '#/'} />
 		{#if open}<span class="crumb">/ {open.name}</span>{/if}
-	</nav>
+	</div>
 	<div class="me">
 		{#if where}<span class="where" data-testid="where">{where}</span>{/if}
 		{#if account}
@@ -120,7 +121,7 @@
 		border-bottom: 1px solid var(--line);
 	}
 
-	nav,
+	.nav,
 	.me {
 		display: flex;
 		align-items: center;
@@ -128,7 +129,7 @@
 		min-width: 0;
 	}
 
-	nav {
+	.nav {
 		flex: none;
 	}
 
@@ -137,15 +138,6 @@
 		.where {
 			display: none;
 		}
-	}
-
-	.home {
-		color: var(--accent);
-		font-family: var(--font-display);
-		font-size: 21px;
-		font-weight: 500;
-		letter-spacing: -0.01em;
-		text-decoration: none;
 	}
 
 	.crumb,

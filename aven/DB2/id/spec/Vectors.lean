@@ -48,7 +48,8 @@ import Aven.ID.Expiry
   PEERS.md §5): `TreeExamples`, the races one by one, generated sets, and production's store migrated from every
   invite trace (`Aven.ID.Restore`). `records.json`: signed records and the newest of each (`Aven.ID.Records`, §6).
   `node.json`: networks losing each peer in turn, with every home relay, who reaches whom and who can fetch the chat
-  (`Aven.ID.Node`, R7).
+  (`Aven.ID.Node`, R7). `catchup.json`: sources offered against a signed log tip, the one chosen and the ones caught,
+  and presence from signed beats (`Aven.ID.CatchUp`).
 
 `bun run up --check` runs it again and fails when the files differ from what is committed. -/
 
@@ -267,3 +268,4 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "settled.json") (render SettleJson.settledVectors)
   IO.FS.writeFile (dir / "records.json") (render SettleJson.recordVectors)
   IO.FS.writeFile (dir / "node.json") (render SettleJson.nodeVectors)
+  IO.FS.writeFile (dir / "catchup.json") (render SettleJson.catchUpVectors)
