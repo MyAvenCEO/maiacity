@@ -1,8 +1,8 @@
 # avenBRAIN
 
 The documentation of the whole system, told from first principles for a reader with no background: a wiki of pages,
-each built from slides that explain one concept at a time, and the one global glossary. avenOS shows it under **Docs**
-(`#/docs`), to anyone, signed in or not: it is as public as the repo.
+each built from slides that explain one concept at a time, and the one global glossary. avenOS shows it as **Brain**
+(`#/brain`), to anyone, signed in or not: it is as public as the repo.
 
 Its look is in [`STYLE.md`](STYLE.md), its language in [`VOICE.md`](VOICE.md), and
 every term in [`GLOSSARY.md`](GLOSSARY.md).
@@ -11,7 +11,7 @@ every term in [`GLOSSARY.md`](GLOSSARY.md).
 
 | Path | What |
 |---|---|
-| [`docs.json`](docs.json) | The package list: one item per package on the docs dashboard, its page and its slides |
+| [`packages.json`](packages.json) | The package list: one item per package on Brain's dashboard, its page and its slides |
 | [`GLOSSARY.md`](GLOSSARY.md) | The one glossary, every term with its one meaning (moved here from `aven/DB2`) |
 | [`STYLE.md`](STYLE.md), [`VOICE.md`](VOICE.md) | The look and the language |
 | [`style/tokens.css`](style/tokens.css) | The palette, type and chrome as tokens, sampled from the references |
@@ -41,12 +41,12 @@ One concept, in three files under `<package>/slides/`, named by the slide's id:
 - **`<id>.md`, its text.** Markdown, shown on the page under the slide. `[vault](glossary:vault)` links a term to the
   glossary.
 
-A slide is listed in `docs.json` under its package, in its place in the story. `render/tree.test.js` checks every
+A slide is listed in `packages.json` under its package, in its place in the story. `render/tree.test.js` checks every
 slide against the allowlist and that every element has a class (`bun test brain/render`).
 
 ## How avenOS draws it
 
-Until the runtimes exist, avenOS draws the brain with its own Svelte (`os/web/docs`): the content is first-party, from
+Until the runtimes exist, avenOS draws the brain with its own Svelte (`os/web/brain`): the content is first-party, from
 the repo, bundled at build time. Both kinds of text become the node tree the runtimes will hand over, and one
 component draws it, never parsing HTML on the page:
 
@@ -85,7 +85,7 @@ The objects are drawn in code: [`art/objects.mjs`](art/objects.mjs), with the pa
 PNG in `art/img/`, named by the BLAKE3 hash of its bytes, as the network names its files, and lists them in
 `art/images.json`. `bun brain/art/slides.mjs` lays out avenID's slides and writes their markup and CSS. A slide shows
 a drawing as `<img src="/files/<hash>">`, the only image the allowlist takes; avenOS resolves the brain's own from its
-bundle (`os/web/docs/brain.js`). Both outputs are generated: edit the objects and the layouts, then run them.
+bundle (`os/web/brain/brain.js`). Both outputs are generated: edit the objects and the layouts, then run them.
 
 ## Releases
 

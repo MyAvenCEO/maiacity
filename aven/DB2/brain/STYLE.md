@@ -1,7 +1,7 @@
 # The look
 
 An illustrated asset sheet, like the game's resource icons ([`style/reference/`](style/reference/)): hand-drawn
-objects on a warm cream ground, each with its name under it in bold navy capitals. The slides and the docs pages
+objects on a warm cream ground, each with its name under it in bold navy capitals. The slides and Brain's pages
 around them share it.
 
 The objects are drawn in code ([`art/objects.mjs`](art/objects.mjs), with the kit in [`art/paint.mjs`](art/paint.mjs))
@@ -53,12 +53,12 @@ encrypted), and a thing on a slide is drawn as a **card**, never a record (a Rec
 - **Objects** with their names under them, bold uppercase navy. **A dotted ochre path** with an arrowhead is a
   relation, its name over it.
 - **No text under 2.6 % of the slide's width** (2.6cqw): about 9 px on a phone, where a slide is about 356 px wide.
-  The box checks it at 390 px (`sandbox/docs.mjs`), and a test checks the CSS (`render/tree.test.js`).
+  The box checks it at 390 px (`sandbox/brain.mjs`), and a test checks the CSS (`render/tree.test.js`).
 - Text has 4.5:1 against what is under it, and sits on the ground, never on a drawing.
 - **Every element a layer** with a stable class, so a motion version can move each one.
 - The text that explains it is on the page under the slide, in Markdown.
 
 ## The pages
 
-The docs pages are the same sheet: the cream ground, bold navy titles, and on the dashboard each package as one of
+Brain's pages are the same sheet: the cream ground, bold navy titles, and on the dashboard each package as one of
 the drawings with its name under it, like an asset library.

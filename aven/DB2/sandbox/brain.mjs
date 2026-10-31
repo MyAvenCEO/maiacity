@@ -1,8 +1,8 @@
-// avenOS's docs (aven/DB2/brain, os/web/docs), in all three of Playwright's engines, in the browsers' container (`bun
+// Brain, avenOS's documentation (aven/DB2/brain, os/web/brain), in all three of Playwright's engines, in the browsers' container (`bun
 // run up --check`). Read on production's stand-in (localhost:5174) by a browser that never signed in, as anyone reads
 // them, and on the box's own view (localhost:5173). Checked, at a desktop's 1280 px and a phone's 390 px:
 //   1. the dashboard has an item per package, avenID's open and the rest coming; the main nav reaches it;
-//   2. avenID's page draws its slide as 16:9; the glossary draws, and #/docs/glossary/vault marks that term;
+//   2. avenID's page draws its slide as 16:9; the glossary draws, and #/brain/glossary/vault marks that term;
 //   3. no page scrolls sideways;
 //   4. every text has 4.5:1 against the background under it (3:1 when large), as WCAG has it, and no text on a slide is
 //      under 9 px at a phone's width (brain/STYLE.md, "A slide");
@@ -16,7 +16,7 @@ mkdirSync(run, { recursive: true });
 const problems = [];
 const report = {};
 const widths = { desktop: 1280, phone: 390 };
-const pages = { dashboard: 'docs', id: 'docs/id', glossary: 'docs/glossary/vault' };
+const pages = { dashboard: 'brain', id: 'brain/id', glossary: 'brain/glossary/vault' };
 
 // every element's own text, its colour and the first opaque background behind it, as the page lays it out; the
 // ratio is Face.lean's, in integers over its linear table (brain/render/contrast.js, held to the spec's vectors)
@@ -71,9 +71,9 @@ async function read(engine) {
 					const say = (p) => problems.push(`${name}, ${size}, ${where}, ${view}: ${p}`);
 					if (where === 'box') {
 						await page.goto(`${origin}/`);
-						await page.getByTestId('nav-docs').first().click({ timeout: 30_000 });
+						await page.getByTestId('nav-brain').first().click({ timeout: 30_000 });
 					} else await page.goto(`${origin}/#/${route}`);
-					const ready = { dashboard: '[data-testid="doc-id"]', id: '[data-testid="slide-owns"] .slide', glossary: '#term-vault.here' }[view];
+					const ready = { dashboard: '[data-testid="brain-id"]', id: '[data-testid="slide-owns"] .slide', glossary: '#term-vault.here' }[view];
 					if (!(await page.locator(ready).first().waitFor({ timeout: 30_000 }).then(() => true, () => false))) {
 						say(`${ready} never showed`);
 						continue;
@@ -81,10 +81,10 @@ async function read(engine) {
 					await page.evaluate(() => document.fonts.ready);
 					const seen = {};
 					if (view === 'dashboard') {
-						seen.items = await page.locator('[data-testid^="doc-"]').count();
-						seen.open = await page.locator('[data-testid^="doc-"] a').count();
+						seen.items = await page.locator('[data-testid^="brain-"]').count();
+						seen.open = await page.locator('[data-testid^="brain-"] a').count();
 						if (seen.items !== 9) say(`${seen.items} items, not 9`);
-						if (!(await page.locator('[data-testid="doc-id"] a').count())) say('avenID is not open');
+						if (!(await page.locator('[data-testid="brain-id"] a').count())) say('avenID is not open');
 					}
 					if (view === 'id') {
 						const box = await page.locator('.slide').first().boundingBox();
@@ -105,7 +105,7 @@ async function read(engine) {
 					const low = (await page.evaluate(contrasts, linear)).filter((c) => !c.ok);
 					seen.lowContrast = low;
 					for (const c of low) say(`"${c.text}" has ${c.ratio}:1, under ${c.need}:1`);
-					await page.screenshot({ path: `${run}/docs-${view}-${where}-${size}-${name}.png`, fullPage: view !== 'glossary' });
+					await page.screenshot({ path: `${run}/brain-${view}-${where}-${size}-${name}.png`, fullPage: view !== 'glossary' });
 					got[`${where}-${view}-${size}`] = seen;
 				}
 			}
@@ -124,7 +124,7 @@ for (const engine of [chromium, webkit, firefox]) {
 		problems.push(`${engine.name()}: ${error.message}`);
 	}
 }
-writeFileSync(`${run}/docs.json`, `${JSON.stringify({ ok: problems.length === 0, problems, report }, null, 2)}\n`);
-for (const p of problems) console.log(`docs: ${p}`);
-console.log(problems.length ? 'the docs step FAILED' : 'the docs read in Chromium, WebKit and Firefox, at 1280 and 390 px, with 4.5:1 text');
+writeFileSync(`${run}/brain.json`, `${JSON.stringify({ ok: problems.length === 0, problems, report }, null, 2)}\n`);
+for (const p of problems) console.log(`brain: ${p}`);
+console.log(problems.length ? 'the brain step FAILED' : 'Brain reads in Chromium, WebKit and Firefox, at 1280 and 390 px, with 4.5:1 text');
 process.exit(problems.length ? 1 : 0);

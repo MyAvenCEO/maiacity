@@ -1,6 +1,6 @@
 # The glossary
 
-The one glossary of the whole system, kept in avenBRAIN and shown in avenOS under Docs: every term the specs use,
+The one glossary of the whole system, kept in avenBRAIN and shown in avenOS's Brain: every term the specs use,
 part by part, with its one meaning and a verdict. The shared primitives (Value, envelope, log, Doc, cap, want and the
 rest) are defined once, in [`ARCHITECTURE.md`](../ARCHITECTURE.md#the-primitives-everything-shares). This file maps
 every other term onto them. The verdicts are proposals until they are decided (**A1**).
@@ -333,11 +333,10 @@ means something else in another part, and that part's meaning is named.
 - **record** (a peer's status, `first-start`) **→ status**, **first-start ref**.
 - **`aven/db/1`, `Router`, `ProtocolHandler`, `after_handshake`**: our ALPN; iroh's dispatch and hook.
 
-## avenBRAIN: the docs
+## avenBRAIN: Brain
 
 - **avenBRAIN**: the package that holds all the documentation (`aven/DB2/brain`): the wiki, its slides, the style,
-  the voice and this glossary. avenOS shows it under **Docs** (⚠ **docs**: the tab's name is a question for Samuel;
-  see "New collisions" below).
+  the voice and this glossary. avenOS shows it as **Brain** (`#/brain`), so "docs" means only avenDB's (**A41**).
 - **page** (avenBRAIN): one package's part of the wiki, in Markdown: its story, then its slides in order. ⚠ **page**.
 - **story**: a page's concepts in the order a reader meets them, from first principles; never a term before its slide.
 - **slide**: one concept as one 16:9 picture, with its text in Markdown under it. Its markup is allowlisted HTML with
@@ -349,7 +348,7 @@ means something else in another part, and that part's meaning is named.
   encrypted.
 - **card** (on a slide or a page): a drawn or laid-out panel; never "record", since a Record is avenDB's.
 - **contents**: a page's list of its sections, beside it; never "index", which is the engine's.
-- **package list** (`docs.json`): the packages the docs dashboard shows; never "catalogue", which the vocabulary
+- **package list** (`packages.json`): the packages Brain's dashboard shows; never "catalogue", which the vocabulary
   replaced.
 
 ## Decided since the verdicts above
@@ -363,6 +362,8 @@ means something else in another part, and that part's meaning is named.
   one thing; this replaces the caps verdict "operation → verb" above.
 - **Every Doc has a type, always** (**A39**). A Doc's genesis fixes its root type with its vault: the network tree, a
   carrier Doc, an actor's Doc, a catalogue and a period Doc too. A type Doc's own type is the built-in type of types.
+- **The documentation is Brain** (**A41**): avenOS's tab and route (`#/brain`) for avenBRAIN, so "docs" and "Docs" mean
+  only avenDB's document layer and its Docs.
 - **Rule 16, clean architecture only, never a patch.** A fix goes where the primitive is, once, for every use of it.
   Nothing is built for a structure that is about to go; until its clean form exists, the old one stays as it is.
 - **Holdings follow caps** (**A40**). A device or a keeper holds only what its caps cover, so whenever coverage
@@ -416,7 +417,7 @@ resolution is a proposal (**A1**); nothing is renamed in the specs or the code u
 | Word | Its meanings | Proposed |
 |---|---|---|
 | settle | the tree's one rule; merges resolving; the issuer choosing a fetch key; owner removals; the chat keeper | settle only for the tree; merges "resolve"; fetch keys "the issuer chooses"; `settleRemovals` → `resolveRemovals` |
-| docs, Docs | the document layer; the plural of Doc; avenOS's documentation tab | "docs" only for the document layer; the documentation **→ Brain** (Samuel's question) |
+| docs, Docs | the document layer; the plural of Doc; avenOS's documentation tab | decided (**A41**): the documentation is **Brain**; "docs" only for the document layer |
 | seal, sealed | encrypted; a segment closed; fixed into a name; a drawn signature | sealed only means encrypted; segments "closed"; slides "signature mark" |
 | record, Record | the primitive; signed peer notices; a peer's first-start status; an actor's log entry; slide cards | Record only; peer records **→ notices**; `record.rs` **→ `FirstStart`**; slide **cards** |
 | chain | caps' chain; a well-formed log (`IsChain`); fetch keys; the chat's chains; the owners above; period Docs | caps only; `IsChain` **→ `IsLog`**; fetch keys "succeed"; `Tree.chain` **→ `above`**; period Docs a "series" |

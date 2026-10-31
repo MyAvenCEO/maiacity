@@ -1,5 +1,5 @@
 /* avenBRAIN's tokens (STYLE.md): an illustrated asset sheet. A warm cream ground, bold navy type, the drawings'
-   ochre paths. Scoped to `.brain`, the root of every docs view, so avenOS's own tokens (os/web/style.css) stay as they
+   ochre paths. Scoped to `.brain`, the root of every view of Brain, so avenOS's own tokens (os/web/style.css) stay as they
    are. The slides write these values out (slide.css), since the face-runtime takes no custom properties. */
 .brain {
 	--brain-cream: #f8eee2;

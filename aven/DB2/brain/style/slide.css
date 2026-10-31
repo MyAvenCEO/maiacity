@@ -2,7 +2,7 @@
    title in bold navy at the top left, hand-drawn objects (art/objects.mjs, placed as image layers) with bold
    uppercase navy labels under them, and dotted ochre paths for how they relate, each named. Every length inside is in
    cqw, a hundredth of the slide's width, so the slide scales as one picture. No text is smaller than 2.6cqw: about
-   9 px on a phone (sandbox/docs.mjs). Every element is a layer with a stable class, so a motion version can move
+   9 px on a phone (sandbox/brain.mjs). Every element is a layer with a stable class, so a motion version can move
    each one.
    Written in the subset the face-runtime takes as typed style rules: class and tag selectors, the properties
    render/tree.test.js lists, plain values. No custom properties and no url(). */

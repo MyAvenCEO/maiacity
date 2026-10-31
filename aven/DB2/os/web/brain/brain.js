@@ -1,7 +1,7 @@
 // avenBRAIN in avenOS (aven/DB2/brain): its package list, pages, slides and glossary, bundled from the repo at build time.
 // Text comes in as Markdown and markup and leaves as node trees (brain/render), which Node.svelte draws: the shape the
 // markdown-runtime and the face-runtime will hand over once they exist.
-import list from '../../../brain/docs.json';
+import list from '../../../brain/packages.json';
 import { blocks, slug } from '../../../brain/render/markdown.js';
 import { rewriteLinks } from '../../../brain/render/links.js';
 import { check, parse } from '../../../brain/render/tree.js';
@@ -20,13 +20,13 @@ const repo = 'https://github.com/myavenceo/maiacity/blob/main/aven/DB2/brain/';
 // other file in the repo to GitHub, and the rest only if the allowlist takes it
 export function linker(from) {
 	return (href) => {
-		if (href.startsWith('glossary:')) return `#/docs/glossary/${href.slice(9)}`;
+		if (href.startsWith('glossary:')) return `#/brain/glossary/${href.slice(9)}`;
 		if (/^(https:\/\/|mailto:)/.test(href)) return href;
 		if (href.startsWith('#')) return null;
 		const url = new URL(href, `https://repo/${from}`);
 		const path = url.pathname.slice(1);
 		const own = packages.find((p) => p.page === path);
-		if (own) return `#/docs/${own.id}`;
+		if (own) return `#/brain/${own.id}`;
 		return path.startsWith('../') ? null : `${repo}${path}${url.hash}`.replace('/brain/../', '/');
 	};
 }
@@ -53,7 +53,7 @@ export function slide(pkg, id) {
 	};
 }
 
-// the glossary: its tree, every term's entry with an id (`term-<word>`), and each word it defines, for #/docs/glossary/<word>
+// the glossary: its tree, every term's entry with an id (`term-<word>`), and each word it defines, for #/brain/glossary/<word>
 export function glossary() {
 	const tree = rewriteLinks(blocks(file('GLOSSARY.md'), { idPrefix: 'g-' }), linker('GLOSSARY.md'));
 	const terms = new Map();

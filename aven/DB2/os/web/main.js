@@ -1,7 +1,7 @@
 // avenOS in the browser. A Peer-Light's origin from the cast runs avenOS as that device; a host whose `/aven.json`
 // names an Aven Peer is that network's (Network.svelte: claim it, sign in, or invite only); any other host is the
 // box's own view (localhost) or a visitor's (App.svelte). Every view of the tree is pushed by the Peer-Light's core
-// (id.svelte.js), the page's one WebAssembly module. #/docs is avenBRAIN's docs on every host (Root.svelte).
+// (id.svelte.js), the page's one WebAssembly module. #/brain is avenBRAIN on every host (Root.svelte).
 import { mount } from 'svelte';
 import cast from '../../sandbox/cast.json';
 import App from './App.svelte';
