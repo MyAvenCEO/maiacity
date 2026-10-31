@@ -40,6 +40,7 @@ fn brain() -> Params {
                 "https://github.com/MyAvenCEO/maiacity/blob/main/aven/".into(),
             ),
         ],
+        ..Params::default()
     }
 }
 
@@ -130,8 +131,16 @@ fn tables_and_tasks() {
                             "tr",
                             &[],
                             vec![
-                                el("th", &[("class", "left")], vec![t("Term")]),
-                                el("th", &[("class", "right")], vec![t("Means")]),
+                                el(
+                                    "th",
+                                    &[("scope", "col"), ("class", "left")],
+                                    vec![t("Term")]
+                                ),
+                                el(
+                                    "th",
+                                    &[("scope", "col"), ("class", "right")],
+                                    vec![t("Means")]
+                                ),
                             ]
                         )]
                     ),
@@ -420,4 +429,69 @@ fn a_dense_document_is_refused() {
         | a | b |\n|---|---|\n| 1 | 2 |\n\n- one\n- two\n\n```\ncode\n```\n\n";
     let s = section.repeat(200 * 1024 / section.len() + 1);
     assert!(render(&s, &Params::default(), TREE_LIMITS).is_none());
+}
+
+/// v2: a soft break is a space; heading ids and in-page links carry the document's `idPrefix`; a relative link resolves
+/// against the document's `base` before the rules, so the brain's links reach its pages and the repository.
+#[test]
+fn links_in_their_document() {
+    let p = Params {
+        links: vec![
+            ("glossary:".into(), "#/brain/glossary/".into()),
+            ("aven/DB2/brain/id/README.md".into(), "#/brain/id".into()),
+            (
+                "aven/".into(),
+                "https://github.com/MyAvenCEO/maiacity/blob/main/aven/".into(),
+            ),
+        ],
+        base: "aven/DB2/brain/GLOSSARY.md".into(),
+        id_prefix: "g-".into(),
+    };
+    let s = "# Vault\n\nOne\nline. See [it](#vault), [id](id/README.md), [voice](VOICE.md#rules) and [x](../../../../x).";
+    let got = render(s, &p, TREE_LIMITS).expect("drawn");
+    let gh = "https://github.com/MyAvenCEO/maiacity/blob/main/aven/DB2/brain/VOICE.md#rules";
+    assert_eq!(
+        got,
+        doc(vec![
+            el("h1", &[("id", "g-vault")], vec![t("Vault")]),
+            el(
+                "p",
+                &[],
+                vec![
+                    t("One line. See "),
+                    el("a", &[("href", "#g-vault")], vec![t("it")]),
+                    t(", "),
+                    el("a", &[("href", "#/brain/id")], vec![t("id")]),
+                    t(", "),
+                    el("a", &[("href", gh)], vec![t("voice")]),
+                    t(" and x."),
+                ]
+            ),
+        ])
+    );
+}
+
+/// The params refuse a key they don't know, a key twice, and a value of the wrong kind.
+#[test]
+fn params_are_exact() {
+    use aven_core::Value;
+    let text = |s: &str| Value::Text(s.into());
+    assert_eq!(
+        Params::of_value(&Value::Map(vec![])),
+        Some(Params::default())
+    );
+    let p = Params::of_value(&Value::Map(vec![
+        ("base".into(), text("a/b.md")),
+        ("idPrefix".into(), text("g-")),
+    ]))
+    .unwrap();
+    assert_eq!((p.base.as_str(), p.id_prefix.as_str()), ("a/b.md", "g-"));
+    for bad in [
+        vec![("other".into(), text("x"))],
+        vec![("base".into(), text("a")), ("base".into(), text("b"))],
+        vec![("base".into(), Value::Uint(1))],
+        vec![("links".into(), text("x"))],
+    ] {
+        assert_eq!(Params::of_value(&Value::Map(bad.clone())), None, "{bad:?}");
+    }
 }
