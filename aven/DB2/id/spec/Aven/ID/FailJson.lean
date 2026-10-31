@@ -53,7 +53,6 @@ def net : Net :=
 def tree : List TreeStatement :=
   [⟨100, "alice-passkey", [], .genesis alicesGenesis⟩, ⟨110, "alice-passkey", [100], .signIn "alice" "alice-light"⟩,
    ⟨120, "alice-passkey", [110], .ticket "t-carol"⟩, ⟨130, "alice-passkey", [110], .ticket "t-dan"⟩]
-def ok (_ : TreeStatement) : Bool := true
 
 def carol : TreeStatement := ⟨500, "t-carol", [120], .claim 120 "carol" "carol-passkey" "carol-light" guardian⟩
 def carolConfirm : TreeStatement := ⟨510, "alice-peer", [500], .confirm 500⟩
@@ -72,7 +71,7 @@ def step (n : Nat) (what : String) (input expected : Json) : Json :=
   Json.mkObj [("name", s!"failure {n}: {what}"), ("input", input), ("expected", expected)]
 
 def treeJson (S : List TreeStatement) : Json := Json.arr (S.map SettleJson.TreeStatement.json).toArray
-def settled (S : List TreeStatement) : Json := Listed.json ((settle ok 100 S).listed S)
+def settled (S : List TreeStatement) : Json := Listed.json ((settle 100 S).listed S)
 
 /-- Everything the members hold by step 7. -/
 def all7 : List TreeStatement := tree ++ [carol, carolConfirm, dan1, dan2]
@@ -99,7 +98,7 @@ def failureVectors : List Json :=
    step 4 "a ticket claimed through Alice Peer's relay, waiting, then confirmed into a member cap"
      (Json.mkObj [("tree", treeJson tree), ("claim", SettleJson.TreeStatement.json carol),
        ("confirm", SettleJson.TreeStatement.json carolConfirm)])
-     (Json.mkObj [("letIn", toJson (newcomer ok 100 tree "carol-light" (some carol))),
+     (Json.mkObj [("letIn", toJson (newcomer 100 tree "carol-light" (some carol))),
        ("waiting", settled (tree ++ [carol])), ("confirmed", settled (tree ++ [carol, carolConfirm]))]),
    step 5 "two claims of one ticket at once: the same winner everywhere"
      (Json.mkObj [("tree", treeJson (tree ++ [dan1, dan2]))])
@@ -107,10 +106,10 @@ def failureVectors : List Json :=
    step 6 "a withdrawal and a claim, neither seeing the other: the withdrawal wins"
      (Json.mkObj [("tree", treeJson (tree ++ [carol, carolWithdrawn]))])
      (Json.mkObj [("settled", settled (tree ++ [carol, carolWithdrawn])),
-       ("carolLetIn", toJson ((settle ok 100 (tree ++ [carol, carolWithdrawn])).admits "carol-light"))]),
+       ("carolLetIn", toJson ((settle 100 (tree ++ [carol, carolWithdrawn])).admits "carol-light"))]),
    step 7 "the Aven Peer starts again and settles the tree every member holds"
      (Json.mkObj [("members", treeJson all7), ("avenPeer", treeJson all7.reverse)])
-     (Json.mkObj [("same", toJson ((settle ok 100 all7).listed all7 == (settle ok 100 all7.reverse).listed all7)),
+     (Json.mkObj [("same", toJson ((settle 100 all7).listed all7 == (settle 100 all7.reverse).listed all7)),
        ("settled", settled all7)]),
    step 8 "a peer on another wire version is refused with update"
      (Json.mkObj [("mine", toJson (1 : Nat)), ("theirs", toJson (2 : Nat))])
@@ -132,20 +131,20 @@ def failureVectors : List Json :=
 #guard fileKeepers == ["aven-peer", "bob-peer"] && fetchable net gone "alice-light" "bobs-file"
 -- 4. Carol gets in at the relay for her claim; it stands and waits for its confirmation; once Alice Peer confirms it,
 -- Carol's vault holds its member cap and the door admits her browser
-#guard newcomer ok 100 tree "carol-light" (some carol)
-#guard (settle ok 100 (tree ++ [carol])).standing 500 && !(settle ok 100 (tree ++ [carol])).final 500 &&
-  !(settle ok 100 (tree ++ [carol])).admits "carol-light"
-#guard (settle ok 100 (tree ++ [carol, carolConfirm])).final 500 &&
-  (settle ok 100 (tree ++ [carol, carolConfirm])).admits "carol-light"
+#guard newcomer 100 tree "carol-light" (some carol)
+#guard (settle 100 (tree ++ [carol])).standing 500 && !(settle 100 (tree ++ [carol])).final 500 &&
+  !(settle 100 (tree ++ [carol])).admits "carol-light"
+#guard (settle 100 (tree ++ [carol, carolConfirm])).final 500 &&
+  (settle 100 (tree ++ [carol, carolConfirm])).admits "carol-light"
 -- 5. the smaller hash wins in every order, and the loser is out
-#guard (settle ok 100 (tree ++ [dan1, dan2])).standing 605 && !(settle ok 100 (tree ++ [dan1, dan2])).standing 610
-#guard (settle ok 100 (tree ++ [dan2, dan1])).listed (tree ++ [dan1, dan2]) ==
-  (settle ok 100 (tree ++ [dan1, dan2])).listed (tree ++ [dan1, dan2])
-#guard !(settle ok 100 (tree ++ [dan1, dan2])).admits "dan-light"
+#guard (settle 100 (tree ++ [dan1, dan2])).standing 605 && !(settle 100 (tree ++ [dan1, dan2])).standing 610
+#guard (settle 100 (tree ++ [dan2, dan1])).listed (tree ++ [dan1, dan2]) ==
+  (settle 100 (tree ++ [dan1, dan2])).listed (tree ++ [dan1, dan2])
+#guard !(settle 100 (tree ++ [dan1, dan2])).admits "dan-light"
 -- 6. the withdrawal wins and Carol's browser is out
-#guard !(settle ok 100 (tree ++ [carol, carolWithdrawn])).admits "carol-light"
+#guard !(settle 100 (tree ++ [carol, carolWithdrawn])).admits "carol-light"
 -- 7. the same tree, whatever order the Aven Peer reads it back in
-#guard (settle ok 100 all7).listed all7 == (settle ok 100 all7.reverse).listed all7
+#guard (settle 100 all7).listed all7 == (settle 100 all7.reverse).listed all7
 -- 8. no fallback
 #guard !Records.speaks 1 2
 -- 9. the hider is caught, and Alice Peer is asked instead

@@ -180,11 +180,16 @@ thread's recommendation. Samuel may overrule any.
 The hard part. Today the Aven Peer orders statements by compare-and-set on ref names. Without one place doing that,
 every peer must reach the same tree from the same statements, whatever order they arrive in.
 
-### The tree is a Doc of signed statements (A12)
+### The tree is a Doc of Core envelopes (A12, A30, A39)
 
-- **Every statement names the tips it saw:** the hashes of the tree's newest statements when it was signed. So the
-  statements form a graph, and "in the past of" is decidable: B is in A's past if A names B, or names something whose
-  past holds B. This is a log of envelopes, as every Doc's is (`Aven.Core.Log`).
+- **Every statement is a Core envelope of the tree Doc,** a Doc of type `tree` in Maia City's vault. Its body says what
+  it says (`TreeSays.toValue`, read back by `ofValue_toValue`). A peer stores each envelope under its name and reads it
+  as the statement it carries (`TreeDoc.read`); one that doesn't read, or fails its own checks (its name, its
+  signature), is dropped before settling, so it carries no other statement's past (`TreeDoc.settleDoc`).
+- **Every statement names the tips it saw,** its parents: the names of the tree's newest statements when it was
+  signed. So the statements form a graph, and "in the past of" is decidable: B is in A's past if A names B, or names
+  something whose past holds B. That is Core's past, as for every Doc (`Aven.Core.Past`), with no second one for the
+  tree.
 - **The genesis** (A11) is the first statement. Samuel's passkey and MaiaCityGuardian sign it, and it names the RP ID,
   the origins, the admin coop, the agent, the Aven Peer's key and the guardian's keys. Every member pins its hash; a
   statement whose past doesn't reach the pinned genesis is not part of the tree.
@@ -258,7 +263,8 @@ In `Aven.ID.Network`, with the caps thread (`ticket_once` is there since #1531),
   new address record is the newest (`rehome_newest`), and one relay alone is an only source (`one_relay_only_source`);
   plain bytes go only to a reader, and relays and keepers that aren't readers see sealed bytes only
   (`no_plain_to_nonreader`, `relay_blind`, `keeper_blind`). Vectors `node.json`: networks losing each peer in turn.
-- **Vectors:** `settled.json`. The same statement sets in six orders each, with their settled tree: `TreeExamples`, the
+- **Vectors:** `settled.json`. Each statement is given as its envelope's CBOR under its name, with what it says
+  written out to read. The same statement sets in six orders each, with their settled tree: `TreeExamples`, the
   races one by one (two claims, a claim against a withdrawal, a claim after its confirmation, two devices confirming two
   claims, the Aven Peer's key changed, a list's add against its remove, a statement outside the genesis, a bad one), 40
   generated sets, and production's store migrated from the invite traces. `records.json`: records and the newest of

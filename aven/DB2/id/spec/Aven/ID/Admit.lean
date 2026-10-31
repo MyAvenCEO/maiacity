@@ -25,7 +25,7 @@ def TreeStatement.brings (s : TreeStatement) : Option String :=
 
 namespace Settle
 
-variable (ok : TreeStatement → Bool) (pinned : Nat)
+variable (pinned : Core.Hash)
 
 /-! ## B1: honest acks -/
 
@@ -34,8 +34,8 @@ view, and no other claim of its ticket is final there. Any other statement is no
 def confirmPolicy (V : List TreeStatement) (a : TreeStatement) : Bool :=
   match a.says with
   | .confirm n =>
-    (view ok pinned V).any fun c => c.name == n && standing (view ok pinned V) c &&
-      (view ok pinned V).all fun f => !(final (view ok pinned V) f && sameTicket f c && f.name != c.name)
+    (view pinned V).any fun c => c.name == n && standing (view pinned V) c &&
+      (view pinned V).all fun f => !(final (view pinned V) f && sameTicket f c && f.name != c.name)
   | _ => true
 
 /-- **`honest_confirm_once`:** a claim `c₁` final among statements a device held (`V₁`, its own earlier ack among them)
@@ -43,23 +43,23 @@ stays final in every later view `V₂ ⊇ V₁`, so the policy refuses an ack th
 Names are hashes, so one name is one statement (`uniq`). -/
 theorem honest_confirm_once {V₁ V₂ : List TreeStatement} (sub : ∀ x ∈ V₁, x ∈ V₂)
     (uniq : ∀ x ∈ V₂, ∀ y ∈ V₂, x.name = y.name → x = y) {c₁ c₂ a : TreeStatement} (m₁ : c₁ ∈ V₁)
-    (f₁ : final (view ok pinned V₁) c₁ = true) (same : sameTicket c₁ c₂ = true) (other : c₁.name ≠ c₂.name)
-    (m₂ : c₂ ∈ V₂) (acks : a.says = .confirm c₂.name) : confirmPolicy ok pinned V₂ a = false := by
-  have f₂ : final (view ok pinned V₂) c₁ = true := final_mono ok pinned sub f₁
-  have cnt : counted ok pinned V₂ c₁ = true := claimOk_counted ok pinned (final_claimOk f₂)
+    (f₁ : final (view pinned V₁) c₁ = true) (same : sameTicket c₁ c₂ = true) (other : c₁.name ≠ c₂.name)
+    (m₂ : c₂ ∈ V₂) (acks : a.says = .confirm c₂.name) : confirmPolicy pinned V₂ a = false := by
+  have f₂ : final (view pinned V₂) c₁ = true := final_mono pinned sub f₁
+  have cnt : counted pinned V₂ c₁ = true := claimOk_counted pinned (final_claimOk f₂)
   unfold confirmPolicy
   rw [acks]
   simp only
-  cases e : (view ok pinned V₂).any fun c => c.name == c₂.name && standing (view ok pinned V₂) c &&
-      (view ok pinned V₂).all fun f => !(final (view ok pinned V₂) f && sameTicket f c && f.name != c.name)
+  cases e : (view pinned V₂).any fun c => c.name == c₂.name && standing (view pinned V₂) c &&
+      (view pinned V₂).all fun f => !(final (view pinned V₂) f && sameTicket f c && f.name != c.name)
   · rfl
   · exfalso
-    obtain ⟨c, mc, _, hc⟩ := (view_any ok pinned).mp e
+    obtain ⟨c, mc, _, hc⟩ := (view_any pinned).mp e
     simp only [Bool.and_eq_true, beq_iff_eq] at hc
     obtain ⟨⟨hn, _⟩, hall⟩ := hc
     have hcc : c = c₂ := uniq c mc c₂ m₂ hn
     subst hcc
-    have := view_all ok pinned hall (sub c₁ m₁) cnt
+    have := view_all pinned hall (sub c₁ m₁) cnt
     simp [f₂, same, other] at this
 
 /-! ## B2: newcomers -/
@@ -67,19 +67,19 @@ theorem honest_confirm_once {V₁ V₂ : List TreeStatement} (sub : ∀ x ∈ V�
 /-- A claim that would stand with what a peer holds: its device may bring it to a confirmer (A38), which issues its
 vault's member cap; until then it is let in for that and nothing else. -/
 def pending (S : List TreeStatement) (st : TreeStatement) : Bool :=
-  st.ticketOf.isSome && (settle ok pinned (st :: S)).standing st.name
+  st.ticketOf.isSome && (settle pinned (st :: S)).standing st.name
 
 /-- A relay or a hook lets `key` in: the settled tree admits it, or it brings a statement naming it as the device, with
 which the tree would admit it. -/
 def newcomer (S : List TreeStatement) (key : String) (s : Option TreeStatement) : Bool :=
-  (settle ok pinned S).admits key ||
+  (settle pinned S).admits key ||
     match s with
-    | some st => st.brings == some key && (pending ok pinned S st || (settle ok pinned (st :: S)).admits key)
+    | some st => st.brings == some key && (pending pinned S st || (settle pinned (st :: S)).admits key)
     | none => false
 
 /-- **`newcomer_own`:** a key the tree doesn't admit yet gets in only for a statement that names it as its device. -/
 theorem newcomer_own {S : List TreeStatement} {key : String} {st : TreeStatement}
-    (h : newcomer ok pinned S key (some st) = true) (no : (settle ok pinned S).admits key = false) :
+    (h : newcomer pinned S key (some st) = true) (no : (settle pinned S).admits key = false) :
     st.brings = some key := by
   simp only [newcomer, no, Bool.false_or, Bool.and_eq_true, beq_iff_eq] at h
   exact h.1
@@ -87,18 +87,18 @@ theorem newcomer_own {S : List TreeStatement} {key : String} {st : TreeStatement
 /-- **`newcomer_admitted`:** once the statement a newcomer brought reaches the statements a peer holds, its tree says
 what let it in at the relay: the newcomer's claim stands there, waiting for its confirmation, or the tree admits it. -/
 theorem newcomer_admitted {S S' : List TreeStatement} {key : String} {st : TreeStatement}
-    (h : newcomer ok pinned S key (some st) = true) (same : ∀ x, x ∈ st :: S ↔ x ∈ S') :
-    (settle ok pinned S').admits key = true ∨ (settle ok pinned S').standing st.name = true ∨
-      (settle ok pinned S).admits key = true := by
+    (h : newcomer pinned S key (some st) = true) (same : ∀ x, x ∈ st :: S ↔ x ∈ S') :
+    (settle pinned S').admits key = true ∨ (settle pinned S').standing st.name = true ∨
+      (settle pinned S).admits key = true := by
   simp only [newcomer, pending, Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at h
   rcases h with h | ⟨_, ⟨_, h⟩ | h⟩
   · exact .inr (.inr h)
-  · exact .inr (.inl (by rw [← settle_perm ok pinned same]; exact h))
-  · exact .inl (by rw [← settle_perm ok pinned same]; exact h)
+  · exact .inr (.inl (by rw [← settle_perm pinned same]; exact h))
+  · exact .inl (by rw [← settle_perm pinned same]; exact h)
 
 /-- **`newcomer_none`:** without a statement, only what the tree admits gets in. -/
 theorem newcomer_none {S : List TreeStatement} {key : String} :
-    newcomer ok pinned S key none = (settle ok pinned S).admits key := by
+    newcomer pinned S key none = (settle pinned S).admits key := by
   simp [newcomer]
 
 end Settle
@@ -112,22 +112,21 @@ open Settle TreeExamples
 def g : TreeStatement := ⟨100, "alice-passkey", [], .genesis alicesGenesis⟩
 def t : TreeStatement := ⟨120, "alice-passkey", [100], .ticket "t-bob"⟩
 def bob : TreeStatement := ⟨500, "t-bob", [120], .claim 120 "bob" "bob-passkey" "bob-peer" guardian⟩
-def ok (_ : TreeStatement) : Bool := true
 
 -- Bob's browser, not yet a member, is let in at any relay for its claim, and for nothing else
-#guard newcomer ok 100 [g, t] "bob-peer" (some bob)
-#guard !newcomer ok 100 [g, t] "mallory-peer" (some bob)
-#guard !newcomer ok 100 [g, t] "bob-peer" none
+#guard newcomer 100 [g, t] "bob-peer" (some bob)
+#guard !newcomer 100 [g, t] "mallory-peer" (some bob)
+#guard !newcomer 100 [g, t] "bob-peer" none
 -- after the claim, Bob's browser waits for a confirmation; once Aven's device confirms it, Bob's vault holds its
 -- member cap and his browser needs no statement
-#guard !newcomer ok 100 [g, t, bob] "bob-peer" none
-#guard newcomer ok 100 [g, t, bob, ⟨510, "aven-peer", [500], .confirm 500⟩] "bob-peer" none
+#guard !newcomer 100 [g, t, bob] "bob-peer" none
+#guard newcomer 100 [g, t, bob, ⟨510, "aven-peer", [500], .confirm 500⟩] "bob-peer" none
 
 -- the ack policy: Alice's Peer acks Bob's claim; once that ack is in its view, it refuses to ack a leaked one
 def leak : TreeStatement := ⟨300, "t-bob", [120], .claim 120 "mallory" "mallory-passkey" "mallory-peer" guardian⟩
 def ack1 : TreeStatement := ⟨510, "alice-peer", [500], .confirm 500⟩
-#guard confirmPolicy ok 100 [g, t, bob] ack1
-#guard !confirmPolicy ok 100 [g, t, bob, ack1, leak] ⟨520, "alice-peer", [510, 300], .confirm 300⟩
+#guard confirmPolicy 100 [g, t, bob] ack1
+#guard !confirmPolicy 100 [g, t, bob, ack1, leak] ⟨520, "alice-peer", [510, 300], .confirm 300⟩
 
 end AdmitExamples
 
