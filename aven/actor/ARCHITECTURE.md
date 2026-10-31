@@ -174,12 +174,13 @@ the WebAssembly boundary's, not the part's.
 
 - **Where runtimes come from.** Only the repository. Each is built from source in `aven/runtimes/actor` (section 13), reviewed,
   frozen, named by its hash and never changed. A new capability is a new version beside the old ones. A part names the
-  version it was made for. A version that closes a hole raises the runtime's **floor**, and a part naming an older
-  version runs on the floor.
+  version it was made for, and runs exactly that runtime's hash, when that hash is pinned in the past of what it is
+  judged in (avenDB A7, A42). A hole is closed by the owners withdrawing the pin, in history, so every reader agrees
+  on every turn. A **floor** binds only what a device runs for itself: what it draws and caches.
 - **How they run.** The kernel runs each runtime inside itself, in a pure-Rust WebAssembly interpreter with fuel
   metering (such as wasmi). Fuel is counted per instruction, so a runtime stops at the same point on every device, and
   the engine is the same in tests, natively and in the browser.
-- **What every runtime declares**: its name, version and hash, its floor, the schema of its input and of its output
+- **What every runtime declares**: its name, version and hash, the schema of its input and of its output
   (the kernel checks both), its fuel and memory limits, and whether its output may be journaled.
 
 **The runtimes of version 1**, each rewritten from scratch, with the learnings in [`README.md`](README.md):
@@ -365,7 +366,7 @@ Its host feeds it time and events and takes back what it draws. It has four part
 ```
 
 A **journal entry** holds the message it handled, whole; the definition in force; the hash of the runtime that
-actually ran (after any floor) and the interpreter's version, which fixes the fuel schedule; `given`; the state hashes
+actually ran (the pinned one the part names) and the interpreter's version, which fixes the fuel schedule; `given`; the state hashes
 before and after; the effects; the fuel used; and the **outcome**: `done`, `refused` with its reason, or `error` with
 its reason. A refused or failed message is journaled too, and leaves the state as it was. Replaying a journal with
 what it pins gives the same state.
