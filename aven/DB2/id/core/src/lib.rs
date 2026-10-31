@@ -35,6 +35,7 @@ mod sign;
 mod statements;
 mod tree;
 mod value;
+mod vault_name;
 
 pub use cast::CastError;
 pub use claim::{
@@ -68,3 +69,4 @@ pub use sign::{SignError, Statement};
 pub use tree::{
     Invalid, Kind, MAX_NAME, MAX_PERSON_NAME, Owner, Tree, Vault, valid_name, valid_person_name,
 };
+pub use vault_name::{VAULT_LABEL_TEXT, VAULT_NONCE_LEN, VaultGenesis};

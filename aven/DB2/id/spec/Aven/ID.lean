@@ -47,6 +47,8 @@ import Aven.ID.Holdings
 import Aven.ID.Safe
 import Aven.ID.KeyFormats
 import Aven.ID.KeyFormatsJson
+import Aven.ID.VaultName
+import Aven.ID.VaultNameJson
 import Aven.ID.SafeJson
 import Aven.ID.SealedIndex
 import Aven.ID.CapsExamples
