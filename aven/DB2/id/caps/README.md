@@ -699,9 +699,15 @@ An epoch is named by the BLAKE3 hash of its key blob:
 ```
 
 - **`stanzas`:** the epoch's key sealed with X-Wing to each reader's vault or group key. Each stanza is found by a
-  **tag**, a keyed BLAKE3 of the reader's tag seed, the Doc's id and the epoch number. Only readers and writers of the
-  Doc can compute a tag, so the keeper can't link a reader, or the Docs of one group, across Docs or epochs. The list's
-  length is padded with Padmé, at most about 12 % (D18).
+  **tag**, a keyed BLAKE3 of the reader's tag seed, the Doc's id and the epoch number. **A tag seed lives in the epoch
+  before:** it is the keyed hash of the reader's X-Wing public key under `derive_key("avenID tag seed 1", previous
+  epoch's key)`, so the writer who rotates and every reader of the previous epoch can compute it, and the keeper, which
+  holds no key, can't link a reader, or the Docs of one group, across Docs or epochs. A first epoch's stanzas, and a
+  reader resealed into an epoch, carry no tag: their reader finds them by opening (`Aven.ID.KeyFormats.tagSeed`).
+- **Padding** (D18): the list holds at least four stanzas, so a lone reader doesn't show, then Padmé's at most an
+  eighth more (`Aven.ID.Padme`, the one Padmé segments use too). The extra stanzas are random bytes of a stanza's
+  lengths that open for no one, and nobody, the writer included, can tell them from a reader's
+  (`Aven.ID.KeyFormats.padded`).
 - **`commit`:** a commitment to the key. A reader opening a stanza checks it, so a stanza with a wrong key is found at
   once (avenDB-old never checked what its boxes held).
 - **`back`:** the previous epoch's key, sealed under this one. With it, the newest key opens all of history, for a
