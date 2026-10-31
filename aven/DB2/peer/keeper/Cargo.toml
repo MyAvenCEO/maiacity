@@ -8,6 +8,8 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+# what a fetch proof signs: Core's signing bytes (Aven.Core.Signed)
+aven-core = { path = "../../core" }
 
 [dev-dependencies]
 serde_json = "=1.0.154"

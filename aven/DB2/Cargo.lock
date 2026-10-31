@@ -381,6 +381,7 @@ dependencies = [
 name = "aven-peer-keeper"
 version = "0.0.0"
 dependencies = [
+ "aven-core",
  "serde_json",
 ]
 

@@ -3,7 +3,9 @@
 
 use std::path::PathBuf;
 
-use aven_peer_keeper::fetch::{Assembly, Dropped, PART_BYTES, answer, parts};
+use aven_peer_keeper::fetch::{
+    Assembly, Dropped, EXPORTER_LABEL, EXPORTER_LEN, PART_BYTES, answer, parts, proof_bytes,
+};
 use serde_json::Value;
 
 fn vectors(file: &str) -> Vec<Value> {
@@ -12,6 +14,13 @@ fn vectors(file: &str) -> Vec<Value> {
         .join(file);
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     serde_json::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+fn unhex(s: &str) -> Vec<u8> {
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+        .collect()
 }
 
 fn nums(v: &Value) -> Vec<u64> {
@@ -26,6 +35,7 @@ fn nums(v: &Value) -> Vec<u64> {
 fn answers_and_parts_are_the_models() {
     let vs = vectors("fetch.json");
     assert!(vs.len() > 60);
+    let mut proofs = 0;
     for v in vs {
         let name = v["name"].as_str().unwrap();
         let input = &v["input"];
@@ -51,8 +61,26 @@ fn answers_and_parts_are_the_models() {
             assert_eq!(a.finish(&bytes.len(), |b| b.len()), Ok(bytes), "{name}");
             continue;
         }
-        if input.get("exporter").is_some() {
-            // what a fetch proof signs: avenID's proof check replays it (Core's signing bytes, after #1710)
+        if let Some(exporter) = input.get("exporter") {
+            // what a fetch proof signs, under the exporter's label and length
+            assert_eq!(
+                input["exporterLabel"].as_str().unwrap().as_bytes(),
+                EXPORTER_LABEL,
+                "{name}"
+            );
+            assert_eq!(
+                input["exporterLength"].as_u64().unwrap(),
+                EXPORTER_LEN as u64,
+                "{name}"
+            );
+            let doc: [u8; 32] = unhex(input["doc"].as_str().unwrap()).try_into().unwrap();
+            let exporter: [u8; 32] = unhex(exporter.as_str().unwrap()).try_into().unwrap();
+            assert_eq!(
+                proof_bytes(&doc, &exporter),
+                unhex(v["expected"].as_str().unwrap()),
+                "{name}"
+            );
+            proofs += 1;
             continue;
         }
         let doc = input["doc"].as_str().unwrap();
@@ -90,6 +118,7 @@ fn answers_and_parts_are_the_models() {
             assert_eq!(a.later, nums(&e["later"]), "{name}: later");
         }
     }
+    assert_eq!(proofs, 1, "the fetch proof's vector is replayed");
 }
 
 #[test]
