@@ -291,6 +291,7 @@ name = "aven-db-docs"
 version = "0.0.0"
 dependencies = [
  "aven-core",
+ "aven-db-store",
  "aven-id",
  "blake3",
  "chacha20poly1305",
@@ -299,6 +300,16 @@ dependencies = [
  "proptest",
  "serde_json",
  "subtle",
+ "tokio",
+]
+
+[[package]]
+name = "aven-db-engine"
+version = "0.0.0"
+dependencies = [
+ "aven-core",
+ "proptest",
+ "serde_json",
 ]
 
 [[package]]
@@ -360,10 +371,12 @@ name = "aven-peer"
 version = "0.0.0"
 dependencies = [
  "aven-core",
+ "aven-db-docs",
  "aven-db-store",
  "aven-gen1",
  "aven-id",
  "aven-runtimes-registry",
+ "blake3",
  "bytes",
  "futures-channel",
  "iroh",
@@ -378,15 +391,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "aven-peer-keeper"
+version = "0.0.0"
+dependencies = [
+ "aven-core",
+ "aven-db-docs",
+ "aven-id",
+ "serde_json",
+]
+
+[[package]]
 name = "aven-peer-light"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
  "aven-core",
  "aven-db-store",
  "aven-gen1",
  "aven-id",
  "aven-peer",
  "aven-runtimes-registry",
+ "bytes",
  "futures-channel",
  "iroh",
  "js-sys",

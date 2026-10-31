@@ -3,8 +3,10 @@
 Every key in the box is a test key: its Ed25519 seed is `sha256("avenSANDBOX test signer: <id>")`, public on purpose
 and valid only inside the box (SANDBOX.md, "Vaults own vaults"). Here they are derived in core Lean, so the public
 halves in `sandbox/cast.json` come from the model too (`vectors/keys.json`): SHA-256 and SHA-512 as FIPS 180-4 defines
-them, their constants computed from the primes as it describes, and an Ed25519 public key as RFC 8032 derives it. Only
-what the box needs: no signing, which the model takes as sound (`Aven.ID.Sign`). -/
+them, their constants computed from the primes as it describes, and an Ed25519 public key as RFC 8032 derives it.
+Signing, as RFC 8032 defines it, is deterministic, so the vectors carry real signatures by these public test keys
+(`sign`), which a backend verifies and makes again byte for byte. The theorems take signatures as sound
+(`Aven.Core.Verify`). -/
 
 namespace Aven.ID.Keys
 
@@ -129,14 +131,67 @@ def mul (k : Nat) (P : Point) : Point := Id.run do
 
 def le (n x : Nat) : List UInt8 := (List.range n).map fun i => (x >>> (8 * i)).toUInt8
 
-def publicKey (seed : List UInt8) : List UInt8 :=
-  let h := sha512.digest seed
-  let a := (h.take 32).reverse.foldl (fun acc b => acc * 256 + b.toNat) 0
-  let a := (((a % 2 ^ 254) >>> 3) <<< 3) ||| 2 ^ 254
-  let A := mul a base
+/-- Bytes as a little-endian number. -/
+def ofLe (bs : List UInt8) : Nat := bs.reverse.foldl (fun acc b => acc * 256 + b.toNat) 0
+
+/-- A point's 32 bytes: y, with the low bit of x on top. -/
+def encode (A : Point) : List UInt8 :=
   let zi := inv A.z
   let (x, y) := (A.x * zi % p, A.y * zi % p)
   le 32 (y ||| (x % 2) <<< 255)
+
+/-- A seed's secret scalar, clamped (RFC 8032, 5.1.5). -/
+def scalar (seed : List UInt8) : Nat :=
+  let a := ofLe ((sha512.digest seed).take 32)
+  (((a % 2 ^ 254) >>> 3) <<< 3) ||| 2 ^ 254
+
+def publicKey (seed : List UInt8) : List UInt8 := encode (mul (scalar seed) base)
+
+/-- The order of the base point. -/
+def order : Nat := 2 ^ 252 + 27742317777372353535851937790883648493
+
+/-- A seed's signature of `msg` (RFC 8032, 5.1.6): `R ‖ S`, 64 bytes, the same every time. -/
+def sign (seed msg : List UInt8) : List UInt8 :=
+  let a := scalar seed
+  let r := ofLe (sha512.digest ((sha512.digest seed).drop 32 ++ msg)) % order
+  let R := encode (mul r base)
+  let k := ofLe (sha512.digest (R ++ publicKey seed ++ msg)) % order
+  R ++ le 32 ((r + k * a) % order)
+
+/-- A point from its 32 bytes (RFC 8032, 5.1.3), when they encode one. -/
+def decode (bs : List UInt8) : Option Point :=
+  let n := ofLe bs
+  let y := n % 2 ^ 255
+  let sign := n / 2 ^ 255
+  if p ≤ y then none else
+    let u := sub (y * y % p) 1
+    let v := (d * (y * y % p) + 1) % p
+    let x := u * powMod v 3 p % p * powMod (u * powMod v 7 p % p) ((p - 5) / 8) p % p
+    let vx2 := v * (x * x % p) % p
+    let x? := if vx2 == u then some x
+      else if vx2 == (p - u) % p then some (x * powMod 2 ((p - 1) / 4) p % p) else none
+    match x? with
+    | none => none
+    | some x =>
+      if x == 0 && sign == 1 then none
+      else
+        let x := if x % 2 == sign then x else p - x
+        some ⟨x, y, 1, x * y % p⟩
+
+/-- A point of small order: eight times it is the neutral point, whose encoding is the number 1. -/
+def smallOrder (P : Point) : Bool := encode (mul 8 P) == le 32 1
+
+/-- Whether `sig` is `key`'s signature of `msg`, verified strictly (RFC 8032, 5.1.7, without the cofactor): the key and
+`R` decode to points of large order, `S` lies below the order, and `[S]B = R + [k]A`. So an all-zero key and
+signature never pass. -/
+def verify (key msg sig : List UInt8) : Bool :=
+  key.length == 32 && sig.length == 64 &&
+    match decode key, decode (sig.take 32) with
+    | some A, some R =>
+      let s := ofLe (sig.drop 32)
+      let k := ofLe (sha512.digest (sig.take 32 ++ key ++ msg)) % order
+      !smallOrder A && !smallOrder R && s < order && encode (mul s base) == encode (add R (mul k A))
+    | _, _ => false
 
 def hex (bytes : List UInt8) : String :=
   let digit (x : UInt8) := "0123456789abcdef".toList[x.toNat]!
@@ -158,6 +213,43 @@ def seed (id : String) : List UInt8 := sha256.digest s!"avenSANDBOX test signer:
 -- RFC 8032, 7.1, test 1
 #guard hex (publicKey (unhex "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")) =
   "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+-- RFC 8032, 7.1, test 1: its signature
+#guard hex (sign (unhex "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60") []) =
+  "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e06522490155" ++
+  "5fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
+-- RFC 8032, 7.1, test 1: its signature verifies, and not for another message
+#guard verify (unhex "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a") []
+  (sign (unhex "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60") [])
+#guard !verify (unhex "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a") [0]
+  (sign (unhex "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60") [])
+/-! ## Verifying, by hand (`signatures.json`)
+
+A signature verifies only by its own key, over its own message, with `S` below the order and no point of small order:
+each answer written by hand and checked as the module builds. -/
+
+/-- A message the cast signs. -/
+def capWord : List UInt8 := "a cap".toUTF8.toList
+
+/-- Alice's owner key's signature of `capWord`, its `S` raised by the order: the same point, not canonical. -/
+def raisedS : List UInt8 :=
+  let sig := sign (seed "alice-owner") capWord
+  sig.take 32 ++ le 32 (ofLe (sig.drop 32) + order)
+
+/-- Each case: its name, the key, the message, the signature, and whether it verifies. -/
+def verifyCases : List (String × List UInt8 × List UInt8 × List UInt8 × Bool) :=
+  let alice := publicKey (seed "alice-owner")
+  let sig := sign (seed "alice-owner") capWord
+  [("Alice's owner key, over its own message", alice, capWord, sig, true),
+   ("over another message", alice, capWord ++ [46], sig, false),
+   ("by another key", publicKey (seed "bob-owner"), capWord, sig, false),
+   ("a bit of R flipped", alice, capWord, (sig.head! ^^^ 1) :: sig.tail, false),
+   ("S raised by the order", alice, capWord, raisedS, false),
+   ("63 bytes", alice, capWord, sig.take 63, false),
+   ("a key off the curve", le 32 2, capWord, sig, false),
+   ("an all-zero key and signature: points of small order", List.replicate 32 0, capWord, List.replicate 64 0,
+    false)]
+
+#guard verifyCases.all fun (_, k, m, s, b) => verify k m s == b
 -- the cast's, as SANDBOX.md writes it: Alice Peer-Light's key starts 9f78
 #guard (hex (publicKey (seed "alice-peer-light"))).startsWith "9f78"
 

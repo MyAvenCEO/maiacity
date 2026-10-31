@@ -19,6 +19,9 @@ aven-db-store = { path = "../../store" }
 aven-id = { path = "../../id/core" }
 # the file registry, aven/runtimes': what a file is by its bytes (at /runtimes in the box and the Peer's image)
 aven-runtimes-registry = { path = "../../../runtimes/registry" }
+# the docs worker's store, which asks the Peer-Light's worker (docs::Remote), on the store's own contract
+async-trait = "=0.1.92"
+bytes = "=1.12.1"
 futures-channel = "=0.3.34"
 iroh = { version = "=1.4.1", default-features = false, features = ["tls-ring"] }
 js-sys = "=0.3.107"

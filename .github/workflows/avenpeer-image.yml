@@ -21,6 +21,7 @@ on:
       - aven/DB2/core/**
       - aven/DB2/gen1/**
       - aven/DB2/db/docs/**
+      - aven/DB2/db/engine/**
       - aven/DB2/store/**
       - aven/DB2/id/core/**
       - aven/DB2/peer/native/**
