@@ -292,10 +292,12 @@ fn record_of(doc: &LoroDoc, id: &str) -> Option<Record> {
     })
 }
 
-/// Reads what an envelope's ops do to the Records (`changesOf`), from the state before it and after it.
+/// Reads what an envelope's ops do to the Records (`changesOf`), on a scratch copy holding its ops: checked out at
+/// the envelope itself to read where each op lands, then at its dependencies to read what was there before.
 fn changes_of(
-    before: &LoroDoc,
-    after: &LoroDoc,
+    scratch: &LoroDoc,
+    past: &Frontiers,
+    at: &Frontiers,
     json: &[loro::JsonChange],
     body: &Body,
 ) -> Result<Vec<RecordChange>, Unfit> {
@@ -303,6 +305,9 @@ fn changes_of(
         t: Option<DocId>,
         fields: Vec<(String, Option<Value>)>,
     }
+    let loro = |_| Unfit::Op("its version isn't in the scratch copy".into());
+    scratch.checkout(at).map_err(loro)?;
+    let after = scratch;
     let root = records_root();
     let mut touched: BTreeMap<String, Touch> = BTreeMap::new();
     let bad = |why: &str| Unfit::Op(why.into());
@@ -360,10 +365,12 @@ fn changes_of(
     }
     let named: BTreeMap<&str, &Version> =
         body.records.iter().map(|(i, t)| (i.as_str(), t)).collect();
+    let present_after: Vec<bool> = touched.keys().map(|id| present(after, id)).collect();
+    scratch.checkout(past).map_err(loro)?;
     let mut out = Vec::new();
-    for (id, t) in touched {
-        let was = type_of(before, &id);
-        let (kind, ty) = match (was, present(after, &id), t.t) {
+    for ((id, t), now) in touched.into_iter().zip(present_after) {
+        let was = type_of(scratch, &id);
+        let (kind, ty) = match (was, now, t.t) {
             (None, true, Some(ty)) => (ChangeKind::New, ty),
             (Some(ty), true, None) => (ChangeKind::Edited, ty),
             (Some(ty), false, None) => (ChangeKind::Gone, ty),
@@ -390,6 +397,69 @@ fn changes_of(
         });
     }
     Ok(out)
+}
+
+/// What steps 1 to 8 made of an envelope: held (with whether it is half of a split), or a verdict already.
+enum Checked {
+    Held(usize, bool),
+    Done(Imported),
+}
+
+/// Fit, judged once (rule 15), on a scratch copy holding the envelope's past: its ops imported, read at its own
+/// version and at its dependencies, against the schemas it names. Loro may panic on bytes it should have refused; on a
+/// scratch copy, natively, that is one envelope unfit, never a crash and never a touched live state.
+fn judge(
+    scratch: &LoroDoc,
+    h: &Held,
+    held: &[Held],
+    by_name: &BTreeMap<Hash, usize>,
+    pinned: &BTreeMap<Version, Schema>,
+    limits: &Limits,
+) -> Result<Vec<RecordChange>, Unfit> {
+    let past: Vec<OpId> =
+        h.e.prev
+            .iter()
+            .chain(&h.e.deps)
+            .map(|n| held[by_name[n]].last())
+            .collect();
+    let past = frontiers(&past).ok_or_else(|| Unfit::Op("counters past Loro's".into()))?;
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        scratch
+            .import(&h.body.changes)
+            .map_err(|_| Unfit::Op("Loro refused it".into()))?;
+        let r = judge_on(scratch, &past, h.e.writer, &h.body, pinned, limits);
+        scratch.checkout_to_latest();
+        r
+    }))
+    .unwrap_or_else(|_| Err(Unfit::Op("Loro panicked on it".into())))
+}
+
+/// The judge itself, on a scratch copy that holds the envelope's ops.
+fn judge_on(
+    scratch: &LoroDoc,
+    past: &Frontiers,
+    writer: u64,
+    body: &Body,
+    pinned: &BTreeMap<Version, Schema>,
+    limits: &Limits,
+) -> Result<Vec<RecordChange>, Unfit> {
+    let end = i32::try_from(body.to).map_err(|_| Unfit::Op("counters past Loro's".into()))?;
+    let json = scratch.export_json_in_id_span(IdSpan::new(writer, body.from as i32, end));
+    let message = body.message();
+    if json
+        .iter()
+        .any(|c| c.msg.as_deref() != Some(message.as_str()))
+        || json.iter().map(|c| c.ops.len()).sum::<usize>() > limits.ops
+    {
+        return Err(Unfit::Op("its message isn't its Records' hash".into()));
+    }
+    let at = Frontiers::from(vec![ID::new(writer, end - 1)]);
+    let changes = changes_of(scratch, past, &at, &json, body)?;
+    if changes.len() > limits.records {
+        return Err(Unfit::Records);
+    }
+    fit(&changes, &body.records, pinned, limits)?;
+    Ok(changes)
 }
 
 impl Doc {
@@ -504,7 +574,7 @@ impl Doc {
         self.import(&bytes, auth)
     }
 
-    /// Imports a writer's sealed segment: each of its envelopes, in order, through every check an envelope gets.
+    /// Imports a writer's sealed segment as one page: each of its envelopes through every check an envelope gets.
     pub fn import_segment(
         &mut self,
         sealed: &[u8],
@@ -512,28 +582,72 @@ impl Doc {
         auth: &impl Authorize,
     ) -> Result<Vec<Result<Imported, Refused>>, BadSegment> {
         let (s, _) = Segment::open(sealed, &self.id, epoch, &self.limits)?;
-        Ok(s.envelopes.iter().map(|e| self.import(e, auth)).collect())
+        let page: Vec<&[u8]> = s.envelopes.iter().map(Vec::as_slice).collect();
+        Ok(self.import_page(&page, auth))
     }
 
-    /// Imports one envelope's bytes, then whatever waited on it.
+    /// Imports one envelope's bytes, then whatever waited on it: a page of one.
     pub fn import(&mut self, bytes: &[u8], auth: &impl Authorize) -> Result<Imported, Refused> {
-        let r = self.import_one(bytes, auth)?;
-        if matches!(r, Imported::Counts | Imported::NotCounted(_)) {
-            loop {
-                let before = self.waiting.len();
-                for w in std::mem::take(&mut self.waiting) {
-                    // a refusal now is final: the bytes are dropped
-                    let _ = self.import_one(&w, auth);
+        self.import_page(&[bytes], auth)
+            .pop()
+            .expect("one result per envelope")
+    }
+
+    /// Imports a page of envelopes, then whatever waited on them (docs, "Imports go in a batch"). Every envelope is
+    /// checked before any byte reaches Loro; the page is then judged on one scratch copy, and what counts enters the
+    /// live state in one batch: one diff, one snapshot.
+    pub fn import_page(
+        &mut self,
+        page: &[&[u8]],
+        auth: &impl Authorize,
+    ) -> Vec<Result<Imported, Refused>> {
+        let mut results: Vec<Result<Imported, Refused>> = Vec::with_capacity(page.len());
+        let mut fresh_held: Vec<(usize, Option<usize>)> = Vec::new();
+        let mut split = false;
+        for (k, bytes) in page.iter().enumerate() {
+            match self.import_one(bytes, auth) {
+                Ok(Checked::Held(i, sp)) => {
+                    split |= sp;
+                    fresh_held.push((i, Some(k)));
+                    results.push(Ok(Imported::Counts));
                 }
-                if self.waiting.len() >= before {
-                    break;
-                }
+                Ok(Checked::Done(r)) => results.push(Ok(r)),
+                Err(e) => results.push(Err(e)),
             }
         }
-        Ok(r)
+        // whatever waited and is now whole is held too, before anything is judged
+        loop {
+            let before = self.waiting.len();
+            for w in std::mem::take(&mut self.waiting) {
+                // a refusal now is final: the bytes are dropped
+                if let Ok(Checked::Held(i, sp)) = self.import_one(&w, auth) {
+                    split |= sp;
+                    fresh_held.push((i, None));
+                }
+            }
+            if self.waiting.len() >= before {
+                break;
+            }
+        }
+        let verdicts: BTreeMap<usize, Option<Why>> = if split {
+            self.rebuild()
+        } else {
+            self.settle(fresh_held.iter().map(|x| x.0).collect())
+        };
+        for (i, k) in fresh_held {
+            if let Some(k) = k {
+                results[k] = Ok(match verdicts.get(&i).cloned().flatten() {
+                    None if self.counted.contains(&self.held[i].name) => Imported::Counts,
+                    None => Imported::NotCounted(Why::Past),
+                    Some(why) => Imported::NotCounted(why),
+                });
+            }
+        }
+        results
     }
 
-    fn import_one(&mut self, bytes: &[u8], auth: &impl Authorize) -> Result<Imported, Refused> {
+    /// Steps 1 to 8: everything checked before any byte reaches Loro. A held envelope is judged with its page.
+    fn import_one(&mut self, bytes: &[u8], auth: &impl Authorize) -> Result<Checked, Refused> {
         // 1. limits on the bytes, before anything is decoded
         if bytes.len() > self.limits.sealed {
             return Err(Refused::Limits);
@@ -555,7 +669,7 @@ impl Doc {
         }
         let name = e.name();
         if self.by_name.contains_key(&name) {
-            return Ok(Imported::Known);
+            return Ok(Checked::Done(Imported::Known));
         }
         if !e.valid(&Ed25519) {
             return Err(Refused::Signature);
@@ -586,7 +700,7 @@ impl Doc {
             if !self.waiting.iter().any(|w| w == bytes) {
                 self.waiting.push(bytes.to_vec());
             }
-            return Ok(Imported::Waits);
+            return Ok(Checked::Done(Imported::Waits));
         }
         let from = match e.prev {
             None => 0,
@@ -640,7 +754,7 @@ impl Doc {
         }
         match ops_agree(&held, last, &named, &carried) {
             OpsVerdict::Agrees => {}
-            OpsVerdict::Waits => return Ok(Imported::Waits),
+            OpsVerdict::Waits => return Ok(Checked::Done(Imported::Waits)),
             OpsVerdict::Disagree | OpsVerdict::UsedTwice => return Err(Refused::OpIds),
         }
         // 7. authority, by caps
@@ -657,15 +771,7 @@ impl Doc {
             authorized,
             fit: None,
         });
-        if split {
-            self.rebuild();
-            return Ok(Imported::NotCounted(Why::Split));
-        }
-        let i = self.held.len() - 1;
-        Ok(match self.count(i) {
-            None => Imported::Counts,
-            Some(why) => Imported::NotCounted(why),
-        })
+        Ok(Checked::Held(self.held.len() - 1, split))
     }
 
     /// Whether a held envelope's place in its log is half of a split.
@@ -675,134 +781,119 @@ impl Doc {
             .is_some_and(|ns| ns.len() > 1)
     }
 
-    /// Decides whether held envelope `i` counts against the live state, and when it does, imports it there. `None`
-    /// when it counts.
-    fn count(&mut self, i: usize) -> Option<Why> {
-        let h = &self.held[i];
-        if self.is_split(h) {
-            return Some(Why::Split);
+    /// Settles held envelopes, in the order given: each counts when it isn't half of a split, is authorized, its past
+    /// counts, and it fits, judged once on one scratch copy for the whole page. What counts enters the live state in
+    /// one batch. Returns why each that doesn't count doesn't (`None` when it counts).
+    fn settle(&mut self, order: Vec<usize>) -> BTreeMap<usize, Option<Why>> {
+        let mut out = BTreeMap::new();
+        let mut accepted: Vec<usize> = Vec::new();
+        let mut taken: BTreeSet<Hash> = BTreeSet::new();
+        let mut scratch: Option<LoroDoc> = None;
+        for i in order {
+            let h = &self.held[i];
+            let why = if self.is_split(h) {
+                Some(Why::Split)
+            } else if h
+                .e
+                .prev
+                .iter()
+                .chain(&h.e.deps)
+                .any(|n| !self.counted.contains(n) && !taken.contains(n))
+            {
+                Some(Why::Past)
+            } else if !h.authorized {
+                Some(Why::Unauthorized)
+            } else {
+                if h.fit.is_none() {
+                    let sc = scratch.get_or_insert_with(|| {
+                        let sc = self.live.fork();
+                        sc.set_record_timestamp(false);
+                        // what this page already took, so later envelopes find their past
+                        let _ = sc.import_batch(
+                            &accepted
+                                .iter()
+                                .map(|&j| self.held[j].body.changes.clone())
+                                .collect::<Vec<_>>(),
+                        );
+                        sc
+                    });
+                    let v = judge(
+                        sc,
+                        &self.held[i],
+                        &self.held,
+                        &self.by_name,
+                        &self.pinned,
+                        &self.limits,
+                    );
+                    self.held[i].fit = Some(v);
+                } else if let Some(sc) = &scratch {
+                    let _ = sc.import(&self.held[i].body.changes);
+                }
+                match self.held[i].fit.as_ref().expect("judged") {
+                    Ok(_) => None,
+                    Err(u) => Some(Why::Unfit(u.clone())),
+                }
+            };
+            if why.is_none() {
+                accepted.push(i);
+                taken.insert(self.held[i].name);
+            }
+            out.insert(i, why);
         }
-        if h.e
-            .prev
+        if accepted.is_empty() {
+            return out;
+        }
+        let batch: Vec<Vec<u8>> = accepted
             .iter()
-            .chain(&h.e.deps)
-            .any(|n| !self.counted.contains(n))
-        {
-            return Some(Why::Past);
+            .map(|&i| self.held[i].body.changes.clone())
+            .collect();
+        if self.live.import_batch(&batch).is_err() {
+            // each fit on a copy of this state with its past, so Loro takes them; if it doesn't, nothing counts
+            for &i in &accepted {
+                out.insert(i, Some(Why::Unfit(Unfit::Op("Loro refused it".into()))));
+            }
+            return out;
         }
-        if !h.authorized {
-            return Some(Why::Unauthorized);
-        }
-        if self.held[i].fit.is_none() {
-            let v = self.judge(i);
-            self.held[i].fit = Some(v);
-        }
-        let changes = match self.held[i].fit.as_ref().expect("judged") {
-            Ok(cs) => cs.clone(),
-            Err(u) => return Some(Why::Unfit(u.clone())),
-        };
-        let h = &self.held[i];
-        if self.live.import(&h.body.changes).is_err() {
-            // its past is in the live state and it fits on a copy at its past, so Loro takes it
-            return Some(Why::Unfit(Unfit::Op("Loro refused it".into())));
-        }
-        let (name, writer) = (h.name, h.e.writer);
-        let parents: Vec<Hash> = h.e.prev.iter().chain(&h.e.deps).copied().collect();
-        self.counted.insert(name);
-        for p in parents {
-            self.tips.remove(&p);
-        }
-        self.tips.insert(name);
-        self.head.logs.insert(writer, name);
         let mut s = (*self.snapshot).clone();
+        let mut ids: BTreeSet<String> = BTreeSet::new();
+        for &i in &accepted {
+            let h = &self.held[i];
+            self.counted.insert(h.name);
+            for p in h.e.prev.iter().chain(&h.e.deps) {
+                self.tips.remove(p);
+            }
+            self.tips.insert(h.name);
+            self.head.logs.insert(h.e.writer, h.name);
+            let changes = h.fit.clone().expect("judged").expect("fits");
+            ids.extend(changes.iter().map(|c| c.id.clone()));
+            self.feed.push(Feed::Counted {
+                envelope: h.name,
+                changes,
+            });
+        }
         s.version = self.tips.iter().copied().collect();
-        for c in &changes {
-            match record_of(&self.live, &c.id) {
-                Some(r) => s.records.insert(c.id.clone(), r),
-                None => s.records.remove(&c.id),
+        for id in ids {
+            match record_of(&self.live, &id) {
+                Some(r) => s.records.insert(id, r),
+                None => s.records.remove(&id),
             };
         }
         self.snapshot = Arc::new(s);
-        self.feed.push(Feed::Counted {
-            envelope: name,
-            changes,
-        });
-        None
-    }
-
-    /// Fit, judged once (rule 15): on a scratch copy holding the envelope, read at exactly its dependencies and at
-    /// itself, the ops it carries against the schemas it names. Its past counts, so the live state holds it.
-    fn judge(&self, i: usize) -> Result<Vec<RecordChange>, Unfit> {
-        let h = &self.held[i];
-        let past: Vec<OpId> =
-            h.e.prev
-                .iter()
-                .chain(&h.e.deps)
-                .map(|n| self.held[self.by_name[n]].last())
-                .collect();
-        let at = frontiers(&past).ok_or_else(|| Unfit::Op("counters past Loro's".into()))?;
-        self.judge_at(&at, h.e.writer, &h.body)
-    }
-
-    fn judge_at(
-        &self,
-        past: &Frontiers,
-        writer: u64,
-        body: &Body,
-    ) -> Result<Vec<RecordChange>, Unfit> {
-        // Loro may panic on bytes it should have refused; on a scratch copy that is one envelope unfit, never a crash
-        // and never a touched live state
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            self.judge_scratch(past, writer, body)
-        }))
-        .unwrap_or_else(|_| Err(Unfit::Op("Loro panicked on it".into())))
-    }
-
-    fn judge_scratch(
-        &self,
-        past: &Frontiers,
-        writer: u64,
-        body: &Body,
-    ) -> Result<Vec<RecordChange>, Unfit> {
-        let loro = |_| Unfit::Op("Loro refused it".into());
-        let end = i32::try_from(body.to).map_err(|_| Unfit::Op("counters past Loro's".into()))?;
-        let scratch = self.live.fork();
-        scratch.set_record_timestamp(false);
-        scratch.import(&body.changes).map_err(loro)?;
-        let json = scratch.export_json_in_id_span(IdSpan::new(writer, body.from as i32, end));
-        let message = body.message();
-        if json
-            .iter()
-            .any(|c| c.msg.as_deref() != Some(message.as_str()))
-            || json.iter().map(|c| c.ops.len()).sum::<usize>() > self.limits.ops
-        {
-            return Err(Unfit::Op("its message isn't its Records' hash".into()));
-        }
-        let before = scratch.fork_at(past).map_err(loro)?;
-        let after = scratch
-            .fork_at(&Frontiers::from(vec![ID::new(writer, end - 1)]))
-            .map_err(loro)?;
-        let changes = changes_of(&before, &after, &json, body)?;
-        if changes.len() > self.limits.records {
-            return Err(Unfit::Records);
-        }
-        fit(&changes, &body.records, &self.pinned, &self.limits)?;
-        Ok(changes)
+        out
     }
 
     /// Rebuilds the live state from the envelopes that still count, in the order they were held (rule 13).
-    fn rebuild(&mut self) {
+    fn rebuild(&mut self) -> BTreeMap<usize, Option<Why>> {
         self.live = fresh();
         self.counted.clear();
         self.tips.clear();
         self.head.logs.clear();
         self.snapshot = Arc::new(Snapshot::default());
         let feed = self.feed.len();
-        for i in 0..self.held.len() {
-            let _ = self.count(i);
-        }
+        let out = self.settle((0..self.held.len()).collect());
         self.feed.truncate(feed);
         self.feed.push(Feed::Rebuilt);
+        out
     }
 
     /// Asks caps again whether each envelope held is authorized, after a revocation. A verdict that turns rebuilds the
@@ -815,7 +906,7 @@ impl Doc {
             h.authorized = a;
         }
         if turned {
-            self.rebuild();
+            let _ = self.rebuild();
         }
     }
 
@@ -930,7 +1021,9 @@ impl Doc {
             .collect::<Result<Vec<Hash>, _>>()?;
         // fit, before anything is signed
         let past = frontiers(&carried).ok_or(CommitError::Stuck)?;
-        self.judge_at(&past, w, &body).map_err(CommitError::Unfit)?;
+        let judged = judge_on(&scratch, &past, w, &body, &self.pinned, &self.limits);
+        scratch.checkout_to_latest();
+        judged.map_err(CommitError::Unfit)?;
         let mut e = Envelope {
             doc: self.id,
             branch: MAIN.into(),
