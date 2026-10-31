@@ -54,7 +54,7 @@ settles it as drawn here.
 | engine | Operations and demand | operation, want, target, view, runtime, vocabulary | [`db/engine`](db/engine/README.md) | engine |
 | ontology | Meaning: facts over predicates | fact, predicate, trait | [`db/ontology`](db/ontology/README.md) | engine |
 | actors | Behaviour | actor, definition, message, turn, face | [`aven/actor`](../actor/ARCHITECTURE.md) | avenACTORS |
-| runtimes | Every runtime: the actors', the engine's plugins, and file runtimes with one registry of file types | runtime, registry, applier | [`aven/runtimes`](../runtimes/README.md) (a plan; Samuel, 30 Oct 2026: one home) | runtimes (plan only) |
+| runtimes | Every runtime: the actors', the engine's plugins, and file runtimes with one registry of file types | runtime, registry, applier | [`aven/runtimes`](../runtimes/README.md) (Samuel, 30 Oct 2026: one home) | runtimes: face-runtime and markdown-runtime as code, the rest a plan |
 | avenPEER | The node and the network | Peer, Peer-Light, relay, door, keeper | [`README`](README.md), [`MILESTONE2.md`](MILESTONE2.md), [`PRODUCTION.md`](PRODUCTION.md), [`SANDBOX.md`](SANDBOX.md) | PEERS planning |
 | avenOS | The apps | app, face, the applier | `os/` | — |
 
@@ -646,7 +646,7 @@ the spec that owns it.
   withdrawals, and the relay and keeper lists) counts only when the admin's passkey signed it, a tap each time; an admin
   device's key only acks claims. A stolen or compromised browser can't let anyone in, or route members through a relay
   that logs their addresses. *Decided (Samuel, 31 Oct 2026: "choose the more secure way"; PEERS decision 12,
-  `adminPasskey`, #1618).*
+  `adminPasskey`, #1618),* invites included: *"passkey taps for invites yes" (Samuel, 31 Oct 2026).*
 - **A13. The guardian is named, with hybrid keys, in every claim and join text** people sign, until it leaves before
   the network opens beyond the founding circle (caps D12). *Decided: yes (Samuel, 30 Oct 2026: "do as you believe").*
 - **A14. A dedicated passkey RP ID for avenOS,** for example `aven.maia.city`, before more passkeys exist; today's few
@@ -753,7 +753,8 @@ codec, names, envelopes, logs and the target grammar, defined once.
 | engine | `Aven.DB.Engine` (#1530) onto the core: footprints and the diff check; deriving indexes from query shapes, lookups and `complete` with an index (**A26**) |
 | caps | `Aven.ID` (#1531) onto the core: **A10** to **A13**, **A22**; sealing indexes and who may fold (**A26**) |
 | avenACTORS | `Aven.Actor` (#1504) onto the core: **A16**, **A17**, messages across types through lens paths |
-| runtimes | `Aven.Runtime` (#1533) onto the core; the box checks the vectors of `aven/runtimes` and `aven/actor` too |
+| runtimes | `Aven.Runtime` (#1533) onto the core; the box checks the vectors of `aven/runtimes` and `aven/actor` too. **Code starts** for `face-runtime` and `markdown-runtime`, the two the docs need; the actors' code waits (Samuel, 31 Oct 2026) |
+| avenBRAIN | The docs wiki in English (Samuel, 31 Oct 2026), its style and slides, one concept each; the global glossary; renders through `face-runtime` and `markdown-runtime` once they land |
 | PEERS planning | `PEERS.md`: relays, address records, catch-up and keepers peer to peer, upgrades by wire version; the tree's Lean with caps (**A10** to **A13**) |
 
 One model across them all, `Aven.Architecture`, proves the rules above across parts: 13 of 14 since 30 Oct 2026
