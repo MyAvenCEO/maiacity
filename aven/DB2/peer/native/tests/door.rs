@@ -9,10 +9,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use aven_db_store::backend::{self, DalStore};
-use aven_gen1::wire::Frame;
 use aven_id::{Members, Relying};
 use aven_peer::door::Door;
 use aven_peer::door::Statement;
+use aven_peer_wire::wire::Frame;
 use p256::ecdsa::signature::Signer;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};

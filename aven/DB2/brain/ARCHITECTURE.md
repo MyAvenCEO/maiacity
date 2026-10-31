@@ -47,7 +47,7 @@ clean-slate cutover, and is deleted after it.
 | avenDOCS | a Doc's genesis, types and fit, bodies, writer ids, commit, the head, import, segments, the seal's use, branches, lenses, directories | [docs](docs/README.md) | `db/docs` | `Aven.DB.Docs` |
 | avenOPS | lowering calls to steps, footprints, queries, the want queue, search, sealed indexes' queries | [ops](ops/README.md) | `db/engine` | `Aven.DB.Engine` |
 | avenSTORE | Values and refs, compare-and-set, backends | [store](store/README.md) | `store` | `Aven.DB.Store` |
-| avenPEERS | the Peer and Peer-Light, the wire, gossip per group, sync, catch-up, keepers, the fetch gate, relays, presence, upgrades, deploy | [peers](peers/README.md) | `peer` | `Aven.DB.Wire`, `Aven.Peer` |
+| avenPEERS | the Peer and Peer-Light, the wire, gossip per group, sync, catch-up, keepers, the fetch gate, relays, presence, upgrades, deploy | [peers](peers/README.md) | `peer` | `Aven.Peer` |
 | avenRUNTIME | modules by hash, the manifest, hosts, the drawer, the markdown and face runtimes | [runtime](runtime/README.md) | `aven/runtimes` | `Aven.Runtime` |
 | avenACTORS | actors, inboxes, turns, hosts under chains | [actors](actors/README.md) | `aven/actor` | `Aven.Actor` |
 | avenOS | the page, its workers, sign-up and sign-in, the chat screen, Brain | [os](os/README.md) | `os` | — |
@@ -131,9 +131,11 @@ decision's own text, reasons and Lean are its row there.
 
 | Decision | What | Page | Holds |
 |---|---|---|---|
+| [A214](DECISIONS.md) | The cast's vault nonces are #1738's; vectors name cast vaults by handle only in case descriptions | [id](id/README.md) | yes |
+| [A213](DECISIONS.md) | The tree starts from its setup's Value, never from a body; the `genesis` op goes | [caps](caps/README.md) | yes |
 | [A212](DECISIONS.md) | A built-in type's label never follows its module: the tree's type is `avenID tree 1` | [id](id/README.md) | yes |
 | [A211](DECISIONS.md) | A device's vault names its key in a field `key` | [id](id/README.md) | yes |
-| [A210](DECISIONS.md) | avenID's Lean is generic in the vault id; the cast stays readable fixtures | [id](id/README.md) | yes |
+| [A210](DECISIONS.md) | avenID's Lean is generic in the vault id; the cast stays readable fixtures | [id](id/README.md) | superseded by [A214](DECISIONS.md) in part |
 | [A209](DECISIONS.md) | A keeper knows a keyring by its genesis: type `keyring`, a vault it keeps for | [peers](peers/README.md) | yes |
 | [A208](DECISIONS.md) | How avenCAPS splits out of avenID: `caps/spec` as `Aven.Caps`, and the crate `aven-caps` | [caps](caps/README.md) | yes |
 | [A207](DECISIONS.md) | A type's version is a `schema` Record; a named version stays `version` | [docs](docs/README.md) | yes |

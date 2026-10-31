@@ -277,7 +277,7 @@ def keepingExamples : List (String × List Cap × Core.Facts × List String) := 
     factsOf b1 "bob" tasks, [])]
 
 /-- Who governs whom, which actor spawned which and what a collection lists, for the keeping examples: nothing. -/
-def noGov (_ _ : Core.Bytes) : Bool := false
+def noGov (_ _ : Core.Hash) : Bool := false
 def noSpawn (_ _ : Core.DocId) : Bool := false
 def noLists (_ _ : Core.DocId) : Bool := false
 
@@ -425,7 +425,7 @@ def castName (d : Core.DocId) : String :=
     ["d1", "d2", "b1", "city-notes", "city-dome", "tasks", "notes", "g-garden", "album", "aven-notes"]).find?
     (·.1 == d)).map (·.2)).getD "a Doc"
 
-def castVault (v : Core.Bytes) : String :=
+def castVault (v : Core.Hash) : String :=
   ((["alice", "bob", "maia-city", "aven"].find? (vaultId · == v))).getD "a vault"
 
 /-- How avenOS shows a cap for a passkey tap: written from the cap itself (A2, rule 25). -/
@@ -435,7 +435,7 @@ def Holder.text : Holder → String
   | .«public» => "every member of the network"
 
 /-- A target as avenOS shows it, the Docs and vaults by the names `name` gives them. -/
-def targetText (name : Core.DocId → String) (vault : Core.Bytes → String) : Core.Target → String
+def targetText (name : Core.DocId → String) (vault : Core.Hash → String) : Core.Target → String
   | .doc d .self => name d
   | .doc d .spawned => s!"the actor {name d} and what it spawned"
   | .doc d .lists => s!"{name d} and what it lists"
@@ -454,7 +454,7 @@ def valueText (name : Core.DocId → String) : Core.Value → String
   | _ => "a value"
 
 /-- A line as avenOS shows it: its op, its target, and each bound on a parameter. -/
-def Line.text (name : Core.DocId → String) (vault : Core.Bytes → String) (l : Line) : String :=
+def Line.text (name : Core.DocId → String) (vault : Core.Hash → String) (l : Line) : String :=
   s!"{opText l.op} {targetText name vault l.doc}" ++
     if l.params.isEmpty then "" else
       " (" ++ ", ".intercalate (l.params.map fun (p, b) => s!"{Core.utf8Text p} " ++

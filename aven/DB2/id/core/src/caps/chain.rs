@@ -5,7 +5,7 @@
 //! narrows (`narrow_chain`, `narrow_ops`), every line it grants lies in its root issuer's authority
 //! (`root_authority`), and it passes its root on no more often than its root may be shared (`chain_short`).
 
-use aven_core::{CoreOp, DocId, Facts};
+use aven_core::{CoreOp, DocId, Facts, Hash};
 
 use super::approve::Sig;
 use super::conditions::{Conditions, Form, Holder};
@@ -122,9 +122,10 @@ impl ChainError {
     }
 }
 
-/// A vault's id as Core's targets name it: `v:` and its id (`vaultId`).
-pub fn vault_id(v: &str) -> String {
-    format!("v:{v}")
+/// A vault's 32-byte name as Core's targets name it (`vaultId`): a stand-in, the BLAKE3 of `v:` and its id, until
+/// avenID's vault names (A164) replace it.
+pub fn vault_id(v: &str) -> Hash {
+    aven_core::blake3(format!("v:{v}").as_bytes())
 }
 
 /// Its issuer signed cap `c` (`Tree.issued`, A28): the device that signed it acts for the issuer, or, with no device
@@ -142,35 +143,34 @@ pub fn authority_over_vault(
     t: &Tree,
     threshold: &dyn Fn(&str) -> usize,
     issuer: &str,
-    v: &str,
+    v: &Hash,
 ) -> bool {
-    v == vault_id(issuer)
+    *v == vault_id(issuer)
         || t.governs(issuer)
             .into_iter()
-            .any(|w| vault_id(w) == v && t.alone(threshold, issuer, w))
+            .any(|w| vault_id(w) == *v && t.alone(threshold, issuer, w))
 }
 
 impl Ctx<'_> {
     /// Who governs whom as authority runs (`Ctx.governs`, A28), by vault ids: `v` governs `w` when `w` is below it
     /// and `v` meets its quorum alone. It is the `gov` a reader gives targets and its own-authority check.
-    pub fn governs(&self, v: &str, w: &str) -> bool {
-        let Some(a) = v.strip_prefix("v:") else {
-            return false;
-        };
-        self.tree.vault(a).is_some()
-            && self
-                .tree
-                .governs(a)
-                .into_iter()
-                .any(|b| vault_id(b) == w && self.tree.alone(self.threshold, a, b))
+    pub fn governs(&self, v: &Hash, w: &Hash) -> bool {
+        self.tree.vaults().iter().any(|a| {
+            vault_id(&a.id) == *v
+                && self
+                    .tree
+                    .governs(&a.id)
+                    .into_iter()
+                    .any(|b| vault_id(b) == *w && self.tree.alone(self.threshold, &a.id, b))
+        })
     }
 
     /// The vault a line lies in: the vault its target names, or the vault of the Doc it names, as its genesis fixed;
     /// none for a Doc the reader doesn't know (`lineVault`).
-    pub fn line_vault(&self, l: &Line) -> Option<String> {
+    pub fn line_vault(&self, l: &Line) -> Option<Hash> {
         match &l.doc {
             aven_core::Target::Vault { vault, .. } | aven_core::Target::VaultType { vault, .. } => {
-                Some(vault.clone())
+                Some(*vault)
             }
             aven_core::Target::Doc { doc, .. } => (self.facts)(doc).map(|f| f.vault),
         }

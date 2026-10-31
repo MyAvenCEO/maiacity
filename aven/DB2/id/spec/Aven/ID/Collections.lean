@@ -62,8 +62,8 @@ section
 
 /- `nm` names envelopes; `read` reads a change to a list from an envelope's body; `signs k v` says the device key `k`
 signs for vault `v`; `gov v w` says vault `v` governs `w`; `facts` gives each Doc's genesis facts a reader knows. -/
-variable (nm : Envelope → Hash) (read : Envelope → Option ListChange) (signs : Bytes → Bytes → Bool)
-  (gov : Bytes → Bytes → Bool) (facts : DocId → Option Facts)
+variable (nm : Envelope → Hash) (read : Envelope → Option ListChange) (signs : Bytes → Hash → Bool)
+  (gov : Hash → Hash → Bool) (facts : DocId → Option Facts)
 
 /-- A change to collection `c`'s list: an envelope of its Doc, signed by a device of its vault. -/
 def changeOf (c : Facts) (e : Envelope) : Option ListChange :=
@@ -137,8 +137,8 @@ theorem filterMap_filter_of {α β : Type} {p : α → Bool} {g : α → Option 
 
 section
 
-variable {nm : Envelope → Hash} {read : Envelope → Option ListChange} {signs : Bytes → Bytes → Bool}
-  {gov : Bytes → Bytes → Bool} {facts : DocId → Option Facts}
+variable {nm : Envelope → Hash} {read : Envelope → Option ListChange} {signs : Bytes → Hash → Bool}
+  {gov : Hash → Hash → Bool} {facts : DocId → Option Facts}
 
 /-- What doesn't change `c`'s list leaves what it lists directly, and its entries, as they were. -/
 theorem listsDirect_filter {p : Envelope → Bool} {S : List Envelope} {c : Facts}
@@ -261,7 +261,7 @@ end
 
 /-- What collection `c` lists for envelope `e`, as a reader holding `S` judges it: from the listings in `e`'s past. A
 write under a cap through a collection counts only if its Doc was listed in its past. -/
-def listsAt (nm : Envelope → Hash) (read : Envelope → Option ListChange) (signs gov : Bytes → Bytes → Bool)
+def listsAt (nm : Envelope → Hash) (read : Envelope → Option ListChange) (signs : Bytes → Hash → Bool) (gov : Hash → Hash → Bool)
     (facts : DocId → Option Facts) (S : List Envelope) (e : Envelope) (c d : DocId) : Bool :=
   lists nm read signs gov facts (S.filter (Past.inPast nm S e)) c d
 
@@ -282,7 +282,7 @@ theorem before_of_append {nm : Envelope → Hash} {S X : List Envelope} {e x : E
 /-- **Catching up on others changes nothing** (A42): envelopes a reader takes in that aren't in a write's past leave
 what a collection lists for that write as it was. A removal the write never saw doesn't undo it, and an addition it
 never saw doesn't make it count. -/
-theorem listsAt_catch_up {nm : Envelope → Hash} {read : Envelope → Option ListChange} {signs gov : Bytes → Bytes → Bool}
+theorem listsAt_catch_up {nm : Envelope → Hash} {read : Envelope → Option ListChange} {signs : Bytes → Hash → Bool} {gov : Hash → Hash → Bool}
     {facts : DocId → Option Facts} {S X : List Envelope} {e : Envelope}
     (outside : ∀ y ∈ X, ¬ Past.Before nm (S ++ X) e y) (c d : DocId) :
     listsAt nm read signs gov facts (S ++ X) e c d = listsAt nm read signs gov facts S e c d := by
@@ -315,17 +315,17 @@ def utf8 (s : String) : Bytes := s.toUTF8.toList
 def docOf (s : String) : DocId := ⟨blake3 (utf8 s)⟩
 def photoType : DocId := docOf "type:photo"
 
-def samuel : Bytes := utf8 "v:samuel"
-def garden : Bytes := utf8 "v:garden"
-def ana : Bytes := utf8 "v:ana"
+def samuel : Hash := blake3 (utf8 "v:samuel")
+def garden : Hash := blake3 (utf8 "v:garden")
+def ana : Hash := blake3 (utf8 "v:ana")
 def mac : Bytes := utf8 "samuel-mac"
 def mallory : Bytes := utf8 "mallory-phone"
 
-def signs (k v : Bytes) : Bool := k == mac && v == samuel
-def gov (v w : Bytes) : Bool := v == samuel && w == garden
+def signs (k : Bytes) (v : Hash) : Bool := k == mac && v == samuel
+def gov (v w : Hash) : Bool := v == samuel && w == garden
 
 def collection (name : String) : Facts := ⟨docOf name, samuel, collectionType⟩
-def photo (name : String) (vault : Bytes) : Facts := ⟨docOf name, vault, photoType⟩
+def photo (name : String) (vault : Hash) : Facts := ⟨docOf name, vault, photoType⟩
 
 def beach : Facts := collection "beach"
 def trips : Facts := collection "trips"

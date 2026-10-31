@@ -180,8 +180,11 @@ def typeOfTypes (H : Bytes → Hash) : DocId := builtinType H "avenDB" "type of 
 /-- A type Doc: one whose root type is the type of types. -/
 def Facts.isType (H : Bytes → Hash) (f : Facts) : Bool := f.type == typeOfTypes H
 
-/-- The type of types' own facts: built in, in no vault, and its own type. -/
-def typeOfTypesFacts (H : Bytes → Hash) : Facts := ⟨typeOfTypes H, [], typeOfTypes H⟩
+/-- The name that stands for no vault: 32 zero bytes, which no vault's genesis hashes to. -/
+def noVault : Hash := ⟨List.replicate 32 0⟩
+
+/-- The type of types' own facts: built in, in no vault (`noVault`), and its own type. -/
+def typeOfTypesFacts (H : Bytes → Hash) : Facts := ⟨typeOfTypes H, noVault, typeOfTypes H⟩
 
 /-- The type of types is a type Doc: its own type. -/
 theorem typeOfTypes_typed (H : Bytes → Hash) : (typeOfTypesFacts H).isType H = true := by

@@ -327,9 +327,9 @@ open CollectionExamples in
 def collectionVector (name : String) (S : List Aven.Core.Envelope) (c d : Aven.Core.Facts) : Json :=
   vector name
     (Json.mkObj [("known", Json.arr (known.map factsJson).toArray),
-      ("signs", Json.arr #[Json.mkObj [("key", Aven.Core.hex mac), ("vault", Aven.Core.utf8Text samuel)]]),
+      ("signs", Json.arr #[Json.mkObj [("key", Aven.Core.hex mac), ("vault", samuel.text)]]),
       ("governs",
-        Json.arr #[Json.mkObj [("vault", Aven.Core.utf8Text samuel), ("governed", Aven.Core.utf8Text garden)]]),
+        Json.arr #[Json.mkObj [("vault", samuel.text), ("governed", garden.text)]]),
       ("depth", toJson collectionDepth),
       ("envelopes", Json.arr (S.map fun e => Json.mkObj [("name", (nm e).text), ("doc", e.doc.text),
         ("branch", Aven.Core.utf8Text e.branch), ("writer", toJson e.writer), ("seq", toJson e.seq),
@@ -343,7 +343,7 @@ def writeVector (name : String) (S : List Aven.Core.Envelope) (w : Aven.Core.Env
     Json :=
   vector name
     (Json.mkObj [("known", Json.arr (known.map factsJson).toArray),
-      ("signs", Json.arr #[Json.mkObj [("key", Aven.Core.hex mac), ("vault", Aven.Core.utf8Text samuel)]]),
+      ("signs", Json.arr #[Json.mkObj [("key", Aven.Core.hex mac), ("vault", samuel.text)]]),
       ("depth", toJson collectionDepth),
       ("envelopes", Json.arr (S.map fun e => Json.mkObj [("name", (nm e).text), ("doc", e.doc.text),
         ("seq", toJson e.seq), ("prev", toJson (e.prev.map (·.text))), ("deps", toJson (e.deps.map (·.text))),

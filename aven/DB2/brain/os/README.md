@@ -219,7 +219,7 @@ only the side that is behind follows ([avenPEERS](../peers/README.md)).
 **Decided:** README rule 3; A15 (three origins; signed releases checked before new code activates, later); A42 (release
 signing by a vault comes later); A29 (the frozen greeting); A86 (a file's bytes decide its type); the store README's
 "What a file may run" (the security audit, 30 Oct: every file served as hostile; not in the log yet) · **Lean:**
-`Aven.DB.Wire` — `follows_newer`, `follows_one`, `meet_refuses` (avenPEERS's); the Service Worker is held by the box
+`Aven.Peer.Wire` — `follows_newer`, `follows_one`, `meet_refuses` (avenPEERS's); the Service Worker is held by the box
 (`sandbox/inline.mjs`, `sandbox/upgrade.mjs`)
 
 ## Brain

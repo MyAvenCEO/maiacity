@@ -199,14 +199,13 @@ impl World {
 
 // ---- random targets, facts and bounds ----
 
-const VAULTS: [&str; 3] = ["v:alice", "v:bob", "v:maia-city"];
-
 fn any_doc() -> impl Strategy<Value = DocId> {
     (0u8..4).prop_map(|i| DocId(blake3(&[i, 0xD0])))
 }
 
-fn any_vault() -> impl Strategy<Value = String> {
-    (0usize..3).prop_map(|i| VAULTS[i].to_string())
+/// Three vaults, by 32-byte names.
+fn any_vault() -> impl Strategy<Value = Hash> {
+    (0u8..3).prop_map(|i| blake3(&[i, 0xA0]))
 }
 
 fn any_target() -> impl Strategy<Value = Target> {
@@ -234,7 +233,7 @@ fn any_facts() -> impl Strategy<Value = Facts> {
 struct Coverage {
     targets: Vec<Target>,
     facts: Vec<Facts>,
-    gov: Vec<(String, String)>,
+    gov: Vec<(Hash, Hash)>,
     spawned: Vec<(DocId, DocId)>,
     lists: Vec<(DocId, DocId)>,
 }
@@ -267,9 +266,9 @@ impl Coverage {
         json!({
             "targets": self.targets.iter().map(|t| hex(&encode(&t.value()))).collect::<Vec<_>>(),
             "facts": self.facts.iter()
-                .map(|f| json!({"id": f.id.text(), "vault": f.vault, "type": f.r#type.text()}))
+                .map(|f| json!({"id": f.id.text(), "vault": f.vault.text(), "type": f.r#type.text()}))
                 .collect::<Vec<_>>(),
-            "gov": self.gov.iter().map(|(a, b)| [a, b]).collect::<Vec<_>>(),
+            "gov": self.gov.iter().map(|(a, b)| [a.text(), b.text()]).collect::<Vec<_>>(),
             "spawned": pairs(&self.spawned),
             "lists": pairs(&self.lists),
         })
@@ -350,7 +349,7 @@ fn any_bytes_case() -> impl Strategy<Value = Vec<u8>> {
             Value::Map(vec![
                 ("type".into(), Value::Bytes(vec![1; n])),
                 ("below".into(), Value::Bool(true)),
-                ("vault".into(), Value::Text("v:alice".into())),
+                ("vault".into(), Value::Bytes(vec![2; 32])),
             ])
         })
     });
@@ -471,7 +470,7 @@ proptest! {
     #[test]
     fn coverage_is_leans(c in coverage()) {
         let a = ask(&c.case());
-        let gov = |v: &str, w: &str| c.gov.iter().any(|(x, y)| x == v && y == w);
+        let gov = |v: &Hash, w: &Hash| c.gov.contains(&(*v, *w));
         let spawned = |x: &DocId, y: &DocId| c.spawned.contains(&(*x, *y));
         let lists = |x: &DocId, y: &DocId| c.lists.contains(&(*x, *y));
         let covers: Vec<Vec<bool>> = c.targets.iter()
