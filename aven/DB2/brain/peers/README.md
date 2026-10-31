@@ -193,17 +193,20 @@ also carries `frame`, in its place in the codec's order.
 | `doc_tips` | `doc`, `more`, `tips` | the other's `doc_tips`, then `doc_have` | a reader's log heads, paged ([catch-up](#by-version-between-readers)) |
 | `doc_have` | `doc`, `more`, `values` | `fetch` | the sealed values beyond the other's tips, by hash |
 | `prove` | `doc`, `key`, `sig` | `proven {doc}` or `prove_refused {doc, why}` | proves the Doc's current fetch key on this connection ([the gate](#the-fetch-gate)) |
-| `fetch` | `doc`, `hashes` | `items`, `missing`, `fetched` | sealed values by hash, at most 128 |
+| `fetch` | `doc`, `hashes` | `items` for each held, `missing {doc, hashes}`, then `fetched {doc, later}`; or `fetch_refused {doc, why}` | sealed values by hash, at most 128; `fetched` closes each answer |
 | `items` | `at`, `doc`, `hash`, `bytes`, `total` | — | a part of one item, at most 48 KiB |
-| `keep_put`, `keep_took` | | | an upload of sealed items with their covers, and the keeper's answer ([keepers](#keepers)) |
-| `keep_after`, `keep_arrived`, `keep_end` | | | catch-up by arrival number ([catch-up](#by-arrival-number-from-keepers)) |
+| `keep_put` | `doc`, `hash`, `bytes`, `total`, `covers` | — | an upload's item, its first part, with its covers ([keepers](#keepers)) |
+| `keep_part` | `at`, `doc`, `hash`, `bytes`, `total` | — | a later part of that item |
+| `keep_end` | `doc` | `keep_took {doc, numbers}` or `keep_refused {doc, why}` | ends the upload; `numbers` gives each new item's `{n, hash}` |
+| `keep_after` | `n`, `doc` | `keep_arrived {doc, more, entries}` | the items held above `n`, each `{n, hash}`, paged ([catch-up](#by-arrival-number-from-keepers)) |
 
-The keepers' frames' keys, and those of `missing` and `fetched`, are fixed in the frames' Lean. `keep_cap`,
-`keep_order`, `keep_choice` and `keep_link`, which carry a keeper's Books, come after them.
+Every `why` is at most 64 bytes (`whyMax`). An upload is at most 128 items (`putsPerUpload`), and an item's covers at
+most 256 (`coversMax`). `keep_cap`, `keep_order`, `keep_choice` and `keep_link`, which carry a keeper's Books, come
+after these.
 
 **Decided:** rule 1, rule 14, A29, A42, A45, A118, A133, A134, A143 · **Lean:** `Aven.Peer.Wire` — `pages_ne_nil`,
 `headsPages_heads`, `answer_pages`; `Aven.Peer.WireCbor` — `frameOf_value`, `frameValue_canon`, `decodeAll_frame`,
-`push_tooLong`; wire 3's frames pending, after the move
+`push_tooLong`; wire 3's gate and keeper frames in stage 5's PR 1 (#1765)
 
 ## The Doc host
 
@@ -324,9 +327,10 @@ owner ([avenCAPS](../caps/README.md#keep-caps-offers-and-placement)); it decides
 - **What it sees:** each sealed thing's outside and size ([avenID](../id/README.md#the-seal)), and the device of each
   connection. It learns a Doc's owner vault from the keep cap's issuer, never from the Doc.
 - **The keyring travels unsealed:** its Records are already ciphertext, so a keeper carries its plain envelopes and
-  segments by Doc id as it carries any Doc's items, and serves them to a device the door admits that names the Doc,
-  with no fetch proof (A195). It sees its signers, writer ids, epoch numbers, counts and times,
-  nothing that opens anything. Every other Doc is sealed.
+  segments by Doc id as it carries any Doc's items, and serves them to a device the door admits that names the Doc, with
+  no fetch proof (A195). It knows a keyring by the Doc's own genesis, in its first envelope: the built-in type `keyring`
+  and a vault it keeps for; any other Doc needs a proof (A209). It sees its signers, writer ids, epoch numbers, counts
+  and times, nothing that opens anything. Every other Doc is sealed.
 - **Arrivals:** each sealed thing it takes, a segment or a loose envelope, is an item named by the BLAKE3 of its sealed
   bytes. A new item gets the Doc's next arrival number, from 1, never reused; the same bytes again get no new number,
   only another uploader (`numbers_fresh`).
@@ -411,7 +415,7 @@ Two readers of a Doc compare what they hold by their logs' heads, and each sends
 A device asks a keeper "what came after your number n?" and gets hashes in the order they arrived. It fetches the ones
 it lacks. The keeper needs to know nothing about writers.
 
-- **`keep_after {doc, n}`** is answered with exactly the items held above `n`, by number and hash, oldest first
+- **`keep_after {n, doc}`** is answered with exactly the items held above `n`, by number and hash, oldest first
   (`after_complete`, `after_sorted`), in pages of at most `pageSize`, none empty (`after_pages`), each with `more`.
 - **The device fetches** the hashes it lacks, lands each page in one write (one Value and one ref move), imports it as
   a sealed page ([avenDOCS](../docs/README.md#sealing-and-sealed-pages)), and then stands at the page's largest number

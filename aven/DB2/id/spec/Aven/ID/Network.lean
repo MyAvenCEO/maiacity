@@ -279,9 +279,9 @@ inductive TreeSays where
   /-- A device joins the vault of the passkey that signs it (the register maps the passkey to its vault), which
   needs that passkey's owner beside its ES256 (caps rule 21): the body names no vault. -/
   | signIn (device : String)
-  /-- A ticket (an invite) with its one-time key, signed by an admin passkey. -/
+  /-- A ticket (an invite) with its one-time key, approved by Maia City's owners. -/
   | ticket (key : String)
-  /-- Ticket `ticket` (the ticket statement's name) withdrawn, by an admin passkey. -/
+  /-- Ticket `ticket` (the ticket statement's name) withdrawn, approved by Maia City's owners. -/
   | withdrawal (ticket : Core.Hash)
   /-- A claim of a ticket, signed by its one-time key: it founds `vault` with its passkey's record and its devices
   (a new claim's first device; a migrated join's every device, A42), and names the guardian vault it consents to,
@@ -380,36 +380,40 @@ theorem HybridKey.ofValue_toValue (h : HybridKey) : ofValue h.toValue = some h :
   simp [toValue, ofValue, Body.ofText_text]
 
 open Body in
-/-- An optional Value: null when absent. -/
-def optValue {α : Type} (f : α → Core.Value) : Option α → Core.Value
-  | some a => f a
-  | none => .null
-
-def ofOpt {α : Type} (f : Core.Value → Option α) : Core.Value → Option (Option α)
-  | .null => some none
-  | v => (f v).map some
-
-open Body in
-/-- A passkey record as a map, `{seal, spki, epoch, owner, credential}` in the codec's order; an absent owner or seal is
-null. -/
+/-- A passkey record as a map, `{seal, spki, epoch, owner, credential}` in the codec's order. An absent owner or seal
+is left out, never null (A184). -/
 def Passkey.toValue (k : Passkey) : Core.Value :=
-  .map [(utf8 "seal", optValue text k.sealKey), (utf8 "spki", text k.spki), (utf8 "epoch", .uint k.epoch),
-    (utf8 "owner", optValue HybridKey.toValue k.owner), (utf8 "credential", text k.credential)]
+  .map ((k.sealKey.map fun se => (utf8 "seal", text se)).toList ++
+    [(utf8 "spki", text k.spki), (utf8 "epoch", .uint k.epoch)] ++
+    (k.owner.map fun o => (utf8 "owner", o.toValue)).toList ++ [(utf8 "credential", text k.credential)])
 
 open Body in
+/-- A passkey record read back: one of its four shapes, by which of `seal` and `owner` it holds. A null for either is
+refused, as is any other key. -/
 def Passkey.ofValue : Core.Value → Option Passkey
   | .map [(ks, se), (kk, sp), (ke, .uint ep), (ko, ow), (kc, cr)] =>
     if ks == utf8 "seal" && kk == utf8 "spki" && ke == utf8 "epoch" && ko == utf8 "owner" &&
         kc == utf8 "credential" then
-      do pure ⟨← ofText cr, ← ofText sp, ← ofOpt HybridKey.ofValue ow, ← ofOpt ofText se, ep⟩
+      do pure ⟨← ofText cr, ← ofText sp, some (← HybridKey.ofValue ow), some (← ofText se), ep⟩
+    else none
+  | .map [(ks, se), (kk, sp), (ke, .uint ep), (kc, cr)] =>
+    if ks == utf8 "seal" && kk == utf8 "spki" && ke == utf8 "epoch" && kc == utf8 "credential" then
+      do pure ⟨← ofText cr, ← ofText sp, none, some (← ofText se), ep⟩
+    else none
+  | .map [(kk, sp), (ke, .uint ep), (ko, ow), (kc, cr)] =>
+    if kk == utf8 "spki" && ke == utf8 "epoch" && ko == utf8 "owner" && kc == utf8 "credential" then
+      do pure ⟨← ofText cr, ← ofText sp, some (← HybridKey.ofValue ow), none, ep⟩
+    else none
+  | .map [(kk, sp), (ke, .uint ep), (kc, cr)] =>
+    if kk == utf8 "spki" && ke == utf8 "epoch" && kc == utf8 "credential" then
+      do pure ⟨← ofText cr, ← ofText sp, none, none, ep⟩
     else none
   | _ => none
 
 theorem Passkey.ofValue_toValue (k : Passkey) : ofValue k.toValue = some k := by
   rcases k with ⟨cr, sp, ow, se, ep⟩
   cases ow <;> cases se <;>
-    simp [toValue, ofValue, optValue, Body.text, HybridKey.toValue, ofOpt, Body.ofText, Body.ofUtf8_utf8,
-      HybridKey.ofValue]
+    simp [toValue, ofValue, Body.text, HybridKey.toValue, Body.ofText, Body.ofUtf8_utf8, HybridKey.ofValue]
 
 open Body in
 def Genesis.toValue (g : Genesis) : Core.Value :=
@@ -744,8 +748,9 @@ def guardianNamed (v : View) (c : TreeStatement) (x : String) : Bool :=
   gen v (fun g => g.guardianVault == x) ||
     v.any fun s => configBy v isGuardianSet s && s.says == .setGuardian x && v.past c s
 
-/-- A claim that counts: its ticket was issued by an admin passkey, is in its past and has the one-time key that signed
-the claim, and it names a guardian vault Maia City named, as the claim saw it (`guardianNamed`, A13, A42). -/
+/-- A claim that counts: its ticket was issued with Maia City's owners' approval, is in its past and has the one-time
+key that signed the claim, and it names a guardian vault Maia City named, as the claim saw it (`guardianNamed`, A13,
+A42). -/
 def claimOk (v : View) (c : TreeStatement) : Bool :=
   match c.says with
   | .claim t _ _ _ guardian =>
@@ -760,7 +765,7 @@ def sameTicket (c d : TreeStatement) : Bool := c.ticketOf.isSome && c.ticketOf =
 def final (v : View) (c : TreeStatement) : Bool :=
   claimOk v c && v.any fun a => confirmer v a.signer && a.says == .confirm c.name && v.past a c
 
-/-- `w` wins over claim `c`: an admin passkey's withdrawal of its ticket that didn't have it in its past. -/
+/-- `w` wins over claim `c`: Maia City's owners' withdrawal of its ticket that didn't have it in its past. -/
 def beats (v : View) (w c : TreeStatement) : Bool :=
   match c.ticketOf with
   | some t => byAdmin v w.keys && w.says == .withdrawal t && !v.past w c

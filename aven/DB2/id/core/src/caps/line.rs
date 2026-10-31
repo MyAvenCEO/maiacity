@@ -2,7 +2,7 @@
 //! Core's grammar (A8), and bounds on the op's parameters; a parameter it doesn't bound is free. A line names no step:
 //! the steps a call writes are its op's lowering, which every reader computes. So caps judge calls, never steps.
 
-use aven_core::{Bound, Call, DocId, Facts, OpId, Target};
+use aven_core::{Bound, Call, DocId, Facts, Hash, OpId, Target};
 
 /// One line of a grant.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -15,11 +15,11 @@ pub struct Line {
 /// A grant: its lines.
 pub type Grant = [Line];
 
-/// What a target's cover reads besides a Doc's facts: who governs whom (vaults as Core names them, `v:` and the id),
+/// What a target's cover reads besides a Doc's facts: who governs whom (vaults by their 32-byte names, as Core names them),
 /// which actor spawned which, and what a collection lists. They are avenID's, the actors' and the collections', so
 /// they are given, as in Core's `Target::covers`.
 pub struct World<'a> {
-    pub gov: &'a dyn Fn(&str, &str) -> bool,
+    pub gov: &'a dyn Fn(&Hash, &Hash) -> bool,
     pub spawned: &'a dyn Fn(&DocId, &DocId) -> bool,
     pub lists: &'a dyn Fn(&DocId, &DocId) -> bool,
 }

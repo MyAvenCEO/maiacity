@@ -56,7 +56,7 @@ theorem write_keeps_chain (device : Bytes) (actor : DocId) (carried : List Cap) 
 
 /-- When a reader accepts the write's chain, no cap in it lets an op reach a Doc beyond the chain's root: the
 authority the handled message carried. -/
-theorem actor_within_chain {x : Ctx} (gov : Bytes → Bytes → Prop) (spawned lists : DocId → DocId → Prop)
+theorem actor_within_chain {x : Ctx} (gov : Core.Hash → Core.Hash → Prop) (spawned lists : DocId → DocId → Prop)
     {device : Bytes} {actor : DocId} {r : Cap} {rest : List Cap} {doc : Facts} {calls : List Call}
     (ok : chainOk x (signWrite device actor (r :: rest) doc calls).chain = true) :
     ∀ c ∈ (signWrite device actor (r :: rest) doc calls).chain, ∀ f v,
@@ -65,7 +65,7 @@ theorem actor_within_chain {x : Ctx} (gov : Bytes → Bytes → Prop) (spawned l
 
 /-- When a reader accepts the write's chain and a cap in it allows each call on the Doc, as the reader checks, the
 chain's root allows each call too: the actor writes nothing its caller couldn't. -/
-theorem actor_calls_within {x : Ctx} (gov : Bytes → Bytes → Prop) (spawned lists : DocId → DocId → Prop)
+theorem actor_calls_within {x : Ctx} (gov : Core.Hash → Core.Hash → Prop) (spawned lists : DocId → DocId → Prop)
     {device : Bytes} {actor : DocId} {r : Cap} {rest : List Cap} {doc : Facts} {calls : List Call}
     (ok : chainOk x (r :: rest) = true) {c : Cap} (hc : c ∈ r :: rest)
     (hcalls : ∀ k ∈ (signWrite device actor (r :: rest) doc calls).calls,

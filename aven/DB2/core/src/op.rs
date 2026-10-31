@@ -194,6 +194,9 @@ pub fn builtin_type(namespace: &str, name: &str) -> DocId {
     ))))
 }
 
+/// The name that stands for no vault (`noVault`): 32 zero bytes, which no vault's genesis hashes to.
+pub const NO_VAULT: Hash = Hash([0; 32]);
+
 /// The built-in type of types: the root type of every type Doc, and its own, `avenDB type of types 1`.
 pub fn type_of_types() -> DocId {
     builtin_type("avenDB", "type of types")
@@ -205,11 +208,11 @@ impl Facts {
         self.r#type == type_of_types()
     }
 
-    /// The type of types' own facts: built in, in no vault, and its own type.
+    /// The type of types' own facts: built in, in no vault ([`NO_VAULT`]), and its own type.
     pub fn type_of_types() -> Facts {
         Facts {
             id: type_of_types(),
-            vault: String::new(),
+            vault: NO_VAULT,
             r#type: type_of_types(),
         }
     }

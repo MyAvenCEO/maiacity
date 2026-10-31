@@ -86,7 +86,7 @@ def targetOf (j : Json) : Except String Target := do
       | r => throw s!"reach {r} is unknown"
     return .doc (← docId d) reach
   | .error _ =>
-    let v := (← j.getObjValAs? String "vault").toUTF8.toList
+    let v ← hashOf (← j.getObjValAs? String "vault")
     let below ← j.getObjValAs? Bool "below"
     match j.getObjValAs? String "type" with
     | .ok t => return .vaultType v (← docId t) below
@@ -146,7 +146,7 @@ def capOf (j : Json) : Except String Cap := do
              return ⟨← a.getObjValAs? String "key", ← a.getObjValAs? String "digest"⟩ }
 
 def factsOf (j : Json) : Except String Facts :=
-  return ⟨← docId (← j.getObjValAs? String "id"), (← j.getObjValAs? String "vault").toUTF8.toList,
+  return ⟨← docId (← j.getObjValAs? String "id"), ← hashOf (← j.getObjValAs? String "vault"),
     ← docId (← j.getObjValAs? String "type")⟩
 
 /-- A reader's context: the tree, one threshold for every vault but those its optional `thresholds` give their own
@@ -239,7 +239,7 @@ def docAnswer (j : Json) : Except String Json := do
   | .error _, _ => return Json.mkObj (doc.map fun e => ((nameOf e).text, (verdict nameOf rd doc rs e).json))
 
 /-- Who governs whom, as authority runs down the context's tree (A28). -/
-def govOf (x : Ctx) (v w : Bytes) : Bool := x.governs v w
+def govOf (x : Ctx) (v w : Hash) : Bool := x.governs v w
 
 /-- No actor spawned another and no collection lists a Doc in caps' cases. -/
 def noDocs (_ _ : DocId) : Bool := false

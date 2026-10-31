@@ -1,5 +1,5 @@
 //! Hashes, Doc ids and type ids (`Aven.Core.Names`). A Value is named by the BLAKE3 hash of its one encoding; a Doc
-//! by the hash of its signed genesis; a type id names a version of a type, `<type Doc>/<schema hash>`. In CBOR a hash
+//! by its unsigned genesis's name (A30); a type id names a version of a type, `<type Doc>/<schema hash>`. In CBOR a hash
 //! is a byte string of its 32 bytes; `b3:<hex>` and `d:<hex>` are only the readable form.
 
 use alloc::string::String;
@@ -11,7 +11,7 @@ use crate::cbor::{Value, encode};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Hash(pub [u8; 32]);
 
-/// A Doc's name: the hash of its signed genesis envelope.
+/// A Doc's name: its genesis's name, the hash of its label and body, unsigned (A30).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct DocId(pub Hash);
 

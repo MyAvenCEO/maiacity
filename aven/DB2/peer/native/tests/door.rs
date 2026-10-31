@@ -79,7 +79,7 @@ fn tree(m: &Members) -> Value {
         .iter()
         .map(|v| {
             let owners: Vec<String> = v.owners.iter().map(ToString::to_string).collect();
-            json!({ "id": v.id, "name": v.name, "kind": v.kind.as_str(), "owners": owners })
+            json!({ "id": v.id, "name": v.name, "kind": v.kind.as_str(), "owners": owners, "threshold": v.threshold })
         })
         .collect();
     json!({ "keys": keys, "vaults": vaults })
@@ -280,6 +280,8 @@ async fn the_door_reads_what_production_stored_before_the_agent() {
     for v in want["vaults"].as_array_mut().unwrap() {
         let kind = aven_id::Kind::parse(v["kind"].as_str().unwrap()).unwrap();
         v["kind"] = json!(kind.as_str());
+        // stored before thresholds: each vault reads as taking one owner
+        v["threshold"] = json!(1);
     }
     assert_ne!(want, old["tree"], "the old tree names a network");
     assert_eq!(tree(&m), want);
