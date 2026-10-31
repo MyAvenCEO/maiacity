@@ -1,0 +1,13 @@
+[package]
+name = "aven-peer-keeper"
+version = "0.0.0"
+description = "A keeper's arrivals for one Doc, pure: items by their sealed hash, numbered by arrival, covers by the uploader's own word, and catch-up by number (Aven.DB.Keeper)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+serde_json = "=1.0.154"
