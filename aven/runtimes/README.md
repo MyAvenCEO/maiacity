@@ -278,7 +278,11 @@ A file runtime's output is only one of two things.
 
 **The drawers** are host code in `drawers/`, written once, reviewed like a runtime, small, and fed only checked output:
 the **tree** drawer is the applier; the **pixel** drawer is a canvas; the **table** drawer is one component. What needs
-the GPU or a native codec stays in a drawer, and what parses hostile bytes stays in a runtime.
+the GPU or a native codec stays in a drawer, and what parses hostile bytes stays in a runtime. A face never draws
+outside its host: the tree drawer (avenOS's `os/web/runtimes/draw.js`) draws into a shadow root whose host is
+positioned, clips its overflow and contains layout, paint and style, so it is the containing block of every absolute
+layer, and is isolated, so no z-index leaves it. A face can't cover avenOS's own buttons or take their clicks
+(`sandbox/drawer.mjs`, in all three engines).
 
 ## Hostile files and their limits
 

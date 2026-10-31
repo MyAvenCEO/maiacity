@@ -222,6 +222,11 @@ function build(doc, n, file) {
 	return el;
 }
 
+// A face never draws outside its host: a runtime is untrusted, and a face drawn over avenOS's own buttons could fake
+// them. Paint containment makes the host the containing block of every absolute and fixed descendant and clips them
+// to its box; overflow clips what scrolls; isolation keeps every z-index inside it.
+const HOST = ':host{display:block;position:relative;overflow:hidden;contain:layout paint style;isolation:isolate}';
+
 /**
  * Draws a runtime's answer into `host`'s shadow root, replacing what was there: `{tree, style}`, the style a list of
  * rules (none for markdown-runtime). Refuses, and draws nothing, unless the tree passes the check and every rule is of
@@ -234,7 +239,7 @@ export function draw(host, { tree, style = [] }, { onEvent = () => {}, onLink = 
 	const root = host.shadowRoot ?? host.attachShadow({ mode: 'open' });
 	const doc = host.ownerDocument;
 	const sheet = doc.createElement('style');
-	sheet.textContent = [':host{display:block}', ...style.map(ruleCss)].join('\n');
+	sheet.textContent = [HOST, ...style.map(ruleCss)].join('\n');
 	root.replaceChildren(sheet, build(doc, tree, file));
 	if (!root.__avenDrawn) {
 		root.__avenDrawn = true;

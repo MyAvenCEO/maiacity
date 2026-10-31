@@ -8,7 +8,9 @@
 //      (`Rule.css`); the drawer refuses exactly the rules the model counts as out of range, and rules outside Style's
 //      types;
 //   4. a click on a node with data-on is heard as its event, and a click on a link is handed to the host: the page
-//      never follows it; text that looks like markup stays text, and nothing in it runs.
+//      never follows it; text that looks like markup stays text, and nothing in it runs;
+//   5. a face never draws outside its host: layers placed absolutely, covering, translated far off and huge paint
+//      nothing and take no click outside it.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { chromium, firefox, webkit } from 'playwright';
@@ -127,6 +129,49 @@ async function clicks(page) {
 	});
 }
 
+// A face never draws outside its host: one that places layers absolutely, covers its parent, translates them far off
+// and makes them huge, drawn into a small host beside a button of the page. Every point of the page outside the host
+// is still the page's (`elementFromPoint`), and a real click on the button reaches the button. (A layer's own box may
+// reach past the host; what counts is that nothing is painted or hit there.)
+async function boxed(page) {
+	const at = await page.evaluate(() => {
+		const { d } = window;
+		const stage = document.createElement('div');
+		stage.style.cssText = 'position:relative;width:600px;height:400px;margin:20px';
+		const button = document.createElement('button');
+		button.textContent = 'Sign in';
+		button.style.cssText = 'position:absolute;left:10px;top:10px;width:120px;height:40px';
+		button.onclick = () => (window.signedIn = true);
+		const host = document.createElement('div');
+		host.style.cssText = 'position:absolute;left:300px;top:200px;width:200px;height:100px';
+		stage.append(button, host);
+		document.body.prepend(stage);
+		const px = (v) => [v * 100, 'px'];
+		const veil = [['position', 'absolute'], ['inset'], ['width', px(10000)], ['height', px(10000)], ['background-color', [0, 0, 0]]];
+		const far = [['position', 'absolute'], ['transform', [['translateX', px(-5000)], ['translateY', px(-5000)]]],
+			['width', px(10000)], ['height', px(10000)], ['background-color', [255, 0, 0]]];
+		const left = [['position', 'absolute'], ['left', px(-10000)], ['top', px(-10000)], ['width', px(10000)], ['height', px(10000)]];
+		const tree = ['div', [], [['div', [['class', 'veil']], ['x']], ['div', [['class', 'far']], ['y']], ['div', [['class', 'left']], ['z']]]];
+		const style = [[[[null, ['veil']]], veil], [[[null, ['far']]], far], [[[null, ['left']]], left]];
+		d.draw(host, { tree, style });
+		const hr = host.getBoundingClientRect();
+		const br = button.getBoundingClientRect();
+		const outside = [];
+		for (let x = 0; x < innerWidth; x += 37)
+			for (let y = 0; y < innerHeight; y += 37)
+				if (x < hr.left || x > hr.right || y < hr.top || y > hr.bottom) {
+					const e = document.elementFromPoint(x, y);
+					if (e === host || host.contains(e)) outside.push([x, y]);
+				}
+		return { outside: outside.slice(0, 5), count: outside.length, button: [br.left + br.width / 2, br.top + br.height / 2] };
+	});
+	const problems = [];
+	if (at.count) problems.push(`a face is drawn outside its host at ${at.count} points, ${JSON.stringify(at.outside)}`);
+	await page.mouse.click(at.button[0], at.button[1]);
+	if (!(await page.evaluate(() => window.signedIn === true))) problems.push("a face took the click meant for the page's button");
+	return problems;
+}
+
 const report = {};
 let failed = false;
 for (const [engine, type] of [['chromium', chromium], ['webkit', webkit], ['firefox', firefox]]) {
@@ -135,7 +180,7 @@ for (const [engine, type] of [['chromium', chromium], ['webkit', webkit], ['fire
 	const tab = await browser.newPage();
 	await tab.goto(url);
 	await tab.waitForFunction(() => window.ready);
-	const problems = [...(await tab.evaluate(inPage, { trees, faces })), ...(await clicks(tab))];
+	const problems = [...(await tab.evaluate(inPage, { trees, faces })), ...(await clicks(tab)), ...(await boxed(tab))];
 	await browser.close();
 	report[engine] = { problems, trees: trees.length, faces: faces.length, ms: Date.now() - started };
 	if (problems.length) failed = true;
