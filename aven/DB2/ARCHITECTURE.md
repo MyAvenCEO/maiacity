@@ -699,9 +699,15 @@ the spec that owns it.
     the reader checks against the chain; it is never appended as a link, which would need the owners' approval (D14).
   - **A cap that travels on in a message** narrows by an attenuation link. It needs no approval, since it grants
     nothing new. It is valid only within its parent, keeps its parent's holder, is signed by a device of that holder,
-    and only follows an approved grant. Caps adds it to `chainOk`.
-  - **A message that crosses to an actor on another vault's host** changes the holder, which is a grant (D14): open
-    with caps and avenACTORS, to Samuel if it needs him.
+    and only follows an approved grant (#1626: `attenuate_within`, `attenuate_signed`, `holder_granted`).
+  - **A message that crosses to an actor on another vault's host** (caps and avenACTORS agreed, under D14 and D16):
+    - by default, authority doesn't cross vaults. B acts under its own standing caps, and A's chain travels only as
+      provenance;
+    - acting with A's authority needs a standing grant to B's vault that A's side approved, which attenuations may
+      follow. A holder changes only by an approved grant (`new_holder_granted`).
+  - **Who checks what.** A reader checks the owner-approved bound: every grant and every attenuation within its parent.
+    The kernel holds the per-message narrowing within that bound, since after a standing delegation a reader can check
+    an attenuation only against the delegation; avenACTORS proves it (`attenuation_within_message`).
 - **A18. Plugins are runtimes.** A lowering is pinned by its runtime's hash, and an envelope carries the lowered hash.
   *Decided: yes (Samuel, 30 Oct 2026: "do as you believe").*
 - **A19. One update grammar:** put, patch, remove and a new `edit` for text, lists and trees, each with a verb and a
