@@ -128,3 +128,185 @@ impl Cap {
         signing_bytes(CAP_LABEL, &self.body())
     }
 }
+
+fn field<'a>(kvs: &'a [(String, Value)], k: &str) -> Option<&'a Value> {
+    kvs.iter().find(|(x, _)| x == k).map(|(_, v)| v)
+}
+
+fn as_map(v: &Value) -> Option<&[(String, Value)]> {
+    match v {
+        Value::Map(kvs) => Some(kvs),
+        _ => None,
+    }
+}
+
+fn as_text(v: &Value) -> Option<&str> {
+    match v {
+        Value::Text(t) => Some(t),
+        _ => None,
+    }
+}
+
+fn as_opt_text(v: &Value) -> Option<Option<String>> {
+    match v {
+        Value::Null => Some(None),
+        Value::Text(t) => Some(Some(t.clone())),
+        _ => None,
+    }
+}
+
+fn as_opt_nat(v: &Value) -> Option<Option<u64>> {
+    match v {
+        Value::Null => Some(None),
+        Value::Uint(n) => Some(Some(*n)),
+        _ => None,
+    }
+}
+
+fn as_nat(v: &Value) -> Option<u64> {
+    match v {
+        Value::Uint(n) => Some(*n),
+        _ => None,
+    }
+}
+
+/// A map with exactly these keys.
+fn keys_are(kvs: &[(String, Value)], keys: &[&str]) -> bool {
+    kvs.len() == keys.len() && keys.iter().all(|k| field(kvs, k).is_some())
+}
+
+impl Line {
+    /// The inverse of [`Line::value`].
+    pub fn of_value(v: &Value) -> Option<Line> {
+        let kvs = as_map(v)?;
+        if !keys_are(kvs, &["op", "doc", "params"]) {
+            return None;
+        }
+        let op = match field(kvs, "op")? {
+            Value::Bytes(b) => Hash(b.as_slice().try_into().ok()?),
+            _ => return None,
+        };
+        let doc = aven_core::Target::of_value(field(kvs, "doc")?.clone())?;
+        let params = as_map(field(kvs, "params")?)?
+            .iter()
+            .map(|(p, b)| Some((p.clone(), aven_core::Bound::of_value(b.clone())?)))
+            .collect::<Option<_>>()?;
+        Some(Line { op, doc, params })
+    }
+}
+
+impl Holder {
+    /// The inverse of [`Holder::value`].
+    pub fn of_value(v: &Value) -> Option<Holder> {
+        if as_text(v) == Some("public") {
+            return Some(Holder::Public);
+        }
+        let kvs = as_map(v)?;
+        let [(k, x)] = kvs else { return None };
+        match (k.as_str(), x) {
+            ("vault", Value::Text(t)) => Some(Holder::Vault(t.clone())),
+            ("ticket", Value::Text(t)) => Some(Holder::Ticket(t.clone())),
+            ("group", Value::Bytes(b)) => Some(Holder::Group(aven_core::DocId(Hash(
+                b.as_slice().try_into().ok()?,
+            )))),
+            _ => None,
+        }
+    }
+}
+
+impl Branches {
+    /// The inverse of [`Branches::value`].
+    pub fn of_value(v: &Value) -> Option<Branches> {
+        match v {
+            Value::Text(t) if t == "any" => Some(Branches::Any),
+            Value::Text(t) if t == "main" => Some(Branches::Main),
+            Value::Text(t) if t == "proposals" => Some(Branches::Proposals),
+            Value::Map(kvs) => match kvs.as_slice() {
+                [(k, Value::Text(b))] if k == "branch" => Some(Branches::One(b.clone())),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+}
+
+impl Conditions {
+    /// The inverse of [`Conditions::value`].
+    pub fn of_value(v: &Value) -> Option<Conditions> {
+        let kvs = as_map(v)?;
+        let keys = [
+            "own",
+            "uses",
+            "approve",
+            "expires",
+            "history",
+            "branches",
+            "notBefore",
+        ];
+        if !keys_are(kvs, &keys) {
+            return None;
+        }
+        Some(Conditions {
+            not_before: as_nat(field(kvs, "notBefore")?)?,
+            expires: as_opt_nat(field(kvs, "expires")?)?,
+            approve: as_nat(field(kvs, "approve")?)?,
+            uses: as_opt_nat(field(kvs, "uses")?)?,
+            own: match field(kvs, "own")? {
+                Value::Bool(b) => *b,
+                _ => return None,
+            },
+            branches: Branches::of_value(field(kvs, "branches")?)?,
+            history: match as_text(field(kvs, "history")?)? {
+                "all" => super::conditions::History::All,
+                "from-now" => super::conditions::History::FromNow,
+                _ => return None,
+            },
+        })
+    }
+}
+
+impl Cap {
+    /// A cap read from its bytes, with the id, signer and verified approvals that travel beside them: the inverse of
+    /// [`Cap::bytes`]. Bytes that aren't the one encoding of a cap's body are none: Core's `decode` refuses anything
+    /// non-canonical, and a body is read back only when it writes back as itself.
+    pub fn from_bytes(
+        bytes: &[u8],
+        id: String,
+        signer: String,
+        approvals: Vec<super::approve::Sig>,
+    ) -> Option<Cap> {
+        let body = aven_core::decode(bytes)?;
+        let kvs = as_map(&body)?;
+        let keys = [
+            "form",
+            "role",
+            "grant",
+            "share",
+            "holder",
+            "issuer",
+            "parent",
+            "conditions",
+        ];
+        if !keys_are(kvs, &keys) {
+            return None;
+        }
+        let grant = match field(kvs, "grant")? {
+            Value::Array(ls) => ls.iter().map(Line::of_value).collect::<Option<_>>()?,
+            _ => return None,
+        };
+        let cap = Cap {
+            id,
+            issuer: as_text(field(kvs, "issuer")?)?.into(),
+            holder: Holder::of_value(field(kvs, "holder")?)?,
+            parent: as_opt_text(field(kvs, "parent")?)?,
+            form: super::conditions::Form::parse(as_text(field(kvs, "form")?)?)?,
+            grant,
+            role: as_opt_text(field(kvs, "role")?)?,
+            share: as_nat(field(kvs, "share")?)?,
+            conditions: Conditions::of_value(field(kvs, "conditions")?)?,
+            signer,
+            approvals,
+        };
+        (cap.bytes() == bytes).then_some(cap)
+    }
+}

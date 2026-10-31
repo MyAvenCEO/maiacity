@@ -11,7 +11,7 @@
 //! A merge into main counts only when the grant covers the whole merge: the reader judges it on every call the merge
 //! brings onto main ([`Reading::whole`]), not the fixing commit's alone (`merge_covered`, `merge_within_device`).
 
-use aven_core::{Call, DocId, Facts};
+use aven_core::{Call, DocId, Facts, Step};
 
 use super::chain::{Cap, ChainError, Ctx, vault_id};
 use super::conditions::{Branches, Holder};
@@ -52,6 +52,12 @@ pub struct Reading<'e> {
 }
 
 impl Reading<'_> {
+    /// Its footprint: the steps its calls lower to, which the engine checks what it changed against
+    /// (`Reader.footprint`). The lowering is the engine's (`Aven.DB.Engine.Lower`), so it is given.
+    pub fn footprint(&self, lower: impl Fn(&Call) -> Vec<Step>) -> Vec<Step> {
+        self.calls.iter().flat_map(lower).collect()
+    }
+
     /// A merge into main, read whole (`WholeMerges`): its calls and every call the merge brings onto main from main's
     /// version at its `prev`.
     pub fn whole(mut self, merge: &[Call]) -> Self {
