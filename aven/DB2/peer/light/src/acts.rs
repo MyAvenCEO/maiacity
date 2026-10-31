@@ -102,11 +102,11 @@ pub fn sign_join(secret: &str, text: &str) -> Result<String, JsError> {
     id::sign_join(secret, text).ok_or_else(|| JsError::new("a one-time secret is 64 hex digits"))
 }
 
-/// The PRF step's input for a vault's owner at an epoch (`Aven.ID.KeyFormats.prfInput`), hex, for the page's WebAuthn
+/// The PRF step's input for an owner at an epoch (`Aven.ID.KeyFormats.prfInput`), hex, for the page's WebAuthn
 /// `prf.eval.first`. The browser hashes it into the authenticator's salt itself.
 #[wasm_bindgen(js_name = prfInput)]
-pub fn prf_input(vault: &str, epoch: u32) -> String {
-    hex(&id::prf_input(vault, epoch.into()))
+pub fn prf_input(epoch: u32) -> String {
+    hex(&id::prf_input(epoch.into()))
 }
 
 fn hex(b: &[u8]) -> String {

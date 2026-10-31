@@ -571,15 +571,19 @@ std::thread_local! {
     static OWNER: RefCell<Option<(aven_id::HybridKey, aven_id::SealKey)>> = const { RefCell::new(None) };
 }
 
-/// The passkey's PRF output for `vault`'s owner at `epoch`, straight from the ceremony (rule 13): the Peer-Light derives
-/// the owner key and the seal key from it, keeps them in memory for this session, wipes the output, and keeps only the
-/// public halves in its store, under the ref `owner-keys`, until the tree's ops carry them. Gives back `{owner, seal}`,
-/// hex: never a secret.
+/// The PRF output of the passkey `credential` (its id, base64url) at owner epoch `epoch`, straight from the ceremony
+/// (rule 13): the Peer-Light derives the owner key and the seal key from it, keeps them in memory for this session,
+/// wipes the output, and keeps only the public halves in its store, under the ref `owner-keys`, until the tree's ops
+/// carry them. Gives back `{owner, seal}`, hex: never a secret.
 #[wasm_bindgen(js_name = prfKeys)]
-pub async fn prf_keys(vault: String, epoch: u32, mut output: Vec<u8>) -> Result<JsValue, JsError> {
+pub async fn prf_keys(
+    epoch: u32,
+    credential: String,
+    mut output: Vec<u8>,
+) -> Result<JsValue, JsError> {
     use aven_db_store::RefName;
     let derived = acts::prf_derive(&mut output).map_err(|e| JsError::new(&e))?;
-    let kept = serde_json::json!({ "vault": vault, "epoch": epoch, "owner": derived.owner, "seal": derived.seal });
+    let kept = serde_json::json!({ "credential": credential, "epoch": epoch, "owner": derived.owner, "seal": derived.seal });
     let (store, _) = store().await?;
     let name = RefName::new("owner-keys").map_err(js)?;
     let blob = store

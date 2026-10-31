@@ -917,27 +917,40 @@ which makes it a passkey without a device.
 The WebAuthn PRF extension (CTAP2's hmac-secret) returns 32 bytes that only the authenticator can make, for a given
 input. avenID uses it so that **a new browser signing in with a passkey opens its vault with no other device online.**
 
-**Derivations.**
-- The input is `avenID prf 1`, the vault's id and the owner's epoch. The browser hashes it into the authenticator's
-  salt.
+**Derivations** (`Aven.ID.KeyFormats`, `derivations.json`).
+- The input is `encode(["avenID prf 1", {epoch}])`: the owner's epoch, and no vault (A43, 31 Oct 2026). The
+  authenticator's PRF secret is already its credential's own, and a passkey belongs to one vault (rule 15), so the
+  vault would separate nothing; the label separates this use from any other on the RP ID. Without it, the claim's keys
+  exist before the assertion that signs them, and a new browser asks the PRF in its one sign-in tap. The browser hashes
+  the input into the authenticator's salt.
 - The input can be guessed, so any origin the passkey's RP ID covers could ask for the same output. A dedicated RP ID
   for avenOS, with a secret mixed into the input (A14), is not yet (Samuel, 30 Oct 2026). Until then, the origins are
   few and their releases signed (A15).
 - From the output, BLAKE3's key derivation makes:
-  - `avenID owner 1`: the Ed25519 and ML-DSA-65 seeds of the passkey's **hybrid owner key**;
+  - `avenID owner 1`, read for 64 bytes: the Ed25519 seed and the ML-DSA-65 ξ of the passkey's **hybrid owner key**;
   - `avenID seal 1`: the X-Wing seed of its **seal key**.
-- Both public halves go into the vault's statement with the passkey's own (ES256) key.
+- Both public halves go into the vault's register with the passkey's own (ES256) key: the register maps a credential
+  id to its passkey's record (its vault, SPKI, owner and seal public halves and owner epoch), params of `tree/1`'s
+  claim and join.
 - Device keys are never derived from it (D11), so devices rotate on their own.
 
 **Signing up:**
-1. `create()` asks for `prf`. Some platforms only say it's enabled, so a `get()` follows at once.
-2. The keyring is made and sealed to the device and to the passkey's seal key.
+1. `create()` asks the PRF for owner epoch 1. Where the platform answers there, the owner and seal keys come at once;
+   where it only says the PRF is enabled, a `get()` asks it, one tap more at sign-up only. A passkey without PRF stops
+   here (below).
+2. The claim's assertion signs the claim, the owner and seal public halves among its params, and the owner key signs
+   the same name (A30): two taps, three where the platform only says `enabled`.
+3. The keyring is made and sealed to the device and to the passkey's seal key.
 
-**Signing in on a new browser:**
-1. `get()` with the PRF input returns the assertion and the output.
-2. The sign-in statement carries both proofs (rule 21) and adds the browser as a device, so the door opens.
-3. The browser fetches the keyring's stanza for this passkey from the keeper.
-4. It opens the stanza with the seal key, seals the keyring to itself, and reads everything its vault can.
+**Signing in on a new browser, one tap:**
+1. One discoverable `get()`: its challenge the sign-in op's name, and the PRF for the owner epoch the browser expects
+   (1 when it knows nothing). The sign-in names the network, this device and its key, not the vault: the vault is the
+   one of the passkey that signed, found by its credential id, sent beside the signature as an unsigned hint. The owner
+   key signs the same name.
+2. If the register says that passkey's owner epoch has moved on, the derived key doesn't match: the browser reads the
+   epoch from the register and asks once more, two taps only after a rotation.
+3. The door opens, the browser fetches the keyring's stanza for this passkey from the keeper, opens it with the seal
+   key, seals the keyring to itself, and reads everything its vault can.
 
 **Rotating the keyring needs no ceremony:** it seals to the seal key's public half. Only opening it needs the passkey.
 

@@ -113,9 +113,9 @@
 	</div>
 </header>
 
-{#if config && ready() && device && net.opened !== tree.actsFor(device)}
-	<!-- the passkey's PRF step (id/caps/README.md): a new browser's second tap, and each later session's first, opens
-	     the vault's owner and seal keys in the Peer-Light; nothing secret comes back to this page -->
+{#if config && ready() && device && !net.opened}
+	<!-- the passkey's PRF step (id/caps/README.md): each later session's first tap opens the vault's owner and seal keys
+	     in the Peer-Light again; nothing secret comes back to this page -->
 	<aside class="open-vault card" data-testid="open-vault">
 		<p class="hint">{opening.error ?? 'Your passkey opens this vault\'s keys on this browser.'}</p>
 		<button disabled={opening.busy} onclick={openKeys}>{opening.busy ? 'Opening…' : 'Open your vault with your passkey'}</button>

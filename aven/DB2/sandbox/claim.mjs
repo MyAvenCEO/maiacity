@@ -11,7 +11,7 @@
 //                                           profile with the same passkey, which becomes a second device; that
 //                                           browser's local data then made an older avenOS's, which it resets, and
 //                                           a sign-in with the passkey makes it a device again. With PRF, the claim
-//                                           opens the vault's keys, the second browser opens them with a second tap,
+//                                           opens the vault's keys, the second browser's one sign-in tap opens them,
 //                                           and both derive the same public halves
 //   node sandbox/claim.mjs restarted <run>  after the Aven Peer restarted: both browsers on the same tree
 //   node sandbox/claim.mjs wiped <run>      after its store was wiped: the network unclaimed again
@@ -212,14 +212,9 @@ if (phase === 'claim') {
 	report.signInMs = Date.now() - signedAt;
 	const signedIn = await second.page.locator('[data-view="dashboard"]').first().getAttribute('data-account').catch(() => null);
 	if (signedIn !== report.admin) problems.push(`the second browser acts as ${signedIn}, not ${report.admin}`);
-	// a new browser opens its vault with the passkey alone: a second tap, once it knows the vault, asks the PRF; the same
-	// passkey derives the same owner and seal keys there
-	const opener = second.page.getByTestId('open-vault');
-	if (!(await opener.count())) problems.push('a signed-in new browser offers no "open your vault"');
-	else {
-		await opener.getByRole('button').click();
-		await opener.waitFor({ state: 'detached', timeout: 10_000 }).catch(() => problems.push('the second tap did not open the vault'));
-	}
+	// a new browser opens its vault with the passkey alone, in its one sign-in tap, which asked the PRF too (A43); the
+	// same passkey derives the same owner and seal keys there
+	if (await second.page.getByTestId('open-vault').count()) problems.push("the sign-in's one tap did not open the vault's keys");
 	await second.page.screenshot({ path: `${run}/claim-opened.png` });
 	const secondKeys = await ownerKeys(second.page);
 	if (secondKeys?.owner !== report.ownerKeys?.owner || secondKeys?.seal !== report.ownerKeys?.seal)

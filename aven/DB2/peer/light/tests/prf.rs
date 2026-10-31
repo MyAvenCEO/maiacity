@@ -24,7 +24,7 @@ fn only_public_halves_come_back() {
         b"a statement",
         &signature
     ));
-    assert_eq!(acts::prf_input("alice", 1), hex(&prf_input("alice", 1)));
+    assert_eq!(acts::prf_input(1), hex(&prf_input(1)));
 }
 
 #[test]
