@@ -124,16 +124,56 @@ def runOn (_d : Device) (r : Runtime) (l : Limits) (p i : Value) : Except Failur
 theorem deterministic (d d' : Device) (r : Runtime) (l : Limits) (p i : Value) :
     runOn d r l p i = runOn d' r l p i := rfl
 
-/-! ## Versions and floors (README, "Names, versions, hashes and floors") -/
+/-! ## Pins, withdrawals and floors (README, "Names, versions, hashes and floors"; A7, A42) -/
 
-/-- The version a part runs on: the one it names, or the floor when it names an older one. -/
-def resolve (floor named : Nat) : Nat := max floor named
+/-- What a Doc's or a vault's owners did to a runtime, in its history (A7): pinned it, or withdrew the pin, by its
+hash. A hole in a runtime is closed by withdrawing its pin, never by a floor that rises with releases. -/
+inductive PinAct where
+  | pin (h : Hash)
+  | withdraw (h : Hash)
+  deriving DecidableEq, Repr
 
-theorem resolve_ge_floor (floor named : Nat) : floor ≤ resolve floor named := Nat.le_max_left _ _
+/-- Whether `h` is pinned after these acts, in order: the last act on it decides. -/
+def pinned (acts : List PinAct) (h : Hash) : Bool :=
+  acts.foldl (fun b a => match a with
+    | .pin h' => if h' = h then true else b
+    | .withdraw h' => if h' = h then false else b) false
 
-theorem resolve_named {floor named : Nat} (h : floor ≤ named) : resolve floor named = named := Nat.max_eq_right h
+/-- **The runtime a verdict runs:** exactly the hash the envelope names, when it is pinned in the envelope's past;
+otherwise none, and the envelope is refused. Never a floor and never a newer version: every reader re-lowers alike
+(K7, rule 4). -/
+def verdictRuntime (past : List PinAct) (named : Hash) : Option Hash :=
+  if pinned past named then some named else none
 
-theorem resolve_floor {floor named : Nat} (h : named ≤ floor) : resolve floor named = floor := Nat.max_eq_left h
+theorem verdict_named {past : List PinAct} {named h : Hash} (hv : verdictRuntime past named = some h) : h = named := by
+  unfold verdictRuntime at hv
+  split at hv
+  · exact (Option.some.inj hv).symm
+  · cases hv
+
+theorem pinned_append (acts more : List PinAct) (h : Hash) :
+    pinned (acts ++ more) h = more.foldl (fun b a => match a with
+      | .pin h' => if h' = h then true else b
+      | .withdraw h' => if h' = h then false else b) (pinned acts h) := by
+  simp [pinned, List.foldl_append]
+
+/-- A withdrawal closes the hash for every envelope whose past holds it, until a pin again. -/
+theorem withdraw_closes (acts : List PinAct) (h : Hash) : verdictRuntime (acts ++ [.withdraw h]) h = none := by
+  simp [verdictRuntime, pinned_append]
+
+/-- **Readers agree:** two readers whose histories hold the same envelope's past, whatever came after it (a later
+withdrawal, a later pin), run the same runtime for it, or both refuse it. -/
+theorem readers_agree_pins (past later later' : List PinAct) (named : Hash) :
+    verdictRuntime ((past ++ later).take past.length) named =
+      verdictRuntime ((past ++ later').take past.length) named := by
+  simp
+
+/-- **A floor binds only what a device runs for itself:** its renders and their cache. A file render runs the newest
+version the registry names; a cached render below the runtime's floor is dropped. -/
+def cacheKeeps (floor version : Nat) : Bool := decide (floor ≤ version)
+
+theorem cache_drops {floor version : Nat} (h : version < floor) : cacheKeeps floor version = false := by
+  simp [cacheKeeps]; omega
 
 /-! ## The module a host admits (README, "The runtime contract") -/
 

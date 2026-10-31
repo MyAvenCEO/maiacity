@@ -1,12 +1,12 @@
 import Aven.ID.SettleJson
 import Aven.ID.Admit
-import Aven.ID.Placement
+import Aven.ID.Keeping
 
 /-! # The box's failures, expected (PEERS.md, "How it is checked"; Thread F, F1)
 
 `failures.json`: the nine checks `bun run up --check` runs with the Aven Peer stopped, each with its input and the
 outcome the models give: who reaches whom and through which relay (`Aven.ID.Node`), which source a catch-up takes and
-which it catches (`Aven.ID.CatchUp`), which keeper serves a file (`Aven.ID.Placement`'s `keepersOf`), whether a
+which it catches (`Aven.ID.CatchUp`), which keeper serves a file (`Aven.ID.Keeping`'s `keepersOf`), whether a
 newcomer gets in at Alice Peer's relay (`Settle.newcomer`), the settled tree after each race and after a restart
 (`settle`), and the wire version's refusal (`Records.speaks`). The `#guard`s below hold each outcome to what PEERS.md
 says the box must see, so the vectors can't drift from the plan.
@@ -29,15 +29,17 @@ def gone : String := "aven-peer"
 /-- A file Bob's Peer-Light shared, a Doc of Bob's vault, as its genesis fixes it. -/
 def bobsFile : Core.Facts := ⟨⟨⟨"bobs-file".toUTF8.toList⟩⟩, vaultId "bob", ⟨⟨"file".toUTF8.toList⟩⟩⟩
 
-/-- Bob's vault's keep caps (`Aven.ID.Placement`), each approved by Bob's passkey: the default, everything of Bob's own
+/-- Bob's vault's keep caps (`Aven.ID.Keeping`), each approved by Bob's passkey: the default, everything of Bob's own
 to the Aven Peer, and the file at Bob's Peer, a keeper Bob's vault named. -/
 def keeps : List Cap :=
   [defaultKeep "bob" "aven-peer" "bob-light" [⟨"bob-passkey", "keep-bob"⟩],
    { id := "keep-file", issuer := "bob", holder := .vault "bob-peer", signer := "bob-light",
-     grant := [⟨.doc bobsFile.id, .keep, []⟩], approvals := [⟨"bob-passkey", "keep-file"⟩] }]
+     grant := [⟨coreOp .keep, .doc bobsFile.id .self, []⟩], approvals := [⟨"bob-passkey", "keep-file"⟩] }]
 
-/-- The file's keepers: the vaults Bob's keep caps name for it. No keep cap here reaches below. -/
-def fileKeepers : List String := keepersOf (fun _ _ => false) (fun _ _ => false) [] keeps bobsFile
+/-- The file's keepers: the vaults Bob's keep caps name for it. No keep cap here reaches below or through a
+collection. -/
+def fileKeepers : List String :=
+  keepersOf (fun _ _ => false) (fun _ _ => false) (fun _ _ => false) [] keeps bobsFile
 
 /-- The relay list names vaults (rule 15): Aven's and Alice's, whose relays run on the Aven Peer and Alice Peer. -/
 def relayVaults : List String := ["aven", "alice"]

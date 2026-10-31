@@ -98,14 +98,17 @@ same day, and what they agreed is marked where it applies. Nothing in this spec 
 
 **Grants**
 
-- **cap:** a signed Value in which an issuer grants a holder operations on targets under conditions, resting on a
-  parent cap or on the issuer's own authority. Its id is its hash.
+- **cap:** a signed Value in which an issuer grants a holder ops on targets under conditions, resting on a parent cap
+  or on the issuer's own authority. Its id is its hash.
 - **issuer, holder:** the vault that grants and the vault (or group, or ticket) that receives.
-- **target:** what a cap or a want names: a Doc, a vault's Docs, or a vault's Docs of one root type, each with or
-  without the vaults below it.
-- **operation:** what a cap allows: `read`, `query`, `write`, `mutate`, `tell`, `keep`, `share`.
-- **footprint:** what a write may touch: types, verbs, fields and their constraints
-  ([engine](../../db/engine/README.md#terms)).
+- **target:** what a cap or a want names: a Doc (with what it spawned or what it lists, or not), a vault's Docs, or a
+  vault's Docs of one root type, each with or without the vaults below it.
+- **op:** what a cap allows, named by the hash of its stored form: `core/1`'s `read`, `put`, `patch`, `remove`,
+  `edit`, `tell`, `keep` and `share`, a stored query, or a plugin's op (A32). The verbs are ops.
+- **line:** one op of a grant, on a target, with bounds on its parameters: `{op, doc, params}`.
+- **collection:** a Doc of avenID's type `collection` that lists Docs; a cap reaches what it lists (A32).
+- **footprint:** what a write touches, per lowered step: type, verb, fields and their constraints, computed from an
+  op's lowering and never written in a cap ([engine](../../db/engine/README.md#terms)).
 - **condition:** not before, expiry, approval, uses, budget, own Records, branches, history.
 - **chain:** a cap and its parents, up to a **root cap**, which a vault issues over Docs of its own or of vaults it
   governs.
@@ -150,24 +153,25 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
 2. **Governing is ownership, never a cap.** A vault's owners change its owners, devices, thresholds and recovery, k of
    n. No cap governs, and no device governs (`Aven.ID.Governs`).
 3. **Every cap narrows what it rests on.** A root cap rests on its issuer's authority over the target's vault. Every
-   other cap rests on a parent its issuer holds and grants part of it: targets within, operations within, footprints
-   within, conditions at least as strict. A grant passes it to a holder, a share depth lower; an attenuation narrows it
+   other cap rests on a parent its issuer holds and grants part of it: the same ops, targets within, bounds at least as
+   tight, conditions at least as strict. A grant passes it to a holder, a share depth lower; an attenuation narrows it
    for the same holder, no deeper (A27).
 4. **The verifier computes the chain, and a cap never changes.** Nothing a cap says about itself widens it. It names
-   operations and roles by hash, so what it grants is fixed when it is signed.
-5. **A cap grants operations on targets.** The engine's operations (`read`, `query`, `write`, `mutate`) and the
-   network's (`tell`, `keep`, `share`). There are no levels.
-6. **One target grammar.** Caps and wants name the same targets (engine, D4). A want may add a stored query; a cap
-   never names one, because what a query covers changes with the data.
+   ops and roles by hash, so what it grants is fixed when it is signed.
+5. **A cap grants ops on targets** (A32). `core/1`'s (`read`, `put`, `patch`, `remove`, `edit`, `tell`, `keep`,
+   `share`), stored queries and plugins' ops, each by its hash. There are no levels.
+6. **One target grammar.** Caps and wants name the same targets (engine, D4). A cap never names a query as a target,
+   because what a query covers changes with the data; a query's flexibility comes as a collection, whose list changes
+   only by its issuer's signed act (A32).
 7. **Read is the key, per Doc.** Holding read means holding the Doc's key. Nothing inside a Doc is secret from its
    readers: a part that must be secret is a Doc of its own (docs rule 16).
 8. **Write needs read.** A vault writes a Doc only with its key. A holder without `read` acts only through someone who
    holds the key (rule 10).
-9. **Every reader checks every write.** A change counts only when its signer's chain is valid, live and covers the
-   change's footprint. One that doesn't count is kept but shows on no branch, and neither does anything built on it
-   (docs rule 10).
+9. **Every reader checks every write.** A change counts only when its signer's chain is valid, live and allows the
+   call it names, and the change is what that call lowers to. One that doesn't count is kept but shows on no branch,
+   and neither does anything built on it (docs rule 10).
 10. **Without the key, the key's holder checks.** A holder without `read` gets only what a kernel or a serving peer runs
-    for it, and only the operations its cap names. For actors and agents, that holds query by query.
+    for it, and only the ops its cap names. For actors and agents, that holds query by query.
 11. **Hidden is not refused.** A peer refuses what no cap grants, whether or not an app showed it.
 12. **Caps live where their checkers read them.** A Doc's caps and revocations are Records in that Doc. A cap on a
     vault's Docs lives in the group that opens them. A cap reaches its holder in a letter.
@@ -249,7 +253,7 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
                                                                   │
                                     issues, on its own authority  │  or resting on a cap it holds
                                                                   ▼
-             cap { issuer, holder, grants: [ target × operations × branches ], conditions, parent }
+             cap { issuer, holder, grant: [ op × target × bounds ], conditions, parent }
                                                                   │
                          holder: a vault, a group, the public, or a ticket until it is claimed
 ```
@@ -260,14 +264,14 @@ Four things remain when every concept is reduced to its job (avenACTOR's discove
 |---|---|
 | **Key** | The only thing that signs or opens. Passkeys, device keys, ticket keys, recovery keys and fetch keys differ only in who keeps them |
 | **Vault** | A principal: owners (keys or vaults) and how many must agree. People, coops, agents and devices are kinds of vault |
-| **Cap** | A signed grant that narrows something its issuer holds: to whom, which operations, on what, under which conditions |
+| **Cap** | A signed grant that narrows something its issuer holds: to whom, which ops, on what, under which conditions |
 | **Proof** | The way from a signing key, through devices, owners and caps, to one act. Anyone can check it |
 
 Everything older is one of these four, or gone:
 
 | Seen before as | Here |
 |---|---|
-| Level, ops, built-in groups, cap groups | Operations; a role |
+| Level, ops, built-in groups, cap groups | Ops; a role |
 | Share, tenant grant, per-method capability | A cap |
 | The Owner level, the Owner group | Governing (never a cap), or `share` |
 | Threshold, root, consent, merge accept, human gate | Approval |
@@ -292,27 +296,26 @@ are Values the same way.
   "issuer": "v:alice",
   "holder": "v:bob",
   "parent": null,
-  "kind": "grant",
-  "grants": [
-    { "target": { "doc": "d:7Hq…" },
-      "read": { "history": "all" },
-      "write": [ { "type": "b3:due…", "verbs": [ "put-new", "patch" ],
-                   "fields": { "x1": "free", "x2": { "is": "d:7Hq…/t1" } } } ],
-      "mutate": [ "b3:4f1c…" ],
-      "share": 0,
-      "branches": "main" } ],
-  "conditions": { "expires": "2026-12-31T00:00:00Z" },
+  "form": "grant",
+  "grant": [
+    { "op": "b3:…read", "doc": { "doc": "d:7Hq…", "reach": "self" }, "params": {} },
+    { "op": "b3:…patch", "doc": { "doc": "d:7Hq…", "reach": "self" },
+      "params": { "type": [ "d:due…" ], "fields": [ "x1", "x2" ] } },
+    { "op": "b3:…invoice.create", "doc": { "vault": "v:alice", "type": "d:invoice…", "below": false },
+      "params": { "currency": [ "EUR", "CHF" ] } } ],
+  "share": 0,
+  "conditions": { "expires": "2026-12-31T00:00:00Z", "branches": "main", "history": "all" },
   "nonce": "9a0e…" }
 ```
 
 | Field | Meaning |
 |---|---|
 | `issuer` | The vault that grants |
-| `holder` | A vault (devices are vaults), a group (`g:<doc>`), a ticket's public key, or `public`: every member of the network |
+| `holder` | A vault (devices are vaults), a group (`{"group": <its Doc>}`), a ticket's public key, or `public`: every member of the network |
 | `parent` | The cap it narrows, by id, or `null` for a root cap |
-| `kind` | `grant`, or `attenuate` for a link that narrows its parent for the same holder, as a message's cap narrows per hop (A27, D16) |
-| `grants` | Each a target, the operations on it and the branches it may write; or `role` and `target` instead |
-| `conditions` | [Below](#conditions); they apply to every grant |
+| `form` | `grant`, or `attenuate` for a link that narrows its parent for the same holder, as a message's cap narrows per hop (A27, D16). ("Kind" is only a vault's, A1) |
+| `grant` | Its lines, each an op, the Docs it may act on and bounds on its parameters; or `role` and a target instead |
+| `conditions` | [Below](#conditions); they apply to every line |
 | `nonce` | Makes two caps with the same grants two caps, each revocable on its own |
 
 **Signed** by a device acting for the issuer, with a hybrid signature over `avenID cap 1`, a newline and the cap's hash,
@@ -321,47 +324,82 @@ Value, never inside it, so a cap's id doesn't depend on who signed it.
 
 ## What a cap grants
 
+Caps are built from ops (A32, Samuel, 31 Oct 2026: "caps should be built from their ops"). A grant is a list of
+**lines**, each `{op, doc, params}`: an op by its hash, the Docs it may act on as a target, and bounds on its
+parameters. What an owner approves is an op's name and definition, exactly what it lets the holder do, and an
+envelope names the op it ran with its parameters, so a reader checks the cap lists it and the change is what it
+produces.
+
 ### Targets
 
-The same grammar as the engine's wants (D4):
+The same grammar as the engine's wants (D4), in three forms (A32):
 
 ```json
-{ "doc": "d:7Hq…" }                              one Doc
-{ "vault": "v:alice" }                           every Doc of Alice's vault
-{ "vault": "v:alice", "below": true }            and every Doc of the vaults she governs
-{ "vault": "v:alice", "type": "b3:invoice…" }    her Docs of one root type
-{ "actor": "e:9f78…/list" }                      one actor (an actor is a Doc)
-{ "actor": "e:9f78…/list", "below": true }       and every actor it spawned: a screen and its buttons
-{ "vault": "v:alice", "def": "b3:todo…" }        every actor of one definition in her vault
+{ "doc": "d:7Hq…", "reach": "self" }              one Doc
+{ "doc": "e:9f78…/list", "reach": "spawned" }     an actor and every actor it spawned: a screen and its buttons
+{ "doc": "d:beach…", "reach": "lists" }           a collection and every Doc it lists
+{ "vault": "v:alice", "below": false }            every Doc of Alice's vault
+{ "vault": "v:alice", "below": true }             and every Doc of the vaults she governs
+{ "vault": "v:alice", "type": "d:invoice…", "below": false }   her Docs of one root type
 ```
 
 A want may also name `{ "query": "b3:…", "column": "x2" }`; a cap never does. Readers decide whether a Doc is in a
-target from its vault and its root type, both fixed when it is made. An actor's address survives its upgrades and a
-definition's hash doesn't. So a definition names the one it `replaces`. A cap follows the upgrade while every message
-it names keeps its schema, and a new or changed message isn't covered until it is granted. `replaces` is a claim anyone
-can write, so it moves a cap only when the vault that granted the cap has adopted the new definition. A look-alike
-elsewhere inherits nothing (Samuel and avenACTORS, 30 Oct 2026; `aven/actor/ARCHITECTURE.md`, sections 6 and 11).
+target from its id, its vault and its root type, all fixed when it is made, and from what a collection's issuer signed
+into its list; never from content. An actor is a Doc: every actor of one definition in a vault is the vault's Docs of
+the definition's type. An actor's address survives its upgrades and a definition's hash doesn't. So a definition names
+the one it `replaces`. A cap follows the upgrade while every message it names keeps its schema, and a new or changed
+message isn't covered until it is granted. `replaces` is a claim anyone can write, so it moves a cap only when the
+vault that granted the cap has adopted the new definition. A look-alike elsewhere inherits nothing (Samuel and
+avenACTORS, 30 Oct 2026; `aven/actor/ARCHITECTURE.md`, sections 6 and 11).
 
-### Operations
+### Collections
 
-| Operation | What it allows | Checked by |
+A query's flexibility comes as a collection (A32, Samuel, 31 Oct 2026: "photos tagged beach from 2026"): a Doc of the
+sharing vault, of avenID's built-in type `collection`, that lists Docs, like a smart album. Its vault's devices keep the
+list with any op, hand-picked, a query, a rule over facts, an actor or an approved suggestion, and each change to it is
+an envelope of the collection a device of its vault signs: it adds a Doc as an entry, or removes entries, each named by
+the envelope that added it. A cap names the collection with `"reach": "lists"`, for any op: read, keep, write and tell.
+Directories (A26), shared folders and keep scopes are collections.
+
+- **Only its issuer's signed listings decide what it lists** (`listed_by_issuer`): a reader reads them from the
+  collection Doc's past as it holds it, and nothing else, so anyone can check it, keepers too.
+- **An edit never changes coverage** (`edit_keeps_coverage`): editing a listed Doc's content, or a tag, widens no cap.
+- **It stays in its vault's authority** (`listed_in_authority`): a collection lists only Docs of its own vault or of
+  vaults its vault governs.
+- **It is bounded** (rule 10): collections nest at most 8 deep, counting the outer one, enough for albums of albums
+  and folders in folders while a reader's check stays small. A deeper tree is shared by a cap on an inner collection.
+- **A write is judged on its own past** (A42): a write through a collection counts only if its Doc was listed in the
+  write's past (`listsAt`), so a list changes by its vault's own acts, never while a reader catches up on others'
+  envelopes (`listsAt_catch_up`).
+
+A Doc that leaves the list leaves its holders' devices at their next sync (A40, `unlisted_not_held`).
+
+### Ops
+
+| Op | What it allows | Checked by |
 |---|---|---|
 | `read` | The Doc's keys. `history`: `all` (every epoch) or `from-now` | Crypto |
-| `query` | Running these stored queries, named by the hash of their lowered core operation | The kernel or serving peer that holds the key. For a vault that holds `read` too, only its honest code |
-| `write` | Changes within these footprints: types, verbs, fields and their constraints | Every reader |
-| `mutate` | These mutations, by the hash of their lowered core operation: their footprints, and exactly what they produce when the envelope names them | Every reader |
+| a stored query | Running it, named by its hash | The kernel or serving peer that holds the key. For a vault that holds `read` too, only its honest code |
+| `put`, `patch`, `remove`, `edit` | Writes of the types and fields its bounds allow; free editing is `edit` on a type and field | Every reader |
+| a plugin's op | What its lowering produces, by its hash, with its parameters within the bounds | Every reader |
 | `tell` | Sending these messages, by name in the receiver's interface, as `tell` or `ask` | The receiver's router |
 | `keep` | Keeping and serving the sealed bytes, without a key | Nothing to check: the keeper keeps |
 | `share` | Issuing narrower caps, to a depth | Every reader of where the caps live |
 
-The engine is how a cap says what its holder may do (Samuel, 30 Oct 2026). Queries and mutations are operations stored
-by hash ([engine](../../db/engine/README.md#operations)); a cap names exactly the ones it allows, or the core verbs over
-types for writes no operation made, such as typing in an editor. `want` needs no cap.
+`core/1`'s ops have fixed ids: each is the hash of its stored form `{"op": name, "plugin": "core/1"}`
+(`Aven.Core.CoreOp`, `core/spec/vectors/ops.json`). Queries and plugin ops are stored by hash
+([engine](../../db/engine/README.md#operations)). An op is pinned by its hash, and a vault adopts a new version as it
+adopts an actor's (`replaces`), so a grant never changes behaviour by itself. `want` needs no cap.
+
+**Bounds.** A line bounds an op's parameters by enumeration: a parameter is free, or one of some values, and a list
+value's every element one of them; a parameter the line doesn't name is free. `core/1`'s writes take `type`, the type
+Doc a step writes, and `fields`, the fields it writes. A narrower line bounds every parameter the wider one bounds at
+least as tightly (`Bound.within_allows`). Ranges come only when a real op needs them.
 
 ### Footprints
 
-Agreed with the engine thread on 30 Oct 2026 (E1–E3). A footprint is computed once, from an operation's lowering to
-core operations, and per lowered step it says:
+Agreed with the engine thread on 30 Oct 2026 (E1–E3). A footprint is computed once, from an op's lowering to core
+ops, never written in a cap (A32), and per lowered step it says:
 
 - **the type**, and the **verb**: `put-new` (a Record that didn't exist at the envelope's base), `put-replace`, `patch`
   or `remove`. A put under a slot id ([ontology](../../db/ontology/README.md#the-rules), rule 9) is an upsert by design,
@@ -377,12 +415,11 @@ core operations, and per lowered step it says:
   or written once by `put-new` (an owner field set to `$actor`). Those read the same at the envelope's base and now, so
   the check is a lookup of the touched Records. Anything else narrows by type and field only.
 
-A footprint sits only on a line that writes: `put`, `patch`, `remove` or `edit` (A19). A line that reads, queries,
-tells, keeps or shares allows no step, so what an owner approves as reading never writes (A2; `no_step_without_write`,
-`footprint_writes`). The footprint grant names each step's verb exactly, so the line's verb only says that it writes.
+`read`, `tell`, `keep` and `share` lower to no step, so a cap whose ops all lower to none lets an envelope change
+nothing: what an owner approves as reading never writes (A2; `no_step_without_write`, `chain_writes_nothing`,
+`rule4_reading_writes_nothing`).
 
-A cap names the hash of the **lowered** core operation (E3), which a plugin upgrade can't widen. The operation's own
-hash may ride along for display and grants nothing. An envelope made by an operation carries the operation's hash and
+A cap names an op by its hash, which a plugin upgrade can't widen. An envelope made by an op carries the op's hash and
 its params inside the seal, so a reader re-lowers it and checks the change is exactly what it produces.
 
 ### Conditions
@@ -412,7 +449,7 @@ for people; authority never looks one up, and avenOS shows the grants a role exp
 | A type within a Doc | Write `due` and `done` facts | Every reader | Any writer, honest or not: an outside write doesn't count |
 | A field, a constant, own Records | Change only your own Records' `status` | Every reader | The same |
 | A predicate | Assert `member_of` | Every reader (a predicate is a type) | The same |
-| A kind | `invoice.create` | Every reader, through the kind's compiled mutation | The same |
+| An op | `invoice.create`, by its hash | Every reader, through the op's lowering | The same |
 | A branch | Propose, don't land | Every reader | The same |
 | A query | Run `invoice.list` and nothing else | The kernel or serving peer holding the key | Everyone without the key. A vault holding the key could read the whole Doc with a changed client |
 | A message | `tell` a todo list `add` | The receiver's router | Any sender |
@@ -556,19 +593,20 @@ checks the footprint ([engine](../../db/engine/README.md#who-checks-what)):
      - **valid:** signatures, approvals on every grant, every link narrowing, every attenuation keeping its holder,
        conditions;
      - **live:** kept by every revocation on the chain that the reader holds (rule 14);
-     - **covering:** its footprint covers the change; with `approve`, the approvals over this envelope's digest; and
-       for a group's cap, the writer's live read cap on the group, and the issuer of each child still in it.
+     - **covering:** its last cap allows the call the envelope names, the op listed, the Doc covered and the
+       parameters within its bounds (A32); with `approve`, the approvals over this envelope's digest; and for a
+       group's cap, the writer's live read cap on the group, and the issuer of each child still in it.
 
    The chain comes from the Doc's access map or from inside the envelope.
 8. **Loro's own checks** (docs).
-9. **Fit,** and the footprint for the engine: a named operation is re-lowered, and the change must be what it produces.
+9. **Fit,** and the footprint for the engine: the named op is re-lowered, and the change must be what it produces.
 10. **Counts:** fit, authorized and not a split, and everything it builds on counts.
 
-**A merge into main** counts only when the merger's grant covers the footprint of the whole merge: every type and field
-that differs between the base and the merged state, not only the commit that fixes conflicts. Otherwise a merger with a
-narrow cap could land a proposal's wider changes (agreed with the docs thread, 30 Oct 2026). The engine computes that
-diff from main's version at the merge's `prev` (`merge_granted`), and caps' verdict judges a merge into main on it
-(`merge_covered`).
+**A merge into main** counts only when the merger's grant covers the whole merge: every call the merge brings onto
+main, not only the commit that fixes conflicts. Otherwise a merger with a narrow cap could land a proposal's wider
+changes (agreed with the docs thread, 30 Oct 2026). The engine holds every Record the merge changes on main to the steps
+those calls lower to, from main's version at the merge's `prev` (`merge_steps`), and caps' verdict judges a merge into
+main on its whole calls (`merge_covered`).
 
 **Three verdicts per envelope** (the docs layer's):
 - **fit**, which depends only on the envelope and never changes;
@@ -587,8 +625,8 @@ An envelope counts when all three hold and everything it builds on counts.
 | The door | The relay and every peer (milestone 2) | Every connection |
 | Fetch and upload proofs, quota, keep caps | The keeper | Every request |
 | Signer, epoch, chain, revocations | Every reader (docs layer) | Every envelope |
-| Footprint, operation | Every reader (engine) | Every envelope |
-| An operation against its caps before it runs | The engine | Before it runs (engine, rule 10) |
+| Footprint, op | Every reader (engine) | Every envelope |
+| An op against its caps before it runs | The engine | Before it runs (engine, rule 10) |
 | Served is wants intersected with caps | The serving peer | Every request |
 | `tell` | The receiver's router | Every message |
 | Loads intersected with the run's caps | The kernel | Every turn |
@@ -1082,6 +1120,10 @@ with ML-DSA, which COSE is standardising and no authenticator we know of ships.
 - **Keep caps tell a keeper what to keep without saying what it is** ([blind keepers](#blind-keepers)). What a device
   keeps for itself is its profile (engine, D5); what a keeper keeps for others is a keep cap.
 - **Tiers only order.** A tier never grants or withholds (engine, rule 9).
+- **Holdings follow caps** (A40). A device or keeper holds only what its caps cover, so when coverage shrinks, by a
+  delete, a Doc leaving a collection, a revoked or narrowed cap or a withdrawn keep cap, honest peers drop the bytes and
+  keys at their next sync (`Aven.ID.Holdings`, `holds_within_caps`). A copy someone deliberately took outside avenOS is
+  beyond any system's reach.
 
 ## Scale: the battle test
 
@@ -1220,11 +1262,20 @@ to and leave all the time. Scale need not be built from day one, but no choice m
     every successor, takes the smaller epoch hash as current, as writers do, and flags a fork. The uploading vault
     pays.
 
+22. **Caps are built from ops** (A32, Samuel, 31 Oct 2026: "caps should be built from their ops"). A line is an op by
+    its hash, a target and bounds on its parameters; footprints come only from an op's lowering, so what an owner
+    approves is exactly what the holder may do. `core/1`'s verbs are ops with fixed ids, a query is a stored op, and
+    bounds are enumerations. This replaces decisions 4 and 5's operations and footprint grants. A query's flexibility
+    comes as a collection, whose list its issuer signs.
+23. **Holdings follow caps** (A40, Samuel, 31 Oct 2026). A device or keeper holds only what its caps cover, so when
+    coverage shrinks, by a delete, a Doc leaving a collection, a revoked or narrowed cap or a withdrawn keep cap, honest
+    peers drop the bytes and keys at their next sync.
+
 Agreed with the engine thread (30 Oct 2026):
 
 - **E1.** Footprints carry verbs, fields and constraints, computed once from the lowering.
 - **E2.** `where` is checked only on fields that never change.
-- **E3.** Caps name the lowered core operation's hash, and an envelope carries its operation's hash and params.
+- **E3.** Caps name an op by its hash, and an envelope carries its op's hash and params (A32).
 
 ## What Lean proves
 
@@ -1232,26 +1283,29 @@ Agreed with the engine thread (30 Oct 2026):
 proves it). Its examples on the cast carry their answers, written by hand and checked as it builds: by `decide`, or by
 `#guard` where they go through UTF-8. `lake exe vectors` exports them with generated cases (README, rule 10).
 
-What a grant reaches is `Aven.Core`'s (`core/spec`), which `id/spec` requires. A **line** of a grant is a target in
-Core's grammar, a verb, and for a write the footprint grants each step must keep. A line lies within another when its
-target is narrower (`Target.le`), its verb the same and its footprint grants no wider, so a chain narrows by Core's
-`Target.le_sound`. Caps defines no Values, hashes or targets of its own.
+What a grant reaches is `Aven.Core`'s (`core/spec`), which `id/spec` requires. A **line** of a grant is an op by its id
+(`Aven.Core.OpId`), a target in Core's grammar and bounds on the op's parameters (`Aven.Core.Bound`), never a step
+(A32). A line lies within another when its op is the same, its target narrower (`Target.le`) and each bound at least as
+tight (`Bound.within`), so a chain narrows by Core's `Target.le_sound` and `Bound.within_allows`. Caps defines no
+Values, hashes, ops or targets of its own; its built-in types are `Aven.ID.Types`.
 
 | Module | Theorem | Says |
 |---|---|---|
 | `CapsCbor` | `Cap.digest_inj` | Two allowed caps with one id say the same thing: the bytes approved and signed name the cap exactly |
 | `Authorized` | `own_authorized`, `authorized_vault` | Caps' verdict on a Core envelope (checking, step 7): its device acts within its device cap, and it writes on its vault's own authority (the signer's vault is the Doc's vault or governs it: an owner writing their own Docs, with no chain; never an actor host's device) or under a chain. On either path the signer's vault owns or governs the Doc or holds the chain's last cap: no authority from nowhere |
-| | `chain_signer`, `chain_root` | Under a chain: it keeps every rule, its last cap is held by the signer's vault, every step of the footprint is one the chain's root allows on the Doc, and every line the chain grants lies in the root issuer's authority |
+| | `chain_signer`, `chain_root` | Under a chain: it keeps every rule, its last cap is held by the signer's vault, every call the envelope makes is one the chain's root allows on the Doc, and every line the chain grants lies in the root issuer's authority |
+| | `chain_writes_nothing` | Under a chain whose last cap names only ops that lower to no step, the envelope's footprint is empty: what an owner approves as reading never writes (A2) |
 | | `counts_iff` | An envelope counts exactly when everything in its past is signed, fresh, authorized, live and fit, and none of it is half of a split. `Aven.Architecture` composes the parts |
 | | `readers_agree` | Two readers that hold the same past of an envelope, and the same splits in it, give it the same verdict, whatever else each holds |
 | | `branch_allowed`, `proposals_never_main` | Every cap of a chain an envelope rests on lets its holder write on the envelope's branch, so a cap for proposals, or for one branch, never writes on main: landing a proposal on main is someone else's merge |
-| | `merge_covered` | A merge into main counts only when the merger's grant covers the whole merge: for a reader that judges merges whole (the engine's `changesFrom` from main's version at the merge's `prev`, `merge_granted`), a merge under a chain has a last cap that writes on main and allows every step of the whole merge; on own authority the device cap covers it (`merge_within_device`) |
-| | `device_within_cap`, `device_and_chain` | The signing device acts within its device cap on either path, a cap from the vault it serves: it lets the device write on the envelope's branch and allows every step, so under a chain each step is allowed both by the chain for the vault and by the device cap for the device (rule 1) |
+| | `merge_covered` | A merge into main counts only when the merger's grant covers the whole merge: for a reader that judges merges on every call they bring onto main (the engine's `merge_steps` over `changesFrom` from main's version at the merge's `prev`), a merge under a chain has a last cap that writes on main and allows every call of the whole merge; on own authority the device cap covers it (`merge_within_device`) |
+| | `device_within_cap`, `device_and_chain` | The signing device acts within its device cap on either path, a cap from the vault it serves: it lets the device write on the envelope's branch and allows every call, so under a chain each call is allowed both by the chain for the vault and by the device cap for the device (rule 1) |
 | | `device_proposals_never_main`, `merge_within_device` | A device whose cap is for proposals, as an agent's removals go, never writes on main whatever chain it names; a merge into main read whole stays within the merging device's cap |
-| | `host_chain_only`, `actor_within_device`, `host_never_beyond` | An authorized envelope an actor host's device signed rests on a chain, the one the acting actor's message carried, and names that actor; every step of it is allowed both by that chain's last cap and by the host's device cap, the union of its hosted actors' standing caps (A27) |
-| `Caps` | `narrow_chain`, `narrow_steps` | No cap in a chain lets a verb reach a Doc, or allows a write step, that its root doesn't |
+| | `host_chain_only`, `actor_within_device`, `host_never_beyond` | An authorized envelope an actor host's device signed rests on a chain, the one the acting actor's message carried, and names that actor; every call of it is allowed both by that chain's last cap and by the host's device cap, the union of its hosted actors' standing caps (A27) |
+| `Caps` | `narrow_chain`, `narrow_ops` | No cap in a chain lets an op reach a Doc, or allows a call (an op, on a Doc, with parameters), that its root doesn't (A32) |
 | | `root_authority` | Every line a chain grants lies in its root issuer's authority: its own vault, one it governs, or a Doc of one |
-| | `no_step_without_write`, `footprint_writes` | Only a line that writes (put, patch, remove, edit) allows a step, and in a valid chain a footprint sits only on such a line: a cap shown as reading never writes (A2) |
+| | `no_step_without_write` | A grant whose ops all lower to no step, as `core/1`'s read, tell, keep and share do, lets no call write a step (A2) |
+| | `group_typed` | A group that holds a cap in a valid chain is a Doc of avenID's type `group`, a type Doc (A39) |
 | | `chain_short` | A chain passes its root on no more often than its root may be shared: every grant lowers the share depth, and an attenuation never raises it |
 | | `grant_approved` | Every cap in a chain was signed by a device of its issuer, and every grant in it approved by its issuer's owners, an owner vault by its own quorum (D14) |
 | | `child_live` | A cap issued from a group's cap holds only while its issuer is in the group |
@@ -1260,7 +1314,14 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `new_holder_granted`, `holder_granted` | A cap reaches a new holder only by a grant its issuer's owners approved (D14), and every cap of a chain is held by a holder an approved grant in it reached: a chain starts from authority, and an attenuation only follows an approved grant |
 | | `role_pinned` | A new version of a role changes nothing a cap naming the old one grants (D6) |
 | | `chainError_none` | The first rule a chain breaks is none exactly when it keeps them all |
-| `Placement` | `coversB_iff`, `keeps_iff` | Coverage as a device computes it is Core's `Target.covers`, and a cap keeps a Doc exactly when one of its `keep` lines reaches it |
+| `Types` | `builtin_typed` | avenID's built-in types, `keyring`, `safe`, `group`, `collection`, `cap`, `revoke` and `epoch`, are type Docs, their own type Core's type of types (A39) |
+| `Collections` | `listed_by_issuer` | What a collection lists is decided by the listings in the collection Doc's past that a device of its own vault signed, and nothing else (A32) |
+| | `edit_keeps_coverage`, `content_no_listing`, `stranger_no_listing` | An envelope that is no listing, an edit to a listed Doc's content or anyone else's envelope, changes no coverage |
+| | `listed_in_authority` | A collection lists only Docs of its own vault or of vaults its vault governs, however deep it nests (at most 8) |
+| | `listsAt_catch_up` | A write through a collection is judged on the listings in its own past: envelopes a reader takes in outside that past change nothing (A42) |
+| `Holdings` | `holds_within_caps`, `keeps_covered` | After its sync a peer holds nothing outside its coverage, however that shrank, and drops nothing it still covers (A40) |
+| | `withdrawn_not_held`, `deleted_not_held`, `delete_held`, `unlisted_not_held` | Its instances: a withdrawn keep cap's Docs and a deleted Doc leave the keeper; a reader holding a delete keeps only the delete and its past; a Doc that leaves a collection leaves its holders |
+| `Keeping` | `keeps_iff` | A cap keeps a Doc exactly when one of its `keep` lines reaches it, coverage being Core's `Target.covers` as `Target.coversB` decides it |
 | | `resolve_exact` | A keep cap's issuer hands its keeper exactly the Docs the cap covers, each with its first fetch key |
 | | `keepers_by_caps`, `holder_keeps`, `default_kept` | A Doc's keepers are exactly the vaults holding the caps that keep it; a new vault's default keep cap has every Doc of its own kept by Maia City's keeper (A22) |
 | | `default_approved`, `default_needs_owner` | The default keep cap is an ordinary grant: it holds only with its owners' approval, and without one it breaks `.approval` (D14) |
@@ -1317,7 +1378,6 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `acts_on_cap`, `locked_refuses` | It acts only when unlocked, and only on a `tell` cap that names the act (D16) |
 
 **After Core, or with another thread:**
-- `footprints.json` (Core's footprints, with the engine);
 - `want_grants_nothing` and `one_grammar` (Core's target grammar);
 - `group_holds` (a group cap's writes in `Revoke`);
 - `upgrade_no_wider` and `no_confused_deputy`, in the cross-spec model `Aven.Architecture`: they need `Aven.Actor`,
@@ -1331,7 +1391,8 @@ One smaller gap:
 
 | File | What |
 |---|---|
-| `caps.json` | Chains on the cast, their lines in Core's form, each cap with its CBOR bytes, its id and the bytes its device signs, and each chain with the first rule it breaks or none; how avenOS shows a cap; 40 generated chains |
+| `caps.json` | Chains on the cast, their lines of ops in Core's form (A32), each cap with its CBOR bytes, its id and the bytes its device signs, and each chain with the first rule it breaks or none; who keeps a Doc; how avenOS shows a cap; 40 generated chains |
+| `collections.json` | A collection's envelopes, the Docs a reader knows, who signs for and governs which vault, and whether it lists a Doc: removals, strangers, reach, nesting and the depth (A32) |
 | `revocations.json` | Docs of Core envelopes, each with its name and what caps reads of it, the revocations held, and verdicts: hand-written, and 30 generated Docs with every envelope's verdict |
 | `epochs.json` | Who learns which key after Bob's removal and after Alice's heal, and what Bob learns holding Maia City's `below` group |
 | `safe.json` | Requests to Alice's safe from her agent and from Mallory, on her Mac and on a host that keeps Doc keys inside, with what each gives back |
@@ -1342,8 +1403,9 @@ One smaller gap:
 
 A cap's bytes are its body in Core's deterministic CBOR, its targets as `Aven.Core.TargetCbor` writes them; its id is
 their BLAKE3 hash, and its device signs them under the label `avenID cap 1` (`Aven.ID.CapsCbor`). The cast's caps go by
-readable names, so a parent and a role are text until R5 makes them hashes. `derivations.json` follows once Core's
-BLAKE3 gains its keyed and key-derivation modes. The primitives themselves (X-Wing, ML-DSA, Ed25519, the AEAD)
+readable names, so a parent and a role are text until R5 makes them hashes. Core's BLAKE3 has its keyed and
+extendable modes, and `Aven.ID.KeyFormats` fixes the PRF step's, the stanzas' and the epochs' bytes (`derivations.json`,
+`stanzas.json`); hybrid signatures are `Aven.Core.Hybrid`. The primitives themselves (X-Wing, ML-DSA, Ed25519, the AEAD)
 stay outside Lean, as Ed25519 does today. They are tested against their standards' known answers and Wycheproof.
 
 ## Order of work

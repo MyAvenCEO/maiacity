@@ -17,9 +17,9 @@ value of each field it writes.
 What it proves:
 - `diff_footprint`: a diff that passes `diffWithin` passes `footprintOk` on `changesFrom`, on a Doc whose Records have
   distinct ids;
-- `honest_footprint`: so an honest writer's commit, its grants covering its footprint, passes the verdict's footprint
-  part (`verdictFootprint`);
-- `footprint_granted`: what passes it is granted, change by change.
+- `honest_footprint`: so an honest writer's commit passes the verdict's footprint part (`verdictFootprint`);
+- `footprint_steps`: what passes it is made by the footprint's steps, change by change. The footprint is the lowering of
+  the ops the envelope calls; whether its caps let it call them is caps' part (`Aven.ID.Authorized`, A32).
 
 With the docs layer's `ChangesAreDiff`, what an envelope says it does is `changesFrom` as a set, and these hold of it.
 -/
@@ -59,9 +59,9 @@ def footprintOk (fp : List Step) (cs : List RecordChange) : Bool :=
     | .edited => c.names.all (fieldsOf fp c.type.type).contains
     | .gone => hasVerb fp c.type.type .remove
 
-/-- The verdict's footprint part for a commit: the grants cover the footprint, and the changes stay within it. -/
-def verdictFootprint (grants : List Grant) (fp : List Step) (cs : List RecordChange) : Bool :=
-  covers grants fp && footprintOk fp cs
+/-- The verdict's footprint part for a commit: the changes stay within the footprint of the ops it calls. -/
+def verdictFootprint (fp : List Step) (cs : List RecordChange) : Bool :=
+  footprintOk fp cs
 
 theorem find_id {s : List (Record Value)} (hn : (s.map (·.id)).Nodup) {r0 r : Record Value} (h0 : r0 ∈ s)
     (hid : r0.id = r.id) : s.find? (·.id == r.id) = some r0 := by
@@ -140,56 +140,50 @@ theorem diff_footprint (ver : DocId → TypeId) (hver : ∀ t, (ver t).type = t)
       exact hgone r hr (by simpa using hid.1)
     · simpa [hver] using hrm
 
-/-- **An honest writer passes the verdict's footprint part:** its grants cover its footprint and its commit ran as its
-ops say, on a Doc whose Records have distinct ids. -/
+/-- **An honest writer passes the verdict's footprint part:** its commit ran as its ops say, on a Doc whose Records
+have distinct ids. -/
 theorem honest_footprint (ver : DocId → TypeId) (hver : ∀ t, (ver t).type = t) (ofId : NewId → Value) (w c : Nat)
-    (grants : List Grant) (s s' : List (Record Value)) (ops : List (Op Value)) (hn : (s.map (·.id)).Nodup)
-    (hg : covers grants (footprint ops) = true) (h : commit valEq ofId w c s ops = .ok s') :
-    verdictFootprint grants (footprint ops) (changesFrom ver s s') = true := by
-  simp only [verdictFootprint, hg, Bool.true_and]
-  exact diff_footprint ver hver _ s s' hn (commit_within valEq valEq_refl ofId w c s s' ops h)
+    (s s' : List (Record Value)) (ops : List (Op Value)) (hn : (s.map (·.id)).Nodup)
+    (h : commit valEq ofId w c s ops = .ok s') :
+    verdictFootprint (footprint ops) (changesFrom ver s s') = true :=
+  diff_footprint ver hver _ s s' hn (commit_within valEq valEq_refl ofId w c s s' ops h)
 
-/-- **What passes is granted:** every change is made by a footprint step that some grant allows: a new Record by a
-`put-new` of its type, with each of its fields written by a step of its type; an edit's fields likewise; a gone Record
-by a `remove` of its type. -/
-theorem footprint_granted (grants : List Grant) (fp : List Step) (cs : List RecordChange)
-    (h : verdictFootprint grants fp cs = true) :
-    (∀ st ∈ fp, ∃ g ∈ grants, g.allows st = true) ∧
+/-- **What passes is the footprint's:** every change is made by a footprint step: a new Record by a `put-new` of its
+type, with each of its fields written by a step of its type; an edit's fields likewise; a gone Record by a `remove` of
+its type. -/
+theorem footprint_steps (fp : List Step) (cs : List RecordChange) (h : verdictFootprint fp cs = true) :
     ∀ ch ∈ cs,
       (ch.kind = .new → ∃ st ∈ fp, st.type = ch.type.type ∧ st.verb = .putNew) ∧
       (ch.kind = .gone → ∃ st ∈ fp, st.type = ch.type.type ∧ st.verb = .remove) ∧
       (ch.kind ≠ .gone → ∀ f ∈ ch.names, ∃ st ∈ fp, st.type = ch.type.type ∧ f ∈ st.fields) := by
-  simp only [verdictFootprint, Bool.and_eq_true] at h
-  obtain ⟨hc, hf⟩ := h
-  refine ⟨fun st hst => ?_, fun ch hch => ?_⟩
-  · simp only [covers, List.all_eq_true, List.any_eq_true] at hc
-    exact hc st hst
-  · have := (List.all_eq_true.mp hf) ch hch
-    have wr : ∀ f, (fieldsOf fp ch.type.type).contains f = true → ∃ st ∈ fp, st.type = ch.type.type ∧ f ∈ st.fields := by
-      intro f hf
-      simp only [fieldsOf, List.contains_iff_mem, List.mem_flatMap, List.mem_filter, beq_iff_eq] at hf
-      obtain ⟨st, ⟨hst, hty⟩, hm⟩ := hf
-      exact ⟨st, hst, hty, hm⟩
-    have hv : ∀ v, hasVerb fp ch.type.type v = true → ∃ st ∈ fp, st.type = ch.type.type ∧ st.verb = v := by
-      intro v hv
-      simp only [hasVerb, List.any_eq_true, Bool.and_eq_true, beq_iff_eq] at hv
-      exact hv
-    cases hk : ch.kind <;> rw [hk] at this <;> simp only [Bool.and_eq_true, List.all_eq_true] at this
-    · exact ⟨fun _ => hv _ this.1, (fun h => nomatch h), fun _ f hf' => wr f (this.2 f hf')⟩
-    · exact ⟨(fun h => nomatch h), (fun h => nomatch h), fun _ f hf' => wr f (this f hf')⟩
-    · exact ⟨(fun h => nomatch h), (fun _ => hv _ this), fun h => absurd rfl h⟩
+  intro ch hch
+  have := (List.all_eq_true.mp h) ch hch
+  have wr : ∀ f, (fieldsOf fp ch.type.type).contains f = true → ∃ st ∈ fp, st.type = ch.type.type ∧ f ∈ st.fields := by
+    intro f hf
+    simp only [fieldsOf, List.contains_iff_mem, List.mem_flatMap, List.mem_filter, beq_iff_eq] at hf
+    obtain ⟨st, ⟨hst, hty⟩, hm⟩ := hf
+    exact ⟨st, hst, hty, hm⟩
+  have hv : ∀ v, hasVerb fp ch.type.type v = true → ∃ st ∈ fp, st.type = ch.type.type ∧ st.verb = v := by
+    intro v hv
+    simp only [hasVerb, List.any_eq_true, Bool.and_eq_true, beq_iff_eq] at hv
+    exact hv
+  cases hk : ch.kind <;> rw [hk] at this <;> simp only [Bool.and_eq_true, List.all_eq_true] at this
+  · exact ⟨fun _ => hv _ this.1, (fun h => nomatch h), fun _ f hf' => wr f (this.2 f hf')⟩
+  · exact ⟨(fun h => nomatch h), (fun h => nomatch h), fun _ f hf' => wr f (this f hf')⟩
+  · exact ⟨(fun h => nomatch h), (fun _ => hv _ this), fun h => absurd rfl h⟩
 
 /-! ## A merge into main is judged on the whole merge -/
 
-/-- **Every Record a merge changes on main is granted** (`merge_granted`; caps, "Checking"). A merge into main is
-judged on `changesFrom ver main merged`: main's Records before the merge (the version its `prev` alone names) against
-the merged Records, not on the commit that settles conflicts, whose changes are only the fixes. When that verdict
-passes, every Record of main the merge changes or removes, and every Record it brings, is granted, field by field.
-The same holds of any before and after; a merge only chooses which before. -/
-theorem merge_granted (ver : DocId → TypeId) (hver : ∀ t, (ver t).type = t) (grants : List Grant) (fp : List Step)
+/-- **Every Record a merge changes on main is made by the footprint's steps** (`merge_steps`; caps, "Checking"). A
+merge into main is judged on `changesFrom ver main merged`: main's Records before the merge (the version its `prev`
+alone names) against the merged Records, not on the commit that settles conflicts, whose changes are only the fixes.
+`fp` is the lowering of every call the merge brings onto main, which caps' part checks the merger may call
+(`Aven.ID.merge_covered`). When the verdict passes, every Record of main the merge changes or removes, and every Record
+it brings, is made by those steps, field by field. The same holds of any before and after; a merge only chooses which
+before. -/
+theorem merge_steps (ver : DocId → TypeId) (hver : ∀ t, (ver t).type = t) (fp : List Step)
     (main merged : List (Record Value)) (hn : (main.map (·.id)).Nodup)
-    (h : verdictFootprint grants fp (changesFrom ver main merged) = true) :
-    (∀ st ∈ fp, ∃ g ∈ grants, g.allows st = true) ∧
+    (h : verdictFootprint fp (changesFrom ver main merged) = true) :
     -- a Record main had, changed: every field whose value differs is written by a step of its type
     (∀ r ∈ merged, ∀ r0 ∈ main, r0.id = r.id → ∀ f v, (f, v) ∈ r.fields →
       optEq valEq (get r0.fields f) (get r.fields f) = false →
@@ -200,8 +194,8 @@ theorem merge_granted (ver : DocId → TypeId) (hver : ∀ t, (ver t).type = t) 
       ∀ f ∈ r.fields.map Prod.fst, ∃ st ∈ fp, st.type = r.type ∧ f ∈ st.fields) ∧
     -- a Record of main the merge removes: its type is removed
     (∀ r0 ∈ main, (∀ r ∈ merged, r.id ≠ r0.id) → ∃ st ∈ fp, st.type = r0.type ∧ st.verb = .remove) := by
-  have ⟨hg, hc⟩ := footprint_granted grants fp _ h
-  refine ⟨hg, ?_, ?_, ?_⟩
+  have hc := footprint_steps fp _ h
+  refine ⟨?_, ?_, ?_⟩
   · intro r hr r0 hr0 hid f v hfv hne
     have hfind := find_id hn hr0 hid
     -- the change the reader sees for r is an edit naming f

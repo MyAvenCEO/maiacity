@@ -2,7 +2,8 @@
 //! may panic, and every answer a face that passes `faceOk`.
 
 use aven_core::Value;
-use aven_runtimes_face::{FaceOut, Key, Markup, Rgb, Rule, Src, eval, face_ok};
+use aven_runtimes_face::style::{Compound, Len, LenUnit};
+use aven_runtimes_face::{Decl, FaceOut, Key, Markup, Rgb, Rule, Src, eval, face_ok};
 use aven_runtimes_tree::{Node, TREE_LIMITS};
 
 /// xorshift64, as the specs' property tests draw.
@@ -99,15 +100,22 @@ fn random_faces() {
     let (mut drawn, mut refused) = (0, 0);
     for _ in 0..5000 {
         let style = vec![Rule {
-            cls: r.pick(&["row", "x}y", ""]).into(),
-            color: Some(Rgb {
-                r: r.below(256) as u8,
-                g: 0,
-                b: 0,
-            }),
-            background: None,
-            size: Some(r.below(40)),
-            bold: Some(r.below(2) == 0),
+            sel: vec![Compound {
+                tag: None,
+                classes: vec![r.pick(&["row", "x}y", ""]).into()],
+            }],
+            decls: vec![
+                Decl::Color(Rgb {
+                    r: r.below(256) as u8,
+                    g: 0,
+                    b: 0,
+                }),
+                Decl::Size(Len {
+                    v: r.below(4000) as i64,
+                    unit: LenUnit::Px,
+                }),
+                Decl::Weight(r.below(10) * 100),
+            ],
         }];
         let part = aven_runtimes_face::FacePart {
             markup: markup(&mut r, 5),
