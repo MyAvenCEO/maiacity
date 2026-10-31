@@ -12,7 +12,7 @@ const dockerfile = 'sandbox/box/Dockerfile';
 // avenDB's own workflows, relative to aven/DB2
 const workflows = ['../../.github/workflows/avensandbox.yml', '../../.github/workflows/avensandbox-image.yml'];
 // every Lean spec's toolchain, relative to aven/DB2: its own, and those outside it that vectors.sh builds
-const leanToolchains = ['core/spec/lean-toolchain', 'id/spec/lean-toolchain', 'db/spec/lean-toolchain',
+const leanToolchains = ['core/spec/lean-toolchain', 'id/spec/lean-toolchain', 'db/spec/lean-toolchain', 'peer/spec/lean-toolchain',
 	'architecture/spec/lean-toolchain', '../runtimes/spec/lean-toolchain', '../actor/spec/lean-toolchain'].filter((file) => existsSync(join(db2, file)));
 // Pins held back by hand, each with its reason; none since the store's own opfs driver replaced OpenDAL's forked one.
 const held = {};

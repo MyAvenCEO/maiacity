@@ -128,8 +128,9 @@ thread's recommendation. Samuel may overrule any.
 ## 3. Catch-up from whoever holds the log
 
 - **Every native Peer answers** catch-up of a Doc's log from its own store (A34): the tree first, the chat once it is a
-  Doc. Nothing is written for the chat's chains. A Peer-Light answers nothing: it is rarely online, and serves no
-  one.
+  Doc. Nothing is written for the chat's chains. A Peer-Light keeps and serves nothing by arrival number for others:
+  it is rarely online. It answers only the readers it meets on a Doc's topic, by version (docs README, "Catching up",
+  2; `Aven.Peer.DocSync`, the architect, 31 Oct 2026).
 - **Signed tips.** Each device signs the tip of its own log: the hash of its newest post and the post's number. Tips
   travel on gossip and in `heads`. A peer that announces an older tip than one already seen is not believed for that
   log: the gap shows, and the posts are asked of someone else (A3: envelopes name what they build on by hash).
