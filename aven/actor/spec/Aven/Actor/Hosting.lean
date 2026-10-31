@@ -43,21 +43,21 @@ structure World where
 
 /-- `c` hosts actor `a` on `host`: issued by `a`'s owner, held by the host, and every line of it reads `a` itself or
 one of `a`'s loads. -/
-def Hosting (w : World) (c : Cap) (host : String) (a : DocId) : Prop :=
+def Hosting (w : World) (c : Cap String) (host : String) (a : DocId) : Prop :=
   c.issuer = w.ownerOf a ∧ c.holder = .vault host ∧
     ∀ l ∈ c.grants w.roles, l.op = coreOp .read ∧ (l.doc = .doc a .self ∨ l.doc ∈ w.loads a)
 
 /-- What an owner is shown: every cap it issued. -/
-def shownTo (caps : List Cap) (owner : String) : List Cap := caps.filter (·.issuer == owner)
+def shownTo (caps : List (Cap String)) (owner : String) : List (Cap String) := caps.filter (·.issuer == owner)
 
 /-- What a host may read: a Doc some hosting cap of that host reaches with `read`. This is the only way a host reads;
 where an actor lives is not an argument, so hosting alone grants nothing. -/
-def HostReads (w : World) (caps : List Cap) (host : String) (f : Facts) : Prop :=
+def HostReads (w : World) (caps : List (Cap String)) (host : String) (f : Facts) : Prop :=
   ∃ c ∈ caps, ∃ a, Hosting w c host a ∧ (c.grants w.roles).reaches w.gov w.spawned w.lists f (coreOp .read)
 
 /-- A host reads a Doc exactly when a hosting cap of its own reaches it with `read`, and that cap is one the actor's
 owner is shown. -/
-theorem hosting_explicit (w : World) (caps : List Cap) (host : String) (f : Facts) :
+theorem hosting_explicit (w : World) (caps : List (Cap String)) (host : String) (f : Facts) :
     HostReads w caps host f ↔ ∃ a, ∃ c ∈ shownTo caps (w.ownerOf a),
       Hosting w c host a ∧ (c.grants w.roles).reaches w.gov w.spawned w.lists f (coreOp .read) := by
   constructor
@@ -69,13 +69,13 @@ theorem hosting_explicit (w : World) (caps : List Cap) (host : String) (f : Fact
     exact ⟨c, (List.mem_filter.mp hc).1, a, hh, hr⟩
 
 /-- A host that holds no cap reads nothing, whatever actors it hosts. -/
-theorem no_hosting_without_cap (w : World) (caps : List Cap) (host : String)
+theorem no_hosting_without_cap (w : World) (caps : List (Cap String)) (host : String)
     (hnone : ∀ c ∈ caps, c.holder ≠ .vault host) (f : Facts) : ¬ HostReads w caps host f := by
   rintro ⟨c, hc, a, hh, -⟩
   exact hnone c hc hh.2.1
 
 /-- A hosting cap with one line reads only what that line's target covers: one load's cap is not another's. -/
-theorem per_target (w : World) (c : Cap) (host : String) (l : Line) (hl : c.grants w.roles = [l]) (f : Facts) :
+theorem per_target (w : World) (c : Cap String) (host : String) (l : Line) (hl : c.grants w.roles = [l]) (f : Facts) :
     HostReads w [c] host f → l.doc.covers w.gov w.spawned w.lists f := by
   rintro ⟨c', hc', -, -, hr⟩
   simp only [List.mem_singleton] at hc'
@@ -86,7 +86,7 @@ theorem per_target (w : World) (c : Cap) (host : String) (l : Line) (hl : c.gran
   exact hcov
 
 /-- A cap that hosts no actor on the host reads nothing there. -/
-theorem invalid_cap_reads_nothing (w : World) (c : Cap) (host : String) (hv : ∀ a, ¬ Hosting w c host a)
+theorem invalid_cap_reads_nothing (w : World) (c : Cap String) (host : String) (hv : ∀ a, ¬ Hosting w c host a)
     (f : Facts) : ¬ HostReads w [c] host f := by
   rintro ⟨c', hc', a, hh, -⟩
   simp only [List.mem_singleton] at hc'

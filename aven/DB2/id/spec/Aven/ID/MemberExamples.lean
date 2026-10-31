@@ -20,16 +20,16 @@ def chatMessage : DocId := docOf "chat-message"
 
 /-- What a reader of the cast knows, with Maia City's tree Doc among its Docs. -/
 def memberFacts (d : DocId) : Option Facts :=
-  if d == maiaTree then some ⟨d, vaultId "maia-city", notes⟩ else castFacts d
+  if d == maiaTree then some ⟨d, Named.name "maia-city", notes⟩ else castFacts d
 
-def memberCtx : Ctx := { castCtx with facts := memberFacts }
+def memberCtx : Ctx String := { castCtx with facts := memberFacts }
 
 /-- Maia City's confirm cap to Aven, approved by its owners through Alice's key. -/
-def avenConfirm : Cap := confirmCap maiaTree "aven" [⟨"alice-owner", "confirm-aven"⟩]
+def avenConfirm : Cap String := confirmCap maiaTree "aven" [⟨"alice-owner", "confirm-aven"⟩]
 
 /-- Each device's cap: Alice's and Bob's phones may do everything their vaults may; Aven's Peer hosts Aven's agent,
 whose standing cap is the confirm cap (A27). -/
-def memberDeviceCaps : List (Bytes × DeviceCap) :=
+def memberDeviceCaps : List (Bytes × (DeviceCap String)) :=
   [(key "alice-peer-light", ⟨"alice-peer-light", "alice", none, .any, false⟩),
    (key "bob-peer-light", ⟨"bob-peer-light", "bob", none, .any, false⟩),
    (key "aven-peer", ⟨"aven-peer", "aven", some avenConfirm.grant, .any, true⟩)]
@@ -53,7 +53,7 @@ structure Case where
   name : String
   signer : String
   doc : DocId := maiaTree
-  chain : List Cap := []
+  chain : List (Cap String) := []
   calls : List Call
   actor : Option DocId := none
   answer : Bool × List String
@@ -62,7 +62,7 @@ def Case.envelope (c : Case) : Envelope :=
   { doc := c.doc, branch := key "main", writer := 1, seq := 1, prev := none, deps := [], body := .null,
     sigs := [⟨key c.signer, []⟩] }
 
-def Case.reader (c : Case) : Reader :=
+def Case.reader (c : Case) : Reader String :=
   { ctx := memberCtx, chain := fun _ => c.chain, calls := fun _ => c.calls, lower := fun _ => [],
     signer := fun _ => key c.signer, vaultOf := fun k => (castKeys.find? (·.1 == k)).map (·.2),
     member := castMembers.contains, facts := memberFacts,
@@ -93,8 +93,8 @@ def cases : List Case := [
 #guard cases.all fun c => c.verdict == c.answer
 
 /-- The member caps a confirm issues, for Bob and for a vault not yet in the cast. -/
-def memberCaps : List Cap := ["bob", "carol"].map (memberCap maiaTree chat chatMessage)
+def memberCaps : List (Cap String) := ["bob", "carol"].map (memberCap maiaTree chat chatMessage)
 
-#guard memberCaps.all fun c => Canon c.body
+#guard memberCaps.all fun c => Canon (c.map Named.name).body
 
 end Aven.ID.MemberExamples

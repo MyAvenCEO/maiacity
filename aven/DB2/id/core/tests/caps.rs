@@ -3,6 +3,7 @@
 
 mod common;
 
+use aven_core::Hash;
 use aven_id::caps::Cap;
 use common::caps::{Context, Names, branches, full_docs};
 use common::{hex, unhex, vectors};
@@ -46,6 +47,7 @@ fn chains_are_judged_as_the_model_does() {
         // its bytes, its id and what its device signs, where every Doc it names is a real one
         if names.all_full() {
             for (c, j) in chain.iter().zip(v["input"]["chain"].as_array().unwrap()) {
+                let c = c.named();
                 assert_eq!(hex(&c.bytes()), j["cbor"], "{}: {}", v["name"], c.id);
                 assert_eq!(c.digest().text(), j["hash"], "{}: {}", v["name"], c.id);
                 assert_eq!(hex(&c.signing()), j["signs"], "{}: {}", v["name"], c.id);
@@ -60,10 +62,10 @@ fn chains_are_judged_as_the_model_does() {
                     unhex(j["cbor"].as_str().unwrap())
                 );
                 let theirs = aven_core::encode(&full_docs(theirs));
+                let c = c.named();
                 assert_eq!(hex(&c.bytes()), hex(&theirs), "{}: {}", v["name"], c.id);
                 // and read back as itself
-                let back =
-                    Cap::from_bytes(&theirs, c.id.clone(), c.signer.clone(), c.approvals.clone());
+                let back = Cap::from_bytes(&theirs, c.id.clone(), c.signer, c.approvals.clone());
                 assert_eq!(
                     back.map(codec_order),
                     Some(codec_order(c.clone())),
@@ -83,11 +85,11 @@ fn chains_are_judged_as_the_model_does() {
 #[test]
 fn only_a_caps_own_bytes_read_back() {
     let names = Names::default();
-    let caps: Vec<Cap> = vectors("caps.json")
+    let caps: Vec<Cap<Hash>> = vectors("caps.json")
         .iter()
         .filter_map(|v| v["input"]["chain"].as_array().cloned())
         .flatten()
-        .map(|c| names.cap(&c))
+        .map(|c| names.cap(&c).named())
         .collect();
     assert!(caps.len() > 100);
     let mut read = 0;
@@ -103,7 +105,7 @@ fn only_a_caps_own_bytes_read_back() {
         }
         variants.push([bytes.as_slice(), &[0]].concat());
         for b in variants {
-            if let Some(x) = Cap::from_bytes(&b, c.id.clone(), c.signer.clone(), vec![]) {
+            if let Some(x) = Cap::from_bytes(&b, c.id.clone(), c.signer, vec![]) {
                 assert_eq!(x.bytes(), b, "{}", c.id);
                 read += 1;
             }
@@ -114,7 +116,7 @@ fn only_a_caps_own_bytes_read_back() {
 
 /// A cap with each line's parameters in the codec's order (shorter names first, then by their bytes), as its bytes
 /// hold them: the vectors' JSON writes a line's parameters by name, which is another order of the same map.
-fn codec_order(mut c: Cap) -> Cap {
+fn codec_order<V>(mut c: Cap<V>) -> Cap<V> {
     for l in &mut c.grant {
         l.params
             .sort_by(|(a, _), (b, _)| (a.len(), a.as_bytes()).cmp(&(b.len(), b.as_bytes())));
@@ -143,6 +145,7 @@ fn issuers_are_judged_as_the_model_does() {
         });
         assert_eq!(got, v["expected"], "{}", v["name"]);
         for (c, j) in chain.iter().zip(v["input"]["chain"].as_array().unwrap()) {
+            let c = c.named();
             assert_eq!(c.digest().text(), j["hash"], "{}: {}", v["name"], c.id);
             assert_eq!(hex(&c.bytes()), j["cbor"], "{}: {}", v["name"], c.id);
         }

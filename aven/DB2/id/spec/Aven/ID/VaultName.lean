@@ -108,13 +108,13 @@ theorem vaultName_len {H : Bytes → Hash} (hok : ∀ b, (H b).ok = true) (g : G
 /-- A vault as it lives: its genesis, and what changes, its owners and its owners' epoch. -/
 structure Living where
   genesis : Genesis
-  owners : List Owner
+  owners : List (Owner Hash)
   epoch : Nat
 
 def Living.name (H : Bytes → Hash) (v : Living) : Hash := nameWith H v.genesis
 
 /-- **The name depends on the genesis alone:** owners and epochs change, and the name doesn't. -/
-theorem name_ignores_owners (H : Bytes → Hash) (v : Living) (owners : List Owner) (epoch : Nat) :
+theorem name_ignores_owners (H : Bytes → Hash) (v : Living) (owners : List (Owner Hash)) (epoch : Nat) :
     ({ v with owners, epoch } : Living).name H = v.name H := rfl
 
 /-! ## Reading a genesis back -/
@@ -164,5 +164,31 @@ def castVaults : List (String × Kind) :=
 -- every cast vault's name is its own
 #guard (castVaults.map fun (id, k) => (vaultName (castGenesis k id)).bytes).eraseDups.length = castVaults.length
 #guard castVaults.all fun (id, k) => Genesis.ofValue? (castGenesis k id).value == some (castGenesis k id)
+
+/-- A fixture handle's name (A164, A210): its cast genesis, of the kind the cast lists (a person's for a handle only
+the examples use), with its fixed nonce, so two handles never share a name. What every format and vector writes for
+the handle; computed by compiled code only (`#guard`, the exporters), never by the kernel. -/
+def castName (id : String) : Hash := vaultName (castGenesis ((castVaults.lookup id).getD .person) id)
+
+#guard castVaults.all fun (id, k) => castName id == vaultName (castGenesis k id)
+
+end Aven.ID.VaultName
+
+namespace Aven.ID
+
+/-- How a vault id names its vault where Core's formats need 32 bytes (A190, A210): a `Hash` is the vault's name; a
+fixture's readable handle names its cast genesis (`VaultName.castName`). -/
+class Named (V : Type) where
+  name : V → Core.Hash
+  /-- How it is written in text: a name as `b3:<hex>` (A198), a handle as itself. -/
+  text : V → String
+
+instance : Named Core.Hash := ⟨id, Core.Hash.text⟩
+
+instance : Named String := ⟨VaultName.castName, id⟩
+
+end Aven.ID
+
+namespace Aven.ID.VaultName
 
 end Aven.ID.VaultName

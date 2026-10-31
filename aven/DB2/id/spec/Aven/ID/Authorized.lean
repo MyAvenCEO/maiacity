@@ -69,12 +69,14 @@ namespace Aven.ID
 
 open Aven.Core
 
+variable {V : Type} [DecidableEq V] [Named V]
+
 /-- A device cap: what a device may do for the vault it serves, a cap from that vault to the device's own vault (caps,
 "Holders"). `grants` none is everything its vault may do except govern, which a device added by a passkey sign-in
 holds; an agent's devices and the Aven Peer hold narrower ones, and an agent's removals go to proposals. -/
-structure DeviceCap where
-  device : String
-  vault : String
+structure DeviceCap (V : Type) where
+  device : V
+  vault : V
   grants : Option Grant := none
   branches : Branches := .any
   /-- An actor host's device (A27): a kernel's own device, its grants the union of its hosted actors' standing caps. -/
@@ -82,17 +84,17 @@ structure DeviceCap where
 
 /-- A call a device cap lets its device make on a Doc. With no grants listed, every call: governing is never an op,
 since owners govern k of n and no cap and no device does (rule 2), so this never lets a device govern. -/
-def DeviceCap.allows (gov : Hash → Hash → Prop) (spawned lists : DocId → DocId → Prop) (dc : DeviceCap) (f : Facts)
+def DeviceCap.allows (gov : Hash → Hash → Prop) (spawned lists : DocId → DocId → Prop) (dc : DeviceCap V) (f : Facts)
     (c : Call) : Prop :=
   match dc.grants with
   | none => True
   | some g => g.allows gov spawned lists f c
 
 /-- What caps reads of an envelope, and what the reader knows. -/
-structure Reader where
-  ctx : Ctx
+structure Reader (V : Type) where
+  ctx : Ctx V
   /-- The caps an envelope rests on, root first, as the docs layer reads them inside its seal; none on own authority. -/
-  chain : Envelope → List Cap
+  chain : Envelope → List (Cap V)
   /-- The calls it makes: the op it names, with its parameters; for a merge into main, every call the whole merge brings
   onto main (`WholeMerges`). -/
   calls : Envelope → List Call
@@ -102,27 +104,27 @@ structure Reader where
   Approvals beside it are other keys'. -/
   signer : Envelope → Bytes
   /-- The vault a signing key is a device of, as the tree says. -/
-  vaultOf : Bytes → Option String
+  vaultOf : Bytes → Option V
   /-- The network's members, for public caps (D15). -/
-  member : String → Bool
+  member : V → Bool
   /-- What a Doc's genesis fixed. -/
   facts : DocId → Option Facts
   /-- The device cap of the device whose key signs, as its vault holds it. -/
-  deviceCap : Bytes → Option DeviceCap
+  deviceCap : Bytes → Option (DeviceCap V)
   /-- The acting actor an envelope names inside its seal, when an actor host signed it (A27). -/
   actorOf : Envelope → Option DocId
 
 /-- `v` holds `c`: it is `c`'s vault, in `c`'s group now, or, for the public, a member of the network. -/
-def Reader.holdsAt (r : Reader) (c : Cap) (v : String) : Bool :=
+def Reader.holdsAt (r : Reader V) (c : Cap V) (v : V) : Bool :=
   match c.holder with
   | .vault w => w == v
   | .group g => r.ctx.inGroup g v
   | .«public» => r.member v
 
 /-- An envelope's footprint: the steps its calls lower to, which the engine checks what it changed against. -/
-def Reader.footprint (r : Reader) (e : Envelope) : List Step := (r.calls e).flatMap r.lower
+def Reader.footprint (r : Reader V) (e : Envelope) : List Step := (r.calls e).flatMap r.lower
 
-variable (r : Reader) (gov : Hash → Hash → Prop) (spawned lists : DocId → DocId → Prop)
+variable (r : Reader V) (gov : Hash → Hash → Prop) (spawned lists : DocId → DocId → Prop)
 
 /-- The signing device acts within its device cap: the cap is from the vault the device serves, lets it write on the
 envelope's branch, and allows every call the envelope makes on its Doc. -/
@@ -132,7 +134,7 @@ def Reader.WithinDevice (e : Envelope) : Prop :=
 
 /-- Its vault's own authority: the signer's vault is the Doc's vault, or governs it. -/
 def Reader.Own (e : Envelope) : Prop :=
-  ∃ v f, r.vaultOf (r.signer e) = some v ∧ r.facts e.doc = some f ∧ (f.vault = vaultId v ∨ gov (vaultId v) f.vault)
+  ∃ v f, r.vaultOf (r.signer e) = some v ∧ r.facts e.doc = some f ∧ (f.vault = Named.name v ∨ gov (Named.name v) f.vault)
 
 /-- Under a chain: it keeps every rule, its last cap is held by the signer's vault, lets it write on the envelope's
 branch, and allows every call the envelope makes on its Doc. -/
@@ -183,7 +185,7 @@ theorem chain_signer {e : Envelope} (h : r.ByChain gov spawned lists e) :
 vault, governs it, or holds the last cap of the chain it names. -/
 theorem authorized_vault {e : Envelope} (h : r.Authorized gov spawned lists e) :
     ∃ v, r.vaultOf (r.signer e) = some v ∧
-      ((∃ f, r.facts e.doc = some f ∧ (f.vault = vaultId v ∨ gov (vaultId v) f.vault)) ∨
+      ((∃ f, r.facts e.doc = some f ∧ (f.vault = Named.name v ∨ gov (Named.name v) f.vault)) ∨
         ∃ last ∈ r.chain e, r.holdsAt last v = true) := by
   rcases h.2 with ⟨⟨v, f, hv, hf, o⟩, _⟩ | ⟨c, _⟩
   · exact ⟨v, hv, .inl ⟨f, hf, o⟩⟩
@@ -208,7 +210,7 @@ theorem chain_root {e : Envelope} (h : r.ByChain gov spawned lists e) :
 /-- **A chain that names no write writes nothing** (A2): under a chain whose last cap names only ops that lower to no
 step, as `core/1`'s read, tell, keep and share do, the envelope's footprint is empty, so the engine's check lets it
 change no Record. -/
-theorem chain_writes_nothing {e : Envelope} (h : r.ByChain gov spawned lists e) {last : Cap}
+theorem chain_writes_nothing {e : Envelope} (h : r.ByChain gov spawned lists e) {last : Cap V}
     (hl : (r.chain e).getLast? = some last)
     (reads : ∀ l ∈ last.grants r.ctx.roles, ∀ c : Call, c.op = l.op → r.lower c = []) : r.footprint e = [] := by
   obtain ⟨_, last', hl', _, _, f, _, calls⟩ := h
@@ -231,7 +233,7 @@ theorem branch_allowed {e : Envelope} (h : r.ByChain gov spawned lists e) :
 
 /-- A cap for proposals, or for one branch, never writes on main: no envelope on main rests on a chain that holds one.
 Landing a proposal on main is someone else's merge. -/
-theorem proposals_never_main {e : Envelope} (main : e.branch = mainBranch) {c : Cap} (m : c ∈ r.chain e)
+theorem proposals_never_main {e : Envelope} (main : e.branch = mainBranch) {c : Cap V} (m : c ∈ r.chain e)
     (prop : c.conditions.branches = .proposals ∨ ∃ b, c.conditions.branches = .one b) :
     ¬ r.ByChain gov spawned lists e := by
   intro h
@@ -275,7 +277,7 @@ theorem device_and_chain {e : Envelope} (h : r.Authorized gov spawned lists e) (
 
 /-- A device whose cap is for proposals, or for one branch, never writes on main, on its vault's own authority or under
 any chain: an agent's removals go to proposals, and landing them on main is someone else's merge. -/
-theorem device_proposals_never_main {e : Envelope} (main : e.branch = mainBranch) {dc : DeviceCap}
+theorem device_proposals_never_main {e : Envelope} (main : e.branch = mainBranch) {dc : DeviceCap V}
     (hd : r.deviceCap (r.signer e) = some dc) (prop : dc.branches = .proposals ∨ ∃ b, dc.branches = .one b) :
     ¬ r.Authorized gov spawned lists e := by
   intro h
@@ -336,14 +338,14 @@ that is the Doc's vault, governs it, or holds one of those caps, one of whose li
 
 /-- The signer's chain reaches the Doc at all: its device serves a vault that is the Doc's vault, governs it, or holds
 one of the caps `held` with a line that covers the Doc. -/
-def Reader.Reaches (held : List Cap) (doc : DocId) (signer : Bytes) : Prop :=
+def Reader.Reaches (held : List (Cap V)) (doc : DocId) (signer : Bytes) : Prop :=
   ∃ v f, r.vaultOf signer = some v ∧ r.facts doc = some f ∧
-    (f.vault = vaultId v ∨ gov (vaultId v) f.vault ∨
+    (f.vault = Named.name v ∨ gov (Named.name v) f.vault ∨
       ∃ c ∈ held, r.holdsAt c v = true ∧ ∃ l ∈ c.grants r.ctx.roles, l.doc.covers gov spawned lists f)
 
 /-- **Step 4 never refuses what step 7 counts:** an envelope caps authorizes, making a call, reaches its Doc, when the
 reader holds the caps its chain names. -/
-theorem authorized_reaches {held : List Cap} {e : Envelope} (h : r.Authorized gov spawned lists e)
+theorem authorized_reaches {held : List (Cap V)} {e : Envelope} (h : r.Authorized gov spawned lists e)
     (hc : ∀ c ∈ r.chain e, c ∈ held) (calls : r.calls e ≠ []) :
     r.Reaches gov spawned lists held e.doc (r.signer e) := by
   obtain ⟨-, ⟨⟨v, f, hv, hf, own⟩, -⟩ | ⟨⟨-, last, hl, ⟨v, hv, hold⟩, -, f, hf, allows⟩, -⟩⟩ := h
@@ -371,12 +373,13 @@ theorem Grant.allowsB_iff {g : Grant} {f : Facts} {c : Call} :
   simp only [Grant.allowsB, Grant.allows, List.any_eq_true, Bool.and_eq_true, beq_iff_eq, Target.coversB_iff,
     and_assoc]
 
-def DeviceCap.allowsB (dc : DeviceCap) (f : Facts) (c : Call) : Bool :=
+def DeviceCap.allowsB (dc : DeviceCap V) (f : Facts) (c : Call) : Bool :=
   match dc.grants with
   | none => true
   | some g => g.allowsB gov spawned lists f c
 
-theorem DeviceCap.allowsB_iff {dc : DeviceCap} {f : Facts} {c : Call} :
+omit [DecidableEq V] [Named V] in
+theorem DeviceCap.allowsB_iff {dc : DeviceCap V} {f : Facts} {c : Call} :
     dc.allowsB gov spawned lists f c = true ↔
       dc.allows (gov · · = true) (spawned · · = true) (lists · · = true) f c := by
   unfold DeviceCap.allowsB DeviceCap.allows
@@ -384,7 +387,7 @@ theorem DeviceCap.allowsB_iff {dc : DeviceCap} {f : Facts} {c : Call} :
   | none => simp
   | some g => exact Grant.allowsB_iff gov spawned lists
 
-variable (r : Reader)
+variable (r : Reader V)
 
 def Reader.withinDeviceB (e : Envelope) : Bool :=
   match r.deviceCap (r.signer e), r.facts e.doc with
@@ -394,7 +397,7 @@ def Reader.withinDeviceB (e : Envelope) : Bool :=
 
 def Reader.ownB (e : Envelope) : Bool :=
   match r.vaultOf (r.signer e), r.facts e.doc with
-  | some v, some f => f.vault == vaultId v || gov (vaultId v) f.vault
+  | some v, some f => f.vault == Named.name v || gov (Named.name v) f.vault
   | _, _ => false
 
 def Reader.byChainB (e : Envelope) : Bool :=
@@ -416,6 +419,7 @@ def Reader.authorizedB (e : Envelope) : Bool :=
 
 variable {r} {e : Envelope}
 
+omit [Named V] in
 theorem Reader.withinDeviceB_iff :
     r.withinDeviceB gov spawned lists e = true ↔
       r.WithinDevice (gov · · = true) (spawned · · = true) (lists · · = true) e := by
@@ -423,6 +427,7 @@ theorem Reader.withinDeviceB_iff :
   cases hd : r.deviceCap (r.signer e) <;> cases hf : r.facts e.doc <;>
     simp [List.all_eq_true, DeviceCap.allowsB_iff, and_assoc]
 
+omit [DecidableEq V] in
 theorem Reader.ownB_iff : r.ownB gov e = true ↔ r.Own (gov · · = true) e := by
   unfold Reader.ownB Reader.Own
   cases hv : r.vaultOf (r.signer e) <;> cases hf : r.facts e.doc <;> simp
@@ -434,18 +439,19 @@ theorem Reader.byChainB_iff :
   cases hl : (r.chain e).getLast? <;> cases hv : r.vaultOf (r.signer e) <;> cases hf : r.facts e.doc <;>
     simp [List.all_eq_true, Grant.allowsB_iff, and_assoc]
 
+omit [DecidableEq V] [Named V] in
 theorem Reader.hostSignedB_iff : r.hostSignedB e = true ↔ r.HostSigned e := by
   unfold Reader.hostSignedB Reader.HostSigned
   cases h : r.deviceCap (r.signer e) <;> simp
 
 /-- `Reaches`, decided: caps' answer to the docs layer's `Authorize::reaches`. -/
-def Reader.reachesB (r : Reader) (held : List Cap) (doc : DocId) (signer : Bytes) : Bool :=
+def Reader.reachesB (r : Reader V) (held : List (Cap V)) (doc : DocId) (signer : Bytes) : Bool :=
   match r.vaultOf signer, r.facts doc with
-  | some v, some f => f.vault == vaultId v || gov (vaultId v) f.vault ||
+  | some v, some f => f.vault == Named.name v || gov (Named.name v) f.vault ||
       held.any fun c => r.holdsAt c v && (c.grants r.ctx.roles).any fun l => l.doc.coversB gov spawned lists f
   | _, _ => false
 
-theorem Reader.reachesB_iff {r : Reader} {held : List Cap} {doc : DocId} {signer : Bytes} :
+theorem Reader.reachesB_iff {r : Reader V} {held : List (Cap V)} {doc : DocId} {signer : Bytes} :
     r.reachesB gov spawned lists held doc signer = true ↔
       r.Reaches (gov · · = true) (spawned · · = true) (lists · · = true) held doc signer := by
   unfold Reader.reachesB Reader.Reaches

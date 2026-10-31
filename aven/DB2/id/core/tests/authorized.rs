@@ -6,9 +6,7 @@ mod common;
 
 use aven_core::{Call, CoreOp, DocId, Facts, Hash, OpId, Value as V};
 use aven_id::Tree;
-use aven_id::caps::{
-    Branches, Cap, DeviceCap, Line, Path, Reader, Reading, World, grant_allows, vault_id,
-};
+use aven_id::caps::{Branches, Cap, DeviceCap, Line, Path, Reader, Reading, World, grant_allows};
 use common::caps::{Context, Names};
 use common::vectors;
 use proptest::prelude::*;
@@ -144,9 +142,12 @@ fn branches(i: usize) -> Branches {
 
 /// The cast's governance, as Core's targets name vaults.
 fn gov(t: &Tree, v: &Hash, w: &Hash) -> bool {
-    t.vaults()
-        .iter()
-        .any(|a| vault_id(&a.id) == *v && t.governs(&a.id).into_iter().any(|g| vault_id(g) == *w))
+    t.vaults().iter().any(|a| {
+        aven_id::cast_name(&a.id) == *v
+            && t.governs(&a.id)
+                .into_iter()
+                .any(|g| aven_id::cast_name(g) == *w)
+    })
 }
 
 fn check(case: &Case, d: &Draw) -> Result<(), TestCaseError> {
@@ -269,7 +270,10 @@ fn check(case: &Case, d: &Draw) -> Result<(), TestCaseError> {
                 // `authorized_vault`, own side: the Doc's vault or one it governs
                 Path::Own => {
                     prop_assert!(!host, "host_chain_only");
-                    prop_assert!(f.vault == vault_id(&v) || gov(t, &vault_id(&v), &f.vault));
+                    prop_assert!(
+                        f.vault == aven_id::cast_name(&v)
+                            || gov(t, &aven_id::cast_name(&v), &f.vault)
+                    );
                 }
                 Path::Chain => {
                     prop_assert!(by_chain.is_ok());

@@ -19,9 +19,9 @@ fn by_names(file: &str) {
     {
         with_reader(&v["input"], |r, reading, _| {
             let held: Vec<Cap> = reading.chain.to_vec();
-            let cap = |n: &Hash| held.iter().find(|c| c.digest() == *n).cloned();
+            let cap = |n: &Hash| held.iter().find(|c| c.named().digest() == *n).cloned();
             let authority = Authority {
-                caps: held.iter().map(Cap::digest).collect(),
+                caps: held.iter().map(|c| c.named().digest()).collect(),
                 acks: vec![],
                 actor: reading.actor,
             };

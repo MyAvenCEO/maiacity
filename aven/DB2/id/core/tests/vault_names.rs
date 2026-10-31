@@ -3,7 +3,7 @@
 
 mod common;
 
-use aven_id::{Kind, VaultGenesis};
+use aven_id::{CAST_VAULTS, Kind, VaultGenesis, cast_name, cast_nonce};
 use serde_json::Value;
 
 fn unhex(v: &Value) -> Vec<u8> {
@@ -44,5 +44,21 @@ fn every_vault_name_is_the_models() {
             "{name}"
         );
         assert_eq!(VaultGenesis::from_bytes(&encoded), Some(genesis), "{name}");
+        // the cast's vault by its handle: the same nonce and name (`VaultName.castName`, A210)
+        let handle = name.trim_start_matches("the name of the cast's ");
+        assert_eq!(cast_nonce(handle), genesis.nonce, "{name}");
+        assert_eq!(cast_name(handle), genesis.name(), "{name}");
+        assert!(
+            CAST_VAULTS
+                .iter()
+                .any(|&(h, k)| h == handle && k == genesis.kind),
+            "{name}"
+        );
     }
+    assert_eq!(
+        all.iter()
+            .filter(|v| !v["name"].as_str().unwrap().starts_with("read back"))
+            .count(),
+        CAST_VAULTS.len()
+    );
 }

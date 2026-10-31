@@ -102,7 +102,7 @@ def lineOf (j : Json) : Except String Line := do
   return ⟨← hashOf (← j.getObjValAs? String "op"), ← targetOf (← j.getObjVal? "doc"),
     ← ps.mapM fun (p, b) => return (p.toUTF8.toList, ← boundOf b)⟩
 
-def holderOf (j : Json) : Except String Holder := do
+def holderOf (j : Json) : Except String (Holder String) := do
   if j == Json.str "public" then return .«public»
   match j.getObjValAs? String "vault" with
   | .ok v => return .vault v
@@ -132,7 +132,7 @@ def conditionsOf (j : Json) : Except String Conditions :=
 
 def optStr (j : Json) (k : String) : Option String := (j.getObjValAs? String k).toOption
 
-def capOf (j : Json) : Except String Cap := do
+def capOf (j : Json) : Except String (Cap String) := do
   let form ← match ← j.getObjValAs? String "form" with
     | "grant" => pure CapForm.grant
     | "attenuate" => pure .attenuate
@@ -151,7 +151,7 @@ def factsOf (j : Json) : Except String Facts :=
 
 /-- A reader's context: the tree, one threshold for every vault but those its optional `thresholds` give their own
 (A28), who is in each group, the roles, what each Doc is. -/
-def ctxOf (j : Json) : Except String Ctx := do
+def ctxOf (j : Json) : Except String (Ctx String) := do
   let tree ← match ← j.getObjVal? "tree" with
     | .str "cast" => pure cast
     | t => parseTree t
@@ -169,7 +169,7 @@ def ctxOf (j : Json) : Except String Ctx := do
            inGroup := fun g v => groups.any fun (h, ms) => h == g && ms.contains v }
 
 /-- The chain's verdict: kept, or the first rule it breaks. -/
-def chainAnswer (x : Ctx) (cs : List Cap) : Json :=
+def chainAnswer (x : Ctx String) (cs : List (Cap String)) : Json :=
   match chainError x cs with
   | none => Json.mkObj [("ok", true)]
   | some e => Json.mkObj [("ok", false), ("error", e.json)]
@@ -239,7 +239,7 @@ def docAnswer (j : Json) : Except String Json := do
   | .error _, _ => return Json.mkObj (doc.map fun e => ((nameOf e).text, (verdict nameOf rd doc rs e).json))
 
 /-- Who governs whom, as authority runs down the context's tree (A28). -/
-def govOf (x : Ctx) (v w : Hash) : Bool := x.governs v w
+def govOf (x : Ctx String) (v w : Hash) : Bool := x.governs v w
 
 /-- No actor spawned another and no collection lists a Doc in caps' cases. -/
 def noDocs (_ _ : DocId) : Bool := false
@@ -259,7 +259,7 @@ def callOf (j : Json) : Except String Call := do
   return ⟨← hashOf (← j.getObjValAs? String "op"), ← ps.mapM fun (p, v) => return (p.toUTF8.toList, ← valueOf v)⟩
 
 /-- A device's cap, by the key its device signs with; `"grants": null` is everything its vault may do. -/
-def deviceCapOf (j : Json) : Except String (Bytes × DeviceCap) := do
+def deviceCapOf (j : Json) : Except String (Bytes × (DeviceCap String)) := do
   let grants ← match j.getObjValD "grants" with
     | .null => pure none
     | g => do pure (some (← (← fromJson? (α := Array Json) g).toList.mapM lineOf))
@@ -271,7 +271,7 @@ def deviceCapOf (j : Json) : Except String (Bytes × DeviceCap) := do
 branch and signing key; its calls, for a merge into main every call the whole merge brings; the chain it names, empty
 on its vault's own authority; and what the reader knows: its context, each signing key's vault, each device's cap, the
 network's members, and the actor an actor host's envelope names. -/
-def readerOf (j : Json) : Except String (Ctx × Reader × Envelope) := do
+def readerOf (j : Json) : Except String ((Ctx String) × (Reader String) × Envelope) := do
   let x ← ctxOf (← j.getObjVal? "context")
   let ej ← j.getObjVal? "envelope"
   let signer ← bytesOf (← ej.getObjValAs? String "signer")
@@ -287,7 +287,7 @@ def readerOf (j : Json) : Except String (Ctx × Reader × Envelope) := do
   let actor ← match j.getObjValD "actor" with
     | .null => pure none
     | a => do pure (some (← docId (← fromJson? a)))
-  let r : Reader :=
+  let r : Reader String :=
     { ctx := x, chain := fun _ => chain, calls := fun _ => calls, lower := fun _ => [], signer := fun _ => signer,
       vaultOf := fun k => (keys.find? (·.1 == k)).map (·.2), member := ms.contains, facts := x.facts,
       deviceCap := fun k => (dcs.find? (·.1 == k)).map (·.2), actorOf := fun _ => actor }
@@ -323,7 +323,7 @@ def reachAnswer (j : Json) : Except String Json := do
     return (← bytesOf (← k.getObjValAs? String "key"), ← k.getObjValAs? String "vault")
   let ms ← j.getObjValAs? (List String) "members"
   let held ← (← j.getObjValAs? (Array Json) "held").toList.mapM capOf
-  let r : Reader :=
+  let r : Reader String :=
     { ctx := x, chain := fun _ => [], calls := fun _ => [], lower := fun _ => [], signer := fun _ => [],
       vaultOf := fun k => (keys.find? (·.1 == k)).map (·.2), member := ms.contains, facts := x.facts,
       deviceCap := fun _ => none, actorOf := fun _ => none }

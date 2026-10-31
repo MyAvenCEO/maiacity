@@ -20,20 +20,20 @@ inductive Host where
 
 namespace Tree
 
-variable {t : Tree}
+variable {t : Tree String}
 
 /-- Whom a host may act as: a device the person it serves, the box every person, a visitor no one. -/
-def hostAccounts (t : Tree) : Host → List String
+def hostAccounts (t : Tree String) : Host → List String
   | .box => t.accounts none
   | .device d => t.accounts (some d)
   | .visitor => []
 
 /-- The vault the Vault app opens for `account` at `target`. -/
-def opens (t : Tree) (account target : String) : String :=
+def opens (t : Tree String) (account target : String) : String :=
   if (t.governs account).contains target then target else account
 
 /-- The Vault app's tree: the vault it opens, then all it governs. -/
-def vaultView (t : Tree) (account target : String) : List String :=
+def vaultView (t : Tree String) (account target : String) : List String :=
   let shown := t.opens account target
   shown :: t.governs shown
 

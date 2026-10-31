@@ -13,10 +13,10 @@
     "bob": { "name": "Bob's vault", "kind": "person", "owners": ["key:bob-owner"] },
     "maia-city": { "name": "Maia City", "kind": "coop", "owners": ["vault:alice"] },
     "aven": { "name": "Aven", "kind": "agent", "owners": ["vault:maia-city"] },
-    "aven-peer": { "name": "Aven Peer", "kind": "device", "owners": ["vault:aven"] },
-    "alice-peer": { "name": "Alice Peer", "kind": "device", "owners": ["vault:alice"] },
-    "alice-peer-light": { "name": "Alice Peer-Light", "kind": "device", "owners": ["vault:alice"] },
-    "bob-peer-light": { "name": "Bob's Peer-Light", "kind": "device", "owners": ["vault:bob"] }
+    "aven-peer": { "name": "Aven Peer", "kind": "device", "owners": ["vault:aven"], "key": "aven-peer" },
+    "alice-peer": { "name": "Alice Peer", "kind": "device", "owners": ["vault:alice"], "key": "alice-peer" },
+    "alice-peer-light": { "name": "Alice Peer-Light", "kind": "device", "owners": ["vault:alice"], "key": "alice-peer-light" },
+    "bob-peer-light": { "name": "Bob's Peer-Light", "kind": "device", "owners": ["vault:bob"], "key": "bob-peer-light" }
   },
   "peers": {
     "aven-peer": { "name": "Aven Peer", "kind": "peer", "relay": true, "store": "S3" },

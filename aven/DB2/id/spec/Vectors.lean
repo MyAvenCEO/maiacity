@@ -112,7 +112,7 @@ open Lean Aven.ID
 def vector (name : String) (input expected : Json) : Json :=
   Json.mkObj [("name", name), ("input", input), ("expected", expected)]
 
-def treeVector (name : String) (t : Tree) (qs : List Query) : Json :=
+def treeVector (name : String) (t : Tree String) (qs : List Query) : Json :=
   vector name (Json.mkObj [("keys", toJson t.keys), ("vaults", (t.json.getObjValD "vaults")),
     ("queries", Json.arr (qs.map Query.json).toArray)]) (t.result qs)
 
@@ -212,7 +212,7 @@ def invites : List Json :=
     vector s!"generated member trace, seed {n}" i e
 
 def capsVectors : List Json :=
-  let chain (cs : List Cap) := Json.mkObj [("context", castCtxJson), ("chain", Json.arr (cs.map Cap.json).toArray)]
+  let chain (cs : List (Cap String)) := Json.mkObj [("context", castCtxJson), ("chain", Json.arr (cs.map Cap.json).toArray)]
   (chainExamples.map fun (name, cs, _) => vector name (chain cs) (chainResult cs)) ++
   (keepingExamples.map fun (name, caps, f, _) =>
     vector s!"who keeps it? {name}"
@@ -233,7 +233,7 @@ open AuthorizedExamples in
 def authorizedVectors : List Json :=
   let call (c : Aven.Core.Call) := Json.mkObj [("op", c.op.text),
     ("params", Json.mkObj (c.params.map fun (p, v) => (Aven.Core.utf8Text p, v.json)))]
-  let deviceCap (k : Aven.Core.Bytes) (dc : DeviceCap) := Json.mkObj [("key", Aven.Core.hex k),
+  let deviceCap (k : Aven.Core.Bytes) (dc : DeviceCap String) := Json.mkObj [("key", Aven.Core.hex k),
     ("device", dc.device), ("vault", dc.vault), ("grants", match dc.grants with
       | none => Json.null
       | some g => Json.arr (g.map Line.json).toArray), ("branches", dc.branches.json), ("host", toJson dc.host)]
@@ -272,7 +272,7 @@ open MemberExamples AuthorizedExamples in
 def memberVectors : List Json :=
   let call (c : Aven.Core.Call) := Json.mkObj [("op", c.op.text),
     ("params", Json.mkObj (c.params.map fun (p, v) => (Aven.Core.utf8Text p, v.json)))]
-  let deviceCap (k : Aven.Core.Bytes) (dc : DeviceCap) := Json.mkObj [("key", Aven.Core.hex k),
+  let deviceCap (k : Aven.Core.Bytes) (dc : DeviceCap String) := Json.mkObj [("key", Aven.Core.hex k),
     ("device", dc.device), ("vault", dc.vault), ("grants", match dc.grants with
       | none => Json.null
       | some g => Json.arr (g.map Line.json).toArray), ("branches", dc.branches.json), ("host", toJson dc.host)]
@@ -439,7 +439,7 @@ def keepBytesVectors : List Json :=
   let signed (name : String) (input : Json) (s : Aven.Core.Signed) := vector name input
     (Json.mkObj [("body", s.body.json), ("cbor", Aven.Core.hex (Aven.Core.encode s.body)),
       ("signing", Aven.Core.hex s.signing), ("name", (s.name Aven.Core.blake3).text)])
-  let keepCap := keepAlice.digest Aven.Core.blake3
+  let keepCap := (keepAlice.map Named.name).digest Aven.Core.blake3
   let listing : KeepCbor.Listing := ⟨keepCap, [(d1, fetchKey (epochKey 0))]⟩
   let link1 : Link := ⟨d1, epochName 1, fetchKey (epochKey 1), 1, listing.signed.name Aven.Core.blake3⟩
   let link2 : Link := ⟨d1, epochName 2, fetchKey (epochKey 2), 2, link1.signed.name Aven.Core.blake3⟩

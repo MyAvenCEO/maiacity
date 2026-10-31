@@ -72,7 +72,8 @@ impl Tree {
         body: &[u8],
     ) -> Result<Statement, SignError> {
         let vault = self.serves(device)?;
-        if self.key(device) != Some(public_hex(&key.verifying_key()).as_str()) {
+        let named = self.device_key(device).and_then(|k| self.key(k));
+        if named != Some(public_hex(&key.verifying_key()).as_str()) {
             return Err(SignError::WrongKey(device.to_string()));
         }
         let signature = key.sign(&message(device, vault, body)).to_bytes();
@@ -84,7 +85,7 @@ impl Tree {
         })
     }
 
-    /// A statement holds when its device serves its vault and its device's key signed it.
+    /// A statement holds when its device serves its vault and the key its vault names (A211) signed it.
     pub fn verify(&self, statement: &Statement) -> Result<(), SignError> {
         let Statement {
             device,
@@ -99,7 +100,8 @@ impl Tree {
             });
         }
         let public = self
-            .key(device)
+            .device_key(device)
+            .and_then(|k| self.key(k))
             .and_then(parse_public)
             .ok_or_else(|| SignError::NoKey(device.clone()))?;
         public
