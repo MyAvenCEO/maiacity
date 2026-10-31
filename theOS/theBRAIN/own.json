@@ -33,7 +33,7 @@
   },
   {
    "title": "Four things to start with.",
-   "text": "Create, read, update and delete are {operations}: things you can do with data. A rule gives a {role}, a set of identities, some operations on one piece of data. Never a person directly, always a role. Only the owner writes rules: that's what being the owner means.",
+   "text": "Create, read, update and delete are {operations}: things you can do with data. A rule gives a {role}, a set of identities, some operations on one piece of data. Never a person directly, always a role. The owner writes the first rules; later we'll see how a role can be allowed to pass its own on.",
    "list": [
     "create",
     "read",

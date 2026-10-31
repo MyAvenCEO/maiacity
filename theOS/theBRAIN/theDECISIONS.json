@@ -629,7 +629,7 @@
    "id": "D30",
    "title": "Only the owner changes rules",
    "status": "decided",
-   "decision": "No role gets admin. Only the owner adds, changes or ends rules and role memberships. A family or team that wants several people to manage rules makes the owner a coop, whose own signing rule (for example 2 of 3) decides.",
+   "decision": "The owner writes the first rules on its data; ownership acts (hand over, retain, erase, open the archive) stay with the owner alone. A role may write rules for other roles only through share, within the limits of D47.",
    "why": "Identities work like Gnosis Safes: members sign by the identity's own rules (1 of 2, 2 of 3, per action). So one owner covers several managers, and there is no removed admin who could backdate a revoke.",
    "supersedes": "D15; removes admin from the role do-list in D8",
    "sources": [
@@ -926,7 +926,7 @@
   {
    "id": "D45",
    "title": "Canonical CBOR for everything signed or hashed",
-   "status": "proposed",
+   "status": "decided",
    "decision": "Everything that is signed, hashed or stored uses canonical CBOR (RFC 8949 deterministic encoding). Everything people read is JSON or PDF/A.",
    "why": "Same data, same bytes, same hash and signature; JSON has no canonical form. CBOR carries keys, hashes and signatures as raw bytes, keeps JSON's data model, and is what WebAuthn and COSE already use.",
    "sources": [
@@ -945,7 +945,7 @@
   {
    "id": "D46",
    "title": "A device identity has one owner, human or coop",
-   "status": "proposed",
+   "status": "decided",
    "decision": "Every device identity is owned by exactly one identity: a human for personal devices, or a coop for shared machines such as a company server.",
    "why": "Servers and shared machines belong to organisations, not to one person. A coop still never contains a signer, because a device is an identity.",
    "sources": [],
@@ -953,6 +953,28 @@
     "own-1"
    ],
    "date": "2026-10-31"
+  },
+  {
+   "id": "D47",
+   "title": "Rule-writing is delegated through share, narrowing only",
+   "status": "proposed",
+   "date": "2026-10-31",
+   "decision": "A role holding share may write rules for other roles, but only within its own operations, conditions and expiry; it may end only rules it issued itself; when its own rule ends, every rule issued under it ends too (cascade); writes by a removed delegate that never saw the ending are dropped. The owner's rules are the root and never fall this way.",
+   "why": "Gives teams day-to-day delegation without the problems of admin roles: no granting more than you hold, no rule wars between delegates, no backdated revokes.",
+   "sources": [
+    {
+     "label": "UCAN specification (delegation and attenuation)",
+     "url": "https://github.com/ucan-wg/spec"
+    },
+    {
+     "label": "Keyhive design: convergent capabilities",
+     "url": "https://github.com/inkandswitch/keyhive/blob/main/design/convergent_capabilities.md"
+    }
+   ],
+   "slides": [
+    "rules-8",
+    "rules-2"
+   ]
   }
  ]
 }

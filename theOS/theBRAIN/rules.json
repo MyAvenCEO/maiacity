@@ -30,7 +30,7 @@
    "list": [
     "Content: create, read, update, delete.",
     "Carrying: want, keep, sync.",
-    "Passing on: share, a narrower rule of your own.",
+    "Passing on: share, giving other roles a narrower copy, which you can end again.",
     "Operations that only look at data, like searching, need only read.",
     "Writing rules is not on the list: only the owner does that."
    ],
@@ -126,7 +126,7 @@
   },
   {
    "title": "Passing a rule on only narrows it.",
-   "text": "If home's rule allows share, Mia can hand a narrower copy of it to the role “grandma's”: she adds a block to the token. A block can only take things away, shorten the expiry or add conditions. It can never add.",
+   "text": "If home's rule allows share, Mia can give other roles a narrower copy: “grandma's” may read, the plumber may read and update one item. She can end what she gave, but no one else's. And if her own rule ends, everything she passed on ends with it. Only the owner's rules never fall this way.",
    "code": {
     "blocks": [
      {
@@ -147,10 +147,11 @@
       ],
       "expires": "2026-11-15"
      }
-    ]
+    ],
+    "if_mia_leaves_home": "grandma's rule ends too"
    },
    "action": "Check a rule",
-   "deep": "Attenuation: each appended block can only remove operations, shorten the expiry or add conditions. A verifier intersects all blocks."
+   "deep": "Attenuation: each appended block can only remove operations, shorten the expiry or add conditions; a verifier intersects all blocks. A delegate may end only rules it issued. When a rule ends, every rule issued under it ends too (cascade); the owner's rules are the root. Writes by a removed delegate that never saw the ending are dropped."
   },
   {
    "title": "Every device checks the same four things.",
@@ -214,9 +215,9 @@
    "title": "Rules, in short.",
    "list": [
     "A rule: this role may perform these operations, on this data, until then.",
-    "Only the owner, an identity, writes rules; its own rule never expires.",
+    "The owner writes the first rules; roles with share pass narrower copies on.",
     "Conditions narrow a rule; nothing can widen it.",
-    "A revoke or a lapse is an ending: it wins, turns the key if it gave read, and wipes copies.",
+    "A revoke or a lapse is an ending: it wins, turns the key if it gave read, wipes copies, and takes everything passed on under it.",
     "Under the hood: a signed token any device checks offline."
    ],
    "action": "",
