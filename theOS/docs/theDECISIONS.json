@@ -276,7 +276,7 @@
    "id": "D14",
    "title": "Ambiguity resolves toward less authority",
    "status": "decided",
-   "decision": "When policy changes and other changes are concurrent, the result with less authority wins.",
+   "decision": "When policy, role or ending changes are concurrent with other changes, the result with less authority wins. For role records: if two versions are concurrent, only identities present in both count, so a removal is never outvoted. A change that never saw a removal or an ending is dropped everywhere (D13), whether it was made offline honestly or backdated. Nothing wins by being “latest”: order matters only where one change has seen the other, and last-writer-wins is never used for authority (D25).",
    "why": "The safe default without a central order. Keyhive's guiding principle.",
    "sources": [
     {
