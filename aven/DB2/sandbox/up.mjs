@@ -447,11 +447,12 @@ export async function upgrades(run) {
 		await $`${compose} restart prod`.env(env).quiet();
 	};
 	await wipe();
+	// a version ahead of this build's, and one behind, from the model's own (db/spec/vectors/upgrades.json)
+	const wire = JSON.parse(readFileSync(join(db2, 'db/spec/vectors/upgrades.json'), 'utf8')).find((v) => v.expected.answer === null).input.mine;
 	const asks = {
-		// a version ahead of this build's, and one behind: version 0 is the wire before it had versions
-		'prod-ahead': () => restart('prod', '2'),
+		'prod-ahead': () => restart('prod', String(wire + 1)),
 		'prod-back': () => restart('prod', ''),
-		'alice-behind': () => restart('alice', '0'),
+		'alice-behind': () => restart('alice', String(wire - 1)),
 		'alice-back': () => restart('alice', ''),
 	};
 	const script = $`${compose} exec -T browsers node sandbox/upgrade.mjs ${run}`.env(env).nothrow();
