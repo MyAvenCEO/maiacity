@@ -14,9 +14,9 @@ this gate like any sealed Value (A22).
   (`prove_only_to_holders`); whether the proof holds is `Keep.serves`. The
   gate keeps the Docs proven on the connection (`proven`).
 - **`fetch {doc, hashes}`:** at most `fetchHashes` hashes. Each is served only if the peer holds it *for that Doc*: a
-  hash held for another Doc is answered as missing, never served across Docs (`served_proven`, `served_held`). A Doc
+  hash held for another Doc is answered as missing, never served across Docs (`served_held`). A Doc
   not proven gets nothing (`unproven_nothing`). The items served together stay within `inFlight` bytes, at least one
-  item always (`answer_bounded`, `answer_moves`); from the first that doesn't fit on, the rest held are answered
+  item always (`answer_bounded`); from the first that doesn't fit on, the rest held are answered
   `later`, so what is served keeps the order asked and the device asks again for the rest. Every
   hash asked is answered exactly once, as served, missing or later (`answer_partition`).
 - **`items`:** each item in parts of at most `partBytes`, at consecutive offsets, which together are its bytes
@@ -89,8 +89,9 @@ theorem parts_bounded (h : Nat) (b : Bytes) :
 /-! ## The connection a proof is bound to
 
 A device proves a Doc on a connection by signing, with the Doc's fetch key, a Value that names the Doc and this
-connection's TLS exporter. The proof's form and the fetch key's scheme are avenID's (`Aven.ID.Keep`, A22; the
-architect, 31 Oct 2026); this gate only says which exporter: `exporterLength` bytes under the label `exporterLabel`
+connection's TLS exporter. The proof's form is avenID's (`Aven.ID.KeepCbor`: `fetchLabel`, `proofBody`,
+`proofSigned`), as is the fetch key's scheme (`Aven.ID.Keep`, A22; the architect, 31 Oct 2026); this gate only says
+which exporter: `exporterLength` bytes under the label `exporterLabel`
 (RFC 5705's prefix) with an empty context, which both ends of one connection compute and no other connection shares.
 -/
 
@@ -100,19 +101,20 @@ def exporterLength : Nat := 32
 
 /-! ## Whom a device proves to
 
-The gate names a Doc by its id, which the fetch proof signs; gossip and `doc_tips` name it by its topic. Naming it by id
-widens nothing a link peer learns, because a device sends `prove {doc}` only to a peer it already knows holds that
-Doc: a keeper its vault's keep caps name for it, or a reader it met on the Doc's topic (the architect,
+The gate names a Doc by its id, which the fetch proof signs, as every Docs frame does (A9; gossip is per group). Naming
+it widens nothing a link peer learns, because a device sends `prove {doc}` only to a peer it already knows holds that
+Doc: a keeper its vault's keep caps name for it, or a reader it met on the Doc's group topic (the architect,
 31 Oct 2026). -/
 
 /-- A device may prove a Doc to `peer`: a keeper its vault's keep caps name for the Doc, or a reader it met on the
-Doc's topic. -/
+Doc's group topic. -/
 def mayProve (keepers met : List String) (peer : String) : Bool := keepers.contains peer || met.contains peer
 
 /-- The peers among `links` a device sends `prove {doc}` to. -/
 def provesTo (keepers met links : List String) : List String := links.filter (mayProve keepers met)
 
-/-- **`prove_only_to_holders`:** a device proves a Doc only to a keeper named for it or a reader met on its topic. -/
+/-- **`prove_only_to_holders`:** a device proves a Doc only to a keeper named for it or a reader met on its group's
+topic. -/
 theorem prove_only_to_holders {keepers met links : List String} {p : String} (h : p ∈ provesTo keepers met links) :
     p ∈ links ∧ (p ∈ keepers ∨ p ∈ met) := by
   simp only [provesTo, mayProve, List.mem_filter, Bool.or_eq_true, List.contains_iff_mem] at h
@@ -301,7 +303,7 @@ theorem unproven_nothing {proven : List String} {hs : List Nat}
   · rw [h]; simp
   · simp [Nat.not_le.mpr h]
 
-/-- **`served_proven`, `served_held`:** whatever the gate serves is for a Doc proven on this connection, and held for
+/-- **`served_held`:** whatever the gate serves is for a Doc proven on this connection, and held for
 that Doc with those bytes: never another Doc's. -/
 theorem served_held {proven : List String} {hs : List Nat} {a : Answer} (h : answer proven held doc hs = some a) :
     proven.contains doc = true ∧ ∀ x ∈ a.served, held x.1 = some (doc, x.2) := by
@@ -326,7 +328,7 @@ theorem answer_partition {proven : List String} {hs : List Nat} {a : Answer} (h 
     exact ⟨serveFrom_partition held doc hs true inFlight, serveFrom_missing held doc hs true inFlight⟩
   · nomatch h
 
-/-- **`answer_bounded`, `answer_moves`:** beyond its first item, an answer serves at most `inFlight` bytes; and when
+/-- **`answer_bounded`:** beyond its first item, an answer serves at most `inFlight` bytes; and when
 anything asked is held for the Doc, something is served, so each fetch moves the device forward (README, rule 3). -/
 theorem answer_bounded {proven : List String} {hs : List Nat} {a : Answer} (h : answer proven held doc hs = some a) :
     (a.served.tail.map (·.2.length)).sum ≤ inFlight ∧

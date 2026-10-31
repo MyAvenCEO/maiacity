@@ -39,8 +39,9 @@ keeps paying for its loose envelopes. Decided under A44 (ARCHITECTURE.md, #1721)
 
 **Catching up: "what came after your number n?"** (`after`). The answer lists exactly the items held with a number
 above `n`, by number and hash (`after_complete`), in pages of at most `pageSize`, none empty (`after_pages`): every
-page moves the device forward (README, rule 3). A device then fetches the hashes it lacks as one hash sequence, lands
-the page in one write and imports it in one batch (docs, "Catching up", items 1, 3 to 5). Numbers dropped leave holes;
+page moves the device forward (README, rule 3). A device then fetches the hashes it lacks through the fetch gate
+(`Aven.Peer.Fetch`), lands the page in one write and imports it in one batch (docs, "Catching up", items 1, 3 to 5).
+Numbers dropped leave holes;
 a device that held a dropped loose envelope already has it, and one that didn't gets the segment that covered it, which
 came after it and so has a higher number.
 -/
