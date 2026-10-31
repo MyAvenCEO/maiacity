@@ -1,13 +1,14 @@
 import Aven.ID.SettleJson
 import Aven.ID.Admit
+import Aven.ID.Placement
 
 /-! # The box's failures, expected (PEERS.md, "How it is checked"; Thread F, F1)
 
 `failures.json`: the nine checks `bun run up --check` runs with the Aven Peer stopped, each with its input and the
 outcome the models give: who reaches whom and through which relay (`Aven.ID.Node`), which source a catch-up takes and
-which it catches (`Aven.ID.CatchUp`), which keeper serves a file (`Node.keepersOf`), whether a newcomer gets in at
-Alice Peer's relay (`Settle.newcomer`), the settled tree after each race and after a restart (`settle`), and the wire
-version's refusal (`Records.speaks`). The `#guard`s below hold each outcome to what PEERS.md says the box must see, so
+which it catches (`Aven.ID.CatchUp`), which keeper serves a file (`Aven.ID.Placement`'s `keepersOf`), whether a
+newcomer gets in at Alice Peer's relay (`Settle.newcomer`), the settled tree after each race and after a restart
+(`settle`), and the wire version's refusal (`Records.speaks`). The `#guard`s below hold each outcome to what PEERS.md says the box must see, so
 the vectors can't drift from the plan.
 
 The cast: the Aven Peer (`aven-peer`) and Alice Peer (`alice-peer`) run the listed relays; Bob's Peer (`bob-peer`)
@@ -24,12 +25,23 @@ open Settle Node CatchUp SettleJson TreeExamples
 def members : List String := ["aven-peer", "alice-peer", "bob-peer", "bob-light", "alice-light"]
 def gone : String := "aven-peer"
 
-/-- The relays every member can use (PEERS §1), the chat's holders, and a file Bob's Peer-Light shared, kept by the
-default keeper and by Bob's Peer, which Bob's vault named. -/
-def keeps : List KeepCap := [defaultKeep "aven-peer", ⟨(· == "bobs-file"), "bob-peer"⟩]
+/-- A file Bob's Peer-Light shared, a Doc of Bob's vault, as its genesis fixes it. -/
+def bobsFile : Core.Facts := ⟨⟨⟨"bobs-file".toUTF8.toList⟩⟩, vaultId "bob", ⟨⟨"file".toUTF8.toList⟩⟩⟩
+
+/-- Bob's vault's keep caps (`Aven.ID.Placement`), each approved by Bob's passkey: the default, everything of Bob's own
+to the Aven Peer, and the file at Bob's Peer, a keeper Bob's vault named. -/
+def keeps : List Cap :=
+  [defaultKeep "bob" "aven-peer" "bob-light" [⟨"bob-passkey", "keep-bob"⟩],
+   { id := "keep-file", issuer := "bob", holder := .vault "bob-peer", signer := "bob-light",
+     grant := [⟨.doc bobsFile.id, .keep, []⟩], approvals := [⟨"bob-passkey", "keep-file"⟩] }]
+
+/-- The file's keepers: the vaults Bob's keep caps name for it. No keep cap here reaches below. -/
+def fileKeepers : List String := keepersOf (fun _ _ => false) (fun _ _ => false) [] keeps bobsFile
+
+/-- The relays every member can use (PEERS §1), and the file's holders: Bob's browser and its keepers. -/
 def net : Net :=
   { members, relays := ["aven-peer", "alice-peer"], usable := fun _ _ => true
-    holders := fun d => if d == "bobs-file" then "bob-light" :: keepersOf keeps d else [] }
+    holders := fun d => if d == "bobs-file" then "bob-light" :: fileKeepers else [] }
 
 /-- The tree before the stop: the genesis, Alice's second device, and the tickets for Carol and Dan. -/
 def tree : List TreeStatement :=
@@ -74,8 +86,8 @@ def failureVectors : List Json :=
        ("sources", Json.arr (sources.map fun (s, c) => Json.mkObj [("source", s), ("copy", toJson c)]).toArray)])
      (Json.mkObj [("chosen", toJson ((choose bobsTip sources).map (·.1)))]),
    step 3 "a file Bob's Peer-Light shared loads from Bob's Peer, its tab closed"
-     (Json.mkObj [("keepers", toJson (keepersOf keeps "bobs-file")), ("gone", toJson ["aven-peer", "bob-light"])])
-     (Json.mkObj [("servedBy", toJson ((keepersOf keeps "bobs-file").filter fun k =>
+     (Json.mkObj [("keepers", toJson fileKeepers), ("gone", toJson ["aven-peer", "bob-light"])])
+     (Json.mkObj [("servedBy", toJson (fileKeepers.filter fun k =>
          k != "aven-peer" && k != "bob-light" && reaches net gone "alice-light" k))]),
    step 4 "an invite claimed through Alice Peer's relay, waiting, then acked"
      (Json.mkObj [("tree", treeJson tree), ("claim", SettleJson.TreeStatement.json carol),
@@ -110,7 +122,7 @@ def failureVectors : List Json :=
 -- 2. from a member, not the Aven Peer
 #guard (choose bobsTip sources).map (·.1) == some "alice-peer"
 -- 3. Bob's Peer serves the file, and Alice's browser can fetch it
-#guard keepersOf keeps "bobs-file" == ["aven-peer", "bob-peer"] && fetchable net gone "alice-light" "bobs-file"
+#guard fileKeepers == ["aven-peer", "bob-peer"] && fetchable net gone "alice-light" "bobs-file"
 -- 4. Carol gets in at the relay for her claim; she stands, waits for the ack, then is final
 #guard newcomer ok 100 tree "carol-light" (some carol)
 #guard (settle ok 100 (tree ++ [carol])).admits "carol-light" && !(settle ok 100 (tree ++ [carol])).final 500
