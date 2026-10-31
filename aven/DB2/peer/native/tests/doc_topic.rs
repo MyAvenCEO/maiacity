@@ -1,13 +1,13 @@
-//! A Doc's topic among its readers, natively, as the box runs it: a relay in this process, a reader's Peer on UDP and
+//! A group's topic among its members, natively, as the box runs it: a relay in this process, a reader's Peer on UDP and
 //! the relay, and two Peer-Lights through the relay only. Every peer holds the door (`Gate`) in its hook. A message one
-//! reader sends reaches the other through the Peer; a member on another Doc's topic hears nothing of it; and each reader
-//! meets the others on the topic, which is when the host syncs with them by version.
+//! reader sends reaches the other through the Peer; a member on another group's topic hears nothing of it; and each
+//! member meets the others on the topic, which is when the host tells them its Docs' versions.
 #![cfg(feature = "native")]
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use aven_peer::docs::{DocTopic, Heard, Live, topic};
+use aven_peer::docs::{GroupTopic, Heard, Live, group_topic};
 use aven_peer::members::{Gate, Hook};
 use aven_peer::relay::Allow;
 use aven_peer::{Notes, iroh_gossip};
@@ -40,7 +40,7 @@ impl Got {
 }
 
 struct Peer {
-    topic: DocTopic,
+    topic: GroupTopic,
     got: Got,
     _router: Router,
     _endpoint: Endpoint,
@@ -78,7 +78,7 @@ async fn peer(
         .spawn();
     let got = Got::default();
     let into = got.clone();
-    let topic = DocTopic::join(
+    let topic = GroupTopic::join(
         &gossip,
         on,
         name.into(),
@@ -105,7 +105,7 @@ async fn peer(
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn readers_hear_each_other_on_a_docs_topic_and_no_one_else_does() {
+async fn members_hear_each_other_on_a_groups_topic_and_no_one_else_does() {
     let (alice_peer, alice, bob, carol) = (key(1), key(2), key(3), key(4));
     let members = [
         (alice_peer.public(), "alice-peer"),
@@ -137,8 +137,8 @@ async fn readers_hear_each_other_on_a_docs_topic_and_no_one_else_does() {
         .parse()
         .unwrap();
 
-    let doc = topic(&[7; 32]);
-    let other = topic(&[8; 32]);
+    let doc = group_topic(3, &[7; 32]);
+    let other = group_topic(3, &[8; 32]);
     let via = EndpointAddr::new(alice_peer.public()).with_relay_url(url.clone());
     let hub = peer("alice-peer", alice_peer, &url, gate(), true, doc, vec![]).await;
     let a = peer(
@@ -172,7 +172,7 @@ async fn readers_hear_each_other_on_a_docs_topic_and_no_one_else_does() {
     )
     .await;
 
-    // each Peer-Light meets the Peer on the Doc's topic
+    // each Peer-Light meets the Peer on the group's topic
     for p in [&a, &b] {
         assert!(p.got.wait(|g| !g.1.is_empty()).await, "never met anyone");
     }
@@ -181,7 +181,7 @@ async fn readers_hear_each_other_on_a_docs_topic_and_no_one_else_does() {
         "the Peer met both readers"
     );
 
-    let live = Live::of(b"a sealed envelope");
+    let live = Live::of(aven_core::Hash([5; 32]), b"a sealed envelope");
     assert!(a.topic.send(&live).await);
     assert!(b.got.wait(|g| g.0.contains(&live)).await, "Bob heard it");
     assert!(
@@ -189,15 +189,15 @@ async fn readers_hear_each_other_on_a_docs_topic_and_no_one_else_does() {
         "the Peer heard it"
     );
 
-    let big = Live::of(&vec![9u8; 10_000]);
-    assert!(matches!(big, Live::Hash(_)));
+    let big = Live::of(aven_core::Hash([5; 32]), &vec![9u8; 10_000]);
+    assert!(matches!(big, Live::Hash { .. }));
     assert!(b.topic.send(&big).await);
     assert!(
         a.got.wait(|g| g.0.contains(&big)).await,
         "Alice heard the hash"
     );
 
-    // Carol, on another Doc's topic, heard nothing of either
+    // Carol, on another group's topic, heard nothing of either
     tokio::time::sleep(Duration::from_millis(500)).await;
     assert!(c.got.0.lock().unwrap().0.is_empty());
 }

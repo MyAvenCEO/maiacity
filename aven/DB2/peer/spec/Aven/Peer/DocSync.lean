@@ -3,20 +3,27 @@ import Aven.Core.CborLaws
 import Aven.Core.Text
 
 /-!
-# Docs in the Peers: the topic, and sync between readers by version
+# Docs in the Peers: the topics, what they carry, and sync between readers by version
 
-The Peers own the wire, presence and catch-up (ARCHITECTURE.md, A45). For a Doc they own its topic and the sync
-between its readers. This module imports only Core, so it moves with the wire into the Peers' package unchanged.
+The Peers own the wire, presence and catch-up (ARCHITECTURE.md, A45). For Docs they own the gossip that carries them
+and the sync between their readers. This module imports only Core, so it moves with the wire into the Peers' package
+unchanged.
 
-**The topic.** A Doc's live envelopes travel on the gossip topic `derive_key("avenDB topic 1", epoch key)` (caps
-README, "Sealing"): only the Doc's readers, and keepers told it, can find it. A topic is per epoch; a reader joins the
-newest epoch's and the one before, so a rotation loses nothing in flight. On the wire a Doc is named by its topic,
-never by its id, so a member who isn't a reader learns nothing from a frame.
+**One topic per group** (ARCHITECTURE.md, A9, "Massive data", 13): gossip is per group a device reads, not per Doc,
+so 100,000 Docs don't cost 100,000 topics. A group's topic is `derive_key("avenDB topic 1", the group's epoch key)`
+with the wire version mixed in (`groupTopic`), so only the group's members find it, and a peer of another wire version
+is in another room (PEERS.md §7, `Wire.lean`). On a rotation a device joins the newest epoch's topic and the one
+before, so nothing in flight is lost. Everyone on a group's topic reads its Docs, so the topic names each Doc by its id.
 
-**Sync by version** (docs README, "Catching up", 2). Two readers who meet on a Doc's topic each tell their tips
-(`doc_tips`): the head of each of their logs, as `{writer, seq, name}`. Each answers the other's telling, once its last
-page is in, with what lies `beyond` it (`doc_have`), and the other fetches that. An envelope is left out of the answer
-only when the tips tell that the other holds it:
+**What a topic carries** (`Live`): a commit's loose envelope, sealed as it is (its outside names its Doc); its Doc and
+hash, when it is too large for a gossip message, fetched through the one fetch gate on `aven/db/1`; and a Doc's
+version, the digest of a reader's tips, which a reader that holds another version answers by syncing with its sender.
+Gossip forwards sealed bytes blind (rule 7); every reader judges each envelope itself (rule 4).
+
+**Sync by version** (docs README, "Catching up", 2). Two readers of a Doc each tell their tips (`doc_tips`): the head
+of each of their logs, as `{writer, seq, name}`. Each answers the other's telling, once its last page is in, with what
+lies `beyond` it (`doc_have`), and the other fetches that. An envelope is left out of the answer only when the tips
+tell that the other holds it:
 - **by name:** a tip names it, or names something it is before (Core's past, `Aven.Core.Past`), which the other holds
   with its whole past;
 - **by place:** the tips name one head of its log, further on than it, and this reader holds no split in that log.
@@ -37,7 +44,7 @@ What it proves:
 - `split_sent`, `split_shows`: a split is never left out, held or shown;
 - `beyond_new`: nothing the tips name is sent;
 - `sync_moves`: a page that moves makes the names held strictly more;
-- `Live.ofValue_value`, `Live.of_fits`: what a Doc's topic carries reads back, and fits a gossip message.
+- `Live.ofValue_value`, `Live.of_fits`: what a topic carries reads back, and fits a gossip message.
 
 Catch-up from keepers, by arrival number, is another exchange (stage 5), never this one.
 -/
@@ -46,61 +53,15 @@ namespace Aven.Peer.DocSync
 
 open Aven.Core Aven.Core.Past
 
-/-! ## The topic -/
+/-! ## A group's topic -/
 
-/-- The subkey label a Doc's gossip topic is derived under (caps README, "Sealing"). -/
+/-- The subkey label a group's gossip topic is derived under (caps README, "Sealing"). -/
 def topicLabel : String := "avenDB topic 1"
 
-/-- A Doc's gossip topic in one epoch: BLAKE3's key derivation under `topicLabel` over the epoch's key. -/
-def topic (epochKey : Bytes) : Bytes := Blake3.deriveKey topicLabel epochKey
-
-/-! ## What a Doc's topic carries
-
-A commit's loose envelope goes out on its Doc's topic sealed, as it is. One too large for a gossip message goes out as
-its sealed bytes' hash, and readers fetch it through the fetch gate on `aven/db/1` (`prove`, `fetch`, `items`), as they
-fetch a `doc_have`'s. A message is a Value with exactly one key, read back from exactly that (`Live.ofValue_value`). -/
-
-/-- The most one gossip message carries: iroh-gossip's default. -/
-def gossipMax : Nat := 4096
-
-/-- A message on a Doc's topic. -/
-inductive Live where
-  /-- a loose envelope, sealed with the `envelope` kind -/
-  | sealed (bytes : Bytes)
-  /-- the hash of one too large to gossip, to fetch -/
-  | hash (h : Hash)
-  deriving DecidableEq, Repr
-
-def Live.value : Live → Value
-  | .sealed b => .map [(text "sealed", .bytes b)]
-  | .hash h => .map [(text "hash", .bytes h.bytes)]
-
-/-- A message read from exactly its one key; a hash is 32 bytes. -/
-def Live.ofValue? : Value → Option Live
-  | .map [(k, .bytes b)] =>
-    if k = text "sealed" then some (.sealed b)
-    else if k = text "hash" ∧ b.length = 32 then some (.hash ⟨b⟩)
-    else none
-  | _ => none
-
-/-- **One form:** a message reads back from its Value. -/
-theorem Live.ofValue_value (l : Live) (h : ∀ x, l = .hash x → x.bytes.length = 32) : Live.ofValue? l.value = some l := by
-  cases l with
-  | sealed b => simp [Live.value, Live.ofValue?]
-  | hash x =>
-    have := h x rfl
-    simp [Live.value, Live.ofValue?, text_inj, this]
-
-/-- What a writer gossips for a sealed envelope: itself when it fits a message, else its hash. -/
-def Live.of (sealed : Bytes) : Live :=
-  if (encode (Live.sealed sealed).value).length ≤ gossipMax then .sealed sealed else .hash (blake3 sealed)
-
-/-- **It fits:** a sealed envelope goes out as itself only when its message fits. -/
-theorem Live.of_fits {b : Bytes} (h : Live.of b = .sealed b) : (encode (Live.sealed b).value).length ≤ gossipMax := by
-  unfold Live.of at h
-  split at h
-  · assumption
-  · cases h
+/-- A group's gossip topic in one epoch, on wire version `wire`: the BLAKE3 of `{key, wire}` in the one codec, where
+`key` is the epoch key's `topicLabel` subkey. -/
+def groupTopic (wire : Nat) (epochKey : Bytes) : Hash :=
+  blake3 (encode (.map [(text "key", .bytes (Blake3.deriveKey topicLabel epochKey)), (text "wire", .uint wire)]))
 
 /-! ## What sync reads of an envelope -/
 
@@ -123,6 +84,74 @@ structure Tip where
   deriving DecidableEq, Repr
 
 def Entry.tip (e : Entry) : Tip := ⟨e.writer, e.seq, e.name⟩
+
+/-! ## What a topic carries -/
+
+/-- The most one gossip message carries: iroh-gossip's default. -/
+def gossipMax : Nat := 4096
+
+/-- A tip as a Value, its keys in the codec's order: `{seq, name, writer}`. -/
+def Tip.value (t : Tip) : Value :=
+  .map [(text "seq", .uint t.seq), (text "name", .bytes t.name.bytes), (text "writer", .uint t.writer)]
+
+/-- A Doc's version as a reader holds it: the BLAKE3 of its tips, sorted by their encodings, so it is one hash
+whatever order they are held in. -/
+def version (T : List Tip) : Hash :=
+  blake3 (encode (.array ((T.mergeSort fun a b => !lexLt (encode b.value) (encode a.value)).map Tip.value)))
+
+/-- A message on a group's topic. -/
+inductive Live where
+  /-- a loose envelope, sealed with the `envelope` kind; its outside names its Doc -/
+  | sealed (bytes : Bytes)
+  /-- a Doc, and the hash of a sealed envelope of it too large to gossip, to fetch -/
+  | hash (doc : Hash) (h : Hash)
+  /-- a Doc, and the version its sender holds -/
+  | version (doc : Hash) (v : Hash)
+  deriving DecidableEq, Repr
+
+def Live.value : Live → Value
+  | .sealed b => .map [(text "sealed", .bytes b)]
+  | .hash d h => .map [(text "doc", .bytes d.bytes), (text "hash", .bytes h.bytes)]
+  | .version d v => .map [(text "doc", .bytes d.bytes), (text "version", .bytes v.bytes)]
+
+/-- A message read from exactly its keys; a Doc's id, a hash and a version are 32 bytes. -/
+def Live.ofValue? : Value → Option Live
+  | .map [(k, .bytes b)] => if k = text "sealed" then some (.sealed b) else none
+  | .map [(k, .bytes d), (k', .bytes x)] =>
+    if k = text "doc" ∧ d.length = 32 ∧ x.length = 32 then
+      if k' = text "hash" then some (.hash ⟨d⟩ ⟨x⟩)
+      else if k' = text "version" then some (.version ⟨d⟩ ⟨x⟩)
+      else none
+    else none
+  | _ => none
+
+/-- Its hashes are BLAKE3's 32 bytes. -/
+def Live.Ok : Live → Prop
+  | .sealed _ => True
+  | .hash d h | .version d h => d.bytes.length = 32 ∧ h.bytes.length = 32
+
+/-- **One form:** a message reads back from its Value. -/
+theorem Live.ofValue_value (l : Live) (ok : l.Ok) : Live.ofValue? l.value = some l := by
+  cases l with
+  | sealed b => simp [Live.value, Live.ofValue?]
+  | hash d h =>
+    obtain ⟨hd, hh⟩ := ok
+    simp [Live.value, Live.ofValue?, hd, hh]
+  | version d h =>
+    obtain ⟨hd, hh⟩ := ok
+    simp [Live.value, Live.ofValue?, text_inj, hd, hh]
+
+/-- What a writer gossips for a sealed envelope of `doc`: itself when it fits a message, else its Doc and hash. -/
+def Live.of (doc : Hash) (sealed : Bytes) : Live :=
+  if (encode (Live.sealed sealed).value).length ≤ gossipMax then .sealed sealed else .hash doc (blake3 sealed)
+
+/-- **It fits:** a sealed envelope goes out as itself only when its message fits. -/
+theorem Live.of_fits {d : Hash} {b : Bytes} (h : Live.of d b = .sealed b) :
+    (encode (Live.sealed b).value).length ≤ gossipMax := by
+  unfold Live.of at h
+  split at h
+  · assumption
+  · cases h
 
 /-- A reader holds a version: everything a held envelope builds on is held, by name (rule 11). -/
 def Closed (S : List Entry) : Prop := ∀ a ∈ S, ∀ h ∈ parents a, ∃ b ∈ S, b.name = h
@@ -358,17 +387,21 @@ def both : List Entry := alice ++ [e 5 1 3 (some 1) []]
 -- a page of names already held doesn't move; one with a new name does
 #guard !moves alice [e 1 1 2 (some 0) []]
 #guard moves alice [e 3 2 1 none []]
--- what a topic carries: up to 4085 sealed bytes as they are, more as their hash; each reads back from its bytes
-#guard (Live.of (List.replicate 4085 7)) == .sealed (List.replicate 4085 7)
-#guard (Live.of (List.replicate 4086 7)) == .hash (blake3 (List.replicate 4086 7))
-#guard (encode (Live.of (List.replicate 100000 7)).value).length ≤ gossipMax
-#guard [Live.sealed [1, 2, 3], Live.sealed [], Live.hash (blake3 [1])].all fun l =>
-  (decodeAll (encode l.value)).bind Live.ofValue? == some l
+-- what a topic carries: up to 4085 sealed bytes as they are, more as their Doc and hash; each reads back
+def d0 : Hash := blake3 [0]
+#guard Live.of d0 (List.replicate 4085 7) == .sealed (List.replicate 4085 7)
+#guard Live.of d0 (List.replicate 4086 7) == .hash d0 (blake3 (List.replicate 4086 7))
+#guard (encode (Live.of d0 (List.replicate 100000 7)).value).length ≤ gossipMax
+#guard [Live.sealed [1, 2, 3], Live.sealed [], Live.hash d0 (blake3 [1]), Live.version d0 (version (tips alice))].all
+  fun l => (decodeAll (encode l.value)).bind Live.ofValue? == some l
 -- a hash that isn't 32 bytes, another key, a key extra: none
-#guard Live.ofValue? (.map [(text "hash", .bytes [1])]) == none
+#guard Live.ofValue? (.map [(text "doc", .bytes d0.bytes), (text "hash", .bytes [1])]) == none
 #guard Live.ofValue? (.map [(text "line", .bytes [1])]) == none
 #guard Live.ofValue? (.map [(text "sealed", .bytes [1]), (text "x", .null)]) == none
--- a topic is 32 bytes
-#guard (topic (List.replicate 32 0)).length = 32
+-- a version is one hash whatever order the tips are held in, and tells two versions apart
+#guard version (tips bob) == version (tips bob).reverse
+#guard version (tips alice) != version (tips carol)
+-- a group's topic is per wire version
+#guard groupTopic 3 (List.replicate 32 0) != groupTopic 4 (List.replicate 32 0)
 
 end Aven.Peer.DocSync

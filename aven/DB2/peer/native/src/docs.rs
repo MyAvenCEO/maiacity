@@ -1,18 +1,21 @@
-//! Docs in the Peers (ARCHITECTURE.md, A43, A45: the Peers own the wire, presence and catch-up): a Doc's gossip topic,
-//! and sync between two of its readers by version (`Aven.Peer.DocSync`, held to `peer/spec/vectors/topics.json` and
-//! `doc-sync.json`).
+//! Docs in the Peers (ARCHITECTURE.md, A43, A45: the Peers own the wire, presence and catch-up): the gossip that
+//! carries Docs, and sync between their readers by version (`Aven.Peer.DocSync`, held to `peer/spec/vectors`'s
+//! `topics.json`, `live.json` and `doc-sync.json`).
 //!
-//! - **The topic** is `derive_key("avenDB topic 1", epoch key)` (caps README, "Sealing"): only the Doc's readers, and
-//!   keepers told it, can find it. A reader joins the newest epoch's and the one before. On the wire a Doc is named by
-//!   its topic, never by its id.
-//! - **Sync by version** (docs README, "Catching up", 2): two readers who meet on a Doc's topic each tell their
-//!   [`tips`], the head of each of their logs; each answers the other's whole telling with what lies [`beyond`] it, and
-//!   the other fetches that. An envelope is left out only when the tips tell the other holds it: a tip names it or
-//!   something it is before (by name), or names the one head of its log further on, in a log with no split held (by
-//!   place). A log with a split held goes whole, so both halves reach every reader they meet.
+//! - **One topic per group** a device reads (A9, "Massive data", 13), never per Doc: [`group_topic`], the BLAKE3 of
+//!   `{key, wire}` where `key` is the group's epoch key's `avenDB topic 1` subkey. A device joins the newest epoch's
+//!   and the one before. Until caps' groups exist there are two kinds: Maia City's members (the network's room) and
+//!   each vault's own devices (from its keyring's epoch key).
+//! - **What a topic carries** ([`Live`]): a loose envelope sealed as it is, or its Doc and hash when it is too large
+//!   for a gossip message, fetched through the fetch gate on `aven/db/1`; and a Doc's [`version`], which a reader
+//!   holding another answers by syncing with its sender.
+//! - **Sync by version** (docs README, "Catching up", 2): two readers each tell their [`tips`], the head of each of
+//!   their logs; each answers the other's whole telling with what lies [`beyond`] it. An envelope is left out only
+//!   when the tips tell the other holds it: a tip names it or something it is before (by name), or names the one head
+//!   of its log further on, in a log with no split held (by place). A log with a split held goes whole.
 //!
-//! What a Peer-Light answers is only this: the readers it meets on a Doc's topic, by version. It never keeps or serves
-//! by arrival number for others (that is keepers' catch-up, stage 5).
+//! What a Peer-Light answers is only this: the readers it meets, by version. It never keeps or serves by arrival number
+//! for others (that is keepers' catch-up, stage 5).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -30,40 +33,58 @@ use serde_json::json;
 use crate::members::Gate;
 use crate::{Notes, now};
 
-/// The subkey label a Doc's gossip topic is derived under (`Aven.Peer.DocSync.topicLabel`).
+/// The subkey label a group's gossip topic is derived under (`Aven.Peer.DocSync.topicLabel`).
 pub const TOPIC_LABEL: &str = "avenDB topic 1";
 
-/// A Doc's gossip topic in one epoch (`Aven.Peer.DocSync.topic`).
-pub fn topic(epoch_key: &[u8; 32]) -> [u8; 32] {
-    blake3::derive_key(TOPIC_LABEL, epoch_key)
+/// A group's gossip topic in one epoch, on wire version `wire` (`groupTopic`): the BLAKE3 of `{key, wire}`.
+pub fn group_topic(wire: u64, epoch_key: &[u8; 32]) -> [u8; 32] {
+    let key = blake3::derive_key(TOPIC_LABEL, epoch_key);
+    aven_core::blake3(&encode(&Value::Map(vec![
+        ("key".into(), Value::Bytes(key.to_vec())),
+        ("wire".into(), Value::Uint(wire)),
+    ])))
+    .0
 }
 
 /// The most one gossip message carries: iroh-gossip's default (`gossipMax`).
 pub const GOSSIP_MAX: usize = 4096;
 
-/// A message on a Doc's topic (`Live`): a commit's loose envelope sealed as it is, or, when that wouldn't fit a gossip
-/// message, its sealed bytes' hash, which readers fetch through the fetch gate on `aven/db/1`.
+/// A message on a group's topic (`Live`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Live {
+    /// A loose envelope, sealed with the `envelope` kind; its outside names its Doc.
     Sealed(Vec<u8>),
-    Hash(Hash),
+    /// A Doc, and the hash of a sealed envelope of it too large to gossip, to fetch.
+    Hash { doc: Hash, hash: Hash },
+    /// A Doc, and the version its sender holds.
+    Version { doc: Hash, version: Hash },
 }
 
 impl Live {
-    /// What a writer gossips for a sealed envelope (`Live.of`).
-    pub fn of(sealed: &[u8]) -> Live {
+    /// What a writer gossips for a sealed envelope of `doc` (`Live.of`).
+    pub fn of(doc: Hash, sealed: &[u8]) -> Live {
         let whole = Live::Sealed(sealed.to_vec());
         if whole.encode().len() <= GOSSIP_MAX {
             whole
         } else {
-            Live::Hash(aven_core::blake3(sealed))
+            Live::Hash {
+                doc,
+                hash: aven_core::blake3(sealed),
+            }
         }
     }
 
     pub fn value(&self) -> Value {
+        let two = |k: &str, doc: &Hash, h: &Hash| {
+            Value::Map(vec![
+                ("doc".into(), Value::Bytes(doc.0.to_vec())),
+                (k.into(), Value::Bytes(h.0.to_vec())),
+            ])
+        };
         match self {
             Live::Sealed(b) => Value::Map(vec![("sealed".into(), Value::Bytes(b.clone()))]),
-            Live::Hash(h) => Value::Map(vec![("hash".into(), Value::Bytes(h.0.to_vec()))]),
+            Live::Hash { doc, hash } => two("hash", doc, hash),
+            Live::Version { doc, version } => two("version", doc, version),
         }
     }
 
@@ -71,8 +92,8 @@ impl Live {
         encode(&self.value())
     }
 
-    /// A message read from exactly its one key, from the one encoding of it (`Live.ofValue?`). The limits on the
-    /// sealed bytes inside are the docs layer's, when it opens them.
+    /// A message read from exactly its keys, from the one encoding of it (`Live.ofValue?`). The limits on the sealed
+    /// bytes inside are the docs layer's, when it opens them.
     pub fn decode(bytes: &[u8]) -> Option<Live> {
         if bytes.len() > GOSSIP_MAX {
             return None;
@@ -80,11 +101,20 @@ impl Live {
         let Value::Map(kvs) = decode(bytes)? else {
             return None;
         };
+        let h = |b: &Vec<u8>| -> Option<Hash> { Some(Hash(b.as_slice().try_into().ok()?)) };
         match kvs.as_slice() {
             [(k, Value::Bytes(b))] if k == "sealed" => Some(Live::Sealed(b.clone())),
-            [(k, Value::Bytes(b))] if k == "hash" => {
-                Some(Live::Hash(Hash(b.as_slice().try_into().ok()?)))
-            }
+            [(d, Value::Bytes(doc)), (k, Value::Bytes(x))] if d == "doc" => match k.as_str() {
+                "hash" => Some(Live::Hash {
+                    doc: h(doc)?,
+                    hash: h(x)?,
+                }),
+                "version" => Some(Live::Version {
+                    doc: h(doc)?,
+                    version: h(x)?,
+                }),
+                _ => None,
+            },
             _ => None,
         }
     }
@@ -129,6 +159,29 @@ pub fn tips(held: &[Entry]) -> Vec<Tip> {
         .filter(|e| !named.contains(&e.name))
         .map(Entry::tip)
         .collect()
+}
+
+impl Tip {
+    /// A tip as a Value, its keys in the codec's order (`Tip.value`).
+    pub fn value(&self) -> Value {
+        Value::Map(vec![
+            ("seq".into(), Value::Uint(self.seq)),
+            ("name".into(), Value::Bytes(self.name.0.to_vec())),
+            ("writer".into(), Value::Uint(self.writer)),
+        ])
+    }
+}
+
+/// A Doc's version as a reader holds it (`version`): the BLAKE3 of its tips sorted by their encodings, one hash
+/// whatever order they are held in.
+pub fn version(tips: &[Tip]) -> Hash {
+    let mut sorted: Vec<Vec<u8>> = tips.iter().map(|t| encode(&t.value())).collect();
+    sorted.sort();
+    let values = sorted
+        .iter()
+        .map(|b| decode(b).expect("a tip's own encoding"))
+        .collect();
+    aven_core::blake3(&encode(&Value::Array(values)))
 }
 
 /// Whether a split is held in writer `w`'s log: two envelopes of different names at one place (`split`).
@@ -176,29 +229,29 @@ pub fn beyond<'a>(held: &'a [Entry], tips: &[Tip]) -> Vec<&'a Entry> {
         .collect()
 }
 
-/// What a topic hands up: a message heard and the neighbour it came through, or a reader met on the topic, whom the
-/// host then syncs with by version.
+/// What a topic hands up: a message heard and the neighbour it came through, or a member met on the topic, whom the
+/// host then tells the versions of the group's Docs.
 pub enum Heard {
     Live(Live, PublicKey),
     Met(PublicKey),
 }
 
-/// A peer's place on one Doc's topic in one epoch: iroh-gossip on the peer's `Router`, whose connections the door
+/// A peer's place on one group's topic in one epoch: iroh-gossip on the peer's `Router`, whose connections the door
 /// already keeps to members (`members::Hook`). It forwards sealed bytes blind (rule 7) and hands up every message
 /// that reads as a [`Live`]; every reader judges each envelope itself (rule 4), so nothing is taken on a neighbour's
 /// word.
 #[derive(Clone)]
-pub struct DocTopic {
+pub struct GroupTopic {
     me: String,
     notes: Notes,
     sender: GossipSender,
     neighbours: Arc<AtomicUsize>,
 }
 
-impl DocTopic {
+impl GroupTopic {
     #[allow(clippy::too_many_arguments)]
-    /// Joins the topic `topic` (`docs::topic` of an epoch's key) through `bootstrap`: the devices of the Doc's readers
-    /// this peer knows. As in the room, a peer dials them only once the door admits it, and again every second while
+    /// Joins the topic `topic` ([`group_topic`] of a group's epoch key) through `bootstrap`: the devices of the group's
+    /// members this peer knows. As in the room, a peer dials them only once the door admits it, and again every second while
     /// it has no neighbour on the topic, for as long as its gossip runs.
     pub async fn join(
         gossip: &Gossip,
@@ -209,13 +262,13 @@ impl DocTopic {
         bootstrap: Vec<PublicKey>,
         notes: Notes,
         hear: Arc<dyn Fn(Heard) + Send + Sync>,
-    ) -> Result<DocTopic, String> {
+    ) -> Result<GroupTopic, String> {
         let (sender, mut receiver) = gossip
             .subscribe(TopicId::from_bytes(topic), vec![])
             .await
             .map_err(|e| e.to_string())?
             .split();
-        let t = DocTopic {
+        let t = GroupTopic {
             me,
             notes,
             sender,
@@ -229,7 +282,7 @@ impl DocTopic {
                         Some(live) => hear(Heard::Live(live, m.delivered_from)),
                         None => hears.note(
                             "dropped",
-                            json!({ "why": "not a Doc's message", "via": m.delivered_from.fmt_short().to_string() }),
+                            json!({ "why": "not a group's message", "via": m.delivered_from.fmt_short().to_string() }),
                         ),
                     },
                     Ok(Event::NeighborUp(k)) => {
@@ -243,7 +296,7 @@ impl DocTopic {
                     }
                     Ok(_) => {}
                     Err(e) => {
-                        hears.note("dropped", json!({ "why": format!("a Doc's topic: {e}") }));
+                        hears.note("dropped", json!({ "why": format!("a group's topic: {e}") }));
                         break;
                     }
                 }

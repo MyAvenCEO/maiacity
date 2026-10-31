@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 
 use aven_core::Hash;
-use aven_peer::docs::{Entry, Live, Tip, beyond, split, tips, topic};
+use aven_peer::docs::{Entry, Live, Tip, beyond, group_topic, split, tips, version};
 use serde_json::Value;
 
 fn vectors(file: &str) -> Vec<Value> {
@@ -76,7 +76,8 @@ fn topics_are_the_models() {
             .try_into()
             .unwrap();
         let want = unhex(v["expected"]["topic"].as_str().unwrap());
-        assert_eq!(topic(&key).to_vec(), want, "{}", v["name"]);
+        let wire = v["input"]["wire"].as_u64().unwrap();
+        assert_eq!(group_topic(wire, &key).to_vec(), want, "{}", v["name"]);
     }
 }
 
@@ -98,6 +99,23 @@ fn sync_is_the_models() {
         let want = |k: &str| x[k].as_array().unwrap().iter().map(tip).collect::<Vec<_>>();
         assert_eq!(tips(&a), want("tipsA"), "{name}: A's tips");
         assert_eq!(tips(&b), want("tipsB"), "{name}: B's tips");
+        assert_eq!(
+            version(&tips(&a)),
+            hash(&x["versionA"]),
+            "{name}: A's version"
+        );
+        assert_eq!(
+            version(&tips(&b)),
+            hash(&x["versionB"]),
+            "{name}: B's version"
+        );
+        let mut backwards = tips(&a);
+        backwards.reverse();
+        assert_eq!(
+            version(&backwards),
+            hash(&x["versionA"]),
+            "{name}: one version, any order"
+        );
         let to_b = beyond(&a, &tips(&b));
         let to_a = beyond(&b, &tips(&a));
         let answer = |k: &str| {
@@ -154,11 +172,20 @@ fn live_is_the_models() {
             assert_eq!(Live::decode(&bytes), None, "{name}");
             continue;
         }
-        let sealed = unhex(v["input"]["sealed"].as_str().unwrap());
-        let live = Live::of(&sealed);
+        let live = if v["input"]["version"].is_string() {
+            let h = |k: &str| Hash(unhex(v["input"][k].as_str().unwrap()).try_into().unwrap());
+            Live::Version {
+                doc: h("doc"),
+                version: h("version"),
+            }
+        } else {
+            let sealed = unhex(v["input"]["sealed"].as_str().unwrap());
+            Live::of(aven_core::blake3(&[1]), &sealed)
+        };
         let kind = match live {
             Live::Sealed(_) => "sealed",
-            Live::Hash(_) => "hash",
+            Live::Hash { .. } => "hash",
+            Live::Version { .. } => "version",
         };
         assert_eq!(kind, v["expected"]["kind"], "{name}");
         let bytes = unhex(v["expected"]["bytes"].as_str().unwrap());
