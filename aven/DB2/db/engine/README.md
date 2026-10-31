@@ -18,6 +18,7 @@ Its architecture: [avenOPS](../../brain/ops/README.md)
 | `Wants` | `wants.json` |
 | `Mutate` | `mutations.json` |
 | `Footprint` | `mutations.json` |
-| `Changes` | `mutations.json` |
+| `Changes` | `mutations.json`, `changes.json`, `merge-check.json` |
+| `Lower` | `lower.json` |
 | `Index` | `lookups.json` |
 | `Probe` | `lookups.json` |

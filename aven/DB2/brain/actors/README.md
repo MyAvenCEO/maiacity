@@ -114,24 +114,33 @@ projection of `describe`, never configured apart.
 
 ## Addresses
 
-An actor's **address is its Doc's id**: the hash of its genesis, which fixes
-- **the vault**, its 32-byte name: an address names a vault-scoped id, never a device. The actor's **home**, the peer
-  it lives on, only routes; a member's own Peer is the default home;
-- **the id**, the hash of its definition's name, its spawner's address and the spawner's count, so a replay names the
+An actor is named by its Doc's id, the hash of its genesis (A201). The genesis fixes:
+- **its vault,** 32 bytes (A190): an address names a vault-scoped actor, never a device;
+- **its id,** the hash of its definition's name, its spawner's address and the spawner's count, so a replay names the
   same actors; a face actor's id is the hash of its placer's address and its place (and, in `each`, the item's key);
-- **`n`, the incarnation:** how often the id had been spawned. An id spawned again, such as a face placed again after
-  it was unplaced, is a new actor with a new Doc, whose messages count from 1 again without being taken for the old
-  one's. The old Doc is kept, closed.
+- **`n`, its incarnation:** how often the id had been spawned. An id spawned again, such as a face placed again after
+  it was unplaced, is a new Doc, whose messages count from 1 again without being taken for the old one's. The old Doc
+  is kept, closed.
 
-The genesis has no nonce. Caps target an actor by that Doc id (`.doc a .self`, `.doc a .spawned`) with no
-translation, and a cap on `.doc a .self` binds one incarnation; a cap meant to outlast incarnations targets
-`.spawned` or `.vaultDef`, as an actor host's standing caps do. On the wire an address is `[vault, doc]`: the vault
-picks the carrier Doc without reading the genesis, and a reader refuses an address whose vault isn't its genesis's.
+The genesis has no nonce, so one address is one Doc id (`doc_inj`). On the wire an address is `[vault, actor]`, the
+vault only to route to the carrier Doc of the pair (A33); a reader refuses an address whose vault isn't its genesis's.
+Its readable form is `<vault hex>/<doc hex>`, and it is never text in CBOR. Caps target an actor by this Doc id, so a
+cap on `.doc a .self` binds one incarnation: a respawned actor or a face placed again inherits no authority, and a
+cap meant to outlast incarnations targets the spawner (`.spawned`) or a definition in a vault (`.vaultDef`), as an
+actor host's standing caps do. Version 1 uses one fixed local vault.
 
-Moving an actor's home is a handover: the new home continues the actor's logs from the old one's last entry, and the
-old one writes no more.
+**Moving an actor's home** is the owner's act (D14), since an address names no device (A202). The owner's statement
+sets the new home, whose device cap then covers the actor and the old one's no longer does (A27).
+- **An orderly move:** the old home finishes its turn and writes one last journal entry, `handover {to, version}`,
+  naming the Doc's tips by hash; the new home's first envelope builds on it, so the log stays one, and a reader refuses
+  an old-home envelope after it.
+- **A lost old home:** the owner's statement alone moves it, and the new home goes on from the latest version it can
+  gather. The move starts a new **generation** of the actor's sends: messages order per (sender, generation, seq), and
+  the statement names, per pair, the last seq it accepts as seen. Receipts by hash stop true duplicates (A33).
 
-**Decided:** A17, A201; actors §15 · **Lean:** `Aven.Actor.Address` — `doc_inj`, `incarnation_new_doc`; `Aven.Actor.Theorems` — `spawn_fresh`
+**Decided:** A17, A201, A202; actors §15 · **Lean:** `Aven.Actor.Address` — `Addr {vault, id, n}`, `Addr.doc`,
+`doc_inj`, `incarnation_new_doc`; `Aven.Actor.Theorems` — `spawn_fresh`; to come: `handover_single_writer`,
+`handover_continues`, generations in the per-pair order
 
 ## Messages
 
@@ -226,7 +235,10 @@ drops it if it already has it.
 
 **The journal is the truth.** Replaying it on the runtimes it pins gives the same state, anywhere.
 
-**Decided:** A17, A37, K9; rule 2; actors §15 · **Lean:** `Aven.Actor.Theorems` — `replays`, `machine_sound`;
+**Nothing is compacted.** Every journal and carrier entry is kept, and a face actor's journal stays after it is
+unplaced, as every Doc's history does. Compaction comes when size calls for it, as a decision of its own (A205).
+
+**Decided:** A17, A37, A205, K9; rule 2; actors §15 · **Lean:** `Aven.Actor.Theorems` — `replays`, `machine_sound`;
 `Aven.Actor.Runtimes` — `stateTurn_phase`, `runTurn_state`, `fits_machine`
 
 ## Loads
@@ -390,7 +402,7 @@ seed.
 | Hosting (A16) | `Hosting` (#1565) | — | — | Lean only |
 | Actor hosts and chains (A27, kernel half) | `Signing` (#1617, #1623, #1681), `Messaging` (#1628) | — | — | Lean only; the reader's half is avenCAPS' (#1619, #1624, #1626) |
 | Turns as steps (A37) | `Runtimes`, with state-runtime's `State` (#1676) | — | — | Lean only |
-| Addresses as Doc ids (A201) | `Address` (this PR) | — | — | Lean only; the router resolving `[vault, doc]` and state-runtime's address shape come next |
+| Addresses as Doc ids (A201) | `Address` (#1756) | — | — | Lean only; the router resolving `[vault, doc]` and state-runtime's address shape come next |
 | Carrier Doc (A33) | — | — | — | written down (#1685); for milestone 3 |
 | Version 1: the todo app in memory | — | — | — | not started; actor code waits for its go |
 
@@ -400,7 +412,7 @@ an open/done machine) and the components `field` and `checkbox`. The order: laye
 in-memory Doc, messages) with the vectors; then `state-runtime`, then `js-runtime`, each with hostile parts that must
 fail; the kernel; faces (face-runtime, the drawer, events as tells); the app, its kernel in a worker. Version 1 refuses
 every Value that sets a field kept for later (a message's `cap`, the `now` tier, `loads`, a Doc's `schema` and
-`branch`, the address's vault), so nothing depends on it missing; its vault is 32 bytes of `01`.
+`branch`, the address's vault scope), so nothing depends on it missing; its scope is `local`.
 
 **Known gaps (code and Lean):**
 - The carrier Doc, receipts by hash and the journal as an avenDB Doc's log aren't modelled: the Lean's inboxes are one
@@ -414,8 +426,5 @@ every Value that sets a field kept for later (a message's `cap`, the `now` tier,
 
 - **The kernel's own authority:** click caps scoped to what the placer wired; who may spawn, and a bound on placement
   depth; a budget per run, and backpressure. Samuel decides, on avenACTORS' proposal.
-- **Compaction:** which journal and carrier entries may be folded into checkpoints, and whether a mounted face
-  actor's journal is kept after it is unplaced. Samuel decides.
-- **Moving an actor's home:** the handover's protocol. avenMAIA decides, on avenACTORS' and avenPEERS' proposal.
 - **The word "kernel":** the actor kernel keeps it, or takes another name so it never meets avenCORE's. avenMAIA
   decides.

@@ -6,6 +6,7 @@ import Aven.DB.Engine.Footprint
 import Aven.DB.Engine.Changes
 import Aven.DB.Engine.Index
 import Aven.DB.Engine.Probe
+import Aven.DB.Engine.Lower
 
 /-!
 # The engine's examples, and how its vectors are written (README, rule 10)
@@ -362,7 +363,7 @@ def tick : List (Op Value) := [.patch task (rows [("x2", text "Order seeds")]) (
   false
 
 /-- Every type Doc written under one schema version in these examples. -/
-def ver (t : DocId) : TypeId := ⟨t, blake3 (utf8 "schema:v1")⟩
+def ver (t : DocId) : Aven.DB.Docs.Version := ⟨t, some (blake3 (utf8 "schema:v1"))⟩
 
 -- Ticking a task done is one edited Record whose one field is `done`, and the untouched task is no change; it passes
 -- the verdict's footprint part.

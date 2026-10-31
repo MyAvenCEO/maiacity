@@ -23,7 +23,8 @@ by default), where they are committed. Every vector is `{"name", "input", "expec
 - `contrast.json`: `linear`, the table every contrast check uses, then pairs of colours with their luminances and
   whether they reach 4.5:1 and 3:1.
 - `markdown.json`: headings and the ids markdown-runtime gives them; links under rules and what they become, or null
-  when only their text stays (`Aven.Runtime.Markdown`).
+  when only their text stays; links resolved against their document (`base`, `idPrefix`), and resolved and rewritten
+  under the brain's rules (`Aven.Runtime.Markdown`).
 - `face-runtime.json`: a face part and face data in the one codec; the result the host hands on, the tree, the style
   as typed rules and the placements, or the failure (`Aven.Runtime.FaceRuntime`).
 - `markup.json`: markup and face data; the drawn tree, the placements, and whether face-runtime gives the face
@@ -291,10 +292,18 @@ def markupVectors : List Json :=
 def markdownVectors : List Json :=
   headingExamples.map (fun (name, hs, _) =>
       vector name (Json.mkObj [("headings", toJson hs)]) (Json.mkObj [("ids", toJson (slugs hs))])) ++
-  linkExamples.map fun (name, href, _) =>
+  linkExamples.map (fun (name, href, _) =>
     let rules := avenBrainRules ++ [("evil:", "javascript:")]
     vector name (Json.mkObj [("rules", Json.arr (rules.map fun (a, b) => Json.arr #[a, b]).toArray), ("href", href)])
-      (Json.mkObj [("href", match rewrite rules href with | some h => Json.str h | none => Json.null)])
+      (Json.mkObj [("href", match rewrite rules href with | some h => Json.str h | none => Json.null)]))
+  ++ resolveExamples.map (fun (name, base, pre, href, _) =>
+    vector name (Json.mkObj [("base", base), ("idPrefix", pre), ("href", href)])
+      (Json.mkObj [("resolved", resolve base pre href)]))
+  ++ linkToExamples.map fun (name, base, pre, href, _) =>
+    vector name (Json.mkObj [("rules", Json.arr (brainRules.map fun ((a, b) : String × String) => Json.arr #[a, b]).toArray),
+        ("base", base), ("idPrefix", pre), ("href", href)])
+      (Json.mkObj [("href", match linkTo { links := brainRules, base, idPrefix := pre } href with
+        | some h => Json.str h | none => Json.null)])
 
 /-! ## face-runtime -/
 

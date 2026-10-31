@@ -232,6 +232,12 @@ every package's page, readable on every host by anyone, signed in or not, as the
   the glossary, and `#/brain/glossary/<word>` one term in it, marked.
 - **It shows the brain's own files,** bundled from the repository at build time, never copies of them. Nothing in them
   is parsed as HTML on the page.
+- **Every page reads on a phone** (A203): a wide table scrolls inside its own box, the contents list every page's
+  headings, and the box opens every page in three engines at 1280 and 390 px. The dashboard shows the index first, then
+  the eleven packages, each with a drawing of its own, then the decision log and the glossary.
+- **The decision log has a view of its own,** read from the runtime's checked tree of the same file: a card per row,
+  search by text or id, filters by who decided, by list and "only what still stands", links between a row and what
+  supersedes it, and deep links `#/brain/decisions/A<n>`. An `A<n>` in any page's text links to its row (A203).
 - **Markdown becomes a checked node tree,** its links rewritten: a term (`glossary:vault`) to the glossary, a page of
   the brain to its route, any other file of the repository to GitHub, anything else only if the allowlist takes it.
 - **A slide is a face:** its part goes through the frozen face-runtime in the runtimes worker, and the drawer draws the
@@ -239,8 +245,8 @@ every package's page, readable on every host by anyone, signed in or not, as the
   brain is drawn is avenBRAIN's ([avenBRAIN](../README.md)).
 
 **Decided:** A41 (the documentation is Brain); L9 (Brain renders the brain's files themselves); P20 ("public" means the
-members, so Brain is called readable by anyone, never public) · **Lean:** not in Lean (the screen); the node tree and
-the faces are avenRUNTIME's (`Aven.Runtime.Tree`, `Aven.Runtime.Face`)
+members, so Brain is called readable by anyone, never public), A203 · **Lean:** not in Lean (the screen); the node tree
+and the faces are avenRUNTIME's (`Aven.Runtime.Tree`, `Aven.Runtime.Face`)
 
 ## Status
 

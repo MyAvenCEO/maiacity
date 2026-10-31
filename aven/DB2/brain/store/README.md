@@ -67,10 +67,11 @@ guards against that writer's own racing tasks and against a crash, not against a
 - Every backend runs compare-and-set under one async lock in the store, so the one writer's tasks take turns.
 - S3 also asks the server to refuse a stale write, as its `Conditions` say:
 
-  | Conditions | What the server is asked | |---|---| | `On` | `If-None-Match: *` to create a ref, `If-Match` to change
-  or delete one | | `Create` | `If-None-Match: *` only: a write-once ref is refused by the server, a changing one leans
-  on the lock. Hetzner's Object Storage refuses a correct `If-Match` and ignores it on DELETE, so production runs
-  `Create` | | `Off` | nothing: the lock and the one writer alone, as on a folder |
+  | Conditions | What the server is asked |
+  |---|---|
+  | `On` | `If-None-Match: *` to create a ref, `If-Match` to change or delete one |
+  | `Create` | `If-None-Match: *` only: a write-once ref is refused by the server, a changing one leans on the lock. Hetzner's Object Storage refuses a correct `If-Match` and ignores it on DELETE, so production runs `Create` |
+  | `Off` | nothing: the lock and the one writer alone, as on a folder |
 
 - A ref that a second writer moved is refused, never retried over (L2).
 

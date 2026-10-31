@@ -345,3 +345,186 @@ impl<K> Books<'_, K> {
         (self.keeps(d) && k.serves(exporter, p)).then(|| p.vault.clone())
     }
 }
+
+/// A keeper's bytes (`Aven.ID.KeepCbor`, A30, A44): everything a keeper checks is one of Core's signed things, a label
+/// and a body with its signatures beside it, named by the hash of the two. Each body has exactly its own keys, none
+/// null and none optional (A42). A fetch key is Ed25519, its seed `derive_key("avenDB fetch key 1", the Doc epoch's
+/// key)`, so every reader of the epoch derives it and a keeper checks by its public half.
+pub mod bytes {
+    use aven_core::{DocId, Hash, Sig, Signed, Value};
+    use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
+
+    use crate::Secret;
+
+    pub const LISTING_LABEL: &str = "avenID keep listing 1";
+    pub const LINK_LABEL: &str = "avenDB fetch link 1";
+    pub const ORDER_LABEL: &str = "avenID keep order 1";
+    pub const CHOICE_LABEL: &str = "avenID keep choice 1";
+    /// The fetch proof's label, caps' (the keeper's `Aven.Peer.Fetch` cites it).
+    pub const FETCH_LABEL: &str = "avenDB fetch 1";
+    /// What a fetch key's seed is derived under.
+    pub const FETCH_KEY_LABEL: &str = "avenDB fetch key 1";
+
+    /// A fetch key's Ed25519 seed, from the key of the Doc epoch it opens (`fetchSeed`).
+    pub fn fetch_seed(epoch_key: &Secret) -> Secret {
+        Secret::take(&mut blake3::derive_key(FETCH_KEY_LABEL, epoch_key.expose()))
+    }
+
+    /// A fetch key, its private half: what a reader of the epoch signs links and proofs with.
+    pub fn fetch_signer(epoch_key: &Secret) -> SigningKey {
+        SigningKey::from_bytes(fetch_seed(epoch_key).expose())
+    }
+
+    /// A fetch key's public half, which a keeper checks proofs and links by (`fetchKey`).
+    pub fn fetch_key(epoch_key: &Secret) -> [u8; 32] {
+        fetch_signer(epoch_key).verifying_key().to_bytes()
+    }
+
+    /// An Ed25519 signature by the fetch key `key` over `msg`, as [`aven_core::Verify`] asks.
+    pub fn verify(key: &[u8], msg: &[u8], sig: &[u8]) -> bool {
+        let (Ok(key), Ok(sig)) = (<[u8; 32]>::try_from(key), <[u8; 64]>::try_from(sig)) else {
+            return false;
+        };
+        VerifyingKey::from_bytes(&key)
+            .is_ok_and(|k| k.verify_strict(msg, &Signature::from_bytes(&sig)).is_ok())
+    }
+
+    fn doc(d: &DocId) -> Value {
+        Value::Bytes(d.0.0.to_vec())
+    }
+
+    fn name(h: &Hash) -> Value {
+        Value::Bytes(h.0.to_vec())
+    }
+
+    fn map(kvs: Vec<(&str, Value)>) -> Value {
+        Value::Map(kvs.into_iter().map(|(k, v)| (k.into(), v)).collect())
+    }
+
+    fn signed(label: &str, body: Value, sigs: Vec<Sig>) -> Signed {
+        Signed {
+            label: label.into(),
+            body,
+            sigs,
+        }
+    }
+
+    /// A listing: the keep cap it rests on, by its name, and each Doc with its first fetch key, number 0. A device
+    /// acting for the keep cap's issuer signs it, or the issuer's owners, k of n.
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct Listing {
+        pub cap: Hash,
+        pub docs: Vec<(DocId, [u8; 32])>,
+    }
+
+    impl Listing {
+        pub fn body(&self) -> Value {
+            map(vec![
+                ("cap", name(&self.cap)),
+                (
+                    "docs",
+                    Value::Array(
+                        self.docs
+                            .iter()
+                            .map(|(d, k)| {
+                                map(vec![("doc", doc(d)), ("key", Value::Bytes(k.to_vec()))])
+                            })
+                            .collect(),
+                    ),
+                ),
+            ])
+        }
+
+        pub fn signed(&self, sigs: Vec<Sig>) -> Signed {
+            signed(LISTING_LABEL, self.body(), sigs)
+        }
+    }
+
+    /// Fetch link `n ≥ 1`: the Doc, the epoch it opens by its name, its new fetch key, and the name before it (the
+    /// link before, or the listing for link 1). Fetch key `n − 1` signs it.
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct Link {
+        pub doc: DocId,
+        pub epoch: Hash,
+        pub key: [u8; 32],
+        pub n: u64,
+        pub prev: Hash,
+    }
+
+    impl Link {
+        pub fn body(&self) -> Value {
+            map(vec![
+                ("n", Value::Uint(self.n)),
+                ("doc", doc(&self.doc)),
+                ("key", Value::Bytes(self.key.to_vec())),
+                ("prev", name(&self.prev)),
+                ("epoch", name(&self.epoch)),
+            ])
+        }
+
+        pub fn signed(&self, sigs: Vec<Sig>) -> Signed {
+            signed(LINK_LABEL, self.body(), sigs)
+        }
+    }
+
+    /// What a keep cap's issuer orders its keeper: withdraw the keep cap named, or delete a Doc. Signed as a listing.
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub enum Order {
+        Withdraw(Hash),
+        Delete(DocId),
+    }
+
+    impl Order {
+        pub fn body(&self) -> Value {
+            match self {
+                Order::Withdraw(c) => map(vec![
+                    ("act", Value::Text("withdraw".into())),
+                    ("cap", name(c)),
+                ]),
+                Order::Delete(d) => {
+                    map(vec![("act", Value::Text("delete".into())), ("doc", doc(d))])
+                }
+            }
+        }
+
+        pub fn signed(&self, sigs: Vec<Sig>) -> Signed {
+            signed(ORDER_LABEL, self.body(), sigs)
+        }
+    }
+
+    /// Which branch to follow at a fork of a Doc's fetch keys: the key forked from, and the next key chosen. A device of
+    /// the vault that issued the keep cap signs it (A22).
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct Choice {
+        pub doc: DocId,
+        pub fork: [u8; 32],
+        pub branch: [u8; 32],
+    }
+
+    impl Choice {
+        pub fn body(&self) -> Value {
+            map(vec![
+                ("doc", doc(&self.doc)),
+                ("fork", Value::Bytes(self.fork.to_vec())),
+                ("branch", Value::Bytes(self.branch.to_vec())),
+            ])
+        }
+
+        pub fn signed(&self, sigs: Vec<Sig>) -> Signed {
+            signed(CHOICE_LABEL, self.body(), sigs)
+        }
+    }
+
+    /// What a fetch key signs to prove it on a connection: the Doc, and the connection's TLS exporter (`proofBody`).
+    pub fn proof_body(d: &DocId, exporter: &[u8]) -> Value {
+        map(vec![
+            ("doc", doc(d)),
+            ("exporter", Value::Bytes(exporter.to_vec())),
+        ])
+    }
+
+    /// The proof as Core's signed thing (`proofSigned`): the fetch key it proves signs [`Signed::signing`].
+    pub fn proof_signed(d: &DocId, exporter: &[u8], sigs: Vec<Sig>) -> Signed {
+        signed(FETCH_LABEL, proof_body(d, exporter), sigs)
+    }
+}

@@ -44,11 +44,14 @@ pub fn parse(input: &Value) -> Result<(Vec<String>, Vec<Vault>), String> {
                     .ok_or("neither key: nor vault:")
             })
             .collect::<Result<_, _>>()?;
+        // a tree written before thresholds (A28) has none: its vaults took one owner each
+        let threshold = v["threshold"].as_u64().map_or(1, |t| t as usize);
         vaults.push(Vault {
             name,
             id,
             kind,
             owners,
+            threshold,
         });
     }
     Ok((keys, vaults))
@@ -59,7 +62,7 @@ pub fn case(keys: &[String], vaults: &[Vault]) -> Value {
         .iter()
         .map(|v| {
             let owners: Vec<String> = v.owners.iter().map(Owner::to_string).collect();
-            json!({ "id": v.id, "name": v.name, "kind": v.kind.as_str(), "owners": owners })
+            json!({ "id": v.id, "name": v.name, "kind": v.kind.as_str(), "owners": owners, "threshold": v.threshold })
         })
         .collect();
     json!({ "keys": keys, "vaults": vaults })
@@ -108,6 +111,7 @@ pub fn invalid(why: &Invalid) -> Value {
         Invalid::CoopDevice { coop, device } => {
             json!({ "rule": "coopDevice", "vault": coop, "device": device })
         }
+        Invalid::NoQuorum(id) => json!({ "rule": "noQuorum", "vault": id }),
         Invalid::Cycle(_) => json!({ "rule": "cycle" }),
     }
 }

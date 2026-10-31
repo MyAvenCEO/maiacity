@@ -37,7 +37,8 @@ def Passkey.json (k : Passkey) : Json :=
 def Genesis.json (g : Genesis) : Json :=
   Json.mkObj [("rpId", g.rpId), ("origins", toJson g.origins), ("claimant", g.claimant),
     ("passkey", Passkey.json g.passkey),
-    ("devices", toJson g.devices), ("coop", g.coop), ("coopOwners", toJson g.coopOwners), ("agent", g.agent),
+    ("devices", toJson g.devices), ("coop", g.coop), ("coopOwners", toJson g.coopOwners),
+    ("coopThreshold", toJson g.coopThreshold), ("agent", g.agent),
     ("avenPeer", g.avenPeer),
     ("guardian", GuardianKeys.json g.guardian), ("guardianVault", g.guardianVault),
     ("confirmers", toJson g.confirmers), ("signedBy", toJson g.signedBy)]
@@ -66,7 +67,8 @@ envelope's, written out to read. -/
 def TreeStatement.json (s : TreeStatement) : Json :=
   Json.mkObj [("name", hashJson s.name),
     ("envelope", Core.hex (Core.encode (TreeDoc.envelope Core.blake3 treeDoc s).value)),
-    ("signer", s.signer), ("parents", hashesJson s.parents), ("says", TreeSays.json s.says)]
+    ("signer", s.signer), ("approvals", toJson s.approvals), ("parents", hashesJson s.parents),
+    ("says", TreeSays.json s.says)]
 
 def Listed.json (l : Listed) : Json :=
   Json.mkObj [("counted", hashesJson l.counted), ("final", hashesJson l.final), ("standing", hashesJson l.standing),
@@ -108,65 +110,65 @@ def Case.orders (c : Case) (seed : Nat) : List (String × List TreeStatement) :=
 /-! ## The races, one by one -/
 
 open TreeExamples in
-def g : TreeStatement := ⟨100, "alice-passkey", [], .genesis alicesGenesis⟩
+def g : TreeStatement := ⟨100, "alice-passkey", [], .genesis alicesGenesis, []⟩
 
 open TreeExamples in
 def raceCases : List Case :=
-  let t : TreeStatement := ⟨120, "alice-passkey", [100], .ticket "t-bob"⟩
+  let t : TreeStatement := ⟨120, "alice-passkey", [100], .ticket "t-bob", []⟩
   let bob : TreeStatement :=
-    ⟨500, "t-bob", [120], .claim 120 "bob" (pk "bob-passkey") ["bob-peer"] "maia-city-guardian"⟩
+    ⟨500, "t-bob", [120], .claim 120 "bob" (pk "bob-passkey") ["bob-peer"] "maia-city-guardian", []⟩
   let leak : TreeStatement :=
-    ⟨300, "t-bob", [120], .claim 120 "mallory" (pk "mallory-passkey") ["mallory-peer"] "maia-city-guardian"⟩
+    ⟨300, "t-bob", [120], .claim 120 "mallory" (pk "mallory-passkey") ["mallory-peer"] "maia-city-guardian", []⟩
   [{ name := "the genesis alone", statements := [g], pinned := 100 },
    { name := "the genesis and two sign-ins", pinned := 100,
-     statements := [g, ⟨110, "alice-passkey", [100], .signIn "alice-phone"⟩,
-       ⟨111, "alice-passkey", [100], .signIn "alice-laptop"⟩] },
+     statements := [g, ⟨110, "alice-passkey", [100], .signIn "alice-phone", []⟩,
+       ⟨111, "alice-passkey", [100], .signIn "alice-laptop", []⟩] },
    { name := "a claim, not yet acked", statements := [g, t, bob], pinned := 100 },
    { name := "a claim and its ack", pinned := 100,
-     statements := [g, t, bob, ⟨510, "alice-peer", [500], .confirm 500⟩] },
+     statements := [g, t, bob, ⟨510, "alice-peer", [500], .confirm 500, []⟩] },
    { name := "two claims of one ticket, none acked: the smaller hash", statements := [g, t, bob, leak], pinned := 100 },
    { name := "two claims, the larger acked: the final one", pinned := 100,
-     statements := [g, t, bob, leak, ⟨510, "alice-peer", [500], .confirm 500⟩] },
+     statements := [g, t, bob, leak, ⟨510, "alice-peer", [500], .confirm 500, []⟩] },
    { name := "a withdrawal that never saw the claim wins", pinned := 100,
-     statements := [g, t, bob, ⟨610, "alice-passkey", [120], .withdrawal 120⟩] },
+     statements := [g, t, bob, ⟨610, "alice-passkey", [120], .withdrawal 120, []⟩] },
    { name := "a withdrawal that saw the claim changes nothing", pinned := 100,
-     statements := [g, t, bob, ⟨610, "alice-passkey", [500], .withdrawal 120⟩] },
+     statements := [g, t, bob, ⟨610, "alice-passkey", [500], .withdrawal 120, []⟩] },
    { name := "a claim that saw the withdrawal is out", pinned := 100,
-     statements := [g, t, ⟨610, "alice-passkey", [120], .withdrawal 120⟩,
-       ⟨500, "t-bob", [610], .claim 120 "bob" (pk "bob-passkey") ["bob-peer"] "maia-city-guardian"⟩] },
+     statements := [g, t, ⟨610, "alice-passkey", [120], .withdrawal 120, []⟩,
+       ⟨500, "t-bob", [610], .claim 120 "bob" (pk "bob-passkey") ["bob-peer"] "maia-city-guardian", []⟩] },
    { name := "two admin devices ack two claims without seeing each other: contested, the smaller hash", pinned := 100,
-     statements := [g, ⟨110, "alice-passkey", [100], .signIn "alice-peer-light"⟩, t, bob, leak,
-       ⟨510, "alice-peer", [500], .confirm 500⟩, ⟨511, "alice-peer-light", [300, 110], .confirm 300⟩] },
+     statements := [g, ⟨110, "alice-passkey", [100], .signIn "alice-peer-light", []⟩, t, bob, leak,
+       ⟨510, "alice-peer", [500], .confirm 500, []⟩, ⟨511, "alice-peer-light", [300, 110], .confirm 300, []⟩] },
    { name := "a withdrawal never wins over a final claim", pinned := 100,
-     statements := [g, t, bob, ⟨510, "alice-peer", [500], .confirm 500⟩,
-       ⟨610, "alice-passkey", [120], .withdrawal 120⟩] },
+     statements := [g, t, bob, ⟨510, "alice-peer", [500], .confirm 500, []⟩,
+       ⟨610, "alice-passkey", [120], .withdrawal 120, []⟩] },
    { name := "an ack by no admin key makes nothing final", pinned := 100,
-     statements := [g, t, bob, ⟨510, "bob-peer", [500], .confirm 500⟩] },
+     statements := [g, t, bob, ⟨510, "bob-peer", [500], .confirm 500, []⟩] },
    { name := "a relay added, removed, and added again after", pinned := 100,
-     statements := [g, ⟨700, "alice-passkey", [100], .relayAdd "bob"⟩,
-       ⟨710, "alice-passkey", [700], .relayRemove "bob"⟩,
-       ⟨720, "alice-passkey", [710], .relayAdd "bob"⟩] },
+     statements := [g, ⟨700, "alice-passkey", [100], .relayAdd "bob", []⟩,
+       ⟨710, "alice-passkey", [700], .relayRemove "bob", []⟩,
+       ⟨720, "alice-passkey", [710], .relayAdd "bob", []⟩] },
    { name := "a relay added and removed at once: the remove", pinned := 100,
-     statements := [g, ⟨700, "alice-passkey", [100], .relayAdd "bob"⟩,
-       ⟨710, "alice-passkey", [100], .relayRemove "bob"⟩] },
+     statements := [g, ⟨700, "alice-passkey", [100], .relayAdd "bob", []⟩,
+       ⟨710, "alice-passkey", [100], .relayRemove "bob", []⟩] },
    { name := "a ticket and a relay signed by an admin device, not the passkey: neither counts for anything",
      pinned := 100,
-     statements := [g, ⟨120, "alice-peer", [100], .ticket "t-bob"⟩,
-       ⟨500, "t-bob", [120], .claim 120 "bob" (pk "bob-passkey") ["bob-peer"] "maia-city-guardian"⟩,
-       ⟨700, "alice-peer", [100], .relayAdd "bob"⟩] },
+     statements := [g, ⟨120, "alice-peer", [100], .ticket "t-bob", []⟩,
+       ⟨500, "t-bob", [120], .claim 120 "bob" (pk "bob-passkey") ["bob-peer"] "maia-city-guardian", []⟩,
+       ⟨700, "alice-peer", [100], .relayAdd "bob", []⟩] },
    { name := "Maia City moves the Aven Peer to a new key; a device's change and a concurrent rival don't win",
      pinned := 100,
-     statements := [g, ⟨110, "alice-passkey", [100], .setAvenPeer "aven-peer-2"⟩,
-       ⟨120, "alice-peer", [100], .setAvenPeer "rogue-peer"⟩,
-       ⟨130, "alice-passkey", [100], .setAvenPeer "aven-peer-3"⟩,
-       ⟨140, "alice-passkey", [100], .setOrigins ["https://maia.city", "https://aven.maia.city"]⟩,
-       ⟨150, "alice-passkey", [100], .setGuardian "new-guardian"⟩] },
+     statements := [g, ⟨110, "alice-passkey", [100], .setAvenPeer "aven-peer-2", []⟩,
+       ⟨120, "alice-peer", [100], .setAvenPeer "rogue-peer", []⟩,
+       ⟨130, "alice-passkey", [100], .setAvenPeer "aven-peer-3", []⟩,
+       ⟨140, "alice-passkey", [100], .setOrigins ["https://maia.city", "https://aven.maia.city"], []⟩,
+       ⟨150, "alice-passkey", [100], .setGuardian "new-guardian", []⟩] },
    { name := "a later change of the Aven Peer's key wins over the one it saw", pinned := 100,
-     statements := [g, ⟨110, "alice-passkey", [100], .setAvenPeer "aven-peer-2"⟩,
-       ⟨130, "alice-passkey", [110], .setAvenPeer "aven-peer-3"⟩] },
+     statements := [g, ⟨110, "alice-passkey", [100], .setAvenPeer "aven-peer-2", []⟩,
+       ⟨130, "alice-passkey", [110], .setAvenPeer "aven-peer-3", []⟩] },
    { name := "a statement whose past doesn't reach the genesis", pinned := 100,
-     statements := [g, ⟨120, "alice-passkey", [99], .ticket "t-bob"⟩,
-       ⟨500, "t-bob", [120], .claim 120 "bob" (pk "bob-passkey") ["bob-peer"] "maia-city-guardian"⟩] },
+     statements := [g, ⟨120, "alice-passkey", [99], .ticket "t-bob", []⟩,
+       ⟨500, "t-bob", [120], .claim 120 "bob" (pk "bob-passkey") ["bob-peer"] "maia-city-guardian", []⟩] },
    { name := "a ticket that fails its own checks", statements := [g, t, bob], failing := [120], pinned := 100 }]
 
 /-! ## Generated sets -/
@@ -218,7 +220,7 @@ def genCase (seed : Nat) : Case := Id.run do
     | .claim .. => claims := claims.push name
     | _ => pure ()
     if bad == 0 then failing := failing.push name
-    out := out.push ⟨name, signer, tips, says⟩
+    out := out.push ⟨name, signer, tips, says, []⟩
   return { name := s!"generated set, seed {seed}", statements := out.toList, failing := failing.toList, pinned := 100 }
 
 def generatedCases : Nat := 40

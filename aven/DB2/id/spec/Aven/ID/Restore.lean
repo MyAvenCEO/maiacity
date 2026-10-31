@@ -116,7 +116,7 @@ def Old.says (m : Members) (c : Claim) : Old → String × TreeSays
 
 /-- The genesis statement production's claim becomes, named `genesisName`. -/
 def genesisStatement (m : Members) (c : Claim) (g : SwitchKeys) : TreeStatement :=
-  ⟨genesisName, c.passkey, [], .genesis (genesisOf m.founding c g)⟩
+  ⟨genesisName, c.passkey, [], .genesis (genesisOf m.founding c g), []⟩
 
 /-- What an old statement names besides the one before it: a join, its invite's ticket. -/
 def Old.parents (olds : List Old) : Old → List Core.Hash
@@ -127,7 +127,7 @@ def Old.parents (olds : List Old) : Old → List Core.Hash
 /-- The `k`-th old statement as a tree statement: named `nameAt k`, naming the one before it, and a join its ticket. -/
 def step (m : Members) (c : Claim) (k : Nat) (o : Old) : TreeStatement :=
   let (signer, says) := o.says m c
-  ⟨nameAt k, signer, num (k + 1) :: o.parents (refOrder m), says⟩
+  ⟨nameAt k, signer, num (k + 1) :: o.parents (refOrder m), says, []⟩
 
 /-- Production's store as tree statements: the genesis, then every old statement in ref order, each naming the one
 before it (a join its ticket too). An unclaimed store has none. -/

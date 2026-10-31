@@ -55,6 +55,9 @@ The theorems:
 - `host_chain_only`, `actor_within_device`, `host_never_beyond`: an authorized envelope a host signed rests on a chain
   and names its actor; it stays within the host's device cap; and every call is allowed both by the chain the actor's
   message carried and by that outer bound (A27);
+- `authorized_reaches`: step 4 of the docs layer's import never refuses what step 7 counts: an envelope caps authorizes,
+  making a call, reaches its Doc (`Reaches`, docs' `Authorize::reaches`), when the reader holds the caps its chain
+  names;
 - `counts_iff`: an envelope counts exactly when everything in its past is signed, fresh, authorized, live and fit, and
   none of it is half of a split (the docs layer's rule 13, over Core's `Counts`);
 - `readers_agree`: two readers that hold the same past of an envelope, and the same splits in it, give it the same
@@ -324,6 +327,31 @@ theorem host_never_beyond {e : Envelope} (h : r.Authorized gov spawned lists e) 
   cases hd'
   exact ⟨named, dc, last, f, hd, ht, hl, hf, calls⟩
 
+/-! ## Reaching a Doc at all
+
+Before a byte of an envelope's changes is read, the docs layer asks caps whether the signer's chain reaches the Doc at
+all (its import's step 4, `Authorize::reaches`). A stranger's envelope is refused there and never held, so it never
+reaches Loro. Caps answers from the signer and the Doc alone, with the caps the reader holds: the device serves a vault
+that is the Doc's vault, governs it, or holds one of those caps, one of whose lines covers the Doc (`Reaches`). -/
+
+/-- The signer's chain reaches the Doc at all: its device serves a vault that is the Doc's vault, governs it, or holds
+one of the caps `held` with a line that covers the Doc. -/
+def Reader.Reaches (held : List Cap) (doc : DocId) (signer : Bytes) : Prop :=
+  ∃ v f, r.vaultOf signer = some v ∧ r.facts doc = some f ∧
+    (f.vault = vaultId v ∨ gov (vaultId v) f.vault ∨
+      ∃ c ∈ held, r.holdsAt c v = true ∧ ∃ l ∈ c.grants r.ctx.roles, l.doc.covers gov spawned lists f)
+
+/-- **Step 4 never refuses what step 7 counts:** an envelope caps authorizes, making a call, reaches its Doc, when the
+reader holds the caps its chain names. -/
+theorem authorized_reaches {held : List Cap} {e : Envelope} (h : r.Authorized gov spawned lists e)
+    (hc : ∀ c ∈ r.chain e, c ∈ held) (calls : r.calls e ≠ []) :
+    r.Reaches gov spawned lists held e.doc (r.signer e) := by
+  obtain ⟨-, ⟨⟨v, f, hv, hf, own⟩, -⟩ | ⟨⟨-, last, hl, ⟨v, hv, hold⟩, -, f, hf, allows⟩, -⟩⟩ := h
+  · exact ⟨v, f, hv, hf, own.elim Or.inl fun g => .inr (.inl g)⟩
+  · obtain ⟨c, mc⟩ := List.exists_mem_of_ne_nil _ calls
+    obtain ⟨l, ml, -, lc, -⟩ := allows c mc
+    exact ⟨v, f, hv, hf, .inr (.inr ⟨last, hc last (List.mem_of_getLast? hl), hold, l, ml, lc⟩)⟩
+
 /-! ## Decided
 
 A reader computes its verdict: who governs whom, which actor spawned which and what a collection lists are tests, as
@@ -409,6 +437,20 @@ theorem Reader.byChainB_iff :
 theorem Reader.hostSignedB_iff : r.hostSignedB e = true ↔ r.HostSigned e := by
   unfold Reader.hostSignedB Reader.HostSigned
   cases h : r.deviceCap (r.signer e) <;> simp
+
+/-- `Reaches`, decided: caps' answer to the docs layer's `Authorize::reaches`. -/
+def Reader.reachesB (r : Reader) (held : List Cap) (doc : DocId) (signer : Bytes) : Bool :=
+  match r.vaultOf signer, r.facts doc with
+  | some v, some f => f.vault == vaultId v || gov (vaultId v) f.vault ||
+      held.any fun c => r.holdsAt c v && (c.grants r.ctx.roles).any fun l => l.doc.coversB gov spawned lists f
+  | _, _ => false
+
+theorem Reader.reachesB_iff {r : Reader} {held : List Cap} {doc : DocId} {signer : Bytes} :
+    r.reachesB gov spawned lists held doc signer = true ↔
+      r.Reaches (gov · · = true) (spawned · · = true) (lists · · = true) held doc signer := by
+  unfold Reader.reachesB Reader.Reaches
+  cases hv : r.vaultOf signer <;> cases hf : r.facts doc <;>
+    simp [List.any_eq_true, Target.coversB_iff, or_assoc]
 
 /-- **The verdict a reader computes is caps' verdict** (`Authorized`, decided). -/
 theorem Reader.authorizedB_iff :
