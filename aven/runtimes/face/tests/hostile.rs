@@ -1,7 +1,7 @@
 //! face-runtime against hostile parts and data: random markup and data from the grammar's own pieces, none of which
 //! may panic, and every answer a face that passes `faceOk`.
 
-use aven_core::Value;
+use aven_codec::Value;
 use aven_runtimes_face::style::{Compound, Len, LenUnit};
 use aven_runtimes_face::{Decl, FaceOut, Key, Markup, Rgb, Rule, Src, eval, face_ok};
 use aven_runtimes_tree::{Node, TREE_LIMITS};

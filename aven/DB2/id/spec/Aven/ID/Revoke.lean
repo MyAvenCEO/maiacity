@@ -294,7 +294,7 @@ def env (writer seq : Nat) (label vault : String) (caps acks deps : List Hash) (
     body := .map ([(utf8 "acks", .array (acks.map Hash.value)), (utf8 "caps", .array (caps.map Hash.value)),
       (utf8 "time", .uint time), (utf8 "label", .text (utf8 label)), (utf8 "vault", .text (utf8 vault))] ++
       if delete then [(utf8 "delete", .bool true)] else []),
-    signer := utf8 vault, sig := [] }
+    sigs := [⟨utf8 vault, []⟩] }
 
 private def field (e : Envelope) (key : String) : Option Value :=
   match e.body with

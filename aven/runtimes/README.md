@@ -133,7 +133,13 @@ A runtime is code that runs on every member's device, so it arrives only the way
   new runtime and every new dependency of one goes through the security auditor's checklist (the `security-auditor`
   skill: `rust-security`, `fuzz-harness`, `cargo-fuzz`);
 - **frozen** by a reproducible build: the box builds the module, and the check fails when its hash differs from the
-  manifest's. The manifest is append-only, and the check refuses an edit to a frozen entry;
+  manifest's. The manifest is append-only, and the check refuses an edit to a frozen entry. The bytes are kept beside
+  it, `frozen/<hex>.wasm`: a frozen version stays loadable by its hash after its source has moved on (a change to
+  aven-codec moves every module's build). The check holds each runtime's newest build to its newest kept bytes,
+  every kept file to its name, and keeps nothing the manifest doesn't name. Runtimes live with their owners (ARCHITECTURE A45):
+  a module is a blob and its manifest a typed Doc, owned by the vault that publishes it (Aven's for the built-ins),
+  kept where that vault's keep caps say (A44) and fetched by hash. `manifest.json`, the bootstrap manifest, and
+  `frozen/` are that, in git, until Docs run;
 - **shipped** with the release that carries it, never fetched from a peer, a URL or a Doc. A peer may hand another peer
   a module's bytes only by a hash that the receiver's own release already lists.
 
@@ -150,11 +156,14 @@ excludes it as it excludes `aven/DB2`.
 aven/runtimes/
   README.md          this plan
   spec/              Lean: Aven.Runtime, and the vectors it exports (the contract, the registry, the node tree)
-  manifest.json      built: every frozen runtime (name, version, hash, limits, users) and every withdrawal; append-only
-  host/              built: aven-runtimes-host: load by hash, refuse imports, fuel, memory, output limits (native;
-                     wasm for a browser worker next)
+  manifest.json      built: the bootstrap manifest: every frozen runtime (name, version, hash, limits, users) and every
+                     withdrawal; append-only; a typed Doc of Aven's vault once Docs run (A45)
+  host/              built: aven-runtimes-host: load by hash, refuse imports, fuel, memory, output limits; a Value's
+                     JSON form; the manifest's reader
+  web/               built: aven-runtimes-web, the host behind wasm-bindgen for avenOS's runtimes worker
   abi/               built: the module ABI, alloc and run over the one codec's bytes, in safe Rust
   modules/           built: each runtime as a WebAssembly module importing nothing: markdown/ face/
+  frozen/            built: every frozen module's bytes, <hex>.wasm, kept until Docs keep them (below)
   freeze.sh          built: the reproducible build, each module's hash, and the host's tests against the manifest
   registry/          built: aven-runtimes-registry, the file registry, the sniffer, decide_file(); native and wasm
   tree/              built: the node-tree allowlist, shared by every runtime that draws and the applier
@@ -177,10 +186,42 @@ Each runtime crate has one job, a size limit per file (DB2 rule 11), and a test 
 |---|---|---|
 | The actor kernel (`aven/actor/core`) | Linked as bytes into the kernel's build, from the manifest | `aven-runtimes-host` inside the kernel, in wasmi |
 | The engine (`aven/DB2/db/engine`) | A plugin's lowering is Rust built twice: natively into the engine, and frozen as wasm | The native build runs; the check proves it equals the frozen module on every vector ([below](#moving-the-actors-runtimes-and-the-plugins-in)) |
+| avenOS (faces, its own pages) | Static assets of avenOS's release, `/runtimes/frozen/<hex>.wasm` on avenOS's origin | `aven-runtimes-web`, the host compiled to wasm, in the runtimes worker ([below](#the-browser-host)) |
 | avenOS (file runtimes) | Static assets of avenOS's release, at `/runtimes/<hash>.wasm` on the files origin | `aven-runtimes-host` compiled to wasm, in a dedicated worker on the files origin ([below](#where-file-runtimes-run)) |
 
 Every loader checks the module's BLAKE3 against the hash it asked for before it compiles a byte, and refuses a hash
 the manifest doesn't list. A compiled module is a cache keyed by its hash.
+
+### The browser host
+
+avenOS runs runtimes in a worker of its own, the runtimes worker (`os/web/runtimes/host.js`), never in the Peer-Light's
+(ARCHITECTURE A45). Who holds what, and what can stop what:
+
+| | Holds | Can stop |
+|---|---|---|
+| The page | the parts it shows (a slide's `<id>.part.json`) and their inputs; the drawer (`draw.js`) | itself |
+| The runtimes worker | `aven-runtimes-web`: the host, wasmi, the manifest compiled in, the modules it loaded by hash | itself, and so the page's next ask starts it again |
+| A runtime module | its own memory, inside the host's, under fuel, memory and output limits | nothing: a trap is its run's `failure` |
+| The Peer-Light's worker | the device key, the store, the network | nothing here: the runtimes never reach it |
+
+- **The ask.** The page calls `runtime(name, part, input)` (`os/web/runtimes/runtimes.js`): Values in their one JSON
+  form, bytes as `{"bytes": hex}`. The worker asks the host for the newest hash the manifest lists for `name`, fetches
+  its bytes once from avenOS's own origin, `/runtimes/frozen/<hex>.wasm`, and the host loads them only when the
+  manifest lists the hash and the bytes are the hash's, and admits them; then it runs the part and the input under the
+  limits the manifest froze with the module. The answer is the run's result, `{"ok": output}` or `{"failure": name}`;
+  the page draws only an `ok`, and a refused part draws nothing.
+- **Why a worker of its own.** A module is untrusted code, even interpreted, and the Peer-Light's worker holds the
+  device key: they never share a realm. And wasm32 aborts on a panic: a fault in the host stops only this worker,
+  which says so (`fatal`) and ends; what was asked of it is refused, and the next ask starts it again. Sync, the store
+  and the key's holder never notice.
+- **Its own build.** `aven-runtimes-web` is built in this workspace and bound by the same wasm-bindgen as the
+  Peer-Light; nothing of avenDB's builds, images or lockfile depends on it. The box builds it and copies `frozen/` beside
+  it, and Vite serves both at `/runtimes/`; the release puts both in `dist/runtimes/` (sandbox/up.mjs, `buildRuntimes`).
+- **Dispatch.** wasmi's threaded dispatch needs tail calls, which wasm32 doesn't have: the host builds wasmi with
+  `auto-dispatch`, which dispatches in a loop there, and the same fuel is counted either way.
+- **Checked** in all three engines (`sandbox/runtimes.mjs`): every slide's part through face-runtime by its hash,
+  accepted, the engines' answers the same byte for byte; a part that isn't a face `refused`; another module's bytes, a
+  flipped byte and an unlisted hash refused by the host.
 
 ## The file registry: one source of truth
 
@@ -508,8 +549,11 @@ starts until Samuel says so (plan only).
    limits, the import check, the manifest, the reproducible build; hostile modules that import, grow memory, loop and
    flood output, which must fail. *First step built:* markdown-runtime and face-runtime as modules, frozen by hash; the
    native host loads only a listed hash whose bytes match, admits only a module that imports nothing and declares its
-   memory, and runs it under fuel, memory and output, answering face-runtime's vectors byte for byte. Next: the host
-   in the Peer-Light's wasm, and the browser loading runtimes by hash.
+   memory, and runs it under fuel, memory and output, answering face-runtime's vectors byte for byte. *The browser
+   host built:* the frozen bytes kept in `frozen/`, the host in avenOS's runtimes worker, a worker of its own, loading
+   by hash from avenOS's origin; avenBRAIN's slides drawn from face-runtime ([The browser host](#the-browser-host)).
+   Next: avenBRAIN's pages and glossary through markdown-runtime, held to brain/render's tree, links included, and
+   brain/render's renderer gone.
 4. **The files origin** (A15), with avenOS and avenPEER's planning: the runtime worker, the Service Worker serving it.
 5. **Trees:** the allowlist crate and the applier as the tree drawer; `text-runtime`, `json-runtime`,
    `markdown-runtime`.

@@ -73,7 +73,15 @@ def derivationVectors : List Json :=
     let seed := testBytes "avenSANDBOX test tag seed"
     vec s!"the tag of {id} at epoch {epoch}" (Json.mkObj [("seed", h seed), ("id", id), ("epoch", toJson epoch)])
       (h (tag seed id epoch))
-  blake ++ prf ++ seeds ++ stanzas ++ epochs ++ tags
+  let pads := ([0, 1, 3, 4, 5, 8, 9, 17, 64, 100, 129, 1000] : List Nat).map fun n =>
+    vec s!"the stanzas of an epoch with {n} readers" (Json.mkObj [("readers", toJson n)]) (toJson (padded n))
+  let seeds' := ([(0, "d:01", 2), (1, "alice", 3)] : List (Nat × String × Nat)).map fun (i, id, epoch) =>
+    let prevKey := testBytes s!"avenSANDBOX test epoch key {i}"
+    let recipient := testBytes s!"avenSANDBOX test recipient {i}"
+    vec s!"a reader's tag seed and tag in {id} at epoch {epoch}"
+      (Json.mkObj [("prevKey", h prevKey), ("recipient", h recipient), ("id", id), ("epoch", toJson epoch)])
+      (Json.mkObj [("seed", h (tagSeed prevKey recipient)), ("tag", h (tag (tagSeed prevKey recipient) id epoch))])
+  blake ++ prf ++ seeds ++ stanzas ++ epochs ++ tags ++ pads ++ seeds'
 
 def Stanza.json (s : Stanza) : Json :=
   Json.mkObj ([("ct", h s.ct), ("commit", h s.commit), ("sealed", h s.sealed)] ++
@@ -108,6 +116,25 @@ def stanzaVectors : List Json :=
       ("a hybrid signature", (⟨ramp 42 ed25519SigLen, ramp 43 mlDsa65SigLen⟩ : Hybrid))].map
     fun (name, x) => vec name (Json.mkObj [("ed25519", h x.ed25519), ("mlDsa", h x.mlDsa)])
       (Json.mkObj [("bytes", h (encode x.value))])
-  stanzas ++ epochs ++ hybrids
+  -- blobs read back, and blobs that aren't one: each a Value's bytes, and whether `Epoch.ofValue?` takes it
+  let fields (v : Value) : List (Bytes × Value) := match v with | .map kvs => kvs | _ => []
+  let remap (e : Epoch) (f : List (Bytes × Value) → List (Bytes × Value)) : Value := .map (f (fields e.value))
+  let set (key : String) (x : Value) (kvs : List (Bytes × Value)) := kvs.map fun kv => if kv.1 = t key then (kv.1, x) else kv
+  let reads : List (String × Value) :=
+    [("a keyring's blob", keyringEpoch.value), ("a Doc's blob", docEpoch.value),
+     ("a field the blob doesn't name", remap docEpoch (· ++ [(t "zz", .null)])),
+     ("another scheme", remap docEpoch (set "scheme" (.text (t "tree 1")))),
+     ("a commitment cut short", remap docEpoch (set "commit" (.bytes (ramp 0 31)))),
+     ("a Doc's blob with a vault key", (({ docEpoch with vault := some (ramp 1 48) } : Epoch)).value),
+     ("a keyring's blob without one", (({ keyringEpoch with vault := none } : Epoch)).value),
+     ("a stanza of another suite", (({ docEpoch with stanzas := [] } : Epoch)).value |> fun v =>
+        match v with
+        | .map kvs => .map (kvs.map fun kv => if kv.1 = t "stanzas" then (kv.1, .array [.map (fields
+            (patternStanza 20 true).value |>.map fun kv' => if kv'.1 = t "suite" then (kv'.1, .uint 2) else kv')]) else kv)
+        | v => v)]
+  let readVectors := reads.map fun (name, v) =>
+    vec s!"read back: {name}" (Json.mkObj [("bytes", h (encode v))])
+      (Json.mkObj [("reads", toJson (Epoch.ofValue? v).isSome)])
+  stanzas ++ epochs ++ hybrids ++ readVectors
 
 end Aven.ID.KeyFormats

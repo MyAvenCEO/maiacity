@@ -8,19 +8,23 @@
 //! limits: fuel used up is `outOfFuel`, memory grown past the limit `outOfMemory`, an encoded output past the limit
 //! `outputTooLarge`, an answer that isn't a result `badOutput`, and a module that traps otherwise `refused`.
 
-use aven_core::{Hash, Value, blake3, decode, encode};
+pub mod json;
+
+use aven_codec::{Hash, Value, blake3, decode, encode};
 use aven_runtimes_contract::{Failure, Limits};
 use wasmi::{
     Config, Engine, ExternType, Instance, Linker, Memory, Module, Store, StoreLimits,
     StoreLimitsBuilder, TrapCode, TypedFunc,
 };
 
-/// One frozen runtime in the manifest: its name and version, its module's hash, and who may load it.
+/// One frozen runtime in the manifest: its name and version, its module's hash, the limits its runs are held to, and
+/// who may load it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Frozen {
     pub name: String,
     pub version: u64,
     pub hash: Hash,
+    pub limits: Limits,
     pub users: Vec<String>,
 }
 
@@ -39,6 +43,49 @@ impl Entry {
             Entry::Withdrawn(h) => *h,
         }
     }
+}
+
+/// The manifest's entries, as `manifest.json` has them under `runtimes`: `{name, version, hash, limits, users}` frozen,
+/// or `{"withdrawn": hash}`; `None` when an entry is neither.
+pub fn manifest(text: &str) -> Option<Vec<Entry>> {
+    let j: serde_json::Value = serde_json::from_str(text).ok()?;
+    j.get("runtimes")?
+        .as_array()?
+        .iter()
+        .map(|e| {
+            if let Some(h) = e.get("withdrawn") {
+                return Some(Entry::Withdrawn(Hash::parse(h.as_str()?)?));
+            }
+            let l = e.get("limits")?;
+            Some(Entry::Frozen(Frozen {
+                name: e.get("name")?.as_str()?.into(),
+                version: e.get("version")?.as_u64()?,
+                hash: Hash::parse(e.get("hash")?.as_str()?)?,
+                limits: Limits {
+                    fuel: l.get("fuel")?.as_u64()?,
+                    memory: l.get("memory")?.as_u64()?,
+                    output: l.get("output")?.as_u64()?,
+                },
+                users: e
+                    .get("users")?
+                    .as_array()?
+                    .iter()
+                    .map(|u| u.as_str().map(String::from))
+                    .collect::<Option<_>>()?,
+            }))
+        })
+        .collect()
+}
+
+/// A runtime's newest frozen module that the manifest still lists.
+pub fn latest(manifest: &[Entry], name: &str) -> Option<Frozen> {
+    manifest
+        .iter()
+        .filter_map(|e| match e {
+            Entry::Frozen(f) if f.name == name && listed(manifest, &f.hash) => Some(f.clone()),
+            _ => None,
+        })
+        .max_by_key(|f| f.version)
 }
 
 /// Whether the manifest lists `h` now: the last entry for it froze it, no withdrawal came after (`listed`).

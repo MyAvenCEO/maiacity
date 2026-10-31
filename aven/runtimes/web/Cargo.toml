@@ -1,0 +1,19 @@
+[package]
+name = "aven-runtimes-web"
+version = "0.0.0"
+description = "The runtime host in a browser: aven-runtimes-host behind wasm-bindgen, for avenOS's runtimes worker"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+aven-codec = { path = "../../DB2/codec" }
+aven-runtimes-contract = { path = "../contract" }
+aven-runtimes-host = { path = "../host" }
+serde_json = "=1.0.154"
+# the same version as avenDB's Peer-Light, so the box's one wasm-bindgen CLI binds both
+wasm-bindgen = "=0.2.130"

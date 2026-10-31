@@ -12,7 +12,7 @@ extern crate alloc;
 use alloc::string::String;
 use alloc::vec;
 
-use aven_core::{Hash, Value, name_of};
+use aven_codec::{Hash, Value, name_of};
 
 /// Why a run failed. A failure is a Value too, the same on every device.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

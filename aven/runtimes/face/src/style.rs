@@ -8,7 +8,7 @@
 //! at least 9 px where a slide is narrowest (356 px), and every text has WCAG's contrast against what it is drawn on:
 //! the nearest background above it, or an earlier sibling layer that covers its whole parent.
 
-use aven_core::Value;
+use aven_codec::Value;
 use aven_runtimes_tree::{Node, TreeLimits, check, tag_ok};
 
 use crate::face::{BLACK, Rgb, WHITE, alt_ok, class_ok, interactive, named, reaches, role_ok};

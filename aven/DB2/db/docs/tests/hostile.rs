@@ -38,8 +38,7 @@ fn around(
         prev: None,
         deps: vec![],
         body: body.value(),
-        signer: vec![],
-        sig: vec![],
+        sigs: vec![],
     };
     d.sign_envelope(&mut e);
     e.encode()

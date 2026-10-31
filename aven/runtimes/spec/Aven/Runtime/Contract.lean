@@ -205,7 +205,13 @@ theorem admit_memory {pages : Nat} {m : Module} (h : admit pages m = true) : ∃
   | none => simp [hp] at h
   | some p => simp [hp] at h; exact ⟨p, rfl, h.2⟩
 
-/-! ## The manifest (README, "Only from the repository") -/
+/-! ## The manifest (README, "Only from the repository")
+
+A runtime lives with its owner (ARCHITECTURE A45): its module is a blob and its manifest a typed Doc, owned by the
+vault that publishes it, Aven's for the built-ins, kept where that vault's keep caps say (A44) and fetched by hash.
+Until Docs run, the bootstrap manifest (`manifest.json`) and the frozen bytes (`frozen/<hex>.wasm`) are in git. Either
+way the laws below hold: the manifest only appends, and a host loads only bytes whose hash it lists. A runtime runs on
+the reader's device, in a worker of its own. -/
 
 /-- One frozen runtime, named by its module's hash. -/
 structure Frozen where

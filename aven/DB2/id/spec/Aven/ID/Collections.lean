@@ -67,7 +67,7 @@ variable (nm : Envelope → Hash) (read : Envelope → Option ListChange) (signs
 
 /-- A change to collection `c`'s list: an envelope of its Doc, signed by a device of its vault. -/
 def changeOf (c : Facts) (e : Envelope) : Option ListChange :=
-  if e.doc == c.id && signs e.signer c.vault then read e else none
+  if e.doc == c.id && e.sigs.any (signs ·.signer c.vault) then read e else none
 
 /-- Whether removal `r` of collection `c` removes entry `a`. -/
 def removes (c : Facts) (r a : Envelope) : Bool :=
@@ -109,7 +109,7 @@ def lists (S : List Envelope) (c d : DocId) : Bool :=
 collection's vault. Nothing else is. -/
 def isListing (e : Envelope) : Bool :=
   match facts e.doc with
-  | some f => f.type == collectionType && signs e.signer f.vault && (read e).isSome
+  | some f => f.type == collectionType && e.sigs.any (signs ·.signer f.vault) && (read e).isSome
   | none => false
 
 end
@@ -219,7 +219,7 @@ theorem content_no_listing {e : Envelope} {f : Facts} (hf : facts e.doc = some f
 
 /-- Nor is one signed by a device of no collection's own vault. -/
 theorem stranger_no_listing {e : Envelope} {f : Facts} (hf : facts e.doc = some f)
-    (stranger : signs e.signer f.vault = false) : isListing read signs facts e = false := by
+    (stranger : e.sigs.any (signs ·.signer f.vault) = false) : isListing read signs facts e = false := by
   simp [isListing, hf, stranger]
 
 /-- **A collection stays in its vault's authority** (A32): whatever it lists, nested or not, is a Doc of its own vault
@@ -345,7 +345,7 @@ def nm : Envelope → Hash := Envelope.name blake3
 def read (e : Envelope) : Option ListChange := ListChange.ofValue? e.body
 
 def env (doc : DocId) (writer seq : Nat) (signer : Bytes) (l : ListChange) (prev : Option Hash := none) : Envelope :=
-  { doc, branch := utf8 "main", writer, seq, prev, deps := [], body := l.value, signer, sig := [] }
+  { doc, branch := utf8 "main", writer, seq, prev, deps := [], body := l.value, sigs := [⟨signer, []⟩] }
 
 def a1 : Envelope := env beach.id 1 1 mac (.add p1.id)
 def a2 : Envelope := env beach.id 1 2 mac (.add p2.id) (nm a1)
@@ -375,7 +375,7 @@ def listed (S : List Envelope) (c d : Facts) : Bool := lists nm read signs gov f
 def bob : Bytes := utf8 "bob-phone"
 def w1 : Envelope :=
   { doc := p2.id, branch := utf8 "main", writer := 3, seq := 1, prev := none, deps := [nm a2], body := .null,
-    signer := bob, sig := [] }
+    sigs := [⟨bob, []⟩] }
 def w2 : Envelope := { w1 with seq := 2, prev := some (nm w1), deps := [nm r1] }
 
 def listedAt (S : List Envelope) (e : Envelope) (c d : Facts) : Bool := listsAt nm read signs gov facts S e c.id d.id
