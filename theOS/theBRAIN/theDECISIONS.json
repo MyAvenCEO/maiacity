@@ -38,7 +38,7 @@
    "id": "D3",
    "title": "Two kinds of identity: human and coop",
    "status": "decided",
-   "decision": "A human identity is controlled by signers only. A coop identity is controlled by one or more identities (human or coop), never by signers directly. Cycles are not allowed. Each identity has its own signing rules, like a Gnosis Safe: which members must sign, how many, for what.",
+   "decision": "A human identity is controlled by signers only. A coop identity is controlled by one or more identities (human or coop), never by signers directly. Cycles are not allowed. Each identity has its own signing rules, like a Gnosis Safe: which members must sign, how many, for what. Open question: may a coop contain other coops, or only human identities?",
    "why": "Families, teams and organisations are identities of identities; one model covers all of them.",
    "sources": [
     {
@@ -152,9 +152,9 @@
   },
   {
    "id": "D8",
-   "title": "A rule lists what a role may do",
+   "title": "A rule: role, data, operations, conditions, expiry, proof",
    "status": "decided",
-   "decision": "A rule is: role, data, a \"do\" list, conditions, expiry. The do list: create, read, update, delete, share, want, keep, sync. Writing rules belongs to the owner alone (D30).",
+   "decision": "A rule is a signed certificate with: the role it is given to; the data it applies to; a list of operations (create, read, update, delete, share, want, keep, sync), each optionally narrowed by at (a path), where (matching entries) or a limit; an expiry; the owner's signature; and the proof chain back to the seal. Writing rules is not an operation: it belongs to the owner (D30).",
    "why": "One small vocabulary for content, carrying and the rules themselves. Keyhive's Relay, Read, Edit and Admin map onto it; ours is finer.",
    "sources": [
     {
@@ -167,6 +167,7 @@
     }
    ],
    "slides": [
+    "rules-1",
     "rules-2",
     "rules-3"
    ],
@@ -461,9 +462,9 @@
   },
   {
    "id": "D22",
-   "title": "Words: do, op, change",
+   "title": "Words: operation, CRDT op",
    "status": "decided",
-   "decision": "A do is what you ask the engine to do. An op is a CRDT op, as in Loro. Rules list dos. The slides name CRDT data types, not Loro.",
+   "decision": "An operation is anything you do: what a rule allows and what the engine runs (find, update, want …). A CRDT op is Loro's low-level change, always called “CRDT op”. The slides name CRDT data types, not Loro.",
    "why": "One meaning per word.",
    "sources": [
     {
@@ -480,9 +481,9 @@
   },
   {
    "id": "D23",
-   "title": "The engine: JSON dos, pluggable, local",
+   "title": "The engine: JSON operations, pluggable, local",
    "status": "decided",
-   "decision": "Every read, change, search and sync is a JSON do (find, walk, search, near, chain …). New kinds plug in and name what a rule must allow. Dos run only on your own device, over what you can read.",
+   "decision": "Every read, change, search and sync is a JSON operation (find, walk, search, near, chain …). New kinds plug in and name what a rule must allow. Operations run only on your own device, over what you can read.",
    "why": "One engine for everything, with no server in the loop.",
    "sources": [],
    "slides": [
@@ -646,19 +647,23 @@
   },
   {
    "id": "D31",
-   "title": "Signers: a random key per device, registered by a passkey",
+   "title": "A signer is the identity of one device",
    "status": "proposed",
-   "decision": "A signer is a random signing key made on a device and registered once by a passkey (which needs a tap per signature, too slow for every change). The signer signs every change, and its public key is also the device's iroh address. Loro's peer ID stays a plain number, bound to the signer in each chunk's signed header. Each device also publishes its own lock.",
-   "why": "Not derived from the passkey: synced passkeys give two devices the same secret, so they would share one key and one address and could not be locked out separately.",
+   "decision": "Each device is a signer: an identity of its own, the only kind that holds keys directly (signing key, network address, lock). It makes its keys at random and keeps them on the device only; the human's passkey registers it once. Every signer has exactly one owner, a human identity. It rotates its own keys in its own history without touching the human identity. Loro's peer ID stays a number, bound to the signer in each chunk's signed header.",
+   "why": "A passkey needs a tap per signature, too slow for every change. It cannot derive per-device keys: synced passkeys give several devices the same PRF secret, and Apple's Secure Enclave holds only P-256 keys, not Ed25519.",
    "supersedes": "the separate iroh key in D28",
    "sources": [
+    {
+     "label": "WebAuthn PRF extension",
+     "url": "https://w3c.github.io/webauthn/#prf-extension"
+    },
     {
      "label": "iroh",
      "url": "https://iroh.computer"
     },
     {
-     "label": "WebAuthn PRF extension",
-     "url": "https://w3c.github.io/webauthn/#prf-extension"
+     "label": "Keyhive notebook 05: individuals and groups",
+     "url": "https://www.inkandswitch.com/keyhive/notebook/05/"
     }
    ],
    "slides": [],
@@ -666,9 +671,9 @@
   },
   {
    "id": "D32",
-   "title": "Words: signer, identity, role, data; address identities",
+   "title": "Words: signer, identity, role, data; dial identities",
    "status": "proposed",
-   "decision": "A human identity's members are signers; a coop's members are identities; roles are sets of identities; data is acted upon. \"Device\" is only where a signer lives. Peers dial identities: each identity publishes a signed record of the signers it can be reached through, and the connection goes to whichever is online.",
+   "decision": "Signers are device identities, owned by one human identity. Human identities' members are signers; coops' members are identities. Roles are sets of identities; data is acted upon. Peers dial identities: each identity publishes a signed record of its signers, each signer's history holds its current address, and the connection goes to whichever is online.",
    "why": "One word per thing, matching the Safe analogy (a Safe's members are signers). Addressing identities keeps the address stable while signers change, like a phone number and its SIM.",
    "sources": [],
    "slides": [],
@@ -744,12 +749,11 @@
   },
   {
    "id": "D36",
-   "title": "Heal, forget, lock away: forward secrecy in three layers",
-   "status": "proposed",
+   "title": "Heal: keys turn regularly",
+   "status": "decided",
    "date": "2026-10-31",
-   "decision": "Role and data keys turn regularly (post-compromise security). At stable points the past is cut, resealed and the old keys deleted (forward secrecy before the cut, D35). Older keys a device rarely needs are sealed under a key derived from the passkey's PRF and open only with a fresh tap.",
+   "decision": "Role keys and data keys turn regularly, not only when someone leaves, so a stolen key soon opens nothing new (post-compromise security). Forgetting the past is D35; locking older keys away is D37.",
    "why": "Full forward secrecy for live CRDT history is impossible: a late op may need any old state. Keyhive gave forward secrecy up; BeeKEM's κ parameter shows the trade-off. These three layers get as close as the setting allows.",
-   "rejected": "Keyhive's choice of no forward secrecy at all.",
    "sources": [
     {
      "label": "Keyhive notebook 06: E2EE in the local-first setting",
@@ -771,6 +775,40 @@
    "slides": [
     "keys-12"
    ]
+  },
+  {
+   "id": "D37",
+   "title": "Lock away: older keys behind a fresh tap",
+   "status": "proposed",
+   "decision": "Current keys stay ready on the device. Older keys, needed only for scrolling far back or merging a very late CRDT op, are sealed under an archive key derived from the passkey's PRF secret. The secure hardware releases it only after a fresh tap or face scan; afterwards it is wiped from memory.",
+   "why": "A thief with the device, or malware reading app storage, gets only the current keys. Limits: malware running during the tap, or a taken-over passkey sync account.",
+   "sources": [
+    {
+     "label": "WebAuthn PRF extension",
+     "url": "https://w3c.github.io/webauthn/#prf-extension"
+    }
+   ],
+   "slides": [
+    "keys-12"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D38",
+   "title": "Signing rules are pluggable policies",
+   "status": "proposed",
+   "decision": "Each identity's signing rules are a policy per action, built from kinds: threshold (k of n), weights, all-of / any-of, time lock with objection window. A policy kind is identified by the hash of its specification and is declarative data, not code. A device that does not know a kind treats the policy as not satisfied. Changing the signing rules needs the policy for that action.",
+   "why": "New kinds of signing rules can be added over time without old devices ever wrongly accepting something.",
+   "sources": [
+    {
+     "label": "KERI specification (weighted thresholds)",
+     "url": "https://trustoverip.github.io/tswg-keri-specification/"
+    }
+   ],
+   "slides": [
+    "own-11"
+   ],
+   "date": "2026-10-31"
   }
  ]
 }

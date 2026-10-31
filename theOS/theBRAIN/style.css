@@ -136,3 +136,10 @@ body {
 .dslides a { font: 500 12px var(--mono); color: var(--ink); background: #ece2cf; border-radius: 4px; padding: 4px 8px; text-decoration: none; }
 .dsrc { margin: 0; padding-left: 18px; font-size: 13px; color: var(--ink-soft); }
 .dsrc a { color: var(--ink); }
+
+/* Fine print: the technical deep dive, always in the right column. */
+.deep { margin: 0; padding-top: 12px; border-top: 1px solid #e2d6c0; font-size: 12.5px; line-height: 1.55; color: var(--ink-soft); }
+.deep b { display: block; font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink); margin-bottom: 4px; }
+.card.has-code { align-content: start; }
+.card .side { align-self: start; }
+.card.has-code .num { margin-top: 4px; }

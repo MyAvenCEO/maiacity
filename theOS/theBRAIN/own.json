@@ -4,27 +4,32 @@
   {
    "title": "It starts with your phone.",
    "text": "Your phone holds a {signer}. It can say one thing: “this is really me.” It never owns anything.",
-   "action": "Go on"
+   "action": "Go on",
+   "deep": "A passkey is a WebAuthn credential kept in secure hardware (Secure Enclave, TPM). It never leaves the device and needs a tap or face scan for every use. It authorises a signer: a key that signs changes without a tap."
   },
   {
    "title": "The signer acts for you.",
    "text": "You are an {identity}: a human. Your phone, laptop and watch are your signers, your hands. Lose one, add another, and you're still you.",
-   "action": "Write something"
+   "action": "Write something",
+   "deep": "An identity's ID is the hash of its birth record, not a key, so it outlives every key behind it. Its history lists its current signers and commits to the next ones in advance (KERI-style pre-rotation)."
   },
   {
    "title": "You write a to-do list.",
    "text": "Everything you keep is {data}. Your list keeps changing; the photo of the leaking tap you attach never will. Both are data.",
-   "action": "Who owns it?"
+   "action": "Who owns it?",
+   "deep": "The list is a Doc: CRDT maps, lists and text. The photo is a Value: immutable bytes named by their BLAKE3 hash, streamed in verified chunks."
   },
   {
    "title": "The list owns itself.",
    "text": "When data is born, it gets a {seal}: a key used exactly once, to sign the data's first rule, and then destroyed. Nobody holds it, so nobody can share it, lose it or steal it. The list belongs to no one but itself.",
-   "action": "Read its first rule"
+   "action": "Read its first rule",
+   "deep": "The seal is a fresh Ed25519 key pair. Its public key is the data ID. It signs one certificate, naming the owner, and the private key is zeroised. Keyhive calls the same pattern the genesis key."
   },
   {
    "title": "Its first rule makes you the owner.",
    "text": "The seal's one signature names a single {owner}: you. The owner may do everything, for good, including writing the rules for everyone else. There is always exactly one owner: an identity, never a role.",
-   "action": "What is everything?"
+   "action": "What is everything?",
+   "deep": "The owner is an identity ID inside the first certificate. Its authority never expires and only the owner can sign a hand-over. Ownership is never a set, so there is no removing someone from it. (D5, D30)"
   },
   {
    "title": "Five things to start with.",
@@ -35,30 +40,35 @@
     "update",
     "delete"
    ],
-   "action": "Share the list"
+   "action": "Share the list",
+   "deep": "A rule is a signed certificate: role, data, list of operations, conditions, expiry, plus the proof chain back to the seal. Rules are written only by the owner (D30). The full list of operations is in the Rules story."
   },
   {
    "title": "You share the list with Mia.",
    "text": "You make a role “home”, give it read, create and update on the list, and add Mia. She can see the list, add things and tick them off. She can't delete it, and she can't change the rules.",
-   "action": "Call the plumber"
+   "action": "Call the plumber",
+   "deep": "Mia's identity is added to the role “home”. Technically: the owner signs a membership change and wraps the role key for Mia's identity key. The data's rules don't change at all."
   },
   {
    "title": "The plumber gets one item.",
    "text": "“Fix the tap” is its own little piece of data, linked from the list. Born inside the list, it starts with the list's rules. You add one more: the role “plumber” may read and update this item, and nothing else.",
-   "action": "The tap is fixed"
+   "action": "The tap is fixed",
+   "deep": "Read access can only be as fine as a key. So an item shared on its own is its own piece of data, with its own data key, linked from the list. New data born inside the list copies the list's rules once, at birth."
   },
   {
    "title": "The job is done.",
    "text": "You take the plumber out of his role. He sees nothing new, and his devices, if they're honest, forget what he saw. The role stays, ready for the next plumber.",
-   "action": "Move in together"
+   "action": "Move in together",
+   "deep": "Removing a member is an ending: the role key turns, data keys turn on the next write, and honest devices that learn of it wipe the keys and plaintext the rule gave them."
   },
   {
    "title": "You and Mia start a home.",
    "text": "Together you form a {coop}: an identity made of identities. You hand the list over: the coop becomes its owner. Now neither of you owns it alone, the coop's own rules decide what it does, and neither of you can lose it.",
-   "action": "How does a coop decide?"
+   "action": "How does a coop decide?",
+   "deep": "A coop's members are identities, never signers directly, and membership may not form a cycle. Handing the list over is a certificate signed by the current owner under its own signing rules."
   },
   {
-   "title": "A coop decides like a safe.",
+   "title": "A coop decides by its own signing rules.",
    "text": "A coop has members, and its own {signing rules}: how many of them must sign, for what. Ticking an item needs one of you. Handing the list over or changing who may see it needs both. Your own identity works the same way, with your devices as its members.",
    "code": {
     "coop": "home",
@@ -72,17 +82,19 @@
      "hand over": "2 of 2"
     }
    },
-   "action": "Sum it up"
+   "action": "Sum it up",
+   "deep": "Signing rules are a policy per action: threshold (k of n), weights, all-of / any-of, time locks. They live in the identity's own signed history. Changing them needs the policy for “change signing rules”, usually the strictest."
   },
   {
    "title": "That's all there is.",
    "list": [
     "Signers act for identities.",
-    "An identity decides like a safe: its members sign by its own rules.",
+    "An identity decides by its own signing rules: which members must sign, for what.",
     "Every piece of data has one owner: an identity, human or coop.",
     "Only the owner writes rules; everyone else gets in through roles."
    ],
-   "action": ""
+   "action": "",
+   "deep": "Four objects: signer, identity (human or coop), role, data. Two powers: owning (one identity per piece of data) and rules (operations given to roles). Everything else is how those are kept safe without a server."
   }
  ]
 }

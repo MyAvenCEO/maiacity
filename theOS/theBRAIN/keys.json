@@ -4,7 +4,8 @@
   {
    "title": "Can this really work?",
    "text": "Rules are promises. This story shows the cryptography that keeps them: which keys exist, what each step does to them, and the few things no cryptography can do.",
-   "action": "Meet the keys"
+   "action": "Meet the keys",
+   "deep": "Two mechanisms carry everything: encryption for read (keys you hold or don't) and signature verification for every other operation (checked by each peer on every change). The limits are listed honestly at the end."
   },
   {
    "title": "Four kinds of keys.",
@@ -15,7 +16,8 @@
     "Role key: a lock all members of a role can open.",
     "Data key: the key the data itself is encrypted with."
    ],
-   "action": "Give birth to data"
+   "action": "Give birth to data",
+   "deep": "Ed25519 for signing (seal, signers). X25519, later hybrid X-Wing with ML-KEM, for locks. Data keys are 256-bit symmetric keys used with an AEAD (XChaCha20-Poly1305). Wrapping follows HPKE (RFC 9180)."
   },
   {
    "title": "Data is born.",
@@ -24,7 +26,7 @@
     "id": "ed25519:7Hq…",
     "first_rule": {
      "owner": "you",
-     "do": "everything"
+     "operation": "everything"
     },
     "sig": "seal:…",
     "seal": "destroyed"
@@ -34,7 +36,8 @@
     "sign first rule",
     "wipe seal"
    ],
-   "action": "Lock the content"
+   "action": "Lock the content",
+   "deep": "The genesis certificate: data ID = seal public key, first rule = {owner, everything}, signature by the seal. Then the secret is zeroised. Any later rule must chain back to this certificate."
   },
   {
    "title": "Reading is a chain of envelopes.",
@@ -45,7 +48,8 @@
     "data key",
     "the list"
    ],
-   "action": "Write something"
+   "action": "Write something",
+   "deep": "Three envelopes: identity key → role key → data key → content. Each envelope is an HPKE seal of one key to another key's public half. The keyring travels with the data, so no server ever holds keys."
   },
   {
    "title": "Writing is a chain of signatures.",
@@ -53,7 +57,7 @@
    "code": {
     "change": {
      "data": "house-list",
-     "do": "update",
+     "operation": "update",
      "by": "mia/phone",
      "sig": "…"
     },
@@ -63,7 +67,8 @@
      "home may update house-list"
     ]
    },
-   "action": "Add someone"
+   "action": "Add someone",
+   "deep": "Every peer checks a change before merging: the signature, the signer's registration in the identity's history, the identity's role membership, and a rule covering this operation on this data. Any broken link: dropped."
   },
   {
    "title": "Adding Mia to a role: one envelope.",
@@ -74,7 +79,8 @@
     "add": "mia",
     "envelope": "role key → mia's identity key"
    },
-   "action": "Give a rule"
+   "action": "Give a rule",
+   "deep": "One HPKE envelope of the current role key to Mia's identity key, signed by the owner. Older role keys are reachable through back-links, so Mia reads the history too."
   },
   {
    "title": "Giving a rule: read needs a key, everything else needs only a signature.",
@@ -84,14 +90,15 @@
     "data": "fix-tap",
     "grant": {
      "role": "plumber",
-     "do": [
+     "operations": [
       "read",
       "update"
      ]
     },
     "envelope": "data key → plumber role key"
    },
-   "action": "Remove someone"
+   "action": "Remove someone",
+   "deep": "Read needs the data key wrapped for the role key. Every other operation needs only a signed rule. That rule sits in the data's rule set, a grow-only set of signed certificates merged by union."
   },
   {
    "title": "Removing someone means new keys.",
@@ -101,7 +108,8 @@
     "new role key",
     "new data key on next change"
    ],
-   "action": "Take a rule away"
+   "action": "Take a rule away",
+   "deep": "The role key rotates and is wrapped for the remaining members. Each piece of data the role reads gets a new data key on its next write (lazy rotation), because the old one is known to the removed member."
   },
   {
    "title": "Taking a rule away.",
@@ -111,13 +119,14 @@
     "data": "house-list",
     "revoke": {
      "role": "kids",
-     "do": [
+     "operations": [
       "read"
      ]
     },
     "rotate": "data key"
    },
-   "action": "Lose your phone"
+   "action": "Lose your phone",
+   "deep": "Taking read from a role rotates that data key immediately; the new key is wrapped for the owner and the remaining reading roles. Taking any other operation is only a signed rule change; no key turns."
   },
   {
    "title": "Losing your phone.",
@@ -127,7 +136,8 @@
     "new identity key",
     "new key for every role you're in"
    ],
-   "action": "Two things at once"
+   "action": "Two things at once",
+   "deep": "Pre-rotation: the identity's birth record committed to the hash of its next signer key. A stolen device also held role keys, so every role the identity is in rotates, as if the identity had been removed."
   },
   {
    "title": "Two things at once.",
@@ -139,7 +149,8 @@
     ],
     "result": "removal wins, edit dropped"
    },
-   "action": "Heal and forget"
+   "action": "Heal and forget",
+   "deep": "Concurrency is resolved toward less authority: a removal and a change made without seeing it count as concurrent, and the removal wins. Every peer applies the same deterministic rule, so all copies converge."
   },
   {
    "title": "Heal the future, forget the past.",
@@ -149,7 +160,8 @@
     "Forget: cut at stable points, delete the old keys.",
     "Lock away: older keys only open with a fresh tap."
    ],
-   "action": "The limits"
+   "action": "The limits",
+   "deep": "Heal: post-compromise security through regular rotation (decided). Forget: true forward secrecy before a stable cut (D35, open). Lock away: archive keys sealed under a PRF-derived key, released only after user verification (D37, proposed)."
   },
   {
    "title": "What no cryptography can do, and why that's fine.",
@@ -159,7 +171,8 @@
     "Nothing kept, on honest devices: the next step.",
     "Read is per piece of data, so what you share alone is its own data."
    ],
-   "action": "Forget on ending"
+   "action": "Forget on ending",
+   "deep": "The analogue hole is real for every system: whatever a reader saw can be copied. Read granularity equals key granularity, so a part shared on its own must be its own data."
   },
   {
    "title": "Ended means forgotten.",
@@ -179,7 +192,8 @@
     "learn the ending",
     "wipe keys and copies"
    ],
-   "action": "Which locks?"
+   "action": "Which locks?",
+   "deep": "An ending (revoke or lapse) is a signed event in the history. On learning it, an honest device deletes the affected data keys and decrypted copies. A carrier keeps only sealed bytes, which it could never open."
   },
   {
    "title": "Envelopes only for keys you can trust.",
@@ -195,7 +209,8 @@
     ],
     "envelopes_to": "only these locks"
    },
-   "action": "Where does the data key live?"
+   "action": "Where does the data key live?",
+   "deep": "Each device's lock is published in its identity's history, signed by its registered signer. Envelopes go only to locks found there, so nobody can inject a key of their own (Keyhive's open gap G2)."
   },
   {
    "title": "Where does the data key live?",
@@ -215,7 +230,8 @@
      "back": "K2 opens K1"
     }
    },
-   "action": "Which key turns when?"
+   "action": "Which key turns when?",
+   "deep": "The keyring: current epoch, one envelope per reader (owner and reading roles), and back-links where each data key decrypts the previous one, like Keyhive's causal encryption. Forward secrecy is given up for live history, on purpose."
   },
   {
    "title": "Which key turns when.",
@@ -272,7 +288,8 @@
      ]
     ]
    },
-   "action": "Sum it up"
+   "action": "Sum it up",
+   "deep": "Only read touches keys. Concurrent rotations of the same key are both kept until the next rotation, BeeKEM's approach to concurrent updates. Large roles may manage their role key with BeeKEM later (D20, proposed)."
   },
   {
    "title": "The whole machine.",
@@ -282,7 +299,8 @@
     "Everything else is a chain of signatures, checked by every device.",
     "Removing someone rotates keys: they lose the future, and honest devices forget the past."
    ],
-   "action": ""
+   "action": "",
+   "deep": "Seal → owner → rules for roles. Read: identity key → role key → data key. Everything else: signature chains checked by every peer. Endings win, rotate keys and wipe copies."
   }
  ]
 }

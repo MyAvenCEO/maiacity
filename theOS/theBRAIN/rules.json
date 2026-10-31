@@ -3,45 +3,54 @@
  "slides": [
   {
    "title": "Every rule is one sentence.",
-   "text": "A {rule} says: this role may do these things, on this data, until then. Nothing more. Everything anyone may ever do with your data is written in rules like this one.",
+   "text": "A {rule} says: this role may perform these {operations}, on this data, until then. Nothing more. Everything anyone may ever do with your data is written in rules like this one.",
    "code": {
-    "role": "home",
-    "data": "house-list",
-    "do": [
-     "create",
-     "read",
-     "update"
-    ],
-    "expires": "2026-12-01"
+    "rule": {
+     "role": "home",
+     "data": "house-list",
+     "operations": [
+      "create",
+      "read",
+      {
+       "operation": "update",
+       "at": "items/*/done"
+      }
+     ],
+     "expires": "2026-12-01"
+    },
+    "signed_by": "you (owner)",
+    "proof": "…back to the seal"
    },
-   "action": "What can a rule allow?"
+   "action": "What can a rule allow?",
+   "deep": "A rule is a signed certificate: role, data, operations (each optionally narrowed by at, where or a limit), expiry, and a proof chain back to the seal. People see “rule”; underneath it is a capability."
   },
   {
    "title": "What a rule can allow.",
-   "text": "Each entry in “do” is one thing a role may do. Some are about the content, some about carrying it, and two are about rules themselves.",
+   "text": "Each operation is one thing a role may do. Some are about the content, some about carrying it, and two are about rules themselves.",
    "list": [
     "Content: create, read, update, delete.",
     "Carrying: want, keep, sync.",
     "Passing on: share, a narrower rule of your own.",
-    "Engine dos, like find or search, need no entry of their own: read is enough.",
+    "Engine operations, like find or search, need no entry of their own: read is enough.",
     "Writing rules is not on the list: only the owner does that."
    ],
-   "action": "Make it narrower"
+   "action": "Make it narrower",
+   "deep": "The full list of operations: create, read, update, delete, share, want, keep, sync. Writing rules is not an operation anyone can be given; it belongs to the owner (D30). Engine operations that only read need read."
   },
   {
    "title": "Conditions make a rule narrower.",
-   "text": "Each “do” can carry {conditions}: only this part of the data, only entries that match, only with two signatures, only so many times.",
+   "text": "Each operation can carry {conditions}: only this part of the data, only entries that match, only with two signatures, only so many times.",
    "code": {
     "role": "kids",
     "data": "house-list",
-    "do": [
+    "operations": [
      "read",
      {
-      "do": "create",
+      "operation": "create",
       "at": "items"
      },
      {
-      "do": "update",
+      "operation": "update",
       "at": "items/*/done",
       "where": {
        "author": "$self"
@@ -49,7 +58,8 @@
      }
     ]
    },
-   "action": "Every rule ends"
+   "action": "Every rule ends",
+   "deep": "Conditions are evaluated by every verifying peer: at (a path prefix), where (matching entries, for example author = $self), limits. Like Meadowcap's areas, each condition can only narrow."
   },
   {
    "title": "Every rule expires.",
@@ -57,13 +67,14 @@
    "code": {
     "role": "plumber",
     "data": "fix-tap",
-    "do": [
+    "operations": [
      "read",
      "update"
     ],
     "expires": "2026-11-07"
    },
-   "action": "But my family?"
+   "action": "But my family?",
+   "deep": "The default expiry is 30 days. Expiry is enforced through endings in the history (lapses), never by a verifier's clock."
   },
   {
    "title": "Unchanged rules renew themselves.",
@@ -73,7 +84,8 @@
     "renew for 30 days",
     "else: let it run out"
    ],
-   "action": "And the first rule?"
+   "action": "And the first rule?",
+   "deep": "Renewal is a new certificate with the same content and a later expiry, signed by one of the owner's signers. Changed or removed rules are simply not renewed."
   },
   {
    "title": "Only the owner never expires.",
@@ -82,12 +94,13 @@
     "data": "house-list",
     "first_rule": {
      "owner": "you",
-     "do": "everything, and the rules"
+     "operation": "everything, and the rules"
     },
     "signed_by": "seal",
     "expires": "never"
    },
-   "action": "What is a rule, really?"
+   "action": "What is a rule, really?",
+   "deep": "The genesis certificate has no expiry. Ownership moves only through a hand-over signed by the owner under its own signing rules."
   },
   {
    "title": "Under the hood, a rule is a capability.",
@@ -95,7 +108,7 @@
    "code": {
     "rule": {
      "role": "home",
-     "do": [
+     "operations": [
       "create",
       "read",
       "update"
@@ -108,7 +121,8 @@
      "you → home"
     ]
    },
-   "action": "Pass it on"
+   "action": "Pass it on",
+   "deep": "Like a Biscuit or UCAN token: a chain of signed blocks, each signed by the holder of the previous one, verifiable offline without any server."
   },
   {
    "title": "Passing a rule on only narrows it.",
@@ -118,7 +132,7 @@
      {
       "by": "you",
       "role": "home",
-      "do": [
+      "operations": [
        "read",
        "update",
        "share"
@@ -128,14 +142,15 @@
      {
       "by": "mia",
       "role": "grandma's",
-      "do": [
+      "operations": [
        "read"
       ],
       "expires": "2026-11-15"
      }
     ]
    },
-   "action": "Check a rule"
+   "action": "Check a rule",
+   "deep": "Attenuation: each appended block can only remove operations, shorten the expiry or add conditions. A verifier intersects all blocks."
   },
   {
    "title": "Every device checks the same four things.",
@@ -143,10 +158,11 @@
    "list": [
     "Every signature in the proof is valid, back to the seal.",
     "The rule hasn't ended.",
-    "What's being done is listed in its “do”.",
+    "The operation is listed in the rule.",
     "Every condition holds."
    ],
-   "action": "End one early"
+   "action": "End one early",
+   "deep": "Verification order: signatures along the chain, no ending in the causal past, operation covered, conditions hold. All deterministic, so every peer reaches the same verdict."
   },
   {
    "title": "Ending a rule early.",
@@ -157,7 +173,8 @@
     "by": "you (owner)",
     "when": "any time"
    },
-   "action": "And when time runs out?"
+   "action": "And when time runs out?",
+   "deep": "A revoke is a signed certificate in the rule set (a grow-only set). It cannot be undone; access returns only through a new rule."
   },
   {
    "title": "When time runs out, anyone may say so.",
@@ -168,7 +185,8 @@
     "by": "mia-phone",
     "after": "2026-11-07"
    },
-   "action": "One concept"
+   "action": "One concept",
+   "deep": "A lapse may be written by any peer that can read the rules, once the date has passed for it. It can only end a rule, never grant one. From then on the causal history decides."
   },
   {
    "title": "Revoke or lapse: one ending, same effect.",
@@ -189,18 +207,20 @@
      "wipe keys and copies"
     ]
    },
-   "action": "Sum it up"
+   "action": "Sum it up",
+   "deep": "One ending type, two authors. Effects: concurrent changes that never saw it are dropped, the data key turns, and the delete trigger runs on honest devices."
   },
   {
    "title": "Rules, in short.",
    "list": [
-    "A rule: this role may do these things, on this data, until then.",
+    "A rule: this role may perform these operations, on this data, until then.",
     "Only the owner, an identity, writes rules; its own rule never expires.",
     "Conditions narrow a rule; nothing can widen it.",
     "A revoke or a lapse is an ending: it wins, turns the key and wipes copies.",
     "Under the hood: a signed token any device checks offline."
    ],
-   "action": ""
+   "action": "",
+   "deep": "Rules are capabilities attached to roles, granted only by the owner, narrowable, expiring by default, ended by events, and checked offline by every peer."
   }
  ]
 }

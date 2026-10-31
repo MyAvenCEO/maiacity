@@ -1,20 +1,21 @@
 {
- "title": "The engine",
+ "title": "The operations engine",
  "slides": [
   {
-   "title": "Everything you do is a do.",
-   "text": "Reading a list, ticking an item, searching your notes, syncing with a friend: each is a {do}, a small piece of JSON that says what to do. One engine runs them all.",
+   "title": "Everything you do is an operation.",
+   "text": "Reading a list, ticking an item, searching your notes, syncing with a friend: each is an {operation}, a small piece of JSON that says what to do. One engine runs them all.",
    "code": {
-    "do": "get",
+    "operation": "get",
     "data": "house-list"
    },
-   "action": "Ask a question"
+   "action": "Ask a question",
+   "deep": "An operation is JSON: {operation, data, …arguments}. One engine parses it, checks the rule, runs it locally and returns a result or a set of CRDT ops."
   },
   {
    "title": "A simple query.",
-   "text": "“What's still open, soonest first?” A do takes data, narrows it and hands back an answer. It runs on your own device, over what you can already read.",
+   "text": "“What's still open, soonest first?” An operation takes data, narrows it and hands back an answer. It runs on your own device, over what you can already read.",
    "code": {
-    "do": "find",
+    "operation": "find",
     "data": "house-list",
     "at": "items",
     "where": {
@@ -23,31 +24,33 @@
     "order": "due",
     "limit": 10
    },
-   "action": "Change something"
+   "action": "Change something",
+   "deep": "find evaluates over the local decrypted state: filter (where), sort (order) and limit. Indexes are local and rebuilt from data the device can read."
   },
   {
-   "title": "Changes are dos too.",
-   "text": "Ticking an item is a do. The engine checks your rule, turns it into CRDT ops, signs them and hands them to sync. A do is what you mean; ops are what gets stored.",
+   "title": "Changes are operations too.",
+   "text": "Ticking an item is an operation. The engine checks your rule, turns it into CRDT ops, signs them and hands them to sync. An operation is what you mean; CRDT ops are what gets stored.",
    "code": {
-    "do": "update",
+    "operation": "update",
     "data": "house-list",
     "at": "items/milk/done",
     "value": true
    },
    "flow": [
-    "do: update",
+    "operation: update",
     "check the rule",
     "CRDT ops",
     "sign",
     "sync"
    ],
-   "action": "Follow the links"
+   "action": "Follow the links",
+   "deep": "update becomes one or more CRDT ops on the Doc, grouped into a change, signed by the signer, sealed into a chunk and announced."
   },
   {
    "title": "Walking a graph.",
    "text": "Data links to data: a list to its items, an item to a photo, a person to their friends. A {walk} follows links hop by hop, and stops wherever your rules stop.",
    "code": {
-    "do": "walk",
+    "operation": "walk",
     "from": "you",
     "follow": [
      "friends",
@@ -59,13 +62,14 @@
      "tag": "garden"
     }
    },
-   "action": "Search by words"
+   "action": "Search by words",
+   "deep": "walk follows link fields across Docs to a given depth. Each hop needs read on the next piece of data; without it, the walk stops there."
   },
   {
    "title": "Searching by words.",
    "text": "A {search} finds the notes that best match your words, ranked the way search engines do it (BM25). The index is built on your device, from what you can read, and never leaves it.",
    "code": {
-    "do": "search",
+    "operation": "search",
     "data": "my-notes",
     "text": "leaking tap kitchen",
     "fields": [
@@ -74,49 +78,52 @@
     ],
     "limit": 5
    },
-   "action": "Search by meaning"
+   "action": "Search by meaning",
+   "deep": "BM25 full-text ranking over a local inverted index built from readable data. Neither the index nor the query leaves the device."
   },
   {
    "title": "Searching by meaning.",
    "text": "“Plumbing problems” should also find “water under the sink”. A {near} compares meaning as vectors and returns the closest entries. Same rule: the index is local.",
    "code": {
-    "do": "near",
+    "operation": "near",
     "data": "my-notes",
     "text": "plumbing problems",
     "k": 5
    },
-   "action": "Chain them"
+   "action": "Chain them",
+   "deep": "near: vector similarity (for example cosine) over local embeddings, with an approximate nearest-neighbour index on the device. Embeddings are computed locally."
   },
   {
-   "title": "Dos chain together.",
-   "text": "The answer of one do is the input of the next. Search by meaning, follow the links to whoever is assigned, keep only what's open.",
+   "title": "Operations chain together.",
+   "text": "The answer of one operation is the input of the next. Search by meaning, follow the links to whoever is assigned, keep only what's open.",
    "code": {
-    "do": "chain",
+    "operation": "chain",
     "steps": [
      {
-      "do": "near",
+      "operation": "near",
       "data": "house-list",
       "text": "plumbing",
       "k": 20
      },
      {
-      "do": "walk",
+      "operation": "walk",
       "follow": [
        "assignee"
       ]
      },
      {
-      "do": "find",
+      "operation": "find",
       "where": {
        "done": false
       }
      }
     ]
    },
-   "action": "Add a new kind"
+   "action": "Add a new kind",
+   "deep": "chain pipes the result set of each step into the next; each step is checked against its own required rule."
   },
   {
-   "title": "New kinds of dos plug in.",
+   "title": "New kinds of operations plug in.",
    "text": "find, walk, search and near are {plugins}. Each one declares its name, the shape of its JSON, and what a rule must allow for it to run. A new plugin, say for maps or for time series, slots in the same way.",
    "code": {
     "plugin": "search",
@@ -128,46 +135,48 @@
     "needs": "read",
     "runs": "local"
    },
-   "action": "And syncing?"
+   "action": "And syncing?",
+   "deep": "A plugin declares its name, JSON input schema, required rule operation and where it runs. Unknown operations are rejected."
   },
   {
-   "title": "Sync is dos too.",
-   "text": "Your device's sync plan is written as dos: what it wants, what it keeps, what it passes on. Here, your phone keeps three months of the house list and only fetches the photos you open.",
+   "title": "Sync is operations too.",
+   "text": "Your device's sync plan is written as operations: what it wants, what it keeps, what it passes on. Here, your phone keeps three months of the house list and only fetches the photos you open.",
    "code": {
-    "do": "chain",
+    "operation": "chain",
     "steps": [
      {
-      "do": "want",
+      "operation": "want",
       "data": "house-list"
      },
      {
-      "do": "keep",
+      "operation": "keep",
       "data": "house-list",
       "for": "90 days"
      },
      {
-      "do": "want",
+      "operation": "want",
       "data": "house-list/photos",
       "when": "opened"
      }
     ]
    },
-   "action": "Who may run what?"
+   "action": "Who may run what?",
+   "deep": "Sync plans are operations evaluated by the device's sync layer: want and keep with conditions (for, when). They are subject to the same rules as any other operation."
   },
   {
-   "title": "Rules name the dos.",
-   "text": "Reading dos, like find, walk, search and near, need read on the data, and that's all: once your device can read it, the engine may search it any way you like. Change dos are where rules get fine: every device checks every signed change against them, down to one path or one matching entry.",
+   "title": "Rules name the operations.",
+   "text": "Reading operations, like find, walk, search and near, need read on the data, and that's all: once your device can read it, the engine may search it any way you like. Change operations are where rules get fine: every device checks every signed change against them, down to one path or one matching entry.",
    "code": {
     "role": "kids",
     "data": "house-list",
-    "do": [
+    "operations": [
      "read",
      {
-      "do": "create",
+      "operation": "create",
       "at": "items"
      },
      {
-      "do": "update",
+      "operation": "update",
       "at": "items/*/done",
       "where": {
        "author": "$self"
@@ -175,18 +184,20 @@
      }
     ]
    },
-   "action": "Who asks whom?"
+   "action": "Who asks whom?",
+   "deep": "Reading operations need read on the data and nothing else, because a reader holds the plaintext. Change operations are checked by every peer, down to a path or matching entry."
   },
   {
    "title": "Peers sync. They never ask.",
-   "text": "A do runs only on your own device, over data you can read. No peer ever asks another peer a question about its data. Peers only carry what their rules allow, sealed. There's no client and no server, only peers. An always-on machine is just one more peer.",
+   "text": "An operation runs only on your own device, over data you can read. No peer ever asks another peer a question about its data. Peers only carry what their rules allow, sealed. There's no client and no server, only peers. An always-on machine is just one more peer.",
    "flow": [
     "your device",
     "your data",
-    "your do",
+    "your operation",
     "your answer"
    ],
-   "action": "Sharing an answer"
+   "action": "Sharing an answer",
+   "deep": "There is no query protocol between peers, only chunk sync. That removes trust in a remote answerer and inference attacks by repeated questions."
   },
   {
    "title": "Sharing an answer is sharing data.",
@@ -201,20 +212,22 @@
       "read"
      ]
     },
-    "updated_by": "do: count, on your device"
+    "updated_by": "count, on your device"
    },
-   "action": "Sum it up"
+   "action": "Sum it up",
+   "deep": "The answer is written as new data with its own rule for the asker, computed and signed by your own device. It is visible, revocable and expires like any other data."
   },
   {
    "title": "The engine, in short.",
    "list": [
-    "Every read, change, search and sync is a JSON do.",
+    "Every read, change, search and sync is a JSON operation.",
     "A change you do becomes CRDT ops that are signed and synced.",
-    "Dos chain: one do's answer feeds the next.",
-    "Dos run only on your device, over what you can read. Peers sync; they never ask.",
+    "Operations chain: one answer feeds the next.",
+    "Operations run only on your device, over what you can read. Peers sync; they never ask.",
     "Reading is allowed per piece of data; changes as finely as you like."
    ],
-   "action": ""
+   "action": "",
+   "deep": "JSON operations, local execution, plugins, rules per operation, and peer-to-peer only. Your data, your device, your answers."
   }
  ]
 }

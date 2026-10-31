@@ -8,7 +8,8 @@
     "Doc: any JSON that changes, built from CRDT data types that merge by themselves.",
     "Value: any file that never changes, named by its hash."
    ],
-   "action": "Open a Doc"
+   "action": "Open a Doc",
+   "deep": "Doc: a Loro document, a history of CRDT ops. Value: immutable bytes addressed by BLAKE3, fetched in verified ranges (iroh-blobs style)."
   },
   {
    "title": "A Doc looks like JSON.",
@@ -28,11 +29,12 @@
      }
     ]
    },
-   "action": "Look closer"
+   "action": "Look closer",
+   "deep": "CRDT containers: map, list, movable list, text, tree, counter. The JSON you see is a projection of their current state."
   },
   {
    "title": "But really, a Doc is a history.",
-   "text": "Every change is an {op} with its own ID: which device made it, and its counter on that device. Each op also says which ops it had already seen. The JSON is just what you get when you play the history.",
+   "text": "Every change is a {CRDT op} with its own ID: which device made it, and its counter on that device. Each op also says which ops it had already seen. The JSON is just what you get when you play the history.",
    "code": {
     "id": "alice:41",
     "deps": [
@@ -43,7 +45,8 @@
     "at": "items/milk/done",
     "value": true
    },
-   "action": "Open a Value"
+   "action": "Open a Value",
+   "deep": "Every CRDT op has an ID (peer, counter) and depends on the frontier it was made on. Replaying the ops in causal order gives the same state everywhere."
   },
   {
    "title": "A Value never changes.",
@@ -54,7 +57,8 @@
     "chunks": "1 MiB each",
     "type": "video/mp4"
    },
-   "action": "And its Doc"
+   "action": "And its Doc",
+   "deep": "BLAKE3 builds a hash tree over 1 KiB blocks, so any range can be verified against the root hash alone. Change one byte and the name changes."
   },
   {
    "title": "Every Value has its own Doc.",
@@ -66,12 +70,14 @@
     "notes": "Under the sink",
     "value_key": "sealed with this Doc's data key"
    },
-   "action": "Meet Alice and Bob"
+   "action": "Meet Alice and Bob",
+   "deep": "A Value's data key is stored inside its metadata Doc, under that Doc's own data key. Read on the Doc implies read on the Value. Taking read away protects only future versions of an immutable Value."
   },
   {
    "title": "Alice and Bob share a list.",
    "text": "Both of them have a full copy on their own devices. There's no master copy on a server. Each copy is complete, and each can be edited on its own.",
-   "action": "Go offline"
+   "action": "Go offline",
+   "deep": "Every replica is complete and primary; carriers hold secondary, sealed copies. This is the local-first model."
   },
   {
    "title": "Both edit offline.",
@@ -97,7 +103,8 @@
      }
     ]
    },
-   "action": "They meet"
+   "action": "They meet",
+   "deep": "Each device appends CRDT ops to its own counter sequence. Nothing coordinates while offline."
   },
   {
    "title": "They swap only what's missing.",
@@ -121,7 +128,8 @@
      ]
     }
    },
-   "action": "Merge"
+   "action": "Merge",
+   "deep": "A version vector maps each peer to the highest counter seen from it. Comparing two vectors yields exactly which ops each side lacks. Over the network we compare sealed chunks instead (story 4)."
   },
   {
    "title": "They end up the same.",
@@ -143,7 +151,8 @@
      }
     ]
    },
-   "action": "Same field, twice"
+   "action": "Same field, twice",
+   "deep": "CRDT merge is commutative, associative and idempotent: any order, any duplicates, same result. That is strong eventual consistency."
   },
   {
    "title": "Both rename the list.",
@@ -161,7 +170,8 @@
     },
     "winner": "same clock, higher device ID"
    },
-   "action": "Type together"
+   "action": "Type together",
+   "deep": "Maps resolve concurrent sets with last-writer-wins by Lamport timestamp, ties broken by peer ID. Deterministic, so every replica picks the same winner."
   },
   {
    "title": "Text merges letter by letter.",
@@ -172,7 +182,8 @@
     "bob": "Fix the tap today",
     "merged": "Fix the kitchen tap today"
    },
-   "action": "What history remembers"
+   "action": "What history remembers",
+   "deep": "Text is a sequence CRDT (Loro uses the Fugue algorithm), which avoids interleaving concurrent insertions character by character."
   },
   {
    "title": "History remembers what you deleted.",
@@ -184,7 +195,8 @@
      "delete “Call the landlord about ”"
     ]
    },
-   "action": "Let the past go"
+   "action": "Let the past go",
+   "deep": "A delete in a CRDT is a tombstone: the inserted characters stay in the history. Anyone given the history can reconstruct deleted text."
   },
   {
    "title": "Snapshots let the past go.",
@@ -200,7 +212,8 @@
     "snapshot for newcomers",
     "drop the old keys"
    ],
-   "action": "Now with rules"
+   "action": "Now with rules",
+   "deep": "Loro's shallow snapshot holds the state plus history after a cut. Stability means every writer's frontier includes the cut. Re-sealing and deleting old keys is our part, still open (D35)."
   },
   {
    "title": "Every op is checked on arrival.",
@@ -217,7 +230,8 @@
     ],
     "result": "merge"
    },
-   "action": "Bob loses update"
+   "action": "Bob loses update",
+   "deep": "Verification happens before merge: signature, signer registration, role membership and covering rule, evaluated against the rules known in the change's causal history."
   },
   {
    "title": "Bob loses update.",
@@ -234,7 +248,8 @@
      "result": "dropped: ending wins"
     }
    },
-   "action": "Seal it"
+   "action": "Seal it",
+   "deep": "A revoke is a certificate in the rule set, not a CRDT op. A CRDT op whose dependencies don't include the revoke counts as concurrent with it, and the ending wins."
   },
   {
    "title": "Sealed in chunks, not op by op.",
@@ -255,7 +270,8 @@
     "hash",
     "link to the chunks before"
    ],
-   "action": "What does a carrier see?"
+   "action": "What does a carrier see?",
+   "deep": "A chunk is Loro's exported update bytes for a range of changes: compressed, then sealed with the data key (AEAD). Its BLAKE3 hash names it; its signed header lists the previous chunk hashes and binds Loro's peer ID to the signer."
   },
   {
    "title": "What a carrier sees.",
@@ -268,7 +284,8 @@
     "author_proof": "…",
     "bytes": "e4 1a 9c 07 …"
    },
-   "action": "Sum it up"
+   "action": "Sum it up",
+   "deep": "Visible to a carrier: chunk hashes, sizes, links between chunks, and the proofs needed to decide whom to serve. Invisible: content, rules and keys."
   },
   {
    "title": "Inside data, in short.",
@@ -279,7 +296,8 @@
     "Copies swap only what's missing and always end the same.",
     "Every op is checked against the rules on arrival."
    ],
-   "action": ""
+   "action": "",
+   "deep": "Docs are CRDT histories; Values are hashed bytes. Both travel as sealed chunks. Every change is verified on arrival; history can be cut at stable points."
   }
  ]
 }

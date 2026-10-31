@@ -39,7 +39,9 @@ function render() {
   $('#table').innerHTML = s.table ? `<thead><tr>${s.table.head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>` +
     `<tbody>${s.table.rows.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody>` : '';
   $('#table').hidden = !s.table;
-  card.classList.toggle('has-code', Boolean(s.code || s.flow || s.table));
+  $('#deep').innerHTML = s.deep ? `<b>Under the hood</b>${esc(s.deep)}` : '';
+  $('#deep').hidden = !s.deep;
+  card.classList.toggle('has-code', Boolean(s.code || s.flow || s.table || s.deep));
   document.querySelectorAll('#stories button').forEach((b) => b.classList.toggle('on', b.dataset.story === story.id));
   const fresh = new Set(termsOf(s));
   const known = [...new Set(deck.slice(0, at + 1).flatMap(termsOf))];
