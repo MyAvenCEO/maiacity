@@ -25,7 +25,8 @@ import Lean.Data.Json
 - `target-bytes.json`: each target form, readable, and its CBOR in hex (`Aven.Core.TargetCbor`); and the CBOR of
   targets whose Doc or type id isn't 32 bytes, refused on read (`expected` null).
 - `ops.json`: `core/1`'s ops, each with its stored form and its id; a call as an envelope's body carries it, and one
-  whose params are out of order, refused on read (`expected` null); the type of types' id; and
+  whose params are out of order or whose op isn't 32 bytes, refused on read (`expected` null); the type of types'
+  id; bounds in CBOR, read back, and Values that are no bound, refused; and
   bounds on a parameter, whether a value is within one, and whether one is within another (`Aven.Core.Op`, A32).
 
 Values are shown in their readable form (`Aven.Core.Json`).
@@ -457,7 +458,21 @@ def unsortedCall : Call := { patchCall with params := patchCall.params.reverse }
 def calls : List Json :=
   [vector "a call to core/1's patch: a type and the fields it sets" patchCall.value.json
     (Json.mkObj [("cbor", hex (encode patchCall.value)), ("op", (CoreOp.patch.id blake3).text)]),
-   vector "a call with its params out of order: refused on read" (hex (encode unsortedCall.value)) Json.null]
+   vector "a call with its params out of order: refused on read" (hex (encode unsortedCall.value)) Json.null,
+   vector "a call whose op isn't 32 bytes: refused on read"
+     (hex (encode (Call.value { patchCall with op := ⟨List.replicate 31 1⟩ }))) Json.null]
+
+#guard Call.ofValue? patchCall.value == some patchCall
+#guard Call.ofValue? (Call.value { patchCall with op := ⟨List.replicate 31 1⟩ }) == none
+
+/-- Bounds in CBOR: each read back, and Values that are no bound, refused (`expected` null). -/
+def boundBytes : List Json :=
+  ([("any value", (none : Bound)), ("one of these", some [status, total]), ("none at all", some [])].map
+    fun (name, b) => vector s!"a bound: {name}" (hex (encode (Bound.value b))) (Bound.json b)) ++
+  ([("text", status), ("a map", .map [(k "a", status)])].map fun (name, v) =>
+    vector s!"no bound: {name}" (hex (encode v)) Json.null)
+
+#guard [status, .map [(k "a", status)]].all fun v => (Bound.ofValue? v).isNone
 
 def ops : List Json :=
   coreOps ++ calls ++
@@ -465,7 +480,8 @@ def ops : List Json :=
   (boundAllows.map fun (name, b, v, _) =>
     vector s!"does it allow? {name}" (Json.mkObj [("bound", b.json), ("value", v.json)]) (toJson (b.allows v))) ++
   (boundWithin.map fun (name, a, b, _) =>
-    vector s!"is it within? {name}" (Json.arr #[a.json, b.json]) (toJson (a.within b)))
+    vector s!"is it within? {name}" (Json.arr #[a.json, b.json]) (toJson (a.within b))) ++
+  boundBytes
 
 /-! ## Checks before writing -/
 
