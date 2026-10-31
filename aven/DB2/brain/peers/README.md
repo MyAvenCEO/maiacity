@@ -11,7 +11,7 @@ every Doc's sealed bytes move from peer to peer, with no peer above the others.
   any member, the links a peer keeps.
 - [The door](#the-door): which devices may connect at all, checked at every connection.
 - [The wire](#the-wire): `aven/db/1`, its frozen greeting, frames in Core's codec, wire versions, the frames' rules.
-- [The Doc host and the shelf](#the-doc-host-and-the-shelf): a Doc as a peer holds it, on avenDOCS' shelf; the docs
+- [The Doc host](#the-doc-host): a Doc as a peer holds it, on avenDOCS' shelf; the docs
   worker's place in the browser, and sifting a page that crashed it.
 - [Gossip per group](#gossip-per-group): group topics, the members' and the keyring's, and the `Live` messages on them.
 - [The fetch gate](#the-fetch-gate): the one way sealed values leave a peer: `prove`, `fetch` and `items`.
@@ -205,7 +205,7 @@ The keepers' frames' keys, and those of `missing` and `fetched`, are fixed in th
 `headsPages_heads`, `answer_pages`; `Aven.DB.WireCbor` — `frameOf_value`, `frameValue_canon`, `decodeAll_frame`,
 `push_tooLong`; wire 3's frames pending, after the move
 
-## The Doc host and the shelf
+## The Doc host
 
 A peer holds each Doc it reads in a host: avenDOCS's Doc, its bytes on avenDOCS' shelf in the peer's store, committed
 to by the device, and fed from gossip and fetches. In a browser the Doc runs in a docs worker, away from the keys,

@@ -59,7 +59,7 @@ reader checks for itself, and gives each Doc its types, its history, its branche
   query's shape and its lookup ([the query side](../ops/README.md#sealed-indexes-the-query-side)).
 - [avenSTORE](../store/README.md#blobs-and-refs): blobs named by hash, and refs moved by
   [compare-and-set](../store/README.md#compare-and-set).
-- [avenPEERS](../peers/README.md#the-doc-host-and-the-shelf): the Doc host, which runs Docs in the Peer and the docs
+- [avenPEERS](../peers/README.md#the-doc-host): the Doc host, which runs Docs in the Peer and the docs
   worker in the Peer-Light, and sifts a page that crashed that worker;
   [gossip per group](../peers/README.md#gossip-per-group),
   [sync by version](../peers/README.md#by-version-between-readers), [the fetch gate](../peers/README.md#the-fetch-gate),
@@ -483,7 +483,7 @@ place that can die alone.
   worker for all open Docs, away from the keys. When the worker crashes, it restarts and reopens the open Docs from the
   store, and an envelope is marked unfit only when it crashes the worker again alone, so a transient fault never marks
   a valid envelope.
-- **Sifting** a crashed page to find that envelope is [avenPEERS'](../peers/README.md#the-doc-host-and-the-shelf).
+- **Sifting** a crashed page to find that envelope is [avenPEERS'](../peers/README.md#the-doc-host).
 - **A crash mark is local.** `Doc::mark_unfit(name)` takes effect before or after the envelope is held. The mark is the
   docs worker's, never stored by avenDOCS and never travelling, and it is not the shared fit verdict. An envelope so
   marked never counts here, and is never forwarded or served.

@@ -87,12 +87,44 @@ Production moves from the first generation to this architecture in seven stages 
 | Stage | What | State |
 |---|---|---|
 | 1. The Doc foundation | avenCORE, avenID's keys, minimal avenCAPS, avenDOCS, avenOPS | merged, except avenOPS' engine (#1697, next) |
-| 2. Authority in Lean | vault authority, member caps, the tree's passkey records and migration snapshot, k of n | merged (#1717, #1718, #1735); k of n and owner changes in progress |
-| 3. Docs in the Peers | the Doc host, gossip per group, sync by version, the docs worker | native host built (#1727); the browser and the frames in progress |
-| 4. The tree as the first Doc | the register on Core's counting, its setup as the root Record, sign-in keys bound | in progress |
-| 5. Catch-up and keepers | arrivals, covers, bills, the fetch gate, catch-up by arrival number | native catch-up built (#1722); caps' half merged (#1734) |
+| 2. Authority in Lean | vault authority, member caps, the tree's passkey records and migration snapshot, k of n | merged (#1717, #1718, #1735); envelope authority (#1741) and caps on Core's op ids (#1744) in review; k of n by stored thresholds in progress |
+| 3. Docs in the Peers | the Doc host, gossip per group, sync by version, the docs worker | native host built (#1727); the docs API for it (#1742), the wire split (#1745) and the keyring Doc (#1743) in review; the browser and the frames in progress |
+| 4. The tree as the first Doc | the register on Core's counting, its setup as the root Record, sign-in keys bound | in progress: k of n (PR 1), then owner changes on `Closed` (A191) and the vault-name switch (A190) |
+| 5. Catch-up and keepers | arrivals, covers, bills, the fetch gate, catch-up by arrival number | native catch-up built (#1722); caps' half merged (#1734); the keeper's byte forms (#1739) and their Rust (#1740) in review |
 | 6. The chat as a fresh Doc | messages as Records, the screen on avenOPS queries, files behind the gate | not started |
 | 7. Rehearsal and cutover | production's snapshot replayed in the box, then release, deploy, delete `aven-gen1` | not started |
+
+## Open questions
+
+Every question the pages leave open, with who decides it. This list changes as they are settled: an answer becomes a
+row in [the log](DECISIONS.md), its page states it, and it leaves both the page and this list.
+
+| Question | Page | Who decides |
+|---|---|---|
+| Overlapping text edits in a merge: shown only, or offered as a choice? | [docs](docs/README.md#open-questions) | Samuel |
+| Who owns the release vault | [peers](peers/README.md#open-questions) | Samuel |
+| Who may publish a runtime once Docs run | [runtime](runtime/README.md#open-questions) | Samuel |
+| The actor kernel's own authority: click caps, who may spawn, a run budget | [actors](actors/README.md#open-questions) | Samuel, on avenACTORS' proposal |
+| An actor's compaction | [actors](actors/README.md#open-questions) | Samuel |
+| A vault-wide cap in a one-Doc reader's hands | [caps](caps/README.md#open-questions) | the architect, on avenCAPS' and avenDOCS' proposal |
+| Directory and vocabulary root types: built-in or user types | [docs](docs/README.md#open-questions) | the architect, with avenCAPS |
+| The index interface between avenDOCS and avenOPS | [docs](docs/README.md#open-questions) | the architect, on avenDOCS' and avenOPS' proposal |
+| The first lens catalogue's named conversions | [docs](docs/README.md#open-questions) | the architect, with avenDOCS at its step 3 |
+| The root Record's fields for a Doc's birth references | [docs](docs/README.md#open-questions) | the architect |
+| A slot-id put, a device's default query bound, and the granularity of deltas | [ops](ops/README.md#open-questions) | the architect, with avenOPS |
+| Whether `set_ref` requires its blob to exist | [store](store/README.md#open-questions) | the architect |
+| How much of a Peer-Light's OPFS cached chunks may take | [store](store/README.md#open-questions) | the architect, with avenOS |
+| Reconciling many Docs at a reconnect | [peers](peers/README.md#open-questions) | the architect |
+| Large values over iroh-blobs | [peers](peers/README.md#open-questions) | the architect, at stage 6 |
+| Which stage builds relays, address entries, bootstrap and signed presence | [peers](peers/README.md#open-questions) | the architect |
+| When a keeper that goes quiet counts as gone | [peers](peers/README.md#open-questions) | the architect |
+| Presence at scale | [peers](peers/README.md#open-questions) | the architect |
+| Which `users` label avenOS's own pages load a runtime as | [runtime](runtime/README.md#open-questions) | the architect, with the runtimes thread |
+| The word "kernel" | [actors](actors/README.md#open-questions) | the architect |
+| How an actor's address names its vault | [actors](actors/README.md#open-questions) | avenACTORS, with avenID |
+| Moving an actor's home | [actors](actors/README.md#open-questions) | avenACTORS, with avenPEERS |
+| Where the Service Worker lives once the safe has its own origin | [os](os/README.md#open-questions) | the architect |
+| Thumbnails and posters for files in the chat | [os](os/README.md#open-questions) | the architect |
 
 ## Every decision
 
@@ -102,6 +134,9 @@ decision's own text, reasons and Lean are its row there.
 
 | Decision | What | Page | Holds |
 |---|---|---|---|
+| [A200](DECISIONS.md) | No nulls in any format avenDB defines | [core](core/README.md) | yes |
+| [A199](DECISIONS.md) | A checkpoint's Loro export is `loro`; `state` stays its Records' hash | [docs](docs/README.md) | yes |
+| [A198](DECISIONS.md) | The readable form exactly as Core's vectors write it: `{"bytes"}`, `b3:`, `d:`, hex keys | [core](core/README.md) | yes |
 | [A197](DECISIONS.md) | Log tips retire with gen1; history is address and release entries | [peers](peers/README.md) | yes |
 | [A196](DECISIONS.md) | What each release carries of the runtimes | [runtime](runtime/README.md) | yes |
 | [A195](DECISIONS.md) | The keyring Doc is fetched by its id alone | [peers](peers/README.md) | yes |
@@ -115,17 +150,17 @@ decision's own text, reasons and Lean are its row there.
 | [A187](DECISIONS.md) | The keyring Doc travels unsealed | [id](id/README.md) | yes |
 | [A186](DECISIONS.md) | No wiping in production (Samuel, 30 Oct) | [peers](peers/README.md) | yes |
 | [A185](DECISIONS.md) | One owner for each of the pages' shared parts | this page | yes |
-| [A184](DECISIONS.md) | Built-in bodies carry no nulls | [core](core/README.md) | yes |
+| [A184](DECISIONS.md) | Built-in bodies carry no nulls | [core](core/README.md) | superseded by A200 |
 | [A183](DECISIONS.md) | A cap is its content: no nonce | [caps](caps/README.md) | yes |
 | [A182](DECISIONS.md) | A revocation discounts, as a split does: Core's counting takes avenCAPS' `revoked` | [caps](caps/README.md) | yes |
-| [A181](DECISIONS.md) | A checkpoint carries a `state`, sealed as a checkpoint | [docs](docs/README.md) | yes |
+| [A181](DECISIONS.md) | A checkpoint carries a `state`, sealed as a checkpoint | [docs](docs/README.md) | superseded by A199 in part |
 | [A180](DECISIONS.md) | Runtimes have no release of their own; they ship inside `@aven/os` and the avenPEER image | [runtime](runtime/README.md) | superseded by A196 in part |
 | [A179](DECISIONS.md) | Threads keep their page's Status table current | process | yes |
 | [A178](DECISIONS.md) | A device's vault: its key signs, the vault it serves owns | [id](id/README.md) | yes |
 | [A177](DECISIONS.md) | The seal names what it seals (`seals`), and a checkpoint is a checkpoint | [id](id/README.md) | yes |
 | [A176](DECISIONS.md) | One padding for every sealed byte: 256 B, 1 KiB, 4 KiB, then Padmé | [id](id/README.md) | yes |
 | [A175](DECISIONS.md) | Versions are avenCORE's | [core](core/README.md) | yes |
-| [A174](DECISIONS.md) | Bytes in JSON are `{"bytes": hex}`, as built | [core](core/README.md) | yes |
+| [A174](DECISIONS.md) | Bytes in JSON are `{"bytes": hex}`, as built | [core](core/README.md) | superseded by A198 in part |
 | [A173](DECISIONS.md) | The keeper's byte forms, as built (keep-bytes.json); caps' half of the gate | [caps](caps/README.md) | yes |
 | [A172](DECISIONS.md) | A pinned schema lives in its type Doc's version Record `{at, name, schema}` | [docs](docs/README.md) | yes |
 | [A171](DECISIONS.md) | Threads never add A-numbers or architecture prose | process | yes |
@@ -300,8 +335,7 @@ decision's own text, reasons and Lean are its row there.
 | [A2](DECISIONS.md) | One codec and signing rule | [core](core/README.md) | superseded by A174 in part |
 | [A1](DECISIONS.md) | One vocabulary | [glossary](GLOSSARY.md) | superseded by A175 in part |
 
-The package lists' decisions, below A1 in the log, that a later decision supersedes (every other one still holds, cited
-on its page):
+The package lists' decisions, below A1 in the log, that a later decision supersedes (every other one still holds, cited on its page):
 
 | Imported | Superseded by |
 |---|---|
