@@ -99,7 +99,7 @@ structure Kernel where
   read : Addr → Addr → Nat
   journal : Addr → List Entry
   /-- How often each id has been spawned. -/
-  spawned : String → Nat
+  spawned : Bytes → Nat
   /-- The asks still waiting for an answer, with their deadlines. -/
   pending : List (MsgId × Nat)
   now : Nat
@@ -195,11 +195,11 @@ def Def.admit (d : Def) : Bool :=
   | some mc => mc.wellFormed d.messages
 
 /-- The address a spawn of `id` gets: the next incarnation. -/
-def Kernel.next (k : Kernel) (id : String) : Addr := ⟨"local", id, k.spawned id + 1⟩
+def Kernel.next (k : Kernel) (id : Bytes) : Addr := ⟨localVault, id, k.spawned id + 1⟩
 
 /-- Spawning (section 7): the kernel's turn on a `spawn` ask. Only a definition from the repository that its
 admission check accepts (`Aven.Actor.Machines`), as a new incarnation of `id`. -/
-def Kernel.spawn (lib : Library) (k : Kernel) (id dn : String) : Kernel :=
+def Kernel.spawn (lib : Library) (k : Kernel) (id : Bytes) (dn : String) : Kernel :=
   match (lib dn).filter Def.admit with
   | none => k
   | some d =>
@@ -217,7 +217,7 @@ def Kernel.retire (k : Kernel) (a : Addr) : Kernel := { k with defs := upd k.def
 inductive Event where
   | handle (r s : Addr)
   | tick (t : Nat)
-  | spawn (id dn : String)
+  | spawn (id : Bytes) (dn : String)
   | retire (a : Addr)
   | send (e : Effect)
   deriving Repr, Inhabited
