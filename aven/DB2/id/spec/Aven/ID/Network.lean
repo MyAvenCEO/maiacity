@@ -204,9 +204,9 @@ MaiaCityGuardian's vault; the admin coop, owned by the vaults the genesis names;
 MaiaCityGuardian's vault, owned by its key. -/
 def Genesis.tree (g : Genesis) : Tree :=
   { keys := [g.passkey.spki, g.guardian.ed25519]
-    vaults := [⟨g.claimant, "", .person, [.key g.passkey.spki, .vault g.guardianVault]⟩,
-      ⟨g.coop, "", .coop, g.coopOwners.map .vault⟩, ⟨g.agent, "", .agent, [.vault g.coop]⟩,
-      ⟨g.guardianVault, "", .agent, [.key g.guardian.ed25519]⟩] }
+    vaults := [⟨g.claimant, "", .person, [.key g.passkey.spki, .vault g.guardianVault], 1⟩,
+      ⟨g.coop, "", .coop, g.coopOwners.map .vault, 1⟩, ⟨g.agent, "", .agent, [.vault g.coop], 1⟩,
+      ⟨g.guardianVault, "", .agent, [.key g.guardian.ed25519], 1⟩] }
 
 /-- What every tree statement's signer signs, as `Aven.ID.Approve` names a digest: the statement itself. -/
 def stmtDigest : String := "tree statement"
@@ -231,7 +231,7 @@ theorem Genesis.approvesF_own (g : Genesis) (d : String) (f : Nat) :
     g.tree.approvesF (fun _ => 1) d [⟨g.passkey.spki, d⟩] (f + 1) g.claimant = true := by
   unfold Tree.approvesF
   have e : g.tree.get? g.claimant =
-      some ⟨g.claimant, "", .person, [.key g.passkey.spki, .vault g.guardianVault]⟩ := by
+      some ⟨g.claimant, "", .person, [.key g.passkey.spki, .vault g.guardianVault], 1⟩ := by
     simp [Tree.get?, Genesis.tree]
   rw [e]
   simp only [decide_eq_true_eq]
@@ -250,7 +250,7 @@ theorem Genesis.approves_claimant (g : Genesis) (hc : g.claimant ∈ g.coopOwner
   by_cases e : g.claimant = g.coop
   · rw [← e]; exact key _
   · unfold Tree.approvesF
-    have ec : g.tree.get? g.coop = some ⟨g.coop, "", .coop, g.coopOwners.map .vault⟩ := by
+    have ec : g.tree.get? g.coop = some ⟨g.coop, "", .coop, g.coopOwners.map .vault, 1⟩ := by
       simp [Tree.get?, Genesis.tree, e]
     rw [ec]
     simp only [decide_eq_true_eq]

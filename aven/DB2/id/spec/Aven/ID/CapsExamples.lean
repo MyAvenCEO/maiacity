@@ -388,7 +388,7 @@ theorem approval_examples :
     approvalExamples.all (fun (_, sigs, k, v, d, b) => cast.approved k v d sigs == b) = true := by decide
 
 /-- The cast with the garden, a coop of Alice's and Bob's vaults that needs both. -/
-def garden : Vault := ⟨"garden", "The garden", .coop, [.vault "alice", .vault "bob"]⟩
+def garden : Vault := ⟨"garden", "The garden", .coop, [.vault "alice", .vault "bob"], 1⟩
 
 def gardenCast : Tree := { cast with vaults := cast.vaults ++ [garden] }
 
