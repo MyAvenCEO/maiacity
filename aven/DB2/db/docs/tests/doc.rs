@@ -496,7 +496,7 @@ impl aven_db_docs::Authorize for NotMallory {
         signer != self.0.as_slice()
     }
 
-    fn authorized(&self, _: &Genesis, _: &Envelope, _: &Body) -> bool {
+    fn authorized(&self, _: &Genesis, _: &Envelope, _: &Body, _: &aven_db_docs::Past<'_>) -> bool {
         true
     }
 }
@@ -701,4 +701,64 @@ fn an_envelope_the_judge_crashed_on_is_marked_unfit() {
     doc.mark_unfit(y1_name);
     assert!(!doc.counts(&y1_name) && !doc.snapshot().records.contains_key("t2"));
     assert_eq!(doc.feed(0).last(), Some(&Feed::Rebuilt));
+}
+
+/// Bob may write only on top of alice's grant: authorized when the grant is in the envelope's own past.
+struct GrantInPast {
+    alice: Vec<u8>,
+    grant: aven_core::Hash,
+}
+
+impl aven_db_docs::Authorize for GrantInPast {
+    fn reaches(&self, _: &Genesis, _: &[u8]) -> bool {
+        true
+    }
+
+    fn authorized(
+        &self,
+        _: &Genesis,
+        e: &Envelope,
+        _: &Body,
+        past: &aven_db_docs::Past<'_>,
+    ) -> bool {
+        e.signer == self.alice || past.contains(&self.grant)
+    }
+}
+
+#[test]
+fn authority_is_judged_on_the_envelopes_own_past_in_any_order() {
+    let (a, b) = (device("alice"), device("bob"));
+    let g = genesis(&a);
+    let mut da = open(&g);
+    let grant = commit(&mut da, &a, &[todo_put("grant", "bob may write")]);
+    let mut on_grant = open(&g);
+    on_grant.import(&grant, &Allow).unwrap();
+    let y1 = commit(&mut on_grant, &b, &[todo_put("t1", "on the grant")]);
+    let mut alone = open(&g);
+    let z1 = commit(
+        &mut alone,
+        &device("bob's other device"),
+        &[todo_put("t2", "without it")],
+    );
+    let caps = GrantInPast {
+        alice: a.public().to_vec(),
+        grant: Envelope::decode(&grant).unwrap().name(),
+    };
+    let mut snaps = vec![];
+    for order in [[&grant, &y1, &z1], [&z1, &y1, &grant]] {
+        let mut r = open(&g);
+        for x in order {
+            r.import(x, &caps).unwrap();
+        }
+        assert!(
+            r.counts(&Envelope::decode(&y1).unwrap().name()),
+            "on the grant: authorized"
+        );
+        assert!(
+            !r.counts(&Envelope::decode(&z1).unwrap().name()),
+            "without it in its past: not"
+        );
+        snaps.push(r.snapshot());
+    }
+    assert_eq!(snaps[0], snaps[1], "any order, one verdict");
 }

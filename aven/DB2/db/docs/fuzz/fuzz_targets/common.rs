@@ -16,7 +16,7 @@ impl Authorize for Allow {
         true
     }
 
-    fn authorized(&self, _: &Genesis, _: &Envelope, _: &Body) -> bool {
+    fn authorized(&self, _: &Genesis, _: &Envelope, _: &Body, _: &aven_db_docs::Past<'_>) -> bool {
         true
     }
 }

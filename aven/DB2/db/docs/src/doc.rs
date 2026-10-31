@@ -57,8 +57,35 @@ pub trait Authorize {
     /// stranger's envelope is refused here, before any of its bytes reaches Loro, and is never held.
     fn reaches(&self, genesis: &Genesis, signer: &[u8]) -> bool;
 
-    /// Step 7: the cap chain is valid, live and covering. This verdict can turn by a later revocation.
-    fn authorized(&self, genesis: &Genesis, e: &Envelope, body: &Body) -> bool;
+    /// Step 7: the cap chain is valid, live and covering, judged against the envelope's own past, so every reader
+    /// reaches the same verdict whatever order it imported in. This verdict can turn by a later revocation.
+    fn authorized(&self, genesis: &Genesis, e: &Envelope, body: &Body, past: &Past<'_>) -> bool;
+}
+
+/// An envelope's past as a reader holds it: every held envelope it reaches through `prev` and `deps`, in the order
+/// they were held, each with its name and body. Import holds the whole past before it asks (step 6), so every reader
+/// sees the same past. Whether those envelopes count is decided after: if any doesn't, neither does this one, so a
+/// verdict on the past only matters where all of it counts.
+pub struct Past<'a> {
+    items: Vec<(Hash, &'a Envelope, &'a Body)>,
+}
+
+impl<'a> Past<'a> {
+    pub fn iter(&self) -> impl Iterator<Item = (Hash, &'a Envelope, &'a Body)> + '_ {
+        self.items.iter().copied()
+    }
+
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
+    pub fn contains(&self, name: &Hash) -> bool {
+        self.items.iter().any(|x| x.0 == *name)
+    }
 }
 
 /// One Record at a version: its type Doc and its fields.
@@ -867,7 +894,10 @@ impl Doc {
             OpsVerdict::Disagree | OpsVerdict::UsedTwice => return Err(Refused::OpIds),
         }
         // 7. authority, by caps
-        let authorized = auth.authorized(&self.genesis, &e, &body);
+        let authorized = {
+            let past = self.past_of(e.prev.iter().chain(&e.deps));
+            auth.authorized(&self.genesis, &e, &body, &past)
+        };
         // held: from here on it is a proof, split or not
         let place = (e.writer, e.seq);
         let split = self.places.get(&place).is_some_and(|ns| !ns.is_empty());
@@ -881,6 +911,32 @@ impl Doc {
             fit: None,
         });
         Ok(Checked::Held(self.held.len() - 1, split))
+    }
+
+    /// The held envelopes reached from `parents`, in the order held.
+    fn past_of<'n>(&self, parents: impl Iterator<Item = &'n Hash>) -> Past<'_> {
+        let mut seen: BTreeSet<usize> = BTreeSet::new();
+        let mut todo: Vec<Hash> = parents.copied().collect();
+        while let Some(n) = todo.pop() {
+            if let Some(&i) = self.by_name.get(&n)
+                && seen.insert(i)
+            {
+                todo.extend(
+                    self.held[i]
+                        .e
+                        .prev
+                        .iter()
+                        .chain(&self.held[i].e.deps)
+                        .copied(),
+                );
+            }
+        }
+        Past {
+            items: seen
+                .into_iter()
+                .map(|i| (self.held[i].name, &self.held[i].e, &self.held[i].body))
+                .collect(),
+        }
     }
 
     /// Whether a held envelope's place in its log is half of a split.
@@ -1011,8 +1067,14 @@ impl Doc {
     /// live state; a revocation only narrows (`revocation_narrows`).
     pub fn reauthorize(&mut self, auth: &impl Authorize) {
         let mut turned = false;
-        for h in &mut self.held {
-            let a = h.authorized && auth.authorized(&self.genesis, &h.e, &h.body);
+        let verdicts: Vec<bool> = (0..self.held.len())
+            .map(|i| {
+                let h = &self.held[i];
+                let past = self.past_of(h.e.prev.iter().chain(&h.e.deps));
+                h.authorized && auth.authorized(&self.genesis, &h.e, &h.body, &past)
+            })
+            .collect();
+        for (h, a) in self.held.iter_mut().zip(verdicts) {
             turned |= a != h.authorized;
             h.authorized = a;
         }
