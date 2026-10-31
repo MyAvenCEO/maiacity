@@ -10,7 +10,7 @@
 use std::sync::Arc;
 
 use aven_db_core::timeline;
-use aven_db_core::wire::Decoder;
+use aven_db_core::wire::Frame;
 use iroh_relay::server::{Access, AccessControl, ClientRequest};
 use serde_json::json;
 
@@ -40,9 +40,7 @@ fn read(token: &str) -> Option<Statement> {
                 .and_then(|b| u8::from_str_radix(b, 16).ok())
         })
         .collect();
-    let mut line = bytes?;
-    line.push(b'\n');
-    let frame = Decoder::default().push(&line).ok()?.into_iter().next()?;
+    let frame = Frame::of_value(&aven_core::decode(&bytes?)?)?;
     Statement::of(&frame)?.ok()
 }
 

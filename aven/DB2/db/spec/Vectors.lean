@@ -11,9 +11,9 @@ import Aven.DB.Docs
 - `status.json`: a limit and status events; the state after each (`Aven.DB.Status`).
 - `presence.json`: connections joining and leaving; what every peer is told after each (`Aven.DB.Presence`).
 - `timeline.json`: a timeline line's parts; the line (`Aven.DB.Timeline`).
-- `wire.json`: chunks of a stream; the frames each completes, and the error that ends it (`Aven.DB.Wire`).
-- `frames.json`: the frames after the hello from wire version 2 (A29): each as its bytes on the stream, hex, and
-  streams that are refused, with what each gives (`Aven.DB.WireCbor`).
+- `wire.json`: greeting lines, and the greeting each is or none (`Aven.DB.Wire.Greeting`).
+- `frames.json`: streams as chunks of hex: the greeting read, the frames each chunk completes in Core's CBOR, and the
+  error that ends it (`Aven.DB.WireCbor`, A29). A line's bytes are hex in the readable form.
 - `upgrades.json`: a peer's wire version and the version a hello names; its answer (none, or `update` and its own
   version) and whether the hello's peer follows that refusal; and the gossip topic's name for a wire version and a
   network (`Aven.DB.Wire`, "The wire version").
@@ -136,45 +136,75 @@ def timeline : List Json :=
       ("fields", Json.arr (fields.map fun (k, v) => Json.arr #[k, v]).toArray)]) (line t peer event fields)
 
 /-- A long run of one character is written as `{"fill", "len"}`, so the file stays small. -/
-def chunkJson (c : String) : Json :=
-  match c.toList with
-  | x :: rest => if rest.length ≥ 100 ∧ rest.all (· == x) then
-      Json.mkObj [("fill", toString x), ("len", toJson c.length)] else c
-  | [] => c
-
 def WireError.name : WireError → String
   | .bad => "bad"
   | .tooLong => "tooLong"
 
+/-- A frame in the vectors' readable form: its Value's keys as JSON, a line's bytes in hex. -/
+def Frame.json : Frame → Json
+  | .presence ps => Json.mkObj [("frame", "presence"), ("peers", toJson ps)]
+  | .beat n => Json.mkObj [("frame", "beat"), ("n", toJson n)]
+  | .claim st => Json.mkObj [("frame", "claim"), ("statement", st)]
+  | .signIn st => Json.mkObj [("frame", "sign_in"), ("statement", st)]
+  | .invite st => Json.mkObj [("frame", "invite"), ("statement", st)]
+  | .withdraw st => Json.mkObj [("frame", "withdraw"), ("statement", st)]
+  | .join st => Json.mkObj [("frame", "join"), ("statement", st)]
+  | .network c t st => Json.mkObj [("frame", "network"), ("claimed", toJson c), ("tree", toJson t),
+      ("statements", toJson st)]
+  | .refused w => Json.mkObj [("frame", "refused"), ("why", w)]
+  | .heads hs more => Json.mkObj [("frame", "heads"), ("heads", toJson hs), ("more", toJson more)]
+  | .catchUp hs only => Json.mkObj [("frame", "catch_up"), ("have", toJson hs), ("only", toJson only)]
+  | .lines ls => Json.mkObj [("frame", "lines"), ("lines", toJson (ls.map Aven.Core.hex))]
+  | .kept fs => Json.mkObj [("frame", "kept"), ("files", toJson fs)]
+
+/-- The greetings: a line, and the greeting it is, or none. -/
 def wire : List Json :=
-  wireExamples.map fun (name, chunks, _) =>
-    let (frames, err) := decode chunks
-    vector name (Json.mkObj [("chunks", Json.arr (chunks.map chunkJson).toArray)])
-      (Json.mkObj [("frames", Json.arr (frames.map fun fs => Json.arr (fs.map Frame.json).toArray).toArray),
-        ("error", toJson (err.map WireError.name))])
+  let lines : List (String × String) := [
+    ("a hello", (Greeting.hello "alice-peer" wireVersion).json.compress),
+    ("an update", (Greeting.update wireVersion).json.compress),
+    ("a hello of version 1", (Greeting.hello "alice-peer" 1).json.compress),
+    ("a hello without its version, as version 0 sent it", "{\"frame\":\"hello\",\"peer\":\"a\"}"),
+    ("a hello with a key extra", "{\"frame\":\"hello\",\"peer\":\"a\",\"wire\":2,\"x\":1}"),
+    ("a hello whose version is text", "{\"frame\":\"hello\",\"peer\":\"a\",\"wire\":\"2\"}"),
+    ("an update without its version", "{\"frame\":\"update\"}"),
+    ("a frame, which is no greeting", "{\"frame\":\"beat\",\"n\":1}"),
+    ("not JSON", "nope")]
+  lines.map fun (name, line) =>
+    vector name (Json.mkObj [("line", line)]) ((Greeting.parse line).elim Json.null Greeting.json)
 
 open WireCbor in
+/-- Streams as hex: the greeting read, the frames each chunk completes, and the error that ends it. -/
 def frames : List Json :=
-  let result (bs : List UInt8) := let (fs, err) := WireCbor.decode [bs]
-    Json.mkObj [("frames", Json.arr (fs.flatten.map Frame.json).toArray), ("error", toJson (err.map WireError.name))]
-  (frameExamples.filterMap fun f => (frameBytes f).map fun bs =>
-    vector s!"a frame: {(Frame.json f).compress}" (Json.mkObj [("bytes", Aven.Core.hex bs)]) (result bs)) ++
-  [("a key missing", framed (obj [("frame", txt "heads"), ("heads", .array [])])),
-   ("a key extra", framed (obj [("frame", txt "beat"), ("n", .uint 1), ("extra", .null)])),
-   ("a key of the wrong kind", framed (obj [("frame", txt "beat"), ("n", txt "1")])),
-   ("a frame no peer sends", framed (obj [("frame", txt "shout")])),
-   ("a number longer than it needs", Aven.Core.be 4 4 ++ [0xA1, 0x61, 0x6E, 0x18]),
-   ("a length of none", [0, 0, 0, 0]),
-   ("a length over the limit", Aven.Core.be 4 (maxFrame + 1)),
-   ("all frames in one stream", bytesOf frameExamples)].map fun (name, bs) =>
-    vector name (Json.mkObj [("bytes", Aven.Core.hex bs)]) (result bs)
+  let hello := greetingBytes (.hello "alice-peer" wireVersion)
+  let result (chunks : List (List UInt8)) := let (g, fs, err) := WireCbor.read chunks
+    Json.mkObj [("greeting", g.elim Json.null Greeting.json),
+      ("frames", Json.arr (fs.map fun f => Json.arr (f.map Frame.json).toArray).toArray),
+      ("error", toJson (err.map WireError.name))]
+  let one (name : String) (chunks : List (List UInt8)) :=
+    vector name (Json.mkObj [("chunks", toJson (chunks.map Aven.Core.hex))]) (result chunks)
+  (frameExamples.map fun f => one s!"a frame: {(Frame.json f).compress}" [hello ++ frameBytes f]) ++
+  [one "every frame, the greeting in a chunk of its own" [hello, bytesOf frameExamples],
+   one "cut in the greeting and in a frame" [hello.take 9, hello.drop 9 ++ (bytesOf (frameExamples.take 2)).take 5,
+     (bytesOf (frameExamples.take 2)).drop 5],
+   one "an update, and nothing after it" [greetingBytes (.update wireVersion)],
+   one "version 0's hello, without its version" [Aven.Core.text "{\"frame\":\"hello\",\"peer\":\"a\"}\n"],
+   one "a greeting past the limit, without its newline" [List.replicate (maxFrame + 1) 0x61],
+   one "a key missing" [hello ++ framed (obj [("frame", txt "heads"), ("heads", .array [])])],
+   one "a key extra" [hello ++ framed (obj [("n", .uint 1), ("extra", .null), ("frame", txt "beat")])],
+   one "a key of the wrong kind" [hello ++ framed (obj [("n", txt "1"), ("frame", txt "beat")])],
+   one "a line as text, not bytes" [hello ++ framed (obj [("frame", txt "lines"), ("lines", .array [txt "x"])])],
+   one "a frame no peer sends" [hello ++ framed (obj [("frame", txt "shout")])],
+   one "a number longer than it needs" [hello ++ Aven.Core.be 4 4 ++ [0xA1, 0x61, 0x6E, 0x18]],
+   one "a length of none" [hello ++ [0, 0, 0, 0]],
+   one "a length over the limit" [hello ++ Aven.Core.be 4 (maxFrame + 1)],
+   one "a frame half in" [hello ++ (frameBytes (.beat 7)).take 6]]
 
 def upgrades : List Json :=
   (meetExamples.map fun (name, mine, theirs) =>
     vector name (Json.mkObj [("mine", toJson mine), ("theirs", toJson theirs)])
       (Json.mkObj [("answer", match meet mine theirs with | some f => f.json | none => Json.null),
         ("follows", toJson (follows theirs mine))])) ++
-  ([(wireVersion, "aven"), (wireVersion, "maia.city"), (2, "aven")].map fun (w, n) =>
+  ([(wireVersion, "aven"), (wireVersion, "maia.city"), (3, "aven")].map fun (w, n) =>
     vector s!"the topic of {n} on wire {w}" (Json.mkObj [("wire", toJson w), ("network", toJson n)])
       (Json.mkObj [("topic", toJson (topicName w n))]))
 
