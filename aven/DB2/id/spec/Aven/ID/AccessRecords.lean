@@ -29,112 +29,7 @@ namespace Aven.ID
 
 open Aven.Core
 
-/-- A key as the codec stores it. -/
-def recKey (s : String) : Bytes := s.toUTF8.toList
-
-/-- Map keys in the codec's order: shorter first, then by their bytes. -/
-def keyBefore (a b : Bytes) : Bool :=
-  a.length < b.length || (a.length == b.length && decide (a.map (·.toNat) < b.map (·.toNat)))
-
-/-- An entry put where the codec's order puts it. -/
-def insertKey (e : Bytes × Value) : List (Bytes × Value) → List (Bytes × Value)
-  | [] => [e]
-  | x :: xs => if keyBefore e.1 x.1 then e :: x :: xs else x :: insertKey e xs
-
-/-- A body with its signatures beside it, under `sigs`. -/
-def withSigs (body : Value) (sigs : List Core.Sig) : Value :=
-  match body with
-  | .map kvs => .map (insertKey (recKey "sigs", .array (sigs.map Core.Sig.value)) kvs)
-  | v => v
-
-/-- A field of a map, by its key. -/
-def recField (kvs : List (Bytes × Value)) (k : String) : Option Value := (kvs.find? (·.1 == recKey k)).map (·.2)
-
-/-- A map's fields and its signatures, apart. -/
-def splitSigs : Value → Option (List (Bytes × Value) × List Core.Sig)
-  | .map kvs => do
-    let .array ss ← recField kvs "sigs" | none
-    let sigs ← sigsOf? ss
-    guard (sigsWithin sigs)
-    some (kvs.filter (·.1 != recKey "sigs"), sigs)
-  | _ => none
-
-def recText? : Value → Option String
-  | .text b => String.fromUTF8? ⟨b.toArray⟩
-  | _ => none
-
-def recNat? : Value → Option Nat
-  | .uint n => some n
-  | _ => none
-
-def recOptNat? : Value → Option (Option Nat)
-  | .null => some none
-  | .uint n => some (some n)
-  | _ => none
-
-def recOptText? : Value → Option (Option String)
-  | .null => some none
-  | v => (recText? v).map some
-
-/-- Bytes of exactly this length. -/
-def recBytes? (n : Nat) : Value → Option Bytes
-  | .bytes b => if b.length = n then some b else none
-  | _ => none
-
 /-! ## A cap Record -/
-
-def Line.ofValue? : Value → Option Line
-  | .map kvs => do
-    let op ← recBytes? 32 (← recField kvs "op")
-    let doc ← Target.ofValue? (← recField kvs "doc")
-    let .map ps ← recField kvs "params" | none
-    let params ← ps.mapM fun (p, b) => do some (p, ← Bound.ofValue? b)
-    some { op := ⟨op⟩, doc, params }
-  | _ => none
-
-def Holder.ofValue? : Value → Option Holder
-  | .text b => if b = recKey "public" then some .«public» else none
-  | .map [(k, v)] =>
-    if k = recKey "vault" then (recText? v).map .vault
-    else if k = recKey "group" then (recBytes? 32 v).map fun h => .group ⟨⟨h⟩⟩
-    else none
-  | _ => none
-
-def Branches.ofValue? : Value → Option Branches
-  | .text b =>
-    if b = recKey "any" then some .any else if b = recKey "main" then some .main
-    else if b = recKey "proposals" then some .proposals else none
-  | .map [(k, v)] => if k = recKey "branch" then (recText? v).map .one else none
-  | _ => none
-
-def History.ofValue? : Value → Option History
-  | .text b => if b = recKey "all" then some .all else if b = recKey "from-now" then some .fromNow else none
-  | _ => none
-
-def Conditions.ofValue? : Value → Option Conditions
-  | .map kvs => do
-    let own ← match ← recField kvs "own" with | .bool b => some b | _ => none
-    some { notBefore := ← recNat? (← recField kvs "notBefore"), expires := ← recOptNat? (← recField kvs "expires"),
-           approve := ← recNat? (← recField kvs "approve"), uses := ← recOptNat? (← recField kvs "uses"), own,
-           branches := ← Branches.ofValue? (← recField kvs "branches"),
-           history := ← History.ofValue? (← recField kvs "history") }
-  | _ => none
-
-def CapForm.ofValue? (v : Value) : Option CapForm := do
-  let f ← recText? v
-  if f = "grant" then some .grant else if f = "attenuate" then some .attenuate else none
-
-/-- A cap read from its body's fields. Its id is its digest; who signed it and who approved it travel beside it, as a
-Record's signatures. -/
-def Cap.ofFields? (kvs : List (Bytes × Value)) : Option Cap := do
-  let .array ls ← recField kvs "grant" | none
-  let c : Cap := { id := "", issuer := ← recText? (← recField kvs "issuer"),
-                   holder := ← Holder.ofValue? (← recField kvs "holder"),
-                   parent := ← recOptText? (← recField kvs "parent"), form := ← CapForm.ofValue? (← recField kvs "form"),
-                   grant := ← ls.mapM Line.ofValue?, role := ← recOptText? (← recField kvs "role"),
-                   share := ← recNat? (← recField kvs "share"),
-                   conditions := ← Conditions.ofValue? (← recField kvs "conditions"), signer := "" }
-  some { c with id := (c.digest blake3).text }
 
 /-- A cap Record: a cap and its signatures. -/
 structure CapRecord where
@@ -145,7 +40,7 @@ def CapRecord.value (r : CapRecord) : Value := withSigs r.cap.body r.sigs
 
 def CapRecord.ofValue? (v : Value) : Option CapRecord := do
   let (kvs, sigs) ← splitSigs v
-  let r : CapRecord := ⟨← Cap.ofFields? kvs, sigs⟩
+  let r : CapRecord := ⟨← Cap.ofBody? (.map kvs), sigs⟩
   if r.value = v then some r else none
 
 /-- What `CapRecord.ofValue?` reads is what `CapRecord.value` writes: a cap Record has one form. -/

@@ -38,5 +38,8 @@ fn records_fit_as_the_model_says() {
         };
         assert_eq!(got, v["expected"], "{}", v["name"]);
     }
-    assert!(fit >= 10 && unfit >= 10 && foreign >= 2, "{fit} fit, {unfit} unfit, {foreign} foreign");
+    assert!(
+        fit >= 10 && unfit >= 10 && foreign >= 2,
+        "{fit} fit, {unfit} unfit, {foreign} foreign"
+    );
 }

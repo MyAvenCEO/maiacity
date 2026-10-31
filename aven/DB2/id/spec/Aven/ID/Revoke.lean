@@ -73,9 +73,8 @@ private def hash32? : Value → Option Hash
   | .bytes b => if b.length = 32 then some ⟨b⟩ else none
   | _ => none
 
-/-- A revocation read back from its Value, its id the BLAKE3 name of that Value; anything but the one form
-`Revocation.value` writes is none. -/
-def Revocation.ofValue? (v : Value) : Option Revocation := do
+/-- A revocation's Value read field by field; `Revocation.ofValue?` keeps it only in its one form. -/
+def Revocation.parse? (v : Value) : Option Revocation := do
   let .map [(_, cap), (_, kept), (_, envelope)] := v | none
   let kept ← match kept with
     | .null => some none
@@ -85,19 +84,21 @@ def Revocation.ofValue? (v : Value) : Option Revocation := do
     | .null => some none
     | x => (hash32? x).map some
   let r : Revocation := { id := ⟨[]⟩, cap := ← hash32? cap, envelope, kept }
-  let r := { r with id := r.digest blake3 }
+  some { r with id := r.digest blake3 }
+
+/-- A revocation read back from its Value, its id the BLAKE3 name of that Value; anything but the one form
+`Revocation.value` writes is none. -/
+def Revocation.ofValue? (v : Value) : Option Revocation := do
+  let r ← Revocation.parse? v
   if r.value = v then some r else none
 
 /-- What `Revocation.ofValue?` reads is what `Revocation.value` writes. -/
 theorem Revocation.ofValue?_value {v : Value} {r : Revocation} (h : Revocation.ofValue? v = some r) :
     r.value = v := by
-  unfold Revocation.ofValue? at h
+  simp only [Revocation.ofValue?, Option.bind_eq_bind, Option.bind_eq_some_iff] at h
+  obtain ⟨_, _, h⟩ := h
   split at h
-  · simp only [Option.bind_eq_bind, Option.bind_eq_some_iff] at h
-    obtain ⟨_, _, _, _, _, _, h⟩ := h
-    split at h
-    · cases h; assumption
-    · cases h
+  · cases h; assumption
   · cases h
 
 section
