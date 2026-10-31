@@ -362,9 +362,13 @@ and the decisions, not the parsers.
   reducer as data, one handler per message with its moves (`from → to`), its updates (`set`, `merge`, `append`,
   `remove` at a path of fields and indexes) and its sends (`tell`, `ask`, `reply`). A runtime is a pure
   `run(part, input)` the kernel calls, so it names nothing of the actors': a message is a sender's address, a name, a
-  payload and an ask's id, all Values, and a step gives back the new state, its sends as data and the phase it moved
-  to. `Aven.Actor` maps them to its effects and joins the step to its kernel and its machines; actors build on
-  runtimes, never the reverse. `step` is total and deterministic; under the contract (`stateRuntime`) the part and
+  payload and an ask's id, all Values, and a step gives back the writes it commits, its sends as data and the phase
+  it moved to. The writes are K8's steps (A37), never a whole new state: `put`, `patch`, `remove` and an `edit` that
+  pushes onto a list, each at a path, which are the turn's commit and what the caps check (`Write.footprint`). The
+  reducer's `set`, `merge`, `append` and `remove` lower to them, and `lower_apply`, `lowerAll_apply` and `step_writes`
+  prove the writes, applied in order, make exactly the state the updates make. `Aven.Actor` applies the writes, maps
+  the sends to its effects and joins the step to its kernel and its machines; actors build on runtimes, never the
+  reverse. `step` is total and deterministic; under the contract (`stateRuntime`) the part and
   the input are Values, the fuel a count of the part's work. Theorems:
   - `step_moves`: a step that answers took one of the part's moves for that message and phase; otherwise it refuses;
   - `step_allowed`: under a machine's transitions the part `fits`, the move is one they allow;
