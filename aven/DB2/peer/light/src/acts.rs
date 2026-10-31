@@ -101,3 +101,37 @@ pub fn one_time_public(secret: &str) -> Result<String, JsError> {
 pub fn sign_join(secret: &str, text: &str) -> Result<String, JsError> {
     id::sign_join(secret, text).ok_or_else(|| JsError::new("a one-time secret is 64 hex digits"))
 }
+
+/// The PRF step's input for an owner at an epoch (`Aven.ID.KeyFormats.prfInput`), hex, for the page's WebAuthn
+/// `prf.eval.first`. The browser hashes it into the authenticator's salt itself.
+#[wasm_bindgen(js_name = prfInput)]
+pub fn prf_input(epoch: u32) -> String {
+    hex(&id::prf_input(epoch.into()))
+}
+
+fn hex(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+/// What a PRF output derives: the owner key and the seal key, and their public halves (the owner key's Value's bytes,
+/// and X-Wing's), hex. `output` is wiped before this returns, whatever it returns.
+pub struct Derived {
+    pub owner: String,
+    pub seal: String,
+    pub owner_key: id::HybridKey,
+    pub seal_key: id::SealKey,
+}
+
+pub fn prf_derive(output: &mut [u8]) -> Result<Derived, String> {
+    use zeroize::Zeroize;
+    let taken = <&mut [u8; 32]>::try_from(&mut *output).map(id::Secret::take);
+    output.zeroize();
+    let prf = id::PrfOutput::new(taken.map_err(|_| "a PRF output is 32 bytes".to_string())?);
+    let (owner_key, seal_key) = (prf.owner_key(), prf.seal_key());
+    Ok(Derived {
+        owner: hex(&owner_key.public().to_bytes()),
+        seal: hex(&seal_key.public().to_bytes()),
+        owner_key,
+        seal_key,
+    })
+}

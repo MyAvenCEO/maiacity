@@ -13,7 +13,10 @@ its writer, then sealed with the `segment` kind (`Aven.ID.Seal`). Its body is
   segment's first;
 - `prev`: the name of the writer's segment before it in this log, or null;
 - `envelopes`: its envelopes, each the encoding of Core's `Envelope.value`, the same signed bytes, so their names
-  stay. Their names are what a keeper drops loose envelopes by; a segment lists no `covers` of its own.
+  stay. A keeper, which sees only sealed bytes, never reads them: a segment's upload names the loose items it covers
+  by their sealed hashes, beside the sealed segment and never inside it, and that is the uploader's own word. The
+  keeper takes only that device off those items' uploaders, and drops an item once none is left (A44,
+  `Aven.Peer.Keeper`).
 
 A segment closes at 256 envelopes or 1 MiB (`Aven.DB.Docs.Limits`), at a rotation of the Doc's epoch (a segment holds
 one epoch), or when its writer goes quiet. One hybrid signature covers it.

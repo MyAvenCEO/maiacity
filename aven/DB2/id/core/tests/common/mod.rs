@@ -213,7 +213,14 @@ pub fn envelope(v: &Value) -> aven_core::Envelope {
         prev: v["prev"].as_str().map(|_| hash(&v["prev"])),
         deps: v["deps"].as_array().unwrap().iter().map(hash).collect(),
         body: core_value(&v["body"]),
-        signer: unhex(v["signer"].as_str().unwrap()),
-        sig: unhex(v["sig"].as_str().unwrap()),
+        sigs: v["sigs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| aven_core::Sig {
+                signer: unhex(x["signer"].as_str().unwrap()),
+                sig: unhex(x["sig"].as_str().unwrap()),
+            })
+            .collect(),
     }
 }

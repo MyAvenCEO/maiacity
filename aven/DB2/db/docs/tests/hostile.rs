@@ -1,4 +1,4 @@
-//! The fuzz target's inputs on stable (`db/docs/fuzz`, `cargo +nightly fuzz run import`): whatever bytes arrive, a Doc
+//! The fuzz target's inputs on stable (`db/docs/fuzz`, `bun run box sh sandbox/fuzz.sh`): whatever bytes arrive, a Doc
 //! refuses or takes them, never panics, and its live state is only ever what counts. Random bytes as an envelope, as
 //! the Loro update inside an envelope a member signed (so they reach Loro), as a sealed segment; and real Loro updates
 //! with bits flipped, which reach deeper into Loro's decoding than random bytes do.
@@ -38,8 +38,7 @@ fn around(
         prev: None,
         deps: vec![],
         body: body.value(),
-        signer: vec![],
-        sig: vec![],
+        sigs: vec![],
     };
     d.sign_envelope(&mut e);
     e.encode()

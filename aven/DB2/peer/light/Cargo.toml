@@ -14,7 +14,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 aven-peer = { path = "../native", default-features = false }
 aven-core = { path = "../../core" }
-aven-db-core = { path = "../../db/core" }
+aven-gen1 = { path = "../../gen1" }
 aven-db-store = { path = "../../store" }
 aven-id = { path = "../../id/core" }
 # the file registry, aven/runtimes': what a file is by its bytes (at /runtimes in the box and the Peer's image)
@@ -25,3 +25,4 @@ js-sys = "=0.3.107"
 serde_json = "=1.0.154"
 wasm-bindgen = "=0.2.130"
 wasm-bindgen-futures = "=0.4.80"
+zeroize = "=1.9.1"

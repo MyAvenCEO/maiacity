@@ -10,9 +10,9 @@ heard from in the last `ttl` milliseconds that have not said goodbye: each peer 
 milliseconds. The chat lives in memory only: no store, no history (milestone 4).
 
 As `Aven.ID.Sign` does, the model takes the signature as sound: it verifies for exactly the key and bytes signed, and
-with no other key. Ed25519 is mechanics; aven-db-core's tests sign for real.
+with no other key. Ed25519 is mechanics; aven-gen1's tests sign for real.
 
-`aven-db-core`'s `chat` module implements this, and its tests replay the traces in `vectors/chat.json`.
+`aven-gen1`'s `chat` module implements this, and its tests replay the traces in `vectors/chat.json`.
 -/
 
 namespace Aven.DB.Chat

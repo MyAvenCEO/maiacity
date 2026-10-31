@@ -32,39 +32,52 @@ def maxSignerBytes : Nat := 4096
 /-- The longest signature: room for a hybrid one (Ed25519 with ML-DSA-65's 3309 bytes) or a passkey's assertion. -/
 def maxSigBytes : Nat := 16384
 
+/-- The most signatures beside one name: the writer's and approvals, k of a vault's owners. -/
+def maxSigs : Nat := 16
+
 private def k (s : String) : Bytes := s.toUTF8.toList
 
 /-! ## Envelopes -/
 
-def Envelope.withinLimits (e : Envelope) : Bool :=
-  decide (e.deps.length ≤ maxDeps) && decide (e.branch.length ≤ maxBranchBytes) &&
-    decide (e.signer.length ≤ maxSignerBytes) && decide (e.sig.length ≤ maxSigBytes)
+/-- A set of signatures within the limits, in its one form: at most `maxSigs`, each signer and signature within its
+limit, sorted by signer, one each (`sigsOk`). -/
+def sigsWithin (xs : List Sig) : Bool :=
+  decide (xs.length ≤ maxSigs) && sigsOk xs &&
+    xs.all fun x => decide (x.signer.length ≤ maxSignerBytes) && decide (x.sig.length ≤ maxSigBytes)
 
-/-- A hash from its CBOR: a byte string of 32 bytes. -/
-def hashOf? : Value → Option Hash
-  | .bytes b => if b.length = 32 then some ⟨b⟩ else none
-  | _ => none
+def Envelope.withinLimits (e : Envelope) : Bool :=
+  decide (e.deps.length ≤ maxDeps) && decide (e.branch.length ≤ maxBranchBytes) && sigsWithin e.sigs
 
 def optHashOf? : Value → Option (Option Hash)
   | .null => some none
-  | v => (hashOf? v).map some
+  | v => (Hash.ofValue? v).map some
 
 def hashesOf? : List Value → Option (List Hash)
   | [] => some []
-  | v :: vs => do let h ← hashOf? v; let hs ← hashesOf? vs; some (h :: hs)
+  | v :: vs => do let h ← Hash.ofValue? v; let hs ← hashesOf? vs; some (h :: hs)
+
+/-- A signature from `Sig.value`'s shape. -/
+def sigOf? : Value → Option Sig
+  | .map [(k₁, .bytes sig), (k₂, .bytes signer)] => if k₁ = k "sig" ∧ k₂ = k "signer" then some ⟨signer, sig⟩ else none
+  | _ => none
+
+def sigsOf? : List Value → Option (List Sig)
+  | [] => some []
+  | v :: vs => do let x ← sigOf? v; let xs ← sigsOf? vs; some (x :: xs)
 
 def envelopeKeys : List Bytes :=
-  [k "doc", k "seq", k "sig", k "body", k "deps", k "prev", k "branch", k "signer", k "writer"]
+  [k "doc", k "seq", k "body", k "deps", k "prev", k "sigs", k "branch", k "writer"]
 
-/-- An envelope read back from `Envelope.value`'s shape: its nine keys in the codec's order, each in its form. -/
+/-- An envelope read back from `Envelope.value`'s shape: its eight keys in the codec's order, each in its form. -/
 def Envelope.ofValue? : Value → Option Envelope
-  | .map [(k₁, .bytes d), (k₂, .uint seq), (k₃, .bytes sig), (k₄, body), (k₅, .array deps), (k₆, prev),
-      (k₇, .text branch), (k₈, .bytes signer), (k₉, .uint writer)] =>
-    if [k₁, k₂, k₃, k₄, k₅, k₆, k₇, k₈, k₉] = envelopeKeys then do
-      let doc ← hashOf? (.bytes d)
+  | .map [(k₁, .bytes d), (k₂, .uint seq), (k₃, body), (k₄, .array deps), (k₅, prev), (k₆, .array sigs),
+      (k₇, .text branch), (k₈, .uint writer)] =>
+    if [k₁, k₂, k₃, k₄, k₅, k₆, k₇, k₈] = envelopeKeys then do
+      let doc ← Hash.ofValue? (.bytes d)
       let prev ← optHashOf? prev
       let deps ← hashesOf? deps
-      some { doc := ⟨doc⟩, branch, writer, seq, prev, deps, body, signer, sig }
+      let sigs ← sigsOf? sigs
+      some { doc := ⟨doc⟩, branch, writer, seq, prev, deps, body, sigs }
     else none
   | _ => none
 
@@ -77,42 +90,50 @@ def Envelope.accept (bs : Bytes) : Option Envelope :=
     | none => none
   else none
 
-theorem hashOf?_value {v : Value} {h : Hash} (e : hashOf? v = some h) : h.value = v := by
-  unfold hashOf? at e
-  split at e
-  · split at e
-    · cases e; rfl
-    · cases e
-  · cases e
-
 theorem optHashOf?_value {v : Value} {h : Option Hash} (e : optHashOf? v = some h) : optHash h = v := by
   unfold optHashOf? at e
   split at e
   · cases e; rfl
-  · cases hv : hashOf? v with
+  · cases hv : Hash.ofValue? v with
     | none => simp [hv] at e
-    | some x => simp [hv] at e; subst e; exact hashOf?_value hv
+    | some x => simp [hv] at e; subst e; exact Hash.ofValue?_value hv
 
 theorem hashesOf?_value : ∀ {vs : List Value} {hs : List Hash}, hashesOf? vs = some hs → hs.map Hash.value = vs
   | [], hs, e => by simp [hashesOf?] at e; subst e; rfl
   | v :: vs, hs, e => by
     simp only [hashesOf?, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.some.injEq] at e
     obtain ⟨h, hh, t, ht, rfl⟩ := e
-    simp [hashOf?_value hh, hashesOf?_value ht]
+    simp [Hash.ofValue?_value hh, hashesOf?_value ht]
+
+theorem sigOf?_value {v : Value} {x : Sig} (e : sigOf? v = some x) : x.value = v := by
+  unfold sigOf? at e
+  split at e
+  · split at e
+    · rename_i h
+      obtain ⟨rfl, rfl⟩ := h
+      cases e; rfl
+    · cases e
+  · cases e
+
+theorem sigsOf?_value : ∀ {vs : List Value} {xs : List Sig}, sigsOf? vs = some xs → xs.map Sig.value = vs
+  | [], xs, e => by simp [sigsOf?] at e; subst e; rfl
+  | v :: vs, xs, e => by
+    simp only [sigsOf?, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.some.injEq] at e
+    obtain ⟨x, hx, t, ht, rfl⟩ := e
+    simp [sigOf?_value hx, sigsOf?_value ht]
 
 /-- What `ofValue?` reads is what `value` writes. -/
 theorem Envelope.ofValue?_value {v : Value} {e : Envelope} (h : Envelope.ofValue? v = some e) : e.value = v := by
   unfold Envelope.ofValue? at h
   split at h
-  · rename_i k₁ d seq sig body k₅ deps k₆ prev k₇ branch k₈ signer k₉ writer k₂ k₃ k₄
-    split at h
+  · split at h
     · rename_i hk
       simp only [envelopeKeys, List.cons.injEq, and_true] at hk
-      obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hk
+      obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hk
       simp only [Option.bind_eq_bind, Option.bind_eq_some_iff, Option.some.injEq] at h
-      obtain ⟨doc, hd, p, hp, ds, hds, rfl⟩ := h
+      obtain ⟨doc, hd, p, hp, ds, hds, xs, hxs, rfl⟩ := h
       simp only [Envelope.value]
-      rw [hashOf?_value (v := .bytes d) hd |>.symm, optHashOf?_value hp, hashesOf?_value hds]
+      rw [← Hash.ofValue?_value hd, optHashOf?_value hp, hashesOf?_value hds, sigsOf?_value hxs]
       rfl
     · cases h
   · cases h
@@ -147,16 +168,14 @@ theorem Envelope.accept_encode {bs : Bytes} {e : Envelope} (h : Envelope.accept 
 
 /-! ## Signed things -/
 
-def Signed.withinLimits (s : Signed) : Bool :=
-  decide (s.label.length ≤ maxLabelBytes) && decide (s.signer.length ≤ maxSignerBytes) &&
-    decide (s.sig.length ≤ maxSigBytes)
+def Signed.withinLimits (s : Signed) : Bool := decide (s.label.length ≤ maxLabelBytes) && sigsWithin s.sigs
 
-def signedKeys : List Bytes := [k "sig", k "body", k "label", k "signer"]
+def signedKeys : List Bytes := [k "body", k "sigs", k "label"]
 
 /-- A signed thing read back from `Signed.value`'s shape. -/
 def Signed.ofValue? : Value → Option Signed
-  | .map [(k₁, .bytes sig), (k₂, body), (k₃, .text label), (k₄, .bytes signer)] =>
-    if [k₁, k₂, k₃, k₄] = signedKeys then some { label, body, signer, sig } else none
+  | .map [(k₁, body), (k₂, .array sigs), (k₃, .text label)] =>
+    if [k₁, k₂, k₃] = signedKeys then (sigsOf? sigs).map fun sigs => { label, body, sigs } else none
   | _ => none
 
 def Signed.accept (bs : Bytes) : Option Signed :=
@@ -172,8 +191,11 @@ theorem Signed.ofValue?_value {v : Value} {s : Signed} (h : Signed.ofValue? v = 
   · split at h
     · rename_i hk
       simp only [signedKeys, List.cons.injEq, and_true] at hk
-      obtain ⟨rfl, rfl, rfl, rfl⟩ := hk
-      cases h
+      obtain ⟨rfl, rfl, rfl⟩ := hk
+      simp only [Option.map_eq_some_iff] at h
+      obtain ⟨xs, hxs, rfl⟩ := h
+      simp only [Signed.value]
+      rw [sigsOf?_value hxs]
       rfl
     · cases h
   · cases h

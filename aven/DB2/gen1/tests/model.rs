@@ -1,13 +1,13 @@
 //! The Lean model runs (README, rule 10): random traces through the Rust machines and through `aven-db-model`
 //! (`db/spec/Main.lean`), compared state by state. The test builds the model with `lake build` first, so it needs the
-//! box: `bun run box cargo test -p aven-db-core`.
+//! box: `bun run box cargo test -p aven-gen1`.
 
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use aven_db_core::presence::Presence;
-use aven_db_core::status::{Event, Status};
+use aven_gen1::presence::Presence;
+use aven_gen1::status::{Event, Status};
 use serde_json::{Value, json};
 
 const TRACES: usize = 1000;
@@ -93,12 +93,12 @@ fn input(t: &Trace) -> String {
 }
 
 fn model() -> std::path::PathBuf {
-    let spec = Path::new(env!("CARGO_MANIFEST_DIR")).join("../spec");
+    let spec = Path::new(env!("CARGO_MANIFEST_DIR")).join("../db/spec");
     let built = Command::new("lake")
         .arg("build")
         .current_dir(&spec)
         .status()
-        .expect("lake runs in the box: bun run box cargo test -p aven-db-core");
+        .expect("lake runs in the box: bun run box cargo test -p aven-gen1");
     assert!(built.success(), "lake build failed in db/spec");
     spec.join(".lake/build/bin/aven-db-model")
 }

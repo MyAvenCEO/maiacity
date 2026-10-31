@@ -59,11 +59,11 @@ thread's recommendation. Samuel may overrule any.
 8. **Each vault chooses its keepers, by keep caps** (Samuel, 31 Oct 2026; A22, A44). Placement has one source, the
    owner's vault: there is no keeper list. A keeper's vault issues offer caps (quota, rate) to a vault or a group, and
    the offers Maia City's members hold say who offers to keep. A vault's keep caps say which keeper holds which of its
-   Docs and Values, and a keeper keeps a Doc only where the owner's keep cap and its own offer both hold. A new vault starts with one
-   keep cap for everything to Maia City's keeper (the Aven Peer, acting for Aven), approved by its owner with their
-   join, and only its owner changes it or adds others (Samuel, 31 Oct 2026). Keepers stay blind. Files are no special
-   case: a file's chunks are Values that a file Record in its Doc names, kept as that Doc is. Every native Peer also
-   keeps the chat's logs it hears. Any peer may keep, and none is special.
+   Docs and Values, and a keeper keeps a Doc only where the owner's keep cap and its own offer both hold. A new vault
+   starts with one keep cap for everything to Maia City's keeper (the Aven Peer, acting for Aven), approved by its owner
+   with their join, and only its owner changes it or adds others (Samuel, 31 Oct 2026). Keepers stay blind. Files are no
+   special case: a file's chunks are Values that a file Record in its Doc names, kept as that Doc is. Every native Peer
+   also keeps the chat's logs it hears. Any peer may keep, and none is special.
 9. **What stays special is named, signed or on its way out** ([8](#8-what-stays-special)). The claim becomes the
    signed genesis that every member pins (A11). The guardian is named in what people sign (A13). The `maia.city` origin
    stays special until Samuel takes up A14.
@@ -145,8 +145,9 @@ thread's recommendation. Samuel may overrule any.
 - **Who offers:** a keeper's vault, by offer caps (A44): how much it stores for a vault or a group, and how fast.
   A device with `--keep` keeps under its vault's offers. There is no keeper list in the tree, and an offer keeps
   nothing by itself.
-- **Who keeps what:** a vault's keep caps (A22), each naming a keeper vault and a target, which may be a query (A8);
-  the keeper keeps it only where its offer covers that vault (keep caps ∩ offers, caps' `Keep`). Samuel, 31 Oct 2026: caps decide which vault gets which Docs and Values, and each vault decides itself.
+- **Who keeps what:** a vault's keep caps (A22), each naming a keeper vault and a target, which may be a query (A8); the
+  keeper keeps it only where its offer covers that vault (keep caps ∩ offers, caps' `Keep`). Samuel, 31 Oct 2026: caps
+  decide which vault gets which Docs and Values, and each vault decides itself.
 - **The default:** every new vault's owner approves one keep cap for everything to Maia City's keeper, the Aven Peer
   acting for Aven, as part of what they sign to join (`default_kept`). The owner can change it or add others in
   avenOS; no one else can.
@@ -185,11 +186,12 @@ every peer must reach the same tree from the same statements, whatever order the
 
 ### The tree is a Doc of Core envelopes (A12, A30, A39)
 
-- **Every statement is a Core envelope of the tree Doc,** a Doc of type `tree` in Maia City's vault. Its body is a
-  call of one of `tree/1`'s ops (A32): `{op, params}`, the op named by the hash of `{op: name, plugin: "tree/1"}` as
+- **Every statement is a Core envelope of the tree Doc,** a Doc of type `tree` in Maia City's vault. Its body is a call
+  of one of `tree/1`'s ops (A32): `{op, params}`, the op named by the hash of `{op: name, plugin: "tree/1"}` as
   `core/1`'s are (`TreeSays.toValue`, read back by `ofValue_toValue`; ids and calls in `tree-ops.json`). A peer stores
-  each envelope under its name and reads it as the statement it carries (`TreeDoc.read`); one that doesn't read, or fails its own checks (its name, its
-  signature), is dropped before settling, so it carries no other statement's past (`TreeDoc.settleDoc`).
+  each envelope under its name and reads it as the statement it carries (`TreeDoc.read`); one that doesn't read, or
+  fails its own checks (its name, its signature), is dropped before settling, so it carries no other statement's past
+  (`TreeDoc.settleDoc`).
 - **Every statement names the tips it saw,** its parents: the names of the tree's newest statements when it was
   signed. So the statements form a graph, and "in the past of" is decidable: B is in A's past if A names B, or names
   something whose past holds B. That is Core's past, as for every Doc (`Aven.Core.Past`), with no second one for the
@@ -209,8 +211,11 @@ every peer must reach the same tree from the same statements, whatever order the
 - **The genesis names vaults, not keys, for authority:** Maia City's vault and its owners (`coopOwners`), and
   MaiaCityGuardian's vault, which its key owns and which owns each person's vault (`guardianVault`).
 - **Sign-ins** stop being numbered by arrival (`signin-000001`). A sign-in adds a device and conflicts with nothing,
-  so the set of sign-ins is the order. The members sign in thread already makes sign-ins statements; this plan only
-  changes how they are stored.
+  so the set of sign-ins is the order. Its body names only the device: the device joins the vault of the passkey
+  that signed it, and the passkey needs its owner (`passkeyOf`, `signIn_own_vault`, A42).
+- **Passkeys are records** in a claim and the genesis: `{credential, spki, owner, seal, epoch}`, the owner and seal
+  derived from the passkey's PRF. A passkey without an owner signs only `ownerEpoch`, which adds them
+  (`ownerless_only_adds_owner`).
 
 ### The settle rule
 
@@ -304,10 +309,26 @@ copy of production's store format is tested, as `id/core/tests/before/` is today
 confirmation per join signed under Maia City's approval when Samuel signs the genesis (`Old.confirm`, `final_join`).
 So every member today is a member after, with its member cap, and no device needs the roster.
 
+**Passkeys and sign-ins at the switch** (A42, the architect, 31 Oct 2026: option (a) and the snapshot):
+- **The snapshot.** Production's sign-ins are not replayed as statements. The claimant's go into the genesis's
+  devices, with the claiming browser; each member's go into its join's claim, with the join's browser
+  (`memberDevices`). The ref order keeps only invites, withdrawals, joins and their confirmations. Every device
+  production admits today is still admitted (`settle_restore_door`, `restore_agrees`).
+- **Passkey records.** Samuel signs the genesis in avenOS, so his passkey's record has its owner and seal keys from
+  its PRF (`SwitchKeys`; a genesis needs its claimant's owner, `Genesis.consented`). A migrated join's passkey has a
+  partial record (`stored`): its credential and key, no owner, no seal.
+- **The owner-epoch op.** A member's first sign-in after the switch adds owner and seal with `ownerEpoch`, signed by
+  the passkey's ES256 alone. Until then that passkey signs in no device (`ownerless_only_adds_owner`); every later
+  sign-in needs the owner's hybrid signature beside the ES256 (caps rule 21), and adds a device only to the signer
+  passkey's own vault (`signIn_own_vault`). So no member is locked out and there is no dual mode.
+- **A migrated passkey without PRF** keeps its vault's existing devices but adds no new one until a passkey from a
+  provider with PRF gives its vault an owner. The page says so, as the sign-up refusal does.
+
 **The migration's guarantee** (the architect, 31 Oct 2026): three things together, checked on production's own store
 before anything switches.
 1. `settle_restore` and `settle_restore_door` (proved, `Aven.ID.Restore`, `Aven.ID.RestoreDoor`): every stored
-   statement counts after migration, and for every clean store the settled door admits exactly its device keys.
+   statement counts after migration, and for every clean store the settled door admits exactly its device keys, the
+   sign-ins among them through the snapshot.
 2. `isClean` on production's store: it is a store `Members.restore` reads back clean.
 3. `oldSideAgrees` on production's store: today's door admits exactly those same keys.
 
@@ -316,7 +337,8 @@ Both checks are the functions Lean exports, held to aven-id's vectors (README ru
 **Two releases, no dual mode:**
 - **Release N, the pre-flight.** The Aven Peer runs both checks read-only on production's store. It logs only the
   verdict and counts; production's data never leaves the server.
-- **Samuel signs the genesis** in avenOS, with his passkey and MaiaCityGuardian.
+- **Samuel signs the genesis** in avenOS, with his passkey (its PRF gives his owner and seal keys) and
+  MaiaCityGuardian.
 - **Release N+1, the switch.** The Aven Peer checks the genesis and runs both checks again, then writes the migrated
   statements and settles. If a check fails, it refuses, the deploy fails and says why, and production stays on
   release N.
@@ -372,7 +394,7 @@ Installing, running and upgrading a node belong to avenPEER (the architect, 30 O
 
 How it is built (thread E, 31 Oct 2026):
 
-- **The wire version** is `Aven.DB.Wire.wireVersion`, 2, and `aven_db_core::wire::VERSION`. Version 1 carried it
+- **The wire version** is `Aven.DB.Wire.wireVersion`, 2, and `aven_gen1::wire::VERSION`. Version 1 carried it
   first, with frames as JSON lines; version 2 moved the frames to Core's CBOR (A29, `Aven.DB.WireCbor`). `meet`
   answers any other version with `update` and closes; `follows` says which side is behind, and only that one updates
   (`meet_speaks`, `meet_refuses`, `follows_newer`, `follows_one`; `upgrades.json`). The topic's name carries it too
@@ -445,9 +467,9 @@ Nothing for the chat's chains. The Peer-Light's cache in OPFS and the ticket lin
 
 ### Thread D: keepers (`peer/native/src/keep.rs`, `main.rs`)
 
-`--keep` under its vault's offer caps (A44); a vault's keep caps (the default to Maia City's keeper, and the vault's own, from the caps
-thread's types) deciding which keeper keeps which file; a keeper keeping what its keep caps name; telling the vault's
-owners when a keeper leaves; fetching from sender, then keepers, then anyone.
+`--keep` under its vault's offer caps (A44); a vault's keep caps (the default to Maia City's keeper, and the vault's
+own, from the caps thread's types) deciding which keeper keeps which file; a keeper keeping what its keep caps name;
+telling the vault's owners when a keeper leaves; fetching from sender, then keepers, then anyone.
 
 ### Thread E: upgrades and avenOS (`os/web`, the Service Worker, `deploy`)
 

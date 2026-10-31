@@ -116,17 +116,39 @@ theorem resolve_exact {roles : List Role} {c : Cap} {held : List (Facts × Nat)}
     exact ⟨f, k, ⟨m, kf⟩, rfl, rfl⟩
 
 /-- The keep cap a new vault `v` starts with: every Doc of its own, to Maia City's keeper `k`, the Aven Peer acting for
-Aven. Its owner approves it with what they sign to join (D14). It may not share, and the vault can withdraw it. -/
-def defaultKeep (v k signer : String) (approvals : List Sig) : Cap :=
+Aven. Its owner approves it as they join (D14, A44): the tree's claim carries it, and a vault migrated from production
+approves it at its next sign-in. It may not share, and the vault can withdraw it. No device need sign it: its owner's
+approval proves its issuer (A28). -/
+def defaultKeep (v k : String) (signer : Option String) (approvals : List Sig) : Cap :=
   { id := "keep-" ++ v, issuer := v, holder := .vault k, signer, approvals,
     grant := [⟨coreOp .keep, .vault (vaultId v) false, []⟩] }
 
+/-- A cap is vault `v`'s default keep cap at keeper `k`: it says exactly what the default says, whatever its id and
+signatures. The tree's claim checks the keep cap it carries with this (A44). -/
+def Cap.isDefaultKeep (v k : String) (c : Cap) : Bool :=
+  c.form == .grant && c.issuer == v && c.holder == .vault k && c.parent == none && c.role == none &&
+    c.share == 0 && c.grant == (defaultKeep v k none []).grant && c.conditions == {}
+
+theorem isDefaultKeep_iff {v k : String} {c : Cap} :
+    c.isDefaultKeep v k = true ↔ c.form = .grant ∧ c.issuer = v ∧ c.holder = .vault k ∧ c.parent = none ∧
+      c.role = none ∧ c.share = 0 ∧ c.grant = [⟨coreOp .keep, .vault (vaultId v) false, []⟩] ∧ c.conditions = {} := by
+  simp [Cap.isDefaultKeep, defaultKeep, and_assoc]
+
 /-- A vault with its default keep cap has every Doc of its own kept by Maia City's keeper. -/
-theorem default_kept {roles : List Role} {caps : List Cap} {v k signer : String} {approvals : List Sig} {f : Facts}
-    (h : defaultKeep v k signer approvals ∈ caps) (own : f.vault = vaultId v) :
+theorem default_kept {roles : List Role} {caps : List Cap} {v k : String} {signer : Option String}
+    {approvals : List Sig} {f : Facts} (h : defaultKeep v k signer approvals ∈ caps) (own : f.vault = vaultId v) :
     k ∈ keepersOf gov spawned lists roles caps f := by
   simp only [keepersOf, List.mem_filterMap, List.mem_filter]
   exact ⟨_, ⟨h, by simp [Cap.keeps, Cap.grants, defaultKeep, Target.coversB, own]⟩, rfl⟩
+
+/-- **The claim's keep cap keeps the new vault** (A44): any cap that says what the default says has its keeper keep
+every Doc of the vault, whoever wrote it out. -/
+theorem isDefaultKeep_kept {roles : List Role} {caps : List Cap} {c : Cap} {v k : String} {f : Facts}
+    (h : c.isDefaultKeep v k = true) (m : c ∈ caps) (own : f.vault = vaultId v) :
+    k ∈ keepersOf gov spawned lists roles caps f := by
+  obtain ⟨_, _, ho, _, hr, _, hg, _⟩ := isDefaultKeep_iff.mp h
+  simp only [keepersOf, List.mem_filterMap, List.mem_filter]
+  exact ⟨c, ⟨m, by simp [Cap.keeps, Cap.grants, hr, hg, Target.coversB, own]⟩, by simp [Cap.keeper, ho]⟩
 
 end
 
@@ -236,9 +258,17 @@ theorem keepers_by_owner (gov : Bytes → Bytes → Bool) (spawned lists : DocId
     root_authority ok c (List.mem_singleton_self c) l ml⟩
 
 /-- A default keep cap holds as a chain only with its owners' approval (D14). -/
-theorem default_approved {v k s : String} {a : List Sig} (h : chainOk x [defaultKeep v k s a] = true) :
-    x.tree.approves x.threshold v ("keep-" ++ v) a = true :=
+theorem default_approved {v k : String} {s : Option String} {a : List Sig}
+    (h : chainOk x [defaultKeep v k s a] = true) : x.tree.approves x.threshold v ("keep-" ++ v) a = true :=
   (grant_approved h _ (List.mem_singleton_self _)).2 rfl
+
+/-- **A claim's keep cap needs its vault's owners** (A44, D14): a cap that says what the default says holds as a chain
+only with the approval of the vault it keeps, by its own quorum. -/
+theorem isDefaultKeep_approved {c : Cap} {v k : String} (h : c.isDefaultKeep v k = true) (ok : chainOk x [c] = true) :
+    x.tree.approves x.threshold v c.id c.approvals = true := by
+  obtain ⟨hf, hi, _⟩ := isDefaultKeep_iff.mp h
+  have a := (grant_approved ok c (List.mem_singleton_self c)).2 hf
+  rwa [hi] at a
 
 /-- **The default needs its owner** (A22, D14): a default keep cap is an ordinary grant, however the join collects its
 approval. Signed by a device of its vault but with no approval, it breaks `.approval`, every threshold being one or
