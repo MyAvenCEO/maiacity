@@ -1470,7 +1470,7 @@ One smaller gap:
 | `issuers.json` | Chains on the cast with the garden, a coop Alice and Bob own whose quorum each case gives, and its helper: a root over a coop's Docs needs the coop's own owners, a vault without devices issues by its owners' approval alone, an attenuation with no device needs its holder's owners, and Maia City's confirm cap (A28, A38). The context writes the tree out and gives per-vault quorums |
 | `expiry.json` | Writes under a cap that expires, with each envelope's signed time, and whether each counts for the clock |
 | `network.json` | A ticket's claims in two orders (A12), removals that clash, MaiaCityGuardian's exit |
-| `keep.json` | Fetch-key links in the order they came, with the keys a keeper takes, its current key and its flags; proofs and whether they're served; what each vault pays; what a keeper keeps under the keep caps it holds and its own offers (A44); 30 generated keepers |
+| `keep.json` | Fetch-key links in the order they came, with the keys a keeper takes, its current key and its flags; proofs and whether they're served; what each vault pays; what a keeper keeps under the keep caps it holds and its own offers (A44); how much each vault may keep, by those offers, and the uploads admitted within it; 30 generated keepers |
 
 `aven-id-model` answers the same cases a backend's property tests draw: a chain, who keeps a Doc, a Doc of envelopes
 with its revocations, and an envelope's authority, each in the form its vector's input takes (`Aven.ID.CapsModel`).

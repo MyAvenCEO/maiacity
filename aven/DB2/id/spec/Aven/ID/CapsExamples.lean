@@ -350,6 +350,18 @@ def bookCases : List (String × Books × List Core.DocId) := [
 -- The quota Aven keeps for a member is its offer's, and nothing for anyone the offer doesn't cover.
 #guard avenBooks.quota "bob" == 10000000000 && avenBooks.quota "maia-city" == 0
 
+/-- Aven offers Alice alone 5000 bytes, at 1000 bytes a second (A44). -/
+def smallOffer : Cap :=
+  recap avenOffer "offer-small" "alice-owner" fun c =>
+    { c with holder := .vault "alice", grant := [offerLine "aven" 1000 5000] }
+
+def smallBooks : Books := { avenBooks with offers := [smallOffer] }
+
+-- The keeper admits uploads within the quota its own offer gives: Alice's 4096 bytes are taken, 1024 more would pass
+-- her 5000 and are refused, and 512 after that still fit.
+#guard smallBooks.quota "alice" == 5000 && smallBooks.quota "bob" == 0
+#guard (KeepExamples.keepD1.admit smallBooks.quota [] KeepExamples.quotaUploads).map (·.bytes) == [4096, 512]
+
 /-- Which branches a cap writes on, each answer written out by hand: main only on main, proposals on every branch but
 main, one branch only on it. -/
 def branchExamples : List (Branches × String × Bool) := [
