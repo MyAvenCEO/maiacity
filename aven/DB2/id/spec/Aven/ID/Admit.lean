@@ -16,12 +16,12 @@ any member's relay, with nothing but the tree as its input. -/
 
 namespace Aven.ID
 
-/-- The device a statement brings to the door: a claim's first device, or a sign-in's device. -/
-def TreeStatement.brings (s : TreeStatement) : Option String :=
+/-- The devices a statement brings to the door: a claim's devices, or a sign-in's device. -/
+def TreeStatement.brings (s : TreeStatement) : List String :=
   match s.says with
-  | .claim _ _ _ d _ => some d
-  | .signIn _ d => some d
-  | _ => none
+  | .claim _ _ _ ds _ => ds
+  | .signIn d => [d]
+  | _ => []
 
 namespace Settle
 
@@ -81,14 +81,14 @@ which the tree would admit it. -/
 def newcomer (S : List TreeStatement) (key : String) (s : Option TreeStatement) : Bool :=
   (settle pinned S).admits key ||
     match s with
-    | some st => st.brings == some key && (pending pinned S st || (settle pinned (st :: S)).admits key)
+    | some st => st.brings.contains key && (pending pinned S st || (settle pinned (st :: S)).admits key)
     | none => false
 
 /-- **`newcomer_own`:** a key the tree doesn't admit yet gets in only for a statement that names it as its device. -/
 theorem newcomer_own {S : List TreeStatement} {key : String} {st : TreeStatement}
     (h : newcomer pinned S key (some st) = true) (no : (settle pinned S).admits key = false) :
-    st.brings = some key := by
-  simp only [newcomer, no, Bool.false_or, Bool.and_eq_true, beq_iff_eq] at h
+    key ∈ st.brings := by
+  simp only [newcomer, no, Bool.false_or, Bool.and_eq_true, List.contains_iff_mem] at h
   exact h.1
 
 /-- **`newcomer_admitted`:** once the statement a newcomer brought reaches the statements a peer holds, its tree says
@@ -97,7 +97,7 @@ theorem newcomer_admitted {S S' : List TreeStatement} {key : String} {st : TreeS
     (h : newcomer pinned S key (some st) = true) (same : ∀ x, x ∈ st :: S ↔ x ∈ S') :
     (settle pinned S').admits key = true ∨ (settle pinned S').standing st.name = true ∨
       (settle pinned S).admits key = true := by
-  simp only [newcomer, pending, Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at h
+  simp only [newcomer, pending, Bool.or_eq_true, Bool.and_eq_true] at h
   rcases h with h | ⟨_, ⟨_, h⟩ | h⟩
   · exact .inr (.inr h)
   · exact .inr (.inl (by rw [← settle_perm pinned same]; exact h))
@@ -118,7 +118,7 @@ open Settle TreeExamples
 
 def g : TreeStatement := ⟨100, "alice-passkey", [], .genesis alicesGenesis⟩
 def t : TreeStatement := ⟨120, "alice-passkey", [100], .ticket "t-bob"⟩
-def bob : TreeStatement := ⟨500, "t-bob", [120], .claim 120 "bob" "bob-passkey" "bob-peer" "maia-city-guardian"⟩
+def bob : TreeStatement := ⟨500, "t-bob", [120], .claim 120 "bob" (pk "bob-passkey") ["bob-peer"] "maia-city-guardian"⟩
 
 -- Bob's browser, not yet a member, is let in at any relay for its claim, and for nothing else
 #guard newcomer 100 [g, t] "bob-peer" (some bob)
@@ -132,7 +132,7 @@ def bob : TreeStatement := ⟨500, "t-bob", [120], .claim 120 "bob" "bob-passkey
 -- the confirm policy: Alice's Peer confirms Bob's claim; once that confirmation is in its view, it refuses to confirm
 -- a leaked one
 def leak : TreeStatement :=
-  ⟨300, "t-bob", [120], .claim 120 "mallory" "mallory-passkey" "mallory-peer" "maia-city-guardian"⟩
+  ⟨300, "t-bob", [120], .claim 120 "mallory" (pk "mallory-passkey") ["mallory-peer"] "maia-city-guardian"⟩
 def ack1 : TreeStatement := ⟨510, "alice-peer", [500], .confirm 500⟩
 #guard confirmPolicy 100 [g, t, bob] ack1
 #guard !confirmPolicy 100 [g, t, bob, ack1, leak] ⟨520, "alice-peer", [510, 300], .confirm 300⟩
@@ -144,17 +144,31 @@ def setG : TreeStatement := ⟨150, "alice-passkey", [510], .setGuardian "new-gu
 def tc : TreeStatement := ⟨130, "alice-passkey", [100], .ticket "t-carol"⟩
 def td : TreeStatement := ⟨140, "alice-passkey", [100], .ticket "t-dan"⟩
 def carol : TreeStatement :=
-  ⟨600, "t-carol", [130, 150], .claim 130 "carol" "carol-passkey" "carol-peer" "new-guardian"⟩
-def dan : TreeStatement := ⟨700, "t-dan", [140, 150], .claim 140 "dan" "dan-passkey" "dan-peer" "maia-city-guardian"⟩
+  ⟨600, "t-carol", [130, 150], .claim 130 "carol" (pk "carol-passkey") ["carol-peer"] "new-guardian"⟩
+def dan : TreeStatement :=
+  ⟨700, "t-dan", [140, 150], .claim 140 "dan" (pk "dan-passkey") ["dan-peer"] "maia-city-guardian"⟩
 def withG : List TreeStatement := [g, t, bob, ack1, setG, tc, td, carol, dan]
 #guard (settle 100 withG).standing 600 && (settle 100 withG).standing 700
 #guard confirmPolicy 100 withG ⟨610, "aven-peer", [600], .confirm 600⟩
 #guard !confirmPolicy 100 withG ⟨710, "aven-peer", [700], .confirm 700⟩
 #guard (settle 100 withG).member "bob" && (settle 100 withG).guardianVault "new-guardian"
 -- a claim naming a guardian vault it never saw named doesn't count
-#guard !(settle 100 [g, td, ⟨700, "t-dan", [140], .claim 140 "dan" "dan-passkey" "dan-peer" "new-guardian"⟩]).standing
-  700
+#guard !(settle 100
+  [g, td, ⟨700, "t-dan", [140], .claim 140 "dan" (pk "dan-passkey") ["dan-peer"] "new-guardian"⟩]).standing 700
 
+
+-- the owner-epoch op (A42): Bob's vault was migrated with a stored passkey, no owner. Its sign-in of a new browser
+-- admits nothing until the passkey adds its owner and seal; then the same sign-in does. Its claim's devices stay in.
+def bobStored : TreeStatement :=
+  ⟨500, "t-bob", [120], .claim 120 "bob" ⟨"bob-passkey", "bob-passkey", none, none, 1⟩ ["bob-peer"]
+    "maia-city-guardian"⟩
+def bobPhone : TreeStatement := ⟨530, "bob-passkey", [510], .signIn "bob-phone"⟩
+def bobOwner : TreeStatement := ⟨520, "bob-passkey", [510], .ownerEpoch "bob-passkey" ⟨"bob-ed", "bob-ml"⟩ "bob-seal" 2⟩
+#guard (settle 100 [g, t, bobStored, ack1, bobPhone]).admits "bob-peer"
+#guard !(settle 100 [g, t, bobStored, ack1, bobPhone]).admits "bob-phone"
+#guard (settle 100 [g, t, bobStored, ack1, bobOwner, bobPhone]).admits "bob-phone"
+-- a sign-in by a passkey of no vault signs no one in
+#guard !(settle 100 [g, t, bob, ack1, ⟨530, "mallory-passkey", [510], .signIn "mallory-phone"⟩]).admits "mallory-phone"
 end AdmitExamples
 
 end Aven.ID

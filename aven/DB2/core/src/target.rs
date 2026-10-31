@@ -75,10 +75,7 @@ pub enum Target {
 }
 
 fn doc_id(v: Value) -> Option<DocId> {
-    match v {
-        Value::Bytes(b) => Some(DocId(Hash(b.as_slice().try_into().ok()?))),
-        _ => None,
-    }
+    Hash::of_value(&v).map(DocId)
 }
 
 impl Target {

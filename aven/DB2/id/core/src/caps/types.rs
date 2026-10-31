@@ -2,11 +2,12 @@
 //! Doc's access map. Each id is the name of a fixed label, `avenID <name> 1`, so every reader knows them without
 //! fetching anything.
 
-use aven_core::{DocId, Value, name_of};
+use aven_core::DocId;
 
-/// An avenID built-in type, named by the hash of its label `avenID <name> 1` (`builtinType`).
+/// An avenID built-in type, named by the hash of its label `avenID <name> 1`: Core's [`aven_core::builtin_type`] in
+/// avenID's namespace (`builtinType`, A45).
 pub fn builtin_type(name: &str) -> DocId {
-    DocId(name_of(&Value::Text(format!("avenID {name} 1"))))
+    aven_core::builtin_type("avenID", name)
 }
 
 /// Every built-in type's name (`builtinTypes`).

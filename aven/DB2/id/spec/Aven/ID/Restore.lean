@@ -22,26 +22,40 @@ left for later (PEERS.md, "Open"). -/
 namespace Aven.ID
 namespace Restore
 
-/-- An old statement, as production's store holds it. -/
+/-- An old statement, as production's store holds it. Sign-ins are not among them: the migration takes them into the
+snapshot, the claimant's into the genesis's devices and each member's into its join's claim (A42), so no passkey
+without an owner signs anything but the owner-epoch op. -/
 inductive Old where
-  | signIn (i : SignIn)
   | invite (i : Invite)
   | withdrawal (w : Withdrawal)
   | join (j : Join)
-  | memberSignIn (s : MemberSignIn)
   /-- the member cap a join's vault gets at the switch (A38): the migration confirms it with Maia City's approval -/
   | confirm (j : Join)
   deriving DecidableEq, Repr
 
-/-- The old statements after the claim, in the order `Members.restore` reads them: the claimant's sign-ins, then the
-invites, withdrawals and joins by their invite's id, then the members' sign-ins, then each join's member cap (A38). -/
+/-- The old statements after the claim, in the order `Members.restore` reads them: the invites, withdrawals and joins
+by their invite's id, then each join's member cap (A38). -/
 def refOrder (m : Members) : List Old :=
-  m.founding.signIns.map .signIn ++
-    (m.invites.mergeSort fun a b => Members.byId a.key b.key).map .invite ++
+  (m.invites.mergeSort fun a b => Members.byId a.key b.key).map .invite ++
     (m.withdrawn.mergeSort fun a b => Members.byId a.key b.key).map .withdrawal ++
     (m.joins.mergeSort fun a b => Members.byId a.invite b.invite).map .join ++
-    m.signIns.map .memberSignIn ++
     (m.joins.mergeSort fun a b => Members.byId a.invite b.invite).map .confirm
+
+/-- The keys signed at the switch: MaiaCityGuardian's hybrid keys, and the claimant's owner and seal keys from their
+passkey's PRF as they sign the genesis in avenOS. -/
+structure SwitchKeys where
+  guardian : GuardianKeys
+  owner : HybridKey
+  sealKey : String
+  deriving DecidableEq, Repr
+
+/-- A passkey's record as production stored it: its credential and key, with no owner or seal until it adds them
+(`ownerEpoch`, A42). -/
+def stored (passkey : String) : Passkey := ⟨passkey, passkey, none, none, 1⟩
+
+/-- A member's devices at the switch: its join's browser and every browser it signed in. -/
+def memberDevices (m : Members) (j : Join) : List String :=
+  j.deviceKey :: (m.signIns.filter (·.member == j)).map (·.signIn.deviceKey)
 
 /-- The first index in `l` where `p` holds. -/
 def indexWhere {α : Type} (p : α → Bool) : List α → Option Nat
@@ -80,25 +94,28 @@ def ticketName (olds : List Old) (key : String) : Core.Hash :=
   | some k => nameAt k
   | none => num 0
 
-/-- The genesis the claimant signs for production's claim: its relying party, the claimant's vault, passkey and
-claiming browser, the admin coop, the agent and the Aven Peer's key, and the guardian's hybrid keys (A13). -/
-def genesisOf (s : Founding) (c : Claim) (g : GuardianKeys) : Genesis :=
-  { rpId := s.rp.rpId, origins := s.rp.origins, claimant := c.person, passkey := c.passkey, devices := [c.deviceKey],
-    coop := s.coop, coopOwners := [c.person], agent := s.network, avenPeer := s.peerKey, guardian := g,
+/-- The genesis the claimant signs for production's claim: its relying party, the claimant's vault, passkey (with the
+owner and seal keys its PRF gives at the signing) and devices (the claiming browser and every one it signed in), the
+admin coop, the agent and the Aven Peer's key, and the guardian's hybrid keys (A13). -/
+def genesisOf (s : Founding) (c : Claim) (g : SwitchKeys) : Genesis :=
+  { rpId := s.rp.rpId, origins := s.rp.origins, claimant := c.person,
+    passkey := ⟨c.passkey, c.passkey, some g.owner, some g.sealKey, 1⟩,
+    devices := c.deviceKey :: s.signIns.map (·.deviceKey),
+    coop := s.coop, coopOwners := [c.person], agent := s.network, avenPeer := s.peerKey, guardian := g.guardian,
     guardianVault := guardianId, confirmers := [s.network, c.person],
-    signedBy := [c.passkey, g.ed25519, g.mlDsa] }
+    signedBy := [c.passkey, g.guardian.ed25519, g.guardian.mlDsa] }
 
-/-- An old statement's signer and what it says as a tree statement. Devices go by their keys, as the door does. -/
-def Old.says (olds : List Old) (c : Claim) : Old → String × TreeSays
-  | .signIn i => (c.passkey, .signIn c.person i.deviceKey)
+/-- An old statement's signer and what it says as a tree statement. Devices go by their keys, as the door does; a
+join's claim carries its passkey's stored record and its member's devices. -/
+def Old.says (m : Members) (c : Claim) : Old → String × TreeSays
   | .invite i => (i.passkey, .ticket i.key)
-  | .withdrawal w => (w.passkey, .withdrawal (ticketName olds w.key))
-  | .join j => (j.invite, .claim (ticketName olds j.invite) j.person j.passkey j.deviceKey guardianId)
-  | .memberSignIn s => (s.member.passkey, .signIn s.member.person s.signIn.deviceKey)
-  | .confirm j => (c.passkey, .confirm (joinName olds j.invite))
+  | .withdrawal w => (w.passkey, .withdrawal (ticketName (refOrder m) w.key))
+  | .join j => (j.invite, .claim (ticketName (refOrder m) j.invite) j.person (stored j.passkey) (memberDevices m j)
+      guardianId)
+  | .confirm j => (c.passkey, .confirm (joinName (refOrder m) j.invite))
 
 /-- The genesis statement production's claim becomes, named `genesisName`. -/
-def genesisStatement (m : Members) (c : Claim) (g : GuardianKeys) : TreeStatement :=
+def genesisStatement (m : Members) (c : Claim) (g : SwitchKeys) : TreeStatement :=
   ⟨genesisName, c.passkey, [], .genesis (genesisOf m.founding c g)⟩
 
 /-- What an old statement names besides the one before it: a join, its invite's ticket. -/
@@ -109,12 +126,12 @@ def Old.parents (olds : List Old) : Old → List Core.Hash
 
 /-- The `k`-th old statement as a tree statement: named `nameAt k`, naming the one before it, and a join its ticket. -/
 def step (m : Members) (c : Claim) (k : Nat) (o : Old) : TreeStatement :=
-  let (signer, says) := o.says (refOrder m) c
+  let (signer, says) := o.says m c
   ⟨nameAt k, signer, num (k + 1) :: o.parents (refOrder m), says⟩
 
 /-- Production's store as tree statements: the genesis, then every old statement in ref order, each naming the one
 before it (a join its ticket too). An unclaimed store has none. -/
-def migrate (m : Members) (g : GuardianKeys) : List TreeStatement :=
+def migrate (m : Members) (g : SwitchKeys) : List TreeStatement :=
   match m.founding.claim with
   | none => []
   | some c => genesisStatement m c g :: (refOrder m).mapIdx (step m c)
@@ -126,7 +143,7 @@ theorem step_name (m : Members) (c : Claim) (k : Nat) (o : Old) :
   simp [step]
 
 /-- Each migrated old statement has the genesis in its past: its parent is the one before it, down to the genesis. -/
-theorem migrate_past (m : Members) (g : GuardianKeys) (c : Claim) (hc : m.founding.claim = some c) :
+theorem migrate_past (m : Members) (g : SwitchKeys) (c : Claim) (hc : m.founding.claim = some c) :
     ∀ k (hk : k < ((refOrder m).mapIdx (step m c)).length),
       Core.Past.Before TreeStatement.name (migrate m g) (((refOrder m).mapIdx (step m c))[k])
         (genesisStatement m c g) := by
@@ -148,7 +165,7 @@ theorem migrate_past (m : Members) (g : GuardianKeys) (c : Claim) (hc : m.foundi
 
 /-- **`settle_restore`**, its general half: given a genesis both its signers signed, every statement production holds
 counts in the settled tree. The change of rule loses nothing. -/
-theorem settle_restore (m : Members) (g : GuardianKeys) (c : Claim) (hc : m.founding.claim = some c)
+theorem settle_restore (m : Members) (g : SwitchKeys) (c : Claim) (hc : m.founding.claim = some c)
     (signed : (genesisOf m.founding c g).consented = true) :
     ∀ s ∈ migrate m g, (settle genesisName (migrate m g)).counted s.name = true := by
   intro s ms
@@ -169,8 +186,11 @@ theorem settle_restore (m : Members) (g : GuardianKeys) (c : Claim) (hc : m.foun
 
 /-! ## The rest, checked on every trace -/
 
-/-- The guardian's hybrid keys the migration names: the box's guardian as its Ed25519 half. -/
-def boxGuardianKeys : GuardianKeys := ⟨boxGuardian, "maia-city-guardian-ml-dsa", "maia-city-guardian-x-wing"⟩
+/-- The keys signed at the switch in the box: the box's guardian as MaiaCityGuardian's Ed25519 half, and the claimant's
+owner and seal keys. -/
+def boxSwitchKeys : SwitchKeys :=
+  ⟨⟨boxGuardian, "maia-city-guardian-ml-dsa", "maia-city-guardian-x-wing"⟩, ⟨"owner-ed25519", "owner-ml-dsa"⟩,
+    "owner-seal"⟩
 
 /-- The keys a store's door is asked about: the traces' keys and every public key the store holds. -/
 def askedKeys (m : Members) : List String := doorKeys ++ m.publics.map (·.2)
@@ -185,7 +205,7 @@ def agrees (m : Members) : Bool :=
   match m.founding.claim, m.restore with
   | none, _ => true
   | some c, .ok r =>
-    let t := settle genesisName (migrate r boxGuardianKeys)
+    let t := settle genesisName (migrate r boxSwitchKeys)
     (askedKeys r).all (fun k => t.admits k == r.admits k) &&
       (namedVaults r).all fun v =>
         t.member v == (v == c.person || v == r.coop || v == r.network || r.members.contains v)

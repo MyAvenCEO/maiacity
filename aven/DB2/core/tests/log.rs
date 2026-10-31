@@ -109,8 +109,8 @@ fn labels_and_signing() {
     let writes = |k: &[u8], _: &Envelope| k == key.as_slice();
     let mut signed = e.clone();
     signed.sigs[0].sig = blake3(&[&key[..], &e.signing()].concat()).0.to_vec();
-    assert!(signed.placed(&scheme, writes));
-    assert!(!e.placed(&scheme, writes));
+    assert!(signed.placed(&scheme, &writes));
+    assert!(!e.placed(&scheme, &writes));
     assert_eq!(signed.name(), e.name());
     // an approval beside it: the same name, placed still, and one more signature that verifies
     let other = vec![1u8; 32];
@@ -120,7 +120,7 @@ fn labels_and_signing() {
         sig: blake3(&[&other[..], &e.signing()].concat()).0.to_vec(),
     });
     assert_eq!(approved.name(), e.name());
-    assert!(approved.placed(&scheme, writes) && !split(&signed, &approved));
+    assert!(approved.placed(&scheme, &writes) && !split(&signed, &approved));
     assert_eq!(
         (
             signed.approvals(&scheme).len(),
@@ -133,7 +133,7 @@ fn labels_and_signing() {
         sigs: vec![approved.sigs[0].clone()],
         ..e.clone()
     };
-    assert!(!only_other.placed(&scheme, writes));
+    assert!(!only_other.placed(&scheme, &writes));
 }
 
 /// Every input has a limit (rule 10), and only the envelope's own shape reads back.

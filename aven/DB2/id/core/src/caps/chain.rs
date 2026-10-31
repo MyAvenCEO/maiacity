@@ -34,8 +34,9 @@ pub struct Cap {
     pub role: Option<String>,
     pub share: u64,
     pub conditions: Conditions,
-    /// The device whose key signed it.
-    pub signer: String,
+    /// The device that signed it, when one did; a vault without devices, such as a coop, issues by its owners'
+    /// approvals alone (A28).
+    pub signer: Option<String>,
     pub approvals: Vec<Sig>,
 }
 
@@ -126,23 +127,59 @@ pub fn vault_id(v: &str) -> String {
     format!("v:{v}")
 }
 
-/// `issuer` has authority over vault `v`'s Docs: `v` is its own, or one it governs (`authorityOverVault`).
-pub fn authority_over_vault(t: &Tree, issuer: &str, v: &str) -> bool {
-    v == vault_id(issuer) || t.governs(issuer).into_iter().any(|g| vault_id(g) == v)
+/// Its issuer signed cap `c` (`Tree.issued`, A28): the device that signed it acts for the issuer, or, with no device
+/// signing, the issuer's owners approve it by their own quorum.
+pub fn issued(t: &Tree, threshold: &dyn Fn(&str) -> usize, c: &Cap) -> bool {
+    match &c.signer {
+        Some(s) => t.acts_for(s) == Some(c.issuer.as_str()),
+        None => t.approves(threshold, &c.issuer, &c.id, &c.approvals),
+    }
+}
+
+/// `issuer` has authority over vault `v`'s Docs: `v` is its own, or one it governs whose quorum it meets alone
+/// (`authorityOverVault`, A28). Authority runs down the tree only through quorums.
+pub fn authority_over_vault(
+    t: &Tree,
+    threshold: &dyn Fn(&str) -> usize,
+    issuer: &str,
+    v: &str,
+) -> bool {
+    v == vault_id(issuer)
+        || t.governs(issuer)
+            .into_iter()
+            .any(|w| vault_id(w) == v && t.alone(threshold, issuer, w))
 }
 
 impl Ctx<'_> {
-    /// `issuer` has authority over a line: over the vault its target names, or over the vault the Doc it names
-    /// belongs to. A Doc the reader doesn't know gives none (`authorityOver`).
-    pub fn authority_over(&self, issuer: &str, l: &Line) -> bool {
+    /// Who governs whom as authority runs (`Ctx.governs`, A28), by vault ids: `v` governs `w` when `w` is below it
+    /// and `v` meets its quorum alone. It is the `gov` a reader gives targets and its own-authority check.
+    pub fn governs(&self, v: &str, w: &str) -> bool {
+        let Some(a) = v.strip_prefix("v:") else {
+            return false;
+        };
+        self.tree.vault(a).is_some()
+            && self
+                .tree
+                .governs(a)
+                .into_iter()
+                .any(|b| vault_id(b) == w && self.tree.alone(self.threshold, a, b))
+    }
+
+    /// The vault a line lies in: the vault its target names, or the vault of the Doc it names, as its genesis fixed;
+    /// none for a Doc the reader doesn't know (`lineVault`).
+    pub fn line_vault(&self, l: &Line) -> Option<String> {
         match &l.doc {
             aven_core::Target::Vault { vault, .. } | aven_core::Target::VaultType { vault, .. } => {
-                authority_over_vault(self.tree, issuer, vault)
+                Some(vault.clone())
             }
-            aven_core::Target::Doc { doc, .. } => {
-                (self.facts)(doc).is_some_and(|f| authority_over_vault(self.tree, issuer, &f.vault))
-            }
+            aven_core::Target::Doc { doc, .. } => (self.facts)(doc).map(|f| f.vault),
         }
+    }
+
+    /// `issuer` has authority over a line: over the vault it lies in (`authorityOver`).
+    pub fn authority_over(&self, issuer: &str, l: &Line) -> bool {
+        self.line_vault(l)
+            .is_some_and(|v| authority_over_vault(self.tree, self.threshold, issuer, &v))
     }
 
     /// `issuer` holds `p`: it is `p`'s vault, or in `p`'s group now. The public passes nothing on (`holds`).
@@ -167,7 +204,7 @@ impl Ctx<'_> {
     /// that holds it is a group Doc.
     fn cap_error(&self, c: &Cap) -> Option<ChainError> {
         let id = || c.id.clone();
-        if self.tree.acts_for(&c.signer) != Some(c.issuer.as_str()) {
+        if !issued(self.tree, self.threshold, c) {
             return Some(ChainError::Signer(id()));
         }
         if c.form != Form::Attenuate
