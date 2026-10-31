@@ -3,6 +3,7 @@ import Aven.Core.Cbor
 import Aven.Core.CborLaws
 import Aven.Core.Names
 import Aven.Core.Signed
+import Aven.Core.Hybrid
 import Aven.Core.Log
 import Aven.Core.Past
 import Aven.Core.Target

@@ -43,6 +43,8 @@ import Aven.ID.Admit
 import Aven.ID.Keep
 import Aven.ID.Holdings
 import Aven.ID.Safe
+import Aven.ID.KeyFormats
+import Aven.ID.KeyFormatsJson
 import Aven.ID.SafeJson
 import Aven.ID.SealedIndex
 import Aven.ID.CapsExamples
