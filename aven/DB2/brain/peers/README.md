@@ -324,9 +324,10 @@ owner ([avenCAPS](../caps/README.md#keep-caps-offers-and-placement)); it decides
 - **What it sees:** each sealed thing's outside and size ([avenID](../id/README.md#the-seal)), and the device of each
   connection. It learns a Doc's owner vault from the keep cap's issuer, never from the Doc.
 - **The keyring travels unsealed:** its Records are already ciphertext, so a keeper carries its plain envelopes and
-  segments by Doc id as it carries any Doc's items, and serves them to a device the door admits that names the Doc,
-  with no fetch proof (A195). It sees its signers, writer ids, epoch numbers, counts and times,
-  nothing that opens anything. Every other Doc is sealed.
+  segments by Doc id as it carries any Doc's items, and serves them to a device the door admits that names the Doc, with
+  no fetch proof (A195). It knows a keyring by the Doc's own genesis, in its first envelope: the built-in type `keyring`
+  and a vault it keeps for; any other Doc needs a proof (A209). It sees its signers, writer ids, epoch numbers, counts
+  and times, nothing that opens anything. Every other Doc is sealed.
 - **Arrivals:** each sealed thing it takes, a segment or a loose envelope, is an item named by the BLAKE3 of its sealed
   bytes. A new item gets the Doc's next arrival number, from 1, never reused; the same bytes again get no new number,
   only another uploader (`numbers_fresh`).
