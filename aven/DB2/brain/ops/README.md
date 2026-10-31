@@ -92,7 +92,7 @@ lowering on trust. This is `core/1`'s lowering, `lowerCore : Call → Option (Li
 - **avenCAPS takes the lowering as a parameter,** so caps never depends on the engine's internals.
 
 **Decided:** A32, A19, A90, A101 · **Lean:** `Aven.DB.Engine.Lower` —
-`lowerCore_no_replace`, `lower_call`, `lower_calls` (pending in #1697)
+`lowerCore_no_replace`, `lower_call`, `lower_calls` (#1697)
 
 ## Plugins are runtimes
 
@@ -179,7 +179,7 @@ verdict.
 **Decided:** rule 4, A32, A45, engine 9, A83, A90, A96, A101, A182 · **Lean:** `Aven.DB.Engine.Footprint` —
 `commit_within`, `honest_passes`; `Aven.DB.Engine.Changes` — `changesFrom_edited_names`, `typesKept` (#1712),
 `diff_footprint`, `commit_types_kept`, `honest_footprint`, `footprint_steps`, `merge_steps`; `Fresh`, removed fields
-and `RecordChange.type : Docs.Version` pending in #1697; `Aven.Architecture` composes the merge
+and `RecordChange.type : Docs.Version` #1697; `Aven.Architecture` composes the merge
 (`rule4_merge_whole`, #1608)
 
 ## A Record id as a key
@@ -194,7 +194,7 @@ form.
 - **The ids the engine mints** are the codec's encoding of `[writer, counter, index]`. Ids two writers may create at
   once, such as a slot id, meet on one key, so not every id is a minted one.
 
-**Decided:** A96 · **Lean:** `Aven.DB.Engine.Changes` — `idOfKey_idKey`, `idKey_inj` (pending in #1697)
+**Decided:** A96 · **Lean:** `Aven.DB.Engine.Changes` — `idOfKey_idKey`, `idKey_inj` (#1697)
 
 ## Facts and Records
 
@@ -385,18 +385,18 @@ is how the engine derives an index and looks a query up in it.
 
 | Concept | Lean | Rust (`aven-db-engine`) | TS |
 |---|---|---|---|
-| The update grammar | `Engine.Mutate`, `mutations.json` (#1530) | `mutate`, pending in #1697 | — |
-| Lowering a call to steps | `Engine.Lower`, `lower.json`, pending in #1697 | `lower`, pending in #1697 | — |
-| Plugins are runtimes | `readers_agree` (#1530); the ontology's lowering not yet | `core/1` only, pending in #1697; the ontology not started | — |
-| Footprints and the merge check | `Engine.Footprint`, `Engine.Changes` (`typesKept` in #1712); `Fresh`, removed fields, `Docs.Version`, `changes.json` and `merge-check.json` pending in #1697 | `footprint`, `changes`, pending in #1697 | — |
-| A Record id as a key | `idKey`, pending in #1697 | `id_key`, `id_of_key`, pending in #1697 | — |
+| The update grammar | `Engine.Mutate`, `mutations.json` (#1530) | `mutate` (#1697) | — |
+| Lowering a call to steps | `Engine.Lower`, `lower.json` (#1697) | `lower` (#1697) | — |
+| Plugins are runtimes | `readers_agree` (#1530); the ontology's lowering not yet | `core/1` only (#1697); the ontology not started | — |
+| Footprints and the merge check | `Engine.Footprint`, `Engine.Changes` (`typesKept` in #1712); `Fresh`, removed fields, `Docs.Version`, `changes.json` and `merge-check.json` (#1697) | `footprint`, `changes` (#1697) | — |
+| A Record id as a key | `idKey` (#1697) | `id_key`, `id_of_key` (#1697) | — |
 | Facts and Records | not yet | not started | — |
-| Queries | `Engine.Query`, `queries.json` (#1530) | `query`, `value`, pending in #1697 | — |
+| Queries | `Engine.Query`, `queries.json` (#1530) | `query`, `value` (#1697) | — |
 | Answers | `complete_iff`; live deltas not yet | not started | — |
 | The want queue | `Engine.Wants`, `wants.json` (#1530) | not started | — |
 | Sealed indexes, the query side | `Engine.Index`, `Engine.Probe`, `lookups.json` | not started | — |
 
-The Rust crate is pure (`no_std`, no `unsafe`, builds for wasm32) and replays every vector in #1697.
+The Rust crate is pure (`no_std`, no `unsafe`, builds for wasm32) and replays every vector (#1697).
 
 **Known gaps** (Lean and code work):
 - `Engine.Wants`' `Depth` becomes `Level` (A1).

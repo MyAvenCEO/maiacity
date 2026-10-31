@@ -297,22 +297,25 @@ impl Epoch {
         })
     }
 
-    /// Seals this epoch to one more reader, a new device or a new passkey, without rotating or renaming it. Its stanza
-    /// is untagged (the reader finds it by opening), and the list is padded again.
+    /// A reseal's Record: this epoch, so the same name, sealed to one more reader (a new device or a new passkey)
+    /// without rotating or renaming it (A170). It carries only the new reader's stanza, untagged (the reader finds it
+    /// by opening), padded like any stanza list; a reader unions the stanzas of every Record of one name.
     pub fn reseal(
-        &mut self,
+        &self,
         key: &Secret,
         to: &SealPublic,
         entropy: &mut impl Entropy,
-    ) -> Result<(), KeyError> {
+    ) -> Result<Epoch, KeyError> {
         self.check(key)?;
-        let stanza = Stanza::seal(key, to, &self.context(), entropy);
-        self.stanzas.push(stanza);
+        let mut record = Epoch {
+            stanzas: vec![Stanza::seal(key, to, &self.context(), entropy)],
+            ..self.clone()
+        };
         let tagged = self.stanzas.iter().any(|s| s.tag.is_some());
-        while self.stanzas.len() < padded(self.stanzas.len()) {
-            self.stanzas.push(dummy(tagged, entropy));
+        while record.stanzas.len() < padded(record.stanzas.len()) {
+            record.stanzas.push(dummy(tagged, entropy));
         }
-        Ok(())
+        Ok(record)
     }
 
     /// Whether the stanza list is padded: as long as some count of readers pads to (`Epoch.isPadded`).

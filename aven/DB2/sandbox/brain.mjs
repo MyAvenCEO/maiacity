@@ -171,8 +171,10 @@ async function read(engine) {
 					const low = (await page.evaluate(contrasts, linear)).filter((c) => !c.ok);
 					seen.lowContrast = low;
 					for (const c of low) say(`"${c.text}" has ${c.ratio}:1, under ${c.need}:1`);
-					// the dashboard whole; every other page as the reader first sees it (an engine takes no shot over 32767 px)
-					await page.screenshot({ path: `${run}/brain-${view}-${where}-${size}-${name}.png`, fullPage: view === 'dashboard' });
+					// WebKit and Firefox take no screenshot taller than 32,767 px, and a whole package page on a phone is taller:
+					// the page's top, at most 16,000 px of it, is the evidence; the checks above read the whole page
+					const tall = Math.min(await page.evaluate(() => document.documentElement.scrollHeight), 16_000);
+					await page.screenshot({ path: `${run}/brain-${view}-${where}-${size}-${name}.png`, fullPage: true, clip: { x: 0, y: 0, width, height: tall } });
 					got[`${where}-${view}-${size}`] = seen;
 				}
 			}

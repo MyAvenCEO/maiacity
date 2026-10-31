@@ -1,0 +1,17 @@
+[package]
+name = "aven-peer-keeper"
+version = "0.0.0"
+description = "A keeper's arrivals for one Doc, pure: items by their sealed hash, numbered by arrival, covers by the uploader's own word, and catch-up by number (Aven.Peer.Keeper)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+# catching up end to end: a writer's sealed envelopes and segments through a keeper into a reader's Doc
+aven-core = { path = "../../core" }
+aven-db-docs = { path = "../../db/docs" }
+aven-id = { path = "../../id/core" }
+serde_json = "=1.0.154"

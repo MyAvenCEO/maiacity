@@ -24,8 +24,8 @@ open Aven.Core
 /-- The cast with the garden, a coop Alice and Bob own, and its helper, an agent the coop owns. -/
 def coopTree : Tree :=
   { cast with
-    vaults := cast.vaults ++ [⟨"garden", "The garden", .coop, [.vault "alice", .vault "bob"]⟩,
-      ⟨"garden-helper", "The garden's helper", .agent, [.vault "garden"]⟩] }
+    vaults := cast.vaults ++ [⟨"garden", "The garden", .coop, [.vault "alice", .vault "bob"], 1⟩,
+      ⟨"garden-helper", "The garden's helper", .agent, [.vault "garden"], 1⟩] }
 
 theorem coopTree_wf : coopTree.WF := by decide
 
