@@ -112,7 +112,7 @@
 					</div>
 					{#each slides as s (s.id)}
 						<section class="slide-page" id={`slide-${s.id}`} data-testid={`slide-${s.id}`}>
-							<div class="face" use:face={s.face}></div>
+							<div class="face" use:face={s.part}></div>
 							<div class="prose">
 								<!-- the slide's own headline stands for its text's title -->
 								{#each s.text[0]?.[0] === 'h1' ? s.text.slice(1) : s.text as node, i (i)}<Node {node} />{/each}
@@ -360,6 +360,11 @@
 	.slide-page {
 		margin: 40px 0 0;
 		scroll-margin-top: 16px;
+	}
+
+	/* a slide's place, kept while face-runtime runs its part, so the page doesn't move when it is drawn */
+	.slide-page .face {
+		aspect-ratio: 16 / 9;
 	}
 
 	.slide-page .prose {
