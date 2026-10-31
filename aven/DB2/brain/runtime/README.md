@@ -180,7 +180,7 @@ receiver's own release lists. Parts are data and come from anyone; runtimes are 
 
 There are no floors and no schemas in the manifest: each runtime's schemas are its Lean model's.
 
-**Decided:** A44, A45, A89, A102, A180; runtimes 1 · **Lean:** `Aven.Runtime.Contract` — `listed`,
+**Decided:** A44, A45, A89, A102, A180, A196; runtimes 1 · **Lean:** `Aven.Runtime.Contract` — `listed`,
 `loads`
 
 ## Frozen bytes, loading by hash, and versions

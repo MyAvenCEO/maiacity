@@ -18,7 +18,7 @@ reader checks for itself, and gives each Doc its types, its history, its branche
 - [Importing: three verdicts](#importing-three-verdicts): the import's steps, fit, `authorized` on the past, not a
   split; pages.
 - [The live state](#the-live-state): what counts, the snapshot read, the change feed, the rebuild.
-- [The judge](#the-judge): Loro behind the checks, in one docs worker; an unfit mark kept local.
+- [The judge](#the-judge): Loro behind the checks, where it can die alone; a crash mark kept local.
 - [Generations and stuck logs](#generations-and-stuck-logs): a device's fresh start after a split or a stuck log.
 - [Segments](#segments): a writer's closed run of one log, hybrid-signed; covers by the uploader's word.
 - [Sealing and sealed pages](#sealing-and-sealed-pages): how a Doc uses avenID's seal; `import_sealed_page`, each
@@ -40,28 +40,30 @@ reader checks for itself, and gives each Doc its types, its history, its branche
   [signed things](../core/README.md#signed-things).
 - [avenCORE](../core/README.md#envelopes): the envelope, its name and its signatures, placed by who `Writes` its log;
   [logs](../core/README.md#logs), [splits](../core/README.md#splits),
-  [the past and versions](../core/README.md#the-past) and [counting](../core/README.md#counting), with fit and
-  authorized as parameters.
+  [the past and versions](../core/README.md#the-past) and [counting](../core/README.md#counting), with fit, authorized
+  and revoked as parameters.
 - [avenCORE](../core/README.md#ops-and-calls): calls `{op, params}`; [built-in types](../core/README.md#built-in-types),
   `builtinType` and the type of types; [limits](../core/README.md#limits).
 - [avenID](../id/README.md#devices): device keys, Ed25519 for envelopes and the hybrid key for segments, counted once
-  its owner binds it; [vaults](../id/README.md#vaults) and their names; [epochs](../id/README.md#epochs) and their keys;
+  its owner binds it; [vaults](../id/README.md#vaults) and their names; [epochs](../id/README.md#epochs), their keys
+  and the `epoch` Records; [the keyring](../id/README.md#the-keyring), which travels unsealed;
   [the seal](../id/README.md#the-seal), what it seals found by commitment, and
   [the one padding](../id/README.md#padding).
-- [avenCAPS](../caps/README.md#the-readers-verdict): `reaches` and `authorized`;
-  [the envelope's authority](../caps/README.md#the-envelopes-authority), `{acks, caps}`; the `cap`, `revoke` and
-  `epoch` Records and their shapes (`idBuiltinFit`); [collections](../caps/README.md#collections); the `own` condition;
-  [the register](../caps/README.md#the-register) and its `tree` type.
+- [avenCAPS](../caps/README.md#the-readers-verdict): `reaches`, `authorized` and `revoked`;
+  [the envelope's authority](../caps/README.md#the-envelopes-authority), `{acks, caps}` or `{acks, caps, actor}`; the
+  `cap` and `revoke` Records and their shapes (`idBuiltinFit`, which checks avenID's `epoch` too);
+  [collections](../caps/README.md#collections); the `own` condition; [the register](../caps/README.md#the-register) and
+  its `tree` type.
 - [avenOPS](../ops/README.md#footprints-and-the-merge-check): the change view (`RecordChange`), `typesKept`, the
   footprint; [a Record id as a key](../ops/README.md#a-record-id-as-a-key); calls lowered to steps; an index from a
   query's shape and its lookup ([the query side](../ops/README.md#sealed-indexes-the-query-side)).
 - [avenSTORE](../store/README.md#blobs-and-refs): blobs named by hash, and refs moved by
   [compare-and-set](../store/README.md#compare-and-set).
 - [avenPEERS](../peers/README.md#the-doc-host-and-the-shelf): the Doc host, which runs Docs in the Peer and the docs
-  worker in the Peer-Light; [gossip per group](../peers/README.md#gossip-per-group),
-  [sync by version](../peers/README.md#sync-by-version-between-readers),
-  [the fetch gate](../peers/README.md#the-fetch-gate), [keepers](../peers/README.md#keepers) and
-  [catch-up from keepers](../peers/README.md#catch-up-from-keepers).
+  worker in the Peer-Light, and sifts a page that crashed that worker;
+  [gossip per group](../peers/README.md#gossip-per-group),
+  [sync by version](../peers/README.md#by-version-between-readers), [the fetch gate](../peers/README.md#the-fetch-gate),
+  [keepers](../peers/README.md#keepers) and [catch-up from keepers](../peers/README.md#by-arrival-number-from-keepers).
 - [avenRUNTIME](../runtime/README.md#pins): the runtime a checkpoint or a fold names, pinned by hash.
 
 ## A Doc and its genesis
@@ -92,7 +94,7 @@ owner or another type without another id.
 - **A vault's singletons** (its profile, its vocabulary) are found by name in the vault's vocabulary, never by a
   guessable id. Two made offline at once are both kept, and the vocabulary's one key picks the one that counts.
 
-**Decided:** A30, A32, A39, A174, P23, L15, docs 13, docs 24, ledger 09:04, ledger 09:41 · **Lean:**
+**Decided:** A30, A32, A39, A81, A95, A149, A164, A174, docs 13, docs 24 · **Lean:**
 `Aven.DB.Docs.Genesis` — `id_fixes`; `Aven.DB.Docs.Body` — `genesis_iff_first`, `genesis_names_doc`,
 `root_carries_genesis`, `closed_reaches_genesis`
 
@@ -129,7 +131,7 @@ changes atomically with it. Where a Record sits can change; its address can't.
 | a map of entries (`additionalProperties`) | Map | one value per key, the later writer's |
 | anything else | a value in the Record's map | the later writer's |
 
-**Decided:** A39, docs 1, docs 5, docs rules 2–4, ledger 09:43 · **Lean:** `Aven.DB.Docs.Head` — `recordsRoot`; the
+**Decided:** A39, A96, docs 1, docs 5, docs rules 2–4 · **Lean:** `Aven.DB.Docs.Head` — `recordsRoot`; the
 type kept: avenOPS' `typesKept` (#1712)
 
 ## Types, schemas and fit
@@ -183,8 +185,9 @@ its label, has no schema and is never pinned. Whoever defines it checks its Reco
   | `version` | `at` hashes, `name` text | a named version |
   | `split` | `after` a hash, `writer` an unsigned integer | the Doc's owners declare a split |
 
-- **Other definers:** [avenID](../id/README.md#built-in-types) and [avenCAPS](../caps/README.md) define `keyring`,
-  `safe`, `group`, `collection`, `cap`, `revoke` and `epoch`; the register defines `tree`.
+- **Other definers:** [avenID](../id/README.md#built-in-types) defines `keyring`, `safe` and `epoch`;
+  [avenCAPS](../caps/README.md#where-caps-live) defines `group`, `collection`, `cap` and `revoke`, and its register
+  `tree`.
 - **Fit takes the checks as a parameter,** `BuiltinFit : DocId → Option (Value → Bool)`, one per definer, joined
   (`BuiltinFit.or`; Rust `Either`). A type nobody supplies is no built-in, so its Records don't fit.
 - **A built-in Record** is written whole at its birth and its fields, as a map, pass its definer's check. It is never
@@ -192,7 +195,7 @@ its label, has no schema and is never pinned. Whoever defines it checks its Reco
 - **The version a Record is written under** is `{type, schema?}`: `schema` is absent exactly for a built-in type. A
   reader refuses a built-in type with a schema, and a user type without one.
 
-**Decided:** A39, A45, P9, P18, ledger 09:04, ledger 09:41, ledger 09:43, ledger 10:01 · **Lean:**
+**Decided:** A39, A45, A81, A95, A96, A104, A135, A146, A185 · **Lean:**
 `Aven.DB.Docs.Builtins` — `builtin_fits_iff`, `docsBuiltinFit`; `Aven.Core` — `builtinType`; `Aven.ID` —
 `idBuiltinFit`; `schema_none_iff_builtin`: not in Lean yet
 
@@ -311,7 +314,7 @@ The body is a Core Value with exactly these keys, in the codec's order:
 | `changes` | the Loro update holding exactly the commit's ops, as bytes |
 | `genesis` | the Doc's [genesis](#a-doc-and-its-genesis), exactly in a log's first envelope and absent from every other |
 | `records` | every Record the commit creates, changes or removes, by id, with the version it was written under: `[type Doc, schema hash]` for a user type, `[type Doc]` for a built-in type. The reader works out the touched Records from the ops and refuses a body whose list differs |
-| `authority` | [avenCAPS'](../caps/README.md#the-envelopes-authority) Value `{acks, caps}`, the authority the envelope writes under. avenDOCS carries it without reading it, checking only its canonical form and limits |
+| `authority` | [avenCAPS'](../caps/README.md#the-envelopes-authority) Value `{acks, caps}`, or `{acks, caps, actor}` for an actor host's envelope: the authority the envelope writes under. avenDOCS carries the Value whole and never reads inside it, checking only its canonical form and limits |
 | `generation` | the writer's [generation](#generations-and-stuck-logs), which its writer id is derived from |
 
 - **The commit's Loro message** is the lowercase hex of BLAKE3 over the canonical CBOR of `records`.
@@ -321,7 +324,7 @@ The body is a Core Value with exactly these keys, in the codec's order:
 - **Local first.** The writer keeps the envelope's own bytes at once
   ([the shelf](#the-head-the-held-page-and-the-shelf)), so a write survives a crash.
 
-**Decided:** A30, A32, A45, docs 2, docs 24, ledger 09:04, ledger 09:41, ledger 10:06, ledger 10:10, ledger 10:43 ·
+**Decided:** A30, A32, A45, A81, A95, A106, A188, docs 2, docs 24 ·
 **Lean:** `Aven.DB.Docs.Body` — `log_ops_disjoint`; the authority's form: avenCAPS' `Authority.ofValue?_value`,
 pending on `claude/avenid-a45` (no PR)
 
@@ -342,7 +345,7 @@ never stored as an identity: the identity is the avenID device, and blame maps a
 - **An import refuses** an envelope holding an op of any writer id but its signer's for that Doc, branch and
   generation, and one whose counters don't continue that writer's log.
 
-**Decided:** A45, docs 6, docs rule 8, ledger 00:07, ledger 00:24 · **Lean:** `Aven.DB.Docs.Writers` — `writer`,
+**Decided:** A45, A47, A48, docs 6, docs rule 8 · **Lean:** `Aven.DB.Docs.Writers` — `writer`,
 `writer_lt`, `writer_ne_reserved`; `Aven.DB.Docs.Counts` — `writer_ids_distinct`, `ops_are_signers`
 
 ## Loro
@@ -366,7 +369,7 @@ Rust tests check Loro against the model on causal orders.
   consecutive commits into one Change.
 - **`subscribe_pre_commit`** sees every commit, implicit ones included: that is where the commit message is set.
 - **Version vectors and frontiers stay inside a peer.** A Doc's version is [avenCORE's](../core/README.md#the-past),
-  named by its tips' hashes, and readers sync by it ([avenPEERS](../peers/README.md#sync-by-version-between-readers)).
+  named by its tips' hashes, and readers sync by it ([avenPEERS](../peers/README.md#by-version-between-readers)).
 - **Ephemeral state stays out of the Doc:** presence and cursors travel apart. **Undo is local:** Loro's `UndoManager`
   undoes one editor's own recent edits; it is not history's back out.
 
@@ -375,7 +378,7 @@ dependencies, read with its writer's previous op first (`carriedDeps`), must be 
 then of `deps`. An envelope whose hashes and `LoroId`s disagree is refused. Among envelopes that pass, the same hashes
 name the same past exactly when the same `LoroId`s do.
 
-**Decided:** A3, A45, A175, docs 7, docs 22, docs rules 7–10, ledger 09:04 · **Lean:** `Aven.DB.Docs.Loro` —
+**Decided:** A3, A45, A81, A175, docs 7, docs 22, docs rules 7–10 · **Lean:** `Aven.DB.Docs.Loro` —
 `Loro.converges`, `Loro.snapshot_load`; `Aven.DB.Docs.OpIds` — `same_past`, `opsAgreeB_sound`, `loroAgrees_sound`
 
 ## A commit
@@ -399,7 +402,7 @@ It goes in three calls, so the device's key never enters the docs worker and Lor
 `Doc::commit(device, …)` is all three, for a device whose key is at hand. The envelope's bytes go to the
 [shelf](#the-head-the-held-page-and-the-shelf) and to sync, and the new version to everything downstream.
 
-**Decided:** docs 2, docs rule 6, P1, ledger 09:16, ledger 10:48 · **Lean:** not in Lean (the Rust holds it in
+**Decided:** A87, A119, A127, docs 2, docs rule 6 · **Lean:** not in Lean (the Rust holds it in
 `tests/doc.rs`)
 
 ## Importing: three verdicts
@@ -428,21 +431,22 @@ An imported envelope goes through these steps in order. Step 2 opens avenID's se
 | Verdict | Depends on | Can it turn? |
 |---|---|---|
 | **fit** (avenDOCS) | the envelope, the Values it names, the pins at its dependencies, the checker's version | never |
-| **authorized** (avenCAPS) | the cap chain and the revocations the reader holds, judged on the envelope's own past | yes, by a later revocation |
+| **authorized** (avenCAPS) | the cap chain, judged on the envelope's own past | never; a later revocation discounts the envelope in counting instead (`revoked`) |
 | **not a split** (avenCORE) | the envelopes of its log the reader holds | yes, by a second envelope found later |
 
-- **What counts** is [avenCORE's](../core/README.md#counting) `Counts`, with fit and authorized as its parameters: an
-  envelope counts once its whole past is held, it and its past are fit and authorized, and none of them is half of a
-  split.
+- **What counts** is [avenCORE's](../core/README.md#counting) `Counts`, with fit, authorized and revoked as its
+  parameters: an envelope counts once its whole past is held, it and its past are fit and authorized, none of them is
+  half of a split, and none is discounted by a revocation the reader holds (avenCAPS' `revoked`).
 - **`authorized` is judged on the past:** `authorized(genesis, envelope, body, past)`, where the past is every held
   envelope it reaches through `prev` and `deps`, held whole before it is asked. Every reader that holds that past
-  reaches the same verdict, whatever order it imported in, and a re-check after a revocation passes the same past.
-  Rules about concurrent envelopes live only in the register's settle; avenCAPS has none.
+  reaches the same verdict, whatever order it imported in. A revocation learned later doesn't change it: it discounts
+  the envelope in Core's counting, as a split does. Rules about concurrent envelopes live only in the register's
+  settle; avenCAPS has none.
 - **Imports go by page.** A page's envelopes all pass steps 1 to 8 first, and whatever waited on them joins. The page
   is judged on one scratch copy, and what counts enters the live state in one `import_batch`: one diff, one snapshot,
   one event. **The target:** a Peer-Light catches up 500 envelopes of one Doc in under a second, in every engine.
 
-**Decided:** rule 4, rule 11, A23, A30, A45, P11, P19, docs rule 13, ledger 09:16, ledger 09:41 · **Lean:**
+**Decided:** rule 4, rule 11, A23, A30, A45, A87, A95, A137, A147, A182, docs rule 13 · **Lean:**
 `Aven.Core` — `Counts`, `counts_past`, `split_final`, `closed_mono`, `countsB_iff`
 
 ## The live state
@@ -477,11 +481,11 @@ place that can die alone.
 - **Natively, the judge catches.** Fit is judged on a scratch copy inside `catch_unwind`, so a panic there marks one
   envelope and never touches the live state. That needs `panic = "unwind"`: `aven-db-docs` refuses to compile natively
   without it, and no profile of the workspace or the Peer sets `abort`.
-- **In the browser, one docs worker** holds Loro for all open Docs; wasm32 aborts on a panic, so `catch_unwind` does
-  nothing there. When the worker crashes, it restarts and reopens the open Docs from the store. It retries the crashed
-  page envelope by envelope in a fresh worker, and marks an envelope unfit only when it crashes again alone, so a
-  transient fault never marks a valid envelope. Keys and the segment closer stay in the Peer-Light; Loro runs only in
-  the docs worker.
+- **In the browser,** wasm32 aborts on a panic, so `catch_unwind` does nothing there, and Loro runs only in one docs
+  worker for all open Docs, away from the keys. When the worker crashes, it restarts and reopens the open Docs from the
+  store, and an envelope is marked unfit only when it crashes the worker again alone, so a transient fault never marks
+  a valid envelope.
+- **Sifting** a crashed page to find that envelope is [avenPEERS'](../peers/README.md#the-doc-host-and-the-shelf).
 - **A crash mark is local.** `Doc::mark_unfit(name)` takes effect before or after the envelope is held. The mark is the
   docs worker's, never stored by avenDOCS and never travelling, and it is not the shared fit verdict. An envelope so
   marked never counts here, and is never forwarded or served.
@@ -489,8 +493,7 @@ place that can die alone.
   signed first envelope, so they reach Loro (`changes`), and as a sealed segment (`segment`). `tests/hostile.rs` runs
   the same inputs, and bit-flipped real updates, on every check.
 
-**Decided:** P3, ledger 09:16, ledger 09:41, ledger 10:48 · **Lean:** the retry, `Aven.Peer.Judge` — `sift_alone`,
-`sift_fine`, `sift_sub`, `sift_nodup` (pending in #1727); the rest is held by `tests/hostile.rs` and `db/docs/fuzz`
+**Decided:** A87, A119, A129, A185 · **Lean:** not in Lean: held by `tests/hostile.rs` and `db/docs/fuzz`
 
 ## Generations and stuck logs
 
@@ -536,18 +539,21 @@ own segments, so a segment is the same bytes everywhere, and a split shows as tw
   those items' uploaders, and drops an item once none is left: a lie costs only the liar's own uploads, and a writer
   that never comes back loses nothing. Closing returns `Closed {segment, covers}`.
 
-**Decided:** A43, A44, P4, L6, caps D13, docs 3, docs rule 11, ledger 10:58 · **Lean:** `Aven.DB.Docs.Segment` —
+**Decided:** A43, A44, A130, A156, caps D13, docs 3, docs rule 11 · **Lean:** `Aven.DB.Docs.Segment` —
 `run_one_log`, `run_bounded`; `Aven.DB.Docs.Limits` — `segment_bounded`, `segment_records`; the keeper's side,
 `Aven.Peer.Keeper`, pending in #1722
 
 ## Sealing and sealed pages
 
-Everything of a Doc that leaves a device is sealed under the Doc's epoch key by
+Everything of a Doc that leaves a device, but the keyring's, is sealed under the Doc's epoch key by
 [avenID's one seal](../id/README.md#the-seal). Its keys, its AAD, its outside, its padding, and how a reader finds what
 a sealed thing seals, are avenID's. A peer keeps envelopes' own bytes, and seals only what leaves the device.
 
-- **What a Doc seals:** a loose envelope as `envelope`, a segment as `segment`, and a [checkpoint](#checkpoints) as
-  `checkpoint`.
+- **What a Doc seals:** a loose envelope as `envelope`, a segment as `segment`, and a [checkpoint](#checkpoints) and
+  its state, each as `checkpoint`.
+- **The keyring travels plain.** avenID's keyring Doc is the one built-in type whose envelopes and segments aren't
+  sealed: its Records are already ciphertext ([avenID](../id/README.md#the-keyring)). avenDOCS takes its items by a
+  plain path beside the sealed one; every other Doc stays sealed.
 - **A loose envelope** travels live on its group's topic ([avenPEERS](../peers/README.md#gossip-per-group)). The seal's
   outside names its Doc, the one source for it, and a reader refuses a seal whose `doc` isn't the Doc's.
 - **A sealed page** is what catch-up fetches: loose envelopes and segments mixed, served by hash with nothing beside
@@ -558,7 +564,7 @@ a sealed thing seals, are avenID's. A peer keeps envelopes' own bytes, and seals
   an epoch the reader holds no key for, a commitment for neither an envelope nor a segment, a seal that doesn't open,
   or a bad segment.
 
-**Decided:** A44, A176, A177, caps D13, L5, L17, P2, ledger 09:04 · **Lean:** `Aven.ID.Seal` — `open_seal`,
+**Decided:** A44, A82, A128, A155, A166, A176, A177, A181, A187, caps D13 · **Lean:** `Aven.ID.Seal` — `open_seal`,
 `open_checks_commit`; found by commitment: `kind_by_commit`, `kindOf_sound`, `kindOf_complete`, `kindOf_seal`, pending
 on `claude/aven-docs` (no PR)
 
@@ -586,7 +592,7 @@ A peer keeps its own record of each Doc it holds. None of it travels: what a pee
   page, and `doc-<id hex>`, the head. The held page moves first, so a crash between the two leaves nothing a reopen
   can't rebuild. A ref moved by a second writer is refused, never retried over.
 
-**Decided:** P2, P3, L2, docs rule 1 · **Lean:** `Aven.DB.Docs.Head` — `Head.ok`, `Held.ofValue?` (vectors
+**Decided:** A128, A129, A151, A185, docs rule 1 · **Lean:** `Aven.DB.Docs.Head` — `Head.ok`, `Held.ofValue?` (vectors
 `heads.json`, `held.json`)
 
 ## Limits
@@ -608,7 +614,7 @@ a segment and a blob have limits of their own. The limits of an envelope as such
 
 The fan-out, Records, ops and blob limits are the release's; these are the defaults the vectors use.
 
-**Decided:** rule 10, P17, docs rule 24 · **Lean:** `Aven.DB.Docs.Limits` — `capped_holds`, `capped_within`,
+**Decided:** rule 10, A145, docs rule 24 · **Lean:** `Aven.DB.Docs.Limits` — `capped_holds`, `capped_within`,
 `capped_whole`, `admitted_bounded`, `segment_bounded`, `segment_records`, `blob_bounded`
 
 ## Checkpoints
@@ -618,12 +624,15 @@ any reader holding what it covers can check it. A new device starts from the new
 it, and shows the Doc at once, marked **unchecked**. Checkpoints come after the cutover.
 
 - **Its form** is avenCORE's `Signed` under `avenDB checkpoint 1`, its signatures beside its name, its body in the
-  codec's order: `{doc, state, branch, covers, runtime, version, snapshot}`.
+  codec's order: `{doc, state, branch, covers, runtime, version}`.
   - `doc`, `branch`, `version`: the branch at the version it states, by its tips' hashes;
   - `covers`: the segments it covers, by hash;
-  - `snapshot`: the hash of the sealed Loro export of the state, which travels only inside a checkpoint;
-  - `state`: the hash of the Records' CBOR;
+  - `state`: the hash of the sealed Loro export of the state, which travels only inside a checkpoint; the export is
+    sealed as `checkpoint`, under the same Doc and epoch as the checkpoint that names it;
   - `runtime`: the runtime that made it.
+
+  The hash of the Records' CBOR, which this body held under `state` before, has no key yet
+  ([open questions](#open-questions)).
 - **Hybrid-signed, and sealed** as `checkpoint`.
 - **Who may sign one** a reader takes: a device whose vault may write the Doc at the version the checkpoint names. A
   reader ignores one from anyone else. A keeper with only a keep cap can't make one: it can neither read nor write.
@@ -635,7 +644,7 @@ it, and shows the Doc at once, marked **unchecked**. Checkpoints come after the 
   what it covers, so a keeper can serve "the newest checkpoint, then every segment after it". Readers still find what
   an item seals by its commitment, and check every checkpoint by replay.
 
-**Decided:** A5, A177, K10, rule 8, P24, docs 4 · **Lean:** `Aven.DB.Docs.Checkpoint` — `checked_is_replay`,
+**Decided:** A5, A150, A177, A181, K10, rule 8, docs 4 · **Lean:** `Aven.DB.Docs.Checkpoint` — `checked_is_replay`,
 `checked_names`, `checkpoint_by_writer`
 
 ## Branches, merges and forks
@@ -694,7 +703,7 @@ changed it): no conflict, nothing lost. Had both changed the title, Alice's woul
 - **A named version** is a built-in `version` Record `{at, name}` on the branch it names: a person's act, which syncs
   and has history.
 
-**Decided:** A4, P23, docs 14, docs 16, docs 17, docs 21, docs rule 22 · **Lean:** `Aven.DB.Docs.Merge` —
+**Decided:** A4, A149, docs 14, docs 16, docs 17, docs 21, docs rule 22 · **Lean:** `Aven.DB.Docs.Merge` —
 `keeps_target`, `lands_other`, `conflict_by_choice`, `merge_same`, `back_out_removes`, `back_out_keeps_later`; the
 whole merge: `rule4_merge_whole` (`Aven.Architecture`, #1608)
 
@@ -727,7 +736,7 @@ It is a **series of period Docs**, never one Doc forever, and never trimmed by a
 - **Other collections that grow,** such as invoices or pages, are root Records: each is a Doc of its own, listed by a
   [directory](#directories-and-indexes).
 
-**Decided:** A6, A9, P23, docs 18, docs rule 25 · **Lean:** not in Lean yet
+**Decided:** A6, A9, A149, docs 18, docs rule 25 · **Lean:** not in Lean yet
 
 ## Directories and indexes
 
@@ -771,7 +780,7 @@ and how a lookup runs are [avenOPS'](../ops/README.md#sealed-indexes-the-query-s
   so a Doc with fewer readers never enters it. A wrong entry costs a fetch, never a wrong row; a missing entry is the
   only harm, and only someone who may write the directory can cause it.
 
-**Decided:** A26, A42, K13, P25, docs 23 · **Lean:** `Aven.DB.Docs.Key` — `key_order`, `key_inj`, `key_prefix`,
+**Decided:** A26, A42, K13, docs 23 · **Lean:** `Aven.DB.Docs.Key` — `key_order`, `key_inj`, `key_prefix`,
 `extension_in_range`; `Aven.DB.Docs.Index` — `entries_set`, `fold_steps`, `fold_removes`, `chunks_size`, `root_set`,
 `lookup_complete`, `lookup_sound`; `Aven.DB.Docs.Walk` — `fold_good`, `walk_exact`, `fold_exact`, `walk_verified`;
 `Aven.DB.Docs.Directory` — `listed_now`, `same_entries` (to be restated for entries as their own envelopes)
@@ -783,7 +792,7 @@ and queries are every Doc's. The city-dome is a series of [period Docs](#period-
 Record.
 
 **Its history is read as it is, never rewritten.** Each device's chain of signed line blobs from the first generation
-stays stored, and nothing is wiped ([`PRODUCTION.md`](../../PRODUCTION.md#no-wiping-in-production)).
+stays stored, and nothing is wiped ([A186](../DECISIONS.md)).
 
 - The first period Doc's root Record, written by its first envelope and fixed at birth, names the frozen chains:
   `{<device>: <its newest line's hash>, …}`.
@@ -793,7 +802,7 @@ stays stored, and nothing is wiped ([`PRODUCTION.md`](../../PRODUCTION.md#no-wip
 - The frozen format is held to a frozen copy of its Lean, `Aven.DB.Before`, and the Rust is tested against a frozen
   copy of the format under `db/docs/tests/before/`.
 
-**Decided:** rule 9, rule 16, A34, A43, P22, P23, docs 19 · **Lean:** the chains' rules: `Aven.DB.Chains`
+**Decided:** rule 9, rule 16, A34, A43, A112, A149, A186, docs 19 · **Lean:** the chains' rules: `Aven.DB.Chains`
 (`chain_suffix`); `Aven.DB.Before`: not in Lean yet
 
 ## Status
@@ -817,7 +826,7 @@ built in Rust yet.
 | A commit | — | `prepare`, `finish`, `commit` (#1732) | — |
 | Importing: three verdicts | avenCORE's `Counts` (#1710); avenDOCS' own copies | `import`, `import_page`, `Authorize` on the past (#1732) | — |
 | The live state | `Loro.snapshot_load`, `live` | `Snapshot`, `Feed`, the rebuild (#1694) | — |
-| The judge | the retry, `Aven.Peer.Judge`, pending in #1727 | `catch_unwind`, the `panic = "unwind"` guard, three fuzz targets (#1694, #1732) | the docs worker: with Docs in the Peers, pending in #1727 |
+| The judge | — | `catch_unwind`, the `panic = "unwind"` guard, three fuzz targets (#1694, #1732) | — (the docs worker and sifting are avenPEERS') |
 | Generations and stuck logs | avenCORE's `split_final` | `Stuck`, a generation per writer (#1694) | — |
 | Segments | `Segment` (#1694) | `Segment`, `Closer`, `Closed {segment, covers}` (#1694, #1732) | — |
 | Sealing and sealed pages | `Aven.ID.Seal` (#1694); found by commitment, pending on `claude/aven-docs` | `seal`, `import_sealed_page` with what each item seals named by its caller (#1732); found by commitment, and `open_sealed_page` without a Doc, pending on `claude/aven-docs` | — |
@@ -859,7 +868,8 @@ one (`tests/catchup.rs`, #1694). In the browsers with Docs in the Peers (#1727).
 - **The Record key:** the lowercase hex key (`idKey`) is pending in #1697; `aven-db-docs` follows it.
 - **Segments:** `Segment.ok` checks no signature, and `device_hybrid_bound` is in no Lean yet.
 - **Checkpoints:** no Value form in Lean or Rust and no vector of the form; `Checkpoint.lean`'s `covers` holds the
-  segments' envelopes, while the form names segments.
+  segments' envelopes, while the form names segments. The body names its Loro export as `state`, sealed as
+  `checkpoint` (A181): `Aven.DB.Docs`' checkpoint body and its vectors, to come with checkpoints.
 - **Directories:** `listed_now` and `same_entries`, and avenOPS' `lookup_exact` on them, assume an entry in the same
   commit as its Doc. An entry is its own envelope, so it can lag: avenDOCS and avenOPS restate them, the Doc counting
   as unfolded until its entry counts. No root type exists for a directory or a vocabulary, nor shapes for `entry` and
@@ -872,14 +882,17 @@ one (`tests/catchup.rs`, #1694). In the browsers with Docs in the Peers (#1727).
   (`Kind`, `Kind::Snapshot`, `kind_of`); the AAD becomes `{doc, seals, epoch}`.
 - **The one padding (A176):** the seal pads with Padmé alone, in `Aven.ID.Seal` and `seal.rs`. It takes avenID's one
   padding (256 B, 1 KiB or 4 KiB, then Padmé) once avenID defines it beside `Aven.ID.Padme`.
+- **The keyring's plain path (A187):** `Item::Plain` beside the sealed items, and the keyring's vectors: to come;
+  draft #1743 holds the keyring Doc.
+- **The authority's second shape (A188):** `{acks, caps, actor}` for an actor host's envelope, carried whole like the
+  first, with `Aven.ID.Authority` in draft #1741.
 
 ## Open questions
 
 1. **Directory and vocabulary root types:** built-in types with their definers' shapes, or user types? A42 says every
    sort of Doc names its root type. *The architect, with avenCAPS.*
-2. **A checkpoint's Loro export:** its body key is `snapshot`, though what travels is never a snapshot (A177), and
-   what it is sealed as is unsaid. Rename the key, and seal the export as `checkpoint`, before checkpoints ship? *The
-   architect, with avenID.*
+2. **The checkpoint's Records hash:** A181 gives the key `state` to the Loro export, which this body used for the hash
+   of the Records' CBOR. Does that hash keep a key of its own, and which, or does it go? *The architect.*
 3. **The index interface** with avenOPS: `entry`, `fold`, `lookup` with the unfolded entries, and `rebuild` to check a
    fold, for entries that are envelopes of their own. *avenDOCS and avenOPS; the architect decides.*
 4. **The first lens catalogue's named conversions:** text to money, text to date, text to number. *avenDOCS at step 3;

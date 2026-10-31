@@ -7,7 +7,7 @@ every Doc's sealed bytes move from peer to peer, with no peer above the others.
 
 - [The Peer and the Peer-Light](#the-peer-and-the-peer-light): the two builds of one core, and the Aven Peer as a Peer.
 - [Relays](#relays): who carries bytes between peers that can't reach each other, and how a peer picks one.
-- [Addresses and entry](#addresses-and-entry): history (address entries, log tips, release entries), bootstrap through
+- [Addresses and entry](#addresses-and-entry): history (address and release entries), bootstrap through
   any member, the links a peer keeps.
 - [The door](#the-door): which devices may connect at all, checked at every connection.
 - [The wire](#the-wire): `aven/db/1`, its frozen greeting, frames in Core's codec, wire versions, the frames' rules.
@@ -112,10 +112,10 @@ let it into gossip, so no host is the way in.
   and its direct addresses. The newest is the latest in the latest generation. Two entries at one place are a split,
   which ends that generation; the device's next generation counts again (`split_final`, `split_spares_next`), so a
   device that split re-homes in a new one (`rehome_new_generation`).
-- **History is avenPEERS':** a peer's address entries, log tips and release entries. Each is a Core envelope in its
-  signer's own history log, whose writer id comes from (signer, generation); `seq` counts and `prev` chains. Its body
-  is a map with exactly one key naming what it is, `{"address": …}`, `{"tip": …}` or `{"release": …}`, never a `kind`
-  field. It counts by Core's `Counts`, with fit as the entry's shape and `authorized` as who may sign it: a device
+- **History is avenPEERS':** a peer's address entries and release entries. Each is a Core envelope in its signer's
+  own history log, whose writer id comes from (signer, generation); `seq` counts and `prev` chains. Its body is a map
+  with exactly one key naming what it is, `{"address": …}` or `{"release": …}`, never a `kind` field. There are no
+  log-tip entries: a reader learns a Doc's tips from `doc_tips`, and gen1's log tips go with it (A197). It counts by Core's `Counts`, with fit as the entry's shape and `authorized` as who may sign it: a device
   about itself, admitted by the door, or a release signer for a release. The newest entry about one thing is the
   counting one with the greatest (generation, seq), and splits are Core's. Its Lean is `Aven.ID.Records` until it
   moves to `peer/spec` as `Aven.Peer.History`.
@@ -132,7 +132,7 @@ let it into gossip, so no host is the way in.
   Doc id and its tips, all signed, so it can join through any listed relay. A returning browser has all of it in OPFS.
   `/aven.json` is one more source.
 
-**Decided:** peers 2, peers 3, A31, A42, A193, A194 · **Lean:** `Aven.ID.Records` — `newest_set`, `newest_signed`,
+**Decided:** A197, peers 2, peers 3, A31, A42, A193, A194 · **Lean:** `Aven.ID.Records` — `newest_set`, `newest_signed`,
 `newest_agree`, `newest_grows`, `split_final`, `split_spares_next`; `Aven.ID.Node` — `rehome_newest`,
 `rehome_new_generation`
 
@@ -237,11 +237,12 @@ because Loro can crash on bytes it should have refused.
 - **The first Docs:** a device's first Doc is its vault's keyring ([avenID](../id/README.md#the-keyring)); at sign-up
   the Peer-Light computes its first Record and the Doc host makes the Doc and writes it, and the vault's other devices
   sync it like any Doc. The keyring travels unsealed, since its Records are already ciphertext: a new browser fetches
-  them through [the fetch gate](#the-fetch-gate) by Doc id, opens its stanza with its PRF seal key, and only then
-  joins its vault's group topic. Every other Doc is sealed. The register is the first shared Doc, and its group's
+  them through [the fetch gate](#the-fetch-gate) by Doc id alone, with no fetch proof (a fetch key would come from the
+  keyring itself), opens its stanza with its PRF seal key, and only then joins its vault's group topic. There a
+  keyring change is announced as `{doc, version}` and fetched, never sent whole (A195). Every other Doc is sealed. The register is the first shared Doc, and its group's
   topic is joined first at start.
 
-**Decided:** A119, A121, A127, A128, A129, A135, A151, A155, A166, A169, A170, A185, A187 · **Lean:**
+**Decided:** A195, A119, A121, A127, A128, A129, A135, A151, A155, A166, A169, A170, A185, A187 · **Lean:**
 `Aven.Peer.Judge` — `sift_alone`, `sift_fine`, `sift_sub`, `sift_nodup` (pending in #1727)
 
 ## Gossip per group
@@ -322,7 +323,8 @@ owner ([avenCAPS](../caps/README.md#keep-caps-offers-and-placement)); it decides
 - **What it sees:** each sealed thing's outside and size ([avenID](../id/README.md#the-seal)), and the device of each
   connection. It learns a Doc's owner vault from the keep cap's issuer, never from the Doc.
 - **The keyring travels unsealed:** its Records are already ciphertext, so a keeper carries its plain envelopes and
-  segments by Doc id as it carries any Doc's items, and sees its signers, writer ids, epoch numbers, counts and times,
+  segments by Doc id as it carries any Doc's items, and serves them to a device the door admits that names the Doc,
+  with no fetch proof (A195). It sees its signers, writer ids, epoch numbers, counts and times,
   nothing that opens anything. Every other Doc is sealed.
 - **Arrivals:** each sealed thing it takes, a segment or a loose envelope, is an item named by the BLAKE3 of its sealed
   bytes. A new item gets the Doc's next arrival number, from 1, never reused; the same bytes again get no new number,
@@ -364,7 +366,7 @@ owner ([avenCAPS](../caps/README.md#keep-caps-offers-and-placement)); it decides
   Doc is held by its writers' devices and those keepers; with two keepers named, losing any one peer leaves it
   fetchable (`no_only_holder`, `kept_fetchable`). Keepers stay blind (`keeper_blind`).
 
-**Decided:** rule 10, A22, A40, A44, A117, A141, A150, A153, A166, A173, A177, A181, A187 · **Lean:**
+**Decided:** A195, rule 10, A22, A40, A44, A117, A141, A150, A153, A166, A173, A177, A181, A187 · **Lean:**
 `Aven.Peer.Keeper` — `numbers_fresh`, `dropped_covered`, `cover_own`, `gone_writer_kept`, `put_held`, `dropped_listed`;
 `Aven.Peer.Serve` — `bill_follows`, `admitted_within`, `over_quota_sheds`, `moved_bill_keeps`, `unproven_refused`,
 `kept_only_proven` (pending in #1722); `Aven.ID.Node` — `no_only_holder`, `kept_fetchable`, `keeper_blind`
