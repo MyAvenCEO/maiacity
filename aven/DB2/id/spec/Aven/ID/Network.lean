@@ -720,9 +720,16 @@ def Counts (S : List TreeStatement) (s : TreeStatement) : Prop :=
 
 /-- Part of the tree: it counts, decided. -/
 def counted (S : List TreeStatement) (s : TreeStatement) : Bool :=
-  (pinnedGenesis pinned s || S.any fun g => pinnedGenesis pinned g && inPast TreeStatement.name S s g) &&
-    (s.parentsHeld S && S.all fun x => !inPast TreeStatement.name S s x || x.parentsHeld S) &&
-    (s.fit && S.all fun x => !inPast TreeStatement.name S s x || x.fit)
+  let P := past TreeStatement.name S s
+  (pinnedGenesis pinned s || S.any fun g => pinnedGenesis pinned g && P.contains g.name) &&
+    (s.parentsHeld S && S.all fun x => !P.contains x.name || x.parentsHeld S) &&
+    (s.fit && S.all fun x => !P.contains x.name || x.fit)
+
+/-- `counted`, its past computed once, is the past decided. -/
+theorem counted_eq : counted pinned S s =
+    ((pinnedGenesis pinned s || S.any fun g => pinnedGenesis pinned g && inPast TreeStatement.name S s g) &&
+      (s.parentsHeld S && S.all fun x => !inPast TreeStatement.name S s x || x.parentsHeld S) &&
+      (s.fit && S.all fun x => !inPast TreeStatement.name S s x || x.fit)) := rfl
 
 theorem parentsHeld_iff {x : TreeStatement} : x.parentsHeld S = true ↔ ∀ h ∈ x.parents, ∃ y ∈ S, y.name = h := by
   simp [TreeStatement.parentsHeld]
@@ -760,7 +767,7 @@ theorem counted_iff : counted pinned S s = true ↔ Counts pinned S s := by
     rw [past_all (p := TreeStatement.parentsHeld S)]
     exact ⟨fun h x hx => parentsHeld_iff.mp (h x hx), fun h x hx => parentsHeld_iff.mpr (h x hx)⟩
   have hf := past_all (S := S) (s := s) (p := TreeStatement.fit)
-  unfold counted
+  rw [counted_eq]
   constructor
   · intro h
     have h1 := (Bool.and_eq_true _ _).mp h
