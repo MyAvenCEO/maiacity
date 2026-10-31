@@ -1339,6 +1339,7 @@ changed. A refinement names what it refines; a change of mind names what it supe
   - `commit` is the commit key's keyed BLAKE3 over `encode({aad, nonce})`, checked in constant time before decrypting;
   - the plaintext is padded to Padmé's length (PURBs; defined in Lean with its ≤ 12 % bound proved) before sealing;
   - outside are `{commit, ct, doc, epoch, nonce}` and nothing else (D13).
+
   The AEAD stays a parameter in Lean, as in KeyFormats: the Lean vectors fix the subkeys, AAD, commit, padded plaintext
   and outside form, and the Rust adds draft-irtf-cfrg-xchacha's known-answer test and Wycheproof's XChaCha cases
   (09:19).
@@ -1401,6 +1402,7 @@ changed. A refinement names what it refines; a change of mind names what it supe
   - (c) in the browser, the judge runs in a wasm instance of its own, a worker; if it dies, that envelope is unfit,
     recorded by its name so it's never judged again, and the judge restarts;
   - (d) a cargo-fuzz target on import.
+
   A commit goes through `live.fork()`, all or nothing, and imports are judged a page at a time on one scratch fork,
   never one fork per envelope, with a target of 500 envelopes of one Doc in under 1 s in every engine (76 ms measured,
   09:41). (a) to (c) are written into the docs README's "Importing" section.
