@@ -27,6 +27,17 @@ use aven_id::Entropy;
 
 use crate::docs::{Entry, Live, Saved, Shelf, Tip, beyond, tips, version};
 
+/// A commit as it left the host: what to gossip, and what its writer's segment closing needs.
+#[derive(Debug)]
+pub struct Committed {
+    pub live: Live,
+    pub envelope: Envelope,
+    /// The hash of its sealed bytes, as uploaded loose.
+    pub sealed: Hash,
+    /// The epoch it was sealed under.
+    pub epoch: Hash,
+}
+
 /// What a sealed thing taken in did.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Taken {
@@ -139,7 +150,7 @@ impl<A: Authorize> Host<A> {
         prepared: Prepared,
         sig: [u8; 64],
         entropy: &mut impl Entropy,
-    ) -> Result<Live, String> {
+    ) -> Result<Committed, String> {
         let bytes = self
             .doc
             .finish(prepared, sig, &self.auth)
@@ -148,9 +159,14 @@ impl<A: Authorize> Host<A> {
         let e = Envelope::decode(&bytes).ok_or("a commit that doesn't decode")?;
         let name = e.name();
         let sealed = self.seal(&bytes, entropy)?;
-        let at = self.shelf.put(sealed.clone()).await?;
-        self.sealed.insert(name, core_hash(&at));
-        Ok(Live::of(self.doc.id().0, &sealed))
+        let at = core_hash(&self.shelf.put(sealed.clone()).await?);
+        self.sealed.insert(name, at);
+        Ok(Committed {
+            live: Live::of(self.doc.id().0, &sealed),
+            envelope: e,
+            sealed: at,
+            epoch: self.epochs.last().expect("sealed under it").name,
+        })
     }
 
     /// Commits with a device key this peer holds: [`Host::prepare`], its Ed25519 signature, [`Host::finish`].
@@ -162,7 +178,7 @@ impl<A: Authorize> Host<A> {
         at: &str,
         act: Act,
         entropy: &mut impl Entropy,
-    ) -> Result<Live, String> {
+    ) -> Result<Committed, String> {
         let p = self.prepare(*device.public().as_bytes(), generation, batch, at, act)?;
         let sig = device.sign(&p.signing()).to_bytes();
         self.finish(p, sig, entropy).await

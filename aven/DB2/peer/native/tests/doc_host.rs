@@ -1,7 +1,8 @@
 //! A Doc held by two readers' peers (`aven_peer::doc_host::Host`), natively, each on its own shelf: a commit at one is
 //! taken at the other from what gossip carries; commits made apart sync by version, each answering the other's tips
-//! with the sealed values beyond them; a peer reopens from its shelf as it was; and a stranger's envelope is refused
-//! at every reader, before Loro sees a byte of it.
+//! with the sealed values beyond them; a peer reopens from its shelf as it was; a writer's quiet closes its loose
+//! envelopes into a segment a new reader takes whole; and a stranger's envelope is refused at every reader, before
+//! Loro sees a byte of it.
 #![cfg(feature = "native")]
 
 use std::collections::BTreeSet;
@@ -14,8 +15,8 @@ use aven_db_docs::{
 };
 use aven_db_store::backend;
 use aven_id::{Secret, TestEntropy};
-use aven_peer::doc_host::{Host, Taken};
-use aven_peer::docs::{Live, Shelf};
+use aven_peer::doc_host::{Committed, Host, Taken};
+use aven_peer::docs::{Closing, Live, QUIET_MS, Shelf, seal_segment};
 use iroh::SecretKey;
 
 /// The readers' devices reach the Doc; a stranger's doesn't. Caps implements this; here only who is in.
@@ -119,7 +120,7 @@ async fn commit(
     id: &str,
     title: &str,
     e: &mut TestEntropy,
-) -> Live {
+) -> Committed {
     h.commit(
         device,
         0,
@@ -151,7 +152,7 @@ async fn two_readers_share_a_doc() {
     let mut b = host(shelf()).await;
 
     // live: what Alice's commit gossips, Bob takes
-    let live = commit(&mut a, &alice, "t1", "milk", &mut e).await;
+    let live = commit(&mut a, &alice, "t1", "milk", &mut e).await.live;
     let Live::Sealed(sealed) = live else {
         panic!("a small commit gossips whole")
     };
@@ -243,4 +244,39 @@ async fn a_strangers_envelope_is_refused_at_every_reader() {
         b.take(&[(false, b"not a seal".to_vec())]).await.unwrap()[..],
         [Taken::Unopened(_)]
     ));
+}
+
+#[tokio::test]
+async fn a_quiet_writer_closes_a_segment_a_new_reader_takes() {
+    let alice = key(1);
+    let mut e = TestEntropy::new("the segment test");
+    let mut a = host(shelf()).await;
+    let mut closing: Option<Closing> = None;
+    let mut closed = vec![];
+    for (i, title) in ["milk", "eggs", "bread"].iter().enumerate() {
+        let c = commit(&mut a, &alice, &format!("t{i}"), title, &mut e).await;
+        let cl = closing.get_or_insert_with(|| {
+            Closing::new(a.doc().id(), c.envelope.writer, 0, Limits::DEFAULTS)
+        });
+        closed.extend(cl.add(c.epoch, c.envelope, c.sealed, 1_000 + i as u64));
+    }
+    let mut cl = closing.unwrap();
+    // nothing closes while the writer writes, nor before it has been quiet long enough
+    assert!(closed.is_empty());
+    assert!(!cl.due(1_002 + QUIET_MS - 1));
+    assert!(cl.due(1_002 + QUIET_MS));
+    let c = cl.close().expect("three loose envelopes");
+    assert_eq!((c.segment.from, c.segment.to, c.covers.len()), (1, 4, 3));
+    assert!(cl.close().is_none());
+
+    let seed = aven_id::Secret::take(&mut alice.to_bytes());
+    let sealed = seal_segment(&c, &seed, &epoch(), &mut e);
+    // a reader new to the Doc takes the segment whole, as one page
+    let mut carol = host(shelf()).await;
+    assert_eq!(
+        carol.take(&[(true, sealed)]).await.unwrap(),
+        vec![Taken::Imported(vec![Ok(Imported::Counts); 3])]
+    );
+    assert_eq!(carol.version(), a.version());
+    assert_eq!(titles(&carol).len(), 3);
 }

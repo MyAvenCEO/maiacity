@@ -461,3 +461,68 @@ impl Shelf {
         }
     }
 }
+
+/// How long a writer stays quiet on a Doc before its open segment closes (docs README, "Closing a segment": 5 s to
+/// start; the catch-up target tunes it).
+pub const QUIET_MS: u64 = 5_000;
+
+/// A writer's loose envelopes of one Doc, closed into segments (docs, rule 11: each writer closes its own) at whichever
+/// comes first: 256 envelopes or 1 MiB, the epoch rotating (the docs layer's [`aven_db_docs::Closer`]), the writer
+/// quiet for [`QUIET_MS`], or the page hiding ([`Closing::close`]). It needs no Loro, so in the browser it runs beside
+/// the keys, in the Peer-Light's own worker. Only a device whose hybrid key its vault owner has bound closes segments
+/// (stage 4's `device_hybrid_bound`): the caller makes a `Closing` only for one; an unbound device's envelopes stay
+/// loose, as keepers keep them.
+pub struct Closing {
+    closer: aven_db_docs::Closer,
+    last: u64,
+}
+
+impl Closing {
+    pub fn new(
+        doc: aven_core::DocId,
+        writer: u64,
+        generation: u64,
+        limits: aven_db_docs::Limits,
+    ) -> Closing {
+        Closing {
+            closer: aven_db_docs::Closer::new(doc, aven_db_docs::MAIN, writer, generation, limits),
+            last: 0,
+        }
+    }
+
+    /// The writer's next envelope, written at `now` (ms) under `epoch` and uploaded loose as `sealed`. Returns the
+    /// segment this closes first, when the epoch rotated or a limit would be passed.
+    pub fn add(
+        &mut self,
+        epoch: Hash,
+        e: aven_core::Envelope,
+        sealed: Hash,
+        now: u64,
+    ) -> Option<aven_db_docs::Closed> {
+        self.last = now;
+        self.closer.add(epoch, e, sealed)
+    }
+
+    /// Whether the writer has been quiet long enough at `now` for its open segment to close.
+    pub fn due(&self, now: u64) -> bool {
+        !self.closer.loose().is_empty() && now.saturating_sub(self.last) >= QUIET_MS
+    }
+
+    /// Closes the open segment, if any: the writer went quiet, or the page hides.
+    pub fn close(&mut self) -> Option<aven_db_docs::Closed> {
+        self.closer.close()
+    }
+}
+
+/// A closed segment sealed for the Doc's readers, hybrid-signed by its writer's device: its Ed25519 seed, and the
+/// ML-DSA-65 half derived from it (`aven_id::device_ml_dsa_seed`), made for this one signature and dropped.
+pub fn seal_segment(
+    closed: &aven_db_docs::Closed,
+    device_seed: &aven_id::Secret,
+    epoch: &aven_db_docs::EpochKey,
+    entropy: &mut impl aven_id::Entropy,
+) -> Vec<u8> {
+    let device =
+        aven_db_docs::Device::from_seeds(device_seed, &aven_id::device_ml_dsa_seed(device_seed));
+    closed.segment.seal(&device, epoch, entropy)
+}
