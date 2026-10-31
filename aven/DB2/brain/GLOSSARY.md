@@ -363,6 +363,16 @@ means something else in another part, and that part's meaning is named.
   one thing; this replaces the caps verdict "operation → verb" above.
 - **Every Doc has a type, always** (**A39**). A Doc's genesis fixes its root type with its vault: the network tree, a
   carrier Doc, an actor's Doc, a catalogue and a period Doc too. A type Doc's own type is the built-in type of types.
+- **Rule 16, clean architecture only, never a patch.** A fix goes where the primitive is, once, for every use of it.
+  Nothing is built for a structure that is about to go; until its clean form exists, the old one stays as it is.
+- **Holdings follow caps** (**A40**). A device or a keeper holds only what its caps cover, so whenever coverage
+  shrinks, honest peers drop the bytes and the keys at their next sync. A delete for everyone, a Doc leaving a
+  collection, a revoked or narrowed cap and a withdrawn keep cap are this one rule. A copy taken outside avenOS on
+  purpose is out of any system's reach.
+- **collection** (**A32**): a Doc of the sharing vault that lists Docs, like a smart album ("photos tagged beach from
+  2026"). The vault's devices run its query, an op, and sign each change to the list. A cap names the collection and
+  what it lists, so what the cap covers changes only by its issuer's signed act, never because someone edited a tag;
+  a Doc that leaves the list is dropped at the holders' next sync (A40).
 
 ## New terms (proposals)
 
