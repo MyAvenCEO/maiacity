@@ -6,7 +6,7 @@ act as, and the brain beside them.
 ## Owns
 
 - [The page and its workers](#the-page-and-its-workers): the Peer-Light's worker holds the keys, the docs worker runs
-  the judge, the runtimes worker runs the modules.
+  the judge, the runtimes worker runs the modules (avenRUNTIME's browser host).
 - [Hosts, accounts and the dashboard](#hosts-accounts-and-the-dashboard): whom a host may act as, the account
   switcher, addresses and the apps.
 - [Sign-up and sign-in](#sign-up-and-sign-in): the passkey's ceremonies on the page, the PRF step and its refusal.
@@ -42,8 +42,9 @@ judges Docs, and the one that runs untrusted modules. A fault in a worker stops 
 - Every tab, the leader's too, speaks to it over the BroadcastChannel of the same name. When the leader's tab closes,
   the next tab waiting for the lock starts it again; it says so, and every tab says hello and sends its start and its
   unanswered asks again. Frames are tabs.
-- It holds the device key, made in the browser and kept in its store, and the owner and seal keys the passkey's PRF
-  opens each session, which are never stored. It opens seals, signs, and closes and seals segments.
+- It holds the device key, made in the browser and kept in its store. The owner key exists in it only during a
+  ceremony: derived from the passkey's PRF output, used to sign, and dropped. It opens seals, signs, and closes and
+  seals segments.
 - It wakes its link at once when the page comes back online or into view.
 
 **The docs worker** runs avenDOCS's judge ([avenDOCS](../docs/README.md)): a second instance of the Peer-Light's
@@ -56,24 +57,20 @@ wasm, with Loro and no key.
 - Loro can panic, and wasm aborts on a panic. When the docs worker crashes it restarts and reopens the open Docs from
   the store. To find the culprit it retries the crashed page envelope by envelope in a fresh worker, and marks an
   envelope unfit only when it crashes again alone, so a passing fault such as running out of memory never marks a valid
-  envelope unfit. The unfit set is the docs worker's: local, never stored by avenDOCS, never travelling.
+  envelope unfit. The unfit set is local and never travels: the Peer-Light keeps it as the ref `docs-unfit` in its
+  store, of which it is the one writer.
 
-**The runtimes worker** runs avenRUNTIME's host, `aven-runtimes-web` ([avenRUNTIME](../runtime/README.md)).
+**The runtimes worker** runs avenRUNTIME's host, holding no key and reaching no store; how it loads and runs modules is
+avenRUNTIME's ([the browser host](../runtime/README.md#the-browser-host)).
 
-- It holds no key and reaches no store. The page asks it to run a runtime by name on a part and an input, and it
-  answers the run's result, `ok` or `failure`, or an error.
-- It loads a module only by a hash the manifest it was compiled with names, fetched once from this origin
-  (`/runtimes/frozen/<hex>.wasm`), and only when the bytes are that hash's.
-- A trap in the host itself ends the worker; what was asked of it is refused with why, and the page starts it again on
-  the next ask.
-
-**One origin, for now.** All three workers, the Service Worker and the page share avenOS's origin until A15's three
-origins (the app, the safe and files) exist. Until then the walls between them are workers, modules that import nothing,
-and fuel.
+**One origin, for now.** The workers, the Service Worker and the page share avenOS's origin until A15's three origins
+(the app, the safe and files) exist. Until then the walls between them are workers, modules that import nothing, and
+fuel.
 
 **Decided:** rule 13; A15; A45 (a runtime runs in a worker of its own, apart from the device key); P1; P3; ledger
-10:48 (one docs worker; how it finds an unfit envelope); README rule 1 · **Lean:** not in Lean (the workers are
-mechanics); avenDOCS's `Doc::prepare` and `Doc::finish` are tested in Rust
+10:48 (one docs worker; how it finds an unfit envelope); A169 (the Peer-Light opens seals, the docs worker sees only
+plaintext; the unfit set is the ref `docs-unfit`); README rule 1 · **Lean:** not in Lean (the workers are mechanics);
+avenDOCS's `Doc::prepare` and `Doc::finish` are tested in Rust
 
 ## Hosts, accounts and the dashboard
 
@@ -105,8 +102,8 @@ act as, and every view is pushed by the Peer-Light, never asked for again.
   can't reach the network says so plainly, the reason kept in the timeline. A browser that keeps no storage for the
   host (site data blocked, always private) runs no Peer-Light, and is told why.
 
-**Decided:** README rules 3 and 8; A28 (an admin act counts with Maia City's owners' approval); milestone 1's avenID
-decisions (avenOS reads the tree through avenID's wasm) · **Lean:** `Aven.ID.OS` — `opens_governed`,
+**Decided:** README rules 3 and 8; A28 (an admin act counts with Maia City's owners' approval); SANDBOX.md's
+decisions, **avenOS reads the tree through aven-id's wasm** · **Lean:** `Aven.ID.OS` — `opens_governed`,
 `hostAccounts_people`, `accounts_examples`, `vault_examples`; vectors `id/spec/vectors/avenos.json`
 
 ## Sign-up and sign-in
@@ -117,7 +114,7 @@ The ceremonies run on the page, since a worker has no `navigator.credentials`; w
 is computed in the Peer-Light.
 
 - **Sign-up** asks the person's name, then makes a passkey: ES256, a resident key, user verification required, no
-  attestation, and the PRF asked for its first owner epoch.
+  attestation, `user.id` 16 random bytes that mean nothing, and the PRF asked for its first owner epoch.
   - Where the platform answers the PRF at `create()`, the owner and seal keys come from it, the claim is built, and one
     `get()` signs it: two taps.
   - Where it only says the PRF is enabled, a `get()` asks the PRF first, then another signs the claim: three taps, at
@@ -135,7 +132,8 @@ is computed in the Peer-Light.
   evaluated for the epoch the browser expects (1 when it knows nothing). The sign-in names no vault: it is the vault of
   the passkey that signed it ([avenCAPS](../caps/README.md)). If that passkey's owner epoch has moved on, the browser
   reads the right epoch from the register and asks once more.
-- **Each later session's first tap** opens the owner and seal keys again, since they are never stored.
+- **An act that needs the owner** asks the passkey again: the owner key is derived for that ceremony and dropped after,
+  never stored.
 - **The PRF output** goes straight into the Peer-Light, which derives the keys and keeps only their public halves; the
   page's copy is wiped at once ([avenID](../id/README.md)).
 - **A passkey from before the owner keys** that has no PRF still signs in, but can't add an owner and seal key, so it
@@ -150,7 +148,8 @@ is computed in the Peer-Light.
 - **Join:** a ticket's link (`#/join/…`) asks a name, makes a passkey the same way, and claims the ticket; the link
   works once.
 
-**Decided:** A42 (the owner key from the PRF, never stored); A43 (no passkey without PRF makes a vault; the PRF input
+**Decided:** A42 (the owner key from the PRF, never stored); A77 (the PRF output straight into the Peer-Light; the
+owner key derived per ceremony and dropped); A43 (no passkey without PRF makes a vault; the PRF input
 is the epoch; one tap on a new browser); ledger 08:58 (Samuel: refuse and explain; detect from `create()` or the first
 `get()`); ledger 09:04 (the taps); ledger 09:34 (`signalUnknownCredential`); ledger 09:49 (a migrated passkey without
 PRF); A44 and ledger 10:45 (the default keep cap at the next sign-in) · **Lean:** not in Lean (the ceremonies); the
@@ -218,8 +217,8 @@ only the side that is behind follows ([avenPEERS](../peers/README.md)).
 - A tab ahead of the peer that refused it waits for that peer.
 
 **Decided:** README rule 3; A15 (three origins; signed releases checked before new code activates, later); A42
-(release signing by a vault comes later); A29 (the frozen greeting); the store's security decisions of 30 Oct (every
-file served as hostile, inline only for passive types) · **Lean:** `Aven.DB.Wire` — `follows_newer`, `follows_one`,
+(release signing by a vault comes later); A29 (the frozen greeting); A86 (a file's bytes decide its type); the store README's "What a file
+may run" (the security audit, 30 Oct: every file served as hostile; not in the log yet) · **Lean:** `Aven.DB.Wire` — `follows_newer`, `follows_one`,
 `meet_refuses` (avenPEERS's); the Service Worker is held by the box (`sandbox/inline.mjs`, `sandbox/upgrade.mjs`)
 
 ## Brain
@@ -239,7 +238,7 @@ every package's page, readable on every host by anyone, signed in or not, as the
   brain is drawn is avenBRAIN's ([avenBRAIN](../README.md)).
 
 **Decided:** A41 (the documentation is Brain); L9 (Brain renders the brain's files themselves); P20 ("public" means
-the members, so Brain is open to everyone, not "public") · **Lean:** not in Lean (the screen); the node tree and the
+the members, so Brain is called readable by anyone, never public) · **Lean:** not in Lean (the screen); the node tree and the
 faces are avenRUNTIME's (`Aven.Runtime.Tree`, `Aven.Runtime.Face`)
 
 ## Status

@@ -73,8 +73,8 @@ and our code never enters it: it stays in the checkout, mounted in.
   Rust change running on every peer under 30 s; a new cloud session with the image on disk, until every peer is live,
   under 2 min.
 
-**Decided:** README rules 2, 10, 12 and 13; milestone 1's decisions (the builder a `docker run`; the check's browser
-profile kept in a volume) · **Lean:** not in Lean (the box is mechanics)
+**Decided:** README rules 2, 10, 12 and 13; SANDBOX.md's decisions, **The builder is a `docker run` from `up.mjs`**,
+**The check's Chromium keeps its profile in a volume** · **Lean:** not in Lean (the box is mechanics)
 
 ## The image and its tag
 
@@ -148,8 +148,12 @@ Bob's vault             person    owned by Bob's owner key
 - **The PRF stand-in** (`sandbox/prf.mjs`): the virtual authenticator WebKit and Firefox run the box's passkeys on has
   no PRF, so the box answers a ceremony's PRF with SHA-256 of a label, the credential's id and the salt. Only the box
   does this; the real PRF is checked against Chromium's own virtual authenticator.
+- **Checks run the real path:** a box check never takes keys from the cast's configuration, and product code has no
+  fixture path. A check that needs a person's keys signs up through the PRF stand-in and makes the keyring as a person's
+  browser would.
 
-**Decided:** A28 (only a vault is an admin; its acts count with its owners' approval); milestone 1's avenID decisions ·
+**Decided:** A28 (only a vault is an admin; its acts count with its owners' approval); A168 (checks run the real path);
+SANDBOX.md's decisions, **The device rules are part of `WF`** ·
 **Lean:** `Aven.ID.Cast` — `cast_wf`, `cast_examples`, `aven_not_account`, `coop_not_account`; the cast's keys derived
 in `Aven.ID.Keys`
 
@@ -291,6 +295,7 @@ and releases each package that changed); A42 (until release signing exists, a re
 | The check, steps 1 to 15 | built |
 | Docs in the Peers in the check (a commit at one Peer-Light reaching another; catching up 500 envelopes of one Doc in every engine) | not built: only the native test measures catch-up (`db/docs/tests/catchup.rs`) |
 | The cast's vault names | text ids (`vault:alice`); 32-byte vault names (L15) are pending, with avenID and avenCAPS |
+| Checks on the real path (A168) | the cast's peers still get their device keys by configuration (`--secret`); stage 3's check, the first on the real path, waits for the keyring Doc and the register's Doc |
 | Topologies: flat, home NAT, hard NAT, UDP blocked, two homes | built |
 | Topologies: roaming, bad links (`netem`), a direct path between Peer-Lights | not built; a cloud session's kernel has no `netem` |
 | The fuzzer | built (#1732); runs by hand, no workflow runs it |

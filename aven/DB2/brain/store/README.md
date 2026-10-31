@@ -40,8 +40,8 @@ no keys, caps or members, and it decides nothing about what to fetch or keep.
 - **A ref** is named by a `RefName`: 1 to 128 of `A-Z a-z 0-9 . _ -`, not starting with `.`. Names are flat, so every
   backend lays them out alike. At rest a ref is exactly its hash's 64 lowercase hex digits and a newline, in every
   backend; anything else is refused. Refs never leave their peer.
-- **The layout** is the same everywhere: blobs at `blobs/<hex>`, refs at `refs/<name>`. A hash is bare hex in a store's
-  paths and `b3:<hex>` in every text format.
+- **The layout** is the same everywhere: blobs at `blobs/<hex>`, refs at `refs/<name>`. A hash is bare lowercase hex
+  in a store's paths, and in JSON a 32-byte string, `{"bytes": "<hex>"}` (A174).
 - **The contract** is the `Store` trait: `put`, `get`, `get_range`, `has`, `size`, `list`, `delete`, `get_ref`,
   `set_ref`, `delete_ref`, `list_refs`. There is no append, since object storage has none. No backend's types cross
   it, and its errors are `Stale`, `Range`, `InvalidName`, `Corrupt`, `Outdated` and `Backend`.
@@ -49,8 +49,8 @@ no keys, caps or members, and it decides nothing about what to fetch or keep.
 - **Refs in use:** avenDOCS keeps each Doc's head and held page under two refs, `doc-<id hex>` and `doc-<id hex>-held`
   ([avenDOCS](../docs/README.md)).
 
-**Decided:** README rules 1 and 10; A1 ("ref" only for the store, "link" elsewhere); milestone 1's store decisions
-(ref names flat; one contract, no append); L2 · **Lean:** `Aven.DB.Store` — `blob_never_changes`, `blob_kept`,
+**Decided:** README rules 1 and 10; A1 ("ref" only for the store, "link" elsewhere); SANDBOX.md's decisions, **Ref
+names are flat**; L2; A174 (a hash in JSON) · **Lean:** `Aven.DB.Store` — `blob_never_changes`, `blob_kept`,
 `named_step`, `named_run`, `named_empty`, `size_get`, `readRef_refText`, `readRef_bare_refused`,
 `readRef_only_refText`
 
@@ -99,8 +99,9 @@ Each place a peer stores gets a backend, and every backend passes the same suite
   runs under `cargo test` and in a browser's dedicated worker, in Chromium, WebKit and Firefox.
 - **The model runs too:** the memory store follows the running Lean model call by call on random traces.
 
-**Decided:** README rule 10; milestone 1's store decisions (one contract, OpenDAL for memory, fs and s3; the suite a
-public module; versitygw as the box's S3); Samuel, 30 Oct (our own opfs driver) · **Lean:** `Aven.DB.Store`, its
+**Decided:** README rule 10; SANDBOX.md's decisions, **The suite is a public module**, **The OPFS suite runs in
+Playwright's Chromium, WebKit and Firefox**, **versitygw is the box's S3**; Samuel, 30 Oct (our own opfs driver,
+SANDBOX.md's open question 7) · **Lean:** `Aven.DB.Store`, its
 traces exported as `store.json`; the suite replays them
 
 ## The opfs driver
@@ -130,8 +131,8 @@ leaves the store as it was before the call or after it.
   | Chromium and WebKit | 60 ms | 30 ms | 10 s |
   | Firefox | 150 ms | 100 ms | 30 s |
 
-**Decided:** Samuel, 30 Oct (our own driver; a browser's store may be reset, never migrated); the store's decisions of
-30 Oct (one file per blob; the gates per engine) · **Lean:** `Aven.DB.StoreCrash` — `crash_atomic`, `crash_trace`,
+**Decided:** Samuel, 30 Oct (our own driver; a browser's store may be reset, never migrated); the store README, "What
+the store asks of the opfs driver", item 4 (one file per blob; the gates per engine) · **Lean:** `Aven.DB.StoreCrash` — `crash_atomic`, `crash_trace`,
 `torn_ref`; `Aven.DB.Store` — `open_marked`, `open_unmarked`
 
 ## Files
@@ -156,7 +157,7 @@ in memory, and a seek fetches only the chunks it touches.
   is (A22). After the cutover a file's chunks are Doc Values behind the one fetch gate (P16).
 - **Outboards are made, never kept:** iroh-blobs builds a chunk's bao tree when it serves or checks it.
 
-**Decided:** the store's decision of 30 Oct (big files are hash sequences, the contract unchanged); A1 (chunk list);
+**Decided:** the store README, "Big files are hash sequences" (the contract unchanged); A1 (chunk list);
 A22; P16 · **Lean:** `Aven.DB.Files` — `split_fits`, `flatten_split`, `length_split`, `split_size`, `index_fits`,
 `mem_touches`, `touches_lt`; vectors `files.json`
 
@@ -183,7 +184,7 @@ store names an iroh-blobs type: it is 0.x and breaks about monthly.
 - **Until the cutover** iroh-blobs serves the first generation's chat files. After it, a Doc's sealed Values move
   behind avenPEERS's one fetch gate ([avenPEERS](../peers/README.md)).
 
-**Decided:** the store's spike (iroh-blobs on our store through one adapter, over bao-tree directly); A44; P16 ·
+**Decided:** the store README, "iroh-blobs on the store" (one adapter, over bao-tree directly); A44; P16 ·
 **Lean:** not in Lean (mechanics); `tests/blobs.rs` holds it
 
 ## Pack files
@@ -208,7 +209,7 @@ opfs driver changes underneath.
   byte offset a crash point; then the driver.
 - **Its gates** are the same workload, every engine held to 60 ms, 30 ms and 10 s.
 
-**Decided:** the store's decision of 30 Oct (packs next, on the upgrade's evidence) · **Lean:** not in Lean yet
+**Decided:** the architect, 30 Oct (packs next, on the upgrade's evidence; not in the log yet) · **Lean:** not in Lean yet
 
 ## Status
 
