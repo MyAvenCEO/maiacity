@@ -582,8 +582,14 @@ pub async fn prf_keys(
     mut output: Vec<u8>,
 ) -> Result<JsValue, JsError> {
     use aven_db_store::RefName;
-    let derived = acts::prf_derive(&mut output).map_err(|e| JsError::new(&e))?;
-    let kept = serde_json::json!({ "credential": credential, "epoch": epoch, "owner": derived.owner, "seal": derived.seal });
+    // the keys go into this session's keeping before anything awaits, so no future carries them
+    let (owner, seal) = {
+        let derived = acts::prf_derive(&mut output).map_err(|e| JsError::new(&e))?;
+        let public = (derived.owner.clone(), derived.seal.clone());
+        OWNER.with(|o| *o.borrow_mut() = Some((derived.owner_key, derived.seal_key)));
+        public
+    };
+    let kept = serde_json::json!({ "credential": credential, "epoch": epoch, "owner": owner, "seal": seal });
     let (store, _) = store().await?;
     let name = RefName::new("owner-keys").map_err(js)?;
     let blob = store
@@ -592,11 +598,7 @@ pub async fn prf_keys(
         .map_err(js)?;
     let was = store.get_ref(&name).await.map_err(js)?;
     store.set_ref(&name, was, blob).await.map_err(js)?;
-    OWNER.with(|o| *o.borrow_mut() = Some((derived.owner_key, derived.seal_key)));
-    Ok(object(&[
-        ("owner", derived.owner.into()),
-        ("seal", derived.seal.into()),
-    ]))
+    Ok(object(&[("owner", owner.into()), ("seal", seal.into())]))
 }
 
 /// What the passkey's hybrid owner key signs, inside the Peer-Light: `bytes` (hex) in, the signature's Value's bytes
