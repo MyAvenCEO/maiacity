@@ -357,6 +357,7 @@ dependencies = [
  "aven-db-store",
  "aven-id",
  "aven-runtimes-registry",
+ "blake3",
  "bytes",
  "futures-channel",
  "iroh",
