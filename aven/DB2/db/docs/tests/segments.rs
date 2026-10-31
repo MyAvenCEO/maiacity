@@ -264,7 +264,7 @@ fn pt_len(s: &[u8]) -> usize {
 
 #[test]
 fn a_mixed_sealed_page_lands_in_one_batch() {
-    use aven_db_docs::{SealedItem, Unopened};
+    use aven_db_docs::Unopened;
     let a = device("alice");
     let g = genesis(&a);
     let mut writer = open(&g);
@@ -300,12 +300,8 @@ fn a_mixed_sealed_page_lands_in_one_batch() {
     );
     // the later loose envelope first: it waits in the page for the segment, and the page settles at once
     let mut reader = open(&g);
-    let page = [
-        SealedItem::Loose(&later),
-        SealedItem::Segment(&seg),
-        SealedItem::Loose(&unknown),
-        SealedItem::Loose(b"junk"),
-    ];
+    // as a keeper serves them, without kinds: each found by its commitment
+    let page: [&[u8]; 4] = [&later, &seg, &unknown, b"junk"];
     let keys = [&e1, &e2];
     let r = reader.import_sealed_page(
         &page,
@@ -323,4 +319,60 @@ fn a_mixed_sealed_page_lands_in_one_batch() {
     assert!(matches!(r[2], Err(Unopened::Epoch(_))));
     assert_eq!(r[3], Err(Unopened::Form));
     assert_eq!(reader.snapshot(), writer.snapshot());
+    // a checkpoint is no page's, and a commitment one byte off matches no kind: neither opens
+    let mut blind = open(&g);
+    let snap = seal(Kind::Snapshot, &e1, &g.id(), b"a checkpoint", &mut ent);
+    let mut wrong = seal(Kind::Envelope, &e1, &g.id(), b"x", &mut ent);
+    let n = wrong.len();
+    wrong[n - 1] ^= 1;
+    let page: [&[u8]; 2] = [&snap, &wrong];
+    let r = blind.import_sealed_page(
+        &page,
+        |n| keys.iter().copied().find(|k| k.name == *n),
+        &Allow,
+    );
+    assert_eq!(r, vec![Err(Unopened::Seal), Err(Unopened::Seal)]);
+    // the opening half alone, with no Doc, as the Peer-Light runs it beside the keys: the same envelopes, which import
+    // to the same state
+    let page: [&[u8]; 3] = [&later, &seg, &unknown];
+    let plain = aven_db_docs::open_sealed_page(
+        &g.id(),
+        &page,
+        |n| keys.iter().copied().find(|k| k.name == *n),
+        &Limits::DEFAULTS,
+    );
+    assert_eq!(plain[0].as_ref().map(Vec::len), Ok(1));
+    assert_eq!(plain[1].as_ref().map(Vec::len), Ok(4));
+    assert!(matches!(plain[2], Err(Unopened::Epoch(_))));
+    let mut split = open(&g);
+    let envs: Vec<&[u8]> = plain
+        .iter()
+        .flatten()
+        .flatten()
+        .map(Vec::as_slice)
+        .collect();
+    assert!(
+        split
+            .import_page(&envs, &Allow)
+            .iter()
+            .all(|x| *x == Ok(Imported::Counts))
+    );
+    assert_eq!(split.snapshot(), writer.snapshot());
+    let other = aven_db_docs::open_sealed_page(
+        &aven_core::DocId(blake3(b"another Doc")),
+        &page[..1],
+        |n| keys.iter().copied().find(|k| k.name == *n),
+        &Limits::DEFAULTS,
+    );
+    assert_eq!(other, vec![Err(Unopened::Doc)]);
+    // a kind found by the commitment alone, and none under another epoch's key
+    assert_eq!(
+        aven_db_docs::seal::kind_of(&e1, &seg, 1 << 21),
+        Some(Kind::Segment)
+    );
+    assert_eq!(
+        aven_db_docs::seal::kind_of(&e2, &later, 1 << 21),
+        Some(Kind::Envelope)
+    );
+    assert_eq!(aven_db_docs::seal::kind_of(&e2, &seg, 1 << 21), None);
 }

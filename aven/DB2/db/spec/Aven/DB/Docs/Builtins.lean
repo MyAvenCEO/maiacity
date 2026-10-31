@@ -1,20 +1,23 @@
 import Aven.DB.Docs.Genesis
+import Aven.DB.Docs.Schema
 
 /-!
 # Built-in types' fit, by whoever defines them
 
 A built-in type is versioned by its label, so it has no schema; its shape is its definer's Lean structure (the
 architect, 31 Oct 2026). Fit takes the built-in checks as a parameter, `BuiltinFit : DocId → Option (Value → Bool)`:
-the docs layer supplies its own four (`docsBuiltinFit`: branch, closed, version, split), avenID supplies `cap`,
+the docs layer supplies its own five (`docsBuiltinFit`: branch, closed, version, schema, split), avenID supplies `cap`,
 `revoke` and `epoch`, and a type nobody supplies is no built-in.
 
 A built-in Record is a statement written whole at its birth: its fields, as a map, must pass its definer's check. It is
 never edited afterwards, and may be removed (`builtin_fits_iff`).
 
-The docs four, each a map of exactly these fields:
+The docs five, each a map of exactly these fields:
 - `branch`: `name` text, `base` a list of hashes, `nonce` a hash, and optionally `follows` text;
 - `closed`: optionally `at`, a list of hashes;
-- `version`: `name` text, `at` a list of hashes;
+- `version`: `name` text, `at` a list of hashes: a named version, on any Doc;
+- `schema`: `name` text, `at` a list of hashes, and `schema` a schema's one form (`Schema.ofValue?`): a type Doc's
+  version, named by its schema's hash (A39, A207, `pin_resolves_one`). It alone carries a schema;
 - `split`: `writer` an unsigned integer, `after` a hash.
 -/
 
@@ -47,7 +50,7 @@ theorem builtin_fits_iff {bf : BuiltinFit} {t : DocId} {check : Value → Bool} 
     builtinFits bf t kind fields = some true ↔ kind = .gone ∨ (kind = .new ∧ check (.map fields) = true) := by
   cases kind <;> simp [builtinFits, h]
 
-/-! ## The docs layer's four -/
+/-! ## The docs layer's five -/
 
 def isHash : Value → Bool
   | .bytes b => b.length == 32
@@ -60,6 +63,8 @@ def isHashes : Value → Bool
 def isText : Value → Bool
   | .text _ => true
   | _ => false
+
+def isSchema (v : Value) : Bool := (Schema.ofValue? v).isSome
 
 def isUint : Value → Bool
   | .uint _ => true
@@ -78,6 +83,7 @@ def branchShape : Value → Bool :=
   shape [("name", isText, true), ("base", isHashes, true), ("nonce", isHash, true), ("follows", isText, false)]
 def closedShape : Value → Bool := shape [("at", isHashes, false)]
 def versionShape : Value → Bool := shape [("name", isText, true), ("at", isHashes, true)]
+def schemaShape : Value → Bool := shape [("name", isText, true), ("at", isHashes, true), ("schema", isSchema, true)]
 def splitShape : Value → Bool := shape [("writer", isUint, true), ("after", isHash, true)]
 
 /-- The docs layer's built-in types, each with its shape. -/
@@ -85,6 +91,7 @@ def docsBuiltinFit (H : Bytes → Hash) : BuiltinFit := fun t =>
   if t == builtinType H "branch" then some branchShape
   else if t == builtinType H "closed" then some closedShape
   else if t == builtinType H "version" then some versionShape
+  else if t == builtinType H "schema" then some schemaShape
   else if t == builtinType H "split" then some splitShape
   else none
 
@@ -93,7 +100,10 @@ def BuiltinFit.or (a b : BuiltinFit) : BuiltinFit := fun t => (a t).or (b t)
 
 #guard versionShape (.map [(k "at", .array []), (k "name", .text (k "v1"))])
 #guard !versionShape (.map [(k "name", .text (k "v1"))])
-#guard !versionShape (.map [(k "at", .array []), (k "name", .text (k "v1")), (k "x", .null)])
+#guard !versionShape (.map [(k "at", .array []), (k "name", .text (k "v1")), (k "schema", (Schema.mk [] [] false).value)])
+#guard schemaShape (.map [(k "at", .array []), (k "name", .text (k "v1")), (k "schema", (Schema.mk [] [] false).value)])
+#guard !schemaShape (.map [(k "at", .array []), (k "name", .text (k "v1"))])
+#guard !schemaShape (.map [(k "at", .array []), (k "name", .text (k "v1")), (k "schema", .map [])])
 #guard (docsBuiltinFit blake3 (builtinType blake3 "split")).isSome
 #guard (docsBuiltinFit blake3 (typeOfTypes blake3)).isNone
 
