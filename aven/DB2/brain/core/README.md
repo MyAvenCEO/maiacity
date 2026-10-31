@@ -12,7 +12,8 @@ envelopes and logs, counting, limits, ops and targets, each defined once and reu
 - [Logs](#logs): one writer's envelopes in one Doc and branch, each naming the one before.
 - [Splits](#splits): two envelopes at one place of a log, final.
 - [The past](#the-past): what an envelope builds on, decided for what a reader holds, and versions.
-- [Counting](#counting): a whole past held (`Closed`) and the one counting rule, `Counts nm fit authorized`.
+- [Counting](#counting): a whole past held (`Closed`) and the one counting rule, `Counts`, over fit, authorized and
+  revoked.
 - [Limits](#limits): the limits on Values, signed things, envelopes, calls and bounds, and what a reader accepts.
 - [Ops and calls](#ops-and-calls): `OpId`, `OpId.ofPlugin`, `core/1`'s eight ops and write params, calls and bounds.
 - [Targets and steps](#targets-and-steps): the one target grammar in three forms, its CBOR, and a write's steps.
@@ -28,8 +29,9 @@ avenCORE imports no other package. What it needs from one, it takes as a paramet
   owners' signatures beside one name decide; sealing.
 - [avenDOCS](../docs/README.md): `Writes`, from its writer ids; `fit`; a Doc's genesis, whose name is the Doc's id; an
   envelope's `body`; types and their versions; segments.
-- [avenCAPS](../caps/README.md): `authorized`; `lists`, what a collection lists; the check of a writer's key against
-  its device cap; cap lines, which name ops and bound their params.
+- [avenCAPS](../caps/README.md): `authorized`; `revoked`, which revocations a reader holds discount an envelope;
+  `lists`, what a collection lists; the check of a writer's key against its device cap; cap lines, which name ops and
+  bound their params.
 - [avenOPS](../ops/README.md): lowering a call to steps; stored queries and plugins' ops.
 - [avenACTORS](../actors/README.md): `spawned`, which actor spawned which.
 - [avenSTORE](../store/README.md): a Value at rest, a blob.
@@ -54,11 +56,14 @@ people and the vectors read a Value.
   or map around it one more. A hostile input can't exhaust a reader's stack, and the reader and the writer agree on
   where the limit is.
 - **Whole.** A byte string is one Value, with nothing after it.
+- **No null in a built-in body.** Every built-in body (caps, revocations, passkey records, keeper records and the rest)
+  leaves an absent field out of its map instead of writing `null`, and its decoder refuses a `null`, so a field has one
+  form, not two. A user's Values may still hold `null`.
 - **Proven:** decoding an encoding gives the Value back (`decode_encode`, `decodeAll_encode`); every byte string the
   decoder accepts is exactly the encoding of what it decoded (`encode_decode`, `encode_decodeAll`); two allowed Values
   with one encoding are one Value (`encode_inj`); nothing accepted nests deeper than 512 (`decodeAll_deep`).
-- **The readable form.** In JSON, an integer is a number, text a string, a byte string `{"bytes": "<hex>"}`. Every
-  package's vectors use this one form.
+- **The readable form.** In JSON, an integer is a number, text a string, a byte string `{"bytes": "<hex>"}` in
+  lowercase hex, a hash among them. Every package's vectors use this one form.
 - **Two frozen forms** are never written in the codec: what was stored before the network's genesis, read as it is and
   never written again, and the wire's hello and `update`, which every version must read
   ([avenPEERS](../peers/README.md)).
@@ -66,8 +71,8 @@ people and the vectors read a Value.
   [names](#names). What compiles only the codec, such as the runtimes' frozen modules, moves only when the codec does.
   `aven-core` re-exports it. Both are `no_std`, with no `unsafe`, and build for wasm32.
 
-**Decided:** rule 1, A2, A29, A45; ledger 06:29 (512 deep), ledger 09:57 and 10:07 (the codec crate) · **Lean:**
-`Aven.Core.CborLaws` — `decode_encode`, `encode_decode`, `decodeAll_encode`, `encode_decodeAll`, `decodeAll_deep`,
+**Decided:** rule 1, A2, A29, A45, A52 (512 deep), A98 (the codec crate), A174 (bytes in JSON), A184 (no null in a
+built-in body) · **Lean:** `Aven.Core.CborLaws` — `decode_encode`, `encode_decode`, `decodeAll_encode`, `encode_decodeAll`, `decodeAll_deep`,
 `encode_inj`; `Aven.Core.Text` — `utf8_text`, `text_inj`; `Aven.Core.ValueEq` — `Value.beq_iff`
 
 ## Names
@@ -77,21 +82,23 @@ with one name are one Value. The hash is BLAKE3. Every model takes the hash as a
 collision-free says so (`Injective`): the one assumption every Aven model makes.
 
 - **A hash** is BLAKE3's 32 bytes. In CBOR it is a byte string of exactly 32 bytes, and `Hash.ofValue?` is the one
-  reader of a hash: every id, `prev`, dep and op id is read through it. Its text is `b3:<64 lowercase hex>`.
+  reader of a hash: every id, `prev`, dep and op id is read through it. In JSON it is `{"bytes": "<hex>"}`, as every
+  byte string is; `b3:<64 lowercase hex>` (`Hash.text`) is only for display.
 - **A Value's name** is the hash of its encoding (`nameOf`; in Rust `name_of`). Two allowed Values with one name are
   one Value (`nameOf_inj`).
 - **A Doc id** is the [name of a signed thing](#signed-things): the Doc's genesis under `avenDB genesis 1`. The genesis
-  itself is [avenDOCS](../docs/README.md)'. In CBOR a Doc id is its 32 bytes; its text is `d:<hex>`.
+  itself is [avenDOCS](../docs/README.md)'. In CBOR a Doc id is its 32 bytes; `d:<hex>` is only for display.
 - **A type id** names one version of a type: `<type Doc>/<schema hash>`, the version Record's address in its type Doc,
   and the one way a version is named anywhere. In CBOR it is `[type Doc's id, schema hash]`, two byte strings of 32
-  bytes, and any other length is refused (`TypeId.ofValue_value`). Its text is `d:<hex>/b3:<hex>`. Types and their
+  bytes, and any other length is refused (`TypeId.ofValue_value`). It is shown as `d:<hex>/b3:<hex>`. Types and their
   versions are [avenDOCS](../docs/README.md)'.
 - **A sealed Value** is named by the hash of its sealed bytes; sealing is [avenID](../id/README.md)'s.
 - **BLAKE3 in Lean** is the specification's algorithm, held to its known answers: hashing, the keyed mode, `derive_key`
   and the extendable output of all three. avenID's keys and avenDOCS' writer ids derive with it. Rust uses the `blake3`
   crate, pinned exactly.
 
-**Decided:** rule 1, A2, A45, P17 (one hash reader), docs 24 (a Doc id is its genesis's A30 name) · **Lean:**
+**Decided:** rule 1, A2, A45, A96 (text forms are display only), A145 (one hash reader), A174 (a hash in JSON),
+docs 24 (a Doc id is its genesis's A30 name) · **Lean:**
 `Aven.Core.Names` — `nameOf_inj`, `Hash.ofValue?_value`, `Hash.ofValue_value`, `TypeId.ofValue_value`;
 `Aven.Core.Blake3` — `digestXof`, `keyedHash`, `deriveKey`, held to the specification's answers
 
@@ -121,8 +128,8 @@ names: the other signatures are approvals over the same bytes.
 - **History or a beat.** Whatever decides something is history: written by an envelope in a log, where a split is
   final and the newest is the latest. A beat decides nothing ([avenPEERS](../peers/README.md)' presence).
 
-**Decided:** rule 1, A30, A31, A36 (a format's label is its version), A45, L12 (labels are frozen strings); ledger 07:44
-(a body carries what makes an act its own), ledger 09:35 (`Sig`, one per signer) · **Lean:** `Aven.Core.Signed` —
+**Decided:** rule 1, A30, A31, A36 (a format's label is its version), A45, A65 (a body carries what makes an act its
+own), A94 (`Sig`, one per signer), A161 (labels are frozen strings) · **Lean:** `Aven.Core.Signed` —
 `signing_separates`, `Signed.name_inj`, `Signed.name_sigs`, `Signed.name_addSig`, `addSig_mono`, `addSig_signed`,
 `Signed.signedBy_addSig`
 
@@ -161,8 +168,8 @@ As it travels (`Envelope.value`), keys in the codec's order:
   [avenID](../id/README.md)'s and [avenCAPS](../caps/README.md)'.
 - **Read from bytes** only within its [limits](#limits) and in exactly this shape (`Envelope.accept`).
 
-**Decided:** rule 2, A3, A30, A45 (writer ids are docs'; Core takes `writes`), P17 (`Writes`, a named trait in Rust);
-ledger 09:35 (an envelope that isn't placed is nothing) · **Lean:** `Aven.Core.Log` — `Envelope.name_inj`,
+**Decided:** rule 2, A3, A30, A45 (writer ids are docs'; Core takes `writes`), A94 (an envelope that isn't placed is
+nothing), A145 (`Writes`, a named trait in Rust) · **Lean:** `Aven.Core.Log` — `Envelope.name_inj`,
 `Envelope.unsigned_inj`, `Envelope.value_inj`, `Envelope.name_sigs`, `Envelope.name_addSig`, `Envelope.placed_addSig`
 
 ## Logs
