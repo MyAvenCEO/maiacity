@@ -8,7 +8,7 @@ slide, each built on the ones before it.
 1. **A key signs.** A key makes a signature over some words.
 2. **Anyone can check a signature.** With the key's public half, and nothing secret.
 3. **A vault.** An identity that can own things, with a name.
-4. **A key owns a vault.** What its owner key signs, it signs for the vault.
+4. **A key owns a vault.** The owner key governs the vault: what it signs as owner, the vault has decided.
 5. **A device keeps its own key.** A phone or a laptop signs with a key that never leaves it.
 6. **A passkey.** The key a person's browser or phone keeps for them, behind a fingerprint or a face.
 7. **A device acts for a vault.** Within what the vault lets it do: its device cap.

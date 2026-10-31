@@ -12,6 +12,7 @@ date; the rest is a proposal.
 - **Exact.** Every claim says what the specs mean, in their words ([`GLOSSARY.md`](GLOSSARY.md)); a simplification
   says so ("That comes later"), it never says something false.
 - **English.** The docs are in English (Samuel, 31 Oct 2026).
+- **"Signs for" is a device key's** (slide 7); an owner key **governs** its vault (Samuel, 31 Oct 2026).
 - **No metaphors from the game** (Samuel, 31 Oct 2026). Say and draw what a thing is: a vault, not a dome.
 
 ## The story map
