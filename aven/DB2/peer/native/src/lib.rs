@@ -48,6 +48,21 @@ pub fn know(endpoint: &iroh::Endpoint, addr: iroh::EndpointAddr) {
     }
 }
 
+/// The wire version this peer says it speaks (PEERS.md §7): `wire::VERSION`, unless [`speak`] set another.
+static WIRE: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(aven_db_core::wire::VERSION);
+
+/// The wire version this peer's hellos and gossip topic name, and the only one it accepts.
+pub fn wire_version() -> u64 {
+    WIRE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Makes this peer say it speaks wire version `v` (the Peer's `--wire-version`), to rehearse an upgrade: a peer a
+/// version ahead, or one left behind (sandbox/upgrade.mjs). Its frames stay this build's, so it is for that alone.
+pub fn speak(v: u64) {
+    WIRE.store(v, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Milliseconds since the epoch, the one clock every line is stamped with.
 pub fn now() -> u64 {
     n0_future::time::SystemTime::now()
