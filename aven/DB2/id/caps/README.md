@@ -739,7 +739,7 @@ through.
   - `avenDB envelope 1`;
   - `avenDB segment 1`;
   - `avenDB snapshot 1`, for checkpoints;
-  - `avenDB fetch 1`;
+  - `avenDB fetch key 1`, the fetch key's seed (`Aven.ID.KeepCbor`);
   - `avenDB topic 1`;
   - `avenDB converge 1`.
 - **Envelopes, segments and checkpoints** use XChaCha20-Poly1305 with a key commitment. A segment holds one epoch, so a
@@ -846,7 +846,7 @@ A keep cap tells a keeper what to keep and nothing about what it is:
 
 How much it keeps for a vault, and how fast, is the keeper's own offer (A44).
 
-**Fetch keys chain** (A22, Samuel, 30 Oct 2026). Each epoch's fetch key comes from its key (`avenDB fetch 1`). The
+**Fetch keys chain** (A22, Samuel, 30 Oct 2026). Each epoch's fetch key comes from its key (`avenDB fetch key 1`). The
 rotation's writer signs a link with the fetch key before it: the Doc, the epoch's depth `n` and hash, and the new fetch
 key's public half. A keeper takes a link on that signature alone, since it reads no caps:
 1. A link counts only if it is for this Doc, one epoch deeper than the key before it, and signed by that key, which the
@@ -858,9 +858,6 @@ key's public half. A keeper takes a link on that signature alone, since it reads
 3. It takes and serves a Doc's sealed bytes only for a device that signs the connection's TLS exporter with the current
    fetch key (`served_current`). So "nothing leaves for a device that may not receive it" (engine, rule 13) holds at a
    keeper that can't read caps, and nobody outside a Doc can fill it with junk.
-4. The uploading vault pays, and only for what the keeper took from it (`uploader_pays`). Uploads are taken in the
-   order they come, each only while its vault's spending stays within the quota the keep cap gives it, so no vault ever
-   spends past it (`quota_holds`, R10).
 
 **What a keeper keeps, and for whom** (A22, Samuel, 31 Oct 2026: "a Vault owner always decides, where its data gets
 shared to"). A keeper holds its keep caps, so it checks each against the tree: a grant naming the keeper's vault,
@@ -1439,14 +1436,13 @@ Values, hashes, ops or targets of its own; its built-in types are `Aven.ID.Types
 | | `current_agrees`, `current_chained` | Keepers holding the same links take the same current fetch key, whatever order they came in, and it chains |
 | | `fork_flagged` | Every fork a keeper takes is flagged |
 | | `served_current`, `fork_served` | A keeper serves a fetch or takes an upload only for a proof on that connection by the current fetch key, or, while a fork is unsettled, by a branch's newest key, so honest readers are never refused |
-| | `quota_holds`, `admitted_served` | A keeper takes uploads in the order they come, each only while its vault's spending stays within the quota its keep cap gives it, so no vault's spending ever passes its quota; and it takes only what it serves (R10) |
 | | `grind_settled`, `settled_example` | Once the keep cap's issuer chooses a branch at a fork, every keeper follows it whatever forks arrive after |
 | | `kept_only_offered` | A keeper keeps a Doc only where the owner's keep cap names it and the keeper's own offer, valid and not withdrawn, covers that owner: keep caps ∩ offers (A44) |
 | | `kept_only_covered`, `kept_only_by_owner`, `kept_by_owner` | A keeper keeps only what a keep cap it holds lists, one naming it that a device of its issuer signed, its issuer's owners approved, and its issuer hasn't withdrawn: a keeper holds a vault's data only under a keep cap that vault's owners approved (A22) |
 | | `withdrawn_dropped`, `withdrawn_not_served`, `others_kept` | A withdrawn keep cap's Docs are dropped and served no more, and what other keep caps cover stays, as do the keeper's offers |
 | | `deleted_gone`, `deleted_final` | A Doc its vault deleted is dropped and served no more, whatever comes after |
-| | `uploader_pays` | The uploading vault pays, and only for what the keeper took from it |
 | | `grind_example` | A removed reader's fork with a ground hash becomes current at a keeper until the issuer chooses; it is flagged, and honest readers are still served |
+| `KeepCbor` | `labels_distinct`, `link_name_inj`, `listing_name_inj` | A keeper's five labels differ, so no signature over one kind reads as another's; two fetch links, or two listings, with one name say the same thing (A30) |
 | `SealedIndex`, moving to `Aven.Architecture.Sealed` (the docs thread) | `index_within_key`, `index_skips` | An index holds only entries read under keys every holder of its key holds; one some holder can't read changes nothing in it (rule 36) |
 | | `sealed_roots_agree` | Two readers holding the same admissible entries rebuild the same sealed root under one key, so each can check a published one. The root is a parameter here; `Aven.Architecture` joins it with the docs model's `root_set` |
 | | `sealed_padded`, `root_by_writer` | Sealed nodes are padded (D18); only a vault that may write the directory publishes a root a reader takes |
@@ -1480,7 +1476,8 @@ One smaller gap:
 | `issuers.json` | Chains on the cast with the garden, a coop Alice and Bob own whose quorum each case gives, and its helper: a root over a coop's Docs needs the coop's own owners, a vault without devices issues by its owners' approval alone, an attenuation with no device needs its holder's owners, and Maia City's confirm cap (A28, A38). The context writes the tree out and gives per-vault quorums |
 | `expiry.json` | Writes under a cap that expires, with each envelope's signed time, and whether each counts for the clock |
 | `network.json` | A ticket's claims in two orders (A12), removals that clash, MaiaCityGuardian's exit |
-| `keep.json` | Fetch-key links in the order they came, with the keys a keeper takes, its current key and its flags; proofs and whether they're served; what each vault pays; what a keeper keeps under the keep caps it holds and its own offers (A44); how much each vault may keep, by those offers, and the uploads admitted within it; 30 generated keepers |
+| `keep.json` | Fetch-key links in the order they came, with the keys a keeper takes, its current key and its flags; proofs and whether they're served; what a keeper keeps under the keep caps it holds and its own offers (A44); how much each vault may keep, by those offers; 30 generated keepers |
+| `keep-bytes.json` | A keeper's bytes (`Aven.ID.KeepCbor`, A30): fetch keys from Doc epoch keys; a listing, two fetch links, both orders, a choice and a fetch proof, each with its body, CBOR, signing bytes and name |
 
 `aven-id-model` answers the same cases a backend's property tests draw: a chain, who keeps a Doc, a Doc of envelopes
 with its revocations, and an envelope's authority, each in the form its vector's input takes (`Aven.ID.CapsModel`).
