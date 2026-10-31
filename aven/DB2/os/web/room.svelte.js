@@ -6,13 +6,14 @@
 // The network's invites and their states come the same way, in its `network` lines. A deleted line is told again as
 // `deleted`, without its text or file, and shows so in its place.
 // `refused`: why the Peer-Light refused the last line written here; `sharing`: files on their way into the store;
+// `writing`: lines said here not yet back from the Peer-Light's store (a switch waits for them, release.svelte.js);
 // `draft`: the line being written, kept in this origin's OPFS by the Peer-Light's worker as it changes, so a reload
 // (an update's above all, PEERS.md §7) finds it again
 import { putChunk, shareFile } from './id.svelte.js';
 
 // `files`: per file, how far it is on its way: `sent` of `size` bytes gone out from this device (its sender's), `held` of
 // `len` here (a viewer's)
-export const room = $state({ lines: [], present: [], invites: null, refused: null, sent: {}, sharing: [], files: {}, draft: '' });
+export const room = $state({ lines: [], present: [], invites: null, refused: null, sent: {}, sharing: [], files: {}, draft: '', writing: [] });
 
 const chunk = 1 << 20;
 const before = (a, b) => a.at - b.at || (a.key < b.key ? -1 : a.key > b.key ? 1 : a.seq - b.seq);
@@ -33,6 +34,8 @@ export function hear(line) {
 		// a line is shown once, by its name; told again (its sender named now), it changes in place. A line without a name
 		// (milestone 2's `say`) shows every time
 		// a line written before this device knew its own head, chained now, takes its queued line's place
+		const mine = room.writing.indexOf(line.text);
+		if (mine >= 0) room.writing.splice(mine, 1);
 		if (line.replaces) room.lines = room.lines.filter((l) => l.id !== line.replaces);
 		const shown = said.id ? room.lines.findIndex((l) => l.id === said.id) : -1;
 		// a delete written before this device knew its own head names only the line: the rest stays as it was
@@ -48,7 +51,7 @@ export function hear(line) {
 		for (const file of line.files ?? []) room.files[file] = { ...room.files[file], kept: true };
 	if (line.event === 'room') room.present = line.present;
 	if (line.event === 'network' && 'invites' in line) room.invites = line.invites ?? null;
-	if (line.event === 'refused') room.refused = line.why;
+	if (line.event === 'refused') Object.assign(room, { refused: line.why, writing: [] });
 	// the draft kept before a reload, unless a line is being written here already
 	if (line.event === 'draft' && !room.draft) room.draft = line.text;
 	if (line.event === 'draft-kept') drafts.get(line.id)?.(line.error);
@@ -81,6 +84,7 @@ export function say(text) {
 	const line = text.trim();
 	if (!line || !port) return;
 	room.refused = null;
+	room.writing.push(line);
 	port.postMessage({ start: starting, say: line });
 }
 

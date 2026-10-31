@@ -212,3 +212,124 @@ self.addEventListener('fetch', (event) => {
 	const file = url.origin === self.location.origin && /^\/files\/([0-9a-f]{64})$/.exec(url.pathname);
 	if (file) event.respondWith(serve(file[1], event.request.headers.get('range')));
 });
+
+// A newer release (PEERS.md §7, `Aven.ID.Release`): the release record at /release.json names every file of avenOS's
+// build with its SHA-256. When the app opens and every hour (release.svelte.js asks), this worker fetches the record;
+// one newer than the release it keeps is downloaded whole into a cache of its own, each file hashed as it comes, and
+// checked by this origin's Peer-Light, which runs the release the device trusts now (`releaseCheck`, over the same
+// BroadcastChannel as a file's bytes). A ready release waits there until a tab reaches a safe point and asks to switch:
+// it becomes the shell, and every tab reloads at its own safe point. A refused one is dropped, and the tabs are told
+// why. The record this worker keeps (`/release.json` in the shell) is the release it runs; a host without one (the dev
+// server) has nothing to check. A device's first record is taken as it is, since the page it opened came with it.
+const runningKey = '/release.json';
+let staged = null;
+let checking = null;
+
+const hex = (buffer) => [...new Uint8Array(buffer)].map((b) => b.toString(16).padStart(2, '0')).join('');
+const tell = async (message) => {
+	for (const client of await self.clients.matchAll({ type: 'window' })) client.postMessage(message);
+};
+
+async function runningRecord() {
+	const kept = await caches.match(runningKey, { cacheName: shell }).catch(() => null);
+	return kept ? kept.json().catch(() => null) : null;
+}
+
+// the Peer-Light's verdict on a record and the files fetched for it: {verdict, why?, signed?}
+function verdict(record, running, fetched) {
+	const id = `${me}${asked++}`;
+	return new Promise((resolve) => {
+		const ask = () => channel.postMessage({ id, release: { record: JSON.stringify(record), running, fetched: JSON.stringify(fetched) } });
+		const again = setInterval(ask, 2_000);
+		const gaveUp = setTimeout(() => done({ verdict: 'refuse', why: 'the Peer-Light did not answer in 60 s' }), 60_000);
+		const done = (answer) => {
+			clearInterval(again);
+			clearTimeout(gaveUp);
+			channel.removeEventListener('message', hear);
+			resolve(answer);
+		};
+		const hear = ({ data }) => {
+			if (data?.id === id && data.verdict) done(data.verdict);
+		};
+		channel.addEventListener('message', hear);
+		ask();
+	});
+}
+
+async function checkRelease() {
+	const got = await fetch(runningKey, { cache: 'no-store' }).catch(() => null);
+	if (!got?.ok || !got.headers.get('content-type')?.includes('json')) return;
+	const record = await got.json().catch(() => null);
+	if (!record || typeof record.counter !== 'number' || !Array.isArray(record.files)) return;
+	const running = await runningRecord();
+	await tell({ release: 'running', counter: running?.counter ?? null });
+	// the first record: the page this device opened came with it, so it is the release it runs
+	if (!running) {
+		await (await caches.open(shell)).put(runningKey, new Response(JSON.stringify(record), { headers: { 'content-type': 'application/json' } }));
+		return tell({ release: 'running', counter: record.counter });
+	}
+	if (record.counter <= running.counter || staged?.record.counter === record.counter) return;
+	// the whole release, each file hashed as it is kept
+	const name = `aven-next-${record.counter}`;
+	await caches.delete(name);
+	const cache = await caches.open(name);
+	const fetched = [];
+	for (const file of record.files) {
+		const answer = await fetch(file.path, { cache: 'no-store' }).catch(() => null);
+		if (!answer?.ok) continue;
+		const bytes = await answer.clone().arrayBuffer();
+		fetched.push({ path: file.path, sha256: hex(await crypto.subtle.digest('SHA-256', bytes)) });
+		await cache.put(file.path, answer);
+	}
+	const said = await verdict(record, running.counter, fetched);
+	if (said.verdict !== 'ready') {
+		await caches.delete(name);
+		if (said.verdict === 'refuse') await tell({ release: 'refused', counter: record.counter, why: said.why });
+		return;
+	}
+	staged = { record, cache: name };
+	// kept with it, so a worker started again before the switch still finds it
+	await cache.put(runningKey, new Response(JSON.stringify(record), { headers: { 'content-type': 'application/json' } }));
+	await tell({ release: 'ready', counter: record.counter, version: record.version, signed: said.signed });
+}
+
+// a release staged by this worker before it was stopped
+async function stagedRecord(counter) {
+	const name = `aven-next-${counter}`;
+	if (!(await caches.has(name))) return null;
+	const kept = await (await caches.open(name)).match(runningKey);
+	const record = kept && (await kept.json().catch(() => null));
+	return record?.counter === counter ? { record, cache: name } : null;
+}
+
+// the staged release becomes the shell: its files under their paths, its page as `/`, its record as the one it runs
+async function promote() {
+	const { record, cache: name } = staged;
+	const next = await caches.open(name);
+	const cache = await caches.open(shell);
+	for (const file of record.files) {
+		const kept = await next.match(file.path);
+		if (!kept) continue;
+		await cache.put(file.path === '/index.html' ? '/' : file.path, kept);
+	}
+	await cache.put(runningKey, new Response(JSON.stringify(record), { headers: { 'content-type': 'application/json' } }));
+	await caches.delete(name);
+	staged = null;
+}
+
+self.addEventListener('message', (event) => {
+	const asked = event.data?.release;
+	if (asked === 'check') event.waitUntil((checking ??= checkRelease().finally(() => (checking = null))));
+	if (asked === 'switch')
+		event.waitUntil(
+			(async () => {
+				const running = await runningRecord();
+				staged ??= await stagedRecord(event.data.counter);
+				if (staged?.record.counter === event.data.counter) {
+					await promote();
+					await tell({ release: 'switched', counter: event.data.counter });
+				} else if (running?.counter !== event.data.counter) return;
+				event.source?.postMessage({ release: 'reload' });
+			})(),
+		);
+});

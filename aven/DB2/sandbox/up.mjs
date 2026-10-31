@@ -215,7 +215,8 @@ async function check() {
 		(await videos(run)) &&
 		(await shares(run)) &&
 		(await offlines(run)) &&
-		(await upgrades(run));
+		(await upgrades(run)) &&
+		(await releases(run));
 	say(`${passed ? 'check passed' : 'check FAILED'}; screenshots and report in aven/DB2/${run}/`);
 	return passed ? 0 : 1;
 }
@@ -446,6 +447,20 @@ export async function upgrades(run) {
 	await restart('prod', '');
 	await wipe();
 	say(`${ok ? 'a peer of another wire version is refused with update, and the one behind follows' : 'the upgrade step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s)`);
+	return ok;
+}
+// A newer release, checked and switched to at a safe point, and a tampered one refused (PEERS.md §7), by
+// sandbox/release.mjs on avenOS's release build in front of production's stand-in, from an empty store it leaves empty
+export async function releases(run) {
+	const timed = Date.now();
+	const wipe = async () => {
+		await $`${compose} exec -T s3 rm -rf /data/aven/prod`.env(env).quiet();
+		await $`${compose} restart prod`.env(env).quiet();
+	};
+	await wipe();
+	const ok = (await $`${compose} exec -T browsers node sandbox/release.mjs ${run}`.env(env).nothrow()).exitCode === 0;
+	await wipe();
+	say(`${ok ? 'a newer release is checked and switched to at a safe point; a tampered one is refused' : 'the release step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s)`);
 	return ok;
 }
 const chats = async (run) => (await $`${compose} exec -T browsers node sandbox/chat.mjs ${run}`.env(env).nothrow()).exitCode === 0;

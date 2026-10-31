@@ -18,6 +18,7 @@ mod members;
 mod network;
 mod passkey;
 mod query;
+pub mod release;
 mod sign;
 mod statements;
 mod tree;

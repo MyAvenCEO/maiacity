@@ -7,6 +7,7 @@ import cast from '../../sandbox/cast.json';
 import App from './App.svelte';
 import Network from './Network.svelte';
 import Updating from './Updating.svelte';
+import { followReleases } from './release.svelte.js';
 import { hostNetwork, net, runNetwork, storageBlocked } from './network.svelte.js';
 import { runBox, runLight } from './peers.svelte.js';
 // the fonts are self-hosted from their packages: avenOS calls no third party
@@ -18,6 +19,8 @@ const device = Object.keys(cast.peers).find((id) => cast.peers[id].origin === lo
 const target = document.getElementById('app');
 // "Updating…" while this tab follows an `update` refusal, over whatever else shows (update.svelte.js)
 mount(Updating, { target: document.body });
+// a newer release, checked by the Service Worker and switched to at a safe point (release.svelte.js)
+followReleases();
 
 // a Peer-Light's origin runs that Peer-Light, in a worker of its own
 if (device) runLight(cast, device);

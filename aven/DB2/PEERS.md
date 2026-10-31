@@ -317,8 +317,48 @@ How it is built (thread E, 31 Oct 2026):
   timeline until the Peer starts again, upgraded by its owner. It never upgrades itself.
 - **The box rehearses it** with `--wire-version` (`AVEN_PEER_WIRE_VERSION`), which makes a Peer say another version,
   and only for that: `sandbox/upgrade.mjs` in `bun run up --check`.
+- **The release record** is `Aven.ID.Release` (`ready_newer`, `ready_os`, `ready_files`, `ready_signed`;
+  `releases.json`), `aven_id::release` in Rust. The release workflow writes it into avenOS's build as `/release.json`
+  and publishes it beside the release (`deploy/release.mjs`): the version, a counter, the wire version (the model's),
+  every file's SHA-256 with `os`, their listing's hash, and the Peer's binary per platform, copied out of the Peer's
+  image and hashed. The deploy downloads it with the tarball and checks it in `SHA256SUMS`.
+- **The Service Worker** checks `/release.json` when the app opens and every hour, downloads a newer release into a
+  cache of its own, hashing each file, and asks this origin's Peer-Light, the code the device trusts now, for the
+  verdict (`releaseCheck`). A ready release waits until a tab is at a safe point: its draft on disk, no line it said
+  still on its way into the store, no file half shared, and the tab hidden or idle a minute. Then it becomes the
+  shell and every tab reloads, showing "Updating…" (`os/web/release.svelte.js`). A refused one is dropped and the tabs
+  are told why. A device's first record is taken as the release it runs. `sandbox/release.mjs` checks it in three
+  engines, a tampered page included.
 - **The last manual reload:** the first release with the wire version refuses today's unversioned tabs, which can't
   read `update`. They drop and redial until a person reloads them once; every release after that is followed by itself.
+
+### The release vault's owners: a proposal (A36, for Samuel to decide)
+
+ARCHITECTURE A36 decides the shape: one release record per package, ordered by its dated version, an envelope in the
+release vault's Doc (A31), the genesis naming the release vault and its owners approving each record (rule 15, A28).
+What is left is who owns the release vault, and with what threshold.
+
+Today nothing signs a release, and no key is in CI or any secret. Every device runs `Device::today`: it checks a
+release's hashes against what it fetched, switches, and knows the release is unsigned. That catches a broken or
+half-served release, not a host that serves other code with a matching record. `Records.takes` and `Release.check`
+still take their signers as a free parameter; they become "approved by the release vault's owners, as the genesis
+names it" when the vault exists (A28's list, `audits/vaults.md`).
+
+- **The release vault,** "Aven Releases", is owned by Samuel's person vault, k = 1: a release is approved by one tap
+  of his passkey, on his own device. Not by Maia City's vault: who may change the code every member runs is a narrower
+  power than who governs the network, and it should not grow with the admins.
+- **The threshold grows with its owners:** 2 of 3 once two more people each hold a passkey of their own vault and
+  want the duty, by an ordinary owner change approved by the vault's current owners (D14). No new genesis.
+- **Never CI, a runner or a server:** CI builds and publishes the unsigned record as today. avenOS shows the release
+  vault's owners "Approve release 26.10.31": the package, version, wire version and `os` hash, and the GitHub release
+  it came from. The tap signs the record's body as an owner of the release vault; the record is an envelope in its
+  Doc, kept and gossiped by every peer that has it. CI needs no new write access.
+- **An unapproved record,** once the genesis names the release vault: `Unsigned.refuse`. The Service Worker keeps the
+  release it runs, and the Control Room says a release is waiting for approval. A device with no record yet takes the
+  first approved one. A tab refused with `update` still reloads, since the browser fetches the page and the worker from
+  the host: a Service Worker only raises the bar (A15), and the trusted path that needs no origin is the Mac app.
+- **Native Peers** read the same Doc and say `update` when an approved record names a newer wire version or binary
+  for their platform. Their owner upgrades them.
 
 ## 8. What stays special
 

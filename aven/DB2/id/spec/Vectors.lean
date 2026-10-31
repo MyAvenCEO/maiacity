@@ -8,6 +8,7 @@ import Aven.ID.Before
 import Aven.ID.CapsJson
 import Aven.ID.SettleJson
 import Aven.ID.Expiry
+import Aven.ID.Release
 
 /-! # The test vectors (README, rule 10)
 
@@ -49,6 +50,8 @@ import Aven.ID.Expiry
   invite trace (`Aven.ID.Restore`). `records.json`: signed records and the newest of each (`Aven.ID.Records`, §6).
   `node.json`: networks losing each peer in turn, with every home relay, who reaches whom and who can fetch the chat
   (`Aven.ID.Node`, R7).
+- `releases.json`: avenOS's build listed and hashed as `osHash` does; then devices, release records and the files each
+  fetched, with what the device does (`Aven.ID.Release`, PEERS.md §7).
 
 `bun run up --check` runs it again and fails when the files differ from what is committed. -/
 
@@ -238,6 +241,23 @@ def keepVectors : List Json :=
     let s := genKeep (i + 1)
     vector s!"generated keeper, seed {i + 1}" (Json.mkObj [("keep", s.json)]) (keepResult s)
 
+open Release in
+def releaseVectors : List Json :=
+  let fileJson (fs : List File) := Json.arr (fs.map fun f => Json.mkObj [("path", f.path), ("sha256", f.sha256)]).toArray
+  let listings : List (String × List File) := [("no files", []), ("the build, as written", ReleaseExamples.files),
+    ("the build, reversed", ReleaseExamples.files.reverse),
+    ("a path with a space and an accent", [⟨"/assets/caf\u00e9 1.js", ReleaseExamples.hashOf '0'⟩])]
+  (listings.map fun (name, fs) =>
+    vector s!"listed: {name}" (Json.mkObj [("files", fileJson fs)])
+      (Json.mkObj [("listing", listing fs), ("os", osHash fs)])) ++
+  ReleaseExamples.cases.map fun (name, d, r, os, signedBy, fetched) =>
+    vector name (Json.mkObj [
+        ("device", Json.mkObj [("running", toJson d.running), ("signers", toJson d.signers),
+          ("unsigned", d.unsigned.name)]),
+        ("record", (Release.json r).setObjVal! "os" os), ("signedBy", toJson signedBy),
+        ("fetched", fileJson fetched)])
+      (check d r os signedBy fetched).json
+
 /-- One vector per line, so a change reads as a diff of lines. -/
 def render (vs : List Json) : String :=
   "[\n" ++ ",\n".intercalate (vs.map Json.compress) ++ "\n]\n"
@@ -263,3 +283,4 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "settled.json") (render SettleJson.settledVectors)
   IO.FS.writeFile (dir / "records.json") (render SettleJson.recordVectors)
   IO.FS.writeFile (dir / "node.json") (render SettleJson.nodeVectors)
+  IO.FS.writeFile (dir / "releases.json") (render releaseVectors)
