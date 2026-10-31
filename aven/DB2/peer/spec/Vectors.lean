@@ -33,6 +33,11 @@ import Lean.Data.Json
   (`Aven.Peer.Fetch`).
 - `serve.json`: a gate's verdicts (which proof of which Doc it serves, for which vault; each vault's quota) and asks,
   each on its device's connection; the keeper's reply to each, and each vault's bill at the end (`Aven.Peer.Serve`).
+- `history.json`: history entries in their signers' logs, and the newest of each sort about each device or release
+  line, in several orders; presence beats and the newest of each (`Aven.Peer.History`, A193, A194, A197).
+  `catchup.json`: sources offered against a signed log tip, the one chosen and the ones caught, and presence from
+  signed beats (`Aven.Peer.CatchUp`). `failures.json`: the nine checks the box runs with the Aven Peer stopped, each
+  with what the models say it must see (`Aven.Peer.Failures`, PEERS.md).
 -/
 
 open Lean Aven.Core Aven.Core.Past Aven.Peer.DocSync Aven.Peer
@@ -505,5 +510,7 @@ def main (args : List String) : IO Unit := do
   write dir "judge.json" judgeVectors
   write dir "doc-sync.json" syncVectors
   for (file, vs) in [("presence.json", presence), ("wire.json", wire), ("frames.json", frames),
-      ("upgrades.json", upgrades), ("keeper.json", keeper), ("fetch.json", fetchCases), ("serve.json", serveCases)] do
+      ("upgrades.json", upgrades), ("keeper.json", keeper), ("fetch.json", fetchCases), ("serve.json", serveCases),
+      ("history.json", HistoryJson.historyVectors), ("catchup.json", HistoryJson.catchUpVectors),
+      ("failures.json", Failures.failureVectors)] do
     IO.FS.writeFile (dir / file) (render vs)

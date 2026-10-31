@@ -156,7 +156,7 @@ theorem PhaseInv.handle {lib : Library} {k : Kernel} (hk : PhaseInv lib k) (r s 
     · exact hk'.answer _ _ _ _
     · exact hk'
 
-theorem PhaseInv.spawn {lib : Library} {k : Kernel} (hk : PhaseInv lib k) (id dn : String) :
+theorem PhaseInv.spawn {lib : Library} {k : Kernel} (hk : PhaseInv lib k) (id : Bytes) (dn : String) :
     PhaseInv lib (k.spawn lib id dn) := by
   unfold Kernel.spawn
   split
