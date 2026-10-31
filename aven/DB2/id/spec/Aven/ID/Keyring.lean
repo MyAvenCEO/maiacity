@@ -7,7 +7,8 @@ the vault's devices, by their derived seal keys, and to each passkey's PRF seal 
 Records are caps' built-in `epoch` Records, each an epoch blob (`Aven.ID.KeyFormats.Epoch`, scope keyring) with
 signatures beside it. Built-in Records are written whole and never edited (`Aven.DB.Docs.Builtins`), so:
 
-- **A rotation** writes a Record of epoch n + 1 whose `prev` names the epoch before.
+- **A rotation** writes a Record of epoch n + 1 whose `prev` names the epoch before. Removing a reader, a device or
+  a sealing owner, is always a rotation, never an edit: the old epoch's Records stay as they were.
 - **A reseal**, for a new device or passkey, writes another Record of the *same* epoch carrying the new reader's stanza:
   it has the same name (`reseal_name`), since an epoch is named without its stanzas, and records only accumulate.
 - **Opening** an epoch tries the stanzas of every Record that shares its name (`stanzasOf`): adding a Record never takes

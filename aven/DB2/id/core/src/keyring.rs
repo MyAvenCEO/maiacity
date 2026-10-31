@@ -1,5 +1,6 @@
 //! A vault's keyring, as a Doc (`Aven.ID.Keyring`; A43): its Records are `epoch` Records, each an [`Epoch`] blob of
-//! scope keyring. Built-in Records are written whole and never edited, so a rotation writes epoch n + 1, and a reseal
+//! scope keyring. Built-in Records are written whole and never edited, so a rotation writes epoch n + 1 (removing a
+//! reader is always a rotation, never an edit), and a reseal
 //! writes another Record of the *same* epoch, carrying the new reader's stanza. Opening an epoch tries the stanzas of
 //! every Record that shares its name; the current epoch is the highest number, and at one number the smaller name.
 //!
