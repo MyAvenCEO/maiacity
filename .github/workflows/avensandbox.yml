@@ -179,7 +179,7 @@ jobs:
             # its release record, written into the build as /release.json and published beside it: the version, the
             # wire version, every file's SHA-256 and the Peer's per platform. Unsigned until A15's signers are agreed
             mkdir web && tar -xzf deliverables/aven-os-web.tar.gz -C web
-            node aven/DB2/deploy/release.mjs web "$v" "$(date +%s)" "${peer_hashes[@]}"
+            node aven/DB2/deploy/release.mjs web "$v" "${peer_hashes[@]}"
             tar -czf "deliverables/$file" -C web .
             cp web/release.json deliverables/release.json
             rm deliverables/aven-os-web.tar.gz

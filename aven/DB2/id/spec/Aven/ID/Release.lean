@@ -34,7 +34,7 @@ structure File where
 structure Release where
   /-- avenOS's dated version: `26.10.31`, `26.10.31v2` -/
   version : String
-  /-- larger is newer: the release's time in seconds -/
+  /-- larger is newer: its dated version's order (`26.10.31v2` is 2610310002, `deploy/release.mjs`) -/
   counter : Nat
   /-- the wire version it speaks -/
   wire : Nat

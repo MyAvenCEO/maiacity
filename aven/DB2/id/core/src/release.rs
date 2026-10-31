@@ -27,7 +27,7 @@ pub struct File {
 pub struct Release {
     /// avenOS's dated version: `26.10.31`, `26.10.31v2`
     pub version: String,
-    /// larger is newer: the release's time in seconds
+    /// larger is newer: its dated version's order (`26.10.31v2` is 2610310002, `deploy/release.mjs`)
     pub counter: u64,
     /// the wire version it speaks
     pub wire: u64,
