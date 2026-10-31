@@ -5,7 +5,7 @@
 mod common;
 
 use aven_core::{Envelope, Hash, Value as V};
-use aven_id::{Doc, Reads, Revocation, Verdict};
+use aven_id::caps::{Doc, Reads, Revocation, Verdict};
 use common::{envelope, hash, vectors};
 use serde_json::{Value, json};
 

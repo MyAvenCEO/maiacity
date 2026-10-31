@@ -13,7 +13,7 @@
 //! owner [`HybridKey`] and its [`SealKey`]; a vault's keyring and each Doc's keys are [`Epoch`]s sealed to their readers in
 //! X-Wing [`Stanza`]s; and [`safe`] decides what may leave a vault's safe, as `Aven.ID.Safe` does.
 
-mod approve;
+pub mod caps;
 mod cast;
 mod claim;
 mod epoch;
@@ -26,7 +26,6 @@ mod network;
 mod passkey;
 mod prf;
 mod query;
-mod revoke;
 pub mod safe;
 mod seal;
 mod secret;
@@ -35,7 +34,6 @@ mod statements;
 mod tree;
 mod value;
 
-pub use approve::Sig;
 pub use cast::CastError;
 pub use claim::{
     Claim, SignIn, browser_name, claim_text, device_id, passkey_id, person_id, sign_in_text,
@@ -53,7 +51,6 @@ pub use members::{MemberError, MemberSignIn, Members, Pending};
 pub use network::{COOP, COOP_NAME, ClaimError, GUARDIAN, Network};
 pub use passkey::{Assertion, AssertionError, Passkey, Relying, base64url, challenge};
 pub use prf::{OWNER_LABEL, PRF_LABEL, PrfOutput, SEAL_LABEL, prf_input, prf_salt};
-pub use revoke::{Doc, Reads, Revocation, Verdict};
 pub use seal::{
     Context, STANZA_COMMIT_LABEL, STANZA_KEY_LABEL, STANZA_SUITE, Scope, SealKey, SealPublic,
     Stanza, stanza_commit, stanza_keys,

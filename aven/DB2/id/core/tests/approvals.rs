@@ -3,7 +3,8 @@
 
 mod common;
 
-use aven_id::{Kind, Owner, Sig, Tree, Vault};
+use aven_id::caps::Sig;
+use aven_id::{Kind, Owner, Tree, Vault};
 use common::vectors;
 use serde_json::{Value, json};
 
