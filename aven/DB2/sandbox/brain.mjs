@@ -171,8 +171,8 @@ async function read(engine) {
 					const low = (await page.evaluate(contrasts, linear)).filter((c) => !c.ok);
 					seen.lowContrast = low;
 					for (const c of low) say(`"${c.text}" has ${c.ratio}:1, under ${c.need}:1`);
-					// the long pages as the reader first sees them; the dashboard and avenID's slides whole
-					await page.screenshot({ path: `${run}/brain-${view}-${where}-${size}-${name}.png`, fullPage: view === 'dashboard' || view === 'id' });
+					// the dashboard whole; every other page as the reader first sees it (an engine takes no shot over 32767 px)
+					await page.screenshot({ path: `${run}/brain-${view}-${where}-${size}-${name}.png`, fullPage: view === 'dashboard' });
 					got[`${where}-${view}-${size}`] = seen;
 				}
 			}
