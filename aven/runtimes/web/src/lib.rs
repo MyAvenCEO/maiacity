@@ -10,7 +10,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use aven_core::{Hash, Value};
+use aven_codec::{Hash, Value};
 use aven_runtimes_contract::{Failure, result};
 use aven_runtimes_host::json::{of_json, to_json};
 use aven_runtimes_host::{Entry, Frozen, Loaded, latest, load, manifest, run};

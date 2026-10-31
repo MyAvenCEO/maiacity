@@ -1,7 +1,7 @@
 //! A Value in its one JSON form (`Aven.Core.Json`): null, booleans, integers of either sign, text, arrays, maps, and
 //! bytes as `{"bytes": hex}`. How a part is written in the repository and how a page hands Values to the host.
 
-use aven_core::Value;
+use aven_codec::Value;
 use serde_json::Value as Json;
 
 /// A Value from its JSON form; `None` for a float, an integer out of range, or bytes that aren't hex.

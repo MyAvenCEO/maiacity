@@ -4,7 +4,7 @@
 //! declares no maximum memory) and holds every run to its fuel, memory and output. avenBRAIN's slides are faces in
 //! use: each one's part (`brain/*/slides/<id>.part.json`) is accepted by the frozen face-runtime, as natively.
 
-use aven_core::{Hash, Value, blake3, decode, encode};
+use aven_codec::{Hash, Value, blake3, decode, encode};
 use aven_runtimes_contract::{Failure, Limits, result};
 use aven_runtimes_host::json::{of_json, to_json};
 use aven_runtimes_host::{Entry, Frozen, LoadError, Loaded, listed, load, run};
