@@ -54,7 +54,11 @@ fn trees() {
             "{name}: encoding"
         );
         assert_eq!(aven_core::encode(&t.value()), out, "{name}: as a Value");
-        assert_eq!(Node::of_value(&t.value(), 1000), Some(t.clone()), "{name}: read back");
+        assert_eq!(
+            Node::of_value(&t.value(), 1000),
+            Some(t.clone()),
+            "{name}: read back"
+        );
     }
 }
 
