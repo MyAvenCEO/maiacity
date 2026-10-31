@@ -82,11 +82,20 @@ impl Tree {
                     CastError::Format(format!("{id}'s owner {owner} is neither key: nor vault:"))
                 })?);
             }
+            // a tree written before thresholds (A28) has none: its vaults took one owner each
+            let threshold = match vault.get("threshold") {
+                None | Some(Value::Null) => 1,
+                Some(t) => t
+                    .as_u64()
+                    .ok_or_else(|| CastError::Format(format!("{id}'s threshold is not a number")))?
+                    as usize,
+            };
             vaults.push(Vault {
                 id: id.clone(),
                 name,
                 kind,
                 owners,
+                threshold,
             });
         }
         Tree::new(keys, vaults).map_err(CastError::Invalid)

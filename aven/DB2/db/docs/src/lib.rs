@@ -16,6 +16,8 @@
 //!   `counts.json` (`Aven.DB.Docs.Counts`).
 //! - [`Segment`] and [`Closer`]: segments closed per writer and epoch, hybrid-signed (`Aven.DB.Docs.Segment`,
 //!   `segments.json`), inside the one seal ([`seal`], `Aven.ID.Seal`, id's `seals.json`).
+//! - `Shelf` (the `shelf` feature, for peers): where a peer keeps the Docs it holds in its store: blobs by hash, the held page and the head by
+//!   compare-and-set (A185).
 //! - [`Limits`]: every input bounded before Loro sees it (`Aven.DB.Docs.Limits`).
 //!
 //! Catch-up, checkpoints and period streams are the next step.
@@ -41,6 +43,8 @@ mod opids;
 pub mod schema;
 pub mod seal;
 mod segment;
+#[cfg(feature = "shelf")]
+mod shelf;
 mod value;
 mod writer;
 
@@ -58,5 +62,7 @@ pub use limits::Limits;
 pub use opids::{LoroVerdict, OpId, OpsVerdict, carried_deps, loro_agrees, ops_agree};
 pub use seal::EpochKey;
 pub use segment::{BadSegment, Closed, Closer, SEGMENT_LABEL, Segment};
+#[cfg(feature = "shelf")]
+pub use shelf::{Saved, Shelf, Shelved};
 pub use value::{of_loro, to_loro};
 pub use writer::{RESERVED_PEER, WRITER_LABEL, writer, writer_derived, writer_input};

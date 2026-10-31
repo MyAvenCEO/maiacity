@@ -5,7 +5,7 @@ defaultTargets = ["Aven", "aven-db-model", "vectors"]
 
 [[lean_lib]]
 name = "Aven"
-# Only Aven.DB is this package's: Aven.Core comes from the core package.
+# Only Aven.DB is this package's: Aven.Core comes from the core package, and Aven.Peer is peer/spec's (A45).
 roots = ["Aven.DB"]
 
 # The model runs (README, rule 10): replays traces given as JSON, so Rust's tests compare against it.

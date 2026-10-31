@@ -108,6 +108,7 @@ fn trees() -> impl Strategy<Value = (Vec<String>, Vec<Vault>)> {
                         name,
                         kind,
                         owners,
+                        threshold: 1,
                     }
                 })
                 .collect();

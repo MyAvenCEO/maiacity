@@ -1,4 +1,5 @@
 import Aven.DB.Docs.Genesis
+import Aven.DB.Docs.Changes
 
 /-!
 # What a docs envelope carries (A32, A43; docs, "Envelopes")
@@ -31,19 +32,6 @@ namespace Aven.DB.Docs
 open Aven.Core
 
 private def k (s : String) : Bytes := s.toUTF8.toList
-
-/-- The version a Record was written under: its type Doc, and its schema's hash unless the type is built in. -/
-structure Version where
-  type : DocId
-  schema : Option Hash
-  deriving DecidableEq, Repr
-
-def Version.value (v : Version) : Value := .array (.bytes v.type.hash.bytes :: (v.schema.map Hash.value).toList)
-
-def Version.ofValue? : Value → Option Version
-  | .array [.bytes t] => if t.length == 32 then some ⟨⟨⟨t⟩⟩, none⟩ else none
-  | .array [.bytes t, .bytes s] => if t.length == 32 && s.length == 32 then some ⟨⟨⟨t⟩⟩, some ⟨s⟩⟩ else none
-  | _ => none
 
 structure Body where
   acks : List Hash

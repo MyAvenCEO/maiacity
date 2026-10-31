@@ -6,8 +6,8 @@ The tree is a Doc of type `tree` in Maia City's vault (`facts`). Each of its sta
 stores each under its name (`Named`), so settling never computes a hash. `read` reads an envelope as the statement it
 carries:
 - it belongs to the tree Doc every member pins;
-- it carries one signature, and its signer's key is UTF-8 text (a statement with approvals beside it comes with the
-  tree's own k-of-n reading, not here);
+- its signatures sit beside its name (A30): the first is its signer's, the rest are approvals of the same act (k of
+  n); every key is UTF-8 text;
 - its parents are Core's (`Aven.Core.Past.parents`): the one before it in its writer's log and the tips it saw;
 - its body is the call of a `tree/1` op it makes (`TreeSays.ofValue`, A32).
 
@@ -36,7 +36,8 @@ structure Named where
 def read (H : Bytes → Hash) (doc : DocId) (n : Named) : Option TreeStatement :=
   if n.env.doc = doc then
     match n.env.sigs, TreeSays.ofValue H n.env.body with
-    | [x], some says => (ofUtf8 x.signer).map fun signer => ⟨n.name, signer, Core.Past.parents n.env, says⟩
+    | x :: xs, some says => do
+      pure ⟨n.name, ← ofUtf8 x.signer, Core.Past.parents n.env, says, ← xs.mapM (ofUtf8 ·.signer)⟩
     | _, _ => none
   else none
 
@@ -49,12 +50,19 @@ def settleDoc (H : Bytes → Hash) (ok : Named → Bool) (doc : DocId) (pinned :
 The tree reads neither the writer nor the sequence number: its order is its parents. -/
 def envelope (H : Bytes → Hash) (doc : DocId) (s : TreeStatement) : Envelope :=
   { doc, branch := mainBranch, writer := 0, seq := 0, prev := none, deps := s.parents, body := s.says.toValue H,
-    sigs := [⟨utf8 s.signer, []⟩] }
+    sigs := s.keys.map fun k => (⟨Body.utf8 k, []⟩ : Core.Sig) }
 
 /-- An envelope made from a statement reads back as that statement. -/
 theorem read_envelope {H : Bytes → Hash} (d : TreeOp.distinct H) (doc : DocId) (s : TreeStatement)
     (h : s.says.refsOk = true) : read H doc ⟨s.name, envelope H doc s⟩ = some s := by
-  simp [read, envelope, ofUtf8_utf8, TreeSays.ofValue_toValue d _ h, Core.Past.parents_envelope]
+  have ap : ∀ l : List String,
+      List.mapM (fun x : Core.Sig => ofUtf8 x.signer) (l.map fun k => (⟨Body.utf8 k, []⟩ : Core.Sig)) = some l := by
+    intro l
+    induction l with
+    | nil => rfl
+    | cons k l ih => simp [List.mapM_cons, ofUtf8_utf8, ih]
+  simp [read, envelope, TreeStatement.keys, ofUtf8_utf8, TreeSays.ofValue_toValue d _ h, Core.Past.parents_envelope,
+    ap]
 
 /-- **Settling the envelopes is settling the statements:** whatever a set of statements settles to, the envelopes that
 carry them, stored under the statements' names, settle to the same. -/

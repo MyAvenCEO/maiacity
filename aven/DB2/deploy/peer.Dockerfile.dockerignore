@@ -8,11 +8,13 @@
 !core
 !gen1
 !db/docs
+!db/engine
 !store
 !id/core
 !peer/wire
 !peer/native
 !peer/light
+!peer/keeper
 **/target
 **/node_modules
 **/.lake
