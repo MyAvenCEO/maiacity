@@ -424,13 +424,18 @@ theorem rule10_pages {Key α : Type} [DecidableEq Key] (size : α → Nat) (lim 
       ((∀ x ∈ pending k, size x ≤ lim.bytes) → 0 < lim.entries → p ≠ []) :=
   DB.Engine.page_bounded size lim pending uploads keys got k p pending' h
 
-/-- A vault's quota at the keeper: what the keeper takes leaves every vault within its quota, and it takes only uploads
-it serves. -/
-theorem rule10_quota (k : ID.Keep) (quota : String → Nat) (us taken : List ID.Keep.Upload)
-    (within : ∀ v, ID.Keep.spent taken v ≤ quota v) (served : ∀ u ∈ taken, k.serves u.exporter u.proof = true) :
-    (∀ v, ID.Keep.spent (k.admit quota taken us) v ≤ quota v) ∧
-      ∀ u ∈ k.admit quota taken us, k.serves u.exporter u.proof = true :=
-  ⟨ID.Keep.quota_holds k quota us taken within, ID.Keep.admitted_served k quota us taken served⟩
+/-- A vault's quota at a keeper: caps' books say how much the keeper keeps for each vault, from its own offers
+(`ID.Books.quota`, A44). Gated by them, the keeper takes an upload only when the vault's bill after it is within that
+quota or no larger than before (`admitted_within`), and always takes one that doesn't grow the bill, so a vault a
+moved bill pushed past its quota can shed bytes and never grows past it (`over_quota_sheds`). -/
+theorem rule10_quota (b : ID.Books) (serves : String → Nat → Option String) (k : Peer.Serve.Keeper)
+    (c : Peer.Serve.Conn) {doc v : String} (ps : List Peer.Keeper.Put) (pv : Peer.Serve.lookup c.proven doc = some v) :
+    (∀ ns, (k.step ⟨serves, b.quota⟩ c (.upload doc ps)).2.2 = .took doc ns →
+      (k.taking c doc ps).bill v ≤ b.quota v ∨ (k.taking c doc ps).bill v ≤ k.bill v) ∧
+    ((k.taking c doc ps).bill v ≤ k.bill v →
+      ∃ ns, (k.step ⟨serves, b.quota⟩ c (.upload doc ps)).2.2 = .took doc ns) :=
+  ⟨fun _ h => (Peer.Serve.Keeper.admitted_within _ k c pv h).2,
+    fun sheds => (Peer.Serve.Keeper.over_quota_sheds _ k c pv sheds).2⟩
 
 /-! ## Rule 11: every wait ends -/
 
