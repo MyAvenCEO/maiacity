@@ -1,0 +1,20 @@
+# Aven.Peer: avenPEER's model in Lean (ARCHITECTURE.md, A45: the wire, presence and catch-up are the Peers'). Core Lean
+# only: the box has no network for Lean packages. It starts with Docs in the Peers (`Aven.Peer.DocSync`); the wire's
+# Lean (`Wire`, `WireCbor`, `Presence`) moves in from db/spec with the wire's Rust (thread E).
+name = "aven-peer-spec"
+version = "0.1.0"
+defaultTargets = ["AvenPeer", "vectors"]
+
+[[lean_lib]]
+name = "AvenPeer"
+roots = ["Aven.Peer"]
+
+# The examples and generated cases as test vectors, committed in vectors/ (README, rule 10).
+[[lean_exe]]
+name = "vectors"
+root = "Vectors"
+
+# The shared core: Values, the codec, hashes, envelopes, logs and the past (core/spec).
+[[require]]
+name = "aven-core-spec"
+path = "../../core/spec"

@@ -130,7 +130,7 @@ theorem rule4_fit_merges {S K V : Type} [DecidableEq K] (rule : S → K → V �
 /-- The content of an envelope, as every reader judges it from the changes it sees: the engine's footprint check (no
 Record changes its type, and the changes stay within the steps its calls lower to, `fp`, which caps checked it may call,
 A32) and docs' fit, both over the one change view, from the version the envelope builds on (`before`) to the one it makes (`step`). -/
-def contentOk (ver : DocId → TypeId) (fp : Envelope → List Step) (rule : TypeId → Bytes → Value → Prop)
+def contentOk (ver : DocId → DB.Docs.Version) (fp : Envelope → List Step) (rule : DB.Docs.Version → Bytes → Value → Prop)
     (before : Envelope → List (DB.Engine.Record Value))
     (step : List (DB.Engine.Record Value) → Envelope → List (DB.Engine.Record Value)) (e : Envelope) : Prop :=
   DB.Engine.verdictFootprint ver (fp e) (before e) (step (before e) e) = true ∧
@@ -143,8 +143,8 @@ and everything in it is signed, in a fresh epoch, authorized by its cap chain, n
 within its calls' footprint and fit, and none of it is half of a split. -/
 theorem rule4_one_verdict (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spawned lists : DocId → DocId → Prop)
     (signed : Envelope → Prop) (H : Bytes → Hash) (epochOf : Envelope → Nat) (rd : ID.Reads)
-    (rs : List ID.Revocation) (isDelete byOwner : Envelope → Bool) (ver : DocId → TypeId)
-    (rule : TypeId → Bytes → Value → Prop) (before : Envelope → List (DB.Engine.Record Value))
+    (rs : List ID.Revocation) (isDelete byOwner : Envelope → Bool) (ver : DocId → DB.Docs.Version)
+    (rule : DB.Docs.Version → Bytes → Value → Prop) (before : Envelope → List (DB.Engine.Record Value))
     (step : List (DB.Engine.Record Value) → Envelope → List (DB.Engine.Record Value)) (S : List Envelope)
     (e : Envelope) :
     Counts (Envelope.name H) (contentOk ver r.footprint rule before step)
@@ -185,7 +185,7 @@ theorem rule4_readers_agree (nm : Envelope → Hash) (fit authorized : Envelope 
 /-- What the content check gives: every change is one a step of the footprint makes, the footprint being the steps the
 envelope's calls lower to; and where what an envelope says it does is the diff a reader sees (`ChangesAreDiff`, with
 distinct Record ids in the engine's `diff_footprint`), fit holds of what it says. -/
-theorem rule4_content {ver : DocId → TypeId} {fp : Envelope → List Step} {rule : TypeId → Bytes → Value → Prop}
+theorem rule4_content {ver : DocId → DB.Docs.Version} {fp : Envelope → List Step} {rule : DB.Docs.Version → Bytes → Value → Prop}
     {before : Envelope → List (DB.Engine.Record Value)}
     {step : List (DB.Engine.Record Value) → Envelope → List (DB.Engine.Record Value)} {e : Envelope}
     (h : contentOk ver fp rule before step e) {R : DB.Docs.Reading (List (DB.Engine.Record Value))}
@@ -202,7 +202,7 @@ theorem rule4_content {ver : DocId → TypeId} {fp : Envelope → List Step} {ru
 to no step, as `core/1`'s read, tell, keep and share do, an envelope that passes the content check brings no Record,
 removes none and changes no field of one. -/
 theorem rule4_reading_writes_nothing (r : ID.Reader) (gov : Bytes → Bytes → Prop)
-    (spawned lists : DocId → DocId → Prop) {ver : DocId → TypeId} {rule : TypeId → Bytes → Value → Prop}
+    (spawned lists : DocId → DocId → Prop) {ver : DocId → DB.Docs.Version} {rule : DB.Docs.Version → Bytes → Value → Prop}
     {before : Envelope → List (DB.Engine.Record Value)}
     {step : List (DB.Engine.Record Value) → Envelope → List (DB.Engine.Record Value)} {e : Envelope}
     (h : r.ByChain gov spawned lists e) {last : ID.Cap} (hl : (r.chain e).getLast? = some last)
@@ -236,15 +236,18 @@ created or removed by a step those calls lower to; the signing device's cap writ
 and the authority is either the signer's vault, which owns or governs the Doc, or a chain whose last cap writes on
 main and allows every such call. A narrow merger can't land a proposal's wider changes. -/
 theorem rule4_merge_whole (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spawned lists : DocId → DocId → Prop)
-    {ver : DocId → TypeId} (hver : ∀ t, (ver t).type = t) {rule : TypeId → Bytes → Value → Prop}
+    {ver : DocId → DB.Docs.Version} (hver : ∀ t, (ver t).type = t) {rule : DB.Docs.Version → Bytes → Value → Prop}
     {before : Envelope → List (DB.Engine.Record Value)}
     {step : List (DB.Engine.Record Value) → Envelope → List (DB.Engine.Record Value)} {e : Envelope}
     (main : e.branch = ID.mainBranch) (hn : ((before e).map (·.id)).Nodup) (h : r.Authorized gov spawned lists e)
     (hc : contentOk ver r.footprint rule before step e) :
-    -- every Record of main the merge touches is handled by a step the whole merge's calls lower to
+    -- every Record of main the merge touches, every field it changes or removes, is handled by a step the whole merge's
+    -- calls lower to
     ((∀ r' ∈ step (before e) e, ∀ r0 ∈ before e, r0.id = r'.id → ∀ fl v, (fl, v) ∈ r'.fields →
         DB.Engine.optEq DB.Engine.valEq (DB.Engine.get r0.fields fl) (DB.Engine.get r'.fields fl) = false →
           ∃ st ∈ r.footprint e, st.type = r'.type ∧ fl ∈ st.fields) ∧
+      (∀ r' ∈ step (before e) e, ∀ r0 ∈ before e, r0.id = r'.id → ∀ fl ∈ r0.fields.map Prod.fst,
+        DB.Engine.get r'.fields fl = none → ∃ st ∈ r.footprint e, st.type = r'.type ∧ fl ∈ st.fields) ∧
       (∀ r' ∈ step (before e) e, (∀ r0 ∈ before e, r0.id ≠ r'.id) →
         (∃ st ∈ r.footprint e, st.type = r'.type ∧ st.verb = .putNew) ∧
         ∀ fl ∈ r'.fields.map Prod.fst, ∃ st ∈ r.footprint e, st.type = r'.type ∧ fl ∈ st.fields) ∧
@@ -258,9 +261,9 @@ theorem rule4_merge_whole (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spaw
       ∃ last, (r.chain e).getLast? = some last ∧ last.conditions.branches.allows ID.mainBranch = true ∧
         ∃ f, r.facts e.doc = some f ∧ ∀ c ∈ r.calls e, (last.grants r.ctx.roles).allows gov spawned lists f c) := by
   have wm : r.WholeMerges r.calls := fun _ _ _ m => m
-  have ⟨hchg, hnew, hgone⟩ :=
+  have ⟨hchg, hrm, hnew, hgone⟩ :=
     DB.Engine.merge_steps ver hver (r.footprint e) (before e) (step (before e) e) hn hc.1
-  refine ⟨⟨hchg, hnew, hgone⟩, ID.merge_within_device r gov spawned lists wm main h, ?_⟩
+  refine ⟨⟨hchg, hrm, hnew, hgone⟩, ID.merge_within_device r gov spawned lists wm main h, ?_⟩
   rcases ID.authorized_by r gov spawned lists h with own | chain
   · exact .inl own
   · exact .inr (ID.merge_covered r gov spawned lists wm main chain)
@@ -424,13 +427,18 @@ theorem rule10_pages {Key α : Type} [DecidableEq Key] (size : α → Nat) (lim 
       ((∀ x ∈ pending k, size x ≤ lim.bytes) → 0 < lim.entries → p ≠ []) :=
   DB.Engine.page_bounded size lim pending uploads keys got k p pending' h
 
-/-- A vault's quota at the keeper: what the keeper takes leaves every vault within its quota, and it takes only uploads
-it serves. -/
-theorem rule10_quota (k : ID.Keep) (quota : String → Nat) (us taken : List ID.Keep.Upload)
-    (within : ∀ v, ID.Keep.spent taken v ≤ quota v) (served : ∀ u ∈ taken, k.serves u.exporter u.proof = true) :
-    (∀ v, ID.Keep.spent (k.admit quota taken us) v ≤ quota v) ∧
-      ∀ u ∈ k.admit quota taken us, k.serves u.exporter u.proof = true :=
-  ⟨ID.Keep.quota_holds k quota us taken within, ID.Keep.admitted_served k quota us taken served⟩
+/-- A vault's quota at a keeper: caps' books say how much the keeper keeps for each vault, from its own offers
+(`ID.Books.quota`, A44). Gated by them, the keeper takes an upload only when the vault's bill after it is within that
+quota or no larger than before (`admitted_within`), and always takes one that doesn't grow the bill, so a vault a
+moved bill pushed past its quota can shed bytes and never grows past it (`over_quota_sheds`). -/
+theorem rule10_quota (b : ID.Books) (serves : String → Nat → Option String) (k : Peer.Serve.Keeper)
+    (c : Peer.Serve.Conn) {doc v : String} (ps : List Peer.Keeper.Put) (pv : Peer.Serve.lookup c.proven doc = some v) :
+    (∀ ns, (k.step ⟨serves, b.quota⟩ c (.upload doc ps)).2.2 = .took doc ns →
+      (k.taking c doc ps).bill v ≤ b.quota v ∨ (k.taking c doc ps).bill v ≤ k.bill v) ∧
+    ((k.taking c doc ps).bill v ≤ k.bill v →
+      ∃ ns, (k.step ⟨serves, b.quota⟩ c (.upload doc ps)).2.2 = .took doc ns) :=
+  ⟨fun _ h => (Peer.Serve.Keeper.admitted_within _ k c pv h).2,
+    fun sheds => (Peer.Serve.Keeper.over_quota_sheds _ k c pv sheds).2⟩
 
 /-! ## Rule 11: every wait ends -/
 

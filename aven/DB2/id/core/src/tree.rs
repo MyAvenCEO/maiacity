@@ -86,6 +86,8 @@ pub struct Vault {
     pub name: String,
     pub kind: Kind,
     pub owners: Vec<Owner>,
+    /// How many of its owners approve for it (D14, A28): k of n, at least one.
+    pub threshold: usize,
 }
 
 impl Vault {
@@ -137,6 +139,8 @@ pub enum Invalid {
     CoopOwner { coop: String, owner: Owner },
     /// A coop holds a device.
     CoopDevice { coop: String, device: String },
+    /// A vault's threshold is zero, so it would approve on no signature (A28).
+    NoQuorum(String),
     /// A vault is above itself.
     Cycle(String),
 }
@@ -168,6 +172,7 @@ impl fmt::Display for Invalid {
             Invalid::CoopDevice { coop, device } => {
                 write!(f, "the coop {coop} holds the device {device}")
             }
+            Invalid::NoQuorum(id) => write!(f, "{id}'s threshold is zero"),
             Invalid::Cycle(id) => write!(f, "{id} is above itself"),
         }
     }
@@ -262,6 +267,9 @@ impl Tree {
                     device: vault.id.clone(),
                 });
             }
+            if vault.threshold == 0 {
+                return Err(Invalid::NoQuorum(vault.id.clone()));
+            }
         }
         let mut children = vec![Vec::new(); vaults.len()];
         for (at, vault) in vaults.iter().enumerate() {
@@ -288,6 +296,11 @@ impl Tree {
 
     pub fn vaults(&self) -> &[Vault] {
         &self.vaults
+    }
+
+    /// A vault's threshold as the tree stores it (`Tree.threshold`); 1 for a vault it doesn't hold.
+    pub fn threshold(&self, id: &str) -> usize {
+        self.vault(id).map_or(1, |v| v.threshold)
     }
 
     pub fn vault(&self, id: &str) -> Option<&Vault> {

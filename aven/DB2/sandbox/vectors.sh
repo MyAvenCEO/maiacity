@@ -10,7 +10,7 @@
 set -e
 stale=0
 checked=""
-for spec in core/spec id/spec db/spec /aven/runtimes/spec /aven/actor/spec /aven/DB2/architecture/spec; do
+for spec in core/spec id/spec db/spec peer/spec /aven/runtimes/spec /aven/actor/spec /aven/DB2/architecture/spec; do
   [ -f "$spec/lakefile.toml" ] || continue
   (cd $spec && lake build -q)
   # a spec without a `vectors` program is only built

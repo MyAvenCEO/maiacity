@@ -145,6 +145,7 @@ impl Network {
             name,
             kind,
             owners,
+            threshold: 1,
         };
         let network = vault(&self.network, "Aven".into(), Kind::Agent, vec![]);
         let peer = vault(

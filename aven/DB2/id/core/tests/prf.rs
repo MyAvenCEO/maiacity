@@ -54,7 +54,7 @@ fn a_new_browser_opens_the_vault_with_its_passkey_alone() {
     let vault = SealKey::generate(&mut entropy);
     // signing up: the PRF answers for alice at owner epoch 1
     let passkey = output("alice's passkey, alice, 1");
-    let (mut ring, _) = Epoch::keyring(
+    let (ring, _) = Epoch::keyring(
         "alice",
         &vault,
         &[laptop.public(), passkey.seal_key().public()],
@@ -67,13 +67,14 @@ fn a_new_browser_opens_the_vault_with_its_passkey_alone() {
     let ring_key = ring.open(&again.seal_key()).unwrap();
     assert_eq!(ring.vault_key(&ring_key).unwrap().public(), vault.public());
     let browser = SealKey::generate(&mut entropy);
-    ring.reseal(&ring_key, &browser.public(), &mut entropy)
+    let resealed = ring
+        .reseal(&ring_key, &browser.public(), &mut entropy)
         .unwrap();
-    let name = ring.name();
-    assert_eq!(ring.open(&browser).unwrap(), ring_key);
+    assert_eq!(resealed.open(&browser).unwrap(), ring_key);
+    assert!(resealed.is_padded());
     assert_eq!(
+        resealed.name(),
         ring.name(),
-        name,
         "adding a device doesn't rename the epoch"
     );
     // a passkey on another owner epoch, or another passkey, opens nothing

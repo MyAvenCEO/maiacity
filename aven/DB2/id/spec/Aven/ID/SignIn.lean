@@ -130,11 +130,11 @@ theorem submitSignIn_accept {sender : String} {i : SignIn} (h : m.submitSignIn s
 
 /-- The claimant's vault is the tree's first, and the coop's owner. -/
 theorem founding_vaults (c : Claim) (hc : m.founding.claim = some c) :
-    m.founding.vaults = ⟨c.person, c.vaultName, .person, m.founding.founders c.passkey⟩ ::
-      ⟨m.founding.coop, m.founding.coopName, .coop, [.vault c.person]⟩ :: ⟨m.founding.network, networkName, .agent,
-      [.vault m.founding.coop]⟩ :: ⟨m.founding.peer, peerName, .device, [.vault m.founding.network]⟩ ::
-      ⟨c.device, c.browser 1, .device, [.vault c.person]⟩ ::
-      m.founding.signIns.mapIdx fun k i => ⟨i.device, c.browser (k + 2), .device, [.vault c.person]⟩ := by
+    m.founding.vaults = ⟨c.person, c.vaultName, .person, m.founding.founders c.passkey, 1⟩ ::
+      ⟨m.founding.coop, m.founding.coopName, .coop, [.vault c.person], 1⟩ :: ⟨m.founding.network, networkName, .agent,
+      [.vault m.founding.coop], 1⟩ :: ⟨m.founding.peer, peerName, .device, [.vault m.founding.network], 1⟩ ::
+      ⟨c.device, c.browser 1, .device, [.vault c.person], 1⟩ ::
+      m.founding.signIns.mapIdx fun k i => ⟨i.device, c.browser (k + 2), .device, [.vault c.person], 1⟩ := by
   simp [Founding.vaults, hc]
 
 /-- A sign-in adds one device to the signing passkey's own vault, named after its person, and nothing else: its
@@ -143,7 +143,7 @@ among the vaults, acts for that vault, and no vault there was changes. -/
 theorem signIn_adds {sender : String} {i : SignIn} (h : m.submitSignIn sender i = .ok m') :
     ∃ p person name n, (p, person, name) ∈ m.holders ∧ i.assertion.signer = p ∧
       (∃ pre post, m.tree.vaults = pre ++ post ∧
-        m'.tree.vaults = pre ++ [⟨i.device, browserName name n, .device, [.vault person]⟩] ++ post) ∧
+        m'.tree.vaults = pre ++ [⟨i.device, browserName name n, .device, [.vault person], 1⟩] ++ post) ∧
       m'.tree.WF ∧ m'.tree.KeyOwns p person ∧ m'.tree.actsFor i.device = some person ∧
       ∀ x ∈ m.tree.ids, m'.tree.get? x = m.tree.get? x := by
   obtain ⟨c, hc, nk, w, cases⟩ := acceptSignIn_cases (submitSignIn_accept h)
@@ -152,12 +152,12 @@ theorem signIn_adds {sender : String} {i : SignIn} (h : m.submitSignIn sender i 
   -- the browser, the person's vault and the shape of the tree, from either case
   suffices key : ∃ p person name n, (p, person, name) ∈ m.holders ∧
       i.assertion.check m.founding.rp (challengeOf i.text) p = .ok () ∧
-      (⟨person, name ++ "'s vault", .person, m.founding.founders p⟩ : Vault) ∈ m'.tree.vaults ∧
+      (⟨person, name ++ "'s vault", .person, m.founding.founders p, 1⟩ : Vault) ∈ m'.tree.vaults ∧
       ∃ pre post, m.tree.vaults = pre ++ post ∧
-        m'.tree.vaults = pre ++ [⟨i.device, browserName name n, .device, [.vault person]⟩] ++ post by
+        m'.tree.vaults = pre ++ [⟨i.device, browserName name n, .device, [.vault person], 1⟩] ++ post by
     obtain ⟨p, person, name, n, mh, ok, mp, pre, post, e, e'⟩ := key
     have old := Tree.get?_insert e e' (by simpa using nd)
-    have gd := Tree.get?_of_mem w.nodup (v := ⟨i.device, browserName name n, .device, [.vault person]⟩)
+    have gd := Tree.get?_of_mem w.nodup (v := ⟨i.device, browserName name n, .device, [.vault person], 1⟩)
       (by rw [e']; simp)
     have gp := Tree.get?_of_mem w.nodup mp
     refine ⟨p, person, name, n, mh, (check_ok ok).2.2.2.2.1, ⟨pre, post, e, e'⟩, w,
@@ -220,7 +220,7 @@ theorem signIn_admits {sender : String} {i : SignIn} (h : m.submitSignIn sender 
     rcases mh with ⟨_, rfl, _⟩ | ⟨j, mj, _, rfl, _⟩
     · -- the claimant's vault owns the admin coop
       refine .inr (.inr (.owns ?_))
-      have mc : (⟨m'.founding.coop, m'.founding.coopName, .coop, [.vault c.person]⟩ : Vault) ∈ m'.tree.vaults := by
+      have mc : (⟨m'.founding.coop, m'.founding.coopName, .coop, [.vault c.person], 1⟩ : Vault) ∈ m'.tree.vaults := by
         have hc' : m'.founding.claim = some c := by
           rcases cases with ⟨_, _, rfl⟩ | ⟨_, _, _, _, _, rfl⟩ <;> simpa using hc
         simp [tree, vaults, Founding.vaults, hc']

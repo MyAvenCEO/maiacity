@@ -108,6 +108,8 @@ export const ownerKeys = ask('ownerKeys');
 export const deviceHybrid = ask('deviceHybrid');
 // this device's seal key's public half, which its vault's keyring is sealed to
 export const deviceSeal = ask('deviceSeal');
+// sign-up's keyring genesis Record (bytes, hex), for the keyring Doc's writer: never a key
+export const keyringGenesis = ask('keyringGenesis');
 // a file shared in the chat: its chunks into this origin's store, then its index and its line (room.svelte.js)
 export const putChunk = ask('put_chunk');
 export const shareFile = ask('share');

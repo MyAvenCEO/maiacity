@@ -8,14 +8,15 @@ the ops a holder may call, never steps (A32): the steps are the op's lowering, w
 an envelope names, so every reader works out the same footprint, and then checks what the envelope actually changed
 against it:
 
-- a Record that is new: a `put-new` of its type is in the footprint, and every field it carries is a field the
-  footprint writes for its type;
+- a Record that is new, no Record before having its id: a `put-new` of its type is in the footprint, and every field
+  it carries is a field the footprint writes for its type;
 - a Record that changed: it keeps its id and type, and every field whose value changed is a field the footprint writes
   for its type;
 - a Record that is gone: a `remove` of its type is in the footprint.
 
-What it proves: a commit that ran as its ops say always passes that check (`commit_within`), so an honest writer is
-accepted by every reader (`honest_passes`); whether its caps let it call those ops is caps' part of the verdict
+What it proves: a commit that ran as its ops say, under a (writer, counter) the Doc hasn't seen, always passes that check
+(`commit_within`), so an honest writer is accepted by every reader (`honest_passes`). Its counter is fresh because a
+writer's counter only grows (A18): a commit that reused one would make an id the Doc already holds; whether its caps let it call those ops is caps' part of the verdict
 (`Aven.ID.Authorized`). -/
 
 namespace Aven.DB.Engine
@@ -50,13 +51,13 @@ def changedOk (eq : Val → Val → Bool) (fp : List Step) (r0 r : Record Val) :
     (r0.fields.map (·.1) ++ r.fields.map (·.1)).all fun f =>
       optEq eq (get r0.fields f) (get r.fields f) || (fieldsOf fp r.type).contains f
 
-/-- A new Record: its type is created, with only fields the footprint writes. -/
+/-- A new Record: its type is created, with only fields the footprint writes. Whether its id is new is the diff's. -/
 def newOk (fp : List Step) (r : Record Val) : Bool :=
   hasVerb fp r.type .putNew && r.fields.all fun (f, _) => (fieldsOf fp r.type).contains f
 
 /-- What every reader checks: the Doc before, the Doc after, and the footprint. -/
 def diffWithin (eq : Val → Val → Bool) (fp : List Step) (s s' : List (Record Val)) : Bool :=
-  s'.all (fun r => s.any (changedOk eq fp · r) || newOk fp r) &&
+  s'.all (fun r => s.any (changedOk eq fp · r) || (newOk fp r && !s.any (·.id == r.id))) &&
     s.all fun r0 => s'.any (fun r => r.id == r0.id && r.type == r0.type) || hasVerb fp r0.type .remove
 
 /-- A reader accepts a commit's diff when it stays within the footprint of the ops it lowers to. -/
@@ -133,7 +134,8 @@ structure Within (eq : Val → Val → Bool) (fp : List Step) (s0 s : List (Reco
   now : ∀ r ∈ s,
     (∃ r0 ∈ s0, r0.id = r.id ∧ r0.type = r.type ∧
       ∀ f, optEq eq (get r0.fields f) (get r.fields f) = false → Writes fp r.type f) ∨
-    ((∃ st ∈ fp, st.type = r.type ∧ st.verb = .putNew) ∧ ∀ f, (get r.fields f).isSome = true → Writes fp r.type f)
+    ((∃ st ∈ fp, st.type = r.type ∧ st.verb = .putNew) ∧ (∀ f, (get r.fields f).isSome = true → Writes fp r.type f) ∧
+      ∀ r0 ∈ s0, r0.id ≠ r.id)
   before : ∀ r0 ∈ s0,
     (∃ r ∈ s, r.id = r0.id ∧ r.type = r0.type) ∨ (∃ st ∈ fp, st.type = r0.type ∧ st.verb = .remove)
 
@@ -169,11 +171,11 @@ theorem within_map (eq : Val → Val → Bool) (fp : List Step) (s0 s : List (Re
         · simpa [hty] using hset f hs
         · rw [get_setFields_of_not_mem f _ _ hs] at hne
           exact hf f hne
-      · refine .inr ⟨hc, fun f hsome => ?_⟩
+      · refine .inr ⟨hc, fun f hsome => ?_, hf.2⟩
         by_cases hs : f ∈ set.map (·.1)
         · simpa [hty] using hset f hs
         · rw [get_setFields_of_not_mem f _ _ hs] at hsome
-          exact hf f hsome
+          exact hf.1 f hsome
     · have : p r = false := by simpa using hpr
       simp only [this]
       exact h.now r hr
@@ -183,8 +185,11 @@ theorem within_map (eq : Val → Val → Bool) (fp : List Step) (s0 s : List (Re
       by_cases hpr : p r = true <;> simp [hpr, hid, hty]
     · exact .inr hrm
 
+/-- No Record of the Doc was made under this writer's counter. -/
+def Fresh (w c : Nat) (s0 : List (Record Val)) : Prop := ∀ r0 ∈ s0, ¬(r0.id.writer = w ∧ r0.id.counter = c)
+
 theorem within_step (eq : Val → Val → Bool) (ofId : NewId → Val) (w c i : Nat) (fp : List Step)
-    (s0 s s1 : List (Record Val)) (op : Op Val) (hop : op.step ∈ fp) (h : Within eq fp s0 s)
+    (s0 s s1 : List (Record Val)) (hfresh : Fresh w c s0) (op : Op Val) (hop : op.step ∈ fp) (h : Within eq fp s0 s)
     (hs : step eq ofId w c i s op = .ok s1) : Within eq fp s0 s1 := by
   cases op with
   | put ty fs =>
@@ -196,9 +201,10 @@ theorem within_step (eq : Val → Val → Bool) (ofId : NewId → Val) (w c i : 
       · exact h.now r hr
       · simp only [List.mem_singleton] at hr
         subst hr
-        refine .inr ⟨⟨_, hop, rfl, rfl⟩, fun f hsome => ⟨_, hop, rfl, ?_⟩⟩
-        have := lookup_isSome_mem _ f hsome
-        simpa [Op.step, List.map_map, Function.comp_def] using this
+        refine .inr ⟨⟨_, hop, rfl, rfl⟩, fun f hsome => ⟨_, hop, rfl, ?_⟩, fun r0 hr0 e => hfresh r0 hr0 ?_⟩
+        · have := lookup_isSome_mem _ f hsome
+          simpa [Op.step, List.map_map, Function.comp_def] using this
+        · simp [e]
     · intro r0 hr0
       rcases h.before r0 hr0 with ⟨r, hr, hid⟩ | hrm
       · exact .inl ⟨r, List.mem_append_left _ hr, hid⟩
@@ -232,7 +238,7 @@ theorem within_step (eq : Val → Val → Bool) (ofId : NewId → Val) (w c i : 
     · cases hs
 
 theorem within_steps (eq : Val → Val → Bool) (ofId : NewId → Val) (w c : Nat) (fp : List Step)
-    (s0 : List (Record Val)) :
+    (s0 : List (Record Val)) (hfresh : Fresh w c s0) :
     ∀ (ops : List (Op Val)) (i : Nat) (s s' : List (Record Val)), (∀ op ∈ ops, op.step ∈ fp) → Within eq fp s0 s →
       stepsFrom eq ofId w c i s ops = .ok s' → Within eq fp s0 s'
   | [], _, s, s', _, h, hs => by
@@ -244,9 +250,9 @@ theorem within_steps (eq : Val → Val → Bool) (ofId : NewId → Val) (w c : N
     | error e => rw [h1] at hs; cases hs
     | ok s1 =>
       rw [h1] at hs
-      exact within_steps eq ofId w c fp s0 ops (i + 1) s1 s'
+      exact within_steps eq ofId w c fp s0 hfresh ops (i + 1) s1 s'
         (fun o ho => hfp o (List.mem_cons_of_mem _ ho))
-        (within_step eq ofId w c i fp s0 s s1 op (hfp op List.mem_cons_self) h h1) hs
+        (within_step eq ofId w c i fp s0 s s1 hfresh op (hfp op List.mem_cons_self) h h1) hs
 
 theorem within_check (eq : Val → Val → Bool) (fp : List Step) (s s' : List (Record Val)) (h : Within eq fp s s') :
     diffWithin eq fp s s' = true := by
@@ -265,8 +271,9 @@ theorem within_check (eq : Val → Val → Bool) (fp : List Step) (s s' : List (
       · exact .inr (wr _ _ (hf f ho))
       · exact .inl rfl
     · refine .inr ?_
-      simp only [newOk, hasVerb, Bool.and_eq_true, List.any_eq_true, beq_iff_eq, List.all_eq_true]
-      refine ⟨⟨st, hst, hty, hv⟩, fun ⟨f, x⟩ hx => wr _ _ (hf f (lookup_of_mem _ f x hx))⟩
+      simp only [newOk, hasVerb, Bool.and_eq_true, List.any_eq_true, beq_iff_eq, List.all_eq_true,
+        Bool.not_eq_true', List.any_eq_false]
+      exact ⟨⟨⟨st, hst, hty, hv⟩, fun ⟨f, x⟩ hx => wr _ _ (hf.1 f (lookup_of_mem _ f x hx))⟩, hf.2⟩
   · intro r0 hr0
     rcases h.before r0 hr0 with ⟨r, hr, hid, hty⟩ | ⟨st, hst, hty, hv⟩
     · exact .inl ⟨r, hr, by simp [hid, hty]⟩
@@ -274,20 +281,20 @@ theorem within_check (eq : Val → Val → Bool) (fp : List Step) (s s' : List (
       simp only [hasVerb, List.any_eq_true, Bool.and_eq_true, beq_iff_eq]
       exact ⟨st, hst, hty, hv⟩
 
-/-- **A commit that ran as its ops say passes every reader's check of its diff.** -/
+/-- **A commit that ran as its ops say, under a fresh counter, passes every reader's check of its diff.** -/
 theorem commit_within (eq : Val → Val → Bool) (heq : ∀ x, eq x x = true) (ofId : NewId → Val) (w c : Nat)
-    (s s' : List (Record Val)) (ops : List (Op Val)) (h : commit eq ofId w c s ops = .ok s') :
+    (s s' : List (Record Val)) (ops : List (Op Val)) (hfresh : Fresh w c s) (h : commit eq ofId w c s ops = .ok s') :
     diffWithin eq (footprint ops) s s' = true := by
   simp only [commit] at h
   split at h
-  · exact within_check eq _ s s' (within_steps eq ofId w c (footprint ops) s ops 0 s s'
+  · exact within_check eq _ s s' (within_steps eq ofId w c (footprint ops) s hfresh ops 0 s s'
       (fun op hop => List.mem_map.mpr ⟨op, hop, rfl⟩) (within_refl eq heq _ s) h)
   · cases h
 
-/-- **An honest writer is accepted by every reader:** its commit ran as its ops say. -/
+/-- **An honest writer is accepted by every reader:** its commit ran as its ops say, under a fresh counter. -/
 theorem honest_passes (eq : Val → Val → Bool) (heq : ∀ x, eq x x = true) (ofId : NewId → Val) (w c : Nat)
-    (s s' : List (Record Val)) (ops : List (Op Val)) (h : commit eq ofId w c s ops = .ok s') :
+    (s s' : List (Record Val)) (ops : List (Op Val)) (hfresh : Fresh w c s) (h : commit eq ofId w c s ops = .ok s') :
     check eq ops s s' = true :=
-  commit_within eq heq ofId w c s s' ops h
+  commit_within eq heq ofId w c s s' ops hfresh h
 
 end Aven.DB.Engine
