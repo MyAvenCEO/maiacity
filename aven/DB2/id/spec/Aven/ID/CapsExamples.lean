@@ -38,7 +38,7 @@ def readOn (d : Core.DocId) : Line := ⟨coreOp .read, .doc d .self, []⟩
 /-- A `core/1` write on a Doc, of one type, and of some fields or any. -/
 def writeOn (o : Core.CoreOp) (d t : Core.DocId) (fields : Option (List String) := none) : Line :=
   ⟨coreOp o, .doc d .self,
-    (typeParam, some [docValue t]) :: (fields.map fun fs => (fieldsParam, some (fs.map fieldValue))).toList⟩
+    (Core.typeParam, some [docValue t]) :: (fields.map fun fs => (Core.fieldsParam, some (fs.map fieldValue))).toList⟩
 
 /-- Writing tasks into a Doc: new ones, and patches to any field. -/
 def tasksOn (d : Core.DocId) : Grant := [writeOn .put d tasks, writeOn .patch d tasks]
