@@ -343,9 +343,69 @@ pub fn full_docs(v: aven_core::Value) -> aven_core::Value {
 /// The reader's verdict on an `authorized.json` input, in its `expected` form: each part of `Authorized`, the path,
 /// and when refused, which group of reasons (`Reader::authorized`'s order).
 pub fn judge(input: &Value) -> Value {
+    with_reader(input, |r, reading, _| verdict(r, reading))
+}
+
+/// A `member.json` reading's answer: whether caps authorizes it, and the vaults it makes members (`Reader.membersB`).
+pub fn judge_members(input: &Value) -> Value {
+    with_reader(input, |r, reading, names| {
+        let founded: Vec<(aven_core::Hash, String)> = input["founded"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| {
+                (
+                    aven_core::Hash::parse(f["claim"].as_str().unwrap()).unwrap(),
+                    f["vault"].as_str().unwrap().into(),
+                )
+            })
+            .collect();
+        let of = |c: &aven_core::Hash| founded.iter().find(|(x, _)| x == c).map(|(_, v)| v.clone());
+        let tree = names.doc(input["tree"].as_str().unwrap());
+        json!({ "authorized": r.authorized(reading).is_ok(), "members": r.members(&tree, reading, &of) })
+    })
+}
+
+fn verdict(r: &aven_id::caps::Reader, reading: &aven_id::caps::Reading) -> Value {
+    use aven_id::caps::{Authority, Refusal};
+    let verdict = r.authorized(reading);
+    let mut out = json!({
+        "withinDevice": r.within_device(reading).is_ok(),
+        "own": r.own(reading),
+        "byChain": r.by_chain(reading).is_ok(),
+        "hostSigned": (r.device_cap)(reading.signer).is_some_and(|d| d.host),
+        "authorized": verdict.is_ok(),
+        "path": match verdict {
+            Ok(Authority::Own) => "own",
+            Ok(Authority::Chain) => "chain",
+            Err(_) => "refused",
+        },
+    });
+    if let Err(why) = &verdict {
+        out["refusal"] = Value::from(match why {
+            Refusal::Device
+            | Refusal::DeviceBranch
+            | Refusal::UnknownDoc
+            | Refusal::DeviceCall(_) => "device",
+            Refusal::NoAuthority
+            | Refusal::Chain(_)
+            | Refusal::NotHolder
+            | Refusal::Branch
+            | Refusal::Call(_) => "authority",
+            Refusal::NoActor => "actor",
+        });
+    }
+    out
+}
+
+/// A reader and the reading of an `authorized.json`-form input, handed to `f`.
+fn with_reader<T>(
+    input: &Value,
+    f: impl FnOnce(&aven_id::caps::Reader, &aven_id::caps::Reading, &Names) -> T,
+) -> T {
     use super::unhex;
     use aven_core::{Call, DocId};
-    use aven_id::caps::{Authority, DeviceCap, Reader, Reading, Refusal, World};
+    use aven_id::caps::{DeviceCap, Reader, Reading, World};
     let names = Names::default();
     let ctx = Context::of(&names, &input["context"]);
     let chain: Vec<Cap> = input["chain"]
@@ -443,33 +503,6 @@ pub fn judge(input: &Value) -> Value {
             vault_of: &vault_of,
             device_cap: &dc_of,
         };
-        let verdict = r.authorized(&reading);
-        let mut out = json!({
-            "withinDevice": r.within_device(&reading).is_ok(),
-            "own": r.own(&reading),
-            "byChain": r.by_chain(&reading).is_ok(),
-            "hostSigned": dc_of(&signer).is_some_and(|d| d.host),
-            "authorized": verdict.is_ok(),
-            "path": match verdict {
-                Ok(Authority::Own) => "own",
-                Ok(Authority::Chain) => "chain",
-                Err(_) => "refused",
-            },
-        });
-        if let Err(why) = &verdict {
-            out["refusal"] = Value::from(match why {
-                Refusal::Device
-                | Refusal::DeviceBranch
-                | Refusal::UnknownDoc
-                | Refusal::DeviceCall(_) => "device",
-                Refusal::NoAuthority
-                | Refusal::Chain(_)
-                | Refusal::NotHolder
-                | Refusal::Branch
-                | Refusal::Call(_) => "authority",
-                Refusal::NoActor => "actor",
-            });
-        }
-        out
+        f(&r, &reading, &names)
     })
 }

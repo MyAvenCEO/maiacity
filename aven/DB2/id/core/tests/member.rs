@@ -183,3 +183,35 @@ fn a_member_only_by_a_confirm() {
         assert_eq!(got, expect, "{name}");
     }
 }
+
+/// Member caps and the members a reading makes, against Lean's vectors (`member.json`, `Reader.membersB`).
+#[test]
+fn members_are_the_models() {
+    use aven_id::caps::member_cap;
+    let all = vectors("member.json");
+    assert!(all.len() >= 9, "{} member vectors", all.len());
+    for v in &all {
+        let input = &v["input"];
+        let names = Names::default();
+        if let Some(vault) = input["vault"].as_str() {
+            let d = |k: &str| names.doc(input[k].as_str().unwrap());
+            let cap = member_cap(d("tree"), d("chat"), d("message"), vault);
+            assert_eq!(cap, names.cap(&v["expected"]["cap"]), "{}", v["name"]);
+            assert_eq!(
+                hex(&cap.bytes()),
+                v["expected"]["cap"]["cbor"],
+                "{}",
+                v["name"]
+            );
+            assert_eq!(
+                cap.digest().text(),
+                v["expected"]["cap"]["hash"],
+                "{}",
+                v["name"]
+            );
+        } else {
+            let got = common::caps::judge_members(input);
+            assert_eq!(got, v["expected"], "{}", v["name"]);
+        }
+    }
+}

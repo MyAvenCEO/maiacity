@@ -20,8 +20,8 @@ pub use chain::{Cap, ChainError, Ctx, Role, authority_over_vault, issued, vault_
 pub use conditions::{Branches, Conditions, Form, History, Holder, MAIN};
 pub use line::{Grant, Line, World, grant_allows, grant_reaches, grant_within};
 pub use member::{
-    CLAIM_PARAM, confirm_call, confirm_cap, confirm_op, member_cap, member_lines, plugin_op,
-    sign_in_op,
+    CLAIM_PARAM, claim_of, confirm_call, confirm_cap, confirm_op, member_cap, member_lines,
+    plugin_op, sign_in_op,
 };
 pub use records::{CapRecord, EpochRecord, IdRecord, REVOKE_LABEL, RevokeRecord, id_builtin_fit};
 pub use revoke::{Doc, Reads, Revocation, Verdict};
