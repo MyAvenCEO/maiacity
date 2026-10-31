@@ -1,4 +1,5 @@
 import Aven.ID.Authorized
+import Aven.ID.Network
 
 /-! # Membership is a cap (A38)
 
@@ -19,25 +20,26 @@ one-time key only authorizes the claim and holds nothing (A28, A42).
 - `member_by_confirm`: a reader counts a vault as a member only by an authorized confirm on the tree Doc, naming a claim
   that founded it, written on its signer's vault's own authority or under a chain whose root allows that confirm.
 
-What the tree settles, which claims stand and whom each founded, is avenPEER's (`Aven.ID.Network`, `Settled.member`),
-so it is a parameter here, as are the tree Doc, the chat Doc and the chat message's type, which Maia City's genesis
-names. -/
+`tree/1`'s ops and the calls its statements make are avenPEER's (`Aven.ID.Network`, `TreeOp`, `TreeSays.call`), and so
+is what the tree settles, which claims stand and whom each founded (`Settled.member`): a parameter here, as are the
+tree Doc, the chat Doc and the chat message's type, which Maia City's genesis names. -/
 
 namespace Aven.ID
 
 open Aven.Core
 
-/-- `tree/1`'s op, by its id. -/
-def treeOp (name : String) : OpId := pluginOp "tree/1" name
+/-- `tree/1`'s confirm and sign-in, by their ids. -/
+def confirmOp : OpId := TreeOp.confirm.id blake3
+def signInOp : OpId := TreeOp.signIn.id blake3
 
-def confirmOp : OpId := treeOp "confirm"
-def signInOp : OpId := treeOp "signIn"
+/-- The parameter a confirm names its claim by. -/
+def claimParam : Bytes := Body.utf8 "claim"
 
-/-- The claim a confirm names, by its name. -/
-def claimParam : Bytes := "claim".toUTF8.toList
+/-- A confirm of the claim named `c`, the call its tree statement makes. -/
+def confirmCall (c : Hash) : Call := (TreeSays.confirm c).call blake3
 
-/-- A confirm of claim `c`. -/
-def confirmCall (c : Bytes) : Call := ⟨confirmOp, [(claimParam, .bytes c)]⟩
+/-- A confirm's one parameter is its claim. -/
+theorem confirmCall_params (c : Hash) : (confirmCall c).params.map (·.1) = [claimParam] := rfl
 
 section
 variable (tree chat message : DocId)
@@ -72,18 +74,18 @@ variable (r : Reader) (gov : Bytes → Bytes → Prop) (spawned lists : DocId �
 
 /-- A confirmation a reader counts: an envelope caps authorizes, on the tree Doc, calling `tree/1`'s confirm for
 claim `c`. -/
-def Reader.Confirms (e : Envelope) (c : Bytes) : Prop :=
+def Reader.Confirms (e : Envelope) (c : Hash) : Prop :=
   r.Authorized gov spawned lists e ∧ e.doc = tree ∧ confirmCall c ∈ r.calls e
 
 /-- Vault `v` holds the member cap: the reader counts a confirmation of a claim that founded `v`, as the tree settles
 claims (`founded`). -/
-def Reader.Member (founded : Bytes → Option String) (v : String) : Prop :=
+def Reader.Member (founded : Hash → Option String) (v : String) : Prop :=
   ∃ e c, r.Confirms tree gov spawned lists e c ∧ founded c = some v
 
 /-- **A member only by a confirm** (A38): a reader counts a vault as a member only by an authorized confirm on the tree
 Doc, naming a claim that founded it, its signing device within its device cap, and written on its signer's vault's
 own authority, the tree Doc's vault or one that governs it, or under a chain whose root allows that confirm. -/
-theorem member_by_confirm {founded : Bytes → Option String} {v : String}
+theorem member_by_confirm {founded : Hash → Option String} {v : String}
     (h : r.Member tree gov spawned lists founded v) :
     ∃ e c, founded c = some v ∧ e.doc = tree ∧ r.WithinDevice gov spawned lists e ∧
       ((r.Own gov e ∧ ¬ r.HostSigned e) ∨
