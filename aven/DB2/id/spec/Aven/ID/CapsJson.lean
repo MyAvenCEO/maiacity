@@ -107,6 +107,7 @@ def ChainError.json : ChainError → Json
   | .approval c => Json.mkObj [("rule", "approval"), ("cap", c)]
   | .publicShares c => Json.mkObj [("rule", "publicShares"), ("cap", c)]
   | .keepShares c => Json.mkObj [("rule", "keepShares"), ("cap", c)]
+  | .footprint c => Json.mkObj [("rule", "footprint"), ("cap", c)]
   | .parent c => Json.mkObj [("rule", "parent"), ("cap", c)]
   | .issuer c => Json.mkObj [("rule", "issuer"), ("cap", c)]
   | .holder c => Json.mkObj [("rule", "holder"), ("cap", c)]

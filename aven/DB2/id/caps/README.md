@@ -372,6 +372,10 @@ core operations, and per lowered step it says:
   or written once by `put-new` (an owner field set to `$actor`). Those read the same at the envelope's base and now, so
   the check is a lookup of the touched Records. Anything else narrows by type and field only.
 
+A footprint sits only on a line that writes: `put`, `patch`, `remove` or `edit` (A19). A line that reads, queries,
+tells, keeps or shares allows no step, so what an owner approves as reading never writes (A2; `no_step_without_write`,
+`footprint_writes`). The footprint grant names each step's verb exactly, so the line's verb only says that it writes.
+
 A cap names the hash of the **lowered** core operation (E3), which a plugin upgrade can't widen. The operation's own
 hash may ride along for display and grants nothing. An envelope made by an operation carries the operation's hash and
 its params inside the seal, so a reader re-lowers it and checks the change is exactly what it produces.
@@ -1234,6 +1238,7 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `host_chain_only`, `actor_within_device`, `host_never_beyond` | An authorized envelope an actor host's device signed rests on a chain, the one the acting actor's message carried, and names that actor; every step of it is allowed both by that chain's last cap and by the host's device cap, the union of its hosted actors' standing caps (A27) |
 | `Caps` | `narrow_chain`, `narrow_steps` | No cap in a chain lets a verb reach a Doc, or allows a write step, that its root doesn't |
 | | `root_authority` | Every line a chain grants lies in its root issuer's authority: its own vault, one it governs, or a Doc of one |
+| | `no_step_without_write`, `footprint_writes` | Only a line that writes (put, patch, remove, edit) allows a step, and in a valid chain a footprint sits only on such a line: a cap shown as reading never writes (A2) |
 | | `chain_short` | A chain passes its root on no more often than its root may be shared: every grant lowers the share depth, and an attenuation never raises it |
 | | `grant_approved` | Every cap in a chain was signed by a device of its issuer, and every grant in it approved by its issuer's owners, an owner vault by its own quorum (D14) |
 | | `child_live` | A cap issued from a group's cap holds only while its issuer is in the group |
