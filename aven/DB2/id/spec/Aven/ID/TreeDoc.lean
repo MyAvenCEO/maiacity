@@ -8,7 +8,7 @@ carries:
 - it belongs to the tree Doc every member pins;
 - its signer's key is UTF-8 text;
 - its parents are Core's (`Aven.Core.Past.parents`): the one before it in its writer's log and the tips it saw;
-- its body is what it says (`TreeSays.ofValue`).
+- its body is the call of a `tree/1` op it makes (`TreeSays.ofValue`, A32).
 
 An envelope that doesn't read doesn't count, and neither does one that fails its own checks (`ok`: its name is its
 hash, its signature verifies). The settle rule is `Aven.ID.settle`'s, over the statements read (`settleDoc`), and its
@@ -32,34 +32,34 @@ structure Named where
   env : Envelope
 
 /-- The statement an envelope of the tree Doc carries, if it reads as one. -/
-def read (doc : DocId) (n : Named) : Option TreeStatement :=
+def read (H : Bytes → Hash) (doc : DocId) (n : Named) : Option TreeStatement :=
   if n.env.doc = doc then
-    match ofUtf8 n.env.signer, TreeSays.ofValue n.env.body with
+    match ofUtf8 n.env.signer, TreeSays.ofValue H n.env.body with
     | some signer, some says => some ⟨n.name, signer, Core.Past.parents n.env, says⟩
     | _, _ => none
   else none
 
 /-- The tree from the envelopes a peer stores: `ok` is each one's own checks, `doc` the tree Doc and `pinned` its
 genesis's name, both of which every member pins. -/
-def settleDoc (ok : Named → Bool) (doc : DocId) (pinned : Hash) (E : List Named) : Settled :=
-  settle pinned (E.filterMap fun n => if ok n then read doc n else none)
+def settleDoc (H : Bytes → Hash) (ok : Named → Bool) (doc : DocId) (pinned : Hash) (E : List Named) : Settled :=
+  settle pinned (E.filterMap fun n => if ok n then read H doc n else none)
 
 /-- A statement as an envelope of the tree Doc, for the examples and vectors: the tips it saw are its dependencies.
 The tree reads neither the writer nor the sequence number: its order is its parents. -/
-def envelope (doc : DocId) (s : TreeStatement) : Envelope :=
-  { doc, branch := mainBranch, writer := 0, seq := 0, prev := none, deps := s.parents, body := s.says.toValue,
+def envelope (H : Bytes → Hash) (doc : DocId) (s : TreeStatement) : Envelope :=
+  { doc, branch := mainBranch, writer := 0, seq := 0, prev := none, deps := s.parents, body := s.says.toValue H,
     signer := utf8 s.signer, sig := [] }
 
 /-- An envelope made from a statement reads back as that statement. -/
-theorem read_envelope (doc : DocId) (s : TreeStatement) (h : s.says.refsOk = true) :
-    read doc ⟨s.name, envelope doc s⟩ = some s := by
-  simp [read, envelope, ofUtf8_utf8, TreeSays.ofValue_toValue _ h, Core.Past.parents_envelope]
+theorem read_envelope {H : Bytes → Hash} (d : TreeOp.distinct H) (doc : DocId) (s : TreeStatement)
+    (h : s.says.refsOk = true) : read H doc ⟨s.name, envelope H doc s⟩ = some s := by
+  simp [read, envelope, ofUtf8_utf8, TreeSays.ofValue_toValue d _ h, Core.Past.parents_envelope]
 
 /-- **Settling the envelopes is settling the statements:** whatever a set of statements settles to, the envelopes that
 carry them, stored under the statements' names, settle to the same. -/
-theorem settleDoc_envelopes (doc : DocId) (pinned : Hash) (S : List TreeStatement)
-    (h : ∀ s ∈ S, s.says.refsOk = true) :
-    settleDoc (fun _ => true) doc pinned (S.map fun s => ⟨s.name, envelope doc s⟩) =
+theorem settleDoc_envelopes {H : Bytes → Hash} (d : TreeOp.distinct H) (doc : DocId) (pinned : Hash)
+    (S : List TreeStatement) (h : ∀ s ∈ S, s.says.refsOk = true) :
+    settleDoc H (fun _ => true) doc pinned (S.map fun s => ⟨s.name, envelope H doc s⟩) =
       settle pinned S := by
   unfold settleDoc
   congr 1
@@ -67,7 +67,7 @@ theorem settleDoc_envelopes (doc : DocId) (pinned : Hash) (S : List TreeStatemen
   induction S with
   | nil => rfl
   | cons s S ih =>
-    simp only [List.map_cons, List.filterMap_cons, read_envelope doc s (h s (List.mem_cons_self ..))]
+    simp only [List.map_cons, List.filterMap_cons, read_envelope d doc s (h s (List.mem_cons_self ..))]
     rw [ih fun x m => h x (List.mem_cons_of_mem _ m)]
 
 end TreeDoc
