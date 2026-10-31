@@ -21,6 +21,7 @@ use std::time::{Instant, SystemTime};
 use aven_db_core::timeline;
 use aven_db_store::blobs::{Blobs, FetchError};
 use aven_db_store::{Hash, RefName, Store, files};
+use aven_runtimes_registry as registry;
 use bytes::Bytes;
 use iroh::{Endpoint, EndpointAddr, PublicKey, RelayUrl};
 use serde_json::json;
@@ -33,28 +34,27 @@ pub fn file_ref(index: &Hash) -> RefName {
     RefName::new(format!("file-{index}")).expect("a valid ref name")
 }
 
-/// The MIME type a file's name claims, by its extension.
-pub fn mime(name: &str) -> &'static str {
-    let ext = name
-        .rsplit_once('.')
-        .map(|(_, e)| e.to_ascii_lowercase())
-        .unwrap_or_default();
-    match ext.as_str() {
-        "mp4" | "m4v" => "video/mp4",
-        "mov" => "video/quicktime",
-        "webm" => "video/webm",
-        "mp3" => "audio/mpeg",
-        "pdf" => "application/pdf",
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "txt" => "text/plain",
-        _ => "application/octet-stream",
+/// The media type a file is, by its first bytes (aven/runtimes' registry, `Aven.Runtime.Registry`): its name only
+/// chooses among the text formats its bytes can't tell apart, so a movie named `.txt` is still a movie. A file that
+/// can't be read is `application/octet-stream`.
+pub fn sniffed(path: &Path, name: &str) -> &'static str {
+    let mut head = Vec::with_capacity(registry::HEAD_MAX);
+    let read = std::fs::File::open(path)
+        .and_then(|f| f.take(registry::HEAD_MAX as u64).read_to_end(&mut head));
+    if read.is_err() {
+        return registry::FileType::Unknown.mime();
     }
+    registry::sniff(
+        &head,
+        &registry::Claim {
+            r#type: None,
+            name: Some(name),
+        },
+    )
+    .mime()
 }
 
-/// A file put from the folder, to announce: its index's hash, its size, its name and the type its name claims.
+/// A file put from the folder, to announce: its index's hash, its size, its name and the type its bytes say.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Shared {
     pub index: Hash,
@@ -129,7 +129,7 @@ where
             announce(Shared {
                 index,
                 size: stamp.0,
-                mime: mime(&name).into(),
+                mime: sniffed(&path, &name).into(),
                 name,
             })
             .await;

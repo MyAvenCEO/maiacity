@@ -605,6 +605,15 @@ pub fn entry(t: FileType) -> Entry {
         .unwrap_or(e(t, Mode::Download, 0, 0))
 }
 
+/// The type a claimed media type names, by its essence; `Unknown` for any other (`FileType.ofMime`). Only for what a
+/// claim may label (the chat's card before the bytes are read): a decision never takes it, since the bytes decide.
+pub fn of_mime(m: &str) -> FileType {
+    REGISTRY
+        .iter()
+        .find(|x| essence_is(m, x.r#type.mime()))
+        .map_or(FileType::Unknown, |x| x.r#type)
+}
+
 /// Where the registry stands: whether the files origin runs file runtimes yet (decision 3).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Stage {
