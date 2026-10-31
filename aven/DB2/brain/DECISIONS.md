@@ -2565,3 +2565,46 @@ changed. A refinement names what it refines; a change of mind names what it supe
   keeper nothing to tell them apart by.
 - **Supersedes:** — (applies A1 and A177 to checkpoints)
 - **Lean or code then:** to come with checkpoints: `Aven.DB.Docs` checkpoint body, its vectors.
+
+### A182 · A revocation discounts, as a split does
+- **Decided by:** the architect, for the avenCAPS and avenCORE pages (12:46)
+- **Decision:** Core's one counting rule takes a third parameter from avenCAPS, `revoked`: an envelope is discounted
+  when the reader holds a counted revocation of a cap in its chain that has taken effect in that Doc (in the Doc itself,
+  at its kept list, or at another writer's first ack, caps D8) and whose kept past doesn't hold the envelope.
+  `authorized` stays a function of the envelope and its own past (A147). Like a split learned later, a revocation
+  learned later discounts; every reader holding the same envelopes counts the same, and there is no settle order.
+- **Why:** caps D8's race judges a write by what the reader holds, not by the write's own past, so it can't live in
+  `authorized`; counting is Core's, and Core already discounts on what arrives later (`split_final`).
+- **Supersedes:** — (places caps D8 within A147 and A23)
+- **Lean or code then:** to come: `Counts nm fit authorized revoked` in `Aven.Core.Log`, `Aven.ID.Revoke` supplying
+  `revoked`, `rule4_one_verdict` over the three.
+
+### A183 · A cap is its content
+- **Decided by:** the architect, for the avenCAPS page (12:47)
+- **Decision:** a cap's body carries no nonce. Two grants with the same issuer, holder, lines and conditions are one cap
+  with one name (A30), and revoking it revokes that grant.
+- **Why:** an issuer that grants the same thing twice has granted it once; a nonce would let two names mean one grant,
+  and a revocation of one leave the other standing.
+- **Supersedes:** —
+- **Lean or code then:** `Aven.ID.Caps`, as built.
+
+### A184 · Built-in bodies carry no nulls
+- **Decided by:** the architect, for the avenCAPS page (12:47)
+- **Decision:** every built-in body (caps, revocations, passkey records, keeper records and the rest) leaves an absent
+  field out of its map instead of writing null, and its decoder refuses a null. A user's Values may still hold null.
+- **Why:** one byte form per meaning (A2): a field that is null or absent is two encodings of one thing, and the
+  keeper's records (A173) already have exact shapes.
+- **Supersedes:** —
+- **Lean or code then:** to come: caps' cap, revoke and passkey-record formats and their vectors, free while nothing
+  stored uses them.
+
+### A185 · One owner for each of the pages' shared parts
+- **Decided by:** the architect, settling the brain pages' overlaps (12:48)
+- **Decision:** the shelf (`docs::Shelf`), the head and the held page, the judge and its crash mark are avenDOCS'. The
+  Doc host, sifting (`Aven.Peer.Judge`), the docs worker's place in the browser and the fetch gate with its exporter are
+  avenPEERS'. The tab's `update` switch and the list of the page's workers are avenOS'. Owners, thresholds and approvals
+  are avenID's, and the register's owner-change op with its settling (`removal_beats`) is avenCAPS'. The `epoch` Records
+  are avenID's. Each other page names these in a line and links.
+- **Why:** one concept, one owner (A45): each goes where its code and Lean are.
+- **Supersedes:** A170 (in part: "caps' built-in `epoch` Records")
+- **Lean or code then:** none.
