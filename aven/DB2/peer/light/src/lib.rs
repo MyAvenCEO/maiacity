@@ -56,6 +56,7 @@ use iroh::{
 use wasm_bindgen::prelude::*;
 
 pub mod acts;
+pub mod docs;
 pub mod views;
 
 /// The `name` of the `Error` the file API throws when the holder hasn't the file, or a chunk of it, or what it holds
