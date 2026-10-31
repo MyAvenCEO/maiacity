@@ -144,11 +144,16 @@ queried by its type.
 
 A **type** is a Doc whose Records are its versions. A type Doc's own root type is avenCORE's built-in type of types.
 
-- **A version Record** is `{lens, title, parent, version}`: its schema's hash (`version`), the version it derives from
-  (`parent`), the one lens to it (`lens`) and a title. Its id is its schema's hash. Each version names its parent, so a
-  type's versions form a tree; the newest on a line of versions is a leaf.
-- **A schema** is a Value: JSON Schema (2020-12) in the subset [fit](#fit) allows, with `x-loro` for the container and
-  `x-link` for a link and the types it may point at.
+- **A version** is a built-in `schema` Record, `{at, name, schema}` (A207). `schema` is the schema's Value whole, in
+  its one form; `name` is a title, and `at` the type Doc's tips it was published at. Its schema's hash names it: a pin
+  `(type Doc, h)` resolves to the version whose `blake3(encode(schema))` is `h`. Being a built-in, it is write-once, so
+  a pinned schema never changes under its pin.
+- **The parent and the lens** aren't in the version yet. They come with lenses (step 3); until then a type's versions
+  form no tree, and no lens joins them.
+- **A schema**, in step 1's form, is `{title, closed, fields: [[name, kind, required]…]}`: a kind is `any`, `bool`,
+  `text`, `bytes`, `hash`, `["uint", max]` or `["array", kind]`, no field is named twice, and it says only what survives
+  a merge ([fit](#fit)). JSON Schema's subset, with `x-loro` for the container and `x-link` for a link and the types it
+  may point at, replaces it in step 3, as in the example below.
 - **A type id** is `<type Doc>/<schema hash>`, the one way a version is named anywhere: a Record's writes in a body's
   `records`, a fact's `p`, an actor message's payload. Two type Docs may hold the same schema bytes, and their type
   ids still differ. Type ids a lens path joins are compatible, in one type Doc or across two.
@@ -167,21 +172,24 @@ A **type** is a Doc whose Records are its versions. A type Doc's own root type i
   "required": [] }
 ```
 
-**Decided:** A1, A39, A42, K5, docs rule 3 · **Lean:** `Aven.Core` — `typeOfTypes`; type Docs and the schema
-language: not in Lean yet
+**Decided:** A1, A39, A42, A172, A207, K5, docs rule 3 · **Lean:** `Aven.Core` — `typeOfTypes`; `Aven.DB.Docs.Schema` —
+`Schema.ofValue?`, `ofValue_value`, `value_ofValue` (pending in #1742); JSON Schema's subset: not in Lean yet
 
 ### Built-in types
 
 A **built-in type** is named by a fixed label, so every reader knows it without fetching anything. It is versioned by
 its label, has no schema and is never pinned. Whoever defines it checks its Records' shape.
 
-- **Its id** is avenCORE's `builtinType` of the label `<namespace> <name> 1`; avenDOCS' four use `avenDB`.
-- **avenDOCS' four,** each a map of exactly these fields, in the codec's order:
+- **Its id** is avenCORE's `builtinType` of the label `<namespace> <name> 1`; avenDOCS' five use `avenDB`.
+- **avenDOCS' five,** each a map of exactly these fields, in the codec's order:
 
-  | Type | Fields | What it says | |---|---|---| | `branch` | `base` hashes, `name` text, `nonce` a hash, and `follows`
-  text or absent | a branch's start ([below](#branches)) | | `closed` | `at` hashes, or none | a branch is closed | |
-  `version` | `at` hashes, `name` text | a named version | | `split` | `after` a hash, `writer` an unsigned integer |
-  the Doc's owners declare a split |
+  | Type | Fields | What it says |
+  |---|---|---|
+  | `branch` | `base` hashes, `name` text, `nonce` a hash, and `follows` text or absent | a branch's start ([below](#branches)) |
+  | `closed` | `at` hashes, or none | a branch is closed |
+  | `version` | `at` hashes, `name` text | a named version |
+  | `schema` | `at` hashes, `name` text, `schema` a schema in its one form | a type Doc's version ([Types are Docs](#types-are-docs)) |
+  | `split` | `after` a hash, `writer` an unsigned integer | the Doc's owners declare a split |
 
 - **Other definers:** [avenID](../id/README.md#built-in-types) defines `keyring`, `safe` and `epoch`;
   [avenCAPS](../caps/README.md#where-caps-live) defines `group`, `collection`, `cap` and `revoke`, and its register
@@ -193,8 +201,8 @@ its label, has no schema and is never pinned. Whoever defines it checks its Reco
 - **The version a Record is written under** is `{type, schema?}`: `schema` is absent exactly for a built-in type. A
   reader refuses a built-in type with a schema, and a user type without one.
 
-**Decided:** A39, A45, A81, A95, A96, A104, A135, A146, A185 · **Lean:**
-`Aven.DB.Docs.Builtins` — `builtin_fits_iff`, `docsBuiltinFit`; `Aven.Core` — `builtinType`; `Aven.ID` —
+**Decided:** A39, A45, A81, A95, A96, A104, A135, A146, A172, A185, A207 · **Lean:** `Aven.DB.Docs.Builtins` —
+`builtin_fits_iff`, `docsBuiltinFit`, `isSchema` (pending in #1742); `Aven.Core` — `builtinType`; `Aven.ID` —
 `idBuiltinFit`; `schema_none_iff_builtin`: not in Lean yet
 
 ### Pins
@@ -206,11 +214,17 @@ type's writers can publish a version; only a Doc's owners decide whether that Do
   count. So two readers holding the same past reach the same verdict.
 - **Runtimes are pinned the same way:** the runtime a verdict runs is the hash an envelope names, pinned in its past,
   and there are no floors ([avenRUNTIME](../runtime/README.md#pins)).
-- **Fit never reads a type Doc's changing state,** only the pinned schema Values, by hash.
+- **A pin resolves in its type Doc.** Opening a Doc reads each pinned type Doc's snapshot and keeps the versions whose
+  schema's hash a pin names; a pin that resolves to nothing is refused by name (`Unopenable::Pin {type, schema}`).
+- **A pin names one schema.** Two versions whose schemas hash alike hold one schema: no two Values hash alike, and
+  Values come off the wire canonical. Either can be taken.
+- **Fit never reads a type Doc's changing state:** only the pinned schemas, resolved by hash when the Doc opens. A
+  version is write-once.
 - **Pins cover lenses** between two type Docs too ([Lenses](#lenses)).
 
-**Decided:** A7, A18, A42, docs 11, docs rule 17 · **Lean:** pins at birth: `Aven.DB.Docs.Genesis` (`Genesis.ok`); pins
-by act: not in Lean yet
+**Decided:** A7, A18, A39, A42, A172, A207, docs 11, docs rule 17 · **Lean:** pins at birth: `Aven.DB.Docs.Genesis`
+(`Genesis.ok`); resolving them: `Aven.DB.Docs.Schema` — `resolvePin`, `resolvePin_sound`, `pin_resolves_one` (pending in
+#1742); pins by act: not in Lean yet
 
 ### Fit
 
@@ -688,8 +702,8 @@ changed it): no conflict, nothing lost. Had both changed the title, Alice's woul
   the version), and whose first commit puts the origin's Records at that version, written by the forker. The fork has
   new writer ids, its own caps and its own key; the history before the fork stays in the origin, readable by whoever
   may read the origin. Ids inside are kept, so links within the Doc still resolve.
-- **A named version** is a built-in `version` Record `{at, name}` on the branch it names: a person's act, which syncs
-  and has history.
+- **A named version** is a built-in `version` Record `{at, name}` on the branch it names, never a type's version, which
+  is a `schema` Record (A207): a person's act, which syncs and has history.
 
 **Decided:** A4, A149, A204, docs 14, docs 16, docs 17, docs 21, docs rule 22 · **Lean:** `Aven.DB.Docs.Merge` —
 `keeps_target`, `lands_other`, `conflict_by_choice`, `merge_same`, `back_out_removes`, `back_out_keeps_later`; the

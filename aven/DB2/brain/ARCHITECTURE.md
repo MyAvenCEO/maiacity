@@ -131,6 +131,7 @@ decision's own text, reasons and Lean are its row there.
 
 | Decision | What | Page | Holds |
 |---|---|---|---|
+| [A207](DECISIONS.md) | A type's version is a `schema` Record; a named version stays `version` | [docs](docs/README.md) | yes |
 | [A206](DECISIONS.md) | Runtimes stay files in this repository; publishing runtimes and the release vault parked (Samuel) | [runtime](runtime/README.md) | yes |
 | [A205](DECISIONS.md) | No compaction: everything about an actor is kept (Samuel) | [actors](actors/README.md) | yes |
 | [A204](DECISIONS.md) | Overlapping text edits in a merge are a choice, the target's by default (Samuel) | [docs](docs/README.md) | yes |
@@ -165,7 +166,7 @@ decision's own text, reasons and Lean are its row there.
 | [A175](DECISIONS.md) | Versions are avenCORE's | [core](core/README.md) | yes |
 | [A174](DECISIONS.md) | Bytes in JSON are `{"bytes": hex}`, as built | [core](core/README.md) | superseded by A198 in part |
 | [A173](DECISIONS.md) | The keeper's byte forms, as built (keep-bytes.json); caps' half of the gate | [caps](caps/README.md) | yes |
-| [A172](DECISIONS.md) | A pinned schema lives in its type Doc's version Record `{at, name, schema}` | [docs](docs/README.md) | yes |
+| [A172](DECISIONS.md) | A pinned schema lives in its type Doc's version Record `{at, name, schema}` | [docs](docs/README.md) | superseded by A207 in part |
 | [A171](DECISIONS.md) | Threads never add A-numbers or architecture prose | process | yes |
 | [A170](DECISIONS.md) | The keyring's `epoch` Records are write-once; a reseal adds a Record | [id](id/README.md) | superseded by A185 in part |
 | [A169](DECISIONS.md) | avenDOCS defines Authorize; avenCAPS a pure verdict; avenPEERS the adapter | [peers](peers/README.md) | yes |
@@ -338,8 +339,7 @@ decision's own text, reasons and Lean are its row there.
 | [A2](DECISIONS.md) | One codec and signing rule | [core](core/README.md) | superseded by A174 in part |
 | [A1](DECISIONS.md) | One vocabulary | [glossary](GLOSSARY.md) | superseded by A175 in part |
 
-The package lists' decisions, below A1 in the log, that a later decision supersedes (every other one still holds, cited
-on its page):
+The package lists' decisions, below A1 in the log, that a later decision supersedes (every other one still holds, cited on its page):
 
 | Imported | Superseded by |
 |---|---|
