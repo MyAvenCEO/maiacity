@@ -4,7 +4,8 @@ import Aven.ID.Name
 /-! # Well-formed trees
 
 Each id once; every vault has an owner, and every owner is a known key or vault; a device's vault has one owner, the
-vault it serves, owns nothing, and names its own key (A211), a key of the tree, which owns nothing either; no cycles:
+vault it serves, owns nothing, and names its own key (A211), a key of the tree, which owns nothing either, and
+no other vault names a key; no cycles:
 every owner stands strictly lower than what it owns; every vault has a valid name (`Aven.ID.Name`); and a coop's vault
 is owned by people's or coops' vaults only, and holds no devices. `WF` is decidable, so the model checks a tree as it runs. -/
 
@@ -51,7 +52,8 @@ def WF (t : Tree V) : Prop :=
   (∀ v ∈ t.vaults, validName v.name = true) ∧
   (∀ v ∈ t.vaults, v.kind = .coop → ∀ o ∈ v.owners, t.coopOwner o = true) ∧
   (∀ v ∈ t.vaults, v.kind = .device → ∀ a ∈ v.ownerVaults, t.kind? a ≠ some .coop) ∧
-  (∀ v ∈ t.vaults, 1 ≤ v.threshold)
+  (∀ v ∈ t.vaults, 1 ≤ v.threshold) ∧
+  (∀ v ∈ t.vaults, v.kind ≠ .device → v.key = none)
 
 instance (t : Tree V) : Decidable t.WF := by unfold WF; infer_instance
 
@@ -73,7 +75,9 @@ theorem WF.coopOwned (w : t.WF) : ∀ v ∈ t.vaults, v.kind = .coop → ∀ o �
 theorem WF.coopHolds (w : t.WF) : ∀ v ∈ t.vaults, v.kind = .device → ∀ a ∈ v.ownerVaults, t.kind? a ≠ some .coop :=
   w.2.2.2.2.2.2.2.2.2.2.1
 /-- Every vault's threshold is at least one: no approval passes on no signatures. -/
-theorem WF.quorum (w : t.WF) : ∀ v ∈ t.vaults, 1 ≤ v.threshold := w.2.2.2.2.2.2.2.2.2.2.2
+theorem WF.quorum (w : t.WF) : ∀ v ∈ t.vaults, 1 ≤ v.threshold := w.2.2.2.2.2.2.2.2.2.2.2.1
+/-- Only a device's vault names a key (A211). -/
+theorem WF.keyedDevice (w : t.WF) : ∀ v ∈ t.vaults, v.kind ≠ .device → v.key = none := w.2.2.2.2.2.2.2.2.2.2.2.2
 
 /-- In a well-formed tree, every threshold the tree gives is at least one. -/
 theorem WF.threshold_pos (w : t.WF) (id : V) : 1 ≤ t.threshold id := by

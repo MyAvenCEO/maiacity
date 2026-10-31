@@ -12,8 +12,8 @@ the old one:
   have, and the tree they make is the one they made then but for the agent's kind, and its members belong to the admin
   coop (`aven-id`'s test of `tests/before`, made with the code of main before the change).
 - **A tree written out the old way** (`Tree.jsonBefore`, as the cast and the trees told to devices wrote it) reads back
-  as the same tree (`Kind.parse_before`, and the traces' trees below). It names no device's key: a device's key was its
-  id, as it reads back (A211). -/
+  as the same tree (`Kind.parse_before`, and the traces' trees below): only the agent's kind is written by its old
+  name. -/
 
 open Lean
 
@@ -33,7 +33,8 @@ theorem Kind.parse_name (k : Kind) : Kind.parse k.name = some k := by
   cases k <;> decide
 
 def Vault.jsonBefore (v : Vault String) : Json :=
-  Json.mkObj [("id", v.id), ("name", v.name), ("kind", v.kind.before), ("owners", toJson (v.owners.map Owner.name))]
+  Json.mkObj ([("id", toJson v.id), ("name", toJson v.name), ("kind", toJson v.kind.before),
+    ("owners", toJson (v.owners.map Owner.name))] ++ (v.key.map fun k => ("key", toJson k)).toList)
 
 def Tree.jsonBefore (t : Tree String) : Json :=
   Json.mkObj [("keys", toJson t.keys), ("vaults", Json.arr (t.vaults.map Vault.jsonBefore).toArray)]

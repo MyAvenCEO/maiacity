@@ -143,6 +143,8 @@ pub enum Invalid {
     CoopDevice { coop: String, device: String },
     /// A vault's threshold is zero, so it would approve on no signature (A28).
     NoQuorum(String),
+    /// A vault that is no device names a key (A211).
+    Keyed(String),
     /// A vault is above itself.
     Cycle(String),
 }
@@ -175,6 +177,7 @@ impl fmt::Display for Invalid {
                 write!(f, "the coop {coop} holds the device {device}")
             }
             Invalid::NoQuorum(id) => write!(f, "{id}'s threshold is zero"),
+            Invalid::Keyed(id) => write!(f, "{id} is no device and names a key"),
             Invalid::Cycle(id) => write!(f, "{id} is above itself"),
         }
     }
@@ -195,7 +198,7 @@ pub struct Tree {
 impl Tree {
     /// A tree, if it is well formed (`Aven.ID.Tree.WF`): each id once; every vault named and owned, by known keys and
     /// vaults; a device's vault owned by exactly one vault and owning nothing, naming its own key (A211), a key the
-    /// tree knows, which owns nothing either; a coop owned by people's or coops' vaults only, holding no devices; and no vault
+    /// tree knows, which owns nothing either, and no other vault naming a key; a coop owned by people's or coops' vaults only, holding no devices; and no vault
     /// above itself. The first rule broken is named in `Aven.ID.Tree.check`'s order.
     pub fn new(keys: Vec<(String, String)>, vaults: Vec<Vault>) -> Result<Tree, Invalid> {
         let mut index = HashMap::new();
@@ -276,6 +279,9 @@ impl Tree {
             }
             if vault.threshold == 0 {
                 return Err(Invalid::NoQuorum(vault.id.clone()));
+            }
+            if vault.kind != Kind::Device && vault.key.is_some() {
+                return Err(Invalid::Keyed(vault.id.clone()));
             }
         }
         let mut children = vec![Vec::new(); vaults.len()];

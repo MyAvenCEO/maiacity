@@ -4,8 +4,9 @@ import Aven.ID.WF
 
 `check` names the first rule a tree breaks, in the order aven-id's `Tree::new` reports it: two vaults with one id first;
 then, vault by vault in the tree's order, a name that is none, no owner, an unknown owner, a device not owned by exactly
-one vault, a device among the owners, a device that names no key of the tree, a device's key among the owners, a coop owned by
-anything but a person's or a coop's vault, a device held by a coop, a threshold of zero; and a cycle last. `check_iff`
+one vault, a device among the owners, a device that names no key of the tree, a device's key among the owners, a coop
+owned by anything but a person's or a coop's vault, a device held by a coop, a threshold of zero, a key named by a vault
+that is no device (A211); and a cycle last. `check_iff`
 proves it names nothing exactly when the tree is well formed. -/
 
 namespace Aven.ID
@@ -23,6 +24,7 @@ inductive Invalid (V : Type) where
   | coopDevice (coop device : V)
   /-- a vault whose threshold is zero: it would approve on no signature (A28) -/
   | noQuorum (id : V)
+  | keyed (id : V)
   | cycle
   deriving DecidableEq, Repr
 
@@ -78,7 +80,8 @@ def problem (t : Tree V) (v : Vault V) : Option (Invalid V) :=
   orElse (if v.kind = .coop then (v.owners.find? fun o => !t.coopOwner o).map (.coopOwner v.id) else none) <|
   orElse (if v.kind = .device then (v.ownerVaults.find? fun a => t.kind? a == some .coop).map (.coopDevice · v.id)
     else none) <|
-  if v.threshold = 0 then some (.noQuorum v.id) else none
+  orElse (if v.threshold = 0 then some (.noQuorum v.id) else none) <|
+  if v.kind ≠ .device ∧ v.key.isSome then some (.keyed v.id) else none
 
 def acyclic (t : Tree V) : Bool := t.vaults.all fun v => v.ownerVaults.all fun a => t.rank a < t.rank v.id
 
@@ -93,7 +96,8 @@ theorem problem_none {t : Tree V} {v : Vault V} : t.problem v = none ↔
     validName v.name = true ∧ v.owners ≠ [] ∧ (∀ o ∈ v.owners, t.knows o = true) ∧ (v.kind = .device → v.servesOne = true) ∧
     (∀ a ∈ v.ownerVaults, t.kind? a ≠ some .device) ∧ (v.kind = .device → t.keyed v = true) ∧
     (∀ k ∈ v.ownerKeys, t.isDeviceKey k = false) ∧ (v.kind = .coop → ∀ o ∈ v.owners, t.coopOwner o = true) ∧
-    (v.kind = .device → ∀ a ∈ v.ownerVaults, t.kind? a ≠ some .coop) ∧ 1 ≤ v.threshold := by
+    (v.kind = .device → ∀ a ∈ v.ownerVaults, t.kind? a ≠ some .coop) ∧ 1 ≤ v.threshold ∧
+    (v.kind ≠ .device → v.key = none) := by
   by_cases hc : v.kind = .coop <;> by_cases hd : v.kind = .device <;>
     simp_all [problem, List.find?_eq_none, Nat.one_le_iff_ne_zero]
 
@@ -118,12 +122,13 @@ theorem check_iff (t : Tree V) : t.check = none ↔ t.WF := by
     exact ⟨n, fun v m => (all v m).2.1, fun v m => (all v m).2.2.1, fun v m => (all v m).2.2.2.1,
       fun v m => (all v m).2.2.2.2.1, cyc.mp c, fun v m => (all v m).2.2.2.2.2.1,
       fun v m => (all v m).2.2.2.2.2.2.1, fun v m => (all v m).1, fun v m => (all v m).2.2.2.2.2.2.2.1,
-      fun v m => (all v m).2.2.2.2.2.2.2.2.1, fun v m => (all v m).2.2.2.2.2.2.2.2.2⟩
-  · intro ⟨n, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11⟩
+      fun v m => (all v m).2.2.2.2.2.2.2.2.1, fun v m => (all v m).2.2.2.2.2.2.2.2.2.1,
+      fun v m => (all v m).2.2.2.2.2.2.2.2.2.2⟩
+  · intro ⟨n, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12⟩
     have hd : firstDup [] t.ids = none := firstDup_none.mpr ⟨n, by simp⟩
     have hp : t.vaults.findSome? t.problem = none :=
       each.mpr fun v m => problem_none.mpr ⟨a8 v m, a1 v m, a2 v m, a3 v m, a4 v m, a6 v m, a7 v m, a9 v m, a10 v m,
-        a11 v m⟩
+        a11 v m, a12 v m⟩
     simp [check, hd, hp, cyc.mpr a5]
 
 end Tree

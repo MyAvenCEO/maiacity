@@ -98,6 +98,7 @@ def invalidExamples : List (String × Tree String × Option (Invalid String)) :=
    ("a device whose key the tree doesn't know", tree [a, ⟨"e", "E", .device, [.vault "a"], 1, some "e"⟩],
      some (.deviceKeyless "e")),
    ("a device that names no key", tree [a, ⟨"d", "D", .device, [.vault "a"], 1, none⟩], some (.deviceKeyless "d")),
+   ("a person's vault that names a key", tree [⟨"a", "A", .person, [.key "k"], 1, some "k"⟩], some (.keyed "a")),
    ("a device's key that owns", tree [a, ⟨"d", "D", .device, [.vault "a"], 1, some "d"⟩, ⟨"b", "B", .person, [.key "d"], 1, none⟩],
      some (.deviceKeyOwns "d" "b")),
    ("a device with its key", tree [a, ⟨"d", "D", .device, [.vault "a"], 1, some "d"⟩], none),

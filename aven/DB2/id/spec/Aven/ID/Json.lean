@@ -57,6 +57,7 @@ def Invalid.json : Invalid String → Json
   | .coopOwner c o => Json.mkObj [("rule", "coopOwner"), ("vault", c), ("owner", o.name)]
   | .coopDevice c d => Json.mkObj [("rule", "coopDevice"), ("vault", c), ("device", d)]
   | .noQuorum id => Json.mkObj [("rule", "noQuorum"), ("vault", id)]
+  | .keyed id => Json.mkObj [("rule", "keyed"), ("vault", id)]
   | .cycle => Json.mkObj [("rule", "cycle")]
 
 /-- What the model answers for a tree and its queries. A tree that is not well formed gets no answers. -/
@@ -76,10 +77,12 @@ def parseVault (j : Json) : Except String (Vault String) := do
   let threshold ← match j.getObjValD "threshold" with
     | .null => pure 1
     | t => fromJson? t
-  -- a device names its key (A211); a tree written before that names none, and a device's key was its id
-  let key ← match j.getObjValD "key" with
-    | .null => pure (if kind = .device then some id else none)
+  -- a device's vault names its key, and no other vault does (A211)
+  let key : Option String ← match j.getObjValD "key" with
+    | .null => pure none
     | k => some <$> fromJson? k
+  if (kind = .device) != key.isSome then
+    throw s!"{id}: a device's vault names its key, and no other vault does"
   pure ⟨id, name, kind, owners, threshold, key⟩
 
 def parseTree (j : Json) : Except String (Tree String) := do

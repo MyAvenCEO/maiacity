@@ -112,6 +112,7 @@ pub fn invalid(why: &Invalid) -> Value {
             json!({ "rule": "deviceKeyOwns", "key": key, "vault": vault })
         }
         Invalid::Name(id) => json!({ "rule": "name", "vault": id }),
+        Invalid::Keyed(id) => json!({ "rule": "keyed", "vault": id }),
         Invalid::CoopOwner { coop, owner } => {
             json!({ "rule": "coopOwner", "vault": coop, "owner": owner.to_string() })
         }
