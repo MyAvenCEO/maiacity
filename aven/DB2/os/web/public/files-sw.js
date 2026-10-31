@@ -12,18 +12,16 @@
 const channel = new BroadcastChannel(`aven-peer-light:${new URL(self.location.href).searchParams.get('name') ?? 'network'}`);
 const me = `sw-${crypto.randomUUID()}-`;
 let asked = 0;
-// What a file may be shown as, here on avenOS's own origin, which holds the device's secret: the type its sender
-// claims is a claim. Only passive types are served inline (images but SVG, audio, video, PDF; Chat.svelte's `inline`
-// keeps the same list); everything else, SVG and HTML included, is application/octet-stream and an attachment, so
-// opening it downloads it and nothing in it runs here. Every answer forbids sniffing and sandboxes the document:
-// no script, no form, its own opaque origin, whatever the bytes are.
-const passive = /^(image\/(png|jpeg|gif|webp|avif|bmp)|audio\/[a-z0-9.+-]+|video\/[a-z0-9.+-]+|application\/pdf)$/;
-const essence = (type) => String(type ?? '').split(';')[0].trim().toLowerCase();
-function headers(claimed, more) {
-	const type = essence(claimed);
-	const inline = passive.test(type);
+// What a file may be shown as, here on avenOS's own origin, which holds the device's secret: what the file registry
+// (aven/runtimes, `decideFile`) decides from its bytes, never what its sender claims. The Peer-Light's worker decides
+// once per file, from its first 64 KiB, and answers each read with `type`: the media type to serve it inline as (a
+// native image but SVG, audio, video, a PDF), or null. Everything else, SVG and HTML included, is
+// application/octet-stream and an attachment, so opening it downloads it and nothing in it runs here. This file keeps no
+// list of types. Every answer forbids sniffing and sandboxes the document: no script, no form, its own opaque origin,
+// whatever the bytes are.
+function headers(inline, more) {
 	return {
-		'Content-Type': inline ? type : 'application/octet-stream',
+		'Content-Type': inline ?? 'application/octet-stream',
 		'Content-Disposition': inline ? 'inline' : 'attachment',
 		'X-Content-Type-Options': 'nosniff',
 		'Content-Security-Policy': "sandbox; default-src 'none'; img-src 'self'; media-src 'self'; object-src 'self'",
@@ -141,7 +139,7 @@ function read(file, start, end) {
 			resolve(answer);
 		};
 		const hear = ({ data }) => {
-			if (data?.id === id && !data.read) done({ ...data, type: data.type ?? 'application/octet-stream' });
+			if (data?.id === id && !data.read) done({ ...data, type: typeof data.type === 'string' ? data.type : null });
 		};
 		channel.addEventListener('message', hear);
 		ask();

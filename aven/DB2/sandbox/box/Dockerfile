@@ -67,5 +67,8 @@ WORKDIR /work
 # start warm, and its first build compiles only our code and downloads nothing. The registry keeps the .crate files:
 # without them cargo downloads every crate again, though it compiles none.
 COPY . /work/
+# aven/runtimes' file registry, which the Peers take by path: its manifest only, from the workflow's named context
+# `registry` (.github/workflows/avensandbox-image.yml), stubbed like ours
+COPY --from=registry Cargo.toml /runtimes/registry/Cargo.toml
 RUN sh sandbox/box/deps.sh \
     && find /work -mindepth 1 -maxdepth 1 ! -name target -exec rm -rf {} +
