@@ -440,10 +440,10 @@ messages and queries. For people with keys, reading is whole Docs; for actors an
   reader checks against that chain (D16), never a link added to it. So every step is within the actor's chain and
   within the host's device cap (`actor_within_device`, `host_never_beyond`). The Aven Peer signs with Aven's own
   device, under a chain the owner issued to Aven's vault for that actor's Docs and its owners approved (D14).
-- **Groups** (Samuel, 30 Oct 2026: a cap goes to one vault or a group of vaults). A group is a Doc whose readers are
-  its members, of avenID's built-in root type `group` (A39). It holds caps for them: a team editing the team's Docs, a family reading the family's photos. A write
-  under a group's cap carries, inside the seal, the writer's read cap on the group. Groups aren't vaults, so they
-  aren't in the tree the keeper sees, and making one needs no governance.
+- **Groups** (Samuel, 30 Oct 2026: a cap goes to one vault or a group of vaults). A group is a Doc whose readers are its
+  members, of avenID's built-in root type `group` (A39). It holds caps for them: a team editing the team's Docs, a
+  family reading the family's photos. A write under a group's cap carries, inside the seal, the writer's read cap on the
+  group. Groups aren't vaults, so they aren't in the tree the keeper sees, and making one needs no governance.
 - **Actors** hold no keys (`aven/actor/ARCHITECTURE.md`, section 11). Agreed with avenACTOR and confirmed by Samuel on
   30 Oct 2026 (D16); the architect's avenACTORS thread carries them on:
   - **Every message carries a `cap` beside its `run`.** The run is the causal chain and stays the same; the cap narrows
