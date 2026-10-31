@@ -1,17 +1,19 @@
-// avenBRAIN in avenOS (aven/DB2/brain): its catalogue, pages, slides and glossary, bundled from the repo at build time.
+// avenBRAIN in avenOS (aven/DB2/brain): its package list, pages, slides and glossary, bundled from the repo at build time.
 // Text comes in as Markdown and markup and leaves as node trees (brain/render), which Node.svelte draws: the shape the
 // markdown-runtime and the face-runtime will hand over once they exist.
-import catalogue from '../../../brain/docs.json';
+import list from '../../../brain/docs.json';
 import { blocks, slug } from '../../../brain/render/markdown.js';
+import { rewriteLinks } from '../../../brain/render/links.js';
 import { check, parse } from '../../../brain/render/tree.js';
 import '../../../brain/style/tokens.css';
 import '../../../brain/style/slide.css';
+import images from '../../../brain/art/images.json';
 
 const files = import.meta.glob('../../../brain/**/*.{md,html}', { query: '?raw', import: 'default', eager: true });
 import.meta.glob('../../../brain/*/slides/*.css', { eager: true });
 const file = (path) => files[`../../../brain/${path}`];
 
-export const packages = catalogue.packages;
+export const packages = list.packages;
 
 const repo = 'https://github.com/myavenceo/maiacity/blob/main/aven/DB2/brain/';
 // a link in the brain's Markdown: a term (`glossary:vault`) goes to the glossary, a package's page to its page, any
@@ -36,21 +38,24 @@ function checked(where, tree) {
 	return tree;
 }
 
-export const page = (path) => checked(path, blocks(file(path) ?? '', { link: linker(path) }));
+// Markdown to a tree, its links rewritten, checked
+const markdown = (path, options = {}) => checked(path, rewriteLinks(blocks(file(path) ?? '', options), linker(path)));
+
+export const page = (path) => markdown(path);
 
 // a slide: its markup as a tree, checked against the face-runtime's allowlist, and its text
 export function slide(pkg, id) {
 	const text = `${pkg}/slides/${id}.md`;
 	return {
 		id,
-		tree: checked(`${pkg}/slides/${id}.html`, parse(file(`${pkg}/slides/${id}.html`) ?? '')),
-		text: checked(text, blocks(file(text) ?? '', { link: linker(text) })),
+		tree: checked(`${pkg}/slides/${id}.html`, parse(file(`${pkg}/slides/${id}.html`) ?? '')).map(resolve),
+		text: markdown(text),
 	};
 }
 
 // the glossary: its tree, every term's entry with an id (`term-<word>`), and each word it defines, for #/docs/glossary/<word>
 export function glossary() {
-	const tree = blocks(file('GLOSSARY.md'), { link: linker('GLOSSARY.md'), idPrefix: 'g-' });
+	const tree = rewriteLinks(blocks(file('GLOSSARY.md'), { idPrefix: 'g-' }), linker('GLOSSARY.md'));
 	const terms = new Map();
 	const words = (node) => (typeof node === 'string' ? node : node[2].map(words).join(''));
 	const visit = (node) => {
@@ -71,3 +76,16 @@ export function glossary() {
 	tree.forEach(visit);
 	return { tree: checked('GLOSSARY.md', tree), terms };
 }
+
+// The drawings (brain/art), bundled. A slide names one as the network names a file, `/files/<BLAKE3 hash>`, and that is
+// what the allowlist takes; avenOS serves the brain's own from its bundle, so the hash is resolved here, after the
+// check, to the bundled file
+const drawn = import.meta.glob('../../../brain/art/img/*.png', { query: '?url', import: 'default', eager: true });
+const fileOf = (hash) => drawn[`../../../brain/art/img/${hash}.png`];
+const resolve = (node) =>
+	typeof node === 'string'
+		? node
+		: [node[0], node[1].map(([k, v]) => (k === 'src' && v.startsWith('/files/') && fileOf(v.slice(7)) ? [k, fileOf(v.slice(7))] : [k, v])), node[2].map(resolve)];
+
+// an object's picture, for a card
+export const art = (name) => fileOf(images[name]);

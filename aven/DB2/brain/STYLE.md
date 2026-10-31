@@ -1,44 +1,64 @@
 # The look
 
-The brand's look: calm, natural and clear. Deep forest green and sage on a warm off-white ground, soft white cards,
-an elegant serif for headlines and a clean sans for the rest, with a touch of lime. The game's pictures in
-[`style/reference/`](style/reference/) were the first references; the look now follows the brand's UI references, and
-no slide uses the game's world as a metaphor. A slide draws the concept itself: a key, a vault and its list of owners,
-an arrow for a relation.
+An illustrated asset sheet, like the game's resource icons ([`style/reference/`](style/reference/)): hand-drawn
+objects on a warm cream ground, each with its name under it in bold navy capitals. The slides and the docs pages
+around them share it.
 
-The tokens are in [`style/tokens.css`](style/tokens.css); the parts every slide is drawn from in
-[`style/slide.css`](style/slide.css).
+The objects are drawn in code ([`art/objects.mjs`](art/objects.mjs), with the kit in [`art/paint.mjs`](art/paint.mjs))
+and rendered to images, so every one is reproducible and its own layer. The tokens are in
+[`style/tokens.css`](style/tokens.css), the slide in [`style/slide.css`](style/slide.css).
+
+## The objects
+
+- **Hand-drawn.** A soft dark-brown outline that wobbles a little, as a pen does; straight edges stay straight, and
+  corners are only a little rounded.
+- **Volume from light.** Every surface is a gradient lit from the top left, with a highlight where the light falls.
+- **Paper grain** over every surface, and **a soft mauve shadow** to the lower right.
+- **Real materials:** turned wood, brass, red wax, paper, iron bands, painted wood, glass, slate.
+- **Iconic, not to scale:** a stamp is as big as a chest, so that each reads.
+
+## Metaphors
+
+Each concept gets the object that explains it. A metaphor is never the claim: the claim is in the text, exact to the
+spec. Its words keep to the glossary's senses too: a signature is a **signature mark**, never a seal (sealed means
+encrypted), and a thing on a slide is drawn as a **card**, never a record (a Record is avenDB's).
+
+| Concept | Object |
+|---|---|
+| a key | a signet stamp: only the one who keeps it can press its mark |
+| a signature | a signature mark pressed in red wax on a letter |
+| a public key | a card with the mark's imprint, for anyone to hold a mark against |
+| checking | a magnifying glass, then a green tick |
+| a vault | a strongbox with a brass nameplate; its owner's mark on the plate |
+| a coop's vault (Maia City) | a green guild chest |
+| an agent's vault (Aven) | a robot helper |
+| a device | a phone; its own key a little signet shut in a glass case on its screen |
+| a passkey | a fingerprint glowing on the phone |
+| a device cap | a permit badge on a lanyard, bearing the vault's signature mark |
+| a cap | a pass with its stub, bearing its issuer's signature mark |
 
 ## The palette
 
-| Token | Value | Where |
+| Colour | Values | Where |
 |---|---|---|
-| Ground | `#f3efe7` | the page |
-| Card | `#fffdf9` | cards on the page and on slides |
-| Sage, soft | `#e2e6d3` | a slide's panel, a marked row |
-| Sage | `#c9d0b0` | a device's vault, brackets |
-| Forest | `#1f3d2b`, lit `#3a5a44` | keys, arrows, relation pills, the selected item, a live package's mark |
-| Olive, moss | `#4a5a3a`, `#8fa27c` | a public key, coming packages' marks |
-| Lime | `#d9e27a` | a tick, a seal's ring, an agent's vault: one accent, used sparingly |
-| Blush | `#f4e4d7` | a cap |
-| Ink, quiet | `#1d2a21`, `#56634f` | text: 13:1 and 5.6:1 on the ground, 5:1 on the soft sage |
-
-## Shapes
-
-- **Cards:** white, large radius (24 px on the page, 2.4cqw on a slide), a soft green-tinted shadow, no border.
-- **Pills:** a record's kind in its tone, a relation's name in forest with cream text, chips and the index's selected
-  item.
-- **Flat shapes, no outlines.** A shape's lit side is a step lighter, as a hard stop. Nothing is textured or blended.
-- **Type:** headlines in Fraunces, everything else in Inter, in sentence case. Both are bundled with avenOS, which
-  makes no request off its origin.
+| Cream | `#f8eee2`, a slide `#fcf5ea`, a card `#fffaf2` | the ground |
+| Navy | `#23324a`, quiet `#4a5468` | titles, labels, text: 11:1 and 6.6:1 on the cream |
+| Ochre | `#c4923f`, its ink `#7d4f12` | dotted paths and their names |
+| Teal ink | `#245a61` | links |
+| The objects' own | wood `#a8683f`, brass `#e2b14f`, wax `#c4473a`, paper `#f4ead7`, slate `#46515c`, teal `#5a9294`, green `#6f8f5a` | in the drawings |
 
 ## A slide
 
-- A **16:9 frame** that reads as a still: one concept, its headline at the top left, few words.
-- **No text under 2.6 % of the frame's width** (2.6cqw): about 9 px on a phone, where the frame is about 356 px wide.
+- A **16:9 slide** that reads as one picture: one concept, its title in bold navy at the top left, few words.
+- **Objects** with their names under them, bold uppercase navy. **A dotted ochre path** with an arrowhead is a
+  relation, its name over it.
+- **No text under 2.6 % of the slide's width** (2.6cqw): about 9 px on a phone, where a slide is about 356 px wide.
   The box checks it at 390 px (`sandbox/docs.mjs`), and a test checks the CSS (`render/tree.test.js`).
-- Text has 4.5:1 against what is under it, and sits either on the panel or on the part that holds it (a card, a pill,
-  a chip), never on a placed shape, so what the face-runtime checks is what a reader sees.
-- **Every element a layer** with a stable class, so a motion version can animate each one.
-- The text that explains it is on the page under the frame, in Markdown. The frame's headline stands for its title,
-  and the slide's number is in the page's index.
+- Text has 4.5:1 against what is under it, and sits on the ground, never on a drawing.
+- **Every element a layer** with a stable class, so a motion version can move each one.
+- The text that explains it is on the page under the slide, in Markdown.
+
+## The pages
+
+The docs pages are the same sheet: the cream ground, bold navy titles, and on the dashboard each package as one of
+the drawings with its name under it, like an asset library.

@@ -1,8 +1,11 @@
-/* A slide (STYLE.md, "A slide"): a 16:9 frame that reads as a still, and the parts every slide is drawn from. Every
-   length inside is in cqw, a hundredth of the frame's width, so the still scales as one picture. No text is smaller
-   than 2.6cqw: about 9 px on a phone, where the frame is about 356 px wide (sandbox/docs.mjs). Every element is a
-   layer with a stable class, so a motion version can move each one. The look is the brand's: a soft sage panel, white
-   cards with a soft shadow on it, flat shapes in forest green, no outlines. */
+/* A slide (STYLE.md, "A slide"): a 16:9 picture in the style of an illustrated asset sheet. A warm cream ground, its
+   title in bold navy at the top left, hand-drawn objects (art/objects.mjs, placed as image layers) with bold
+   uppercase navy labels under them, and dotted ochre paths for how they relate, each named. Every length inside is in
+   cqw, a hundredth of the slide's width, so the slide scales as one picture. No text is smaller than 2.6cqw: about
+   9 px on a phone (sandbox/docs.mjs). Every element is a layer with a stable class, so a motion version can move
+   each one.
+   Written in the subset the face-runtime takes as typed style rules: class and tag selectors, the properties
+   render/tree.test.js lists, plain values. No custom properties and no url(). */
 .slide {
 	position: relative;
 	width: 100%;
@@ -10,356 +13,84 @@
 	margin: 0;
 	overflow: hidden;
 	container-type: inline-size;
-	color: var(--brain-ink);
-	background: var(--brain-sage-soft);
-	border-radius: var(--brain-radius);
+	color: #23324a;
+	background: #fcf5ea;
+	border: 1px solid #e6d8c4;
+	border-radius: 1.6cqw;
 }
 
 .slide div,
-.slide span {
+.slide span,
+.slide img {
 	position: absolute;
 	display: block;
 }
 
-/* drawn: a part that floats a little above the ground */
-.slide .drawn {
-	filter: drop-shadow(0 0.5cqw 1cqw rgb(31 61 43 / 0.12));
-}
-
-/* the title: a big serif headline at the top left, on the ground */
+/* the title: bold navy, at the top left */
 .slide .title {
 	position: absolute;
-	left: 5%;
-	top: 7%;
+	left: 4%;
+	top: 6%;
 	margin: 0;
 }
 
 .slide .headline {
 	margin: 0;
-	font: 500 4.6cqw/1.05 var(--brain-serif);
-	letter-spacing: -0.015em;
+	font-family: 'Inter Variable', system-ui, sans-serif;
+	font-size: 4.2cqw;
+	font-weight: 800;
+	line-height: 1;
+	letter-spacing: -0.01em;
+	white-space: nowrap;
 }
 
-/* a label: a thing's name, centred under it */
+/* a label: a thing's name, bold uppercase navy, centred under it */
 .slide .label {
 	position: absolute;
 	margin: 0;
-	color: var(--brain-ink);
-	font: 600 2.6cqw/1 var(--brain-sans);
+	font-family: 'Inter Variable', system-ui, sans-serif;
+	font-size: 2.6cqw;
+	font-weight: 700;
+	line-height: 1.15;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	text-align: center;
 	white-space: nowrap;
 	transform: translateX(-50%);
 }
 
-/* in flow: a part laid out by its content, not placed */
-.slide .flow {
-	position: relative;
-}
-
-/* an arrow: a relation from one thing to another, in forest green; its name is a pill above it */
-.slide .arrow {
-	height: 2cqw;
-}
-
-.slide .arrow-line {
-	left: 0;
-	right: 1.6cqw;
-	top: 0.75cqw;
-	height: 0.5cqw;
-	background: var(--brain-forest);
-	border-radius: 0.3cqw;
-}
-
-.slide .arrow-head {
-	right: 0;
-	top: 0;
-	width: 2cqw;
-	height: 2cqw;
-	clip-path: polygon(0 0, 100% 50%, 0 100%);
-	background: var(--brain-forest);
-}
-
+/* a relation's name, over its path, in the path's dark ochre */
 .slide .relation {
-	padding: 0.9cqw 1.8cqw;
-	color: var(--brain-on-forest);
-	background: var(--brain-forest);
-	border-radius: 3cqw;
+	color: #7d4f12;
+	font-weight: 800;
 }
 
-/* a record: a thing the system keeps (a vault, a cap), as a soft white card. Its kind is a pill in its tone */
-.slide .record {
-	--tone: var(--brain-ground);
-}
-
-.slide .record.sage {
-	--tone: var(--brain-sage);
-}
-
-.slide .record.blush {
-	--tone: var(--brain-blush);
-}
-
-.slide .record.lime {
-	--tone: var(--brain-lime);
-}
-
-.slide .record-card {
-	inset: 0;
-	padding: 2.4cqw 2.8cqw;
-	background: var(--brain-card);
-	border-radius: 2.4cqw;
-}
-
-.slide .record-kind {
-	display: inline-block;
-	margin: 0;
-	padding: 0.7cqw 1.6cqw;
-	font: 600 2.6cqw/1 var(--brain-sans);
-	background: var(--tone);
-	border-radius: 3cqw;
-}
-
-.slide .record-name {
-	margin: 1.4cqw 0 1.4cqw;
-	font: 500 4cqw/1.1 var(--brain-serif);
-}
-
-.slide .record-section {
-	margin: 0;
-	padding-top: 1.4cqw;
-	color: var(--brain-quiet);
-	font: 600 2.6cqw/1.2 var(--brain-sans);
-	border-top: 0.15cqw solid var(--brain-line);
-}
-
-.slide .record-field {
-	margin: 0.8cqw 0 0;
-	font: 500 2.6cqw/1.3 var(--brain-sans);
-}
-
-.slide .field-name {
-	display: inline-block;
-	width: 12cqw;
-	color: var(--brain-quiet);
-	font: 600 2.6cqw/1.3 var(--brain-sans);
-}
-
-.slide .record.small .record-card {
-	padding: 1.8cqw 1.8cqw;
-}
-
-.slide .record.small .record-name {
-	margin-bottom: 0;
-	font-size: 3.2cqw;
-}
-
-.slide .record-row {
-	height: 5cqw;
-	margin-top: 1.2cqw;
-}
-
-.slide .record-row-text {
-	margin: 0;
-	padding: 1.1cqw 0 0 10cqw;
-	font: 600 2.8cqw/1.3 var(--brain-sans);
-}
-
-.slide .key.mini {
-	left: 0.4cqw;
-	top: 0.8cqw;
-	width: 12cqw;
-	height: 5cqw;
-	transform: scale(0.66);
-	transform-origin: 0 0;
-}
-
-/* a sheet: some words on a white card, and the signature under them */
-.slide .sheet-paper {
-	inset: 0;
-	padding: 2.6cqw 2.8cqw;
-	background: var(--brain-card);
-	border-radius: 2.4cqw;
-}
-
-.slide .sheet-words {
-	margin: 0;
-	font: 500 3.2cqw/1.3 var(--brain-serif);
-}
-
-.slide .sheet-sign {
-	margin: 0;
-	padding: 1.1cqw 0 0 5.6cqw;
-	color: var(--brain-quiet);
-	font: 600 2.6cqw/1.3 var(--brain-sans);
-}
-
-.slide .sheet-foot {
-	left: 2.8cqw;
-	right: 2.8cqw;
-	bottom: 2.2cqw;
-	height: 5cqw;
-	border-top: 0.15cqw solid var(--brain-line);
-}
-
-/* a seal: a signature, a forest-green disc with a lime ring */
-.slide .seal {
-	width: 3.8cqw;
-	height: 3.8cqw;
-	background: var(--brain-forest);
-	border: 0.6cqw solid var(--brain-lime);
-	border-radius: 50%;
-}
-
-.slide .sheet-foot .seal {
-	left: 0;
-	top: 1cqw;
-}
-
-/* a tick: checked and found good, a lime disc with a forest check */
-.slide .tick {
-	width: 9cqw;
-	height: 9cqw;
-	background: var(--brain-lime);
-	border-radius: 50%;
-}
-
-.slide .tick-short,
-.slide .tick-long {
-	height: 1.1cqw;
-	background: var(--brain-forest);
-	border-radius: 0.5cqw;
-	transform-origin: 0 50%;
-}
-
-.slide .tick-short {
-	left: 2.4cqw;
-	top: 4.2cqw;
-	width: 2.4cqw;
-	transform: rotate(45deg);
-}
-
-.slide .tick-long {
-	left: 3.6cqw;
-	top: 5.9cqw;
-	width: 4.2cqw;
-	transform: rotate(-50deg);
-}
-
-/* a device: a phone in forest green, its screen sage */
-.slide .phone-body {
-	inset: 0;
-	background: var(--brain-forest);
-	border-radius: 2.4cqw;
-}
-
-.slide .phone-screen {
-	left: 1cqw;
-	top: 2.2cqw;
-	right: 1cqw;
-	bottom: 2.2cqw;
-	background: var(--brain-ground);
-	border-radius: 1.2cqw;
-}
-
-/* a fingerprint: rings round one point */
-.slide .print {
-	width: 6cqw;
-	height: 6cqw;
-}
-
-.slide .ring {
-	border: 0.4cqw solid var(--brain-forest);
-	border-radius: 50%;
-	clip-path: inset(0 0 30% 0);
-}
-
-.slide .ring-1 { inset: 0; }
-.slide .ring-2 { inset: 0.9cqw; }
-.slide .ring-3 { inset: 1.8cqw; }
-.slide .ring-4 { inset: 2.6cqw; clip-path: none; }
-
-/* a chip: one word in a row of them, `on` the one meant */
-.slide .chips {
-	display: flex;
-	gap: 1.4cqw;
-}
-
-.slide .chip {
-	position: static;
-	display: inline-block;
-	margin: 0;
-	padding: 1cqw 2cqw;
-	font: 600 2.6cqw/1 var(--brain-sans);
-	background: var(--brain-card);
-	border-radius: 3cqw;
-}
-
-.slide .chip.on {
-	color: var(--brain-on-forest);
-	background: var(--brain-forest);
-}
-
-/* a note: a quiet line of text on the ground */
+/* a note: a quiet sentence on the ground */
 .slide .note {
 	position: absolute;
 	margin: 0;
-	color: var(--brain-quiet);
-	font: 500 2.6cqw/1.35 var(--brain-sans);
-	text-align: center;
-	transform: translateX(-50%);
+	color: #4a5468;
+	font-family: 'Inter Variable', system-ui, sans-serif;
+	font-size: 2.8cqw;
+	font-weight: 500;
+	line-height: 1.3;
 }
 
-/* a span: a soft bracket under a row of things, for what holds across all of them */
-.slide .span {
-	height: 2cqw;
-	border: 0.4cqw solid var(--brain-sage);
-	border-top: 0;
-	border-radius: 0 0 1.2cqw 1.2cqw;
+/* a path: a relation, dotted in ochre, its segments turned from their start, an arrowhead at its end */
+.slide .path {
+	inset: 0;
 }
 
-/* a key: a round bow, a shaft and two bits, flat in forest green, its lit side lighter */
-.slide .key .bow {
-	left: 0;
-	top: 0;
-	width: 5cqw;
-	height: 5cqw;
-	background: linear-gradient(135deg, var(--brain-forest-light) 0 50%, var(--brain-forest) 50%);
-	border-radius: 50%;
+.slide .dots {
+	height: 0;
+	border-top: 0.6cqw dotted #c4923f;
+	transform-origin: 0 0;
 }
 
-.slide .key .hole {
-	left: 1.75cqw;
-	top: 1.75cqw;
-	width: 1.5cqw;
-	height: 1.5cqw;
-	background: var(--brain-card);
-	border-radius: 50%;
-}
-
-.slide .key .shaft,
-.slide .key .bit {
-	background: var(--brain-forest);
-}
-
-.slide .key .shaft {
-	left: 4.6cqw;
-	top: 1.95cqw;
-	width: 7cqw;
-	height: 1.1cqw;
-	border-radius: 0 0.5cqw 0.5cqw 0;
-}
-
-.slide .key .bit {
-	top: 2.9cqw;
-	width: 1cqw;
-	border-radius: 0 0 0.3cqw 0.3cqw;
-}
-
-/* a public key: the half anyone may see, in olive with a lime bow */
-.slide .key.public .bow {
-	background: linear-gradient(135deg, var(--brain-lime) 0 50%, #c3cd5f 50%);
-}
-
-.slide .key.public .shaft,
-.slide .key.public .bit {
-	background: var(--brain-olive);
+.slide .head {
+	width: 2.4cqw;
+	height: 2.4cqw;
+	background: #c4923f;
+	clip-path: polygon(0 0, 100% 50%, 0 100%, 25% 50%);
+	transform-origin: 50% 50%;
 }
