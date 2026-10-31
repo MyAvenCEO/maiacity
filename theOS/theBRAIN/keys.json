@@ -9,10 +9,10 @@
   },
   {
    "title": "Four kinds of keys.",
-   "text": "Each one has exactly one job.",
+   "text": "Each has one job. Your {identity key} is your {lock}: a public key anyone can seal something to, which only you can open. A {role key} is a lock all members of a role share. A {data key} encrypts the data itself.",
    "list": [
     "Seal: signs a piece of data's first rule, then is destroyed.",
-    "Identity key: your lock. Each of your devices also publishes a lock of its own, grown from its passkey.",
+    "Identity key: your lock. Each of your devices also publishes a lock of its own.",
     "Role key: a lock all members of a role can open.",
     "Data key: the key the data itself is encrypted with."
    ],
@@ -49,11 +49,11 @@
     "the list"
    ],
    "action": "Write something",
-   "deep": "Three envelopes: identity key → role key → data key → content. Each envelope is an HPKE seal of one key to another key's public half. The keyring travels with the data, so no server ever holds keys."
+   "deep": "Three envelopes: identity key → role key → data key → content. Each envelope is one key, encrypted with HPKE to another key's public half. The envelopes travel with the data (its keyring, below), so no server ever holds keys."
   },
   {
    "title": "Writing is a chain of signatures.",
-   "text": "Mia ticks “buy milk”. Her signer signs the change. Every device that receives it checks three links before merging: the signer acts for Mia, Mia is in “home”, and “home” has update on this list. One broken link, and the change is dropped.",
+   "text": "Mia ticks “buy milk”. Her signer signs the change. Every {peer}, any device holding a copy, checks three links before merging: the signer acts for Mia, Mia is in “home”, and “home” has update on this list. One broken link, and the change is dropped.",
    "code": {
     "change": {
      "data": "house-list",
@@ -72,7 +72,7 @@
   },
   {
    "title": "Adding Mia to a role: one envelope.",
-   "text": "The owner puts the role key in an envelope for Mia's identity key. That's all. Mia can now read everything the role can read, including what came before she joined.",
+   "text": "The owner puts the role key in an envelope for Mia's identity key. That's all. Mia can now read everything the role can read, including the last 30 days. Anything older is in the owner's archive.",
    "code": {
     "by": "you (owner)",
     "role": "home",
@@ -80,7 +80,7 @@
     "envelope": "role key → mia's identity key"
    },
    "action": "Give a rule",
-   "deep": "One HPKE envelope of the current role key to Mia's identity key, signed by the owner. Older role keys are reachable through back-links, so Mia reads the history too."
+   "deep": "One HPKE envelope of the current role key to Mia's identity key, signed by the owner. Older keys inside the hot window are reachable through back-links; anything older stays in the owner's archive."
   },
   {
    "title": "Giving a rule: read needs a key, everything else needs only a signature.",
@@ -117,7 +117,7 @@
    "code": {
     "by": "you (owner)",
     "data": "house-list",
-    "revoke": {
+    "take_away": {
      "role": "kids",
      "operations": [
       "read"
@@ -149,12 +149,12 @@
     ],
     "result": "removal wins, edit dropped"
    },
-   "action": "Heal and forget",
+   "action": "How keys age",
    "deep": "Concurrency is resolved toward less authority: a removal and a change made without seeing it count as concurrent, and the removal wins. Every peer applies the same deterministic rule, so all copies converge."
   },
   {
    "title": "Every key lives through three windows.",
-   "text": "A key is {hot} for 30 days: ready on every reader's device, and each new key opens the one before. Then it goes {cold}: out of the chain, so today's key no longer opens it. Cold keys go to the owner's archive, opened only by the owner's own signing rules. And on request, keys are {erased} everywhere.",
+   "text": "A key is {hot} for 30 days: ready on every reader's device, and each new key opens the one before. Keys also turn regularly, so they {heal}: a stolen key soon opens nothing new. Then a key goes {cold}: out of the chain, so today's key no longer opens it, and into the owner's {archive}, a sealed store of old keys, opened only by the owner's own signing rules. On request, keys are {erased} everywhere.",
    "action": "Erase something",
    "deep": "Hot: back-links within the window, keys turn regularly (post-compromise security). Cold: at each rotation boundary older than the window, the chain is cut; old keys are sealed for the owner identity's archive key, split among its members by its signing rules. Late writers from before a cut lose and get a conflict view.",
    "table": {
@@ -188,7 +188,7 @@
   },
   {
    "title": "Erasing works on any text.",
-   "text": "A note names ten people, and one of them asks to be forgotten. You delete their name. Then the note is {cut}: a fresh snapshot without the name, under a new key. The keys of everything before the cut are {shredded} on every honest device and in the archive. The name is gone for good, even from the history.",
+   "text": "A note names ten people, and one of them asks to be forgotten. You delete their name. Then the note is {cut}: a fresh {snapshot}, the current state with no history, without the name, under a new key. The keys of everything before the cut are {shredded} on every honest device and in the archive. The name is gone for good, even from the history.",
    "flow": [
     "delete",
     "cut",
@@ -227,7 +227,7 @@
   },
   {
    "title": "Ended means forgotten.",
-   "text": "The moment a device meets any peer that holds an ending, a revoke or a lapse, it applies it like a {delete trigger}: it wipes the keys and the plaintext copies of everything it may no longer read. It happens offline-first and without a server, on every honest device, the plumber's included.",
+   "text": "The moment a device meets any peer that holds an {ending}, either a {revoke} by the owner or a {lapse} written once a rule's date has passed, it applies it like a {delete trigger}: it wipes the keys and the plaintext copies of everything it may no longer read. It happens offline-first and without a server, on every honest device, the plumber's included.",
    "code": {
     "on": "ending (revoke or lapse)",
     "data": "fix-tap",
@@ -235,7 +235,7 @@
     "then": [
      "wipe data key",
      "wipe local plaintext",
-     "keep only sealed bytes, if a carrier"
+     "keep only sealed bytes"
     ]
    },
    "flow": [
@@ -265,7 +265,7 @@
   },
   {
    "title": "Where does the data key live?",
-   "text": "Nobody holds it for the data. It travels with the data itself: every piece of data carries a small {keyring} next to its rules. The keyring holds the data key in envelopes: one for the owner, one for each role that may read. Carriers store it like everything else, sealed and unreadable.",
+   "text": "Nobody holds it for the data. It travels with the data itself: every piece of data carries a small {keyring} next to its rules. The keyring holds the data key in envelopes: one for the owner, one for each role that may read. {Carriers}, devices that store or forward data they can't read, like a backup, store it like everything else, sealed and unreadable.",
    "code": {
     "data": "house-list",
     "rules": {
@@ -273,7 +273,7 @@
      "home": "create, read, update"
     },
     "keyring": {
-     "epoch": 2,
+     "generation": 2,
      "envelopes": {
       "you": "K2 → your identity key",
       "home": "K2 → home role key"
@@ -282,11 +282,11 @@
     }
    },
    "action": "Which key turns when?",
-   "deep": "The keyring: current epoch, one envelope per reader (owner and reading roles), and back-links where each data key opens the previous one, within the hot window only. Older keys move to the owner's archive."
+   "deep": "The keyring: current generation (how often the data key has turned), one envelope per reader (owner and reading roles), and back-links where each data key opens the previous one, within the hot window only. Older keys move to the owner's archive."
   },
   {
    "title": "Which key turns when.",
-   "text": "Only read changes keys. A new data key always opens the one before it, so whoever may read now can still read the history.",
+   "text": "Only read changes keys. Within the hot window, each new data key opens the one before it; older keys sit in the owner's archive.",
    "table": {
     "head": [
      "Step",

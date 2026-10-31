@@ -17,23 +17,23 @@
    "title": "You write a to-do list.",
    "text": "Everything you keep is {data}. Your list keeps changing; the photo of the leaking tap you attach never will. Both are data.",
    "action": "Who owns it?",
-   "deep": "The list is a Doc: CRDT maps, lists and text. The photo is a Value: immutable bytes named by their BLAKE3 hash, streamed in verified chunks."
+   "deep": "The list is a Doc (story 3): CRDT maps, lists and text. The photo is a Value: immutable bytes named by their BLAKE3 hash, streamed in verified chunks."
   },
   {
    "title": "The list starts from itself.",
-   "text": "When data is born, it gets a {seal}: a key used exactly once, to sign the data's first rule, naming its owner, and then destroyed. Nobody holds the seal, so nobody can share it, lose it or steal it. The list doesn't come from any account; its authority starts with itself.",
+   "text": "When data is born, it gets a {seal}: a key used exactly once, to sign the data's first {rule}, a signed statement of who may do what, naming its owner, and then destroyed. Nobody holds the seal, so nobody can share it, lose it or steal it. The list doesn't come from any account; its authority starts with itself.",
    "action": "Read its first rule",
    "deep": "The seal is a fresh Ed25519 key pair. Its public key is the data ID. It signs one certificate, naming the owner, and the private key is zeroised. Keyhive calls the same pattern the genesis key."
   },
   {
    "title": "Its first rule makes you the owner.",
-   "text": "The seal's one signature names a single {owner}: you. The owner may do everything, for good, including writing the rules for everyone else. There is always exactly one owner: an identity, never a role.",
+   "text": "The seal's one signature names a single {owner}: you. The owner may do everything, for good, including writing the rules for everyone else. There is always exactly one owner: an identity, never a group.",
    "action": "What is everything?",
    "deep": "The owner is an identity ID inside the first certificate. Its authority never expires and only the owner can sign a hand-over. Ownership is never a set, so there is no removing someone from it. (D5, D30)"
   },
   {
-   "title": "Five things to start with.",
-   "text": "Create, read, update and delete. A {rule} gives a {role}, a set of identities, some of these, on one piece of data. Never a person directly, always a role. Only the owner writes rules: that's what being the owner means.",
+   "title": "Four things to start with.",
+   "text": "Create, read, update and delete are {operations}: things you can do with data. A rule gives a {role}, a set of identities, some operations on one piece of data. Never a person directly, always a role. Only the owner writes rules: that's what being the owner means.",
    "list": [
     "create",
     "read",
@@ -41,13 +41,13 @@
     "delete"
    ],
    "action": "Share the list",
-   "deep": "A rule is a signed certificate: role, data, list of operations, conditions, expiry, plus the proof chain back to the seal. Rules are written only by the owner (D30). The full list of operations is in the Rules story."
+   "deep": "A rule is a signed certificate: role, data, list of operations, conditions, expiry, plus the proof chain back to the seal. Rules are written only by the owner (D30). Conditions, expiry and proofs come in story 5, Rules."
   },
   {
    "title": "You share the list with Mia.",
    "text": "You make a role “home”, give it read, create and update on the list, and add Mia. She can see the list, add things and tick them off. She can't delete it, and she can't change the rules.",
    "action": "Call the plumber",
-   "deep": "Mia's identity is added to the role “home”. Technically: the owner signs a membership change and wraps the role key for Mia's identity key. The data's rules don't change at all."
+   "deep": "Mia's identity is added to the role “home”. Technically: the owner signs a membership change and wraps the role key for Mia's identity key (both explained in story 2). The data's rules don't change at all."
   },
   {
    "title": "The plumber gets one item.",
@@ -63,7 +63,7 @@
   },
   {
    "title": "You and Mia start a home.",
-   "text": "Together you form a {coop}: an identity made of identities. You hand the list over: the coop becomes its owner. Now neither of you owns it alone, the coop's own rules decide what it does, and neither of you can lose it.",
+   "text": "Together you form a {coop}: an identity made of identities. You hand the list over: the coop becomes its owner. Now neither of you owns it alone, the coop's own signing rules decide what it does, and neither of you can lose it.",
    "action": "How does a coop decide?",
    "deep": "A coop's members are identities, never signers directly, and membership may not form a cycle. Handing the list over is a certificate signed by the current owner under its own signing rules."
   },

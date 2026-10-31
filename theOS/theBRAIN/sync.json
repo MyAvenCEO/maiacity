@@ -65,14 +65,14 @@
   },
   {
    "title": "Sealed chunks settle in layers.",
-   "text": "Every sealed change has a hash. About one in 256 hashes starts with a zero byte: that change closes a chunk holding everything since the last one. One in 65,000 starts with two zero bytes and closes a bigger chunk around the smaller ones. Like layers of {sediment}: old history ends up in a few big chunks. Every device, even a carrier that reads nothing, cuts in the same places.",
+   "text": "Every sealed change has a hash. About one in 256 hashes starts with a zero byte: that change closes a chunk holding everything since the last one. One in 65,000 starts with two zero bytes and closes a bigger chunk around the smaller ones. Like layers of {sediment}: old history ends up in a few big chunks. Every device, even a carrier that reads nothing, splits at the same places.",
    "code": {
     "0x7c3a…": "depth 0: a loose change",
     "0x00b1…": "depth 1: closes a chunk",
     "0x0000…": "depth 2: closes a bigger chunk"
    },
    "action": "Find what's missing",
-   "deep": "Sedimentree (from Ink & Switch's Subduction): depth = number of leading zero bytes of a change's BLAKE3 hash. Depth ≥ 1 closes a fragment; deeper fragments contain shallower ones. Equal content gives an equal minimal hash. (D33)"
+   "deep": "Sedimentree (from Ink & Switch's Subduction): depth = number of leading zero bytes of a change's BLAKE3 hash. Depth ≥ 1 closes a chunk; deeper chunks contain shallower ones. Equal content gives an equal minimal hash. (D33)"
   },
   {
    "title": "Finding what's missing, cheaply.",
@@ -146,7 +146,7 @@
   },
   {
    "title": "News travels by gossip.",
-   "text": "When Alice changes the list, her device tells the peers interested in it: “house-list has something new.” They pass it on, and whoever wants it fetches the new sealed chunks.",
+   "text": "News travels by {gossip}: each peer passes it on to a few others. When Alice changes the list, her device tells the peers interested in it: “house-list has something new.” Whoever wants it fetches the new sealed chunks.",
    "code": {
     "topic": "house-list",
     "news": {
@@ -180,7 +180,7 @@
     "result": "send sealed chunks"
    },
    "action": "keep",
-   "deep": "The asker presents a capability chain: seal → owner → rule granting want to a role → the asker's identity in that role → the asker's registered signer. Valid chain: sealed chunks are sent. No chain: nothing, not even ciphertext."
+   "deep": "The asker presents a proof chain: seal → owner → rule granting want to a role → the asker's identity in that role → the asker's registered signer. Valid chain: sealed chunks are sent. No chain: nothing, not even ciphertext."
   },
   {
    "title": "keep",

@@ -3,7 +3,7 @@
  "slides": [
   {
    "title": "Everything you do is an operation.",
-   "text": "Reading a list, ticking an item, searching your notes, syncing with a friend: each is an {operation}, a small piece of JSON that says what to do. One engine runs them all.",
+   "text": "Reading a list, ticking an item, searching your notes, syncing with a friend: each is an operation, a small piece of JSON that says what to do. One engine runs them all.",
    "code": {
     "operation": "get",
     "data": "house-list"
@@ -161,7 +161,7 @@
     ]
    },
    "action": "Who may run what?",
-   "deep": "Sync plans are operations evaluated by the device's sync layer: want and keep with conditions (for, when). They are subject to the same rules as any other operation."
+   "deep": "Sync plans are operations evaluated by the device's sync layer: want and keep with arguments (for, when). A rule's conditions still apply."
   },
   {
    "title": "Rules name the operations.",
@@ -215,7 +215,7 @@
     "updated_by": "count, on your device"
    },
    "action": "Sum it up",
-   "deep": "The answer is written as new data with its own rule for the asker, computed and signed by your own device. It is visible, revocable and expires like any other data."
+   "deep": "The answer is written as new data, computed and signed by your own device, with its own rule for the asker. That rule is revocable and expires like any other."
   },
   {
    "title": "The engine, in short.",

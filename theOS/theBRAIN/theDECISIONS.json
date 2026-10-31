@@ -16,7 +16,7 @@
    "id": "D2",
    "title": "Signers act, identities own",
    "status": "decided",
-   "decision": "A signer is a device key (a passkey). It only signs, for an identity, and never owns anything. Only identities own data.",
+   "decision": "A signer is a key that signs changes for an identity. It never owns anything. Only identities own data.",
    "why": "Devices come and go; ownership must not move with them.",
    "sources": [
     {
@@ -250,7 +250,7 @@
    "id": "D13",
    "title": "Endings: revoke and lapse",
    "status": "decided",
-   "decision": "A revoke (by an admin) and a lapse (by any peer, once the date has passed) are the same kind of event in the history. An ending wins over every change that never saw it, turns the data key, and is the delete trigger on honest devices.",
+   "decision": "A revoke (by the owner) and a lapse (by any peer that can read the rules, once the date has passed) are the same kind of event in the history. An ending wins over every change that never saw it, turns the data key if the ended rule gave read, and is the delete trigger on honest devices.",
    "why": "Validity follows from the history alone, so all copies agree. No clock is trusted.",
    "rejected": "Checking expiry against each device's own clock (copies would disagree).",
    "sources": [

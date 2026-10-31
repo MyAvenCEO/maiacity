@@ -3,7 +3,7 @@
  "slides": [
   {
    "title": "Every rule is one sentence.",
-   "text": "A {rule} says: this role may perform these {operations}, on this data, until then. Nothing more. Everything anyone may ever do with your data is written in rules like this one.",
+   "text": "A rule says: this role may perform these operations, on this data, until then. Nothing more. Everything anyone may ever do with your data is written in rules like this one.",
    "code": {
     "rule": {
      "role": "home",
@@ -26,12 +26,12 @@
   },
   {
    "title": "What a rule can allow.",
-   "text": "Each operation is one thing a role may do. Some are about the content, some about carrying it, and two are about rules themselves.",
+   "text": "Each operation is one thing a role may do. Some are about the content, some about carrying it, and one, share, passes a rule on.",
    "list": [
     "Content: create, read, update, delete.",
     "Carrying: want, keep, sync.",
     "Passing on: share, a narrower rule of your own.",
-    "Engine operations, like find or search, need no entry of their own: read is enough.",
+    "Operations that only look at data, like searching, need only read.",
     "Writing rules is not on the list: only the owner does that."
    ],
    "action": "Make it narrower",
@@ -39,7 +39,7 @@
   },
   {
    "title": "Conditions make a rule narrower.",
-   "text": "Each operation can carry {conditions}: only this part of the data, only entries that match, only with two signatures, only so many times.",
+   "text": "Each operation can carry {conditions}: only this part of the data, only entries that match, only so many times.",
    "code": {
     "role": "kids",
     "data": "house-list",
@@ -78,14 +78,14 @@
   },
   {
    "title": "Unchanged rules renew themselves.",
-   "text": "You don't want your family locked out every month. So one of the owner's devices quietly renews every rule that hasn't changed, a week before it ends. Rules you changed or removed simply run out.",
+   "text": "You don't want your family locked out every month. So the owner quietly renews every rule that hasn't changed, a week before it ends, under its own signing rules (a coop can let one member do renewals). Rules you changed or removed simply run out.",
    "flow": [
     "rule still the same?",
     "renew for 30 days",
     "else: let it run out"
    ],
    "action": "And the first rule?",
-   "deep": "Renewal is a new certificate with the same content and a later expiry, signed by one of the owner's signers. Changed or removed rules are simply not renewed."
+   "deep": "Renewal is a new certificate with the same content and a later expiry, signed under the owner's signing rule for renewals. Changed or removed rules are simply not renewed."
   },
   {
    "title": "Only the owner never expires.",
@@ -104,7 +104,7 @@
   },
   {
    "title": "Under the hood, a rule is a capability.",
-   "text": "Each rule is a signed token, a {capability}, like a Biscuit. It carries its own proof: who signed it, and why they were allowed to, all the way back to the seal. Any device can check it offline. Nobody can forge it.",
+   "text": "Each rule is a signed token, a {capability}. It carries its own proof: who signed it, and why they were allowed to, all the way back to the seal. Any device can check it offline. Nobody can forge it.",
    "code": {
     "rule": {
      "role": "home",
@@ -126,7 +126,7 @@
   },
   {
    "title": "Passing a rule on only narrows it.",
-   "text": "If home's rule allows share, Mia can give a role of her own, “grandma's”, a rule of its own: she adds a block to the token. A block can only take things away, shorten the expiry or add conditions. It can never add.",
+   "text": "If home's rule allows share, Mia can hand a narrower copy of it to the role “grandma's”: she adds a block to the token. A block can only take things away, shorten the expiry or add conditions. It can never add.",
    "code": {
     "blocks": [
      {
@@ -166,7 +166,7 @@
   },
   {
    "title": "Ending a rule early.",
-   "text": "You don't have to wait for the expiry. The owner writes a {revoke}: a signed event in the history that says “this rule is over”. It travels like any other change.",
+   "text": "You don't have to wait for the expiry. The owner writes a revoke: a signed event in the history that says “this rule is over”. It travels like any other change.",
    "code": {
     "ending": "revoke",
     "rule": "home → plumber",
@@ -178,7 +178,7 @@
   },
   {
    "title": "When time runs out, anyone may say so.",
-   "text": "Devices are often offline, and a device can lie about its time, so no clock decides. Once a rule's date has passed for it, any peer that can read the rules writes a {lapse}: the same kind of event as a revoke. It can only end a rule, never grant anything. From then on, the history decides.",
+   "text": "Devices are often offline, and a device can lie about its time, so no clock decides. Once a rule's date has passed for it, any peer that can read the rules writes a lapse: the same kind of event as a revoke. It can only end a rule, never grant anything. From then on, the history decides.",
    "code": {
     "ending": "lapse",
     "rule": "home → plumber",
@@ -190,7 +190,7 @@
   },
   {
    "title": "Revoke or lapse: one ending, same effect.",
-   "text": "Whoever wrote it, an {ending} does the same three things on every device. Changes that never saw it are dropped, because the ending wins. The data key turns. And every honest device wipes the keys and copies the rule gave it. Validity follows from the history alone, so every copy agrees.",
+   "text": "Whoever wrote it, an ending does the same things on every device. Changes that never saw it are dropped, because the ending wins. If the rule gave read, the data key turns. And every honest device wipes the keys and copies the rule gave it. Validity follows from the history alone, so every copy agrees.",
    "code": {
     "ending": "lapse",
     "rule": "home → plumber",
@@ -203,12 +203,12 @@
     },
     "then": [
      "drop: ending wins",
-     "the data key turns",
+     "if it gave read: the data key turns",
      "wipe keys and copies"
     ]
    },
    "action": "Sum it up",
-   "deep": "One ending type, two authors. Effects: concurrent changes that never saw it are dropped, the data key turns, and the delete trigger runs on honest devices."
+   "deep": "One ending type, two authors. Effects: concurrent changes that never saw it are dropped, the data key turns if the rule gave read, and the delete trigger runs on honest devices."
   },
   {
    "title": "Rules, in short.",
@@ -216,7 +216,7 @@
     "A rule: this role may perform these operations, on this data, until then.",
     "Only the owner, an identity, writes rules; its own rule never expires.",
     "Conditions narrow a rule; nothing can widen it.",
-    "A revoke or a lapse is an ending: it wins, turns the key and wipes copies.",
+    "A revoke or a lapse is an ending: it wins, turns the key if it gave read, and wipes copies.",
     "Under the hood: a signed token any device checks offline."
    ],
    "action": "",

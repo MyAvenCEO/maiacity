@@ -34,7 +34,7 @@
   },
   {
    "title": "But really, a Doc is a history.",
-   "text": "Every change is a {CRDT op} with its own ID: which device made it, and its counter on that device. Each op also says which ops it had already seen. The JSON is just what you get when you play the history.",
+   "text": "Every change is a {CRDT op} with its own ID: which device made it, and its counter on that device. Each CRDT op also says which CRDT ops it had already seen. The JSON is just what you get when you play the history.",
    "code": {
     "id": "alice:41",
     "deps": [
@@ -50,11 +50,11 @@
   },
   {
    "title": "A Value never changes.",
-   "text": "Its name is the hash of its bytes, so it can't be swapped without everyone noticing. It travels in chunks, and you fetch only the parts you need: the first minute of a movie, page 3 of a PDF.",
+   "text": "Its name is the hash of its bytes, so it can't be swapped without everyone noticing. It travels in ranges, and you fetch only the parts you need: the first minute of a movie, page 3 of a PDF.",
    "code": {
     "value": "blake3:9f2c…",
     "size": "1.4 GB",
-    "chunks": "1 MiB each",
+    "fetched": "in verified ranges",
     "type": "video/mp4"
    },
    "action": "And its Doc",
@@ -108,7 +108,7 @@
   },
   {
    "title": "They swap only what's missing.",
-   "text": "Each device keeps a {version vector}: the highest op it has seen from every device. They compare vectors and send only the difference. Three small ops, not the whole list.",
+   "text": "Each device keeps a {version vector}: the highest CRDT op it has seen from every device. They compare vectors and send only the difference. Three small CRDT ops, not the whole list.",
    "code": {
     "alice_has": {
      "alice": 41,
@@ -133,7 +133,7 @@
   },
   {
    "title": "They end up the same.",
-   "text": "However the ops arrive, in any order, twice or late, every copy ends in the same state. That's the promise of CRDT data types: no server, no locking, no “who was first?”.",
+   "text": "However the CRDT ops arrive, in any order, twice or late, every copy ends in the same state. That's the promise of CRDT data types: no server, no locking, no “who was first?”.",
    "code": {
     "title": "Home",
     "items": [
@@ -156,7 +156,7 @@
   },
   {
    "title": "Both rename the list.",
-   "text": "Alice types “Our home”, Bob types “Home”. For one field, one value has to win. The map picks the op with the later logical clock, and if those tie, the higher device ID. Every copy picks the same one.",
+   "text": "Alice types “Our home”, Bob types “Home”. For one field, one value has to win. The map picks the CRDT op with the later logical clock, and if those tie, the higher device ID. Every copy picks the same one.",
    "code": {
     "alice": {
      "id": "alice:42",
@@ -187,7 +187,7 @@
   },
   {
    "title": "History remembers what you deleted.",
-   "text": "A CRDT keeps every op, because a device that was offline for months may still send an op that builds on an old state. That also means a sentence you typed and erased is still in the history, and anyone who can read the history can read it.",
+   "text": "A CRDT keeps every CRDT op, because a device that was offline for weeks may still send a CRDT op that builds on an old state. That also means a sentence you typed and erased is still in the history, and anyone who can read the history can read it.",
    "code": {
     "now": "Fix the tap",
     "history": [
@@ -200,24 +200,24 @@
   },
   {
    "title": "Snapshots let the past go.",
-   "text": "Once every writer has seen a version, it is {stable}: no late op can still build on anything older. There, a device can cut: newcomers get a {snapshot} of the state, not the old ops, so they never see what was deleted. What lies before the cut is sealed under a new key, and honest devices drop the old chunks and keys.",
+   "text": "At key turns older than 30 days, the history is cut: newcomers get a snapshot of the state, not the old CRDT ops, so they never see what was deleted. The older keys go to the owner's archive. A writer who comes back from before the cut loses, and sees what was not adopted.",
    "code": {
-    "cut_at": "version 412, seen by all",
-    "newcomers_get": "snapshot + ops after 412",
-    "before_the_cut": "new key, old keys dropped"
+    "cut_at": "a key turn > 30 days old",
+    "newcomers_get": "snapshot + later CRDT ops",
+    "before_the_cut": "keys to the archive"
    },
    "flow": [
-    "every writer has seen it",
+    "older than the hot window",
     "cut",
     "snapshot for newcomers",
-    "drop the old keys"
+    "old keys to the archive"
    ],
    "action": "Now with rules",
    "deep": "Loro's shallow snapshot holds the state plus the history after a cut. Cuts happen at key-rotation boundaries older than the hot window; the old chunks' keys go to the owner's archive or are shredded on erase."
   },
   {
-   "title": "Every op is checked on arrival.",
-   "text": "Before Alice's device merges Bob's ops, it checks each one against the rules in the Doc's own history. Bob's role has update, so his ops go in. A stranger's op on the same list is dropped, quietly, everywhere.",
+   "title": "Every change is checked on arrival.",
+   "text": "Before Alice's device merges Bob's CRDT ops, it checks each one against the rules in the Doc's own history. Bob's role has update, so his CRDT ops go in. A stranger's CRDT op on the same list is dropped, quietly, everywhere.",
    "code": {
     "op": "bob:19",
     "kind": "insert",
@@ -235,7 +235,7 @@
   },
   {
    "title": "Bob loses update.",
-   "text": "You take update away from “home”. A revoke is a signed event, not an op, and it syncs like everything else. Bob's op had not seen it, so the ending wins: his op is dropped on every device. His earlier ops stay.",
+   "text": "You take update away from “home”. A revoke is a signed event, not a CRDT op, and it syncs like everything else. Bob's CRDT op had not seen it, so the ending wins: it is dropped on every device. His earlier CRDT ops stay.",
    "code": {
     "ending": "revoke",
     "rule": "home: update",
@@ -252,8 +252,8 @@
    "deep": "A revoke is a certificate in the rule set, not a CRDT op. A CRDT op whose dependencies don't include the revoke counts as concurrent with it, and the ending wins."
   },
   {
-   "title": "Sealed in chunks, not op by op.",
-   "text": "Sealing every op on its own would make data huge. So a device seals {chunks}: a run of changes, compressed, then encrypted. Chunk boundaries come from the changes' hashes, so every device cuts in the same places. Old small chunks get merged into bigger ones, like layers of sediment.",
+   "title": "Sealed in chunks, not one by one.",
+   "text": "Sealing every CRDT op on its own would make data huge. So a device seals {chunks}: a run of changes, compressed, then encrypted. Chunk boundaries come from the changes' hashes, so every device splits at the same places. Old small chunks get merged into bigger ones, like layers of sediment.",
    "code": {
     "chunk": "blake3:a91f…",
     "holds": "bob:18 – bob:40",
@@ -275,7 +275,7 @@
   },
   {
    "title": "What a carrier sees.",
-   "text": "Sealed chunks, the hashes that link them, and the proofs it needs to decide whom to give them to. It can store, count and forward them. It can't read a title, a tick, a rule or a frame of the movie.",
+   "text": "Sealed chunks, the hashes that link them, and the {proofs}, signed chains from the seal to whoever asks, it needs to decide whom to give them to. It can store, count and forward them. It can't read a title, a tick, a rule or a frame of the movie.",
    "code": {
     "chunk": "blake3:a91f…",
     "after": [
@@ -290,14 +290,14 @@
   {
    "title": "Inside data, in short.",
    "list": [
-    "A Doc is JSON that changes: a history of ops that merges.",
+    "A Doc is JSON that changes: a history of CRDT ops that merges.",
     "A Value is bytes that never change, named by its hash.",
     "Every Value has a Doc for its metadata and its key.",
     "Copies swap only what's missing and always end the same.",
-    "Every op is checked against the rules on arrival."
+    "Every change is checked against the rules on arrival."
    ],
    "action": "",
-   "deep": "Docs are CRDT histories; Values are hashed bytes. Both travel as sealed chunks. Every change is verified on arrival; history can be cut at stable points."
+   "deep": "Docs are CRDT histories; Values are hashed bytes. Both travel as sealed chunks. Every change is verified on arrival; history is cut at key turns older than the hot window."
   }
  ]
 }
