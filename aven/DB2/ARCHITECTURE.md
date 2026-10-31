@@ -642,7 +642,11 @@ the spec that owns it.
     revocation wins over what it hadn't seen (refined with the PEERS thread);
   - members gossip signed tips.
 
-  *Decided: yes (Samuel, 30 Oct 2026: "do as you believe").*
+  *Decided: yes (Samuel, 30 Oct 2026: "do as you believe").* What changes who is in or who sees whom (tickets,
+  withdrawals, and the relay and keeper lists) counts only when the admin's passkey signed it, a tap each time; an admin
+  device's key only acks claims. A stolen or compromised browser can't let anyone in, or route members through a relay
+  that logs their addresses. *Decided (Samuel, 31 Oct 2026: "choose the more secure way"; PEERS decision 12,
+  `adminPasskey`, #1618).*
 - **A13. The guardian is named, with hybrid keys, in every claim and join text** people sign, until it leaves before
   the network opens beyond the founding circle (caps D12). *Decided: yes (Samuel, 30 Oct 2026: "do as you believe").*
 - **A14. A dedicated passkey RP ID for avenOS,** for example `aven.maia.city`, before more passkeys exist; today's few
