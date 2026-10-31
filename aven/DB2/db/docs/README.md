@@ -9,7 +9,7 @@ Everything a Doc is lives here. Two neighbours build on it: the [engine](../engi
 over Docs, and the [ontology](../ontology/README.md) says what their Records mean. Below it sit the
 [store](../../store/README.md) (Values and refs, iroh-blobs through our adapter, unchanged by this spec) and avenID's
 [caps](../../id/caps/README.md) (keys, seals, who may write). Shared words are the
-[glossary](../../GLOSSARY.md)'s and the [architecture](../../ARCHITECTURE.md)'s, in exactly their sense. Nothing here
+[glossary](../../brain/GLOSSARY.md)'s and the [architecture](../../ARCHITECTURE.md)'s, in exactly their sense. Nothing here
 is built before its step's plan names it, and avenDB-old's learnings come in as rules and Lean theorems, never as code
 (README, rule 12).
 
