@@ -4,6 +4,7 @@
 #![allow(dead_code)]
 
 pub mod caps;
+pub mod model;
 
 use std::path::PathBuf;
 

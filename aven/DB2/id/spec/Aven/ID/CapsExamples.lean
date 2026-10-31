@@ -16,9 +16,10 @@ group `g-garden`. `Aven.ID.CapsJson` exports them as vectors. -/
 
 namespace Aven.ID
 
-/-- The cast's Docs, named by short bytes rather than 32-byte hashes so that `decide` stays quick. `tasks` and `notes`
-are type Docs, `g-garden` is the group of Alice's and Bob's vaults, and `album` is a collection of Alice's. -/
-def docOf (s : String) : Core.DocId := ⟨⟨s.toUTF8.toList⟩⟩
+/-- The cast's Docs, each named by the BLAKE3 hash of a label, so every id is 32 bytes as Core's are and Rust can read
+it. `tasks` and `notes` are type Docs, `g-garden` is the group of Alice's and Bob's vaults, and `album` is a collection
+of Alice's. -/
+def docOf (s : String) : Core.DocId := ⟨Core.blake3 s.toUTF8.toList⟩
 
 def d1 : Core.DocId := docOf "d1"
 def d2 : Core.DocId := docOf "d2"

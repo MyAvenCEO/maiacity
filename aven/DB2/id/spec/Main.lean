@@ -1,9 +1,10 @@
 import Aven.ID.Json
+import Aven.ID.CapsModel
 
 /-! # The running model
 
-`aven-id-model` reads one case per line, a tree and its queries as JSON, and answers each line with one line
-(`Aven.ID.Json`):
+`aven-id-model` reads one case per line, a tree and its queries as JSON, a cap chain, or a Doc of envelopes and its
+revocations, and answers each line with one line (`Aven.ID.Json`, `Aven.ID.CapsModel`):
 
 ```
 {"keys":["k"],"vaults":[{"id":"a","name":"A's vault","kind":"person","owners":["key:k"]}],"queries":[["governs","a"],["accounts",null]]}
@@ -18,7 +19,10 @@ open Lean Aven.ID
 partial def loop (stdin : IO.FS.Stream) (stdout : IO.FS.Stream) : IO Unit := do
   let line ← stdin.getLine
   if line.isEmpty then return
-  let out := match Json.parse line.trimAscii.toString >>= answerCase with
+  let answer (j : Json) : Except String Json := match CapsModel.answer? j with
+    | some a => .ok a
+    | none => answerCase j
+  let out := match Json.parse line.trimAscii.toString >>= answer with
     | .ok j => j.compress
     | .error e => (Json.mkObj [("error", toJson e)]).compress
   stdout.putStrLn out

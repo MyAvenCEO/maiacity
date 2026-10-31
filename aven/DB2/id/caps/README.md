@@ -1429,6 +1429,10 @@ One smaller gap:
 | `network.json` | A ticket's claims in two orders (A12), removals that clash, MaiaCityGuardian's exit |
 | `keep.json` | Fetch-key links in the order they came, with the keys a keeper takes, its current key and its flags; proofs and whether they're served; what each vault pays; what a keeper keeps under the keep caps it holds and its own offers (A44); 30 generated keepers |
 
+`aven-id-model` answers the same cases a backend's property tests draw: a chain, who keeps a Doc, and a Doc of
+envelopes with its revocations, each in the form its vector's input takes (`Aven.ID.CapsModel`). Every Doc id in the
+vectors is 32 bytes, as Core's are.
+
 A cap's bytes are its body in Core's deterministic CBOR, its targets as `Aven.Core.TargetCbor` writes them; its id is
 their BLAKE3 hash, and its device signs them under the label `avenID cap 1` (`Aven.ID.CapsCbor`). The cast's caps go by
 readable names, so a parent and a role are text until R5 makes them hashes. Core's BLAKE3 has its keyed and
