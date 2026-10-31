@@ -645,7 +645,7 @@ Decided here, on those grounds:
   came. The Aven Peer signs as Aven's device under a chain the owner issued and approved, not as a device of the
   owner's vault. For a write, an actor's narrowing is never a link (it is no grant): it is the write's footprint,
   checked against the chain. The actor half is `Aven.Actor.Signing` (`signs_by_chain`, `write_names_actor`,
-  `write_keeps_chain`, `actor_within_chain`, `actor_steps_within`); the reader's half (`Aven.ID.host_never_own`,
+  `write_keeps_chain`, `actor_within_chain`, `actor_steps_within`); the reader's half (`Aven.ID.host_chain_only`,
   `actor_within_device`, `host_never_beyond`) is avenID's. A cap that travels on in a message narrows instead by
   caps' attenuation link (no approval, within its parent, the same holder, only after an approved grant): the
   chain a message carries is its handled message's chain plus at most one attenuation (avenDB ARCHITECTURE.md).
