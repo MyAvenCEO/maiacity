@@ -60,23 +60,27 @@ theorem step_mem {k : Nat} (hk : k < (refOrder r).length) (hc : r.founding.claim
   exact List.mem_cons_of_mem _ (mem_steps.mpr ⟨k, hk, rfl⟩)
 
 /-- Every migrated statement counts. -/
-theorem migrate_counted (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true) (named : Named r) :
+theorem migrate_counted (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true)
+    (named : Named r) :
     ∀ s ∈ migrate r g, counted genesisName (migrate r g) s = true :=
   fun s ms => (counted_iff genesisName).mpr (migrate_counts r g c hc signed named s ms)
 
-theorem vany (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true) (named : Named r)
+theorem vany (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true)
+    (named : Named r)
     {p : TreeStatement → Bool} :
     (view genesisName (migrate r g)).any p = true ↔ ∃ s ∈ migrate r g, p s = true := by
   rw [view_any]
   exact ⟨fun ⟨s, m, _, h⟩ => ⟨s, m, h⟩, fun ⟨s, m, h⟩ => ⟨s, m, migrate_counted hc signed named s m, h⟩⟩
 
-theorem vall (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true) (named : Named r)
+theorem vall (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true)
+    (named : Named r)
     {p : TreeStatement → Bool} :
     (view genesisName (migrate r g)).all p = true ↔ ∀ s ∈ migrate r g, p s = true := by
   rw [view_all_iff]
   exact ⟨fun h s m => h s m (migrate_counted hc signed named s m), fun h s m _ => h s m⟩
 
-theorem vpast (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true) (named : Named r)
+theorem vpast (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true)
+    (named : Named r)
     {a b : TreeStatement} : (view genesisName (migrate r g)).past a b = true ↔
       a ∈ migrate r g ∧ b ∈ migrate r g ∧ Before TreeStatement.name (migrate r g) a b := by
   rw [view_past]
@@ -99,7 +103,8 @@ theorem step_not_genesis {k : Nat} {o : Old} {gs : Setup} : (step r c k o).says 
   cases o <;> simp [step, Old.says]
 
 /-- The pinned genesis is the migrated claim's: what `gen` reads is `genesisOf`. -/
-theorem gen_eq (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true) (named : Named r)
+theorem gen_eq (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true)
+    (named : Named r)
     (P : Setup → Bool) : gen (view genesisName (migrate r g)) P = P (genesisOf r.founding c g) := by
   apply Bool.eq_iff_iff.mpr
   unfold gen
@@ -292,7 +297,8 @@ theorem join_ticket (cl : Clean r c) {j : Join} (mj : j ∈ r.joins) :
   obtain ⟨htl, i', et, k'⟩ := ticketName_spec cl.fits (by have := cl.fits; omega) ht
   exact ⟨t, htl, i', et, invite_mem (List.getElem_mem htl) et, k'.trans ki, ki ▸ ht⟩
 
-theorem claimOk_join (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true) (named : Named r)
+theorem claimOk_join (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true)
+    (named : Named r)
     (cl : Clean r c) {k : Nat} (hk : k < (refOrder r).length) {j : Join} (e : (refOrder r)[k] = .join j) :
     claimOk (view genesisName (migrate r g)) (step r c k (.join j)) = true := by
   have mj : j ∈ r.joins := join_mem (List.getElem_mem hk) e
@@ -336,7 +342,8 @@ theorem joinName_at (cl : Clean r c) {k : Nat} (hk : k < (refOrder r).length) {j
 
 /-- **Every join's claim is final:** the migration confirms each with Maia City's approval at the genesis's signing,
 issuing its vault's member cap (A38). -/
-theorem final_join (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true) (named : Named r)
+theorem final_join (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true)
+    (named : Named r)
     (cl : Clean r c) {k : Nat} (hk : k < (refOrder r).length) {j : Join} (e : (refOrder r)[k] = .join j) :
     final (view genesisName (migrate r g)) (step r c k (.join j)) = true := by
   have mj : j ∈ r.joins := join_mem (List.getElem_mem hk) e
@@ -360,7 +367,8 @@ theorem final_join (hc : r.founding.claim = some c) (signed : (genesisOf r.found
     simp [step, Old.parents, jn, Core.Past.parents]
 
 /-- **Every join's claim stands** in the settled tree of a clean store. -/
-theorem standing_join (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true) (named : Named r)
+theorem standing_join (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true)
+    (named : Named r)
     (cl : Clean r c) {k : Nat} (hk : k < (refOrder r).length) {j : Join} (e : (refOrder r)[k] = .join j) :
     standing (view genesisName (migrate r g)) (step r c k (.join j)) = true := by
   have mj : j ∈ r.joins := join_mem (List.getElem_mem hk) e
@@ -418,7 +426,8 @@ theorem old_index {o : Old} (m : o ∈ refOrder r) : ∃ k, ∃ hk : k < (refOrd
   List.mem_iff_getElem.mp m
 
 /-- A migrated store changes no setting: its Aven Peer is the genesis's, production's peer key. -/
-theorem peerIs_eq (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true) (named : Named r)
+theorem peerIs_eq (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true)
+    (named : Named r)
     (key : String) : peerIs (view genesisName (migrate r g)) key = (key == r.founding.peerKey) := by
   have none : (view genesisName (migrate r g)).any (configBy (view genesisName (migrate r g)) isPeerSet) = false := by
     cases e : (view genesisName (migrate r g)).any (configBy (view genesisName (migrate r g)) isPeerSet)

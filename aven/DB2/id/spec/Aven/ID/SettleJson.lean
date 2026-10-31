@@ -62,8 +62,8 @@ def TreeSays.json : TreeSays → Json
   | .setGuardian v => Json.mkObj [("kind", "setGuardian"), ("vault", v)]
   | .ownerEpoch c o se e => Json.mkObj [("kind", "ownerEpoch"), ("credential", c), ("owner", HybridKey.json o),
       ("seal", se), ("epoch", toJson e)]
-  | .setOwners v os th => Json.mkObj [("kind", "setOwners"), ("vault", v), ("owners", Json.arr (os.map Owner.json).toArray),
-      ("threshold", toJson th)]
+  | .setOwners v os th => Json.mkObj [("kind", "setOwners"), ("vault", v),
+      ("owners", Json.arr (os.map Owner.json).toArray), ("threshold", toJson th)]
 
 /-- The tree Doc of the vectors. -/
 def treeDoc : Core.DocId := ⟨Core.blake3 (Body.utf8 "Maia City's tree")⟩
@@ -133,7 +133,9 @@ def raceCases : List Case :=
     ⟨500, "t-bob", [120], .claim 120 "bob" (pk "bob-passkey") ["bob-peer"] "maia-city-guardian", []⟩
   let leak : TreeStatement :=
     ⟨300, "t-bob", [120], .claim 120 "mallory" (pk "mallory-passkey") ["mallory-peer"] "maia-city-guardian", []⟩
-  [{ name := "the genesis alone", statements := [g], pinned := 100 },
+  [{ name := "an owner removal: what it saw and what a confirmation rests on stay", statements := removal,
+     pinned := 100 },
+   { name := "the genesis alone", statements := [g], pinned := 100 },
    { name := "the genesis and two sign-ins", pinned := 100,
      statements := [g, ⟨110, "alice-passkey", [100], .signIn "alice-phone", []⟩,
        ⟨111, "alice-passkey", [100], .signIn "alice-laptop", []⟩] },

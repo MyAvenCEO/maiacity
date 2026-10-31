@@ -17,8 +17,9 @@ name and reads it as the statement it carries (`Aven.ID.TreeDoc`): its signer, i
 says (`TreeSays`, its body: `TreeSays.toValue`, read back by `TreeSays.ofValue_toValue`). The past is Core's
 (`Aven.Core.Past`: `Before`, decided by `inPast`). `settle` is a function of the set of statements that passed their
 own checks:
-1. a statement counts when it descends from the pinned genesis, which the claimant's passkey and MaiaCityGuardian both
-   signed;
+1. a statement counts as Core's `Counts` judges it (A45, A191): it descends from the pinned genesis, whose setup, the
+   tree Doc's root Record (A213), the claimant's passkey and MaiaCityGuardian both signed, its whole past is held
+   (`Closed`), and all of it fits: the setup only at birth;
 2. a withdrawal wins over every claim of its ticket not in its past;
 3. a claim is final once a confirmation names it and has it in its past (A38), and a withdrawal never wins over a final
    claim. A confirmer confirms only the claim that stands in its own view (`confirmPolicy`);
@@ -26,24 +27,29 @@ own checks:
    smallest hash (`hashAtMost`). Two final claims of one ticket can only come from confirmations that didn't see each
    other: the ticket is `contested`;
 5. a list's remove wins over every add that hadn't seen it. Tickets, withdrawals and the lists count only with Maia
-   City's owners' approval (`byAdmin`, `Tree.approves`): the admin is a vault, never a key (rule 15, A28). A device of
-   a vault holding Maia City's confirm cap confirms for it (`confirmer`);
+   City's owners' approval in force in their own past (`byAdmin`, `Tree.approves`): the admin is a vault, never a key
+   (rule 15, A28). An owner change (`setOwners`) sets a vault's owners and threshold, approved by the owners in force in
+   its own past; a removal beats the acts it never saw that no counted confirmation rests on (A191). A device of a
+   vault holding Maia City's confirm cap confirms for it (`confirmer`);
 6. the door admits the member vaults' devices (K12).
 
 The theorems:
-- `settle_perm`: peers holding the same statements, in any order, settle the same tree;
+- `settle_perm`, `owners_perm`: peers holding the same statements, in any order, settle the same tree and hold the
+  same owners in force;
 - `settle_ticket_once`: a ticket founds at most one vault;
 - `settle_withdrawn`: a withdrawal leaves no claim of its ticket standing that isn't final and wasn't in its past;
-- `settle_final`: a final claim stays final whatever is added, and stands unless another claim of its ticket with a
-  smaller hash is made final, which only a confirmation that never saw the first can do;
+- `settle_final`: a final claim stays final whatever is added, removals included (A191), and stands unless another
+  claim of its ticket with a smaller hash is made final, which only a confirmation that never saw the first can do;
 - `settle_door`: the door admits exactly the devices of the member vaults, so it is a function of the tree alone;
-- `settle_genesis`: nothing outside the pinned genesis's descendants changes the tree;
+- `settle_genesis`: nothing outside the pinned genesis's descendants that nothing builds on changes the tree;
 - `genesis_pinned`: everything in the tree descends from the pinned genesis, signed by its claimant's passkey and
   MaiaCityGuardian (A11);
 - `guardian_consented`: a claim counts only if it names the genesis's guardian (A13);
 - `settle_listed`: a list's entry stands only through an add that saw every remove of it;
 - `admin_by_owners`, `device_not_admin`: an admin act counts only with Maia City's owners' approval (`Tree.approves`),
-  resting on an owner key above the coop, never a device's (rule 15, A28).
+  resting on an owner key above the coop, never a device's (rule 15, A28);
+- `removal_beats`, `removal_keeps_past`, `removal_keeps_kept`: a removal beats an owner's concurrent act, never one in
+  its past or one a counted confirmation rests on (A191).
 
 `settle_restore`, production's ref order, the record kinds and `settled.json` are avenPEER's (`Aven.ID.Restore`,
 `Aven.ID.Records`; PEERS.md, Thread A). -/
@@ -886,8 +892,8 @@ theorem Counts.desc (h : Counts pinned S s) : Desc pinned S s := h.1
 
 An owner change sets a vault's owners and its threshold k. It counts when its vault's owners in force in its own past
 approve it, k of n. The owners in force at a statement are the setup's, with each vault's latest approved change in its
-past applied: the latest by the past, ties by the smallest name, the same at every peer (`owners_perm`). That recurses on
-the past, which shrinks along it (`depth`). A change reaches the vaults the setup founds; a vault a claim founds is
+past applied: the latest by the past, ties by the smallest name, the same at every peer (`owners_perm`). That
+recurses on the past, which shrinks along it (`depth`). A change reaches the vaults the setup founds; a vault a claim founds is
 changed once vaults are named by their genesis. -/
 
 /-- How many statements a statement's past holds. -/
@@ -1516,7 +1522,8 @@ theorem before_without (hN : ∀ x ∈ X, ∀ s ∈ S, x.name ∉ s.parents) (ma
 theorem counts_without (hN : ∀ x ∈ X, ∀ s ∈ S, x.name ∉ s.parents) {s : TreeStatement} (ms : s ∈ S) :
     Counts pinned (S ++ X) s ↔ Counts pinned S s := by
   have sub : ∀ x ∈ S, x ∈ S ++ X := fun x m => List.mem_append_left _ m
-  have back : ∀ {x}, (x = s ∨ Before TreeStatement.name (S ++ X) s x) → x ∈ S ∧ (x = s ∨ Before TreeStatement.name S s x) :=
+  have back : ∀ {x}, (x = s ∨ Before TreeStatement.name (S ++ X) s x) →
+      x ∈ S ∧ (x = s ∨ Before TreeStatement.name S s x) :=
     fun {x} h => by
       rcases h with rfl | h
       · exact ⟨ms, .inl rfl⟩
@@ -1901,8 +1908,9 @@ theorem final_mono (h : final (view pinned S) c = true) :
   simp only [Bool.and_eq_true] at hx ⊢
   exact ⟨⟨confirmer_mono pinned sub uniq hx.1.1, hx.1.2⟩, past_mono pinned sub uniq hx.2⟩
 
-/-- A final claim stays final whatever is added (its whole past is held, so it stays the same past), and stands unless what is added makes another claim of its ticket
-with a smaller hash final: only a confirmation that never saw the first can. -/
+/-- A final claim stays final whatever is added (its whole past is held, so it stays the same past; A191), and stands
+unless what is added makes another claim of its ticket with a smaller hash final: only a confirmation that never saw the
+first can. -/
 theorem settle_final (mc : c ∈ S) (hf : final (view pinned S) c = true) :
     final (view pinned S') c = true ∧
       ((∀ f ∈ S', final (view pinned S') f = true → sameTicket f c = true → hashAtMost c.name f.name = true) →
@@ -2341,7 +2349,9 @@ theorem admin_by_owners {s : TreeStatement} (h : byAdmin (view pinned S) s = tru
     have c' := c
     simp only [Setup.consented, Bool.and_eq_true, decide_eq_true_eq] at c'
     exact c'.1.1.1.1
-  have pos := threshold_withOwners_pos gs hc ((view pinned S).owners s) fun y o ho => by obtain ⟨_, _, _, h⟩ := owners_some pinned ho; exact h
+  have pos := threshold_withOwners_pos gs hc ((view pinned S).owners s) fun y o ho => by
+    obtain ⟨_, _, _, h⟩ := owners_some pinned ho
+    exact h
   obtain ⟨k', ka, mk⟩ := Tree.approvesF_signed pos ap
   simp only [TreeStatement.sigs, List.mem_map, Sig.mk.injEq, and_true] at mk
   obtain ⟨k, mk, rfl⟩ := mk
@@ -2365,6 +2375,23 @@ theorem device_not_admin {s : TreeStatement}
     · exact absurd ko (no k mk g mg gs e).1
     · exact absurd ko (no k mk g mg gs e).2
     · exact (noChange k mk u mu x os th hu mo).elim
+
+/-- **`removal_beats`** (A191): an approved owner change that drops an owner beats every act it never saw and that
+never saw it, which no counted confirmation rests on and which Maia City's owners no longer approve under its owners. -/
+theorem removal_beats {r a : TreeStatement} (mr : r ∈ S) (cr : counted pinned S r = true)
+    (h : removes (view pinned S) r a = true) : byAdmin (view pinned S) a = false := by
+  have : (view pinned S).any (fun r => removes (view pinned S) r a) = true := (view_any pinned).mpr ⟨r, mr, cr, h⟩
+  simp [byAdmin, this]
+
+/-- A removal never beats an act in its own past: that act was approved where the removal saw it. -/
+theorem removal_keeps_past {r a : TreeStatement} (p : (view pinned S).past r a = true) :
+    removes (view pinned S) r a = false := by
+  simp [removes, p]
+
+/-- A removal never beats what a counted confirmation rests on (A191). -/
+theorem removal_keeps_kept {r a : TreeStatement} (k : kept (view pinned S) a = true) :
+    removes (view pinned S) r a = false := by
+  simp [removes, k]
 
 /-- A list's entry stands only through an admin act's add that saw every remove of it. -/
 theorem settle_listed {add remove : String → TreeSays} {d : String}
@@ -2528,6 +2555,32 @@ def approved : List TreeStatement :=
 #guard (settle 100 approved).standing 500
 -- a threshold of zero is no genesis anyone pinned: nothing counts
 #guard !(settle 100 [⟨100, "alice-passkey", [], .setup { twoOfTwo with coopThreshold := 0 }, []⟩]).counted 100
+
+-- Owner changes (A191): Maia City is owned by Alice's vault and MaiaCityGuardian's, one of two. MaiaCityGuardian
+-- removes Alice's vault (200), having seen Alice's ticket for Carol (130), which stays. Alice's concurrent ticket for Bob (120)
+-- is beaten, and so is her ticket after the removal (140); MaiaCityGuardian's own ticket (150) counts. Alice's ticket
+-- for Dan (160), concurrent with the removal, stays: Dan's claim is confirmed, and no removal undoes finality.
+def owned : Setup := { alicesGenesis with coopOwners := ["alice", "maia-city-guardian"] }
+def removal : List TreeStatement :=
+  [⟨100, "alice-passkey", [], .setup owned, []⟩,
+   ⟨130, "alice-passkey", [100], .ticket "t-carol", []⟩,
+   ⟨200, "guardian-ed25519", [130], .setOwners "maia-city" [.vault "maia-city-guardian"] 1, []⟩,
+   ⟨120, "alice-passkey", [100], .ticket "t-bob", []⟩,
+   ⟨140, "alice-passkey", [200], .ticket "t-erin", []⟩,
+   ⟨150, "guardian-ed25519", [200], .ticket "t-frank", []⟩,
+   ⟨160, "alice-passkey", [100], .ticket "t-dan", []⟩,
+   ⟨500, "t-bob", [120], .claim 120 "bob" (pk "bob-passkey") ["bob-peer"] "maia-city-guardian", []⟩,
+   ⟨510, "t-carol", [130], .claim 130 "carol" (pk "carol-passkey") ["carol-peer"] "maia-city-guardian", []⟩,
+   ⟨520, "t-erin", [140], .claim 140 "erin" (pk "erin-passkey") ["erin-peer"] "maia-city-guardian", []⟩,
+   ⟨530, "t-frank", [150], .claim 150 "frank" (pk "frank-passkey") ["frank-peer"] "maia-city-guardian", []⟩,
+   ⟨540, "t-dan", [160], .claim 160 "dan" (pk "dan-passkey") ["dan-peer"] "maia-city-guardian", []⟩,
+   ⟨640, "alice-peer", [540], .confirm 540, []⟩]
+#guard ((settle 100 removal).standing 500, (settle 100 removal).standing 510, (settle 100 removal).standing 520,
+  (settle 100 removal).standing 530, (settle 100 removal).standing 540, (settle 100 removal).final 540) ==
+  (false, true, false, true, true, true)
+#guard (settle 100 removal).listed removal == (settle 100 removal.reverse).listed removal
+-- without the removal, Alice's tickets all count
+#guard (settle 100 (removal.filter (·.name != 200))).standing 500
 end TreeExamples
 
 end Aven.ID
