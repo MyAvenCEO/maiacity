@@ -7,6 +7,7 @@ import { askThrough, challenge, claimText, deviceId, hearViews, passkeyId, perso
 import { openWorker } from './peer/open.js';
 import { live, take, timeline } from './peers.svelte.js';
 import { hear, speakThrough } from './room.svelte.js';
+import { hearUpdate } from './update.svelte.js';
 
 // `me` and `key`: this browser's device and its key; `claimed`: null until the Aven Peer has said; `tree`: the
 // network's tree as cast JSON, told to its devices only; `refused`: why the last claim or sign-in was refused;
@@ -103,6 +104,7 @@ export function runNetwork(config) {
 		if (line.event === 'stored') live.ownStored = line;
 		if (line.peer === net.me) take(line);
 		hear(line);
+		hearUpdate(line);
 	};
 	starting = { name: '', secret: 'opfs', avenKey: config.peer, avenName: 'aven-peer' };
 	speakThrough(port, starting);

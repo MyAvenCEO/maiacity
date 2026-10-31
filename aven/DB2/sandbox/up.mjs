@@ -230,7 +230,8 @@ async function check() {
 		(await domes(run)) &&
 		(await videos(run)) &&
 		(await shares(run)) &&
-		(await offlines(run));
+		(await offlines(run)) &&
+		(await upgrades(run));
 	say(`${passed ? 'check passed' : 'check FAILED'}; screenshots and report in aven/DB2/${run}/`);
 	return passed ? 0 : 1;
 }
@@ -432,6 +433,44 @@ export async function offlines(run) {
 	await $`${compose} start prod`.env(env).quiet();
 	await wipe();
 	say(`${ok ? 'opening, writing and signing in without the Aven Peer hold' : 'the offline step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s)`);
+	return ok;
+}
+// Upgrades (PEERS.md §7), by sandbox/upgrade.mjs, on production's stand-in from an empty store, which it leaves empty,
+// and on the cast's Alice Peer: it asks for a Peer on another wire version by writing `upgrade-<what>` into the run's
+// folder, and the host restarts that Peer with `--wire-version` (or without it, back) and answers `upgrade-<what>-done`
+export async function upgrades(run) {
+	const timed = Date.now();
+	const inBrowsers = (...args) => $`${compose} exec -T browsers ${args}`.env(env).nothrow().quiet();
+	const restart = (service, wire) => $`${compose} up -d --no-deps ${service}`.env({ ...env, [`AVENSANDBOX_WIRE_${service.toUpperCase()}`]: wire }).quiet();
+	const wipe = async () => {
+		await $`${compose} exec -T s3 rm -rf /data/aven/prod`.env(env).quiet();
+		await $`${compose} restart prod`.env(env).quiet();
+	};
+	await wipe();
+	const asks = {
+		// a version ahead of this build's, and one behind: version 0 is the wire before it had versions
+		'prod-ahead': () => restart('prod', '2'),
+		'prod-back': () => restart('prod', ''),
+		'alice-behind': () => restart('alice', '0'),
+		'alice-back': () => restart('alice', ''),
+	};
+	const script = $`${compose} exec -T browsers node sandbox/upgrade.mjs ${run}`.env(env).nothrow();
+	let done = false;
+	const answering = (async () => {
+		for (const [asked, answer] of Object.entries(asks)) {
+			while (!done && (await inBrowsers('test', '-f', `${run}/upgrade-${asked}`)).exitCode !== 0) await Bun.sleep(500);
+			if (done) return;
+			await answer();
+			await inBrowsers('touch', `${run}/upgrade-${asked}-done`);
+		}
+	})();
+	const ok = (await script).exitCode === 0;
+	done = true;
+	await answering;
+	await restart('alice', '');
+	await restart('prod', '');
+	await wipe();
+	say(`${ok ? 'a peer of another wire version is refused with update, and the one behind follows' : 'the upgrade step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s)`);
 	return ok;
 }
 // Brain, avenBRAIN in avenOS, in three engines at a desktop's and a phone's width: sandbox/brain.mjs
