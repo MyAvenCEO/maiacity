@@ -4,7 +4,9 @@
 
 use std::path::PathBuf;
 
-use aven_peer_keeper::{Arrivals, Item, PAGE, Put};
+use std::collections::BTreeSet;
+
+use aven_peer_keeper::{Arrivals, Item, PAGE, Put, Reader};
 use serde_json::Value;
 
 fn vectors(file: &str) -> Vec<Value> {
@@ -104,6 +106,39 @@ fn arrivals_are_the_models() {
                     }
                 }
                 assert_eq!(walked, pages, "{name}: paged after {n}");
+            }
+            // a device at each asked number, holding 11 and 12, catches up a page at a time
+            for (n, want) in asks.iter().zip(want["caughtUp"].as_array().unwrap()) {
+                let mut r = Reader { at: *n };
+                let mut held: Vec<u64> = vec![11, 12];
+                loop {
+                    let (page, more) = s.page(r.at);
+                    if page.is_empty() {
+                        break;
+                    }
+                    let have: BTreeSet<u64> = held.iter().copied().collect();
+                    held.extend(Reader::lacks(&page, |h| have.contains(h)));
+                    assert!(r.land(&page), "{name}: every page moves the device forward");
+                    if !more {
+                        break;
+                    }
+                }
+                assert_eq!(
+                    r.at,
+                    want["at"].as_u64().unwrap(),
+                    "{name}: caught up from {n}"
+                );
+                let want_held: Vec<u64> = want["held"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|h| h.as_u64().unwrap())
+                    .collect();
+                assert_eq!(held, want_held, "{name}: held after catching up from {n}");
+                assert!(
+                    s.after_all(r.at).is_empty(),
+                    "{name}: nothing after where it caught up to"
+                );
             }
             // what the keeper stores reads back as the same arrivals
             assert_eq!(

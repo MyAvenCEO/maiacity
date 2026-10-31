@@ -338,6 +338,85 @@ theorem after_sorted {s : Store} (w : s.wf) (n : Nat) : (s.afterAll n).Pairwise 
 
 end Store
 
+/-! ## A device catching up from a keeper -/
+
+/-- What a device holds of one Doc from one keeper: the keeper's number it has caught up to, and the sealed hashes it
+holds. -/
+structure Reader where
+  at_ : Nat := 0
+  held : List Nat := []
+  deriving DecidableEq, Repr
+
+namespace Reader
+
+/-- The hashes of a page the device lacks: what it fetches, as one request. -/
+def lacks (r : Reader) (page : List (Nat × Nat)) : List Nat := (page.map (·.2)).filter (!r.held.contains ·)
+
+/-- The largest of `a` and a page's numbers. -/
+def upTo (a : Nat) (page : List (Nat × Nat)) : Nat := page.foldl (fun a e => max a e.1) a
+
+/-- A page lands in one write: what it lacked held, and the device at the page's largest number. -/
+def land (r : Reader) (page : List (Nat × Nat)) : Reader := { at_ := upTo r.at_ page, held := r.held ++ r.lacks page }
+
+/-- Catching up: ask what came after its number, land each page in turn. -/
+def catchUp (r : Reader) (s : Store) : Reader := (s.after r.at_).foldl land r
+
+theorem upTo_ge : ∀ (a : Nat) (page : List (Nat × Nat)), a ≤ upTo a page ∧ ∀ e ∈ page, e.1 ≤ upTo a page
+  | a, [] => ⟨Nat.le_refl a, fun _ m => nomatch m⟩
+  | a, e :: es => by
+    have ⟨ge, all⟩ := upTo_ge (max a e.1) es
+    refine ⟨Nat.le_trans (Nat.le_max_left _ _) ge, fun x m => ?_⟩
+    rcases List.mem_cons.mp m with rfl | m
+    · exact Nat.le_trans (Nat.le_max_right _ _) ge
+    · exact all x m
+
+theorem land_holds (r : Reader) (page : List (Nat × Nat)) :
+    (∀ h ∈ r.held, h ∈ (r.land page).held) ∧ ∀ e ∈ page, e.2 ∈ (r.land page).held := by
+  refine ⟨fun h m => List.mem_append_left _ m, fun e m => ?_⟩
+  by_cases c : r.held.contains e.2 = true
+  · exact List.mem_append_left _ (List.contains_iff_mem.mp c)
+  · refine List.mem_append_right _ (List.mem_filter.mpr ⟨List.mem_map_of_mem m, ?_⟩)
+    simpa using c
+
+/-- **`land_progress`:** a page that isn't empty, of numbers above the device's, moves it forward (README, rule 3). -/
+theorem land_progress {r : Reader} {page : List (Nat × Nat)} (ne : page ≠ []) (above : ∀ e ∈ page, r.at_ < e.1) :
+    r.at_ < (r.land page).at_ := by
+  obtain ⟨e, m⟩ := List.exists_mem_of_ne_nil page ne
+  exact Nat.lt_of_lt_of_le (above e m) ((upTo_ge r.at_ page).2 e m)
+
+theorem foldl_land : ∀ (ps : List (List (Nat × Nat))) (r : Reader),
+    r.at_ ≤ (ps.foldl land r).at_ ∧ (∀ h ∈ r.held, h ∈ (ps.foldl land r).held) ∧
+      ∀ e ∈ ps.flatten, e.1 ≤ (ps.foldl land r).at_ ∧ e.2 ∈ (ps.foldl land r).held
+  | [], r => ⟨Nat.le_refl _, fun _ m => m, fun _ m => nomatch m⟩
+  | p :: ps, r => by
+    have ⟨ge, keeps, all⟩ := foldl_land ps (r.land p)
+    simp only [List.foldl_cons, List.flatten_cons]
+    refine ⟨Nat.le_trans (upTo_ge r.at_ p).1 ge, fun h m => keeps h ((land_holds r p).1 h m), fun e m => ?_⟩
+    rcases List.mem_append.mp m with m | m
+    · exact ⟨Nat.le_trans ((upTo_ge r.at_ p).2 e m) ge, keeps _ ((land_holds r p).2 e m)⟩
+    · exact all e m
+
+/-- **`caught_up_holds`:** after catching up, a device holds every item the keeper held after its number, and
+everything it held before. -/
+theorem caught_up_holds (r : Reader) (s : Store) :
+    (∀ h ∈ r.held, h ∈ (r.catchUp s).held) ∧ ∀ e ∈ s.afterAll r.at_, e.2 ∈ (r.catchUp s).held := by
+  have ⟨_, keeps, all⟩ := foldl_land (s.after r.at_) r
+  refine ⟨keeps, fun e m => (all e ?_).2⟩
+  rw [(Store.after_pages s r.at_).1]
+  exact m
+
+/-- **`caught_up_done`:** after catching up, nothing the keeper holds came after the device's number: asking again
+gets no page. -/
+theorem caught_up_done (r : Reader) (s : Store) : s.afterAll (r.catchUp s).at_ = [] := by
+  have ⟨ge, _, all⟩ := foldl_land (s.after r.at_) r
+  rw [(Store.after_pages s r.at_).1] at all
+  refine List.eq_nil_iff_forall_not_mem.mpr fun ⟨a, b⟩ m => ?_
+  obtain ⟨i, mi, rfl, rfl, lt⟩ := Store.after_complete.mp m
+  have := (all (i.n, i.hash) (Store.after_complete.mpr ⟨i, mi, rfl, rfl, Nat.lt_of_le_of_lt ge lt⟩)).1
+  exact absurd lt (Nat.not_lt.mpr this)
+
+end Reader
+
 /-! ## Examples -/
 
 namespace KeeperExamples
@@ -369,6 +448,10 @@ def davesGone : Store := ({} : Store).upload "dave" [⟨21, 900, []⟩] |>.uploa
 def five : Store := ({} : Store).upload "alice" ((List.range 500).map fun i => ⟨1000 + i, 900, []⟩)
 #guard (five.after 200).map (·.length) == [128, 128, 44]
 #guard (five.after 500).isEmpty
+-- Bob's Peer-Light was offline at 0: it catches up in three pages and holds all 500; asking again gets nothing
+#guard ((({} : Reader).catchUp five).at_, (({} : Reader).catchUp five).held.length) == (500, 500)
+-- holding 11 already, Bob fetches only 13, 99 and 50 of what came after 0
+#guard ({ held := [11] } : Reader).lacks (bobCloses.afterAll 0 ++ [(1, 11), (3, 13)]) == [99, 50, 13]
 
 end KeeperExamples
 

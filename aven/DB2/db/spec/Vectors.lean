@@ -71,8 +71,8 @@ import Aven.DB.Docs
 - `keys.json`: tuples and their keys in hex; pairs of tuples and whether the first key sorts before the second
   (`Aven.DB.Docs.Key`).
 - `keeper.json`: uploads from devices to a keeper, one Doc, from an empty store; after each, the items held (number,
-  hash, uploaders) and the next number, and the pages of what came after each asked number
-  (`Aven.DB.Keeper`).
+  hash, uploaders) and the next number, the pages of what came after each asked number, and where a device at that
+  number holding 11 and 12 is after catching up, with what it holds (`Aven.DB.Keeper`).
 
 `aven-db-core`'s and `aven-db-store`'s tests load them. `bun run up --check` runs this again and fails when the files
 differ from what is committed. -/
@@ -1279,7 +1279,10 @@ def keeperVector (name : String) (ups : List (String × List Put)) (asks : List 
         ("items", Json.arr (s.items.map fun i => Json.mkObj [("n", toJson i.n), ("hash", toJson i.hash),
           ("bytes", toJson i.bytes), ("uploaders", toJson i.uploaders)]).toArray),
         ("after", Json.arr (asks.map fun n => Json.arr ((s.after n).map fun q =>
-          Json.arr (q.map fun (m, h) => Json.arr #[toJson m, toJson h]).toArray).toArray).toArray)]).toArray)
+          Json.arr (q.map fun (m, h) => Json.arr #[toJson m, toJson h]).toArray).toArray).toArray),
+        ("caughtUp", Json.arr (asks.map fun n =>
+          let r := ({ at_ := n, held := [11, 12] } : Reader).catchUp s
+          Json.mkObj [("at", toJson r.at_), ("held", toJson r.held)]).toArray)]).toArray)
 
 open Aven.DB.Keeper in
 def keeperExamples : List (String × List (String × List Put) × List Nat) := [

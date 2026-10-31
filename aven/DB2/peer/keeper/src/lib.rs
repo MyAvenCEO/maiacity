@@ -178,3 +178,30 @@ impl<H: Ord + Clone> Arrivals<H> {
         (page, it.next().is_some())
     }
 }
+
+/// What a device holds of one Doc from one keeper (`Aven.DB.Keeper.Reader`): the keeper's number it has caught up to.
+/// The hashes it holds are its store's; [`Reader::land`] is told which.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Reader {
+    pub at: u64,
+}
+
+impl Reader {
+    /// The hashes of a page the device lacks, in the page's order: what it fetches, as one request (`lacks`).
+    pub fn lacks<H: Clone>(page: &[(u64, H)], held: impl Fn(&H) -> bool) -> Vec<H> {
+        page.iter()
+            .filter(|(_, h)| !held(h))
+            .map(|(_, h)| h.clone())
+            .collect()
+    }
+
+    /// A page landed in one write: the device is at the page's largest number (`land`). A page that isn't empty, of
+    /// numbers above the device's, moves it forward (`land_progress`); one that doesn't is a stall (README, rule 3),
+    /// and returns false.
+    pub fn land<H>(&mut self, page: &[(u64, H)]) -> bool {
+        let to = page.iter().map(|(n, _)| *n).fold(self.at, u64::max);
+        let moved = to > self.at;
+        self.at = to;
+        moved
+    }
+}
