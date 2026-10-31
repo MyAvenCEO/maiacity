@@ -86,7 +86,10 @@ def derivationVectors : List Json :=
     vec s!"the device keys of the cast's {id}" (Json.mkObj [("ed25519Seed", h seed)])
       (Json.mkObj [("ed25519Public", h (Keys.publicKey seed)), ("mlDsaSeed", h (deviceMlDsaSeed seed)),
         ("sealSeed", h (deviceSealSeed seed))])
-  blake ++ prf ++ seeds ++ stanzas ++ epochs ++ tags ++ pads ++ seeds' ++ devices
+  let sealedPads := ([0, 1, 255, 256, 257, 1000, 1024, 1025, 4095, 4096, 4097, 5000, 65537, 1048577] : List Nat).map
+    fun l => vec s!"the padded length of {l} sealed bytes" (Json.mkObj [("sealedBytes", toJson l)])
+      (toJson (Padme.padSealed l))
+  blake ++ prf ++ seeds ++ stanzas ++ epochs ++ tags ++ pads ++ seeds' ++ devices ++ sealedPads
 
 def Stanza.json (s : Stanza) : Json :=
   Json.mkObj ([("ct", h s.ct), ("commit", h s.commit), ("sealed", h s.sealed)] ++

@@ -58,7 +58,7 @@ pub use invite::{
 pub use keys::{public_hex, test_signer};
 pub use members::{MemberError, MemberSignIn, Members, Pending};
 pub use network::{COOP, COOP_NAME, ClaimError, GUARDIAN, Network};
-pub use padme::{MIN_STANZAS, padded, padme};
+pub use padme::{MIN_STANZAS, pad_sealed, padded, padme};
 pub use passkey::{Assertion, AssertionError, Passkey, Relying, base64url, challenge};
 pub use prf::{OWNER_LABEL, PRF_LABEL, PrfOutput, SEAL_LABEL, prf_input, prf_salt};
 pub use seal::{

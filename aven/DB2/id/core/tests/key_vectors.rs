@@ -62,6 +62,9 @@ fn derive(input: &Value) -> Value {
         return json!({ "ed25519Public": hex(&device.public().ed25519), "mlDsaSeed": hex(ml.expose()),
             "sealSeed": hex(seal.seed().expose()) });
     }
+    if let Some(l) = input.get("sealedBytes") {
+        return json!(aven_id::pad_sealed(l.as_u64().unwrap() as usize));
+    }
     if let Some(readers) = input.get("readers") {
         return json!(padded(readers.as_u64().unwrap() as usize));
     }
