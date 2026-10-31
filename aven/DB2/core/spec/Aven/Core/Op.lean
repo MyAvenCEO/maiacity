@@ -15,7 +15,8 @@ the holder do (A32, Samuel, 31 Oct 2026: "caps should be built from their ops").
   and field. Read, tell, keep and share lower to no step (`CoreOp.writes`). A stored query is an op by its hash.
 - A bound is an enumeration: any value, or one of some values, and for a list each of its elements one of them. Ranges
   come only when a real op needs them. A narrower bound allows no value a wider one doesn't (`Bound.within_allows`).
-- An envelope names the op it ran and its parameters, a `Call`: `{"op": id, "params": {…}}` (`Call.value`). Another
+- An envelope names the op it ran and its parameters, a `Call`: `{"op": id, "params": {…}}` (`Call.value`), read back
+  by `Call.ofValue?` (`Call.ofValue_value`); a bound reads back by `Bound.ofValue?` (`Bound.ofValue_value`). Another
   plugin's built-in ops are named as `core/1`'s are, `{"op": name, "plugin": "tree/1"}` for the tree's.
 - Every Doc has a type (A39): a type Doc's own type is the built-in type of types, which is its own type too
   (`typeOfTypes`, `typeOfTypes_typed`).
@@ -66,6 +67,16 @@ def Bound.value : Bound → Value
   | none => .null
   | some vs => .array vs
 
+/-- A bound read back from its Value: null for any value, an array for the values it allows. -/
+def Bound.ofValue? : Value → Option Bound
+  | .null => some none
+  | .array vs => some (some vs)
+  | _ => none
+
+/-- A bound reads back as itself. -/
+theorem Bound.ofValue_value (b : Bound) : Bound.ofValue? b.value = some b := by
+  cases b <;> rfl
+
 /-- A bound within another: any value it allows, the other allows too. -/
 def Bound.within : Bound → Bound → Bool
   | _, none => true
@@ -112,6 +123,19 @@ def Call.param (c : Call) (p : Bytes) : Value := (c.params.lookup p).getD .null
 hash, its params a map with text keys. A call whose params aren't in the codec's order, or name one twice, isn't
 canonical, so one call has one encoding. -/
 def Call.value (c : Call) : Value := .map [(k "op", .bytes c.op.bytes), (k "params", .map c.params)]
+
+/-- A call read back from `Call.value`'s shape: its op a hash of 32 bytes, its params a map. Bytes that aren't
+canonical never reach it: the codec refuses them, a call's params out of order among them. -/
+def Call.ofValue? : Value → Option Call
+  | .map [(a, .bytes op), (b, .map ps)] =>
+    if a = k "op" ∧ b = k "params" ∧ op.length = 32 then some ⟨⟨op⟩, ps⟩ else none
+  | _ => none
+
+/-- A call whose op is a hash reads back as itself. -/
+theorem Call.ofValue_value (c : Call) (h : c.op.ok = true) : Call.ofValue? c.value = some c := by
+  obtain ⟨⟨op⟩, ps⟩ := c
+  simp only [Hash.ok, beq_iff_eq] at h
+  simp [Call.value, Call.ofValue?, h]
 
 /-! ## The type of types (A39) -/
 

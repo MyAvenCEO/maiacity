@@ -712,6 +712,13 @@ the spec that owns it.
 - **A30. One name for a signed thing:** the hash of `[label, body]`, its signatures beside it, so signing one act
   twice never makes two names. A split is two different bodies at one place (A4). The tree's statements become Core
   envelopes on Core's past. *Decided (the architect, 31 Oct 2026): it follows from rule 1 and A4.*
+  - **Many signatures beside one name** (the architect, 31 Oct 2026). A signed thing or an envelope carries a set of
+    signatures that only grows: adding one never renames it and is never a split. In an envelope, its log writer's
+    signature places it in the log, and the others are approvals over the same name: k of a vault's owners (D14,
+    caps' approvals), or a passkey's ES256 beside its owner's hybrid at a sign-in (caps rule 21).
+  - **What counts has its whole past held** (rule 11). An envelope built on a parent the reader doesn't hold waits;
+    it counts only once every parent its `prev` and `deps` name is held, recursively. So counting is monotone, and
+    an approval that depends on the owners in its past is judged on that whole past.
 - **A31. Two kinds of signed thing:** history (envelopes in a log, where a split is final) and beats, which decide
   nothing. An address or release record is history: an envelope in its signer's own log, the newest the latest there,
   so the "smaller body wins" tie-break goes. *Decided (the architect, 31 Oct 2026): it follows from A4.*

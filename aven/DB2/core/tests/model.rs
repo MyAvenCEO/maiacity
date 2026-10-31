@@ -1,6 +1,7 @@
 //! aven-core against the running Lean model (README rule 10): random worlds of envelopes go to `aven-core-model`
 //! (`core/spec`), and every answer it gives must be this crate's: names, the past, splits, what is discounted, what
-//! counts and what a version holds; and for random bytes, what a reader accepts as an envelope or a signed thing. The
+//! counts and what a version holds; for random targets, facts and bounds, coverage, narrowing and what a bound
+//! allows; and for random bytes, what a reader accepts as an envelope, a signed thing or a target. The
 //! theorems `split_final`, `counts_past` and `Version.holds_mono` are checked of the crate on the same worlds. Set
 //! `AVEN_CORE_MODEL` to a built model to skip `lake`.
 
@@ -15,7 +16,10 @@ use std::sync::OnceLock;
 
 use aven_core::limits::{MAX_DEPS, MAX_SIG_BYTES};
 use aven_core::past::in_past;
-use aven_core::{DocId, Envelope, Hash, Held, Signed, Value, blake3, split};
+use aven_core::{
+    Bound, Call, DocId, Envelope, Facts, Hash, Held, Reach, Signed, Target, Value, blake3, decode,
+    encode, split,
+};
 use common::{bools, hex, names};
 use proptest::prelude::*;
 use serde_json::{Value as Json, json};
@@ -188,6 +192,103 @@ impl World {
     }
 }
 
+// ---- random targets, facts and bounds ----
+
+const VAULTS: [&str; 3] = ["v:alice", "v:bob", "v:maia-city"];
+
+fn any_doc() -> impl Strategy<Value = DocId> {
+    (0u8..4).prop_map(|i| DocId(blake3(&[i, 0xD0])))
+}
+
+fn any_vault() -> impl Strategy<Value = String> {
+    (0usize..3).prop_map(|i| VAULTS[i].to_string())
+}
+
+fn any_target() -> impl Strategy<Value = Target> {
+    prop_oneof![
+        (any_doc(), 0u8..3).prop_map(|(doc, r)| Target::Doc {
+            doc,
+            reach: [Reach::Itself, Reach::Spawned, Reach::Lists][r as usize],
+        }),
+        (any_vault(), any::<bool>()).prop_map(|(vault, below)| Target::Vault { vault, below }),
+        (any_vault(), any_doc(), any::<bool>()).prop_map(|(vault, r#type, below)| {
+            Target::VaultType {
+                vault,
+                r#type,
+                below,
+            }
+        }),
+    ]
+}
+
+fn any_facts() -> impl Strategy<Value = Facts> {
+    (any_doc(), any_vault(), any_doc()).prop_map(|(id, vault, r#type)| Facts { id, vault, r#type })
+}
+
+#[derive(Clone, Debug)]
+struct Coverage {
+    targets: Vec<Target>,
+    facts: Vec<Facts>,
+    gov: Vec<(String, String)>,
+    spawned: Vec<(DocId, DocId)>,
+    lists: Vec<(DocId, DocId)>,
+}
+
+fn coverage() -> impl Strategy<Value = Coverage> {
+    use proptest::collection::vec;
+    (
+        vec(any_target(), 1..6),
+        vec(any_facts(), 1..6),
+        vec((any_vault(), any_vault()), 0..4),
+        vec((any_doc(), any_doc()), 0..4),
+        vec((any_doc(), any_doc()), 0..4),
+    )
+        .prop_map(|(targets, facts, gov, spawned, lists)| Coverage {
+            targets,
+            facts,
+            gov,
+            spawned,
+            lists,
+        })
+}
+
+impl Coverage {
+    fn case(&self) -> Json {
+        let pairs = |ps: &[(DocId, DocId)]| {
+            ps.iter()
+                .map(|(a, b)| [a.text(), b.text()])
+                .collect::<Vec<_>>()
+        };
+        json!({
+            "targets": self.targets.iter().map(|t| hex(&encode(&t.value()))).collect::<Vec<_>>(),
+            "facts": self.facts.iter()
+                .map(|f| json!({"id": f.id.text(), "vault": f.vault, "type": f.r#type.text()}))
+                .collect::<Vec<_>>(),
+            "gov": self.gov.iter().map(|(a, b)| [a, b]).collect::<Vec<_>>(),
+            "spawned": pairs(&self.spawned),
+            "lists": pairs(&self.lists),
+        })
+    }
+}
+
+/// Parameter values from a small set, so bounds often allow them: text, a number, and lists of them.
+fn any_param() -> impl Strategy<Value = Value> {
+    let leaf = prop_oneof![
+        Just(Value::Text("status".into())),
+        Just(Value::Text("total".into())),
+        Just(Value::Text("title".into())),
+        Just(Value::Uint(1)),
+    ];
+    prop_oneof![3 => leaf.clone(), 1 => proptest::collection::vec(leaf, 0..3).prop_map(Value::Array)]
+}
+
+fn any_bound() -> impl Strategy<Value = Bound> {
+    prop_oneof![
+        1 => Just(Bound::Any),
+        4 => proptest::collection::vec(any_param(), 0..4).prop_map(Bound::OneOf),
+    ]
+}
+
 fn any_bytes_case() -> impl Strategy<Value = Vec<u8>> {
     let envelope = (world(), any::<prop::sample::Index>())
         .prop_map(|(w, i)| w.all[i.index(w.all.len())].encode());
@@ -219,7 +320,37 @@ fn any_bytes_case() -> impl Strategy<Value = Vec<u8>> {
         };
         e.encode()
     });
-    let base = prop_oneof![4 => envelope, 4 => signed, 1 => wide];
+    let target = any_target().prop_map(|t| encode(&t.value()));
+    // a Doc or type id that isn't 32 bytes: refused by both
+    let short = (30usize..35, any::<bool>()).prop_map(|(n, doc)| {
+        encode(&if doc {
+            Value::Map(vec![
+                ("doc".into(), Value::Bytes(vec![1; n])),
+                ("reach".into(), Value::Text("self".into())),
+            ])
+        } else {
+            Value::Map(vec![
+                ("type".into(), Value::Bytes(vec![1; n])),
+                ("below".into(), Value::Bool(true)),
+                ("vault".into(), Value::Text("v:alice".into())),
+            ])
+        })
+    });
+    // calls with sorted params (the only canonical ones) and ops of 32 bytes or not, and bounds
+    let call = (
+        proptest::collection::btree_map("[a-z]{1,6}", any_param(), 0..3),
+        31usize..34,
+    )
+        .prop_map(|(ps, n)| {
+            let mut params: Vec<(String, Value)> = ps.into_iter().collect();
+            params.sort_by(|a, b| a.0.len().cmp(&b.0.len()).then_with(|| a.0.cmp(&b.0)));
+            encode(&Value::Map(vec![
+                ("op".into(), Value::Bytes(vec![2; n])),
+                ("params".into(), Value::Map(params)),
+            ]))
+        });
+    let bound = any_bound().prop_map(|b| encode(&b.value()));
+    let base = prop_oneof![4 => envelope, 4 => signed, 1 => wide, 3 => target, 1 => short, 3 => call, 2 => bound];
     // now and then broken: a byte changed, cut short, or a byte added
     (base, 0u8..4, any::<prop::sample::Index>(), any::<u8>()).prop_map(|(mut bs, how, at, b)| {
         let i = at.index(bs.len());
@@ -298,5 +429,58 @@ proptest! {
         prop_assert_eq!(e.as_ref().map(|b| hex(b)), a["envelope"].as_str().map(String::from));
         prop_assert_eq!(s.as_ref().map(|b| hex(b)), a["signed"].as_str().map(String::from));
         prop_assert!(e.is_none_or(|e| e == bs) && s.is_none_or(|s| s == bs));
+        let t = decode(&bs).and_then(Target::of_value).map(|t| encode(&t.value()));
+        prop_assert_eq!(t.as_ref().map(|b| hex(b)), a["target"].as_str().map(String::from));
+        let c = decode(&bs).and_then(Call::of_value).map(|c| encode(&c.value()));
+        prop_assert_eq!(c.as_ref().map(|b| hex(b)), a["call"].as_str().map(String::from));
+        let b = decode(&bs).and_then(Bound::of_value).map(|b| encode(&b.value()));
+        prop_assert_eq!(b.as_ref().map(|b| hex(b)), a["bound"].as_str().map(String::from));
+        prop_assert!([t, c, b].iter().flatten().all(|x| *x == bs));
+    }
+
+    /// Coverage and narrowing are the model's (`Target.coversB`, `Target.le`), and a narrower target covers only
+    /// what the wider one does (`Target.le_sound`).
+    #[test]
+    fn coverage_is_leans(c in coverage()) {
+        let a = ask(&c.case());
+        let gov = |v: &str, w: &str| c.gov.iter().any(|(x, y)| x == v && y == w);
+        let spawned = |x: &DocId, y: &DocId| c.spawned.contains(&(*x, *y));
+        let lists = |x: &DocId, y: &DocId| c.lists.contains(&(*x, *y));
+        let covers: Vec<Vec<bool>> = c.targets.iter()
+            .map(|t| c.facts.iter().map(|f| t.covers(gov, spawned, lists, f)).collect()).collect();
+        let le: Vec<Vec<bool>> = c.targets.iter().map(|x| c.targets.iter().map(|y| x.le(y)).collect()).collect();
+        prop_assert_eq!(&covers, &a["covers"].as_array().unwrap().iter().map(bools).collect::<Vec<_>>());
+        prop_assert_eq!(&le, &a["le"].as_array().unwrap().iter().map(bools).collect::<Vec<_>>());
+        for (i, _) in c.targets.iter().enumerate() {
+            for (j, _) in c.targets.iter().enumerate() {
+                if le[i][j] {
+                    for (a, b) in covers[i].iter().zip(&covers[j]) {
+                        prop_assert!(!a || *b);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Bounds are the model's (`Bound.allows`, `Bound.within`), and a narrower bound allows no value a wider one
+    /// doesn't (`Bound.within_allows`).
+    #[test]
+    fn bounds_are_leans(bounds in proptest::collection::vec(any_bound(), 1..5),
+        values in proptest::collection::vec(any_param(), 1..6)) {
+        let a = ask(&json!({
+            "bounds": bounds.iter().map(|b| hex(&encode(&b.value()))).collect::<Vec<_>>(),
+            "values": values.iter().map(|v| hex(&encode(v))).collect::<Vec<_>>(),
+        }));
+        let allows: Vec<Vec<bool>> = bounds.iter().map(|b| values.iter().map(|v| b.allows(v)).collect()).collect();
+        let within: Vec<Vec<bool>> = bounds.iter().map(|x| bounds.iter().map(|y| x.within(y)).collect()).collect();
+        prop_assert_eq!(&allows, &a["allows"].as_array().unwrap().iter().map(bools).collect::<Vec<_>>());
+        prop_assert_eq!(&within, &a["within"].as_array().unwrap().iter().map(bools).collect::<Vec<_>>());
+        for (i, _) in bounds.iter().enumerate() {
+            for (j, _) in bounds.iter().enumerate() {
+                for (k, _) in values.iter().enumerate() {
+                    prop_assert!(!(within[i][j] && allows[i][k]) || allows[j][k]);
+                }
+            }
+        }
     }
 }
