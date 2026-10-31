@@ -302,6 +302,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "aven-db-engine"
+version = "0.0.0"
+dependencies = [
+ "aven-core",
+ "proptest",
+ "serde_json",
+]
+
+[[package]]
 name = "aven-db-store"
 version = "0.0.0"
 dependencies = [
