@@ -52,6 +52,7 @@ import Aven.ID.SealedIndex
 import Aven.ID.CapsExamples
 import Aven.ID.AuthorizedExamples
 import Aven.ID.IssuerExamples
+import Aven.ID.MemberExamples
 import Aven.ID.CapsJson
 import Aven.ID.SettleJson
 import Aven.ID.FailJson
