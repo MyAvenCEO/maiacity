@@ -1,0 +1,12 @@
+# aven/runtimes' own Cargo workspace (README, "The package"): every runtime and what they share, with one lockfile and
+# one build folder (target/, a volume in the box). The Lean spec sits beside them in spec/, outside the workspace. The
+# repository's root workspace excludes this folder, as it excludes aven/DB2.
+[workspace]
+resolver = "3"
+members = ["tree"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.99"
+license = "UNLICENSED"
+publish = false

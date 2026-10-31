@@ -27,8 +27,8 @@ default-members = [
     "aven/db/crates/avendb-testkit",
 ]
 # the patched iroh (below), the security tools' own workspace (.claude/skills/security-auditor/tools), and the new
-# avenDB's own workspace (aven/DB2)
-exclude = ["aven/db/vendor/iroh", ".claude/skills/security-auditor/tools", "aven/DB2"]
+# avenDB's own workspaces (aven/DB2, aven/runtimes)
+exclude = ["aven/db/vendor/iroh", ".claude/skills/security-auditor/tools", "aven/DB2", "aven/runtimes"]
 
 [workspace.package]
 edition = "2024"
