@@ -13,7 +13,6 @@ pub mod docs;
 pub mod door;
 #[cfg(feature = "native")]
 pub mod hub;
-pub mod joined;
 #[cfg(feature = "native")]
 pub mod keep;
 /// iroh-gossip, as every peer runs it: the Peer-Light takes it from here.
