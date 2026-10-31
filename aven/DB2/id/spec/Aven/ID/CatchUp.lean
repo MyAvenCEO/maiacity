@@ -111,7 +111,8 @@ namespace CatchUpExamples
 
 def tip : Tip := ⟨3, 33⟩
 
--- the Aven Peer is gone; Alice's Peer holds Bob's log up to the tip, a stale peer only two posts, a forger another third
+-- the Aven Peer is gone: Alice's Peer holds Bob's log up to the tip, a stale peer only two posts, a forger
+-- another third
 #guard choose tip [("stale-peer", [11, 22]), ("forger", [11, 22, 99]), ("alice-peer", [11, 22, 33, 44])] ==
   some ("alice-peer", [11, 22, 33, 44])
 #guard caught tip [11, 22] && caught tip [11, 22, 99] && !caught tip [11, 22, 33]
