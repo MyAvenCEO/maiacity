@@ -101,11 +101,7 @@ row in [the log](DECISIONS.md), its page states it, and it leaves both the page 
 
 | Question | Page | Who decides |
 |---|---|---|
-| Overlapping text edits in a merge: shown only, or offered as a choice? | [docs](docs/README.md#open-questions) | Samuel |
-| Who owns the release vault | [peers](peers/README.md#open-questions) | Samuel |
-| Who may publish a runtime once Docs run | [runtime](runtime/README.md#open-questions) | Samuel |
 | The actor kernel's own authority: click caps, who may spawn, a run budget | [actors](actors/README.md#open-questions) | Samuel, on avenACTORS' proposal |
-| An actor's compaction | [actors](actors/README.md#open-questions) | Samuel |
 | A vault-wide cap in a one-Doc reader's hands | [caps](caps/README.md#open-questions) | avenMAIA, on avenCAPS' and avenDOCS' proposal |
 | Directory and vocabulary root types: built-in or user types | [docs](docs/README.md#open-questions) | avenMAIA, with avenCAPS |
 | The index interface between avenDOCS and avenOPS | [docs](docs/README.md#open-questions) | avenMAIA, on avenDOCS' and avenOPS' proposal |
@@ -121,10 +117,11 @@ row in [the log](DECISIONS.md), its page states it, and it leaves both the page 
 | Presence at scale | [peers](peers/README.md#open-questions) | avenMAIA |
 | Which `users` label avenOS's own pages load a runtime as | [runtime](runtime/README.md#open-questions) | avenMAIA, with the runtimes thread |
 | The word "kernel" | [actors](actors/README.md#open-questions) | avenMAIA |
-| How an actor's address names its vault | [actors](actors/README.md#open-questions) | avenMAIA, on avenACTORS' and avenID's proposal |
-| Moving an actor's home | [actors](actors/README.md#open-questions) | avenMAIA, on avenACTORS' and avenPEERS' proposal |
 | Where the Service Worker lives once the safe has its own origin | [os](os/README.md#open-questions) | avenMAIA |
 | Thumbnails and posters for files in the chat | [os](os/README.md#open-questions) | avenMAIA |
+
+**Parked by Samuel for later** (A206): moving runtimes into avenDB and who may publish one then; the release vault, who
+owns it and when signed release entries replace the dated releases.
 
 ## Every decision
 
@@ -134,6 +131,13 @@ decision's own text, reasons and Lean are its row there.
 
 | Decision | What | Page | Holds |
 |---|---|---|---|
+| [A207](DECISIONS.md) | A type's version is a `schema` Record; a named version stays `version` | [docs](docs/README.md) | yes |
+| [A206](DECISIONS.md) | Runtimes stay files in this repository; publishing runtimes and the release vault parked (Samuel) | [runtime](runtime/README.md) | yes |
+| [A205](DECISIONS.md) | No compaction: everything about an actor is kept (Samuel) | [actors](actors/README.md) | yes |
+| [A204](DECISIONS.md) | Overlapping text edits in a merge are a choice, the target's by default (Samuel) | [docs](docs/README.md) | yes |
+| [A203](DECISIONS.md) | How Brain shows the source of truth: phone-readable pages, the log as searchable cards, A<n> links | [os](os/README.md) | yes |
+| [A202](DECISIONS.md) | Moving an actor's home is a handover in its own log; a forced move starts a generation | [actors](actors/README.md) | yes |
+| [A201](DECISIONS.md) | An actor's address is its Doc's id; `[vault, actor]` on the wire | [actors](actors/README.md) | yes |
 | [A200](DECISIONS.md) | No nulls in any format avenDB defines | [core](core/README.md) | yes |
 | [A199](DECISIONS.md) | A checkpoint's Loro export is `loro`; `state` stays its Records' hash | [docs](docs/README.md) | yes |
 | [A198](DECISIONS.md) | The readable form exactly as Core's vectors write it: `{"bytes"}`, `b3:`, `d:`, hex keys | [core](core/README.md) | yes |
@@ -162,7 +166,7 @@ decision's own text, reasons and Lean are its row there.
 | [A175](DECISIONS.md) | Versions are avenCORE's | [core](core/README.md) | yes |
 | [A174](DECISIONS.md) | Bytes in JSON are `{"bytes": hex}`, as built | [core](core/README.md) | superseded by A198 in part |
 | [A173](DECISIONS.md) | The keeper's byte forms, as built (keep-bytes.json); caps' half of the gate | [caps](caps/README.md) | yes |
-| [A172](DECISIONS.md) | A pinned schema lives in its type Doc's version Record `{at, name, schema}` | [docs](docs/README.md) | yes |
+| [A172](DECISIONS.md) | A pinned schema lives in its type Doc's version Record `{at, name, schema}` | [docs](docs/README.md) | superseded by A207 in part |
 | [A171](DECISIONS.md) | Threads never add A-numbers or architecture prose | process | yes |
 | [A170](DECISIONS.md) | The keyring's `epoch` Records are write-once; a reseal adds a Record | [id](id/README.md) | superseded by A185 in part |
 | [A169](DECISIONS.md) | avenDOCS defines Authorize; avenCAPS a pure verdict; avenPEERS the adapter | [peers](peers/README.md) | yes |
@@ -196,7 +200,7 @@ decision's own text, reasons and Lean are its row there.
 | [A141](DECISIONS.md) | The keeper owns its bill and admission; the earliest remaining uploader's vault pays | [peers](peers/README.md) | yes |
 | [A140](DECISIONS.md) | The Peer image takes its crates from one list (`tag.mjs` reads `Cargo.toml`) | [peers](peers/README.md) | yes |
 | [A139](DECISIONS.md) | Held and spent in caps' Keep | [id](id/README.md) | superseded by A141 |
-| [A138](DECISIONS.md) | The decision log is append-only; avenMAIA is its only writer | process | yes |
+| [A138](DECISIONS.md) | The decision log is append-only; the architect is its only writer | process | yes |
 | [A137](DECISIONS.md) | Authorize judges an envelope on its own counted past | [docs](docs/README.md) | yes |
 | [A136](DECISIONS.md) | Tips are log heads `{writer, seq, name}` | [peers](peers/README.md) | yes |
 | [A135](DECISIONS.md) | The tree on the Doc host: its `BuiltinFit` and `Authorize` | [id](id/README.md) | yes |
@@ -289,7 +293,7 @@ decision's own text, reasons and Lean are its row there.
 | [A48](DECISIONS.md) | A writer id is the first of four windows that isn't Loro's reserved value; 0 if none | [docs](docs/README.md) | yes |
 | [A47](DECISIONS.md) | A writer id's exact layout (derive_key `avenDB writer 1`, first 8 bytes LE) | [docs](docs/README.md) | superseded by A48 in part |
 | [A46](DECISIONS.md) | `Aven.ID.Past` moves into Core as `Aven.Core.Past` | [core](core/README.md) | yes |
-| [A45](DECISIONS.md) | One concept, one owner | this page | superseded by A159 in part |
+| [A45](DECISIONS.md) | One concept, one owner | this page | superseded by A159 in part, A206 in part |
 | [A44](DECISIONS.md) | Placement has one source: the owner's vault | [caps](caps/README.md) | superseded by A144 in part |
 | [A43](DECISIONS.md) | The Doc foundation comes first | process | superseded by A112 in part |
 | [A42](DECISIONS.md) | The contradictions of 31 Oct | [caps](caps/README.md) | superseded by A148 in part |
@@ -335,8 +339,7 @@ decision's own text, reasons and Lean are its row there.
 | [A2](DECISIONS.md) | One codec and signing rule | [core](core/README.md) | superseded by A174 in part |
 | [A1](DECISIONS.md) | One vocabulary | [glossary](GLOSSARY.md) | superseded by A175 in part |
 
-The package lists' decisions, below A1 in the log, that a later decision supersedes (every other one still holds, cited
-on its page):
+The package lists' decisions, below A1 in the log, that a later decision supersedes (every other one still holds, cited on its page):
 
 | Imported | Superseded by |
 |---|---|

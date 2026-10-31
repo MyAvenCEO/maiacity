@@ -50,13 +50,15 @@ and our code never enters it: it stays in the checkout, mounted in.
   binary from and Vite serves the Peer-Light's wasm from.
 - **Commands,** from `aven/DB2`:
 
-  | Command | What | |---|---| | `bun run up [--check]` | starts the box and prints avenOS's address; with `--check`,
-  runs [the check](#the-check) | | `bun run down [--wipe]` | stops it; `--wipe` empties every peer's store. Run it
-  before `up` after `dockerd` restarts | | `bun run logs`, `bun run shot` | the peers' logs; a screenshot of the Control
-  Room | | `bun run doctor` | versions, Docker's settings and kernel features, and the pins that are behind | |
-  `bun run box <command>` | any command in the box: `bun run box cargo test`,
-  `bun run box sh -c 'cd id/spec && lake build'` | | `bun run bump [--check]` | moves every pin to its newest stable
-  release ([Pins](#pins)) | | `bun run lanes` | the [topologies](#topologies) |
+  | Command | What |
+  |---|---|
+  | `bun run up [--check]` | starts the box and prints avenOS's address; with `--check`, runs [the check](#the-check) |
+  | `bun run down [--wipe]` | stops it; `--wipe` empties every peer's store. Run it before `up` after `dockerd` restarts |
+  | `bun run logs`, `bun run shot` | the peers' logs; a screenshot of the Control Room |
+  | `bun run doctor` | versions, Docker's settings and kernel features, and the pins that are behind |
+  | `bun run box <command>` | any command in the box: `bun run box cargo test`, `bun run box sh -c 'cd id/spec && lake build'` |
+  | `bun run bump [--check]` | moves every pin to its newest stable release ([Pins](#pins)) |
+  | `bun run lanes` | the [topologies](#topologies) |
 
 - **One Docker setting:** `allow-direct-routing`. Docker 28 and later drop routed traffic between its networks
   without it.
