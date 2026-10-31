@@ -830,8 +830,8 @@ built in Rust yet.
 | The live state | `Loro.snapshot_load`, `live` | `Snapshot`, `Feed`, the rebuild (#1694) | — |
 | The judge | — | `catch_unwind`, the `panic = "unwind"` guard, three fuzz targets (#1694, #1732), 600 s each with no crashes (#1742) | — (the docs worker and sifting are avenPEERS') |
 | Generations and stuck logs | avenCORE's `split_final` | `Stuck`, a generation per writer (#1694) | — |
-| Segments | `Segment` (#1694); `prev` left out of a log's first (A200, `value_no_prev`, #FOLLOWUP) | `Segment`, `Closer`, `Closed {segment, covers}` (#1694, #1732); `prev` left out of a log's first, a null refused (#FOLLOWUP) | — |
-| Sealing and sealed pages | `Aven.ID.Seal` (#1694): what it seals found by commitment (`seals_by_commit`, #1742), `seals` and `checkpoint` (A177), the one padding (`padSealed`, A176) (#FOLLOWUP) | `seal` with `Seals` and `pad_sealed`; `open_page` and `Doc::import_items` over `Item::Sealed`, and `Item::Plain` for the keyring (A187) (#1742, #FOLLOWUP) | — |
+| Segments | `Segment` (#1694); `prev` left out of a log's first (A200, `value_no_prev`, #1773) | `Segment`, `Closer`, `Closed {segment, covers}` (#1694, #1732); `prev` left out of a log's first, a null refused (#1773) | — |
+| Sealing and sealed pages | `Aven.ID.Seal` (#1694): what it seals found by commitment (`seals_by_commit`, #1742), `seals` and `checkpoint` (A177), the one padding (`padSealed`, A176) (#1773) | `seal` with `Seals` and `pad_sealed`; `open_page` and `Doc::import_items` over `Item::Sealed`, and `Item::Plain` for the keyring (A187) (#1742, #1773) | — |
 | The head, the held page, the shelf | `Head`, `Held` (#1694, #1732) | `Head`, `HeldPage` (#1732); the shelf in `aven-peer`, pending in #1727 | — |
 | Limits | `Limits` (#1582) | `limits` (#1694) | — |
 | Checkpoints | `Checkpoint`: the check, no Value form | not started (after the cutover) | — |
