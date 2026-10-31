@@ -18,7 +18,7 @@ An envelope counts only once its whole past is held (`Closed`, rule 11).
 
 What it proves:
 - `Envelope.name_inj`: one name is one envelope, but for its signatures;
-- `chain_no_split`, `chains_agree`: a log read as a chain holds no split, and two readers' chains of one log agree
+- `log_no_split`, `logs_agree`: a log as one reader holds it has no split, and two readers' copies of one log agree
   wherever both hold it unless there is a split between them;
 - `reaches_mono`, `split_final`: more envelopes never undo a split;
 - `counts_past`: what an envelope that counts builds on counts too;
@@ -276,16 +276,16 @@ theorem split_final {fit authorized revoked : Envelope → Prop} {S S' : List En
   obtain ⟨x, y, hx, hy, hsp⟩ := h
   exact discounted_not_counts nm ⟨x, y, reaches_mono nm hs hx, hs y hy, hsp⟩
 
-/-! ## A log read as a chain -/
+/-! ## A log as one reader holds it (A1: `IsLog`) -/
 
 /-- A log as one reader holds it: its envelopes from the first, each at its place and naming the one before. -/
-def IsChain (c : List Envelope) : Prop :=
+def IsLog (c : List Envelope) : Prop :=
   ∀ (i : Nat) (h : i < c.length),
     SameLog c[i] c[0] ∧ c[i].seq = i + 1 ∧
       c[i].prev = (if h0 : i = 0 then none else some (nm (c[i - 1]'(by omega))))
 
-/-- A chain holds no split. -/
-theorem chain_no_split {c : List Envelope} (hc : IsChain nm c)
+/-- A log holds no split. -/
+theorem log_no_split {c : List Envelope} (hc : IsLog nm c)
     {a b : Envelope} (ha : a ∈ c) (hb : b ∈ c) : ¬ Split nm a b := by
   intro ⟨_, hs, hn⟩
   obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem ha
@@ -296,9 +296,9 @@ theorem chain_no_split {c : List Envelope} (hc : IsChain nm c)
   subst hij
   exact hn rfl
 
-/-- Two readers' chains of one log agree wherever both hold it, unless a split lies between them. -/
-theorem chains_agree (hnm : ∀ a b, nm a = nm b → a = b) {c₁ c₂ : List Envelope} (h₁ : IsChain nm c₁)
-    (h₂ : IsChain nm c₂) (h₀ : ∀ (p : 0 < c₁.length) (q : 0 < c₂.length), SameLog c₁[0] c₂[0])
+/-- Two readers' copies of one log agree wherever both hold it, unless a split lies between them. -/
+theorem logs_agree (hnm : ∀ a b, nm a = nm b → a = b) {c₁ c₂ : List Envelope} (h₁ : IsLog nm c₁)
+    (h₂ : IsLog nm c₂) (h₀ : ∀ (p : 0 < c₁.length) (q : 0 < c₂.length), SameLog c₁[0] c₂[0])
     (hns : ∀ a ∈ c₁, ∀ b ∈ c₂, ¬ Split nm a b) (i : Nat) (hi₁ : i < c₁.length) (hi₂ : i < c₂.length) :
     c₁[i] = c₂[i] := by
   have ⟨l₁, s₁, _⟩ := h₁ i hi₁

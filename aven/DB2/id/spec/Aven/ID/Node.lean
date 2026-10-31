@@ -58,10 +58,10 @@ whatever else they hold or whoever they are linked to, accept the same writes. -
 theorem write_fits (d d' : Device) (same : d.own = d'.own) (e : Envelope) : Fits nm d.own e ↔ Fits nm d'.own e := by
   rw [same]
 
-/-- **`write_chain`:** a write that fits keeps the device's own log a chain (`Aven.Core.IsChain`), so it is durable
+/-- **`write_chain`:** a write that fits keeps the device's own log a chain (`Aven.Core.IsLog`), so it is durable
 and readable at once, before any peer has seen it. -/
-theorem write_chain {d : Device} {e : Envelope} (c : IsChain nm d.own) (f : Fits nm d.own e) :
-    IsChain nm (write d e).own := by
+theorem write_chain {d : Device} {e : Envelope} (c : IsLog nm d.own) (f : Fits nm d.own e) :
+    IsLog nm (write d e).own := by
   obtain ⟨fs, fp, f0⟩ := f
   intro i hi
   simp only [write, List.length_append, List.length_singleton] at hi

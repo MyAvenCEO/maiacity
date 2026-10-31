@@ -28,7 +28,7 @@ def rules : List RuleStatus := [
     missing := [] },
   { rule := 3, title := "One writer per log, and a log never waits",
     theorems := ["rule3_chain_whole", "rule3_split_final", "rule3_never_waits", "rule3_split_spreads"],
-    restsOn := ["Aven.Core.chain_no_split", "Aven.DB.Docs.split_final", "Aven.ID.Node.write_fits",
+    restsOn := ["Aven.Core.log_no_split", "Aven.DB.Docs.split_final", "Aven.ID.Node.write_fits",
       "Aven.ID.Node.write_chain", "Aven.ID.Node.split_spreads"],
     missing := [] },
   { rule := 4, title := "Readers judge",

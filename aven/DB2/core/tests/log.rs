@@ -11,7 +11,7 @@ use aven_core::limits::{
 use aven_core::past::{in_past, past};
 use aven_core::{
     DocId, ENVELOPE_LABEL, Envelope, Hash, Held, Log, LogId, MAX_DEPTH, Refused, Sig, Signed,
-    Value, add_sig, blake3, decode, encode, is_chain, signing_bytes, sigs_ok, split,
+    Value, add_sig, blake3, decode, encode, is_log, signing_bytes, sigs_ok, split,
 };
 use common::{bools, envelope, hex, indices, names, signed, unhex, vectors};
 use proptest::prelude::*;
@@ -60,16 +60,16 @@ fn logs() {
     assert!(n >= 4);
 }
 
-/// The vectors' first two envelopes are a chain, and a writer's log takes them in order and refuses the split.
+/// The vectors' first two envelopes are a log, and a writer's log takes them in order and refuses the split.
 #[test]
-fn vectors_chain() {
+fn vectors_log() {
     let es: Vec<Envelope> = vectors("envelopes.json")
         .iter()
         .map(|v| envelope(&v["input"]))
         .collect();
     // the first two are one writer's log; the third, another writer's, builds on both
-    assert!(is_chain(&es[..2]) && !is_chain(&es));
-    assert!(is_chain(&es[2..3]) && es[2].deps == [es[1].name(), es[0].name()]);
+    assert!(is_log(&es[..2]) && !is_log(&es));
+    assert!(is_log(&es[2..3]) && es[2].deps == [es[1].name(), es[0].name()]);
     // the fourth is the second, approved by another: one name, two signatures
     assert_eq!(es[3].name(), es[1].name());
     assert_eq!(es[3].sigs.len(), 2);
@@ -481,10 +481,10 @@ proptest! {
         prop_assert_eq!(split(&e, &other), other.unsigned() != e.unsigned());
     }
 
-    /// A writer's log is a chain and holds no split (`chain_no_split`); two readers' chains of one log agree wherever
-    /// both hold it, unless a split lies between them (`chains_agree`).
+    /// A writer's log is a log (`IsLog`) and holds no split (`log_no_split`); two readers' copies of one log agree wherever
+    /// both hold it, unless a split lies between them (`logs_agree`).
     #[test]
-    fn chains(bodies in proptest::collection::vec(0u64..3, 1..8), other in proptest::collection::vec(0u64..3, 1..8)) {
+    fn writers_logs(bodies in proptest::collection::vec(0u64..3, 1..8), other in proptest::collection::vec(0u64..3, 1..8)) {
         let id = LogId { doc: DocId(blake3(b"a Doc")), branch: "main".into(), writer: 1 };
         let write = |bodies: &[u64]| {
             let mut log = Log::new(id.clone());
@@ -498,7 +498,7 @@ proptest! {
             log
         };
         let (l1, l2) = (write(&bodies), write(&other));
-        prop_assert!(is_chain(l1.envelopes()) && is_chain(l2.envelopes()));
+        prop_assert!(is_log(l1.envelopes()) && is_log(l2.envelopes()));
         for a in l1.envelopes() {
             for b in l1.envelopes() {
                 prop_assert!(!split(a, b));

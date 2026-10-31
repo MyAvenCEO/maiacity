@@ -63,10 +63,10 @@ theorem rule2_ops_are_hashes {nm : Envelope → Hash} {O : DB.Docs.Ops} {held : 
 
 /-! ## Rule 3: one writer per log; a split is final -/
 
-/-- A log read as a chain holds no split. -/
-theorem rule3_chain_whole {nm : Envelope → Hash} {c : List Envelope} (hc : IsChain nm c) {a b : Envelope}
+/-- A log as one reader holds it has no split. -/
+theorem rule3_chain_whole {nm : Envelope → Hash} {c : List Envelope} (hc : IsLog nm c) {a b : Envelope}
     (ha : a ∈ c) (hb : b ∈ c) : ¬ Split nm a b :=
-  chain_no_split nm hc ha hb
+  log_no_split nm hc ha hb
 
 /-- A split, once a reader holds both halves, never counts again, whatever else arrives. -/
 theorem rule3_split_final {H : Bytes → Hash} {v : DB.Docs.Verdicts} {S S' : List Envelope} (hs : ∀ x ∈ S, x ∈ S')
@@ -85,9 +85,9 @@ def authorized (H : Bytes → Hash) (vaultOf : Envelope → String) (capsOf acks
 /-- A writer's own log never waits for a peer: whether a write fits depends on its own log alone, and a write that fits
 keeps that log a chain, readable at once. -/
 theorem rule3_never_waits (nm : Envelope → Hash) (d d' : ID.Node.Device) (same : d.own = d'.own) (e : Envelope)
-    (c : IsChain nm d.own) :
+    (c : IsLog nm d.own) :
     (ID.Node.Fits nm d.own e ↔ ID.Node.Fits nm d'.own e) ∧
-      (ID.Node.Fits nm d.own e → IsChain nm (ID.Node.write d e).own) :=
+      (ID.Node.Fits nm d.own e → IsLog nm (ID.Node.write d e).own) :=
   ⟨ID.Node.write_fits nm d d' same e, ID.Node.write_chain nm c⟩
 
 /-- A split is shown to every reader that syncs: its two sides reach each, and nothing built on it counts there. -/

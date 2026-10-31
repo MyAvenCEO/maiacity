@@ -310,9 +310,9 @@ impl<'a> Held<'a> {
     }
 }
 
-/// A log as one reader holds it, read as a chain (`IsChain`): one log, from sequence number 1 up, each envelope naming
+/// A log as one reader holds it (`IsLog`): one log, from sequence number 1 up, each envelope naming
 /// the one before it, the first naming none.
-pub fn is_chain(c: &[Envelope]) -> bool {
+pub fn is_log(c: &[Envelope]) -> bool {
     let Some(first) = c.first() else { return true };
     let mut prev = None;
     for (i, e) in c.iter().enumerate() {
@@ -344,7 +344,7 @@ pub enum Refused {
     Split,
 }
 
-/// A writer's log: a chain ([`is_chain`]) that only grows at its head.
+/// A writer's log: a log as [`is_log`] reads it, that only grows at its head.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Log {
     id: LogId,

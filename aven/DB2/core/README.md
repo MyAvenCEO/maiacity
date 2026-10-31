@@ -46,7 +46,7 @@ Beside them, `Model.lean` is the running model's executable and `Vectors.lean` w
 |---|---|
 | `src/lib.rs` | the crate's exports, `aven-codec`'s among them |
 | `src/signed.rs` | `signing_bytes`, `Sig`, `add_sig`, `Signed`, `Verify` |
-| `src/log.rs` | `Envelope`, `Writes`, `split`, `Held`, `is_chain`, `Log` |
+| `src/log.rs` | `Envelope`, `Writes`, `split`, `Held`, `is_log`, `Log` |
 | `src/past.rs` | `Parents`, `past`, `in_past` |
 | `src/op.rs` | `OpId`, `op_id`, `CoreOp`, `TYPE_PARAM`, `FIELDS_PARAM`, `Bound`, `Call`, `builtin_type`, `type_of_types` |
 | `src/target.rs` | `Facts`, `Reach`, `Target`, `StepVerb`, `Step` |
