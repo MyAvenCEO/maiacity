@@ -45,8 +45,6 @@ def TreeSays.json : TreeSays → Json
   | .confirm c => Json.mkObj [("kind", "confirm"), ("claim", hashJson c)]
   | .relayAdd d => Json.mkObj [("kind", "relayAdd"), ("vault", d)]
   | .relayRemove d => Json.mkObj [("kind", "relayRemove"), ("vault", d)]
-  | .keeperAdd d => Json.mkObj [("kind", "keeperAdd"), ("vault", d)]
-  | .keeperRemove d => Json.mkObj [("kind", "keeperRemove"), ("vault", d)]
   | .setAvenPeer k => Json.mkObj [("kind", "setAvenPeer"), ("key", k)]
   | .setOrigins os => Json.mkObj [("kind", "setOrigins"), ("origins", toJson os)]
   | .setGuardian v => Json.mkObj [("kind", "setGuardian"), ("vault", v)]
@@ -64,7 +62,7 @@ def TreeStatement.json (s : TreeStatement) : Json :=
 def Listed.json (l : Listed) : Json :=
   Json.mkObj [("counted", hashesJson l.counted), ("final", hashesJson l.final), ("standing", hashesJson l.standing),
     ("contested", hashesJson l.contested), ("members", toJson l.members), ("admitted", toJson l.admitted),
-    ("relays", toJson l.relays), ("keepers", toJson l.keepers), ("avenPeer", toJson l.avenPeer),
+    ("relays", toJson l.relays), ("avenPeer", toJson l.avenPeer),
     ("origins", toJson l.origins), ("guardianVault", toJson l.guardianVault)]
 
 /-- A case: its statements, the names that fail their own checks, and the pinned genesis. -/
@@ -138,9 +136,9 @@ def raceCases : List Case :=
      statements := [g, ⟨700, "alice-passkey", [100], .relayAdd "bob"⟩,
        ⟨710, "alice-passkey", [700], .relayRemove "bob"⟩,
        ⟨720, "alice-passkey", [710], .relayAdd "bob"⟩] },
-   { name := "a keeper added and removed at once: the remove", pinned := 100,
-     statements := [g, ⟨700, "alice-passkey", [100], .keeperAdd "bob"⟩,
-       ⟨710, "alice-passkey", [100], .keeperRemove "bob"⟩] },
+   { name := "a relay added and removed at once: the remove", pinned := 100,
+     statements := [g, ⟨700, "alice-passkey", [100], .relayAdd "bob"⟩,
+       ⟨710, "alice-passkey", [100], .relayRemove "bob"⟩] },
    { name := "a ticket and a relay signed by an admin device, not the passkey: neither counts for anything",
      pinned := 100,
      statements := [g, ⟨120, "alice-peer", [100], .ticket "t-bob"⟩,
@@ -202,8 +200,8 @@ def genCase (seed : Nat) : Case := Id.run do
       else if k == 6 ∧ tickets.size > 0 then
         ("alice-passkey", [tip1], .withdrawal (tickets[x % tickets.size]!).1)
       else if k == 7 then ("alice-passkey", [tip1], .relayAdd device)
-      else if k == 8 then ("alice-passkey", [tip1], if x % 2 == 0 then .relayRemove device else .keeperAdd device)
-      else ("alice-passkey", [tip1], .keeperRemove device)
+      else if k == 8 then ("alice-passkey", [tip1], .relayRemove device)
+      else ("alice-passkey", [tip1], .setGuardian device)
     match says with
     | .ticket key => tickets := tickets.push (name, key)
     | .claim .. => claims := claims.push name

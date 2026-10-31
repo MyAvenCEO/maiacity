@@ -253,12 +253,10 @@ inductive TreeSays where
   /-- The confirm op (A38): a device of a vault holding Maia City's standing confirm cap confirms the claim it names,
   which issues the claim's vault its member cap. -/
   | confirm (claim : Core.Hash)
-  /-- The relay and keeper lists name vaults, never devices (rule 15, A28): a vault on the relay list runs a relay on
-  its devices, one on the keeper list keeps on them. -/
+  /-- The relay list names vaults, never devices (rule 15, A28): a vault on it runs a relay on its devices. Who keeps
+  what is the owner's keep caps and the keepers' offers, not a list (A44). -/
   | relayAdd (vault : String)
   | relayRemove (vault : String)
-  | keeperAdd (vault : String)
-  | keeperRemove (vault : String)
   /-- Maia City's changes to what the genesis named (rule 15, A28): the Aven Peer's device key, avenOS's origins, and
   MaiaCityGuardian's vault. Each counts only with its owners' approval; the latest settles it. -/
   | setAvenPeer (key : String)
@@ -354,8 +352,6 @@ def TreeSays.toValue : TreeSays → Core.Value
   | .confirm c => .array [text "confirm", ref c]
   | .relayAdd v => .array [text "relayAdd", text v]
   | .relayRemove v => .array [text "relayRemove", text v]
-  | .keeperAdd v => .array [text "keeperAdd", text v]
-  | .keeperRemove v => .array [text "keeperRemove", text v]
   | .setAvenPeer k => .array [text "setAvenPeer", text k]
   | .setOrigins os => .array [text "setOrigins", texts os]
   | .setGuardian v => .array [text "setGuardian", text v]
@@ -373,8 +369,6 @@ def TreeSays.ofValue : Core.Value → Option TreeSays
     | "confirm", [c] => .confirm <$> ofRef c
     | "relayAdd", [v] => .relayAdd <$> ofText v
     | "relayRemove", [v] => .relayRemove <$> ofText v
-    | "keeperAdd", [v] => .keeperAdd <$> ofText v
-    | "keeperRemove", [v] => .keeperRemove <$> ofText v
     | "setAvenPeer", [k] => .setAvenPeer <$> ofText k
     | "setOrigins", [os] => .setOrigins <$> ofTexts os
     | "setGuardian", [v] => .setGuardian <$> ofText v
@@ -410,7 +404,7 @@ def TreeStatement.ticketOf (s : TreeStatement) : Option Core.Hash :=
   | _ => none
 
 /-- The tree `settle` gives: which statements count, which claims are final and which stand, the member vaults, the
-devices the door admits, and the relay and keeper lists. -/
+devices the door admits, and the relay list. -/
 structure Settled where
   counted : Core.Hash → Bool
   final : Core.Hash → Bool
@@ -420,7 +414,6 @@ structure Settled where
   member : String → Bool
   admits : String → Bool
   relay : String → Bool
-  keeper : String → Bool
   /-- the Aven Peer's device key now: the genesis's, or Maia City's latest change of it -/
   avenPeer : String → Bool
   /-- avenOS's origins now -/
@@ -527,7 +520,7 @@ def gen (v : View) (P : Genesis → Bool) : Bool :=
 
 /-- An admin act's signer: Maia City's owners approve it (`Tree.approves`, D14), k of n, recursive through the vaults
 that own the coop, today one of their owner keys. The admin is Maia City's vault, never a key (rule 15, A28): tickets,
-withdrawals and the relay and keeper lists count only so. A device's key owns nothing, so it never approves
+withdrawals and the relay list count only so. A device's key owns nothing, so it never approves
 (`device_not_admin`); "the more secure way" (Samuel, 31 Oct 2026) holds. -/
 def byAdmin (v : View) (k : String) : Bool :=
   gen v (fun g => g.tree.approves (fun _ => 1) g.coop stmtDigest [⟨k, stmtDigest⟩])
@@ -751,7 +744,6 @@ def settleView (v : View) : Settled where
   member := member v
   admits := admits v
   relay := listed v .relayAdd .relayRemove
-  keeper := listed v .keeperAdd .keeperRemove
   avenPeer := peerIs v
   origin o := setting v isOriginsSet (fun x => match x with | .setOrigins os => os.contains o | _ => false)
     (fun g => g.origins.contains o)
@@ -1249,7 +1241,6 @@ structure Listed where
   members : List String
   admitted : List String
   relays : List String
-  keepers : List String
   avenPeer : List String
   origins : List String
   guardianVault : List String
@@ -1269,7 +1260,7 @@ def TreeStatement.mentions (s : TreeStatement) : List String × List String :=
   | .signIn vault device => ([vault], [device])
   | .ticket _ | .withdrawal _ | .confirm _ => ([], [])
   | .claim _ vault _ device _ => ([vault], [device])
-  | .relayAdd v | .relayRemove v | .keeperAdd v | .keeperRemove v | .setGuardian v => ([v], [])
+  | .relayAdd v | .relayRemove v | .setGuardian v => ([v], [])
   | .setAvenPeer k => ([], [k])
   | .setOrigins _ => ([], [])
 
@@ -1281,7 +1272,7 @@ def Settled.listed (t : Settled) (S : List TreeStatement) : Listed :=
   let keys := strs (S.flatMap (·.mentions.2))
   { counted := names.filter t.counted, final := names.filter t.final, standing := names.filter t.standing
     contested := (hashes (S.filterMap (·.ticketOf))).filter t.contested, members := vaults.filter t.member
-    admitted := keys.filter t.admits, relays := vaults.filter t.relay, keepers := vaults.filter t.keeper
+    admitted := keys.filter t.admits, relays := vaults.filter t.relay
     avenPeer := keys.filter t.avenPeer, origins := (strs (S.flatMap (·.originsNamed))).filter t.origin
     guardianVault := vaults.filter t.guardianVault }
 
@@ -1332,7 +1323,6 @@ def statements : List TreeStatement :=
    ⟨750, "alice-passkey", [740], .relayAdd "aven"⟩,
    ⟨710, "alice-passkey", [520], .relayAdd "bob"⟩,
    ⟨720, "alice-passkey", [100], .relayRemove "bob"⟩,
-   ⟨730, "alice-passkey", [100], .keeperAdd "alice"⟩,
    ⟨50, "eve-passkey", [], .genesis { alicesGenesis with
      claimant := "eve", passkey := "eve-passkey", coopOwners := ["eve"],
      signedBy := ["eve-passkey", "guardian-ed25519", "guardian-ml-dsa"] }⟩,
@@ -1344,12 +1334,12 @@ def statements : List TreeStatement :=
 def kept : List TreeStatement := statements.filter (·.name != 150)
 
 def expected : Listed :=
-  { counted := [100, 110, 120, 130, 140, 160, 300, 310, 500, 510, 520, 600, 610, 650, 700, 710, 720, 730, 740, 750,
+  { counted := [100, 110, 120, 130, 140, 160, 300, 310, 500, 510, 520, 600, 610, 650, 700, 710, 720, 740, 750,
       790, 800, 810, 811]
     final := [500, 790, 800], standing := [500, 790], contested := [160]
     members := ["alice", "aven", "bob", "eve2", "maia-city"]
     admitted := ["alice-peer", "alice-peer-light", "aven-peer", "bob-peer", "bob-peer-light", "eve2-peer"]
-    relays := ["aven"], keepers := ["alice"], avenPeer := ["aven-peer"], origins := ["https://maia.city"]
+    relays := ["aven"], avenPeer := ["aven-peer"], origins := ["https://maia.city"]
     guardianVault := ["maia-city-guardian"] }
 
 #guard (settle 100 kept).listed statements == expected
@@ -1358,7 +1348,7 @@ def expected : Listed :=
 #guard (settle 50 kept).listed statements ==
   { expected with
     counted := [50, 60], final := [], standing := [], contested := [], members := ["aven", "eve", "maia-city"],
-    admitted := ["alice-peer", "aven-peer"], relays := [], keepers := [] }
+    admitted := ["alice-peer", "aven-peer"], relays := [] }
 
 end TreeExamples
 
