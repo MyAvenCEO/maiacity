@@ -679,12 +679,54 @@ the spec that owns it.
     "the more secure way" (31 Oct) holds. Today that is one tap of Samuel's passkey, since his vault owns Maia City. A
     second admin, an owner change and recovery are ordinary governance of the vault, with no new genesis.
   - **Release keys and the guardian** become vaults' signers, named by the genesis as vaults and changed by their
-    owners' approval. The full list of places where a key still holds authority itself is the audit of 31 Oct
-    ([`audits/`](audits/README.md)). Each is fixed Lean-first before its code, and avenPEER's `settle` takes the
-    admin's approval from each statement's own past, so settling stays order-free.
+    owners' approval. avenPEER's `settle` takes the admin's approval from each statement's own past, so settling stays
+    order-free.
+  - **Every place a key still holds authority** is in [`audits/vaults.md`](audits/vaults.md), each fixed Lean-first
+    before its code:
+    - the guardian, one key owning every person's vault, becomes the guardian's vault, its key that vault's owner;
+    - the genesis's `origins`, `avenPeer` and guardian become Maia City's to change, by its owners' approval;
+    - the running code's first signup and unsigned flags give way to the pinned genesis (A11);
+    - a claim is final by a vault's grant, not an admin device's ack;
+    - release signers become the release vault (A36);
+    - a root cap over a coop's Docs needs the coop's own owners, k of n, not one governing vault alone;
+    - a ticket is a cap from Maia City to the vault its claim founds, the one-time key only authorizing the claim;
+    - the relay and keeper lists name vaults, not devices;
+    - each vault stores its own threshold k.
 - **A29. Frames in CBOR.** The wire's frames move from JSON lines to Core's canonical CBOR, the one codec (rule 1),
   replacing actors' "frames as JSON lines". It ships as a wire-version bump (PEERS §7), which updates open tabs by
   itself. *Decided: yes (Samuel, 31 Oct 2026).*
+- **A30. One name for a signed thing:** the hash of `[label, body]`, its signatures beside it, so signing one act
+  twice never makes two names. A split is two different bodies at one place (A4). The tree's statements become Core
+  envelopes on Core's past. *Decided (the architect, 31 Oct 2026): it follows from rule 1 and A4.*
+- **A31. Two kinds of signed thing:** history (envelopes in a log, where a split is final) and beats, which decide
+  nothing. An address or release record is history: an envelope in its signer's own log, the newest the latest there,
+  so the "smaller body wins" tie-break goes. *Decided (the architect, 31 Oct 2026): it follows from A4.*
+- **A32. Targets, not queries.** A cap names a target over a Doc's birth facts (its id, vault, type and the actor that
+  spawned it), never a query over its content, so what it covers can't drift with the data, and anyone can check it.
+  A keep cap's target is resolved to Doc ids by the issuer's devices for its blind keeper (#1642); "query" in A22 meant
+  this. Queries are for wants and search. The target grammar shrinks to a Doc (with what it spawned or not), a vault's
+  Docs and a vault's Docs of one type, each with the vaults below or not; only a write line carries a footprint
+  (#1653). *Decided (the architect, 31 Oct 2026): it follows from caps rule 6 and A8.*
+- **A33. An actor's message is an envelope** in the carrier Doc of its two vaults (A17), born with the first letter
+  through the letterbox, and delivered as any Doc's envelopes are (K11): live by the pair's gossip, caught up by
+  reconciliation; a direct connection is a faster path for the same sync. The receiver's turn names the message by hash
+  (rule 2), which is its receipt; the delivery `ack` frame goes. *Decided (the architect, 31 Oct 2026): it follows
+  from A17 and K11; for milestone 3.*
+- **A34. Catch-up on Doc logs only.** Thread C's catch-up is written for Core's log, never for the chat's chains. The
+  tree is the first Doc (A12, A30), the chat the second, moving onto a Doc with no interim fix and its history read as
+  it is; members catch up the chat from each other once it is a Doc. *For Samuel: it changes the order of B to F.*
+- **A35. One presence:** a signed beat per device, ordered by its counter, its time a claim (rule 12). The hub's
+  connection count, the chat's `here` and `bye`, and the wire's `Beat` frame go, with thread C. *Decided (the
+  architect, 31 Oct 2026).*
+- **A36. Releases:** one release record per package, ordered by its dated version (`@aven/os@26.10.31`), an envelope
+  in the release vault's Doc, which the genesis names and whose owners approve each record. The ALPN `aven/db/1` is a
+  frozen name; the hello's number is the only wire version (#1649); a format's label is its version. *Decided (the
+  architect, 31 Oct 2026); who owns the release vault is for Samuel, with thread E's signer proposal.*
+- **A37. state-runtime returns K8's steps** (put, patch, remove, edit at a path), which are the turn's commit and the
+  footprint caps check, never a whole new state. *Decided (the architect, 31 Oct 2026): it follows from A19.*
+- **A38. Membership is a cap:** Maia City's vault grants each member's vault a member cap, which is what a join is. A
+  member shows its chain and anyone checks it (rule 4), so no device needs the roster; the tree keeps Maia City's
+  governance and its withdrawals. *For Samuel: it changes what a join is.*
 
 **The engine and actors**
 - **A9. The want queue** as in [Massive data](#massive-data-wants-decide-what-moves). Its laws go into Lean before
