@@ -10,11 +10,19 @@ builds on by hash: never a counter alone (rule 2). What it carries beyond that i
 A **split** is a writer signing two different envelopes at one place of its log. Splits are final: an envelope whose
 past holds a split never counts, for any reader, however many more envelopes it learns of (A4).
 
+Its signatures sit beside its name (A30), a set that only grows: adding one never renames it (`Envelope.name_addSig`)
+and is never a split (`addSig_no_split`). The log's writer's signature places it (`Envelope.placed`); the others are
+approvals over the same bytes.
+
+An envelope counts only once its whole past is held (`Closed`, rule 11).
+
 What it proves:
+- `Envelope.name_inj`: one name is one envelope, but for its signatures;
 - `chain_no_split`, `chains_agree`: a log read as a chain holds no split, and two readers' chains of one log agree
   wherever both hold it unless there is a split between them;
 - `reaches_mono`, `split_final`: more envelopes never undo a split;
 - `counts_past`: what an envelope that counts builds on counts too;
+- `closed_mono`: a whole past stays whole as more arrives;
 - `Version.holds_mono`: a version holds more as more arrives, never less.
 -/
 
@@ -28,8 +36,7 @@ structure Envelope where
   prev : Option Hash
   deps : List Hash
   body : Value
-  signer : Bytes
-  sig : Bytes
+  sigs : List Sig
 
 def optHash : Option Hash → Value
   | none => .null
@@ -37,30 +44,41 @@ def optHash : Option Hash → Value
 
 private def k (s : String) : Bytes := s.toUTF8.toList
 
-/-- What the writer signs: everything but the signature, keys in the codec's order. -/
+/-- What its signers sign: everything but the signatures, keys in the codec's order. -/
 def Envelope.unsigned (e : Envelope) : Value :=
   .map [(k "doc", .bytes e.doc.hash.bytes), (k "seq", .uint e.seq), (k "body", e.body),
     (k "deps", .array (e.deps.map Hash.value)), (k "prev", optHash e.prev), (k "branch", .text e.branch),
-    (k "signer", .bytes e.signer), (k "writer", .uint e.writer)]
+    (k "writer", .uint e.writer)]
 
-/-- The whole envelope, signature included, as it travels. Its name hashes only what is signed (A30). -/
+/-- The whole envelope, its signatures beside it, as it travels. Its name hashes only what is signed (A30). -/
 def Envelope.value (e : Envelope) : Value :=
-  .map [(k "doc", .bytes e.doc.hash.bytes), (k "seq", .uint e.seq), (k "sig", .bytes e.sig), (k "body", e.body),
-    (k "deps", .array (e.deps.map Hash.value)), (k "prev", optHash e.prev), (k "branch", .text e.branch),
-    (k "signer", .bytes e.signer), (k "writer", .uint e.writer)]
+  .map [(k "doc", .bytes e.doc.hash.bytes), (k "seq", .uint e.seq), (k "body", e.body),
+    (k "deps", .array (e.deps.map Hash.value)), (k "prev", optHash e.prev), (k "sigs", .array (e.sigs.map Sig.value)),
+    (k "branch", .text e.branch), (k "writer", .uint e.writer)]
 
 def envelopeLabel : Bytes := k "avenDB envelope 1"
 
 def Envelope.signing (e : Envelope) : Bytes := signingBytes envelopeLabel e.unsigned
 
-def Envelope.valid (verify : Verify) (e : Envelope) : Bool := verify e.signer e.signing e.sig
+/-- Which keys write which envelope's log: a parameter, as `Verify` is. The docs layer supplies it from how it derives
+a writer id (the device key, the Doc, the branch, the generation), and caps checks the key against the device cap. -/
+abbrev Writes := (key : Bytes) → Envelope → Bool
 
-/-- An envelope's name: the hash of exactly what its writer signs, `[label, everything but the signature]`, so signing
-one envelope twice never makes two names (A30). -/
+/-- An envelope is placed in its log when a key that writes that log signed it: some signature's signer `writes` it
+and verifies over its signing bytes. Every other signature is an approval over the same bytes. An envelope with no
+such signature is nothing: a reader refuses it, so it is never held, never counts and is never half of a split. -/
+def Envelope.placed (verify : Verify) (writes : Writes) (e : Envelope) : Bool :=
+  e.sigs.any fun x => writes x.signer e && x.valid verify e.signing
+
+/-- The signatures beside it that verify, the writer's among them: what approvals count. -/
+def Envelope.approvals (verify : Verify) (e : Envelope) : List Sig := e.sigs.filter (Sig.valid verify e.signing)
+
+/-- An envelope's name: the hash of exactly what its signers sign, `[label, everything but the signatures]`, so signing
+one envelope again, by its writer or anyone, never makes two names (A30). -/
 def Envelope.name (H : Bytes → Hash) (e : Envelope) : Hash := H e.signing
 
-#guard keysSorted (match (Envelope.mk ⟨⟨[]⟩⟩ [] 0 0 none [] .null [] []).value with | .map kvs => kvs | _ => [])
-#guard keysSorted (match (Envelope.mk ⟨⟨[]⟩⟩ [] 0 0 none [] .null [] []).unsigned with | .map kvs => kvs | _ => [])
+#guard keysSorted (match (Envelope.mk ⟨⟨[]⟩⟩ [] 0 0 none [] .null []).value with | .map kvs => kvs | _ => [])
+#guard keysSorted (match (Envelope.mk ⟨⟨[]⟩⟩ [] 0 0 none [] .null []).unsigned with | .map kvs => kvs | _ => [])
 
 theorem optHash_inj : ∀ {a b : Option Hash}, optHash a = optHash b → a = b
   | none, none, _ => rfl
@@ -76,37 +94,60 @@ theorem hashes_inj : ∀ {a b : List Hash}, a.map Hash.value = b.map Hash.value 
     simp only [List.map_cons, List.cons.injEq, Hash.value, Value.bytes.injEq] at h
     rw [hashes_inj h.2, h.1]
 
+theorem sigs_inj : ∀ {a b : List Sig}, a.map Sig.value = b.map Sig.value → a = b
+  | [], [], _ => rfl
+  | [], _ :: _, h => by simp at h
+  | _ :: _, [], h => by simp at h
+  | ⟨x, x'⟩ :: xs, ⟨y, y'⟩ :: ys, h => by
+    simp only [List.map_cons, List.cons.injEq, Sig.value, Value.map.injEq, Prod.mk.injEq, Value.bytes.injEq,
+      true_and, and_true] at h
+    obtain ⟨⟨rfl, rfl⟩, t⟩ := h
+    rw [sigs_inj t]
+
 theorem Envelope.value_inj {a b : Envelope} (h : a.value = b.value) : a = b := by
-  obtain ⟨⟨⟨da⟩⟩, bra, wa, sa, pa, dsa, ba, sga, sia⟩ := a
-  obtain ⟨⟨⟨db⟩⟩, brb, wb, sb, pb, dsb, bb, sgb, sib⟩ := b
+  obtain ⟨⟨⟨da⟩⟩, bra, wa, sa, pa, dsa, ba, sga⟩ := a
+  obtain ⟨⟨⟨db⟩⟩, brb, wb, sb, pb, dsb, bb, sgb⟩ := b
   simp only [Envelope.value, Value.map.injEq, List.cons.injEq, Prod.mk.injEq, Value.bytes.injEq, Value.uint.injEq,
     Value.array.injEq, Value.text.injEq, true_and, and_true] at h
-  obtain ⟨hd, hs, hg, hb, hdeps, hp, hbr, hsg, hw⟩ := h
-  rw [optHash_inj hp, hashes_inj hdeps]
-  subst hd hs hg hb hbr hsg hw
+  obtain ⟨hd, hs, hb, hdeps, hp, hsg, hbr, hw⟩ := h
+  rw [optHash_inj hp, hashes_inj hdeps, sigs_inj hsg]
+  subst hd hs hb hbr hw
   rfl
 
-/-- What an envelope signs fixes everything but its signature. -/
-theorem Envelope.unsigned_inj {a b : Envelope} (h : a.unsigned = b.unsigned) : { a with sig := b.sig } = b := by
-  obtain ⟨⟨⟨da⟩⟩, bra, wa, sa, pa, dsa, ba, sga, sia⟩ := a
-  obtain ⟨⟨⟨db⟩⟩, brb, wb, sb, pb, dsb, bb, sgb, sib⟩ := b
+/-- What an envelope signs fixes everything but its signatures. -/
+theorem Envelope.unsigned_inj {a b : Envelope} (h : a.unsigned = b.unsigned) : { a with sigs := b.sigs } = b := by
+  obtain ⟨⟨⟨da⟩⟩, bra, wa, sa, pa, dsa, ba, sga⟩ := a
+  obtain ⟨⟨⟨db⟩⟩, brb, wb, sb, pb, dsb, bb, sgb⟩ := b
   simp only [Envelope.unsigned, Value.map.injEq, List.cons.injEq, Prod.mk.injEq, Value.bytes.injEq, Value.uint.injEq,
     Value.array.injEq, Value.text.injEq, true_and, and_true] at h
-  obtain ⟨hd, hs, hb, hdeps, hp, hbr, hsg, hw⟩ := h
+  obtain ⟨hd, hs, hb, hdeps, hp, hbr, hw⟩ := h
   rw [optHash_inj hp, hashes_inj hdeps]
-  subst hd hs hb hbr hsg hw
+  subst hd hs hb hbr hw
   rfl
 
 theorem envelopeLabel_ok : textOk envelopeLabel = true := by decide +kernel
 
 /-- Two well-formed envelopes with one name say the same thing: they differ at most in their signatures (A30). -/
 theorem Envelope.name_inj {H : Bytes → Hash} (hH : Injective H) {a b : Envelope} (ha : Canon a.unsigned = true)
-    (hb : Canon b.unsigned = true) (h : a.name H = b.name H) : { a with sig := b.sig } = b :=
+    (hb : Canon b.unsigned = true) (h : a.name H = b.name H) : { a with sigs := b.sigs } = b :=
   Envelope.unsigned_inj (signing_separates envelopeLabel_ok envelopeLabel_ok ha hb (hH _ _ h)).2
 
-/-- Signing an envelope again keeps its name: a name never hangs on a signature (A30). -/
-theorem Envelope.name_resign (H : Bytes → Hash) (e : Envelope) (sig : Bytes) :
-    ({ e with sig } : Envelope).name H = e.name H := rfl
+/-- An envelope's signatures never touch its name: a name never hangs on a signature (A30). -/
+theorem Envelope.name_sigs (H : Bytes → Hash) (e : Envelope) (sigs : List Sig) :
+    ({ e with sigs } : Envelope).name H = e.name H := rfl
+
+/-- Adding a signature never renames an envelope. -/
+theorem Envelope.name_addSig (H : Bytes → Hash) (e : Envelope) (x : Sig) :
+    ({ e with sigs := addSig x e.sigs } : Envelope).name H = e.name H := rfl
+
+/-- Adding a signature keeps an envelope placed: the set only grows. -/
+theorem Envelope.placed_addSig {verify : Verify} {writes : Writes} {e : Envelope} (x : Sig)
+    (hw : ∀ k, writes k { e with sigs := addSig x e.sigs } = writes k e) (h : e.placed verify writes = true) :
+    ({ e with sigs := addSig x e.sigs } : Envelope).placed verify writes = true := by
+  simp only [Envelope.placed, List.any_eq_true, Bool.and_eq_true, Sig.valid, Envelope.signing,
+    Envelope.unsigned] at h ⊢
+  obtain ⟨y, m, hy, hv⟩ := h
+  exact ⟨y, addSig_mono x _ y m, by rw [hw]; exact hy, hv⟩
 
 /-! ## Logs and splits
 
@@ -124,11 +165,16 @@ def Split (a b : Envelope) : Prop := SameLog a b ∧ a.seq = b.seq ∧ nm a ≠ 
 theorem Split.symm {a b : Envelope} (h : Split nm a b) : Split nm b a :=
   ⟨⟨h.1.1.symm, h.1.2.1.symm, h.1.2.2.symm⟩, h.2.1.symm, fun e => h.2.2 e.symm⟩
 
-/-- An envelope signed twice is no split: a split is two different bodies at one place, never two signatures over one
-(A4, A30). -/
-theorem resign_no_split (H : Bytes → Hash) (e : Envelope) (sig : Bytes) :
-    ¬ Split (Envelope.name H) e { e with sig } :=
-  fun h => h.2.2 (Envelope.name_resign H e sig).symm
+/-- An envelope signed again is no split: a split is two different bodies at one place, never two sets of signatures
+over one (A4, A30). -/
+theorem sigs_no_split (H : Bytes → Hash) (e : Envelope) (sigs : List Sig) :
+    ¬ Split (Envelope.name H) e { e with sigs } :=
+  fun h => h.2.2 (Envelope.name_sigs H e sigs).symm
+
+/-- Adding a signature is never a split. -/
+theorem addSig_no_split (H : Bytes → Hash) (e : Envelope) (x : Sig) :
+    ¬ Split (Envelope.name H) e { e with sigs := addSig x e.sigs } :=
+  sigs_no_split H e _
 
 /-- `a` builds directly on `b`: `b` is the envelope before it in its log, or a tip it names. -/
 def BuildsOn (a b : Envelope) : Prop := a.prev = some (nm b) ∨ nm b ∈ a.deps
@@ -138,14 +184,21 @@ inductive Reaches (S : List Envelope) : Envelope → Envelope → Prop
   | refl (a : Envelope) : Reaches S a a
   | step {a b c : Envelope} : b ∈ S → BuildsOn nm a b → Reaches S b c → Reaches S a c
 
+/-- An envelope's whole past is held: every envelope it reaches, itself included, names as its prev and deps only
+envelopes of `S` (rule 11: an envelope built on a parent a reader lacks waits, and counts for nothing until it comes). -/
+def Closed (S : List Envelope) (e : Envelope) : Prop :=
+  ∀ x, Reaches nm S e x → ∀ h, (x.prev = some h ∨ h ∈ x.deps) → ∃ y ∈ S, nm y = h
+
 /-- An envelope's past, itself included, holds half of a split. -/
 def Discounted (S : List Envelope) (e : Envelope) : Prop :=
   ∃ x y, Reaches nm S e x ∧ y ∈ S ∧ Split nm x y
 
-/-- An envelope counts when everything in its past passes the other verdicts (`ok`: fit and authorized) and none of it
-is half of a split (docs, rule 13). -/
+/-- An envelope counts when its whole past is held (`Closed`), everything in it passes the other verdicts (`ok`: fit and
+authorized) and none of it is half of a split (docs, rule 13). Counting is not monotone in what a reader holds, by
+design: a split learned later discounts (A4, `split_final`), and a parent learned later is the first step to counting
+(`closed_mono`). -/
 def Counts (ok : Envelope → Prop) (S : List Envelope) (e : Envelope) : Prop :=
-  ∀ x, Reaches nm S e x → ok x ∧ ∀ y ∈ S, ¬ Split nm x y
+  Closed nm S e ∧ ∀ x, Reaches nm S e x → ok x ∧ ∀ y ∈ S, ¬ Split nm x y
 
 theorem reaches_trans {S : List Envelope} {a b c : Envelope} (h₁ : Reaches nm S a b) (h₂ : Reaches nm S b c) :
     Reaches nm S a c := by
@@ -159,16 +212,54 @@ theorem reaches_mono {S S' : List Envelope} (hs : ∀ x ∈ S, x ∈ S') {a b : 
   | refl => exact .refl _
   | step hb hab _ ih => exact .step (hs _ hb) hab ih
 
+theorem closed_past {S : List Envelope} {e x : Envelope} (h : Closed nm S e) (hx : Reaches nm S e x) :
+    Closed nm S x :=
+  fun y hy => h y (reaches_trans nm hx hy)
+
 /-- What an envelope that counts builds on counts too. -/
 theorem counts_past {ok : Envelope → Prop} {S : List Envelope} {e x : Envelope} (h : Counts nm ok S e)
     (hx : Reaches nm S e x) : Counts nm ok S x :=
-  fun y hy => h y (reaches_trans nm hx hy)
+  ⟨closed_past nm h.1 hx, fun y hy => h.2 y (reaches_trans nm hx hy)⟩
 
 theorem discounted_not_counts {ok : Envelope → Prop} {S : List Envelope} {e : Envelope} (h : Discounted nm S e) :
     ¬ Counts nm ok S e := by
   intro hc
   obtain ⟨x, y, hx, hy, hs⟩ := h
-  exact (hc x hx).2 y hy hs
+  exact (hc.2 x hx).2 y hy hs
+
+/-- Two envelopes name the same parents. -/
+def SameParents (a b : Envelope) : Prop := a.prev = b.prev ∧ a.deps = b.deps
+
+/-- What a closed envelope reaches among more envelopes has the parents of something it reaches among `S`, when one
+name is one set of parents (as `Envelope.name_inj` gives for well-formed envelopes under an injective hash). -/
+theorem reaches_closed {S S' : List Envelope}
+    (hp : ∀ a b, nm a = nm b → SameParents a b) {a c : Envelope} (h : Reaches nm S' a c) :
+    ∀ a₀, SameParents a₀ a → Closed nm S a₀ → ∃ c₀, Reaches nm S a₀ c₀ ∧ SameParents c₀ c := by
+  induction h with
+  | refl a => exact fun a₀ e _ => ⟨a₀, .refl _, e⟩
+  | @step a b c _ hab _ ih =>
+    intro a₀ e hc
+    have hb : a₀.prev = some (nm b) ∨ nm b ∈ a₀.deps := by
+      rcases hab with h | h
+      · exact .inl (e.1.trans h)
+      · exact .inr (e.2 ▸ h)
+    obtain ⟨y, my, ny⟩ := hc a₀ (.refl _) (nm b) hb
+    have hy : BuildsOn nm a₀ y := by unfold BuildsOn; rw [ny]; exact hb
+    have ry : Reaches nm S a₀ y := .step my hy (.refl _)
+    obtain ⟨c₀, r, sp⟩ := ih y (hp y b ny) (closed_past nm hc ry)
+    exact ⟨c₀, reaches_trans nm ry r, sp⟩
+
+/-- A closed envelope stays closed as more arrives, when one name is one set of parents. -/
+theorem closed_mono {S S' : List Envelope} (hs : ∀ x ∈ S, x ∈ S') (hp : ∀ a b, nm a = nm b → SameParents a b)
+    {e : Envelope} (h : Closed nm S e) : Closed nm S' e := by
+  intro x hx k hk
+  obtain ⟨x₀, r, sp⟩ := reaches_closed nm hp hx e ⟨rfl, rfl⟩ h
+  have hk₀ : x₀.prev = some k ∨ k ∈ x₀.deps := by
+    rcases hk with h | h
+    · exact .inl (sp.1.trans h)
+    · exact .inr (sp.2 ▸ h)
+  obtain ⟨y, my, ny⟩ := h x₀ r k hk₀
+  exact ⟨y, hs y my, ny⟩
 
 /-- Splits are final: once an envelope's past holds a split, no reader that learns more ever counts it (A4). -/
 theorem split_final {ok : Envelope → Prop} {S S' : List Envelope} (hs : ∀ x ∈ S, x ∈ S') {e : Envelope}

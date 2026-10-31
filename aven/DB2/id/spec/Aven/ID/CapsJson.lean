@@ -137,7 +137,9 @@ def envelopeJson (e : Core.Envelope) : Json :=
     ("time", toJson (time e)),
     ("envelope", Json.mkObj [("doc", e.doc.text), ("branch", Core.utf8Text e.branch), ("writer", toJson e.writer),
       ("seq", toJson e.seq), ("prev", toJson (e.prev.map (·.text))), ("deps", toJson (e.deps.map (·.text))),
-      ("body", e.body.json), ("signer", Core.hex e.signer), ("sig", Core.hex e.sig)])]
+      ("body", e.body.json),
+      ("sigs", Json.arr (e.sigs.map fun x =>
+        Json.mkObj [("signer", Core.hex x.signer), ("sig", Core.hex x.sig)]).toArray)])]
 
 def Revocation.json (r : Revocation) : Json :=
   Json.mkObj [("id", r.id.text), ("cap", r.cap.text), ("envelope", toJson (r.envelope.map (·.text))),

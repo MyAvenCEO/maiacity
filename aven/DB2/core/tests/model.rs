@@ -14,11 +14,11 @@ use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::OnceLock;
 
-use aven_core::limits::{MAX_DEPS, MAX_SIG_BYTES};
+use aven_core::limits::{MAX_DEPS, MAX_SIG_BYTES, MAX_SIGS};
 use aven_core::past::in_past;
 use aven_core::{
-    Bound, Call, DocId, Envelope, Facts, Hash, Held, Reach, Signed, Target, Value, blake3, decode,
-    encode, split,
+    Bound, Call, DocId, Envelope, Facts, Hash, Held, Reach, Sig, Signed, Target, Value, blake3,
+    decode, encode, split,
 };
 use common::{bools, hex, names};
 use proptest::prelude::*;
@@ -140,8 +140,10 @@ fn build(draws: &[Draw]) -> Vec<Envelope> {
             prev: d.prev.map(|i| pick(&out, i)),
             deps: d.deps.iter().map(|&i| pick(&out, i)).collect(),
             body: Value::Uint(d.body),
-            signer: vec![7; 32],
-            sig: vec![9; 64],
+            sigs: vec![Sig {
+                signer: vec![7; 32],
+                sig: vec![9; 64],
+            }],
         };
         out.push(e);
     }
@@ -295,14 +297,23 @@ fn any_bytes_case() -> impl Strategy<Value = Vec<u8>> {
     let signed = (
         ".{0,8}",
         any::<u64>(),
-        proptest::collection::vec(any::<u8>(), 0..40),
+        // signatures as drawn: now and then out of order or one signer twice, which both refuse
+        proptest::collection::vec(
+            (0u8..4, proptest::collection::vec(any::<u8>(), 0..40)),
+            0..4,
+        ),
     )
-        .prop_map(|(label, n, sig)| {
+        .prop_map(|(label, n, sigs)| {
             Signed {
                 label,
                 body: Value::Uint(n),
-                signer: vec![7; 32],
-                sig,
+                sigs: sigs
+                    .into_iter()
+                    .map(|(k, sig)| Sig {
+                        signer: vec![k; 32],
+                        sig,
+                    })
+                    .collect(),
             }
             .encode()
         });
@@ -315,8 +326,12 @@ fn any_bytes_case() -> impl Strategy<Value = Vec<u8>> {
             prev: None,
             deps: vec![blake3(b"x"); MAX_DEPS + k - 1],
             body: Value::Null,
-            signer: vec![7; 32],
-            sig: vec![9; MAX_SIG_BYTES + k - 1],
+            sigs: (0..MAX_SIGS + k - 1)
+                .map(|i| Sig {
+                    signer: vec![i as u8; 32],
+                    sig: vec![9; MAX_SIG_BYTES + k - 1],
+                })
+                .collect(),
         };
         e.encode()
     });
@@ -387,13 +402,15 @@ proptest! {
             prop_assert_eq!(splits, bools(&a["split"][k]), "split of {}", k);
         }
         let got = |f: &dyn Fn(&Envelope) -> bool| w.all.iter().map(f).collect::<Vec<bool>>();
+        prop_assert_eq!(got(&|e| held.closed(e)), bools(&a["closed"]));
         prop_assert_eq!(got(&|e| held.discounted(e)), bools(&a["discounted"]));
         prop_assert_eq!(got(&|e| held.counts(e, ok)), bools(&a["counts"]));
         prop_assert_eq!(got(&|e| held.holds(&tips, e)), bools(&a["holds"]));
     }
 
     /// Splits are final: what is discounted among `S` never counts among all of it, which holds more
-    /// (`split_final`). What counts builds on what counts (`counts_past`). A version holds more as more arrives
+    /// (`split_final`). What counts builds on what counts (`counts_past`). A whole past stays whole (`closed_mono`). A
+    /// version holds more as more arrives
     /// (`Version.holds_mono`).
     #[test]
     fn splits_are_final(w in world()) {
@@ -412,6 +429,10 @@ proptest! {
                 for x in s.iter().filter(|x| past.contains(&x.name())) {
                     prop_assert!(h.counts(x, ok));
                 }
+            }
+            // closed_mono: one name is one set of parents under BLAKE3
+            if h.closed(e) {
+                prop_assert!(h_all.closed(e));
             }
             if h.holds(&tips, e) {
                 prop_assert!(h_all.holds(&tips, e));

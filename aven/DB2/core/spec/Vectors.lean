@@ -19,8 +19,8 @@ import Lean.Data.Json
   bytes (a megabyte written out would be two in hex).
 - `past.json`: generated worlds (`Aven.Core.Model`): envelopes and which a reader holds; for each envelope, the names
   before it and whether each held one is before it.
-- `counts.json`: the same worlds with bad envelopes and a version's tips; for each envelope, whether it is discounted,
-  counts and is held by the version.
+- `counts.json`: the same worlds with bad envelopes and a version's tips; for each envelope, whether its whole past is
+  held (closed), whether it is discounted, counts and is held by the version.
 - `targets.json`: pairs of targets; whether the first narrows the second, and which Docs each covers.
 - `target-bytes.json`: each target form, readable, and its CBOR in hex (`Aven.Core.TargetCbor`); and the CBOR of
   targets whose Doc or type id isn't 32 bytes, refused on read (`expected` null).
@@ -206,26 +206,36 @@ def names : List Json :=
 
 def doc : DocId := ⟨blake3 (k "a Doc's genesis")⟩
 
+/-- The writer's signature, and another's: both placeholders, as the model takes signatures as sound. -/
+def sig7 : Sig := ⟨List.replicate 32 7, List.replicate 64 9⟩
+def sig8 : Sig := ⟨List.replicate 32 8, List.replicate 64 10⟩
+
 def env (writer seq : Nat) (prev : Option Hash) (body : Value) : Envelope :=
-  { doc, branch := k "main", writer, seq, prev, deps := [], body,
-    signer := List.replicate 32 7, sig := List.replicate 64 9 }
+  { doc, branch := k "main", writer, seq, prev, deps := [], body, sigs := [sig7] }
 
 def e1 : Envelope := env 42 1 none (.map [(k "post", .text (k "hello"))])
 def e2 : Envelope := env 42 2 (some (e1.name blake3)) (.map [(k "post", .text (k "again"))])
 def e2' : Envelope := env 42 2 (some (e1.name blake3)) (.map [(k "post", .text (k "a copy says otherwise"))])
 def other : Envelope := env 43 2 none (.map [(k "post", .text (k "another writer"))])
 
+def Aven.Core.Sig.json (x : Sig) : Json := Json.mkObj [("signer", hex x.signer), ("sig", hex x.sig)]
+
 def Aven.Core.Envelope.json (e : Envelope) : Json :=
   Json.mkObj [("doc", e.doc.text), ("branch", utf8Text e.branch), ("writer", toJson e.writer), ("seq", toJson e.seq),
     ("prev", match e.prev with | some h => h.text | none => Json.null), ("deps", toJson (e.deps.map Hash.text)),
-    ("body", e.body.json), ("signer", hex e.signer), ("sig", hex e.sig)]
+    ("body", e.body.json), ("sigs", Json.arr (e.sigs.map Sig.json).toArray)]
 
 /-- An envelope of another writer that builds on both of the first writer's. -/
 def e3 : Envelope :=
   { env 43 1 none (.map [(k "post", .text (k "builds on both"))]) with deps := [e2.name blake3, e1.name blake3] }
 
+/-- The second, approved by another signer beside its writer: one name, two signatures. -/
+def e2Approved : Envelope := { e2 with sigs := addSig sig8 e2.sigs }
+
+#guard e2Approved.name blake3 == e2.name blake3 && e2Approved.sigs.length == 2
+
 def envelopes : List Json :=
-  [("the first", e1), ("the second", e2), ("with deps", e3)].map fun (name, e) =>
+  [("the first", e1), ("the second", e2), ("with deps", e3), ("the second, approved by another", e2Approved)].map fun (name, e) =>
     vector name e.json
       (Json.mkObj [("signs", hex e.signing), ("cbor", encodes e.value), ("name", (e.name blake3).text)])
 
@@ -234,18 +244,17 @@ def splitB (a b : Envelope) : Bool :=
 
 def logs : List Json :=
   [("two places of one log", e1, e2), ("one envelope twice", e2, e2), ("a split", e2, e2'),
-   ("two writers", e2, other)].map fun (name, a, b) =>
+   ("two writers", e2, other), ("one envelope, signed again by another", e2, e2Approved)].map fun (name, a, b) =>
     vector name (Json.arr #[a.json, b.json]) (toJson (splitB a b))
 
 /-! ## Signed things -/
 
 def Aven.Core.Signed.json (s : Signed) : Json :=
-  Json.mkObj [("label", utf8Text s.label), ("body", s.body.json), ("signer", hex s.signer), ("sig", hex s.sig)]
+  Json.mkObj [("label", utf8Text s.label), ("body", s.body.json), ("sigs", Json.arr (s.sigs.map Sig.json).toArray)]
 
-def s1 : Signed :=
-  ⟨k "aven example 1", .map [(k "says", .text (k "hello"))], List.replicate 32 7, List.replicate 64 9⟩
+def s1 : Signed := ⟨k "aven example 1", .map [(k "says", .text (k "hello"))], [sig7]⟩
 def s2 : Signed := { s1 with label := k "aven example 2" }
-def s3 : Signed := { s1 with signer := List.replicate 32 8, sig := List.replicate 64 10 }
+def s3 : Signed := { s1 with sigs := addSig sig8 s1.sigs }
 
 def signedVectors : List Json :=
   [("a signed thing", s1), ("another label, one body", s2), ("signed again by another", s3)].map fun (name, s) =>
@@ -271,30 +280,48 @@ def signedOfSize (s : Signed) (size : Nat) : Signed × Nat :=
   let n := size - (encode { s with body := zeros 0 }.value).length - 4
   ({ s with body := zeros n }, n)
 
+/-- `n` signatures by `n` signers, in signer order. -/
+def manySigs (n : Nat) : List Sig :=
+  (List.range n).map fun i => ⟨i.toUInt8 :: List.replicate 31 7, List.replicate 64 9⟩
+
 def limitEnvelopes : List (String × Envelope) :=
   [(s!"{maxDeps} deps", { e1 with deps := List.replicate maxDeps (e1.name blake3) }),
    (s!"{maxDeps + 1} deps", { e1 with deps := List.replicate (maxDeps + 1) (e1.name blake3) }),
    (s!"a branch of {maxBranchBytes} bytes", { e1 with branch := as maxBranchBytes }),
    (s!"a branch of {maxBranchBytes + 1} bytes", { e1 with branch := as (maxBranchBytes + 1) }),
-   (s!"a signer of {maxSignerBytes} bytes", { e1 with signer := List.replicate maxSignerBytes 7 }),
-   (s!"a signer of {maxSignerBytes + 1} bytes", { e1 with signer := List.replicate (maxSignerBytes + 1) 7 }),
-   (s!"a signature of {maxSigBytes} bytes", { e1 with sig := List.replicate maxSigBytes 9 }),
-   (s!"a signature of {maxSigBytes + 1} bytes", { e1 with sig := List.replicate (maxSigBytes + 1) 9 })]
+   (s!"a signer of {maxSignerBytes} bytes", { e1 with sigs := [{ sig7 with signer := List.replicate maxSignerBytes 7 }] }),
+   (s!"a signer of {maxSignerBytes + 1} bytes",
+     { e1 with sigs := [{ sig7 with signer := List.replicate (maxSignerBytes + 1) 7 }] }),
+   (s!"a signature of {maxSigBytes} bytes", { e1 with sigs := [{ sig7 with sig := List.replicate maxSigBytes 9 }] }),
+   (s!"a signature of {maxSigBytes + 1} bytes",
+     { e1 with sigs := [{ sig7 with sig := List.replicate (maxSigBytes + 1) 9 }] }),
+   (s!"{maxSigs} signatures", { e1 with sigs := manySigs maxSigs }),
+   (s!"{maxSigs + 1} signatures", { e1 with sigs := manySigs (maxSigs + 1) })]
+
+/-- Sets of signatures not in their one form: refused, though the codec takes their bytes. -/
+def unsortedEnvelopes : List (String × Envelope) :=
+  [("two signatures out of order", { e1 with sigs := [sig8, sig7] }),
+   ("one signer twice", { e1 with sigs := [sig7, { sig7 with sig := List.replicate 64 1 }] })]
 
 def limitSigned : List (String × Signed) :=
   [(s!"a label of {maxLabelBytes} bytes", { s1 with label := as maxLabelBytes }),
    (s!"a label of {maxLabelBytes + 1} bytes", { s1 with label := as (maxLabelBytes + 1) }),
-   (s!"a signer of {maxSignerBytes} bytes", { s1 with signer := List.replicate maxSignerBytes 7 }),
-   (s!"a signer of {maxSignerBytes + 1} bytes", { s1 with signer := List.replicate (maxSignerBytes + 1) 7 }),
-   (s!"a signature of {maxSigBytes} bytes", { s1 with sig := List.replicate maxSigBytes 9 }),
-   (s!"a signature of {maxSigBytes + 1} bytes", { s1 with sig := List.replicate (maxSigBytes + 1) 9 })]
+   (s!"a signer of {maxSignerBytes} bytes", { s1 with sigs := [{ sig7 with signer := List.replicate maxSignerBytes 7 }] }),
+   (s!"a signer of {maxSignerBytes + 1} bytes",
+     { s1 with sigs := [{ sig7 with signer := List.replicate (maxSignerBytes + 1) 7 }] }),
+   (s!"a signature of {maxSigBytes} bytes", { s1 with sigs := [{ sig7 with sig := List.replicate maxSigBytes 9 }] }),
+   (s!"a signature of {maxSigBytes + 1} bytes",
+     { s1 with sigs := [{ sig7 with sig := List.replicate (maxSigBytes + 1) 9 }] }),
+   (s!"{maxSigs} signatures", { s1 with sigs := manySigs maxSigs }),
+   (s!"{maxSigs + 1} signatures", { s1 with sigs := manySigs (maxSigs + 1) })]
 
 def accepted (bs : Bytes) (ok : Bool) : Json := Json.mkObj [("bytes", toJson bs.length), ("accepted", toJson ok)]
 
 def limits : List Json :=
   [vector "the limits" Json.null (Json.mkObj [("maxEnvelopeBytes", toJson maxEnvelopeBytes),
     ("maxDeps", toJson maxDeps), ("maxBranchBytes", toJson maxBranchBytes), ("maxLabelBytes", toJson maxLabelBytes),
-    ("maxSignerBytes", toJson maxSignerBytes), ("maxSigBytes", toJson maxSigBytes), ("maxDepth", toJson maxDepth)])] ++
+    ("maxSignerBytes", toJson maxSignerBytes), ("maxSigBytes", toJson maxSigBytes), ("maxSigs", toJson maxSigs),
+    ("maxDepth", toJson maxDepth)])] ++
   (limitEnvelopes.map fun (name, e) =>
     let bs := encode e.value
     vector s!"an envelope, {name}" (Json.mkObj [("envelope", e.json)]) (accepted bs (Envelope.accept bs).isSome)) ++
@@ -312,33 +339,44 @@ def limits : List Json :=
     let bs := encode s.value
     vector s!"a signed thing of {size} bytes"
       (Json.mkObj [("signed", { s with body := .null }.json), ("bodyZeros", toJson n)])
-      (accepted bs (Signed.accept bs).isSome))
+      (accepted bs (Signed.accept bs).isSome)) ++
+  (unsortedEnvelopes.map fun (name, e) =>
+    let bs := encode e.value
+    vector s!"an envelope, {name}" (Json.mkObj [("envelope", e.json)]) (accepted bs (Envelope.accept bs).isSome))
 
 /-! ## The past and the verdicts, on generated worlds -/
 
 /-- A small world where splits and shared parents are common: two Docs, two writers, three places, bodies from four.
-Each envelope names earlier ones, or a name nobody holds, as its prev and deps. -/
+Each envelope names earlier ones, or now and then a name nobody holds, as its prev and deps; a reader holds most of
+them, so some pasts are whole and some wait. -/
 def Rng.world (r : Rng) : Aven.Core.Model.World × Rng := Id.run do
   let (n, r) := r.below 10
   let mut r := r
   let mut all : Array Envelope := #[]
   let mut held : Array Bool := #[]
   let pick (all : Array Envelope) (r : Rng) : Hash × Rng :=
-    let (i, r) := r.below (all.size + 1)
-    if h : i < all.size then (all[i].name blake3, r) else (blake3 [i.toUInt8, 0xFF], r)
+    let (i, r) := r.below (2 * all.size + 1)
+    if h : i / 2 < all.size then (all[i / 2].name blake3, r) else (blake3 [i.toUInt8, 0xFF], r)
   for _ in [0:n + 1] do
     let (d, r1) := r.below 2
     let (w, r2) := r1.below 2
     let (s, r3) := r2.below 3
     let (hasPrev, r4) := r3.below 3
     let (p, r5) := pick all r4
-    let (nd, r6) := r5.below 3
+    -- the first envelope of a world builds on nothing
+    let (nd, r6) := r5.below (if all.size = 0 then 1 else 3)
     let (deps, r7) := r6.many nd (pick all)
     let (b, r8) := r7.below 4
-    let (h, r9) := r8.below 3
-    r := r9
-    let e : Envelope := Envelope.mk ⟨blake3 [d.toUInt8]⟩ (k "main") w (s + 1)
-      (if hasPrev = 0 then none else some p) deps (.uint b) (List.replicate 32 7) (List.replicate 64 9)
+    let (h, r9) := r8.below 6
+    let (again, r10) := r9.below 5
+    let (j, r11) := r10.below (all.size + 1)
+    r := r11
+    -- now and then an earlier envelope again, approved by another: one name, more signatures
+    let fresh : Envelope := Envelope.mk ⟨blake3 [d.toUInt8]⟩ (k "main") w (s + 1)
+      (if hasPrev == 0 || all.size == 0 then none else some p) deps (.uint b) [sig7]
+    let e : Envelope := match all[j]? with
+      | some x => if again = 0 then { x with sigs := addSig sig8 x.sigs } else fresh
+      | none => fresh
     all := all.push e
     held := held.push (h ≠ 0)
   let (nb, r') := r.below 3
@@ -363,7 +401,8 @@ def countsVectors : List Json :=
   worlds.zipIdx.map fun (w, i) =>
     let a := w.answer
     vector s!"world {i + 1}" (Json.mkObj (worldInput w ++ [("bad", toJson w.bad), ("tips", toJson w.tips)]))
-      (Json.mkObj [("discounted", a.getObjValD "discounted"), ("counts", a.getObjValD "counts"),
+      (Json.mkObj [("closed", a.getObjValD "closed"), ("discounted", a.getObjValD "discounted"),
+        ("counts", a.getObjValD "counts"),
         ("holds", a.getObjValD "holds")])
 
 /-! ## Targets and footprints -/
@@ -498,7 +537,8 @@ def ops : List Json :=
 #guard (deepExamples (maxDepth + 1)).all fun (_, v) => depth v == maxDepth + 1 && Shape v && !Canon v
 #guard tooDeep.all fun (_, bs) => (decodeAll bs).isNone
 #guard [e1, e2, e2', other, e3].all fun e => Canon e.value
-#guard [e1, e2, e3].all fun e => Envelope.accept (encode e.value) == some e
+#guard [e1, e2, e3, e2Approved].all fun e => Envelope.accept (encode e.value) == some e
+#guard unsortedEnvelopes.all fun (_, e) => Canon e.value && (Envelope.accept (encode e.value)).isNone
 #guard [s1, s2, s3].all fun s => Canon s.value && (Signed.accept (encode s.value)).isSome
 #guard splitB e2 e2' && !splitB e1 e2 && !splitB e2 e2 && !splitB e2 other
 
@@ -515,7 +555,7 @@ def main (args : List String) : IO Unit := do
   write dir "signed.json" signedVectors
   let ls := limits
   -- each pair is one at the limit, accepted, and one past it, refused; the sizes land exactly
-  for (v, i) in (ls.drop 1).zipIdx do
+  for (v, i) in ((ls.drop 1).take (ls.length - 1 - unsortedEnvelopes.length)).zipIdx do
     if (v.getObjValD "expected").getObjValD "accepted" != toJson (i % 2 == 0) then
       throw (IO.userError s!"limits: {(v.getObjValD "name").compress} is on the wrong side")
   write dir "limits.json" ls

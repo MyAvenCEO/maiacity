@@ -44,12 +44,12 @@ theorem rule1_named {H : Bytes → Hash} (hH : Injective H) {a b : Value} (ha : 
 differ at most in their signatures (A30). -/
 theorem rule2_prev_fixed {H : Bytes → Hash} (hH : Injective H) {a b b' : Envelope} (hb : Canon b.unsigned = true)
     (hb' : Canon b'.unsigned = true) (h : a.prev = some (b.name H)) (h' : a.prev = some (b'.name H)) :
-    { b with sig := b'.sig } = b' :=
+    { b with sigs := b'.sigs } = b' :=
   Envelope.name_inj hH hb hb' (Option.some.inj (h.symm.trans h'))
 
 /-- So is each tip it builds on. -/
 theorem rule2_dep_fixed {H : Bytes → Hash} (hH : Injective H) {b b' : Envelope} (hb : Canon b.unsigned = true)
-    (hb' : Canon b'.unsigned = true) (h : b.name H = b'.name H) : { b with sig := b'.sig } = b' :=
+    (hb' : Canon b'.unsigned = true) (h : b.name H = b'.name H) : { b with sigs := b'.sigs } = b' :=
   Envelope.name_inj hH hb hb' h
 
 /-- An envelope's Loro dependencies and its hashes name the same past: among envelopes that pass docs rule 7, the same
@@ -104,9 +104,12 @@ theorem rule4_order_free {nm : Envelope → Hash} {ok : Envelope → Prop} {S S'
     (same : ∀ x, x ∈ S ↔ x ∈ S') {e : Envelope} : Counts nm ok S e ↔ Counts nm ok S' e := by
   have to : ∀ {A B : List Envelope}, (∀ x, x ∈ A → x ∈ B) → (∀ x, x ∈ B → x ∈ A) → Counts nm ok A e →
       Counts nm ok B e := by
-    intro A B ab ba h x hx
-    obtain ⟨o, ns⟩ := h x (reaches_mono nm ba hx)
-    exact ⟨o, fun y hy => ns y (ba y hy)⟩
+    intro A B ab ba h
+    refine ⟨fun x hx k hk => ?_, fun x hx => ?_⟩
+    · obtain ⟨y, my, ny⟩ := h.1 x (reaches_mono nm ba hx) k hk
+      exact ⟨y, ab y my, ny⟩
+    · obtain ⟨o, ns⟩ := h.2 x (reaches_mono nm ba hx)
+      exact ⟨o, fun y hy => ns y (ba y hy)⟩
   exact ⟨to (fun x => (same x).mp) (fun x => (same x).mpr), to (fun x => (same x).mpr) (fun x => (same x).mp)⟩
 
 /-- Readers who agree on what a runtime's hash names lower an operation alike, and make the same commit: the engine's
@@ -135,9 +138,9 @@ def contentOk (ver : DocId → TypeId) (fp : Envelope → List Step) (rule : Typ
 
 /-- One reader verdict (rule 4): caps' `Verdict`, with fresh the epoch check, live the revocation verdict and the
 deletes the reader holds (`ID.liveWith`), and fit the content check against the reader's footprint: the steps the
-calls it authorized lower to (A32). An envelope counts exactly when everything in its past is signed, in a fresh epoch,
-authorized by its cap chain, not revoked, not ended by a delete, within its calls' footprint and fit, and none of it is
-half of a split. -/
+calls it authorized lower to (A32). An envelope counts exactly when its whole past is held (Core's `Closed`, rule 11)
+and everything in it is signed, in a fresh epoch, authorized by its cap chain, not revoked, not ended by a delete,
+within its calls' footprint and fit, and none of it is half of a split. -/
 theorem rule4_one_verdict (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spawned lists : DocId → DocId → Prop)
     (signed : Envelope → Prop) (H : Bytes → Hash) (epochOf : Envelope → Nat) (rd : ID.Reads)
     (rs : List ID.Revocation) (isDelete byOwner : Envelope → Bool) (ver : DocId → TypeId)
@@ -148,7 +151,7 @@ theorem rule4_one_verdict (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spaw
         (r.Verdict gov spawned lists signed (fun x => ID.freshEpoch (Envelope.name H) epochOf S x = true)
           (fun x => ID.liveWith (Envelope.name H) rd isDelete byOwner S rs x = true)
           (contentOk ver r.footprint rule before step)) S e ↔
-      ∀ x, Reaches (Envelope.name H) S e x →
+      Closed (Envelope.name H) S e ∧ ∀ x, Reaches (Envelope.name H) S e x →
         (signed x ∧ ID.freshEpoch (Envelope.name H) epochOf S x = true ∧ r.Authorized gov spawned lists x ∧
           ID.liveWith (Envelope.name H) rd isDelete byOwner S rs x = true ∧
           contentOk ver r.footprint rule before step x) ∧
@@ -168,15 +171,16 @@ theorem rule4_delete_ends (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spaw
       (r.Verdict gov spawned lists signed (fun x => ID.freshEpoch (Envelope.name H) epochOf S x = true)
         (fun x => ID.liveWith (Envelope.name H) rd isDelete byOwner S rs x = true) fit) S e) :
     r.Own gov d ∧ (Envelope.name H d = Envelope.name H e ∨ Past.Before (Envelope.name H) S d e) :=
-  ⟨(owner d own).1, ID.delete_ends hd del own he (ID.liveWith_iff.mp ((h e (.refl e)).1).2.2.2.1).2⟩
+  ⟨(owner d own).1, ID.delete_ends hd del own he (ID.liveWith_iff.mp ((h.2 e (.refl e)).1).2.2.2.1).2⟩
 
-/-- Two readers that hold the same past of an envelope, and the same splits in it, give it the same verdict, whatever
-else each holds. -/
+/-- Two readers that hold the same past of an envelope, whole for both or for neither, and the same splits in it, give
+it the same verdict, whatever else each holds. -/
 theorem rule4_readers_agree (nm : Envelope → Hash) (ok : Envelope → Prop) {S S' : List Envelope} {e : Envelope}
+    (closed : Closed nm S e ↔ Closed nm S' e)
     (past : ∀ x, Reaches nm S e x ↔ Reaches nm S' e x)
     (splits : ∀ x, Reaches nm S e x → ((∃ y ∈ S, Split nm x y) ↔ (∃ y ∈ S', Split nm x y))) :
     Counts nm ok S e ↔ Counts nm ok S' e :=
-  ID.readers_agree nm ok past splits
+  ID.readers_agree nm ok closed past splits
 
 /-- What the content check gives: every change is one a step of the footprint makes, the footprint being the steps the
 envelope's calls lower to; and where what an envelope says it does is the diff a reader sees (`ChangesAreDiff`, with
@@ -247,7 +251,7 @@ theorem rule4_merge_whole (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spaw
       (∀ r0 ∈ before e, (∀ r' ∈ step (before e) e, r'.id ≠ r0.id) →
         ∃ st ∈ r.footprint e, st.type = r0.type ∧ st.verb = .remove)) ∧
     -- the signing device's cap writes on main and allows every call of the whole merge
-    (∃ dc f, r.deviceCap e.signer = some dc ∧ dc.branches.allows ID.mainBranch = true ∧ r.facts e.doc = some f ∧
+    (∃ dc f, r.deviceCap (r.signer e) = some dc ∧ dc.branches.allows ID.mainBranch = true ∧ r.facts e.doc = some f ∧
       ∀ c ∈ r.calls e, dc.allows gov spawned lists f c) ∧
     -- on the signer's vault's own authority, or by a chain whose last cap writes on main and allows every call
     (r.Own gov e ∨

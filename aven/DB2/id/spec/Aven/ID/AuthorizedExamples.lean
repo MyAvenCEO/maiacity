@@ -61,11 +61,11 @@ structure Case where
 
 def Case.envelope (c : Case) : Envelope :=
   { doc := c.doc, branch := key c.branch, writer := 1, seq := 1, prev := none, deps := [], body := .null,
-    signer := key c.signer, sig := [] }
+    sigs := [⟨key c.signer, []⟩] }
 
 def Case.reader (c : Case) : Reader :=
   { ctx := castCtx, chain := fun _ => c.chain, calls := fun _ => c.calls, lower := fun _ => [],
-    vaultOf := fun k => (castKeys.find? (·.1 == k)).map (·.2), member := castMembers.contains,
+    signer := fun _ => key c.signer, vaultOf := fun k => (castKeys.find? (·.1 == k)).map (·.2), member := castMembers.contains,
     facts := castCtx.facts, deviceCap := fun k => (castDeviceCaps.find? (·.1 == k)).map (·.2),
     actorOf := fun _ => c.actor }
 
