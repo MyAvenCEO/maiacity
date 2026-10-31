@@ -358,6 +358,17 @@ and the decisions, not the parsers.
   text has 4.5:1 against the background the style resolves under it, 3:1 when large) and `face_classes`. Contrast is
   exact integer arithmetic over one table, `linear` (sRGB to linear light, × 10⁷), which the vectors export: #767676
   on white passes and #777777 fails, as WCAG has it.
+- **A face's style, typed** (`Style`, its examples in `StyleExamples`). What a slide needs, and avenBRAIN's slides are
+  written in: a rule is a selector, a descendant chain of one to four compounds (an allowlisted tag, up to four
+  classes), and typed declarations: placement, size, aspect, border, colours, the one bundled font, size, weight,
+  leading, tracking, uppercase, centring, a transform of translate, rotate and scale, and the one arrowhead clip-path.
+  No custom properties, no `url()`, no free text: `StyleRule.css` writes the CSS. Which rule reaches a node is CSS's
+  cascade (classes, then tags, then the later rule). `styledOk` accepts a styled face when the tree passes `check`,
+  every rule is in range (`styled_rules`), every text is at least 2.5cqw where a slide is narrowest, 356 px
+  (`styled_size`), every text has enough contrast against what it is drawn on (`styled_contrast`: the nearest
+  background above it, or an earlier sibling layer covering the whole parent), and names and `alt`s are there
+  (`styled_named`). The examples are avenBRAIN's slide "A key signs", its layers and the shared slide rules, and 17
+  faces the checks take or refuse. The face-runtime moves to it next, and its crate and the drawer with it.
 - **state-runtime** (`State`, its examples in `StateExamples`). The grammar of a state part: a statechart and a
   reducer as data, one handler per message with its moves (`from → to`), its updates (`set`, `merge`, `append`,
   `remove` at a path of fields and indexes) and its sends (`tell`, `ask`, `reply`). A runtime is a pure
