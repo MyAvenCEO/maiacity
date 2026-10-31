@@ -1,0 +1,11 @@
+[package]
+name = "aven-runtimes-registry"
+version = "0.0.0"
+description = "The file registry: what a file really is, by its bytes, and how it shows (Aven.Runtime.Registry)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dev-dependencies]
+serde_json = "=1.0.154"

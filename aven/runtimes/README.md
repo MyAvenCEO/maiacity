@@ -145,7 +145,7 @@ aven/runtimes/
   host/              aven-runtimes-host: load by hash, refuse imports, fuel, memory, schemas, output limits
                      (native for the Peer, the kernel and the engine; wasm for a browser worker)
   freeze/            the reproducible build and the checks: no imports, declared memory, hash = manifest
-  registry/          aven-runtimes-registry: the file registry, the sniffer, decide(); built native and to wasm
+  registry/          built: aven-runtimes-registry, the file registry, the sniffer, decide_file(); native and wasm
   tree/              built: the node-tree allowlist, shared by every runtime that draws and the applier
   contract/          built: the contract's failures, limits, results and render keys
   markdown/          built: markdown-runtime, the first file runtime (the docs need it first)
@@ -184,7 +184,7 @@ types.
 For each file, from its first bytes, its size and its claimed type, `decide` gives one **decision**:
 
 1. **What the file really is,** by its bytes. Each binary type has signatures (bytes at an offset, with a mask: PNG's
-   `89 50 4E 47 0D 0A 1A 0A`, JPEG's `FF D8 FF`, `RIFF….WEBP`, `ftyp` boxes for MP4 and AVIF, `%PDF-`). Text types have
+   `89 50 4E 47 0D 0A 1A 0A`, JPEG's `FF D8 FF`, `RIFF….WEBP`, `ftyp` boxes for MP4, QuickTime and AVIF, `%PDF-`). Text types have
    no magic: a file is text when its head is valid UTF-8 (or UTF-16 with a BOM) without NUL, and then a parse decides
    among them: an XML prolog or root element (`<svg` is SVG; anything with an HTML root, `<!DOCTYPE html` or `<script`
    is HTML), JSON by a bounded parse. Only then may the claimed type, or the name's extension, choose among formats the
