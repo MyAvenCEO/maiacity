@@ -115,8 +115,7 @@ impl Names {
         let holder = match &v["holder"] {
             Value::String(s) if s == "public" => Holder::Public,
             h if h.get("vault").is_some() => Holder::Vault(h["vault"].as_str().unwrap().into()),
-            h if h.get("group").is_some() => Holder::Group(self.doc(h["group"].as_str().unwrap())),
-            h => Holder::Ticket(h["ticket"].as_str().unwrap().into()),
+            h => Holder::Group(self.doc(h["group"].as_str().unwrap())),
         };
         Cap {
             id: v["id"].as_str().unwrap().into(),
@@ -152,6 +151,33 @@ impl Names {
                 .map(|s| Sig::new(s["key"].as_str().unwrap(), s["digest"].as_str().unwrap()))
                 .collect(),
         }
+    }
+
+    /// A cap as the vectors write it, without its bytes.
+    pub fn cap_json(&self, c: &Cap) -> Value {
+        let holder = match &c.holder {
+            Holder::Vault(v) => json!({ "vault": v }),
+            Holder::Group(g) => json!({ "group": self.text(g) }),
+            Holder::Public => json!("public"),
+        };
+        let k = &c.conditions;
+        let branches = match &k.branches {
+            Branches::Any => json!("any"),
+            Branches::Main => json!("main"),
+            Branches::Proposals => json!("proposals"),
+            Branches::One(b) => json!({ "branch": b }),
+        };
+        json!({
+            "id": c.id, "issuer": c.issuer, "holder": holder, "parent": c.parent, "form": c.form.name(),
+            "grant": c.grant.iter().map(|l| self.line_json(l)).collect::<Vec<_>>(), "role": c.role,
+            "share": c.share,
+            "conditions": {
+                "notBefore": k.not_before, "expires": k.expires, "approve": k.approve, "uses": k.uses, "own": k.own,
+                "branches": branches, "history": k.history.name(),
+            },
+            "signer": c.signer,
+            "approvals": c.approvals.iter().map(|a| json!({ "key": a.key, "digest": a.digest })).collect::<Vec<_>>(),
+        })
     }
 
     pub fn error_json(&self, e: &ChainError) -> Value {

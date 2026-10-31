@@ -115,14 +115,12 @@ pub struct Reader<'a> {
 }
 
 impl Reader<'_> {
-    /// `v` holds `c`: it is `c`'s vault, in `c`'s group now, or, for the public, a member of the network. A ticket is
-    /// claimed by a vault before it writes (`holdsAt`).
+    /// `v` holds `c`: it is `c`'s vault, in `c`'s group now, or, for the public, a member of the network (`holdsAt`).
     pub fn holds_at(&self, c: &Cap, v: &str) -> bool {
         match &c.holder {
             Holder::Vault(w) => w == v,
             Holder::Group(g) => (self.ctx.in_group)(g, v),
             Holder::Public => (self.member)(v),
-            Holder::Ticket(_) => false,
         }
     }
 

@@ -145,12 +145,12 @@ impl Ctx<'_> {
         }
     }
 
-    /// `issuer` holds `p`: it is `p`'s vault, or in `p`'s group now. The public and tickets pass nothing on (`holds`).
+    /// `issuer` holds `p`: it is `p`'s vault, or in `p`'s group now. The public passes nothing on (`holds`).
     pub fn holds(&self, p: &Cap, issuer: &str) -> bool {
         match &p.holder {
             Holder::Vault(v) => v == issuer,
             Holder::Group(g) => (self.in_group)(g, issuer),
-            Holder::Public | Holder::Ticket(_) => false,
+            Holder::Public => false,
         }
     }
 

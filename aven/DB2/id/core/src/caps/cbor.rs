@@ -5,7 +5,7 @@
 //! {"form", "role", "grant": [line…], "share", "holder", "issuer", "parent", "conditions": {"own", "uses", "approve",
 //!  "expires", "history", "branches", "notBefore"}}
 //! line:   {"op": op id, "doc": target, "params": {param: [value…] or null, …}}
-//! holder: {"vault": v}   {"group": Doc}   "public"   {"ticket": key}
+//! holder: {"vault": v}   {"group": Doc}   "public"
 //! ```
 //!
 //! A cap's id is the BLAKE3 name of its body ([`Cap::digest`]), which its issuer's owners approve. Its issuing device
@@ -63,7 +63,6 @@ impl Holder {
             Holder::Vault(v) => map(vec![("vault", text(v))]),
             Holder::Group(g) => map(vec![("group", Value::Bytes(g.0.0.to_vec()))]),
             Holder::Public => text("public"),
-            Holder::Ticket(k) => map(vec![("ticket", text(k))]),
         }
     }
 }
@@ -205,7 +204,6 @@ impl Holder {
         let [(k, x)] = kvs else { return None };
         match (k.as_str(), x) {
             ("vault", Value::Text(t)) => Some(Holder::Vault(t.clone())),
-            ("ticket", Value::Text(t)) => Some(Holder::Ticket(t.clone())),
             ("group", Value::Bytes(b)) => Some(Holder::Group(aven_core::DocId(Hash(
                 b.as_slice().try_into().ok()?,
             )))),

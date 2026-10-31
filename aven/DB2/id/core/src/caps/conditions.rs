@@ -109,14 +109,14 @@ impl Conditions {
     }
 }
 
-/// Who holds a cap: a vault (devices are vaults), everyone in a group (its Doc, of avenID's type `group`), the public
-/// (every member of the network, D15), or a ticket's one-time key until a vault claims it.
+/// Who holds a cap: a vault (a device is its own vault), everyone in a group of vaults (its Doc, of avenID's type
+/// `group`), or the public (every member of the network, D15). Nothing else holds one: a bearer key, a ticket's
+/// one-time key or a fetch key, proves a condition of a cap and never holds it (rule 15, A42).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Holder {
     Vault(String),
     Group(DocId),
     Public,
-    Ticket(String),
 }
 
 /// A cap's form: a **grant** starts a chain or passes its parent on to a holder, with its issuer's owners' approval
