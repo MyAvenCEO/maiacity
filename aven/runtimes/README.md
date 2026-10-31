@@ -145,7 +145,7 @@ aven/runtimes/
   host/              aven-runtimes-host: load by hash, refuse imports, fuel, memory, schemas, output limits
                      (native for the Peer, the kernel and the engine; wasm for a browser worker)
   freeze/            the reproducible build and the checks: no imports, declared memory, hash = manifest
-  registry/          aven-runtimes-registry: the file registry, the sniffer, decide(); built native and to wasm
+  registry/          built: aven-runtimes-registry, the file registry, the sniffer, decide_file(); native and wasm
   tree/              built: the node-tree allowlist, shared by every runtime that draws and the applier
   contract/          built: the contract's failures, limits, results and render keys
   markdown/          built: markdown-runtime, the first file runtime (the docs need it first)
@@ -184,7 +184,7 @@ types.
 For each file, from its first bytes, its size and its claimed type, `decide` gives one **decision**:
 
 1. **What the file really is,** by its bytes. Each binary type has signatures (bytes at an offset, with a mask: PNG's
-   `89 50 4E 47 0D 0A 1A 0A`, JPEG's `FF D8 FF`, `RIFF….WEBP`, `ftyp` boxes for MP4 and AVIF, `%PDF-`). Text types have
+   `89 50 4E 47 0D 0A 1A 0A`, JPEG's `FF D8 FF`, `RIFF….WEBP`, `ftyp` boxes for MP4, QuickTime and AVIF, `%PDF-`). Text types have
    no magic: a file is text when its head is valid UTF-8 (or UTF-16 with a BOM) without NUL, and then a parse decides
    among them: an XML prolog or root element (`<svg` is SVG; anything with an HTML root, `<!DOCTYPE html` or `<script`
    is HTML), JSON by a bounded parse. Only then may the claimed type, or the name's extension, choose among formats the
@@ -358,13 +358,28 @@ and the decisions, not the parsers.
   text has 4.5:1 against the background the style resolves under it, 3:1 when large) and `face_classes`. Contrast is
   exact integer arithmetic over one table, `linear` (sRGB to linear light, × 10⁷), which the vectors export: #767676
   on white passes and #777777 fails, as WCAG has it.
+- **A face's style, typed** (`Style`, its examples in `StyleExamples`). What a slide needs, and avenBRAIN's slides are
+  written in: a rule is a selector, a descendant chain of one to four compounds (an allowlisted tag, up to four
+  classes), and typed declarations: placement, size, aspect, border, colours, the one bundled font, size, weight,
+  leading, tracking, uppercase, centring, a transform of translate, rotate and scale, and the one arrowhead clip-path.
+  No custom properties, no `url()`, no free text: `StyleRule.css` writes the CSS. Which rule reaches a node is CSS's
+  cascade (classes, then tags, then the later rule). `styledOk` accepts a styled face when the tree passes `check`,
+  every rule is in range (`styled_rules`), every text is at least 9 px where a slide is narrowest, 356 px, so 2.6cqw
+  (`styled_size`), every text has enough contrast against what it is drawn on (`styled_contrast`: the nearest
+  background above it, or an earlier sibling layer covering the whole parent), and names and `alt`s are there
+  (`styled_named`). The examples are avenBRAIN's slide "A key signs", its layers and the shared slide rules, and 17
+  faces the checks take or refuse. The face-runtime moves to it next, and its crate and the drawer with it.
 - **state-runtime** (`State`, its examples in `StateExamples`). The grammar of a state part: a statechart and a
   reducer as data, one handler per message with its moves (`from → to`), its updates (`set`, `merge`, `append`,
   `remove` at a path of fields and indexes) and its sends (`tell`, `ask`, `reply`). A runtime is a pure
   `run(part, input)` the kernel calls, so it names nothing of the actors': a message is a sender's address, a name, a
-  payload and an ask's id, all Values, and a step gives back the new state, its sends as data and the phase it moved
-  to. `Aven.Actor` maps them to its effects and joins the step to its kernel and its machines; actors build on
-  runtimes, never the reverse. `step` is total and deterministic; under the contract (`stateRuntime`) the part and
+  payload and an ask's id, all Values, and a step gives back the writes it commits, its sends as data and the phase
+  it moved to. The writes are K8's steps (A37), never a whole new state: `put`, `patch`, `remove` and an `edit` that
+  pushes onto a list, each at a path, which are the turn's commit and what the caps check (`Write.footprint`). The
+  reducer's `set`, `merge`, `append` and `remove` lower to them, and `lower_apply`, `lowerAll_apply` and `step_writes`
+  prove the writes, applied in order, make exactly the state the updates make. `Aven.Actor` applies the writes, maps
+  the sends to its effects and joins the step to its kernel and its machines; actors build on runtimes, never the
+  reverse. `step` is total and deterministic; under the contract (`stateRuntime`) the part and
   the input are Values, the fuel a count of the part's work. Theorems:
   - `step_moves`: a step that answers took one of the part's moves for that message and phase; otherwise it refuses;
   - `step_allowed`: under a machine's transitions the part `fits`, the move is one they allow;

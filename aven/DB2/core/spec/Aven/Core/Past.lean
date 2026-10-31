@@ -8,88 +8,101 @@ a proposition. This module decides it for the envelopes a reader holds: rounds o
 that something already found builds on, until a round adds nothing. That takes no more rounds than there are
 envelopes.
 
+It decides the past of anything found by name that names its parents (`Parents`): Core's envelopes, by the name a
+reader computes, and the tree's statements, by the name a peer stores each under. Nothing here depends on which.
+
 - `reaches_iff`: Core's past is the envelope itself and what is `Before` it;
 - `found_iff`, `inPast_iff`: `past` finds exactly the names of what is before an envelope, and `inPast` decides
   `Before`.
 
-Envelopes are found by name, as Core's `BuildsOn` finds them: two envelopes of `S` with one name are both in the past
+Things are found by name, as Core's `BuildsOn` finds envelopes: two things of `S` with one name are both in the past
 or neither is (`Before.rename`). -/
 
 namespace Aven.Core.Past
 
-/-- The names an envelope builds on, its parents: the one before it in its log, and the tips of other logs it names. -/
-def parents (e : Envelope) : List Hash := e.prev.toList ++ e.deps
+/-- The names a thing builds on, its parents. An envelope's are the one before it in its log and the tips it names;
+anything else that is found by name and names what it builds on, such as a tree statement a peer stores by its name,
+decides its past here too. -/
+class Parents (α : Type) where
+  parents : α → List Hash
 
-variable (nm : Envelope → Hash)
+export Parents (parents)
 
-theorem buildsOn_iff {a b : Envelope} : BuildsOn nm a b ↔ nm b ∈ parents a := by
-  simp [BuildsOn, parents]
+instance : Parents Envelope := ⟨fun e => e.prev.toList ++ e.deps⟩
+
+theorem parents_envelope (e : Envelope) : parents e = e.prev.toList ++ e.deps := rfl
+
+theorem buildsOn_iff {nm : Envelope → Hash} {a b : Envelope} : BuildsOn nm a b ↔ nm b ∈ parents a := by
+  simp [BuildsOn, parents_envelope]
+
+variable {α : Type} [Parents α] (nm : α → Hash)
 
 /-- `b` is in `a`'s past among `S`, `a` itself left out: `a` builds on it, or on something whose past holds it. -/
-inductive Before (S : List Envelope) (a : Envelope) : Envelope → Prop
-  | parent {b : Envelope} : b ∈ S → nm b ∈ parents a → Before S a b
-  | step {b c : Envelope} : Before S a b → c ∈ S → nm c ∈ parents b → Before S a c
+inductive Before (S : List α) (a : α) : α → Prop
+  | tip {b : α} : b ∈ S → nm b ∈ parents a → Before S a b
+  | step {b c : α} : Before S a b → c ∈ S → nm c ∈ parents b → Before S a c
 
 /-- Each name once, the first time it comes. -/
 def dedup : List Hash → List Hash
   | [] => []
   | x :: xs => if (dedup xs).contains x then dedup xs else x :: dedup xs
 
-/-- The names one round adds: of envelopes of `S` not yet known, built on by one already known. -/
-def fresh (S : List Envelope) (K : List Hash) : List Hash :=
+/-- The names one round adds: of things of `S` not yet known, built on by one already known. -/
+def fresh (S : List α) (K : List Hash) : List Hash :=
   dedup ((S.filter fun c =>
     !K.contains (nm c) && S.any fun b => K.contains (nm b) && (parents b).contains (nm c)).map nm)
 
 /-- The names in `a`'s past among `S` after `n + 1` rounds. -/
-def pastNames (S : List Envelope) (a : Envelope) : Nat → List Hash
+def pastNames (S : List α) (a : α) : Nat → List Hash
   | 0 => dedup ((S.filter fun b => (parents a).contains (nm b)).map nm)
   | n + 1 => pastNames S a n ++ fresh nm S (pastNames S a n)
 
-/-- The names in `a`'s past among `S`: as many rounds as `S` has envelopes find them all. -/
-def past (S : List Envelope) (a : Envelope) : List Hash := pastNames nm S a (S.length + 1)
+/-- The names in `a`'s past among `S`: as many rounds as `S` has things find them all. -/
+def past (S : List α) (a : α) : List Hash := pastNames nm S a (S.length + 1)
 
 /-- `b` is before `a` among `S`, decided. -/
-def inPast (S : List Envelope) (a b : Envelope) : Bool := (past nm S a).contains (nm b)
+def inPast (S : List α) (a b : α) : Bool := (past nm S a).contains (nm b)
 
-variable {nm} {S S' : List Envelope} {a b c : Envelope}
+variable {nm} {S S' : List α} {a b c : α}
 
 theorem Before.mem (h : Before nm S a b) : b ∈ S := by
   cases h with
-  | parent m _ => exact m
+  | tip m _ => exact m
   | step _ m _ => exact m
 
 theorem Before.trans (h₁ : Before nm S a b) (h₂ : Before nm S b c) : Before nm S a c := by
   induction h₂ with
-  | parent m t => exact .step h₁ m t
+  | tip m t => exact .step h₁ m t
   | step _ m t ih => exact .step ih m t
 
 theorem Before.mono (hs : ∀ x ∈ S, x ∈ S') (h : Before nm S a b) : Before nm S' a b := by
   induction h with
-  | parent m t => exact .parent (hs _ m) t
+  | tip m t => exact .tip (hs _ m) t
   | step _ m t ih => exact .step ih (hs _ m) t
 
 /-- Another envelope of `S` with the same name is in the past too. -/
 theorem Before.rename (h : Before nm S a b) (m : c ∈ S) (n : nm c = nm b) : Before nm S a c := by
   cases h with
-  | parent _ t => exact .parent m (n ▸ t)
+  | tip _ t => exact .tip m (n ▸ t)
   | step h' _ t => exact .step h' m (n ▸ t)
 
 /-- Core's past is the envelope itself and what is before it. -/
-theorem reaches_iff : Reaches nm S a b ↔ b = a ∨ Before nm S a b := by
+theorem reaches_iff {nm : Envelope → Hash} {S : List Envelope} {a b : Envelope} :
+    Reaches nm S a b ↔ b = a ∨ Before nm S a b := by
   constructor
   · intro h
     induction h with
     | refl => exact .inl rfl
     | step hb hab _ ih =>
-      have t := (buildsOn_iff nm).mp hab
+      have t := buildsOn_iff.mp hab
       rcases ih with rfl | p
-      · exact .inr (.parent hb t)
-      · exact .inr ((Before.parent hb t).trans p)
+      · exact .inr (.tip hb t)
+      · exact .inr ((Before.tip hb t).trans p)
   · rintro (rfl | h)
     · exact .refl _
     · induction h with
-      | parent m t => exact .step m ((buildsOn_iff nm).mpr t) (.refl _)
-      | step _ m t ih => exact reaches_trans nm ih (.step m ((buildsOn_iff nm).mpr t) (.refl _))
+      | tip m t => exact .step m (buildsOn_iff.mpr t) (.refl _)
+      | step _ m t ih => exact reaches_trans nm ih (.step m (buildsOn_iff.mpr t) (.refl _))
 
 theorem mem_dedup {x : Hash} : ∀ {l : List Hash}, x ∈ dedup l ↔ x ∈ l
   | [] => by simp [dedup]
@@ -154,7 +167,7 @@ theorem pastNames_sound : ∀ {n : Nat} {x : Hash}, x ∈ pastNames nm S a n →
   | 0, x, h => by
     simp only [pastNames, mem_dedup, List.mem_map, List.mem_filter, List.contains_iff_mem] at h
     obtain ⟨b, ⟨m, t⟩, e⟩ := h
-    exact ⟨b, m, e, .parent m t⟩
+    exact ⟨b, m, e, .tip m t⟩
   | n + 1, x, h => by
     simp only [pastNames, List.mem_append] at h
     rcases h with h | h
@@ -169,7 +182,7 @@ theorem pastNames_sound : ∀ {n : Nat} {x : Hash}, x ∈ pastNames nm S a n →
 theorem pastNames_closed {j : Nat} (hj : fresh nm S (pastNames nm S a j) = []) (h : Before nm S a b) :
     nm b ∈ pastNames nm S a j := by
   induction h with
-  | parent m t =>
+  | tip m t =>
     refine pastNames_mono (Nat.zero_le j) ?_
     simp only [pastNames, mem_dedup, List.mem_map, List.mem_filter, List.contains_iff_mem]
     exact ⟨_, ⟨m, t⟩, rfl⟩
