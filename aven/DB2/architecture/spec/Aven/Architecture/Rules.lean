@@ -124,13 +124,13 @@ theorem rule4_fit_merges {S K V : Type} [DecidableEq K] (rule : S → K → V �
     rule w.value.1 k w.value.2 :=
   DB.Docs.fit_envelopes rule h k hw
 
-/-- The content of an envelope, as every reader judges it from the changes it sees: the engine's footprint check (the
-changes stay within the steps its calls lower to, `fp`, which caps checked it may call, A32) and docs' fit, both over
-the one change view, from the version the envelope builds on (`before`) to the one it makes (`step`). -/
+/-- The content of an envelope, as every reader judges it from the changes it sees: the engine's footprint check (no
+Record changes its type, and the changes stay within the steps its calls lower to, `fp`, which caps checked it may call,
+A32) and docs' fit, both over the one change view, from the version the envelope builds on (`before`) to the one it makes (`step`). -/
 def contentOk (ver : DocId → TypeId) (fp : Envelope → List Step) (rule : TypeId → Bytes → Value → Prop)
     (before : Envelope → List (DB.Engine.Record Value))
     (step : List (DB.Engine.Record Value) → Envelope → List (DB.Engine.Record Value)) (e : Envelope) : Prop :=
-  DB.Engine.verdictFootprint (fp e) (DB.Engine.changesFrom ver (before e) (step (before e) e)) = true ∧
+  DB.Engine.verdictFootprint ver (fp e) (before e) (step (before e) e) = true ∧
     DB.Docs.FitsAll rule (DB.Engine.changesFrom ver (before e) (step (before e) e))
 
 /-- One reader verdict (rule 4): caps' `Verdict`, with fresh the epoch check, live the revocation verdict and the
@@ -192,7 +192,7 @@ theorem rule4_content {ver : DocId → TypeId} {fp : Envelope → List Step} {ru
       (ch.kind = .gone → ∃ st ∈ fp e, st.type = ch.type.type ∧ st.verb = .remove) ∧
       (ch.kind ≠ .gone → ∀ f ∈ ch.names, ∃ st ∈ fp e, st.type = ch.type.type ∧ f ∈ st.fields)) ∧
     DB.Docs.FitsAll rule cs :=
-  ⟨DB.Engine.footprint_steps _ _ h.1, (DB.Docs.fit_diff link rule said).mpr h.2⟩
+  ⟨DB.Engine.footprint_steps _ _ (DB.Engine.verdictFootprint_iff.mp h.1).2, (DB.Docs.fit_diff link rule said).mpr h.2⟩
 
 /-- **What an owner approves as reading never writes** (A2, A32): under a chain whose last cap names only ops that lower
 to no step, as `core/1`'s read, tell, keep and share do, an envelope that passes the content check brings no Record,
@@ -207,7 +207,7 @@ theorem rule4_reading_writes_nothing (r : ID.Reader) (gov : Bytes → Bytes → 
     ∀ ch ∈ DB.Engine.changesFrom ver (before e) (step (before e) e), ch.kind = .edited ∧ ch.names = [] := by
   have z := ID.chain_writes_nothing r gov spawned lists h hl reads
   intro ch m
-  obtain ⟨hn, hg, hf⟩ := DB.Engine.footprint_steps _ _ hc.1 ch m
+  obtain ⟨hn, hg, hf⟩ := DB.Engine.footprint_steps _ _ (DB.Engine.verdictFootprint_iff.mp hc.1).2 ch m
   rw [z] at hn hg hf
   cases k : ch.kind with
   | new =>

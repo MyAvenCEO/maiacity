@@ -7,10 +7,23 @@
 set -e
 cd /work
 
-# A stub for every target a manifest names, ours and aven/runtimes' registry's at /runtimes/registry, which the Peers
-# take by path: the library, and each [[bin]], [[example]], [[test]] and [[bench]] at its `path` or cargo's default for
-# its name. A crate that came with its source is third-party code, kept whole (none today).
-for manifest in $(find . /runtimes -name Cargo.toml -not -path ./Cargo.toml); do
+# Every crate manifest the build reads: ours, and aven/runtimes' registry's at /runtimes/registry, which the Peers take
+# by path; never one the workspace excludes (its `exclude`, such as db/docs/fuzz, a workspace of its own)
+excluded=$(awk -F'"' '/^exclude *=/ { for (i = 2; i <= NF; i += 2) print $i }' Cargo.toml)
+manifests() {
+	find . /runtimes -name Cargo.toml -not -path ./Cargo.toml | while read -r manifest; do
+		keep=1
+		for path in $excluded; do
+			case "$manifest" in "./$path"/*) keep= ;; esac
+		done
+		if [ -n "$keep" ]; then echo "$manifest"; fi
+	done
+}
+
+# A stub for every target a manifest names: the library, and each [[bin]], [[example]], [[test]] and [[bench]] at its
+# `path` or cargo's default for its name. A crate that came with its source is third-party code, kept whole (none
+# today).
+for manifest in $(manifests); do
 	dir=$(dirname "$manifest")
 	[ -e "$dir/src/lib.rs" ] && continue
 	mkdir -p "$dir/src"
@@ -39,7 +52,7 @@ cargo test --locked --workspace --no-run
 
 # The stubs' own artifacts go, and the fork's, whose source the checkout brings again with newer times: our crates and
 # the fork, every profile and target
-packages=$(for manifest in $(find . /runtimes -name Cargo.toml -not -path ./Cargo.toml); do
+packages=$(for manifest in $(manifests); do
 	awk '/^\[/ { section = $0 } section == "[package]" && /^name *=/ { gsub(/^name *= *"|".*$/, ""); print; exit }' "$manifest"
 done)
 for target in "" "--target wasm32-unknown-unknown"; do

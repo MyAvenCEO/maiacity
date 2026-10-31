@@ -7,24 +7,24 @@ import Aven.DB.Wire
 /-!
 # The wire's frames in CBOR (A29, wire version 2)
 
-From wire version 2, every frame after the hello is a Value in Core's one codec (rule 1, `Aven.Core.Cbor`): a map
-with text keys, sorted as the codec sorts them, sent as its canonical encoding behind a 4-byte big-endian length. JSON
-lines stay for one thing only, the hello and its `update` (`Aven.DB.Wire`): the first frame's form is frozen, as the
-ALPN's name is, so a peer of any version reads another's hello and can refuse it with `update` (PEERS.md §7). A peer
-of version 2 sends nothing after its hello until the other's has come, so a peer of version 1 never reads CBOR.
+From wire version 2, every frame after the greeting is a Value in Core's one codec (rule 1, `Aven.Core.Cbor`): a map
+with text keys in the codec's order, sent as its canonical encoding behind a 4-byte big-endian length. The greeting
+stays a JSON line, frozen (`Aven.DB.Wire.Greeting`), so a peer of any version can refuse another with `update`; a peer
+sends nothing after its hello until the other's has come.
 
 The rules:
 - **one form per frame:** a frame is read only from exactly its keys, each of its kind: no key is optional and none
-  is defaulted (README rule 9), so `frameOf` reads back what `frameValue` wrote (`frameOf_value`);
+  is defaulted (README rule 9, A42), so `frameOf` reads back what `frameValue` wrote (`frameOf_value`);
 - **one encoding per frame:** each frame names its keys in the codec's order, so a frame that fits the profile is a
   canonical Value (`frameValue_canon`); its bytes are the one encoding of it, a reader refuses any other
   (`Aven.Core.encode_decodeAll`), and reads them back as the frame (`decodeAll_frame`);
 - **the length first:** a length above `maxFrame` is refused as soon as its 4 bytes are in, before anything is
-  buffered (`push_tooLong`); a length of 0 is no frame.
+  buffered (`push_tooLong`); a length of 0 is no frame;
+- **the greeting first:** a stream's first bytes up to its newline are the greeting, at most `maxFrame` of them
+  (`greet`); every byte after it is frames.
 
-Text is a `String`'s UTF-8, which is always valid as the codec's table says (`Aven.Core.utf8_text`). A line's blob
-is carried as text here, as `Aven.DB.Wire.Frame` holds it; it becomes bytes when the Rust moves and the JSON frames
-go, since CBOR has bytes (the architect, 31 Oct 2026). -/
+Text is a `String`'s UTF-8, which is always valid as the codec's table says (`Aven.Core.utf8_text`). A line's blob is
+bytes, as CBOR holds them. -/
 
 namespace Aven.DB
 namespace WireCbor
@@ -53,6 +53,10 @@ def keys (kvs : List (Bytes × Value)) : List Bytes := kvs.map (·.1)
 /-- A map whose keys are exactly these: the same set, so no key is missing and none is extra. -/
 def exactly (kvs : List (Bytes × Value)) (ks : List String) : Bool :=
   kvs.length == ks.length && ks.all fun k => (keys kvs).contains (text k)
+
+def readBytes : Value → Option Bytes
+  | .bytes b => some b
+  | _ => none
 
 def readNat : Value → Option Nat
   | .uint n => some n
@@ -91,9 +95,8 @@ def haveOf : Value → Option Have
     pure ⟨← readText (← field kvs "device"), ← readNat (← field kvs "seq")⟩
   | _ => none
 
-/-- The frames after the hello: `Aven.DB.Wire.Frame` but its hello and `update`, which stay JSON lines. -/
-def frameValue : Frame → Option Value
-  | .hello .. | .update _ => none
+/-- A frame as its Value. -/
+def frameValue : Frame → Value
   | .presence ps => obj [("frame", txt "presence"), ("peers", .array (ps.map txt))]
   | .beat n => obj [("n", .uint n), ("frame", txt "beat")]
   | .claim st => obj [("frame", txt "claim"), ("statement", txt st)]
@@ -106,7 +109,7 @@ def frameValue : Frame → Option Value
   | .refused w => obj [("why", txt w), ("frame", txt "refused")]
   | .heads hs more => obj [("more", .bool more), ("frame", txt "heads"), ("heads", .array (hs.map headValue))]
   | .catchUp hs only => obj [("have", .array (hs.map haveValue)), ("only", .bool only), ("frame", txt "catch_up")]
-  | .lines ls => obj [("frame", txt "lines"), ("lines", .array (ls.map txt))]
+  | .lines ls => obj [("frame", txt "lines"), ("lines", .array (ls.map .bytes))]
   | .kept fs => obj [("files", .array (fs.map txt)), ("frame", txt "kept")]
 
 /-- A frame read from exactly its keys. -/
@@ -134,17 +137,17 @@ def frameOf : Value → Option Frame
     | "catch_up" => do
       guard (exactly kvs ["frame", "have", "only"])
       pure (.catchUp (← one "have" (readList haveOf)) (← one "only" readBool))
-    | "lines" => guard (exactly kvs ["frame", "lines"]) *> (.lines <$> one "lines" (readList readText))
+    | "lines" => guard (exactly kvs ["frame", "lines"]) *> (.lines <$> one "lines" (readList readBytes))
     | "kept" => guard (exactly kvs ["frame", "files"]) *> (.kept <$> one "files" (readList readText))
     | _ => none
   | _ => none
 
 /-- A frame's bytes on the stream: its encoding's length, 4 bytes big-endian, then the encoding. -/
-def frameBytes (f : Frame) : Option Bytes := do
-  let e := encode (← frameValue f)
-  pure (be 4 e.length ++ e)
+def frameBytes (f : Frame) : Bytes :=
+  let e := encode (frameValue f)
+  be 4 e.length ++ e
 
-/-- What the stream buffers, the frames it gives and how it ends, as `Aven.DB.Wire.push` for JSON lines. -/
+/-- What the stream buffers after its greeting: the next frame, if it is all in, and what stays buffered. -/
 def step (buf : Bytes) : Except WireError (Option (Frame × Bytes)) :=
   if buf.length < 4 then .ok none
   else
@@ -175,6 +178,38 @@ def decode (chunks : List Bytes) : List (List Frame) × Option WireError := Id.r
     | .ok (fs, rest) => out := out.push fs; buf := rest
     | .error e => return (out.toList, some e)
   return (out.toList, none)
+
+/-- A stream's greeting: its bytes up to the first newline, a JSON line (`Aven.DB.Wire.Greeting`); none yet while the
+newline hasn't come; refused once more than `maxFrame` bytes came without it. Returns the bytes after it. -/
+def greet (buf : Bytes) : Except WireError (Option (Greeting × Bytes)) :=
+  match buf.idxOf? 10 with
+  | none => if buf.length > maxFrame then .error .tooLong else .ok none
+  | some i =>
+    if i > maxFrame then .error .tooLong
+    else match String.fromUTF8? ⟨(buf.take i).toArray⟩ >>= Greeting.parse with
+      | some g => .ok (some (g, buf.drop (i + 1)))
+      | none => .error .bad
+
+/-- A whole stream as it is read, chunk by chunk: its greeting once its line is in, then the frames each chunk
+completes, until something is refused. -/
+def read (chunks : List Bytes) : Option Greeting × List (List Frame) × Option WireError := Id.run do
+  let mut buf : Bytes := []
+  let mut greeting : Option Greeting := none
+  let mut out := #[]
+  for c in chunks do
+    buf := buf ++ c
+    if greeting.isNone then
+      match greet buf with
+      | .error e => return (greeting, out.toList, some e)
+      | .ok none => out := out.push []; continue
+      | .ok (some (g, rest)) => greeting := some g; buf := rest
+    match push [] buf with
+    | .ok (fs, rest) => out := out.push fs; buf := rest
+    | .error e => return (greeting, out.toList, some e)
+  return (greeting, out.toList, none)
+
+/-- A greeting's bytes: its JSON line. -/
+def greetingBytes (g : Greeting) : Bytes := text (g.json.compress ++ "\n")
 
 /-! ## What it proves -/
 
@@ -222,6 +257,8 @@ theorem readList_map {f : α → Value} {g : Value → Option α} (hg : ∀ a, g
     simp only [readList, List.map_cons, List.mapM_cons, hg] at this ⊢
     rw [this]; rfl
 
+theorem readBytes_bytes (b : Bytes) : readBytes (.bytes b) = some b := rfl
+
 @[simp] theorem some_seqRight (x : Option α) : (some () *> x) = x := rfl
 
 @[simp] theorem readOpt_optVal (o : Option String) : readOpt (optVal o) = some o := by
@@ -230,10 +267,10 @@ theorem readList_map {f : α → Value} {g : Value → Option α} (hg : ∀ a, g
   | some s => exact congrArg (Option.map some) (readText_txt s)
 
 /-- **One form per frame:** a frame reads back from the Value it is written as. -/
-theorem frameOf_value {f : Frame} {v : Value} (h : frameValue f = some v) : frameOf v = some f := by
-  cases f <;> simp only [frameValue, reduceCtorEq, Option.some.injEq] at h <;> subst h <;>
+theorem frameOf_value (f : Frame) : frameOf (frameValue f) = some f := by
+  cases f <;> simp only [frameValue] <;>
     simp [frameOf, obj, exactly, keys, field, List.lookup, readList_map headOf_headValue,
-      readList_map haveOf_haveValue, guard, readNat, readBool]
+      readList_map haveOf_haveValue, readList_map readBytes_bytes, guard, readNat, readBool]
 
 /-! ### One encoding per frame -/
 
@@ -243,8 +280,8 @@ abbrev Short (s : String) : Prop := (text s).length < limit
 /-- What the profile can write of a frame: every number below 2⁶⁴, every text and list shorter. Every frame a peer
 sends fits: `maxFrame` is far below. -/
 def Fits : Frame → Prop
-  | .hello .. | .update _ => True
-  | .presence ps | .lines ps | .kept ps => ps.length < limit ∧ ∀ p ∈ ps, Short p
+  | .presence ps | .kept ps => ps.length < limit ∧ ∀ p ∈ ps, Short p
+  | .lines ls => ls.length < limit ∧ ∀ l ∈ ls, l.length < limit
   | .beat n => n < limit
   | .claim st | .signIn st | .invite st | .withdraw st | .join st | .refused st => Short st
   | .network _ t st => (∀ s, t = some s → Short s) ∧ (∀ s, st = some s → Short s)
@@ -286,13 +323,17 @@ theorem haveShape {h : Have} (f : Short h.device ∧ h.seq < limit) : Shape (hav
 
 /-- **One encoding per frame:** a frame that fits is a canonical Value, so its bytes are the one encoding of it and
 every reader decodes them to it (`Aven.Core.decodeAll_encode`). -/
-theorem frameValue_canon {f : Frame} {v : Value} (fits : Fits f) (h : frameValue f = some v) : Canon v = true := by
-  cases f <;> simp only [frameValue, reduceCtorEq, Option.some.injEq] at h <;> subst h <;> simp only [Fits] at fits <;>
+theorem frameValue_canon {f : Frame} (fits : Fits f) : Canon (frameValue f) = true := by
+  cases f <;> simp only [frameValue] <;> simp only [Fits] at fits <;>
     simp (config := { decide := true }) [Canon, obj, Shape, ShapeMap, keysSorted, depth, depthMap, txt, textOk,
       utf8_text, optVal]
   case beat => exact fits
   case claim | signIn | invite | withdraw | join | refused => exact fits
-  case presence | lines | kept =>
+  case lines =>
+    refine ⟨⟨fits.1, shapeList_map (fun l : Bytes => l.length < limit) (fun _ h => by simp [Shape, h]) fits.2⟩, ?_⟩
+    have := depthList_map (f := Value.bytes) (d := 1) (fun _ => Nat.le_refl _) ‹List Bytes›
+    simp only [maxDepth]; omega
+  case presence | kept =>
     refine ⟨⟨fits.1, shapeList_map Short (fun _ h => shape_txt h) fits.2⟩, ?_⟩
     have := depthList_map (f := txt) (d := 1) (fun _ => Nat.le_refl _) ‹List String›
     simp only [maxDepth]; omega
@@ -312,10 +353,9 @@ theorem frameValue_canon {f : Frame} {v : Value} (fits : Fits f) (h : frameValue
     cases t <;> cases st <;> simp_all [Shape, textOk, utf8_text, depth, maxDepth]
 
 /-- **A frame's bytes are read back as it:** whatever fits, written to the stream, is read as itself. -/
-theorem decodeAll_frame {f : Frame} {v : Value} (fits : Fits f) (h : frameValue f = some v) :
-    (decodeAll (encode v) >>= frameOf) = some f := by
-  rw [decodeAll_encode v (frameValue_canon fits h)]
-  exact frameOf_value h
+theorem decodeAll_frame {f : Frame} (fits : Fits f) : (decodeAll (encode (frameValue f)) >>= frameOf) = some f := by
+  rw [decodeAll_encode _ (frameValue_canon fits)]
+  exact frameOf_value f
 
 /-! ## Examples -/
 
@@ -325,18 +365,14 @@ def frameExamples : List Frame := [
   .presence ["alice-peer", "aven-peer"], .presence [], .beat 7, .beat (2 ^ 64 - 1), .claim "{}", .signIn "{\"a\":1}",
   .invite "{}", .withdraw "{}", .join "{}", .network false none none, .network true (some "{}") (some "[]"),
   .refused "taken", .heads heads2 true, .heads [] false, .catchUp [⟨"ab", 1⟩] true, .catchUp [] false,
-  .lines ["x", "y"], .kept ["ab", "cd"], .refused "café ✓"]
+  .lines [[0x78], [], [0, 255]], .kept ["ab", "cd"], .refused "café ✓"]
 
 -- **One form per frame:** every frame reads back from its Value.
-#guard frameExamples.all fun f => (frameValue f >>= frameOf) == some f
+#guard frameExamples.all fun f => frameOf (frameValue f) == some f
 -- **One encoding:** every frame's Value is canonical, and its bytes decode to it.
-#guard frameExamples.all fun f => match frameValue f with
-  | some v => Canon v && decodeAll (encode v) == some v
-  | none => false
--- The hello and `update` have no CBOR form: they stay JSON lines.
-#guard (frameValue (.hello "a" 2)).isNone && (frameValue (.update 2)).isNone
+#guard frameExamples.all fun f => Canon (frameValue f) && decodeAll (encode (frameValue f)) == some (frameValue f)
 
-def bytesOf (fs : List Frame) : Bytes := (fs.filterMap frameBytes).flatten
+def bytesOf (fs : List Frame) : Bytes := (fs.map frameBytes).flatten
 
 -- whole frames in one chunk; the same cut anywhere
 #guard decode [bytesOf frameExamples] == ([frameExamples], none)
@@ -347,8 +383,8 @@ def bytesOf (fs : List Frame) : Bytes := (fs.filterMap frameBytes).flatten
 -- a key missing, a key extra, a key of the wrong kind: refused, never defaulted
 def framed (v : Value) : Bytes := let e := encode v; be 4 e.length ++ e
 #guard decode [framed (obj [("frame", txt "heads"), ("heads", .array [])])] == ([], some .bad)
-#guard decode [framed (obj [("frame", txt "beat"), ("n", .uint 1), ("extra", .null)])] == ([], some .bad)
-#guard decode [framed (obj [("frame", txt "beat"), ("n", txt "1")])] == ([], some .bad)
+#guard decode [framed (obj [("n", .uint 1), ("extra", .null), ("frame", txt "beat")])] == ([], some .bad)
+#guard decode [framed (obj [("n", txt "1"), ("frame", txt "beat")])] == ([], some .bad)
 #guard decode [framed (obj [("frame", txt "shout")])] == ([], some .bad)
 -- bytes that aren't the canonical encoding: a number in a longer form than it needs
 #guard decode [be 4 4 ++ [0xA1, 0x61, 0x6E, 0x18]] == ([], some .bad)
@@ -358,6 +394,26 @@ def framed (v : Value) : Bytes := let e := encode v; be 4 e.length ++ e
 #guard decode [be 4 maxFrame] == ([[]], none)
 -- fewer than 4 bytes: it waits
 #guard decode [[0, 0]] == ([[]], none)
+
+-- **A page fits a frame:** `pageSize` heads or files of the longest kind (64-digit keys and names, the largest number)
+-- are well under `maxFrame`
+def longest : List Head := List.replicate pageSize ⟨String.ofList (List.replicate 64 'f'),
+  String.ofList (List.replicate 64 'e'), 2 ^ 64 - 1⟩
+#guard (frameBytes (.heads longest true)).length * 2 < maxFrame
+#guard (frameBytes (.kept (List.replicate pageSize (String.ofList (List.replicate 64 'f'))))).length * 2 < maxFrame
+
+-- a stream: the greeting's line, then frames; cut anywhere, the same
+def stream : Bytes := greetingBytes (.hello "alice-peer" 2) ++ bytesOf (frameExamples.take 3)
+#guard read [stream] == (some (.hello "alice-peer" 2), [frameExamples.take 3], none)
+#guard (List.range stream.length).all fun i =>
+  let (g, fs, e) := read ([stream.take i, stream.drop i] : List Bytes)
+  g == some (.hello "alice-peer" 2) && fs.flatten == frameExamples.take 3 && e.isNone
+-- an update in the hello's place, then nothing
+#guard read [greetingBytes (.update 2)] == (some (.update 2), [[]], none)
+-- version 0's hello, without its version: no greeting
+#guard read [text "{\"frame\":\"hello\",\"peer\":\"a\"}\n"] == (none, [], some .bad)
+-- a line without its newline, past the limit
+#guard read [List.replicate (maxFrame + 1) 0x61] == (none, [], some .tooLong)
 
 end WireCbor
 end Aven.DB
