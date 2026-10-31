@@ -435,6 +435,11 @@ grammar is what people and agents usually write:
 
 It lowers to three `put`s of fact Records with new ids.
 
+A new Record's id is made from the writer, its counter for the commit and the op's place in it, never drawn, so a
+`put` always lowers to a `put-new` step (`Engine.Lower`, `lowerCore_no_replace`). Every reader accepts an honest
+commit only under a counter the Doc has not seen (`Fresh`, in `commit_within` and `honest_footprint`): a commit that
+reuses one would make an id a Record already has, which is a split of the writer's log, so it fails the check.
+
 - `assert` adds a fact; `set` changes places of facts found by `where`; `retract` removes facts found by `where`.
 - A cell is a literal, `{ "param": … }`, `{ "bind": … }`, or `{ "ref": n }`: the id op `n` created, where `n` is an
   earlier `assert` (an earlier `put` in the core).
