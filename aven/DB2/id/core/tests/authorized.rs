@@ -481,3 +481,14 @@ fn verdicts_are_the_models() {
         );
     }
 }
+
+/// Whether a signer's chain reaches a Doc at all, against Lean's vectors (`reach.json`, `Reader.reachesB`).
+#[test]
+fn reaches_as_the_model_says() {
+    let all = vectors("reach.json");
+    assert!(all.len() >= 11, "{} reach vectors", all.len());
+    for v in &all {
+        let got = common::caps::judge_reach(&v["input"]);
+        assert_eq!(got, v["expected"], "{}", v["name"]);
+    }
+}

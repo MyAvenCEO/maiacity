@@ -10,6 +10,7 @@ import Aven.ID.AuthorizedExamples
 import Aven.ID.IssuerExamples
 import Aven.ID.MemberExamples
 import Aven.ID.KeepCbor
+import Aven.ID.ReachExamples
 import Aven.ID.SettleJson
 import Aven.ID.FailJson
 import Aven.ID.Expiry
@@ -54,6 +55,8 @@ import Aven.ID.SealJson
 - `authority.json`: Values an envelope's body carries under `authority` (`Aven.ID.Authority`, A45, A188), each in its
   readable form and as CBOR, and what caps reads of it: the caps and acks by name and an actor host's actor, or
   nothing.
+- `reach.json`: whether a signer's chain reaches a Doc at all, the docs layer's step 4 (`Reader.reachesB`,
+  `Aven.ID.ReachExamples`): the signing key, the Doc and the caps the reader holds, on the cast's context.
 - `member.json`: the member caps a confirm issues (A38), each with its CBOR bytes and its name, under the tree Doc, the
   chat Doc and the chat message's type they name; and envelopes on Maia City's tree Doc, in `authorized.json`'s form
   with the tree Doc and the claims the tree says each founded, with whether caps authorizes each and the vaults it
@@ -239,6 +242,17 @@ def authorityVectors : List Json :=
   AuthorityExamples.cases.map fun (name, v, _) =>
     vector name (Json.mkObj [("authority", v.json), ("cbor", Aven.Core.hex (Aven.Core.encode v))])
       (Authority.readJson (Authority.ofValue? v))
+
+open ReachExamples AuthorizedExamples in
+/-- Whether a signer's chain reaches a Doc at all (docs' step 4), on the cast. -/
+def reachVectors : List Json :=
+  ReachExamples.cases.map fun c =>
+    vector c.name
+      (Json.mkObj [("context", castCtxJson),
+        ("keys", Json.arr (castKeys.map fun (k, v) => Json.mkObj [("key", Aven.Core.hex k), ("vault", v)]).toArray),
+        ("members", toJson castMembers), ("held", Json.arr (c.held.map Cap.json).toArray), ("doc", c.doc.text),
+        ("signer", Aven.Core.hex (key c.signer))])
+      (Json.mkObj [("reaches", toJson c.answer)])
 
 open MemberExamples AuthorizedExamples in
 /-- The member caps a confirm issues, and what a reader of the cast counts as membership from each envelope. -/
@@ -481,6 +495,7 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "issuers.json") (render issuerVectors)
   IO.FS.writeFile (dir / "member.json") (render memberVectors)
   IO.FS.writeFile (dir / "authority.json") (render authorityVectors)
+  IO.FS.writeFile (dir / "reach.json") (render reachVectors)
   IO.FS.writeFile (dir / "collections.json") (render collectionVectors)
   IO.FS.writeFile (dir / "revocations.json") (render revocationVectors)
   IO.FS.writeFile (dir / "epochs.json") (render epochVectors)
