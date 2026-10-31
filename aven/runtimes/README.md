@@ -149,8 +149,10 @@ aven/runtimes/
   tree/              built: the node-tree allowlist, shared by every runtime that draws and the applier
   contract/          built: the contract's failures, limits, results and render keys
   markdown/          built: markdown-runtime, the first file runtime (the docs need it first)
+  face/              built: face-runtime, markup and style as data to a checked tree; here, not under actor/, since
+                     it comes before actors and serves the docs wiki as much as actors' faces
   formats/           file runtimes still to come, one crate each, wasm32: text/ json/ csv/ svg/ pdf/
-  actor/             actors' runtimes when they move in: state/ js/ face/
+  actor/             actors' runtimes when they move in: state/ js/
   plugins/           plugin runtimes when they move in: ontology/
   drawers/           the trusted host code that draws checked output: tree (the applier), pixels, table
   hostile/           hostile parts and files per runtime, and the fuzz targets
