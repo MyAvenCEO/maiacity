@@ -19,3 +19,14 @@ pub const MIN_STANZAS: usize = 4;
 pub fn padded(readers: usize) -> usize {
     padme(readers.max(MIN_STANZAS))
 }
+
+/// Every sealed thing's padded length (`Aven.ID.Padme.padSealed`, A176): 256 B, 1 KiB or 4 KiB, then Padmé. One
+/// function for every sealed byte, so small things share three sizes.
+pub fn pad_sealed(l: usize) -> usize {
+    match l {
+        0..=256 => 256,
+        257..=1024 => 1024,
+        1025..=4096 => 4096,
+        _ => padme(l),
+    }
+}

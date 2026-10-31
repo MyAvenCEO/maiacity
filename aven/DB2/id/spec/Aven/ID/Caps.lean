@@ -42,16 +42,6 @@ def vaultId (v : String) : Core.Hash := Core.blake3 ("v:" ++ v).toUTF8.toList
 /-- `core/1`'s op, by its id: the BLAKE3 name of its stored form. -/
 def coreOp (o : Core.CoreOp) : Core.OpId := o.id Core.blake3
 
-/-- A plugin's op, by its id: the BLAKE3 name of its stored form `{"op": name, "plugin": plugin}`, as `core/1`'s are
-named. -/
-def pluginOp (plugin name : String) : Core.OpId :=
-  Core.nameOf Core.blake3
-    (.map [("op".toUTF8.toList, .text name.toUTF8.toList), ("plugin".toUTF8.toList, .text plugin.toUTF8.toList)])
-
-/-- The parameters caps bounds on `core/1`'s writes: the type a step writes, and the fields it writes. -/
-def typeParam : Core.Bytes := "type".toUTF8.toList
-def fieldsParam : Core.Bytes := "fields".toUTF8.toList
-
 /-- A Doc, and a field, as a parameter's value. -/
 def docValue (d : Core.DocId) : Core.Value := .bytes d.hash.bytes
 def fieldValue (f : String) : Core.Value := .text f.toUTF8.toList

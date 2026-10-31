@@ -429,7 +429,7 @@ runtimes' frozen modules compile `aven-codec`.
 | Values | `Cbor`, `CborLaws`, `Text`, `ValueEq`, `Json`, `Bytes` | `aven-codec`: `Value`, `encode`, `decode`, `MAX_DEPTH` | #1532, #1651, #1710 | — |
 | Names | `Names`, `Blake3` | `aven-codec`: `Hash`, `DocId`, `TypeId`, `blake3`, `name_of` | #1532, #1710, #1733, #1746 | — |
 | Signed things | `Signed` | `Signed`, `Sig`, `add_sig`, `signing_bytes`, `Verify` | #1666, #1679, #1710 | — |
-| Envelopes | `Log` | `Envelope`, `Writes`, `ENVELOPE_LABEL` | #1679, #1710, #1733 | A200: `prev` left out of a log's first envelope, and a bound's any value left out, not `null`, in Lean, Rust and vectors (avenCORE, with the vault-name switch, A190) |
+| Envelopes | `Log` | `Envelope`, `Writes`, `ENVELOPE_LABEL` | #1679, #1710, #1733 | A200: `prev` left out of a log's first envelope, and a bound's any value left out, not `null`, in Lean, Rust and vectors (avenCORE, in its PR after #1746, with A182) |
 | Logs | `Log` | `Log`, `LogId`, `Refused`, `is_chain` | #1679 | A1's rename `IsChain` → `IsLog`, and the names built on it: `chain_no_split`, `chains_agree` and Rust's `is_chain` (avenCORE), `Aven.Architecture`'s `rule3_chain_whole` (avenMAIA); no PR |
 | Splits | `Log`, `Verdicts` | `split`, `Held::discounted` | #1679, #1710, #1746 | — |
 | The past, versions | `Past`, `Log`, `Verdicts` | `past`, `in_past`, `Parents`, `Held::holds` | #1679, #1710 | `Past`'s module doc names the tree's statements, and `Aven.ID.Network` keeps a `Parents` instance for `TreeStatement`; both go once the register's statements are envelopes (A30) (avenCORE, avenCAPS) |

@@ -469,11 +469,11 @@ every later release, forever.
   reset. Only the wire refuses an older peer; the store never does. Production is never wiped: its deploy has no
   `wipe` input, and nothing else deletes its bucket's objects. The box keeps its own wipe, since its data is test data.
 - **A release** is the dated release from `production` ([avenSANDBOX](../sandbox/README.md#checks-before-production)).
-  Signed release entries in the release vault's log come later.
+  Signed release entries in a release vault's log, and who owns that vault, are parked for later (A206).
 - **The box rehearses it:** `--wire-version` (`AVEN_PEER_WIRE_VERSION`) makes a Peer say another version, for that
   check alone.
 
-**Decided:** README rule 9, A29, A36, A42, A186, peers 11 · **Lean:**
+**Decided:** README rule 9, A29, A36, A42, A186, A206, peers 11 · **Lean:**
 `Aven.DB.Wire` — `meet_speaks`, `meet_refuses`, `follows_newer`, `follows_one`, `follows_same`
 
 ## The Aven Peer is just a peer
@@ -534,11 +534,11 @@ what runs.
 | Part | Lean | Rust | In the browser | Pending |
 |---|---|---|---|---|
 | The wire, version 2 | `Aven.DB.Wire`, `Aven.DB.WireCbor` | the first generation's `wire` (`aven-gen1`) | the Peer-Light speaks it | the move to `peer/spec` (`Aven.Peer.Wire`, `Aven.Peer.WireCbor`, `Aven.Peer.Presence`) and `peer/wire` (`aven-peer-wire`): draft #1745 |
-| Wire 3's frames | after the move | after the move | after the move | #1727, #1722 |
+| Wire 3's frames | the fetch gate's and keepers' frames written over the move, reviewed by thread E (`keep_put` and `keep_part`, reasons of at most 64 bytes): after #1722 | the same, in `aven-peer-wire` | after the move | #1727; stage 5's after #1722 |
 | Group topics, `Live`, sync by version | `Aven.Peer.DocSync`, #1727 | `aven-peer`'s `docs`, #1727 | not started | #1727 |
 | The Doc host and sifting | `Aven.Peer.Judge`, #1727 | the native host and sifting's state machine, #1727; the `Authorize` adapter: not started | the docs worker, and a new browser reading its keyring first (A187): not started | #1727; the keyring's plain path, avenDOCS' (A187) |
 | The fetch gate | `Aven.Peer.Fetch`, #1722 | `aven-peer-keeper`'s `fetch`, #1722; caps' half in aven-id's `keep` (#1734) | not started | #1722 |
-| Keepers and catch-up from them | `Aven.Peer.Keeper`, `Aven.Peer.Serve`, #1722 (in `db/spec`, moving to `peer/spec`) | `aven-peer-keeper`, #1722; the native keeper (`--keep`, the keeper's store): not started | the catch-up client: not started | #1722 |
+| Keepers and catch-up from them | `Aven.Peer.Keeper`, `Aven.Peer.Serve`, #1722 (in `db/spec`, moving to `peer/spec`) | `aven-peer-keeper`, #1722, with catch-up end to end natively over avenDOCS' sealed pages (`tests/catchup.rs`: 500 envelopes, about 0.5 s in a debug build); the `Gate` adapter over aven-id's `keep`, and the native keeper (`--keep`, the keeper's store): not started | the catch-up client: not started | #1722 |
 | The door | `settle_door` | the first generation's door, from stored refs | the same | the door from the register, with stage 4 |
 | Relays, address entries, bootstrap, links | `Aven.ID.Node`, `Aven.ID.Records` | not started: one relay in the Aven Peer, `--aven`, `--aven-key` | one relay URL | history: `Aven.ID.Records` to `peer/spec` as `Aven.Peer.History`, `records.json` as `history.json` (A193, A194): thread E, stacked on the wire split (#1745); the rest: no stage named yet |
 | Presence by signed beats | `Aven.ID.CatchUp` | not started: the hub counts connections | — | `Aven.ID.CatchUp` to `Aven.Peer.CatchUp`, with the history (A194); the rest: no stage named yet |
@@ -551,8 +551,6 @@ Known gaps, code and Lean:
 - `Aven.ID.Records.speaks_same` restates `meet_speaks`; `speaks` moves into `Aven.Peer.Wire` with the history (A194).
 - `Aven.DB.Presence` models the hub's count, and retires with the first generation.
 - `Aven.Peer.Keeper` imports `Aven.DB.Wire` for `pages`; it imports `Aven.Peer.Wire` after the move.
-- `Aven.Peer.Fetch`'s module text still says `doc_tips` names a Doc by its topic, and names `answer_moves` and
-  `served_proven`, which have no theorem; `Aven.Peer.Keeper`'s says a device fetches "as one hash sequence".
 - `rule10_quota` is still to be composed over `Aven.Peer.Serve`'s `admitted_within` and `over_quota_sheds` with caps'
   quota, once #1722 lands; caps' `Keep` still holds a bill of its own (`uploader_pays`, `quota_holds`), which leaves it
   then.
@@ -576,6 +574,4 @@ Known gaps, code and Lean:
   vault's owners their keep caps name a keeper that isn't there. Nothing decides it and no Lean holds it. avenMAIA
   decides.
 - **Presence at scale.** A beat per device per step on one topic suits Maia City, not millions. avenMAIA
-  decides.
-- **The release vault.** Who owns it, and when signed release entries replace the dated release (A36, A42). Samuel
   decides.
