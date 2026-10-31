@@ -499,7 +499,7 @@ export async function upgrades(run) {
 async function hosts(run) {
 	const timed = Date.now();
 	const ok = (await $`${compose} exec -T browsers node sandbox/runtimes.mjs ${run}`.env(env).nothrow()).exitCode === 0;
-	say(`${ok ? 'the browser host runs face-runtime by its hash and refuses what it must, in Chromium, WebKit and Firefox' : 'the runtimes step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s)`);
+	say(`${ok ? 'the browser host runs face-runtime and markdown-runtime by their hashes and refuses what it must, in Chromium, WebKit and Firefox' : 'the runtimes step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s)`);
 	return ok;
 }
 
