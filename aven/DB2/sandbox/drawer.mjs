@@ -10,7 +10,8 @@
 //   4. a click on a node with data-on is heard as its event, and a click on a link is handed to the host: the page
 //      never follows it; text that looks like markup stays text, and nothing in it runs;
 //   5. a face never draws outside its host: layers placed absolutely, covering, translated far off and huge paint
-//      nothing and take no click outside it.
+//      nothing and take no click outside it;
+//   6. a face sizes as avenOS does (border-box): a layer as wide as its host, with a border and padding, fits it.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { chromium, firefox, webkit } from 'playwright';
@@ -172,6 +173,24 @@ async function boxed(page) {
 	return problems;
 }
 
+// A face sizes border-box: a slide as wide as its host, with a 1 px border and padding, is exactly the host's width,
+// so the host's clip never cuts its border (avenBRAIN's slides, `.slide`: width 100% and a border).
+async function sized(page) {
+	const got = await page.evaluate(() => {
+		const { d } = window;
+		const host = document.createElement('div');
+		host.style.cssText = 'width:400px;height:225px';
+		document.body.append(host);
+		const px = (v) => [v * 100, 'px'];
+		const slide = [['width', [10000, '%']], ['height', [10000, '%']], ['border', px(1), 'solid', [0, 0, 0]], ['padding', px(8)]];
+		d.draw(host, { tree: ['div', [['class', 'slide']], ['x']], style: [[[[null, ['slide']]], slide]] });
+		const r = host.shadowRoot.querySelector('.slide').getBoundingClientRect();
+		host.remove();
+		return [r.width, r.height];
+	});
+	return got[0] === 400 && got[1] === 225 ? [] : [`a layer as wide as its host is ${got.join(' × ')}, not 400 × 225`];
+}
+
 const report = {};
 let failed = false;
 for (const [engine, type] of [['chromium', chromium], ['webkit', webkit], ['firefox', firefox]]) {
@@ -180,7 +199,7 @@ for (const [engine, type] of [['chromium', chromium], ['webkit', webkit], ['fire
 	const tab = await browser.newPage();
 	await tab.goto(url);
 	await tab.waitForFunction(() => window.ready);
-	const problems = [...(await tab.evaluate(inPage, { trees, faces })), ...(await clicks(tab)), ...(await boxed(tab))];
+	const problems = [...(await tab.evaluate(inPage, { trees, faces })), ...(await clicks(tab)), ...(await boxed(tab)), ...(await sized(tab))];
 	await browser.close();
 	report[engine] = { problems, trees: trees.length, faces: faces.length, ms: Date.now() - started };
 	if (problems.length) failed = true;
