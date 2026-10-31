@@ -23,7 +23,7 @@ body {
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
-.stage { max-width: 1080px; margin: 0 auto; padding-block: 28px 36px; display: grid; gap: 18px; }
+.stage { max-width: 1240px; margin: 0 auto; padding-block: 28px 36px; display: grid; gap: 18px; }
 .card {
   background: var(--paper);
   color: var(--ink);
@@ -138,8 +138,19 @@ body {
 .dsrc a { color: var(--ink); }
 
 /* Fine print: the technical deep dive, always in the right column. */
-.deep { margin: 0; padding-top: 12px; border-top: 1px solid #e2d6c0; font-size: 12.5px; line-height: 1.55; color: var(--ink-soft); }
+.deep { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--ink-soft); }
 .deep b { display: block; font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink); margin-bottom: 4px; }
 .card.has-code { align-content: start; }
 .card .side { align-self: start; }
 .card.has-code .num { margin-top: 4px; }
+
+/* "Under the hood": a fixed 250px aside on the right of every slide. */
+.card.has-deep { grid-template-columns: minmax(0, 1fr) 250px; column-gap: 40px; }
+.card.has-deep.has-code { grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr) 250px; column-gap: 32px; }
+.card.has-deep.has-code .code { font-size: 12px; padding: 16px 18px; }
+.card .deep { grid-column: -2 / -1; grid-row: 1 / span 6; align-self: stretch; border-left: 1px solid #e2d6c0; padding-left: 22px; }
+@media (max-width: 980px) {
+  .card.has-deep, .card.has-deep.has-code { grid-template-columns: minmax(0, 1fr); }
+  .card .side, .card .deep { grid-column: 1; grid-row: auto; }
+  .card .deep { border-left: 0; border-top: 1px solid #e2d6c0; padding: 14px 0 0; }
+}

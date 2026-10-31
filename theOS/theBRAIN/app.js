@@ -41,7 +41,8 @@ function render() {
   $('#table').hidden = !s.table;
   $('#deep').innerHTML = s.deep ? `<b>Under the hood</b>${esc(s.deep)}` : '';
   $('#deep').hidden = !s.deep;
-  card.classList.toggle('has-code', Boolean(s.code || s.flow || s.table || s.deep));
+  card.classList.toggle('has-code', Boolean(s.code || s.flow || s.table));
+  card.classList.toggle('has-deep', Boolean(s.deep));
   document.querySelectorAll('#stories button').forEach((b) => b.classList.toggle('on', b.dataset.story === story.id));
   const fresh = new Set(termsOf(s));
   const known = [...new Set(deck.slice(0, at + 1).flatMap(termsOf))];
