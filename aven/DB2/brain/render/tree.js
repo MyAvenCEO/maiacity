@@ -44,15 +44,31 @@ const attrOk = (tag, [name, value]) =>
 	(globalAttrs.includes(name) || name.startsWith('aria-') || (tagAttrs[tag] ?? []).includes(name)) &&
 	valueOk(name, value);
 
-// every problem in a tree, as `<path>: what`; none means the face-runtime would draw it
-export function check(node, path = '') {
+// Tree.lean's `treeLimits`: how deep, how many nodes (texts count) and how many bytes of text a tree may hold
+export const limits = { depth: 64, nodes: 20000, text: 8 * 1048576 };
+
+const depth = (node) => (typeof node === 'string' ? 1 : 1 + Math.max(0, ...node[2].map(depth)));
+const count = (node) => (typeof node === 'string' ? 1 : 1 + node[2].reduce((n, kid) => n + count(kid), 0));
+const textBytes = (node) => (typeof node === 'string' ? new TextEncoder().encode(node).length : node[2].reduce((n, kid) => n + textBytes(kid), 0));
+
+// Tree.lean's `check`: every node allowed, and the tree within the limits. Every problem, as `<path>: what`; none
+// means the applier would draw it
+export function check(node) {
+	const problems = checkNodes(node);
+	if (depth(node) > limits.depth) problems.push(`the tree is ${depth(node)} deep, over ${limits.depth}`);
+	if (count(node) > limits.nodes) problems.push(`the tree has ${count(node)} nodes, over ${limits.nodes}`);
+	if (textBytes(node) > limits.text) problems.push(`the tree holds ${textBytes(node)} bytes of text, over ${limits.text}`);
+	return problems;
+}
+
+function checkNodes(node, path = '') {
 	if (typeof node === 'string') return [];
 	const [tag, attrs, kids] = node;
 	const here = `${path}/${tag}`;
 	const problems = [];
 	if (!allowedTags.includes(tag) || forbidden.includes(tag)) problems.push(`${here}: the tag ${tag} is not allowed`);
 	for (const attr of attrs) if (!attrOk(tag, attr)) problems.push(`${here}: the attribute ${attr[0]}="${attr[1]}" is not allowed`);
-	kids.forEach((kid, i) => problems.push(...check(kid, `${here}[${i}]`)));
+	kids.forEach((kid, i) => problems.push(...checkNodes(kid, `${here}[${i}]`)));
 	return problems;
 }
 

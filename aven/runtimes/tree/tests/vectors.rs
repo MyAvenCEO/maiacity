@@ -1,7 +1,7 @@
 //! The allowlist against Lean's vectors (README rule 10 of aven/DB2): every tree in `spec/vectors/tree.json` with the
 //! model's verdict and its encoding, and every face's tree in `face.json` with the model's `check`.
 
-use aven_runtimes_tree::{Node, TREE_LIMITS, check, encode};
+use aven_runtimes_tree::{Node, TREE_LIMITS, check};
 use serde_json::Value;
 
 /// The vectors of `file`. Their trees nest deeper than serde_json's default limit of 128, so it is lifted.
@@ -46,12 +46,15 @@ fn trees() {
             v["expected"].as_bool().unwrap(),
             "{name}"
         );
-        let mut out = Vec::new();
-        encode(&t, &mut out);
         assert_eq!(
-            hex(&out),
+            hex(&aven_core::encode(&t.value())),
             v["input"]["cbor"].as_str().unwrap(),
             "{name}: encoding"
+        );
+        assert_eq!(
+            Node::of_value(&t.value(), 1000),
+            Some(t.clone()),
+            "{name}: read back"
         );
     }
 }

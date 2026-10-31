@@ -70,15 +70,20 @@ thread's recommendation. Samuel may overrule any.
     and changed rarely. A peer refuses any other wire version with "update to join", and never falls back (README rule
     9). The Service Worker and native Peers read one signed release record. Stored formats stay readable forever,
     tested against frozen vectors, because production is never wiped ([7](#7-upgrades)).
-12. **The admin's passkey signs what changes who is in or who sees whom.** Tickets, withdrawals, and the relay and
-    keeper lists are signed by the admin's passkey, a tap each time; an admin device's key only acks claims, which it
-    does on its own (Samuel, 31 Oct 2026: "choose the more secure way"). Reason: a stolen or compromised browser can't
-    let anyone in, or route members through a relay that logs their addresses (`adminPasskey` in `Aven.ID.Network`).
+12. **Maia City's vault is the admin; its owners approve what changes who is in or who sees whom** (rule 15, A28;
+    Samuel, 31 Oct 2026: "a tree admin should always be a VAULT, never an individual signer"). Tickets, withdrawals,
+    and the relay and keeper lists count only with the approval of Maia City's owners, k of n through the vaults that
+    own it (`byAdmin`, `Tree.approves`, `admin_by_owners`). Owner keys are passkeys and MaiaCityGuardian, never a
+    device's key (`device_not_admin`), so "the more secure way" (31 Oct) holds: today one tap of Samuel's passkey, since
+    his vault owns Maia City. A device of a vault that owns Maia City acks claims for it, within its device cap, on its
+    own (`acker`). A second admin, an owner change or recovery is ordinary governance of the vault, with no new genesis.
+    Reason: a stolen or compromised browser can't let anyone in, or route members through a relay that logs their
+    addresses.
 
 ## 1. Several relays
 
 - **The relay list** is part of the tree: statements `relay-add` (a member device's key and its relay's HTTPS URL)
-  and `relay-remove`, each signed by the admin's passkey (decision 12). The tree settles the list as it settles
+  and `relay-remove`, each approved by Maia City's owners (decision 12). The tree settles the list as it settles
   everything else ([5](#5-one-rule-for-the-tree)).
 - **Any member's Peer can run a relay** with `--relay`, as the Aven Peer does today. The flag no longer means "this is
   the Aven Peer". A relay on the list admits exactly the door's devices (K12), built from the settled tree, plus a
@@ -132,7 +137,7 @@ thread's recommendation. Samuel may overrule any.
 ## 4. Any member's Peer as a keeper
 
 - **Who offers:** the keeper list is statements `keeper-add` and `keeper-remove`, naming a member device, each signed
-  by the admin's passkey (decision 12). A device with `--keep` offers itself, and the admin's avenOS shows the offer to
+  by Maia City's owners (decision 12). A device with `--keep` offers itself, and the admin's avenOS shows the offer to
   accept. Being on the list keeps nothing by itself.
 - **Who keeps what:** a vault's keep caps (A22), each naming a keeper from the list and a target, which may be a query
   (A8). Samuel, 31 Oct 2026: caps decide which vault gets which Docs and Values, and each vault decides itself.
@@ -194,7 +199,7 @@ every peer must reach the same tree from the same statements, whatever order the
 1. Drop every statement that fails its own checks, or whose past doesn't reach the genesis.
 2. **Tickets and withdrawals:** a withdrawal of ticket T wins over every claim of T that isn't in the withdrawal's past.
    A withdrawal that has a claim of T in its past changes nothing: that ticket was already used (`withdraw_used`
-   today). Tickets and withdrawals count only when the admin's passkey signed them (decision 12).
+   today). Tickets and withdrawals count only with Maia City's owners' approval (decision 12).
 3. **Acks:** an ack names the claim it acks, by hash, and has it in its past. An admin device acks on its own whenever
    it syncs a new claim, but only the claim that stands in its own settled view, and never a second claim of a ticket
    that already has a final claim in that view. So finality waits only for an admin's device to be online.
@@ -358,9 +363,12 @@ against its vectors.
 
 ### Thread B: the tree as a Doc (`id/core`, `peer/native/src/door.rs`, `members.rs`)
 
-aven-id's `settle`, against `settled.json`. Statements stored by hash, not by ref name, and production's refs read as
-they are (`settle_restore`, the frozen format). Any member accepts a statement: it checks it, keeps it, gossips it, and
-settles. Admin devices ack. The Peer refuses flags that disagree with its genesis.
+aven-id's `settle`, against `settled.json`. The admin is Maia City's vault (decision 12): today's `members.rs`
+`admin_key`, a passkey owning a vault that governs the coop, becomes `byAdmin`, an approval by the coop's owners read
+from the genesis's tree, and acks come from `acker`, a device of a vault that owns the coop. Statements stored by
+hash, not by ref name, and production's refs read as they are (`settle_restore`, the frozen format). Any member
+accepts a statement: it checks it, keeps it, gossips it, and settles. Admin devices ack. The Peer refuses flags that
+disagree with its genesis.
 
 ### Thread C: relays, addresses, entry and catch-up (`peer/native`, `peer/light`)
 

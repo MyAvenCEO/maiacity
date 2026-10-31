@@ -146,8 +146,10 @@ aven/runtimes/
                      (native for the Peer, the kernel and the engine; wasm for a browser worker)
   freeze/            the reproducible build and the checks: no imports, declared memory, hash = manifest
   registry/          aven-runtimes-registry: the file registry, the sniffer, decide(); built native and to wasm
-  tree/              the node-tree allowlist, shared with actors' faces
-  formats/           file runtimes, one crate each, wasm32: text/ json/ csv/ markdown/ svg/ pdf/
+  tree/              built: the node-tree allowlist, shared by every runtime that draws and the applier
+  contract/          built: the contract's failures, limits, results and render keys
+  markdown/          built: markdown-runtime, the first file runtime (the docs need it first)
+  formats/           file runtimes still to come, one crate each, wasm32: text/ json/ csv/ svg/ pdf/
   actor/             actors' runtimes when they move in: state/ js/ face/
   plugins/           plugin runtimes when they move in: ontology/
   drawers/           the trusted host code that draws checked output: tree (the applier), pixels, table

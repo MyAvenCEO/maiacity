@@ -321,7 +321,8 @@ theorem claimOk_join (hc : r.founding.claim = some c) (signed : (genesisOf r.fou
   simp only [Bool.and_eq_true, beq_iff_eq]
   refine ⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩
   · simp [step, tn]
-  · simp only [adminPasskey, gen_eq hc signed, step, Old.says, genesisOf, cl.invites_admin i mi]; simp
+  · simp only [byAdmin, gen_eq hc signed, step, Old.says, cl.invites_admin i mi]
+    exact Genesis.approves_claimant (genesisOf r.founding c g) (by simp [genesisOf]) stmtDigest
   · simp [step, Old.says, ki]
   · refine (vpast hc signed).mpr ⟨by simpa [step, Old.says] using mC, mT, .tip mT ?_⟩
     simp [step, Old.tips, tn]
@@ -404,11 +405,11 @@ theorem old_index {o : Old} (m : o ∈ refOrder r) : ∃ k, ∃ hk : k < (refOrd
   List.mem_iff_getElem.mp m
 
 /-- A member's passkey: the passkey of every joined vault is its passkey in the settled tree. -/
-theorem passkeyOf_join (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true)
+theorem ownerKeyOf_join (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true)
     (cl : Clean r c) {j : Join} (mj : j ∈ r.joins) :
-    passkeyOf (view restored 1 (migrate r g)) j.person j.passkey = true := by
+    ownerKeyOf (view restored 1 (migrate r g)) j.person j.passkey = true := by
   obtain ⟨k, hk, e⟩ := old_index (mem_refOrder.mpr (.inr (.inr (.inr (.inl ⟨j, mj, rfl⟩)))) : Old.join j ∈ refOrder r)
-  unfold passkeyOf
+  unfold ownerKeyOf
   simp only [Bool.or_eq_true]
   refine .inr ((vany hc signed).mpr ⟨_, e ▸ step_mem hk hc, ?_⟩)
   rw [standing_join hc signed cl hk e]
@@ -461,7 +462,7 @@ theorem settle_restore_door (hc : r.founding.claim = some c) (signed : (genesisO
     · exact .inl (.inl (.inr e))
     · obtain ⟨k, hk, eo⟩ := old_index (mem_refOrder.mpr (.inl ⟨i, mi, rfl⟩) : Old.signIn i ∈ refOrder r)
       refine .inr ((vany hc signed).mpr ⟨_, eo ▸ step_mem hk hc, ?_⟩)
-      simp [step, Old.says, e, passkeyOf, gen_eq hc signed, genesisOf]
+      simp [step, Old.says, e, ownerKeyOf, gen_eq hc signed, genesisOf]
     · obtain ⟨k, hk, eo⟩ :=
         old_index (mem_refOrder.mpr (.inr (.inr (.inr (.inl ⟨j, mj, rfl⟩)))) : Old.join j ∈ refOrder r)
       refine .inl (.inr ((vany hc signed).mpr ⟨_, eo ▸ step_mem hk hc, ?_⟩))
@@ -470,7 +471,7 @@ theorem settle_restore_door (hc : r.founding.claim = some c) (signed : (genesisO
     · obtain ⟨k, hk, eo⟩ :=
         old_index (mem_refOrder.mpr (.inr (.inr (.inr (.inr ⟨x, mx, rfl⟩)))) : Old.memberSignIn x ∈ refOrder r)
       refine .inr ((vany hc signed).mpr ⟨_, eo ▸ step_mem hk hc, ?_⟩)
-      simp [step, Old.says, e, passkeyOf_join hc signed cl (cl.signIns_joined x mx)]
+      simp [step, Old.says, e, ownerKeyOf_join hc signed cl (cl.signIns_joined x mx)]
 
 end
 

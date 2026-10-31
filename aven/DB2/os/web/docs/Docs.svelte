@@ -5,7 +5,7 @@
 	// ever named `docs`.
 	import MainNav from './MainNav.svelte';
 	import Node from './Node.svelte';
-	import { glossary, packages, page, slide } from './brain.js';
+	import { art, glossary, packages, page, slide } from './brain.js';
 
 	let { home = '#/' } = $props();
 
@@ -22,7 +22,7 @@
 	const story = $derived(part?.page && part.id !== 'glossary' ? page(part.page) : []);
 	const slides = $derived(part?.page ? (part.slides ?? []).map((id) => slide(part.id, id)) : []);
 	const textOf = (node) => (typeof node === 'string' ? node : node[2].map(textOf).join(''));
-	// the index on the left: this page's sections, then the other docs
+	// the contents on the left: this page's sections, then the other docs
 	const sections = $derived(
 		route[0] === 'glossary'
 			? words.tree.filter((n) => n[0] === 'h2').map((n) => ({ href: `#/docs/glossary/${n[1][0][1]}`, id: n[1][0][1], name: textOf(n) }))
@@ -66,43 +66,33 @@
 
 	{#if !route.length}
 		<main class="dashboard">
-			<p class="kicker">avenBRAIN</p>
-			<h1>Docs</h1>
+			<h1 class="sheet-title">Docs</h1>
 			<p class="lead">How the whole system works, told from the ground up for someone with no background. One idea per slide.</p>
 			<ul class="grid">
 				{#each packages as item (item.id)}
-					<li class="item" data-tone={item.id} data-testid={`doc-${item.id}`}>
-						{#if item.page}
-							<a href={`#/docs/${item.id}`}>
-								<span class="mark">{item.mark}</span>
-								<span class="state">{item.slides ? `${item.slides.length} slide${item.slides.length === 1 ? '' : 's'}` : 'Read'}</span>
-								<strong>{item.name}</strong>
-								<span class="what">{item.what}</span>
-							</a>
-						{:else}
-							<div class="off">
-								<span class="mark">{item.mark}</span>
-								<span class="state">Coming</span>
-								<strong>{item.name}</strong>
-								<span class="what">{item.what}</span>
-							</div>
-						{/if}
+					<li class="item" data-testid={`doc-${item.id}`}>
+						<svelte:element this={item.page ? 'a' : 'div'} class={item.page ? 'tile open' : 'tile off'} href={item.page ? `#/docs/${item.id}` : undefined}>
+							<img class="art" src={art(item.art)} alt="" width="440" height="440" />
+							<strong>{item.name}</strong>
+							<span class="state">{item.page ? (item.slides ? `${item.slides.length} slides` : 'Read') : 'Coming'}</span>
+							<span class="what">{item.what}</span>
+						</svelte:element>
 					</li>
 				{/each}
 			</ul>
 		</main>
 	{:else if part?.page}
 		<div class="layout">
-			<aside class="index" aria-label="Contents">
+			<aside class="contents" aria-label="Contents">
 				<details open={wide}>
 					<summary>Contents</summary>
-					<p class="index-head">{part.name}</p>
+					<p class="contents-head">{part.name}</p>
 					<ol class:numbered={route[0] !== 'glossary'}>
 						{#each sections as item (item.id)}
 							<li><a href={item.href} aria-current={route[1] === item.id ? 'true' : undefined}>{item.name}</a></li>
 						{/each}
 					</ol>
-					<p class="index-head">Docs</p>
+					<p class="contents-head">Docs</p>
 					<ul>
 						<li><a href="#/docs">All docs</a></li>
 						{#each others as other (other.id)}
@@ -134,7 +124,6 @@
 		</div>
 	{:else}
 		<main class="prose">
-			<p class="kicker">{part ? 'Coming' : 'Not here'}</p>
 			<h1>{part ? part.name : 'No such page'}</h1>
 			<p>{part ? `${part.what}. Its page comes once avenID's has found the style and the language.` : 'This page is not in the docs.'}</p>
 			<p><a href="#/docs">All docs</a></p>
@@ -143,10 +132,11 @@
 </div>
 
 <style>
+	/* an illustrated asset sheet: a warm cream ground, bold navy type */
 	.brain {
 		min-height: 100vh;
-		color: var(--brain-ink);
-		background: var(--brain-ground);
+		color: var(--brain-navy);
+		background: var(--brain-cream);
 	}
 
 	.top {
@@ -172,90 +162,79 @@
 		padding: 32px 16px 80px;
 	}
 
-	.kicker,
-	.state {
-		margin: 0;
-		color: var(--brain-quiet);
-		font: 600 13px/1.3 var(--brain-sans);
-	}
-
-	h1 {
-		margin: 6px 0 8px;
-		font: 500 clamp(34px, 6vw, 48px) / 1.1 var(--brain-serif);
+	.sheet-title,
+	.prose :global(h1) {
+		margin: 4px 0 12px;
+		font: 800 clamp(30px, 5vw, 42px) / 1.1 var(--brain-sans);
+		letter-spacing: -0.015em;
 	}
 
 	.lead {
 		max-width: 60ch;
-		margin: 0 0 28px;
+		margin: 0 0 32px;
+		color: var(--brain-quiet);
 		font-size: 17px;
 	}
 
+	/* the dashboard: each package as a drawing with its name under it, as on an asset sheet */
 	.grid {
 		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr));
-		gap: 16px;
+		grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+		gap: 28px 20px;
 		margin: 0;
 		padding: 0;
 		list-style: none;
 	}
 
-	.item > a,
-	.item > .off {
+	.tile {
 		display: grid;
+		justify-items: center;
 		align-content: start;
-		gap: 6px;
+		gap: 4px;
 		height: 100%;
-		padding: 20px;
+		padding: 8px 8px 16px;
 		color: inherit;
+		text-align: center;
 		text-decoration: none;
-		background: var(--brain-card);
 		border-radius: var(--brain-radius);
-		box-shadow: var(--brain-shadow);
-		transition: transform 0.15s;
+		transition: background 0.15s;
 	}
 
-	.item > a:hover {
-		transform: translateY(-2px);
+	.tile.open:hover {
+		background: var(--brain-card);
 	}
 
-	.item > .off {
-		background: transparent;
-		box-shadow: inset 0 0 0 1px var(--brain-line);
+	.art {
+		width: 150px;
+		height: 150px;
+		margin-bottom: -6px;
 	}
 
-	.item strong {
-		font: 500 24px/1.15 var(--brain-serif);
+	.off .art {
+		opacity: 0.55;
+		filter: saturate(0.6);
+	}
+
+	.tile strong {
+		font: 800 17px/1.2 var(--brain-sans);
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+	}
+
+	.state {
+		color: var(--brain-ochre-ink);
+		font: 700 12px/1.3 var(--brain-sans);
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
 	}
 
 	.what {
+		max-width: 26ch;
 		color: var(--brain-quiet);
 		font-size: 14px;
 	}
 
-	/* each package's mark: a rounded tile with its monogram, forest when live */
-	.mark {
-		display: grid;
-		place-items: center;
-		width: 52px;
-		height: 52px;
-		margin-bottom: 18px;
-		color: var(--brain-on-forest);
-		font: 500 20px/1 var(--brain-serif);
-		background: var(--brain-forest);
-		border-radius: 16px;
-	}
-
-	.off .mark {
-		color: var(--brain-olive);
-		background: var(--brain-sage-soft);
-	}
-
-	.item[data-tone='glossary'] .mark {
-		color: var(--brain-forest);
-		background: var(--brain-lime);
-	}
-
-	/* a page with its index: the index on the left, the page centred, a matching gutter on the right */
+	/* a page with its contents: the contents on the left, the page centred, a matching gutter on the right */
 	.layout {
 		display: grid;
 		grid-template-columns: minmax(240px, 1fr) minmax(0, 860px) minmax(240px, 1fr);
@@ -269,7 +248,7 @@
 		margin: 0;
 	}
 
-	.index {
+	.contents {
 		grid-column: 1;
 		justify-self: end;
 		width: min(240px, 100%);
@@ -282,20 +261,21 @@
 		font-size: 14px;
 	}
 
-	.index summary {
+	.contents summary {
 		display: none;
 		cursor: pointer;
 	}
 
-	.index-head {
+	.contents-head {
 		margin: 0 0 8px;
 		padding-left: 10px;
-		color: var(--brain-quiet);
-		font: 600 13px/1.3 var(--brain-sans);
+		font: 800 12px/1.3 var(--brain-sans);
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
 	}
 
-	.index ol,
-	.index ul {
+	.contents ol,
+	.contents ul {
 		display: grid;
 		gap: 2px;
 		margin: 0 0 24px;
@@ -303,45 +283,41 @@
 		list-style: none;
 	}
 
-	.index ol.numbered {
+	.contents ol.numbered {
 		counter-reset: slide;
 	}
 
-	.index ol.numbered li {
+	.contents ol.numbered li {
 		counter-increment: slide;
 	}
 
-	.index a {
+	.contents a {
 		display: flex;
 		gap: 8px;
-		padding: 6px 12px;
-		color: var(--brain-ink);
+		padding: 6px 10px;
+		color: var(--brain-navy);
 		line-height: 1.35;
 		text-decoration: none;
-		border-radius: 999px;
+		border-radius: 10px;
 	}
 
-	.index ol.numbered a::before {
+	.contents ol.numbered a::before {
 		content: counter(slide);
 		min-width: 1.2em;
-		color: var(--brain-quiet);
-		font-variant-numeric: tabular-nums;
+		color: var(--brain-ochre-ink);
+		font-weight: 700;
 	}
 
-	.index a:hover {
-		background: var(--brain-sage-soft);
+	.contents a:hover {
+		background: var(--brain-card);
 	}
 
-	.index a[aria-current] {
-		color: var(--brain-on-forest);
-		background: var(--brain-forest);
+	.contents a[aria-current] {
+		font-weight: 700;
+		background: var(--brain-card);
 	}
 
-	.index ol.numbered a[aria-current]::before {
-		color: var(--brain-lime);
-	}
-
-	/* narrower than both columns: the index is a folded list above the page */
+	/* narrower than both columns: the contents are a folded list above the page */
 	@media (max-width: 1199px) {
 		.layout {
 			display: block;
@@ -355,7 +331,7 @@
 			padding-right: 0;
 		}
 
-		.index {
+		.contents {
 			position: static;
 			justify-self: stretch;
 			width: auto;
@@ -363,19 +339,20 @@
 			padding: 20px 0 0;
 		}
 
-		.index details {
+		.contents details {
 			padding: 12px 16px;
 			background: var(--brain-card);
 			border-radius: var(--brain-radius);
-			box-shadow: var(--brain-shadow);
 		}
 
-		.index summary {
+		.contents summary {
 			display: list-item;
-			font: 600 14px/1.6 var(--brain-sans);
+			font: 800 13px/1.6 var(--brain-sans);
+			letter-spacing: 0.08em;
+			text-transform: uppercase;
 		}
 
-		.index details[open] summary {
+		.contents details[open] summary {
 			margin-bottom: 10px;
 		}
 	}
@@ -401,31 +378,29 @@
 		max-width: 920px;
 	}
 
-	.prose :global(h1) {
-		margin: 6px 0 12px;
-	}
-
 	.prose :global(h2) {
 		margin: 36px 0 10px;
-		font: 500 26px/1.2 var(--brain-serif);
+		font: 800 22px/1.25 var(--brain-sans);
 	}
 
 	.prose :global(h3) {
 		margin: 24px 0 8px;
-		font: 500 20px/1.25 var(--brain-serif);
+		font: 800 17px/1.3 var(--brain-sans);
 	}
 
 	.prose :global(a) {
-		color: var(--brain-forest);
-		text-decoration-color: var(--brain-moss);
+		color: var(--brain-teal-ink);
+		text-decoration-color: var(--brain-ochre);
+		text-decoration-style: dotted;
+		text-decoration-thickness: 2px;
 		text-underline-offset: 3px;
 	}
 
 	.prose :global(code) {
 		padding: 1px 5px;
 		font-size: 0.88em;
-		background: var(--brain-sage-soft);
-		border-radius: 5px;
+		background: var(--brain-line);
+		border-radius: 4px;
 	}
 
 	.prose :global(li) {
@@ -436,7 +411,8 @@
 	}
 
 	.prose :global(li.here) {
-		background: var(--brain-sage-soft);
+		background: var(--brain-card);
+		box-shadow: inset 3px 0 0 var(--brain-ochre);
 	}
 
 	.prose :global(table) {
@@ -456,13 +432,15 @@
 	}
 
 	.prose :global(th) {
-		font: 600 13px/1.3 var(--brain-sans);
-		border-bottom-color: var(--brain-sage);
+		font: 800 12px/1.3 var(--brain-sans);
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		border-bottom: 2px solid var(--brain-navy);
 	}
 
 	.prose :global(blockquote) {
 		margin: 16px 0;
 		padding: 2px 16px;
-		border-left: 3px solid var(--brain-sage);
+		border-left: 3px solid var(--brain-ochre);
 	}
 </style>

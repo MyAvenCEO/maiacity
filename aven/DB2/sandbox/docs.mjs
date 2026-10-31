@@ -1,14 +1,15 @@
 // avenOS's docs (aven/DB2/brain, os/web/docs), in all three of Playwright's engines, in the browsers' container (`bun
 // run up --check`). Read on production's stand-in (localhost:5174) by a browser that never signed in, as anyone reads
 // them, and on the box's own view (localhost:5173). Checked, at a desktop's 1280 px and a phone's 390 px:
-//   1. the dashboard has an item per package, avenID's live and the rest coming; the main nav reaches it;
-//   2. avenID's page draws its slide as a 16:9 frame; the glossary draws, and #/docs/glossary/vault marks that term;
+//   1. the dashboard has an item per package, avenID's open and the rest coming; the main nav reaches it;
+//   2. avenID's page draws its slide as 16:9; the glossary draws, and #/docs/glossary/vault marks that term;
 //   3. no page scrolls sideways;
 //   4. every text has 4.5:1 against the background under it (3:1 when large), as WCAG has it, and no text on a slide is
 //      under 9 px at a phone's width (brain/STYLE.md, "A slide");
 //   5. a screenshot of each, in the run's folder.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium, firefox, webkit } from 'playwright';
+import { linear } from '../brain/render/contrast.js';
 
 const run = process.argv[2] ?? 'runs/latest';
 mkdirSync(run, { recursive: true });
@@ -17,14 +18,15 @@ const report = {};
 const widths = { desktop: 1280, phone: 390 };
 const pages = { dashboard: 'docs', id: 'docs/id', glossary: 'docs/glossary/vault' };
 
-// every element's own text, its colour and the first opaque background behind it, as the page lays it out
-function contrasts() {
+// every element's own text, its colour and the first opaque background behind it, as the page lays it out; the
+// ratio is Face.lean's, in integers over its linear table (brain/render/contrast.js, held to the spec's vectors)
+function contrasts(table) {
 	const parse = (c) => {
 		const m = c.match(/[\d.]+/g)?.map(Number) ?? [0, 0, 0, 0];
 		return { rgb: m.slice(0, 3), a: m[3] ?? 1 };
 	};
-	const linear = (v) => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
-	const lum = ([r, g, b]) => 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+	const lum = ([r, g, b]) => 2126 * table[Math.round(r)] + 7152 * table[Math.round(g)] + 722 * table[Math.round(b)];
+	const flare = 5_000_000_000;
 	const behind = (el) => {
 		for (let at = el; at; at = at.parentElement) {
 			const bg = parse(getComputedStyle(at).backgroundColor);
@@ -40,10 +42,11 @@ function contrasts() {
 		const style = getComputedStyle(el);
 		const fg = lum(parse(style.color).rgb);
 		const bg = lum(behind(el));
-		const ratio = (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+		const [hi, lo] = [Math.max(fg, bg) + flare, Math.min(fg, bg) + flare];
 		const size = parseFloat(style.fontSize);
 		const large = size >= 24 || (size >= 18.66 && Number(style.fontWeight) >= 700);
-		out.push({ text: el.textContent.trim().slice(0, 40), ratio: Math.round(ratio * 100) / 100, need: large ? 3 : 4.5 });
+		const ok = large ? hi >= 3 * lo : 2 * hi >= 9 * lo;
+		out.push({ text: el.textContent.trim().slice(0, 40), ratio: Math.round((hi / lo) * 100) / 100, need: large ? 3 : 4.5, ok });
 	}
 	return out;
 }
@@ -79,9 +82,9 @@ async function read(engine) {
 					const seen = {};
 					if (view === 'dashboard') {
 						seen.items = await page.locator('[data-testid^="doc-"]').count();
-						seen.live = await page.locator('[data-testid^="doc-"] a').count();
+						seen.open = await page.locator('[data-testid^="doc-"] a').count();
 						if (seen.items !== 9) say(`${seen.items} items, not 9`);
-						if (!(await page.locator('[data-testid="doc-id"] a').count())) say('avenID is not live');
+						if (!(await page.locator('[data-testid="doc-id"] a').count())) say('avenID is not open');
 					}
 					if (view === 'id') {
 						const box = await page.locator('.slide').first().boundingBox();
@@ -99,7 +102,7 @@ async function read(engine) {
 					}
 					seen.scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
 					if (seen.scrollWidth > width) say(`the page is ${seen.scrollWidth} px wide at ${width} px: it scrolls sideways`);
-					const low = (await page.evaluate(contrasts)).filter((c) => c.ratio < c.need);
+					const low = (await page.evaluate(contrasts, linear)).filter((c) => !c.ok);
 					seen.lowContrast = low;
 					for (const c of low) say(`"${c.text}" has ${c.ratio}:1, under ${c.need}:1`);
 					await page.screenshot({ path: `${run}/docs-${view}-${where}-${size}-${name}.png`, fullPage: view !== 'glossary' });
