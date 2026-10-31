@@ -1,11 +1,5 @@
 /* "A cap" (cap.html): The cap as a record: its issuer, its holder, what it allows, on what, until when */
-.cap .facet-1 { clip-path: polygon(0 0, 34% 0, 20% 30%, 0 44%); }
-.cap .facet-2 { clip-path: polygon(34% 0, 52% 0, 20% 30%); }
-.cap .facet-3 { clip-path: polygon(64% 0, 100% 0, 100% 34%, 86% 18%); }
-.cap .facet-4 { clip-path: polygon(0 70%, 14% 60%, 28% 100%, 0 100%); }
-.cap .facet-5 { clip-path: polygon(72% 100%, 90% 76%, 100% 84%, 100% 100%); }
-.cap .title { left: 3.5%; top: 6%; }
 .cap .key .bit-1 { left: 8.6cqw; height: 1.6cqw; }
 .cap .key .bit-2 { left: 10.4cqw; height: 2.2cqw; }
 .cap .grant { left: 30%; top: 25%; width: 40cqw; height: 34cqw; }
-.cap .cap-seal { left: 67%; top: 76%; width: 6cqw; height: 6cqw; }
+.cap .cap-seal { left: 62.5%; top: 29%; width: 5cqw; height: 5cqw; }

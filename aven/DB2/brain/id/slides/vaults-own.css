@@ -1,16 +1,10 @@
 /* "Vaults own vaults" (vaults-own.html): Alice's vault owns Maia City, which owns Aven; ownership runs only down */
-.vaults-own .facet-1 { clip-path: polygon(0 0, 34% 0, 20% 30%, 0 44%); }
-.vaults-own .facet-2 { clip-path: polygon(34% 0, 52% 0, 20% 30%); }
-.vaults-own .facet-3 { clip-path: polygon(64% 0, 100% 0, 100% 34%, 86% 18%); }
-.vaults-own .facet-4 { clip-path: polygon(0 70%, 14% 60%, 28% 100%, 0 100%); }
-.vaults-own .facet-5 { clip-path: polygon(72% 100%, 90% 76%, 100% 84%, 100% 100%); }
-.vaults-own .title { left: 3.5%; top: 6%; }
 .vaults-own .key .bit-1 { left: 8.6cqw; height: 1.6cqw; }
 .vaults-own .key .bit-2 { left: 10.4cqw; height: 2.2cqw; }
-.vaults-own .alice { left: 2%; top: 40%; width: 25.5cqw; height: 11cqw; }
-.vaults-own .owns-1 { left: 29.5%; top: 52%; width: 5cqw; }
-.vaults-own .coop { left: 36.5%; top: 40%; width: 25.5cqw; height: 11cqw; }
-.vaults-own .owns-2 { left: 64%; top: 52%; width: 5cqw; }
-.vaults-own .agent { left: 71%; top: 40%; width: 25.5cqw; height: 11cqw; }
-.vaults-own .span { left: 4%; top: 75%; width: 92cqw; height: 2cqw; border: 0.3cqw solid var(--brain-path); border-top: 0; border-radius: 0 0 1cqw 1cqw; }
-.vaults-own .span-note { left: 50%; top: 82%; width: 80cqw; }
+.vaults-own .alice { left: 2.5%; top: 38%; width: 27cqw; height: 14cqw; }
+.vaults-own .owns-1 { left: 31%; top: 50%; width: 4cqw; }
+.vaults-own .coop { left: 36.5%; top: 38%; width: 27cqw; height: 14cqw; }
+.vaults-own .owns-2 { left: 65%; top: 50%; width: 4cqw; }
+.vaults-own .agent { left: 70.5%; top: 38%; width: 27cqw; height: 14cqw; }
+.vaults-own .span { left: 4%; top: 72%; width: 92cqw; }
+.vaults-own .span-note { left: 50%; top: 80%; width: 80cqw; }

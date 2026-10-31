@@ -1,14 +1,8 @@
 /* "A key owns a vault" (owns.html): Left: Alice's key. Right: her vault, a record whose list of owners holds that key */
-.owns .facet-1 { clip-path: polygon(0 0, 34% 0, 20% 30%, 0 44%); }
-.owns .facet-2 { clip-path: polygon(34% 0, 52% 0, 20% 30%); }
-.owns .facet-3 { clip-path: polygon(64% 0, 100% 0, 100% 34%, 86% 18%); }
-.owns .facet-4 { clip-path: polygon(0 70%, 14% 60%, 28% 100%, 0 100%); }
-.owns .facet-5 { clip-path: polygon(72% 100%, 90% 76%, 100% 84%, 100% 100%); }
-.owns .title { left: 3.5%; top: 6%; }
 .owns .key .bit-1 { left: 8.6cqw; height: 1.6cqw; }
 .owns .key .bit-2 { left: 10.4cqw; height: 2.2cqw; }
 .owns .key.big { left: 5%; top: 50%; transform: rotate(-12deg) scale(1.35); transform-origin: 0 50%; width: 16cqw; height: 6cqw; }
 .owns .key-label { left: 16.5%; top: 72%; }
 .owns .owns-arrow { left: 33%; top: 56%; width: 12cqw; }
-.owns .owns-label { left: 39%; top: 48%; }
+.owns .owns-label { left: 39%; top: 45%; }
 .owns .alice { left: 51%; top: 30%; width: 44cqw; height: 31cqw; }

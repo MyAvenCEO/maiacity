@@ -18,8 +18,4 @@ How avenBRAIN talks.
 ## The story map
 
 Each package's page opens with its story: the concepts in the order a reader meets them. avenID's is in
-[`id/README.md`](id/README.md).
-
-## Open
-
-1. **avenID's story order** (`id/README.md`): nine slides, from "A key signs" to "A cap".
+[`id/README.md`](id/README.md): nine slides, from "A key signs" to "A cap", agreed.

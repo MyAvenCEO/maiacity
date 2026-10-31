@@ -74,14 +74,14 @@
 					<li class="item" data-tone={item.id} data-testid={`doc-${item.id}`}>
 						{#if item.page}
 							<a href={`#/docs/${item.id}`}>
-								<span class="facets"></span>
+								<span class="mark">{item.mark}</span>
 								<span class="state">{item.slides ? `${item.slides.length} slide${item.slides.length === 1 ? '' : 's'}` : 'Read'}</span>
 								<strong>{item.name}</strong>
 								<span class="what">{item.what}</span>
 							</a>
 						{:else}
 							<div class="off">
-								<span class="facets"></span>
+								<span class="mark">{item.mark}</span>
 								<span class="state">Coming</span>
 								<strong>{item.name}</strong>
 								<span class="what">{item.what}</span>
@@ -124,7 +124,8 @@
 						<section class="slide-page" id={`slide-${s.id}`} data-testid={`slide-${s.id}`}>
 							{#each s.tree as node, i (i)}<Node {node} />{/each}
 							<div class="prose">
-								{#each s.text as node, i (i)}<Node {node} />{/each}
+								<!-- the slide's own headline stands for its text's title -->
+								{#each s.text[0]?.[0] === 'h1' ? s.text.slice(1) : s.text as node, i (i)}<Node {node} />{/each}
 							</div>
 						</section>
 					{/each}
@@ -145,7 +146,7 @@
 	.brain {
 		min-height: 100vh;
 		color: var(--brain-ink);
-		background: var(--brain-cream);
+		background: var(--brain-ground);
 	}
 
 	.top {
@@ -154,7 +155,7 @@
 		gap: 10px;
 		min-height: 64px;
 		padding: 10px 16px;
-		border-bottom: 1px solid var(--brain-gold);
+		border-bottom: 1px solid var(--brain-line);
 	}
 
 	.crumb {
@@ -175,9 +176,7 @@
 	.state {
 		margin: 0;
 		color: var(--brain-quiet);
-		font: 600 12px/1.3 var(--brain-sans);
-		letter-spacing: 0.12em;
-		text-transform: uppercase;
+		font: 600 13px/1.3 var(--brain-sans);
 	}
 
 	h1 {
@@ -202,32 +201,30 @@
 
 	.item > a,
 	.item > .off {
-		position: relative;
 		display: grid;
-		gap: 4px;
+		align-content: start;
+		gap: 6px;
 		height: 100%;
-		padding: 64px 18px 18px;
-		overflow: hidden;
+		padding: 20px;
 		color: inherit;
 		text-decoration: none;
-		background: var(--brain-panel);
-		border: 1px solid var(--brain-gold);
+		background: var(--brain-card);
 		border-radius: var(--brain-radius);
-		box-shadow: var(--brain-lift);
+		box-shadow: var(--brain-shadow);
+		transition: transform 0.15s;
 	}
 
 	.item > a:hover {
-		border-color: var(--brain-path);
+		transform: translateY(-2px);
 	}
 
 	.item > .off {
 		background: transparent;
-		box-shadow: none;
-		border-style: dashed;
+		box-shadow: inset 0 0 0 1px var(--brain-line);
 	}
 
 	.item strong {
-		font: 500 22px/1.2 var(--brain-serif);
+		font: 500 24px/1.15 var(--brain-serif);
 	}
 
 	.what {
@@ -235,51 +232,27 @@
 		font-size: 14px;
 	}
 
-	/* each package's mark: a band of low-poly facets in its colour, lit from the top left */
-	.facets {
-		position: absolute;
-		inset: 0 0 auto;
-		height: 46px;
-		clip-path: polygon(0 0, 100% 0, 100% 62%, 74% 100%, 46% 70%, 18% 92%, 0 64%);
-		background: linear-gradient(115deg, var(--light) 0 38%, var(--mid) 38% 70%, var(--deep) 70%);
+	/* each package's mark: a rounded tile with its monogram, forest when live */
+	.mark {
+		display: grid;
+		place-items: center;
+		width: 52px;
+		height: 52px;
+		margin-bottom: 18px;
+		color: var(--brain-on-forest);
+		font: 500 20px/1 var(--brain-serif);
+		background: var(--brain-forest);
+		border-radius: 16px;
 	}
 
-	.off .facets {
-		opacity: 0.45;
+	.off .mark {
+		color: var(--brain-olive);
+		background: var(--brain-sage-soft);
 	}
 
-	[data-tone] {
-		--light: var(--brain-ochre-light);
-		--mid: var(--brain-ochre);
-		--deep: var(--brain-ochre-deep);
-	}
-	[data-tone='id'],
-	[data-tone='actors'] {
-		--light: var(--brain-teal-light);
-		--mid: var(--brain-teal);
-		--deep: var(--brain-teal-deep);
-	}
-	[data-tone='db'],
-	[data-tone='runtimes'] {
-		--light: var(--brain-terracotta-light);
-		--mid: var(--brain-terracotta);
-		--deep: var(--brain-terracotta-deep);
-	}
-	[data-tone='peer'],
-	[data-tone='sandbox'] {
-		--light: var(--brain-conifer-light);
-		--mid: var(--brain-conifer);
-		--deep: var(--brain-conifer-deep);
-	}
-	[data-tone='os'] {
-		--light: var(--brain-glass);
-		--mid: var(--brain-glass-deep);
-		--deep: var(--brain-teal-deep);
-	}
-	[data-tone='architecture'] {
-		--light: var(--brain-sage-light);
-		--mid: var(--brain-sage);
-		--deep: var(--brain-conifer);
+	.item[data-tone='glossary'] .mark {
+		color: var(--brain-forest);
+		background: var(--brain-lime);
 	}
 
 	/* a page with its index: the index on the left, the page centred, a matching gutter on the right */
@@ -316,10 +289,9 @@
 
 	.index-head {
 		margin: 0 0 8px;
+		padding-left: 10px;
 		color: var(--brain-quiet);
-		font: 600 11px/1.3 var(--brain-sans);
-		letter-spacing: 0.12em;
-		text-transform: uppercase;
+		font: 600 13px/1.3 var(--brain-sans);
 	}
 
 	.index ol,
@@ -342,11 +314,11 @@
 	.index a {
 		display: flex;
 		gap: 8px;
-		padding: 5px 10px;
+		padding: 6px 12px;
 		color: var(--brain-ink);
 		line-height: 1.35;
 		text-decoration: none;
-		border-radius: 8px;
+		border-radius: 999px;
 	}
 
 	.index ol.numbered a::before {
@@ -357,12 +329,16 @@
 	}
 
 	.index a:hover {
-		background: var(--brain-facet);
+		background: var(--brain-sage-soft);
 	}
 
 	.index a[aria-current] {
-		background: var(--brain-plot);
-		box-shadow: inset 3px 0 0 var(--brain-path);
+		color: var(--brain-on-forest);
+		background: var(--brain-forest);
+	}
+
+	.index ol.numbered a[aria-current]::before {
+		color: var(--brain-lime);
 	}
 
 	/* narrower than both columns: the index is a folded list above the page */
@@ -388,17 +364,15 @@
 		}
 
 		.index details {
-			padding: 10px 14px;
-			background: var(--brain-panel);
-			border: 1px solid var(--brain-gold);
+			padding: 12px 16px;
+			background: var(--brain-card);
 			border-radius: var(--brain-radius);
+			box-shadow: var(--brain-shadow);
 		}
 
 		.index summary {
 			display: list-item;
-			font: 600 12px/1.6 var(--brain-sans);
-			letter-spacing: 0.12em;
-			text-transform: uppercase;
+			font: 600 14px/1.6 var(--brain-sans);
 		}
 
 		.index details[open] summary {
@@ -442,15 +416,15 @@
 	}
 
 	.prose :global(a) {
-		color: var(--brain-teal-deep);
-		text-decoration-color: var(--brain-gold);
+		color: var(--brain-forest);
+		text-decoration-color: var(--brain-moss);
 		text-underline-offset: 3px;
 	}
 
 	.prose :global(code) {
 		padding: 1px 5px;
 		font-size: 0.88em;
-		background: var(--brain-facet);
+		background: var(--brain-sage-soft);
 		border-radius: 5px;
 	}
 
@@ -462,8 +436,7 @@
 	}
 
 	.prose :global(li.here) {
-		background: var(--brain-plot);
-		box-shadow: inset 3px 0 0 var(--brain-path);
+		background: var(--brain-sage-soft);
 	}
 
 	.prose :global(table) {
@@ -479,19 +452,17 @@
 		padding: 6px 10px;
 		text-align: left;
 		vertical-align: top;
-		border-bottom: 1px solid var(--brain-facet-deep);
+		border-bottom: 1px solid var(--brain-line);
 	}
 
 	.prose :global(th) {
-		font: 600 12px/1.3 var(--brain-sans);
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		border-bottom-color: var(--brain-gold);
+		font: 600 13px/1.3 var(--brain-sans);
+		border-bottom-color: var(--brain-sage);
 	}
 
 	.prose :global(blockquote) {
 		margin: 16px 0;
 		padding: 2px 16px;
-		border-left: 3px solid var(--brain-gold);
+		border-left: 3px solid var(--brain-sage);
 	}
 </style>

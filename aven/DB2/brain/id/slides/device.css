@@ -1,10 +1,4 @@
 /* "A device keeps its own key" (device.html): Alice's phone, holding a key of its own */
-.device .facet-1 { clip-path: polygon(0 0, 34% 0, 20% 30%, 0 44%); }
-.device .facet-2 { clip-path: polygon(34% 0, 52% 0, 20% 30%); }
-.device .facet-3 { clip-path: polygon(64% 0, 100% 0, 100% 34%, 86% 18%); }
-.device .facet-4 { clip-path: polygon(0 70%, 14% 60%, 28% 100%, 0 100%); }
-.device .facet-5 { clip-path: polygon(72% 100%, 90% 76%, 100% 84%, 100% 100%); }
-.device .title { left: 3.5%; top: 6%; }
 .device .key .bit-1 { left: 8.6cqw; height: 1.6cqw; }
 .device .key .bit-2 { left: 10.4cqw; height: 2.2cqw; }
 .device .alice-phone { left: 22%; top: 28%; width: 14cqw; height: 27cqw; }
