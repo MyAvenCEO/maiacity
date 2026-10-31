@@ -18,8 +18,8 @@ Keys sort as the codec sorts them: shorter first, then by their bytes. An op id 
 hash; a bound is null for any value or the values it allows (A32). A line's parameters are a map, so a line whose
 parameters aren't sorted, or name one twice, isn't canonical. A cap's id is the BLAKE3 hash of its body's encoding
 (`Cap.digest`), which its issuer's owners approve, unless it attenuates. Its form is in its body, so a signature over
-an attenuation is never one over a grant. Its issuing device signs the body under the label
-`avenID cap 1` (`Cap.signing`), so the signature can't be read as anything else's (Core's `signing_separates`).
+an attenuation is never one over a grant. Its issuing device signs the body under the label `avenID cap 1`
+(`Cap.signing`), so the signature can't be read as anything else's (Core's `signing_separates`).
 
 The cast's caps go by readable names, so here a parent and a role are text; with R5 they become hashes, as every
 Doc id already is. -/
