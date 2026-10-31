@@ -7,6 +7,8 @@
 
 pub mod blobs;
 pub mod chats;
+pub mod doc_host;
+pub mod docs;
 #[cfg(feature = "native")]
 pub mod door;
 #[cfg(feature = "native")]

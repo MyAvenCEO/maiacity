@@ -1,10 +1,10 @@
 // avenOS's runtimes worker (aven/runtimes, README, "The browser host"): the runtime host, aven-runtimes-web, the same
 // wasmi host as native, in a worker of its own. It holds no key and reaches no store: a page asks it to run a runtime
-// on a part and an input, `{ id, name, part, input }`, and it answers `{ id, result }`, the run's result in a Value's
-// JSON form, `{ ok }` or `{ failure }`, or `{ id, error }`. The manifest compiled into the host names each runtime's
-// newest frozen hash; its bytes are fetched once from this origin, /runtimes/frozen/<hex>.wasm, and the host loads them
-// only when they are the hash's. A trap in the host itself (a Rust panic) leaves it unusable: that answer says `fatal`,
-// and the worker ends, for the page to start again.
+// on a part and an input, `{ id, name, part, input }`, each a Value's JSON form as text, and it answers
+// `{ id, result }`, the run's result in a Value's JSON form, `{ ok }` or `{ failure }`, or `{ id, error }`. The
+// manifest compiled into the host names each runtime's newest frozen hash; its bytes are fetched once from this
+// origin, /runtimes/frozen/<hex>.wasm, and the host loads them only when they are the hash's. A trap in the host itself
+// (a Rust panic) leaves it unusable: that answer says `fatal`, and the worker ends, for the page to start again.
 let host;
 function load() {
 	host ??= (async () => {
@@ -44,7 +44,7 @@ self.onmessage = async ({ data: { id, name, part, input } }) => {
 		const hash = web.runtime_hash(String(name));
 		if (!hash) throw new Error(`no runtime ${name} is frozen`);
 		await module(web, hash);
-		const result = JSON.parse(web.runtime_run(hash, JSON.stringify(part), JSON.stringify(input ?? {})));
+		const result = JSON.parse(web.runtime_run(hash, String(part), String(input)));
 		self.postMessage({ id, hash, result });
 	} catch (error) {
 		const fatal = error instanceof WebAssembly.RuntimeError;

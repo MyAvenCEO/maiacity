@@ -62,6 +62,12 @@ fn derive(input: &Value) -> Value {
         return json!({ "ed25519Public": hex(&device.public().ed25519), "mlDsaSeed": hex(ml.expose()),
             "sealSeed": hex(seal.seed().expose()) });
     }
+    if let Some(l) = input.get("padme") {
+        return json!(padme(l.as_u64().unwrap() as usize));
+    }
+    if let Some(l) = input.get("sealedBytes") {
+        return json!(aven_id::pad_sealed(l.as_u64().unwrap() as usize));
+    }
     if let Some(readers) = input.get("readers") {
         return json!(padded(readers.as_u64().unwrap() as usize));
     }
@@ -188,23 +194,4 @@ fn every_layout_is_the_models() {
         };
         assert_eq!(got, v["expected"], "{name}");
     }
-}
-
-/// Padmé is the one aven-db-docs pads segments with: `seals.json`'s "Padmé of n", Lean's (`Aven.ID.Padme`).
-#[test]
-fn padme_is_the_models() {
-    let all = common::vectors("seals.json");
-    let mut seen = 0;
-    for v in &all {
-        if let Some(rest) = v["name"].as_str().unwrap().strip_prefix("Padmé of ") {
-            let l: usize = rest.parse().unwrap();
-            assert_eq!(
-                padme(l) as u64,
-                v["expected"].as_u64().unwrap(),
-                "Padmé of {l}"
-            );
-            seen += 1;
-        }
-    }
-    assert!(seen >= 10, "{seen} Padmé vectors");
 }

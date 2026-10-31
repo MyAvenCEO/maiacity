@@ -306,7 +306,7 @@ theorem claimOk_join (hc : r.founding.claim = some c) (signed : (genesisOf r.fou
   refine ⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩
   · simp [step, tn]
   · simp only [byAdmin, gen_eq hc signed, step, Old.says, cl.invites_admin i mi]
-    exact Genesis.approves_claimant (genesisOf r.founding c g) (by simp [genesisOf]) stmtDigest
+    exact Genesis.approves_claimant (genesisOf r.founding c g) (by simp [genesisOf]) rfl stmtDigest
   · simp [step, Old.says, ki]
   · refine (vpast hc signed).mpr ⟨by simpa [step, Old.says] using mC, mT, .tip mT ?_⟩
     simp [step, Old.parents, tn, Core.Past.parents]

@@ -30,6 +30,13 @@ import Aven.DB.Docs
 - `mutations.json`: a writer id, its counter, a Doc's Records and core operations; the footprint, the Records after the
   commit or why it was refused, and every reader's check of the diff (`Aven.DB.Engine.Mutate`,
   `Aven.DB.Engine.Footprint`).
+- `lower.json`: `core/1`'s calls, their params in order; each call's encoding and the steps it lowers to, or null when
+  it is refused; and committers' ops with the call each names (`Aven.DB.Engine.Lower`).
+- `changes.json`: a Doc's Records before and after a commit (some tampered with after), every type at one schema, and
+  the commit's footprint; the changes a reader sees, a change's fields in order as `[field, value]`, or `[field]` for
+  one it removes, and the verdict's footprint part (`Aven.DB.Engine.Changes`).
+- `merge-check.json`: main's Records before a merge, the merged Records and the footprint of the calls the merge
+  brings; the changes the merge makes on main and the verdict's footprint part on them (`merge_steps`).
 - `lookups.json`: a shape, the Records and Docs at version V, the Records now, the Docs unfolded since and listed now, a
   probe; the index at V, its hits, the candidates, the query over them and the folded index (`Aven.DB.Engine.Index`).
 - `merges.json`: one place's base, the target's and the other branch's values and the merger's choice; the merged value,
@@ -621,6 +628,152 @@ def randomMutationVector (seed : Nat) : Json := Id.run do
 
 def mutations : List Json := mutationExamples ++ (List.range generated).map fun i => randomMutationVector (i + 1)
 
+/-! ### Lowering `core/1`'s calls (`Engine.Lower`), the change view and the verdict (`Engine.Changes`) -/
+
+def callJson (c : Call) : Json :=
+  Json.mkObj [("op", toJson c.op.text),
+    ("params", Json.arr (c.params.map fun (p, v) => Json.arr #[toJson (utf8Text p), v.json]).toArray)]
+
+def loweredJson (c : Call) : Json :=
+  Json.mkObj [("cbor", if Canon c.value then toJson (hex (encode c.value)) else Json.null), ("steps", match lowerCore blake3 c with
+    | some sts => Json.arr (sts.map stepJson).toArray
+    | none => Json.null)]
+
+/-- A call, its params in order; its encoding (null when its params aren't in the codec's order, as no encoder
+writes them) and its steps, or null when it is refused. -/
+def lowerVector (name : String) (c : Call) : Json := vector name (Json.mkObj [("call", callJson c)]) (loweredJson c)
+
+/-- A committer's op; the call it names, its encoding and its steps, which are the op's own footprint step. -/
+def opCallVector (name : String) (o : Op Value) : Json :=
+  vector name (Json.mkObj [("op", opJson o)]) (loweredJson (o.call blake3))
+
+def params (ty : Value) (fs : List String) : List (Bytes × Value) :=
+  [(utf8 "type", ty), (utf8 "fields", .array (fs.map text))]
+
+def taskType : Value := .bytes task.hash.bytes
+
+def lowerExamples : List Json :=
+  (coreOps.map fun o => lowerVector s!"core/1's {o.name}"
+    ⟨o.id blake3, params taskType (if o = .remove then [] else ["x2", "done"])⟩) ++
+  [lowerVector "a remove that names a field: refused" ⟨CoreOp.remove.id blake3, params taskType ["x2"]⟩,
+   lowerVector "fields before type: refused" ⟨CoreOp.patch.id blake3, (params taskType ["done"]).reverse⟩,
+   lowerVector "no fields: refused" ⟨CoreOp.patch.id blake3, [(utf8 "type", taskType)]⟩,
+   lowerVector "a key more: refused" ⟨CoreOp.patch.id blake3, params taskType ["done"] ++ [(utf8 "value", .uint 1)]⟩,
+   lowerVector "a type of 31 bytes: refused" ⟨CoreOp.patch.id blake3, params (.bytes (task.hash.bytes.take 31)) ["done"]⟩,
+   lowerVector "a type as text: refused" ⟨CoreOp.patch.id blake3, params (text "task") ["done"]⟩,
+   lowerVector "a field that isn't text: refused"
+     ⟨CoreOp.patch.id blake3, [(utf8 "type", taskType), (utf8 "fields", .array [text "done", .uint 1])]⟩,
+   lowerVector "a read with params of its own: no step" ⟨CoreOp.read.id blake3, [(utf8 "query", text "open tasks")]⟩,
+   lowerVector "another plugin's op: not core/1's" ⟨blake3 (utf8 "tree/1 move"), params taskType ["parent"]⟩] ++
+  ((bananas ++ tick ++ [Op.remove task (rows [("done", .uint 1)]), Op.edit task ⟨2, 4, 0⟩ (utf8 "x2") (text "dawn")]).mapIdx
+    fun i (o : Op Value) => opCallVector s!"the call of op {i}, a {o.core.name}" o)
+
+def lowerVectors : List Json :=
+  lowerExamples ++ (List.range generated).map fun i => opCallVector s!"seed {i + 1}" (randomOp (Rng.seed (i + 1 + 9500))).1
+
+def kindName : Docs.ChangeKind → String
+  | .new => "new"
+  | .edited => "edited"
+  | .gone => "gone"
+
+def changeJson (c : Docs.RecordChange) : Json :=
+  Json.mkObj [("id", toJson (hex c.id)), ("type", Json.arr (#[toJson c.type.type.text] ++ (c.type.schema.map fun h => toJson h.text).toArray)), ("kind", toJson (kindName c.kind)),
+    ("fields", Json.arr (c.fields.map fun (f, v) => match v with
+      | some x => Json.arr #[toJson (utf8Text f), x.json]
+      | none => Json.arr #[toJson (utf8Text f)]).toArray)]
+
+/-- Records before and after, and a footprint; the changes a reader sees, under `ver` (every type at one schema), and
+the verdict's footprint part on them. -/
+def checkVector (name : String) (before after : List (Record Value)) (fp : List Step) : Json :=
+  let cs := changesFrom ver before after
+  vector name (Json.mkObj [("schema", toJson (blake3 (utf8 "schema:v1")).text),
+      ("before", Json.arr (before.map recordJson).toArray), ("after", Json.arr (after.map recordJson).toArray),
+      ("footprint", Json.arr (fp.map stepJson).toArray)])
+    (Json.mkObj [("changes", Json.arr (cs.map changeJson).toArray), ("verdict", toJson (verdictFootprint ver fp before after))])
+
+/-- A commit's changes against its own footprint, `tamper` applied to what it made: none for an honest writer. -/
+def commitCheck (name : String) (w c : Nat) (s : List (Record Value)) (ops : List (Op Value))
+    (tamper : List (Record Value) → List (Record Value) := id) : Option Json :=
+  match commit valEq ofId w c s ops with
+  | .ok s' => some (checkVector name s (tamper s') (footprint ops))
+  | .error _ => none
+
+/-- Retitle the first Record: a write no tick's footprint makes. -/
+def retitle : List (Record Value) → List (Record Value)
+  | r :: rs => { r with fields := setFields r.fields (rows [("x2", text "tampered")]) } :: rs
+  | [] => []
+
+def changesExamples : List Json := [
+  commitCheck "I ate 2 bananas" 1 7 [] bananas,
+  commitCheck "tick one task done" 1 8 todo tick,
+  commitCheck "rename a task" 1 8 todo
+    [.patch task (rows [("x2", text "Order seeds")]) (rows [("x2", text "Order bean seeds")])],
+  commitCheck "remove done tasks" 1 9 todo (tick ++ [.remove task (rows [("done", .uint 1)])]),
+  commitCheck "edit a title" 2 5 todo [.edit task ⟨2, 4, 0⟩ (utf8 "x2") (text "Water the beans at dawn")],
+  commitCheck "a tick that also renames: beyond its footprint" 1 8 todo tick retitle,
+  commitCheck "a tick that also drops the other task: beyond its footprint" 1 8 todo tick (·.take 1),
+  commitCheck "nothing changes" 1 8 todo []].filterMap id
+
+def randomChangesVector (seed : Nat) : Option Json := Id.run do
+  let r := Rng.seed (seed + 9700)
+  let (n, r) := r.below 5
+  let mut r := r
+  let mut ops := #[]
+  for _ in [0:n + 1] do
+    let (op, r') := randomOp r
+    ops := ops.push op
+    r := r'
+  let (c, r1) := r.below 9
+  let (t, _) := r1.below 3
+  let tamper : List (Record Value) → List (Record Value) := if t = 0 then retitle else if t = 1 then (·.drop 1) else id
+  return commitCheck s!"seed {seed}" 1 c todo ops.toList tamper
+
+def changeVectors : List Json :=
+  changesExamples ++ ((List.range (4 * generated)).filterMap fun i => randomChangesVector (i + 1)).take generated
+
+def rename : List (Op Value) := [.patch task [] (rows [("x2", text "Order bean seeds")])]
+
+def mergeCheckExamples : List Json := [
+  checkVector "the settling tick alone, against the proposal: passes" proposal merged (footprint settle),
+  checkVector "the whole merge on main, with only the tick's footprint: refused" mainBefore merged (footprint settle),
+  checkVector "the whole merge on main, with the rename's call too: passes" mainBefore merged
+    (footprint (settle ++ rename)),
+  checkVector "a task retyped as a note: refused, whatever the footprint" todo retyped (footprint tick)]
+
+/-- The steps a merge's footprint is drawn from. -/
+def gSteps : List Step := [⟨task, .patch, [utf8 "done"]⟩, ⟨task, .patch, [utf8 "x2"]⟩,
+  ⟨task, .putNew, [utf8 "x2", utf8 "done"]⟩, ⟨task, .remove, []⟩, ⟨note, .putNew, [utf8 "x1"]⟩,
+  ⟨note, .edit, [utf8 "x1"]⟩]
+
+/-- Main's Records, with distinct ids; the merged Records: each of main's kept, changed or dropped, and new ones. -/
+def randomMergeVector (seed : Nat) : Json := Id.run do
+  let r := Rng.seed (seed + 9800)
+  let (n, r) := r.below 4
+  let mut r := r
+  let mut main := #[]
+  let mut merged := #[]
+  for i in [0:n] do
+    let (ty, r1) := pick r [task, note] task
+    let (d, r2) := r1.below 2
+    let rec0 : Record Value := ⟨⟨1, 1, i⟩, ty, rows [("x1", text s!"r{i}"), ("done", .uint d)]⟩
+    main := main.push rec0
+    let (fate, r3) := r2.below 5
+    if fate = 0 then merged := merged.push rec0
+    else if fate = 1 then merged := merged.push { rec0 with fields := setFields rec0.fields (rows [("done", .uint 1)]) }
+    else if fate = 2 then merged := merged.push { rec0 with fields := setFields rec0.fields (rows [("x1", text "new")]) }
+    else if fate = 3 then merged := merged.push { rec0 with fields := rec0.fields.filter (·.1 != utf8 "done") }
+    r := r3
+  let (m, r') := r.below 3
+  r := r'
+  for j in [0:m] do
+    let (ty, r') := pick r [task, note] task
+    merged := merged.push ⟨⟨2, 1, j⟩, ty, rows [("x1", text s!"n{j}")]⟩
+    r := r'
+  let (fp, _) := subset r gSteps
+  return checkVector s!"seed {seed}" main.toList merged.toList fp
+
+def mergeChecks : List Json := mergeCheckExamples ++ (List.range generated).map fun i => randomMergeVector (i + 1)
+
 def gInvoices (r : Rng) (docs : List DocId) : List (Rec Value) × Rng := Id.run do
   let mut r := r
   let mut out := #[]
@@ -1192,7 +1345,8 @@ def main (args : List String) : IO Unit := do
       ("wants.json", wants), ("mutations.json", mutations), ("merges.json", merges), ("lenses.json", lenses),
       ("indexes.json", indexes), ("trees.json", trees), ("lookups.json", lookups), ("keys.json", keys), ("writers.json", writers), ("envelopes.json", envelopes),
       ("checkpoints.json", checkpoints), ("fit.json", fit), ("logs.json", logs),
-      ("counts.json", counts), ("genesis.json", genesisVectors), ("bodies.json", bodyVectors),
+      ("counts.json", counts), ("lower.json", lowerVectors), ("changes.json", changeVectors),
+      ("merge-check.json", mergeChecks), ("genesis.json", genesisVectors), ("bodies.json", bodyVectors),
       ("segments.json", segmentVectors), ("heads.json", headVectors), ("loro.json", loroVectors),
       ("placements.json", placementVectors), ("held.json", heldVectors), ("builtins.json", builtinVectors)] do
     IO.FS.writeFile (dir / file) (render vs)
