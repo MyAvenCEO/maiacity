@@ -6,8 +6,7 @@
 //! (`CapRecord.ofValue?_value` and the others). [`id_builtin_fit`] is the check the docs layer asks for each of the
 //! three types, and none for any other.
 
-use aven_core::limits::{MAX_SIG_BYTES, MAX_SIGNER_BYTES, MAX_SIGS};
-use aven_core::{DocId, Hash, Sig, Value, encode, sigs_ok};
+use aven_core::{DocId, Hash, Sig, Value, encode, sigs_within};
 
 use super::chain::Cap;
 use super::revoke::Revocation;
@@ -46,16 +45,6 @@ fn split_sigs(v: &Value) -> Option<(Value, Vec<Sig>)> {
     }
     let body = kvs.iter().filter(|(k, _)| k != "sigs").cloned().collect();
     Some((Value::Map(body), sigs))
-}
-
-/// Core's limits on the signatures beside one name (`sigsWithin`): sorted by signer, one each, at most
-/// [`MAX_SIGS`], each within its lengths.
-fn sigs_within(sigs: &[Sig]) -> bool {
-    sigs.len() <= MAX_SIGS
-        && sigs_ok(sigs)
-        && sigs
-            .iter()
-            .all(|x| x.signer.len() <= MAX_SIGNER_BYTES && x.sig.len() <= MAX_SIG_BYTES)
 }
 
 /// Writing it back gives the same Value: the codec writes maps in its own order, so the same encoding.
