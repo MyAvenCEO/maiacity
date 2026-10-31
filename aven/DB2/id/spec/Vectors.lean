@@ -33,7 +33,8 @@ import Aven.ID.Expiry
 - `caps.json`: cap chains on the cast, with the first rule each breaks or none (`Aven.ID.Caps`), how avenOS shows a cap
   for a passkey tap, and generated chains (`Aven.ID.CapsJson`).
 - `revocations.json`: Docs of Core envelopes, each with its name and what caps reads of it, the revocations a reader
-  holds, and each envelope's verdict (`Aven.ID.Revoke`), hand-written and generated.
+  holds, and each envelope's verdict (`Aven.ID.Revoke`), hand-written and generated; and a Doc its vault deleted, with
+  whether each envelope survives the delete (`survives`; a delete Record carries `delete: true` in its body).
 - `epochs.json`: who learns which key after a removal, after a heal, and holding a `below` group (`Aven.ID.Epochs`).
 - `approvals.json`: signatures, thresholds and digests on the cast, and whether each approval holds; then approvals
   where an owner is a vault, which approves by its own quorum, with a coop of two vaults added (`Aven.ID.Approve`).
@@ -170,6 +171,10 @@ def revocationVectors : List Json :=
   (revocationExamples.map fun (name, doc, rs, e, _) =>
     vector name (Json.mkObj (docJson doc rs ++ [("envelope", Json.str (nm e).text)]))
       (verdict nm reads doc rs e).json) ++
+  (deleteExamples.map fun (name, doc, e, _) =>
+    vector s!"a delete: {name}"
+      (Json.mkObj (docJson doc [] ++ [("owner", Json.str "alice"), ("envelope", Json.str (nm e).text)]))
+      (Json.mkObj [("survives", survives nm isDelete byAlice doc e)])) ++
   (List.range generatedDocs).map fun i =>
     let (doc, rs) := genDoc (i + 1)
     vector s!"generated Doc, seed {i + 1}" (Json.mkObj (docJson doc rs))
