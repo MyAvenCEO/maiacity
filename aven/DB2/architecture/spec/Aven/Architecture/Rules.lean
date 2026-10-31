@@ -14,7 +14,7 @@ ARCHITECTURE.md from those.
 
 The view that joins the parts is defined here, once: `served`, what a reader sends, the engine's want queue over caps'
 read grants (rule 6). Caps' revocation verdict reads Core's envelopes itself, its past Core's `Reaches`
-(`Aven.ID.Past.reaches_iff`, rules 2, 4 and 11).
+(`Aven.Core.Past.reaches_iff`, rules 2, 4 and 11).
 -/
 
 namespace Aven.Architecture
@@ -419,7 +419,7 @@ theorem rule12_causal {nm : Envelope → Hash} {S : List Envelope} {a b : Envelo
 seen doesn't count whatever time it claims, and a write claiming a time past the expiry never counts. -/
 theorem rule12_time_acked (nm : Envelope → Hash) (rd : ID.Reads) (time : Envelope → Nat) {doc : List Envelope}
     {x : Hash} {t : Nat} {e a : Envelope} (ha : a ∈ doc) (acks : x ∈ rd.acks a) (late : t ≤ time a) (he : e ∈ doc)
-    (unseen : ¬ ID.Past.Before nm doc a e) :
+    (unseen : ¬ Past.Before nm doc a e) :
     ID.inTime nm rd time doc x t e = false ∧ (t ≤ time e → ID.inTime nm rd time doc x t e = false) :=
   ⟨ID.time_acked ha acks late he unseen, fun l => ID.claimed_late l⟩
 
