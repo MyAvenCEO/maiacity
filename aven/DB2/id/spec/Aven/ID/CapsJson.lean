@@ -6,15 +6,15 @@ import Lean.Data.Json
 
 /-! # Caps as JSON, and generated cases
 
-The form of `vectors/caps.json`, `revocations.json`, `epochs.json`, `approvals.json`, `network.json` and `keep.json`
-(`Vectors.lean`). Caps' readable form is JSON. A line's target, verb and footprint grants are written as Core's vectors
-write them (`targets.json`, `footprints.json`): Docs as `d:` and hex, vaults as their UTF-8 ids. The vectors add each
-cap's CBOR bytes and hash once Core encodes targets (A8). A context names the cast's tree, which `trees.json` carries,
-and lists who is in each group and which vault each Doc belongs to.
+The form of `vectors/caps.json`, `revocations.json`, `epochs.json`, `approvals.json`, `network.json`, `keep.json` and
+`collections.json` (`Vectors.lean`). Caps' readable form is JSON. A line's op is its id, as Core's `ops.json` names
+`core/1`'s, and its target is written as Core's vectors write it (`targets.json`): Docs as `d:` and hex, vaults as
+their UTF-8 ids; a bound is null for any value, or the values it allows. Each cap carries its CBOR bytes and hash. A
+context names the cast's tree, which `trees.json` carries, and lists who is in each group and what each Doc is.
 
 ```
-cap:      {"id":"cap-a","issuer":"alice","holder":{"vault":"bob"},"parent":null,"kind":"grant",
-           "grant":[{"target":{"doc":"d:6431"},"verb":"read","footprint":[]}],"role":null,"share":1,
+cap:      {"id":"cap-a","issuer":"alice","holder":{"vault":"bob"},"parent":null,"form":"grant",
+           "grant":[{"op":"b3:…","doc":{"doc":"d:6431","reach":"self"},"params":{}}],"role":null,"share":1,
            "conditions":{…},
            "signer":"alice-peer","approvals":[{"key":"alice-owner","digest":"cap-a"}]}
 error:    {"rule":"wider","cap":"cap-w"}   {"rule":"holder","cap":"att-bob"}   {"rule":"empty"}
@@ -34,19 +34,17 @@ open Lean
 namespace Aven.ID
 
 def targetJson : Core.Target → Json
-  | .doc d => Json.mkObj [("doc", d.text)]
+  | .doc d r => Json.mkObj [("doc", d.text), ("reach", r.name)]
   | .vault v b => Json.mkObj [("vault", Core.utf8Text v), ("below", toJson b)]
   | .vaultType v t b => Json.mkObj [("vault", Core.utf8Text v), ("type", t.text), ("below", toJson b)]
-  | .actor a b => Json.mkObj [("actor", a.text), ("below", toJson b)]
-  | .vaultDef v d => Json.mkObj [("vault", Core.utf8Text v), ("def", d.text)]
 
-def footprintJson (g : Core.Grant) : Json :=
-  Json.mkObj [("type", g.type.text), ("verb", g.verb.name),
-    ("fields", match g.fields with | some fs => toJson (fs.map Core.utf8Text) | none => Json.null)]
+def boundJson : Core.Bound → Json
+  | none => Json.null
+  | some vs => Json.arr (vs.map Core.Value.json).toArray
 
 def Line.json (l : Line) : Json :=
-  Json.mkObj [("target", targetJson l.target), ("verb", verbName l.verb),
-    ("footprint", Json.arr (l.footprint.map footprintJson).toArray)]
+  Json.mkObj [("op", l.op.text), ("doc", targetJson l.doc),
+    ("params", Json.mkObj (l.params.map fun (p, b) => (Core.utf8Text p, boundJson b)))]
 
 def Branches.json : Branches → Json
   | .any => "any"
@@ -64,7 +62,7 @@ def Conditions.json (c : Conditions) : Json :=
 
 def Holder.json : Holder → Json
   | .vault v => Json.mkObj [("vault", v)]
-  | .group g => Json.mkObj [("group", g)]
+  | .group g => Json.mkObj [("group", g.text)]
   | .«public» => "public"
   | .ticket k => Json.mkObj [("ticket", k)]
 
@@ -72,7 +70,7 @@ def Sig.json (s : Sig) : Json := Json.mkObj [("key", s.key), ("digest", s.digest
 
 def Cap.json (c : Cap) : Json :=
   Json.mkObj [("id", c.id), ("issuer", c.issuer), ("holder", c.holder.json), ("parent", toJson c.parent),
-    ("kind", c.kind.name), ("grant", Json.arr (c.grant.map Line.json).toArray), ("role", toJson c.role),
+    ("form", c.form.name), ("grant", Json.arr (c.grant.map Line.json).toArray), ("role", toJson c.role),
     ("share", toJson c.share), ("conditions", c.conditions.json), ("signer", c.signer),
     ("approvals", Json.arr (c.approvals.map Sig.json).toArray),
     ("cbor", Core.hex c.bytes), ("hash", (c.digest Core.blake3).text), ("signs", Core.hex c.signing)]
@@ -107,7 +105,7 @@ def ChainError.json : ChainError → Json
   | .approval c => Json.mkObj [("rule", "approval"), ("cap", c)]
   | .publicShares c => Json.mkObj [("rule", "publicShares"), ("cap", c)]
   | .keepShares c => Json.mkObj [("rule", "keepShares"), ("cap", c)]
-  | .footprint c => Json.mkObj [("rule", "footprint"), ("cap", c)]
+  | .group c => Json.mkObj [("rule", "group"), ("cap", c)]
   | .parent c => Json.mkObj [("rule", "parent"), ("cap", c)]
   | .issuer c => Json.mkObj [("rule", "issuer"), ("cap", c)]
   | .holder c => Json.mkObj [("rule", "holder"), ("cap", c)]
@@ -118,10 +116,10 @@ def ChainError.json : ChainError → Json
 /-- The cast's context as the vectors give it: the tree by name, one owner per approval, and the groups. -/
 def castCtxJson : Json :=
   Json.mkObj [("tree", "cast"), ("threshold", toJson (1 : Nat)),
-    ("groups", Json.arr #[Json.mkObj [("group", "g-garden"), ("members", toJson ["alice", "bob"])]]),
+    ("groups", Json.arr #[Json.mkObj [("group", gGarden.text), ("members", toJson ["alice", "bob"])]]),
     ("roles", Json.arr (castCtx.roles.map Role.json).toArray),
-    ("docs", Json.arr ([d1, d2, b1, cityNotes, cityDome].filterMap fun d =>
-      (castDocVault d).map fun v => Json.mkObj [("doc", d.text), ("vault", v)]).toArray)]
+    ("docs", Json.arr ([d1, d2, b1, cityNotes, cityDome, gGarden, album].filterMap fun d =>
+      (castFacts d).map factsJson).toArray)]
 
 def chainResult (cs : List Cap) : Json :=
   match chainError castCtx cs with
@@ -199,7 +197,7 @@ def genOwner (v : String) : String :=
 
 /-- Lines on a vault's Docs, as the cast has them; Aven's Doc `a1` is one the reader doesn't know. -/
 def genLines (v : String) : List Line :=
-  if v = "alice" then [readOn d1, tasksOn d1, readOn d2] else if v = "bob" then [readOn b1, tasksOn b1]
+  if v = "alice" then [readOn d1] ++ tasksOn d1 ++ [readOn d2] else if v = "bob" then readOn b1 :: tasksOn b1
   else if v = "maia-city" then [readOn cityDome] else [readOn (docOf "a1")]
 
 /-- A random cap after `parent`: mostly a fair narrowing by the parent's holder, now and then wider, longer, unsigned,
@@ -216,7 +214,7 @@ def genCap (r : Rng) (id : String) (parent : Option Cap) : Cap × Rng := Id.run 
     | none => other
   let (h, r3) := r.below 20; r := r3
   let (hv, r4) := pick r (if h < 11 then ["alice", "bob"] else genVaults); r := r4
-  let holder : Holder := if h < 14 then .vault hv else if h < 17 then .group "g-garden" else if h < 19 then .«public»
+  let holder : Holder := if h < 14 then .vault hv else if h < 17 then .group gGarden else if h < 19 then .«public»
     else .ticket "t-1"
   let (w, r5) := r.below 2; r := r5
   let (wv, r6) := pick r (issuer :: genVaults); r := r6
@@ -238,12 +236,12 @@ def genCap (r : Rng) (id : String) (parent : Option Cap) : Cap × Rng := Id.run 
     | some p => if k == 6 then none else p.conditions.expires
     | none => if k == 0 then some 100 else none
   let (a, r10) := r.below 4; r := r10
-  let kind : CapKind := if a == 0 && (parent.isSome || k < 4) then .attenuate else .grant
-  let (holder, share, approvals) := match kind, parent with
+  let form : CapForm := if a == 0 && (parent.isSome || k < 4) then .attenuate else .grant
+  let (holder, share, approvals) := match form, parent with
     | .attenuate, some p =>
       (if k == 4 then holder else p.holder, if k == 5 then p.share + 1 else p.share, ([] : List Sig))
     | _, _ => (holder, share, approvals)
-  pure ({ id, issuer, holder, parent := if k == 19 then some "cap-z" else parent.map (·.id), kind, grant, share,
+  pure ({ id, issuer, holder, parent := if k == 19 then some "cap-z" else parent.map (·.id), form, grant, share,
           signer, approvals, conditions := { expires } }, r)
 
 def genChain (seed : Nat) : List Cap := Id.run do

@@ -161,9 +161,9 @@ Caps found a hole in rule 4 the same day, and it was closed the same day. A merg
 merger's grant covers the whole merge (caps README, "Checking"). But the content check read a merge against the version
 its prev and deps name, which already holds the proposal, so a narrow merger could land a proposal's wider changes.
 `rule4_merge_whole` (#1608) judges a merge into main against main before it. Every Record it changes, brings or removes
-is handled by a step of the whole merge (the engine's `merge_granted`). The merging device's cap allows each step
-(`merge_within_device`). The authority is the signer's own vault, which owns or governs the Doc, or a chain whose last
-cap writes on main and allows each step (caps' `merge_covered`, #1601, #1604, #1607).
+is made by the steps the whole merge's calls lower to (the engine's `merge_steps`, A32). The merging device's cap
+allows each call (`merge_within_device`). The authority is the signer's own vault, which owns or governs the Doc, or a
+chain whose last cap writes on main and allows each call (caps' `merge_covered`, #1601, #1604, #1607, #1681).
 
 Rule 14 is a property of the node, held by the format vectors and the box's check; no theorem is planned for it.
 
@@ -716,6 +716,7 @@ the spec that owns it.
   nothing. An address or release record is history: an envelope in its signer's own log, the newest the latest there,
   so the "smaller body wins" tie-break goes. *Decided (the architect, 31 Oct 2026): it follows from A4.*
 - **A32. Caps are built from ops.** *Decided: yes (Samuel, 31 Oct 2026: "caps should be built from their ops").*
+  *In Lean (#1681), with A39's types, A40's holdings and A42's collections clause.*
   A cap line names an operation by its hash (rule 1's name of its stored form) and bounds on its parameters, and nothing
   else.
   - **The core verbs are ops:** read, put, patch, remove, edit, tell, keep and share are the core plugin's (`core/1`).
@@ -815,7 +816,17 @@ the spec that owns it.
   keys (the passkey's PRF step, owner and seal keys, the keyring, Doc keys), the minimal caps (Own, device caps,
   member caps), the docs layer and the ops engine; then the tree as the first Doc and the chat as the second, a fresh
   Doc (the old chains stay stored, never wiped); then catch-up, keepers and the failures. Thread E's wire runs beside.
-  *Decided: yes.*
+  *Decided: yes.* The keys' browser half, decided 31 Oct 2026:
+  - **No passkey without PRF makes a vault** (Samuel: "refuse, explain"). Sign-up stops with a plain message, so
+    there is one kind of vault: post-quantum, and it opens on any device. There is no ES256-only owner.
+  - **The PRF input is only the epoch** (`["avenID prf 1", {epoch}]`): a passkey's PRF secret is already its own,
+    and a passkey belongs to one vault. So sign-up evaluates the PRF at create and signs the claim, owner and seal
+    halves included, with one more tap. A new browser signs in with one tap. The epoch stays, so a leaked output
+    never opens a later epoch.
+  - **The register maps a credential id to its passkey record:** its vault, ES256 key, owner and seal public halves
+    and epoch, parameters of `tree/1`'s claim and join. A sign-in names no vault: it is the vault of the passkey that
+    signed. Caps rule 21's two proofs are two signatures beside the one name (A30): the passkey's ES256 and the
+    owner's hybrid. The old text statements gain nothing.
 
 - **A44. Placement has one source: the owner's vault** (Samuel, 31 Oct 2026: "we can't have two sources of truth
   for who keeps what; it's always co-located with the owner's data and vaults"). A vault's keep caps say which keeper
@@ -853,7 +864,7 @@ the spec that owns it.
 
   *Decided: yes (Samuel, 31 Oct 2026: "do it").* A host gets only the caps its owners give it. In Lean, avenACTORS
   proves the kernel's half (`Aven.Actor.Signing`, #1617: `signs_by_chain`, `write_names_actor`, `write_keeps_chain`,
-  `actor_within_chain`, `actor_steps_within`), and caps the reader's (`host_chain_only`, `actor_within_device`,
+  `actor_within_chain`, `actor_calls_within`), and caps the reader's (`host_chain_only`, `actor_within_device`,
   `host_never_beyond`). Version 1 (no caps, in memory) is unaffected.
 
   Lean showed where per-hop narrowing (D16) lives. *The architect's answer (31 Oct 2026):*

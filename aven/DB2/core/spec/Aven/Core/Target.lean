@@ -1,18 +1,21 @@
 import Aven.Core.Names
 
 /-!
-# Targets, verbs and footprints
+# Targets and steps
 
 **One target grammar** for what a cap covers, what a want asks for and what a query ranges over (A8, decided by
-Samuel, 30 Oct 2026; its CBOR is `Aven.Core.TargetCbor`). Its forms are caps' (`id/caps`, "Targets"). Whether a Doc is in a target is
-read from what its genesis fixes: its id, its vault and its root type (docs, "A Doc"). Who governs whom and which
-actor spawned which come from avenID and the actors, so the model takes them as parameters.
+Samuel, 30 Oct 2026; its CBOR is `Aven.Core.TargetCbor`). Its forms are three (A32, Samuel, 31 Oct 2026): a Doc, with
+what it spawned or what it lists, or neither; a vault's Docs; and a vault's Docs of one root type, each with the vaults
+below it or not. Whether a Doc is in a target is read from what its genesis fixes, its id, its vault and its root type
+(docs, "A Doc"), never from its content, so what a target covers can't drift with the data (caps rule 6). Who governs
+whom, which actor spawned which and what a collection lists come from avenID, the actors and the collections' own
+signed listings, so the model takes them as parameters.
 
-**Verbs** are what a cap allows (ARCHITECTURE.md, "verb"). A **footprint** is what a write touches, per lowered step:
-the type, the step's verb and the fields (caps, "Footprints"). Constraints on field values stay caps' own.
+A **step** is what a write touches, per lowered core op: the type, the step's verb and the fields (caps,
+"Footprints"). Steps are computed from an op's lowering (E1 to E3), never written in a cap.
 
-What it proves: a narrower target covers only what the wider one does (`Target.le_sound`), and footprint coverage
-grows with the grants and composes (`covers_mono`, `covers_append`).
+What it proves: a narrower target covers only what the wider one does (`Target.le_sound`); `Target.coversB` decides
+coverage (`Target.coversB_iff`).
 -/
 
 namespace Aven.Core
@@ -23,42 +26,71 @@ structure Facts where
   vault : Bytes
   type : DocId
 
+/-- What a Doc target reaches besides the Doc itself: nothing more, every actor it spawned, or every Doc it lists, a
+collection (A32). -/
+inductive Reach where
+  | self
+  | spawned
+  | lists
+  deriving DecidableEq, Repr
+
 inductive Target where
-  /-- One Doc. -/
-  | doc (d : DocId)
+  /-- One Doc, and with its reach the actors it spawned or the Docs it lists. -/
+  | doc (d : DocId) (reach : Reach)
   /-- Every Doc of a vault, and with `below` every Doc of the vaults it governs. -/
   | vault (v : Bytes) (below : Bool)
   /-- A vault's Docs of one root type, a type Doc. -/
   | vaultType (v : Bytes) (t : DocId) (below : Bool)
-  /-- One actor, and with `below` every actor it spawned. -/
-  | actor (a : DocId) (below : Bool)
-  /-- Every actor of one definition in a vault: its root type is the definition's type Doc. -/
-  | vaultDef (v : Bytes) (d : DocId)
   deriving DecidableEq, Repr
 
-/-- `gov v w`: vault `v` governs vault `w` (avenID). `spawned a b`: actor `a` spawned actor `b`, directly or not. -/
-def Target.covers (gov : Bytes → Bytes → Prop) (spawned : DocId → DocId → Prop) : Target → Facts → Prop
-  | .doc d, f => f.id = d
+/-- `gov v w`: vault `v` governs vault `w` (avenID). `spawned a b`: actor `a` spawned actor `b`, directly or not.
+`lists c d`: the collection `c` lists the Doc `d`, by its issuer's signed listings, nested at most a bounded depth. -/
+def Target.covers (gov : Bytes → Bytes → Prop) (spawned lists : DocId → DocId → Prop) : Target → Facts → Prop
+  | .doc d .self, f => f.id = d
+  | .doc d .spawned, f => f.id = d ∨ spawned d f.id
+  | .doc d .lists, f => f.id = d ∨ lists d f.id
   | .vault v b, f => f.vault = v ∨ (b = true ∧ gov v f.vault)
   | .vaultType v t b, f => f.type = t ∧ (f.vault = v ∨ (b = true ∧ gov v f.vault))
-  | .actor a b, f => f.id = a ∨ (b = true ∧ spawned a f.id)
-  | .vaultDef v d, f => f.vault = v ∧ f.type = d
+
+/-- `Target.covers`, decided, with who governs whom, which actor spawned which and what a collection lists given as
+tests, as a device evaluates them. -/
+def Target.coversB (gov : Bytes → Bytes → Bool) (spawned lists : DocId → DocId → Bool) : Target → Facts → Bool
+  | .doc d .self, f => f.id == d
+  | .doc d .spawned, f => f.id == d || spawned d f.id
+  | .doc d .lists, f => f.id == d || lists d f.id
+  | .vault v b, f => f.vault == v || (b && gov v f.vault)
+  | .vaultType v t b, f => f.type == t && (f.vault == v || (b && gov v f.vault))
+
+theorem Target.coversB_iff {gov : Bytes → Bytes → Bool} {spawned lists : DocId → DocId → Bool} {t : Target}
+    {f : Facts} :
+    t.coversB gov spawned lists f = true ↔ t.covers (gov · · = true) (spawned · · = true) (lists · · = true) f := by
+  cases t with
+  | doc d r => cases r <;> simp [Target.coversB, Target.covers]
+  | _ => simp [Target.coversB, Target.covers]
+
+/-- As caps writes it. -/
+def Reach.name : Reach → String
+  | .self => "self"
+  | .spawned => "spawned"
+  | .lists => "lists"
+
+/-- A reach within another: the Doc alone is within either. -/
+def Reach.le : Reach → Reach → Bool
+  | .self, _ => true
+  | .spawned, .spawned => true
+  | .lists, .lists => true
+  | _, _ => false
 
 /-- `a` is a narrowing of `b`, read from the two targets alone. -/
 def Target.le : Target → Target → Bool
   | .vault v b, .vault w c => v == w && (!b || c)
   | .vaultType v _ b, .vault w c => v == w && (!b || c)
   | .vaultType v t b, .vaultType w u c => v == w && t == u && (!b || c)
-  | .vaultDef v _, .vault w _ => v == w
-  | .vaultDef v d, .vaultType w u _ => v == w && d == u
-  | .vaultDef v d, .vaultDef w e => v == w && d == e
-  | .actor a b, .actor c d => a == c && (!b || d)
-  | .doc d, .doc e => d == e
-  | .doc d, .actor a _ => d == a
+  | .doc d r, .doc e s => d == e && r.le s
   | _, _ => false
 
-theorem Target.le_sound {gov : Bytes → Bytes → Prop} {spawned : DocId → DocId → Prop} :
-    ∀ {a b : Target} {f : Facts}, a.le b = true → a.covers gov spawned f → b.covers gov spawned f
+theorem Target.le_sound {gov : Bytes → Bytes → Prop} {spawned lists : DocId → DocId → Prop} :
+    ∀ {a b : Target} {f : Facts}, a.le b = true → a.covers gov spawned lists f → b.covers gov spawned lists f
   | .vault v b, .vault w c, f, h, hc => by
     simp only [Target.le, Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true, Bool.not_eq_true'] at h
     obtain ⟨rfl, h⟩ := h
@@ -81,39 +113,12 @@ theorem Target.le_sound {gov : Bytes → Bytes → Prop} {spawned : DocId → Do
     rcases hc.2 with hc | ⟨hb, hg⟩
     · exact .inl hc
     · rcases h with h | h <;> simp_all
-  | .vaultDef v d, .vault w _, f, h, hc => by
-    simp only [Target.le, beq_iff_eq] at h
-    subst h
-    exact .inl hc.1
-  | .vaultDef v d, .vaultType w u _, f, h, hc => by
+  | .doc d r, .doc e s, f, h, hc => by
     simp only [Target.le, Bool.and_eq_true, beq_iff_eq] at h
-    obtain ⟨rfl, rfl⟩ := h
-    exact ⟨hc.2, .inl hc.1⟩
-  | .vaultDef v d, .vaultDef w e, f, h, hc => by
-    simp only [Target.le, Bool.and_eq_true, beq_iff_eq] at h
-    obtain ⟨rfl, rfl⟩ := h
-    exact hc
-  | .actor a b, .actor c d, f, h, hc => by
-    simp only [Target.le, Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true, Bool.not_eq_true'] at h
     obtain ⟨rfl, h⟩ := h
-    simp only [Target.covers] at hc ⊢
-    rcases hc with hc | ⟨hb, hs⟩
-    · exact .inl hc
-    · rcases h with h | h <;> simp_all
-  | .doc d, .doc e, f, h, hc => by
-    simp only [Target.le, beq_iff_eq] at h
-    subst h
-    exact hc
-  | .doc d, .actor a _, f, h, hc => by
-    simp only [Target.le, beq_iff_eq] at h
-    subst h
-    exact .inl hc
+    cases r <;> cases s <;> simp_all [Reach.le, Target.covers]
 
-/-! ## Verbs and footprints -/
-
-inductive Verb where
-  | read | query | put | patch | remove | edit | tell | keep | share
-  deriving DecidableEq, Repr
+/-! ## Steps -/
 
 /-- A write step's verb: a put of a Record that didn't exist at the envelope's base, or of one that did; a patch, a
 remove, or an edit of a text, list or tree (caps, "Footprints"; A19). -/
@@ -135,33 +140,5 @@ structure Step where
   verb : StepVerb
   fields : List Bytes
   deriving DecidableEq, Repr
-
-/-- What a cap grants for writes: a type, a verb, and the fields, or every field. -/
-structure Grant where
-  type : DocId
-  verb : StepVerb
-  fields : Option (List Bytes)
-  deriving DecidableEq, Repr
-
-def Grant.allows (g : Grant) (s : Step) : Bool :=
-  g.type == s.type && g.verb == s.verb &&
-    match g.fields with
-    | none => true
-    | some fs => s.fields.all (fs.contains ·)
-
-/-- Every step of a footprint is allowed by one of the grants. -/
-def covers (grants : List Grant) (fp : List Step) : Bool := fp.all fun s => grants.any (·.allows s)
-
-theorem covers_mono {g g' : List Grant} (hg : ∀ x ∈ g, x ∈ g') {fp : List Step} (h : covers g fp = true) :
-    covers g' fp = true := by
-  simp only [covers, List.all_eq_true, List.any_eq_true] at h ⊢
-  intro s hs
-  obtain ⟨x, hx, ha⟩ := h s hs
-  exact ⟨x, hg x hx, ha⟩
-
-theorem covers_append {g : List Grant} {a b : List Step} (ha : covers g a = true) (hb : covers g b = true) :
-    covers g (a ++ b) = true := by
-  simp only [covers, List.all_append, Bool.and_eq_true] at ha hb ⊢
-  exact ⟨ha, hb⟩
 
 end Aven.Core
