@@ -22,14 +22,14 @@
   },
   {
    "title": "Two questions, every time.",
-   "text": "Every change has to pass two checks. Does it really come from the coop? The coop's signing rules decide. May the coop do this to this data? The data's rules decide. Only both together let a change in.",
+   "text": "Every change has to pass two checks. Does it really come from the coop? The coop's own rules decide. May the coop do this to this data? The data's rules decide. Only both together let a change in.",
    "flow": [
     "signatures",
-    "signing rules: who speaks?",
+    "own rules: who speaks?",
     "the data's rules: may it?",
     "accepted"
    ],
-   "deep": "Agency and access stay apart. The chain signer → device → human → coop only answers who is acting; rules on data only answer what that identity may do. Both use the same small policy language and are checked offline by every peer."
+   "deep": "Agency and access stay apart. The chain signer → agent → owner (human or coop) only answers who is acting; rules on data only answer what that identity may do. Both use the same small policy language and are checked offline by every peer."
   },
   {
    "title": "Under the hood, a rule is a capability.",

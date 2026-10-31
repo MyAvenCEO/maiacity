@@ -2,34 +2,41 @@
  "title": "Identity",
  "slides": [
   {
-   "title": "It starts with your phone.",
-   "text": "Your phone is a {device}: an {identity} of its own, something that can act. Inside it sits a {signer}: a {key}, a secret only the phone holds, that can say one thing: “this really comes from this phone.” A signer is not an identity; it is just the device's current key.",
-   "deep": "A device identity's ID is the hash of its birth record, which its first signer signs itself, so the ID outlives every key. How the key is kept is up to the device: on a phone, derived from the passkey's PRF plus a per-device salt; on a laptop, the keychain; on a server, an environment variable, a secret manager or an HSM."
+   "title": "It starts with you.",
+   "text": "You are an {identity}: something that can own things and decide. More exactly, you are a {human} identity. You have no key of your own; you act through the things you own.",
+   "deep": "An identity's ID is the hash of its birth record, so it outlives every key. Every identity keeps a signed history of its rules and keys. Identity types: human, coop, agent."
   },
   {
-   "title": "Your devices act for you.",
-   "text": "You are an identity too: a {human}. Your phone, laptop and watch are {members} of you: they act for you, each with its own signer. A device is a member of exactly one identity: you, or, for a shared server, a coop, which you'll meet next. Lose a device, add another, and you're still you.",
-   "deep": "One kind of link only, always pointing up: signer (a key) → device → human → coop. Authority flows up (the device signs, so you act); control flows down (you add and remove your devices by your own rules). Identity types: device, human, coop."
+   "title": "Your phone is your agent.",
+   "text": "Your phone runs an {agent}: an identity that acts on your behalf. Inside it sits a {signer}: a {key}, a secret only the phone holds, that can say “this really comes from this agent.” The agent belongs to you, and it owns nothing itself.",
+   "deep": "An agent identity is owned by exactly one human or coop. Its signer is just its current key; how the key is kept is up to the device it runs on: derived from the passkey's PRF plus a salt on a phone, the keychain on a laptop, an environment variable, secret manager or HSM on a server."
   },
   {
-   "title": "How it all starts.",
-   "text": "First comes your first device: it makes its signer and signs its own birth. Then you are born: your birth is signed by that device, names it as your first member, and already names your next keys. Every later device joins from both sides: it signs “I act for you”, and you sign “this device is mine”. Only both together count.",
-   "flow": [
-    "device is born",
-    "you are born, signed by it",
-    "each new device: both sides sign"
-   ],
+   "title": "You and your first agent are born together.",
+   "text": "When you start, your phone's agent makes its signer and signs one record: your birth, its own birth, and its first rule, “this agent may act for you.” From then on, you exist, and you own it. Nothing has to come first.",
    "code": {
-    "1. phone": "signs its own birth",
-    "2. you": "birth signed by phone; members: [phone]",
-    "3. laptop": "“I act for you” + you: “my member”"
+    "signed_by": "phone's signer",
+    "you": "born (ID = hash of this record)",
+    "phone": "born, owned by you",
+    "first_rule": "phone may act, own and govern for you"
    },
-   "deep": "No loop: the device's birth needs no one; the human's birth needs one device; every later membership needs two signatures, the device's and the human's under its own rules. Nobody can claim someone else's device, and no device can attach itself to someone else."
+   "deep": "One genesis record creates the human identity and its first agent together, so there is no chicken-and-egg problem. The record already commits to the next keys in advance (KERI-style pre-rotation)."
+  },
+  {
+   "title": "Each agent gets only what you give it.",
+   "text": "You can have many agents: your laptop, your watch, a server, even an AI assistant. Each gets its own {rule} from you: a signed statement of what it may do for you. Your phone may do everything; your watch only what concerns your health; your assistant only your shopping list.",
+   "code": {
+    "phone": "act, own, govern",
+    "watch": "act, only on health data",
+    "server": "sync only",
+    "assistant": "read and update “house-list”"
+   },
+   "deep": "An agent's rule has the same shape as every rule in theOS: who (the agent), on what (its owner), operations (act, own, govern), conditions (which data, limits, expiry). Adding an agent needs its own signature and a rule from its owner."
   },
   {
    "title": "You and Mia start a home.",
-   "text": "Together you form a {coop}: an identity made of identities. Neither of you is the coop alone, and it lives on even if one of you loses every device.",
-   "deep": "A coop's members are identities, never signers, and membership may not form a cycle."
+   "text": "Together you form a {coop}: an identity made of identities. You and Mia are its members. Neither of you is the coop alone, and it lives on even if one of you loses every agent.",
+   "deep": "A coop's members are human or coop identities, never agents and never signers, and membership may not form a cycle. A coop owns agents too, for example a shared server."
   },
   {
    "title": "Coops can hold coops.",
@@ -49,44 +56,44 @@
      ]
     }
    },
-   "deep": "Identity types: device, human, coop. A coop's members are human or coop identities; a human's members are device identities. Cycles are rejected when a membership change is checked."
+   "deep": "Membership is checked whenever it changes; a change that would close a circle is rejected."
   },
   {
-   "title": "A coop decides by its own signing rules.",
-   "text": "A coop has members, and its own {signing rules}: who must agree for the coop to act. They know only three kinds of act. Acting: ordinary changes. Owning: writing the rules for data it owns, and handing data over (Data chapter). Governing: changing its own members and signing rules. Signing rules never mention a piece of data.",
+   "title": "A coop decides by its own rules.",
+   "text": "A coop's rules say who must agree for it to act. They know only three kinds of act. Acting: ordinary changes. Owning: writing rules for what it owns, and handing things over. Governing: changing its own members and rules. Each comes with its own count of signatures.",
    "code": {
     "coop": "home",
     "members": [
      "you",
      "mia"
     ],
-    "signing_rules": {
+    "rules": {
      "act": "1 of 2",
      "own": "2 of 2",
      "govern": "2 of 2, then 7 days to object"
     }
    },
-   "deep": "Same shape as every rule in theOS: who (its members), on what (the coop itself), operations (act, own, govern), conditions (threshold, weights, all-of / any-of, time locks). Conditions are plugins; a device that does not know one treats it as not satisfied."
+   "deep": "Same shape as every rule: who (its members), on what (the coop itself), operations (act, own, govern), conditions (threshold, weights, time locks). Conditions are plugins; an unknown one counts as not satisfied."
   },
   {
    "title": "Losing your phone.",
-   "text": "Every identity keeps a signed {history} of its keys and members. When it was born, that history named its next keys, so you can switch to them. You mark the lost phone as gone, and from then on it can sign nothing for you. What it could still read comes in the Keys chapter.",
+   "text": "Your history named your next keys when you were born, so you can switch to them from another agent. You revoke the lost phone's rule, and from then on it can do nothing for you. What it could still read comes in the Keys chapter.",
    "flow": [
-    "next keys",
-    "switch",
-    "lost phone signs nothing new"
+    "switch to the next keys",
+    "revoke the phone's rule",
+    "the phone acts for no one"
    ],
-   "deep": "Pre-rotation (KERI): the birth record commits to the hash of the next keys. The device identity of the lost phone is removed from the human identity's members, so its signer no longer counts."
+   "deep": "Pre-rotation: the birth record commits to the hash of the next keys. Revoking an agent's rule is an ending like any other (Endings chapter)."
   },
   {
    "title": "Identity, in short.",
    "list": [
-    "A device is an identity of its own; its signer is only a key.",
-    "A human identity's members are its devices.",
-    "A coop is an identity made of identities, and coops can hold coops.",
-    "Each identity decides by its own signing rules: act, own, govern."
+    "Humans and coops are identities that own and decide.",
+    "Agents are identities that act for exactly one owner, each with its own signer.",
+    "An agent may do only what its owner's rule gives it.",
+    "A coop decides by its own rules: act, own, govern."
    ],
-   "deep": "Three identity types: device, human, coop. Every identity's ID is the hash of its birth record, so it outlives all of its keys."
+   "deep": "Three identity types: human, coop, agent. Ownership points from humans and coops to agents and data; authority to act flows back only through rules."
   }
  ]
 }

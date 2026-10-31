@@ -16,7 +16,7 @@
    "id": "D2",
    "title": "Signers act, identities own",
    "status": "decided",
-   "decision": "A signer is a key that signs changes for an identity. It never owns anything. Only identities own data.",
+   "decision": "A signer is a key that signs for an agent. Agents act; only humans and coops own data and agents.",
    "why": "Devices come and go; ownership must not move with them.",
    "sources": [
     {
@@ -29,7 +29,6 @@
     }
    ],
    "slides": [
-    "identity-1",
     "identity-2"
    ],
    "date": "2026-10-31"
@@ -38,7 +37,7 @@
    "id": "D3",
    "title": "Two kinds of identity: human and coop",
    "status": "decided",
-   "decision": "Identity types: device, human, coop. Only identities are members. A device is a member of exactly one identity (a human, or a coop for a shared server). A human's members are devices. A coop's members are humans, coops or devices; coops may contain coops, never in a circle. Signers are keys, never members. Each identity has its own signing rules.",
+   "decision": "Identity types: human, coop, agent. Humans and coops own and decide. A coop's members are humans or coops, never agents or signers; coops may contain coops, never in a circle. Agents are never members; they are owned.",
    "why": "Families, teams and organisations are identities of identities; one model covers all of them.",
    "sources": [
     {
@@ -51,11 +50,10 @@
     }
    ],
    "slides": [
-    "identity-2",
-    "identity-3",
-    "identity-4",
+    "identity-1",
     "identity-5",
-    "identity-6"
+    "identity-6",
+    "identity-7"
    ],
    "date": "2026-10-31"
   },
@@ -648,18 +646,18 @@
    ],
    "slides": [
     "rules-1",
-    "identity-6",
     "rules-5",
     "rules-8",
-    "time-4"
+    "time-4",
+    "identity-7"
    ],
    "date": "2026-10-31"
   },
   {
    "id": "D31",
-   "title": "A signer is a key; devices are identities",
+   "title": "A signer is the key of an agent",
    "status": "decided",
-   "decision": "Identity types: device, human, coop. A signer is only a key, never an identity; it is the current key of exactly one device identity, registered in that device's own history, and never a member of anything. How the key is kept is up to the device: derived from the passkey's PRF plus a per-device salt on phones, the keychain on laptops, an environment variable, secret manager or HSM on servers. The device identity's ID is the hash of its birth record, so it survives key changes. Loro's peer ID stays a number, bound to the signer in each chunk's signed header.",
+   "decision": "A signer is only a key: the current key of exactly one agent identity, registered in that agent's history. How it is kept is up to the device the agent runs on: derived from the passkey's PRF plus a per-device salt on phones, the keychain on laptops, an environment variable, secret manager or HSM on servers. Loro's peer ID stays a number, bound to the signer in each chunk's signed header.",
    "why": "Separates who acts (identities) from what signs (keys). Not derived from the passkey alone: synced passkeys give several devices the same secret, and Apple's Secure Enclave holds only P-256 keys.",
    "supersedes": "the separate iroh key in D28",
    "sources": [
@@ -677,7 +675,6 @@
     }
    ],
    "slides": [
-    "identity-1",
     "identity-2",
     "sync-1"
    ],
@@ -819,9 +816,7 @@
      "url": "https://trustoverip.github.io/tswg-keri-specification/"
     }
    ],
-   "slides": [
-    "identity-6"
-   ],
+   "slides": [],
    "date": "2026-10-31",
    "superseded_by": "D48"
   },
@@ -925,7 +920,7 @@
    "why": "Agency and access are different questions; mixing them made the coop example ambiguous.",
    "sources": [],
    "slides": [
-    "identity-6",
+    "identity-7",
     "check-2"
    ],
    "date": "2026-10-31"
@@ -953,16 +948,19 @@
   },
   {
    "id": "D46",
-   "title": "One link: “is a member of”, pointing up",
+   "title": "Agents: owned by one human or coop, acting by its rules",
    "status": "decided",
-   "decision": "There is one kind of link between identities: “is a member of”, always pointing up (device → human → coop). A device is a member of exactly one identity. The first device is born on its own; the human's birth is signed by it; every later membership needs both signatures, the member's and the identity's under its own rules. We no longer say an identity owns a device; owning is only for data.",
-   "why": "“Owned by” and “member of” described the same link twice, which looked like a loop. Birth order removes the chicken-and-egg problem.",
+   "decision": "An agent identity (phone, laptop, watch, server, AI assistant) is owned by exactly one human or coop and acts only through rules its owner gives it: who = the agent, on what = the owner, operations act / own / govern, with conditions (which data, limits, expiry). The owner and its first agent are born together in one record signed by the agent's key. Losing a device means revoking its agent's rule.",
+   "why": "Devices are owned, not members; acting on behalf is delegation by rules (D48). One genesis record removes the chicken-and-egg problem.",
    "sources": [],
    "slides": [
     "identity-2",
-    "identity-3"
+    "identity-3",
+    "identity-4",
+    "identity-8"
    ],
-   "date": "2026-10-31"
+   "date": "2026-10-31",
+   "supersedes": "the earlier “device is a member of” model"
   },
   {
    "id": "D47",
@@ -996,7 +994,8 @@
    "supersedes": "D38",
    "sources": [],
    "slides": [
-    "identity-6",
+    "identity-4",
+    "identity-7",
     "rules-4",
     "ops-8"
    ]

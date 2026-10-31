@@ -17,13 +17,13 @@
   },
   {
    "title": "Unchanged rules renew themselves.",
-   "text": "You don't want your family locked out every month. So the owner quietly renews every rule that hasn't changed, a week before it ends, under its own signing rules (a coop can let one member do renewals). Rules you changed or removed simply run out.",
+   "text": "You don't want your family locked out every month. So the owner quietly renews every rule that hasn't changed, a week before it ends, under its own rules (a coop can let one member do renewals). Rules you changed or removed simply run out.",
    "flow": [
     "rule still the same?",
     "renew for 30 days",
     "else: let it run out"
    ],
-   "deep": "Renewal is a new certificate with the same content and a later expiry, signed under the owner's signing rule for renewals. Changed or removed rules are simply not renewed."
+   "deep": "Renewal is a new certificate with the same content and a later expiry, signed under the owner's own rule for renewals. Changed or removed rules are simply not renewed."
   },
   {
    "title": "The job is done.",

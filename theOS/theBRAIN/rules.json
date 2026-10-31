@@ -42,7 +42,7 @@
     "signed_by": "you (owner)",
     "proof": "…back to the seal"
    },
-   "deep": "A rule is a signed certificate with one shape everywhere: who (a role), on what (this data), operations (each optionally narrowed by at, where or a limit), expiry, and a proof chain back to the seal. An identity's signing rules use the same shape (Identity chapter). People see “rule”; underneath it is a capability."
+   "deep": "A rule is a signed certificate with one shape everywhere: who (a role), on what (this data), operations (each optionally narrowed by at, where or a limit), expiry, and a proof chain back to the seal. An identity's own rules use the same shape (Identity chapter). People see “rule”; underneath it is a capability."
   },
   {
    "title": "What a rule can allow.",
@@ -119,7 +119,7 @@
     "signed_by": "seal",
     "expires": "never"
    },
-   "deep": "The genesis certificate has no expiry. Ownership moves only through a hand-over signed by the owner under its own signing rules."
+   "deep": "The genesis certificate has no expiry. Ownership moves only through a hand-over signed by the owner under its own rules."
   },
   {
    "title": "Rules, in short.",

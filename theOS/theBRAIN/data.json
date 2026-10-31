@@ -8,7 +8,7 @@
   },
   {
    "title": "The list starts from itself.",
-   "text": "When data is born, it gets a {seal}: a key used exactly once, to sign the data's first {rule}, a signed statement of who may do what, naming its owner, and then destroyed. Nobody holds the seal, so nobody can share it, lose it or steal it. The list doesn't come from any account; its authority starts with itself.",
+   "text": "When data is born, it gets a {seal}: a key used exactly once, to sign the data's first rule, naming its owner, and then destroyed. Nobody holds the seal, so nobody can share it, lose it or steal it. The list doesn't come from any account; its authority starts with itself.",
    "deep": "The seal is a fresh Ed25519 key pair. Its public key is the data ID. It signs one certificate, naming the owner, and the private key is zeroised. Keyhive calls the same pattern the genesis key.",
    "code": {
     "id": "ed25519:7Hq…",
