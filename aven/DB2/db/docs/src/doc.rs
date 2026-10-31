@@ -102,6 +102,29 @@ pub struct Snapshot {
     pub records: BTreeMap<String, Record>,
 }
 
+impl Snapshot {
+    /// A type Doc's versions (A39): each `version` Record's schema, by its hash. Version Records are built-ins, so
+    /// write-once, and two with one hash hold one schema (`pin_resolves_one`).
+    pub fn versions(&self) -> BTreeMap<Hash, Schema> {
+        let version = crate::schema::builtin_type("version");
+        self.records
+            .values()
+            .filter(|r| r.r#type == version)
+            .filter_map(|r| Schema::of_value(r.fields.get("schema")?))
+            .map(|s| (s.hash(), s))
+            .collect()
+    }
+}
+
+/// Why a Doc doesn't open.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Unopenable {
+    /// The genesis isn't well formed (`Genesis::ok`): a built-in type pinned, or pins out of order.
+    Genesis,
+    /// A pin resolves to no version of its type Doc, by name.
+    Pin { r#type: DocId, schema: Hash },
+}
+
 /// The change feed, one entry per new version.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Feed {
@@ -548,28 +571,37 @@ fn judge_on(
 }
 
 impl Doc {
-    /// Opens a Doc from its genesis, with the schema of every version it pins (the built-in types need no pin).
-    /// `None` when the genesis isn't well formed or a pinned schema is missing. The genesis carries no signature: the
-    /// Doc's first envelope carries it, and that envelope's signature and cap authorize it.
-    pub fn open(genesis: Genesis, schemas: &[Schema], limits: Limits) -> Option<Doc> {
-        Doc::open_with(genesis, schemas, limits, Box::new(DocsBuiltins))
+    /// Opens a Doc from its genesis, reading every version it pins from its type Doc: `types` gives a type Doc's
+    /// snapshot, and a pin `(type Doc, h)` resolves to the `version` Record there whose schema hashes to `h`
+    /// ([`Snapshot::versions`], `Aven.DB.Docs.pin_resolves_one`). The built-in types need no pin. The genesis carries
+    /// no signature: the Doc's first envelope carries it, and that envelope's signature and cap authorize it.
+    pub fn open(
+        genesis: Genesis,
+        types: impl Fn(&DocId) -> Option<Arc<Snapshot>>,
+        limits: Limits,
+    ) -> Result<Doc, Unopenable> {
+        Doc::open_with(genesis, types, limits, Box::new(DocsBuiltins))
     }
 
     /// [`Doc::open`] with the built-in types' checks given: the docs layer's own, joined with avenID's once caps
     /// supplies them (`Either(DocsBuiltins, caps)`).
     pub fn open_with(
         genesis: Genesis,
-        schemas: &[Schema],
+        types: impl Fn(&DocId) -> Option<Arc<Snapshot>>,
         limits: Limits,
         builtins: Box<dyn BuiltinFit + Send + Sync>,
-    ) -> Option<Doc> {
+    ) -> Result<Doc, Unopenable> {
         if !genesis.ok(is_builtin) {
-            return None;
+            return Err(Unopenable::Genesis);
         }
         let mut pinned: BTreeMap<Version, Schema> = BTreeMap::new();
         for (t, hs) in &genesis.pins {
+            let versions = types(t).map(|s| s.versions()).unwrap_or_default();
             for h in hs {
-                let s = schemas.iter().find(|s| s.hash() == *h)?;
+                let s = versions.get(h).ok_or(Unopenable::Pin {
+                    r#type: *t,
+                    schema: *h,
+                })?;
                 pinned.insert(
                     Version {
                         r#type: *t,
@@ -580,7 +612,7 @@ impl Doc {
             }
         }
         let id = genesis.id();
-        Some(Doc {
+        Ok(Doc {
             genesis,
             id,
             limits,
@@ -602,21 +634,25 @@ impl Doc {
         })
     }
 
-    /// Opens a Doc from its first envelope, which carries its genesis, and imports that envelope.
+    /// Opens a Doc from its first envelope, which carries its genesis, and imports that envelope. `None` when the
+    /// bytes carry no genesis of their Doc, or the first envelope doesn't import.
     pub fn from_first(
         bytes: &[u8],
-        schemas: &[Schema],
+        types: impl Fn(&DocId) -> Option<Arc<Snapshot>>,
         limits: Limits,
         auth: &impl Authorize,
-    ) -> Option<(Doc, Imported)> {
+    ) -> Option<Result<(Doc, Imported), Unopenable>> {
         let e = Envelope::decode(bytes)?;
         let g = Body::of_value(&e.body)?.genesis?;
         if g.id() != e.doc {
             return None;
         }
-        let mut doc = Doc::open(g, schemas, limits)?;
+        let mut doc = match Doc::open(g, types, limits) {
+            Ok(d) => d,
+            Err(u) => return Some(Err(u)),
+        };
         let r = doc.import(bytes, auth).ok()?;
-        Some((doc, r))
+        Some(Ok((doc, r)))
     }
 
     pub fn id(&self) -> DocId {

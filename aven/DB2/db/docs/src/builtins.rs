@@ -32,6 +32,11 @@ fn is_hash(v: &Value) -> bool {
     matches!(v, Value::Bytes(b) if b.len() == 32)
 }
 
+/// A schema's one form (`isSchema`): a type Doc's version names its schema by its hash (A39).
+fn is_schema(v: &Value) -> bool {
+    crate::schema::Schema::of_value(v).is_some()
+}
+
 fn is_hashes(v: &Value) -> bool {
     matches!(v, Value::Array(xs) if xs.iter().all(is_hash))
 }
@@ -72,7 +77,11 @@ impl BuiltinFit for DocsBuiltins {
         } else if *t == builtin_type("closed") {
             &[("at", is_hashes, false)]
         } else if *t == builtin_type("version") {
-            &[("name", is_text, true), ("at", is_hashes, true)]
+            &[
+                ("name", is_text, true),
+                ("at", is_hashes, true),
+                ("schema", is_schema, true),
+            ]
         } else if *t == builtin_type("split") {
             &[("writer", is_uint, true), ("after", is_hash, true)]
         } else {

@@ -1,4 +1,5 @@
 import Aven.DB.Docs.Genesis
+import Aven.DB.Docs.Schema
 
 /-!
 # Built-in types' fit, by whoever defines them
@@ -14,7 +15,8 @@ never edited afterwards, and may be removed (`builtin_fits_iff`).
 The docs four, each a map of exactly these fields:
 - `branch`: `name` text, `base` a list of hashes, `nonce` a hash, and optionally `follows` text;
 - `closed`: optionally `at`, a list of hashes;
-- `version`: `name` text, `at` a list of hashes;
+- `version`: `name` text, `at` a list of hashes, and `schema` a schema's one form (`Schema.ofValue?`): a type Doc's
+  Records are its versions, each named by its schema's hash (A39, `pin_resolves_one`);
 - `split`: `writer` an unsigned integer, `after` a hash.
 -/
 
@@ -61,6 +63,8 @@ def isText : Value → Bool
   | .text _ => true
   | _ => false
 
+def isSchema (v : Value) : Bool := (Schema.ofValue? v).isSome
+
 def isUint : Value → Bool
   | .uint _ => true
   | _ => false
@@ -77,7 +81,7 @@ def shape (spec : List (String × (Value → Bool) × Bool)) : Value → Bool
 def branchShape : Value → Bool :=
   shape [("name", isText, true), ("base", isHashes, true), ("nonce", isHash, true), ("follows", isText, false)]
 def closedShape : Value → Bool := shape [("at", isHashes, false)]
-def versionShape : Value → Bool := shape [("name", isText, true), ("at", isHashes, true)]
+def versionShape : Value → Bool := shape [("name", isText, true), ("at", isHashes, true), ("schema", isSchema, true)]
 def splitShape : Value → Bool := shape [("writer", isUint, true), ("after", isHash, true)]
 
 /-- The docs layer's built-in types, each with its shape. -/
@@ -91,9 +95,12 @@ def docsBuiltinFit (H : Bytes → Hash) : BuiltinFit := fun t =>
 /-- Two definers' checks, the first's where both define a type. -/
 def BuiltinFit.or (a b : BuiltinFit) : BuiltinFit := fun t => (a t).or (b t)
 
-#guard versionShape (.map [(k "at", .array []), (k "name", .text (k "v1"))])
+#guard versionShape (.map [(k "at", .array []), (k "name", .text (k "v1")), (k "schema", (Schema.mk [] [] false).value)])
+#guard !versionShape (.map [(k "at", .array []), (k "name", .text (k "v1"))])
+#guard !versionShape (.map [(k "at", .array []), (k "name", .text (k "v1")), (k "schema", .map [])])
 #guard !versionShape (.map [(k "name", .text (k "v1"))])
-#guard !versionShape (.map [(k "at", .array []), (k "name", .text (k "v1")), (k "x", .null)])
+#guard !versionShape (.map [(k "at", .array []), (k "name", .text (k "v1")), (k "schema", (Schema.mk [] [] false).value),
+  (k "x", .null)])
 #guard (docsBuiltinFit blake3 (builtinType blake3 "split")).isSome
 #guard (docsBuiltinFit blake3 (typeOfTypes blake3)).isNone
 

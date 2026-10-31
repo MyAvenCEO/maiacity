@@ -181,4 +181,42 @@ theorem Schema.value_ofValue {v : Value} {s : Schema} (h : Schema.ofValue? v = s
     · cases h
   · cases h
 
+/-! ## A pin resolves to one schema
+
+A type Doc's Records are its versions (A39): each a `version` built-in, write-once, whose `schema` field holds a
+schema's Value whole. A pin `(type Doc, h)` resolves to the version whose schema hashes to `h`. Two versions with one
+hash are one version: under a hash nothing collides under, and with Values as they come off the wire (canonical,
+`encode_decodeAll`), their schemas are equal (`pin_resolves_one`), so a pin never names two schemas. -/
+
+/-- The schema a pin's hash names among a type Doc's versions' `schema` Values, `none` when none does. -/
+def resolvePin (H : Bytes → Hash) (versions : List Value) (h : Hash) : Option Schema :=
+  versions.findSome? fun v => (Schema.ofValue? v).filter (Schema.hash H · == h)
+
+/-- Two versions whose schemas hash alike hold one schema. -/
+theorem pin_resolves_one {H : Bytes → Hash} {v₁ v₂ : Value} {s₁ s₂ : Schema}
+    (c₁ : Canon v₁ = true) (c₂ : Canon v₂ = true)
+    (hH : H (encode v₁) = H (encode v₂) → encode v₁ = encode v₂)
+    (h₁ : Schema.ofValue? v₁ = some s₁) (h₂ : Schema.ofValue? v₂ = some s₂)
+    (hh : s₁.hash H = s₂.hash H) : s₁ = s₂ := by
+  have e₁ := Schema.value_ofValue h₁
+  have e₂ := Schema.value_ofValue h₂
+  simp only [Schema.hash, e₁, e₂] at hh
+  have := encode_inj c₁ c₂ (hH hh)
+  subst this
+  rw [h₁] at h₂
+  exact Option.some.inj h₂
+
+/-- What a pin resolves to is a schema one of the versions holds, with the pin's hash. -/
+theorem resolvePin_sound {H : Bytes → Hash} {versions : List Value} {h : Hash} {s : Schema}
+    (r : resolvePin H versions h = some s) : ∃ v ∈ versions, Schema.ofValue? v = some s ∧ s.hash H = h := by
+  obtain ⟨v, hv, hs⟩ := List.exists_of_findSome?_eq_some r
+  refine ⟨v, hv, ?_⟩
+  cases ho : Schema.ofValue? v with
+  | none => simp [ho] at hs
+  | some s' =>
+    simp only [ho, Option.filter_some] at hs
+    split at hs
+    · cases hs; simp_all
+    · cases hs
+
 end Aven.DB.Docs

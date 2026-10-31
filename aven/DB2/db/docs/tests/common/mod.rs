@@ -4,9 +4,11 @@
 use aven_core::{DocId, Envelope, Hash, Value, blake3};
 use aven_db_docs::schema::{Kind, Schema, builtin_type};
 use aven_db_docs::{
-    Act, Authorize, Body, Device, Doc, EpochKey, Genesis, Limits, RecordWrite, Version,
+    Act, Authorize, Body, Device, Doc, EpochKey, Genesis, Limits, Record, RecordWrite, Snapshot,
+    Version,
 };
 use aven_id::{Secret, TestEntropy};
+use std::sync::Arc;
 
 pub fn device(name: &str) -> Device {
     let mut e = TestEntropy::new(name);
@@ -64,6 +66,32 @@ pub fn todo_type() -> Version {
     }
 }
 
+/// The todo type Doc as a reader holds it: one `version` Record, holding the todo schema.
+pub fn todo_type_doc() -> Arc<Snapshot> {
+    let fields = [
+        ("at".to_string(), Value::Array(vec![])),
+        ("name".to_string(), Value::Text("v1".into())),
+        ("schema".to_string(), todo().value()),
+    ];
+    Arc::new(Snapshot {
+        version: vec![],
+        records: [(
+            "v1".to_string(),
+            Record {
+                r#type: builtin_type("version"),
+                fields: fields.into_iter().collect(),
+            },
+        )]
+        .into_iter()
+        .collect(),
+    })
+}
+
+/// The type Docs a reader holds: the todo type's.
+pub fn types(t: &DocId) -> Option<Arc<Snapshot>> {
+    (*t == todo_type().r#type).then(todo_type_doc)
+}
+
 pub fn version_type() -> Version {
     Version {
         r#type: builtin_type("version"),
@@ -81,7 +109,7 @@ pub fn genesis(_by: &Device) -> Genesis {
 }
 
 pub fn open(g: &Genesis) -> Doc {
-    Doc::open(g.clone(), &[todo()], Limits::DEFAULTS).expect("opens")
+    Doc::open(g.clone(), types, Limits::DEFAULTS).expect("opens")
 }
 
 pub fn put(id: &str, version: Version, set: Vec<(&str, Value)>) -> RecordWrite {
