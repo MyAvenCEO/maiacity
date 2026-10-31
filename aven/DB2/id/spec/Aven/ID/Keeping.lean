@@ -36,7 +36,7 @@ open Aven.Core
 
 section
 
-variable (gov : Bytes → Bytes → Bool) (spawned lists : DocId → DocId → Bool)
+variable (gov : Hash → Hash → Bool) (spawned lists : DocId → DocId → Bool)
 
 /-- A cap keeps the Doc whose genesis fixed `f`: one of its `keep` lines covers it. -/
 def Cap.keeps (roles : List Role) (c : Cap) (f : Facts) : Bool :=
@@ -224,7 +224,7 @@ theorem keep_one_holder {r : Cap} {cs : List Cap} (h : chainOk x (r :: cs) = tru
 /-- **The owner decides who keeps** (A22): under a valid chain, a cap keeps a Doc only as the chain's root does, a grant
 by a vault with authority over every line, its own vault or one it governs, to that very keeper. No one else extends
 it. -/
-theorem keeper_named_by_owner (gov : Bytes → Bytes → Bool) (spawned lists : DocId → DocId → Bool) {r : Cap}
+theorem keeper_named_by_owner (gov : Hash → Hash → Bool) (spawned lists : DocId → DocId → Bool) {r : Cap}
     {cs : List Cap} (h : chainOk x (r :: cs) = true) {c : Cap} (m : c ∈ r :: cs) {f : Facts}
     (k : c.keeps gov spawned lists x.roles f = true) :
     c.holder = r.holder ∧ r.keeps gov spawned lists x.roles f = true ∧
@@ -240,7 +240,7 @@ theorem keeper_named_by_owner (gov : Bytes → Bytes → Bool) (spawned lists : 
 /-- **Only an owner places a keeper** (A22): every keeper of a Doc, by keep caps that are valid roots as every
 owner-issued one is, is named by one its issuer's owners approved (D14), with a `keep` line covering the Doc in its
 issuer's authority: the Doc's own vault, or one that governs it. -/
-theorem keepers_by_owner (gov : Bytes → Bytes → Bool) (spawned lists : DocId → DocId → Bool) {caps : List Cap}
+theorem keepers_by_owner (gov : Hash → Hash → Bool) (spawned lists : DocId → DocId → Bool) {caps : List Cap}
     (valid : ∀ c ∈ caps, chainOk x [c] = true) {f : Facts} {k : String}
     (h : k ∈ keepersOf gov spawned lists x.roles caps f) :
     ∃ c ∈ caps, c.holder = .vault k ∧ x.tree.approves x.threshold c.issuer c.id c.approvals = true ∧

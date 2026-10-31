@@ -104,7 +104,7 @@ pub fn indices(j: &Json) -> Vec<usize> {
 pub fn target(j: &Json) -> aven_core::Target {
     use aven_core::{Reach, Target};
     let below = || j["below"].as_bool().unwrap();
-    let vault = || j["vault"].as_str().unwrap().to_string();
+    let vault = || Hash::parse(j["vault"].as_str().unwrap()).unwrap();
     if let Some(d) = j.get("doc") {
         Target::Doc {
             doc: DocId::parse(d.as_str().unwrap()).unwrap(),

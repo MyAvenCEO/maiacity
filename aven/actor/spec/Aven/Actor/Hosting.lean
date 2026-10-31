@@ -32,7 +32,7 @@ open Aven.ID (Cap Holder Role Line coreOp)
 
 /-- What the model takes from avenID and the engine. -/
 structure World where
-  gov : Bytes → Bytes → Prop
+  gov : Core.Hash → Core.Hash → Prop
   spawned : DocId → DocId → Prop
   lists : DocId → DocId → Prop
   roles : List Role

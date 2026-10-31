@@ -7,7 +7,7 @@ mod common;
 use aven_core::{Call, CoreOp, DocId, Facts, Hash, Target, Value, blake3};
 use aven_id::caps::{
     Cap, DeviceCap, Reader, Reading, Sig, World, confirm_call, confirm_cap, confirm_op,
-    grant_allows, sign_in_op,
+    grant_allows, sign_in_op, vault_id,
 };
 use common::caps::{Context, Names};
 use common::{hex, vectors};
@@ -68,8 +68,8 @@ proptest! {
         let ops = [confirm_op(), sign_in_op(), CoreOp::Put.id(), CoreOp::Read.id()];
         let call = Call { op: ops[op], params: vec![("claim".into(), Value::Bytes(claim.to_vec()))] };
         let doc = [tree, chat, DocId(blake3(b"other"))][on];
-        let f = Facts { id: doc, vault: "v:maia-city".into(), r#type: DocId(blake3(b"t")) };
-        let gov = |_: &str, _: &str| false;
+        let f = Facts { id: doc, vault: vault_id("maia-city"), r#type: DocId(blake3(b"t")) };
+        let gov = |_: &Hash, _: &Hash| false;
         let w = World { gov: &gov, spawned: &never, lists: &never };
         if grant_allows(&w, &cap.grant, &f, &call) {
             prop_assert_eq!(call.op, confirm_op());
@@ -100,7 +100,7 @@ fn a_member_only_by_a_confirm() {
     let mut docs = ctx.docs.clone();
     docs.push(Facts {
         id: tree,
-        vault: "v:maia-city".into(),
+        vault: vault_id("maia-city"),
         r#type: DocId(blake3(b"tree/1")),
     });
     let ctx = Context { docs, ..ctx };
@@ -160,7 +160,7 @@ fn a_member_only_by_a_confirm() {
         let dc_of = |k: &[u8]| (k == b"aven-peer").then(|| dc.clone());
         let member = |_: &str| true;
         let got = ctx.with(|x| {
-            let gov = |a: &str, b: &str| x.governs(a, b);
+            let gov = |a: &Hash, b: &Hash| x.governs(a, b);
             let r = Reader {
                 ctx: aven_id::caps::Ctx {
                     tree: x.tree,

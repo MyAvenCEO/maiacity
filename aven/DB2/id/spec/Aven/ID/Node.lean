@@ -224,7 +224,7 @@ another keeper stays fetchable by every member when any one peer is lost, the Av
 (`Aven.ID.Keeping`), and a Doc's keepers are the vaults its keep caps name for its facts `f`. With the default alone,
 the Aven Peer is its one keeper, and only the writer's own devices hold it besides. -/
 theorem kept_fetchable {n : Net} (hl : n.Listed) {r₁ r₂ : String} (m₁ : r₁ ∈ n.relays) (m₂ : r₂ ∈ n.relays)
-    (ne : r₁ ≠ r₂) {gov : Bytes → Bytes → Bool} {spawned lists : DocId → DocId → Bool} {roles : List Role}
+    (ne : r₁ ≠ r₂) {gov : Hash → Hash → Bool} {spawned lists : DocId → DocId → Bool} {roles : List Role}
     {caps : List Cap} {doc : String} {f : Facts} {v k s : String} {approvals : List Sig}
     (hk : defaultKeep v k s approvals ∈ caps) (own : f.vault = vaultId v) {c : Cap} {k' : String} (hc : c ∈ caps)
     (cov : c.keeps gov spawned lists roles f = true) (held : c.holder = .vault k') (other : k' ≠ k)

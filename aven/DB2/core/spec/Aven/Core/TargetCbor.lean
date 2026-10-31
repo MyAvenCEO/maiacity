@@ -12,8 +12,8 @@ A target is a map, its keys the ones caps writes (`id/caps`, "Targets"), sorted 
 | a vault's Docs | `{"below": bool, "vault": vault}` |
 | a vault's Docs of one root type | `{"type": type Doc, "below": bool, "vault": vault}` |
 
-Doc ids are byte strings of their hash, exactly 32 bytes, a vault is its text. Each form has keys no other form has, so
-a target whose ids are hashes reads back as itself (`Target.ofValue_value`), and an id of any other length is refused.
+Doc ids and vaults are byte strings of their 32-byte names, read through `Hash.ofValue?`: a vault is its name, never
+text. Each form has keys no other form has, so a target whose ids are hashes reads back as itself (`Target.ofValue_value`), and an id of any other length is refused.
 An allowed target is a canonical Value (`Target.value_canon`), so a cap's bytes, and its hash, name its targets
 exactly.
 -/
@@ -48,26 +48,27 @@ theorem Reach.ofBytes_bytes (r : Reach) : Reach.ofBytes? r.bytes = some r := by
 
 def Target.value : Target → Value
   | .doc d r => .map [(keyDoc, .bytes d.hash.bytes), (keyReach, .text r.bytes)]
-  | .vault v b => .map [(keyBelow, .bool b), (keyVault, .text v)]
-  | .vaultType v t b => .map [(keyType, .bytes t.hash.bytes), (keyBelow, .bool b), (keyVault, .text v)]
+  | .vault v b => .map [(keyBelow, .bool b), (keyVault, .bytes v.bytes)]
+  | .vaultType v t b => .map [(keyType, .bytes t.hash.bytes), (keyBelow, .bool b), (keyVault, .bytes v.bytes)]
 
 def Target.ofValue? : Value → Option Target
   | .map [(a, .bytes d), (c, .text r)] =>
     if a = keyDoc ∧ c = keyReach then
       (Hash.ofValue? (.bytes d)).bind fun h => (Reach.ofBytes? r).map (.doc ⟨h⟩ ·)
     else none
-  | .map [(a, .bool b), (c, .text v)] =>
-    if a = keyBelow ∧ c = keyVault then some (.vault v b) else none
-  | .map [(a, .bytes t), (c, .bool b), (e, .text v)] =>
-    if a = keyType ∧ c = keyBelow ∧ e = keyVault then (Hash.ofValue? (.bytes t)).map (.vaultType v ⟨·⟩ b)
+  | .map [(a, .bool b), (c, .bytes v)] =>
+    if a = keyBelow ∧ c = keyVault then (Hash.ofValue? (.bytes v)).map (.vault · b) else none
+  | .map [(a, .bytes t), (c, .bool b), (e, .bytes v)] =>
+    if a = keyType ∧ c = keyBelow ∧ e = keyVault then
+      (Hash.ofValue? (.bytes v)).bind fun v => (Hash.ofValue? (.bytes t)).map (.vaultType v ⟨·⟩ b)
     else none
   | _ => none
 
-/-- Its Doc or type id is a hash, 32 bytes. -/
+/-- Its ids, Doc, type and vault, are hashes, 32 bytes each. -/
 def Target.idsOk : Target → Bool
   | .doc d _ => d.hash.ok
-  | .vaultType _ t _ => t.hash.ok
-  | .vault _ _ => true
+  | .vaultType v t _ => v.ok && t.hash.ok
+  | .vault v _ => v.ok
 
 /-- A target whose ids are hashes reads back as itself. -/
 theorem Target.ofValue_value (t : Target) (h : t.idsOk = true) : Target.ofValue? t.value = some t := by
@@ -75,31 +76,31 @@ theorem Target.ofValue_value (t : Target) (h : t.idsOk = true) : Target.ofValue?
   | doc d r =>
     simp only [Target.idsOk, Hash.ok, beq_iff_eq] at h
     cases r <;> simp [Target.value, Target.ofValue?, Reach.ofBytes_bytes, Hash.ofValue?, h]
-  | vault v b => simp [Target.value, Target.ofValue?, keyBelow, keyVault]
-  | vaultType v t b =>
+  | vault v b =>
     simp only [Target.idsOk, Hash.ok, beq_iff_eq] at h
+    simp [Target.value, Target.ofValue?, keyBelow, keyVault, Hash.ofValue?, h]
+  | vaultType v t b =>
+    simp only [Target.idsOk, Hash.ok, Bool.and_eq_true, beq_iff_eq] at h
     simp [Target.value, Target.ofValue?, keyType, keyBelow, keyVault, Hash.ofValue?, h]
 
-/-- A target the profile allows: its vault, if it has one, is text the codec takes. -/
-def Target.ok : Target → Bool
-  | .vault v _ | .vaultType v _ _ => textOk v
-  | .doc _ _ => true
-
-/-- An allowed target is a canonical Value. -/
-theorem Target.value_canon (t : Target) (h : t.ok = true) (hb : ∀ d : DocId, d.hash.bytes.length < limit) :
-    Canon t.value = true := by
+/-- A target whose ids are hashes is a canonical Value. -/
+theorem Target.value_canon (t : Target) (h : t.idsOk = true) : Canon t.value = true := by
   cases t with
   | doc d r =>
-    cases r <;> simp_all [Target.value, Target.ok, Canon, Shape, ShapeMap, depth, depthMap, keysSorted,
+    simp only [Target.idsOk, Hash.ok, beq_iff_eq] at h
+    cases r <;> simp_all [Target.value, Canon, Shape, ShapeMap, depth, depthMap, keysSorted,
       strictlySorted, keyBytes, textOk, keyDoc, keyReach, Reach.bytes, limit] <;> decide
   | vault v b =>
-    simp_all [Target.value, Target.ok, Canon, Shape, ShapeMap, depth, depthMap, keysSorted, strictlySorted,
-      keyBytes, textOk, keyBelow, keyVault, limit] <;> decide
+    simp only [Target.idsOk, Hash.ok, beq_iff_eq] at h
+    simp_all [Target.value, Canon, Shape, ShapeMap, depth, depthMap, keysSorted, strictlySorted,
+      keyBytes, keyBelow, keyVault, limit] <;> decide
   | vaultType v t b =>
-    simp_all [Target.value, Target.ok, Canon, Shape, ShapeMap, depth, depthMap, keysSorted, strictlySorted,
-      keyBytes, textOk, keyType, keyBelow, keyVault, limit] <;> decide
+    simp only [Target.idsOk, Hash.ok, Bool.and_eq_true, beq_iff_eq] at h
+    simp_all [Target.value, Canon, Shape, ShapeMap, depth, depthMap, keysSorted, strictlySorted,
+      keyBytes, keyType, keyBelow, keyVault, limit] <;> decide
 
-#guard (Target.vault "v:alice".toUTF8.toList true).value matches .map _
+#guard (Target.vault ⟨List.replicate 32 3⟩ true).value matches .map _
+#guard Target.ofValue? (Target.vault ⟨List.replicate 31 3⟩ true).value == none
 #guard Target.ofValue? (Target.doc ⟨⟨List.replicate 32 1⟩⟩ .lists).value ==
   some (.doc ⟨⟨List.replicate 32 1⟩⟩ .lists)
 #guard Target.ofValue? (Target.doc ⟨⟨[1, 2]⟩⟩ .lists).value == none
