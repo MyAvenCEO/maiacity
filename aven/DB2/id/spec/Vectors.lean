@@ -62,7 +62,8 @@ import Aven.ID.SealJson
   (`Aven.ID.Network`, `Aven.ID.Recover`).
 - `keep.json`: a keeper's fetch-key links in the order they came, with the keys it takes, its current fetch key and
   its flags; the proofs it serves; what each vault pays; what it keeps under the keep caps it holds, after withdrawals
-  and deletes (`Aven.ID.Keep`, A22). Hand-written and generated.
+  and deletes (`Aven.ID.Keep`, A22); how much each vault may keep there, by the keeper's own offers, and the uploads it
+  admits within that (A44). Hand-written and generated.
 - `safe.json`: requests to a vault's safe from its agent and from Mallory, on a Mac and on a host that keeps Doc keys
   inside, with what each request gives back (`Aven.ID.Safe`, R13).
 - `settled.json`: sets of tree statements, each in several orders, and the tree `settle` gives (`Aven.ID.Network`,
@@ -349,6 +350,17 @@ def keepVectors : List Json :=
     vector s!"what the Aven Peer keeps: {name}"
       (Json.mkObj [("books", b.json), ("docs", toJson (bookDocs.map (·.text)))])
       (Json.mkObj [("kept", toJson ((bookDocs.filter b.keeps).map (·.text)))])) ++
+  (((bookCases.map fun (name, b, _) => (name, b)) ++ [("Aven offers Alice alone 5000 bytes", smallBooks)] :
+      List (String × Books)).map fun (name, b) =>
+      vector s!"how much each vault may keep at the Aven Peer: {name}"
+        (Json.mkObj [("books", b.json), ("vaults", toJson genVaults)])
+        (Json.mkObj [("quota", Json.mkObj (genVaults.map fun v => (v, toJson (b.quota v))))])) ++
+  [vector "the Aven Peer admits uploads within the quota its own offer gives (A44)"
+    (Json.mkObj [("keep", keepD1.json), ("books", smallBooks.json),
+      ("uploads", Json.arr (quotaUploads.map (·.json)).toArray)])
+    (let taken := keepD1.admit smallBooks.quota [] quotaUploads
+     Json.mkObj [("taken", Json.arr (taken.map (·.json)).toArray),
+      ("spent", Json.mkObj [("alice", toJson (Keep.spent taken "alice"))])])] ++
   (keepCases.map fun (name, s, _, _) => vector name (Json.mkObj [("keep", s.json)]) (keepResult s)) ++
   (proofCases.map fun (name, s, e, p, _) =>
     vector s!"proof: {name}" (Json.mkObj [("keep", s.json), ("exporter", e), ("proof", p.json)])
