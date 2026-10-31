@@ -3,14 +3,14 @@
  "slides": [
   {
    "title": "Can this really work?",
-   "text": "Caps are promises. This story shows the cryptography that keeps them: which keys exist, what each step does to them, and the few things no cryptography can do.",
+   "text": "Rules are promises. This story shows the cryptography that keeps them: which keys exist, what each step does to them, and the few things no cryptography can do.",
    "action": "Meet the keys"
   },
   {
    "title": "Four kinds of keys.",
    "text": "Each one has exactly one job.",
    "list": [
-    "Seal: signs a piece of data's first caps, then is destroyed.",
+    "Seal: signs a piece of data's first rule, then is destroyed.",
     "Identity key: a lock only you can open, grown from your passkey.",
     "Role key: a lock all members of a role can open.",
     "Data key: the key the data itself is encrypted with."
@@ -19,10 +19,10 @@
   },
   {
    "title": "Data is born.",
-   "text": "Your device makes a fresh seal. Its public half becomes the data's ID. It signs the first caps, and the private half is wiped. From now on, caps can only change through a role whose cap includes admin.",
+   "text": "Your device makes a fresh seal. Its public half becomes the data's ID. It signs the first rule, and the private half is wiped. From now on, rules can only change through a role whose rule includes admin.",
    "code": {
     "id": "ed25519:7Hq…",
-    "caps": {
+    "rules": {
      "role": "owners",
      "ops": [
       "admin",
@@ -37,7 +37,7 @@
    },
    "flow": [
     "new seal",
-    "sign first caps",
+    "sign first rule",
     "wipe seal"
    ],
    "action": "Lock the content"
@@ -80,11 +80,11 @@
     "who": "mia",
     "envelope": "role key → mia's identity key"
    },
-   "action": "Give a cap"
+   "action": "Give a rule"
   },
   {
-   "title": "Giving a cap: read needs a key, the other ops need only a signature.",
-   "text": "Giving “plumber” read on the tap item puts the item's data key in an envelope for the plumber role. Giving update needs no key at all: it's a signed cap change in the item's history, and every device enforces it.",
+   "title": "Giving a rule: read needs a key, the other ops need only a signature.",
+   "text": "Giving “plumber” read on the tap item puts the item's data key in an envelope for the plumber role. Giving update needs no key at all: it's a signed rule change in the item's history, and every device enforces it.",
    "code": {
     "data": "fix-tap",
     "op": "admin",
@@ -107,11 +107,11 @@
     "new role key",
     "new data key on next change"
    ],
-   "action": "Take a cap away"
+   "action": "Take a rule away"
   },
   {
-   "title": "Taking a cap away.",
-   "text": "Taking update away is just a signed cap change. Taking read away rotates the data key, and the new one goes to every reading role except that one.",
+   "title": "Taking a rule away.",
+   "text": "Taking update away is just a signed rule change. Taking read away rotates the data key, and the new one goes to every reading role except that one.",
    "code": {
     "data": "house-list",
     "op": "admin",
@@ -179,10 +179,10 @@
   },
   {
    "title": "Where does the data key live?",
-   "text": "Nobody holds it for the data. It travels with the data itself: every piece of data carries a small {keyring} next to its caps. The keyring holds the data key in envelopes, one for each role that may read. Carriers store it like everything else, sealed and unreadable.",
+   "text": "Nobody holds it for the data. It travels with the data itself: every piece of data carries a small {keyring} next to its rules. The keyring holds the data key in envelopes, one for each role that may read. Carriers store it like everything else, sealed and unreadable.",
    "code": {
     "data": "house-list",
-    "caps": {
+    "rules": {
      "owners": "admin, CRUD",
      "home": "create, read, update"
     },

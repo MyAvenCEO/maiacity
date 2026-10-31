@@ -2,5 +2,7 @@
   { "id": "own", "title": "1 · Owning and sharing", "file": "own.json" },
   { "id": "keys", "title": "2 · Under the hood", "file": "keys.json" },
   { "id": "data", "title": "3 · Inside data", "file": "data.json" },
-  { "id": "sync", "title": "4 · Between devices", "file": "sync.json" }
+  { "id": "sync", "title": "4 · Between devices", "file": "sync.json" },
+  { "id": "rules", "title": "5 · Rules", "file": "rules.json" },
+  { "id": "ops", "title": "6 · The ops engine", "file": "ops.json" }
 ] }
