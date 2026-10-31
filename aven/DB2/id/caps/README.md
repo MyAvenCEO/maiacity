@@ -699,9 +699,15 @@ An epoch is named by the BLAKE3 hash of its key blob:
 ```
 
 - **`stanzas`:** the epoch's key sealed with X-Wing to each reader's vault or group key. Each stanza is found by a
-  **tag**, a keyed BLAKE3 of the reader's tag seed, the Doc's id and the epoch number. Only readers and writers of the
-  Doc can compute a tag, so the keeper can't link a reader, or the Docs of one group, across Docs or epochs. The list's
-  length is padded with Padmé, at most about 12 % (D18).
+  **tag**, a keyed BLAKE3 of the reader's tag seed, the Doc's id and the epoch number. **A tag seed lives in the epoch
+  before:** it is the keyed hash of the reader's X-Wing public key under `derive_key("avenID tag seed 1", previous
+  epoch's key)`, so the writer who rotates and every reader of the previous epoch can compute it, and the keeper, which
+  holds no key, can't link a reader, or the Docs of one group, across Docs or epochs. A first epoch's stanzas, and a
+  reader resealed into an epoch, carry no tag: their reader finds them by opening (`Aven.ID.KeyFormats.tagSeed`).
+- **Padding** (D18): the list holds at least four stanzas, so a lone reader doesn't show, then Padmé's at most an
+  eighth more (`Aven.ID.Padme`, the one Padmé segments use too). The extra stanzas are random bytes of a stanza's
+  lengths that open for no one, and nobody, the writer included, can tell them from a reader's
+  (`Aven.ID.KeyFormats.padded`).
 - **`commit`:** a commitment to the key. A reader opening a stanza checks it, so a stanza with a wrong key is found at
   once (avenDB-old never checked what its boxes held).
 - **`back`:** the previous epoch's key, sealed under this one. With it, the newest key opens all of history, for a
@@ -812,10 +818,13 @@ the keeper, which can't read a Doc's facts. The Values a Doc's Records name, a f
 it.
 - **By default** a new vault's keep cap covers everything of its own, to Maia City's keeper, the Aven Peer acting for
   Aven (`defaultKeep`, `default_kept`). It is an ordinary grant: it holds only with its owners' approval (D14), however
-  the join collects it, and without one it breaks `.approval` (`default_approved`, `default_needs_owner`). One tap that
-  covers the join and the keep cap together is a change to the signed join text, for avenPEER's code threads, Lean
-  and Rust together. The vault can withdraw it or issue others. It doesn't reach below, so a vault it governs keeps its
-  own default.
+  the join collects it, and without one it breaks `.approval` (`default_approved`, `default_needs_owner`). The tree's
+  claim carries it as a cap Record, its body with its own approval beside it (A44, A30): the passkey's PRF gives the
+  owner key, which signs the claim and the keep cap in one tap, and no device need sign it (A28). A vault migrated
+  from production approves it at its next sign-in. `Cap.isDefaultKeep` checks that the cap a claim carries says
+  exactly what the default says, so its keeper keeps every Doc of the vault (`isDefaultKeep_kept`) and it holds only
+  with that vault's owners' approval (`isDefaultKeep_approved`). The vault can withdraw it or issue others. It doesn't
+  reach below, so a vault it governs keeps its own default.
 - **The owner always decides where its data goes.** A keep cap may not share, so no keeper passes data on: a chain
   that keeps has one holder, and every link after its root only attenuates (`keep_one_holder`). A cap keeps a Doc only
   as its root does, a grant by a vault with authority over it, its own or one it governs (`keeper_named_by_owner`).
@@ -990,9 +999,12 @@ which makes it a passkey without a device.
 The WebAuthn PRF extension (CTAP2's hmac-secret) returns 32 bytes that only the authenticator can make, for a given
 input. avenID uses it so that **a new browser signing in with a passkey opens its vault with no other device online.**
 
-**Derivations.**
-- The input is `avenID prf 1`, the vault's id and the owner's epoch. The browser hashes it into the authenticator's
-  salt.
+**Derivations** (`Aven.ID.KeyFormats`, `derivations.json`).
+- The input is `encode(["avenID prf 1", {epoch}])`: the owner's epoch, and no vault (A43, 31 Oct 2026). The
+  authenticator's PRF secret is already its credential's own, and a passkey belongs to one vault (rule 15), so the
+  vault would separate nothing; the label separates this use from any other on the RP ID. Without it, the claim's keys
+  exist before the assertion that signs them, and a new browser asks the PRF in its one sign-in tap. The browser hashes
+  the input into the authenticator's salt.
 - **The owner key is derived, never stored** (A42, Samuel, 31 Oct 2026: the more secure way). Each ceremony derives
   it from the PRF output, signs, and drops it; no safe, keyring or page keeps it.
 - **Its boundary is every origin under `maia.city`.** The input can be guessed and the passkey answers any origin its
@@ -1000,20 +1012,30 @@ input. avenID uses it so that **a new browser signing in with a passkey opens it
   rule 13 (keys live only in the safe) holds within that boundary. A dedicated RP ID for avenOS, with a secret mixed
   into the input (A14), is not yet (Samuel, 30 Oct 2026).
 - From the output, BLAKE3's key derivation makes:
-  - `avenID owner 1`: the Ed25519 and ML-DSA-65 seeds of the passkey's **hybrid owner key**;
+  - `avenID owner 1`, read for 64 bytes: the Ed25519 seed and the ML-DSA-65 ξ of the passkey's **hybrid owner key**;
   - `avenID seal 1`: the X-Wing seed of its **seal key**.
-- Both public halves go into the vault's statement with the passkey's own (ES256) key.
+- Both public halves go into the vault's register with the passkey's own (ES256) key: the register maps a credential
+  id to its passkey's record (its vault, SPKI, owner and seal public halves and owner epoch), params of `tree/1`'s
+  claim and join.
 - Device keys are never derived from it (D11), so devices rotate on their own.
 
 **Signing up:**
-1. `create()` asks for `prf`. Some platforms only say it's enabled, so a `get()` follows at once.
-2. The keyring is made and sealed to the device and to the passkey's seal key.
+1. `create()` asks the PRF for owner epoch 1. Where the platform answers there, the owner and seal keys come at once;
+   where it only says the PRF is enabled, a `get()` asks it, one tap more at sign-up only. A passkey without PRF stops
+   here (below).
+2. The claim's assertion signs the claim, the owner and seal public halves among its params, and the owner key signs
+   the same name (A30): two taps, three where the platform only says `enabled`.
+3. The keyring is made and sealed to the device and to the passkey's seal key.
 
-**Signing in on a new browser:**
-1. `get()` with the PRF input returns the assertion and the output.
-2. The sign-in statement carries both proofs (rule 21) and adds the browser as a device, so the door opens.
-3. The browser fetches the keyring's stanza for this passkey from the keeper.
-4. It opens the stanza with the seal key, seals the keyring to itself, and reads everything its vault can.
+**Signing in on a new browser, one tap:**
+1. One discoverable `get()`: its challenge the sign-in op's name, and the PRF for the owner epoch the browser expects
+   (1 when it knows nothing). The sign-in names the network, this device and its key, not the vault: the vault is the
+   one of the passkey that signed, found by its credential id, sent beside the signature as an unsigned hint. The owner
+   key signs the same name.
+2. If the register says that passkey's owner epoch has moved on, the derived key doesn't match: the browser reads the
+   epoch from the register and asks once more, two taps only after a rotation.
+3. The door opens, the browser fetches the keyring's stanza for this passkey from the keeper, opens it with the seal
+   key, seals the keyring to itself, and reads everything its vault can.
 
 **Rotating the keyring needs no ceremony:** it seals to the seal key's public half. Only opening it needs the passkey.
 
@@ -1031,11 +1053,17 @@ and avenOS learns at sign-up whether PRF answered, never by guessing from the br
 | 1Password | Its output isn't spec-compliant | |
 | Bitwarden, Dashlane | No (June 2026) | |
 
-**Without PRF:**
-- **Pairing** from a device already in: the new browser shows a QR with a one-time X-Wing key, both screens show a short
-  code, and the old device seals the keyring to it after the person confirms (Matrix's and Signal's device linking).
-- **A recovery kit**, or **MaiaCityGuardian** for now.
-- Without PRF, that passkey's owner signatures are ES256 only, so classical.
+**Without PRF, no vault** (Samuel, 31 Oct 2026). A passkey whose provider has no PRF never makes a vault: sign-up
+refuses and says plainly to use a passkey provider that can open the vault on any device. There is no ES256-only owner
+path, no record of a passkey without PRF and no second kind of vault, so every vault is post-quantum and opens
+anywhere.
+- avenOS learns it from the ceremony: `create()`'s `prf.enabled` saying no, or no PRF output from the claim's first
+  `get()`. Never from the user agent.
+- Nothing is sent or kept before the PRF has answered: no claim, no statement in the store.
+- **Pairing** from a device already in (the new browser shows a QR with a one-time X-Wing key, both screens show a
+  short code, and the old device seals the keyring to it after the person confirms; Matrix's and Signal's device
+  linking), **a recovery kit**, and **MaiaCityGuardian** for now, still cover a lost passkey or a new device whose
+  passkey can't answer.
 
 **Caveats:**
 - Deleting a passkey loses its PRF, so every vault keeps at least two ways in: its devices and the keyring's other
@@ -1119,8 +1147,8 @@ the suite byte, and each rotation moves to it.
 - an ML-DSA-65 public key is 1,952 bytes, a signature 3,309.
 
 **Passkeys, honestly.** ES256 falls to a quantum computer; the PRF-derived hybrid key doesn't. An owner's act needs
-both, so a quantum attacker would also need the PRF output. A passkey without PRF is classical until authenticators sign
-with ML-DSA, which COSE is standardising and no authenticator we know of ships.
+both, so a quantum attacker would also need the PRF output. A passkey without PRF makes no vault (Samuel, 31 Oct 2026),
+so no owner is classical only.
 
 ## Metadata: what hosts still see
 
@@ -1373,6 +1401,7 @@ Values, hashes, ops or targets of its own; its built-in types are `Aven.ID.Types
 | | `resolve_exact` | A keep cap's issuer hands its keeper exactly the Docs the cap covers, each with its first fetch key |
 | | `keepers_by_caps`, `holder_keeps`, `default_kept` | A Doc's keepers are exactly the vaults holding the caps that keep it; a new vault's default keep cap has every Doc of its own kept by Maia City's keeper (A22) |
 | | `default_approved`, `default_needs_owner` | The default keep cap is an ordinary grant: it holds only with its owners' approval, and without one it breaks `.approval` (D14) |
+| | `isDefaultKeep_kept`, `isDefaultKeep_approved` | A cap that says what the default says, as the tree's claim carries it, has its keeper keep every Doc of the vault, and holds only with that vault's owners' approval (A44) |
 | | `keepers_by_owner` | Every keeper of a Doc, by keep caps that are valid roots, is named by one its issuer's owners approved, with a line covering the Doc in its issuer's authority (A22) |
 | | `keep_one_holder` | No keeper passes a vault's data on: a keep cap may not share, so a chain that keeps has one holder, and every link after its root only attenuates |
 | | `keeper_named_by_owner` | A cap keeps a Doc only as its chain's root does, a grant by a vault with authority over every line, its own or one it governs: the owner decides who keeps (A22) |
@@ -1451,7 +1480,7 @@ One smaller gap:
 | `issuers.json` | Chains on the cast with the garden, a coop Alice and Bob own whose quorum each case gives, and its helper: a root over a coop's Docs needs the coop's own owners, a vault without devices issues by its owners' approval alone, an attenuation with no device needs its holder's owners, and Maia City's confirm cap (A28, A38). The context writes the tree out and gives per-vault quorums |
 | `expiry.json` | Writes under a cap that expires, with each envelope's signed time, and whether each counts for the clock |
 | `network.json` | A ticket's claims in two orders (A12), removals that clash, MaiaCityGuardian's exit |
-| `keep.json` | Fetch-key links in the order they came, with the keys a keeper takes, its current key and its flags; proofs and whether they're served; what each vault pays; what a keeper keeps under the keep caps it holds and its own offers (A44); 30 generated keepers |
+| `keep.json` | Fetch-key links in the order they came, with the keys a keeper takes, its current key and its flags; proofs and whether they're served; what each vault pays; what a keeper keeps under the keep caps it holds and its own offers (A44); how much each vault may keep, by those offers, and the uploads admitted within it; 30 generated keepers |
 
 `aven-id-model` answers the same cases a backend's property tests draw: a chain, who keeps a Doc, a Doc of envelopes
 with its revocations, and an envelope's authority, each in the form its vector's input takes (`Aven.ID.CapsModel`).

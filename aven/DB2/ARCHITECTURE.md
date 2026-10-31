@@ -834,6 +834,14 @@ the spec that owns it.
     and epoch, parameters of `tree/1`'s claim and join. A sign-in names no vault: it is the vault of the passkey that
     signed. Caps rule 21's two proofs are two signatures beside the one name (A30): the passkey's ES256 and the
     owner's hybrid. The old text statements gain nothing.
+  - **A device's hybrid key comes from its own seed, and counts only once its owner binds it** (the architect, 31 Oct
+    2026). Its ML-DSA-65 seed is `derive_key("avenID device ml-dsa 1", the device's Ed25519 seed)`, in the process
+    that holds the seed, wiped after use, never from a passkey. A quantum attacker recovers the Ed25519 scalar, never
+    the seed it was hashed from, so the ML-DSA half stays out of reach (as X-Wing derives both its halves from one
+    seed). It rotates with the device key, and needs no second secret and no migration. Its public half counts only
+    where the vault owner's hybrid signature binds it: in the sign-in that admits the device, or for a migrated device
+    at its owner's `ownerEpoch` or next sign-in. A binding signed only by the device's own Ed25519 never counts
+    (`device_hybrid_bound`).
 
 - **A44. Placement has one source: the owner's vault** (Samuel, 31 Oct 2026: "we can't have two sources of truth
   for who keeps what; it's always co-located with the owner's data and vaults"). A vault's keep caps say which keeper
@@ -842,7 +850,23 @@ the spec that owns it.
   fast (quota, rate limits). A keeper keeps a Doc only where both hold: the owner's keep cap names it, and the
   keeper's offer covers that owner (keep caps ∩ offers, as wants ∩ caps). The admin's keeper list goes: the offers
   Maia City's members hold are the list. The relay list stays Maia City's: it is about who sees members' connections,
-  not about data. *Decided: yes.*
+  not about data. *Decided: yes.* What follows from it (the architect, 31 Oct 2026, for the clean-slate cutover):
+  - **The default keep cap is the owner's own act at join.** The claim carries it: everything to Maia City's keeper,
+    the Aven Peer acting for Aven (`default_kept`; the tree's claim statement, in caps' keep-cap form). A member
+    migrated from production never approved one, so the migration doesn't invent it: they approve it at their next
+    sign-in, where avenOS shows what it covers and to whom.
+  - **A keeper learns a Doc's owner from the keep cap's issuer,** never from the Doc, which it can't read. It reads
+    no other caps, and serves and takes only on a fetch proof (`Aven.ID.Keep`).
+  - **What a keeper drops is the uploader's own word, about its own uploads.** A segment upload names the loose items
+    it covers by their sealed hashes; the keeper takes only that device off those items' uploaders, and drops an item
+    once no uploader is left. A lie costs only the liar, no reader can make a keeper drop another device's envelopes,
+    and a writer that never comes back loses nothing (scenario 16). Lean: `Aven.Peer.Keeper`.
+  - **One fetch gate, on the Peers' own frames.** A fetch proof signs the TLS exporter of the connection that serves,
+    so sealed Doc values travel on that same connection: `prove`, then `fetch` and `items` frames on aven/db/1, each
+    item checked against its hash before it is stored. Readers and keepers use the one gate. iroh-blobs stays for files.
+  - **Keepers' caps are caps' code.** Keep caps, offer caps, quotas and the gate's fetch-key chain and proof check are
+    avenID's, in aven-id, replaying `keep.json`. The keeper's own crate (`aven-peer-keeper`) holds only arrivals,
+    covers and pages.
 
 - **A45. One concept, one owner** (Samuel, 31 Oct 2026). Every concept is defined once, in the spec that owns it,
   with its vectors beside it; the others reuse it and add only what is theirs, as parameters. Core defines the
@@ -866,6 +890,11 @@ the spec that owns it.
     whichever thread writes them; the wire and its frames are the Peers', with their Lean (today `Aven.DB.Wire`).
   - **The first generation splits up.** `aven-db-core` holds four jobs today; each goes to its owner as Docs arrive:
     the wire and presence to the Peers, the chat to a Doc, files to the Store and the registry.
+
+  - **The wire moves first** (the architect, 31 Oct 2026). Before any Doc frame is added, the wire and presence leave
+    the first generation for the Peers: the Rust into `peer/wire` (`aven-peer-wire`), the Lean into the Peers' own
+    package `peer/spec` (`Aven.Peer`), wire v2 byte for byte. The Doc frames (`Aven.Peer.DocSync`) and the keeper's
+    (`Aven.Peer.Keeper`) land there, in one step to wire v3.
 
   *Decided: yes.*
 
@@ -941,7 +970,7 @@ the spec that owns it.
   thread's open question 1 (30 Oct 2026).*
 
   **Who keeps what is each vault's own decision, by the keep caps it issues** (Samuel, 31 Oct 2026):
-  - the admin's keeper list says who offers to keep;
+  - a keeper's offer caps say whom it offers to keep for (A44; the admin's keeper list went);
   - a vault's keep caps say which keeper holds which of its Docs and Values; their targets may be queries (A8);
   - by default, a new vault issues a keep cap for everything to Maia City's keeper, the Aven Peer acting for Aven, and
     each vault can change it;

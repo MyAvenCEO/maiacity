@@ -686,11 +686,21 @@ impl Doc {
         if self.by_name.contains_key(&name) {
             return Ok(Checked::Done(Imported::Known));
         }
-        if !e.valid(&Ed25519) {
+        // every signature beside it verifies, and one is by the device whose writer id it carries: that one places it
+        // in its log (Core's `Envelope.placed`); the others are approvals
+        if !envelope_valid(&e) {
             return Err(Refused::Signature);
         }
+        let Some(signer) = e
+            .sigs
+            .iter()
+            .map(|x| x.signer.clone())
+            .find(|k| e.writer == writer(k, &e.doc, &e.branch, body.generation))
+        else {
+            return Err(Refused::Writer);
+        };
         // 4. the signer's chain reaches this Doc: strangers never reach Loro
-        if !auth.reaches(&self.genesis, &e.signer) {
+        if !auth.reaches(&self.genesis, &signer) {
             return Err(Refused::Stranger);
         }
         if body.to <= body.from {
@@ -706,10 +716,7 @@ impl Doc {
         {
             return Err(Refused::Limits);
         }
-        // 5. the writer id and its log
-        if e.writer != writer(&e.signer, &e.doc, &e.branch, body.generation) {
-            return Err(Refused::Writer);
-        }
+        // 5. the writer id (its signer's, above) and its log
         if (e.seq == 1) != e.prev.is_none() || e.seq == 0 {
             return Err(Refused::Log);
         }
@@ -1053,10 +1060,9 @@ impl Doc {
             prev,
             deps,
             body: body.value(),
-            signer: device.public().to_vec(),
-            sig: vec![],
+            sigs: vec![],
         };
-        e.sig = device.sign(&e.signing()).to_vec();
+        device.sign_envelope(&mut e);
         let bytes = e.encode();
         match self.import(&bytes, auth) {
             Ok(Imported::Counts) => Ok(bytes),
@@ -1065,7 +1071,12 @@ impl Doc {
     }
 }
 
-/// Checks a Core envelope's Ed25519 signature: what a single envelope is signed with.
+/// Checks a Core envelope's Ed25519 signatures, what a single envelope is signed with: it has one at least, and every
+/// one beside it verifies over what it signs.
 pub fn envelope_valid(e: &Envelope) -> bool {
-    Ed25519.verify(&e.signer, &e.signing(), &e.sig)
+    let msg = e.signing();
+    !e.sigs.is_empty()
+        && e.sigs
+            .iter()
+            .all(|x| Ed25519.verify(&x.signer, &msg, &x.sig))
 }
