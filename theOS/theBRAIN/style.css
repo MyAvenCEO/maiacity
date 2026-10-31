@@ -1,4 +1,4 @@
-/* Text first: one moment per card, cream paper on dark marina blue. */
+/* Text first: one moment per card, cream paper on dark marina blue; JSON examples on a marina panel. */
 :root {
   --stage: #13212c;
   --stage-ink: #dcd5c6;
@@ -23,7 +23,7 @@ body {
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
-.stage { max-width: 960px; margin: 0 auto; padding-block: 28px 36px; display: grid; gap: 18px; }
+.stage { max-width: 1080px; margin: 0 auto; padding-block: 28px 36px; display: grid; gap: 18px; }
 .card {
   background: var(--paper);
   color: var(--ink);
@@ -74,3 +74,28 @@ body {
 .track button { position: relative; width: 11px; height: 11px; padding: 0; border-radius: 50%; border: 1.5px solid #3b5466; background: var(--stage); cursor: pointer; }
 .track button.past { background: var(--stage-ink); border-color: var(--stage-ink); }
 .track button.now { background: var(--ochre); border-color: var(--ochre); transform: scale(1.35); }
+
+.stories { display: flex; gap: 8px; flex-wrap: wrap; }
+.stories button {
+  font: 500 14px var(--display); color: var(--stage-soft); background: none;
+  border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px; cursor: pointer;
+}
+.stories button.on { color: var(--ink); background: var(--paper); border-color: var(--paper); }
+
+.card { display: grid; grid-template-columns: minmax(0, 1fr); align-content: center; }
+.card.has-code { grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); column-gap: 40px; }
+.card > * { grid-column: 1; }
+.card .code { grid-column: 2; grid-row: 1 / span 4; align-self: center; }
+.card.has-code .title { font-size: clamp(26px, 3.4vw, 38px); }
+.card.has-code .text { font-size: clamp(16px, 1.6vw, 18px); }
+.code {
+  margin: 0; padding: 20px 22px; border-radius: 6px; background: var(--stage); color: var(--stage-ink);
+  font: 400 clamp(12px, 1.25vw, 14px)/1.65 var(--mono); white-space: pre; overflow-x: auto; cursor: text;
+}
+.code i { font-style: normal; color: #9fb4c2; }
+.code u { text-decoration: none; color: var(--ochre); }
+.code s { text-decoration: none; color: #c9876a; }
+@media (max-width: 820px) {
+  .card.has-code { grid-template-columns: minmax(0, 1fr); }
+  .card .code { grid-column: 1; grid-row: auto; }
+}
