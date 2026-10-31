@@ -534,6 +534,7 @@ messages and queries. For people with keys, reading is whole Docs; for actors an
 | Every grant: a root cap, a child cap, a group's new reader | The granting vault's owners, k of n (an approval). Today that is one passkey tap, since any one owner suffices (Samuel, 30 Oct 2026, for now) |
 | A public cap | The granting vault's owners, k of n |
 | A new vault's default keep cap | Its owner, with what they sign to join (D14, A22) |
+| A keeper's offer | The keeper's vault's owners, k of n (A44) |
 | Governance | Owners, k of n (avenID) |
 | A new device's device cap | The passkey sign-in that adds the device, which is already an owner's act |
 | An actor's narrower cap, message by message: an attenuation | A device of its holder, the host's (A27). It grants nothing new, so no approval |
@@ -804,12 +805,20 @@ it.
   Every keeper of a Doc is named by a keep cap its issuer's owners approved, with a line covering the Doc in its
   issuer's authority (`keepers_by_owner`). Neither Maia City nor a keeper can extend it; a new keeper needs a new keep
   cap from the owner.
+- **A keeper decides only about its own resources** (A44, Samuel, 31 Oct 2026: "we can't have two sources of truth for
+  who keeps what"). Its vault issues **offer caps** to a vault or a group of vaults: the op `keep-offer`, avenID's own
+  (`id/1`), on the keeper's vault, its `quota` in bytes and its `rate` in bytes a second each bounded to one value
+  (`keepOffer`, `offerLine`). A keeper keeps a Doc only where both hold: the owner's keep cap names it, and the
+  keeper's own offer, valid and not withdrawn, covers that owner (`kept_only_offered`): keep caps ∩ offers, as wants
+  ∩ caps. The quota it keeps for a vault is its offer's (`Books.quota`). The admin's keeper list goes: the offers
+  Maia City's members hold are the list.
 
 A keep cap tells a keeper what to keep and nothing about what it is:
 - the Doc ids, or the group whose Docs to keep;
 - each Doc's first fetch key, from its genesis;
-- the gossip topics;
-- the quota.
+- the gossip topics.
+
+How much it keeps for a vault, and how fast, is the keeper's own offer (A44).
 
 **Fetch keys chain** (A22, Samuel, 30 Oct 2026). Each epoch's fetch key comes from its key (`avenDB fetch 1`). The
 rotation's writer signs a link with the fetch key before it: the Doc, the epoch's depth `n` and hash, and the new fetch
@@ -1285,6 +1294,9 @@ to and leave all the time. Scale need not be built from day one, but no choice m
 23. **Holdings follow caps** (A40, Samuel, 31 Oct 2026). A device or keeper holds only what its caps cover, so when
     coverage shrinks, by a delete, a Doc leaving a collection, a revoked or narrowed cap or a withdrawn keep cap, honest
     peers drop the bytes and keys at their next sync.
+24. **Placement has one source, the owner's vault** (A44, Samuel, 31 Oct 2026). A vault's keep caps say which keeper
+    holds which of its Docs; a keeper's vault only offers its resources, quota and rate, to a vault or a group, and
+    keeps a Doc only where both hold.
 
 Agreed with the engine thread (30 Oct 2026):
 
@@ -1378,8 +1390,9 @@ Values, hashes, ops or targets of its own; its built-in types are `Aven.ID.Types
 | | `served_current`, `fork_served` | A keeper serves a fetch or takes an upload only for a proof on that connection by the current fetch key, or, while a fork is unsettled, by a branch's newest key, so honest readers are never refused |
 | | `quota_holds`, `admitted_served` | A keeper takes uploads in the order they come, each only while its vault's spending stays within the quota its keep cap gives it, so no vault's spending ever passes its quota; and it takes only what it serves (R10) |
 | | `grind_settled`, `settled_example` | Once the keep cap's issuer chooses a branch at a fork, every keeper follows it whatever forks arrive after |
+| | `kept_only_offered` | A keeper keeps a Doc only where the owner's keep cap names it and the keeper's own offer, valid and not withdrawn, covers that owner: keep caps ∩ offers (A44) |
 | | `kept_only_covered`, `kept_only_by_owner`, `kept_by_owner` | A keeper keeps only what a keep cap it holds lists, one naming it that a device of its issuer signed, its issuer's owners approved, and its issuer hasn't withdrawn: a keeper holds a vault's data only under a keep cap that vault's owners approved (A22) |
-| | `withdrawn_dropped`, `withdrawn_not_served`, `others_kept` | A withdrawn keep cap's Docs are dropped and served no more, and what other keep caps cover stays |
+| | `withdrawn_dropped`, `withdrawn_not_served`, `others_kept` | A withdrawn keep cap's Docs are dropped and served no more, and what other keep caps cover stays, as do the keeper's offers |
 | | `deleted_gone`, `deleted_final` | A Doc its vault deleted is dropped and served no more, whatever comes after |
 | | `uploader_pays` | The uploading vault pays, and only for what the keeper took from it |
 | | `grind_example` | A removed reader's fork with a ground hash becomes current at a keeper until the issuer chooses; it is flagged, and honest readers are still served |
@@ -1414,7 +1427,7 @@ One smaller gap:
 | `approvals.json` | Signatures, thresholds and digests on the cast, and whether each approval holds; approvals where an owner is a vault, with a coop of two vaults added |
 | `expiry.json` | Writes under a cap that expires, with each envelope's signed time, and whether each counts for the clock |
 | `network.json` | A ticket's claims in two orders (A12), removals that clash, MaiaCityGuardian's exit |
-| `keep.json` | Fetch-key links in the order they came, with the keys a keeper takes, its current key and its flags; proofs and whether they're served; what each vault pays; 30 generated keepers |
+| `keep.json` | Fetch-key links in the order they came, with the keys a keeper takes, its current key and its flags; proofs and whether they're served; what each vault pays; what a keeper keeps under the keep caps it holds and its own offers (A44); 30 generated keepers |
 
 A cap's bytes are its body in Core's deterministic CBOR, its targets as `Aven.Core.TargetCbor` writes them; its id is
 their BLAKE3 hash, and its device signs them under the label `avenID cap 1` (`Aven.ID.CapsCbor`). The cast's caps go by

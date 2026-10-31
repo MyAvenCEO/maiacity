@@ -87,11 +87,13 @@ def Signed.json (o : Signed) : Json :=
   | .withdraw c => Json.mkObj [("withdraw", c), ("signer", o.signer)]
   | .delete d => Json.mkObj [("delete", d.text), ("signer", o.signer)]
 
-/-- A keeper's books on the cast's tree, one owner per approval. -/
+/-- A keeper's books on the cast's tree, one owner per approval, with its vault's offers and Maia City's members. -/
 def Books.json (b : Books) : Json :=
   Json.mkObj [("keeper", b.keeper), ("tree", "cast"), ("threshold", toJson (1 : Nat)),
     ("listings", Json.arr (b.listings.map Listing.json).toArray),
-    ("orders", Json.arr (b.orders.map Signed.json).toArray)]
+    ("orders", Json.arr (b.orders.map Signed.json).toArray),
+    ("offers", Json.arr (b.offers.map Cap.json).toArray),
+    ("groups", Json.arr #[Json.mkObj [("group", gMembers.text), ("members", toJson ["alice", "bob"])]])]
 
 def Role.json (r : Role) : Json :=
   Json.mkObj [("id", r.id), ("name", r.name), ("grant", Json.arr (r.grant.map Line.json).toArray)]
