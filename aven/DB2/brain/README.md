@@ -45,8 +45,10 @@ One concept, in files under `<package>/slides/`, named by the slide's id:
 - **`<id>.md`, its text.** Markdown, shown on the page under the slide. `[vault](glossary:vault)` links a term to the
   glossary.
 
-A slide is listed in `packages.json` under its package, in its place in the story. `render/tree.test.js` checks every
-slide against the allowlist and that every element has a class (`bun test brain/render`).
+A slide is listed in `packages.json` under its package, in its place in the story. `art/slides.mjs` builds each
+slide's tree itself (`art/face.mjs`), so nothing parses its `.html`. `art/slides.test.js` reads every part: one
+figure, every element a named layer, its rules of Style and none under 2.6cqw, its images drawings by hash, its
+`.html` a preview of its tree (`bun test brain`). Whether the face-runtime takes it is the host test `slides`.
 
 ## How avenOS draws it
 

@@ -6,13 +6,12 @@
 import list from '../../../brain/packages.json';
 import { blocks, slug } from '../../../brain/render/markdown.js';
 import { rewriteLinks } from '../../../brain/render/links.js';
-import { check } from '../../../brain/render/tree.js';
 import '../../../brain/style/tokens.css';
 import images from '../../../brain/art/images.json';
-import { draw } from '../runtimes/draw.js';
+import { checkTree, draw } from '../runtimes/draw.js';
 import { fromJson, runtime } from '../runtimes/runtimes.js';
 
-const files = import.meta.glob('../../../brain/**/*.{md,html}', { query: '?raw', import: 'default', eager: true });
+const files = import.meta.glob('../../../brain/**/*.md', { query: '?raw', import: 'default', eager: true });
 const file = (path) => files[`../../../brain/${path}`];
 
 // Each slide's part, as brain/art/slides.mjs writes it: its markup and its rules, style/slide.style.json's first, in
@@ -37,10 +36,10 @@ export function linker(from) {
 	};
 }
 
-// every tree is checked against the allowlist before it is drawn, whoever made it: Markdown too
+// every tree is checked against the allowlist before it is drawn, whoever made it: Markdown too, by the drawer's check
 function checked(where, tree) {
-	const problems = tree.flatMap((node) => check(node));
-	if (problems.length) throw new Error(`${where}: ${problems.join('; ')}`);
+	const bad = tree.find((node) => !checkTree(node));
+	if (bad) throw new Error(`${where}: a node outside the allowlist: ${JSON.stringify(bad).slice(0, 120)}`);
 	return tree;
 }
 

@@ -1,11 +1,12 @@
-// avenID's slides, laid out as an illustrated asset sheet: `bun brain/art/slides.mjs` writes, for each, id/slides/<id>.html
-// (its markup), <id>.style.json (where each layer stands, as the face-runtime's style data) and <id>.part.json (the
-// whole face part the face-runtime takes: its markup and every rule, style/slide.style.json's first). Coordinates are
+// avenID's slides, laid out as an illustrated asset sheet: `bun brain/art/slides.mjs` builds each as one node tree
+// (face.mjs) and writes id/slides/<id>.part.json (the face part avenOS draws through the face-runtime: its markup and
+// every rule, style/slide.style.json's first), <id>.style.json (where each layer stands, as style data) and <id>.html
+// (the tree as a readable preview). Coordinates are
 // in cqw on both axes: a slide is 100 wide and 56.25 high. Objects are the drawings (objects.mjs), placed by their
 // hash (images.json) as `<img src="/files/<hash>">`, the way the network names files. Each slide's text (<id>.md) is
 // written by hand, and so are the rules every slide shares (style/slide.style.json).
 import { readFileSync, writeFileSync } from 'node:fs';
-import { parse } from '../render/tree.js';
+import { html, markup } from './face.mjs';
 
 // one rule per line, so a change to one layer reads as one line in a diff
 const json = (rules) => `[\n${rules.map((r) => JSON.stringify(r)).join(',\n')}\n]\n`;
@@ -21,30 +22,27 @@ const turn = (deg) => ['transform', [['rotate', h(deg)]]];
 const foot = { 'phone-key': 1, 'phone-print': 1, badge: 0.97, signet: 0.94 };
 const at = (x, y) => [['left', pct(x)], ['top', pct((y / H) * 100)]];
 
-// a node of the checked tree in FaceRuntime.lean's markup forms
-const markup = (n) =>
-	typeof n === 'string' ? ['text', ['lit', n]] : ['el', n[0], n[1].map(([k, v]) => [k, ['lit', v]]), null, n[2].map(markup)];
-
 function slide(id, title, aria) {
-	const html = [];
+	const layers = [];
 	const rules = [];
+	const el = (tag, cls, kids = [], more = []) => [tag, [['class', cls], ...more], kids];
 	// a rule for one of this slide's layers: `.<id> .<cls>`
 	const rule = (cls, decls) => rules.push([[[null, [id]], [null, [cls]]], decls]);
 	const s = {
 		// an object, its top left at (x, y), s wide and high, its label centred under it (one line, or two)
 		put(name, cls, x, y, size, label) {
-			html.push(`\t<img class="obj ${cls}" src="/files/${images[name]}" alt="">`);
+			layers.push(el('img', `obj ${cls}`, [], [['src', `/files/${images[name]}`], ['alt', '']]));
 			rule(cls, [...at(x, y), ['width', cqw(size)], ['height', cqw(size)]]);
 			if (label) s.label(`${cls}-label`, label, x + size / 2, y + size * (foot[name] ?? 0.9));
 			return s;
 		},
 		label(cls, text, x, y, relation = false) {
-			html.push(`\t<p class="label${relation ? ' relation' : ''} ${cls}">${text}</p>`);
+			layers.push(el('p', `label${relation ? ' relation' : ''} ${cls}`, [text]));
 			rule(cls, at(x, y));
 			return s;
 		},
 		note(cls, text, x, y, w) {
-			html.push(`\t<p class="note ${cls}">${text}</p>`);
+			layers.push(el('p', `note ${cls}`, [text]));
 			rule(cls, [...at(x, y), ['width', cqw(w)]]);
 			return s;
 		},
@@ -59,22 +57,22 @@ function slide(id, title, aria) {
 			for (let i = 0; i < 8; i++) {
 				const [x0, y0] = pts[i];
 				const [x1, y1] = pts[i + 1];
-				segs.push(`\t\t<div class="dots ${cls}-${i + 1}"></div>`);
+				segs.push(el('div', `dots ${cls}-${i + 1}`));
 				rule(`${cls}-${i + 1}`, [...at(x0, y0), ['width', cqw(Math.hypot(x1 - x0, y1 - y0))], turn((Math.atan2(y1 - y0, x1 - x0) * 180) / Math.PI)]);
 			}
 			const [x0, y0] = pts[7];
 			const [x1, y1] = pts[8];
-			segs.push(`\t\t<div class="head ${cls}-head"></div>`);
+			segs.push(el('div', `head ${cls}-head`));
 			rule(`${cls}-head`, [...at(x1 - 1.2, y1 - 1.2), turn((Math.atan2(y1 - y0, x1 - x0) * 180) / Math.PI)]);
-			html.push(`\t<div class="path ${cls}">\n${segs.join('\n')}\n\t</div>`);
+			layers.push(el('div', `path ${cls}`, segs));
 			if (name) s.label(`${cls}-name`, name, c[0], (a[1] + b[1]) / 2 - lift / 2 - 4.6, true);
 			return s;
 		},
 		write() {
-			const page = `<figure class="slide ${id}" role="img" aria-label="${aria}">\n${html.join('\n')}\n\t<header class="title"><h2 class="headline">${title}</h2></header>\n</figure>\n`;
-			writeFileSync(new URL(`../id/slides/${id}.html`, import.meta.url), page);
+			const tree = el('figure', `slide ${id}`, [...layers, el('header', 'title', [el('h2', 'headline', [title])])], [['role', 'img'], ['aria-label', aria]]);
+			writeFileSync(new URL(`../id/slides/${id}.html`, import.meta.url), `${html(tree)}\n`);
 			writeFileSync(new URL(`../id/slides/${id}.style.json`, import.meta.url), json(rules));
-			const part = [markup(parse(page)[0]), [...shared, ...rules]];
+			const part = [markup(tree), [...shared, ...rules]];
 			writeFileSync(new URL(`../id/slides/${id}.part.json`, import.meta.url), `${JSON.stringify(part)}\n`);
 		},
 	};
