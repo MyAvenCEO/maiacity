@@ -28,6 +28,7 @@ import Aven.ID.Collections
 import Aven.ID.Keeping
 import Aven.ID.CapsCbor
 import Aven.ID.Authorized
+import Aven.ID.Member
 import Aven.ID.Revoke
 import Aven.ID.Expiry
 import Aven.ID.Epochs
@@ -49,6 +50,7 @@ import Aven.ID.SafeJson
 import Aven.ID.SealedIndex
 import Aven.ID.CapsExamples
 import Aven.ID.AuthorizedExamples
+import Aven.ID.IssuerExamples
 import Aven.ID.CapsJson
 import Aven.ID.SettleJson
 import Aven.ID.FailJson
