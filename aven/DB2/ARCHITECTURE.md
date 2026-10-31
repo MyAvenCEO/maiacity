@@ -161,9 +161,9 @@ Caps found a hole in rule 4 the same day, and it was closed the same day. A merg
 merger's grant covers the whole merge (caps README, "Checking"). But the content check read a merge against the version
 its prev and deps name, which already holds the proposal, so a narrow merger could land a proposal's wider changes.
 `rule4_merge_whole` (#1608) judges a merge into main against main before it. Every Record it changes, brings or removes
-is handled by a step of the whole merge (the engine's `merge_granted`). The merging device's cap allows each step
-(`merge_within_device`). The authority is the signer's own vault, which owns or governs the Doc, or a chain whose last
-cap writes on main and allows each step (caps' `merge_covered`, #1601, #1604, #1607).
+is made by the steps the whole merge's calls lower to (the engine's `merge_steps`, A32). The merging device's cap
+allows each call (`merge_within_device`). The authority is the signer's own vault, which owns or governs the Doc, or a
+chain whose last cap writes on main and allows each call (caps' `merge_covered`, #1601, #1604, #1607, #1681).
 
 Rule 14 is a property of the node, held by the format vectors and the box's check; no theorem is planned for it.
 
@@ -716,6 +716,7 @@ the spec that owns it.
   nothing. An address or release record is history: an envelope in its signer's own log, the newest the latest there,
   so the "smaller body wins" tie-break goes. *Decided (the architect, 31 Oct 2026): it follows from A4.*
 - **A32. Caps are built from ops.** *Decided: yes (Samuel, 31 Oct 2026: "caps should be built from their ops").*
+  *In Lean (#1681), with A39's types, A40's holdings and A42's collections clause.*
   A cap line names an operation by its hash (rule 1's name of its stored form) and bounds on its parameters, and nothing
   else.
   - **The core verbs are ops:** read, put, patch, remove, edit, tell, keep and share are the core plugin's (`core/1`).
@@ -863,7 +864,7 @@ the spec that owns it.
 
   *Decided: yes (Samuel, 31 Oct 2026: "do it").* A host gets only the caps its owners give it. In Lean, avenACTORS
   proves the kernel's half (`Aven.Actor.Signing`, #1617: `signs_by_chain`, `write_names_actor`, `write_keeps_chain`,
-  `actor_within_chain`, `actor_steps_within`), and caps the reader's (`host_chain_only`, `actor_within_device`,
+  `actor_within_chain`, `actor_calls_within`), and caps the reader's (`host_chain_only`, `actor_within_device`,
   `host_never_beyond`). Version 1 (no caps, in memory) is unaffected.
 
   Lean showed where per-hop narrowing (D16) lives. *The architect's answer (31 Oct 2026):*
