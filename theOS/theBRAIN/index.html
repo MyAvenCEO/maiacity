@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>theID Tutorial</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=Instrument+Sans:wght@400;500&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="stage">
+  <article class="card" id="card" aria-live="polite">
+    <svg id="art" viewBox="0 0 800 450" preserveAspectRatio="xMidYMid meet" aria-hidden="true"></svg>
+    <div class="copy">
+      <span class="num" id="num">01</span>
+      <h1 class="title" id="title">theID</h1>
+      <p class="lead" id="lead">Who is acting?</p>
+      <p class="more" id="more"></p>
+    </div>
+  </article>
+  <div class="nav">
+    <button type="button" id="prev">← Back</button>
+    <span class="count" id="count">01 / 13</span>
+    <button type="button" id="next">Next →</button>
+  </div>
+  <ol class="chain" id="chain" aria-label="The chain so far"></ol>
+  <p class="hint">Arrow keys, a tap on the card, or a swipe move through the chain.</p>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
