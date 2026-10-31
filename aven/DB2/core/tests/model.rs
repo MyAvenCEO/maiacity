@@ -156,6 +156,7 @@ struct World {
     held: Vec<bool>,
     unfit: Vec<usize>,
     unauthorized: Vec<usize>,
+    revoked: Vec<usize>,
     tips: Vec<usize>,
 }
 
@@ -165,8 +166,9 @@ fn world() -> impl Strategy<Value = World> {
         proptest::collection::vec(any::<prop::sample::Index>(), 0..3),
         proptest::collection::vec(any::<prop::sample::Index>(), 0..3),
         proptest::collection::vec(any::<prop::sample::Index>(), 0..3),
+        proptest::collection::vec(any::<prop::sample::Index>(), 0..3),
     )
-        .prop_map(|(ds, unfit, unauthorized, tips)| {
+        .prop_map(|(ds, unfit, unauthorized, revoked, tips)| {
             let (draws, held): (Vec<Draw>, Vec<bool>) = ds.into_iter().unzip();
             let n = draws.len();
             World {
@@ -174,6 +176,7 @@ fn world() -> impl Strategy<Value = World> {
                 held,
                 unfit: unfit.iter().map(|i| i.index(n)).collect(),
                 unauthorized: unauthorized.iter().map(|i| i.index(n)).collect(),
+                revoked: revoked.iter().map(|i| i.index(n)).collect(),
                 tips: tips.iter().map(|i| i.index(n)).collect(),
             }
         })
@@ -192,7 +195,8 @@ impl World {
     fn case(&self) -> Json {
         json!({
             "envelopes": self.all.iter().map(|e| hex(&e.encode())).collect::<Vec<_>>(),
-            "held": self.held, "unfit": self.unfit, "unauthorized": self.unauthorized, "tips": self.tips,
+            "held": self.held, "unfit": self.unfit, "unauthorized": self.unauthorized,
+            "revoked": self.revoked, "tips": self.tips,
         })
     }
 }
@@ -396,6 +400,8 @@ proptest! {
         let tips: Vec<Hash> = w.tips.iter().map(|&i| w.all[i].name()).collect();
         let fit = |x: &Envelope| !unfit.contains(&x.name());
         let authorized = |x: &Envelope| !unauthorized.contains(&x.name());
+        let revoked: Vec<Hash> = w.revoked.iter().map(|&i| w.all[i].name()).collect();
+        let revoked = |x: &Envelope| revoked.contains(&x.name());
         prop_assert_eq!(w.all.iter().map(Envelope::name).collect::<Vec<_>>(), names(&a["names"]));
         for (k, e) in w.all.iter().enumerate() {
             let want: BTreeSet<Hash> = names(&a["past"][k]).into_iter().collect();
@@ -408,12 +414,12 @@ proptest! {
         let got = |f: &dyn Fn(&Envelope) -> bool| w.all.iter().map(f).collect::<Vec<bool>>();
         prop_assert_eq!(got(&|e| held.closed(e)), bools(&a["closed"]));
         prop_assert_eq!(got(&|e| held.discounted(e)), bools(&a["discounted"]));
-        prop_assert_eq!(got(&|e| held.counts(e, fit, authorized)), bools(&a["counts"]));
+        prop_assert_eq!(got(&|e| held.counts(e, fit, authorized, revoked)), bools(&a["counts"]));
         prop_assert_eq!(got(&|e| held.holds(&tips, e)), bools(&a["holds"]));
     }
 
     /// Splits are final: what is discounted among `S` never counts among all of it, which holds more
-    /// (`split_final`). What counts builds on what counts (`counts_past`). A whole past stays whole (`closed_mono`). A
+    /// (`split_final`). A revocation in an envelope's past discounts it (`revoked_not_counts`). What counts builds on what counts (`counts_past`). A whole past stays whole (`closed_mono`). A
     /// version holds more as more arrives
     /// (`Version.holds_mono`).
     #[test]
@@ -425,15 +431,21 @@ proptest! {
         let tips: Vec<Hash> = w.tips.iter().map(|&i| w.all[i].name()).collect();
         let fit = |x: &Envelope| !unfit.contains(&x.name());
         let authorized = |x: &Envelope| !unauthorized.contains(&x.name());
+        let revoked: Vec<Hash> = w.revoked.iter().map(|&i| w.all[i].name()).collect();
+        let revoked = |x: &Envelope| revoked.contains(&x.name());
         for e in &w.all {
             if h.discounted(e) {
                 prop_assert!(h_all.discounted(e));
-                prop_assert!(!h_all.counts(e, |_| true, |_| true));
+                prop_assert!(!h_all.counts(e, |_| true, |_| true, |_| false));
             }
-            if h.counts(e, fit, authorized) {
-                let past = h.past(e);
+            // revoked_not_counts: a revocation in its past, itself included, discounts it, as a split does (A182)
+            let past = h.past(e);
+            if revoked(e) || s.iter().any(|x| past.contains(&x.name()) && revoked(x)) {
+                prop_assert!(!h.counts(e, |_| true, |_| true, revoked));
+            }
+            if h.counts(e, fit, authorized, revoked) {
                 for x in s.iter().filter(|x| past.contains(&x.name())) {
-                    prop_assert!(h.counts(x, fit, authorized));
+                    prop_assert!(h.counts(x, fit, authorized, revoked));
                 }
             }
             // closed_mono: one name is one set of parents under BLAKE3

@@ -22,26 +22,28 @@ namespace Aven.DB.Docs
 
 open Aven.Core
 
-/-- The verdicts beside "not a split": whether an envelope fits its schemas, and whether its signer may write it. -/
+/-- The verdicts beside "not a split": whether an envelope fits its schemas, whether its signer may write it, and
+whether a revocation the reader holds discounts it (A182). -/
 structure Verdicts where
   fit : Envelope → Prop
   authorized : Envelope → Prop
+  revoked : Envelope → Prop
 
 /-- An envelope counts, among `S`, named by `H`. -/
 def counts (H : Bytes → Hash) (v : Verdicts) (S : List Envelope) (e : Envelope) : Prop :=
-  Counts (Envelope.name H) v.fit v.authorized S e
+  Counts (Envelope.name H) v.fit v.authorized v.revoked S e
 
 theorem counts_verdicts {H : Bytes → Hash} {v : Verdicts} {S : List Envelope} {e x : Envelope}
     (h : counts H v S e) (hx : Reaches (Envelope.name H) S e x) :
-    v.fit x ∧ v.authorized x ∧ ∀ y ∈ S, ¬ Split (Envelope.name H) x y :=
-  let ⟨⟨f, a⟩, s⟩ := h.2 x hx; ⟨f, a, s⟩
+    v.fit x ∧ v.authorized x ∧ ¬ v.revoked x ∧ ∀ y ∈ S, ¬ Split (Envelope.name H) x y :=
+  let ⟨⟨⟨f, a⟩, r⟩, s⟩ := h.2 x hx; ⟨f, a, r, s⟩
 
 /-- A revocation only narrows what is authorized, so it only narrows what counts. -/
-theorem revocation_narrows {H : Bytes → Hash} {fit a a' : Envelope → Prop} (ha : ∀ x, a' x → a x)
-    {S : List Envelope} {e : Envelope} (h : counts H ⟨fit, a'⟩ S e) : counts H ⟨fit, a⟩ S e := by
+theorem revocation_narrows {H : Bytes → Hash} {fit a a' rv : Envelope → Prop} (ha : ∀ x, a' x → a x)
+    {S : List Envelope} {e : Envelope} (h : counts H ⟨fit, a', rv⟩ S e) : counts H ⟨fit, a, rv⟩ S e := by
   refine ⟨h.1, fun x hx => ?_⟩
-  obtain ⟨⟨f, ax⟩, s⟩ := h.2 x hx
-  exact ⟨⟨f, ha x ax⟩, s⟩
+  obtain ⟨⟨⟨f, ax⟩, r⟩, s⟩ := h.2 x hx
+  exact ⟨⟨⟨f, ha x ax⟩, r⟩, s⟩
 
 /-- A split found among `S` is never undone by more envelopes (A4). -/
 theorem split_final {H : Bytes → Hash} {v : Verdicts} {S S' : List Envelope} (hs : ∀ x ∈ S, x ∈ S')
@@ -66,13 +68,15 @@ theorem splitB_iff {nm : Envelope → Hash} {a b : Envelope} : splitB nm a b = t
   simp only [splitB, Bool.and_eq_true, beq_iff_eq, bne_iff_ne, Split, SameLog, and_assoc]
 
 /-- An envelope counts, decided: Core's `countsB`. Its whole past is held, it and everything in its past are fit and
-authorized,
-and none of them is half of a split. -/
-def countsB (nm : Envelope → Hash) (fit authorized : Envelope → Bool) (S : List Envelope) (e : Envelope) : Bool :=
-  Aven.Core.countsB nm fit authorized S e
+authorized and not revoked, and none of them is half of a split. -/
+def countsB (nm : Envelope → Hash) (fit authorized revoked : Envelope → Bool) (S : List Envelope) (e : Envelope) :
+    Bool :=
+  Aven.Core.countsB nm fit authorized revoked S e
 
-theorem countsB_iff {nm : Envelope → Hash} {fit authorized : Envelope → Bool} {S : List Envelope} {e : Envelope} :
-    countsB nm fit authorized S e = true ↔ Counts nm (fun x => fit x = true) (fun x => authorized x = true) S e :=
+theorem countsB_iff {nm : Envelope → Hash} {fit authorized revoked : Envelope → Bool} {S : List Envelope}
+    {e : Envelope} :
+    countsB nm fit authorized revoked S e = true ↔
+      Counts nm (fun x => fit x = true) (fun x => authorized x = true) (fun x => revoked x = true) S e :=
   Aven.Core.countsB_iff
 
 /-! ## Writer ids -/

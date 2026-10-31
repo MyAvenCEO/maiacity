@@ -282,15 +282,17 @@ impl<'a> Held<'a> {
     }
 
     /// It counts (`Counts`, the one counting rule, A45): its whole past is held, everything it reaches is `fit` and
-    /// `authorized`, and none of it is half of a split. The docs layer supplies `fit`, avenID `authorized`. Not
-    /// monotone in what is held, by design: a split learned later discounts (A4).
+    /// `authorized` and not `revoked`, and none of it is half of a split. The docs layer supplies `fit`, avenID
+    /// `authorized`, avenCAPS `revoked` (A182). Not monotone in what is held, by design: a split or a revocation
+    /// learned later discounts (A4, A182).
     pub fn counts(
         &self,
         e: &Envelope,
         fit: impl Fn(&Envelope) -> bool,
         authorized: impl Fn(&Envelope) -> bool,
+        revoked: impl Fn(&Envelope) -> bool,
     ) -> bool {
-        let ok = |x: &Envelope| fit(x) && authorized(x);
+        let ok = |x: &Envelope| fit(x) && authorized(x) && !revoked(x);
         self.closed(e)
             && ok(e)
             && !self.split_with(e, &e.name())

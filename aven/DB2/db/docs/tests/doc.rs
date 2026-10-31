@@ -438,7 +438,7 @@ fn a_split_is_final_and_matches_the_model() {
     for e in &envs {
         assert_eq!(
             reader.counts(&e.name()),
-            held.counts(e, |_| true, |_| true),
+            held.counts(e, |_| true, |_| true, |_| false),
             "seq {} of {}",
             e.seq,
             e.writer

@@ -314,6 +314,10 @@ fn counts_vectors() {
             .iter()
             .map(|&i| all[i].name())
             .collect();
+        let revoked: Vec<Hash> = indices(&v["input"]["revoked"])
+            .iter()
+            .map(|&i| all[i].name())
+            .collect();
         let tips: Vec<Hash> = indices(&v["input"]["tips"])
             .iter()
             .map(|&i| all[i].name())
@@ -321,6 +325,7 @@ fn counts_vectors() {
         let held = Held::new(&s);
         let fit = |x: &Envelope| !unfit.contains(&x.name());
         let authorized = |x: &Envelope| !unauthorized.contains(&x.name());
+        let revoked = |x: &Envelope| revoked.contains(&x.name());
         let x = &v["expected"];
         let got = |f: &dyn Fn(&Envelope) -> bool| all.iter().map(f).collect::<Vec<bool>>();
         assert_eq!(
@@ -334,7 +339,7 @@ fn counts_vectors() {
             "{name}: discounted"
         );
         assert_eq!(
-            got(&|e| held.counts(e, fit, authorized)),
+            got(&|e| held.counts(e, fit, authorized, revoked)),
             bools(&x["counts"]),
             "{name}: counts"
         );

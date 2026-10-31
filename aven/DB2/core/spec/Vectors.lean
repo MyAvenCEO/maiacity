@@ -19,7 +19,7 @@ import Lean.Data.Json
   bytes (a megabyte written out would be two in hex).
 - `past.json`: generated worlds (`Aven.Core.Model`): envelopes and which a reader holds; for each envelope, the names
   before it and whether each held one is before it.
-- `counts.json`: the same worlds with unfit and unauthorized envelopes and a version's tips; for each envelope, whether
+- `counts.json`: the same worlds with unfit, unauthorized and revoked envelopes and a version's tips; for each envelope, whether
   its whole past is held (closed), whether it is discounted, counts and is held by the version.
 - `targets.json`: pairs of targets; whether the first narrows the second, and which Docs each covers.
 - `target-bytes.json`: each target form, readable, and its CBOR in hex (`Aven.Core.TargetCbor`); and the CBOR of
@@ -391,7 +391,9 @@ def Rng.world (r : Rng) : Aven.Core.Model.World × Rng := Id.run do
   let (unauthorized, r') := r'.many na fun r => r.below all.size
   let (nt, r') := r'.below 3
   let (tips, r') := r'.many nt fun r => r.below all.size
-  return (⟨all.toList, held.toList, unfit, unauthorized, tips⟩, r')
+  let (nr, r') := r'.below 3
+  let (revoked, r') := r'.many nr fun r => r.below all.size
+  return (⟨all.toList, held.toList, unfit, unauthorized, revoked, tips⟩, r')
 
 def worlds : List Aven.Core.Model.World :=
   (List.range 40).map fun i => (Rng.world (Rng.seed (1000 + i))).1
@@ -410,7 +412,7 @@ def countsVectors : List Json :=
     let a := w.answer
     vector s!"world {i + 1}"
       (Json.mkObj (worldInput w ++ [("unfit", toJson w.unfit), ("unauthorized", toJson w.unauthorized),
-        ("tips", toJson w.tips)]))
+        ("revoked", toJson w.revoked), ("tips", toJson w.tips)]))
       (Json.mkObj [("closed", a.getObjValD "closed"), ("discounted", a.getObjValD "discounted"),
         ("counts", a.getObjValD "counts"),
         ("holds", a.getObjValD "holds")])

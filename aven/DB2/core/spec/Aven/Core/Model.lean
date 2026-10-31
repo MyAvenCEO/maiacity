@@ -11,8 +11,8 @@ import Lean.Data.Json
 `aven-core-model` (`Model.lean` beside the spec) and the vectors (`past.json`, `counts.json`) answer from here, so the
 property tests and the vectors ask the same Lean. Envelopes are named by BLAKE3 (`Envelope.name blake3`).
 
-A **world** is envelopes, which of them a reader holds (`S`), which are unfit and which unauthorized (an envelope with the name
-of one of them is), the verdicts `Counts` takes and a version's tips. Its answer gives, for each
+A **world** is envelopes, which of them a reader holds (`S`), which are unfit, which unauthorized and which revoked (an
+envelope with the name of one of them is), the verdicts `Counts` takes and a version's tips. Its answer gives, for each
 envelope `a` of the world: its name; `past`, the names before it among `S`; `inPast`, whether each envelope of `S` is
 before it; `split` with each envelope of the world; and whether its whole past is held (`closed`), it is `discounted`, `counts` and is held by the version.
 -/
@@ -57,6 +57,7 @@ structure World where
   held : List Bool
   unfit : List Nat
   unauthorized : List Nat
+  revoked : List Nat
   tips : List Nat
 
 namespace World
@@ -87,7 +88,8 @@ def answer (w : World) : Json :=
     ("split", toJson (w.all.map fun a => w.all.map fun b => splitB nm a b)),
     ("closed", toJson (w.all.map (closedB nm S))),
     ("discounted", toJson (w.all.map (discountedB nm S))),
-    ("counts", toJson (w.all.map (countsB nm (w.notIn w.unfit nm) (w.notIn w.unauthorized nm) S))),
+    ("counts", toJson (w.all.map (countsB nm (w.notIn w.unfit nm) (w.notIn w.unauthorized nm)
+      (fun x => !w.notIn w.revoked nm x) S))),
     ("holds", toJson (w.all.map (holdsB nm S (w.version nm))))]
 
 end World
@@ -168,7 +170,7 @@ def boundsCase (j : Json) : Except String Json := do
     ("within", toJson (bounds.map fun a => bounds.map a.within))]
 
 /-- One case of the running model:
-- `{"envelopes": [hex], "held": [bool], "unfit": [index], "unauthorized": [index], "tips": [index]}`, envelopes in CBOR: a world's answer;
+- `{"envelopes": [hex], "held": [bool], "unfit": [index], "unauthorized": [index], "revoked": [index], "tips": [index]}`, envelopes in CBOR: a world's answer;
 - `{"accept": hex}`: what `Envelope.accept`, `Signed.accept`, `Target.ofValue?`, `Call.ofValue?` and `Bound.ofValue?`
   take from those bytes, encoded
   again, or null;
@@ -192,8 +194,9 @@ def answerCase (j : Json) : Except String Json := do
   let held ← j.getObjValAs? (List Bool) "held"
   let unfit ← j.getObjValAs? (List Nat) "unfit"
   let unauthorized ← j.getObjValAs? (List Nat) "unauthorized"
+  let revoked ← j.getObjValAs? (List Nat) "revoked"
   let tips ← j.getObjValAs? (List Nat) "tips"
   if held.length ≠ all.length then throw "held: one per envelope"
-  return World.answer ⟨all, held, unfit, unauthorized, tips⟩
+  return World.answer ⟨all, held, unfit, unauthorized, revoked, tips⟩
 
 end Aven.Core.Model

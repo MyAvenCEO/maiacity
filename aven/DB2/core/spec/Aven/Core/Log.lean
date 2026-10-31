@@ -193,13 +193,15 @@ def Closed (S : List Envelope) (e : Envelope) : Prop :=
 def Discounted (S : List Envelope) (e : Envelope) : Prop :=
   ∃ x y, Reaches nm S e x ∧ y ∈ S ∧ Split nm x y
 
-/-- An envelope counts when its whole past is held (`Closed`), everything in it is `fit` and `authorized` and none of it
-is half of a split (A4, A30, A45). This is the one counting rule (A45): the docs layer, avenID and the tree each supply
-their verdicts here, and none defines its own. Counting is not monotone in what a reader holds, by
-design: a split learned later discounts (A4, `split_final`), and a parent learned later is the first step to counting
-(`closed_mono`). -/
-def Counts (fit authorized : Envelope → Prop) (S : List Envelope) (e : Envelope) : Prop :=
-  Closed nm S e ∧ ∀ x, Reaches nm S e x → (fit x ∧ authorized x) ∧ ∀ y ∈ S, ¬ Split nm x y
+/-- An envelope counts when its whole past is held (`Closed`), everything in it is `fit` and `authorized`, none of it is
+`revoked` and none of it is half of a split (A4, A30, A45, A182). This is the one counting rule (A45): the docs layer,
+avenID and the tree each supply their verdicts here, and none defines its own. `authorized` is a function of an envelope
+and its own past (A147); `revoked` is avenCAPS', read from what the reader holds: a counted revocation of a cap in the
+envelope's chain, taken effect in its Doc, whose kept past doesn't hold it (A182). Counting is not monotone in what a
+reader holds, by design: a split or a revocation learned later discounts (A4, A182, `split_final`, `revoked_not_counts`),
+and a parent learned later is the first step to counting (`closed_mono`). -/
+def Counts (fit authorized revoked : Envelope → Prop) (S : List Envelope) (e : Envelope) : Prop :=
+  Closed nm S e ∧ ∀ x, Reaches nm S e x → ((fit x ∧ authorized x) ∧ ¬ revoked x) ∧ ∀ y ∈ S, ¬ Split nm x y
 
 theorem reaches_trans {S : List Envelope} {a b c : Envelope} (h₁ : Reaches nm S a b) (h₂ : Reaches nm S b c) :
     Reaches nm S a c := by
@@ -218,15 +220,21 @@ theorem closed_past {S : List Envelope} {e x : Envelope} (h : Closed nm S e) (hx
   fun y hy => h y (reaches_trans nm hx hy)
 
 /-- What an envelope that counts builds on counts too. -/
-theorem counts_past {fit authorized : Envelope → Prop} {S : List Envelope} {e x : Envelope}
-    (h : Counts nm fit authorized S e) (hx : Reaches nm S e x) : Counts nm fit authorized S x :=
+theorem counts_past {fit authorized revoked : Envelope → Prop} {S : List Envelope} {e x : Envelope}
+    (h : Counts nm fit authorized revoked S e) (hx : Reaches nm S e x) : Counts nm fit authorized revoked S x :=
   ⟨closed_past nm h.1 hx, fun y hy => h.2 y (reaches_trans nm hx hy)⟩
 
-theorem discounted_not_counts {fit authorized : Envelope → Prop} {S : List Envelope} {e : Envelope}
-    (h : Discounted nm S e) : ¬ Counts nm fit authorized S e := by
+theorem discounted_not_counts {fit authorized revoked : Envelope → Prop} {S : List Envelope} {e : Envelope}
+    (h : Discounted nm S e) : ¬ Counts nm fit authorized revoked S e := by
   intro hc
   obtain ⟨x, y, hx, hy, hs⟩ := h
   exact (hc.2 x hx).2 y hy hs
+
+/-- A revocation discounts, as a split does (A182): an envelope whose past, itself included, holds a revoked envelope
+doesn't count. -/
+theorem revoked_not_counts {fit authorized revoked : Envelope → Prop} {S : List Envelope} {e x : Envelope}
+    (hx : Reaches nm S e x) (h : revoked x) : ¬ Counts nm fit authorized revoked S e :=
+  fun hc => (hc.2 x hx).1.2 h
 
 /-- Two envelopes name the same parents. -/
 def SameParents (a b : Envelope) : Prop := a.prev = b.prev ∧ a.deps = b.deps
@@ -263,8 +271,8 @@ theorem closed_mono {S S' : List Envelope} (hs : ∀ x ∈ S, x ∈ S') (hp : �
   exact ⟨y, hs y my, ny⟩
 
 /-- Splits are final: once an envelope's past holds a split, no reader that learns more ever counts it (A4). -/
-theorem split_final {fit authorized : Envelope → Prop} {S S' : List Envelope} (hs : ∀ x ∈ S, x ∈ S')
-    {e : Envelope} (h : Discounted nm S e) : ¬ Counts nm fit authorized S' e := by
+theorem split_final {fit authorized revoked : Envelope → Prop} {S S' : List Envelope} (hs : ∀ x ∈ S, x ∈ S')
+    {e : Envelope} (h : Discounted nm S e) : ¬ Counts nm fit authorized revoked S' e := by
   obtain ⟨x, y, hx, hy, hsp⟩ := h
   exact discounted_not_counts nm ⟨x, y, reaches_mono nm hs hx, hs y hy, hsp⟩
 
