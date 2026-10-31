@@ -13,9 +13,10 @@ is an item named by the hash of its sealed bytes. A new item gets the Doc's next
 
 **Covers: the uploader's own word, binding only its own uploads** (the gap in `Aven.DB.Docs.Segment`, settled
 31 Oct 2026, A44). A segment holds its loose envelopes by their names, the hashes of their signed plaintext, which a
-keeper can't see. So the keeper records which devices uploaded each item (the door knows every connection's device), and a
-segment's upload names, in the clear, the sealed hashes of the loose envelopes it holds: its `covers`. A cover takes
-off an item's uploaders only the device that uploaded the segment, and an item is dropped once no uploader is left.
+keeper can't see. So the keeper records which devices uploaded each item (the door knows every connection's device),
+and a segment's upload names, in the clear, the sealed hashes of the loose envelopes it holds: its `covers`. A cover
+takes off an item's uploaders only the device that uploaded the segment, and an item is dropped once no uploader is
+left.
 - every item dropped was covered, by each device that ever uploaded it, by an item the keeper still holds
   (`dropped_covered`);
 - a device's upload never takes another device off any item (`cover_own`), so a reader can't make a keeper drop
