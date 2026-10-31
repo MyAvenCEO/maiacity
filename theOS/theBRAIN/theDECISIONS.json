@@ -1,0 +1,619 @@
+{
+ "title": "theDECISIONS",
+ "note": "Every decision about theOS, numbered. A later decision names the one it supersedes.",
+ "decisions": [
+  {
+   "id": "D1",
+   "title": "theBRAIN is native HTML, CSS, JS and JSON",
+   "status": "decided",
+   "decision": "Docs, wiki and architecture in theOS/theBRAIN are written as HTML, CSS, JS and JSON. No markdown.",
+   "why": "One format that the app renders directly, nothing to convert, nothing to drift.",
+   "sources": [],
+   "slides": [],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D2",
+   "title": "Signers act, identities own",
+   "status": "decided",
+   "decision": "A signer is a device key (a passkey). It only signs, for an identity, and never owns anything. Only identities own data.",
+   "why": "Devices come and go; ownership must not move with them.",
+   "sources": [
+    {
+     "label": "WebAuthn PRF extension",
+     "url": "https://w3c.github.io/webauthn/#prf-extension"
+    },
+    {
+     "label": "KERI specification (pre-rotation)",
+     "url": "https://trustoverip.github.io/tswg-keri-specification/"
+    }
+   ],
+   "slides": [
+    "own-1",
+    "own-2"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D3",
+   "title": "Two kinds of identity: human and coop",
+   "status": "decided",
+   "decision": "A human identity is controlled by signers only. A coop identity is controlled by one or more identities (human or coop), never by signers directly. Cycles are not allowed.",
+   "why": "Families, teams and organisations are identities of identities; one model covers all of them.",
+   "sources": [
+    {
+     "label": "KERI specification (pre-rotation)",
+     "url": "https://trustoverip.github.io/tswg-keri-specification/"
+    },
+    {
+     "label": "Keyhive lab notebook (Ink & Switch)",
+     "url": "https://www.inkandswitch.com/keyhive/notebook/"
+    }
+   ],
+   "slides": [
+    "own-10"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D4",
+   "title": "Data owns itself: the seal",
+   "status": "decided",
+   "decision": "Data is born with a fresh key pair, the seal. Its public key is the data ID. It signs exactly one thing, the first rule, and the private key is wiped.",
+   "why": "Nobody holds the seal, so it cannot be shared, lost or stolen. Keyhive does the same with its genesis key.",
+   "sources": [
+    {
+     "label": "Keyhive design: glossary (genesis key)",
+     "url": "https://github.com/inkandswitch/keyhive/blob/main/design/glossary.md"
+    },
+    {
+     "label": "Keyhive design: Keyline (root role, rotation)",
+     "url": "https://github.com/inkandswitch/keyhive/blob/main/design/keyline"
+    }
+   ],
+   "slides": [
+    "own-4",
+    "keys-3"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D5",
+   "title": "One owner per piece of data, and it is an identity",
+   "status": "decided",
+   "decision": "The seal's first rule names exactly one owner: an identity, human or coop. The owner may do everything, its rule never expires, and only the owner can hand ownership to another identity. The owner is not a role.",
+   "why": "A role of owners cannot shrink durably: any past owner could revoke the others for good (Keyline's warning). With one owner identity, people change inside the coop, not in the data.",
+   "rejected": "An \"owners\" role holding admin.",
+   "supersedes": "D4 as first drafted (owners role)",
+   "sources": [
+    {
+     "label": "Keyhive design: Keyline (root role, rotation)",
+     "url": "https://github.com/inkandswitch/keyhive/blob/main/design/keyline"
+    },
+    {
+     "label": "Keyhive design: threat model",
+     "url": "https://github.com/inkandswitch/keyhive/blob/main/design/threat_model.md"
+    }
+   ],
+   "slides": [
+    "own-5",
+    "rules-6"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D6",
+   "title": "Rules go to roles, never to identities",
+   "status": "decided",
+   "decision": "Everyone except the owner gets access through roles. A role is a set of identities. Rules attach only to roles.",
+   "why": "People come and go; roles stay. Changing who is in a role never touches the data's rules.",
+   "sources": [
+    {
+     "label": "Jazz: groups and roles",
+     "url": "https://jazz.tools/docs"
+    },
+    {
+     "label": "Keyhive design: Keyline (root role, rotation)",
+     "url": "https://github.com/inkandswitch/keyhive/blob/main/design/keyline"
+    }
+   ],
+   "slides": [
+    "own-6",
+    "own-7"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D7",
+   "title": "People see \"rules\"; underneath they are capabilities",
+   "status": "decided",
+   "decision": "The word everyone sees is \"rule\". Underneath, each rule is a signed capability token that carries its own proof back to the seal and is checked offline.",
+   "why": "\"Rule\" is the word ordinary people understand; capabilities are what makes it hold without a server.",
+   "sources": [
+    {
+     "label": "Biscuit authorization tokens",
+     "url": "https://www.biscuitsec.org/"
+    },
+    {
+     "label": "UCAN specification",
+     "url": "https://github.com/ucan-wg/spec"
+    },
+    {
+     "label": "Meadowcap (Willow capabilities)",
+     "url": "https://willowprotocol.org/specs/meadowcap/"
+    }
+   ],
+   "slides": [
+    "rules-1",
+    "rules-7"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D8",
+   "title": "A rule lists what a role may do",
+   "status": "decided",
+   "decision": "A rule is: role, data, a \"do\" list, conditions, expiry. The do list: create, read, update, delete, admin, share, want, keep, sync.",
+   "why": "One small vocabulary for content, carrying and the rules themselves. Keyhive's Relay, Read, Edit and Admin map onto it; ours is finer.",
+   "sources": [
+    {
+     "label": "Keyhive design: convergent capabilities",
+     "url": "https://github.com/inkandswitch/keyhive/blob/main/design/convergent_capabilities.md"
+    },
+    {
+     "label": "Meadowcap (Willow capabilities)",
+     "url": "https://willowprotocol.org/specs/meadowcap/"
+    }
+   ],
+   "slides": [
+    "rules-2",
+    "rules-3"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D9",
+   "title": "Sharing only narrows",
+   "status": "decided",
+   "decision": "Whoever may share hands on a rule that is the same or smaller: fewer dos, shorter expiry, more conditions. Never more.",
+   "why": "Attenuation keeps delegation safe without asking anyone. Meadowcap and Biscuit both require each step to sit inside the previous one.",
+   "sources": [
+    {
+     "label": "Meadowcap (Willow capabilities)",
+     "url": "https://willowprotocol.org/specs/meadowcap/"
+    },
+    {
+     "label": "Biscuit authorization tokens",
+     "url": "https://www.biscuitsec.org/"
+    },
+    {
+     "label": "willow25 Rust implementation",
+     "url": "https://codeberg.org/worm-blossom/willow_rs"
+    }
+   ],
+   "slides": [
+    "rules-8"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D10",
+   "title": "Read is encryption, everything else is verification",
+   "status": "decided",
+   "decision": "Reading is enforced by keys. Every other do is enforced by every peer checking each signed change against the rules in the history.",
+   "why": "Encryption can only be all or nothing per key; signature checks can be as fine as needed.",
+   "sources": [
+    {
+     "label": "Keyhive lab notebook (Ink & Switch)",
+     "url": "https://www.inkandswitch.com/keyhive/notebook/"
+    },
+    {
+     "label": "Local-first software (Kleppmann et al., 2019)",
+     "url": "https://www.inkandswitch.com/essay/local-first/"
+    }
+   ],
+   "slides": [
+    "keys-4",
+    "keys-5"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D11",
+   "title": "Reading is per piece of data; changes can be as fine as needed",
+   "status": "decided",
+   "decision": "Read is granted per piece of data. Anything to be shared on its own is its own data. Create, update and delete can be narrowed to paths and matching entries.",
+   "why": "A reader holds the plaintext, so finer read limits would be promises, not protection.",
+   "sources": [],
+   "slides": [
+    "ops-10"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D12",
+   "title": "Every rule expires and renews itself",
+   "status": "decided",
+   "decision": "Rules expire after 30 days unless set otherwise. An admin's device renews unchanged rules a week before they end. The owner's first rule never expires.",
+   "why": "Forgotten shares close by themselves; families are never locked out.",
+   "sources": [],
+   "slides": [
+    "rules-4",
+    "rules-5"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D13",
+   "title": "Endings: revoke and lapse",
+   "status": "decided",
+   "decision": "A revoke (by an admin) and a lapse (by any peer, once the date has passed) are the same kind of event in the history. An ending wins over every change that never saw it, turns the data key, and is the delete trigger on honest devices.",
+   "why": "Validity follows from the history alone, so all copies agree. No clock is trusted.",
+   "rejected": "Checking expiry against each device's own clock (copies would disagree).",
+   "sources": [
+    {
+     "label": "Keyhive design: convergent capabilities",
+     "url": "https://github.com/inkandswitch/keyhive/blob/main/design/convergent_capabilities.md"
+    },
+    {
+     "label": "Keyhive design: threat model",
+     "url": "https://github.com/inkandswitch/keyhive/blob/main/design/threat_model.md"
+    },
+    {
+     "label": "Keyhive notebook 06: E2EE in the local-first setting",
+     "url": "https://www.inkandswitch.com/keyhive/notebook/06/"
+    }
+   ],
+   "slides": [
+    "rules-10",
+    "rules-11",
+    "rules-12",
+    "keys-13"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D14",
+   "title": "Ambiguity resolves toward less authority",
+   "status": "decided",
+   "decision": "When rule changes and other changes are concurrent, the result with less authority wins.",
+   "why": "The safe default without a central order. Keyhive's guiding rule.",
+   "sources": [
+    {
+     "label": "Keyhive design: convergent capabilities",
+     "url": "https://github.com/inkandswitch/keyhive/blob/main/design/convergent_capabilities.md"
+    },
+    {
+     "label": "Keyhive design: threat model",
+     "url": "https://github.com/inkandswitch/keyhive/blob/main/design/threat_model.md"
+    }
+   ],
+   "slides": [
+    "keys-11"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D15",
+   "title": "A removed admin means a successor role",
+   "status": "proposed",
+   "decision": "When an admin is removed from a role, the role is replaced by a successor with a new ID and the remaining members are added again.",
+   "why": "A removed admin can backdate a revoke by pretending not to have seen their removal. Old revokes then point at a dead role.",
+   "sources": [
+    {
+     "label": "Keyhive design: Keyline (root role, rotation)",
+     "url": "https://github.com/inkandswitch/keyhive/blob/main/design/keyline"
+    },
+    {
+     "label": "Keyhive design: threat model",
+     "url": "https://github.com/inkandswitch/keyhive/blob/main/design/threat_model.md"
+    }
+   ],
+   "slides": [
+    "rules-13"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D16",
+   "title": "Keys: identity key, role key, data key",
+   "status": "decided",
+   "decision": "Content is encrypted with a data key. The data key is wrapped for the owner and for each reading role. The role key is wrapped for each member's identity key. Each new data key opens the previous one.",
+   "why": "Envelope encryption is the proven pattern (HPKE; Keybase teams, Jazz, Cryptree). Removing a member rotates one role key, not every piece of data. Forward secrecy is given up on purpose, because CRDTs need their whole history.",
+   "sources": [
+    {
+     "label": "RFC 9180: Hybrid Public Key Encryption",
+     "url": "https://www.rfc-editor.org/rfc/rfc9180"
+    },
+    {
+     "label": "Jazz: groups and roles",
+     "url": "https://jazz.tools/docs"
+    },
+    {
+     "label": "Keyhive design: causal encryption",
+     "url": "https://github.com/inkandswitch/keyhive/blob/main/design/causal_encryption.md"
+    },
+    {
+     "label": "Keyhive notebook 06: E2EE in the local-first setting",
+     "url": "https://www.inkandswitch.com/keyhive/notebook/06/"
+    }
+   ],
+   "slides": [
+    "keys-2",
+    "keys-4",
+    "keys-15"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D17",
+   "title": "The keyring travels with the data",
+   "status": "decided",
+   "decision": "Each piece of data carries its keyring (envelopes, epoch, back-links) next to its rules, sealed.",
+   "why": "No one keeps keys for the data; it is self-contained wherever it goes.",
+   "sources": [
+    {
+     "label": "Keyhive design: causal encryption",
+     "url": "https://github.com/inkandswitch/keyhive/blob/main/design/causal_encryption.md"
+    }
+   ],
+   "slides": [
+    "keys-15"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D18",
+   "title": "Which key turns when",
+   "status": "decided",
+   "decision": "Adding a member or giving read: nothing turns. Removing a member: new role key, data keys on next write. Removing an admin: successor role. Taking read: new data key now. Stolen device: identity key and every role it is in. Concurrent rotations are both kept until the next one.",
+   "why": "Only read touches keys; the rest is signed rules.",
+   "sources": [
+    {
+     "label": "Keyhive notebook 02: BeeKEM",
+     "url": "https://www.inkandswitch.com/keyhive/notebook/02/"
+    },
+    {
+     "label": "RFC 9420: Messaging Layer Security",
+     "url": "https://www.rfc-editor.org/rfc/rfc9420"
+    }
+   ],
+   "slides": [
+    "keys-16"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D19",
+   "title": "Envelopes only for published, signed locks",
+   "status": "proposed",
+   "decision": "Each device derives its encryption key (lock) from its passkey's PRF secret and publishes it in its identity's history, signed by its signer. Envelopes are made only for locks found there, and only by someone a rule allows.",
+   "why": "Stops an attacker from slipping in a lock of their own. Closes the gap Keyhive lists as G2.",
+   "sources": [
+    {
+     "label": "Keyhive design: threat model",
+     "url": "https://github.com/inkandswitch/keyhive/blob/main/design/threat_model.md"
+    },
+    {
+     "label": "WebAuthn PRF extension",
+     "url": "https://w3c.github.io/webauthn/#prf-extension"
+    },
+    {
+     "label": "X-Wing hybrid KEM (draft)",
+     "url": "https://datatracker.ietf.org/doc/draft-connolly-cfrg-xwing-kem/"
+    }
+   ],
+   "slides": [
+    "keys-14"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D20",
+   "title": "BeeKEM inside large roles, later",
+   "status": "proposed",
+   "decision": "Small roles use one envelope per member. Roles of several dozen members and up manage their role key with BeeKEM. Not per piece of data.",
+   "why": "BeeKEM per document (Keyhive) costs one update per document a removed reader could read; per role it costs one. Every Keyhive crate is pre-alpha and unaudited: pin and audit before use.",
+   "sources": [
+    {
+     "label": "BeeKEM crate (Apache-2.0, pre-alpha)",
+     "url": "https://crates.io/crates/beekem"
+    },
+    {
+     "label": "Keyhive notebook 02: BeeKEM",
+     "url": "https://www.inkandswitch.com/keyhive/notebook/02/"
+    },
+    {
+     "label": "Formal security of BeeKEM (ePrint 2026/1434)",
+     "url": "https://eprint.iacr.org/2026/1434.pdf"
+    }
+   ],
+   "slides": [],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D21",
+   "title": "Data is a Doc or a Value",
+   "status": "decided",
+   "decision": "A Doc is JSON that changes, made of CRDT data types (Loro underneath). A Value is bytes that never change, named by their BLAKE3 hash, streamed in checked chunks. Every Value has a small metadata Doc that holds its key.",
+   "why": "Mergeable structure where it helps, plain files where it does not.",
+   "sources": [
+    {
+     "label": "Loro CRDT",
+     "url": "https://loro.dev"
+    },
+    {
+     "label": "BLAKE3",
+     "url": "https://github.com/BLAKE3-team/BLAKE3"
+    },
+    {
+     "label": "Local-first software (Kleppmann et al., 2019)",
+     "url": "https://www.inkandswitch.com/essay/local-first/"
+    }
+   ],
+   "slides": [
+    "data-1",
+    "data-4",
+    "data-5"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D22",
+   "title": "Words: do, op, change",
+   "status": "decided",
+   "decision": "A do is what you ask the engine to do. An op is a CRDT op, as in Loro. Rules list dos. The slides name CRDT data types, not Loro.",
+   "why": "One meaning per word.",
+   "sources": [
+    {
+     "label": "Loro CRDT",
+     "url": "https://loro.dev"
+    }
+   ],
+   "slides": [
+    "ops-3"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D23",
+   "title": "The engine: JSON dos, pluggable, local",
+   "status": "decided",
+   "decision": "Every read, change, search and sync is a JSON do (find, walk, search, near, chain …). New kinds plug in and name what a rule must allow. Dos run only on your own device, over what you can read.",
+   "why": "One engine for everything, with no server in the loop.",
+   "sources": [],
+   "slides": [
+    "ops-1",
+    "ops-8"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D24",
+   "title": "Peers sync, they never ask",
+   "status": "decided",
+   "decision": "No peer ever answers questions about its data for another peer. Peers only carry what rules allow. A shared answer is its own data with its own rule.",
+   "why": "Removes the trust in the answering device, and the risk of asking one's way to the content.",
+   "sources": [
+    {
+     "label": "Local-first software (Kleppmann et al., 2019)",
+     "url": "https://www.inkandswitch.com/essay/local-first/"
+    }
+   ],
+   "slides": [
+    "ops-11",
+    "ops-12"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D25",
+   "title": "Rules are their own signed set, not a Loro doc",
+   "status": "proposed",
+   "decision": "Rules, role memberships and endings are a grow-only set of signed certificates, merged by union and evaluated by our own logic.",
+   "why": "Rule conflicts need \"less authority wins\"; Loro's last-writer-wins would resolve them wrongly. Keyhive does the same.",
+   "sources": [
+    {
+     "label": "Keyhive design: convergent capabilities",
+     "url": "https://github.com/inkandswitch/keyhive/blob/main/design/convergent_capabilities.md"
+    }
+   ],
+   "slides": [],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D26",
+   "title": "Sealed in chunks, linked by hashes",
+   "status": "proposed",
+   "decision": "Devices seal ranges of changes (Loro update bytes, compressed, then encrypted). Boundaries come from change hashes so every device cuts the same way; small chunks merge into bigger ones over time. Each chunk is hashed and lists the chunks before it; its signed header binds Loro's peer ID to the signer.",
+   "why": "Sealing op by op makes data huge and uncompressible. Same lesson as Keyhive's sedimentree.",
+   "sources": [
+    {
+     "label": "Keyhive notebook 05: Syncing Keyhive",
+     "url": "https://www.inkandswitch.com/keyhive/notebook/05/"
+    },
+    {
+     "label": "Subduction: sync for encrypted history, with iroh transport",
+     "url": "https://github.com/inkandswitch/subduction"
+    },
+    {
+     "label": "BLAKE3",
+     "url": "https://github.com/BLAKE3-team/BLAKE3"
+    }
+   ],
+   "slides": [
+    "data-14"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D27",
+   "title": "Carriers see sealed chunks and proofs, never rules",
+   "status": "proposed",
+   "decision": "Rules are sealed for readers. A carrier checks only proofs: the asker's want proof, and each change author's proof. IDs in proofs are pseudonymous.",
+   "why": "Keyhive syncs its membership graph to servers in plain text; we keep that private too.",
+   "sources": [
+    {
+     "label": "Keyhive notebook 05: Syncing Keyhive",
+     "url": "https://www.inkandswitch.com/keyhive/notebook/05/"
+    },
+    {
+     "label": "Keyhive design: threat model",
+     "url": "https://github.com/inkandswitch/keyhive/blob/main/design/threat_model.md"
+    }
+   ],
+   "slides": [
+    "sync-10",
+    "sync-11"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D28",
+   "title": "Peer to peer over iroh",
+   "status": "decided",
+   "decision": "Devices connect directly over iroh: the address is a key, relays see only sealed traffic. Each device's iroh key is separate from its signer and vouched for by it.",
+   "why": "No cloud in the middle; the address can change without touching the identity.",
+   "sources": [
+    {
+     "label": "iroh",
+     "url": "https://iroh.computer"
+    },
+    {
+     "label": "Local-first software (Kleppmann et al., 2019)",
+     "url": "https://www.inkandswitch.com/essay/local-first/"
+    }
+   ],
+   "slides": [
+    "sync-1",
+    "sync-5"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D29",
+   "title": "Evaluate Subduction for sync",
+   "status": "proposed",
+   "decision": "Test Ink & Switch's Subduction (iroh transport, sedimentree, RIBLT set reconciliation) before building our own sync.",
+   "why": "It already syncs encrypted history between peers that cannot read it, and finds differences at about 1.5 summaries per missing item.",
+   "sources": [
+    {
+     "label": "Subduction: sync for encrypted history, with iroh transport",
+     "url": "https://github.com/inkandswitch/subduction"
+    },
+    {
+     "label": "Rateless Invertible Bloom Lookup Tables (arXiv 2402.02668)",
+     "url": "https://arxiv.org/abs/2402.02668"
+    },
+    {
+     "label": "Keyhive notebook 05: Syncing Keyhive",
+     "url": "https://www.inkandswitch.com/keyhive/notebook/05/"
+    }
+   ],
+   "slides": [
+    "sync-7"
+   ],
+   "date": "2026-10-31"
+  }
+ ]
+}

@@ -22,15 +22,9 @@
    "text": "Your device makes a fresh seal. Its public half becomes the data's ID. It signs the first rule, and the private half is wiped. From now on, rules can only change through a role whose rule includes admin.",
    "code": {
     "id": "ed25519:7Hq…",
-    "rules": {
-     "role": "owners",
-     "do": [
-      "admin",
-      "create",
-      "read",
-      "update",
-      "delete"
-     ]
+    "first_rule": {
+     "owner": "you",
+     "do": "everything"
     },
     "sig": "seal:…",
     "seal": "destroyed"
@@ -175,21 +169,37 @@
     "learn the ending",
     "wipe keys and copies"
    ],
+   "action": "Which locks?"
+  },
+  {
+   "title": "Envelopes only for keys you can trust.",
+   "text": "Each device publishes its lock, an encryption key, in its identity's history, signed by its own signer. Envelopes may only be made for locks found there, and only by someone a rule allows. Otherwise an attacker could slip in a lock of their own, and writers would quietly encrypt to them.",
+   "code": {
+    "identity": "mia",
+    "devices": [
+     {
+      "device": "mia-phone",
+      "lock": "x25519:4kd…",
+      "signed_by": "mia-phone signer"
+     }
+    ],
+    "envelopes_to": "only these locks"
+   },
    "action": "Where does the data key live?"
   },
   {
    "title": "Where does the data key live?",
-   "text": "Nobody holds it for the data. It travels with the data itself: every piece of data carries a small {keyring} next to its rules. The keyring holds the data key in envelopes, one for each role that may read. Carriers store it like everything else, sealed and unreadable.",
+   "text": "Nobody holds it for the data. It travels with the data itself: every piece of data carries a small {keyring} next to its rules. The keyring holds the data key in envelopes: one for the owner, one for each role that may read. Carriers store it like everything else, sealed and unreadable.",
    "code": {
     "data": "house-list",
     "rules": {
-     "owners": "admin, CRUD",
+     "owner: you": "everything",
      "home": "create, read, update"
     },
     "keyring": {
      "epoch": 2,
      "envelopes": {
-      "owners": "K2 → owners role key",
+      "you": "K2 → your identity key",
       "home": "K2 → home role key"
      },
      "back": "K2 opens K1"
@@ -221,6 +231,12 @@
       "new on next write"
      ],
      [
+      "Remove an admin from a role",
+      "–",
+      "new role, new key",
+      "new on next write"
+     ],
+     [
       "Give a role read",
       "–",
       "–",
@@ -243,6 +259,12 @@
       "new",
       "new, for every role",
       "new on next write"
+     ],
+     [
+      "Two admins rotate at once",
+      "–",
+      "both kept, until the next rotation",
+      "–"
      ]
     ]
    },

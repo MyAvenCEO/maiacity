@@ -22,13 +22,13 @@
    "action": "Read its first rule"
   },
   {
-   "title": "Its first rule names you.",
-   "text": "The seal's one signature gives the role “owners” a rule that may do everything. A {role} is a name for a set of identities. You're its only member.",
+   "title": "Its first rule makes you the owner.",
+   "text": "The seal's one signature names a single {owner}: you. The owner may do everything, for good. There is always exactly one owner, an identity, never a group of people. Everyone else gets in through roles.",
    "action": "What is everything?"
   },
   {
    "title": "Five things you can do with data.",
-   "text": "Create, read, update, delete, and admin: change the rules themselves. A {rule} says which of them a role may do, on one piece of data. Never to a person directly, always to a role.",
+   "text": "Create, read, update, delete, and admin: change the rules themselves. A {rule} gives a {role}, a set of identities, some of these, on one piece of data. Never a person directly, always a role.",
    "list": [
     "create",
     "read",
@@ -55,16 +55,16 @@
   },
   {
    "title": "You and Mia start a home.",
-   "text": "Together you form a {coop}: an identity made of identities. You make the coop the only member of “owners”. Now neither of you owns the list alone, and neither of you can lose it.",
+   "text": "Together you form a {coop}: an identity made of identities. You hand the list over: the coop becomes its owner. Now neither of you owns it alone, the coop's own rules decide what it does, and neither of you can lose it.",
    "action": "Sum it up"
   },
   {
    "title": "That's all there is.",
    "list": [
     "Signers act for identities.",
-    "Identities, human or coop, are members of roles.",
-    "Roles hold rules: create, read, update, delete, admin.",
-    "Data owns itself and only ever hands out rules."
+    "Every piece of data has one owner: an identity, human or coop.",
+    "Everyone else gets in through roles, and roles hold rules.",
+    "Data owns itself; its owner hands out rules."
    ],
    "action": ""
   }

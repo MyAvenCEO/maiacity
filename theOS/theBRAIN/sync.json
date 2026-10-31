@@ -58,22 +58,18 @@
    "action": "Sync a Doc"
   },
   {
-   "title": "A Doc syncs in two messages.",
-   "text": "Alice sends her version vector. Bob answers with the ops she's missing, still encrypted. Alice checks each op's signature and rules, then merges.",
+   "title": "Finding what's missing, cheaply.",
+   "text": "Two devices may hold millions of chunks and differ by five. They don't list everything: they exchange a few tiny mixed-up summaries, and the difference falls out. About one and a half summaries per missing chunk, whatever the size. Then they swap exactly those sealed chunks.",
    "code": {
-    "alice": {
-     "doc": "house-list",
-     "has": {
-      "alice": 41,
-      "bob": 17
-     }
-    },
-    "bob": {
-     "sends": [
-      "bob:18",
-      "bob:19"
-     ],
-     "as": "sealed ops"
+    "alice_has": "2,000,000 chunks",
+    "bob_has": "2,000,003 chunks",
+    "summaries_sent": 5,
+    "result": {
+     "to_alice": [
+      "blake3:a91f…",
+      "blake3:c3e0…",
+      "blake3:0b7d…"
+     ]
     }
    },
    "action": "Sync a Value"
@@ -105,7 +101,7 @@
   },
   {
    "title": "Who may even get the bytes?",
-   "text": "Read decides who can open data. Three more things a rule can allow decide who can carry it: want, keep and sync.",
+   "text": "Read decides who can open data. Three more things a rule can allow decide who can carry it: want, keep and sync. Carriers never see the rules themselves: those are sealed for readers. Whoever asks shows their own proof.",
    "list": [
     "want: may ask for this data and receive it, sealed.",
     "keep: may store it for good.",
@@ -115,12 +111,15 @@
   },
   {
    "title": "want",
-   "text": "Before a device sends anything, even sealed bytes, it checks the asker's rules for {want}. A stranger gets nothing at all, not even ciphertext to count or keep. Read includes want: you can't open what you can't get.",
+   "text": "Before a device sends anything, even sealed chunks, the asker shows a proof that a rule gives them {want}. The carrier checks the signatures and nothing else. A stranger gets nothing at all, not even ciphertext to count or keep. Read includes want.",
    "code": {
-    "asker": "stranger",
-    "data": "house-list",
-    "rules": [],
-    "result": "nothing sent"
+    "asker": "bob-laptop",
+    "proof": [
+     "seal → owner",
+     "owner → home: want",
+     "home ∋ bob"
+    ],
+    "result": "send sealed chunks"
    },
    "action": "keep"
   },
@@ -152,19 +151,11 @@
   },
   {
    "title": "All the rules on one list.",
-   "text": "One piece of data, four roles, each with exactly what it needs.",
+   "text": "One piece of data, one owner, three roles, each with exactly what it needs.",
    "code": {
     "data": "house-list",
+    "owner": "you",
     "rules": {
-     "owners": [
-      "admin",
-      "create",
-      "read",
-      "update",
-      "delete",
-      "keep",
-      "sync"
-     ],
      "home": [
       "create",
       "read",

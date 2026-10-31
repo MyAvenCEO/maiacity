@@ -75,21 +75,13 @@
    "action": "And the first rule?"
   },
   {
-   "title": "Only the first rule never expires.",
-   "text": "The rule the seal signed at birth names the owners. It has no expiry, so data can never end up with nobody allowed to look after it. Every rule after it expires.",
+   "title": "Only the owner never expires.",
+   "text": "The rule the seal signed at birth names the owner. It has no expiry, so data can never end up with nobody allowed to look after it. Only the owner can hand it over to another identity. Every other rule expires.",
    "code": {
     "data": "house-list",
     "first_rule": {
-     "role": "owners",
-     "do": [
-      "admin",
-      "create",
-      "read",
-      "update",
-      "delete",
-      "keep",
-      "sync"
-     ]
+     "owner": "you",
+     "do": "everything"
     },
     "signed_by": "seal",
     "expires": "never"
@@ -109,10 +101,10 @@
      ],
      "expires": "2026-12-01"
     },
-    "signed_by": "you (owners)",
+    "signed_by": "you (owner)",
     "proof": [
-     "seal → owners: admin",
-     "owners → home"
+     "seal → owner: you",
+     "you → home"
     ]
    },
    "action": "Pass it on"
@@ -161,7 +153,7 @@
    "code": {
     "ending": "revoke",
     "rule": "home → plumber",
-    "by": "you (owners)",
+    "by": "you (owner)",
     "when": "any time"
    },
    "action": "And when time runs out?"
@@ -196,16 +188,34 @@
      "wipe keys and copies"
     ]
    },
+   "action": "When an admin leaves"
+  },
+  {
+   "title": "When an admin leaves, the role moves.",
+   "text": "A removed admin could still write a revoke and pretend it happened before their removal. So when an admin is removed, the role doesn't just get a new key: it is replaced by a {successor role} with a new ID, and everyone else is added again. The ex-admin's old revokes point at a role that no longer counts.",
+   "code": {
+    "remove": "mia (admin of home)",
+    "successor": {
+     "role": "home-2",
+     "replaces": "home",
+     "members": [
+      "you",
+      "kids"
+     ]
+    },
+    "old_revokes_by_mia": "point at home: ignored"
+   },
    "action": "Sum it up"
   },
   {
    "title": "Rules, in short.",
    "list": [
     "A rule: this role may do these things, on this data, until then.",
-    "Conditions narrow it; nothing can widen it.",
-    "Every rule expires, and renews itself while it stays the same.",
+    "Data has one owner, an identity; its rule never expires.",
+    "Conditions narrow a rule; nothing can widen it.",
     "A revoke or a lapse is an ending: it wins, turns the key and wipes copies.",
-    "Under the hood it's a signed capability that any device checks offline."
+    "A removed admin means a successor role.",
+    "Under the hood: a signed capability any device checks offline."
    ],
    "action": ""
   }

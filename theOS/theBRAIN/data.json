@@ -208,14 +208,38 @@
      "result": "dropped"
     }
    },
+   "action": "Seal it"
+  },
+  {
+   "title": "Sealed in chunks, not op by op.",
+   "text": "Sealing every op on its own would make data huge. So a device seals {chunks}: a run of changes, compressed, then encrypted. Chunk boundaries come from the changes' hashes, so every device cuts in the same places. Old small chunks get merged into bigger ones, like layers of sediment.",
+   "code": {
+    "chunk": "blake3:a91f…",
+    "holds": "bob:18 – bob:40",
+    "after": [
+     "blake3:77c2…"
+    ],
+    "signed_by": "bob-laptop",
+    "bytes": "sealed"
+   },
+   "flow": [
+    "changes",
+    "compress",
+    "seal",
+    "hash",
+    "link to the chunks before"
+   ],
    "action": "What does the server see?"
   },
   {
    "title": "What the server sees.",
-   "text": "Encrypted ops for Docs, encrypted chunks for Values, and the IDs it needs to route them. It can store, count and forward them. It can't read a title, a tick or a frame of the movie.",
+   "text": "Sealed chunks, the hashes that link them, and the proofs it needs to decide whom to give them to. It can store, count and forward them. It can't read a title, a tick, a rule or a frame of the movie.",
    "code": {
-    "doc": "ed25519:7Hq…",
-    "op": "bob:19",
+    "chunk": "blake3:a91f…",
+    "after": [
+     "blake3:77c2…"
+    ],
+    "author_proof": "…",
     "bytes": "e4 1a 9c 07 …"
    },
    "action": "Sum it up"
