@@ -19,7 +19,7 @@ on:
       - aven/DB2/Cargo.lock
       - aven/DB2/codec/**
       - aven/DB2/core/**
-      - aven/DB2/db/core/**
+      - aven/DB2/gen1/**
       - aven/DB2/db/docs/**
       - aven/DB2/store/**
       - aven/DB2/id/core/**

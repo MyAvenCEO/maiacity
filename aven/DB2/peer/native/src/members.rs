@@ -10,8 +10,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, RwLock};
 
-use aven_db_core::timeline;
-use aven_db_core::wire::ALPN;
+use aven_gen1::timeline;
+use aven_gen1::wire::ALPN;
 use iroh::PublicKey;
 use iroh::endpoint::{AfterHandshakeOutcome, Connection, EndpointHooks};
 use serde_json::json;
