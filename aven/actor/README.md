@@ -29,6 +29,5 @@ lake exe vectors    writes the kernel's traces into spec/vectors/
 ```
 aven/actor/
   README.md          this file
-  ARCHITECTURE.md    the version 1 design and its decisions (section 15)
   spec/              the Lean model, Aven.Actor, and the vectors it exports
 ```

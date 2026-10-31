@@ -2,7 +2,7 @@
 
 Six first-principles audits, one per part of avenDB, that Samuel asked for on 30 Oct 2026. They read the specs as they
 stood at main `2c1a9890`, so every `path:line` they cite points into that commit. Their synthesis is
-[`ARCHITECTURE.md`](../ARCHITECTURE.md), which tracks what has since been fixed or decided. Many findings below are
+[`ARCHITECTURE.md`](https://github.com/MyAvenCEO/maiacity/blob/dd5bfebad2f41ef4dff535b6c446953c55769a9d/aven/DB2/ARCHITECTURE.md), which tracks what has since been fixed or decided. Many findings below are
 settled now.
 
 | Audit | Part |
@@ -18,7 +18,7 @@ settled now.
 
 Four audits across all parts that Samuel asked for on 31 Oct 2026: whether any word means two things, whether any job
 has two mechanisms, whether any key holds authority a vault should, and whether any two statements contradict each other. Each cites the main of its day. What follows
-from them is in [`ARCHITECTURE.md`](../ARCHITECTURE.md): rule 15 and A28 to A38.
+from them is in [`ARCHITECTURE.md`](https://github.com/MyAvenCEO/maiacity/blob/dd5bfebad2f41ef4dff535b6c446953c55769a9d/aven/DB2/ARCHITECTURE.md): rule 15 and A28 to A38.
 
 | Audit | Question |
 |---|---|
