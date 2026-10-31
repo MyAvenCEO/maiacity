@@ -30,6 +30,8 @@ import Aven.ID.SealJson
   before verifying, and the answers. aven-id's tests sign and verify with real keys and compare.
 - `keys.json`: each cast key's seed and public half (`Aven.ID.Keys`). aven-id's tests derive them with Ed25519 and
   compare, and hold `sandbox/cast.json`'s public halves to them.
+- `signatures.json`: Ed25519 signatures by the cast's test keys, as RFC 8032 makes them (`Keys.sign`), for a backend
+  to make again byte for byte; and signatures that verify or don't, with the answer (`Keys.verify`).
 - `avenos.json`: what avenOS shows on the cast (`Aven.ID.OS`) and the names it shows vaults by, for
   `sandbox/check.mjs`.
 - `passkeys.json`: the test passkeys' P-256 keys (`Aven.ID.P256`), challenges of statements' texts, and assertions
@@ -156,6 +158,18 @@ def keys : List Json :=
     let seed := Keys.seed id
     vector s!"{id}'s test key" (Json.mkObj [("id", id)])
       (Json.mkObj [("seed", Keys.hex seed), ("public", Keys.hex (Keys.publicKey seed))])
+
+/-- The cast's keys' signatures of three messages, and what verifying says of a signature and its alterations. -/
+def signatures : List Json :=
+  let msgs : List (String × List UInt8) :=
+    [("nothing", []), ("a word", Keys.capWord), ("32 bytes", (List.range 32).map (·.toUInt8))]
+  (cast.keys.flatMap fun id => msgs.map fun (m, msg) =>
+    let seed := Keys.seed id
+    vector s!"{id} signs {m}" (Json.mkObj [("id", id), ("msg", Keys.hex msg)])
+      (Json.mkObj [("key", Keys.hex (Keys.publicKey seed)), ("sig", Keys.hex (Keys.sign seed msg))])) ++
+  Keys.verifyCases.map fun (name, k, m, s, _) =>
+    vector s!"verifying: {name}" (Json.mkObj [("key", Keys.hex k), ("msg", Keys.hex m), ("sig", Keys.hex s)])
+      (Json.mkObj [("valid", toJson (Keys.verify k m s))])
 
 def passkeys : List Json :=
   (["a", "b", "c"].map fun p =>
@@ -434,6 +448,7 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "trees.json") (render trees)
   IO.FS.writeFile (dir / "statements.json") (render statements)
   IO.FS.writeFile (dir / "keys.json") (render keys)
+  IO.FS.writeFile (dir / "signatures.json") (render signatures)
   IO.FS.writeFile (dir / "avenos.json") (render avenos)
   IO.FS.writeFile (dir / "passkeys.json") (render passkeys)
   IO.FS.writeFile (dir / "claims.json") (render claims)
