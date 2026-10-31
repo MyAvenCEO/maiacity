@@ -26,6 +26,7 @@ import { served } from './prod.mjs';
 import { narrow } from './narrow.mjs';
 import { lines } from './records.mjs';
 import { walkViews } from './views.mjs';
+import { withPrf } from './prf.mjs';
 
 const run = process.argv[2] ?? 'runs/latest';
 mkdirSync(run, { recursive: true });
@@ -192,10 +193,11 @@ async function noStorage() {
 	await browser.close();
 }
 
-// 4. The passkeys, through `context.credentials`
+// 4. The passkeys, through `context.credentials`, with the box's PRF stand-in (sandbox/prf.mjs)
 async function withPasskeys(engine, name) {
 	const context = await launch(engine, name);
 	await context.credentials.install();
+	await withPrf(context);
 	const page = context.pages()[0] ?? (await context.newPage());
 	await page.goto(`${origin}/`);
 	return { context, page };
@@ -253,6 +255,7 @@ async function passkeys() {
 	const third = await launch(firefox, 'sign-in');
 	if (passkey) await third.credentials.create(passkey.rpId, passkey);
 	await third.credentials.install();
+	await withPrf(third);
 	const page = third.pages()[0] ?? (await third.newPage());
 	await page.goto(`${origin}/`);
 	await shows(page, 'invite-only');
