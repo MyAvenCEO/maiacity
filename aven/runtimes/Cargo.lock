@@ -16,17 +16,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "aven-core"
-version = "0.0.0"
-dependencies = [
- "aven-codec",
-]
-
-[[package]]
 name = "aven-runtimes-abi"
 version = "0.0.0"
 dependencies = [
- "aven-core",
+ "aven-codec",
  "aven-runtimes-contract",
 ]
 
@@ -34,7 +27,7 @@ dependencies = [
 name = "aven-runtimes-contract"
 version = "0.0.0"
 dependencies = [
- "aven-core",
+ "aven-codec",
  "serde_json",
 ]
 
@@ -42,7 +35,7 @@ dependencies = [
 name = "aven-runtimes-face"
 version = "0.0.0"
 dependencies = [
- "aven-core",
+ "aven-codec",
  "aven-runtimes-contract",
  "aven-runtimes-tree",
  "serde_json",
@@ -52,7 +45,7 @@ dependencies = [
 name = "aven-runtimes-host"
 version = "0.0.0"
 dependencies = [
- "aven-core",
+ "aven-codec",
  "aven-runtimes-contract",
  "aven-runtimes-face",
  "aven-runtimes-markdown",
@@ -64,7 +57,7 @@ dependencies = [
 name = "aven-runtimes-markdown"
 version = "0.0.0"
 dependencies = [
- "aven-core",
+ "aven-codec",
  "aven-runtimes-contract",
  "aven-runtimes-tree",
  "pulldown-cmark",
@@ -98,7 +91,7 @@ dependencies = [
 name = "aven-runtimes-tree"
 version = "0.0.0"
 dependencies = [
- "aven-core",
+ "aven-codec",
  "serde",
  "serde_json",
 ]
@@ -107,7 +100,7 @@ dependencies = [
 name = "aven-runtimes-web"
 version = "0.0.0"
 dependencies = [
- "aven-core",
+ "aven-codec",
  "aven-runtimes-contract",
  "aven-runtimes-host",
  "serde_json",
