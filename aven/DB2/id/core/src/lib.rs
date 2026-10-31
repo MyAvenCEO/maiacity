@@ -13,6 +13,7 @@
 //! owner [`HybridKey`] and its [`SealKey`]; a vault's keyring and each Doc's keys are [`Epoch`]s sealed to their readers in
 //! X-Wing [`Stanza`]s; and [`safe`] decides what may leave a vault's safe, as `Aven.ID.Safe` does.
 
+mod approve;
 mod cast;
 mod claim;
 mod epoch;
@@ -33,6 +34,7 @@ mod statements;
 mod tree;
 mod value;
 
+pub use approve::Sig;
 pub use cast::CastError;
 pub use claim::{
     Claim, SignIn, browser_name, claim_text, device_id, passkey_id, person_id, sign_in_text,
