@@ -1,9 +1,9 @@
 //! What the Doc tests share: devices, a genesis, the built-in `version` type, and an authorization that allows all.
 #![allow(dead_code)]
 
-use aven_core::{Envelope, Hash, TypeId, Value, blake3};
-use aven_db_docs::schema::{Kind, Schema, builtin_type, builtins};
-use aven_db_docs::{Act, Body, Device, Doc, EpochKey, Genesis, Limits, RecordWrite};
+use aven_core::{DocId, Envelope, Hash, Value, blake3};
+use aven_db_docs::schema::{Kind, Schema, builtin_type};
+use aven_db_docs::{Act, Body, Device, Doc, EpochKey, Genesis, Limits, RecordWrite, Version};
 use aven_id::{Secret, TestEntropy};
 
 pub fn device(name: &str) -> Device {
@@ -27,27 +27,25 @@ pub fn todo() -> Schema {
     }
 }
 
-pub fn todo_type() -> TypeId {
-    TypeId {
-        r#type: aven_core::DocId(blake3(b"the todo type Doc")),
-        schema: todo().hash(),
+pub fn todo_type() -> Version {
+    Version {
+        r#type: DocId(blake3(b"the todo type Doc")),
+        schema: Some(todo().hash()),
     }
 }
 
-pub fn version_type() -> TypeId {
-    builtins()
-        .into_iter()
-        .find(|(t, _)| t.r#type == builtin_type("version"))
-        .unwrap()
-        .0
+pub fn version_type() -> Version {
+    Version {
+        r#type: builtin_type("version"),
+        schema: None,
+    }
 }
 
-pub fn genesis(by: &Device) -> Genesis {
+pub fn genesis(_by: &Device) -> Genesis {
     Genesis::new(
-        by,
         b"alice's vault",
         todo_type().r#type,
-        vec![todo_type()],
+        &[(todo_type().r#type, todo().hash())],
         [5; 32],
     )
 }
@@ -56,7 +54,7 @@ pub fn open(g: &Genesis) -> Doc {
     Doc::open(g.clone(), &[todo()], Limits::DEFAULTS).expect("opens")
 }
 
-pub fn put(id: &str, version: TypeId, set: Vec<(&str, Value)>) -> RecordWrite {
+pub fn put(id: &str, version: Version, set: Vec<(&str, Value)>) -> RecordWrite {
     RecordWrite {
         id: id.into(),
         version,

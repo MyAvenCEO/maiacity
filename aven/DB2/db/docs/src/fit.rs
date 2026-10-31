@@ -11,7 +11,9 @@
 
 use std::collections::BTreeMap;
 
-use aven_core::{DocId, TypeId, Value};
+use aven_core::{DocId, Value};
+
+use crate::body::Version;
 
 use crate::limits::{Limits, depth};
 use crate::schema::Schema;
@@ -28,7 +30,7 @@ pub enum ChangeKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RecordChange {
     pub id: String,
-    pub r#type: TypeId,
+    pub r#type: Version,
     pub kind: ChangeKind,
     pub fields: Vec<(String, Option<Value>)>,
 }
@@ -63,13 +65,13 @@ pub type Types = BTreeMap<String, DocId>;
 /// The fit verdict on `changes` that an envelope naming `named` says it makes, with the Doc's pinned schemas.
 pub fn fit(
     changes: &[RecordChange],
-    named: &[(String, TypeId)],
-    pinned: &BTreeMap<TypeId, Schema>,
+    named: &[(String, Version)],
+    pinned: &BTreeMap<Version, Schema>,
     limits: &Limits,
 ) -> Result<(), Unfit> {
-    let mut touched: Vec<(&str, &TypeId)> =
+    let mut touched: Vec<(&str, &Version)> =
         changes.iter().map(|c| (c.id.as_str(), &c.r#type)).collect();
-    let mut names: Vec<(&str, &TypeId)> = named.iter().map(|(i, t)| (i.as_str(), t)).collect();
+    let mut names: Vec<(&str, &Version)> = named.iter().map(|(i, t)| (i.as_str(), t)).collect();
     touched.sort();
     names.sort();
     if touched != names {

@@ -25,15 +25,32 @@ fn genesis_names_the_doc() {
         g.id(),
         "the nonce makes two Docs born alike different"
     );
-    other.sig = g.sig.clone();
     assert!(
-        Doc::open(other, &[todo()], Limits::DEFAULTS).is_none(),
-        "a genesis that doesn't verify"
-    );
-    assert!(
-        Doc::open(g, &[], Limits::DEFAULTS).is_none(),
+        Doc::open(g.clone(), &[], Limits::DEFAULTS).is_none(),
         "a pinned schema it doesn't have"
     );
+    let builtin = Genesis::new(
+        b"v",
+        todo_type().r#type,
+        &[(version_type().r#type, hash("x"))],
+        [5; 32],
+    );
+    assert!(
+        Doc::open(builtin, &[todo()], Limits::DEFAULTS).is_none(),
+        "a built-in type is never pinned"
+    );
+    // the first envelope carries the genesis, and a reader opens the Doc from it
+    let mut doc = open(&g);
+    let first = commit(&mut doc, &a, &[todo_put("t1", "first")]);
+    let body = |b: &[u8]| aven_db_docs::Body::of_value(&Envelope::decode(b).unwrap().body).unwrap();
+    assert_eq!(body(&first).genesis, Some(g.clone()));
+    let second = commit(&mut doc, &a, &[todo_put("t2", "second")]);
+    assert_eq!(body(&second).genesis, None);
+    let (mut reader, r) =
+        Doc::from_first(&first, &[todo()], Limits::DEFAULTS, &allow).expect("opens from it");
+    assert_eq!(r, Imported::Counts);
+    reader.import(&second, &allow).unwrap();
+    assert_eq!(reader.snapshot(), doc.snapshot());
 }
 
 #[test]
@@ -179,9 +196,9 @@ fn unfit_writes_never_enter() {
         ),
         put(
             "t1",
-            aven_core::TypeId {
+            aven_db_docs::Version {
                 r#type: todo_type().r#type,
-                schema: hash("another schema"),
+                schema: Some(hash("another schema")),
             },
             vec![("title", Value::Text("x".into()))],
         ),
@@ -233,7 +250,7 @@ fn unchecked(
     g: &Genesis,
     id: &str,
     fields: Vec<(&str, loro::LoroValue)>,
-    version: aven_core::TypeId,
+    version: aven_db_docs::Version,
 ) -> Vec<u8> {
     let w = doc.writer_of(d, 0);
     let l = loro::LoroDoc::new();
@@ -256,13 +273,13 @@ fn unchecked(
         at: "now".into(),
         cap: None,
         acks: vec![],
-        call: None,
-        params: Value::Null,
+        calls: vec![],
+        genesis: None,
     };
     l.set_next_commit_message(&body.message());
     l.commit();
     let end = *l.oplog_vv().get(&w).unwrap();
-    body.to = end as u64 - 1;
+    body.to = end as u64;
     body.changes = l
         .export(loro::ExportMode::updates_in_range(vec![loro::IdSpan::new(
             w, 0, end,
@@ -360,10 +377,9 @@ fn refused_before_loro() {
     );
     // another Doc's
     let other = Genesis::new(
-        &a,
         b"alice's vault",
         todo_type().r#type,
-        vec![todo_type()],
+        &[(todo_type().r#type, todo().hash())],
         [6; 32],
     );
     let mut od = Doc::open(other, &[todo()], Limits::DEFAULTS).unwrap();
@@ -381,6 +397,10 @@ fn refused_before_loro() {
     doc.import(&x1, &allow).unwrap();
     let mut e = Envelope::decode(&lone).unwrap();
     e.deps = vec![Envelope::decode(&x1).unwrap().name()];
+    // without the genesis its own first envelope carried, so only rule 7 stands in its way
+    let mut body = Body::of_value(&e.body).unwrap();
+    body.genesis = None;
+    e.body = body.value();
     b.sign_envelope(&mut e);
     assert_eq!(doc.import(&e.encode(), &allow), Err(Refused::OpIds));
     assert!(

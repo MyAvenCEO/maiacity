@@ -1,12 +1,14 @@
-//! Schemas for step 1's fit: the built-in types every Doc pins without asking (docs, "Types are Docs"), and the
-//! smallest schema language they need. **Provisional: no Lean yet** for the built-in types' ids, their schema hashes
-//! or their fields; the full schema language (JSON Schema's subset with `x-loro`) and type Docs are step 3's.
+//! Fit's rules for step 1: the docs layer's built-in types, named by their labels (`Aven.DB.Docs.Genesis`), and one
+//! toy schema language for a user type's version, named by its hash. The full schema language (JSON Schema's subset
+//! with `x-loro`) and type Docs come with user types, in step 3.
 //!
 //! What a schema here may say is only what survives a merge (docs, rule 16; `Aven.DB.Docs.Fit`): a field's kind, an
 //! upper bound on a number replaced whole, which fields are required at a Record's birth, and whether other fields are
 //! allowed. No size of a container, nothing across fields or Records.
 
-use aven_core::{DocId, Hash, TypeId, Value, blake3, encode};
+use aven_core::{DocId, Hash, Value, blake3, encode};
+
+use crate::body::Version;
 
 /// What one field may hold, judged on a value replaced whole.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -99,29 +101,30 @@ impl Schema {
     }
 }
 
-/// A built-in type's Doc id: the hash of `avenDB built-in type <name>`.
+/// A docs built-in type: the name of its label `avenDB <name> 1` (`builtinType`).
 pub fn builtin_type(name: &str) -> DocId {
-    DocId(blake3(format!("avenDB built-in type {name}").as_bytes()))
+    DocId(aven_core::name_of(&Value::Text(format!("avenDB {name} 1"))))
 }
 
-/// The built-in types every Doc pins (docs, "Types are Docs"): caps' `cap`, `revoke` and `epoch`, whose fields caps
-/// owns and so are open here, and docs' `branch`, `closed`, `version` and `split`.
-pub fn builtins() -> Vec<(TypeId, Schema)> {
-    let open = |t: &str| Schema {
-        title: t.into(),
-        fields: vec![],
-        closed: false,
-    };
+/// The docs layer's built-in types (`builtinNames`).
+pub const BUILTIN_NAMES: [&str; 4] = ["branch", "closed", "version", "split"];
+
+/// Whether a type Doc is one of the docs layer's built-in types (`isBuiltin`).
+pub fn is_builtin(t: &DocId) -> bool {
+    BUILTIN_NAMES.iter().any(|n| builtin_type(n) == *t)
+}
+
+/// The built-in types every Doc takes without pinning (docs, "Types are Docs"): each versioned by its label, so its
+/// version has no schema hash; its shape is its Lean structure, which these fields state for fit.
+pub fn builtins() -> Vec<(Version, Schema)> {
     let f = |n: &str, k: Kind, r: bool| (n.to_string(), k, r);
-    let all = [
-        open("cap"),
-        open("revoke"),
-        open("epoch"),
+    let hashes = || Kind::Array(Box::new(Kind::Hash));
+    [
         Schema {
             title: "branch".into(),
             fields: vec![
                 f("name", Kind::Text, true),
-                f("base", Kind::Array(Box::new(Kind::Hash)), true),
+                f("base", hashes(), true),
                 f("follows", Kind::Text, false),
                 f("nonce", Kind::Hash, true),
             ],
@@ -129,15 +132,12 @@ pub fn builtins() -> Vec<(TypeId, Schema)> {
         },
         Schema {
             title: "closed".into(),
-            fields: vec![f("at", Kind::Array(Box::new(Kind::Hash)), false)],
+            fields: vec![f("at", hashes(), false)],
             closed: true,
         },
         Schema {
             title: "version".into(),
-            fields: vec![
-                f("name", Kind::Text, true),
-                f("at", Kind::Array(Box::new(Kind::Hash)), true),
-            ],
+            fields: vec![f("name", Kind::Text, true), f("at", hashes(), true)],
             closed: true,
         },
         Schema {
@@ -148,16 +148,16 @@ pub fn builtins() -> Vec<(TypeId, Schema)> {
             ],
             closed: true,
         },
-    ];
-    all.into_iter()
-        .map(|s| {
-            (
-                TypeId {
-                    r#type: builtin_type(&s.title),
-                    schema: s.hash(),
-                },
-                s,
-            )
-        })
-        .collect()
+    ]
+    .into_iter()
+    .map(|s| {
+        (
+            Version {
+                r#type: builtin_type(&s.title),
+                schema: None,
+            },
+            s,
+        )
+    })
+    .collect()
 }

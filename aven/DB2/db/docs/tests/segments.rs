@@ -7,7 +7,7 @@ mod common;
 
 use aven_core::{DocId, Envelope, blake3};
 use aven_db_docs::limits::Limits;
-use aven_db_docs::seal::{ENVELOPE_SEAL, SEGMENT_SEAL, open as unseal, outside, padme, seal};
+use aven_db_docs::seal::{Kind, open as unseal, outside, padme, seal};
 use aven_db_docs::{BadSegment, Closer, Imported, Segment};
 use aven_id::TestEntropy;
 use common::*;
@@ -33,10 +33,10 @@ fn a_segment_closes_at_rotation_and_imports() {
         "the rotation closed the first epoch's segment"
     );
     let first = &closed[0];
-    assert_eq!((first.from, first.to, first.epoch), (1, 3, e1.name));
+    assert_eq!((first.from, first.to, first.epoch), (1, 4, e1.name));
     let second = closer.close().expect("the quiet closes the rest");
-    assert_eq!((second.from, second.to, second.epoch), (4, 5, e2.name));
-    assert_eq!(second.prev, Some(aven_core::name_of(&first.body())));
+    assert_eq!((second.from, second.to, second.epoch), (4, 6, e2.name));
+    assert_eq!(second.prev, Some(first.name()));
     assert!(closer.close().is_none());
 
     let mut ent = TestEntropy::new("seal");
@@ -155,9 +155,9 @@ fn a_loose_envelope_travels_sealed() {
     let mut doc = open(&g);
     let e1 = epoch("epoch 1");
     let x = commit(&mut doc, &a, &[todo_put("t1", "x")]);
-    let sealed = seal(ENVELOPE_SEAL, &e1, &g.id(), &x, &mut TestEntropy::new("n"));
+    let sealed = seal(Kind::Envelope, &e1, &g.id(), &x, &mut TestEntropy::new("n"));
     // the segment subkey doesn't open it
-    assert!(unseal(SEGMENT_SEAL, &e1, &sealed, 1 << 21).is_none());
+    assert!(unseal(Kind::Segment, &e1, &sealed, 1 << 21).is_none());
     let mut reader = open(&g);
     assert_eq!(
         reader.import_sealed(&sealed, &e1, &allow),
@@ -181,8 +181,8 @@ proptest! {
     fn seal_open_round_trips(pt in proptest::collection::vec(any::<u8>(), 0..4096), name in "[a-z]{1,8}", nonce in "[a-z]{1,8}") {
         let e = epoch(&name);
         let doc = DocId(blake3(name.as_bytes()));
-        let s = seal(SEGMENT_SEAL, &e, &doc, &pt, &mut TestEntropy::new(&nonce));
-        let (d, back) = unseal(SEGMENT_SEAL, &e, &s, 1 << 20).expect("opens");
+        let s = seal(Kind::Segment, &e, &doc, &pt, &mut TestEntropy::new(&nonce));
+        let (d, back) = unseal(Kind::Segment, &e, &s, 1 << 20).expect("opens");
         prop_assert_eq!(d, doc);
         prop_assert_eq!(back, pt);
         prop_assert_eq!(outside(&s, 1 << 20).unwrap().len, padme(pt_len(&s)) + 16);
@@ -192,11 +192,11 @@ proptest! {
     fn any_flipped_bit_or_other_key_refuses(pt in proptest::collection::vec(any::<u8>(), 1..512), at in any::<usize>(), bit in 0u8..8) {
         let e = epoch("k");
         let doc = DocId(blake3(b"d"));
-        let mut s = seal(SEGMENT_SEAL, &e, &doc, &pt, &mut TestEntropy::new("n"));
-        prop_assert!(unseal(SEGMENT_SEAL, &epoch("another"), &s, 1 << 20).is_none());
+        let mut s = seal(Kind::Segment, &e, &doc, &pt, &mut TestEntropy::new("n"));
+        prop_assert!(unseal(Kind::Segment, &epoch("another"), &s, 1 << 20).is_none());
         let i = at % s.len();
         s[i] ^= 1 << bit;
-        prop_assert!(unseal(SEGMENT_SEAL, &e, &s, 1 << 20).is_none());
+        prop_assert!(unseal(Kind::Segment, &e, &s, 1 << 20).is_none());
     }
 
     /// The commitment binds the key: the same ciphertext and nonce under a key whose commitment differs never open.
@@ -204,9 +204,9 @@ proptest! {
     fn the_commitment_is_checked_first(pt in proptest::collection::vec(any::<u8>(), 1..256)) {
         let (e, f) = (epoch("k"), epoch("k2"));
         let doc = DocId(blake3(b"d"));
-        let s = seal(SEGMENT_SEAL, &e, &doc, &pt, &mut TestEntropy::new("n"));
+        let s = seal(Kind::Segment, &e, &doc, &pt, &mut TestEntropy::new("n"));
         let other = aven_db_docs::EpochKey { name: e.name, key: f.key };
-        prop_assert!(unseal(SEGMENT_SEAL, &other, &s, 1 << 20).is_none());
+        prop_assert!(unseal(Kind::Segment, &other, &s, 1 << 20).is_none());
     }
 
     /// A segment closes at every rotation and at its limits: each holds one epoch, runs on from the one before, and
@@ -224,9 +224,9 @@ proptest! {
         let mut seqs = vec![];
         for s in &segs {
             prop_assert!(s.envelopes.len() <= 256);
-            let eps: Vec<u8> = (s.from..=s.to).map(|q| epochs[q as usize - 1]).collect();
+            let eps: Vec<u8> = (s.from..s.to).map(|q| epochs[q as usize - 1]).collect();
             prop_assert!(eps.iter().all(|x| blake3(&[*x]) == s.epoch));
-            seqs.extend(s.from..=s.to);
+            seqs.extend(s.from..s.to);
         }
         seqs.extend(c.loose().iter().map(|e| e.seq));
         prop_assert_eq!(seqs, (1..=epochs.len() as u64).collect::<Vec<_>>());

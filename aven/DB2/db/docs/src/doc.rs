@@ -1,5 +1,6 @@
 //! A Doc: its genesis, its envelopes, and the live Loro state of what counts (docs, "A Doc", "Importing: three
-//! verdicts", "What the engine and actors build on"). Step 1 holds one branch, `main`.
+//! verdicts", "What the engine and actors build on"). Step 1 holds one branch, `main`. Its formats are the Lean's:
+//! `Aven.DB.Docs.Genesis`, `Body`, `Head`, and rule 7 on Loro commits (`loroAgrees`).
 //!
 //! **Import** runs the README's steps in order: limits on the bytes; strict decoding and the device's signature; the
 //! writer id; the log (`seq`, `prev`, counters); dependencies held, else the envelope waits; the Loro update's own
@@ -19,21 +20,21 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use aven_core::{DocId, Envelope, Hash, TypeId, Value, Verify};
+use aven_core::{DocId, Envelope, Hash, Value, Verify};
 use loro::json::{JsonOpContent, MapOp};
 use loro::{
     ContainerID, ContainerType, ExportMode, Frontiers, ID, IdSpan, Index, LoroDoc, LoroValue,
     ValueOrContainer,
 };
 
-use crate::body::Body;
+use crate::body::{Body, Call, Version, codec_order};
 use crate::device::{Device, Ed25519};
 use crate::fit::{ChangeKind, RecordChange, Unfit, fit};
 use crate::genesis::Genesis;
 use crate::limits::Limits;
 use crate::opids::{OpId, OpsVerdict, carried_deps, ops_agree};
-use crate::schema::{Schema, builtins};
-use crate::seal::{ENVELOPE_SEAL, EpochKey, open};
+use crate::schema::{Schema, builtins, is_builtin};
+use crate::seal::{EpochKey, Kind, open};
 use crate::segment::{BadSegment, Segment};
 use crate::value::{of_loro, to_loro};
 use crate::writer::writer;
@@ -41,7 +42,7 @@ use crate::writer::writer;
 /// Step 1's one branch.
 pub const MAIN: &str = "main";
 
-/// The root map Records sit in, flat by id (docs, rule 2). **Provisional: no Lean yet.**
+/// The root map Records sit in, flat by id (docs, rule 2; `Aven.DB.Docs.recordsRoot`).
 pub const RECORDS: &str = "records";
 
 /// The field holding a Record's type Doc, fixed at its birth.
@@ -86,7 +87,7 @@ pub enum Feed {
 }
 
 /// A peer's own record of what it holds of a Doc: each log's newest counted envelope (docs, "The head"). It never
-/// travels. **Provisional: no Lean yet** for its CBOR.
+/// travels (`Aven.DB.Docs.Head`, held to `heads.json`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Head {
     pub doc: DocId,
@@ -176,7 +177,7 @@ pub enum CommitError {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RecordWrite {
     pub id: String,
-    pub version: TypeId,
+    pub version: Version,
     pub set: Vec<(String, Value)>,
     pub unset: Vec<String>,
     /// The Record is removed.
@@ -184,13 +185,12 @@ pub struct RecordWrite {
 }
 
 /// What a commit says beside its changes: the cap it writes under, the revocations it acknowledges, the engine's
-/// operation and its params (caps, "Checking").
+/// operations it ran (caps, "Checking"; A32).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Act {
     pub cap: Option<Hash>,
     pub acks: Vec<Hash>,
-    pub call: Option<Hash>,
-    pub params: Option<Value>,
+    pub calls: Vec<Call>,
 }
 
 struct Held {
@@ -204,7 +204,7 @@ struct Held {
 
 impl Held {
     fn last(&self) -> OpId {
-        (self.e.writer, self.body.to)
+        (self.e.writer, self.body.to - 1)
     }
 }
 
@@ -213,7 +213,7 @@ pub struct Doc {
     genesis: Genesis,
     id: DocId,
     limits: Limits,
-    pinned: BTreeMap<TypeId, Schema>,
+    pinned: BTreeMap<Version, Schema>,
     held: Vec<Held>,
     by_name: BTreeMap<Hash, usize>,
     /// Each place of each log, `(writer, seq)`, and the names held there: more than one is a split.
@@ -358,7 +358,7 @@ fn changes_of(
             }
         }
     }
-    let named: BTreeMap<&str, &TypeId> =
+    let named: BTreeMap<&str, &Version> =
         body.records.iter().map(|(i, t)| (i.as_str(), t)).collect();
     let mut out = Vec::new();
     for (id, t) in touched {
@@ -393,16 +393,25 @@ fn changes_of(
 }
 
 impl Doc {
-    /// Opens a Doc from its genesis, with the schema of every version it pins (the built-in types are pinned
-    /// without asking). `None` when the genesis doesn't verify or a pinned schema is missing.
+    /// Opens a Doc from its genesis, with the schema of every version it pins (the built-in types need no pin).
+    /// `None` when the genesis isn't well formed or a pinned schema is missing. The genesis carries no signature: the
+    /// Doc's first envelope carries it, and that envelope's signature and cap authorize it.
     pub fn open(genesis: Genesis, schemas: &[Schema], limits: Limits) -> Option<Doc> {
-        if !genesis.valid(&Ed25519) {
+        if !genesis.ok(is_builtin) {
             return None;
         }
-        let mut pinned: BTreeMap<TypeId, Schema> = builtins().into_iter().collect();
-        for p in &genesis.pins {
-            let s = schemas.iter().find(|s| s.hash() == p.schema)?;
-            pinned.insert(*p, s.clone());
+        let mut pinned: BTreeMap<Version, Schema> = builtins().into_iter().collect();
+        for (t, hs) in &genesis.pins {
+            for h in hs {
+                let s = schemas.iter().find(|s| s.hash() == *h)?;
+                pinned.insert(
+                    Version {
+                        r#type: *t,
+                        schema: Some(*h),
+                    },
+                    s.clone(),
+                );
+            }
         }
         let id = genesis.id();
         Some(Doc {
@@ -424,6 +433,23 @@ impl Doc {
             snapshot: Arc::new(Snapshot::default()),
             feed: vec![],
         })
+    }
+
+    /// Opens a Doc from its first envelope, which carries its genesis, and imports that envelope.
+    pub fn from_first(
+        bytes: &[u8],
+        schemas: &[Schema],
+        limits: Limits,
+        auth: &impl Authorize,
+    ) -> Option<(Doc, Imported)> {
+        let e = Envelope::decode(bytes)?;
+        let g = Body::of_value(&e.body)?.genesis?;
+        if g.id() != e.doc {
+            return None;
+        }
+        let mut doc = Doc::open(g, schemas, limits)?;
+        let r = doc.import(bytes, auth).ok()?;
+        Some((doc, r))
     }
 
     pub fn id(&self) -> DocId {
@@ -471,7 +497,7 @@ impl Doc {
         auth: &impl Authorize,
     ) -> Result<Imported, Refused> {
         let limit = self.limits.sealed + self.limits.sealed / 8 + 256;
-        let (doc, bytes) = open(ENVELOPE_SEAL, epoch, sealed, limit).ok_or(Refused::Form)?;
+        let (doc, bytes) = open(Kind::Envelope, epoch, sealed, limit).ok_or(Refused::Form)?;
         if doc != self.id {
             return Err(Refused::Doc);
         }
@@ -521,6 +547,12 @@ impl Doc {
         if e.doc != self.id || e.branch != MAIN {
             return Err(Refused::Doc);
         }
+        // the genesis rides only in the Doc's first envelope, and is this Doc's
+        if body.genesis.as_ref().is_some_and(|g| {
+            *g != self.genesis || e.seq != 1 || e.prev.is_some() || !e.deps.is_empty()
+        }) {
+            return Err(Refused::Doc);
+        }
         let name = e.name();
         if self.by_name.contains_key(&name) {
             return Ok(Imported::Known);
@@ -528,7 +560,10 @@ impl Doc {
         if !e.valid(&Ed25519) {
             return Err(Refused::Signature);
         }
-        let ops = body.to - body.from + 1;
+        if body.to <= body.from {
+            return Err(Refused::Form);
+        }
+        let ops = body.to - body.from;
         if !self.limits.admits(
             &e.body,
             e.deps.len(),
@@ -563,7 +598,7 @@ impl Doc {
                 {
                     return Err(Refused::Log);
                 }
-                p.body.to + 1
+                p.body.to
             }
         };
         if body.from != from
@@ -582,7 +617,7 @@ impl Doc {
                     .get(&e.writer)
                     .is_some_and(|c| u64::try_from(*c).ok() == Some(at))
         };
-        if !one(&meta.partial_start_vv, body.from) || !one(&meta.partial_end_vv, body.to + 1) {
+        if !one(&meta.partial_start_vv, body.from) || !one(&meta.partial_end_vv, body.to) {
             return Err(Refused::Loro);
         }
         let frontier: Vec<OpId> = meta
@@ -595,7 +630,7 @@ impl Doc {
             .iter()
             .map(|n| (*n, self.held[self.by_name[n]].last()))
             .collect();
-        let last = (e.writer, body.to);
+        let last = (e.writer, body.to - 1);
         if self
             .held
             .iter()
@@ -730,8 +765,7 @@ impl Doc {
         body: &Body,
     ) -> Result<Vec<RecordChange>, Unfit> {
         let loro = |_| Unfit::Op("Loro refused it".into());
-        let end =
-            i32::try_from(body.to + 1).map_err(|_| Unfit::Op("counters past Loro's".into()))?;
+        let end = i32::try_from(body.to).map_err(|_| Unfit::Op("counters past Loro's".into()))?;
         let scratch = self.live.fork();
         scratch.set_record_timestamp(false);
         scratch.import(&body.changes).map_err(loro)?;
@@ -810,7 +844,7 @@ impl Doc {
         let (seq, prev, from) = match own {
             None => (1, None, 0),
             Some(h) if self.counted.contains(&h.name) && !self.is_split(h) => {
-                (h.e.seq + 1, Some(h.name), h.body.to + 1)
+                (h.e.seq + 1, Some(h.name), h.body.to)
             }
             Some(_) => return Err(CommitError::Stuck),
         };
@@ -821,7 +855,7 @@ impl Doc {
             .map_err(|e| CommitError::Value(e.to_string()))?;
         let root = scratch.get_map(RECORDS);
         let loro = |e: loro::LoroError| CommitError::Value(e.to_string());
-        let mut records: Vec<(String, TypeId)> = Vec::new();
+        let mut records: Vec<(String, Version)> = Vec::new();
         for r in batch {
             if r.gone {
                 root.delete(&r.id).map_err(loro)?;
@@ -848,7 +882,7 @@ impl Doc {
             records.retain(|x| x.0 != r.id);
             records.push((r.id.clone(), r.version));
         }
-        records.sort_by(|a, b| a.0.len().cmp(&b.0.len()).then_with(|| a.0.cmp(&b.0)));
+        records.sort_by(|a, b| codec_order(&a.0, &b.0));
         let mut body = Body {
             generation,
             from,
@@ -858,8 +892,8 @@ impl Doc {
             at: at.into(),
             cap: act.cap,
             acks: act.acks,
-            call: act.call,
-            params: act.params.unwrap_or(Value::Null),
+            calls: act.calls,
+            genesis: self.held.is_empty().then(|| self.genesis.clone()),
         };
         scratch.set_next_commit_message(&body.message());
         scratch.commit();
@@ -867,7 +901,7 @@ impl Doc {
         if end <= from {
             return Err(CommitError::Empty);
         }
-        body.to = end - 1;
+        body.to = end;
         let span = IdSpan::new(w, from as i32, end as i32);
         body.changes = scratch
             .export(ExportMode::updates_in_range(vec![span]))

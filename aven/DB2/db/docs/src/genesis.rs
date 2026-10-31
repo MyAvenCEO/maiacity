@@ -1,34 +1,24 @@
-//! A Doc's genesis (docs, "A Doc"; A39). **Provisional: no Lean yet.** It is a Core [`Signed`] thing under
-//! [`GENESIS_LABEL`], signed by the creating device's Ed25519 key, whose body is
+//! A Doc's genesis (`Aven.DB.Docs.Genesis`; A30, A39), held to `db/spec/vectors/genesis.json`.
 //!
-//! ```text
-//! { "genesis": 1, "vault": h'<vault>', "type": h'<root type Doc>',
-//!   "pins": [ [ h'<type Doc>', [ h'<schema hash>' … ] ] … ], "nonce": h'<32 random bytes>' }
-//! ```
-//!
-//! The Doc's id is the genesis's name, the hash of exactly what its device signs, so its vault and root type are
-//! sealed into it (docs, decision 13). The nonce makes two Docs born alike different. Built-in types are pinned
-//! without asking ([`crate::schema::builtins`]).
+//! A Core Value `{pins, type, nonce, vault}`, exact keys and no defaults. The Doc's id is its name by A30: the hash of
+//! `["avenDB genesis 1", genesis]`. It carries no signature of its own: the Doc's first envelope carries it in its
+//! body, and that envelope's signature and cap authorize it. `pins` lists only user types, sorted, each with its schema
+//! hashes sorted; the built-in types are never pinned.
 
-use aven_core::{DocId, Hash, Signed, TypeId, Value, Verify};
+use aven_core::{DocId, Hash, Value, blake3, decode, encode, signing_bytes};
 
-use crate::device::Device;
-
-/// What a genesis is signed under.
+/// The genesis's label, its version.
 pub const GENESIS_LABEL: &str = "avenDB genesis 1";
 
-/// A Doc's genesis, as its device signed it.
+/// A Doc's genesis.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Genesis {
-    pub vault: Vec<u8>,
+    /// The schema versions it accepts, per user type.
+    pub pins: Vec<(DocId, Vec<Hash>)>,
     /// Its root type, a type Doc (A39). A Doc never changes type.
     pub root: DocId,
-    /// The schema versions it accepts, per type.
-    pub pins: Vec<TypeId>,
     pub nonce: [u8; 32],
-    /// The creating device's Ed25519 key.
-    pub by: Vec<u8>,
-    pub sig: Vec<u8>,
+    pub vault: Vec<u8>,
 }
 
 fn bytes32(v: &Value) -> Option<[u8; 32]> {
@@ -39,41 +29,33 @@ fn bytes32(v: &Value) -> Option<[u8; 32]> {
 }
 
 impl Genesis {
-    /// A new Doc's genesis, signed by `device`.
-    pub fn new(
-        device: &Device,
-        vault: &[u8],
-        root: DocId,
-        pins: Vec<TypeId>,
-        nonce: [u8; 32],
-    ) -> Genesis {
-        let mut g = Genesis {
-            vault: vault.to_vec(),
-            root,
-            pins,
-            nonce,
-            by: device.public().to_vec(),
-            sig: vec![],
-        };
-        g.pins.sort();
-        g.pins.dedup();
-        g.sig = device.sign(&g.signed().signing()).to_vec();
-        g
-    }
-
-    fn body(&self) -> Value {
-        let mut types: Vec<(DocId, Vec<Hash>)> = Vec::new();
-        for p in &self.pins {
-            match types.last_mut() {
-                Some((t, hs)) if *t == p.r#type => hs.push(p.schema),
-                _ => types.push((p.r#type, vec![p.schema])),
+    /// A genesis with its pins in their order: types sorted, each type's schemas sorted.
+    pub fn new(vault: &[u8], root: DocId, pins: &[(DocId, Hash)], nonce: [u8; 32]) -> Genesis {
+        let mut sorted: Vec<(DocId, Hash)> = pins.to_vec();
+        sorted.sort();
+        sorted.dedup();
+        let mut grouped: Vec<(DocId, Vec<Hash>)> = Vec::new();
+        for (t, h) in sorted {
+            match grouped.last_mut() {
+                Some((u, hs)) if *u == t => hs.push(h),
+                _ => grouped.push((t, vec![h])),
             }
         }
+        Genesis {
+            pins: grouped,
+            root,
+            nonce,
+            vault: vault.to_vec(),
+        }
+    }
+
+    /// `Genesis.value`: its keys in the codec's order.
+    pub fn value(&self) -> Value {
         Value::Map(vec![
             (
                 "pins".into(),
                 Value::Array(
-                    types
+                    self.pins
                         .iter()
                         .map(|(t, hs)| {
                             Value::Array(vec![
@@ -87,84 +69,66 @@ impl Genesis {
             ("type".into(), self.root.0.value()),
             ("nonce".into(), Value::Bytes(self.nonce.to_vec())),
             ("vault".into(), Value::Bytes(self.vault.clone())),
-            ("genesis".into(), Value::Uint(1)),
         ])
     }
 
-    /// As a Core signed thing.
-    pub fn signed(&self) -> Signed {
-        Signed {
-            label: GENESIS_LABEL.into(),
-            body: self.body(),
-            signer: self.by.clone(),
-            sig: self.sig.clone(),
-        }
-    }
-
-    /// The Doc's id: the genesis's name.
+    /// The Doc's id: the hash of `["avenDB genesis 1", genesis]` (A30).
     pub fn id(&self) -> DocId {
-        DocId(self.signed().name())
+        DocId(blake3(&signing_bytes(GENESIS_LABEL, &self.value())))
     }
 
-    pub fn valid(&self, verify: &impl Verify) -> bool {
-        self.signed().valid(verify)
+    /// `Genesis.ok`: pins sorted by type with none twice, each with schemas sorted and distinct, none a built-in type.
+    pub fn ok(&self, builtin: impl Fn(&DocId) -> bool) -> bool {
+        self.pins.windows(2).all(|w| w[0].0 < w[1].0)
+            && self
+                .pins
+                .iter()
+                .all(|(t, hs)| !builtin(t) && !hs.is_empty() && hs.windows(2).all(|w| w[0] < w[1]))
     }
 
-    pub fn encode(&self) -> Vec<u8> {
-        self.signed().encode()
-    }
-
-    /// Read back strictly: its label, exactly its keys, pins sorted by type and schema with no type twice.
-    pub fn decode(bytes: &[u8]) -> Option<Genesis> {
-        let s = Signed::decode(bytes)?;
-        if s.label != GENESIS_LABEL {
-            return None;
-        }
-        let Value::Map(kvs) = &s.body else {
-            return None;
-        };
+    /// The `pin?`/`genesis?` reading: exactly its keys, each in its form.
+    pub fn of_value(v: &Value) -> Option<Genesis> {
+        let Value::Map(kvs) = v else { return None };
         let [
             (k0, Value::Array(pins)),
             (k1, ty),
             (k2, nonce),
             (k3, Value::Bytes(vault)),
-            (k4, Value::Uint(1)),
         ] = kvs.as_slice()
         else {
             return None;
         };
-        if [k0, k1, k2, k3, k4].map(String::as_str) != ["pins", "type", "nonce", "vault", "genesis"]
-        {
+        if [k0, k1, k2, k3].map(String::as_str) != ["pins", "type", "nonce", "vault"] {
             return None;
         }
-        let mut flat = Vec::new();
-        for p in pins {
-            let Value::Array(p) = p else { return None };
-            let [t, Value::Array(hs)] = p.as_slice() else {
-                return None;
-            };
-            let t = DocId(Hash(bytes32(t)?));
-            if hs.is_empty() {
-                return None;
-            }
-            for h in hs {
-                flat.push(TypeId {
-                    r#type: t,
-                    schema: Hash(bytes32(h)?),
-                });
-            }
-        }
-        if flat.windows(2).any(|w| w[0] >= w[1]) {
-            return None;
-        }
-        let g = Genesis {
-            vault: vault.clone(),
+        let pins = pins
+            .iter()
+            .map(|p| match p {
+                Value::Array(p) => match p.as_slice() {
+                    [t, Value::Array(hs)] => Some((
+                        DocId(Hash(bytes32(t)?)),
+                        hs.iter()
+                            .map(|h| bytes32(h).map(Hash))
+                            .collect::<Option<_>>()?,
+                    )),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect::<Option<_>>()?;
+        Some(Genesis {
+            pins,
             root: DocId(Hash(bytes32(ty)?)),
-            pins: flat,
             nonce: bytes32(nonce)?,
-            by: s.signer,
-            sig: s.sig,
-        };
-        (g.encode() == bytes).then_some(g)
+            vault: vault.clone(),
+        })
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        encode(&self.value())
+    }
+
+    pub fn decode(bytes: &[u8]) -> Option<Genesis> {
+        Genesis::of_value(&decode(bytes)?)
     }
 }

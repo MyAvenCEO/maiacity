@@ -34,7 +34,19 @@ fn history(steps: &[(usize, u8, u8)]) -> (aven_db_docs::Genesis, Vec<Vec<u8>>) {
         } else {
             todo_put(&id, "born")
         };
-        all.push(commit(&mut docs[who], &ds[who], &[w]));
+        match docs[who].commit(
+            &ds[who],
+            0,
+            &[w],
+            "2026-10-31T12:00:00Z",
+            aven_db_docs::Act::default(),
+            &allow,
+        ) {
+            Ok(b) => all.push(b),
+            // a write of the value a field already holds changes nothing, so there is nothing to commit
+            Err(aven_db_docs::CommitError::Empty) => {}
+            Err(e) => panic!("{e:?}"),
+        }
     }
     (g, all)
 }
@@ -89,8 +101,8 @@ proptest! {
     #[test]
     fn body_round_trips(generation in any::<u64>(), from in 0u64..1000, len in 0u64..1000, changes in proptest::collection::vec(any::<u8>(), 0..64), at in ".{0,20}", ids in proptest::collection::btree_set("[a-z0-9]{1,6}", 0..5)) {
         let mut records: Vec<_> = ids.into_iter().map(|i| (i, todo_type())).collect();
-        records.sort_by(|a, b| a.0.len().cmp(&b.0.len()).then_with(|| a.0.cmp(&b.0)));
-        let b = Body { generation, from, to: from + len, records, changes, at, cap: Some(hash("cap")), acks: vec![hash("a")], call: None, params: Value::Null };
+        records.sort_by(|a, b| aven_db_docs::codec_order(&a.0, &b.0));
+        let b = Body { generation, from, to: from + len, records, changes, at, cap: Some(hash("cap")), acks: vec![hash("a")], calls: vec![], genesis: None };
         let back = Body::of_value(&aven_core::decode(&aven_core::encode(&b.value())).unwrap());
         prop_assert_eq!(back, Some(b));
     }
