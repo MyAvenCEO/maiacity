@@ -216,10 +216,11 @@ only the side that is behind follows ([avenPEERS](../peers/README.md)).
   reload and never reloads in a loop.
 - A tab ahead of the peer that refused it waits for that peer.
 
-**Decided:** README rule 3; A15 (three origins; signed releases checked before new code activates, later); A42
-(release signing by a vault comes later); A29 (the frozen greeting); A86 (a file's bytes decide its type); the store README's "What a file
-may run" (the security audit, 30 Oct: every file served as hostile; not in the log yet) · **Lean:** `Aven.DB.Wire` — `follows_newer`, `follows_one`,
-`meet_refuses` (avenPEERS's); the Service Worker is held by the box (`sandbox/inline.mjs`, `sandbox/upgrade.mjs`)
+**Decided:** README rule 3; A15 (three origins; signed releases checked before new code activates, later); A42 (release
+signing by a vault comes later); A29 (the frozen greeting); A86 (a file's bytes decide its type); the store README's
+"What a file may run" (the security audit, 30 Oct: every file served as hostile; not in the log yet) · **Lean:**
+`Aven.DB.Wire` — `follows_newer`, `follows_one`, `meet_refuses` (avenPEERS's); the Service Worker is held by the box
+(`sandbox/inline.mjs`, `sandbox/upgrade.mjs`)
 
 ## Brain
 
@@ -237,9 +238,9 @@ every package's page, readable on every host by anyone, signed in or not, as the
   answer into a shadow root of its own. A part face-runtime refuses draws nothing, and the slide says why. How the
   brain is drawn is avenBRAIN's ([avenBRAIN](../README.md)).
 
-**Decided:** A41 (the documentation is Brain); L9 (Brain renders the brain's files themselves); P20 ("public" means
-the members, so Brain is called readable by anyone, never public) · **Lean:** not in Lean (the screen); the node tree and the
-faces are avenRUNTIME's (`Aven.Runtime.Tree`, `Aven.Runtime.Face`)
+**Decided:** A41 (the documentation is Brain); L9 (Brain renders the brain's files themselves); P20 ("public" means the
+members, so Brain is called readable by anyone, never public) · **Lean:** not in Lean (the screen); the node tree and
+the faces are avenRUNTIME's (`Aven.Runtime.Tree`, `Aven.Runtime.Face`)
 
 ## Status
 

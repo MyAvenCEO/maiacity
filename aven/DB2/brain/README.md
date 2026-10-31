@@ -79,11 +79,11 @@ on the page:
   `Node.svelte` draws it.
 - **A slide is a face.** Its part, `<id>.part.json`, goes through the frozen face-runtime, loaded by its hash in
   avenOS's runtimes worker, a worker of its own (`aven/runtimes`, README, "The browser host"). face-runtime checks the
-  tree against the allowlist, every rule's range, the text's size and contrast, and that it can be read aloud, and answers the tree and
-  the style; a part it refuses draws nothing, and the slide says why (`data-refused`). The drawer
-  (`os/web/runtimes/draw.js`) checks both again, builds the slide node by node into a shadow root of its own and
-  writes its CSS there from the rules. No slide style is in avenOS's own sheets, and none of avenOS's reaches a slide.
-  The drawer asks avenOS where each `/files/<hash>` drawing is, and avenOS serves the brain's own from its bundle.
+  tree against the allowlist, every rule's range, the text's size and contrast, and that it can be read aloud, and
+  answers the tree and the style; a part it refuses draws nothing, and the slide says why (`data-refused`). The drawer
+  (`os/web/runtimes/draw.js`) checks both again, builds the slide node by node into a shadow root of its own and writes
+  its CSS there from the rules. No slide style is in avenOS's own sheets, and none of avenOS's reaches a slide. The
+  drawer asks avenOS where each `/files/<hash>` drawing is, and avenOS serves the brain's own from its bundle.
 
 Markdown goes the same way next: through markdown-runtime, held to `render/markdown.js`'s tree, links included, and
 then `render/` goes.
@@ -93,11 +93,12 @@ then `render/` goes.
 The objects are drawn in code: [`art/objects.mjs`](art/objects.mjs), with the paint kit in
 [`art/paint.mjs`](art/paint.mjs). `AVEN_CHROMIUM=<a Chromium> bun brain/art/render.mjs` renders each to a transparent
 PNG in `art/img/`, named by the BLAKE3 hash of its bytes, as the network names its files, and lists them in
-`art/images.json`. `bun brain/art/slides.mjs` lays out avenID's slides and writes, for each, its markup, its style data and its face
-part; the rules every slide shares, `style/slide.style.json`, are written by hand. A test holds every rule to `ruleOk`,
-every font size to 2.6cqw or more, each part to its markup and style, and the runtimes' vector for "A key signs"
-(`face.json`) to the CSS the drawer writes from the brain's own rules. A slide shows
-a drawing as `<img src="/files/<hash>">`, the only image the allowlist takes. The images and the slides' files are generated: edit the objects and the layouts, then run them.
+`art/images.json`. `bun brain/art/slides.mjs` lays out avenID's slides and writes, for each, its markup, its style data
+and its face part; the rules every slide shares, `style/slide.style.json`, are written by hand. A test holds every rule
+to `ruleOk`, every font size to 2.6cqw or more, each part to its markup and style, and the runtimes' vector for "A key
+signs" (`face.json`) to the CSS the drawer writes from the brain's own rules. A slide shows a drawing as
+`<img src="/files/<hash>">`, the only image the allowlist takes. The images and the slides' files are generated: edit
+the objects and the layouts, then run them.
 
 ## Releases
 

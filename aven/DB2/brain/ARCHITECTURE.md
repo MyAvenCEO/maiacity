@@ -300,7 +300,8 @@ decision's own text, reasons and Lean are its row there.
 | [A2](DECISIONS.md) | One codec and signing rule | [core](core/README.md) | superseded by A174 in part |
 | [A1](DECISIONS.md) | One vocabulary | [glossary](GLOSSARY.md) | superseded by A175 in part |
 
-The package lists' decisions, below A1 in the log, that a later decision supersedes (every other one still holds, cited on its page):
+The package lists' decisions, below A1 in the log, that a later decision supersedes (every other one still holds, cited
+on its page):
 
 | Imported | Superseded by |
 |---|---|

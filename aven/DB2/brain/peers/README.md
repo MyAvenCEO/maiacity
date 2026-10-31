@@ -112,13 +112,14 @@ let it into gossip, so no host is the way in.
   and its direct addresses. The newest is the latest in the latest generation. Two entries at one place are a split,
   which ends that generation; the device's next generation counts again (`split_final`, `split_spares_next`), so a
   device that split re-homes in a new one (`rehome_new_generation`).
-- **History is avenPEERS':** a peer's address entries and release entries. Each is a Core envelope in its signer's
-  own history log, whose writer id comes from (signer, generation); `seq` counts and `prev` chains. Its body is a map
-  with exactly one key naming what it is, `{"address": …}` or `{"release": …}`, never a `kind` field. There are no
-  log-tip entries: a reader learns a Doc's tips from `doc_tips`, and gen1's log tips go with it (A197). It counts by Core's `Counts`, with fit as the entry's shape and `authorized` as who may sign it: a device
-  about itself, admitted by the door, or a release signer for a release. The newest entry about one thing is the
-  counting one with the greatest (generation, seq), and splits are Core's. Its Lean is `Aven.ID.Records` until it
-  moves to `peer/spec` as `Aven.Peer.History`.
+- **History is avenPEERS':** a peer's address entries and release entries. Each is a Core envelope in its signer's own
+  history log, whose writer id comes from (signer, generation); `seq` counts and `prev` chains. Its body is a map with
+  exactly one key naming what it is, `{"address": …}` or `{"release": …}`, never a `kind` field. There are no log-tip
+  entries: a reader learns a Doc's tips from `doc_tips`, and gen1's log tips go with it (A197). It counts by Core's
+  `Counts`, with fit as the entry's shape and `authorized` as who may sign it: a device about itself, admitted by the
+  door, or a release signer for a release. The newest entry about one thing is the counting one with the greatest
+  (generation, seq), and splits are Core's. Its Lean is `Aven.ID.Records` until it moves to `peer/spec` as
+  `Aven.Peer.History`.
 - **Every peer keeps the newest entry per device** and feeds it into iroh's `MemoryLookup`. Which entry is newest
   depends only on the set held, never on the order or on who passed it on (`newest_set`, `newest_signed`,
   `newest_agree`, `newest_grows`). An entry from a device the door doesn't admit is dropped. A re-homed device's new
@@ -238,9 +239,9 @@ because Loro can crash on bytes it should have refused.
   the Peer-Light computes its first Record and the Doc host makes the Doc and writes it, and the vault's other devices
   sync it like any Doc. The keyring travels unsealed, since its Records are already ciphertext: a new browser fetches
   them through [the fetch gate](#the-fetch-gate) by Doc id alone, with no fetch proof (a fetch key would come from the
-  keyring itself), opens its stanza with its PRF seal key, and only then joins its vault's group topic. There a
-  keyring change is announced as `{doc, version}` and fetched, never sent whole (A195). Every other Doc is sealed. The register is the first shared Doc, and its group's
-  topic is joined first at start.
+  keyring itself), opens its stanza with its PRF seal key, and only then joins its vault's group topic. There a keyring
+  change is announced as `{doc, version}` and fetched, never sent whole (A195). Every other Doc is sealed. The register
+  is the first shared Doc, and its group's topic is joined first at start.
 
 **Decided:** A195, A119, A121, A127, A128, A129, A135, A151, A155, A166, A169, A170, A185, A187 · **Lean:**
 `Aven.Peer.Judge` — `sift_alone`, `sift_fine`, `sift_sub`, `sift_nodup` (pending in #1727)

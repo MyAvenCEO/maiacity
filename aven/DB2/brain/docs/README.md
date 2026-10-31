@@ -178,12 +178,10 @@ its label, has no schema and is never pinned. Whoever defines it checks its Reco
 - **Its id** is avenCORE's `builtinType` of the label `<namespace> <name> 1`; avenDOCS' four use `avenDB`.
 - **avenDOCS' four,** each a map of exactly these fields, in the codec's order:
 
-  | Type | Fields | What it says |
-  |---|---|---|
-  | `branch` | `base` hashes, `name` text, `nonce` a hash, and `follows` text or absent | a branch's start ([below](#branches)) |
-  | `closed` | `at` hashes, or none | a branch is closed |
-  | `version` | `at` hashes, `name` text | a named version |
-  | `split` | `after` a hash, `writer` an unsigned integer | the Doc's owners declare a split |
+  | Type | Fields | What it says | |---|---|---| | `branch` | `base` hashes, `name` text, `nonce` a hash, and `follows`
+  text or absent | a branch's start ([below](#branches)) | | `closed` | `at` hashes, or none | a branch is closed | |
+  `version` | `at` hashes, `name` text | a named version | | `split` | `after` a hash, `writer` an unsigned integer |
+  the Doc's owners declare a split |
 
 - **Other definers:** [avenID](../id/README.md#built-in-types) defines `keyring`, `safe` and `epoch`;
   [avenCAPS](../caps/README.md#where-caps-live) defines `group`, `collection`, `cap` and `revoke`, and its register
@@ -624,28 +622,16 @@ any reader holding what it covers can check it. A new device starts from the new
 it, and shows the Doc at once, marked **unchecked**. Checkpoints come after the cutover.
 
 - **Its form** is avenCORE's `Signed` under `avenDB checkpoint 1`, its signatures beside its name, its body in the
-  codec's order: `{doc, state, branch, covers, runtime, version}`.
+  codec's order: `{doc, loro, state, branch, covers, runtime, version}` (A199).
   - `doc`, `branch`, `version`: the branch at the version it states, by its tips' hashes;
   - `covers`: the segments it covers, by hash;
-  - `state`: the hash of the sealed Loro export of the state, which travels only inside a checkpoint; the export is
+  - `loro`: the hash of the sealed Loro export of the state, which travels only inside a checkpoint; the export is
     sealed as `checkpoint`, under the same Doc and epoch as the checkpoint that names it;
+  - `state`: the hash of the Records' CBOR, which a reader checks after replay;
   - `runtime`: the runtime that made it.
 
-  The hash of the Records' CBOR, which this body held under `state` before, has no key yet
-  ([open questions](#open-questions)).
-- **Hybrid-signed, and sealed** as `checkpoint`.
-- **Who may sign one** a reader takes: a device whose vault may write the Doc at the version the checkpoint names. A
-  reader ignores one from anyone else. A keeper with only a keep cap can't make one: it can neither read nor write.
-- **Checked in the background.** The reader fetches what the checkpoint covers, replays it and compares the state's
-  hash; then the state is checked. A checkpoint that doesn't match is dropped, its signer's device is shown, and the
-  state is rebuilt from the envelopes. A reader with a `history: from-now` grant can't fetch what came before, so its
-  state stays unchecked, and says so.
-- **What a keeper knows of one** is the uploader's word, as covers are: the upload says an item is a checkpoint and
-  what it covers, so a keeper can serve "the newest checkpoint, then every segment after it". Readers still find what
-  an item seals by its commitment, and check every checkpoint by replay.
-
-**Decided:** A5, A150, A177, A181, K10, rule 8, docs 4 · **Lean:** `Aven.DB.Docs.Checkpoint` — `checked_is_replay`,
-`checked_names`, `checkpoint_by_writer`
+**Decided:** A5, A150, A177, A181, A199, K10, rule 8, docs 4 · **Lean:** `Aven.DB.Docs.Checkpoint` —
+`checked_is_replay`, `checked_names`, `checkpoint_by_writer`
 
 ## Branches, merges and forks
 
@@ -891,12 +877,10 @@ one (`tests/catchup.rs`, #1694). In the browsers with Docs in the Peers (#1727).
 
 1. **Directory and vocabulary root types:** built-in types with their definers' shapes, or user types? A42 says every
    sort of Doc names its root type. *The architect, with avenCAPS.*
-2. **The checkpoint's Records hash:** A181 gives the key `state` to the Loro export, which this body used for the hash
-   of the Records' CBOR. Does that hash keep a key of its own, and which, or does it go? *The architect.*
-3. **The index interface** with avenOPS: `entry`, `fold`, `lookup` with the unfolded entries, and `rebuild` to check a
+2. **The index interface** with avenOPS: `entry`, `fold`, `lookup` with the unfolded entries, and `rebuild` to check a
    fold, for entries that are envelopes of their own. *avenDOCS and avenOPS; the architect decides.*
-4. **The first lens catalogue's named conversions:** text to money, text to date, text to number. *avenDOCS at step 3;
+3. **The first lens catalogue's named conversions:** text to money, text to date, text to number. *avenDOCS at step 3;
    the architect decides.*
-5. **Overlapping text edits in a merge:** shown only, or offered as a choice? *Samuel.*
-6. **The root Record's fields for a Doc's birth references** (a fork's origin, the period before, the frozen chains):
+4. **Overlapping text edits in a merge:** shown only, or offered as a choice? *Samuel.*
+5. **The root Record's fields for a Doc's birth references** (a fork's origin, the period before, the frozen chains):
    their names and shapes, and how a user root type's schema admits them. *The architect.*

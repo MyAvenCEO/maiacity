@@ -67,11 +67,10 @@ guards against that writer's own racing tasks and against a crash, not against a
 - Every backend runs compare-and-set under one async lock in the store, so the one writer's tasks take turns.
 - S3 also asks the server to refuse a stale write, as its `Conditions` say:
 
-  | Conditions | What the server is asked |
-  |---|---|
-  | `On` | `If-None-Match: *` to create a ref, `If-Match` to change or delete one |
-  | `Create` | `If-None-Match: *` only: a write-once ref is refused by the server, a changing one leans on the lock. Hetzner's Object Storage refuses a correct `If-Match` and ignores it on DELETE, so production runs `Create` |
-  | `Off` | nothing: the lock and the one writer alone, as on a folder |
+  | Conditions | What the server is asked | |---|---| | `On` | `If-None-Match: *` to create a ref, `If-Match` to change
+  or delete one | | `Create` | `If-None-Match: *` only: a write-once ref is refused by the server, a changing one leans
+  on the lock. Hetzner's Object Storage refuses a correct `If-Match` and ignores it on DELETE, so production runs
+  `Create` | | `Off` | nothing: the lock and the one writer alone, as on a folder |
 
 - A ref that a second writer moved is refused, never retried over (L2).
 
@@ -132,8 +131,8 @@ leaves the store as it was before the call or after it.
   | Firefox | 150 ms | 100 ms | 30 s |
 
 **Decided:** Samuel, 30 Oct (our own driver; a browser's store may be reset, never migrated); the store README, "What
-the store asks of the opfs driver", item 4 (one file per blob; the gates per engine) · **Lean:** `Aven.DB.StoreCrash` — `crash_atomic`, `crash_trace`,
-`torn_ref`; `Aven.DB.Store` — `open_marked`, `open_unmarked`
+the store asks of the opfs driver", item 4 (one file per blob; the gates per engine) · **Lean:** `Aven.DB.StoreCrash` —
+`crash_atomic`, `crash_trace`, `torn_ref`; `Aven.DB.Store` — `open_marked`, `open_unmarked`
 
 ## Files
 
@@ -169,9 +168,9 @@ store names an iroh-blobs type: it is 0.x and breaks about monthly.
 
 - **The adapter** (`store/src/blobs`) answers 6 of the 23 requests of iroh-blobs' store API: observe and status by
   `size`, the exports of bao and of plain ranges, the import of bao, and listing. Tags, temp tags and deletes answer
-  "unsupported" or nothing, since refs keep blobs. A fetched blob is buffered until every byte has arrived and iroh-blobs
-  has checked it, then put once, whole or absent. In a browser the store is neither `Send` nor `Sync`, so it lives in
-  the adapter's own task and only channels cross.
+  "unsupported" or nothing, since refs keep blobs. A fetched blob is buffered until every byte has arrived and
+  iroh-blobs has checked it, then put once, whole or absent. In a browser the store is neither `Send` nor `Sync`, so it
+  lives in the adapter's own task and only channels cross.
 - **A peer mounts** the adapter's provider on its Router under iroh-blobs' ALPN, `/iroh-bytes/4`, behind its door, and
   asks once per connection whom it serves (`Admit`). Push is off. It fetches with `fetch_file` and `fetch_chunks`, in
   our hashes and iroh's connections.
@@ -209,7 +208,8 @@ opfs driver changes underneath.
   byte offset a crash point; then the driver.
 - **Its gates** are the same workload, every engine held to 60 ms, 30 ms and 10 s.
 
-**Decided:** the architect, 30 Oct (packs next, on the upgrade's evidence; not in the log yet) · **Lean:** not in Lean yet
+**Decided:** the architect, 30 Oct (packs next, on the upgrade's evidence; not in the log yet) · **Lean:** not in Lean
+yet
 
 ## Status
 

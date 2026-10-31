@@ -56,14 +56,15 @@ people and the vectors read a Value.
   or map around it one more. A hostile input can't exhaust a reader's stack, and the reader and the writer agree on
   where the limit is.
 - **Whole.** A byte string is one Value, with nothing after it.
-- **No null in a built-in body.** Every built-in body (caps, revocations, passkey records, keeper records and the rest)
-  leaves an absent field out of its map instead of writing `null`, and its decoder refuses a `null`, so a field has one
-  form, not two. A user's Values may still hold `null`.
+- **No null in any format avenDB defines** (A184, A200): built-in bodies, Core's envelope and bounds, docs' segments
+  and caps' lines leave an absent field out of their map instead of writing `null`, and their decoders refuse a
+  `null`, so a field has one form, not two. A user's Values may still hold `null`.
 - **Proven:** decoding an encoding gives the Value back (`decode_encode`, `decodeAll_encode`); every byte string the
   decoder accepts is exactly the encoding of what it decoded (`encode_decode`, `encode_decodeAll`); two allowed Values
   with one encoding are one Value (`encode_inj`); nothing accepted nests deeper than 512 (`decodeAll_deep`).
-- **The readable form.** In JSON, an integer is a number, text a string, a byte string `{"bytes": "<hex>"}` in
-  lowercase hex, a hash among them. Every package's vectors use this one form.
+- **The readable form.** In JSON, an integer is a number, text a string and a byte string `{"bytes": "<hex>"}`; a
+  hash is `"b3:<hex>"`, a Doc id `"d:<hex>"`, and a key or a signature its hex, all lowercase, as `Aven.Core.Json`
+  writes them (A198). Every package's vectors use this one form; what is signed and stored is CBOR.
 - **Two frozen forms** are never written in the codec: what was stored before the network's genesis, read as it is and
   never written again, and the wire's hello and `update`, which every version must read
   ([avenPEERS](../peers/README.md)).
@@ -71,8 +72,8 @@ people and the vectors read a Value.
   [names](#names). What compiles only the codec, such as the runtimes' frozen modules, moves only when the codec does.
   `aven-core` re-exports it. Both are `no_std`, with no `unsafe`, and build for wasm32.
 
-**Decided:** rule 1, A2, A29, A45, A52 (512 deep), A98 (the codec crate), A174 (bytes in JSON), A184 (no null in a
-built-in body) · **Lean:** `Aven.Core.CborLaws` — `decode_encode`, `encode_decode`, `decodeAll_encode`,
+**Decided:** rule 1, A2, A29, A45, A52 (512 deep), A98 (the codec crate), A184 and A200 (no null in a format of ours),
+A198 (the readable form) · **Lean:** `Aven.Core.CborLaws` — `decode_encode`, `encode_decode`, `decodeAll_encode`,
 `encode_decodeAll`, `decodeAll_deep`, `encode_inj`; `Aven.Core.Text` — `utf8_text`, `text_inj`; `Aven.Core.ValueEq` —
 `Value.beq_iff`
 
@@ -83,8 +84,8 @@ with one name are one Value. The hash is BLAKE3. Every model takes the hash as a
 collision-free says so (`Injective`): the one assumption every Aven model makes.
 
 - **A hash** is BLAKE3's 32 bytes. In CBOR it is a byte string of exactly 32 bytes, and `Hash.ofValue?` is the one
-  reader of a hash: every id, `prev`, dep and op id is read through it. In JSON it is `{"bytes": "<hex>"}`, as every
-  byte string is; `b3:<64 lowercase hex>` (`Hash.text`) is only for display.
+  reader of a hash: every id, `prev`, dep and op id is read through it. In JSON and on screen it is `b3:<64 lowercase
+  hex>` (`Hash.text`, A198).
 - **A Value's name** is the hash of its encoding (`nameOf`; in Rust `name_of`). Two allowed Values with one name are
   one Value (`nameOf_inj`).
 - **A Doc id** is the [name of a signed thing](#signed-things): the Doc's genesis under `avenDB genesis 1`. The genesis
@@ -98,7 +99,7 @@ collision-free says so (`Injective`): the one assumption every Aven model makes.
   and the extendable output of all three. avenID's keys and avenDOCS' writer ids derive with it. Rust uses the `blake3`
   crate, pinned exactly.
 
-**Decided:** rule 1, A2, A45, A96 (text forms are display only), A145 (one hash reader), A174 (a hash in JSON),
+**Decided:** rule 1, A2, A45, A96 (text forms are display only), A145 (one hash reader), A198 (the readable form),
 docs 24 (a Doc id is its genesis's A30 name) · **Lean:**
 `Aven.Core.Names` — `nameOf_inj`, `Hash.ofValue?_value`, `Hash.ofValue_value`, `TypeId.ofValue_value`;
 `Aven.Core.Blake3` — `digestXof`, `keyedHash`, `deriveKey`, held to the specification's answers
@@ -150,7 +151,7 @@ As it travels (`Envelope.value`), keys in the codec's order:
 | `seq` | its place in its log | an integer, from 1 |
 | `body` | what it carries | a Value, in [avenDOCS](../docs/README.md)' form; its `authority` is [avenCAPS](../caps/README.md)' |
 | `deps` | the tips of other logs it builds on | their names, 32 bytes each, at most 256 |
-| `prev` | the envelope before it in its log | its name, 32 bytes, or `null` for the first |
+| `prev` | the envelope before it in its log | its name, 32 bytes; left out of the first (A200) |
 | `sigs` | its signatures, not signed | a set of `Sig`s, at most 16 |
 | `branch` | its branch | text, at most 256 bytes |
 | `writer` | its writer id | an integer, made by [avenDOCS](../docs/README.md) |
@@ -179,7 +180,7 @@ A log is one writer's envelopes in one Doc and branch, in order. Each names the 
 reorder a log or fill a gap in it unseen, and no reader needs a counter it trusts.
 
 - **One log** is the envelopes with one Doc, one branch and one writer id (`SameLog`).
-- **In order.** The first has `seq` 1 and `prev` `null`; each next one has the next `seq` and names the one before as
+- **In order.** The first has `seq` 1 and no `prev`; each next one has the next `seq` and names the one before as
   its `prev`.
 - **One writer, never waiting.** A device's own log is its truth, and it never waits for another peer to confirm its
   head. How a writer id is made, when a device starts a fresh one (a generation), and a log's closed runs (segments)
@@ -326,9 +327,9 @@ behaviour by itself.
   decoded, so one call has one encoding; a call within its limits reads back as itself (`Call.ofValue_value`).
 
 **Bounds.**
-- **A bound** (`Bound`) is what a cap allows for one param: any value (`null`), or one of a list of values (an array,
-  at most 256). For a list param, each of its elements must be one of them (`Bound.allows`). Ranges come only when a
-  real op needs them.
+- **A bound** (`Bound`) is what a cap allows for one param: any value (the param left out, A200), or one of a list of
+  values (an array, at most 256). For a list param, each of its elements must be one of them (`Bound.allows`). Ranges
+  come only when a real op needs them.
 - **Narrowing a bound** (`Bound.within`): any value the narrower one allows, the wider one allows too
   (`Bound.within_allows`), and narrowing composes (`Bound.within_trans`). A bound within its limit reads back as itself
   (`Bound.ofValue_value`).
@@ -389,7 +390,8 @@ built-in type's id is the name of a fixed label.
   Each package lists its own types through this one function ([avenID](../id/README.md),
   [avenDOCS](../docs/README.md)).
 - **The type of types** (`typeOfTypes`) is `avenDB type of types 1`: the root type of every type Doc, and its own
-  (`typeOfTypes_typed`). It is built in, in no vault, since no genesis could name its own hash.
+  (`typeOfTypes_typed`). It is built in, in no vault, since no genesis could name its own hash; where a format needs a
+  vault for it, it writes 32 zero bytes (`noVault`, A190).
 - **A type Doc** is one whose root type is the type of types (`Facts.isType`).
 
 **Decided:** A39, A42 (the type of types is a fixed, built-in id), A45, A67 (the type of types), docs 24 (built-in
@@ -425,9 +427,9 @@ runtimes' frozen modules compile `aven-codec`.
 | Concept | Lean | Rust | Landed | Open work (owner) |
 |---|---|---|---|---|
 | Values | `Cbor`, `CborLaws`, `Text`, `ValueEq`, `Json`, `Bytes` | `aven-codec`: `Value`, `encode`, `decode`, `MAX_DEPTH` | #1532, #1651, #1710 | — |
-| Names | `Names`, `Blake3` | `aven-codec`: `Hash`, `DocId`, `TypeId`, `blake3`, `name_of` | #1532, #1710, #1733 | `Names`' module doc and `DocId`'s Rust doc say a Doc is named by its "signed genesis"; the genesis is unsigned and named by A30 (docs 24) (avenCORE). A174 has JSON write a hash as `{"bytes": hex}` and says the vectors already do; `names.json`, `past.json`, `counts.json` and the other vectors still write hashes and Doc ids as `b3:`/`d:` text (architect) |
+| Names | `Names`, `Blake3` | `aven-codec`: `Hash`, `DocId`, `TypeId`, `blake3`, `name_of` | #1532, #1710, #1733 | `Names`' module doc and `DocId`'s Rust doc say a Doc is named by its "signed genesis"; the genesis is unsigned and named by A30 (docs 24) (avenCORE). |
 | Signed things | `Signed` | `Signed`, `Sig`, `add_sig`, `signing_bytes`, `Verify` | #1666, #1679, #1710 | — |
-| Envelopes | `Log` | `Envelope`, `Writes`, `ENVELOPE_LABEL` | #1679, #1710, #1733 | — |
+| Envelopes | `Log` | `Envelope`, `Writes`, `ENVELOPE_LABEL` | #1679, #1710, #1733 | A200: `prev` left out of a log's first envelope, and a bound's any value left out, not `null`, in Lean, Rust and vectors (avenCORE, with the vault-name switch, A190) |
 | Logs | `Log` | `Log`, `LogId`, `Refused`, `is_chain` | #1679 | A1's rename `IsChain` → `IsLog`, and the names built on it: `chain_no_split`, `chains_agree` and Rust's `is_chain` (avenCORE), `Aven.Architecture`'s `rule3_chain_whole` (architect); no PR |
 | Splits | `Log`, `Verdicts` | `split`, `Held::discounted` | #1679, #1710 | `split`'s Rust doc cites `resign_no_split`; the theorem is `sigs_no_split` (avenCORE) |
 | The past, versions | `Past`, `Log`, `Verdicts` | `past`, `in_past`, `Parents`, `Held::holds` | #1679, #1710 | `Past`'s module doc names the tree's statements, and `Aven.ID.Network` keeps a `Parents` instance for `TreeStatement`; both go once the register's statements are envelopes (A30) (avenCORE, avenCAPS) |
