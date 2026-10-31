@@ -1,25 +1,26 @@
-# Aven.Peer: the Peers' Lean model (A45): the wire (its greeting and its frames in Core's CBOR) and presence as the
-# Aven Peer counts it, moved out of Aven.DB's first generation. Core Lean only: the box has no network for Lean packages.
-# `lake build` proves every theorem and checks every example; `aven-peer-model` runs presence for the Rust's random
-# traces, and `vectors` exports the examples and generated cases (README rule 10).
+# Aven.Peer: avenPEER's model in Lean (ARCHITECTURE.md, A45: the wire, presence and catch-up are the Peers'). Core Lean
+# only: the box has no network for Lean packages. Docs in the Peers (`Aven.Peer.DocSync`), and the wire (`Wire`,
+# `WireCbor`) and presence (`Presence`), moved in from db/spec with the wire's Rust (`aven-peer-wire`). `lake build`
+# proves every theorem and checks every example; `aven-peer-model` runs presence for the Rust's random traces.
 name = "aven-peer-spec"
 version = "0.1.0"
-defaultTargets = ["Aven", "aven-peer-model", "vectors"]
+defaultTargets = ["AvenPeer", "aven-peer-model", "vectors"]
 
 [[lean_lib]]
-name = "Aven"
-# Only Aven.Peer is this package's: Aven.Core comes from the core package.
+name = "AvenPeer"
 roots = ["Aven.Peer"]
 
+# The model runs (README, rule 10): presence traces replayed as JSON, so Rust's tests compare against it.
 [[lean_exe]]
 name = "aven-peer-model"
 root = "Main"
 
+# The examples and generated cases as test vectors, committed in vectors/ (README, rule 10).
 [[lean_exe]]
 name = "vectors"
 root = "Vectors"
 
-# The shared core: Values, the codec, text (core/spec, ARCHITECTURE.md).
+# The shared core: Values, the codec, hashes, envelopes, logs and the past (core/spec).
 [[require]]
 name = "aven-core-spec"
 path = "../../core/spec"

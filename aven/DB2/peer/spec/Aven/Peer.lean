@@ -1,3 +1,4 @@
+import Aven.Peer.DocSync
 import Aven.Peer.Presence
 import Aven.Peer.Wire
 import Aven.Peer.WireCbor
