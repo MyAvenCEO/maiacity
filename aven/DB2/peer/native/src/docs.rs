@@ -285,3 +285,126 @@ impl DocTopic {
         (self.notes)(timeline::line(now(), &self.me, event, fields));
     }
 }
+
+/// Where a peer keeps its Docs in its store (docs README, "The head", "Catching up", 3): each envelope's own bytes as
+/// a blob named by their hash, and per Doc two refs, each a Value's blob moved by compare-and-set: `doc-<id>-held`,
+/// the docs layer's held page (every envelope held, by name and blob, in the order held), and `doc-<id>`, its head.
+/// What a peer seals is only what leaves the device. The held page moves first: the head is what the held page
+/// reopens to, so a crash between the two leaves nothing a reopen can't rebuild. One writer per store (store, rule 1):
+/// a ref that moved under it is an error, never retried over.
+#[derive(Clone)]
+pub struct Shelf {
+    store: aven_db_store::blobs::Shared,
+}
+
+/// Where a Doc's two refs pointed when this peer last read or moved them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Saved {
+    pub held: Option<aven_db_store::Hash>,
+    pub head: Option<aven_db_store::Hash>,
+}
+
+/// A Doc's refs, read back: its held page and its head as Values, and where they pointed.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Shelved {
+    pub held: Option<Value>,
+    pub head: Option<Value>,
+    pub saved: Saved,
+}
+
+fn refs(doc: &aven_core::DocId) -> (aven_db_store::RefName, aven_db_store::RefName) {
+    let hex: String = doc.0.0.iter().map(|b| format!("{b:02x}")).collect();
+    (
+        aven_db_store::RefName::new(format!("doc-{hex}-held")).expect("a ref name"),
+        aven_db_store::RefName::new(format!("doc-{hex}")).expect("a ref name"),
+    )
+}
+
+impl Shelf {
+    pub fn new(store: aven_db_store::blobs::Shared) -> Shelf {
+        Shelf { store }
+    }
+
+    /// Keeps an envelope's bytes (or a sealed value fetched for it), named by their hash.
+    pub async fn put(&self, bytes: Vec<u8>) -> Result<aven_db_store::Hash, String> {
+        self.store
+            .put(bytes.into())
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    /// The bytes kept under `hash`, checked against it by the store.
+    pub async fn get(&self, hash: &aven_db_store::Hash) -> Result<Option<Vec<u8>>, String> {
+        Ok(self
+            .store
+            .get(hash)
+            .await
+            .map_err(|e| e.to_string())?
+            .map(|b| b.to_vec()))
+    }
+
+    async fn read(
+        &self,
+        name: &aven_db_store::RefName,
+    ) -> Result<(Option<Value>, Option<aven_db_store::Hash>), String> {
+        let Some(at) = self.store.get_ref(name).await.map_err(|e| e.to_string())? else {
+            return Ok((None, None));
+        };
+        let bytes = self
+            .get(&at)
+            .await?
+            .ok_or_else(|| format!("{} points at a missing blob", name.as_str()))?;
+        let v = decode(&bytes).ok_or_else(|| format!("{} isn't a Value", name.as_str()))?;
+        Ok((Some(v), Some(at)))
+    }
+
+    /// What this peer keeps of `doc`: nothing for a Doc it has never held.
+    pub async fn load(&self, doc: &aven_core::DocId) -> Result<Shelved, String> {
+        let (held_ref, head_ref) = refs(doc);
+        let (held, held_at) = self.read(&held_ref).await?;
+        let (head, head_at) = self.read(&head_ref).await?;
+        Ok(Shelved {
+            held,
+            head,
+            saved: Saved {
+                held: held_at,
+                head: head_at,
+            },
+        })
+    }
+
+    /// Moves `doc`'s refs to a new held page and head, the held page first, each from where `saved` says it was; then
+    /// `saved` says where they are now.
+    pub async fn save(
+        &self,
+        doc: &aven_core::DocId,
+        saved: &mut Saved,
+        held: &Value,
+        head: &Value,
+    ) -> Result<(), String> {
+        let (held_ref, head_ref) = refs(doc);
+        saved.held = Some(self.moved(&held_ref, saved.held, held).await?);
+        saved.head = Some(self.moved(&head_ref, saved.head, head).await?);
+        Ok(())
+    }
+
+    async fn moved(
+        &self,
+        name: &aven_db_store::RefName,
+        expected: Option<aven_db_store::Hash>,
+        v: &Value,
+    ) -> Result<aven_db_store::Hash, String> {
+        let at = self.put(encode(v)).await?;
+        if expected == Some(at) {
+            return Ok(at);
+        }
+        match self.store.set_ref(name, expected, at).await {
+            Ok(()) => Ok(at),
+            Err(aven_db_store::Error::Stale { .. }) => Err(format!(
+                "{} moved under this peer: a second writer",
+                name.as_str()
+            )),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+}
