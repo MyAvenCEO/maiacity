@@ -25,6 +25,7 @@ fn tree(input: &Value) -> Tree {
                 .iter()
                 .map(|o| Owner::parse(o.as_str().unwrap()).unwrap())
                 .collect(),
+            threshold: v["threshold"].as_u64().map_or(1, |t| t as usize),
         });
     }
     let keys = cast.keys().map(|(k, p)| (k.into(), p.into())).collect();

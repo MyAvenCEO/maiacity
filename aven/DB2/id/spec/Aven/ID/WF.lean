@@ -38,7 +38,8 @@ def WF (t : Tree) : Prop :=
   (∀ v ∈ t.vaults, ∀ k ∈ v.ownerKeys, t.kind? k ≠ some .device) ∧
   (∀ v ∈ t.vaults, validName v.name = true) ∧
   (∀ v ∈ t.vaults, v.kind = .coop → ∀ o ∈ v.owners, t.coopOwner o = true) ∧
-  (∀ v ∈ t.vaults, v.kind = .device → ∀ a ∈ v.ownerVaults, t.kind? a ≠ some .coop)
+  (∀ v ∈ t.vaults, v.kind = .device → ∀ a ∈ v.ownerVaults, t.kind? a ≠ some .coop) ∧
+  (∀ v ∈ t.vaults, 1 ≤ v.threshold)
 
 instance (t : Tree) : Decidable t.WF := by unfold WF; infer_instance
 
@@ -58,7 +59,16 @@ theorem WF.named (w : t.WF) : ∀ v ∈ t.vaults, validName v.name = true := w.2
 theorem WF.coopOwned (w : t.WF) : ∀ v ∈ t.vaults, v.kind = .coop → ∀ o ∈ v.owners, t.coopOwner o = true :=
   w.2.2.2.2.2.2.2.2.2.1
 theorem WF.coopHolds (w : t.WF) : ∀ v ∈ t.vaults, v.kind = .device → ∀ a ∈ v.ownerVaults, t.kind? a ≠ some .coop :=
-  w.2.2.2.2.2.2.2.2.2.2
+  w.2.2.2.2.2.2.2.2.2.2.1
+/-- Every vault's threshold is at least one: no approval passes on no signatures. -/
+theorem WF.quorum (w : t.WF) : ∀ v ∈ t.vaults, 1 ≤ v.threshold := w.2.2.2.2.2.2.2.2.2.2.2
+
+/-- In a well-formed tree, every threshold the tree gives is at least one. -/
+theorem WF.threshold_pos (w : t.WF) (id : String) : 1 ≤ t.threshold id := by
+  unfold threshold
+  cases g : t.get? id with
+  | none => simp
+  | some v => simpa using w.quorum v (get?_some g).1
 
 /-- An owner stands strictly lower than what it owns. -/
 theorem WF.rank_lt (w : t.WF) {a b : String} (h : t.Owns a b) : t.rank a < t.rank b := by

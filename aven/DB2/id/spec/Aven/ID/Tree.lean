@@ -30,11 +30,14 @@ def Owner.key? : Owner → Option String
   | .key id => some id
   | .vault _ => none
 
+/-- A vault: its id, name, kind and owners, and its threshold, how many of its owners approve for it (D14, A28; k of n).
+-/
 structure Vault where
   id : String
   name : String
   kind : Kind
   owners : List Owner
+  threshold : Nat := 1
   deriving DecidableEq, Repr
 
 /-- The vaults among a vault's owners. -/
@@ -55,6 +58,10 @@ def ids (t : Tree) : List String := t.vaults.map (·.id)
 def get? (t : Tree) (id : String) : Option Vault := t.vaults.find? (·.id == id)
 
 def kind? (t : Tree) (id : String) : Option Kind := (t.get? id).map (·.kind)
+
+/-- A vault's threshold as the tree stores it: how many of its owners approve for it. A vault the tree doesn't hold has
+none to meet, and `approves` refuses it anyway. -/
+def threshold (t : Tree) (id : String) : Nat := ((t.get? id).map (·.threshold)).getD 1
 
 /-- The vaults that own the vault `b` directly. -/
 def ownersOf (t : Tree) (b : String) : List String := ((t.get? b).map (·.ownerVaults)).getD []
