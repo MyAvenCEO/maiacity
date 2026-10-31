@@ -8,8 +8,8 @@
 //! - text is valid UTF-8 (RFC 3629).
 //!
 //! `decode` accepts exactly the encodings of Values, so bytes that don't encode back to themselves are refused, as
-//! Lean proves of its decoder (`encode_decode`). One limit the model doesn't have yet: nesting deeper than
-//! [`MAX_DEPTH`] is refused, so a hostile input can't exhaust the stack (ARCHITECTURE.md rule 10).
+//! Lean proves of its decoder (`encode_decode`). Nothing nests deeper than [`MAX_DEPTH`], as Lean's `maxDepth`, so a
+//! hostile input can't exhaust the stack (ARCHITECTURE.md rule 10).
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -28,7 +28,8 @@ pub enum Value {
     Null,
 }
 
-/// The deepest nesting `decode` accepts: arrays and maps inside each other at most this many times.
+/// The deepest Value `decode` accepts (`Aven.Core.maxDepth`): a scalar or an empty array or map is 1 deep, and each
+/// array or map around it one more.
 pub const MAX_DEPTH: usize = 512;
 
 /// A data item's head: its major type and its argument, in the shortest form (`Aven.Core.head`).
@@ -150,7 +151,11 @@ impl Reader<'_> {
         Some(String::from(s))
     }
 
+    /// One item inside `depth` arrays and maps: it is at least `depth + 1` deep.
     fn item(&mut self, depth: usize) -> Option<Value> {
+        if depth >= MAX_DEPTH {
+            return None;
+        }
         let (major, n) = self.head()?;
         match major {
             0 => Some(Value::Uint(n)),
@@ -161,9 +166,6 @@ impl Reader<'_> {
             }
             3 => Some(Value::Text(self.text(n)?)),
             4 => {
-                if depth >= MAX_DEPTH {
-                    return None;
-                }
                 // every item takes at least one byte, so the bytes left bound the count
                 let mut xs = Vec::with_capacity(self.len(n)?);
                 for _ in 0..n {
@@ -172,9 +174,6 @@ impl Reader<'_> {
                 Some(Value::Array(xs))
             }
             5 => {
-                if depth >= MAX_DEPTH {
-                    return None;
-                }
                 let mut kvs: Vec<(String, Value)> = Vec::with_capacity(self.len(n)? / 2);
                 for _ in 0..n {
                     let (km, kn) = self.head()?;

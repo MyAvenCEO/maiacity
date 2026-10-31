@@ -8,7 +8,12 @@ fn vectors(file: &str) -> Vec<Json> {
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
     text.lines()
         .filter(|l| !l.trim().is_empty())
-        .map(|l| serde_json::from_str(l).unwrap())
+        .map(|l| {
+            // the deepest vectors nest 513 deep, past serde_json's default limit of 128
+            let mut de = serde_json::Deserializer::from_str(l);
+            de.disable_recursion_limit();
+            serde::Deserialize::deserialize(&mut de).unwrap()
+        })
         .collect()
 }
 
@@ -124,12 +129,13 @@ fn names() {
     assert!(n >= 17);
 }
 
-/// Nesting past `MAX_DEPTH` is refused, however long the input: a megabyte of nested arrays costs no stack.
+/// Nesting past `MAX_DEPTH` is refused, however long the input: a megabyte of nested arrays costs no stack. `null`
+/// inside 511 arrays is 512 deep, as Lean counts (`cbor.json` has the same from both sides).
 #[test]
 fn deep() {
-    let ok = [vec![0x81u8; MAX_DEPTH], vec![0xF6]].concat();
+    let ok = [vec![0x81u8; MAX_DEPTH - 1], vec![0xF6]].concat();
     assert!(decode(&ok).is_some());
-    let deep = [vec![0x81u8; MAX_DEPTH + 1], vec![0xF6]].concat();
+    let deep = [vec![0x81u8; MAX_DEPTH], vec![0xF6]].concat();
     assert_eq!(decode(&deep), None);
     let huge = [vec![0x81u8; 1_000_000], vec![0xF6]].concat();
     assert_eq!(decode(&huge), None);

@@ -14,7 +14,7 @@ this repository, `run(part, input) → output`. Three kinds of users need runtim
 
 This file is a plan, written on 30 Oct 2026 (Samuel: "just plan them, don't start them"). Nothing here is built yet: no
 crate, no Lean file, no change to the box. It says what comes later and in what order, and records Samuel's answers to
-its questions ([Decisions](#decisions)). The words are those of [`GLOSSARY.md`](../DB2/GLOSSARY.md).
+its questions ([Decisions](#decisions)). The words are those of [`GLOSSARY.md`](../DB2/brain/GLOSSARY.md).
 
 ## Contents
 

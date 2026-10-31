@@ -43,7 +43,7 @@ def Envelope.unsigned (e : Envelope) : Value :=
     (k "deps", .array (e.deps.map Hash.value)), (k "prev", optHash e.prev), (k "branch", .text e.branch),
     (k "signer", .bytes e.signer), (k "writer", .uint e.writer)]
 
-/-- The whole envelope, signature included: what its name hashes. -/
+/-- The whole envelope, signature included, as it travels. Its name hashes only what is signed (A30). -/
 def Envelope.value (e : Envelope) : Value :=
   .map [(k "doc", .bytes e.doc.hash.bytes), (k "seq", .uint e.seq), (k "sig", .bytes e.sig), (k "body", e.body),
     (k "deps", .array (e.deps.map Hash.value)), (k "prev", optHash e.prev), (k "branch", .text e.branch),
@@ -55,7 +55,9 @@ def Envelope.signing (e : Envelope) : Bytes := signingBytes envelopeLabel e.unsi
 
 def Envelope.valid (verify : Verify) (e : Envelope) : Bool := verify e.signer e.signing e.sig
 
-def Envelope.name (H : Bytes → Hash) (e : Envelope) : Hash := nameOf H e.value
+/-- An envelope's name: the hash of exactly what its writer signs, `[label, everything but the signature]`, so signing
+one envelope twice never makes two names (A30). -/
+def Envelope.name (H : Bytes → Hash) (e : Envelope) : Hash := H e.signing
 
 #guard keysSorted (match (Envelope.mk ⟨⟨[]⟩⟩ [] 0 0 none [] .null [] []).value with | .map kvs => kvs | _ => [])
 #guard keysSorted (match (Envelope.mk ⟨⟨[]⟩⟩ [] 0 0 none [] .null [] []).unsigned with | .map kvs => kvs | _ => [])
@@ -84,10 +86,27 @@ theorem Envelope.value_inj {a b : Envelope} (h : a.value = b.value) : a = b := b
   subst hd hs hg hb hbr hsg hw
   rfl
 
-/-- Two well-formed envelopes with one name are one envelope. -/
-theorem Envelope.name_inj {H : Bytes → Hash} (hH : Injective H) {a b : Envelope} (ha : Canon a.value = true)
-    (hb : Canon b.value = true) (h : a.name H = b.name H) : a = b :=
-  Envelope.value_inj (nameOf_inj hH ha hb h)
+/-- What an envelope signs fixes everything but its signature. -/
+theorem Envelope.unsigned_inj {a b : Envelope} (h : a.unsigned = b.unsigned) : { a with sig := b.sig } = b := by
+  obtain ⟨⟨⟨da⟩⟩, bra, wa, sa, pa, dsa, ba, sga, sia⟩ := a
+  obtain ⟨⟨⟨db⟩⟩, brb, wb, sb, pb, dsb, bb, sgb, sib⟩ := b
+  simp only [Envelope.unsigned, Value.map.injEq, List.cons.injEq, Prod.mk.injEq, Value.bytes.injEq, Value.uint.injEq,
+    Value.array.injEq, Value.text.injEq, true_and, and_true] at h
+  obtain ⟨hd, hs, hb, hdeps, hp, hbr, hsg, hw⟩ := h
+  rw [optHash_inj hp, hashes_inj hdeps]
+  subst hd hs hb hbr hsg hw
+  rfl
+
+theorem envelopeLabel_ok : textOk envelopeLabel = true := by decide +kernel
+
+/-- Two well-formed envelopes with one name say the same thing: they differ at most in their signatures (A30). -/
+theorem Envelope.name_inj {H : Bytes → Hash} (hH : Injective H) {a b : Envelope} (ha : Canon a.unsigned = true)
+    (hb : Canon b.unsigned = true) (h : a.name H = b.name H) : { a with sig := b.sig } = b :=
+  Envelope.unsigned_inj (signing_separates envelopeLabel_ok envelopeLabel_ok ha hb (hH _ _ h)).2
+
+/-- Signing an envelope again keeps its name: a name never hangs on a signature (A30). -/
+theorem Envelope.name_resign (H : Bytes → Hash) (e : Envelope) (sig : Bytes) :
+    ({ e with sig } : Envelope).name H = e.name H := rfl
 
 /-! ## Logs and splits
 
@@ -104,6 +123,12 @@ def Split (a b : Envelope) : Prop := SameLog a b ∧ a.seq = b.seq ∧ nm a ≠ 
 
 theorem Split.symm {a b : Envelope} (h : Split nm a b) : Split nm b a :=
   ⟨⟨h.1.1.symm, h.1.2.1.symm, h.1.2.2.symm⟩, h.2.1.symm, fun e => h.2.2 e.symm⟩
+
+/-- An envelope signed twice is no split: a split is two different bodies at one place, never two signatures over one
+(A4, A30). -/
+theorem resign_no_split (H : Bytes → Hash) (e : Envelope) (sig : Bytes) :
+    ¬ Split (Envelope.name H) e { e with sig } :=
+  fun h => h.2.2 (Envelope.name_resign H e sig).symm
 
 /-- `a` builds directly on `b`: `b` is the envelope before it in its log, or a tip it names. -/
 def BuildsOn (a b : Envelope) : Prop := a.prev = some (nm b) ∨ nm b ∈ a.deps
