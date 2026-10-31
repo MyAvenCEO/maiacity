@@ -21,7 +21,8 @@ past of" is decidable (`InPast`, decided by `inPast`, `inPast_iff`). `settle` is
 4. of a ticket's claims, a final one wins over the rest, and among final ones, or among the rest when none is, the
    smallest hash. Two final claims of one ticket can only come from acks that didn't see each other: the ticket is
    `contested`;
-5. a list's remove wins over every add that hadn't seen it;
+5. a list's remove wins over every add that hadn't seen it. Tickets, withdrawals and the lists are signed by the
+   admin's passkey; an admin device only acks (`adminPasskey`);
 6. the door admits the member vaults' devices (K12).
 
 The theorems:
@@ -158,9 +159,9 @@ inductive TreeSays where
   | genesis (g : Genesis)
   /-- A device joins `vault`, signed by the vault's passkey. -/
   | signIn (vault device : String)
-  /-- A ticket (an invite) with its one-time key, signed by an admin key. -/
+  /-- A ticket (an invite) with its one-time key, signed by an admin passkey. -/
   | ticket (key : String)
-  /-- Ticket `ticket` (the ticket statement's name) withdrawn, by an admin key. -/
+  /-- Ticket `ticket` (the ticket statement's name) withdrawn, by an admin passkey. -/
   | withdrawal (ticket : Nat)
   /-- A claim of a ticket, signed by its one-time key: it founds `vault` with its passkey and first device, and names
   the guardian it consents to. -/
@@ -455,12 +456,17 @@ def admin (v : View) (k : String) : Bool :=
       | .signIn vault d => d == k && gen v (fun g => vault == g.claimant && s.signer == g.passkey)
       | _ => false
 
-/-- A claim that counts: its ticket was issued by an admin key, is in its past and has the one-time key that signed
+/-- An admin passkey: the claimant's. Only it signs the acts that change who may join or who sees members' addresses:
+tickets, withdrawals and the relay and keeper lists (Samuel, 31 Oct 2026: "the more secure way"). An admin device's
+key only acks. -/
+def adminPasskey (v : View) (k : String) : Bool := gen v (fun g => k == g.passkey)
+
+/-- A claim that counts: its ticket was issued by an admin passkey, is in its past and has the one-time key that signed
 the claim, and it names the genesis's guardian (A13). -/
 def claimOk (v : View) (c : TreeStatement) : Bool :=
   match c.says with
   | .claim t _ _ _ guardian =>
-    (v.any fun s => s.name == t && admin v s.signer && s.says == .ticket c.signer && v.past c s) &&
+    (v.any fun s => s.name == t && adminPasskey v s.signer && s.says == .ticket c.signer && v.past c s) &&
       gen v (fun g => g.guardian == guardian)
   | _ => false
 
@@ -471,10 +477,10 @@ def sameTicket (c d : TreeStatement) : Bool := c.ticketOf.isSome && c.ticketOf =
 def final (v : View) (c : TreeStatement) : Bool :=
   claimOk v c && v.any fun a => admin v a.signer && a.says == .ack c.name && v.past a c
 
-/-- `w` wins over claim `c`: an admin key's withdrawal of its ticket that didn't have it in its past. -/
+/-- `w` wins over claim `c`: an admin passkey's withdrawal of its ticket that didn't have it in its past. -/
 def beats (v : View) (w c : TreeStatement) : Bool :=
   match c.ticketOf with
-  | some t => admin v w.signer && w.says == .withdrawal t && !v.past w c
+  | some t => adminPasskey v w.signer && w.says == .withdrawal t && !v.past w c
   | none => false
 
 /-- A claim stands: of its ticket's final claims the one with the smallest hash; if none is final, of the claims no
@@ -532,12 +538,12 @@ def admits (v : View) (d : String) : Bool :=
       | .signIn vault dev => dev == d && passkeyOf v vault s.signer
       | _ => false
 
-/-- A list's entry stands while an admin key's add of it has every admin key's remove of it in its past: a remove wins
+/-- A list's entry stands while an admin passkey's add of it has every admin passkey's remove of it in its past: a remove wins
 over every add that hadn't seen it, the ones it saw and the ones made at the same time, and an add made after it
 stands again. -/
 def listed (v : View) (add remove : String → TreeSays) (d : String) : Bool :=
-  v.any fun a => admin v a.signer && a.says == add d &&
-    !(v.any fun r => admin v r.signer && r.says == remove d && !v.past a r)
+  v.any fun a => adminPasskey v a.signer && a.says == add d &&
+    !(v.any fun r => adminPasskey v r.signer && r.says == remove d && !v.past a r)
 
 /-! ### Reading the view -/
 
@@ -832,7 +838,7 @@ theorem settle_ticket_once {c d : TreeStatement} (mc : c ∈ S) (md : d ∈ S)
 
 /-- A withdrawal of a ticket leaves no claim of it standing that isn't final and wasn't in the withdrawal's past. -/
 theorem settle_withdrawn {w : TreeStatement} {t : Nat} (mw : w ∈ S) (cw : counted ok pinned S w = true)
-    (aw : admin (view ok pinned S) w.signer = true) (says : w.says = .withdrawal t) (ct : c.ticketOf = some t)
+    (aw : adminPasskey (view ok pinned S) w.signer = true) (says : w.says = .withdrawal t) (ct : c.ticketOf = some t)
     (np : ¬ InPast S w c) (nf : final (view ok pinned S) c = false) : standing (view ok pinned S) c = false := by
   have hb : (view ok pinned S).any (fun x => beats (view ok pinned S) x c) = true := by
     refine (view_any ok pinned).mpr ⟨w, mw, cw, ?_⟩
@@ -887,7 +893,7 @@ theorem claimOk_mono (sub : ∀ x ∈ S, x ∈ S') (h : claimOk (view ok pinned 
   · simp only [Bool.and_eq_true] at h ⊢
     refine ⟨any_mono ok pinned sub (fun x hx => ?_) h.1, gen_mono ok pinned sub h.2⟩
     simp only [Bool.and_eq_true] at hx ⊢
-    exact ⟨⟨⟨hx.1.1.1, admin_mono ok pinned sub hx.1.1.2⟩, hx.1.2⟩, past_mono ok pinned sub hx.2⟩
+    exact ⟨⟨⟨hx.1.1.1, gen_mono ok pinned sub hx.1.1.2⟩, hx.1.2⟩, past_mono ok pinned sub hx.2⟩
   · cases h
 
 theorem final_mono (sub : ∀ x ∈ S, x ∈ S') (h : final (view ok pinned S) c = true) :
@@ -1017,11 +1023,11 @@ theorem settle_door {d : String} :
     · refine .inr (any_mono ok pinned (fun _ m => m) (fun x hx => ?_) h)
       cases hx' : x.says <;> simp_all
 
-/-- A list's entry stands only through an add that saw every remove of it. -/
+/-- A list's entry stands only through an admin passkey's add that saw every remove of it. -/
 theorem settle_listed {add remove : String → TreeSays} {d : String}
     (h : listed (view ok pinned S) add remove d = true) :
-    ∃ a ∈ S, counted ok pinned S a = true ∧ admin (view ok pinned S) a.signer = true ∧ a.says = add d ∧
-      ∀ r ∈ S, counted ok pinned S r = true → admin (view ok pinned S) r.signer = true → r.says = remove d →
+    ∃ a ∈ S, counted ok pinned S a = true ∧ adminPasskey (view ok pinned S) a.signer = true ∧ a.says = add d ∧
+      ∀ r ∈ S, counted ok pinned S r = true → adminPasskey (view ok pinned S) r.signer = true → r.says = remove d →
         InPast S a r := by
   obtain ⟨a, ma, ca, ha⟩ := (view_any ok pinned).mp h
   simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at ha
@@ -1031,7 +1037,7 @@ theorem settle_listed {add remove : String → TreeSays} {d : String}
     cases e : (view ok pinned S).past a r
     · rfl
     · exact absurd ((view_past ok pinned).mp e).2.2 np
-  have : (view ok pinned S).any (fun r => admin (view ok pinned S) r.signer && r.says == remove d &&
+  have : (view ok pinned S).any (fun r => adminPasskey (view ok pinned S) r.signer && r.says == remove d &&
       !(view ok pinned S).past a r) = true :=
     (view_any ok pinned).mpr ⟨r, mr, cr, by simp [ar, sr, pf]⟩
   rw [this] at none

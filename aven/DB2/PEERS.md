@@ -67,11 +67,16 @@ thread's recommendation. Samuel may overrule any.
     and changed rarely. A peer refuses any other wire version with "update to join", and never falls back (README rule
     9). The Service Worker and native Peers read one signed release record. Stored formats stay readable forever,
     tested against frozen vectors, because production is never wiped ([7](#7-upgrades)).
+12. **The admin's passkey signs what changes who is in or who sees whom.** Tickets, withdrawals, and the relay and
+    keeper lists are signed by the admin's passkey, a tap each time; an admin device's key only acks claims, which it
+    does on its own (Samuel, 31 Oct 2026: "choose the more secure way"). Reason: a stolen or compromised browser can't
+    let anyone in, or route members through a relay that logs their addresses (`adminPasskey` in `Aven.ID.Network`).
 
 ## 1. Several relays
 
-- **The relay list** is part of the tree: admin statements `relay-add` (a member device's key and its relay's HTTPS
-  URL) and `relay-remove`. The tree settles the list as it settles everything else ([5](#5-one-rule-for-the-tree)).
+- **The relay list** is part of the tree: statements `relay-add` (a member device's key and its relay's HTTPS URL)
+  and `relay-remove`, each signed by the admin's passkey (decision 12). The tree settles the list as it settles
+  everything else ([5](#5-one-rule-for-the-tree)).
 - **Any member's Peer can run a relay** with `--relay`, as the Aven Peer does today. The flag no longer means "this is
   the Aven Peer". A relay on the list admits exactly the door's devices (K12), built from the settled tree, plus a
   newcomer whose token is a statement the tree would take now (`newcomer`), as the Aven Peer's relay does today.
@@ -125,7 +130,8 @@ thread's recommendation. Samuel may overrule any.
 
 - **The chat's logs:** every native Peer keeps every log it hears, as the Aven Peer does today. They are small, and
   that gives as many keepers as there are Peers.
-- **Files:** the keeper list is admin statements `keeper-add` and `keeper-remove`, naming a member device. When keep
+- **Files:** the keeper list is statements `keeper-add` and `keeper-remove`, naming a member device, each signed by
+  the admin's passkey (decision 12). When keep
   caps land (A22, milestone 3), each statement becomes a keep cap that Maia City's owners grant, with the same fields.
   A device with `--keep` offers itself, and an admin's avenOS shows the offer to accept.
 - **Two keepers per file,** chosen by rendezvous hashing: hash the file's index with each keeper's key and take the 2
@@ -167,7 +173,7 @@ every peer must reach the same tree from the same statements, whatever order the
 1. Drop every statement that fails its own checks, or whose past doesn't reach the genesis.
 2. **Tickets and withdrawals:** a withdrawal of ticket T wins over every claim of T that isn't in the withdrawal's past.
    A withdrawal that has a claim of T in its past changes nothing: that ticket was already used (`withdraw_used`
-   today).
+   today). Tickets and withdrawals count only when the admin's passkey signed them (decision 12).
 3. **Acks:** an ack names the claim it acks, by hash, and has it in its past. An admin device acks on its own whenever
    it syncs a new claim, but only the claim that stands in its own settled view, and never a second claim of a ticket
    that already has a final claim in that view. So finality waits only for an admin's device to be online.
