@@ -10,6 +10,8 @@
 {"expected":null,"input":"a2626f70582022c616aa24bab8360bf28b4c5cc743cd4836c363c0ac37bbecf9fed23e4a52ae66706172616d73a2666669656c647381667374617475736474797065582015f06611701e814d9a5ac38ac44cdf33ac0816c7930b1fc86ce2a549e81ddf75","name":"a call with its params out of order: refused on read"}
 {"expected":null,"input":"a2626f70581f0101010101010101010101010101010101010101010101010101010101010166706172616d73a26474797065582015f06611701e814d9a5ac38ac44cdf33ac0816c7930b1fc86ce2a549e81ddf75666669656c64738166737461747573","name":"a call whose op isn't 32 bytes: refused on read"}
 {"expected":"d:5ee79c756d45c6c7b573ff7a88b4e5fd67b664fb89b8a9bde2d099e3cc718430","input":"avenDB type of types 1","name":"the type of types"}
+{"expected":{"cbor":"a2626f7065636c61696d66706c7567696e66747265652f31","id":"b3:bd7fb4b44ccd26f3b65f81cb6dd991365b5c0165b94ef527e8e0a9e51e6328f0"},"input":{"op":"claim","plugin":"tree/1"},"name":"a plugin's op: tree/1's claim"}
+{"expected":{"fields":"fields","type":"type"},"input":null,"name":"core/1's write params"}
 {"expected":"d:5ee79c756d45c6c7b573ff7a88b4e5fd67b664fb89b8a9bde2d099e3cc718430","input":{"name":"type of types","namespace":"avenDB"},"name":"a built-in type: avenDB type of types"}
 {"expected":"d:acde56d9a200ac0faf87b38b3491d4f56d20b03aa951a0c590847b43a931c7c2","input":{"name":"cap","namespace":"avenID"},"name":"a built-in type: avenID cap"}
 {"expected":true,"input":{"bound":null,"value":"total"},"name":"does it allow? any value"}

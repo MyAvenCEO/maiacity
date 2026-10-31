@@ -523,6 +523,11 @@ def boundBytes : List Json :=
 def ops : List Json :=
   coreOps ++ calls ++
   [vector "the type of types" (utf8Text (k "avenDB type of types 1")) (typeOfTypes blake3).text] ++
+  [vector "a plugin's op: tree/1's claim" (Json.mkObj [("plugin", "tree/1"), ("op", "claim")])
+    (Json.mkObj [("cbor", hex (encode (OpId.stored "tree/1" "claim"))),
+      ("id", (OpId.ofPlugin blake3 "tree/1" "claim").text)]),
+   vector "core/1's write params" Json.null
+    (Json.mkObj [("type", utf8Text typeParam), ("fields", utf8Text fieldsParam)])] ++
   ([("avenDB", "type of types"), ("avenID", "cap")].map fun (ns, n) =>
     vector s!"a built-in type: {ns} {n}" (Json.mkObj [("namespace", ns), ("name", n)]) (builtinType blake3 ns n).text) ++
   (boundAllows.map fun (name, b, v, _) =>

@@ -818,10 +818,13 @@ the keeper, which can't read a Doc's facts. The Values a Doc's Records name, a f
 it.
 - **By default** a new vault's keep cap covers everything of its own, to Maia City's keeper, the Aven Peer acting for
   Aven (`defaultKeep`, `default_kept`). It is an ordinary grant: it holds only with its owners' approval (D14), however
-  the join collects it, and without one it breaks `.approval` (`default_approved`, `default_needs_owner`). One tap that
-  covers the join and the keep cap together is a change to the signed join text, for avenPEER's code threads, Lean
-  and Rust together. The vault can withdraw it or issue others. It doesn't reach below, so a vault it governs keeps its
-  own default.
+  the join collects it, and without one it breaks `.approval` (`default_approved`, `default_needs_owner`). The tree's
+  claim carries it as a cap Record, its body with its own approval beside it (A44, A30): the passkey's PRF gives the
+  owner key, which signs the claim and the keep cap in one tap, and no device need sign it (A28). A vault migrated
+  from production approves it at its next sign-in. `Cap.isDefaultKeep` checks that the cap a claim carries says
+  exactly what the default says, so its keeper keeps every Doc of the vault (`isDefaultKeep_kept`) and it holds only
+  with that vault's owners' approval (`isDefaultKeep_approved`). The vault can withdraw it or issue others. It doesn't
+  reach below, so a vault it governs keeps its own default.
 - **The owner always decides where its data goes.** A keep cap may not share, so no keeper passes data on: a chain
   that keeps has one holder, and every link after its root only attenuates (`keep_one_holder`). A cap keeps a Doc only
   as its root does, a grant by a vault with authority over it, its own or one it governs (`keeper_named_by_owner`).
@@ -1398,6 +1401,7 @@ Values, hashes, ops or targets of its own; its built-in types are `Aven.ID.Types
 | | `resolve_exact` | A keep cap's issuer hands its keeper exactly the Docs the cap covers, each with its first fetch key |
 | | `keepers_by_caps`, `holder_keeps`, `default_kept` | A Doc's keepers are exactly the vaults holding the caps that keep it; a new vault's default keep cap has every Doc of its own kept by Maia City's keeper (A22) |
 | | `default_approved`, `default_needs_owner` | The default keep cap is an ordinary grant: it holds only with its owners' approval, and without one it breaks `.approval` (D14) |
+| | `isDefaultKeep_kept`, `isDefaultKeep_approved` | A cap that says what the default says, as the tree's claim carries it, has its keeper keep every Doc of the vault, and holds only with that vault's owners' approval (A44) |
 | | `keepers_by_owner` | Every keeper of a Doc, by keep caps that are valid roots, is named by one its issuer's owners approved, with a line covering the Doc in its issuer's authority (A22) |
 | | `keep_one_holder` | No keeper passes a vault's data on: a keep cap may not share, so a chain that keeps has one holder, and every link after its root only attenuates |
 | | `keeper_named_by_owner` | A cap keeps a Doc only as its chain's root does, a grant by a vault with authority over every line, its own or one it governs: the owner decides who keeps (A22) |
@@ -1476,7 +1480,7 @@ One smaller gap:
 | `issuers.json` | Chains on the cast with the garden, a coop Alice and Bob own whose quorum each case gives, and its helper: a root over a coop's Docs needs the coop's own owners, a vault without devices issues by its owners' approval alone, an attenuation with no device needs its holder's owners, and Maia City's confirm cap (A28, A38). The context writes the tree out and gives per-vault quorums |
 | `expiry.json` | Writes under a cap that expires, with each envelope's signed time, and whether each counts for the clock |
 | `network.json` | A ticket's claims in two orders (A12), removals that clash, MaiaCityGuardian's exit |
-| `keep.json` | Fetch-key links in the order they came, with the keys a keeper takes, its current key and its flags; proofs and whether they're served; what each vault pays; what a keeper keeps under the keep caps it holds and its own offers (A44); 30 generated keepers |
+| `keep.json` | Fetch-key links in the order they came, with the keys a keeper takes, its current key and its flags; proofs and whether they're served; what each vault pays; what a keeper keeps under the keep caps it holds and its own offers (A44); how much each vault may keep, by those offers, and the uploads admitted within it; 30 generated keepers |
 
 `aven-id-model` answers the same cases a backend's property tests draw: a chain, who keeps a Doc, a Doc of envelopes
 with its revocations, and an envelope's authority, each in the form its vector's input takes (`Aven.ID.CapsModel`).

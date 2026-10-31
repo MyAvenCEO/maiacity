@@ -10,7 +10,7 @@
 
 pub mod json;
 
-use aven_core::{Hash, Value, blake3, decode, encode};
+use aven_codec::{Hash, Value, blake3, decode, encode};
 use aven_runtimes_contract::{Failure, Limits};
 use wasmi::{
     Config, Engine, ExternType, Instance, Linker, Memory, Module, Store, StoreLimits,

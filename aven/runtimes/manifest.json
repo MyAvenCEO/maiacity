@@ -14,6 +14,20 @@
       "hash": "b3:53c155913630175833b18fb763de7d1de9e3bcf2c0955b786e73379599efb456",
       "users": ["actor", "file"],
       "limits": { "part": 1048576, "fuel": 2000000000, "memory": 67108864, "output": 8388608 }
+    },
+    {
+      "name": "markdown-runtime",
+      "version": 2,
+      "hash": "b3:c0f818d4db85ee2ecef71652f732d8dbbd690ab200ab963e30358041d719456a",
+      "users": ["file"],
+      "limits": { "part": 1048576, "fuel": 2000000000, "memory": 67108864, "output": 8388608 }
+    },
+    {
+      "name": "face-runtime",
+      "version": 2,
+      "hash": "b3:b205f86ffbc3a8d0273332c4a858d311da7cf7641233135525f7dac88347b14d",
+      "users": ["actor", "file"],
+      "limits": { "part": 1048576, "fuel": 2000000000, "memory": 67108864, "output": 8388608 }
     }
   ]
 }
