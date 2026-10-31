@@ -2791,3 +2791,19 @@ changed. A refinement names what it refines; a change of mind names what it supe
 - **Why:** one concept, one owner (A45): the Peers made them and use them, and Core already counts logs.
 - **Supersedes:** —
 - **Lean or code then:** to come: thread E, after the wire split (#1745).
+
+### A194 · History entries: their name and shape
+- **Decided by:** the architect, on thread E's plan for A193 (12:28)
+- **Decision:** a peer's address entries, log tips and release entries are **history** (A31, A42), never "records" or
+  "notices": their Lean is `Aven.Peer.History`. Each entry is a Core envelope in its signer's own history log, whose
+  writer id comes from (signer, generation); `seq` counts and `prev` chains. Its body is a map with exactly one key
+  naming what it is, `{"address": …}`, `{"tip": …}` or `{"release": …}`, never a `kind` field (A1). It counts by Core's
+  `Counts`, with fit as the entry's shape and `authorized` as who may sign it (a device about itself, admitted by the
+  door; a release signer for a release). The newest entry about one thing is the counting one with the greatest
+  (generation, seq), and splits are Core's. Presence stays the only beat (A35). The tree's tip is no beat and no entry:
+  the register is a Doc, and its tips travel by `doc_tips` as any Doc's do; gen1 keeps its own until the cutover.
+- **Why:** one word per thing (A1): the glossary already says notices → history; one counting rule (rule 4); and the
+  register is synced as a Doc (stage 4).
+- **Supersedes:** A193 (in part: the name `Aven.Peer.Records`)
+- **Lean or code then:** to come: thread E, stacked on #1745, with `Aven.Peer.CatchUp`, `rehome_*` beside the history,
+  `records.json` to `peer/spec/vectors` as `history.json`, and `speaks` into `Aven.Peer.Wire`.
