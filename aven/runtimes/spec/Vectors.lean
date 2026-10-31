@@ -20,6 +20,10 @@ by default), where they are committed. Every vector is `{"name", "input", "expec
   (`Aven.Runtime.State`): the task and list actors of the todo app, hostile parts and inputs among them.
 - `contrast.json`: `linear`, the table every contrast check uses, then pairs of colours with their luminances and
   whether they reach 4.5:1 and 3:1.
+- `markdown.json`: headings and the ids markdown-runtime gives them; links under rules and what they become, or null
+  when only their text stays (`Aven.Runtime.Markdown`).
+- `face-runtime.json`: a face part and face data in the one codec; the result the host hands on, the tree, the style
+  as typed rules and the placements, or the failure (`Aven.Runtime.FaceRuntime`).
 - `markup.json`: markup and face data; the drawn tree, the placements, and whether face-runtime gives the face
   (`faceRun`). The todo app's row and list, and hostile markup whose tags, attributes, URLs and events must go.
 -/
@@ -277,6 +281,23 @@ def markupVectors : List Json :=
 -- the row is a face face-runtime gives
 #guard (faceRun ⟨rowMarkup, []⟩ (obj [("title", txt' "Buy milk")])).isSome
 
+/-! ## markdown-runtime -/
+
+def markdownVectors : List Json :=
+  headingExamples.map (fun (name, hs, _) =>
+      vector name (Json.mkObj [("headings", toJson hs)]) (Json.mkObj [("ids", toJson (slugs hs))])) ++
+  linkExamples.map fun (name, href, _) =>
+    let rules := avenBrainRules ++ [("evil:", "javascript:")]
+    vector name (Json.mkObj [("rules", Json.arr (rules.map fun (a, b) => Json.arr #[a, b]).toArray), ("href", href)])
+      (Json.mkObj [("href", match rewrite rules href with | some h => Json.str h | none => Json.null)])
+
+/-! ## face-runtime -/
+
+def faceRuntimeVectors : List Json :=
+  faceRuntimeExamples.map fun (name, p, i) =>
+    vector name (Json.mkObj [("part", hex (encode p)), ("data", hex (encode i))])
+      (Json.mkObj [("result", hex (encode (result (run faceRuntime roomy' p i))))])
+
 /-- One vector per line, so a change reads as a diff of lines. -/
 def render (vs : List Json) : String :=
   "[\n" ++ ",\n".intercalate (vs.map Json.compress) ++ "\n]\n"
@@ -286,5 +307,6 @@ def main (args : List String) : IO Unit := do
   IO.FS.createDirAll dir
   for (file, vs) in [("table.json", table), ("registry.json", registryVectors), ("tree.json", treeVectors),
       ("face.json", faceVectors), ("contrast.json", contrastVectors), ("contract.json", contractVectors),
-      ("state.json", stateVectors), ("markup.json", markupVectors)] do
+      ("state.json", stateVectors), ("markup.json", markupVectors),
+      ("markdown.json", markdownVectors), ("face-runtime.json", faceRuntimeVectors)] do
     IO.FS.writeFile (dir / file) (render vs)

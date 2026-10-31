@@ -14,7 +14,7 @@ this repository, `run(part, input) → output`. Three kinds of users need runtim
 
 This file is a plan, written on 30 Oct 2026 (Samuel: "just plan them, don't start them"). Nothing here is built yet: no
 crate, no Lean file, no change to the box. It says what comes later and in what order, and records Samuel's answers to
-its questions ([Decisions](#decisions)). The words are those of [`GLOSSARY.md`](../DB2/GLOSSARY.md).
+its questions ([Decisions](#decisions)). The words are those of [`GLOSSARY.md`](../DB2/brain/GLOSSARY.md).
 
 ## Contents
 
@@ -146,9 +146,13 @@ aven/runtimes/
                      (native for the Peer, the kernel and the engine; wasm for a browser worker)
   freeze/            the reproducible build and the checks: no imports, declared memory, hash = manifest
   registry/          aven-runtimes-registry: the file registry, the sniffer, decide(); built native and to wasm
-  tree/              the node-tree allowlist, shared with actors' faces
-  formats/           file runtimes, one crate each, wasm32: text/ json/ csv/ markdown/ svg/ pdf/
-  actor/             actors' runtimes when they move in: state/ js/ face/
+  tree/              built: the node-tree allowlist, shared by every runtime that draws and the applier
+  contract/          built: the contract's failures, limits, results and render keys
+  markdown/          built: markdown-runtime, the first file runtime (the docs need it first)
+  face/              built: face-runtime, markup and style as data to a checked tree; here, not under actor/, since
+                     it comes before actors and serves the docs wiki as much as actors' faces
+  formats/           file runtimes still to come, one crate each, wasm32: text/ json/ csv/ svg/ pdf/
+  actor/             actors' runtimes when they move in: state/ js/
   plugins/           plugin runtimes when they move in: ontology/
   drawers/           the trusted host code that draws checked output: tree (the applier), pixels, table
   hostile/           hostile parts and files per runtime, and the fuzz targets

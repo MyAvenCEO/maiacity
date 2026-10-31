@@ -1,0 +1,19 @@
+/* avenBRAIN's tokens (STYLE.md): an illustrated asset sheet. A warm cream ground, bold navy type, the drawings'
+   ochre paths. Scoped to `.brain`, the root of every view of Brain, so avenOS's own tokens (os/web/style.css) stay as they
+   are. The slides write these values out (slide.css), since the face-runtime takes no custom properties. */
+.brain {
+	--brain-cream: #f8eee2;
+	--brain-card: #fffaf2;
+	--brain-line: #e6d8c4;
+	/* navy 11:1, quiet 6.6:1, ochre ink 6.1:1 and teal ink 6.6:1 on the cream (5.5:1 on a code chip) */
+	--brain-navy: #23324a;
+	--brain-quiet: #4a5468;
+	--brain-ochre-ink: #7d4f12;
+	--brain-teal-ink: #245a61;
+	--brain-ochre: #c4923f;
+	--brain-mauve: rgb(143 123 134 / 0.3);
+
+	/* type: one clean sans, bold for names, bundled (os/web/main.js) */
+	--brain-sans: 'Inter Variable', system-ui, sans-serif;
+	--brain-radius: 16px;
+}

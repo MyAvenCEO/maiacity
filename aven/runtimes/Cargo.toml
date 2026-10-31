@@ -3,7 +3,7 @@
 # repository's root workspace excludes this folder, as it excludes aven/DB2.
 [workspace]
 resolver = "3"
-members = ["tree"]
+members = ["tree", "contract", "markdown", "face"]
 
 [workspace.package]
 edition = "2024"

@@ -3,6 +3,7 @@ import Aven.ID.Gen
 import Aven.ID.Restore
 import Aven.ID.Records
 import Aven.ID.Node
+import Aven.ID.CatchUp
 
 /-! # The settled tree's vectors (PEERS.md §5 and §6)
 
@@ -23,7 +24,8 @@ def GuardianKeys.json (g : GuardianKeys) : Json :=
 
 def Genesis.json (g : Genesis) : Json :=
   Json.mkObj [("rpId", g.rpId), ("origins", toJson g.origins), ("claimant", g.claimant), ("passkey", g.passkey),
-    ("devices", toJson g.devices), ("coop", g.coop), ("agent", g.agent), ("avenPeer", g.avenPeer),
+    ("devices", toJson g.devices), ("coop", g.coop), ("coopOwners", toJson g.coopOwners), ("agent", g.agent),
+    ("avenPeer", g.avenPeer),
     ("guardian", GuardianKeys.json g.guardian), ("signedBy", toJson g.signedBy)]
 
 def TreeSays.json : TreeSays → Json
@@ -259,6 +261,30 @@ def nodeVectors : List Json :=
           ("home", Json.mkObj (members.map fun d => (d, (home n gone d).elim Json.null toJson))),
           ("reaches", Json.mkObj (members.map fun a => (a, toJson (members.filter (reaches n gone a))))),
           ("fetchesChat", toJson (members.filter fun a => a != gone && fetchable n gone a "chat"))])]
+
+/-! ## Catch-up and presence (`Aven.ID.CatchUp`) -/
+
+open CatchUp in
+def catchUpVectors : List Json :=
+  let tip : Tip := ⟨3, 33⟩
+  let sources : List (List (String × Copy)) :=
+    [[("stale-peer", [11, 22]), ("forger", [11, 22, 99]), ("alice-peer", [11, 22, 33, 44])],
+     [("alice-peer", [11, 22, 33])], [("stale-peer", [11, 22])], [("forger", [11, 22, 99]), ("bob-peer", [11, 22, 33])],
+     []]
+  let copyJson (c : String × Copy) := Json.mkObj [("source", c.1), ("copy", toJson c.2)]
+  (sources.zipIdx.map fun (ss, i) =>
+    Json.mkObj [("name", s!"catch-up: sources {i + 1}"),
+      ("input", Json.mkObj [("tip", Json.mkObj [("number", toJson tip.number), ("hash", toJson tip.hash)]),
+        ("sources", Json.arr (ss.map copyJson).toArray)]),
+      ("expected", Json.mkObj [("chosen", (choose tip ss).elim Json.null fun c => toJson c.1),
+        ("caught", toJson ((ss.filter fun c => caught tip c.2).map (·.1)))])]) ++
+  (([15, 17, 18, 20] : List Nat).map fun now =>
+    Json.mkObj [("name", s!"presence at step {now}, window 3"),
+      ("input", Json.mkObj [("admitted", toJson ["bob-light", "alice-peer"]), ("window", toJson (3 : Nat)),
+        ("now", toJson now), ("beats", Json.arr (CatchUpExamples.beats.map PeerRecord.json).toArray)]),
+      ("expected", Json.mkObj [("present",
+        toJson (["alice-peer", "aven-peer", "bob-light"].filter
+          (present CatchUpExamples.admitted 3 now CatchUpExamples.beats)))])])
 
 end SettleJson
 end Aven.ID

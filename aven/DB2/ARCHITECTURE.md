@@ -3,7 +3,7 @@
 This document is the one map of every part of avenDB. It says what each part is for and which few primitives they all
 share. It also gives the words the parts use, the rules that hold across all of them, and how the whole stands up to
 end-to-end encryption, local first and peer to peer. Each part's own spec has the detail; this document links to it
-and owns only what is shared. Every term of every part, with what should merge, is in [`GLOSSARY.md`](GLOSSARY.md).
+and owns only what is shared. Every term of every part, with what should merge, is in [`GLOSSARY.md`](brain/GLOSSARY.md).
 
 It was written on 30 Oct 2026 from six audits of the specs as they stood at main `2c1a9890`, one per part, and
 updated for caps D13 to D20. Proposals are marked **A1** to **A25**
@@ -61,7 +61,7 @@ settles it as drawn here.
 ## The primitives everything shares
 
 These are the shared words. Every spec uses each of them in exactly this sense. The specs define about 300 terms
-today; these 27 carry the whole design. [`GLOSSARY.md`](GLOSSARY.md) maps every other term onto them.
+today; these 27 carry the whole design. [`GLOSSARY.md`](brain/GLOSSARY.md) maps every other term onto them.
 
 | Primitive | Its one meaning | Owned by | Replaces |
 |---|---|---|---|
@@ -133,6 +133,14 @@ touches.
     hold them, and no origin that serves files or other code is the safe's origin.
 14. **One protocol of ours.** `aven/db/1`, with iroh's gossip and blobs beside it on one `Router`. Every format is
     named and versioned, and Lean comes first, with vectors for every format.
+15. **Vaults own; signers only sign** (Samuel, 31 Oct 2026). Only a vault owns things, holds caps and is an admin,
+    as a smart account does. A key (a passkey, a device key, a release or guardian key) never holds authority itself:
+    it signs for a vault, as one of its owners (k of n, D14) or as its device within its device cap. Every cap is
+    issued by a vault and held by a vault; caps delegate between vaults, never between signers (**A28**).
+16. **Clean architecture only, never a patch** (Samuel, 31 Oct 2026: "don't do weird patching, only clean
+    architecture, always"). A fix goes where the primitive is, once, for every use of it. Nothing is built for a
+    structure that is about to go, such as the chat's chains before the chat is a Doc; until the clean form exists, the
+    old one stays as it is.
 
 ### The rules in Lean
 
@@ -155,11 +163,14 @@ cap writes on main and allows each step (caps' `merge_covered`, #1601, #1604, #1
 
 Rule 14 is a property of the node, held by the format vectors and the box's check; no theorem is planned for it.
 
+Rules 15 and 16 are new (31 Oct 2026). Caps rule 1 ("keys sign; vaults hold") holds rule 15 for caps today. Its other places,
+where a key still holds authority itself, are listed in **A28**, and each is fixed Lean-first before its code.
+
 ## One vocabulary
 
 Of about 300 terms, about 40 mean two or more things across the specs, and about 30 pairs name one thing twice. Every
 homonym is a place where two threads building in parallel will diverge. These are the merges that matter most; the
-full list, part by part, is in [`GLOSSARY.md`](GLOSSARY.md) (**A1**).
+full list, part by part, is in [`GLOSSARY.md`](brain/GLOSSARY.md) (**A1**).
 
 | Word | Today it means | Proposed |
 |---|---|---|
@@ -582,8 +593,12 @@ Each proposal comes with a recommendation; "yes" means the architect recommends 
 the spec that owns it.
 
 **Before any docs or engine code**
-- **A1. One vocabulary:** this document and [`GLOSSARY.md`](GLOSSARY.md) are the single source for shared words and
-  cross-part rules, and every spec uses them in this sense. *Decided: yes (Samuel, 30 Oct 2026).*
+- **A1. One vocabulary:** this document and [`GLOSSARY.md`](brain/GLOSSARY.md) are the single source for shared words and
+  cross-part rules, and every spec uses them in this sense. *Decided: yes (Samuel, 30 Oct 2026).* **Its verdicts are
+  decided too** (Samuel, 31 Oct 2026: "yes for all the glossary"), with two of them corrected by the terminology audit:
+  `Gate` → `Admission` (a `Door` type exists) and the engine's part → level (caps has a share depth). They apply in
+  specs and Lean now, each by the thread that owns the file, and in code only when that code is rewritten anyway
+  (rule 16). Stored formats keep their names: the `claim` ref, the chat's frozen lines and the `network` field.
 - **A2. One codec and signing rule** for everything signed (K1, rule 1). It started with the chat's lines in the
   security fixes (#1493). Samuel asked for "the best-practice encoding possible", shared by avenDB and the actors
   (30 Oct 2026). The recommendation is **deterministic CBOR**, RFC 8949's core deterministic encoding, in a strict
@@ -664,6 +679,94 @@ the spec that owns it.
   *Decided: yes, as the architect recommends (Samuel, 30 Oct 2026: "do as you believe").*
 - **A16. Hosting an actor on the Aven Peer is an explicit read cap** per actor and per load target, shown to its
   owner; a member's own Peer is the default home. *Decided: yes (Samuel, 30 Oct 2026).*
+- **A28. Vaults own; signers only sign** (rule 15). *Decided: yes (Samuel, 31 Oct 2026: "only vaults can own things
+  and be admins; signers are just signers authorized to act for a vault"; "all caps always delegate between vaults,
+  never between signers"; vaults are like smart accounts).*
+  - **The network tree's admin is Maia City's vault,** not the claimant's passkey. An admin act counts when Maia
+    City's owners approve it (D14): tickets, withdrawals, the relay and keeper lists. Only passkeys sign as owners, so
+    "the more secure way" (31 Oct) holds. Today that is one tap of Samuel's passkey, since his vault owns Maia City. A
+    second admin, an owner change and recovery are ordinary governance of the vault, with no new genesis.
+  - **Release keys and the guardian** become vaults' signers, named by the genesis as vaults and changed by their
+    owners' approval. avenPEER's `settle` takes the admin's approval from each statement's own past, so settling stays
+    order-free.
+  - **Every place a key still holds authority** is in [`audits/vaults.md`](audits/vaults.md), each fixed Lean-first
+    before its code:
+    - the guardian, one key owning every person's vault, becomes the guardian's vault, its key that vault's owner;
+    - the genesis's `origins`, `avenPeer` and guardian become Maia City's to change, by its owners' approval;
+    - the running code's first signup and unsigned flags give way to the pinned genesis (A11);
+    - a claim is final by a vault's grant, not an admin device's ack;
+    - release signers become the release vault (A36);
+    - a root cap over a coop's Docs needs the coop's own owners, k of n, not one governing vault alone;
+    - a ticket is a cap from Maia City to the vault its claim founds, the one-time key only authorizing the claim;
+    - the relay and keeper lists name vaults, not devices;
+    - each vault stores its own threshold k.
+- **A29. Frames in CBOR.** The wire's frames move from JSON lines to Core's canonical CBOR, the one codec (rule 1),
+  replacing actors' "frames as JSON lines". It ships as a wire-version bump (PEERS §7), which updates open tabs by
+  itself. *Decided: yes (Samuel, 31 Oct 2026).*
+- **A30. One name for a signed thing:** the hash of `[label, body]`, its signatures beside it, so signing one act
+  twice never makes two names. A split is two different bodies at one place (A4). The tree's statements become Core
+  envelopes on Core's past. *Decided (the architect, 31 Oct 2026): it follows from rule 1 and A4.*
+- **A31. Two kinds of signed thing:** history (envelopes in a log, where a split is final) and beats, which decide
+  nothing. An address or release record is history: an envelope in its signer's own log, the newest the latest there,
+  so the "smaller body wins" tie-break goes. *Decided (the architect, 31 Oct 2026): it follows from A4.*
+- **A32. Caps are built from ops.** *Decided: yes (Samuel, 31 Oct 2026: "caps should be built from their ops").*
+  A cap line names an operation by its hash (rule 1's name of its stored form) and bounds on its parameters, and nothing
+  else.
+  - **The core verbs are ops:** read, put, patch, remove, edit, tell, keep and share are the core plugin's (`core/1`).
+    Free editing is `edit` on a type and field. Reading is still the key (rule 5): `read`'s check is holding it.
+  - **The Doc an op acts on is a parameter,** bounded by a target over the Doc's birth facts (its id, vault, type and
+    the actor that spawned it), never by a query over content, so what a cap covers can't drift with the data (caps
+    rule 6, A8). A keep cap's target is resolved to Doc ids by its issuer's devices for a blind keeper (#1642). The
+    targets are three forms: a Doc (with what it spawned or lists, or not), a vault's Docs and a vault's Docs of one
+    type, each with the vaults below or not.
+  - **A query's flexibility comes as a collection** (Samuel, 31 Oct 2026: "photos tagged beach from 2026"): a Doc of
+    the sharing vault that lists Docs, like a smart album. The vault's devices run the query, an op, and sign each
+    change to the list; a cap names the collection and what it lists. So what a cap covers changes only by its
+    issuer's signed act, never because someone edited a tag, and anyone can check it, keepers too. A Doc that leaves
+    the list is dropped by the holder's devices at their next sync (A40).
+  - **Footprints are computed from an op's lowering** (E1 to E3), never written in a cap, so what an owner approves is
+    the op's name and definition, exactly what it lets the holder do. An envelope names the op it ran; a reader checks
+    the cap lists it and the steps are what it produces.
+  - **Narrowing is a subset:** fewer ops, or tighter bounds. An op is pinned by its hash, and a vault adopts a new
+    version as it adopts an actor's (`replaces`), so a grant never changes behaviour by itself.
+  - **One list of what can be done:** an actor's `describe`, an app's actions and the record of who did what are the
+    ops a caller's caps allow.
+  - Lean first, before any caps code: Core's `Verb` and `Grant`, caps' `Line` and the engine's op declaration become
+    one.
+- **A39. Every Doc has a type, always** (Samuel, 31 Oct 2026: "no doc can be without type ever"). A Doc's genesis
+  fixes its root type with its vault (docs D11), and Core's `Facts.type` is never empty. That holds for every kind of
+  Doc: the network tree, a carrier Doc, the release vault's Doc, an actor's Doc, a catalogue, a period Doc. A type Doc's
+  own type is the one built-in type of types. *Decided: yes.*
+- **A33. An actor's message is an envelope** in the carrier Doc of its two vaults (A17), born with the first letter
+  through the letterbox, and delivered as any Doc's envelopes are (K11): live by the pair's gossip, caught up by
+  reconciliation; a direct connection is a faster path for the same sync. The receiver's turn names the message by hash
+  (rule 2), which is its receipt; the delivery `ack` frame goes. *Decided (the architect, 31 Oct 2026): it follows
+  from A17 and K11; for milestone 3.*
+- **A34. Catch-up on Doc logs only.** Thread C's catch-up is written for Core's log, never for the chat's chains. The
+  tree is the first Doc (A12, A30), the chat the second, moving onto a Doc with no interim fix and its history read as
+  it is; members catch up the chat from each other once it is a Doc, and the chat's wants, sync and queries are then
+  every Doc's. *Decided: yes (Samuel, 31 Oct 2026: "don't do weird patching, only clean architecture, always").*
+- **A35. One presence:** a signed beat per device, ordered by its counter, its time a claim (rule 12). The hub's
+  connection count, the chat's `here` and `bye`, and the wire's `Beat` frame go, with thread C. *Decided (the
+  architect, 31 Oct 2026).*
+- **A36. Releases:** one release record per package, ordered by its dated version (`@aven/os@26.10.31`), an envelope
+  in the release vault's Doc, which the genesis names and whose owners approve each record. The ALPN `aven/db/1` is a
+  frozen name; the hello's number is the only wire version (#1649); a format's label is its version. *Decided (the
+  architect, 31 Oct 2026); who owns the release vault is for Samuel, with thread E's signer proposal.*
+- **A37. state-runtime returns K8's steps** (put, patch, remove, edit at a path), which are the turn's commit and the
+  footprint caps check, never a whole new state. *Decided (the architect, 31 Oct 2026): it follows from A19.*
+- **A38. Membership is a cap:** Maia City's vault grants each member's vault a member cap, which is what a join is. A
+  member shows its chain and anyone checks it (rule 4), so no device needs the roster; the tree keeps Maia City's
+  governance and its withdrawals. The confirm op Aven holds under Maia City's cap issues the member cap, for a claim of
+  a ticket Maia City issued. *Decided: yes (Samuel, 31 Oct 2026).*
+
+- **A40. Holdings follow caps** (Samuel, 31 Oct 2026). A device or keeper holds only what its caps cover (rule 6:
+  wants ∩ caps), so whenever coverage shrinks, honest peers drop the bytes and keys at their next sync: a delete (for
+  everyone), a Doc leaving a collection, a revoked or narrowed cap, a withdrawn keep cap. One rule instead of four. Its
+  limit is honest: a copy someone deliberately took outside avenOS can't be reached by any system. *Decided: yes.*
+
+- **A41. avenOS's documentation is "Brain"** (the tab and `#/brain`), so "Docs" means only avenDB's Docs. *Decided:
+  yes (Samuel, 31 Oct 2026).*
 
 **The engine and actors**
 - **A9. The want queue** as in [Massive data](#massive-data-wants-decide-what-moves). Its laws go into Lean before
@@ -755,7 +858,7 @@ the spec that owns it.
   - rotating a Doc's key shuts removed readers out of everything after it;
   - once every key holder drops a Doc's keys, any copy left anywhere is unreadable.
 
-  What a reader has already seen can't be unseen; no system can (rule 15). The Lean for all of this, and for the rest
+  What a reader has already seen can't be unseen; no system can. The Lean for all of this, and for the rest
   of PEERS threads B to F, comes before their code (Samuel, 31 Oct 2026: "do all lean for these things first").
 - **A23. Acks can't launder:** a revoked holder's envelope never counts if the revocation is in its past. *Done in
   caps (#1499), as what D8 meant.*
@@ -780,8 +883,8 @@ codec, names, envelopes, logs and the target grammar, defined once.
 | avenBRAIN | The docs wiki in English (Samuel, 31 Oct 2026), its style and slides, one concept each; the global glossary; renders through `face-runtime` and `markdown-runtime` once they land |
 | PEERS planning | `PEERS.md`: relays, address records, catch-up and keepers peer to peer, upgrades by wire version; the tree's Lean with caps (**A10** to **A13**) |
 
-One model across them all, `Aven.Architecture`, proves the rules above across parts: 13 of 14 since 30 Oct 2026
-(see "The rules in Lean"). Whatever its proofs expose comes back into this document.
+One model across them all, `Aven.Architecture`, proves the rules above across parts: 13 of 14 since 30 Oct 2026,
+and rules 15 and 16 are new (see "The rules in Lean"). Whatever its proofs expose comes back into this document.
 
 Text fixes that need no decision (broken links to `aven/ID/caps` and `aven/actor`, wrong rule numbers, stale
 milestone numbers) go to each spec's own thread.

@@ -57,10 +57,10 @@ thread's recommendation. Samuel may overrule any.
    open question 1.
 8. **Each vault chooses its keepers, by keep caps** (Samuel, 31 Oct 2026; A22). The admin's keeper list says who
    offers to keep. A vault's keep caps say which keeper holds which of its Docs and Values. A new vault starts with one
-   keep cap for everything to Maia City's keeper (the Aven Peer, acting for Aven), and changes it or adds others as it
-   likes. Keepers stay blind. Files are no special case: a file's chunks are Values that a file Record in its Doc names,
-   kept as that Doc is. Every native Peer also keeps the chat's logs it hears. Any peer may keep, and none is
-   special.
+   keep cap for everything to Maia City's keeper (the Aven Peer, acting for Aven), approved by its owner with their
+   join, and only its owner changes it or adds others (Samuel, 31 Oct 2026). Keepers stay blind. Files are no special
+   case: a file's chunks are Values that a file Record in its Doc names, kept as that Doc is. Every native Peer also
+   keeps the chat's logs it hears. Any peer may keep, and none is special.
 9. **What stays special is named, signed or on its way out** ([8](#8-what-stays-special)). The claim becomes the
    signed genesis that every member pins (A11). The guardian is named in what people sign (A13). The `maia.city` origin
    stays special until Samuel takes up A14.
@@ -70,15 +70,20 @@ thread's recommendation. Samuel may overrule any.
     and changed rarely. A peer refuses any other wire version with "update to join", and never falls back (README rule
     9). The Service Worker and native Peers read one signed release record. Stored formats stay readable forever,
     tested against frozen vectors, because production is never wiped ([7](#7-upgrades)).
-12. **The admin's passkey signs what changes who is in or who sees whom.** Tickets, withdrawals, and the relay and
-    keeper lists are signed by the admin's passkey, a tap each time; an admin device's key only acks claims, which it
-    does on its own (Samuel, 31 Oct 2026: "choose the more secure way"). Reason: a stolen or compromised browser can't
-    let anyone in, or route members through a relay that logs their addresses (`adminPasskey` in `Aven.ID.Network`).
+12. **Maia City's vault is the admin; its owners approve what changes who is in or who sees whom** (rule 15, A28;
+    Samuel, 31 Oct 2026: "a tree admin should always be a VAULT, never an individual signer"). Tickets, withdrawals,
+    and the relay and keeper lists count only with the approval of Maia City's owners, k of n through the vaults that
+    own it (`byAdmin`, `Tree.approves`, `admin_by_owners`). Owner keys are passkeys and MaiaCityGuardian, never a
+    device's key (`device_not_admin`), so "the more secure way" (31 Oct) holds: today one tap of Samuel's passkey, since
+    his vault owns Maia City. A device of a vault that owns Maia City acks claims for it, within its device cap, on its
+    own (`acker`). A second admin, an owner change or recovery is ordinary governance of the vault, with no new genesis.
+    Reason: a stolen or compromised browser can't let anyone in, or route members through a relay that logs their
+    addresses.
 
 ## 1. Several relays
 
 - **The relay list** is part of the tree: statements `relay-add` (a member device's key and its relay's HTTPS URL)
-  and `relay-remove`, each signed by the admin's passkey (decision 12). The tree settles the list as it settles
+  and `relay-remove`, each approved by Maia City's owners (decision 12). The tree settles the list as it settles
   everything else ([5](#5-one-rule-for-the-tree)).
 - **Any member's Peer can run a relay** with `--relay`, as the Aven Peer does today. The flag no longer means "this is
   the Aven Peer". A relay on the list admits exactly the door's devices (K12), built from the settled tree, plus a
@@ -100,8 +105,9 @@ thread's recommendation. Samuel may overrule any.
 ## 2. Entry through any member
 
 - **Address records.** Each device signs a record of how to reach it: its key, its home relay URL, its direct addresses
-  and a counter. A newer counter replaces an older record. Records travel on gossip, every peer keeps the newest one per
-  device, and the records feed `MemoryLookup`. A record from a device the door doesn't admit is dropped.
+  and a counter, its place in the device's own log (A31). The latest place replaces an older record; two records at one
+  place are a split, and a split is final (A4). Records travel on gossip, every peer keeps the newest one per device,
+  and the records feed `MemoryLookup`. A record from a device the door doesn't admit is dropped.
 - **Gossip bootstrap.** A peer joins the room through up to 3 members it holds an address for: the Aven Peer is one
   candidate, not the default. It tries the members it last heard from first. `--aven` and `--aven-key` become
   `--bootstrap KEY@ADDR` (repeatable), for a first start with an empty store.
@@ -132,12 +138,13 @@ thread's recommendation. Samuel may overrule any.
 ## 4. Any member's Peer as a keeper
 
 - **Who offers:** the keeper list is statements `keeper-add` and `keeper-remove`, naming a member device, each signed
-  by the admin's passkey (decision 12). A device with `--keep` offers itself, and the admin's avenOS shows the offer to
+  by Maia City's owners (decision 12). A device with `--keep` offers itself, and the admin's avenOS shows the offer to
   accept. Being on the list keeps nothing by itself.
 - **Who keeps what:** a vault's keep caps (A22), each naming a keeper from the list and a target, which may be a query
   (A8). Samuel, 31 Oct 2026: caps decide which vault gets which Docs and Values, and each vault decides itself.
-- **The default:** every new vault issues one keep cap for everything to Maia City's keeper, the Aven Peer acting for
-  Aven (`default_kept`). The vault can change it or add others in avenOS.
+- **The default:** every new vault's owner approves one keep cap for everything to Maia City's keeper, the Aven Peer
+  acting for Aven, as part of what they sign to join (`default_kept`). The owner can change it or add others in
+  avenOS; no one else can.
 - **Two holders, the vault's choice:** a Doc is held by its writers' own devices and by the keepers its vault's keep
   caps name. With the default alone, the Aven Peer is its one keeper: a Doc whose writer's devices are all offline is
   then fetchable only while the Aven Peer is up. A vault that adds a keep cap naming a second keeper keeps its Docs
@@ -145,6 +152,16 @@ thread's recommendation. Samuel may overrule any.
 - **Files are no special case:** a file's chunks and its chunk list are Values that a file Record in a Doc names
   (`db/docs`), kept and read as that Doc is. Until Docs come (milestone 4), the chat's `file` posts stand for that
   Record, and a keeper keeps a file under the keep caps of the vault whose device posted it.
+- **The vault's owner decides** (Samuel, 31 Oct 2026: "a Vault owner always decides, where its data gets shared
+  to"; A22, #1636). The default keep cap is the owner's own: approved as part of what the owner signs to join, and
+  naming its keeper. No one else can extend it, not Maia City and not a keeper passing data on. A new keeper needs a
+  new keep cap from the owner. A member who joined before the default existed approves it at their next sign-in, where
+  avenOS shows what it covers and to whom.
+- **Forgetting** (`Aven.ID.Forget`, D5): a key rotation shuts a removed reader out of every epoch after it
+  (`rotation_shuts_out`); once no party holds a Doc's keys, no sealed copy any keeper still holds is readable by
+  anyone (`forgotten`, `forgotten_unreadable`), with sealing taken as sound. What a reader copied before stays its own,
+  and nothing takes it back (`copied_stays`). Keepers dropping the bytes themselves, on a withdrawn keep cap or a
+  delete, is the caps thread's (D2, D3).
 - **The chat's logs:** every native Peer keeps every log it hears, as the Aven Peer does today. They are small.
 - **A keeper leaves** when its `keeper-remove` settles, or when it hasn't beaten for 7 days. Its keep caps then name
   a keeper that isn't there: avenOS tells the vault's owners, and the default keeper still holds what it covers. A
@@ -183,7 +200,7 @@ every peer must reach the same tree from the same statements, whatever order the
 1. Drop every statement that fails its own checks, or whose past doesn't reach the genesis.
 2. **Tickets and withdrawals:** a withdrawal of ticket T wins over every claim of T that isn't in the withdrawal's past.
    A withdrawal that has a claim of T in its past changes nothing: that ticket was already used (`withdraw_used`
-   today). Tickets and withdrawals count only when the admin's passkey signed them (decision 12).
+   today). Tickets and withdrawals count only with Maia City's owners' approval (decision 12).
 3. **Acks:** an ack names the claim it acks, by hash, and has it in its past. An admin device acks on its own whenever
    it syncs a new claim, but only the claim that stands in its own settled view, and never a second claim of a ticket
    that already has a final claim in that view. So finality waits only for an admin's device to be online.
@@ -219,8 +236,9 @@ In `Aven.ID.Network`, with the caps thread (`ticket_once` is there since #1531),
   same (`restore_agrees`). A proof of that agreement for every store is open.
 - **Records** (`Aven.ID.Records`): the record kinds of [6](#6-signed-records-not-a-peers-word), each under its own
   label, and which is newest: `newest_set` (no order is an input), `newest_signed` (only the device it is about, or a
-  release signer), `newest_agree` (two newest say the same; a split takes the smaller body), `newest_grows`, and
-  `speaks_same` for the wire version ([7](#7-upgrades)).
+  release signer), `newest_agree` (two newest say the same), `split_final` (address and release records are history in
+  their signer's own log, A31: once a split is held, nothing at or after it counts), `newest_grows`, and `speaks_same`
+  for the wire version ([7](#7-upgrades)).
 - **Node** (`Aven.ID.Node`, the architecture's R3, R7 and R9; the architect, 30 Oct 2026): a write fits on the
   device's own log alone (`write_fits`, `write_chain`), and a split's proof reaches every reader that syncs with a peer
   holding it (`split_spreads`); with two relays every member can use, losing any one peer leaves every member reachable
@@ -254,9 +272,27 @@ claims of its ticket without seeing each other. Both need a leaked link or a dou
 
 Production is never wiped (PRODUCTION.md). Its store holds the claim, two sign-ins and whatever invites and joins
 milestone 2 adds, under their ref names. The peer reads them as they are and treats the old claim as the genesis's
-past: Samuel signs the genesis once, with his passkey and the guardian's key, naming the old claim's hash.
-`settle_restore` shows the tree doesn't move, and a frozen copy of production's store format is tested, as
-`id/core/tests/before/` is today.
+past: Samuel signs the genesis once, with his passkey and the guardian's key, naming the old claim's hash. A frozen
+copy of production's store format is tested, as `id/core/tests/before/` is today.
+
+**The migration's guarantee** (the architect, 31 Oct 2026): three things together, checked on production's own store
+before anything switches.
+1. `settle_restore` and `settle_restore_door` (proved, `Aven.ID.Restore`, `Aven.ID.RestoreDoor`): every stored
+   statement counts after migration, and for every clean store the settled door admits exactly its device keys.
+2. `isClean` on production's store: it is a store `Members.restore` reads back clean.
+3. `oldSideAgrees` on production's store: today's door admits exactly those same keys.
+
+Both checks are the functions Lean exports, held to aven-id's vectors (README rule 10).
+
+**Two releases, no dual mode:**
+- **Release N, the pre-flight.** The Aven Peer runs both checks read-only on production's store. It logs only the
+  verdict and counts; production's data never leaves the server.
+- **Samuel signs the genesis** in avenOS, with his passkey and MaiaCityGuardian.
+- **Release N+1, the switch.** The Aven Peer checks the genesis and runs both checks again, then writes the migrated
+  statements and settles. If a check fails, it refuses, the deploy fails and says why, and production stays on
+  release N.
+
+No code path keeps the old door running beside the settled one (README rule 9).
 
 ## 6. Signed records, not a peer's word
 
@@ -329,9 +365,12 @@ against its vectors.
 
 ### Thread B: the tree as a Doc (`id/core`, `peer/native/src/door.rs`, `members.rs`)
 
-aven-id's `settle`, against `settled.json`. Statements stored by hash, not by ref name, and production's refs read as
-they are (`settle_restore`, the frozen format). Any member accepts a statement: it checks it, keeps it, gossips it, and
-settles. Admin devices ack. The Peer refuses flags that disagree with its genesis.
+aven-id's `settle`, against `settled.json`. The admin is Maia City's vault (decision 12): today's `members.rs`
+`admin_key`, a passkey owning a vault that governs the coop, becomes `byAdmin`, an approval by the coop's owners read
+from the genesis's tree, and acks come from `acker`, a device of a vault that owns the coop. Statements stored by
+hash, not by ref name, and production's refs read as they are (`settle_restore`, the frozen format). Any member
+accepts a statement: it checks it, keeps it, gossips it, and settles. Admin devices ack. The Peer refuses flags that
+disagree with its genesis.
 
 ### Thread C: relays, addresses, entry and catch-up (`peer/native`, `peer/light`)
 
@@ -386,9 +425,10 @@ peer served the catch-up.
   an admin is too slow.
 - **A member's relay sees other members' IPs:** the relay list is the admin's choice for that reason. Mixing traffic
   over several relays is not in this plan.
-- **`settle_restore` for every store:** the agreement of the settled door with `Members.admits` is checked on every
-  trace, not yet proved in general: that needs `settle` related to `Members.tree`'s owners and `Tree.actsFor`. Thread B
-  starts on the checks; the proof comes before production's tree is migrated for real (the architect, 30 Oct 2026).
+- **The old side for every store, a nice-to-have:** a general proof that `Members.restore` always reads back a clean
+  store, and that `Members.admits` admits exactly its `restoredKeys`. Today these are checked on every invite trace
+  (`oldSideAgrees`), and on production's one store before it migrates ([5](#productions-tree)). Not a blocker: a
+  general proof would only add stores that will never exist (the architect, 31 Oct 2026).
 - **Presence at scale:** a beat per device per step on one topic is fine for the chat's network, but not for millions
   (caps, "Scale").
 
