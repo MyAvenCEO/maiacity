@@ -140,6 +140,29 @@ theorem genesis_iff_first {e : Envelope} {b : Body} (h : genesisPlaced e b = tru
   simp only [genesisPlaced, beq_iff_eq] at h
   rw [h]
 
+/-- The reader's genesis check: placed exactly in a log's first envelope, and when there, the genesis of the Doc the
+envelope says it belongs to. -/
+def genesisOk (H : Bytes → Hash) (e : Envelope) (b : Body) : Bool :=
+  genesisPlaced e b && b.genesis.all (·.id H == e.doc)
+
+/-- A genesis an envelope carries, past the check, names the envelope's own Doc. -/
+theorem genesis_names_doc {H : Bytes → Hash} {e : Envelope} {b : Body} {g : Genesis} (h : genesisOk H e b = true)
+    (hg : b.genesis = some g) : g.id H = e.doc := by
+  simp only [genesisOk, Bool.and_eq_true, hg, Option.all_some, beq_iff_eq] at h
+  exact h.2
+
+/-- An envelope that builds on nothing is its log's first (the log's rule: sequence number 1 exactly when there is no
+`prev`), so past the check it carries its Doc's genesis: every Doc's history starts at the genesis that names it. -/
+theorem root_carries_genesis {H : Bytes → Hash} {e : Envelope} {b : Body} (h : genesisOk H e b = true)
+    (hlog : e.seq = 1 ↔ e.prev = none) (hprev : e.prev = none) (hdeps : e.deps = []) :
+    ∃ g, b.genesis = some g ∧ g.id H = e.doc := by
+  have hfirst : isFirst e = true := by simp [isFirst, hlog.mpr hprev, hprev, hdeps]
+  have hok := h
+  simp only [genesisOk, Bool.and_eq_true] at h
+  have hsome := (genesis_iff_first h.1).mpr hfirst
+  obtain ⟨g, hg⟩ := Option.isSome_iff_exists.mp hsome
+  exact ⟨g, hg, genesis_names_doc hok hg⟩
+
 /-! ## Ops in one log -/
 
 /-- A log's bodies continue each other's ops: each is non-empty, and each starts where the one before ended. -/

@@ -1218,11 +1218,20 @@ def placementCases : List (String × Envelope × Bool) := [
   ("a first sequence number that builds on another log, without it", ly1, false)]
 
 def placementVectors : List Json :=
-  placementCases.map fun (name, e, carries) =>
+  (placementCases.map fun (name, e, carries) =>
     let b : Docs.Body := { firstBody with genesis := if carries then some todoGenesis else none }
     vector name (Json.mkObj [("seq", toJson e.seq), ("prev", toJson e.prev.isSome), ("deps", toJson e.deps.length),
         ("genesis", toJson carries)])
-      (Json.mkObj [("first", toJson (Docs.isFirst e)), ("placed", toJson (Docs.genesisPlaced e b))])
+      (Json.mkObj [("first", toJson (Docs.isFirst e)), ("placed", toJson (Docs.genesisPlaced e b))])) ++
+  /- the genesis a first envelope carries must name the envelope's Doc -/
+  ([("its own Doc's genesis", ({ a1 with doc := todoGenesis.id blake3 } : Envelope), todoGenesis),
+    ("another Doc's genesis", ({ a1 with doc := todoGenesis.id blake3 } : Envelope),
+      { todoGenesis with nonce := List.replicate 32 6 })] : List (String × Envelope × Docs.Genesis)).map
+    fun (name, e, g) =>
+      let b : Docs.Body := { firstBody with genesis := some g }
+      vector s!"a log's first envelope carrying {name}" (Json.mkObj [("doc", Json.str e.doc.text),
+          ("genesis", hexJson (encode g.value))])
+        (Json.mkObj [("ok", toJson (Docs.genesisOk blake3 e b))])
 
 def builtinCases : List (String × String × Value) :=
   let h := Value.bytes (blake3 (tb "a tip")).bytes

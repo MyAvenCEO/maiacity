@@ -308,6 +308,16 @@ fn loro() {
 fn placements() {
     for v in vectors("db/spec/vectors/placements.json") {
         let (name, i, x) = (s(&v["name"]), &v["input"], &v["expected"]);
+        if let Some(doc) = i.get("doc") {
+            // `genesisOk`: the genesis a first envelope carries names the envelope's Doc
+            let g = Genesis::decode(&unhex(s(&i["genesis"]))).unwrap();
+            assert_eq!(
+                g.id().text() == s(doc),
+                x["ok"].as_bool().unwrap(),
+                "{name}"
+            );
+            continue;
+        }
         let first = i["seq"].as_u64() == Some(1)
             && !i["prev"].as_bool().unwrap()
             && i["deps"].as_u64() == Some(0);
