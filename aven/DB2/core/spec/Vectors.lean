@@ -200,7 +200,13 @@ def todoV1 : TypeId := ⟨todoType, schema⟩
 def names : List Json :=
   (valueExamples.map fun (name, v) => vector name (encodes v) (nameOf blake3 v).text) ++
   [vector "a type id" (Json.mkObj [("type", todoType.text), ("schema", schema.text)])
-    (Json.mkObj [("text", todoV1.text), ("cbor", encodes todoV1.value)])]
+    (Json.mkObj [("text", todoV1.text), ("cbor", encodes todoV1.value)])] ++
+  -- a type id's hashes are 32 bytes each: one of 31 or 33 is no type id
+  ([("a type id with a 31-byte type", Value.array [.bytes (List.replicate 31 1), schema.value]),
+    ("a type id with a 33-byte schema", Value.array [todoType.hash.value, .bytes (List.replicate 33 1)])].map
+    fun (name, v) => vector name (encodes v) (match TypeId.ofValue? v with
+      | some t => Json.str t.text
+      | none => Json.null))
 
 /-! ## Envelopes and logs -/
 
@@ -496,6 +502,13 @@ def patchCall : Call :=
 
 #guard Canon patchCall.value
 
+/-- A call to `core/1`'s patch with `n` params `p0`, `p1`, … in the codec's order. -/
+def manyParams (n : Nat) : Call :=
+  { patchCall with
+    params := ((List.range n).map fun i => (k s!"p{i}", Value.uint i)).foldl (fun acc kv => insertKey kv acc) [] }
+
+#guard Canon (manyParams maxParams).value
+
 /-- The same call with its params out of the codec's order: not canonical, so no call; its bytes are refused. -/
 def unsortedCall : Call := { patchCall with params := patchCall.params.reverse }
 
@@ -505,14 +518,23 @@ def calls : List Json :=
   [vector "a call to core/1's patch: a type and the fields it sets" patchCall.value.json
     (Json.mkObj [("cbor", hex (encode patchCall.value)), ("op", (CoreOp.patch.id blake3).text)]),
    vector "a call with its params out of order: refused on read" (hex (encode unsortedCall.value)) Json.null,
+   vector s!"a call with {maxParams} params" (hex (encode (manyParams maxParams).value))
+     (toJson (Call.ofValue? (manyParams maxParams).value).isSome),
+   vector s!"a call with {maxParams + 1} params" (hex (encode (manyParams (maxParams + 1)).value))
+     (toJson (Call.ofValue? (manyParams (maxParams + 1)).value).isSome),
    vector "a call whose op isn't 32 bytes: refused on read"
      (hex (encode (Call.value { patchCall with op := ⟨List.replicate 31 1⟩ }))) Json.null]
 
 #guard Call.ofValue? patchCall.value == some patchCall
 #guard Call.ofValue? (Call.value { patchCall with op := ⟨List.replicate 31 1⟩ }) == none
 
-/-- Bounds in CBOR: each read back, and Values that are no bound, refused (`expected` null). -/
+/-- Bounds in CBOR: each read back, and Values that are no bound, refused (`expected` null). The limit from both
+sides: `maxBoundValues` values read back, one more is refused. -/
 def boundBytes : List Json :=
+  ([maxBoundValues, maxBoundValues + 1].map fun n =>
+    let b : Bound := some ((List.range n).map Value.uint)
+    vector s!"a bound of {n} values" (hex (encode (Bound.value b)))
+      (toJson (Bound.ofValue? (Bound.value b)).isSome)) ++
   ([("any value", (none : Bound)), ("one of these", some [status, total]), ("none at all", some [])].map
     fun (name, b) => vector s!"a bound: {name}" (hex (encode (Bound.value b))) (Bound.json b)) ++
   ([("text", status), ("a map", .map [(k "a", status)])].map fun (name, v) =>
