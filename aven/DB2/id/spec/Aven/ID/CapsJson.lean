@@ -174,8 +174,6 @@ def Keep.json (s : Keep) : Json :=
 def Keep.Proof.json (p : Keep.Proof) : Json :=
   Json.mkObj [("device", p.device), ("vault", p.vault), ("key", toJson p.key), ("exporter", p.exporter)]
 
-def Keep.Upload.json (u : Keep.Upload) : Json :=
-  Json.mkObj [("proof", u.proof.json), ("exporter", u.exporter), ("bytes", toJson u.bytes)]
 
 /-- What a keeper takes, by depth, its current fetch key, and its flags, each in order of depth and key. -/
 def keepResult (s : Keep) : Json :=

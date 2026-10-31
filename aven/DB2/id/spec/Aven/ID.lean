@@ -44,6 +44,7 @@ import Aven.ID.Forget
 import Aven.ID.CatchUp
 import Aven.ID.Admit
 import Aven.ID.Keep
+import Aven.ID.KeepCbor
 import Aven.ID.Holdings
 import Aven.ID.Safe
 import Aven.ID.KeyFormats
@@ -56,6 +57,7 @@ import Aven.ID.CapsExamples
 import Aven.ID.AuthorizedExamples
 import Aven.ID.IssuerExamples
 import Aven.ID.MemberExamples
+import Aven.ID.ReachExamples
 import Aven.ID.CapsJson
 import Aven.ID.SettleJson
 import Aven.ID.FailJson
