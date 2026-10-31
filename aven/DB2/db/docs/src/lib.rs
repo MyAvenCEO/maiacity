@@ -52,9 +52,9 @@ pub use body::{Body, Call, Version, codec_order};
 pub use builtins::{BuiltinFit, DocsBuiltins, Either};
 pub use device::{Device, Ed25519};
 pub use doc::{
-    Act, Authorize, CommitError, Doc, Feed, Head, HeldPage, Imported, MAIN, Past, Prepared,
+    Act, Authorize, CommitError, Doc, Feed, Head, HeldPage, Imported, Item, MAIN, Past, Prepared,
     RECORDS, Record, RecordWrite, Refused, Snapshot, TYPE_FIELD, Unopenable, Unopened, Why,
-    envelope_valid, open_sealed_page,
+    envelope_valid, open_page, travels_plain,
 };
 pub use fit::{ChangeKind, RecordChange, Rules, Unfit};
 pub use genesis::{GENESIS_LABEL, Genesis};

@@ -1,41 +1,42 @@
-//! The one seal for a Doc's loose envelopes, segments and checkpoints (`Aven.ID.Seal`; caps, "Sealing"; D13, D18),
-//! held to `id/spec/vectors/seals.json`.
+//! The one seal for a Doc's loose envelopes, segments and checkpoints (`Aven.ID.Seal`; A176, A177; D13, D18), held
+//! to `id/spec/vectors/seals.json`.
 //!
-//! - The kind's keys: from the epoch's key, `derive_key("avenDB <kind> 1")` is the cipher's and
-//!   `derive_key("avenDB <kind> commit 1")` the commitment's.
+//! - What it seals ([`Seals`]) has its own keys: from the epoch's key, `derive_key("avenDB <seals> 1")` is the
+//!   cipher's and `derive_key("avenDB <seals> commit 1")` the commitment's.
 //! - A fresh 24-byte nonce, XChaCha20-Poly1305's.
-//! - The AAD is `encode({doc, kind, epoch})`; the commitment is the commitment key's keyed BLAKE3 over
+//! - The AAD is `encode({doc, epoch, seals})`; the commitment is the commitment key's keyed BLAKE3 over
 //!   `encode({aad, nonce})`, checked in constant time before anything is decrypted.
-//! - The plaintext is padded to Padmé's length of its length plus one: a `0x80`, then zeros.
+//! - The plaintext is padded to the one padding's length of its length plus one ([`aven_id::pad_sealed`], A176:
+//!   256 B, 1 KiB or 4 KiB, then Padmé): a `0x80`, then zeros.
 //! - Outside: `encode({ct, doc, epoch, nonce, commit})`, and nothing else.
 
 use aven_core::{DocId, Hash, Value, decode, encode};
-use aven_id::{Entropy, Secret};
+use aven_id::{Entropy, Secret, pad_sealed};
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use subtle::ConstantTimeEq;
 
-/// What a seal holds (`Kind`).
+/// What a seal holds (`Seals`, A177).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Kind {
+pub enum Seals {
     Envelope,
     Segment,
-    Snapshot,
+    Checkpoint,
 }
 
-impl Kind {
+impl Seals {
+    pub const ALL: [Seals; 3] = [Seals::Envelope, Seals::Segment, Seals::Checkpoint];
+
     pub fn text(self) -> &'static str {
         match self {
-            Kind::Envelope => "envelope",
-            Kind::Segment => "segment",
-            Kind::Snapshot => "snapshot",
+            Seals::Envelope => "envelope",
+            Seals::Segment => "segment",
+            Seals::Checkpoint => "checkpoint",
         }
     }
 
-    pub fn parse(s: &str) -> Option<Kind> {
-        [Kind::Envelope, Kind::Segment, Kind::Snapshot]
-            .into_iter()
-            .find(|k| k.text() == s)
+    pub fn parse(s: &str) -> Option<Seals> {
+        Seals::ALL.into_iter().find(|k| k.text() == s)
     }
 }
 
@@ -45,59 +46,53 @@ pub struct EpochKey {
     pub key: Secret,
 }
 
-/// `cipherKey`: the kind's cipher key.
-pub fn cipher_key(kind: Kind, epoch_key: &[u8; 32]) -> [u8; 32] {
-    blake3::derive_key(&format!("avenDB {} 1", kind.text()), epoch_key)
+/// `cipherKey`: the cipher key for what it seals.
+pub fn cipher_key(seals: Seals, epoch_key: &[u8; 32]) -> [u8; 32] {
+    blake3::derive_key(&format!("avenDB {} 1", seals.text()), epoch_key)
 }
 
-/// `commitKey`: the kind's commitment key.
-pub fn commit_key(kind: Kind, epoch_key: &[u8; 32]) -> [u8; 32] {
-    blake3::derive_key(&format!("avenDB {} commit 1", kind.text()), epoch_key)
+/// `commitKey`: the commitment key for what it seals.
+pub fn commit_key(seals: Seals, epoch_key: &[u8; 32]) -> [u8; 32] {
+    blake3::derive_key(&format!("avenDB {} commit 1", seals.text()), epoch_key)
 }
 
-/// `aad`: `encode({doc, kind, epoch})`.
-pub fn aad(kind: Kind, doc: &DocId, epoch: &Hash) -> Vec<u8> {
+/// `aad`: `encode({doc, epoch, seals})`.
+pub fn aad(seals: Seals, doc: &DocId, epoch: &Hash) -> Vec<u8> {
     encode(&Value::Map(vec![
         ("doc".into(), doc.0.value()),
-        ("kind".into(), Value::Text(kind.text().into())),
         ("epoch".into(), epoch.value()),
+        ("seals".into(), Value::Text(seals.text().into())),
     ]))
 }
 
 /// `commit`: the commitment key's keyed BLAKE3 over `encode({aad, nonce})`.
-pub fn commit(kind: Kind, epoch_key: &[u8; 32], aad: &[u8], nonce: &[u8]) -> [u8; 32] {
+pub fn commit(seals: Seals, epoch_key: &[u8; 32], aad: &[u8], nonce: &[u8]) -> [u8; 32] {
     let msg = encode(&Value::Map(vec![
         ("aad".into(), Value::Bytes(aad.to_vec())),
         ("nonce".into(), Value::Bytes(nonce.to_vec())),
     ]));
-    *blake3::keyed_hash(&commit_key(kind, epoch_key), &msg).as_bytes()
+    *blake3::keyed_hash(&commit_key(seals, epoch_key), &msg).as_bytes()
 }
 
-/// Padmé (PURBs): the padded length of `l`, at most an eighth more (`padme_le`).
-pub fn padme(l: usize) -> usize {
-    if l < 2 {
-        return l;
-    }
-    let e = usize::BITS - 1 - l.leading_zeros(); // ⌊log₂ l⌋
-    let s = u32::BITS - e.leading_zeros(); // ⌊log₂ e⌋ + 1
-    let z = e.saturating_sub(s);
-    let unit = 1usize << z;
-    l.div_ceil(unit) * unit
+/// The most a sealed thing of a plaintext of at most `plaintext` bytes may take: the one padding's length of it plus one,
+/// the tag, and the outside's frame.
+pub fn sealed_limit(plaintext: usize) -> usize {
+    pad_sealed(plaintext.saturating_add(1)).saturating_add(256)
 }
 
-/// `pad`: the plaintext, a `0x80`, then zeros to Padmé's length of its length plus one.
+/// `pad`: the plaintext, a `0x80`, then zeros to the one padding's length of its length plus one (A176).
 pub fn pad(pt: &[u8]) -> Vec<u8> {
-    let mut p = Vec::with_capacity(padme(pt.len() + 1));
+    let mut p = Vec::with_capacity(pad_sealed(pt.len() + 1));
     p.extend_from_slice(pt);
     p.push(0x80);
-    p.resize(padme(pt.len() + 1), 0);
+    p.resize(pad_sealed(pt.len() + 1), 0);
     p
 }
 
 /// `unpad`: the plaintext back, `None` unless the padding is whole.
 pub fn unpad(p: &[u8]) -> Option<Vec<u8>> {
     let end = p.iter().rposition(|&b| b != 0)?;
-    (p[end] == 0x80 && padme(end + 1) == p.len()).then(|| p[..end].to_vec())
+    (p[end] == 0x80 && pad_sealed(end + 1) == p.len()).then(|| p[..end].to_vec())
 }
 
 /// What a keeper sees of a sealed thing: the Doc, the epoch, and the padded length (D13).
@@ -172,9 +167,9 @@ impl Sealed {
     }
 }
 
-/// `plaintext` sealed as `kind` for `doc` under `epoch`.
+/// `plaintext` sealed as `seals` for `doc` under `epoch`.
 pub fn seal(
-    kind: Kind,
+    seals: Seals,
     epoch: &EpochKey,
     doc: &DocId,
     plaintext: &[u8],
@@ -182,19 +177,19 @@ pub fn seal(
 ) -> Vec<u8> {
     let mut nonce = [0u8; 24];
     entropy.fill(&mut nonce);
-    seal_with_nonce(kind, epoch, doc, plaintext, nonce).encode()
+    seal_with_nonce(seals, epoch, doc, plaintext, nonce).encode()
 }
 
 /// [`seal`] with a given nonce: for tests and vectors. A nonce must never repeat under one key.
 pub fn seal_with_nonce(
-    kind: Kind,
+    seals: Seals,
     epoch: &EpochKey,
     doc: &DocId,
     plaintext: &[u8],
     nonce: [u8; 24],
 ) -> Sealed {
-    let a = aad(kind, doc, &epoch.name);
-    let ct = XChaCha20Poly1305::new(&cipher_key(kind, epoch.key.expose()).into())
+    let a = aad(seals, doc, &epoch.name);
+    let ct = XChaCha20Poly1305::new(&cipher_key(seals, epoch.key.expose()).into())
         .encrypt(
             &XNonce::from(nonce),
             Payload {
@@ -208,7 +203,7 @@ pub fn seal_with_nonce(
         doc: *doc,
         epoch: epoch.name,
         nonce,
-        commit: commit(kind, epoch.key.expose(), &a, &nonce),
+        commit: commit(seals, epoch.key.expose(), &a, &nonce),
     }
 }
 
@@ -217,35 +212,38 @@ pub fn outside(bytes: &[u8], limit: usize) -> Option<Outside> {
     Sealed::decode(bytes, limit).map(|s| s.outside())
 }
 
-/// The kind a sealed thing was sealed as, found by its commitment alone, before anything is decrypted: each kind has a
-/// commitment key of its own, so at most one kind's commitment matches (BLAKE3's keyed hash under distinct keys). A
-/// reader that fetched it from a keeper, which knows only hashes, learns the kind this way, and nothing about it
-/// travels outside the seal (D13). `None` when no kind's commitment matches under `epoch`.
-pub fn kind_of(epoch: &EpochKey, bytes: &[u8], limit: usize) -> Option<Kind> {
+/// What a sealed thing seals, found by its commitment alone, before anything is decrypted (`sealsOf`): each has a
+/// commitment key of its own, so at most one commitment matches (`seals_by_commit`). A reader that fetched it from a
+/// keeper, which knows only hashes, learns it this way, and nothing about it travels outside the seal (D13). `None`
+/// when no commitment matches under `epoch`.
+pub fn seals_of(epoch: &EpochKey, bytes: &[u8], limit: usize) -> Option<Seals> {
     let s = Sealed::decode(bytes, limit)?;
     if s.epoch != epoch.name {
         return None;
     }
-    [Kind::Envelope, Kind::Segment, Kind::Snapshot]
-        .into_iter()
-        .find(|&k| {
-            let a = aad(k, &s.doc, &s.epoch);
-            bool::from(commit(k, epoch.key.expose(), &a, &s.nonce).ct_eq(&s.commit))
-        })
+    Seals::ALL.into_iter().find(|&k| {
+        let a = aad(k, &s.doc, &s.epoch);
+        bool::from(commit(k, epoch.key.expose(), &a, &s.nonce).ct_eq(&s.commit))
+    })
 }
 
-/// Opens a sealed thing of `limit` bytes at most as `kind` under `epoch`: the commitment first, in constant time, then
+/// Opens a sealed thing of `limit` bytes at most as `seals` under `epoch`: the commitment first, in constant time, then
 /// the AEAD, then the padding (`openWith`). Returns its Doc and plaintext.
-pub fn open(kind: Kind, epoch: &EpochKey, bytes: &[u8], limit: usize) -> Option<(DocId, Vec<u8>)> {
+pub fn open(
+    seals: Seals,
+    epoch: &EpochKey,
+    bytes: &[u8],
+    limit: usize,
+) -> Option<(DocId, Vec<u8>)> {
     let s = Sealed::decode(bytes, limit)?;
     if s.epoch != epoch.name {
         return None;
     }
-    let a = aad(kind, &s.doc, &s.epoch);
-    if !bool::from(commit(kind, epoch.key.expose(), &a, &s.nonce).ct_eq(&s.commit)) {
+    let a = aad(seals, &s.doc, &s.epoch);
+    if !bool::from(commit(seals, epoch.key.expose(), &a, &s.nonce).ct_eq(&s.commit)) {
         return None;
     }
-    let p = XChaCha20Poly1305::new(&cipher_key(kind, epoch.key.expose()).into())
+    let p = XChaCha20Poly1305::new(&cipher_key(seals, epoch.key.expose()).into())
         .decrypt(
             &XNonce::from(s.nonce),
             Payload {

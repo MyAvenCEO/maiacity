@@ -11,9 +11,9 @@ use std::sync::Arc;
 
 use aven_core::{DocId, Envelope, Value, blake3};
 use aven_db_docs::schema::{Kind as Field, Schema};
-use aven_db_docs::seal::{Kind, seal};
+use aven_db_docs::seal::{Seals, seal};
 use aven_db_docs::{
-    Act, Authorize, Body, Closer, Device, Doc, EpochKey, Genesis, Imported, Limits, Record,
+    Act, Authorize, Body, Closer, Device, Doc, EpochKey, Genesis, Imported, Item, Limits, Record,
     RecordWrite, Snapshot, Version,
 };
 use aven_id::{Secret, TestEntropy};
@@ -153,7 +153,7 @@ fn catch_up(n: usize, close: bool) -> usize {
                 &Allow,
             )
             .expect("commits");
-        let sealed = seal(Kind::Envelope, &epoch, &g.id(), &b, &mut ent);
+        let sealed = seal(Seals::Envelope, &epoch, &g.id(), &b, &mut ent);
         let closed = closer.add(epoch.name, Envelope::decode(&b).unwrap(), blake3(&sealed));
         upload(sealed, vec![], false);
         if let Some(c) = closed {
@@ -198,8 +198,8 @@ fn catch_up(n: usize, close: bool) -> usize {
         }
         // the page lands in one write: one batch import
         // as a keeper serves them, without kinds: each found by its commitment
-        let items: Vec<&[u8]> = page.iter().map(|(_, h)| held[h].as_slice()).collect();
-        let r = bob.import_sealed_page(&items, |n| (*n == epoch.name).then_some(&epoch), &Allow);
+        let items: Vec<Item<'_>> = page.iter().map(|(_, h)| Item::Sealed(&held[h])).collect();
+        let r = bob.import_items(&items, |n| (*n == epoch.name).then_some(&epoch), &Allow);
         for item in r {
             for e in item.expect("opens") {
                 assert_eq!(e, Ok(Imported::Counts));
