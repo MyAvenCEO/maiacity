@@ -266,9 +266,9 @@ inductive TreeSays where
 
 /-! ### The body on Core's envelope (A30)
 
-A tree statement is a Core envelope of the tree Doc (A39): its body is `TreeSays.toValue`, a CBOR array that starts
-with the kind's name. Strings are UTF-8 text; a reference to another statement is its 32-byte name. `ofValue` reads it
-back (`TreeSays.ofValue_toValue`), so a body names one thing whatever reads it. -/
+A tree statement is a Core envelope of the tree Doc (A39): its body is a call of one of `tree/1`'s ops
+(`TreeSays.toValue`, below). Strings are UTF-8 text; a reference to another statement is its 32-byte name. `ofValue`
+reads it back (`TreeSays.ofValue_toValue`), so a body names one thing whatever reads it. -/
 
 namespace Body
 open Core
@@ -341,38 +341,108 @@ def Genesis.ofValue : Core.Value → Option Genesis
 theorem Genesis.ofValue_toValue (g : Genesis) : ofValue g.toValue = some g := by
   simp [toValue, ofValue, Body.ofText_text, Body.ofTexts_texts, GuardianKeys.ofValue_toValue]
 
-open Body in
-/-- The body of a tree statement: `[kind, ...fields]`. -/
-def TreeSays.toValue : TreeSays → Core.Value
-  | .genesis g => .array [text "genesis", g.toValue]
-  | .signIn v d => .array [text "signIn", text v, text d]
-  | .ticket k => .array [text "ticket", text k]
-  | .withdrawal t => .array [text "withdrawal", ref t]
-  | .claim t v p d g => .array [text "claim", ref t, text v, text p, text d, text g]
-  | .confirm c => .array [text "confirm", ref c]
-  | .relayAdd v => .array [text "relayAdd", text v]
-  | .relayRemove v => .array [text "relayRemove", text v]
-  | .setAvenPeer k => .array [text "setAvenPeer", text k]
-  | .setOrigins os => .array [text "setOrigins", texts os]
-  | .setGuardian v => .array [text "setGuardian", text v]
+/-! ### The tree's ops (A32): `tree/1`
+
+Each statement is a call of one of `tree/1`'s ops (`Aven.Core.Call`): `{"op": id, "params": {…}}`. An op's id is the
+name of its stored form `{"op": name, "plugin": "tree/1"}`, as `core/1`'s are (`Aven.Core.CoreOp.id`). The params are
+a map with text keys in the codec's order, shorter first. `ofValue` reads a body back when the ops' ids differ, which
+they do under any hash nothing collides under (`TreeSays.ofValue_toValue`; for BLAKE3, checked below). -/
+
+inductive TreeOp where
+  | genesis | signIn | ticket | withdraw | claim | confirm | relayAdd | relayRemove | setAvenPeer | setOrigins
+  | setGuardian
+  deriving DecidableEq, Repr
+
+def TreeOp.name : TreeOp → String
+  | .genesis => "genesis" | .signIn => "signIn" | .ticket => "ticket" | .withdraw => "withdraw" | .claim => "claim"
+  | .confirm => "confirm" | .relayAdd => "relayAdd" | .relayRemove => "relayRemove"
+  | .setAvenPeer => "setAvenPeer" | .setOrigins => "setOrigins" | .setGuardian => "setGuardian"
+
+def TreeOp.all : List TreeOp :=
+  [.genesis, .signIn, .ticket, .withdraw, .claim, .confirm, .relayAdd, .relayRemove, .setAvenPeer, .setOrigins,
+   .setGuardian]
+
+theorem TreeOp.mem_all (o : TreeOp) : o ∈ TreeOp.all := by cases o <;> simp [TreeOp.all]
 
 open Body in
-def TreeSays.ofValue : Core.Value → Option TreeSays
-  | .array (k :: xs) => do
-    match ← ofText k, xs with
-    | "genesis", [g] => .genesis <$> Genesis.ofValue g
-    | "signIn", [v, d] => pure (.signIn (← ofText v) (← ofText d))
-    | "ticket", [k] => .ticket <$> ofText k
-    | "withdrawal", [t] => .withdrawal <$> ofRef t
-    | "claim", [t, v, p, d, g] =>
-      pure (.claim (← ofRef t) (← ofText v) (← ofText p) (← ofText d) (← ofText g))
-    | "confirm", [c] => .confirm <$> ofRef c
-    | "relayAdd", [v] => .relayAdd <$> ofText v
-    | "relayRemove", [v] => .relayRemove <$> ofText v
-    | "setAvenPeer", [k] => .setAvenPeer <$> ofText k
-    | "setOrigins", [os] => .setOrigins <$> ofTexts os
-    | "setGuardian", [v] => .setGuardian <$> ofText v
-    | _, _ => none
+/-- An op's stored form, `{"op": name, "plugin": "tree/1"}`, its keys in the codec's order. -/
+def TreeOp.value (o : TreeOp) : Core.Value := .map [(utf8 "op", text o.name), (utf8 "plugin", text "tree/1")]
+
+/-- An op's id: the name of its stored form. -/
+def TreeOp.id (H : Core.Bytes → Core.Hash) (o : TreeOp) : Core.OpId := Core.nameOf H o.value
+
+/-- The ops' ids differ. -/
+def TreeOp.distinct (H : Core.Bytes → Core.Hash) : Prop := ∀ a b : TreeOp, a.id H = b.id H → a = b
+
+/-- The op whose id this is. -/
+def TreeOp.ofId (H : Core.Bytes → Core.Hash) (id : Core.Bytes) : Option TreeOp :=
+  TreeOp.all.find? fun o => (o.id H).bytes == id
+
+theorem TreeOp.ofId_id {H : Core.Bytes → Core.Hash} (d : TreeOp.distinct H) (o : TreeOp) :
+    TreeOp.ofId H (o.id H).bytes = some o := by
+  unfold TreeOp.ofId
+  cases e : TreeOp.all.find? fun x => (x.id H).bytes == (o.id H).bytes with
+  | none =>
+    exact absurd e (by simpa [List.find?_eq_none] using ⟨o, TreeOp.mem_all o, rfl⟩)
+  | some x =>
+    have := List.find?_some e
+    simp only [beq_iff_eq] at this
+    exact congrArg some (d x o (by cases hx : x.id H; cases ho : o.id H; simp_all))
+
+/-- The op a statement calls. -/
+def TreeSays.op : TreeSays → TreeOp
+  | .genesis _ => .genesis | .signIn .. => .signIn | .ticket _ => .ticket | .withdrawal _ => .withdraw
+  | .claim .. => .claim | .confirm _ => .confirm | .relayAdd _ => .relayAdd | .relayRemove _ => .relayRemove
+  | .setAvenPeer _ => .setAvenPeer | .setOrigins _ => .setOrigins | .setGuardian _ => .setGuardian
+
+open Body in
+/-- A statement's params, in the codec's order: shorter keys first, then by their bytes. -/
+def TreeSays.params : TreeSays → List (Core.Bytes × Core.Value)
+  | .genesis g => [(utf8 "genesis", g.toValue)]
+  | .signIn v d => [(utf8 "vault", text v), (utf8 "device", text d)]
+  | .ticket k => [(utf8 "key", text k)]
+  | .withdrawal t => [(utf8 "ticket", ref t)]
+  | .claim t v p d g =>
+    [(utf8 "vault", text v), (utf8 "device", text d), (utf8 "ticket", ref t), (utf8 "passkey", text p),
+     (utf8 "guardian", text g)]
+  | .confirm c => [(utf8 "claim", ref c)]
+  | .relayAdd v | .relayRemove v | .setGuardian v => [(utf8 "vault", text v)]
+  | .setAvenPeer k => [(utf8 "key", text k)]
+  | .setOrigins os => [(utf8 "origins", texts os)]
+
+/-- A statement as the call its envelope carries. -/
+def TreeSays.call (H : Core.Bytes → Core.Hash) (s : TreeSays) : Core.Call := ⟨s.op.id H, s.params⟩
+
+/-- The body of a tree statement: its call. -/
+def TreeSays.toValue (H : Core.Bytes → Core.Hash) (s : TreeSays) : Core.Value := (s.call H).value
+
+open Body in
+/-- A statement from an op and its params. -/
+def TreeSays.ofParams : TreeOp → List (Core.Bytes × Core.Value) → Option TreeSays
+  | .genesis, [(kg, g)] => if kg == utf8 "genesis" then .genesis <$> Genesis.ofValue g else none
+  | .signIn, [(kv, v), (kd, d)] =>
+    if kv == utf8 "vault" && kd == utf8 "device" then do pure (.signIn (← ofText v) (← ofText d)) else none
+  | .ticket, [(kk, k)] => if kk == utf8 "key" then .ticket <$> ofText k else none
+  | .withdraw, [(kt, t)] => if kt == utf8 "ticket" then .withdrawal <$> ofRef t else none
+  | .claim, [(kv, v), (kd, d), (kt, t), (kp, p), (kg, g)] =>
+    if kv == utf8 "vault" && kd == utf8 "device" && kt == utf8 "ticket" && kp == utf8 "passkey" &&
+        kg == utf8 "guardian" then
+      do pure (.claim (← ofRef t) (← ofText v) (← ofText p) (← ofText d) (← ofText g))
+    else none
+  | .confirm, [(kc, c)] => if kc == utf8 "claim" then .confirm <$> ofRef c else none
+  | .relayAdd, [(kv, v)] => if kv == utf8 "vault" then .relayAdd <$> ofText v else none
+  | .relayRemove, [(kv, v)] => if kv == utf8 "vault" then .relayRemove <$> ofText v else none
+  | .setAvenPeer, [(kk, k)] => if kk == utf8 "key" then .setAvenPeer <$> ofText k else none
+  | .setOrigins, [(ko, os)] => if ko == utf8 "origins" then .setOrigins <$> ofTexts os else none
+  | .setGuardian, [(kv, v)] => if kv == utf8 "vault" then .setGuardian <$> ofText v else none
+  | _, _ => none
+
+/-- A body read back as the statement it calls, if it is exactly a call of one of `tree/1`'s ops: the call it reads
+encodes back to it. -/
+def TreeSays.ofValue (H : Core.Bytes → Core.Hash) (v : Core.Value) : Option TreeSays :=
+  match v with
+  | .map [(_, .bytes id), (_, .map ps)] =>
+    if (Core.Call.mk ⟨id⟩ ps).value == v then (TreeOp.ofId H id).bind fun o => TreeSays.ofParams o ps else none
   | _ => none
 
 /-- The names a body refers to, each a 32-byte name. -/
@@ -380,13 +450,23 @@ def TreeSays.refsOk : TreeSays → Bool
   | .withdrawal t | .claim t .. | .confirm t => t.ok
   | _ => true
 
-theorem TreeSays.ofValue_toValue (s : TreeSays) (h : s.refsOk) : ofValue s.toValue = some s := by
-  cases s <;> simp_all [toValue, ofValue, refsOk, Body.ofText_text, Body.ofTexts_texts, Body.ofRef_ref,
+theorem TreeSays.ofParams_params (s : TreeSays) (h : s.refsOk) : ofParams s.op s.params = some s := by
+  cases s <;> simp_all [op, params, ofParams, refsOk, Body.ofText_text, Body.ofTexts_texts, Body.ofRef_ref,
     Genesis.ofValue_toValue]
 
-#guard TreeSays.ofValue (TreeSays.claim ⟨Core.be 32 7⟩ "carol" "carol-passkey" "carol-light" "guardian").toValue ==
+/-- A body reads back as the statement it was made from, whenever the ops' ids differ. -/
+theorem TreeSays.ofValue_toValue {H : Core.Bytes → Core.Hash} (d : TreeOp.distinct H) (s : TreeSays)
+    (h : s.refsOk) : ofValue H (s.toValue H) = some s := by
+  simp [ofValue, toValue, call, Core.Call.value, TreeOp.ofId_id d, ofParams_params s h]
+
+-- under BLAKE3, `tree/1`'s ids differ, and the stored forms and the calls are canonical
+#guard (TreeOp.all.map fun o => (o.id Core.blake3).bytes).eraseDups.length == TreeOp.all.length
+#guard TreeOp.all.all fun o => Core.Canon o.value
+#guard Core.Canon ((TreeSays.claim ⟨Core.be 32 7⟩ "carol" "carol-passkey" "carol-light" "guardian").toValue Core.blake3)
+#guard TreeSays.ofValue Core.blake3
+    ((TreeSays.claim ⟨Core.be 32 7⟩ "carol" "carol-passkey" "carol-light" "guardian").toValue Core.blake3) ==
   some (.claim ⟨Core.be 32 7⟩ "carol" "carol-passkey" "carol-light" "guardian")
-#guard TreeSays.ofValue (.array [Body.text "nope"]) == none
+#guard TreeSays.ofValue Core.blake3 (.array [Body.text "nope"]) == none
 
 /-- A tree statement, as a peer reads it from the envelope it stores by name (A30): its name, the key that signed it,
 its parents (the names of the tree's newest statements it saw), and what it says. -/

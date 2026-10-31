@@ -56,7 +56,7 @@ def treeDoc : Core.DocId := ⟨Core.blake3 (Body.utf8 "Maia City's tree")⟩
 envelope's, written out to read. -/
 def TreeStatement.json (s : TreeStatement) : Json :=
   Json.mkObj [("name", hashJson s.name),
-    ("envelope", Core.hex (Core.encode (TreeDoc.envelope treeDoc s).value)),
+    ("envelope", Core.hex (Core.encode (TreeDoc.envelope Core.blake3 treeDoc s).value)),
     ("signer", s.signer), ("parents", hashesJson s.parents), ("says", TreeSays.json s.says)]
 
 def Listed.json (l : Listed) : Json :=
@@ -75,10 +75,10 @@ structure Case where
 /-- The envelopes a peer stores, and their own checks: the case's failing names fail. -/
 def Case.ok (c : Case) (n : TreeDoc.Named) : Bool := !c.failing.contains n.name
 
-def named (s : TreeStatement) : TreeDoc.Named := ⟨s.name, TreeDoc.envelope treeDoc s⟩
+def named (s : TreeStatement) : TreeDoc.Named := ⟨s.name, TreeDoc.envelope Core.blake3 treeDoc s⟩
 
 def Case.settled (c : Case) (order : List TreeStatement) : Listed :=
-  (TreeDoc.settleDoc c.ok treeDoc c.pinned (order.map named)).listed c.statements
+  (TreeDoc.settleDoc Core.blake3 c.ok treeDoc c.pinned (order.map named)).listed c.statements
 
 /-- The case in the order given: its input and the settled tree. -/
 def Case.vector (c : Case) (label : String) (order : List TreeStatement) : Json :=
@@ -241,6 +241,28 @@ def settledVectors : List Json :=
   (all.zipIdx).flatMap fun (c, i) => (c.orders (i + 1)).map fun (label, o) => c.vector label o
 
 #guard settledVectors.length == (2 + raceCases.length + generatedCases + restoreCases.length) * (2 + shuffles)
+
+/-! ## `tree/1`'s ops -/
+
+/-- Each of `tree/1`'s ops: its stored form's CBOR and its id under BLAKE3; and one call of each, as an envelope's
+body carries it, with the statement it reads back as. -/
+def treeOpVectors : List Json :=
+  let g : TreeStatement := SettleJson.g
+  let h : Core.Hash := ⟨Core.be 32 120⟩
+  let examples : List TreeSays :=
+    [g.says, .signIn "alice" "alice-phone", .ticket "t-bob", .withdrawal h,
+     .claim h "bob" "bob-passkey" "bob-peer" "maia-city-guardian", .confirm h, .relayAdd "bob", .relayRemove "bob",
+     .setAvenPeer "aven-peer-2", .setOrigins ["https://maia.city"], .setGuardian "new-guardian"]
+  (TreeOp.all.map fun o =>
+    Json.mkObj [("name", s!"tree/1 op {o.name}"),
+      ("input", Json.mkObj [("op", o.name), ("plugin", "tree/1")]),
+      ("expected", Json.mkObj [("cbor", Core.hex (Core.encode o.value)), ("id", (o.id Core.blake3).text)])]) ++
+  examples.map fun s =>
+    Json.mkObj [("name", s!"tree/1 call {s.op.name}"),
+      ("input", Json.mkObj [("cbor", Core.hex (Core.encode (s.toValue Core.blake3)))]),
+      ("expected", TreeSays.json s)]
+
+#guard treeOpVectors.length == 2 * TreeOp.all.length
 
 /-! ## Records -/
 

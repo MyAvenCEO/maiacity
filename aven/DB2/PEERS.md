@@ -185,9 +185,10 @@ every peer must reach the same tree from the same statements, whatever order the
 
 ### The tree is a Doc of Core envelopes (A12, A30, A39)
 
-- **Every statement is a Core envelope of the tree Doc,** a Doc of type `tree` in Maia City's vault. Its body says what
-  it says (`TreeSays.toValue`, read back by `ofValue_toValue`). A peer stores each envelope under its name and reads it
-  as the statement it carries (`TreeDoc.read`); one that doesn't read, or fails its own checks (its name, its
+- **Every statement is a Core envelope of the tree Doc,** a Doc of type `tree` in Maia City's vault. Its body is a
+  call of one of `tree/1`'s ops (A32): `{op, params}`, the op named by the hash of `{op: name, plugin: "tree/1"}` as
+  `core/1`'s are (`TreeSays.toValue`, read back by `ofValue_toValue`; ids and calls in `tree-ops.json`). A peer stores
+  each envelope under its name and reads it as the statement it carries (`TreeDoc.read`); one that doesn't read, or fails its own checks (its name, its
   signature), is dropped before settling, so it carries no other statement's past (`TreeDoc.settleDoc`).
 - **Every statement names the tips it saw,** its parents: the names of the tree's newest statements when it was
   signed. So the statements form a graph, and "in the past of" is decidable: B is in A's past if A names B, or names
