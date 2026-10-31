@@ -1,14 +1,16 @@
 import Aven.ID.SettleJson
 import Aven.ID.Admit
 import Aven.ID.Keeping
+import Aven.Peer.CatchUp
+import Aven.Peer.Wire
 
 /-! # The box's failures, expected (PEERS.md, "How it is checked"; Thread F, F1)
 
 `failures.json`: the nine checks `bun run up --check` runs with the Aven Peer stopped, each with its input and the
 outcome the models give: who reaches whom and through which relay (`Aven.ID.Node`), which source a catch-up takes and
-which it catches (`Aven.ID.CatchUp`), which keeper serves a file (`Aven.ID.Keeping`'s `keepersOf`), whether a
+which it catches (`Aven.Peer.CatchUp`), which keeper serves a file (`Aven.ID.Keeping`'s `keepersOf`), whether a
 newcomer gets in at Alice Peer's relay (`Settle.newcomer`), the settled tree after each race and after a restart
-(`settle`), and the wire version's refusal (`Records.speaks`). The `#guard`s below hold each outcome to what PEERS.md
+(`settle`), and the wire version's refusal (`Aven.Peer.meet`). The `#guard`s below hold each outcome to what PEERS.md
 says the box must see, so the vectors can't drift from the plan.
 
 The cast: the Aven Peer (`aven-peer`) and Alice Peer (`alice-peer`) run the listed relays; Bob's Peer (`bob-peer`)
@@ -18,10 +20,10 @@ a device of Alice's vault, which holds Maia City's confirm cap, confirms claims 
 
 open Lean
 
-namespace Aven.ID
-namespace FailJson
+namespace Aven.Peer
+namespace Failures
 
-open Settle Node CatchUp SettleJson TreeExamples
+open Aven.ID Aven.ID.Settle Aven.ID.Node CatchUp Aven.ID.SettleJson Aven.ID.TreeExamples
 
 def members : List String := ["aven-peer", "alice-peer", "bob-peer", "bob-light", "alice-light"]
 def gone : String := "aven-peer"
@@ -118,7 +120,7 @@ def failureVectors : List Json :=
        ("settled", settled all7)]),
    step 8 "a peer on another wire version is refused with update"
      (Json.mkObj [("mine", toJson (1 : Nat)), ("theirs", toJson (2 : Nat))])
-     (Json.mkObj [("speaks", toJson (Records.speaks 1 2))]),
+     (Json.mkObj [("speaks", toJson (meet 1 2).isNone)]),
    step 9 "a peer that hides Bob's newest post is caught"
      (Json.mkObj [("tip", Json.mkObj [("number", toJson bobsTip.number), ("hash", toJson bobsTip.hash)]),
        ("sources", Json.arr (hider.map fun (s, c) => Json.mkObj [("source", s), ("copy", toJson c)]).toArray)])
@@ -151,9 +153,9 @@ def failureVectors : List Json :=
 -- 7. the same tree, whatever order the Aven Peer reads it back in
 #guard (settle 100 all7).listed all7 == (settle 100 all7.reverse).listed all7
 -- 8. no fallback
-#guard !Records.speaks 1 2
+#guard meet 1 2 = some (.update 1)
 -- 9. the hider is caught, and Alice Peer is asked instead
 #guard (choose bobsTip hider).map (·.1) == some "alice-peer" && caught bobsTip [11, 22]
 
-end FailJson
-end Aven.ID
+end Failures
+end Aven.Peer

@@ -1,9 +1,9 @@
-import Aven.ID.Records
+import Aven.Peer.Notices
 
 /-! # Catch-up from whoever holds the posts, and presence from beats (PEERS.md §2 and §3; Thread C, C1 and C2)
 
 **Whom to ask (C1).** A peer catches up a device's log from any member that holds it, not from the Aven Peer first.
-What it trusts is the device's own signed log tip (`Aven.ID.Records`, `.logTip`): the tip's number and the hash of the
+What it trusts is the device's own signed log tip (`Aven.Peer.Notices`, `.logTip`): the tip's number and the hash of the
 post at that number. A source offers its copy of the log, the posts' hashes in order. A copy that falls short of the
 tip, or holds another post at the tip's place, is caught (`caught`): a source can't hide posts behind a newer tip it
 has seen signed, nor pass off a forged or split log. The peer asks its sources in order and takes the first that
@@ -11,13 +11,14 @@ isn't caught (`choose`); that one's copy reaches the tip (`chosen_reaches`), and
 knows each one fell short or differs (`none_chosen`). Every post is still checked by its receiver as before; this
 only decides whom to ask.
 
-**Presence (C2, A35, A42).** A device is present while its newest signed beat (`.presence`) was heard at most `window`
-steps ago, by the clock of the peer that heard it (`present`). The beat's counter only orders the device's beats: it
-is not a time, so a beat dated ahead stays present no longer than any other (`present_heard`, `present_ages`). Only
-the device's own beats count (`present_signed`), and who is present depends only on the beats a peer holds and when
-it heard them, not on their order or on who passed them on (`present_set`): no hub counts connections. -/
+**Presence (C2, A35, A42).** A device is present while its newest signed beat (`Notices.Beat`, `.presence`) was
+heard at most `window` steps ago, by the clock of the peer that heard it (`present`). The beat's counter only orders
+the device's beats: it is not a time, so a beat dated ahead stays present no longer than any other (`present_heard`,
+`present_ages`). Only the device's own beats count (`present_signed`), and who is present depends only on the beats a
+peer holds and when it heard them, not on their order or on who passed them on (`present_set`): no hub counts
+connections. -/
 
-namespace Aven.ID
+namespace Aven.Peer
 namespace CatchUp
 
 /-- A device's signed log tip: the number of its newest post and that post's hash. -/
@@ -81,11 +82,11 @@ theorem honest_chosen {tip : Tip} {sources : List (String × Copy)} {s : String 
 
 /-! ## Presence from signed beats -/
 
-open Records
+open Notices
 
 /-- A beat as a peer holds it: the record and the step of the peer's own clock when it first heard it. -/
 structure Heard where
-  beat : PeerRecord
+  beat : Beat
   at_ : Nat
   deriving DecidableEq, Repr
 
@@ -93,7 +94,7 @@ structure Heard where
 heard at most `window` steps ago. -/
 def present (admits : String → Bool) (window now : Nat) (hs : List Heard) (d : String) : Bool :=
   hs.any fun h => h.beat.kind == .presence && h.beat.about == d &&
-    isNewest admits (fun _ => false) (hs.map (·.beat)) h.beat && decide (now ≤ h.at_ + window)
+    h.beat.isNewest admits (hs.map (·.beat)) && decide (now ≤ h.at_ + window)
 
 /-- **`present_set`:** holding the same beats, heard at the same steps, in any order, gives the same presence. -/
 theorem present_set {admits : String → Bool} {window now : Nat} {hs hs' : List Heard}
@@ -104,7 +105,7 @@ theorem present_set {admits : String → Bool} {window now : Nat} {hs hs' : List
     exact ⟨fun ⟨x, m, e⟩ => ⟨x, (h x).mp m, e⟩, fun ⟨x, m, e⟩ => ⟨x, (h x).mpr m, e⟩⟩
   funext d
   apply Bool.eq_iff_iff.mpr
-  simp only [present, List.any_eq_true, newest_set hb]
+  simp only [present, List.any_eq_true, beat_newest_set hb]
   exact ⟨fun ⟨r, m, p⟩ => ⟨r, (h r).mp m, p⟩, fun ⟨r, m, p⟩ => ⟨r, (h r).mpr m, p⟩⟩
 
 /-- **`present_signed`:** a device is present only through a beat it signed itself, which the door admits. -/
@@ -113,8 +114,7 @@ theorem present_signed {admits : String → Bool} {window now : Nat} {hs : List 
     ∃ x ∈ hs, x.beat.kind = .presence ∧ x.beat.about = d ∧ x.beat.signer = d ∧ admits d = true := by
   simp only [present, List.any_eq_true, Bool.and_eq_true, beq_iff_eq] at h
   obtain ⟨x, mx, ⟨⟨⟨k, a⟩, n⟩, _⟩⟩ := h
-  have t := ((isNewest_iff.mp n).1).1.2
-  simp only [takes, k, Bool.and_eq_true, beq_iff_eq] at t
+  have t := beat_newest_signed n
   exact ⟨x, mx, k, a, t.1.trans a, a ▸ t.1 ▸ t.2⟩
 
 /-- **`present_heard`:** a device is present only through a beat this peer heard within the window, by its own clock,
@@ -151,10 +151,10 @@ def tip : Tip := ⟨3, 33⟩
 def admitted (k : String) : Bool := k == "bob-light" || k == "alice-peer"
 /-- Beats as a peer heard them, at steps of its own clock. -/
 def beats : List Heard :=
-  [⟨⟨.presence, "bob-light", "bob-light", 0, 10, 0⟩, 10⟩, ⟨⟨.presence, "bob-light", "bob-light", 0, 11, 0⟩, 14⟩,
-   ⟨⟨.presence, "alice-peer", "alice-peer", 0, 5, 0⟩, 5⟩, ⟨⟨.presence, "bob-light", "aven-peer", 0, 99, 0⟩, 15⟩,
+  [⟨⟨.presence, "bob-light", "bob-light", 10, 0⟩, 10⟩, ⟨⟨.presence, "bob-light", "bob-light", 11, 0⟩, 14⟩,
+   ⟨⟨.presence, "alice-peer", "alice-peer", 5, 0⟩, 5⟩, ⟨⟨.presence, "bob-light", "aven-peer", 99, 0⟩, 15⟩,
    -- Alice's Peer dates a beat far ahead: its counter orders it, but it ages from when it was heard
-   ⟨⟨.presence, "alice-peer", "alice-peer", 0, 1000, 0⟩, 6⟩]
+   ⟨⟨.presence, "alice-peer", "alice-peer", 1000, 0⟩, 6⟩]
 
 -- at step 15 with a window of 3: Bob's browser was last heard at 14, Alice's Peer at 6 whatever its counter says;
 -- the Aven Peer's word for Bob counts for nothing
@@ -165,4 +165,4 @@ def beats : List Heard :=
 end CatchUpExamples
 
 end CatchUp
-end Aven.ID
+end Aven.Peer
