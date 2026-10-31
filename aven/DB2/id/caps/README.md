@@ -738,12 +738,17 @@ vault, or of one type (`keepersOf`, `keepers_by_caps`). The issuing vault's devi
 the keeper, which can't read a Doc's facts. The Values a Doc's Records name, a file's chunks among them, are kept with
 it.
 - **By default** a new vault's keep cap covers everything of its own, to Maia City's keeper, the Aven Peer acting for
-  Aven. Its owner approves it with what they sign to join (`defaultKeep`, `default_kept`), and the vault can withdraw
-  it or issue others. It doesn't reach below, so a vault it governs keeps its own default.
+  Aven (`defaultKeep`, `default_kept`). It is an ordinary grant: it holds only with its owners' approval (D14), however
+  the join collects it, and without one it breaks `.approval` (`default_approved`, `default_needs_owner`). One tap that
+  covers the join and the keep cap together is a change to the signed join text, for avenPEER's code threads, Lean
+  and Rust together. The vault can withdraw it or issue others. It doesn't reach below, so a vault it governs keeps its
+  own default.
 - **The owner always decides where its data goes.** A keep cap may not share, so no keeper passes data on: a chain
   that keeps has one holder, and every link after its root only attenuates (`keep_one_holder`). A cap keeps a Doc only
   as its root does, a grant by a vault with authority over it, its own or one it governs (`keeper_named_by_owner`).
-  Neither Maia City nor a keeper can extend it; a new keeper needs a new keep cap from the owner.
+  Every keeper of a Doc is named by a keep cap its issuer's owners approved, with a line covering the Doc in its
+  issuer's authority (`keepers_by_owner`). Neither Maia City nor a keeper can extend it; a new keeper needs a new keep
+  cap from the owner.
 
 A keep cap tells a keeper what to keep and nothing about what it is:
 - the Doc ids, or the group whose Docs to keep;
@@ -766,6 +771,25 @@ key's public half. A keeper takes a link on that signature alone, since it reads
 4. The uploading vault pays, and only for what the keeper took from it (`uploader_pays`). Uploads are taken in the
    order they come, each only while its vault's spending stays within the quota the keep cap gives it, so no vault ever
    spends past it (`quota_holds`, R10).
+
+**What a keeper keeps, and for whom** (A22, Samuel, 31 Oct 2026: "a Vault owner always decides, where its data gets
+shared to"). A keeper holds its keep caps, so it checks each against the tree: a grant naming the keeper's vault,
+signed by a device of its issuer, which its issuer's owners approved (D14). It can't read a Doc's facts, so the
+issuer's device hands it the Docs the cap's target covers, each with its first fetch key, exactly those
+(`resolve_exact`).
+1. It keeps, and takes uploads and serves fetches for, only what such a keep cap lists (`kept_only_covered`): a
+   keeper holds a vault's data only under a keep cap that vault's owners approved (`kept_only_by_owner`). With the
+   lists resolved by their issuers, and each keep cap one its issuer checked, a keep cap in its issuer's authority
+   covers the Doc by its facts (`kept_by_owner`).
+2. A device of the issuing vault withdraws a keep cap by an order the keeper checks against the tree. The keeper drops
+   what it covered and serves it no more (`withdrawn_dropped`, `withdrawn_not_served`). What another keep cap covers
+   stays (`others_kept`), and a device of another vault can't withdraw it.
+3. A device of a Doc's vault deletes it by such an order, and the keeper drops the bytes and serves none
+   (`deleted_gone`). It is final: whatever keep caps and orders come after, the Doc stays gone at the keeper
+   (`deleted_final`).
+
+Withdrawals and deletes only take away, so a device signs them alone, as it signs a revocation. Readers see a delete
+too, as a Record in the Doc; that half is the docs layer's and `Revoke`'s.
 
 Key blobs and letters are served to any member, since they are useless without the keys they're sealed to. A device
 whose proof is refused because a newer epoch came fetches that epoch's key blob, opens its stanza and proves again.
@@ -1219,7 +1243,10 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `role_pinned` | A new version of a role changes nothing a cap naming the old one grants (D6) |
 | | `chainError_none` | The first rule a chain breaks is none exactly when it keeps them all |
 | `Placement` | `coversB_iff`, `keeps_iff` | Coverage as a device computes it is Core's `Target.covers`, and a cap keeps a Doc exactly when one of its `keep` lines reaches it |
-| | `keepers_by_caps`, `default_kept` | A Doc's keepers are the vaults holding the caps that keep it; a new vault's default keep cap has every Doc of its own kept by Maia City's keeper (A22) |
+| | `resolve_exact` | A keep cap's issuer hands its keeper exactly the Docs the cap covers, each with its first fetch key |
+| | `keepers_by_caps`, `holder_keeps`, `default_kept` | A Doc's keepers are exactly the vaults holding the caps that keep it; a new vault's default keep cap has every Doc of its own kept by Maia City's keeper (A22) |
+| | `default_approved`, `default_needs_owner` | The default keep cap is an ordinary grant: it holds only with its owners' approval, and without one it breaks `.approval` (D14) |
+| | `keepers_by_owner` | Every keeper of a Doc, by keep caps that are valid roots, is named by one its issuer's owners approved, with a line covering the Doc in its issuer's authority (A22) |
 | | `keep_one_holder` | No keeper passes a vault's data on: a keep cap may not share, so a chain that keeps has one holder, and every link after its root only attenuates |
 | | `keeper_named_by_owner` | A cap keeps a Doc only as its chain's root does, a grant by a vault with authority over every line, its own or one it governs: the owner decides who keeps (A22) |
 | `Approve` | `approval_exact` | An approval holds only with k distinct owners, each having signed exactly its digest |
@@ -1256,6 +1283,9 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `served_current`, `fork_served` | A keeper serves a fetch or takes an upload only for a proof on that connection by the current fetch key, or, while a fork is unsettled, by a branch's newest key, so honest readers are never refused |
 | | `quota_holds`, `admitted_served` | A keeper takes uploads in the order they come, each only while its vault's spending stays within the quota its keep cap gives it, so no vault's spending ever passes its quota; and it takes only what it serves (R10) |
 | | `grind_settled`, `settled_example` | Once the keep cap's issuer chooses a branch at a fork, every keeper follows it whatever forks arrive after |
+| | `kept_only_covered`, `kept_only_by_owner`, `kept_by_owner` | A keeper keeps only what a keep cap it holds lists, one naming it that a device of its issuer signed, its issuer's owners approved, and its issuer hasn't withdrawn: a keeper holds a vault's data only under a keep cap that vault's owners approved (A22) |
+| | `withdrawn_dropped`, `withdrawn_not_served`, `others_kept` | A withdrawn keep cap's Docs are dropped and served no more, and what other keep caps cover stays |
+| | `deleted_gone`, `deleted_final` | A Doc its vault deleted is dropped and served no more, whatever comes after |
 | | `uploader_pays` | The uploading vault pays, and only for what the keeper took from it |
 | | `grind_example` | A removed reader's fork with a ground hash becomes current at a keeper until the issuer chooses; it is flagged, and honest readers are still served |
 | `SealedIndex`, moving to `Aven.Architecture.Sealed` (the docs thread) | `index_within_key`, `index_skips` | An index holds only entries read under keys every holder of its key holds; one some holder can't read changes nothing in it (rule 36) |

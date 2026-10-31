@@ -6,7 +6,8 @@ A vault decides who keeps its data and who sees it, by its caps (Samuel, 31 Oct 
 read caps for readers. A keep cap is a cap like any other, a grant from the vault to a keeper's vault, and its lines
 `keep` targets in Core's grammar (A8), so a target may be a query: every Doc of a vault, or of one type. A keeper is
 blind, so the issuing vault's devices, which read each Doc's facts, resolve the target to the Doc ids they hand the
-keeper (`Aven.ID.Keep`). The Values a Doc's Records name, a file's chunks among them, are kept with it.
+keeper, each with its first fetch key: exactly the Docs it covers (`resolve`, `resolve_exact`). What the keeper does
+with them is `Aven.ID.Keep`'s. The Values a Doc's Records name, a file's chunks among them, are kept with it.
 
 **The vault's owner always decides where its data goes** (Samuel, 31 Oct 2026). A keep cap may not share, so no keeper
 passes data on: a chain that keeps has one holder, the keeper its root names, and every link after the root only
@@ -15,8 +16,11 @@ over every line, its own vault or one it governs (`keeper_named_by_owner`). So n
 adding servers and not a keeper: a new keeper needs a new keep cap from the owner.
 
 **By default** a new vault issues a keep cap for everything of its own to Maia City's keeper, the Aven Peer acting for
-Aven (`defaultKeep`, `default_kept`). Its owner approves it with what they sign to join (D14), and the vault can
+Aven (`defaultKeep`, `default_kept`). It is an ordinary grant: it holds only with its owners' approval (D14), however
+the join collects it, and without one it breaks `.approval` (`default_approved`, `default_needs_owner`). The vault can
 withdraw it or issue others. A vault it governs starts with its own, so withdrawing that one isn't undone from above.
+Every keeper of a Doc, by keep caps that are valid roots, is named by one its issuer's owners approved, whose line
+covering the Doc lies in its issuer's authority (`keepers_by_owner`).
 
 Coverage is Core's `Target.covers`, computed (`coversB`, `coversB_iff`): who governs whom and which actor spawned which
 are functions a device evaluates. -/
@@ -69,6 +73,29 @@ theorem keepers_by_caps {roles : List Role} {caps : List Cap} {f : Facts} {k : S
   refine ⟨c, m, ?_, kc⟩
   unfold Cap.keeper at hk
   split at hk <;> simp_all
+
+/-- A keep cap's holder keeps every Doc the cap keeps. -/
+theorem holder_keeps {roles : List Role} {caps : List Cap} {c : Cap} {f : Facts} {k : String} (m : c ∈ caps)
+    (kc : c.keeps gov spawned roles f = true) (held : c.holder = .vault k) :
+    k ∈ keepersOf gov spawned roles caps f := by
+  simp only [keepersOf, List.mem_filterMap, List.mem_filter]
+  exact ⟨c, ⟨m, kc⟩, by simp [Cap.keeper, held]⟩
+
+/-- What a keep cap's issuer hands its keeper: the Docs among those it holds, with their facts and first fetch keys,
+that the cap keeps, each by its id with its first fetch key. -/
+def resolve (roles : List Role) (c : Cap) (held : List (Facts × Nat)) : List (DocId × Nat) :=
+  (held.filter fun (f, _) => c.keeps gov spawned roles f).map fun (f, k) => (f.id, k)
+
+/-- **The keeper is handed exactly the Docs a keep cap covers** (A22): a Doc is in the list exactly when its issuer
+holds it and the cap keeps it. -/
+theorem resolve_exact {roles : List Role} {c : Cap} {held : List (Facts × Nat)} {d : DocId} {k : Nat} :
+    (d, k) ∈ resolve gov spawned roles c held ↔ ∃ f, (f, k) ∈ held ∧ f.id = d ∧ c.keeps gov spawned roles f = true := by
+  simp only [resolve, List.mem_map, List.mem_filter, Prod.mk.injEq, Prod.exists]
+  constructor
+  · rintro ⟨f, k', ⟨m, kf⟩, rfl, rfl⟩
+    exact ⟨f, m, rfl, kf⟩
+  · rintro ⟨f, m, rfl, kf⟩
+    exact ⟨f, k, ⟨m, kf⟩, rfl, rfl⟩
 
 /-- The keep cap a new vault `v` starts with: every Doc of its own, to Maia City's keeper `k`, the Aven Peer acting for
 Aven. Its owner approves it with what they sign to join (D14). It may not share, and the vault can withdraw it. -/
@@ -167,5 +194,43 @@ theorem keeper_named_by_owner (gov : Bytes → Bytes → Bool) (spawned : DocId 
   refine ⟨(keep_one_holder h ⟨c, m, kk⟩ c m).1, ?_, root_authority h c m⟩
   rw [keeps_iff] at k ⊢
   exact narrow_chain _ _ h c m f .keep k
+
+/-- **Only an owner places a keeper** (A22): every keeper of a Doc, by keep caps that are valid roots as every
+owner-issued one is, is named by one its issuer's owners approved (D14), with a `keep` line covering the Doc in its
+issuer's authority: the Doc's own vault, or one that governs it. -/
+theorem keepers_by_owner (gov : Bytes → Bytes → Bool) (spawned : DocId → DocId → Bool) {caps : List Cap}
+    (valid : ∀ c ∈ caps, chainOk x [c] = true) {f : Facts} {k : String}
+    (h : k ∈ keepersOf gov spawned x.roles caps f) :
+    ∃ c ∈ caps, c.holder = .vault k ∧ x.tree.approves x.threshold c.issuer c.id c.approvals = true ∧
+      ∃ l ∈ c.grants x.roles, l.verb = .keep ∧ coversB gov spawned l.target f = true ∧
+        authorityOver x c.issuer l = true := by
+  obtain ⟨c, m, held, kc⟩ := keepers_by_caps gov spawned h
+  have ok := valid c m
+  have kind : c.kind = .grant := by
+    have r := ok
+    rw [chainOk, chainRules, rules_all] at r
+    exact (rootRules_ok r.1).2.1
+  simp only [Cap.keeps, List.any_eq_true, Bool.and_eq_true, beq_iff_eq] at kc
+  obtain ⟨l, ml, lk, lc⟩ := kc
+  exact ⟨c, m, held, (grant_approved ok c (List.mem_singleton_self c)).2 kind, l, ml, lk, lc,
+    root_authority ok c (List.mem_singleton_self c) l ml⟩
+
+/-- A default keep cap holds as a chain only with its owners' approval (D14). -/
+theorem default_approved {v k s : String} {a : List Sig} (h : chainOk x [defaultKeep v k s a] = true) :
+    x.tree.approves x.threshold v ("keep-" ++ v) a = true :=
+  (grant_approved h _ (List.mem_singleton_self _)).2 rfl
+
+/-- **The default needs its owner** (A22, D14): a default keep cap is an ordinary grant, however the join collects its
+approval. Signed by a device of its vault but with no approval, it breaks `.approval`, every threshold being one or
+more. -/
+theorem default_needs_owner {v k s : String} (pos : ∀ w, 1 ≤ x.threshold w) (dev : x.tree.actsFor s = some v) :
+    chainError x [defaultKeep v k s []] = some (.approval ("keep-" ++ v)) := by
+  have none : x.tree.approves x.threshold v ("keep-" ++ v) [] = false := by
+    cases h : x.tree.approves x.threshold v ("keep-" ++ v) []
+    · rfl
+    · obtain ⟨_, _, m⟩ := Tree.approves_signed pos h
+      simp at m
+  simp [chainError, chainRules, rootRules, capRules, linksRules, defaultKeep, Cap.grants, authorityOver, anchor,
+    authorityOverVault, dev, none]
 
 end Aven.ID
