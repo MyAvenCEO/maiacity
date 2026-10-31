@@ -247,6 +247,43 @@ theorem cover_wf {s : Store} (w : s.wf) (d : String) (p : Put) : (s.cover d p).w
     exact lt i mi
   · exact (mem_cover mj).choose_spec.2.2.2.2.1
 
+/-! ### Uploaders in upload order -/
+
+/-- An item's uploaders after a put are its uploaders before, in the order they came, with the putting device added
+at the end or taken off: so its earliest remaining uploader is the first of those still on it. -/
+theorem put_order {s : Store} {d : String} {p : Put} {j : Item} (m : j ∈ (s.put d p).items) :
+    (∃ i ∈ s.items, j.n = i.n ∧ j.hash = i.hash ∧
+      (j.uploaders = i.uploaders ∨ j.uploaders = i.uploaders ++ [d] ∨ j.uploaders = i.uploaders.filter (· != d) ∨
+        j.uploaders = (i.uploaders ++ [d]).filter (· != d))) ∨ j.uploaders = [d] := by
+  simp only [put, cover, List.mem_filter, List.mem_map] at m
+  obtain ⟨⟨k, mk, e⟩, -⟩ := m
+  have hk : (∃ i ∈ s.items, k.n = i.n ∧ k.hash = i.hash ∧ (k.uploaders = i.uploaders ∨ k.uploaders = i.uploaders ++ [d]))
+      ∨ (k.uploaders = [d] ∧ k.hash = p.hash) := by
+    unfold add at mk
+    split at mk
+    · simp only [List.mem_map] at mk
+      obtain ⟨i, mi, ei⟩ := mk
+      left
+      refine ⟨i, mi, ?_⟩
+      split at ei <;> subst ei
+      · exact ⟨rfl, rfl, .inr rfl⟩
+      · exact ⟨rfl, rfl, .inl rfl⟩
+    · rcases List.mem_append.mp mk with mk | mk
+      · exact .inl ⟨k, mk, rfl, rfl, .inl rfl⟩
+      · exact .inr (by rw [List.mem_singleton.mp mk]; exact ⟨rfl, rfl⟩)
+  split at e <;> subst e
+  · rcases hk with ⟨i, mi, n, h, u | u⟩ | u
+    · exact .inl ⟨i, mi, n, h, .inr (.inr (.inl (by simp [u])))⟩
+    · exact .inl ⟨i, mi, n, h, .inr (.inr (.inr (by simp [u])))⟩
+    · -- the new item has the put's hash, so its own covers pass it by
+      rename_i c
+      rw [u.2, bne_self_eq_false, Bool.and_false] at c
+      exact absurd c Bool.false_ne_true
+  · rcases hk with ⟨i, mi, n, h, u | u⟩ | u
+    · exact .inl ⟨i, mi, n, h, .inl u⟩
+    · exact .inl ⟨i, mi, n, h, .inr (.inl u)⟩
+    · exact .inr u.1
+
 /-! ### Putting -/
 
 theorem put_wf {s : Store} (w : s.wf) (d : String) (p : Put) : (s.put d p).wf := cover_wf (add_wf w d p) d p

@@ -17,11 +17,10 @@ fn vectors(file: &str) -> Vec<Value> {
     serde_json::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
-/// The gate by the model's verdicts, its bills kept as `admit` keeps them.
+/// The gate by the model's verdicts.
 struct Verdicts {
     serves: Vec<(String, u64, String)>,
     quotas: BTreeMap<String, u64>,
-    bills: BTreeMap<String, u64>,
 }
 
 impl Gate<String> for Verdicts {
@@ -33,17 +32,8 @@ impl Gate<String> for Verdicts {
             .find(|(d, p, _)| d == doc && p == proof)
             .map(|(_, _, v)| v.clone())
     }
-    fn admit(&mut self, vault: &String, bytes: u64) -> bool {
-        let bill = self.bills.entry(vault.clone()).or_default();
-        if *bill + bytes > self.quotas.get(vault).copied().unwrap_or(0) {
-            return false;
-        }
-        *bill += bytes;
-        true
-    }
-    fn release(&mut self, vault: &String, bytes: u64) {
-        let bill = self.bills.entry(vault.clone()).or_default();
-        *bill = bill.saturating_sub(bytes);
+    fn quota(&self, vault: &String) -> u64 {
+        self.quotas.get(vault).copied().unwrap_or(0)
     }
 }
 
@@ -109,20 +99,20 @@ fn replies_are_the_models() {
                     )
                 })
                 .collect(),
-            bills: BTreeMap::new(),
         };
+        let quotas: Vec<String> = gate.quotas.keys().cloned().collect();
         let mut k = Keeper::<String, u64, _>::new(gate);
-        let mut c = Conn::new(input["device"].as_str().unwrap(), [0; 32]);
-        for (i, (a, want)) in input["asks"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .zip(v["expected"].as_array().unwrap())
-            .enumerate()
-        {
+        let mut conns: BTreeMap<String, Conn<String, String>> = BTreeMap::new();
+        let asks = input["asks"].as_array().unwrap();
+        let wants = v["expected"]["replies"].as_array().unwrap();
+        for (i, (a, want)) in asks.iter().zip(wants).enumerate() {
             let doc = a["doc"].as_str().unwrap().to_string();
+            let device = a["device"].as_str().unwrap();
+            let c = conns
+                .entry(device.to_string())
+                .or_insert_with(|| Conn::new(device, [0; 32]));
             let r = match a["ask"].as_str().unwrap() {
-                "prove" => k.prove(&mut c, &doc, &a["proof"].as_u64().unwrap()),
+                "prove" => k.prove(c, &doc, &a["proof"].as_u64().unwrap()),
                 "upload" => {
                     let puts: Vec<Put<u64>> = a["puts"]
                         .as_array()
@@ -134,13 +124,20 @@ fn replies_are_the_models() {
                             covers: nums(&p["covers"]),
                         })
                         .collect();
-                    k.upload(&c, &doc, &puts)
+                    k.upload(c, &doc, &puts)
                 }
-                "after" => k.after(&c, &doc, a["n"].as_u64().unwrap()),
-                "fetch" => k.fetch(&c, &doc, &nums(&a["hashes"])),
+                "after" => k.after(c, &doc, a["n"].as_u64().unwrap()),
+                "fetch" => k.fetch(c, &doc, &nums(&a["hashes"])),
                 other => panic!("{name}: an ask {other}"),
             };
             assert_eq!(reply(&r, &doc), *want, "{name}: ask {i}");
+        }
+        for vault in quotas {
+            assert_eq!(
+                json!(k.bill(&vault)),
+                v["expected"]["bills"][&vault],
+                "{name}: {vault}'s bill"
+            );
         }
     }
 }
