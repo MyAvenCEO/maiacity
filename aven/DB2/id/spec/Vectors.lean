@@ -11,6 +11,7 @@ import Aven.ID.FailJson
 import Aven.ID.Expiry
 import Aven.ID.Collections
 import Aven.ID.KeyFormatsJson
+import Aven.ID.SealJson
 
 /-! # The test vectors (README, rule 10)
 
@@ -65,6 +66,9 @@ import Aven.ID.KeyFormatsJson
   extendable modes, the PRF step's input, salt and seeds, a stanza's AAD, keys and commitment, an epoch's subkeys and
   tags; and the bytes of stanzas, keyring and Doc epochs with their names, and hybrid keys and signatures. aven-id
   derives and encodes each and compares.
+- `seals.json`: the one seal for loose envelopes, segments and checkpoints (`Aven.ID.Seal`): each kind's cipher and
+  commitment keys, the AAD, the commitment, the padded plaintext and the outside's bytes; Padmé's lengths; paddings a
+  reader refuses. aven-db-docs checks each, and seals and opens through XChaCha20-Poly1305 itself.
 
 `bun run up --check` runs it again and fails when the files differ from what is committed. -/
 
@@ -342,3 +346,4 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "failures.json") (render FailJson.failureVectors)
   IO.FS.writeFile (dir / "derivations.json") (render KeyFormats.derivationVectors)
   IO.FS.writeFile (dir / "stanzas.json") (render KeyFormats.stanzaVectors)
+  IO.FS.writeFile (dir / "seals.json") (render Seal.sealVectors)

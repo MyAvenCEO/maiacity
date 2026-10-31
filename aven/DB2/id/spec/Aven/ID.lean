@@ -51,6 +51,7 @@ import Aven.ID.CapsExamples
 import Aven.ID.CapsJson
 import Aven.ID.SettleJson
 import Aven.ID.FailJson
+import Aven.ID.Seal
 
 /-! # Aven.ID
 
