@@ -9,14 +9,16 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use aven_core::{DocId, Envelope, Value, blake3};
+use aven_db_docs::Shelf;
 use aven_db_docs::schema::{Kind, Schema};
 use aven_db_docs::{
     Act, Authorize, Body, EpochKey, Genesis, Imported, Limits, Past, RecordWrite, Refused, Version,
 };
 use aven_db_store::backend;
 use aven_id::{Secret, TestEntropy};
+use aven_peer::doc_host::DynStore;
 use aven_peer::doc_host::{Committed, Host, Taken};
-use aven_peer::docs::{Closing, Live, QUIET_MS, Shelf, seal_segment};
+use aven_peer::docs::{Closing, Live, QUIET_MS, seal_segment};
 use iroh::SecretKey;
 
 /// The readers' devices reach the Doc; a stranger's doesn't. Caps implements this; here only who is in.
@@ -81,7 +83,7 @@ fn key(seed: u8) -> SecretKey {
     SecretKey::from_bytes(&[seed; 32])
 }
 
-async fn host(shelf: Shelf) -> Host<Readers> {
+async fn host(shelf: Shelf<DynStore>) -> Host<Readers> {
     let readers = [key(1), key(2)]
         .iter()
         .map(|k| *k.public().as_bytes())
@@ -99,7 +101,7 @@ async fn host(shelf: Shelf) -> Host<Readers> {
     .unwrap()
 }
 
-fn shelf() -> Shelf {
+fn shelf() -> Shelf<DynStore> {
     Shelf::new(Arc::new(backend::memory().unwrap()))
 }
 

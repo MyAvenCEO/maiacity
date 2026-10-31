@@ -1,13 +1,12 @@
-//! A Doc on a peer's shelf (`aven_peer::docs::Shelf`), on the store's memory backend: envelopes kept by hash, the held
+//! A Doc on a peer's shelf (`aven_db_docs::Shelf`, A185), on the store's memory backend: envelopes kept by hash, the held
 //! page and the head read back as they were saved, a Doc never held reads as nothing, and a ref moved by a second
 //! writer is refused, never written over.
-#![cfg(feature = "native")]
 
 use std::sync::Arc;
 
 use aven_core::{DocId, Hash, Value};
-use aven_db_store::{RefName, backend};
-use aven_peer::docs::{Saved, Shelf};
+use aven_db_docs::{Saved, Shelf};
+use aven_db_store::{RefName, Store, backend};
 
 fn doc(n: u8) -> DocId {
     DocId(Hash([n; 32]))
@@ -15,7 +14,7 @@ fn doc(n: u8) -> DocId {
 
 #[tokio::test]
 async fn a_doc_reads_back_as_it_was_saved() {
-    let store: aven_db_store::blobs::Shared = Arc::new(backend::memory().unwrap());
+    let store = Arc::new(backend::memory().unwrap());
     let shelf = Shelf::new(store.clone());
     assert_eq!(shelf.load(&doc(1)).await.unwrap().held, None);
 

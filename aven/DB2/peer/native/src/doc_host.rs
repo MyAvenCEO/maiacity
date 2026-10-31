@@ -25,7 +25,9 @@ use aven_db_docs::{
 use aven_db_docs::{SealedItem, Unopened};
 use aven_id::Entropy;
 
-use crate::docs::{Entry, Live, Saved, Shelf, Tip, beyond, tips, version};
+use aven_db_docs::{Saved, Shelf};
+
+use crate::docs::{Entry, Live, Tip, beyond, tips, version};
 
 /// A commit as it left the host: what to gossip, and what its writer's segment closing needs.
 #[derive(Debug)]
@@ -47,9 +49,15 @@ pub enum Taken {
     Unopened(Unopened),
 }
 
+/// The store a peer's shelf sits on: the peer's own, or the docs worker's that asks the Peer-Light's.
+#[cfg(not(target_arch = "wasm32"))]
+pub type DynStore = dyn aven_db_store::Store + Send + Sync;
+#[cfg(target_arch = "wasm32")]
+pub type DynStore = dyn aven_db_store::Store;
+
 /// A Doc as one peer holds it.
 pub struct Host<A: Authorize> {
-    shelf: Shelf,
+    shelf: Shelf<DynStore>,
     doc: Doc,
     saved: Saved,
     /// The Doc's epochs this peer holds, the newest last: what it writes under, and what it opens with.
@@ -76,7 +84,7 @@ impl<A: Authorize> Host<A> {
     /// Opens a Doc from its genesis, reading back what the shelf holds of it.
     #[allow(clippy::too_many_arguments)]
     pub async fn open(
-        shelf: Shelf,
+        shelf: Shelf<DynStore>,
         genesis: Genesis,
         schemas: &[Schema],
         limits: Limits,

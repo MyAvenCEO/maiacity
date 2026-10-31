@@ -291,6 +291,7 @@ name = "aven-db-docs"
 version = "0.0.0"
 dependencies = [
  "aven-core",
+ "aven-db-store",
  "aven-id",
  "blake3",
  "chacha20poly1305",
@@ -299,6 +300,7 @@ dependencies = [
  "proptest",
  "serde_json",
  "subtle",
+ "tokio",
 ]
 
 [[package]]
