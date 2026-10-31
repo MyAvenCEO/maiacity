@@ -25,6 +25,7 @@ aven-core = { path = "../../core" }
 # the docs layer: the Docs a peer holds and syncs (doc_host::Host)
 aven-db-docs = { path = "../../db/docs", features = ["shelf"] }
 aven-gen1 = { path = "../../gen1" }
+aven-peer-wire = { path = "../wire" }
 aven-db-store = { path = "../../store" }
 aven-id = { path = "../../id/core" }
 # the file registry, aven/runtimes': what a file is by its bytes (at /runtimes in the box and the Peer's image)

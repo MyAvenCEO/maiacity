@@ -1,4 +1,4 @@
-//! Presence as the Aven Peer counts it (`aven_gen1::presence`): every peer that says hello on `aven/db/1` joins,
+//! Presence as the Aven Peer counts it (`aven_peer_wire::presence`): every peer that says hello on `aven/db/1` joins,
 //! each of its connections counted, and every connected peer is told who is there, itself included, on every change.
 //! The Aven Peer beats once per clock step on every link, so a quiet link still moves. An Aven Peer that keeps its tree
 //! (`door`) also tells every link whether its network is claimed and, to the devices its door admits, its tree and
@@ -9,10 +9,10 @@
 
 use std::sync::{Arc, Mutex, OnceLock};
 
-use aven_gen1::presence::Presence;
 use aven_gen1::status::TICK_MS;
 use aven_gen1::timeline;
-use aven_gen1::wire::{self, Decoder, Frame, Greeting, encode, heads_pages, kept_pages};
+use aven_peer_wire::presence::Presence;
+use aven_peer_wire::wire::{self, Decoder, Frame, Greeting, encode, heads_pages, kept_pages};
 use iroh::PublicKey;
 use iroh::endpoint::Connection;
 use iroh::protocol::{AcceptError, ProtocolHandler};

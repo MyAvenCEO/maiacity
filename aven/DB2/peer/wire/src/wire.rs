@@ -1,4 +1,4 @@
-//! Our one protocol (README, rule 9, `Aven.DB.Wire`, `Aven.DB.WireCbor`), on ALPN `aven/db/1`, a frozen name: one
+//! Our one protocol (README, rule 9, `Aven.Peer.Wire`, `Aven.Peer.WireCbor`), on ALPN `aven/db/1`, a frozen name: one
 //! stream each way. It opens with a [`Greeting`], a JSON line whose form never changes, so a peer of any version reads
 //! another's and refuses it with `update` (PEERS.md §7). Every [`Frame`] after it is a Value in Core's one codec
 //! (`aven_core`, A29), sent as its canonical encoding behind a 4-byte big-endian length. A peer sends nothing after its
@@ -16,12 +16,12 @@ use serde_json::json;
 pub const ALPN: &[u8] = b"aven/db/1";
 /// A frame or a greeting longer than this is refused: no peer needs one.
 pub const MAX_FRAME: usize = 64 * 1024;
-/// The wire version this peer speaks (`Aven.DB.Wire.wireVersion`): a number of its own, changed only when a frame's
+/// The wire version this peer speaks (`Aven.Peer.Wire.wireVersion`): a number of its own, changed only when a frame's
 /// meaning changes, never with an ordinary release. 2: frames in CBOR (A29); 1 was frames as JSON lines, 0 the wire
 /// before it had versions.
 pub const VERSION: u64 = 2;
 
-/// The first line each side sends (`Aven.DB.Wire.Greeting`).
+/// The first line each side sends (`Aven.Peer.Wire.Greeting`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Greeting {
     /// The cast's id of the peer it is, and the wire version it speaks.
@@ -231,7 +231,7 @@ impl Have {
 }
 
 impl Frame {
-    /// The frame as a Value (`Aven.DB.WireCbor.frameValue`).
+    /// The frame as a Value (`Aven.Peer.WireCbor.frameValue`).
     pub fn value(&self) -> Value {
         let named = |name: &str| ("frame", text(name));
         match self {
@@ -286,7 +286,7 @@ impl Frame {
         }
     }
 
-    /// A frame read from exactly its keys (`Aven.DB.WireCbor.frameOf`).
+    /// A frame read from exactly its keys (`Aven.Peer.WireCbor.frameOf`).
     pub fn of_value(v: &Value) -> Option<Frame> {
         let Value::Map(kvs) = v else { return None };
         let name = kvs
@@ -356,29 +356,29 @@ impl Frame {
     }
 }
 
-/// What a peer speaking `mine` answers a hello of version `theirs` with (`Aven.DB.Wire.meet`): nothing, and the
+/// What a peer speaking `mine` answers a hello of version `theirs` with (`Aven.Peer.Wire.meet`): nothing, and the
 /// connection carries on; or `update` with its own version, and the connection closes. No fallback (README rule 9).
 pub fn meet(mine: u64, theirs: u64) -> Option<Greeting> {
     (theirs != mine).then_some(Greeting::Update { wire: mine })
 }
 
-/// Whether a peer speaking `mine`, refused by one speaking `theirs`, updates (`Aven.DB.Wire.follows`): only when that
+/// Whether a peer speaking `mine`, refused by one speaking `theirs`, updates (`Aven.Peer.Wire.follows`): only when that
 /// one is ahead. Of two peers that differ, exactly one follows, and nobody ever goes back.
 pub fn follows(mine: u64, theirs: u64) -> bool {
     mine < theirs
 }
 
-/// The gossip topic's name for a network on a wire version (`Aven.DB.Wire.topicName`): a peer on another version is
+/// The gossip topic's name for a network on a wire version (`Aven.Peer.Wire.topicName`): a peer on another version is
 /// in another room.
 pub fn topic_name(wire: u64, network: &str) -> String {
     format!("avenDB chat 1\nwire {wire}\nnetwork {network}")
 }
 
-/// The most heads or haves in one frame (`Aven.DB.Wire.pageSize`): a page of the longest stays well under
+/// The most heads or haves in one frame (`Aven.Peer.Wire.pageSize`): a page of the longest stays well under
 /// [`MAX_FRAME`], however many devices there are.
 pub const PAGE: usize = 128;
 
-/// One telling of the heads (`Aven.DB.Wire.headsPages`): pages of at most [`PAGE`], every one but the last with `more`;
+/// One telling of the heads (`Aven.Peer.Wire.headsPages`): pages of at most [`PAGE`], every one but the last with `more`;
 /// no heads is one empty page, so a peer always hears the end of a telling.
 pub fn heads_pages(heads: Vec<Head>) -> Vec<Frame> {
     if heads.is_empty() {
@@ -395,7 +395,7 @@ pub fn heads_pages(heads: Vec<Head>) -> Vec<Frame> {
         .collect()
 }
 
-/// What a peer asks for, in pages of at most [`PAGE`] (`Aven.DB.Wire.catchUpPages`): each `only` for the chains it
+/// What a peer asks for, in pages of at most [`PAGE`] (`Aven.Peer.Wire.catchUpPages`): each `only` for the chains it
 /// names, so the Aven Peer answers each alone, and the answers together are the answer to all of it.
 pub fn catch_up_pages(holds: Vec<Have>) -> Vec<Frame> {
     holds
@@ -407,7 +407,7 @@ pub fn catch_up_pages(holds: Vec<Have>) -> Vec<Frame> {
         .collect()
 }
 
-/// Files kept, in pages of at most [`PAGE`] (`Aven.DB.Wire.keptPages`); none for none.
+/// Files kept, in pages of at most [`PAGE`] (`Aven.Peer.Wire.keptPages`); none for none.
 pub fn kept_pages(files: Vec<String>) -> Vec<Frame> {
     files
         .chunks(PAGE)
@@ -417,7 +417,7 @@ pub fn kept_pages(files: Vec<String>) -> Vec<Frame> {
         .collect()
 }
 
-/// A frame on the stream (`Aven.DB.WireCbor.frameBytes`): its encoding's length, 4 bytes big-endian, then the
+/// A frame on the stream (`Aven.Peer.WireCbor.frameBytes`): its encoding's length, 4 bytes big-endian, then the
 /// encoding.
 pub fn encode(frame: &Frame) -> Vec<u8> {
     let e = aven_core::encode(&frame.value());
@@ -439,7 +439,7 @@ pub enum Incoming {
     Frame(Frame),
 }
 
-/// Bytes in, the greeting and whole frames out: the reading half of a stream, without I/O (`Aven.DB.WireCbor.read`).
+/// Bytes in, the greeting and whole frames out: the reading half of a stream, without I/O (`Aven.Peer.WireCbor.read`).
 /// A peer reads the greeting alone first ([`Decoder::greeting`]): what came after it stays buffered until the peer has
 /// met its version, so a peer of another version is answered `update` before anything else it sent is read.
 #[derive(Default)]
@@ -449,7 +449,7 @@ pub struct Decoder {
 }
 
 impl Decoder {
-    /// The greeting, once its line is in (`Aven.DB.WireCbor.greet`); the bytes after it stay buffered for
+    /// The greeting, once its line is in (`Aven.Peer.WireCbor.greet`); the bytes after it stay buffered for
     /// [`Decoder::frames`].
     pub fn greeting(&mut self, bytes: &[u8]) -> Result<Option<Greeting>, WireError> {
         self.buf.extend_from_slice(bytes);
@@ -472,7 +472,7 @@ impl Decoder {
         Ok(Some(greeting))
     }
 
-    /// Every whole frame after the greeting (`Aven.DB.WireCbor.push`).
+    /// Every whole frame after the greeting (`Aven.Peer.WireCbor.push`).
     pub fn frames(&mut self, bytes: &[u8]) -> Result<Vec<Frame>, WireError> {
         self.buf.extend_from_slice(bytes);
         let mut out = Vec::new();

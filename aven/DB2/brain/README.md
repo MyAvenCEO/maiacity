@@ -75,7 +75,13 @@ The content is first-party, from the repo, bundled at build time (`os/web/brain`
 on the page:
 
 - **Markdown** goes through the frozen markdown-runtime, in the same worker, with the brain's link rules
-  (`os/web/brain/brain.js`), and `Node.svelte` draws its tree.
+  (`os/web/brain/brain.js`), and `Node.svelte` draws its tree. An `A<n>` in a page's text that the log holds becomes
+  a link to its row, and each page's contents list its headings ([A203](DECISIONS.md)).
+- **The dashboard** has three bands: the architecture to start, the packages, and the decisions and the glossary to
+  look things up.
+- **The decision log** is drawn from markdown-runtime's tree of `DECISIONS.md`, its table read as rows
+  (`os/web/brain/Decisions.svelte`): a card per decision, a search over every row, filters by who decided and by
+  list, "only what still stands", and both directions of "supersedes". `#/brain/decisions/<id>` opens one.
 - **A slide is a face.** Its part, `<id>.part.json`, goes through the frozen face-runtime, loaded by its hash in
   avenOS's runtimes worker, a worker of its own (`aven/runtimes`, README, "The browser host"). face-runtime checks the
   tree against the allowlist, every rule's range, the text's size and contrast, and that it can be read aloud, and
@@ -86,7 +92,8 @@ on the page:
 
 ## Drawing
 
-The objects are drawn in code: [`art/objects.mjs`](art/objects.mjs), with the paint kit in
+The objects are drawn in code: the slides' in [`art/objects.mjs`](art/objects.mjs), the dashboard's tiles in
+[`art/tiles.mjs`](art/tiles.mjs), with the paint kit in
 [`art/paint.mjs`](art/paint.mjs). `AVEN_CHROMIUM=<a Chromium> bun brain/art/render.mjs` renders each to a transparent
 PNG in `art/img/`, named by the BLAKE3 hash of its bytes, as the network names its files, and lists them in
 `art/images.json`. `bun brain/art/slides.mjs` lays out avenID's slides and writes, for each, its markup, its style data

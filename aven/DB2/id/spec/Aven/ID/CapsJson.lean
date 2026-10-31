@@ -37,8 +37,8 @@ namespace Aven.ID
 
 def targetJson : Core.Target → Json
   | .doc d r => Json.mkObj [("doc", d.text), ("reach", r.name)]
-  | .vault v b => Json.mkObj [("vault", Core.utf8Text v), ("below", toJson b)]
-  | .vaultType v t b => Json.mkObj [("vault", Core.utf8Text v), ("type", t.text), ("below", toJson b)]
+  | .vault v b => Json.mkObj [("vault", v.text), ("below", toJson b)]
+  | .vaultType v t b => Json.mkObj [("vault", v.text), ("type", t.text), ("below", toJson b)]
 
 def boundJson : Core.Bound → Json
   | none => Json.null
@@ -78,7 +78,7 @@ def Cap.json (c : Cap) : Json :=
 
 /-- A Doc's facts, as its genesis fixes them: its id, its vault and its root type. -/
 def factsJson (f : Core.Facts) : Json :=
-  Json.mkObj [("id", f.id.text), ("vault", Core.utf8Text f.vault), ("type", f.type.text)]
+  Json.mkObj [("id", f.id.text), ("vault", f.vault.text), ("type", f.type.text)]
 
 def Listing.json (l : Listing) : Json :=
   Json.mkObj [("cap", l.cap.json),

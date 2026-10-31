@@ -72,7 +72,7 @@ theorem delete_held {nm : Envelope → Hash} {isDelete byOwner : Envelope → Bo
 
 /-- **A Doc that leaves a collection leaves its holders** (A32): after its sync, a holder whose cap covers what
 collection `c` lists holds nothing of a Doc `c` no longer lists. -/
-theorem unlisted_not_held {gov : Bytes → Bytes → Bool} {spawned listed : DocId → DocId → Bool} {c : DocId}
+theorem unlisted_not_held {gov : Hash → Hash → Bool} {spawned listed : DocId → DocId → Bool} {c : DocId}
     {held fetched : List Facts} {f : Facts} (other : f.id ≠ c) (gone : listed c f.id = false) :
     f ∉ sync ((Target.doc c .lists).coversB gov spawned listed) held fetched := by
   intro m

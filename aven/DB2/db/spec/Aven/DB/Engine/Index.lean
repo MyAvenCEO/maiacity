@@ -36,7 +36,8 @@ open Aven.Core
 
 /-- A query's shape. -/
 structure Shape where
-  vault : Bytes
+  /-- The vault, by its 32-byte name (A190). -/
+  vault : Hash
   type : DocId
   eqs : List Bytes
   range : Option Bytes
@@ -45,7 +46,7 @@ structure Shape where
 
 /-- A shape as a Value, so an index is named by its hash. -/
 def Shape.value (s : Shape) : Value :=
-  .array [.bytes s.vault, .bytes s.type.hash.bytes, .array (s.eqs.map .text),
+  .array [.bytes s.vault.bytes, .bytes s.type.hash.bytes, .array (s.eqs.map .text),
     match s.range with | some f => .text f | none => .null,
     match s.order with | some f => .text f | none => .null]
 

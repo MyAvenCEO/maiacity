@@ -2,14 +2,14 @@ import Aven.Core.Cbor
 import Aven.Core.CborLaws
 import Aven.Core.ValueEq
 import Aven.Core.Text
-import Aven.DB.Wire
+import Aven.Peer.Wire
 
 /-!
 # The wire's frames in CBOR (A29, wire version 2)
 
 From wire version 2, every frame after the greeting is a Value in Core's one codec (rule 1, `Aven.Core.Cbor`): a map
 with text keys in the codec's order, sent as its canonical encoding behind a 4-byte big-endian length. The greeting
-stays a JSON line, frozen (`Aven.DB.Wire.Greeting`), so a peer of any version can refuse another with `update`; a peer
+stays a JSON line, frozen (`Aven.Peer.Wire.Greeting`), so a peer of any version can refuse another with `update`; a peer
 sends nothing after its hello until the other's has come.
 
 The rules:
@@ -26,7 +26,7 @@ The rules:
 Text is a `String`'s UTF-8, which is always valid as the codec's table says (`Aven.Core.utf8_text`). A line's blob is
 bytes, as CBOR holds them. -/
 
-namespace Aven.DB
+namespace Aven.Peer
 namespace WireCbor
 
 open Aven.Core
@@ -179,7 +179,7 @@ def decode (chunks : List Bytes) : List (List Frame) × Option WireError := Id.r
     | .error e => return (out.toList, some e)
   return (out.toList, none)
 
-/-- A stream's greeting: its bytes up to the first newline, a JSON line (`Aven.DB.Wire.Greeting`); none yet while the
+/-- A stream's greeting: its bytes up to the first newline, a JSON line (`Aven.Peer.Wire.Greeting`); none yet while the
 newline hasn't come; refused once more than `maxFrame` bytes came without it. Returns the bytes after it. -/
 def greet (buf : Bytes) : Except WireError (Option (Greeting × Bytes)) :=
   match buf.idxOf? 10 with
@@ -416,4 +416,4 @@ def stream : Bytes := greetingBytes (.hello "alice-peer" 2) ++ bytesOf (frameExa
 #guard read [List.replicate (maxFrame + 1) 0x61] == (none, [], some .tooLong)
 
 end WireCbor
-end Aven.DB
+end Aven.Peer

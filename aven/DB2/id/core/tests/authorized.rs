@@ -4,7 +4,7 @@
 
 mod common;
 
-use aven_core::{Call, CoreOp, DocId, Facts, OpId, Value as V};
+use aven_core::{Call, CoreOp, DocId, Facts, Hash, OpId, Value as V};
 use aven_id::Tree;
 use aven_id::caps::{
     Branches, Cap, DeviceCap, Line, Path, Reader, Reading, World, grant_allows, vault_id,
@@ -143,9 +143,10 @@ fn branches(i: usize) -> Branches {
 }
 
 /// The cast's governance, as Core's targets name vaults.
-fn gov(t: &Tree, v: &str, w: &str) -> bool {
-    v.strip_prefix("v:")
-        .is_some_and(|v| t.governs(v).into_iter().any(|g| vault_id(g) == w))
+fn gov(t: &Tree, v: &Hash, w: &Hash) -> bool {
+    t.vaults()
+        .iter()
+        .any(|a| vault_id(&a.id) == *v && t.governs(&a.id).into_iter().any(|g| vault_id(g) == *w))
 }
 
 fn check(case: &Case, d: &Draw) -> Result<(), TestCaseError> {
@@ -205,7 +206,7 @@ fn check(case: &Case, d: &Draw) -> Result<(), TestCaseError> {
     };
     let merge = calls(&d.merge, &ops);
 
-    let gov_ = |v: &str, w: &str| gov(t, v, w);
+    let gov_ = |v: &Hash, w: &Hash| gov(t, v, w);
     let never = |_: &DocId, _: &DocId| false;
     let world = World {
         gov: &gov_,
@@ -391,7 +392,7 @@ fn both_paths_are_reached() {
         .find(|c| c.ctx.with(|x| x.chain_ok(&c.chain)) && c.chain.len() == 1)
         .expect("a good one-cap chain");
     let t = &case.ctx.tree;
-    let gov_ = |v: &str, w: &str| gov(t, v, w);
+    let gov_ = |v: &Hash, w: &Hash| gov(t, v, w);
     let never = |_: &DocId, _: &DocId| false;
     let member = |_: &str| true;
     let vault_of = |k: &[u8]| {

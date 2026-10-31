@@ -12,7 +12,7 @@
 //!   `n`, oldest first, in pages of at most [`PAGE`], none empty (`after_complete`, `after_pages`).
 //!
 //! The hash type is a parameter: the keeper names items by BLAKE3 over their sealed bytes; the tests by the model's
-//! numbers. `tests/vectors.rs` replays `db/spec/vectors/keeper.json`.
+//! numbers. `tests/vectors.rs` replays `peer/spec/vectors/keeper.json`.
 
 use std::collections::BTreeMap;
 
@@ -20,7 +20,7 @@ pub mod fetch;
 pub mod gate;
 pub mod serve;
 
-/// The most entries in one page of "what came after" (`Aven.DB.Wire.pageSize`).
+/// The most entries in one page of "what came after" (`Aven.Peer.pageSize`).
 pub const PAGE: usize = 128;
 
 /// An item a keeper holds: its arrival number, the hash of its sealed bytes, their length, and the devices that

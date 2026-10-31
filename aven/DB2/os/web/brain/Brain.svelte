@@ -1,11 +1,14 @@
 <script>
-	// Brain, avenOS's documentation (aven/DB2/brain): #/brain is the dashboard, one item per package; #/brain/<package> its
-	// page, the story and its slides; #/brain/glossary the glossary, and #/brain/glossary/<word> one term in it. Readable
+	// Brain, avenOS's documentation (aven/DB2/brain): #/brain is the dashboard, in three bands (the architecture, the
+	// packages, the decisions and the glossary); #/brain/<package> its page, its slides in their place, and
+	// #/brain/<package>/<heading> one section of it; #/brain/decisions the decision log, and #/brain/decisions/<id> one
+	// decision; #/brain/glossary the glossary, and #/brain/glossary/<word> one term in it. Readable
 	// on every host without signing in, as public as the repo: Root.svelte routes #/brain here before any vault's
 	// route, so no vault is ever named `brain`.
 	import MainNav from './MainNav.svelte';
+	import Decisions from './Decisions.svelte';
 	import Node from './Node.svelte';
-	import { art, face, glossary, packages, page, slide } from './brain.js';
+	import { art, decisions, face, glossary, headings, packages, page, slide, textOf } from './brain.js';
 
 	let { home = '#/' } = $props();
 
@@ -23,6 +26,7 @@
 	let words = $state({ tree: [], terms: new Map() });
 	let story = $state([]);
 	let slides = $state([]);
+	let log = $state(null);
 	let refused = $state(null);
 	$effect(() => {
 		const p = part;
@@ -30,21 +34,34 @@
 		slides = [];
 		refused = null;
 		if (!p?.page) return;
-		const asked = p.id === 'glossary' ? glossary().then((g) => (words = g)) : Promise.all([page(p.page), Promise.all((p.slides ?? []).map((id) => slide(p.id, id)))]).then(([s, ss]) => {
-			if (part !== p) return;
-			story = s;
-			slides = ss;
-		});
+		const asked =
+			p.id === 'glossary'
+				? glossary().then((g) => (words = g))
+				: p.id === 'decisions'
+					? decisions().then((l) => part === p && (log = l))
+					: Promise.all([page(p.page), Promise.all((p.slides ?? []).map((id) => slide(p.id, id)))]).then(([s, ss]) => {
+							if (part !== p) return;
+							story = s;
+							slides = ss;
+						});
 		asked.catch((error) => part === p && (refused = String(error?.message ?? error)));
 	});
-	const textOf = (node) => (typeof node === 'string' ? node : node[2].map(textOf).join(''));
-	// the contents on the left: this page's sections, then the other packages
+	// the contents on the left: this page's headings (and a package's slides, numbered, after its story), then the brain
 	const sections = $derived(
 		route[0] === 'glossary'
-			? words.tree.filter((n) => n[0] === 'h2').map((n) => ({ href: `#/brain/glossary/${n[1][0][1]}`, id: n[1][0][1], name: textOf(n) }))
-			: slides.map((s, i) => ({ href: `#/brain/${part.id}/${s.id}`, id: s.id, name: textOf(s.text[0] ?? ''), n: i + 1 })),
+			? headings(words.tree).filter((h) => h.level === 2).map((h) => ({ href: `#/brain/glossary/${h.id}`, id: h.id, name: h.name, level: 2 }))
+			: route[0] === 'decisions'
+				? [...headings(log?.intro ?? []), { id: 'log', name: 'The log', level: 2 }].map((h) => ({ ...h, href: `#/brain/decisions/${h.id}` }))
+				: headings(story).map((h) => ({ ...h, href: `#/brain/${part.id}/${h.id}` })),
 	);
+	const numbered = $derived(slides.map((s, i) => ({ href: `#/brain/${part.id}/${s.id}`, id: s.id, name: textOf(s.text[0] ?? ''), n: i + 1 })));
 	const others = packages.filter((p) => p.page);
+	// the dashboard's three bands (A203): where to start, the packages, and where to look things up
+	const start = packages.filter((p) => p.id === 'architecture');
+	const reference = packages.filter((p) => p.id === 'decisions' || p.id === 'glossary');
+	const kits = packages.filter((p) => !start.includes(p) && !reference.includes(p));
+	// a decision asked for by its id, for the log
+	const asked = $derived(route[0] === 'decisions' && route[1] && route[1] !== 'log' && !headings(log?.intro ?? []).some((h) => h.id === route[1]) ? route[1] : null);
 	let wide = $state(true);
 	$effect(() => {
 		const query = matchMedia('(min-width: 1200px)');
@@ -65,10 +82,11 @@
 			entry.scrollIntoView({ block: id.startsWith('g-') ? 'start' : 'center' });
 		} else scrollTo(0, 0);
 	});
-	// a slide asked for by name: scroll to it, once its page is drawn; any other page opens at its top
+	// a slide or a section asked for by name: scroll to it, once its page is drawn; any other page opens at its top. A
+	// decision is the log's own to find.
 	$effect(() => {
-		if (route[0] === 'glossary' || (part?.slides?.length && !slides.length)) return;
-		const entry = route[1] && document.getElementById(`slide-${route[1]}`);
+		if (route[0] === 'glossary' || asked || (part?.slides?.length && !slides.length) || (route[0] === 'decisions' ? !log : part?.page && !story.length)) return;
+		const entry = route[1] && (document.getElementById(`slide-${route[1]}`) ?? document.getElementById(route[1]));
 		if (entry) entry.scrollIntoView({ block: 'start' });
 		else scrollTo(0, 0);
 	});
@@ -83,19 +101,31 @@
 	{#if !route.length}
 		<main class="dashboard">
 			<h1 class="sheet-title">Brain</h1>
-			<p class="lead">How the whole system works, told from the ground up for someone with no background. One idea per slide.</p>
-			<ul class="grid">
-				{#each packages as item (item.id)}
-					<li class="item" data-testid={`brain-${item.id}`}>
-						<svelte:element this={item.page ? 'a' : 'div'} class={item.page ? 'tile open' : 'tile off'} href={item.page ? `#/brain/${item.id}` : undefined}>
-							<img class="art" src={art(item.art)} alt="" width="440" height="440" />
+			<p class="lead">How avenDB works, in one place: the whole on one page, a page for each part, every decision as it was made, and every word with its one meaning. Open to anyone, signed in or not.</p>
+			{#snippet tile(item, wide)}
+				<li class="item" class:wide data-testid={`brain-${item.id}`}>
+					<svelte:element this={item.page ? 'a' : 'div'} class={item.page ? 'tile open' : 'tile off'} href={item.page ? `#/brain/${item.id}` : undefined}>
+						<img class="art" src={art(item.art)} alt="" width="440" height="440" />
+						<span class="words">
 							<strong>{item.name}</strong>
 							<span class="state">{item.page ? (item.slides ? `${item.slides.length} slides` : 'Read') : 'Coming'}</span>
 							<span class="what">{item.what}</span>
-						</svelte:element>
-					</li>
-				{/each}
-			</ul>
+						</span>
+					</svelte:element>
+				</li>
+			{/snippet}
+			<section class="band" aria-labelledby="band-start">
+				<h2 class="band-title" id="band-start">Start here</h2>
+				<ul class="grid start">{#each start as item (item.id)}{@render tile(item, true)}{/each}</ul>
+			</section>
+			<section class="band" aria-labelledby="band-parts">
+				<h2 class="band-title" id="band-parts">The packages</h2>
+				<ul class="grid">{#each kits as item (item.id)}{@render tile(item, false)}{/each}</ul>
+			</section>
+			<section class="band" aria-labelledby="band-look">
+				<h2 class="band-title" id="band-look">Look things up</h2>
+				<ul class="grid">{#each reference as item (item.id)}{@render tile(item, false)}{/each}</ul>
+			</section>
 		</main>
 	{:else if part?.page}
 		<div class="layout">
@@ -103,11 +133,21 @@
 				<details open={wide}>
 					<summary>Contents</summary>
 					<p class="contents-head">{part.name}</p>
-					<ol class:numbered={route[0] !== 'glossary'}>
-						{#each sections as item (item.id)}
-							<li><a href={item.href} aria-current={route[1] === item.id ? 'true' : undefined}>{item.name}</a></li>
-						{/each}
-					</ol>
+					{#if sections.length}
+						<ul class="sections">
+							{#each sections as item (item.id)}
+								<li class:sub={item.level === 3}><a href={item.href} aria-current={route[1] === item.id ? 'true' : undefined}>{item.name}</a></li>
+							{/each}
+						</ul>
+					{/if}
+					{#if numbered.length}
+						<p class="contents-head">Slides</p>
+						<ol class="numbered">
+							{#each numbered as item (item.id)}
+								<li><a href={item.href} aria-current={route[1] === item.id ? 'true' : undefined}>{item.name}</a></li>
+							{/each}
+						</ol>
+					{/if}
 					<p class="contents-head">Brain</p>
 					<ul>
 						<li><a href="#/brain">The whole brain</a></li>
@@ -121,6 +161,14 @@
 				<main class="prose" data-testid="refused">
 					<h1>{part.name}</h1>
 					<p>This page wasn't drawn: {refused}</p>
+				</main>
+			{:else if route[0] === 'decisions'}
+				<main class="page" data-testid="decisions-page">
+					{#if log}
+						<div class="prose">{#each log.intro as node, i (i)}<Node {node} />{/each}</div>
+						<Decisions {log} selected={asked} />
+						<div class="prose">{#each log.after as node, i (i)}<Node {node} />{/each}</div>
+					{/if}
 				</main>
 			{:else if route[0] === 'glossary'}
 				<main class="prose glossary" data-testid="glossary">
@@ -197,7 +245,54 @@
 		font-size: 17px;
 	}
 
-	/* the dashboard: each package as a drawing with its name under it, as on an asset sheet */
+	/* the dashboard: three bands, each package as a drawing with its name under it, as on an asset sheet */
+	.band {
+		margin: 0 0 40px;
+	}
+
+	.band-title {
+		margin: 0 0 16px;
+		padding-bottom: 8px;
+		font: 800 13px/1.3 var(--brain-sans);
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		border-bottom: 1px solid var(--brain-line);
+	}
+
+	.grid.start {
+		grid-template-columns: 1fr;
+	}
+
+	.wide .tile {
+		grid-template-columns: auto 1fr;
+		align-items: center;
+		justify-items: start;
+		gap: 4px 24px;
+		padding: 16px 24px;
+		text-align: left;
+		background: var(--brain-card);
+		border: 1px solid var(--brain-line);
+	}
+
+	.wide .what {
+		max-width: 52ch;
+		font-size: 16px;
+	}
+
+	.words {
+		display: grid;
+		gap: 4px;
+		justify-items: inherit;
+	}
+
+	@media (max-width: 560px) {
+		.wide .tile {
+			grid-template-columns: 1fr;
+			justify-items: center;
+			text-align: center;
+		}
+	}
+
 	.grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
@@ -329,6 +424,11 @@
 		font-weight: 700;
 	}
 
+	.contents li.sub a {
+		padding-left: 24px;
+		font-size: 13px;
+	}
+
 	.contents a:hover {
 		background: var(--brain-card);
 	}
@@ -404,6 +504,11 @@
 		max-width: 920px;
 	}
 
+	.prose :global(h2),
+	.prose :global(h3) {
+		scroll-margin-top: 16px;
+	}
+
 	.prose :global(h2) {
 		margin: 36px 0 10px;
 		font: 800 22px/1.25 var(--brain-sans);
@@ -441,12 +546,28 @@
 		box-shadow: inset 3px 0 0 var(--brain-ochre);
 	}
 
+	/* a wide table scrolls inside its own box, never the page; its cells keep their words whole */
 	.prose :global(table) {
 		display: block;
 		max-width: 100%;
 		overflow-x: auto;
 		border-collapse: collapse;
 		font-size: 14px;
+		overflow-wrap: normal;
+	}
+
+	.prose :global(td) {
+		min-width: 8ch;
+	}
+
+	.prose :global(td:last-child),
+	.prose :global(td:nth-child(2)) {
+		min-width: 16ch;
+	}
+
+	.prose :global(pre) {
+		max-width: 100%;
+		overflow-x: auto;
 	}
 
 	.prose :global(th),

@@ -6,7 +6,8 @@ import Aven.Core.Blake3
 
 - A **hash** is BLAKE3's 32 bytes. The model takes the hash function as a parameter, `H : Bytes → Hash`, and a theorem
   that needs it to be collision-free says so with `Injective H`: the assumption every Aven model makes.
-- A **Value** is named by the hash of its encoding; a **Doc** by the hash of its signed genesis (docs, "A Doc").
+- A **Value** is named by the hash of its encoding; a **Doc** by the name of its genesis, which is unsigned:
+  the hash of its label and body (A30).
 - A **type id** names a version of a type: `<type Doc>/<schema hash>`, the version Record's address in its type Doc
   (Samuel, 30 Oct 2026). It is the one way a version is named anywhere.
 
@@ -61,7 +62,7 @@ theorem nameOf_inj {H : Bytes → Hash} (hH : Injective H) {a b : Value} (ha : C
     (h : nameOf H a = nameOf H b) : a = b :=
   encode_inj ha hb (hH _ _ h)
 
-/-- A Doc, named by the hash of its signed genesis. -/
+/-- A Doc, named by its genesis's name: the hash of its label and body, unsigned (A30). -/
 structure DocId where
   hash : Hash
   deriving DecidableEq, Repr, Inhabited

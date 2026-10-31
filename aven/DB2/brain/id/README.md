@@ -110,15 +110,21 @@ admin; a key only signs for one. A vault is its owners, how many of them must ag
   may share one, and the name from the genesis tells them apart.
 - **A well-formed tree.** Each vault once. Every vault has an owner, and every owner is a known key or vault. An owner
   always ranks before what it owns, so there are no cycles. A device's vault is owned by exactly one vault, the one it
-  serves, and has its own key; no device and no device's key owns anything. A coop is owned only by people's or coops'
+  serves, and names its own key in a field `key` (A211): the key is in the tree, and no device and no device's key owns
+  anything. A coop is owned only by people's or coops'
   vaults, never a key, and holds no devices. Every display name is valid. aven-id builds only well-formed trees, and
   `check` names the first rule a tree breaks.
+- **In Lean,** `Tree`, its checks and caps' model are generic in the vault id (A210): every theorem holds for any id
+  with decidable equality, and the cast's tables, which the kernel decides, use readable handles as test fixtures.
+  Formats and vectors take the 32-byte name, each cast vault named by a fixed genesis that only compiled code computes,
+  its nonce `VaultName.castNonce` (A214). A vector's case description may name a cast vault by its handle; every byte
+  form and every readable form of a Value carries the name. A device vault has `key` and no other kind has one.
 - **A vault fingerprint** lets two people compare a vault once, as Signal's safety numbers do, so a host that invents a
   vault looking like Bob's is caught.
 
-**Decided:** rule 15, A1, A28, A42, A162, A164, A178, A190  ·  **Lean:** `Aven.ID.Tree`, `Aven.ID.WF`; `Aven.ID.Check` —
-`check_iff`; `Aven.ID.Name` — `name_examples`, `person_name_examples`; `Aven.ID.VaultName` — `vaultName_inj`,
-`vaultName_len`, `name_ignores_owners` (#1738)
+**Decided:** rule 15, A1, A28, A42, A162, A164, A178, A190, A210, A211, A214  ·  **Lean:** `Aven.ID.Tree`, `Aven.ID.WF`;
+`Aven.ID.Check` — `check_iff`; `Aven.ID.Name` — `name_examples`, `person_name_examples`; `Aven.ID.VaultName` —
+`vaultName_inj`, `vaultName_len`, `name_ignores_owners` (#1738)
 
 ## Owners and governing
 
@@ -175,7 +181,7 @@ exactly one vault: the one it serves, the only one that may change or end it. Th
 governs nothing. What it may do for the vault it serves is its device cap ([avenCAPS](../caps/README.md)).
 
 - **Its key is made on it** and never leaves its safe runtime: an Ed25519 seed, never derived from a passkey. The key
-  carries its device vault's id, and signs only for the vault the device serves.
+  is named in its device vault's `key` field (A211), and signs only for the vault the device serves.
 - **Its other keys come from that seed,** in the process that holds it, and are wiped after use:
   - its ML-DSA-65 ξ is `derive_key("avenID device ml-dsa 1", seed)`, which with the Ed25519 half makes its hybrid key;
   - its X-Wing seed is `derive_key("avenID device seal 1", seed)`: its seal key, which its vault's keyring is sealed
@@ -193,7 +199,7 @@ governs nothing. What it may do for the vault it serves is its device cap ([aven
 - **Removing a device** is its device cap's revocation. Its keyring rotates at once, and each group and Doc it could
   read rotates at its next use.
 
-**Decided:** rule 15, A42, A43, A130, A132, A156, A178, caps D2, caps D11, caps D19, caps rule 17  ·  **Lean:**
+**Decided:** rule 15, A42, A43, A130, A132, A156, A178, A211, caps D2, caps D11, caps D19, caps rule 17  ·  **Lean:**
 `Aven.ID.KeyFormats` — `deviceMlDsaSeed`, `deviceSealSeed`; `Aven.ID.Sign` — `verify_ok`, `sign_verify`; the binding
 (`device_hybrid_bound`) not in Lean yet
 
@@ -411,8 +417,11 @@ everything sealed to the vault, so adding a device is one seal, and a device the
 - The topic a vault's own devices gossip on comes from the keyring epoch's key ([avenPEERS](../peers/README.md)). So
   a new browser fetches the keyring's Records through the fetch gate by its Doc id, opens its stanza with its passkey's
   PRF seal key, and only then joins its vault's group topic.
+- **A keeper knows it by its genesis** (A209): the genesis in its first envelope, readable since the keyring travels
+  unsealed, has the built-in type `keyring` and the vault; a keeper serves it by id with no fetch proof only for a vault
+  it keeps for. No listing marks it, and its id isn't derived from the vault's.
 
-**Decided:** A43, A131, A154, A168, A170, A185, A187, caps D11, caps rule 17  ·  **Lean:** `Aven.ID.KeyFormats` —
+**Decided:** A43, A131, A154, A168, A170, A185, A187, A209, caps D11, caps rule 17  ·  **Lean:** `Aven.ID.KeyFormats` —
 `Epoch.ofValue_value`; `Aven.ID.AccessRecords` — `EpochRecord.ofValue?_value`; `Aven.ID.Recover` — `guardian_exit`;
 the keyring as a Doc in draft #1743: `Aven.ID.Keyring` — `reseal_name`, `reseal_joins`, `stanzas_mono`,
 `shared_header`, `current_mem`
@@ -530,10 +539,12 @@ for each act. The safe works like a password manager, except that its secrets ar
 
 avenID's built-in types are `keyring` and `safe`, the root types of the Docs it makes, and `epoch`, the type of an
 epoch Record. Each is named by Core's `builtinType` in avenID's namespace, the hash of the label `avenID <name> 1`, so
-every reader knows them without fetching anything. Each is a type Doc, whose own type is the type of types, and a
+every reader knows them without fetching anything. The tree's Doc has the type `tree`, `avenID tree 1`. A built-in
+type keeps the label it was made with when its module moves (A212), so avenCAPS' `group`, `collection`, `cap` and
+`revoke` keep `avenID` after the split. Each is a type Doc, whose own type is the type of types, and a
 Record of type `epoch` fits only as an epoch Record's one form.
 
-**Decided:** A39, A45, A185 (the `epoch` Records are avenID's)  ·  **Lean:** `Aven.ID.Types` — `builtin_typed`;
+**Decided:** A39, A45, A185 (the `epoch` Records are avenID's), A212  ·  **Lean:** `Aven.ID.Types` — `builtin_typed`;
 `Aven.ID.AccessRecords` — `idBuiltinFit`
 
 ## Status
@@ -541,7 +552,7 @@ Record of type `epoch` fits only as an epoch Record's one form.
 | Concept | Lean | Rust and TS | Open |
 |---|---|---|---|
 | Hybrid signatures | `Aven.Core.Hybrid` (#1680) | aven-id `hybrid.rs`, as aven-core's `Verify`; Ed25519 verified strictly (#1680) | |
-| Vaults, owners, governing | `Tree`, `WF`, `Check`, `Governs`, `Query`, `Correct`, `Name`; `VaultName` (#1738) | aven-id `tree.rs`, `vault_name.rs` (#1738) | Vault ids are text in `Tree`. `Tree`'s ids, avenCORE's `Target`, `Facts` and `TargetCbor`, avenCAPS and the register switch to plain 32-byte names in one step (A164, A190): `claude/aven-core-logs`, then avenID's PR, merged back to back |
+| Vaults, owners, governing | `Tree`, `WF`, `Check`, `Governs`, `Query`, `Correct`, `Name`; `VaultName` (#1738) | aven-id `tree.rs`, `vault_name.rs` (#1738) | Vault ids are text in `Tree`. `Tree`'s ids, avenCORE's `Target`, `Facts` and `TargetCbor`, avenCAPS and the register switch to plain 32-byte names in one step (A164, A190): #1746, then avenID's PR A, merged back to back. PR A makes `Tree` generic in the vault id with the cast on fixed geneses (A210), and a device vault names its `key` (A211) |
 | Approvals, k of n | `Approve` | aven-id `caps/approve.rs` | Stage 4, the tree as the first Doc: `threshold` on each vault with k ≥ 1 in `WF`; the owner-change op, its settling and `removal_beats` are avenCAPS' ([its status](../caps/README.md#status)). `Approve`'s own `Sig {key, digest}` gives way to Core's `Sig`s over the signing bytes, with vectors signed by the cast's test keys (A189): to come in one PR, caps' Lean and vectors with minimal caps' Rust. `Recover`'s `settleRemovals` (`never_ownerless`, `removals_win`) goes with the owner-change op |
 | Devices | `KeyFormats` `deviceMlDsaSeed`, `deviceSealSeed` (#1731) | `HybridKey::from_device_seed`, `device_ml_dsa_seed`, `device_seal_key`; Peer-Light `deviceHybrid()`, `deviceSeal()`; Peer `keys::hybrid_public`, `seal_public` (#1731) | `device_hybrid_bound`: the sign-in names the device's hybrid public half under its owner's approval (stage 4). Segments close only once it holds. Monthly rotation isn't built |
 | Passkeys and the PRF step | `Passkey`, `KeyFormats` (#1680, #1700); the passkey record and `ownerless_only_adds_owner` in `Network` (#1718) | aven-id `prf.rs`, `passkey.rs`; Peer-Light `prfKeys`, `ownerSign`; avenOS's ceremonies and the refusal without PRF (#1700) | The owner key's signature beside the passkey's on the register's claim and sign-in (stage 4); `ownerSign` has no caller yet |
@@ -552,7 +563,7 @@ Record of type `epoch` fits only as an epoch Record's one form.
 | The seal | `Seal` (#1694); the kind by commitment on `claude/aven-docs`, no PR yet | aven-db-docs `seal.rs`, with its own Padmé (#1694); `seal::kind_of` on `claude/aven-docs` | The seal is avenID's (A45): its Rust moves into aven-id, and aven-db-docs drops its Padmé. `kind` becomes `seals`, `snapshot` becomes `checkpoint` (`avenDB checkpoint 1`, `avenDB checkpoint commit 1`) and the AAD `{doc, seals, epoch}` (A177), in `Seal`, the seal's Rust and `seals.json`, with A176's padding; free while nothing stored is sealed |
 | The heal | `Epochs` `heal_evicts` | | Not built |
 | The safe | `Safe` | aven-id `safe.rs`, held to `safe.json` | No safe runtime yet: the Peer-Light's own-origin worker comes first, native ones with the Mac app. `safe.json` tags its unions with `kind`, which is only a vault's (A1). The safe's own spec, `aven/DB2/id/safe`, comes with its milestone |
-| Built-in types | `Types`, `AccessRecords` (#1716) | aven-id `caps/types.rs` | `Types` also names avenCAPS's `group`, `collection`, `cap` and `revoke` until the split |
+| Built-in types | `Types`, `AccessRecords` (#1716) | aven-id `caps/types.rs` | `Types` also names avenCAPS's `group`, `collection`, `cap` and `revoke`, under `avenID` before and after the split (A212); `tree` in avenPEER's follow-up to #1747 |
 | The package | `id/spec` also holds avenCAPS's Lean (`Caps`, `Revoke`, `Keep`, `Network` and the rest) and avenPEERS' (`Records`' wire version and presence, `Node`, `CatchUp`) | aven-id also holds avenCAPS's `caps` and `keep` modules, and production's text statements (`claim.rs`, `network.rs`, `members.rs`, `invite.rs`, `statements.rs`, `sign.rs`) | The split: `caps/spec` (`Aven.Caps`) and crate aven-caps, planned by the caps Lean thread (A159, A160); the Peers' Lean into `peer/spec` (A45), `Aven.ID.Records` as `Aven.Peer.History` (A193, A194); production's text statements go at the cutover |
 | Later | | | `tree 1`, once Maia City passes about 150 members; recovery owners with a delay; the recovery kit; a scheduled heal for everyone |
 
