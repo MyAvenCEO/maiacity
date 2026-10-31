@@ -818,12 +818,14 @@ the spec that owns it.
   *Decided: yes.* The keys' browser half, decided 31 Oct 2026:
   - **No passkey without PRF makes a vault** (Samuel: "refuse, explain"). Sign-up stops with a plain message, so
     there is one kind of vault: post-quantum, and it opens on any device. There is no ES256-only owner.
-  - **A passkey's user id is its vault.** A new browser asks once to learn the vault, then again with the vault's
-    PRF input: two taps, on a new browser only. The input names the vault and its epoch, so an owner key turns over
-    without a new passkey.
-  - **The owner and seal keys' public halves** are parameters of `tree/1`'s claim and sign-in ops. Caps rule 21's two
-    proofs are two signatures beside the one name (A30): the passkey's ES256 and the owner's hybrid. The old text
-    statements gain nothing.
+  - **The PRF input is only the epoch** (`["avenID prf 1", {epoch}]`): a passkey's PRF secret is already its own,
+    and a passkey belongs to one vault. So sign-up evaluates the PRF at create and signs the claim, owner and seal
+    halves included, with one more tap. A new browser signs in with one tap. The epoch stays, so a leaked output
+    never opens a later epoch.
+  - **The register maps a credential id to its passkey record:** its vault, ES256 key, owner and seal public halves
+    and epoch, parameters of `tree/1`'s claim and join. A sign-in names no vault: it is the vault of the passkey that
+    signed. Caps rule 21's two proofs are two signatures beside the one name (A30): the passkey's ES256 and the
+    owner's hybrid. The old text statements gain nothing.
 
 - **A44. Placement has one source: the owner's vault** (Samuel, 31 Oct 2026: "we can't have two sources of truth
   for who keeps what; it's always co-located with the owner's data and vaults"). A vault's keep caps say which keeper
