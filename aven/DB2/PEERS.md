@@ -367,7 +367,8 @@ aven-id's `settle`, against `settled.json`. The admin is Maia City's vault (deci
 `admin_key`, a passkey owning a vault that governs the coop, becomes `byAdmin`, an approval by the coop's owners read
 from the genesis's tree, and acks come from `acker`, a device of a vault that owns the coop. Statements stored by
 hash, not by ref name, and production's refs read as they are (`settle_restore`, the frozen format). Any member
-accepts a statement: it checks it, keeps it, gossips it, and settles. Admin devices ack. The Peer refuses flags that disagree with its genesis.
+accepts a statement: it checks it, keeps it, gossips it, and settles. Admin devices ack. The Peer refuses flags that
+disagree with its genesis.
 
 ### Thread C: relays, addresses, entry and catch-up (`peer/native`, `peer/light`)
 
