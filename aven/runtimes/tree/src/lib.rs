@@ -21,6 +21,8 @@ extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use aven_core::Value;
+
 /// A node: text, or an element with attributes and children.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Node {
@@ -289,5 +291,56 @@ fn head(major: u8, n: u64, out: &mut Vec<u8>) {
     } else {
         out.push(m | 27);
         out.extend_from_slice(&n.to_be_bytes());
+    }
+}
+
+impl Node {
+    /// The tree as the Value it crosses in (`Node.value`).
+    pub fn value(&self) -> Value {
+        match self {
+            Node::Text(s) => Value::Text(s.clone()),
+            Node::El { tag, attrs, kids } => Value::Array(alloc::vec![
+                Value::Text(tag.clone()),
+                Value::Array(
+                    attrs
+                        .iter()
+                        .map(|(k, v)| Value::Array(alloc::vec![
+                            Value::Text(k.clone()),
+                            Value::Text(v.clone())
+                        ]))
+                        .collect()
+                ),
+                Value::Array(kids.iter().map(Node::value).collect()),
+            ]),
+        }
+    }
+
+    /// A tree from its Value, no deeper than `depth`: what a drawer reads from a runtime's answer before it checks it.
+    /// `None` for anything that isn't a tree's shape.
+    pub fn of_value(v: &Value, depth: usize) -> Option<Node> {
+        match v {
+            Value::Text(s) => Some(Node::Text(s.clone())),
+            Value::Array(xs) if depth > 0 => match xs.as_slice() {
+                [Value::Text(tag), Value::Array(attrs), Value::Array(kids)] => Some(Node::El {
+                    tag: tag.clone(),
+                    attrs: attrs
+                        .iter()
+                        .map(|a| match a {
+                            Value::Array(kv) => match kv.as_slice() {
+                                [Value::Text(k), Value::Text(v)] => Some((k.clone(), v.clone())),
+                                _ => None,
+                            },
+                            _ => None,
+                        })
+                        .collect::<Option<Vec<_>>>()?,
+                    kids: kids
+                        .iter()
+                        .map(|k| Node::of_value(k, depth - 1))
+                        .collect::<Option<Vec<_>>>()?,
+                }),
+                _ => None,
+            },
+            _ => None,
+        }
     }
 }
