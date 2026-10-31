@@ -1,4 +1,4 @@
-//! A keeper's arrivals for one Doc (`Aven.DB.Keeper`; PEERS.md §3 and §4; docs, "Catching up"), pure: no I/O, no
+//! A keeper's arrivals for one Doc (`Aven.Peer.Keeper`; PEERS.md §3 and §4; docs, "Catching up"), pure: no I/O, no
 //! clock. A keeper keeps a Doc's sealed bytes for its readers (A22) and reads none of them. Whether it may take an
 //! upload or serve a fetch at all is avenID's gate (`Aven.ID.Keep`); this is what it does with what it took.
 //!
@@ -179,7 +179,7 @@ impl<H: Ord + Clone> Arrivals<H> {
     }
 }
 
-/// What a device holds of one Doc from one keeper (`Aven.DB.Keeper.Reader`): the keeper's number it has caught up to.
+/// What a device holds of one Doc from one keeper (`Aven.Peer.Keeper.Reader`): the keeper's number it has caught up to.
 /// The hashes it holds are its store's; [`Reader::land`] is told which.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Reader {

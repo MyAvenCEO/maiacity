@@ -1,7 +1,7 @@
 [package]
 name = "aven-peer-keeper"
 version = "0.0.0"
-description = "A keeper's arrivals for one Doc, pure: items by their sealed hash, numbered by arrival, covers by the uploader's own word, and catch-up by number (Aven.DB.Keeper)"
+description = "A keeper's arrivals for one Doc, pure: items by their sealed hash, numbered by arrival, covers by the uploader's own word, and catch-up by number (Aven.Peer.Keeper)"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

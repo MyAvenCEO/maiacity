@@ -72,7 +72,7 @@ import Aven.DB.Docs
   (`Aven.DB.Docs.Key`).
 - `keeper.json`: uploads from devices to a keeper, one Doc, from an empty store; after each, the items held (number,
   hash, uploaders) and the next number, the pages of what came after each asked number, and where a device at that
-  number holding 11 and 12 is after catching up, with what it holds (`Aven.DB.Keeper`).
+  number holding 11 and 12 is after catching up, with what it holds (`Aven.Peer.Keeper`).
 
 `aven-db-core`'s and `aven-db-store`'s tests load them. `bun run up --check` runs this again and fails when the files
 differ from what is committed. -/
@@ -1263,14 +1263,14 @@ def render (vs : List Json) : String :=
 
 /-! ## A keeper's arrivals -/
 
-open Aven.DB.Keeper in
+open Aven.Peer.Keeper in
 def keeperPut (p : Put) : Json :=
   Json.mkObj [("hash", toJson p.hash), ("bytes", toJson p.bytes), ("covers", toJson p.covers)]
 
-open Aven.DB.Keeper in
+open Aven.Peer.Keeper in
 def keeperVector (name : String) (ups : List (String × List Put)) (asks : List Nat) : Json :=
-  let states := (ups.foldl (fun (acc : List Keeper.Store × Keeper.Store) u =>
-    let s := acc.2.upload u.1 u.2; (acc.1 ++ [s], s)) ([], ({} : Keeper.Store))).1
+  let states := (ups.foldl (fun (acc : List Aven.Peer.Keeper.Store × Aven.Peer.Keeper.Store) u =>
+    let s := acc.2.upload u.1 u.2; (acc.1 ++ [s], s)) ([], ({} : Aven.Peer.Keeper.Store))).1
   vector name
     (Json.mkObj [("uploads", Json.arr (ups.map fun (d, ps) =>
         Json.mkObj [("device", Json.str d), ("puts", Json.arr (ps.map keeperPut).toArray)]).toArray),
@@ -1284,7 +1284,7 @@ def keeperVector (name : String) (ups : List (String × List Put)) (asks : List 
           let r := ({ at_ := n, held := [11, 12] } : Reader).catchUp s
           Json.mkObj [("at", toJson r.at_), ("held", toJson r.held)]).toArray)]).toArray)
 
-open Aven.DB.Keeper in
+open Aven.Peer.Keeper in
 def keeperExamples : List (String × List (String × List Put) × List Nat) := [
   ("a reader's covers take only itself off; the writer's segment drops its loose envelopes",
     [("bob", [⟨11, 900, []⟩, ⟨12, 900, []⟩, ⟨13, 900, []⟩]), ("carol", [⟨12, 900, []⟩, ⟨99, 100, [11, 12]⟩]),
@@ -1297,7 +1297,7 @@ def keeperExamples : List (String × List (String × List Put) × List Nat) := [
      ("alice", [⟨2000, 200000, (List.range 256).map (1000 + ·)⟩, ⟨2001, 200000, (List.range 244).map (1256 + ·)⟩])],
     [0, 200, 499, 500, 501])]
 
-open Aven.DB.Keeper in
+open Aven.Peer.Keeper in
 def randomUploads (seed : Nat) : List (String × List Put) := Id.run do
   let (len, r) := (Rng.seed seed).below 12
   let (ups, _) := r.many (len + 1) fun r =>

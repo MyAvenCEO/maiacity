@@ -12,7 +12,7 @@ is an item named by the hash of its sealed bytes. A new item gets the Doc's next
 (`numbers_fresh`, `Store.wf`); the same bytes again get no new number, only another uploader.
 
 **Covers: the uploader's own word, binding only its own uploads** (the gap in `Aven.DB.Docs.Segment`, settled
-31 Oct 2026). A segment holds its loose envelopes by their names, the hashes of their signed plaintext, which a keeper
+31 Oct 2026, A44). A segment holds its loose envelopes by their names, the hashes of their signed plaintext, which a keeper
 can't see. So the keeper records which devices uploaded each item (the door knows every connection's device), and a
 segment's upload names, in the clear, the sealed hashes of the loose envelopes it holds: its `covers`. A cover takes
 off an item's uploaders only the device that uploaded the segment, and an item is dropped once no uploader is left.
@@ -22,7 +22,19 @@ off an item's uploaders only the device that uploaded the segment, and an item i
   someone else's envelopes, and a lie hurts only the liar's own uploads, which it could have withheld anyway;
 - a writer that never comes back covers nothing, so what it uploaded stays, whatever anyone else uploads
   (`gone_writer_kept`, architecture scenario 16);
-- the item uploaded is held after its own upload, whatever it covers (`put_held`).
+- the item uploaded is held after its own upload, whatever it covers (`put_held`);
+- a dropped item stays reachable through the item that covered it: a reader that hadn't got the dropped item gets
+  the covering one by asking what came after its number, or already holds it (`dropped_listed`). That the covering
+  segment really holds the dropped envelopes is the uploader's word: it holds while the uploader is honest, and a lie
+  loses only the liar's own envelopes.
+
+The covers count only for the device whose proof authenticates the upload on that connection (`Aven.ID.Keep`,
+`served_current`). They are upload metadata beside the sealed segment, never part of its bytes: the seal's outside
+stays `{ct, doc, epoch, nonce, commit}` (D13), and covers tell the keeper nothing it couldn't link from the uploads
+themselves, which device sent which bytes. Covers only decide which loose items a keeper may drop early while it keeps
+the Doc: a withdrawn keep cap or a deleted Doc drops every item at once, whoever uploaded it (`withdrawn_dropped`,
+`deleted_gone`). An item stays on its uploaders' bills while kept (`uploader_pays`), so a writer that never comes back
+keeps paying for its loose envelopes. Decided under A44 (ARCHITECTURE.md, #1721).
 
 **Catching up: "what came after your number n?"** (`after`). The answer lists exactly the items held with a number
 above `n`, by number and hash (`after_complete`), in pages of at most `pageSize`, none empty (`after_pages`): every
@@ -32,7 +44,10 @@ a device that held a dropped loose envelope already has it, and one that didn't 
 came after it and so has a higher number.
 -/
 
-namespace Aven.DB.Keeper
+namespace Aven.Peer.Keeper
+
+-- the wire's paging, the Peers' own: `Aven.DB.Wire` moves into `Aven.Peer` with thread E (A45)
+open Aven.DB (pages pageSize pages_flatten pages_ne_nil)
 
 /-- An item a keeper holds of one Doc: its arrival number, the hash of its sealed bytes, their length, and the devices
 that uploaded it and haven't covered it since. -/
@@ -336,6 +351,24 @@ theorem after_sorted {s : Store} (w : s.wf) (n : Nat) : (s.afterAll n).Pairwise 
   rw [List.pairwise_map]
   exact (w.1.filter _)
 
+/-- **`dropped_listed`:** an item a put drops stays reachable through the item that covered it, which the keeper holds:
+a reader whose number is below the dropped item's either holds the covering item already (its number is at most the
+reader's) or is told it by what came after its number; and a covering item new to the keeper is numbered after the
+dropped one. It holds for every item held before the put, so for the dropped ones (`dropped_covered`). That the
+covering segment holds the dropped envelopes is the uploader's word: this holds while the uploader is honest. -/
+theorem dropped_listed {s : Store} (w : s.wf) (d : String) (p : Put) {i : Item} (m : i ∈ s.items) :
+    ∃ j ∈ (s.put d p).items, j.hash = p.hash ∧ (s.holds p.hash = false → i.n < j.n) ∧
+      ∀ n, n < i.n → (j.n, j.hash) ∈ (s.put d p).afterAll n ∨ j.n ≤ n := by
+  have reach : ∀ j ∈ (s.put d p).items, ∀ n, n < i.n → (j.n, j.hash) ∈ (s.put d p).afterAll n ∨ j.n ≤ n :=
+    fun j mj n _ => if c : n < j.n then .inl (after_complete.mpr ⟨j, mj, rfl, rfl, c⟩) else .inr (Nat.not_lt.mp c)
+  cases nh : s.holds p.hash with
+  | false =>
+    obtain ⟨k, mk, nk, hk, -⟩ := numbers_fresh s d p nh
+    exact ⟨k, mk, hk, fun _ => nk ▸ w.2.1 i m, reach k mk⟩
+  | true =>
+    obtain ⟨j, mj, hj, -⟩ := put_held s d p
+    exact ⟨j, mj, hj, fun h => absurd h (by decide), reach j mj⟩
+
 end Store
 
 /-! ## A device catching up from a keeper -/
@@ -455,4 +488,4 @@ def five : Store := ({} : Store).upload "alice" ((List.range 500).map fun i => �
 
 end KeeperExamples
 
-end Aven.DB.Keeper
+end Aven.Peer.Keeper
