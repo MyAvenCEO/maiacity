@@ -6,6 +6,7 @@ import Aven.Core.Signed
 import Aven.Core.Log
 import Aven.Core.Past
 import Aven.Core.Target
+import Aven.Core.Op
 import Aven.Core.Json
 import Aven.Core.ValueEq
 import Aven.Core.TargetCbor
