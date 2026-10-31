@@ -1,13 +1,16 @@
 import Lean.Data.Json
 import Aven.ID.Gen
 import Aven.ID.Restore
+import Aven.ID.TreeDoc
 import Aven.ID.Records
 import Aven.ID.Node
 import Aven.ID.CatchUp
 
 /-! # The settled tree's vectors (PEERS.md §5 and §6)
 
-`settled.json`: sets of tree statements, each in several orders, with the tree `settle` gives (`Settled.listed`):
+`settled.json`: sets of tree statements, each in several orders, with the tree `settle` gives (`Settled.listed`).
+Each statement is the Core envelope of the tree Doc that carries it, as CBOR, under the name a peer stores it by, and
+the tree is settled from those envelopes (`TreeDoc.settleDoc`) as a peer settles it:
 `TreeExamples`, the races written out one by one, generated sets, and production's store migrated from every invite
 trace (`Aven.ID.Restore`). `records.json`: records and the newest of each kind about each device (`Aven.ID.Records`).
 aven-id's tests settle each input and compare (README rule 10). -/
@@ -17,7 +20,10 @@ open Lean
 namespace Aven.ID
 namespace SettleJson
 
-open Settle
+open Settle TreeExamples
+
+def hashJson (h : Core.Hash) : Json := h.text
+def hashesJson (l : List Core.Hash) : Json := Json.arr (l.map hashJson).toArray
 
 def GuardianKeys.json (g : GuardianKeys) : Json :=
   Json.mkObj [("ed25519", g.ed25519), ("mlDsa", g.mlDsa), ("xWing", g.xWing)]
@@ -33,10 +39,10 @@ def TreeSays.json : TreeSays → Json
   | .genesis g => Json.mkObj [("kind", "genesis"), ("genesis", Genesis.json g)]
   | .signIn v d => Json.mkObj [("kind", "signIn"), ("vault", v), ("device", d)]
   | .ticket k => Json.mkObj [("kind", "ticket"), ("key", k)]
-  | .withdrawal t => Json.mkObj [("kind", "withdrawal"), ("ticket", toJson t)]
-  | .claim t v p d g => Json.mkObj [("kind", "claim"), ("ticket", toJson t), ("vault", v), ("passkey", p),
+  | .withdrawal t => Json.mkObj [("kind", "withdrawal"), ("ticket", hashJson t)]
+  | .claim t v p d g => Json.mkObj [("kind", "claim"), ("ticket", hashJson t), ("vault", v), ("passkey", p),
       ("device", d), ("guardian", GuardianKeys.json g)]
-  | .confirm c => Json.mkObj [("kind", "confirm"), ("claim", toJson c)]
+  | .confirm c => Json.mkObj [("kind", "confirm"), ("claim", hashJson c)]
   | .relayAdd d => Json.mkObj [("kind", "relayAdd"), ("vault", d)]
   | .relayRemove d => Json.mkObj [("kind", "relayRemove"), ("vault", d)]
   | .keeperAdd d => Json.mkObj [("kind", "keeperAdd"), ("vault", d)]
@@ -45,12 +51,19 @@ def TreeSays.json : TreeSays → Json
   | .setOrigins os => Json.mkObj [("kind", "setOrigins"), ("origins", toJson os)]
   | .setGuardian v => Json.mkObj [("kind", "setGuardian"), ("vault", v)]
 
+/-- The tree Doc of the vectors. -/
+def treeDoc : Core.DocId := ⟨Core.blake3 (Body.utf8 "Maia City's tree")⟩
+
+/-- A statement as a peer stores it: its name and its envelope's CBOR; the signer, parents and what it says are the
+envelope's, written out to read. -/
 def TreeStatement.json (s : TreeStatement) : Json :=
-  Json.mkObj [("name", toJson s.name), ("signer", s.signer), ("tips", toJson s.tips), ("says", TreeSays.json s.says)]
+  Json.mkObj [("name", hashJson s.name),
+    ("envelope", Core.hex (Core.encode (TreeDoc.envelope treeDoc s).value)),
+    ("signer", s.signer), ("parents", hashesJson s.parents), ("says", TreeSays.json s.says)]
 
 def Listed.json (l : Listed) : Json :=
-  Json.mkObj [("counted", toJson l.counted), ("final", toJson l.final), ("standing", toJson l.standing),
-    ("contested", toJson l.contested), ("members", toJson l.members), ("admitted", toJson l.admitted),
+  Json.mkObj [("counted", hashesJson l.counted), ("final", hashesJson l.final), ("standing", hashesJson l.standing),
+    ("contested", hashesJson l.contested), ("members", toJson l.members), ("admitted", toJson l.admitted),
     ("relays", toJson l.relays), ("keepers", toJson l.keepers), ("avenPeer", toJson l.avenPeer),
     ("origins", toJson l.origins), ("guardianVault", toJson l.guardianVault)]
 
@@ -58,18 +71,22 @@ def Listed.json (l : Listed) : Json :=
 structure Case where
   name : String
   statements : List TreeStatement
-  failing : List Nat := []
-  pinned : Nat
+  failing : List Core.Hash := []
+  pinned : Core.Hash
 
-def Case.ok (c : Case) (s : TreeStatement) : Bool := !c.failing.contains s.name
+/-- The envelopes a peer stores, and their own checks: the case's failing names fail. -/
+def Case.ok (c : Case) (n : TreeDoc.Named) : Bool := !c.failing.contains n.name
+
+def named (s : TreeStatement) : TreeDoc.Named := ⟨s.name, TreeDoc.envelope treeDoc s⟩
 
 def Case.settled (c : Case) (order : List TreeStatement) : Listed :=
-  (settle c.ok c.pinned order).listed c.statements
+  (TreeDoc.settleDoc c.ok treeDoc c.pinned (order.map named)).listed c.statements
 
 /-- The case in the order given: its input and the settled tree. -/
 def Case.vector (c : Case) (label : String) (order : List TreeStatement) : Json :=
   Json.mkObj [("name", s!"{c.name}, {label}"),
-    ("input", Json.mkObj [("pinned", toJson c.pinned), ("failing", toJson c.failing),
+    ("input", Json.mkObj [("doc", treeDoc.text), ("pinned", hashJson c.pinned),
+      ("failing", hashesJson c.failing),
       ("statements", Json.arr (order.map TreeStatement.json).toArray)]),
     ("expected", Listed.json (c.settled order))]
 
@@ -151,9 +168,9 @@ two earlier statements as its tips; a few fail their own checks. Names are disti
 def genCase (seed : Nat) : Case := Id.run do
   let mut r := Rng.seed (seed + 7000)
   let mut out : Array TreeStatement := #[g]
-  let mut failing : Array Nat := #[]
-  let mut tickets : Array (Nat × String) := #[]
-  let mut claims : Array Nat := #[]
+  let mut failing : Array Core.Hash := #[]
+  let mut tickets : Array (Core.Hash × String) := #[]
+  let mut claims : Array Core.Hash := #[]
   let (n, r1) := r.below 10
   r := r1
   for i in [0:n + 8] do
@@ -164,13 +181,13 @@ def genCase (seed : Nat) : Case := Id.run do
     let (x, r5) := r4.below 8
     let (bad, r6) := r5.below 15
     r := r6
-    let name := h * 100 + i + 1000
+    let name := Restore.num (h * 100 + i + 1000)
     let tip1 := (out.getD t1 g).name
     let tip2 := (out.getD t2 g).name
     let device := s!"vault-{x % 4}"
     -- a claim mostly names its ticket, and an ack its claim, so many count; now and then they name only one
     -- earlier statement, so acks and withdrawals often don't see each other
-    let (signer, tips, says) : String × List Nat × TreeSays :=
+    let (signer, tips, says) : String × List Core.Hash × TreeSays :=
       if k == 0 then ("alice-passkey", [tip1], .signIn "alice" "alice-peer-light")
       else if k ≤ 2 then ("alice-passkey", [tip1, tip2].eraseDups, .ticket s!"t-{i}")
       else if k ≤ 4 ∧ tickets.size > 0 then
@@ -210,7 +227,7 @@ def restoreCases : List Case :=
     let m := membersAfter ops
     match m.founding.claim, m.restore with
     | some _, .ok r =>
-      some { name := s!"migrated: {name}", statements := migrate r boxGuardianKeys, pinned := 1 }
+      some { name := s!"migrated: {name}", statements := migrate r boxGuardianKeys, pinned := genesisName }
     | _, _ => none
 
 /-! ## All of it -/
