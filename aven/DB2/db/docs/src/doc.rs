@@ -36,7 +36,7 @@ use crate::genesis::Genesis;
 use crate::limits::Limits;
 use crate::opids::{OpId, OpsVerdict, carried_deps, ops_agree};
 use crate::schema::{Schema, is_builtin};
-use crate::seal::{EpochKey, Kind, open};
+use crate::seal::{EpochKey, Seals, open};
 use crate::segment::{BadSegment, Segment};
 use crate::value::{of_loro, to_loro};
 use crate::writer::writer;
@@ -456,55 +456,94 @@ fn changes_of(
     Ok(out)
 }
 
-/// Opens a page of sealed things as catch-up fetches them, loose envelopes and segments mixed, without a [`Doc`]: what
-/// holds the epoch keys opens, and only plaintext envelopes go on to be imported. A keeper serves them by hash and the
-/// reader doesn't know their kinds (the kind is in the AAD, D13), so each is opened under its epoch's key (found by the
-/// epoch its outside names) as the kind whose commitment it carries ([`crate::seal::kind_of`],
-/// `Aven.ID.Seal.kind_by_commit`), checked before anything is decrypted. Per item, its envelopes' bytes in order (a
-/// segment's flattened), or why it didn't open.
-pub fn open_sealed_page<'k>(
-    doc: &DocId,
-    items: &[&[u8]],
+/// One item of a page as catch-up fetches it: a loose envelope or a segment, sealed or, for the keyring alone, plain.
+#[derive(Clone, Copy, Debug)]
+pub enum Item<'a> {
+    /// Sealed under one of the Doc's epochs: what it seals is found by its commitment.
+    Sealed(&'a [u8]),
+    /// Unsealed (A187): the keyring Doc's envelope, Core's encoding, or segment, its hybrid-signed bytes. Its Records are
+    /// already ciphertext, so it travels as it is; every other Doc's items are sealed.
+    Plain(&'a [u8]),
+}
+
+/// Whether a Doc's items travel plain: its genesis types it avenID's `keyring` (A187, A209).
+pub fn travels_plain(genesis: &Genesis) -> bool {
+    genesis.root == aven_id::caps::builtin_type("keyring")
+}
+
+/// Opens a page as catch-up fetches it, loose envelopes and segments mixed, without a [`Doc`]: what holds the epoch
+/// keys opens, and only plaintext envelopes go on to be imported.
+///
+/// - **Sealed:** a keeper serves sealed things by hash and the reader doesn't know what each seals (it is in the AAD,
+///   D13), so each is opened under its epoch's key (found by the epoch its outside names) as what its commitment says
+///   it seals ([`crate::seal::seals_of`], `Aven.ID.Seal.seals_by_commit`), checked before anything is decrypted.
+/// - **Plain:** only for the keyring ([`travels_plain`]): an envelope if Core reads it as one, else a segment, checked
+///   as a sealed one is once opened. Either is the page's Doc's.
+///
+/// Per item, its envelopes' bytes in order (a segment's flattened), or why it didn't open.
+pub fn open_page<'k>(
+    genesis: &Genesis,
+    items: &[Item<'_>],
     epochs: impl Fn(&Hash) -> Option<&'k EpochKey>,
     limits: &Limits,
 ) -> Vec<Result<Vec<Vec<u8>>, Unopened>> {
-    let limit = limits.sealed + limits.sealed / 8 + 256;
-    let seg_limit = limits.segment_bytes + limits.segment_bytes / 8 + 256;
+    let doc = genesis.id();
+    let plain = travels_plain(genesis);
+    let limit = crate::seal::sealed_limit(limits.sealed);
+    let seg_limit = crate::seal::sealed_limit(limits.segment_bytes);
     items
         .iter()
-        .map(|&b| {
-            let out = crate::seal::outside(b, limit.max(seg_limit)).ok_or(Unopened::Form)?;
-            if out.doc != *doc {
-                return Err(Unopened::Doc);
-            }
-            let epoch = epochs(&out.epoch).ok_or(Unopened::Epoch(out.epoch))?;
-            match crate::seal::kind_of(epoch, b, limit.max(seg_limit)) {
-                Some(Kind::Envelope) => match open(Kind::Envelope, epoch, b, limit) {
-                    Some((d, pt)) if d == *doc => Ok(vec![pt]),
-                    _ => Err(Unopened::Seal),
-                },
-                Some(Kind::Segment) => Segment::open(b, doc, epoch, limits)
+        .map(|item| match *item {
+            Item::Plain(_) if !plain => Err(Unopened::Plain),
+            Item::Plain(b) => match Envelope::decode(b) {
+                Some(e) if b.len() <= limits.sealed => {
+                    if e.doc == doc {
+                        Ok(vec![b.to_vec()])
+                    } else {
+                        Err(Unopened::Doc)
+                    }
+                }
+                Some(_) => Err(Unopened::Form),
+                None => Segment::open_plain(b, &doc, limits)
                     .map(|(s, _)| s.envelopes)
                     .map_err(Unopened::Segment),
-                Some(Kind::Snapshot) | None => Err(Unopened::Seal),
+            },
+            Item::Sealed(b) => {
+                let out = crate::seal::outside(b, limit.max(seg_limit)).ok_or(Unopened::Form)?;
+                if out.doc != doc {
+                    return Err(Unopened::Doc);
+                }
+                let epoch = epochs(&out.epoch).ok_or(Unopened::Epoch(out.epoch))?;
+                match crate::seal::seals_of(epoch, b, limit.max(seg_limit)) {
+                    Some(Seals::Envelope) => match open(Seals::Envelope, epoch, b, limit) {
+                        Some((d, pt)) if d == doc => Ok(vec![pt]),
+                        _ => Err(Unopened::Seal),
+                    },
+                    Some(Seals::Segment) => Segment::open(b, &doc, epoch, limits)
+                        .map(|(s, _)| s.envelopes)
+                        .map_err(Unopened::Segment),
+                    Some(Seals::Checkpoint) | None => Err(Unopened::Seal),
+                }
             }
         })
         .collect()
 }
 
-/// Why a sealed thing in a page didn't open.
+/// Why an item of a page didn't open.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Unopened {
-    /// Not a sealed thing within the limits.
+    /// Not a sealed thing, or a plain envelope or segment, within the limits.
     Form,
-    /// Sealed for another Doc.
+    /// Another Doc's.
     Doc,
     /// An epoch the reader holds no key for.
     Epoch(Hash),
-    /// No kind's commitment matches under its epoch's key (a snapshot's is no page's), or it doesn't open as the kind
-    /// found.
+    /// No commitment matches under its epoch's key (a checkpoint is no page's), or it doesn't open as what its
+    /// commitment says it seals.
     Seal,
     Segment(BadSegment),
+    /// Plain, for a Doc whose items travel sealed: every Doc but the keyring (A187).
+    Plain,
 }
 
 /// What steps 1 to 8 made of an envelope: held (with whether it is half of a split), or a verdict already.
@@ -699,8 +738,8 @@ impl Doc {
         epoch: &EpochKey,
         auth: &impl Authorize,
     ) -> Result<Imported, Refused> {
-        let limit = self.limits.sealed + self.limits.sealed / 8 + 256;
-        let (doc, bytes) = open(Kind::Envelope, epoch, sealed, limit).ok_or(Refused::Form)?;
+        let limit = crate::seal::sealed_limit(self.limits.sealed);
+        let (doc, bytes) = open(Seals::Envelope, epoch, sealed, limit).ok_or(Refused::Form)?;
         if doc != self.id {
             return Err(Refused::Doc);
         }
@@ -719,16 +758,16 @@ impl Doc {
         Ok(self.import_page(&page, auth))
     }
 
-    /// Imports a page of sealed things as catch-up fetches them, loose envelopes and segments mixed, in one batch:
-    /// [`open_sealed_page`], then [`Doc::import_page`] over what opened (one judge, one `import_batch`, one
+    /// Imports a page as catch-up fetches it, loose envelopes and segments mixed, sealed or (the keyring's) plain, in
+    /// one batch: [`open_page`], then [`Doc::import_page`] over what opened (one judge, one `import_batch`, one
     /// snapshot). Per item, the results of its envelopes in order, or why it didn't open.
-    pub fn import_sealed_page<'k>(
+    pub fn import_items<'k>(
         &mut self,
-        items: &[&[u8]],
+        items: &[Item<'_>],
         epochs: impl Fn(&Hash) -> Option<&'k EpochKey>,
         auth: &impl Authorize,
     ) -> Vec<Result<Vec<Result<Imported, Refused>>, Unopened>> {
-        let opened = open_sealed_page(&self.id, items, epochs, &self.limits);
+        let opened = open_page(&self.genesis, items, epochs, &self.limits);
         let page: Vec<&[u8]> = opened
             .iter()
             .flatten()

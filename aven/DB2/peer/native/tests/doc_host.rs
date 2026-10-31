@@ -247,7 +247,7 @@ async fn a_strangers_envelope_is_refused_at_every_reader() {
         sig: eve.sign(&p.signing()).to_bytes().to_vec(),
     });
     let sealed = aven_db_docs::seal::seal(
-        aven_db_docs::seal::Kind::Envelope,
+        aven_db_docs::seal::Seals::Envelope,
         &epoch(),
         &a.doc().id(),
         &env.encode(),

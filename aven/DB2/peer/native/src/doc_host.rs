@@ -18,11 +18,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use aven_core::{DocId, Envelope, Hash};
-use aven_db_docs::Unopened;
-use aven_db_docs::seal::{self, Kind};
+use aven_db_docs::seal::{self, Seals};
 use aven_db_docs::{
     Act, Authorize, Doc, EpochKey, Genesis, Imported, Limits, Prepared, RecordWrite, Snapshot,
 };
+use aven_db_docs::{Item, Unopened};
 use aven_id::Entropy;
 
 use aven_db_docs::{Saved, Shelf};
@@ -196,7 +196,7 @@ impl<A: Authorize> Host<A> {
     fn seal(&self, plaintext: &[u8], entropy: &mut impl Entropy) -> Result<Vec<u8>, String> {
         let epoch = self.epochs.last().ok_or("no epoch key to write under")?;
         Ok(seal::seal(
-            Kind::Envelope,
+            Seals::Envelope,
             epoch,
             &self.doc.id(),
             plaintext,
@@ -205,15 +205,13 @@ impl<A: Authorize> Host<A> {
     }
 
     /// Takes in sealed things, loose envelopes and segments, as one page: each opened under the epoch its outside
-    /// names, as the kind its commitment names, then imported in one batch. What became held goes on the shelf.
+    /// names, as what its commitment says it seals, then imported in one batch. What became held goes on the shelf.
     pub async fn take(&mut self, items: &[Vec<u8>]) -> Result<Vec<Taken>, String> {
-        let page: Vec<&[u8]> = items.iter().map(Vec::as_slice).collect();
+        let page: Vec<Item<'_>> = items.iter().map(|b| Item::Sealed(b)).collect();
         let epochs = &self.epochs;
-        let results = self.doc.import_sealed_page(
-            &page,
-            |h| epochs.iter().find(|e| e.name == *h),
-            &self.auth,
-        );
+        let results =
+            self.doc
+                .import_items(&page, |h| epochs.iter().find(|e| e.name == *h), &self.auth);
         self.keep().await?;
         Ok(results
             .into_iter()

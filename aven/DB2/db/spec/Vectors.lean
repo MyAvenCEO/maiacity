@@ -1232,10 +1232,10 @@ def segmentCases : List (String × Docs.Segment) := [
 
 def segmentVectors : List Json :=
   segmentCases.map fun (name, sg) =>
-    vector name (Json.mkObj [("branch", Json.str "main"), ("writer", toJson sg.writer),
-        ("generation", toJson sg.generation), ("from", toJson sg.segFrom), ("to", toJson sg.segTo),
-        ("prev", match sg.prev with | some h => Json.str h.text | none => Json.null),
-        ("envelopes", Json.arr (sg.envelopes.map fun e => hexJson (encode e.value)).toArray)])
+    vector name (Json.mkObj ([("branch", Json.str "main"), ("writer", toJson sg.writer),
+        ("generation", toJson sg.generation), ("from", toJson sg.segFrom), ("to", toJson sg.segTo)] ++
+        (match sg.prev with | some h => [("prev", Json.str h.text)] | none => []) ++
+        [("envelopes", Json.arr (sg.envelopes.map fun e => hexJson (encode e.value)).toArray)]))
       (Json.mkObj [("value", hexJson (encode sg.value)), ("name", Json.str (sg.name blake3).text),
         ("ok", toJson (sg.ok Docs.Limits.defaults (Envelope.name blake3)))])
 
@@ -1371,7 +1371,7 @@ def schemaVectors : List Json :=
   schemaCases.map fun (name, v) =>
     vector s!"schema: {name}" (Json.mkObj [("value", hexJson (encode v))])
       (match Docs.Schema.ofValue? v with
-        | some s => Json.mkObj [("ok", true), ("hash", hexJson (Docs.Schema.hash blake3 s).bytes)]
+        | some s => Json.mkObj [("ok", true), ("hash", Json.str (Docs.Schema.hash blake3 s).text)]
         | none => Json.mkObj [("ok", false)])
 
 end DocsVectors
