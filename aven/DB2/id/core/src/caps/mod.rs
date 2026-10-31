@@ -8,14 +8,21 @@ mod cbor;
 mod chain;
 mod conditions;
 mod line;
+mod member;
+mod records;
 mod revoke;
 mod types;
 
 pub use approve::Sig;
 pub use authorized::{Authority, DeviceCap, Reader, Reading, Refusal};
 pub use cbor::CAP_LABEL;
-pub use chain::{Cap, ChainError, Ctx, Role, authority_over_vault, vault_id};
+pub use chain::{Cap, ChainError, Ctx, Role, authority_over_vault, issued, vault_id};
 pub use conditions::{Branches, Conditions, Form, History, Holder, MAIN};
 pub use line::{Grant, Line, World, grant_allows, grant_reaches, grant_within};
+pub use member::{
+    CLAIM_PARAM, confirm_call, confirm_cap, confirm_op, member_cap, member_lines, plugin_op,
+    sign_in_op,
+};
+pub use records::{CapRecord, EpochRecord, IdRecord, REVOKE_LABEL, RevokeRecord, id_builtin_fit};
 pub use revoke::{Doc, Reads, Revocation, Verdict};
 pub use types::{BUILTIN_TYPES, builtin_type, group_type};

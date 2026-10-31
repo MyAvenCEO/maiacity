@@ -58,6 +58,8 @@ import Aven.ID.SettleJson
 import Aven.ID.FailJson
 import Aven.ID.Padme
 import Aven.ID.Seal
+import Aven.ID.AccessRecords
+import Aven.ID.AccessJson
 
 /-! # Aven.ID
 

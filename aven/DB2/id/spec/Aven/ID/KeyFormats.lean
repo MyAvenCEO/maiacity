@@ -86,6 +86,24 @@ def ownerSeeds (prf : Bytes) : Bytes × Bytes :=
 
 def sealSeed (prf : Bytes) : Bytes := Blake3.deriveKey sealLabel prf
 
+/-! ## A device's hybrid key and seal key
+
+A device's ML-DSA-65 half, and its X-Wing seal key, which its vault's keyring is sealed to, are derived from its own
+Ed25519 seed, never from a passkey (D11), in its own process and wiped after use (A43, 31 Oct 2026). A quantum attacker recovers Ed25519's clamped scalar from the public key, never the seed
+it was hashed from (RFC 8032), so the ML-DSA key stays out of reach; the seed is never exported or derived from
+elsewhere. All three rotate together, with its device key (D19), and a rotation reseals the keyring to the new seal
+key. Nothing trusts the ML-DSA half until its vault owner's hybrid signature binds it. -/
+
+def deviceMlDsaLabel : String := "avenID device ml-dsa 1"
+
+/-- A device's ML-DSA-65 ξ, from its Ed25519 seed. -/
+def deviceMlDsaSeed (ed25519Seed : Bytes) : Bytes := Blake3.deriveKey deviceMlDsaLabel ed25519Seed
+
+def deviceSealLabel : String := "avenID device seal 1"
+
+/-- A device's X-Wing seed, from its Ed25519 seed. -/
+def deviceSealSeed (ed25519Seed : Bytes) : Bytes := Blake3.deriveKey deviceSealLabel ed25519Seed
+
 theorem prf_shape {n : Nat} (hn : n < limit) : Shape (.array [.text prfLabelBytes, prfBody n]) = true := by
   have closed : utf8 prfLabelBytes = true ∧ utf8 keyEpoch = true := by decide
   simp [Shape, ShapeList, ShapeMap, prfBody, keysSorted, strictlySorted, textOk, closed, hn, limit]
