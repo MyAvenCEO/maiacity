@@ -30,7 +30,7 @@ def builtinTypes : List (String × DocId) :=
   ["keyring", "safe", "group", "collection", "cap", "revoke", "epoch"].map fun n => (n, builtinType n)
 
 /-- A built-in type's own facts: built in, in no vault, and a type Doc. -/
-def builtinFacts (t : DocId) : Facts := ⟨t, [], typeOfTypes blake3⟩
+def builtinFacts (t : DocId) : Facts := ⟨t, noVault, typeOfTypes blake3⟩
 
 /-- Each built-in type is a type Doc: its own type is the type of types. -/
 theorem builtin_typed (t : DocId) : (builtinFacts t).isType blake3 = true := by

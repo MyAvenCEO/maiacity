@@ -27,8 +27,8 @@ def utf8 (s : String) : Bytes := s.toUTF8.toList
 /-- A Doc named in an example: the hash of its label. -/
 def doc (label : String) : DocId := ⟨blake3 (utf8 ("doc:" ++ label))⟩
 
-/-- A vault named in an example. -/
-def vault (label : String) : Bytes := utf8 ("vault:" ++ label)
+/-- A vault named in an example, by a 32-byte name (A190). -/
+def vault (label : String) : Hash := blake3 (utf8 ("vault:" ++ label))
 
 def text (s : String) : Value := .text (utf8 s)
 
@@ -64,11 +64,11 @@ def queryJson : Query Value → Json
 
 def targetJson : Target → Json
   | .doc d r => Json.mkObj [("doc", docJson d), ("reach", toJson r.name)]
-  | .vault v b => Json.mkObj [("vault", toJson (utf8Text v)), ("below", toJson b)]
-  | .vaultType v t b => Json.mkObj [("vault", toJson (utf8Text v)), ("type", docJson t), ("below", toJson b)]
+  | .vault v b => Json.mkObj [("vault", toJson v.text), ("below", toJson b)]
+  | .vaultType v t b => Json.mkObj [("vault", toJson v.text), ("type", docJson t), ("below", toJson b)]
 
 def factsJson (f : Facts) : Json :=
-  Json.mkObj [("id", docJson f.id), ("vault", toJson (utf8Text f.vault)), ("type", docJson f.type)]
+  Json.mkObj [("id", docJson f.id), ("vault", toJson f.vault.text), ("type", docJson f.type)]
 
 def answerJson : Answer Value → Json
   | .refused => toJson "refused"
@@ -85,7 +85,7 @@ def recJson (r : Rec Value) : Json :=
 def counts (db : List (Rec Value)) (ty : DocId) : Nat := (db.filter (·.type == ty)).length
 
 /-- No vault governs another, no actor spawned another and no collection lists a Doc, in these examples. -/
-def noGov : Bytes → Bytes → Bool := fun _ _ => false
+def noGov : Hash → Hash → Bool := fun _ _ => false
 def noSpawn : DocId → DocId → Bool := fun _ _ => false
 def noLists : DocId → DocId → Bool := fun _ _ => false
 
@@ -407,7 +407,7 @@ def mutationExamples : List Json := [
 /-! ## Sealed indexes -/
 
 def shapeJson (sh : Shape) : Json :=
-  Json.mkObj [("vault", toJson (utf8Text sh.vault)), ("type", docJson sh.type), ("eqs", toJson (sh.eqs.map utf8Text)),
+  Json.mkObj [("vault", toJson sh.vault.text), ("type", docJson sh.type), ("eqs", toJson (sh.eqs.map utf8Text)),
     ("range", match sh.range with | some f => toJson (utf8Text f) | none => Json.null),
     ("order", match sh.order with | some f => toJson (utf8Text f) | none => Json.null),
     ("name", toJson (sh.name blake3).text)]

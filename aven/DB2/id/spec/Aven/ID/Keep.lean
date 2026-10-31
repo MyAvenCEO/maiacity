@@ -685,7 +685,7 @@ theorem kept_only_by_owner {d : Core.DocId} (h : b.keeps d = true) :
 /-- With every list resolved by its issuer's device from the Docs that vault holds, and every keep cap one its issuer
 checked, a keeper keeps a Doc only when a keep cap its issuer's owners approved covers it by its facts, every line of it
 in its issuer's authority: its own vault, or one it governs. -/
-theorem kept_by_owner (gov : Core.Bytes → Core.Bytes → Bool) (spawned lists : Core.DocId → Core.DocId → Bool)
+theorem kept_by_owner (gov : Core.Hash → Core.Hash → Bool) (spawned lists : Core.DocId → Core.DocId → Bool)
     (x : Ctx) (held : String → List (Core.Facts × Nat))
     (resolved : ∀ l ∈ b.listings, l.docs = resolve gov spawned lists x.roles l.cap (held l.cap.issuer))
     (checked : ∀ l ∈ b.listings, chainOk x [l.cap] = true) {d : Core.DocId} (h : b.keeps d = true) :
