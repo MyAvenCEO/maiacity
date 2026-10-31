@@ -19,8 +19,8 @@ keys sort as the codec sorts them, `sigs` among them.
 Each reader (`CapRecord.ofValue?`, `RevokeRecord.ofValue?`, `EpochRecord.ofValue?`) reads a Value field by field and
 then keeps it only if writing it back gives the very same Value, so a Record has one form: what `ofValue?` reads is
 what `value` writes (`CapRecord.ofValue?_value` and the others), and no other key, order or spelling fits. On top of
-that each field has its form: hashes are 32 bytes; an epoch's commitment 32 bytes, its sealed keys 48 and its stanzas'
-ciphertexts 1120, with the flat scheme and suite 1, and a vault key exactly when it is a keyring's.
+that each field has its form: hashes are 32 bytes, and an epoch's blob is read by its owner, `KeyFormats`
+(`Epoch.ofFields?`, with its named lengths).
 
 `idBuiltinFit` gives the check for each of the three types, and none for any other Doc: the docs layer joins it with
 the other packages' built-ins. -/
@@ -74,40 +74,6 @@ theorem RevokeRecord.ofValue?_value {v : Value} {r : RevokeRecord} (h : RevokeRe
 
 /-! ## An epoch Record -/
 
-namespace KeyFormats
-
-/-- An X-Wing ciphertext's length, a sealed key's, and a commitment's or tag's. -/
-def ctLen : Nat := 1120
-def sealedLen : Nat := 48
-
-def Scope.ofText? (s : String) : Option Scope :=
-  if s = "keyring" then some .keyring else if s = "doc" then some .doc else none
-
-def recOptBytes? (n : Nat) : Option Value → Option (Option Bytes)
-  | none => some none
-  | some v => (recBytes? n v).map some
-
-def Stanza.ofValue? : Value → Option Stanza
-  | .map kvs => do
-    guard (recNat? (← recField kvs "suite") = some stanzaSuite)
-    some { ct := ← recBytes? ctLen (← recField kvs "ct"), commit := ← recBytes? 32 (← recField kvs "commit"),
-           sealed := ← recBytes? sealedLen (← recField kvs "sealed"), tag := ← recOptBytes? 32 (recField kvs "tag") }
-  | _ => none
-
-/-- An epoch from its blob's fields: the flat scheme, a vault key exactly when it is a keyring's. -/
-def Epoch.ofFields? (kvs : List (Bytes × Value)) : Option Epoch := do
-  guard (recText? (← recField kvs "scheme") = some "flat 1")
-  let scope ← Scope.ofText? (← recText? (← recField kvs "scope"))
-  let .array prev ← recField kvs "prev" | none
-  let .array stanzas ← recField kvs "stanzas" | none
-  let vault ← recOptBytes? sealedLen (recField kvs "vault")
-  guard (decide (scope = .keyring) == vault.isSome)
-  some { scope, id := ← recText? (← recField kvs "id"), n := ← recNat? (← recField kvs "n"),
-         prev := ← prev.mapM (recBytes? 32), stanzas := ← stanzas.mapM Stanza.ofValue?,
-         commit := ← recBytes? 32 (← recField kvs "commit"), back := ← recOptBytes? sealedLen (recField kvs "back"),
-         vault }
-
-end KeyFormats
 
 structure EpochRecord where
   epoch : KeyFormats.Epoch
