@@ -68,15 +68,15 @@ fn unhex64(s: &str) -> Option<[u8; 64]> {
 
 /// Lines' blobs with the retractions first (`Aven.DB.Chains.Keeper.catchUpAll`), each group in its order: a peer
 /// applies every delete before any line or file it deletes reaches it.
-fn retractions_first(lines: Vec<String>) -> Vec<String> {
-    let (first, rest): (Vec<String>, Vec<String>) = lines.into_iter().partition(|l| {
-        Line::read_kept(l.as_bytes()).is_some_and(|(l, _)| matches!(l.body, Body::Retract(_)))
-    });
+fn retractions_first(lines: Vec<Vec<u8>>) -> Vec<Vec<u8>> {
+    let (first, rest): (Vec<Vec<u8>>, Vec<Vec<u8>>) = lines
+        .into_iter()
+        .partition(|l| Line::read_kept(l).is_some_and(|(l, _)| matches!(l.body, Body::Retract(_))));
     first.into_iter().chain(rest).collect()
 }
 
 /// Lines in frames that stay well under the wire's limit, in order.
-pub fn batches(lines: Vec<String>) -> Vec<Frame> {
+pub fn batches(lines: Vec<Vec<u8>>) -> Vec<Frame> {
     let mut out = vec![];
     let (mut batch, mut size) = (vec![], 0);
     for line in lines {
@@ -471,8 +471,8 @@ impl Chats {
             .map_or(0, |h| h.line.seq)
     }
 
-    /// The blobs of `device`'s chain newer than `seq`, oldest first, as frames' text.
-    pub async fn lines_after(&self, device: &str, seq: u64) -> Vec<String> {
+    /// The blobs of `device`'s chain newer than `seq`, oldest first, as frames carry them.
+    pub async fn lines_after(&self, device: &str, seq: u64) -> Vec<Vec<u8>> {
         // a line held without its text goes as the retraction that counts for it
         let ids: Vec<(String, Option<String>)> = {
             let keeper = self.keeper.lock().unwrap();
@@ -497,7 +497,7 @@ impl Chats {
                 Some(sent) => self.blob(&sent).await,
                 None => None,
             } {
-                out.push(String::from_utf8_lossy(&blob).into_owned());
+                out.push(blob.to_vec());
             }
         }
         out

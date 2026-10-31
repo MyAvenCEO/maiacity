@@ -167,26 +167,23 @@ theorem one_relay_only_source {n : Net} {r : String} (one : n.relays = [r]) (a b
 
 /-- **`rehome_newest`:** a device that re-homes signs an address record at the next place of its own log, after
 every one it signed before, and every peer takes it as newest (`Aven.ID.Records`), as long as the device never split
-its log (A4, A31). -/
-theorem rehome_newest {admits releasers : String → Bool} {rs : List Records.PeerRecord} {b : String} {c body : Nat}
+that generation (A4, A31). -/
+theorem rehome_newest {admits releasers : String → Bool} {rs : List Records.PeerRecord} {b : String} {g c body : Nat}
     (ad : admits b = true)
-    (older : ∀ s ∈ rs, s.kind = .address → s.about = b → s.counter < c)
+    (older : ∀ s ∈ rs, s.kind = .address → s.about = b → s.generation < g ∨ (s.generation = g ∧ s.counter < c))
     (honest : ∀ s ∈ rs, ∀ t ∈ rs, s.kind = .address → s.about = b → t.kind = .address → t.about = b →
-      s.counter = t.counter → s.body = t.body) :
-    Records.isNewest admits releasers (⟨.address, b, b, c, body⟩ :: rs) ⟨.address, b, b, c, body⟩ = true := by
-  have cnt : Records.counts admits releasers (⟨.address, b, b, c, body⟩ :: rs) ⟨.address, b, b, c, body⟩ = true := by
-    simp only [Records.counts, Records.RecordKind.history, Bool.not_true, Bool.false_or, List.all_eq_true,
-      Records.mem_candidates, List.mem_cons]
-    rintro s ⟨ms, _, ks, as⟩ t ⟨mt, _, kt, at_⟩
-    simp only [Bool.not_eq_true', Bool.and_eq_false_iff, beq_eq_false_iff_ne, ne_eq, decide_eq_false_iff_not,
-      bne_eq_false_iff_eq]
-    rcases ms with rfl | ms <;> rcases mt with rfl | mt
-    · exact .inr rfl
-    · have := older t mt kt at_; left; left; simp; omega
-    · have := older s ms ks as; left; left; simp; omega
-    · by_cases e : s.counter = t.counter
-      · exact .inr (honest s ms t mt ks as kt at_ e)
-      · left; left; simpa using e
+      s.generation = g → t.generation = g → s.counter = t.counter → s.body = t.body) :
+    Records.isNewest admits releasers (⟨.address, b, b, g, c, body⟩ :: rs) ⟨.address, b, b, g, c, body⟩ = true := by
+  have cnt : Records.counts admits releasers (⟨.address, b, b, g, c, body⟩ :: rs) ⟨.address, b, b, g, c, body⟩ =
+      true := by
+    refine Records.split_spares_next _ fun s ms t mt gs gt e => ?_
+    obtain ⟨ms, _, ks, as⟩ := Records.mem_candidates.mp ms
+    obtain ⟨mt, _, kt, at_⟩ := Records.mem_candidates.mp mt
+    rcases List.mem_cons.mp ms with rfl | ms <;> rcases List.mem_cons.mp mt with rfl | mt
+    · rfl
+    · have := older t mt kt at_; dsimp only at gt e; omega
+    · have := older s ms ks as; dsimp only at gs e; omega
+    · exact honest s ms t mt ks as kt at_ gs gt e
   refine Records.isNewest_iff.mpr ⟨⟨⟨List.mem_cons_self .., by simp [Records.takes, ad]⟩, cnt⟩, ?_⟩
   intro s ms _ k a _
   rcases List.mem_cons.mp ms with e | ms
@@ -195,6 +192,14 @@ theorem rehome_newest {admits releasers : String → Bool} {rs : List Records.Pe
     simp only [Records.newer, Bool.or_eq_false_iff, decide_eq_false_iff_not, Bool.and_eq_false_iff,
       beq_eq_false_iff_ne, ne_eq]
     omega
+
+/-- **`rehome_new_generation`:** a device that split its log re-homes in a new generation, later than every one it
+signed before, and every peer takes its new address as newest: a split ends a generation, not the device (A42). -/
+theorem rehome_new_generation {admits releasers : String → Bool} {rs : List Records.PeerRecord} {b : String}
+    {g c body : Nat} (ad : admits b = true) (later : ∀ s ∈ rs, s.kind = .address → s.about = b → s.generation < g) :
+    Records.isNewest admits releasers (⟨.address, b, b, g, c, body⟩ :: rs) ⟨.address, b, b, g, c, body⟩ = true :=
+  rehome_newest ad (fun s ms k a => .inl (later s ms k a))
+    (fun s ms _ _ k a _ _ gs _ _ => absurd gs (Nat.ne_of_lt (later s ms k a)))
 
 /-- A Doc is fetchable by `a` once `gone` is lost: `a` holds it, or reaches a holder. -/
 def fetchable (n : Net) (gone a doc : String) : Bool :=

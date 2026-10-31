@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use aven_db_core::presence::Presence;
 use aven_db_core::status::{Event, Status};
 use aven_db_core::timeline;
-use aven_db_core::wire::{self, Decoder, WireError, encode};
+use aven_db_core::wire::{self, Decoder, Frame, Greeting, Incoming, WireError, encode};
 use serde_json::{Map, Value, json};
 
 fn vectors(file: &str) -> Vec<Value> {
@@ -99,46 +99,129 @@ fn timeline_lines_follow_the_vectors() {
     }
 }
 
-fn chunk(c: &Value) -> Vec<u8> {
-    match c {
-        Value::String(s) => s.as_bytes().to_vec(),
-        fill => fill["fill"]
-            .as_str()
-            .unwrap()
-            .repeat(fill["len"].as_u64().unwrap() as usize)
-            .into_bytes(),
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn unhex(s: &str) -> Vec<u8> {
+    (0..s.len() / 2)
+        .map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap())
+        .collect()
+}
+
+/// A frame in the vectors' readable form (`Vectors.lean`'s `Frame.json`): a line's bytes in hex.
+fn frame_json(f: &Frame) -> Value {
+    match f {
+        Frame::Presence { peers } => json!({ "frame": "presence", "peers": peers }),
+        Frame::Beat { n } => json!({ "frame": "beat", "n": n }),
+        Frame::Claim { statement } => json!({ "frame": "claim", "statement": statement }),
+        Frame::SignIn { statement } => json!({ "frame": "sign_in", "statement": statement }),
+        Frame::Invite { statement } => json!({ "frame": "invite", "statement": statement }),
+        Frame::Withdraw { statement } => json!({ "frame": "withdraw", "statement": statement }),
+        Frame::Join { statement } => json!({ "frame": "join", "statement": statement }),
+        Frame::Network {
+            claimed,
+            tree,
+            statements,
+        } => {
+            json!({ "frame": "network", "claimed": claimed, "tree": tree, "statements": statements })
+        }
+        Frame::Refused { why } => json!({ "frame": "refused", "why": why }),
+        Frame::Heads { heads, more } => json!({ "frame": "heads", "heads": heads, "more": more }),
+        Frame::CatchUp { holds, only } => {
+            json!({ "frame": "catch_up", "have": holds, "only": only })
+        }
+        Frame::Lines { lines } => {
+            json!({ "frame": "lines", "lines": lines.iter().map(|l| hex(l)).collect::<Vec<_>>() })
+        }
+        Frame::Kept { files } => json!({ "frame": "kept", "files": files }),
     }
 }
 
-/// The chunks of a stream through the decoder: the frames of each push, and the error that ends it.
-fn decode(chunks: &[Vec<u8>]) -> Value {
+/// A stream through the decoder, chunk by chunk (`Aven.DB.WireCbor.read`): its greeting, the frames each chunk
+/// completes, and the error that ends it.
+fn read(chunks: &[Vec<u8>]) -> Value {
     let mut d = Decoder::default();
-    let mut frames = Vec::new();
+    let (mut greeting, mut frames) = (Value::Null, Vec::new());
+    let ended = |greeting: &Value, frames: &Vec<Value>, e: WireError| {
+        let e = match e {
+            WireError::Bad(_) => "bad",
+            WireError::TooLong => "tooLong",
+        };
+        json!({ "greeting": greeting, "frames": frames, "error": e })
+    };
     for c in chunks {
-        match d.push(c) {
-            Ok(fs) => frames.push(json!(fs)),
-            Err(e) => {
-                let e = match e {
-                    WireError::Bad(_) => "bad",
-                    WireError::TooLong => "tooLong",
-                };
-                return json!({ "frames": frames, "error": e });
+        let mut bytes: &[u8] = c;
+        if greeting.is_null() {
+            match d.greeting(c) {
+                Ok(Some(g)) => greeting = g.json(),
+                Ok(None) => {
+                    frames.push(json!([]));
+                    continue;
+                }
+                Err(e) => return ended(&greeting, &frames, e),
             }
+            bytes = &[];
+        }
+        match d.frames(bytes) {
+            Ok(fs) => frames.push(json!(fs.iter().map(frame_json).collect::<Vec<_>>())),
+            Err(e) => return ended(&greeting, &frames, e),
         }
     }
-    json!({ "frames": frames, "error": null })
+    json!({ "greeting": greeting, "frames": frames, "error": null })
 }
 
+fn chunks(v: &Value) -> Vec<Vec<u8>> {
+    v["input"]["chunks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| unhex(c.as_str().unwrap()))
+        .collect()
+}
+
+/// Greetings, read from exactly their keys.
 #[test]
-fn the_wire_follows_the_vectors() {
-    for v in vectors("wire.json") {
-        let chunks: Vec<Vec<u8>> = v["input"]["chunks"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(chunk)
-            .collect();
-        assert_eq!(decode(&chunks), v["expected"], "{}", v["name"]);
+fn greetings_follow_the_vectors() {
+    let all = vectors("wire.json");
+    assert!(all.len() >= 9);
+    for v in all {
+        let got =
+            Greeting::parse(v["input"]["line"].as_str().unwrap()).map_or(Value::Null, |g| g.json());
+        assert_eq!(got, v["expected"], "{}", v["name"]);
+    }
+}
+
+/// Streams: the greeting, then frames in CBOR, and what each refuses.
+#[test]
+fn frames_follow_the_vectors() {
+    let all = vectors("frames.json");
+    assert!(all.len() >= 30);
+    for v in all {
+        assert_eq!(read(&chunks(&v)), v["expected"], "{}", v["name"]);
+    }
+}
+
+/// Every frame the vectors name encodes to the bytes Lean wrote for it.
+#[test]
+fn frames_encode_as_the_vectors() {
+    for v in vectors("frames.json") {
+        let name = v["name"].as_str().unwrap();
+        if !name.starts_with("a frame: ") {
+            continue;
+        }
+        let bytes = chunks(&v).concat();
+        let hello = Greeting::Hello {
+            peer: "alice-peer".into(),
+            wire: wire::VERSION,
+        }
+        .line();
+        let mut d = Decoder::default();
+        let got = d.push(&bytes).unwrap();
+        let Some(Incoming::Frame(frame)) = got.get(1) else {
+            panic!("{name}")
+        };
+        assert_eq!([hello, encode(frame)].concat(), bytes, "{name}");
     }
 }
 
@@ -160,7 +243,7 @@ fn upgrades_follow_the_vectors() {
             input["theirs"].as_u64().unwrap(),
         );
         assert_eq!(
-            json!(wire::meet(mine, theirs)),
+            wire::meet(mine, theirs).map_or(Value::Null, |g| g.json()),
             expected["answer"],
             "{}",
             v["name"]
@@ -180,33 +263,32 @@ fn upgrades_follow_the_vectors() {
     assert_eq!(ours[0]["input"]["mine"], json!(wire::VERSION));
 }
 
-/// However a stream is cut, the same frames arrive, and they encode back to the same bytes: a property of the
-/// decoder over the vectors' streams, not an expected value.
+/// However a stream is cut, the same greeting and frames arrive: a property of the decoder over the vectors' streams,
+/// not an expected value.
 #[test]
 fn frames_survive_any_split() {
-    for v in vectors("wire.json") {
+    for v in vectors("frames.json") {
         if !v["expected"]["error"].is_null() {
             continue;
         }
-        let bytes: Vec<u8> = v["input"]["chunks"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .flat_map(chunk)
-            .collect();
-        let whole = Decoder::default().push(&bytes).unwrap();
-        let encoded: Vec<u8> = whole.iter().flat_map(encode).collect();
-        assert_eq!(
-            Decoder::default().push(&encoded).unwrap(),
-            whole,
-            "{}",
-            v["name"]
-        );
+        let bytes = chunks(&v).concat();
+        let whole = read(std::slice::from_ref(&bytes));
+        let flat = |r: &Value| {
+            r["frames"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .flat_map(|f| f.as_array().unwrap().clone())
+                .collect::<Vec<_>>()
+        };
         for cut in 0..bytes.len().min(400) {
-            let mut d = Decoder::default();
-            let mut got = d.push(&bytes[..cut]).unwrap();
-            got.extend(d.push(&bytes[cut..]).unwrap());
-            assert_eq!(got, whole, "{} cut at {cut}", v["name"]);
+            let got = read(&[bytes[..cut].to_vec(), bytes[cut..].to_vec()]);
+            assert_eq!(
+                got["greeting"], whole["greeting"],
+                "{} cut at {cut}",
+                v["name"]
+            );
+            assert_eq!(flat(&got), flat(&whole), "{} cut at {cut}", v["name"]);
         }
     }
 }

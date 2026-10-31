@@ -14,6 +14,7 @@
 //      upgrades itself: back on this build's version (`alice-back`), the card says it no more and it is live again.
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { chromium, firefox, webkit } from 'playwright';
+import { withPrf } from './prf.mjs';
 
 const run = process.argv[2] ?? 'runs/latest';
 const origin = 'http://localhost:5174';
@@ -46,6 +47,8 @@ async function launch(engine, passkey) {
 	const context = await engine.launchPersistentContext(dir, { viewport: { width: 1000, height: 760 } });
 	if (passkey) await context.credentials.create(passkey.rpId, passkey);
 	await context.credentials.install();
+	// a passkey without PRF makes no vault: the box stands in for a provider that has one (prf.mjs)
+	await withPrf(context);
 	const page = context.pages()[0] ?? (await context.newPage());
 	await page.goto(`${origin}/`);
 	return { context, page };

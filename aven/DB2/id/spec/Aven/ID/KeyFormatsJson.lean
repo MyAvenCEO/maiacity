@@ -43,10 +43,9 @@ def derivationVectors : List Json :=
         ("input", h (ramp 1 32)), ("length", 64)]) (h (Blake3.deriveKeyXof ownerLabel (ramp 1 32) 64)),
      vec "hash, 131 bytes of output" (Json.mkObj [("mode", "hash"), ("input", h (ramp 3 1500)), ("length", 131)])
         (h (Blake3.digestXof (ramp 3 1500) 131))]
-  let prf := ([("alice", 1), ("alice", 2), ("bob", 1), ("maia-city", 7), ("", 0), ("alice", 2 ^ 32 + 1)] :
-      List (String × Nat)).map fun (v, e) =>
-    vec s!"the PRF input of {v}'s owner at epoch {e}" (Json.mkObj [("vault", v), ("epoch", toJson e)])
-      (Json.mkObj [("input", h (prfInput v e)), ("salt", h (prfSalt v e))])
+  let prf := ([0, 1, 2, 7, 2 ^ 32 + 1] : List Nat).map fun e =>
+    vec s!"the PRF input of an owner at epoch {e}" (Json.mkObj [("epoch", toJson e)])
+      (Json.mkObj [("input", h (prfInput e)), ("salt", h (prfSalt e))])
   let seeds := prfOutputs.map fun (name, prf) =>
     let (ed, ml) := ownerSeeds prf
     vec s!"the keys of PRF output {name}" (Json.mkObj [("prf", h prf)])

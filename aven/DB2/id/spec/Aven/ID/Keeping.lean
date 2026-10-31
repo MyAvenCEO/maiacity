@@ -47,11 +47,8 @@ theorem keeps_iff {roles : List Role} {c : Cap} {f : Facts} :
       (c.grants roles).reaches (gov · · = true) (spawned · · = true) (lists · · = true) f (coreOp .keep) := by
   simp only [Cap.keeps, List.any_eq_true, Bool.and_eq_true, beq_iff_eq, Target.coversB_iff, Grant.reaches]
 
-/-- avenID's own op, by its id: the name of its stored form `{"op": name, "plugin": "id/1"}`, as `core/1`'s are
-named. -/
-def idOp (name : String) : OpId :=
-  nameOf blake3
-    (.map [("op".toUTF8.toList, .text name.toUTF8.toList), ("plugin".toUTF8.toList, .text "id/1".toUTF8.toList)])
+/-- avenID's own op, by its id: the name of its stored form `{"op": name, "plugin": "id/1"}`. -/
+def idOp (name : String) : OpId := pluginOp "id/1" name
 
 /-- **A keeper's offer** (A44): its vault offers its storage to a vault or a group, as much as the `quota` bound, in
 bytes, and as fast as the `rate` bound, in bytes a second. Placement has one source, the owner's keep caps; a keeper
@@ -253,7 +250,7 @@ theorem default_needs_owner {v k s : String} (pos : ∀ w, 1 ≤ x.threshold w) 
     · rfl
     · obtain ⟨_, _, m⟩ := Tree.approves_signed pos h
       simp at m
-  simp [chainError, chainRules, rootRules, capRules, linksRules, defaultKeep, Cap.grants, authorityOver, anchor,
-    authorityOverVault, Holder.typed, dev, none]
+  simp [chainError, chainRules, rootRules, capRules, linksRules, defaultKeep, Cap.grants, authorityOver, lineVault,
+    anchor, authorityOverVault, Tree.issued, Holder.typed, dev, none]
 
 end Aven.ID
