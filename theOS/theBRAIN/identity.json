@@ -8,7 +8,7 @@
   },
   {
    "title": "Your devices act for you.",
-   "text": "You are an identity too: a {human}. Your phone, laptop and watch are your devices, your hands, and each signs with its own signer. Each device belongs to exactly one identity: you, or, for a shared server, a group you'll meet next. Lose a device, add another, and you're still you.",
+   "text": "You are an identity too: a {human}. Your phone, laptop and watch are your devices, your hands, and each signs with its own signer. Each device belongs to exactly one identity: you, or, for a shared server, a coop, which you'll meet next. Lose a device, add another, and you're still you.",
    "deep": "A human identity's members are device identities. Its history lists them and commits to the next ones in advance (KERI-style pre-rotation). Identity types: device, human, coop."
   },
   {

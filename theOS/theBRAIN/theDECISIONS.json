@@ -895,7 +895,7 @@
   {
    "id": "D43",
    "title": "Retain: an owner event at any time",
-   "status": "proposed",
+   "status": "decided",
    "decision": "The owner can say “retain until <date>” at any time; the date can only move later. Until then, honest devices refuse cuts, shreds and erasure. A retention role names identities that keep the sealed bytes (want, keep) and may hold a share of the archive key. Stored as canonical CBOR, exported as JSON and PDF/A, resealed periodically under current algorithms.",
    "why": "Bookkeeping must be kept for years (in Germany 10 years for books, 8 for vouchers since 2025; check with a tax adviser), and a legal retention duty takes priority over erasure (GDPR Art. 17(3)(b)).",
    "sources": [
@@ -916,7 +916,7 @@
   {
    "id": "D44",
    "title": "Signing rules and data rules never overlap",
-   "status": "proposed",
+   "status": "decided",
    "decision": "Signing rules belong to an identity and answer who speaks for it: members, thresholds, weights, time locks, for three kinds of act only (act, own, govern). The data's rules belong to a piece of data and answer what an identity may do with it, through roles. Signing rules never mention data or roles; data rules never mention signature counts. A change is valid only if both hold. Both use the same policy language (D38). A coop is like a small DAO: members, governance, assets, nesting.",
    "why": "Agency and access are different questions; mixing them made the coop example ambiguous.",
    "sources": [],
@@ -980,6 +980,20 @@
    "slides": [
     "rules-7",
     "rules-5"
+   ]
+  },
+  {
+   "id": "D48",
+   "title": "One rule shape, one plugin system",
+   "status": "proposed",
+   "date": "2026-10-31",
+   "decision": "Every rule has one shape: who, on what, operations, conditions, expiry. An identity's rules have its members as who and the identity itself as target, with operations act, own and govern. A piece of data's rules have a role as who and the data as target. Operations and conditions (threshold, weights, time lock, at, where, limit …) are plugins in one registry, each named by the hash of its specification, declarative, failing closed when unknown. Each condition plugin declares which target it may be used on, so thresholds stay on identities (D44).",
+   "why": "One language and one engine for all rules, with the separation between agency and access kept by the target.",
+   "supersedes": "D38",
+   "sources": [],
+   "slides": [
+    "identity-5",
+    "rules-4"
    ]
   }
  ]
