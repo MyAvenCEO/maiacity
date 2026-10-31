@@ -265,9 +265,27 @@ claims of its ticket without seeing each other. Both need a leaked link or a dou
 
 Production is never wiped (PRODUCTION.md). Its store holds the claim, two sign-ins and whatever invites and joins
 milestone 2 adds, under their ref names. The peer reads them as they are and treats the old claim as the genesis's
-past: Samuel signs the genesis once, with his passkey and the guardian's key, naming the old claim's hash.
-`settle_restore` shows the tree doesn't move, and a frozen copy of production's store format is tested, as
-`id/core/tests/before/` is today.
+past: Samuel signs the genesis once, with his passkey and the guardian's key, naming the old claim's hash. A frozen
+copy of production's store format is tested, as `id/core/tests/before/` is today.
+
+**The migration's guarantee** (the architect, 31 Oct 2026): three things together, checked on production's own store
+before anything switches.
+1. `settle_restore` and `settle_restore_door` (proved, `Aven.ID.Restore`, `Aven.ID.RestoreDoor`): every stored
+   statement counts after migration, and for every clean store the settled door admits exactly its device keys.
+2. `isClean` on production's store: it is a store `Members.restore` reads back clean.
+3. `oldSideAgrees` on production's store: today's door admits exactly those same keys.
+
+Both checks are the functions Lean exports, held to aven-id's vectors (README rule 10).
+
+**Two releases, no dual mode:**
+- **Release N, the pre-flight.** The Aven Peer runs both checks read-only on production's store. It logs only the
+  verdict and counts; production's data never leaves the server.
+- **Samuel signs the genesis** in avenOS, with his passkey and MaiaCityGuardian.
+- **Release N+1, the switch.** The Aven Peer checks the genesis and runs both checks again, then writes the migrated
+  statements and settles. If a check fails, it refuses, the deploy fails and says why, and production stays on
+  release N.
+
+No code path keeps the old door running beside the settled one (README rule 9).
 
 ## 6. Signed records, not a peer's word
 
@@ -397,11 +415,10 @@ peer served the catch-up.
   an admin is too slow.
 - **A member's relay sees other members' IPs:** the relay list is the admin's choice for that reason. Mixing traffic
   over several relays is not in this plan.
-- **`settle_restore` for every store, the old side:** the settled side is proved (`settle_restore_door`,
-  `Aven.ID.RestoreDoor`): for every store `Members.restore` reads back clean, the settled door admits exactly its
-  device keys. Still checked, not proved: that `Members.restore` reads back a clean store, and that `Members.admits`
-  admits exactly those keys (`oldSideAgrees`, on every step of every invite trace). Due before production's tree is
-  migrated for real (the architect, 30 Oct 2026).
+- **The old side for every store, a nice-to-have:** a general proof that `Members.restore` always reads back a clean
+  store, and that `Members.admits` admits exactly its `restoredKeys`. Today these are checked on every invite trace
+  (`oldSideAgrees`), and on production's one store before it migrates ([5](#productions-tree)). Not a blocker: a
+  general proof would only add stores that will never exist (the architect, 31 Oct 2026).
 - **Presence at scale:** a beat per device per step on one topic is fine for the chat's network, but not for millions
   (caps, "Scale").
 
