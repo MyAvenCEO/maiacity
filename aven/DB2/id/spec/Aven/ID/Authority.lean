@@ -190,4 +190,33 @@ theorem Reads.ofAuthority_caps {vault : Envelope → String} {auth : Envelope �
 #guard Authority.ofValue? (Authority.value ⟨[⟨List.replicate 31 1⟩], []⟩) = none
 #guard Canon (Authority.value ⟨[⟨List.replicate 32 1⟩, ⟨List.replicate 32 2⟩], [⟨List.replicate 32 3⟩]⟩)
 
+namespace AuthorityExamples
+
+/-- A name for the examples: the hash of a word. -/
+def nm (s : String) : Hash := blake3 s.toUTF8.toList
+
+/-- Values under `authority`, each with what caps reads of it, written by hand (`authority.json`). Every one is a
+canonical Value, so each is refused here, by its shape, and never by the codec. -/
+def cases : List (String × Value × Option Authority) := [
+  ("on its vault's own authority: no caps, no acks", (⟨[], []⟩ : Authority).value, some ⟨[], []⟩),
+  ("a chain of two caps, root first", (⟨[nm "root cap", nm "device cap"], []⟩ : Authority).value,
+    some ⟨[nm "root cap", nm "device cap"], []⟩),
+  ("one cap and two revocations acknowledged",
+    (⟨[nm "cap"], [nm "revocation 1", nm "revocation 2"]⟩ : Authority).value,
+    some ⟨[nm "cap"], [nm "revocation 1", nm "revocation 2"]⟩),
+  ("caps without acks", .map [(capsKey, .array [(nm "cap").value])], none),
+  ("a third key", .map [(acksKey, .array []), (capsKey, .array []), ("more".toUTF8.toList, .array [])], none),
+  ("a name of 31 bytes", .map [(acksKey, .array []), (capsKey, .array [.bytes (List.replicate 31 1)])], none),
+  ("a name of 33 bytes", .map [(acksKey, .array [.bytes (List.replicate 33 1)]), (capsKey, .array [])], none),
+  ("a name as text", .map [(acksKey, .array []), (capsKey, .array [.text "cap".toUTF8.toList])], none),
+  ("caps as one name, not a list", .map [(acksKey, .array []), (capsKey, (nm "cap").value)], none),
+  ("an empty map", .map [], none),
+  ("a list, not a map", .array [], none),
+  ("null", .null, none)]
+
+#guard cases.all fun (_, v, a) => Authority.ofValue? v == a
+#guard cases.all fun (_, v, _) => Canon v
+
+end AuthorityExamples
+
 end Aven.ID

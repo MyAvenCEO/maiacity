@@ -1,5 +1,6 @@
 import Aven.ID.CapsExamples
 import Aven.ID.Keep
+import Aven.ID.Authority
 import Aven.ID.Gen
 import Aven.Core.Json
 import Lean.Data.Json
@@ -333,5 +334,12 @@ def genKeep (seed : Nat) : Keep := Id.run do
 def generatedChains : Nat := 40
 def generatedDocs : Nat := 30
 def generatedKeeps : Nat := 30
+
+/-- What caps reads of a body's `authority` Value (`Authority.ofValue?`), as `authority.json` writes it:
+`{"reads": false}`, or `{"reads": true, "caps": [name…], "acks": [name…]}`. -/
+def Authority.readJson : Option Authority → Json
+  | some a => Json.mkObj [("reads", toJson true), ("caps", toJson (a.caps.map (·.text))),
+      ("acks", toJson (a.acks.map (·.text)))]
+  | none => Json.mkObj [("reads", toJson false)]
 
 end Aven.ID
