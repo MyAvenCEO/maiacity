@@ -178,15 +178,19 @@ def decode (bs : List UInt8) : Option Point :=
         let x := if x % 2 == sign then x else p - x
         some ⟨x, y, 1, x * y % p⟩
 
-/-- Whether `sig` is `key`'s signature of `msg` (RFC 8032, 5.1.7, without the cofactor): `S` below the order, and
-`[S]B = R + [k]A`. -/
+/-- A point of small order: eight times it is the neutral point, whose encoding is the number 1. -/
+def smallOrder (P : Point) : Bool := encode (mul 8 P) == le 32 1
+
+/-- Whether `sig` is `key`'s signature of `msg`, verified strictly (RFC 8032, 5.1.7, without the cofactor): the key and
+`R` decode to points of large order, `S` lies below the order, and `[S]B = R + [k]A`. So an all-zero key and
+signature never pass. -/
 def verify (key msg sig : List UInt8) : Bool :=
   key.length == 32 && sig.length == 64 &&
     match decode key, decode (sig.take 32) with
     | some A, some R =>
       let s := ofLe (sig.drop 32)
       let k := ofLe (sha512.digest (sig.take 32 ++ key ++ msg)) % order
-      s < order && encode (mul s base) == encode (add R (mul k A))
+      !smallOrder A && !smallOrder R && s < order && encode (mul s base) == encode (add R (mul k A))
     | _, _ => false
 
 def hex (bytes : List UInt8) : String :=
@@ -220,8 +224,8 @@ def seed (id : String) : List UInt8 := sha256.digest s!"avenSANDBOX test signer:
   (sign (unhex "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60") [])
 /-! ## Verifying, by hand (`signatures.json`)
 
-A signature verifies only by its own key, over its own message, with `S` below the order: each answer written by hand
-and checked as the module builds. -/
+A signature verifies only by its own key, over its own message, with `S` below the order and no point of small order:
+each answer written by hand and checked as the module builds. -/
 
 /-- A message the cast signs. -/
 def capWord : List UInt8 := "a cap".toUTF8.toList
@@ -241,7 +245,9 @@ def verifyCases : List (String × List UInt8 × List UInt8 × List UInt8 × Bool
    ("a bit of R flipped", alice, capWord, (sig.head! ^^^ 1) :: sig.tail, false),
    ("S raised by the order", alice, capWord, raisedS, false),
    ("63 bytes", alice, capWord, sig.take 63, false),
-   ("a key off the curve", le 32 2, capWord, sig, false)]
+   ("a key off the curve", le 32 2, capWord, sig, false),
+   ("an all-zero key and signature: points of small order", List.replicate 32 0, capWord, List.replicate 64 0,
+    false)]
 
 #guard verifyCases.all fun (_, k, m, s, b) => verify k m s == b
 -- the cast's, as SANDBOX.md writes it: Alice Peer-Light's key starts 9f78
