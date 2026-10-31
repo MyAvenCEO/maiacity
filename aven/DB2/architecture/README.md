@@ -1,6 +1,6 @@
 # Architecture: the rules across all parts, in Lean
 
-`Aven.Architecture` states [`ARCHITECTURE.md`](../ARCHITECTURE.md)'s fourteen rules ("The rules across all parts") as
+`Aven.Architecture` states [the architecture](../brain/ARCHITECTURE.md#the-rules)'s rules as
 theorems composed from the parts' own models. It is one Lean package, in [`spec`](spec), that requires every part:
 `Aven.Core`, `Aven.ID`, `Aven.DB`, `Aven.Runtime` and `Aven.Actor`. So cross-part theorems live in one place, and no
 part requires another sideways: avenID, below docs, never requires docs (the architect, 30 Oct 2026).
