@@ -59,8 +59,8 @@ thread's recommendation. Samuel may overrule any.
    offers to keep. A vault's keep caps say which keeper holds which of its Docs and Values. A new vault starts with one
    keep cap for everything to Maia City's keeper (the Aven Peer, acting for Aven), approved by its owner with their
    join, and only its owner changes it or adds others (Samuel, 31 Oct 2026). Keepers stay blind. Files are no special
-   case: a file's chunks are Values that a file Record in its Doc names, kept as that Doc is. Every native Peer also keeps the chat's logs it hears. Any peer may keep, and none is
-   special.
+   case: a file's chunks are Values that a file Record in its Doc names, kept as that Doc is. Every native Peer also
+   keeps the chat's logs it hears. Any peer may keep, and none is special.
 9. **What stays special is named, signed or on its way out** ([8](#8-what-stays-special)). The claim becomes the
    signed genesis that every member pins (A11). The guardian is named in what people sign (A13). The `maia.city` origin
    stays special until Samuel takes up A14.
