@@ -492,8 +492,8 @@ def longest : List Head := List.replicate pageSize ⟨String.ofList (List.replic
   String.ofList (List.replicate 64 'e'), 2 ^ 64 - 1⟩
 #guard (frameBytes (.heads longest true)).length * 2 < maxFrame
 #guard (frameBytes (.kept (List.replicate pageSize (String.ofList (List.replicate 64 'f'))))).length * 2 < maxFrame
-#guard (frameBytes (.docTips (blake3 [1]) (List.replicate pageSize ⟨2 ^ 64 - 1, 2 ^ 64 - 1, blake3 [2]⟩) true)).length * 2
-  < maxFrame
+#guard (frameBytes (.docTips (blake3 [1]) (List.replicate pageSize ⟨2 ^ 64 - 1, 2 ^ 64 - 1, blake3 [2]⟩) true)).length
+  * 2 < maxFrame
 #guard (frameBytes (.docHave (blake3 [1]) (List.replicate pageSize (blake3 [2])) true)).length * 2 < maxFrame
 
 -- a stream: the greeting's line, then frames; cut anywhere, the same

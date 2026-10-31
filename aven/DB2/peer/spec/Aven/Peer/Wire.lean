@@ -297,8 +297,9 @@ def heads300 : List Head := (List.range 300).map fun i => ⟨toString i, "id", i
 A reader tells its tips and answers a telling in pages of at most `pageSize`, as the heads go: together the pages are
 the whole (`docTipsPages_tips`, `docHavePages_values`), none is empty but a telling of nothing, which is one empty page
 so the other hears its end (`docTipsPages_shape`, `docHavePages_shape`), the last alone says nothing more comes
-(`docTipsPages_last`, `docHavePages_last`), and a page of the longest entries fits a frame (`Aven.Peer.WireCbor`). A reader answers a
-telling once its last page, the one without `more`, is in (`DocSync.beyond` answers a whole telling). -/
+(`docTipsPages_last`, `docHavePages_last`), and a page of the longest entries fits a frame (`Aven.Peer.WireCbor`).
+A reader answers a telling once its last page, the one without `more`, is in (`DocSync.beyond` answers a whole
+telling). -/
 
 /-- One telling of a reader's tips of `doc`: its pages, every one but the last with `more`. -/
 def docTipsPages (doc : Aven.Core.Hash) (ts : List DocSync.Tip) : List Frame :=
@@ -457,8 +458,8 @@ rarely, and never with an ordinary release (PEERS.md §7, decision 11). Two peer
 - **the gossip topic is per version**: a peer on another version is in another room, so no message of another meaning
   ever reaches it (`topicName`). -/
 
-/-- The wire version this model speaks: 3, with a Doc's sync between readers (`docTips`, `docHave`). Version 2 was frames
-in CBOR (A29), version 1 frames as JSON lines, version 0 the wire before it had versions. -/
+/-- The wire version this model speaks: 3, with a Doc's sync between readers (`docTips`, `docHave`). Version 2 was
+frames in CBOR (A29), version 1 frames as JSON lines, version 0 the wire before it had versions. -/
 def wireVersion : Nat := 3
 
 /-- What a peer answers a hello of version `theirs` with, speaking `mine`: nothing, and the connection carries on; or

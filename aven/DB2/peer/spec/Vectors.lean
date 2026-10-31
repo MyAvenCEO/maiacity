@@ -15,8 +15,8 @@ import Lean.Data.Json
 - `doc-sync.json`: generated worlds of two readers. Each world is entries (an envelope as sync reads it: its name, its
   writer, its place, `prev` and `deps`, by name) and which of them each reader holds, each a version; expected are each
   reader's tips and its version (`version`), what each answers the other's tips with (`beyond`), whether each holds a
-  split in each writer's log, and what each holds after one exchange. Splits are common: one entry in eight is a second one at its log's newest
-  place.
+  split in each writer's log, and what each holds after one exchange. Splits are common: one entry in eight is a
+  second one at its log's newest place.
 
 - `presence.json`: connections joining and leaving; what every peer is told after each (`Aven.Peer.Presence`).
 - `wire.json`: greeting lines, and the greeting each is or none (`Aven.Peer.Wire.Greeting`).
