@@ -1,5 +1,9 @@
 [
-{"expected":{"error":null,"frames":[[{"frame":"hello","peer":"alice-peer"},{"frame":"presence","peers":["a"]},{"frame":"beat","n":7}]]},"input":{"chunks":["{\"frame\":\"hello\",\"peer\":\"alice-peer\"}\n{\"frame\":\"presence\",\"peers\":[\"a\"]}\n{\"frame\":\"beat\",\"n\":7}\n"]},"name":"three frames in one chunk"},
+{"expected":{"error":null,"frames":[[{"frame":"hello","peer":"alice-peer","wire":1},{"frame":"presence","peers":["a"]},{"frame":"beat","n":7}]]},"input":{"chunks":["{\"frame\":\"hello\",\"peer\":\"alice-peer\",\"wire\":1}\n{\"frame\":\"presence\",\"peers\":[\"a\"]}\n{\"frame\":\"beat\",\"n\":7}\n"]},"name":"three frames in one chunk"},
+{"expected":{"error":null,"frames":[[{"frame":"hello","peer":"alice-peer","wire":0}]]},"input":{"chunks":["{\"frame\":\"hello\",\"peer\":\"alice-peer\"}\n"]},"name":"a hello from before the wire had versions is version 0"},
+{"expected":{"error":null,"frames":[[{"frame":"hello","peer":"b","wire":7},{"frame":"update","wire":1}]]},"input":{"chunks":["{\"frame\":\"hello\",\"peer\":\"b\",\"wire\":7}\n{\"frame\":\"update\",\"wire\":1}\n"]},"name":"a hello refused: update, and the version spoken"},
+{"expected":{"error":"bad","frames":[]},"input":{"chunks":["{\"frame\":\"update\"}\n"]},"name":"an update without its version"},
+{"expected":{"error":"bad","frames":[]},"input":{"chunks":["{\"frame\":\"hello\",\"peer\":\"b\",\"wire\":\"1\"}\n"]},"name":"a hello whose version isn't a number"},
 {"expected":{"error":null,"frames":[[],[],[{"frame":"beat","n":1}]]},"input":{"chunks":["{\"frame\":\"be","at\",\"n\":1}","\n"]},"name":"a frame split across chunks"},
 {"expected":{"error":null,"frames":[[{"frame":"beat","n":1},{"frame":"beat","n":2}]]},"input":{"chunks":["{\"frame\":\"beat\",\"n\":1}\n{\"frame\":\"beat\",\"n\":2}\n{\"frame\":"]},"name":"two frames, then half a third"},
 {"expected":{"error":null,"frames":[[{"frame":"presence","peers":[]}]]},"input":{"chunks":["{\"frame\":\"presence\",\"peers\":[]}\n"]},"name":"presence of nobody"},

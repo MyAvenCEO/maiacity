@@ -5,8 +5,10 @@
 import { askThrough, hearViews } from './id.svelte.js';
 import { openWorker } from './peer/open.js';
 import { hear, speakThrough } from './room.svelte.js';
+import { hearUpdate } from './update.svelte.js';
 
-export const live = $state({ timeline: [], status: {}, paths: {}, stored: {}, own: null, ownStored: null });
+// `update`: per peer, its newest `update` line while it is the one behind (PEERS.md §7), until it starts again upgraded
+export const live = $state({ timeline: [], status: {}, paths: {}, stored: {}, own: null, ownStored: null, update: {} });
 
 const keep = 300;
 // whether the box's timeline is this page's: not on an Aven Peer's host without a cast, whose peers aren't the box's
@@ -18,6 +20,8 @@ export function take(line) {
 	if (line.event === 'status') live.status[line.peer] = line;
 	if (line.event === 'stored') live.stored[line.peer] = line;
 	if (line.event === 'stopped' || line.event === 'failed') live.status[line.peer] = { ...line, phase: 'offline', peers: 0 };
+	if (line.event === 'update' && line.follows) live.update[line.peer] = line;
+	if (line.event === 'started' || (line.event === 'status' && line.phase === 'live')) delete live.update[line.peer];
 	// the paths the Aven Peer sees its peers on, for "relays N"
 	if (line.peer === 'aven-peer' && line.event === 'joined') live.paths[line.from] = line.path;
 	if (line.peer === 'aven-peer' && line.event === 'left') delete live.paths[line.from];
@@ -53,6 +57,7 @@ export async function runLight(cast, me) {
 		if (line.event === 'status' || line.event === 'failed') live.own = line.event === 'failed' ? { ...line, phase: 'offline', peers: 0 } : line;
 		if (line.event === 'stored') live.ownStored = line;
 		hear(line);
+		hearUpdate(line);
 	};
 	start = await configure(cast, me);
 	speakThrough(port, start);
