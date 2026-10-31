@@ -1,0 +1,8 @@
+/* "A key signs" (sign.html): Left: Alice's key. Right: some words, and the signature it made over them */
+.sign .key .bit-1 { left: 8.6cqw; height: 1.6cqw; }
+.sign .key .bit-2 { left: 10.4cqw; height: 2.2cqw; }
+.sign .key.big { left: 6%; top: 50%; transform: rotate(-12deg) scale(1.35); transform-origin: 0 50%; width: 16cqw; height: 6cqw; }
+.sign .key-label { left: 17.5%; top: 72%; }
+.sign .sign-arrow { left: 34%; top: 56%; width: 13cqw; }
+.sign .sign-label { left: 40.5%; top: 45%; }
+.sign .words { left: 54%; top: 36%; width: 40cqw; height: 24cqw; }

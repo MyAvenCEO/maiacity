@@ -4,7 +4,7 @@ The documentation of the whole system, told from first principles for a reader w
 each built from slides that explain one concept at a time, and the one global glossary. avenOS shows it under **Docs**
 (`#/docs`), to anyone, signed in or not: it is as public as the repo.
 
-Samuel started it on 31 Oct 2026. Its look is in [`STYLE.md`](STYLE.md), its language in [`VOICE.md`](VOICE.md), and
+Its look is in [`STYLE.md`](STYLE.md), its language in [`VOICE.md`](VOICE.md), and
 every term in [`GLOSSARY.md`](GLOSSARY.md).
 
 ## What is here
@@ -13,14 +13,14 @@ every term in [`GLOSSARY.md`](GLOSSARY.md).
 |---|---|
 | [`docs.json`](docs.json) | The catalogue: one item per package on the docs dashboard, its page and its slides |
 | [`GLOSSARY.md`](GLOSSARY.md) | The one glossary, every term with its one meaning (moved here from `aven/DB2`) |
-| [`STYLE.md`](STYLE.md), [`VOICE.md`](VOICE.md) | The look and the language, as Samuel agrees them |
+| [`STYLE.md`](STYLE.md), [`VOICE.md`](VOICE.md) | The look and the language |
 | [`style/tokens.css`](style/tokens.css) | The palette, type and chrome as tokens, sampled from the references |
 | [`style/slide.css`](style/slide.css) | The frame and the parts every illustration is drawn from |
-| [`style/reference/`](style/reference/) | Samuel's references, the maiaCITY look |
+| [`style/reference/`](style/reference/) | The first references, from the game |
 | [`id/`](id/README.md) | avenID's page: its story, and its slides in `id/slides/` |
 | [`render/`](render/) | Markdown and slide markup to a checked node tree, and its tests |
 
-Samuel's references:
+The first references, from the game (the look has since moved to the brand's UI, [`STYLE.md`](STYLE.md)):
 - `scenes.webp`: First Settlers, Mountain Quarry Outpost, Coastal Solar Village, Thriving Abundance City;
 - `places-and-domes.webp`: Desert Oasis Settlement, Alpine Forest Valley, inside the Food Forest Dome, inside the
   Solar Factory Dome;
@@ -65,19 +65,20 @@ the CSS a slide needs:
 
 | Property | Used for |
 |---|---|
-| `clip-path` (`polygon`, `inset`) | low-poly shapes: facets, the key's bow, an arrow's head |
-| `transform` (`rotate`, `translateX`) and `transform-origin` | a key at an angle, scaled down in a list, centred labels |
-| `filter` (`drop-shadow`) | the thin dark outline round a layer, and the soft shadow to the lower right |
-| `linear-gradient`, `repeating-linear-gradient` with hard stops | the lit and shaded faces, as hard stops |
+| `clip-path` (`polygon`, `inset`) | an arrow's head, a fingerprint's rings |
+| `transform` (`rotate`, `translateX`, `scale`) and `transform-origin` | a key at an angle, scaled down in a list, centred labels |
+| `filter` (`drop-shadow`) | the soft shadow under a card or a part |
+| `linear-gradient` with hard stops | a key's lit side |
 | `position: absolute`, `inset`, `left`, `top`, `width`, `height` | where each layer stands in the frame |
 | `container-type: inline-size` and `cqw` lengths | a still that scales as one picture |
 | `aspect-ratio` | the 16:9 frame |
-| `border`, `border-radius` | panels, a vault's card |
-| `letter-spacing`, `text-transform`, `white-space`, `font` | the uppercase labels and the serif titles |
+| `border`, `border-radius` | cards, pills, a seal's ring, a bracket |
+| `letter-spacing`, `text-transform`, `white-space`, `text-align`, `font` | the uppercase labels, notes and the serif titles; no text under 2.6cqw |
+| `display: flex`, `gap`, `display: inline-block` | a row of chips; a record's field names |
 | `box-shadow`, `overflow` | panels |
 | `animation`, `@keyframes`, `transition` | not used yet: the motion version of a slide will |
 
-The node tree needs nothing beyond the allowlist: `figure`, `div`, `span`, `p`, `h2` and `header`, with `class`,
+The node tree needs nothing beyond the allowlist: `figure`, `div`, `span`, `p`, `b`, `h2` and `header`, with `class`,
 `role` and `aria-label`.
 
 ## Releases

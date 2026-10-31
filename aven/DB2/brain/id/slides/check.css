@@ -1,0 +1,11 @@
+/* "Anyone can check a signature" (check.html): The signed words, plus the key's public half; checked, they fit */
+.check .key .bit-1 { left: 8.6cqw; height: 1.6cqw; }
+.check .key .bit-2 { left: 10.4cqw; height: 2.2cqw; }
+.check .words { left: 3%; top: 36%; width: 38cqw; height: 24cqw; }
+.check .plus { left: 44.5%; top: 56%; font-size: 4cqw; }
+.check .key.public { left: 48%; top: 54%; transform: rotate(-12deg) scale(0.85); transform-origin: 0 50%; width: 16cqw; height: 6cqw; }
+.check .public-label { left: 55%; top: 72%; }
+.check .check-arrow { left: 65%; top: 57%; width: 11cqw; }
+.check .check-label { left: 70.5%; top: 46%; }
+.check .tick { left: 81.5%; top: 48%; }
+.check .tick-label { left: 86%; top: 72%; }

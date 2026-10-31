@@ -84,3 +84,14 @@ describe('the slides', () => {
 		expect(tree.filter((n) => n[0] === 'h2').length).toBeGreaterThan(5);
 	});
 });
+
+// no text on a slide under 2.6cqw (STYLE.md, "A slide"): 9 px where a phone shows the frame 356 px wide
+test('every font size in the slides\' CSS is at least 2.6cqw', () => {
+	const sheets = ['style/slide.css', ...readdirSync(`${brain}id/slides`).filter((f) => f.endsWith('.css')).map((f) => `id/slides/${f}`)];
+	const small = [];
+	for (const sheet of sheets) {
+		const css = readFileSync(`${brain}${sheet}`, 'utf8');
+		for (const [, size] of css.matchAll(/font(?:-size)?:[^;]*?([\d.]+)cqw/g)) if (Number(size) < 2.6) small.push(`${sheet}: ${size}cqw`);
+	}
+	expect(small).toEqual([]);
+});

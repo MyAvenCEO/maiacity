@@ -1,0 +1,8 @@
+/* "A device acts for a vault" (acts-for.html): The phone's own key signs for it; the phone acts for Alice's vault, within its device cap */
+.acts-for .key .bit-1 { left: 8.6cqw; height: 1.6cqw; }
+.acts-for .key .bit-2 { left: 10.4cqw; height: 2.2cqw; }
+.acts-for .phone-vault { left: 4%; top: 32%; width: 36cqw; height: 19cqw; }
+.acts-for .acts-arrow { left: 44%; top: 56%; width: 12cqw; }
+.acts-for .acts-label { left: 50%; top: 45%; }
+.acts-for .alice { left: 61%; top: 36%; width: 34cqw; height: 14cqw; }
+.acts-for .cap-note { left: 50%; top: 66%; width: 32cqw; }
