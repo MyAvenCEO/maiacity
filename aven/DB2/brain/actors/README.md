@@ -402,7 +402,7 @@ seed.
 | Hosting (A16) | `Hosting` (#1565) | — | — | Lean only |
 | Actor hosts and chains (A27, kernel half) | `Signing` (#1617, #1623, #1681), `Messaging` (#1628) | — | — | Lean only; the reader's half is avenCAPS' (#1619, #1624, #1626) |
 | Turns as steps (A37) | `Runtimes`, with state-runtime's `State` (#1676) | — | — | Lean only |
-| Addresses as Doc ids (A201) | `Address` (#1756) | — | — | Lean only; the router resolving `[vault, doc]` and state-runtime's address shape come next |
+| Addresses as Doc ids (A201) | `Address` (#1756) | — | — | Lean only; the router resolving `[vault, doc]` and state-runtime's `[bytes32, bytes32]` address shape: next, waits for the actor code's go |
 | Carrier Doc (A33) | — | — | — | written down (#1685); for milestone 3 |
 | Version 1: the todo app in memory | — | — | — | not started; actor code waits for its go |
 
