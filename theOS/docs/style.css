@@ -236,7 +236,7 @@ body {
   .text { font-size: clamp(15px, min(2vw, 2.6vh), 21px); }
   .card.has-code .text { font-size: clamp(14px, min(1.6vw, 2.3vh), 18px); }
   .list { font-size: clamp(15px, min(2.2vw, 2.8vh), 24px); gap: clamp(5px, 1.2vh, 10px); }
-  .code { font-size: clamp(11px, min(1vw, 1.65vh), 13px); line-height: 1.5; padding: clamp(12px, 2.2vh, 20px) clamp(14px, 2vw, 22px); }
+  .code { font-size: clamp(11px, min(1vw, 1.55vh), 13px); line-height: 1.5; padding: clamp(12px, 2.2vh, 20px) clamp(14px, 2vw, 22px); }
   .deep { font-size: clamp(11.5px, 1.6vh, 13px); padding-top: clamp(8px, 1.6vh, 14px); }
   .table { font-size: clamp(11px, min(1.2vw, 1.6vh), 14px); }
   .table td { padding: clamp(4px, 1vh, 9px) 8px clamp(4px, 1vh, 9px) 0; }
