@@ -39,7 +39,7 @@ stanzas, so sealing it to one more reader doesn't rename it (`name_ignores_stanz
 at random, to `padme (max n 4)` entries for `n` readers: never fewer than four, so a lone reader doesn't show, and then
 Padmé's at most an eighth more (`Aven.ID.Padme`, the one Padmé that segments use too), so the count tells little
 (`padded_ge`, `padded_le`). A dummy can't be told from a reader's stanza, by the writer either, so a reseal
-adds its stanza and pads again to `padded` of the new length.
+is a Record of its own (A170, `Aven.ID.Keyring.reseal`): the same epoch, carrying only the new reader's stanza, padded.
 
 **Tag seeds** live in the epoch before. A reader's tag seed in an epoch is the keyed hash, under
 `derive_key("avenID tag seed 1", previous epoch's key)`, of its X-Wing public key's BLAKE3 (`tagSeed`): every writer

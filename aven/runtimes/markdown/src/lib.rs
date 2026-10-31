@@ -2,9 +2,12 @@
 //! to a node tree that passed the applier's check.
 //!
 //! - CommonMark with GitHub's tables, task lists and strikethrough, parsed by pulldown-cmark. Raw HTML is text.
-//! - Headings get GitHub's ids (`slug`, `slugs`, as Lean has them).
+//! - Headings get GitHub's ids (`slug`, `slugs`, as Lean has them), after `idPrefix`.
+//! - A link resolves against its document first (`resolve`): a scheme's never, a fragment alone gets `idPrefix`, a
+//!   path is merged with `base` and its dot segments removed, `..` clamped at the root; lexical only.
 //! - A link the allowlist takes stays; any other is rewritten by the first rule whose prefix it starts with
 //!   (`rewrite`), and kept only if the result is one the allowlist takes; otherwise its text stays, without a link.
+//! - A soft break is a space; a table's header cell names its column (`scope="col"`).
 //! - An image shows only as a file of the network by its hash (`/files/<hash>`); any other image is its alt text.
 //! - Building stops and the file is refused as soon as nesting, nodes or text pass the tree's limits, so a hostile
 //!   document is never built deeper or larger than a tree may be. Every answer passes `check` (`markdown_ok`).
@@ -19,33 +22,50 @@ use pulldown_cmark::{Alignment, CodeBlockKind, Event, Options, Parser, Tag, TagE
 /// The largest file markdown-runtime takes: the registry's limit for Markdown (`entry .markdown`).
 pub const MAX_PART: usize = 1_048_576;
 
-/// The runtime's input: the link rules, `{"links": [[prefix, replacement], …]}`, or `{}` for none.
+/// The runtime's input: the link rules, the document's path and its ids' prefix, `{"links": [[prefix, replacement],
+/// …], "base": path, "idPrefix": prefix}`, each optional, no other key.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Params {
     pub links: Vec<(String, String)>,
+    pub base: String,
+    pub id_prefix: String,
 }
 
 impl Params {
-    /// `Params.ofValue?`: exactly `{}` or `{"links": [[text, text], …]}`.
+    /// `Params.ofValue?`: a map whose keys are among `links`, `base` and `idPrefix`, each once.
     pub fn of_value(v: &Value) -> Option<Params> {
-        match v {
-            Value::Map(kvs) => match kvs.as_slice() {
-                [] => Some(Params::default()),
-                [(k, Value::Array(rs))] if k == "links" => rs
-                    .iter()
-                    .map(|r| match r {
-                        Value::Array(ab) => match ab.as_slice() {
-                            [Value::Text(a), Value::Text(b)] => Some((a.clone(), b.clone())),
-                            _ => None,
-                        },
-                        _ => None,
-                    })
-                    .collect::<Option<Vec<_>>>()
-                    .map(|links| Params { links }),
-                _ => None,
-            },
-            _ => None,
+        let Value::Map(kvs) = v else { return None };
+        let known = ["links", "base", "idPrefix"];
+        for (i, (k, _)) in kvs.iter().enumerate() {
+            if !known.contains(&k.as_str()) || kvs[..i].iter().any(|(j, _)| j == k) {
+                return None;
+            }
         }
+        let get = |key: &str| kvs.iter().find(|(k, _)| k == key).map(|(_, v)| v);
+        let text = |key: &str| match get(key) {
+            None => Some(String::new()),
+            Some(Value::Text(t)) => Some(t.clone()),
+            Some(_) => None,
+        };
+        let links = match get("links") {
+            None => vec![],
+            Some(Value::Array(rs)) => rs
+                .iter()
+                .map(|r| match r {
+                    Value::Array(ab) => match ab.as_slice() {
+                        [Value::Text(a), Value::Text(b)] => Some((a.clone(), b.clone())),
+                        _ => None,
+                    },
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()?,
+            Some(_) => return None,
+        };
+        Some(Params {
+            links,
+            base: text("base")?,
+            id_prefix: text("idPrefix")?,
+        })
     }
 }
 
@@ -101,6 +121,82 @@ pub fn rewrite(rules: &[(String, String)], href: &str) -> Option<String> {
         href.chars().skip(from.chars().count()).collect::<String>()
     );
     is_link(&out).then_some(out)
+}
+
+/// Whether an href starts with a scheme (`hasScheme`): a letter, then letters, digits, `+`, `-` or `.`, then `:`.
+pub fn has_scheme(href: &str) -> bool {
+    let Some((name, _)) = href.split_once(':') else {
+        return false;
+    };
+    let mut cs = name.chars();
+    cs.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && cs.all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.')
+}
+
+/// RFC 3986's `remove_dot_segments`, `..` clamped at the root (`removeDots`).
+fn remove_dots<'a>(segs: &[&'a str]) -> Vec<&'a str> {
+    let mut out: Vec<&str> = Vec::new();
+    for s in segs {
+        match *s {
+            "." => {}
+            ".." => {
+                out.pop();
+            }
+            s => out.push(s),
+        }
+    }
+    if matches!(segs.last(), Some(&".") | Some(&"..")) {
+        out.push("");
+    }
+    out
+}
+
+/// A link's target, resolved against its document (`resolve`): a scheme's never; a fragment alone gets `id_prefix`; a
+/// path is merged with the directory of `base` (or the root, after a leading `/`), its dot segments removed, its query
+/// and fragment kept.
+pub fn resolve(base: &str, id_prefix: &str, href: &str) -> String {
+    if has_scheme(href) {
+        return href.to_string();
+    }
+    let (rest, frag) = match href.split_once('#') {
+        Some((a, b)) => (a, Some(b)),
+        None => (href, None),
+    };
+    let (path, query) = match rest.split_once('?') {
+        Some((a, b)) => (a, Some(b)),
+        None => (rest, None),
+    };
+    if path.is_empty() && query.is_none() {
+        return match frag {
+            Some(f) => format!("#{id_prefix}{f}"),
+            None => href.to_string(),
+        };
+    }
+    let segs: Vec<&str> = if path.is_empty() {
+        base.split('/').collect()
+    } else if let Some(p) = path.strip_prefix('/') {
+        p.split('/').collect()
+    } else {
+        let mut b: Vec<&str> = base.split('/').collect();
+        b.pop();
+        b.extend(path.split('/'));
+        b
+    };
+    let mut out = remove_dots(&segs).join("/");
+    if let Some(q) = query {
+        out.push('?');
+        out.push_str(q);
+    }
+    if let Some(f) = frag {
+        out.push('#');
+        out.push_str(f);
+    }
+    out
+}
+
+/// A link in a document (`linkTo`): resolved against it, then rewritten by the rules.
+pub fn link_to(p: &Params, href: &str) -> Option<String> {
+    rewrite(&p.links, &resolve(&p.base, &p.id_prefix, href))
 }
 
 /// What an open element becomes when it closes.
@@ -273,7 +369,7 @@ impl Builder {
                 self.push_text(&s)?;
                 self.close();
             }
-            Event::SoftBreak => self.push_text("\n")?,
+            Event::SoftBreak => self.push_text(" ")?,
             Event::HardBreak => self.leaf("br", vec![])?,
             Event::Rule => self.leaf("hr", vec![])?,
             Event::TaskListMarker(done) => {
@@ -338,11 +434,17 @@ impl Builder {
                 self.open("tr", vec![])
             }
             Tag::TableCell => {
-                let attrs = match self.aligns.get(self.column) {
-                    Some(Alignment::Left) => vec![("class".into(), "left".into())],
-                    Some(Alignment::Center) => vec![("class".into(), "center".into())],
-                    Some(Alignment::Right) => vec![("class".into(), "right".into())],
-                    _ => vec![],
+                // a header cell names its column, for a reader that reads a table aloud
+                let mut attrs: Vec<(String, String)> = if self.in_head {
+                    vec![("scope".into(), "col".into())]
+                } else {
+                    vec![]
+                };
+                match self.aligns.get(self.column) {
+                    Some(Alignment::Left) => attrs.push(("class".into(), "left".into())),
+                    Some(Alignment::Center) => attrs.push(("class".into(), "center".into())),
+                    Some(Alignment::Right) => attrs.push(("class".into(), "right".into())),
+                    _ => {}
                 };
                 self.column += 1;
                 self.open(if self.in_head { "th" } else { "td" }, attrs)
@@ -354,7 +456,7 @@ impl Builder {
             Tag::Subscript => self.open("sub", vec![]),
             Tag::Link {
                 dest_url, title, ..
-            } => match rewrite(&p.links, &dest_url) {
+            } => match link_to(p, &dest_url) {
                 Some(href) => {
                     let mut attrs = vec![("href".into(), href)];
                     if !title.is_empty() {
@@ -445,7 +547,11 @@ pub fn render(md: &str, p: &Params, limits: TreeLimits) -> Option<Node> {
     };
     let mut hs = Vec::new();
     headings(&root, &mut hs);
-    name_headings(&mut root, &mut slugs(&hs).into_iter());
+    let ids: Vec<String> = slugs(&hs)
+        .into_iter()
+        .map(|id| format!("{}{id}", p.id_prefix))
+        .collect();
+    name_headings(&mut root, &mut ids.into_iter());
     Some(root)
 }
 

@@ -7,9 +7,15 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+shelf = ["dep:aven-db-store"]
+
 [dependencies]
 aven-core = { path = "../../core" }
 aven-id = { path = "../../id/core" }
+# the shelf: a peer's Docs in its store, on the store's contract (A185), for peers only (`shelf`): the pure core
+# and its fuzz targets stay without the store and iroh
+aven-db-store = { path = "../../store", optional = true }
 blake3 = { version = "=1.8.7", default-features = false }
 chacha20poly1305 = { version = "=0.11.0", default-features = false, features = ["alloc", "zeroize"] }
 ed25519-dalek = "=3.0.0"
@@ -18,4 +24,9 @@ subtle = { version = "=2.6.1", default-features = false }
 
 [dev-dependencies]
 proptest = "=1.12.0"
+tokio = { version = "=1.54.1", features = ["rt", "macros"] }
 serde_json = { version = "=1.0.154", features = ["arbitrary_precision", "unbounded_depth"] }
+
+[[test]]
+name = "shelf"
+required-features = ["shelf"]

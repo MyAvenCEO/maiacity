@@ -2,8 +2,10 @@
 // in the browsers' container (`bun run up --check`), on the box's own view. Checked:
 //   1. every slide's part (brain/*/slides/<id>.part.json) goes through face-runtime in the runtimes worker, by its
 //      frozen hash, and is accepted; the three engines give the same answer, byte for byte;
-//   2. a part that isn't a face is face-runtime's `refused`, and a runtime nobody froze isn't run;
-//   3. the host loads a module only by a hash the manifest lists and only when the bytes are the hash's: another
+//   2. the glossary goes through markdown-runtime, its links resolved against its own path, and the three engines
+//      give the same tree, byte for byte;
+//   3. a part that isn't a face is face-runtime's `refused`, and a runtime nobody froze isn't run;
+//   4. the host loads a module only by a hash the manifest lists and only when the bytes are the hash's: another
 //      module's bytes, one flipped byte and an unlisted hash are refused.
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -21,6 +23,12 @@ const parts = readdirSync('brain', { withFileTypes: true })
 		}
 	});
 
+// the glossary as avenBRAIN shows it: its bytes, and its links resolved against its own path
+const glossary = {
+	part: { bytes: readFileSync('brain/GLOSSARY.md').toString('hex') },
+	input: { links: [['glossary:', '#/brain/glossary/'], ['aven/', 'https://github.com/myavenceo/maiacity/blob/main/aven/']], base: 'aven/DB2/brain/GLOSSARY.md', idPrefix: 'g-' },
+};
+
 const report = {};
 const answers = {};
 let failed = false;
@@ -30,11 +38,12 @@ for (const [engine, type] of [['chromium', chromium], ['webkit', webkit], ['fire
 	const browser = await type.launch();
 	const page = await browser.newPage();
 	await page.goto('http://localhost:5173/');
-	const got = await page.evaluate(async (parts) => {
+	const got = await page.evaluate(async ([parts, glossary]) => {
 		const { runtime } = await import('/runtimes/runtimes.js');
 		const tell = (p) => p.then((v) => ({ ok: JSON.stringify(v) }), (e) => ({ error: String(e.message) }));
 		const slides = {};
 		for (const [name, part] of parts) slides[name] = await tell(runtime('face-runtime', part, {}));
+		slides.glossary = await tell(runtime('markdown-runtime', glossary.part, glossary.input));
 		const notFace = await tell(runtime('face-runtime', ['not', 'a', 'face'], {}));
 		const nobody = await tell(runtime('no-runtime', [], {}));
 		// the host itself, on the page: what it loads and what it refuses
@@ -62,7 +71,7 @@ for (const [engine, type] of [['chromium', chromium], ['webkit', webkit], ['fire
 			unlisted: load(`b3:${'0'.repeat(64)}`, await bytes(face)),
 			own: load(face, await bytes(face)),
 		};
-	}, parts);
+	}, [parts, glossary]);
 	await browser.close();
 	for (const [name, a] of Object.entries(got.slides)) if (!a.ok) problems.push(`${name}: ${a.error}`);
 	if (got.notFace.error !== 'face-runtime: refused') problems.push(`a part that isn't a face: ${JSON.stringify(got.notFace)}`);
@@ -74,7 +83,7 @@ for (const [engine, type] of [['chromium', chromium], ['webkit', webkit], ['fire
 	answers[engine] = createHash('sha256').update(JSON.stringify(got.slides)).digest('hex');
 	report[engine] = { problems, slides: parts.length, answers: answers[engine], ms: Date.now() - started };
 	if (problems.length) failed = true;
-	console.log(`runtimes, ${engine}: ${problems.length ? `${problems.length} problems: ${problems.slice(0, 5).join('; ')}` : `${parts.length} slides through face-runtime by its hash, and every refusal`}`);
+	console.log(`runtimes, ${engine}: ${problems.length ? `${problems.length} problems: ${problems.slice(0, 5).join('; ')}` : `${parts.length} slides through face-runtime and the glossary through markdown-runtime, by their hashes, and every refusal`}`);
 }
 if (new Set(Object.values(answers)).size !== 1) {
 	failed = true;

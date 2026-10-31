@@ -8,7 +8,11 @@ stanza list (`Aven.ID.KeyFormats`, in entries).
 `padme` is the identity below 8, and rounds up from there (9 → 10, 17 → 18, 129 → 144, 1000 → 1024).
 
 What it proves: `padme_ge` (it never shrinks), `padme_le` (it adds at most an eighth); a padded length pads to itself,
-checked for every length below 2¹⁶. -/
+checked for every length below 2¹⁶.
+
+**Every sealed byte's length** (`padSealed`, A176): one function for every sealed thing's bytes. A length rounds up to
+256 B, 1 KiB or 4 KiB, so small things share three sizes, and Padmé takes over above 4 KiB (`padSealed_ge`,
+`padSealed_bucket`, `padSealed_le`); a padded length pads to itself. -/
 
 namespace Aven.ID.Padme
 
@@ -61,5 +65,46 @@ theorem padme_le (l : Nat) : padme l ≤ l + l / 8 := by
 
 #guard (List.range 8).all fun l => padme l == l
 #guard padme 0 = 0 ∧ padme 1 = 1 ∧ padme 9 = 10 ∧ padme 17 = 18 ∧ padme 129 = 144 ∧ padme 1000 = 1024
+
+/-! ## Every sealed byte's length (A176) -/
+
+/-- The sizes small sealed things round up to. -/
+def buckets : List Nat := [256, 1024, 4096]
+
+/-- A sealed thing's padded length: 256 B, 1 KiB or 4 KiB, then Padmé. -/
+def padSealed (l : Nat) : Nat :=
+  if l ≤ 256 then 256 else if l ≤ 1024 then 1024 else if l ≤ 4096 then 4096 else padme l
+
+/-- It never shrinks. -/
+theorem padSealed_ge (l : Nat) : l ≤ padSealed l := by
+  unfold padSealed
+  split
+  · assumption
+  · split
+    · assumption
+    · split
+      · assumption
+      · exact padme_ge l
+
+/-- Up to 4 KiB, a length becomes one of three sizes. -/
+theorem padSealed_bucket {l : Nat} (h : l ≤ 4096) : padSealed l ∈ buckets := by
+  unfold padSealed buckets
+  by_cases a : l ≤ 256 <;> by_cases b : l ≤ 1024 <;> simp [a, b, h]
+
+/-- Above 4 KiB, it adds at most an eighth, as Padmé does. -/
+theorem padSealed_le {l : Nat} (h : 4096 < l) : padSealed l ≤ l + l / 8 := by
+  unfold padSealed
+  split
+  · omega
+  · split
+    · omega
+    · split
+      · omega
+      · exact padme_le l
+
+-- A padded length pads to itself, checked for every length up to 2¹⁶; and the three sizes and the step above them.
+#guard (List.range 65536).all fun l => padSealed (padSealed l) == padSealed l
+#guard padSealed 0 = 256 ∧ padSealed 256 = 256 ∧ padSealed 257 = 1024 ∧ padSealed 1025 = 4096 ∧
+  padSealed 4096 = 4096 ∧ padSealed 4097 = padme 4097
 
 end Aven.ID.Padme
