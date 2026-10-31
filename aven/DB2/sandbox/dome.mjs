@@ -20,7 +20,7 @@
 //
 // The fork and the stranger's line are signed here with the cast's test keys (public on purpose, valid only inside
 // the box), as a cloned device or an outsider would, and sent through Alice's Peer-Light as they are. What a line's
-// body is and what the peers answer comes from Lean (`Aven.DB.Chains`, its traces replayed by aven-db-core's tests);
+// body is and what the peers answer comes from Lean (`Aven.DB.Chains`, its traces replayed by aven-gen1's tests);
 // here only the box's mechanics.
 import { createHash, createPrivateKey, sign } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -62,7 +62,7 @@ const seed = (id) => createHash('sha256').update(`avenSANDBOX test signer: ${id}
 const ed25519 = (seed) => createPrivateKey({ key: Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), seed]), format: 'der', type: 'pkcs8' });
 const publicHex = (key) => Buffer.from(key.export({ format: 'jwk' }).x, 'base64url').toString('hex');
 
-// A line's blob (aven-db-core's `chain::Line::blob`): its body with the signature after its `at` line
+// A line's blob (aven-gen1's `chain::Line::blob`): its body with the signature after its `at` line
 function blob({ device, seq, prev, at, text }, key) {
 	const head = `avenDB line 1\nnetwork aven\ndevice ${device}\nseq ${seq}\nprev ${prev ?? 'none'}\nat ${at}\n`;
 	const body = `text\n${text}`;

@@ -5,7 +5,7 @@ The phase a peer's link is in (README, rule 7) and the progress counter behind r
 A peer starts, dials, and is live while frames arrive. Every clock step without a frame adds one to `idle`; once
 `idle` reaches `limit`, the peer is stalled, never live. A lost link is offline until the next dial.
 
-`aven-db-core`'s `status` module implements this machine, and its tests replay random traces against `Main.lean`.
+`aven-gen1`'s `status` module implements this machine, and its tests replay random traces against `Main.lean`.
 -/
 
 namespace Aven.DB
@@ -183,7 +183,7 @@ end Status
 /-! ## Examples
 
 Traces and the phase they end in, written out by hand (`limit` 3). `lake exe vectors` exports them, with every state
-on the way, and `aven-db-core`'s tests replay them (README, rule 10). -/
+on the way, and `aven-gen1`'s tests replay them (README, rule 10). -/
 
 def statusExamples : List (String × List Event × Phase) := [
   ("live while frames arrive", [.dial, .frame, .tick, .tick], .live),

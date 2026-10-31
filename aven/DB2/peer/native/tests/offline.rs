@@ -8,9 +8,9 @@
 
 use std::sync::{Arc, Mutex};
 
-use aven_db_core::chain::{Answer, Body};
-use aven_db_core::wire::Frame;
 use aven_db_store::{RefName, backend};
+use aven_gen1::chain::{Answer, Body};
+use aven_gen1::wire::Frame;
 use aven_peer::Notes;
 use aven_peer::chats::{self, Chats};
 use aven_peer::members::Gate;

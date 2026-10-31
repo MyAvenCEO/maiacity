@@ -22,14 +22,14 @@ import Aven.DB.Docs
 - `hashes.json`: spellings of a hash; whether the store reads each as one.
 - `chat.json`: messages arriving in a room and the clock moving on; after each step the answer, the body the message's
   sender signs, who is present and the lines said (`Aven.DB.Chat`). The door admits `alice`, `aven` and `bob`; each
-  name is a test key, which aven-db-core's tests sign with for real.
+  name is a test key, which aven-gen1's tests sign with for real.
 - `files.json`: files cut into chunks; each chunk's bounds and hash, the index, the file's name, and the chunks each
   range touches with the bytes read from them alone; files of the city-dome's size by their size alone
   (`Aven.DB.Files`).
 - `chats.json`: lines arriving at peers and peers catching up; after each step the answers, the peer's heads, loose
   lines, forks and what its chat shows (`Aven.DB.Chains`); what a line's device signs; and blobs read as lines or
   refused as not canonical (`Aven.DB.Chains.read`). Lines are named by labels,
-  which aven-db-core's tests replace with the hashes of real signed blobs.
+  which aven-gen1's tests replace with the hashes of real signed blobs.
 - `queries.json`: a directory's genesis facts, Records, the Docs held, a target, a stored query; the answer (refused,
   complete, or short with the Docs missing), the query's bound and cost, and the work it did (`Aven.DB.Engine.Query`).
 - `wants.json`: wants, the keys caps allow and each key's prerequisites; the queue, one round over the pages left with
@@ -63,6 +63,7 @@ import Aven.DB.Docs
   (`Aven.DB.Docs.Body`).
 - `segments.json`: segments' bodies and names, and which a reader takes (`Aven.DB.Docs.Segment`).
 - `heads.json`: a head's encoding (`Aven.DB.Docs.Head`).
+- `held.json`: what a peer holds of a Doc, its envelopes' names and blob hashes in the order held (`Docs.Held`).
 - `loro.json`: rule 7 on Loro commits: the deps a change carries, read with its writer's previous op, and the verdict
   (`Aven.DB.Docs.loroAgrees`).
 - `placements.json`: envelopes with and without the genesis; whether each is its log's first, and whether the
@@ -71,7 +72,7 @@ import Aven.DB.Docs
 - `keys.json`: tuples and their keys in hex; pairs of tuples and whether the first key sorts before the second
   (`Aven.DB.Docs.Key`).
 
-`aven-db-core`'s and `aven-db-store`'s tests load them. `bun run up --check` runs this again and fails when the files
+`aven-gen1`'s and `aven-db-store`'s tests load them. `bun run up --check` runs this again and fails when the files
 differ from what is committed. -/
 
 open Lean Aven.DB
@@ -1179,6 +1180,17 @@ def segmentVectors : List Json :=
       (Json.mkObj [("value", hexJson (encode sg.value)), ("name", Json.str (sg.name blake3).text),
         ("ok", toJson (sg.ok Docs.Limits.defaults (Envelope.name blake3)))])
 
+def heldVectors : List Json :=
+  let one : Docs.Held := ⟨docOf "a Doc's genesis", [(a1.name blake3, blake3 (encode a1.value)),
+    (b1.name blake3, blake3 (encode b1.value)), (a2.name blake3, blake3 (encode a2.value))]⟩
+  let twice : Value := .map [(tb "doc", .bytes (docOf "a Doc's genesis").hash.bytes),
+    (tb "envelopes", .array [.array [(a1.name blake3).value, (blake3 (encode a1.value)).value],
+      .array [(a1.name blake3).value, (blake3 (encode a1.value)).value]])]
+  [vector "three envelopes, in the order held" (Json.mkObj [("doc", Json.str one.doc.text),
+      ("envelopes", Json.arr (one.envelopes.map fun (n, b) => Json.arr #[Json.str n.text, Json.str b.text]).toArray)])
+    (Json.mkObj [("value", hexJson (encode one.value)), ("reads", toJson (Docs.Held.ofValue? one.value).isSome)]),
+   vector "refused: an envelope named twice" (hexJson (encode twice)) (toJson (Docs.Held.ofValue? twice).isSome)]
+
 def headVectors : List Json :=
   let h : Docs.Head := ⟨docOf "a Doc's genesis", [(tb "main", [(1, a2.name blake3), (2, b1.name blake3)])]⟩
   [vector "two logs of main" (Json.mkObj [("doc", Json.str h.doc.text),
@@ -1218,11 +1230,20 @@ def placementCases : List (String × Envelope × Bool) := [
   ("a first sequence number that builds on another log, without it", ly1, false)]
 
 def placementVectors : List Json :=
-  placementCases.map fun (name, e, carries) =>
+  (placementCases.map fun (name, e, carries) =>
     let b : Docs.Body := { firstBody with genesis := if carries then some todoGenesis else none }
     vector name (Json.mkObj [("seq", toJson e.seq), ("prev", toJson e.prev.isSome), ("deps", toJson e.deps.length),
         ("genesis", toJson carries)])
-      (Json.mkObj [("first", toJson (Docs.isFirst e)), ("placed", toJson (Docs.genesisPlaced e b))])
+      (Json.mkObj [("first", toJson (Docs.isFirst e)), ("placed", toJson (Docs.genesisPlaced e b))])) ++
+  /- the genesis a first envelope carries must name the envelope's Doc -/
+  ([("its own Doc's genesis", ({ a1 with doc := todoGenesis.id blake3 } : Envelope), todoGenesis),
+    ("another Doc's genesis", ({ a1 with doc := todoGenesis.id blake3 } : Envelope),
+      { todoGenesis with nonce := List.replicate 32 6 })] : List (String × Envelope × Docs.Genesis)).map
+    fun (name, e, g) =>
+      let b : Docs.Body := { firstBody with genesis := some g }
+      vector s!"a log's first envelope carrying {name}" (Json.mkObj [("doc", Json.str e.doc.text),
+          ("genesis", hexJson (encode g.value))])
+        (Json.mkObj [("ok", toJson (Docs.genesisOk blake3 e b))])
 
 def builtinCases : List (String × String × Value) :=
   let h := Value.bytes (blake3 (tb "a tip")).bytes
@@ -1269,5 +1290,5 @@ def main (args : List String) : IO Unit := do
       ("checkpoints.json", checkpoints), ("fit.json", fit), ("logs.json", logs),
       ("counts.json", counts), ("genesis.json", genesisVectors), ("bodies.json", bodyVectors),
       ("segments.json", segmentVectors), ("heads.json", headVectors), ("loro.json", loroVectors),
-      ("placements.json", placementVectors), ("builtins.json", builtinVectors)] do
+      ("placements.json", placementVectors), ("held.json", heldVectors), ("builtins.json", builtinVectors)] do
     IO.FS.writeFile (dir / file) (render vs)
