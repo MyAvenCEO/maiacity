@@ -131,6 +131,7 @@ decision's own text, reasons and Lean are its row there.
 
 | Decision | What | Page | Holds |
 |---|---|---|---|
+| [A213](DECISIONS.md) | The tree starts from its setup's Value, never from a body; the `genesis` op goes | [caps](caps/README.md) | yes |
 | [A212](DECISIONS.md) | A built-in type's label never follows its module: the tree's type is `avenID tree 1` | [id](id/README.md) | yes |
 | [A211](DECISIONS.md) | A device's vault names its key in a field `key` | [id](id/README.md) | yes |
 | [A210](DECISIONS.md) | avenID's Lean is generic in the vault id; the cast stays readable fixtures | [id](id/README.md) | yes |
