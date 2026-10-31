@@ -7,8 +7,10 @@
 //! ML-DSA-65 ξ is `derive_key("avenID device ml-dsa 1", seed)` (A43, 31 Oct 2026), derived in the device's own process
 //! and wiped after use. The seed is never exported, and nothing else is derived from it; outside this derivation only
 //! Ed25519's scalar signs. A quantum attacker recovers that clamped scalar from the public key, never the seed it was
-//! hashed from (RFC 8032), so the ML-DSA half stays out of reach. Both halves rotate together, with the device key
-//! (D19). Nothing trusts a device's ML-DSA half until its vault owner's hybrid signature binds it.
+//! hashed from (RFC 8032), so the ML-DSA half stays out of reach. A device's X-Wing seal key is derived the same way
+//! ([`device_seal_key`], `avenID device seal 1`). All three rotate together, with the device key (D19), and a
+//! rotation reseals the keyring to the new seal key. Nothing trusts a device's ML-DSA half until its vault owner's
+//! hybrid signature binds it.
 
 use aven_core::{Value, decode, encode};
 use ed25519_dalek::Signer as _;
@@ -26,6 +28,18 @@ pub const ED25519_KEY_LEN: usize = 32;
 pub const ED25519_SIG_LEN: usize = 64;
 pub const ML_DSA_KEY_LEN: usize = 1952;
 pub const ML_DSA_SIG_LEN: usize = 3309;
+
+/// The label of a device's X-Wing seed, from its Ed25519 seed (`Aven.ID.KeyFormats.deviceSealLabel`).
+pub const DEVICE_SEAL_LABEL: &str = "avenID device seal 1";
+
+/// A device's seal key, which its vault's keyring is sealed to: X-Wing from `derive_key("avenID device seal 1",
+/// its Ed25519 seed)`, as the ML-DSA-65 half is derived, and under the same rules.
+pub fn device_seal_key(ed25519: &Secret) -> crate::SealKey {
+    crate::SealKey::from_seed(&Secret::take(&mut blake3::derive_key(
+        DEVICE_SEAL_LABEL,
+        ed25519.expose(),
+    )))
+}
 
 /// A device's ML-DSA-65 ξ, from its Ed25519 seed (`Aven.ID.KeyFormats.deviceMlDsaSeed`).
 pub fn device_ml_dsa_seed(ed25519: &Secret) -> Secret {

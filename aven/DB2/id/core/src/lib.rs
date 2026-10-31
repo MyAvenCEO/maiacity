@@ -47,6 +47,7 @@ pub use hybrid::{
     DEVICE_ML_DSA_LABEL, HYBRID_SUITE, Hybrid, HybridKey, HybridPublic, HybridSignature,
     device_ml_dsa_seed, hybrid_verify,
 };
+pub use hybrid::{DEVICE_SEAL_LABEL, device_seal_key};
 pub use invite::{
     Invite, Join, Withdrawal, invite_id, invite_text, join_text, one_time_public, sign_join,
     withdraw_text,

@@ -30,6 +30,13 @@ pub fn hybrid_public(secret: &SecretKey) -> aven_id::HybridPublic {
     aven_id::HybridKey::from_device_seed(&aven_id::Secret::take(&mut seed)).public()
 }
 
+/// The device's seal key's public half (X-Wing, derived from its seed: `avenID device seal 1`, A43), which its
+/// vault's keyring is sealed to.
+pub fn seal_public(secret: &SecretKey) -> aven_id::SealPublic {
+    let mut seed = secret.to_bytes();
+    aven_id::device_seal_key(&aven_id::Secret::take(&mut seed)).public()
+}
+
 /// A public key in hex.
 pub fn public(hex: &str) -> Result<PublicKey, String> {
     PublicKey::from_bytes(&bytes(hex)?).map_err(|e| e.to_string())

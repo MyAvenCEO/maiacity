@@ -58,7 +58,9 @@ fn derive(input: &Value) -> Value {
             device.public(),
             aven_id::HybridKey::from_seeds(&seed, &ml).public()
         );
-        return json!({ "ed25519Public": hex(&device.public().ed25519), "mlDsaSeed": hex(ml.expose()) });
+        let seal = aven_id::device_seal_key(&seed);
+        return json!({ "ed25519Public": hex(&device.public().ed25519), "mlDsaSeed": hex(ml.expose()),
+            "sealSeed": hex(seal.seed().expose()) });
     }
     if let Some(readers) = input.get("readers") {
         return json!(padded(readers.as_u64().unwrap() as usize));

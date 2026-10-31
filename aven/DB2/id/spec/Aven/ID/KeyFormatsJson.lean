@@ -83,8 +83,9 @@ def derivationVectors : List Json :=
       (Json.mkObj [("seed", h (tagSeed prevKey recipient)), ("tag", h (tag (tagSeed prevKey recipient) id epoch))])
   let devices := (["alice-peer", "alice-peer-light", "aven-peer"] : List String).map fun id =>
     let seed := Keys.seed id
-    vec s!"the device hybrid key of the cast's {id}" (Json.mkObj [("ed25519Seed", h seed)])
-      (Json.mkObj [("ed25519Public", h (Keys.publicKey seed)), ("mlDsaSeed", h (deviceMlDsaSeed seed))])
+    vec s!"the device keys of the cast's {id}" (Json.mkObj [("ed25519Seed", h seed)])
+      (Json.mkObj [("ed25519Public", h (Keys.publicKey seed)), ("mlDsaSeed", h (deviceMlDsaSeed seed)),
+        ("sealSeed", h (deviceSealSeed seed))])
   blake ++ prf ++ seeds ++ stanzas ++ epochs ++ tags ++ pads ++ seeds' ++ devices
 
 def Stanza.json (s : Stanza) : Json :=

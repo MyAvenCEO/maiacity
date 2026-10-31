@@ -672,7 +672,7 @@ An envelope counts when all three hold and everything it builds on counts.
 
 | Layer | Its key | Sealed to | Rotates when | A rotation costs |
 |---|---|---|---|---|
-| Device | X-Wing, Ed25519 and ML-DSA-65, made in the device's safe runtime, never leaving it, never derived from a passkey. The ML-DSA-65 half is derived from the device's own Ed25519 seed (`avenID device ml-dsa 1`, A43) and rotates with it | Nothing: its public halves are in its statement | On suspicion, or on a schedule | One statement |
+| Device | X-Wing, Ed25519 and ML-DSA-65, made in the device's safe runtime, never leaving it, never derived from a passkey. The ML-DSA-65 half and the X-Wing seal key are derived from the device's own Ed25519 seed (`avenID device ml-dsa 1`, `avenID device seal 1`, A43) and rotate with it | Nothing: its public halves are in its statement | On suspicion, or on a schedule | One statement |
 | Keyring | A key per epoch, and the vault key inside | Its devices; each passkey's PRF-derived seal key; MaiaCityGuardian during evaluation. A coop's goes to its owners' vault keys | A device or a sealing owner leaves | One seal per device |
 | Group | A key per epoch, and the group key inside | Its readers: vaults and groups | A reader leaves; a reader's vault key changes | Flat: one seal per reader. Tree, later: one path, about log n |
 | Doc | A key per epoch | Its readers: its type's group, the groups it's shared with, at most 64 single vaults | At its next write after a reader leaves or a reader's key changes | One seal per reader, usually one or two |
@@ -781,8 +781,8 @@ kept, such as presence, typing and calls (later).
 5. each Doc rotates at its next use.
 
 That costs one rotation per group, in the background, busiest first. When it runs (Samuel, 30 Oct 2026, D19):
-- **Device keys rotate monthly** by themselves, both halves together: the ML-DSA-65 half is derived from the Ed25519
-  seed. That is cheap, and it limits how long a key copied from a disk stays
+- **Device keys rotate monthly** by themselves, all together: the ML-DSA-65 half and the X-Wing seal key are derived
+  from the Ed25519 seed. A rotation reseals the vault's keyring to the device's new seal key. That is cheap, and it limits how long a key copied from a disk stays
   good.
 - **The full heal runs on suspicion,** and whenever a device is removed.
 - **A scheduled full heal for everyone** waits for the tree: with flat groups, each heal re-keys every group its person
@@ -1015,10 +1015,11 @@ input. avenID uses it so that **a new browser signing in with a passkey opens it
 - Both public halves go into the vault's register with the passkey's own (ES256) key: the register maps a credential
   id to its passkey's record (its vault, SPKI, owner and seal public halves and owner epoch), params of `tree/1`'s
   claim and join.
-- Device keys are never derived from it (D11), so devices rotate on their own. A device's ML-DSA-65 half comes from its
-  own Ed25519 seed instead (`derive_key("avenID device ml-dsa 1", seed)`, A43, 31 Oct 2026): a quantum attacker
-  recovers Ed25519's clamped scalar, never the seed it was hashed from, so that half stays post-quantum. It counts only
-  once its vault owner's hybrid signature binds it.
+- Device keys are never derived from it (D11), so devices rotate on their own. A device's ML-DSA-65 half and its
+  X-Wing seal key come from its own Ed25519 seed instead (`derive_key("avenID device ml-dsa 1", seed)`,
+  `derive_key("avenID device seal 1", seed)`, A43, 31 Oct 2026): a quantum attacker recovers Ed25519's clamped scalar,
+  never the seed it was hashed from, so both stay post-quantum. The ML-DSA half counts only once its vault owner's
+  hybrid signature binds it.
 
 **Signing up:**
 1. `create()` asks the PRF for owner epoch 1. Where the platform answers there, the owner and seal keys come at once;
@@ -1288,8 +1289,8 @@ to and leave all the time. Scale need not be built from day one, but no choice m
 10. **Hybrid signatures where authority lasts** (Samuel, 30 Oct 2026). Ed25519 + ML-DSA-65 on caps, governance,
     segments and checkpoints; Ed25519 on single envelopes; an owner key derived from the passkey's PRF.
 11. **The passkey PRF step** (Samuel, 30 Oct 2026). The PRF opens the keyring the keeper keeps, so a new browser needs
-    no other device. Device keys are made fresh, and a device's ML-DSA-65 half is derived from its own Ed25519 seed,
-    never from a passkey (A43, 31 Oct 2026). Pairing and a recovery kit cover the gaps.
+    no other device. Device keys are made fresh, and a device's ML-DSA-65 half and X-Wing seal key are derived from its
+    own Ed25519 seed, never from a passkey (A43, 31 Oct 2026). Pairing and a recovery kit cover the gaps.
 12. **MaiaCityGuardian stays a full owner through the evaluation phase** (Samuel, 30 Oct 2026), its keyring seal
     included. It leaves before the network opens beyond the founding circle (Samuel, 30 Oct 2026): one act per vault
     removes it and rotates the keyring, and its secrets are destroyed.
@@ -1323,8 +1324,8 @@ to and leave all the time. Scale need not be built from day one, but no choice m
     an always-on Peer's own process, and the browser's own-origin worker. Secrets never leave it; everything else asks
     it to act.
 18. **Everything is padded** (Samuel, 30 Oct 2026). Live messages to fixed sizes, segments and files with Padmé.
-19. **The heal** (Samuel, 30 Oct 2026). Device keys rotate monthly, the ML-DSA-65 half with the Ed25519 seed it is
-    derived from. The full heal runs on suspicion and on a device's
+19. **The heal** (Samuel, 30 Oct 2026). Device keys rotate monthly, the ML-DSA-65 half and the X-Wing seal key with
+    the Ed25519 seed they are derived from, and the keyring is resealed to the new seal key. The full heal runs on suspicion and on a device's
     removal. A scheduled full heal for everyone waits for the tree.
 20. **Write without read comes later** (Samuel, 30 Oct 2026), at its first real case: likely invoices sent to a coop.
     A Doc's epoch would also carry an X-Wing key that drop-box writers seal to.
