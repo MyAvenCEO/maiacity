@@ -25,3 +25,8 @@ root = "Vectors"
 [[require]]
 name = "aven-core-spec"
 path = "../../core/spec"
+
+# avenID, below avenPEERS as aven-peer is above aven-id: the box's failures settle its tree and read its keep caps.
+[[require]]
+name = "aven-id-spec"
+path = "../../id/spec"
