@@ -40,14 +40,16 @@ theorem rule1_named {H : Bytes → Hash} (hH : Injective H) {a b : Value} (ha : 
 
 /-! ## Rule 2: history names its past by hash -/
 
-/-- The envelope before another in its log is fixed by the name it gives: two candidates are one envelope. -/
-theorem rule2_prev_fixed {H : Bytes → Hash} (hH : Injective H) {a b b' : Envelope} (hb : Canon b.value = true)
-    (hb' : Canon b'.value = true) (h : a.prev = some (b.name H)) (h' : a.prev = some (b'.name H)) : b = b' :=
+/-- The envelope before another in its log is fixed by the name it gives: two candidates say the same thing, and
+differ at most in their signatures (A30). -/
+theorem rule2_prev_fixed {H : Bytes → Hash} (hH : Injective H) {a b b' : Envelope} (hb : Canon b.unsigned = true)
+    (hb' : Canon b'.unsigned = true) (h : a.prev = some (b.name H)) (h' : a.prev = some (b'.name H)) :
+    { b with sig := b'.sig } = b' :=
   Envelope.name_inj hH hb hb' (Option.some.inj (h.symm.trans h'))
 
 /-- So is each tip it builds on. -/
-theorem rule2_dep_fixed {H : Bytes → Hash} (hH : Injective H) {b b' : Envelope} (hb : Canon b.value = true)
-    (hb' : Canon b'.value = true) (h : b.name H = b'.name H) : b = b' :=
+theorem rule2_dep_fixed {H : Bytes → Hash} (hH : Injective H) {b b' : Envelope} (hb : Canon b.unsigned = true)
+    (hb' : Canon b'.unsigned = true) (h : b.name H = b'.name H) : { b with sig := b'.sig } = b' :=
   Envelope.name_inj hH hb hb' h
 
 /-- An envelope's Loro dependencies and its hashes name the same past: among envelopes that pass docs rule 7, the same

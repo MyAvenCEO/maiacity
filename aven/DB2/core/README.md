@@ -13,8 +13,8 @@ primitives everything shares" and rules 1 to 3). It is one Lean package, in [`sp
 | `Json` | the readable form of a Value, which every spec's vectors import | — |
 | `ValueEq` | `DecidableEq`, `BEq` and `LawfulBEq` for Values, by structural recursion | `Value.beq_iff`: the equality is lawful |
 | `Names` | hashes, Doc ids, type ids (`<type Doc>/<schema hash>`) | names of allowed Values don't collide under an injective hash |
-| `Signed` | a label plus a Value, signed over exactly its encoding | a signing input names its label and body |
-| `Log` | envelopes, logs, splits, versions | a chain holds no split; two readers' chains agree unless split; splits are final; what counts builds on what counts; versions only grow |
+| `Signed` | a label plus a Value, signed over exactly its encoding, and named by the hash of those bytes, its signatures beside it (A30) | a signing input names its label and body; signing again keeps the name (`Signed.name_resign`); one name is one label and body (`Signed.name_inj`) |
+| `Log` | envelopes, named by what their writer signs (A30); logs, splits, versions | one name is one envelope but for its signature (`Envelope.name_inj`), and an envelope signed twice is no split (`resign_no_split`); a chain holds no split; two readers' chains agree unless split; splits are final; what counts builds on what counts; versions only grow |
 | `Past` | an envelope's past among those a reader holds, decided | `reaches_iff`: `Reaches` is the envelope itself and what is `Before` it; `found_iff`, `inPast_iff`: the rounds find exactly that |
 | `Target`, `TargetCbor` | the one target grammar (A8), its CBOR, verbs, footprints | a narrower target covers only what the wider one does; a target reads back from its CBOR, which is canonical; footprint coverage grows with grants and composes |
 
