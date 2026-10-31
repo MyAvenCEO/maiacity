@@ -7,6 +7,7 @@ import Aven.ID.InviteJson
 import Aven.ID.Before
 import Aven.ID.CapsJson
 import Aven.ID.SettleJson
+import Aven.ID.FailJson
 import Aven.ID.Expiry
 
 /-! # The test vectors (README, rule 10)
@@ -41,7 +42,8 @@ import Aven.ID.Expiry
 - `network.json`: tickets claimed in two orders (A12), removals that clash and MaiaCityGuardian's exit
   (`Aven.ID.Network`, `Aven.ID.Recover`).
 - `keep.json`: a keeper's fetch-key links in the order they came, with the keys it takes, its current fetch key and
-  its flags; the proofs it serves; what each vault pays (`Aven.ID.Keep`, A22). Hand-written and generated.
+  its flags; the proofs it serves; what each vault pays; what it keeps under the keep caps it holds, after withdrawals
+  and deletes (`Aven.ID.Keep`, A22). Hand-written and generated.
 - `safe.json`: requests to a vault's safe from its agent and from Mallory, on a Mac and on a host that keeps Doc keys
   inside, with what each request gives back (`Aven.ID.Safe`, R13).
 - `settled.json`: sets of tree statements, each in several orders, and the tree `settle` gives (`Aven.ID.Network`,
@@ -49,7 +51,8 @@ import Aven.ID.Expiry
   invite trace (`Aven.ID.Restore`). `records.json`: signed records and the newest of each (`Aven.ID.Records`, §6).
   `node.json`: networks losing each peer in turn, with every home relay, who reaches whom and who can fetch the chat
   (`Aven.ID.Node`, R7). `catchup.json`: sources offered against a signed log tip, the one chosen and the ones caught,
-  and presence from signed beats (`Aven.ID.CatchUp`).
+  and presence from signed beats (`Aven.ID.CatchUp`). `failures.json`: the nine checks the box runs with the Aven Peer
+  stopped, each with what the models say it must see (`Aven.ID.FailJson`, PEERS.md).
 
 `bun run up --check` runs it again and fails when the files differ from what is committed. -/
 
@@ -148,6 +151,10 @@ def invites : List Json :=
 def capsVectors : List Json :=
   let chain (cs : List Cap) := Json.mkObj [("context", castCtxJson), ("chain", Json.arr (cs.map Cap.json).toArray)]
   (chainExamples.map fun (name, cs, _) => vector name (chain cs) (chainResult cs)) ++
+  (placementExamples.map fun (name, caps, f, _) =>
+    vector s!"who keeps it? {name}"
+      (Json.mkObj [("context", castCtxJson), ("caps", Json.arr (caps.map Cap.json).toArray), ("doc", factsJson f)])
+      (Json.mkObj [("keepers", toJson (keepersOf noGov noSpawn castCtx.roles caps f))])) ++
   ([capA, capB, capPublic, attRead].map fun c =>
     vector s!"how avenOS shows {c.id}" (Json.mkObj [("show", c.json)]) (Json.mkObj [("text", c.text castCtx.roles)])) ++
   (branchExamples.map fun (b, br, _) =>
@@ -222,6 +229,10 @@ def networkVectors : List Json :=
 
 open KeepExamples in
 def keepVectors : List Json :=
+  (bookCases.map fun (name, b, _) =>
+    vector s!"what the Aven Peer keeps: {name}"
+      (Json.mkObj [("books", b.json), ("docs", toJson (bookDocs.map (·.text)))])
+      (Json.mkObj [("kept", toJson ((bookDocs.filter b.keeps).map (·.text)))])) ++
   (keepCases.map fun (name, s, _, _) => vector name (Json.mkObj [("keep", s.json)]) (keepResult s)) ++
   (proofCases.map fun (name, s, e, p, _) =>
     vector s!"proof: {name}" (Json.mkObj [("keep", s.json), ("exporter", e), ("proof", p.json)])
@@ -265,3 +276,4 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "records.json") (render SettleJson.recordVectors)
   IO.FS.writeFile (dir / "node.json") (render SettleJson.nodeVectors)
   IO.FS.writeFile (dir / "catchup.json") (render SettleJson.catchUpVectors)
+  IO.FS.writeFile (dir / "failures.json") (render FailJson.failureVectors)

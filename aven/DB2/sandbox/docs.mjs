@@ -4,7 +4,8 @@
 //   1. the dashboard has an item per package, avenID's live and the rest coming; the main nav reaches it;
 //   2. avenID's page draws its slide as a 16:9 frame; the glossary draws, and #/docs/glossary/vault marks that term;
 //   3. no page scrolls sideways;
-//   4. every text has 4.5:1 against the background under it (3:1 when large), as WCAG has it;
+//   4. every text has 4.5:1 against the background under it (3:1 when large), as WCAG has it, and no text on a slide is
+//      under 9 px at a phone's width (brain/STYLE.md, "A slide");
 //   5. a screenshot of each, in the run's folder.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium, firefox, webkit } from 'playwright';
@@ -86,6 +87,15 @@ async function read(engine) {
 						const box = await page.locator('.slide').first().boundingBox();
 						seen.ratio = Math.round((box.width / box.height) * 1000) / 1000;
 						if (Math.abs(seen.ratio - 16 / 9) > 0.02) say(`the slide is ${seen.ratio}:1, not 16:9`);
+						// every text on every slide, as the reader sees it
+						const small = await page.evaluate(() =>
+							[...document.querySelectorAll('.slide *')]
+								.filter((el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()))
+								.map((el) => ({ text: el.textContent.trim().slice(0, 30), px: parseFloat(getComputedStyle(el).fontSize) }))
+								.filter((t) => t.px < 9),
+						);
+						seen.smallest = small;
+						if (size === 'phone') for (const t of small) say(`"${t.text}" on a slide is ${t.px.toFixed(1)} px, under 9 px`);
 					}
 					seen.scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
 					if (seen.scrollWidth > width) say(`the page is ${seen.scrollWidth} px wide at ${width} px: it scrolls sideways`);

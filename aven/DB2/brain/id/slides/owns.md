@@ -3,7 +3,8 @@
 Alice has a [vault](glossary:vault): an identity that can own things, with a name, *Alice's vault*. She also has a
 [key](glossary:key), which signs. She keeps it, and no one else has it.
 
-Her vault lists that key as its **owner**. An owner governs the vault: when the key signs, it signs for Alice's vault.
+Her vault lists that key as its **owner**. The owner governs the vault: what the key signs as owner, Alice's vault
+has decided.
 
 Anyone can check it. The signature fits the key, and the key is on the vault's list of owners.
 

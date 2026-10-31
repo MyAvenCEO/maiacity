@@ -1,0 +1,10 @@
+/* "A passkey" (passkey.html): Alice's passkey, kept by her phone and unlocked by her finger, gives her owner key */
+.passkey .key .bit-1 { left: 8.6cqw; height: 1.6cqw; }
+.passkey .key .bit-2 { left: 10.4cqw; height: 2.2cqw; }
+.passkey .alice-phone { left: 15%; top: 28%; width: 14cqw; height: 27cqw; }
+.passkey .print { left: 4cqw; top: 10.5cqw; }
+.passkey .phone-label { left: 22%; top: 82%; }
+.passkey .unlock-arrow { left: 39%; top: 56%; width: 14cqw; }
+.passkey .unlock-label { left: 46%; top: 45%; }
+.passkey .key.big { left: 61%; top: 50%; transform: rotate(-12deg) scale(1.35); transform-origin: 0 50%; width: 16cqw; height: 6cqw; }
+.passkey .key-label { left: 72.5%; top: 72%; }

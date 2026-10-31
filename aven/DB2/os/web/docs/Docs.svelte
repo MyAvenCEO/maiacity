@@ -21,20 +21,40 @@
 	const words = glossary();
 	const story = $derived(part?.page && part.id !== 'glossary' ? page(part.page) : []);
 	const slides = $derived(part?.page ? (part.slides ?? []).map((id) => slide(part.id, id)) : []);
+	const textOf = (node) => (typeof node === 'string' ? node : node[2].map(textOf).join(''));
+	// the index on the left: this page's sections, then the other docs
+	const sections = $derived(
+		route[0] === 'glossary'
+			? words.tree.filter((n) => n[0] === 'h2').map((n) => ({ href: `#/docs/glossary/${n[1][0][1]}`, id: n[1][0][1], name: textOf(n) }))
+			: slides.map((s, i) => ({ href: `#/docs/${part.id}/${s.id}`, id: s.id, name: textOf(s.text[0] ?? ''), n: i + 1 })),
+	);
+	const others = packages.filter((p) => p.page);
+	let wide = $state(true);
+	$effect(() => {
+		const query = matchMedia('(min-width: 1200px)');
+		const follow = () => (wide = query.matches);
+		follow();
+		query.addEventListener('change', follow);
+		return () => query.removeEventListener('change', follow);
+	});
 
 	// a term asked for by name: scroll to it and mark it, once the glossary is drawn
 	$effect(() => {
 		if (route[0] !== 'glossary') return;
-		const id = words.terms.get(route[1]) ?? (route[1] ? `term-${route[1]}` : null);
+		const id = route[1]?.startsWith('g-') ? route[1] : (words.terms.get(route[1]) ?? (route[1] ? `term-${route[1]}` : null));
 		for (const old of document.querySelectorAll('.brain .here')) old.classList.remove('here');
 		const entry = id && document.getElementById(id);
 		if (entry) {
-			entry.classList.add('here');
-			entry.scrollIntoView({ block: 'center' });
+			if (!id.startsWith('g-')) entry.classList.add('here');
+			entry.scrollIntoView({ block: id.startsWith('g-') ? 'start' : 'center' });
 		} else scrollTo(0, 0);
 	});
+	// a slide asked for by name: scroll to it; any other page opens at its top
 	$effect(() => {
-		if (route[0] !== 'glossary') (route, scrollTo(0, 0));
+		if (route[0] === 'glossary') return;
+		const entry = route[1] && document.getElementById(`slide-${route[1]}`);
+		if (entry) entry.scrollIntoView({ block: 'start' });
+		else scrollTo(0, 0);
 	});
 </script>
 
@@ -54,14 +74,14 @@
 					<li class="item" data-tone={item.id} data-testid={`doc-${item.id}`}>
 						{#if item.page}
 							<a href={`#/docs/${item.id}`}>
-								<span class="facets"></span>
+								<span class="mark">{item.mark}</span>
 								<span class="state">{item.slides ? `${item.slides.length} slide${item.slides.length === 1 ? '' : 's'}` : 'Read'}</span>
 								<strong>{item.name}</strong>
 								<span class="what">{item.what}</span>
 							</a>
 						{:else}
 							<div class="off">
-								<span class="facets"></span>
+								<span class="mark">{item.mark}</span>
 								<span class="state">Coming</span>
 								<strong>{item.name}</strong>
 								<span class="what">{item.what}</span>
@@ -71,24 +91,47 @@
 				{/each}
 			</ul>
 		</main>
-	{:else if route[0] === 'glossary'}
-		<main class="prose glossary" data-testid="glossary">
-			{#each words.tree as node, i (i)}<Node {node} />{/each}
-		</main>
 	{:else if part?.page}
-		<main class="page">
-			<div class="prose">
-				{#each story as node, i (i)}<Node {node} />{/each}
-			</div>
-			{#each slides as s (s.id)}
-				<section class="slide-page" id={`slide-${s.id}`} data-testid={`slide-${s.id}`}>
-					{#each s.tree as node, i (i)}<Node {node} />{/each}
+		<div class="layout">
+			<aside class="index" aria-label="Contents">
+				<details open={wide}>
+					<summary>Contents</summary>
+					<p class="index-head">{part.name}</p>
+					<ol class:numbered={route[0] !== 'glossary'}>
+						{#each sections as item (item.id)}
+							<li><a href={item.href} aria-current={route[1] === item.id ? 'true' : undefined}>{item.name}</a></li>
+						{/each}
+					</ol>
+					<p class="index-head">Docs</p>
+					<ul>
+						<li><a href="#/docs">All docs</a></li>
+						{#each others as other (other.id)}
+							<li><a href={`#/docs/${other.id}`} aria-current={other.id === part.id ? 'page' : undefined}>{other.name}</a></li>
+						{/each}
+					</ul>
+				</details>
+			</aside>
+			{#if route[0] === 'glossary'}
+				<main class="prose glossary" data-testid="glossary">
+					{#each words.tree as node, i (i)}<Node {node} />{/each}
+				</main>
+			{:else}
+				<main class="page">
 					<div class="prose">
-						{#each s.text as node, i (i)}<Node {node} />{/each}
+						{#each story as node, i (i)}<Node {node} />{/each}
 					</div>
-				</section>
-			{/each}
-		</main>
+					{#each slides as s (s.id)}
+						<section class="slide-page" id={`slide-${s.id}`} data-testid={`slide-${s.id}`}>
+							{#each s.tree as node, i (i)}<Node {node} />{/each}
+							<div class="prose">
+								<!-- the slide's own headline stands for its text's title -->
+								{#each s.text[0]?.[0] === 'h1' ? s.text.slice(1) : s.text as node, i (i)}<Node {node} />{/each}
+							</div>
+						</section>
+					{/each}
+				</main>
+			{/if}
+		</div>
 	{:else}
 		<main class="prose">
 			<p class="kicker">{part ? 'Coming' : 'Not here'}</p>
@@ -103,7 +146,7 @@
 	.brain {
 		min-height: 100vh;
 		color: var(--brain-ink);
-		background: var(--brain-cream);
+		background: var(--brain-ground);
 	}
 
 	.top {
@@ -112,7 +155,7 @@
 		gap: 10px;
 		min-height: 64px;
 		padding: 10px 16px;
-		border-bottom: 1px solid var(--brain-gold);
+		border-bottom: 1px solid var(--brain-line);
 	}
 
 	.crumb {
@@ -133,9 +176,7 @@
 	.state {
 		margin: 0;
 		color: var(--brain-quiet);
-		font: 600 12px/1.3 var(--brain-sans);
-		letter-spacing: 0.12em;
-		text-transform: uppercase;
+		font: 600 13px/1.3 var(--brain-sans);
 	}
 
 	h1 {
@@ -160,32 +201,30 @@
 
 	.item > a,
 	.item > .off {
-		position: relative;
 		display: grid;
-		gap: 4px;
+		align-content: start;
+		gap: 6px;
 		height: 100%;
-		padding: 64px 18px 18px;
-		overflow: hidden;
+		padding: 20px;
 		color: inherit;
 		text-decoration: none;
-		background: var(--brain-panel);
-		border: 1px solid var(--brain-gold);
+		background: var(--brain-card);
 		border-radius: var(--brain-radius);
-		box-shadow: var(--brain-lift);
+		box-shadow: var(--brain-shadow);
+		transition: transform 0.15s;
 	}
 
 	.item > a:hover {
-		border-color: var(--brain-path);
+		transform: translateY(-2px);
 	}
 
 	.item > .off {
 		background: transparent;
-		box-shadow: none;
-		border-style: dashed;
+		box-shadow: inset 0 0 0 1px var(--brain-line);
 	}
 
 	.item strong {
-		font: 500 22px/1.2 var(--brain-serif);
+		font: 500 24px/1.15 var(--brain-serif);
 	}
 
 	.what {
@@ -193,55 +232,157 @@
 		font-size: 14px;
 	}
 
-	/* each package's mark: a band of low-poly facets in its colour, lit from the top left */
-	.facets {
-		position: absolute;
-		inset: 0 0 auto;
-		height: 46px;
-		clip-path: polygon(0 0, 100% 0, 100% 62%, 74% 100%, 46% 70%, 18% 92%, 0 64%);
-		background: linear-gradient(115deg, var(--light) 0 38%, var(--mid) 38% 70%, var(--deep) 70%);
+	/* each package's mark: a rounded tile with its monogram, forest when live */
+	.mark {
+		display: grid;
+		place-items: center;
+		width: 52px;
+		height: 52px;
+		margin-bottom: 18px;
+		color: var(--brain-on-forest);
+		font: 500 20px/1 var(--brain-serif);
+		background: var(--brain-forest);
+		border-radius: 16px;
 	}
 
-	.off .facets {
-		opacity: 0.45;
+	.off .mark {
+		color: var(--brain-olive);
+		background: var(--brain-sage-soft);
 	}
 
-	[data-tone] {
-		--light: var(--brain-ochre-light);
-		--mid: var(--brain-ochre);
-		--deep: var(--brain-ochre-deep);
+	.item[data-tone='glossary'] .mark {
+		color: var(--brain-forest);
+		background: var(--brain-lime);
 	}
-	[data-tone='id'],
-	[data-tone='actors'] {
-		--light: var(--brain-teal-light);
-		--mid: var(--brain-teal);
-		--deep: var(--brain-teal-deep);
+
+	/* a page with its index: the index on the left, the page centred, a matching gutter on the right */
+	.layout {
+		display: grid;
+		grid-template-columns: minmax(240px, 1fr) minmax(0, 860px) minmax(240px, 1fr);
+		gap: 32px;
 	}
-	[data-tone='db'],
-	[data-tone='runtimes'] {
-		--light: var(--brain-terracotta-light);
-		--mid: var(--brain-terracotta);
-		--deep: var(--brain-terracotta-deep);
+
+	.layout > main {
+		grid-column: 2;
+		width: 100%;
+		min-width: 0;
+		margin: 0;
 	}
-	[data-tone='peer'],
-	[data-tone='sandbox'] {
-		--light: var(--brain-conifer-light);
-		--mid: var(--brain-conifer);
-		--deep: var(--brain-conifer-deep);
+
+	.index {
+		grid-column: 1;
+		justify-self: end;
+		width: min(240px, 100%);
+		position: sticky;
+		top: 0;
+		align-self: start;
+		max-height: 100vh;
+		overflow-y: auto;
+		padding: 32px 0 32px 16px;
+		font-size: 14px;
 	}
-	[data-tone='os'] {
-		--light: var(--brain-glass);
-		--mid: var(--brain-glass-deep);
-		--deep: var(--brain-teal-deep);
+
+	.index summary {
+		display: none;
+		cursor: pointer;
 	}
-	[data-tone='architecture'] {
-		--light: var(--brain-sage-light);
-		--mid: var(--brain-sage);
-		--deep: var(--brain-conifer);
+
+	.index-head {
+		margin: 0 0 8px;
+		padding-left: 10px;
+		color: var(--brain-quiet);
+		font: 600 13px/1.3 var(--brain-sans);
+	}
+
+	.index ol,
+	.index ul {
+		display: grid;
+		gap: 2px;
+		margin: 0 0 24px;
+		padding: 0;
+		list-style: none;
+	}
+
+	.index ol.numbered {
+		counter-reset: slide;
+	}
+
+	.index ol.numbered li {
+		counter-increment: slide;
+	}
+
+	.index a {
+		display: flex;
+		gap: 8px;
+		padding: 6px 12px;
+		color: var(--brain-ink);
+		line-height: 1.35;
+		text-decoration: none;
+		border-radius: 999px;
+	}
+
+	.index ol.numbered a::before {
+		content: counter(slide);
+		min-width: 1.2em;
+		color: var(--brain-quiet);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.index a:hover {
+		background: var(--brain-sage-soft);
+	}
+
+	.index a[aria-current] {
+		color: var(--brain-on-forest);
+		background: var(--brain-forest);
+	}
+
+	.index ol.numbered a[aria-current]::before {
+		color: var(--brain-lime);
+	}
+
+	/* narrower than both columns: the index is a folded list above the page */
+	@media (max-width: 1199px) {
+		.layout {
+			display: block;
+			max-width: 1040px;
+			margin: 0 auto;
+			padding: 0 16px;
+		}
+
+		.layout > main {
+			padding-left: 0;
+			padding-right: 0;
+		}
+
+		.index {
+			position: static;
+			justify-self: stretch;
+			width: auto;
+			max-height: none;
+			padding: 20px 0 0;
+		}
+
+		.index details {
+			padding: 12px 16px;
+			background: var(--brain-card);
+			border-radius: var(--brain-radius);
+			box-shadow: var(--brain-shadow);
+		}
+
+		.index summary {
+			display: list-item;
+			font: 600 14px/1.6 var(--brain-sans);
+		}
+
+		.index details[open] summary {
+			margin-bottom: 10px;
+		}
 	}
 
 	.slide-page {
 		margin: 40px 0 0;
+		scroll-margin-top: 16px;
 	}
 
 	.slide-page .prose {
@@ -275,15 +416,15 @@
 	}
 
 	.prose :global(a) {
-		color: var(--brain-teal-deep);
-		text-decoration-color: var(--brain-gold);
+		color: var(--brain-forest);
+		text-decoration-color: var(--brain-moss);
 		text-underline-offset: 3px;
 	}
 
 	.prose :global(code) {
 		padding: 1px 5px;
 		font-size: 0.88em;
-		background: var(--brain-facet);
+		background: var(--brain-sage-soft);
 		border-radius: 5px;
 	}
 
@@ -295,8 +436,7 @@
 	}
 
 	.prose :global(li.here) {
-		background: var(--brain-plot);
-		box-shadow: inset 3px 0 0 var(--brain-path);
+		background: var(--brain-sage-soft);
 	}
 
 	.prose :global(table) {
@@ -312,19 +452,17 @@
 		padding: 6px 10px;
 		text-align: left;
 		vertical-align: top;
-		border-bottom: 1px solid var(--brain-facet-deep);
+		border-bottom: 1px solid var(--brain-line);
 	}
 
 	.prose :global(th) {
-		font: 600 12px/1.3 var(--brain-sans);
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		border-bottom-color: var(--brain-gold);
+		font: 600 13px/1.3 var(--brain-sans);
+		border-bottom-color: var(--brain-sage);
 	}
 
 	.prose :global(blockquote) {
 		margin: 16px 0;
 		padding: 2px 16px;
-		border-left: 3px solid var(--brain-gold);
+		border-left: 3px solid var(--brain-sage);
 	}
 </style>

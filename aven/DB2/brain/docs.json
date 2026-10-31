@@ -1,14 +1,72 @@
 {
 	"about": "avenBRAIN's catalogue (README.md): one item per package on avenOS's docs dashboard, in the order a reader meets them. A package with a page is live; its slides are shown in their place in its story, by the file name under <package>/slides/.",
 	"packages": [
-		{ "id": "id", "name": "avenID", "what": "Who: keys, vaults, owners, devices and caps", "page": "id/README.md", "slides": ["owns"] },
-		{ "id": "db", "name": "avenDB", "what": "Data: Values, Docs, records and the store" },
-		{ "id": "peer", "name": "avenPEER", "what": "Running: the Peer, the Peer-Light and the relay" },
-		{ "id": "os", "name": "avenOS", "what": "The shell: apps on a dashboard, acting as a vault" },
-		{ "id": "actors", "name": "avenACTORS", "what": "Programs that live in a Doc and take turns" },
-		{ "id": "runtimes", "name": "avenRUNTIMES", "what": "Frozen modules that run code and draw faces" },
-		{ "id": "sandbox", "name": "avenSANDBOX", "what": "The box: every peer on one machine, checked" },
-		{ "id": "architecture", "name": "The architecture", "what": "The shared primitives and the decisions A1–A27" },
-		{ "id": "glossary", "name": "The glossary", "what": "Every term, with its one meaning", "page": "GLOSSARY.md" }
+		{
+			"id": "id",
+			"name": "avenID",
+			"what": "Who: keys, vaults, owners, devices and caps",
+			"page": "id/README.md",
+			"slides": [
+				"sign",
+				"check",
+				"vault",
+				"owns",
+				"device",
+				"passkey",
+				"acts-for",
+				"vaults-own",
+				"cap"
+			],
+			"mark": "ID"
+		},
+		{
+			"id": "db",
+			"name": "avenDB",
+			"what": "Data: Values, Docs, records and the store",
+			"mark": "DB"
+		},
+		{
+			"id": "peer",
+			"name": "avenPEER",
+			"what": "Running: the Peer, the Peer-Light and the relay",
+			"mark": "Pe"
+		},
+		{
+			"id": "os",
+			"name": "avenOS",
+			"what": "The shell: apps on a dashboard, acting as a vault",
+			"mark": "OS"
+		},
+		{
+			"id": "actors",
+			"name": "avenACTORS",
+			"what": "Programs that live in a Doc and take turns",
+			"mark": "Ac"
+		},
+		{
+			"id": "runtimes",
+			"name": "avenRUNTIMES",
+			"what": "Frozen modules that run code and draw faces",
+			"mark": "Ru"
+		},
+		{
+			"id": "sandbox",
+			"name": "avenSANDBOX",
+			"what": "The box: every peer on one machine, checked",
+			"mark": "Sb"
+		},
+		{
+			"id": "architecture",
+			"name": "The architecture",
+			"what": "The shared primitives and the decisions A1–A27",
+			"mark": "Ar"
+		},
+		{
+			"id": "glossary",
+			"name": "The glossary",
+			"what": "Every term, with its one meaning",
+			"page": "GLOSSARY.md",
+			"mark": "Gl"
+		}
 	]
 }

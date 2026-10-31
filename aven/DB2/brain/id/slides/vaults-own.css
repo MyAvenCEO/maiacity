@@ -1,0 +1,10 @@
+/* "Vaults own vaults" (vaults-own.html): Alice's vault owns Maia City, which owns Aven; ownership runs only down */
+.vaults-own .key .bit-1 { left: 8.6cqw; height: 1.6cqw; }
+.vaults-own .key .bit-2 { left: 10.4cqw; height: 2.2cqw; }
+.vaults-own .alice { left: 2.5%; top: 38%; width: 27cqw; height: 14cqw; }
+.vaults-own .owns-1 { left: 31%; top: 50%; width: 4cqw; }
+.vaults-own .coop { left: 36.5%; top: 38%; width: 27cqw; height: 14cqw; }
+.vaults-own .owns-2 { left: 65%; top: 50%; width: 4cqw; }
+.vaults-own .agent { left: 70.5%; top: 38%; width: 27cqw; height: 14cqw; }
+.vaults-own .span { left: 4%; top: 72%; width: 92cqw; }
+.vaults-own .span-note { left: 50%; top: 80%; width: 80cqw; }

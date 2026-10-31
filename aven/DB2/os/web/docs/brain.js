@@ -29,14 +29,23 @@ export function linker(from) {
 	};
 }
 
-export const page = (path) => blocks(file(path) ?? '', { link: linker(path) });
+// every tree is checked against the allowlist before it is drawn, whoever made it: Markdown too
+function checked(where, tree) {
+	const problems = tree.flatMap((node) => check(node));
+	if (problems.length) throw new Error(`${where}: ${problems.join('; ')}`);
+	return tree;
+}
+
+export const page = (path) => checked(path, blocks(file(path) ?? '', { link: linker(path) }));
 
 // a slide: its markup as a tree, checked against the face-runtime's allowlist, and its text
 export function slide(pkg, id) {
-	const tree = parse(file(`${pkg}/slides/${id}.html`) ?? '');
-	const problems = tree.flatMap((node) => check(node));
-	if (problems.length) throw new Error(`${pkg}/slides/${id}.html: ${problems.join('; ')}`);
-	return { id, tree, text: blocks(file(`${pkg}/slides/${id}.md`) ?? '', { link: linker(`${pkg}/slides/${id}.md`) }) };
+	const text = `${pkg}/slides/${id}.md`;
+	return {
+		id,
+		tree: checked(`${pkg}/slides/${id}.html`, parse(file(`${pkg}/slides/${id}.html`) ?? '')),
+		text: checked(text, blocks(file(text) ?? '', { link: linker(text) })),
+	};
 }
 
 // the glossary: its tree, every term's entry with an id (`term-<word>`), and each word it defines, for #/docs/glossary/<word>
@@ -60,5 +69,5 @@ export function glossary() {
 		node[2].forEach(visit);
 	};
 	tree.forEach(visit);
-	return { tree, terms };
+	return { tree: checked('GLOSSARY.md', tree), terms };
 }
