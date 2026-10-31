@@ -25,7 +25,7 @@ open Core Body
 def treeType : DocId := ⟨⟨utf8 "tree"⟩⟩
 
 /-- The tree Doc's facts: its id, Maia City's vault, and its type. -/
-def facts (doc : DocId) (coop : String) : Facts := ⟨doc, vaultId coop, treeType⟩
+def facts (doc : DocId) (coop : String) : Facts := ⟨doc, Named.name coop, treeType⟩
 
 /-- An envelope as a peer stores it: under its name. -/
 structure Named where

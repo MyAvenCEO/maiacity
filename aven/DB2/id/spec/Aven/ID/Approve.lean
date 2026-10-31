@@ -27,24 +27,24 @@ structure Sig where
   digest : String
   deriving DecidableEq, Repr
 
-theorem nodup_dedup : ∀ (l : List String), (dedup l).Nodup
+theorem nodup_dedup {α : Type} [DecidableEq α] : ∀ (l : List α), (dedup l).Nodup
   | [] => List.nodup_nil
   | x :: xs => by
     simp only [dedup]
     refine List.nodup_cons.mpr ⟨by simp [List.mem_filter], (nodup_dedup xs).filter _⟩
 
 /-- Each owner once, at its first place. -/
-def ownersOnce : List Owner → List Owner
+def ownersOnce {V : Type} [DecidableEq V] : List (Owner V) → List (Owner V)
   | [] => []
   | o :: os => o :: (ownersOnce os).filter (· != o)
 
-theorem mem_ownersOnce {o : Owner} : ∀ {l : List Owner}, o ∈ ownersOnce l ↔ o ∈ l
+theorem mem_ownersOnce {V : Type} [DecidableEq V] {o : Owner V} : ∀ {l : List (Owner V)}, o ∈ ownersOnce l ↔ o ∈ l
   | [] => by simp [ownersOnce]
   | p :: ps => by
     simp only [ownersOnce, List.mem_cons, List.mem_filter, bne_iff_ne, ne_eq, mem_ownersOnce]
     by_cases e : o = p <;> simp [e]
 
-theorem nodup_ownersOnce : ∀ (l : List Owner), (ownersOnce l).Nodup
+theorem nodup_ownersOnce {V : Type} [DecidableEq V] : ∀ (l : List (Owner V)), (ownersOnce l).Nodup
   | [] => List.nodup_nil
   | p :: ps => by
     simp only [ownersOnce]
@@ -62,23 +62,25 @@ theorem length_filter_le {α : Type} {p q : α → Bool} : ∀ {l : List α}, (�
 
 namespace Tree
 
+variable {V : Type} [DecidableEq V]
+
 /-- `k` is one of `vault`'s owner keys. -/
-def ownerKey (t : Tree) (vault k : String) : Bool :=
+def ownerKey (t : Tree V) (vault : V) (k : String) : Bool :=
   match t.get? vault with
   | some v => v.ownerKeys.contains k
   | none => false
 
 /-- The owners of `vault` who signed exactly `digest`, each once. -/
-def approvers (t : Tree) (vault digest : String) (sigs : List Sig) : List String :=
+def approvers (t : Tree V) (vault : V) (digest : String) (sigs : List Sig) : List String :=
   dedup ((sigs.filter fun s => s.digest == digest && t.ownerKey vault s.key).map (·.key))
 
 /-- `k` of `vault`'s owners signed exactly `digest`. -/
-def approved (t : Tree) (k : Nat) (vault digest : String) (sigs : List Sig) : Bool :=
+def approved (t : Tree V) (k : Nat) (vault : V) (digest : String) (sigs : List Sig) : Bool :=
   decide (k ≤ (t.approvers vault digest sigs).length)
 
-variable {t : Tree}
+variable {t : Tree V}
 
-theorem mem_approvers {vault digest o : String} {sigs : List Sig} :
+theorem mem_approvers {vault : V} {digest o : String} {sigs : List Sig} :
     o ∈ t.approvers vault digest sigs ↔ ⟨o, digest⟩ ∈ sigs ∧ t.ownerKey vault o = true := by
   simp only [approvers, mem_dedup, List.mem_map, List.mem_filter, Bool.and_eq_true, beq_iff_eq]
   constructor
@@ -88,13 +90,13 @@ theorem mem_approvers {vault digest o : String} {sigs : List Sig} :
     exact ⟨⟨o, digest⟩, ⟨m, rfl, k⟩, rfl⟩
 
 /-- An approval holds only with `k` distinct owners of the vault, each having signed exactly this digest. -/
-theorem approval_exact {k : Nat} {vault digest : String} {sigs : List Sig} (h : t.approved k vault digest sigs = true) :
+theorem approval_exact {k : Nat} {vault : V} {digest : String} {sigs : List Sig} (h : t.approved k vault digest sigs = true) :
     ∃ owners : List String, owners.Nodup ∧ k ≤ owners.length ∧
       ∀ o ∈ owners, ⟨o, digest⟩ ∈ sigs ∧ t.ownerKey vault o = true :=
   ⟨t.approvers vault digest sigs, nodup_dedup _, by simpa [approved] using h, fun _ m => mem_approvers.mp m⟩
 
 /-- A signature over another digest never counts toward this one. -/
-theorem approvers_other {vault digest : String} {sigs : List Sig} {s : Sig} (other : s.digest ≠ digest) :
+theorem approvers_other {vault : V} {digest : String} {sigs : List Sig} {s : Sig} (other : s.digest ≠ digest) :
     t.approvers vault digest (s :: sigs) = t.approvers vault digest sigs := by
   simp [approvers, other]
 
@@ -105,12 +107,12 @@ owners do, by its own threshold, and so on up to keys (D14, rule 25). `approves`
 vaults, which in a well-formed tree finds every approval (`approves_iff`). -/
 
 /-- Whether an owner approves `digest`: a key by having signed exactly it, a vault by `ok`. -/
-def ownerApproves (digest : String) (sigs : List Sig) (ok : String → Bool) : Owner → Bool
+def ownerApproves (digest : String) (sigs : List Sig) (ok : V → Bool) : Owner V → Bool
   | .key k => sigs.contains ⟨k, digest⟩
   | .vault a => ok a
 
 /-- `vault` approves `digest`, looking `f` levels of owners up: at least its threshold of its owners do, each once. -/
-def approvesF (t : Tree) (th : String → Nat) (digest : String) (sigs : List Sig) : Nat → String → Bool
+def approvesF (t : Tree V) (th : V → Nat) (digest : String) (sigs : List Sig) : Nat → V → Bool
   | 0, _ => false
   | f + 1, vault =>
     match t.get? vault with
@@ -120,25 +122,25 @@ def approvesF (t : Tree) (th : String → Nat) (digest : String) (sigs : List Si
         ((ownersOnce v.owners).filter (ownerApproves digest sigs (t.approvesF th digest sigs f))).length)
 
 /-- `vault`'s owners approve `digest` by its threshold, an owner vault by its own, recursively. -/
-def approves (t : Tree) (th : String → Nat) (vault digest : String) (sigs : List Sig) : Bool :=
+def approves (t : Tree V) (th : V → Nat) (vault : V) (digest : String) (sigs : List Sig) : Bool :=
   t.approvesF th digest sigs (t.vaults.length + 1) vault
 
 /-- `k` is an owner key of `b`, or of a vault above it. -/
-inductive KeyAbove (t : Tree) (k : String) : String → Prop
-  | own {b : String} : t.KeyOwns k b → KeyAbove t k b
-  | up {a b : String} : t.Owns a b → KeyAbove t k a → KeyAbove t k b
+inductive KeyAbove (t : Tree V) (k : String) : V → Prop
+  | own {b : V} : t.KeyOwns k b → KeyAbove t k b
+  | up {a b : V} : t.Owns a b → KeyAbove t k a → KeyAbove t k b
 
-variable {th : String → Nat} {digest : String} {sigs : List Sig}
+variable {th : V → Nat} {digest : String} {sigs : List Sig}
 
-theorem owns_of_get? {a vault : String} {v : Vault} (hv : t.get? vault = some v) (m : Owner.vault a ∈ v.owners) :
+theorem owns_of_get? {a vault : V} {v : Vault V} (hv : t.get? vault = some v) (m : Owner.vault a ∈ v.owners) :
     t.Owns a vault := by
   simp only [Owns, ownersOf, hv, Option.map_some, Option.getD_some, Vault.ownerVaults, List.mem_filterMap]
   exact ⟨_, m, rfl⟩
 
 /-- An approval holds only with its threshold of distinct owners, each a key that signed exactly this digest or a vault
 that approves it by its own quorum. -/
-theorem approvesF_exact {f : Nat} {vault : String} (h : t.approvesF th digest sigs (f + 1) vault = true) :
-    ∃ v, t.get? vault = some v ∧ ∃ owners : List Owner, owners.Nodup ∧ th vault ≤ owners.length ∧
+theorem approvesF_exact {f : Nat} {vault : V} (h : t.approvesF th digest sigs (f + 1) vault = true) :
+    ∃ v, t.get? vault = some v ∧ ∃ owners : List (Owner V), owners.Nodup ∧ th vault ≤ owners.length ∧
       ∀ o ∈ owners, o ∈ v.owners ∧ ownerApproves digest sigs (t.approvesF th digest sigs f) o = true := by
   unfold approvesF at h
   cases hv : t.get? vault with
@@ -151,7 +153,7 @@ theorem approvesF_exact {f : Nat} {vault : String} (h : t.approvesF th digest si
 
 /-- With every threshold at least one, an approval rests on a signature of exactly this digest by a key above the
 vault: no vault approves on nobody's signature. -/
-theorem approvesF_signed (pos : ∀ x, 1 ≤ th x) : ∀ {f : Nat} {vault : String},
+theorem approvesF_signed (pos : ∀ x, 1 ≤ th x) : ∀ {f : Nat} {vault : V},
     t.approvesF th digest sigs f vault = true → ∃ k, t.KeyAbove k vault ∧ ⟨k, digest⟩ ∈ sigs
   | 0, _, h => by simp [approvesF] at h
   | f + 1, vault, h => by
@@ -168,7 +170,7 @@ theorem approvesF_signed (pos : ∀ x, 1 ≤ th x) : ∀ {f : Nat} {vault : Stri
       exact ⟨k, .up (owns_of_get? hv ov) ka, s⟩
 
 /-- Looking one more level up never undoes an approval. -/
-theorem approvesF_succ : ∀ {f : Nat} {vault : String}, t.approvesF th digest sigs f vault = true →
+theorem approvesF_succ : ∀ {f : Nat} {vault : V}, t.approvesF th digest sigs f vault = true →
     t.approvesF th digest sigs (f + 1) vault = true
   | 0, _, h => by simp [approvesF] at h
   | f + 1, vault, h => by
@@ -182,7 +184,7 @@ theorem approvesF_succ : ∀ {f : Nat} {vault : String}, t.approvesF th digest s
       | key k => exact p
       | vault a => exact approvesF_succ p
 
-theorem approvesF_mono {f g : Nat} {vault : String} (le : f ≤ g) (h : t.approvesF th digest sigs f vault = true) :
+theorem approvesF_mono {f g : Nat} {vault : V} (le : f ≤ g) (h : t.approvesF th digest sigs f vault = true) :
     t.approvesF th digest sigs g vault = true := by
   induction le with
   | refl => exact h
@@ -190,7 +192,7 @@ theorem approvesF_mono {f g : Nat} {vault : String} (le : f ≤ g) (h : t.approv
 
 /-- In a well-formed tree a vault's owners stand lower than it, so looking as many levels up as its rank finds every
 approval. -/
-theorem approvesF_rank (w : t.WF) : ∀ {f : Nat} {vault : String}, t.approvesF th digest sigs f vault = true →
+theorem approvesF_rank (w : t.WF) : ∀ {f : Nat} {vault : V}, t.approvesF th digest sigs f vault = true →
     t.approvesF th digest sigs (t.rank vault + 1) vault = true
   | 0, _, h => by simp [approvesF] at h
   | f + 1, vault, h => by
@@ -207,13 +209,13 @@ theorem approvesF_rank (w : t.WF) : ∀ {f : Nat} {vault : String}, t.approvesF 
 
 /-- In a well-formed tree, `approves` is the recursive quorum itself: it holds exactly when looking some number of
 levels up finds the approval. -/
-theorem approves_iff (w : t.WF) {vault : String} :
+theorem approves_iff (w : t.WF) {vault : V} :
     t.approves th vault digest sigs = true ↔ ∃ f, t.approvesF th digest sigs f vault = true :=
   ⟨fun h => ⟨_, h⟩, fun ⟨_, h⟩ => approvesF_mono (by have := t.rank_le vault; omega) (approvesF_rank w h)⟩
 
 /-- An approval of a vault with every threshold at least one rests on a signature of exactly this digest by a key above
 it. -/
-theorem approves_signed (pos : ∀ x, 1 ≤ th x) {vault : String} (h : t.approves th vault digest sigs = true) :
+theorem approves_signed (pos : ∀ x, 1 ≤ th x) {vault : V} (h : t.approves th vault digest sigs = true) :
     ∃ k, t.KeyAbove k vault ∧ ⟨k, digest⟩ ∈ sigs :=
   approvesF_signed pos h
 
@@ -224,7 +226,7 @@ vaults `a` meets alone. An owner key never counts, being no vault's. With every 
 every vault below it; over a coop whose owners approve k of n with k > 1, no one owner vault does. -/
 
 /-- `a` meets `w`'s quorum alone, looking `f` levels of owners up. -/
-def aloneF (t : Tree) (th : String → Nat) (a : String) : Nat → String → Bool
+def aloneF (t : Tree V) (th : V → Nat) (a : V) : Nat → V → Bool
   | 0, w => w == a
   | f + 1, w => w == a ||
     match t.get? w with
@@ -234,11 +236,11 @@ def aloneF (t : Tree) (th : String → Nat) (a : String) : Nat → String → Bo
         | .key _ => false).length)
 
 /-- `a` meets `w`'s quorum alone, looking as many levels up as the tree has vaults. -/
-def alone (t : Tree) (th : String → Nat) (a w : String) : Bool := t.aloneF th a (t.vaults.length + 1) w
+def alone (t : Tree V) (th : V → Nat) (a w : V) : Bool := t.aloneF th a (t.vaults.length + 1) w
 
 /-- Whatever `a` approves, looking `g` levels up, a vault whose quorum `a` meets alone approves, looking `f` more. -/
-theorem aloneF_approves {a : String} {g : Nat} (ha : t.approvesF th digest sigs g a = true) :
-    ∀ {f : Nat} {w : String}, t.aloneF th a f w = true → t.approvesF th digest sigs (f + g) w = true
+theorem aloneF_approves {a : V} {g : Nat} (ha : t.approvesF th digest sigs g a = true) :
+    ∀ {f : Nat} {w : V}, t.aloneF th a f w = true → t.approvesF th digest sigs (f + g) w = true
   | 0, w, h => by
     simp only [aloneF, beq_iff_eq] at h
     subst h
@@ -263,7 +265,7 @@ theorem aloneF_approves {a : String} {g : Nat} (ha : t.approvesF th digest sigs 
 /-- **Authority runs down only through quorums** (A28): in a well-formed tree, whatever `a`'s owners approve, the owners
 of a vault whose quorum `a` meets alone approve too. So what `a` grants over that vault's Docs speaks for its owners, k
 of n: over a coop with k > 1, no one owner vault speaks alone, and the coop issues as itself. -/
-theorem alone_approves (w : t.WF) {a v : String} (al : t.alone th a v = true)
+theorem alone_approves (w : t.WF) {a v : V} (al : t.alone th a v = true)
     (ha : t.approves th a digest sigs = true) : t.approves th v digest sigs = true :=
   (approves_iff w).mpr ⟨_, aloneF_approves ha al⟩
 

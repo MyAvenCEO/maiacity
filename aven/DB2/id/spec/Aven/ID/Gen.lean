@@ -70,7 +70,7 @@ def randomSpec (r : Rng) : Spec × Rng :=
   let (named, r) := r.below 64
   (⟨[Kind.person, .agent, .coop, .device, .person][k]!, simple, tags.zip ats, up, named⟩, r)
 
-def randomTree (seed : Nat) : Tree := Id.run do
+def randomTree (seed : Nat) : Tree String := Id.run do
   let mut r := Rng.seed seed
   let (n, r') := r.below 7
   r := r'
@@ -82,7 +82,7 @@ def randomTree (seed : Nat) : Tree := Id.run do
     specs := specs.push s
   let kinds := specs.map (·.kind)
   let devices := (List.range n).filter fun j => kinds[j]! == .device
-  let earlier (i at_ : Nat) (fits : Kind → Bool) : Option Owner :=
+  let earlier (i at_ : Nat) (fits : Kind → Bool) : Option (Owner String) :=
     let owners := (List.range i).filter fun j => fits kinds[j]!
     owners[at_ % max owners.length 1]?.map fun j => .vault s!"v{j}"
   let vaults := (List.range n).map fun i =>
@@ -105,7 +105,9 @@ def randomTree (seed : Nat) : Tree := Id.run do
             (earlier i at_ fits).getD (.key "k0")
           else .vault s!"v{at_ % (n + 1)}"
     let name := if s.named == 0 then "" else if s.named == 1 then s!"v{i}\nv{i}" else s!"v{i}"
-    ({ id := s!"v{i}", name, kind := s.kind, owners } : Vault)
+    -- a device names its key, `v{i}`, which the tree's keys leave out when `up` is 7 (A211)
+    ({ id := s!"v{i}", name, kind := s.kind, owners, key := if s.kind == .device then some s!"v{i}" else none } :
+      Vault String)
   let keys := ["k0", "k1"] ++ ((vaults.zip specs.toList).filter fun (v, s) => v.kind == .device && s.up != 7).map
     (·.1.id)
   let (vaults, _) := r.shuffle vaults

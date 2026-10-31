@@ -75,7 +75,7 @@ variable (tree chat message : DocId)
 
 /-- Maia City's confirm cap to confirmer vault `v`, with its owners' approvals: `tree/1`'s confirm on the tree Doc, for
 any claim. -/
-def confirmCap (v : String) (approvals : List Sig) : Cap :=
+def confirmCap (v : String) (approvals : List Sig) : Cap String :=
   { id := "confirm-" ++ v, issuer := "maia-city", holder := .vault v,
     grant := [⟨confirmOp, .doc tree .self, [(claimParam, none)]⟩], approvals }
 
@@ -87,7 +87,7 @@ def memberLines : Grant :=
 
 /-- The member cap (A38): Maia City's grant to member vault `v`. The confirm envelope that names `v`'s claim is its
 issuance, so it carries no signature of its own. -/
-def memberCap (v : String) : Cap :=
+def memberCap (v : String) : Cap String :=
   { id := "member-" ++ v, issuer := "maia-city", holder := .vault v, grant := memberLines tree chat message }
 
 /-- **The confirm cap only confirms**: whatever call it allows is a confirm, on the tree Doc. -/
@@ -99,7 +99,7 @@ theorem confirm_only (gov : Hash → Hash → Prop) (spawned lists : DocId → D
   subst ml
   exact ⟨op.symm, cov⟩
 
-variable (r : Reader) (gov : Hash → Hash → Prop) (spawned lists : DocId → DocId → Prop)
+variable (r : Reader String) (gov : Hash → Hash → Prop) (spawned lists : DocId → DocId → Prop)
 
 /-- A confirmation a reader counts: an envelope caps authorizes, on the tree Doc, calling `tree/1`'s confirm for
 claim `c`. -/
@@ -128,7 +128,7 @@ theorem member_by_confirm {founded : Hash → Option String} {v : String}
 end
 
 section Decided
-variable (tree : DocId) (r : Reader) (gov : Hash → Hash → Bool) (spawned lists : DocId → DocId → Bool)
+variable (tree : DocId) (r : Reader String) (gov : Hash → Hash → Bool) (spawned lists : DocId → DocId → Bool)
 
 /-- The members a reader counts from one envelope: when caps authorizes it and it is on the tree Doc, the vaults the
 claims its confirms name founded (`founded`, the tree's). -/

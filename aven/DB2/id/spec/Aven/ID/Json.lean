@@ -19,11 +19,12 @@ open Lean
 
 namespace Aven.ID
 
-def Vault.json (v : Vault) : Json :=
-  Json.mkObj [("id", v.id), ("name", v.name), ("kind", v.kind.name), ("owners", toJson (v.owners.map Owner.name)),
-    ("threshold", toJson v.threshold)]
+def Vault.json (v : Vault String) : Json :=
+  Json.mkObj ([("id", toJson v.id), ("name", toJson v.name), ("kind", toJson v.kind.name),
+    ("owners", toJson (v.owners.map Owner.name)), ("threshold", toJson v.threshold)] ++
+    (v.key.map fun k => ("key", toJson k)).toList)
 
-def Tree.json (t : Tree) : Json :=
+def Tree.json (t : Tree String) : Json :=
   Json.mkObj [("keys", toJson t.keys), ("vaults", Json.arr (t.vaults.map Vault.json).toArray)]
 
 def Query.json : Query → Json
@@ -44,14 +45,14 @@ def Answer.json : Answer → Json
   | .id x => toJson x
   | .yes b => toJson b
 
-def Invalid.json : Invalid → Json
+def Invalid.json : Invalid String → Json
   | .duplicate id => Json.mkObj [("rule", "duplicate"), ("vault", id)]
   | .unowned id => Json.mkObj [("rule", "unowned"), ("vault", id)]
   | .unknown v o => Json.mkObj [("rule", "unknown"), ("vault", v), ("owner", o.name)]
   | .deviceOwners id => Json.mkObj [("rule", "deviceOwners"), ("vault", id)]
   | .deviceOwns d v => Json.mkObj [("rule", "deviceOwns"), ("device", d), ("vault", v)]
   | .deviceKeyless id => Json.mkObj [("rule", "deviceKeyless"), ("vault", id)]
-  | .deviceKeyOwns d v => Json.mkObj [("rule", "deviceKeyOwns"), ("device", d), ("vault", v)]
+  | .deviceKeyOwns k v => Json.mkObj [("rule", "deviceKeyOwns"), ("key", k), ("vault", v)]
   | .name id => Json.mkObj [("rule", "name"), ("vault", id)]
   | .coopOwner c o => Json.mkObj [("rule", "coopOwner"), ("vault", c), ("owner", o.name)]
   | .coopDevice c d => Json.mkObj [("rule", "coopDevice"), ("vault", c), ("device", d)]
@@ -59,12 +60,12 @@ def Invalid.json : Invalid → Json
   | .cycle => Json.mkObj [("rule", "cycle")]
 
 /-- What the model answers for a tree and its queries. A tree that is not well formed gets no answers. -/
-def Tree.result (t : Tree) (qs : List Query) : Json :=
+def Tree.result (t : Tree String) (qs : List Query) : Json :=
   match t.check with
   | none => Json.mkObj [("wf", true), ("answers", Json.arr (qs.map fun q => (t.ask q).json).toArray)]
   | some why => Json.mkObj [("wf", false), ("invalid", why.json), ("answers", Json.arr #[])]
 
-def parseVault (j : Json) : Except String Vault := do
+def parseVault (j : Json) : Except String (Vault String) := do
   let id ← j.getObjValAs? String "id"
   let name ← j.getObjValAs? String "name"
   let k ← j.getObjValAs? String "kind"
@@ -75,9 +76,13 @@ def parseVault (j : Json) : Except String Vault := do
   let threshold ← match j.getObjValD "threshold" with
     | .null => pure 1
     | t => fromJson? t
-  pure ⟨id, name, kind, owners, threshold⟩
+  -- a device names its key (A211); a tree written before that names none, and a device's key was its id
+  let key ← match j.getObjValD "key" with
+    | .null => pure (if kind = .device then some id else none)
+    | k => some <$> fromJson? k
+  pure ⟨id, name, kind, owners, threshold, key⟩
 
-def parseTree (j : Json) : Except String Tree := do
+def parseTree (j : Json) : Except String (Tree String) := do
   let keys ← j.getObjValAs? (List String) "keys"
   let vaults ← (← j.getObjValAs? (Array Json) "vaults").toList.mapM parseVault
   pure ⟨keys, vaults⟩
@@ -111,7 +116,7 @@ end Aven.ID
 
 namespace Aven.ID
 
-def SignError.json : SignError → Json
+def SignError.json : SignError String → Json
   | .notDevice id => Json.mkObj [("error", "notDevice"), ("id", id)]
   | .noKey id => Json.mkObj [("error", "noKey"), ("id", id)]
   | .wrongKey id => Json.mkObj [("error", "wrongKey"), ("id", id)]

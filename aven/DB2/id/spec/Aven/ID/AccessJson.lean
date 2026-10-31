@@ -54,7 +54,7 @@ def dropField (v : Value) (k : String) : Value :=
   | .map kvs => .map (kvs.filter (·.1 != recKey k))
   | v => v
 
-def caps : List (String × Cap) :=
+def caps : List (String × Cap String) :=
   [("cap-a", capA), ("cap-b, held by a group", capB), ("a public cap", capPublic), ("Aven's cap", capAven),
    ("an actor host's cap", capHost), ("an attenuation", attRead), ("a keep cap", keepBob)]
 
@@ -66,7 +66,7 @@ def revocations : List (String × Revocation) :=
 def epochs : List (String × KeyFormats.Epoch) :=
   [("a keyring's second epoch", KeyFormats.keyringEpoch), ("a Doc's first epoch", KeyFormats.docEpoch)]
 
-def capRecord (c : Cap) : Value := (CapRecord.mk c sigs).value
+def capRecord (c : Cap String) : Value := (CapRecord.mk (c.map Named.name) sigs).value
 def revokeRecord (r : Revocation) : Value := (RevokeRecord.mk r sigs).value
 def epochRecord (e : KeyFormats.Epoch) : Value := (EpochRecord.mk e sigs).value
 
@@ -74,9 +74,9 @@ def accessVectors : List Json :=
   caps.map (fun (n, c) => case s!"a cap Record: {n}" capType (capRecord c)) ++
   revocations.map (fun (n, r) => case s!"a revoke Record: {n}" revokeType (revokeRecord r)) ++
   epochs.map (fun (n, e) => case s!"an epoch Record: {n}" epochType (epochRecord e)) ++
-  [case "a cap Record with no signatures yet" capType (CapRecord.mk capA []).value,
+  [case "a cap Record with no signatures yet" capType (CapRecord.mk (capA.map Named.name) []).value,
    -- what doesn't fit
-   case "a cap's bare body, no sigs" capType capA.body,
+   case "a cap's bare body, no sigs" capType (capA.map Named.name).body,
    case "a cap Record with a field it doesn't have" capType (setField (capRecord capA) "note" (.text (recKey "hi"))),
    case "a cap Record missing its conditions" capType (dropField (capRecord capA) "conditions"),
    case "a cap Record whose share is text" capType (setField (capRecord capA) "share" (.text (recKey "1"))),

@@ -27,11 +27,11 @@ def members : List String := ["aven-peer", "alice-peer", "bob-peer", "bob-light"
 def gone : String := "aven-peer"
 
 /-- A file Bob's Peer-Light shared, a Doc of Bob's vault, as its genesis fixes it. -/
-def bobsFile : Core.Facts := ⟨⟨⟨"bobs-file".toUTF8.toList⟩⟩, vaultId "bob", ⟨⟨"file".toUTF8.toList⟩⟩⟩
+def bobsFile : Core.Facts := ⟨⟨⟨"bobs-file".toUTF8.toList⟩⟩, Named.name "bob", ⟨⟨"file".toUTF8.toList⟩⟩⟩
 
 /-- Bob's vault's keep caps (`Aven.ID.Keeping`), each approved by Bob's passkey: the default, everything of Bob's own
 to the Aven Peer, and the file at Bob's Peer, a keeper Bob's vault named. -/
-def keeps : List Cap :=
+def keeps : List (Cap String) :=
   [defaultKeep "bob" "aven-peer" "bob-light" [⟨"bob-passkey", "keep-bob"⟩],
    { id := "keep-file", issuer := "bob", holder := .vault "bob-peer", signer := "bob-light",
      grant := [⟨coreOp .keep, .doc bobsFile.id .self, []⟩], approvals := [⟨"bob-passkey", "keep-file"⟩] }]

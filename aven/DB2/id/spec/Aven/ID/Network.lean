@@ -51,10 +51,10 @@ The theorems:
 namespace Aven.ID
 
 /-- A write under `c` from `writer`'s vault counts only if `c` isn't public or the writer is a member. -/
-def publicWriter (member : String → Bool) (c : Cap) (writer : String) : Bool :=
+def publicWriter (member : String → Bool) (c : Cap String) (writer : String) : Bool :=
   c.holder != .«public» || member writer
 
-theorem public_member {member : String → Bool} {c : Cap} {writer : String} (h : publicWriter member c writer = true)
+theorem public_member {member : String → Bool} {c : Cap String} {writer : String} (h : publicWriter member c writer = true)
     (p : c.holder = .«public») : member writer = true := by
   simpa [publicWriter, p] using h
 
@@ -205,11 +205,11 @@ def Genesis.consented (g : Genesis) : Bool :=
 /-- The vaults the genesis founds, as `Aven.ID.Approve` reads them: the claimant's vault, owned by its passkey and
 MaiaCityGuardian's vault; the admin coop, owned by the vaults the genesis names; the agent, owned by the coop; and
 MaiaCityGuardian's vault, owned by its key. -/
-def Genesis.tree (g : Genesis) : Tree :=
+def Genesis.tree (g : Genesis) : Tree String :=
   { keys := [g.passkey.spki, g.guardian.ed25519]
-    vaults := [⟨g.claimant, "", .person, [.key g.passkey.spki, .vault g.guardianVault], 1⟩,
-      ⟨g.coop, "", .coop, g.coopOwners.map .vault, g.coopThreshold⟩, ⟨g.agent, "", .agent, [.vault g.coop], 1⟩,
-      ⟨g.guardianVault, "", .agent, [.key g.guardian.ed25519], 1⟩] }
+    vaults := [⟨g.claimant, "", .person, [.key g.passkey.spki, .vault g.guardianVault], 1, none⟩,
+      ⟨g.coop, "", .coop, g.coopOwners.map .vault, g.coopThreshold, none⟩, ⟨g.agent, "", .agent, [.vault g.coop], 1, none⟩,
+      ⟨g.guardianVault, "", .agent, [.key g.guardian.ed25519], 1, none⟩] }
 
 /-- What every tree statement's signer signs, as `Aven.ID.Approve` names a digest: the statement itself. -/
 def stmtDigest : String := "tree statement"
@@ -244,7 +244,7 @@ theorem Genesis.approvesF_own (g : Genesis) (d : String) (f : Nat) :
     g.tree.approvesF g.tree.threshold d [⟨g.passkey.spki, d⟩] (f + 1) g.claimant = true := by
   unfold Tree.approvesF
   have e : g.tree.get? g.claimant =
-      some ⟨g.claimant, "", .person, [.key g.passkey.spki, .vault g.guardianVault], 1⟩ := by
+      some ⟨g.claimant, "", .person, [.key g.passkey.spki, .vault g.guardianVault], 1, none⟩ := by
     simp [Tree.get?, Genesis.tree]
   rw [e, g.threshold_claimant]
   simp only [decide_eq_true_eq]
@@ -264,7 +264,7 @@ theorem Genesis.approves_claimant (g : Genesis) (hc : g.claimant ∈ g.coopOwner
   by_cases e : g.claimant = g.coop
   · rw [← e]; exact key _
   · unfold Tree.approvesF
-    have ec : g.tree.get? g.coop = some ⟨g.coop, "", .coop, g.coopOwners.map .vault, g.coopThreshold⟩ := by
+    have ec : g.tree.get? g.coop = some ⟨g.coop, "", .coop, g.coopOwners.map .vault, g.coopThreshold, none⟩ := by
       simp [Tree.get?, Genesis.tree, e]
     have tc : g.tree.threshold g.coop = 1 := by simp [Tree.threshold, ec, one]
     rw [ec, tc]
@@ -1407,7 +1407,7 @@ theorem ownerless_signs_in_nothing {vault p : String}
       · simp at hc
 
 /-- A signature by a key that owns no vault of the tree never makes an approval: k of n counts owners only. -/
-theorem approvesF_extra {t : Tree} {th : String → Nat} {d : String} {sigs : List Sig} {p : String}
+theorem approvesF_extra {t : Tree String} {th : String → Nat} {d : String} {sigs : List Sig} {p : String}
     (np : ∀ v ∈ t.vaults, p ∉ v.ownerKeys) :
     ∀ {f : Nat} {vault : String}, t.approvesF th d (⟨p, d⟩ :: sigs) f vault = true →
       t.approvesF th d sigs f vault = true

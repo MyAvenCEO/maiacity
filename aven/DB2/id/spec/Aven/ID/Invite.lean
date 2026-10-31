@@ -114,7 +114,7 @@ inductive MemberError where
   | notFromDevice
   /-- the join names a vault, a passkey or a browser the tree has; a sign-in a browser it has -/
   | known
-  | invalid (why : Invalid)
+  | invalid (why : Invalid String)
   /-- a sign-in by a passkey that owns no vault here -/
   | stranger
   /-- a sign-in whose passkey's counter did not count up -/
@@ -149,27 +149,27 @@ def joinedPublics (j : Join) : List (String × String) := [(j.passkey, "es256:" 
 
 /-- The vaults a join founds, named after the person: theirs, owned by its passkey (and the guardian), and its
 browser. -/
-def joinedVaults (s : Founding) (j : Join) : List Vault :=
-  [⟨j.person, j.name ++ "'s vault", .person, s.founders j.passkey, 1⟩,
-    ⟨j.device, j.name ++ "'s browser", .device, [.vault j.person], 1⟩]
+def joinedVaults (s : Founding) (j : Join) : List (Vault String) :=
+  [⟨j.person, j.name ++ "'s vault", .person, s.founders j.passkey, 1, none⟩,
+    ⟨j.device, j.name ++ "'s browser", .device, [.vault j.person], 1, some j.device⟩]
 
 /-- A member's browser that signed in after `seen`: named after them, numbered after their join's browser and the
 browsers they signed in before. -/
-def signedInVault (seen : List MemberSignIn) (s : MemberSignIn) : Vault :=
+def signedInVault (seen : List MemberSignIn) (s : MemberSignIn) : Vault String :=
   ⟨s.signIn.device, browserName s.member.name ((seen.filter (·.member.person == s.member.person)).length + 2), .device,
-    [.vault s.member.person], 1⟩
+    [.vault s.member.person], 1, some s.signIn.device⟩
 
-def signedInVaults (seen : List MemberSignIn) : List MemberSignIn → List Vault
+def signedInVaults (seen : List MemberSignIn) : List MemberSignIn → List (Vault String)
   | [] => []
   | s :: l => signedInVault seen s :: signedInVaults (seen ++ [s]) l
 
 def publics (m : Members) : List (String × String) :=
   m.founding.publics ++ m.joins.flatMap joinedPublics ++ m.signIns.map fun s => (s.signIn.device, s.signIn.deviceKey)
 
-def vaults (m : Members) : List Vault :=
+def vaults (m : Members) : List (Vault String) :=
   m.founding.vaults ++ m.joins.flatMap (joinedVaults m.founding) ++ signedInVaults [] m.signIns
 
-def tree (m : Members) : Tree := ⟨m.publics.map (·.1), m.vaults⟩
+def tree (m : Members) : Tree String := ⟨m.publics.map (·.1), m.vaults⟩
 
 /-- The members: the person vaults joins founded, members of the admin coop. -/
 def members (m : Members) : List String := m.joins.map (·.person)
@@ -489,16 +489,16 @@ joining browser as its device, a member of the admin coop; the tree holds, and n
 vaults go in after the joins before it, ahead of the members' browsers that signed in. -/
 theorem join_founds {j : Join} (h : m.acceptJoin j = .ok m') :
     (∃ pre post, m.tree.vaults = pre ++ post ∧
-      m'.tree.vaults = pre ++ [⟨j.person, j.name ++ "'s vault", .person, m.founding.founders j.passkey, 1⟩,
-        ⟨j.device, j.name ++ "'s browser", .device, [.vault j.person], 1⟩] ++ post) ∧ m'.tree.WF ∧
+      m'.tree.vaults = pre ++ [⟨j.person, j.name ++ "'s vault", .person, m.founding.founders j.passkey, 1, none⟩,
+        ⟨j.device, j.name ++ "'s browser", .device, [.vault j.person], 1, some j.device⟩] ++ post) ∧ m'.tree.WF ∧
     m'.tree.KeyOwns j.passkey j.person ∧
     (∀ g, m.founding.guardian = some g → Owner.key guardianId ∈ m.founding.founders j.passkey) ∧
     m'.tree.actsFor j.device = some j.person ∧ m'.memberOf j.person m.coop = true ∧
     ∀ x ∈ m.tree.ids, m'.tree.get? x = m.tree.get? x := by
   obtain ⟨_, _, _, _, _, nk, e, w⟩ := acceptJoin_ok h
   subst e
-  let pv : Vault := ⟨j.person, j.name ++ "'s vault", .person, m.founding.founders j.passkey, 1⟩
-  let dv : Vault := ⟨j.device, j.name ++ "'s browser", .device, [.vault j.person], 1⟩
+  let pv : Vault String := ⟨j.person, j.name ++ "'s vault", .person, m.founding.founders j.passkey, 1, none⟩
+  let dv : Vault String := ⟨j.device, j.name ++ "'s browser", .device, [.vault j.person], 1, some j.device⟩
   have v0 : m.tree.vaults = (m.founding.vaults ++ m.joins.flatMap (joinedVaults m.founding)) ++
       signedInVaults [] m.signIns := by simp [tree, vaults]
   have v : ({ m with joins := m.joins ++ [j] } : Members).tree.vaults =

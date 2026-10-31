@@ -27,7 +27,7 @@ def castKeys : List (Bytes × String) :=
 
 /-- Each device's cap: Alice's and Bob's phones may do everything their vaults may; Alice's agent reads `d1` and
 patches its tasks, on proposals only; Aven's Peer, an actor host, holds its hosted actors' standing caps (A27). -/
-def castDeviceCaps : List (Bytes × DeviceCap) :=
+def castDeviceCaps : List (Bytes × (DeviceCap String)) :=
   [(key "alice-peer-light", ⟨"alice-peer-light", "alice", none, .any, false⟩),
    (key "bob-peer-light", ⟨"bob-peer-light", "bob", none, .any, false⟩),
    (key "alice-agent", ⟨"alice-agent", "alice", some [readOn d1, writeOn .patch d1 tasks], .proposals, false⟩),
@@ -52,7 +52,7 @@ structure Case where
   signer : String
   doc : DocId
   branch : String := "main"
-  chain : List Cap := []
+  chain : List (Cap String) := []
   calls : List Call
   actor : Option DocId := none
   answer : Bool × Bool × Bool × Bool × Bool
@@ -61,7 +61,7 @@ def Case.envelope (c : Case) : Envelope :=
   { doc := c.doc, branch := key c.branch, writer := 1, seq := 1, prev := none, deps := [], body := .null,
     sigs := [⟨key c.signer, []⟩] }
 
-def Case.reader (c : Case) : Reader :=
+def Case.reader (c : Case) : Reader String :=
   { ctx := castCtx, chain := fun _ => c.chain, calls := fun _ => c.calls, lower := fun _ => [],
     signer := fun _ => key c.signer, vaultOf := fun k => (castKeys.find? (·.1 == k)).map (·.2), member := castMembers.contains,
     facts := castCtx.facts, deviceCap := fun k => (castDeviceCaps.find? (·.1 == k)).map (·.2),

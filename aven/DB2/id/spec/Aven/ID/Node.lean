@@ -225,8 +225,8 @@ another keeper stays fetchable by every member when any one peer is lost, the Av
 the Aven Peer is its one keeper, and only the writer's own devices hold it besides. -/
 theorem kept_fetchable {n : Net} (hl : n.Listed) {r₁ r₂ : String} (m₁ : r₁ ∈ n.relays) (m₂ : r₂ ∈ n.relays)
     (ne : r₁ ≠ r₂) {gov : Hash → Hash → Bool} {spawned lists : DocId → DocId → Bool} {roles : List Role}
-    {caps : List Cap} {doc : String} {f : Facts} {v k s : String} {approvals : List Sig}
-    (hk : defaultKeep v k s approvals ∈ caps) (own : f.vault = vaultId v) {c : Cap} {k' : String} (hc : c ∈ caps)
+    {caps : List (Cap String)} {doc : String} {f : Facts} {v k s : String} {approvals : List Sig}
+    (hk : defaultKeep v k s approvals ∈ caps) (own : f.vault = Named.name v) {c : Cap String} {k' : String} (hc : c ∈ caps)
     (cov : c.keeps gov spawned lists roles f = true) (held : c.holder = .vault k') (other : k' ≠ k)
     (holds : ∀ x ∈ keepersOf gov spawned lists roles caps f, x ∈ n.holders doc) (mk : k ∈ n.members)
     (mk' : k' ∈ n.members) (gone : String) {a : String} (ma : a ∈ n.members) (ha : a ≠ gone) :
@@ -285,11 +285,11 @@ def net : Net :=
     holders := fun d => if d == "chat" then ["bob-light", "aven-peer", "alice-peer"] else [] }
 
 /-- The chat and Bob's notes, Docs of Bob's vault, as their genesis fixes them. -/
-def chat : Facts := ⟨⟨⟨"chat".toUTF8.toList⟩⟩, vaultId "bob", ⟨⟨"chat-type".toUTF8.toList⟩⟩⟩
-def notes : Facts := ⟨⟨⟨"notes".toUTF8.toList⟩⟩, vaultId "bob", ⟨⟨"notes-type".toUTF8.toList⟩⟩⟩
+def chat : Facts := ⟨⟨⟨"chat".toUTF8.toList⟩⟩, Named.name "bob", ⟨⟨"chat-type".toUTF8.toList⟩⟩⟩
+def notes : Facts := ⟨⟨⟨"notes".toUTF8.toList⟩⟩, Named.name "bob", ⟨⟨"notes-type".toUTF8.toList⟩⟩⟩
 
 /-- Bob's keep cap for the chat at Bob's Peer. -/
-def keepChat : Cap :=
+def keepChat : Cap String :=
   { id := "keep-chat", issuer := "bob", holder := .vault "bob-peer", signer := "bob-light",
     grant := [⟨coreOp .keep, .doc chat.id .self, []⟩] }
 

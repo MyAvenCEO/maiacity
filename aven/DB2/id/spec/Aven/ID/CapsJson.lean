@@ -10,8 +10,10 @@ import Lean.Data.Json
 The form of `vectors/caps.json`, `revocations.json`, `epochs.json`, `approvals.json`, `network.json`, `keep.json`,
 `collections.json` and `authorized.json` (`Vectors.lean`). Caps' readable form is JSON. A line's op is its id, as Core's
 `ops.json` names `core/1`'s, and its target is written as Core's vectors write it (`targets.json`): Docs as `d:` and
-hex, vaults as their UTF-8 ids; a bound is null for any value, or the values it allows. Each cap carries its CBOR bytes
-and hash. A context names the cast's tree, which `trees.json` carries, and lists who is in each group and what each Doc
+hex; a bound is null for any value, or the values it allows. Each cap carries its CBOR bytes
+and hash. The cast's caps and tree are written with their readable handles, fixtures (A210); every byte form, a cap's
+CBOR, its hash and what it signs, and every target and Doc's facts, writes a vault as its 32-byte name, the cast
+genesis's (`Named.name`, `VaultName.castName`). A context names the cast's tree, which `trees.json` carries, and lists who is in each group and what each Doc
 is.
 
 ```
@@ -62,19 +64,20 @@ def Conditions.json (c : Conditions) : Json :=
   Json.mkObj [("notBefore", toJson c.notBefore), ("expires", toJson c.expires), ("approve", toJson c.approve),
     ("uses", toJson c.uses), ("own", toJson c.own), ("branches", c.branches.json), ("history", c.history.json)]
 
-def Holder.json : Holder → Json
+def Holder.json : Holder String → Json
   | .vault v => Json.mkObj [("vault", v)]
   | .group g => Json.mkObj [("group", g.text)]
   | .«public» => "public"
 
 def Sig.json (s : Sig) : Json := Json.mkObj [("key", s.key), ("digest", s.digest)]
 
-def Cap.json (c : Cap) : Json :=
+def Cap.json (c : Cap String) : Json :=
   Json.mkObj [("id", c.id), ("issuer", c.issuer), ("holder", c.holder.json), ("parent", toJson c.parent),
     ("form", c.form.name), ("grant", Json.arr (c.grant.map Line.json).toArray), ("role", toJson c.role),
     ("share", toJson c.share), ("conditions", c.conditions.json), ("signer", toJson c.signer),
     ("approvals", Json.arr (c.approvals.map Sig.json).toArray),
-    ("cbor", Core.hex c.bytes), ("hash", (c.digest Core.blake3).text), ("signs", Core.hex c.signing)]
+    ("cbor", Core.hex (c.map Named.name).bytes), ("hash", ((c.map Named.name).digest Core.blake3).text),
+    ("signs", Core.hex (c.map Named.name).signing)]
 
 /-- A Doc's facts, as its genesis fixes them: its id, its vault and its root type. -/
 def factsJson (f : Core.Facts) : Json :=
@@ -124,7 +127,7 @@ def castCtxJson : Json :=
     ("docs", Json.arr ([d1, d2, b1, cityNotes, cityDome, gGarden, album, avenNotes].filterMap fun d =>
       (castFacts d).map factsJson).toArray)]
 
-def chainResult (cs : List Cap) : Json :=
+def chainResult (cs : List (Cap String)) : Json :=
   match chainError castCtx cs with
   | none => Json.mkObj [("ok", true)]
   | some e => Json.mkObj [("ok", false), ("error", e.json)]
@@ -222,7 +225,7 @@ def genLines (v : String) : List Line :=
 unapproved, issued by someone else, or held by a group the reader doesn't know. A quarter of the links attenuate: by
 the parent's holder, keeping it, with no approval, now and then handing the cap to another holder or sharing further;
 now and then a chain starts with one. -/
-def genCap (r : Rng) (id : String) (parent : Option Cap) : Cap × Rng := Id.run do
+def genCap (r : Rng) (id : String) (parent : Option (Cap String)) : Cap String × Rng := Id.run do
   let mut r := r
   let (k, r1) := r.below 20; r := r1
   let (other, r2) := pick r (if k < 14 then ["alice", "bob"] else genVaults); r := r2
@@ -233,7 +236,7 @@ def genCap (r : Rng) (id : String) (parent : Option Cap) : Cap × Rng := Id.run 
     | none => other
   let (h, r3) := r.below 20; r := r3
   let (hv, r4) := pick r (if h < 11 then ["alice", "bob"] else genVaults); r := r4
-  let holder : Holder := if h < 14 then .vault hv else if h < 17 then .group gGarden else if h < 19 then .«public»
+  let holder : Holder String := if h < 14 then .vault hv else if h < 17 then .group gGarden else if h < 19 then .«public»
     else .group (docOf "g-unknown")
   let (w, r5) := r.below 2; r := r5
   let (wv, r6) := pick r (issuer :: genVaults); r := r6
@@ -263,11 +266,11 @@ def genCap (r : Rng) (id : String) (parent : Option Cap) : Cap × Rng := Id.run 
   pure ({ id, issuer, holder, parent := if k == 19 then some "cap-z" else parent.map (·.id), form, grant, share,
           signer, approvals, conditions := { expires } }, r)
 
-def genChain (seed : Nat) : List Cap := Id.run do
+def genChain (seed : Nat) : List (Cap String) := Id.run do
   let mut r := Rng.seed seed
   let (n, r1) := r.below 4; r := r1
-  let mut caps : List Cap := []
-  let mut prev : Option Cap := none
+  let mut caps : List (Cap String) := []
+  let mut prev : Option (Cap String) := none
   for i in [0:n + 1] do
     let (c, r2) := genCap r s!"cap-{seed}-{i}" prev
     r := r2

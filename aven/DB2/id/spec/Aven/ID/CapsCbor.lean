@@ -15,14 +15,14 @@ holder:  {"vault": v}   {"group": Doc}   "public"
 ```
 
 Keys sort as the codec sorts them: shorter first, then by their bytes. An op id and a Doc id are byte strings of their
-hash; a bound is null for any value or the values it allows (A32). A line's parameters are a map, so a line whose
+hash, and a vault its 32-byte name (A190, A210); a bound is null for any value or the values it allows (A32). A line's parameters are a map, so a line whose
 parameters aren't sorted, or name one twice, isn't canonical. A cap's id is Core's name of it as a signed thing, the
 BLAKE3 hash of `[label, body]` (`Cap.digest`, A30), which its issuer's owners approve, unless it attenuates. Its form is
 in its body, so a signature over an attenuation is never one over a grant. Its issuing device signs the body under the label `avenID cap 1`
 (`Cap.signing`), so the signature can't be read as anything else's (Core's `signing_separates`).
 
-The cast's caps go by readable names, so here a parent and a role are text; with R5 they become hashes, as every
-Doc id already is. -/
+A cap here is a `Cap Core.Hash`: the cast's caps, written with readable handles, are named first (`Cap.map Named.name`).
+A parent and a role are still text; with R5 they become hashes, as every Doc id already is. -/
 
 namespace Aven.ID
 
@@ -43,8 +43,8 @@ def Line.value (l : Line) : Value :=
   .map [(key "op", .bytes l.op.bytes), (key "doc", l.doc.value),
     (key "params", .map (l.params.map fun (p, b) => (p, Bound.value b)))]
 
-def Holder.value : Holder → Value
-  | .vault v => .map [(key "vault", txt v)]
+def Holder.value : Holder Hash → Value
+  | .vault v => .map [(key "vault", v.value)]
   | .group g => .map [(key "group", .bytes g.hash.bytes)]
   | .«public» => txt "public"
 
@@ -64,31 +64,31 @@ def Conditions.value (c : Conditions) : Value :=
     (key "notBefore", .uint c.notBefore)]
 
 /-- What a cap says, without its signature and approvals. -/
-def Cap.body (c : Cap) : Value :=
+def Cap.body (c : Cap Hash) : Value :=
   .map [(key "form", txt c.form.name), (key "role", optText c.role), (key "grant", .array (c.grant.map Line.value)),
-    (key "share", .uint c.share), (key "holder", c.holder.value), (key "issuer", txt c.issuer),
+    (key "share", .uint c.share), (key "holder", c.holder.value), (key "issuer", c.issuer.value),
     (key "parent", optText c.parent), (key "conditions", c.conditions.value)]
 
 /-- A cap's bytes: its body's one encoding. -/
-def Cap.bytes (c : Cap) : Bytes := encode c.body
+def Cap.bytes (c : Cap Hash) : Bytes := encode c.body
 
 /-- What its issuing device signs it under. -/
 def capLabel : Bytes := key "avenID cap 1"
 
 /-- A cap as Core's signed thing: its label and body, its signatures beside it (A30). -/
-def Cap.signed (c : Cap) (sigs : List Core.Sig := []) : Signed := { label := capLabel, body := c.body, sigs }
+def Cap.signed (c : Cap Hash) (sigs : List Core.Sig := []) : Signed := { label := capLabel, body := c.body, sigs }
 
 /-- What its issuing device signs, and its owners approve: its label and body. -/
-def Cap.signing (c : Cap) : Bytes := (c.signed).signing
+def Cap.signing (c : Cap Hash) : Bytes := (c.signed).signing
 
 /-- A cap's id: Core's name of the signed thing, the hash of `[label, body]`, exactly what its signers sign (A30).
 Signatures never touch it. -/
-def Cap.digest (H : Bytes → Hash) (c : Cap) : Hash := (c.signed).name H
+def Cap.digest (H : Bytes → Hash) (c : Cap Hash) : Hash := (c.signed).name H
 
 theorem capLabel_ok : textOk capLabel = true := by decide +kernel
 
 /-- Two allowed caps with one id say the same thing, under a hash nothing collides under. -/
-theorem Cap.digest_inj {H : Bytes → Hash} (hH : Injective H) {c d : Cap} (hc : Canon c.body = true)
+theorem Cap.digest_inj {H : Bytes → Hash} (hH : Injective H) {c d : Cap Hash} (hc : Canon c.body = true)
     (hd : Canon d.body = true) (h : c.digest H = d.digest H) : c.body = d.body :=
   (Signed.name_inj hH capLabel_ok capLabel_ok hc hd h).2
 
@@ -155,10 +155,10 @@ def Line.ofValue? : Value → Option Line
     some { op := ⟨op⟩, doc, params }
   | _ => none
 
-def Holder.ofValue? : Value → Option Holder
+def Holder.ofValue? : Value → Option (Holder Hash)
   | .text b => if b = recKey "public" then some .«public» else none
   | .map [(k, v)] =>
-    if k = recKey "vault" then (recText? v).map .vault
+    if k = recKey "vault" then (Hash.ofValue? v).map .vault
     else if k = recKey "group" then (recBytes? 32 v).map fun h => .group ⟨⟨h⟩⟩
     else none
   | _ => none
@@ -188,27 +188,29 @@ def CapForm.ofValue? (v : Value) : Option CapForm := do
   if f = "grant" then some .grant else if f = "attenuate" then some .attenuate else none
 
 /-- A cap's body read field by field; `Cap.ofBody?` keeps it only in its one form. -/
-def Cap.parseBody? (v : Value) : Option Cap := do
+def Cap.parseBody? (v : Value) : Option (Cap Hash) := do
   let .map kvs := v | none
   let .array ls ← recField kvs "grant" | none
-  let c : Cap := { id := "", issuer := ← recText? (← recField kvs "issuer"),
-                   holder := ← Holder.ofValue? (← recField kvs "holder"),
-                   parent := ← recOptText? (← recField kvs "parent"),
-                   form := ← CapForm.ofValue? (← recField kvs "form"),
-                   grant := ← ls.mapM Line.ofValue?, role := ← recOptText? (← recField kvs "role"),
-                   share := ← recNat? (← recField kvs "share"),
-                   conditions := ← Conditions.ofValue? (← recField kvs "conditions"), signer := default }
+  let issuer ← Hash.ofValue? (← recField kvs "issuer")
+  let c : Cap Hash :=
+    { id := "", issuer := issuer,
+      holder := ← Holder.ofValue? (← recField kvs "holder"),
+      parent := ← recOptText? (← recField kvs "parent"),
+      form := ← CapForm.ofValue? (← recField kvs "form"),
+      grant := ← ls.mapM Line.ofValue?, role := ← recOptText? (← recField kvs "role"),
+      share := ← recNat? (← recField kvs "share"),
+      conditions := ← Conditions.ofValue? (← recField kvs "conditions"), signer := default }
   some { c with id := (c.digest blake3).text }
 
 /-- A cap read back from its body (`Cap.body`), its id its name (`Cap.digest`). No signer is read from the body: who
 signed it travels beside it, as a Record's signatures, so the signer keeps its default. Only the one form `Cap.body`
 writes reads back. -/
-def Cap.ofBody? (v : Value) : Option Cap := do
+def Cap.ofBody? (v : Value) : Option (Cap Hash) := do
   let c ← Cap.parseBody? v
   if c.body = v then some c else none
 
 /-- What `Cap.ofBody?` reads is what `Cap.body` writes: a cap's body has one form. -/
-theorem Cap.ofBody?_body {v : Value} {c : Cap} (h : Cap.ofBody? v = some c) : c.body = v := by
+theorem Cap.ofBody?_body {v : Value} {c : Cap Hash} (h : Cap.ofBody? v = some c) : c.body = v := by
   simp only [Cap.ofBody?, Option.bind_eq_bind, Option.bind_eq_some_iff] at h
   obtain ⟨_, _, h⟩ := h
   split at h
