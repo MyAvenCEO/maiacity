@@ -8,6 +8,7 @@
 !core
 !db/core
 !db/docs
+!db/engine
 !store
 !id/core
 !peer/native
