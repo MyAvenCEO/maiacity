@@ -26,9 +26,18 @@
      "to": "agent:b3:f2p…#your-phone",
      "on": "human:b3:q4x7…#you",
      "operations": [
-      "act",
-      "own",
-      "govern"
+      {
+       "operation": "act",
+       "at": ""
+      },
+      {
+       "operation": "own",
+       "at": ""
+      },
+      {
+       "operation": "govern",
+       "at": ""
+      }
      ]
     },
     "sig": {
@@ -49,6 +58,7 @@
     "operations": [
      {
       "operation": "act",
+      "at": "",
       "where": {
        "data": "data:ed25519:4Hb…#health"
       }
@@ -112,9 +122,18 @@
     "to": "role:b3:h8m…#home/members",
     "on": "coop:b3:c7n2…#home",
     "operations": [
-     "act",
-     "own",
-     "govern"
+     {
+      "operation": "act",
+      "at": ""
+     },
+     {
+      "operation": "own",
+      "at": ""
+     },
+     {
+      "operation": "govern",
+      "at": ""
+     }
     ],
     "proof": [
      "coop:b3:c7n2…#home",

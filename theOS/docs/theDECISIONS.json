@@ -98,7 +98,7 @@
    ],
    "slides": [
     "data-3",
-    "policies-8"
+    "policies-9"
    ],
    "date": "2026-10-31"
   },
@@ -153,7 +153,7 @@
    "id": "D8",
    "title": "A policy: role, data, operations, conditions, expiry, proof",
    "status": "decided",
-   "decision": "A policy is a signed certificate with: the role it is given to; the data it applies to; a list of operations (create, read, update, delete, share, want, keep, sync), each optionally narrowed by at (a path), where (matching entries) or a limit; an expiry; the signature of the issuer's agent (the owner's, or a sharer's under D47); and the proof chain back to the seal. Identity policies use the same shape with act, own and govern (D48). Writing policies is not an operation: it belongs to the owner (D30).",
+   "decision": "A policy is a signed certificate with: the role it is given to; the data it applies to; a list of operations (create, read, update, delete, want, keep, sync), each optionally narrowed by at (a path), where (matching entries) or a limit; an expiry; the signature of the owner's agent; and the proof chain back to the seal. Identity policies use the same shape with act, own and govern (D48). Writing policies is not an operation: it belongs to the owner (D30).",
    "why": "One small vocabulary for content, carrying and the policies themselves. Keyhive's Relay, Read, Edit and Admin map onto it; ours is finer.",
    "sources": [
     {
@@ -168,14 +168,15 @@
    "slides": [
     "policies-4",
     "policies-5",
-    "policies-6"
+    "policies-6",
+    "policies-7"
    ],
    "date": "2026-10-31"
   },
   {
    "id": "D9",
    "title": "Sharing only narrows",
-   "status": "decided",
+   "status": "superseded",
    "decision": "Whoever may share hands on a policy that is the same or smaller: fewer operations, shorter expiry, more conditions. Never more.",
    "why": "Attenuation keeps delegation safe without asking anyone. Meadowcap and Biscuit both require each step to sit inside the previous one.",
    "sources": [
@@ -192,16 +193,15 @@
      "url": "https://codeberg.org/worm-blossom/willow_rs"
     }
    ],
-   "slides": [
-    "policies-7"
-   ],
-   "date": "2026-10-31"
+   "slides": [],
+   "date": "2026-10-31",
+   "superseded_by": "D54"
   },
   {
    "id": "D10",
    "title": "Read is encryption, everything else is verification",
    "status": "decided",
-   "decision": "Reading is enforced by keys. Every other operation is enforced by every peer checking each signed change against the policies in the history.",
+   "decision": "Opening a piece of data at all is enforced by keys; read's conditions by the reader's own engine (D55). Every other operation is enforced by every peer checking each signed change against the policies in the history.",
    "why": "Encryption can only be all or nothing per key; signature checks can be as fine as needed.",
    "sources": [
     {
@@ -222,16 +222,13 @@
   {
    "id": "D11",
    "title": "Reading is per piece of data; changes can be as fine as needed",
-   "status": "decided",
+   "status": "superseded",
    "decision": "Read is granted per piece of data. Anything to be shared on its own is its own data. Create, update and delete can be narrowed to paths and matching entries.",
    "why": "A reader holds the plaintext, so finer read limits would be promises, not protection.",
    "sources": [],
-   "slides": [
-    "ops-9",
-    "time-5",
-    "policies-3"
-   ],
-   "date": "2026-10-31"
+   "slides": [],
+   "date": "2026-10-31",
+   "superseded_by": "D55"
   },
   {
    "id": "D12",
@@ -250,7 +247,7 @@
    "id": "D13",
    "title": "Endings: revoke and lapse",
    "status": "decided",
-   "decision": "A revoke (by the owner, or by the issuer of a shared policy) and a lapse (by any peer that can read the policies, once the date has passed) are the same kind of event in the history. An ending wins over every change that never saw it, turns the data key if the ended policy gave read, and is the delete trigger on honest devices.",
+   "decision": "A revoke (by the owner) and a lapse (by any peer that can read the policies, once the date has passed) are the same kind of event in the history. An ending wins over every change that never saw it, turns the data key if the ended policy gave read, and is the delete trigger on honest devices.",
    "why": "Validity follows from the history alone, so all copies agree. No clock is trusted.",
    "rejected": "Checking expiry against each device's own clock (copies would disagree).",
    "sources": [
@@ -494,7 +491,7 @@
     "ops-1",
     "ops-8",
     "ops-2",
-    "ops-10"
+    "sync-8"
    ],
    "date": "2026-10-31"
   },
@@ -511,8 +508,8 @@
     }
    ],
    "slides": [
-    "ops-10",
-    "ops-11"
+    "sync-8",
+    "sync-9"
    ],
    "date": "2026-10-31"
   },
@@ -637,7 +634,7 @@
    "id": "D30",
    "title": "Only the owner changes policies",
    "status": "decided",
-   "decision": "The owner writes the first policies on its data; ownership acts (hand over, retain, erase, open the archive) stay with the owner alone. A role may write policies for other roles only through share, within the limits of D47.",
+   "decision": "The owner writes and ends all policies on its data; ownership acts (retain, erase, open the archive) stay with the owner alone. Nobody else writes policies, and ownership is never handed over (D54).",
    "why": "Identities work like Gnosis Safes: agents of its members sign under the identity's own policies (one signature for now, D49). So one owner covers several managers, and there is no removed admin who could backdate a revoke.",
    "supersedes": "D15; removes admin from the role do-list in D8",
    "sources": [
@@ -650,6 +647,7 @@
     "policies-1",
     "policies-5",
     "policies-8",
+    "policies-9",
     "time-4",
     "identity-7"
    ],
@@ -967,7 +965,7 @@
   {
    "id": "D47",
    "title": "Policy-writing is delegated through share, narrowing only",
-   "status": "decided",
+   "status": "superseded",
    "date": "2026-10-31",
    "decision": "A role holding share may write policies for other roles, but only within its own operations, conditions and expiry; it may end only policies it issued itself; when its own policy ends, every policy issued under it ends too (cascade); writes by a removed delegate that never saw the ending are dropped. The owner's policies are the root and never fall this way.",
    "why": "Gives teams day-to-day delegation without the problems of admin roles: no granting more than you hold, no policy wars between delegates, no backdated revokes.",
@@ -981,10 +979,8 @@
      "url": "https://github.com/inkandswitch/keyhive/blob/main/design/convergent_capabilities.md"
     }
    ],
-   "slides": [
-    "policies-7",
-    "policies-5"
-   ]
+   "slides": [],
+   "superseded_by": "D54"
   },
   {
    "id": "D48",
@@ -1080,7 +1076,7 @@
    "id": "D53",
    "title": "Engine operations are specific and typed",
    "status": "decided",
-   "decision": "Policies name broad operations (read, create, update, delete, share, want, keep, sync). Engine operations are specific and each belongs to one: read → get, find, walk, search, near, count; create → create, insert; update → set, move, splice; delete → remove, delete; chain runs each step under that step's own operation. Every operation names data, schema version and path; the engine validates its input against the plugin's shape and the schema before running it.",
+   "decision": "Policies name broad operations (read, create, update, delete, want, keep, sync). Engine operations are specific and each belongs to one: read → get, find, walk, search, near, count; create → create, insert; update → set, move, splice; delete → remove, delete; chain runs each step under that step's own operation. Every operation names data, schema version and path; the engine validates its input against the plugin's shape and the schema before running it.",
    "why": "Precise, checkable operations, with policies that stay short and readable.",
    "sources": [],
    "slides": [
@@ -1088,6 +1084,78 @@
     "ops-9"
    ],
    "date": "2026-10-31"
+  },
+  {
+   "id": "D54",
+   "title": "Only the owner writes policies: no passing on, no hand-over yet",
+   "status": "decided",
+   "date": "2026-10-31",
+   "decision": "Only the owner writes and ends policies on its data, through its own agents. No role can pass a policy on (there is no share operation), and ownership is never handed over: whoever needs to work on the data gets a policy. Delegated, narrowing-only policy-writing may come back later as its own decision.",
+   "why": "One author for a piece of data's policies keeps every check simple: no cascades, no revokes by other issuers, no backdating by a removed delegate. Policies already cover everything a hand-over would.",
+   "rejected": "Share with attenuation and cascading ends (D9, D47), for now.",
+   "supersedes": [
+    "D9",
+    "D47"
+   ],
+   "sources": [
+    {
+     "label": "UCAN specification (delegation and attenuation)",
+     "url": "https://github.com/ucan-wg/spec"
+    },
+    {
+     "label": "Keyhive design: convergent capabilities",
+     "url": "https://github.com/inkandswitch/keyhive/blob/main/design/convergent_capabilities.md"
+    }
+   ],
+   "slides": [
+    "policies-1",
+    "policies-5",
+    "policies-8",
+    "policies-9",
+    "end-4"
+   ]
+  },
+  {
+   "id": "D55",
+   "title": "Read is an operation like any other",
+   "status": "decided",
+   "date": "2026-10-31",
+   "decision": "Read carries the same conditions as every other operation (at, where, limit) and covers specific engine operations (get, find, walk, search, near, count). The data key opens a whole piece of data, so read's conditions are kept by the reader's own engine on honest devices; anything that must stay unseen is its own data, with its own key. Changes are checked by every peer.",
+   "why": "One query logic for every operation: a policy always says what, where and how much. Keys still mark the hard boundary of what can be opened at all.",
+   "supersedes": [
+    "D11"
+   ],
+   "sources": [],
+   "slides": [
+    "policies-3",
+    "policies-7",
+    "ops-9",
+    "time-5"
+   ]
+  },
+  {
+   "id": "D56",
+   "title": "One operation shape everywhere",
+   "status": "decided",
+   "date": "2026-10-31",
+   "decision": "Policies and the engine write an operation the same way: {\"operation\", \"at\", \"where\", \"limit\"}, defined once as a schema. In a policy the operation is broad (read, create …); in the engine (theos/operation@1) it is specific (find, set …) with its own inputs. at is a JSON Pointer, \"\" for the whole data or identity; where and limit only narrow. An engine operation is allowed when a policy entry covers its broad operation, its path lies under at, and where and limit hold. Never a bare name.",
+   "why": "One source of truth for what an operation is: every example, record and check reads the same fields, and read answers “read what?” like everything else.",
+   "sources": [
+    {
+     "label": "RFC 6901: JSON Pointer",
+     "url": "https://www.rfc-editor.org/rfc/rfc6901"
+    },
+    {
+     "label": "Meadowcap (areas: path prefixes that only narrow)",
+     "url": "https://willowprotocol.org/specs/meadowcap/"
+    }
+   ],
+   "slides": [
+    "policies-6",
+    "policies-7",
+    "ops-1",
+    "ops-9"
+   ]
   }
  ]
 }

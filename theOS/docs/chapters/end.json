@@ -3,14 +3,20 @@
  "slides": [
   {
    "title": "Every policy expires.",
-   "text": "No policy lasts forever by accident. Each one has an expiry, 30 days unless you choose otherwise. A forgotten share closes by itself.",
+   "text": "No policy lasts forever by accident. Each one has an expiry, 30 days unless you choose otherwise. A forgotten policy closes by itself.",
    "code": {
     "type": "theos/policy@1",
     "to": "role:b3:r4p…#plumber",
     "on": "data:ed25519:3Tk…#fix-tap",
     "operations": [
-     "read",
-     "update"
+     {
+      "operation": "read",
+      "at": ""
+     },
+     {
+      "operation": "update",
+      "at": ""
+     }
     ],
     "expires": "2026-11-07T00:00:00Z",
     "sig": {
@@ -38,12 +44,11 @@
   },
   {
    "title": "Ending a policy early.",
-   "text": "You don't have to wait for the expiry. The owner, or whoever issued a shared policy, writes a {revoke}: a signed event in the history that says “this policy is over”. It travels like any other change.",
+   "text": "You don't have to wait for the expiry. The owner writes a {revoke}: a signed event in the history that says “this policy is over”. It travels like any other change.",
    "code": {
     "type": "theos/ending@1",
     "kind": "revoke",
     "ends": "policy:b3:p3q…#plumber",
-    "issuer": "human:b3:q4x7…#you",
     "sig": {
      "by": "agent:b3:f2p…#your-phone",
      "key": "ed25519:Fp2…",
@@ -119,7 +124,7 @@
   },
   {
    "title": "Ended means forgotten.",
-   "text": "The moment a device meets any peer that holds an ending, either a revoke by the owner or a policy's issuer, or a lapse written once a policy's date has passed, it applies it like a {delete trigger}: it wipes the keys and the plaintext copies of everything it may no longer read. It happens offline-first and without a server, on every honest device, the plumber's included.",
+   "text": "The moment a device meets any peer that holds an ending, either a revoke by the owner or a lapse written once a policy's date has passed, it applies it like a {delete trigger}: it wipes the keys and the plaintext copies of everything it may no longer read. It happens offline-first and without a server, on every honest device, the plumber's included.",
    "code": {
     "on": "ending:b3:e5d…#plumber",
     "data": "data:ed25519:3Tk…#fix-tap",
@@ -144,7 +149,7 @@
    "title": "Endings, in short.",
    "list": [
     "Every policy expires and renews itself while unchanged.",
-    "The owner, or a shared policy's issuer, can revoke; any peer that can read the policies may write a lapse once the date has passed.",
+    "The owner can revoke; any peer that can read the policies may write a lapse once the date has passed.",
     "An ending wins over changes that never saw it.",
     "Honest devices forget what an ended policy gave them."
    ],

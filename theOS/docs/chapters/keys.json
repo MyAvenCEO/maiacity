@@ -71,8 +71,14 @@
      "to": "role:b3:r4p…#plumber",
      "on": "data:ed25519:3Tk…#fix-tap",
      "operations": [
-      "read",
-      "update"
+      {
+       "operation": "read",
+       "at": ""
+      },
+      {
+       "operation": "update",
+       "at": ""
+      }
      ]
     },
     "envelope": {

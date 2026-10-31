@@ -11,7 +11,10 @@
     "policy": {
      "to": "human:b3:q4x7…#you",
      "operations": [
-      "own"
+      {
+       "operation": "own",
+       "at": ""
+      }
      ],
      "expires": null
     },

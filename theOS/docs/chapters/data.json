@@ -17,7 +17,10 @@
     "policy": {
      "to": "human:b3:q4x7…#you",
      "operations": [
-      "own"
+      {
+       "operation": "own",
+       "at": ""
+      }
      ],
      "expires": null
     },
@@ -36,7 +39,7 @@
   {
    "title": "Its first policy makes you the owner.",
    "text": "The seal's one signature names a single owner: you. The owner may do everything, for good, including writing the policies for everyone else. There is always exactly one owner: one identity, a person or a coop, never a list of people.",
-   "deep": "The owner is an identity ID inside the first certificate. Its authority never expires and only the owner can sign a hand-over. Ownership is never a set, so there is no removing someone from it. (D5, D30)"
+   "deep": "The owner is an identity ID inside the first certificate. Its authority never expires and never moves: there is no hand-over. Ownership is never a set, so there is no removing someone from it. (D5, D30)"
   },
   {
    "title": "Data comes in two kinds.",

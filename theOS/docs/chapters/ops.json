@@ -3,15 +3,15 @@
  "slides": [
   {
    "title": "Everything you do is an operation.",
-   "text": "Reading a list, ticking an item, searching your notes, syncing with a friend: each is an operation, a small piece of JSON that says what to do. One engine runs them all.",
+   "text": "Reading a list, ticking an item, searching your notes: each is an {operation}, a small piece of JSON that says what to do, on which data, at which path. One engine runs them all.",
    "code": {
     "type": "theos/operation@1",
     "operation": "get",
     "on": "data:ed25519:7Hq…#house-list",
-    "schema": "data:ed25519:Sc4…#todo-list@2",
-    "at": "/"
+    "schema": "data:ed25519:Sc4…@b3:1f0…#todo-list",
+    "at": ""
    },
-   "deep": "An operation is JSON: {operation, on, schema, at, …arguments}. One engine parses it, checks the policy, runs it locally and returns a result or a set of CRDT ops."
+   "deep": "An operation is JSON: {operation, on, schema, at, …arguments}, the record theos/operation@1. One engine parses it, validates it against the schema, runs it locally and returns a result or a set of CRDT ops."
   },
   {
    "title": "A simple query.",
@@ -20,7 +20,7 @@
     "type": "theos/operation@1",
     "operation": "find",
     "on": "data:ed25519:7Hq…#house-list",
-    "schema": "data:ed25519:Sc4…#todo-list@2",
+    "schema": "data:ed25519:Sc4…@b3:1f0…#todo-list",
     "at": "/items",
     "where": {
      "done": false
@@ -32,12 +32,12 @@
   },
   {
    "title": "Changes are operations too.",
-   "text": "Ticking an item is a {set} at a path. The engine checks your policy, turns it into CRDT ops, signs them and hands them to sync. An operation is what you mean; CRDT ops are what gets stored.",
+   "text": "Ticking an item is a {set} at a path. The engine checks it against the schema, turns it into CRDT ops and signs them. An operation is what you mean; CRDT ops are what gets stored.",
    "code": {
     "type": "theos/operation@1",
     "operation": "set",
     "on": "data:ed25519:7Hq…#house-list",
-    "schema": "data:ed25519:Sc4…#todo-list@2",
+    "schema": "data:ed25519:Sc4…@b3:1f0…#todo-list",
     "at": "/items/0/done",
     "value": true
    },
@@ -48,11 +48,11 @@
     "sign",
     "sync"
    ],
-   "deep": "set becomes one or more CRDT ops on the Doc, grouped into a change, signed by the agent's signer, sealed into a chunk and announced."
+   "deep": "set becomes one or more CRDT ops on the Doc, grouped into a change and signed by the agent's signer."
   },
   {
    "title": "Every operation names its schema.",
-   "text": "An operation says which data, which version of its schema and which path. The engine checks the input against the schema before it runs: a set at /items/0/done must be true or false. A wrong operation fails on your own device, long before any peer would drop it.",
+   "text": "An operation says which data, which version of its schema and which path. The engine checks the input against the schema before it runs: a set at /items/0/done must be true or false. A wrong operation fails on your own device, before anything is stored.",
    "code": {
     "type": "theos/operation@1",
     "operation": "set",
@@ -66,7 +66,7 @@
   },
   {
    "title": "Walking a graph.",
-   "text": "Data links to data: a list to its items, an item to a photo, a person to their friends. A {walk} follows links hop by hop, and stops wherever your policies stop.",
+   "text": "Data links to data: a list to its items, an item to a photo, a person to their friends. A {walk} follows links hop by hop, and stops wherever you can't read further.",
    "code": {
     "type": "theos/operation@1",
     "operation": "walk",
@@ -82,7 +82,7 @@
      "tag": "garden"
     }
    },
-   "deep": "walk follows link fields across Docs to a given depth. Each hop needs read on the next piece of data; without it, the walk stops there."
+   "deep": "walk follows link fields across Docs to a given depth. Each hop needs the next piece of data to be readable on this device; without it, the walk stops there."
   },
   {
    "title": "Searching by words or by meaning.",
@@ -99,7 +99,7 @@
     "text": "leaking tap kitchen",
     "limit": 5
    },
-   "deep": "search ranks with BM25 over a local inverted index; near compares embeddings with an approximate nearest-neighbour index. Both are read operations."
+   "deep": "search ranks with BM25 over a local inverted index; near compares embeddings with an approximate nearest-neighbour index. Both only look at data."
   },
   {
    "title": "Operations chain together.",
@@ -128,33 +128,30 @@
      }
     ]
    },
-   "deep": "chain pipes the result set of each step into the next; later steps keep the data and schema of the results they receive. Each step is checked against its own required policy."
+   "deep": "chain pipes the result set of each step into the next; later steps keep the data and schema of the results they receive. Each step is validated on its own."
   },
   {
    "title": "New kinds of operations plug in.",
-   "text": "find, walk, search and near are {plugins}. Each one declares its name, the shape of its JSON, and what a policy must allow for it to run. A new plugin, say for maps or for time series, slots in the same way.",
+   "text": "find, walk, search and near are {plugins}. Each one declares its name, the shape of its JSON, and which broad kind of operation it is. A new plugin, say for maps or for time series, slots in the same way.",
    "code": {
     "plugin": "search",
     "spec": "b3:6dq…",
+    "kind": "read",
     "input": {
      "text": "string",
      "at": "list of paths",
      "limit": "number"
     },
-    "needs": [
-     "read"
-    ],
     "runs": "local"
    },
-   "deep": "One plugin registry for operations (find, walk, near, act …) and for policy conditions (at, where, limit …, and later signature counts). Each plugin is named by the hash of its specification, declares its JSON shape, what a policy must allow, and, for conditions, whether it applies to identities or to data. Unknown plugins fail closed."
+   "deep": "One plugin registry for every operation (find, walk, near …); the Policies chapter adds conditions to the same registry. Each plugin is named by the hash of its specification and declares its JSON shape and its broad kind. Unknown plugins fail closed."
   },
   {
-   "title": "From policies to operations.",
-   "text": "A policy names broad operations: read, create, update, delete. The engine's operations are more specific, and each belongs to one of them. Before running one, the engine checks that a policy allows its broad operation at that path.",
-   "deep": "Reading operations need read on the data and nothing else, because a reader holds the plaintext. Change operations are checked again by every peer, down to a path or matching entry.",
+   "title": "Four broad kinds.",
+   "text": "Every engine operation belongs to one of four broad kinds: it reads, creates, updates or deletes. The next chapter, Policies, speaks only in these four.",
    "table": {
     "head": [
-     "Policy allows",
+     "Broad kind",
      "Engine operations"
     ],
     "rows": [
@@ -175,67 +172,22 @@
       "remove (one entry), delete (whole data)"
      ],
      [
-      "share, want, keep, sync",
-      "the same names"
-     ],
-     [
       "chain",
       "each step's own"
      ]
     ]
-   }
-  },
-  {
-   "title": "Peers sync. They never ask.",
-   "text": "An operation runs only on your own device, over data you can read. No peer ever asks another peer a question about its data. Peers only carry what their policies allow, sealed. There's no client and no server, only peers. An always-on machine is just one more peer.",
-   "flow": [
-    "your device",
-    "your data",
-    "your operation",
-    "your answer"
-   ],
-   "deep": "There is no query protocol between peers, only chunk sync. That removes trust in a remote answerer and inference attacks by repeated questions."
-  },
-  {
-   "title": "Sharing an answer is sharing data.",
-   "text": "The street wants to know how many tasks are open in your home. It can't ask. Instead, your device counts and writes the number into a small piece of data of your home's, with a policy that lets the street read it. The street sees the number and nothing else.",
-   "code": {
-    "on": "data:ed25519:8Rs…#home-stats",
-    "schema": "data:ed25519:St2…@b3:5e8…#count",
-    "owner": "coop:b3:c7n2…#home",
-    "content": {
-     "open_tasks": 4
-    },
-    "policy": {
-     "type": "theos/policy@1",
-     "to": "role:b3:s9m…#street/members",
-     "on": "data:ed25519:8Rs…#home-stats",
-     "operations": [
-      "read"
-     ],
-     "proof": [
-      "policy:b3:z2h…#first",
-      "role:b3:h8m…#home/members",
-      "policy:b3:a0p…#your-phone"
-     ],
-     "sig": {
-      "by": "agent:b3:f2p…#your-phone",
-      "key": "ed25519:Fp2…",
-      "value": "…"
-     }
-    }
    },
-   "deep": "The answer is written as new data, computed and signed by your own device, with its own policy for the asker. That policy is revocable and expires like any other."
+   "deep": "The broad kind is what a policy names; the engine resolves each specific operation to it (D53). Both write an operation with the same fields (D56)."
   },
   {
    "title": "The engine, in short.",
    "list": [
-    "Every read, change, search and sync is a JSON operation on a schema path.",
-    "Engine operations are specific; each belongs to one broad operation a policy allows.",
-    "Operations run only on your device, over what you can read. Peers sync; they never ask.",
+    "Every read, change and search is a JSON operation on a schema path.",
+    "Engine operations are specific; each belongs to one broad kind: read, create, update or delete.",
+    "Operations run only on your device, over what you can read.",
     "New kinds of operations plug in, each with its own input shape."
    ],
-   "deep": "JSON operations, local execution, plugins, policies per operation, and peer-to-peer only. Your data, your device, your answers."
+   "deep": "JSON operations, local execution, plugins, one broad kind per operation. Your data, your device, your answers."
   }
  ]
 }

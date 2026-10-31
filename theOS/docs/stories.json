@@ -21,6 +21,11 @@
    "file": "chapters/schema.json"
   },
   {
+   "id": "ops",
+   "title": "Operations",
+   "file": "chapters/ops.json"
+  },
+  {
    "id": "policies",
    "title": "Policies",
    "file": "chapters/policies.json"
@@ -59,11 +64,6 @@
    "id": "carry",
    "title": "Carriers",
    "file": "chapters/carry.json"
-  },
-  {
-   "id": "ops",
-   "title": "Operations",
-   "file": "chapters/ops.json"
   },
   {
    "id": "decisions",

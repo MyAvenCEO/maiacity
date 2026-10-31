@@ -41,6 +41,7 @@
     "operations": [
      {
       "operation": "act",
+      "at": "",
       "where": {
        "data": "data:ed25519:7Hq…#house-list",
        "operations": [
@@ -69,8 +70,14 @@
     "to": "role:b3:e9s…#street-carrier",
     "on": "data:ed25519:7Hq…#house-list",
     "operations": [
-     "want",
-     "sync"
+     {
+      "operation": "want",
+      "at": ""
+     },
+     {
+      "operation": "sync",
+      "at": ""
+     }
     ],
     "expires": "2026-12-01T00:00:00Z",
     "proof": [
@@ -106,37 +113,36 @@
   },
   {
    "title": "All the policies on one list.",
-   "text": "One piece of data, one owner, four roles and one agent, each with exactly what it needs.",
-   "code": {
-    "on": "data:ed25519:7Hq…#house-list",
-    "schema": "data:ed25519:Sc4…@b3:1f0…#todo-list",
-    "owner": "human:b3:q4x7…#you",
-    "policies": {
-     "role:b3:k1m…#household": [
-      "create",
-      "read",
-      "update"
+   "text": "One piece of data, one owner, four roles and one agent, each with exactly what it needs. Every line is a policy the owner wrote.",
+   "deep": "One owner, four roles and one agent: readers and writers (household), children who add and tick (kids), a reader (grandma), a forwarding carrier (street-carrier), and your backup agent, a durable carrier.",
+   "table": {
+    "head": [
+     "Who",
+     "Operations"
+    ],
+    "rows": [
+     [
+      "household (role)",
+      "create, read, update at \"\""
      ],
-     "role:b3:d5k…#kids": [
-      "create",
-      "update"
+     [
+      "kids (role)",
+      "read at /items; create at /items, 20 times; update at /items/*/done, own entries"
      ],
-     "role:b3:g6m…#grandma": [
-      "read (via Mia)"
+     [
+      "grandma (role)",
+      "read at \"\""
      ],
-     "role:b3:e9s…#street-carrier": [
-      "want",
-      "sync"
+     [
+      "street-carrier (role)",
+      "want, sync at \"\""
+     ],
+     [
+      "backup (your agent)",
+      "want, keep at \"\""
      ]
-    },
-    "agents": {
-     "agent:b3:k8b…#backup": [
-      "want",
-      "keep"
-     ]
-    }
-   },
-   "deep": "One owner, four roles and one agent: readers and writers (household), children who add and tick (kids), a reader Mia shared with (grandma), a forwarding carrier (street-carrier), and your backup agent, a durable carrier."
+    ]
+   }
   },
   {
    "title": "Alice and Bob, never online together.",

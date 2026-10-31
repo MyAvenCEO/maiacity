@@ -140,11 +140,57 @@
    "deep": "Gossip topic = data ID. Announcements carry only new chunk hashes, so carriers learn no author or content."
   },
   {
+   "title": "Peers sync. They never ask.",
+   "text": "An operation runs only on your own device, over data you can read. No peer ever asks another peer a question about its data. Peers only carry what their policies allow, sealed. There's no client and no server, only peers. An always-on machine is just one more peer.",
+   "flow": [
+    "your device",
+    "your data",
+    "your operation",
+    "your answer"
+   ],
+   "deep": "There is no query protocol between peers, only chunk sync. That removes trust in a remote answerer and inference attacks by repeated questions."
+  },
+  {
+   "title": "Sharing an answer is sharing data.",
+   "text": "The street wants to know how many tasks are open in your home. It can't ask. Instead, your device counts and writes the number into a small piece of data of your home's, with a policy that lets the street read it. The street sees the number and nothing else.",
+   "code": {
+    "on": "data:ed25519:8Rs…#home-stats",
+    "schema": "data:ed25519:St2…@b3:5e8…#count",
+    "owner": "coop:b3:c7n2…#home",
+    "content": {
+     "open_tasks": 4
+    },
+    "policy": {
+     "type": "theos/policy@1",
+     "to": "role:b3:s9m…#street/members",
+     "on": "data:ed25519:8Rs…#home-stats",
+     "operations": [
+      {
+       "operation": "read",
+       "at": ""
+      }
+     ],
+     "proof": [
+      "policy:b3:z2h…#first",
+      "role:b3:h8m…#home/members",
+      "policy:b3:a0p…#your-phone"
+     ],
+     "sig": {
+      "by": "agent:b3:f2p…#your-phone",
+      "key": "ed25519:Fp2…",
+      "value": "…"
+     }
+    }
+   },
+   "deep": "The answer is written as new data, computed and signed by your own device, with its own policy for the asker. That policy is revocable and expires like any other."
+  },
+  {
    "title": "Sync, in short.",
    "list": [
     "Changes travel as sealed chunks that settle in layers.",
     "Fingerprints find what's missing inside one piece of data; summaries across many.",
-    "Values stream in checked ranges; gossip spreads the news."
+    "Values stream in checked ranges; gossip spreads the news.",
+    "Peers never ask each other questions; an answer to share becomes its own data."
    ],
    "deep": "Sedimentree, keyed fingerprints and RIBLT: costs grow with the difference, not the total."
   }

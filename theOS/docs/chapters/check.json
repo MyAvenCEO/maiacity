@@ -43,9 +43,18 @@
     "to": "role:b3:k1m…#household",
     "on": "data:ed25519:7Hq…#house-list",
     "operations": [
-     "create",
-     "read",
-     "update"
+     {
+      "operation": "create",
+      "at": ""
+     },
+     {
+      "operation": "read",
+      "at": ""
+     },
+     {
+      "operation": "update",
+      "at": ""
+     }
     ],
     "expires": "2026-12-01T00:00:00Z",
     "proof": [

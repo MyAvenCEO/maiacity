@@ -87,7 +87,7 @@
      "value": "…"
     }
    },
-   "deep": "Retain is an owner-signed event, extend-only; honest devices refuse cuts and erasures before the date (erring toward keeping). The retention role holds want and keep, and optionally a share of the archive key. Stored as canonical CBOR; exported as JSON and PDF/A; resealed periodically under current algorithms."
+   "deep": "Retain is an owner-signed event, extend-only; honest devices refuse cuts and erasures before the date (erring toward keeping). The retention role holds want and keep, and optionally a part of the archive key. Stored as canonical CBOR; exported as JSON and PDF/A; resealed periodically under current algorithms."
   },
   {
    "title": "What no cryptography can do, and why that's fine.",
@@ -95,7 +95,7 @@
    "list": [
     "Nothing new: rotation keeps the future out.",
     "Nothing kept, on honest devices: endings wipe what they gave (Endings chapter).",
-    "Read is per piece of data, so what you share alone is its own data."
+    "Read is per piece of data, so what one role alone may open is its own data."
    ],
    "deep": "The analogue hole is real for every system: whatever a reader saw can be copied. Read granularity equals key granularity, so a part shared on its own must be its own data."
   },
