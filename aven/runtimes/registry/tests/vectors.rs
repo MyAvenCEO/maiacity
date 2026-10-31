@@ -3,8 +3,8 @@
 //! `table.json`, entry by entry and signature by signature.
 
 use aven_runtimes_registry::{
-    Claim, Decision, Element, FileType, Mode, Output, REGISTRY, SIGNATURES, Serve, Stage, decide_file, headers,
-    of_mime,
+    Claim, Decision, Element, FileType, Mode, Output, REGISTRY, SIGNATURES, Serve, Stage,
+    decide_file, headers, of_mime,
 };
 use serde_json::{Value, json};
 
