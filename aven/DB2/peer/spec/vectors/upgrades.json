@@ -4,6 +4,8 @@
 {"expected":{"answer":{"frame":"update","wire":3},"follows":true},"input":{"mine":3,"theirs":2},"name":"an older peer: refused, and it follows"},
 {"expected":{"answer":{"frame":"update","wire":2},"follows":false},"input":{"mine":2,"theirs":3},"name":"a newer peer: refused, and it waits for this one"},
 {"expected":{"answer":{"frame":"update","wire":2},"follows":false},"input":{"mine":2,"theirs":9},"name":"far apart: refused"},
+{"expected":{"answer":{"frame":"update","wire":3},"follows":true},"input":{"mine":3,"theirs":2},"name":"wire 3 meets wire 2: refused with update, and the 2 follows"},
+{"expected":{"answer":{"frame":"update","wire":2},"follows":false},"input":{"mine":2,"theirs":3},"name":"wire 2 meets wire 3: refused with update, and the 2 follows"},
 {"expected":{"topic":"avenDB chat 1\nwire 3\nnetwork aven"},"input":{"network":"aven","wire":3},"name":"the topic of aven on wire 3"},
 {"expected":{"topic":"avenDB chat 1\nwire 3\nnetwork maia.city"},"input":{"network":"maia.city","wire":3},"name":"the topic of maia.city on wire 3"},
 {"expected":{"topic":"avenDB chat 1\nwire 3\nnetwork aven"},"input":{"network":"aven","wire":3},"name":"the topic of aven on wire 3"}

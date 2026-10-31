@@ -259,8 +259,10 @@ def Frame.json : Frame → Json
   | .keepArrived d es more => Json.mkObj [("frame", "keep_arrived"), ("doc", hx d),
       ("entries", Json.arr (es.map fun (n, h) => Json.mkObj [("n", toJson n), ("hash", hx h)]).toArray),
       ("more", toJson more)]
-  | .keepPut d h a t b cs => Json.mkObj [("frame", "keep_put"), ("doc", hx d), ("hash", hx h), ("at", toJson a),
-      ("total", toJson t), ("bytes", hx b), ("covers", toJson (cs.map Aven.Core.hex))]
+  | .keepPut d h t b cs => Json.mkObj [("frame", "keep_put"), ("doc", hx d), ("hash", hx h), ("total", toJson t),
+      ("bytes", hx b), ("covers", toJson (cs.map Aven.Core.hex))]
+  | .keepPart d h a t b => Json.mkObj [("frame", "keep_part"), ("doc", hx d), ("hash", hx h), ("at", toJson a),
+      ("total", toJson t), ("bytes", hx b)]
   | .keepEnd d => Json.mkObj [("frame", "keep_end"), ("doc", hx d)]
   | .keepTook d es => Json.mkObj [("frame", "keep_took"), ("doc", hx d),
       ("numbers", Json.arr (es.map fun (n, h) => Json.mkObj [("n", toJson n), ("hash", hx h)]).toArray)]
@@ -303,6 +305,14 @@ def frames : List Json :=
    one "a key of the wrong kind" [hello ++ framed (obj [("n", txt "1"), ("frame", txt "beat")])],
    one "a line as text, not bytes" [hello ++ framed (obj [("frame", txt "lines"), ("lines", .array [txt "x"])])],
    one "a frame no peer sends" [hello ++ framed (obj [("frame", txt "shout")])],
+   one "covers in a later part of an upload" [hello ++ framed (obj [("at", .uint 1), ("doc", .bytes h32),
+     ("hash", .bytes h32), ("bytes", .bytes []), ("frame", txt "keep_part"), ("total", .uint 2),
+     ("covers", .array [])])],
+   one "an offset in an upload's first part" [hello ++ framed (obj [("at", .uint 0), ("doc", .bytes h32),
+     ("hash", .bytes h32), ("bytes", .bytes []), ("frame", txt "keep_put"), ("total", .uint 2),
+     ("covers", .array [])])],
+   one "a hash as text, not bytes" [hello ++ framed (obj [("doc", .bytes h32), ("frame", txt "fetch"),
+     ("hashes", .array [txt "ab"])])],
    one "a number longer than it needs" [hello ++ Aven.Core.be 4 4 ++ [0xA1, 0x61, 0x6E, 0x18]],
    one "a length of none" [hello ++ [0, 0, 0, 0]],
    one "a length over the limit" [hello ++ Aven.Core.be 4 (maxFrame + 1)],

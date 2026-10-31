@@ -121,12 +121,23 @@ fn frame_json(f: &Frame) -> Value {
         Frame::KeepPut {
             doc,
             hash,
-            at,
             total,
             bytes,
             covers,
-        } => json!({ "frame": "keep_put", "doc": hex(doc),
-            "hash": hex(hash), "at": at, "total": total, "bytes": hex(bytes), "covers": hexes(covers) }),
+        } => {
+            json!({ "frame": "keep_put", "doc": hex(doc), "hash": hex(hash), "total": total, "bytes": hex(bytes),
+            "covers": hexes(covers) })
+        }
+        Frame::KeepPart {
+            doc,
+            hash,
+            at,
+            total,
+            bytes,
+        } => {
+            json!({ "frame": "keep_part", "doc": hex(doc), "hash": hex(hash), "at": at, "total": total,
+            "bytes": hex(bytes) })
+        }
         Frame::KeepEnd { doc } => json!({ "frame": "keep_end", "doc": hex(doc) }),
         Frame::KeepTook { doc, numbers } => json!({ "frame": "keep_took", "doc": hex(doc),
             "numbers": numbers.iter().map(|(n, h)| json!({ "n": n, "hash": hex(h) })).collect::<Vec<_>>() }),

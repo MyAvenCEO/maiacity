@@ -118,9 +118,11 @@ inductive Frame where
   | keepAfter (doc : Bytes) (n : Nat)
   /-- a page of what came after: arrival numbers and sealed hashes, `more` until the last page -/
   | keepArrived (doc : Bytes) (entries : List (Nat × Bytes)) (more : Bool)
-  /-- a part of a sealed item uploaded to a keeper; its first part (`at` 0) names the loose items it covers, every
-  later part none -/
-  | keepPut (doc hash : Bytes) (at_ total : Nat) (bytes : Bytes) (covers : List Bytes)
+  /-- the first part of a sealed item uploaded to a keeper, from offset 0 of its `total`, with the loose items it covers
+  (none for a loose envelope) -/
+  | keepPut (doc hash : Bytes) (total : Nat) (bytes : Bytes) (covers : List Bytes)
+  /-- a later part of an item uploaded to a keeper, from offset `at`: no covers, so none can slip in after the first -/
+  | keepPart (doc hash : Bytes) (at_ total : Nat) (bytes : Bytes)
   /-- the end of an upload: the keeper takes what came since the last, whole, in one write (`Aven.Peer.Serve`) -/
   | keepEnd (doc : Bytes)
   /-- the keeper took the upload: each item's hash and arrival number -/
@@ -402,6 +404,8 @@ def meetExamples : List (String × Nat × Nat) := [
   ("a peer of version 1, frames as JSON lines: refused, and it follows", wireVersion, 1),
   ("an older peer: refused, and it follows", 3, 2),
   ("a newer peer: refused, and it waits for this one", 2, 3),
-  ("far apart: refused", 2, 9)]
+  ("far apart: refused", 2, 9),
+  ("wire 3 meets wire 2: refused with update, and the 2 follows", 3, 2),
+  ("wire 2 meets wire 3: refused with update, and the 2 follows", 2, 3)]
 
 end Aven.Peer

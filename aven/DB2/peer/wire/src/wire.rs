@@ -138,15 +138,22 @@ pub enum Frame {
         entries: Vec<(u64, Vec<u8>)>,
         more: bool,
     },
-    /// A part of a sealed item uploaded to a keeper; its first part (`at` 0) names the loose items it covers, every
-    /// later part none.
+    /// The first part of a sealed item uploaded to a keeper, from offset 0 of its `total`, with the loose items it
+    /// covers (none for a loose envelope).
     KeepPut {
+        doc: Vec<u8>,
+        hash: Vec<u8>,
+        total: u64,
+        bytes: Vec<u8>,
+        covers: Vec<Vec<u8>>,
+    },
+    /// A later part of an item uploaded to a keeper, from offset `at`: no covers, so none can slip in after the first.
+    KeepPart {
         doc: Vec<u8>,
         hash: Vec<u8>,
         at: u64,
         total: u64,
         bytes: Vec<u8>,
-        covers: Vec<Vec<u8>>,
     },
     /// The end of an upload: the keeper takes what came since the last, whole, in one write (`Aven.Peer.Serve`).
     KeepEnd { doc: Vec<u8> },
@@ -428,18 +435,30 @@ impl Frame {
             Frame::KeepPut {
                 doc,
                 hash,
-                at,
                 total,
                 bytes: b,
                 covers,
             } => map(vec![
-                ("at", Value::Uint(*at)),
                 ("doc", bytes(doc)),
                 ("hash", bytes(hash)),
                 ("bytes", bytes(b)),
                 named("keep_put"),
                 ("total", Value::Uint(*total)),
                 ("covers", hashes(covers)),
+            ]),
+            Frame::KeepPart {
+                doc,
+                hash,
+                at,
+                total,
+                bytes: b,
+            } => map(vec![
+                ("at", Value::Uint(*at)),
+                ("doc", bytes(doc)),
+                ("hash", bytes(hash)),
+                ("bytes", bytes(b)),
+                named("keep_part"),
+                ("total", Value::Uint(*total)),
             ]),
             Frame::KeepEnd { doc } => map(vec![("doc", bytes(doc)), named("keep_end")]),
             Frame::KeepTook { doc, numbers } => map(vec![
@@ -592,14 +611,23 @@ impl Frame {
                 }
             }
             "keep_put" => {
-                let f = with(&["frame", "doc", "hash", "at", "total", "bytes", "covers"])?;
+                let f = with(&["frame", "doc", "hash", "total", "bytes", "covers"])?;
                 Frame::KeepPut {
+                    doc: f.bytes("doc")?,
+                    hash: f.bytes("hash")?,
+                    total: f.nat("total")?,
+                    bytes: f.bytes("bytes")?,
+                    covers: f.list("covers", read_bytes)?,
+                }
+            }
+            "keep_part" => {
+                let f = with(&["frame", "doc", "hash", "at", "total", "bytes"])?;
+                Frame::KeepPart {
                     doc: f.bytes("doc")?,
                     hash: f.bytes("hash")?,
                     at: f.nat("at")?,
                     total: f.nat("total")?,
                     bytes: f.bytes("bytes")?,
-                    covers: f.list("covers", read_bytes)?,
                 }
             }
             "keep_end" => Frame::KeepEnd {

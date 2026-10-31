@@ -136,8 +136,10 @@ def frameValue : Frame → Value
   | .keepAfter d n => obj [("n", .uint n), ("doc", .bytes d), ("frame", txt "keep_after")]
   | .keepArrived d es more => obj [("doc", .bytes d), ("more", .bool more), ("frame", txt "keep_arrived"),
       ("entries", .array (es.map entryValue))]
-  | .keepPut d h a t b cs => obj [("at", .uint a), ("doc", .bytes d), ("hash", .bytes h), ("bytes", .bytes b),
-      ("frame", txt "keep_put"), ("total", .uint t), ("covers", hashesValue cs)]
+  | .keepPut d h t b cs => obj [("doc", .bytes d), ("hash", .bytes h), ("bytes", .bytes b), ("frame", txt "keep_put"),
+      ("total", .uint t), ("covers", hashesValue cs)]
+  | .keepPart d h a t b => obj [("at", .uint a), ("doc", .bytes d), ("hash", .bytes h), ("bytes", .bytes b),
+      ("frame", txt "keep_part"), ("total", .uint t)]
   | .keepEnd d => obj [("doc", .bytes d), ("frame", txt "keep_end")]
   | .keepTook d es => obj [("doc", .bytes d), ("frame", txt "keep_took"), ("numbers", .array (es.map entryValue))]
   | .keepRefused d w => obj [("doc", .bytes d), ("why", txt w), ("frame", txt "keep_refused")]
@@ -199,9 +201,13 @@ def frameOf : Value → Option Frame
       guard (exactly kvs ["frame", "doc", "entries", "more"])
       pure (.keepArrived (← one "doc" readBytes) (← one "entries" (readList entryOf)) (← one "more" readBool))
     | "keep_put" => do
-      guard (exactly kvs ["frame", "doc", "hash", "at", "total", "bytes", "covers"])
-      pure (.keepPut (← one "doc" readBytes) (← one "hash" readBytes) (← one "at" readNat) (← one "total" readNat)
+      guard (exactly kvs ["frame", "doc", "hash", "total", "bytes", "covers"])
+      pure (.keepPut (← one "doc" readBytes) (← one "hash" readBytes) (← one "total" readNat)
         (← one "bytes" readBytes) (← one "covers" (readList readBytes)))
+    | "keep_part" => do
+      guard (exactly kvs ["frame", "doc", "hash", "at", "total", "bytes"])
+      pure (.keepPart (← one "doc" readBytes) (← one "hash" readBytes) (← one "at" readNat) (← one "total" readNat)
+        (← one "bytes" readBytes))
     | "keep_end" => guard (exactly kvs ["frame", "doc"]) *> (.keepEnd <$> one "doc" readBytes)
     | "keep_took" => do
       guard (exactly kvs ["frame", "doc", "numbers"])
@@ -351,6 +357,9 @@ theorem frameOf_value (f : Frame) : frameOf (frameValue f) = some f := by
 /-- Text the profile can write: its UTF-8 shorter than 2⁶⁴ bytes. -/
 abbrev Short (s : String) : Prop := (text s).length < limit
 
+/-- The longest reason a refusal names, in UTF-8 bytes: a refusal never carries a frame-sized text. -/
+def whyMax : Nat := 64
+
 /-- What the profile can write of a frame: every number below 2⁶⁴, every text and list shorter. Every frame a peer
 sends fits: `maxFrame` is far below. -/
 def Fits : Frame → Prop
@@ -363,13 +372,14 @@ def Fits : Frame → Prop
   | .catchUp hs _ => hs.length < limit ∧ ∀ h ∈ hs, Short h.device ∧ h.seq < limit
   | .prove d k sg => d.length < limit ∧ k.length < limit ∧ sg.length < limit
   | .proven d | .keepEnd d => d.length < limit
-  | .proveRefused d w | .fetchRefused d w | .keepRefused d w => d.length < limit ∧ Short w
+  | .proveRefused d w | .fetchRefused d w | .keepRefused d w => d.length < limit ∧ (text w).length ≤ whyMax
   | .fetch d hs | .missing d hs | .fetched d hs => d.length < limit ∧ hs.length < limit ∧ ∀ h ∈ hs, h.length < limit
   | .items d h a t b => d.length < limit ∧ h.length < limit ∧ a < limit ∧ t < limit ∧ b.length < limit
   | .keepAfter d n => d.length < limit ∧ n < limit
   | .keepArrived d es _ | .keepTook d es => d.length < limit ∧ es.length < limit ∧ ∀ e ∈ es, e.1 < limit ∧ e.2.length < limit
-  | .keepPut d h a t b cs => d.length < limit ∧ h.length < limit ∧ a < limit ∧ t < limit ∧ b.length < limit ∧
+  | .keepPut d h t b cs => d.length < limit ∧ h.length < limit ∧ t < limit ∧ b.length < limit ∧
       cs.length < limit ∧ ∀ c ∈ cs, c.length < limit
+  | .keepPart d h a t b => d.length < limit ∧ h.length < limit ∧ a < limit ∧ t < limit ∧ b.length < limit
 
 theorem shape_txt {s : String} (h : Short s) : Shape (txt s) = true := by
   simp [txt, Shape, textOk, utf8_text, show (text _).length < limit from h]
@@ -437,7 +447,10 @@ theorem frameValue_canon {f : Frame} (fits : Fits f) : Canon (frameValue f) = tr
     have := depthList_map (f := haveValue) (d := 2) (fun _ => by simp [haveValue, obj, depth, depthMap, txt])
       ‹List Have›
     simp only [maxDepth]; omega
-  case prove | proven | keepEnd | proveRefused | fetchRefused | keepRefused => exact fits
+  case prove | proven | keepEnd => exact fits
+  case proveRefused | fetchRefused | keepRefused =>
+    exact ⟨fits.1, Nat.lt_of_le_of_lt fits.2 (by decide)⟩
+  case keepPart => obtain ⟨d, h, a, t, b⟩ := fits; exact ⟨a, d, h, b, t⟩
   case items => obtain ⟨d, h, a, t, b⟩ := fits; exact ⟨a, d, h, b, t⟩
   case keepAfter => exact ⟨fits.2, fits.1⟩
   case fetch | missing | fetched =>
@@ -450,7 +463,7 @@ theorem frameValue_canon {f : Frame} (fits : Fits f) : Canon (frameValue f) = tr
       ‹List (Nat × Bytes)›
     simp only [maxDepth]; omega
   case keepPut =>
-    obtain ⟨d, h, a, t, b, cl, cs⟩ := fits
+    obtain ⟨d, h, t, b, cl, cs⟩ := fits
     have sl := shapeList_map _ bytesShape cs
     have := depthList_map (f := Value.bytes) (d := 1) (fun _ => Nat.le_refl _) ‹List Bytes›
     refine ⟨by simp_all, ?_⟩
@@ -481,7 +494,8 @@ def frameExamples : List Frame := [
   .fetchRefused (List.replicate 32 1) "too many", .keepAfter (List.replicate 32 1) 0,
   .keepArrived (List.replicate 32 1) [(1, List.replicate 32 9), (2 ^ 64 - 1, [])] true,
   .keepArrived (List.replicate 32 1) [] false,
-  .keepPut (List.replicate 32 1) (List.replicate 32 9) 0 2 [5, 6] [List.replicate 32 8],
+  .keepPut (List.replicate 32 1) (List.replicate 32 9) 4 [5, 6] [List.replicate 32 8],
+  .keepPut (List.replicate 32 1) (List.replicate 32 9) 2 [5, 6] [], .keepPart (List.replicate 32 1) (List.replicate 32 9) 2 4 [7, 8],
   .keepEnd (List.replicate 32 1), .keepTook (List.replicate 32 1) [(3, List.replicate 32 9)],
   .keepRefused (List.replicate 32 1) "quota"]
 
@@ -528,8 +542,19 @@ def h32 : Bytes := List.replicate 32 0xff
 #guard (frameBytes (.fetched h32 (List.replicate Fetch.fetchHashes h32))).length < maxFrame
 #guard (frameBytes (.items h32 h32 (2 ^ 64 - 1) (2 ^ 64 - 1) (List.replicate Fetch.partBytes 0))).length < maxFrame
 #guard (frameBytes (.keepArrived h32 (List.replicate pageSize (2 ^ 64 - 1, h32)) true)).length < maxFrame
-#guard (frameBytes (.keepPut h32 h32 (2 ^ 64 - 1) (2 ^ 64 - 1) (List.replicate Fetch.partBytes 0)
+#guard (frameBytes (.keepPut h32 h32 (2 ^ 64 - 1) (List.replicate Fetch.partBytes 0)
   (List.replicate Keeper.coversMax h32))).length < maxFrame
+#guard (frameBytes (.keepPart h32 h32 (2 ^ 64 - 1) (2 ^ 64 - 1) (List.replicate Fetch.partBytes 0))).length < maxFrame
+-- a refusal's reason at its longest
+def why64 : String := String.ofList (List.replicate whyMax 'w')
+#guard (text why64).length ≤ whyMax
+#guard [Frame.proveRefused h32 why64, .fetchRefused h32 why64, .keepRefused h32 why64].all fun f =>
+  (frameBytes f).length * 100 < maxFrame
+-- covers can't slip into a later part, nor an offset into a first part: each shape's keys exactly
+#guard decode [framed (obj [("at", .uint 1), ("doc", .bytes h32), ("hash", .bytes h32), ("bytes", .bytes []),
+  ("frame", txt "keep_part"), ("total", .uint 2), ("covers", .array [])])] == ([], some .bad)
+#guard decode [framed (obj [("at", .uint 0), ("doc", .bytes h32), ("hash", .bytes h32), ("bytes", .bytes []),
+  ("frame", txt "keep_put"), ("total", .uint 2), ("covers", .array [])])] == ([], some .bad)
 #guard (frameBytes (.keepTook h32 (List.replicate Keeper.putsPerUpload (2 ^ 64 - 1, h32)))).length < maxFrame
 
 -- a stream: the greeting's line, then frames; cut anywhere, the same
