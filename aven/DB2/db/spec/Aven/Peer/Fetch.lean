@@ -89,8 +89,9 @@ theorem parts_bounded (h : Nat) (b : Bytes) :
 /-! ## The connection a proof is bound to
 
 A device proves a Doc on a connection by signing, with the Doc's fetch key, a Value that names the Doc and this
-connection's TLS exporter. The proof's form and the fetch key's scheme are avenID's (`Aven.ID.Keep`, A22; the
-architect, 31 Oct 2026); this gate only says which exporter: `exporterLength` bytes under the label `exporterLabel`
+connection's TLS exporter. The proof's form is avenID's (`Aven.ID.KeepCbor`: `fetchLabel`, `proofBody`,
+`proofSigned`), as is the fetch key's scheme (`Aven.ID.Keep`, A22; the architect, 31 Oct 2026); this gate only says
+which exporter: `exporterLength` bytes under the label `exporterLabel`
 (RFC 5705's prefix) with an empty context, which both ends of one connection compute and no other connection shares.
 -/
 
