@@ -140,4 +140,9 @@ def Example.holds (e : Example) : Bool :=
 
 #guard examples.all Example.holds
 
+-- a claimed type names its type by its essence, whatever its case and parameters; anything else is unknown
+#guard registry.all fun e => FileType.ofMime e.type.mime == e.type
+#guard FileType.ofMime "Video/QuickTime; codecs=hvc1" == .mov
+#guard FileType.ofMime "image/x-icon" == .unknown
+
 end Aven.Runtime

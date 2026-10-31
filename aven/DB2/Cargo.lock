@@ -314,6 +314,7 @@ dependencies = [
  "aven-db-core",
  "aven-db-store",
  "aven-id",
+ "aven-runtimes-registry",
  "bytes",
  "futures-channel",
  "iroh",
@@ -335,6 +336,7 @@ dependencies = [
  "aven-db-store",
  "aven-id",
  "aven-peer",
+ "aven-runtimes-registry",
  "futures-channel",
  "iroh",
  "js-sys",
@@ -342,6 +344,10 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
 ]
+
+[[package]]
+name = "aven-runtimes-registry"
+version = "0.0.0"
 
 [[package]]
 name = "aws-lc-rs"

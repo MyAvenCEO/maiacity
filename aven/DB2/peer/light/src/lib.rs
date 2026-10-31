@@ -47,6 +47,7 @@ use aven_peer::iroh_gossip::{self, Gossip};
 use aven_peer::members::{Gate, Hook};
 use aven_peer::room::Room;
 use aven_peer::{Notes, blobs, keys, link, now, record};
+use aven_runtimes_registry as registry;
 use iroh::endpoint::{Connection, presets};
 use iroh::protocol::Router;
 use iroh::{
@@ -890,6 +891,49 @@ fn object(fields: &[(&str, JsValue)]) -> JsValue {
         let _ = js_sys::Reflect::set(&o, &JsValue::from_str(k), v);
     }
     o.into()
+}
+
+/// How the Service Worker serves a file (aven/runtimes' registry, `decideFile`), by its first bytes (at most 64 KiB),
+/// its size and what its sender claims: `{type, mime, inline}`, `inline` the media type to serve it inline as, or null
+/// for an attachment. The bytes decide; the claim only chooses among text formats, and never makes a file inline. No
+/// file runtime runs before the files origin (A15), so a decision is native, framed or a download.
+#[wasm_bindgen]
+pub fn decide(head: &[u8], size: f64, claimed: Option<String>, name: Option<String>) -> JsValue {
+    let claim = registry::Claim {
+        r#type: claimed.as_deref(),
+        name: name.as_deref(),
+    };
+    let d = registry::decide_file(
+        registry::Stage { runtimes: false },
+        head,
+        size as u64,
+        &claim,
+    );
+    let inline = match d.serve {
+        registry::Serve::Inline(m) => JsValue::from_str(m),
+        _ => JsValue::NULL,
+    };
+    object(&[
+        ("type", JsValue::from_str(d.r#type.name())),
+        ("mime", JsValue::from_str(d.r#type.mime())),
+        ("inline", inline),
+    ])
+}
+
+/// What the chat's card for a file is, by the type its sender claims, before its bytes are read: `image`, `audio`,
+/// `video`, `pdf` or `file` (a download link). Only a label: the Service Worker serves the bytes as [`decide`] says,
+/// so a card whose claim lies shows nothing.
+#[wasm_bindgen]
+pub fn file_kind(claimed: &str) -> String {
+    use registry::{Element, Mode};
+    match registry::entry(registry::of_mime(claimed)).mode {
+        Mode::Native(Element::Img) => "image",
+        Mode::Native(Element::Audio) => "audio",
+        Mode::Native(Element::Video) => "video",
+        Mode::Frame => "pdf",
+        _ => "file",
+    }
+    .into()
 }
 
 fn hash(file: &str) -> Result<Hash, JsError> {

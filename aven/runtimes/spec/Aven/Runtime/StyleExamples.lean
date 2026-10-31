@@ -1,21 +1,17 @@
 import Aven.Runtime.Style
 
 /-!
-# A slide, styled (avenBRAIN's `brain/style/slide.css` and `brain/id/slides/sign.*`)
+# Faces, and a slide (avenBRAIN's `brain/style/slide.css` and `brain/id/slides/sign.*`)
 
-The slide "A key signs" as a styled face: its tree as avenBRAIN writes it, and its CSS as typed rules. The examples
-around it are what the checks refuse: text under 9 px, too little contrast, a layer covering the ground, a selector
-or a value out of range, and which rule wins.
+What every face is held to: the todo app's task row, names, roles, `alt` and contrast at WCAG's lines. Then the slide
+"A key signs" as a face: its tree as avenBRAIN writes it, and its CSS as typed rules, with what the checks refuse
+around it: text under 9 px, too little contrast, a layer covering the ground, a selector or a value out of range, and
+which rule wins.
 -/
 
 namespace Aven.Runtime
 
 open Aven.Core
-
-/-- `.a .b …`: a chain of single classes. -/
-def cls (cs : List String) : Selector := cs.map fun c => { classes := [c] }
-
-def rule (cs : List String) (ds : List Decl) : StyleRule := ⟨cls cs, ds⟩
 
 def hexRGB (r g b : UInt8) : RGB := ⟨r, g, b⟩
 
@@ -27,7 +23,7 @@ def ochreInk : RGB := hexRGB 0x7d 0x4f 0x12
 def quiet : RGB := hexRGB 0x4a 0x54 0x68
 
 /-- `brain/style/slide.css`, rule by rule (a selector list is one rule per selector). -/
-def slideRules : List StyleRule :=
+def slideRules : List Rule :=
   [rule ["slide"] [.position false, .width (pct 10000), .aspect 16 9, .margin .all (px 0), .clip, .container,
       .color navy, .background cream, .border .all (px 100) .solid line, .radius (cqw 160)],
    ⟨[{ classes := ["slide"] }, { tag := some "div" }], [.position true, .display .block]⟩,
@@ -47,7 +43,7 @@ def slideRules : List StyleRule :=
       .origin (pct 5000) (pct 5000)]]
 
 /-- `brain/id/slides/sign.css`: where each layer of "A key signs" stands (two of the path's eight dots). -/
-def signRules : List StyleRule :=
+def signRules : List Rule :=
   [rule ["sign", "key"] [.place .left (pct 900), .place .top (pct 2133), .width (cqw 2800), .height (cqw 2800)],
    rule ["sign", "key-label"] [.place .left (pct 2300), .place .top (pct 6812)],
    rule ["sign", "signs-1"] [.place .left (pct 3600), .place .top (pct 5333), .width (cqw 326),
@@ -74,15 +70,15 @@ def signTree : Node :=
      el "p" [("class", "label words-label")] [txt "Words + signature"],
      el "header" [("class", "title")] [el "h2" [("class", "headline")] [txt "A key signs"]]]
 
-def sign : Styled := ⟨signTree, slideRules ++ signRules⟩
+def sign : FaceOut := ⟨signTree, slideRules ++ signRules⟩
 
 /-- A slide with one more text and one more rule. -/
-def withNote (note : Node) (rs : List StyleRule) : Styled :=
+def withNote (note : Node) (rs : List Rule) : FaceOut :=
   ⟨el "figure" [("class", "slide sign"), ("role", "img"), ("aria-label", "A note.")] [note], slideRules ++ rs⟩
 
 def noteP (c : String) (s : String) : Node := el "p" [("class", c)] [txt s]
 
-def styleExamples : List (String × Styled × Bool) :=
+def slideExamples : List (String × FaceOut × Bool) :=
   [("the slide \"A key signs\"", sign, true),
    ("a label at 2.5cqw is too small", withNote (noteP "label" "tiny") [rule ["slide", "label"] [.size (cqw 250)]],
      false),
@@ -115,18 +111,56 @@ def styleExamples : List (String × Styled × Bool) :=
    ("a scale of zero", withNote (noteP "note" "x") [rule ["slide", "note"] [.transform [.scale 0]]], false),
    ("a rule with nothing in it", withNote (noteP "note" "x") [rule ["slide", "note"] []], false)]
 
-#guard styleExamples.all fun (_, o, ok) => styledOk treeLimits o == ok
-#guard styleExamples.all fun (_, o, _) => Canon o.value
+/-- A task row of the todo app: a checkbox, its title and a remove button. -/
+def task : FaceOut :=
+  ⟨el "li" [("class", "row")]
+    [el "input" [("type", "checkbox"), ("aria-label", "Done"), ("data-on", "toggle")],
+     el "span" [("class", "title")] [txt "Buy bread"],
+     el "button" [("type", "button"), ("data-on", "remove"), ("aria-label", "Remove")] [txt "×"]],
+   [rule ["row"] [.background white], rule ["title"] [.color (grey 0x22)]]⟩
+
+def blue : RGB := ⟨0, 0x60, 0xdf⟩
+
+/-- What every face is held to, slide or not: names, roles, `alt`, the applier's check, and contrast at WCAG's lines
+(#767676 on white is the lightest grey that reaches 4.5:1, #949494 the lightest large one that reaches 3:1). -/
+def a11yExamples : List (String × FaceOut × Bool) :=
+  [("a task row", task, true),
+   ("dark text on a dark card", ⟨el "div" [("class", "card")] [txt "hidden"],
+     [rule ["card"] [.color (grey 0x33), .background (grey 0x22)]]⟩, false),
+   ("#777777 on white", ⟨el "p" [("class", "muted")] [txt "almost"], [rule ["muted"] [.color (grey 0x77)]]⟩, false),
+   ("#767676 on white", ⟨el "p" [("class", "muted")] [txt "just"], [rule ["muted"] [.color (grey 0x76)]]⟩, true),
+   ("large #959595 on white fails 3:1", ⟨el "h1" [("class", "big")] [txt "Title"],
+     [rule ["big"] [.color (grey 0x95), .size (px 3200)]]⟩, false),
+   ("large #949494 on white", ⟨el "h1" [("class", "big")] [txt "Title"],
+     [rule ["big"] [.color (grey 0x94), .size (px 3200)]]⟩, true),
+   ("white on a background set above", ⟨el "div" [("class", "brand")] [el "p" [] [txt "on blue"]],
+     [rule ["brand"] [.color white, .background blue]]⟩, true),
+   ("a later rule wins", ⟨el "p" [("class", "a b")] [txt "x"],
+     [rule ["a"] [.color (grey 0xcc)], rule ["b"] [.color black]]⟩, true),
+   ("a button with no name", ⟨el "button" [("data-on", "go")] [], []⟩, false),
+   ("a button named by its label", ⟨el "button" [("data-on", "go"), ("aria-label", "Go")] [], []⟩, true),
+   ("a clickable div without a role", ⟨el "div" [("data-on", "open")] [txt "Open"], []⟩, false),
+   ("a clickable div with a role and a tab stop", ⟨el "div" [("data-on", "open"), ("role", "button"),
+     ("tabindex", "0")] [txt "Open"], []⟩, true),
+   ("an image without alt", ⟨el "img" [("src", aHash)], []⟩, false),
+   ("a decorative image", ⟨el "img" [("src", aHash), ("alt", "")], []⟩, true),
+   ("a script in a face", ⟨el "div" [] [el "script" [] [txt "x"]], []⟩, false)]
+
+/-- Every face example: what every face is held to, then the slide and what its checks refuse. -/
+def faceExamples : List (String × FaceOut × Bool) := a11yExamples ++ slideExamples
+
+#guard faceExamples.all fun (_, o, ok) => faceOk treeLimits o == ok
+#guard faceExamples.all fun (_, o, _) => Canon o.value
 
 -- the CSS text, generated
-#guard (slideRules.map StyleRule.css)[6]! ==
+#guard (slideRules.map Rule.css)[6]! ==
   ".slide .label{position:absolute;margin:0;font-family:'Inter Variable',system-ui,sans-serif;font-size:2.6cqw;" ++
   "font-weight:700;line-height:1.15;letter-spacing:0.04em;text-transform:uppercase;text-align:center;" ++
   "white-space:nowrap;transform:translateX(-50%)}"
-#guard (slideRules.map StyleRule.css)[1]! == ".slide div{position:absolute;display:block}"
-#guard (signRules.map StyleRule.css)[2]! ==
+#guard (slideRules.map Rule.css)[1]! == ".slide div{position:absolute;display:block}"
+#guard (signRules.map Rule.css)[2]! ==
   ".sign .signs-1{left:36%;top:53.33%;width:3.26cqw;transform:rotate(-32.47deg)}"
-#guard (slideRules.map StyleRule.css)[10]! == ".slide .dots{height:0;border-top:0.6cqw dotted #c4923f;transform-origin:0 0}"
+#guard (slideRules.map Rule.css)[10]! == ".slide .dots{height:0;border-top:0.6cqw dotted #c4923f;transform-origin:0 0}"
 -- the label's text in the slide: navy on cream, 2.6cqw bold, 9.26 px where the slide is narrowest
 #guard sign.texts.map (fun (l, _) => (l.fg, l.bg, l.size.pxAt, l.weight)) ==
   [(navy, cream, 925, 700), (ochreInk, cream, 925, 800), (navy, cream, 925, 700), (navy, cream, 1495, 800)]
