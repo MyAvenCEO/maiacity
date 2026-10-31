@@ -786,6 +786,23 @@ def treesAgree : Bool :=
 
 #guard treesAgree
 
+/-- A peer that answers every name with a forged leaf holding one entry in the range: the reader refuses the forged
+nodes (their hash isn't the name asked for), so the walk finds nothing it shouldn't, here nothing at all. -/
+def forged (lo : List UInt8) (_ : Aven.Core.Hash) : Option Aven.Core.Value :=
+  some (.array [.bytes (lo ++ [0x01]), .bytes (lo ++ [0x01]), .bytes []])
+
+open Docs.Key Docs.Index in
+def treesForged : Bool :=
+  treeCases.all fun (_, es, limit, pre) =>
+    let bs := es.map fun (fs, d) => invoiceEntry fs d
+    let lo := keyBytes pre
+    let lvls := levels indexBoundary List.length limit Aven.Core.blake3 bs
+    let top := (lvls.getLast?.bind List.head?).getD []
+    let walked := top.flatMap (walk (verify Aven.Core.blake3 (forged lo)) lo (lo ++ [0xFF]) (lvls.length - 1))
+    walked.all fun x => (lookup indexBoundary List.length limit lo (lo ++ [0xFF]) bs).contains x
+
+#guard treesForged
+
 /-- One vector per line, so a change reads as a diff of lines. -/
 def render (vs : List Json) : String :=
   "[\n" ++ ",\n".intercalate (vs.map Json.compress) ++ "\n]\n"
