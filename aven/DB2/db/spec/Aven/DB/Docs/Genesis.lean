@@ -72,7 +72,7 @@ theorem id_fixes {H : Bytes → Hash} (hH : Injective H) {g g' : Genesis} (hc : 
 /-- A docs built-in type: the name of its label `avenDB <name> 1`, as avenID's built-in types are named. -/
 def builtinType (H : Bytes → Hash) (name : String) : DocId := ⟨nameOf H (.text (k ("avenDB " ++ name ++ " 1")))⟩
 
-def builtinNames : List String := ["branch", "closed", "version", "split"]
+def builtinNames : List String := ["branch", "closed", "version", "schema", "split"]
 
 def isBuiltin (H : Bytes → Hash) (t : DocId) : Bool := builtinNames.any fun n => builtinType H n == t
 

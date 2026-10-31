@@ -245,7 +245,6 @@ fn unfit_writes_never_enter() {
             vec![
                 ("name", Value::Text("v1".into())),
                 ("at", Value::Array(vec![hash("tip").value()])),
-                ("schema", todo().value()),
             ],
         )],
     );
@@ -794,7 +793,7 @@ fn pins_resolve_in_the_type_doc() {
     let v1 = |name: &str, schema: Value| {
         put(
             name,
-            version_type(),
+            schema_type(),
             vec![
                 ("at", Value::Array(vec![])),
                 ("name", Value::Text(name.into())),
@@ -816,6 +815,19 @@ fn pins_resolve_in_the_type_doc() {
                 &Allow
             )
             .is_err()
+    );
+    // a named version on the type Doc is no version of the type: only `schema` Records are
+    commit(
+        &mut type_doc,
+        &a,
+        &[put(
+            "release",
+            version_type(),
+            vec![
+                ("at", Value::Array(vec![])),
+                ("name", Value::Text("release".into())),
+            ],
+        )],
     );
     let snap = type_doc.snapshot();
     assert_eq!(

@@ -66,7 +66,7 @@ pub fn todo_type() -> Version {
     }
 }
 
-/// The todo type Doc as a reader holds it: one `version` Record, holding the todo schema.
+/// The todo type Doc as a reader holds it: one `schema` Record, a version holding the todo schema.
 pub fn todo_type_doc() -> Arc<Snapshot> {
     let fields = [
         ("at".to_string(), Value::Array(vec![])),
@@ -78,7 +78,7 @@ pub fn todo_type_doc() -> Arc<Snapshot> {
         records: [(
             "v1".to_string(),
             Record {
-                r#type: builtin_type("version"),
+                r#type: builtin_type("schema"),
                 fields: fields.into_iter().collect(),
             },
         )]
@@ -90,6 +90,14 @@ pub fn todo_type_doc() -> Arc<Snapshot> {
 /// The type Docs a reader holds: the todo type's.
 pub fn types(t: &DocId) -> Option<Arc<Snapshot>> {
     (*t == todo_type().r#type).then(todo_type_doc)
+}
+
+/// A type Doc's version: the `schema` built-in.
+pub fn schema_type() -> Version {
+    Version {
+        r#type: builtin_type("schema"),
+        schema: None,
+    }
 }
 
 pub fn version_type() -> Version {

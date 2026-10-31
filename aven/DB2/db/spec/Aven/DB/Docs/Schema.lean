@@ -183,7 +183,7 @@ theorem Schema.value_ofValue {v : Value} {s : Schema} (h : Schema.ofValue? v = s
 
 /-! ## A pin resolves to one schema
 
-A type Doc's Records are its versions (A39): each a `version` built-in, write-once, whose `schema` field holds a
+A type Doc's Records are its versions (A39, A207): each a `schema` built-in, write-once, whose `schema` field holds a
 schema's Value whole. A pin `(type Doc, h)` resolves to the version whose schema hashes to `h`. Two versions with one
 hash are one version: under a hash nothing collides under, and with Values as they come off the wire (canonical,
 `encode_decodeAll`), their schemas are equal (`pin_resolves_one`), so a pin never names two schemas. -/

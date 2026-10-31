@@ -103,10 +103,10 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    /// A type Doc's versions (A39): each `version` Record's schema, by its hash. Version Records are built-ins, so
+    /// A type Doc's versions (A39, A207): each `schema` Record's schema, by its hash. They are built-ins, so
     /// write-once, and two with one hash hold one schema (`pin_resolves_one`).
     pub fn versions(&self) -> BTreeMap<Hash, Schema> {
-        let version = crate::schema::builtin_type("version");
+        let version = crate::schema::builtin_type("schema");
         self.records
             .values()
             .filter(|r| r.r#type == version)
@@ -572,7 +572,7 @@ fn judge_on(
 
 impl Doc {
     /// Opens a Doc from its genesis, reading every version it pins from its type Doc: `types` gives a type Doc's
-    /// snapshot, and a pin `(type Doc, h)` resolves to the `version` Record there whose schema hashes to `h`
+    /// snapshot, and a pin `(type Doc, h)` resolves to the `schema` Record there whose schema hashes to `h`
     /// ([`Snapshot::versions`], `Aven.DB.Docs.pin_resolves_one`). The built-in types need no pin. The genesis carries
     /// no signature: the Doc's first envelope carries it, and that envelope's signature and cap authorize it.
     pub fn open(

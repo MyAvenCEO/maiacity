@@ -161,7 +161,7 @@ pub fn builtin_type(name: &str) -> DocId {
 }
 
 /// The docs layer's built-in types (`builtinNames`).
-pub const BUILTIN_NAMES: [&str; 4] = ["branch", "closed", "version", "split"];
+pub const BUILTIN_NAMES: [&str; 5] = ["branch", "closed", "version", "schema", "split"];
 
 /// Whether a type Doc is one of the docs layer's built-in types (`isBuiltin`).
 pub fn is_builtin(t: &DocId) -> bool {
