@@ -330,31 +330,33 @@ How it is built (thread E, 31 Oct 2026):
 - **The last manual reload:** the first release with the wire version refuses today's unversioned tabs, which can't
   read `update`. They drop and redial until a person reloads them once; every release after that is followed by itself.
 
-### The release record's signers: a proposal (A15, for Samuel to decide)
+### The release vault's owners: a proposal (A36, for Samuel to decide)
 
-Nothing signs a release yet, and no key is in CI or any secret. Every device runs `Device::today`: it trusts no
-release signer, checks a release's hashes against what it fetched, switches, and knows the release is unsigned. That
-catches a broken or half-served release, not a host that serves other code with a matching record. Today
-`Records.takes` and `Release.check` take the signers as a free parameter, anchored nowhere. The proposal:
+ARCHITECTURE A36 decides the shape: one release record per package, ordered by its dated version, an envelope in the
+release vault's Doc (A31), the genesis naming the release vault and its owners approving each record (rule 15, A28).
+What is left is who owns the release vault, and with what threshold.
 
-- **One record per package and release,** under the tags `avensandbox.yml` gives (`@aven/os@26.10.31`), ordered by
-  the dated version: its counter is the version's order (`26.10.31v2` is 2610310002). avenOS's record names the Peer's
-  binaries too, as §7 asks; the Peer's and the box's own records follow the same shape.
-- **The release keys are named in the genesis,** as the guardian is (A11, A13), so every member pins them with the
-  network. They change only by a statement Maia City's owners approve (D14), never by a peer's word or a flag. That
-  anchors `releasers` in `Records` and `Device.signers` in `Release`.
-- **Who holds them:** a person's passkey, at first Samuel's, signing with a tap on his own device: never CI, a runner or
-  a server. A second release key, k of n, once a second person holds one.
-- **How a release gets signed:** CI builds and publishes the unsigned record as today. avenOS shows the release key's
-  holder "Sign release 26.10.31", with its version, wire version and `os` hash and the GitHub release it came from.
-  The tap signs the record's body under `aven/peer/release/1` (`RecordKind.release`), and the signed record goes on
-  gossip as a release record (§6), kept by every peer that has it. CI needs no new write access.
-- **What a device does with an unsigned one,** once the genesis names release keys: `Unsigned.refuse`. The Service
-  Worker keeps the release it runs, and the Control Room says a release is waiting for its signature. A tab refused
-  with `update` still reloads: the browser fetches the page and the worker from the host, so a Service Worker only
-  raises the bar (A15); the trusted path that needs no origin is the Mac app.
-- **Native Peers** read the same record from gossip and say `update` on their timeline when a signed release names a
-  newer wire version or binary for their platform. Their owner upgrades them.
+Today nothing signs a release, and no key is in CI or any secret. Every device runs `Device::today`: it checks a
+release's hashes against what it fetched, switches, and knows the release is unsigned. That catches a broken or
+half-served release, not a host that serves other code with a matching record. `Records.takes` and `Release.check`
+still take their signers as a free parameter; they become "approved by the release vault's owners, as the genesis
+names it" when the vault exists (A28's list, `audits/vaults.md`).
+
+- **The release vault,** "Aven Releases", is owned by Samuel's person vault, k = 1: a release is approved by one tap
+  of his passkey, on his own device. Not by Maia City's vault: who may change the code every member runs is a narrower
+  power than who governs the network, and it should not grow with the admins.
+- **The threshold grows with its owners:** 2 of 3 once two more people each hold a passkey of their own vault and
+  want the duty, by an ordinary owner change approved by the vault's current owners (D14). No new genesis.
+- **Never CI, a runner or a server:** CI builds and publishes the unsigned record as today. avenOS shows the release
+  vault's owners "Approve release 26.10.31": the package, version, wire version and `os` hash, and the GitHub release
+  it came from. The tap signs the record's body as an owner of the release vault; the record is an envelope in its
+  Doc, kept and gossiped by every peer that has it. CI needs no new write access.
+- **An unapproved record,** once the genesis names the release vault: `Unsigned.refuse`. The Service Worker keeps the
+  release it runs, and the Control Room says a release is waiting for approval. A device with no record yet takes the
+  first approved one. A tab refused with `update` still reloads, since the browser fetches the page and the worker from
+  the host: a Service Worker only raises the bar (A15), and the trusted path that needs no origin is the Mac app.
+- **Native Peers** read the same Doc and say `update` when an approved record names a newer wire version or binary
+  for their platform. Their owner upgrades them.
 
 ## 8. What stays special
 
