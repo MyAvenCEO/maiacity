@@ -204,7 +204,7 @@ impl Parents for Envelope {
 }
 
 /// Two different envelopes at one place of one log (`Split`, A4): one Doc, branch, writer and sequence number, two
-/// names. One envelope signed twice is no split (`resign_no_split`).
+/// names. One envelope signed twice is no split (`sigs_no_split`).
 pub fn split(a: &Envelope, b: &Envelope) -> bool {
     a.doc == b.doc
         && a.branch == b.branch

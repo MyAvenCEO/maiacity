@@ -243,13 +243,13 @@ pub fn target(j: &Json) -> Option<aven_core::Target> {
         }
     } else if let Some(t) = j.get("type") {
         Target::VaultType {
-            vault: text(&j["vault"]),
+            vault: aven_core::Hash::parse(&text(&j["vault"])).unwrap(),
             r#type: doc(t),
             below: j["below"].as_bool().unwrap(),
         }
     } else {
         Target::Vault {
-            vault: text(&j["vault"]),
+            vault: aven_core::Hash::parse(&text(&j["vault"])).unwrap(),
             below: j["below"].as_bool().unwrap(),
         }
     })
@@ -258,7 +258,7 @@ pub fn target(j: &Json) -> Option<aven_core::Target> {
 pub fn facts(j: &Json) -> aven_core::Facts {
     aven_core::Facts {
         id: doc(&j["id"]),
-        vault: text(&j["vault"]),
+        vault: aven_core::Hash::parse(&text(&j["vault"])).unwrap(),
         r#type: doc(&j["type"]),
     }
 }

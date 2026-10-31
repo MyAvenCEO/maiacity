@@ -38,6 +38,12 @@ def unhexChars (cs : List Char) : Option Bytes :=
 
 def unhex? (s : String) : Option Bytes := unhexChars s.toList
 
+/-- A hash from its readable form, `b3:<hex>`: a vault's name. -/
+def hash? (s : String) : Option Hash :=
+  match s.toList with
+  | 'b' :: '3' :: ':' :: rest => (unhexChars rest).map fun b => ⟨b⟩
+  | _ => none
+
 /-- A Doc id from its readable form, `d:<hex>`. -/
 def docId? (s : String) : Option DocId :=
   match s.toList with
@@ -98,7 +104,7 @@ pairs: for each target, whether it covers each Doc (`Target.coversB`), and wheth
 structure Coverage where
   targets : List Target
   facts : List Facts
-  gov : List (Bytes × Bytes)
+  gov : List (Hash × Hash)
   spawned : List (DocId × DocId)
   lists : List (DocId × DocId)
 
@@ -132,9 +138,9 @@ def factsOf (j : Json) : Except String Facts := do
   let id ← j.getObjValAs? String "id"
   let vault ← j.getObjValAs? String "vault"
   let type ← j.getObjValAs? String "type"
-  match docId? id, docId? type with
-  | some i, some t => pure ⟨i, vault.toUTF8.toList, t⟩
-  | _, _ => throw "facts: not Doc ids"
+  match docId? id, hash? vault, docId? type with
+  | some i, some v, some t => pure ⟨i, v, t⟩
+  | _, _, _ => throw "facts: not a Doc id, a vault's name and a type"
 
 def coverageCase (j : Json) : Except String Json := do
   let targets ← (← j.getObjValAs? (List String) "targets").mapM fun h => do
@@ -142,9 +148,11 @@ def coverageCase (j : Json) : Except String Json := do
     | some t => pure t
     | none => throw s!"not a target: {h}"
   let facts ← (← j.getObjValAs? (List Json) "facts").mapM factsOf
-  let gov := (← j.getObjValAs? (List (List String)) "gov").filterMap fun
-    | [a, b] => some (a.toUTF8.toList, b.toUTF8.toList)
-    | _ => none
+  let gov ← (← j.getObjValAs? (List (List String)) "gov").mapM fun
+    | [a, b] => match hash? a, hash? b with
+      | some x, some y => pure (x, y)
+      | _, _ => throw "gov: not two vaults' names"
+    | _ => throw "gov: not a pair"
   let spawned ← (← j.getObjValAs? (List (List String)) "spawned").mapM docPair
   let lists ← (← j.getObjValAs? (List (List String)) "lists").mapM docPair
   return Coverage.answer ⟨targets, facts, gov, spawned, lists⟩
