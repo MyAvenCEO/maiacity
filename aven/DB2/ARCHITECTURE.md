@@ -137,6 +137,10 @@ touches.
     as a smart account does. A key (a passkey, a device key, a release or guardian key) never holds authority itself:
     it signs for a vault, as one of its owners (k of n, D14) or as its device within its device cap. Every cap is
     issued by a vault and held by a vault; caps delegate between vaults, never between signers (**A28**).
+16. **Clean architecture only, never a patch** (Samuel, 31 Oct 2026: "don't do weird patching, only clean
+    architecture, always"). A fix goes where the primitive is, once, for every use of it. Nothing is built for a
+    structure that is about to go, such as the chat's chains before the chat is a Doc; until the clean form exists, the
+    old one stays as it is.
 
 ### The rules in Lean
 
@@ -159,7 +163,7 @@ cap writes on main and allows each step (caps' `merge_covered`, #1601, #1604, #1
 
 Rule 14 is a property of the node, held by the format vectors and the box's check; no theorem is planned for it.
 
-Rule 15 is new (31 Oct 2026). Caps rule 1 ("keys sign; vaults hold") holds it for caps today. Its other places,
+Rules 15 and 16 are new (31 Oct 2026). Caps rule 1 ("keys sign; vaults hold") holds rule 15 for caps today. Its other places,
 where a key still holds authority itself, are listed in **A28**, and each is fixed Lean-first before its code.
 
 ## One vocabulary
@@ -736,7 +740,8 @@ the spec that owns it.
   from A17 and K11; for milestone 3.*
 - **A34. Catch-up on Doc logs only.** Thread C's catch-up is written for Core's log, never for the chat's chains. The
   tree is the first Doc (A12, A30), the chat the second, moving onto a Doc with no interim fix and its history read as
-  it is; members catch up the chat from each other once it is a Doc. *For Samuel: it changes the order of B to F.*
+  it is; members catch up the chat from each other once it is a Doc, and the chat's wants, sync and queries are then
+  every Doc's. *Decided: yes (Samuel, 31 Oct 2026: "don't do weird patching, only clean architecture, always").*
 - **A35. One presence:** a signed beat per device, ordered by its counter, its time a claim (rule 12). The hub's
   connection count, the chat's `here` and `bye`, and the wire's `Beat` frame go, with thread C. *Decided (the
   architect, 31 Oct 2026).*
@@ -866,7 +871,7 @@ codec, names, envelopes, logs and the target grammar, defined once.
 | PEERS planning | `PEERS.md`: relays, address records, catch-up and keepers peer to peer, upgrades by wire version; the tree's Lean with caps (**A10** to **A13**) |
 
 One model across them all, `Aven.Architecture`, proves the rules above across parts: 13 of 14 since 30 Oct 2026,
-and rule 15 is new (see "The rules in Lean"). Whatever its proofs expose comes back into this document.
+and rules 15 and 16 are new (see "The rules in Lean"). Whatever its proofs expose comes back into this document.
 
 Text fixes that need no decision (broken links to `aven/ID/caps` and `aven/actor`, wrong rule numbers, stale
 milestone numbers) go to each spec's own thread.
