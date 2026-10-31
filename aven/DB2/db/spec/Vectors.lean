@@ -34,9 +34,9 @@ import Aven.DB.Docs
   complete, or short with the Docs missing), the query's bound and cost, and the work it did (`Aven.DB.Engine.Query`).
 - `wants.json`: wants, the keys caps allow and each key's prerequisites; the queue, one round over the pages left with
   the device's uploads first, and what eviction to a budget keeps (`Aven.DB.Engine.Wants`).
-- `mutations.json`: a writer id, its counter, its grants, a Doc's Records and core operations; the footprint and
-  whether the grants cover it, the Records after the commit or why it was refused, and every reader's check of the
-  diff (`Aven.DB.Engine.Mutate`, `Aven.DB.Engine.Footprint`).
+- `mutations.json`: a writer id, its counter, a Doc's Records and core operations; the footprint, the Records after the
+  commit or why it was refused, and every reader's check of the diff (`Aven.DB.Engine.Mutate`,
+  `Aven.DB.Engine.Footprint`).
 - `lookups.json`: a shape, the Records and Docs at version V, the Records now, the Docs unfolded since and listed now, a
   probe; the index at V, its hits, the candidates, the query over them and the folded index (`Aven.DB.Engine.Index`).
 - `merges.json`: one place's base, the target's and the other branch's values and the merger's choice; the merged value,
@@ -560,7 +560,7 @@ def gDocs : List DocId := ["d1", "d2", "d3"].map doc
 def gTypes : List DocId := ["type:a", "type:b"].map doc
 def gDir : List Facts := [⟨doc "d1", vault "v1", doc "type:list"⟩, ⟨doc "d2", vault "v1", doc "type:list"⟩,
   ⟨doc "d3", vault "v2", doc "type:list"⟩]
-def gTargets : List Target := [.doc (doc "d1"), .vault (vault "v1") false, .vault (vault "v2") false,
+def gTargets : List Target := [.doc (doc "d1") .self, .vault (vault "v1") false, .vault (vault "v2") false,
   .vaultType (vault "v1") (doc "type:list") false]
 
 def randomRecord (r : Rng) (i : Nat) : Rec Value × Rng :=
@@ -662,9 +662,6 @@ def randomOp (r : Rng) : Op Value × Rng :=
   | _ => let (w, r) := pick r [1, 2, 3] 1
          (.edit ty ⟨w, 4, 0⟩ (utf8 "x1") (.uint k), r)
 
-def gGrants : List (List Grant) := [everything [task, note], everything [task],
-  [⟨task, .patch, some [utf8 "done"]⟩, ⟨task, .putNew, none⟩], []]
-
 def randomMutationVector (seed : Nat) : Json := Id.run do
   let r := Rng.seed (seed + 9000)
   let (n, r) := r.below 5
@@ -674,9 +671,8 @@ def randomMutationVector (seed : Nat) : Json := Id.run do
     let (op, r') := randomOp r
     ops := ops.push op
     r := r'
-  let (c, r1) := r.below 9
-  let (g, _) := pick r1 gGrants []
-  return mutationVector s!"seed {seed}" 1 c g todo ops.toList
+  let (c, _) := r.below 9
+  return mutationVector s!"seed {seed}" 1 c todo ops.toList
 
 def mutations : List Json := mutationExamples ++ (List.range generated).map fun i => randomMutationVector (i + 1)
 

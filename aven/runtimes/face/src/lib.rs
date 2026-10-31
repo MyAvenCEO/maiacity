@@ -1,5 +1,6 @@
-//! face-runtime (`Aven.Runtime.FaceRuntime`, `Markup`, `Face`): a face's markup and style, with its data, to a tree
-//! and a style as typed rules, accepted only when the tree passes the applier's check and its a11y holds across both.
+//! face-runtime (`Aven.Runtime.FaceRuntime`, `Markup`, `Style`, `Face`): a face's markup and style, with its data, to a
+//! tree and a style as typed rules (selectors and declarations), accepted only when the tree passes the applier's check,
+//! its a11y holds across both, every rule is in range, and every text is large enough and has enough contrast.
 //!
 //! The answer carries the style as data, never as CSS text: the drawer writes the CSS itself from rules it has checked
 //! ([`Rule::css`]). Every function here is the Lean definition of the same name; the tests replay the model's vectors
@@ -9,13 +10,15 @@
 
 pub mod face;
 pub mod markup;
+pub mod style;
 
 use aven_core::Value;
 use aven_runtimes_contract::Failure;
 use aven_runtimes_tree::{Node, TREE_LIMITS};
 
-pub use face::{FaceOut, Rgb, Rule, face_ok};
+pub use face::Rgb;
 pub use markup::{Key, Markup, Path, Placement, Src, draw};
+pub use style::{Decl, FaceOut, Rule, face_ok};
 
 /// A face part: its markup and its style.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -44,54 +47,6 @@ pub fn face_run(fp: &FacePart, data: &Value) -> Option<(FaceOut, Vec<Placement>)
 
 fn text(s: &str) -> Value {
     Value::Text(s.to_string())
-}
-
-impl Rule {
-    /// `[class, colour or null, background or null, size or null, bold or null]`, a colour as three bytes.
-    pub fn value(&self) -> Value {
-        let rgb = |c: Option<Rgb>| c.map_or(Value::Null, |c| Value::Bytes(vec![c.r, c.g, c.b]));
-        Value::Array(vec![
-            text(&self.cls),
-            rgb(self.color),
-            rgb(self.background),
-            self.size.map_or(Value::Null, Value::Uint),
-            self.bold.map_or(Value::Null, Value::Bool),
-        ])
-    }
-
-    pub fn of_value(v: &Value) -> Option<Rule> {
-        let Value::Array(xs) = v else { return None };
-        let [Value::Text(cls), fg, bg, size, bold] = xs.as_slice() else {
-            return None;
-        };
-        let rgb = |v: &Value| match v {
-            Value::Null => Some(None),
-            Value::Bytes(b) => match b.as_slice() {
-                [r, g, b] => Some(Some(Rgb {
-                    r: *r,
-                    g: *g,
-                    b: *b,
-                })),
-                _ => None,
-            },
-            _ => None,
-        };
-        Some(Rule {
-            cls: cls.clone(),
-            color: rgb(fg)?,
-            background: rgb(bg)?,
-            size: match size {
-                Value::Null => None,
-                Value::Uint(n) => Some(*n),
-                _ => return None,
-            },
-            bold: match bold {
-                Value::Null => None,
-                Value::Bool(b) => Some(*b),
-                _ => return None,
-            },
-        })
-    }
 }
 
 /// A path as state-runtime writes one: fields as text, indexes as numbers.

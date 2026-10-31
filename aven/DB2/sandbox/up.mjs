@@ -114,11 +114,14 @@ function network() {
 	return ['--network', 'host', '-v', `${proxyCa}:${ca}:ro`, ...trust, ...proxyNames().flatMap((name) => ['-e', name])];
 }
 
-// The Rust builds and crate downloads live in volumes, kept across runs: a Mac's shared folders are slow for them.
+// The Rust builds and crate downloads live in volumes, kept across runs: a Mac's shared folders are slow for them. The
+// file registry, aven/runtimes' crate the Peers take by path (`../../../runtimes/registry`), is at /runtimes/registry,
+// read-only, as in the Peer's image (deploy/peer.Dockerfile).
 const rustVolumes = [
 	'-v', 'avensandbox_target:/work/target',
 	'-v', 'avensandbox_cargo_registry:/opt/cargo/registry',
 	'-v', 'avensandbox_cargo_git:/opt/cargo/git',
+	'-v', `${join(db2, '..', 'runtimes', 'registry')}:/runtimes/registry:ro`,
 ];
 
 // What the box takes from outside aven/DB2: aven/runtimes whole at /aven/runtimes (its Lean spec, which

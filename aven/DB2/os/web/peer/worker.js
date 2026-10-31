@@ -27,12 +27,16 @@ const chat = new Map();
 function tell(line) {
 	const event = JSON.parse(line);
 	if (event.event === 'chat' && event.id) {
-		chat.set(event.id, line);
 		if (event.file) {
-			files.set(event.file.file, { type: event.file.type, key: event.key });
+			files.set(event.file.file, { type: event.file.type, name: event.file.name, key: event.key });
 			for (const done of awaited.get(event.file.file) ?? []) done();
 			awaited.delete(event.file.file);
+			// the card's kind, by the registry (aven/runtimes, through the wasm), from the type the sender claims: only a
+			// label until the bytes are read, which decide how the Service Worker serves them
+			event.file.kind = light?.file_kind(String(event.file.type ?? '')) ?? 'file';
+			line = JSON.stringify(event);
 		}
+		chat.set(event.id, line);
 		for (const port of pages) port.postMessage(line);
 		fetch(`/events/${event.peer}`, { method: 'POST', body: line }).catch(() => {});
 		return;
@@ -203,7 +207,9 @@ channel.postMessage({ leader: true });
 // A file's bytes for the Service Worker (public/files-sw.js, peer/bridge.js): `{id, read: {file, start, end}}`, `end`
 // exclusive, answered `{id, size, type, bytes}` with at most 1 MiB, clamped to the file's length (`size`, for
 // Content-Range), or `{id, error}`: "not found", or why not. Only the leader runs this worker, so only the leader
-// answers. The type, and the device that shared the file, are its `file` line's; the bytes come through the
+// answers. `type` is how the Service Worker serves the file: the media type to serve it inline as, or null for an
+// attachment, as the registry decides it (aven/runtimes, the wasm's `decide`) from the file's first 64 KiB, its size
+// and its `file` line's claim, once per file. The device that shared the file is its line's; the bytes come through the
 // Peer-Light's `file_range`, which fetches the chunks it lacks: from the Aven Peer, which keeps every file, or else from
 // the device that shared it. A read asked again while this one is at it is the same read.
 const MiB = 1 << 20;
@@ -230,6 +236,25 @@ const lineOf = (file, ms) =>
 		awaited.set(file, [...(awaited.get(file) ?? []), told]);
 		setTimeout(told, ms);
 	});
+// How the Service Worker serves each file, decided once from its head
+const decided = new Map();
+async function decision(file, got, from, holders, known) {
+	if (decided.has(file)) return decided.get(file);
+	let head = from === 0 ? got.bytes.subarray(0, HEAD) : null;
+	for (const holder of head ? [] : holders) {
+		try {
+			head = (await light.file_range(file, 0, HEAD, holder)).bytes;
+			break;
+		} catch {}
+	}
+	// without its head no decision: the bytes go as an attachment, and the next read asks again
+	if (!head) return { inline: null };
+	const how = light.decide(head, got.len, known?.type ?? undefined, known?.name ?? undefined);
+	decided.set(file, how);
+	return how;
+}
+// the registry reads at most a file's first 64 KiB (`HEAD_MAX`)
+const HEAD = 65536;
 const reading = new Set();
 async function read({ id, read: { file, start = 0, end } }) {
 	if (reading.has(id)) return;
@@ -252,7 +277,8 @@ async function read({ id, read: { file, start = 0, end } }) {
 				if (i === holders.length - 1) throw error;
 			}
 		}
-		channel.postMessage({ id, size: got.len, type: known?.type ?? null, bytes: got.bytes });
+		const how = await decision(file, got, from, holders, known);
+		channel.postMessage({ id, size: got.len, type: how.inline, bytes: got.bytes });
 		holding(file);
 	} catch (error) {
 		channel.postMessage({ id, error: error?.name === 'NotFoundError' ? 'not found' : String(error?.message ?? error) });
