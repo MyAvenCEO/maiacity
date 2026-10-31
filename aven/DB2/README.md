@@ -55,7 +55,7 @@ Each rule is held by a test or a check once there is code to hold.
     rules and tests, never as code. A check will fail on any such import.
 13. **Latest versions, always.** Every dependency and tool is pinned exactly. Pins move only when a person runs `bun
     run bump`, never on their own; `bun run bump --check` and `bun run doctor` show what's behind
-    ([`SANDBOX.md`](SANDBOX.md#latest-versions-always)).
+    ([`SANDBOX.md`](brain/sandbox/README.md#pins)).
 14. **Nothing merges with a red check,** and every bug found becomes a test.
 
 ## Names
@@ -74,7 +74,7 @@ avenSANDBOX   the box all of it is built and tested in
 ```
 
 avenPEER is the edge: it does all the I/O and runs avenDB's pure cores, and nothing in them depends on it
-([`ARCHITECTURE.md`](ARCHITECTURE.md#the-whole-on-one-page), decision A24).
+([the architecture](brain/ARCHITECTURE.md#the-whole-on-one-page), decision A24).
 
 | Name | What |
 |---|---|
@@ -105,7 +105,7 @@ The words below are the ones every page here needs. Every term of every part, wi
   was called `network` until then, and the old name still reads as `agent` (`Aven.ID.Before`).
 - **owns, governs:** a vault owns what is directly below it and governs everything below it. Authority runs only down.
 - **admin:** the vault that owns the network's agent: the coop Maia City is Aven's, and the people whose vaults own Maia
-  City act for it ([`PRODUCTION.md`](PRODUCTION.md#part-c-maia-city-the-admin-coop)).
+  City act for it ([`PRODUCTION.md`](brain/caps/README.md#the-register)).
 - **acts through:** a vault acts through its own devices, within the rights its owner gives it: Aven through the Aven
   Peer.
 - **account:** a person's vault, which one acts as in avenOS. Never an agent's or a device's.
@@ -171,7 +171,7 @@ organization `aven` reserves the scope before anything is published.
   path hides it. Any member's Peer can run a relay, so the members' network doesn't depend on the Aven Peer.
 - **Pluggable storage.** The core defines one small contract of blobs and refs, `Store`. Behind it: object storage for the
   Aven Peer, a folder for a Peer, OPFS for a Peer-Light, memory for tests. Apache OpenDAL provides the first backends;
-  our own OPFS backend comes where speed needs it ([`SANDBOX.md`](SANDBOX.md#storage-one-contract-pluggable-backends)).
+  our own OPFS backend comes where speed needs it ([`SANDBOX.md`](brain/store/README.md#the-backends)).
 - **One primitive underneath: the sealed blob.** Everything at rest and on the wire is an immutable object named by
   the BLAKE3 hash of its bytes, sealed to its readers. A file is a hash sequence of chunks of at most 1 MiB
   ([`store`](store/README.md)). A Loro document is a small head (its id, its version and
@@ -187,7 +187,7 @@ organization `aven` reserves the scope before anything is published.
   This is Tahoe-LAFS's convergence secret, with symmetric crypto only. Private documents stay sealed with random keys;
   their segments are unique anyway. Dedup across all peers through the Aven Peer (DupLESS-style) stays an option, not
   the default. It takes effect with sealing, which comes with avenID's caps: the store upgrade's files are plain
-  until then (Samuel, 30 Oct 2026; [`store`](store/README.md#later-sealing)).
+  until then (Samuel, 30 Oct 2026; [`store`](brain/id/README.md#the-seal)).
 - **Identity is a package of its own: avenID.** Vaults own vaults, a concept kept from avenDB-old and built anew. A
   person's vault is owned by its owner key. A device's vault is owned by the vault it serves; the device's key signs for
   that vault and governs nothing, so a lost device is revoked by its vault, and the vault loses nothing. A network's
@@ -206,7 +206,7 @@ organization `aven` reserves the scope before anything is published.
   make. Signatures: Ed25519 and passkeys, with Ed25519 and ML-DSA-65 together wherever authority lasts
   ([`id/caps`](id/caps/README.md), decision 10).
 - **The Aven Peer only ever sees ciphertext,** once sealing ships with caps. The city-dome's history from before then
-  stays plain and readable ([`store`](store/README.md#later-sealing)).
+  stays plain and readable ([`store`](brain/id/README.md#the-seal)).
 - **What ships is the node, never the box.** avenSANDBOX's image is a development machine (browsers, compilers,
   Lean) and is never deployed. avenPEER ships one binary whose modes are flags (`--relay`, `--store memory|fs|s3`), in
   one slim image: the binary on a minimal base. Sandbox or live is only configuration: which relay, which S3. The box
@@ -233,7 +233,7 @@ the `ProtocolHandler` registered for its ALPN. avenDB's own protocol plugs in th
 ## The specs
 
 The whole, with its shared primitives, its cross-part rules and how it stands up to end-to-end encryption, local first
-and peer to peer: [`ARCHITECTURE.md`](ARCHITECTURE.md). Every term of every part: [`GLOSSARY.md`](brain/GLOSSARY.md).
+and peer to peer: [avenBRAIN](brain/ARCHITECTURE.md). Every term of every part: [`GLOSSARY.md`](brain/GLOSSARY.md).
 
 Each plan is its own document; there is no numbered roadmap here (Samuel, 30 Oct 2026). The box:
 [`SANDBOX.md`](SANDBOX.md). Production: [`PRODUCTION.md`](PRODUCTION.md). The members' network:
@@ -245,6 +245,6 @@ Each plan is its own document; there is no numbered roadmap here (Samuel, 30 Oct
 
 - Milestone by milestone, test-first: the Lean model and its theorems, Rust tests against it, the sandbox check, then
   the code.
-- Every command runs in the box ([`SANDBOX.md`](SANDBOX.md#the-box)), the same on a Mac (OrbStack), in a Claude cloud
+- Every command runs in the box ([`SANDBOX.md`](brain/sandbox/README.md#the-box)), the same on a Mac (OrbStack), in a Claude cloud
   session and in CI.
 - The repository's rules hold ([`CLAUDE.md`](../../CLAUDE.md)): task branches, draft PRs, CI once per goal.
