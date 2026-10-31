@@ -133,6 +133,10 @@ touches.
     hold them, and no origin that serves files or other code is the safe's origin.
 14. **One protocol of ours.** `aven/db/1`, with iroh's gossip and blobs beside it on one `Router`. Every format is
     named and versioned, and Lean comes first, with vectors for every format.
+15. **Vaults own; signers only sign** (Samuel, 31 Oct 2026). Only a vault owns things, holds caps and is an admin,
+    as a smart account does. A key (a passkey, a device key, a release or guardian key) never holds authority itself:
+    it signs for a vault, as one of its owners (k of n, D14) or as its device within its device cap. Every cap is
+    issued by a vault and held by a vault; caps delegate between vaults, never between signers (**A28**).
 
 ### The rules in Lean
 
@@ -154,6 +158,9 @@ is handled by a step of the whole merge (the engine's `merge_granted`). The merg
 cap writes on main and allows each step (caps' `merge_covered`, #1601, #1604, #1607).
 
 Rule 14 is a property of the node, held by the format vectors and the box's check; no theorem is planned for it.
+
+Rule 15 is new (31 Oct 2026). Caps rule 1 ("keys sign; vaults hold") holds it for caps today. Its other places,
+where a key still holds authority itself, are listed in **A28**, and each is fixed Lean-first before its code.
 
 ## One vocabulary
 
@@ -664,6 +671,20 @@ the spec that owns it.
   *Decided: yes, as the architect recommends (Samuel, 30 Oct 2026: "do as you believe").*
 - **A16. Hosting an actor on the Aven Peer is an explicit read cap** per actor and per load target, shown to its
   owner; a member's own Peer is the default home. *Decided: yes (Samuel, 30 Oct 2026).*
+- **A28. Vaults own; signers only sign** (rule 15). *Decided: yes (Samuel, 31 Oct 2026: "only vaults can own things
+  and be admins; signers are just signers authorized to act for a vault"; "all caps always delegate between vaults,
+  never between signers"; vaults are like smart accounts).*
+  - **The network tree's admin is Maia City's vault,** not the claimant's passkey. An admin act counts when Maia
+    City's owners approve it (D14): tickets, withdrawals, the relay and keeper lists. Only passkeys sign as owners, so
+    "the more secure way" (31 Oct) holds. Today that is one tap of Samuel's passkey, since his vault owns Maia City. A
+    second admin, an owner change and recovery are ordinary governance of the vault, with no new genesis.
+  - **Release keys and the guardian** become vaults' signers, named by the genesis as vaults and changed by their
+    owners' approval. The full list of places where a key still holds authority itself is the audit of 31 Oct
+    ([`audits/`](audits/README.md)). Each is fixed Lean-first before its code, and avenPEER's `settle` takes the
+    admin's approval from each statement's own past, so settling stays order-free.
+- **A29. Frames in CBOR.** The wire's frames move from JSON lines to Core's canonical CBOR, the one codec (rule 1),
+  replacing actors' "frames as JSON lines". It ships as a wire-version bump (PEERS §7), which updates open tabs by
+  itself. *Decided: yes (Samuel, 31 Oct 2026).*
 
 **The engine and actors**
 - **A9. The want queue** as in [Massive data](#massive-data-wants-decide-what-moves). Its laws go into Lean before
@@ -755,7 +776,7 @@ the spec that owns it.
   - rotating a Doc's key shuts removed readers out of everything after it;
   - once every key holder drops a Doc's keys, any copy left anywhere is unreadable.
 
-  What a reader has already seen can't be unseen; no system can (rule 15). The Lean for all of this, and for the rest
+  What a reader has already seen can't be unseen; no system can. The Lean for all of this, and for the rest
   of PEERS threads B to F, comes before their code (Samuel, 31 Oct 2026: "do all lean for these things first").
 - **A23. Acks can't launder:** a revoked holder's envelope never counts if the revocation is in its past. *Done in
   caps (#1499), as what D8 meant.*
@@ -780,8 +801,8 @@ codec, names, envelopes, logs and the target grammar, defined once.
 | avenBRAIN | The docs wiki in English (Samuel, 31 Oct 2026), its style and slides, one concept each; the global glossary; renders through `face-runtime` and `markdown-runtime` once they land |
 | PEERS planning | `PEERS.md`: relays, address records, catch-up and keepers peer to peer, upgrades by wire version; the tree's Lean with caps (**A10** to **A13**) |
 
-One model across them all, `Aven.Architecture`, proves the rules above across parts: 13 of 14 since 30 Oct 2026
-(see "The rules in Lean"). Whatever its proofs expose comes back into this document.
+One model across them all, `Aven.Architecture`, proves the rules above across parts: 13 of 14 since 30 Oct 2026,
+and rule 15 is new (see "The rules in Lean"). Whatever its proofs expose comes back into this document.
 
 Text fixes that need no decision (broken links to `aven/ID/caps` and `aven/actor`, wrong rule numbers, stale
 milestone numbers) go to each spec's own thread.
