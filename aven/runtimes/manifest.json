@@ -1,0 +1,40 @@
+{
+  "about": "The bootstrap manifest: every frozen runtime module, in git until Docs run, when it becomes a typed Doc of Aven's vault and each module a blob (README, \"Only from the repository\"; ARCHITECTURE A45): append-only. An entry is a module frozen, {name, version, hash, limits, users}, or a frozen module withdrawn, {\"withdrawn\": hash}; there are no floors. A module is loaded only by a hash listed here and not withdrawn after, and only when its bytes have that hash. `sh freeze.sh --check`, in the box, rebuilds each module and fails when its bytes aren't the frozen hash: a change to a runtime is its next version, appended.",
+  "runtimes": [
+    {
+      "name": "markdown-runtime",
+      "version": 1,
+      "hash": "b3:6ef96e5ce10a00cb5aef538e5eaf65bf58910394ad264b0fc360748a1c33e5ee",
+      "users": ["file"],
+      "limits": { "part": 1048576, "fuel": 2000000000, "memory": 67108864, "output": 8388608 }
+    },
+    {
+      "name": "face-runtime",
+      "version": 1,
+      "hash": "b3:53c155913630175833b18fb763de7d1de9e3bcf2c0955b786e73379599efb456",
+      "users": ["actor", "file"],
+      "limits": { "part": 1048576, "fuel": 2000000000, "memory": 67108864, "output": 8388608 }
+    },
+    {
+      "name": "markdown-runtime",
+      "version": 2,
+      "hash": "b3:c0f818d4db85ee2ecef71652f732d8dbbd690ab200ab963e30358041d719456a",
+      "users": ["file"],
+      "limits": { "part": 1048576, "fuel": 2000000000, "memory": 67108864, "output": 8388608 }
+    },
+    {
+      "name": "face-runtime",
+      "version": 2,
+      "hash": "b3:b205f86ffbc3a8d0273332c4a858d311da7cf7641233135525f7dac88347b14d",
+      "users": ["actor", "file"],
+      "limits": { "part": 1048576, "fuel": 2000000000, "memory": 67108864, "output": 8388608 }
+    },
+    {
+      "name": "markdown-runtime",
+      "version": 3,
+      "hash": "b3:c126a34422a66c6b16a66f7fea96087fe5759a9be60ff918b06b6451b2845516",
+      "users": ["file"],
+      "limits": { "part": 1048576, "fuel": 2000000000, "memory": 67108864, "output": 8388608 }
+    }
+  ]
+}

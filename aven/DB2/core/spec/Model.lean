@@ -7,7 +7,8 @@ in CBOR as hex, with which a reader holds, which are bad and a version's tips, o
 
 ```
 {"envelopes":["a963…"],"held":[true],"bad":[],"tips":[0]}
-{"names":["b3:…"],"past":[[]],"inPast":[[false]],"split":[[false]],"discounted":[false],"counts":[true],"holds":[true]}
+{"names":["b3:…"],"past":[[]],"inPast":[[false]],"split":[[false]],"discounted":[false],"counts":[true],
+ "holds":[true]}
 ```
 
 aven-core's property tests compare their answers with these (README rule 10). -/

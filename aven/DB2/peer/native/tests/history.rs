@@ -1,5 +1,5 @@
 //! The chat's history at a peer's edge (`aven_peer::chats`, store/README.md "The chat keeps its history"), without a
-//! network: what the chains do is `aven_db_core::chain`'s, tested against Lean's traces; here the store and the frames.
+//! network: what the chains do is `aven_gen1::chain`'s, tested against Lean's traces; here the store and the frames.
 //! Lines rest as blobs and `chat-<device>` follows the head; a reopened store shows the whole chat again, in order; a
 //! peer catches up through the frames the Aven Peer answers (`heads`, `catch_up`, `lines`), and sends back what it
 //! wrote offline; a fork is raised and never moves a head.
@@ -7,9 +7,9 @@
 
 use std::sync::{Arc, Mutex};
 
-use aven_db_core::chain::{Answer, Body, Line};
-use aven_db_core::wire::{Frame, Head, MAX_FRAME, encode};
 use aven_db_store::{Hash, RefName, backend};
+use aven_gen1::chain::{Answer, Body, Line};
+use aven_gen1::wire::{Frame, Head, MAX_FRAME, encode};
 use aven_peer::Notes;
 use aven_peer::chats::{self, Chats};
 use aven_peer::members::Gate;
@@ -123,7 +123,7 @@ async fn catch_up(to: &Chats, from: &Chats) {
                 panic!()
             };
             for line in lines {
-                to.take(line.as_bytes()).await;
+                to.take(&line).await;
             }
         }
     }
@@ -175,7 +175,7 @@ async fn history_is_kept_and_caught_up() {
             panic!()
         };
         for line in lines {
-            assert!(matches!(hub.take(line.as_bytes()).await, Answer::Moved(_)));
+            assert!(matches!(hub.take(&line).await, Answer::Moved(_)));
         }
     }
     let (_, told) = open("aven", &aven, &gate, &hub_store).await;

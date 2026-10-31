@@ -20,10 +20,13 @@ travels on in a message narrows per hop (D16). An attenuation grants nothing new
 first one a bad chain breaks, and `chainOk` holds exactly when none is broken. The theorems: a chain only narrows, so no
 cap in it lets an op reach a Doc, or allows a call, that its root doesn't (`narrow_chain`, `narrow_ops`, through Core's
 `Target.le_sound` and `Bound.within_allows`); every line it grants lies in its root issuer's authority
-(`root_authority`); it passes its root on no more often than its root may be shared (`chain_short`); every grant in it
+(`root_authority`), which runs down the tree only through quorums the issuer meets alone, so every vault a root grants
+over approves it by its own owners, k of n, and a root over a coop's Docs needs the coop's own (`root_quorum`, A28); it
+passes its root on no more often than its root may be shared (`chain_short`); every grant in it
 carries its issuer's owners' approval (`grant_approved`, D14), so a cap reaches a new holder only by an approved grant
-(`new_holder_granted`); an attenuation keeps its parent's holder, a device of that holder signs it, and it lies within
-its parent (`attenuate_within`, `attenuate_signed`); every holder in a chain got there by an approved grant in it, so a
+(`new_holder_granted`); a vault without devices, such as a coop, issues by its owners' approval alone (A28); an
+attenuation keeps its parent's holder, that holder issues it, and it lies within its parent (`attenuate_within`,
+`attenuate_signed`); every holder in a chain got there by an approved grant in it, so a
 chain starts from authority (`holder_granted`); a group that holds a cap is a Doc of avenID's type `group`, itself a
 type Doc (`group_typed`, A39); a cap issued from a group's cap lives only while its issuer is in the group
 (`child_live`); the public never passes a cap on and may not share (`public_bounded`, D15), nor may a keep cap, so no
@@ -37,6 +40,10 @@ def vaultId (v : String) : Core.Bytes := ("v:" ++ v).toUTF8.toList
 
 /-- `core/1`'s op, by its id: the BLAKE3 name of its stored form. -/
 def coreOp (o : Core.CoreOp) : Core.OpId := o.id Core.blake3
+
+/-- A Doc, and a field, as a parameter's value. -/
+def docValue (d : Core.DocId) : Core.Value := .bytes d.hash.bytes
+def fieldValue (f : String) : Core.Value := .text f.toUTF8.toList
 
 /-- One line of a grant: an op by its id, the Docs it may act on, and bounds on its parameters. A parameter it doesn't
 bound is free. -/
@@ -223,13 +230,13 @@ theorem Conditions.narrows_trans {a b c : Conditions} (h : a.narrows b = true) (
     History.within_trans h1 h2⟩
   cases ha : a.own <;> cases hb : b.own <;> cases hc : c.own <;> simp_all
 
-/-- Who holds a cap: a vault (devices are vaults), everyone in a group (its Doc, of avenID's type `group`), the public
-(every member of the network, D15), or a ticket's one-time key until a vault claims it. -/
+/-- Who holds a cap: a vault (a device is its own vault), everyone in a group of vaults (its Doc, of avenID's type
+`group`), or the public (every member of the network, D15). Nothing else holds one: a bearer key, a ticket's one-time
+key or a fetch key, proves a condition of a cap and never holds it (rule 15, A42). -/
 inductive Holder where
   | vault (id : String)
   | group (doc : Core.DocId)
   | «public»
-  | ticket (key : String)
   deriving DecidableEq, Repr
 
 /-- A role: a named bundle of grants, named by its hash, so it never changes under its holders (D6). -/
@@ -257,8 +264,9 @@ def CapForm.name : CapForm → String
   | .grant => "grant"
   | .attenuate => "attenuate"
 
-/-- A cap. Its id is its hash, once `Aven.Core` names Values; its signature travels beside it, by its issuer's device,
-with its issuer's owners' approvals over its id. An attenuation carries none. -/
+/-- A cap. Its id is its hash, once `Aven.Core` names Values; its signatures travel beside it: its issuer's device's,
+and its issuer's owners' approvals over its id. An attenuation needs no approval. A vault without devices, such as a
+coop, issues by its owners' approvals alone: no device signs (A28). -/
 structure Cap where
   id : String
   issuer : String
@@ -269,7 +277,8 @@ structure Cap where
   role : Option String := none
   share : Nat := 0
   conditions : Conditions := {}
-  signer : String
+  /-- The device that signed it, when one did. -/
+  signer : Option String := none
   approvals : List Sig := []
   deriving DecidableEq, Repr
 
@@ -288,8 +297,9 @@ theorem role_pinned {roles : List Role} {c : Cap} {r : Role} (pinned : ∀ x, c.
   | none => rfl
   | some x => simp [pinned x h]
 
-/-- What a reader knows when it checks a chain: the tree, how many owners each vault needs (1 today), who is in each
-group now, the roles it holds, and what each Doc it knows is, as the Doc's genesis fixes it: its vault and root type. -/
+/-- What a reader knows when it checks a chain: the tree, how many of its owners each vault needs, its own k (1 until
+the tree stores it, A28), who is in each group now, the roles it holds, and what each Doc it knows is, as the Doc's
+genesis fixes it: its vault and root type. -/
 structure Ctx where
   tree : Tree
   threshold : String → Nat := fun _ => 1
@@ -315,9 +325,24 @@ inductive ChainError where
   | conditions (cap : String)
   deriving DecidableEq, Repr
 
-/-- `issuer` has authority over vault `v`'s Docs: `v` is its own, or one it governs. Authority runs down the tree. -/
-def authorityOverVault (t : Tree) (issuer : String) (v : Core.Bytes) : Bool :=
-  v == vaultId issuer || (t.governs issuer).any (vaultId · == v)
+/-- Its issuer signed cap `c`: the device that signed it acts for the issuer, or, with no device signing, the issuer's
+owners approve it by their own quorum, as a vault without devices, such as a coop, issues (A28). -/
+def Tree.issued (t : Tree) (th : String → Nat) (c : Cap) : Bool :=
+  match c.signer with
+  | some s => t.actsFor s == some c.issuer
+  | none => t.approves th c.issuer c.id c.approvals
+
+/-- `issuer` has authority over vault `v`'s Docs: `v` is its own, or one it governs whose quorum it meets alone (A28).
+Authority runs down the tree only through quorums: over a coop whose owners approve k of n with k > 1, no one owner
+vault has it, and the coop issues as itself. -/
+def authorityOverVault (t : Tree) (th : String → Nat) (issuer : String) (v : Core.Bytes) : Bool :=
+  v == vaultId issuer || (t.governs issuer).any fun w => vaultId w == v && t.alone th issuer w
+
+/-- Who governs whom as authority runs (A28), by vault ids: `v` governs `w` when `w` is below it and `v` meets its
+quorum alone. It is the `gov` a reader gives targets that reach below a vault and its own-authority check. -/
+def Ctx.governs (x : Ctx) (v w : Core.Bytes) : Bool :=
+  x.tree.vaults.any fun a => vaultId a.id == v && (x.tree.governs a.id).any fun b =>
+    vaultId b == w && x.tree.alone x.threshold a.id b
 
 /-- What a target is anchored to: the vault it names, or the Doc (an actor or a collection is a Doc). -/
 def anchor : Core.Target → Core.Bytes ⊕ Core.DocId
@@ -328,41 +353,42 @@ def anchor : Core.Target → Core.Bytes ⊕ Core.DocId
 theorem anchor_le {a b : Core.Target} (h : a.le b = true) : anchor a = anchor b := by
   cases a <;> cases b <;> simp_all [Core.Target.le, anchor]
 
-/-- `issuer` has authority over a line: over the vault its target names, or over the vault the Doc, actor or collection
-it names belongs to. A Doc the reader doesn't know gives none. -/
-def authorityOver (x : Ctx) (issuer : String) (l : Line) : Bool :=
+/-- The vault a line lies in: the vault its target names, or the vault of the Doc, actor or collection it names, as
+its genesis fixed. A Doc the reader doesn't know gives none. -/
+def lineVault (x : Ctx) (l : Line) : Option Core.Bytes :=
   match anchor l.doc with
-  | .inl v => authorityOverVault x.tree issuer v
-  | .inr d =>
-    match x.facts d with
-    | some f => authorityOverVault x.tree issuer f.vault
-    | none => false
+  | .inl v => some v
+  | .inr d => (x.facts d).map (·.vault)
+
+/-- `issuer` has authority over a line: over the vault it lies in. -/
+def authorityOver (x : Ctx) (issuer : String) (l : Line) : Bool :=
+  (lineVault x l).any (authorityOverVault x.tree x.threshold issuer)
 
 /-- Authority over the wider line is authority over the narrower one. -/
 theorem authority_le {x : Ctx} {i : String} {l m : Line} (le : l.doc.le m.doc = true)
     (h : authorityOver x i m = true) : authorityOver x i l = true := by
-  unfold authorityOver at h ⊢
+  unfold authorityOver lineVault at h ⊢
   rw [anchor_le le]
   exact h
 
-/-- `issuer` holds `p`: it is `p`'s vault, or in `p`'s group now. The public and tickets pass nothing on. -/
+/-- `issuer` holds `p`: it is `p`'s vault, or in `p`'s group now. The public passes nothing on. -/
 def holds (x : Ctx) (p : Cap) (issuer : String) : Bool :=
   match p.holder with
   | .vault v => v == issuer
   | .group g => x.inGroup g issuer
   | .«public» => false
-  | .ticket _ => false
 
 /-- A holder the reader can type: a group that holds a cap is a Doc of avenID's type `group` (A39). -/
 def Holder.typed (x : Ctx) : Holder → Bool
   | .group g => (x.facts g).any (·.type == groupType)
   | _ => true
 
-/-- What every cap must keep: a device of its issuer signed it, its issuer's owners approved it, an owner vault by its
-own quorum (D14), unless it only attenuates; a public cap may not share, and nor may a keep cap, so no keeper passes a
-vault's data on (A22); and a group that holds it is a group Doc (A39). -/
+/-- What every cap must keep: its issuer signed it, by a device or, with none, by its owners' approval (A28); its
+issuer's owners approved it, an owner vault by its own quorum (D14), unless it only attenuates; a public cap may not
+share, and nor may a keep cap, so no keeper passes a vault's data on (A22); and a group that holds it is a group Doc
+(A39). -/
 def capRules (x : Ctx) (c : Cap) : List (Bool × ChainError) :=
-  [(x.tree.actsFor c.signer == some c.issuer, .signer c.id),
+  [(x.tree.issued x.threshold c, .signer c.id),
    (c.form == .attenuate || x.tree.approves x.threshold c.issuer c.id c.approvals, .approval c.id),
    (c.holder != .«public» || c.share == 0, .publicShares c.id),
    (c.share == 0 || (c.grants x.roles).all (·.op != coreOp .keep), .keepShares c.id),
@@ -409,7 +435,7 @@ theorem rules_all {l m : List (Bool × ChainError)} :
   simp only [List.all_append, Bool.and_eq_true]
 
 theorem capRules_ok {c : Cap} (h : (capRules x c).all (·.1) = true) :
-    x.tree.actsFor c.signer = some c.issuer ∧
+    x.tree.issued x.threshold c = true ∧
       (c.form = .grant → x.tree.approves x.threshold c.issuer c.id c.approvals = true) ∧
       (c.holder = .«public» → c.share = 0) ∧ (∀ l ∈ c.grants x.roles, l.op = coreOp .keep → c.share = 0) ∧
       c.holder.typed x = true := by
@@ -511,7 +537,7 @@ theorem links_authority {i : String} : ∀ {p : Cap} {cs : List Cap},
     · exact links_authority hc rest d m
 
 /-- No authority from nowhere: every line a chain grants lies in its root issuer's authority, its own vault or one it
-governs. -/
+governs whose quorum it meets alone. -/
 theorem root_authority {r : Cap} {cs : List Cap} (h : chainOk x (r :: cs) = true) :
     ∀ c ∈ r :: cs, ∀ l ∈ c.grants x.roles, authorityOver x r.issuer l = true := by
   rw [chainOk, chainRules, rules_all] at h
@@ -520,6 +546,26 @@ theorem root_authority {r : Cap} {cs : List Cap} (h : chainOk x (r :: cs) = true
   rcases List.mem_cons.mp m with e | m
   · exact e ▸ root
   · exact links_authority root h.2 c m
+
+/-- **A root speaks for every vault it grants over** (A28): in a well-formed tree, every line a kept chain's root grants
+lies in a vault whose owners approve the root by their own quorum, k of n. So a root over a coop's Docs needs the
+coop's own owners: no one owner vault issues it alone. -/
+theorem root_quorum (wf : x.tree.WF) {r : Cap} {cs : List Cap} (h : chainOk x (r :: cs) = true) {l : Line}
+    (ml : l ∈ r.grants x.roles) :
+    ∃ w, lineVault x l = some (vaultId w) ∧ x.tree.approves x.threshold w r.id r.approvals = true := by
+  rw [chainOk, chainRules, rules_all] at h
+  obtain ⟨_, form, auth, caps⟩ := rootRules_ok h.1
+  have ap := (capRules_ok caps).2.1 form
+  have a := auth l ml
+  unfold authorityOver at a
+  cases hv : lineVault x l with
+  | none => simp [hv] at a
+  | some v =>
+    simp only [hv, Option.any_some, authorityOverVault, Bool.or_eq_true, beq_iff_eq, List.any_eq_true,
+      Bool.and_eq_true] at a
+    rcases a with e | ⟨w, _, e, al⟩
+    · exact ⟨r.issuer, by rw [e], ap⟩
+    · exact ⟨w, by rw [e], Tree.alone_approves wf al ap⟩
 
 /-- Links pass `p` on no more often than it may be shared: every grant lowers the share depth, and an attenuation, which
 keeps its holder, never raises it. -/
@@ -564,10 +610,11 @@ theorem links_branch {br : Core.Bytes} : ∀ {p : Cap} {cs : List Cap} {last : C
         (ih c' (List.mem_cons_self ..))
     · exact ih c m
 
-/-- A device of its issuer signed every cap of a chain, and every grant in it carries its issuer's owners' approval, an
-owner vault's by its own quorum (D14). An attenuation grants nothing new and carries none. -/
+/-- Its issuer signed every cap of a chain, by a device or its owners' approval (A28), and every grant in it carries its
+issuer's owners' approval, an owner vault's by its own quorum (D14). An attenuation grants nothing new and needs
+none. -/
 theorem grant_approved {r : Cap} {cs : List Cap} (h : chainOk x (r :: cs) = true) :
-    ∀ c ∈ r :: cs, x.tree.actsFor c.signer = some c.issuer ∧
+    ∀ c ∈ r :: cs, x.tree.issued x.threshold c = true ∧
       (c.form = .grant → x.tree.approves x.threshold c.issuer c.id c.approvals = true) := by
   rw [chainOk, chainRules, rules_all] at h
   intro c m
@@ -595,10 +642,10 @@ theorem attenuate_within (gov : Core.Bytes → Core.Bytes → Prop) (spawned lis
   rw [att, CapForm.hops, Nat.add_zero] at sh
   exact ⟨o.resolve_left (by simp [att]), fun f v => Grant.within_reaches w, fun f s => Grant.within_allows w, sh, n⟩
 
-/-- A device of its holder signs an attenuation: the signer acts for a vault that holds it, the parent's own vault for a
-vault's cap, or a vault in the group now for a group's. -/
+/-- Its holder issues an attenuation: a vault that holds it signs it, by a device or its owners' approval, the parent's
+own vault for a vault's cap, or a vault in the group now for a group's. -/
 theorem attenuate_signed {p c : Cap} (h : (linkRules x p c).all (·.1) = true) (att : c.form = .attenuate) :
-    x.tree.actsFor c.signer = some c.issuer ∧ holds x c c.issuer = true := by
+    x.tree.issued x.threshold c = true ∧ holds x c c.issuer = true := by
   obtain ⟨_, hp, o, _, _, _, k⟩ := linkRules_ok h
   have same : c.holder = p.holder := o.resolve_left (by simp [att])
   refine ⟨(capRules_ok k).1, ?_⟩

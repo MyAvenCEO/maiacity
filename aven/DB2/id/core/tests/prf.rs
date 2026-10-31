@@ -54,7 +54,7 @@ fn a_new_browser_opens_the_vault_with_its_passkey_alone() {
     let vault = SealKey::generate(&mut entropy);
     // signing up: the PRF answers for alice at owner epoch 1
     let passkey = output("alice's passkey, alice, 1");
-    let (mut ring, _) = Epoch::keyring(
+    let (ring, _) = Epoch::keyring(
         "alice",
         &vault,
         &[laptop.public(), passkey.seal_key().public()],
@@ -67,13 +67,14 @@ fn a_new_browser_opens_the_vault_with_its_passkey_alone() {
     let ring_key = ring.open(&again.seal_key()).unwrap();
     assert_eq!(ring.vault_key(&ring_key).unwrap().public(), vault.public());
     let browser = SealKey::generate(&mut entropy);
-    ring.reseal(&ring_key, &browser.public(), &mut entropy)
+    let resealed = ring
+        .reseal(&ring_key, &browser.public(), &mut entropy)
         .unwrap();
-    let name = ring.name();
-    assert_eq!(ring.open(&browser).unwrap(), ring_key);
+    assert_eq!(resealed.open(&browser).unwrap(), ring_key);
+    assert!(resealed.is_padded());
     assert_eq!(
+        resealed.name(),
         ring.name(),
-        name,
         "adding a device doesn't rename the epoch"
     );
     // a passkey on another owner epoch, or another passkey, opens nothing
@@ -129,10 +130,10 @@ fn rotation_seals_to_the_public_half() {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(16))]
 
-    /// Every vault and owner epoch has its own input, and the same output always derives the same keys.
+    /// Every owner epoch has its own input, and the same output always derives the same keys.
     #[test]
-    fn inputs_differ(a in "[a-z-]{1,12}", b in "[a-z-]{1,12}", m in any::<u64>(), n in any::<u64>()) {
-        prop_assert_eq!(prf_salt(&a, m) == prf_salt(&b, n), a == b && m == n);
+    fn inputs_differ(m in any::<u64>(), n in any::<u64>()) {
+        prop_assert_eq!(prf_salt(m) == prf_salt(n), m == n);
     }
 
     /// A hybrid key, an owner's or a device's: a signature holds for its message under its key, and only with both

@@ -1,0 +1,10 @@
+[
+{"expected":{"first":true,"placed":true},"input":{"deps":0,"genesis":true,"prev":false,"seq":1},"name":"a log's first envelope with the genesis"},
+{"expected":{"first":true,"placed":false},"input":{"deps":0,"genesis":false,"prev":false,"seq":1},"name":"a log's first envelope without it"},
+{"expected":{"first":false,"placed":false},"input":{"deps":1,"genesis":true,"prev":true,"seq":2},"name":"a later envelope with the genesis"},
+{"expected":{"first":false,"placed":true},"input":{"deps":1,"genesis":false,"prev":true,"seq":2},"name":"a later envelope without it"},
+{"expected":{"first":false,"placed":false},"input":{"deps":1,"genesis":true,"prev":false,"seq":1},"name":"a first sequence number that builds on another log, with the genesis"},
+{"expected":{"first":false,"placed":true},"input":{"deps":1,"genesis":false,"prev":false,"seq":1},"name":"a first sequence number that builds on another log, without it"},
+{"expected":{"ok":true},"input":{"doc":"d:1755eae6d8bec23396d4f819e96ee056fe91f82cd2e64ae90cbeac2340378cbc","genesis":"a46470696e7381825820f50e10debd66c5f7de69b0205b053ee1c333270603d6041e4e38912b610cef96815820c94d8d4cc760228e09d6fddafb87e77d60befb99da3ad3e25e6fb0d21105bf9a64747970655820f50e10debd66c5f7de69b0205b053ee1c333270603d6041e4e38912b610cef96656e6f6e636558200505050505050505050505050505050505050505050505050505050505050505657661756c744d616c6963652773207661756c74"},"name":"a log's first envelope carrying its own Doc's genesis"},
+{"expected":{"ok":false},"input":{"doc":"d:1755eae6d8bec23396d4f819e96ee056fe91f82cd2e64ae90cbeac2340378cbc","genesis":"a46470696e7381825820f50e10debd66c5f7de69b0205b053ee1c333270603d6041e4e38912b610cef96815820c94d8d4cc760228e09d6fddafb87e77d60befb99da3ad3e25e6fb0d21105bf9a64747970655820f50e10debd66c5f7de69b0205b053ee1c333270603d6041e4e38912b610cef96656e6f6e636558200606060606060606060606060606060606060606060606060606060606060606657661756c744d616c6963652773207661756c74"},"name":"a log's first envelope carrying another Doc's genesis"}
+]

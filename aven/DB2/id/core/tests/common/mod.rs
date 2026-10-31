@@ -3,6 +3,9 @@
 
 #![allow(dead_code)]
 
+pub mod caps;
+pub mod model;
+
 use std::path::PathBuf;
 
 use aven_id::{Invalid, Kind, Owner, SignError, Tree, Vault};
@@ -41,11 +44,14 @@ pub fn parse(input: &Value) -> Result<(Vec<String>, Vec<Vault>), String> {
                     .ok_or("neither key: nor vault:")
             })
             .collect::<Result<_, _>>()?;
+        // a tree written before thresholds (A28) has none: its vaults took one owner each
+        let threshold = v["threshold"].as_u64().map_or(1, |t| t as usize);
         vaults.push(Vault {
             name,
             id,
             kind,
             owners,
+            threshold,
         });
     }
     Ok((keys, vaults))
@@ -56,7 +62,7 @@ pub fn case(keys: &[String], vaults: &[Vault]) -> Value {
         .iter()
         .map(|v| {
             let owners: Vec<String> = v.owners.iter().map(Owner::to_string).collect();
-            json!({ "id": v.id, "name": v.name, "kind": v.kind.as_str(), "owners": owners })
+            json!({ "id": v.id, "name": v.name, "kind": v.kind.as_str(), "owners": owners, "threshold": v.threshold })
         })
         .collect();
     json!({ "keys": keys, "vaults": vaults })
@@ -105,6 +111,7 @@ pub fn invalid(why: &Invalid) -> Value {
         Invalid::CoopDevice { coop, device } => {
             json!({ "rule": "coopDevice", "vault": coop, "device": device })
         }
+        Invalid::NoQuorum(id) => json!({ "rule": "noQuorum", "vault": id }),
         Invalid::Cycle(_) => json!({ "rule": "cycle" }),
     }
 }
@@ -173,5 +180,51 @@ pub fn assertion(a: &Value) -> aven_id::Assertion {
         client_data: a["clientData"].as_str().unwrap().as_bytes().to_vec(),
         authenticator_data: unhex(a["authData"].as_str().unwrap()),
         signature: signature.to_der().as_bytes().to_vec(),
+    }
+}
+
+/// A Core Value as Core's vectors write it (`Aven.Core.Value.json`): byte strings as `{"bytes": hex}`.
+pub fn core_value(v: &Value) -> aven_core::Value {
+    use aven_core::Value as V;
+    match v {
+        Value::Null => V::Null,
+        Value::Bool(b) => V::Bool(*b),
+        Value::Number(n) => match n.as_u64() {
+            Some(u) => V::Uint(u),
+            None => V::Nint((-1 - n.as_i64().unwrap()) as u64),
+        },
+        Value::String(s) => V::Text(s.clone()),
+        Value::Array(xs) => V::Array(xs.iter().map(core_value).collect()),
+        Value::Object(m) => match (m.len(), m.get("bytes").and_then(Value::as_str)) {
+            (1, Some(h)) => V::Bytes(unhex(h)),
+            _ => V::Map(m.iter().map(|(k, x)| (k.clone(), core_value(x))).collect()),
+        },
+    }
+}
+
+/// A hash as Core writes it, `b3:` and hex.
+pub fn hash(v: &Value) -> aven_core::Hash {
+    aven_core::Hash::parse(v.as_str().unwrap()).unwrap()
+}
+
+/// An envelope as Core's vectors write it (`envelopes.json`).
+pub fn envelope(v: &Value) -> aven_core::Envelope {
+    aven_core::Envelope {
+        doc: aven_core::DocId::parse(v["doc"].as_str().unwrap()).unwrap(),
+        branch: v["branch"].as_str().unwrap().into(),
+        writer: v["writer"].as_u64().unwrap(),
+        seq: v["seq"].as_u64().unwrap(),
+        prev: v["prev"].as_str().map(|_| hash(&v["prev"])),
+        deps: v["deps"].as_array().unwrap().iter().map(hash).collect(),
+        body: core_value(&v["body"]),
+        sigs: v["sigs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| aven_core::Sig {
+                signer: unhex(x["signer"].as_str().unwrap()),
+                sig: unhex(x["sig"].as_str().unwrap()),
+            })
+            .collect(),
     }
 }

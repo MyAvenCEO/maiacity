@@ -1,16 +1,18 @@
 import Aven.ID.CapsExamples
 import Aven.ID.Keep
+import Aven.ID.Authority
 import Aven.ID.Gen
 import Aven.Core.Json
 import Lean.Data.Json
 
 /-! # Caps as JSON, and generated cases
 
-The form of `vectors/caps.json`, `revocations.json`, `epochs.json`, `approvals.json`, `network.json`, `keep.json` and
-`collections.json` (`Vectors.lean`). Caps' readable form is JSON. A line's op is its id, as Core's `ops.json` names
-`core/1`'s, and its target is written as Core's vectors write it (`targets.json`): Docs as `d:` and hex, vaults as
-their UTF-8 ids; a bound is null for any value, or the values it allows. Each cap carries its CBOR bytes and hash. A
-context names the cast's tree, which `trees.json` carries, and lists who is in each group and what each Doc is.
+The form of `vectors/caps.json`, `revocations.json`, `epochs.json`, `approvals.json`, `network.json`, `keep.json`,
+`collections.json` and `authorized.json` (`Vectors.lean`). Caps' readable form is JSON. A line's op is its id, as Core's
+`ops.json` names `core/1`'s, and its target is written as Core's vectors write it (`targets.json`): Docs as `d:` and
+hex, vaults as their UTF-8 ids; a bound is null for any value, or the values it allows. Each cap carries its CBOR bytes
+and hash. A context names the cast's tree, which `trees.json` carries, and lists who is in each group and what each Doc
+is.
 
 ```
 cap:      {"id":"cap-a","issuer":"alice","holder":{"vault":"bob"},"parent":null,"form":"grant",
@@ -64,14 +66,13 @@ def Holder.json : Holder → Json
   | .vault v => Json.mkObj [("vault", v)]
   | .group g => Json.mkObj [("group", g.text)]
   | .«public» => "public"
-  | .ticket k => Json.mkObj [("ticket", k)]
 
 def Sig.json (s : Sig) : Json := Json.mkObj [("key", s.key), ("digest", s.digest)]
 
 def Cap.json (c : Cap) : Json :=
   Json.mkObj [("id", c.id), ("issuer", c.issuer), ("holder", c.holder.json), ("parent", toJson c.parent),
     ("form", c.form.name), ("grant", Json.arr (c.grant.map Line.json).toArray), ("role", toJson c.role),
-    ("share", toJson c.share), ("conditions", c.conditions.json), ("signer", c.signer),
+    ("share", toJson c.share), ("conditions", c.conditions.json), ("signer", toJson c.signer),
     ("approvals", Json.arr (c.approvals.map Sig.json).toArray),
     ("cbor", Core.hex c.bytes), ("hash", (c.digest Core.blake3).text), ("signs", Core.hex c.signing)]
 
@@ -83,16 +84,18 @@ def Listing.json (l : Listing) : Json :=
   Json.mkObj [("cap", l.cap.json),
     ("docs", Json.arr (l.docs.map fun (d, k) => Json.mkObj [("doc", d.text), ("fetchKey", toJson k)]).toArray)]
 
-def Signed.json (o : Signed) : Json :=
+def KeepOrder.json (o : KeepOrder) : Json :=
   match o.order with
   | .withdraw c => Json.mkObj [("withdraw", c), ("signer", o.signer)]
   | .delete d => Json.mkObj [("delete", d.text), ("signer", o.signer)]
 
-/-- A keeper's books on the cast's tree, one owner per approval. -/
+/-- A keeper's books on the cast's tree, one owner per approval, with its vault's offers and Maia City's members. -/
 def Books.json (b : Books) : Json :=
   Json.mkObj [("keeper", b.keeper), ("tree", "cast"), ("threshold", toJson (1 : Nat)),
     ("listings", Json.arr (b.listings.map Listing.json).toArray),
-    ("orders", Json.arr (b.orders.map Signed.json).toArray)]
+    ("orders", Json.arr (b.orders.map KeepOrder.json).toArray),
+    ("offers", Json.arr (b.offers.map Cap.json).toArray),
+    ("groups", Json.arr #[Json.mkObj [("group", gMembers.text), ("members", toJson ["alice", "bob"])]])]
 
 def Role.json (r : Role) : Json :=
   Json.mkObj [("id", r.id), ("name", r.name), ("grant", Json.arr (r.grant.map Line.json).toArray)]
@@ -118,7 +121,7 @@ def castCtxJson : Json :=
   Json.mkObj [("tree", "cast"), ("threshold", toJson (1 : Nat)),
     ("groups", Json.arr #[Json.mkObj [("group", gGarden.text), ("members", toJson ["alice", "bob"])]]),
     ("roles", Json.arr (castCtx.roles.map Role.json).toArray),
-    ("docs", Json.arr ([d1, d2, b1, cityNotes, cityDome, gGarden, album].filterMap fun d =>
+    ("docs", Json.arr ([d1, d2, b1, cityNotes, cityDome, gGarden, album, avenNotes].filterMap fun d =>
       (castFacts d).map factsJson).toArray)]
 
 def chainResult (cs : List Cap) : Json :=
@@ -135,7 +138,9 @@ def envelopeJson (e : Core.Envelope) : Json :=
     ("time", toJson (time e)),
     ("envelope", Json.mkObj [("doc", e.doc.text), ("branch", Core.utf8Text e.branch), ("writer", toJson e.writer),
       ("seq", toJson e.seq), ("prev", toJson (e.prev.map (·.text))), ("deps", toJson (e.deps.map (·.text))),
-      ("body", e.body.json), ("signer", Core.hex e.signer), ("sig", Core.hex e.sig)])]
+      ("body", e.body.json),
+      ("sigs", Json.arr (e.sigs.map fun x =>
+        Json.mkObj [("signer", Core.hex x.signer), ("sig", Core.hex x.sig)]).toArray)])]
 
 def Revocation.json (r : Revocation) : Json :=
   Json.mkObj [("id", r.id.text), ("cap", r.cap.text), ("envelope", toJson (r.envelope.map (·.text))),
@@ -169,8 +174,6 @@ def Keep.json (s : Keep) : Json :=
 def Keep.Proof.json (p : Keep.Proof) : Json :=
   Json.mkObj [("device", p.device), ("vault", p.vault), ("key", toJson p.key), ("exporter", p.exporter)]
 
-def Keep.Upload.json (u : Keep.Upload) : Json :=
-  Json.mkObj [("proof", u.proof.json), ("exporter", u.exporter), ("bytes", toJson u.bytes)]
 
 /-- What a keeper takes, by depth, its current fetch key, and its flags, each in order of depth and key. -/
 def keepResult (s : Keep) : Json :=
@@ -179,6 +182,21 @@ def keepResult (s : Keep) : Json :=
   let flags := s.flags.eraseDups.mergeSort fun a b => a.1 < b.1 || (a.1 == b.1 && a.2 ≤ b.2)
   Json.mkObj [("kept", Json.arr (kept.map fun (i, k) => pair i k).toArray), ("current", toJson s.current),
     ("flags", Json.arr (flags.map fun (i, k) => pair i k).toArray), ("unsettled", toJson s.unsettled)]
+
+/-- A reader's verdict on an envelope, as `authorized.json` writes it: each check (`Aven.ID.Authorized`), and the
+path it takes, `"own"` or `"chain"`, or `"refused"` with the first check that fails, in the order a reader checks:
+`"device"`, its device cap; `"authority"`, neither its vault's own authority, which never counts for an actor host,
+nor a chain that allows its calls; `"actor"`, an actor host's envelope under a chain that names no actor (A27). -/
+def readerVerdictJson : Bool × Bool × Bool × Bool × Bool → Json
+  | (withinDevice, own, byChain, hostSigned, authorized) =>
+    let path : String := if !authorized then "refused" else if own && !hostSigned then "own" else "chain"
+    let refusal : List (String × Json) :=
+      if authorized then []
+      else if !withinDevice then [("refusal", "device")]
+      else if !byChain then [("refusal", "authority")]
+      else [("refusal", "actor")]
+    Json.mkObj ([("withinDevice", toJson withinDevice), ("own", toJson own), ("byChain", toJson byChain),
+      ("hostSigned", toJson hostSigned), ("authorized", toJson authorized), ("path", path)] ++ refusal)
 
 /-! ## Generated cases -/
 
@@ -201,8 +219,9 @@ def genLines (v : String) : List Line :=
   else if v = "maia-city" then [readOn cityDome] else [readOn (docOf "a1")]
 
 /-- A random cap after `parent`: mostly a fair narrowing by the parent's holder, now and then wider, longer, unsigned,
-unapproved, or issued by someone else. A quarter of the links attenuate: by the parent's holder, keeping it, with no
-approval, now and then handing the cap to another holder or sharing further; now and then a chain starts with one. -/
+unapproved, issued by someone else, or held by a group the reader doesn't know. A quarter of the links attenuate: by
+the parent's holder, keeping it, with no approval, now and then handing the cap to another holder or sharing further;
+now and then a chain starts with one. -/
 def genCap (r : Rng) (id : String) (parent : Option Cap) : Cap × Rng := Id.run do
   let mut r := r
   let (k, r1) := r.below 20; r := r1
@@ -215,7 +234,7 @@ def genCap (r : Rng) (id : String) (parent : Option Cap) : Cap × Rng := Id.run 
   let (h, r3) := r.below 20; r := r3
   let (hv, r4) := pick r (if h < 11 then ["alice", "bob"] else genVaults); r := r4
   let holder : Holder := if h < 14 then .vault hv else if h < 17 then .group gGarden else if h < 19 then .«public»
-    else .ticket "t-1"
+    else .group (docOf "g-unknown")
   let (w, r5) := r.below 2; r := r5
   let (wv, r6) := pick r (issuer :: genVaults); r := r6
   let (li, r7) := r.below 3; r := r7
@@ -313,5 +332,14 @@ def genKeep (seed : Nat) : Keep := Id.run do
 def generatedChains : Nat := 40
 def generatedDocs : Nat := 30
 def generatedKeeps : Nat := 30
+
+/-- What caps reads of a body's `authority` Value (`Authority.ofValue?`), as `authority.json` writes it:
+`{"reads": false}`, or `{"reads": true, "caps": [name…], "acks": [name…], "actor": Doc or null}`. -/
+def Authority.readJson : Option Authority → Json
+  | some a => Json.mkObj [("reads", toJson true), ("caps", toJson (a.caps.map (·.text))),
+      ("acks", toJson (a.acks.map (·.text))), ("actor", match a.actor with
+        | some d => Json.str d.text
+        | none => Json.null)]
+  | none => Json.mkObj [("reads", toJson false)]
 
 end Aven.ID

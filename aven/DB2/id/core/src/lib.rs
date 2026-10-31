@@ -13,15 +13,19 @@
 //! owner [`HybridKey`] and its [`SealKey`]; a vault's keyring and each Doc's keys are [`Epoch`]s sealed to their readers in
 //! X-Wing [`Stanza`]s; and [`safe`] decides what may leave a vault's safe, as `Aven.ID.Safe` does.
 
+pub mod caps;
 mod cast;
 mod claim;
 mod epoch;
 mod hex;
 mod hybrid;
 mod invite;
+pub mod keep;
+pub mod keyring;
 mod keys;
 mod members;
 mod network;
+mod padme;
 mod passkey;
 mod prf;
 mod query;
@@ -32,15 +36,21 @@ mod sign;
 mod statements;
 mod tree;
 mod value;
+mod vault_name;
 
 pub use cast::CastError;
 pub use claim::{
     Claim, SignIn, browser_name, claim_text, device_id, passkey_id, person_id, sign_in_text,
 };
 pub use epoch::{
-    BACK_LABEL, COMMIT_LABEL, Epoch, History, KeyError, SCHEME, VAULT_LABEL, commit, subkey, tag,
+    BACK_LABEL, COMMIT_LABEL, Epoch, History, KeyError, SCHEME, TAG_SEED_LABEL, VAULT_LABEL,
+    commit, subkey, tag, tag_seed,
 };
-pub use hybrid::{HYBRID_SUITE, Hybrid, HybridKey, HybridPublic, HybridSignature, hybrid_verify};
+pub use hybrid::{
+    DEVICE_ML_DSA_LABEL, HYBRID_SUITE, Hybrid, HybridKey, HybridPublic, HybridSignature,
+    device_ml_dsa_seed, hybrid_verify,
+};
+pub use hybrid::{DEVICE_SEAL_LABEL, device_seal_key};
 pub use invite::{
     Invite, Join, Withdrawal, invite_id, invite_text, join_text, one_time_public, sign_join,
     withdraw_text,
@@ -48,14 +58,16 @@ pub use invite::{
 pub use keys::{public_hex, test_signer};
 pub use members::{MemberError, MemberSignIn, Members, Pending};
 pub use network::{COOP, COOP_NAME, ClaimError, GUARDIAN, Network};
+pub use padme::{MIN_STANZAS, pad_sealed, padded, padme};
 pub use passkey::{Assertion, AssertionError, Passkey, Relying, base64url, challenge};
 pub use prf::{OWNER_LABEL, PRF_LABEL, PrfOutput, SEAL_LABEL, prf_input, prf_salt};
 pub use seal::{
-    Context, STANZA_COMMIT_LABEL, STANZA_KEY_LABEL, STANZA_SUITE, Scope, SealKey, SealPublic,
-    Stanza, stanza_commit, stanza_keys,
+    CIPHERTEXT_LEN, Context, HASH_LEN, SEALED_LEN, STANZA_COMMIT_LABEL, STANZA_KEY_LABEL,
+    STANZA_SUITE, Scope, SealKey, SealPublic, Stanza, stanza_commit, stanza_keys,
 };
 pub use secret::{Entropy, Secret, TestEntropy};
 pub use sign::{SignError, Statement};
 pub use tree::{
     Invalid, Kind, MAX_NAME, MAX_PERSON_NAME, Owner, Tree, Vault, valid_name, valid_person_name,
 };
+pub use vault_name::{VAULT_LABEL_TEXT, VAULT_NONCE_LEN, VaultGenesis};

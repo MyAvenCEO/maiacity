@@ -20,7 +20,8 @@ open Lean
 namespace Aven.ID
 
 def Vault.json (v : Vault) : Json :=
-  Json.mkObj [("id", v.id), ("name", v.name), ("kind", v.kind.name), ("owners", toJson (v.owners.map Owner.name))]
+  Json.mkObj [("id", v.id), ("name", v.name), ("kind", v.kind.name), ("owners", toJson (v.owners.map Owner.name)),
+    ("threshold", toJson v.threshold)]
 
 def Tree.json (t : Tree) : Json :=
   Json.mkObj [("keys", toJson t.keys), ("vaults", Json.arr (t.vaults.map Vault.json).toArray)]
@@ -54,6 +55,7 @@ def Invalid.json : Invalid → Json
   | .name id => Json.mkObj [("rule", "name"), ("vault", id)]
   | .coopOwner c o => Json.mkObj [("rule", "coopOwner"), ("vault", c), ("owner", o.name)]
   | .coopDevice c d => Json.mkObj [("rule", "coopDevice"), ("vault", c), ("device", d)]
+  | .noQuorum id => Json.mkObj [("rule", "noQuorum"), ("vault", id)]
   | .cycle => Json.mkObj [("rule", "cycle")]
 
 /-- What the model answers for a tree and its queries. A tree that is not well formed gets no answers. -/
@@ -69,7 +71,11 @@ def parseVault (j : Json) : Except String Vault := do
   let kind ← (Kind.parse k).elim (.error s!"{id}'s kind {k} is unknown") pure
   let owners ← (← j.getObjValAs? (List String) "owners").mapM fun o =>
     (Owner.parse o).elim (.error s!"{id}'s owner {o} is neither key: nor vault:") pure
-  pure ⟨id, name, kind, owners⟩
+  -- a tree written before thresholds (A28) has none: each of its vaults took one owner, its threshold 1
+  let threshold ← match j.getObjValD "threshold" with
+    | .null => pure 1
+    | t => fromJson? t
+  pure ⟨id, name, kind, owners, threshold⟩
 
 def parseTree (j : Json) : Except String Tree := do
   let keys ← j.getObjValAs? (List String) "keys"

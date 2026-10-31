@@ -1,10 +1,10 @@
 [
-{"expected":{"answer":null,"follows":false},"input":{"mine":1,"theirs":1},"name":"one version: the connection carries on"},
-{"expected":{"answer":{"frame":"update","wire":1},"follows":true},"input":{"mine":1,"theirs":0},"name":"a hello from before the wire had versions: refused, and the tab follows"},
-{"expected":{"answer":{"frame":"update","wire":2},"follows":true},"input":{"mine":2,"theirs":1},"name":"an older peer: refused, and it follows"},
-{"expected":{"answer":{"frame":"update","wire":1},"follows":false},"input":{"mine":1,"theirs":2},"name":"a newer peer: refused, and it waits for this one"},
-{"expected":{"answer":{"frame":"update","wire":1},"follows":false},"input":{"mine":1,"theirs":9},"name":"far apart: refused"},
-{"expected":{"topic":"avenDB chat 1\nwire 1\nnetwork aven"},"input":{"network":"aven","wire":1},"name":"the topic of aven on wire 1"},
-{"expected":{"topic":"avenDB chat 1\nwire 1\nnetwork maia.city"},"input":{"network":"maia.city","wire":1},"name":"the topic of maia.city on wire 1"},
-{"expected":{"topic":"avenDB chat 1\nwire 2\nnetwork aven"},"input":{"network":"aven","wire":2},"name":"the topic of aven on wire 2"}
+{"expected":{"answer":null,"follows":false},"input":{"mine":2,"theirs":2},"name":"one version: the connection carries on"},
+{"expected":{"answer":{"frame":"update","wire":2},"follows":true},"input":{"mine":2,"theirs":1},"name":"a peer of version 1, frames as JSON lines: refused, and it follows"},
+{"expected":{"answer":{"frame":"update","wire":3},"follows":true},"input":{"mine":3,"theirs":2},"name":"an older peer: refused, and it follows"},
+{"expected":{"answer":{"frame":"update","wire":2},"follows":false},"input":{"mine":2,"theirs":3},"name":"a newer peer: refused, and it waits for this one"},
+{"expected":{"answer":{"frame":"update","wire":2},"follows":false},"input":{"mine":2,"theirs":9},"name":"far apart: refused"},
+{"expected":{"topic":"avenDB chat 1\nwire 2\nnetwork aven"},"input":{"network":"aven","wire":2},"name":"the topic of aven on wire 2"},
+{"expected":{"topic":"avenDB chat 1\nwire 2\nnetwork maia.city"},"input":{"network":"maia.city","wire":2},"name":"the topic of maia.city on wire 2"},
+{"expected":{"topic":"avenDB chat 1\nwire 3\nnetwork aven"},"input":{"network":"aven","wire":3},"name":"the topic of aven on wire 3"}
 ]

@@ -1,15 +1,19 @@
 # The slim image's build context (deploy/peer.Dockerfile): avenDB's Cargo workspace, its manifests and every member's
 # sources, nothing else. The same files make its tag (deploy/tag.mjs). This file replaces aven/DB2/.dockerignore, the
-# box's, for this Dockerfile only.
+# box's, for this Dockerfile only. Every member in Cargo.toml needs its line here: tag.mjs refuses to run otherwise.
 *
 !Cargo.toml
 !Cargo.lock
+!codec
 !core
-!db/core
+!gen1
+!db/docs
+!db/engine
 !store
 !id/core
 !peer/native
 !peer/light
+!peer/keeper
 **/target
 **/node_modules
 **/.lake

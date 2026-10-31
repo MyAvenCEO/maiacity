@@ -1,6 +1,6 @@
 //! The link: a peer's one connection to the Aven Peer on `aven/db/1`, and the status it is in. It dials, says hello,
 //! and reads frames; every frame is progress, every clock step without one counts against it
-//! (`aven_db_core::status`). A link that stays stalled, or is lost, dials again. What it learns goes out as timeline
+//! (`aven_gen1::status`). A link that stays stalled, or is lost, dials again. What it learns goes out as timeline
 //! lines whenever the phase, the presence or the path changes, so a page is pushed deltas (README, rule 8). A Peer-Light
 //! also hands it frames to send, its statements (`Outbox`), and hears back from an Aven Peer that keeps its tree whether
 //! the network is claimed and, once the door admits it, the tree and every statement, which it checks itself
@@ -14,9 +14,9 @@
 //! browser knows its tree and opens before any link is up. A [`Wake`] (the page's `online` and `visibilitychange`)
 //! makes a link that isn't live dial again at once rather than at its next try.
 
-use aven_db_core::status::{Event, Phase, STALL_AFTER, Status, TICK_MS};
-use aven_db_core::timeline;
-use aven_db_core::wire::{self, ALPN, Decoder, Frame, Head, encode};
+use aven_gen1::status::{Event, Phase, STALL_AFTER, Status, TICK_MS};
+use aven_gen1::timeline;
+use aven_gen1::wire::{self, ALPN, Decoder, Frame, Greeting, Head, encode};
 use iroh::endpoint::Connection;
 use iroh::{Endpoint, EndpointAddr};
 use n0_future::time::{Duration, Instant, sleep, timeout};
@@ -176,6 +176,8 @@ pub async fn recall(store: &Shared, me: &str, gate: &Gate, notes: &Notes) -> boo
 /// What a link waits for: bytes from the Aven Peer, or a frame to send it.
 enum Next<R> {
     Read(R),
+    /// frames that came after the Aven Peer's hello, before the link's first read
+    Frames(Vec<Frame>),
     Send(Option<Frame>),
     Woken,
 }
@@ -473,10 +475,13 @@ async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Re
         })
         .await?;
     let (mut send, mut recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
-    send.write_all(&encode(&Frame::Hello {
-        peer: link.me.clone(),
-        wire: crate::wire_version(),
-    }))
+    send.write_all(
+        &Greeting::Hello {
+            peer: link.me.clone(),
+            wire: crate::wire_version(),
+        }
+        .line(),
+    )
     .await
     .map_err(|e| e.to_string())?;
     link.view.path = path(&conn);
@@ -486,26 +491,66 @@ async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Re
     );
     let mut decoder = Decoder::default();
     let mut buf = vec![0u8; 16 * 1024];
+    // the Aven Peer's greeting before anything else is sent or read: one wire version, or this link refuses it
+    let greeting = timeout(Duration::from_secs(10), async {
+        loop {
+            match recv.read(&mut buf).await {
+                Ok(Some(n)) => {
+                    if let Some(g) = decoder.greeting(&buf[..n]).map_err(|e| format!("{e:?}"))? {
+                        return Ok(g);
+                    }
+                }
+                Ok(None) => {
+                    return Err("the Aven Peer closed the stream before its hello".to_string());
+                }
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+    })
+    .await
+    .map_err(|_| "no hello in 10 s".to_string())??;
+    match greeting {
+        // refused for another wire version: no fallback, and the older side follows
+        Greeting::Update { wire: theirs } => return Err(link.refused(theirs)),
+        // a hello of another version: this link's own hello told its version already, so it closes
+        Greeting::Hello { wire: theirs, .. } => {
+            if wire::meet(crate::wire_version(), theirs).is_some() {
+                return Err(link.refused(theirs));
+            }
+        }
+    }
+    let mut first = Some(decoder.frames(&[]).map_err(|e| format!("{e:?}"))?);
     let mut next = Instant::now() + TICK;
     loop {
-        let read = async { Next::Read(recv.read(&mut buf).await) };
-        let outbox = &mut link.outbox;
-        let send_next = async {
-            match outbox.as_mut() {
-                Some(outbox) => Next::Send(outbox.next().await),
-                None => std::future::pending().await,
+        let got = match first.take() {
+            Some(frames) => Ok(Next::Frames(frames)),
+            None => {
+                let read = async { Next::Read(recv.read(&mut buf).await) };
+                let outbox = &mut link.outbox;
+                let send_next = async {
+                    match outbox.as_mut() {
+                        Some(outbox) => Next::Send(outbox.next().await),
+                        None => std::future::pending().await,
+                    }
+                };
+                let wake = &mut link.wake;
+                let woken_next = async {
+                    woken(wake).await;
+                    Next::Woken
+                };
+                timeout(
+                    next.saturating_duration_since(Instant::now()),
+                    read.or(send_next).or(woken_next),
+                )
+                .await
             }
         };
-        let wake = &mut link.wake;
-        let woken_next = async {
-            woken(wake).await;
-            Next::Woken
+        let got = match got {
+            Ok(Next::Read(Ok(Some(n)))) => Ok(Next::Frames(
+                decoder.frames(&buf[..n]).map_err(|e| format!("{e:?}"))?,
+            )),
+            got => got,
         };
-        let got = timeout(
-            next.saturating_duration_since(Instant::now()),
-            read.or(send_next).or(woken_next),
-        )
-        .await;
         match got {
             // a live link carries on (iroh moves its paths itself); any other dials again at once
             Ok(Next::Woken) if link.view.status.phase == Phase::Live => continue,
@@ -540,24 +585,10 @@ async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Re
                     return Err(format!("no progress in {} steps", link.view.status.idle));
                 }
             }
-            Ok(Next::Read(Ok(Some(n)))) => {
-                for frame in decoder.push(&buf[..n]).map_err(|e| format!("{e:?}"))? {
+            Ok(Next::Frames(frames)) => {
+                for frame in frames {
                     link.step(Event::Frame);
                     match frame {
-                        // the Aven Peer's hello: one wire version, or this link refuses it and closes
-                        Frame::Hello { wire: theirs, .. } => {
-                            if let Some(answer) = wire::meet(crate::wire_version(), theirs) {
-                                send.write_all(&encode(&answer))
-                                    .await
-                                    .map_err(|e| e.to_string())?;
-                                let _ = send.finish();
-                                // the refusal reaches the Aven Peer before the connection goes, or a moment passes
-                                let _ = timeout(Duration::from_secs(2), send.stopped()).await;
-                                return Err(link.refused(theirs));
-                            }
-                        }
-                        // refused for another wire version: no fallback, and the older side follows
-                        Frame::Update { wire: theirs } => return Err(link.refused(theirs)),
                         Frame::Presence { peers } => link.view.peers = peers,
                         Frame::Network {
                             claimed,
@@ -610,7 +641,7 @@ async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Re
                         Frame::Lines { lines } => {
                             if let Some(chats) = &link.chats {
                                 for line in lines {
-                                    chats.take(line.as_bytes()).await;
+                                    chats.take(&line).await;
                                 }
                                 link.learn().await;
                                 upload(link, &mut send).await?;
@@ -622,6 +653,7 @@ async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Re
                 }
             }
             Ok(Next::Read(Ok(None))) => return Err("the Aven Peer closed the stream".into()),
+            Ok(Next::Read(Ok(Some(_)))) => unreachable!("a read is read into frames above"),
             Ok(Next::Read(Err(e))) => return Err(e.to_string()),
         }
         let now_on = path(&conn);

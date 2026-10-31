@@ -92,7 +92,7 @@ Each rule is held by a Lean theorem or a check once there is code to hold.
     when every sample round-trips without loss, or when a person accepts the named losses.
 12. **Predicates evolve as schemas do.** A predicate is named by its hash, so a changed definition is a new version.
     Facts are never migrated: they are read through the docs layer's lenses, and every fact's `p` names the version that
-    wrote it ([docs](../docs/README.md#lenses)).
+    wrote it ([docs](../../brain/docs/README.md#lenses)).
 13. **The agents that grow it are actors with caps.** A model mints as a device vault of its person's aven: its
     additions are signed, bounded by its caps, and anything beyond its person's vault is a proposal.
 
@@ -111,7 +111,7 @@ avenOS            apps run operations; the minting agent proposes predicates, ki
 ### Where facts live
 
 **A document is the unit of sharing; a fact is the unit of meaning.** A document holds many facts, in a map of entries
-keyed by fact id ([docs](../docs/README.md#values-what-the-schema-picks)):
+keyed by fact id ([docs](../../brain/docs/README.md#types-schemas-and-fit)):
 
 ```json
 { "facts": {
@@ -169,7 +169,7 @@ email:             name(x1 = "email", x2 = email)
 addressing_system: class_of(x1 = addressing_system, x2 = category)
 ```
 
-A category tree is walked by a bounded query ([engine](../engine/README.md#queries), `walk`), so "every kind of
+A category tree is walked by a bounded query ([engine](../../brain/ops/README.md#queries), `walk`), so "every kind of
 identifier" is one query and a new kind of identifier is one fact.
 
 ### Kinds
@@ -201,7 +201,7 @@ A kind declares each trait once, for writing and reading alike, so the two can't
 
 The view of this kind is `{ id, biller, number, total, issued_on, lines: [...], payments: [...] }`. Saving the kind has
 the engine compile it into `invoice.list`, `invoice.create`, `invoice.update` and `invoice.delete`
-([engine](../engine/README.md#kinds-compile-to-operations)); from then on, apps and agents run those.
+([engine](../../brain/ops/README.md#facts-and-records)); from then on, apps and agents run those.
 
 ### The minting agent
 
@@ -219,7 +219,7 @@ From a request ("I want to track which projects people are members of"):
 3. **Check.** Meta-grammar, then the gismu table (positions, kinds, completeness), then the vocabulary (no second
    predicate with the same meaning; a near match becomes a lens or a reuse).
 4. **Write or propose.** Additive definitions go into the vault's vocabulary directly. Anything for the network's
-   vocabulary is a proposal ([docs](../docs/README.md#history-versions-and-lines)) that its admin accepts.
+   vocabulary is a proposal ([docs](../../brain/docs/README.md#history)) that its admin accepts.
 5. **Keep provenance.** Who asked, which model, which request, as facts about the new definition.
 
 Kinds are minted the same way, on top of the predicates, and queries and mutations in the engine's grammar. A kind made

@@ -2,14 +2,18 @@
 // run up --check`). Read on production's stand-in (localhost:5174) by a browser that never signed in, as anyone reads
 // them, and on the box's own view (localhost:5173). Checked, at a desktop's 1280 px and a phone's 390 px:
 //   1. the dashboard has an item per package, avenID's open and the rest coming; the main nav reaches it;
-//   2. avenID's page draws its slide as 16:9; the glossary draws, and #/brain/glossary/vault marks that term;
+//   2. avenID's page draws each slide as 16:9, through the face-runtime's drawer into a shadow root of its own, with no
+//      slide style left in the page's own sheets; the glossary draws, and #/brain/glossary/vault marks that term;
 //   3. no page scrolls sideways;
 //   4. every text has 4.5:1 against the background under it (3:1 when large), as WCAG has it, and no text on a slide is
 //      under 9 px at a phone's width (brain/STYLE.md, "A slide");
 //   5. a screenshot of each, in the run's folder.
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { chromium, firefox, webkit } from 'playwright';
 import { linear } from '../brain/render/contrast.js';
+
+// Brain's dashboard shows one tile per entry of its list
+const { packages } = JSON.parse(readFileSync(new URL('../brain/packages.json', import.meta.url), 'utf8'));
 
 const run = process.argv[2] ?? 'runs/latest';
 mkdirSync(run, { recursive: true });
@@ -27,15 +31,17 @@ function contrasts(table) {
 	};
 	const lum = ([r, g, b]) => 2126 * table[Math.round(r)] + 7152 * table[Math.round(g)] + 722 * table[Math.round(b)];
 	const flare = 5_000_000_000;
+	// a slide is drawn in a shadow root: look in every one, and behind one to its host
+	const deep = (root) => [...root.querySelectorAll('*')].flatMap((el) => (el.shadowRoot ? [el, ...deep(el.shadowRoot)] : [el]));
 	const behind = (el) => {
-		for (let at = el; at; at = at.parentElement) {
+		for (let at = el; at; at = at.parentElement ?? at.getRootNode().host) {
 			const bg = parse(getComputedStyle(at).backgroundColor);
 			if (bg.a > 0.5) return bg.rgb;
 		}
 		return [255, 255, 255];
 	};
 	const out = [];
-	for (const el of document.querySelectorAll('.brain *')) {
+	for (const el of deep(document).filter((e) => e.closest('.brain') || e.getRootNode().host?.closest('.brain'))) {
 		const own = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
 		const box = el.getBoundingClientRect();
 		if (!own || !box.width || getComputedStyle(el).visibility === 'hidden') continue;
@@ -78,12 +84,20 @@ async function read(engine) {
 						say(`${ready} never showed`);
 						continue;
 					}
+					// each slide is drawn once face-runtime has run its part, in the runtimes worker: wait for every one, drawn or
+					// refused (os/web/brain/brain.js, `face`)
+					if (view === 'id') {
+						const settled = () => [...document.querySelectorAll('.face')].every((h) => h.shadowRoot?.querySelector('.slide') || h.dataset.refused);
+						await page.waitForFunction(settled, null, { timeout: 30_000 }).catch(() => {});
+						const refused = await page.evaluate(() => [...document.querySelectorAll('.face')].map((h) => h.dataset.refused).filter(Boolean));
+						for (const why of refused) say(`face-runtime refused a slide: ${why}`);
+					}
 					await page.evaluate(() => document.fonts.ready);
 					const seen = {};
 					if (view === 'dashboard') {
 						seen.items = await page.locator('[data-testid^="brain-"]').count();
 						seen.open = await page.locator('[data-testid^="brain-"] a').count();
-						if (seen.items !== 9) say(`${seen.items} items, not 9`);
+						if (seen.items !== packages.length) say(`${seen.items} items, not ${packages.length}`);
 						if (!(await page.locator('[data-testid="brain-id"] a').count())) say('avenID is not open');
 					}
 					if (view === 'id') {
@@ -91,8 +105,22 @@ async function read(engine) {
 						seen.ratio = Math.round((box.width / box.height) * 1000) / 1000;
 						if (Math.abs(seen.ratio - 16 / 9) > 0.02) say(`the slide is ${seen.ratio}:1, not 16:9`);
 						// every text on every slide, as the reader sees it
+						// each slide is a face, drawn into its own shadow root; none is left in the page itself
+						seen.faces = await page.evaluate(() => [...document.querySelectorAll('.face')].filter((h) => h.shadowRoot?.querySelector('.slide')).length);
+						if (seen.faces !== 9) say(`${seen.faces} slides drawn in shadow roots, not 9`);
+						if (await page.evaluate(() => !!document.querySelector('.slide'))) say('a slide is drawn in the page, outside a shadow root');
+						const leaked = await page.evaluate(() =>
+							[...document.styleSheets].flatMap((sheet) => {
+								try {
+									return [...sheet.cssRules].map((r) => r.selectorText ?? '');
+								} catch {
+									return [];
+								}
+							}).filter((t) => /\.slide(?![\w-])/.test(t)),
+						);
+						if (leaked.length) say(`the page's own sheets style slides: ${leaked[0]}`);
 						const small = await page.evaluate(() =>
-							[...document.querySelectorAll('.slide *')]
+							[...document.querySelectorAll('.face')].flatMap((h) => [...h.shadowRoot.querySelectorAll('.slide *')])
 								.filter((el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()))
 								.map((el) => ({ text: el.textContent.trim().slice(0, 30), px: parseFloat(getComputedStyle(el).fontSize) }))
 								.filter((t) => t.px < 9),
@@ -105,7 +133,10 @@ async function read(engine) {
 					const low = (await page.evaluate(contrasts, linear)).filter((c) => !c.ok);
 					seen.lowContrast = low;
 					for (const c of low) say(`"${c.text}" has ${c.ratio}:1, under ${c.need}:1`);
-					await page.screenshot({ path: `${run}/brain-${view}-${where}-${size}-${name}.png`, fullPage: view !== 'glossary' });
+					// WebKit and Firefox take no screenshot taller than 32,767 px, and a whole package page on a phone is taller:
+					// the page's top, at most 16,000 px of it, is the evidence; the checks above read the whole page
+					const tall = Math.min(await page.evaluate(() => document.documentElement.scrollHeight), 16_000);
+					await page.screenshot({ path: `${run}/brain-${view}-${where}-${size}-${name}.png`, fullPage: true, clip: { x: 0, y: 0, width, height: tall } });
 					got[`${where}-${view}-${size}`] = seen;
 				}
 			}

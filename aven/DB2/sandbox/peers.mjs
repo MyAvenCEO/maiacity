@@ -10,7 +10,7 @@ const lights = Object.keys(cast.peers).filter((id) => cast.peers[id].kind === 'p
 const backlog = 400;
 const types = { '.js': 'text/javascript', '.wasm': 'application/wasm' };
 
-export function peers({ light = 'target/light', events = process.env.AVENSANDBOX_EVENTS ?? 'runs/events' } = {}) {
+export function peers({ light = 'target/light', runtimes = 'target/runtimes', events = process.env.AVENSANDBOX_EVENTS ?? 'runs/events' } = {}) {
 	mkdirSync(events, { recursive: true });
 	const clients = new Set();
 	const offsets = new Map();
@@ -93,6 +93,14 @@ export function peers({ light = 'target/light', events = process.env.AVENSANDBOX
 						res.writeHead(204).end();
 					});
 					return;
+				}
+				// the runtime host and the frozen modules it loads by hash (sandbox/up.mjs, `buildRuntimes`)
+				const host = url.pathname.match(/^\/runtimes\/((?:frozen\/[0-9a-f]{64}\.wasm)|(?:aven_runtimes_web(?:_bg)?\.(?:js|wasm)))$/);
+				if (req.method === 'GET' && host) {
+					const path = join(runtimes, host[1]);
+					if (!existsSync(path)) return res.writeHead(404).end('the runtime host is not built yet: bun run up builds it');
+					res.writeHead(200, { 'content-type': types[host[1].slice(host[1].lastIndexOf('.'))], 'cache-control': 'no-store' });
+					return res.end(readFileSync(path));
 				}
 				const file = url.pathname.match(/^\/peer-light\/([\w.-]+\.(js|wasm))$/);
 				if (req.method === 'GET' && file) {

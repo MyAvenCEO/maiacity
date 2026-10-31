@@ -14,11 +14,11 @@ use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::OnceLock;
 
-use aven_core::limits::{MAX_DEPS, MAX_SIG_BYTES};
+use aven_core::limits::{MAX_DEPS, MAX_SIG_BYTES, MAX_SIGS};
 use aven_core::past::in_past;
 use aven_core::{
-    Bound, DocId, Envelope, Facts, Hash, Held, Reach, Signed, Target, Value, blake3, decode,
-    encode, split,
+    Bound, Call, DocId, Envelope, Facts, Hash, Held, Reach, Sig, Signed, Target, Value, blake3,
+    decode, encode, split,
 };
 use common::{bools, hex, names};
 use proptest::prelude::*;
@@ -140,8 +140,10 @@ fn build(draws: &[Draw]) -> Vec<Envelope> {
             prev: d.prev.map(|i| pick(&out, i)),
             deps: d.deps.iter().map(|&i| pick(&out, i)).collect(),
             body: Value::Uint(d.body),
-            signer: vec![7; 32],
-            sig: vec![9; 64],
+            sigs: vec![Sig {
+                signer: vec![7; 32],
+                sig: vec![9; 64],
+            }],
         };
         out.push(e);
     }
@@ -152,7 +154,8 @@ fn build(draws: &[Draw]) -> Vec<Envelope> {
 struct World {
     all: Vec<Envelope>,
     held: Vec<bool>,
-    bad: Vec<usize>,
+    unfit: Vec<usize>,
+    unauthorized: Vec<usize>,
     tips: Vec<usize>,
 }
 
@@ -161,14 +164,16 @@ fn world() -> impl Strategy<Value = World> {
         proptest::collection::vec((draw(), any::<bool>()), 1..14),
         proptest::collection::vec(any::<prop::sample::Index>(), 0..3),
         proptest::collection::vec(any::<prop::sample::Index>(), 0..3),
+        proptest::collection::vec(any::<prop::sample::Index>(), 0..3),
     )
-        .prop_map(|(ds, bad, tips)| {
+        .prop_map(|(ds, unfit, unauthorized, tips)| {
             let (draws, held): (Vec<Draw>, Vec<bool>) = ds.into_iter().unzip();
             let n = draws.len();
             World {
                 all: build(&draws),
                 held,
-                bad: bad.iter().map(|i| i.index(n)).collect(),
+                unfit: unfit.iter().map(|i| i.index(n)).collect(),
+                unauthorized: unauthorized.iter().map(|i| i.index(n)).collect(),
                 tips: tips.iter().map(|i| i.index(n)).collect(),
             }
         })
@@ -187,7 +192,7 @@ impl World {
     fn case(&self) -> Json {
         json!({
             "envelopes": self.all.iter().map(|e| hex(&e.encode())).collect::<Vec<_>>(),
-            "held": self.held, "bad": self.bad, "tips": self.tips,
+            "held": self.held, "unfit": self.unfit, "unauthorized": self.unauthorized, "tips": self.tips,
         })
     }
 }
@@ -295,14 +300,23 @@ fn any_bytes_case() -> impl Strategy<Value = Vec<u8>> {
     let signed = (
         ".{0,8}",
         any::<u64>(),
-        proptest::collection::vec(any::<u8>(), 0..40),
+        // signatures as drawn: now and then out of order or one signer twice, which both refuse
+        proptest::collection::vec(
+            (0u8..4, proptest::collection::vec(any::<u8>(), 0..40)),
+            0..4,
+        ),
     )
-        .prop_map(|(label, n, sig)| {
+        .prop_map(|(label, n, sigs)| {
             Signed {
                 label,
                 body: Value::Uint(n),
-                signer: vec![7; 32],
-                sig,
+                sigs: sigs
+                    .into_iter()
+                    .map(|(k, sig)| Sig {
+                        signer: vec![k; 32],
+                        sig,
+                    })
+                    .collect(),
             }
             .encode()
         });
@@ -315,8 +329,12 @@ fn any_bytes_case() -> impl Strategy<Value = Vec<u8>> {
             prev: None,
             deps: vec![blake3(b"x"); MAX_DEPS + k - 1],
             body: Value::Null,
-            signer: vec![7; 32],
-            sig: vec![9; MAX_SIG_BYTES + k - 1],
+            sigs: (0..MAX_SIGS + k - 1)
+                .map(|i| Sig {
+                    signer: vec![i as u8; 32],
+                    sig: vec![9; MAX_SIG_BYTES + k - 1],
+                })
+                .collect(),
         };
         e.encode()
     });
@@ -336,7 +354,21 @@ fn any_bytes_case() -> impl Strategy<Value = Vec<u8>> {
             ])
         })
     });
-    let base = prop_oneof![4 => envelope, 4 => signed, 1 => wide, 3 => target, 1 => short];
+    // calls with sorted params (the only canonical ones) and ops of 32 bytes or not, and bounds
+    let call = (
+        proptest::collection::btree_map("[a-z]{1,6}", any_param(), 0..3),
+        31usize..34,
+    )
+        .prop_map(|(ps, n)| {
+            let mut params: Vec<(String, Value)> = ps.into_iter().collect();
+            params.sort_by(|a, b| a.0.len().cmp(&b.0.len()).then_with(|| a.0.cmp(&b.0)));
+            encode(&Value::Map(vec![
+                ("op".into(), Value::Bytes(vec![2; n])),
+                ("params".into(), Value::Map(params)),
+            ]))
+        });
+    let bound = any_bound().prop_map(|b| encode(&b.value()));
+    let base = prop_oneof![4 => envelope, 4 => signed, 1 => wide, 3 => target, 1 => short, 3 => call, 2 => bound];
     // now and then broken: a byte changed, cut short, or a byte added
     (base, 0u8..4, any::<prop::sample::Index>(), any::<u8>()).prop_map(|(mut bs, how, at, b)| {
         let i = at.index(bs.len());
@@ -360,9 +392,11 @@ proptest! {
         let a = ask(&w.case());
         let s = w.s();
         let held = Held::new(&s);
-        let bad: Vec<Hash> = w.bad.iter().map(|&i| w.all[i].name()).collect();
+        let unfit: Vec<Hash> = w.unfit.iter().map(|&i| w.all[i].name()).collect();
+        let unauthorized: Vec<Hash> = w.unauthorized.iter().map(|&i| w.all[i].name()).collect();
         let tips: Vec<Hash> = w.tips.iter().map(|&i| w.all[i].name()).collect();
-        let ok = |x: &Envelope| !bad.contains(&x.name());
+        let fit = |x: &Envelope| !unfit.contains(&x.name());
+        let authorized = |x: &Envelope| !unauthorized.contains(&x.name());
         prop_assert_eq!(w.all.iter().map(Envelope::name).collect::<Vec<_>>(), names(&a["names"]));
         for (k, e) in w.all.iter().enumerate() {
             let want: BTreeSet<Hash> = names(&a["past"][k]).into_iter().collect();
@@ -373,31 +407,39 @@ proptest! {
             prop_assert_eq!(splits, bools(&a["split"][k]), "split of {}", k);
         }
         let got = |f: &dyn Fn(&Envelope) -> bool| w.all.iter().map(f).collect::<Vec<bool>>();
+        prop_assert_eq!(got(&|e| held.closed(e)), bools(&a["closed"]));
         prop_assert_eq!(got(&|e| held.discounted(e)), bools(&a["discounted"]));
-        prop_assert_eq!(got(&|e| held.counts(e, ok)), bools(&a["counts"]));
+        prop_assert_eq!(got(&|e| held.counts(e, fit, authorized)), bools(&a["counts"]));
         prop_assert_eq!(got(&|e| held.holds(&tips, e)), bools(&a["holds"]));
     }
 
     /// Splits are final: what is discounted among `S` never counts among all of it, which holds more
-    /// (`split_final`). What counts builds on what counts (`counts_past`). A version holds more as more arrives
+    /// (`split_final`). What counts builds on what counts (`counts_past`). A whole past stays whole (`closed_mono`). A
+    /// version holds more as more arrives
     /// (`Version.holds_mono`).
     #[test]
     fn splits_are_final(w in world()) {
         let s = w.s();
         let (h, h_all) = (Held::new(&s), Held::new(&w.all));
-        let bad: Vec<Hash> = w.bad.iter().map(|&i| w.all[i].name()).collect();
+        let unfit: Vec<Hash> = w.unfit.iter().map(|&i| w.all[i].name()).collect();
+        let unauthorized: Vec<Hash> = w.unauthorized.iter().map(|&i| w.all[i].name()).collect();
         let tips: Vec<Hash> = w.tips.iter().map(|&i| w.all[i].name()).collect();
-        let ok = |x: &Envelope| !bad.contains(&x.name());
+        let fit = |x: &Envelope| !unfit.contains(&x.name());
+        let authorized = |x: &Envelope| !unauthorized.contains(&x.name());
         for e in &w.all {
             if h.discounted(e) {
                 prop_assert!(h_all.discounted(e));
-                prop_assert!(!h_all.counts(e, |_| true));
+                prop_assert!(!h_all.counts(e, |_| true, |_| true));
             }
-            if h.counts(e, ok) {
+            if h.counts(e, fit, authorized) {
                 let past = h.past(e);
                 for x in s.iter().filter(|x| past.contains(&x.name())) {
-                    prop_assert!(h.counts(x, ok));
+                    prop_assert!(h.counts(x, fit, authorized));
                 }
+            }
+            // closed_mono: one name is one set of parents under BLAKE3
+            if h.closed(e) {
+                prop_assert!(h_all.closed(e));
             }
             if h.holds(&tips, e) {
                 prop_assert!(h_all.holds(&tips, e));
@@ -417,6 +459,11 @@ proptest! {
         prop_assert!(e.is_none_or(|e| e == bs) && s.is_none_or(|s| s == bs));
         let t = decode(&bs).and_then(Target::of_value).map(|t| encode(&t.value()));
         prop_assert_eq!(t.as_ref().map(|b| hex(b)), a["target"].as_str().map(String::from));
+        let c = decode(&bs).and_then(Call::of_value).map(|c| encode(&c.value()));
+        prop_assert_eq!(c.as_ref().map(|b| hex(b)), a["call"].as_str().map(String::from));
+        let b = decode(&bs).and_then(Bound::of_value).map(|b| encode(&b.value()));
+        prop_assert_eq!(b.as_ref().map(|b| hex(b)), a["bound"].as_str().map(String::from));
+        prop_assert!([t, c, b].iter().flatten().all(|x| *x == bs));
     }
 
     /// Coverage and narrowing are the model's (`Target.coversB`, `Target.le`), and a narrower target covers only

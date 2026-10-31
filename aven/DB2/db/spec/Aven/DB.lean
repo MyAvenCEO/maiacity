@@ -2,6 +2,10 @@ import Aven.DB.Status
 import Aven.DB.Presence
 import Aven.DB.Timeline
 import Aven.DB.Wire
+import Aven.Peer.Keeper
+import Aven.Peer.Fetch
+import Aven.Peer.Serve
+import Aven.DB.WireCbor
 import Aven.DB.Blake3
 import Aven.DB.Store
 import Aven.DB.StoreExamples

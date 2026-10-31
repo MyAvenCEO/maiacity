@@ -15,7 +15,8 @@ the holder do (A32, Samuel, 31 Oct 2026: "caps should be built from their ops").
   and field. Read, tell, keep and share lower to no step (`CoreOp.writes`). A stored query is an op by its hash.
 - A bound is an enumeration: any value, or one of some values, and for a list each of its elements one of them. Ranges
   come only when a real op needs them. A narrower bound allows no value a wider one doesn't (`Bound.within_allows`).
-- An envelope names the op it ran and its parameters, a `Call`: `{"op": id, "params": {…}}` (`Call.value`). Another
+- An envelope names the op it ran and its parameters, a `Call`: `{"op": id, "params": {…}}` (`Call.value`), read back
+  by `Call.ofValue?` (`Call.ofValue_value`); a bound reads back by `Bound.ofValue?` (`Bound.ofValue_value`). Another
   plugin's built-in ops are named as `core/1`'s are, `{"op": name, "plugin": "tree/1"}` for the tree's.
 - Every Doc has a type (A39): a type Doc's own type is the built-in type of types, which is its own type too
   (`typeOfTypes`, `typeOfTypes_typed`).
@@ -42,11 +43,23 @@ def CoreOp.writes : CoreOp → Bool
 
 private def k (s : String) : Bytes := s.toUTF8.toList
 
-/-- A core op's stored form, `{"op": name, "plugin": "core/1"}`, its keys in the codec's order. -/
-def CoreOp.value (o : CoreOp) : Value := .map [(k "op", .text (k o.name)), (k "plugin", .text (k "core/1"))]
+/-- A plugin's built-in op in its stored form, `{"op": name, "plugin": plugin}`, its keys in the codec's order. -/
+def OpId.stored (plugin name : String) : Value := .map [(k "op", .text (k name)), (k "plugin", .text (k plugin))]
 
-/-- A core op's id: the name of its stored form. -/
-def CoreOp.id (H : Bytes → Hash) (o : CoreOp) : OpId := nameOf H o.value
+/-- Any plugin's built-in op id: the name of its stored form, the one way an op of `core/1`, `tree/1` or any other
+plugin is named (A45). -/
+def OpId.ofPlugin (H : Bytes → Hash) (plugin name : String) : OpId := nameOf H (OpId.stored plugin name)
+
+/-- A core op's stored form, `{"op": name, "plugin": "core/1"}`. -/
+def CoreOp.value (o : CoreOp) : Value := OpId.stored "core/1" o.name
+
+/-- A core op's id: `core/1`'s op of its name. -/
+def CoreOp.id (H : Bytes → Hash) (o : CoreOp) : OpId := OpId.ofPlugin H "core/1" o.name
+
+/-- `core/1`'s write params, by name: the type a write is on and the fields it sets (caps' lines and the engine's
+lowering read them here). -/
+def typeParam : Bytes := k "type"
+def fieldsParam : Bytes := k "fields"
 
 #guard [CoreOp.read, .put, .patch, .remove, .edit, .tell, .keep, .share].all fun o => Canon o.value
 
@@ -65,6 +78,27 @@ def Bound.allows : Bound → Value → Bool
 def Bound.value : Bound → Value
   | none => .null
   | some vs => .array vs
+
+/-- The most values one bound allows (rule 10; the limit follows its primitive's owner, A45): room for every field of
+a schema, every type of a vault or every op of a plugin a cap line names. -/
+def maxBoundValues : Nat := 256
+
+/-- The most params one call names: `core/1`'s take two, a plugin's op a handful. -/
+def maxParams : Nat := 64
+
+/-- A bound read back from its Value: null for any value, an array of at most `maxBoundValues` for the values it
+allows. -/
+def Bound.ofValue? : Value → Option Bound
+  | .null => some none
+  | .array vs => if vs.length ≤ maxBoundValues then some (some vs) else none
+  | _ => none
+
+/-- A bound within its limit reads back as itself. -/
+theorem Bound.ofValue_value (b : Bound) (h : ∀ vs, b = some vs → vs.length ≤ maxBoundValues) :
+    Bound.ofValue? b.value = some b := by
+  cases b with
+  | none => rfl
+  | some vs => simp [Bound.value, Bound.ofValue?, h vs rfl]
 
 /-- A bound within another: any value it allows, the other allows too. -/
 def Bound.within : Bound → Bound → Bool
@@ -113,11 +147,35 @@ hash, its params a map with text keys. A call whose params aren't in the codec's
 canonical, so one call has one encoding. -/
 def Call.value (c : Call) : Value := .map [(k "op", .bytes c.op.bytes), (k "params", .map c.params)]
 
+/-- A call read back from `Call.value`'s shape: its op a hash (`Hash.ofValue?`), its params a map of at most
+`maxParams`. Bytes that aren't canonical never reach it: the codec refuses them, a call's params out of order among
+them. -/
+def Call.ofValue? : Value → Option Call
+  | .map [(a, .bytes op), (b, .map ps)] =>
+    if a = k "op" ∧ b = k "params" ∧ ps.length ≤ maxParams then (Hash.ofValue? (.bytes op)).map (⟨·, ps⟩)
+    else none
+  | _ => none
+
+/-- A call whose op is a hash, within its limit, reads back as itself. -/
+theorem Call.ofValue_value (c : Call) (h : c.op.ok = true) (hp : c.params.length ≤ maxParams) :
+    Call.ofValue? c.value = some c := by
+  obtain ⟨⟨op⟩, ps⟩ := c
+  simp only [Hash.ok, beq_iff_eq] at h
+  simp [Call.value, Call.ofValue?, Hash.ofValue?, h, hp]
+
 /-! ## The type of types (A39) -/
 
+/-- A built-in type: no Doc's genesis, its id the name of the label `<namespace> <name> 1`, so every reader knows it
+without fetching anything. The one way a part names its built-in types (A45): avenID's and the docs layer's list
+theirs through it. -/
+def builtinType (H : Bytes → Hash) (ns name : String) : DocId :=
+  ⟨nameOf H (.text (k s!"{ns} {name} 1"))⟩
+
 /-- The built-in type of types: the root type of every type Doc, and its own. It is no Doc's genesis, which couldn't
-name its own hash: its id is the name of a fixed label, so every reader knows it without fetching anything. -/
-def typeOfTypes (H : Bytes → Hash) : DocId := ⟨nameOf H (.text (k "avenDB type of types 1"))⟩
+name its own hash: it is a built-in type, `avenDB type of types 1`. -/
+def typeOfTypes (H : Bytes → Hash) : DocId := builtinType H "avenDB" "type of types"
+
+#guard typeOfTypes blake3 == ⟨nameOf blake3 (.text (k "avenDB type of types 1"))⟩
 
 /-- A type Doc: one whose root type is the type of types. -/
 def Facts.isType (H : Bytes → Hash) (f : Facts) : Bool := f.type == typeOfTypes H

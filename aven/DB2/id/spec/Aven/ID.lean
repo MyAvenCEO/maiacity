@@ -28,11 +28,14 @@ import Aven.ID.Collections
 import Aven.ID.Keeping
 import Aven.ID.CapsCbor
 import Aven.ID.Authorized
+import Aven.ID.Member
 import Aven.ID.Revoke
+import Aven.ID.Authority
 import Aven.ID.Expiry
 import Aven.ID.Epochs
 import Aven.ID.Recover
 import Aven.ID.Network
+import Aven.ID.TreeDoc
 import Aven.ID.Restore
 import Aven.ID.RestoreDoor
 import Aven.ID.Records
@@ -41,16 +44,29 @@ import Aven.ID.Forget
 import Aven.ID.CatchUp
 import Aven.ID.Admit
 import Aven.ID.Keep
+import Aven.ID.KeepCbor
 import Aven.ID.Holdings
 import Aven.ID.Safe
 import Aven.ID.KeyFormats
 import Aven.ID.KeyFormatsJson
+import Aven.ID.VaultName
+import Aven.ID.VaultNameJson
+import Aven.ID.Keyring
+import Aven.ID.KeyringJson
 import Aven.ID.SafeJson
 import Aven.ID.SealedIndex
 import Aven.ID.CapsExamples
+import Aven.ID.AuthorizedExamples
+import Aven.ID.IssuerExamples
+import Aven.ID.MemberExamples
+import Aven.ID.ReachExamples
 import Aven.ID.CapsJson
 import Aven.ID.SettleJson
 import Aven.ID.FailJson
+import Aven.ID.Padme
+import Aven.ID.Seal
+import Aven.ID.AccessRecords
+import Aven.ID.AccessJson
 
 /-! # Aven.ID
 

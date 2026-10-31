@@ -2,8 +2,15 @@
 //! empty, and a signature holds only when both halves verify. A key and a signature are each a Value with its suite
 //! and its two halves, so they travel as the signer and signature bytes of any signed thing ([`hybrid_verify`]).
 //!
-//! An owner key comes from a passkey's PRF ([`crate::PrfOutput::owner_key`]); a device's is made fresh on the device
-//! ([`HybridKey::generate`]), never derived from a passkey (D11).
+//! An owner key comes from a passkey's PRF ([`crate::PrfOutput::owner_key`]). A device's comes from its own Ed25519
+//! seed ([`HybridKey::from_device_seed`]), never from a passkey (D11): the seed is the Ed25519 half's, and the
+//! ML-DSA-65 ξ is `derive_key("avenID device ml-dsa 1", seed)` (A43, 31 Oct 2026), derived in the device's own process
+//! and wiped after use. The seed is never exported, and nothing else is derived from it; outside this derivation only
+//! Ed25519's scalar signs. A quantum attacker recovers that clamped scalar from the public key, never the seed it was
+//! hashed from (RFC 8032), so the ML-DSA half stays out of reach. A device's X-Wing seal key is derived the same way
+//! ([`device_seal_key`], `avenID device seal 1`). All three rotate together, with the device key (D19), and a
+//! rotation reseals the keyring to the new seal key. Nothing trusts a device's ML-DSA half until its vault owner's
+//! hybrid signature binds it.
 
 use aven_core::{Value, decode, encode};
 use ed25519_dalek::Signer as _;
@@ -12,6 +19,9 @@ use ml_dsa::{EncodedSignature, EncodedVerifyingKey, MlDsa65};
 use crate::secret::{Entropy, Secret};
 use crate::value::{bytes, fields};
 
+/// The label of a device's ML-DSA-65 ξ, from its Ed25519 seed (`Aven.ID.KeyFormats.deviceMlDsaLabel`).
+pub const DEVICE_ML_DSA_LABEL: &str = "avenID device ml-dsa 1";
+
 /// The hybrid suite (`Aven.Core.hybridSuite`).
 pub const HYBRID_SUITE: u64 = 1;
 pub const ED25519_KEY_LEN: usize = 32;
@@ -19,10 +29,31 @@ pub const ED25519_SIG_LEN: usize = 64;
 pub const ML_DSA_KEY_LEN: usize = 1952;
 pub const ML_DSA_SIG_LEN: usize = 3309;
 
-/// A hybrid signing key. Both halves' seeds are wiped when it drops.
+/// The label of a device's X-Wing seed, from its Ed25519 seed (`Aven.ID.KeyFormats.deviceSealLabel`).
+pub const DEVICE_SEAL_LABEL: &str = "avenID device seal 1";
+
+/// A device's seal key, which its vault's keyring is sealed to: X-Wing from `derive_key("avenID device seal 1",
+/// its Ed25519 seed)`, as the ML-DSA-65 half is derived, and under the same rules.
+pub fn device_seal_key(ed25519: &Secret) -> crate::SealKey {
+    crate::SealKey::from_seed(&Secret::take(&mut blake3::derive_key(
+        DEVICE_SEAL_LABEL,
+        ed25519.expose(),
+    )))
+}
+
+/// A device's ML-DSA-65 ξ, from its Ed25519 seed (`Aven.ID.KeyFormats.deviceMlDsaSeed`).
+pub fn device_ml_dsa_seed(ed25519: &Secret) -> Secret {
+    Secret::take(&mut blake3::derive_key(
+        DEVICE_ML_DSA_LABEL,
+        ed25519.expose(),
+    ))
+}
+
+/// A hybrid signing key. Both halves' seeds are wiped when it drops. ML-DSA-65's expanded key is tens of KB, so it
+/// lives on the heap: a wasm worker's stack is small, and a debug build copies what it moves.
 pub struct HybridKey {
     ed25519: ed25519_dalek::SigningKey,
-    ml_dsa: ml_dsa::SigningKey<MlDsa65>,
+    ml_dsa: Box<ml_dsa::SigningKey<MlDsa65>>,
 }
 
 impl HybridKey {
@@ -30,11 +61,16 @@ impl HybridKey {
     pub fn from_seeds(ed25519: &Secret, ml_dsa: &Secret) -> HybridKey {
         HybridKey {
             ed25519: ed25519_dalek::SigningKey::from_bytes(ed25519.expose()),
-            ml_dsa: ml_dsa::SigningKey::from_seed(ml_dsa.expose().into()),
+            ml_dsa: Box::new(ml_dsa::SigningKey::from_seed(ml_dsa.expose().into())),
         }
     }
 
-    /// A device's fresh key.
+    /// A device's hybrid key, from its own Ed25519 seed: the seed itself, and the ML-DSA-65 ξ derived from it.
+    pub fn from_device_seed(ed25519: &Secret) -> HybridKey {
+        HybridKey::from_seeds(ed25519, &device_ml_dsa_seed(ed25519))
+    }
+
+    /// A fresh key, for tests and for anything that has no device seed: both halves random.
     pub fn generate(entropy: &mut impl Entropy) -> HybridKey {
         HybridKey::from_seeds(&Secret::generate(entropy), &Secret::generate(entropy))
     }
@@ -163,8 +199,9 @@ pub fn hybrid_verify(key: &[u8], msg: &[u8], sig: &[u8]) -> bool {
     }
 }
 
-/// The hybrid scheme as aven-core's [`Verify`](aven_core::Verify), for any `Signed` thing whose signer and signature
-/// are hybrid: `signed.valid(&Hybrid)` holds only when both halves verify its signing bytes (`Signed.hybrid_valid`).
+/// The hybrid scheme as aven-core's [`Verify`](aven_core::Verify), for any signed thing whose signatures are hybrid:
+/// `signed.valid(&Hybrid)` holds only when, for each signature beside it, both halves verify its signing bytes
+/// (`Signed.hybrid_valid`).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Hybrid;
 
@@ -181,8 +218,10 @@ impl HybridKey {
         aven_core::Signed {
             label: label.into(),
             body,
-            signer: self.public().to_bytes(),
-            sig: self.sign(&msg).to_bytes(),
+            sigs: vec![aven_core::Sig {
+                signer: self.public().to_bytes(),
+                sig: self.sign(&msg).to_bytes(),
+            }],
         }
     }
 }

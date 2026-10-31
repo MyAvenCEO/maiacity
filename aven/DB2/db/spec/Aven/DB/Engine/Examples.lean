@@ -6,6 +6,7 @@ import Aven.DB.Engine.Footprint
 import Aven.DB.Engine.Changes
 import Aven.DB.Engine.Index
 import Aven.DB.Engine.Probe
+import Aven.DB.Engine.Lower
 
 /-!
 # The engine's examples, and how its vectors are written (README, rule 10)
@@ -362,13 +363,13 @@ def tick : List (Op Value) := [.patch task (rows [("x2", text "Order seeds")]) (
   false
 
 /-- Every type Doc written under one schema version in these examples. -/
-def ver (t : DocId) : TypeId := ⟨t, blake3 (utf8 "schema:v1")⟩
+def ver (t : DocId) : Aven.DB.Docs.Version := ⟨t, some (blake3 (utf8 "schema:v1"))⟩
 
 -- Ticking a task done is one edited Record whose one field is `done`, and the untouched task is no change; it passes
 -- the verdict's footprint part.
 #guard (match commit valEq ofId 1 8 todo tick with
   | .ok s' => ((changesFrom ver todo s').map fun c => (c.kind, c.names.map utf8Text),
-      verdictFootprint (footprint tick) (changesFrom ver todo s'))
+      verdictFootprint ver (footprint tick) todo s')
   | .error _ => ([], false)) ==
   ([(Aven.DB.Docs.ChangeKind.edited, ["done"])], true)
 
@@ -381,8 +382,15 @@ def proposal : List (Record Value) := [⟨⟨1, 1, 0⟩, task, rows [("x2", text
 def merged : List (Record Value) := [⟨⟨1, 1, 0⟩, task, rows [("done", .uint 1), ("x2", text "Order bean seeds")]⟩]
 def settle : List (Op Value) := [.patch task [] (rows [("done", .uint 1)])]
 
-#guard verdictFootprint (footprint settle) (changesFrom ver proposal merged) == true
-#guard verdictFootprint (footprint settle) (changesFrom ver mainBefore merged) == false
+#guard verdictFootprint ver (footprint settle) proposal merged == true
+#guard verdictFootprint ver (footprint settle) mainBefore merged == false
+
+-- A Record's type is fixed at birth. Turning the task into a note, keeping its id and every field, changes no field, so
+-- the change view shows nothing; the verdict refuses it, whatever the footprint, the empty one included.
+def retyped : List (Record Value) := todo.map fun r => if r.id == ⟨1, 1, 0⟩ then { r with type := note } else r
+#guard changesFrom ver todo retyped == []
+#guard verdictFootprint ver [] todo retyped == false
+#guard verdictFootprint ver (footprint tick) todo retyped == false
 
 def mutationExamples : List Json := [
   mutationVector "I ate 2 bananas" 1 7 [] bananas,

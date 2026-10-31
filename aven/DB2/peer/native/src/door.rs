@@ -17,10 +17,10 @@
 
 use std::sync::Arc;
 
-use aven_db_core::timeline;
-use aven_db_core::wire::Frame;
 use aven_db_store::backend::DalStore;
 use aven_db_store::{Error as StoreError, RefName, Store};
+use aven_gen1::timeline;
+use aven_gen1::wire::Frame;
 use aven_id::{
     Claim, Invite, Join, MemberError, Members, Network, Pending, Relying, SignIn, Withdrawal,
     invite_id,

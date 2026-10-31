@@ -13,8 +13,9 @@ A target is a map, its keys the ones caps writes (`id/caps`, "Targets"), sorted 
 | a vault's Docs of one root type | `{"type": type Doc, "below": bool, "vault": vault}` |
 
 Doc ids are byte strings of their hash, exactly 32 bytes, a vault is its text. Each form has keys no other form has, so
-a target whose ids are hashes reads back as itself (`Target.ofValue_value`), and an id of any other length is refused, and an allowed one is a canonical Value (`Target.value_canon`), so a cap's
-bytes, and its hash, name its targets exactly.
+a target whose ids are hashes reads back as itself (`Target.ofValue_value`), and an id of any other length is refused.
+An allowed target is a canonical Value (`Target.value_canon`), so a cap's bytes, and its hash, name its targets
+exactly.
 -/
 
 namespace Aven.Core
@@ -52,11 +53,14 @@ def Target.value : Target → Value
 
 def Target.ofValue? : Value → Option Target
   | .map [(a, .bytes d), (c, .text r)] =>
-    if a = keyDoc ∧ c = keyReach ∧ d.length = 32 then (Reach.ofBytes? r).map (.doc ⟨⟨d⟩⟩ ·) else none
+    if a = keyDoc ∧ c = keyReach then
+      (Hash.ofValue? (.bytes d)).bind fun h => (Reach.ofBytes? r).map (.doc ⟨h⟩ ·)
+    else none
   | .map [(a, .bool b), (c, .text v)] =>
     if a = keyBelow ∧ c = keyVault then some (.vault v b) else none
   | .map [(a, .bytes t), (c, .bool b), (e, .text v)] =>
-    if a = keyType ∧ c = keyBelow ∧ e = keyVault ∧ t.length = 32 then some (.vaultType v ⟨⟨t⟩⟩ b) else none
+    if a = keyType ∧ c = keyBelow ∧ e = keyVault then (Hash.ofValue? (.bytes t)).map (.vaultType v ⟨·⟩ b)
+    else none
   | _ => none
 
 /-- Its Doc or type id is a hash, 32 bytes. -/
@@ -70,11 +74,11 @@ theorem Target.ofValue_value (t : Target) (h : t.idsOk = true) : Target.ofValue?
   cases t with
   | doc d r =>
     simp only [Target.idsOk, Hash.ok, beq_iff_eq] at h
-    cases r <;> simp [Target.value, Target.ofValue?, Reach.ofBytes_bytes, h]
+    cases r <;> simp [Target.value, Target.ofValue?, Reach.ofBytes_bytes, Hash.ofValue?, h]
   | vault v b => simp [Target.value, Target.ofValue?, keyBelow, keyVault]
   | vaultType v t b =>
     simp only [Target.idsOk, Hash.ok, beq_iff_eq] at h
-    simp [Target.value, Target.ofValue?, keyType, keyBelow, keyVault, h]
+    simp [Target.value, Target.ofValue?, keyType, keyBelow, keyVault, Hash.ofValue?, h]
 
 /-- A target the profile allows: its vault, if it has one, is text the codec takes. -/
 def Target.ok : Target → Bool
@@ -96,7 +100,8 @@ theorem Target.value_canon (t : Target) (h : t.ok = true) (hb : ∀ d : DocId, d
       keyBytes, textOk, keyType, keyBelow, keyVault, limit] <;> decide
 
 #guard (Target.vault "v:alice".toUTF8.toList true).value matches .map _
-#guard Target.ofValue? (Target.doc ⟨⟨List.replicate 32 1⟩⟩ .lists).value == some (.doc ⟨⟨List.replicate 32 1⟩⟩ .lists)
+#guard Target.ofValue? (Target.doc ⟨⟨List.replicate 32 1⟩⟩ .lists).value ==
+  some (.doc ⟨⟨List.replicate 32 1⟩⟩ .lists)
 #guard Target.ofValue? (Target.doc ⟨⟨[1, 2]⟩⟩ .lists).value == none
 
 end Aven.Core

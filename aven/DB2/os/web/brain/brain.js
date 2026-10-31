@@ -1,61 +1,97 @@
 // avenBRAIN in avenOS (aven/DB2/brain): its package list, pages, slides and glossary, bundled from the repo at build time.
-// Text comes in as Markdown and markup and leaves as node trees (brain/render), which Node.svelte draws: the shape the
-// markdown-runtime and the face-runtime will hand over once they exist.
+// Its Markdown goes through the frozen markdown-runtime and leaves as a checked node tree, which Node.svelte draws; a
+// slide is a face: its part (<id>.part.json, its markup and every rule) goes through the frozen face-runtime, and the
+// drawer (os/web/runtimes/draw.js) draws its answer into a shadow root of its own. Both run by their hash in the
+// runtimes worker (os/web/runtimes), apart from the device key. Nothing is drawn that a runtime didn't accept.
 import list from '../../../brain/packages.json';
-import { blocks, slug } from '../../../brain/render/markdown.js';
-import { rewriteLinks } from '../../../brain/render/links.js';
-import { check, parse } from '../../../brain/render/tree.js';
 import '../../../brain/style/tokens.css';
-import '../../../brain/style/slide.css';
 import images from '../../../brain/art/images.json';
+import { checkTree, draw } from '../runtimes/draw.js';
+import { fromJson, runtime } from '../runtimes/runtimes.js';
 
-const files = import.meta.glob('../../../brain/**/*.{md,html}', { query: '?raw', import: 'default', eager: true });
-import.meta.glob('../../../brain/*/slides/*.css', { eager: true });
+const files = import.meta.glob('../../../brain/**/*.md', { query: '?raw', import: 'default', eager: true });
 const file = (path) => files[`../../../brain/${path}`];
+
+// Each slide's part, as brain/art/slides.mjs writes it: its markup and its rules, style/slide.style.json's first, in
+// the JSON form of a Value
+const parts = import.meta.glob('../../../brain/*/slides/*.part.json', { import: 'default', eager: true });
 
 export const packages = list.packages;
 
-const repo = 'https://github.com/myavenceo/maiacity/blob/main/aven/DB2/brain/';
-// a link in the brain's Markdown: a term (`glossary:vault`) goes to the glossary, a package's page to its page, any
-// other file in the repo to GitHub, and the rest only if the allowlist takes it
-export function linker(from) {
-	return (href) => {
-		if (href.startsWith('glossary:')) return `#/brain/glossary/${href.slice(9)}`;
-		if (/^(https:\/\/|mailto:)/.test(href)) return href;
-		if (href.startsWith('#')) return null;
-		const url = new URL(href, `https://repo/${from}`);
-		const path = url.pathname.slice(1);
-		const own = packages.find((p) => p.page === path);
-		if (own) return `#/brain/${own.id}`;
-		return path.startsWith('../') ? null : `${repo}${path}${url.hash}`.replace('/brain/../', '/');
-	};
-}
+// Where the brain's Markdown sits in the repository: each document resolves its links against its own path there
+const home = 'aven/DB2/brain/';
+// The brain's links, for markdown-runtime (its `links`, the first rule whose prefix a resolved link starts with): a
+// term (`glossary:vault`) goes to the glossary, a package's page to its page, any other file of the repository to
+// GitHub. A link no rule turns into one the allowlist takes keeps only its text.
+const rules = [
+	['glossary:', '#/brain/glossary/'],
+	...packages.filter((p) => p.page).map((p) => [`${home}${p.page}`, `#/brain/${p.id}`]),
+	['aven/', 'https://github.com/myavenceo/maiacity/blob/main/aven/'],
+];
 
-// every tree is checked against the allowlist before it is drawn, whoever made it: Markdown too
-function checked(where, tree) {
-	const problems = tree.flatMap((node) => check(node));
-	if (problems.length) throw new Error(`${where}: ${problems.join('; ')}`);
-	return tree;
-}
+const hex = (text) => Array.from(new TextEncoder().encode(text), (b) => b.toString(16).padStart(2, '0')).join('');
 
-// Markdown to a tree, its links rewritten, checked
-const markdown = (path, options = {}) => checked(path, rewriteLinks(blocks(file(path) ?? '', options), linker(path)));
+// A document's tree, as markdown-runtime draws it: the nodes under its root. Each is drawn once.
+const trees = new Map();
+function markdown(path, idPrefix = '') {
+	if (!trees.has(path)) {
+		const input = { links: rules, base: `${home}${path}`, idPrefix };
+		// the runtime's tree, checked again by the drawer's own check before the page draws it, as a face's is
+		const tree = runtime('markdown-runtime', { bytes: hex(file(path) ?? '') }, input).then((root) => {
+			const bad = root[2].find((node) => !checkTree(node));
+			if (bad) throw new Error(`${path}: a node outside the allowlist: ${JSON.stringify(bad).slice(0, 120)}`);
+			return root[2];
+		});
+		// a refusal isn't kept: the next ask runs it again
+		tree.catch(() => trees.delete(path));
+		trees.set(path, tree);
+	}
+	return trees.get(path);
+}
 
 export const page = (path) => markdown(path);
 
-// a slide: its markup as a tree, checked against the face-runtime's allowlist, and its text
-export function slide(pkg, id) {
-	const text = `${pkg}/slides/${id}.md`;
-	return {
-		id,
-		tree: checked(`${pkg}/slides/${id}.html`, parse(file(`${pkg}/slides/${id}.html`) ?? '')).map(resolve),
-		text: markdown(text),
-	};
+// a slide: a face's part, and its text's tree
+export async function slide(pkg, id) {
+	const part = parts[`../../../brain/${pkg}/slides/${id}.part.json`];
+	if (!part) throw new Error(`${pkg}/slides/${id}.part.json: no part; bun brain/art/slides.mjs writes it`);
+	return { id, part, text: await markdown(`${pkg}/slides/${id}.md`) };
 }
 
-// the glossary: its tree, every term's entry with an id (`term-<word>`), and each word it defines, for #/brain/glossary/<word>
-export function glossary() {
-	const tree = rewriteLinks(blocks(file('GLOSSARY.md'), { idPrefix: 'g-' }), linker('GLOSSARY.md'));
+// A Svelte action: face-runtime runs the part (no data: a slide's text is its markup's), and the drawer draws its
+// answer into the node's own shadow root, its images from the bundle. A part face-runtime refuses draws nothing, and
+// the node says why (`data-refused`). Only the newest part's answer is drawn.
+export const face = (node, part) => {
+	let asked = 0;
+	const show = async (next) => {
+		const mine = ++asked;
+		try {
+			const answer = fromJson(await runtime('face-runtime', next, {}));
+			if (mine !== asked) return;
+			draw(node, answer, { file: fileOf });
+			delete node.dataset.refused;
+		} catch (error) {
+			if (mine !== asked) return;
+			node.dataset.refused = String(error?.message ?? error);
+			console.error(`a slide wasn't drawn: ${node.dataset.refused}`);
+		}
+	};
+	show(part);
+	return { update: show };
+};
+
+// a term's word as an id: lower case, punctuation gone, spaces to hyphens
+const slug = (text) =>
+	text
+		.toLowerCase()
+		.replace(/[^\p{L}\p{N}\s-]/gu, '')
+		.trim()
+		.replace(/\s/g, '-');
+
+// The glossary: its tree, its headings' ids `g-`'s, every term's entry with an id (`term-<word>`), and each word it
+// defines, for #/brain/glossary/<word>. A term's id is the page's own, given to the tree markdown-runtime drew.
+export async function glossary() {
+	const tree = structuredClone(await markdown('GLOSSARY.md', 'g-'));
 	const terms = new Map();
 	const words = (node) => (typeof node === 'string' ? node : node[2].map(words).join(''));
 	const visit = (node) => {
@@ -74,18 +110,13 @@ export function glossary() {
 		node[2].forEach(visit);
 	};
 	tree.forEach(visit);
-	return { tree: checked('GLOSSARY.md', tree), terms };
+	return { tree, terms };
 }
 
-// The drawings (brain/art), bundled. A slide names one as the network names a file, `/files/<BLAKE3 hash>`, and that is
-// what the allowlist takes; avenOS serves the brain's own from its bundle, so the hash is resolved here, after the
-// check, to the bundled file
+// The drawings (brain/art), bundled. A slide names one as the network names a file, `/files/<BLAKE3 hash>`, the only
+// image the allowlist takes; the drawer asks here where that file is, and avenOS serves the brain's own from its bundle
 const drawn = import.meta.glob('../../../brain/art/img/*.png', { query: '?url', import: 'default', eager: true });
-const fileOf = (hash) => drawn[`../../../brain/art/img/${hash}.png`];
-const resolve = (node) =>
-	typeof node === 'string'
-		? node
-		: [node[0], node[1].map(([k, v]) => (k === 'src' && v.startsWith('/files/') && fileOf(v.slice(7)) ? [k, fileOf(v.slice(7))] : [k, v])), node[2].map(resolve)];
+const fileOf = (hash) => drawn[`../../../brain/art/img/${hash}.png`] ?? null;
 
 // an object's picture, for a card
 export const art = (name) => fileOf(images[name]);

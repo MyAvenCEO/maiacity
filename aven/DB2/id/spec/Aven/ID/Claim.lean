@@ -145,11 +145,11 @@ def founders (s : Founding) (passkey : String) : List Owner :=
 
 def vaults (s : Founding) : List Vault :=
   match s.claim with
-  | none => [⟨s.network, networkName, .agent, []⟩, ⟨s.peer, peerName, .device, [.vault s.network]⟩]
-  | some c => [⟨c.person, c.vaultName, .person, s.founders c.passkey⟩,
-      ⟨s.coop, s.coopName, .coop, [.vault c.person]⟩, ⟨s.network, networkName, .agent, [.vault s.coop]⟩,
-      ⟨s.peer, peerName, .device, [.vault s.network]⟩, ⟨c.device, c.browser 1, .device, [.vault c.person]⟩] ++
-    s.signIns.mapIdx fun k i => ⟨i.device, c.browser (k + 2), .device, [.vault c.person]⟩
+  | none => [⟨s.network, networkName, .agent, [], 1⟩, ⟨s.peer, peerName, .device, [.vault s.network], 1⟩]
+  | some c => [⟨c.person, c.vaultName, .person, s.founders c.passkey, 1⟩,
+      ⟨s.coop, s.coopName, .coop, [.vault c.person], 1⟩, ⟨s.network, networkName, .agent, [.vault s.coop], 1⟩,
+      ⟨s.peer, peerName, .device, [.vault s.network], 1⟩, ⟨c.device, c.browser 1, .device, [.vault c.person], 1⟩] ++
+    s.signIns.mapIdx fun k i => ⟨i.device, c.browser (k + 2), .device, [.vault c.person], 1⟩
 
 def tree (s : Founding) : Tree := ⟨s.publics.map (·.1), s.vaults⟩
 
@@ -253,10 +253,11 @@ theorem claim_admin {sender : String} {c : Claim} (h : s.submitClaim sender c = 
   split at h; · cases h
   obtain ⟨e, w, _⟩ := acceptClaim_ok h
   subst e
-  have v : ({ s with claim := some c } : Founding).tree.vaults = ⟨c.person, c.vaultName, .person, s.founders c.passkey⟩ ::
-      ⟨s.coop, s.coopName, .coop, [.vault c.person]⟩ :: ⟨s.network, networkName, .agent, [.vault s.coop]⟩ ::
-      (⟨s.peer, peerName, .device, [.vault s.network]⟩ :: ⟨c.device, c.browser 1, .device, [.vault c.person]⟩ ::
-      s.signIns.mapIdx fun k i => ⟨i.device, c.browser (k + 2), .device, [.vault c.person]⟩) := by
+  have v : ({ s with claim := some c } : Founding).tree.vaults =
+      ⟨c.person, c.vaultName, .person, s.founders c.passkey, 1⟩ ::
+      ⟨s.coop, s.coopName, .coop, [.vault c.person], 1⟩ :: ⟨s.network, networkName, .agent, [.vault s.coop], 1⟩ ::
+      (⟨s.peer, peerName, .device, [.vault s.network], 1⟩ :: ⟨c.device, c.browser 1, .device, [.vault c.person], 1⟩ ::
+      s.signIns.mapIdx fun k i => ⟨i.device, c.browser (k + 2), .device, [.vault c.person], 1⟩) := by
     simp [tree, vaults, founders]
   have n := w.nodup
   unfold Tree.ids at n
@@ -270,7 +271,7 @@ theorem claim_admin {sender : String} {c : Claim} (h : s.submitClaim sender c = 
   refine ⟨w, kc, ?_, ?_, ?_, fun d x k => Tree.device_governs_nothing w k, fun d k o => w.coop_no_device o k kc⟩
   · simp [Tree.ownersOf, Tree.get?, v, pc, Vault.ownerVaults, Owner.vault?]
   · simp [Tree.ownersOf, Tree.get?, v, pn, cn, Vault.ownerVaults, Owner.vault?]
-  · exact ⟨⟨c.person, c.vaultName, .person, s.founders c.passkey⟩, by simp [Tree.get?, v],
+  · exact ⟨⟨c.person, c.vaultName, .person, s.founders c.passkey, 1⟩, by simp [Tree.get?, v],
       by simp [founders, Vault.ownerKeys, Owner.key?]⟩
 
 theorem acceptSignIn_ok {i : SignIn} (h : s.acceptSignIn i = .ok s') :
@@ -296,7 +297,7 @@ theorem acceptSignIn_ok {i : SignIn} (h : s.acceptSignIn i = .ok s') :
 its owners, nor the claim. -/
 theorem signIn_adds {sender : String} {i : SignIn} (h : s.submitSignIn sender i = .ok s') :
     ∃ c, s.claim = some c ∧ s'.claim = s.claim ∧
-      s'.tree.vaults = s.tree.vaults ++ [⟨i.device, c.browser (s.signIns.length + 2), .device, [.vault c.person]⟩] ∧
+      s'.tree.vaults = s.tree.vaults ++ [⟨i.device, c.browser (s.signIns.length + 2), .device, [.vault c.person], 1⟩] ∧
       s'.tree.WF ∧
       ∀ x ∈ s.tree.ids, s'.tree.get? x = s.tree.get? x := by
   unfold submitSignIn at h
@@ -305,7 +306,7 @@ theorem signIn_adds {sender : String} {i : SignIn} (h : s.submitSignIn sender i 
   obtain ⟨c, hc, e, w, _⟩ := acceptSignIn_ok h
   subst e
   have v : ({ s with signIns := s.signIns ++ [i] } : Founding).tree.vaults =
-      s.tree.vaults ++ [⟨i.device, c.browser (s.signIns.length + 2), .device, [.vault c.person]⟩] := by
+      s.tree.vaults ++ [⟨i.device, c.browser (s.signIns.length + 2), .device, [.vault c.person], 1⟩] := by
     simp [tree, vaults, founders, hc, List.mapIdx_append]
   refine ⟨c, hc, rfl, v, w, fun x m => ?_⟩
   have some : (s.tree.vaults.find? (·.id == x)).isSome := by
@@ -319,7 +320,7 @@ theorem signIn_adds {sender : String} {i : SignIn} (h : s.submitSignIn sender i 
 
 /-- Before its claim, the tree is the agent's vault, with no owner, and the Aven Peer, its device. -/
 theorem unclaimed_vaults (h : s.claim = none) :
-    s.tree.vaults = [⟨s.network, networkName, .agent, []⟩, ⟨s.peer, peerName, .device, [.vault s.network]⟩] := by
+    s.tree.vaults = [⟨s.network, networkName, .agent, [], 1⟩, ⟨s.peer, peerName, .device, [.vault s.network], 1⟩] := by
   simp [tree, vaults, h]
 
 /-- After its claim, every vault has an owner: the agent's lacks one only before. -/

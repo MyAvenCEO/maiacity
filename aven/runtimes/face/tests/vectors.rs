@@ -1,7 +1,7 @@
 //! face-runtime against Lean's vectors: `face-runtime.json` (the runtime, byte for byte), `face.json` (a face's
 //! rules read from their Values, its checks, issues, every text's look and its CSS), `contrast.json` (the table and the ratios) and `markup.json` (what markup draws).
 
-use aven_core::{Value, decode, encode};
+use aven_codec::{Value, decode, encode};
 use aven_runtimes_contract::result;
 use aven_runtimes_face::face::{self, LINEAR, reaches};
 use aven_runtimes_face::style::{BASE, Look, issues};

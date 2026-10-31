@@ -21,11 +21,16 @@ default = ["native"]
 native = ["dep:iroh-relay", "dep:rustls", "dep:tokio"]
 
 [dependencies]
-aven-db-core = { path = "../../db/core" }
+aven-core = { path = "../../core" }
+# the docs layer: the Docs a peer holds and syncs (doc_host::Host)
+aven-db-docs = { path = "../../db/docs", features = ["shelf"] }
+aven-gen1 = { path = "../../gen1" }
 aven-db-store = { path = "../../store" }
 aven-id = { path = "../../id/core" }
 # the file registry, aven/runtimes': what a file is by its bytes (at /runtimes in the box and the Peer's image)
 aven-runtimes-registry = { path = "../../../runtimes/registry" }
+# a Doc's gossip topic, a subkey of its epoch key (docs, `Aven.Peer.DocSync`)
+blake3 = { version = "=1.8.7", default-features = false }
 bytes = "=1.12.1"
 futures-channel = "=0.3.34"
 iroh = { version = "=1.4.1", default-features = false, features = ["tls-ring"] }
