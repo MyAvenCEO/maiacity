@@ -15,7 +15,7 @@ mod types;
 pub use approve::Sig;
 pub use authorized::{Authority, DeviceCap, Reader, Reading, Refusal};
 pub use cbor::CAP_LABEL;
-pub use chain::{Cap, ChainError, Ctx, Role, authority_over_vault, vault_id};
+pub use chain::{Cap, ChainError, Ctx, Role, authority_over_vault, issued, vault_id};
 pub use conditions::{Branches, Conditions, Form, History, Holder, MAIN};
 pub use line::{Grant, Line, World, grant_allows, grant_reaches, grant_within};
 pub use records::{CapRecord, EpochRecord, IdRecord, REVOKE_LABEL, RevokeRecord, id_builtin_fit};

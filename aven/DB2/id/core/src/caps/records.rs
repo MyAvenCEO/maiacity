@@ -67,7 +67,7 @@ impl CapRecord {
     /// Only a cap Record's one form; the cap's id is its digest (`CapRecord.ofValue?`).
     pub fn of_value(v: &Value) -> Option<CapRecord> {
         let (body, sigs) = split_sigs(v)?;
-        let mut cap = Cap::of_body(&body, String::new(), String::new(), vec![])?;
+        let mut cap = Cap::of_body(&body, String::new(), None, vec![])?;
         cap.id = cap.digest().text();
         let r = CapRecord { cap, sigs };
         same(&r.value(), v).then_some(r)

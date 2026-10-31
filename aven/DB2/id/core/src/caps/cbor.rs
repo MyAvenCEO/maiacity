@@ -281,7 +281,7 @@ impl Cap {
     pub fn from_bytes(
         bytes: &[u8],
         id: String,
-        signer: String,
+        signer: Option<String>,
         approvals: Vec<super::approve::Sig>,
     ) -> Option<Cap> {
         let cap = Cap::of_body(&aven_core::decode(bytes)?, id, signer, approvals)?;
@@ -293,7 +293,7 @@ impl Cap {
     pub fn of_body(
         body: &Value,
         id: String,
-        signer: String,
+        signer: Option<String>,
         approvals: Vec<super::approve::Sig>,
     ) -> Option<Cap> {
         let kvs = as_map(body)?;

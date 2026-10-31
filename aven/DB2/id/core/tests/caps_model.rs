@@ -51,7 +51,7 @@ fn change() -> impl Strategy<Value = Change> {
         (i.clone(), any::<bool>()).prop_map(|(a, b)| Change::Share(a, b)),
         i.clone().prop_map(Change::Form),
         (i.clone(), 0usize..7).prop_map(|(a, b)| Change::Holder(a, b)),
-        (i.clone(), 0usize..5).prop_map(|(a, b)| Change::Signer(a, b)),
+        (i.clone(), 0usize..6).prop_map(|(a, b)| Change::Signer(a, b)),
         (i.clone(), 0usize..5).prop_map(|(a, b)| Change::Issuer(a, b)),
         (i.clone(), 0usize..3).prop_map(|(a, b)| Change::Approval(a, b)),
         (i.clone(), 0usize..7).prop_map(|(a, b)| Change::Parent(a, b)),
@@ -92,7 +92,7 @@ fn apply(chain: &mut Vec<Cap>, garden: DocId, c: &Change) {
                 v => Holder::Vault(VAULTS[v].into()),
             }
         }
-        Change::Signer(i, s) => chain[i % n].signer = SIGNERS[s].into(),
+        Change::Signer(i, s) => chain[i % n].signer = SIGNERS.get(s).map(|d| d.to_string()),
         Change::Issuer(i, v) => chain[i % n].issuer = VAULTS[v].into(),
         Change::Approval(i, a) => {
             let c = &mut chain[i % n];
