@@ -49,7 +49,7 @@ theorem honest_confirm_once {V₁ V₂ : List TreeStatement} (sub : ∀ x ∈ V�
     (uniq : ∀ x ∈ V₂, ∀ y ∈ V₂, x.name = y.name → x = y) {c₁ c₂ a : TreeStatement} (m₁ : c₁ ∈ V₁)
     (f₁ : final (view pinned V₁) c₁ = true) (same : sameTicket c₁ c₂ = true) (other : c₁.name ≠ c₂.name)
     (m₂ : c₂ ∈ V₂) (acks : a.says = .confirm c₂.name) : confirmPolicy pinned V₂ a = false := by
-  have f₂ : final (view pinned V₂) c₁ = true := final_mono pinned sub f₁
+  have f₂ : final (view pinned V₂) c₁ = true := final_mono pinned sub uniq f₁
   have cnt : counted pinned V₂ c₁ = true := claimOk_counted pinned (final_claimOk f₂)
   unfold confirmPolicy
   rw [acks]

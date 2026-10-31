@@ -163,24 +163,73 @@ theorem migrate_past (m : Members) (g : SwitchKeys) (c : Claim) (hc : m.founding
     refine Core.Past.Before.trans (.tip (mem k hk') ?_) (ih hk')
     simp [List.getElem_mapIdx, step_name, nameAt, Core.Past.parents]
 
-/-- **`settle_restore`**, its general half: given a genesis both its signers signed, every statement production holds
-counts in the settled tree. The change of rule loses nothing. -/
-theorem settle_restore (m : Members) (g : SwitchKeys) (c : Claim) (hc : m.founding.claim = some c)
-    (signed : (genesisOf m.founding c g).consented = true) :
-    ∀ s ∈ migrate m g, (settle genesisName (migrate m g)).counted s.name = true := by
+/-- Every ticket and join an old statement names is in the ref order: an invite for each join, a join for each
+confirm. -/
+def Named (m : Members) : Prop :=
+  ∀ o ∈ refOrder m, ∀ h ∈ o.parents (refOrder m), ∃ k < (refOrder m).length, h = nameAt k
+
+/-- Each migrated statement's parents are held: the one before it, and the ticket or join it names. -/
+theorem migrate_held (m : Members) (g : SwitchKeys) (c : Claim) (hc : m.founding.claim = some c) (named : Named m) :
+    ∀ x ∈ migrate m g, ∀ h ∈ x.parents, ∃ y ∈ migrate m g, y.name = h := by
+  have at_ : ∀ k (hk : k < (refOrder m).length), step m c k (refOrder m)[k] ∈ migrate m g := fun k hk => by
+    simp only [migrate, hc]
+    exact List.mem_cons_of_mem _ (List.mem_iff_getElem.mpr ⟨k, by simpa using hk, by simp [List.getElem_mapIdx]⟩)
+  intro x mx h mh
+  simp only [migrate, hc, List.mem_cons] at mx
+  rcases mx with rfl | mx
+  · simp [genesisStatement] at mh
+  · obtain ⟨k, hk, rfl⟩ := List.mem_iff_getElem.mp mx
+    simp only [List.length_mapIdx] at hk
+    simp only [List.getElem_mapIdx, (step_name ..).2, List.mem_cons] at mh
+    rcases mh with rfl | mh
+    · cases k with
+      | zero => exact ⟨genesisStatement m c g, by simp [migrate, hc], by simp [genesisStatement, genesisName]⟩
+      | succ k => exact ⟨_, at_ k (by omega), by simp [step_name, nameAt]⟩
+    · obtain ⟨t, ht, rfl⟩ := named _ (List.getElem_mem hk) h mh
+      exact ⟨_, at_ t ht, (step_name ..).1⟩
+
+/-- Every migrated statement fits: the setup once, at birth, and tree ops after it. -/
+theorem migrate_fit (m : Members) (g : SwitchKeys) (c : Claim) (hc : m.founding.claim = some c) :
+    ∀ x ∈ migrate m g, x.fit = true := by
+  intro x mx
+  simp only [migrate, hc, List.mem_cons] at mx
+  rcases mx with rfl | mx
+  · simp [TreeStatement.fit, genesisStatement]
+  · have st : ∀ k o, (step m c k o).fit = true := fun k o => by
+      cases o <;> simp [TreeStatement.fit, step, Old.says]
+    obtain ⟨k, hk, rfl⟩ := List.mem_iff_getElem.mp mx
+    simp only [List.getElem_mapIdx]
+    exact st _ _
+
+/-- Every migrated statement counts, given a genesis both its signers signed and a store whose old statements name only
+what it holds. -/
+theorem migrate_counts (m : Members) (g : SwitchKeys) (c : Claim) (hc : m.founding.claim = some c)
+    (signed : (genesisOf m.founding c g).consented = true) (named : Named m) :
+    ∀ s ∈ migrate m g, Settle.Counts genesisName (migrate m g) s := by
   intro s ms
   have hg : Settle.pinnedGenesis genesisName (genesisStatement m c g) = true := by
     simp [Settle.pinnedGenesis, genesisStatement, signed]
   have mg : genesisStatement m c g ∈ migrate m g := by simp [migrate, hc]
-  have cs : Settle.counted genesisName (migrate m g) s = true := by
-    refine (Settle.counted_iff genesisName).mpr ?_
-    have ms' := ms
-    simp only [migrate, hc, List.mem_cons] at ms'
-    rcases ms' with e | ms'
-    · subst e; exact .inl hg
-    · obtain ⟨k, hk, e⟩ := List.mem_iff_getElem.mp ms'
-      subst e
-      exact .inr ⟨_, mg, hg, migrate_past m g c hc k hk⟩
+  have mem : ∀ {x}, (x = s ∨ Core.Past.Before TreeStatement.name (migrate m g) s x) → x ∈ migrate m g :=
+    fun hx => hx.elim (· ▸ ms) Core.Past.Before.mem
+  refine ⟨?_, fun x hx => migrate_held m g c hc named x (mem hx), fun x hx => migrate_fit m g c hc x (mem hx)⟩
+  have ms' := ms
+  simp only [migrate, hc, List.mem_cons] at ms'
+  rcases ms' with e | ms'
+  · subst e; exact .inl hg
+  · obtain ⟨k, hk, e⟩ := List.mem_iff_getElem.mp ms'
+    subst e
+    exact .inr ⟨_, mg, hg, migrate_past m g c hc k hk⟩
+
+/-- **`settle_restore`**, its general half: given a genesis both its signers signed and a store whose old statements
+name only what it holds, every statement production holds counts in the settled tree. The change of rule loses
+nothing. -/
+theorem settle_restore (m : Members) (g : SwitchKeys) (c : Claim) (hc : m.founding.claim = some c)
+    (signed : (genesisOf m.founding c g).consented = true) (named : Named m) :
+    ∀ s ∈ migrate m g, (settle genesisName (migrate m g)).counted s.name = true := by
+  intro s ms
+  have cs : Settle.counted genesisName (migrate m g) s = true :=
+    (Settle.counted_iff genesisName).mpr (migrate_counts m g c hc signed named s ms)
   simp only [settle, Settle.settleView]
   exact (Settle.view_any genesisName).mpr ⟨s, ms, cs, by simp⟩
 

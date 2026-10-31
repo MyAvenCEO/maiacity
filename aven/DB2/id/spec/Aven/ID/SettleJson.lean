@@ -34,6 +34,10 @@ def Passkey.json (k : Passkey) : Json :=
   Json.mkObj [("credential", k.credential), ("spki", k.spki), ("owner", (k.owner.map HybridKey.json).getD Json.null),
     ("seal", (k.sealKey.map Json.str).getD Json.null), ("epoch", toJson k.epoch)]
 
+def Owner.json : Owner → Json
+  | .key k => Json.mkObj [("key", k)]
+  | .vault v => Json.mkObj [("vault", v)]
+
 def Genesis.json (g : Genesis) : Json :=
   Json.mkObj [("rpId", g.rpId), ("origins", toJson g.origins), ("claimant", g.claimant),
     ("passkey", Passkey.json g.passkey),
@@ -58,6 +62,8 @@ def TreeSays.json : TreeSays → Json
   | .setGuardian v => Json.mkObj [("kind", "setGuardian"), ("vault", v)]
   | .ownerEpoch c o se e => Json.mkObj [("kind", "ownerEpoch"), ("credential", c), ("owner", HybridKey.json o),
       ("seal", se), ("epoch", toJson e)]
+  | .setOwners v os th => Json.mkObj [("kind", "setOwners"), ("vault", v), ("owners", Json.arr (os.map Owner.json).toArray),
+      ("threshold", toJson th)]
 
 /-- The tree Doc of the vectors. -/
 def treeDoc : Core.DocId := ⟨Core.blake3 (Body.utf8 "Maia City's tree")⟩
@@ -267,7 +273,8 @@ def treeOpVectors : List Json :=
      .claim h "bob" (pk "bob-passkey") ["bob-peer"] "maia-city-guardian", .confirm h, .relayAdd "bob",
      .relayRemove "bob",
      .setAvenPeer "aven-peer-2", .setOrigins ["https://maia.city"], .setGuardian "new-guardian",
-     .ownerEpoch "bob-passkey-credential" ⟨"bob-ed25519", "bob-ml-dsa"⟩ "bob-seal" 2]
+     .ownerEpoch "bob-passkey-credential" ⟨"bob-ed25519", "bob-ml-dsa"⟩ "bob-seal" 2,
+     .setOwners "maia-city" [.vault "alice", .vault "maia-city-guardian"] 2]
   (TreeOp.all.map fun o =>
     Json.mkObj [("name", s!"tree/1 op {o.name}"),
       ("input", Json.mkObj [("op", o.name), ("plugin", "tree/1")]),

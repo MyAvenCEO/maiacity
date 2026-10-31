@@ -302,6 +302,9 @@ inductive TreeSays where
   /-- The owner-epoch op: a passkey adds the owner and seal keys its PRF derives, signed by its ES256 alone, the one
   act a passkey without an owner signs (A42). -/
   | ownerEpoch (credential : String) (owner : HybridKey) (sealKey : String) (epoch : Nat)
+  /-- An owner change (A28, A191): `vault`'s owners and its threshold k from now on, approved by its owners in force in
+  the change's own past. -/
+  | setOwners (vault : String) (owners : List Owner) (threshold : Nat)
   deriving DecidableEq, Repr
 
 /-! ### The body on Core's envelope (A30)
@@ -412,6 +415,27 @@ theorem Passkey.ofValue_toValue (k : Passkey) : ofValue k.toValue = some k := by
       HybridKey.ofValue]
 
 open Body in
+/-- An owner as a map of one key: `{"key": k}` or `{"vault": v}`. -/
+def Owner.toValue : Owner → Core.Value
+  | .key k => .map [(utf8 "key", text k)]
+  | .vault v => .map [(utf8 "vault", text v)]
+
+open Body in
+def Owner.ofValue : Core.Value → Option Owner
+  | .map [(kk, x)] =>
+    if kk == utf8 "key" then .key <$> ofText x else if kk == utf8 "vault" then .vault <$> ofText x else none
+  | _ => none
+
+theorem Owner.ofValue_toValue (o : Owner) : ofValue o.toValue = some o := by
+  have ne : (Body.utf8 "vault" == Body.utf8 "key") = false := by decide
+  cases o <;> simp [toValue, ofValue, Body.ofText_text, ne]
+
+theorem Owner.ofValues (os : List Owner) : os.mapM (Owner.ofValue ∘ Owner.toValue) = some os := by
+  induction os with
+  | nil => rfl
+  | cons o os ih => simp [List.mapM_cons, Owner.ofValue_toValue, ih]
+
+open Body in
 def Genesis.toValue (g : Genesis) : Core.Value :=
   .array [text g.rpId, texts g.origins, text g.claimant, g.passkey.toValue, texts g.devices, text g.coop,
     texts g.coopOwners, .uint g.coopThreshold, text g.agent, text g.avenPeer, g.guardian.toValue, text g.guardianVault,
@@ -438,18 +462,18 @@ they do under any hash nothing collides under (`TreeSays.ofValue_toValue`; for B
 
 inductive TreeOp where
   | genesis | signIn | ticket | withdraw | claim | confirm | relayAdd | relayRemove | setAvenPeer | setOrigins
-  | setGuardian | ownerEpoch
+  | setGuardian | ownerEpoch | setOwners
   deriving DecidableEq, Repr
 
 def TreeOp.name : TreeOp → String
   | .genesis => "genesis" | .signIn => "signIn" | .ticket => "ticket" | .withdraw => "withdraw" | .claim => "claim"
   | .confirm => "confirm" | .relayAdd => "relayAdd" | .relayRemove => "relayRemove"
   | .setAvenPeer => "setAvenPeer" | .setOrigins => "setOrigins" | .setGuardian => "setGuardian"
-  | .ownerEpoch => "ownerEpoch"
+  | .ownerEpoch => "ownerEpoch" | .setOwners => "setOwners"
 
 def TreeOp.all : List TreeOp :=
   [.genesis, .signIn, .ticket, .withdraw, .claim, .confirm, .relayAdd, .relayRemove, .setAvenPeer, .setOrigins,
-   .setGuardian, .ownerEpoch]
+   .setGuardian, .ownerEpoch, .setOwners]
 
 theorem TreeOp.mem_all (o : TreeOp) : o ∈ TreeOp.all := by cases o <;> simp [TreeOp.all]
 
@@ -483,7 +507,7 @@ def TreeSays.op : TreeSays → TreeOp
   | .genesis _ => .genesis | .signIn .. => .signIn | .ticket _ => .ticket | .withdrawal _ => .withdraw
   | .claim .. => .claim | .confirm _ => .confirm | .relayAdd _ => .relayAdd | .relayRemove _ => .relayRemove
   | .setAvenPeer _ => .setAvenPeer | .setOrigins _ => .setOrigins | .setGuardian _ => .setGuardian
-  | .ownerEpoch .. => .ownerEpoch
+  | .ownerEpoch .. => .ownerEpoch | .setOwners .. => .setOwners
 
 open Body in
 /-- A statement's params, in the codec's order: shorter keys first, then by their bytes. -/
@@ -501,6 +525,8 @@ def TreeSays.params : TreeSays → List (Core.Bytes × Core.Value)
   | .setOrigins os => [(utf8 "origins", texts os)]
   | .ownerEpoch c o se e =>
     [(utf8 "seal", text se), (utf8 "epoch", .uint e), (utf8 "owner", o.toValue), (utf8 "credential", text c)]
+  | .setOwners v os th =>
+    [(utf8 "vault", text v), (utf8 "owners", .array (os.map Owner.toValue)), (utf8 "threshold", .uint th)]
 
 /-- A statement as the call its envelope carries. -/
 def TreeSays.call (H : Core.Bytes → Core.Hash) (s : TreeSays) : Core.Call := ⟨s.op.id H, s.params⟩
@@ -530,6 +556,10 @@ def TreeSays.ofParams : TreeOp → List (Core.Bytes × Core.Value) → Option Tr
     if ks == utf8 "seal" && ke == utf8 "epoch" && ko == utf8 "owner" && kc == utf8 "credential" then
       do pure (.ownerEpoch (← ofText c) (← HybridKey.ofValue o) (← ofText se) e)
     else none
+  | .setOwners, [(kv, v), (ko, .array os), (kt, .uint th)] =>
+    if kv == utf8 "vault" && ko == utf8 "owners" && kt == utf8 "threshold" then
+      do pure (.setOwners (← ofText v) (← os.mapM Owner.ofValue) th)
+    else none
   | _, _ => none
 
 /-- A body read back as the statement it calls, if it is exactly a call of one of `tree/1`'s ops: the call it reads
@@ -547,7 +577,7 @@ def TreeSays.refsOk : TreeSays → Bool
 
 theorem TreeSays.ofParams_params (s : TreeSays) (h : s.refsOk) : ofParams s.op s.params = some s := by
   cases s <;> simp_all [op, params, ofParams, refsOk, Body.ofText_text, Body.ofTexts_texts, Body.ofRef_ref,
-    Genesis.ofValue_toValue, Passkey.ofValue_toValue, HybridKey.ofValue_toValue]
+    Genesis.ofValue_toValue, Passkey.ofValue_toValue, HybridKey.ofValue_toValue, Owner.ofValues]
 
 /-- A body reads back as the statement it was made from, whenever the ops' ids differ. -/
 theorem TreeSays.ofValue_toValue {H : Core.Bytes → Core.Hash} (d : TreeOp.distinct H) (s : TreeSays)
@@ -643,9 +673,10 @@ theorem all_set {l l' : List TreeStatement} (h : ∀ x, x ∈ l ↔ x ∈ l') (p
 
 variable (pinned : Core.Hash)
 
-/-- The pinned genesis: its name is the pinned one, it passes its own checks, and both its signers are there. -/
+/-- The pinned genesis: its name is the pinned one, it is the first statement, building on nothing, it passes its own
+checks, and both its signers are there. -/
 def pinnedGenesis (g : TreeStatement) : Bool :=
-  g.name == pinned &&
+  g.name == pinned && g.parents.isEmpty &&
     match g.says with
     | .genesis gen => gen.consented
     | _ => false
@@ -654,19 +685,87 @@ def pinnedGenesis (g : TreeStatement) : Bool :=
 def Desc (S : List TreeStatement) (s : TreeStatement) : Prop :=
   pinnedGenesis pinned s = true ∨ ∃ g ∈ S, pinnedGenesis pinned g = true ∧ Before TreeStatement.name S s g
 
-/-- Part of the tree: it descends from the pinned genesis. -/
-def counted (S : List TreeStatement) (s : TreeStatement) : Bool :=
-  pinnedGenesis pinned s || S.any fun g => pinnedGenesis pinned g && inPast TreeStatement.name S s g
+end Settle
 
-theorem counted_iff : counted pinned S s = true ↔ Desc pinned S s := by
-  simp only [counted, Desc, Bool.and_eq_true, Bool.or_eq_true, List.any_eq_true]
+/-- What the tree type's fit takes (A39, A149): the setup, its root Record, only whole at birth, in the first statement,
+which builds on nothing; it refuses it anywhere else, so no later statement edits it. -/
+def TreeStatement.fit (s : TreeStatement) : Bool :=
+  match s.says with
+  | .genesis _ => s.parents.isEmpty
+  | _ => true
+
+/-- Every parent `x` names is held: the name of a statement of `S`. -/
+def TreeStatement.parentsHeld (S : List TreeStatement) (x : TreeStatement) : Bool :=
+  x.parents.all fun h => S.any (·.name == h)
+
+namespace Settle
+
+variable (pinned : Core.Hash)
+variable {S S' : List TreeStatement} {a b c : TreeStatement}
+
+/-- `s`'s whole past is held (rule 11): it and everything before it name only parents `S` holds. This is Core's
+`Closed`, read through `Aven.Core.Past` (`Aven.Core.Past.reaches_iff`: Core's past is the envelope and what is `Before`
+it). A statement built on a parent a peer lacks waits, and counts for nothing until it comes. -/
+def Closed (S : List TreeStatement) (s : TreeStatement) : Prop :=
+  ∀ x, (x = s ∨ Before TreeStatement.name S s x) → ∀ h ∈ x.parents, ∃ y ∈ S, y.name = h
+
+/-- What counts, as Core's `Counts` judges it (A45, A191): a descendant of the pinned genesis whose whole past is held
+(`Closed`) and fits, all of it. Splits don't arise: a statement is its own log's one envelope. -/
+def Counts (S : List TreeStatement) (s : TreeStatement) : Prop :=
+  Desc pinned S s ∧ Closed S s ∧ ∀ x, (x = s ∨ Before TreeStatement.name S s x) → x.fit = true
+
+/-- Part of the tree: it counts, decided. -/
+def counted (S : List TreeStatement) (s : TreeStatement) : Bool :=
+  (pinnedGenesis pinned s || S.any fun g => pinnedGenesis pinned g && inPast TreeStatement.name S s g) &&
+    (s.parentsHeld S && S.all fun x => !inPast TreeStatement.name S s x || x.parentsHeld S) &&
+    (s.fit && S.all fun x => !inPast TreeStatement.name S s x || x.fit)
+
+theorem parentsHeld_iff {x : TreeStatement} : x.parentsHeld S = true ↔ ∀ h ∈ x.parents, ∃ y ∈ S, y.name = h := by
+  simp [TreeStatement.parentsHeld]
+
+/-- Over a statement's past and itself, decided. -/
+theorem past_all {p : TreeStatement → Bool} :
+    (p s && S.all fun x => !inPast TreeStatement.name S s x || p x) = true ↔
+      ∀ x, (x = s ∨ Before TreeStatement.name S s x) → p x = true := by
+  simp only [Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true, Bool.not_eq_true']
   constructor
-  · rintro (g | ⟨g, m, pg, p⟩)
-    · exact .inl g
-    · exact .inr ⟨g, m, pg, (inPast_iff m).mp p⟩
-  · rintro (g | ⟨g, m, pg, p⟩)
-    · exact .inl g
-    · exact .inr ⟨g, m, pg, (inPast_iff m).mpr p⟩
+  · rintro ⟨hs, h⟩ x (rfl | bx)
+    · exact hs
+    · rcases h x bx.mem with e | e
+      · rw [(inPast_iff bx.mem).mpr bx] at e; cases e
+      · exact e
+  · intro h
+    refine ⟨h s (.inl rfl), fun x m => ?_⟩
+    cases e : inPast TreeStatement.name S s x
+    · exact .inl rfl
+    · exact .inr (h x (.inr ((inPast_iff m).mp e)))
+
+theorem counted_iff : counted pinned S s = true ↔ Counts pinned S s := by
+  have hd : (pinnedGenesis pinned s || S.any fun g => pinnedGenesis pinned g && inPast TreeStatement.name S s g) =
+      true ↔ Desc pinned S s := by
+    simp only [Desc, Bool.and_eq_true, Bool.or_eq_true, List.any_eq_true]
+    constructor
+    · rintro (g | ⟨g, m, pg, p⟩)
+      · exact .inl g
+      · exact .inr ⟨g, m, pg, (inPast_iff m).mp p⟩
+    · rintro (g | ⟨g, m, pg, p⟩)
+      · exact .inl g
+      · exact .inr ⟨g, m, pg, (inPast_iff m).mpr p⟩
+  have hc : (s.parentsHeld S && S.all fun x => !inPast TreeStatement.name S s x || x.parentsHeld S) = true ↔
+      Closed S s := by
+    rw [past_all (p := TreeStatement.parentsHeld S)]
+    exact ⟨fun h x hx => parentsHeld_iff.mp (h x hx), fun h x hx => parentsHeld_iff.mpr (h x hx)⟩
+  have hf := past_all (S := S) (s := s) (p := TreeStatement.fit)
+  unfold counted
+  constructor
+  · intro h
+    have h1 := (Bool.and_eq_true _ _).mp h
+    have h2 := (Bool.and_eq_true _ _).mp h1.1
+    exact ⟨hd.mp h2.1, hc.mp h2.2, hf.mp h1.2⟩
+  · rintro ⟨d, cl, ft⟩
+    exact (Bool.and_eq_true _ _).mpr ⟨(Bool.and_eq_true _ _).mpr ⟨hd.mpr d, hc.mpr cl⟩, hf.mpr ft⟩
+
+theorem Counts.desc (h : Counts pinned S s) : Desc pinned S s := h.1
 
 /-- What the rest of `settle` reads: the pinned name, the counted statements, and the past between them. -/
 structure View where
@@ -965,9 +1064,23 @@ variable {S S' X : List TreeStatement} {a b c : TreeStatement}
 
 /-! ### `settle_perm`: no order is an input -/
 
+theorem counts_set (h : ∀ x, x ∈ S ↔ x ∈ S') {s : TreeStatement} : Counts pinned S s → Counts pinned S' s := by
+  have sub : ∀ x ∈ S, x ∈ S' := fun x m => (h x).mp m
+  have bk : ∀ {x}, (x = s ∨ Before TreeStatement.name S' s x) → x = s ∨ Before TreeStatement.name S s x :=
+    fun hx => hx.imp_right (Before.mono fun x m => (h x).mpr m)
+  rintro ⟨d, cl, ft⟩
+  refine ⟨?_, fun x hx k mk => ?_, fun x hx => ft x (bk hx)⟩
+  · rcases d with g | ⟨g, mg, pg, sg⟩
+    · exact .inl g
+    · exact .inr ⟨g, sub g mg, pg, sg.mono sub⟩
+  · obtain ⟨y, my, ny⟩ := cl x (bk hx) k mk
+    exact ⟨y, sub y my, ny⟩
+
 theorem counted_set (h : ∀ x, x ∈ S ↔ x ∈ S') : counted pinned S = counted pinned S' := by
   funext s
-  simp only [counted, inPast_set h, any_set h]
+  apply Bool.eq_iff_iff.mpr
+  rw [counted_iff, counted_iff]
+  exact ⟨counts_set pinned h, counts_set pinned fun x => (h x).symm⟩
 
 theorem View.ext' {v w : View} (p : v.pinned = w.pinned) (a : v.any = w.any) (l : v.all = w.all)
     (q : v.past = w.past) : v = w := by
@@ -1003,79 +1116,97 @@ variable {S S' X : List TreeStatement} {a b c : TreeStatement}
 
 /-! ### `settle_genesis`: only the pinned genesis's descendants count -/
 
-/-- A path between descendants never passes a statement that isn't one. -/
-theorem past_without (hX : ∀ x ∈ X, ¬ Desc pinned (S ++ X) x) (h : Before TreeStatement.name (S ++ X) a c)
-    (d : Desc pinned (S ++ X) c) : Before TreeStatement.name S a c := by
+/-- From a statement of `S`, the past never reaches a statement of `X` that nothing of `S` names. -/
+theorem before_without (hN : ∀ x ∈ X, ∀ s ∈ S, x.name ∉ s.parents) (ma : a ∈ S)
+    (h : Before TreeStatement.name (S ++ X) a c) : c ∈ S ∧ Before TreeStatement.name S a c := by
   induction h with
   | tip m t =>
     rcases List.mem_append.mp m with m | m
-    · exact .tip m t
-    · exact absurd d (hX _ m)
-  | @step b c hb m t ih =>
-    have db : Desc pinned (S ++ X) b := by
-      have bc : Before TreeStatement.name (S ++ X) b c := .tip m t
-      rcases d with g | ⟨g, mg, pg, cg⟩
-      · exact .inr ⟨c, m, g, bc⟩
-      · exact .inr ⟨g, mg, pg, bc.trans cg⟩
-    rcases List.mem_append.mp m with m' | m'
-    · exact .step (ih db) m' t
-    · exact absurd d (hX _ m')
-
-theorem desc_without (hX : ∀ x ∈ X, ¬ Desc pinned (S ++ X) x) {s : TreeStatement} :
-    Desc pinned (S ++ X) s ↔ Desc pinned S s := by
-  constructor
-  · rintro (g | ⟨g, mg, pg, sg⟩)
-    · exact .inl g
-    · rcases List.mem_append.mp mg with mg | mg
-      · exact .inr ⟨g, mg, pg, past_without pinned hX sg (.inl pg)⟩
-      · exact absurd (.inl pg) (hX _ mg)
-  · rintro (g | ⟨g, mg, pg, sg⟩)
-    · exact .inl g
-    · exact .inr ⟨g, List.mem_append_left _ mg, pg, sg.mono fun x m => List.mem_append_left _ m⟩
-
-theorem counted_without (hX : ∀ x ∈ X, ¬ Desc pinned (S ++ X) x) :
-    counted pinned (S ++ X) = counted pinned S := by
-  funext s
-  apply Bool.eq_iff_iff.mpr
-  rw [counted_iff, counted_iff, desc_without pinned hX]
-
-theorem view_without (hX : ∀ x ∈ X, ¬ Desc pinned (S ++ X) x) : view pinned (S ++ X) = view pinned S := by
-  have hc := counted_without pinned hX
-  have hf : (S ++ X).filter (counted pinned S) = S.filter (counted pinned S) := by
-    have none : X.filter (counted pinned S) = [] := by
-      refine List.filter_eq_nil_iff.mpr fun x m cx => ?_
-      have d := (counted_iff pinned).mp cx
-      exact hX x m ((desc_without pinned hX).mpr d)
-    rw [List.filter_append, none, List.append_nil]
-  have hm : ∀ x, counted pinned S x = true → (x ∈ S ++ X ↔ x ∈ S) := by
-    intro x cx
-    refine ⟨fun m => ?_, List.mem_append_left _⟩
+    · exact ⟨m, .tip m t⟩
+    · exact absurd t (hN _ m _ ma)
+  | step _ m t ih =>
+    obtain ⟨mb, bb⟩ := ih
     rcases List.mem_append.mp m with m | m
-    · exact m
-    · have d := (counted_iff pinned).mp cx
-      exact absurd ((desc_without pinned hX).mpr d) (hX x m)
-  have hf' : ∀ x, x ∈ (S ++ X).filter (counted pinned (S ++ X)) ↔ x ∈ S.filter (counted pinned S) := by
-    intro x
-    rw [hc, hf]
-  refine View.ext' rfl (funext (any_set hf')) (funext (all_set hf')) (funext fun a => funext fun b => ?_)
-  apply Bool.eq_iff_iff.mpr
-  rw [view_past, view_past, hc]
+    · exact ⟨m, .step bb m t⟩
+    · exact absurd t (hN _ m _ mb)
+
+theorem counts_without (hN : ∀ x ∈ X, ∀ s ∈ S, x.name ∉ s.parents) {s : TreeStatement} (ms : s ∈ S) :
+    Counts pinned (S ++ X) s ↔ Counts pinned S s := by
+  have sub : ∀ x ∈ S, x ∈ S ++ X := fun x m => List.mem_append_left _ m
+  have back : ∀ {x}, (x = s ∨ Before TreeStatement.name (S ++ X) s x) → x ∈ S ∧ (x = s ∨ Before TreeStatement.name S s x) :=
+    fun {x} h => by
+      rcases h with rfl | h
+      · exact ⟨ms, .inl rfl⟩
+      · obtain ⟨m, b⟩ := before_without hN ms h
+        exact ⟨m, .inr b⟩
+  have fwd : ∀ {x}, (x = s ∨ Before TreeStatement.name S s x) → x = s ∨ Before TreeStatement.name (S ++ X) s x :=
+    fun {x} h => h.imp_right (Before.mono sub)
   constructor
-  · rintro ⟨⟨ma, ca⟩, ⟨mb, cb⟩, p⟩
-    have d := (counted_iff pinned).mp cb
-    exact ⟨⟨(hm a ca).mp ma, ca⟩, ⟨(hm b cb).mp mb, cb⟩,
-      past_without pinned hX p ((desc_without pinned hX).mpr d)⟩
-  · rintro ⟨⟨ma, ca⟩, ⟨mb, cb⟩, p⟩
-    exact ⟨⟨List.mem_append_left _ ma, ca⟩, ⟨List.mem_append_left _ mb, cb⟩,
-      p.mono fun x m => List.mem_append_left _ m⟩
+  · rintro ⟨d, cl, ft⟩
+    refine ⟨?_, fun x hx h mh => ?_, fun x hx => ft x (fwd hx)⟩
+    · rcases d with g | ⟨g, _, pg, sg⟩
+      · exact .inl g
+      · obtain ⟨mg, sg⟩ := before_without hN ms sg
+        exact .inr ⟨g, mg, pg, sg⟩
+    · obtain ⟨y, my, ny⟩ := cl x (fwd hx) h mh
+      rcases List.mem_append.mp my with my | my
+      · exact ⟨y, my, ny⟩
+      · have mx : x ∈ S := by
+          rcases hx with rfl | hx
+          · exact ms
+          · exact hx.mem
+        exact absurd (ny ▸ mh) (hN y my x mx)
+  · rintro ⟨d, cl, ft⟩
+    refine ⟨?_, fun x hx h mh => ?_, fun x hx => ft x (back hx).2⟩
+    · rcases d with g | ⟨g, mg, pg, sg⟩
+      · exact .inl g
+      · exact .inr ⟨g, sub g mg, pg, sg.mono sub⟩
+    · obtain ⟨y, my, ny⟩ := cl x (back hx).2 h mh
+      exact ⟨y, sub y my, ny⟩
+
+theorem counted_without (hX : ∀ x ∈ X, ¬ Desc pinned (S ++ X) x) (hN : ∀ x ∈ X, ∀ s ∈ S, x.name ∉ s.parents)
+    {s : TreeStatement} (m : s ∈ S ++ X) : counted pinned (S ++ X) s = (s ∈ S && counted pinned S s) := by
+  by_cases ms : s ∈ S
+  · apply Bool.eq_iff_iff.mpr
+    simp only [ms, decide_true, Bool.true_and]
+    rw [counted_iff, counted_iff, counts_without pinned hN ms]
+  · have mx : s ∈ X := (List.mem_append.mp m).resolve_left ms
+    simp only [ms, decide_false, Bool.false_and]
+    cases e : counted pinned (S ++ X) s
+    · rfl
+    · exact absurd ((counted_iff pinned).mp e).desc (hX s mx)
+
+theorem view_without (hX : ∀ x ∈ X, ¬ Desc pinned (S ++ X) x) (hN : ∀ x ∈ X, ∀ s ∈ S, x.name ∉ s.parents) :
+    view pinned (S ++ X) = view pinned S := by
+  have hm : ∀ x, x ∈ S ++ X ∧ counted pinned (S ++ X) x = true ↔ x ∈ S ∧ counted pinned S x = true := by
+    intro x
+    constructor
+    · rintro ⟨m, c⟩
+      rw [counted_without pinned hX hN m] at c
+      simpa using c
+    · rintro ⟨m, c⟩
+      have m' : x ∈ S ++ X := List.mem_append_left _ m
+      exact ⟨m', by rw [counted_without pinned hX hN m']; simpa [m] using c⟩
+  have hf : ∀ x, x ∈ (S ++ X).filter (counted pinned (S ++ X)) ↔ x ∈ S.filter (counted pinned S) := by
+    intro x
+    simp only [List.mem_filter]
+    exact hm x
+  refine View.ext' rfl (funext (any_set hf)) (funext (all_set hf)) (funext fun a => funext fun b => ?_)
+  apply Bool.eq_iff_iff.mpr
+  rw [view_past, view_past, hm, hm]
+  constructor
+  · rintro ⟨ha, hb, p⟩
+    exact ⟨ha, hb, (before_without hN ha.1 p).2⟩
+  · rintro ⟨ha, hb, p⟩
+    exact ⟨ha, hb, p.mono fun x m => List.mem_append_left _ m⟩
 
 end Settle
-
 open Settle in
-/-- Nothing outside the pinned genesis's descendants changes the tree. -/
+/-- Nothing outside the pinned genesis's descendants that nothing in the tree builds on changes the tree. -/
 theorem settle_genesis (pinned : Core.Hash) {S X : List TreeStatement}
-    (hX : ∀ x ∈ X, ¬ Desc pinned (S ++ X) x) : settle pinned (S ++ X) = settle pinned S := by
-  simp only [settle, view_without pinned hX]
+    (hX : ∀ x ∈ X, ¬ Desc pinned (S ++ X) x) (hN : ∀ x ∈ X, ∀ s ∈ S, x.name ∉ s.parents) :
+    settle pinned (S ++ X) = settle pinned S := by
+  simp only [settle, view_without pinned hX hN]
 
 namespace Settle
 
@@ -1092,12 +1223,12 @@ theorem genesis_pinned {s : TreeStatement} (h : counted pinned S s = true) :
     intro g h
     unfold pinnedGenesis at h
     simp only [Bool.and_eq_true, beq_iff_eq] at h
-    obtain ⟨n, c⟩ := h
+    obtain ⟨⟨n, _⟩, c⟩ := h
     split at c
     · rename_i gen e
       exact ⟨gen, n, e, c⟩
     · cases c
-  obtain d := (counted_iff pinned).mp h
+  obtain d := ((counted_iff pinned).mp h).desc
   rcases d with g | ⟨g, mg, pgg, sg⟩
   · obtain ⟨gen, n, e, c⟩ := pg g
     exact ⟨s, gen, n, e, c, .inl rfl⟩
@@ -1184,79 +1315,122 @@ theorem settle_withdrawn {w : TreeStatement} {t : Core.Hash} (mw : w ∈ S) (cw 
 
 /-! ### Monotone in the statements: what finality needs -/
 
-theorem counted_mono (sub : ∀ x ∈ S, x ∈ S') (h : counted pinned S a = true) : counted pinned S' a = true := by
-  have d := (counted_iff pinned).mp h
-  refine (counted_iff pinned).mpr ?_
-  rcases d with g | ⟨g, mg, pg, sg⟩
-  · exact .inl g
-  · exact .inr ⟨g, sub g mg, pg, sg.mono sub⟩
+/-- Past a statement whose whole past is held, more statements find nothing more: one name is one statement. -/
+theorem before_closed (sub : ∀ x ∈ S, x ∈ S') (uniq : ∀ x ∈ S', ∀ y ∈ S', x.name = y.name → x = y)
+    (cl : Closed S a) {x : TreeStatement} (h : Before TreeStatement.name S' a x) :
+    x ∈ S ∧ Before TreeStatement.name S a x := by
+  induction h with
+  | tip m t =>
+    obtain ⟨y, my, ny⟩ := cl a (.inl rfl) _ t
+    have e := uniq y (sub y my) _ m ny
+    subst e
+    exact ⟨my, .tip my t⟩
+  | step _ m t ih =>
+    obtain ⟨mb, bb⟩ := ih
+    obtain ⟨y, my, ny⟩ := cl _ (.inr bb) _ t
+    have e := uniq y (sub y my) _ m ny
+    subst e
+    exact ⟨my, .step bb my t⟩
 
-theorem any_mono (sub : ∀ x ∈ S, x ∈ S') {p q : TreeStatement → Bool} (pq : ∀ x, p x = true → q x = true)
+theorem past_closed (sub : ∀ x ∈ S, x ∈ S') (uniq : ∀ x ∈ S', ∀ y ∈ S', x.name = y.name → x = y)
+    (cl : Closed S a) {x : TreeStatement} :
+    Before TreeStatement.name S' a x ↔ Before TreeStatement.name S a x :=
+  ⟨fun h => (before_closed sub uniq cl h).2, Before.mono sub⟩
+
+/-- What counts keeps counting as more statements come (A191): its whole past is held, so it is the same past. -/
+theorem counts_mono (sub : ∀ x ∈ S, x ∈ S') (uniq : ∀ x ∈ S', ∀ y ∈ S', x.name = y.name → x = y)
+    (h : Counts pinned S a) : Counts pinned S' a := by
+  obtain ⟨d, cl, ft⟩ := h
+  have bk : ∀ {x}, (x = a ∨ Before TreeStatement.name S' a x) → x = a ∨ Before TreeStatement.name S a x :=
+    fun hx => hx.imp_right (past_closed sub uniq cl).mp
+  refine ⟨?_, fun x hx k mk => ?_, fun x hx => ft x (bk hx)⟩
+  · rcases d with g | ⟨g, mg, pg, sg⟩
+    · exact .inl g
+    · exact .inr ⟨g, sub g mg, pg, sg.mono sub⟩
+  · obtain ⟨y, my, ny⟩ := cl x (bk hx) k mk
+    exact ⟨y, sub y my, ny⟩
+
+theorem counted_mono (sub : ∀ x ∈ S, x ∈ S') (uniq : ∀ x ∈ S', ∀ y ∈ S', x.name = y.name → x = y)
+    (h : counted pinned S a = true) : counted pinned S' a = true :=
+  (counted_iff pinned).mpr (counts_mono pinned sub uniq ((counted_iff pinned).mp h))
+
+theorem any_imp {p q : TreeStatement → Bool} (pq : ∀ x, p x = true → q x = true)
+    (h : (view pinned S).any p = true) : (view pinned S).any q = true := by
+  obtain ⟨x, m, cx, px⟩ := (view_any pinned).mp h
+  exact (view_any pinned).mpr ⟨x, m, cx, pq x px⟩
+
+section Mono
+
+-- `S'` holds what `S` holds and more, and one name is one statement in it (names are hashes)
+variable (sub : ∀ x ∈ S, x ∈ S') (uniq : ∀ x ∈ S', ∀ y ∈ S', x.name = y.name → x = y)
+include sub uniq
+
+theorem any_mono {p q : TreeStatement → Bool} (pq : ∀ x, p x = true → q x = true)
     (h : (view pinned S).any p = true) : (view pinned S').any q = true := by
   obtain ⟨x, m, cx, px⟩ := (view_any pinned).mp h
-  exact (view_any pinned).mpr ⟨x, sub x m, counted_mono pinned sub cx, pq x px⟩
+  exact (view_any pinned).mpr ⟨x, sub x m, counted_mono pinned sub uniq cx, pq x px⟩
 
-theorem past_mono (sub : ∀ x ∈ S, x ∈ S') (h : (view pinned S).past a b = true) :
+theorem past_mono (h : (view pinned S).past a b = true) :
     (view pinned S').past a b = true := by
   obtain ⟨⟨ma, ca⟩, ⟨mb, cb⟩, p⟩ := (view_past pinned).mp h
   exact (view_past pinned).mpr
-    ⟨⟨sub a ma, counted_mono pinned sub ca⟩, ⟨sub b mb, counted_mono pinned sub cb⟩, p.mono sub⟩
+    ⟨⟨sub a ma, counted_mono pinned sub uniq ca⟩, ⟨sub b mb, counted_mono pinned sub uniq cb⟩, p.mono sub⟩
 
-theorem gen_mono (sub : ∀ x ∈ S, x ∈ S') {P : Genesis → Bool} (h : gen (view pinned S) P = true) :
+theorem gen_mono {P : Genesis → Bool} (h : gen (view pinned S) P = true) :
     gen (view pinned S') P = true :=
-  any_mono pinned sub (fun _ hx => hx) h
+  any_mono pinned sub uniq (fun _ hx => hx) h
 
-theorem ownerAdded_mono (sub : ∀ x ∈ S, x ∈ S') {p : String} (h : ownerAdded (view pinned S) p = true) :
+theorem ownerAdded_mono {p : String} (h : ownerAdded (view pinned S) p = true) :
     ownerAdded (view pinned S') p = true :=
-  any_mono pinned sub (fun _ hx => hx) h
+  any_mono pinned sub uniq (fun _ hx => hx) h
 
-theorem confirmer_mono (sub : ∀ x ∈ S, x ∈ S') {k : String} (h : confirmer (view pinned S) k = true) :
+theorem confirmer_mono {k : String} (h : confirmer (view pinned S) k = true) :
     confirmer (view pinned S') k = true := by
   unfold confirmer at h ⊢
   simp only [Bool.or_eq_true] at h ⊢
   rcases h with (h | h) | h
-  · exact .inl (.inl (gen_mono pinned sub h))
-  · exact .inl (.inr (gen_mono pinned sub h))
-  · refine .inr (any_mono pinned sub (fun x hx => ?_) h)
+  · exact .inl (.inl (gen_mono pinned sub uniq h))
+  · exact .inl (.inr (gen_mono pinned sub uniq h))
+  · refine .inr (any_mono pinned sub uniq (fun x hx => ?_) h)
     split at hx
     · simp only [Bool.and_eq_true, Bool.or_eq_true] at hx ⊢
       refine ⟨hx.1, ?_⟩
       rcases hx.2 with g | ⟨g, o⟩
-      · exact .inl (gen_mono pinned sub g)
-      · exact .inr ⟨gen_mono pinned sub g, ownerAdded_mono pinned sub o⟩
+      · exact .inl (gen_mono pinned sub uniq g)
+      · exact .inr ⟨gen_mono pinned sub uniq g, ownerAdded_mono pinned sub uniq o⟩
     · cases hx
 
-theorem claimOk_mono (sub : ∀ x ∈ S, x ∈ S') (h : claimOk (view pinned S) c = true) :
+theorem claimOk_mono (h : claimOk (view pinned S) c = true) :
     claimOk (view pinned S') c = true := by
   unfold claimOk at h ⊢
   split at h
   · simp only [Bool.and_eq_true] at h ⊢
-    refine ⟨any_mono pinned sub (fun x hx => ?_) h.1, ?_⟩
+    refine ⟨any_mono pinned sub uniq (fun x hx => ?_) h.1, ?_⟩
     · simp only [Bool.and_eq_true] at hx ⊢
-      exact ⟨⟨⟨hx.1.1.1, gen_mono pinned sub hx.1.1.2⟩, hx.1.2⟩, past_mono pinned sub hx.2⟩
+      exact ⟨⟨⟨hx.1.1.1, gen_mono pinned sub uniq hx.1.1.2⟩, hx.1.2⟩, past_mono pinned sub uniq hx.2⟩
     · have g := h.2
       simp only [guardianNamed, Bool.or_eq_true] at g ⊢
       rcases g with g | g
-      · exact .inl (gen_mono pinned sub g)
-      · refine .inr (any_mono pinned sub (fun x hx => ?_) g)
+      · exact .inl (gen_mono pinned sub uniq g)
+      · refine .inr (any_mono pinned sub uniq (fun x hx => ?_) g)
         simp only [configBy, Bool.and_eq_true] at hx ⊢
-        exact ⟨⟨⟨gen_mono pinned sub hx.1.1.1, hx.1.1.2⟩, hx.1.2⟩, past_mono pinned sub hx.2⟩
+        exact ⟨⟨⟨gen_mono pinned sub uniq hx.1.1.1, hx.1.1.2⟩, hx.1.2⟩, past_mono pinned sub uniq hx.2⟩
   · cases h
 
-theorem final_mono (sub : ∀ x ∈ S, x ∈ S') (h : final (view pinned S) c = true) :
+theorem final_mono (h : final (view pinned S) c = true) :
     final (view pinned S') c = true := by
   simp only [final, Bool.and_eq_true] at h ⊢
-  refine ⟨claimOk_mono pinned sub h.1, any_mono pinned sub (fun x hx => ?_) h.2⟩
+  refine ⟨claimOk_mono pinned sub uniq h.1, any_mono pinned sub uniq (fun x hx => ?_) h.2⟩
   simp only [Bool.and_eq_true] at hx ⊢
-  exact ⟨⟨confirmer_mono pinned sub hx.1.1, hx.1.2⟩, past_mono pinned sub hx.2⟩
+  exact ⟨⟨confirmer_mono pinned sub uniq hx.1.1, hx.1.2⟩, past_mono pinned sub uniq hx.2⟩
 
-/-- A final claim stays final whatever is added, and stands unless what is added makes another claim of its ticket
+/-- A final claim stays final whatever is added (its whole past is held, so it stays the same past), and stands unless what is added makes another claim of its ticket
 with a smaller hash final: only a confirmation that never saw the first can. -/
-theorem settle_final (sub : ∀ x ∈ S, x ∈ S') (mc : c ∈ S) (hf : final (view pinned S) c = true) :
+theorem settle_final (mc : c ∈ S) (hf : final (view pinned S) c = true) :
     final (view pinned S') c = true ∧
       ((∀ f ∈ S', final (view pinned S') f = true → sameTicket f c = true → hashAtMost c.name f.name = true) →
         standing (view pinned S') c = true) := by
-  have f' := final_mono pinned sub hf
+  have f' := final_mono pinned sub uniq hf
   refine ⟨f', fun least => ?_⟩
   have okc := final_claimOk f'
   have cc := claimOk_counted pinned okc
@@ -1270,6 +1444,8 @@ theorem settle_final (sub : ∀ x ∈ S, x ∈ S') (mc : c ∈ S) (hf : final (v
     · simp [ff, sf, least f mf ff sf]
     · simp [ff, sf]
   · simp [ff]
+
+end Mono
 
 /-! ### The door -/
 
@@ -1352,15 +1528,15 @@ theorem passkeyOf_signsIn {vault p : String} (h : passkeyOf (view pinned S) vaul
   unfold signsIn
   simp only [Bool.or_eq_true, Bool.and_eq_true] at h ⊢
   rcases h with (h | ⟨h, o⟩) | h
-  · refine .inl (.inl (any_mono pinned (fun _ m => m) (fun x hx => ?_) h))
+  · refine .inl (.inl (any_imp pinned (fun x hx => ?_) h))
     cases hx' : x.says
     case genesis gs => simp_all
     all_goals simp [hx'] at hx
-  · refine .inl (.inr ⟨any_mono pinned (fun _ m => m) (fun x hx => ?_) h, o⟩)
+  · refine .inl (.inr ⟨any_imp pinned (fun x hx => ?_) h, o⟩)
     cases hx' : x.says
     case genesis gs => simp_all
     all_goals simp [hx'] at hx
-  · refine .inr (any_mono pinned (fun _ m => m) (fun x hx => ?_) h)
+  · refine .inr (any_imp pinned (fun x hx => ?_) h)
     cases hx' : x.says <;> simp_all
 
 /-- **`signIn_own_vault`:** a sign-in adds a device only to the vault of the passkey that signed it, a passkey with an
@@ -1544,7 +1720,7 @@ theorem settle_door {d : String} :
     unfold admits
     simp only [Bool.or_eq_true, Bool.and_eq_true] at h ⊢
     rcases h with ((h | ⟨_, h⟩) | h) | h
-    · refine .inl (.inl (.inl (any_mono pinned (fun _ m => m) (fun x hx => ?_) h)))
+    · refine .inl (.inl (.inl (any_imp pinned (fun x hx => ?_) h)))
       cases hx' : x.says
       case genesis gs =>
         simp only [hx', Bool.and_eq_true, beq_iff_eq] at hx ⊢
@@ -1552,9 +1728,9 @@ theorem settle_door {d : String} :
         exact ⟨n, c, hp⟩
       all_goals simp [hx'] at hx
     · exact .inl (.inl (.inr h))
-    · refine .inl (.inr (any_mono pinned (fun _ m => m) (fun x hx => ?_) h))
+    · refine .inl (.inr (any_imp pinned (fun x hx => ?_) h))
       cases hx' : x.says <;> simp_all
-    · refine .inr (any_mono pinned (fun _ m => m) (fun x hx => ?_) h)
+    · refine .inr (any_imp pinned (fun x hx => ?_) h)
       split at hx
       · simp only [Bool.and_eq_true] at hx
         simp only [hx.1, Bool.true_and]
@@ -1644,6 +1820,7 @@ def TreeStatement.mentions (s : TreeStatement) : List String × List String :=
   | .relayAdd v | .relayRemove v | .setGuardian v => ([v], [])
   | .setAvenPeer k => ([], [k])
   | .setOrigins _ | .ownerEpoch .. => ([], [])
+  | .setOwners v os _ => (v :: os.filterMap Owner.vault?, os.filterMap Owner.key?)
 
 def Settled.listed (t : Settled) (S : List TreeStatement) : Listed :=
   let hashes (l : List Core.Hash) := l.eraseDups.mergeSort fun a b => decide (hashNum a ≤ hashNum b)
