@@ -5,9 +5,9 @@
 use std::collections::BTreeMap;
 
 use aven_core::{DocId, Envelope, Hash, Value, decode, encode};
-use aven_db_docs::schema::{BUILTIN_NAMES, builtin_type, is_builtin};
+use aven_db_docs::schema::{BUILTIN_NAMES, Schema, builtin_type, is_builtin};
 use aven_db_docs::seal::{
-    Kind, Sealed, aad, cipher_key, commit, open, pad, padme, seal_with_nonce, unpad,
+    Kind, Sealed, aad, cipher_key, commit, kind_of, open, pad, padme, seal_with_nonce, unpad,
 };
 use aven_db_docs::{
     Body, Call, EpochKey, Genesis, Head, Limits, OpId, Segment, Version, loro_agrees,
@@ -62,6 +62,17 @@ fn seals() {
             assert_eq!(got.map(|b| hex(&b)), x.as_str().map(String::from), "{name}");
             continue;
         }
+        if name.starts_with("matching no kind: ") {
+            let outside = unhex(s(&i["outside"]));
+            let sealed = Sealed::decode(&outside, 1 << 20).unwrap();
+            let ek = EpochKey {
+                name: sealed.epoch,
+                key: Secret::take(&mut h32(&i["epochKey"])),
+            };
+            assert!(x["kind"].is_null(), "{name}");
+            assert_eq!(kind_of(&ek, &outside, 1 << 20), None, "{name}");
+            continue;
+        }
         let kind = Kind::parse(s(&i["kind"])).unwrap();
         let key = h32(&i["epochKey"]);
         let doc = DocId::parse(s(&i["doc"])).unwrap();
@@ -111,6 +122,19 @@ fn seals() {
             "{name}: the ciphertext's length"
         );
         assert_eq!(real.commit, fixture.commit);
+        // the kind a reader finds by the commitment alone, on the fixture and on the real seal
+        let found = Kind::parse(s(&x["kind"]));
+        assert_eq!(found, Some(kind), "{name}: the kind found");
+        assert_eq!(
+            kind_of(&ek, &fixture.encode(), 1 << 20),
+            found,
+            "{name}: kind_of"
+        );
+        assert_eq!(
+            kind_of(&ek, &real.encode(), 1 << 20),
+            found,
+            "{name}: kind_of, sealed"
+        );
         assert_eq!(
             open(kind, &ek, &real.encode(), 1 << 20),
             Some((doc, pt.clone())),
@@ -377,5 +401,20 @@ fn held() {
             x["reads"].as_bool().unwrap(),
             "{name}"
         );
+    }
+}
+
+#[test]
+fn schemas() {
+    for v in vectors("db/spec/vectors/schemas.json") {
+        let (name, i, x) = (s(&v["name"]), &v["input"], &v["expected"]);
+        let bytes = unhex(s(&i["value"]));
+        let got = decode(&bytes).and_then(|v| Schema::of_value(&v));
+        assert_eq!(got.is_some(), x["ok"].as_bool().unwrap(), "{name}");
+        if let Some(schema) = got {
+            // one form: read back, it is the same Value, and its hash is the one pinned
+            assert_eq!(encode(&schema.value()), bytes, "{name}: its one form");
+            assert_eq!(schema.hash(), Hash(h32(&x["hash"])), "{name}: hash");
+        }
     }
 }

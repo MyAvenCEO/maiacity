@@ -7,12 +7,14 @@
 use std::collections::BTreeMap;
 use std::time::Instant;
 
-use aven_core::{Envelope, Value, blake3};
+use std::sync::Arc;
+
+use aven_core::{DocId, Envelope, Value, blake3};
 use aven_db_docs::schema::{Kind as Field, Schema};
 use aven_db_docs::seal::{Kind, seal};
 use aven_db_docs::{
-    Act, Authorize, Body, Closer, Device, Doc, EpochKey, Genesis, Imported, Limits, RecordWrite,
-    SealedItem, Version,
+    Act, Authorize, Body, Closer, Device, Doc, EpochKey, Genesis, Imported, Limits, Record,
+    RecordWrite, Snapshot, Version,
 };
 use aven_id::{Secret, TestEntropy};
 use aven_peer_keeper::fetch::{Assembly, answer, parts};
@@ -53,8 +55,27 @@ fn todo_type() -> Version {
     }
 }
 
+/// The todo type Doc as a reader holds it: one `schema` Record, the version holding the todo schema (A207).
+fn types(t: &DocId) -> Option<Arc<Snapshot>> {
+    let fields = [
+        ("at".to_string(), Value::Array(vec![])),
+        ("name".to_string(), Value::Text("v1".into())),
+        ("schema".to_string(), todo().value()),
+    ];
+    let record = Record {
+        r#type: aven_db_docs::schema::builtin_type("schema"),
+        fields: fields.into_iter().collect(),
+    };
+    (*t == todo_type().r#type).then(|| {
+        Arc::new(Snapshot {
+            version: vec![],
+            records: [("v1".to_string(), record)].into_iter().collect(),
+        })
+    })
+}
+
 fn open(g: &Genesis) -> Doc {
-    Doc::open(g.clone(), &[todo()], Limits::DEFAULTS).expect("opens")
+    Doc::open(g.clone(), types, Limits::DEFAULTS).expect("opens")
 }
 
 fn write(id: String, k: usize, born: bool) -> RecordWrite {
@@ -176,16 +197,8 @@ fn catch_up(n: usize, close: bool) -> usize {
             lacks = a.later;
         }
         // the page lands in one write: one batch import
-        let items: Vec<SealedItem<'_>> = page
-            .iter()
-            .map(|(_, h)| {
-                if segments.contains(h) {
-                    SealedItem::Segment(&held[h])
-                } else {
-                    SealedItem::Loose(&held[h])
-                }
-            })
-            .collect();
+        // as a keeper serves them, without kinds: each found by its commitment
+        let items: Vec<&[u8]> = page.iter().map(|(_, h)| held[h].as_slice()).collect();
         let r = bob.import_sealed_page(&items, |n| (*n == epoch.name).then_some(&epoch), &Allow);
         for item in r {
             for e in item.expect("opens") {

@@ -17,6 +17,7 @@ import Aven.DB.Docs.Body
 import Aven.DB.Docs.Segment
 import Aven.DB.Docs.Head
 import Aven.DB.Docs.Builtins
+import Aven.DB.Docs.Schema
 
 /-!
 # Aven.DB.Docs: the docs layer's model

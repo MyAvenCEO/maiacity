@@ -12,7 +12,8 @@ use aven_core::{DocId, Envelope, Value, blake3};
 use aven_db_docs::Shelf;
 use aven_db_docs::schema::{Kind, Schema};
 use aven_db_docs::{
-    Act, Authorize, Body, EpochKey, Genesis, Imported, Limits, Past, RecordWrite, Refused, Version,
+    Act, Authorize, Body, EpochKey, Genesis, Imported, Limits, Past, Record, RecordWrite, Refused,
+    Snapshot, Version,
 };
 use aven_db_store::backend;
 use aven_id::{Secret, TestEntropy};
@@ -50,6 +51,25 @@ fn todo_type() -> Version {
         r#type: DocId(blake3(b"the todo type Doc")),
         schema: Some(todo().hash()),
     }
+}
+
+/// The todo type Doc as a reader holds it: one `schema` Record, the version holding the todo schema (A207).
+fn types(t: &DocId) -> Option<Arc<Snapshot>> {
+    let fields = [
+        ("at".to_string(), Value::Array(vec![])),
+        ("name".to_string(), Value::Text("v1".into())),
+        ("schema".to_string(), todo().value()),
+    ];
+    let record = Record {
+        r#type: aven_db_docs::schema::builtin_type("schema"),
+        fields: fields.into_iter().collect(),
+    };
+    (*t == todo_type().r#type).then(|| {
+        Arc::new(Snapshot {
+            version: vec![],
+            records: [("v1".to_string(), record)].into_iter().collect(),
+        })
+    })
 }
 
 fn genesis() -> Genesis {
@@ -91,7 +111,7 @@ async fn host(shelf: Shelf<DynStore>) -> Host<Readers> {
     Host::open(
         shelf,
         genesis(),
-        &[todo()],
+        types,
         Limits::DEFAULTS,
         vec![epoch()],
         Readers(readers),
@@ -140,7 +160,7 @@ async fn sync(from: &mut Host<Readers>, to: &mut Host<Readers>, e: &mut TestEntr
     let hashes = from.answer(&to.tips(), e).await.unwrap();
     let mut items = vec![];
     for h in hashes {
-        items.push((false, from.sealed(&h).await.unwrap().expect("served")));
+        items.push(from.sealed(&h).await.unwrap().expect("served"));
     }
     to.take(&items).await.unwrap();
 }
@@ -159,7 +179,7 @@ async fn two_readers_share_a_doc() {
         panic!("a small commit gossips whole")
     };
     assert_eq!(
-        b.take(&[(false, sealed)]).await.unwrap(),
+        b.take(&[sealed]).await.unwrap(),
         vec![Taken::Imported(vec![Ok(Imported::Counts)])]
     );
     assert_eq!(titles(&b), vec!["milk"]);
@@ -235,7 +255,7 @@ async fn a_strangers_envelope_is_refused_at_every_reader() {
     );
     for reader in [&mut a, &mut b] {
         assert_eq!(
-            reader.take(&[(false, sealed.clone())]).await.unwrap(),
+            reader.take(std::slice::from_ref(&sealed)).await.unwrap(),
             vec![Taken::Imported(vec![Err(Refused::Stranger)])]
         );
         assert_eq!(titles(reader), vec!["milk"]);
@@ -243,7 +263,7 @@ async fn a_strangers_envelope_is_refused_at_every_reader() {
 
     // bytes that aren't a seal, or another Doc's: refused before anything opens
     assert!(matches!(
-        b.take(&[(false, b"not a seal".to_vec())]).await.unwrap()[..],
+        b.take(&[b"not a seal".to_vec()]).await.unwrap()[..],
         [Taken::Unopened(_)]
     ));
 }
@@ -276,7 +296,7 @@ async fn a_quiet_writer_closes_a_segment_a_new_reader_takes() {
     // a reader new to the Doc takes the segment whole, as one page
     let mut carol = host(shelf()).await;
     assert_eq!(
-        carol.take(&[(true, sealed)]).await.unwrap(),
+        carol.take(&[sealed]).await.unwrap(),
         vec![Taken::Imported(vec![Ok(Imported::Counts); 3])]
     );
     assert_eq!(carol.version(), a.version());

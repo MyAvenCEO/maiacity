@@ -42,7 +42,7 @@ pub fn world() -> &'static World {
 }
 
 pub fn doc() -> Doc {
-    Doc::open(world().genesis.clone(), &[], Limits::DEFAULTS).expect("opens")
+    Doc::open(world().genesis.clone(), |_| None, Limits::DEFAULTS).expect("opens")
 }
 
 /// Whatever happened, the live state holds only what counts.

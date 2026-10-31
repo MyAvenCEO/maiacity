@@ -217,6 +217,23 @@ pub fn outside(bytes: &[u8], limit: usize) -> Option<Outside> {
     Sealed::decode(bytes, limit).map(|s| s.outside())
 }
 
+/// The kind a sealed thing was sealed as, found by its commitment alone, before anything is decrypted: each kind has a
+/// commitment key of its own, so at most one kind's commitment matches (BLAKE3's keyed hash under distinct keys). A
+/// reader that fetched it from a keeper, which knows only hashes, learns the kind this way, and nothing about it
+/// travels outside the seal (D13). `None` when no kind's commitment matches under `epoch`.
+pub fn kind_of(epoch: &EpochKey, bytes: &[u8], limit: usize) -> Option<Kind> {
+    let s = Sealed::decode(bytes, limit)?;
+    if s.epoch != epoch.name {
+        return None;
+    }
+    [Kind::Envelope, Kind::Segment, Kind::Snapshot]
+        .into_iter()
+        .find(|&k| {
+            let a = aad(k, &s.doc, &s.epoch);
+            bool::from(commit(k, epoch.key.expose(), &a, &s.nonce).ct_eq(&s.commit))
+        })
+}
+
 /// Opens a sealed thing of `limit` bytes at most as `kind` under `epoch`: the commitment first, in constant time, then
 /// the AEAD, then the padding (`openWith`). Returns its Doc and plaintext.
 pub fn open(kind: Kind, epoch: &EpochKey, bytes: &[u8], limit: usize) -> Option<(DocId, Vec<u8>)> {

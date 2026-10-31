@@ -102,6 +102,29 @@ pub struct Snapshot {
     pub records: BTreeMap<String, Record>,
 }
 
+impl Snapshot {
+    /// A type Doc's versions (A39, A207): each `schema` Record's schema, by its hash. They are built-ins, so
+    /// write-once, and two with one hash hold one schema (`pin_resolves_one`).
+    pub fn versions(&self) -> BTreeMap<Hash, Schema> {
+        let version = crate::schema::builtin_type("schema");
+        self.records
+            .values()
+            .filter(|r| r.r#type == version)
+            .filter_map(|r| Schema::of_value(r.fields.get("schema")?))
+            .map(|s| (s.hash(), s))
+            .collect()
+    }
+}
+
+/// Why a Doc doesn't open.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Unopenable {
+    /// The genesis isn't well formed (`Genesis::ok`): a built-in type pinned, or pins out of order.
+    Genesis,
+    /// A pin resolves to no version of its type Doc, by name.
+    Pin { r#type: DocId, schema: Hash },
+}
+
 /// The change feed, one entry per new version.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Feed {
@@ -433,11 +456,40 @@ fn changes_of(
     Ok(out)
 }
 
-/// A sealed thing catch-up fetched: a loose envelope, or a segment.
-#[derive(Clone, Copy, Debug)]
-pub enum SealedItem<'a> {
-    Loose(&'a [u8]),
-    Segment(&'a [u8]),
+/// Opens a page of sealed things as catch-up fetches them, loose envelopes and segments mixed, without a [`Doc`]: what
+/// holds the epoch keys opens, and only plaintext envelopes go on to be imported. A keeper serves them by hash and the
+/// reader doesn't know their kinds (the kind is in the AAD, D13), so each is opened under its epoch's key (found by the
+/// epoch its outside names) as the kind whose commitment it carries ([`crate::seal::kind_of`],
+/// `Aven.ID.Seal.kind_by_commit`), checked before anything is decrypted. Per item, its envelopes' bytes in order (a
+/// segment's flattened), or why it didn't open.
+pub fn open_sealed_page<'k>(
+    doc: &DocId,
+    items: &[&[u8]],
+    epochs: impl Fn(&Hash) -> Option<&'k EpochKey>,
+    limits: &Limits,
+) -> Vec<Result<Vec<Vec<u8>>, Unopened>> {
+    let limit = limits.sealed + limits.sealed / 8 + 256;
+    let seg_limit = limits.segment_bytes + limits.segment_bytes / 8 + 256;
+    items
+        .iter()
+        .map(|&b| {
+            let out = crate::seal::outside(b, limit.max(seg_limit)).ok_or(Unopened::Form)?;
+            if out.doc != *doc {
+                return Err(Unopened::Doc);
+            }
+            let epoch = epochs(&out.epoch).ok_or(Unopened::Epoch(out.epoch))?;
+            match crate::seal::kind_of(epoch, b, limit.max(seg_limit)) {
+                Some(Kind::Envelope) => match open(Kind::Envelope, epoch, b, limit) {
+                    Some((d, pt)) if d == *doc => Ok(vec![pt]),
+                    _ => Err(Unopened::Seal),
+                },
+                Some(Kind::Segment) => Segment::open(b, doc, epoch, limits)
+                    .map(|(s, _)| s.envelopes)
+                    .map_err(Unopened::Segment),
+                Some(Kind::Snapshot) | None => Err(Unopened::Seal),
+            }
+        })
+        .collect()
 }
 
 /// Why a sealed thing in a page didn't open.
@@ -449,7 +501,8 @@ pub enum Unopened {
     Doc,
     /// An epoch the reader holds no key for.
     Epoch(Hash),
-    /// It doesn't open under its epoch's key.
+    /// No kind's commitment matches under its epoch's key (a snapshot's is no page's), or it doesn't open as the kind
+    /// found.
     Seal,
     Segment(BadSegment),
 }
@@ -518,28 +571,37 @@ fn judge_on(
 }
 
 impl Doc {
-    /// Opens a Doc from its genesis, with the schema of every version it pins (the built-in types need no pin).
-    /// `None` when the genesis isn't well formed or a pinned schema is missing. The genesis carries no signature: the
-    /// Doc's first envelope carries it, and that envelope's signature and cap authorize it.
-    pub fn open(genesis: Genesis, schemas: &[Schema], limits: Limits) -> Option<Doc> {
-        Doc::open_with(genesis, schemas, limits, Box::new(DocsBuiltins))
+    /// Opens a Doc from its genesis, reading every version it pins from its type Doc: `types` gives a type Doc's
+    /// snapshot, and a pin `(type Doc, h)` resolves to the `schema` Record there whose schema hashes to `h`
+    /// ([`Snapshot::versions`], `Aven.DB.Docs.pin_resolves_one`). The built-in types need no pin. The genesis carries
+    /// no signature: the Doc's first envelope carries it, and that envelope's signature and cap authorize it.
+    pub fn open(
+        genesis: Genesis,
+        types: impl Fn(&DocId) -> Option<Arc<Snapshot>>,
+        limits: Limits,
+    ) -> Result<Doc, Unopenable> {
+        Doc::open_with(genesis, types, limits, Box::new(DocsBuiltins))
     }
 
     /// [`Doc::open`] with the built-in types' checks given: the docs layer's own, joined with avenID's once caps
     /// supplies them (`Either(DocsBuiltins, caps)`).
     pub fn open_with(
         genesis: Genesis,
-        schemas: &[Schema],
+        types: impl Fn(&DocId) -> Option<Arc<Snapshot>>,
         limits: Limits,
         builtins: Box<dyn BuiltinFit + Send + Sync>,
-    ) -> Option<Doc> {
+    ) -> Result<Doc, Unopenable> {
         if !genesis.ok(is_builtin) {
-            return None;
+            return Err(Unopenable::Genesis);
         }
         let mut pinned: BTreeMap<Version, Schema> = BTreeMap::new();
         for (t, hs) in &genesis.pins {
+            let versions = types(t).map(|s| s.versions()).unwrap_or_default();
             for h in hs {
-                let s = schemas.iter().find(|s| s.hash() == *h)?;
+                let s = versions.get(h).ok_or(Unopenable::Pin {
+                    r#type: *t,
+                    schema: *h,
+                })?;
                 pinned.insert(
                     Version {
                         r#type: *t,
@@ -550,7 +612,7 @@ impl Doc {
             }
         }
         let id = genesis.id();
-        Some(Doc {
+        Ok(Doc {
             genesis,
             id,
             limits,
@@ -572,21 +634,25 @@ impl Doc {
         })
     }
 
-    /// Opens a Doc from its first envelope, which carries its genesis, and imports that envelope.
+    /// Opens a Doc from its first envelope, which carries its genesis, and imports that envelope. `None` when the
+    /// bytes carry no genesis of their Doc, or the first envelope doesn't import.
     pub fn from_first(
         bytes: &[u8],
-        schemas: &[Schema],
+        types: impl Fn(&DocId) -> Option<Arc<Snapshot>>,
         limits: Limits,
         auth: &impl Authorize,
-    ) -> Option<(Doc, Imported)> {
+    ) -> Option<Result<(Doc, Imported), Unopenable>> {
         let e = Envelope::decode(bytes)?;
         let g = Body::of_value(&e.body)?.genesis?;
         if g.id() != e.doc {
             return None;
         }
-        let mut doc = Doc::open(g, schemas, limits)?;
+        let mut doc = match Doc::open(g, types, limits) {
+            Ok(d) => d,
+            Err(u) => return Some(Err(u)),
+        };
         let r = doc.import(bytes, auth).ok()?;
-        Some((doc, r))
+        Some(Ok((doc, r)))
     }
 
     pub fn id(&self) -> DocId {
@@ -653,45 +719,16 @@ impl Doc {
         Ok(self.import_page(&page, auth))
     }
 
-    /// Imports a page of sealed things as catch-up fetches them, loose envelopes and segments mixed, in one batch: each
-    /// is opened under its epoch's key (found by the epoch its outside names), segments are flattened in order, and the
-    /// whole goes through [`Doc::import_page`]: one judge, one `import_batch`, one snapshot. Per item, the results of its
-    /// envelopes in order, or why it didn't open.
+    /// Imports a page of sealed things as catch-up fetches them, loose envelopes and segments mixed, in one batch:
+    /// [`open_sealed_page`], then [`Doc::import_page`] over what opened (one judge, one `import_batch`, one
+    /// snapshot). Per item, the results of its envelopes in order, or why it didn't open.
     pub fn import_sealed_page<'k>(
         &mut self,
-        items: &[SealedItem<'_>],
+        items: &[&[u8]],
         epochs: impl Fn(&Hash) -> Option<&'k EpochKey>,
         auth: &impl Authorize,
     ) -> Vec<Result<Vec<Result<Imported, Refused>>, Unopened>> {
-        let limit = self.limits.sealed + self.limits.sealed / 8 + 256;
-        let seg_limit = self.limits.segment_bytes + self.limits.segment_bytes / 8 + 256;
-        let mut opened: Vec<Result<Vec<Vec<u8>>, Unopened>> = Vec::with_capacity(items.len());
-        for item in items {
-            let bytes = match item {
-                SealedItem::Loose(b) | SealedItem::Segment(b) => *b,
-            };
-            let Some(out) = crate::seal::outside(bytes, limit.max(seg_limit)) else {
-                opened.push(Err(Unopened::Form));
-                continue;
-            };
-            if out.doc != self.id {
-                opened.push(Err(Unopened::Doc));
-                continue;
-            }
-            let Some(epoch) = epochs(&out.epoch) else {
-                opened.push(Err(Unopened::Epoch(out.epoch)));
-                continue;
-            };
-            opened.push(match item {
-                SealedItem::Loose(b) => match open(Kind::Envelope, epoch, b, limit) {
-                    Some((d, pt)) if d == self.id => Ok(vec![pt]),
-                    _ => Err(Unopened::Seal),
-                },
-                SealedItem::Segment(b) => Segment::open(b, &self.id, epoch, &self.limits)
-                    .map(|(s, _)| s.envelopes)
-                    .map_err(Unopened::Segment),
-            });
-        }
+        let opened = open_sealed_page(&self.id, items, epochs, &self.limits);
         let page: Vec<&[u8]> = opened
             .iter()
             .flatten()

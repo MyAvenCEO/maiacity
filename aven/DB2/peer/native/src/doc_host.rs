@@ -4,25 +4,25 @@
 //! keys stay in the Peer-Light's own worker: [`Host::prepare`] and [`Host::finish`] take the device's signature from
 //! outside.
 //!
-//! - **Open:** the Doc's genesis and its schemas come from the caller (the pinned genesis, never the network); what
+//! - **Open:** the Doc's genesis and its type Docs come from the caller (the pinned genesis, never the network); what
 //!   the shelf holds is imported back, in the order held, and the envelopes the docs worker found to crash the judge
 //!   are marked unfit first.
 //! - **Commit:** prepare, the device's signature, finish; then the envelope's bytes go on the shelf, the held page and
 //!   the head move, and the envelope is sealed under the newest epoch for gossip ([`Live::of`]).
-//! - **Take:** a sealed envelope or segment from gossip or a fetch is opened under the epoch its outside names and
-//!   imported; whatever it made held goes on the shelf.
+//! - **Take:** a sealed envelope or segment from gossip or a fetch is opened under the epoch its outside names, as the
+//!   kind its commitment names, and imported; whatever it made held goes on the shelf.
 //! - **Sync:** its [`tips`], its [`version`], and its answer to another reader's tips: the sealed values beyond them
 //!   (`doc_have`), sealed on the shelf so the fetch gate can serve them. What crashed the judge is never served.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
-use aven_core::{Envelope, Hash};
+use aven_core::{DocId, Envelope, Hash};
+use aven_db_docs::Unopened;
 use aven_db_docs::seal::{self, Kind};
 use aven_db_docs::{
     Act, Authorize, Doc, EpochKey, Genesis, Imported, Limits, Prepared, RecordWrite, Snapshot,
-    schema::Schema,
 };
-use aven_db_docs::{SealedItem, Unopened};
 use aven_id::Entropy;
 
 use aven_db_docs::{Saved, Shelf};
@@ -81,19 +81,20 @@ fn core_hash(h: &aven_db_store::Hash) -> Hash {
 }
 
 impl<A: Authorize> Host<A> {
-    /// Opens a Doc from its genesis, reading back what the shelf holds of it.
+    /// Opens a Doc from its genesis, its pins resolved in the type Docs `types` gives, reading back what the shelf
+    /// holds of it.
     #[allow(clippy::too_many_arguments)]
     pub async fn open(
         shelf: Shelf<DynStore>,
         genesis: Genesis,
-        schemas: &[Schema],
+        types: impl Fn(&DocId) -> Option<Arc<Snapshot>>,
         limits: Limits,
         epochs: Vec<EpochKey>,
         auth: A,
         unfit: BTreeSet<Hash>,
     ) -> Result<Host<A>, String> {
-        let mut doc = Doc::open(genesis, schemas, limits)
-            .ok_or("a genesis this peer can't open: its type or pins")?;
+        let mut doc = Doc::open(genesis, types, limits)
+            .map_err(|u| format!("a genesis this peer can't open: {u:?}"))?;
         for name in &unfit {
             doc.mark_unfit(*name);
         }
@@ -204,18 +205,9 @@ impl<A: Authorize> Host<A> {
     }
 
     /// Takes in sealed things, loose envelopes and segments, as one page: each opened under the epoch its outside
-    /// names, then imported in one batch. What became held goes on the shelf.
-    pub async fn take(&mut self, items: &[(bool, Vec<u8>)]) -> Result<Vec<Taken>, String> {
-        let page: Vec<SealedItem<'_>> = items
-            .iter()
-            .map(|(segment, b)| {
-                if *segment {
-                    SealedItem::Segment(b)
-                } else {
-                    SealedItem::Loose(b)
-                }
-            })
-            .collect();
+    /// names, as the kind its commitment names, then imported in one batch. What became held goes on the shelf.
+    pub async fn take(&mut self, items: &[Vec<u8>]) -> Result<Vec<Taken>, String> {
+        let page: Vec<&[u8]> = items.iter().map(Vec::as_slice).collect();
         let epochs = &self.epochs;
         let results = self.doc.import_sealed_page(
             &page,
