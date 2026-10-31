@@ -27,16 +27,19 @@ inductive Old where
   | withdrawal (w : Withdrawal)
   | join (j : Join)
   | memberSignIn (s : MemberSignIn)
+  /-- the member cap a join's vault gets at the switch (A38): the migration confirms it with Maia City's approval -/
+  | confirm (j : Join)
   deriving DecidableEq, Repr
 
 /-- The old statements after the claim, in the order `Members.restore` reads them: the claimant's sign-ins, then the
-invites, withdrawals and joins by their invite's id, then the members' sign-ins. -/
+invites, withdrawals and joins by their invite's id, then the members' sign-ins, then each join's member cap (A38). -/
 def refOrder (m : Members) : List Old :=
   m.founding.signIns.map .signIn ++
     (m.invites.mergeSort fun a b => Members.byId a.key b.key).map .invite ++
     (m.withdrawn.mergeSort fun a b => Members.byId a.key b.key).map .withdrawal ++
     (m.joins.mergeSort fun a b => Members.byId a.invite b.invite).map .join ++
-    m.signIns.map .memberSignIn
+    m.signIns.map .memberSignIn ++
+    (m.joins.mergeSort fun a b => Members.byId a.invite b.invite).map .confirm
 
 /-- The first index in `l` where `p` holds. -/
 def indexWhere {α : Type} (p : α → Bool) : List α → Option Nat
@@ -51,6 +54,17 @@ def isInvite (key : String) : Old → Bool
   | .invite i => i.key == key
   | _ => false
 
+/-- Whether an old statement is the join of this invite. -/
+def isJoin (key : String) : Old → Bool
+  | .join j => j.invite == key
+  | _ => false
+
+/-- The name of the claim a join of this invite becomes; 0, which names nothing, if there is none. -/
+def joinName (olds : List Old) (key : String) : Nat :=
+  match indexWhere (isJoin key) olds with
+  | some k => nameAt k
+  | none => 0
+
 /-- The name of the ticket statement for an invite's one-time key; 0, which names nothing, if there is none. -/
 def ticketName (olds : List Old) (key : String) : Nat :=
   match indexWhere (isInvite key) olds with
@@ -61,7 +75,8 @@ def ticketName (olds : List Old) (key : String) : Nat :=
 claiming browser, the admin coop, the agent and the Aven Peer's key, and the guardian's hybrid keys (A13). -/
 def genesisOf (s : Founding) (c : Claim) (g : GuardianKeys) : Genesis :=
   { rpId := s.rp.rpId, origins := s.rp.origins, claimant := c.person, passkey := c.passkey, devices := [c.deviceKey],
-    coop := s.coop, coopOwners := [c.person], agent := s.network, avenPeer := s.peerKey, guardian := g, guardianVault := guardianId,
+    coop := s.coop, coopOwners := [c.person], agent := s.network, avenPeer := s.peerKey, guardian := g,
+    guardianVault := guardianId, confirmers := [s.network, c.person],
     signedBy := [c.passkey, g.ed25519, g.mlDsa] }
 
 /-- An old statement's signer and what it says as a tree statement. Devices go by their keys, as the door does. -/
@@ -71,6 +86,7 @@ def Old.says (olds : List Old) (c : Claim) (g : GuardianKeys) : Old → String �
   | .withdrawal w => (w.passkey, .withdrawal (ticketName olds w.key))
   | .join j => (j.invite, .claim (ticketName olds j.invite) j.person j.passkey j.deviceKey g)
   | .memberSignIn s => (s.member.passkey, .signIn s.member.person s.signIn.deviceKey)
+  | .confirm j => (c.passkey, .confirm (joinName olds j.invite))
 
 /-- The genesis statement production's claim becomes, named 1. -/
 def genesisStatement (m : Members) (c : Claim) (g : GuardianKeys) : TreeStatement :=
@@ -79,6 +95,7 @@ def genesisStatement (m : Members) (c : Claim) (g : GuardianKeys) : TreeStatemen
 /-- What an old statement names besides the one before it: a join, its invite's ticket. -/
 def Old.tips (olds : List Old) : Old → List Nat
   | .join j => [ticketName olds j.invite]
+  | .confirm j => [joinName olds j.invite]
   | _ => []
 
 /-- The `k`-th old statement as a tree statement: named `nameAt k`, naming the one before it, and a join its ticket. -/

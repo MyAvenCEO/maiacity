@@ -44,17 +44,18 @@ thread's recommendation. Samuel may overrule any.
    must learn a peer's home relay from somewhere it can verify.
 4. **Two claims of one ticket: the smallest statement hash wins** (A12, `ticket_once`). Only someone holding the link's
    secret can make a second claim, so this happens only with a leaked link or a double tap.
-5. **A withdrawal wins over every claim not in its past, and a claim is final once an admin device has acked it** (A12).
+5. **A withdrawal wins over every claim not in its past, and a claim is final once it is confirmed** (A12, A38).
    This is how a revocation wins over what it hadn't seen in caps. A withdrawal is the ticket's revocation. Reason: if a
    concurrent claim won instead, a withdrawal could never stop someone with a leaked link, who need only say they
    hadn't seen it.
 6. **An undone claim is hidden everywhere, and kept.** The door closes on its devices at every peer at once, because
    every peer settles the same statements the same way. Its posts stay in the store, marked, and are no longer shown.
    Nothing is wiped.
-7. **Catch-up comes from whoever holds the posts.** Every native Peer, the Aven Peer included, answers `heads` and
-   `catch_up` from its own store. A peer links to up to 3 members and asks whichever announced the newer tip. This is
-   the want queue's order of sources (engine): your own devices, then other readers, then keepers. It answers engine
-   open question 1.
+7. **Catch-up comes from whoever holds the Doc's log** (A34, Samuel, 31 Oct 2026). Every native Peer, the Aven Peer
+   included, answers catch-up of a Doc's log from its own store. A peer links to up to 3 members and asks whichever
+   announced the newer tip. This is the want queue's order of sources (engine): your own devices, then other readers,
+   then keepers. It is written once, for Doc logs: the tree is the first Doc, the chat the second once it moves onto a
+   Doc. Nothing is built for the chat's chains. It answers engine open question 1.
 8. **Each vault chooses its keepers, by keep caps** (Samuel, 31 Oct 2026; A22). The admin's keeper list says who
    offers to keep. A vault's keep caps say which keeper holds which of its Docs and Values. A new vault starts with one
    keep cap for everything to Maia City's keeper (the Aven Peer, acting for Aven), approved by its owner with their
@@ -71,14 +72,13 @@ thread's recommendation. Samuel may overrule any.
     9). The Service Worker and native Peers read one signed release record. Stored formats stay readable forever,
     tested against frozen vectors, because production is never wiped ([7](#7-upgrades)).
 12. **Maia City's vault is the admin; its owners approve what changes who is in or who sees whom** (rule 15, A28;
-    Samuel, 31 Oct 2026: "a tree admin should always be a VAULT, never an individual signer"). Tickets, withdrawals,
-    and the relay and keeper lists count only with the approval of Maia City's owners, k of n through the vaults that
-    own it (`byAdmin`, `Tree.approves`, `admin_by_owners`). Owner keys are passkeys and MaiaCityGuardian, never a
-    device's key (`device_not_admin`), so "the more secure way" (31 Oct) holds: today one tap of Samuel's passkey, since
-    his vault owns Maia City. A device of a vault that owns Maia City acks claims for it, within its device cap, on its
-    own (`acker`). A second admin, an owner change or recovery is ordinary governance of the vault, with no new genesis.
-    Reason: a stolen or compromised browser can't let anyone in, or route members through a relay that logs their
-    addresses.
+    Samuel, 31 Oct 2026: "a tree admin should always be a VAULT, never an individual signer"). Tickets, withdrawals, and
+    the relay and keeper lists count only with the approval of Maia City's owners, k of n through the vaults that own it
+    (`byAdmin`, `Tree.approves`, `admin_by_owners`). Owner keys are passkeys and MaiaCityGuardian, never a device's key
+    (`device_not_admin`), so "the more secure way" (31 Oct) holds: today one tap of Samuel's passkey, since his vault
+    owns Maia City. A second admin, an owner change or recovery is ordinary governance of the vault, with no new
+    genesis. Reason: a stolen or compromised browser can't let anyone in, or route members through a relay that logs
+    their addresses.
 
 ## 1. Several relays
 
@@ -122,10 +122,11 @@ thread's recommendation. Samuel may overrule any.
   `aven/db/1` to members, chosen from its address records, and replaces one that stalls (README rule 3). Status names
   its phase from all of them together (rule 7).
 
-## 3. Catch-up from whoever holds the posts
+## 3. Catch-up from whoever holds the log
 
-- **Every native Peer answers** `heads`, `catch_up` and `lines` (the posts) on `aven/db/1` from its own store, the
-  same frames the Aven Peer's hub answers today. A Peer-Light answers nothing: it is rarely online, and serves no one.
+- **Every native Peer answers** catch-up of a Doc's log from its own store (A34): the tree first, the chat once it is a
+  Doc. Nothing is written for the chat's chains. A Peer-Light answers nothing: it is rarely online, and serves no
+  one.
 - **Signed tips.** Each device signs the tip of its own log: the hash of its newest post and the post's number. Tips
   travel on gossip and in `heads`. A peer that announces an older tip than one already seen is not believed for that
   log: the gap shows, and the posts are asked of someone else (A3: envelopes name what they build on by hash).
@@ -187,11 +188,11 @@ every peer must reach the same tree from the same statements, whatever order the
 - **The genesis** (A11) is the first statement. Samuel's passkey and MaiaCityGuardian sign it, and it names the RP ID,
   the origins, the admin coop, the agent, the Aven Peer's key and the guardian's keys. Every member pins its hash; a
   statement whose past doesn't reach the pinned genesis is not part of the tree.
-- **Kinds of statement:** genesis, sign-in, ticket (an invite), withdrawal, claim (a join), ack, the lists (relay-add,
-  relay-remove, keeper-add, keeper-remove), and Maia City's changes to what the genesis named: the Aven Peer's key,
-  avenOS's origins and MaiaCityGuardian's vault (rule 15, A28). A change counts only with Maia City's owners' approval;
-  the latest settles it, and concurrent changes settle by the smallest name (`setting`, `config_by_admin`). Each is
-  checked alone as it is today (signatures, assertions, names), then settled together.
+- **Kinds of statement:** genesis, sign-in, ticket (an invite), withdrawal, claim (a join), confirm, the lists
+  (relay-add, relay-remove, keeper-add, keeper-remove), and Maia City's changes to what the genesis named: the Aven
+  Peer's key, avenOS's origins and MaiaCityGuardian's vault (rule 15, A28). A change counts only with Maia City's
+  owners' approval; the latest settles it, and concurrent changes settle by the smallest name (`setting`,
+  `config_by_admin`). Each is checked alone as it is today (signatures, assertions, names), then settled together.
 - **The genesis names vaults, not keys, for authority:** Maia City's vault and its owners (`coopOwners`), and
   MaiaCityGuardian's vault, which its key owns and which owns each person's vault (`guardianVault`).
 - **Sign-ins** stop being numbered by arrival (`signin-000001`). A sign-in adds a device and conflicts with nothing,
@@ -206,14 +207,20 @@ every peer must reach the same tree from the same statements, whatever order the
 2. **Tickets and withdrawals:** a withdrawal of ticket T wins over every claim of T that isn't in the withdrawal's past.
    A withdrawal that has a claim of T in its past changes nothing: that ticket was already used (`withdraw_used`
    today). Tickets and withdrawals count only with Maia City's owners' approval (decision 12).
-3. **Acks:** an ack names the claim it acks, by hash, and has it in its past. An admin device acks on its own whenever
-   it syncs a new claim, but only the claim that stands in its own settled view, and never a second claim of a ticket
-   that already has a final claim in that view. So finality waits only for an admin's device to be online.
-4. **Finality:** a claim is final once an ack from an admin device names it. A withdrawal never wins over a final
-   claim, and a final claim wins over every claim of its ticket that isn't final.
+3. **Confirmations** (A38, Samuel and the architect, 31 Oct 2026): membership is a cap. Maia City's vault grants a
+   standing cap for the confirm op to the vaults the genesis names (`confirmers`): Aven's, so the Aven Peer confirms
+   on its own, and today Alice's (the claimant's) too. A confirmation names the claim it confirms, by hash, and has it
+   in its past, and is signed by Maia City's owners or by a device of a vault holding the cap (`confirmer`). It is
+   bounded to a standing claim of a ticket Maia City issued, so it lets in no one without a ticket. A confirming
+   device confirms only the claim that stands in its own view, and never a second claim of a ticket that already has
+   a final claim there (`confirmPolicy`). The ticket keeps its passkey tap; the confirmation is automatic.
+4. **Finality and membership:** a claim is final once a confirmation names it; that issues its vault's member cap.
+   Only a final, standing claim's vault is a member, and only its devices are let in. A withdrawal never wins over a
+   final claim, and a final claim wins over every claim of its ticket that isn't final.
 5. **Claims of one ticket:** among the final claims of a ticket, if there are any, the smallest hash wins; otherwise
    among the claims still standing (`ticket_once`). The others found nothing. Two final claims of one ticket happen
-   only when two admin devices ack different claims without seeing each other's ack: the smallest hash still settles it,
+   only when two devices confirm different claims without seeing each other's confirmation: the smallest hash still
+   settles it,
    and the conflict shows in the settled tree (the caps thread, 30 Oct 2026).
 6. **Lists:** an admin's remove wins over every add of the same device that hadn't seen it: the adds in its past and
    those concurrent with it. An add that has the remove in its past puts the device back (the caps thread, 30 Oct
@@ -231,7 +238,7 @@ In `Aven.ID.Network`, with the caps thread (`ticket_once` is there since #1531),
   marked `contested`.
 - **`settle_withdrawn`:** a withdrawal of T leaves no non-final claim of T outside its past standing.
 - **`settle_final`:** a final claim stays standing whatever statements are added later, unless what is added makes
-  another claim of its ticket with a smaller hash final, which only an ack that never saw the first ack can do.
+  another claim of its ticket with a smaller hash final, which only a confirmation that never saw the first can do.
 - **`settle_door`:** the door's admitted keys are a function of the settled tree only (`door_from_tree`).
 - **`settle_genesis`:** nothing outside the pinned genesis's descendants changes the tree.
 - **`settle_restore`** (`Aven.ID.Restore`): production's stored statements, ordered by their ref names as the Aven
@@ -251,27 +258,25 @@ In `Aven.ID.Network`, with the caps thread (`ticket_once` is there since #1531),
   new address record is the newest (`rehome_newest`), and one relay alone is an only source (`one_relay_only_source`);
   plain bytes go only to a reader, and relays and keepers that aren't readers see sealed bytes only
   (`no_plain_to_nonreader`, `relay_blind`, `keeper_blind`). Vectors `node.json`: networks losing each peer in turn.
-- **Vectors:** `settled.json`. The same statement sets in six orders each, with their settled tree: `TreeExamples`,
-  the races one by one (two claims, a claim against a withdrawal, a claim after its ack, two admin devices acking two
-  claims, a list's add against its remove, a statement outside the genesis, a bad one), 40 generated sets, and
-  production's store migrated from the invite traces. `records.json`: records and the newest of each. aven-id, the
-  wasm and avenOS's check load them (README rule 10).
+- **Vectors:** `settled.json`. The same statement sets in six orders each, with their settled tree: `TreeExamples`, the
+  races one by one (two claims, a claim against a withdrawal, a claim after its confirmation, two devices confirming two
+  claims, the Aven Peer's key changed, a list's add against its remove, a statement outside the genesis, a bad one), 40
+  generated sets, and production's store migrated from the invite traces. `records.json`: records and the newest of
+  each. aven-id, the wasm and avenOS's check load them (README rule 10).
 
-### The cost: a claim can be undone
+### The cost: a claim waits for its confirmation, and can be undone before it
 
-Until an admin device acks it, a claim can still lose to a withdrawal the admin signed without seeing it, or to a
-competing claim of the same ticket with a smaller hash. After the ack, it can lose only if two admin devices acked two
-claims of its ticket without seeing each other. Both need a leaked link or a double tap. Meanwhile:
+A claim is let in only to reach a confirmer (`newcomer`, `pending`): the Aven Peer, or another device of a vault
+holding the confirm cap. Until a confirmation reaches it, the claim can still lose to a withdrawal Maia City signed
+without seeing it, or to a competing claim of the same ticket with a smaller hash. After it, it can lose only if two
+devices confirmed two claims of its ticket without seeing each other. Both need a leaked link or a double tap.
 
-- **The new member works fully:** they chat, are counted present, and their device is let in everywhere their claim
-  has reached.
-- **avenOS says it quietly:** "Waiting for Maia City to confirm", under the member's name in their own view, until the
-  ack arrives. Others see nothing different.
-- **If it is undone,** that member's avenOS says "This invite was withdrawn" (or "already used"), the door closes on
-  the device at every peer, and its posts are hidden (decision 6).
-- **How long** is how long until an admin device is online. In production, Samuel's browsers are online most days. If
-  that is too slow, a later grant can let the Aven Peer ack, as a cap Maia City's owners give it: the right to finalise
-  claims. That is a grant, not a position, and it stays a decision for later.
+- **avenOS says it quietly:** "Waiting for Maia City to confirm", in the new member's own view, until the confirmation
+  arrives, usually within a moment, since the Aven Peer confirms on its own. Others see nothing.
+- **If it is undone,** that person's avenOS says "This ticket was withdrawn" (or "already used"), and the door, which
+  never let them past their claim, stays closed.
+- **With the Aven Peer down,** another holder of the confirm cap confirms: today Alice's devices. Maia City's owners
+  can grant the cap to more vaults, and revoke it, by its owners' approval.
 
 ### Production's tree
 
@@ -279,6 +284,10 @@ Production is never wiped (PRODUCTION.md). Its store holds the claim, two sign-i
 milestone 2 adds, under their ref names. The peer reads them as they are and treats the old claim as the genesis's
 past: Samuel signs the genesis once, with his passkey and the guardian's key, naming the old claim's hash. A frozen
 copy of production's store format is tested, as `id/core/tests/before/` is today.
+
+**Production's members get member caps at the switch** (A38): the migration confirms each stored join, as one
+confirmation per join signed under Maia City's approval when Samuel signs the genesis (`Old.confirm`, `final_join`).
+So every member today is a member after, with its member cap, and no device needs the roster.
 
 **The migration's guarantee** (the architect, 31 Oct 2026): three things together, checked on production's own store
 before anything switches.
@@ -372,16 +381,18 @@ against its vectors.
 
 aven-id's `settle`, against `settled.json`. The admin is Maia City's vault (decision 12): today's `members.rs`
 `admin_key`, a passkey owning a vault that governs the coop, becomes `byAdmin`, an approval by the coop's owners read
-from the genesis's tree, and acks come from `acker`, a device of a vault that owns the coop. Statements stored by
-hash, not by ref name, and production's refs read as they are (`settle_restore`, the frozen format). Any member
-accepts a statement: it checks it, keeps it, gossips it, and settles. Admin devices ack. The Peer refuses flags that
-disagree with its genesis.
+from the genesis's tree, and confirmations come from `confirmer`, a device of a vault holding Maia City's confirm cap
+(A38): the Aven Peer confirms on its own, and a confirmation issues the claim's vault its member cap. Statements stored
+by hash, not by ref name, and production's refs read as they are (`settle_restore`, the frozen format). Any member
+accepts a statement: it checks it, keeps it, gossips it, and settles. Confirm-cap holders' devices confirm. The Peer
+refuses flags that disagree with its genesis.
 
 ### Thread C: relays, addresses, entry and catch-up (`peer/native`, `peer/light`)
 
-`RelayMap` from the relay list, `--relays`, `--bootstrap`; address records into `MemoryLookup`; gossip bootstrap from
-up to 3 members; up to 3 links; signed presence; every native Peer answering `heads`, `catch_up` and `lines`; signed
-log tips. The Peer-Light's cache in OPFS and the invite link's records.
+`RelayMap` from the relay list (vaults, their endpoints from address records), `--relays`, `--bootstrap`; address
+history entries into `MemoryLookup`; gossip bootstrap from up to 3 members; up to 3 links; one presence, from signed
+beats (A35); every native Peer answering catch-up of Doc logs from its own store, the tree first (A34); signed log tips.
+Nothing for the chat's chains. The Peer-Light's cache in OPFS and the ticket link's entries.
 
 ### Thread D: keepers (`peer/native/src/keep.rs`, `main.rs`)
 
@@ -405,12 +416,12 @@ Peer as a keeper, named by a keep cap of Bob's vault. Then the checks below.
 `bun run up --check` grows. With the Aven Peer **stopped** after the first steps:
 
 1. Alice Peer and Bob's Peer-Light still chat, through Alice Peer's relay: posts both ways.
-2. A third peer (Alice Peer-Light, reloaded) catches up from Alice Peer, and its view equals the posts every log's
-   signed tip names.
+2. A third peer (Alice Peer-Light, reloaded) catches up the tree's log from Alice Peer, and its tree equals the one
+   the signed tips name (A34: the chat's catch-up from members waits for the chat Doc).
 3. A file Bob's Peer-Light shared loads from Bob's Peer, which Bob's vault named as a keeper beside the default,
    while its sender's tab is closed.
-4. An invite made before the stop is claimed through Alice Peer's relay; the new member chats, shows "Waiting for Maia
-   City to confirm", and stops showing it when the admin's device acks.
+4. A ticket made before the stop is claimed through Alice Peer's relay; the claim waits ("Waiting for Maia City to
+   confirm"), Alice Peer confirms it, and the new member's vault holds its member cap and chats.
 5. Two claims of one ticket from two profiles, at once: every peer settles the same winner, and the loser's avenOS says
    "already used".
 6. A withdrawal and a claim of one ticket, each signed without seeing the other: the withdrawal wins everywhere, and
@@ -418,7 +429,8 @@ Peer as a keeper, named by a keep cap of Bob's vault. Then the checks below.
 7. The Aven Peer starts again, catches up from members, and settles the same tree as every other peer.
 8. A peer whose wire version differs is refused with `update`, and an open tab switches to a newer release without
    losing a draft.
-9. A peer that hides a tree statement or a log's newest post from one member is caught by the signed tips.
+9. A peer that hides a tree envelope, or the newest entry of a Doc's log, from one member is caught by the signed
+   tips.
 
 `bun run lanes` adds lanes for losing the Aven Peer's relay, losing a member's relay, and both relays up with the
 home relay killed mid-chat. Each reports the path iroh took, how long until a post arrived after the loss, and which
@@ -426,8 +438,8 @@ peer served the catch-up.
 
 ## Open
 
-- **Finality without an admin online:** a grant that lets the Aven Peer, or k members, ack claims. Later, if waiting for
-  an admin is too slow.
+- **Granting and revoking the confirm cap after the genesis:** today the genesis names its holders; a grant or
+  revocation by Maia City's owners comes with the tree's other governance (owner changes, A28).
 - **A member's relay sees other members' IPs:** the relay list is the admin's choice for that reason. Mixing traffic
   over several relays is not in this plan.
 - **The old side for every store, a nice-to-have:** a general proof that `Members.restore` always reads back a clean
