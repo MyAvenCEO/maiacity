@@ -202,7 +202,7 @@ theorem rule4_merge_whole (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spaw
   obtain ⟨_, hchg, hnew, hgone⟩ :=
     DB.Engine.merge_granted ver hver (grants e) (fp e) (before e) (step (before e) e) hn hc.1
   refine ⟨⟨hchg, hnew, hgone⟩, ID.merge_within_device r gov spawned wm main h, ?_⟩
-  rcases h.2 with own | chain
+  rcases ID.authorized_by r gov spawned h with own | chain
   · exact .inl own
   · exact .inr (ID.merge_covered r gov spawned wm main chain)
 

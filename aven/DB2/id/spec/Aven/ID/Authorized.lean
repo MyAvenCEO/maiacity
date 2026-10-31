@@ -22,14 +22,20 @@ writes on its vault's own authority or under a chain.
 A device cap is a cap from the vault to its device: by default everything its vault may do except govern, which a
 device added by a passkey sign-in holds, and narrower for an agent's devices and the Aven Peer.
 
+**An actor host** (A27, Samuel, 31 Oct 2026) signs every write of the actors it hosts with one device of its own, a
+narrow device vault whose cap is the union of its hosted actors' standing caps: the outer bound. A host device never
+writes on its vault's own authority, only under the chain the acting actor's message carried, and each envelope it
+signs names that actor. So each actor is bounded by its own chain, and the host by its device cap.
+
 **A merge into main** counts only when the merger's grant covers the whole merge (caps, "Checking"): every type and
 field that differs between main's version at the merge's `prev` and what it makes, not the fixing commit's alone. The
 engine computes that diff (`Aven.DB.Engine.merge_granted`, over `changesFrom` from main's Records); a reader that judges
 a merge into main on it is `WholeMerges`, and `Aven.Architecture` joins the two.
 
 The theorems:
-- `own_authorized`: a device of the Doc's vault, or of a vault that governs it, acting within its device cap, is
-  authorized without a chain;
+- `own_authorized`, `chain_authorized`, `authorized_by`: a device of the Doc's vault, or of a vault that governs it,
+  acting within its device cap, is authorized without a chain (an actor host's never is); a write under a chain is,
+  within the device cap; and every authorized envelope takes one of the two paths;
 - `authorized_vault`: on either path, the signer is a device of a vault that is the Doc's vault, governs it, or holds
   the last cap of the chain it names, so no envelope writes on authority from nowhere;
 - `chain_signer`: under a chain, the signer is a device of a vault that holds the last cap;
@@ -43,6 +49,9 @@ The theorems:
   within its device cap, on either path, so under a chain every step is allowed both by the chain for its vault and by
   the device cap for the device; a device whose cap is for proposals, as an agent's removals go, never writes on main;
   and a merge into main read whole stays within the merging device's cap;
+- `host_chain_only`, `actor_within_device`, `host_never_beyond`: an authorized envelope a host signed rests on a chain
+  and names its actor; it stays within the host's device cap; and every step is allowed both by the chain the actor's
+  message carried and by that outer bound (A27);
 - `counts_iff`: an envelope counts exactly when everything in its past is signed, fresh, authorized, live and fit, and
   none of it is half of a split (the docs layer's rule 13, over Core's `Counts`);
 - `readers_agree`: two readers that hold the same past of an envelope, and the same splits in it, give it the same
@@ -60,6 +69,8 @@ structure DeviceCap where
   vault : String
   grants : Option Grant := none
   branches : Branches := .any
+  /-- An actor host's device (A27): a kernel's own device, its grants the union of its hosted actors' standing caps. -/
+  host : Bool := false
 
 /-- A step a device cap lets its device write on a Doc. With no grants listed, every step: governing is never a step,
 since owners govern k of n and no cap and no device does (rule 2), so this never lets a device govern. -/
@@ -84,6 +95,8 @@ structure Reader where
   facts : DocId → Option Facts
   /-- The device cap of the device whose key signs, as its vault holds it. -/
   deviceCap : Bytes → Option DeviceCap
+  /-- The acting actor an envelope names inside its seal, when an actor host signed it (A27). -/
+  actorOf : Envelope → Option DocId
 
 /-- `v` holds `c`: it is `c`'s vault, in `c`'s group now, or, for the public, a member of the network. A ticket is
 claimed by a vault before it writes. -/
@@ -114,16 +127,33 @@ def Reader.ByChain (e : Envelope) : Prop :=
       last.conditions.branches.allows e.branch = true ∧
       ∃ f, r.facts e.doc = some f ∧ ∀ s ∈ r.footprint e, (last.grants r.ctx.roles).allows gov spawned f s
 
+/-- An actor host's device signed it (A27). -/
+def Reader.HostSigned (e : Envelope) : Prop :=
+  ∃ dc, r.deviceCap e.signer = some dc ∧ dc.host = true
+
 /-- Caps' verdict on an envelope: its device acts within its device cap, and it writes on its vault's own authority or
-under a chain. -/
+under a chain; an actor host's device only under a chain, naming the acting actor (A27). -/
 def Reader.Authorized (e : Envelope) : Prop :=
-  r.WithinDevice gov spawned e ∧ (r.Own gov e ∨ r.ByChain gov spawned e)
+  r.WithinDevice gov spawned e ∧
+    ((r.Own gov e ∧ ¬ r.HostSigned e) ∨ (r.ByChain gov spawned e ∧ (r.HostSigned e → (r.actorOf e).isSome = true)))
 
 /-- **An owner writes their own Docs without a chain** (checking, step 7): a device of the Doc's vault, or of a vault
-that governs it, acting within its device cap, is authorized. -/
-theorem own_authorized {e : Envelope} (o : r.Own gov e) (wd : r.WithinDevice gov spawned e) :
+that governs it, acting within its device cap, is authorized, unless it is an actor host's. -/
+theorem own_authorized {e : Envelope} (o : r.Own gov e) (nh : ¬ r.HostSigned e) (wd : r.WithinDevice gov spawned e) :
     r.Authorized gov spawned e :=
-  ⟨wd, .inl o⟩
+  ⟨wd, .inl ⟨o, nh⟩⟩
+
+/-- An authorized envelope writes on its vault's own authority or under a chain: the two paths, whatever else the
+verdict asks of each. -/
+theorem authorized_by {e : Envelope} (h : r.Authorized gov spawned e) : r.Own gov e ∨ r.ByChain gov spawned e :=
+  h.2.imp (·.1) (·.1)
+
+/-- A write under a chain its signer's vault holds, within the device cap, is authorized; an actor host's names its
+actor. -/
+theorem chain_authorized {e : Envelope} (c : r.ByChain gov spawned e)
+    (named : r.HostSigned e → (r.actorOf e).isSome = true) (wd : r.WithinDevice gov spawned e) :
+    r.Authorized gov spawned e :=
+  ⟨wd, .inr ⟨c, named⟩⟩
 
 /-- Under a chain, the signer is a device of a vault that holds the chain's last cap. -/
 theorem chain_signer {e : Envelope} (h : r.ByChain gov spawned e) :
@@ -137,7 +167,7 @@ theorem authorized_vault {e : Envelope} (h : r.Authorized gov spawned e) :
     ∃ v, r.vaultOf e.signer = some v ∧
       ((∃ f, r.facts e.doc = some f ∧ (f.vault = vaultId v ∨ gov (vaultId v) f.vault)) ∨
         ∃ last ∈ r.chain e, r.holdsAt last v = true) := by
-  rcases h.2 with ⟨v, f, hv, hf, o⟩ | c
+  rcases h.2 with ⟨⟨v, f, hv, hf, o⟩, _⟩ | ⟨c, _⟩
   · exact ⟨v, hv, .inl ⟨f, hf, o⟩⟩
   · obtain ⟨last, ml, v, hv, hl⟩ := chain_signer r gov spawned c
     exact ⟨v, hv, .inr ⟨last, ml, hl⟩⟩
@@ -232,6 +262,39 @@ theorem merge_within_device {whole : Envelope → List Step} (wm : r.WholeMerges
       ∀ s ∈ whole e, dc.allows gov spawned f s := by
   obtain ⟨dc, f, hd, _, br, hf, steps⟩ := device_within_cap r gov spawned h
   exact ⟨dc, f, hd, main ▸ br, hf, fun s m => steps s (wm e main s m)⟩
+
+/-- **A host never writes on its vault's own authority** (A27): an authorized envelope an actor host's device signed
+rests on a chain, the one the acting actor's message carried, and names that actor. -/
+theorem host_chain_only {e : Envelope} (h : r.Authorized gov spawned e) (host : r.HostSigned e) :
+    r.ByChain gov spawned e ∧ (r.actorOf e).isSome = true := by
+  rcases h.2 with ⟨_, nh⟩ | ⟨c, named⟩
+  · exact absurd host nh
+  · exact ⟨c, named host⟩
+
+/-- **An actor's write stays within its host's device cap** (A27): the host device's cap, the union of its hosted
+actors' standing caps, allows every step of an authorized envelope it signed. -/
+theorem actor_within_device {e : Envelope} (h : r.Authorized gov spawned e) (host : r.HostSigned e) :
+    ∃ dc f, r.deviceCap e.signer = some dc ∧ dc.host = true ∧ r.facts e.doc = some f ∧
+      ∀ s ∈ r.footprint e, dc.allows gov spawned f s := by
+  obtain ⟨dc, f, hd, _, _, hf, steps⟩ := device_within_cap r gov spawned h
+  obtain ⟨dc', hd', ht⟩ := host
+  rw [hd] at hd'
+  cases hd'
+  exact ⟨dc, f, hd, ht, hf, steps⟩
+
+/-- **A host writes nothing its acting actor wasn't granted** (A27): an authorized envelope an actor host signed names
+its actor, and every step of it is allowed both by the last cap of the chain the actor's message carried and by the
+host's device cap, the outer bound. -/
+theorem host_never_beyond {e : Envelope} (h : r.Authorized gov spawned e) (host : r.HostSigned e) :
+    (r.actorOf e).isSome = true ∧ ∃ dc last f, r.deviceCap e.signer = some dc ∧ dc.host = true ∧
+      (r.chain e).getLast? = some last ∧ r.facts e.doc = some f ∧
+      ∀ s ∈ r.footprint e, dc.allows gov spawned f s ∧ (last.grants r.ctx.roles).allows gov spawned f s := by
+  obtain ⟨c, named⟩ := host_chain_only r gov spawned h host
+  obtain ⟨dc, last, f, hd, hl, hf, steps⟩ := device_and_chain r gov spawned h c
+  obtain ⟨dc', hd', ht⟩ := host
+  rw [hd] at hd'
+  cases hd'
+  exact ⟨named, dc, last, f, hd, ht, hl, hf, steps⟩
 
 /-- One reader verdict: signed, fresh, authorized, live and fit. The other parts are the other layers'. -/
 def Reader.Verdict (signed fresh live fit : Envelope → Prop) (e : Envelope) : Prop :=
