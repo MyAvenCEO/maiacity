@@ -158,7 +158,8 @@ def boundsCase (j : Json) : Except String Json := do
 
 /-- One case of the running model:
 - `{"envelopes": [hex], "held": [bool], "bad": [index], "tips": [index]}`, envelopes in CBOR: a world's answer;
-- `{"accept": hex}`: what `Envelope.accept`, `Signed.accept` and `Target.ofValue?` take from those bytes, encoded
+- `{"accept": hex}`: what `Envelope.accept`, `Signed.accept`, `Target.ofValue?`, `Call.ofValue?` and `Bound.ofValue?`
+  take from those bytes, encoded
   again, or null;
 - `{"targets": [hex], "facts": [{"id", "vault", "type"}], "gov": [[vault, vault]], "spawned": [[doc, doc]],
   "lists": [[doc, doc]]}`: coverage and narrowing (`Coverage`);
@@ -168,7 +169,9 @@ def answerCase (j : Json) : Except String Json := do
     let bs ← (unhex? h).elim (.error "accept: not hex") pure
     return Json.mkObj [("envelope", encodesOpt ((Envelope.accept bs).map Envelope.value)),
       ("signed", encodesOpt ((Signed.accept bs).map Signed.value)),
-      ("target", encodesOpt ((decodeAll bs >>= Target.ofValue?).map Target.value))]
+      ("target", encodesOpt ((decodeAll bs >>= Target.ofValue?).map Target.value)),
+      ("call", encodesOpt ((decodeAll bs >>= Call.ofValue?).map Call.value)),
+      ("bound", encodesOpt ((decodeAll bs >>= Bound.ofValue?).map Bound.value))]
   if (j.getObjVal? "targets").isOk then return ← coverageCase j
   if (j.getObjVal? "bounds").isOk then return ← boundsCase j
   let hexes ← j.getObjValAs? (List String) "envelopes"
