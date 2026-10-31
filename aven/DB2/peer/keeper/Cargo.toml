@@ -12,4 +12,7 @@ publish.workspace = true
 aven-core = { path = "../../core" }
 
 [dev-dependencies]
+# catching up end to end: a writer's sealed envelopes and segments through a keeper into a reader's Doc
+aven-db-docs = { path = "../../db/docs" }
+aven-id = { path = "../../id/core" }
 serde_json = "=1.0.154"
