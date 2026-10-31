@@ -121,21 +121,23 @@ end
 theorem mem_refOrder {r : Members} {o : Old} : o ∈ refOrder r ↔
     (∃ i ∈ r.founding.signIns, o = .signIn i) ∨ (∃ i ∈ r.invites, o = .invite i) ∨
       (∃ w ∈ r.withdrawn, o = .withdrawal w) ∨ (∃ j ∈ r.joins, o = .join j) ∨
-        (∃ s ∈ r.signIns, o = .memberSignIn s) := by
+        (∃ s ∈ r.signIns, o = .memberSignIn s) ∨ (∃ j ∈ r.joins, o = .confirm j) := by
   simp only [refOrder, List.mem_append, List.mem_map, List.mem_mergeSort]
   constructor
-  · rintro ((((⟨i, m, e⟩ | ⟨i, m, e⟩) | ⟨w, m, e⟩) | ⟨j, m, e⟩) | ⟨x, m, e⟩)
+  · rintro (((((⟨i, m, e⟩ | ⟨i, m, e⟩) | ⟨w, m, e⟩) | ⟨j, m, e⟩) | ⟨x, m, e⟩) | ⟨j, m, e⟩)
     · exact .inl ⟨i, m, e.symm⟩
     · exact .inr (.inl ⟨i, m, e.symm⟩)
     · exact .inr (.inr (.inl ⟨w, m, e.symm⟩))
     · exact .inr (.inr (.inr (.inl ⟨j, m, e.symm⟩)))
-    · exact .inr (.inr (.inr (.inr ⟨x, m, e.symm⟩)))
-  · rintro (⟨i, m, e⟩ | ⟨i, m, e⟩ | ⟨w, m, e⟩ | ⟨j, m, e⟩ | ⟨x, m, e⟩)
-    · exact .inl (.inl (.inl (.inl ⟨i, m, e.symm⟩)))
-    · exact .inl (.inl (.inl (.inr ⟨i, m, e.symm⟩)))
-    · exact .inl (.inl (.inr ⟨w, m, e.symm⟩))
-    · exact .inl (.inr ⟨j, m, e.symm⟩)
-    · exact .inr ⟨x, m, e.symm⟩
+    · exact .inr (.inr (.inr (.inr (.inl ⟨x, m, e.symm⟩))))
+    · exact .inr (.inr (.inr (.inr (.inr ⟨j, m, e.symm⟩))))
+  · rintro (⟨i, m, e⟩ | ⟨i, m, e⟩ | ⟨w, m, e⟩ | ⟨j, m, e⟩ | ⟨x, m, e⟩ | ⟨j, m, e⟩)
+    · exact .inl (.inl (.inl (.inl (.inl ⟨i, m, e.symm⟩))))
+    · exact .inl (.inl (.inl (.inl (.inr ⟨i, m, e.symm⟩))))
+    · exact .inl (.inl (.inl (.inr ⟨w, m, e.symm⟩)))
+    · exact .inl (.inl (.inr ⟨j, m, e.symm⟩))
+    · exact .inl (.inr ⟨x, m, e.symm⟩)
+    · exact .inr ⟨j, m, e.symm⟩
 
 theorem indexWhere_some {α : Type} {p : α → Bool} :
     ∀ {l : List α} {k : Nat}, indexWhere p l = some k → ∃ h : k < l.length, p l[k] = true
@@ -226,8 +228,10 @@ theorem step_signIn {k : Nat} {o : Old} {v d : String} (h : (step r c g k o).say
   next i => exact ⟨h.1.symm, h.2.symm⟩
   next s => exact ⟨h.1.symm, h.2.symm⟩
 
-theorem step_not_ack {k : Nat} {o : Old} {n : Nat} : (step r c g k o).says ≠ .ack n := by
-  cases o <;> simp [step, Old.says]
+theorem step_confirm {k : Nat} {o : Old} {n : Nat} (h : (step r c g k o).says = .confirm n) :
+    ∃ j, o = .confirm j ∧ n = joinName (refOrder r) j.invite := by
+  cases o <;> simp [step, Old.says] at h ⊢
+  next j => exact h.symm
 
 end
 
@@ -260,44 +264,29 @@ variable {r : Members} {c : Claim} {g : GuardianKeys}
 
 theorem invite_mem {o : Old} {i : Invite} (m : o ∈ refOrder r) (e : o = .invite i) : i ∈ r.invites := by
   subst e
-  rcases mem_refOrder.mp m with ⟨_, _, h⟩ | ⟨x, mx, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ <;> cases h
+  rcases mem_refOrder.mp m with ⟨_, _, h⟩ | ⟨x, mx, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ <;> cases h
   exact mx
 
 theorem join_mem {o : Old} {j : Join} (m : o ∈ refOrder r) (e : o = .join j) : j ∈ r.joins := by
   subst e
-  rcases mem_refOrder.mp m with ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨x, mx, h⟩ | ⟨_, _, h⟩ <;> cases h
+  rcases mem_refOrder.mp m with ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨x, mx, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ <;> cases h
   exact mx
 
 theorem withdrawal_mem {o : Old} {w : Withdrawal} (m : o ∈ refOrder r) (e : o = .withdrawal w) : w ∈ r.withdrawn := by
   subst e
-  rcases mem_refOrder.mp m with ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨x, mx, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ <;> cases h
+  rcases mem_refOrder.mp m with ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨x, mx, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ <;> cases h
   exact mx
 
 theorem memberSignIn_mem {o : Old} {s : MemberSignIn} (m : o ∈ refOrder r) (e : o = .memberSignIn s) :
     s ∈ r.signIns := by
   subst e
-  rcases mem_refOrder.mp m with ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨x, mx, h⟩ <;> cases h
+  rcases mem_refOrder.mp m with ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨x, mx, h⟩ | ⟨_, _, h⟩ <;> cases h
   exact mx
 
 theorem signIn_mem {o : Old} {i : SignIn} (m : o ∈ refOrder r) (e : o = .signIn i) : i ∈ r.founding.signIns := by
   subst e
-  rcases mem_refOrder.mp m with ⟨x, mx, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ <;> cases h
+  rcases mem_refOrder.mp m with ⟨x, mx, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ | ⟨_, _, h⟩ <;> cases h
   exact mx
-
-/-- No migrated statement acks, so nothing is final. -/
-theorem final_none (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true)
-    (f : TreeStatement) : final (view restored 1 (migrate r g)) f = false := by
-  cases e : final (view restored 1 (migrate r g)) f
-  · rfl
-  · simp only [final, Bool.and_eq_true] at e
-    obtain ⟨a, ma, ha⟩ := (vany hc signed).mp e.2
-    simp only [Bool.and_eq_true, beq_iff_eq] at ha
-    rw [migrate_eq hc] at ma
-    rcases List.mem_cons.mp ma with ea | ma
-    · subst ea; simp [genesisStatement] at ha
-    · obtain ⟨k, _, ea⟩ := mem_steps.mp ma
-      subst ea
-      exact absurd ha.1.2 step_not_ack
 
 /-- A join's ticket: an invite the store holds, with the join's key, at a place of the old statements. -/
 theorem join_ticket (cl : Clean r c) {j : Join} (mj : j ∈ r.joins) :
@@ -327,6 +316,52 @@ theorem claimOk_join (hc : r.founding.claim = some c) (signed : (genesisOf r.fou
   · refine (vpast hc signed).mpr ⟨by simpa [step, Old.says] using mC, mT, .tip mT ?_⟩
     simp [step, Old.tips, tn]
 
+/-- A join's claim is named by its join's place: the first join of its invite is that join. -/
+theorem joinName_at (cl : Clean r c) {k : Nat} (hk : k < (refOrder r).length) {j : Join}
+    (e : (refOrder r)[k] = .join j) : joinName (refOrder r) j.invite = nameAt k := by
+  have mj : j ∈ r.joins := join_mem (List.getElem_mem hk) e
+  obtain ⟨k', hk'⟩ := indexWhere_found (List.getElem_mem hk) (by rw [e]; simp [isJoin] :
+    isJoin j.invite (refOrder r)[k] = true)
+  obtain ⟨hl, p⟩ := indexWhere_some hk'
+  unfold joinName
+  rw [hk']
+  show nameAt k' = nameAt k
+  congr 1
+  cases e' : (refOrder r)[k'] with
+  | join j' =>
+    rw [e'] at p
+    simp only [isJoin, beq_iff_eq] at p
+    have mj' : j' ∈ r.joins := join_mem (List.getElem_mem hl) e'
+    have jj : j' = j := cl.join_once j' mj' j mj p
+    subst jj
+    exact nodup_getElem_inj cl.olds_nodup hl hk (e'.trans e.symm)
+  | _ => rw [e'] at p; simp [isJoin] at p
+
+/-- **Every join's claim is final:** the migration confirms each with Maia City's approval at the genesis's signing,
+issuing its vault's member cap (A38). -/
+theorem final_join (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true)
+    (cl : Clean r c) {k : Nat} (hk : k < (refOrder r).length) {j : Join} (e : (refOrder r)[k] = .join j) :
+    final (view restored 1 (migrate r g)) (step r c g k (.join j)) = true := by
+  have mj : j ∈ r.joins := join_mem (List.getElem_mem hk) e
+  obtain ⟨kc, hkc, ec⟩ := List.mem_iff_getElem.mp
+    (mem_refOrder.mpr (.inr (.inr (.inr (.inr (.inr ⟨j, mj, rfl⟩))))) : Old.confirm j ∈ refOrder r)
+  have mC : step r c g k (.join j) ∈ migrate r g := e ▸ step_mem hk hc
+  have mK : step r c g kc (.confirm j) ∈ migrate r g := ec ▸ step_mem hkc hc
+  have jn := joinName_at cl hk e
+  unfold final
+  rw [claimOk_join hc signed cl hk e, Bool.true_and]
+  refine (vany hc signed).mpr ⟨_, mK, ?_⟩
+  simp only [Bool.and_eq_true, beq_iff_eq]
+  refine ⟨⟨?_, ?_⟩, ?_⟩
+  · unfold confirmer
+    simp only [Bool.or_eq_true]
+    left; left
+    simp only [byAdmin, gen_eq hc signed, step, Old.says]
+    exact Genesis.approves_claimant (genesisOf r.founding c g) (by simp [genesisOf]) stmtDigest
+  · simp [step, Old.says, jn]
+  · refine (vpast hc signed).mpr ⟨mK, mC, .tip mC ?_⟩
+    simp [step, Old.tips, jn]
+
 /-- **Every join's claim stands** in the settled tree of a clean store. -/
 theorem standing_join (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true)
     (cl : Clean r c) {k : Nat} (hk : k < (refOrder r).length) {j : Join} (e : (refOrder r)[k] = .join j) :
@@ -338,38 +373,19 @@ theorem standing_join (hc : r.founding.claim = some c) (signed : (genesisOf r.fo
     simp [step, Old.says, TreeStatement.ticketOf]
   unfold standing
   rw [cok, Bool.true_and]
-  have nofinal : (view restored 1 (migrate r g)).any
-      (fun f => final (view restored 1 (migrate r g)) f && sameTicket f (step r c g k (.join j))) = false := by
-    cases ea : (view restored 1 (migrate r g)).any
-      (fun f => final (view restored 1 (migrate r g)) f && sameTicket f (step r c g k (.join j)))
-    · rfl
-    · obtain ⟨f, _, hf⟩ := (vany hc signed).mp ea
-      simp [final_none hc signed f] at hf
-  -- no withdrawal of the join's ticket: its invite was never withdrawn
-  have nobeat : ∀ d, d ∈ migrate r g → d.ticketOf = some (ticketName (refOrder r) j.invite) →
-      (view restored 1 (migrate r g)).any (fun w => beats (view restored 1 (migrate r g)) w d) = false := by
-    intro d _ dt
-    cases eb : (view restored 1 (migrate r g)).any (fun w => beats (view restored 1 (migrate r g)) w d)
-    · rfl
-    · exfalso
-      obtain ⟨w, mw, hw⟩ := (vany hc signed).mp eb
-      simp only [beats, dt, Bool.and_eq_true, beq_iff_eq] at hw
-      rw [migrate_eq hc] at mw
-      rcases List.mem_cons.mp mw with ew | mw
-      · subst ew; simp [genesisStatement] at hw
-      · obtain ⟨kw, hkw, ew⟩ := mem_steps.mp mw
-        subst ew
-        obtain ⟨w0, eo, wt⟩ := step_withdrawal hw.1.2
-        have mw0 : w0 ∈ r.withdrawn := withdrawal_mem (List.getElem_mem hkw) eo
-        rw [tn] at wt
-        exact cl.not_withdrawn w0 mw0 j mj (ticketName_inj wt.symm tn)
-  simp only [nofinal, Bool.false_eq_true, ↓reduceIte, Bool.and_eq_true, Bool.not_eq_true']
-  refine ⟨nobeat _ (e ▸ step_mem hk hc) ticket, (vall hc signed).mpr fun d md => ?_⟩
+  have mC : step r c g k (.join j) ∈ migrate r g := e ▸ step_mem hk hc
+  have fC := final_join hc signed cl hk e
+  have anyfinal : (view restored 1 (migrate r g)).any
+      (fun f => final (view restored 1 (migrate r g)) f && sameTicket f (step r c g k (.join j))) = true :=
+    (vany hc signed).mpr ⟨_, mC, by simp [fC, sameTicket, ticket]⟩
+  simp only [anyfinal, ↓reduceIte, fC, Bool.true_and]
+  refine (vall hc signed).mpr fun d md => ?_
   simp only [Bool.or_eq_true, Bool.not_eq_true', Bool.and_eq_false_iff, decide_eq_true_eq]
-  by_cases dc : claimOk (view restored 1 (migrate r g)) d = true
+  by_cases df : final (view restored 1 (migrate r g)) d = true
   · by_cases ds : sameTicket d (step r c g k (.join j)) = true
-    · -- another claim of the join's ticket is the same join's
+    · -- another final claim of the join's ticket is the same join's
       right
+      have dc := final_claimOk df
       rw [migrate_eq hc] at md
       rcases List.mem_cons.mp md with ed | md
       · subst ed; simp [claimOk, genesisStatement] at dc
@@ -390,9 +406,8 @@ theorem standing_join (hc : r.founding.claim = some c) (signed : (genesisOf r.fo
           subst kk
           exact Nat.le_refl _
         · cases dt
-    · left; left; right; simpa using ds
-  · left; left; left; simpa using dc
-
+    · left; right; simpa using ds
+  · left; left; simpa using df
 end
 
 /-! ## The door -/
@@ -412,7 +427,7 @@ theorem ownerKeyOf_join (hc : r.founding.claim = some c) (signed : (genesisOf r.
   unfold ownerKeyOf
   simp only [Bool.or_eq_true]
   refine .inr ((vany hc signed).mpr ⟨_, e ▸ step_mem hk hc, ?_⟩)
-  rw [standing_join hc signed cl hk e]
+  rw [standing_join hc signed cl hk e, final_join hc signed cl hk e]
   simp [step, Old.says]
 
 /-- A migrated store changes no setting: its Aven Peer is the genesis's, production's peer key. -/
@@ -487,10 +502,10 @@ theorem settle_restore_door (hc : r.founding.claim = some c) (signed : (genesisO
     · obtain ⟨k, hk, eo⟩ :=
         old_index (mem_refOrder.mpr (.inr (.inr (.inr (.inl ⟨j, mj, rfl⟩)))) : Old.join j ∈ refOrder r)
       refine .inl (.inr ((vany hc signed).mpr ⟨_, eo ▸ step_mem hk hc, ?_⟩))
-      rw [standing_join hc signed cl hk eo]
+      rw [standing_join hc signed cl hk eo, final_join hc signed cl hk eo]
       simp [step, Old.says, e]
     · obtain ⟨k, hk, eo⟩ :=
-        old_index (mem_refOrder.mpr (.inr (.inr (.inr (.inr ⟨x, mx, rfl⟩)))) : Old.memberSignIn x ∈ refOrder r)
+        old_index (mem_refOrder.mpr (.inr (.inr (.inr (.inr (.inl ⟨x, mx, rfl⟩))))) : Old.memberSignIn x ∈ refOrder r)
       refine .inr ((vany hc signed).mpr ⟨_, eo ▸ step_mem hk hc, ?_⟩)
       simp [step, Old.says, e, ownerKeyOf_join hc signed cl (cl.signIns_joined x mx)]
 

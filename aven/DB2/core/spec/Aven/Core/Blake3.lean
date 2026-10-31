@@ -4,9 +4,11 @@
 Every Value's name is the BLAKE3 hash of its bytes (ARCHITECTURE.md, "Value"). This is the hash as its
 specification's reference implementation computes it, in core Lean, so the store's traces (`Aven.DB.Store`) carry
 real names: chunks of 1024 bytes in blocks of 64, each chunk's chaining value, and a binary tree of parents whose
-left side holds the largest power of two chunks that leaves the right one non-empty. Hashing, and key derivation
-(`deriveKey`, the specification's `derive_key`, for writer ids); no keyed mode or longer output. The models take the hash as a parameter, and their theorems hold for any injective one; this is the
-one their examples and vectors use. It moved here from `Aven.DB.Blake3`, which now names it.
+left side holds the largest power of two chunks that leaves the right one non-empty. Hashing, key derivation
+(`deriveKey`, the specification's `derive_key`, for writer ids), the keyed mode (`keyedHash`) and the extendable
+output of all three (`digestXof`, `keyedXof`, `deriveKeyXof`), for avenID's keys (`Aven.ID.KeyFormats`). The models
+take the hash as a parameter, and their theorems hold for any injective one; this is the one their examples and
+vectors use. It moved here from `Aven.DB.Blake3`, which now names it.
 -/
 
 namespace Aven.Core.Blake3
@@ -20,6 +22,7 @@ def flagChunkStart : UInt32 := 1
 def flagChunkEnd : UInt32 := 2
 def flagParent : UInt32 := 4
 def flagRoot : UInt32 := 8
+def flagKeyedHash : UInt32 := 16
 def flagDeriveKeyContext : UInt32 := 32
 def flagDeriveKeyMaterial : UInt32 := 64
 
@@ -124,14 +127,43 @@ def digestWith (key : Array UInt32) (mode : UInt32) (bytes : List UInt8) : List 
   let w := (compress o.cv o.block 0 o.len (o.flags ||| flagRoot)).extract 0 8
   w.toList.flatMap fun (x : UInt32) => [x.toUInt8, (x >>> 8).toUInt8, (x >>> 16).toUInt8, (x >>> 24).toUInt8]
 
+/-- Words as little-endian bytes. -/
+def leBytes (w : Array UInt32) : List UInt8 :=
+  w.toList.flatMap fun (x : UInt32) => [x.toUInt8, (x >>> 8).toUInt8, (x >>> 16).toUInt8, (x >>> 24).toUInt8]
+
+/-- `n` bytes of the root's extendable output over `bytes`, under `key` and `mode`: output block `i` is the root's
+compression with counter `i`, all 16 words, so the first 32 bytes are `digestWith`'s. -/
+def xofWith (key : Array UInt32) (mode : UInt32) (bytes : List UInt8) (n : Nat) : List UInt8 :=
+  let o := nodeWith key mode bytes.length bytes 0
+  ((List.range ((n + 63) / 64)).flatMap fun i =>
+    leBytes (compress o.cv o.block i.toUInt64 o.len (o.flags ||| flagRoot))).take n
+
 /-- The 32 bytes of the hash of `bytes`. -/
 def digest (bytes : List UInt8) : List UInt8 := digestWith iv 0 bytes
+
+/-- `n` bytes of the hash's extendable output. -/
+def digestXof (bytes : List UInt8) (n : Nat) : List UInt8 := xofWith iv 0 bytes n
+
+/-- A 32-byte key as the words that replace the IV. -/
+def keyWords (key : List UInt8) : Array UInt32 := (words key).extract 0 8
+
+/-- The keyed hash (the specification's `keyed_hash`): the 32-byte key replaces the IV. -/
+def keyedHash (key : List UInt8) (bytes : List UInt8) : List UInt8 := digestWith (keyWords key) flagKeyedHash bytes
+
+/-- `n` bytes of the keyed hash's extendable output. -/
+def keyedXof (key : List UInt8) (bytes : List UInt8) (n : Nat) : List UInt8 :=
+  xofWith (keyWords key) flagKeyedHash bytes n
 
 /-- Key derivation (the specification's `derive_key`): the context string is hashed in its own mode into a key, under
 which the key material is hashed in another. -/
 def deriveKey (context : String) (material : List UInt8) : List UInt8 :=
   let ctx := digestWith iv flagDeriveKeyContext context.toUTF8.toList
   digestWith ((words ctx).extract 0 8) flagDeriveKeyMaterial material
+
+/-- `n` bytes of key derivation's extendable output; the first 32 are `deriveKey`'s. -/
+def deriveKeyXof (context : String) (material : List UInt8) (n : Nat) : List UInt8 :=
+  let ctx := digestWith iv flagDeriveKeyContext context.toUTF8.toList
+  xofWith (keyWords ctx) flagDeriveKeyMaterial material n
 
 /-- The hash of `bytes`, as 64 lowercase hex digits: how the store writes it. -/
 def hash (bytes : List UInt8) : String := hex (digest bytes)
@@ -149,5 +181,18 @@ def tvContext : String := "BLAKE3 2019-12-27 16:29:52 test vectors context"
 #guard hex (deriveKey tvContext (tvInput 1024)) = "7356cd7720d5b66b6d0697eb3177d9f8d73a4a5c5e968896eb6a689684302706"
 #guard hex (deriveKey tvContext (tvInput 1025)) = "effaa245f065fbf82ac186839a249707c3bddf6d3fdda22d1b95a3c970379bcb"
 #guard hex (deriveKey tvContext (tvInput 3073)) = "72613c9ec9ff7e40f8f5c173784c532ad852e827dba2bf85b2ab4b76f7079081"
+
+-- the keyed hash's and the extendable output's known answers, from the same file: its `keyed_hash` cases under the key
+-- `whats the Elvish word for friend`, and the first 80 bytes of each mode's extended output
+def tvKey : List UInt8 := "whats the Elvish word for friend".toUTF8.toList
+#guard hex (keyedHash tvKey (tvInput 0)) = "92b2b75604ed3c761f9d6f62392c8a9227ad0ea3f09573e783f1498a4ed60d26"
+#guard hex (keyedHash tvKey (tvInput 1)) = "6d7878dfff2f485635d39013278ae14f1454b8c0a3a2d34bc1ab38228a80c95b"
+#guard hex (keyedHash tvKey (tvInput 1024)) = "75c46f6f3d9eb4f55ecaaee480db732e6c2105546f1e675003687c31719c7ba4"
+#guard hex (keyedHash tvKey (tvInput 1025)) = "357dc55de0c7e382c900fd6e320acc04146be01db6a8ce7210b7189bd664ea69"
+#guard hex (keyedHash tvKey (tvInput 3073)) = "68dede9bef00ba89e43f31a6825f4cf433389fedae75c04ee9f0cf16a427c95a"
+#guard hex (digestXof (tvInput 0) 40) = "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262e00f03e7b69af26b"
+#guard hex (keyedXof tvKey (tvInput 1025) 40) = "357dc55de0c7e382c900fd6e320acc04146be01db6a8ce7210b7189bd664ea69362396b77fdc0d26"
+#guard hex (deriveKeyXof tvContext (tvInput 3073) 80) = "72613c9ec9ff7e40f8f5c173784c532ad852e827dba2bf85b2ab4b76f7079081" ++
+  "576288e552647a9d86481c2cae75c2dd4e7c5195fb9ada1ef50e9c5098c249d743929191441301c69e1f48505a4305ec"
 
 end Aven.Core.Blake3

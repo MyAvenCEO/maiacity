@@ -5,7 +5,7 @@ pub fn encode(bytes: &[u8]) -> String {
 }
 
 pub fn decode(hex: &str) -> Option<Vec<u8>> {
-    if hex.len() % 2 != 0 || !hex.is_ascii() {
+    if !hex.len().is_multiple_of(2) || !hex.is_ascii() {
         return None;
     }
     (0..hex.len() / 2)

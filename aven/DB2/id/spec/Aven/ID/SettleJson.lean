@@ -26,7 +26,8 @@ def Genesis.json (g : Genesis) : Json :=
   Json.mkObj [("rpId", g.rpId), ("origins", toJson g.origins), ("claimant", g.claimant), ("passkey", g.passkey),
     ("devices", toJson g.devices), ("coop", g.coop), ("coopOwners", toJson g.coopOwners), ("agent", g.agent),
     ("avenPeer", g.avenPeer),
-    ("guardian", GuardianKeys.json g.guardian), ("guardianVault", g.guardianVault), ("signedBy", toJson g.signedBy)]
+    ("guardian", GuardianKeys.json g.guardian), ("guardianVault", g.guardianVault),
+    ("confirmers", toJson g.confirmers), ("signedBy", toJson g.signedBy)]
 
 def TreeSays.json : TreeSays → Json
   | .genesis g => Json.mkObj [("kind", "genesis"), ("genesis", Genesis.json g)]
@@ -35,7 +36,7 @@ def TreeSays.json : TreeSays → Json
   | .withdrawal t => Json.mkObj [("kind", "withdrawal"), ("ticket", toJson t)]
   | .claim t v p d g => Json.mkObj [("kind", "claim"), ("ticket", toJson t), ("vault", v), ("passkey", p),
       ("device", d), ("guardian", GuardianKeys.json g)]
-  | .ack c => Json.mkObj [("kind", "ack"), ("claim", toJson c)]
+  | .confirm c => Json.mkObj [("kind", "confirm"), ("claim", toJson c)]
   | .relayAdd d => Json.mkObj [("kind", "relayAdd"), ("vault", d)]
   | .relayRemove d => Json.mkObj [("kind", "relayRemove"), ("vault", d)]
   | .keeperAdd d => Json.mkObj [("kind", "keeperAdd"), ("vault", d)]
@@ -96,10 +97,10 @@ def raceCases : List Case :=
        ⟨111, "alice-passkey", [100], .signIn "alice" "alice-laptop"⟩] },
    { name := "a claim, not yet acked", statements := [g, t, bob], pinned := 100 },
    { name := "a claim and its ack", pinned := 100,
-     statements := [g, t, bob, ⟨510, "alice-peer", [500], .ack 500⟩] },
+     statements := [g, t, bob, ⟨510, "alice-peer", [500], .confirm 500⟩] },
    { name := "two claims of one ticket, none acked: the smaller hash", statements := [g, t, bob, leak], pinned := 100 },
    { name := "two claims, the larger acked: the final one", pinned := 100,
-     statements := [g, t, bob, leak, ⟨510, "alice-peer", [500], .ack 500⟩] },
+     statements := [g, t, bob, leak, ⟨510, "alice-peer", [500], .confirm 500⟩] },
    { name := "a withdrawal that never saw the claim wins", pinned := 100,
      statements := [g, t, bob, ⟨610, "alice-passkey", [120], .withdrawal 120⟩] },
    { name := "a withdrawal that saw the claim changes nothing", pinned := 100,
@@ -109,12 +110,12 @@ def raceCases : List Case :=
        ⟨500, "t-bob", [610], .claim 120 "bob" "bob-passkey" "bob-peer" guardian⟩] },
    { name := "two admin devices ack two claims without seeing each other: contested, the smaller hash", pinned := 100,
      statements := [g, ⟨110, "alice-passkey", [100], .signIn "alice" "alice-peer-light"⟩, t, bob, leak,
-       ⟨510, "alice-peer", [500], .ack 500⟩, ⟨511, "alice-peer-light", [300, 110], .ack 300⟩] },
+       ⟨510, "alice-peer", [500], .confirm 500⟩, ⟨511, "alice-peer-light", [300, 110], .confirm 300⟩] },
    { name := "a withdrawal never wins over a final claim", pinned := 100,
-     statements := [g, t, bob, ⟨510, "alice-peer", [500], .ack 500⟩,
+     statements := [g, t, bob, ⟨510, "alice-peer", [500], .confirm 500⟩,
        ⟨610, "alice-passkey", [120], .withdrawal 120⟩] },
    { name := "an ack by no admin key makes nothing final", pinned := 100,
-     statements := [g, t, bob, ⟨510, "bob-peer", [500], .ack 500⟩] },
+     statements := [g, t, bob, ⟨510, "bob-peer", [500], .confirm 500⟩] },
    { name := "a relay added, removed, and added again after", pinned := 100,
      statements := [g, ⟨700, "alice-passkey", [100], .relayAdd "bob"⟩,
        ⟨710, "alice-passkey", [700], .relayRemove "bob"⟩,
@@ -178,7 +179,7 @@ def genCase (seed : Nat) : Case := Id.run do
           (if x == 7 then ⟨"other", "other", "other"⟩ else TreeExamples.guardian))
       else if k == 5 ∧ claims.size > 0 then
         let c := claims[x % claims.size]!
-        (if x < 3 then "alice-peer" else if x < 6 then "alice-peer-light" else "browser-0", [c], .ack c)
+        (if x < 3 then "alice-peer" else if x < 6 then "alice-peer-light" else "browser-0", [c], .confirm c)
       else if k == 6 ∧ tickets.size > 0 then
         ("alice-passkey", [tip1], .withdrawal (tickets[x % tickets.size]!).1)
       else if k == 7 then ("alice-passkey", [tip1], .relayAdd device)
