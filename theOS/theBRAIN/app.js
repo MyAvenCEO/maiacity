@@ -84,7 +84,7 @@ async function openDecisions(st, i) {
   const shown = decisions.decisions.filter((d) => filter === 'all' || d.status === filter);
   const count = (k) => decisions.decisions.filter((d) => d.status === k).length;
   $('#decisions').innerHTML = `<header class="dhead"><h1>${esc(decisions.title)}</h1><p>${esc(decisions.note)}</p>
-    <div class="dfilter">${[['all', `All ${decisions.decisions.length}`], ['decided', `Decided ${count('decided')}`], ['proposed', `Proposed ${count('proposed')}`]]
+    <div class="dfilter">${[['all', `All ${decisions.decisions.length}`], ['decided', `Decided ${count('decided')}`], ['proposed', `Proposed ${count('proposed')}`], ['superseded', `Superseded ${count('superseded')}`]]
       .map(([k, l]) => `<button type="button" data-filter="${k}" class="${filter === k ? 'on' : ''}">${l}</button>`).join('')}</div></header>` +
     shown.map((d) => `<article class="dcard" id="${d.id}">
       <div class="dtop"><span class="did">${d.id}</span><span class="dstatus ${d.status}">${d.status}</span><span class="ddate">${esc(d.date)}</span></div>

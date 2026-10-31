@@ -23,18 +23,17 @@
   },
   {
    "title": "Its first rule makes you the owner.",
-   "text": "The seal's one signature names a single {owner}: you. The owner may do everything, for good. There is always exactly one owner: an identity, never a role. Everyone else gets in through roles.",
+   "text": "The seal's one signature names a single {owner}: you. The owner may do everything, for good, including writing the rules for everyone else. There is always exactly one owner: an identity, never a role.",
    "action": "What is everything?"
   },
   {
    "title": "Five things to start with.",
-   "text": "Create, read, update, delete, and admin: change the rules themselves. A few more, for sharing and carrying, come in the story about rules. A {rule} gives a {role}, a set of identities, some of these, on one piece of data. Never a person directly, always a role.",
+   "text": "Create, read, update and delete. A {rule} gives a {role}, a set of identities, some of these, on one piece of data. Never a person directly, always a role. Only the owner writes rules: that's what being the owner means.",
    "list": [
     "create",
     "read",
     "update",
-    "delete",
-    "admin"
+    "delete"
    ],
    "action": "Share the list"
   },
@@ -56,15 +55,32 @@
   {
    "title": "You and Mia start a home.",
    "text": "Together you form a {coop}: an identity made of identities. You hand the list over: the coop becomes its owner. Now neither of you owns it alone, the coop's own rules decide what it does, and neither of you can lose it.",
+   "action": "How does a coop decide?"
+  },
+  {
+   "title": "A coop decides like a safe.",
+   "text": "A coop has members, and its own {signing rules}: how many of them must sign, for what. Ticking an item needs one of you. Handing the list over or changing who may see it needs both. Your own identity works the same way, with your devices as its members.",
+   "code": {
+    "coop": "home",
+    "members": [
+     "you",
+     "mia"
+    ],
+    "signing_rules": {
+     "edit content": "1 of 2",
+     "write rules": "2 of 2",
+     "hand over": "2 of 2"
+    }
+   },
    "action": "Sum it up"
   },
   {
    "title": "That's all there is.",
    "list": [
     "Signers act for identities.",
+    "An identity decides like a safe: its members sign by its own rules.",
     "Every piece of data has one owner: an identity, human or coop.",
-    "Everyone else gets in through roles, and roles hold rules.",
-    "Data owns itself; its owner hands out rules."
+    "Only the owner writes rules; everyone else gets in through roles."
    ],
    "action": ""
   }

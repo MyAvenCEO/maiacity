@@ -125,6 +125,8 @@ body {
 .dstatus { border-radius: 999px; padding: 3px 10px; }
 .dstatus.decided { background: #a9b79a; }
 .dstatus.proposed { background: var(--ochre); }
+.dstatus.superseded { background: #ddd2bf; color: var(--ink-soft); text-decoration: line-through; }
+.dcard:has(.superseded) { opacity: .75; }
 .ddate { color: var(--ink-soft); margin-left: auto; }
 .dcard h2 { margin: 2px 0 0; font: 500 clamp(19px, 2.2vw, 24px)/1.2 var(--display); }
 .ddec { margin: 0; font-size: 16px; line-height: 1.55; }

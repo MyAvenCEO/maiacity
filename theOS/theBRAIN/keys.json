@@ -19,7 +19,7 @@
   },
   {
    "title": "Data is born.",
-   "text": "Your device makes a fresh seal. Its public half becomes the data's ID. It signs the first rule, and the private half is wiped. From now on, only the owner, or a role whose rule includes admin, can change the rules.",
+   "text": "Your device makes a fresh seal. Its public half becomes the data's ID. It signs the first rule, naming the owner, and the private half is wiped. From now on, only the owner can change the rules.",
    "code": {
     "id": "ed25519:7Hq…",
     "first_rule": {
@@ -67,10 +67,10 @@
   },
   {
    "title": "Adding Mia to a role: one envelope.",
-   "text": "An admin of the role puts the role key in an envelope for Mia's identity key. That's all. Mia can now read everything the role can read, including what came before she joined.",
+   "text": "The owner puts the role key in an envelope for Mia's identity key. That's all. Mia can now read everything the role can read, including what came before she joined.",
    "code": {
+    "by": "you (owner)",
     "role": "home",
-    "do": "admin",
     "add": "mia",
     "envelope": "role key → mia's identity key"
    },
@@ -80,8 +80,8 @@
    "title": "Giving a rule: read needs a key, everything else needs only a signature.",
    "text": "Giving “plumber” read on the tap item puts the item's data key in an envelope for the plumber role. Giving update needs no key at all: it's a signed rule change in the item's history, and every device enforces it.",
    "code": {
+    "by": "you (owner)",
     "data": "fix-tap",
-    "do": "admin",
     "grant": {
      "role": "plumber",
      "do": [
@@ -107,8 +107,8 @@
    "title": "Taking a rule away.",
    "text": "Taking update away is just a signed rule change. Taking read away rotates the data key, and the new one goes to the owner and every reading role except that one.",
    "code": {
+    "by": "you (owner)",
     "data": "house-list",
-    "do": "admin",
     "revoke": {
      "role": "kids",
      "do": [
@@ -139,6 +139,16 @@
     ],
     "result": "removal wins, edit dropped"
    },
+   "action": "Heal and forget"
+  },
+  {
+   "title": "Heal the future, forget the past.",
+   "text": "A CRDT needs its history, so old keys can't simply be deleted, and full {forward secrecy} for live history is impossible. Three layers get close. Keys turn regularly, so a stolen key soon opens nothing new. At stable points, the past is cut, resealed, and the old keys are deleted for good. And older keys a device rarely needs sit behind a fresh tap of your passkey, out of reach of a thief or of malware.",
+   "list": [
+    "Heal: keys turn regularly.",
+    "Forget: cut at stable points, delete the old keys.",
+    "Lock away: older keys only open with a fresh tap."
+   ],
    "action": "The limits"
   },
   {
@@ -231,12 +241,6 @@
       "new on next write"
      ],
      [
-      "Remove an admin from a role",
-      "–",
-      "new role, new key",
-      "new on next write"
-     ],
-     [
       "Give a role read",
       "–",
       "–",
@@ -261,7 +265,7 @@
       "new on next write"
      ],
      [
-      "Two admins rotate at once",
+      "Two of the owner's devices rotate at once",
       "–",
       "both kept, until the next rotation",
       "–"

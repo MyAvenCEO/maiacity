@@ -22,8 +22,9 @@
    "list": [
     "Content: create, read, update, delete.",
     "Carrying: want, keep, sync.",
-    "Rules: admin (write any rule), share (pass on a narrower one).",
-    "Engine dos, like find or search, need no entry of their own: read is enough."
+    "Passing on: share, a narrower rule of your own.",
+    "Engine dos, like find or search, need no entry of their own: read is enough.",
+    "Writing rules is not on the list: only the owner does that."
    ],
    "action": "Make it narrower"
   },
@@ -66,7 +67,7 @@
   },
   {
    "title": "Unchanged rules renew themselves.",
-   "text": "You don't want your family locked out every month. So a device of an admin quietly renews every rule that hasn't changed, a week before it ends. Rules you changed or removed simply run out.",
+   "text": "You don't want your family locked out every month. So one of the owner's devices quietly renews every rule that hasn't changed, a week before it ends. Rules you changed or removed simply run out.",
    "flow": [
     "rule still the same?",
     "renew for 30 days",
@@ -81,7 +82,7 @@
     "data": "house-list",
     "first_rule": {
      "owner": "you",
-     "do": "everything"
+     "do": "everything, and the rules"
     },
     "signed_by": "seal",
     "expires": "never"
@@ -149,7 +150,7 @@
   },
   {
    "title": "Ending a rule early.",
-   "text": "You don't have to wait for the expiry. An admin writes a {revoke}: a signed event in the history that says “this rule is over”. It travels like any other change.",
+   "text": "You don't have to wait for the expiry. The owner writes a {revoke}: a signed event in the history that says “this rule is over”. It travels like any other change.",
    "code": {
     "ending": "revoke",
     "rule": "home → plumber",
@@ -188,33 +189,15 @@
      "wipe keys and copies"
     ]
    },
-   "action": "When an admin leaves"
-  },
-  {
-   "title": "When an admin leaves, the role moves.",
-   "text": "A removed admin could still write a revoke and pretend it happened before their removal. So when an admin is removed, the role doesn't just get a new key: it is replaced by a {successor role} with a new ID, and everyone else is added again. The ex-admin's old revokes point at a role that no longer counts.",
-   "code": {
-    "remove": "mia (admin of home)",
-    "successor": {
-     "role": "home-2",
-     "replaces": "home",
-     "members": [
-      "you",
-      "leo"
-     ]
-    },
-    "old_revokes_by_mia": "point at home: ignored"
-   },
    "action": "Sum it up"
   },
   {
    "title": "Rules, in short.",
    "list": [
     "A rule: this role may do these things, on this data, until then.",
-    "Data has one owner, an identity; its rule never expires.",
+    "Only the owner, an identity, writes rules; its own rule never expires.",
     "Conditions narrow a rule; nothing can widen it.",
     "A revoke or a lapse is an ending: it wins, turns the key and wipes copies.",
-    "A removed admin means a successor role.",
     "Under the hood: a signed token any device checks offline."
    ],
    "action": ""

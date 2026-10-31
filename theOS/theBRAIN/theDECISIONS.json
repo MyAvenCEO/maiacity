@@ -38,7 +38,7 @@
    "id": "D3",
    "title": "Two kinds of identity: human and coop",
    "status": "decided",
-   "decision": "A human identity is controlled by signers only. A coop identity is controlled by one or more identities (human or coop), never by signers directly. Cycles are not allowed.",
+   "decision": "A human identity is controlled by signers only. A coop identity is controlled by one or more identities (human or coop), never by signers directly. Cycles are not allowed. Each identity has its own signing rules, like a Gnosis Safe: which members must sign, how many, for what.",
    "why": "Families, teams and organisations are identities of identities; one model covers all of them.",
    "sources": [
     {
@@ -51,7 +51,8 @@
     }
    ],
    "slides": [
-    "own-10"
+    "own-10",
+    "own-11"
    ],
    "date": "2026-10-31"
   },
@@ -153,7 +154,7 @@
    "id": "D8",
    "title": "A rule lists what a role may do",
    "status": "decided",
-   "decision": "A rule is: role, data, a \"do\" list, conditions, expiry. The do list: create, read, update, delete, admin, share, want, keep, sync.",
+   "decision": "A rule is: role, data, a \"do\" list, conditions, expiry. The do list: create, read, update, delete, share, want, keep, sync. Writing rules belongs to the owner alone (D30).",
    "why": "One small vocabulary for content, carrying and the rules themselves. Keyhive's Relay, Read, Edit and Admin map onto it; ours is finer.",
    "sources": [
     {
@@ -227,7 +228,7 @@
    "sources": [],
    "slides": [
     "ops-10",
-    "keys-12"
+    "keys-13"
    ],
    "date": "2026-10-31"
   },
@@ -269,7 +270,7 @@
     "rules-10",
     "rules-11",
     "rules-12",
-    "keys-13"
+    "keys-14"
    ],
    "date": "2026-10-31"
   },
@@ -297,7 +298,7 @@
   {
    "id": "D15",
    "title": "A removed admin means a successor role",
-   "status": "proposed",
+   "status": "superseded",
    "decision": "When an admin is removed from a role, the role is replaced by a successor with a new ID and the remaining members are added again.",
    "why": "A removed admin can backdate a revoke by pretending not to have seen their removal. Old revokes then point at a dead role.",
    "sources": [
@@ -310,12 +311,9 @@
      "url": "https://github.com/inkandswitch/keyhive/blob/main/design/threat_model.md"
     }
    ],
-   "slides": [
-    "rules-13",
-    "keys-16"
-   ],
+   "slides": [],
    "date": "2026-10-31",
-   "superseded_by": "D30 (if decided)"
+   "superseded_by": "D30"
   },
   {
    "id": "D16",
@@ -344,7 +342,7 @@
    "slides": [
     "keys-2",
     "keys-4",
-    "keys-15"
+    "keys-16"
    ],
    "date": "2026-10-31"
   },
@@ -361,7 +359,7 @@
     }
    ],
    "slides": [
-    "keys-15"
+    "keys-16"
    ],
    "date": "2026-10-31"
   },
@@ -382,7 +380,7 @@
     }
    ],
    "slides": [
-    "keys-16"
+    "keys-17"
    ],
    "date": "2026-10-31"
   },
@@ -407,7 +405,7 @@
     }
    ],
    "slides": [
-    "keys-14"
+    "keys-15"
    ],
    "date": "2026-10-31"
   },
@@ -629,9 +627,9 @@
   {
    "id": "D30",
    "title": "Only the owner changes rules",
-   "status": "proposed",
+   "status": "decided",
    "decision": "No role gets admin. Only the owner adds, changes or ends rules and role memberships. A family or team that wants several people to manage rules makes the owner a coop, whose own signing rule (for example 2 of 3) decides.",
-   "why": "No delegated admins means no removed admin who could backdate a revoke, and no successor roles. The problem shrinks into the coop, where one removed member cannot sign alone.",
+   "why": "Identities work like Gnosis Safes: members sign by the identity's own rules (1 of 2, 2 of 3, per action). So one owner covers several managers, and there is no removed admin who could backdate a revoke.",
    "supersedes": "D15; removes admin from the role do-list in D8",
    "sources": [
     {
@@ -639,7 +637,11 @@
      "url": "https://github.com/inkandswitch/keyhive/blob/main/design/keyline"
     }
    ],
-   "slides": [],
+   "slides": [
+    "own-6",
+    "own-11",
+    "rules-2"
+   ],
    "date": "2026-10-31"
   },
   {
@@ -737,6 +739,36 @@
     "data-13"
    ],
    "date": "2026-10-31"
+  },
+  {
+   "id": "D36",
+   "title": "Heal, forget, lock away: forward secrecy in three layers",
+   "status": "proposed",
+   "date": "2026-10-31",
+   "decision": "Role and data keys turn regularly (post-compromise security). At stable points the past is cut, resealed and the old keys deleted (forward secrecy before the cut, D35). Older keys a device rarely needs are sealed under a key derived from the passkey's PRF and open only with a fresh tap.",
+   "why": "Full forward secrecy for live CRDT history is impossible: a late op may need any old state. Keyhive gave forward secrecy up; BeeKEM's κ parameter shows the trade-off. These three layers get as close as the setting allows.",
+   "rejected": "Keyhive's choice of no forward secrecy at all.",
+   "sources": [
+    {
+     "label": "Keyhive notebook 06: E2EE in the local-first setting",
+     "url": "https://www.inkandswitch.com/keyhive/notebook/06/"
+    },
+    {
+     "label": "Formal security of BeeKEM (ePrint 2026/1434)",
+     "url": "https://eprint.iacr.org/2026/1434.pdf"
+    },
+    {
+     "label": "Keyhive design: causal encryption",
+     "url": "https://github.com/inkandswitch/keyhive/blob/main/design/causal_encryption.md"
+    },
+    {
+     "label": "WebAuthn PRF extension",
+     "url": "https://w3c.github.io/webauthn/#prf-extension"
+    }
+   ],
+   "slides": [
+    "keys-12"
+   ]
   }
  ]
 }
