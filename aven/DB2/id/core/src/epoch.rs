@@ -1,4 +1,5 @@
-//! Epochs of keys (id/caps/README.md, "The layers", "Epochs"; `Aven.ID.Epochs`, `Aven.ID.Forget`).
+//! Epochs of keys (id/caps/README.md, "The layers", "Epochs"; `Aven.ID.Epochs`, `Aven.ID.Forget`,
+//! `Aven.ID.KeyFormats`).
 //!
 //! An [`Epoch`] is a key blob: a fresh 32-byte key, sealed in one [`Stanza`] to each reader, a commitment to it, and
 //! the previous epoch's key sealed under it (`back`), so the newest key opens the past. Two kinds:
@@ -9,18 +10,22 @@
 //!   next write after a reader leaves, and nothing already written is sealed again: the old epoch keeps its bytes and
 //!   its readers, and a removed reader opens no later epoch (`rotation_shuts_out`).
 //!
-//! An epoch is named by the BLAKE3 hash of everything but its stanzas, so adding a reader with [`Epoch::reseal`]
-//! doesn't rename it; each stanza's key is checked against the commitment, so a stanza with a wrong key opens nothing.
+//! The blob is a Core Value with `scheme: "flat 1"`; its name is BLAKE3 of the blob without its stanzas
+//! (`name_ignores_stanzas`), so sealing it to one more reader with [`Epoch::reseal`] doesn't rename it.
 
 use std::fmt;
 
-use crate::seal::{
-    BACK_LABEL, Context, Scope, SealKey, SealPublic, Stanza, VAULT_LABEL, WRAPPED_LEN, commit,
-    commits, put, subkey, unwrap_key, wrap_key,
-};
-use crate::secret::{Entropy, Secret};
+use aven_core::{Value, decode, encode};
+use subtle::ConstantTimeEq;
 
-const DOMAIN: &[u8] = b"avenID epoch 1\0";
+use crate::seal::{Context, SEALED_LEN, Scope, SealKey, SealPublic, Stanza, unwrap_key, wrap_key};
+use crate::secret::{Entropy, Secret};
+use crate::value::{bytes, fields, text};
+
+pub const COMMIT_LABEL: &str = "avenID commit 1";
+pub const BACK_LABEL: &str = "avenID back 1";
+pub const VAULT_LABEL: &str = "avenID keyring vault 1";
+pub const SCHEME: &str = "flat 1";
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum KeyError {
@@ -57,6 +62,25 @@ pub enum History {
     FromNow,
 }
 
+/// An epoch's commitment to its key: `keyed_hash(key, "avenID commit 1")`.
+pub fn commit(key: &Secret) -> [u8; 32] {
+    *blake3::keyed_hash(key.expose(), COMMIT_LABEL.as_bytes()).as_bytes()
+}
+
+/// The subkey of `key` for `label`.
+pub fn subkey(label: &str, key: &Secret) -> Secret {
+    Secret::take(&mut blake3::derive_key(label, key.expose()))
+}
+
+/// A reader's tag for an epoch: `keyed_hash(seed, encode({id, epoch}))`.
+pub fn tag(seed: &Secret, id: &str, epoch: u64) -> [u8; 32] {
+    let at = encode(&Value::Map(vec![
+        ("id".into(), text(id)),
+        ("epoch".into(), Value::Uint(epoch)),
+    ]));
+    *blake3::keyed_hash(seed.expose(), &at).as_bytes()
+}
+
 /// One epoch's key blob.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Epoch {
@@ -64,24 +88,14 @@ pub struct Epoch {
     /// The vault whose keyring it is, or the Doc.
     pub owner: String,
     pub n: u64,
-    /// The previous epoch's name.
-    pub prev: Option<[u8; 32]>,
+    /// The names of the epochs it follows.
+    pub prev: Vec<[u8; 32]>,
     pub stanzas: Vec<Stanza>,
     pub commit: [u8; 32],
     /// The previous epoch's key, sealed under this one.
-    pub back: Option<[u8; WRAPPED_LEN]>,
+    pub back: Option<[u8; SEALED_LEN]>,
     /// A keyring's vault key (its X-Wing seed), sealed under this epoch's key.
-    pub vault_key: Option<[u8; WRAPPED_LEN]>,
-}
-
-/// What an epoch's own key seals, besides stanzas: bound to the epoch, under a subkey used once.
-fn inner_aad(label: &str, scope: Scope, owner: &str, n: u64) -> Vec<u8> {
-    let mut out = label.as_bytes().to_vec();
-    out.push(0);
-    out.push(scope as u8);
-    put(&mut out, owner.as_bytes());
-    out.extend_from_slice(&n.to_be_bytes());
-    out
+    pub vault_key: Option<[u8; SEALED_LEN]>,
 }
 
 impl Epoch {
@@ -108,30 +122,24 @@ impl Epoch {
         let n = prev.map_or(1, |(p, _)| p.n + 1);
         let key = Secret::generate(entropy);
         let context = Context { scope, owner, n };
+        let inner = context.inner_aad();
         let stanzas = to
             .iter()
             .map(|reader| Stanza::seal(&key, reader, &context, entropy))
             .collect();
         let back = match (prev, history) {
-            (Some((_, prev_key)), History::All) => Some(wrap_key(
-                &subkey(BACK_LABEL, &key),
-                &inner_aad(BACK_LABEL, scope, owner, n),
-                prev_key,
-            )),
+            (Some((_, prev_key)), History::All) => {
+                Some(wrap_key(&subkey(BACK_LABEL, &key), &inner, prev_key))
+            }
             _ => None,
         };
-        let vault_key = vault_key.map(|vault| {
-            wrap_key(
-                &subkey(VAULT_LABEL, &key),
-                &inner_aad(VAULT_LABEL, scope, owner, n),
-                &vault.seed(),
-            )
-        });
+        let vault_key =
+            vault_key.map(|vault| wrap_key(&subkey(VAULT_LABEL, &key), &inner, &vault.seed()));
         let epoch = Epoch {
             scope,
             owner: owner.to_string(),
             n,
-            prev: prev.map(|(p, _)| p.id()),
+            prev: prev.map(|(p, _)| vec![p.name()]).unwrap_or_default(),
             stanzas,
             commit: commit(&key),
             back,
@@ -220,26 +228,33 @@ impl Epoch {
 
     /// Whether `key` is this epoch's, in constant time.
     pub fn check(&self, key: &Secret) -> Result<(), KeyError> {
-        if commits(key, &self.commit) {
+        if bool::from(commit(key).ct_eq(&self.commit)) {
             Ok(())
         } else {
             Err(KeyError::WrongKey)
         }
     }
 
-    /// The epoch's key, from the stanza sealed to `key`.
+    /// The epoch's key, from the stanza sealed to `key`: a stanza whose key isn't the one committed to opens nothing.
     pub fn open(&self, key: &SealKey) -> Result<Secret, KeyError> {
         let context = self.context();
-        let opened = self
-            .stanzas
-            .iter()
-            .find_map(|stanza| stanza.open(key, &context))
-            .ok_or(KeyError::NotSealedTo)?;
-        self.check(&opened)?;
-        Ok(opened)
+        let mut wrong = false;
+        for stanza in &self.stanzas {
+            if let Some(opened) = stanza.open(key, &context) {
+                if self.check(&opened).is_ok() {
+                    return Ok(opened);
+                }
+                wrong = true;
+            }
+        }
+        Err(if wrong {
+            KeyError::WrongKey
+        } else {
+            KeyError::NotSealedTo
+        })
     }
 
-    /// Seals this epoch to one more reader, a new device or a new passkey, without rotating.
+    /// Seals this epoch to one more reader, a new device or a new passkey, without rotating or renaming it.
     pub fn reseal(
         &mut self,
         key: &Secret,
@@ -256,134 +271,108 @@ impl Epoch {
     pub fn back(&self, key: &Secret) -> Result<Secret, KeyError> {
         self.check(key)?;
         let back = self.back.as_ref().ok_or(KeyError::NoBack)?;
-        unwrap_key(
-            &subkey(BACK_LABEL, key),
-            &inner_aad(BACK_LABEL, self.scope, &self.owner, self.n),
-            back,
-        )
-        .ok_or(KeyError::WrongKey)
+        unwrap_key(&subkey(BACK_LABEL, key), &self.context().inner_aad(), back)
+            .ok_or(KeyError::WrongKey)
     }
 
     /// A keyring's vault key, opened with the epoch's key.
     pub fn vault_key(&self, key: &Secret) -> Result<SealKey, KeyError> {
         self.scoped(Scope::Keyring)?;
         self.check(key)?;
-        let wrapped = self.vault_key.as_ref().ok_or(KeyError::WrongScope)?;
+        let sealed = self.vault_key.as_ref().ok_or(KeyError::WrongScope)?;
         unwrap_key(
             &subkey(VAULT_LABEL, key),
-            &inner_aad(VAULT_LABEL, self.scope, &self.owner, self.n),
-            wrapped,
+            &self.context().inner_aad(),
+            sealed,
         )
         .map(|seed| SealKey::from_seed(&seed))
         .ok_or(KeyError::WrongKey)
     }
 
-    fn header(&self) -> Vec<u8> {
-        let mut out = DOMAIN.to_vec();
-        out.push(self.scope as u8);
-        put(&mut out, self.owner.as_bytes());
-        out.extend_from_slice(&self.n.to_be_bytes());
-        optional(&mut out, self.prev.as_ref().map(|p| p.as_slice()));
-        out.extend_from_slice(&self.commit);
-        optional(&mut out, self.back.as_ref().map(|b| b.as_slice()));
-        optional(&mut out, self.vault_key.as_ref().map(|v| v.as_slice()));
-        out
+    /// The blob as a Value (`Aven.ID.KeyFormats.Epoch.value`).
+    pub fn value(&self) -> Value {
+        let mut kvs = vec![
+            ("n".into(), Value::Uint(self.n)),
+            ("id".into(), text(&self.owner)),
+            (
+                "prev".into(),
+                Value::Array(self.prev.iter().map(|p| bytes(p)).collect()),
+            ),
+            ("scope".into(), text(self.scope.text())),
+            ("commit".into(), bytes(&self.commit)),
+            ("scheme".into(), text(SCHEME)),
+            (
+                "stanzas".into(),
+                Value::Array(self.stanzas.iter().map(Stanza::value).collect()),
+            ),
+        ];
+        if let Some(back) = &self.back {
+            kvs.push(("back".into(), bytes(back)));
+        }
+        if let Some(vault) = &self.vault_key {
+            kvs.push(("vault".into(), bytes(vault)));
+        }
+        Value::Map(kvs)
     }
 
-    /// The epoch's name: BLAKE3 of everything but its stanzas.
-    pub fn id(&self) -> [u8; 32] {
-        *blake3::hash(&self.header()).as_bytes()
-    }
-
-    /// The blob: the header, then the stanzas with their count.
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut out = self.header();
-        out.extend_from_slice(&(self.stanzas.len() as u32).to_be_bytes());
-        for stanza in &self.stanzas {
-            out.extend_from_slice(&stanza.to_bytes());
-        }
-        out
+        encode(&self.value())
     }
 
-    /// Reads only what [`Epoch::to_bytes`] writes: anything else, trailing bytes included, is `None`.
-    pub fn from_bytes(bytes: &[u8]) -> Option<Epoch> {
-        let mut r = Reader(bytes);
-        if r.take(DOMAIN.len())? != DOMAIN {
-            return None;
-        }
-        let scope = match r.byte()? {
-            1 => Scope::Keyring,
-            2 => Scope::Doc,
-            _ => return None,
+    /// The epoch's name: BLAKE3 of its blob without its stanzas.
+    pub fn name(&self) -> [u8; 32] {
+        let bare = Epoch {
+            stanzas: Vec::new(),
+            ..self.clone()
         };
-        let len = u32::from_be_bytes(r.array()?) as usize;
-        let owner = String::from_utf8(r.take(len)?.to_vec()).ok()?;
-        let n = u64::from_be_bytes(r.array()?);
-        let prev = r.optional()?;
-        let commit = r.array()?;
-        let back = r.optional()?;
-        let vault_key = r.optional()?;
+        *blake3::hash(&bare.to_bytes()).as_bytes()
+    }
+
+    /// Reads only what [`Epoch::to_bytes`] writes: exactly its keys, the flat scheme, a vault key just for a keyring.
+    pub fn from_bytes(blob: &[u8]) -> Option<Epoch> {
+        let v = decode(blob)?;
+        let f = fields(
+            &v,
+            &["n", "id", "prev", "scope", "commit", "scheme", "stanzas"],
+            &["back", "vault"],
+        )?;
+        if f.text("scheme")? != SCHEME {
+            return None;
+        }
+        let scope = Scope::parse(f.text("scope")?)?;
+        let Value::Array(prev) = f.get("prev")? else {
+            return None;
+        };
+        let Value::Array(stanzas) = f.get("stanzas")? else {
+            return None;
+        };
+        let optional = |key: &str| match f.get(key) {
+            Some(Value::Bytes(b)) => b.as_slice().try_into().ok().map(Some),
+            Some(_) => None,
+            None => Some(None),
+        };
+        let vault_key = optional("vault")?;
         if (scope == Scope::Keyring) != vault_key.is_some() {
-            return None;
-        }
-        let count = u32::from_be_bytes(r.array()?) as usize;
-        if count > r.0.len() / Stanza::LEN {
-            return None;
-        }
-        let stanzas = (0..count)
-            .map(|_| Stanza::from_bytes(r.take(Stanza::LEN)?))
-            .collect::<Option<Vec<_>>>()?;
-        if !r.0.is_empty() {
             return None;
         }
         Some(Epoch {
             scope,
-            owner,
-            n,
-            prev,
-            stanzas,
-            commit,
-            back,
+            owner: f.text("id")?.to_string(),
+            n: f.uint("n")?,
+            prev: prev
+                .iter()
+                .map(|p| match p {
+                    Value::Bytes(b) => b.as_slice().try_into().ok(),
+                    _ => None,
+                })
+                .collect::<Option<_>>()?,
+            stanzas: stanzas
+                .iter()
+                .map(Stanza::of_value)
+                .collect::<Option<_>>()?,
+            commit: f.array("commit")?,
+            back: optional("back")?,
             vault_key,
         })
-    }
-}
-
-fn optional(out: &mut Vec<u8>, bytes: Option<&[u8]>) {
-    match bytes {
-        Some(bytes) => {
-            out.push(1);
-            out.extend_from_slice(bytes);
-        }
-        None => out.push(0),
-    }
-}
-
-struct Reader<'a>(&'a [u8]);
-
-impl<'a> Reader<'a> {
-    fn take(&mut self, n: usize) -> Option<&'a [u8]> {
-        if self.0.len() < n {
-            return None;
-        }
-        let (head, rest) = self.0.split_at(n);
-        self.0 = rest;
-        Some(head)
-    }
-
-    fn byte(&mut self) -> Option<u8> {
-        Some(self.take(1)?[0])
-    }
-
-    fn array<const N: usize>(&mut self) -> Option<[u8; N]> {
-        self.take(N)?.try_into().ok()
-    }
-
-    fn optional<const N: usize>(&mut self) -> Option<Option<[u8; N]>> {
-        match self.byte()? {
-            0 => Some(None),
-            1 => Some(Some(self.array()?)),
-            _ => None,
-        }
     }
 }

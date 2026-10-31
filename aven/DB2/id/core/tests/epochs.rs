@@ -140,7 +140,7 @@ proptest! {
             let (last, last_key) = chain.last().unwrap();
             let history = if *all { History::All } else { History::FromNow };
             let next = last.rotate_doc(last_key, &publics(&remain), history, &mut entropy).unwrap();
-            prop_assert_eq!(next.0.prev, Some(last.id()));
+            prop_assert_eq!(&next.0.prev, &vec![last.name()]);
             prop_assert_eq!(next.0.n, last.n + 1);
             chain.push(next);
         }
@@ -167,7 +167,7 @@ proptest! {
         }
     }
 
-    /// A blob reads back as written, and a blob cut short or lengthened reads as nothing.
+    /// A blob reads back as written, and a blob cut short or lengthened reads as nothing; a stanza too.
     #[test]
     fn a_blob_reads_back(count in 1usize..4, seed in any::<u64>(), cut in any::<prop::sample::Index>()) {
         let keys = readers(count, seed);
@@ -180,6 +180,9 @@ proptest! {
             prop_assert_eq!(Epoch::from_bytes(&bytes), Some(epoch.clone()));
             prop_assert_eq!(Epoch::from_bytes(&bytes[..cut.index(bytes.len())]), None);
             prop_assert_eq!(Epoch::from_bytes(&[bytes.as_slice(), &[0]].concat()), None);
+            for stanza in &epoch.stanzas {
+                prop_assert_eq!(&Stanza::of_value(&stanza.value()), &Some(stanza.clone()));
+            }
         }
     }
 
@@ -187,15 +190,15 @@ proptest! {
     #[test]
     fn any_bytes_read_safely(bytes in proptest::collection::vec(any::<u8>(), 0..512)) {
         let _ = Epoch::from_bytes(&bytes);
-        let mut with_domain = b"avenID epoch 1\0".to_vec();
-        with_domain.extend_from_slice(&bytes);
-        let _ = Epoch::from_bytes(&with_domain);
+        if let Some(v) = aven_core::decode(&bytes) {
+            let _ = Stanza::of_value(&v);
+        }
     }
 
     /// A stanza opens only for its reader and only in its context: another key, another owner, another epoch or
-    /// another scope opens nothing.
+    /// another scope opens nothing, nor does a stanza with any bit changed.
     #[test]
-    fn a_stanza_opens_only_where_it_was_sealed(seed in any::<u64>(), n in any::<u64>(), flip in 0usize..1168) {
+    fn a_stanza_opens_only_where_it_was_sealed(seed in any::<u64>(), n in any::<u64>(), flip in 0usize..(1200 * 8)) {
         let mut entropy = TestEntropy::new(&format!("stanza {seed}"));
         let (reader, other) = (key(&format!("a {seed}")), key(&format!("b {seed}")));
         let secret = Secret::generate(&mut entropy);
@@ -206,9 +209,14 @@ proptest! {
         prop_assert_eq!(stanza.open(&reader, &Context { owner: "d:02", ..here }), None);
         prop_assert_eq!(stanza.open(&reader, &Context { n: n.wrapping_add(1), ..here }), None);
         prop_assert_eq!(stanza.open(&reader, &Context { scope: Scope::Keyring, ..here }), None);
-        let mut bytes = stanza.to_bytes();
-        bytes[flip] ^= 1;
-        prop_assert_eq!(Stanza::from_bytes(&bytes).unwrap().open(&reader, &here), None);
+        let mut changed = stanza.clone();
+        let (part, bit) = (flip / 8, 1u8 << (flip % 8));
+        match part {
+            p if p < 1120 => changed.ct[p] ^= bit,
+            p if p < 1152 => changed.commit[p - 1120] ^= bit,
+            p => changed.sealed[(p - 1152) % 48] ^= bit,
+        }
+        prop_assert_eq!(changed.open(&reader, &here), None);
     }
 }
 
@@ -229,7 +237,10 @@ fn a_stanza_with_another_key_fails_the_commitment() {
         },
         &mut entropy,
     );
-    epoch.stanzas.insert(0, forged);
+    epoch.stanzas.insert(0, forged.clone());
+    // the forged stanza opens, its key fails the commitment, and the reader goes on to its real one
+    assert_eq!(epoch.open(&reader).unwrap(), epoch_key);
+    epoch.stanzas = vec![forged];
     assert_eq!(epoch.open(&reader).unwrap_err(), KeyError::WrongKey);
     assert_eq!(
         epoch

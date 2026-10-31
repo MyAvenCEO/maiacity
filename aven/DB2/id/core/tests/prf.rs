@@ -1,30 +1,15 @@
 //! The passkey's PRF step and the keyring it opens (id/caps/README.md, "Passkeys and the PRF step", the keyring's row
-//! of "The layers"; D11, D13). The derivations are recomputed here from their definitions: the PRF input and
-//! WebAuthn's salt, BLAKE3's key derivation for `avenID owner 1` (64 bytes: Ed25519's seed, then ML-DSA-65's ξ) and
-//! `avenID seal 1` (X-Wing's seed). Lean's byte vectors for them come later; these hold the code to the definitions.
+//! of "The layers"; D11). Every byte of the derivations is Lean's (`tests/key_vectors.rs`); here, what they make: the
+//! hybrid owner key, the seal key, and a new browser opening its vault with its passkey alone.
 
 use aven_id::{
-    Epoch, KeyError, OWNER_LABEL, OwnerKey, PRF_DOMAIN, PrfOutput, SEAL_LABEL, SealKey, SealPublic,
-    Secret, TestEntropy, prf_input, prf_salt,
+    Epoch, HybridKey, KeyError, OWNER_LABEL, PrfOutput, SEAL_LABEL, SealKey, SealPublic, Secret,
+    TestEntropy, hybrid_verify, prf_salt,
 };
 use proptest::prelude::*;
-use sha2::{Digest, Sha256};
 
 fn output(seed: &str) -> PrfOutput {
     PrfOutput::new(Secret::generate(&mut TestEntropy::new(seed)))
-}
-
-#[test]
-fn the_input_and_the_salt_are_the_definitions() {
-    let input = prf_input("alice", 3);
-    let mut expected = b"avenID prf 1\0".to_vec();
-    expected.extend_from_slice(&[0, 0, 0, 5]);
-    expected.extend_from_slice(b"alice");
-    expected.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 3]);
-    assert_eq!(input, expected);
-    assert_eq!(PRF_DOMAIN, "avenID prf 1");
-    let salt: [u8; 32] = Sha256::digest([b"WebAuthn PRF\0".as_slice(), &expected].concat()).into();
-    assert_eq!(prf_salt("alice", 3), salt);
 }
 
 #[test]
@@ -48,7 +33,7 @@ fn the_seeds_are_blake3s_derivations() {
     assert_eq!(prf.seal_key().seed(), prf.seal_seed());
     assert_eq!(
         prf.owner_key().public(),
-        OwnerKey::from_seeds(&ed, &ml).public()
+        HybridKey::from_seeds(&ed, &ml).public()
     );
 }
 
@@ -57,7 +42,7 @@ fn secrets_never_print() {
     let prf = output("print");
     assert_eq!(format!("{prf:?}"), "PrfOutput(Secret(..))");
     assert_eq!(format!("{:?}", prf.seal_key()), "SealKey(..)");
-    assert_eq!(format!("{:?}", prf.owner_key()), "OwnerKey(..)");
+    assert_eq!(format!("{:?}", prf.owner_key()), "HybridKey(..)");
 }
 
 /// Signing up, then a new browser with the passkey alone (the PRF step's two ceremonies), then the keyring's rotation
@@ -84,9 +69,13 @@ fn a_new_browser_opens_the_vault_with_its_passkey_alone() {
     let browser = SealKey::generate(&mut entropy);
     ring.reseal(&ring_key, &browser.public(), &mut entropy)
         .unwrap();
-    let id = ring.id();
+    let name = ring.name();
     assert_eq!(ring.open(&browser).unwrap(), ring_key);
-    assert_eq!(ring.id(), id, "adding a device doesn't rename the epoch");
+    assert_eq!(
+        ring.name(),
+        name,
+        "adding a device doesn't rename the epoch"
+    );
     // a passkey on another owner epoch, or another passkey, opens nothing
     assert_eq!(
         ring.open(&output("alice's passkey, alice, 2").seal_key())
@@ -146,18 +135,25 @@ proptest! {
         prop_assert_eq!(prf_salt(&a, m) == prf_salt(&b, n), a == b && m == n);
     }
 
-    /// The hybrid owner key: a signature holds for its message under its key, and only with both halves.
+    /// A hybrid key, an owner's or a device's: a signature holds for its message under its key, and only with both
+    /// halves; as bytes, `hybrid_verify` says the same.
     #[test]
-    fn owner_signatures_need_both_halves(seed in "[a-z]{1,8}", msg in proptest::collection::vec(any::<u8>(), 0..64), at in any::<prop::sample::Index>()) {
+    fn hybrid_signatures_need_both_halves(seed in "[a-z]{1,8}", msg in proptest::collection::vec(any::<u8>(), 0..64), at in any::<prop::sample::Index>()) {
         let key = output(&seed).owner_key();
         let public = output(&seed).owner_key().public();
         let signature = key.sign(&msg);
         prop_assert!(public.verify(&msg, &signature));
+        prop_assert!(hybrid_verify(&public.to_bytes(), &msg, &signature.to_bytes()));
+        prop_assert!(!hybrid_verify(&signature.to_bytes(), &msg, &public.to_bytes()), "a signature is no key");
+        let device = HybridKey::generate(&mut TestEntropy::new(&seed));
+        prop_assert!(device.public().verify(&msg, &device.sign(&msg)));
+        prop_assert!(!device.public().verify(&msg, &signature));
         prop_assert_eq!(&signature, &output(&seed).owner_key().sign(&msg), "deterministic");
         prop_assert!(!public.verify(&[msg.as_slice(), &[0]].concat(), &signature));
         let mut classical = signature.clone();
         classical.ed25519[at.index(64)] ^= 1;
         prop_assert!(!public.verify(&msg, &classical));
+        prop_assert!(!hybrid_verify(&public.to_bytes(), &msg, &classical.to_bytes()));
         let mut quantum = signature.clone();
         quantum.ml_dsa[at.index(quantum.ml_dsa.len())] ^= 1;
         prop_assert!(!public.verify(&msg, &quantum));
