@@ -139,8 +139,8 @@ sets the new home, whose device cap then covers the actor and the old one's no l
   the statement names, per pair, the last seq it accepts as seen. Receipts by hash stop true duplicates (A33).
 
 **Decided:** A17, A201, A202; actors §15 · **Lean:** `Aven.Actor.Address` — `Addr {vault, id, n}`, `Addr.doc`,
-`doc_inj`, `incarnation_new_doc`; `Aven.Actor.Theorems` — `spawn_fresh`; to come: `handover_single_writer`,
-`handover_continues`, generations in the per-pair order
+`doc_inj`, `incarnation_new_doc`; `Aven.Actor.Handover` — `handover_single_writer`, `handover_continues`,
+`generation_order`; `Aven.Actor.Theorems` — `spawn_fresh`
 
 ## Messages
 
@@ -403,6 +403,7 @@ seed.
 | Actor hosts and chains (A27, kernel half) | `Signing` (#1617, #1623, #1681), `Messaging` (#1628) | — | — | Lean only; the reader's half is avenCAPS' (#1619, #1624, #1626) |
 | Turns as steps (A37) | `Runtimes`, with state-runtime's `State` (#1676) | — | — | Lean only |
 | Addresses as Doc ids (A201) | `Address` (#1756) | — | — | Lean only; the router resolving `[vault, doc]` and state-runtime's `[bytes32, bytes32]` address shape: next, waits for the actor code's go |
+| Moving an actor's home (A202) | `Handover` (this PR) | — | — | Lean only, beside the kernel: version 1 has one home |
 | Carrier Doc (A33) | — | — | — | written down (#1685); for milestone 3 |
 | Version 1: the todo app in memory | — | — | — | not started; actor code waits for its go |
 
