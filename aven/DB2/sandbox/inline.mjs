@@ -1,17 +1,20 @@
 // A shared file never runs on avenOS's origin (store/README.md, "What a file may run"), in all three of Playwright's
 // engines, in the browsers' container (`bun run up --check`, after the engines' step). avenOS's origin holds the
 // device's secret in OPFS, and its Service Worker (os/web/public/files-sw.js) serves the chat's files there as
-// /files/<hash>, with the type their sender claims. A member who shares an HTML page or an SVG with a script must not
-// run it there: not opened in a tab of its own, not framed, not as an image.
+// /files/<hash>, as the file registry (aven/runtimes) decides from their bytes, never as their sender claims. A member
+// who shares an HTML page or an SVG with a script must not run it there: not opened in a tab of its own, not framed,
+// not as an image.
 //
 // Here the Service Worker is served alone on localhost, and the page plays the Peer-Light's leader on its
-// BroadcastChannel, answering its reads with the files a hostile member would share. Each file's script, if it ever
-// ran on this origin, writes to its localStorage and posts on a BroadcastChannel the page listens on. Checked:
-//   1. every answer forbids sniffing and sandboxes the document; only passive types are inline, everything else is
-//      application/octet-stream and an attachment;
+// BroadcastChannel, answering its reads with the files a hostile member would share, each decided as the leader does:
+// by the Peer-Light's own wasm (`decide`, built by `bun run up` into target/light). Each file's script, if it ever ran
+// on this origin, writes to its localStorage and posts on a BroadcastChannel the page listens on. Checked:
+//   1. every answer forbids sniffing and sandboxes the document; only what the registry serves inline is inline (a
+//      native image, audio, video, a PDF, by its bytes), everything else is application/octet-stream and an
+//      attachment, whatever its claim;
 //   2. opened in a tab, framed, embedded or shown as an image, no file's script runs on the origin;
 //   3. the control: the same HTML served by this server as text/html does run, so the probe would see it.
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { chromium, firefox, webkit } from 'playwright';
@@ -32,14 +35,24 @@ const files = [
 	{ name: 'an SVG', type: 'image/svg+xml', body: svg, served: 'application/octet-stream', as: 'attachment' },
 	{ name: 'an SVG in capitals', type: 'IMAGE/SVG+XML', body: svg, served: 'application/octet-stream', as: 'attachment' },
 	{ name: 'an HTML page with a charset', type: 'text/html; charset=utf-8', body: html, served: 'application/octet-stream', as: 'attachment' },
-	{ name: 'an HTML page claimed as a PNG', type: 'image/png', body: html, served: 'image/png', as: 'inline' },
+	{ name: 'an HTML page claimed as a PNG', type: 'image/png', body: html, served: 'application/octet-stream', as: 'attachment' },
 	{ name: 'XHTML', type: 'application/xhtml+xml', body: html, served: 'application/octet-stream', as: 'attachment' },
 	{ name: 'a PNG', type: 'image/png', body: png, served: 'image/png', as: 'inline' },
+	{ name: 'a PNG claimed as HTML', type: 'text/html', body: png, served: 'image/png', as: 'inline' },
+	{ name: 'an SVG claimed as a PNG', type: 'image/png', body: svg, served: 'application/octet-stream', as: 'attachment' },
 ].map((f, i) => ({ ...f, hash: hash(i + 1) }));
 
-const page = `<!doctype html><title>probe</title><script>
+// the Peer-Light's wasm, as `bun run up` built it
+const light = new URL('../target/light/', import.meta.url);
+if (!existsSync(new URL('aven_peer_light.js', light))) {
+	console.log("avenSANDBOX: inline: FAILED, the Peer-Light's wasm isn't built (bun run up builds it)");
+	process.exit(1);
+}
+const page = `<!doctype html><title>probe</title><script type="module">
 window.ran = [];
 new BroadcastChannel('ran').onmessage = ({ data }) => window.ran.push(data);
+const core = await import('/peer-light/aven_peer_light.js');
+await core.default();
 const files = ${JSON.stringify(files.map((f) => ({ hash: f.hash, type: f.type, body: Buffer.from(f.body).toString('base64') })))};
 const leader = new BroadcastChannel('aven-peer-light:probe');
 leader.onmessage = ({ data }) => {
@@ -47,13 +60,20 @@ leader.onmessage = ({ data }) => {
 	const f = files.find((f) => f.hash === data.read.file);
 	if (!f) return leader.postMessage({ id: data.id, error: 'not found' });
 	const bytes = Uint8Array.from(atob(f.body), (c) => c.charCodeAt(0));
-	leader.postMessage({ id: data.id, size: bytes.length, type: f.type, bytes: bytes.slice(data.read.start, data.read.end) });
+	// as the leader does (peer/worker.js): the registry decides from the first 64 KiB, the size and the claim
+	const how = core.decide(bytes.subarray(0, 65536), bytes.length, f.type, undefined);
+	leader.postMessage({ id: data.id, size: bytes.length, type: how.inline, bytes: bytes.slice(data.read.start, data.read.end) });
 };
+window.ready = true;
 </script>`;
 const server = createServer((req, res) => {
 	const path = new URL(req.url, 'http://localhost').pathname;
 	if (path === '/') return res.writeHead(200, { 'content-type': 'text/html' }).end(page);
 	if (path === '/files-sw.js') return res.writeHead(200, { 'content-type': 'text/javascript' }).end(worker);
+	if (path === '/peer-light/aven_peer_light.js')
+		return res.writeHead(200, { 'content-type': 'text/javascript' }).end(readFileSync(new URL('aven_peer_light.js', light)));
+	if (path === '/peer-light/aven_peer_light_bg.wasm')
+		return res.writeHead(200, { 'content-type': 'application/wasm' }).end(readFileSync(new URL('aven_peer_light_bg.wasm', light)));
 	if (path === '/control.html') return res.writeHead(200, { 'content-type': 'text/html' }).end(html);
 	res.writeHead(404).end();
 });
@@ -67,6 +87,7 @@ async function probe(engine) {
 	try {
 		const tab = context.pages()[0] ?? (await context.newPage());
 		await tab.goto(`${origin}/`);
+		await tab.waitForFunction(() => window.ready, null, { timeout: 30_000 });
 		await tab.evaluate(async () => {
 			await navigator.serviceWorker.register('/files-sw.js?name=probe');
 			await navigator.serviceWorker.ready;

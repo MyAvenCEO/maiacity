@@ -22,6 +22,7 @@ on:
       - aven/DB2/id/core/**
       - aven/DB2/peer/native/**
       - aven/DB2/peer/light/**
+      - aven/runtimes/registry/**
       - .github/workflows/avenpeer-image.yml
   workflow_dispatch:
   workflow_call:
@@ -117,6 +118,8 @@ jobs:
         with:
           # aven/DB2, cut down by deploy/peer.Dockerfile.dockerignore to the workspace's crates
           context: aven/DB2
+          # aven/runtimes' file registry, which the Peer takes by path, at /runtimes/registry
+          build-contexts: registry=aven/runtimes/registry
           file: aven/DB2/deploy/peer.Dockerfile
           platforms: linux/${{ matrix.arch }}
           build-args: BOX=${{ needs.plan.outputs.box }}

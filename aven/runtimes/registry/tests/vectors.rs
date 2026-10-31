@@ -3,8 +3,8 @@
 //! `table.json`, entry by entry and signature by signature.
 
 use aven_runtimes_registry::{
-    Claim, Decision, Element, Mode, Output, REGISTRY, SIGNATURES, Serve, Stage, decide_file,
-    headers,
+    Claim, Decision, Element, FileType, Mode, Output, REGISTRY, SIGNATURES, Serve, Stage, decide_file, headers,
+    of_mime,
 };
 use serde_json::{Value, json};
 
@@ -175,4 +175,15 @@ fn hostile_heads() {
             }
         }
     }
+}
+
+/// A claimed type names its type by its essence, whatever its case and parameters; anything else is unknown (the
+/// model's `#guard`s on `FileType.ofMime`).
+#[test]
+fn claimed_types() {
+    for e in REGISTRY {
+        assert_eq!(of_mime(e.r#type.mime()), e.r#type);
+    }
+    assert_eq!(of_mime("Video/QuickTime; codecs=hvc1"), FileType::Mov);
+    assert_eq!(of_mime("image/x-icon"), FileType::Unknown);
 }

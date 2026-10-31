@@ -1,7 +1,7 @@
 // The slim image's tag (PRODUCTION.md, "The slim image"): the first 16 hex digits of a SHA-256 over the box it is
 // built in (its tag, sandbox/box/tag.mjs) and every file its build reads: peer.Dockerfile, its .dockerignore, this
-// file, avenDB's Cargo.toml and Cargo.lock, and every workspace member's sources. peer.Dockerfile.dockerignore admits
-// the same files, and the image workflow (.github/workflows/avenpeer-image.yml) runs when any of them changes. The
+// file, avenDB's Cargo.toml and Cargo.lock, every workspace member's sources, and aven/runtimes' file registry's.
+// peer.Dockerfile.dockerignore and the named context `registry` admit the same files, and the image workflow (.github/workflows/avenpeer-image.yml) runs when any of them changes. The
 // same inputs give the same tag, so an unchanged peer is never built again, and the release sees it didn't change.
 //
 // `node aven/DB2/deploy/tag.mjs` prints the tag, `--files` the files. Node's own modules only, so it runs on a bare
@@ -15,7 +15,8 @@ import { boxTag } from '../sandbox/box/tag.mjs';
 const db2 = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const fixed = ['deploy/peer.Dockerfile', 'deploy/peer.Dockerfile.dockerignore', 'deploy/tag.mjs', 'Cargo.toml', 'Cargo.lock'];
 // the workspace's members, whole (Cargo.toml's members, and the fork store holds)
-const whole = ['db/core', 'store', 'id/core', 'peer/native', 'peer/light'];
+// and aven/runtimes' file registry, which the Peer takes by path, from the named context `registry`
+const whole = ['db/core', 'store', 'id/core', 'peer/native', 'peer/light', '../runtimes/registry'];
 // what the .dockerignore leaves out wherever it is
 const skipped = new Set(['target', 'node_modules', '.git', '.lake', 'runs', 'dist', 'deliverables']);
 

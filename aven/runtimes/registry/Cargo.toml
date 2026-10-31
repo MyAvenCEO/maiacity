@@ -2,10 +2,12 @@
 name = "aven-runtimes-registry"
 version = "0.0.0"
 description = "The file registry: what a file really is, by its bytes, and how it shows (Aven.Runtime.Registry)"
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-publish.workspace = true
+# Not inherited from aven/runtimes' workspace: aven/DB2's Peers take this crate by path, and in the box and the Peer's
+# image it stands alone at /runtimes/registry
+edition = "2024"
+rust-version = "1.99"
+license = "UNLICENSED"
+publish = false
 
 [dev-dependencies]
 serde_json = "=1.0.154"
