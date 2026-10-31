@@ -17,10 +17,11 @@ their group headings) and its rules 7, 15 and 16, which name Samuel's decisions;
 (`caps D1` to `caps D24`, and `caps E1` to `caps E3`, agreed with the engine thread); the "Decisions" of the docs,
 engine and runtimes READMEs (`docs 1` to `docs 24`, `engine 1` to `engine 13`, `runtimes 1` to `runtimes 12`) and of
 PEERS.md (`peers 1` to `peers 12`); the store README, which has no list, by its two sections marked "(decided)" and its
-one decision in line; the unnumbered "Decisions" of MILESTONE2.md and SANDBOX.md, cited by their bold words; and section
-15, "Decisions", of the actors' `aven/actor/ARCHITECTURE.md`, cited as `actors §15`. PRODUCTION.md has no decision list,
-so nothing of it is imported, and ARCHITECTURE.md's table "Caps, bulletproof" marks rows decided only by citing
-A-numbers, which are here already.
+one decision in line; the unnumbered "Decisions" of MILESTONE2.md and SANDBOX.md, cited by their bold words, with
+SANDBOX.md's decisions outside its list and its settled open questions, and the store README's "What a file may run" and
+"Next: pack files"; and section 15, "Decisions", of the actors' `aven/actor/ARCHITECTURE.md`, cited as `actors §15`.
+PRODUCTION.md has no decision list, so nothing of it is imported, and ARCHITECTURE.md's table "Caps, bulletproof" marks
+rows decided only by citing A-numbers, which are here already.
 
 ### From ARCHITECTURE.md
 
@@ -888,6 +889,103 @@ Made in milestone 1's threads and its integration (29–30 Oct 2026).
   features across the workspace, so after the merge every crate's maps keep insertion order. One test of
   `aven-db-core` had compared a line's text with sorted keys.
 - **rustfmt's default width (100)** stays for Rust; the prose wraps at 120. No `rustfmt.toml`.
+
+#### SANDBOX.md's decisions outside its list
+
+- **Only the checkout's own box runs** (Samuel, 30 Oct 2026): no fallback to another box, not even one with the same
+  tools. A change that moves the tag, a new dependency included, is pushed to its branch first; until GitHub has
+  published that box, `bun run up` stops and says so.
+
+**v1's three workflows are parked** in [`.github/workflows-v1/`](https://github.com/MyAvenCEO/maiacity/blob/f7e1775bc687f8ac00ba23f475475b0a616c23ce/.github/workflows-v1/README.md) (Samuel, 29
+Oct 2026): moved, not deleted, so `main` runs no CI and deploys nothing. v1's site, API and peer keep running as they
+were last deployed; nothing redeploys them, checks that they are up, or rolls them back. Its README says how to
+switch one back on.
+
+Every dependency and tool is pinned exactly, so every build can be reproduced. **Pins move only by hand** (Samuel, 30
+Oct 2026): a person runs `bun run bump` when they choose. No scheduled workflow and no bot updates anything.
+
+#### SANDBOX.md's open questions, those settled
+
+1. **Precompiled crates in the image** (settled 30 Oct 2026). The image compiles the third-party crates cargo-chef
+   style, Docker copies them into a session's empty build folder on first mount, and the tag hashes every file the
+   build reads ([The third-party crates, precompiled](https://github.com/MyAvenCEO/maiacity/blob/f7e1775bc687f8ac00ba23f475475b0a616c23ce/aven/DB2/SANDBOX.md#the-third-party-crates-precompiled)). A new session's first
+   build fell from 137–183 s to 28 s, all four peers live 35–54 s after `up --check` starts. The image grew by
+   0.79 GB compressed (amd64: 2.44 to 3.23 GB; arm64 0.75 GB), 3.1 GB on disk, and a new session copies another
+   2.9 GB into its volumes. Left open: the store's own checks (`cargo test -p aven-db-store`, the OPFS wasm in
+   release) resolve features of their own and still compile some crates on their first run; GitHub rebuilds the
+   crates' layer whole on any dependency change.
+2. **`opt-level` for dependencies** (settled 30 Oct 2026): `[profile.dev.package."*"]` with `opt-level = 1` and
+   `debug = "line-tables-only"`, our crates unchanged. Measured in the box, warm:
+
+   | | opt-level 0, full debug | opt-level 1 | opt-level 1, line tables |
+   |---|---|---|---|
+   | the Peer-Light's wasm, before and after wasm-bindgen | 148 MB, 21.5 MB | 170 MB, 8.1 MB | 71 MB, 8.1 MB |
+   | wasm-bindgen | 2.5–2.9 s | 1.1–1.3 s | 1.1 s |
+   | a change in `aven-peer`, both builds | 4.5 s | 3.5 s | 2.7 s |
+   | `cargo test --workspace` (without the store), warm | 15.6 s | 3.0 s | 3.2 s |
+   | the crates, compiled in the image (4 vCPU) | 3 min, 4.1 GB | 7.6 min, 4.8 GB | 5.8 min, 2.6 GB |
+
+7. **Our own OPFS backend, or OpenDAL's with sync access handles.** OpenDAL's is slow for small writes and ranges and
+   refuses reads that race a commit. Sync access handles in the Peer-Light's worker fix both; they exist only in
+   workers, which the fork now reaches. Also: offer the fork's fix upstream, so the fork can go.
+   **Decided (Samuel, 30 Oct 2026): our own,** `opfs-sync` in `store`, after the agent rename. Measured that day,
+   200 × 4 KiB writes: Chromium 14 ms (OpenDAL 2,066), WebKit 4–10 ms (712–869), Firefox 24–45 ms (4,070). Sync access
+   handles exist in a dedicated worker in all three engines, but in a SharedWorker only in WebKit, so the Peer-Light
+   moves to a dedicated worker run by the one tab that holds a Web Lock; other tabs reach it through a BroadcastChannel,
+   and the next tab takes over when it closes. The contract, the Lean model and the conformance suite stay; the
+   opendal-opfs fork goes; iOS 15.2–25 may work too (to confirm on a real iOS 18).
+8. **Rule 10's vectors:** done (30 Oct 2026), [Tests in milestone 1](https://github.com/MyAvenCEO/maiacity/blob/f7e1775bc687f8ac00ba23f475475b0a616c23ce/aven/DB2/SANDBOX.md#tests-in-milestone-1).
+
+#### The store README's "What a file may run" (the security audit) and "Next: pack files" (the architect)
+
+## What a file may run
+
+A file's type is what its sender claims, and avenOS's origin holds the device's secret in OPFS, so the Service Worker
+([`files-sw.js`](https://github.com/MyAvenCEO/maiacity/blob/f7e1775bc687f8ac00ba23f475475b0a616c23ce/aven/DB2/os/web/public/files-sw.js)) serves `/files/<hash>` as if the bytes were hostile (the security
+audit, 30 Oct 2026):
+
+- **Every answer** carries `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox; default-src
+  'none'` (with `img-src`, `media-src` and `object-src` only from the origin itself): a document opened from it has an
+  opaque origin of its own and runs no script, whatever its bytes.
+- **Inline only for passive types:** images but SVG (PNG, JPEG, GIF, WebP, AVIF, BMP), audio, video and PDF. Every
+  other type, SVG, HTML and XHTML among them, is served as `application/octet-stream` with `Content-Disposition:
+  attachment`: opening it downloads it.
+- **The chat shows files only as `<img>`, `<video>` or a PDF's frame,** for those same types; anything else is a
+  download link.
+- `bun run up --check` holds it in all three engines (`sandbox/inline.mjs`: an HTML page and an SVG, each with a
+  script, opened in a tab, framed, embedded and as an image, run nothing on the origin; a control served as HTML by
+  the test's own server does), and in the city-dome's chat (`sandbox/dome.mjs`).
+- **A PDF previews only where the engine renders one in a sandboxed document;** opening it still works, as a download
+  at worst. That is the price of the sandbox, until files move.
+- **Files should later move to an origin of their own** (the security fix's recommendation, 30 Oct 2026). The headers
+  are defence in depth: one mistake in the allow-list, or an engine's bug in sandboxing, would still run a sender's
+  bytes beside the device's secret. A separate origin that holds no secret (as open question 3 asks, the Service
+  Worker on the Peer-Light's origin or a files-only one) makes that mistake harmless; until then these headers hold.
+
+
+## Next: pack files
+
+The next store step, on this upgrade's evidence (the architect, 30 Oct 2026): Firefox pays about 23 ms for every
+`createSyncAccessHandle()`, twice per chat line, and the same engines write 200 × 4 KiB into one open file in 10 to
+102 ms. Packs keep a few files open and append to them, so a write costs a write, not a file. Not built in this
+upgrade; the contract, the suite and the gates stay, and the opfs driver changes underneath.
+
+- **Blobs in packs.** A blob is appended to the open pack as one record: a header (its hash, its length, a checksum of
+  the header) and its bytes. A pack closes at a size (64 MiB, to measure) and a new one opens. Big chunks may stay one
+  file each: a 1 MiB chunk already costs one handle per MiB, which is cheap; the line is measured, not guessed.
+- **Refs in a log.** Every `set_ref` and `delete_ref` appends a record (name, old, new or none, checksum) to the refs
+  log; the newest record of a name is its value. Compare-and-set still runs under the one writer's lock.
+- **The index is rebuilt on open,** by reading every pack's headers and the refs log, and kept in memory: hash →
+  (pack, offset, length), name → hash. Reads are ranges of an open pack's handle.
+- **A torn tail is cut by checksum:** a crash leaves at most the last record of a pack or of the log partly written;
+  opening finds the first record whose header or checksum fails and truncates there. A blob's bytes are also checked
+  against its hash on read, as now.
+- **Deletes are tombstones** (a record naming the hash); `list` and `has` skip them. **Compaction comes later:** a pack
+  mostly tombstoned is rewritten to a new one, then the old one removed, the index switched under the lock.
+- **Lean first:** a model of the log (records appended, a torn tail) beside `Aven.DB.Store`, with the theorem that
+  replaying any prefix of the bytes written, cut at its first bad record, gives the store before or after the last
+  call, the same shape as `crash_atomic`; then Rust's crash tests (every byte offset a crash point), then the driver.
+- **Gates:** the same workload, every engine held to 60 ms, 30 ms and 10 s, Firefox included.
 
 ### From the actors' ARCHITECTURE.md
 
