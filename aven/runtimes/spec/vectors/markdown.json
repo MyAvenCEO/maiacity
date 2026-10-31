@@ -1,0 +1,20 @@
+[
+{"expected":{"ids":["hello-world"]},"input":{"headings":["Hello World"]},"name":"a plain heading"},
+{"expected":{"ids":["whats-new-2026"]},"input":{"headings":["What's new? (2026)"]},"name":"punctuation goes"},
+{"expected":{"ids":["a-b_c"]},"input":{"headings":["a-b_c"]},"name":"hyphens and underscores stay"},
+{"expected":{"ids":["intro","intro-1","intro-2"]},"input":{"headings":["Intro","Intro","Intro"]},"name":"repeats are numbered"},
+{"expected":{"ids":["grüße-aus-köln"]},"input":{"headings":["Grüße aus Köln"]},"name":"letters beyond ASCII stay"},
+{"expected":{"ids":["vault--keys-owner"]},"input":{"headings":["Vault — key’s owner"]},"name":"punctuation beyond ASCII goes"},
+{"expected":{"ids":["","-1"]},"input":{"headings":["!!!","???"]},"name":"only punctuation"},
+{"expected":{"ids":["the-store-contract"]},"input":{"headings":["The `Store` contract"]},"name":"code and spaces"},
+{"expected":{"href":"https://maia.city"},"input":{"href":"https://maia.city","rules":[["glossary:","#/docs/glossary/"],["aven/","https://github.com/MyAvenCEO/maiacity/blob/main/aven/"],["evil:","javascript:"]]},"name":"an https link stays"},
+{"expected":{"href":"#vault"},"input":{"href":"#vault","rules":[["glossary:","#/docs/glossary/"],["aven/","https://github.com/MyAvenCEO/maiacity/blob/main/aven/"],["evil:","javascript:"]]},"name":"a fragment stays"},
+{"expected":{"href":"mailto:hi@maia.city"},"input":{"href":"mailto:hi@maia.city","rules":[["glossary:","#/docs/glossary/"],["aven/","https://github.com/MyAvenCEO/maiacity/blob/main/aven/"],["evil:","javascript:"]]},"name":"a mail link stays"},
+{"expected":{"href":"#/docs/glossary/vault"},"input":{"href":"glossary:vault","rules":[["glossary:","#/docs/glossary/"],["aven/","https://github.com/MyAvenCEO/maiacity/blob/main/aven/"],["evil:","javascript:"]]},"name":"a glossary link is rewritten"},
+{"expected":{"href":"https://github.com/MyAvenCEO/maiacity/blob/main/aven/DB2/README.md"},"input":{"href":"aven/DB2/README.md","rules":[["glossary:","#/docs/glossary/"],["aven/","https://github.com/MyAvenCEO/maiacity/blob/main/aven/"],["evil:","javascript:"]]},"name":"a repository path is rewritten"},
+{"expected":{"href":null},"input":{"href":"javascript:steal()","rules":[["glossary:","#/docs/glossary/"],["aven/","https://github.com/MyAvenCEO/maiacity/blob/main/aven/"],["evil:","javascript:"]]},"name":"javascript: goes"},
+{"expected":{"href":null},"input":{"href":"http://maia.city","rules":[["glossary:","#/docs/glossary/"],["aven/","https://github.com/MyAvenCEO/maiacity/blob/main/aven/"],["evil:","javascript:"]]},"name":"plain http goes"},
+{"expected":{"href":null},"input":{"href":"data:text/html,<script>1</script>","rules":[["glossary:","#/docs/glossary/"],["aven/","https://github.com/MyAvenCEO/maiacity/blob/main/aven/"],["evil:","javascript:"]]},"name":"data: goes"},
+{"expected":{"href":null},"input":{"href":"../secrets","rules":[["glossary:","#/docs/glossary/"],["aven/","https://github.com/MyAvenCEO/maiacity/blob/main/aven/"],["evil:","javascript:"]]},"name":"a relative path no rule names goes"},
+{"expected":{"href":null},"input":{"href":"evil:x","rules":[["glossary:","#/docs/glossary/"],["aven/","https://github.com/MyAvenCEO/maiacity/blob/main/aven/"],["evil:","javascript:"]]},"name":"a rule can't make a link the allowlist refuses"}
+]

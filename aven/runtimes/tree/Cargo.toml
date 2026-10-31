@@ -7,6 +7,9 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[dependencies]
+aven-core = { path = "../../DB2/core" }
+
 [dev-dependencies]
 serde = "=1.0.229"
 serde_json = { version = "=1.0.154", features = ["unbounded_depth"] }
