@@ -102,7 +102,10 @@ decision's own text, reasons and Lean are its row there.
 
 | Decision | What | Page | Holds |
 |---|---|---|---|
-| [A194](DECISIONS.md) | History entries: `Aven.Peer.History`, one-key bodies, no tree-tip beat | [peers](peers/README.md) | yes |
+| [A197](DECISIONS.md) | Log tips retire with gen1; history is address and release entries | [peers](peers/README.md) | yes |
+| [A196](DECISIONS.md) | What each release carries of the runtimes | [runtime](runtime/README.md) | yes |
+| [A195](DECISIONS.md) | The keyring Doc is fetched by its id alone | [peers](peers/README.md) | yes |
+| [A194](DECISIONS.md) | History entries: `Aven.Peer.History`, one-key bodies, no tree-tip beat | [peers](peers/README.md) | superseded by A197 in part |
 | [A193](DECISIONS.md) | Peer records are avenPEERS' | [peers](peers/README.md) | superseded by A194 in part |
 | [A192](DECISIONS.md) | markdown-runtime v3: links resolve against their document | [runtime](runtime/README.md) | yes |
 | [A191](DECISIONS.md) | A removal never undoes finality | [caps](caps/README.md) | yes |
@@ -116,7 +119,7 @@ decision's own text, reasons and Lean are its row there.
 | [A183](DECISIONS.md) | A cap is its content: no nonce | [caps](caps/README.md) | yes |
 | [A182](DECISIONS.md) | A revocation discounts, as a split does: Core's counting takes avenCAPS' `revoked` | [caps](caps/README.md) | yes |
 | [A181](DECISIONS.md) | A checkpoint carries a `state`, sealed as a checkpoint | [docs](docs/README.md) | yes |
-| [A180](DECISIONS.md) | Runtimes have no release of their own; they ship inside `@aven/os` and the avenPEER image | [runtime](runtime/README.md) | yes |
+| [A180](DECISIONS.md) | Runtimes have no release of their own; they ship inside `@aven/os` and the avenPEER image | [runtime](runtime/README.md) | superseded by A196 in part |
 | [A179](DECISIONS.md) | Threads keep their page's Status table current | process | yes |
 | [A178](DECISIONS.md) | A device's vault: its key signs, the vault it serves owns | [id](id/README.md) | yes |
 | [A177](DECISIONS.md) | The seal names what it seals (`seals`), and a checkpoint is a checkpoint | [id](id/README.md) | yes |
