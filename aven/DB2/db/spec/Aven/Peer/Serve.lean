@@ -16,7 +16,7 @@ The asks:
 - **`prove doc proof`:** the Doc is proven on this connection, and the device acts for the vault the gate names; or
   refused.
 - **`upload doc puts`:** from a connection that proved `doc`, the puts go into the Doc's arrivals in one write, if the
-  vault's bill and the new items' bytes stay within its quota; otherwise refused whole, nothing taken.
+  vault's bill after it is within its quota or no larger than before; otherwise refused whole, nothing taken.
 - **`after doc n`:** the first page of what came after `n`, and whether more follows.
 - **`fetch doc hashes`:** the fetch gate's answer over what the keeper holds for `doc`.
 
@@ -28,8 +28,10 @@ What it proves:
   is billed to the vault of the first device that uploaded it; when that device covers it, the bill moves to the next
   uploader in upload order (`put_order`), and it is freed when the item drops (the architect, 31 Oct 2026: the quota
   counts what is held; a rate limit, apart, counts bytes taken per window);
-- `moved_bill_keeps`: a bill that moved can put a vault over its quota. That only refuses the vault's new uploads: a
-  refused upload changes nothing, and no ask drops an item another device uploaded.
+- `moved_bill_keeps`: a bill that moved can put a vault over its quota. A refused upload changes nothing, and no ask
+  drops an item another device uploaded;
+- admission: an upload is taken when the vault's bill after it is within its quota, or no larger than before
+  (`admitted_within`), so a vault over its quota can always shed bytes and never grow past it (`over_quota_sheds`).
 -/
 
 namespace Aven.Peer.Serve
@@ -108,12 +110,6 @@ def payer (k : Keeper) (i : Item) : Option String := i.uploaders.head?.bind (loo
 def bill (k : Keeper) (v : String) : Nat :=
   (k.docs.map fun e => ((e.2.items.filter fun i => k.payer i == some v).map (·.bytes)).sum).sum
 
-/-- The puts an upload adds: those new to the Doc, once each, by hash and bytes. -/
-def fresh (s : Store) : List Put → List (Nat × Nat)
-  | [] => []
-  | p :: ps =>
-    if s.holds p.hash then fresh s ps else (p.hash, p.bytes) :: fresh (s.put "" ⟨p.hash, p.bytes, []⟩) ps
-
 /-- One ask on connection `c`. -/
 def step (g : Gate) (k : Keeper) (c : Conn) : Ask → Keeper × Conn × Reply
   | .prove doc proof =>
@@ -124,11 +120,10 @@ def step (g : Gate) (k : Keeper) (c : Conn) : Ask → Keeper × Conn × Reply
     match lookup c.proven doc with
     | none => (k, c, .refused doc)
     | some v =>
-      let s := k.store doc
-      if k.bill v + ((fresh s puts).map (·.2)).sum ≤ g.quota v then
-        let s' := s.upload c.device puts
-        ({ k with docs := setAt k.docs doc s' }, c,
-          .took doc (puts.filterMap fun p => (s'.items.find? (·.hash == p.hash)).map fun i => (p.hash, i.n)))
+      let s' := (k.store doc).upload c.device puts
+      let k' := { k with docs := setAt k.docs doc s' }
+      if k'.bill v ≤ g.quota v || k'.bill v ≤ k.bill v then
+        (k', c, .took doc (puts.filterMap fun p => (s'.items.find? (·.hash == p.hash)).map fun i => (p.hash, i.n)))
       else (k, c, .uploadRefused doc "quota")
   | .after doc n =>
     match lookup c.proven doc with
@@ -187,14 +182,34 @@ theorem bill_follows (k : Keeper) (v : String) :
     k.bill v = (k.docs.map fun e =>
       ((e.2.items.filter fun i => i.uploaders.head?.bind (lookup k.acts) == some v).map (·.bytes)).sum).sum := rfl
 
-/-- An admitted upload kept the vault within its quota at the moment it was taken. -/
+/-- The keeper after taking an upload, before it decides to. -/
+def taking (k : Keeper) (c : Conn) (doc : String) (ps : List Put) : Keeper :=
+  { k with docs := setAt k.docs doc ((k.store doc).upload c.device ps) }
+
+/-- **`admitted_within`:** a taken upload leaves the vault's bill within its quota, or no larger than before. -/
 theorem admitted_within (g : Gate) (k : Keeper) (c : Conn) {doc : String} {ps : List Put} {v : String}
     (pv : lookup c.proven doc = some v) {ns : List (Nat × Nat)} (h : (k.step g c (.upload doc ps)).2.2 = .took doc ns) :
-    k.bill v + ((fresh (k.store doc) ps).map (·.2)).sum ≤ g.quota v := by
-  simp only [step, pv] at h
+    (k.step g c (.upload doc ps)).1 = k.taking c doc ps ∧
+      ((k.taking c doc ps).bill v ≤ g.quota v ∨ (k.taking c doc ps).bill v ≤ k.bill v) := by
+  simp only [step, pv] at h ⊢
   split at h
-  · assumption
+  · rename_i ok
+    simp only [ok, ↓reduceIte]
+    refine ⟨rfl, ?_⟩
+    simp only [Bool.or_eq_true, decide_eq_true_eq] at ok
+    exact ok
   · simp at h
+
+/-- **`over_quota_sheds`:** an upload that doesn't grow the vault's bill is taken, so a vault a moved bill pushed past
+its quota can always shed bytes (a covering segment), and never grow past it. -/
+theorem over_quota_sheds (g : Gate) (k : Keeper) (c : Conn) {doc : String} {ps : List Put} {v : String}
+    (pv : lookup c.proven doc = some v) (sheds : (k.taking c doc ps).bill v ≤ k.bill v) :
+    (k.step g c (.upload doc ps)).1 = k.taking c doc ps ∧ ∃ ns, (k.step g c (.upload doc ps)).2.2 = .took doc ns := by
+  simp only [step, pv]
+  split
+  · exact ⟨rfl, _, rfl⟩
+  · rename_i no
+    exact (no (by simp only [Bool.or_eq_true, decide_eq_true_eq]; exact .inr sheds)).elim
 
 /-- **`moved_bill_keeps`:** a bill that moved over a vault's quota only refuses its new uploads. A refused upload
 changes nothing; and no ask drops an item another device uploaded: it stays, with that uploader on it. -/
@@ -284,6 +299,9 @@ def moved : List (String × Ask) :=
   [.proven "d1", .proven "d1", .took "d1" [(12, 1)], .took "d1" [(12, 1)], .took "d1" [(50, 2)],
    .uploadRefused "d1" "quota", .arrived "d1" [(1, 12), (2, 50)] false]
 #guard let k := (Keeper.run gate {} [] moved).1; (k.bill "carol", k.bill "bob") == (900, 300)
+-- Carol sheds it: her segment covering 12 drops 900 bytes for 10, so it is taken, and then 77 fits
+#guard (replies (moved ++ [("carol-peer", .upload "d1" [⟨60, 10, [12]⟩]), ("carol-peer", .upload "d1" [⟨77, 10, []⟩])])).drop 7 ==
+  [.took "d1" [(60, 3)], .took "d1" [(77, 4)]]
 
 end ServeExamples
 

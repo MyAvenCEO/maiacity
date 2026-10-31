@@ -3,10 +3,11 @@
 //! (`Aven.ID.Keep`); the tests drive it by the model's verdicts.
 //!
 //! - `prove`: the Doc is proven on this connection, billed to the vault the gate names, or refused;
-//! - `upload`: from a connection that proved the Doc, its puts land in one write if the vault's bill and their new
-//!   bytes stay within its quota, or refused whole with nothing taken. A bill is the bytes held whose earliest
-//!   remaining uploader acts for the vault: it moves when that uploader covers the item, and is freed when it drops.
-//!   A bill moved past a quota only refuses new uploads (`moved_bill_keeps`);
+//! - `upload`: from a connection that proved the Doc, its puts land in one write if the vault's bill after them is
+//!   within its quota or no larger than before, or refused whole with nothing taken. A bill is the bytes held whose
+//!   earliest remaining uploader acts for the vault: it moves when that uploader covers the item, and is freed when
+//!   the item drops. A bill moved past a quota refuses only uploads that would grow it (`moved_bill_keeps`,
+//!   `over_quota_sheds`);
 //! - `after`: the first page of what came after a number, and whether more follows;
 //! - `fetch`: the fetch gate's answer over what the keeper holds for that Doc.
 //!
@@ -154,25 +155,17 @@ impl<D: Ord + Clone, H: Ord + Clone, G: Gate<D>> Keeper<D, H, G> {
         }
     }
 
-    /// An upload of `puts` to `doc` from `c`, whole: one write of the Doc's arrivals, if the vault's bill and what the
-    /// upload adds stay within its quota (`admitted_within`).
+    /// An upload of `puts` to `doc` from `c`, whole: one write of the Doc's arrivals, taken when the vault's bill after
+    /// it is within its quota or no larger than before (`admitted_within`), so a vault a moved bill pushed past its
+    /// quota can always shed bytes (`over_quota_sheds`); otherwise refused with nothing taken.
     pub fn upload(&mut self, c: &Conn<D, G::Vault>, doc: &D, puts: &[Put<H>]) -> Reply<H> {
         let Some(v) = c.proven.get(doc).cloned() else {
             return Reply::Refused;
         };
-        let empty = Arrivals::default();
-        let held = self.docs.get(doc).unwrap_or(&empty);
-        // the bytes the upload adds: the puts new to the Doc, once each (`fresh`)
-        let mut seen = BTreeSet::new();
-        let adds: u64 = puts
-            .iter()
-            .filter(|p| held.get(&p.hash).is_none() && seen.insert(p.hash.clone()))
-            .map(|p| p.bytes)
-            .sum();
-        if self.bill(&v) + adds > self.gate.quota(&v) {
-            return Reply::UploadRefused(UploadRefused::Quota);
-        }
-        // the items it can touch leave their bills, and come back to whoever pays for them after
+        // the upload taken on a copy, before deciding (`taking`): only the items it names can change
+        let held = self.docs.get(doc).cloned().unwrap_or_default();
+        let mut taken = held.clone();
+        taken.upload(&c.device, puts);
         let touched: BTreeSet<H> = puts
             .iter()
             .flat_map(|p| std::iter::once(p.hash.clone()).chain(p.covers.iter().cloned()))
@@ -181,19 +174,33 @@ impl<D: Ord + Clone, H: Ord + Clone, G: Gate<D>> Keeper<D, H, G> {
             .iter()
             .filter_map(|h| held.get(h).cloned())
             .collect();
+        let after: Vec<Item<H>> = touched
+            .iter()
+            .filter_map(|h| taken.get(h).cloned())
+            .collect();
+        let paid = |items: &[Item<H>]| -> u64 {
+            items
+                .iter()
+                .filter(|i| Self::payer(&self.acts, i).as_ref() == Some(&v))
+                .map(|i| i.bytes)
+                .sum()
+        };
+        let now = self.bill(&v);
+        let then = now - paid(&before) + paid(&after);
+        if then > self.gate.quota(&v) && then > now {
+            return Reply::UploadRefused(UploadRefused::Quota);
+        }
         for i in &before {
             self.charge(i, false);
         }
-        let s = self.docs.entry(doc.clone()).or_default();
-        s.upload(&c.device, puts);
-        let after: Vec<Item<H>> = touched.iter().filter_map(|h| s.get(h).cloned()).collect();
-        let took = puts
-            .iter()
-            .filter_map(|p| s.get(&p.hash).map(|i| (p.hash.clone(), i.n)))
-            .collect();
         for i in &after {
             self.charge(i, true);
         }
+        let took = puts
+            .iter()
+            .filter_map(|p| taken.get(&p.hash).map(|i| (p.hash.clone(), i.n)))
+            .collect();
+        self.docs.insert(doc.clone(), taken);
         Reply::Took(took)
     }
 
