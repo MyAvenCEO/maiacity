@@ -124,11 +124,10 @@ pub fn target(j: &Json) -> aven_core::Target {
     }
 }
 
-/// A bound from its readable form: null for any value, else the values it allows.
+/// A bound from its readable form: the array of the values it allows.
 pub fn bound(j: &Json) -> aven_core::Bound {
     match j {
-        Json::Null => aven_core::Bound::Any,
-        Json::Array(vs) => aven_core::Bound::OneOf(vs.iter().map(value).collect()),
+        Json::Array(vs) => aven_core::Bound(vs.iter().map(value).collect()),
         j => panic!("not a bound: {j}"),
     }
 }

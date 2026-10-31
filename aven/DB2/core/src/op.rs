@@ -4,8 +4,8 @@
 //!
 //! - `core/1`'s ops are read, put, patch, remove, edit, tell, keep and share, each with a fixed id: the name of its
 //!   stored form `{"op": name, "plugin": "core/1"}`. Read, tell, keep and share lower to no step ([`CoreOp::writes`]).
-//! - A [`Bound`] is an enumeration: any value, or one of some values, and for a list each of its elements one of them.
-//!   A narrower bound allows no value a wider one doesn't (`Bound.within_allows`).
+//! - A [`Bound`] is an enumeration: one of some values, and for a list each of its elements one of them; a param that
+//!   may take any value is left out (A200). A narrower bound allows no value a wider one doesn't (`Bound.within_allows`).
 //! - Every Doc has a type (A39): a type Doc's own type is the built-in type of types, which is its own type too.
 
 use alloc::string::String;
@@ -96,48 +96,37 @@ impl CoreOp {
     }
 }
 
-/// A bound on one parameter (Lean's `Option (List Value)`): any value, or one of these values; for a list, each of its
-/// elements one of them.
+/// A bound on one parameter (`Bound`): the values it may take; for a list, each of its elements one of them. A
+/// parameter that may take any value isn't bounded: a cap line leaves it out (A200).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Bound {
-    Any,
-    OneOf(Vec<Value>),
-}
+pub struct Bound(pub Vec<Value>);
 
 impl Bound {
     /// `Bound.allows`.
     pub fn allows(&self, v: &Value) -> bool {
-        match (self, v) {
-            (Bound::Any, _) => true,
-            (Bound::OneOf(vs), Value::Array(xs)) => xs.iter().all(|x| vs.contains(x)),
-            (Bound::OneOf(vs), v) => vs.contains(v),
+        match v {
+            Value::Array(xs) => xs.iter().all(|x| self.0.contains(x)),
+            v => self.0.contains(v),
         }
     }
 
-    /// Read back from [`Bound::value`] (`Bound.ofValue?`): null for any value, an array for the values it allows.
+    /// Read back from [`Bound::value`] (`Bound.ofValue?`): an array of at most [`MAX_BOUND_VALUES`]. A null is no
+    /// bound (A200).
     pub fn of_value(v: Value) -> Option<Bound> {
         match v {
-            Value::Null => Some(Bound::Any),
-            Value::Array(vs) if vs.len() <= MAX_BOUND_VALUES => Some(Bound::OneOf(vs)),
+            Value::Array(vs) if vs.len() <= MAX_BOUND_VALUES => Some(Bound(vs)),
             _ => None,
         }
     }
 
-    /// `Bound.within`: any value it allows, the other allows too.
+    /// `Bound.within`: every value it allows, the other allows too.
     pub fn within(&self, other: &Bound) -> bool {
-        match (self, other) {
-            (_, Bound::Any) => true,
-            (Bound::OneOf(vs), Bound::OneOf(ws)) => vs.iter().all(|v| ws.contains(v)),
-            (Bound::Any, Bound::OneOf(_)) => false,
-        }
+        self.0.iter().all(|v| other.0.contains(v))
     }
 
-    /// Null for any value, else the values it allows.
+    /// The array of the values it allows (`Bound.value`).
     pub fn value(&self) -> Value {
-        match self {
-            Bound::Any => Value::Null,
-            Bound::OneOf(vs) => Value::Array(vs.clone()),
-        }
+        Value::Array(self.0.clone())
     }
 }
 

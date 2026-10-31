@@ -93,9 +93,8 @@ def targetOf (j : Json) : Except String Target := do
     | .error _ => return .vault v below
 
 def boundOf : Json → Except String Bound
-  | .null => pure none
-  | .arr vs => return some (← vs.toList.mapM valueOf)
-  | _ => throw "a bound is null or an array"
+  | .arr vs => vs.toList.mapM valueOf
+  | _ => throw "a bound is an array; a param that may take any value is left out (A200)"
 
 def lineOf (j : Json) : Except String Line := do
   let ps ← members (← j.getObjVal? "params")

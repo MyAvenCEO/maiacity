@@ -13,8 +13,8 @@ the holder do (A32, Samuel, 31 Oct 2026: "caps should be built from their ops").
 - `core/1`'s ops are read, put, patch, remove, edit, tell, keep and share, each with a fixed id: the name of its stored
   form `{"op": name, "plugin": "core/1"}`. Reading is still holding the key (rule 5); free editing is `edit` on a type
   and field. Read, tell, keep and share lower to no step (`CoreOp.writes`). A stored query is an op by its hash.
-- A bound is an enumeration: any value, or one of some values, and for a list each of its elements one of them. Ranges
-  come only when a real op needs them. A narrower bound allows no value a wider one doesn't (`Bound.within_allows`).
+- A bound is an enumeration: one of some values, and for a list each of its elements one of them. A param that may take
+  any value is left out, never null (A200). Ranges come only when a real op needs them. A narrower bound allows no value a wider one doesn't (`Bound.within_allows`).
 - An envelope names the op it ran and its parameters, a `Call`: `{"op": id, "params": {…}}` (`Call.value`), read back
   by `Call.ofValue?` (`Call.ofValue_value`); a bound reads back by `Bound.ofValue?` (`Bound.ofValue_value`). Another
   plugin's built-in ops are named as `core/1`'s are, `{"op": name, "plugin": "tree/1"}` for the tree's.
@@ -65,19 +65,16 @@ def fieldsParam : Bytes := k "fields"
 
 /-! ## Bounds on parameters -/
 
-/-- A bound on one parameter: any value (`none`), or one of these values; for a list, each of its elements one of
-them. -/
-abbrev Bound := Option (List Value)
+/-- A bound on one parameter: the values it may take; for a list, each of its elements one of them. A parameter that
+may take any value isn't bounded: a cap line leaves it out (A200). -/
+abbrev Bound := List Value
 
-def Bound.allows : Bound → Value → Bool
-  | none, _ => true
-  | some vs, .array xs => xs.all (vs.contains ·)
-  | some vs, v => vs.contains v
+def Bound.allows (vs : Bound) : Value → Bool
+  | .array xs => xs.all (vs.contains ·)
+  | v => vs.contains v
 
-/-- A bound as a Value: null for any value, else the values it allows. -/
-def Bound.value : Bound → Value
-  | none => .null
-  | some vs => .array vs
+/-- A bound as a Value: the array of the values it allows. -/
+def Bound.value (vs : Bound) : Value := .array vs
 
 /-- The most values one bound allows (rule 10; the limit follows its primitive's owner, A45): room for every field of
 a schema, every type of a vault or every op of a plugin a cap line names. -/
@@ -86,49 +83,26 @@ def maxBoundValues : Nat := 256
 /-- The most params one call names: `core/1`'s take two, a plugin's op a handful. -/
 def maxParams : Nat := 64
 
-/-- A bound read back from its Value: null for any value, an array of at most `maxBoundValues` for the values it
-allows. -/
+/-- A bound read back from its Value: an array of at most `maxBoundValues`. A null is no bound (A200). -/
 def Bound.ofValue? : Value → Option Bound
-  | .null => some none
-  | .array vs => if vs.length ≤ maxBoundValues then some (some vs) else none
+  | .array vs => if vs.length ≤ maxBoundValues then some vs else none
   | _ => none
 
 /-- A bound within its limit reads back as itself. -/
-theorem Bound.ofValue_value (b : Bound) (h : ∀ vs, b = some vs → vs.length ≤ maxBoundValues) :
-    Bound.ofValue? b.value = some b := by
-  cases b with
-  | none => rfl
-  | some vs => simp [Bound.value, Bound.ofValue?, h vs rfl]
+theorem Bound.ofValue_value (b : Bound) (h : b.length ≤ maxBoundValues) : Bound.ofValue? b.value = some b := by
+  simp [Bound.value, Bound.ofValue?, h]
 
-/-- A bound within another: any value it allows, the other allows too. -/
-def Bound.within : Bound → Bound → Bool
-  | _, none => true
-  | some vs, some ws => vs.all (ws.contains ·)
-  | none, some _ => false
+/-- A bound within another: every value it allows, the other allows too, a subset. -/
+def Bound.within (vs ws : Bound) : Bool := vs.all (ws.contains ·)
 
 theorem Bound.within_allows {a b : Bound} {v : Value} (w : a.within b = true) (h : a.allows v = true) :
     b.allows v = true := by
-  cases b with
-  | none => rfl
-  | some ws =>
-    cases a with
-    | none => simp [Bound.within] at w
-    | some vs =>
-      simp only [Bound.within, List.all_eq_true, List.contains_iff_mem] at w
-      cases v <;> simp_all [Bound.allows, List.all_eq_true]
+  simp only [Bound.within, List.all_eq_true, List.contains_iff_mem] at w
+  cases v <;> simp_all [Bound.allows, List.all_eq_true]
 
 theorem Bound.within_trans {a b c : Bound} (h : a.within b = true) (k : b.within c = true) : a.within c = true := by
-  cases c with
-  | none => rfl
-  | some ws =>
-    cases b with
-    | none => simp [Bound.within] at k
-    | some vs =>
-      cases a with
-      | none => simp [Bound.within] at h
-      | some us =>
-        simp only [Bound.within, List.all_eq_true, List.contains_iff_mem] at h k ⊢
-        exact fun x m => k x (h x m)
+  simp only [Bound.within, List.all_eq_true, List.contains_iff_mem] at h k ⊢
+  exact fun x m => k x (h x m)
 
 /-! ## Calls -/
 

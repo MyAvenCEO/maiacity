@@ -77,12 +77,12 @@ variable (tree chat message : DocId)
 any claim. -/
 def confirmCap (v : String) (approvals : List Sig) : Cap :=
   { id := "confirm-" ++ v, issuer := "maia-city", holder := .vault v,
-    grant := [⟨confirmOp, .doc tree .self, [(claimParam, none)]⟩], approvals }
+    grant := [⟨confirmOp, .doc tree .self, []⟩], approvals }
 
 /-- What `tree/1`'s confirm grants a member's vault: reading the chat and putting its messages, and signing in its own
 devices on the tree Doc. -/
 def memberLines : Grant :=
-  [⟨coreOp .read, .doc chat .self, []⟩, ⟨coreOp .put, .doc chat .self, [(typeParam, some [docValue message])]⟩,
+  [⟨coreOp .read, .doc chat .self, []⟩, ⟨coreOp .put, .doc chat .self, [(typeParam, [docValue message])]⟩,
    ⟨signInOp, .doc tree .self, []⟩]
 
 /-- The member cap (A38): Maia City's grant to member vault `v`. The confirm envelope that names `v`'s claim is its

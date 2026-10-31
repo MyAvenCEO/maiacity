@@ -58,7 +58,7 @@ pub fn confirm_cap(tree: DocId, v: &str, approvals: Vec<Sig>) -> Cap {
                 doc: tree,
                 reach: aven_core::Reach::Itself,
             },
-            params: vec![(CLAIM_PARAM.into(), aven_core::Bound::Any)],
+            params: vec![],
         }],
         role: None,
         share: 0,
@@ -86,7 +86,7 @@ pub fn member_lines(tree: DocId, chat: DocId, message: DocId) -> Vec<Line> {
             doc: doc(chat),
             params: vec![(
                 "type".into(),
-                aven_core::Bound::OneOf(vec![Value::Bytes(message.0.0.to_vec())]),
+                aven_core::Bound(vec![Value::Bytes(message.0.0.to_vec())]),
             )],
         },
         Line {

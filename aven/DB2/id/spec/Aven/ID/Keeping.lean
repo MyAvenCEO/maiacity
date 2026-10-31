@@ -60,7 +60,7 @@ def quotaParam : Bytes := "quota".toUTF8.toList
 
 /-- An offer's line: `keep-offer` on the keeper's vault, its rate and quota each bounded to one value. -/
 def offerLine (keeper : String) (rate quota : Nat) : Line :=
-  ⟨keepOffer, .vault (vaultId keeper) false, [(rateParam, some [.uint rate]), (quotaParam, some [.uint quota])]⟩
+  ⟨keepOffer, .vault (vaultId keeper) false, [(rateParam, [.uint rate]), (quotaParam, [.uint quota])]⟩
 
 /-- The quota an offer gives: the largest its `keep-offer` lines bound. -/
 def Cap.offerQuota (o : Cap) : Nat :=

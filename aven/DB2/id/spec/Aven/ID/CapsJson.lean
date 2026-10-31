@@ -40,9 +40,7 @@ def targetJson : Core.Target → Json
   | .vault v b => Json.mkObj [("vault", v.text), ("below", toJson b)]
   | .vaultType v t b => Json.mkObj [("vault", v.text), ("type", t.text), ("below", toJson b)]
 
-def boundJson : Core.Bound → Json
-  | none => Json.null
-  | some vs => Json.arr (vs.map Core.Value.json).toArray
+def boundJson (vs : Core.Bound) : Json := Json.arr (vs.map Core.Value.json).toArray
 
 def Line.json (l : Line) : Json :=
   Json.mkObj [("op", l.op.text), ("doc", targetJson l.doc),

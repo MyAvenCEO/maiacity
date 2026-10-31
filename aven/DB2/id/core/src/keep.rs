@@ -221,12 +221,9 @@ pub fn offer_quota(o: &Cap) -> u64 {
     o.grant
         .iter()
         .filter(|l| l.op == op)
-        .filter_map(|l: &Line| match l.bound("quota") {
-            aven_core::Bound::OneOf(vs) => match vs.as_slice() {
-                [aven_core::Value::Uint(q)] => Some(*q),
-                _ => None,
-            },
-            aven_core::Bound::Any => None,
+        .filter_map(|l: &Line| match l.bound("quota").map(|b| b.0.as_slice()) {
+            Some([aven_core::Value::Uint(q)]) => Some(*q),
+            _ => None,
         })
         .max()
         .unwrap_or(0)

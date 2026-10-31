@@ -56,16 +56,18 @@ structure Line where
 
 abbrev Grant := List Line
 
-/-- The bound a line puts on parameter `p`: the first it names for it, else any value. -/
-def Line.bound (l : Line) (p : Core.Bytes) : Core.Bound :=
-  match l.params.find? (·.1 == p) with
-  | some (_, b) => b
-  | none => none
+/-- The bound a line puts on parameter `p`: the first it names for it; none for a param it leaves out, which is free
+(A200: any value is a param left out). -/
+def Line.bound (l : Line) (p : Core.Bytes) : Option Core.Bound :=
+  (l.params.find? (·.1 == p)).map (·.2)
 
 /-- A line within another: the same op, a narrower target, and each parameter the other bounds bounded at least as
-tightly. -/
+tightly. A param the wider line bounds and the narrower one leaves out, free, is not within. -/
 def Line.within (l m : Line) : Bool :=
-  l.op == m.op && l.doc.le m.doc && m.params.all fun (p, b) => (l.bound p).within b
+  l.op == m.op && l.doc.le m.doc && m.params.all fun (p, b) =>
+    match l.bound p with
+    | some a => a.within b
+    | none => false
 
 /-- A line's bounds hold for a call's parameters. -/
 def Line.admits (l : Line) (c : Core.Call) : Bool := l.params.all fun (p, b) => b.allows (c.param p)
@@ -111,14 +113,13 @@ theorem Line.within_admits {l m : Line} {c : Core.Call} (w : l.within m = true) 
   have wb := w.2 (p, b) mb
   simp only [Line.bound] at wb
   split at wb
-  · rename_i q b' e
-    have hq : (q == p) = true := by simpa using List.find?_some e
-    have mq := a (q, b') (List.mem_of_find?_eq_some e)
+  · rename_i b' e
+    obtain ⟨⟨q, b''⟩, e', rfl⟩ := Option.map_eq_some_iff.mp e
+    have hq : (q == p) = true := by simpa using List.find?_some e'
+    have mq := a (q, b'') (List.mem_of_find?_eq_some e')
     rw [beq_iff_eq.mp hq] at mq
     exact Core.Bound.within_allows wb mq
-  · cases b with
-    | none => rfl
-    | some _ => simp [Core.Bound.within] at wb
+  · cases wb
 
 theorem Grant.within_reaches {gov : Core.Hash → Core.Hash → Prop} {spawned lists : Core.DocId → Core.DocId → Prop}
     {g h : Grant} {f : Core.Facts} {o : Core.OpId} (w : g.within h = true) (r : g.reaches gov spawned lists f o) :

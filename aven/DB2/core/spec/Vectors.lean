@@ -472,9 +472,7 @@ def targets : List Json :=
 def Aven.Core.Step.json (s : Step) : Json :=
   Json.mkObj [("type", s.type.text), ("verb", s.verb.name), ("fields", toJson (s.fields.map utf8Text))]
 
-def Aven.Core.Bound.json : Bound → Json
-  | none => Json.null
-  | some vs => Json.arr (vs.map Value.json).toArray
+def Aven.Core.Bound.json (vs : Bound) : Json := Json.arr (vs.map Value.json).toArray
 
 /-- `core/1`'s ops: each one's stored form and its id. -/
 def coreOps : List Json :=
@@ -487,17 +485,16 @@ def total : Value := .text (k "total")
 
 /-- Bounds on a parameter: whether each allows a value, and whether one is within another. -/
 def boundAllows : List (String × Bound × Value × Bool) := [
-  ("any value", none, total, true),
-  ("one of these", some [status], status, true),
-  ("not one of these", some [status], total, false),
-  ("a list, each element one of these", some [status, total], .array [status, total], true),
-  ("a list with one element outside", some [status], .array [status, total], false)]
+  ("one of these", [status], status, true),
+  ("not one of these", [status], total, false),
+  ("a list, each element one of these", [status, total], .array [status, total], true),
+  ("a list with one element outside", [status], .array [status, total], false)]
 
 def boundWithin : List (String × Bound × Bound × Bool) := [
-  ("fewer values, within more", some [status], some [status, total], true),
-  ("more values, within fewer", some [status, total], some [status], false),
-  ("any value, within one of these", none, some [status], false),
-  ("one of these, within any", some [status], none, true)]
+  ("fewer values, within more", [status], [status, total], true),
+  ("more values, within fewer", [status, total], [status], false),
+  ("none at all, within one of these", [], [status], true),
+  ("one of these, within none at all", [status], [], false)]
 
 #guard boundAllows.all fun (_, b, v, a) => b.allows v == a
 #guard boundWithin.all fun (_, a, b, w) => a.within b == w
@@ -538,15 +535,15 @@ def calls : List Json :=
 sides: `maxBoundValues` values read back, one more is refused. -/
 def boundBytes : List Json :=
   ([maxBoundValues, maxBoundValues + 1].map fun n =>
-    let b : Bound := some ((List.range n).map Value.uint)
+    let b : Bound := (List.range n).map Value.uint
     vector s!"a bound of {n} values" (hex (encode (Bound.value b)))
       (toJson (Bound.ofValue? (Bound.value b)).isSome)) ++
-  ([("any value", (none : Bound)), ("one of these", some [status, total]), ("none at all", some [])].map
+  ([("one of these", [status, total]), ("none at all", ([] : Bound))].map
     fun (name, b) => vector s!"a bound: {name}" (hex (encode (Bound.value b))) (Bound.json b)) ++
-  ([("text", status), ("a map", .map [(k "a", status)])].map fun (name, v) =>
-    vector s!"no bound: {name}" (hex (encode v)) Json.null)
+  ([("null: any value is a param left out (A200)", Value.null), ("text", status), ("a map", .map [(k "a", status)])].map
+    fun (name, v) => vector s!"no bound: {name}" (hex (encode v)) Json.null)
 
-#guard [status, .map [(k "a", status)]].all fun v => (Bound.ofValue? v).isNone
+#guard [.null, status, .map [(k "a", status)]].all fun v => (Bound.ofValue? v).isNone
 
 def ops : List Json :=
   coreOps ++ calls ++

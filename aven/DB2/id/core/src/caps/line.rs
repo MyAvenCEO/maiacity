@@ -30,24 +30,21 @@ impl World<'_> {
     }
 }
 
-/// Free: any value.
-const FREE: Bound = Bound::Any;
-
 impl Line {
-    /// The bound a line puts on parameter `p`: the first it names for it, else any value (`Line.bound`).
-    pub fn bound(&self, p: &str) -> &Bound {
-        self.params
-            .iter()
-            .find(|(q, _)| q == p)
-            .map_or(&FREE, |(_, b)| b)
+    /// The bound a line puts on parameter `p`: the first it names for it; none for a param it leaves out, which is
+    /// free (`Line.bound`, A200: any value is a param left out).
+    pub fn bound(&self, p: &str) -> Option<&Bound> {
+        self.params.iter().find(|(q, _)| q == p).map(|(_, b)| b)
     }
 
     /// Within another: the same op, a narrower target, and each parameter the other bounds bounded at least as
-    /// tightly (`Line.within`).
+    /// tightly; one it leaves out, free, is not within (`Line.within`).
     pub fn within(&self, m: &Line) -> bool {
         self.op == m.op
             && self.doc.le(&m.doc)
-            && m.params.iter().all(|(p, b)| self.bound(p).within(b))
+            && m.params
+                .iter()
+                .all(|(p, b)| self.bound(p).is_some_and(|a| a.within(b)))
     }
 
     /// Its bounds hold for a call's parameters (`Line.admits`).

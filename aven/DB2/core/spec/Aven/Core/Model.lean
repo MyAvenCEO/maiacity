@@ -118,10 +118,9 @@ def Coverage.answer (c : Coverage) : Json :=
     ("covers", toJson (c.targets.map fun t => c.facts.map (t.coversB gov spawned lists))),
     ("le", toJson (c.targets.map fun a => c.targets.map fun b => a.le b))]
 
-/-- A bound from its Value (`Bound.value`): null for any value, else an array of the values it allows. -/
+/-- A bound from its Value (`Bound.value`): the array of the values it allows. -/
 def boundOf? : Value → Option Bound
-  | .null => some none
-  | .array vs => some (some vs)
+  | .array vs => some vs
   | _ => none
 
 def valueOf (h : String) : Except String Value :=

@@ -38,7 +38,7 @@ def readOn (d : Core.DocId) : Line := ⟨coreOp .read, .doc d .self, []⟩
 /-- A `core/1` write on a Doc, of one type, and of some fields or any. -/
 def writeOn (o : Core.CoreOp) (d t : Core.DocId) (fields : Option (List String) := none) : Line :=
   ⟨coreOp o, .doc d .self,
-    (Core.typeParam, some [docValue t]) :: (fields.map fun fs => (Core.fieldsParam, some (fs.map fieldValue))).toList⟩
+    (Core.typeParam, [docValue t]) :: (fields.map fun fs => (Core.fieldsParam, fs.map fieldValue)).toList⟩
 
 /-- Writing tasks into a Doc: new ones, and patches to any field. -/
 def tasksOn (d : Core.DocId) : Grant := [writeOn .put d tasks, writeOn .patch d tasks]
@@ -457,10 +457,8 @@ def valueText (name : Core.DocId → String) : Core.Value → String
 def Line.text (name : Core.DocId → String) (vault : Core.Hash → String) (l : Line) : String :=
   s!"{opText l.op} {targetText name vault l.doc}" ++
     if l.params.isEmpty then "" else
-      " (" ++ ", ".intercalate (l.params.map fun (p, b) => s!"{Core.utf8Text p} " ++
-        match b with
-        | none => "any"
-        | some vs => " or ".intercalate (vs.map (valueText name))) ++ ")"
+      " (" ++ ", ".intercalate (l.params.map fun (p, vs) => s!"{Core.utf8Text p} " ++
+        " or ".intercalate (vs.map (valueText name))) ++ ")"
 
 def Cap.text (c : Cap) (roles : List Role) : String :=
   (match c.form with

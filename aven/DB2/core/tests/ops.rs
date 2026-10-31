@@ -154,7 +154,7 @@ fn ops() {
         }
     }
     assert_eq!((core, calls, types, bounds, limits), (8, 3, 5, 5, 4));
-    assert!(allows >= 5 && within >= 4);
+    assert!(allows >= 4 && within >= 4);
 }
 
 #[test]

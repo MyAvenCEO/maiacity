@@ -291,10 +291,7 @@ fn any_param() -> impl Strategy<Value = Value> {
 }
 
 fn any_bound() -> impl Strategy<Value = Bound> {
-    prop_oneof![
-        1 => Just(Bound::Any),
-        4 => proptest::collection::vec(any_param(), 0..4).prop_map(Bound::OneOf),
-    ]
+    proptest::collection::vec(any_param(), 0..4).prop_map(Bound)
 }
 
 fn any_bytes_case() -> impl Strategy<Value = Vec<u8>> {

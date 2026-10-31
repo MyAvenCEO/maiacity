@@ -16,19 +16,18 @@
 {"expected":{"fields":"fields","type":"type"},"input":null,"name":"core/1's write params"}
 {"expected":"d:5ee79c756d45c6c7b573ff7a88b4e5fd67b664fb89b8a9bde2d099e3cc718430","input":{"name":"type of types","namespace":"avenDB"},"name":"a built-in type: avenDB type of types"}
 {"expected":"d:acde56d9a200ac0faf87b38b3491d4f56d20b03aa951a0c590847b43a931c7c2","input":{"name":"cap","namespace":"avenID"},"name":"a built-in type: avenID cap"}
-{"expected":true,"input":{"bound":null,"value":"total"},"name":"does it allow? any value"}
 {"expected":true,"input":{"bound":["status"],"value":"status"},"name":"does it allow? one of these"}
 {"expected":false,"input":{"bound":["status"],"value":"total"},"name":"does it allow? not one of these"}
 {"expected":true,"input":{"bound":["status","total"],"value":["status","total"]},"name":"does it allow? a list, each element one of these"}
 {"expected":false,"input":{"bound":["status"],"value":["status","total"]},"name":"does it allow? a list with one element outside"}
 {"expected":true,"input":[["status"],["status","total"]],"name":"is it within? fewer values, within more"}
 {"expected":false,"input":[["status","total"],["status"]],"name":"is it within? more values, within fewer"}
-{"expected":false,"input":[null,["status"]],"name":"is it within? any value, within one of these"}
-{"expected":true,"input":[["status"],null],"name":"is it within? one of these, within any"}
+{"expected":true,"input":[[],["status"]],"name":"is it within? none at all, within one of these"}
+{"expected":false,"input":[["status"],[]],"name":"is it within? one of these, within none at all"}
 {"expected":true,"input":"990100000102030405060708090a0b0c0d0e0f101112131415161718181819181a181b181c181d181e181f1820182118221823182418251826182718281829182a182b182c182d182e182f1830183118321833183418351836183718381839183a183b183c183d183e183f1840184118421843184418451846184718481849184a184b184c184d184e184f1850185118521853185418551856185718581859185a185b185c185d185e185f1860186118621863186418651866186718681869186a186b186c186d186e186f1870187118721873187418751876187718781879187a187b187c187d187e187f1880188118821883188418851886188718881889188a188b188c188d188e188f1890189118921893189418951896189718981899189a189b189c189d189e189f18a018a118a218a318a418a518a618a718a818a918aa18ab18ac18ad18ae18af18b018b118b218b318b418b518b618b718b818b918ba18bb18bc18bd18be18bf18c018c118c218c318c418c518c618c718c818c918ca18cb18cc18cd18ce18cf18d018d118d218d318d418d518d618d718d818d918da18db18dc18dd18de18df18e018e118e218e318e418e518e618e718e818e918ea18eb18ec18ed18ee18ef18f018f118f218f318f418f518f618f718f818f918fa18fb18fc18fd18fe18ff","name":"a bound of 256 values"}
 {"expected":false,"input":"990101000102030405060708090a0b0c0d0e0f101112131415161718181819181a181b181c181d181e181f1820182118221823182418251826182718281829182a182b182c182d182e182f1830183118321833183418351836183718381839183a183b183c183d183e183f1840184118421843184418451846184718481849184a184b184c184d184e184f1850185118521853185418551856185718581859185a185b185c185d185e185f1860186118621863186418651866186718681869186a186b186c186d186e186f1870187118721873187418751876187718781879187a187b187c187d187e187f1880188118821883188418851886188718881889188a188b188c188d188e188f1890189118921893189418951896189718981899189a189b189c189d189e189f18a018a118a218a318a418a518a618a718a818a918aa18ab18ac18ad18ae18af18b018b118b218b318b418b518b618b718b818b918ba18bb18bc18bd18be18bf18c018c118c218c318c418c518c618c718c818c918ca18cb18cc18cd18ce18cf18d018d118d218d318d418d518d618d718d818d918da18db18dc18dd18de18df18e018e118e218e318e418e518e618e718e818e918ea18eb18ec18ed18ee18ef18f018f118f218f318f418f518f618f718f818f918fa18fb18fc18fd18fe18ff190100","name":"a bound of 257 values"}
-{"expected":null,"input":"f6","name":"a bound: any value"}
 {"expected":["status","total"],"input":"826673746174757365746f74616c","name":"a bound: one of these"}
 {"expected":[],"input":"80","name":"a bound: none at all"}
+{"expected":null,"input":"f6","name":"no bound: null: any value is a param left out (A200)"}
 {"expected":null,"input":"66737461747573","name":"no bound: text"}
 {"expected":null,"input":"a1616166737461747573","name":"no bound: a map"}

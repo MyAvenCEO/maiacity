@@ -4,7 +4,7 @@
 //! ```text
 //! {"form", "role", "grant": [line…], "share", "holder", "issuer", "parent", "conditions": {"own", "uses", "approve",
 //!  "expires", "history", "branches", "notBefore"}}
-//! line:   {"op": op id, "doc": target, "params": {param: [value…] or null, …}}
+//! line:   {"op": op id, "doc": target, "params": {param: [value…], …}}, a free param left out (A200)
 //! holder: {"vault": v}   {"group": Doc}   "public"
 //! ```
 //!

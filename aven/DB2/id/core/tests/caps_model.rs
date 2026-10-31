@@ -6,7 +6,7 @@ mod common;
 
 use std::cell::RefCell;
 
-use aven_core::{Bound, DocId, Envelope, Hash, Value as V, blake3};
+use aven_core::{DocId, Envelope, Hash, Value as V, blake3};
 use aven_id::caps::{Branches, Cap, Doc, Form, Holder, Reads, Revocation, Sig, Verdict};
 use common::caps::{Context, Names};
 use common::model::Model;
@@ -125,9 +125,8 @@ fn apply(chain: &mut Vec<Cap>, garden: DocId, c: &Change) {
             let g = &mut chain[i % n].grant;
             let at = l % g.len().max(1);
             if let Some(line) = g.get_mut(at) {
-                for (_, b) in &mut line.params {
-                    *b = Bound::Any;
-                }
+                // every param free: left out (A200)
+                line.params.clear();
             }
         }
         Change::Expires(i, e) => chain[i % n].conditions.expires = e,

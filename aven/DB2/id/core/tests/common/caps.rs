@@ -85,8 +85,7 @@ impl Names {
                 .iter()
                 .map(|(p, b)| {
                     let b = match b {
-                        Value::Null => Bound::Any,
-                        Value::Array(vs) => Bound::OneOf(vs.iter().map(core_value).collect()),
+                        Value::Array(vs) => Bound(vs.iter().map(core_value).collect()),
                         _ => panic!("not a bound: {b}"),
                     };
                     (p.clone(), b)
@@ -100,10 +99,7 @@ impl Names {
             .params
             .iter()
             .map(|(p, b)| {
-                let b = match b {
-                    Bound::Any => Value::Null,
-                    Bound::OneOf(vs) => Value::Array(vs.iter().map(value_json).collect()),
-                };
+                let b = Value::Array(b.0.iter().map(value_json).collect());
                 (p.clone(), b)
             })
             .collect();
