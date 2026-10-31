@@ -128,7 +128,7 @@
     "needs": "read",
     "runs": "local"
    },
-   "deep": "A plugin declares its name, JSON input schema, required rule operation and where it runs. Unknown operations are rejected."
+   "deep": "One plugin registry for operations (find, walk, near, act …) and for rule conditions (threshold, weights, time lock, at, where, limit …). Each plugin is named by the hash of its specification, declares its JSON shape, what a rule must allow, and, for conditions, whether it applies to identities or to data. Unknown plugins fail closed."
   },
   {
    "title": "Rules name the operations.",

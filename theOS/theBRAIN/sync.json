@@ -39,7 +39,7 @@
     "inside_one": "fingerprints of its layers",
     "across_many": "summaries that peel apart"
    },
-   "deep": "Two levels (D34, proposed): fingerprints within one piece of data, RIBLT set reconciliation across many. Both cost roughly in proportion to the difference."
+   "deep": "Two levels (D34): fingerprints within one piece of data, RIBLT set reconciliation across many. Both cost roughly in proportion to the difference."
   },
   {
    "title": "Fingerprints, step by step.",

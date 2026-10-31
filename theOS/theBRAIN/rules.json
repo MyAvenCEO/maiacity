@@ -42,7 +42,7 @@
     "signed_by": "you (owner)",
     "proof": "…back to the seal"
    },
-   "deep": "A rule is a signed certificate: role, data, operations (each optionally narrowed by at, where or a limit), expiry, and a proof chain back to the seal. People see “rule”; underneath it is a capability."
+   "deep": "A rule is a signed certificate with one shape everywhere: who (a role), on what (this data), operations (each optionally narrowed by at, where or a limit), expiry, and a proof chain back to the seal. An identity's signing rules use the same shape (Identity chapter). People see “rule”; underneath it is a capability."
   },
   {
    "title": "What a rule can allow.",

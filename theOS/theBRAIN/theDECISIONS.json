@@ -38,7 +38,7 @@
    "id": "D3",
    "title": "Two kinds of identity: human and coop",
    "status": "decided",
-   "decision": "A human identity is controlled by signers only. A coop identity is controlled by one or more identities (human or coop), never by signers directly. Cycles are not allowed. Each identity has its own signing rules, like a Gnosis Safe: which members must sign, how many, for what. Coops may contain coops, never in a circle.",
+   "decision": "Identity types: device, human, coop. Only identities are members. A device is a member of exactly one identity (a human, or a coop for a shared server). A human's members are devices. A coop's members are humans, coops or devices; coops may contain coops, never in a circle. Signers are keys, never members. Each identity has its own signing rules.",
    "why": "Families, teams and organisations are identities of identities; one model covers all of them.",
    "sources": [
     {
@@ -54,7 +54,8 @@
     "identity-2",
     "identity-3",
     "identity-4",
-    "identity-5"
+    "identity-5",
+    "identity-6"
    ],
    "date": "2026-10-31"
   },
@@ -389,7 +390,7 @@
   {
    "id": "D19",
    "title": "Envelopes only for published, signed locks",
-   "status": "proposed",
+   "status": "decided",
    "decision": "Each device publishes its own lock (encryption key) in its identity's history, signed by its signer. Envelopes are made only for locks found there, and only by someone a rule allows.",
    "why": "Stops an attacker from slipping in a lock of their own. Closes the gap Keyhive lists as G2.",
    "sources": [
@@ -414,7 +415,7 @@
   {
    "id": "D20",
    "title": "BeeKEM inside large roles, later",
-   "status": "proposed",
+   "status": "decided",
    "decision": "Small roles use one envelope per member. Roles of several dozen members and up manage their role key with BeeKEM. Not per piece of data.",
    "why": "BeeKEM per document (Keyhive) costs one update per document a removed reader could read; per role it costs one. Every Keyhive crate is pre-alpha and unaudited: pin and audit before use.",
    "sources": [
@@ -431,7 +432,9 @@
      "url": "https://eprint.iacr.org/2026/1434.pdf"
     }
    ],
-   "slides": [],
+   "slides": [
+    "keys-10"
+   ],
    "date": "2026-10-31"
   },
   {
@@ -516,7 +519,7 @@
   {
    "id": "D25",
    "title": "Rules are their own signed set, not a Loro doc",
-   "status": "proposed",
+   "status": "decided",
    "decision": "Rules, role memberships and endings are a grow-only set of signed certificates, merged by union and evaluated by our own logic.",
    "why": "Rule conflicts need \"less authority wins\"; Loro's last-writer-wins would resolve them wrongly. Keyhive does the same.",
    "sources": [
@@ -534,7 +537,7 @@
   {
    "id": "D26",
    "title": "Sealed in chunks, linked by hashes",
-   "status": "proposed",
+   "status": "decided",
    "decision": "Devices seal ranges of changes (Loro update bytes, compressed, then encrypted). Boundaries come from change hashes so every device cuts the same way; small chunks merge into bigger ones over time. Each chunk is hashed and lists the chunks before it; its signed header binds Loro's peer ID to the signer.",
    "why": "Sealing op by op makes data huge and uncompressible. Same lesson as Keyhive's sedimentree.",
    "sources": [
@@ -560,7 +563,7 @@
   {
    "id": "D27",
    "title": "Carriers see sealed chunks and proofs, never rules",
-   "status": "proposed",
+   "status": "decided",
    "decision": "Rules are sealed for readers. A carrier checks only proofs: the asker's want proof, and each change author's proof. IDs in proofs are pseudonymous.",
    "why": "Keyhive syncs its membership graph to servers in plain text; we keep that private too.",
    "sources": [
@@ -607,7 +610,7 @@
   {
    "id": "D29",
    "title": "Evaluate Subduction for sync",
-   "status": "proposed",
+   "status": "decided",
    "decision": "Test Ink & Switch's Subduction (iroh transport, sedimentree, fingerprint sync) before building our own sync.",
    "why": "It already syncs encrypted history between peers that cannot read it. Note: current Subduction compares 8-byte fingerprints; RIBLT was in its predecessor Beelay.",
    "sources": [
@@ -645,7 +648,7 @@
    ],
    "slides": [
     "rules-1",
-    "identity-5",
+    "identity-6",
     "rules-5",
     "rules-8",
     "time-4"
@@ -656,7 +659,7 @@
    "id": "D31",
    "title": "A signer is a key; devices are identities",
    "status": "decided",
-   "decision": "Identity types: device, human, coop. A signer is only a key, never an identity; it is held by a device identity and registered in that device's history. How the key is kept is up to the device: derived from the passkey's PRF plus a per-device salt on phones, the keychain on laptops, an environment variable, secret manager or HSM on servers. The device identity's ID is the hash of its birth record, so it survives key changes. Loro's peer ID stays a number, bound to the signer in each chunk's signed header.",
+   "decision": "Identity types: device, human, coop. A signer is only a key, never an identity; it is the current key of exactly one device identity, registered in that device's own history, and never a member of anything. How the key is kept is up to the device: derived from the passkey's PRF plus a per-device salt on phones, the keychain on laptops, an environment variable, secret manager or HSM on servers. The device identity's ID is the hash of its birth record, so it survives key changes. Loro's peer ID stays a number, bound to the signer in each chunk's signed header.",
    "why": "Separates who acts (identities) from what signs (keys). Not derived from the passkey alone: synced passkeys give several devices the same secret, and Apple's Secure Enclave holds only P-256 keys.",
    "supersedes": "the separate iroh key in D28",
    "sources": [
@@ -715,7 +718,7 @@
   {
    "id": "D34",
    "title": "Fingerprints inside data, RIBLT across data",
-   "status": "proposed",
+   "status": "decided",
    "decision": "Inside one piece of data, peers compare 8-byte keyed fingerprints of its layers and swap the missing sealed chunks in 1.5 round trips. Across many pieces of data, peers use RIBLT set reconciliation to find which ones differ.",
    "why": "Sedimentree keeps the count inside one piece small, so fingerprints are cheap there; across thousands, RIBLT costs about 1.5 summaries per difference, whatever the total.",
    "sources": [
@@ -807,7 +810,7 @@
   {
    "id": "D38",
    "title": "Signing rules are pluggable policies",
-   "status": "proposed",
+   "status": "superseded",
    "decision": "Each identity's signing rules are a policy per action, built from kinds: threshold (k of n), weights, all-of / any-of, time lock with objection window. A policy kind is identified by the hash of its specification and is declarative data, not code. A device that does not know a kind treats the policy as not satisfied. Changing the signing rules needs the policy for that action.",
    "why": "New kinds of signing rules can be added over time without old devices ever wrongly accepting something.",
    "sources": [
@@ -817,9 +820,10 @@
     }
    ],
    "slides": [
-    "identity-5"
+    "identity-6"
    ],
-   "date": "2026-10-31"
+   "date": "2026-10-31",
+   "superseded_by": "D48"
   },
   {
    "id": "D39",
@@ -921,7 +925,7 @@
    "why": "Agency and access are different questions; mixing them made the coop example ambiguous.",
    "sources": [],
    "slides": [
-    "identity-5",
+    "identity-6",
     "check-2"
    ],
    "date": "2026-10-31"
@@ -949,21 +953,21 @@
   },
   {
    "id": "D46",
-   "title": "A device identity has one owner, human or coop",
+   "title": "One link: “is a member of”, pointing up",
    "status": "decided",
-   "decision": "Every device identity is owned by exactly one identity: a human for personal devices, or a coop for shared machines such as a company server.",
-   "why": "Servers and shared machines belong to organisations, not to one person. A coop still never contains a signer, because a device is an identity.",
+   "decision": "There is one kind of link between identities: “is a member of”, always pointing up (device → human → coop). A device is a member of exactly one identity. The first device is born on its own; the human's birth is signed by it; every later membership needs both signatures, the member's and the identity's under its own rules. We no longer say an identity owns a device; owning is only for data.",
+   "why": "“Owned by” and “member of” described the same link twice, which looked like a loop. Birth order removes the chicken-and-egg problem.",
    "sources": [],
    "slides": [
     "identity-2",
-    "net-5"
+    "identity-3"
    ],
    "date": "2026-10-31"
   },
   {
    "id": "D47",
    "title": "Rule-writing is delegated through share, narrowing only",
-   "status": "proposed",
+   "status": "decided",
    "date": "2026-10-31",
    "decision": "A role holding share may write rules for other roles, but only within its own operations, conditions and expiry; it may end only rules it issued itself; when its own rule ends, every rule issued under it ends too (cascade); writes by a removed delegate that never saw the ending are dropped. The owner's rules are the root and never fall this way.",
    "why": "Gives teams day-to-day delegation without the problems of admin roles: no granting more than you hold, no rule wars between delegates, no backdated revokes.",
@@ -985,15 +989,16 @@
   {
    "id": "D48",
    "title": "One rule shape, one plugin system",
-   "status": "proposed",
+   "status": "decided",
    "date": "2026-10-31",
    "decision": "Every rule has one shape: who, on what, operations, conditions, expiry. An identity's rules have its members as who and the identity itself as target, with operations act, own and govern. A piece of data's rules have a role as who and the data as target. Operations and conditions (threshold, weights, time lock, at, where, limit …) are plugins in one registry, each named by the hash of its specification, declarative, failing closed when unknown. Each condition plugin declares which target it may be used on, so thresholds stay on identities (D44).",
    "why": "One language and one engine for all rules, with the separation between agency and access kept by the target.",
    "supersedes": "D38",
    "sources": [],
    "slides": [
-    "identity-5",
-    "rules-4"
+    "identity-6",
+    "rules-4",
+    "ops-8"
    ]
   }
  ]

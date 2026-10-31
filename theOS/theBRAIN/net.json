@@ -45,14 +45,14 @@
   },
   {
    "title": "Both sides know who they talk to.",
-   "text": "Every connection is encrypted with the two devices' keys. Then the device shows that its key is registered in its own history, and who owns it. The other side knows: this is Alice's phone, acting for Alice.",
+   "text": "Every connection is encrypted with the two devices' keys. Then the device shows that its key is registered in its own history, and whose member it is. The other side knows: this is Alice's phone, acting for Alice.",
    "code": {
     "connected": "ed25519:k51q…",
     "device": "alice-phone",
-    "owned_by": "alice",
+    "member_of": "alice",
     "proof": "registered in alice-phone's history"
    },
-   "deep": "The QUIC handshake proves the key. The device identity's history proves the key is its current signer, and its owner's history proves the device belongs to it."
+   "deep": "The QUIC handshake proves the key. The device identity's history proves the key is its current signer, and the identity it is a member of lists it in its own history."
   },
   {
    "title": "One line, three languages.",

@@ -173,7 +173,7 @@
      ]
     ]
    },
-   "deep": "Only read touches keys. Concurrent rotations of the same key are both kept until the next rotation, BeeKEM's approach to concurrent updates. Large roles may manage their role key with BeeKEM later (D20, proposed)."
+   "deep": "Only read touches keys. Concurrent rotations of the same key are both kept until the next rotation, BeeKEM's approach to concurrent updates. Large roles may manage their role key with BeeKEM later (D20)."
   },
   {
    "title": "The whole machine.",
