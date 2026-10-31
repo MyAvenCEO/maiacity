@@ -740,7 +740,10 @@ the spec that owns it.
   - the admin's keeper list says who offers to keep;
   - a vault's keep caps say which keeper holds which of its Docs and Values; their targets may be queries (A8);
   - by default, a new vault issues a keep cap for everything to Maia City's keeper, the Aven Peer acting for Aven, and
-    each vault can change it.
+    each vault can change it;
+  - **the vault's owner always decides where its data is shared to** (Samuel, 31 Oct 2026). The default keep cap is the
+    owner's own, approved as part of what the owner signs to join (D14), and it names its keeper. No one else can extend
+    it: not Maia City adding servers, not a keeper passing data on. A new keeper needs a new keep cap from the owner.
 
   Keepers stay blind (rule 9). A file is no special case: its chunks and chunk list are Values that a file Record in a
   Doc names, kept and read as that Doc is.
