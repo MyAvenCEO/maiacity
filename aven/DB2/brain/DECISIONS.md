@@ -2490,7 +2490,7 @@ changed. A refinement names what it refines; a change of mind names what it supe
 - **Lean or code then:** caps' Keep PR, stacked on #1722.
 
 ### A174 · Bytes in JSON are `{"bytes": hex}`, as built
-- **Decided by:** the architect, from avenCORE's Lean and vectors (12:16)
+- **Decided by:** the architect, from avenCORE's Lean and vectors (12:11)
 - **Decision:** JSON, the readable form, writes a byte string as `{"bytes": "<hex>"}`, lowercase, as `Aven.Core.Json`
   and every vector file already do. A hash is such a byte string of 32 bytes.
 - **Why:** A2's `b3:` or base64url text was never built, and the vectors are the contract every implementation is held
@@ -2499,7 +2499,7 @@ changed. A refinement names what it refines; a change of mind names what it supe
 - **Lean or code then:** `Aven.Core.Json`, done.
 
 ### A175 · Versions are avenCORE's
-- **Decided by:** the architect, for the avenCORE page (12:16)
+- **Decided by:** the architect, for the avenCORE page (12:11)
 - **Decision:** a version, a set of envelopes with everything they build on, named by its tips, is avenCORE's primitive
   beside logs and the past: `Version` and `Version.holds` in `Aven.Core`. avenDOCS uses it as a Doc's version. Snapshots
   and checkpoints stay avenDOCS'.
@@ -2508,7 +2508,7 @@ changed. A refinement names what it refines; a change of mind names what it supe
 - **Lean or code then:** `Aven.Core` `Version`, done.
 
 ### A176 · One padding for every sealed byte
-- **Decided by:** the architect, holding caps D18 (Samuel, 30 Oct 2026: everything is padded) (12:17)
+- **Decided by:** the architect, holding caps D18 (Samuel, 30 Oct 2026: everything is padded) (12:12)
 - **Decision:** one function pads every sealed thing a device sends, before sealing: up to 4 KiB, the next of 256 B, 1
   KiB and 4 KiB; above that, Padmé. The seal pads with it, so a live message, which carries a sealed envelope, needs no
   padding of its own. avenID defines it once, beside `Aven.ID.Padme`, and every user imports it.
@@ -2518,7 +2518,7 @@ changed. A refinement names what it refines; a change of mind names what it supe
 - **Lean or code then:** to come: avenID's `pad`, the seal's Rust and `seals.json`. Free while nothing stored is sealed.
 
 ### A177 · The seal names what it seals, and a checkpoint is a checkpoint
-- **Decided by:** the architect, for the avenID page (12:17)
+- **Decided by:** the architect, for the avenID page (12:12)
 - **Decision:** the seal's field `kind` is renamed `seals`, with the values `envelope`, `segment` and `checkpoint`. The
   AAD is `encode({doc, seals, epoch})`, and the keys are `derive_key("avenDB <seals> 1")` and
   `derive_key("avenDB <seals> commit 1")`, so a checkpoint's labels are `avenDB checkpoint 1` and
@@ -2529,7 +2529,7 @@ changed. A refinement names what it refines; a change of mind names what it supe
 - **Lean or code then:** to come: `Aven.ID.Seal`, the seal's Rust, `seals.json`, with A176's change.
 
 ### A178 · A device's vault: its key signs, the vault it serves owns
-- **Decided by:** the architect, from the 08:22 briefs and the Lean (12:18)
+- **Decided by:** the architect, from the 08:22 briefs and the Lean (12:12)
 - **Decision:** a device has its own vault. Its key signs for that vault and governs nothing. The vault it serves is its
   one owner, the only one that may change or end it. What the device may do for that vault is its device cap.
 - **Why:** rule 15's wording said the device's key also owns its vault, while the 08:22 briefs and the Lean (`WF`,
@@ -2539,7 +2539,7 @@ changed. A refinement names what it refines; a change of mind names what it supe
 - **Lean or code then:** `device_key_governs_nothing`, done.
 
 ### A179 · Threads keep their page's Status table current
-- **Decided by:** the architect, writing avenBRAIN's working rule (12:31)
+- **Decided by:** the architect, writing avenBRAIN's working rule (12:13)
 - **Decision:** a thread whose PR builds what a row of its package page's Status table lists updates that row in the
   same PR. Everything else on a page, and every log entry, stays the architect's (A171).
 - **Why:** a page is the latest truth only if what is built shows the moment it lands; a row changed by the PR that
@@ -2548,7 +2548,7 @@ changed. A refinement names what it refines; a change of mind names what it supe
 - **Lean or code then:** none; the rule is in `aven/DB2/CLAUDE.md`.
 
 ### A180 · Runtimes have no release of their own
-- **Decided by:** the architect, for the avenRUNTIME page (12:36)
+- **Decided by:** the architect, for the avenRUNTIME page (12:14)
 - **Decision:** a runtime ships inside what loads it: its frozen bytes are committed (A102) and go out in `@aven/os` and
   in the avenPEER image, each named by its hash. `aven/runtimes` gets no dated release of its own, and the manifest is
   its version list.
@@ -2558,7 +2558,7 @@ changed. A refinement names what it refines; a change of mind names what it supe
 - **Lean or code then:** none; the runtimes README and `avensandbox.yml` already agree.
 
 ### A181 · A checkpoint carries a state, sealed as a checkpoint
-- **Decided by:** the architect, for the avenDOCS page (12:37)
+- **Decided by:** the architect, for the avenDOCS page (12:14)
 - **Decision:** a checkpoint's body names its Loro export under the key `state`, not `snapshot`, and that export is
   sealed as `checkpoint`, under the same Doc and epoch as the checkpoint that names it.
 - **Why:** what travels is a checkpoint, never a snapshot (A1), and one seal for a checkpoint and its state leaves a
@@ -2567,7 +2567,7 @@ changed. A refinement names what it refines; a change of mind names what it supe
 - **Lean or code then:** to come with checkpoints: `Aven.DB.Docs` checkpoint body, its vectors.
 
 ### A182 · A revocation discounts, as a split does
-- **Decided by:** the architect, for the avenCAPS and avenCORE pages (12:46)
+- **Decided by:** the architect, for the avenCAPS and avenCORE pages (12:16)
 - **Decision:** Core's one counting rule takes a third parameter from avenCAPS, `revoked`: an envelope is discounted
   when the reader holds a counted revocation of a cap in its chain that has taken effect in that Doc (in the Doc itself,
   at its kept list, or at another writer's first ack, caps D8) and whose kept past doesn't hold the envelope.
@@ -2580,7 +2580,7 @@ changed. A refinement names what it refines; a change of mind names what it supe
   `revoked`, `rule4_one_verdict` over the three.
 
 ### A183 · A cap is its content
-- **Decided by:** the architect, for the avenCAPS page (12:47)
+- **Decided by:** the architect, for the avenCAPS page (12:16)
 - **Decision:** a cap's body carries no nonce. Two grants with the same issuer, holder, lines and conditions are one cap
   with one name (A30), and revoking it revokes that grant.
 - **Why:** an issuer that grants the same thing twice has granted it once; a nonce would let two names mean one grant,
@@ -2589,7 +2589,7 @@ changed. A refinement names what it refines; a change of mind names what it supe
 - **Lean or code then:** `Aven.ID.Caps`, as built.
 
 ### A184 · Built-in bodies carry no nulls
-- **Decided by:** the architect, for the avenCAPS page (12:47)
+- **Decided by:** the architect, for the avenCAPS page (12:16)
 - **Decision:** every built-in body (caps, revocations, passkey records, keeper records and the rest) leaves an absent
   field out of its map instead of writing null, and its decoder refuses a null. A user's Values may still hold null.
 - **Why:** one byte form per meaning (A2): a field that is null or absent is two encodings of one thing, and the
@@ -2599,7 +2599,7 @@ changed. A refinement names what it refines; a change of mind names what it supe
   stored uses them.
 
 ### A185 · One owner for each of the pages' shared parts
-- **Decided by:** the architect, settling the brain pages' overlaps (12:48)
+- **Decided by:** the architect, settling the brain pages' overlaps (12:16)
 - **Decision:** the shelf (`docs::Shelf`), the head and the held page, the judge and its crash mark are avenDOCS'. The
   Doc host, sifting (`Aven.Peer.Judge`), the docs worker's place in the browser and the fetch gate with its exporter are
   avenPEERS'. The tab's `update` switch and the list of the page's workers are avenOS'. Owners, thresholds and approvals
@@ -2610,7 +2610,7 @@ changed. A refinement names what it refines; a change of mind names what it supe
 - **Lean or code then:** none.
 
 ### A186 · No wiping in production
-- **Decided by:** Samuel (30 Oct 2026, before the admin's sign-up), recorded by the architect (12:51)
+- **Decided by:** Samuel (30 Oct 2026, before the admin's sign-up), recorded by the architect (12:17)
 - **Decision:** production has no way to empty its store. The deploy has no `wipe` input, and nothing else deletes the
   bucket's objects. From the first sign-up on, what production stores is kept: a change to a stored format reads the old
   one too, or migrates it in the peer, tested against the old format's vectors, and never asks for a reset. The box
