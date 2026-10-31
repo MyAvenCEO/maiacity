@@ -364,7 +364,7 @@ and the decisions, not the parsers.
   leading, tracking, uppercase, centring, a transform of translate, rotate and scale, and the one arrowhead clip-path.
   No custom properties, no `url()`, no free text: `StyleRule.css` writes the CSS. Which rule reaches a node is CSS's
   cascade (classes, then tags, then the later rule). `styledOk` accepts a styled face when the tree passes `check`,
-  every rule is in range (`styled_rules`), every text is at least 2.5cqw where a slide is narrowest, 356 px
+  every rule is in range (`styled_rules`), every text is at least 9 px where a slide is narrowest, 356 px, so 2.6cqw
   (`styled_size`), every text has enough contrast against what it is drawn on (`styled_contrast`: the nearest
   background above it, or an earlier sibling layer covering the whole parent), and names and `alt`s are there
   (`styled_named`). The examples are avenBRAIN's slide "A key signs", its layers and the shared slide rules, and 17

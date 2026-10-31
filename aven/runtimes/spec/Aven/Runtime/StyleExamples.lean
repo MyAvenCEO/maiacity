@@ -4,7 +4,7 @@ import Aven.Runtime.Style
 # A slide, styled (avenBRAIN's `brain/style/slide.css` and `brain/id/slides/sign.*`)
 
 The slide "A key signs" as a styled face: its tree as avenBRAIN writes it, and its CSS as typed rules. The examples
-around it are what the checks refuse: text under 2.5cqw, too little contrast, a layer covering the ground, a selector
+around it are what the checks refuse: text under 9 px, too little contrast, a layer covering the ground, a selector
 or a value out of range, and which rule wins.
 -/
 
@@ -84,12 +84,12 @@ def noteP (c : String) (s : String) : Node := el "p" [("class", c)] [txt s]
 
 def styleExamples : List (String × Styled × Bool) :=
   [("the slide \"A key signs\"", sign, true),
-   ("a label at 2.4cqw is too small", withNote (noteP "label" "tiny") [rule ["slide", "label"] [.size (cqw 240)]],
+   ("a label at 2.5cqw is too small", withNote (noteP "label" "tiny") [rule ["slide", "label"] [.size (cqw 250)]],
      false),
-   ("a label at 2.5cqw is the smallest", withNote (noteP "label" "small") [rule ["slide", "label"] [.size (cqw 250)]],
+   ("a label at 2.6cqw is the smallest", withNote (noteP "label" "small") [rule ["slide", "label"] [.size (cqw 260)]],
      true),
-   ("8.9px is the smallest in pixels", withNote (noteP "note" "px") [rule ["slide", "note"] [.size (px 890)]], true),
-   ("8.8px is too small", withNote (noteP "note" "px") [rule ["slide", "note"] [.size (px 880)]], false),
+   ("9px is the smallest in pixels", withNote (noteP "note" "px") [rule ["slide", "note"] [.size (px 900)]], true),
+   ("8.99px is too small", withNote (noteP "note" "px") [rule ["slide", "note"] [.size (px 899)]], false),
    ("ochre text on the cream is too faint", withNote (noteP "note" "faint") [rule ["slide", "note"] [.color ochre]],
      false),
    ("a more specific rule wins over a later one", withNote (noteP "note" "navy")

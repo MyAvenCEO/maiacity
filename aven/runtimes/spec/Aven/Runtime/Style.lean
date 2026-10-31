@@ -16,8 +16,9 @@ is a selector and typed declarations, the subset avenBRAIN's slides are written 
 
 A face whose style is of these types is accepted only when, besides `Face`'s checks of its tree:
 
-- **every text is at least 2.5cqw**, measured where a slide is smallest: 356 px wide, a phone's width, so 8.9 px. A
-  size in `px` is held to the same 8.9 px;
+- **every text is at least 9 px where a slide is smallest,** 356 px wide, a phone's width: 2.6cqw is 9.26 px there,
+  2.5cqw only 8.9 px, as Firefox measures it, so 2.6cqw is the smallest a slide writes (avenBRAIN's STYLE.md and its
+  box check). A size in `px` is held to the same 9 px;
 - **every text has enough contrast** against what it is drawn on, as the style resolves it down the tree (WCAG 2.2's
   4.5:1, 3:1 for large text, by `Face`'s table of linear light). What a text is drawn on is the nearest background
   above it, or an earlier sibling layer that covers its whole parent (absolute, `inset: 0`) with a background. An image
@@ -302,8 +303,9 @@ def Len.pxAt (l : Len) : Int :=
   | .cqw => l.v * narrowest / 100
   | _ => 0
 
-/-- The smallest text: 2.5cqw at 356 px, 8.9 px. -/
-def minText : Int := 890
+/-- The smallest text, in hundredths of a pixel where a slide is narrowest: 9 px, which 2.6cqw reaches and 2.5cqw
+doesn't. -/
+def minText : Int := 900
 
 /-- Large text: at least 24 px, or 18.66 px bold (WCAG's 18 pt and 14 pt). -/
 def Look.large (l : Look) : Bool := 2400 ≤ l.size.pxAt || (700 ≤ l.weight && 1866 ≤ l.size.pxAt)
@@ -380,7 +382,7 @@ theorem styled_rules {l : TreeLimits} {o : Styled} (h : styledOk l o = true) : �
   have := filter_empty (styledOk_parts h).2.2.2.2.1 r hr
   simpa using this
 
-/-- Every text of an accepted styled face is at least 2.5cqw where the slide is narrowest. -/
+/-- Every text of an accepted styled face is at least 9 px where the slide is narrowest (2.6cqw). -/
 theorem styled_size {l : TreeLimits} {o : Styled} (h : styledOk l o = true) :
     ∀ p ∈ o.texts, minText ≤ p.1.size.pxAt := by
   intro p hp
