@@ -163,7 +163,7 @@ cap writes on main and allows each step (caps' `merge_covered`, #1601, #1604, #1
 
 Rule 14 is a property of the node, held by the format vectors and the box's check; no theorem is planned for it.
 
-Rules 15 and 16 are new (31 Oct 2026). Caps rule 1 ("keys sign; vaults hold") holds it for caps today. Its other places,
+Rules 15 and 16 are new (31 Oct 2026). Caps rule 1 ("keys sign; vaults hold") holds rule 15 for caps today. Its other places,
 where a key still holds authority itself, are listed in **A28**, and each is fixed Lean-first before its code.
 
 ## One vocabulary
