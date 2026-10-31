@@ -755,7 +755,7 @@ the spec that owns it.
 - **A35. One presence:** a signed beat per device, ordered by its counter, its time a claim (rule 12). The hub's
   connection count, the chat's `here` and `bye`, and the wire's `Beat` frame go, with thread C. *Decided (the
   architect, 31 Oct 2026).*
-- **A36. Releases:** one release record per package, ordered by its dated version (`@aven/os@26.10.31`), an envelope
+- **A36. Releases** (the release vault comes later, A42): one release record per package, ordered by its dated version (`@aven/os@26.10.31`), an envelope
   in the release vault's Doc, which the genesis names and whose owners approve each record. The ALPN `aven/db/1` is a
   frozen name; the hello's number is the only wire version (#1649); a format's label is its version. *Decided (the
   architect, 31 Oct 2026); who owns the release vault is for Samuel, with thread E's signer proposal.*
@@ -774,8 +774,20 @@ the spec that owns it.
 - **A41. avenOS's documentation is "Brain"** (the tab and `#/brain`), so "Docs" means only avenDB's Docs. *Decided:
   yes (Samuel, 31 Oct 2026).*
 
-- **A42. The contradictions of 31 Oct** ([`audits/contradictions.md`](audits/contradictions.md)), resolved under the
-  rules above; each thread fixes its own files, Lean first:
+- **A42. The contradictions of 31 Oct** ([`audits/contradictions.md`](audits/contradictions.md)). Samuel decided four
+  (31 Oct 2026):
+  - **MaiaCityGuardian stays a super admin for now:** a full owner of every person's vault, as caps D12 has it. Specs
+    that call it recovery say so: recovery only comes later.
+  - **The owner key is derived from the passkey's PRF and never stored,** the more secure way. Its boundary is every
+    origin under `maia.city`, since the passkey answers any of them, so every such origin serves only our signed
+    releases (A15). Rule 13 holds within that.
+  - **Maia City's tree is its public register:** the genesis, governance, tickets, withdrawals, the relay and keeper
+    lists and the settings, in a public Doc whose readers are everyone (rule 9 holds: it is sealed to its readers).
+    Who joined is in the members' own caps (A38), not in the register.
+  - **Release signing by a vault comes later.** Until then a release is the dated release from `production`; A36's
+    release vault is for then.
+
+  The rest are resolved under the rules above; each thread fixes its own files, Lean first:
   - **k of n:** a statement's signatures beside its `[label, body]` (A30) are D14's approvals, and each vault stores
     its threshold; an owner change is a governance statement, never a new genesis (avenPEER, caps).
   - **Who confirms a claim:** A38's confirm op, which Aven and the genesis's confirmers hold under Maia City's cap;
