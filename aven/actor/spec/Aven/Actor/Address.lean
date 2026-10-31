@@ -1,4 +1,4 @@
-import Aven.Actor.Messaging
+import Aven.Actor.Basic
 
 /-!
 # An actor's address is its Doc id (A201)
@@ -12,12 +12,13 @@ On the wire an address is `[vault, doc]`: the vault picks the carrier Doc (A33) 
 reader refuses an address whose vault isn't its genesis's. A cap naming `.doc a .self` binds one incarnation; a cap
 meant to outlast incarnations targets `.spawned` or `.vaultDef`.
 
-The kernel keys its actors by their genesis (`Addr`); `doc_inj` makes that the same as keying them by Doc id.
+The kernel keys its actors by their genesis (`Addr`); `doc_inj` makes that the same as keying them by Doc id. Turns
+name actors by `Ref`, the wire form, which the router resolves through the kernel's directory (`Aven.Actor.Kernel`).
 -/
 
 namespace Aven.Actor
 
-open Aven.Core (Value Bytes Hash DocId Injective encode Shape encode_inj_shape)
+open Aven.Core (Value Bytes Hash DocId Injective encode Shape encode_inj_shape blake3)
 
 /-- An address the codec can write: a 32-byte vault, and an id and incarnation within the profile's limits. -/
 def Addr.ok (a : Addr) : Bool :=
@@ -36,6 +37,11 @@ def Addr.doc (H : Bytes → Hash) (a : Addr) : DocId := ⟨H (encode a.genesis)�
 
 /-- The address on the wire: `[vault, doc]`. -/
 def Addr.wire (H : Bytes → Hash) (a : Addr) : Value := .array [.bytes a.vault, .bytes (a.doc H).hash.bytes]
+
+/-- The address as a turn names it: its vault and its Doc id under BLAKE3. -/
+def Addr.ref (a : Addr) : Ref := ⟨a.vault, (a.doc blake3).hash.bytes⟩
+
+def MsgId.ref (i : MsgId) : MsgRef := ⟨i.sender.ref, i.to.ref, i.seq⟩
 
 theorem genesis_shape {a : Addr} (h : a.ok = true) : Shape a.genesis = true := by
   simp only [Addr.ok, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h

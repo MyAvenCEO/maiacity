@@ -29,6 +29,20 @@ def person : Addr := ⟨localVault, "person".toUTF8.toList, 0⟩
 /-- The kernel, an actor too (section 7). Incarnation 0: it is never spawned. -/
 def kernelAddr : Addr := ⟨localVault, "kernel".toUTF8.toList, 0⟩
 
+/-- An address on the wire (A201): the vault and the actor's Doc id, `[vault, doc]`. Turns name their targets this
+way; the router resolves it to the actor (`Kernel.resolve`). -/
+structure Ref where
+  vault : Bytes
+  doc : Bytes
+  deriving DecidableEq, Repr, Inhabited
+
+/-- A message's name on the wire: `[sender, to, seq]`, each address a `Ref`. -/
+structure MsgRef where
+  sender : Ref
+  to : Ref
+  seq : Nat
+  deriving DecidableEq, Repr, Inhabited
+
 /-- A message's name `(from, to, seq)` (section 4). -/
 structure MsgId where
   sender : Addr
@@ -68,11 +82,12 @@ def Kind.answers : Kind → Option MsgId
   | .fail re _ => some re
   | _ => none
 
-/-- What a turn may do (section 6): tell, ask within some time, or reply to an ask it was sent. -/
+/-- What a turn may do (section 6): tell, ask within some time, or reply to an ask it was sent. A turn names actors
+as they are on the wire, `[vault, doc]` (A201). -/
 inductive Effect where
-  | tell (to : Addr) (name : String) (payload : Value)
-  | ask (to : Addr) (name : String) (payload : Value) (within : Nat)
-  | reply (re : MsgId) (payload : Value)
+  | tell (to : Ref) (name : String) (payload : Value)
+  | ask (to : Ref) (name : String) (payload : Value) (within : Nat)
+  | reply (re : MsgRef) (payload : Value)
   deriving Repr, Inhabited
 
 /-- The turn's time and seed, journaled so a replay sees the same (section 6). -/

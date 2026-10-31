@@ -16,15 +16,18 @@ The traces run four test definitions, which the Rust tests implement natively, e
 
 - `counter`: state a count from 0. `inc` (a tell) adds one; `get` (an ask) replies with the count.
 - `task`: state its title. A machine, open and done: `finish` takes open to done, `reopen` done to open.
-- `asker`: on `go`, asks `local/c/1` for `get` within 1000 and tells it `inc`, which it never declared; a `reply`
-  becomes its state, and a `fail` makes it `"failed"`.
+- `asker`: on `go`, asks the counter (`c`, incarnation 1) for `get` within 1000 and tells it `inc`, which it never
+  declared; a `reply` becomes its state, and a `fail` makes it `"failed"`.
 - `broken`: a machine that leads to a phase it never declares, which admission refuses.
 
 An event is `["spawn", id, definition]`, `["handle", receiver, sender]`, `["tick", t]`, `["retire", address]`, or a
 send from the person, `["tell", to, name, payload]` or `["ask", to, name, payload, within]`. An address is
 `<vault hex>/<doc hex>`, its Doc id: the BLAKE3 name of its genesis `{n, id, vault}` (A201); version 1's vault is 32
-bytes of `01`. A spawn's id is its bytes, `{"bytes": hex}`. A Value's readable form is `Aven.Core`'s: integers as numbers, text as strings, arrays, maps as objects,
-a byte string as `{"bytes": hex}`; a type id is its text, `d:<hex>/b3:<hex>`.
+bytes of `01`. Sends name their target this way too, and the kernel resolves it through its directory (every address
+it spawned, the person and the kernel); an address it doesn't know resolves to `{n: 0, id: <doc bytes>, vault}`,
+which no actor ever has. A spawn's id is its bytes, `{"bytes": hex}`. A Value's readable form is `Aven.Core`'s:
+integers as numbers, text as strings, arrays, maps as objects, a byte string as `{"bytes": hex}`; a type id is its
+text, `d:<hex>/b3:<hex>`.
 -/
 
 open Lean Aven.Core Aven.Actor
@@ -32,9 +35,14 @@ open Lean Aven.Core Aven.Actor
 def vector (name : String) (input expected : Json) : Json :=
   Json.mkObj [("name", name), ("input", input), ("expected", expected)]
 
-def Aven.Actor.Addr.text (a : Addr) : String := hex a.vault ++ "/" ++ hex (a.doc blake3).hash.bytes
+def Aven.Actor.Ref.text (r : Ref) : String := hex r.vault ++ "/" ++ hex r.doc
+
+def Aven.Actor.Addr.text (a : Addr) : String := a.ref.text
 
 def Aven.Actor.MsgId.json (i : MsgId) : Json :=
+  Json.mkObj [("from", i.sender.text), ("to", i.to.text), ("seq", i.seq)]
+
+def Aven.Actor.MsgRef.json (i : MsgRef) : Json :=
   Json.mkObj [("from", i.sender.text), ("to", i.to.text), ("seq", i.seq)]
 
 def Aven.Actor.Reason.name : Reason → String
@@ -85,7 +93,7 @@ def counter : Def where
   machine := none
   turn := fun st m _ _ => match m.name with
     | "inc" => some ⟨match st with | .uint n => .uint (n + 1) | _ => .uint 1, [], none⟩
-    | "get" => some ⟨st, [.reply m.id st], none⟩
+    | "get" => some ⟨st, [.reply m.id.ref st], none⟩
     | _ => none
   init := .uint 0
 
@@ -112,7 +120,7 @@ def asker : Def where
   accepts := fun _ _ => true
   machine := none
   turn := fun st m _ _ => match m.name with
-    | "go" => some ⟨st, [.ask counterAddr "get" .null 1000, .tell counterAddr "inc" .null], none⟩
+    | "go" => some ⟨st, [.ask counterAddr.ref "get" .null 1000, .tell counterAddr.ref "inc" .null], none⟩
     | "reply" => some ⟨m.payload, [], none⟩
     | "fail" => some ⟨text "failed", [], none⟩
     | _ => none
@@ -153,33 +161,33 @@ def Aven.Actor.Event.json : Event → Json
 
 def traces : List (String × List Event) := [
   ("a counter counts, and answers an ask",
-    [sp "c" "counter", .send (.tell counterAddr "inc" .null), .send (.tell counterAddr "inc" .null),
-     .handle counterAddr person, .handle counterAddr person, .send (.ask counterAddr "get" .null 500),
+    [sp "c" "counter", .send (.tell counterAddr.ref "inc" .null), .send (.tell counterAddr.ref "inc" .null),
+     .handle counterAddr person, .handle counterAddr person, .send (.ask counterAddr.ref "get" .null 500),
      .handle counterAddr person]),
   ("messages from one sender are handled in the order sent",
-    [sp "c" "counter", .send (.tell counterAddr "inc" .null), .send (.ask counterAddr "get" .null 500),
-     .send (.tell counterAddr "inc" .null), .handle counterAddr person, .handle counterAddr person,
+    [sp "c" "counter", .send (.tell counterAddr.ref "inc" .null), .send (.ask counterAddr.ref "get" .null 500),
+     .send (.tell counterAddr.ref "inc" .null), .handle counterAddr person, .handle counterAddr person,
      .handle counterAddr person]),
   ("a machine allows finish, refuses it twice, then reopens",
-    [sp "t" "task", .send (.tell (addr "t") "finish" .null), .handle (addr "t") person,
-     .send (.tell (addr "t") "finish" .null), .handle (addr "t") person,
-     .send (.tell (addr "t") "reopen" .null), .handle (addr "t") person]),
+    [sp "t" "task", .send (.tell (addr "t").ref "finish" .null), .handle (addr "t") person,
+     .send (.tell (addr "t").ref "finish" .null), .handle (addr "t") person,
+     .send (.tell (addr "t").ref "reopen" .null), .handle (addr "t") person]),
   ("an ask past its deadline fails with timeout, and the late reply is dropped",
-    [sp "c" "counter", .send (.ask counterAddr "get" .null 100), .tick 200, .handle counterAddr person]),
+    [sp "c" "counter", .send (.ask counterAddr.ref "get" .null 100), .tick 200, .handle counterAddr person]),
   ("an ask to no live actor fails at once, from the kernel, at seq 0",
-    [.send (.ask (addr "nobody") "get" .null 100)]),
+    [.send (.ask (addr "nobody").ref "get" .null 100)]),
   ("an actor asks another; an undeclared tell is refused by the router",
-    [sp "c" "counter", sp "a" "asker", .send (.tell (addr "a") "go" .null), .handle (addr "a") person,
+    [sp "c" "counter", sp "a" "asker", .send (.tell (addr "a").ref "go" .null), .handle (addr "a") person,
      .handle counterAddr (addr "a"), .handle (addr "a") counterAddr]),
   ("describe lists what the phase allows",
-    [sp "t" "task", .send (.ask (addr "t") "describe" .null 100), .handle (addr "t") person,
-     .send (.tell (addr "t") "finish" .null), .handle (addr "t") person,
-     .send (.ask (addr "t") "describe" .null 100), .handle (addr "t") person]),
+    [sp "t" "task", .send (.ask (addr "t").ref "describe" .null 100), .handle (addr "t") person,
+     .send (.tell (addr "t").ref "finish" .null), .handle (addr "t") person,
+     .send (.ask (addr "t").ref "describe" .null 100), .handle (addr "t") person]),
   ("a face placed again is a new incarnation; the old address takes nothing",
-    [sp "t" "task", .retire (addr "t"), sp "t" "task", .send (.tell (addr "t") "finish" .null),
-     .send (.tell (addr "t" 2) "finish" .null), .handle (addr "t" 2) person]),
+    [sp "t" "task", .retire (addr "t"), sp "t" "task", .send (.tell (addr "t").ref "finish" .null),
+     .send (.tell (addr "t" 2).ref "finish" .null), .handle (addr "t" 2) person]),
   ("admission refuses a machine that leads to an undeclared phase",
-    [sp "b" "broken", .send (.tell (addr "b") "go" .null)])]
+    [sp "b" "broken", .send (.tell (addr "b").ref "go" .null)])]
 
 /-- Every address a trace touches: the person, the kernel, and every incarnation it spawned. -/
 def addrsOf (kn : Kernel) (es : List Event) : List Addr :=
@@ -188,8 +196,8 @@ def addrsOf (kn : Kernel) (es : List Event) : List Addr :=
   let named := es.flatMap fun
     | .handle r s => [r, s]
     | .retire a => [a]
-    | .send (.tell r _ _) => [r]
-    | .send (.ask r _ _ _) => [r]
+    | .send (.tell r _ _) => [kn.resolve r]
+    | .send (.ask r _ _ _) => [kn.resolve r]
     | _ => []
   ([person, kernelAddr] ++ spawned ++ named).eraseDups
 
@@ -245,12 +253,12 @@ def Rng.event (r : Rng) (kn : Kernel) : Event × Rng :=
   | 3 | 4 =>
     let (to, r) := r.pick pool
     let (name, r) := r.pick names
-    (.send (.tell to name .null), r)
+    (.send (.tell to.ref name .null), r)
   | 5 =>
     let (to, r) := r.pick pool
     let (name, r) := r.pick names
     let (within, r) := r.below 300
-    (.send (.ask to name .null within), r)
+    (.send (.ask to.ref name .null within), r)
   | _ =>
     let senders := pool ++ [kernelAddr]
     let ready := pool.flatMap fun rcv => (senders.filter fun snd =>

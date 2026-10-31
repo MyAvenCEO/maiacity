@@ -56,8 +56,9 @@ theorem LinkInv.send {k : Kernel} (hk : LinkInv k) (lib : Library) (s : Addr) (e
       rcases hq with hq | rfl
       · obtain ⟨m, hm, h1, h2⟩ := hk q hq
         exact ⟨m, mem_inbox_append _ _ _ _ _ _ _ _ _ hm, h1, h2⟩
-      · refine ⟨⟨s, r, (k.inbox s r).length + 1, name, p, .ask (k.now + min within askMax)⟩, ?_, rfl, rfl⟩
-        show _ ∈ (k.append s r name p _).inbox s r
+      · refine ⟨⟨s, k.resolve r, (k.inbox s (k.resolve r)).length + 1, name, p, .ask (k.now + min within askMax)⟩,
+          ?_, rfl, rfl⟩
+        show _ ∈ (k.append s (k.resolve r) name p _).inbox s (k.resolve r)
         rw [inbox_append]; simp
     · exact hk.append _ _ _ _ _
   | reply re p => simp only [Kernel.send]; exact hk.answer _ _ _ _

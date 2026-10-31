@@ -102,14 +102,14 @@ theorem Inv.send {lib : Library} {k : Kernel} (hk : Inv lib k) (s : Addr) (hs : 
     split
     · next h =>
       apply hk.append
-      intro hr; simp [hk.fresh r hr] at h
+      intro hr; simp [hk.fresh _ hr] at h
     · exact hk
   | ask r name p within =>
     simp only [Kernel.send]
     split
     · next h =>
-      have hr : ¬ k.Fresh r := by intro hr; simp [hk.fresh r hr] at h
-      have ha := hk.append s r name p (.ask (k.now + min within askMax)) hr
+      have hr : ¬ k.Fresh (k.resolve r) := by intro hr; simp [hk.fresh _ hr] at h
+      have ha := hk.append s (k.resolve r) name p (.ask (k.now + min within askMax)) hr
       refine ⟨ha.wf, ha.readLe, ha.handled, ha.entries, ha.replay, ha.fresh, ?_⟩
       intro q hq
       simp only [List.mem_append, List.mem_singleton] at hq

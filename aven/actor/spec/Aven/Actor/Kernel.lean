@@ -1,4 +1,4 @@
-import Aven.Actor.Basic
+import Aven.Actor.Address
 
 /-!
 # The kernel (ARCHITECTURE.md, sections 3, 4 and 7)
@@ -12,6 +12,11 @@ which actor handles its next message from which sender, so every theorem holds f
 - `spawn id dn`: the kernel spawns the repository's definition `dn` under `id`, as a new incarnation.
 - `retire a`: `a` goes, as a face actor does when it is unplaced. Its Doc stays.
 - `send e`: the person tells or asks, as a click does.
+
+Turns name actors as they are on the wire, `[vault, doc]` (A201). The router resolves a `Ref` through the kernel's
+**directory**, every address it ever spawned plus the person and the kernel, filled at spawn. A `Ref` the directory
+doesn't know resolves to an address no actor ever has (incarnation 0, never spawned), so it is refused exactly like
+an actor that isn't live (`Aven.Actor.Router`: `resolve_known`, `unknown_not_live`).
 -/
 
 namespace Aven.Actor
@@ -75,7 +80,7 @@ def judge (lib : Library) (dn : Option String) (st : Value) (m : Message) (g : G
   match dn.bind lib with
   | none => (st, ph, .refused, [])
   | some d =>
-    if m.name == describeName && m.kind.isAsk then (st, ph, .described, [.reply m.id (d.describeValue ph)])
+    if m.name == describeName && m.kind.isAsk then (st, ph, .described, [.reply m.id.ref (d.describeValue ph)])
     else if gate d m ph then
       match runTurn d st m g ph with
       | some (st', ph', fx) => (st', ph', .done, fx)
@@ -100,13 +105,21 @@ structure Kernel where
   journal : Addr → List Entry
   /-- How often each id has been spawned. -/
   spawned : Bytes → Nat
+  /-- The directory: every address the kernel spawned, after the person and the kernel. Retiring keeps the entry. -/
+  dir : List Addr
   /-- The asks still waiting for an answer, with their deadlines. -/
   pending : List (MsgId × Nat)
   now : Nat
 
 def Kernel.empty : Kernel :=
   ⟨fun _ => none, fun _ => (.null, ""), fun _ => .null, fun _ => "", fun _ _ => [], fun _ _ => 0, fun _ => [],
-    fun _ => 0, [], 0⟩
+    fun _ => 0, [person, kernelAddr], [], 0⟩
+
+/-- Where a `Ref` points: the first address in the directory with that wire form, or else an address no actor ever
+has, with incarnation 0. -/
+def Kernel.resolve (k : Kernel) (r : Ref) : Addr := (k.dir.find? (·.ref == r)).getD ⟨r.vault, r.doc, 0⟩
+
+def Kernel.resolveId (k : Kernel) (i : MsgRef) : MsgId := ⟨k.resolve i.sender, k.resolve i.to, i.seq⟩
 
 /-- Sending is appending to the inbox Doc from `s` to `r` (section 4). `seq` counts per pair, from 1. -/
 def Kernel.append (k : Kernel) (s r : Addr) (name : String) (payload : Value) (kind : Kind) : Kernel :=
@@ -133,18 +146,22 @@ def Kernel.declares (lib : Library) (k : Kernel) (s r : Addr) (name : String) : 
     | some t => ds.sends.contains t
     | none => false
 
-/-- One effect of `s`'s turn, through the router. Only a live actor is sent to, and only a type `s` declared. A tell to no live actor is dropped;
-an ask to none is never sent, and the kernel fails it at once with `refused`: its `re` has seq 0, which no message
-ever has, so it can never be taken for the answer to a real ask. -/
+/-- One effect of `s`'s turn, through the router, which first resolves its target. Only a live actor is sent to,
+and only a type `s` declared. A tell to no live actor is dropped; an ask to none is never sent, and the kernel fails
+it at once with `refused`: its `re` has seq 0, which no message ever has, so it can never be taken for the answer to
+a real ask. -/
 def Kernel.send (lib : Library) (k : Kernel) (s : Addr) : Effect → Kernel
-  | .tell r name p => if (k.defs r).isSome ∧ k.declares lib s r name then k.append s r name p .tell else k
-  | .ask r name p within =>
+  | .tell t name p =>
+    let r := k.resolve t
+    if (k.defs r).isSome ∧ k.declares lib s r name then k.append s r name p .tell else k
+  | .ask t name p within =>
+    let r := k.resolve t
     let id : MsgId := ⟨s, r, (k.inbox s r).length + 1⟩
     if (k.defs r).isSome ∧ (name == describeName || k.declares lib s r name) then
       let dl := k.now + min within askMax
       { k.append s r name p (.ask dl) with pending := k.pending ++ [(id, dl)] }
     else k.append kernelAddr s "fail" .null (.fail { id with seq := 0 } .refused)
-  | .reply re p => k.answer s re p none
+  | .reply re p => k.answer s (k.resolveId re) p none
 
 def Kernel.sendAll (lib : Library) (k : Kernel) (s : Addr) (fx : List Effect) : Kernel :=
   fx.foldl (fun k e => k.send lib s e) k
@@ -206,6 +223,7 @@ def Kernel.spawn (lib : Library) (k : Kernel) (id : Bytes) (dn : String) : Kerne
     let a := k.next id
     { k with
       spawned := upd k.spawned id (k.spawned id + 1)
+      dir := k.dir ++ [a]
       defs := upd k.defs a (some dn)
       start := upd k.start a (d.init, d.initialPhase)
       state := upd k.state a d.init

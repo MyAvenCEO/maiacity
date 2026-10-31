@@ -9,8 +9,8 @@ import Aven.Runtime.StateExamples
 The runtimes live in `aven/runtimes` and know nothing of actors; this file joins them.
 
 - `stateTurn`: a state-runtime part (`Aven.Runtime.State`) as an actor's turn. The kernel hands the runtime a neutral
-  input: the sender's address and the ask's name as Values, the turn's time and seed, and the current phase. Each
-  neutral send becomes an effect, and a send the kernel can't make one of (a target that is no address, a reply to
+  input: the sender's address and the ask's name as Values, addresses in their wire form `[vault, doc]` (A201), the
+  turn's time and seed, and the current phase. Each neutral send becomes an effect, and a send the kernel can't make one of (a target that is no address, a reply to
   something that is no ask) refuses the whole turn, which is journaled as an error, never dropped.
 - `stateTurn_phase`: a state-runtime turn moves only where its machine allows, when the part fits the machine.
 - `runTurn_state`: the kernel takes every answer of such a turn as it is: `runTurn` never refuses it for its phase,
@@ -27,20 +27,26 @@ open Aven.Runtime (FacePart Placement FaceOut faceRun treeLimits StatePart State
 
 /-! ## state-runtime -/
 
-/-- An address as the runtimes see it: its genesis inputs `[vault, id, n]`, bytes, bytes and a number. Until the
-router resolves Doc ids (A201's second step), this is the form state-runtime is handed and gives back. -/
-def addrValue (a : Addr) : Value := .array [.bytes a.vault, .bytes a.id, .uint a.n]
+/-- An address as the runtimes see it: the wire form `[vault, doc]` (A201), two byte strings of 32 bytes. -/
+def refValue (r : Ref) : Value := .array [.bytes r.vault, .bytes r.doc]
 
-def addrOf? : Value → Option Addr
-  | .array [.bytes v, .bytes i, .uint n] => some ⟨v, i, n⟩
+def addrValue (a : Addr) : Value := refValue a.ref
+
+def refOf? : Value → Option Ref
+  | .array [.bytes v, .bytes d] => if v.length = 32 ∧ d.length = 32 then some ⟨v, d⟩ else none
   | _ => none
 
 /-- A message's name as the runtimes see it: `[sender, to, seq]`. -/
 def msgIdValue (i : MsgId) : Value := .array [addrValue i.sender, addrValue i.to, .uint i.seq]
 
-def msgIdOf? : Value → Option MsgId
-  | .array [s, t, .uint q] => (addrOf? s).bind fun s => (addrOf? t).map fun t => ⟨s, t, q⟩
+def msgRefOf? : Value → Option MsgRef
+  | .array [s, t, .uint q] => (refOf? s).bind fun s => (refOf? t).map fun t => ⟨s, t, q⟩
   | _ => none
+
+/-- The wire form reads back as it was written, for every address with 32-byte parts. -/
+theorem refOf_refValue {r : Ref} (hv : r.vault.length = 32) (hd : r.doc.length = 32) :
+    refOf? (refValue r) = some r := by
+  simp [refValue, refOf?, hv, hd]
 
 /-- The neutral message the runtime reads. -/
 def Message.toMsg (m : Message) : Msg :=
@@ -48,9 +54,9 @@ def Message.toMsg (m : Message) : Msg :=
 
 /-- A neutral send as an effect, where the kernel can make one. -/
 def outEffect : Out → Option Effect
-  | .tell to name p => (addrOf? to).map fun a => .tell a name p
-  | .ask to name p within => (addrOf? to).map fun a => .ask a name p within
-  | .reply re p => (msgIdOf? re).map fun i => .reply i p
+  | .tell to name p => (refOf? to).map fun a => .tell a name p
+  | .ask to name p within => (refOf? to).map fun a => .ask a name p within
+  | .reply re p => (msgRefOf? re).map fun i => .reply i p
 
 /-- A state-runtime part as an actor's turn: the state is what the step's writes make of it (A37), and its phase is
 always the one the step moved to. -/
