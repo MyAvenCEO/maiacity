@@ -32,14 +32,6 @@ def gGarden : Core.DocId := docOf "g-garden"
 def album : Core.DocId := docOf "album"
 def avenNotes : Core.DocId := docOf "aven-notes"
 
-/-- The parameters caps bounds on `core/1`'s writes: the type a step writes, and the fields it writes. -/
-def typeParam : Core.Bytes := "type".toUTF8.toList
-def fieldsParam : Core.Bytes := "fields".toUTF8.toList
-
-/-- A Doc, and a field, as a parameter's value. -/
-def docValue (d : Core.DocId) : Core.Value := .bytes d.hash.bytes
-def fieldValue (f : String) : Core.Value := .text f.toUTF8.toList
-
 /-- Reading a Doc. -/
 def readOn (d : Core.DocId) : Line := ⟨coreOp .read, .doc d .self, []⟩
 
