@@ -5,13 +5,20 @@
    "title": "Sealed in chunks, not one by one.",
    "text": "Sealing every CRDT op on its own would make data huge. So a device seals {chunks}: a run of changes, compressed, then encrypted. Where a chunk ends is decided by the changes' hashes, as the next slide shows.",
    "code": {
-    "chunk": "blake3:a91f…",
-    "holds": "bob:18 – bob:40",
+    "type": "theos/chunk@1",
+    "id": "chunk:b3:a91f…",
+    "on": "data:ed25519:7Hq…#house-list",
+    "peer": "a17e02",
+    "ops": "a17e02:18 – a17e02:40",
     "after": [
-     "blake3:77c2…"
+     "chunk:b3:77c2…"
     ],
-    "signed_by": "bob-laptop",
-    "bytes": "sealed"
+    "bytes": "e4 1a 9c 07 …",
+    "sig": {
+     "by": "agent:b3:b4l…#bob-laptop",
+     "key": "ed25519:Bq3…",
+     "value": "…"
+    }
    },
    "flow": [
     "changes",
@@ -26,9 +33,9 @@
    "title": "Sealed chunks settle in layers.",
    "text": "Every sealed change has a hash. About one in 256 hashes starts with a zero byte: that change closes a chunk holding everything since the last one. One in 65,000 starts with two zero bytes and closes a bigger chunk around the smaller ones. Like layers of {sediment}: old history ends up in a few big chunks. Every device, even a carrier that reads nothing, splits at the same places.",
    "code": {
-    "0x7c3a…": "depth 0: a loose change",
-    "0x00b1…": "depth 1: closes a chunk",
-    "0x0000…": "depth 2: closes a bigger chunk"
+    "b3:7c3a…": "depth 0: a loose change",
+    "b3:00b1…": "depth 1: closes a chunk",
+    "b3:0000…": "depth 2: closes a bigger one"
    },
    "deep": "Sedimentree (from Ink & Switch's Subduction): depth = number of leading zero bytes of a change's BLAKE3 hash. Depth ≥ 1 closes a chunk; deeper chunks contain shallower ones. Equal content gives an equal minimal hash. (D33)"
   },
@@ -36,8 +43,14 @@
    "title": "Finding what's missing, cheaply.",
    "text": "Two devices may hold the same data and differ by only a little. They never list everything. Inside one piece of data they compare {fingerprints}, short keyed hashes of each layer; across thousands of pieces of data they swap a few tiny {summaries}. Both cost about as much as the difference, not the whole.",
    "code": {
-    "inside_one": "fingerprints of its layers",
-    "across_many": "summaries that peel apart"
+    "inside_one": {
+     "on": "data:ed25519:7Hq…#house-list",
+     "send": "8-byte fingerprint per layer"
+    },
+    "across_many": {
+     "on": "all data you hold",
+     "send": "RIBLT summaries until all peel"
+    }
    },
    "deep": "Two levels (D34): fingerprints within one piece of data, RIBLT set reconciliation across many. Both cost roughly in proportion to the difference."
   },
@@ -45,18 +58,18 @@
    "title": "Fingerprints, step by step.",
    "text": "Alice picks a fresh random seed. For each layer and loose change she holds, she sends an 8-byte fingerprint: its hash, mixed with the seed. Bob fingerprints his own with the same seed, sends what she lacks and asks for what he lacks. One and a half round trips. Thanks to the layers, even a million changes are only a few hundred fingerprints.",
    "code": {
-    "seed": "random, fresh each time",
+    "seed": "0x3e91…c07a",
     "alice_sends": [
      "9f3a01c2…",
      "04b77e10…",
      "…"
     ],
     "bob_answers": {
-     "you_lack": [
-      "layer 0x00b1…"
+     "chunks": [
+      "chunk:b3:00b1…"
      ],
-     "i_lack": [
-      "change 0x7c3a…"
+     "want": [
+      "b3:7c3a…"
      ]
     }
    },
@@ -72,10 +85,14 @@
    "title": "Tiny summaries that peel apart.",
    "text": "Across all your data, each side mixes the hashes of everything it holds into summaries: each one an XOR of a random handful of hashes, plus a count. Bob subtracts his own summaries from Alice's. Whatever both hold cancels out. A summary left with just one hash names it outright; remove that one everywhere, and the next summary opens, like peeling an onion. Alice sends more summaries until everything has peeled.",
    "code": {
-    "held_each": "10,000 pieces of data",
+    "held_each": 10000,
     "differ": 5,
-    "summaries_needed": "about 8, of 32 bytes",
-    "costs": "~1.5 × the difference"
+    "summary": {
+     "xor": "b3:5e0c…",
+     "count": 1,
+     "check": "a41f…"
+    },
+    "summaries_sent": 8
    },
    "flow": [
     "mix",
@@ -89,12 +106,18 @@
    "title": "A Value streams in checked ranges.",
    "text": "Bob asks for a Value by its hash. Every range is checked against that hash as it arrives, so nobody can slip in a wrong byte. He can ask for just a range, and from several devices at once.",
    "code": {
-    "want": "blake3:9f2c…",
-    "range": "chunks 0–60",
+    "type": "theos/want@1",
+    "value": "value:b3:9f2c…#movie",
+    "range": "bytes 0–64 MiB",
     "from": [
-     "alice-phone",
-     "backup"
-    ]
+     "agent:b3:a1p…#alice-phone",
+     "agent:b3:k8b…#backup"
+    ],
+    "sig": {
+     "by": "agent:b3:b4l…#bob-laptop",
+     "key": "ed25519:Bq3…",
+     "value": "…"
+    }
    },
    "deep": "BLAKE3 verified streaming: every received range is checked against the root hash before use. Ranges can come from several peers at once."
   },
@@ -102,10 +125,11 @@
    "title": "News travels by gossip.",
    "text": "News travels by {gossip}: each peer passes it on to a few others. When Alice changes the list, her device tells the peers interested in it: “house-list has something new.” Whoever wants it fetches the new sealed chunks.",
    "code": {
-    "topic": "house-list",
-    "news": {
-     "chunk": "blake3:e40d…"
-    }
+    "type": "theos/news@1",
+    "topic": "data:ed25519:7Hq…#house-list",
+    "chunks": [
+     "chunk:b3:e40d…"
+    ]
    },
    "deep": "Gossip topic = data ID. Announcements carry only new chunk hashes, so carriers learn no author or content."
   },

@@ -11,13 +11,17 @@
    "text": "When data is born, it gets a {seal}: a key used exactly once, to sign the data's first rule, naming its owner, and then destroyed. Nobody holds the seal, so nobody can share it, lose it or steal it. The list doesn't come from any account; its authority starts with itself.",
    "deep": "The seal is a fresh Ed25519 key pair. Its public key is the data ID. It signs one certificate, naming the owner, and the private key is zeroised. Keyhive calls the same pattern the genesis key.",
    "code": {
-    "id": "ed25519:7Hq…",
-    "first_rule": {
-     "owner": "you",
-     "operation": "everything"
-    },
-    "sig": "seal:…",
-    "seal": "destroyed"
+    "type": "theos/rule@1",
+    "to": "human:b3:q4x7…#you",
+    "on": "data:ed25519:7Hq…#house-list",
+    "operations": [
+     "own"
+    ],
+    "sig": {
+     "by": "data:ed25519:7Hq…#house-list",
+     "key": "ed25519:7Hq…",
+     "value": "…"
+    }
    },
    "flow": [
     "new seal",
@@ -63,24 +67,23 @@
    "title": "A Value never changes.",
    "text": "Its name is the hash of its bytes, so it can't be swapped without everyone noticing. It travels in ranges, and you fetch only the parts you need: the first minute of a movie, page 3 of a PDF.",
    "code": {
-    "value": "blake3:9f2c…",
-    "size": "1.4 GB",
-    "fetched": "in verified ranges",
-    "type": "video/mp4"
+    "type": "theos/value@1",
+    "id": "value:b3:9f2c…#movie",
+    "size": 1503238554,
+    "tree": "BLAKE3, 1 KiB blocks"
    },
    "deep": "BLAKE3 builds a hash tree over 1 KiB blocks, so any range can be verified against the root hash alone. Change one byte and the name changes."
   },
   {
    "title": "Every Value has its own Doc.",
-   "text": "The movie never changes, but its name, its notes and who may see it do. So every Value comes with a small Doc: its metadata. The Doc also holds the Value's key, so whoever may read the Doc can open the Value.",
+   "text": "The movie never changes, but its name, its notes and who may see it do. So every Value comes with a small Doc: its metadata. Whoever may read that Doc can open the Value; how, comes in the Keys chapter.",
    "code": {
-    "doc": "tap-photo",
-    "value": "blake3:9f2c…",
-    "name": "Leaking tap",
-    "notes": "Under the sink",
-    "value_key": "sealed with this Doc's key"
+    "type": "theos/meta@1",
+    "value": "value:b3:9f2c…#movie",
+    "name": "Our summer",
+    "notes": "For grandma"
    },
-   "deep": "A Value's data key is stored inside its metadata Doc, under that Doc's own data key. Read on the Doc implies read on the Value. Taking read away protects only future versions of an immutable Value."
+   "deep": "A Value has no rules of its own: its keyring holds one envelope, addressed to its metadata Doc's data key (Keys chapter). Taking read away protects only future versions of an immutable Value."
   },
   {
    "title": "Data, in short.",

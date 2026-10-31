@@ -26,21 +26,25 @@
    "title": "Every rule is one sentence.",
    "text": "A rule says: this role may perform these operations, on this data, until a date: its {expiry}. Nothing more. Everything anyone may ever do with your data is written in rules like this one.",
    "code": {
-    "rule": {
-     "role": "home",
-     "data": "house-list",
-     "operations": [
-      "create",
-      "read",
-      {
-       "operation": "update",
-       "at": "items/*/done"
-      }
-     ],
-     "expires": "2026-12-01"
-    },
-    "signed_by": "you (owner)",
-    "proof": "…back to the seal"
+    "type": "theos/rule@1",
+    "to": "role:b3:k1m…#home",
+    "on": "data:ed25519:7Hq…#house-list",
+    "operations": [
+     "create",
+     "read",
+     "update"
+    ],
+    "expires": "2026-12-01T00:00:00Z",
+    "issuer": "human:b3:q4x7…#you",
+    "proof": [
+     "rule:b3:z0e…#first",
+     "rule:b3:a0p…#your-phone"
+    ],
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
    },
    "deep": "A rule is a signed certificate with one shape everywhere: who (a role), on what (this data), operations (each optionally narrowed by at, where or a limit), expiry, and a proof chain back to the seal. An identity's own rules use the same shape (Identity chapter). People see “rule”; underneath it is a capability."
   },
@@ -60,13 +64,15 @@
    "title": "Conditions make a rule narrower.",
    "text": "Each operation can carry {conditions}: only this part of the data, only entries that match, only so many times.",
    "code": {
-    "role": "kids",
-    "data": "house-list",
+    "type": "theos/rule@1",
+    "to": "role:b3:d5k…#kids",
+    "on": "data:ed25519:7Hq…#house-list",
     "operations": [
      "read",
      {
       "operation": "create",
-      "at": "items"
+      "at": "items",
+      "limit": 20
      },
      {
       "operation": "update",
@@ -75,7 +81,12 @@
        "author": "$self"
       }
      }
-    ]
+    ],
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
    },
    "deep": "Conditions are evaluated by every verifying peer: at (a path prefix), where (matching entries, for example author = $self), limits. Like Meadowcap's areas, each condition can only narrow."
   },
@@ -83,27 +94,23 @@
    "title": "Passing a rule on only narrows it.",
    "text": "If home's rule allows share, Mia can give other roles a narrower copy: “grandma's” may read, the plumber may read and update one item. She can end what she gave, but no one else's. And if her own rule ends, everything she passed on ends with it. Only the owner's rules never fall this way.",
    "code": {
-    "blocks": [
-     {
-      "by": "you",
-      "role": "home",
-      "operations": [
-       "read",
-       "update",
-       "share"
-      ],
-      "expires": "2026-12-01"
-     },
-     {
-      "by": "mia",
-      "role": "grandma's",
-      "operations": [
-       "read"
-      ],
-      "expires": "2026-11-15"
-     }
+    "type": "theos/rule@1",
+    "to": "role:b3:g6m…#grandma",
+    "on": "data:ed25519:7Hq…#house-list",
+    "operations": [
+     "read"
     ],
-    "if_mia_leaves_home": "grandma's rule ends too"
+    "expires": "2026-11-15T00:00:00Z",
+    "issuer": "human:b3:m2a9…#mia",
+    "proof": [
+     "rule:b3:z0e…#first",
+     "rule:b3:h7r…#home"
+    ],
+    "sig": {
+     "by": "agent:b3:p9c…#mia-phone",
+     "key": "ed25519:Mk7…",
+     "value": "…"
+    }
    },
    "deep": "Attenuation: each appended block can only remove operations, shorten the expiry or add conditions; a verifier intersects all blocks. A delegate may end only rules it issued. When a rule ends, every rule issued under it ends too (cascade); the owner's rules are the root. Writes by a removed delegate that never saw the ending are dropped."
   },
@@ -111,13 +118,18 @@
    "title": "Only the owner never expires.",
    "text": "The rule the seal signed at birth names the owner. It has no expiry, so data can never end up with nobody allowed to look after it. Only the owner can hand it over to another identity. Every other rule expires.",
    "code": {
-    "data": "house-list",
-    "first_rule": {
-     "owner": "you",
-     "operation": "everything, and the rules"
-    },
-    "signed_by": "seal",
-    "expires": "never"
+    "type": "theos/rule@1",
+    "to": "human:b3:q4x7…#you",
+    "on": "data:ed25519:7Hq…#house-list",
+    "operations": [
+     "own"
+    ],
+    "expires": null,
+    "sig": {
+     "by": "data:ed25519:7Hq…#house-list",
+     "key": "ed25519:7Hq…",
+     "value": "…"
+    }
    },
    "deep": "The genesis certificate has no expiry. Ownership moves only through a hand-over signed by the owner under its own rules."
   },

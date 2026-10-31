@@ -38,9 +38,21 @@
    "title": "Snapshots let the past go.",
    "text": "At key turns older than 30 days, the history is {cut}: newcomers get a {snapshot}, the current state with no history, so they never see what was deleted. The older keys go to the owner's archive. A writer who comes back from before the cut loses, and gets a conflict view of what was not adopted.",
    "code": {
-    "cut_at": "a key turn > 30 days old",
-    "newcomers_get": "snapshot + later CRDT ops",
-    "before_the_cut": "keys to the archive"
+    "type": "theos/chunk@1",
+    "id": "chunk:b3:s9n…#snapshot",
+    "on": "data:ed25519:7Hq…#house-list",
+    "snapshot": true,
+    "frontier": [
+     "5f3a9c:120",
+     "a17e02:88"
+    ],
+    "after": [],
+    "key": "datakey:house-list/7",
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
    },
    "flow": [
     "older than the hot window",
@@ -65,14 +77,15 @@
    "title": "Some things must be kept for years.",
    "text": "Bookkeeping must be kept for ten years. At any time, the owner can say {retain}: keep this until 2036. From then on, nobody can cut, shred or erase it before that date, and the date can only move later. Identities in a retention role, like your tax adviser, help keep it.",
    "code": {
-    "event": "retain",
-    "data": "invoices-2026",
-    "until": "2036-12-31",
-    "by": "you (owner)",
-    "retainers": [
-     "backup",
-     "tax adviser"
-    ]
+    "type": "theos/retain@1",
+    "on": "data:ed25519:2Nv…#invoices-2026",
+    "until": "2036-12-31T00:00:00Z",
+    "role": "role:b3:t3x…#retainers",
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
    },
    "deep": "Retain is an owner-signed event, extend-only; honest devices refuse cuts and erasures before the date (erring toward keeping). The retention role holds want and keep, and optionally a share of the archive key. Stored as canonical CBOR; exported as JSON and PDF/A; resealed periodically under current algorithms."
   },

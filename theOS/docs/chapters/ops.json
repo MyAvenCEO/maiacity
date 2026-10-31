@@ -5,8 +5,9 @@
    "title": "Everything you do is an operation.",
    "text": "Reading a list, ticking an item, searching your notes, syncing with a friend: each is an operation, a small piece of JSON that says what to do. One engine runs them all.",
    "code": {
+    "type": "theos/operation@1",
     "operation": "get",
-    "data": "house-list"
+    "on": "data:ed25519:7Hq…#house-list"
    },
    "deep": "An operation is JSON: {operation, data, …arguments}. One engine parses it, checks the rule, runs it locally and returns a result or a set of CRDT ops."
   },
@@ -14,8 +15,9 @@
    "title": "A simple query.",
    "text": "“What's still open, soonest first?” An operation takes data, narrows it and hands back an answer. It runs on your own device, over what you can already read.",
    "code": {
+    "type": "theos/operation@1",
     "operation": "find",
-    "data": "house-list",
+    "on": "data:ed25519:7Hq…#house-list",
     "at": "items",
     "where": {
      "done": false
@@ -29,8 +31,9 @@
    "title": "Changes are operations too.",
    "text": "Ticking an item is an operation. The engine checks your rule, turns it into CRDT ops, signs them and hands them to sync. An operation is what you mean; CRDT ops are what gets stored.",
    "code": {
+    "type": "theos/operation@1",
     "operation": "update",
-    "data": "house-list",
+    "on": "data:ed25519:7Hq…#house-list",
     "at": "items/milk/done",
     "value": true
    },
@@ -47,8 +50,9 @@
    "title": "Walking a graph.",
    "text": "Data links to data: a list to its items, an item to a photo, a person to their friends. A {walk} follows links hop by hop, and stops wherever your rules stop.",
    "code": {
+    "type": "theos/operation@1",
     "operation": "walk",
-    "from": "you",
+    "from": "data:ed25519:1Pf…#your-profile",
     "follow": [
      "friends",
      "lists",
@@ -65,8 +69,9 @@
    "title": "Searching by words.",
    "text": "A {search} finds the notes that best match your words, ranked the way search engines do it (BM25). The index is built on your device, from what you can read, and never leaves it.",
    "code": {
+    "type": "theos/operation@1",
     "operation": "search",
-    "data": "my-notes",
+    "on": "data:ed25519:5Wn…#notes",
     "text": "leaking tap kitchen",
     "fields": [
      "title",
@@ -80,8 +85,9 @@
    "title": "Searching by meaning.",
    "text": "“Plumbing problems” should also find “water under the sink”. A {near} compares meaning as vectors and returns the closest entries. Same rule: the index is local.",
    "code": {
+    "type": "theos/operation@1",
     "operation": "near",
-    "data": "my-notes",
+    "on": "data:ed25519:5Wn…#notes",
     "text": "plumbing problems",
     "k": 5
    },
@@ -91,11 +97,12 @@
    "title": "Operations chain together.",
    "text": "The answer of one operation is the input of the next. Search by meaning, follow the links to whoever is assigned, keep only what's open.",
    "code": {
+    "type": "theos/operation@1",
     "operation": "chain",
     "steps": [
      {
       "operation": "near",
-      "data": "house-list",
+      "on": "data:ed25519:7Hq…#house-list",
       "text": "plumbing",
       "k": 20
      },
@@ -120,12 +127,15 @@
    "text": "find, walk, search and near are {plugins}. Each one declares its name, the shape of its JSON, and what a rule must allow for it to run. A new plugin, say for maps or for time series, slots in the same way.",
    "code": {
     "plugin": "search",
+    "spec": "b3:6dq…",
     "input": {
      "text": "string",
      "fields": "list",
      "limit": "number"
     },
-    "needs": "read",
+    "needs": [
+     "read"
+    ],
     "runs": "local"
    },
    "deep": "One plugin registry for operations (find, walk, near, act …) and for rule conditions (at, where, limit …, and later signature counts). Each plugin is named by the hash of its specification, declares its JSON shape, what a rule must allow, and, for conditions, whether it applies to identities or to data. Unknown plugins fail closed."
@@ -134,8 +144,9 @@
    "title": "Rules name the operations.",
    "text": "Reading operations, like find, walk, search and near, need read on the data, and that's all: once your device can read it, the engine may search it any way you like. Change operations are where rules get fine: every device checks every signed change against them, down to one path or one matching entry.",
    "code": {
-    "role": "kids",
-    "data": "house-list",
+    "type": "theos/rule@1",
+    "to": "role:b3:d5k…#kids",
+    "on": "data:ed25519:7Hq…#house-list",
     "operations": [
      "read",
      {
@@ -149,7 +160,12 @@
        "author": "$self"
       }
      }
-    ]
+    ],
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
    },
    "deep": "Reading operations need read on the data and nothing else, because a reader holds the plaintext. Change operations are checked by every peer, down to a path or matching entry."
   },
@@ -168,16 +184,17 @@
    "title": "Sharing an answer is sharing data.",
    "text": "The street wants to know how many tasks are open in your home. It can't ask. Instead, your device counts and writes the number into a small piece of data of its own, with a rule that lets the street read it. The street sees the number and nothing else.",
    "code": {
-    "data": "home-stats",
+    "on": "data:ed25519:8Rs…#home-stats",
     "content": {
      "open_tasks": 4
     },
-    "rules": {
-     "street": [
+    "rule": {
+     "type": "theos/rule@1",
+     "to": "role:b3:e9s…#street",
+     "operations": [
       "read"
      ]
-    },
-    "updated_by": "count, on your device"
+    }
    },
    "deep": "The answer is written as new data, computed and signed by your own device, with its own rule for the asker. That rule is revocable and expires like any other."
   },

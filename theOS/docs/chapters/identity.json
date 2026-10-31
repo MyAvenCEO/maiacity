@@ -15,10 +15,24 @@
    "title": "You and your first agent are born together.",
    "text": "When you start, your phone's agent makes its signer and signs one record: your birth, its own birth, and its first rule, “this agent may act for you.” From then on, you exist, and you own it. Nothing has to come first.",
    "code": {
-    "signed_by": "phone's signer",
-    "you": "born (ID = hash of this record)",
-    "phone": "born, owned by you",
-    "first_rule": "phone may act, own and govern for you"
+    "type": "theos/genesis@1",
+    "human": "#you",
+    "signer": "ed25519:Fp2…",
+    "next": "b3:9xk…",
+    "rule": {
+     "to": "#your-phone",
+     "on": "#you",
+     "operations": [
+      "act",
+      "own",
+      "govern"
+     ]
+    },
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
    },
    "deep": "One genesis record creates the human identity and its first agent together, so there is no chicken-and-egg problem. The record already commits to the next keys in advance (KERI-style pre-rotation)."
   },
@@ -26,10 +40,22 @@
    "title": "Each agent gets only what you give it.",
    "text": "You can have many agents: your laptop, your watch, a server, even an AI assistant. Each gets its own {rule} from you: a signed statement of what it may do for you. Your phone may do everything; your watch only what concerns your health; your assistant only your shopping list.",
    "code": {
-    "phone": "act, own, govern",
-    "watch": "act, only on health data",
-    "server": "sync only",
-    "assistant": "read and update “house-list”"
+    "type": "theos/rule@1",
+    "to": "agent:b3:w3t…#watch",
+    "on": "human:b3:q4x7…#you",
+    "operations": [
+     {
+      "operation": "act",
+      "where": {
+       "data": "data:ed25519:4Hb…#health"
+      }
+     }
+    ],
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
    },
    "deep": "An agent's rule has the same shape as every rule in theOS: who (the agent), on what (its owner), operations (act, own, govern), conditions (which data, limits, expiry). Adding an agent needs its own signature and a rule from its owner."
   },
@@ -42,18 +68,17 @@
    "title": "Coops can hold coops.",
    "text": "Your street is a coop of homes, and a home is a coop of people. Coops can be members of coops, as deep as you like, just never in a circle.",
    "code": {
-    "street": {
-     "members": [
-      "home",
-      "home-12",
-      "home-14"
-     ]
-    },
-    "home": {
-     "members": [
-      "you",
-      "mia"
-     ]
+    "type": "theos/identity@1",
+    "id": "coop:b3:s5t8…#street",
+    "members": [
+     "coop:b3:c7n2…#home",
+     "coop:b3:h1x…#home-12",
+     "coop:b3:h4y…#home-14"
+    ],
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
     }
    },
    "deep": "Membership is checked whenever it changes; a change that would close a circle is rejected."
@@ -62,15 +87,21 @@
    "title": "A coop decides by its own rules.",
    "text": "A coop's rules say which members may act for it. They know only three kinds of act. Acting: ordinary changes. Owning: writing rules for what it owns, and handing things over. Governing: changing its own members and rules. For now, one member's signature is enough for each.",
    "code": {
-    "coop": "home",
-    "members": [
-     "you",
-     "mia"
+    "type": "theos/rule@1",
+    "to": [
+     "human:b3:q4x7…#you",
+     "human:b3:m2a9…#mia"
     ],
-    "rules": {
-     "act": "any one member",
-     "own": "any one member",
-     "govern": "any one member"
+    "on": "coop:b3:c7n2…#home",
+    "operations": [
+     "act",
+     "own",
+     "govern"
+    ],
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
     }
    },
    "deep": "Same shape as every rule: who (its members), on what (the coop itself), operations (act, own, govern), conditions. The default condition is one signature (1 of 1). Counts like 2 of 3, weights or a waiting time can be plugged in later as condition plugins; a device that does not know one treats it as not satisfied."

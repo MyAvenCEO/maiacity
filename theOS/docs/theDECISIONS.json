@@ -351,7 +351,7 @@
    "id": "D17",
    "title": "The keyring travels with the data",
    "status": "decided",
-   "decision": "Each piece of data carries its keyring (envelopes, generation, back-links) next to its rules, sealed.",
+   "decision": "Each piece of data carries its keyring (envelopes, generation, back-links) next to its rules, sealed. An envelope is addressed either to a lock or to another data key (a Value bound to its metadata Doc).",
    "why": "No one keeps keys for the data; it is self-contained wherever it goes.",
    "sources": [
     {
@@ -360,7 +360,8 @@
     }
    ],
    "slides": [
-    "keys-9"
+    "keys-9",
+    "keys-10"
    ],
    "date": "2026-10-31"
   },
@@ -381,7 +382,7 @@
     }
    ],
    "slides": [
-    "keys-10"
+    "keys-11"
    ],
    "date": "2026-10-31"
   },
@@ -431,7 +432,7 @@
     }
    ],
    "slides": [
-    "keys-10"
+    "keys-11"
    ],
    "date": "2026-10-31"
   },
@@ -439,7 +440,7 @@
    "id": "D21",
    "title": "Data is a Doc or a Value",
    "status": "decided",
-   "decision": "A Doc is JSON that changes, made of CRDT data types (Loro underneath). A Value is bytes that never change, named by their BLAKE3 hash, streamed in checked chunks. Every Value has a small metadata Doc that holds its key.",
+   "decision": "A Doc is JSON that changes, made of CRDT data types (Loro underneath). A Value is bytes that never change, named by their BLAKE3 hash, streamed in checked ranges. Every Value has a small metadata Doc; the Value's keyring holds one envelope, addressed to that Doc's data key, so read on the Doc means read on the Value.",
    "why": "Mergeable structure where it helps, plain files where it does not.",
    "sources": [
     {
@@ -458,7 +459,8 @@
    "slides": [
     "data-4",
     "data-6",
-    "data-7"
+    "data-7",
+    "keys-10"
    ],
    "date": "2026-10-31"
   },
@@ -1018,7 +1020,7 @@
    "title": "Record conventions",
    "status": "decided",
    "date": "2026-10-31",
-   "decision": "Every stored or sent thing is a record: {\"type\": \"theos/<kind>@<version>\", …fields, \"sig\"} in canonical CBOR (shown as JSON). IDs are typed: human:, coop:, agent:, role:, rule:, ending: and chunk: followed by b3: and the BLAKE3 hash of the record; data: followed by the seal's ed25519 public key; value: b3: hash of the bytes. A #label after an ID is only for people (human:b3:q4x7…#you). Public keys: ed25519:… (signers, seals), x25519:… (locks). Secret keys never appear; they are named, for example datakey:house-list/3. CRDT op IDs are Loro's peer and counter (5f3a9c:41). Times are RFC 3339 in UTC. Signatures: \"sig\": {\"by\": agent ID, \"key\": ed25519 public key, \"value\": …}.",
+   "decision": "Every stored or sent thing is a record: {\"type\": \"theos/<kind>@<version>\", …fields, \"sig\"} in canonical CBOR (shown as JSON). IDs are typed: human:, coop:, agent:, role:, rule:, ending: and chunk: followed by b3: and the BLAKE3 hash of the record; data: followed by the seal's ed25519 public key; value: b3: hash of the bytes. A #label after an ID is only for people (human:b3:q4x7…#you). Public keys: ed25519:… (signers, seals), x25519:… (locks). Secret keys never appear; they are named, for example datakey:house-list/3. CRDT op IDs are Loro's peer and counter (5f3a9c:41). Times are RFC 3339 in UTC. Signatures: \"sig\": {\"by\": agent ID, \"key\": ed25519 public key, \"value\": …}. Record kinds: genesis, identity, member, rule, renewal, ending, envelope, keyring, change, chunk, value, meta, retain, erase, record, proof, want, news, operation. A member record joins an identity to a coop; an ending ends a rule or a member record. A data's first rule gives its owner the operation own (everything, including writing rules) and is signed by the seal, the only signer that is not an agent. A proof is the ordered list of record IDs from the seal or an identity's genesis to the acting agent. Identity rules do not expire unless they say so.",
    "why": "Slides and code use the same shapes and names, so the examples are drafts of the real schema, not illustrations.",
    "sources": [
     {

@@ -5,10 +5,10 @@
    "title": "But really, a Doc is a history.",
    "text": "Every change is a {CRDT op} with its own ID: which device made it, and its counter on that device. Each CRDT op also says which CRDT ops it had already seen. The JSON is just what you get when you play the history.",
    "code": {
-    "id": "alice:41",
+    "id": "5f3a9c:41",
     "deps": [
-     "alice:40",
-     "bob:17"
+     "5f3a9c:40",
+     "a17e02:17"
     ],
     "op": "set",
     "at": "items/milk/done",
@@ -25,23 +25,23 @@
    "title": "Both edit offline.",
    "text": "On a train, Alice ticks “buy milk”. At home, Bob renames the list and adds “call grandma”. Neither knows about the other's changes.",
    "code": {
-    "alice": [
+    "alice-phone": [
      {
-      "id": "alice:41",
+      "id": "5f3a9c:41",
       "set": "items/milk/done",
-      "to": true
+      "value": true
      }
     ],
-    "bob": [
+    "bob-laptop": [
      {
-      "id": "bob:18",
+      "id": "a17e02:18",
       "set": "title",
-      "to": "Home"
+      "value": "Home"
      },
      {
-      "id": "bob:19",
+      "id": "a17e02:19",
       "insert": "items/2",
-      "to": "Call grandma"
+      "value": "Call grandma"
      }
     ]
    },
@@ -52,20 +52,20 @@
    "text": "Each device keeps a {version vector}: the highest CRDT op it has seen from every device. They compare vectors and send only the difference. Three small CRDT ops, not the whole list.",
    "code": {
     "alice_has": {
-     "alice": 41,
-     "bob": 17
+     "5f3a9c": 41,
+     "a17e02": 17
     },
     "bob_has": {
-     "alice": 40,
-     "bob": 19
+     "5f3a9c": 40,
+     "a17e02": 19
     },
     "send": {
      "to_bob": [
-      "alice:41"
+      "5f3a9c:41"
      ],
      "to_alice": [
-      "bob:18",
-      "bob:19"
+      "a17e02:18",
+      "a17e02:19"
      ]
     }
    },
@@ -97,17 +97,17 @@
    "title": "Both rename the list.",
    "text": "Alice types “Our home”, Bob types “Home”. For one field, one value has to win. The map picks the CRDT op with the later logical clock, and if those tie, the higher device ID. Every copy picks the same one.",
    "code": {
-    "alice": {
-     "id": "alice:42",
+    "5f3a9c:42": {
      "lamport": 61,
-     "title": "Our home"
+     "set": "title",
+     "value": "Our home"
     },
-    "bob": {
-     "id": "bob:20",
+    "a17e02:20": {
      "lamport": 61,
-     "title": "Home"
+     "set": "title",
+     "value": "Home"
     },
-    "winner": "same clock, higher device ID"
+    "winner": "a17e02:20 (same clock, higher peer)"
    },
    "deep": "Maps resolve concurrent sets with last-writer-wins by Lamport timestamp, ties broken by peer ID. Deterministic, so every replica picks the same winner."
   },
@@ -124,12 +124,18 @@
   },
   {
    "title": "History remembers what you deleted.",
-   "text": "A CRDT keeps every CRDT op, because a device that was offline for weeks may still send a CRDT op that builds on an old state. That also means a sentence you typed and erased is still in the history, and anyone who can read the history can read it.",
+   "text": "A CRDT keeps every CRDT op, because a device that was offline for weeks may still send a CRDT op that builds on an old state. That also means a sentence you typed and erased is still in the history, and anyone who can read the history can read it. How to really erase it comes in the Time chapter.",
    "code": {
     "now": "Fix the tap",
     "history": [
-     "insert “Call the landlord about the tap”",
-     "delete “Call the landlord about ”"
+     {
+      "id": "0d93e7:12",
+      "insert": "Call the landlord about the tap"
+     },
+     {
+      "id": "0d93e7:43",
+      "delete": "Call the landlord about "
+     }
     ]
    },
    "deep": "A delete in a CRDT is a tombstone: the inserted characters stay in the history. Anyone given the history can reconstruct deleted text."

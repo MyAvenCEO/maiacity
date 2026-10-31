@@ -32,15 +32,16 @@
    "title": "Envelopes only for keys you can trust.",
    "text": "Each device publishes its lock, an encryption key, in its identity's history, signed by its own signer. Envelopes may only be made for locks found there, and only by someone a rule allows. Otherwise an attacker could slip in a lock of their own, and writers would quietly encrypt to them.",
    "code": {
-    "identity": "mia",
-    "devices": [
-     {
-      "device": "mia-phone",
-      "lock": "x25519:4kd…",
-      "signed_by": "mia-phone signer"
-     }
-    ],
-    "envelopes_to": "only these locks"
+    "type": "theos/identity@1",
+    "id": "agent:b3:p9c…#mia-phone",
+    "owner": "human:b3:m2a9…#mia",
+    "signer": "ed25519:Mk7…",
+    "lock": "x25519:4kd…",
+    "sig": {
+     "by": "agent:b3:p9c…#mia-phone",
+     "key": "ed25519:Mk7…",
+     "value": "…"
+    }
    },
    "deep": "Each device's lock is published in its identity's history, signed by its registered signer. Envelopes go only to locks found there, so nobody can inject a key of their own (Keyhive's open gap G2)."
   },
@@ -48,10 +49,16 @@
    "title": "Adding Mia to a role: one envelope.",
    "text": "The owner puts the role key in an envelope for Mia's identity key. That's all. Mia can now read everything the role can read, including recent history. How older history is kept comes in the Time chapter.",
    "code": {
-    "by": "you (owner)",
-    "role": "home",
-    "add": "mia",
-    "envelope": "role key → mia's identity key"
+    "type": "theos/envelope@1",
+    "key": "rolekey:home/2",
+    "for": "human:b3:m2a9…#mia",
+    "lock": "x25519:Qm4…",
+    "sealed": "hpke:…",
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
    },
    "deep": "One HPKE envelope of the current role key to Mia's identity key, signed by the owner. Older keys inside the hot window are reachable through back-links; anything older stays in the owner's archive."
   },
@@ -59,16 +66,21 @@
    "title": "Giving a rule: read needs a key, everything else needs only a signature.",
    "text": "Giving “plumber” read on the tap item puts the item's data key in an envelope for the plumber role. Giving update needs no key at all: it's a signed rule change in the item's history, and every device enforces it.",
    "code": {
-    "by": "you (owner)",
-    "data": "fix-tap",
-    "grant": {
-     "role": "plumber",
+    "rule": {
+     "type": "theos/rule@1",
+     "to": "role:b3:r4p…#plumber",
+     "on": "data:ed25519:3Tk…#fix-tap",
      "operations": [
       "read",
       "update"
      ]
     },
-    "envelope": "data key → plumber role key"
+    "envelope": {
+     "type": "theos/envelope@1",
+     "key": "datakey:fix-tap/1",
+     "for": "role:b3:r4p…#plumber",
+     "sealed": "hpke:…"
+    }
    },
    "deep": "Read needs the data key wrapped for the role key. Every other operation needs only a signed rule. That rule sits in the data's rule set, a grow-only set of signed certificates merged by union."
   },
@@ -86,15 +98,19 @@
    "title": "Taking a rule away.",
    "text": "Taking update away is just a signed rule change. Taking read away rotates the data key, and the new one goes to the owner and every reading role except that one.",
    "code": {
-    "by": "you (owner)",
-    "data": "house-list",
-    "take_away": {
-     "role": "kids",
-     "operations": [
-      "read"
-     ]
+    "ending": {
+     "type": "theos/ending@1",
+     "kind": "revoke",
+     "ends": "rule:b3:d6r…#kids-read"
     },
-    "rotate": "data key"
+    "keyring": {
+     "type": "theos/keyring@1",
+     "key": "datakey:house-list/4",
+     "for": [
+      "human:b3:q4x7…#you",
+      "role:b3:k1m…#home"
+     ]
+    }
    },
    "deep": "Taking read from a role rotates that data key immediately; the new key is wrapped for the owner and the remaining reading roles. Taking any other operation is only a signed rule change; no key turns."
   },
@@ -102,21 +118,38 @@
    "title": "Where does the data key live?",
    "text": "Nobody holds it for the data. It travels with the data itself: every piece of data carries a small {keyring} next to its rules. Its generation counts how often the data key has turned. The keyring holds the data key in envelopes: one for the owner, one for each role that may read. {Carriers}, devices that store or forward data they can't read, like a backup, store it like everything else, sealed and unreadable.",
    "code": {
-    "data": "house-list",
-    "rules": {
-     "owner: you": "everything",
-     "home": "create, read, update"
+    "type": "theos/keyring@1",
+    "on": "data:ed25519:7Hq…#house-list",
+    "generation": 2,
+    "key": "datakey:house-list/2",
+    "envelopes": {
+     "human:b3:q4x7…#you": "hpke:…",
+     "role:b3:k1m…#home": "hpke:…"
     },
-    "keyring": {
-     "generation": 2,
-     "envelopes": {
-      "you": "K2 → your identity key",
-      "home": "K2 → home role key"
-     },
-     "back": "K2 opens K1"
+    "back": "datakey:house-list/1",
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
     }
    },
    "deep": "The keyring: current generation (how often the data key has turned), one envelope per reader (owner and reading roles), and back-links where each data key opens the previous one, within the hot window only. Older keys move to the owner's archive."
+  },
+  {
+   "title": "A Value's key rides with its Doc.",
+   "text": "A Value has a keyring too, with just one envelope: the Value's key, sealed under its metadata Doc's data key. So whoever can open the Doc can open the Value, and the Value needs no rules of its own. Because a Value never changes, its key never turns: someone who already opened it keeps what they saw.",
+   "code": {
+    "type": "theos/keyring@1",
+    "on": "value:b3:9f2c…#movie",
+    "generation": 1,
+    "envelopes": [
+     {
+      "for": "datakey:movie-meta/3",
+      "sealed": "…"
+     }
+    ]
+   },
+   "deep": "An envelope is addressed either to a lock (a public key: the owner's identity key or a role key) or to another data key (a Value bound to its Doc). Same record, two kinds of address."
   },
   {
    "title": "Which key turns when.",

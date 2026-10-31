@@ -10,15 +10,16 @@
    "title": "You dial identities, not devices.",
    "text": "Every device has an {address} on the network: its signer's public key. But you never need to know it. Each identity publishes a signed record of its devices, and each device's history holds its current address. You dial Alice, and the connection goes to whichever of her devices is online.",
    "code": {
-    "dial": "alice",
-    "record": {
-     "devices": [
-      "alice-phone",
-      "alice-laptop"
-     ]
-    },
-    "alice-phone": {
-     "address": "ed25519:k51q…"
+    "type": "theos/record@1",
+    "id": "human:b3:a8f3…#alice",
+    "agents": [
+     "agent:b3:a1p…#alice-phone",
+     "agent:b3:a2l…#alice-laptop"
+    ],
+    "sig": {
+     "by": "agent:b3:a1p…#alice-phone",
+     "key": "ed25519:k51q…",
+     "value": "…"
     }
    },
    "deep": "An iroh endpoint ID is an Ed25519 public key; here it is the device's signer key. Identity records are signed and published like iroh's own discovery records. A new key changes the device's address, never the identity's."
@@ -47,10 +48,18 @@
    "title": "Both sides know who they talk to.",
    "text": "Every connection is encrypted with the two devices' keys. Then the device shows that its key is registered in its own history, and whose agent it is. The other side knows: this is Alice's phone, acting for Alice.",
    "code": {
-    "connected": "ed25519:k51q…",
-    "device": "alice-phone",
-    "agent_of": "alice",
-    "proof": "registered in alice-phone's history"
+    "type": "theos/proof@1",
+    "key": "ed25519:k51q…",
+    "agent": "agent:b3:a1p…#alice-phone",
+    "for": "human:b3:a8f3…#alice",
+    "chain": [
+     "rule:b3:a3c…#alice-phone"
+    ],
+    "sig": {
+     "by": "agent:b3:a1p…#alice-phone",
+     "key": "ed25519:k51q…",
+     "value": "…"
+    }
    },
    "deep": "The QUIC handshake proves the key. The agent's history proves the key is its current signer, and its owner's rules prove it may act."
   },

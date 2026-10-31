@@ -5,18 +5,21 @@
    "title": "Writing is a chain of signatures.",
    "text": "Mia ticks “buy milk”. Her phone's signer signs the change. Every {peer}, any device holding a copy, checks the links before merging: the signer belongs to Mia's phone, the phone belongs to Mia, Mia is in “home”, and “home” has update on this list. One broken link, and the change is dropped.",
    "code": {
-    "change": {
-     "data": "house-list",
-     "operation": "update",
-     "by": "mia-phone",
-     "sig": "…"
-    },
-    "check": [
-     "signer registered to mia-phone",
-     "mia-phone belongs to mia",
-     "mia is in home",
-     "home may update house-list"
-    ]
+    "type": "theos/change@1",
+    "on": "data:ed25519:7Hq…#house-list",
+    "ops": [
+     "c40b11:7"
+    ],
+    "proof": [
+     "rule:b3:m3a…#mia-phone",
+     "role:b3:k1m…#home",
+     "rule:b3:h7r…#home"
+    ],
+    "sig": {
+     "by": "agent:b3:p9c…#mia-phone",
+     "key": "ed25519:Mk7…",
+     "value": "…"
+    }
    },
    "deep": "Every peer checks a change before merging: the signature, the signer's registration in the identity's history, the identity's role membership, and a rule covering this operation on this data. Any broken link: dropped."
   },
@@ -35,20 +38,24 @@
    "title": "Under the hood, a rule is a capability.",
    "text": "Each rule is a signed token, a {capability}. It carries its own {proof}: who signed it, and why they were allowed to, all the way back to the seal. Any device can check it offline. Nobody can forge it.",
    "code": {
-    "rule": {
-     "role": "home",
-     "operations": [
-      "create",
-      "read",
-      "update"
-     ],
-     "expires": "2026-12-01"
-    },
-    "signed_by": "you (owner)",
+    "type": "theos/rule@1",
+    "to": "role:b3:k1m…#home",
+    "on": "data:ed25519:7Hq…#house-list",
+    "operations": [
+     "create",
+     "read",
+     "update"
+    ],
+    "expires": "2026-12-01T00:00:00Z",
     "proof": [
-     "seal → owner: you",
-     "you → home"
-    ]
+     "rule:b3:z0e…#first",
+     "rule:b3:a0p…#your-phone"
+    ],
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
    },
    "deep": "Like a Biscuit or UCAN token: a chain of signed blocks, each signed by the holder of the previous one, verifiable offline without any server. Like every signed or hashed thing, it is encoded as canonical CBOR, so the same rule always gives the same bytes."
   },
@@ -67,16 +74,22 @@
    "title": "Every change is checked on arrival.",
    "text": "Before Alice's device merges Bob's CRDT ops, it checks each one against the rules in the Doc's own history. Bob's role has update, so his CRDT ops go in. A stranger's CRDT op on the same list is dropped, quietly, everywhere.",
    "code": {
-    "op": "bob:19",
-    "kind": "insert",
-    "by": "bob",
-    "in": "home",
-    "home_may": [
-     "create",
-     "read",
-     "update"
+    "type": "theos/change@1",
+    "on": "data:ed25519:7Hq…#house-list",
+    "ops": [
+     "a17e02:18",
+     "a17e02:19"
     ],
-    "result": "merge"
+    "proof": [
+     "rule:b3:b5l…#bob-laptop",
+     "role:b3:k1m…#home",
+     "rule:b3:h7r…#home"
+    ],
+    "sig": {
+     "by": "agent:b3:b4l…#bob-laptop",
+     "key": "ed25519:Bq3…",
+     "value": "…"
+    }
    },
    "deep": "Verification happens before merge: signature, signer registration, role membership and covering rule, evaluated against the rules known in the change's causal history."
   },
@@ -84,11 +97,22 @@
    "title": "Two things at once.",
    "text": "Mia edits the list on a train, offline, at the same moment you remove her. When both devices meet, the removal wins: her edit is dropped everywhere. Every device decides the same way, so they all end up agreeing.",
    "code": {
-    "concurrent": [
-     "you: remove mia from home",
-     "mia: update house-list"
-    ],
-    "result": "removal wins, edit dropped"
+    "ending": {
+     "type": "theos/ending@1",
+     "kind": "revoke",
+     "member": "human:b3:m2a9…#mia",
+     "of": "role:b3:k1m…#home"
+    },
+    "change": {
+     "type": "theos/change@1",
+     "ops": [
+      "c40b11:9"
+     ],
+     "deps": [
+      "c40b11:8"
+     ]
+    },
+    "result": "ending wins, c40b11:9 dropped"
    },
    "deep": "Concurrency is resolved toward less authority: a removal and a change made without seeing it count as concurrent, and the removal wins. Every peer applies the same deterministic rule, so all copies converge."
   },

@@ -15,13 +15,18 @@
    "title": "want",
    "text": "Before a device sends anything, even sealed chunks, the asker shows a proof that a rule gives them want. The carrier checks the signatures and nothing else. A stranger gets nothing at all, not even ciphertext to count or keep. Read includes want.",
    "code": {
-    "asker": "bob-laptop",
+    "type": "theos/want@1",
+    "on": "data:ed25519:7Hq…#house-list",
     "proof": [
-     "seal → owner",
-     "owner → home: want",
-     "home ∋ bob"
+     "rule:b3:z0e…#first",
+     "rule:b3:h7r…#home",
+     "role:b3:k1m…#home"
     ],
-    "result": "send sealed chunks"
+    "sig": {
+     "by": "agent:b3:b4l…#bob-laptop",
+     "key": "ed25519:Bq3…",
+     "value": "…"
+    }
    },
    "deep": "The asker presents a proof chain: seal → owner → rule granting want to a role → the asker's identity in that role → the asker's registered signer. Valid chain: sealed chunks are sent. No chain: nothing, not even ciphertext."
   },
@@ -29,12 +34,19 @@
    "title": "keep",
    "text": "Your backup gets want and keep. It holds every sealed chunk, for good, and gives them back to your new phone. It has no read, so to it they're just sealed bytes.",
    "code": {
-    "role": "backup",
-    "data": "house-list",
+    "type": "theos/rule@1",
+    "to": "role:b3:j2b…#backup",
+    "on": "data:ed25519:7Hq…#house-list",
     "operations": [
      "want",
      "keep"
-    ]
+    ],
+    "expires": "2026-12-01T00:00:00Z",
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
    },
    "deep": "keep means the carrier stores sealed chunks durably and serves them to askers holding want. It never holds a data key."
   },
@@ -42,12 +54,19 @@
    "title": "sync",
    "text": "The street's always-on peer gets sync. It passes your changes between Alice and Bob when they're never online at the same time. It keeps them only as long as it has to.",
    "code": {
-    "role": "street",
-    "data": "house-list",
+    "type": "theos/rule@1",
+    "to": "role:b3:e9s…#street",
+    "on": "data:ed25519:7Hq…#house-list",
     "operations": [
      "want",
      "sync"
-    ]
+    ],
+    "expires": "2026-12-01T00:00:00Z",
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
    },
    "deep": "sync means the peer may forward sealed chunks to others whose rules give them want, which bridges devices that are never online at the same time."
   },
@@ -55,12 +74,18 @@
    "title": "What a carrier sees.",
    "text": "Sealed chunks, the hashes that link them, and the proofs it needs to decide whom to give them to. It can store, count and forward them. It can't read a title, a tick, a rule or a frame of the movie.",
    "code": {
-    "chunk": "blake3:a91f…",
+    "type": "theos/chunk@1",
+    "id": "chunk:b3:a91f…",
     "after": [
-     "blake3:77c2…"
+     "chunk:b3:77c2…"
     ],
-    "author_proof": "…",
-    "bytes": "e4 1a 9c 07 …"
+    "size": 18342,
+    "bytes": "e4 1a 9c 07 …",
+    "sig": {
+     "by": "agent:b3:7xq…",
+     "key": "ed25519:Bq3…",
+     "value": "…"
+    }
    },
    "deep": "Visible to a carrier: chunk hashes, sizes, links between chunks, and the proofs needed to decide whom to serve. Invisible: content, rules and keys."
   },
@@ -68,19 +93,19 @@
    "title": "All the rules on one list.",
    "text": "One piece of data, one owner, three roles, each with exactly what it needs.",
    "code": {
-    "data": "house-list",
-    "owner": "you",
+    "on": "data:ed25519:7Hq…#house-list",
+    "owner": "human:b3:q4x7…#you",
     "rules": {
-     "home": [
+     "#home": [
       "create",
       "read",
       "update"
      ],
-     "backup": [
+     "#backup": [
       "want",
       "keep"
      ],
-     "street": [
+     "#street": [
       "want",
       "sync"
      ]

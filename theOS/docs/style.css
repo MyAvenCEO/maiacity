@@ -189,3 +189,6 @@ body {
 .nav .track button.now i { background: var(--ochre); border-color: var(--ochre); transform: scale(1.3); }
 .nav .track button.now span { color: var(--ochre); }
 .nav .track button.past span { color: var(--stage-soft); }
+
+/* Long JSON lines wrap instead of running off the panel, at any window width. */
+.code { white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: hidden; }
