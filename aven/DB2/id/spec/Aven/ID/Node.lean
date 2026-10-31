@@ -119,6 +119,10 @@ structure Net where
   usable : String → String → Bool
   holders : String → List String
 
+/-- The relay list names vaults, never devices (rule 15, A28). A listed vault's relay runs on one of its devices, which
+its newest address record names: these are the endpoints `Net.relays` holds. -/
+def relayEndpoints (vaults : List String) (runs : String → Option String) : List String := vaults.filterMap runs
+
 /-- The admin lists only relays every member can use (PEERS §1). -/
 def Net.Listed (n : Net) : Prop := ∀ m ∈ n.members, ∀ r ∈ n.relays, n.usable m r = true
 
