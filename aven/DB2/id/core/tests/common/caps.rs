@@ -50,7 +50,7 @@ impl Names {
                 reach: Reach::of_name(v["reach"].as_str().unwrap()).unwrap(),
             }
         } else {
-            let vault = v["vault"].as_str().unwrap().to_string();
+            let vault = Hash::parse(v["vault"].as_str().unwrap()).unwrap();
             let below = v["below"].as_bool().unwrap();
             match v["type"].as_str() {
                 Some(t) => Target::VaultType {
@@ -66,12 +66,12 @@ impl Names {
     pub fn target_json(&self, t: &Target) -> Value {
         match t {
             Target::Doc { doc, reach } => json!({ "doc": self.text(doc), "reach": reach.name() }),
-            Target::Vault { vault, below } => json!({ "vault": vault, "below": below }),
+            Target::Vault { vault, below } => json!({ "vault": vault.text(), "below": below }),
             Target::VaultType {
                 vault,
                 r#type,
                 below,
-            } => json!({ "vault": vault, "type": self.text(r#type), "below": below }),
+            } => json!({ "vault": vault.text(), "type": self.text(r#type), "below": below }),
         }
     }
 
@@ -276,7 +276,7 @@ impl Context {
                 .iter()
                 .map(|d| Facts {
                     id: names.doc(d["id"].as_str().unwrap()),
-                    vault: d["vault"].as_str().unwrap().into(),
+                    vault: Hash::parse(d["vault"].as_str().unwrap()).unwrap(),
                     r#type: names.doc(d["type"].as_str().unwrap()),
                 })
                 .collect(),
@@ -485,7 +485,7 @@ fn with_reader<T>(
     };
     ctx.with(|x| {
         // who governs whom as authority runs, through quorums (`Ctx.governs`, A28)
-        let gov_ = |a: &str, b: &str| x.governs(a, b);
+        let gov_ = |a: &Hash, b: &Hash| x.governs(a, b);
         let r = Reader {
             ctx: aven_id::caps::Ctx {
                 tree: x.tree,
