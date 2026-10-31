@@ -1,19 +1,17 @@
 {
-  "about": "Every frozen runtime module (README, \"The runtime contract\", \"Only from the repository\"): append-only. A module is loaded only by a hash listed here, and only when its bytes have that hash. `sh freeze.sh --check`, in the box, rebuilds each module and fails when its bytes aren't the frozen hash: a change to a runtime is its next version, appended.",
+  "about": "Every frozen runtime module (README, \"The runtime contract\", \"Only from the repository\"): append-only. An entry is a module frozen, {name, version, hash, limits, users}, or a frozen module withdrawn, {\"withdrawn\": hash}; there are no floors. A module is loaded only by a hash listed here and not withdrawn after, and only when its bytes have that hash. `sh freeze.sh --check`, in the box, rebuilds each module and fails when its bytes aren't the frozen hash: a change to a runtime is its next version, appended.",
   "runtimes": [
     {
       "name": "markdown-runtime",
       "version": 1,
-      "hash": "b3:64a03eb95f8a4b85f44dd6d70f4cf2c0a8f3324ef8d53bcb8f6794082aad7f44",
-      "floor": 1,
+      "hash": "b3:c6c3f79b1b1d667aa91ee6587692c04f7f753fcfc8d89dd38fa56efc4242404e",
       "users": ["file"],
       "limits": { "part": 1048576, "fuel": 2000000000, "memory": 67108864, "output": 8388608 }
     },
     {
       "name": "face-runtime",
       "version": 1,
-      "hash": "b3:a7d8d4a1004cb836969cba4821a804c5e40fb98425ac6eb87e5db9aa8f453c1a",
-      "floor": 1,
+      "hash": "b3:77d8f66bf83a6badb621c300290cf0baae4948bf98f753427f59b5491b99e52e",
       "users": ["actor", "file"],
       "limits": { "part": 1048576, "fuel": 2000000000, "memory": 67108864, "output": 8388608 }
     }

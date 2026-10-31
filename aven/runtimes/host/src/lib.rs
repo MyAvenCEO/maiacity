@@ -21,8 +21,32 @@ pub struct Frozen {
     pub name: String,
     pub version: u64,
     pub hash: Hash,
-    pub floor: u64,
     pub users: Vec<String>,
+}
+
+/// An entry of the manifest (`ManifestEntry`): a module frozen, or a frozen module withdrawn, appended, never an
+/// edit. There are no floors.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Entry {
+    Frozen(Frozen),
+    Withdrawn(Hash),
+}
+
+impl Entry {
+    pub fn hash(&self) -> Hash {
+        match self {
+            Entry::Frozen(f) => f.hash,
+            Entry::Withdrawn(h) => *h,
+        }
+    }
+}
+
+/// Whether the manifest lists `h` now: the last entry for it froze it, no withdrawal came after (`listed`).
+pub fn listed(manifest: &[Entry], h: &Hash) -> bool {
+    matches!(
+        manifest.iter().rev().find(|e| e.hash() == *h),
+        Some(Entry::Frozen(_))
+    )
 }
 
 /// The most memory a module may declare: 1,024 pages of 64 KiB, 64 MiB.
@@ -31,7 +55,7 @@ pub const MAX_PAGES: u64 = 1024;
 /// Why a module wasn't loaded.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LoadError {
-    /// The manifest doesn't list the hash.
+    /// The manifest doesn't list the hash, or withdrew it.
     NotListed,
     /// The bytes don't have the hash they were asked for by.
     WrongBytes,
@@ -50,16 +74,14 @@ pub struct Loaded {
 
 /// Loads the module `want` names: only when the manifest lists it and the bytes have that hash (`loads`), and only
 /// when the module is admitted (`admit`).
-pub fn load(manifest: &[Frozen], want: &Hash, bytes: &[u8]) -> Result<Loaded, LoadError> {
-    if !manifest.iter().any(|e| e.hash == *want) {
+pub fn load(manifest: &[Entry], want: &Hash, bytes: &[u8]) -> Result<Loaded, LoadError> {
+    if !listed(manifest, want) {
         return Err(LoadError::NotListed);
     }
     if blake3(bytes) != *want {
         return Err(LoadError::WrongBytes);
     }
-    let mut config = Config::default();
-    config.consume_fuel(true);
-    let engine = Engine::new(&config);
+    let engine = Engine::new(&deterministic());
     let module = Module::new(&engine, bytes).map_err(|_| LoadError::Invalid)?;
     admit(&module)?;
     Ok(Loaded {
@@ -67,6 +89,19 @@ pub fn load(manifest: &[Frozen], want: &Hash, bytes: &[u8]) -> Result<Loaded, Lo
         module,
         hash: *want,
     })
+}
+
+/// The engine every host runs, so two hosts always agree (README, "Determinism"): fuel metered per instruction, and
+/// no instruction whose result may differ between machines. Floats are refused outright (a runtime's numbers are
+/// integers: Style's are hundredths), and so is a second memory. SIMD, relaxed SIMD and 64-bit memories can't be read
+/// at all (wasmi is built without its `simd` and `memory64` features), nor threads (wasmi has none). NaNs would be canonicalised (`deterministic`) were floats ever let in.
+pub fn deterministic() -> Config {
+    let mut config = Config::default();
+    config
+        .consume_fuel(true)
+        .floats(false)
+        .wasm_multi_memory(false);
+    config
 }
 
 /// A module is admitted when it imports nothing at all, exports one memory with a declared maximum within the limit,

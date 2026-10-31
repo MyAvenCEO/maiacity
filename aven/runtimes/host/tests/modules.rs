@@ -5,33 +5,51 @@
 
 use aven_core::{Hash, Value, blake3, decode, encode};
 use aven_runtimes_contract::{Failure, Limits, result};
-use aven_runtimes_host::{Frozen, LoadError, Loaded, load, run};
+use aven_runtimes_host::{Entry, Frozen, LoadError, Loaded, listed, load, run};
 use serde_json::Value as Json;
 
 fn here(rel: &str) -> String {
     format!("{}/../{rel}", env!("CARGO_MANIFEST_DIR"))
 }
 
-fn manifest() -> Vec<Frozen> {
+/// The manifest's entries: `{name, version, hash, limits, users}` frozen, or `{"withdrawn": hash}`.
+fn manifest() -> Vec<Entry> {
     let text = std::fs::read_to_string(here("manifest.json")).unwrap();
     let j: Json = serde_json::from_str(&text).unwrap();
     j["runtimes"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|e| Frozen {
-            name: e["name"].as_str().unwrap().into(),
-            version: e["version"].as_u64().unwrap(),
-            hash: Hash::parse(e["hash"].as_str().unwrap()).unwrap(),
-            floor: e["floor"].as_u64().unwrap(),
-            users: e["users"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|u| u.as_str().unwrap().into())
-                .collect(),
+        .map(|e| match e.get("withdrawn") {
+            Some(h) => Entry::Withdrawn(Hash::parse(h.as_str().unwrap()).unwrap()),
+            None => Entry::Frozen(Frozen {
+                name: e["name"].as_str().unwrap().into(),
+                version: e["version"].as_u64().unwrap(),
+                hash: Hash::parse(e["hash"].as_str().unwrap()).unwrap(),
+                users: e["users"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|u| u.as_str().unwrap().into())
+                    .collect(),
+            }),
         })
         .collect()
+}
+
+fn listed_hash(m: &[Entry], runtime: &str) -> Hash {
+    latest(m, runtime).hash
+}
+
+/// A runtime's newest frozen module.
+fn latest(m: &[Entry], runtime: &str) -> Frozen {
+    m.iter()
+        .filter_map(|e| match e {
+            Entry::Frozen(f) if f.name == runtime => Some(f.clone()),
+            _ => None,
+        })
+        .max_by_key(|f| f.version)
+        .unwrap()
 }
 
 /// A module as `freeze.sh` built it.
@@ -44,11 +62,7 @@ fn built(name: &str) -> Vec<u8> {
 
 fn module(runtime: &str, crate_name: &str) -> Loaded {
     let m = manifest();
-    let e = m
-        .iter()
-        .filter(|e| e.name == runtime)
-        .max_by_key(|e| e.version)
-        .unwrap();
+    let e = latest(&m, runtime);
     load(&m, &e.hash, &built(crate_name)).unwrap_or_else(|err| panic!("{runtime}: {err:?}"))
 }
 
@@ -70,11 +84,7 @@ fn unhex(s: &str) -> Vec<u8> {
 fn frozen() {
     for (runtime, crate_name) in [("markdown-runtime", "markdown"), ("face-runtime", "face")] {
         let m = manifest();
-        let e = m
-            .iter()
-            .filter(|e| e.name == runtime)
-            .max_by_key(|e| e.version)
-            .unwrap();
+        let e = latest(&m, runtime);
         assert_eq!(
             blake3(&built(crate_name)),
             e.hash,
@@ -211,7 +221,7 @@ fn wasm(extra: &[u8]) -> Vec<u8> {
 fn refusals() {
     let face = built("face");
     let m = manifest();
-    let listed = m.iter().find(|e| e.name == "face-runtime").unwrap().hash;
+    let face_hash = latest(&m, "face-runtime").hash;
     // a hash the manifest doesn't list, even for good bytes
     assert_eq!(
         load(&m, &blake3(b"something else"), &face).err(),
@@ -219,14 +229,14 @@ fn refusals() {
     );
     // bytes that aren't the hash's
     assert_eq!(
-        load(&m, &listed, &built("markdown")).err(),
+        load(&m, &face_hash, &built("markdown")).err(),
         Some(LoadError::WrongBytes)
     );
     let mut flipped = face.clone();
     let mid = flipped.len() / 2;
     flipped[mid] ^= 1;
     assert_eq!(
-        load(&m, &listed, &flipped).err(),
+        load(&m, &face_hash, &flipped).err(),
         Some(LoadError::WrongBytes)
     );
     // listed, but not admitted: it imports a function, or its memory has no maximum
@@ -238,12 +248,13 @@ fn refusals() {
         0x02, 0x00,
     ]);
     let not_wasm = b"not a module".to_vec();
-    let entry = |b: &[u8]| Frozen {
-        name: "x".into(),
-        version: 1,
-        hash: blake3(b),
-        floor: 1,
-        users: vec![],
+    let entry = |b: &[u8]| {
+        Entry::Frozen(Frozen {
+            name: "x".into(),
+            version: 1,
+            hash: blake3(b),
+            users: vec![],
+        })
     };
     let them = vec![entry(&imports), entry(&unbounded), entry(&not_wasm)];
     assert!(matches!(
@@ -258,4 +269,23 @@ fn refusals() {
         load(&them, &blake3(&not_wasm), &not_wasm).err(),
         Some(LoadError::Invalid)
     );
+    // a float instruction (`f32.const 0; drop`): a module with one is no module of ours
+    let floats = wasm(&[
+        0x03, 0x02, 0x01, 0x00, 0x0a, 0x0a, 0x01, 0x08, 0x00, 0x43, 0x00, 0x00, 0x00, 0x00, 0x1a,
+        0x0b,
+    ]);
+    let them = vec![entry(&floats)];
+    assert_eq!(
+        load(&them, &blake3(&floats), &floats).err(),
+        Some(LoadError::Invalid)
+    );
+    // a withdrawal, appended, unlists the module, and it is never loaded again
+    let mut withdrawn = m.clone();
+    withdrawn.push(Entry::Withdrawn(listed_hash(&m, "face-runtime")));
+    assert!(!listed(&withdrawn, &listed_hash(&m, "face-runtime")));
+    assert_eq!(
+        load(&withdrawn, &listed_hash(&m, "face-runtime"), &face).err(),
+        Some(LoadError::NotListed)
+    );
+    assert!(load(&m, &listed_hash(&m, "face-runtime"), &face).is_ok());
 }
