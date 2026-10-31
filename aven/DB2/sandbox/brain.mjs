@@ -81,6 +81,14 @@ async function read(engine) {
 						say(`${ready} never showed`);
 						continue;
 					}
+					// each slide is drawn once face-runtime has run its part, in the runtimes worker: wait for every one, drawn or
+					// refused (os/web/brain/brain.js, `face`)
+					if (view === 'id') {
+						const settled = () => [...document.querySelectorAll('.face')].every((h) => h.shadowRoot?.querySelector('.slide') || h.dataset.refused);
+						await page.waitForFunction(settled, null, { timeout: 30_000 }).catch(() => {});
+						const refused = await page.evaluate(() => [...document.querySelectorAll('.face')].map((h) => h.dataset.refused).filter(Boolean));
+						for (const why of refused) say(`face-runtime refused a slide: ${why}`);
+					}
 					await page.evaluate(() => document.fonts.ready);
 					const seen = {};
 					if (view === 'dashboard') {

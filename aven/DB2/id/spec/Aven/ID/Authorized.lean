@@ -95,6 +95,9 @@ structure Reader where
   calls : Envelope → List Call
   /-- The steps a call lowers to, as every reader computes them (the engine's lowering, E1 to E3). -/
   lower : Call → List Step
+  /-- The key that placed an envelope in its log: its writer's signature beside its name (Core's `Envelope.placed`).
+  Approvals beside it are other keys'. -/
+  signer : Envelope → Bytes
   /-- The vault a signing key is a device of, as the tree says. -/
   vaultOf : Bytes → Option String
   /-- The network's members, for public caps (D15). -/
@@ -121,24 +124,24 @@ variable (r : Reader) (gov : Bytes → Bytes → Prop) (spawned lists : DocId �
 /-- The signing device acts within its device cap: the cap is from the vault the device serves, lets it write on the
 envelope's branch, and allows every call the envelope makes on its Doc. -/
 def Reader.WithinDevice (e : Envelope) : Prop :=
-  ∃ dc f, r.deviceCap e.signer = some dc ∧ r.vaultOf e.signer = some dc.vault ∧ dc.branches.allows e.branch = true ∧
+  ∃ dc f, r.deviceCap (r.signer e) = some dc ∧ r.vaultOf (r.signer e) = some dc.vault ∧ dc.branches.allows e.branch = true ∧
     r.facts e.doc = some f ∧ ∀ c ∈ r.calls e, dc.allows gov spawned lists f c
 
 /-- Its vault's own authority: the signer's vault is the Doc's vault, or governs it. -/
 def Reader.Own (e : Envelope) : Prop :=
-  ∃ v f, r.vaultOf e.signer = some v ∧ r.facts e.doc = some f ∧ (f.vault = vaultId v ∨ gov (vaultId v) f.vault)
+  ∃ v f, r.vaultOf (r.signer e) = some v ∧ r.facts e.doc = some f ∧ (f.vault = vaultId v ∨ gov (vaultId v) f.vault)
 
 /-- Under a chain: it keeps every rule, its last cap is held by the signer's vault, lets it write on the envelope's
 branch, and allows every call the envelope makes on its Doc. -/
 def Reader.ByChain (e : Envelope) : Prop :=
   chainOk r.ctx (r.chain e) = true ∧
-    ∃ last, (r.chain e).getLast? = some last ∧ (∃ v, r.vaultOf e.signer = some v ∧ r.holdsAt last v = true) ∧
+    ∃ last, (r.chain e).getLast? = some last ∧ (∃ v, r.vaultOf (r.signer e) = some v ∧ r.holdsAt last v = true) ∧
       last.conditions.branches.allows e.branch = true ∧
       ∃ f, r.facts e.doc = some f ∧ ∀ c ∈ r.calls e, (last.grants r.ctx.roles).allows gov spawned lists f c
 
 /-- An actor host's device signed it (A27). -/
 def Reader.HostSigned (e : Envelope) : Prop :=
-  ∃ dc, r.deviceCap e.signer = some dc ∧ dc.host = true
+  ∃ dc, r.deviceCap (r.signer e) = some dc ∧ dc.host = true
 
 /-- Caps' verdict on an envelope: its device acts within its device cap, and it writes on its vault's own authority or
 under a chain; an actor host's device only under a chain, naming the acting actor (A27). -/
@@ -169,14 +172,14 @@ theorem chain_authorized {e : Envelope} (c : r.ByChain gov spawned lists e)
 
 /-- Under a chain, the signer is a device of a vault that holds the chain's last cap. -/
 theorem chain_signer {e : Envelope} (h : r.ByChain gov spawned lists e) :
-    ∃ last ∈ r.chain e, ∃ v, r.vaultOf e.signer = some v ∧ r.holdsAt last v = true := by
+    ∃ last ∈ r.chain e, ∃ v, r.vaultOf (r.signer e) = some v ∧ r.holdsAt last v = true := by
   obtain ⟨_, last, hl, sv, _⟩ := h
   exact ⟨last, List.mem_of_getLast? hl, sv⟩
 
 /-- No envelope writes on authority from nowhere, on either path: its signer is a device of a vault that is the Doc's
 vault, governs it, or holds the last cap of the chain it names. -/
 theorem authorized_vault {e : Envelope} (h : r.Authorized gov spawned lists e) :
-    ∃ v, r.vaultOf e.signer = some v ∧
+    ∃ v, r.vaultOf (r.signer e) = some v ∧
       ((∃ f, r.facts e.doc = some f ∧ (f.vault = vaultId v ∨ gov (vaultId v) f.vault)) ∨
         ∃ last ∈ r.chain e, r.holdsAt last v = true) := by
   rcases h.2 with ⟨⟨v, f, hv, hf, o⟩, _⟩ | ⟨c, _⟩
@@ -259,7 +262,7 @@ theorem device_within_cap {e : Envelope} (h : r.Authorized gov spawned lists e) 
 /-- Under a chain, every call of an authorized envelope is allowed twice over: by the chain's last cap, for the vault,
 and by the device cap, for the device. -/
 theorem device_and_chain {e : Envelope} (h : r.Authorized gov spawned lists e) (c : r.ByChain gov spawned lists e) :
-    ∃ dc last f, r.deviceCap e.signer = some dc ∧ (r.chain e).getLast? = some last ∧ r.facts e.doc = some f ∧
+    ∃ dc last f, r.deviceCap (r.signer e) = some dc ∧ (r.chain e).getLast? = some last ∧ r.facts e.doc = some f ∧
       ∀ x ∈ r.calls e, dc.allows gov spawned lists f x ∧ (last.grants r.ctx.roles).allows gov spawned lists f x := by
   obtain ⟨dc, f, hd, _, _, hf, dcalls⟩ := h.1
   obtain ⟨_, last, hl, _, _, f', hf', calls⟩ := c
@@ -270,7 +273,7 @@ theorem device_and_chain {e : Envelope} (h : r.Authorized gov spawned lists e) (
 /-- A device whose cap is for proposals, or for one branch, never writes on main, on its vault's own authority or under
 any chain: an agent's removals go to proposals, and landing them on main is someone else's merge. -/
 theorem device_proposals_never_main {e : Envelope} (main : e.branch = mainBranch) {dc : DeviceCap}
-    (hd : r.deviceCap e.signer = some dc) (prop : dc.branches = .proposals ∨ ∃ b, dc.branches = .one b) :
+    (hd : r.deviceCap (r.signer e) = some dc) (prop : dc.branches = .proposals ∨ ∃ b, dc.branches = .one b) :
     ¬ r.Authorized gov spawned lists e := by
   intro h
   obtain ⟨dc', _, hd', _, br, _⟩ := device_within_cap r gov spawned lists h
@@ -283,7 +286,7 @@ theorem device_proposals_never_main {e : Envelope} (main : e.branch = mainBranch
 every call of the whole merge. -/
 theorem merge_within_device {whole : Envelope → List Call} (wm : r.WholeMerges whole) {e : Envelope}
     (main : e.branch = mainBranch) (h : r.Authorized gov spawned lists e) :
-    ∃ dc f, r.deviceCap e.signer = some dc ∧ dc.branches.allows mainBranch = true ∧ r.facts e.doc = some f ∧
+    ∃ dc f, r.deviceCap (r.signer e) = some dc ∧ dc.branches.allows mainBranch = true ∧ r.facts e.doc = some f ∧
       ∀ c ∈ whole e, dc.allows gov spawned lists f c := by
   obtain ⟨dc, f, hd, _, br, hf, calls⟩ := device_within_cap r gov spawned lists h
   exact ⟨dc, f, hd, main ▸ br, hf, fun c m => calls c (wm e main c m)⟩
@@ -299,7 +302,7 @@ theorem host_chain_only {e : Envelope} (h : r.Authorized gov spawned lists e) (h
 /-- **An actor's write stays within its host's device cap** (A27): the host device's cap, the union of its hosted
 actors' standing caps, allows every call of an authorized envelope it signed. -/
 theorem actor_within_device {e : Envelope} (h : r.Authorized gov spawned lists e) (host : r.HostSigned e) :
-    ∃ dc f, r.deviceCap e.signer = some dc ∧ dc.host = true ∧ r.facts e.doc = some f ∧
+    ∃ dc f, r.deviceCap (r.signer e) = some dc ∧ dc.host = true ∧ r.facts e.doc = some f ∧
       ∀ c ∈ r.calls e, dc.allows gov spawned lists f c := by
   obtain ⟨dc, f, hd, _, _, hf, calls⟩ := device_within_cap r gov spawned lists h
   obtain ⟨dc', hd', ht⟩ := host
@@ -311,7 +314,7 @@ theorem actor_within_device {e : Envelope} (h : r.Authorized gov spawned lists e
 its actor, and every call of it is allowed both by the last cap of the chain the actor's message carried and by the
 host's device cap, the outer bound. -/
 theorem host_never_beyond {e : Envelope} (h : r.Authorized gov spawned lists e) (host : r.HostSigned e) :
-    (r.actorOf e).isSome = true ∧ ∃ dc last f, r.deviceCap e.signer = some dc ∧ dc.host = true ∧
+    (r.actorOf e).isSome = true ∧ ∃ dc last f, r.deviceCap (r.signer e) = some dc ∧ dc.host = true ∧
       (r.chain e).getLast? = some last ∧ r.facts e.doc = some f ∧
       ∀ c ∈ r.calls e, dc.allows gov spawned lists f c ∧ (last.grants r.ctx.roles).allows gov spawned lists f c := by
   obtain ⟨c, named⟩ := host_chain_only r gov spawned lists h host
@@ -356,25 +359,25 @@ theorem DeviceCap.allowsB_iff {dc : DeviceCap} {f : Facts} {c : Call} :
 variable (r : Reader)
 
 def Reader.withinDeviceB (e : Envelope) : Bool :=
-  match r.deviceCap e.signer, r.facts e.doc with
-  | some dc, some f => r.vaultOf e.signer == some dc.vault && dc.branches.allows e.branch &&
+  match r.deviceCap (r.signer e), r.facts e.doc with
+  | some dc, some f => r.vaultOf (r.signer e) == some dc.vault && dc.branches.allows e.branch &&
       (r.calls e).all (dc.allowsB gov spawned lists f)
   | _, _ => false
 
 def Reader.ownB (e : Envelope) : Bool :=
-  match r.vaultOf e.signer, r.facts e.doc with
+  match r.vaultOf (r.signer e), r.facts e.doc with
   | some v, some f => f.vault == vaultId v || gov (vaultId v) f.vault
   | _, _ => false
 
 def Reader.byChainB (e : Envelope) : Bool :=
   chainOk r.ctx (r.chain e) &&
-    match (r.chain e).getLast?, r.vaultOf e.signer, r.facts e.doc with
+    match (r.chain e).getLast?, r.vaultOf (r.signer e), r.facts e.doc with
     | some last, some v, some f => r.holdsAt last v && last.conditions.branches.allows e.branch &&
         (r.calls e).all ((last.grants r.ctx.roles).allowsB gov spawned lists f)
     | _, _, _ => false
 
 def Reader.hostSignedB (e : Envelope) : Bool :=
-  match r.deviceCap e.signer with
+  match r.deviceCap (r.signer e) with
   | some dc => dc.host
   | none => false
 
@@ -389,23 +392,23 @@ theorem Reader.withinDeviceB_iff :
     r.withinDeviceB gov spawned lists e = true ↔
       r.WithinDevice (gov · · = true) (spawned · · = true) (lists · · = true) e := by
   unfold Reader.withinDeviceB Reader.WithinDevice
-  cases hd : r.deviceCap e.signer <;> cases hf : r.facts e.doc <;>
+  cases hd : r.deviceCap (r.signer e) <;> cases hf : r.facts e.doc <;>
     simp [List.all_eq_true, DeviceCap.allowsB_iff, and_assoc]
 
 theorem Reader.ownB_iff : r.ownB gov e = true ↔ r.Own (gov · · = true) e := by
   unfold Reader.ownB Reader.Own
-  cases hv : r.vaultOf e.signer <;> cases hf : r.facts e.doc <;> simp
+  cases hv : r.vaultOf (r.signer e) <;> cases hf : r.facts e.doc <;> simp
 
 theorem Reader.byChainB_iff :
     r.byChainB gov spawned lists e = true ↔
       r.ByChain (gov · · = true) (spawned · · = true) (lists · · = true) e := by
   unfold Reader.byChainB Reader.ByChain
-  cases hl : (r.chain e).getLast? <;> cases hv : r.vaultOf e.signer <;> cases hf : r.facts e.doc <;>
+  cases hl : (r.chain e).getLast? <;> cases hv : r.vaultOf (r.signer e) <;> cases hf : r.facts e.doc <;>
     simp [List.all_eq_true, Grant.allowsB_iff, and_assoc]
 
 theorem Reader.hostSignedB_iff : r.hostSignedB e = true ↔ r.HostSigned e := by
   unfold Reader.hostSignedB Reader.HostSigned
-  cases h : r.deviceCap e.signer <;> simp
+  cases h : r.deviceCap (r.signer e) <;> simp
 
 /-- **The verdict a reader computes is caps' verdict** (`Authorized`, decided). -/
 theorem Reader.authorizedB_iff :
@@ -436,35 +439,40 @@ theorem Reader.authorizedB_iff :
 
 end Decided
 
-/-- One reader verdict: signed, fresh, authorized, live and fit. The other parts are the other layers'. -/
-def Reader.Verdict (signed fresh live fit : Envelope → Prop) (e : Envelope) : Prop :=
-  signed e ∧ fresh e ∧ r.Authorized gov spawned lists e ∧ live e ∧ fit e
+/-- avenID's `authorized` verdict, which Core's one counting rule takes beside `fit` (A45): signed, fresh, authorized
+by its caps and live. Fit is the docs layer's. -/
+def Reader.Admits (signed fresh live : Envelope → Prop) (e : Envelope) : Prop :=
+  signed e ∧ fresh e ∧ r.Authorized gov spawned lists e ∧ live e
 
-/-- An envelope counts exactly when everything in its past is signed, fresh, authorized, live and fit, and none of it is
-half of a split. -/
+/-- An envelope counts exactly when its whole past is held (Core's `Closed`) and everything in it is fit, signed,
+fresh, authorized and live, and none of it is half of a split. -/
 theorem counts_iff (nm : Envelope → Hash) (signed fresh live fit : Envelope → Prop) (S : List Envelope)
     (e : Envelope) :
-    Counts nm (r.Verdict gov spawned lists signed fresh live fit) S e ↔
-      ∀ x, Reaches nm S e x → (signed x ∧ fresh x ∧ r.Authorized gov spawned lists x ∧ live x ∧ fit x) ∧
-        ∀ y ∈ S, ¬ Split nm x y :=
+    Counts nm fit (r.Admits gov spawned lists signed fresh live) S e ↔
+      Closed nm S e ∧ ∀ x, Reaches nm S e x →
+        (fit x ∧ signed x ∧ fresh x ∧ r.Authorized gov spawned lists x ∧ live x) ∧ ∀ y ∈ S, ¬ Split nm x y :=
   Iff.rfl
 
-/-- Two readers that hold the same past of an envelope, and the same splits in it, give it the same verdict, whatever
-else each holds: a verdict depends only on the envelope, its causal past and what the reader knows of revocations
+/-- Two readers that hold the same past of an envelope, whole for both or for neither, and the same splits in it, give
+it the same verdict, whatever else each holds: a verdict depends only on the envelope, its causal past and what the reader knows of revocations
 (`live`). -/
-theorem readers_agree (nm : Envelope → Hash) (ok : Envelope → Prop) {S S' : List Envelope} {e : Envelope}
+theorem readers_agree (nm : Envelope → Hash) (fit authorized : Envelope → Prop) {S S' : List Envelope}
+    {e : Envelope}
+    (closed : Closed nm S e ↔ Closed nm S' e)
     (past : ∀ x, Reaches nm S e x ↔ Reaches nm S' e x)
     (splits : ∀ x, Reaches nm S e x → ((∃ y ∈ S, Split nm x y) ↔ (∃ y ∈ S', Split nm x y))) :
-    Counts nm ok S e ↔ Counts nm ok S' e := by
+    Counts nm fit authorized S e ↔ Counts nm fit authorized S' e := by
   constructor
-  · intro h x hx
+  · intro h
+    refine ⟨closed.mp h.1, fun x hx => ?_⟩
     have hx' := (past x).mpr hx
-    refine ⟨(h x hx').1, fun y my sp => ?_⟩
+    refine ⟨(h.2 x hx').1, fun y my sp => ?_⟩
     obtain ⟨z, mz, sz⟩ := (splits x hx').mpr ⟨y, my, sp⟩
-    exact (h x hx').2 z mz sz
-  · intro h x hx
-    refine ⟨(h x ((past x).mp hx)).1, fun y my sp => ?_⟩
+    exact (h.2 x hx').2 z mz sz
+  · intro h
+    refine ⟨closed.mpr h.1, fun x hx => ?_⟩
+    refine ⟨(h.2 x ((past x).mp hx)).1, fun y my sp => ?_⟩
     obtain ⟨z, mz, sz⟩ := (splits x hx).mp ⟨y, my, sp⟩
-    exact (h x ((past x).mp hx)).2 z mz sz
+    exact (h.2 x ((past x).mp hx)).2 z mz sz
 
 end Aven.ID

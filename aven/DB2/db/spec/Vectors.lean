@@ -56,6 +56,7 @@ import Aven.DB.Docs
   (`Aven.DB.Docs.Body`).
 - `segments.json`: segments' bodies and names, and which a reader takes (`Aven.DB.Docs.Segment`).
 - `heads.json`: a head's encoding (`Aven.DB.Docs.Head`).
+- `held.json`: what a peer holds of a Doc, its envelopes' names and blob hashes in the order held (`Docs.Held`).
 - `loro.json`: rule 7 on Loro commits: the deps a change carries, read with its writer's previous op, and the verdict
   (`Aven.DB.Docs.loroAgrees`).
 - `placements.json`: envelopes with and without the genesis; whether each is its log's first, and whether the
@@ -816,7 +817,7 @@ def writers : List Json :=
 /-- Envelopes of one Doc, with the op ids a reader learns of each: its last op, and the Loro dependencies it carries. -/
 def opEnv (writer seq : Nat) (prev : Option Hash) (deps : List Hash) (post : String) : Envelope :=
   ⟨docOf "a Doc's genesis", "main".toUTF8.toList, writer, seq, prev, deps,
-    .map [("post".toUTF8.toList, .text post.toUTF8.toList)], List.replicate 32 7, List.replicate 64 9⟩
+    .map [("post".toUTF8.toList, .text post.toUTF8.toList)], [⟨List.replicate 32 7, List.replicate 64 9⟩]⟩
 
 def a1 : Envelope := opEnv 1 1 none [] "first"
 def b1 : Envelope := opEnv 2 1 none [] "another writer's first"
@@ -936,7 +937,7 @@ where labelOf' (h : Hash) : String :=
 
 /-- What a reader holding `S` sees of each envelope: whether it counts, and whether it is half of a split it holds. -/
 def readerView (S : List Envelope) (ok : Envelope → Bool) : Json :=
-  Json.mkObj (S.map fun e => (labelOf e, Json.mkObj [("counts", toJson (Docs.countsB (Envelope.name blake3) ok S e)),
+  Json.mkObj (S.map fun e => (labelOf e, Json.mkObj [("counts", toJson (Docs.countsB (Envelope.name blake3) ok (fun _ => true) S e)),
     ("split", toJson (S.any fun y => Docs.splitB (Envelope.name blake3) e y))]))
 
 def logSteps : List (String × List Envelope × List Envelope) := [
@@ -967,8 +968,8 @@ def counts : List Json :=
       match overrides.find? (·.1 == labelOf e) with
       | some (_, f, a) => (f, a)
       | none => (true, true)
-    let ok (e : Envelope) : Bool := (verdict e).1 && (verdict e).2
-    let counted := countHeld.filter (Docs.countsB (Envelope.name blake3) ok countHeld)
+    let counted := countHeld.filter
+      (Docs.countsB (Envelope.name blake3) (fun e => (verdict e).1) (fun e => (verdict e).2) countHeld)
     vector name (Json.mkObj [("envelopes", Json.arr (countHeld.map fun e => Json.mkObj [("envelope", envSummary (labelOf e) e),
           ("fit", toJson (verdict e).1), ("authorized", toJson (verdict e).2)]).toArray)])
       (Json.mkObj [("counts", Json.arr (counted.map fun e => Json.str (labelOf e)).toArray),
@@ -1083,6 +1084,17 @@ def segmentVectors : List Json :=
       (Json.mkObj [("value", hexJson (encode sg.value)), ("name", Json.str (sg.name blake3).text),
         ("ok", toJson (sg.ok Docs.Limits.defaults (Envelope.name blake3)))])
 
+def heldVectors : List Json :=
+  let one : Docs.Held := ⟨docOf "a Doc's genesis", [(a1.name blake3, blake3 (encode a1.value)),
+    (b1.name blake3, blake3 (encode b1.value)), (a2.name blake3, blake3 (encode a2.value))]⟩
+  let twice : Value := .map [(tb "doc", .bytes (docOf "a Doc's genesis").hash.bytes),
+    (tb "envelopes", .array [.array [(a1.name blake3).value, (blake3 (encode a1.value)).value],
+      .array [(a1.name blake3).value, (blake3 (encode a1.value)).value]])]
+  [vector "three envelopes, in the order held" (Json.mkObj [("doc", Json.str one.doc.text),
+      ("envelopes", Json.arr (one.envelopes.map fun (n, b) => Json.arr #[Json.str n.text, Json.str b.text]).toArray)])
+    (Json.mkObj [("value", hexJson (encode one.value)), ("reads", toJson (Docs.Held.ofValue? one.value).isSome)]),
+   vector "refused: an envelope named twice" (hexJson (encode twice)) (toJson (Docs.Held.ofValue? twice).isSome)]
+
 def headVectors : List Json :=
   let h : Docs.Head := ⟨docOf "a Doc's genesis", [(tb "main", [(1, a2.name blake3), (2, b1.name blake3)])]⟩
   [vector "two logs of main" (Json.mkObj [("doc", Json.str h.doc.text),
@@ -1122,11 +1134,20 @@ def placementCases : List (String × Envelope × Bool) := [
   ("a first sequence number that builds on another log, without it", ly1, false)]
 
 def placementVectors : List Json :=
-  placementCases.map fun (name, e, carries) =>
+  (placementCases.map fun (name, e, carries) =>
     let b : Docs.Body := { firstBody with genesis := if carries then some todoGenesis else none }
     vector name (Json.mkObj [("seq", toJson e.seq), ("prev", toJson e.prev.isSome), ("deps", toJson e.deps.length),
         ("genesis", toJson carries)])
-      (Json.mkObj [("first", toJson (Docs.isFirst e)), ("placed", toJson (Docs.genesisPlaced e b))])
+      (Json.mkObj [("first", toJson (Docs.isFirst e)), ("placed", toJson (Docs.genesisPlaced e b))])) ++
+  /- the genesis a first envelope carries must name the envelope's Doc -/
+  ([("its own Doc's genesis", ({ a1 with doc := todoGenesis.id blake3 } : Envelope), todoGenesis),
+    ("another Doc's genesis", ({ a1 with doc := todoGenesis.id blake3 } : Envelope),
+      { todoGenesis with nonce := List.replicate 32 6 })] : List (String × Envelope × Docs.Genesis)).map
+    fun (name, e, g) =>
+      let b : Docs.Body := { firstBody with genesis := some g }
+      vector s!"a log's first envelope carrying {name}" (Json.mkObj [("doc", Json.str e.doc.text),
+          ("genesis", hexJson (encode g.value))])
+        (Json.mkObj [("ok", toJson (Docs.genesisOk blake3 e b))])
 
 def builtinCases : List (String × String × Value) :=
   let h := Value.bytes (blake3 (tb "a tip")).bytes
@@ -1173,5 +1194,5 @@ def main (args : List String) : IO Unit := do
       ("checkpoints.json", checkpoints), ("fit.json", fit), ("logs.json", logs),
       ("counts.json", counts), ("genesis.json", genesisVectors), ("bodies.json", bodyVectors),
       ("segments.json", segmentVectors), ("heads.json", headVectors), ("loro.json", loroVectors),
-      ("placements.json", placementVectors), ("builtins.json", builtinVectors)] do
+      ("placements.json", placementVectors), ("held.json", heldVectors), ("builtins.json", builtinVectors)] do
     IO.FS.writeFile (dir / file) (render vs)

@@ -71,7 +71,7 @@ def Sig.json (s : Sig) : Json := Json.mkObj [("key", s.key), ("digest", s.digest
 def Cap.json (c : Cap) : Json :=
   Json.mkObj [("id", c.id), ("issuer", c.issuer), ("holder", c.holder.json), ("parent", toJson c.parent),
     ("form", c.form.name), ("grant", Json.arr (c.grant.map Line.json).toArray), ("role", toJson c.role),
-    ("share", toJson c.share), ("conditions", c.conditions.json), ("signer", c.signer),
+    ("share", toJson c.share), ("conditions", c.conditions.json), ("signer", toJson c.signer),
     ("approvals", Json.arr (c.approvals.map Sig.json).toArray),
     ("cbor", Core.hex c.bytes), ("hash", (c.digest Core.blake3).text), ("signs", Core.hex c.signing)]
 
@@ -83,7 +83,7 @@ def Listing.json (l : Listing) : Json :=
   Json.mkObj [("cap", l.cap.json),
     ("docs", Json.arr (l.docs.map fun (d, k) => Json.mkObj [("doc", d.text), ("fetchKey", toJson k)]).toArray)]
 
-def Signed.json (o : Signed) : Json :=
+def KeepOrder.json (o : KeepOrder) : Json :=
   match o.order with
   | .withdraw c => Json.mkObj [("withdraw", c), ("signer", o.signer)]
   | .delete d => Json.mkObj [("delete", d.text), ("signer", o.signer)]
@@ -92,7 +92,7 @@ def Signed.json (o : Signed) : Json :=
 def Books.json (b : Books) : Json :=
   Json.mkObj [("keeper", b.keeper), ("tree", "cast"), ("threshold", toJson (1 : Nat)),
     ("listings", Json.arr (b.listings.map Listing.json).toArray),
-    ("orders", Json.arr (b.orders.map Signed.json).toArray),
+    ("orders", Json.arr (b.orders.map KeepOrder.json).toArray),
     ("offers", Json.arr (b.offers.map Cap.json).toArray),
     ("groups", Json.arr #[Json.mkObj [("group", gMembers.text), ("members", toJson ["alice", "bob"])]])]
 
@@ -137,7 +137,9 @@ def envelopeJson (e : Core.Envelope) : Json :=
     ("time", toJson (time e)),
     ("envelope", Json.mkObj [("doc", e.doc.text), ("branch", Core.utf8Text e.branch), ("writer", toJson e.writer),
       ("seq", toJson e.seq), ("prev", toJson (e.prev.map (·.text))), ("deps", toJson (e.deps.map (·.text))),
-      ("body", e.body.json), ("signer", Core.hex e.signer), ("sig", Core.hex e.sig)])]
+      ("body", e.body.json),
+      ("sigs", Json.arr (e.sigs.map fun x =>
+        Json.mkObj [("signer", Core.hex x.signer), ("sig", Core.hex x.sig)]).toArray)])]
 
 def Revocation.json (r : Revocation) : Json :=
   Json.mkObj [("id", r.id.text), ("cap", r.cap.text), ("envelope", toJson (r.envelope.map (·.text))),

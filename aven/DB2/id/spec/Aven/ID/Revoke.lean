@@ -53,6 +53,69 @@ structure Revocation where
   kept : Option (List Hash) := none
   deriving DecidableEq, Repr
 
+/-! ### A revocation's encoding -/
+
+private def rkey (s : String) : Bytes := s.toUTF8.toList
+
+private def hashValue (h : Hash) : Value := .bytes h.bytes
+
+/-- What a revocation says, as a Value: the cap it ends, the names it keeps in the Doc when it lives elsewhere, and the
+envelope it lives as in the Doc, its keys in the codec's order. Its id is its name as a signed thing
+(`Revocation.digest`), so the id itself is never written. -/
+def Revocation.value (r : Revocation) : Value :=
+  .map [(rkey "cap", hashValue r.cap),
+    (rkey "kept", match r.kept with | none => .null | some ks => .array (ks.map hashValue)),
+    (rkey "envelope", match r.envelope with | none => .null | some h => hashValue h)]
+
+/-- What a revocation's signers sign it under. -/
+def revokeLabel : Bytes := rkey "avenID revoke 1"
+
+theorem revokeLabel_ok : textOk revokeLabel = true := by decide +kernel
+
+/-- A revocation as Core's signed thing: its label and Value, its signatures beside it (A30). -/
+def Revocation.signed (r : Revocation) (sigs : List Sig := []) : Signed := { label := revokeLabel, body := r.value, sigs }
+
+/-- A revocation's id: Core's name of the signed thing, the hash of `[label, value]`, exactly what its signers sign
+(A30). Signatures never touch it. -/
+def Revocation.digest (H : Bytes → Hash) (r : Revocation) : Hash := (r.signed).name H
+
+/-- Two allowed revocations with one id say the same thing, under a hash nothing collides under. -/
+theorem Revocation.digest_inj {H : Bytes → Hash} (hH : Injective H) {r s : Revocation} (hr : Canon r.value = true)
+    (hs : Canon s.value = true) (h : r.digest H = s.digest H) : r.value = s.value :=
+  (Signed.name_inj hH revokeLabel_ok revokeLabel_ok hr hs h).2
+
+private def hash32? : Value → Option Hash
+  | .bytes b => if b.length = 32 then some ⟨b⟩ else none
+  | _ => none
+
+/-- A revocation's Value read field by field; `Revocation.ofValue?` keeps it only in its one form. -/
+def Revocation.parse? (v : Value) : Option Revocation := do
+  let .map [(_, cap), (_, kept), (_, envelope)] := v | none
+  let kept ← match kept with
+    | .null => some none
+    | .array ks => (ks.mapM hash32?).map some
+    | _ => none
+  let envelope ← match envelope with
+    | .null => some none
+    | x => (hash32? x).map some
+  let r : Revocation := { id := ⟨[]⟩, cap := ← hash32? cap, envelope, kept }
+  some { r with id := r.digest blake3 }
+
+/-- A revocation read back from its Value, its id the BLAKE3 name of that Value; anything but the one form
+`Revocation.value` writes is none. -/
+def Revocation.ofValue? (v : Value) : Option Revocation := do
+  let r ← Revocation.parse? v
+  if r.value = v then some r else none
+
+/-- What `Revocation.ofValue?` reads is what `Revocation.value` writes. -/
+theorem Revocation.ofValue?_value {v : Value} {r : Revocation} (h : Revocation.ofValue? v = some r) :
+    r.value = v := by
+  simp only [Revocation.ofValue?, Option.bind_eq_bind, Option.bind_eq_some_iff] at h
+  obtain ⟨_, _, h⟩ := h
+  split at h
+  · cases h; assumption
+  · cases h
+
 section
 
 variable (nm : Envelope → Hash) (rd : Reads)
@@ -294,7 +357,7 @@ def env (writer seq : Nat) (label vault : String) (caps acks deps : List Hash) (
     body := .map ([(utf8 "acks", .array (acks.map Hash.value)), (utf8 "caps", .array (caps.map Hash.value)),
       (utf8 "time", .uint time), (utf8 "label", .text (utf8 label)), (utf8 "vault", .text (utf8 vault))] ++
       if delete then [(utf8 "delete", .bool true)] else []),
-    signer := utf8 vault, sig := [] }
+    sigs := [⟨utf8 vault, []⟩] }
 
 private def field (e : Envelope) (key : String) : Option Value :=
   match e.body with

@@ -7,11 +7,13 @@ import Aven.ID.InviteJson
 import Aven.ID.Before
 import Aven.ID.CapsJson
 import Aven.ID.AuthorizedExamples
+import Aven.ID.IssuerExamples
 import Aven.ID.SettleJson
 import Aven.ID.FailJson
 import Aven.ID.Expiry
 import Aven.ID.Collections
 import Aven.ID.KeyFormatsJson
+import Aven.ID.AccessJson
 import Aven.ID.SealJson
 
 /-! # The test vectors (README, rule 10)
@@ -41,6 +43,11 @@ import Aven.ID.SealJson
   chain it names, and what the reader knows: its context, each signing key's vault, each device's cap and the
   network's members; with each check's verdict, the path, own or chain, and the first check that refuses it
   (`Aven.ID.Authorized`, `Aven.ID.AuthorizedExamples`).
+- `issuers.json`: chains on the cast with the garden, a coop Alice and Bob own whose quorum each case gives, and its
+  helper, an agent the coop owns, with the first rule each chain breaks or none (`Aven.ID.IssuerExamples`, A28): a
+  root over a coop's Docs needs the coop's own owners, a vault without devices issues by its owners' approval alone,
+  and Maia City's confirm cap (A38). The context's tree is written out, and its `thresholds` give each vault's quorum
+  that isn't the one `threshold` gives every other.
 - `collections.json`: a collection's envelopes, the Docs a reader knows, who signs for and governs which vault, and
   whether the collection lists a Doc (`Aven.ID.Collections`, A32): removals, strangers' listings, a Doc out of reach,
   nesting, and the depth.
@@ -56,7 +63,8 @@ import Aven.ID.SealJson
   (`Aven.ID.Network`, `Aven.ID.Recover`).
 - `keep.json`: a keeper's fetch-key links in the order they came, with the keys it takes, its current fetch key and
   its flags; the proofs it serves; what each vault pays; what it keeps under the keep caps it holds, after withdrawals
-  and deletes (`Aven.ID.Keep`, A22). Hand-written and generated.
+  and deletes (`Aven.ID.Keep`, A22); how much each vault may keep there, by the keeper's own offers, and the uploads it
+  admits within that (A44). Hand-written and generated.
 - `safe.json`: requests to a vault's safe from its agent and from Mallory, on a Mac and on a host that keeps Doc keys
   inside, with what each request gives back (`Aven.ID.Safe`, R13).
 - `settled.json`: sets of tree statements, each in several orders, and the tree `settle` gives (`Aven.ID.Network`,
@@ -67,6 +75,9 @@ import Aven.ID.SealJson
   (`Aven.ID.Node`, R7). `catchup.json`: sources offered against a signed log tip, the one chosen and the ones caught,
   and presence from signed beats (`Aven.ID.CatchUp`). `failures.json`: the nine checks the box runs with the Aven Peer
   stopped, each with what the models say it must see (`Aven.ID.FailJson`, PEERS.md).
+
+- `access.json`: Values that fit or don't fit avenID's built-in Records in a Doc, `cap`, `revoke` and `epoch`
+  (`Aven.ID.AccessRecords`), with the name of each that fits. aven-id reads each and compares.
 
 - `derivations.json` and `stanzas.json`: avenID's key formats (`Aven.ID.KeyFormats`, A43): BLAKE3's keyed and
   extendable modes, the PRF step's input, salt and seeds, a stanza's AAD, keys and commitment, an epoch's subkeys and
@@ -201,12 +212,29 @@ def authorizedVectors : List Json :=
     vector c.name
       (Json.mkObj [("context", castCtxJson),
         ("envelope", Json.mkObj [("doc", e.doc.text), ("branch", Aven.Core.utf8Text e.branch),
-          ("signer", Aven.Core.hex e.signer)]),
+          ("signer", Aven.Core.hex (c.reader.signer e))]),
         ("calls", Json.arr (c.calls.map call).toArray), ("chain", Json.arr (c.chain.map Cap.json).toArray),
         ("keys", Json.arr (castKeys.map fun (k, v) => Json.mkObj [("key", Aven.Core.hex k), ("vault", v)]).toArray),
         ("deviceCaps", Json.arr (castDeviceCaps.map fun (k, dc) => deviceCap k dc).toArray),
         ("members", toJson castMembers), ("actor", toJson (c.actor.map (·.text)))])
       (readerVerdictJson c.answer)
+
+open IssuerExamples in
+/-- Chains on the cast with the garden, a coop of two owners whose quorum each case gives (A28). -/
+def issuerVectors : List Json :=
+  issuerExamples.map fun (name, k, cs, _) =>
+    let x := coopCtx k
+    vector name
+      (Json.mkObj [("context", Json.mkObj [("tree", coopTree.json), ("threshold", toJson (1 : Nat)),
+          ("thresholds", Json.mkObj [("garden", toJson k)]),
+          ("groups", Json.arr #[Json.mkObj [("group", gGarden.text), ("members", toJson ["alice", "bob"])]]),
+          ("roles", Json.arr (x.roles.map Role.json).toArray),
+          ("docs", Json.arr ([d1, d2, b1, cityNotes, cityDome, gGarden, album, avenNotes, gardenPlan, helperLog,
+            maiaTree].filterMap fun d => (coopFacts d).map factsJson).toArray)]),
+        ("chain", Json.arr (cs.map Cap.json).toArray)])
+      (match chainError x cs with
+        | none => Json.mkObj [("ok", true)]
+        | some e => Json.mkObj [("ok", false), ("error", e.json)])
 
 open CollectionExamples in
 /-- Whether collection `c` lists `d` among envelopes `S`, with everything a reader needs to decide it. -/
@@ -219,7 +247,7 @@ def collectionVector (name : String) (S : List Aven.Core.Envelope) (c d : Aven.C
       ("depth", toJson collectionDepth),
       ("envelopes", Json.arr (S.map fun e => Json.mkObj [("name", (nm e).text), ("doc", e.doc.text),
         ("branch", Aven.Core.utf8Text e.branch), ("writer", toJson e.writer), ("seq", toJson e.seq),
-        ("body", e.body.json), ("signer", Aven.Core.hex e.signer)]).toArray),
+        ("body", e.body.json), ("signers", toJson (e.sigs.map (Aven.Core.hex ·.signer)))]).toArray),
       ("collection", c.id.text), ("doc", d.id.text)])
     (Json.mkObj [("lists", toJson (listed S c d))])
 
@@ -233,7 +261,7 @@ def writeVector (name : String) (S : List Aven.Core.Envelope) (w : Aven.Core.Env
       ("depth", toJson collectionDepth),
       ("envelopes", Json.arr (S.map fun e => Json.mkObj [("name", (nm e).text), ("doc", e.doc.text),
         ("seq", toJson e.seq), ("prev", toJson (e.prev.map (·.text))), ("deps", toJson (e.deps.map (·.text))),
-        ("body", e.body.json), ("signer", Aven.Core.hex e.signer)]).toArray),
+        ("body", e.body.json), ("signers", toJson (e.sigs.map (Aven.Core.hex ·.signer)))]).toArray),
       ("write", (nm w).text), ("collection", c.id.text), ("doc", d.id.text)])
     (Json.mkObj [("listedInItsPast", toJson (listedAt S w c d))])
 
@@ -326,6 +354,17 @@ def keepVectors : List Json :=
     vector s!"what the Aven Peer keeps: {name}"
       (Json.mkObj [("books", b.json), ("docs", toJson (bookDocs.map (·.text)))])
       (Json.mkObj [("kept", toJson ((bookDocs.filter b.keeps).map (·.text)))])) ++
+  (((bookCases.map fun (name, b, _) => (name, b)) ++ [("Aven offers Alice alone 5000 bytes", smallBooks)] :
+      List (String × Books)).map fun (name, b) =>
+      vector s!"how much each vault may keep at the Aven Peer: {name}"
+        (Json.mkObj [("books", b.json), ("vaults", toJson genVaults)])
+        (Json.mkObj [("quota", Json.mkObj (genVaults.map fun v => (v, toJson (b.quota v))))])) ++
+  [vector "the Aven Peer admits uploads within the quota its own offer gives (A44)"
+    (Json.mkObj [("keep", keepD1.json), ("books", smallBooks.json),
+      ("uploads", Json.arr (quotaUploads.map (·.json)).toArray)])
+    (let taken := keepD1.admit smallBooks.quota [] quotaUploads
+     Json.mkObj [("taken", Json.arr (taken.map (·.json)).toArray),
+      ("spent", Json.mkObj [("alice", toJson (Keep.spent taken "alice"))])])] ++
   (keepCases.map fun (name, s, _, _) => vector name (Json.mkObj [("keep", s.json)]) (keepResult s)) ++
   (proofCases.map fun (name, s, e, p, _) =>
     vector s!"proof: {name}" (Json.mkObj [("keep", s.json), ("exporter", e), ("proof", p.json)])
@@ -359,6 +398,7 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "invites.json") (render invites)
   IO.FS.writeFile (dir / "caps.json") (render capsVectors)
   IO.FS.writeFile (dir / "authorized.json") (render authorizedVectors)
+  IO.FS.writeFile (dir / "issuers.json") (render issuerVectors)
   IO.FS.writeFile (dir / "collections.json") (render collectionVectors)
   IO.FS.writeFile (dir / "revocations.json") (render revocationVectors)
   IO.FS.writeFile (dir / "epochs.json") (render epochVectors)
@@ -376,3 +416,4 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "derivations.json") (render KeyFormats.derivationVectors)
   IO.FS.writeFile (dir / "stanzas.json") (render KeyFormats.stanzaVectors)
   IO.FS.writeFile (dir / "seals.json") (render Seal.sealVectors)
+  IO.FS.writeFile (dir / "access.json") (render AccessJson.accessVectors)

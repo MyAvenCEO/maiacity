@@ -48,6 +48,15 @@ fn unhex(s: &str) -> Option<[u8; 32]> {
 }
 
 impl Hash {
+    /// A hash read back from its CBOR (`Hash.ofValue?`): a byte string of exactly 32 bytes; anything else is no hash.
+    /// The one reader of a hash in CBOR (A45).
+    pub fn of_value(v: &Value) -> Option<Hash> {
+        match v {
+            Value::Bytes(b) => b.as_slice().try_into().ok().map(Hash),
+            _ => None,
+        }
+    }
+
     /// `b3:<hex>`.
     pub fn text(&self) -> String {
         let mut s = String::from("b3:");
@@ -95,9 +104,9 @@ impl TypeId {
     pub fn of_value(v: &Value) -> Option<TypeId> {
         match v {
             Value::Array(xs) => match xs.as_slice() {
-                [Value::Bytes(t), Value::Bytes(s)] => Some(TypeId {
-                    r#type: DocId(Hash(t.as_slice().try_into().ok()?)),
-                    schema: Hash(s.as_slice().try_into().ok()?),
+                [t, s] => Some(TypeId {
+                    r#type: DocId(Hash::of_value(t)?),
+                    schema: Hash::of_value(s)?,
                 }),
                 _ => None,
             },

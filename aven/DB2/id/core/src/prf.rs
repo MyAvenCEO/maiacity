@@ -20,24 +20,22 @@ pub const OWNER_LABEL: &str = "avenID owner 1";
 /// The label of the seal key's seed.
 pub const SEAL_LABEL: &str = "avenID seal 1";
 
-/// The PRF input for a vault's owner at an epoch: `encode(["avenID prf 1", {epoch, vault}])`. Rotating the owner's
-/// epoch changes it and everything derived from it.
-pub fn prf_input(vault: &str, epoch: u64) -> Vec<u8> {
+/// The PRF input for an owner at an epoch: `encode(["avenID prf 1", {epoch}])`. No vault (A43): the authenticator's
+/// PRF secret is its credential's own, and a new browser asks before it knows its vault. Rotating the owner's epoch
+/// changes it and everything derived from it.
+pub fn prf_input(epoch: u64) -> Vec<u8> {
     encode(&Value::Array(vec![
         text(PRF_LABEL),
-        Value::Map(vec![
-            ("epoch".into(), Value::Uint(epoch)),
-            ("vault".into(), text(vault)),
-        ]),
+        Value::Map(vec![("epoch".into(), Value::Uint(epoch))]),
     ]))
 }
 
 /// The salt the browser hands the authenticator for that input: `SHA-256("WebAuthn PRF" ‖ 0 ‖ input)` (WebAuthn
 /// Level 3, the `prf` extension).
-pub fn prf_salt(vault: &str, epoch: u64) -> [u8; 32] {
+pub fn prf_salt(epoch: u64) -> [u8; 32] {
     let mut hash = Sha256::new();
     hash.update(b"WebAuthn PRF\0");
-    hash.update(prf_input(vault, epoch));
+    hash.update(prf_input(epoch));
     hash.finalize().into()
 }
 

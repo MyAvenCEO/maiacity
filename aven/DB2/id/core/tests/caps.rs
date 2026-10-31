@@ -121,3 +121,30 @@ fn codec_order(mut c: Cap) -> Cap {
     }
     c
 }
+
+/// A28's issuers against Lean's vectors (`issuers.json`): coops that issue by their own quorum with no device, owners
+/// that meet a quorum alone or don't, and authority that runs down only through quorums.
+#[test]
+fn issuers_are_judged_as_the_model_does() {
+    let all = vectors("issuers.json");
+    assert!(all.len() >= 13, "{} issuer vectors", all.len());
+    for v in &all {
+        let names = Names::default();
+        let ctx = Context::of(&names, &v["input"]["context"]);
+        let chain: Vec<Cap> = v["input"]["chain"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| names.cap(c))
+            .collect();
+        let got = ctx.with(|x| match x.chain_error(&chain) {
+            None => json!({ "ok": true }),
+            Some(e) => json!({ "ok": false, "error": names.error_json(&e) }),
+        });
+        assert_eq!(got, v["expected"], "{}", v["name"]);
+        for (c, j) in chain.iter().zip(v["input"]["chain"].as_array().unwrap()) {
+            assert_eq!(c.digest().text(), j["hash"], "{}: {}", v["name"], c.id);
+            assert_eq!(hex(&c.bytes()), j["cbor"], "{}: {}", v["name"], c.id);
+        }
+    }
+}
