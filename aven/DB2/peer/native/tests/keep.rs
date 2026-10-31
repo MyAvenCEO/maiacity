@@ -131,7 +131,7 @@ async fn a_shared_file_is_kept_by_the_aven_peer_and_served_once_its_sender_is_go
     let dir = std::env::temp_dir().join(format!("aven-files-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let mut x = 0x2545_f491_4f6c_dd1du64;
-    let bytes: Vec<u8> = (0..3 * files::CHUNK + 4321)
+    let mut bytes: Vec<u8> = (0..3 * files::CHUNK + 4321)
         .map(|_| {
             x ^= x << 13;
             x ^= x >> 7;
@@ -139,6 +139,8 @@ async fn a_shared_file_is_kept_by_the_aven_peer_and_served_once_its_sender_is_go
             x as u8
         })
         .collect();
+    // an MP4's head, which is what makes it one: the Peer records the type its bytes say, not its name's
+    bytes[..16].copy_from_slice(b"\0\0\0\x18ftypisom\0\0\x02\0");
     std::fs::write(dir.join("movie.mp4.part"), &bytes).unwrap();
     std::fs::rename(dir.join("movie.mp4.part"), dir.join("movie.mp4")).unwrap();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Put>();
@@ -276,4 +278,35 @@ async fn a_shared_file_is_kept_by_the_aven_peer_and_served_once_its_sender_is_go
         bytes
     );
     std::fs::remove_dir_all(&dir).ok();
+}
+
+/// What a shared file is recorded as: what its bytes say (aven/runtimes' registry), its name choosing only among text
+/// formats, and `application/octet-stream` for bytes that are nothing it knows or a file it can't read.
+#[test]
+fn a_shared_file_is_its_bytes_not_its_name() {
+    let dir = std::env::temp_dir().join(format!("aven-sniffed-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = |name: &str, bytes: &[u8]| {
+        let path = dir.join(name);
+        std::fs::write(&path, bytes).unwrap();
+        keep::sniffed(&path, name)
+    };
+    let movie = [&b"\0\0\0\x14ftypqt  "[..], &[0; 4], b"qt  "].concat();
+    assert_eq!(file("IMG_0042.MOV", &movie), "video/quicktime");
+    assert_eq!(file("IMG_0042.txt", &movie), "video/quicktime");
+    assert_eq!(file("notes.md", b"# Notes\n"), "text/markdown");
+    assert_eq!(file("notes.txt", b"# Notes\n"), "text/plain");
+    assert_eq!(
+        file("page.png", b"<!doctype html><script>1</script>"),
+        "text/html"
+    );
+    assert_eq!(
+        file("noise.mp4", &[0x00, 0xff, 0x13, 0x00]),
+        "application/octet-stream"
+    );
+    assert_eq!(
+        keep::sniffed(&dir.join("gone"), "gone.mp4"),
+        "application/octet-stream"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
 }

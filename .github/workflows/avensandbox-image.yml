@@ -15,6 +15,7 @@ on:
       - aven/DB2/Cargo.toml
       - aven/DB2/Cargo.lock
       - aven/DB2/**/Cargo.toml
+      - aven/runtimes/registry/Cargo.toml
       - .github/workflows/avensandbox-image.yml
   workflow_dispatch:
 
@@ -92,6 +93,8 @@ jobs:
         with:
           # aven/DB2, cut down by its .dockerignore to the manifests, the patched fork and deps.sh
           context: aven/DB2
+          # aven/runtimes' file registry's manifest, which the Peers take by path, at /runtimes/registry
+          build-contexts: registry=aven/runtimes/registry
           file: aven/DB2/sandbox/box/Dockerfile
           platforms: linux/${{ matrix.arch }}
           # avensandbox.tools, the Dockerfile's hash: which tools a box holds
