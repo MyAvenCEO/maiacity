@@ -4,7 +4,7 @@
 	// included, lands on your own dashboard. The host decides whom you may act as: a Peer-Light's origin from the cast is
 	// that device, localhost is the box's own view, which holds every test key, and any other host is a visitor.
 	import Avatar from './Avatar.svelte';
-	import MainNav from './docs/MainNav.svelte';
+	import MainNav from './brain/MainNav.svelte';
 	import Dashboard from './Dashboard.svelte';
 	import Chat from './apps/Chat.svelte';
 	import ControlRoom from './apps/ControlRoom.svelte';

@@ -12,14 +12,20 @@ by default), where they are committed. Every vector is `{"name", "input", "expec
 - `registry.json`: a stage, a head (hex), a size and a claim; the decision and the Service Worker's headers
   (`Aven.Runtime.Registry`). The examples, then heads cut and changed at random from them, under random claims.
 - `tree.json`: a node tree and its encoding; whether the applier's check passes it (`Aven.Runtime.Tree`).
-- `face.json`: a face's tree, style and encoding; whether it is accepted, what is wrong with it, and its CSS text
-  (`Aven.Runtime.Face`).
+- `face.json`: a face's tree, its style as typed rules (`Aven.Runtime.Style`) in a Value's JSON form, and its
+  encoding; whether it is accepted, what is wrong with it (names, roles, `alt`, which rules are out of range), every
+  text with its colour, what it is drawn on, its size in pixels where a slide is narrowest and its weight, and the CSS
+  text. The todo app's task row and the a11y cases, then avenBRAIN's slide "A key signs" and what its checks refuse.
 - `contract.json`: each failure and an answer as the Value the host hands on, encoded; render keys and their names
   under BLAKE3 (`Aven.Runtime.Contract`).
 - `state.json`: a state part, a turn's input and limits, in the one codec; the result the host hands on
   (`Aven.Runtime.State`): the task and list actors of the todo app, hostile parts and inputs among them.
 - `contrast.json`: `linear`, the table every contrast check uses, then pairs of colours with their luminances and
   whether they reach 4.5:1 and 3:1.
+- `markdown.json`: headings and the ids markdown-runtime gives them; links under rules and what they become, or null
+  when only their text stays (`Aven.Runtime.Markdown`).
+- `face-runtime.json`: a face part and face data in the one codec; the result the host hands on, the tree, the style
+  as typed rules and the placements, or the failure (`Aven.Runtime.FaceRuntime`).
 - `markup.json`: markup and face data; the drawn tree, the placements, and whether face-runtime gives the face
   (`faceRun`). The todo app's row and list, and hostile markup whose tags, attributes, URLs and events must go.
 -/
@@ -137,25 +143,28 @@ namespace Aven.Runtime
 
 def RGB.json (c : RGB) : Json := c.css
 
-def Rule.json (r : Rule) : Json :=
-  Json.mkObj [("class", r.cls), ("color", (r.color.map RGB.json).getD Json.null),
-    ("background", (r.background.map RGB.json).getD Json.null), ("size", (r.size.map toJson).getD Json.null),
-    ("bold", (r.bold.map toJson).getD Json.null)]
+end Aven.Runtime
 
-def Ctx.json (c : Ctx) : Json :=
-  Json.mkObj [("fg", c.fg.json), ("bg", c.bg.json), ("size", c.size), ("bold", c.bold)]
+namespace Aven.Runtime
+
+def Look.json (l : Look) : Json :=
+  Json.mkObj [("fg", l.fg.json), ("bg", l.bg.json), ("px", toJson l.size.pxAt), ("weight", l.weight)]
 
 end Aven.Runtime
 
+/-- A face: its tree, its style as the Value it crosses in (in the one JSON form of a Value, colours as
+`{"bytes": hex}`), and its encoding. -/
 def faceVectors : List Json :=
   faceExamples.map fun (name, o, _) =>
     let i := issues o
-    vector name (Json.mkObj [("tree", o.tree.json), ("style", Json.arr (o.style.map Rule.json).toArray),
+    vector name (Json.mkObj [("tree", o.tree.json), ("style", Json.arr (o.style.map fun r => r.value.json).toArray),
         ("cbor", hex (encode o.value))])
       (Json.mkObj [("ok", faceOk treeLimits o), ("check", check treeLimits o.tree),
         ("unnamed", i.unnamed.length), ("noRole", i.noRole.length), ("noAlt", i.noAlt.length),
-        ("lowContrast", Json.arr (i.lowContrast.map fun (c, s) => Json.arr #[c.json, s]).toArray),
-        ("badClass", i.badClass.length), ("css", Json.arr (o.style.map fun r => Json.str r.css).toArray)])
+        ("badRules", Json.arr (o.style.zipIdx.filterMap fun (r, n) => if r.ok then none else some (toJson n)).toArray),
+        ("texts", Json.arr (o.texts.map fun (l, s) => Json.arr #[l.json, s]).toArray),
+        ("small", i.small.length), ("lowContrast", i.lowContrast.length),
+        ("css", Json.arr (o.style.map fun r => Json.str r.css).toArray)])
 
 def contrastVectors : List Json :=
   let pair (a b : RGB) : Json :=
@@ -277,6 +286,23 @@ def markupVectors : List Json :=
 -- the row is a face face-runtime gives
 #guard (faceRun ⟨rowMarkup, []⟩ (obj [("title", txt' "Buy milk")])).isSome
 
+/-! ## markdown-runtime -/
+
+def markdownVectors : List Json :=
+  headingExamples.map (fun (name, hs, _) =>
+      vector name (Json.mkObj [("headings", toJson hs)]) (Json.mkObj [("ids", toJson (slugs hs))])) ++
+  linkExamples.map fun (name, href, _) =>
+    let rules := avenBrainRules ++ [("evil:", "javascript:")]
+    vector name (Json.mkObj [("rules", Json.arr (rules.map fun (a, b) => Json.arr #[a, b]).toArray), ("href", href)])
+      (Json.mkObj [("href", match rewrite rules href with | some h => Json.str h | none => Json.null)])
+
+/-! ## face-runtime -/
+
+def faceRuntimeVectors : List Json :=
+  faceRuntimeExamples.map fun (name, p, i) =>
+    vector name (Json.mkObj [("part", hex (encode p)), ("data", hex (encode i))])
+      (Json.mkObj [("result", hex (encode (result (run faceRuntime roomy' p i))))])
+
 /-- One vector per line, so a change reads as a diff of lines. -/
 def render (vs : List Json) : String :=
   "[\n" ++ ",\n".intercalate (vs.map Json.compress) ++ "\n]\n"
@@ -285,6 +311,8 @@ def main (args : List String) : IO Unit := do
   let dir : System.FilePath := args.headD "vectors"
   IO.FS.createDirAll dir
   for (file, vs) in [("table.json", table), ("registry.json", registryVectors), ("tree.json", treeVectors),
-      ("face.json", faceVectors), ("contrast.json", contrastVectors), ("contract.json", contractVectors),
-      ("state.json", stateVectors), ("markup.json", markupVectors)] do
+      ("face.json", faceVectors), ("contrast.json", contrastVectors),
+      ("contract.json", contractVectors),
+      ("state.json", stateVectors), ("markup.json", markupVectors),
+      ("markdown.json", markdownVectors), ("face-runtime.json", faceRuntimeVectors)] do
     IO.FS.writeFile (dir / file) (render vs)

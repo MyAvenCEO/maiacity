@@ -174,12 +174,13 @@ the WebAssembly boundary's, not the part's.
 
 - **Where runtimes come from.** Only the repository. Each is built from source in `aven/runtimes/actor` (section 13), reviewed,
   frozen, named by its hash and never changed. A new capability is a new version beside the old ones. A part names the
-  version it was made for. A version that closes a hole raises the runtime's **floor**, and a part naming an older
-  version runs on the floor.
+  version it was made for, and runs exactly that runtime's hash, when that hash is pinned in the past of what it is
+  judged in (avenDB A7, A42). A hole is closed by the owners withdrawing the pin, in history, so every reader agrees
+  on every turn. A **floor** binds only what a device runs for itself: what it draws and caches.
 - **How they run.** The kernel runs each runtime inside itself, in a pure-Rust WebAssembly interpreter with fuel
   metering (such as wasmi). Fuel is counted per instruction, so a runtime stops at the same point on every device, and
   the engine is the same in tests, natively and in the browser.
-- **What every runtime declares**: its name, version and hash, its floor, the schema of its input and of its output
+- **What every runtime declares**: its name, version and hash, the schema of its input and of its output
   (the kernel checks both), its fuel and memory limits, and whether its output may be journaled.
 
 **The runtimes of version 1**, each rewritten from scratch, with the learnings in [`README.md`](README.md):
@@ -365,7 +366,7 @@ Its host feeds it time and events and takes back what it draws. It has four part
 ```
 
 A **journal entry** holds the message it handled, whole; the definition in force; the hash of the runtime that
-actually ran (after any floor) and the interpreter's version, which fixes the fuel schedule; `given`; the state hashes
+actually ran (the pinned one the part names) and the interpreter's version, which fixes the fuel schedule; `given`; the state hashes
 before and after; the effects; the fuel used; and the **outcome**: `done`, `refused` with its reason, or `error` with
 its reason. A refused or failed message is journaled too, and leaves the state as it was. Replaying a journal with
 what it pins gives the same state.
@@ -494,12 +495,12 @@ Each later step replaces a layer's implementation, not its interface:
 
 | Later | What changes |
 | --- | --- |
-| **Persistence** | Each actor's Doc becomes one avenDB Doc under one schema (`def`, `state`, `journal`), its journal a Loro list whose entries keep their names `(writer, seq)`. Each inbox Doc becomes one avenDB Doc, written only by the sender's home device and readable by the receiver's home, like the chat's chain per device. Each Doc has one key and one writer, and commits atomically; law 11 covers the sends that cross Docs |
+| **Persistence** | Each actor's Doc becomes one avenDB Doc under one schema (`def`, `state`, `journal`), its journal a Loro list whose entries keep their names `(writer, seq)`. Between vaults, a message is an envelope in the carrier Doc of the two vaults (avenDB A33, A17): it belongs to the vault that opened contact, the other holding read and tell on it, and it is born with the first letter through the letterbox; letters only start it. Each actor still keeps its own inbox: its messages in the carrier, its read position and its order of handling. Within one home there is no carrier. Each actor Doc commits atomically; law 11 covers the sends that cross Docs |
 | **Lifetimes** | Durable actors persist; mounted face actors stay in memory and go with their face. Whether their journals are kept after that is decided with compaction |
 | **Wants** | The definition's `loads` (section 6): avenDB's engine keeps them current and hands the `now` tier into each turn |
-| **Peers** | An actor lives on one peer, its home, which routing finds; whether the address's scope names the home or a vault is open (section 15). Sending stays "append to the receiver's inbox log", now carried between peers by avenDB's sync. When the home is away, a keeper peer holds the inbox. Keepers are blind and see as little as possible: outside a segment only the Doc, the key epoch and the padded length; they hand out entries by arrival order, to readers who prove they hold the key (avenID caps, D13). There is no bus in the middle, and no gossip for messages |
-| **Live delivery** | For speed, `message` and `ack` frames on `aven/db/1` deliver an append directly, point to point, ahead of sync. The receiver drops duplicates by their `seq` in the inbox |
-| **Capabilities** | Caps are held by vaults, and the kernel holds them for its actors: actors hold no keys, and the signer of every write is a device. A message gains a `cap` field beside `run`, the cap it acts under; a turn's effects carry that cap or a narrower one, and an actor uses its own standing cap only for messages its definition declares as its own. A tell cap names messages of an interface, which the definition's hash pins. The inbox Doc from A to B belongs to A's vault and is written by A's home device; B's vault reads it, and B's router checks the cap: checked twice. Across an upgrade, a definition names the one it `replaces`: a tell cap follows the upgrade while every message it names keeps its schema, and a message that is new or changed is not covered until it is granted. `replaces` is a claim anyone can write, so it moves a cap only when the vault that granted the cap has adopted the new definition; a look-alike elsewhere inherits nothing. An actor narrowing its cap for one message is not a grant; every grant needs its vault's owners' approval for now (avenID caps, D14). A cap targets an address, an address with `below: true` (it and every actor it spawned), or every actor of a definition in a vault, and may go to a group of vaults. The inbox Doc from A to B comes into being when B grants A a tell cap, together with B's read cap. Where an actor lives decides who can read it: a keeper is blind for actors it does not host, and face actors never live on the Aven Peer. Decided as avenID caps D16, in `aven/DB2/id/caps`. Authority doesn't cross vaults by itself (D14, D16): a message to an actor on another vault's host is handled under the receiver's own standing caps, and the sender's chain travels as provenance; to act with the sender's authority, the receiver's vault needs a standing grant the sender's side's owners approved, which attenuations may follow. The reader checks the owner-approved bound (every grant approved, every attenuation within its parent); the kernel keeps each message's attenuation within the handled message's own cap (`Aven.Actor.Messaging`: `attenuation_within_message`, `message_within_root`) |
+| **Peers** | An actor lives on one peer, its home, which routing finds; whether the address's scope names the home or a vault is open (section 15). Sending is appending an envelope to the carrier Doc, delivered as any Doc's envelopes are (K11): live by the pair's gossip, caught up by reconciliation; a direct connection is only a faster path for the same sync. When the home is away, a keeper peer holds the carrier. Keepers are blind and see as little as possible: outside a segment only the Doc, the key epoch and the padded length; they hand out entries by arrival order, to readers who prove they hold the key (avenID caps, D13). There is no bus in the middle |
+| **Receipts** | The receiver's turn names the message it handled by hash (rule 2), which is the sender's receipt, so there is no delivery `ack` frame (A33). The receiver drops a message it already handled by its `seq` |
+| **Capabilities** | Caps are held by vaults, and the kernel holds them for its actors: actors hold no keys, and the signer of every write is a device. A message gains a `cap` field beside `run`, the cap it acts under; a turn's effects carry that cap or a narrower one, and an actor uses its own standing cap only for messages its definition declares as its own. A tell cap names messages of an interface, which the definition's hash pins. A's messages to B travel in the carrier Doc of their two vaults, signed by A's home device; B's router checks the cap: checked twice. Across an upgrade, a definition names the one it `replaces`: a tell cap follows the upgrade while every message it names keeps its schema, and a message that is new or changed is not covered until it is granted. `replaces` is a claim anyone can write, so it moves a cap only when the vault that granted the cap has adopted the new definition; a look-alike elsewhere inherits nothing. An actor narrowing its cap for one message is not a grant; every grant needs its vault's owners' approval for now (avenID caps, D14). A cap targets an address, an address with `below: true` (it and every actor it spawned), or every actor of a definition in a vault, and may go to a group of vaults. The carrier Doc belongs to the vault that opened contact and comes into being with the first letter; the other vault holds read and tell on it (A33). Where an actor lives decides who can read it: a keeper is blind for actors it does not host, and face actors never live on the Aven Peer. Decided as avenID caps D16, in `aven/DB2/id/caps`. Authority doesn't cross vaults by itself (D14, D16): a message to an actor on another vault's host is handled under the receiver's own standing caps, and the sender's chain travels as provenance; to act with the sender's authority, the receiver's vault needs a standing grant the sender's side's owners approved, which attenuations may follow. The reader checks the owner-approved bound (every grant approved, every attenuation within its parent); the kernel keeps each message's attenuation within the handled message's own cap (`Aven.Actor.Messaging`: `attenuation_within_message`, `message_within_root`) |
 | **Compaction** | Old journal and inbox entries folded into snapshots, once we decide what may be forgotten |
 
 ## 12. Not in the engine
@@ -582,8 +583,8 @@ Decided (Samuel, 30 Oct 2026):
   one `face-runtime`, which never takes CSS and only gives it; "view" keeps the engine's sense). They run untrusted parts securely and never
   reach the host.
 - Version 1 is a standalone, in-memory todo app: no network, no avenDB, no capabilities.
-- Frames as JSON lines when the network comes; ids derived from definition, spawner and count; only definitions from
-  the repository are spawned.
+- Frames in Core's canonical CBOR when the network comes, the one codec (Samuel, 31 Oct 2026, replacing "JSON lines";
+  ARCHITECTURE A29); ids derived from definition, spawner and count; only definitions from the repository are spawned.
 - Everything about an actor lives in its own Doc, shaped for Loro, and everything is kept.
 
 Decided here, on those grounds:
@@ -645,7 +646,7 @@ Decided here, on those grounds:
   came. The Aven Peer signs as Aven's device under a chain the owner issued and approved, not as a device of the
   owner's vault. For a write, an actor's narrowing is never a link (it is no grant): it is the write's footprint,
   checked against the chain. The actor half is `Aven.Actor.Signing` (`signs_by_chain`, `write_names_actor`,
-  `write_keeps_chain`, `actor_within_chain`, `actor_steps_within`); the reader's half (`Aven.ID.host_chain_only`,
+  `write_keeps_chain`, `actor_within_chain`, `actor_calls_within`); the reader's half (`Aven.ID.host_chain_only`,
   `actor_within_device`, `host_never_beyond`) is avenID's. A cap that travels on in a message narrows instead by
   caps' attenuation link (no approval, within its parent, the same holder, only after an approved grant): the
   chain a message carries is its handled message's chain plus at most one attenuation (avenDB ARCHITECTURE.md).

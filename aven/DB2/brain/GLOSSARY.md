@@ -1,9 +1,12 @@
 # The glossary
 
-The one glossary of the whole system, kept in avenBRAIN and shown in avenOS under Docs: every term the specs use,
+The one glossary of the whole system, kept in avenBRAIN and shown in avenOS's Brain: every term the specs use,
 part by part, with its one meaning and a verdict. The shared primitives (Value, envelope, log, Doc, cap, want and the
 rest) are defined once, in [`ARCHITECTURE.md`](../ARCHITECTURE.md#the-primitives-everything-shares). This file maps
-every other term onto them. The verdicts are proposals until they are decided (**A1**).
+every other term onto them. The verdicts are decided (**A1**): every rename and merge below stands.
+
+**How they apply.** In the specs and the Lean now, by each file's owner. In code only when it is rewritten anyway.
+Stored formats keep their names: the `claim` ref, the chat's frozen lines and the `network` field stay as they are.
 
 **Verdicts.** No mark: keep as is. **→ x:** rename to x. **= x:** the same thing as x; use x. **⚠:** the same word
 means something else in another part, and that part's meaning is named.
@@ -18,6 +21,7 @@ means something else in another part, and that part's meaning is named.
 - **vault**: an identity that owns things. **kind** of vault: person, coop, agent, device. ⚠ "kind" elsewhere: see
   the ontology and docs; this is the only meaning kept.
 - **owner, owns, governs**: a key or vault that owns a vault, k of n; direct; transitive. Authority runs only down.
+  A key holds no authority of its own: it signs for the vault it owns (rule 15, **A28**, below).
 - **tree**: the vaults and their keys. ⚠ Loro's tree is a **tree container**; caps' `tree 1` is the **key tree**.
 - **chain** (avenID): the vaults above one, nearest first. **→ the owners above** (chain is caps').
 - **account**: a person's vault one acts as.
@@ -49,7 +53,7 @@ means something else in another part, and that part's meaning is named.
 
 - **cap, grant, holder, issuer**: a signed grant; target × verbs × branches inside it; who holds it; who signs it.
 - **operation** (caps) **→ verb**: read, query, put, patch, remove, edit, tell, keep, share. ⚠ An operation is the
-  engine's.
+  engine's. Since **A32** the verbs are ops (below).
 - **target**: one grammar shared with wants and query scope (**A8**).
 - **footprint**: per lowered step: type, verb, fields and constraints.
 - **condition**: `not_before`, `expires`, `approve`, `uses`, `budget`, `own`, `history`, and `lines` **→ `branches`**.
@@ -118,7 +122,7 @@ means something else in another part, and that part's meaning is named.
 - **loose lines, offline queue**: lines waiting for what they build on; writes waiting for a connection.
 - **temp file, roll forward, sweep, marker** (`meta/version`): the opfs crash protocol and format version.
 - **gate**: a time limit per browser engine. **provider gate → the door** at the blob provider. ⚠ The code's `Gate`
-  is the door's set of keys: **→ `Door`**.
+  is the door's set of keys: **→ `Admission`** (a `Door` type exists).
 - **pack, pack record → pack entry, refs log, tombstone, compaction, torn tail**: the next opfs layout.
 - **relay**: iroh's relay; every Peer-Light byte crosses one.
 - **spike**: the measured choice of iroh-blobs over bao-tree.
@@ -179,7 +183,7 @@ means something else in another part, and that part's meaning is named.
 - **slot id**: the id of an at-most-one trait, so concurrent writes meet on one key.
 - **catalogue = vocabulary**: a vault's names for Values (types, operations, runtimes, definitions);
   vault, then network, then built in.
-- **want, target, window, follow, tier, signal, lifetime**: shared primitive and its parts. **part → depth** (`head`,
+- **want, target, window, follow, tier, signal, lifetime**: shared primitive and its parts. **part → level** (`head`,
   `records`, `files`). Tiers are `now`, `next`, `later`, `idle`. A lifetime is `mounted` or `durable`, with the same
   meaning as an actor's.
 - **durable want = keep. mounted want, open**: imported while shown or running.
@@ -231,7 +235,7 @@ means something else in another part, and that part's meaning is named.
 ## actors
 
 - **Value**: JSON only: null, bool, finite number, string, array, map. **= Value**.
-- **part**: code or data in one format, for one runtime. ⚠ A want has a **depth**.
+- **part**: code or data in one format, for one runtime. ⚠ A want has a **level** (caps have a share depth).
 - **runtime**: shared primitive. Actors' runtimes are named after their job: **state-runtime**
   (not json-runtime), **js-runtime** and **face-runtime**: one runtime draws a face from its data, `markup` and
   `style`, checking a11y across both (it replaces view-, markup-, css- and style-runtime). There
@@ -332,16 +336,110 @@ means something else in another part, and that part's meaning is named.
 - **record** (a peer's status, `first-start`) **→ status**, **first-start ref**.
 - **`aven/db/1`, `Router`, `ProtocolHandler`, `after_handshake`**: our ALPN; iroh's dispatch and hook.
 
-## avenBRAIN: the docs
+## avenBRAIN: Brain
 
 - **avenBRAIN**: the package that holds all the documentation (`aven/DB2/brain`): the wiki, its slides, the style,
-  the voice and this glossary. avenOS shows it under **Docs**.
-- **page**: one package's part of the wiki, in Markdown: its story, then its slides in order.
+  the voice and this glossary. avenOS shows it as **Brain** (`#/brain`), so "docs" means only avenDB's (**A41**).
+- **page** (avenBRAIN): one package's part of the wiki, in Markdown: its story, then its slides in order. ⚠ **page**.
 - **story**: a page's concepts in the order a reader meets them, from first principles; never a term before its slide.
-- **slide**: one concept on one 16:9 still: an illustration and its text in Markdown. Its markup is allowlisted HTML
-  with classes only, so the face-runtime can draw it later.
-- **layer**: one visual element of a slide, with a stable class, so a motion version can move it.
-- **arrow** (on a slide): a relation from one thing to another, its name above it.
+- **slide**: one concept as one 16:9 picture, with its text in Markdown under it. Its markup is allowlisted HTML with
+  classes only, its pictures images by hash, so the face-runtime can draw it.
+- **layer** (on a slide): one visual element with a stable class, so a motion version can move it. ⚠ **layer**.
+- **object** (on a slide): one hand-drawn thing standing for a concept (STYLE.md, "Metaphors"), as an image by hash.
+- **path** (on a slide): the dotted line that shows a relation, its name over it.
+- **signature mark** (on a slide): a signature drawn as a mark pressed in wax; never "seal", since sealed means
+  encrypted.
+- **card** (on a slide or a page): a drawn or laid-out panel; never "record", since a Record is avenDB's.
+- **contents**: a page's list of its sections, beside it; never "index", which is the engine's.
+- **package list** (`packages.json`): the packages Brain's dashboard shows; never "catalogue", which the vocabulary
+  replaced.
+
+## Decided since the verdicts above
+
+- **Rule 15, vaults own; signers only sign** (**A28**). Only a vault owns things, holds caps and is an admin. A key
+  (a passkey, a device key, a release or guardian key) holds no authority itself: it signs for a vault, as one of its
+  owners (k of n) or as its device within its device cap. Every cap is issued by a vault and held by a vault; caps
+  delegate between vaults, never between signers. The network tree's admin is Maia City's vault.
+- **Caps are built from ops** (**A32**). A cap line names an operation by its hash and bounds on its parameters. The
+  core verbs (read, put, patch, remove, edit, tell, keep, share) are ops of the core plugin, so "verb" and "op" name
+  one thing; this replaces the caps verdict "operation → verb" above.
+- **Every Doc has a type, always** (**A39**). A Doc's genesis fixes its root type with its vault: the network tree, a
+  carrier Doc, an actor's Doc, a catalogue and a period Doc too. A type Doc's own type is the built-in type of types.
+- **The documentation is Brain** (**A41**): avenOS's tab and route (`#/brain`) for avenBRAIN, so "docs" and "Docs" mean
+  only avenDB's document layer and its Docs.
+- **Rule 16, clean architecture only, never a patch.** A fix goes where the primitive is, once, for every use of it.
+  Nothing is built for a structure that is about to go; until its clean form exists, the old one stays as it is.
+- **Holdings follow caps** (**A40**). A device or a keeper holds only what its caps cover, so whenever coverage
+  shrinks, honest peers drop the bytes and the keys at their next sync. A delete for everyone, a Doc leaving a
+  collection, a revoked or narrowed cap and a withdrawn keep cap are this one rule. A copy taken outside avenOS on
+  purpose is out of any system's reach.
+- **collection** (**A32**): a Doc of the sharing vault that lists Docs, like a smart album ("photos tagged beach from
+  2026"). The vault's devices run its query, an op, and sign each change to the list. A cap names the collection and
+  what it lists, so what the cap covers changes only by its issuer's signed act, never because someone edited a tag;
+  a Doc that leaves the list is dropped at the holders' next sync (A40).
+
+## New terms
+
+From the terminology audit ([`audits/terms.md`](../audits/terms.md), section a): terms the specs use that this
+glossary did not have, each with its verdict (**A1**).
+
+- **tip**: the newest point of something signed: a device's **log tip** (its newest post's number and hash), a **tree
+  tip**. **→ `Past.tips` becomes `parents`**; the wire's `Head` **= tip**, renamed at the next wire version.
+- **beat**: one step of the Aven Peer's clock (wire `beat`). A **presence beat** is a device's signed presence per
+  step. ⚠ **presence** (the hub's count).
+- **attenuation**: a link that narrows its parent for the same holder; at most one per message (A27).
+- **device cap**: the cap from a vault to its device's vault, within which the device acts.
+- **actor host**: a device that signs for the actors it hosts (A27). Always "actor host", never bare "host".
+- **outer bound**: an actor host's device cap, the most any hosted actor may do. ⚠ engine **bound**.
+- **address record, release record, presence record, log tip, tree tip**: a peer's self-signed, newest-wins notices
+  (PEERS §6, `Aven.ID.Records`). **→ notices** (they are not Records).
+- **wire version**: the one version of the wire a peer speaks; no fallback.
+- **relay list, keeper list**: the tree's lists of relays and keepers, kept by the admin. ⚠ caps' "kept list" **→
+  last-seen list**.
+- **fetch link**: a fetch key's successor. Two after one key **→ rival links** (not a fork).
+- **quota**: what an upload may spend under a keep cap.
+- **whole merge**: a merge into main judged as a whole (`WholeMerges`).
+- **own authority**: a device writing on its vault's authority, within its device cap, without a chain.
+- **change view** (`RecordChange`): what changed in a Record, as a reader sees it.
+- **admin device**: a device of the admin's vault, which confirms a claim. Its "ack" **→ confirm**.
+- **settled tree**: the tree the one rule computes from its statements. **settle** stays for this only.
+- **bootstrap, home relay**: how a new device first reaches the network; a device's own relay. ⚠ actor **home**.
+- **contested, final claim**: a ticket claimed twice, before one claim is final; the claim that stands.
+- **keeping** (caps' placement): who keeps a vault's Docs. **`Aven.ID.Placement` → `Aven.ID.Keeping`**; placement
+  stays the actors'.
+- **listing, order, books**: a keep cap as its keeper holds it; an order from its issuer (withdraw, delete); a
+  keeper's books. ⚠ **order** (causal order), **delete** (the chat's retraction).
+- **migration guarantee, clean store, old side**: how production's tree moves to a new release without losing a device.
+- **forgetting**: once no one holds a Doc's keys, no sealed copy of it is readable (`Aven.ID.Forget`).
+
+## New collisions
+
+From the audit's ranking ([`audits/terms.md`](../audits/terms.md), "Ranked"), most likely to confuse first, each with
+its verdict (**A1**). Where a verdict offers two names, the part's owner picks one.
+
+| Word | Its meanings | Verdict |
+|---|---|---|
+| settle | the tree's one rule; merges resolving; the issuer choosing a fetch key; owner removals; the chat keeper | settle only for the tree; merges "resolve"; fetch keys "the issuer chooses"; `settleRemovals` → `resolveRemovals` |
+| docs, Docs | the document layer; the plural of Doc; avenOS's documentation tab | decided (**A41**): the documentation is **Brain**; "docs" only for the document layer |
+| seal, sealed | encrypted; a segment closed; fixed into a name; a drawn signature | sealed only means encrypted; segments "closed"; slides "signature mark" |
+| record, Record | the primitive; signed peer notices; a peer's first-start status; an actor's log entry; slide cards | Record only; peer records **→ notices**; `record.rs` **→ `FirstStart`**; slide **cards** |
+| chain | caps' chain; a well-formed log (`IsChain`); fetch keys; the chat's chains; the owners above; period Docs | caps only; `IsChain` **→ `IsLog`**; fetch keys "succeed"; `Tree.chain` **→ `above`**; period Docs a "series" |
+| line | a chat line; a grant line (`Line`); a JSON line; others | caps' `Line` **→ `Clause`**; chat "line" only in the frozen chat format |
+| fork | a copy (A4); two fetch links after one key; the chat's `Fork` | a copy only; fetch keys **rival links**; chat `Fork` **→ `Split`** |
+| operation, verb | the engine's operation; caps' verbs | one thing since **A32**: the core verbs are ops |
+| host | actor host; "the host is the page"; the runtime host; a platform | always qualified: "actor host", "runtime host", "the page side", "platform" |
+| ack | caps' ack of a revocation; the tree's ack of a claim; actors' frame | caps' ack stays; the tree's **→ confirm**; actors' **→ receipt** |
+| split | final, neither side counts (A4); two peer notices with one counter | A4 applies to notices too, or call it a **tie** |
+| placement | caps' keeping (`Aven.ID.Placement`); actors' placing a face | actors keep it; caps' **→ keeping** |
+| page | a browser page; a catch-up batch; an example type; a wiki page; wasm pages | catch-up **→ batch**; the example type **→ note**; ⚠ between the rest |
+| kept, keep, keeper | what a keeper holds; a lens's parked data; caps' kept list; the wire's `kept`; `Keep` | "kept" only for what a keeper holds; the lens's **→ parked**; caps' **→ last-seen list**; `Keep` **→ `KeeperState`** |
+| tip, head | an envelope's parents; a version's tips; a log tip; a tree tip; the wire's `Head` | add **tip**; `Past.tips` **→ `parents`**; wire `Head` **→ `Tip`** |
+
+Close behind, each with more than one meaning still to settle, part by part: **beat**, **presence**, **kind** (vaults only, yet five new
+enums), **link**, **version** (v1), **join** (only the network join: a browser signing in is *added* to a vault),
+**index**, **network**, **address**, **fit**, **gate** and **door** (the code's `Gate` **→ `Admission`**), **safe runtime**, **layer**, **part** and
+**package**, **standing**, **order**, **withdraw** and **delete**, **verdict**, **admin**, **member**, and decision
+labels that mean caps decisions in one file and thread tasks in another.
 
 ## Words with two meanings
 
@@ -355,7 +453,7 @@ Which part keeps each word.
 | envelope | docs | call (engine) |
 | operation | engine | verb (caps) |
 | keep / keeper | engine (keep), caps (keeper) | `Logs` (code); keep cap (the store's rule) |
-| part | actors | depth (wants) |
+| part | actors | level (wants) |
 | head / heads | store, docs | version (engine) |
 | ref | store | link (engine, ontology, `x-link`) |
 | snapshot | docs (local) | checkpoint (what travels) |
@@ -368,7 +466,7 @@ Which part keeps each word.
 | epoch | caps | generation (docs) |
 | partial | engine | unchecked (milestone-4 notes) |
 | index | engine | chunk list (files), pack table |
-| gate | the box's time limits | door (access); `Door` (code) |
+| gate | the box's time limits | door (access); `Admission` (code) |
 | network | the members group | the agent; the genesis hash; `Genesis` |
 | claim | caps (tickets) | genesis (the network) |
 | member | the network's group | `member_of` stays a predicate |

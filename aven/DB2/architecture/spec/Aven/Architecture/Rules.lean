@@ -13,8 +13,8 @@ the theorem states the part that can, and `Aven.Architecture.Gaps` names what is
 ARCHITECTURE.md from those.
 
 The view that joins the parts is defined here, once: `served`, what a reader sends, the engine's want queue over caps'
-read grants (rule 6). Caps' revocation verdict reads Core's envelopes itself, its past Core's `Reaches`
-(`Aven.Core.Past.reaches_iff`, rules 2, 4 and 11).
+read grants (rule 6). Caps' revocation verdict, and the deletes a reader holds, read Core's envelopes themselves, their
+past Core's `Reaches` (`Aven.Core.Past.reaches_iff`, rules 2, 4 and 11).
 -/
 
 namespace Aven.Architecture
@@ -40,14 +40,16 @@ theorem rule1_named {H : Bytes → Hash} (hH : Injective H) {a b : Value} (ha : 
 
 /-! ## Rule 2: history names its past by hash -/
 
-/-- The envelope before another in its log is fixed by the name it gives: two candidates are one envelope. -/
-theorem rule2_prev_fixed {H : Bytes → Hash} (hH : Injective H) {a b b' : Envelope} (hb : Canon b.value = true)
-    (hb' : Canon b'.value = true) (h : a.prev = some (b.name H)) (h' : a.prev = some (b'.name H)) : b = b' :=
+/-- The envelope before another in its log is fixed by the name it gives: two candidates say the same thing, and
+differ at most in their signatures (A30). -/
+theorem rule2_prev_fixed {H : Bytes → Hash} (hH : Injective H) {a b b' : Envelope} (hb : Canon b.unsigned = true)
+    (hb' : Canon b'.unsigned = true) (h : a.prev = some (b.name H)) (h' : a.prev = some (b'.name H)) :
+    { b with sig := b'.sig } = b' :=
   Envelope.name_inj hH hb hb' (Option.some.inj (h.symm.trans h'))
 
 /-- So is each tip it builds on. -/
-theorem rule2_dep_fixed {H : Bytes → Hash} (hH : Injective H) {b b' : Envelope} (hb : Canon b.value = true)
-    (hb' : Canon b'.value = true) (h : b.name H = b'.name H) : b = b' :=
+theorem rule2_dep_fixed {H : Bytes → Hash} (hH : Injective H) {b b' : Envelope} (hb : Canon b.unsigned = true)
+    (hb' : Canon b'.unsigned = true) (h : b.name H = b'.name H) : { b with sig := b'.sig } = b' :=
   Envelope.name_inj hH hb hb' h
 
 /-- An envelope's Loro dependencies and its hashes name the same past: among envelopes that pass docs rule 7, the same
@@ -122,32 +124,51 @@ theorem rule4_fit_merges {S K V : Type} [DecidableEq K] (rule : S → K → V �
     rule w.value.1 k w.value.2 :=
   DB.Docs.fit_envelopes rule h k hw
 
-/-- The content of an envelope, as every reader judges it from the changes it sees: the engine's footprint check (its
-grants cover the lowered steps, and the changes stay within them) and docs' fit, both over the one change view, from
-the version the envelope builds on (`before`) to the one it makes (`step`). -/
-def contentOk (ver : DocId → TypeId) (grants : Envelope → List Grant) (fp : Envelope → List Step)
-    (rule : TypeId → Bytes → Value → Prop) (before : Envelope → List (DB.Engine.Record Value))
+/-- The content of an envelope, as every reader judges it from the changes it sees: the engine's footprint check (the
+changes stay within the steps its calls lower to, `fp`, which caps checked it may call, A32) and docs' fit, both over
+the one change view, from the version the envelope builds on (`before`) to the one it makes (`step`). -/
+def contentOk (ver : DocId → TypeId) (fp : Envelope → List Step) (rule : TypeId → Bytes → Value → Prop)
+    (before : Envelope → List (DB.Engine.Record Value))
     (step : List (DB.Engine.Record Value) → Envelope → List (DB.Engine.Record Value)) (e : Envelope) : Prop :=
-  DB.Engine.verdictFootprint (grants e) (fp e) (DB.Engine.changesFrom ver (before e) (step (before e) e)) = true ∧
+  DB.Engine.verdictFootprint (fp e) (DB.Engine.changesFrom ver (before e) (step (before e) e)) = true ∧
     DB.Docs.FitsAll rule (DB.Engine.changesFrom ver (before e) (step (before e) e))
 
-/-- One reader verdict (rule 4): caps' `Verdict`, with fresh the epoch check, live the revocation verdict, and fit
-the content check. An envelope counts exactly when everything in its past is signed, in a fresh epoch, authorized by
-its cap chain, not revoked, within its footprint and fit, and none of it is half of a split. -/
-theorem rule4_one_verdict (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spawned : DocId → DocId → Prop)
+/-- One reader verdict (rule 4): caps' `Verdict`, with fresh the epoch check, live the revocation verdict and the
+deletes the reader holds (`ID.liveWith`), and fit the content check against the reader's footprint: the steps the
+calls it authorized lower to (A32). An envelope counts exactly when everything in its past is signed, in a fresh epoch,
+authorized by its cap chain, not revoked, not ended by a delete, within its calls' footprint and fit, and none of it is
+half of a split. -/
+theorem rule4_one_verdict (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spawned lists : DocId → DocId → Prop)
     (signed : Envelope → Prop) (H : Bytes → Hash) (epochOf : Envelope → Nat) (rd : ID.Reads)
-    (rs : List ID.Revocation) (ver : DocId → TypeId) (grants : Envelope → List Grant) (fp : Envelope → List Step)
+    (rs : List ID.Revocation) (isDelete byOwner : Envelope → Bool) (ver : DocId → TypeId)
     (rule : TypeId → Bytes → Value → Prop) (before : Envelope → List (DB.Engine.Record Value))
     (step : List (DB.Engine.Record Value) → Envelope → List (DB.Engine.Record Value)) (S : List Envelope)
     (e : Envelope) :
     Counts (Envelope.name H)
-        (r.Verdict gov spawned signed (fun x => ID.freshEpoch (Envelope.name H) epochOf S x = true)
-          (fun x => ID.verdict (Envelope.name H) rd S rs x = .counts) (contentOk ver grants fp rule before step)) S e ↔
+        (r.Verdict gov spawned lists signed (fun x => ID.freshEpoch (Envelope.name H) epochOf S x = true)
+          (fun x => ID.liveWith (Envelope.name H) rd isDelete byOwner S rs x = true)
+          (contentOk ver r.footprint rule before step)) S e ↔
       ∀ x, Reaches (Envelope.name H) S e x →
-        (signed x ∧ ID.freshEpoch (Envelope.name H) epochOf S x = true ∧ r.Authorized gov spawned x ∧
-          ID.verdict (Envelope.name H) rd S rs x = .counts ∧ contentOk ver grants fp rule before step x) ∧
+        (signed x ∧ ID.freshEpoch (Envelope.name H) epochOf S x = true ∧ r.Authorized gov spawned lists x ∧
+          ID.liveWith (Envelope.name H) rd isDelete byOwner S rs x = true ∧
+          contentOk ver r.footprint rule before step x) ∧
         ∀ y ∈ S, ¬ Split (Envelope.name H) x y :=
-  ID.counts_iff r gov spawned (Envelope.name H) _ _ _ _ S e
+  ID.counts_iff r gov spawned lists (Envelope.name H) _ _ _ _ S e
+
+/-- A delete ends a Doc for every reader (A22): `byOwner` is caps' own-authority path (`ID.Reader.Own`, never an actor
+host's), so the delete is written by a device of the Doc's vault or of one that governs it; and once a reader holds
+it, an envelope that counts is the delete or in its past, whatever cap it writes under. Readers holding the same
+deletes, and the same past of each, agree on it (`ID.deleted_agree`). -/
+theorem rule4_delete_ends (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spawned lists : DocId → DocId → Prop)
+    (signed : Envelope → Prop) (H : Bytes → Hash) (epochOf : Envelope → Nat) (rd : ID.Reads)
+    (rs : List ID.Revocation) (isDelete byOwner : Envelope → Bool)
+    (owner : ∀ x, byOwner x = true → r.Own gov x ∧ ¬ r.HostSigned x) (fit : Envelope → Prop) {S : List Envelope}
+    {d e : Envelope} (hd : d ∈ S) (del : isDelete d = true) (own : byOwner d = true) (he : e ∈ S)
+    (h : Counts (Envelope.name H)
+      (r.Verdict gov spawned lists signed (fun x => ID.freshEpoch (Envelope.name H) epochOf S x = true)
+        (fun x => ID.liveWith (Envelope.name H) rd isDelete byOwner S rs x = true) fit) S e) :
+    r.Own gov d ∧ (Envelope.name H d = Envelope.name H e ∨ Past.Before (Envelope.name H) S d e) :=
+  ⟨(owner d own).1, ID.delete_ends hd del own he (ID.liveWith_iff.mp ((h e (.refl e)).1).2.2.2.1).2⟩
 
 /-- Two readers that hold the same past of an envelope, and the same splits in it, give it the same verdict, whatever
 else each holds. -/
@@ -157,54 +178,88 @@ theorem rule4_readers_agree (nm : Envelope → Hash) (ok : Envelope → Prop) {S
     Counts nm ok S e ↔ Counts nm ok S' e :=
   ID.readers_agree nm ok past splits
 
-/-- What the content check gives: every lowered step is granted, every change is one the footprint makes, and the
-changes fit; and where what an envelope says it does is the diff a reader sees (`ChangesAreDiff`, with distinct Record
-ids in the engine's `diff_footprint`), fit holds of what it says too. -/
-theorem rule4_content {ver : DocId → TypeId} {grants : Envelope → List Grant} {fp : Envelope → List Step}
-    {rule : TypeId → Bytes → Value → Prop} {before : Envelope → List (DB.Engine.Record Value)}
+/-- What the content check gives: every change is one a step of the footprint makes, the footprint being the steps the
+envelope's calls lower to; and where what an envelope says it does is the diff a reader sees (`ChangesAreDiff`, with
+distinct Record ids in the engine's `diff_footprint`), fit holds of what it says. -/
+theorem rule4_content {ver : DocId → TypeId} {fp : Envelope → List Step} {rule : TypeId → Bytes → Value → Prop}
+    {before : Envelope → List (DB.Engine.Record Value)}
     {step : List (DB.Engine.Record Value) → Envelope → List (DB.Engine.Record Value)} {e : Envelope}
-    (h : contentOk ver grants fp rule before step e) {R : DB.Docs.Reading (List (DB.Engine.Record Value))}
+    (h : contentOk ver fp rule before step e) {R : DB.Docs.Reading (List (DB.Engine.Record Value))}
     (link : DB.Docs.ChangesAreDiff R (DB.Engine.changesFrom ver) step) {cs : List DB.Docs.RecordChange}
     (said : R.changesOf (before e) e = some cs) :
-    (∀ st ∈ fp e, ∃ g ∈ grants e, g.allows st = true) ∧ DB.Docs.FitsAll rule cs :=
-  ⟨(DB.Engine.footprint_granted _ _ _ h.1).1, (DB.Docs.fit_diff link rule said).mpr h.2⟩
+    (∀ ch ∈ DB.Engine.changesFrom ver (before e) (step (before e) e),
+      (ch.kind = .new → ∃ st ∈ fp e, st.type = ch.type.type ∧ st.verb = .putNew) ∧
+      (ch.kind = .gone → ∃ st ∈ fp e, st.type = ch.type.type ∧ st.verb = .remove) ∧
+      (ch.kind ≠ .gone → ∀ f ∈ ch.names, ∃ st ∈ fp e, st.type = ch.type.type ∧ f ∈ st.fields)) ∧
+    DB.Docs.FitsAll rule cs :=
+  ⟨DB.Engine.footprint_steps _ _ h.1, (DB.Docs.fit_diff link rule said).mpr h.2⟩
 
-/-- **A merge into main is judged on the whole merge** (caps, "Checking"). A reader whose footprint is the engine's
-lowered steps, and whose `before` for an envelope on main is main's Records at its `prev`, judges every merge into main
-whole (`WholeMerges` holds by construction). Then, for an authorized merge on main that passes the content check:
-every Record of main it changes, brings or removes is written, created or removed by a step of the whole merge; the
-signing device's cap writes on main and allows every such step; and the authority is either the signer's vault, which
-owns or governs the Doc, or a chain whose last cap writes on main and allows every such step. A narrow merger can't
-land a proposal's wider changes. -/
-theorem rule4_merge_whole (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spawned : DocId → DocId → Prop)
-    {ver : DocId → TypeId} (hver : ∀ t, (ver t).type = t) {grants : Envelope → List Grant} {fp : Envelope → List Step}
-    (hfp : r.footprint = fp) {rule : TypeId → Bytes → Value → Prop} {before : Envelope → List (DB.Engine.Record Value)}
+/-- **What an owner approves as reading never writes** (A2, A32): under a chain whose last cap names only ops that lower
+to no step, as `core/1`'s read, tell, keep and share do, an envelope that passes the content check brings no Record,
+removes none and changes no field of one. -/
+theorem rule4_reading_writes_nothing (r : ID.Reader) (gov : Bytes → Bytes → Prop)
+    (spawned lists : DocId → DocId → Prop) {ver : DocId → TypeId} {rule : TypeId → Bytes → Value → Prop}
+    {before : Envelope → List (DB.Engine.Record Value)}
     {step : List (DB.Engine.Record Value) → Envelope → List (DB.Engine.Record Value)} {e : Envelope}
-    (main : e.branch = ID.mainBranch) (hn : ((before e).map (·.id)).Nodup) (h : r.Authorized gov spawned e)
-    (hc : contentOk ver grants fp rule before step e) :
-    -- every Record of main the merge touches is handled by a step of the whole merge
+    (h : r.ByChain gov spawned lists e) {last : ID.Cap} (hl : (r.chain e).getLast? = some last)
+    (reads : ∀ l ∈ last.grants r.ctx.roles, ∀ c : Call, c.op = l.op → r.lower c = [])
+    (hc : contentOk ver r.footprint rule before step e) :
+    ∀ ch ∈ DB.Engine.changesFrom ver (before e) (step (before e) e), ch.kind = .edited ∧ ch.names = [] := by
+  have z := ID.chain_writes_nothing r gov spawned lists h hl reads
+  intro ch m
+  obtain ⟨hn, hg, hf⟩ := DB.Engine.footprint_steps _ _ hc.1 ch m
+  rw [z] at hn hg hf
+  cases k : ch.kind with
+  | new =>
+    obtain ⟨_, m, _⟩ := hn k
+    simp at m
+  | gone =>
+    obtain ⟨_, m, _⟩ := hg k
+    simp at m
+  | edited =>
+    refine ⟨rfl, ?_⟩
+    cases hnm : ch.names with
+    | nil => rfl
+    | cons f _ =>
+      have := hf (by simp [k]) f (by simp [hnm])
+      simp at this
+
+/-- **A merge into main is judged on the whole merge** (caps, "Checking"). A reader whose calls for an envelope on
+main are every call the merge brings onto main, whose footprint is the steps they lower to, and whose `before` for it
+is main's Records at its `prev`, judges every merge into main whole (`WholeMerges` holds by construction). Then, for an
+authorized merge on main that passes the content check: every Record of main it changes, brings or removes is written,
+created or removed by a step those calls lower to; the signing device's cap writes on main and allows every such call;
+and the authority is either the signer's vault, which owns or governs the Doc, or a chain whose last cap writes on
+main and allows every such call. A narrow merger can't land a proposal's wider changes. -/
+theorem rule4_merge_whole (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spawned lists : DocId → DocId → Prop)
+    {ver : DocId → TypeId} (hver : ∀ t, (ver t).type = t) {rule : TypeId → Bytes → Value → Prop}
+    {before : Envelope → List (DB.Engine.Record Value)}
+    {step : List (DB.Engine.Record Value) → Envelope → List (DB.Engine.Record Value)} {e : Envelope}
+    (main : e.branch = ID.mainBranch) (hn : ((before e).map (·.id)).Nodup) (h : r.Authorized gov spawned lists e)
+    (hc : contentOk ver r.footprint rule before step e) :
+    -- every Record of main the merge touches is handled by a step the whole merge's calls lower to
     ((∀ r' ∈ step (before e) e, ∀ r0 ∈ before e, r0.id = r'.id → ∀ fl v, (fl, v) ∈ r'.fields →
         DB.Engine.optEq DB.Engine.valEq (DB.Engine.get r0.fields fl) (DB.Engine.get r'.fields fl) = false →
-          ∃ st ∈ fp e, st.type = r'.type ∧ fl ∈ st.fields) ∧
+          ∃ st ∈ r.footprint e, st.type = r'.type ∧ fl ∈ st.fields) ∧
       (∀ r' ∈ step (before e) e, (∀ r0 ∈ before e, r0.id ≠ r'.id) →
-        (∃ st ∈ fp e, st.type = r'.type ∧ st.verb = .putNew) ∧
-        ∀ fl ∈ r'.fields.map Prod.fst, ∃ st ∈ fp e, st.type = r'.type ∧ fl ∈ st.fields) ∧
+        (∃ st ∈ r.footprint e, st.type = r'.type ∧ st.verb = .putNew) ∧
+        ∀ fl ∈ r'.fields.map Prod.fst, ∃ st ∈ r.footprint e, st.type = r'.type ∧ fl ∈ st.fields) ∧
       (∀ r0 ∈ before e, (∀ r' ∈ step (before e) e, r'.id ≠ r0.id) →
-        ∃ st ∈ fp e, st.type = r0.type ∧ st.verb = .remove)) ∧
-    -- the signing device's cap writes on main and allows every step of the whole merge
+        ∃ st ∈ r.footprint e, st.type = r0.type ∧ st.verb = .remove)) ∧
+    -- the signing device's cap writes on main and allows every call of the whole merge
     (∃ dc f, r.deviceCap e.signer = some dc ∧ dc.branches.allows ID.mainBranch = true ∧ r.facts e.doc = some f ∧
-      ∀ s ∈ fp e, dc.allows gov spawned f s) ∧
-    -- on the signer's vault's own authority, or by a chain whose last cap writes on main and allows every step
+      ∀ c ∈ r.calls e, dc.allows gov spawned lists f c) ∧
+    -- on the signer's vault's own authority, or by a chain whose last cap writes on main and allows every call
     (r.Own gov e ∨
       ∃ last, (r.chain e).getLast? = some last ∧ last.conditions.branches.allows ID.mainBranch = true ∧
-        ∃ f, r.facts e.doc = some f ∧ ∀ s ∈ fp e, (last.grants r.ctx.roles).allows gov spawned f s) := by
-  have wm : r.WholeMerges fp := fun x _ s hs => hfp ▸ hs
-  obtain ⟨_, hchg, hnew, hgone⟩ :=
-    DB.Engine.merge_granted ver hver (grants e) (fp e) (before e) (step (before e) e) hn hc.1
-  refine ⟨⟨hchg, hnew, hgone⟩, ID.merge_within_device r gov spawned wm main h, ?_⟩
-  rcases ID.authorized_by r gov spawned h with own | chain
+        ∃ f, r.facts e.doc = some f ∧ ∀ c ∈ r.calls e, (last.grants r.ctx.roles).allows gov spawned lists f c) := by
+  have wm : r.WholeMerges r.calls := fun _ _ _ m => m
+  have ⟨hchg, hnew, hgone⟩ :=
+    DB.Engine.merge_steps ver hver (r.footprint e) (before e) (step (before e) e) hn hc.1
+  refine ⟨⟨hchg, hnew, hgone⟩, ID.merge_within_device r gov spawned lists wm main h, ?_⟩
+  rcases ID.authorized_by r gov spawned lists h with own | chain
   · exact .inl own
-  · exact .inr (ID.merge_covered r gov spawned wm main chain)
+  · exact .inr (ID.merge_covered r gov spawned lists wm main chain)
 
 /-! ## Rule 5: reading is holding the key -/
 
@@ -233,15 +288,16 @@ theorem rule5_epoch_fresh {nm : Envelope → Hash} {epochOf : Envelope → Nat} 
 
 open Classical in
 /-- What a reader sends: the engine's want queue, where the cap is caps' read grant on the wanted Doc. -/
-noncomputable def served (gov : Bytes → Bytes → Prop) (spawned : DocId → DocId → Prop) (facts : DocId → Facts)
+noncomputable def served (gov : Bytes → Bytes → Prop) (spawned lists : DocId → DocId → Prop) (facts : DocId → Facts)
     (g : ID.Grant) (ws : List (DB.Engine.Want DB.Engine.WantKey)) : List DB.Engine.WantKey :=
-  (DB.Engine.queue (fun k => decide (g.reaches gov spawned (facts k.doc) .read)) ws).map (·.key)
+  (DB.Engine.queue (fun k => decide (g.reaches gov spawned lists (facts k.doc) (ID.coreOp .read))) ws).map (·.key)
 
-/-- What leaves a reader is wants ∩ caps: a key is served exactly when someone wants it and a read grant reaches its
-Doc. A want alone grants nothing. -/
-theorem rule6_wants_caps (gov : Bytes → Bytes → Prop) (spawned : DocId → DocId → Prop) (facts : DocId → Facts)
+/-- What leaves a reader is wants ∩ caps: a key is served exactly when someone wants it and a line naming `read`
+reaches its Doc. A want alone grants nothing. -/
+theorem rule6_wants_caps (gov : Bytes → Bytes → Prop) (spawned lists : DocId → DocId → Prop) (facts : DocId → Facts)
     (g : ID.Grant) (ws : List (DB.Engine.Want DB.Engine.WantKey)) (k : DB.Engine.WantKey) :
-    k ∈ served gov spawned facts g ws ↔ (∃ w ∈ ws, w.key = k) ∧ g.reaches gov spawned (facts k.doc) .read := by
+    k ∈ served gov spawned lists facts g ws ↔
+      (∃ w ∈ ws, w.key = k) ∧ g.reaches gov spawned lists (facts k.doc) (ID.coreOp .read) := by
   classical
   unfold served
   rw [DB.Engine.served_eq_wants_caps]
@@ -278,7 +334,7 @@ theorem rule7_no_only_source {n : ID.Node.Net} (hl : n.Listed) {r₁ r₂ : Stri
 actor's owner is shown, reaches it with `read`. -/
 theorem rule7_hosting_explicit (w : Actor.World) (caps : List ID.Cap) (host : String) (f : Facts) :
     Actor.HostReads w caps host f ↔ ∃ a, ∃ c ∈ Actor.shownTo caps (w.ownerOf a),
-      Actor.Hosting w c host a ∧ (c.grants w.roles).reaches w.gov w.spawned f .read :=
+      Actor.Hosting w c host a ∧ (c.grants w.roles).reaches w.gov w.spawned w.lists f (ID.coreOp .read) :=
   Actor.hosting_explicit w caps host f
 
 /-! ## Rule 8: derived state is a cache or a checkpoint -/

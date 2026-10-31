@@ -114,11 +114,14 @@ function network() {
 	return ['--network', 'host', '-v', `${proxyCa}:${ca}:ro`, ...trust, ...proxyNames().flatMap((name) => ['-e', name])];
 }
 
-// The Rust builds and crate downloads live in volumes, kept across runs: a Mac's shared folders are slow for them.
+// The Rust builds and crate downloads live in volumes, kept across runs: a Mac's shared folders are slow for them. The
+// file registry, aven/runtimes' crate the Peers take by path (`../../../runtimes/registry`), is at /runtimes/registry,
+// read-only, as in the Peer's image (deploy/peer.Dockerfile).
 const rustVolumes = [
 	'-v', 'avensandbox_target:/work/target',
 	'-v', 'avensandbox_cargo_registry:/opt/cargo/registry',
 	'-v', 'avensandbox_cargo_git:/opt/cargo/git',
+	'-v', `${join(db2, '..', 'runtimes', 'registry')}:/runtimes/registry:ro`,
 ];
 
 // What the box takes from outside aven/DB2: aven/runtimes whole at /aven/runtimes (its Lean spec, which
@@ -213,14 +216,16 @@ async function check() {
 		(await keeps(run)) &&
 		(await inEngines(run)) &&
 		(await inlines(run)) &&
-		(await docs(run)) &&
+		(await drawers(run)) &&
+		(await brains(run)) &&
 		(await claims(run)) &&
 		(await members(run)) &&
 		(await chats(run)) &&
 		(await domes(run)) &&
 		(await videos(run)) &&
 		(await shares(run)) &&
-		(await offlines(run));
+		(await offlines(run)) &&
+		(await upgrades(run));
 	say(`${passed ? 'check passed' : 'check FAILED'}; screenshots and report in aven/DB2/${run}/`);
 	return passed ? 0 : 1;
 }
@@ -304,6 +309,15 @@ async function inEngines(run) {
 	const built = Date.now() - timed;
 	const ok = (await $`${compose} exec -T browsers node sandbox/engines.mjs ${run}`.env(env).nothrow()).exitCode === 0;
 	say(`${ok ? 'Chromium, WebKit and Firefox run avenOS, its release build and its passkeys' : 'the engines step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s, the build ${(built / 1000).toFixed(1)} s)`);
+	return ok;
+}
+
+// The tree drawer (os/web/runtimes/draw.js), held to aven/runtimes' vectors in all three engines: sandbox/drawer.mjs, in
+// the box, which mounts aven/runtimes beside aven/DB2.
+async function drawers(run) {
+	const timed = Date.now();
+	const ok = (await inBox(['node', 'sandbox/drawer.mjs', run])) === 0;
+	say(`${ok ? 'the drawer draws only what the model passes, in Chromium, WebKit and Firefox' : 'the drawer step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s)`);
 	return ok;
 }
 
@@ -415,8 +429,46 @@ export async function offlines(run) {
 	say(`${ok ? 'opening, writing and signing in without the Aven Peer hold' : 'the offline step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s)`);
 	return ok;
 }
-// avenBRAIN's docs in avenOS, in three engines at a desktop's and a phone's width: sandbox/docs.mjs
-const docs = async (run) => (await $`${compose} exec -T browsers node sandbox/docs.mjs ${run}`.env(env).nothrow()).exitCode === 0;
+// Upgrades (PEERS.md §7), by sandbox/upgrade.mjs, on production's stand-in from an empty store, which it leaves empty,
+// and on the cast's Alice Peer: it asks for a Peer on another wire version by writing `upgrade-<what>` into the run's
+// folder, and the host restarts that Peer with `--wire-version` (or without it, back) and answers `upgrade-<what>-done`
+export async function upgrades(run) {
+	const timed = Date.now();
+	const inBrowsers = (...args) => $`${compose} exec -T browsers ${args}`.env(env).nothrow().quiet();
+	const restart = (service, wire) => $`${compose} up -d --no-deps ${service}`.env({ ...env, [`AVENSANDBOX_WIRE_${service.toUpperCase()}`]: wire }).quiet();
+	const wipe = async () => {
+		await $`${compose} exec -T s3 rm -rf /data/aven/prod`.env(env).quiet();
+		await $`${compose} restart prod`.env(env).quiet();
+	};
+	await wipe();
+	const asks = {
+		// a version ahead of this build's, and one behind: version 0 is the wire before it had versions
+		'prod-ahead': () => restart('prod', '2'),
+		'prod-back': () => restart('prod', ''),
+		'alice-behind': () => restart('alice', '0'),
+		'alice-back': () => restart('alice', ''),
+	};
+	const script = $`${compose} exec -T browsers node sandbox/upgrade.mjs ${run}`.env(env).nothrow();
+	let done = false;
+	const answering = (async () => {
+		for (const [asked, answer] of Object.entries(asks)) {
+			while (!done && (await inBrowsers('test', '-f', `${run}/upgrade-${asked}`)).exitCode !== 0) await Bun.sleep(500);
+			if (done) return;
+			await answer();
+			await inBrowsers('touch', `${run}/upgrade-${asked}-done`);
+		}
+	})();
+	const ok = (await script).exitCode === 0;
+	done = true;
+	await answering;
+	await restart('alice', '');
+	await restart('prod', '');
+	await wipe();
+	say(`${ok ? 'a peer of another wire version is refused with update, and the one behind follows' : 'the upgrade step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s)`);
+	return ok;
+}
+// Brain, avenBRAIN in avenOS, in three engines at a desktop's and a phone's width: sandbox/brain.mjs
+const brains = async (run) => (await $`${compose} exec -T browsers node sandbox/brain.mjs ${run}`.env(env).nothrow()).exitCode === 0;
 const chats = async (run) => (await $`${compose} exec -T browsers node sandbox/chat.mjs ${run}`.env(env).nothrow()).exitCode === 0;
 
 async function up(args) {

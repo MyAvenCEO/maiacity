@@ -41,6 +41,9 @@ def bmpHead (w h : Nat) : Bytes := ascii "BM" ++ le32b 1000 ++ le32b 0 ++ le32b 
 
 def mp4Head : Bytes := be32b 24 ++ ascii "ftyp" ++ ascii "isom" ++ be32b 512 ++ ascii "isomiso2"
 
+/-- An iPhone's movie: QuickTime, its `ftyp` brand `qt  `. -/
+def movHead : Bytes := be32b 20 ++ ascii "ftyp" ++ ascii "qt  " ++ be32b 0 ++ ascii "qt  "
+
 def on : Stage := ⟨true⟩
 def off : Stage := ⟨false⟩
 
@@ -80,6 +83,7 @@ def examples : List Example :=
    ex "a BMP" on (bmpHead 64 64) 12342 (claim "image/bmp") .bmp (.native .img),
    ex "a BMP with rows top down" on (bmpHead 64 (2 ^ 32 - 64)) 12342 (claim "image/bmp") .bmp (.native .img),
    ex "an MP4" on mp4Head (300 * MiB) (claim "video/mp4") .mp4 (.native .video),
+   ex "an iPhone movie, by its name only" on movHead (300 * MiB) { name := some "IMG_0042.MOV" } .mov (.native .video),
    ex "a WebM claimed as nothing" on [0x1A, 0x45, 0xDF, 0xA3, 0x9F, 0x42, 0x86, 0x81] (20 * MiB) {} .webm
      (.native .video),
    ex "an MP3 with ID3" on (ascii "ID3" ++ [0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]) (5 * MiB) {} .mp3
@@ -135,5 +139,10 @@ def Example.holds (e : Example) : Bool :=
   d == e.decision
 
 #guard examples.all Example.holds
+
+-- a claimed type names its type by its essence, whatever its case and parameters; anything else is unknown
+#guard registry.all fun e => FileType.ofMime e.type.mime == e.type
+#guard FileType.ofMime "Video/QuickTime; codecs=hvc1" == .mov
+#guard FileType.ofMime "image/x-icon" == .unknown
 
 end Aven.Runtime

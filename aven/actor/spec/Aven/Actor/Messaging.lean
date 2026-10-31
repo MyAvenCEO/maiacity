@@ -4,7 +4,7 @@ import Aven.Actor.Signing
 # The cap a message carries (D16, A27)
 
 A message carries the chain its sender's handled message carried, and at most one **attenuation** (`Aven.ID`'s
-`CapKind.attenuate`): a link that only narrows, keeps its parent's holder and needs no approval. Writes keep their
+`CapForm.attenuate`): a link that only narrows, keeps its parent's holder and needs no approval. Writes keep their
 chain as it came (`Aven.Actor.Signing`); a cap that travels on in a message narrows by attenuation.
 
 Who checks what:
@@ -23,19 +23,19 @@ What it proves:
 
 - `attenuation_within_message`: the kernel's attenuation reaches and allows nothing beyond the handled message's cap,
   nor beyond its parent in the chain.
-- `message_within_root`: when a reader accepts a message's chain, nothing in it, the attenuation included, reaches a
-  Doc or allows a step beyond the chain's root.
+- `message_within_root`: when a reader accepts a message's chain, nothing in it, the attenuation included, lets an op
+  reach a Doc or allows a call beyond the chain's root (caps are built from ops, A32).
 -/
 
 namespace Aven.Actor
 
-open Aven.Core (Bytes DocId Facts Verb Step)
-open Aven.ID (Cap CapKind Grant Ctx chainOk narrow_chain narrow_steps)
+open Aven.Core (Bytes DocId Facts Call)
+open Aven.ID (Cap CapForm Grant Ctx chainOk narrow_chain narrow_ops)
 
 /-- An attenuation of `parent` to the grant `g`, issued and signed for `parent`'s holder by its host device. It keeps
 the holder, share and conditions, so only its grant narrows. -/
 def attenuation (id issuer signer : String) (parent : Cap) (g : Grant) : Cap :=
-  { id := id, issuer := issuer, holder := parent.holder, parent := some parent.id, kind := .attenuate, grant := g,
+  { id := id, issuer := issuer, holder := parent.holder, parent := some parent.id, form := .attenuate, grant := g,
     role := none, share := parent.share, conditions := parent.conditions, signer := signer, approvals := [] }
 
 /-- The kernel's attenuation for one message: only when the narrowed grant lies within the handled message's own cap
@@ -54,12 +54,13 @@ theorem attenuation_grants (roles : List Aven.ID.Role) (id issuer signer : Strin
 
 /-- The kernel's attenuation reaches and allows nothing beyond the handled message's cap, nor beyond its parent. -/
 theorem attenuation_within_message {roles : List Aven.ID.Role} (gov : Bytes → Bytes → Prop)
-    (spawned : DocId → DocId → Prop) {id issuer signer : String} {bound parent : Cap} {g : Grant} {a : Cap}
+    (spawned lists : DocId → DocId → Prop) {id issuer signer : String} {bound parent : Cap} {g : Grant} {a : Cap}
     (h : kernelAttenuate roles id issuer signer bound parent g = some a) :
-    a.kind = .attenuate ∧ a.holder = parent.holder ∧
-      (∀ f v, (a.grants roles).reaches gov spawned f v → (bound.grants roles).reaches gov spawned f v) ∧
-      (∀ f s, (a.grants roles).allows gov spawned f s → (bound.grants roles).allows gov spawned f s) ∧
-      (∀ f v, (a.grants roles).reaches gov spawned f v → (parent.grants roles).reaches gov spawned f v) := by
+    a.form = .attenuate ∧ a.holder = parent.holder ∧
+      (∀ f v, (a.grants roles).reaches gov spawned lists f v → (bound.grants roles).reaches gov spawned lists f v) ∧
+      (∀ f c, (a.grants roles).allows gov spawned lists f c → (bound.grants roles).allows gov spawned lists f c) ∧
+      (∀ f v, (a.grants roles).reaches gov spawned lists f v →
+        (parent.grants roles).reaches gov spawned lists f v) := by
   unfold kernelAttenuate at h
   split at h
   · next hw =>
@@ -72,14 +73,14 @@ theorem attenuation_within_message {roles : List Aven.ID.Role} (gov : Bytes → 
     · exact Aven.ID.Grant.within_reaches hw.2 (by simpa [attenuation_grants] using r)
   · simp at h
 
-/-- When a reader accepts a message's chain, nothing in it, the attenuation included, reaches a Doc or allows a step
-beyond the chain's root. -/
-theorem message_within_root {x : Ctx} (gov : Bytes → Bytes → Prop) (spawned : DocId → DocId → Prop)
+/-- When a reader accepts a message's chain, nothing in it, the attenuation included, lets an op reach a Doc or allows a
+call beyond the chain's root. -/
+theorem message_within_root {x : Ctx} (gov : Bytes → Bytes → Prop) (spawned lists : DocId → DocId → Prop)
     {r : Cap} {rest : List Cap} {att : Option Cap} (ok : chainOk x (messageChain (r :: rest) att) = true) :
     (∀ c ∈ messageChain (r :: rest) att, ∀ f v,
-      (c.grants x.roles).reaches gov spawned f v → (r.grants x.roles).reaches gov spawned f v) ∧
+      (c.grants x.roles).reaches gov spawned lists f v → (r.grants x.roles).reaches gov spawned lists f v) ∧
     (∀ c ∈ messageChain (r :: rest) att, ∀ f s,
-      (c.grants x.roles).allows gov spawned f s → (r.grants x.roles).allows gov spawned f s) :=
-  ⟨narrow_chain gov spawned ok, narrow_steps gov spawned ok⟩
+      (c.grants x.roles).allows gov spawned lists f s → (r.grants x.roles).allows gov spawned lists f s) :=
+  ⟨narrow_chain gov spawned lists ok, narrow_ops gov spawned lists ok⟩
 
 end Aven.Actor

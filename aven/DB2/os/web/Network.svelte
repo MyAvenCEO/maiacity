@@ -11,7 +11,7 @@
 	// connecting too: the passkey's ceremony is local, and the statement it signs waits in the Peer-Light's store until
 	// the network takes it, so the person taps once and this browser joins by itself when it is back.
 	import App from './App.svelte';
-	import MainNav from './docs/MainNav.svelte';
+	import MainNav from './brain/MainNav.svelte';
 	import Join from './Join.svelte';
 	import Phase from './Phase.svelte';
 	import { at, tree } from './id.svelte.js';

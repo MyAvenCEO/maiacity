@@ -82,7 +82,7 @@ run(part, input) → output | failure        part, input and output are Values; 
 | `name` | `<format>-runtime` or `<job>-runtime` ([Names](#names-versions-hashes-and-floors)) |
 | `version` | An integer, counting up from 1 |
 | `hash` | `b3:<hex>` of the module's bytes |
-| `floor` | The oldest version still run; a part naming an older one runs on the floor |
+| `floor` | The oldest version a device still runs for itself: a cached render below it is dropped. Never a verdict's: a verdict runs the hash an envelope names, if pinned in its past |
 | `input`, `output` | The hashes of its input and output schemas (JSON Schema, `additionalProperties: false`) |
 | `limits` | Part bytes, fuel, memory pages, output bytes, and the output's own measures (nodes, depth, pixels) |
 | `journal` | Whether its output may be journaled (actors) or must stay a cache (files) |
@@ -108,12 +108,17 @@ run(part, input) → output | failure        part, input and output are Values; 
   new capability or a fix is the next version, beside the old ones.
 - **Hashes.** What names the code is the hash. A part, a journal entry, a lowered operation and a cached render all
   name the hash, never only `name@version`.
-- **Floors.** A version that closes a hole raises its runtime's floor. Actors and plugins whose parts name an older
-  version run on the floor, as the actor spec has it. A file render always uses the newest version the registry names
-  for its type, so a file runtime's floor matters only to caches: a render made below the floor is dropped.
-- **The catalogue** (engine glossary) maps a runtime's name to its versions and hashes in each vault. Its built-in
-  entries come from this package's manifest; a vault can't add a runtime the manifest doesn't hold
-  ([Only from the repository](#only-from-the-repository)).
+- **Pins, not floors, for what others wrote** (A7, A42). A runtime version is a version of a type (K5, K7): a Doc or
+  vault pins the runtime hashes it accepts, and a hole is closed by withdrawing the pin, by its owners' act, in its
+  history. A verdict re-lowers with exactly the hash an envelope names and judges the pin at the envelope's past
+  (`verdictRuntime`), so two readers holding the same past agree (`readers_agree_pins`), and a withdrawal closes the
+  hash for every envelope after it (`withdraw_closes`). A rising floor would make a reader re-lower an old envelope on
+  a newer version and disagree with one that hadn't upgraded.
+- **Floors** bind only what a device runs for itself. A file render uses the newest version the registry names for
+  its type, and a cached render below its runtime's floor is dropped (`cacheKeeps`).
+- **Releases** (A36). Runtimes ship in the package's dated release (`@aven/runtimes@26.10.31`); there is no
+  per-vault catalogue of runtimes. A format's label is its version: a format that changes gets a new label, never a
+  version number beside the old one.
 
 ## Only from the repository
 
@@ -145,10 +150,14 @@ aven/runtimes/
   host/              aven-runtimes-host: load by hash, refuse imports, fuel, memory, schemas, output limits
                      (native for the Peer, the kernel and the engine; wasm for a browser worker)
   freeze/            the reproducible build and the checks: no imports, declared memory, hash = manifest
-  registry/          aven-runtimes-registry: the file registry, the sniffer, decide(); built native and to wasm
-  tree/              the node-tree allowlist, shared with actors' faces
-  formats/           file runtimes, one crate each, wasm32: text/ json/ csv/ markdown/ svg/ pdf/
-  actor/             actors' runtimes when they move in: state/ js/ face/
+  registry/          built: aven-runtimes-registry, the file registry, the sniffer, decide_file(); native and wasm
+  tree/              built: the node-tree allowlist, shared by every runtime that draws and the applier
+  contract/          built: the contract's failures, limits, results and render keys
+  markdown/          built: markdown-runtime, the first file runtime (the docs need it first)
+  face/              built: face-runtime, markup and style as data to a checked tree; here, not under actor/, since
+                     it comes before actors and serves the docs wiki as much as actors' faces
+  formats/           file runtimes still to come, one crate each, wasm32: text/ json/ csv/ svg/ pdf/
+  actor/             actors' runtimes when they move in: state/ js/
   plugins/           plugin runtimes when they move in: ontology/
   drawers/           the trusted host code that draws checked output: tree (the applier), pixels, table
   hostile/           hostile parts and files per runtime, and the fuzz targets
@@ -180,7 +189,7 @@ types.
 For each file, from its first bytes, its size and its claimed type, `decide` gives one **decision**:
 
 1. **What the file really is,** by its bytes. Each binary type has signatures (bytes at an offset, with a mask: PNG's
-   `89 50 4E 47 0D 0A 1A 0A`, JPEG's `FF D8 FF`, `RIFF….WEBP`, `ftyp` boxes for MP4 and AVIF, `%PDF-`). Text types have
+   `89 50 4E 47 0D 0A 1A 0A`, JPEG's `FF D8 FF`, `RIFF….WEBP`, `ftyp` boxes for MP4, QuickTime and AVIF, `%PDF-`). Text types have
    no magic: a file is text when its head is valid UTF-8 (or UTF-16 with a BOM) without NUL, and then a parse decides
    among them: an XML prolog or root element (`<svg` is SVG; anything with an HTML root, `<!DOCTYPE html` or `<script`
    is HTML), JSON by a bounded parse. Only then may the claimed type, or the name's extension, choose among formats the
@@ -204,7 +213,8 @@ For each file, from its first bytes, its size and its claimed type, `decide` giv
 
 ### Its shape
 
-One entry per type; the registry is the list, with a version of its own.
+One entry per type; the registry is the list. It has no version of its own: it ships in the package's dated release
+(A36), and what a file shows as is decided again by whichever release a device runs.
 
 ```json
 { "type": "image/svg+xml",
@@ -274,7 +284,11 @@ A file runtime's output is only one of two things.
 
 **The drawers** are host code in `drawers/`, written once, reviewed like a runtime, small, and fed only checked output:
 the **tree** drawer is the applier; the **pixel** drawer is a canvas; the **table** drawer is one component. What needs
-the GPU or a native codec stays in a drawer, and what parses hostile bytes stays in a runtime.
+the GPU or a native codec stays in a drawer, and what parses hostile bytes stays in a runtime. A face never draws
+outside its host: the tree drawer (avenOS's `os/web/runtimes/draw.js`) draws into a shadow root whose host is
+positioned, clips its overflow and contains layout, paint and style, so it is the containing block of every absolute
+layer, and is isolated, so no z-index leaves it. A face can't cover avenOS's own buttons or take their clicks
+(`sandbox/drawer.mjs`, in all three engines).
 
 ## Hostile files and their limits
 
@@ -314,7 +328,9 @@ and the decisions, not the parsers.
   reach it (`deterministic`). Theorems:
   - `run_ok_fits`: every answer fits its schema, and its encoding its output limit;
   - `run_more_room`: more fuel, memory or output room never changes an answer;
-  - `resolve_ge_floor`, `resolve_named`: a part runs on the version it names, or on the floor;
+  - `verdict_named`, `readers_agree_pins`, `withdraw_closes`: a verdict runs exactly the hash the envelope names,
+    when it is pinned in the envelope's past, so readers with that past agree, and a withdrawal closes it;
+    `cache_drops`: a floor only drops a device's own cached renders;
   - `admit_imports_nothing`, `admit_memory`: a module is admitted only when it imports nothing at all and declares a
     maximum memory within the limit;
   - `frozen`: the manifest only appends, so a frozen entry never changes; `loads_listed`: a host loads only bytes
@@ -347,20 +363,33 @@ and the decisions, not the parsers.
   `src` is a file of the network by its hash, every `href` is `https:`, `mailto:` or a fragment), `check_bounded`.
   27 examples, a `javascript:` link, a remote pixel, a `data:` image, an `ONLOAD` and a style attribute's `url()` among
   them.
-- **The face-runtime's output** (`Face`). Markup and style together: the tree, and a style that is data (a class name
-  and typed colours, size and weight per rule), from which the CSS text is generated. `faceOk` accepts it when the tree
-  passes `check`, and a11y holds across both: `face_passes_check`, `face_named` (every interactive node has an
-  accessible name), `face_roles` (a clickable non-control has a role and a tab stop), `face_alt`, `face_contrast` (every
-  text has 4.5:1 against the background the style resolves under it, 3:1 when large) and `face_classes`. Contrast is
-  exact integer arithmetic over one table, `linear` (sRGB to linear light, × 10⁷), which the vectors export: #767676
-  on white passes and #777777 fails, as WCAG has it.
+- **The face-runtime's output** (`Style`, its examples in `StyleExamples`; what every face is checked with in `Face`).
+  Markup and style together: the tree, and a style that is data, the subset avenBRAIN's slides are written in. A rule
+  is a selector, a descendant chain of one to four compounds (an allowlisted tag, up to four classes), and typed
+  declarations: placement, size, aspect, margin, padding, gap, border, radius, colours, the one bundled font, size,
+  weight, leading, tracking, uppercase, centring, nowrap, a transform of translate, rotate and scale, its origin, and
+  the one arrowhead clip-path. No custom properties, no `url()`, no free text: the drawer writes the CSS from the data
+  (`Rule.css`). Which rule reaches a node is CSS's cascade (classes, then tags, then the later rule). `faceOk` accepts
+  a face when the tree passes `check` (`face_passes_check`), every interactive node has an accessible name and every
+  image an `alt` (`face_named`), a clickable non-control has a role and a tab stop (`face_roles`), every rule is in
+  range (`face_rules`), every text is at least 9 px where a slide is narrowest, 356 px, so 2.6cqw (`face_size`), and
+  every text has enough contrast against what it is drawn on (`face_contrast`: 4.5:1, 3:1 when large, against the
+  nearest background above it or an earlier sibling layer covering the whole parent). Contrast is exact integer
+  arithmetic over one table, `linear` (sRGB to linear light, × 10⁷), which the vectors export: #767676 on white passes
+  and #777777 fails, as WCAG has it. The examples are the todo app's task row and the a11y cases, then avenBRAIN's
+  slide "A key signs", its layers and the shared slide rules, and what its checks refuse. The face crate and the
+  drawer (avenOS's `os/web/runtimes/draw.js`) are held to the same vectors.
 - **state-runtime** (`State`, its examples in `StateExamples`). The grammar of a state part: a statechart and a
   reducer as data, one handler per message with its moves (`from → to`), its updates (`set`, `merge`, `append`,
   `remove` at a path of fields and indexes) and its sends (`tell`, `ask`, `reply`). A runtime is a pure
   `run(part, input)` the kernel calls, so it names nothing of the actors': a message is a sender's address, a name, a
-  payload and an ask's id, all Values, and a step gives back the new state, its sends as data and the phase it moved
-  to. `Aven.Actor` maps them to its effects and joins the step to its kernel and its machines; actors build on
-  runtimes, never the reverse. `step` is total and deterministic; under the contract (`stateRuntime`) the part and
+  payload and an ask's id, all Values, and a step gives back the writes it commits, its sends as data and the phase
+  it moved to. The writes are K8's steps (A37), never a whole new state: `put`, `patch`, `remove` and an `edit` that
+  pushes onto a list, each at a path, which are the turn's commit and what the caps check (`Write.footprint`). The
+  reducer's `set`, `merge`, `append` and `remove` lower to them, and `lower_apply`, `lowerAll_apply` and `step_writes`
+  prove the writes, applied in order, make exactly the state the updates make. `Aven.Actor` applies the writes, maps
+  the sends to its effects and joins the step to its kernel and its machines; actors build on runtimes, never the
+  reverse. `step` is total and deterministic; under the contract (`stateRuntime`) the part and
   the input are Values, the fuel a count of the part's work. Theorems:
   - `step_moves`: a step that answers took one of the part's moves for that message and phase; otherwise it refuses;
   - `step_allowed`: under a machine's transitions the part `fits`, the move is one they allow;
@@ -380,7 +409,7 @@ and the decisions, not the parsers.
 
 **The vectors** (`spec/vectors/`, one vector per line): `table.json` (the registry and its signatures, the data the
 registry crate compiles in), `registry.json`, `tree.json` and `face.json` (each tree and face with its encoding, a face
-with each rule's CSS text), `contract.json` (each failure and an answer as encoded, render keys and their BLAKE3 names)
+with its typed rules as Values, its issues, every text's look and each rule's CSS text), `contract.json` (each failure and an answer as encoded, render keys and their BLAKE3 names)
 `state.json` (a part, an input and limits, and the result, all in the one codec) and `contrast.json` (`linear`,
 then pairs of colours). A tree crosses as a Value: text as text, an element as
 `[tag, [[name, value], …], [child, …]]`; a face as `{"tree", "style"}`; every example's is an allowed Value of the

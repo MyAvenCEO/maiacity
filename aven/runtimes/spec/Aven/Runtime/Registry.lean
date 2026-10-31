@@ -25,7 +25,7 @@ def headMax : Nat := 65536
 
 inductive FileType where
   | png | jpeg | gif | webp | avif | bmp
-  | mp4 | webm | ogg | mp3 | wav | flac
+  | mp4 | mov | webm | ogg | mp3 | wav | flac
   | pdf
   | svg | html | xml
   | json | markdown | csv | tsv | text
@@ -36,7 +36,8 @@ inductive FileType where
 def FileType.mime : FileType → String
   | .png => "image/png" | .jpeg => "image/jpeg" | .gif => "image/gif" | .webp => "image/webp"
   | .avif => "image/avif" | .bmp => "image/bmp"
-  | .mp4 => "video/mp4" | .webm => "video/webm" | .ogg => "audio/ogg" | .mp3 => "audio/mpeg"
+  | .mp4 => "video/mp4" | .mov => "video/quicktime" | .webm => "video/webm" | .ogg => "audio/ogg"
+  | .mp3 => "audio/mpeg"
   | .wav => "audio/wav" | .flac => "audio/flac"
   | .pdf => "application/pdf"
   | .svg => "image/svg+xml" | .html => "text/html" | .xml => "application/xml"
@@ -46,7 +47,7 @@ def FileType.mime : FileType → String
 
 def FileType.name : FileType → String
   | .png => "png" | .jpeg => "jpeg" | .gif => "gif" | .webp => "webp" | .avif => "avif" | .bmp => "bmp"
-  | .mp4 => "mp4" | .webm => "webm" | .ogg => "ogg" | .mp3 => "mp3" | .wav => "wav" | .flac => "flac"
+  | .mp4 => "mp4" | .mov => "mov" | .webm => "webm" | .ogg => "ogg" | .mp3 => "mp3" | .wav => "wav" | .flac => "flac"
   | .pdf => "pdf" | .svg => "svg" | .html => "html" | .xml => "xml"
   | .json => "json" | .markdown => "markdown" | .csv => "csv" | .tsv => "tsv" | .text => "text"
   | .unknown => "unknown"
@@ -80,6 +81,7 @@ def signatures : List (FileType × Sig) :=
    (.mp4, ftyp [0x4D, 0x34, 0x56, 0x20]),
    (.mp4, ftyp [0x4D, 0x34, 0x41, 0x20]),
    (.mp4, ftyp [0x64, 0x61, 0x73, 0x68]),
+   (.mov, ftyp [0x71, 0x74, 0x20, 0x20]),
    (.webm, [(0, [0x1A, 0x45, 0xDF, 0xA3])]),
    (.ogg, [(0, [0x4F, 0x67, 0x67, 0x53])]),
    (.mp3, [(0, [0x49, 0x44, 0x33])]),
@@ -298,7 +300,8 @@ def registry : List Entry :=
   [⟨.png, .native .img, 64 * MiB, 64 * MiB⟩, ⟨.jpeg, .native .img, 64 * MiB, 64 * MiB⟩,
    ⟨.gif, .native .img, 64 * MiB, 64 * MiB⟩, ⟨.webp, .native .img, 64 * MiB, 64 * MiB⟩,
    ⟨.avif, .native .img, 64 * MiB, 64 * MiB⟩, ⟨.bmp, .native .img, 64 * MiB, 64 * MiB⟩,
-   ⟨.mp4, .native .video, 65536 * MiB, 0⟩, ⟨.webm, .native .video, 65536 * MiB, 0⟩,
+   ⟨.mp4, .native .video, 65536 * MiB, 0⟩, ⟨.mov, .native .video, 65536 * MiB, 0⟩,
+   ⟨.webm, .native .video, 65536 * MiB, 0⟩,
    ⟨.ogg, .native .audio, 4096 * MiB, 0⟩, ⟨.mp3, .native .audio, 4096 * MiB, 0⟩,
    ⟨.wav, .native .audio, 4096 * MiB, 0⟩, ⟨.flac, .native .audio, 4096 * MiB, 0⟩,
    ⟨.pdf, .frame, 256 * MiB, 0⟩,
@@ -312,6 +315,11 @@ def registry : List Entry :=
    ⟨.unknown, .download, 0, 0⟩]
 
 def entry (t : FileType) : Entry := (registry.find? (·.type == t)).getD ⟨t, .download, 0, 0⟩
+
+/-- The type a claimed media type names, by its essence; `unknown` for any other. Only for what a claim may label
+(the chat's card before the bytes are read): a decision never takes it, since the bytes decide. -/
+def FileType.ofMime (m : String) : FileType :=
+  ((registry.find? (·.type.mime == essence m)).map (·.type)).getD .unknown
 
 /-- Where the registry stands: whether the files origin runs file runtimes yet (decision 3). -/
 structure Stage where

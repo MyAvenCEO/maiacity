@@ -1,19 +1,20 @@
 import Aven.ID.SettleJson
 import Aven.ID.Admit
-import Aven.ID.Placement
+import Aven.ID.Keeping
 
 /-! # The box's failures, expected (PEERS.md, "How it is checked"; Thread F, F1)
 
 `failures.json`: the nine checks `bun run up --check` runs with the Aven Peer stopped, each with its input and the
 outcome the models give: who reaches whom and through which relay (`Aven.ID.Node`), which source a catch-up takes and
-which it catches (`Aven.ID.CatchUp`), which keeper serves a file (`Aven.ID.Placement`'s `keepersOf`), whether a
+which it catches (`Aven.ID.CatchUp`), which keeper serves a file (`Aven.ID.Keeping`'s `keepersOf`), whether a
 newcomer gets in at Alice Peer's relay (`Settle.newcomer`), the settled tree after each race and after a restart
-(`settle`), and the wire version's refusal (`Records.speaks`). The `#guard`s below hold each outcome to what PEERS.md says the box must see, so
-the vectors can't drift from the plan.
+(`settle`), and the wire version's refusal (`Records.speaks`). The `#guard`s below hold each outcome to what PEERS.md
+says the box must see, so the vectors can't drift from the plan.
 
 The cast: the Aven Peer (`aven-peer`) and Alice Peer (`alice-peer`) run the listed relays; Bob's Peer (`bob-peer`)
 keeps for Bob's vault; Bob's Peer-Light (`bob-light`) and Alice Peer-Light (`alice-light`) are browsers; Carol's
-browser (`carol-light`) and Dan's (`dan-light`) hold invites. Every check runs with the Aven Peer gone. -/
+browser (`carol-light`) and Dan's (`dan-light`) hold tickets. Every check runs with the Aven Peer gone, so Alice Peer,
+a device of Alice's vault, which holds Maia City's confirm cap, confirms claims (A38). -/
 
 open Lean
 
@@ -28,19 +29,26 @@ def gone : String := "aven-peer"
 /-- A file Bob's Peer-Light shared, a Doc of Bob's vault, as its genesis fixes it. -/
 def bobsFile : Core.Facts := ⟨⟨⟨"bobs-file".toUTF8.toList⟩⟩, vaultId "bob", ⟨⟨"file".toUTF8.toList⟩⟩⟩
 
-/-- Bob's vault's keep caps (`Aven.ID.Placement`), each approved by Bob's passkey: the default, everything of Bob's own
+/-- Bob's vault's keep caps (`Aven.ID.Keeping`), each approved by Bob's passkey: the default, everything of Bob's own
 to the Aven Peer, and the file at Bob's Peer, a keeper Bob's vault named. -/
 def keeps : List Cap :=
   [defaultKeep "bob" "aven-peer" "bob-light" [⟨"bob-passkey", "keep-bob"⟩],
    { id := "keep-file", issuer := "bob", holder := .vault "bob-peer", signer := "bob-light",
-     grant := [⟨.doc bobsFile.id, .keep, []⟩], approvals := [⟨"bob-passkey", "keep-file"⟩] }]
+     grant := [⟨coreOp .keep, .doc bobsFile.id .self, []⟩], approvals := [⟨"bob-passkey", "keep-file"⟩] }]
 
-/-- The file's keepers: the vaults Bob's keep caps name for it. No keep cap here reaches below. -/
-def fileKeepers : List String := keepersOf (fun _ _ => false) (fun _ _ => false) [] keeps bobsFile
+/-- The file's keepers: the vaults Bob's keep caps name for it. No keep cap here reaches below or through a
+collection. -/
+def fileKeepers : List String :=
+  keepersOf (fun _ _ => false) (fun _ _ => false) (fun _ _ => false) [] keeps bobsFile
+
+/-- The relay list names vaults (rule 15): Aven's and Alice's, whose relays run on the Aven Peer and Alice Peer. -/
+def relayVaults : List String := ["aven", "alice"]
+def runsRelay (v : String) : Option String :=
+  if v == "aven" then some "aven-peer" else if v == "alice" then some "alice-peer" else none
 
 /-- The relays every member can use (PEERS §1), and the file's holders: Bob's browser and its keepers. -/
 def net : Net :=
-  { members, relays := ["aven-peer", "alice-peer"], usable := fun _ _ => true
+  { members, relays := relayEndpoints relayVaults runsRelay, usable := fun _ _ => true
     holders := fun d => if d == "bobs-file" then "bob-light" :: fileKeepers else [] }
 
 /-- The tree before the stop: the genesis, Alice's second device, and the tickets for Carol and Dan. -/
@@ -50,7 +58,7 @@ def tree : List TreeStatement :=
 def ok (_ : TreeStatement) : Bool := true
 
 def carol : TreeStatement := ⟨500, "t-carol", [120], .claim 120 "carol" "carol-passkey" "carol-light" guardian⟩
-def carolAck : TreeStatement := ⟨510, "alice-peer", [500], .ack 500⟩
+def carolConfirm : TreeStatement := ⟨510, "alice-peer", [500], .confirm 500⟩
 -- step 5: two profiles claim Dan's ticket at once
 def dan1 : TreeStatement := ⟨610, "t-dan", [130], .claim 130 "dan" "dan-passkey" "dan-light" guardian⟩
 def dan2 : TreeStatement := ⟨605, "t-dan", [130], .claim 130 "dan2" "dan2-passkey" "dan2-light" guardian⟩
@@ -69,12 +77,13 @@ def treeJson (S : List TreeStatement) : Json := Json.arr (S.map SettleJson.TreeS
 def settled (S : List TreeStatement) : Json := Listed.json ((settle ok 100 S).listed S)
 
 /-- Everything the members hold by step 7. -/
-def all7 : List TreeStatement := tree ++ [carol, carolAck, dan1, dan2]
+def all7 : List TreeStatement := tree ++ [carol, carolConfirm, dan1, dan2]
 
 def failureVectors : List Json :=
   let pair (a b : String) := Json.mkObj [("from", a), ("to", b)]
   [step 1 "Alice Peer and Bob's Peer-Light chat through Alice Peer's relay"
-     (Json.mkObj [("members", toJson members), ("relays", toJson net.relays), ("gone", gone)])
+     (Json.mkObj [("members", toJson members), ("relayVaults", toJson relayVaults), ("relays", toJson net.relays),
+       ("gone", gone)])
      (Json.mkObj [("reaches", Json.arr #[Json.mkObj [("pair", pair "alice-peer" "bob-light"),
          ("ok", toJson (reaches net gone "alice-peer" "bob-light"))],
        Json.mkObj [("pair", pair "bob-light" "alice-peer"),
@@ -89,11 +98,11 @@ def failureVectors : List Json :=
      (Json.mkObj [("keepers", toJson fileKeepers), ("gone", toJson ["aven-peer", "bob-light"])])
      (Json.mkObj [("servedBy", toJson (fileKeepers.filter fun k =>
          k != "aven-peer" && k != "bob-light" && reaches net gone "alice-light" k))]),
-   step 4 "an invite claimed through Alice Peer's relay, waiting, then acked"
+   step 4 "a ticket claimed through Alice Peer's relay, waiting, then confirmed into a member cap"
      (Json.mkObj [("tree", treeJson tree), ("claim", SettleJson.TreeStatement.json carol),
-       ("ack", SettleJson.TreeStatement.json carolAck)])
+       ("confirm", SettleJson.TreeStatement.json carolConfirm)])
      (Json.mkObj [("letIn", toJson (newcomer ok 100 tree "carol-light" (some carol))),
-       ("waiting", settled (tree ++ [carol])), ("acked", settled (tree ++ [carol, carolAck]))]),
+       ("waiting", settled (tree ++ [carol])), ("confirmed", settled (tree ++ [carol, carolConfirm]))]),
    step 5 "two claims of one ticket at once: the same winner everywhere"
      (Json.mkObj [("tree", treeJson (tree ++ [dan1, dan2]))])
      (Json.mkObj [("settled", settled (tree ++ [dan1, dan2])), ("reversed", settled (tree ++ [dan2, dan1]))]),
@@ -123,10 +132,13 @@ def failureVectors : List Json :=
 #guard (choose bobsTip sources).map (·.1) == some "alice-peer"
 -- 3. Bob's Peer serves the file, and Alice's browser can fetch it
 #guard fileKeepers == ["aven-peer", "bob-peer"] && fetchable net gone "alice-light" "bobs-file"
--- 4. Carol gets in at the relay for her claim; she stands, waits for the ack, then is final
+-- 4. Carol gets in at the relay for her claim; it stands and waits for its confirmation; once Alice Peer confirms it,
+-- Carol's vault holds its member cap and the door admits her browser
 #guard newcomer ok 100 tree "carol-light" (some carol)
-#guard (settle ok 100 (tree ++ [carol])).admits "carol-light" && !(settle ok 100 (tree ++ [carol])).final 500
-#guard (settle ok 100 (tree ++ [carol, carolAck])).final 500
+#guard (settle ok 100 (tree ++ [carol])).standing 500 && !(settle ok 100 (tree ++ [carol])).final 500 &&
+  !(settle ok 100 (tree ++ [carol])).admits "carol-light"
+#guard (settle ok 100 (tree ++ [carol, carolConfirm])).final 500 &&
+  (settle ok 100 (tree ++ [carol, carolConfirm])).admits "carol-light"
 -- 5. the smaller hash wins in every order, and the loser is out
 #guard (settle ok 100 (tree ++ [dan1, dan2])).standing 605 && !(settle ok 100 (tree ++ [dan1, dan2])).standing 610
 #guard (settle ok 100 (tree ++ [dan2, dan1])).listed (tree ++ [dan1, dan2]) ==

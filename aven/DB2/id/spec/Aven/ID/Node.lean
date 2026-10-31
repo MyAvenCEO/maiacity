@@ -1,6 +1,6 @@
 import Aven.Core
 import Aven.ID.Records
-import Aven.ID.Placement
+import Aven.ID.Keeping
 
 /-! # What a node guarantees (PEERS.md; `Aven.Architecture`'s R3, R7 and R9)
 
@@ -17,7 +17,7 @@ two relays listed, losing any one peer leaves every member reachable by every ot
 it leaves nobody reachable through a relay (`one_relay_only_source`). A device that re-homes signs a newer address
 record, which every peer takes as newest (`rehome_newest`). A Doc held by two members stays fetchable by every member
 when any one peer is lost (`no_only_holder`). Who keeps a Doc is its vault's choice, by keep caps
-(`Aven.ID.Placement`): every new vault starts with one for everything of its own to Maia City's keeper, approved by its
+(`Aven.ID.Keeping`): every new vault starts with one for everything of its own to Maia City's keeper, approved by its
 owner (`default_kept`), and a second keeper of its own choice makes the Doc survive the Aven Peer's loss
 (`kept_fetchable`).
 
@@ -119,6 +119,10 @@ structure Net where
   usable : String → String → Bool
   holders : String → List String
 
+/-- The relay list names vaults, never devices (rule 15, A28). A listed vault's relay runs on one of its devices, which
+its newest address record names: these are the endpoints `Net.relays` holds. -/
+def relayEndpoints (vaults : List String) (runs : String → Option String) : List String := vaults.filterMap runs
+
 /-- The admin lists only relays every member can use (PEERS §1). -/
 def Net.Listed (n : Net) : Prop := ∀ m ∈ n.members, ∀ r ∈ n.relays, n.usable m r = true
 
@@ -161,14 +165,30 @@ theorem one_relay_only_source {n : Net} {r : String} (one : n.relays = [r]) (a b
     reaches n r a b = false := by
   simp [reaches, home, one]
 
-/-- **`rehome_newest`:** a device that re-homes signs an address record with a larger counter than any it signed
-before, and every peer takes it as newest (`Aven.ID.Records`). -/
+/-- **`rehome_newest`:** a device that re-homes signs an address record at the next place of its own log, after
+every one it signed before, and every peer takes it as newest (`Aven.ID.Records`), as long as the device never split
+its log (A4, A31). -/
 theorem rehome_newest {admits releasers : String → Bool} {rs : List Records.PeerRecord} {b : String} {c body : Nat}
     (ad : admits b = true)
-    (older : ∀ s ∈ rs, s.kind = .address → s.about = b → s.counter < c) :
+    (older : ∀ s ∈ rs, s.kind = .address → s.about = b → s.counter < c)
+    (honest : ∀ s ∈ rs, ∀ t ∈ rs, s.kind = .address → s.about = b → t.kind = .address → t.about = b →
+      s.counter = t.counter → s.body = t.body) :
     Records.isNewest admits releasers (⟨.address, b, b, c, body⟩ :: rs) ⟨.address, b, b, c, body⟩ = true := by
-  refine Records.isNewest_iff.mpr ⟨⟨List.mem_cons_self .., by simp [Records.takes, ad]⟩, ?_⟩
-  intro s ms _ k a
+  have cnt : Records.counts admits releasers (⟨.address, b, b, c, body⟩ :: rs) ⟨.address, b, b, c, body⟩ = true := by
+    simp only [Records.counts, Records.RecordKind.history, Bool.not_true, Bool.false_or, List.all_eq_true,
+      Records.mem_candidates, List.mem_cons]
+    rintro s ⟨ms, _, ks, as⟩ t ⟨mt, _, kt, at_⟩
+    simp only [Bool.not_eq_true', Bool.and_eq_false_iff, beq_eq_false_iff_ne, ne_eq, decide_eq_false_iff_not,
+      bne_eq_false_iff_eq]
+    rcases ms with rfl | ms <;> rcases mt with rfl | mt
+    · exact .inr rfl
+    · have := older t mt kt at_; left; left; simp; omega
+    · have := older s ms ks as; left; left; simp; omega
+    · by_cases e : s.counter = t.counter
+      · exact .inr (honest s ms t mt ks as kt at_ e)
+      · left; left; simpa using e
+  refine Records.isNewest_iff.mpr ⟨⟨⟨List.mem_cons_self .., by simp [Records.takes, ad]⟩, cnt⟩, ?_⟩
+  intro s ms _ k a _
   rcases List.mem_cons.mp ms with e | ms
   · subst e; simp [Records.newer]
   · have := older s ms k a
@@ -196,18 +216,18 @@ theorem no_only_holder {n : Net} (hl : n.Listed) {r₁ r₂ : String} (m₁ : r�
 
 /-- **`kept_fetchable`:** a Doc its vault keeps with the default keep cap and one keep cap of its own choice naming
 another keeper stays fetchable by every member when any one peer is lost, the Aven Peer included. Keep caps are caps'
-(`Aven.ID.Placement`), and a Doc's keepers are the vaults its keep caps name for its facts `f`. With the default alone,
+(`Aven.ID.Keeping`), and a Doc's keepers are the vaults its keep caps name for its facts `f`. With the default alone,
 the Aven Peer is its one keeper, and only the writer's own devices hold it besides. -/
 theorem kept_fetchable {n : Net} (hl : n.Listed) {r₁ r₂ : String} (m₁ : r₁ ∈ n.relays) (m₂ : r₂ ∈ n.relays)
-    (ne : r₁ ≠ r₂) {gov : Bytes → Bytes → Bool} {spawned : DocId → DocId → Bool} {roles : List Role}
+    (ne : r₁ ≠ r₂) {gov : Bytes → Bytes → Bool} {spawned lists : DocId → DocId → Bool} {roles : List Role}
     {caps : List Cap} {doc : String} {f : Facts} {v k s : String} {approvals : List Sig}
     (hk : defaultKeep v k s approvals ∈ caps) (own : f.vault = vaultId v) {c : Cap} {k' : String} (hc : c ∈ caps)
-    (cov : c.keeps gov spawned roles f = true) (held : c.holder = .vault k') (other : k' ≠ k)
-    (holds : ∀ x ∈ keepersOf gov spawned roles caps f, x ∈ n.holders doc) (mk : k ∈ n.members)
+    (cov : c.keeps gov spawned lists roles f = true) (held : c.holder = .vault k') (other : k' ≠ k)
+    (holds : ∀ x ∈ keepersOf gov spawned lists roles caps f, x ∈ n.holders doc) (mk : k ∈ n.members)
     (mk' : k' ∈ n.members) (gone : String) {a : String} (ma : a ∈ n.members) (ha : a ≠ gone) :
     fetchable n gone a doc = true :=
-  no_only_holder hl m₁ m₂ ne (holds _ (default_kept gov spawned hk own))
-    (holds _ (holder_keeps gov spawned hc cov held)) (Ne.symm other) mk mk' gone ma ha
+  no_only_holder hl m₁ m₂ ne (holds _ (default_kept gov spawned lists hk own))
+    (holds _ (holder_keeps gov spawned lists hc cov held)) (Ne.symm other) mk mk' gone ma ha
 
 /-! ## R9: what leaves a device -/
 
@@ -266,7 +286,7 @@ def notes : Facts := ⟨⟨⟨"notes".toUTF8.toList⟩⟩, vaultId "bob", ⟨⟨
 /-- Bob's keep cap for the chat at Bob's Peer. -/
 def keepChat : Cap :=
   { id := "keep-chat", issuer := "bob", holder := .vault "bob-peer", signer := "bob-light",
-    grant := [⟨.doc chat.id, .keep, []⟩] }
+    grant := [⟨coreOp .keep, .doc chat.id .self, []⟩] }
 
 -- the Aven Peer stopped: Bob's and Carol's browsers still reach each other, at Alice's relay, and fetch the chat
 #guard reaches net "aven-peer" "bob-light" "carol-light"
@@ -275,10 +295,10 @@ def keepChat : Cap :=
 -- with the Aven Peer's relay alone, its loss leaves the browsers unreachable
 #guard !reaches { net with relays := ["aven-peer"] } "aven-peer" "bob-light" "carol-light"
 -- Bob's vault keeps everything at the Aven Peer by default, and the chat at Bob's Peer as well
-#guard keepersOf (fun _ _ => false) (fun _ _ => false) [] [defaultKeep "bob" "aven-peer" "bob-light" [], keepChat]
-  chat == ["aven-peer", "bob-peer"]
-#guard keepersOf (fun _ _ => false) (fun _ _ => false) [] [defaultKeep "bob" "aven-peer" "bob-light" [], keepChat]
-  notes == ["aven-peer"]
+#guard keepersOf (fun _ _ => false) (fun _ _ => false) (fun _ _ => false) []
+  [defaultKeep "bob" "aven-peer" "bob-light" [], keepChat] chat == ["aven-peer", "bob-peer"]
+#guard keepersOf (fun _ _ => false) (fun _ _ => false) (fun _ _ => false) []
+  [defaultKeep "bob" "aven-peer" "bob-light" [], keepChat] notes == ["aven-peer"]
 #guard outgoing (fun to _ => to == "bob-light") "aven-peer" "chat" == .sealed "chat"
 #guard seenBy (fun to _ => to == "bob-light") "bob-light" ["aven-peer"] "chat" "aven-peer" == some (.sealed "chat")
 
