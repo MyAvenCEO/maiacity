@@ -15,3 +15,4 @@ wasmi = { version = "=2.0.0", default-features = false, features = ["std", "vali
 [dev-dependencies]
 serde_json = "=1.0.154"
 aven-runtimes-markdown = { path = "../markdown" }
+aven-runtimes-face = { path = "../face" }
