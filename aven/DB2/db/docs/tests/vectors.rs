@@ -71,8 +71,10 @@ fn op_env(writer: u64, seq: u64, prev: Option<Hash>, deps: Vec<Hash>, post: &str
         prev,
         deps,
         body: Value::Map(vec![("post".into(), Value::Text(post.into()))]),
-        signer: vec![7; 32],
-        sig: vec![9; 64],
+        sigs: vec![aven_core::Sig {
+            signer: vec![7; 32],
+            sig: vec![9; 64],
+        }],
     }
 }
 

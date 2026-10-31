@@ -293,8 +293,7 @@ fn unchecked(
         prev: None,
         deps: vec![],
         body: body.value(),
-        signer: vec![],
-        sig: vec![],
+        sigs: vec![],
     };
     d.sign_envelope(&mut e);
     e.encode()
@@ -385,8 +384,9 @@ fn refused_before_loro() {
     let mut od = Doc::open(other, &[todo()], Limits::DEFAULTS).unwrap();
     let y = commit(&mut od, &a, &[todo_put("t1", "x")]);
     assert_eq!(doc.import(&y, &Allow), Err(Refused::Doc));
-    // re-signed by another device: its writer id isn't the signer's
+    // signed by another device alone: no signature is by the device its writer id names
     let mut e = Envelope::decode(&x1).unwrap();
+    e.sigs.clear();
     b.sign_envelope(&mut e);
     assert_eq!(doc.import(&e.encode(), &Allow), Err(Refused::Writer));
     // rule 7: an envelope that names a past its Loro dependencies don't hold
@@ -479,7 +479,9 @@ fn a_revocation_rebuilds() {
     commit(&mut doc, &a, &[todo_put("t3", "on bob's")]);
     assert_eq!(doc.snapshot().records.len(), 3);
     let bob = b.public().to_vec();
-    doc.reauthorize(&When(move |e: &Envelope, _: &Body| e.signer != bob));
+    doc.reauthorize(&When(move |e: &Envelope, _: &Body| {
+        !e.sigs.iter().any(|x| x.signer == bob)
+    }));
     assert_eq!(
         doc.snapshot().records.keys().collect::<Vec<_>>(),
         ["t1"],
