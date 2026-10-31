@@ -117,7 +117,7 @@ namespace AdmitExamples
 
 open Settle TreeExamples
 
-def g : TreeStatement := ⟨100, "alice-passkey", [], .genesis alicesGenesis, []⟩
+def g : TreeStatement := ⟨100, "alice-passkey", [], .setup alicesGenesis, []⟩
 def t : TreeStatement := ⟨120, "alice-passkey", [100], .ticket "t-bob", []⟩
 def bob : TreeStatement :=
   ⟨500, "t-bob", [120], .claim 120 "bob" (pk "bob-passkey") ["bob-peer"] "maia-city-guardian", []⟩

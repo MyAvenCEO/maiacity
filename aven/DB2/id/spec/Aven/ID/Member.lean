@@ -37,7 +37,7 @@ def signInOp : OpId := TreeOp.signIn.id blake3
 def claimParam : Bytes := Body.utf8 "claim"
 
 /-- A confirm of the claim named `c`, the call its tree statement makes. -/
-def confirmCall (c : Hash) : Call := (TreeSays.confirm c).call blake3
+def confirmCall (c : Hash) : Call := ⟨confirmOp, (TreeSays.confirm c).params⟩
 
 /-- A confirm's one parameter is its claim. -/
 theorem confirmCall_params (c : Hash) : (confirmCall c).params.map (·.1) = [claimParam] := rfl

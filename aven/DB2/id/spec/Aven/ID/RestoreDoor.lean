@@ -84,12 +84,12 @@ theorem vpast (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c
     fun ⟨ma, mb, p⟩ => ⟨⟨ma, migrate_counted hc signed named a ma⟩, ⟨mb, migrate_counted hc signed named b mb⟩, p⟩⟩
 
 /-- No migrated old statement is a genesis: they say what the old statements said. -/
-theorem step_not_genesis {k : Nat} {o : Old} {gs : Genesis} : (step r c k o).says ≠ .genesis gs := by
+theorem step_not_genesis {k : Nat} {o : Old} {gs : Setup} : (step r c k o).says ≠ .setup gs := by
   cases o <;> simp [step, Old.says]
 
 /-- The pinned genesis is the migrated claim's: what `gen` reads is `genesisOf`. -/
 theorem gen_eq (hc : r.founding.claim = some c) (signed : (genesisOf r.founding c g).consented = true) (named : Named r)
-    (P : Genesis → Bool) : gen (view genesisName (migrate r g)) P = P (genesisOf r.founding c g) := by
+    (P : Setup → Bool) : gen (view genesisName (migrate r g)) P = P (genesisOf r.founding c g) := by
   apply Bool.eq_iff_iff.mpr
   unfold gen
   rw [vany hc signed named]
@@ -295,7 +295,7 @@ theorem claimOk_join (hc : r.founding.claim = some c) (signed : (genesisOf r.fou
   refine ⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩
   · simp [step, tn]
   · simp only [byAdmin, gen_eq hc signed named, step, Old.says, cl.invites_admin i mi]
-    exact Genesis.approves_claimant (genesisOf r.founding c g) (by simp [genesisOf]) rfl stmtDigest
+    exact Setup.approves_claimant (genesisOf r.founding c g) (by simp [genesisOf]) rfl stmtDigest
   · simp [step, Old.says, ki]
   · refine (vpast hc signed named).mpr ⟨by simpa [step, Old.says] using mC, mT, .tip mT ?_⟩
     simp [step, Old.parents, tn, Core.Past.parents]
@@ -341,7 +341,7 @@ theorem final_join (hc : r.founding.claim = some c) (signed : (genesisOf r.found
     simp only [Bool.or_eq_true]
     left; left
     simp only [gen_eq hc signed named, step, Old.says, List.any_eq_true]
-    exact ⟨c.person, by simp [genesisOf], Genesis.approves_own (genesisOf r.founding c g) stmtDigest⟩
+    exact ⟨c.person, by simp [genesisOf], Setup.approves_own (genesisOf r.founding c g) stmtDigest⟩
   · simp [step, Old.says, jn]
   · refine (vpast hc signed named).mpr ⟨mK, mC, .tip mC ?_⟩
     simp [step, Old.parents, jn, Core.Past.parents]

@@ -97,7 +97,7 @@ def ticketName (olds : List Old) (key : String) : Core.Hash :=
 /-- The genesis the claimant signs for production's claim: its relying party, the claimant's vault, passkey (with the
 owner and seal keys its PRF gives at the signing) and devices (the claiming browser and every one it signed in), the
 admin coop, the agent and the Aven Peer's key, and the guardian's hybrid keys (A13). -/
-def genesisOf (s : Founding) (c : Claim) (g : SwitchKeys) : Genesis :=
+def genesisOf (s : Founding) (c : Claim) (g : SwitchKeys) : Setup :=
   { rpId := s.rp.rpId, origins := s.rp.origins, claimant := c.person,
     passkey := ⟨c.passkey, c.passkey, some g.owner, some g.sealKey, 1⟩,
     devices := c.deviceKey :: s.signIns.map (·.deviceKey),
@@ -116,7 +116,7 @@ def Old.says (m : Members) (c : Claim) : Old → String × TreeSays
 
 /-- The genesis statement production's claim becomes, named `genesisName`. -/
 def genesisStatement (m : Members) (c : Claim) (g : SwitchKeys) : TreeStatement :=
-  ⟨genesisName, c.passkey, [], .genesis (genesisOf m.founding c g), []⟩
+  ⟨genesisName, c.passkey, [], .setup (genesisOf m.founding c g), []⟩
 
 /-- What an old statement names besides the one before it: a join, its invite's ticket. -/
 def Old.parents (olds : List Old) : Old → List Core.Hash

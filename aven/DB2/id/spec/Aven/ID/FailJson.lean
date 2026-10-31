@@ -53,7 +53,7 @@ def net : Net :=
 
 /-- The tree before the stop: the genesis, Alice's second device, and the tickets for Carol and Dan. -/
 def tree : List TreeStatement :=
-  [⟨100, "alice-passkey", [], .genesis alicesGenesis, []⟩, ⟨110, "alice-passkey", [100], .signIn "alice-light", []⟩,
+  [⟨100, "alice-passkey", [], .setup alicesGenesis, []⟩, ⟨110, "alice-passkey", [100], .signIn "alice-light", []⟩,
    ⟨120, "alice-passkey", [110], .ticket "t-carol", []⟩, ⟨130, "alice-passkey", [110], .ticket "t-dan", []⟩]
 
 def carol : TreeStatement :=

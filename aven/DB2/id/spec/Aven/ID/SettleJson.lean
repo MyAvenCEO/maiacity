@@ -38,7 +38,7 @@ def Owner.json : Owner → Json
   | .key k => Json.mkObj [("key", k)]
   | .vault v => Json.mkObj [("vault", v)]
 
-def Genesis.json (g : Genesis) : Json :=
+def Setup.json (g : Setup) : Json :=
   Json.mkObj [("rpId", g.rpId), ("origins", toJson g.origins), ("claimant", g.claimant),
     ("passkey", Passkey.json g.passkey),
     ("devices", toJson g.devices), ("coop", g.coop), ("coopOwners", toJson g.coopOwners),
@@ -48,7 +48,7 @@ def Genesis.json (g : Genesis) : Json :=
     ("confirmers", toJson g.confirmers), ("signedBy", toJson g.signedBy)]
 
 def TreeSays.json : TreeSays → Json
-  | .genesis g => Json.mkObj [("kind", "genesis"), ("genesis", Genesis.json g)]
+  | .setup g => Json.mkObj [("kind", "setup"), ("setup", Setup.json g)]
   | .signIn d => Json.mkObj [("kind", "signIn"), ("device", d)]
   | .ticket k => Json.mkObj [("kind", "ticket"), ("key", k)]
   | .withdrawal t => Json.mkObj [("kind", "withdrawal"), ("ticket", hashJson t)]
@@ -68,13 +68,17 @@ def TreeSays.json : TreeSays → Json
 /-- The tree Doc of the vectors. -/
 def treeDoc : Core.DocId := ⟨Core.blake3 (Body.utf8 "Maia City's tree")⟩
 
-/-- A statement as a peer stores it: its name and its envelope's CBOR; the signer, parents and what it says are the
-envelope's, written out to read. -/
+/-- A statement as a peer stores it: its name and its envelope's CBOR, or for the setup, the root Record's Value as CBOR
+and its type (A213); the signer, parents and what it says are the envelope's, written out to read. -/
 def TreeStatement.json (s : TreeStatement) : Json :=
-  Json.mkObj [("name", hashJson s.name),
-    ("envelope", Core.hex (Core.encode (TreeDoc.envelope Core.blake3 treeDoc s).value)),
-    ("signer", s.signer), ("approvals", toJson s.approvals), ("parents", hashesJson s.parents),
-    ("says", TreeSays.json s.says)]
+  let body : List (String × Json) :=
+    match TreeDoc.envelope Core.blake3 treeDoc s, s.says with
+    | some e, _ => [("envelope", Core.hex (Core.encode e.value))]
+    | none, .setup g => [("setup", Core.hex (Core.encode g.toValue)), ("type", setupType.text)]
+    | none, _ => []
+  Json.mkObj ([("name", hashJson s.name)] ++ body ++ [
+    ("signer", Json.str s.signer), ("approvals", toJson s.approvals), ("parents", hashesJson s.parents),
+    ("says", TreeSays.json s.says)])
 
 def Listed.json (l : Listed) : Json :=
   Json.mkObj [("counted", hashesJson l.counted), ("final", hashesJson l.final), ("standing", hashesJson l.standing),
@@ -92,10 +96,14 @@ structure Case where
 /-- The envelopes a peer stores, and their own checks: the case's failing names fail. -/
 def Case.ok (c : Case) (n : TreeDoc.Named) : Bool := !c.failing.contains n.name
 
-def named (s : TreeStatement) : TreeDoc.Named := ⟨s.name, TreeDoc.envelope Core.blake3 treeDoc s⟩
+def named (s : TreeStatement) : Option TreeDoc.Named := (TreeDoc.envelope Core.blake3 treeDoc s).map (⟨s.name, ·⟩)
+
+/-- The tree Doc's setup: the root Record the pinned genesis names. Another Doc's setup is no envelope of this one. -/
+def Case.root (c : Case) : Option TreeStatement :=
+  c.statements.find? fun s => s.name == c.pinned && match s.says with | .setup _ => true | _ => false
 
 def Case.settled (c : Case) (order : List TreeStatement) : Listed :=
-  (TreeDoc.settleDoc Core.blake3 c.ok treeDoc c.pinned (order.map named)).listed c.statements
+  (TreeDoc.settleDoc Core.blake3 c.ok treeDoc c.pinned c.root (order.filterMap named)).listed c.statements
 
 /-- The case in the order given: its input and the settled tree. -/
 def Case.vector (c : Case) (label : String) (order : List TreeStatement) : Json :=
@@ -116,7 +124,7 @@ def Case.orders (c : Case) (seed : Nat) : List (String × List TreeStatement) :=
 /-! ## The races, one by one -/
 
 open TreeExamples in
-def g : TreeStatement := ⟨100, "alice-passkey", [], .genesis alicesGenesis, []⟩
+def g : TreeStatement := ⟨100, "alice-passkey", [], .setup alicesGenesis, []⟩
 
 open TreeExamples in
 def raceCases : List Case :=
@@ -266,10 +274,9 @@ def settledVectors : List Json :=
 /-- Each of `tree/1`'s ops: its stored form's CBOR and its id under BLAKE3; and one call of each, as an envelope's
 body carries it, with the statement it reads back as. -/
 def treeOpVectors : List Json :=
-  let g : TreeStatement := SettleJson.g
   let h : Core.Hash := ⟨Core.be 32 120⟩
   let examples : List TreeSays :=
-    [g.says, .signIn "alice-phone", .ticket "t-bob", .withdrawal h,
+    [.signIn "alice-phone", .ticket "t-bob", .withdrawal h,
      .claim h "bob" (pk "bob-passkey") ["bob-peer"] "maia-city-guardian", .confirm h, .relayAdd "bob",
      .relayRemove "bob",
      .setAvenPeer "aven-peer-2", .setOrigins ["https://maia.city"], .setGuardian "new-guardian",
@@ -279,12 +286,16 @@ def treeOpVectors : List Json :=
     Json.mkObj [("name", s!"tree/1 op {o.name}"),
       ("input", Json.mkObj [("op", o.name), ("plugin", "tree/1")]),
       ("expected", Json.mkObj [("cbor", Core.hex (Core.encode o.value)), ("id", (o.id Core.blake3).text)])]) ++
-  examples.map fun s =>
-    Json.mkObj [("name", s!"tree/1 call {s.op.name}"),
-      ("input", Json.mkObj [("cbor", Core.hex (Core.encode (s.toValue Core.blake3)))]),
-      ("expected", TreeSays.json s)]
+  (examples.filterMap fun s => (s.op.bind fun o => (s.toValue Core.blake3).map (o, ·)).map fun (o, v) =>
+    Json.mkObj [("name", s!"tree/1 call {o.name}"),
+      ("input", Json.mkObj [("cbor", Core.hex (Core.encode v))]),
+      ("expected", TreeSays.json s)]) ++
+  -- the setup: the root Record's Value and its built-in type (A213)
+  [Json.mkObj [("name", "the setup Record"),
+    ("input", Json.mkObj [("cbor", Core.hex (Core.encode alicesGenesis.toValue))]),
+    ("expected", Json.mkObj [("type", setupType.text), ("setup", Setup.json alicesGenesis)])]]
 
-#guard treeOpVectors.length == 2 * TreeOp.all.length
+#guard treeOpVectors.length == 2 * TreeOp.all.length + 1
 
 /-! ## Records -/
 
