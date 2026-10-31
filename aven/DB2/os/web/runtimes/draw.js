@@ -115,12 +115,19 @@ export function ruleCss([cls, color, background, size, bold]) {
 	return `.${cls}{${decls.join(';')}}`;
 }
 
-function build(doc, n) {
+function build(doc, n, file) {
 	if (typeof n === 'string') return doc.createTextNode(n);
 	const [tag, attrs, kids] = n;
 	const el = doc.createElement(tag);
-	for (const [k, v] of attrs) el.setAttribute(k, v);
-	for (const k of kids) el.appendChild(build(doc, k));
+	for (const [k, v] of attrs) {
+		if (k !== 'src' || !file) el.setAttribute(k, v);
+		else {
+			// a file named by its hash, where avenOS keeps it: the network's files or a bundle; none, no src
+			const url = file(v.slice('/files/'.length));
+			if (typeof url === 'string') el.setAttribute('src', url);
+		}
+	}
+	for (const k of kids) el.appendChild(build(doc, k, file));
 	return el;
 }
 
@@ -128,16 +135,16 @@ function build(doc, n) {
  * Draws a runtime's answer into `host`'s shadow root, replacing what was there: `{tree, style}`, the style a list of
  * rules (none for markdown-runtime). Refuses, and draws nothing, unless the tree passes the check and every rule is of
  * Face's types. `onEvent(name, element)` hears clicks on `data-on` nodes; `onLink(href)` hears clicks on links, which
- * the page never follows itself.
+ * the page never follows itself. `file(hash)`, if given, says where a `/files/<hash>` image is read from.
  */
-export function draw(host, { tree, style = [] }, { onEvent = () => {}, onLink = () => {} } = {}) {
+export function draw(host, { tree, style = [] }, { onEvent = () => {}, onLink = () => {}, file = null } = {}) {
 	if (!checkTree(tree)) throw new Error('the drawer refused a tree that fails the check');
 	if (!Array.isArray(style) || !style.every(ruleOk)) throw new Error('the drawer refused a style that is not of its types');
 	const root = host.shadowRoot ?? host.attachShadow({ mode: 'open' });
 	const doc = host.ownerDocument;
 	const sheet = doc.createElement('style');
 	sheet.textContent = [':host{display:block}', ...style.map(ruleCss)].join('\n');
-	root.replaceChildren(sheet, build(doc, tree));
+	root.replaceChildren(sheet, build(doc, tree, file));
 	if (!root.__avenDrawn) {
 		root.__avenDrawn = true;
 		root.addEventListener('click', (event) => {

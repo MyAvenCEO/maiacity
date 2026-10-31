@@ -97,6 +97,14 @@ async function clicks(page) {
 		if (location.href !== before) problems.push(`the page followed a link to ${location.href}`);
 		if (window.ran) problems.push('text that looks like markup ran');
 		if (host.shadowRoot.querySelector('img, script')) problems.push('text that looks like markup became elements');
+		// an image named by its hash is read from where `file` says, and has no src where it says nowhere
+		const hash = 'ab'.repeat(32);
+		const art = document.createElement('div');
+		document.getElementById('hosts').append(art);
+		const img = (n) => ['img', [['src', `/files/${n}`], ['alt', '']], []];
+		d.draw(art, { tree: ['figure', [], [img(hash), img('cd'.repeat(32))]] }, { file: (h) => (h === hash ? `blob:bundle/${h}` : null) });
+		const srcs = [...art.shadowRoot.querySelectorAll('img')].map((x) => x.getAttribute('src'));
+		if (JSON.stringify(srcs) !== JSON.stringify([`blob:bundle/${hash}`, null])) problems.push(`images read from ${JSON.stringify(srcs)}`);
 		return problems;
 	});
 }
