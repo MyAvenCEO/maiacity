@@ -1,0 +1,4 @@
+# Every runtime module declares its maximum memory, 64 MiB, and the host refuses one that declares none or more
+# (README, "The runtime contract"; Contract's `admit`).
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=--max-memory=67108864"]

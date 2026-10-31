@@ -146,10 +146,12 @@ excludes it as it excludes `aven/DB2`.
 aven/runtimes/
   README.md          this plan
   spec/              Lean: Aven.Runtime, and the vectors it exports (the contract, the registry, the node tree)
-  manifest.json      every frozen runtime: name, version, hash, floor, schemas, limits, users (append-only)
-  host/              aven-runtimes-host: load by hash, refuse imports, fuel, memory, schemas, output limits
-                     (native for the Peer, the kernel and the engine; wasm for a browser worker)
-  freeze/            the reproducible build and the checks: no imports, declared memory, hash = manifest
+  manifest.json      built: every frozen runtime: name, version, hash, floor, limits, users (append-only)
+  host/              built: aven-runtimes-host: load by hash, refuse imports, fuel, memory, output limits (native;
+                     wasm for a browser worker next)
+  abi/               built: the module ABI, alloc and run over the one codec's bytes, in safe Rust
+  modules/           built: each runtime as a WebAssembly module importing nothing: markdown/ face/
+  freeze.sh          built: the reproducible build, each module's hash, and the host's tests against the manifest
   registry/          built: aven-runtimes-registry, the file registry, the sniffer, decide_file(); native and wasm
   tree/              built: the node-tree allowlist, shared by every runtime that draws and the applier
   contract/          built: the contract's failures, limits, results and render keys
@@ -496,8 +498,12 @@ starts until Samuel says so (plan only).
    and `kind()` gone, the Peer-Light recording sniffed types. Behaviour as the chat thread left it; the security gain
    is that bytes, not claims, decide. `sandbox/inline.mjs` and `sandbox/dome.mjs` extend to lying claims and
    polyglots.
-3. **The host and the freeze** (`host/`, `freeze/`): wasmi with fuel and memory limits, the import check, the
-   manifest, the reproducible build; hostile modules that import, grow memory, loop and flood output, which must fail.
+3. **The host and the freeze** (`host/`, `modules/`, `manifest.json`, `freeze.sh`): wasmi with fuel and memory
+   limits, the import check, the manifest, the reproducible build; hostile modules that import, grow memory, loop and
+   flood output, which must fail. *First step built:* markdown-runtime and face-runtime as modules, frozen by hash; the
+   native host loads only a listed hash whose bytes match, admits only a module that imports nothing and declares its
+   memory, and runs it under fuel, memory and output, answering face-runtime's vectors byte for byte. Next: the host
+   in the Peer-Light's wasm, and the browser loading runtimes by hash.
 4. **The files origin** (A15), with avenOS and avenPEER's planning: the runtime worker, the Service Worker serving it.
 5. **Trees:** the allowlist crate and the applier as the tree drawer; `text-runtime`, `json-runtime`,
    `markdown-runtime`.
