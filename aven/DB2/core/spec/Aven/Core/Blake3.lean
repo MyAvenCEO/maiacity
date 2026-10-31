@@ -140,12 +140,14 @@ def hash (bytes : List UInt8) : String := hex (digest bytes)
 #guard hash [] = "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
 #guard hash "abc".toUTF8.toList = "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85"
 
--- key derivation's known answers, as the `blake3` crate 1.8.7 computes them: the specification's test context over no
--- bytes, and over 3073 bytes (four chunks)
-#guard hex (deriveKey "BLAKE3 2019-12-27 16:29:52 test vectors context" []) =
-  "2cc39783c223154fea8dfb7c1b1660f2ac2dcbd1c1de8277b0b0dd39b7e50d7d"
-#guard hex (deriveKey "BLAKE3 2019-12-27 16:29:52 test vectors context"
-    ((List.range 3073).map fun i => (i % 251).toUInt8)) =
-  "72613c9ec9ff7e40f8f5c173784c532ad852e827dba2bf85b2ab4b76f7079081"
+-- key derivation's known answers: the specification's test vectors (`test_vectors/test_vectors.json` in the BLAKE3
+-- repository, its `derive_key` cases, first 32 bytes), over inputs `i mod 251` of 0, 1, 1024, 1025 and 3073 bytes
+def tvInput (n : Nat) : List UInt8 := (List.range n).map fun i => (i % 251).toUInt8
+def tvContext : String := "BLAKE3 2019-12-27 16:29:52 test vectors context"
+#guard hex (deriveKey tvContext (tvInput 0)) = "2cc39783c223154fea8dfb7c1b1660f2ac2dcbd1c1de8277b0b0dd39b7e50d7d"
+#guard hex (deriveKey tvContext (tvInput 1)) = "b3e2e340a117a499c6cf2398a19ee0d29cca2bb7404c73063382693bf66cb06c"
+#guard hex (deriveKey tvContext (tvInput 1024)) = "7356cd7720d5b66b6d0697eb3177d9f8d73a4a5c5e968896eb6a689684302706"
+#guard hex (deriveKey tvContext (tvInput 1025)) = "effaa245f065fbf82ac186839a249707c3bddf6d3fdda22d1b95a3c970379bcb"
+#guard hex (deriveKey tvContext (tvInput 3073)) = "72613c9ec9ff7e40f8f5c173784c532ad852e827dba2bf85b2ab4b76f7079081"
 
 end Aven.Core.Blake3

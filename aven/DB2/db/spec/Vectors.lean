@@ -50,6 +50,9 @@ import Aven.DB.Docs
   accepted (`Aven.DB.Docs.Checkpoint`).
 - `fit.json`: envelopes under two schemas writing one field; which fit, and the merged value with its schema
   (`Aven.DB.Docs.Fit`).
+- `logs.json`: two readers holding each side of a split, then both, then a stuck log's next envelope; what each sees of
+  each envelope: whether it counts, and whether it is half of a split (`Aven.DB.Docs.countsB`, Core's `Past`).
+- `counts.json`: envelopes with their fit and authorized verdicts; which count, and the live state over them.
 - `keys.json`: tuples and their keys in hex; pairs of tuples and whether the first key sorts before the second
   (`Aven.DB.Docs.Key`).
 
@@ -934,6 +937,73 @@ def fit : List Json :=
               ("fits", toJson (fitRule w.value.1 "total" w.value.2))]
           | none => Json.null)])
 
+/-! ### Logs and counts, as readers hold envelopes over time -/
+
+def lx1 : Envelope := opEnv 1 1 none [] "first"
+def lx2 : Envelope := opEnv 1 2 (some (lx1.name blake3)) [] "second"
+def lx2' : Envelope := opEnv 1 2 (some (lx1.name blake3)) [] "a copy of the second says otherwise"
+def ly1 : Envelope := opEnv 2 1 none [lx2.name blake3] "builds on the second"
+def lz1 : Envelope := opEnv 3 1 none [lx2'.name blake3] "builds on the copy"
+def lx3 : Envelope := opEnv 1 3 (some (lx2.name blake3)) [] "the stuck log goes on"
+def lw1 : Envelope := opEnv 4 1 none [ly1.name blake3] "builds on the other writer"
+
+def labelled : List (String × Envelope) :=
+  [("x1", lx1), ("x2", lx2), ("x2'", lx2'), ("y1", ly1), ("z1", lz1), ("x3", lx3), ("w1", lw1)]
+
+def labelOf (e : Envelope) : String :=
+  match labelled.find? (fun (_, x) => x.name blake3 == e.name blake3) with
+  | some (l, _) => l
+  | none => "?"
+
+def envSummary (l : String) (e : Envelope) : Json :=
+  Json.mkObj [("label", Json.str l), ("name", Json.str (e.name blake3).text), ("writer", toJson e.writer),
+    ("seq", toJson e.seq), ("prev", match e.prev with | some h => Json.str (labelOf' h) | none => Json.null),
+    ("deps", Json.arr (e.deps.map fun h => Json.str (labelOf' h)).toArray)]
+where labelOf' (h : Hash) : String :=
+  match labelled.find? (fun (_, x) => x.name blake3 == h) with
+  | some (l, _) => l
+  | none => h.text
+
+/-- What a reader holding `S` sees of each envelope: whether it counts, and whether it is half of a split it holds. -/
+def readerView (S : List Envelope) (ok : Envelope → Bool) : Json :=
+  Json.mkObj (S.map fun e => (labelOf e, Json.mkObj [("counts", toJson (Docs.countsB (Envelope.name blake3) ok S e)),
+    ("split", toJson (S.any fun y => Docs.splitB (Envelope.name blake3) e y))]))
+
+def logSteps : List (String × List Envelope × List Envelope) := [
+  ("before they sync: each holds one side", [lx1, lx2, ly1], [lx1, lx2', lz1]),
+  ("after they sync: both hold both sides", [lx1, lx2, ly1, lx2', lz1], [lx1, lx2', lz1, lx2, ly1]),
+  ("the stuck log goes on: its next envelope never counts", [lx1, lx2, ly1, lx2', lz1, lx3],
+    [lx1, lx2', lz1, lx2, ly1, lx3])]
+
+def logs : List Json :=
+  logSteps.map fun (name, a, b) =>
+    vector name (Json.mkObj [("envelopes", Json.arr (labelled.map fun (l, e) => envSummary l e).toArray),
+        ("readerA", Json.arr (a.map fun e => Json.str (labelOf e)).toArray),
+        ("readerB", Json.arr (b.map fun e => Json.str (labelOf e)).toArray)])
+      (Json.mkObj [("readerA", readerView a fun _ => true), ("readerB", readerView b fun _ => true)])
+
+/-- Counts: envelopes with their fit and authorized verdicts; which count, and the live state (the toy CRDT's sum of
+sequence numbers over what counts). -/
+def countHeld : List Envelope := [lx1, lx2, ly1, lw1]
+
+def countCases : List (String × List (String × Bool × Bool)) := [
+  ("every verdict holds: all count", []),
+  ("an unfit envelope: it and what builds on it don't count", [("y1", false, true)]),
+  ("a revocation turns one unauthorized: it and everything after it drop", [("x2", true, false)])]
+
+def counts : List Json :=
+  countCases.map fun (name, overrides) =>
+    let verdict (e : Envelope) : Bool × Bool :=
+      match overrides.find? (·.1 == labelOf e) with
+      | some (_, f, a) => (f, a)
+      | none => (true, true)
+    let ok (e : Envelope) : Bool := (verdict e).1 && (verdict e).2
+    let counted := countHeld.filter (Docs.countsB (Envelope.name blake3) ok countHeld)
+    vector name (Json.mkObj [("envelopes", Json.arr (countHeld.map fun e => Json.mkObj [("envelope", envSummary (labelOf e) e),
+          ("fit", toJson (verdict e).1), ("authorized", toJson (verdict e).2)]).toArray)])
+      (Json.mkObj [("counts", Json.arr (counted.map fun e => Json.str (labelOf e)).toArray),
+        ("live", toJson (sumLoro.replay counted))])
+
 end DocsVectors
 
 /-- One vector per line, so a change reads as a diff of lines. -/
@@ -948,5 +1018,6 @@ def main (args : List String) : IO Unit := do
       ("chat.json", chat), ("files.json", files), ("chats.json", chats), ("queries.json", queries),
       ("wants.json", wants), ("mutations.json", mutations), ("merges.json", merges), ("lenses.json", lenses),
       ("indexes.json", indexes), ("trees.json", trees), ("lookups.json", lookups), ("keys.json", keys), ("writers.json", writers), ("envelopes.json", envelopes),
-      ("checkpoints.json", checkpoints), ("fit.json", fit)] do
+      ("checkpoints.json", checkpoints), ("fit.json", fit), ("logs.json", logs),
+      ("counts.json", counts)] do
     IO.FS.writeFile (dir / file) (render vs)
