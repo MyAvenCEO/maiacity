@@ -26,3 +26,18 @@ from them is in [`ARCHITECTURE.md`](https://github.com/MyAvenCEO/maiacity/blob/d
 | [`principles.md`](principles.md) | One job, one mechanism: fifteen places where two mechanisms do one job, and the decisions that pulled apart |
 | [`vaults.md`](vaults.md) | Vaults own; signers only sign: every place a key holds authority itself, and its vault form |
 | [`contradictions.md`](contradictions.md) | Global contradictions: decision against decision, spec against spec, spec against Lean, Lean against code, and the resolution of each |
+
+## The drift audits of 31 Oct 2026
+
+Five read-only audits of decision drift across all parts, before avenBRAIN became the one source of truth: every
+decision of the day against its documentation, its Lean and its code. They cite the main and the branches of their
+hour. Their findings were settled into [avenBRAIN's pages](../brain/ARCHITECTURE.md) and [the decision log](../brain/DECISIONS.md)
+(A151 to A186); what is still to change in Lean or code is in each page's Status.
+
+| Audit | Parts |
+|---|---|
+| [`drift-architecture.md`](drift-architecture.md) | The architecture document and the decisions of the day |
+| [`drift-core.md`](drift-core.md) | avenCORE, the runtimes, the architecture spec, the glossary and Brain |
+| [`drift-id.md`](drift-id.md) | avenID and caps |
+| [`drift-docs.md`](drift-docs.md) | avenDOCS and avenOPS |
+| [`drift-peers.md`](drift-peers.md) | avenPEERS, production and the sandbox |
