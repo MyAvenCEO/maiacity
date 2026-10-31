@@ -8,11 +8,13 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-aven-core = { path = "../../DB2/core" }
+aven-codec = { path = "../../DB2/codec" }
 aven-runtimes-contract = { path = "../contract" }
-wasmi = { version = "=2.0.0", default-features = false, features = ["std", "validate", "deterministic"] }
+serde_json = "=1.0.154"
+# auto-dispatch: wasmi's threaded dispatch needs the target's tail calls and an optimised build; elsewhere (wasm32 in a
+# browser, a debug build) it dispatches in a loop, or every instruction it runs would take a frame of the stack
+wasmi = { version = "=2.0.0", default-features = false, features = ["std", "validate", "deterministic", "auto-dispatch"] }
 
 [dev-dependencies]
-serde_json = "=1.0.154"
 aven-runtimes-markdown = { path = "../markdown" }
 aven-runtimes-face = { path = "../face" }

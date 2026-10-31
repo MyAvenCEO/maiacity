@@ -7,7 +7,8 @@ mod common;
 use aven_core::encode;
 use aven_id::{
     BACK_LABEL, Context, Epoch, HybridPublic, HybridSignature, PrfOutput, Scope, Secret, Stanza,
-    VAULT_LABEL, commit, prf_input, prf_salt, stanza_commit, stanza_keys, subkey, tag,
+    VAULT_LABEL, commit, padded, padme, prf_input, prf_salt, stanza_commit, stanza_keys, subkey,
+    tag, tag_seed,
 };
 use serde_json::{Value, json};
 
@@ -48,9 +49,20 @@ fn derive(input: &Value) -> Value {
         hasher.finalize_xof().fill(&mut out);
         return hex(&out);
     }
-    if let Some(vault) = input.get("vault") {
-        let (vault, epoch) = (vault.as_str().unwrap(), input["epoch"].as_u64().unwrap());
-        return json!({ "input": hex(&prf_input(vault, epoch)), "salt": hex(&prf_salt(vault, epoch)) });
+    if let Some(readers) = input.get("readers") {
+        return json!(padded(readers.as_u64().unwrap() as usize));
+    }
+    if let Some(prev) = input.get("prevKey") {
+        let seed = tag_seed(&secret(prev), &array(&input["recipient"]));
+        let (id, n) = (
+            input["id"].as_str().unwrap(),
+            input["epoch"].as_u64().unwrap(),
+        );
+        return json!({ "seed": hex(seed.expose()), "tag": hex(&tag(&seed, id, n)) });
+    }
+    if input.as_object().unwrap().len() == 1 && input.get("epoch").is_some() {
+        let epoch = input["epoch"].as_u64().unwrap();
+        return json!({ "input": hex(&prf_input(epoch)), "salt": hex(&prf_salt(epoch)) });
     }
     if let Some(prf) = input.get("prf") {
         let prf = PrfOutput::new(secret(prf));
@@ -133,7 +145,9 @@ fn every_layout_is_the_models() {
     assert!(all.len() >= 7, "{} layout vectors", all.len());
     for v in &all {
         let (input, name) = (&v["input"], v["name"].as_str().unwrap());
-        let got = if input.get("ct").is_some() {
+        let got = if name.starts_with("read back") {
+            json!({ "reads": Epoch::from_bytes(&unhex(&input["bytes"])).is_some() })
+        } else if input.get("ct").is_some() {
             let s = stanza(input);
             assert_eq!(Stanza::of_value(&s.value()), Some(s.clone()), "{name}");
             json!({ "bytes": hex(&encode(&s.value())) })
@@ -161,4 +175,23 @@ fn every_layout_is_the_models() {
         };
         assert_eq!(got, v["expected"], "{name}");
     }
+}
+
+/// Padmé is the one aven-db-docs pads segments with: `seals.json`'s "Padmé of n", Lean's (`Aven.ID.Padme`).
+#[test]
+fn padme_is_the_models() {
+    let all = common::vectors("seals.json");
+    let mut seen = 0;
+    for v in &all {
+        if let Some(rest) = v["name"].as_str().unwrap().strip_prefix("Padmé of ") {
+            let l: usize = rest.parse().unwrap();
+            assert_eq!(
+                padme(l) as u64,
+                v["expected"].as_u64().unwrap(),
+                "Padmé of {l}"
+            );
+            seen += 1;
+        }
+    }
+    assert!(seen >= 10, "{seen} Padmé vectors");
 }
