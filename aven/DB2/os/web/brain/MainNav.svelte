@@ -1,11 +1,12 @@
 <script>
-	// avenOS's main nav: home (the dashboard, or the network's door) and Docs, which anyone may read without signing in
-	let { home = '#/', docs = false } = $props();
+	// avenOS's main nav: home (the dashboard, or the network's door) and Brain, the documentation, which anyone may read
+	// without signing in
+	let { home = '#/', brain = false } = $props();
 </script>
 
 <nav class="main" aria-label="Main">
 	<a class="brand" href={home}>avenOS</a>
-	<a class="item" href="#/docs" data-testid="nav-docs" aria-current={docs ? 'page' : undefined}>Docs</a>
+	<a class="item" href="#/brain" data-testid="nav-brain" aria-current={brain ? 'page' : undefined}>Brain</a>
 </nav>
 
 <style>

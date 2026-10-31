@@ -1,15 +1,15 @@
 <script>
-	// avenOS's docs (aven/DB2/brain): #/docs is the dashboard, one item per package; #/docs/<package> its page, the story
-	// and its slides; #/docs/glossary the glossary, and #/docs/glossary/<word> one term in it. Readable on every host
-	// without signing in, as public as the repo: main.js routes #/docs here before any vault's route, so no vault is
-	// ever named `docs`.
+	// Brain, avenOS's documentation (aven/DB2/brain): #/brain is the dashboard, one item per package; #/brain/<package> its
+	// page, the story and its slides; #/brain/glossary the glossary, and #/brain/glossary/<word> one term in it. Readable
+	// on every host without signing in, as public as the repo: Root.svelte routes #/brain here before any vault's
+	// route, so no vault is ever named `brain`.
 	import MainNav from './MainNav.svelte';
 	import Node from './Node.svelte';
 	import { art, glossary, packages, page, slide } from './brain.js';
 
 	let { home = '#/' } = $props();
 
-	const read = () => location.hash.replace(/^#\/?docs\/?/, '').split('/').filter(Boolean);
+	const read = () => location.hash.replace(/^#\/?brain\/?/, '').split('/').filter(Boolean);
 	let route = $state(read());
 	$effect(() => {
 		const follow = () => (route = read());
@@ -22,11 +22,11 @@
 	const story = $derived(part?.page && part.id !== 'glossary' ? page(part.page) : []);
 	const slides = $derived(part?.page ? (part.slides ?? []).map((id) => slide(part.id, id)) : []);
 	const textOf = (node) => (typeof node === 'string' ? node : node[2].map(textOf).join(''));
-	// the contents on the left: this page's sections, then the other docs
+	// the contents on the left: this page's sections, then the other packages
 	const sections = $derived(
 		route[0] === 'glossary'
-			? words.tree.filter((n) => n[0] === 'h2').map((n) => ({ href: `#/docs/glossary/${n[1][0][1]}`, id: n[1][0][1], name: textOf(n) }))
-			: slides.map((s, i) => ({ href: `#/docs/${part.id}/${s.id}`, id: s.id, name: textOf(s.text[0] ?? ''), n: i + 1 })),
+			? words.tree.filter((n) => n[0] === 'h2').map((n) => ({ href: `#/brain/glossary/${n[1][0][1]}`, id: n[1][0][1], name: textOf(n) }))
+			: slides.map((s, i) => ({ href: `#/brain/${part.id}/${s.id}`, id: s.id, name: textOf(s.text[0] ?? ''), n: i + 1 })),
 	);
 	const others = packages.filter((p) => p.page);
 	let wide = $state(true);
@@ -58,20 +58,20 @@
 	});
 </script>
 
-<div class="brain" data-view="docs" data-docs={route[0] ?? 'dashboard'}>
+<div class="brain" data-view="brain" data-brain={route[0] ?? 'dashboard'}>
 	<header class="top">
-		<MainNav {home} docs />
+		<MainNav {home} brain />
 		{#if part}<span class="crumb">/ {part.name}</span>{/if}
 	</header>
 
 	{#if !route.length}
 		<main class="dashboard">
-			<h1 class="sheet-title">Docs</h1>
+			<h1 class="sheet-title">Brain</h1>
 			<p class="lead">How the whole system works, told from the ground up for someone with no background. One idea per slide.</p>
 			<ul class="grid">
 				{#each packages as item (item.id)}
-					<li class="item" data-testid={`doc-${item.id}`}>
-						<svelte:element this={item.page ? 'a' : 'div'} class={item.page ? 'tile open' : 'tile off'} href={item.page ? `#/docs/${item.id}` : undefined}>
+					<li class="item" data-testid={`brain-${item.id}`}>
+						<svelte:element this={item.page ? 'a' : 'div'} class={item.page ? 'tile open' : 'tile off'} href={item.page ? `#/brain/${item.id}` : undefined}>
 							<img class="art" src={art(item.art)} alt="" width="440" height="440" />
 							<strong>{item.name}</strong>
 							<span class="state">{item.page ? (item.slides ? `${item.slides.length} slides` : 'Read') : 'Coming'}</span>
@@ -92,11 +92,11 @@
 							<li><a href={item.href} aria-current={route[1] === item.id ? 'true' : undefined}>{item.name}</a></li>
 						{/each}
 					</ol>
-					<p class="contents-head">Docs</p>
+					<p class="contents-head">Brain</p>
 					<ul>
-						<li><a href="#/docs">All docs</a></li>
+						<li><a href="#/brain">The whole brain</a></li>
 						{#each others as other (other.id)}
-							<li><a href={`#/docs/${other.id}`} aria-current={other.id === part.id ? 'page' : undefined}>{other.name}</a></li>
+							<li><a href={`#/brain/${other.id}`} aria-current={other.id === part.id ? 'page' : undefined}>{other.name}</a></li>
 						{/each}
 					</ul>
 				</details>
@@ -125,8 +125,8 @@
 	{:else}
 		<main class="prose">
 			<h1>{part ? part.name : 'No such page'}</h1>
-			<p>{part ? `${part.what}. Its page comes once avenID's has found the style and the language.` : 'This page is not in the docs.'}</p>
-			<p><a href="#/docs">All docs</a></p>
+			<p>{part ? `${part.what}. Its page comes once avenID's has found the style and the language.` : 'This page is not in the brain.'}</p>
+			<p><a href="#/brain">The whole brain</a></p>
 		</main>
 	{/if}
 </div>

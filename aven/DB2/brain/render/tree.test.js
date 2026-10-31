@@ -26,7 +26,7 @@ describe('the tree', () => {
 	});
 	test('checks the allowlist as Tree.lean has it', () => {
 		expect(check(['div', [['class', 'x'], ['aria-label', 'y']], []])).toEqual([]);
-		expect(check(['a', [['href', '#/docs/glossary']], ['ok']])).toEqual([]);
+		expect(check(['a', [['href', '#/brain/glossary']], ['ok']])).toEqual([]);
 	});
 	for (const v of vectors('tree.json'))
 		test(`tree.json: ${v.name}`, () => expect(check(fromVector(v.input.tree)).length === 0).toBe(v.expected));
@@ -47,14 +47,14 @@ describe('contrast', () => {
 
 describe('Markdown', () => {
 	test('inline: code, strong, emphasis and links, rewritten or dropped in one pass over the tree', () => {
-		const link = (h) => (h.startsWith('glossary:') ? '#/docs/glossary/key' : null);
+		const link = (h) => (h.startsWith('glossary:') ? '#/brain/glossary/key' : null);
 		expect(rewriteLinks([['p', [], inline('a **b `c`** *d* [e](glossary:key) [f](x.md)')]], link)[0][2]).toEqual([
 			'a ',
 			['strong', [], ['b ', ['code', [], ['c']]]],
 			' ',
 			['em', [], ['d']],
 			' ',
-			['a', [['href', '#/docs/glossary/key']], ['e']],
+			['a', [['href', '#/brain/glossary/key']], ['e']],
 			' ',
 			'f',
 		]);
