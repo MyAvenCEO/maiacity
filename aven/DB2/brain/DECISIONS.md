@@ -2608,3 +2608,13 @@ changed. A refinement names what it refines; a change of mind names what it supe
 - **Why:** one concept, one owner (A45): each goes where its code and Lean are.
 - **Supersedes:** A170 (in part: "caps' built-in `epoch` Records")
 - **Lean or code then:** none.
+
+### A186 · No wiping in production
+- **Decided by:** Samuel (30 Oct 2026, before the admin's sign-up), recorded by the architect (12:51)
+- **Decision:** production has no way to empty its store. The deploy has no `wipe` input, and nothing else deletes the
+  bucket's objects. From the first sign-up on, what production stores is kept: a change to a stored format reads the old
+  one too, or migrates it in the peer, tested against the old format's vectors, and never asks for a reset. The box
+  keeps its own wipe, since its data is test data.
+- **Why:** people's vaults and history live there.
+- **Supersedes:** —
+- **Lean or code then:** the deploy workflow, as built; the cutover replays production's snapshot in the box (stage 7).
