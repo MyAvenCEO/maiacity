@@ -183,6 +183,8 @@ structure Genesis where
   devices : List String
   coop : String
   coopOwners : List String
+  /-- how many of Maia City's owners approve for it (k of n, D14, A28) -/
+  coopThreshold : Nat := 1
   agent : String
   avenPeer : String
   guardian : GuardianKeys
@@ -196,7 +198,8 @@ structure Genesis where
 /-- The claimant's passkey and MaiaCityGuardian's hybrid keys both signed it, and the claimant's passkey has an owner:
 its PRF gave the owner key at the signing (A42). -/
 def Genesis.consented (g : Genesis) : Bool :=
-  g.passkey.owner.isSome && g.signedBy.contains g.passkey.spki && g.signedBy.contains g.guardian.ed25519 &&
+  decide (1 ≤ g.coopThreshold) && g.passkey.owner.isSome && g.signedBy.contains g.passkey.spki &&
+    g.signedBy.contains g.guardian.ed25519 &&
     g.signedBy.contains g.guardian.mlDsa
 
 /-- The vaults the genesis founds, as `Aven.ID.Approve` reads them: the claimant's vault, owned by its passkey and
@@ -205,7 +208,7 @@ MaiaCityGuardian's vault, owned by its key. -/
 def Genesis.tree (g : Genesis) : Tree :=
   { keys := [g.passkey.spki, g.guardian.ed25519]
     vaults := [⟨g.claimant, "", .person, [.key g.passkey.spki, .vault g.guardianVault], 1⟩,
-      ⟨g.coop, "", .coop, g.coopOwners.map .vault, 1⟩, ⟨g.agent, "", .agent, [.vault g.coop], 1⟩,
+      ⟨g.coop, "", .coop, g.coopOwners.map .vault, g.coopThreshold⟩, ⟨g.agent, "", .agent, [.vault g.coop], 1⟩,
       ⟨g.guardianVault, "", .agent, [.key g.guardian.ed25519], 1⟩] }
 
 /-- What every tree statement's signer signs, as `Aven.ID.Approve` names a digest: the statement itself. -/
@@ -226,33 +229,45 @@ theorem Genesis.keyAbove {g : Genesis} {k b : String} (h : g.tree.KeyAbove k b) 
     · exact .inr mk
   | up _ _ ih => exact ih
 
+/-- In the tree a consented genesis founds, every threshold is at least one: no approval passes on no signature. -/
+theorem Genesis.threshold_pos (g : Genesis) (h : 1 ≤ g.coopThreshold) (x : String) : 1 ≤ g.tree.threshold x := by
+  unfold Tree.threshold Tree.get? Genesis.tree
+  simp only [List.find?]
+  split <;> simp_all <;> split <;> simp_all <;> split <;> simp_all <;> split <;> simp_all
+
+/-- The claimant's own vault takes one owner. -/
+theorem Genesis.threshold_claimant (g : Genesis) : g.tree.threshold g.claimant = 1 := by
+  simp [Tree.threshold, Tree.get?, Genesis.tree]
+
 /-- The claimant's passkey approves for the claimant's own vault. -/
 theorem Genesis.approvesF_own (g : Genesis) (d : String) (f : Nat) :
-    g.tree.approvesF (fun _ => 1) d [⟨g.passkey.spki, d⟩] (f + 1) g.claimant = true := by
+    g.tree.approvesF g.tree.threshold d [⟨g.passkey.spki, d⟩] (f + 1) g.claimant = true := by
   unfold Tree.approvesF
   have e : g.tree.get? g.claimant =
       some ⟨g.claimant, "", .person, [.key g.passkey.spki, .vault g.guardianVault], 1⟩ := by
     simp [Tree.get?, Genesis.tree]
-  rw [e]
+  rw [e, g.threshold_claimant]
   simp only [decide_eq_true_eq]
   exact List.length_pos_iff_exists_mem.mpr
     ⟨.key g.passkey.spki, List.mem_filter.mpr ⟨mem_ownersOnce.mpr (by simp), by simp [Tree.ownerApproves]⟩⟩
 
 theorem Genesis.approves_own (g : Genesis) (d : String) :
-    g.tree.approves (fun _ => 1) g.claimant d [⟨g.passkey.spki, d⟩] = true :=
+    g.tree.approves g.tree.threshold g.claimant d [⟨g.passkey.spki, d⟩] = true :=
   g.approvesF_own d _
 
-/-- The claimant's passkey alone approves for Maia City when the claimant's vault owns it: one tap today. -/
-theorem Genesis.approves_claimant (g : Genesis) (hc : g.claimant ∈ g.coopOwners) (d : String) :
-    g.tree.approves (fun _ => 1) g.coop d [⟨g.passkey.spki, d⟩] = true := by
+/-- The claimant's passkey alone approves for Maia City when the claimant's vault owns it and Maia City takes one
+owner: one tap today. -/
+theorem Genesis.approves_claimant (g : Genesis) (hc : g.claimant ∈ g.coopOwners) (one : g.coopThreshold = 1)
+    (d : String) : g.tree.approves g.tree.threshold g.coop d [⟨g.passkey.spki, d⟩] = true := by
   have key := g.approvesF_own d
   unfold Tree.approves
   by_cases e : g.claimant = g.coop
   · rw [← e]; exact key _
   · unfold Tree.approvesF
-    have ec : g.tree.get? g.coop = some ⟨g.coop, "", .coop, g.coopOwners.map .vault, 1⟩ := by
+    have ec : g.tree.get? g.coop = some ⟨g.coop, "", .coop, g.coopOwners.map .vault, g.coopThreshold⟩ := by
       simp [Tree.get?, Genesis.tree, e]
-    rw [ec]
+    have tc : g.tree.threshold g.coop = 1 := by simp [Tree.threshold, ec, one]
+    rw [ec, tc]
     simp only [decide_eq_true_eq]
     exact List.length_pos_iff_exists_mem.mpr
       ⟨.vault g.claimant, List.mem_filter.mpr ⟨mem_ownersOnce.mpr (by simp [hc]),
@@ -399,14 +414,15 @@ theorem Passkey.ofValue_toValue (k : Passkey) : ofValue k.toValue = some k := by
 open Body in
 def Genesis.toValue (g : Genesis) : Core.Value :=
   .array [text g.rpId, texts g.origins, text g.claimant, g.passkey.toValue, texts g.devices, text g.coop,
-    texts g.coopOwners, text g.agent, text g.avenPeer, g.guardian.toValue, text g.guardianVault, texts g.confirmers,
+    texts g.coopOwners, .uint g.coopThreshold, text g.agent, text g.avenPeer, g.guardian.toValue, text g.guardianVault,
+    texts g.confirmers,
     texts g.signedBy]
 
 open Body in
 def Genesis.ofValue : Core.Value → Option Genesis
-  | .array [rp, os, cl, pk, ds, co, cos, ag, ap, gu, gv, cf, sb] => do
+  | .array [rp, os, cl, pk, ds, co, cos, .uint th, ag, ap, gu, gv, cf, sb] => do
     pure ⟨← ofText rp, ← ofTexts os, ← ofText cl, ← Passkey.ofValue pk, ← ofTexts ds, ← ofText co, ← ofTexts cos,
-      ← ofText ag, ← ofText ap, ← GuardianKeys.ofValue gu, ← ofText gv, ← ofTexts cf, ← ofTexts sb⟩
+      th, ← ofText ag, ← ofText ap, ← GuardianKeys.ofValue gu, ← ofText gv, ← ofTexts cf, ← ofTexts sb⟩
   | _ => none
 
 theorem Genesis.ofValue_toValue (g : Genesis) : ofValue g.toValue = some g := by
@@ -557,7 +573,12 @@ structure TreeStatement where
   signer : String
   parents : List Core.Hash
   says : TreeSays
+  /-- the other keys whose signatures sit beside its name (A30): approvals of the same act, k of n (D14) -/
+  approvals : List String
   deriving DecidableEq, Repr
+
+/-- Every key that signed a statement: its signer and its approvals. -/
+def TreeStatement.keys (s : TreeStatement) : List String := s.signer :: s.approvals
 
 /-- The ticket a claim claims. -/
 def TreeStatement.ticketOf (s : TreeStatement) : Option Core.Hash :=
@@ -680,12 +701,12 @@ def gen (v : View) (P : Genesis → Bool) : Bool :=
     | .genesis gen => gen.consented && P gen
     | _ => false
 
-/-- An admin act's signer: Maia City's owners approve it (`Tree.approves`, D14), k of n, recursive through the vaults
-that own the coop, today one of their owner keys. The admin is Maia City's vault, never a key (rule 15, A28): tickets,
-withdrawals and the relay list count only so. A device's key owns nothing, so it never approves
-(`device_not_admin`); "the more secure way" (Samuel, 31 Oct 2026) holds. -/
-def byAdmin (v : View) (k : String) : Bool :=
-  gen v (fun g => g.tree.approves (fun _ => 1) g.coop stmtDigest [⟨k, stmtDigest⟩])
+/-- An admin act's keys: Maia City's owners approve it (`Tree.approves`, D14), k of n by each vault's stored threshold
+(`Tree.threshold`, A28), recursive through the vaults that own the coop, down to their owner keys. The admin is Maia
+City's vault, never a key (rule 15, A28): tickets, withdrawals and the relay list count only so. A device's key owns
+nothing, so it never approves (`device_not_admin`); "the more secure way" (Samuel, 31 Oct 2026) holds. -/
+def byAdmin (v : View) (ks : List String) : Bool :=
+  gen v (fun g => g.tree.approves g.tree.threshold g.coop stmtDigest (ks.map (⟨·, stmtDigest⟩)))
 
 /-- Passkey `p` added its owner and seal keys (`ownerEpoch`, signed by `p`'s ES256). -/
 def ownerAdded (v : View) (p : String) : Bool :=
@@ -700,7 +721,7 @@ Aven's holds it, or a device that vault's owners signed in (its device cap). No 
 City's owners as such. The confirm op is bounded by what it confirms: only a claim of a ticket Maia City issued,
 standing (not withdrawn, not beaten). -/
 def confirmer (v : View) (k : String) : Bool :=
-  gen v (fun g => g.confirmers.any fun x => g.tree.approves (fun _ => 1) x stmtDigest [⟨k, stmtDigest⟩]) ||
+  gen v (fun g => g.confirmers.any fun x => g.tree.approves g.tree.threshold x stmtDigest [⟨k, stmtDigest⟩]) ||
     gen v (fun g => (g.confirmers.contains g.claimant && g.devices.contains k) ||
       (g.confirmers.contains g.agent && k == g.avenPeer)) ||
     v.any fun s =>
@@ -712,7 +733,7 @@ def confirmer (v : View) (k : String) : Bool :=
       | _ => false
 
 /-- A change Maia City's owners approved (rule 15, A28): `sel` picks which setting it changes. -/
-def configBy (v : View) (sel : TreeSays → Bool) (s : TreeStatement) : Bool := byAdmin v s.signer && sel s.says
+def configBy (v : View) (sel : TreeSays → Bool) (s : TreeStatement) : Bool := byAdmin v s.keys && sel s.says
 
 def isGuardianSet : TreeSays → Bool | .setGuardian _ => true | _ => false
 
@@ -728,7 +749,7 @@ the claim, and it names a guardian vault Maia City named, as the claim saw it (`
 def claimOk (v : View) (c : TreeStatement) : Bool :=
   match c.says with
   | .claim t _ _ _ guardian =>
-    (v.any fun s => s.name == t && byAdmin v s.signer && s.says == .ticket c.signer && v.past c s) &&
+    (v.any fun s => s.name == t && byAdmin v s.keys && s.says == .ticket c.signer && v.past c s) &&
       guardianNamed v c guardian
   | _ => false
 
@@ -742,7 +763,7 @@ def final (v : View) (c : TreeStatement) : Bool :=
 /-- `w` wins over claim `c`: an admin passkey's withdrawal of its ticket that didn't have it in its past. -/
 def beats (v : View) (w c : TreeStatement) : Bool :=
   match c.ticketOf with
-  | some t => byAdmin v w.signer && w.says == .withdrawal t && !v.past w c
+  | some t => byAdmin v w.keys && w.says == .withdrawal t && !v.past w c
   | none => false
 
 /-- A claim stands: of its ticket's final claims the one with the smallest hash; if none is final, of the claims no
@@ -837,8 +858,8 @@ def admits (v : View) (d : String) : Bool :=
 over every add that hadn't seen it, the ones it saw and the ones made at the same time, and an add made after it
 stands again. -/
 def listed (v : View) (add remove : String → TreeSays) (d : String) : Bool :=
-  v.any fun a => byAdmin v a.signer && a.says == add d &&
-    !(v.any fun r => byAdmin v r.signer && r.says == remove d && !v.past a r)
+  v.any fun a => byAdmin v a.keys && a.says == add d &&
+    !(v.any fun r => byAdmin v r.keys && r.says == remove d && !v.past a r)
 
 /-! ### Reading the view -/
 
@@ -1090,7 +1111,7 @@ theorem guardian_consented (h : claimOk (view pinned S) c = true) :
     ∃ t vault passkey device guardian, c.says = .claim t vault passkey device guardian ∧
       ((∃ g ∈ S, g.name = pinned ∧ ∃ gen, g.says = .genesis gen ∧ gen.consented = true ∧
         gen.guardianVault = guardian) ∨
-       ∃ s ∈ S, counted pinned S s = true ∧ byAdmin (view pinned S) s.signer = true ∧
+       ∃ s ∈ S, counted pinned S s = true ∧ byAdmin (view pinned S) s.keys = true ∧
         s.says = .setGuardian guardian ∧ Before TreeStatement.name S c s) := by
   unfold claimOk at h
   split at h
@@ -1148,7 +1169,7 @@ theorem settle_ticket_once {c d : TreeStatement} (mc : c ∈ S) (md : d ∈ S)
 
 /-- A withdrawal of a ticket leaves no claim of it standing that isn't final and wasn't in the withdrawal's past. -/
 theorem settle_withdrawn {w : TreeStatement} {t : Core.Hash} (mw : w ∈ S) (cw : counted pinned S w = true)
-    (aw : byAdmin (view pinned S) w.signer = true) (says : w.says = .withdrawal t) (ct : c.ticketOf = some t)
+    (aw : byAdmin (view pinned S) w.keys = true) (says : w.says = .withdrawal t) (ct : c.ticketOf = some t)
     (np : ¬ Before TreeStatement.name S w c) (nf : final (view pinned S) c = false) :
     standing (view pinned S) c = false := by
   have hb : (view pinned S).any (fun x => beats (view pinned S) x c) = true := by
@@ -1285,7 +1306,7 @@ theorem peerIs_gen {d : String} (h : peerIs (view pinned S) d = true) :
 theorem config_by_admin {sel now : TreeSays → Bool} {genesis : Genesis → Bool}
     (h : setting (view pinned S) sel now genesis = true)
     (changed : (view pinned S).any (configBy (view pinned S) sel) = true) :
-    ∃ s ∈ S, byAdmin (view pinned S) s.signer = true ∧ sel s.says = true ∧ now s.says = true := by
+    ∃ s ∈ S, byAdmin (view pinned S) s.keys = true ∧ sel s.says = true ∧ now s.says = true := by
   unfold setting at h
   simp only [changed, ↓reduceIte] at h
   obtain ⟨s, ms, _, hs⟩ := (view_any pinned).mp h
@@ -1465,33 +1486,36 @@ theorem settle_door {d : String} :
 /-- **`admin_by_owners`:** an admin act counts only with Maia City's owners' approval, through the vaults that own it,
 resting on a signature by an owner key above the coop: the claimant's passkey or MaiaCityGuardian's, never a device's
 key (rule 15, A28). -/
-theorem admin_by_owners {k : String} (h : byAdmin (view pinned S) k = true) :
+theorem admin_by_owners {ks : List String} (h : byAdmin (view pinned S) ks = true) :
     ∃ g ∈ S, counted pinned S g = true ∧ g.name = pinned ∧ ∃ gs, g.says = .genesis gs ∧ gs.consented = true ∧
-      gs.tree.approves (fun _ => 1) gs.coop stmtDigest [⟨k, stmtDigest⟩] = true ∧ gs.tree.KeyAbove k gs.coop ∧
-      (k = gs.passkey.spki ∨ k = gs.guardian.ed25519) := by
+      gs.tree.approves gs.tree.threshold gs.coop stmtDigest (ks.map (⟨·, stmtDigest⟩)) = true ∧
+      ∃ k ∈ ks, gs.tree.KeyAbove k gs.coop ∧ (k = gs.passkey.spki ∨ k = gs.guardian.ed25519) := by
   obtain ⟨g, mg, cg, n, gs, e, c, ap⟩ := gen_elim pinned h
-  obtain ⟨k', ka, mk⟩ := Tree.approvesF_signed (fun _ => Nat.le_refl 1) ap
-  simp only [List.mem_singleton, Sig.mk.injEq, and_true] at mk
-  subst mk
-  exact ⟨g, mg, cg, n, gs, e, c, ap, ka, Genesis.keyAbove ka⟩
+  have pos : ∀ x, 1 ≤ gs.tree.threshold x := by
+    simp only [Genesis.consented, Bool.and_eq_true, decide_eq_true_eq] at c
+    exact gs.threshold_pos c.1.1.1.1
+  obtain ⟨k', ka, mk⟩ := Tree.approvesF_signed pos ap
+  simp only [List.mem_map, Sig.mk.injEq, and_true] at mk
+  obtain ⟨k, mk, rfl⟩ := mk
+  exact ⟨g, mg, cg, n, gs, e, c, ap, k, mk, ka, Genesis.keyAbove ka⟩
 
 /-- **`device_not_admin`:** a key that is neither the pinned genesis's passkey nor MaiaCityGuardian's, a device's
 among them, never signs an admin act. -/
-theorem device_not_admin {k : String}
-    (no : ∀ g ∈ S, ∀ gs, g.says = .genesis gs → k ≠ gs.passkey.spki ∧ k ≠ gs.guardian.ed25519) :
-    byAdmin (view pinned S) k = false := by
-  cases h : byAdmin (view pinned S) k
+theorem device_not_admin {ks : List String}
+    (no : ∀ k ∈ ks, ∀ g ∈ S, ∀ gs, g.says = .genesis gs → k ≠ gs.passkey.spki ∧ k ≠ gs.guardian.ed25519) :
+    byAdmin (view pinned S) ks = false := by
+  cases h : byAdmin (view pinned S) ks
   · rfl
-  · obtain ⟨g, mg, _, _, gs, e, _, _, _, ko⟩ := admin_by_owners pinned h
+  · obtain ⟨g, mg, _, _, gs, e, _, _, k, mk, _, ko⟩ := admin_by_owners pinned h
     rcases ko with ko | ko
-    · exact absurd ko (no g mg gs e).1
-    · exact absurd ko (no g mg gs e).2
+    · exact absurd ko (no k mk g mg gs e).1
+    · exact absurd ko (no k mk g mg gs e).2
 
 /-- A list's entry stands only through an admin act's add that saw every remove of it. -/
 theorem settle_listed {add remove : String → TreeSays} {d : String}
     (h : listed (view pinned S) add remove d = true) :
-    ∃ a ∈ S, counted pinned S a = true ∧ byAdmin (view pinned S) a.signer = true ∧ a.says = add d ∧
-      ∀ r ∈ S, counted pinned S r = true → byAdmin (view pinned S) r.signer = true → r.says = remove d →
+    ∃ a ∈ S, counted pinned S a = true ∧ byAdmin (view pinned S) a.keys = true ∧ a.says = add d ∧
+      ∀ r ∈ S, counted pinned S r = true → byAdmin (view pinned S) r.keys = true → r.says = remove d →
         Before TreeStatement.name S a r := by
   obtain ⟨a, ma, ca, ha⟩ := (view_any pinned).mp h
   simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at ha
@@ -1501,7 +1525,7 @@ theorem settle_listed {add remove : String → TreeSays} {d : String}
     cases e : (view pinned S).past a r
     · rfl
     · exact absurd ((view_past pinned).mp e).2.2 np
-  have : (view pinned S).any (fun r => byAdmin (view pinned S) r.signer && r.says == remove d &&
+  have : (view pinned S).any (fun r => byAdmin (view pinned S) r.keys && r.says == remove d &&
       !(view pinned S).past a r) = true :=
     (view_any pinned).mpr ⟨r, mr, cr, by simp [ar, sr, pf]⟩
   rw [this] at none
@@ -1581,35 +1605,35 @@ def alicesGenesis : Genesis :=
     signedBy := ["alice-passkey", "guardian-ed25519", "guardian-ml-dsa"] }
 
 def statements : List TreeStatement :=
-  [⟨100, "alice-passkey", [], .genesis alicesGenesis⟩,
-   ⟨110, "alice-passkey", [100], .signIn "alice-peer-light"⟩,
-   ⟨120, "alice-passkey", [110], .ticket "t-bob"⟩,
-   ⟨500, "t-bob", [120], .claim 120 "bob" (pk "bob-passkey") ["bob-peer-light"] "maia-city-guardian"⟩,
-   ⟨510, "alice-peer", [500], .confirm 500⟩,
-   ⟨300, "t-bob", [120], .claim 120 "mallory" (pk "mallory-passkey") ["mallory-peer"] "maia-city-guardian"⟩,
-   ⟨310, "mallory-passkey", [300], .signIn "mallory-peer-2"⟩,
-   ⟨520, "bob-passkey", [510], .signIn "bob-peer"⟩,
-   ⟨130, "alice-passkey", [100], .ticket "t-carol"⟩,
-   ⟨600, "t-carol", [130], .claim 130 "carol" (pk "carol-passkey") ["carol-peer"] "maia-city-guardian"⟩,
-   ⟨610, "alice-passkey", [130], .withdrawal 130⟩,
-   ⟨140, "alice-passkey", [100], .ticket "t-dan"⟩,
-   ⟨650, "t-dan", [140], .claim 140 "dan" (pk "dan-passkey") ["dan-peer"] "other-guardian"⟩,
-   ⟨160, "alice-passkey", [100], .ticket "t-eve"⟩,
-   ⟨800, "t-eve", [160], .claim 160 "eve" (pk "eve-passkey") ["eve-peer"] "maia-city-guardian"⟩,
-   ⟨790, "t-eve", [160], .claim 160 "eve2" (pk "eve2-passkey") ["eve2-peer"] "maia-city-guardian"⟩,
-   ⟨810, "alice-peer", [800], .confirm 800⟩,
-   ⟨811, "alice-peer-light", [790], .confirm 790⟩,
-   ⟨700, "alice-passkey", [100], .relayAdd "aven"⟩,
-   ⟨740, "alice-passkey", [700], .relayRemove "aven"⟩,
-   ⟨750, "alice-passkey", [740], .relayAdd "aven"⟩,
-   ⟨710, "alice-passkey", [520], .relayAdd "bob"⟩,
-   ⟨720, "alice-passkey", [100], .relayRemove "bob"⟩,
+  [⟨100, "alice-passkey", [], .genesis alicesGenesis, []⟩,
+   ⟨110, "alice-passkey", [100], .signIn "alice-peer-light", []⟩,
+   ⟨120, "alice-passkey", [110], .ticket "t-bob", []⟩,
+   ⟨500, "t-bob", [120], .claim 120 "bob" (pk "bob-passkey") ["bob-peer-light"] "maia-city-guardian", []⟩,
+   ⟨510, "alice-peer", [500], .confirm 500, []⟩,
+   ⟨300, "t-bob", [120], .claim 120 "mallory" (pk "mallory-passkey") ["mallory-peer"] "maia-city-guardian", []⟩,
+   ⟨310, "mallory-passkey", [300], .signIn "mallory-peer-2", []⟩,
+   ⟨520, "bob-passkey", [510], .signIn "bob-peer", []⟩,
+   ⟨130, "alice-passkey", [100], .ticket "t-carol", []⟩,
+   ⟨600, "t-carol", [130], .claim 130 "carol" (pk "carol-passkey") ["carol-peer"] "maia-city-guardian", []⟩,
+   ⟨610, "alice-passkey", [130], .withdrawal 130, []⟩,
+   ⟨140, "alice-passkey", [100], .ticket "t-dan", []⟩,
+   ⟨650, "t-dan", [140], .claim 140 "dan" (pk "dan-passkey") ["dan-peer"] "other-guardian", []⟩,
+   ⟨160, "alice-passkey", [100], .ticket "t-eve", []⟩,
+   ⟨800, "t-eve", [160], .claim 160 "eve" (pk "eve-passkey") ["eve-peer"] "maia-city-guardian", []⟩,
+   ⟨790, "t-eve", [160], .claim 160 "eve2" (pk "eve2-passkey") ["eve2-peer"] "maia-city-guardian", []⟩,
+   ⟨810, "alice-peer", [800], .confirm 800, []⟩,
+   ⟨811, "alice-peer-light", [790], .confirm 790, []⟩,
+   ⟨700, "alice-passkey", [100], .relayAdd "aven", []⟩,
+   ⟨740, "alice-passkey", [700], .relayRemove "aven", []⟩,
+   ⟨750, "alice-passkey", [740], .relayAdd "aven", []⟩,
+   ⟨710, "alice-passkey", [520], .relayAdd "bob", []⟩,
+   ⟨720, "alice-passkey", [100], .relayRemove "bob", []⟩,
    ⟨50, "eve-passkey", [], .genesis { alicesGenesis with
      claimant := "eve", passkey := pk "eve-passkey", coopOwners := ["eve"],
-     signedBy := ["eve-passkey", "guardian-ed25519", "guardian-ml-dsa"] }⟩,
-   ⟨60, "eve-passkey", [50], .ticket "t-other"⟩,
-   ⟨150, "alice-passkey", [100], .ticket "t-bad"⟩,
-   ⟨660, "t-bad", [150], .claim 150 "frank" (pk "frank-passkey") ["frank-peer"] "maia-city-guardian"⟩]
+     signedBy := ["eve-passkey", "guardian-ed25519", "guardian-ml-dsa"] }, []⟩,
+   ⟨60, "eve-passkey", [50], .ticket "t-other", []⟩,
+   ⟨150, "alice-passkey", [100], .ticket "t-bad", []⟩,
+   ⟨660, "t-bad", [150], .claim 150 "frank" (pk "frank-passkey") ["frank-peer"] "maia-city-guardian", []⟩]
 
 /-- What a peer keeps: every statement but the bad ticket, which fails its own checks. -/
 def kept : List TreeStatement := statements.filter (·.name != 150)
@@ -1631,6 +1655,21 @@ def expected : Listed :=
     counted := [50, 60], final := [], standing := [], contested := [], members := ["aven", "eve", "maia-city"],
     admitted := ["alice-peer", "aven-peer"], relays := [] }
 
+
+-- k of n (D14, A28): Maia City owned by Alice's vault and MaiaCityGuardian's, two of two. A ticket Alice's passkey
+-- signs alone doesn't count; with the guardian's approval beside its name (A30) it does, and its claim then stands.
+def twoOfTwo : Genesis := { alicesGenesis with coopOwners := ["alice", "maia-city-guardian"], coopThreshold := 2 }
+def alone : List TreeStatement :=
+  [⟨100, "alice-passkey", [], .genesis twoOfTwo, []⟩, ⟨120, "alice-passkey", [100], .ticket "t-bob", []⟩,
+   ⟨500, "t-bob", [120], .claim 120 "bob" (pk "bob-passkey") ["bob-peer"] "maia-city-guardian", []⟩]
+def approved : List TreeStatement :=
+  [⟨100, "alice-passkey", [], .genesis twoOfTwo, []⟩,
+   ⟨120, "alice-passkey", [100], .ticket "t-bob", ["guardian-ed25519"]⟩,
+   ⟨500, "t-bob", [120], .claim 120 "bob" (pk "bob-passkey") ["bob-peer"] "maia-city-guardian", []⟩]
+#guard !(settle 100 alone).standing 500
+#guard (settle 100 approved).standing 500
+-- a threshold of zero is no genesis anyone pinned: nothing counts
+#guard !(settle 100 [⟨100, "alice-passkey", [], .genesis { twoOfTwo with coopThreshold := 0 }, []⟩]).counted 100
 end TreeExamples
 
 end Aven.ID
