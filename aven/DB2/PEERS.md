@@ -82,9 +82,10 @@ thread's recommendation. Samuel may overrule any.
 
 ## 1. Several relays
 
-- **The relay list** is part of the tree: statements `relay-add` (a member device's key and its relay's HTTPS URL)
-  and `relay-remove`, each approved by Maia City's owners (decision 12). The tree settles the list as it settles
-  everything else ([5](#5-one-rule-for-the-tree)).
+- **The relay list** is part of the tree: statements `relay-add` and `relay-remove`, naming a member's vault, never a
+  device (rule 15, A28), each approved by Maia City's owners (decision 12). The vault's relay runs on one of its
+  devices, which its newest address record names with the relay's HTTPS URL (`relayEndpoints`). The tree settles the
+  list as it settles everything else ([5](#5-one-rule-for-the-tree)).
 - **Any member's Peer can run a relay** with `--relay`, as the Aven Peer does today. The flag no longer means "this is
   the Aven Peer". A relay on the list admits exactly the door's devices (K12), built from the settled tree, plus a
   newcomer whose token is a statement the tree would take now (`newcomer`), as the Aven Peer's relay does today.
@@ -136,9 +137,9 @@ thread's recommendation. Samuel may overrule any.
 
 ## 4. Any member's Peer as a keeper
 
-- **Who offers:** the keeper list is statements `keeper-add` and `keeper-remove`, naming a member device, each signed
-  by Maia City's owners (decision 12). A device with `--keep` offers itself, and the admin's avenOS shows the offer to
-  accept. Being on the list keeps nothing by itself.
+- **Who offers:** the keeper list is statements `keeper-add` and `keeper-remove`, naming a member's vault, never a
+  device (rule 15), each approved by Maia City's owners (decision 12). A device with `--keep` offers its vault, and
+  the admin's avenOS shows the offer to accept. Being on the list keeps nothing by itself.
 - **Who keeps what:** a vault's keep caps (A22), each naming a keeper from the list and a target, which may be a query
   (A8). Samuel, 31 Oct 2026: caps decide which vault gets which Docs and Values, and each vault decides itself.
 - **The default:** every new vault's owner approves one keep cap for everything to Maia City's keeper, the Aven Peer
@@ -185,9 +186,13 @@ every peer must reach the same tree from the same statements, whatever order the
 - **The genesis** (A11) is the first statement. Samuel's passkey and MaiaCityGuardian sign it, and it names the RP ID,
   the origins, the admin coop, the agent, the Aven Peer's key and the guardian's keys. Every member pins its hash; a
   statement whose past doesn't reach the pinned genesis is not part of the tree.
-- **Kinds of statement:** genesis, sign-in, ticket (an invite), withdrawal, claim (a join), ack, and the lists:
-  relay-add, relay-remove, keeper-add, keeper-remove. Each is checked alone as it is today (signatures, assertions,
-  names), then settled together.
+- **Kinds of statement:** genesis, sign-in, ticket (an invite), withdrawal, claim (a join), ack, the lists (relay-add,
+  relay-remove, keeper-add, keeper-remove), and Maia City's changes to what the genesis named: the Aven Peer's key,
+  avenOS's origins and MaiaCityGuardian's vault (rule 15, A28). A change counts only with Maia City's owners' approval;
+  the latest settles it, and concurrent changes settle by the smallest name (`setting`, `config_by_admin`). Each is
+  checked alone as it is today (signatures, assertions, names), then settled together.
+- **The genesis names vaults, not keys, for authority:** Maia City's vault and its owners (`coopOwners`), and
+  MaiaCityGuardian's vault, which its key owns and which owns each person's vault (`guardianVault`).
 - **Sign-ins** stop being numbered by arrival (`signin-000001`). A sign-in adds a device and conflicts with nothing,
   so the set of sign-ins is the order. The members sign in thread already makes sign-ins statements; this plan only
   changes how they are stored.

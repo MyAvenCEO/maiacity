@@ -8,8 +8,8 @@ import Aven.ID.Placement
 outcome the models give: who reaches whom and through which relay (`Aven.ID.Node`), which source a catch-up takes and
 which it catches (`Aven.ID.CatchUp`), which keeper serves a file (`Aven.ID.Placement`'s `keepersOf`), whether a
 newcomer gets in at Alice Peer's relay (`Settle.newcomer`), the settled tree after each race and after a restart
-(`settle`), and the wire version's refusal (`Records.speaks`). The `#guard`s below hold each outcome to what PEERS.md says the box must see, so
-the vectors can't drift from the plan.
+(`settle`), and the wire version's refusal (`Records.speaks`). The `#guard`s below hold each outcome to what PEERS.md
+says the box must see, so the vectors can't drift from the plan.
 
 The cast: the Aven Peer (`aven-peer`) and Alice Peer (`alice-peer`) run the listed relays; Bob's Peer (`bob-peer`)
 keeps for Bob's vault; Bob's Peer-Light (`bob-light`) and Alice Peer-Light (`alice-light`) are browsers; Carol's
@@ -38,9 +38,14 @@ def keeps : List Cap :=
 /-- The file's keepers: the vaults Bob's keep caps name for it. No keep cap here reaches below. -/
 def fileKeepers : List String := keepersOf (fun _ _ => false) (fun _ _ => false) [] keeps bobsFile
 
+/-- The relay list names vaults (rule 15): Aven's and Alice's, whose relays run on the Aven Peer and Alice Peer. -/
+def relayVaults : List String := ["aven", "alice"]
+def runsRelay (v : String) : Option String :=
+  if v == "aven" then some "aven-peer" else if v == "alice" then some "alice-peer" else none
+
 /-- The relays every member can use (PEERS §1), and the file's holders: Bob's browser and its keepers. -/
 def net : Net :=
-  { members, relays := ["aven-peer", "alice-peer"], usable := fun _ _ => true
+  { members, relays := relayEndpoints relayVaults runsRelay, usable := fun _ _ => true
     holders := fun d => if d == "bobs-file" then "bob-light" :: fileKeepers else [] }
 
 /-- The tree before the stop: the genesis, Alice's second device, and the tickets for Carol and Dan. -/
@@ -74,7 +79,8 @@ def all7 : List TreeStatement := tree ++ [carol, carolAck, dan1, dan2]
 def failureVectors : List Json :=
   let pair (a b : String) := Json.mkObj [("from", a), ("to", b)]
   [step 1 "Alice Peer and Bob's Peer-Light chat through Alice Peer's relay"
-     (Json.mkObj [("members", toJson members), ("relays", toJson net.relays), ("gone", gone)])
+     (Json.mkObj [("members", toJson members), ("relayVaults", toJson relayVaults), ("relays", toJson net.relays),
+       ("gone", gone)])
      (Json.mkObj [("reaches", Json.arr #[Json.mkObj [("pair", pair "alice-peer" "bob-light"),
          ("ok", toJson (reaches net gone "alice-peer" "bob-light"))],
        Json.mkObj [("pair", pair "bob-light" "alice-peer"),
