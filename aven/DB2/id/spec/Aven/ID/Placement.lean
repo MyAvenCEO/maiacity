@@ -172,7 +172,7 @@ theorem keep_one_holder {r : Cap} {cs : List Cap} (h : chainOk x (r :: cs) = tru
   have z : r.share = 0 := by
     simp only [List.any_eq_true, beq_iff_eq] at kr
     obtain ⟨l, ml, lk⟩ := kr
-    exact (capRules_ok caps).2.2.2 l ml lk
+    exact (capRules_ok caps).2.2.2.1 l ml lk
   intro c m
   rcases List.mem_cons.mp m with e | m
   · subst e
