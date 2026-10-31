@@ -1183,8 +1183,7 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `approvesF_exact`, `approves_signed` | An owner that is a vault approves by its own quorum, recursively: a vault approves only with its threshold of distinct owners, each a key that signed exactly the digest or a vault that approves it, and with every threshold at least one, an approval rests on such a signature by a key above the vault |
 | | `approves_iff` | In a well-formed tree, looking as many levels up as the tree has vaults finds every approval: a vault's owners stand lower than it |
 | | `shown_is_signed` | What avenOS shows for a passkey tap is decoded from the exact bytes signed (A2, rule 25) |
-| `Past` | `reaches_iff`, `found_iff`, `inPast_iff` | An envelope's past among those a reader holds, decided: exactly Core's `Reaches`, the envelope itself and what is before it |
-| `Revoke` | `seen_never_counts` | A revoked holder's envelope with the revocation in its own past never counts: no laundering. Envelopes are Core's, and caps reads the vault, the cap chain and the acks of each from inside its seal |
+| `Revoke` | `seen_never_counts` | A revoked holder's envelope with the revocation in its own past never counts: no laundering. Envelopes are Core's, and caps reads the vault, the cap chain and the acks of each from inside its seal; their past is Core's `Reaches`, which `Aven.Core.Past` decides |
 | | `saw_iff` | Having seen a revocation, in Core's past: its envelope is before the envelope, or the envelope or something it reaches acknowledges it |
 | | `doc_cap_kept` | Under a Doc cap, only the revocation's own past is kept |
 | | `elsewhere_kept` | Elsewhere, once the revocation reaches the Doc, only what its kept list or another writer's ack had seen counts |
