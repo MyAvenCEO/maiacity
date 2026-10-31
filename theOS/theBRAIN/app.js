@@ -48,9 +48,10 @@ function render() {
   $('#terms').innerHTML = known.map((t) => `<span class="${fresh.has(t) ? 'new' : ''}">${esc(cap(t))}</span>`).join('');
   $('#prev').disabled = at === 0;
   const nxt = stories[stories.indexOf(story) + 1];
-  $('#next').textContent = at < deck.length - 1 ? `${deck[at + 1].title.replace(/\.$/, '')} →` : nxt && !nxt.kind ? `Next chapter: ${nxt.title} →` : 'Start over';
+  $('#next').textContent = at < deck.length - 1 ? 'Next →' : nxt && !nxt.kind ? 'Next chapter →' : 'Start over';
+  $('#next').title = at < deck.length - 1 ? deck[at + 1].title : nxt && !nxt.kind ? nxt.title : '';
   document.querySelectorAll('#track button').forEach((b, i) => { b.className = i === at ? 'now' : i < at ? 'past' : ''; });
-  $('#fill').style.width = `${(at / (deck.length - 1)) * 100}%`;
+  $('#fill').style.width = `calc(100% / var(--n) * ${at})`;
   const h = `#${story.id}-${at + 1}`;
   if (location.hash !== h) history.replaceState(null, '', h);
   void card.offsetWidth;
@@ -73,8 +74,9 @@ async function open(st, i) {
   if (story !== st) {
     story = st;
     deck = (await (await fetch(st.file)).json()).slides;
+    $('#track').style.setProperty('--n', deck.length);
     $('#track').innerHTML = '<span class="fill" id="fill"></span>' +
-      deck.map((s, n) => `<button type="button" aria-label="${n + 1}: ${esc(s.title)}" data-go="${n}"></button>`).join('');
+      deck.map((s, n) => `<button type="button" aria-label="${n + 1}: ${esc(s.title)}" title="${esc(s.title)}" data-go="${n}"><i></i><span>${termsOf(s).map((t) => esc(cap(t))).join(' · ')}</span></button>`).join('');
   }
   at = Math.max(0, Math.min(i, deck.length - 1));
   render();
