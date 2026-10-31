@@ -291,7 +291,8 @@ fn running<T>(f: impl FnOnce(&Running) -> Result<T, JsError>) -> Result<T, JsErr
 /// the Peer-Light binds again with it, and sends it on the new link.
 #[wasm_bindgen]
 pub fn send(frame: String) -> Result<(), JsError> {
-    let frame: Frame = serde_json::from_str(&frame).map_err(js)?;
+    let text = frame;
+    let frame = statement(&text).ok_or_else(|| JsError::new("a page sends only a statement"))?;
     let newcomer = matches!(
         frame,
         Frame::Claim { .. } | Frame::SignIn { .. } | Frame::Join { .. }
@@ -302,7 +303,6 @@ pub fn send(frame: String) -> Result<(), JsError> {
     if newcomer && ADMITTED.get() != Some(true) {
         PENDING.set(true);
         let token = aven_peer::token(&frame);
-        let text = serde_json::to_string(&frame).map_err(js)?;
         wasm_bindgen_futures::spawn_local(async move {
             // kept first: a reload, or a network that comes back later, sends it still
             if let (Err(e), Some(config)) = (
@@ -333,6 +333,23 @@ pub fn send(frame: String) -> Result<(), JsError> {
         return Ok(());
     }
     running(|r| r.outbox.unbounded_send(frame).map_err(js))
+}
+
+/// The page's statement, `{"frame": "claim" | "sign_in" | "invite" | "withdraw" | "join", "statement": "…"}`, read from
+/// exactly those keys: as the page sends it, and as a newcomer's is kept in the store until the network takes it, so a
+/// statement kept by an earlier release reads the same.
+fn statement(text: &str) -> Option<Frame> {
+    let v: serde_json::Value = serde_json::from_str(text).ok()?;
+    let o = v.as_object().filter(|o| o.len() == 2)?;
+    let statement = o.get("statement")?.as_str()?.to_string();
+    Some(match o.get("frame")?.as_str()? {
+        "claim" => Frame::Claim { statement },
+        "sign_in" => Frame::SignIn { statement },
+        "invite" => Frame::Invite { statement },
+        "withdraw" => Frame::Withdraw { statement },
+        "join" => Frame::Join { statement },
+        _ => return None,
+    })
 }
 
 /// A newcomer's frame by the name the page knows it.

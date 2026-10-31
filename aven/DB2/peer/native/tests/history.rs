@@ -123,7 +123,7 @@ async fn catch_up(to: &Chats, from: &Chats) {
                 panic!()
             };
             for line in lines {
-                to.take(line.as_bytes()).await;
+                to.take(&line).await;
             }
         }
     }
@@ -175,7 +175,7 @@ async fn history_is_kept_and_caught_up() {
             panic!()
         };
         for line in lines {
-            assert!(matches!(hub.take(line.as_bytes()).await, Answer::Moved(_)));
+            assert!(matches!(hub.take(&line).await, Answer::Moved(_)));
         }
     }
     let (_, told) = open("aven", &aven, &gate, &hub_store).await;

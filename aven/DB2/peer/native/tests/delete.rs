@@ -98,7 +98,7 @@ async fn catch_up(to: &Chats, from: &Chats) {
                 panic!()
             };
             for line in lines {
-                to.take(line.as_bytes()).await;
+                to.take(&line).await;
             }
         }
     }
@@ -191,7 +191,7 @@ async fn a_delete_takes_the_text_out_of_every_store_and_keeps_the_chain() {
     let Frame::Lines { lines: answered } = &hub.answer(&[], false).await[0] else {
         panic!()
     };
-    let first = aven_db_core::chain::Line::parse(answered[0].as_bytes()).unwrap();
+    let first = aven_db_core::chain::Line::parse(&answered[0]).unwrap();
     assert!(matches!(first.body, Body::Retract(_)), "{answered:?}");
 
     // from her second device Alice deletes another of her lines; Bob's peer, holding it, drops it too

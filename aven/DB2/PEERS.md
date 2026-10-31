@@ -347,14 +347,20 @@ Installing, running and upgrading a node belong to avenPEER (the architect, 30 O
 
 How it is built (thread E, 31 Oct 2026):
 
-- **The wire version** is `Aven.DB.Wire.wireVersion`, 1, and `aven_db_core::wire::VERSION`. The hello carries it as
-  `wire`; a hello without one is version 0, the wire before it had versions. `meet` answers any other with
-  `{"frame":"update","wire":1}` and closes; `follows` says which side is behind, and only that one updates
+- **The wire version** is `Aven.DB.Wire.wireVersion`, 2, and `aven_db_core::wire::VERSION`. Version 1 carried it
+  first, with frames as JSON lines; version 2 moved the frames to Core's CBOR (A29, `Aven.DB.WireCbor`). `meet`
+  answers any other version with `update` and closes; `follows` says which side is behind, and only that one updates
   (`meet_speaks`, `meet_refuses`, `follows_newer`, `follows_one`; `upgrades.json`). The topic's name carries it too
-  (`topicName`: `avenDB chat 1\nwire 1\nnetwork <id>`). The ALPN stays `aven/db/1`, frozen as a name: the hello's
-  number is the only wire version, and a new one never bumps the ALPN. Moving frames from JSON lines to Core's CBOR
-  (rule 1) is such a later bump, made cheap by this. Both sides say `update` on their timeline, with `mine`,
-  `theirs` and `follows`; a link refused that way dials again after a minute, or when woken.
+  (`topicName`: `avenDB chat 1\nwire 2\nnetwork <id>`). The ALPN stays `aven/db/1`, frozen as a name: the hello's
+  number is the only wire version, and a new one never bumps the ALPN. Both sides say `update` on their timeline,
+  with `mine`, `theirs` and `follows`; a link refused that way dials again after a minute, or when woken.
+- **The greeting is frozen** (A29, rule 1's one named exception): the hello, or `update` in its place, is a JSON line
+  `{"frame":"hello","peer":…,"wire":…}`, read from exactly those keys, in every version, so a peer of any version
+  reads another's and can refuse it. A peer sends nothing after its hello until the other's has come, and reads the
+  greeting alone first, so a peer of another version is answered before anything else it sent is read. Every frame
+  after it is a Value in the one codec behind a 4-byte length, read from exactly its keys, none defaulted (A42):
+  `frameOf_value` and `frameValue_canon` prove one form and one encoding per frame, a line's blob is bytes
+  (`frames.json`, `wire.json`).
 - **A tab behind** shows "Updating…" and nothing else, keeps its draft, and reloads; a host that still serves the older
   release refuses the reloaded tab again, and it waits a minute before the next reload, so it never loops
   (`os/web/update.svelte.js`). A tab ahead of the peer that refused it waits for that peer.
@@ -368,8 +374,9 @@ How it is built (thread E, 31 Oct 2026):
   timeline until the Peer starts again, upgraded by its owner. It never upgrades itself.
 - **The box rehearses it** with `--wire-version` (`AVEN_PEER_WIRE_VERSION`), which makes a Peer say another version,
   and only for that: `sandbox/upgrade.mjs` in `bun run up --check`.
-- **The last manual reload:** the first release with the wire version refuses today's unversioned tabs, which can't
-  read `update`. They drop and redial until a person reloads them once; every release after that is followed by itself.
+- **The last manual reload:** the first release with the wire version (1) refused the unversioned tabs before it, which
+  can't read `update`: they needed one reload by hand. Every release after it, version 2 included, is followed by
+  itself.
 
 ## 8. What stays special
 

@@ -238,6 +238,7 @@ dependencies = [
 name = "aven-db-core"
 version = "0.0.0"
 dependencies = [
+ "aven-core",
  "blake3",
  "serde",
  "serde_json",
@@ -284,6 +285,7 @@ dependencies = [
 name = "aven-peer"
 version = "0.0.0"
 dependencies = [
+ "aven-core",
  "aven-db-core",
  "aven-db-store",
  "aven-id",
@@ -304,6 +306,7 @@ dependencies = [
 name = "aven-peer-light"
 version = "0.0.0"
 dependencies = [
+ "aven-core",
  "aven-db-core",
  "aven-db-store",
  "aven-id",
