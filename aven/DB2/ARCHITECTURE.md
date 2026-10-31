@@ -842,7 +842,17 @@ the spec that owns it.
   fast (quota, rate limits). A keeper keeps a Doc only where both hold: the owner's keep cap names it, and the
   keeper's offer covers that owner (keep caps ∩ offers, as wants ∩ caps). The admin's keeper list goes: the offers
   Maia City's members hold are the list. The relay list stays Maia City's: it is about who sees members' connections,
-  not about data. *Decided: yes.*
+  not about data. *Decided: yes.* What follows from it (the architect, 31 Oct 2026, for the clean-slate cutover):
+  - **The default keep cap is the owner's own act at join.** The claim carries it: everything to Maia City's keeper,
+    the Aven Peer acting for Aven (`default_kept`; the tree's claim statement, in caps' keep-cap form). A member
+    migrated from production never approved one, so the migration doesn't invent it: they approve it at their next
+    sign-in, where avenOS shows what it covers and to whom.
+  - **A keeper learns a Doc's owner from the keep cap's issuer,** never from the Doc, which it can't read. It reads
+    no other caps, and serves and takes only on a fetch proof (`Aven.ID.Keep`).
+  - **What a keeper drops is the uploader's own word, about its own uploads.** A segment upload names the loose items
+    it covers by their sealed hashes; the keeper takes only that device off those items' uploaders, and drops an item
+    once no uploader is left. A lie costs only the liar, no reader can make a keeper drop another device's envelopes,
+    and a writer that never comes back loses nothing (scenario 16). Lean: `Aven.DB.Keeper`.
 
 - **A45. One concept, one owner** (Samuel, 31 Oct 2026). Every concept is defined once, in the spec that owns it,
   with its vectors beside it; the others reuse it and add only what is theirs, as parameters. Core defines the
