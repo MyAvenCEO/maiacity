@@ -5,10 +5,10 @@
 
 mod common;
 
-use aven_core::{DocId, Envelope, blake3};
+use aven_core::{DocId, Envelope, Value, blake3};
 use aven_db_docs::limits::Limits;
-use aven_db_docs::seal::{Kind, open as unseal, outside, padme, seal};
-use aven_db_docs::{BadSegment, Closer, Imported, Segment};
+use aven_db_docs::seal::{Seals, open as unseal, outside, seal};
+use aven_db_docs::{BadSegment, Closer, Doc, Genesis, Imported, Segment};
 use aven_id::TestEntropy;
 use common::*;
 use proptest::prelude::*;
@@ -37,7 +37,7 @@ fn a_segment_closes_at_rotation_and_imports() {
         "the rotation closed the first epoch's segment"
     );
     let first = &closed[0];
-    assert_eq!((first.from, first.to, first.epoch), (1, 4, e1.name));
+    assert_eq!((first.from, first.to, first.epoch), (1, 4, Some(e1.name)));
     let second_closed = closer.close().expect("the quiet closes the rest");
     assert_eq!(
         second_closed.covers.len(),
@@ -45,7 +45,10 @@ fn a_segment_closes_at_rotation_and_imports() {
         "covers: the sealed hashes of what it replaces"
     );
     let second = second_closed.segment;
-    assert_eq!((second.from, second.to, second.epoch), (4, 6, e2.name));
+    assert_eq!(
+        (second.from, second.to, second.epoch),
+        (4, 6, Some(e2.name))
+    );
     assert_eq!(second.prev, Some(first.name()));
     assert!(closer.close().is_none());
 
@@ -57,8 +60,8 @@ fn a_segment_closes_at_rotation_and_imports() {
     assert_eq!((o.doc, o.epoch), (g.id(), e1.name));
     assert_eq!(
         o.len,
-        padme(o.len - 16) + 16,
-        "the ciphertext is Padmé's length plus the tag"
+        aven_id::pad_sealed(o.len - 16) + 16,
+        "the ciphertext is the one padding's length plus the tag (A176)"
     );
     // under another epoch's key it doesn't open
     assert_eq!(
@@ -174,23 +177,20 @@ fn a_loose_envelope_travels_sealed() {
     let mut doc = open(&g);
     let e1 = epoch("epoch 1");
     let x = commit(&mut doc, &a, &[todo_put("t1", "x")]);
-    let sealed = seal(Kind::Envelope, &e1, &g.id(), &x, &mut TestEntropy::new("n"));
+    let sealed = seal(
+        Seals::Envelope,
+        &e1,
+        &g.id(),
+        &x,
+        &mut TestEntropy::new("n"),
+    );
     // the segment subkey doesn't open it
-    assert!(unseal(Kind::Segment, &e1, &sealed, 1 << 21).is_none());
+    assert!(unseal(Seals::Segment, &e1, &sealed, 1 << 21).is_none());
     let mut reader = open(&g);
     assert_eq!(
         reader.import_sealed(&sealed, &e1, &Allow),
         Ok(Imported::Counts)
     );
-}
-
-#[test]
-fn padme_bounds() {
-    for l in (0..5000).chain([1 << 20, (1 << 20) + 1, 123_456_789]) {
-        let p = padme(l);
-        assert!(p >= l && p <= l + l / 8 + 1, "{l} → {p}");
-        assert_eq!(padme(p), p, "a padded length pads to itself");
-    }
 }
 
 proptest! {
@@ -200,22 +200,22 @@ proptest! {
     fn seal_open_round_trips(pt in proptest::collection::vec(any::<u8>(), 0..4096), name in "[a-z]{1,8}", nonce in "[a-z]{1,8}") {
         let e = epoch(&name);
         let doc = DocId(blake3(name.as_bytes()));
-        let s = seal(Kind::Segment, &e, &doc, &pt, &mut TestEntropy::new(&nonce));
-        let (d, back) = unseal(Kind::Segment, &e, &s, 1 << 20).expect("opens");
+        let s = seal(Seals::Segment, &e, &doc, &pt, &mut TestEntropy::new(&nonce));
+        let (d, back) = unseal(Seals::Segment, &e, &s, 1 << 20).expect("opens");
         prop_assert_eq!(d, doc);
+        prop_assert_eq!(outside(&s, 1 << 20).unwrap().len, aven_id::pad_sealed(pt.len() + 1) + 16);
         prop_assert_eq!(back, pt);
-        prop_assert_eq!(outside(&s, 1 << 20).unwrap().len, padme(pt_len(&s)) + 16);
     }
 
     #[test]
     fn any_flipped_bit_or_other_key_refuses(pt in proptest::collection::vec(any::<u8>(), 1..512), at in any::<usize>(), bit in 0u8..8) {
         let e = epoch("k");
         let doc = DocId(blake3(b"d"));
-        let mut s = seal(Kind::Segment, &e, &doc, &pt, &mut TestEntropy::new("n"));
-        prop_assert!(unseal(Kind::Segment, &epoch("another"), &s, 1 << 20).is_none());
+        let mut s = seal(Seals::Segment, &e, &doc, &pt, &mut TestEntropy::new("n"));
+        prop_assert!(unseal(Seals::Segment, &epoch("another"), &s, 1 << 20).is_none());
         let i = at % s.len();
         s[i] ^= 1 << bit;
-        prop_assert!(unseal(Kind::Segment, &e, &s, 1 << 20).is_none());
+        prop_assert!(unseal(Seals::Segment, &e, &s, 1 << 20).is_none());
     }
 
     /// The commitment binds the key: the same ciphertext and nonce under a key whose commitment differs never open.
@@ -223,9 +223,9 @@ proptest! {
     fn the_commitment_is_checked_first(pt in proptest::collection::vec(any::<u8>(), 1..256)) {
         let (e, f) = (epoch("k"), epoch("k2"));
         let doc = DocId(blake3(b"d"));
-        let s = seal(Kind::Segment, &e, &doc, &pt, &mut TestEntropy::new("n"));
+        let s = seal(Seals::Segment, &e, &doc, &pt, &mut TestEntropy::new("n"));
         let other = aven_db_docs::EpochKey { name: e.name, key: f.key };
-        prop_assert!(unseal(Kind::Segment, &other, &s, 1 << 20).is_none());
+        prop_assert!(unseal(Seals::Segment, &other, &s, 1 << 20).is_none());
     }
 
     /// A segment closes at every rotation and at its limits: each holds one epoch, runs on from the one before, and
@@ -244,7 +244,7 @@ proptest! {
         for s in &segs {
             prop_assert!(s.envelopes.len() <= 256);
             let eps: Vec<u8> = (s.from..s.to).map(|q| epochs[q as usize - 1]).collect();
-            prop_assert!(eps.iter().all(|x| blake3(&[*x]) == s.epoch));
+            prop_assert!(eps.iter().all(|x| Some(blake3(&[*x])) == s.epoch));
             seqs.extend(s.from..s.to);
         }
         seqs.extend(c.loose().iter().map(|e| e.seq));
@@ -257,14 +257,9 @@ proptest! {
     }
 }
 
-/// The plaintext's length a sealed thing pads, read back from its ciphertext's length.
-fn pt_len(s: &[u8]) -> usize {
-    outside(s, 1 << 20).unwrap().len - 16
-}
-
 #[test]
 fn a_mixed_sealed_page_lands_in_one_batch() {
-    use aven_db_docs::{SealedItem, Unopened};
+    use aven_db_docs::{Item, Unopened};
     let a = device("alice");
     let g = genesis(&a);
     let mut writer = open(&g);
@@ -275,7 +270,7 @@ fn a_mixed_sealed_page_lands_in_one_batch() {
     let mut sealed_loose = vec![];
     for i in 0..4 {
         let b = commit(&mut writer, &a, &[todo_put(&format!("t{i}"), "x")]);
-        let s = seal(Kind::Envelope, &e1, &g.id(), &b, &mut ent);
+        let s = seal(Seals::Envelope, &e1, &g.id(), &b, &mut ent);
         assert!(
             closer
                 .add(e1.name, Envelope::decode(&b).unwrap(), blake3(&s))
@@ -290,9 +285,9 @@ fn a_mixed_sealed_page_lands_in_one_batch() {
     );
     let seg = closed.segment.seal(&a, &e1, &mut ent);
     let later = commit(&mut writer, &a, &[todo_put("t9", "after the segment")]);
-    let later = seal(Kind::Envelope, &e2, &g.id(), &later, &mut ent);
+    let later = seal(Seals::Envelope, &e2, &g.id(), &later, &mut ent);
     let unknown = seal(
-        Kind::Envelope,
+        Seals::Envelope,
         &epoch("an epoch nobody gave us"),
         &g.id(),
         b"x",
@@ -300,14 +295,10 @@ fn a_mixed_sealed_page_lands_in_one_batch() {
     );
     // the later loose envelope first: it waits in the page for the segment, and the page settles at once
     let mut reader = open(&g);
-    let page = [
-        SealedItem::Loose(&later),
-        SealedItem::Segment(&seg),
-        SealedItem::Loose(&unknown),
-        SealedItem::Loose(b"junk"),
-    ];
+    // as a keeper serves them, without kinds: each found by its commitment
+    let page = [&later[..], &seg, &unknown, b"junk"].map(Item::Sealed);
     let keys = [&e1, &e2];
-    let r = reader.import_sealed_page(
+    let r = reader.import_items(
         &page,
         |n| keys.iter().copied().find(|k| k.name == *n),
         &Allow,
@@ -323,4 +314,137 @@ fn a_mixed_sealed_page_lands_in_one_batch() {
     assert!(matches!(r[2], Err(Unopened::Epoch(_))));
     assert_eq!(r[3], Err(Unopened::Form));
     assert_eq!(reader.snapshot(), writer.snapshot());
+    // a checkpoint is no page's, and a commitment one byte off matches no kind: neither opens
+    let mut blind = open(&g);
+    let snap = seal(Seals::Checkpoint, &e1, &g.id(), b"a checkpoint", &mut ent);
+    let mut wrong = seal(Seals::Envelope, &e1, &g.id(), b"x", &mut ent);
+    let n = wrong.len();
+    wrong[n - 1] ^= 1;
+    let page = [&snap[..], &wrong].map(Item::Sealed);
+    let r = blind.import_items(
+        &page,
+        |n| keys.iter().copied().find(|k| k.name == *n),
+        &Allow,
+    );
+    assert_eq!(r, vec![Err(Unopened::Seal), Err(Unopened::Seal)]);
+    // the opening half alone, with no Doc, as the Peer-Light runs it beside the keys: the same envelopes, which import
+    // to the same state
+    let page = [&later[..], &seg, &unknown].map(Item::Sealed);
+    let plain = aven_db_docs::open_page(
+        &g,
+        &page,
+        |n| keys.iter().copied().find(|k| k.name == *n),
+        &Limits::DEFAULTS,
+    );
+    assert_eq!(plain[0].as_ref().map(Vec::len), Ok(1));
+    assert_eq!(plain[1].as_ref().map(Vec::len), Ok(4));
+    assert!(matches!(plain[2], Err(Unopened::Epoch(_))));
+    let mut split = open(&g);
+    let envs: Vec<&[u8]> = plain
+        .iter()
+        .flatten()
+        .flatten()
+        .map(Vec::as_slice)
+        .collect();
+    assert!(
+        split
+            .import_page(&envs, &Allow)
+            .iter()
+            .all(|x| *x == Ok(Imported::Counts))
+    );
+    assert_eq!(split.snapshot(), writer.snapshot());
+    let another = aven_db_docs::Genesis {
+        nonce: [9; 32],
+        ..g.clone()
+    };
+    let other = aven_db_docs::open_page(
+        &another,
+        &page[..1],
+        |n| keys.iter().copied().find(|k| k.name == *n),
+        &Limits::DEFAULTS,
+    );
+    assert_eq!(other, vec![Err(Unopened::Doc)]);
+    // a plain item, for a Doc whose items travel sealed, is refused unread (A187)
+    let unsealed = commit(&mut writer, &a, &[todo_put("t10", "plain")]);
+    assert_eq!(
+        aven_db_docs::open_page(&g, &[Item::Plain(&unsealed)], |_| None, &Limits::DEFAULTS),
+        vec![Err(Unopened::Plain)]
+    );
+    // a kind found by the commitment alone, and none under another epoch's key
+    assert_eq!(
+        aven_db_docs::seal::seals_of(&e1, &seg, 1 << 21),
+        Some(Seals::Segment)
+    );
+    assert_eq!(
+        aven_db_docs::seal::seals_of(&e2, &later, 1 << 21),
+        Some(Seals::Envelope)
+    );
+    assert_eq!(aven_db_docs::seal::seals_of(&e2, &seg, 1 << 21), None);
+}
+
+/// The keyring travels plain (A187): its envelopes and its segments go unsealed, its Records being ciphertext already,
+/// and a reader with no key at all takes them, as one page.
+#[test]
+fn the_keyring_travels_plain() {
+    use aven_db_docs::{Item, Unopened};
+    let a = device("alice");
+    let g = Genesis::new(
+        b"alice's vault",
+        aven_id::caps::builtin_type("keyring"),
+        &[],
+        [3; 32],
+    );
+    assert!(aven_db_docs::travels_plain(&g));
+    let mut writer = Doc::open(g.clone(), |_| None, Limits::DEFAULTS).expect("opens");
+    let w = writer.writer_of(&a, 0);
+    let named = |i: u64| {
+        put(
+            &format!("v{i}"),
+            version_type(),
+            vec![
+                ("at", Value::Array(vec![])),
+                ("name", Value::Text(format!("v{i}"))),
+            ],
+        )
+    };
+    let mut closer = Closer::new(g.id(), "main", w, 0, Limits::DEFAULTS);
+    for i in 0..3 {
+        let b = commit(&mut writer, &a, &[named(i)]);
+        assert!(
+            closer
+                .add(
+                    hash("the keyring's epoch"),
+                    Envelope::decode(&b).unwrap(),
+                    blake3(&b)
+                )
+                .is_none()
+        );
+    }
+    let seg = closer.close().unwrap().segment.signed(&a);
+    let loose = commit(&mut writer, &a, &[named(3)]);
+    // no key: the page opens plain, the later envelope first, and lands whole
+    let mut reader = Doc::open(g.clone(), |_| None, Limits::DEFAULTS).unwrap();
+    let r = reader.import_items(&[Item::Plain(&loose), Item::Plain(&seg)], |_| None, &Allow);
+    assert_eq!(r[0], Ok(vec![Ok(Imported::Counts)]));
+    assert_eq!(r[1].as_ref().map(Vec::len), Ok(3));
+    assert_eq!(reader.snapshot(), writer.snapshot());
+    // the plain segment is checked as a sealed one is once opened: a byte off, and it doesn't hold
+    let mut bad = seg.clone();
+    let n = bad.len();
+    bad[n - 1] ^= 1;
+    assert!(matches!(
+        aven_db_docs::open_page(&g, &[Item::Plain(&bad)], |_| None, &Limits::DEFAULTS)[..],
+        [Err(Unopened::Segment(_))]
+    ));
+    // another Doc's plain envelope is refused by its Doc
+    let other = Genesis {
+        nonce: [4; 32],
+        ..g.clone()
+    };
+    let mut od = Doc::open(other.clone(), |_| None, Limits::DEFAULTS).unwrap();
+    let theirs = commit(&mut od, &a, &[named(0)]);
+    assert_eq!(
+        aven_db_docs::open_page(&g, &[Item::Plain(&theirs)], |_| None, &Limits::DEFAULTS),
+        vec![Err(Unopened::Doc)]
+    );
 }

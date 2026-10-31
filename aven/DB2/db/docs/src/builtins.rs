@@ -1,8 +1,9 @@
 //! Built-in types' fit, by whoever defines them (`Aven.DB.Docs.Builtins`), held to `db/spec/vectors/builtins.json`.
 //!
 //! A built-in type is versioned by its label and has no schema: its shape is its definer's. Fit takes the checks as a
-//! parameter, [`BuiltinFit`]: the docs layer supplies its own four ([`DocsBuiltins`]: branch, closed, version, split),
-//! avenID supplies `cap`, `revoke` and `epoch`, and a type nobody supplies is no built-in, so its Records don't fit.
+//! parameter, [`BuiltinFit`]: the docs layer supplies its own five ([`DocsBuiltins`]: branch, closed, version,
+//! schema, split), avenID supplies `cap`, `revoke` and `epoch`, and a type nobody supplies is no built-in, so its
+//! Records don't fit.
 //! A built-in Record is written whole at its birth and must pass its check; it is never edited, and may be removed.
 
 use aven_core::{DocId, Value};
@@ -15,7 +16,7 @@ pub trait BuiltinFit {
     fn check(&self, t: &DocId, record: &Value) -> Option<bool>;
 }
 
-/// The docs layer's four built-in types (`docsBuiltinFit`).
+/// The docs layer's five built-in types (`docsBuiltinFit`).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DocsBuiltins;
 
@@ -30,6 +31,11 @@ impl<A: BuiltinFit, B: BuiltinFit> BuiltinFit for Either<A, B> {
 
 fn is_hash(v: &Value) -> bool {
     matches!(v, Value::Bytes(b) if b.len() == 32)
+}
+
+/// A schema's one form (`isSchema`): a type Doc's version, a `schema` Record, names its schema by its hash (A39, A207).
+fn is_schema(v: &Value) -> bool {
+    crate::schema::Schema::of_value(v).is_some()
 }
 
 fn is_hashes(v: &Value) -> bool {
@@ -73,6 +79,12 @@ impl BuiltinFit for DocsBuiltins {
             &[("at", is_hashes, false)]
         } else if *t == builtin_type("version") {
             &[("name", is_text, true), ("at", is_hashes, true)]
+        } else if *t == builtin_type("schema") {
+            &[
+                ("name", is_text, true),
+                ("at", is_hashes, true),
+                ("schema", is_schema, true),
+            ]
         } else if *t == builtin_type("split") {
             &[("writer", is_uint, true), ("after", is_hash, true)]
         } else {

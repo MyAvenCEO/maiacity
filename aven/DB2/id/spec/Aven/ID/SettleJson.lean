@@ -2,9 +2,7 @@ import Lean.Data.Json
 import Aven.ID.Gen
 import Aven.ID.Restore
 import Aven.ID.TreeDoc
-import Aven.ID.Records
 import Aven.ID.Node
-import Aven.ID.CatchUp
 
 /-! # The settled tree's vectors (PEERS.md §5 and §6)
 
@@ -12,8 +10,7 @@ import Aven.ID.CatchUp
 Each statement is the Core envelope of the tree Doc that carries it, as CBOR, under the name a peer stores it by, and
 the tree is settled from those envelopes (`TreeDoc.settleDoc`) as a peer settles it:
 `TreeExamples`, the races written out one by one, generated sets, and production's store migrated from every invite
-trace (`Aven.ID.Restore`). `records.json`: records and the newest of each kind about each device (`Aven.ID.Records`).
-aven-id's tests settle each input and compare (README rule 10). -/
+trace (`Aven.ID.Restore`). aven-id's tests settle each input and compare (README rule 10). -/
 
 open Lean
 
@@ -279,37 +276,6 @@ def treeOpVectors : List Json :=
 
 #guard treeOpVectors.length == 2 * TreeOp.all.length
 
-/-! ## Records -/
-
-open Records
-
-def RecordKind.name : RecordKind → String
-  | .address => "address" | .presence => "presence" | .logTip => "logTip" | .treeTip => "treeTip"
-  | .release => "release"
-
-def PeerRecord.json (r : PeerRecord) : Json :=
-  Json.mkObj [("kind", RecordKind.name r.kind), ("label", r.kind.label), ("about", r.about), ("signer", r.signer),
-    ("generation", toJson r.generation), ("counter", toJson r.counter), ("body", toJson r.body)]
-
-def Heard.json (h : CatchUp.Heard) : Json := Json.mkObj [("beat", PeerRecord.json h.beat), ("heardAt", toJson h.at_)]
-
-open RecordExamples in
-def recordVectors : List Json :=
-  let asks : List (RecordKind × String) :=
-    [(.address, "alice-peer"), (.address, "bob-peer"), (.presence, "mallory-peer"), (.presence, "bob-peer"),
-     (.logTip, "bob-peer"),
-     (.release, "aven"), (.treeTip, "bob-peer")]
-  let one (label : String) (rs : List PeerRecord) :=
-    Json.mkObj [("name", s!"records, {label}"),
-      ("input", Json.mkObj [("admitted", toJson ["alice-peer", "bob-peer"]),
-        ("releaseSigners", toJson ["release-signer"]),
-        ("records", Json.arr (rs.map PeerRecord.json).toArray),
-        ("asks", Json.arr (asks.map fun (k, a) => Json.mkObj [("kind", RecordKind.name k), ("about", a)]).toArray)]),
-      ("expected", Json.arr (asks.map fun (k, a) =>
-        (newest admitted releaseSigners k a rs).elim Json.null PeerRecord.json).toArray)]
-  [one "as written" records, one "reversed" records.reverse] ++
-    (List.range shuffles).map fun i => one s!"shuffle {i + 1}" ((Rng.seed (i + 900)).shuffle records).1
-
 /-! ## Node properties (`Aven.ID.Node`) -/
 
 open Node in
@@ -333,31 +299,6 @@ def nodeVectors : List Json :=
           ("home", Json.mkObj (members.map fun d => (d, (home n gone d).elim Json.null toJson))),
           ("reaches", Json.mkObj (members.map fun a => (a, toJson (members.filter (reaches n gone a))))),
           ("fetchesChat", toJson (members.filter fun a => a != gone && fetchable n gone a "chat"))])]
-
-/-! ## Catch-up and presence (`Aven.ID.CatchUp`) -/
-
-open CatchUp in
-def catchUpVectors : List Json :=
-  let tip : Tip := ⟨3, 33⟩
-  let sources : List (List (String × Copy)) :=
-    [[("stale-peer", [11, 22]), ("forger", [11, 22, 99]), ("alice-peer", [11, 22, 33, 44])],
-     [("alice-peer", [11, 22, 33])], [("stale-peer", [11, 22])], [("forger", [11, 22, 99]), ("bob-peer", [11, 22, 33])],
-     []]
-  let copyJson (c : String × Copy) := Json.mkObj [("source", c.1), ("copy", toJson c.2)]
-  (sources.zipIdx.map fun (ss, i) =>
-    Json.mkObj [("name", s!"catch-up: sources {i + 1}"),
-      ("input", Json.mkObj [("tip", Json.mkObj [("number", toJson tip.number), ("hash", toJson tip.hash)]),
-        ("sources", Json.arr (ss.map copyJson).toArray)]),
-      ("expected", Json.mkObj [("chosen", (choose tip ss).elim Json.null fun c => toJson c.1),
-        ("caught", toJson ((ss.filter fun c => caught tip c.2).map (·.1)))])]) ++
-  (([8, 10, 15, 17, 18, 20] : List Nat).map fun now =>
-    -- what a peer has heard by step `now` of its own clock
-    let heard := CatchUpExamples.beats.filter (·.at_ ≤ now)
-    Json.mkObj [("name", s!"presence at step {now}, window 3"),
-      ("input", Json.mkObj [("admitted", toJson ["bob-light", "alice-peer"]), ("window", toJson (3 : Nat)),
-        ("now", toJson now), ("heard", Json.arr (heard.map Heard.json).toArray)]),
-      ("expected", Json.mkObj [("present",
-        toJson (["alice-peer", "aven-peer", "bob-light"].filter (present CatchUpExamples.admitted 3 now heard)))])])
 
 end SettleJson
 end Aven.ID

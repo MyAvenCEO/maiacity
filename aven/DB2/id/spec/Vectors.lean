@@ -12,7 +12,6 @@ import Aven.ID.MemberExamples
 import Aven.ID.KeepCbor
 import Aven.ID.ReachExamples
 import Aven.ID.SettleJson
-import Aven.ID.FailJson
 import Aven.ID.Expiry
 import Aven.ID.Collections
 import Aven.ID.KeyFormatsJson
@@ -87,12 +86,9 @@ import Aven.ID.SealJson
   inside, with what each request gives back (`Aven.ID.Safe`, R13).
 - `settled.json`: sets of tree statements, each in several orders, and the tree `settle` gives (`Aven.ID.Network`,
   PEERS.md §5): `TreeExamples`, the races one by one, generated sets, and production's store migrated from every
-  invite trace (`Aven.ID.Restore`). `tree-ops.json`: `tree/1`'s op ids and a call of each (A32). `records.json`:
-  signed records and the newest of each (`Aven.ID.Records`, §6).
+  invite trace (`Aven.ID.Restore`). `tree-ops.json`: `tree/1`'s op ids and a call of each (A32).
   `node.json`: networks losing each peer in turn, with every home relay, who reaches whom and who can fetch the chat
-  (`Aven.ID.Node`, R7). `catchup.json`: sources offered against a signed log tip, the one chosen and the ones caught,
-  and presence from signed beats (`Aven.ID.CatchUp`). `failures.json`: the nine checks the box runs with the Aven Peer
-  stopped, each with what the models say it must see (`Aven.ID.FailJson`, PEERS.md).
+  (`Aven.ID.Node`, R7). History, catch-up and the box's failures are avenPEERS' (peer/spec, A193).
 
 - `access.json`: Values that fit or don't fit avenID's built-in Records in a Doc, `cap`, `revoke` and `epoch`
   (`Aven.ID.AccessRecords`), with the name of each that fits. aven-id reads each and compares.
@@ -524,11 +520,8 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "keep-bytes.json") (render keepBytesVectors)
   IO.FS.writeFile (dir / "safe.json") (render Safe.safeVectors)
   IO.FS.writeFile (dir / "settled.json") (render SettleJson.settledVectors)
-  IO.FS.writeFile (dir / "records.json") (render SettleJson.recordVectors)
   IO.FS.writeFile (dir / "tree-ops.json") (render SettleJson.treeOpVectors)
   IO.FS.writeFile (dir / "node.json") (render SettleJson.nodeVectors)
-  IO.FS.writeFile (dir / "catchup.json") (render SettleJson.catchUpVectors)
-  IO.FS.writeFile (dir / "failures.json") (render FailJson.failureVectors)
   IO.FS.writeFile (dir / "derivations.json") (render KeyFormats.derivationVectors)
   IO.FS.writeFile (dir / "stanzas.json") (render KeyFormats.stanzaVectors)
   IO.FS.writeFile (dir / "vaults.json") (render VaultName.vaultVectors)
