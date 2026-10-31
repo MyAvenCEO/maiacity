@@ -7,7 +7,7 @@ mod common;
 use aven_core::{Call, CoreOp, DocId, Facts, Hash, OpId, Value as V};
 use aven_id::Tree;
 use aven_id::caps::{
-    Authority, Branches, Cap, DeviceCap, Line, Reader, Reading, World, grant_allows, vault_id,
+    Branches, Cap, DeviceCap, Line, Path, Reader, Reading, World, grant_allows, vault_id,
 };
 use common::caps::{Context, Names};
 use common::vectors;
@@ -243,8 +243,8 @@ fn check(case: &Case, d: &Draw) -> Result<(), TestCaseError> {
         let facts: Option<Facts> = (r.ctx.facts)(&doc);
         let verdict = r.authorized(&reading);
         match verdict {
-            Ok(Authority::Own) => &OWN,
-            Ok(Authority::Chain) => &CHAIN,
+            Ok(Path::Own) => &OWN,
+            Ok(Path::Chain) => &CHAIN,
             Err(_) => &REFUSED,
         }
         .fetch_add(1, Ordering::Relaxed);
@@ -267,11 +267,11 @@ fn check(case: &Case, d: &Draw) -> Result<(), TestCaseError> {
             let v = vault_of(reading.signer).expect("a device signs");
             match path {
                 // `authorized_vault`, own side: the Doc's vault or one it governs
-                Authority::Own => {
+                Path::Own => {
                     prop_assert!(!host, "host_chain_only");
                     prop_assert!(f.vault == vault_id(&v) || gov(t, &vault_id(&v), &f.vault));
                 }
-                Authority::Chain => {
+                Path::Chain => {
                     prop_assert!(by_chain.is_ok());
                     let root = &chain[0];
                     let last = chain.last().unwrap();
@@ -453,7 +453,7 @@ fn both_paths_are_reached() {
             calls: vec![call.clone()],
             actor: None,
         };
-        assert_eq!(r.authorized(&own), Ok(Authority::Own), "{}", case.name);
+        assert_eq!(r.authorized(&own), Ok(Path::Own), "{}", case.name);
         {
             let device = device.expect("the holder has a device");
             let held = Reading {
@@ -462,7 +462,7 @@ fn both_paths_are_reached() {
                 ..own
             };
             assert!(line.admits(&call));
-            assert_eq!(r.authorized(&held), Ok(Authority::Chain), "{}", case.name);
+            assert_eq!(r.authorized(&held), Ok(Path::Chain), "{}", case.name);
         }
     });
 }
@@ -480,5 +480,16 @@ fn verdicts_are_the_models() {
             "{}",
             v["name"]
         );
+    }
+}
+
+/// Whether a signer's chain reaches a Doc at all, against Lean's vectors (`reach.json`, `Reader.reachesB`).
+#[test]
+fn reaches_as_the_model_says() {
+    let all = vectors("reach.json");
+    assert!(all.len() >= 11, "{} reach vectors", all.len());
+    for v in &all {
+        let got = common::caps::judge_reach(&v["input"]);
+        assert_eq!(got, v["expected"], "{}", v["name"]);
     }
 }

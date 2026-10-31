@@ -1,0 +1,8 @@
+{"expected":{"topic":"c1a8d24879c9625f532efa23e685e9569a79d5171a462f809f5389db7881d75e"},"input":{"key":"0000000000000000000000000000000000000000000000000000000000000000","wire":3},"name":"epoch key 1, wire 3"}
+{"expected":{"topic":"2cc4dd46456eced2f096b115005ac8dcd0f6077e049dd66d9ad5a554486e49aa"},"input":{"key":"0000000000000000000000000000000000000000000000000000000000000000","wire":4},"name":"epoch key 1, wire 4"}
+{"expected":{"topic":"fab812ffda5caeb069c52151b1ff460fa79a7a896971d929af9a5aaa7d606269"},"input":{"key":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","wire":3},"name":"epoch key 2, wire 3"}
+{"expected":{"topic":"042707540eee57e70033ab1fba2c1493fe4384892d429a92c28c13717bc39568"},"input":{"key":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","wire":4},"name":"epoch key 2, wire 4"}
+{"expected":{"topic":"87d989df43f4b30f7264bdee2b05ba19b23e21f269c296b4f005650d4effbcc0"},"input":{"key":"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f","wire":3},"name":"epoch key 3, wire 3"}
+{"expected":{"topic":"d1485735153b16ef39e796166bb83e1490bb5bdb4a8322bab79c5fa29d4f3509"},"input":{"key":"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f","wire":4},"name":"epoch key 3, wire 4"}
+{"expected":{"topic":"d881aaeab3b236effa0f7e12812be412dd5853793a7b19864607198eb0fbb577"},"input":{"key":"b177ec1bf26dfb3b7010d473e6d44713b29b765b99c6e60ecbfae742de496543","wire":3},"name":"epoch key 4, wire 3"}
+{"expected":{"topic":"2c7bd0c2aa1c13051e5c533796aba13da2e44b150d62161ace6f59cce7b949cf"},"input":{"key":"b177ec1bf26dfb3b7010d473e6d44713b29b765b99c6e60ecbfae742de496543","wire":4},"name":"epoch key 4, wire 4"}

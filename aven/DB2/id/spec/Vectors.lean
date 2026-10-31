@@ -9,12 +9,15 @@ import Aven.ID.CapsJson
 import Aven.ID.AuthorizedExamples
 import Aven.ID.IssuerExamples
 import Aven.ID.MemberExamples
+import Aven.ID.KeepCbor
+import Aven.ID.ReachExamples
 import Aven.ID.SettleJson
 import Aven.ID.FailJson
 import Aven.ID.Expiry
 import Aven.ID.Collections
 import Aven.ID.KeyFormatsJson
 import Aven.ID.VaultNameJson
+import Aven.ID.KeyringJson
 import Aven.ID.AccessJson
 import Aven.ID.SealJson
 
@@ -30,6 +33,8 @@ import Aven.ID.SealJson
   before verifying, and the answers. aven-id's tests sign and verify with real keys and compare.
 - `keys.json`: each cast key's seed and public half (`Aven.ID.Keys`). aven-id's tests derive them with Ed25519 and
   compare, and hold `sandbox/cast.json`'s public halves to them.
+- `signatures.json`: Ed25519 signatures by the cast's test keys, as RFC 8032 makes them (`Keys.sign`), for a backend
+  to make again byte for byte; and signatures that verify or don't, with the answer (`Keys.verify`).
 - `avenos.json`: what avenOS shows on the cast (`Aven.ID.OS`) and the names it shows vaults by, for
   `sandbox/check.mjs`.
 - `passkeys.json`: the test passkeys' P-256 keys (`Aven.ID.P256`), challenges of statements' texts, and assertions
@@ -50,6 +55,11 @@ import Aven.ID.SealJson
   root over a coop's Docs needs the coop's own owners, a vault without devices issues by its owners' approval alone,
   and Maia City's confirm cap (A38). The context's tree is written out, and its `thresholds` give each vault's quorum
   that isn't the one `threshold` gives every other.
+- `authority.json`: Values an envelope's body carries under `authority` (`Aven.ID.Authority`, A45, A188), each in its
+  readable form and as CBOR, and what caps reads of it: the caps and acks by name and an actor host's actor, or
+  nothing.
+- `reach.json`: whether a signer's chain reaches a Doc at all, the docs layer's step 4 (`Reader.reachesB`,
+  `Aven.ID.ReachExamples`): the signing key, the Doc and the caps the reader holds, on the cast's context.
 - `member.json`: the member caps a confirm issues (A38), each with its CBOR bytes and its name, under the tree Doc, the
   chat Doc and the chat message's type they name; and envelopes on Maia City's tree Doc, in `authorized.json`'s form
   with the tree Doc and the claims the tree says each founded, with whether caps authorizes each and the vaults it
@@ -68,9 +78,11 @@ import Aven.ID.SealJson
 - `network.json`: tickets claimed in two orders (A12), removals that clash and MaiaCityGuardian's exit
   (`Aven.ID.Network`, `Aven.ID.Recover`).
 - `keep.json`: a keeper's fetch-key links in the order they came, with the keys it takes, its current fetch key and
-  its flags; the proofs it serves; what each vault pays; what it keeps under the keep caps it holds, after withdrawals
-  and deletes (`Aven.ID.Keep`, A22); how much each vault may keep there, by the keeper's own offers, and the uploads it
-  admits within that (A44). Hand-written and generated.
+  its flags; the proofs it serves; what it keeps under the keep caps it holds, after withdrawals and deletes
+  (`Aven.ID.Keep`, A22); and how much each vault may keep there, by the keeper's own offers (A44). Hand-written and
+  generated.
+- `keep-bytes.json`: a keeper's bytes (`Aven.ID.KeepCbor`, A30): fetch keys from Doc epoch keys, and a listing, two
+  fetch links, both orders, a choice and a fetch proof, each body with its CBOR, the bytes signed and its name.
 - `safe.json`: requests to a vault's safe from its agent and from Mallory, on a Mac and on a host that keeps Doc keys
   inside, with what each request gives back (`Aven.ID.Safe`, R13).
 - `settled.json`: sets of tree statements, each in several orders, and the tree `settle` gives (`Aven.ID.Network`,
@@ -93,6 +105,8 @@ import Aven.ID.SealJson
   commitment keys, the AAD, the commitment, the padded plaintext and the outside's bytes; Padmé's lengths; paddings a
   reader refuses. aven-db-docs checks each, and seals and opens through XChaCha20-Poly1305 itself.
 
+- `keyring.json`: a vault's keyring as Records (`Aven.ID.Keyring`): a genesis, a reseal and a second epoch, their bytes
+  and names, and over them each epoch's stanzas and the current one.
 - `vaults.json`: the cast's vaults' geneses and names (`Aven.ID.VaultName`), and geneses read back and refused.
 
 `bun run up --check` runs it again and fails when the files differ from what is committed. -/
@@ -156,6 +170,18 @@ def keys : List Json :=
     let seed := Keys.seed id
     vector s!"{id}'s test key" (Json.mkObj [("id", id)])
       (Json.mkObj [("seed", Keys.hex seed), ("public", Keys.hex (Keys.publicKey seed))])
+
+/-- The cast's keys' signatures of three messages, and what verifying says of a signature and its alterations. -/
+def signatures : List Json :=
+  let msgs : List (String × List UInt8) :=
+    [("nothing", []), ("a word", Keys.capWord), ("32 bytes", (List.range 32).map (·.toUInt8))]
+  (cast.keys.flatMap fun id => msgs.map fun (m, msg) =>
+    let seed := Keys.seed id
+    vector s!"{id} signs {m}" (Json.mkObj [("id", id), ("msg", Keys.hex msg)])
+      (Json.mkObj [("key", Keys.hex (Keys.publicKey seed)), ("sig", Keys.hex (Keys.sign seed msg))])) ++
+  Keys.verifyCases.map fun (name, k, m, s, _) =>
+    vector s!"verifying: {name}" (Json.mkObj [("key", Keys.hex k), ("msg", Keys.hex m), ("sig", Keys.hex s)])
+      (Json.mkObj [("valid", toJson (Keys.verify k m s))])
 
 def passkeys : List Json :=
   (["a", "b", "c"].map fun p =>
@@ -226,6 +252,24 @@ def authorizedVectors : List Json :=
         ("deviceCaps", Json.arr (castDeviceCaps.map fun (k, dc) => deviceCap k dc).toArray),
         ("members", toJson castMembers), ("actor", toJson (c.actor.map (·.text)))])
       (readerVerdictJson c.answer)
+
+/-- Values under an envelope's `authority` (`Aven.ID.Authority`, A45), each in its readable form and as CBOR, with
+what caps reads of it. -/
+def authorityVectors : List Json :=
+  AuthorityExamples.cases.map fun (name, v, _) =>
+    vector name (Json.mkObj [("authority", v.json), ("cbor", Aven.Core.hex (Aven.Core.encode v))])
+      (Authority.readJson (Authority.ofValue? v))
+
+open ReachExamples AuthorizedExamples in
+/-- Whether a signer's chain reaches a Doc at all (docs' step 4), on the cast. -/
+def reachVectors : List Json :=
+  ReachExamples.cases.map fun c =>
+    vector c.name
+      (Json.mkObj [("context", castCtxJson),
+        ("keys", Json.arr (castKeys.map fun (k, v) => Json.mkObj [("key", Aven.Core.hex k), ("vault", v)]).toArray),
+        ("members", toJson castMembers), ("held", Json.arr (c.held.map Cap.json).toArray), ("doc", c.doc.text),
+        ("signer", Aven.Core.hex (key c.signer))])
+      (Json.mkObj [("reaches", toJson c.answer)])
 
 open MemberExamples AuthorizedExamples in
 /-- The member caps a confirm issues, and what a reader of the cast counts as membership from each envelope. -/
@@ -390,6 +434,46 @@ def networkVectors : List Json :=
      (Json.mkObj [("devices", toJson keyring.devices), ("sealers", toJson keyring.sealers), ("guardian", "guardian")])
      (Json.mkObj [("rotate", toJson (keyring.exit "guardian").rotate)])]
 
+open KeepCbor in
+/-- A keeper's bytes (A30): fetch keys from epoch keys, and a listing, two fetch links, both orders, a choice and a
+proof for `d1`, each body with its CBOR, the bytes signed and its name. -/
+def keepBytesVectors : List Json :=
+  let epochKey (i : Nat) : Aven.Core.Bytes := (List.range 32).map fun j => (i * 32 + j).toUInt8
+  let epochName (i : Nat) : Aven.Core.Hash := Aven.Core.blake3 s!"epoch {i}".toUTF8.toList
+  let signed (name : String) (input : Json) (s : Aven.Core.Signed) := vector name input
+    (Json.mkObj [("body", s.body.json), ("cbor", Aven.Core.hex (Aven.Core.encode s.body)),
+      ("signing", Aven.Core.hex s.signing), ("name", (s.name Aven.Core.blake3).text)])
+  let keepCap := keepAlice.digest Aven.Core.blake3
+  let listing : KeepCbor.Listing := ⟨keepCap, [(d1, fetchKey (epochKey 0))]⟩
+  let link1 : Link := ⟨d1, epochName 1, fetchKey (epochKey 1), 1, listing.signed.name Aven.Core.blake3⟩
+  let link2 : Link := ⟨d1, epochName 2, fetchKey (epochKey 2), 2, link1.signed.name Aven.Core.blake3⟩
+  let exporter : Aven.Core.Bytes := List.replicate 32 7
+  ([0, 1, 2].map fun i =>
+    vector s!"a fetch key from the Doc epoch key {i}" (Json.mkObj [("epochKey", Aven.Core.hex (epochKey i))])
+      (Json.mkObj [("seed", Aven.Core.hex (fetchSeed (epochKey i))),
+        ("key", Aven.Core.hex (fetchKey (epochKey i)))])) ++
+  [signed "a listing: Alice's keep cap, d1 with its first fetch key"
+      (Json.mkObj [("listing", Json.mkObj [("cap", keepCap.text), ("docs", Json.arr #[Json.mkObj [("doc", d1.text),
+        ("key", Aven.Core.hex (fetchKey (epochKey 0)))]])])]) listing.signed,
+   signed "fetch link 1, after the listing"
+      (Json.mkObj [("link", Json.mkObj [("doc", d1.text), ("epoch", (epochName 1).text),
+        ("key", Aven.Core.hex link1.key), ("n", toJson 1), ("prev", link1.prev.text)])]) link1.signed,
+   signed "fetch link 2, after link 1"
+      (Json.mkObj [("link", Json.mkObj [("doc", d1.text), ("epoch", (epochName 2).text),
+        ("key", Aven.Core.hex link2.key), ("n", toJson 2), ("prev", link2.prev.text)])]) link2.signed,
+   signed "an order: withdraw Alice's keep cap"
+      (Json.mkObj [("order", Json.mkObj [("act", "withdraw"), ("cap", keepCap.text)])])
+      (KeepCbor.Order.withdraw keepCap).signed,
+   signed "an order: delete d1"
+      (Json.mkObj [("order", Json.mkObj [("act", "delete"), ("doc", d1.text)])]) (KeepCbor.Order.delete d1).signed,
+   signed "a choice: at the fork after key 1, the branch to key 2"
+      (Json.mkObj [("choice", Json.mkObj [("doc", d1.text), ("fork", Aven.Core.hex (fetchKey (epochKey 1))),
+        ("branch", Aven.Core.hex (fetchKey (epochKey 2)))])])
+      (KeepCbor.Choice.signed ⟨d1, fetchKey (epochKey 1), fetchKey (epochKey 2)⟩),
+   signed "a fetch proof for d1 on a connection"
+      (Json.mkObj [("proof", Json.mkObj [("doc", d1.text), ("exporter", Aven.Core.hex exporter)])])
+      (proofSigned d1 exporter)]
+
 open KeepExamples in
 def keepVectors : List Json :=
   (bookCases.map fun (name, b, _) =>
@@ -401,25 +485,10 @@ def keepVectors : List Json :=
       vector s!"how much each vault may keep at the Aven Peer: {name}"
         (Json.mkObj [("books", b.json), ("vaults", toJson genVaults)])
         (Json.mkObj [("quota", Json.mkObj (genVaults.map fun v => (v, toJson (b.quota v))))])) ++
-  [vector "the Aven Peer admits uploads within the quota its own offer gives (A44)"
-    (Json.mkObj [("keep", keepD1.json), ("books", smallBooks.json),
-      ("uploads", Json.arr (quotaUploads.map (·.json)).toArray)])
-    (let taken := keepD1.admit smallBooks.quota [] quotaUploads
-     Json.mkObj [("taken", Json.arr (taken.map (·.json)).toArray),
-      ("spent", Json.mkObj [("alice", toJson (Keep.spent taken "alice"))])])] ++
   (keepCases.map fun (name, s, _, _) => vector name (Json.mkObj [("keep", s.json)]) (keepResult s)) ++
   (proofCases.map fun (name, s, e, p, _) =>
     vector s!"proof: {name}" (Json.mkObj [("keep", s.json), ("exporter", e), ("proof", p.json)])
       (Json.mkObj [("served", s.serves e p)])) ++
-  (billCases.map fun (v, _) =>
-    vector s!"what {v} pays" (Json.mkObj [("keep", keepD1.json), ("uploads", Json.arr (uploads.map (·.json)).toArray),
-        ("vault", v)])
-      (Json.mkObj [("bill", toJson (keepD1.bill uploads v))])) ++
-  [vector "a vault's quota: what the keeper takes, in the order the uploads came"
-    (Json.mkObj [("keep", keepD1.json), ("quota", Json.arr #[Json.mkObj [("vault", "alice"),
-        ("bytes", toJson (aliceQuota "alice"))]]), ("uploads", Json.arr (quotaUploads.map (·.json)).toArray)])
-    (Json.mkObj [("taken", Json.arr ((keepD1.admit aliceQuota [] quotaUploads).map (·.json)).toArray),
-      ("spent", Json.mkObj [("alice", toJson (Keep.spent (keepD1.admit aliceQuota [] quotaUploads) "alice"))])])] ++
   (List.range generatedKeeps).map fun i =>
     let s := genKeep (i + 1)
     vector s!"generated keeper, seed {i + 1}" (Json.mkObj [("keep", s.json)]) (keepResult s)
@@ -434,6 +503,7 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "trees.json") (render trees)
   IO.FS.writeFile (dir / "statements.json") (render statements)
   IO.FS.writeFile (dir / "keys.json") (render keys)
+  IO.FS.writeFile (dir / "signatures.json") (render signatures)
   IO.FS.writeFile (dir / "avenos.json") (render avenos)
   IO.FS.writeFile (dir / "passkeys.json") (render passkeys)
   IO.FS.writeFile (dir / "claims.json") (render claims)
@@ -442,6 +512,8 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "authorized.json") (render authorizedVectors)
   IO.FS.writeFile (dir / "issuers.json") (render issuerVectors)
   IO.FS.writeFile (dir / "member.json") (render memberVectors)
+  IO.FS.writeFile (dir / "authority.json") (render authorityVectors)
+  IO.FS.writeFile (dir / "reach.json") (render reachVectors)
   IO.FS.writeFile (dir / "collections.json") (render collectionVectors)
   IO.FS.writeFile (dir / "revocations.json") (render revocationVectors)
   IO.FS.writeFile (dir / "epochs.json") (render epochVectors)
@@ -449,6 +521,7 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "network.json") (render networkVectors)
   IO.FS.writeFile (dir / "expiry.json") (render expiryVectors)
   IO.FS.writeFile (dir / "keep.json") (render keepVectors)
+  IO.FS.writeFile (dir / "keep-bytes.json") (render keepBytesVectors)
   IO.FS.writeFile (dir / "safe.json") (render Safe.safeVectors)
   IO.FS.writeFile (dir / "settled.json") (render SettleJson.settledVectors)
   IO.FS.writeFile (dir / "records.json") (render SettleJson.recordVectors)
@@ -459,5 +532,6 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "derivations.json") (render KeyFormats.derivationVectors)
   IO.FS.writeFile (dir / "stanzas.json") (render KeyFormats.stanzaVectors)
   IO.FS.writeFile (dir / "vaults.json") (render VaultName.vaultVectors)
+  IO.FS.writeFile (dir / "keyring.json") (render Keyring.keyringVectors)
   IO.FS.writeFile (dir / "seals.json") (render Seal.sealVectors)
   IO.FS.writeFile (dir / "access.json") (render AccessJson.accessVectors)

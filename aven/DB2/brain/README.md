@@ -37,7 +37,7 @@ every term in [`GLOSSARY.md`](GLOSSARY.md).
 | [`style/tokens.css`](style/tokens.css) | The palette, type and chrome as tokens, sampled from the references |
 | [`style/slide.style.json`](style/slide.style.json) | The slide as style data: its ground, its type, its labels and dotted paths |
 | [`style/reference/`](style/reference/) | The first references, from the game |
-| [`render/`](render/) | Contrast, and Markdown until markdown-runtime takes it, with their tests |
+| [`render/`](render/) | Contrast, as Face.lean computes it, and its test |
 | [`art/`](art/) | The objects drawn in code, their images by hash, and the slide layouts |
 
 The first references, from the game (the look has since moved to the brand's UI, [`STYLE.md`](STYLE.md)):
@@ -74,9 +74,8 @@ figure, every element a named layer, its rules of Style and none under 2.6cqw, i
 The content is first-party, from the repo, bundled at build time (`os/web/brain`), and none of it is parsed as HTML
 on the page:
 
-- **Markdown** becomes a node tree through `render/markdown.js`, the markdown-runtime's job: GitHub's Markdown as the
-  brain writes it, raw HTML as text, links rewritten or dropped. It is checked against the allowlist, and
-  `Node.svelte` draws it.
+- **Markdown** goes through the frozen markdown-runtime, in the same worker, with the brain's link rules
+  (`os/web/brain/brain.js`), and `Node.svelte` draws its tree.
 - **A slide is a face.** Its part, `<id>.part.json`, goes through the frozen face-runtime, loaded by its hash in
   avenOS's runtimes worker, a worker of its own (`aven/runtimes`, README, "The browser host"). face-runtime checks the
   tree against the allowlist, every rule's range, the text's size and contrast, and that it can be read aloud, and
@@ -84,9 +83,6 @@ on the page:
   (`os/web/runtimes/draw.js`) checks both again, builds the slide node by node into a shadow root of its own and writes
   its CSS there from the rules. No slide style is in avenOS's own sheets, and none of avenOS's reaches a slide. The
   drawer asks avenOS where each `/files/<hash>` drawing is, and avenOS serves the brain's own from its bundle.
-
-Markdown goes the same way next: through markdown-runtime, held to `render/markdown.js`'s tree, links included, and
-then `render/` goes.
 
 ## Drawing
 

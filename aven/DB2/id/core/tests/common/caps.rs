@@ -366,8 +366,30 @@ pub fn judge_members(input: &Value) -> Value {
     })
 }
 
+/// A `reach.json` case's answer: whether the signer's chain reaches the Doc (`Reader.reachesB`).
+pub fn judge_reach(input: &Value) -> Value {
+    let mut input = input.clone();
+    // a reach case is an authorized.json reading with no envelope, calls, chain, device caps or actor
+    let doc = input["doc"].clone();
+    let signer = input["signer"].clone();
+    input["envelope"] = json!({ "doc": doc, "branch": "main", "signer": signer });
+    input["calls"] = json!([]);
+    input["chain"] = json!([]);
+    input["deviceCaps"] = json!([]);
+    input["actor"] = Value::Null;
+    with_reader(&input, |r, reading, names| {
+        let held: Vec<Cap> = input["held"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| names.cap(c))
+            .collect();
+        json!({ "reaches": r.reaches(&held, &reading.doc, reading.signer) })
+    })
+}
+
 fn verdict(r: &aven_id::caps::Reader, reading: &aven_id::caps::Reading) -> Value {
-    use aven_id::caps::{Authority, Refusal};
+    use aven_id::caps::{Path, Refusal};
     let verdict = r.authorized(reading);
     let mut out = json!({
         "withinDevice": r.within_device(reading).is_ok(),
@@ -376,8 +398,8 @@ fn verdict(r: &aven_id::caps::Reader, reading: &aven_id::caps::Reading) -> Value
         "hostSigned": (r.device_cap)(reading.signer).is_some_and(|d| d.host),
         "authorized": verdict.is_ok(),
         "path": match verdict {
-            Ok(Authority::Own) => "own",
-            Ok(Authority::Chain) => "chain",
+            Ok(Path::Own) => "own",
+            Ok(Path::Chain) => "chain",
             Err(_) => "refused",
         },
     });
@@ -399,7 +421,7 @@ fn verdict(r: &aven_id::caps::Reader, reading: &aven_id::caps::Reading) -> Value
 }
 
 /// A reader and the reading of an `authorized.json`-form input, handed to `f`.
-fn with_reader<T>(
+pub fn with_reader<T>(
     input: &Value,
     f: impl FnOnce(&aven_id::caps::Reader, &aven_id::caps::Reading, &Names) -> T,
 ) -> T {

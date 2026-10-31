@@ -50,6 +50,7 @@ export function runtime(name, part, input) {
 			resolve: (result) => ('ok' in result ? resolve(result.ok) : reject(new Error(`${name}: ${result.failure}`))),
 			reject,
 		});
-		worker.postMessage({ id, name, part, input });
+		// as JSON text: a page's Values may be its framework's proxies, which a worker can't be sent
+		worker.postMessage({ id, name, part: JSON.stringify(part), input: JSON.stringify(input ?? {}) });
 	});
 }

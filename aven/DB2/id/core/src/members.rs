@@ -180,12 +180,14 @@ impl Members {
                 name: format!("{}'s vault", j.name),
                 kind: Kind::Person,
                 owners: self.network.founders(&j.passkey),
+                threshold: 1,
             });
             out.push(Vault {
                 id: j.device.clone(),
                 name: format!("{}'s browser", j.name),
                 kind: Kind::Device,
                 owners: vec![Owner::Vault(j.person.clone())],
+                threshold: 1,
             });
         }
         for (k, s) in self.sign_ins.iter().enumerate() {
@@ -199,6 +201,7 @@ impl Members {
                 name: browser_name(&s.member.name, before + 2),
                 kind: Kind::Device,
                 owners: vec![Owner::Vault(person.clone())],
+                threshold: 1,
             });
         }
         out

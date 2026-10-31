@@ -48,7 +48,7 @@ theorem keeps_iff {roles : List Role} {c : Cap} {f : Facts} :
   simp only [Cap.keeps, List.any_eq_true, Bool.and_eq_true, beq_iff_eq, Target.coversB_iff, Grant.reaches]
 
 /-- avenID's own op, by its id: the name of its stored form `{"op": name, "plugin": "id/1"}`. -/
-def idOp (name : String) : OpId := pluginOp "id/1" name
+def idOp (name : String) : OpId := OpId.ofPlugin blake3 "id/1" name
 
 /-- **A keeper's offer** (A44): its vault offers its storage to a vault or a group, as much as the `quota` bound, in
 bytes, and as fast as the `rate` bound, in bytes a second. Placement has one source, the owner's keep caps; a keeper
