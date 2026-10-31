@@ -29,9 +29,9 @@ avenID says who is who: the keys that sign and seal, the vaults they act for, an
 - [MaiaCityGuardian](#maiacityguardian): a full owner of every person's vault for now, and its exit.
 - [Seal keys and stanzas](#seal-keys-and-stanzas): X-Wing keys, and a key sealed to one reader.
 - [Epochs](#epochs): one key of a Doc or a keyring, its blob, its tags and its rotation.
-- [The keyring](#the-keyring): a vault's own Doc of keys, the only Doc sealed to devices.
+- [The keyring](#the-keyring): a vault's own Doc of keys, the only Doc sealed to devices, travelling unsealed.
 - [The seal](#the-seal): one construction for envelopes, segments and checkpoints.
-- [Padding](#padding): one Padmé for every size a host sees.
+- [Padding](#padding): one padding for every sealed byte: 256 B, 1 KiB, 4 KiB, then Padmé.
 - [The heal](#the-heal): getting back to safety after a stolen key.
 - [The safe](#the-safe): where a vault's secrets live and act.
 - [Built-in types](#built-in-types): `keyring`, `safe` and `epoch`.
@@ -68,7 +68,7 @@ A seal key opens: anyone can seal a secret to its public half, and only its hold
   `sha256("avenSANDBOX test signer: <id>")`, and a test passkey's P-256 scalar
   `sha256("avenSANDBOX test passkey: <id>")`.
 
-**Decided:** D10, A43, caps rules 20 and 29  ·  **Lean:** `Aven.ID.Keys`, `Aven.ID.P256` (the box's public halves,
+**Decided:** caps D10, A43, caps rules 20 and 29  ·  **Lean:** `Aven.ID.Keys`, `Aven.ID.P256` (the box's public halves,
 held to RFC 8032 by `#guard`); `Aven.ID.KeyFormats` fixes every derivation's bytes (`derivations.json`)
 
 ## Hybrid signatures
@@ -87,7 +87,7 @@ lattice scheme still meets Ed25519.
   the authenticator and the person, and the owner key's hybrid signature, derived from the passkey's PRF
   ([passkeys](#passkeys-and-the-prf-step)). Both must hold, so a quantum attacker would also need the PRF output.
 
-**Decided:** D10, A2, A30, A43, caps rules 20 and 21  ·  **Lean:** `Aven.Core.Hybrid` — `hybrid_needs_both`,
+**Decided:** caps D10, A2, A30, A43, caps rules 20 and 21  ·  **Lean:** `Aven.Core.Hybrid` — `hybrid_needs_both`,
 `Signed.hybrid_valid`
 
 ## Vaults
@@ -99,7 +99,8 @@ admin; a key only signs for one. A vault is its owners, how many of them must ag
 - **Its name is 32 bytes,** the A30 name of its own genesis: the hash of `["avenID vault 1", {kind, nonce}]`, its
   nonce 32 random bytes drawn at its founding. Nothing that changes is in it (owners, keys, epochs, the statement that
   founds it), so a vault's name never changes. A genesis reads back only with exactly those two keys, one of the four
-  kinds and a 32-byte nonce; an unknown kind is refused. Every format names a vault by these bytes, never by text.
+  kinds and a 32-byte nonce; an unknown kind is refused. Every format names a vault by these plain 32 bytes, never by
+  text, and how the name is made shows only in avenID's vectors ([avenCORE](../core/README.md#targets-and-steps)).
 - **Where a genesis is born:** the network's own vaults (Maia City's coop, Aven's vault, the guardian's vault) in the
   register's root Record, with fresh nonces in production and fixed ones in the cast; a person's vault and the
   claiming browser's device vault in their claim; a device's own vault in the sign-in that adds it; a later vault in
@@ -115,7 +116,7 @@ admin; a key only signs for one. A vault is its owners, how many of them must ag
 - **A vault fingerprint** lets two people compare a vault once, as Signal's safety numbers do, so a host that invents a
   vault looking like Bob's is caught.
 
-**Decided:** rule 15, A1, A28, A42, L13, L15  ·  **Lean:** `Aven.ID.Tree`, `Aven.ID.WF`; `Aven.ID.Check` —
+**Decided:** rule 15, A1, A28, A42, A162, A164, A178, A190  ·  **Lean:** `Aven.ID.Tree`, `Aven.ID.WF`; `Aven.ID.Check` —
 `check_iff`; `Aven.ID.Name` — `name_examples`, `person_name_examples`; `Aven.ID.VaultName` — `vaultName_inj`,
 `vaultName_len`, `name_ignores_owners` (#1738)
 
@@ -136,7 +137,7 @@ through a line of owners. Authority runs only down.
   can act as (its accounts, never an agent, coop or device vault), and what a device may act on: what its vault
   governs, never a vault above or beside it.
 
-**Decided:** rule 15, A28, A42, caps rule 2  ·  **Lean:** `Aven.ID.Governs` — `governs_irrefl`, `governs_asymm`,
+**Decided:** rule 15, A28, A42, A178, caps rule 2  ·  **Lean:** `Aven.ID.Governs` — `governs_irrefl`, `governs_asymm`,
 `governs_trans`, `device_governs_nothing`, `device_key_governs_nothing`; `Aven.ID.Correct` — `mem_governs`,
 `mem_chain`, `actsFor_device`, `mayActOn_iff`
 
@@ -145,29 +146,33 @@ through a line of owners. Authority runs only down.
 An act that needs a vault's owners, such as a grant or an owner change, counts only when k of its n owners agree. Each
 agrees by signing the act's one name.
 
-- **Its form.** Approvals are signatures beside the act's name, the hash of `[label, body]` (A30): Core's
-  `Sig {signer, sig}`, a set that only grows. They are a list, never an aggregate, so each stays post-quantum on its
-  own, and adding one never renames the act.
-- **Recursive.** A key approves by signing exactly that name. An owner that is a vault approves by its own quorum, and
-  so on up to keys. With every threshold at least 1, an approval always rests on a signature by a key above the vault.
+- **Its form.** Approvals are signatures beside the act's name, the hash of `[label, body]` (A30): Core's `Sig`s,
+  `[{signer, sig}]`, over the act's signing bytes, a set that only grows. They are a list, never an aggregate, so each
+  stays post-quantum on its own, and adding one never renames the act.
+- **Recursive.** A key approves by a valid signature over exactly those bytes. An owner that is a vault approves by its
+  own quorum, and so on up to keys. With every threshold at least 1, an approval always rests on a signature by a key
+  above the vault.
 - **Authority through quorums.** Whatever a vault approves, a vault whose quorum it meets alone approves too, so
   authority that runs down the tree speaks for each vault's own owners.
 - **Each vault stores its threshold k,** at least 1. Every threshold is 1 today: any one owner is enough.
-- **An owner change** is a governance act in the register, never a new genesis. Two concurrent owner changes settle to
-  one winner everywhere: the latest by the past, ties by the smallest name. A change that drops a key beats every act
-  that key approved outside the change's own past; an act already in its past stays counted. No owner outranks another
-  by seniority.
+- **An owner change** is a governance act, never a new genesis: k of the vault's owners set its new owners and
+  threshold. No owner outranks another by seniority. The op, and how concurrent changes settle and a removal beats the
+  removed (`removal_beats`), are [avenCAPS'](../caps/README.md#owners-k-of-n).
+- **Signed for real in the vectors.** Lean's vectors carry real Ed25519 signatures (RFC 8032), made only with the
+  cast's published test keys, which the Rust verifies and re-signs byte for byte, so Lean holds no secret. `verify` is
+  a parameter of every theorem, and production verifies hybrid signatures.
 - **What is shown is what is signed.** avenOS renders the act being approved by decoding the exact bytes the passkey
   signs, never from a copy kept beside them.
 
-**Decided:** D14, A2, A28, A30, A42, A45, caps rule 25, ledger 10:45  ·  **Lean:** `Aven.ID.Approve` —
+**Decided:** caps D14, A2, A28, A30, A42, A45, A114, A185, A189, caps rule 25  ·  **Lean:** `Aven.ID.Approve` —
 `approval_exact`, `approvesF_exact`, `approves_signed`, `approves_iff`, `alone_approves`, `shown_is_signed`; the
-stored threshold, the owner change and its settling (`removal_beats`) not in Lean yet
+stored threshold not in Lean yet; the owner change and `removal_beats` are avenCAPS'
 
 ## Devices
 
 A device is a phone, a browser or a Peer that acts for a vault. It is a vault of its own, of kind `device`, owned by
-exactly one vault: the one it serves. What it may do for that vault is its device cap ([avenCAPS](../caps/README.md)).
+exactly one vault: the one it serves, the only one that may change or end it. The device's key signs for its vault and
+governs nothing. What it may do for the vault it serves is its device cap ([avenCAPS](../caps/README.md)).
 
 - **Its key is made on it** and never leaves its safe runtime: an Ed25519 seed, never derived from a passkey. The key
   carries its device vault's id, and signs only for the vault the device serves.
@@ -188,7 +193,7 @@ exactly one vault: the one it serves. What it may do for that vault is its devic
 - **Removing a device** is its device cap's revocation. Its keyring rotates at once, and each group and Doc it could
   read rotates at its next use.
 
-**Decided:** rule 15, A42, A43, D11, D19, L6, P4, P6, caps D2, caps rule 17  ·  **Lean:** `Aven.ID.KeyFormats` —
+**Decided:** rule 15, A42, A43, A130, A132, A156, A178, caps D2, caps D11, caps D19, caps rule 17  ·  **Lean:** `Aven.ID.KeyFormats` —
 `deviceMlDsaSeed`, `deviceSealSeed`; `Aven.ID.Sign` — `verify_ok`, `sign_verify`; the binding (`device_hybrid_bound`)
 not in Lean yet
 
@@ -250,7 +255,7 @@ boundary. avenOS has no RP ID of its own (A14: no); moving to one would mean a n
 - Over USB and NFC, the browser and a security key protect the output with a classical P-256 exchange. Recorded, that
   exchange is the remaining quantum risk. The PRF itself is HMAC-SHA-256, which a quantum computer only halves.
 
-**Decided:** D11, A14, A15, A42, A43, caps rule 21, ledger 09:49, ledger 10:01  ·  **Lean:** `Aven.ID.Passkey` —
+**Decided:** caps D11, A14, A15, A42, A43, A97, A103, caps rule 21  ·  **Lean:** `Aven.ID.Passkey` —
 `check_ok`; `Aven.ID.KeyFormats` — `prf_input_separates`; `Aven.ID.Network` — `ownerless_only_adds_owner`
 
 ## MaiaCityGuardian
@@ -275,7 +280,7 @@ the one place where one key is enough, kept for the evaluation phase.
   keys only if the person opts in. A recovery kit is a printed secret whose owner and seal keys are derived as a
   passkey's are from its PRF: a passkey without a device.
 
-**Decided:** D12, A11, A13, A28, A42, caps rule 30  ·  **Lean:** `Aven.ID.Recover` — `guardian_exit`;
+**Decided:** caps D12, A11, A13, A28, A42, caps rule 30  ·  **Lean:** `Aven.ID.Recover` — `guardian_exit`;
 `Aven.ID.Network` — `guardian_consented`
 
 ## Seal keys and stanzas
@@ -302,7 +307,7 @@ It holds while either ML-KEM-768 or X25519 holds, against an adversary who recor
   stanza reads back only in that one form.
 - A stanza names no reader: a reader finds its own by its tag, or by opening.
 
-**Decided:** D10, A43, caps rules 18, 20 and 29  ·  **Lean:** `Aven.ID.KeyFormats` — `stanzaCommit`,
+**Decided:** caps D10, A43, caps rules 18, 20 and 29  ·  **Lean:** `Aven.ID.KeyFormats` — `stanzaCommit`,
 `Stanza.ofValue_value` (`stanzas.json`)
 
 ## Epochs
@@ -339,7 +344,7 @@ exactly these lengths, the flat scheme, stanza suite 1, and a vault key exactly 
   epoch knows that key and the keeper doesn't, so the keeper links no reader across Docs or epochs. A first epoch's
   stanzas, and a reader new to an epoch, carry no tag: their reader finds them by opening.
 - **Padding.** For `n` readers the stanza list holds `padme(max(n, 4))` stanzas: never fewer than four, so a lone
-  reader doesn't show, then at most an eighth more ([padding](#padding)). The extra stanzas are random bytes of a
+  reader doesn't show, then at most an eighth more ([Padmé](#padding)). The extra stanzas are random bytes of a
   stanza's lengths that open for no one, and nobody, the writer included, can tell them from a reader's.
 - **Write-once.** An epoch Record is never edited. Removing a reader is a rotation. Adding one is a reseal: another
   Record of the same epoch, holding only the new reader's stanza padded to four, with the same header and so the same
@@ -373,7 +378,7 @@ exactly these lengths, the flat scheme, stanza suite 1, and a vault key exactly 
 - What a reader read stays read. No cryptography stops a reader from passing on keys or plaintext it kept.
 - Once no one holds a Doc's keys, no sealed copy of it is readable, a keeper's included.
 
-**Decided:** D7, D13, D18, A43, L7, L21, caps rules 15 to 19 and 29, ledger 08:41  ·  **Lean:** `Aven.ID.KeyFormats` —
+**Decided:** caps D7, caps D13, caps D18, A43, A74, A123, A131, A170, A185, caps rules 15 to 19 and 29  ·  **Lean:** `Aven.ID.KeyFormats` —
 `name_ignores_stanzas`, `Epoch.ofValue_value`, `tagSeed`, `padded_ge`, `padded_min`, `padded_le`;
 `Aven.ID.AccessRecords` — `EpochRecord.ofValue?_value`; `Aven.ID.Epochs` — `confidential`, `unknowable`,
 `removal_next_epoch`, `stale_refused`, `authority_down`, `never_above`; `Aven.ID.Forget` — `rotation_shuts_out`,

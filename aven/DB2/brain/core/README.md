@@ -29,9 +29,9 @@ avenCORE imports no other package. What it needs from one, it takes as a paramet
   owners' signatures beside one name decide; sealing.
 - [avenDOCS](../docs/README.md): `Writes`, from its writer ids; `fit`; a Doc's genesis, whose name is the Doc's id; an
   envelope's `body`; types and their versions; segments.
-- [avenCAPS](../caps/README.md): `authorized`; `revoked`, which revocations a reader holds discount an envelope;
-  `lists`, what a collection lists; the check of a writer's key against its device cap; cap lines, which name ops and
-  bound their params.
+- [avenCAPS](../caps/README.md): `authorized`; `revoked`, whether a revocation the reader holds discounts an
+  envelope; `lists`, what a collection lists; the check of a writer's key against its device cap; cap lines, which name
+  ops and bound their params.
 - [avenOPS](../ops/README.md): lowering a call to steps; stored queries and plugins' ops.
 - [avenACTORS](../actors/README.md): `spawned`, which actor spawned which.
 - [avenSTORE](../store/README.md): a Value at rest, a blob.
@@ -72,8 +72,9 @@ people and the vectors read a Value.
   `aven-core` re-exports it. Both are `no_std`, with no `unsafe`, and build for wasm32.
 
 **Decided:** rule 1, A2, A29, A45, A52 (512 deep), A98 (the codec crate), A174 (bytes in JSON), A184 (no null in a
-built-in body) · **Lean:** `Aven.Core.CborLaws` — `decode_encode`, `encode_decode`, `decodeAll_encode`, `encode_decodeAll`, `decodeAll_deep`,
-`encode_inj`; `Aven.Core.Text` — `utf8_text`, `text_inj`; `Aven.Core.ValueEq` — `Value.beq_iff`
+built-in body) · **Lean:** `Aven.Core.CborLaws` — `decode_encode`, `encode_decode`, `decodeAll_encode`,
+`encode_decodeAll`, `decodeAll_deep`, `encode_inj`; `Aven.Core.Text` — `utf8_text`, `text_inj`; `Aven.Core.ValueEq` —
+`Value.beq_iff`
 
 ## Names
 
@@ -222,34 +223,44 @@ is its writer's claim.
   named that names its parents (`Parents`) has its past decided the same way.
 - **A version** is a set of envelopes with everything they build on, named by its tips (`Version`). An envelope is in
   a version when it is in the past of one of its tips (`Version.holds`), and a version holds more as more arrives,
-  never less (`Version.holds_mono`).
+  never less (`Version.holds_mono`). avenDOCS uses it as a Doc's version; snapshots and checkpoints are
+  [avenDOCS](../docs/README.md)'.
 
-**Decided:** rule 2, rule 12, A3 · **Lean:** `Aven.Core.Past` — `reaches_iff`, `found_iff`, `inPast_iff`,
-`Before.rename`; `Aven.Core.Log` — `reaches_mono`, `Version.holds_mono`; `Aven.Core.Verdicts` — `holdsB_iff`
+**Decided:** rule 2, rule 12, A3, A175 (versions are avenCORE's) · **Lean:** `Aven.Core.Past` — `reaches_iff`,
+`found_iff`, `inPast_iff`, `Before.rename`; `Aven.Core.Log` — `reaches_mono`, `Version.holds_mono`;
+`Aven.Core.Verdicts` — `holdsB_iff`
 
 ## Counting
 
 An envelope counts when a reader can rely on it: its whole past is held, every envelope in that past is fit and
-authorized, and none of it is half of a split. This is the one counting rule. avenDOCS supplies `fit` and avenCAPS
-supplies `authorized`, as parameters, and no package defines a counting rule of its own.
+authorized, and none of it is half of a split or discounted by a revocation. This is the one counting rule. avenDOCS
+supplies `fit`, and avenCAPS supplies `authorized` and `revoked`, as parameters, and no package defines a counting rule
+of its own.
 
 - **A whole past held** (`Closed`): every envelope it reaches names, as `prev` and `deps`, only envelopes the reader
   holds. An envelope built on a parent the reader lacks waits, and counts for nothing until the parent arrives. A whole
   past stays whole as more arrives, where one name is one set of parents (`closed_mono`), and what it reaches has a
   whole past too (`closed_past`).
-- **Counts** (`Counts nm fit authorized`): `Closed`, and every envelope in its past fit, authorized and in no split.
-  What a counted envelope builds on counts too (`counts_past`).
-- **Not monotone, by design.** A split learned later discounts (`split_final`); a parent learned later is the first
-  step to counting.
+- **Counts** (`Counts nm fit authorized`, to become `Counts nm fit authorized revoked`): `Closed`, and every envelope
+  in its past fit, authorized, in no split and not revoked. What a counted envelope builds on counts too
+  (`counts_past`).
+- **Revoked** is avenCAPS': an envelope is discounted when the reader holds a counted revocation of a cap in its chain
+  that has taken effect in that Doc, and whose kept past doesn't hold the envelope
+  ([revocation](../caps/README.md#revocation-and-acks)). `authorized` reads only the envelope and its own past;
+  `revoked` reads what the reader holds, so it is a parameter of its own.
+- **Not monotone, by design.** A split learned later discounts (`split_final`), and so does a revocation learned later;
+  a parent learned later is the first step to counting. Every reader holding the same envelopes counts the same, with
+  no settle order.
 - **Decided for what a reader holds,** each decision its proposition: `countsB_iff`, `closedB_iff`, `discountedB_iff`,
   `splitB_iff`, `holdsB_iff`.
-- **Readers judge.** The verdict every reader reaches alone is this rule, with avenCAPS' authority and avenDOCS' fit
-  (`Aven.Architecture`'s `rule4_one_verdict`).
+- **Readers judge.** The verdict every reader reaches alone is this rule, with avenCAPS' `authorized` and `revoked`
+  and avenDOCS' fit (`Aven.Architecture`'s `rule4_one_verdict`).
 
-**Decided:** rule 4, rule 11, A4, A30, A45, L10 (`authorized` is avenCAPS'); ledger 09:35 (counting is not monotone, by
-design) · **Lean:** `Aven.Core.Log` — `counts_past`, `closed_mono`, `closed_past`, `split_final`,
-`discounted_not_counts`; `Aven.Core.Verdicts` — `countsB_iff`, `closedB_iff`, `discountedB_iff`;
-`Aven.Architecture` — `rule4_one_verdict`
+**Decided:** rule 4, rule 11, A4, A30, A45, A94 (counting is not monotone, by design), A159 (`authorized` is
+avenCAPS'), A182 (a revocation discounts, as a split does) · **Lean:** `Aven.Core.Log` — `counts_past`, `closed_mono`,
+`closed_past`, `split_final`, `discounted_not_counts`; `Aven.Core.Verdicts` — `countsB_iff`, `closedB_iff`,
+`discountedB_iff`; `Aven.Architecture` — `rule4_one_verdict`; to come: `Counts nm fit authorized revoked`, and
+`rule4_one_verdict` over the three
 
 ## Limits
 
@@ -282,10 +293,9 @@ and so on).
   vault may hold, from keepers' offers, is [avenCAPS](../caps/README.md)'; a runtime's fuel and memory are
   [avenRUNTIME](../runtime/README.md)'s; a query's bounds are [avenOPS](../ops/README.md)'.
 
-**Decided:** rule 10, P17 (each limit with its primitive's owner); ledger 06:29, 08:33 and 09:35 (the numbers) ·
-**Lean:** `Aven.Core.Limits` — `Envelope.accept_limits`, `Envelope.accept_encode`, `Signed.accept_limits`,
-`Signed.accept_encode`; `Aven.Core.CborLaws` — `decodeAll_deep`; `Aven.Core.Op` — `Call.ofValue_value`,
-`Bound.ofValue_value`
+**Decided:** rule 10, A52, A73 and A94 (the numbers), A145 (each limit with its primitive's owner) · **Lean:**
+`Aven.Core.Limits` — `Envelope.accept_limits`, `Envelope.accept_encode`, `Signed.accept_limits`, `Signed.accept_encode`;
+`Aven.Core.CborLaws` — `decodeAll_deep`; `Aven.Core.Op` — `Call.ofValue_value`, `Bound.ofValue_value`
 
 ## Ops and calls
 
@@ -324,10 +334,10 @@ behaviour by itself.
   (`Bound.ofValue_value`).
 - A cap line, an op with bounds on its params, is [avenCAPS](../caps/README.md)'.
 
-**Decided:** A32, A45; ledger 07:46 (a query is a stored op; bounds are enumerated values), ledger 08:47 (`OpId`),
-ledger 09:17 (a call is canonical or isn't one), ledger 10:34 (`OpId.ofPlugin`, the write params) · **Lean:**
-`Aven.Core.Op` — `Call.ofValue_value`, `Bound.ofValue_value`, `Bound.within_allows`, `Bound.within_trans`; the ids
-are definitions (`OpId.ofPlugin`, `CoreOp.id`, `typeParam`, `fieldsParam`), held by `ops.json`
+**Decided:** A32, A45, A66 (a query is a stored op; bounds are enumerated values), A75 (`OpId`), A88 (a call is
+canonical or isn't one), A109 (`OpId.ofPlugin`, the write params) · **Lean:** `Aven.Core.Op` — `Call.ofValue_value`,
+`Bound.ofValue_value`, `Bound.within_allows`, `Bound.within_trans`; the ids are definitions (`OpId.ofPlugin`,
+`CoreOp.id`, `typeParam`, `fieldsParam`), held by `ops.json`
 
 ## Targets and steps
 
@@ -351,8 +361,10 @@ drift with the data.
   reach within the same reach; a vault's Docs of one type are within the same, or within that vault's Docs; a target
   without `below` is within one with or without it; nothing else. A narrower target covers only what the wider one
   does (`Target.le_sound`).
-- **In CBOR,** Doc and type ids are their 32 bytes, and any other length is refused. A vault is its name, 32 bytes
-  ([avenID](../id/README.md)). Each form has keys no other form has, so a target reads back as itself
+- **In CBOR,** Doc and type ids are their 32 bytes, and any other length is refused. A vault, in a target and in a
+  Doc's facts, is its name: plain 32 bytes, never text. How a name is made is [avenID](../id/README.md#vaults)'s, and
+  only avenID's vectors show it; avenCORE's use plain 32-byte names, and 32 zero bytes is the type of types' vault.
+  Each form has keys no other form has, so a target reads back as itself
   (`Target.ofValue_value`), and an allowed target is canonical (`Target.value_canon`): a cap's bytes, and its name,
   name its targets exactly.
 
@@ -363,8 +375,8 @@ drift with the data.
 - Lowering a call to steps is [avenOPS](../ops/README.md)'; checking steps against a cap's footprint is
   [avenCAPS](../caps/README.md)'.
 
-**Decided:** A8, A19, A32, A39, L13 and L15 (a vault is its 32-byte name); ledger 09:17 (ids are 32 bytes) · **Lean:**
-`Aven.Core.Target` — `Target.le_sound`, `Target.coversB_iff`; `Aven.Core.TargetCbor` — `Target.ofValue_value`,
+**Decided:** A8, A19, A32, A39, A88 (ids are 32 bytes), A162, A164 and A190 (a vault is its plain 32-byte name) ·
+**Lean:** `Aven.Core.Target` — `Target.le_sound`, `Target.coversB_iff`; `Aven.Core.TargetCbor` — `Target.ofValue_value`,
 `Target.value_canon`
 
 ## Built-in types
@@ -380,8 +392,8 @@ built-in type's id is the name of a fixed label.
   (`typeOfTypes_typed`). It is built in, in no vault, since no genesis could name its own hash.
 - **A type Doc** is one whose root type is the type of types (`Facts.isType`).
 
-**Decided:** A39, A42 (the type of types is a fixed, built-in id), A45, docs 24 (built-in types are named by their
-labels and never pinned); ledger 07:46 (the type of types) · **Lean:** `Aven.Core.Op` — `typeOfTypes_typed`;
+**Decided:** A39, A42 (the type of types is a fixed, built-in id), A45, A67 (the type of types), docs 24 (built-in
+types are named by their labels and never pinned) · **Lean:** `Aven.Core.Op` — `typeOfTypes_typed`;
 `builtinType` and `typeOfTypes` are definitions
 
 ## The running model
@@ -401,7 +413,7 @@ model answers random cases, so Rust is held to the Lean itself, not to a transcr
 - **The property tests** of `aven-core` ask it on random inputs and must give its answers, and check `split_final`,
   `counts_past` and `Version.holds_mono` of the Rust on the same worlds.
 
-**Decided:** README rule 10, A45 (one owner per vector file); ledger 08:33 (the running model) · **Lean:**
+**Decided:** README rule 10, A45 (one owner per vector file), A73 (the running model) · **Lean:**
 `Aven.Core.Model`, with the executables `Model.lean` and `Vectors.lean`
 
 ## Status
@@ -413,22 +425,20 @@ runtimes' frozen modules compile `aven-codec`.
 | Concept | Lean | Rust | Landed | Open work (owner) |
 |---|---|---|---|---|
 | Values | `Cbor`, `CborLaws`, `Text`, `ValueEq`, `Json`, `Bytes` | `aven-codec`: `Value`, `encode`, `decode`, `MAX_DEPTH` | #1532, #1651, #1710 | — |
-| Names | `Names`, `Blake3` | `aven-codec`: `Hash`, `DocId`, `TypeId`, `blake3`, `name_of` | #1532, #1710, #1733 | `Names`' module doc and `DocId`'s Rust doc say a Doc is named by its "signed genesis"; the genesis is unsigned and named by A30 (docs 24) (avenCORE) |
+| Names | `Names`, `Blake3` | `aven-codec`: `Hash`, `DocId`, `TypeId`, `blake3`, `name_of` | #1532, #1710, #1733 | `Names`' module doc and `DocId`'s Rust doc say a Doc is named by its "signed genesis"; the genesis is unsigned and named by A30 (docs 24) (avenCORE). A174 has JSON write a hash as `{"bytes": hex}` and says the vectors already do; `names.json`, `past.json`, `counts.json` and the other vectors still write hashes and Doc ids as `b3:`/`d:` text (architect) |
 | Signed things | `Signed` | `Signed`, `Sig`, `add_sig`, `signing_bytes`, `Verify` | #1666, #1679, #1710 | — |
 | Envelopes | `Log` | `Envelope`, `Writes`, `ENVELOPE_LABEL` | #1679, #1710, #1733 | — |
 | Logs | `Log` | `Log`, `LogId`, `Refused`, `is_chain` | #1679 | A1's rename `IsChain` → `IsLog`, and the names built on it: `chain_no_split`, `chains_agree` and Rust's `is_chain` (avenCORE), `Aven.Architecture`'s `rule3_chain_whole` (architect); no PR |
 | Splits | `Log`, `Verdicts` | `split`, `Held::discounted` | #1679, #1710 | `split`'s Rust doc cites `resign_no_split`; the theorem is `sigs_no_split` (avenCORE) |
 | The past, versions | `Past`, `Log`, `Verdicts` | `past`, `in_past`, `Parents`, `Held::holds` | #1679, #1710 | `Past`'s module doc names the tree's statements, and `Aven.ID.Network` keeps a `Parents` instance for `TreeStatement`; both go once the register's statements are envelopes (A30) (avenCORE, avenCAPS) |
-| Counting | `Log`, `Verdicts` | `Held::closed`, `Held::counts` | #1710 | `Counts`' doc cites "docs, rule 13"; it should cite A4, A30 and A45 (avenCORE). Defined again elsewhere, to switch to avenCORE's (A45): avenDOCS' `Verdicts` and db's copies of `envelopes.json`, `logs.json` and `counts.json` (avenDOCS); the register's `counted` (avenCAPS); `Aven.Architecture`'s `rule3_split_final` rests on avenDOCS' `split_final` (architect) |
+| Counting | `Log`, `Verdicts` | `Held::closed`, `Held::counts` | #1710 | `Counts nm fit authorized revoked`, with avenCAPS' `revoked` from `Aven.ID.Revoke`, and `rule4_one_verdict` over the three: to come (A182; avenCORE, avenCAPS, architect). `Counts`' doc cites "docs, rule 13"; it should cite A4, A30 and A45 (avenCORE). Defined again elsewhere, to switch to avenCORE's (A45): avenDOCS' `Verdicts` and db's copies of `envelopes.json`, `logs.json` and `counts.json` (avenDOCS); the register's `counted` (avenCAPS); `Aven.Architecture`'s `rule3_split_final` rests on avenDOCS' `split_final` (architect) |
 | Limits | `Limits`, `Op` | `limits` | #1688, #1733 | `Aven.Architecture`'s rule 10 doesn't rest on `Envelope.accept_limits` (architect) |
 | Ops and calls | `Op` | `OpId`, `op_id`, `stored_op`, `CoreOp`, `TYPE_PARAM`, `FIELDS_PARAM`, `Call`, `Bound` | #1681, #1699, #1710, #1733 | avenCAPS' `pluginOp` and `idOp` and the register's `TreeOp.id` compute op ids themselves, not through `OpId.ofPlugin` (avenCAPS) |
-| Targets and steps | `Target`, `TargetCbor` | `Facts`, `Reach`, `Target`, `Step`, `StepVerb` | #1681, #1699 | A vault is text in `Facts`, `Target` and its CBOR; its 32-byte name waits on avenID's vault names (L13, L15), then avenCORE, avenCAPS and the register switch in one step; not started (avenID first) |
+| Targets and steps | `Target`, `TargetCbor` | `Facts`, `Reach`, `Target`, `Step`, `StepVerb` | #1681, #1699 | A vault is text in `Facts`, `Target` and its CBOR. Plain 32 bytes in one step (A162, A190): `claude/aven-core-logs`, with the edits to every Lean it breaks (the engine's `Query.lean` included), then avenID's PR for avenCAPS and avenID, merged back to back (avenCORE, avenID) |
 | Built-in types | `Op` | `builtin_type`, `type_of_types`, `Facts::is_type` | #1681, #1710 | avenDOCS' `Genesis.builtinType` names its four types itself, not through `builtinType` (avenDOCS) |
 | The running model | `Model`, `Model.lean`, `Vectors.lean` | `tests/vectors.rs`, `tests/log.rs`, `tests/ops.rs`, `tests/model.rs` | #1688 | — |
-| Hybrid signatures | `Hybrid`, in this package | in `aven-id` | — | The concept is avenID's (L10), so its Lean is avenID's to hold (A45); its doc cites "rule 29", which is caps' rule 29 (avenID) |
+| Hybrid signatures | `Hybrid`, in this package | in `aven-id` | — | The concept is avenID's (A159), so its Lean is avenID's to hold (A45); its doc cites "rule 29", which is caps' rule 29 (avenID) |
 
 ## Open questions
 
-- **Who owns versions.** avenCORE's Lean defines `Version` and `Version.holds`, and this page states them; A45's list
-  of Core's primitives doesn't name versions, and ARCHITECTURE.md's primitives table gives them to docs. The architect
-  decides.
+None.

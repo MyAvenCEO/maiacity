@@ -7,11 +7,12 @@ every Doc's sealed bytes move from peer to peer, with no peer above the others.
 
 - [The Peer and the Peer-Light](#the-peer-and-the-peer-light): the two builds of one core, and the Aven Peer as a Peer.
 - [Relays](#relays): who carries bytes between peers that can't reach each other, and how a peer picks one.
-- [Addresses and entry](#addresses-and-entry): address entries, bootstrap through any member, the links a peer keeps.
+- [Addresses and entry](#addresses-and-entry): history (address entries, log tips, release entries), bootstrap through
+  any member, the links a peer keeps.
 - [The door](#the-door): which devices may connect at all, checked at every connection.
 - [The wire](#the-wire): `aven/db/1`, its frozen greeting, frames in Core's codec, wire versions, the frames' rules.
-- [The Doc host and the shelf](#the-doc-host-and-the-shelf): a Doc as a peer holds it; the docs worker's life in the
-  browser, and sifting a page that crashed it.
+- [The Doc host and the shelf](#the-doc-host-and-the-shelf): a Doc as a peer holds it, on avenDOCS' shelf; the docs
+  worker's place in the browser, and sifting a page that crashed it.
 - [Gossip per group](#gossip-per-group): group topics, the members' and the keyring's, and the `Live` messages on them.
 - [The fetch gate](#the-fetch-gate): the one way sealed values leave a peer: `prove`, `fetch` and `items`.
 - [Keepers](#keepers): arrivals, covers, bills, admission and the keeper's store.
@@ -25,7 +26,8 @@ every Doc's sealed bytes move from peer to peer, with no peer above the others.
 ## Uses
 
 - [avenCORE](../core/README.md#envelopes): the one codec, envelopes and their names, logs, splits, the past,
-  signatures beside a name, and the [limits](../core/README.md#limits) every input has.
+  [counting](../core/README.md#counting), signatures beside a name, and the [limits](../core/README.md#limits) every
+  input has.
 - [avenID](../id/README.md#devices): device keys and the hybrid and seal keys derived from them,
   [the seal](../id/README.md#the-seal) and its outside, [the keyring](../id/README.md#the-keyring), epochs, and
   [the safe](../id/README.md#the-safe) that keeps keys.
@@ -35,9 +37,10 @@ every Doc's sealed bytes move from peer to peer, with no peer above the others.
   [the gate's authority half](../caps/README.md#the-gates-authority-half): fetch keys, the proof, `serves` and the
   quota.
 - [avenDOCS](../docs/README.md#a-doc-and-its-genesis): the Doc, [a commit](../docs/README.md#a-commit),
-  [importing](../docs/README.md#importing-three-verdicts), [the judge](../docs/README.md#the-judge),
-  [segments](../docs/README.md#segments), [sealed pages](../docs/README.md#sealing-and-sealed-pages) and the
-  [head and held page](../docs/README.md#the-head-the-held-page-and-the-shelf), and the `Authorize` trait.
+  [importing](../docs/README.md#importing-three-verdicts), [the judge](../docs/README.md#the-judge) and its crash mark,
+  [segments](../docs/README.md#segments), [sealed pages](../docs/README.md#sealing-and-sealed-pages) and the keyring's
+  plain path, [the head, the held page and the shelf](../docs/README.md#the-head-the-held-page-and-the-shelf), and the
+  `Authorize` trait.
 - [avenOPS](../ops/README.md#the-want-queue): the want queue, which decides what to fetch, how urgently, from which
   kind of source first, and that uploads go before pulls.
 - [avenSTORE](../store/README.md#blobs-and-refs): blobs and refs, [compare-and-set](../store/README.md#compare-and-set)
@@ -69,7 +72,7 @@ world is a flag, or its `AVEN_PEER_<FLAG>` environment variable.
 - **Status names its phase** (connecting, catching up with what is left, live, offline, stalled) from all of a
   peer's links together, and a page is pushed deltas, never re-queried.
 
-**Decided:** A24, A45, L8, ledger 10:48 (7d, 7e) · **Lean:** `Aven.ID.Node` — `write_fits`, `write_chain`
+**Decided:** A24, A45, A113, A118, A157 · **Lean:** `Aven.ID.Node` — `write_fits`, `write_chain`
 
 ## Relays
 
@@ -109,6 +112,13 @@ let it into gossip, so no host is the way in.
   and its direct addresses. The newest is the latest in the latest generation. Two entries at one place are a split,
   which ends that generation; the device's next generation counts again (`split_final`, `split_spares_next`), so a
   device that split re-homes in a new one (`rehome_new_generation`).
+- **History is avenPEERS':** a peer's address entries, log tips and release entries. Each is a Core envelope in its
+  signer's own history log, whose writer id comes from (signer, generation); `seq` counts and `prev` chains. Its body
+  is a map with exactly one key naming what it is, `{"address": …}`, `{"tip": …}` or `{"release": …}`, never a `kind`
+  field. It counts by Core's `Counts`, with fit as the entry's shape and `authorized` as who may sign it: a device
+  about itself, admitted by the door, or a release signer for a release. The newest entry about one thing is the
+  counting one with the greatest (generation, seq), and splits are Core's. Its Lean is `Aven.ID.Records` until it
+  moves to `peer/spec` as `Aven.Peer.History`.
 - **Every peer keeps the newest entry per device** and feeds it into iroh's `MemoryLookup`. Which entry is newest
   depends only on the set held, never on the order or on who passed it on (`newest_set`, `newest_signed`,
   `newest_agree`, `newest_grows`). An entry from a device the door doesn't admit is dropped. A re-homed device's new
@@ -122,7 +132,7 @@ let it into gossip, so no host is the way in.
   Doc id and its tips, all signed, so it can join through any listed relay. A returning browser has all of it in OPFS.
   `/aven.json` is one more source.
 
-**Decided:** peers 2, peers 3, A31, A42 · **Lean:** `Aven.ID.Records` — `newest_set`, `newest_signed`,
+**Decided:** peers 2, peers 3, A31, A42, A193, A194 · **Lean:** `Aven.ID.Records` — `newest_set`, `newest_signed`,
 `newest_agree`, `newest_grows`, `split_final`, `split_spares_next`; `Aven.ID.Node` — `rehome_newest`,
 `rehome_new_generation`
 
@@ -190,50 +200,49 @@ also carries `frame`, in its place in the codec's order.
 The keepers' frames' keys, and those of `missing` and `fetched`, are fixed in the frames' Lean. `keep_cap`,
 `keep_order`, `keep_choice` and `keep_link`, which carry a keeper's Books, come after them.
 
-**Decided:** rule 1, rule 14, A29, A42, A45, P7, P8, ledger 10:48 (3, 6) · **Lean:** `Aven.DB.Wire` — `pages_ne_nil`,
+**Decided:** rule 1, rule 14, A29, A42, A45, A118, A133, A134, A143 · **Lean:** `Aven.DB.Wire` — `pages_ne_nil`,
 `headsPages_heads`, `answer_pages`; `Aven.DB.WireCbor` — `frameOf_value`, `frameValue_canon`, `decodeAll_frame`,
 `push_tooLong`; wire 3's frames pending, after the move
 
 ## The Doc host and the shelf
 
-A peer holds each Doc it reads in a host: avenDOCS's Doc, its bytes on the peer's shelf in its store, committed to by
-the device, and fed from gossip and fetches. In a browser the Doc runs in a docs worker, away from the keys, because
-Loro can crash on bytes it should have refused.
+A peer holds each Doc it reads in a host: avenDOCS's Doc, its bytes on avenDOCS' shelf in the peer's store, committed
+to by the device, and fed from gossip and fetches. In a browser the Doc runs in a docs worker, away from the keys,
+because Loro can crash on bytes it should have refused.
 
-- **Open:** the Doc's genesis and schemas come from the caller (the pinned genesis, never the network). What the shelf
-  holds is imported back in the order held, and envelopes this device recorded unfit are marked first.
+- **Open:** the Doc's genesis and schemas come from the caller (the pinned genesis, never the network). It reopens
+  from the shelf as avenDOCS says, and envelopes this device recorded unfit are marked first.
 - **Commit:** avenDOCS's three steps ([a commit](../docs/README.md#a-commit)), with the device's signature between
-  them. The envelope's bytes go on the shelf, the held page and the head move, and the envelope is sealed under the
-  newest epoch and gossiped (`Live.of`).
+  them. The envelope goes on the shelf, and is sealed under the newest epoch and gossiped (`Live.of`).
 - **Take:** a sealed envelope or segment from gossip or a fetch is opened beside the keys, under the epoch its outside
-  names, its kind found by commitment ([avenDOCS](../docs/README.md#sealing-and-sealed-pages)); a seal whose `doc`
-  isn't this Doc's is refused. The plaintext is imported, and what it made held goes on the shelf.
+  names, what it seals found by commitment ([avenDOCS](../docs/README.md#sealing-and-sealed-pages)); a seal whose
+  `doc` isn't this Doc's is refused. The plaintext is imported, and what it made held goes on the shelf.
 - **Authorize:** avenDOCS defines the trait and avenCAPS gives one pure verdict; aven-peer's thin adapter joins them,
   so neither of those packages depends on the other.
-- **The shelf** is where a peer keeps its Docs. Each envelope's own bytes are a blob named by their hash, and a peer
-  seals only what leaves the device. Per Doc there are two refs, each a Value's blob moved by compare-and-set:
-  - `doc-<id hex>-held`, avenDOCS's held page;
-  - `doc-<id hex>`, the head.
-
-  The held page moves first, and the head is what it reopens to, so a crash between the two leaves nothing a reopen
-  can't rebuild. A ref moved by a second writer is refused, never retried over.
+- **The shelf** is avenDOCS'
+  ([the head, the held page and the shelf](../docs/README.md#the-head-the-held-page-and-the-shelf)): its blobs and refs
+  live in the peer's store, and a peer seals only what leaves the device.
 - **Segments** close as avenDOCS says ([segments](../docs/README.md#segments)); in the browser the Closer and segment
   sealing run in the Peer-Light's worker, beside the keys.
-- **Natively,** the Peer runs the Doc in its own process, and the judge catches Loro's panics.
+- **Natively,** the Peer runs the Doc in its own process, and [the judge](../docs/README.md#the-judge) catches Loro's
+  panics.
 - **In the browser, one docs worker for all open Docs.** The Peer-Light opens seals, checks limits and hands the docs
-  worker plaintext only. When the worker dies on a page, it restarts and reopens the open Docs from the store, and the
-  Peer-Light **sifts** the page: a fresh worker takes its envelopes again one at a time, each after those that went
-  through. An envelope is marked unfit only when it crashed the worker alone (`sift_alone`), so a passing fault (out of
-  memory, a killed tab) never marks a valid one (`sift_fine`), and only the page's own envelopes are marked, each once
-  (`sift_sub`, `sift_nodup`). The unfit set is the ref `docs-unfit` in the Peer-Light's store: this device's own, never
-  travelling. An unfit envelope is never judged, counted, forwarded or served again; other readers judge for
-  themselves.
+  worker plaintext only. When the worker dies on a page, it restarts and reopens the open Docs, as
+  [the judge](../docs/README.md#the-judge) says, and the Peer-Light **sifts** the page: a fresh worker takes its
+  envelopes again one at a time, each after those that went through. An envelope is marked unfit only when it crashed
+  the worker alone (`sift_alone`), so a passing fault (out of memory, a killed tab) never marks a valid one
+  (`sift_fine`), and only the page's own envelopes are marked, each once (`sift_sub`, `sift_nodup`). The Peer-Light
+  keeps the unfit set, avenDOCS' crash marks, as the ref `docs-unfit` in its store: this device's own, never
+  travelling. Other readers judge for themselves.
 - **The first Docs:** a device's first Doc is its vault's keyring ([avenID](../id/README.md#the-keyring)); at sign-up
   the Peer-Light computes its first Record and the Doc host makes the Doc and writes it, and the vault's other devices
-  sync it like any Doc. The register is the first shared Doc, and its group's topic is joined first at start.
+  sync it like any Doc. The keyring travels unsealed, since its Records are already ciphertext: a new browser fetches
+  them through [the fetch gate](#the-fetch-gate) by Doc id, opens its stanza with its PRF seal key, and only then
+  joins its vault's group topic. Every other Doc is sealed. The register is the first shared Doc, and its group's
+  topic is joined first at start.
 
-**Decided:** P1, P2, P3, P9, L2, L5, L17, L20, L21, ledger 10:48 (4, 5, 7c) · **Lean:** `Aven.Peer.Judge` —
-`sift_alone`, `sift_fine`, `sift_sub`, `sift_nodup` (pending in #1727); the shelf is held to its tests, not in Lean yet
+**Decided:** A119, A121, A127, A128, A129, A135, A151, A155, A166, A169, A170, A185, A187 · **Lean:**
+`Aven.Peer.Judge` — `sift_alone`, `sift_fine`, `sift_sub`, `sift_nodup` (pending in #1727)
 
 ## Gossip per group
 
@@ -252,8 +261,9 @@ itself.
 
   A carrier Doc's readers are its group, so its gossip is the group's.
 - **What a topic carries** (`Live`), each message read from exactly its keys:
-  - `{sealed}`: a loose envelope, sealed with the `envelope` kind. The seal's outside names its Doc, the one source
-    for it;
+  - `{sealed}`: a loose envelope, sealed as `envelope`. The seal pads it with the one padding
+    ([avenID](../id/README.md#padding)), so a live message has no padding of its own, and the seal's outside names its
+    Doc, the one source for it;
   - `{doc, hash}`: a sealed envelope too large for one gossip message, fetched through
     [the fetch gate](#the-fetch-gate). A message is at most 4096 bytes, iroh-gossip's default, so up to 4085 sealed
     bytes go whole (`Live.of_fits`);
@@ -267,8 +277,8 @@ itself.
 - **What a neighbour learns:** that some endpoints share an opaque topic, their timing and padded sizes, and each
   sealed envelope's outside ([avenID](../id/README.md#the-seal)).
 
-**Decided:** K11, A9 (13), A42, P15, L3, L4, L5, ledger 10:48 (2, 7d) · **Lean:** `Aven.Peer.DocSync` — `groupTopic`,
-`Live.ofValue_value`, `Live.of_fits` (pending in #1727)
+**Decided:** K11, A9 (13), A42, A118, A143, A152, A154, A155, A176, A177 · **Lean:** `Aven.Peer.DocSync` —
+`groupTopic`, `Live.ofValue_value`, `Live.of_fits` (pending in #1727)
 
 ## The fetch gate
 
@@ -299,7 +309,7 @@ first proves, on this very connection, that it holds the Doc's current fetch key
 - **Files** are no special case: a file's chunks are Values a file Record names, fetched through this gate like any
   sealed value. iroh-blobs carries only the first generation's chat files, until the cutover.
 
-**Decided:** K12, A22, A44, P7, P14, P16, L12, L24, ledger 10:58, ledger 11:05 · **Lean:** `Aven.Peer.Fetch` —
+**Decided:** K12, A22, A44, A122, A124, A133, A142, A144, A161, A173, A185 · **Lean:** `Aven.Peer.Fetch` —
 `prove_only_to_holders`, `unproven_nothing`, `served_held`, `answer_bounded`, `answer_partition`, `parts_join`,
 `parts_bounded`, `stored_checked`, `honest_stored` (pending in #1722); `Aven.ID.Keep` — `served_current`
 
@@ -311,6 +321,9 @@ owner ([avenCAPS](../caps/README.md#keep-caps-offers-and-placement)); it decides
 
 - **What it sees:** each sealed thing's outside and size ([avenID](../id/README.md#the-seal)), and the device of each
   connection. It learns a Doc's owner vault from the keep cap's issuer, never from the Doc.
+- **The keyring travels unsealed:** its Records are already ciphertext, so a keeper carries its plain envelopes and
+  segments by Doc id as it carries any Doc's items, and sees its signers, writer ids, epoch numbers, counts and times,
+  nothing that opens anything. Every other Doc is sealed.
 - **Arrivals:** each sealed thing it takes, a segment or a loose envelope, is an item named by the BLAKE3 of its sealed
   bytes. A new item gets the Doc's next arrival number, from 1, never reused; the same bytes again get no new number,
   only another uploader (`numbers_fresh`).
@@ -343,17 +356,18 @@ owner ([avenCAPS](../caps/README.md#keep-caps-offers-and-placement)); it decides
 - **The keeper's store:** each item a blob by its sealed hash; per Doc the ref `keep-<doc>`, a head Value (the next
   number, full pages, the tail), with full pages immutable and one compare-and-set per upload frame; the ref
   `keep-books`, the keeper's Books.
-- **A keeper never tells a reader an item's kind:** the reader finds it by commitment. Checkpoints come after the
+- **A keeper never tells a reader what an item seals:** the reader finds it by commitment. Checkpoints come after the
   cutover; then a keeper learns which items are checkpoints, and what they cover, from the upload, the uploader's word
-  as covers are, and readers check each checkpoint by replay.
+  as covers are, and readers check each checkpoint by replay. A checkpoint's `state`, its Loro export, is sealed as
+  `checkpoint` too, under the checkpoint's Doc and epoch, so a keeper can't tell the two apart.
 - **Which keepers:** those its vault's keep caps name, by default Maia City's keeper, the Aven Peer acting for Aven. A
   Doc is held by its writers' devices and those keepers; with two keepers named, losing any one peer leaves it
   fetchable (`no_only_holder`, `kept_fetchable`). Keepers stay blind (`keeper_blind`).
 
-**Decided:** rule 10, A22, A40, A44, P13, P21, P24, L1, L17, L24, ledger 10:45 · **Lean:** `Aven.Peer.Keeper` —
-`numbers_fresh`, `dropped_covered`, `cover_own`, `gone_writer_kept`, `put_held`, `dropped_listed`; `Aven.Peer.Serve` —
-`bill_follows`, `admitted_within`, `over_quota_sheds`, `moved_bill_keeps`, `unproven_refused`, `kept_only_proven`
-(pending in #1722); `Aven.ID.Node` — `no_only_holder`, `kept_fetchable`, `keeper_blind`
+**Decided:** rule 10, A22, A40, A44, A117, A141, A150, A153, A166, A173, A177, A181, A187 · **Lean:**
+`Aven.Peer.Keeper` — `numbers_fresh`, `dropped_covered`, `cover_own`, `gone_writer_kept`, `put_held`, `dropped_listed`;
+`Aven.Peer.Serve` — `bill_follows`, `admitted_within`, `over_quota_sheds`, `moved_bill_keeps`, `unproven_refused`,
+`kept_only_proven` (pending in #1722); `Aven.ID.Node` — `no_only_holder`, `kept_fetchable`, `keeper_blind`
 
 ## Catch-up
 
@@ -385,7 +399,7 @@ Two readers of a Doc compare what they hold by their logs' heads, and each sends
 - **Every page moves, or the exchange stops** (`sync_moves`): a page that brings no name its receiver didn't hold ends
   it.
 
-**Decided:** A3, A9 (7), A34, P8, P10, L4, ledger 10:42, ledger 10:48 (3) · **Lean:** `Aven.Peer.DocSync` —
+**Decided:** A3, A9 (7), A34, A113, A118, A134, A136, A154 · **Lean:** `Aven.Peer.DocSync` —
 `version`, `beyond_complete`, `sync_union`, `beyond_new`, `split_shows`, `split_sent`, `sync_moves` (pending in #1727);
 `Aven.ID.Node` — `split_spreads`
 
@@ -407,7 +421,7 @@ it lacks. The keeper needs to know nothing about writers.
 - **Checkpoints, once they come,** let a keeper serve a Doc's newest checkpoint first, then what came after it; older
   history is fetched only when someone scrolls to it.
 
-**Decided:** A9 (11), A34, A44, P24, ledger 10:42, ledger 10:45 · **Lean:** `Aven.Peer.Keeper` — `after_complete`,
+**Decided:** A9 (11), A34, A44, A113, A117, A150 · **Lean:** `Aven.Peer.Keeper` — `after_complete`,
 `after_sorted`, `after_pages`, `land_progress`, `caught_up_holds`, `caught_up_done` (pending in #1722)
 
 ## Presence
@@ -416,15 +430,17 @@ Who is here is told by each device itself: a signed beat on gossip, which every 
 counts connections.
 
 - **A beat** is signed by the device present and carries a counter. The counter only orders a device's beats; its
-  time is a claim, never a clock. A beat is not history: it decides nothing.
+  time is a claim, never a clock. A beat is not history: it decides nothing. Presence is the only beat: the
+  register's tips are no beat and no entry, and travel by `doc_tips` as any Doc's do; the first generation keeps its
+  own until the cutover.
 - **A device is present** while its newest beat was heard at most a window ago, by the clock of the peer that heard
   it, so a beat dated ahead stays present no longer than any other (`present_heard`, `present_ages`). Only a device's
   own beats count, and only for a device the door admits (`present_signed`). Who is present depends only on the beats
   a peer holds and when it heard them (`present_set`).
 - **"Who joined"** is the first beat after a claim settles, and each peer says it itself.
 
-**Decided:** rule 12, A31, A35, A42 · **Lean:** `Aven.ID.CatchUp` — `present_set`, `present_signed`, `present_heard`,
-`present_ages`
+**Decided:** rule 12, A31, A35, A42, A194 · **Lean:** `Aven.ID.CatchUp` — `present_set`, `present_signed`,
+`present_heard`, `present_ages`
 
 ## Upgrades
 
@@ -446,15 +462,15 @@ every later release, forever.
 - **Order:** a new wire version reaches production's Aven Peer and the browsers first, then members' Peers. A Peer not
   yet upgraded is cut off until it is: the cost of no fallback.
 - **Stored formats are read forever.** Every release reads what every older release stored, tested against frozen
-  vectors of each format; a format change reads the old one too, or migrates it, and never asks for a reset. Only the
-  wire refuses an older peer; the store never does. Production is never wiped: its deploy has no wipe. The box keeps
-  its own wipe, since its data is test data.
+  vectors of each format; a format change reads the old one too, or migrates it in the peer, and never asks for a
+  reset. Only the wire refuses an older peer; the store never does. Production is never wiped: its deploy has no
+  `wipe` input, and nothing else deletes its bucket's objects. The box keeps its own wipe, since its data is test data.
 - **A release** is the dated release from `production` ([avenSANDBOX](../sandbox/README.md#checks-before-production)).
   Signed release entries in the release vault's log come later.
 - **The box rehearses it:** `--wire-version` (`AVEN_PEER_WIRE_VERSION`) makes a Peer say another version, for that
   check alone.
 
-**Decided:** README rule 9, A29, A36, A42, peers 11, PRODUCTION (no wiping in production) · **Lean:**
+**Decided:** README rule 9, A29, A36, A42, A186, peers 11 · **Lean:**
 `Aven.DB.Wire` — `meet_speaks`, `meet_refuses`, `follows_newer`, `follows_one`, `follows_same`
 
 ## The Aven Peer is just a peer
@@ -482,7 +498,7 @@ What stays special, and why:
 | A ticket link's first contact | A new invitee knows only what the link carries | The link carries several relays and members, so it needs none of them |
 | The Aven Peer's uptime | It is the one Peer always on, so often the first to relay, keep and answer | A convenience, not a privilege: the box checks the network without it |
 
-**Decided:** rule 7, A11, A14, A16, A42, A44, P18, peers 9 · **Lean:** `Aven.ID.Node` — `no_only_relay`,
+**Decided:** rule 7, A11, A14, A16, A42, A44, A146, peers 9 · **Lean:** `Aven.ID.Node` — `no_only_relay`,
 `no_only_holder`, `kept_fetchable`, `no_plain_to_nonreader`
 
 ## Deploy
@@ -508,28 +524,28 @@ what runs.
 - **The deploy** is a workflow run by hand, in the environment `production`; starting the run is the decision.
   Nothing secret goes into a log. Its steps are the runbook in [`PRODUCTION.md`](../../PRODUCTION.md).
 
-**Decided:** L8, P12, PRODUCTION (Part B) · **Lean:** not in Lean
+**Decided:** A140, A157 · **Lean:** not in Lean
 
 ## Status
 
 | Part | Lean | Rust | In the browser | Pending |
 |---|---|---|---|---|
-| The wire, version 2 | `Aven.DB.Wire`, `Aven.DB.WireCbor` | the first generation's `wire` (`aven-gen1`) | the Peer-Light speaks it | the move to `peer/spec` and `peer/wire`: branch `claude/peers-wire-split`, no PR yet |
+| The wire, version 2 | `Aven.DB.Wire`, `Aven.DB.WireCbor` | the first generation's `wire` (`aven-gen1`) | the Peer-Light speaks it | the move to `peer/spec` (`Aven.Peer.Wire`, `Aven.Peer.WireCbor`, `Aven.Peer.Presence`) and `peer/wire` (`aven-peer-wire`): draft #1745 |
 | Wire 3's frames | after the move | after the move | after the move | #1727, #1722 |
 | Group topics, `Live`, sync by version | `Aven.Peer.DocSync`, #1727 | `aven-peer`'s `docs`, #1727 | not started | #1727 |
-| The Doc host, the shelf, sifting | `Aven.Peer.Judge`, #1727 | the native host and sifting's state machine, #1727; the `Authorize` adapter: not started | the docs worker: not started | #1727 |
+| The Doc host and sifting | `Aven.Peer.Judge`, #1727 | the native host and sifting's state machine, #1727; the `Authorize` adapter: not started | the docs worker, and a new browser reading its keyring first (A187): not started | #1727; the keyring's plain path, avenDOCS' (A187) |
 | The fetch gate | `Aven.Peer.Fetch`, #1722 | `aven-peer-keeper`'s `fetch`, #1722; caps' half in aven-id's `keep` (#1734) | not started | #1722 |
 | Keepers and catch-up from them | `Aven.Peer.Keeper`, `Aven.Peer.Serve`, #1722 (in `db/spec`, moving to `peer/spec`) | `aven-peer-keeper`, #1722; the native keeper (`--keep`, the keeper's store): not started | the catch-up client: not started | #1722 |
 | The door | `settle_door` | the first generation's door, from stored refs | the same | the door from the register, with stage 4 |
-| Relays, address entries, bootstrap, links | `Aven.ID.Node`, `Aven.ID.Records` | not started: one relay in the Aven Peer, `--aven`, `--aven-key` | one relay URL | no stage named yet |
-| Presence by signed beats | `Aven.ID.CatchUp` | not started: the hub counts connections | — | as above |
+| Relays, address entries, bootstrap, links | `Aven.ID.Node`, `Aven.ID.Records` | not started: one relay in the Aven Peer, `--aven`, `--aven-key` | one relay URL | history: `Aven.ID.Records` to `peer/spec` as `Aven.Peer.History`, `records.json` as `history.json` (A193, A194): thread E, stacked on the wire split (#1745); the rest: no stage named yet |
+| Presence by signed beats | `Aven.ID.CatchUp` | not started: the hub counts connections | — | `Aven.ID.CatchUp` to `Aven.Peer.CatchUp`, with the history (A194); the rest: no stage named yet |
 | Upgrades | `meet`, `follows` (#1649, #1714) | done | the tab follows `update` | signed release entries, later |
 | Deploy | — | the slim image and its tag (#1730) | — | — |
 
 Known gaps, code and Lean:
 - `Aven.ID.CatchUp`'s catch-up from members by signed log tips retires in favour of `Aven.Peer.DocSync` and
   `Aven.Peer.Keeper`; its presence moves into `Aven.Peer` with the wire.
-- `Aven.ID.Records.speaks_same` restates `meet_speaks`: it goes, or uses the Peers' `meet`.
+- `Aven.ID.Records.speaks_same` restates `meet_speaks`; `speaks` moves into `Aven.Peer.Wire` with the history (A194).
 - `Aven.DB.Presence` models the hub's count, and retires with the first generation.
 - `Aven.Peer.Keeper` imports `Aven.DB.Wire` for `pages`; it imports `Aven.Peer.Wire` after the move.
 - `Aven.Peer.Fetch`'s module text still says `doc_tips` names a Doc by its topic, and names `answer_moves` and
@@ -550,7 +566,7 @@ Known gaps, code and Lean:
 - **Many Docs at a reconnect.** Sync runs per Doc. Reconciling many Docs' versions with a source in one round
   (A9, item 6) has no frame yet. The architect decides.
 - **Large values over iroh-blobs.** Whether large values, video first, go over iroh-blobs with the proof bound to the
-  authenticated endpoint id, measured (P16). The architect decides, at stage 6.
+  authenticated endpoint id, measured (A144). The architect decides, at stage 6.
 - **Who builds relays, address entries, bootstrap and signed presence.** No cutover stage names them yet. The
   architect decides.
 - **A keeper that goes quiet.** Whether a keeper that hasn't beaten for 7 days counts as gone, so avenOS tells the
