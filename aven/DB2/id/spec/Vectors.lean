@@ -7,6 +7,7 @@ import Aven.ID.InviteJson
 import Aven.ID.Before
 import Aven.ID.CapsJson
 import Aven.ID.SettleJson
+import Aven.ID.FailJson
 import Aven.ID.Expiry
 
 /-! # The test vectors (README, rule 10)
@@ -50,7 +51,8 @@ import Aven.ID.Expiry
   invite trace (`Aven.ID.Restore`). `records.json`: signed records and the newest of each (`Aven.ID.Records`, §6).
   `node.json`: networks losing each peer in turn, with every home relay, who reaches whom and who can fetch the chat
   (`Aven.ID.Node`, R7). `catchup.json`: sources offered against a signed log tip, the one chosen and the ones caught,
-  and presence from signed beats (`Aven.ID.CatchUp`).
+  and presence from signed beats (`Aven.ID.CatchUp`). `failures.json`: the nine checks the box runs with the Aven Peer
+  stopped, each with what the models say it must see (`Aven.ID.FailJson`, PEERS.md).
 
 `bun run up --check` runs it again and fails when the files differ from what is committed. -/
 
@@ -274,3 +276,4 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "records.json") (render SettleJson.recordVectors)
   IO.FS.writeFile (dir / "node.json") (render SettleJson.nodeVectors)
   IO.FS.writeFile (dir / "catchup.json") (render SettleJson.catchUpVectors)
+  IO.FS.writeFile (dir / "failures.json") (render FailJson.failureVectors)
