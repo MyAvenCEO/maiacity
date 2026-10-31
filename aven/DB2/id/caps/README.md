@@ -600,6 +600,13 @@ the carrier Doc, never by letters.
 
 ## Checking
 
+**What an envelope says of its authority** (A45, `Aven.ID.Authority`, agreed with the docs threads): its body carries
+one Value under `authority`, which the docs layer carries without reading: `{"acks": [name…], "caps": [name…]}`, keys
+in the codec's order. `caps` names the chain it rests on, root first, by each cap's name (A30), and is empty on its
+vault's own authority; `acks` names the revocations its writer acknowledges. Each name is 32 bytes, the Value has one
+form (`value_ofValue?`), and a reader takes it as Revoke's reads, so the chain an envelope names is the one every
+revocation is checked against.
+
 An imported envelope runs through the docs layer's import, in its order
 ([docs](../../db/docs/README.md#importing-three-verdicts)). The steps marked **caps** are this spec's, and the engine
 checks the footprint ([engine](../../db/engine/README.md#who-checks-what)):
@@ -1347,6 +1354,7 @@ Values, hashes, ops or targets of its own; its built-in types are `Aven.ID.Types
 | | `device_proposals_never_main`, `merge_within_device` | A device whose cap is for proposals, as an agent's removals go, never writes on main whatever chain it names; a merge into main read whole stays within the merging device's cap |
 | | `host_chain_only`, `actor_within_device`, `host_never_beyond` | An authorized envelope an actor host's device signed rests on a chain, the one the acting actor's message carried, and names that actor; every call of it is allowed both by that chain's last cap and by the host's device cap, the union of its hosted actors' standing caps (A27) |
 | | `authorizedB_iff` | The verdict a reader computes, with its tests for who governs whom, spawned and lists, is `Authorized`; `aven-id-model` answers `authorized.json`'s cases with it |
+| `Authority` | `ofValue?_value`, `value_ofValue?`, `ofValue?_names` | The Value an envelope's body carries under `authority`, `{"acks", "caps"}`, lists of 32-byte names: it reads back as written, and only from the one form it writes (A45) |
 | `Member` | `confirm_only` | Maia City's confirm cap allows nothing but `tree/1`'s confirm, on the tree Doc (A38) |
 | | `member_by_confirm` | A reader counts a vault as a member only by an authorized confirm on the tree Doc, naming a claim that founded it, written on its signer's vault's own authority or under a chain whose root allows that confirm: the confirm envelope is the member cap's issuance (A38, A28) |
 | `Caps` | `narrow_chain`, `narrow_ops` | No cap in a chain lets an op reach a Doc, or allows a call (an op, on a Doc, with parameters), that its root doesn't (A32) |

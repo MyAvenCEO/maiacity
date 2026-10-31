@@ -30,6 +30,7 @@ import Aven.ID.CapsCbor
 import Aven.ID.Authorized
 import Aven.ID.Member
 import Aven.ID.Revoke
+import Aven.ID.Authority
 import Aven.ID.Expiry
 import Aven.ID.Epochs
 import Aven.ID.Recover
