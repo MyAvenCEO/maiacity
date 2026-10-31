@@ -317,3 +317,141 @@ pub fn full_docs(v: aven_core::Value) -> aven_core::Value {
         x => x,
     }
 }
+
+/// The reader's verdict on an `authorized.json` input, in its `expected` form: each part of `Authorized`, the path,
+/// and when refused, which group of reasons (`Reader::authorized`'s order).
+pub fn judge(input: &Value) -> Value {
+    use super::unhex;
+    use aven_core::{Call, DocId};
+    use aven_id::caps::{Authority, DeviceCap, Reader, Reading, Refusal, World, vault_id};
+    let gov = |t: &Tree, v: &str, w: &str| {
+        v.strip_prefix("v:")
+            .is_some_and(|v| t.governs(v).into_iter().any(|g| vault_id(g) == w))
+    };
+    let names = Names::default();
+    let ctx = Context::of(&names, &input["context"]);
+    let t = &ctx.tree;
+    let chain: Vec<Cap> = input["chain"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| names.cap(c))
+        .collect();
+    let calls: Vec<Call> = input["calls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| Call {
+            op: aven_core::Hash::parse(c["op"].as_str().unwrap()).unwrap(),
+            params: c["params"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(k, x)| (k.clone(), core_value(x)))
+                .collect(),
+        })
+        .collect();
+    let keys: Vec<(Vec<u8>, String)> = input["keys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|k| {
+            (
+                unhex(k["key"].as_str().unwrap()),
+                k["vault"].as_str().unwrap().into(),
+            )
+        })
+        .collect();
+    let device_caps: Vec<(Vec<u8>, DeviceCap)> = input["deviceCaps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| {
+            (
+                unhex(d["key"].as_str().unwrap()),
+                DeviceCap {
+                    device: d["device"].as_str().unwrap().into(),
+                    vault: d["vault"].as_str().unwrap().into(),
+                    grants: d["grants"]
+                        .as_array()
+                        .map(|g| g.iter().map(|l| names.line(l)).collect()),
+                    branches: branches(&d["branches"]),
+                    host: d["host"].as_bool().unwrap(),
+                },
+            )
+        })
+        .collect();
+    let members: Vec<String> = input["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m.as_str().unwrap().into())
+        .collect();
+    let e = &input["envelope"];
+    let signer = unhex(e["signer"].as_str().unwrap());
+    let reading = Reading {
+        signer: &signer,
+        doc: names.doc(e["doc"].as_str().unwrap()),
+        branch: e["branch"].as_str().unwrap(),
+        chain: &chain,
+        calls,
+        actor: input["actor"].as_str().map(|a| names.doc(a)),
+    };
+    let gov_ = |a: &str, b: &str| gov(t, a, b);
+    let never = |_: &DocId, _: &DocId| false;
+    let member = |m: &str| members.iter().any(|x| x == m);
+    let vault_of = |k: &[u8]| keys.iter().find(|(x, _)| x == k).map(|(_, v)| v.clone());
+    let dc_of = |k: &[u8]| {
+        device_caps
+            .iter()
+            .find(|(x, _)| x == k)
+            .map(|(_, d)| d.clone())
+    };
+    ctx.with(|x| {
+        let r = Reader {
+            ctx: aven_id::caps::Ctx {
+                tree: x.tree,
+                threshold: x.threshold,
+                in_group: x.in_group,
+                roles: x.roles,
+                facts: x.facts,
+            },
+            world: World {
+                gov: &gov_,
+                spawned: &never,
+                lists: &never,
+            },
+            member: &member,
+            vault_of: &vault_of,
+            device_cap: &dc_of,
+        };
+        let verdict = r.authorized(&reading);
+        let mut out = json!({
+            "withinDevice": r.within_device(&reading).is_ok(),
+            "own": r.own(&reading),
+            "byChain": r.by_chain(&reading).is_ok(),
+            "hostSigned": dc_of(&signer).is_some_and(|d| d.host),
+            "authorized": verdict.is_ok(),
+            "path": match verdict {
+                Ok(Authority::Own) => "own",
+                Ok(Authority::Chain) => "chain",
+                Err(_) => "refused",
+            },
+        });
+        if let Err(why) = &verdict {
+            out["refusal"] = Value::from(match why {
+                Refusal::Device
+                | Refusal::DeviceBranch
+                | Refusal::UnknownDoc
+                | Refusal::DeviceCall(_) => "device",
+                Refusal::NoAuthority
+                | Refusal::Chain(_)
+                | Refusal::NotHolder
+                | Refusal::Branch
+                | Refusal::Call(_) => "authority",
+                Refusal::NoActor => "actor",
+            });
+        }
+        out
+    })
+}

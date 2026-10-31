@@ -373,3 +373,170 @@ fn revocations_are_the_models() {
         waits.get()
     );
 }
+
+/// One change to a reading of `authorized.json`.
+#[derive(Clone, Debug)]
+enum Twist {
+    Signer(usize),
+    Branch(usize),
+    Doc(usize),
+    DropCall(usize),
+    BorrowCall(usize, usize),
+    Param(usize, usize),
+    Chain(usize),
+    Actor(bool),
+    Grants(usize, usize),
+    DeviceBranches(usize, usize),
+    Host(usize),
+}
+
+fn twist() -> impl Strategy<Value = Twist> {
+    let i = 0usize..8;
+    prop_oneof![
+        i.clone().prop_map(Twist::Signer),
+        (0usize..3).prop_map(Twist::Branch),
+        (0usize..10).prop_map(Twist::Doc),
+        i.clone().prop_map(Twist::DropCall),
+        (0usize..15, i.clone()).prop_map(|(a, b)| Twist::BorrowCall(a, b)),
+        (i.clone(), 0usize..4).prop_map(|(a, b)| Twist::Param(a, b)),
+        (0usize..3).prop_map(Twist::Chain),
+        any::<bool>().prop_map(Twist::Actor),
+        (i.clone(), 0usize..3).prop_map(|(a, b)| Twist::Grants(a, b)),
+        (i.clone(), 0usize..4).prop_map(|(a, b)| Twist::DeviceBranches(a, b)),
+        i.prop_map(Twist::Host),
+    ]
+}
+
+fn twisted(all: &[Value], at: usize, twists: &[Twist]) -> Value {
+    let mut x = all[at]["input"].clone();
+    for t in twists {
+        let keys: Vec<Value> = x["keys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|k| k["key"].clone())
+            .collect();
+        let docs: Vec<Value> = x["context"]["docs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| d["id"].clone())
+            .collect();
+        let n_calls = x["calls"].as_array().unwrap().len();
+        let n_dc = x["deviceCaps"].as_array().unwrap().len();
+        match *t {
+            Twist::Signer(k) => {
+                x["envelope"]["signer"] = keys.get(k).cloned().unwrap_or(json!(hex(b"mallory")));
+            }
+            Twist::Branch(b) => x["envelope"]["branch"] = json!(["main", "fix-title", "other"][b]),
+            Twist::Doc(d) => {
+                x["envelope"]["doc"] = docs
+                    .get(d)
+                    .cloned()
+                    .unwrap_or(json!(DocId(blake3(b"unknown")).text()));
+            }
+            Twist::DropCall(c) if n_calls > 0 => {
+                x["calls"].as_array_mut().unwrap().remove(c % n_calls);
+            }
+            Twist::BorrowCall(from, c) => {
+                let other = &all[from % all.len()]["input"]["calls"];
+                if let Some(call) = other
+                    .as_array()
+                    .unwrap()
+                    .get(c % other.as_array().unwrap().len().max(1))
+                {
+                    x["calls"].as_array_mut().unwrap().push(call.clone());
+                }
+            }
+            Twist::Param(c, p) if n_calls > 0 => {
+                let call = &mut x["calls"][c % n_calls];
+                call["params"]["type"] = match p {
+                    0 => json!({ "bytes": hex(b"tasks") }),
+                    1 => json!("notes"),
+                    2 => json!([{ "bytes": hex(b"tasks") }]),
+                    _ => Value::Null,
+                };
+            }
+            Twist::Chain(0) => x["chain"] = json!([]),
+            Twist::Chain(1) => {
+                x["chain"].as_array_mut().unwrap().pop();
+            }
+            Twist::Chain(_) => {}
+            Twist::Actor(a) => {
+                x["actor"] = if a {
+                    json!(DocId(blake3(b"actor")).text())
+                } else {
+                    Value::Null
+                };
+            }
+            Twist::Grants(d, g) if n_dc > 0 => {
+                let dc = &mut x["deviceCaps"][d % n_dc];
+                match g {
+                    0 => dc["grants"] = Value::Null,
+                    1 => dc["grants"] = json!([]),
+                    _ => {
+                        if let Some(gs) = dc["grants"].as_array_mut() {
+                            gs.pop();
+                        }
+                    }
+                }
+            }
+            Twist::DeviceBranches(d, b) if n_dc > 0 => {
+                x["deviceCaps"][d % n_dc]["branches"] = match b {
+                    0 => json!("any"),
+                    1 => json!("main"),
+                    2 => json!("proposals"),
+                    _ => json!({ "branch": "fix-title" }),
+                };
+            }
+            Twist::Host(d) if n_dc > 0 => {
+                let h = &mut x["deviceCaps"][d % n_dc]["host"];
+                *h = json!(!h.as_bool().unwrap());
+            }
+            _ => {}
+        }
+    }
+    x
+}
+
+/// The reader's verdict against the running model: readings of `authorized.json` changed at random (another signer,
+/// branch or Doc, calls dropped or borrowed or their bounds' values changed, the chain cut, the actor named or not,
+/// device caps widened, narrowed or made a host's) get the model's answer, part by part.
+#[test]
+fn verdicts_are_the_models_on_random_readings() {
+    let all = vectors("authorized.json");
+    let model = RefCell::new(Model::start());
+    let mut runner = TestRunner::new(Config {
+        cases: 500,
+        ..Config::default()
+    });
+    let paths = RefCell::new(std::collections::BTreeMap::<String, u32>::new());
+    runner
+        .run(
+            &(0..all.len(), proptest::collection::vec(twist(), 0..4)),
+            |(at, twists)| {
+                let input = twisted(&all, at, &twists);
+                let ours = common::caps::judge(&input);
+                let theirs = model.borrow_mut().ask(&input);
+                prop_assert_eq!(
+                    &ours,
+                    &theirs,
+                    "{} twisted by {:?}",
+                    all[at]["name"],
+                    twists
+                );
+                let path = format!(
+                    "{}{}",
+                    ours["path"].as_str().unwrap(),
+                    ours.get("refusal")
+                        .map_or(String::new(), |r| format!(" {r}"))
+                );
+                *paths.borrow_mut().entry(path).or_default() += 1;
+                Ok(())
+            },
+        )
+        .unwrap();
+    let paths = paths.into_inner();
+    eprintln!("paths: {paths:?}");
+    assert!(paths.len() >= 5, "{paths:?}");
+}

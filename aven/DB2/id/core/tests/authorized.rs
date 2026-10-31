@@ -465,3 +465,19 @@ fn both_paths_are_reached() {
         }
     });
 }
+
+/// The reader's verdict against Lean's vectors (`authorized.json`, `Aven.ID.Authorized`): each of its parts, the
+/// path and, when refused, which group of reasons. Every expected value is the model's.
+#[test]
+fn verdicts_are_the_models() {
+    let all = vectors("authorized.json");
+    assert!(all.len() >= 15, "{} authorized vectors", all.len());
+    for v in &all {
+        assert_eq!(
+            common::caps::judge(&v["input"]),
+            v["expected"],
+            "{}",
+            v["name"]
+        );
+    }
+}
