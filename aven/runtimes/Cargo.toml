@@ -3,7 +3,7 @@
 # repository's root workspace excludes this folder, as it excludes aven/DB2.
 [workspace]
 resolver = "3"
-members = ["tree", "contract", "markdown", "face", "registry", "abi", "modules/markdown", "modules/face", "host"]
+members = ["tree", "contract", "markdown", "face", "registry", "abi", "modules/markdown", "modules/face", "host", "web"]
 
 [workspace.package]
 edition = "2024"
@@ -11,8 +11,8 @@ rust-version = "1.99"
 license = "UNLICENSED"
 publish = false
 
-# wasmi, built for debugging with its debug assertions, overflows a test thread's stack while it instantiates a module;
-# in tests it builds as it ships
+# wasmi builds optimised in tests too, as it ships: an interpreter built for debugging runs the host's tests a
+# hundred times slower (6.3 s, where these give 0.06 s)
 [profile.dev.package.wasmi]
 opt-level = 3
 debug-assertions = false
