@@ -23,12 +23,12 @@
   },
   {
    "title": "Its first rule makes you the owner.",
-   "text": "The seal's one signature names a single {owner}: you. The owner may do everything, for good. There is always exactly one owner, an identity, never a group of people. Everyone else gets in through roles.",
+   "text": "The seal's one signature names a single {owner}: you. The owner may do everything, for good. There is always exactly one owner: an identity, never a role. Everyone else gets in through roles.",
    "action": "What is everything?"
   },
   {
-   "title": "Five things you can do with data.",
-   "text": "Create, read, update, delete, and admin: change the rules themselves. A {rule} gives a {role}, a set of identities, some of these, on one piece of data. Never a person directly, always a role.",
+   "title": "Five things to start with.",
+   "text": "Create, read, update, delete, and admin: change the rules themselves. A few more, for sharing and carrying, come in the story about rules. A {rule} gives a {role}, a set of identities, some of these, on one piece of data. Never a person directly, always a role.",
    "list": [
     "create",
     "read",
@@ -50,7 +50,7 @@
   },
   {
    "title": "The job is done.",
-   "text": "You take the plumber out of his role. He keeps what he already saw, and sees nothing new. The role stays, ready for the next plumber.",
+   "text": "You take the plumber out of his role. He sees nothing new, and his devices, if they're honest, forget what he saw. The role stays, ready for the next plumber.",
    "action": "Move in together"
   },
   {

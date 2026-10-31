@@ -93,6 +93,7 @@ async function openDecisions(st, i) {
       ${d.why ? `<p class="dwhy"><b>Why</b> ${esc(d.why)}</p>` : ''}
       ${d.rejected ? `<p class="dwhy"><b>Rejected</b> ${esc(d.rejected)}</p>` : ''}
       ${d.supersedes ? `<p class="dwhy"><b>Supersedes</b> ${esc(d.supersedes)}</p>` : ''}
+      ${d.superseded_by ? `<p class="dwhy"><b>Superseded by</b> ${esc(d.superseded_by)}</p>` : ''}
       ${d.slides.length ? `<div class="dslides">${d.slides.map((r) => { const [sid, n] = r.split('-'); return `<a href="#${r}">${esc(titles[sid] || sid)} ${n}</a>`; }).join('')}</div>` : ''}
       ${d.sources.length ? `<ul class="dsrc">${d.sources.map((x) => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.label)}</a></li>`).join('')}</ul>` : ''}
     </article>`).join('');

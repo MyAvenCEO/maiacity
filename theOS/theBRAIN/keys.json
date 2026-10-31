@@ -11,7 +11,7 @@
    "text": "Each one has exactly one job.",
    "list": [
     "Seal: signs a piece of data's first rule, then is destroyed.",
-    "Identity key: a lock only you can open, grown from your passkey.",
+    "Identity key: your lock. Each of your devices also publishes a lock of its own, grown from its passkey.",
     "Role key: a lock all members of a role can open.",
     "Data key: the key the data itself is encrypted with."
    ],
@@ -19,7 +19,7 @@
   },
   {
    "title": "Data is born.",
-   "text": "Your device makes a fresh seal. Its public half becomes the data's ID. It signs the first rule, and the private half is wiped. From now on, rules can only change through a role whose rule includes admin.",
+   "text": "Your device makes a fresh seal. Its public half becomes the data's ID. It signs the first rule, and the private half is wiped. From now on, only the owner, or a role whose rule includes admin, can change the rules.",
    "code": {
     "id": "ed25519:7Hq…",
     "first_rule": {
@@ -38,7 +38,7 @@
   },
   {
    "title": "Reading is a chain of envelopes.",
-   "text": "The content is encrypted with the data key. The data key sits in an {envelope} for every role that may read. The role key sits in an envelope for every member. Your identity key opens the first envelope, and the chain opens the rest.",
+   "text": "The content is encrypted with the data key. The data key sits in an {envelope} for the owner and for every role that may read. The role key sits in an envelope for every member. Your identity key opens the first envelope, and the chain opens the rest.",
    "flow": [
     "identity key",
     "role key",
@@ -70,8 +70,8 @@
    "text": "An admin of the role puts the role key in an envelope for Mia's identity key. That's all. Mia can now read everything the role can read, including what came before she joined.",
    "code": {
     "role": "home",
-    "do": "add",
-    "who": "mia",
+    "do": "admin",
+    "add": "mia",
     "envelope": "role key → mia's identity key"
    },
    "action": "Give a rule"
@@ -95,7 +95,7 @@
   },
   {
    "title": "Removing someone means new keys.",
-   "text": "The plumber still knows the old role key. So the role gets a new one, in envelopes for the remaining members only. Every piece of data the role reads gets a new data key the next time it changes. This is {rotation}: the plumber keeps the past, and loses the future.",
+   "text": "The plumber still knows the old role key. So the role gets a new one, in envelopes for the remaining members only. Every piece of data the role reads gets a new data key the next time it changes. This is {rotation}: the plumber loses the future, and his honest devices forget the past.",
    "flow": [
     "remove plumber",
     "new role key",
@@ -105,7 +105,7 @@
   },
   {
    "title": "Taking a rule away.",
-   "text": "Taking update away is just a signed rule change. Taking read away rotates the data key, and the new one goes to every reading role except that one.",
+   "text": "Taking update away is just a signed rule change. Taking read away rotates the data key, and the new one goes to the owner and every reading role except that one.",
    "code": {
     "data": "house-list",
     "do": "admin",
@@ -121,11 +121,11 @@
   },
   {
    "title": "Losing your phone.",
-   "text": "Your identity named its next signer when it was born, so you can switch to it. Then your identity key rotates too, and your other device puts your role keys into envelopes for the new key. The lost phone opens nothing new.",
+   "text": "Your identity named its next signer when it was born, so you can switch to it. Then your identity key turns, and every role you're in gets a new role key, so the lost phone opens nothing new.",
    "flow": [
     "next signer",
     "new identity key",
-    "re-envelope role keys"
+    "new key for every role you're in"
    ],
    "action": "Two things at once"
   },
@@ -149,7 +149,7 @@
     "Nothing kept, on honest devices: the next step.",
     "Read is per piece of data, so what you share alone is its own data."
    ],
-   "action": "Forget on revoke"
+   "action": "Forget on ending"
   },
   {
    "title": "Ended means forgotten.",
@@ -276,7 +276,7 @@
     "Data is born with a seal that is used once and destroyed.",
     "Read is a chain of envelopes: identity key, role key, data key.",
     "Everything else is a chain of signatures, checked by every device.",
-    "Removing someone rotates keys: they keep the past and lose the future."
+    "Removing someone rotates keys: they lose the future, and honest devices forget the past."
    ],
    "action": ""
   }

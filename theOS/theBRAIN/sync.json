@@ -12,7 +12,7 @@
    "code": {
     "device": "alice-phone",
     "endpoint": "ed25519:k51q…",
-    "signs_for": "alice"
+    "vouched_for_by": "alice-phone signer"
    },
    "action": "Find each other"
   },
@@ -51,28 +51,37 @@
    "title": "One line, three languages.",
    "text": "Over one connection, devices speak a small {protocol} for each kind of work.",
    "list": [
-    "Docs: swap missing ops, by version vector.",
+    "Docs: find the missing sealed chunks, then swap them.",
     "Values: stream chunks by hash, checked as they arrive.",
     "News: tell interested peers “there's something new”."
    ],
-   "action": "Sync a Doc"
+   "action": "Layers of chunks"
+  },
+  {
+   "title": "Sealed chunks settle in layers.",
+   "text": "Every sealed change has a hash. About one in 256 hashes starts with a zero byte: that change closes a chunk holding everything since the last one. One in 65,000 starts with two zero bytes and closes a bigger chunk around the smaller ones. Like layers of {sediment}: old history ends up in a few big chunks. Every device, even a carrier that reads nothing, cuts in the same places.",
+   "code": {
+    "0x7c3a…": "depth 0: a loose change",
+    "0x00b1…": "depth 1: closes a chunk",
+    "0x0000…": "depth 2: closes a bigger chunk"
+   },
+   "action": "Find what's missing"
   },
   {
    "title": "Finding what's missing, cheaply.",
-   "text": "Two devices may hold millions of chunks and differ by five. They don't list everything: they exchange a few tiny mixed-up summaries, and the difference falls out. About one and a half summaries per missing chunk, whatever the size. Then they swap exactly those sealed chunks.",
+   "text": "Two levels. Across thousands of pieces of data, two devices exchange a few tiny mixed-up summaries and the ones that differ fall out, at about one and a half summaries per difference, however many there are. Inside one piece of data, they compare short {fingerprints} of its layers and swap exactly the missing sealed chunks, in one and a half round trips.",
    "code": {
-    "alice_has": "2,000,000 chunks",
-    "bob_has": "2,000,003 chunks",
-    "summaries_sent": 5,
-    "result": {
-     "to_alice": [
-      "blake3:a91f…",
-      "blake3:c3e0…",
-      "blake3:0b7d…"
-     ]
+    "across_data": {
+     "held": "10,000",
+     "differ": 5,
+     "summaries_sent": 8
+    },
+    "inside_one": {
+     "fingerprints": "8 bytes each",
+     "round_trips": 1.5
     }
    },
-   "action": "Sync a Value"
+   "action": "Fetch a Value"
   },
   {
    "title": "A Value streams in checked chunks.",
@@ -89,12 +98,11 @@
   },
   {
    "title": "News travels by gossip.",
-   "text": "When Alice changes the list, her device tells the peers interested in it: “house-list has something new.” They pass it on, and whoever wants it fetches the ops.",
+   "text": "When Alice changes the list, her device tells the peers interested in it: “house-list has something new.” They pass it on, and whoever wants it fetches the new sealed chunks.",
    "code": {
     "topic": "house-list",
     "news": {
-     "from": "alice",
-     "op": "alice:42"
+     "chunk": "blake3:e40d…"
     }
    },
    "action": "Who may get bytes?"
@@ -125,7 +133,7 @@
   },
   {
    "title": "keep",
-   "text": "Your backup server gets want and {keep}. It holds every op and chunk, forever, and gives them back to your new phone. It has no read, so to it they're just sealed bytes.",
+   "text": "Your backup gets want and {keep}. It holds every sealed chunk, for good, and gives them back to your new phone. It has no read, so to it they're just sealed bytes.",
    "code": {
     "role": "backup",
     "data": "house-list",
@@ -138,7 +146,7 @@
   },
   {
    "title": "sync",
-   "text": "The street's always-on server gets {sync}. It passes your changes between Alice and Bob when they're never online at the same time. It keeps them only as long as it has to.",
+   "text": "The street's always-on peer gets {sync}. It passes your changes between Alice and Bob when they're never online at the same time. It keeps them only as long as it has to.",
    "code": {
     "role": "street",
     "data": "house-list",
@@ -175,7 +183,7 @@
   },
   {
    "title": "Alice and Bob, never online together.",
-   "text": "Alice ticks milk on the train and goes offline. The street server picks it up, the backup keeps it, and Bob's laptop gets it in the evening. Neither server read a word.",
+   "text": "Alice ticks milk on the train and goes offline. The street's peer picks it up, the backup keeps it, and Bob's laptop gets it in the evening. Neither carrier read a word.",
    "flow": [
     "alice-phone",
     "street (sync)",
@@ -189,7 +197,7 @@
    "list": [
     "Every device's address is its key.",
     "Devices connect directly, or through a relay that sees only sealed traffic.",
-    "Docs swap missing ops; Values stream checked chunks; gossip spreads the news.",
+    "Docs swap missing sealed chunks; Values stream checked chunks; gossip spreads the news.",
     "want, keep and sync decide who may carry data. Read decides who may open it."
    ],
    "action": ""

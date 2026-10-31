@@ -179,7 +179,7 @@
   },
   {
    "title": "Peers sync. They never ask.",
-   "text": "A do runs only on your own device, over data you can read. No peer ever asks another peer a question about its data. Peers only carry what their rules allow, sealed. There's no client and no server, only peers.",
+   "text": "A do runs only on your own device, over data you can read. No peer ever asks another peer a question about its data. Peers only carry what their rules allow, sealed. There's no client and no server, only peers. An always-on machine is just one more peer.",
    "flow": [
     "your device",
     "your data",

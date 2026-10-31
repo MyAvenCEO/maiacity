@@ -97,7 +97,8 @@
    ],
    "slides": [
     "own-5",
-    "rules-6"
+    "rules-6",
+    "own-10"
    ],
    "date": "2026-10-31"
   },
@@ -144,7 +145,6 @@
     }
    ],
    "slides": [
-    "rules-1",
     "rules-7"
    ],
    "date": "2026-10-31"
@@ -226,7 +226,8 @@
    "why": "A reader holds the plaintext, so finer read limits would be promises, not protection.",
    "sources": [],
    "slides": [
-    "ops-10"
+    "ops-10",
+    "keys-12"
    ],
    "date": "2026-10-31"
   },
@@ -310,9 +311,11 @@
     }
    ],
    "slides": [
-    "rules-13"
+    "rules-13",
+    "keys-16"
    ],
-   "date": "2026-10-31"
+   "date": "2026-10-31",
+   "superseded_by": "D30 (if decided)"
   },
   {
    "id": "D16",
@@ -387,7 +390,7 @@
    "id": "D19",
    "title": "Envelopes only for published, signed locks",
    "status": "proposed",
-   "decision": "Each device derives its encryption key (lock) from its passkey's PRF secret and publishes it in its identity's history, signed by its signer. Envelopes are made only for locks found there, and only by someone a rule allows.",
+   "decision": "Each device publishes its own lock (encryption key) in its identity's history, signed by its signer. Envelopes are made only for locks found there, and only by someone a rule allows.",
    "why": "Stops an attacker from slipping in a lock of their own. Closes the gap Keyhive lists as G2.",
    "sources": [
     {
@@ -471,7 +474,9 @@
     }
    ],
    "slides": [
-    "ops-3"
+    "ops-3",
+    "rules-2",
+    "data-3"
    ],
    "date": "2026-10-31"
   },
@@ -484,7 +489,9 @@
    "sources": [],
    "slides": [
     "ops-1",
-    "ops-8"
+    "ops-8",
+    "ops-2",
+    "ops-11"
    ],
    "date": "2026-10-31"
   },
@@ -542,7 +549,8 @@
     }
    ],
    "slides": [
-    "data-14"
+    "data-16",
+    "sync-7"
    ],
    "date": "2026-10-31"
   },
@@ -563,8 +571,9 @@
     }
    ],
    "slides": [
-    "sync-10",
-    "sync-11"
+    "sync-11",
+    "sync-12",
+    "data-17"
    ],
    "date": "2026-10-31"
   },
@@ -586,7 +595,9 @@
    ],
    "slides": [
     "sync-1",
-    "sync-5"
+    "sync-5",
+    "sync-2",
+    "sync-4"
    ],
    "date": "2026-10-31"
   },
@@ -594,8 +605,8 @@
    "id": "D29",
    "title": "Evaluate Subduction for sync",
    "status": "proposed",
-   "decision": "Test Ink & Switch's Subduction (iroh transport, sedimentree, RIBLT set reconciliation) before building our own sync.",
-   "why": "It already syncs encrypted history between peers that cannot read it, and finds differences at about 1.5 summaries per missing item.",
+   "decision": "Test Ink & Switch's Subduction (iroh transport, sedimentree, fingerprint sync) before building our own sync.",
+   "why": "It already syncs encrypted history between peers that cannot read it. Note: current Subduction compares 8-byte fingerprints; RIBLT was in its predecessor Beelay.",
    "sources": [
     {
      "label": "Subduction: sync for encrypted history, with iroh transport",
@@ -611,7 +622,119 @@
     }
    ],
    "slides": [
-    "sync-7"
+    "sync-8"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D30",
+   "title": "Only the owner changes rules",
+   "status": "proposed",
+   "decision": "No role gets admin. Only the owner adds, changes or ends rules and role memberships. A family or team that wants several people to manage rules makes the owner a coop, whose own signing rule (for example 2 of 3) decides.",
+   "why": "No delegated admins means no removed admin who could backdate a revoke, and no successor roles. The problem shrinks into the coop, where one removed member cannot sign alone.",
+   "supersedes": "D15; removes admin from the role do-list in D8",
+   "sources": [
+    {
+     "label": "Keyhive design: Keyline (root role, rotation)",
+     "url": "https://github.com/inkandswitch/keyhive/blob/main/design/keyline"
+    }
+   ],
+   "slides": [],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D31",
+   "title": "One device, one key: signer and address together",
+   "status": "proposed",
+   "decision": "Each device makes its own random key pair. It signs for its identity and is also its iroh address. The passkey registers it by signing \"this device key belongs to me\" into the identity's history. Each device also publishes its own lock.",
+   "why": "Fewer keys to explain. Not derived from the passkey alone, because synced passkeys give two devices the same secret, and two devices would then share one address.",
+   "supersedes": "the separate iroh key in D28",
+   "sources": [
+    {
+     "label": "iroh",
+     "url": "https://iroh.computer"
+    },
+    {
+     "label": "WebAuthn PRF extension",
+     "url": "https://w3c.github.io/webauthn/#prf-extension"
+    }
+   ],
+   "slides": [],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D32",
+   "title": "Words: device, identity, role, data",
+   "status": "proposed",
+   "decision": "Things that act: devices and identities (human or coop). Things acted upon: roles and data. Everything has an ID nobody hands out. The words \"signer\" and \"endpoint ID\" leave the slides; a device is simply a device.",
+   "why": "One word per thing, and a clean line between who acts and what is acted upon.",
+   "sources": [],
+   "slides": [],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D33",
+   "title": "Sealed chunks settle in layers (sedimentree)",
+   "status": "proposed",
+   "decision": "Each sealed change is hashed (BLAKE3). Its leading zero bytes give its depth; a change of depth 1 or more closes a chunk with everything since the last one at that depth. Deeper chunks hold shallower ones. Equal content gives an equal minimal hash.",
+   "why": "Every peer, even one that reads nothing, cuts the same chunks; old history becomes a few big chunks; equality is one hash.",
+   "supersedes": "refines D26",
+   "sources": [
+    {
+     "label": "Subduction design: sedimentree",
+     "url": "https://github.com/inkandswitch/subduction/blob/main/design/sedimentree.md"
+    }
+   ],
+   "slides": [
+    "sync-7",
+    "data-16"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D34",
+   "title": "Fingerprints inside data, RIBLT across data",
+   "status": "proposed",
+   "decision": "Inside one piece of data, peers compare 8-byte keyed fingerprints of its layers and swap the missing sealed chunks in 1.5 round trips. Across many pieces of data, peers use RIBLT set reconciliation to find which ones differ.",
+   "why": "Sedimentree keeps the count inside one piece small, so fingerprints are cheap there; across thousands, RIBLT costs about 1.5 summaries per difference, whatever the total.",
+   "sources": [
+    {
+     "label": "Subduction design: batch sync with fingerprints",
+     "url": "https://github.com/inkandswitch/subduction/blob/main/design/sync/batch.md"
+    },
+    {
+     "label": "Rateless Invertible Bloom Lookup Tables (arXiv 2402.02668)",
+     "url": "https://arxiv.org/abs/2402.02668"
+    },
+    {
+     "label": "Keyhive notebook 05: Syncing Keyhive",
+     "url": "https://www.inkandswitch.com/keyhive/notebook/05/"
+    }
+   ],
+   "slides": [
+    "sync-8"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D35",
+   "title": "Compact at stable points; newcomers get snapshots",
+   "status": "proposed",
+   "decision": "When every writer has seen a version, a device may cut there: newcomers get a snapshot plus the ops after it, never the old history. What lies before the cut is sealed under a new key; honest devices drop the old chunks and keys.",
+   "why": "CRDT history keeps deleted text and needs old keys, so forward secrecy is lost. Cutting at stable points gives it back for everything before the cut, without losing any late op.",
+   "sources": [
+    {
+     "label": "Loro: shallow snapshots",
+     "url": "https://loro.dev/docs/concepts/shallow_snapshots"
+    },
+    {
+     "label": "Keyhive notebook 06: E2EE in the local-first setting",
+     "url": "https://www.inkandswitch.com/keyhive/notebook/06/"
+    }
+   ],
+   "slides": [
+    "data-12",
+    "data-13"
    ],
    "date": "2026-10-31"
   }

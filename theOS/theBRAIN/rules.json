@@ -23,7 +23,7 @@
     "Content: create, read, update, delete.",
     "Carrying: want, keep, sync.",
     "Rules: admin (write any rule), share (pass on a narrower one).",
-    "And any engine do, like find or search, that only needs read."
+    "Engine dos, like find or search, need no entry of their own: read is enough."
    ],
    "action": "Make it narrower"
   },
@@ -111,7 +111,7 @@
   },
   {
    "title": "Passing a rule on only narrows it.",
-   "text": "If Mia's rule lets her share, she can hand Grandma a rule of her own: she adds a block to the token. A block can only take things away, shorten the expiry or add conditions. It can never add.",
+   "text": "If home's rule allows share, Mia can give a role of her own, “grandma's”, a rule of its own: she adds a block to the token. A block can only take things away, shorten the expiry or add conditions. It can never add.",
    "code": {
     "blocks": [
      {
@@ -126,7 +126,7 @@
      },
      {
       "by": "mia",
-      "to": "grandma",
+      "role": "grandma's",
       "do": [
        "read"
       ],
@@ -160,11 +160,11 @@
   },
   {
    "title": "When time runs out, anyone may say so.",
-   "text": "Devices are often offline, and a device can lie about its time, so no clock decides. Once a rule's date has passed, any peer that holds the data, even an always-on carrier, writes a {lapse}: the same kind of event as a revoke. It can only end a rule, never grant anything. Honest devices hold back a lapse dated in the future until that date really comes.",
+   "text": "Devices are often offline, and a device can lie about its time, so no clock decides. Once a rule's date has passed for it, any peer that can read the rules writes a {lapse}: the same kind of event as a revoke. It can only end a rule, never grant anything. From then on, the history decides.",
    "code": {
     "ending": "lapse",
     "rule": "home → plumber",
-    "by": "backup (carrier)",
+    "by": "mia-phone",
     "after": "2026-11-07"
    },
    "action": "One concept"
@@ -184,7 +184,7 @@
     },
     "then": [
      "drop: ending wins",
-     "next writer turns the data key",
+     "the data key turns",
      "wipe keys and copies"
     ]
    },
@@ -200,7 +200,7 @@
      "replaces": "home",
      "members": [
       "you",
-      "kids"
+      "leo"
      ]
     },
     "old_revokes_by_mia": "point at home: ignored"
@@ -215,7 +215,7 @@
     "Conditions narrow a rule; nothing can widen it.",
     "A revoke or a lapse is an ending: it wins, turns the key and wipes copies.",
     "A removed admin means a successor role.",
-    "Under the hood: a signed capability any device checks offline."
+    "Under the hood: a signed token any device checks offline."
    ],
    "action": ""
   }

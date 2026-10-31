@@ -172,6 +172,34 @@
     "bob": "Fix the tap today",
     "merged": "Fix the kitchen tap today"
    },
+   "action": "What history remembers"
+  },
+  {
+   "title": "History remembers what you deleted.",
+   "text": "A CRDT keeps every op, because a device that was offline for months may still send an op that builds on an old state. That also means a sentence you typed and erased is still in the history, and anyone who can read the history can read it.",
+   "code": {
+    "now": "Fix the tap",
+    "history": [
+     "insert “Call the landlord about the tap”",
+     "delete “Call the landlord about ”"
+    ]
+   },
+   "action": "Let the past go"
+  },
+  {
+   "title": "Snapshots let the past go.",
+   "text": "Once every writer has seen a version, it is {stable}: no late op can still build on anything older. There, a device can cut: newcomers get a {snapshot} of the state, not the old ops, so they never see what was deleted. What lies before the cut is sealed under a new key, and honest devices drop the old chunks and keys.",
+   "code": {
+    "cut_at": "version 412, seen by all",
+    "newcomers_get": "snapshot + ops after 412",
+    "before_the_cut": "new key, old keys dropped"
+   },
+   "flow": [
+    "every writer has seen it",
+    "cut",
+    "snapshot for newcomers",
+    "drop the old keys"
+   ],
    "action": "Now with rules"
   },
   {
@@ -193,19 +221,17 @@
   },
   {
    "title": "Bob loses update.",
-   "text": "You take update away from “home” for Bob's role. A rule change is an op too, so it syncs like everything else. Ops Bob makes after it, or at the same time as it, are dropped on every device. Bob's op had not seen the revoke, so it ran at the same time, and removal wins. His earlier ops stay.",
+   "text": "You take update away from “home”. A revoke is a signed event, not an op, and it syncs like everything else. Bob's op had not seen it, so the ending wins: his op is dropped on every device. His earlier ops stay.",
    "code": {
-    "rule": {
-     "id": "you:88",
-     "revoke": "update",
-     "from": "home"
-    },
+    "ending": "revoke",
+    "rule": "home: update",
+    "by": "you (owner)",
     "bob": {
-     "id": "bob:21",
+     "op": "bob:21",
      "seen": [
       "bob:20"
      ],
-     "result": "dropped"
+     "result": "dropped: ending wins"
     }
    },
    "action": "Seal it"
@@ -229,10 +255,10 @@
     "hash",
     "link to the chunks before"
    ],
-   "action": "What does the server see?"
+   "action": "What does a carrier see?"
   },
   {
-   "title": "What the server sees.",
+   "title": "What a carrier sees.",
    "text": "Sealed chunks, the hashes that link them, and the proofs it needs to decide whom to give them to. It can store, count and forward them. It can't read a title, a tick, a rule or a frame of the movie.",
    "code": {
     "chunk": "blake3:a91f…",
