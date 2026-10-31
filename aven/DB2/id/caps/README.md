@@ -125,9 +125,14 @@ same day, and what they agreed is marked where it applies. Nothing in this spec 
 - **epoch:** one key of a Doc, from one rotation to the next, named by the hash of its key blob.
 - **key blob:** an epoch's key sealed to each of its readers, with a commitment to it and a link to the epoch before.
 - **reader:** what an epoch is sealed to: a vault, through its vault key, or a group, through its group key.
-- **keyring:** a vault's own Doc of keys, the first part of its safe, and the only Doc sealed to devices.
-- **safe, safe runtime:** a vault's Doc of secrets, and each host's protected place that alone can open it
-  ([the safe](#the-safe)).
+- **keyring:** a vault's own Doc of keys, the first part of its safe, and the only Doc sealed to devices. Its root type
+  is avenID's built-in `keyring`.
+- **safe, safe runtime:** a vault's Doc of secrets, whose root type is avenID's built-in `safe`, and each host's
+  protected place that alone can open it ([the safe](#the-safe)).
+- **avenID's built-in types** (A39, Samuel, 31 Oct 2026: "no doc can be without type ever"): `keyring`, `safe` and
+  `group` are the root types of the Docs caps makes, and `cap`, `revoke` and `epoch` the types of the Records in a
+  Doc's access map. Each is a type Doc, and a type Doc's own type is the type of types, as every Doc's genesis fixes its
+  root type with its vault.
 - **vault key, group key:** X-Wing key pairs. The private half lives in the keyring or the group's Doc; anyone can seal
   to the public half.
 - **rotation:** a new epoch, sealed to the readers that remain.
@@ -436,7 +441,7 @@ messages and queries. For people with keys, reading is whole Docs; for actors an
   within the host's device cap (`actor_within_device`, `host_never_beyond`). The Aven Peer signs with Aven's own
   device, under a chain the owner issued to Aven's vault for that actor's Docs and its owners approved (D14).
 - **Groups** (Samuel, 30 Oct 2026: a cap goes to one vault or a group of vaults). A group is a Doc whose readers are
-  its members. It holds caps for them: a team editing the team's Docs, a family reading the family's photos. A write
+  its members, of avenID's built-in root type `group` (A39). It holds caps for them: a team editing the team's Docs, a family reading the family's photos. A write
   under a group's cap carries, inside the seal, the writer's read cap on the group. Groups aren't vaults, so they
   aren't in the tree the keeper sees, and making one needs no governance.
 - **Actors** hold no keys (`aven/actor/ARCHITECTURE.md`, section 11). Agreed with avenACTOR and confirmed by Samuel on
