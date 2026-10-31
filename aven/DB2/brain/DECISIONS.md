@@ -2716,3 +2716,78 @@ changed. A refinement names what it refines; a change of mind names what it supe
 - **Why:** people's vaults and history live there.
 - **Supersedes:** —
 - **Lean or code then:** the deploy workflow, as built; the cutover replays production's snapshot in the box (stage 7).
+
+### A187 · The keyring Doc travels unsealed
+- **Decided by:** the architect, on the keys and stage 3 threads' question (12:25)
+- **Decision:** the keyring Doc's envelopes and segments are not sealed: its Records are already ciphertext (X-Wing
+  stanzas, commitments, and the vault key sealed under the epoch key, all padded). A keeper sees the keyring's signers,
+  writer ids, epoch numbers, counts and times, and nothing that opens anything. Every other Doc stays sealed. A new
+  browser fetches the keyring's Records through the fetch gate by Doc id, opens its stanza with its PRF seal key, and
+  only then joins its vault's group topic. avenDOCS gives this one built-in type a plain path beside the sealed one.
+- **Why:** a new browser holds only its passkey's PRF output, so it must read the keyring before it has any key from it;
+  a key from the keyring would be circular, and a per-reader segment key would repeat the stanzas for no secret they
+  don't already keep.
+- **Supersedes:** — (refines rule 9 and caps D13 for the keyring alone)
+- **Lean or code then:** to come: the docs plain path (`Item::Plain`), the keyring's vectors; draft #1743 holds the
+  keyring Doc.
+
+### A188 · An actor host's envelope names its actor in its authority
+- **Decided by:** the architect, on the caps and minimal caps threads' question (12:25)
+- **Decision:** an envelope's `authority` is exactly `{acks, caps}`, or `{acks, caps, actor}` when an actor host writes
+  it, naming the actor whose chain it writes under (A27). avenDOCS carries the Value whole and never reads inside it.
+- **Why:** a reader must know which actor's chain to judge a host's write under, and A184's exact shapes leave an absent
+  field out rather than null.
+- **Supersedes:** — (refines A27)
+- **Lean or code then:** `Aven.ID.Authority` in draft #1741, with the second shape added; caps' `reaches` follows as its
+  own PR.
+
+### A189 · Approvals are Core signatures, and Lean's vectors sign for real
+- **Decided by:** the architect, on the caps and minimal caps threads' question (12:25)
+- **Decision:** a cap's approvals are Core `Sig`s, `[{signer, sig}]`, over the cap's signing bytes (A30); an owner key
+  approves by a valid sig, a vault by its quorum. Lean's vectors carry real Ed25519 signatures (RFC 8032, deterministic,
+  pinned by its test vector 7.1 test 1), made only with the cast's published test keys; Rust verifies them and re-signs
+  byte for byte. `verify` is a parameter of every theorem, and production verifies hybrid signatures (A43).
+- **Why:** a stand-in can't catch a wrong message, label or key in the Rust, and a real signature does; the test keys
+  are public, so Lean still holds no secret.
+- **Supersedes:** —
+- **Lean or code then:** to come in one PR, caps' Lean and vectors with minimal caps' Rust.
+
+### A190 · Core names vaults by plain 32 bytes
+- **Decided by:** the architect, on the core and keys threads' report (12:25)
+- **Decision:** a vault in any format is its 32-byte name, never text. Core's vectors use plain 32-byte names (32 zero
+  bytes is the type of types' vault); how a name is made (A164) appears only in avenID's vectors. The switch is one
+  step: Core's PR, carrying the mechanical edits to every Lean it breaks (the engine's `Query.lean` included), and
+  avenID's PR for caps and id, merged back to back.
+- **Why:** one name per vault everywhere (A162), and a build that is never left broken between the two.
+- **Supersedes:** — (refines A162)
+- **Lean or code then:** `claude/aven-core-logs` (a6eb2282), then avenID's PR A.
+
+### A191 · A removal never undoes finality
+- **Decided by:** the architect, on avenPEER's question (12:25)
+- **Decision:** an owner removal beats only acts that no final claim rests on: whatever is in the past of a counted
+  confirm stays, as a withdrawal never beats a final claim. Owner changes are judged on Core's `Counts` with `Closed`,
+  so `setOwners`, `owners_perm` and `removal_beats` come with that, after k of n by stored thresholds.
+- **Why:** a removal racing a ticket must not reopen a member's join, and "the owners in force in its own past" is
+  monotone only once a statement's whole past is held.
+- **Supersedes:** — (refines A116)
+- **Lean or code then:** to come: avenPEER's PR 2 (`removal_beats`, `settle_final`).
+
+### A192 · markdown-runtime v3: links resolve against their document
+- **Decided by:** the architect with the runtimes thread (#1737)
+- **Decision:** a link in a Markdown document resolves inside the runtime, lexically (RFC 3986's `remove_dot_segments`,
+  `..` clamped at the root); an href with a scheme is never resolved; a query and a fragment are kept; a fragment-only
+  href gets the document's `idPrefix`. The document's owner supplies `base`, `idPrefix` and the prefix `links` rules,
+  and the runtime knows no repository. A soft break is `" "`, a table's header cell carries `scope="col"`, heading ids
+  carry `idPrefix`, and old frozen versions stay loadable and answer as they always did.
+- **Why:** what a link in a Markdown document points to belongs to Markdown (A45), and one renderer for every page.
+- **Supersedes:** —
+- **Lean or code then:** `Aven.Runtime.Markdown` (`removeDots_no_dots`, `linkTo_link`), markdown-runtime v3, in draft
+  #1737.
+
+### A193 · Peer records are avenPEERS'
+- **Decided by:** the architect, on the caps thread's question (12:25)
+- **Decision:** address, log-tip and release entries, their split rule and their Lean are avenPEERS'. `Aven.ID.Records`
+  moves to `peer/spec` as `Aven.Peer.Records`, each entry a Core log entry of its signer, counted by Core's `Counts`.
+- **Why:** one concept, one owner (A45): the Peers made them and use them, and Core already counts logs.
+- **Supersedes:** —
+- **Lean or code then:** to come: thread E, after the wire split (#1745).
