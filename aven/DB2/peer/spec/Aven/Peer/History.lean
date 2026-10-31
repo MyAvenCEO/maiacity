@@ -175,9 +175,8 @@ def place (e : Envelope) : Nat × Nat × Nat :=
 /-- `a` is newer than `b`: a later generation, or the same one and a later place, or the same place and a smaller
 body (two entries of one log at one place are a split, and never count; of two release signers', the smaller wins). -/
 def newer (a b : Envelope) : Bool :=
-  let (ga, sa, ba) := place R a
-  let (gb, sb, bb) := place R b
-  gb < ga || (ga == gb && (sb < sa || (sa == sb && ba < bb)))
+  (place R b).1 < (place R a).1 || ((place R a).1 == (place R b).1 &&
+    ((place R b).2.1 < (place R a).2.1 || ((place R a).2.1 == (place R b).2.1 && (place R a).2.2 < (place R b).2.2)))
 
 /-- The entries a reader takes of one sort about one device or release line. -/
 def candidates (which : Which) (about : String) (S : List Envelope) : List Envelope :=
@@ -284,12 +283,9 @@ theorem newest_agree (h : isNewest R S e = true) (h' : isNewest R S f = true) {n
   have n₁ := ne f mf m fm tf kk ka cf
   have n₂ := nf e me n en te kk.symm ka.symm ce
   unfold newer at n₁ n₂
-  obtain ⟨g, s, b⟩ := place R e
-  obtain ⟨g', s', b'⟩ := place R f
   simp only [Bool.or_eq_false_iff, decide_eq_false_iff_not, Bool.and_eq_false_iff, beq_eq_false_iff_ne,
     ne_eq] at n₁ n₂
-  simp only [Prod.mk.injEq]
-  omega
+  refine Prod.ext (by omega) (Prod.ext (by omega) (by omega))
 
 /-- **`newest_grows`:** an entry newest among more entries is at no earlier place than one newest among fewer, while
 the one newest among fewer still counts among more: a split arriving later is the only thing that takes it back (A4). -/
@@ -303,8 +299,6 @@ theorem newest_grows (sub : ∀ x ∈ S, x ∈ S') (h : isNewest R S e = true) (
   cases en₀; cases fm₀
   have n₁ := nf e (sub e me) n en te kk.symm ka.symm still
   unfold newer at n₁
-  obtain ⟨g, s, b⟩ := place R e
-  obtain ⟨g', s', b'⟩ := place R f
   simp only [Bool.or_eq_false_iff, decide_eq_false_iff_not, Bool.and_eq_false_iff, beq_eq_false_iff_ne,
     ne_eq] at n₁
   omega
@@ -407,7 +401,7 @@ theorem rehome_new_generation {b : String} {g body : Nat}
 
 /-- With names that never collide, a closed entry's past among more entries is its past among those it was closed
 in. -/
-theorem reaches_closed_in (hnm : ∀ a b, R.nm a = R.nm b → a = b) {T : List Envelope} (sub : ∀ x ∈ S, x ∈ T) :
+theorem reaches_closed_in (hnm : ∀ a b, R.nm a = R.nm b → a = b) {T : List Envelope} :
     ∀ {a c : Envelope}, Reaches R.nm T a c → Closed R.nm S a → Reaches R.nm S a c := by
   intro a c h
   induction h with
@@ -424,8 +418,8 @@ theorem reaches_closed_in (hnm : ∀ a b, R.nm a = R.nm b → a = b) {T : List E
 theorem reaches_seq_le (hnm : ∀ a b, R.nm a = R.nm b → a = b)
     (c : Counts R.nm (fun x => fit R x = true) (fun x => authorized R S x = true) S e) :
     ∀ {x}, Reaches R.nm S e x → x.seq ≤ e.seq := by
-  suffices ∀ a, Reaches R.nm S e a → ∀ x, Reaches R.nm S a x → x.seq ≤ a.seq from
-    fun h => this e (.refl _) _ h
+  intro x₀ h₀
+  suffices H : ∀ a, Reaches R.nm S e a → ∀ x, Reaches R.nm S a x → x.seq ≤ a.seq from H e (.refl _) x₀ h₀
   intro a ra x h
   induction h with
   | refl => exact Nat.le_refl _
@@ -463,16 +457,16 @@ theorem rehome_newest (hnm : ∀ a b, R.nm a = R.nm b → a = b) {last : Envelop
   have c := counts_iff.mp ct
   have sub : ∀ x ∈ S, x ∈ e :: S := fun x m => List.mem_cons_of_mem _ m
   -- what `e` reaches: itself, or what the last reaches among `S`
-  have via : ∀ {x}, Reaches R.nm (e :: S) e x → x = e ∨ Reaches R.nm S last x := by
+  have via : ∀ {x}, Reaches R.nm (e :: S) e x → e = x ∨ Reaches R.nm S last x := by
     intro x h
     cases h with
     | refl => exact .inl rfl
     | step _ hb r =>
       rcases hb with hb | hb
       · rw [pt] at hb
-        have := hnm _ _ (Option.some.inj hb).symm
-        subst this
-        exact .inr (reaches_closed_in hnm sub r c.1)
+        have hl := hnm _ _ (Option.some.inj hb).symm
+        rw [hl] at r
+        exact .inr (reaches_closed_in hnm r c.1)
       · simp [nd] at hb
   have authMono : ∀ x, authorized R S x = true → authorized R (e :: S) x = true := by
     intro x h
@@ -480,16 +474,16 @@ theorem rehome_newest (hnm : ∀ a b, R.nm a = R.nm b → a = b) {last : Envelop
     refine ⟨h.1, ?_⟩
     have h2 := h.2
     unfold chained at h2 ⊢
-    cases x.prev with
-    | none => exact h2
-    | some p => simp only [List.any_cons, h2, Bool.or_true]
+    cases hp : x.prev with
+    | none => rw [hp] at h2; exact h2
+    | some p => rw [hp] at h2; simp only [List.any_cons, h2, Bool.or_true]
   have ce : counts R (e :: S) e = true := by
     apply counts_iff.mpr
     refine ⟨fun x rx p hp => ?_, fun x rx => ?_⟩
     · rcases via rx with rfl | rx
       · rw [pt] at hp
         rcases hp with hp | hp
-        · exact ⟨last, sub last mt, (Option.some.inj hp).symm⟩
+        · exact ⟨last, sub last mt, Option.some.inj hp⟩
         · simp [nd] at hp
       · obtain ⟨y, my, ny⟩ := c.1 x rx p hp
         exact ⟨y, sub y my, ny⟩
@@ -498,13 +492,14 @@ theorem rehome_newest (hnm : ∀ a b, R.nm a = R.nm b → a = b) {last : Envelop
         · simp only [authorized, en, t, Bool.true_and, chained, pt, List.any_eq_true, Bool.and_eq_true,
             beq_iff_eq, decide_eq_true_eq]
           exact ⟨last, sub last mt, ⟨rfl, lt⟩, st⟩
-        · rcases List.mem_cons.mp my with rfl | my
-          · exact fun sp => sp.2.2 rfl
+        · rcases List.mem_cons.mp my with hy | my
+          · rw [hy]; exact fun sp => sp.2.2 rfl
           · exact alone y my
       · have ok := c.2 x rx
         refine ⟨⟨ok.1.1, authMono x ok.1.2⟩, fun y my => ?_⟩
-        rcases List.mem_cons.mp my with rfl | my
-        · intro sp
+        rcases List.mem_cons.mp my with hy | my
+        · rw [hy]
+          intro sp
           have := reaches_seq_le hnm c rx
           have := sp.2.1
           omega
@@ -581,7 +576,8 @@ def a3 := entry "alice-peer" 0 3 (some a2) (.address 30)
 def a3' := entry "alice-peer" 0 3 (some a2) (.address 20)
 def a4 := entry "alice-peer" 0 4 (some a3) (.address 40)
 def a4skip := entry "alice-peer" 0 4 (some a2) (.address 41)
--- the Aven Peer's own address, in its own log, and nothing it says about Alice
+-- the Aven Peer's own address, in its own log: this door doesn't admit it, so it isn't taken; and an address is
+-- only ever about its signer, so no peer's word stands in for Alice's
 def v1 := entry "aven-peer" 0 1 none (.address 90)
 -- Bob's Peer split its first generation and re-homed in its second: the second's address counts (A42); there it
 -- split again at place 3, which leaves the address before it
