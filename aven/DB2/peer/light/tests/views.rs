@@ -74,7 +74,10 @@ fn as_cast(input: &Value) -> Option<String> {
     let mut vaults = Map::new();
     for v in input["vaults"].as_array()? {
         let id = v["id"].as_str()?.to_string();
-        let vault = json!({ "name": v["name"], "kind": v["kind"], "owners": v["owners"] });
+        let mut vault = json!({ "name": v["name"], "kind": v["kind"], "owners": v["owners"] });
+        if let Some(t) = v.get("threshold") {
+            vault["threshold"] = t.clone();
+        }
         if vaults.insert(id, vault).is_some() {
             return None;
         }

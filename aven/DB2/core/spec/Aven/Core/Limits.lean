@@ -48,10 +48,6 @@ def sigsWithin (xs : List Sig) : Bool :=
 def Envelope.withinLimits (e : Envelope) : Bool :=
   decide (e.deps.length ≤ maxDeps) && decide (e.branch.length ≤ maxBranchBytes) && sigsWithin e.sigs
 
-def optHashOf? : Value → Option (Option Hash)
-  | .null => some none
-  | v => (Hash.ofValue? v).map some
-
 def hashesOf? : List Value → Option (List Hash)
   | [] => some []
   | v :: vs => do let h ← Hash.ofValue? v; let hs ← hashesOf? vs; some (h :: hs)
@@ -68,16 +64,29 @@ def sigsOf? : List Value → Option (List Sig)
 def envelopeKeys : List Bytes :=
   [k "doc", k "seq", k "body", k "deps", k "prev", k "sigs", k "branch", k "writer"]
 
-/-- An envelope read back from `Envelope.value`'s shape: its eight keys in the codec's order, each in its form. -/
+/-- A log's first envelope's keys: `prev` left out, never null (A200). -/
+def firstEnvelopeKeys : List Bytes :=
+  [k "doc", k "seq", k "body", k "deps", k "sigs", k "branch", k "writer"]
+
+/-- An envelope read back from `Envelope.value`'s shape: its keys in the codec's order, each in its form, `prev` a
+hash or left out. A null `prev` is no envelope (A200). -/
 def Envelope.ofValue? : Value → Option Envelope
   | .map [(k₁, .bytes d), (k₂, .uint seq), (k₃, body), (k₄, .array deps), (k₅, prev), (k₆, .array sigs),
       (k₇, .text branch), (k₈, .uint writer)] =>
     if [k₁, k₂, k₃, k₄, k₅, k₆, k₇, k₈] = envelopeKeys then do
       let doc ← Hash.ofValue? (.bytes d)
-      let prev ← optHashOf? prev
+      let prev ← Hash.ofValue? prev
       let deps ← hashesOf? deps
       let sigs ← sigsOf? sigs
-      some { doc := ⟨doc⟩, branch, writer, seq, prev, deps, body, sigs }
+      some { doc := ⟨doc⟩, branch, writer, seq, prev := some prev, deps, body, sigs }
+    else none
+  | .map [(k₁, .bytes d), (k₂, .uint seq), (k₃, body), (k₄, .array deps), (k₆, .array sigs),
+      (k₇, .text branch), (k₈, .uint writer)] =>
+    if [k₁, k₂, k₃, k₄, k₆, k₇, k₈] = firstEnvelopeKeys then do
+      let doc ← Hash.ofValue? (.bytes d)
+      let deps ← hashesOf? deps
+      let sigs ← sigsOf? sigs
+      some { doc := ⟨doc⟩, branch, writer, seq, prev := none, deps, body, sigs }
     else none
   | _ => none
 
@@ -89,14 +98,6 @@ def Envelope.accept (bs : Bytes) : Option Envelope :=
     | some e => if e.withinLimits then some e else none
     | none => none
   else none
-
-theorem optHashOf?_value {v : Value} {h : Option Hash} (e : optHashOf? v = some h) : optHash h = v := by
-  unfold optHashOf? at e
-  split at e
-  · cases e; rfl
-  · cases hv : Hash.ofValue? v with
-    | none => simp [hv] at e
-    | some x => simp [hv] at e; subst e; exact Hash.ofValue?_value hv
 
 theorem hashesOf?_value : ∀ {vs : List Value} {hs : List Hash}, hashesOf? vs = some hs → hs.map Hash.value = vs
   | [], hs, e => by simp [hashesOf?] at e; subst e; rfl
@@ -132,8 +133,18 @@ theorem Envelope.ofValue?_value {v : Value} {e : Envelope} (h : Envelope.ofValue
       obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hk
       simp only [Option.bind_eq_bind, Option.bind_eq_some_iff, Option.some.injEq] at h
       obtain ⟨doc, hd, p, hp, ds, hds, xs, hxs, rfl⟩ := h
-      simp only [Envelope.value]
-      rw [← Hash.ofValue?_value hd, optHashOf?_value hp, hashesOf?_value hds, sigsOf?_value hxs]
+      simp only [Envelope.value, prevKey]
+      rw [← Hash.ofValue?_value hd, ← Hash.ofValue?_value hp, hashesOf?_value hds, sigsOf?_value hxs]
+      rfl
+    · cases h
+  · split at h
+    · rename_i hk
+      simp only [firstEnvelopeKeys, List.cons.injEq, and_true] at hk
+      obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hk
+      simp only [Option.bind_eq_bind, Option.bind_eq_some_iff, Option.some.injEq] at h
+      obtain ⟨doc, hd, ds, hds, xs, hxs, rfl⟩ := h
+      simp only [Envelope.value, prevKey]
+      rw [← Hash.ofValue?_value hd, hashesOf?_value hds, sigsOf?_value hxs]
       rfl
     · cases h
   · cases h

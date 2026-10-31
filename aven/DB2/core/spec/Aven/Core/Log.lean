@@ -44,17 +44,22 @@ def optHash : Option Hash → Value
 
 private def k (s : String) : Bytes := s.toUTF8.toList
 
+/-- The `prev` key: the envelope before, or left out in a log's first envelope, never null (A200). -/
+def prevKey : Option Hash → List (Bytes × Value)
+  | none => []
+  | some h => [(k "prev", h.value)]
+
 /-- What its signers sign: everything but the signatures, keys in the codec's order. -/
 def Envelope.unsigned (e : Envelope) : Value :=
-  .map [(k "doc", .bytes e.doc.hash.bytes), (k "seq", .uint e.seq), (k "body", e.body),
-    (k "deps", .array (e.deps.map Hash.value)), (k "prev", optHash e.prev), (k "branch", .text e.branch),
-    (k "writer", .uint e.writer)]
+  .map ([(k "doc", .bytes e.doc.hash.bytes), (k "seq", .uint e.seq), (k "body", e.body),
+    (k "deps", .array (e.deps.map Hash.value))] ++ prevKey e.prev ++ [(k "branch", .text e.branch),
+    (k "writer", .uint e.writer)])
 
 /-- The whole envelope, its signatures beside it, as it travels. Its name hashes only what is signed (A30). -/
 def Envelope.value (e : Envelope) : Value :=
-  .map [(k "doc", .bytes e.doc.hash.bytes), (k "seq", .uint e.seq), (k "body", e.body),
-    (k "deps", .array (e.deps.map Hash.value)), (k "prev", optHash e.prev), (k "sigs", .array (e.sigs.map Sig.value)),
-    (k "branch", .text e.branch), (k "writer", .uint e.writer)]
+  .map ([(k "doc", .bytes e.doc.hash.bytes), (k "seq", .uint e.seq), (k "body", e.body),
+    (k "deps", .array (e.deps.map Hash.value))] ++ prevKey e.prev ++ [(k "sigs", .array (e.sigs.map Sig.value)),
+    (k "branch", .text e.branch), (k "writer", .uint e.writer)])
 
 def envelopeLabel : Bytes := k "avenDB envelope 1"
 
@@ -79,6 +84,9 @@ def Envelope.name (H : Bytes → Hash) (e : Envelope) : Hash := H e.signing
 
 #guard keysSorted (match (Envelope.mk ⟨⟨[]⟩⟩ [] 0 0 none [] .null []).value with | .map kvs => kvs | _ => [])
 #guard keysSorted (match (Envelope.mk ⟨⟨[]⟩⟩ [] 0 0 none [] .null []).unsigned with | .map kvs => kvs | _ => [])
+#guard keysSorted (match (Envelope.mk ⟨⟨[]⟩⟩ [] 0 0 (some ⟨[]⟩) [] .null []).value with | .map kvs => kvs | _ => [])
+#guard keysSorted (match (Envelope.mk ⟨⟨[]⟩⟩ [] 0 0 (some ⟨[]⟩) [] .null []).unsigned with
+  | .map kvs => kvs | _ => [])
 
 theorem optHash_inj : ∀ {a b : Option Hash}, optHash a = optHash b → a = b
   | none, none, _ => rfl
@@ -107,23 +115,35 @@ theorem sigs_inj : ∀ {a b : List Sig}, a.map Sig.value = b.map Sig.value → a
 theorem Envelope.value_inj {a b : Envelope} (h : a.value = b.value) : a = b := by
   obtain ⟨⟨⟨da⟩⟩, bra, wa, sa, pa, dsa, ba, sga⟩ := a
   obtain ⟨⟨⟨db⟩⟩, brb, wb, sb, pb, dsb, bb, sgb⟩ := b
-  simp only [Envelope.value, Value.map.injEq, List.cons.injEq, Prod.mk.injEq, Value.bytes.injEq, Value.uint.injEq,
-    Value.array.injEq, Value.text.injEq, true_and, and_true] at h
-  obtain ⟨hd, hs, hb, hdeps, hp, hsg, hbr, hw⟩ := h
-  rw [optHash_inj hp, hashes_inj hdeps, sigs_inj hsg]
-  subst hd hs hb hbr hw
-  rfl
+  rcases pa with _ | ⟨⟨pa⟩⟩ <;> rcases pb with _ | ⟨⟨pb⟩⟩ <;>
+    simp only [Envelope.value, prevKey, Hash.value, List.nil_append, List.cons_append, List.append_nil,
+      Value.map.injEq, List.cons.injEq, Prod.mk.injEq, Value.bytes.injEq, Value.uint.injEq, Value.array.injEq,
+      Value.text.injEq, reduceCtorEq, true_and, and_true, and_false] at h
+  · obtain ⟨hd, hs, hb, hdeps, hsg, hbr, hw⟩ := h
+    rw [hashes_inj hdeps, sigs_inj hsg]
+    subst hd hs hb hbr hw
+    rfl
+  · obtain ⟨hd, hs, hb, hdeps, hp, hsg, hbr, hw⟩ := h
+    rw [hashes_inj hdeps, sigs_inj hsg]
+    subst hd hs hb hp hbr hw
+    rfl
 
 /-- What an envelope signs fixes everything but its signatures. -/
 theorem Envelope.unsigned_inj {a b : Envelope} (h : a.unsigned = b.unsigned) : { a with sigs := b.sigs } = b := by
   obtain ⟨⟨⟨da⟩⟩, bra, wa, sa, pa, dsa, ba, sga⟩ := a
   obtain ⟨⟨⟨db⟩⟩, brb, wb, sb, pb, dsb, bb, sgb⟩ := b
-  simp only [Envelope.unsigned, Value.map.injEq, List.cons.injEq, Prod.mk.injEq, Value.bytes.injEq, Value.uint.injEq,
-    Value.array.injEq, Value.text.injEq, true_and, and_true] at h
-  obtain ⟨hd, hs, hb, hdeps, hp, hbr, hw⟩ := h
-  rw [optHash_inj hp, hashes_inj hdeps]
-  subst hd hs hb hbr hw
-  rfl
+  rcases pa with _ | ⟨⟨pa⟩⟩ <;> rcases pb with _ | ⟨⟨pb⟩⟩ <;>
+    simp only [Envelope.unsigned, prevKey, Hash.value, List.nil_append, List.cons_append, List.append_nil,
+      Value.map.injEq, List.cons.injEq, Prod.mk.injEq, Value.bytes.injEq, Value.uint.injEq, Value.array.injEq,
+      Value.text.injEq, reduceCtorEq, true_and, and_true, and_false] at h
+  · obtain ⟨hd, hs, hb, hdeps, hbr, hw⟩ := h
+    rw [hashes_inj hdeps]
+    subst hd hs hb hbr hw
+    rfl
+  · obtain ⟨hd, hs, hb, hdeps, hp, hbr, hw⟩ := h
+    rw [hashes_inj hdeps]
+    subst hd hs hb hp hbr hw
+    rfl
 
 theorem envelopeLabel_ok : textOk envelopeLabel = true := by decide +kernel
 

@@ -58,10 +58,6 @@ pub struct LogId {
     pub writer: u64,
 }
 
-fn opt_hash(h: &Option<Hash>) -> Value {
-    h.as_ref().map_or(Value::Null, Hash::value)
-}
-
 fn hash_of(v: Value) -> Option<Hash> {
     Hash::of_value(&v)
 }
@@ -71,31 +67,34 @@ impl Envelope {
         Value::Array(self.deps.iter().map(Hash::value).collect())
     }
 
-    /// What its signers sign: everything but the signatures, keys in the codec's order (`Envelope.unsigned`).
-    pub fn unsigned(&self) -> Value {
-        Value::Map(vec![
+    /// Its keys in the codec's order, `sigs` among them or not; `prev` left out in a log's first envelope, never
+    /// null (`prevKey`, A200).
+    fn map(&self, sigs: bool) -> Value {
+        let mut kvs = vec![
             ("doc".into(), self.doc.0.value()),
             ("seq".into(), Value::Uint(self.seq)),
             ("body".into(), self.body.clone()),
             ("deps".into(), self.deps_value()),
-            ("prev".into(), opt_hash(&self.prev)),
-            ("branch".into(), Value::Text(self.branch.clone())),
-            ("writer".into(), Value::Uint(self.writer)),
-        ])
+        ];
+        if let Some(p) = &self.prev {
+            kvs.push(("prev".into(), p.value()));
+        }
+        if sigs {
+            kvs.push(("sigs".into(), sigs_value(&self.sigs)));
+        }
+        kvs.push(("branch".into(), Value::Text(self.branch.clone())));
+        kvs.push(("writer".into(), Value::Uint(self.writer)));
+        Value::Map(kvs)
+    }
+
+    /// What its signers sign: everything but the signatures, keys in the codec's order (`Envelope.unsigned`).
+    pub fn unsigned(&self) -> Value {
+        self.map(false)
     }
 
     /// The whole envelope, its signatures beside it, as it travels (`Envelope.value`).
     pub fn value(&self) -> Value {
-        Value::Map(vec![
-            ("doc".into(), self.doc.0.value()),
-            ("seq".into(), Value::Uint(self.seq)),
-            ("body".into(), self.body.clone()),
-            ("deps".into(), self.deps_value()),
-            ("prev".into(), opt_hash(&self.prev)),
-            ("sigs".into(), sigs_value(&self.sigs)),
-            ("branch".into(), Value::Text(self.branch.clone())),
-            ("writer".into(), Value::Uint(self.writer)),
-        ])
+        self.map(true)
     }
 
     /// What its signers sign: `[ENVELOPE_LABEL, unsigned]` encoded (`Envelope.signing`).
@@ -139,13 +138,21 @@ impl Envelope {
         }
     }
 
-    /// Read back from [`Envelope::value`]: exactly its eight keys in the codec's order, each in its form and within
-    /// its limit, its signatures a set in its one form (`Envelope.ofValue?`, `Envelope.withinLimits`, rule 10).
+    /// Read back from [`Envelope::value`]: exactly its keys in the codec's order, each in its form and within its
+    /// limit, `prev` a hash or left out, never null (A200), its signatures a set in its one form (`Envelope.ofValue?`,
+    /// `Envelope.withinLimits`, rule 10).
     pub fn of_value(v: Value) -> Option<Envelope> {
         const KEYS: [&str; 8] = [
             "doc", "seq", "body", "deps", "prev", "sigs", "branch", "writer",
         ];
-        let Value::Map(kvs) = v else { return None };
+        let Value::Map(mut kvs) = v else { return None };
+        let first = kvs.len() == KEYS.len() - 1;
+        if first {
+            // a log's first envelope: no prev; Lean's `Envelope.ofValue?` reads it as `prev := none`
+            kvs.insert(4, ("prev".into(), Value::Null));
+        } else if kvs.get(4).is_some_and(|(_, p)| *p == Value::Null) {
+            return None;
+        }
         if kvs.len() != KEYS.len() || kvs.iter().zip(KEYS).any(|((k, _), want)| k != want) {
             return None;
         }
@@ -167,10 +174,7 @@ impl Envelope {
         if !sigs_within(&sigs) {
             return None;
         }
-        let prev = match prev {
-            Value::Null => None,
-            p => Some(hash_of(p)?),
-        };
+        let prev = if first { None } else { Some(hash_of(prev)?) };
         Some(Envelope {
             doc: DocId(hash_of(doc)?),
             branch,
