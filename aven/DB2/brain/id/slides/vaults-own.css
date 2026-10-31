@@ -7,12 +7,10 @@
 .vaults-own .title { left: 3.5%; top: 6%; }
 .vaults-own .key .bit-1 { left: 8.6cqw; height: 1.6cqw; }
 .vaults-own .key .bit-2 { left: 10.4cqw; height: 2.2cqw; }
-.vaults-own .alice { left: 4%; top: 41%; width: 23cqw; height: 10cqw; }
-.vaults-own .owns-1 { left: 30.5%; top: 50.5%; width: 7cqw; }
-.vaults-own .owns-1-label { left: 34%; top: 44%; }
-.vaults-own .coop { left: 40.5%; top: 41%; width: 23cqw; height: 10cqw; }
-.vaults-own .owns-2 { left: 67%; top: 50.5%; width: 7cqw; }
-.vaults-own .owns-2-label { left: 70.5%; top: 44%; }
-.vaults-own .agent { left: 77%; top: 41%; width: 19cqw; height: 10cqw; }
-.vaults-own .span { left: 6%; top: 67%; width: 88cqw; height: 2cqw; border: 0.3cqw solid var(--brain-path); border-top: 0; border-radius: 0 0 1cqw 1cqw; }
-.vaults-own .span-note { left: 50%; top: 75%; }
+.vaults-own .alice { left: 2%; top: 40%; width: 25.5cqw; height: 11cqw; }
+.vaults-own .owns-1 { left: 29.5%; top: 52%; width: 5cqw; }
+.vaults-own .coop { left: 36.5%; top: 40%; width: 25.5cqw; height: 11cqw; }
+.vaults-own .owns-2 { left: 64%; top: 52%; width: 5cqw; }
+.vaults-own .agent { left: 71%; top: 40%; width: 25.5cqw; height: 11cqw; }
+.vaults-own .span { left: 4%; top: 75%; width: 92cqw; height: 2cqw; border: 0.3cqw solid var(--brain-path); border-top: 0; border-radius: 0 0 1cqw 1cqw; }
+.vaults-own .span-note { left: 50%; top: 82%; width: 80cqw; }

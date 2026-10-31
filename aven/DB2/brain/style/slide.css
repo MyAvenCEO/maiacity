@@ -1,5 +1,6 @@
 /* A slide (STYLE.md, "A slide"): a 16:9 frame that reads as a still, and the parts every illustration is drawn from.
-   Every length inside is in cqw, a hundredth of the frame's width, so the still scales as one picture. Every element is
+   Every length inside is in cqw, a hundredth of the frame's width, so the still scales as one picture. No text is
+   smaller than 2.6cqw: 9 px on a phone, where the frame is about 356 px wide (sandbox/docs.mjs). Every element is
    a layer with a stable class, so a motion version can move each one. Light falls from the top left: a part's lit faces
    are its -light colour, the faces away from the light its -deep one, as hard stops, never a blend. */
 .slide {
@@ -45,24 +46,16 @@
 .slide .panel {
 	position: absolute;
 	margin: 0;
-	padding: 1.3cqw 2cqw 1.5cqw;
+	padding: 1.4cqw 2.4cqw 1.6cqw;
 	background: var(--brain-panel);
 	border: 0.14cqw solid var(--brain-gold);
 	border-radius: 1.3cqw;
 	box-shadow: 0 0.5cqw 1.6cqw rgb(118 88 62 / 0.12);
 }
 
-.slide .kicker {
-	margin: 0;
-	color: var(--brain-quiet);
-	font: 600 1.05cqw/1.3 var(--brain-sans);
-	letter-spacing: 0.12em;
-	text-transform: uppercase;
-}
-
 .slide .headline {
-	margin: 0.3cqw 0 0;
-	font: 500 3.3cqw/1.1 var(--brain-serif);
+	margin: 0;
+	font: 500 4.4cqw/1.1 var(--brain-serif);
 	letter-spacing: -0.01em;
 }
 
@@ -70,8 +63,8 @@
 .slide .label {
 	position: absolute;
 	margin: 0;
-	font: 600 1.2cqw/1 var(--brain-sans);
-	letter-spacing: 0.08em;
+	font: 600 2.6cqw/1 var(--brain-sans);
+	letter-spacing: 0.06em;
 	text-transform: uppercase;
 	white-space: nowrap;
 	transform: translateX(-50%);
@@ -112,7 +105,7 @@
 
 .slide .relation {
 	font-weight: 700;
-	letter-spacing: 0.14em;
+	letter-spacing: 0.1em;
 }
 
 /* a record: a thing the system keeps (a vault, a cap), as a card on a low-poly slab lit from the top left. Its tone
@@ -157,14 +150,14 @@
 .slide .record-section {
 	margin: 0;
 	color: var(--brain-quiet);
-	font: 600 1.1cqw/1.3 var(--brain-sans);
-	letter-spacing: 0.12em;
+	font: 600 2.6cqw/1.2 var(--brain-sans);
+	letter-spacing: 0.06em;
 	text-transform: uppercase;
 }
 
 .slide .record-name {
-	margin: 0.4cqw 0 2cqw;
-	font: 500 3cqw/1.1 var(--brain-serif);
+	margin: 0.5cqw 0 1.6cqw;
+	font: 500 4cqw/1.1 var(--brain-serif);
 }
 
 .slide .record-section {
@@ -173,79 +166,76 @@
 }
 
 .slide .record-field {
-	margin: 0.9cqw 0 0;
-	font: 500 1.5cqw/1.3 var(--brain-sans);
+	margin: 0.8cqw 0 0;
+	font: 500 2.6cqw/1.3 var(--brain-sans);
 }
 
 .slide .field-name {
 	display: inline-block;
-	width: 7.5cqw;
+	width: 12cqw;
 	color: var(--brain-quiet);
-	font: 600 1.05cqw/1.3 var(--brain-sans);
-	letter-spacing: 0.1em;
-	text-transform: uppercase;
+	font: 600 2.6cqw/1.3 var(--brain-sans);
 }
 
 .slide .record.small .record-card {
-	padding: 1.6cqw 1.9cqw;
+	padding: 1.6cqw 1.8cqw;
 }
 
 .slide .record.small .record-kind {
-	font-size: 0.95cqw;
+	letter-spacing: 0;
+	text-transform: none;
 }
 
 .slide .record.small .record-name {
 	margin-bottom: 0;
-	font-size: 2.2cqw;
+	font-size: 3.2cqw;
 }
 
 .slide .record-row {
-	height: 4.6cqw;
+	height: 5cqw;
 	margin-top: 1.4cqw;
 }
 
 .slide .record-row-text {
 	margin: 0;
-	padding: 1.3cqw 0 0 9.4cqw;
-	font: 600 1.6cqw/1.3 var(--brain-sans);
+	padding: 1.1cqw 0 0 10cqw;
+	font: 600 2.8cqw/1.3 var(--brain-sans);
 }
 
 .slide .key.mini {
 	left: 0.4cqw;
-	top: 1.2cqw;
+	top: 0.8cqw;
 	width: 12cqw;
 	height: 5cqw;
-	transform: scale(0.62);
+	transform: scale(0.66);
 	transform-origin: 0 0;
 }
 
 /* a sheet: some words on paper, and the signature under them */
 .slide .sheet-paper {
 	inset: 0;
-	padding: 2.2cqw 2.4cqw;
+	padding: 2.4cqw 2.6cqw;
 	background: linear-gradient(160deg, #fffdf8 0 62%, var(--brain-panel) 62%);
 	border-radius: 0.6cqw;
 }
 
 .slide .sheet-words {
 	margin: 0;
-	font: 500 1.9cqw/1.35 var(--brain-serif);
+	font: 500 3.2cqw/1.3 var(--brain-serif);
 }
 
 .slide .sheet-sign {
 	margin: 0;
-	padding: 0.9cqw 0 0 5cqw;
+	padding: 1cqw 0 0 5.6cqw;
 	color: var(--brain-quiet);
-	font: 600 1cqw/1.3 var(--brain-sans);
-	letter-spacing: 0.1em;
-	text-transform: uppercase;
+	font: 600 2.6cqw/1.3 var(--brain-sans);
 }
 
 .slide .sheet-foot {
-	left: 2.4cqw;
-	right: 2.4cqw;
-	bottom: 2cqw;
-	height: 4cqw;
+	left: 2.6cqw;
+	right: 2.6cqw;
+	bottom: 2.2cqw;
+	height: 5cqw;
 	border-top: 0.14cqw solid var(--brain-gold);
 }
 
@@ -259,7 +249,7 @@
 
 .slide .sheet-foot .seal {
 	left: 0;
-	top: 0.5cqw;
+	top: 0.9cqw;
 }
 
 /* a tick: checked and found good, in conifer green */
@@ -328,20 +318,20 @@
 /* a chip: one word in a row of them, `on` the one meant */
 .slide .chips {
 	display: flex;
-	gap: 1cqw;
+	gap: 1.4cqw;
 }
 
 .slide .chip {
 	position: static;
 	display: inline-block;
 	margin: 0;
-	padding: 0.6cqw 1.4cqw;
-	font: 600 1.2cqw/1 var(--brain-sans);
-	letter-spacing: 0.1em;
+	padding: 0.8cqw 1.8cqw;
+	font: 600 2.6cqw/1 var(--brain-sans);
+	letter-spacing: 0.06em;
 	text-transform: uppercase;
 	background: var(--brain-panel);
 	border: 0.14cqw solid var(--brain-gold);
-	border-radius: 2cqw;
+	border-radius: 3cqw;
 }
 
 .slide .chip.on {
@@ -355,9 +345,9 @@
 	position: absolute;
 	margin: 0;
 	color: var(--brain-quiet);
-	font: 500 1.3cqw/1.35 var(--brain-sans);
-	transform: translateX(-50%);
+	font: 500 2.6cqw/1.35 var(--brain-sans);
 	text-align: center;
+	transform: translateX(-50%);
 }
 
 /* a public key: a key's half that anyone may see, in teal */

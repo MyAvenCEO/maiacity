@@ -47,4 +47,9 @@ Sampled from the references (the values are in `tokens.css`):
 - A **16:9 frame** that reads as a still: one concept, its title in a panel at the top left, few labels.
 - **Every element a layer** with a stable class, so a motion version can animate each one.
 - The text that explains it is on the page under the frame, in Markdown, never crowded into the picture.
-- Text in the frame has 4.5:1 against what is under it.
+- **No text under 2.6 % of the frame's width** (2.6cqw): 9 px on a phone, where the frame is about 356 px wide. So a
+  slide holds few words, and they are big. The box checks it at 390 px (`sandbox/docs.mjs`), and a test checks the CSS
+  (`render/tree.test.js`).
+- Text in the frame has 4.5:1 against what is under it, and never sits on a placed shape: on the ground, or on the
+  part that holds it (a record, a sheet, a chip), so what the face-runtime checks is what a reader sees.
+- The frame's title is its headline alone; the slide's number is in the page's index.

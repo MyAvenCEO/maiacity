@@ -7,7 +7,7 @@
 .device .title { left: 3.5%; top: 6%; }
 .device .key .bit-1 { left: 8.6cqw; height: 1.6cqw; }
 .device .key .bit-2 { left: 10.4cqw; height: 2.2cqw; }
-.device .alice-phone { left: 41%; top: 26%; width: 13cqw; height: 25cqw; }
-.device .alice-phone .key.mini { left: 2.2cqw; top: 10cqw; transform: rotate(-12deg) scale(0.62); }
-.device .phone-label { left: 47.5%; top: 75%; }
-.device .keep-note { left: 76%; top: 47%; width: 30cqw; }
+.device .alice-phone { left: 22%; top: 28%; width: 14cqw; height: 27cqw; }
+.device .alice-phone .key.mini { left: 2.4cqw; top: 11cqw; transform: rotate(-12deg) scale(0.66); }
+.device .phone-label { left: 29%; top: 82%; }
+.device .keep-note { left: 67%; top: 47%; width: 40cqw; }

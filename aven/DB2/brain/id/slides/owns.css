@@ -7,8 +7,8 @@
 .owns .title { left: 3.5%; top: 6%; }
 .owns .key .bit-1 { left: 8.6cqw; height: 1.6cqw; }
 .owns .key .bit-2 { left: 10.4cqw; height: 2.2cqw; }
-.owns .key:not(.mini) { left: 9%; top: 45%; transform: rotate(-12deg) scale(1.35); transform-origin: 0 50%; width: 16cqw; height: 6cqw; }
-.owns .key-label { left: 20.5%; top: 64%; }
-.owns .owns-arrow { left: 37%; top: 50.5%; width: 17cqw; }
-.owns .owns-label { left: 45.5%; top: 44%; }
-.owns .alice { left: 57%; top: 30%; width: 34cqw; height: 22cqw; }
+.owns .key.big { left: 5%; top: 50%; transform: rotate(-12deg) scale(1.35); transform-origin: 0 50%; width: 16cqw; height: 6cqw; }
+.owns .key-label { left: 16.5%; top: 72%; }
+.owns .owns-arrow { left: 33%; top: 56%; width: 12cqw; }
+.owns .owns-label { left: 39%; top: 48%; }
+.owns .alice { left: 51%; top: 30%; width: 44cqw; height: 31cqw; }

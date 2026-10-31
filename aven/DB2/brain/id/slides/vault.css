@@ -7,6 +7,6 @@
 .vault .title { left: 3.5%; top: 6%; }
 .vault .key .bit-1 { left: 8.6cqw; height: 1.6cqw; }
 .vault .key .bit-2 { left: 10.4cqw; height: 2.2cqw; }
-.vault .alice { left: 32%; top: 28%; width: 36cqw; height: 17cqw; }
+.vault .alice { left: 27%; top: 28%; width: 46cqw; height: 18cqw; }
 .vault .kinds { left: 50%; top: 72%; transform: translateX(-50%); }
-.vault .kinds-note { left: 50%; top: 82%; }
+.vault .kinds-note { left: 50%; top: 85%; }
