@@ -14,10 +14,8 @@ open Aven.Core
 
 def key (s : String) : Bytes := s.toUTF8.toList
 
-/-- Who governs whom on the cast, by vault ids `v:<name>`. -/
-def castGov (v w : Bytes) : Bool :=
-  let name (b : Bytes) : String := ((utf8Text b).drop 2).toString
-  (cast.governs (name v)).contains (name w)
+/-- Who governs whom on the cast, as authority runs (A28). -/
+def castGov (v w : Bytes) : Bool := castCtx.governs v w
 
 /-- The network's members, for public caps (D15). -/
 def castMembers : List String := ["alice", "bob"]

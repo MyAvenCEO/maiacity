@@ -148,8 +148,10 @@ same day, and what they agreed is marked where it applies. Nothing in this spec 
 
 Each rule is held by a Lean theorem or a check once there is code to hold.
 
-1. **Keys sign; vaults hold.** Only a key signs, and only a vault, a group of vaults (rule 13), a ticket or the public
-   (rule 33) holds a cap. A device signs for the vault it serves, within its device cap (`device_within_cap`).
+1. **Keys sign; vaults hold.** Only a key signs, and only a vault, a group of vaults (rule 13) or the public (rule 33)
+   holds a cap. A device signs for the vault it serves, within its device cap (`device_within_cap`). A cap's issuer is
+   a vault, proven by one of its devices or by its owners' approval, k of n: a vault without devices, such as a coop,
+   issues by its owners' approval alone (A28).
 2. **Governing is ownership, never a cap.** A vault's owners change its owners, devices, thresholds and recovery, k of
    n. No cap governs, and no device governs (`Aven.ID.Governs`).
 3. **Every cap narrows what it rests on.** A root cap rests on its issuer's authority over the target's vault. Every
@@ -519,6 +521,16 @@ messages and queries. For people with keys, reading is whole Docs; for actors an
   - the door admits exactly the member vaults' devices (`settle_door`), the same at every peer (`settle_perm`).
 - **The public** is every member of the network, as the door admits them (`memberOf` the admin coop), and never
   anyone outside it (Samuel, 30 Oct 2026). There is no open, IPFS-style publishing.
+  - **Membership is a cap** (A38, `Aven.ID.Member`). Maia City's vault grants each member's vault a member cap,
+    which is what a join is: reading the chat and putting its messages, and signing in its own devices on the tree
+    Doc. The confirm op Aven holds under Maia City's confirm cap issues it, for a claim of a ticket Maia City issued.
+    The confirm envelope is the issuance (the architect and avenPEER, 31 Oct 2026). So a member cap is Maia City's
+    act under the cap its owners approved, not the confirmer's own grant: D14 asks the confirmer's owners nothing for
+    each member, and there is no second cap object to keep in step. A ticket is a cap from Maia City to the vault its
+    claim founds; its one-time key only authorizes the claim and holds nothing (A28, A42). A member shows its chain
+    and anyone checks it (rule 4): the confirm cap allows nothing but a confirm on the tree Doc (`confirm_only`), and a
+    reader counts a member only by an authorized confirm of a claim that founded it (`member_by_confirm`). Which
+    claims stand is the tree's (`Settled.member`, avenPEER).
   - A Doc the public reads is sealed to the network's members group, which a member joins when they join and leaves
     when they are removed.
   - The public may write, mutate and tell where the cap says. The city-dome is such a Doc: every member reads and
@@ -537,13 +549,18 @@ messages and queries. For people with keys, reading is whole Docs; for actors an
 | A keeper's offer | The keeper's vault's owners, k of n (A44) |
 | Governance | Owners, k of n (avenID) |
 | A new device's device cap | The passkey sign-in that adds the device, which is already an owner's act |
-| An actor's narrower cap, message by message: an attenuation | A device of its holder, the host's (A27). It grants nothing new, so no approval |
+| A cap from a vault without devices, such as a coop | Its owners, k of n, and no device (A28) |
+| An actor's narrower cap, message by message: an attenuation | A device of its holder, the host's (A27). It grants nothing new, so no approval; with no device signing, its holder's owners approve it |
 | A revocation | Any device of a vault that may revoke. It only takes away, so a lost passkey never stops it |
 
 Approvals bind what others check: writes, `share` and `tell`. Reading is holding a key, and anyone holding a Doc's key
 can pass it on without an approval. No approval stops that, as no system stops a reader from leaking (rule 15).
 
-A root cap is issued by the target's vault or by a vault that governs it: authority runs down the tree.
+A root cap is issued by the target's vault, or by a vault that governs it and meets its quorum alone: authority runs
+down the tree only through quorums (A28). Over a coop whose owners approve k of n with k > 1, no one owner vault has
+it, so the coop issues as itself, approved by k of its owners, and every vault a kept root grants over approves it by
+its own quorum (`root_quorum`). The same relation is who governs whom for a target that reaches below a vault and for
+writing on a vault's own authority.
 
 **Delegating needs no one online.** The holder signs a child cap that narrows its own and writes it where its target's
 caps live. Readers check it when they meet it, as Biscuit's offline attenuation does without Datalog.
@@ -1330,8 +1347,11 @@ Values, hashes, ops or targets of its own; its built-in types are `Aven.ID.Types
 | | `device_proposals_never_main`, `merge_within_device` | A device whose cap is for proposals, as an agent's removals go, never writes on main whatever chain it names; a merge into main read whole stays within the merging device's cap |
 | | `host_chain_only`, `actor_within_device`, `host_never_beyond` | An authorized envelope an actor host's device signed rests on a chain, the one the acting actor's message carried, and names that actor; every call of it is allowed both by that chain's last cap and by the host's device cap, the union of its hosted actors' standing caps (A27) |
 | | `authorizedB_iff` | The verdict a reader computes, with its tests for who governs whom, spawned and lists, is `Authorized`; `aven-id-model` answers `authorized.json`'s cases with it |
+| `Member` | `confirm_only` | Maia City's confirm cap allows nothing but `tree/1`'s confirm, on the tree Doc (A38) |
+| | `member_by_confirm` | A reader counts a vault as a member only by an authorized confirm on the tree Doc, naming a claim that founded it, written on its signer's vault's own authority or under a chain whose root allows that confirm: the confirm envelope is the member cap's issuance (A38, A28) |
 | `Caps` | `narrow_chain`, `narrow_ops` | No cap in a chain lets an op reach a Doc, or allows a call (an op, on a Doc, with parameters), that its root doesn't (A32) |
-| | `root_authority` | Every line a chain grants lies in its root issuer's authority: its own vault, one it governs, or a Doc of one |
+| | `root_authority` | Every line a chain grants lies in its root issuer's authority: its own vault, one it governs whose quorum it meets alone, or a Doc of one |
+| | `root_quorum` | In a well-formed tree, every vault a kept root grants over approves the root by its own quorum, k of n: a root over a coop's Docs needs the coop's own owners, and no one owner vault issues it alone (A28) |
 | | `no_step_without_write` | A grant whose ops all lower to no step, as `core/1`'s read, tell, keep and share do, lets no call write a step (A2) |
 | | `group_typed` | A group that holds a cap in a valid chain is a Doc of avenID's type `group`, a type Doc (A39) |
 | | `chain_short` | A chain passes its root on no more often than its root may be shared: every grant lowers the share depth, and an attenuation never raises it |
@@ -1359,6 +1379,7 @@ Values, hashes, ops or targets of its own; its built-in types are `Aven.ID.Types
 | `Approve` | `approval_exact` | An approval holds only with k distinct owners, each having signed exactly its digest |
 | | `approvesF_exact`, `approves_signed` | An owner that is a vault approves by its own quorum, recursively: a vault approves only with its threshold of distinct owners, each a key that signed exactly the digest or a vault that approves it, and with every threshold at least one, an approval rests on such a signature by a key above the vault |
 | | `approves_iff` | In a well-formed tree, looking as many levels up as the tree has vaults finds every approval: a vault's owners stand lower than it |
+| | `alone_approves` | In a well-formed tree, whatever a vault approves, a vault whose quorum it meets alone approves too: authority that runs down only through such quorums speaks for each vault's own owners (A28) |
 | | `shown_is_signed` | What avenOS shows for a passkey tap is decoded from the exact bytes signed (A2, rule 25) |
 | `Revoke` | `seen_never_counts` | A revoked holder's envelope with the revocation in its own past never counts: no laundering. Envelopes are Core's, and caps reads the vault, the cap chain and the acks of each from inside its seal; their past is Core's `Reaches`, which `Aven.Core.Past` decides |
 | | `saw_iff` | Having seen a revocation, in Core's past: its envelope is before the envelope, or the envelope or something it reaches acknowledges it |
@@ -1427,6 +1448,7 @@ One smaller gap:
 | `epochs.json` | Who learns which key after Bob's removal and after Alice's heal, and what Bob learns holding Maia City's `below` group |
 | `safe.json` | Requests to Alice's safe from her agent and from Mallory, on her Mac and on a host that keeps Doc keys inside, with what each gives back |
 | `approvals.json` | Signatures, thresholds and digests on the cast, and whether each approval holds; approvals where an owner is a vault, with a coop of two vaults added |
+| `issuers.json` | Chains on the cast with the garden, a coop Alice and Bob own whose quorum each case gives, and its helper: a root over a coop's Docs needs the coop's own owners, a vault without devices issues by its owners' approval alone, an attenuation with no device needs its holder's owners, and Maia City's confirm cap (A28, A38). The context writes the tree out and gives per-vault quorums |
 | `expiry.json` | Writes under a cap that expires, with each envelope's signed time, and whether each counts for the clock |
 | `network.json` | A ticket's claims in two orders (A12), removals that clash, MaiaCityGuardian's exit |
 | `keep.json` | Fetch-key links in the order they came, with the keys a keeper takes, its current key and its flags; proofs and whether they're served; what each vault pays; what a keeper keeps under the keep caps it holds and its own offers (A44); 30 generated keepers |
@@ -1473,11 +1495,8 @@ A proposal for milestone 3's plan, for the architect:
 ## Open questions
 
 What is open (A42: the status lists say so):
-- **Rule 15, A28's caps items:**
-  - a root cap over a coop's Docs needs the coop's own owners, k of n;
-  - a vault without devices, such as a coop, issues by its owners' approval alone;
-  - a ticket becomes a cap from Maia City to the vault its claim founds, its one-time key proving the claim;
-  - each vault stores its own threshold (`Ctx.threshold` is 1 today).
+- **Rule 15, A28: each vault stores its own threshold.** avenPEER adds `threshold` to the vault record, with k ≥ 1
+  in WF and the owner-change op that sets it; `Ctx.threshold` reads it then. Until then a context gives its quorums.
 - **Rule 4:** `rule4_reading_writes_nothing` concludes that no Record changes once the engine refuses a change of a
   Record's type (`typesKept`, with the docs thread).
 - **The safe's vectors** tag their unions with `kind`, which is only a vault's (A1); they get another word.
