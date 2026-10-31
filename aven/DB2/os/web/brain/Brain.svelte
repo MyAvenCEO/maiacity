@@ -5,7 +5,7 @@
 	// route, so no vault is ever named `brain`.
 	import MainNav from './MainNav.svelte';
 	import Node from './Node.svelte';
-	import { art, glossary, packages, page, slide } from './brain.js';
+	import { art, face, glossary, packages, page, slide } from './brain.js';
 
 	let { home = '#/' } = $props();
 
@@ -112,7 +112,7 @@
 					</div>
 					{#each slides as s (s.id)}
 						<section class="slide-page" id={`slide-${s.id}`} data-testid={`slide-${s.id}`}>
-							{#each s.tree as node, i (i)}<Node {node} />{/each}
+							<div class="face" use:face={s.face}></div>
 							<div class="prose">
 								<!-- the slide's own headline stands for its text's title -->
 								{#each s.text[0]?.[0] === 'h1' ? s.text.slice(1) : s.text as node, i (i)}<Node {node} />{/each}
