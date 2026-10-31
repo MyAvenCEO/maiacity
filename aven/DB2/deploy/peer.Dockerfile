@@ -9,6 +9,9 @@ ARG BOX
 FROM ${BOX} AS build
 WORKDIR /src
 COPY . .
+# aven/runtimes' file registry, which the Peer takes by path (`../../../runtimes/registry`): the workflow's named
+# context `registry` (.github/workflows/avenpeer-image.yml)
+COPY --from=registry . /runtimes/registry
 # The box's registry holds every crate the lockfile names, so nothing is downloaded.
 RUN cargo build --release --locked --offline -p aven-peer \
     && strip -o /aven-peer target/release/aven-peer

@@ -11,7 +11,9 @@ import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const db2 = resolve(fileURLToPath(new URL('.', import.meta.url)), '../..');
-const fixed = ['sandbox/box/Dockerfile', 'sandbox/box/deps.sh', 'sandbox/box/tag.mjs', '.dockerignore', 'Cargo.toml', 'Cargo.lock'];
+// aven/runtimes' file registry's manifest, which the Peers take by path, comes in as the named context `registry`
+const fixed = ['sandbox/box/Dockerfile', 'sandbox/box/deps.sh', 'sandbox/box/tag.mjs', '.dockerignore', 'Cargo.toml', 'Cargo.lock',
+	'../runtimes/registry/Cargo.toml'];
 const whole = [];
 // what .dockerignore leaves out wherever it is
 const skipped = new Set(['target', 'node_modules', '.git', '.lake', 'runs', 'dist', 'deliverables']);

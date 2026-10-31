@@ -4,10 +4,13 @@
 //   1. every tree of tree.json, and every face's of face.json, gets the model's verdict from the drawer's own check;
 //   2. every tree that passes is drawn into a shadow root and read back node by node: it is exactly the tree, its
 //      attributes in their order; every tree that fails is refused, and nothing is drawn;
-//   3. every face's style is written as the model's CSS text (`Rule.css`); the drawer refuses exactly the rules the
-//      model counts as bad, and a rule outside Face's types;
+//   3. every face's style (Style's typed rules, given as their Values) is written as the model's CSS text
+//      (`Rule.css`); the drawer refuses exactly the rules the model counts as out of range, and rules outside Style's
+//      types;
 //   4. a click on a node with data-on is heard as its event, and a click on a link is handed to the host: the page
-//      never follows it; text that looks like markup stays text, and nothing in it runs.
+//      never follows it; text that looks like markup stays text, and nothing in it runs;
+//   5. a face never draws outside its host: layers placed absolutely, covering, translated far off and huge paint
+//      nothing and take no click outside it.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { chromium, firefox, webkit } from 'playwright';
@@ -21,14 +24,17 @@ const drawJs = readFileSync(new URL('../os/web/runtimes/draw.js', import.meta.ur
 
 // a vector's tree, {text} or {tag, attrs, kids}, in the shape a runtime's answer has: text, or [tag, attrs, kids]
 const shape = (n) => ('text' in n ? n.text : [n.tag, n.attrs, n.kids.map(shape)]);
-const hexBytes = (s) => (s === null ? null : [1, 3, 5].map((i) => parseInt(s.slice(i, i + 2), 16)));
-const rule = (r) => [r.class, hexBytes(r.color), hexBytes(r.background), r.size, r.bold];
+// a Value in its JSON form (Aven.Core.Json), as a runtime's decoded answer has it: bytes as an array of bytes
+const value = (j) =>
+	Array.isArray(j) ? j.map(value)
+	: j && typeof j === 'object' && 'bytes' in j ? j.bytes.match(/../g)?.map((h) => parseInt(h, 16)) ?? []
+	: j;
 
 const trees = [
 	...vectors('tree.json').map((v) => ({ name: v.name, tree: shape(v.input.tree), ok: v.expected })),
 	...vectors('face.json').map((v) => ({ name: `face: ${v.name}`, tree: shape(v.input.tree), ok: v.expected.check })),
 ];
-const faces = vectors('face.json').map((v) => ({ name: v.name, style: v.input.style.map(rule), css: v.expected.css, bad: v.expected.badClass }));
+const faces = vectors('face.json').map((v) => ({ name: v.name, style: v.input.style.map(value), css: v.expected.css, bad: v.expected.badRules }));
 
 const page = `<!doctype html><meta charset="utf-8"><title>drawer</title><body><div id="hosts"></div>
 <script type="module">import * as d from '/draw.js'; window.d = d; window.ready = true;</script>`;
@@ -67,12 +73,26 @@ function inPage({ trees, faces }) {
 	for (const { name, style, css, bad } of faces) {
 		const got = style.map(d.ruleCss);
 		if (JSON.stringify(got) !== JSON.stringify(css)) problems.push(`${name}: css ${JSON.stringify(got)}`);
-		// the drawer refuses exactly the rules the model counts as bad (`badClass`)
-		const refused = style.filter((r) => !d.ruleOk(r)).length;
-		if (refused !== bad) problems.push(`${name}: ${refused} rules refused, the model ${bad}`);
+		// the drawer refuses exactly the rules the model counts as out of range (`badRules`)
+		const refused = style.flatMap((r, i) => (d.ruleOk(r) ? [] : [i]));
+		if (JSON.stringify(refused) !== JSON.stringify(bad)) problems.push(`${name}: rules ${refused} refused, the model ${bad}`);
 	}
-	for (const bad of [['x}y', null, null, null, null], ['row', [1, 2], null, null, null], ['row', null, null, -1, null], ['row', 'red', null, null, null]])
-		if (d.ruleOk(bad)) problems.push(`a rule outside Face's types taken: ${JSON.stringify(bad)}`);
+	// shapes that are no rule of Style's at all
+	const navy = [0x23, 0x32, 0x4a];
+	for (const bad of [
+		[[[null, ['row']]], [['color', 'red']]],
+		[[[null, ['row']]], [['color', [1, 2]]]],
+		[[[null, ['row']]], [['url', 'https://example.com']]],
+		[[[null, ['row']]], [['background-color', navy, 'extra']]],
+		[[[null, ['row']]], [['font-size', [260, 'vw']]]],
+		[[[null, ['row']]], [['--brand', navy]]],
+		[[[null, ['a:hover']]], [['color', navy]]],
+		[[['style', []]], [['color', navy]]],
+		[[[null, []]], [['color', navy]]],
+		[[], [['color', navy]]],
+		['.row', [['color', navy]]],
+	])
+		if (d.ruleOk(bad)) problems.push(`a rule outside Style's types taken: ${JSON.stringify(bad)}`);
 	return problems;
 }
 
@@ -109,6 +129,49 @@ async function clicks(page) {
 	});
 }
 
+// A face never draws outside its host: one that places layers absolutely, covers its parent, translates them far off
+// and makes them huge, drawn into a small host beside a button of the page. Every point of the page outside the host
+// is still the page's (`elementFromPoint`), and a real click on the button reaches the button. (A layer's own box may
+// reach past the host; what counts is that nothing is painted or hit there.)
+async function boxed(page) {
+	const at = await page.evaluate(() => {
+		const { d } = window;
+		const stage = document.createElement('div');
+		stage.style.cssText = 'position:relative;width:600px;height:400px;margin:20px';
+		const button = document.createElement('button');
+		button.textContent = 'Sign in';
+		button.style.cssText = 'position:absolute;left:10px;top:10px;width:120px;height:40px';
+		button.onclick = () => (window.signedIn = true);
+		const host = document.createElement('div');
+		host.style.cssText = 'position:absolute;left:300px;top:200px;width:200px;height:100px';
+		stage.append(button, host);
+		document.body.prepend(stage);
+		const px = (v) => [v * 100, 'px'];
+		const veil = [['position', 'absolute'], ['inset'], ['width', px(10000)], ['height', px(10000)], ['background-color', [0, 0, 0]]];
+		const far = [['position', 'absolute'], ['transform', [['translateX', px(-5000)], ['translateY', px(-5000)]]],
+			['width', px(10000)], ['height', px(10000)], ['background-color', [255, 0, 0]]];
+		const left = [['position', 'absolute'], ['left', px(-10000)], ['top', px(-10000)], ['width', px(10000)], ['height', px(10000)]];
+		const tree = ['div', [], [['div', [['class', 'veil']], ['x']], ['div', [['class', 'far']], ['y']], ['div', [['class', 'left']], ['z']]]];
+		const style = [[[[null, ['veil']]], veil], [[[null, ['far']]], far], [[[null, ['left']]], left]];
+		d.draw(host, { tree, style });
+		const hr = host.getBoundingClientRect();
+		const br = button.getBoundingClientRect();
+		const outside = [];
+		for (let x = 0; x < innerWidth; x += 37)
+			for (let y = 0; y < innerHeight; y += 37)
+				if (x < hr.left || x > hr.right || y < hr.top || y > hr.bottom) {
+					const e = document.elementFromPoint(x, y);
+					if (e === host || host.contains(e)) outside.push([x, y]);
+				}
+		return { outside: outside.slice(0, 5), count: outside.length, button: [br.left + br.width / 2, br.top + br.height / 2] };
+	});
+	const problems = [];
+	if (at.count) problems.push(`a face is drawn outside its host at ${at.count} points, ${JSON.stringify(at.outside)}`);
+	await page.mouse.click(at.button[0], at.button[1]);
+	if (!(await page.evaluate(() => window.signedIn === true))) problems.push("a face took the click meant for the page's button");
+	return problems;
+}
+
 const report = {};
 let failed = false;
 for (const [engine, type] of [['chromium', chromium], ['webkit', webkit], ['firefox', firefox]]) {
@@ -117,7 +180,7 @@ for (const [engine, type] of [['chromium', chromium], ['webkit', webkit], ['fire
 	const tab = await browser.newPage();
 	await tab.goto(url);
 	await tab.waitForFunction(() => window.ready);
-	const problems = [...(await tab.evaluate(inPage, { trees, faces })), ...(await clicks(tab))];
+	const problems = [...(await tab.evaluate(inPage, { trees, faces })), ...(await clicks(tab)), ...(await boxed(tab))];
 	await browser.close();
 	report[engine] = { problems, trees: trees.length, faces: faces.length, ms: Date.now() - started };
 	if (problems.length) failed = true;
