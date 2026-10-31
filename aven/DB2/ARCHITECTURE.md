@@ -719,7 +719,7 @@ the spec that owns it.
     the sharing vault that lists Docs, like a smart album. The vault's devices run the query, an op, and sign each
     change to the list; a cap names the collection and what it lists. So what a cap covers changes only by its
     issuer's signed act, never because someone edited a tag, and anyone can check it, keepers too. A Doc that leaves
-    the list gets no new key for the holder; what was seen stays seen.
+    the list is dropped by the holder's devices at their next sync (A40).
   - **Footprints are computed from an op's lowering** (E1 to E3), never written in a cap, so what an owner approves is
     the op's name and definition, exactly what it lets the holder do. An envelope names the op it ran; a reader checks
     the cap lists it and the steps are what it produces.
@@ -754,6 +754,11 @@ the spec that owns it.
 - **A38. Membership is a cap:** Maia City's vault grants each member's vault a member cap, which is what a join is. A
   member shows its chain and anyone checks it (rule 4), so no device needs the roster; the tree keeps Maia City's
   governance and its withdrawals. *For Samuel: it changes what a join is.*
+
+- **A40. Holdings follow caps** (Samuel, 31 Oct 2026). A device or keeper holds only what its caps cover (rule 6:
+  wants ∩ caps), so whenever coverage shrinks, honest peers drop the bytes and keys at their next sync: a delete (for
+  everyone), a Doc leaving a collection, a revoked or narrowed cap, a withdrawn keep cap. One rule instead of four. Its
+  limit is honest: a copy someone deliberately took outside avenOS can't be reached by any system. *Decided: yes.*
 
 **The engine and actors**
 - **A9. The want queue** as in [Massive data](#massive-data-wants-decide-what-moves). Its laws go into Lean before
