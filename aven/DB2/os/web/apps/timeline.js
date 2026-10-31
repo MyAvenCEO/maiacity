@@ -21,6 +21,11 @@ export function read(cast, line) {
 		stopped: () => [who, 'stopped'],
 		failed: () => [who, `failed: ${line.why}`],
 		refused: () => [who, `refused a key not in the cast`],
+		// another wire version (PEERS.md §7): refused, and the one behind updates
+		update: () =>
+			line.from
+				? [`${who} ← ${name(line.from)}`, `refused wire version ${line.theirs}: ${line.follows ? 'update to join' : 'it updates'}`]
+				: [`${who} → ${name(line.to)}`, `update: wire version ${line.theirs} there, ${line.mine} here${line.follows ? ', update to join' : ''}`],
 	}[line.event] ?? (() => [who, line.event]);
 	const [between, said] = what();
 	return { time, between, said };

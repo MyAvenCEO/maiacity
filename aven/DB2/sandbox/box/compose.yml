@@ -59,6 +59,8 @@ services:
       AVEN_PEER_STORE: fs
       AVEN_PEER_STORE_PATH: /data
       AVEN_PEER_FILES: /data/files
+      # empty but while sandbox/upgrade.mjs rehearses a Peer left behind (PEERS.md §7)
+      AVEN_PEER_WIRE_VERSION: ${AVENSANDBOX_WIRE_ALICE:-}
     volumes:
       - target:/target:ro
       - events:/events
@@ -92,6 +94,8 @@ services:
       AVEN_PEER_ADMIN_COOP: Maia City
       AVEN_PEER_RP_ID: localhost
       AVEN_PEER_ORIGIN: http://localhost:5174,http://localhost:5175
+      # empty but while sandbox/upgrade.mjs rehearses an Aven Peer a wire version ahead (PEERS.md §7)
+      AVEN_PEER_WIRE_VERSION: ${AVENSANDBOX_WIRE_PROD:-}
     depends_on:
       s3: { condition: service_healthy }
 

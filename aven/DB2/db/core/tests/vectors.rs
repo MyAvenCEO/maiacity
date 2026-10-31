@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use aven_db_core::presence::Presence;
 use aven_db_core::status::{Event, Status};
 use aven_db_core::timeline;
-use aven_db_core::wire::{Decoder, WireError, encode};
+use aven_db_core::wire::{self, Decoder, WireError, encode};
 use serde_json::{Map, Value, json};
 
 fn vectors(file: &str) -> Vec<Value> {
@@ -140,6 +140,44 @@ fn the_wire_follows_the_vectors() {
             .collect();
         assert_eq!(decode(&chunks), v["expected"], "{}", v["name"]);
     }
+}
+
+/// A hello of each wire version as this peer meets it: carried on, or refused with `update`; whether the hello's peer
+/// follows the refusal; and the gossip topic's name per version (`Aven.DB.Wire`, "The wire version").
+#[test]
+fn upgrades_follow_the_vectors() {
+    let all = vectors("upgrades.json");
+    assert!(all.len() >= 8);
+    for v in all {
+        let (input, expected) = (&v["input"], &v["expected"]);
+        if let Some(network) = input["network"].as_str() {
+            let name = wire::topic_name(input["wire"].as_u64().unwrap(), network);
+            assert_eq!(json!(name), expected["topic"], "{}", v["name"]);
+            continue;
+        }
+        let (mine, theirs) = (
+            input["mine"].as_u64().unwrap(),
+            input["theirs"].as_u64().unwrap(),
+        );
+        assert_eq!(
+            json!(wire::meet(mine, theirs)),
+            expected["answer"],
+            "{}",
+            v["name"]
+        );
+        assert_eq!(
+            json!(wire::follows(theirs, mine)),
+            expected["follows"],
+            "{}",
+            v["name"]
+        );
+    }
+    // this peer's own version is the model's
+    let ours: Vec<_> = vectors("upgrades.json")
+        .into_iter()
+        .filter(|v| v["name"] == "one version: the connection carries on")
+        .collect();
+    assert_eq!(ours[0]["input"]["mine"], json!(wire::VERSION));
 }
 
 /// However a stream is cut, the same frames arrive, and they encode back to the same bytes: a property of the

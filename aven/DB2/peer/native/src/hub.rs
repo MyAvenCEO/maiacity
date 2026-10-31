@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use aven_db_core::presence::Presence;
 use aven_db_core::status::TICK_MS;
 use aven_db_core::timeline;
-use aven_db_core::wire::{Decoder, Frame, encode, heads_pages, kept_pages};
+use aven_db_core::wire::{self, Decoder, Frame, encode, heads_pages, kept_pages};
 use iroh::PublicKey;
 use iroh::endpoint::Connection;
 use iroh::protocol::{AcceptError, ProtocolHandler};
@@ -189,14 +189,34 @@ impl Hub {
                 break (first, frames);
             }
         };
+        // the first frame names the wire version: any other than this peer's is answered `update` and closed, before
+        // anything else it says is read (PEERS.md §7: no fallback)
+        if let Frame::Hello { wire: theirs, .. } = &said
+            && let Some(answer) = wire::meet(crate::wire_version(), *theirs)
+        {
+            send.write_all(&encode(&answer)).await.map_err(fail)?;
+            let _ = send.finish();
+            // the refusal reaches the peer before the connection goes, or a moment passes
+            let _ = tokio::time::timeout(Duration::from_secs(2), send.stopped()).await;
+            let follows = wire::follows(crate::wire_version(), *theirs);
+            self.note(
+                "update",
+                json!({ "from": peer, "mine": crate::wire_version(), "theirs": theirs, "follows": follows }),
+            );
+            return Err(fail(format!(
+                "{peer} speaks wire version {theirs}, this peer {}",
+                crate::wire_version()
+            )));
+        }
         // the first frame names the peer; a member must name itself
-        let named = matches!(&said, Frame::Hello { peer: name } if name == peer);
+        let named = matches!(&said, Frame::Hello { peer: name, .. } if name == peer);
         if !named && (self.members.knows(&conn.remote_id()) || !matches!(said, Frame::Hello { .. }))
         {
             return Err(fail(format!("{peer} said {said:?}")));
         }
         send.write_all(&encode(&Frame::Hello {
             peer: self.me.clone(),
+            wire: crate::wire_version(),
         }))
         .await
         .map_err(fail)?;

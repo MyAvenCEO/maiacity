@@ -11,11 +11,10 @@
 	import Avatar from '../Avatar.svelte';
 	import Offline from '../Offline.svelte';
 	import { tree, vaultName } from '../id.svelte.js';
-	import { remove, room, say, share } from '../room.svelte.js';
+	import { keepDraft, remove, room, say, share } from '../room.svelte.js';
 
 	let { account, device } = $props();
 
-	let text = $state('');
 	let list = $state();
 	let over = $state(false);
 	let picker = $state();
@@ -34,8 +33,9 @@
 
 	function send(event) {
 		event.preventDefault();
-		say(text);
-		text = '';
+		say(room.draft);
+		room.draft = '';
+		keepDraft(true);
 	}
 
 	function drop(event) {
@@ -362,13 +362,13 @@
 			{/each}
 		</ol>
 		<form onsubmit={send}>
-			<input bind:value={text} placeholder="Write to everyone here" aria-label="Line" data-testid="line" />
+			<input bind:value={room.draft} oninput={() => keepDraft()} placeholder="Write to everyone here" aria-label="Line" data-testid="line" />
 			<input type="file" multiple hidden bind:this={picker} onchange={pick} data-testid="file-input" />
 			<button type="button" class="quiet" onclick={() => picker.click()} aria-label="Share a file" data-testid="share"
 				><svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg
 				></button
 			>
-			<button disabled={!text.trim()} data-testid="say"
+			<button disabled={!room.draft.trim()} data-testid="say"
 				><svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg
 				><span>Send</span></button
 			>
