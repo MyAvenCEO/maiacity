@@ -29,7 +29,7 @@ pub mod query;
 pub mod value;
 
 pub use changes::{
-    ChangeKind, RecordChange, change_of, changes_from, footprint_ok, id_key, id_of_key,
+    ChangeKind, RecordChange, Version, change_of, changes_from, footprint_ok, id_key, id_of_key,
     verdict_footprint,
 };
 pub use footprint::{check, diff_within, footprint};

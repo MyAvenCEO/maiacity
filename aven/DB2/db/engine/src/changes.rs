@@ -15,11 +15,48 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use aven_core::{DocId, Step, StepVerb, TypeId, Value};
+use aven_core::{DocId, Hash, Step, StepVerb, Value};
 
 use crate::footprint::{has_verb, opt_eq, writes};
 use crate::mutate::Record;
 use crate::query::get;
+
+/// The version a Record was written under: its type Doc, and its schema's hash unless the type is built in, which is
+/// versioned by its label (`Version`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Version {
+    pub r#type: DocId,
+    pub schema: Option<Hash>,
+}
+
+impl Version {
+    /// `[type Doc]` for a built-in type, `[type Doc, schema hash]` otherwise, each the 32 bytes of its hash.
+    pub fn value(&self) -> Value {
+        let mut out = alloc::vec![self.r#type.0.value()];
+        out.extend(self.schema.map(|h| h.value()));
+        Value::Array(out)
+    }
+
+    /// Read back; `None` for any other shape, or a hash that isn't 32 bytes (`Version.ofValue?`).
+    pub fn of_value(v: &Value) -> Option<Version> {
+        let hash = |v: &Value| match v {
+            Value::Bytes(b) => b.as_slice().try_into().ok().map(Hash),
+            _ => None,
+        };
+        let Value::Array(xs) = v else { return None };
+        match xs.as_slice() {
+            [t] => Some(Version {
+                r#type: DocId(hash(t)?),
+                schema: None,
+            }),
+            [t, s] => Some(Version {
+                r#type: DocId(hash(t)?),
+                schema: Some(hash(s)?),
+            }),
+            _ => None,
+        }
+    }
+}
 
 /// What a change does to its Record (`ChangeKind`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,13 +76,13 @@ impl ChangeKind {
     }
 }
 
-/// One Record an envelope touches: its id, its type id, the kind, and the fields it writes with their new values:
+/// One Record an envelope touches: its id, its version, the kind, and the fields it writes with their new values:
 /// every field the Record carries when new, the fields whose value differs when edited, none when gone. A field the
 /// envelope removes is written too, with no value, `(f, None)` (`RecordChange`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RecordChange {
     pub id: Vec<u8>,
-    pub r#type: TypeId,
+    pub r#type: Version,
     pub kind: ChangeKind,
     pub fields: Vec<(String, Option<Value>)>,
 }
@@ -74,7 +111,7 @@ fn edited_fields(r0: &Record, r: &Record) -> Vec<(String, Option<Value>)> {
 }
 
 /// One Record as an edit, given its type id (`edited`).
-fn edited(ver: &impl Fn(&DocId) -> TypeId, r0: &Record, r: &Record) -> RecordChange {
+fn edited(ver: &impl Fn(&DocId) -> Version, r0: &Record, r: &Record) -> RecordChange {
     RecordChange {
         id: r.id.bytes(),
         r#type: ver(&r.r#type),
@@ -85,7 +122,7 @@ fn edited(ver: &impl Fn(&DocId) -> TypeId, r0: &Record, r: &Record) -> RecordCha
 
 /// What a reader sees of one Record after: new, edited, or nothing when it is as it was (`changeOf`).
 pub fn change_of(
-    ver: &impl Fn(&DocId) -> TypeId,
+    ver: &impl Fn(&DocId) -> Version,
     s: &[Record],
     r: &Record,
 ) -> Option<RecordChange> {
@@ -110,7 +147,7 @@ pub fn change_of(
 /// The changes a reader sees from a Doc's Records before to after; `ver` gives the type id each type Doc is written
 /// under (`changesFrom`).
 pub fn changes_from(
-    ver: &impl Fn(&DocId) -> TypeId,
+    ver: &impl Fn(&DocId) -> Version,
     s: &[Record],
     s2: &[Record],
 ) -> Vec<RecordChange> {

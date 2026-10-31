@@ -127,7 +127,7 @@ theorem rule4_fit_merges {S K V : Type} [DecidableEq K] (rule : S → K → V �
 /-- The content of an envelope, as every reader judges it from the changes it sees: the engine's footprint check (the
 changes stay within the steps its calls lower to, `fp`, which caps checked it may call, A32) and docs' fit, both over
 the one change view, from the version the envelope builds on (`before`) to the one it makes (`step`). -/
-def contentOk (ver : DocId → TypeId) (fp : Envelope → List Step) (rule : TypeId → Bytes → Value → Prop)
+def contentOk (ver : DocId → DB.Docs.Version) (fp : Envelope → List Step) (rule : DB.Docs.Version → Bytes → Value → Prop)
     (before : Envelope → List (DB.Engine.Record Value))
     (step : List (DB.Engine.Record Value) → Envelope → List (DB.Engine.Record Value)) (e : Envelope) : Prop :=
   DB.Engine.verdictFootprint (fp e) (DB.Engine.changesFrom ver (before e) (step (before e) e)) = true ∧
@@ -140,8 +140,8 @@ authorized by its cap chain, not revoked, not ended by a delete, within its call
 half of a split. -/
 theorem rule4_one_verdict (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spawned lists : DocId → DocId → Prop)
     (signed : Envelope → Prop) (H : Bytes → Hash) (epochOf : Envelope → Nat) (rd : ID.Reads)
-    (rs : List ID.Revocation) (isDelete byOwner : Envelope → Bool) (ver : DocId → TypeId)
-    (rule : TypeId → Bytes → Value → Prop) (before : Envelope → List (DB.Engine.Record Value))
+    (rs : List ID.Revocation) (isDelete byOwner : Envelope → Bool) (ver : DocId → DB.Docs.Version)
+    (rule : DB.Docs.Version → Bytes → Value → Prop) (before : Envelope → List (DB.Engine.Record Value))
     (step : List (DB.Engine.Record Value) → Envelope → List (DB.Engine.Record Value)) (S : List Envelope)
     (e : Envelope) :
     Counts (Envelope.name H)
@@ -181,7 +181,7 @@ theorem rule4_readers_agree (nm : Envelope → Hash) (ok : Envelope → Prop) {S
 /-- What the content check gives: every change is one a step of the footprint makes, the footprint being the steps the
 envelope's calls lower to; and where what an envelope says it does is the diff a reader sees (`ChangesAreDiff`, with
 distinct Record ids in the engine's `diff_footprint`), fit holds of what it says. -/
-theorem rule4_content {ver : DocId → TypeId} {fp : Envelope → List Step} {rule : TypeId → Bytes → Value → Prop}
+theorem rule4_content {ver : DocId → DB.Docs.Version} {fp : Envelope → List Step} {rule : DB.Docs.Version → Bytes → Value → Prop}
     {before : Envelope → List (DB.Engine.Record Value)}
     {step : List (DB.Engine.Record Value) → Envelope → List (DB.Engine.Record Value)} {e : Envelope}
     (h : contentOk ver fp rule before step e) {R : DB.Docs.Reading (List (DB.Engine.Record Value))}
@@ -198,7 +198,7 @@ theorem rule4_content {ver : DocId → TypeId} {fp : Envelope → List Step} {ru
 to no step, as `core/1`'s read, tell, keep and share do, an envelope that passes the content check brings no Record,
 removes none and changes no field of one. -/
 theorem rule4_reading_writes_nothing (r : ID.Reader) (gov : Bytes → Bytes → Prop)
-    (spawned lists : DocId → DocId → Prop) {ver : DocId → TypeId} {rule : TypeId → Bytes → Value → Prop}
+    (spawned lists : DocId → DocId → Prop) {ver : DocId → DB.Docs.Version} {rule : DB.Docs.Version → Bytes → Value → Prop}
     {before : Envelope → List (DB.Engine.Record Value)}
     {step : List (DB.Engine.Record Value) → Envelope → List (DB.Engine.Record Value)} {e : Envelope}
     (h : r.ByChain gov spawned lists e) {last : ID.Cap} (hl : (r.chain e).getLast? = some last)
@@ -232,7 +232,7 @@ created or removed by a step those calls lower to; the signing device's cap writ
 and the authority is either the signer's vault, which owns or governs the Doc, or a chain whose last cap writes on
 main and allows every such call. A narrow merger can't land a proposal's wider changes. -/
 theorem rule4_merge_whole (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spawned lists : DocId → DocId → Prop)
-    {ver : DocId → TypeId} (hver : ∀ t, (ver t).type = t) {rule : TypeId → Bytes → Value → Prop}
+    {ver : DocId → DB.Docs.Version} (hver : ∀ t, (ver t).type = t) {rule : DB.Docs.Version → Bytes → Value → Prop}
     {before : Envelope → List (DB.Engine.Record Value)}
     {step : List (DB.Engine.Record Value) → Envelope → List (DB.Engine.Record Value)} {e : Envelope}
     (main : e.branch = ID.mainBranch) (hn : ((before e).map (·.id)).Nodup) (h : r.Authorized gov spawned lists e)

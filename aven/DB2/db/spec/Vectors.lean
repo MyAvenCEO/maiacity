@@ -742,7 +742,7 @@ def kindName : Docs.ChangeKind → String
   | .gone => "gone"
 
 def changeJson (c : Docs.RecordChange) : Json :=
-  Json.mkObj [("id", toJson (hex c.id)), ("type", toJson c.type.text), ("kind", toJson (kindName c.kind)),
+  Json.mkObj [("id", toJson (hex c.id)), ("type", Json.arr (#[toJson c.type.type.text] ++ (c.type.schema.map fun h => toJson h.text).toArray)), ("kind", toJson (kindName c.kind)),
     ("fields", Json.arr (c.fields.map fun (f, v) => match v with
       | some x => Json.arr #[toJson (utf8Text f), x.json]
       | none => Json.arr #[toJson (utf8Text f)]).toArray)]

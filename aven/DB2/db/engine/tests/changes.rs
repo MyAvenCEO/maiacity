@@ -1,19 +1,19 @@
 //! `Engine.Examples`' checks of the change view and the verdict's footprint part, as Lean's `#guard`s state them, until
 //! `changes.json` and `merge-check.json` export them.
 
-use aven_core::{DocId, TypeId, Value, blake3};
+use aven_core::{DocId, Value, blake3};
 use aven_db_engine::{
-    ChangeKind, NewId, Op, Record, changes_from, commit, footprint, verdict_footprint,
+    ChangeKind, NewId, Op, Record, Version, changes_from, commit, footprint, verdict_footprint,
 };
 
 fn doc(label: &str) -> DocId {
     DocId(blake3(format!("doc:{label}").as_bytes()))
 }
 
-fn ver(t: &DocId) -> TypeId {
-    TypeId {
+fn ver(t: &DocId) -> Version {
+    Version {
         r#type: *t,
-        schema: blake3(b"schema:v1"),
+        schema: Some(blake3(b"schema:v1")),
     }
 }
 

@@ -3,8 +3,8 @@
 
 mod common;
 
-use aven_core::{DocId, TypeId, encode};
-use aven_db_engine::{RecordChange, changes_from, lower_core, verdict_footprint};
+use aven_core::{DocId, encode};
+use aven_db_engine::{RecordChange, Version, changes_from, lower_core, verdict_footprint};
 use common::*;
 use serde_json::{Value as Json, json};
 
@@ -58,10 +58,17 @@ fn sorted_fields(c: &Json) -> Json {
     c
 }
 
+/// A version as the vectors write it: `[type Doc]` or `[type Doc, schema hash]`.
+fn version_json(v: &Version) -> Json {
+    let mut out = vec![json!(v.r#type.text())];
+    out.extend(v.schema.map(|h| json!(h.text())));
+    Json::Array(out)
+}
+
 fn change_json(c: &RecordChange) -> Json {
     json!({
         "id": hex_of(&c.id),
-        "type": c.r#type.text(),
+        "type": version_json(&c.r#type),
         "kind": c.kind.name(),
         "fields": fields_json(&c.fields),
     })
@@ -74,7 +81,10 @@ fn checks(file: &str) {
         let name = &v["name"];
         let i = &v["input"];
         let schema = aven_core::Hash::parse(i["schema"].as_str().unwrap()).unwrap();
-        let ver = |t: &DocId| TypeId { r#type: *t, schema };
+        let ver = |t: &DocId| Version {
+            r#type: *t,
+            schema: Some(schema),
+        };
         let before = list(&i["before"], record);
         let after = list(&i["after"], record);
         let fp = list(&i["footprint"], step);

@@ -8,10 +8,11 @@
 //! - `idOfKey_idKey`: a Record's id as a key reads back;
 //! - `created_distinct`, `ids_differ_across`: one commit's new ids differ, and differ from another commit's.
 
-use aven_core::{DocId, Hash, TypeId, Value};
+use aven_core::{DocId, Hash, Value};
 use aven_db_engine::{
-    Cell, Cmp, NewId, Op, Query, Rec, Record, apply, bound, changes_from, check, commit, cost,
-    created, eval, footprint, id_key, id_of_key, in_scope, lower_core, verdict_footprint, work,
+    Cell, Cmp, NewId, Op, Query, Rec, Record, Version, apply, bound, changes_from, check, commit,
+    cost, created, eval, footprint, id_key, id_of_key, in_scope, lower_core, verdict_footprint,
+    work,
 };
 use proptest::prelude::*;
 
@@ -135,6 +136,12 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(2000))]
 
     #[test]
+    fn versions_read_back(t in any::<[u8; 32]>(), schema in prop::option::of(any::<[u8; 32]>())) {
+        let v = Version { r#type: DocId(Hash(t)), schema: schema.map(Hash) };
+        prop_assert_eq!(Version::of_value(&v.value()), Some(v));
+    }
+
+    #[test]
     fn id_keys(id in prop::collection::vec(any::<u8>(), 0..12), junk in "[0-9a-fA-Z]{0,5}") {
         prop_assert_eq!(id_of_key(&id_key(&id)), Some(id));
         // a reader refuses what isn't lowercase hex of whole bytes
@@ -175,7 +182,7 @@ proptest! {
                 }
                 let distinct = s.iter().enumerate().all(|(i, r)| s[i + 1..].iter().all(|x| x.id != r.id));
                 if fresh && distinct {
-                    let ver = |t: &DocId| TypeId { r#type: *t, schema: Hash([7; 32]) };
+                    let ver = |t: &DocId| Version { r#type: *t, schema: Some(Hash([7; 32])) };
                     prop_assert!(verdict_footprint(&footprint(&ops), &changes_from(&ver, &s, &after)));
                 }
                 for (i, op) in ops.iter().enumerate() {
