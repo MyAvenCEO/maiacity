@@ -15,6 +15,7 @@ import Aven.ID.Expiry
 import Aven.ID.Collections
 import Aven.ID.KeyFormatsJson
 import Aven.ID.VaultNameJson
+import Aven.ID.KeyringJson
 import Aven.ID.AccessJson
 import Aven.ID.SealJson
 
@@ -93,6 +94,8 @@ import Aven.ID.SealJson
   commitment keys, the AAD, the commitment, the padded plaintext and the outside's bytes; Padmé's lengths; paddings a
   reader refuses. aven-db-docs checks each, and seals and opens through XChaCha20-Poly1305 itself.
 
+- `keyring.json`: a vault's keyring as Records (`Aven.ID.Keyring`): a genesis, a reseal and a second epoch, their bytes
+  and names, and over them each epoch's stanzas and the current one.
 - `vaults.json`: the cast's vaults' geneses and names (`Aven.ID.VaultName`), and geneses read back and refused.
 
 `bun run up --check` runs it again and fails when the files differ from what is committed. -/
@@ -459,5 +462,6 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "derivations.json") (render KeyFormats.derivationVectors)
   IO.FS.writeFile (dir / "stanzas.json") (render KeyFormats.stanzaVectors)
   IO.FS.writeFile (dir / "vaults.json") (render VaultName.vaultVectors)
+  IO.FS.writeFile (dir / "keyring.json") (render Keyring.keyringVectors)
   IO.FS.writeFile (dir / "seals.json") (render Seal.sealVectors)
   IO.FS.writeFile (dir / "access.json") (render AccessJson.accessVectors)

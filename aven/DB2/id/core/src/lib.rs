@@ -21,6 +21,7 @@ mod hex;
 mod hybrid;
 mod invite;
 pub mod keep;
+pub mod keyring;
 mod keys;
 mod members;
 mod network;
