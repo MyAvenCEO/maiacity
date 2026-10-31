@@ -131,6 +131,7 @@ decision's own text, reasons and Lean are its row there.
 
 | Decision | What | Page | Holds |
 |---|---|---|---|
+| [A215](DECISIONS.md) | A telling ends with one page that says no more; an empty telling is that page alone | [peers](peers/README.md) | yes |
 | [A214](DECISIONS.md) | The cast's vault nonces are #1738's; vectors name cast vaults by handle only in case descriptions | [id](id/README.md) | yes |
 | [A213](DECISIONS.md) | The tree starts from its setup's Value, never from a body; the `genesis` op goes | [caps](caps/README.md) | yes |
 | [A212](DECISIONS.md) | A built-in type's label never follows its module: the tree's type is `avenID tree 1` | [id](id/README.md) | yes |
