@@ -56,6 +56,10 @@ fn unhex(s: &str) -> Vec<u8> {
 }
 
 /// A frame in the vectors' readable form (`Vectors.lean`'s `Frame.json`): a line's bytes in hex.
+fn hexes(hs: &[Vec<u8>]) -> Vec<String> {
+    hs.iter().map(|h| hex(h)).collect()
+}
+
 fn frame_json(f: &Frame) -> Value {
     match f {
         Frame::Presence { peers } => json!({ "frame": "presence", "peers": peers }),
@@ -81,6 +85,54 @@ fn frame_json(f: &Frame) -> Value {
             json!({ "frame": "lines", "lines": lines.iter().map(|l| hex(l)).collect::<Vec<_>>() })
         }
         Frame::Kept { files } => json!({ "frame": "kept", "files": files }),
+        Frame::Prove { doc, key, sig } => {
+            json!({ "frame": "prove", "doc": hex(doc), "key": hex(key), "sig": hex(sig) })
+        }
+        Frame::Proven { doc } => json!({ "frame": "proven", "doc": hex(doc) }),
+        Frame::ProveRefused { doc, why } => {
+            json!({ "frame": "prove_refused", "doc": hex(doc), "why": why })
+        }
+        Frame::Fetch { doc, hashes } => {
+            json!({ "frame": "fetch", "doc": hex(doc), "hashes": hexes(hashes) })
+        }
+        Frame::Items {
+            doc,
+            hash,
+            at,
+            total,
+            bytes,
+        } => json!({ "frame": "items", "doc": hex(doc), "hash": hex(hash),
+            "at": at, "total": total, "bytes": hex(bytes) }),
+        Frame::Missing { doc, hashes } => {
+            json!({ "frame": "missing", "doc": hex(doc), "hashes": hexes(hashes) })
+        }
+        Frame::Fetched { doc, later } => {
+            json!({ "frame": "fetched", "doc": hex(doc), "later": hexes(later) })
+        }
+        Frame::FetchRefused { doc, why } => {
+            json!({ "frame": "fetch_refused", "doc": hex(doc), "why": why })
+        }
+        Frame::KeepAfter { doc, n } => json!({ "frame": "keep_after", "doc": hex(doc), "n": n }),
+        Frame::KeepArrived { doc, entries, more } => {
+            json!({ "frame": "keep_arrived", "doc": hex(doc),
+            "entries": entries.iter().map(|(n, h)| json!({ "n": n, "hash": hex(h) })).collect::<Vec<_>>(),
+            "more": more })
+        }
+        Frame::KeepPut {
+            doc,
+            hash,
+            at,
+            total,
+            bytes,
+            covers,
+        } => json!({ "frame": "keep_put", "doc": hex(doc),
+            "hash": hex(hash), "at": at, "total": total, "bytes": hex(bytes), "covers": hexes(covers) }),
+        Frame::KeepEnd { doc } => json!({ "frame": "keep_end", "doc": hex(doc) }),
+        Frame::KeepTook { doc, numbers } => json!({ "frame": "keep_took", "doc": hex(doc),
+            "numbers": numbers.iter().map(|(n, h)| json!({ "n": n, "hash": hex(h) })).collect::<Vec<_>>() }),
+        Frame::KeepRefused { doc, why } => {
+            json!({ "frame": "keep_refused", "doc": hex(doc), "why": why })
+        }
     }
 }
 

@@ -50,6 +50,11 @@ namespace Aven.Peer.Keeper
 
 -- the wire's paging (`Aven.Peer.pages`, `pageSize`), the Peers' own (A45)
 
+/-- The most items in one upload (`keep_put` … `keep_end`), so its `keep_took` fits one frame. -/
+def putsPerUpload : Nat := 128
+/-- The most loose items one put covers: a segment's envelopes at most (docs' `Limits.segmentEnvelopes`). -/
+def coversMax : Nat := 256
+
 /-- An item a keeper holds of one Doc: its arrival number, the hash of its sealed bytes, their length, and the devices
 that uploaded it and haven't covered it since. -/
 structure Item where

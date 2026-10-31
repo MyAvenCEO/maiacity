@@ -97,6 +97,36 @@ inductive Frame where
   it keeps it, to the links of the device that shared it; and on each link the files of that peer's own chain it has
   kept, in pages (`keptPages`). A sender says "Kept by the network" only then -/
   | kept (files : List String)
+  /-- the fetch gate (`Aven.Peer.Fetch`): a device proves a Doc's fetch key on this connection, the signature over the
+  Doc and this connection's TLS exporter (`Aven.ID.KeepCbor.proofSigned`); only to a peer it knows holds the Doc -/
+  | prove (doc key sig : Bytes)
+  /-- the Doc is proven on this connection -/
+  | proven (doc : Bytes)
+  /-- the proof isn't the Doc's current fetch key on this connection, or the peer doesn't keep the Doc -/
+  | proveRefused (doc : Bytes) (why : String)
+  /-- a device asks for sealed items of a proven Doc by their hashes, at most `fetchHashes` -/
+  | fetch (doc : Bytes) (hashes : List Bytes)
+  /-- a part of a sealed item, at most `partBytes` from offset `at` of its `total` -/
+  | items (doc hash : Bytes) (at_ total : Nat) (bytes : Bytes)
+  /-- hashes asked for that the peer doesn't hold for that Doc -/
+  | missing (doc : Bytes) (hashes : List Bytes)
+  /-- the end of an answer to `fetch`: the hashes held but not sent, to ask for again -/
+  | fetched (doc : Bytes) (later : List Bytes)
+  /-- a fetch refused whole: the Doc isn't proven on this connection, or it asked for too many hashes -/
+  | fetchRefused (doc : Bytes) (why : String)
+  /-- a device asks a keeper what came after its number `n` of a Doc (`Aven.Peer.Keeper`) -/
+  | keepAfter (doc : Bytes) (n : Nat)
+  /-- a page of what came after: arrival numbers and sealed hashes, `more` until the last page -/
+  | keepArrived (doc : Bytes) (entries : List (Nat × Bytes)) (more : Bool)
+  /-- a part of a sealed item uploaded to a keeper; its first part (`at` 0) names the loose items it covers, every
+  later part none -/
+  | keepPut (doc hash : Bytes) (at_ total : Nat) (bytes : Bytes) (covers : List Bytes)
+  /-- the end of an upload: the keeper takes what came since the last, whole, in one write (`Aven.Peer.Serve`) -/
+  | keepEnd (doc : Bytes)
+  /-- the keeper took the upload: each item's hash and arrival number -/
+  | keepTook (doc : Bytes) (numbers : List (Nat × Bytes))
+  /-- the keeper refused the upload whole, or an ask for a Doc not proven on this connection -/
+  | keepRefused (doc : Bytes) (why : String)
   deriving DecidableEq, Repr
 
 /-- A greeting longer than this without its newline, or a frame longer than this, is refused: no peer needs one. -/
@@ -320,9 +350,10 @@ rarely, and never with an ordinary release (PEERS.md §7, decision 11). Two peer
 - **the gossip topic is per version**: a peer on another version is in another room, so no message of another meaning
   ever reaches it (`topicName`). -/
 
-/-- The wire version this model speaks: 2, frames in CBOR (A29). Version 1 was frames as JSON lines, version 0 the wire
-before it had versions. -/
-def wireVersion : Nat := 2
+/-- The wire version this model speaks: 3, the fetch gate's and keepers' frames (`prove` … `keep_refused`) beside
+version 2's, shared with Docs in the Peers. Version 2 was frames in CBOR (A29), version 1 frames as JSON lines, version
+0 the wire before it had versions. -/
+def wireVersion : Nat := 3
 
 /-- What a peer answers a hello of version `theirs` with, speaking `mine`: nothing, and the connection carries on; or
 `update` with its own version, and the connection closes. -/

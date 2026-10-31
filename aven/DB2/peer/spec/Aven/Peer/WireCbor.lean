@@ -3,9 +3,11 @@ import Aven.Core.CborLaws
 import Aven.Core.ValueEq
 import Aven.Core.Text
 import Aven.Peer.Wire
+import Aven.Peer.Fetch
+import Aven.Peer.Keeper
 
 /-!
-# The wire's frames in CBOR (A29, wire version 2)
+# The wire's frames in CBOR (A29, wire version 3)
 
 From wire version 2, every frame after the greeting is a Value in Core's one codec (rule 1, `Aven.Core.Cbor`): a map
 with text keys in the codec's order, sent as its canonical encoding behind a 4-byte big-endian length. The greeting
@@ -32,7 +34,7 @@ namespace WireCbor
 open Aven.Core
 
 /-- The wire version whose frames this module writes. -/
-def version : Nat := 2
+def version : Nat := 3
 
 /-- Text as the codec holds it: its UTF-8 bytes (`Aven.Core.text`). -/
 def txt (s : String) : Value := .text (text s)
@@ -95,6 +97,17 @@ def haveOf : Value → Option Have
     pure ⟨← readText (← field kvs "device"), ← readNat (← field kvs "seq")⟩
   | _ => none
 
+/-- An arrival as a keeper tells it: its number and sealed hash. -/
+def entryValue (e : Nat × Bytes) : Value := obj [("n", .uint e.1), ("hash", .bytes e.2)]
+
+def entryOf : Value → Option (Nat × Bytes)
+  | .map kvs => do
+    guard (exactly kvs ["n", "hash"])
+    pure (← readNat (← field kvs "n"), ← readBytes (← field kvs "hash"))
+  | _ => none
+
+def hashesValue (hs : List Bytes) : Value := .array (hs.map .bytes)
+
 /-- A frame as its Value. -/
 def frameValue : Frame → Value
   | .presence ps => obj [("frame", txt "presence"), ("peers", .array (ps.map txt))]
@@ -111,6 +124,23 @@ def frameValue : Frame → Value
   | .catchUp hs only => obj [("have", .array (hs.map haveValue)), ("only", .bool only), ("frame", txt "catch_up")]
   | .lines ls => obj [("frame", txt "lines"), ("lines", .array (ls.map .bytes))]
   | .kept fs => obj [("files", .array (fs.map txt)), ("frame", txt "kept")]
+  | .prove d k sg => obj [("doc", .bytes d), ("key", .bytes k), ("sig", .bytes sg), ("frame", txt "prove")]
+  | .proven d => obj [("doc", .bytes d), ("frame", txt "proven")]
+  | .proveRefused d w => obj [("doc", .bytes d), ("why", txt w), ("frame", txt "prove_refused")]
+  | .fetch d hs => obj [("doc", .bytes d), ("frame", txt "fetch"), ("hashes", hashesValue hs)]
+  | .items d h a t b => obj [("at", .uint a), ("doc", .bytes d), ("hash", .bytes h), ("bytes", .bytes b),
+      ("frame", txt "items"), ("total", .uint t)]
+  | .missing d hs => obj [("doc", .bytes d), ("frame", txt "missing"), ("hashes", hashesValue hs)]
+  | .fetched d hs => obj [("doc", .bytes d), ("frame", txt "fetched"), ("later", hashesValue hs)]
+  | .fetchRefused d w => obj [("doc", .bytes d), ("why", txt w), ("frame", txt "fetch_refused")]
+  | .keepAfter d n => obj [("n", .uint n), ("doc", .bytes d), ("frame", txt "keep_after")]
+  | .keepArrived d es more => obj [("doc", .bytes d), ("more", .bool more), ("frame", txt "keep_arrived"),
+      ("entries", .array (es.map entryValue))]
+  | .keepPut d h a t b cs => obj [("at", .uint a), ("doc", .bytes d), ("hash", .bytes h), ("bytes", .bytes b),
+      ("frame", txt "keep_put"), ("total", .uint t), ("covers", hashesValue cs)]
+  | .keepEnd d => obj [("doc", .bytes d), ("frame", txt "keep_end")]
+  | .keepTook d es => obj [("doc", .bytes d), ("frame", txt "keep_took"), ("numbers", .array (es.map entryValue))]
+  | .keepRefused d w => obj [("doc", .bytes d), ("why", txt w), ("frame", txt "keep_refused")]
 
 /-- A frame read from exactly its keys. -/
 def frameOf : Value → Option Frame
@@ -139,6 +169,46 @@ def frameOf : Value → Option Frame
       pure (.catchUp (← one "have" (readList haveOf)) (← one "only" readBool))
     | "lines" => guard (exactly kvs ["frame", "lines"]) *> (.lines <$> one "lines" (readList readBytes))
     | "kept" => guard (exactly kvs ["frame", "files"]) *> (.kept <$> one "files" (readList readText))
+    | "prove" => do
+      guard (exactly kvs ["frame", "doc", "key", "sig"])
+      pure (.prove (← one "doc" readBytes) (← one "key" readBytes) (← one "sig" readBytes))
+    | "proven" => guard (exactly kvs ["frame", "doc"]) *> (.proven <$> one "doc" readBytes)
+    | "prove_refused" => do
+      guard (exactly kvs ["frame", "doc", "why"])
+      pure (.proveRefused (← one "doc" readBytes) (← one "why" readText))
+    | "fetch" => do
+      guard (exactly kvs ["frame", "doc", "hashes"])
+      pure (.fetch (← one "doc" readBytes) (← one "hashes" (readList readBytes)))
+    | "items" => do
+      guard (exactly kvs ["frame", "doc", "hash", "at", "total", "bytes"])
+      pure (.items (← one "doc" readBytes) (← one "hash" readBytes) (← one "at" readNat) (← one "total" readNat)
+        (← one "bytes" readBytes))
+    | "missing" => do
+      guard (exactly kvs ["frame", "doc", "hashes"])
+      pure (.missing (← one "doc" readBytes) (← one "hashes" (readList readBytes)))
+    | "fetched" => do
+      guard (exactly kvs ["frame", "doc", "later"])
+      pure (.fetched (← one "doc" readBytes) (← one "later" (readList readBytes)))
+    | "fetch_refused" => do
+      guard (exactly kvs ["frame", "doc", "why"])
+      pure (.fetchRefused (← one "doc" readBytes) (← one "why" readText))
+    | "keep_after" => do
+      guard (exactly kvs ["frame", "doc", "n"])
+      pure (.keepAfter (← one "doc" readBytes) (← one "n" readNat))
+    | "keep_arrived" => do
+      guard (exactly kvs ["frame", "doc", "entries", "more"])
+      pure (.keepArrived (← one "doc" readBytes) (← one "entries" (readList entryOf)) (← one "more" readBool))
+    | "keep_put" => do
+      guard (exactly kvs ["frame", "doc", "hash", "at", "total", "bytes", "covers"])
+      pure (.keepPut (← one "doc" readBytes) (← one "hash" readBytes) (← one "at" readNat) (← one "total" readNat)
+        (← one "bytes" readBytes) (← one "covers" (readList readBytes)))
+    | "keep_end" => guard (exactly kvs ["frame", "doc"]) *> (.keepEnd <$> one "doc" readBytes)
+    | "keep_took" => do
+      guard (exactly kvs ["frame", "doc", "numbers"])
+      pure (.keepTook (← one "doc" readBytes) (← one "numbers" (readList entryOf)))
+    | "keep_refused" => do
+      guard (exactly kvs ["frame", "doc", "why"])
+      pure (.keepRefused (← one "doc" readBytes) (← one "why" readText))
     | _ => none
   | _ => none
 
@@ -259,6 +329,9 @@ theorem readList_map {f : α → Value} {g : Value → Option α} (hg : ∀ a, g
 
 theorem readBytes_bytes (b : Bytes) : readBytes (.bytes b) = some b := rfl
 
+@[simp] theorem entryOf_entryValue (e : Nat × Bytes) : entryOf (entryValue e) = some e := by
+  simp [entryOf, entryValue, obj, exactly, keys, field, List.lookup, guard, readNat, readBytes]
+
 @[simp] theorem some_seqRight (x : Option α) : (some () *> x) = x := rfl
 
 @[simp] theorem readOpt_optVal (o : Option String) : readOpt (optVal o) = some o := by
@@ -270,7 +343,8 @@ theorem readBytes_bytes (b : Bytes) : readBytes (.bytes b) = some b := rfl
 theorem frameOf_value (f : Frame) : frameOf (frameValue f) = some f := by
   cases f <;> simp only [frameValue] <;>
     simp [frameOf, obj, exactly, keys, field, List.lookup, readList_map headOf_headValue,
-      readList_map haveOf_haveValue, readList_map readBytes_bytes, guard, readNat, readBool]
+      readList_map haveOf_haveValue, readList_map readBytes_bytes, readList_map entryOf_entryValue, hashesValue,
+      guard, readNat, readBool, readBytes]
 
 /-! ### One encoding per frame -/
 
@@ -287,6 +361,15 @@ def Fits : Frame → Prop
   | .network _ t st => (∀ s, t = some s → Short s) ∧ (∀ s, st = some s → Short s)
   | .heads hs _ => hs.length < limit ∧ ∀ h ∈ hs, Short h.device ∧ Short h.id ∧ h.seq < limit
   | .catchUp hs _ => hs.length < limit ∧ ∀ h ∈ hs, Short h.device ∧ h.seq < limit
+  | .prove d k sg => d.length < limit ∧ k.length < limit ∧ sg.length < limit
+  | .proven d | .keepEnd d => d.length < limit
+  | .proveRefused d w | .fetchRefused d w | .keepRefused d w => d.length < limit ∧ Short w
+  | .fetch d hs | .missing d hs | .fetched d hs => d.length < limit ∧ hs.length < limit ∧ ∀ h ∈ hs, h.length < limit
+  | .items d h a t b => d.length < limit ∧ h.length < limit ∧ a < limit ∧ t < limit ∧ b.length < limit
+  | .keepAfter d n => d.length < limit ∧ n < limit
+  | .keepArrived d es _ | .keepTook d es => d.length < limit ∧ es.length < limit ∧ ∀ e ∈ es, e.1 < limit ∧ e.2.length < limit
+  | .keepPut d h a t b cs => d.length < limit ∧ h.length < limit ∧ a < limit ∧ t < limit ∧ b.length < limit ∧
+      cs.length < limit ∧ ∀ c ∈ cs, c.length < limit
 
 theorem shape_txt {s : String} (h : Short s) : Shape (txt s) = true := by
   simp [txt, Shape, textOk, utf8_text, show (text _).length < limit from h]
@@ -321,12 +404,19 @@ theorem haveShape {h : Have} (f : Short h.device ∧ h.seq < limit) : Shape (hav
     show Short "seq" by decide, show Short "device" by decide]
   decide
 
+theorem entryShape {e : Nat × Bytes} (f : e.1 < limit ∧ e.2.length < limit) : Shape (entryValue e) = true := by
+  simp [entryValue, obj, Shape, ShapeMap, keysSorted, f.1, f.2, textOk_key, show Short "n" by decide,
+    show Short "hash" by decide]
+  decide
+
+theorem bytesShape : ∀ b : Bytes, b.length < limit → Shape (.bytes b) = true := fun _ h => by simp [Shape, h]
+
 /-- **One encoding per frame:** a frame that fits is a canonical Value, so its bytes are the one encoding of it and
 every reader decodes them to it (`Aven.Core.decodeAll_encode`). -/
 theorem frameValue_canon {f : Frame} (fits : Fits f) : Canon (frameValue f) = true := by
   cases f <;> simp only [frameValue] <;> simp only [Fits] at fits <;>
     simp (config := { decide := true }) [Canon, obj, Shape, ShapeMap, keysSorted, depth, depthMap, txt, textOk,
-      utf8_text, optVal]
+      utf8_text, optVal, hashesValue]
   case beat => exact fits
   case claim | signIn | invite | withdraw | join | refused => exact fits
   case lines =>
@@ -347,6 +437,24 @@ theorem frameValue_canon {f : Frame} (fits : Fits f) : Canon (frameValue f) = tr
     have := depthList_map (f := haveValue) (d := 2) (fun _ => by simp [haveValue, obj, depth, depthMap, txt])
       ‹List Have›
     simp only [maxDepth]; omega
+  case prove | proven | keepEnd | proveRefused | fetchRefused | keepRefused => exact fits
+  case items => obtain ⟨d, h, a, t, b⟩ := fits; exact ⟨a, d, h, b, t⟩
+  case keepAfter => exact ⟨fits.2, fits.1⟩
+  case fetch | missing | fetched =>
+    refine ⟨⟨fits.1, fits.2.1, shapeList_map _ bytesShape fits.2.2⟩, ?_⟩
+    have := depthList_map (f := Value.bytes) (d := 1) (fun _ => Nat.le_refl _) ‹List Bytes›
+    simp only [maxDepth]; omega
+  case keepArrived | keepTook =>
+    refine ⟨⟨fits.1, fits.2.1, shapeList_map _ (fun _ h => entryShape h) fits.2.2⟩, ?_⟩
+    have := depthList_map (f := entryValue) (d := 2) (fun _ => by simp [entryValue, obj, depth, depthMap])
+      ‹List (Nat × Bytes)›
+    simp only [maxDepth]; omega
+  case keepPut =>
+    obtain ⟨d, h, a, t, b, cl, cs⟩ := fits
+    have sl := shapeList_map _ bytesShape cs
+    have := depthList_map (f := Value.bytes) (d := 1) (fun _ => Nat.le_refl _) ‹List Bytes›
+    refine ⟨by simp_all, ?_⟩
+    simp only [maxDepth]; omega
   case network =>
     rename_i t st
     obtain ⟨ht, hs⟩ := fits
@@ -365,7 +473,17 @@ def frameExamples : List Frame := [
   .presence ["alice-peer", "aven-peer"], .presence [], .beat 7, .beat (2 ^ 64 - 1), .claim "{}", .signIn "{\"a\":1}",
   .invite "{}", .withdraw "{}", .join "{}", .network false none none, .network true (some "{}") (some "[]"),
   .refused "taken", .heads heads2 true, .heads [] false, .catchUp [⟨"ab", 1⟩] true, .catchUp [] false,
-  .lines [[0x78], [], [0, 255]], .kept ["ab", "cd"], .refused "café ✓"]
+  .lines [[0x78], [], [0, 255]], .kept ["ab", "cd"], .refused "café ✓",
+  .prove (List.replicate 32 1) (List.replicate 32 2) (List.replicate 64 3), .proven (List.replicate 32 1),
+  .proveRefused (List.replicate 32 1) "not current", .fetch (List.replicate 32 1) [List.replicate 32 9, []],
+  .fetch [] [], .items (List.replicate 32 1) (List.replicate 32 9) 0 3 [7, 7, 7],
+  .missing (List.replicate 32 1) [List.replicate 32 8], .fetched (List.replicate 32 1) [],
+  .fetchRefused (List.replicate 32 1) "too many", .keepAfter (List.replicate 32 1) 0,
+  .keepArrived (List.replicate 32 1) [(1, List.replicate 32 9), (2 ^ 64 - 1, [])] true,
+  .keepArrived (List.replicate 32 1) [] false,
+  .keepPut (List.replicate 32 1) (List.replicate 32 9) 0 2 [5, 6] [List.replicate 32 8],
+  .keepEnd (List.replicate 32 1), .keepTook (List.replicate 32 1) [(3, List.replicate 32 9)],
+  .keepRefused (List.replicate 32 1) "quota"]
 
 -- **One form per frame:** every frame reads back from its Value.
 #guard frameExamples.all fun f => frameOf (frameValue f) == some f
@@ -401,6 +519,18 @@ def longest : List Head := List.replicate pageSize ⟨String.ofList (List.replic
   String.ofList (List.replicate 64 'e'), 2 ^ 64 - 1⟩
 #guard (frameBytes (.heads longest true)).length * 2 < maxFrame
 #guard (frameBytes (.kept (List.replicate pageSize (String.ofList (List.replicate 64 'f'))))).length * 2 < maxFrame
+
+-- **The keepers' and the fetch gate's frames fit too,** at their limits: 32-byte hashes, `fetchHashes` of them, a page
+-- of `pageSize` arrivals with the largest number, a part of `partBytes` with `coversMax` covers, `putsPerUpload` numbers
+def h32 : Bytes := List.replicate 32 0xff
+#guard (frameBytes (.fetch h32 (List.replicate Fetch.fetchHashes h32))).length < maxFrame
+#guard (frameBytes (.missing h32 (List.replicate Fetch.fetchHashes h32))).length < maxFrame
+#guard (frameBytes (.fetched h32 (List.replicate Fetch.fetchHashes h32))).length < maxFrame
+#guard (frameBytes (.items h32 h32 (2 ^ 64 - 1) (2 ^ 64 - 1) (List.replicate Fetch.partBytes 0))).length < maxFrame
+#guard (frameBytes (.keepArrived h32 (List.replicate pageSize (2 ^ 64 - 1, h32)) true)).length < maxFrame
+#guard (frameBytes (.keepPut h32 h32 (2 ^ 64 - 1) (2 ^ 64 - 1) (List.replicate Fetch.partBytes 0)
+  (List.replicate Keeper.coversMax h32))).length < maxFrame
+#guard (frameBytes (.keepTook h32 (List.replicate Keeper.putsPerUpload (2 ^ 64 - 1, h32)))).length < maxFrame
 
 -- a stream: the greeting's line, then frames; cut anywhere, the same
 def stream : Bytes := greetingBytes (.hello "alice-peer" 2) ++ bytesOf (frameExamples.take 3)

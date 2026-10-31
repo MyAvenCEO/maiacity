@@ -17,9 +17,10 @@ pub const ALPN: &[u8] = b"aven/db/1";
 /// A frame or a greeting longer than this is refused: no peer needs one.
 pub const MAX_FRAME: usize = 64 * 1024;
 /// The wire version this peer speaks (`Aven.Peer.Wire.wireVersion`): a number of its own, changed only when a frame's
-/// meaning changes, never with an ordinary release. 2: frames in CBOR (A29); 1 was frames as JSON lines, 0 the wire
-/// before it had versions.
-pub const VERSION: u64 = 2;
+/// meaning changes, never with an ordinary release. 3: the fetch gate's and keepers' frames ([`Frame::Prove`] …
+/// [`Frame::KeepRefused`]) beside 2's; 2 was frames in CBOR (A29), 1 frames as JSON lines, 0 the wire before it had
+/// versions.
+pub const VERSION: u64 = 3;
 
 /// The first line each side sends (`Aven.Peer.Wire.Greeting`).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -102,6 +103,60 @@ pub enum Frame {
     /// links of the device that shared it; and on each link the files of that peer's own chain it has kept, in pages
     /// ([`kept_pages`]). A sender says "Kept by the network" only then.
     Kept { files: Vec<String> },
+    /// The fetch gate (`Aven.Peer.Fetch`): a device proves a Doc's fetch key on this connection, signing the Doc and
+    /// this connection's TLS exporter (`Aven.ID.KeepCbor.proofSigned`); only to a peer it knows holds the Doc.
+    Prove {
+        doc: Vec<u8>,
+        key: Vec<u8>,
+        sig: Vec<u8>,
+    },
+    /// The Doc is proven on this connection.
+    Proven { doc: Vec<u8> },
+    /// The proof isn't the Doc's current fetch key on this connection, or the peer doesn't keep the Doc.
+    ProveRefused { doc: Vec<u8>, why: String },
+    /// A device asks for sealed items of a proven Doc by their hashes, at most `FETCH_HASHES`.
+    Fetch { doc: Vec<u8>, hashes: Vec<Vec<u8>> },
+    /// A part of a sealed item, at most `PART_BYTES` from offset `at` of its `total`.
+    Items {
+        doc: Vec<u8>,
+        hash: Vec<u8>,
+        at: u64,
+        total: u64,
+        bytes: Vec<u8>,
+    },
+    /// Hashes asked for that the peer doesn't hold for that Doc.
+    Missing { doc: Vec<u8>, hashes: Vec<Vec<u8>> },
+    /// The end of an answer to `Fetch`: the hashes held but not sent, to ask for again.
+    Fetched { doc: Vec<u8>, later: Vec<Vec<u8>> },
+    /// A fetch refused whole: the Doc isn't proven on this connection, or it asked for too many hashes.
+    FetchRefused { doc: Vec<u8>, why: String },
+    /// A device asks a keeper what came after its number `n` of a Doc (`Aven.Peer.Keeper`).
+    KeepAfter { doc: Vec<u8>, n: u64 },
+    /// A page of what came after: arrival numbers and sealed hashes, `more` until the last page.
+    KeepArrived {
+        doc: Vec<u8>,
+        entries: Vec<(u64, Vec<u8>)>,
+        more: bool,
+    },
+    /// A part of a sealed item uploaded to a keeper; its first part (`at` 0) names the loose items it covers, every
+    /// later part none.
+    KeepPut {
+        doc: Vec<u8>,
+        hash: Vec<u8>,
+        at: u64,
+        total: u64,
+        bytes: Vec<u8>,
+        covers: Vec<Vec<u8>>,
+    },
+    /// The end of an upload: the keeper takes what came since the last, whole, in one write (`Aven.Peer.Serve`).
+    KeepEnd { doc: Vec<u8> },
+    /// The keeper took the upload: each item's arrival number and hash.
+    KeepTook {
+        doc: Vec<u8>,
+        numbers: Vec<(u64, Vec<u8>)>,
+    },
+    /// The keeper refused the upload whole, or an ask for a Doc not proven on this connection.
+    KeepRefused { doc: Vec<u8>, why: String },
 }
 
 /// A device's chain as a peer holds it: the device's key, its newest line's name, and that line's number.
@@ -177,12 +232,42 @@ impl<'a> Fields<'a> {
         }
     }
 
+    fn bytes(&self, k: &str) -> Option<Vec<u8>> {
+        read_bytes(self.get(k)?)
+    }
+
     fn list<T>(&self, k: &str, read: impl Fn(&Value) -> Option<T>) -> Option<Vec<T>> {
         match self.get(k)? {
             Value::Array(xs) => xs.iter().map(read).collect(),
             _ => None,
         }
     }
+}
+
+fn bytes(b: &[u8]) -> Value {
+    Value::Bytes(b.to_vec())
+}
+
+fn hashes(hs: &[Vec<u8>]) -> Value {
+    Value::Array(hs.iter().map(|h| bytes(h)).collect())
+}
+
+fn read_bytes(v: &Value) -> Option<Vec<u8>> {
+    match v {
+        Value::Bytes(b) => Some(b.clone()),
+        _ => None,
+    }
+}
+
+/// An arrival as a keeper tells it (`entryValue`): its number and sealed hash.
+fn entry(e: &(u64, Vec<u8>)) -> Value {
+    map(vec![("n", Value::Uint(e.0)), ("hash", bytes(&e.1))])
+}
+
+fn read_entry(v: &Value) -> Option<(u64, Vec<u8>)> {
+    let Value::Map(kvs) = v else { return None };
+    let f = Fields::exactly(kvs, &["n", "hash"])?;
+    Some((f.nat("n")?, f.bytes("hash")?))
 }
 
 fn read_text(v: &Value) -> Option<String> {
@@ -283,6 +368,90 @@ impl Frame {
                 ),
             ]),
             Frame::Kept { files } => map(vec![("files", texts(files)), named("kept")]),
+            Frame::Prove { doc, key, sig } => map(vec![
+                ("doc", bytes(doc)),
+                ("key", bytes(key)),
+                ("sig", bytes(sig)),
+                named("prove"),
+            ]),
+            Frame::Proven { doc } => map(vec![("doc", bytes(doc)), named("proven")]),
+            Frame::ProveRefused { doc, why } => map(vec![
+                ("doc", bytes(doc)),
+                ("why", text(why)),
+                named("prove_refused"),
+            ]),
+            Frame::Fetch { doc, hashes: hs } => map(vec![
+                ("doc", bytes(doc)),
+                named("fetch"),
+                ("hashes", hashes(hs)),
+            ]),
+            Frame::Items {
+                doc,
+                hash,
+                at,
+                total,
+                bytes: b,
+            } => map(vec![
+                ("at", Value::Uint(*at)),
+                ("doc", bytes(doc)),
+                ("hash", bytes(hash)),
+                ("bytes", bytes(b)),
+                named("items"),
+                ("total", Value::Uint(*total)),
+            ]),
+            Frame::Missing { doc, hashes: hs } => map(vec![
+                ("doc", bytes(doc)),
+                named("missing"),
+                ("hashes", hashes(hs)),
+            ]),
+            Frame::Fetched { doc, later } => map(vec![
+                ("doc", bytes(doc)),
+                named("fetched"),
+                ("later", hashes(later)),
+            ]),
+            Frame::FetchRefused { doc, why } => map(vec![
+                ("doc", bytes(doc)),
+                ("why", text(why)),
+                named("fetch_refused"),
+            ]),
+            Frame::KeepAfter { doc, n } => map(vec![
+                ("n", Value::Uint(*n)),
+                ("doc", bytes(doc)),
+                named("keep_after"),
+            ]),
+            Frame::KeepArrived { doc, entries, more } => map(vec![
+                ("doc", bytes(doc)),
+                ("more", Value::Bool(*more)),
+                named("keep_arrived"),
+                ("entries", Value::Array(entries.iter().map(entry).collect())),
+            ]),
+            Frame::KeepPut {
+                doc,
+                hash,
+                at,
+                total,
+                bytes: b,
+                covers,
+            } => map(vec![
+                ("at", Value::Uint(*at)),
+                ("doc", bytes(doc)),
+                ("hash", bytes(hash)),
+                ("bytes", bytes(b)),
+                named("keep_put"),
+                ("total", Value::Uint(*total)),
+                ("covers", hashes(covers)),
+            ]),
+            Frame::KeepEnd { doc } => map(vec![("doc", bytes(doc)), named("keep_end")]),
+            Frame::KeepTook { doc, numbers } => map(vec![
+                ("doc", bytes(doc)),
+                named("keep_took"),
+                ("numbers", Value::Array(numbers.iter().map(entry).collect())),
+            ]),
+            Frame::KeepRefused { doc, why } => map(vec![
+                ("doc", bytes(doc)),
+                ("why", text(why)),
+                named("keep_refused"),
+            ]),
         }
     }
 
@@ -351,6 +520,105 @@ impl Frame {
             "kept" => Frame::Kept {
                 files: with(&["frame", "files"])?.list("files", read_text)?,
             },
+            "prove" => {
+                let f = with(&["frame", "doc", "key", "sig"])?;
+                Frame::Prove {
+                    doc: f.bytes("doc")?,
+                    key: f.bytes("key")?,
+                    sig: f.bytes("sig")?,
+                }
+            }
+            "proven" => Frame::Proven {
+                doc: with(&["frame", "doc"])?.bytes("doc")?,
+            },
+            "prove_refused" => {
+                let f = with(&["frame", "doc", "why"])?;
+                Frame::ProveRefused {
+                    doc: f.bytes("doc")?,
+                    why: f.text("why")?,
+                }
+            }
+            "fetch" => {
+                let f = with(&["frame", "doc", "hashes"])?;
+                Frame::Fetch {
+                    doc: f.bytes("doc")?,
+                    hashes: f.list("hashes", read_bytes)?,
+                }
+            }
+            "items" => {
+                let f = with(&["frame", "doc", "hash", "at", "total", "bytes"])?;
+                Frame::Items {
+                    doc: f.bytes("doc")?,
+                    hash: f.bytes("hash")?,
+                    at: f.nat("at")?,
+                    total: f.nat("total")?,
+                    bytes: f.bytes("bytes")?,
+                }
+            }
+            "missing" => {
+                let f = with(&["frame", "doc", "hashes"])?;
+                Frame::Missing {
+                    doc: f.bytes("doc")?,
+                    hashes: f.list("hashes", read_bytes)?,
+                }
+            }
+            "fetched" => {
+                let f = with(&["frame", "doc", "later"])?;
+                Frame::Fetched {
+                    doc: f.bytes("doc")?,
+                    later: f.list("later", read_bytes)?,
+                }
+            }
+            "fetch_refused" => {
+                let f = with(&["frame", "doc", "why"])?;
+                Frame::FetchRefused {
+                    doc: f.bytes("doc")?,
+                    why: f.text("why")?,
+                }
+            }
+            "keep_after" => {
+                let f = with(&["frame", "doc", "n"])?;
+                Frame::KeepAfter {
+                    doc: f.bytes("doc")?,
+                    n: f.nat("n")?,
+                }
+            }
+            "keep_arrived" => {
+                let f = with(&["frame", "doc", "entries", "more"])?;
+                Frame::KeepArrived {
+                    doc: f.bytes("doc")?,
+                    entries: f.list("entries", read_entry)?,
+                    more: f.bool("more")?,
+                }
+            }
+            "keep_put" => {
+                let f = with(&["frame", "doc", "hash", "at", "total", "bytes", "covers"])?;
+                Frame::KeepPut {
+                    doc: f.bytes("doc")?,
+                    hash: f.bytes("hash")?,
+                    at: f.nat("at")?,
+                    total: f.nat("total")?,
+                    bytes: f.bytes("bytes")?,
+                    covers: f.list("covers", read_bytes)?,
+                }
+            }
+            "keep_end" => Frame::KeepEnd {
+                doc: with(&["frame", "doc"])?.bytes("doc")?,
+            },
+            "keep_took" => {
+                let f = with(&["frame", "doc", "numbers"])?;
+                Frame::KeepTook {
+                    doc: f.bytes("doc")?,
+                    numbers: f.list("numbers", read_entry)?,
+                }
+            }
+            "keep_refused" => {
+                let f = with(&["frame", "doc", "why"])?;
+                Frame::KeepRefused {
+                    doc: f.bytes("doc")?,
+                    why: f.text("why")?,
+                }
+            }
             _ => return None,
         })
     }

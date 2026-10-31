@@ -229,6 +229,8 @@ def WireError.name : WireError → String
   | .tooLong => "tooLong"
 
 /-- A frame in the vectors' readable form: its Value's keys as JSON, a line's bytes in hex. -/
+def hx (b : Aven.Core.Bytes) : Json := Json.str (Aven.Core.hex b)
+
 def Frame.json : Frame → Json
   | .presence ps => Json.mkObj [("frame", "presence"), ("peers", toJson ps)]
   | .beat n => Json.mkObj [("frame", "beat"), ("n", toJson n)]
@@ -244,6 +246,25 @@ def Frame.json : Frame → Json
   | .catchUp hs only => Json.mkObj [("frame", "catch_up"), ("have", toJson hs), ("only", toJson only)]
   | .lines ls => Json.mkObj [("frame", "lines"), ("lines", toJson (ls.map Aven.Core.hex))]
   | .kept fs => Json.mkObj [("frame", "kept"), ("files", toJson fs)]
+  | .prove d k sg => Json.mkObj [("frame", "prove"), ("doc", hx d), ("key", hx k), ("sig", hx sg)]
+  | .proven d => Json.mkObj [("frame", "proven"), ("doc", hx d)]
+  | .proveRefused d w => Json.mkObj [("frame", "prove_refused"), ("doc", hx d), ("why", w)]
+  | .fetch d hs => Json.mkObj [("frame", "fetch"), ("doc", hx d), ("hashes", toJson (hs.map Aven.Core.hex))]
+  | .items d h a t b => Json.mkObj [("frame", "items"), ("doc", hx d), ("hash", hx h), ("at", toJson a),
+      ("total", toJson t), ("bytes", hx b)]
+  | .missing d hs => Json.mkObj [("frame", "missing"), ("doc", hx d), ("hashes", toJson (hs.map Aven.Core.hex))]
+  | .fetched d hs => Json.mkObj [("frame", "fetched"), ("doc", hx d), ("later", toJson (hs.map Aven.Core.hex))]
+  | .fetchRefused d w => Json.mkObj [("frame", "fetch_refused"), ("doc", hx d), ("why", w)]
+  | .keepAfter d n => Json.mkObj [("frame", "keep_after"), ("doc", hx d), ("n", toJson n)]
+  | .keepArrived d es more => Json.mkObj [("frame", "keep_arrived"), ("doc", hx d),
+      ("entries", Json.arr (es.map fun (n, h) => Json.mkObj [("n", toJson n), ("hash", hx h)]).toArray),
+      ("more", toJson more)]
+  | .keepPut d h a t b cs => Json.mkObj [("frame", "keep_put"), ("doc", hx d), ("hash", hx h), ("at", toJson a),
+      ("total", toJson t), ("bytes", hx b), ("covers", toJson (cs.map Aven.Core.hex))]
+  | .keepEnd d => Json.mkObj [("frame", "keep_end"), ("doc", hx d)]
+  | .keepTook d es => Json.mkObj [("frame", "keep_took"), ("doc", hx d),
+      ("numbers", Json.arr (es.map fun (n, h) => Json.mkObj [("n", toJson n), ("hash", hx h)]).toArray)]
+  | .keepRefused d w => Json.mkObj [("frame", "keep_refused"), ("doc", hx d), ("why", w)]
 
 /-- The greetings: a line, and the greeting it is, or none. -/
 def wire : List Json :=
