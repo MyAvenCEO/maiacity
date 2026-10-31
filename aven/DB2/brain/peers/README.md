@@ -469,11 +469,11 @@ every later release, forever.
   reset. Only the wire refuses an older peer; the store never does. Production is never wiped: its deploy has no
   `wipe` input, and nothing else deletes its bucket's objects. The box keeps its own wipe, since its data is test data.
 - **A release** is the dated release from `production` ([avenSANDBOX](../sandbox/README.md#checks-before-production)).
-  Signed release entries in the release vault's log come later.
+  Signed release entries in a release vault's log, and who owns that vault, are parked for later (A206).
 - **The box rehearses it:** `--wire-version` (`AVEN_PEER_WIRE_VERSION`) makes a Peer say another version, for that
   check alone.
 
-**Decided:** README rule 9, A29, A36, A42, A186, peers 11 · **Lean:**
+**Decided:** README rule 9, A29, A36, A42, A186, A206, peers 11 · **Lean:**
 `Aven.DB.Wire` — `meet_speaks`, `meet_refuses`, `follows_newer`, `follows_one`, `follows_same`
 
 ## The Aven Peer is just a peer
@@ -576,6 +576,4 @@ Known gaps, code and Lean:
   vault's owners their keep caps name a keeper that isn't there. Nothing decides it and no Lean holds it. avenMAIA
   decides.
 - **Presence at scale.** A beat per device per step on one topic suits Maia City, not millions. avenMAIA
-  decides.
-- **The release vault.** Who owns it, and when signed release entries replace the dated release (A36, A42). Samuel
   decides.

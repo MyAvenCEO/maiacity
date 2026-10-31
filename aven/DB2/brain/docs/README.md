@@ -663,9 +663,10 @@ another branch only by a merge.
 1. **The union:** the target's state imports the other branch's envelopes since the base. Loro's union keeps
    everything, and silently picks one value where both changed a place.
 2. **The three-way pass** runs only on the places both branches changed since the base: a value replaced whole, a
-   field; a Record, with all its fields, by id at any depth; the order of a list of Records. **Text never conflicts:**
-   Loro merges it character by character, and the merge shows where both edited the same stretch. The target keeps its
-   own unless the person merging takes the other's, place by place.
+   field; a Record, with all its fields, by id at any depth; the order of a list of Records. **Text never conflicts
+   silently:** Loro merges it character by character, and where both edited the same stretch the merge shows it and
+   offers a choice for that stretch: keep the target's (the default), take the other's, or keep Loro's mix (A204). The
+   target keeps its own unless the person merging takes the other's, place by place.
 3. **The fix:** the commit sets every place the pass decided. Where Loro's union already shows the result, nothing is
    written.
 
@@ -690,7 +691,7 @@ changed it): no conflict, nothing lost. Had both changed the title, Alice's woul
 - **A named version** is a built-in `version` Record `{at, name}` on the branch it names: a person's act, which syncs
   and has history.
 
-**Decided:** A4, A149, docs 14, docs 16, docs 17, docs 21, docs rule 22 · **Lean:** `Aven.DB.Docs.Merge` —
+**Decided:** A4, A149, A204, docs 14, docs 16, docs 17, docs 21, docs rule 22 · **Lean:** `Aven.DB.Docs.Merge` —
 `keeps_target`, `lands_other`, `conflict_by_choice`, `merge_same`, `back_out_removes`, `back_out_keeps_later`; the
 whole merge: `rule4_merge_whole` (`Aven.Architecture`, #1608)
 
@@ -882,6 +883,5 @@ one (`tests/catchup.rs`, #1694). In the browsers with Docs in the Peers (#1727).
    fold, for entries that are envelopes of their own. *avenDOCS and avenOPS; avenMAIA decides.*
 3. **The first lens catalogue's named conversions:** text to money, text to date, text to number. *avenDOCS at step 3;
    avenMAIA decides.*
-4. **Overlapping text edits in a merge:** shown only, or offered as a choice? *Samuel.*
-5. **The root Record's fields for a Doc's birth references** (a fork's origin, the period before, the frozen chains):
+4. **The root Record's fields for a Doc's birth references** (a fork's origin, the period before, the frozen chains):
    their names and shapes, and how a user root type's schema admits them. *avenMAIA.*
