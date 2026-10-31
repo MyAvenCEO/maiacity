@@ -1,4 +1,4 @@
-import Aven.ID.Placement
+import Aven.ID.Keeping
 
 /-! # Keepers: fetch keys that chain, proofs, who pays, and what a keeper keeps for whom
 
@@ -593,7 +593,7 @@ variable (b : Books)
 /-- A keep cap the keeper takes: a grant to the keeper's vault, signed by a device of its issuer, which its issuer's
 owners approved, an owner vault by its own quorum (D14). -/
 def valid (c : Cap) : Bool :=
-  c.kind == .grant && c.holder == .vault b.keeper && b.tree.actsFor c.signer == some c.issuer &&
+  c.form == .grant && c.holder == .vault b.keeper && b.tree.actsFor c.signer == some c.issuer &&
     b.tree.approves b.threshold c.issuer c.id c.approvals
 
 /-- An order a device of vault `v` signed, as the tree says. -/
@@ -641,7 +641,7 @@ keep cap lists that names the keeper, that a device of its issuer signed, and th
 its issuer is the Doc's own vault, or one that governs it, is the issuer's check and every reader's
 (`kept_by_owner`). -/
 theorem kept_only_by_owner {d : Core.DocId} (h : b.keeps d = true) :
-    ∃ l ∈ b.listings, (∃ k, (d, k) ∈ l.docs) ∧ l.cap.kind = .grant ∧ l.cap.holder = .vault b.keeper ∧
+    ∃ l ∈ b.listings, (∃ k, (d, k) ∈ l.docs) ∧ l.cap.form = .grant ∧ l.cap.holder = .vault b.keeper ∧
       b.tree.actsFor l.cap.signer = some l.cap.issuer ∧
       b.tree.approves b.threshold l.cap.issuer l.cap.id l.cap.approvals = true := by
   obtain ⟨l, m, v, _, ld, _⟩ := b.kept_only_covered h
@@ -652,16 +652,16 @@ theorem kept_only_by_owner {d : Core.DocId} (h : b.keeps d = true) :
 /-- With every list resolved by its issuer's device from the Docs that vault holds, and every keep cap one its issuer
 checked, a keeper keeps a Doc only when a keep cap its issuer's owners approved covers it by its facts, every line of it
 in its issuer's authority: its own vault, or one it governs. -/
-theorem kept_by_owner (gov : Core.Bytes → Core.Bytes → Bool) (spawned : Core.DocId → Core.DocId → Bool) (x : Ctx)
-    (held : String → List (Core.Facts × Nat))
-    (resolved : ∀ l ∈ b.listings, l.docs = resolve gov spawned x.roles l.cap (held l.cap.issuer))
+theorem kept_by_owner (gov : Core.Bytes → Core.Bytes → Bool) (spawned lists : Core.DocId → Core.DocId → Bool)
+    (x : Ctx) (held : String → List (Core.Facts × Nat))
+    (resolved : ∀ l ∈ b.listings, l.docs = resolve gov spawned lists x.roles l.cap (held l.cap.issuer))
     (checked : ∀ l ∈ b.listings, chainOk x [l.cap] = true) {d : Core.DocId} (h : b.keeps d = true) :
-    ∃ l ∈ b.listings, ∃ f, f.id = d ∧ l.cap.keeps gov spawned x.roles f = true ∧
+    ∃ l ∈ b.listings, ∃ f, f.id = d ∧ l.cap.keeps gov spawned lists x.roles f = true ∧
       b.tree.approves b.threshold l.cap.issuer l.cap.id l.cap.approvals = true ∧
       ∀ line ∈ l.cap.grants x.roles, authorityOver x l.cap.issuer line = true := by
   obtain ⟨l, m, ⟨k, ld⟩, _, _, _, a⟩ := b.kept_only_by_owner h
   rw [resolved l m] at ld
-  obtain ⟨f, _, fd, kf⟩ := (resolve_exact gov spawned).mp ld
+  obtain ⟨f, _, fd, kf⟩ := (resolve_exact gov spawned lists).mp ld
   exact ⟨l, m, f, fd, kf, a, root_authority (checked l m) l.cap (List.mem_singleton_self _)⟩
 
 /-- **A withdrawn keep cap is dropped** (D2): once a device of its issuer withdraws every keep cap that lists a Doc,
