@@ -1,6 +1,7 @@
 import Aven.Core.Cbor
 import Aven.Core.CborLaws
 import Aven.Core.ValueEq
+import Aven.Core.Text
 import Aven.DB.Wire
 
 /-!
@@ -14,15 +15,16 @@ of version 2 sends nothing after its hello until the other's has come, so a peer
 
 The rules:
 - **one form per frame:** a frame is read only from exactly its keys, each of its kind: no key is optional and none
-  is defaulted (README rule 9), so `frameOf` reads back what `frameValue` wrote and nothing else (every example;
-  the general theorem is still to prove);
-- **one encoding per frame:** a frame's bytes are the canonical encoding of its Value, and a reader refuses any other
-  (`Aven.Core.encode_decodeAll`; every example's Value is `Canon`);
+  is defaulted (README rule 9), so `frameOf` reads back what `frameValue` wrote (`frameOf_value`);
+- **one encoding per frame:** each frame names its keys in the codec's order, so a frame that fits the profile is a
+  canonical Value (`frameValue_canon`); its bytes are the one encoding of it, a reader refuses any other
+  (`Aven.Core.encode_decodeAll`), and reads them back as the frame (`decodeAll_frame`);
 - **the length first:** a length above `maxFrame` is refused as soon as its 4 bytes are in, before anything is
   buffered (`push_tooLong`); a length of 0 is no frame.
 
-Still open before the Rust moves: `frameOf_value` and `Canon (frameValue f)` for every frame whose numbers are below
-2⁶⁴, proved rather than checked on examples; and whether `lines` carries its blobs as bytes rather than text. -/
+Text is a `String`'s UTF-8, which is always valid as the codec's table says (`Aven.Core.utf8_text`). A line's blob
+is carried as text here, as `Aven.DB.Wire.Frame` holds it; it becomes bytes when the Rust moves and the JSON frames
+go, since CBOR has bytes (the architect, 31 Oct 2026). -/
 
 namespace Aven.DB
 namespace WireCbor
@@ -32,31 +34,25 @@ open Aven.Core
 /-- The wire version whose frames this module writes. -/
 def version : Nat := 2
 
-/-- Text as the codec holds it: its UTF-8 bytes. -/
-def txt (s : String) : Value := .text s.toUTF8.toList
+/-- Text as the codec holds it: its UTF-8 bytes (`Aven.Core.text`). -/
+def txt (s : String) : Value := .text (text s)
 
 def readText : Value → Option String
   | .text b => String.fromUTF8? ⟨b.toArray⟩
   | _ => none
 
-def keyLt (a b : Bytes) : Bool := lexLt (keyBytes a) (keyBytes b)
-
-def insertKey (kv : Bytes × Value) : List (Bytes × Value) → List (Bytes × Value)
-  | [] => [kv]
-  | x :: xs => if keyLt kv.1 x.1 then kv :: x :: xs else x :: insertKey kv xs
-
-/-- A map with these keys, sorted as the codec sorts them. -/
-def obj (kvs : List (String × Value)) : Value :=
-  .map (kvs.foldr (fun (k, v) acc => insertKey (k.toUTF8.toList, v) acc) [])
+/-- A map with these keys, written in the codec's order: each frame names its keys so, and `frameValue_canon` holds
+it to that. -/
+def obj (kvs : List (String × Value)) : Value := .map (kvs.map fun (k, v) => (text k, v))
 
 /-- The value under a key of a map, if the map has it. -/
-def field (kvs : List (Bytes × Value)) (k : String) : Option Value := kvs.lookup k.toUTF8.toList
+def field (kvs : List (Bytes × Value)) (k : String) : Option Value := kvs.lookup (text k)
 
 def keys (kvs : List (Bytes × Value)) : List Bytes := kvs.map (·.1)
 
 /-- A map whose keys are exactly these: the same set, so no key is missing and none is extra. -/
 def exactly (kvs : List (Bytes × Value)) (ks : List String) : Bool :=
-  kvs.length == ks.length && ks.all fun k => (keys kvs).contains k.toUTF8.toList
+  kvs.length == ks.length && ks.all fun k => (keys kvs).contains (text k)
 
 def readNat : Value → Option Nat
   | .uint n => some n
@@ -79,7 +75,7 @@ def optVal : Option String → Value
   | some s => txt s
   | none => .null
 
-def headValue (h : Head) : Value := obj [("device", txt h.device), ("id", txt h.id), ("seq", .uint h.seq)]
+def headValue (h : Head) : Value := obj [("id", txt h.id), ("seq", .uint h.seq), ("device", txt h.device)]
 
 def headOf : Value → Option Head
   | .map kvs => do
@@ -87,7 +83,7 @@ def headOf : Value → Option Head
     pure ⟨← readText (← field kvs "device"), ← readText (← field kvs "id"), ← readNat (← field kvs "seq")⟩
   | _ => none
 
-def haveValue (h : Have) : Value := obj [("device", txt h.device), ("seq", .uint h.seq)]
+def haveValue (h : Have) : Value := obj [("seq", .uint h.seq), ("device", txt h.device)]
 
 def haveOf : Value → Option Have
   | .map kvs => do
@@ -99,19 +95,19 @@ def haveOf : Value → Option Have
 def frameValue : Frame → Option Value
   | .hello .. | .update _ => none
   | .presence ps => obj [("frame", txt "presence"), ("peers", .array (ps.map txt))]
-  | .beat n => obj [("frame", txt "beat"), ("n", .uint n)]
+  | .beat n => obj [("n", .uint n), ("frame", txt "beat")]
   | .claim st => obj [("frame", txt "claim"), ("statement", txt st)]
   | .signIn st => obj [("frame", txt "sign_in"), ("statement", txt st)]
   | .invite st => obj [("frame", txt "invite"), ("statement", txt st)]
   | .withdraw st => obj [("frame", txt "withdraw"), ("statement", txt st)]
   | .join st => obj [("frame", txt "join"), ("statement", txt st)]
-  | .network c t st => obj [("frame", txt "network"), ("claimed", .bool c), ("tree", optVal t),
+  | .network c t st => obj [("tree", optVal t), ("frame", txt "network"), ("claimed", .bool c),
       ("statements", optVal st)]
-  | .refused w => obj [("frame", txt "refused"), ("why", txt w)]
-  | .heads hs more => obj [("frame", txt "heads"), ("heads", .array (hs.map headValue)), ("more", .bool more)]
-  | .catchUp hs only => obj [("frame", txt "catch_up"), ("have", .array (hs.map haveValue)), ("only", .bool only)]
+  | .refused w => obj [("why", txt w), ("frame", txt "refused")]
+  | .heads hs more => obj [("more", .bool more), ("frame", txt "heads"), ("heads", .array (hs.map headValue))]
+  | .catchUp hs only => obj [("have", .array (hs.map haveValue)), ("only", .bool only), ("frame", txt "catch_up")]
   | .lines ls => obj [("frame", txt "lines"), ("lines", .array (ls.map txt))]
-  | .kept fs => obj [("frame", txt "kept"), ("files", .array (fs.map txt))]
+  | .kept fs => obj [("files", .array (fs.map txt)), ("frame", txt "kept")]
 
 /-- A frame read from exactly its keys. -/
 def frameOf : Value → Option Frame
@@ -197,6 +193,129 @@ theorem push_tooLong {buf chunk : Bytes} (h4 : 4 ≤ (buf ++ chunk).length)
   | succ m =>
     simp only [push.go, step_tooLong h4 hn]
     rfl
+
+/-! ### One form per frame -/
+
+@[simp] theorem readText_txt (s : String) : readText (txt s) = some s := fromUTF8_text s
+
+@[simp] theorem text_beq (a b : String) : (text a == text b) = (a == b) := by
+  rw [Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq, text_inj]
+
+@[simp] theorem readList_txt (ls : List String) : readList readText (.array (ls.map txt)) = some ls := by
+  induction ls with
+  | nil => rfl
+  | cons l ls ih =>
+    simp only [readList, List.map_cons, List.mapM_cons, readText_txt] at ih ⊢
+    rw [ih]; rfl
+
+@[simp] theorem headOf_headValue (h : Head) : headOf (headValue h) = some h := by
+  simp [headOf, headValue, obj, exactly, keys, field, List.lookup, guard, readNat]
+
+@[simp] theorem haveOf_haveValue (h : Have) : haveOf (haveValue h) = some h := by
+  simp [haveOf, haveValue, obj, exactly, keys, field, List.lookup, guard, readNat]
+
+theorem readList_map {f : α → Value} {g : Value → Option α} (hg : ∀ a, g (f a) = some a) :
+    ∀ (xs : List α), readList g (.array (xs.map f)) = some xs
+  | [] => rfl
+  | x :: xs => by
+    have := readList_map hg xs
+    simp only [readList, List.map_cons, List.mapM_cons, hg] at this ⊢
+    rw [this]; rfl
+
+@[simp] theorem some_seqRight (x : Option α) : (some () *> x) = x := rfl
+
+@[simp] theorem readOpt_optVal (o : Option String) : readOpt (optVal o) = some o := by
+  cases o with
+  | none => rfl
+  | some s => exact congrArg (Option.map some) (readText_txt s)
+
+/-- **One form per frame:** a frame reads back from the Value it is written as. -/
+theorem frameOf_value {f : Frame} {v : Value} (h : frameValue f = some v) : frameOf v = some f := by
+  cases f <;> simp only [frameValue, reduceCtorEq, Option.some.injEq] at h <;> subst h <;>
+    simp [frameOf, obj, exactly, keys, field, List.lookup, readList_map headOf_headValue,
+      readList_map haveOf_haveValue, guard, readNat, readBool]
+
+/-! ### One encoding per frame -/
+
+/-- Text the profile can write: its UTF-8 shorter than 2⁶⁴ bytes. -/
+abbrev Short (s : String) : Prop := (text s).length < limit
+
+/-- What the profile can write of a frame: every number below 2⁶⁴, every text and list shorter. Every frame a peer
+sends fits: `maxFrame` is far below. -/
+def Fits : Frame → Prop
+  | .hello .. | .update _ => True
+  | .presence ps | .lines ps | .kept ps => ps.length < limit ∧ ∀ p ∈ ps, Short p
+  | .beat n => n < limit
+  | .claim st | .signIn st | .invite st | .withdraw st | .join st | .refused st => Short st
+  | .network _ t st => (∀ s, t = some s → Short s) ∧ (∀ s, st = some s → Short s)
+  | .heads hs _ => hs.length < limit ∧ ∀ h ∈ hs, Short h.device ∧ Short h.id ∧ h.seq < limit
+  | .catchUp hs _ => hs.length < limit ∧ ∀ h ∈ hs, Short h.device ∧ h.seq < limit
+
+theorem shape_txt {s : String} (h : Short s) : Shape (txt s) = true := by
+  simp [txt, Shape, textOk, utf8_text, show (text _).length < limit from h]
+
+theorem textOk_key (k : String) (h : Short k) : textOk (text k) = true := by
+  simp [textOk, utf8_text, show (text _).length < limit from h]
+
+theorem shapeList_map {f : α → Value} {xs : List α} (P : α → Prop) (hf : ∀ a, P a → Shape (f a) = true)
+    (hx : ∀ a ∈ xs, P a) : ShapeList (xs.map f) = true := by
+  induction xs with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [List.map_cons, ShapeList, hf x (hx x (List.mem_cons_self ..)), Bool.true_and]
+    exact ih fun a m => hx a (List.mem_cons_of_mem _ m)
+
+theorem depthList_map {f : α → Value} {d : Nat} (hf : ∀ a, depth (f a) ≤ d) :
+    ∀ (xs : List α), depthList (xs.map f) ≤ d
+  | [] => Nat.zero_le _
+  | x :: xs => by
+    simp only [List.map_cons, depthList]
+    exact Nat.max_le.mpr ⟨hf x, depthList_map hf xs⟩
+
+
+
+theorem headShape {h : Head} (f : Short h.device ∧ Short h.id ∧ h.seq < limit) : Shape (headValue h) = true := by
+  simp [headValue, obj, Shape, ShapeMap, keysSorted, shape_txt f.1, shape_txt f.2.1, f.2.2, textOk_key,
+    show Short "id" by decide, show Short "seq" by decide, show Short "device" by decide]
+  decide
+
+theorem haveShape {h : Have} (f : Short h.device ∧ h.seq < limit) : Shape (haveValue h) = true := by
+  simp [haveValue, obj, Shape, ShapeMap, keysSorted, shape_txt f.1, f.2, textOk_key,
+    show Short "seq" by decide, show Short "device" by decide]
+  decide
+
+/-- **One encoding per frame:** a frame that fits is a canonical Value, so its bytes are the one encoding of it and
+every reader decodes them to it (`Aven.Core.decodeAll_encode`). -/
+theorem frameValue_canon {f : Frame} {v : Value} (fits : Fits f) (h : frameValue f = some v) : Canon v = true := by
+  cases f <;> simp only [frameValue, reduceCtorEq, Option.some.injEq] at h <;> subst h <;> simp only [Fits] at fits <;>
+    simp (config := { decide := true }) [Canon, obj, Shape, ShapeMap, keysSorted, depth, depthMap, txt, textOk,
+      utf8_text, optVal]
+  case beat => exact fits
+  case claim | signIn | invite | withdraw | join | refused => exact fits
+  case presence | lines | kept =>
+    refine ⟨⟨fits.1, shapeList_map Short (fun _ h => shape_txt h) fits.2⟩, ?_⟩
+    have := depthList_map (f := txt) (d := 1) (fun _ => Nat.le_refl _) ‹List String›
+    simp only [maxDepth]; omega
+  case heads =>
+    refine ⟨⟨fits.1, shapeList_map _ (fun _ h => headShape h) fits.2⟩, ?_⟩
+    have := depthList_map (f := headValue) (d := 2) (fun _ => by simp [headValue, obj, depth, depthMap, txt])
+      ‹List Head›
+    simp only [maxDepth]; omega
+  case catchUp =>
+    refine ⟨⟨fits.1, shapeList_map _ (fun _ h => haveShape h) fits.2⟩, ?_⟩
+    have := depthList_map (f := haveValue) (d := 2) (fun _ => by simp [haveValue, obj, depth, depthMap, txt])
+      ‹List Have›
+    simp only [maxDepth]; omega
+  case network =>
+    rename_i t st
+    obtain ⟨ht, hs⟩ := fits
+    cases t <;> cases st <;> simp_all [Shape, textOk, utf8_text, depth, maxDepth]
+
+/-- **A frame's bytes are read back as it:** whatever fits, written to the stream, is read as itself. -/
+theorem decodeAll_frame {f : Frame} {v : Value} (fits : Fits f) (h : frameValue f = some v) :
+    (decodeAll (encode v) >>= frameOf) = some f := by
+  rw [decodeAll_encode v (frameValue_canon fits h)]
+  exact frameOf_value h
 
 /-! ## Examples -/
 
