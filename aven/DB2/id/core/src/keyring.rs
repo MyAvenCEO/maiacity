@@ -39,12 +39,7 @@ pub fn reseal(
     to: &SealPublic,
     entropy: &mut impl Entropy,
 ) -> Result<Epoch, KeyError> {
-    let mut record = Epoch {
-        stanzas: Vec::new(),
-        ..epoch.clone()
-    };
-    record.reseal(key, to, entropy)?;
-    Ok(record)
+    epoch.reseal(key, to, entropy)
 }
 
 /// Every stanza of the epoch named `name`, from every Record that carries it (`stanzasOf`).
