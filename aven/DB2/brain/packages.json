@@ -1,10 +1,17 @@
 {
-	"about": "avenBRAIN's package list (README.md): one item per package on Brain's dashboard, in the order a reader meets them. A package with a page is open; its slides are shown in their place in its story, by the file name under <package>/slides/. `art` is the object (art/objects.mjs) drawn on its card.",
+	"about": "avenBRAIN's package list (README.md): one item per package on Brain's dashboard, in the order a reader meets them, then the architecture, the decisions and the glossary. `page` is the file Brain shows for it: a package's is <id>/README.md. Its slides are shown in their place in its story, by the file name under <id>/slides/. `art` is the object (art/objects.mjs) drawn on its card.",
 	"packages": [
+		{
+			"id": "core",
+			"name": "avenCORE",
+			"what": "The primitives every package shares: Values, names, signed things, envelopes, logs and ops",
+			"page": "core/README.md",
+			"art": "letter"
+		},
 		{
 			"id": "id",
 			"name": "avenID",
-			"what": "Who: keys, vaults, owners, devices and caps",
+			"what": "Who is who: keys, signatures, sealing, vaults and their owners",
 			"page": "id/README.md",
 			"slides": [
 				"sign",
@@ -20,46 +27,81 @@
 			"art": "signet"
 		},
 		{
-			"id": "db",
-			"name": "avenDB",
-			"what": "Data: Values, Docs, Records and the store",
+			"id": "caps",
+			"name": "avenCAPS",
+			"what": "Who may do what: caps, and Maia City's register",
+			"page": "caps/README.md",
+			"art": "pass"
+		},
+		{
+			"id": "docs",
+			"name": "avenDOCS",
+			"what": "Data that merges: Docs, Records, types and lenses, with their history",
+			"page": "docs/README.md",
 			"art": "chest-bob"
 		},
 		{
-			"id": "peer",
-			"name": "avenPEER",
-			"what": "Running: the Peer, the Peer-Light and the relay",
+			"id": "ops",
+			"name": "avenOPS",
+			"what": "Ops over Docs: queries, mutations and wants",
+			"page": "ops/README.md",
+			"art": "magnifier"
+		},
+		{
+			"id": "store",
+			"name": "avenSTORE",
+			"what": "Where bytes rest: blobs, refs and files",
+			"page": "store/README.md",
+			"art": "chest"
+		},
+		{
+			"id": "peers",
+			"name": "avenPEERS",
+			"what": "Running: the Peer, the Peer-Light, the wire, keepers and relays",
+			"page": "peers/README.md",
 			"art": "phone-key"
 		},
 		{
-			"id": "os",
-			"name": "avenOS",
-			"what": "The shell: apps on a dashboard, acting as a vault",
-			"art": "badge"
+			"id": "runtime",
+			"name": "avenRUNTIME",
+			"what": "Frozen modules that run code and draw faces",
+			"page": "runtime/README.md",
+			"art": "magnifier"
 		},
 		{
 			"id": "actors",
 			"name": "avenACTORS",
 			"what": "Programs that live in a Doc and take turns",
+			"page": "actors/README.md",
 			"art": "robot"
 		},
 		{
-			"id": "runtimes",
-			"name": "avenRUNTIMES",
-			"what": "Frozen modules that run code and draw faces",
-			"art": "magnifier"
+			"id": "os",
+			"name": "avenOS",
+			"what": "The shell: apps on a dashboard, acting as a vault",
+			"page": "os/README.md",
+			"art": "badge"
 		},
 		{
 			"id": "sandbox",
 			"name": "avenSANDBOX",
 			"what": "The box: every peer on one machine, checked",
+			"page": "sandbox/README.md",
 			"art": "guild-chest"
 		},
 		{
 			"id": "architecture",
 			"name": "The architecture",
-			"what": "The shared primitives and every decision",
+			"what": "The whole on one page: the rules, the packages and every decision's status",
+			"page": "ARCHITECTURE.md",
 			"art": "imprint"
+		},
+		{
+			"id": "decisions",
+			"name": "The decisions",
+			"what": "Every decision, in the order it was made",
+			"page": "DECISIONS.md",
+			"art": "tick"
 		},
 		{
 			"id": "glossary",

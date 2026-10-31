@@ -7,7 +7,7 @@ What avenDB-old's query and sync engine taught us, reduced to first principles, 
 Learnings come in as rules and tests, never as code (README rule 12).
 
 The engine's input from apps is what actors declare they need: their `loads`
-([`aven/actor/ARCHITECTURE.md`](../../../actor/ARCHITECTURE.md), sections 3, 6 and 11; avenDB-old's actors as Interests:
+([`aven/actor/ARCHITECTURE.md`](https://github.com/MyAvenCEO/maiacity/blob/dd5bfebad2f41ef4dff535b6c446953c55769a9d/aven/actor/ARCHITECTURE.md), sections 3, 6 and 11; avenDB-old's actors as Interests:
 [`aven/actor/README.md`](../../../actor/README.md), section 6). What it may serve is decided by
 capabilities ([`aven/DB2/id/caps/README.md`](../../id/caps/README.md)).
 
@@ -228,7 +228,7 @@ What may be served is a capability's question, not the engine's.
 - **Writes are local first:** painted at once, never waiting for a peer, gone without trace when refused.
 - **Long logs** are a snapshot plus the edits after it, with windows inside the log.
 - **Actors**: the engine keeps each actor's `loads` current and hands the `now` tier into its turns; later tiers
-  arrive as messages ([`aven/actor/ARCHITECTURE.md`](../../../actor/ARCHITECTURE.md), sections 3, 6 and 11). A want is computed from the
+  arrive as messages ([`aven/actor/ARCHITECTURE.md`](https://github.com/MyAvenCEO/maiacity/blob/dd5bfebad2f41ef4dff535b6c446953c55769a9d/aven/actor/ARCHITECTURE.md), sections 3, 6 and 11). A want is computed from the
   actor's definition and its bound slots, never by reading data first.
 
 ## 9. Tensions in avenDB today
