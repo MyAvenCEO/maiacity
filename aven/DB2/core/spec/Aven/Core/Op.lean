@@ -43,11 +43,23 @@ def CoreOp.writes : CoreOp → Bool
 
 private def k (s : String) : Bytes := s.toUTF8.toList
 
-/-- A core op's stored form, `{"op": name, "plugin": "core/1"}`, its keys in the codec's order. -/
-def CoreOp.value (o : CoreOp) : Value := .map [(k "op", .text (k o.name)), (k "plugin", .text (k "core/1"))]
+/-- A plugin's built-in op in its stored form, `{"op": name, "plugin": plugin}`, its keys in the codec's order. -/
+def OpId.stored (plugin name : String) : Value := .map [(k "op", .text (k name)), (k "plugin", .text (k plugin))]
 
-/-- A core op's id: the name of its stored form. -/
-def CoreOp.id (H : Bytes → Hash) (o : CoreOp) : OpId := nameOf H o.value
+/-- Any plugin's built-in op id: the name of its stored form, the one way an op of `core/1`, `tree/1` or any other
+plugin is named (A45). -/
+def OpId.ofPlugin (H : Bytes → Hash) (plugin name : String) : OpId := nameOf H (OpId.stored plugin name)
+
+/-- A core op's stored form, `{"op": name, "plugin": "core/1"}`. -/
+def CoreOp.value (o : CoreOp) : Value := OpId.stored "core/1" o.name
+
+/-- A core op's id: `core/1`'s op of its name. -/
+def CoreOp.id (H : Bytes → Hash) (o : CoreOp) : OpId := OpId.ofPlugin H "core/1" o.name
+
+/-- `core/1`'s write params, by name: the type a write is on and the fields it sets (caps' lines and the engine's
+lowering read them here). -/
+def typeParam : Bytes := k "type"
+def fieldsParam : Bytes := k "fields"
 
 #guard [CoreOp.read, .put, .patch, .remove, .edit, .tell, .keep, .share].all fun o => Canon o.value
 
@@ -139,9 +151,17 @@ theorem Call.ofValue_value (c : Call) (h : c.op.ok = true) : Call.ofValue? c.val
 
 /-! ## The type of types (A39) -/
 
+/-- A built-in type: no Doc's genesis, its id the name of the label `<namespace> <name> 1`, so every reader knows it
+without fetching anything. The one way a part names its built-in types (A45): avenID's and the docs layer's list
+theirs through it. -/
+def builtinType (H : Bytes → Hash) (ns name : String) : DocId :=
+  ⟨nameOf H (.text (k s!"{ns} {name} 1"))⟩
+
 /-- The built-in type of types: the root type of every type Doc, and its own. It is no Doc's genesis, which couldn't
-name its own hash: its id is the name of a fixed label, so every reader knows it without fetching anything. -/
-def typeOfTypes (H : Bytes → Hash) : DocId := ⟨nameOf H (.text (k "avenDB type of types 1"))⟩
+name its own hash: it is a built-in type, `avenDB type of types 1`. -/
+def typeOfTypes (H : Bytes → Hash) : DocId := builtinType H "avenDB" "type of types"
+
+#guard typeOfTypes blake3 == ⟨nameOf blake3 (.text (k "avenDB type of types 1"))⟩
 
 /-- A type Doc: one whose root type is the type of types. -/
 def Facts.isType (H : Bytes → Hash) (f : Facts) : Bool := f.type == typeOfTypes H

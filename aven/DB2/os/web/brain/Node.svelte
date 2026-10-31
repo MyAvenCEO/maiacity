@@ -1,5 +1,5 @@
 <script>
-	// One node of a checked tree (brain/render/tree.js): text, or an element with its attributes and children. Nothing
+	// One node of a checked tree (checked by os/web/runtimes/draw.js's checkTree): text, or an element with its attributes and children. Nothing
 	// is parsed as HTML here; the tree was checked against the allowlist before it got this far.
 	import Node from './Node.svelte';
 

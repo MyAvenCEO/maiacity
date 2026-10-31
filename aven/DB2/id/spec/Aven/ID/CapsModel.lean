@@ -8,9 +8,9 @@ import Aven.Core.Model
 `aven-id-model` answers caps' cases as well as trees, so a backend's property tests ask the same Lean the vectors
 come from (README, rule 10). Each case is one JSON object, read in the form its vectors write:
 
-- `{"chain": [cap…], "context": {…}}`, as `caps.json` writes a chain, answers `{"ok": true}` or
+- `{"chain": [cap…], "context": {…}}`, as `caps.json` and `issuers.json` write a chain, answers `{"ok": true}` or
   `{"ok": false, "error": {"rule", "cap"[, "line"]}}` (`chainError`). The context's tree is `"cast"` or a tree as
-  `trees.json` writes one; its threshold is one number for every vault.
+  `trees.json` writes one; its `threshold` is every vault's quorum but those its optional `thresholds` give (A28).
 - `{"context", "caps": [cap…], "doc": facts}` answers `{"keepers": [vault…]}`, who keeps the Doc (`keepersOf`).
 - `{"doc": [entry…], "revocations": [rev…][, "envelope": name]}`, as `revocations.json` writes a Doc, answers the
   verdict of the envelope named, or of every one (`verdict`). With `"owner": vault` beside the envelope it answers
@@ -133,7 +133,7 @@ def capOf (j : Json) : Except String Cap := do
            holder := ← holderOf (← j.getObjVal? "holder"), parent := optStr j "parent", form,
            grant := ← (← j.getObjValAs? (Array Json) "grant").toList.mapM lineOf, role := optStr j "role",
            share := ← j.getObjValAs? Nat "share", conditions := ← conditionsOf (← j.getObjVal? "conditions"),
-           signer := ← j.getObjValAs? String "signer",
+           signer := optStr j "signer",
            approvals := ← (← j.getObjValAs? (Array Json) "approvals").toList.mapM fun a =>
              return ⟨← a.getObjValAs? String "key", ← a.getObjValAs? String "digest"⟩ }
 
@@ -141,19 +141,23 @@ def factsOf (j : Json) : Except String Facts :=
   return ⟨← docId (← j.getObjValAs? String "id"), (← j.getObjValAs? String "vault").toUTF8.toList,
     ← docId (← j.getObjValAs? String "type")⟩
 
-/-- A reader's context: the tree, one threshold for every vault, who is in each group, the roles, what each Doc is. -/
+/-- A reader's context: the tree, one threshold for every vault but those its optional `thresholds` give their own
+(A28), who is in each group, the roles, what each Doc is. -/
 def ctxOf (j : Json) : Except String Ctx := do
   let tree ← match ← j.getObjVal? "tree" with
     | .str "cast" => pure cast
     | t => parseTree t
   let k ← j.getObjValAs? Nat "threshold"
+  let own ← match j.getObjValD "thresholds" with
+    | .null => pure []
+    | t => do (← members t).mapM fun (v, n) => return (v, ← fromJson? (α := Nat) n)
   let groups ← (← j.getObjValAs? (Array Json) "groups").toList.mapM fun g =>
     return (← docId (← g.getObjValAs? String "group"), ← g.getObjValAs? (List String) "members")
   let roles ← (← j.getObjValAs? (Array Json) "roles").toList.mapM fun r =>
     return (⟨← r.getObjValAs? String "id", ← r.getObjValAs? String "name",
       ← (← r.getObjValAs? (Array Json) "grant").toList.mapM lineOf⟩ : Role)
   let facts ← (← j.getObjValAs? (Array Json) "docs").toList.mapM factsOf
-  return { tree, threshold := fun _ => k, roles, facts := fun d => facts.find? (·.id == d),
+  return { tree, threshold := fun v => (own.lookup v).getD k, roles, facts := fun d => facts.find? (·.id == d),
            inGroup := fun g v => groups.any fun (h, ms) => h == g && ms.contains v }
 
 /-- The chain's verdict: kept, or the first rule it breaks. -/
@@ -185,7 +189,7 @@ def entryOf (j : Json) : Except String Entry := do
   let env : Envelope :=
     { doc := ← docId (← e.getObjValAs? String "doc"), branch := (← e.getObjValAs? String "branch").toUTF8.toList,
       writer := ← e.getObjValAs? Nat "writer", seq := ← e.getObjValAs? Nat "seq", prev, deps,
-      body := .bytes name.bytes, signer := [], sig := [] }
+      body := .bytes name.bytes, sigs := [] }
   return { env, name, vault := ← j.getObjValAs? String "vault",
            caps := ← (← j.getObjValAs? (List String) "caps").mapM hashOf,
            acks := ← (← j.getObjValAs? (List String) "acks").mapM hashOf, delete }
@@ -226,10 +230,8 @@ def docAnswer (j : Json) : Except String Json := do
   | .ok n, .error _ => return (verdict nameOf rd doc rs (← named n)).json
   | .error _, _ => return Json.mkObj (doc.map fun e => ((nameOf e).text, (verdict nameOf rd doc rs e).json))
 
-/-- Who governs whom, as the context's tree says, by vault ids `v:<name>`. -/
-def govOf (x : Ctx) (v w : Bytes) : Bool :=
-  let name (v : Bytes) : String := (Core.utf8Text v).drop 2 |>.toString
-  (x.tree.governs (name v)).contains (name w)
+/-- Who governs whom, as authority runs down the context's tree (A28). -/
+def govOf (x : Ctx) (v w : Bytes) : Bool := x.governs v w
 
 /-- No actor spawned another and no collection lists a Doc in caps' cases. -/
 def noDocs (_ _ : DocId) : Bool := false
@@ -264,10 +266,10 @@ network's members, and the actor an actor host's envelope names. -/
 def authorizedAnswer (j : Json) : Except String Json := do
   let x ← ctxOf (← j.getObjVal? "context")
   let ej ← j.getObjVal? "envelope"
+  let signer ← bytesOf (← ej.getObjValAs? String "signer")
   let e : Envelope :=
     { doc := ← docId (← ej.getObjValAs? String "doc"), branch := (← ej.getObjValAs? String "branch").toUTF8.toList,
-      writer := 0, seq := 0, prev := none, deps := [], body := .null,
-      signer := ← bytesOf (← ej.getObjValAs? String "signer"), sig := [] }
+      writer := 0, seq := 0, prev := none, deps := [], body := .null, sigs := [⟨signer, []⟩] }
   let calls ← (← j.getObjValAs? (Array Json) "calls").toList.mapM callOf
   let chain ← (← j.getObjValAs? (Array Json) "chain").toList.mapM capOf
   let keys ← (← j.getObjValAs? (Array Json) "keys").toList.mapM fun k =>
@@ -278,7 +280,7 @@ def authorizedAnswer (j : Json) : Except String Json := do
     | .null => pure none
     | a => do pure (some (← docId (← fromJson? a)))
   let r : Reader :=
-    { ctx := x, chain := fun _ => chain, calls := fun _ => calls, lower := fun _ => [],
+    { ctx := x, chain := fun _ => chain, calls := fun _ => calls, lower := fun _ => [], signer := fun _ => signer,
       vaultOf := fun k => (keys.find? (·.1 == k)).map (·.2), member := ms.contains, facts := x.facts,
       deviceCap := fun k => (dcs.find? (·.1 == k)).map (·.2), actorOf := fun _ => actor }
   let gov := govOf x

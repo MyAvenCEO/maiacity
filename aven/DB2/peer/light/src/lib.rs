@@ -292,7 +292,8 @@ fn running<T>(f: impl FnOnce(&Running) -> Result<T, JsError>) -> Result<T, JsErr
 /// the Peer-Light binds again with it, and sends it on the new link.
 #[wasm_bindgen]
 pub fn send(frame: String) -> Result<(), JsError> {
-    let frame: Frame = serde_json::from_str(&frame).map_err(js)?;
+    let text = frame;
+    let frame = statement(&text).ok_or_else(|| JsError::new("a page sends only a statement"))?;
     let newcomer = matches!(
         frame,
         Frame::Claim { .. } | Frame::SignIn { .. } | Frame::Join { .. }
@@ -303,7 +304,6 @@ pub fn send(frame: String) -> Result<(), JsError> {
     if newcomer && ADMITTED.get() != Some(true) {
         PENDING.set(true);
         let token = aven_peer::token(&frame);
-        let text = serde_json::to_string(&frame).map_err(js)?;
         wasm_bindgen_futures::spawn_local(async move {
             // kept first: a reload, or a network that comes back later, sends it still
             if let (Err(e), Some(config)) = (
@@ -334,6 +334,23 @@ pub fn send(frame: String) -> Result<(), JsError> {
         return Ok(());
     }
     running(|r| r.outbox.unbounded_send(frame).map_err(js))
+}
+
+/// The page's statement, `{"frame": "claim" | "sign_in" | "invite" | "withdraw" | "join", "statement": "…"}`, read from
+/// exactly those keys: as the page sends it, and as a newcomer's is kept in the store until the network takes it, so a
+/// statement kept by an earlier release reads the same.
+fn statement(text: &str) -> Option<Frame> {
+    let v: serde_json::Value = serde_json::from_str(text).ok()?;
+    let o = v.as_object().filter(|o| o.len() == 2)?;
+    let statement = o.get("statement")?.as_str()?.to_string();
+    Some(match o.get("frame")?.as_str()? {
+        "claim" => Frame::Claim { statement },
+        "sign_in" => Frame::SignIn { statement },
+        "invite" => Frame::Invite { statement },
+        "withdraw" => Frame::Withdraw { statement },
+        "join" => Frame::Join { statement },
+        _ => return None,
+    })
 }
 
 /// A newcomer's frame by the name the page knows it.
@@ -565,6 +582,86 @@ pub async fn device_secret(candidate: String) -> Result<String, JsError> {
         .map_err(js)?;
     store.set_ref(&name, None, blob).await.map_err(js)?;
     Ok(candidate)
+}
+
+std::thread_local! {
+    /// The passkey's seal key, for this session only: derived again at each ceremony, never stored. The owner key is
+    /// never kept at all (A42): each ceremony derives it, signs, and drops it (`ownerSign`).
+    static SEAL: RefCell<Option<aven_id::SealKey>> = const { RefCell::new(None) };
+}
+
+/// The PRF output of the passkey `credential` (its id, base64url) at owner epoch `epoch`, straight from the ceremony
+/// (rule 13): the Peer-Light derives the owner key and the seal key from it, keeps the seal key in memory for this
+/// session and drops the owner key (A42), wipes the output, and keeps only the public halves in its store, under the
+/// ref `owner-keys`, until the tree's ops carry them. Gives back `{owner, seal}`, hex: never a secret.
+#[wasm_bindgen(js_name = prfKeys)]
+pub async fn prf_keys(
+    epoch: u32,
+    credential: String,
+    mut output: Vec<u8>,
+) -> Result<JsValue, JsError> {
+    use aven_db_store::RefName;
+    // the seal key goes into this session's keeping and the owner key is dropped before anything awaits, so no
+    // future carries them
+    let (owner, seal) = {
+        let derived = acts::prf_derive(&mut output).map_err(|e| JsError::new(&e))?;
+        let public = (derived.owner.clone(), derived.seal.clone());
+        SEAL.with(|s| *s.borrow_mut() = Some(derived.seal_key));
+        public
+    };
+    let kept = serde_json::json!({ "credential": credential, "epoch": epoch, "owner": owner, "seal": seal });
+    let (store, _) = store().await?;
+    let name = RefName::new("owner-keys").map_err(js)?;
+    let blob = store
+        .put(kept.to_string().into_bytes().into())
+        .await
+        .map_err(js)?;
+    let was = store.get_ref(&name).await.map_err(js)?;
+    store.set_ref(&name, was, blob).await.map_err(js)?;
+    Ok(object(&[("owner", owner.into()), ("seal", seal.into())]))
+}
+
+/// What the passkey's hybrid owner key signs, inside the Peer-Light: the ceremony's PRF `output` and `bytes` (hex) in,
+/// the signature's Value's bytes (hex) out. The owner key is derived for this one signature and dropped (A42); the
+/// output is wiped.
+#[wasm_bindgen(js_name = ownerSign)]
+pub fn owner_sign(mut output: Vec<u8>, bytes: String) -> Result<String, JsError> {
+    let msg = unhex(&bytes);
+    let derived = acts::prf_derive(&mut output).map_err(|e| JsError::new(&e))?;
+    let msg = msg.ok_or_else(|| JsError::new("not hex"))?;
+    Ok(derived
+        .owner_key
+        .sign(&msg)
+        .to_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect())
+}
+
+/// The public halves this browser keeps (`owner-keys`), or null.
+#[wasm_bindgen(js_name = ownerKeys)]
+pub async fn owner_keys() -> Result<JsValue, JsError> {
+    use aven_db_store::RefName;
+    let (store, _) = store().await?;
+    let name = RefName::new("owner-keys").map_err(js)?;
+    let Some(blob) = store.get_ref(&name).await.map_err(js)? else {
+        return Ok(JsValue::NULL);
+    };
+    let bytes = store
+        .get(&blob)
+        .await
+        .map_err(js)?
+        .ok_or_else(|| JsError::new("owner-keys points at a missing blob"))?;
+    Ok(String::from_utf8(bytes.to_vec()).map_err(js)?.into())
+}
+
+fn unhex(s: &str) -> Option<Vec<u8>> {
+    if !s.len().is_multiple_of(2) || !s.is_ascii() {
+        return None;
+    }
+    (0..s.len() / 2)
+        .map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).ok())
+        .collect()
 }
 
 /// Starts the Peer-Light `name` with its secret seed (hex), linking through `relay` to the Aven Peer (`aven_key`,

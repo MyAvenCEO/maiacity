@@ -1,30 +1,22 @@
 // avenBRAIN in avenOS (aven/DB2/brain): its package list, pages, slides and glossary, bundled from the repo at build time.
 // Text comes in as Markdown and leaves as a node tree (brain/render), which Node.svelte draws. A slide is a face: its
-// tree and its style data, which the face-runtime's drawer (os/web/runtimes/draw.js) draws into a shadow root of its own.
+// part (<id>.part.json, its markup and every rule) goes through the frozen face-runtime, loaded by its hash in the
+// runtimes worker (os/web/runtimes), and the drawer (os/web/runtimes/draw.js) draws its answer into a shadow root of its
+// own. No slide is drawn that face-runtime didn't accept.
 import list from '../../../brain/packages.json';
 import { blocks, slug } from '../../../brain/render/markdown.js';
 import { rewriteLinks } from '../../../brain/render/links.js';
-import { check, parse } from '../../../brain/render/tree.js';
 import '../../../brain/style/tokens.css';
 import images from '../../../brain/art/images.json';
-import { draw, ruleOk } from '../runtimes/draw.js';
+import { checkTree, draw } from '../runtimes/draw.js';
+import { fromJson, runtime } from '../runtimes/runtimes.js';
 
-const files = import.meta.glob('../../../brain/**/*.{md,html}', { query: '?raw', import: 'default', eager: true });
+const files = import.meta.glob('../../../brain/**/*.md', { query: '?raw', import: 'default', eager: true });
 const file = (path) => files[`../../../brain/${path}`];
 
-// The slides' style is data, the face-runtime's (brain/style/slide.style.json, then each slide's <id>.style.json): rules
-// in the JSON form of a Value, a colour `{ bytes }`, which the drawer takes as its 3 bytes. Checked here as the drawer
-// checks them, so a rule outside Style fails the build's first page, not one slide.
-const sheets = import.meta.glob(['../../../brain/style/slide.style.json', '../../../brain/*/slides/*.style.json'], { import: 'default', eager: true });
-const value = (v) =>
-	Array.isArray(v) ? v.map(value) : v && typeof v === 'object' && 'bytes' in v ? Uint8Array.from(v.bytes.match(/../g), (b) => parseInt(b, 16)) : v;
-const style = (path) => {
-	const rules = value(sheets[`../../../brain/${path}`] ?? []);
-	const bad = rules.find((r) => !ruleOk(r));
-	if (bad) throw new Error(`${path}: a rule outside Style: ${JSON.stringify(bad)}`);
-	return rules;
-};
-const shared = style('style/slide.style.json');
+// Each slide's part, as brain/art/slides.mjs writes it: its markup and its rules, style/slide.style.json's first, in
+// the JSON form of a Value
+const parts = import.meta.glob('../../../brain/*/slides/*.part.json', { import: 'default', eager: true });
 
 export const packages = list.packages;
 
@@ -44,10 +36,10 @@ export function linker(from) {
 	};
 }
 
-// every tree is checked against the allowlist before it is drawn, whoever made it: Markdown too
+// every tree is checked against the allowlist before it is drawn, whoever made it: Markdown too, by the drawer's check
 function checked(where, tree) {
-	const problems = tree.flatMap((node) => check(node));
-	if (problems.length) throw new Error(`${where}: ${problems.join('; ')}`);
+	const bad = tree.find((node) => !checkTree(node));
+	if (bad) throw new Error(`${where}: a node outside the allowlist: ${JSON.stringify(bad).slice(0, 120)}`);
 	return tree;
 }
 
@@ -56,17 +48,33 @@ const markdown = (path, options = {}) => checked(path, rewriteLinks(blocks(file(
 
 export const page = (path) => markdown(path);
 
-// a slide: a face, its markup as one tree and its rules, every slide's first; and its text
+// a slide: a face's part, and its text
 export function slide(pkg, id) {
-	const [tree, ...more] = checked(`${pkg}/slides/${id}.html`, parse(file(`${pkg}/slides/${id}.html`) ?? ''));
-	if (!tree || more.length) throw new Error(`${pkg}/slides/${id}.html: a slide is one element`);
-	return { id, face: { tree, style: [...shared, ...style(`${pkg}/slides/${id}.style.json`)] }, text: markdown(`${pkg}/slides/${id}.md`) };
+	const part = parts[`../../../brain/${pkg}/slides/${id}.part.json`];
+	if (!part) throw new Error(`${pkg}/slides/${id}.part.json: no part; bun brain/art/slides.mjs writes it`);
+	return { id, part, text: markdown(`${pkg}/slides/${id}.md`) };
 }
 
-// a Svelte action: the drawer draws the face into the node's own shadow root, its images from the bundle
+// A Svelte action: face-runtime runs the part (no data: a slide's text is its markup's), and the drawer draws its
+// answer into the node's own shadow root, its images from the bundle. A part face-runtime refuses draws nothing, and
+// the node says why (`data-refused`). Only the newest part's answer is drawn.
 export const face = (node, part) => {
-	draw(node, part, { file: fileOf });
-	return { update: (next) => draw(node, next, { file: fileOf }) };
+	let asked = 0;
+	const show = async (next) => {
+		const mine = ++asked;
+		try {
+			const answer = fromJson(await runtime('face-runtime', next, {}));
+			if (mine !== asked) return;
+			draw(node, answer, { file: fileOf });
+			delete node.dataset.refused;
+		} catch (error) {
+			if (mine !== asked) return;
+			node.dataset.refused = String(error?.message ?? error);
+			console.error(`a slide wasn't drawn: ${node.dataset.refused}`);
+		}
+	};
+	show(part);
+	return { update: show };
 };
 
 // the glossary: its tree, every term's entry with an id (`term-<word>`), and each word it defines, for #/brain/glossary/<word>

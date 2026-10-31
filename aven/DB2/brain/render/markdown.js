@@ -1,7 +1,7 @@
-// Markdown → a node tree (tree.js's shape), the markdown-runtime's job until it exists (aven/runtimes/README.md): the
+// Markdown → a node tree (text, or `[tag, [[name, value], …], [kid, …]]`), the markdown-runtime's job until it exists (aven/runtimes/README.md): the
 // part of GitHub's Markdown the brain is written in. Headings, paragraphs, lists (nested, tight), tables, fenced code,
 // quotes and rules; inline code, links, strong and emphasis. Raw HTML stays text. Links keep their href as written:
-// links.js rewrites them, and tree.js's check refuses any the allowlist doesn't take.
+// links.js rewrites them, and the drawer's check (os/web/runtimes/draw.js) refuses any the allowlist doesn't take.
 
 const inlinePattern = /`([^`]+)`|\*\*(.+?)\*\*|\[([^\]]+)\]\(([^)\s]+)\)|\*([^*\s](?:[^*]*?[^*\s])?)\*/g;
 

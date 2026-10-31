@@ -32,14 +32,6 @@ def gGarden : Core.DocId := docOf "g-garden"
 def album : Core.DocId := docOf "album"
 def avenNotes : Core.DocId := docOf "aven-notes"
 
-/-- The parameters caps bounds on `core/1`'s writes: the type a step writes, and the fields it writes. -/
-def typeParam : Core.Bytes := "type".toUTF8.toList
-def fieldsParam : Core.Bytes := "fields".toUTF8.toList
-
-/-- A Doc, and a field, as a parameter's value. -/
-def docValue (d : Core.DocId) : Core.Value := .bytes d.hash.bytes
-def fieldValue (f : String) : Core.Value := .text f.toUTF8.toList
-
 /-- Reading a Doc. -/
 def readOn (d : Core.DocId) : Line := ⟨coreOp .read, .doc d .self, []⟩
 
@@ -355,8 +347,24 @@ def bookCases : List (String × Books × List Core.DocId) := [
       { c with issuer := "bob", signer := "bob-peer-light" }] }, [])]
 
 #guard bookCases.all fun (_, b, ks) => bookDocs.filter b.keeps == ks
+-- Bob's keep cap is his default at the Aven Peer; one that may share, or is another vault's, is not.
+#guard keepBob.isDefaultKeep "bob" "aven" && !{ keepBob with share := 1 }.isDefaultKeep "bob" "aven" &&
+  !keepBob.isDefaultKeep "alice" "aven" &&
+  (defaultKeep "carol" "aven" none [⟨"carol-owner", "keep-carol"⟩]).isDefaultKeep "carol" "aven"
 -- The quota Aven keeps for a member is its offer's, and nothing for anyone the offer doesn't cover.
 #guard avenBooks.quota "bob" == 10000000000 && avenBooks.quota "maia-city" == 0
+
+/-- Aven offers Alice alone 5000 bytes, at 1000 bytes a second (A44). -/
+def smallOffer : Cap :=
+  recap avenOffer "offer-small" "alice-owner" fun c =>
+    { c with holder := .vault "alice", grant := [offerLine "aven" 1000 5000] }
+
+def smallBooks : Books := { avenBooks with offers := [smallOffer] }
+
+-- The keeper admits uploads within the quota its own offer gives: Alice's 4096 bytes are taken, 1024 more would pass
+-- her 5000 and are refused, and 512 after that still fit.
+#guard smallBooks.quota "alice" == 5000 && smallBooks.quota "bob" == 0
+#guard (KeepExamples.keepD1.admit smallBooks.quota [] KeepExamples.quotaUploads).map (·.bytes) == [4096, 512]
 
 /-- Which branches a cap writes on, each answer written out by hand: main only on main, proposals on every branch but
 main, one branch only on it. -/

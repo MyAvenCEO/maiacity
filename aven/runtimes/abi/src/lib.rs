@@ -12,7 +12,7 @@
 
 use std::sync::Mutex;
 
-use aven_core::{Value, decode, encode};
+use aven_codec::{Value, decode, encode};
 use aven_runtimes_contract::{Failure, result};
 
 /// What a runtime is: `eval(part, input)`.

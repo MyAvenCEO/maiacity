@@ -12,13 +12,20 @@
 //!
 //! The blob is a Core Value with `scheme: "flat 1"`; its name is BLAKE3 of the blob without its stanzas
 //! (`name_ignores_stanzas`), so sealing it to one more reader with [`Epoch::reseal`] doesn't rename it.
+//!
+//! Its stanza list is padded (D18) with stanzas that open for no one, random bytes of the same lengths, to
+//! [`padded`] entries: at least four, then Padmé. A rotation tags each reader's stanza with a tag only those who held
+//! the previous epoch can compute ([`tag_seed`]); a first epoch is untagged, and a reader finds its stanza by opening.
 
 use std::fmt;
 
 use aven_core::{Value, decode, encode};
 use subtle::ConstantTimeEq;
 
-use crate::seal::{Context, SEALED_LEN, Scope, SealKey, SealPublic, Stanza, unwrap_key, wrap_key};
+use crate::padme::padded;
+use crate::seal::{
+    CIPHERTEXT_LEN, Context, SEALED_LEN, Scope, SealKey, SealPublic, Stanza, unwrap_key, wrap_key,
+};
 use crate::secret::{Entropy, Secret};
 use crate::value::{bytes, fields, text};
 
@@ -26,6 +33,7 @@ pub const COMMIT_LABEL: &str = "avenID commit 1";
 pub const BACK_LABEL: &str = "avenID back 1";
 pub const VAULT_LABEL: &str = "avenID keyring vault 1";
 pub const SCHEME: &str = "flat 1";
+pub const TAG_SEED_LABEL: &str = "avenID tag seed 1";
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum KeyError {
@@ -81,6 +89,33 @@ pub fn tag(seed: &Secret, id: &str, epoch: u64) -> [u8; 32] {
     *blake3::keyed_hash(seed.expose(), &at).as_bytes()
 }
 
+/// A reader's tag seed in the epoch after the one whose key is `prev_key` (`Aven.ID.KeyFormats.tagSeed`): the keyed
+/// hash of the reader's X-Wing public key's BLAKE3 under `derive_key("avenID tag seed 1", prev_key)`.
+pub fn tag_seed(prev_key: &Secret, recipient: &[u8; 32]) -> Secret {
+    let mut seed =
+        *blake3::keyed_hash(subkey(TAG_SEED_LABEL, prev_key).expose(), recipient).as_bytes();
+    Secret::take(&mut seed)
+}
+
+/// A stanza that opens for no one: random bytes of a stanza's lengths, a tag too when the epoch's stanzas have one.
+fn dummy(tagged: bool, entropy: &mut impl Entropy) -> Stanza {
+    let mut stanza = Stanza {
+        ct: [0u8; CIPHERTEXT_LEN],
+        commit: [0u8; 32],
+        sealed: [0u8; SEALED_LEN],
+        tag: None,
+    };
+    entropy.fill(&mut stanza.ct);
+    entropy.fill(&mut stanza.commit);
+    entropy.fill(&mut stanza.sealed);
+    if tagged {
+        let mut tag = [0u8; 32];
+        entropy.fill(&mut tag);
+        stanza.tag = Some(tag);
+    }
+    stanza
+}
+
 /// One epoch's key blob.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Epoch {
@@ -123,10 +158,18 @@ impl Epoch {
         let key = Secret::generate(entropy);
         let context = Context { scope, owner, n };
         let inner = context.inner_aad();
-        let stanzas = to
+        let mut stanzas: Vec<Stanza> = to
             .iter()
-            .map(|reader| Stanza::seal(&key, reader, &context, entropy))
+            .map(|reader| {
+                let mut stanza = Stanza::seal(&key, reader, &context, entropy);
+                stanza.tag = prev
+                    .map(|(_, prev_key)| tag(&tag_seed(prev_key, &reader.fingerprint()), owner, n));
+                stanza
+            })
             .collect();
+        while stanzas.len() < padded(to.len()) {
+            stanzas.push(dummy(prev.is_some(), entropy));
+        }
         let back = match (prev, history) {
             (Some((_, prev_key)), History::All) => {
                 Some(wrap_key(&subkey(BACK_LABEL, &key), &inner, prev_key))
@@ -254,7 +297,8 @@ impl Epoch {
         })
     }
 
-    /// Seals this epoch to one more reader, a new device or a new passkey, without rotating or renaming it.
+    /// Seals this epoch to one more reader, a new device or a new passkey, without rotating or renaming it. Its stanza
+    /// is untagged (the reader finds it by opening), and the list is padded again.
     pub fn reseal(
         &mut self,
         key: &Secret,
@@ -264,7 +308,34 @@ impl Epoch {
         self.check(key)?;
         let stanza = Stanza::seal(key, to, &self.context(), entropy);
         self.stanzas.push(stanza);
+        let tagged = self.stanzas.iter().any(|s| s.tag.is_some());
+        while self.stanzas.len() < padded(self.stanzas.len()) {
+            self.stanzas.push(dummy(tagged, entropy));
+        }
         Ok(())
+    }
+
+    /// Whether the stanza list is padded: as long as some count of readers pads to (`Epoch.isPadded`).
+    pub fn is_padded(&self) -> bool {
+        padded(self.stanzas.len()) == self.stanzas.len()
+    }
+
+    /// The epoch's key, from the stanza tagged for `key`'s reader, found with the previous epoch's key, before any
+    /// other stanza is tried.
+    pub fn open_tagged(&self, key: &SealKey, prev_key: &Secret) -> Result<Secret, KeyError> {
+        let wanted = tag(
+            &tag_seed(prev_key, &key.public().fingerprint()),
+            &self.owner,
+            self.n,
+        );
+        let context = self.context();
+        if let Some(stanza) = self.stanzas.iter().find(|s| s.tag == Some(wanted))
+            && let Some(opened) = stanza.open(key, &context)
+        {
+            self.check(&opened)?;
+            return Ok(opened);
+        }
+        self.open(key)
     }
 
     /// The previous epoch's key, opened with this one's. The caller checks it against the previous epoch.

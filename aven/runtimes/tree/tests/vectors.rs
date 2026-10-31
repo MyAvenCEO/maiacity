@@ -47,7 +47,7 @@ fn trees() {
             "{name}"
         );
         assert_eq!(
-            hex(&aven_core::encode(&t.value())),
+            hex(&aven_codec::encode(&t.value())),
             v["input"]["cbor"].as_str().unwrap(),
             "{name}: encoding"
         );
