@@ -7,6 +7,9 @@
 //!   (`Engine.Query`).
 //! - [`mutate`]: a commit of core ops to one Doc's Records, all or nothing, its ids made, not drawn
 //!   (`Engine.Mutate`).
+//! - [`footprint`]: a commit's footprint steps and every reader's check of its diff (`Engine.Footprint`).
+//! - [`changes`]: the change view a reader computes from a Doc's Records before and after, and the footprint part of
+//!   the verdict over it, for a commit and for a merge into main (`Engine.Changes`).
 //! - [`value`]: how the engine compares and orders Values (`Engine.vals`).
 //!
 //! Every answer its tests check comes from the Lean model's vectors (`db/spec/vectors`) or from the model's
@@ -17,12 +20,18 @@
 
 extern crate alloc;
 
+pub mod changes;
+pub mod footprint;
 pub mod mutate;
 pub mod query;
 pub mod value;
 
+pub use changes::{
+    ChangeKind, RecordChange, change_of, changes_from, footprint_ok, verdict_footprint,
+};
+pub use footprint::{check, diff_within, footprint};
 pub use mutate::{Cell, NewId, Op, Record, Refused, apply, commit, created};
 pub use query::{
-    Answer, Cmp, Completeness, Query, Rec, Tuple, answer_over, bound, cost, eval, get, in_scope,
-    work,
+    Answer, Cmp, Completeness, Query, Rec, Relations, Spec, Tuple, answer_over, bound, cost, eval,
+    get, in_scope, resolve, run, work,
 };

@@ -230,3 +230,53 @@ pub fn op(j: &Json) -> Op {
         other => panic!("an op: {other}"),
     }
 }
+
+pub fn target(j: &Json) -> Option<aven_core::Target> {
+    use aven_core::{Reach, Target};
+    if j.is_null() {
+        return None;
+    }
+    Some(if let Some(d) = j.get("doc") {
+        Target::Doc {
+            doc: doc(d),
+            reach: Reach::of_name(j["reach"].as_str().unwrap()).unwrap(),
+        }
+    } else if let Some(t) = j.get("type") {
+        Target::VaultType {
+            vault: text(&j["vault"]),
+            r#type: doc(t),
+            below: j["below"].as_bool().unwrap(),
+        }
+    } else {
+        Target::Vault {
+            vault: text(&j["vault"]),
+            below: j["below"].as_bool().unwrap(),
+        }
+    })
+}
+
+pub fn facts(j: &Json) -> aven_core::Facts {
+    aven_core::Facts {
+        id: doc(&j["id"]),
+        vault: text(&j["vault"]),
+        r#type: doc(&j["type"]),
+    }
+}
+
+pub fn step_json(s: &aven_core::Step) -> Json {
+    serde_json::json!({ "type": doc_json(&s.r#type), "verb": s.verb.name(), "fields": s.fields })
+}
+
+pub fn answer_json(a: &aven_db_engine::Answer) -> Json {
+    use aven_db_engine::{Answer, Completeness};
+    match a {
+        Answer::Refused => Json::String("refused".into()),
+        Answer::Rows(st, rows) => serde_json::json!({
+            "status": match st {
+                Completeness::Complete => Json::String("complete".into()),
+                Completeness::Short(m) => serde_json::json!({ "short": m.iter().map(doc_json).collect::<Vec<_>>() }),
+            },
+            "rows": rows.iter().map(tuple_json).collect::<Vec<_>>(),
+        }),
+    }
+}

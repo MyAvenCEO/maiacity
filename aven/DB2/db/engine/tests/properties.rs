@@ -2,12 +2,14 @@
 //! - `length_le_bound`, `work_le_cost`: what a query yields never exceeds its bound, nor its work its cost;
 //! - `refused_changes_nothing`: a refused commit leaves the Doc as it was;
 //! - `refs_point_backward`: in an accepted commit every reference names an earlier `put`;
+//! - `commit_within`, `honest_footprint`: a commit that ran as its ops say passes every reader's check of its diff,
+//!   and the verdict's footprint part on the changes it makes, on a Doc whose Records have distinct ids;
 //! - `created_distinct`, `ids_differ_across`: one commit's new ids differ, and differ from another commit's.
 
-use aven_core::{DocId, Hash, Value};
+use aven_core::{DocId, Hash, TypeId, Value};
 use aven_db_engine::{
-    Cell, Cmp, NewId, Op, Query, Rec, Record, apply, bound, commit, cost, created, eval, in_scope,
-    work,
+    Cell, Cmp, NewId, Op, Query, Rec, Record, apply, bound, changes_from, check, commit, cost,
+    created, eval, footprint, in_scope, verdict_footprint, work,
 };
 use proptest::prelude::*;
 
@@ -155,7 +157,13 @@ proptest! {
         match commit(w, c, &s, &ops) {
             Err(_) => prop_assert_eq!(apply(w, c, &s, &ops), s),
             Ok(after) => {
-                prop_assert_eq!(apply(w, c, &s, &ops), after);
+                prop_assert_eq!(apply(w, c, &s, &ops), after.clone());
+                prop_assert!(check(&ops, &s, &after));
+                let distinct = s.iter().enumerate().all(|(i, r)| s[i + 1..].iter().all(|x| x.id != r.id));
+                if distinct {
+                    let ver = |t: &DocId| TypeId { r#type: *t, schema: Hash([7; 32]) };
+                    prop_assert!(verdict_footprint(&footprint(&ops), &changes_from(&ver, &s, &after)));
+                }
                 for (i, op) in ops.iter().enumerate() {
                     for n in op.refs() {
                         prop_assert!(n < i as u64 && ops[n as usize].is_put());

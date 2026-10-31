@@ -13,7 +13,7 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use aven_core::{DocId, Value};
+use aven_core::{DocId, Facts, Target, Value};
 
 use crate::value;
 
@@ -302,6 +302,44 @@ pub fn answer_over(
         Completeness::Short(missing)
     };
     Answer::Rows(status, eval(&|ty: &DocId| in_scope(db, docs, held, ty), q))
+}
+
+/// A query as stored and run: its target, and its body (`Spec`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Spec {
+    pub target: Option<Target>,
+    pub body: Query,
+}
+
+/// Who governs whom, which actor spawned which and what a collection lists: avenID's, the actors' and the
+/// collections' own signed listings, given as tests (`Target.coversB`'s parameters).
+pub struct Relations<'a> {
+    pub gov: &'a dyn Fn(&str, &str) -> bool,
+    pub spawned: &'a dyn Fn(&DocId, &DocId) -> bool,
+    pub lists: &'a dyn Fn(&DocId, &DocId) -> bool,
+}
+
+/// The Docs a target resolves to, among those a directory lists (`resolve`).
+pub fn resolve(rel: &Relations, dir: &[Facts], t: &Target) -> Vec<DocId> {
+    dir.iter()
+        .filter(|f| t.covers(rel.gov, rel.spawned, rel.lists, f))
+        .map(|f| f.id)
+        .collect()
+}
+
+/// Run a stored query over the Docs its target resolves to in a directory; without a target it is refused before
+/// anything runs (`run`).
+pub fn run(
+    rel: &Relations,
+    dir: &[Facts],
+    held: &impl Fn(&DocId) -> bool,
+    db: &[Rec],
+    s: &Spec,
+) -> Answer {
+    match &s.target {
+        None => Answer::Refused,
+        Some(t) => answer_over(&resolve(rel, dir, t), held, db, &s.body),
+    }
 }
 
 /// The most rows a query can yield, from the most rows each type can have (`bound`).

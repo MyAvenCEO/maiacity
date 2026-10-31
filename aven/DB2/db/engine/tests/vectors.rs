@@ -4,7 +4,10 @@
 mod common;
 
 use aven_core::DocId;
-use aven_db_engine::{Refused, apply, bound, commit, cost};
+use aven_db_engine::{
+    Refused, Relations, Spec, apply, bound, check, commit, cost, footprint, in_scope, resolve, run,
+    work,
+};
 use common::*;
 use serde_json::{Value as Json, json};
 
@@ -21,13 +24,39 @@ fn refused_json(e: Refused) -> Json {
 }
 
 #[test]
-fn queries_bound_and_cost() {
+fn queries() {
     let all = vectors("queries.json");
     assert!(all.len() >= 60);
     for v in all {
         let name = &v["name"];
         let db = list(&v["input"]["records"], rec);
         let q = query(&v["input"]["query"]);
+        let dir = list(&v["input"]["directory"], facts);
+        let held_docs = list(&v["input"]["held"], doc);
+        let held = |d: &DocId| held_docs.contains(d);
+        let spec = Spec {
+            target: target(&v["input"]["target"]),
+            body: q.clone(),
+        };
+        // no vault governs another, no actor spawned another and no collection lists a Doc, in these vectors
+        let rel = Relations {
+            gov: &|_, _| false,
+            spawned: &|_, _| false,
+            lists: &|_, _| false,
+        };
+        let answer = run(&rel, &dir, &held, &db, &spec);
+        assert_eq!(
+            answer_json(&answer),
+            v["expected"]["answer"],
+            "{name}: answer"
+        );
+        let docs = spec
+            .target
+            .as_ref()
+            .map(|t| resolve(&rel, &dir, t))
+            .unwrap_or_default();
+        let src = |t: &DocId| in_scope(&db, &docs, &held, t);
+        assert_eq!(json!(work(&src, &q)), v["expected"]["work"], "{name}: work");
         assert_eq!(
             json!(bound(&counts(&db), &q)),
             v["expected"]["bound"],
@@ -54,12 +83,19 @@ fn mutations_commit() {
         );
         let s = list(&i["records"], record);
         let ops = list(&i["ops"], op);
+        let fp: Vec<Json> = footprint(&ops).iter().map(step_json).collect();
+        assert_eq!(json!(fp), v["expected"]["footprint"], "{name}: footprint");
         let expected = &v["expected"]["commit"];
         match commit(w, c, &s, &ops) {
             Ok(after) => {
                 let got: Vec<Json> = after.iter().map(record_json).collect();
                 assert_eq!(json!(got), expected["ok"], "{name}: the Records after");
                 assert_eq!(apply(w, c, &s, &ops), after, "{name}: apply");
+                assert_eq!(
+                    json!(check(&ops, &s, &after)),
+                    expected["check"],
+                    "{name}: check"
+                );
             }
             Err(e) => {
                 assert_eq!(
