@@ -1,5 +1,5 @@
 {
-	"about": "avenBRAIN's catalogue (README.md): one item per package on avenOS's docs dashboard, in the order a reader meets them. A package with a page is live; its slides are shown in their place in its story, by the file name under <package>/slides/.",
+	"about": "avenBRAIN's catalogue (README.md): one item per package on avenOS's docs dashboard, in the order a reader meets them. A package with a page is live; its slides are shown in their place in its story, by the file name under <package>/slides/. `art` is the object (art/objects.mjs) drawn on its card.",
 	"packages": [
 		{
 			"id": "id",
@@ -17,56 +17,56 @@
 				"vaults-own",
 				"cap"
 			],
-			"mark": "ID"
+			"art": "signet"
 		},
 		{
 			"id": "db",
 			"name": "avenDB",
 			"what": "Data: Values, Docs, records and the store",
-			"mark": "DB"
+			"art": "chest-bob"
 		},
 		{
 			"id": "peer",
 			"name": "avenPEER",
 			"what": "Running: the Peer, the Peer-Light and the relay",
-			"mark": "Pe"
+			"art": "phone-key"
 		},
 		{
 			"id": "os",
 			"name": "avenOS",
 			"what": "The shell: apps on a dashboard, acting as a vault",
-			"mark": "OS"
+			"art": "badge"
 		},
 		{
 			"id": "actors",
 			"name": "avenACTORS",
 			"what": "Programs that live in a Doc and take turns",
-			"mark": "Ac"
+			"art": "robot"
 		},
 		{
 			"id": "runtimes",
 			"name": "avenRUNTIMES",
 			"what": "Frozen modules that run code and draw faces",
-			"mark": "Ru"
+			"art": "magnifier"
 		},
 		{
 			"id": "sandbox",
 			"name": "avenSANDBOX",
 			"what": "The box: every peer on one machine, checked",
-			"mark": "Sb"
+			"art": "guild-chest"
 		},
 		{
 			"id": "architecture",
 			"name": "The architecture",
 			"what": "The shared primitives and the decisions A1–A27",
-			"mark": "Ar"
+			"art": "imprint"
 		},
 		{
 			"id": "glossary",
 			"name": "The glossary",
 			"what": "Every term, with its one meaning",
 			"page": "GLOSSARY.md",
-			"mark": "Gl"
+			"art": "letter"
 		}
 	]
 }

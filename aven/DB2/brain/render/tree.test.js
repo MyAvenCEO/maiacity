@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync, readdirSync } from 'node:fs';
+import { blake3 } from '@noble/hashes/blake3.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
 import { check, classes, parse } from './tree.js';
 import { contrastOk, linear, luminance, rgb } from './contrast.js';
 import { rewriteLinks } from './links.js';
@@ -120,7 +122,7 @@ test('every font size in the slides\' CSS is at least 2.6cqw', () => {
 const subset = new Set([
 	'position', 'inset', 'left', 'top', 'right', 'bottom', 'width', 'height', 'display', 'aspect-ratio', 'container-type',
 	'overflow', 'margin', 'margin-top', 'margin-bottom', 'padding', 'padding-top', 'clip-path', 'border-radius', 'border',
-	'border-top', 'background', 'filter', 'box-shadow', 'transform', 'transform-origin', 'font-family', 'font-size',
+	'border-top', 'border-right', 'border-bottom', 'border-left', 'background', 'filter', 'box-shadow', 'transform', 'transform-origin', 'font-family', 'font-size',
 	'font-weight', 'line-height', 'letter-spacing', 'text-transform', 'white-space', 'text-align', 'color', 'gap',
 ]);
 test('the slides\' CSS is in the face-runtime\'s subset', () => {
@@ -139,4 +141,22 @@ test('the slides\' CSS is in the face-runtime\'s subset', () => {
 		}
 	}
 	expect(outside).toEqual([]);
+});
+
+// every drawing a slide shows is a file of the brain named by its own BLAKE3 hash, as the network names files
+test('every image on a slide is a drawing, named by its BLAKE3 hash', () => {
+	const wrong = [];
+	for (const file of readdirSync(`${brain}id/slides`).filter((f) => f.endsWith('.html'))) {
+		for (const [, hash] of readFileSync(`${brain}id/slides/${file}`, 'utf8').matchAll(/src="\/files\/([0-9a-f]{64})"/g)) {
+			let bytes;
+			try {
+				bytes = readFileSync(`${brain}art/img/${hash}.png`);
+			} catch {
+				wrong.push(`${file}: no drawing ${hash}`);
+				continue;
+			}
+			if (bytesToHex(blake3(bytes)) !== hash) wrong.push(`${file}: ${hash} is not its file's hash`);
+		}
+	}
+	expect(wrong).toEqual([]);
 });

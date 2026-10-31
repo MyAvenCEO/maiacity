@@ -18,7 +18,8 @@ every term in [`GLOSSARY.md`](GLOSSARY.md).
 | [`style/slide.css`](style/slide.css) | The frame and the parts every illustration is drawn from |
 | [`style/reference/`](style/reference/) | The first references, from the game |
 | [`id/`](id/README.md) | avenID's page: its story, and its slides in `id/slides/` |
-| [`render/`](render/) | Markdown and slide markup to a checked node tree, and its tests |
+| [`render/`](render/) | Markdown and slide markup to a checked node tree, links, contrast, and their tests |
+| [`art/`](art/) | The objects drawn in code, their images by hash, and the slide layouts |
 
 The first references, from the game (the look has since moved to the brand's UI, [`STYLE.md`](STYLE.md)):
 - `scenes.webp`: First Settlers, Mountain Quarry Outpost, Coastal Solar Village, Thriving Abundance City;
@@ -36,7 +37,7 @@ One concept, in three files under `<package>/slides/`, named by the slide's id:
   (`aven/runtimes/spec/Aven/Runtime/Tree.lean`), so no `svg`, `style` or `script` and no inline `style`, and
   classes only. Every element is a layer with a stable class, so a motion version can move each one later.
 - **`<id>.css`, where each layer stands.** Class rules only, every length in `cqw` (a hundredth of the frame's width).
-  The parts themselves (a key, an arrow, a vault's record) are in `style/slide.css`, shared by every slide.
+  The objects are images by hash (`art/img/`), drawn in code (`art/objects.mjs`).
 - **`<id>.md`, its text.** Markdown, shown on the page under the still. `[vault](glossary:vault)` links a term to the
   glossary.
 
@@ -59,27 +60,32 @@ builds both as code (31 Oct 2026); once they and the tree drawer land, the pages
 
 ## What the runtimes plan lacks
 
-The face-runtime's style is data: a class name, and typed colours, size and weight per rule
-([`aven/runtimes/README.md`](../../runtimes/README.md)). The style uses more than that. As input for the runtimes plan,
-the CSS a slide needs:
+The face-runtime's style is data: typed rules per class ([`aven/runtimes/README.md`](../../runtimes/README.md)). The
+slides' CSS is written in the subset agreed with the runtimes thread, which `render/tree.test.js` holds it to: class
+and tag selectors, plain values, no custom properties and no `url()`. Beyond colours, sizes and weights, it needs:
 
 | Property | Used for |
 |---|---|
-| `clip-path` (`polygon`, `inset`) | an arrow's head, a fingerprint's rings |
-| `transform` (`rotate`, `translateX`, `scale`) and `transform-origin` | a key at an angle, scaled down in a list, centred labels |
-| `filter` (`drop-shadow`) | the soft shadow under a card or a part |
-| `linear-gradient` with hard stops | a key's lit side |
-| `position: absolute`, `inset`, `left`, `top`, `width`, `height` | where each layer stands in the frame |
+| `position`, `inset`, `left`, `top`, `width`, `height` | where each layer stands |
 | `container-type: inline-size` and `cqw` lengths | a still that scales as one picture |
 | `aspect-ratio` | the 16:9 frame |
-| `border`, `border-radius` | cards, pills, a seal's ring, a bracket |
-| `letter-spacing`, `text-transform`, `white-space`, `text-align`, `font` | the uppercase labels, notes and the serif titles; no text under 2.6cqw |
-| `display: flex`, `gap`, `display: inline-block` | a row of chips; a record's field names |
-| `box-shadow`, `overflow` | panels |
-| `animation`, `@keyframes`, `transition` | not used yet: the motion version of a slide will |
+| `transform` (`rotate`, `translateX`) and `transform-origin` | dotted path segments, arrowheads, centred labels |
+| `border` (`dotted`), `border-radius` | dotted paths, the frame |
+| `clip-path: polygon(…)` | an arrowhead |
+| `font-family`, `font-size`, `font-weight`, `line-height`, `letter-spacing`, `text-transform`, `text-align`, `white-space` | labels and titles; no text under 2.6cqw |
+| `animation`, `@keyframes` | not used yet: the motion version will move the layers |
 
-The node tree needs nothing beyond the allowlist: `figure`, `div`, `span`, `p`, `b`, `h2` and `header`, with `class`,
-`role` and `aria-label`.
+The node tree needs the allowlist's `img`, by hash: `figure`, `img`, `div`, `p`, `h2` and `header`, with `class`,
+`src`, `alt`, `role` and `aria-label`.
+
+## Drawing
+
+The objects are drawn in code: [`art/objects.mjs`](art/objects.mjs), with the paint kit in
+[`art/paint.mjs`](art/paint.mjs). `AVEN_CHROMIUM=<a Chromium> bun brain/art/render.mjs` renders each to a transparent
+PNG in `art/img/`, named by the BLAKE3 hash of its bytes, as the network names its files, and lists them in
+`art/images.json`. `bun brain/art/slides.mjs` lays out avenID's slides and writes their markup and CSS. A slide shows
+a drawing as `<img src="/files/<hash>">`, the only image the allowlist takes; avenOS resolves the brain's own from its
+bundle (`os/web/docs/brain.js`). Both outputs are generated: edit the objects and the layouts, then run them.
 
 ## Releases
 

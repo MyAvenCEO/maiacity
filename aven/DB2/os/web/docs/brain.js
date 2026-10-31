@@ -7,6 +7,7 @@ import { rewriteLinks } from '../../../brain/render/links.js';
 import { check, parse } from '../../../brain/render/tree.js';
 import '../../../brain/style/tokens.css';
 import '../../../brain/style/slide.css';
+import images from '../../../brain/art/images.json';
 
 const files = import.meta.glob('../../../brain/**/*.{md,html}', { query: '?raw', import: 'default', eager: true });
 import.meta.glob('../../../brain/*/slides/*.css', { eager: true });
@@ -47,7 +48,7 @@ export function slide(pkg, id) {
 	const text = `${pkg}/slides/${id}.md`;
 	return {
 		id,
-		tree: checked(`${pkg}/slides/${id}.html`, parse(file(`${pkg}/slides/${id}.html`) ?? '')),
+		tree: checked(`${pkg}/slides/${id}.html`, parse(file(`${pkg}/slides/${id}.html`) ?? '')).map(resolve),
 		text: markdown(text),
 	};
 }
@@ -75,3 +76,16 @@ export function glossary() {
 	tree.forEach(visit);
 	return { tree: checked('GLOSSARY.md', tree), terms };
 }
+
+// The drawings (brain/art), bundled. A slide names one as the network names a file, `/files/<BLAKE3 hash>`, and that is
+// what the allowlist takes; avenOS serves the brain's own from its bundle, so the hash is resolved here, after the
+// check, to the bundled file
+const drawn = import.meta.glob('../../../brain/art/img/*.png', { query: '?url', import: 'default', eager: true });
+const fileOf = (hash) => drawn[`../../../brain/art/img/${hash}.png`];
+const resolve = (node) =>
+	typeof node === 'string'
+		? node
+		: [node[0], node[1].map(([k, v]) => (k === 'src' && v.startsWith('/files/') && fileOf(v.slice(7)) ? [k, fileOf(v.slice(7))] : [k, v])), node[2].map(resolve)];
+
+// an object's picture, for a card
+export const art = (name) => fileOf(images[name]);

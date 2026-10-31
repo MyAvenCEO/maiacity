@@ -12,7 +12,8 @@ How avenBRAIN talks.
   says so ("That comes later"), it never says something false.
 - **English.** The docs are in English.
 - **"Signs for" is a device key's** (slide 7); an owner key **governs** its vault.
-- **No metaphors from the game.** Say and draw what a thing is: a vault, not a dome.
+- **One metaphor per concept, its own.** Draw each concept as the object that explains it (STYLE.md, "Metaphors"):
+  a signet for a key, a strongbox for a vault, a robot helper for an agent. Not one picture for everything.
 - **No attributions in the text:** no names and dates of who decided what. The docs say what is.
 
 ## The story map
