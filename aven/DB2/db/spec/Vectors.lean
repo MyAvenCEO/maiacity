@@ -22,14 +22,14 @@ import Aven.DB.Docs
 - `hashes.json`: spellings of a hash; whether the store reads each as one.
 - `chat.json`: messages arriving in a room and the clock moving on; after each step the answer, the body the message's
   sender signs, who is present and the lines said (`Aven.DB.Chat`). The door admits `alice`, `aven` and `bob`; each
-  name is a test key, which aven-db-core's tests sign with for real.
+  name is a test key, which aven-gen1's tests sign with for real.
 - `files.json`: files cut into chunks; each chunk's bounds and hash, the index, the file's name, and the chunks each
   range touches with the bytes read from them alone; files of the city-dome's size by their size alone
   (`Aven.DB.Files`).
 - `chats.json`: lines arriving at peers and peers catching up; after each step the answers, the peer's heads, loose
   lines, forks and what its chat shows (`Aven.DB.Chains`); what a line's device signs; and blobs read as lines or
   refused as not canonical (`Aven.DB.Chains.read`). Lines are named by labels,
-  which aven-db-core's tests replace with the hashes of real signed blobs.
+  which aven-gen1's tests replace with the hashes of real signed blobs.
 - `queries.json`: a directory's genesis facts, Records, the Docs held, a target, a stored query; the answer (refused,
   complete, or short with the Docs missing), the query's bound and cost, and the work it did (`Aven.DB.Engine.Query`).
 - `wants.json`: wants, the keys caps allow and each key's prerequisites; the queue, one round over the pages left with
@@ -74,13 +74,13 @@ import Aven.DB.Docs
 - `keeper.json`: uploads from devices to a keeper, one Doc, from an empty store; after each, the items held (number,
   hash, uploaders) and the next number, the pages of what came after each asked number, and where a device at that
   number holding 11 and 12 is after catching up, with what it holds (`Aven.Peer.Keeper`).
-- `fetch.json`: the bytes a fetch proof signs for a Doc and a TLS exporter; what a peer holds for which Doc and each item's length, the Docs proven on a connection, a fetch; the
+- `fetch.json`: what a peer holds for which Doc and each item's length, the Docs proven on a connection, a fetch; the
   answer (refused, or the hashes served, missing and later); and items' lengths with their parts' offsets and lengths
   (`Aven.Peer.Fetch`).
 - `serve.json`: a gate's verdicts (which proof of which Doc it serves, for which vault; each vault's quota) and asks,
   each on its device's connection; the keeper's reply to each, and each vault's bill at the end (`Aven.Peer.Serve`).
 
-`aven-db-core`'s and `aven-db-store`'s tests load them. `bun run up --check` runs this again and fails when the files
+`aven-gen1`'s and `aven-db-store`'s tests load them. `bun run up --check` runs this again and fails when the files
 differ from what is committed. -/
 
 open Lean Aven.DB
@@ -1372,10 +1372,6 @@ def fetchCases : List Json :=
    fetchVector "too many hashes get nothing" fetchTable ["d1"] "d1" (List.replicate 129 1),
    fetchVector "128 hashes are answered" fetchTable ["d1", "d2"] "d2" ((List.range 127).map (· + 100) ++ [9]),
    fetchVector "nothing held: all missing" fetchTable ["d1"] "d1" [5, 6],
-   vector "what a fetch proof signs" (Json.mkObj [("doc", hexJson ((List.range 32).map (·.toUInt8))),
-       ("exporter", hexJson ((List.range 32).map fun i => (200 + i).toUInt8)),
-       ("exporterLabel", Json.str "EXPORTER-avenDB-fetch-1"), ("exporterLength", toJson Aven.Peer.Fetch.exporterLength)])
-     (hexJson (Aven.Peer.Fetch.proofBytes ((List.range 32).map (·.toUInt8)) ((List.range 32).map fun i => (200 + i).toUInt8))),
    fetchVector "once one waits, nothing after it is served, not even an empty item"
      (fetchTable ++ [(4, "d1", 0)]) ["d1"] "d1" [1, 2, 4]] ++
   [0, 1, 49151, 49152, 49153, 100 * 1024, 1024 * 1024 + 3].map partsVector ++

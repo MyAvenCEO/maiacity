@@ -11,26 +11,11 @@
 //! - [`Assembly`]: the receiver puts parts back together and stores the item only if its bytes hash to what it asked
 //!   for (`stored_checked`); otherwise it drops them and notes the sender.
 
-use aven_core::{Value, signing_bytes};
-
-/// The label a fetch proof signs under.
-pub const FETCH_LABEL: &str = "avenDB fetch 1";
-/// The TLS exporter a fetch proof signs: this label (RFC 5705's prefix), an empty context, and this many bytes, the
-/// same at both ends of one connection and different on every other.
+/// The TLS exporter a fetch proof is bound to: this label (RFC 5705's prefix), an empty context, and this many
+/// bytes, the same at both ends of one connection and different on every other. What the proof signs over it is
+/// avenID's (`Aven.ID.Keep`).
 pub const EXPORTER_LABEL: &[u8] = b"EXPORTER-avenDB-fetch-1";
 pub const EXPORTER_LEN: usize = 32;
-
-/// What a device signs with a Doc's fetch key to prove it on a connection: `["avenDB fetch 1", {doc, exporter}]`
-/// (`proofBytes`). Whether the key is the Doc's current one is avenID's gate.
-pub fn proof_bytes(doc: &[u8; 32], exporter: &[u8; EXPORTER_LEN]) -> Vec<u8> {
-    signing_bytes(
-        FETCH_LABEL,
-        &Value::Map(vec![
-            ("doc".into(), Value::Bytes(doc.to_vec())),
-            ("exporter".into(), Value::Bytes(exporter.to_vec())),
-        ]),
-    )
-}
 
 /// The most hashes in one `fetch`.
 pub const FETCH_HASHES: usize = 128;

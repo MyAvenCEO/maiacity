@@ -6,13 +6,13 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use aven_db_core::chain::{Answer, Body, Keeper, Line, Retraction, missing};
-use aven_db_core::files::Announcement;
+use aven_gen1::chain::{Answer, Body, Keeper, Line, Retraction, missing};
+use aven_gen1::files::Announcement;
 use serde_json::{Value, json};
 
 fn vectors(file: &str) -> Vec<Value> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../spec/vectors")
+        .join("../db/spec/vectors")
         .join(file);
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     serde_json::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
@@ -190,7 +190,7 @@ fn reads_follow_the_vectors() {
 fn a_blob_that_is_no_utf8_is_not_canonical() {
     assert_eq!(
         Line::parse(b"avenDB line 1\nnetwork \xff"),
-        Err(aven_db_core::chain::Refusal::NotCanonical)
+        Err(aven_gen1::chain::Refusal::NotCanonical)
     );
 }
 

@@ -1,16 +1,16 @@
 //! The chat's room among members, natively, as the box runs it: an Aven Peer with its relay (in this process), and
 //! members reaching it through the relay only, as a browser does. Every peer holds the door (`Gate`) in its hook and
 //! its room: members hear each other's lines, a line signed by a key that is no member's is dropped, and a stranger's
-//! endpoint is kept out by the relay and by the hook. What the room may take is `aven_db_core::chat`'s, tested against
+//! endpoint is kept out by the relay and by the hook. What the room may take is `aven_gen1::chat`'s, tested against
 //! Lean's traces; here only the mechanics: iroh-gossip on the Router, through the relay.
 #![cfg(feature = "native")]
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use aven_db_core::chain::{Body, Line};
-use aven_db_core::chat::{Kind, Message};
 use aven_db_store::{RefName, backend};
+use aven_gen1::chain::{Body, Line};
+use aven_gen1::chat::{Kind, Message};
 use aven_peer::chats::{self, Chats};
 use aven_peer::members::{Gate, Hook};
 use aven_peer::relay::Allow;
@@ -74,7 +74,7 @@ async fn peer(
         .secret_key(secret.clone())
         .relay_mode(RelayMode::Custom(RelayMap::from(relay.clone())))
         .alpns(vec![
-            aven_db_core::wire::ALPN.to_vec(),
+            aven_gen1::wire::ALPN.to_vec(),
             iroh_gossip::ALPN.to_vec(),
         ])
         .hooks(Hook {
