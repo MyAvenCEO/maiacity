@@ -9,7 +9,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
-name = "aven-core"
+name = "aven-codec"
 version = "0.0.0"
 dependencies = [
  "blake3",
@@ -19,7 +19,7 @@ dependencies = [
 name = "aven-runtimes-abi"
 version = "0.0.0"
 dependencies = [
- "aven-core",
+ "aven-codec",
  "aven-runtimes-contract",
 ]
 
@@ -27,7 +27,7 @@ dependencies = [
 name = "aven-runtimes-contract"
 version = "0.0.0"
 dependencies = [
- "aven-core",
+ "aven-codec",
  "serde_json",
 ]
 
@@ -35,7 +35,7 @@ dependencies = [
 name = "aven-runtimes-face"
 version = "0.0.0"
 dependencies = [
- "aven-core",
+ "aven-codec",
  "aven-runtimes-contract",
  "aven-runtimes-tree",
  "serde_json",
@@ -45,7 +45,7 @@ dependencies = [
 name = "aven-runtimes-host"
 version = "0.0.0"
 dependencies = [
- "aven-core",
+ "aven-codec",
  "aven-runtimes-contract",
  "aven-runtimes-face",
  "aven-runtimes-markdown",
@@ -57,7 +57,7 @@ dependencies = [
 name = "aven-runtimes-markdown"
 version = "0.0.0"
 dependencies = [
- "aven-core",
+ "aven-codec",
  "aven-runtimes-contract",
  "aven-runtimes-tree",
  "pulldown-cmark",
@@ -91,7 +91,7 @@ dependencies = [
 name = "aven-runtimes-tree"
 version = "0.0.0"
 dependencies = [
- "aven-core",
+ "aven-codec",
  "serde",
  "serde_json",
 ]
@@ -100,7 +100,7 @@ dependencies = [
 name = "aven-runtimes-web"
 version = "0.0.0"
 dependencies = [
- "aven-core",
+ "aven-codec",
  "aven-runtimes-contract",
  "aven-runtimes-host",
  "serde_json",

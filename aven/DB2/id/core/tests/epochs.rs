@@ -145,6 +145,20 @@ proptest! {
             chain.push(next);
         }
 
+        // every epoch is padded (D18), and a rotation's stanzas are found by their tags, with the key before
+        for (epoch, _) in &chain {
+            prop_assert!(epoch.is_padded());
+            prop_assert_eq!(epoch.stanzas.len(), aven_id::padded(if epoch.n == 1 { count } else { count - 1 }));
+        }
+        for pair in chain.windows(2) {
+            let ((before, before_key), (after, after_key)) = (&pair[0], &pair[1]);
+            for k in &remain {
+                prop_assert_eq!(&after.open_tagged(k, before_key).unwrap(), after_key);
+            }
+            prop_assert_eq!(after.open_tagged(&keys[removed], before_key).unwrap_err(), KeyError::NotSealedTo);
+            prop_assert!(before.stanzas.iter().all(|s| s.tag.is_none()) || before.n > 1);
+            prop_assert!(after.stanzas.iter().all(|s| s.tag.is_some()), "a rotation tags every stanza, dummies too");
+        }
         for (epoch, epoch_key) in &chain[1..] {
             prop_assert_eq!(epoch.open(&keys[removed]).unwrap_err(), KeyError::NotSealedTo);
             for k in &remain {

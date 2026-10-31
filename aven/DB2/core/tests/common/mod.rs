@@ -3,7 +3,7 @@
 
 #![allow(dead_code)]
 
-use aven_core::{DocId, Envelope, Hash, Signed, Value};
+use aven_core::{DocId, Envelope, Hash, Sig, Signed, Value};
 use serde_json::Value as Json;
 
 pub fn vectors(file: &str) -> Vec<Json> {
@@ -55,9 +55,20 @@ pub fn envelope(j: &Json) -> Envelope {
         prev: j["prev"].as_str().map(|h| Hash::parse(h).unwrap()),
         deps: j["deps"].as_array().unwrap().iter().map(hash).collect(),
         body: value(&j["body"]),
-        signer: unhex(j["signer"].as_str().unwrap()),
-        sig: unhex(j["sig"].as_str().unwrap()),
+        sigs: sigs(&j["sigs"]),
     }
+}
+
+/// Signatures from their readable form, `[{"signer", "sig"}]`.
+pub fn sigs(j: &Json) -> Vec<Sig> {
+    j.as_array()
+        .unwrap()
+        .iter()
+        .map(|x| Sig {
+            signer: unhex(x["signer"].as_str().unwrap()),
+            sig: unhex(x["sig"].as_str().unwrap()),
+        })
+        .collect()
 }
 
 /// A signed thing from its readable form (`Signed.json` in `Vectors.lean`).
@@ -65,8 +76,7 @@ pub fn signed(j: &Json) -> Signed {
     Signed {
         label: j["label"].as_str().unwrap().into(),
         body: value(&j["body"]),
-        signer: unhex(j["signer"].as_str().unwrap()),
-        sig: unhex(j["sig"].as_str().unwrap()),
+        sigs: sigs(&j["sigs"]),
     }
 }
 

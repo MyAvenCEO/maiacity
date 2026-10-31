@@ -27,6 +27,8 @@ pub const PUBLIC_LEN: usize = x_wing::ENCAPSULATION_KEY_SIZE;
 pub const CIPHERTEXT_LEN: usize = x_wing::CIPHERTEXT_SIZE;
 /// 32 bytes of key and Poly1305's 16-byte tag.
 pub const SEALED_LEN: usize = 48;
+/// A commitment, a tag or an epoch's name: a BLAKE3 output (`commitLen`, `tagLen`, `nameLen`).
+pub const HASH_LEN: usize = 32;
 
 /// An X-Wing key that seals open: a device's, made in its safe runtime; a passkey's, derived from its PRF; a vault's
 /// or a group's, which its keyring or group epoch holds. Its seed is wiped when it drops.
