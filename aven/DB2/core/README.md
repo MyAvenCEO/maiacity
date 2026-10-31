@@ -19,7 +19,8 @@ primitives everything shares" and rules 1 to 3). It is one Lean package, in [`sp
 | `Limits` | every input's limit (rule 10): 1 MiB an envelope or signed thing, 256 deps, 256 bytes a branch or label, 4 KiB a signer, 16 KiB a signature; what a reader accepts from bytes (`Envelope.accept`, `Signed.accept`) | what is accepted is within every limit (`accept_limits`) and encodes back to exactly its bytes (`accept_encode`) |
 | `Verdicts` | `Split`, `Discounted`, `Counts` and `Version.holds`, decided for what a reader holds | each decision is its proposition (`splitB_iff`, `discountedB_iff`, `countsB_iff`, `holdsB_iff`) |
 | `Model` | what the running model `aven-core-model` and the vectors answer: worlds of envelopes, and bytes to accept | — |
-| `Target`, `TargetCbor` | the one target grammar (A8), its CBOR, verbs, footprints | a narrower target covers only what the wider one does; a target reads back from its CBOR, which is canonical; footprint coverage grows with grants and composes |
+| `Target`, `TargetCbor` | the one target grammar (A8) in three forms (A32): a Doc with what it spawned or lists, or neither; a vault's Docs; a vault's Docs of one root type; its CBOR; a lowered step | a narrower target covers only what the wider one does (`Target.le_sound`); `Target.coversB` decides coverage; a target reads back from its CBOR, which is canonical |
+| `Op` | ops by hash (A32): `core/1`'s read, put, patch, remove, edit, tell, keep and share with fixed ids, a call's op and parameters, bounds by enumeration; the type of types (A39) | a narrower bound allows nothing a wider one doesn't (`Bound.within_allows`); the type of types is its own type (`typeOfTypes_typed`) |
 
 The hash and signatures are parameters: a theorem that needs the hash collision-free assumes it (`Injective`), and
 signatures are taken as sound, as in every Aven model. `Blake3` is the hash the examples and vectors use.

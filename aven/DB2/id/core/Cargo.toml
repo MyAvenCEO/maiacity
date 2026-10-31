@@ -7,10 +7,17 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+aven-core = { path = "../../core" }
+blake3 = { version = "=1.8.7", default-features = false }
+chacha20poly1305 = { version = "=0.11.0", default-features = false, features = ["alloc", "zeroize"] }
 ed25519-dalek = "=3.0.0"
+ml-dsa = { version = "=0.1.1", default-features = false, features = ["zeroize"] }
 p256 = { version = "=0.14.0", default-features = false, features = ["ecdsa", "pkcs8", "alloc"] }
 serde_json = { version = "=1.0.154", features = ["preserve_order"] }
 sha2 = "=0.11.1"
+subtle = { version = "=2.6.1", default-features = false }
+x-wing = { version = "=0.1.1", default-features = false, features = ["zeroize"] }
+zeroize = { version = "=1.9.1", features = ["derive"] }
 
 [dev-dependencies]
 p256 = { version = "=0.14.0", default-features = false, features = ["ecdsa", "pkcs8", "alloc"] }

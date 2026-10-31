@@ -23,7 +23,8 @@ import Lean.Data.Json
   counts and is held by the version.
 - `targets.json`: pairs of targets; whether the first narrows the second, and which Docs each covers.
 - `target-bytes.json`: each target form, readable, and its CBOR in hex (`Aven.Core.TargetCbor`).
-- `footprints.json`: grants and footprints; whether the grants cover them.
+- `ops.json`: `core/1`'s ops, each with its stored form and its id; a call as an envelope's body carries it; and
+  bounds on a parameter, whether a value is within one, and whether one is within another (`Aven.Core.Op`, A32).
 
 Values are shown in their readable form (`Aven.Core.Json`).
 -/
@@ -362,11 +363,9 @@ def countsVectors : List Json :=
 /-! ## Targets and footprints -/
 
 def Aven.Core.Target.json : Target → Json
-  | .doc d => Json.mkObj [("doc", d.text)]
+  | .doc d r => Json.mkObj [("doc", d.text), ("reach", r.name)]
   | .vault v b => Json.mkObj [("vault", utf8Text v), ("below", toJson b)]
   | .vaultType v t b => Json.mkObj [("vault", utf8Text v), ("type", t.text), ("below", toJson b)]
-  | .actor a b => Json.mkObj [("actor", a.text), ("below", toJson b)]
-  | .vaultDef v d => Json.mkObj [("vault", utf8Text v), ("def", d.text)]
 
 def invoice : DocId := ⟨blake3 (k "the invoice type's genesis")⟩
 def alice : Bytes := k "v:alice"
@@ -378,16 +377,18 @@ def targetPairs : List (String × Target × Target) := [
   ("a vault with below, in one without it", .vault alice true, .vault alice false),
   ("a type of a vault, in the vault", .vaultType alice invoice false, .vault alice false),
   ("a type, below, in the vault without below", .vaultType alice invoice true, .vault alice false),
-  ("a definition in a vault, in that vault's type", .vaultDef alice actorA, .vaultType alice actorA true),
+  ("a vault's actors of one definition, in that vault", .vaultType alice actorA false, .vaultType alice actorA true),
   ("another vault", .vault coop false, .vault alice true),
-  ("a Doc, in itself as an actor", .doc actorA, .actor actorA false),
-  ("an actor, in it with what it spawned", .actor actorA false, .actor actorA true)]
+  ("an actor, in it with what it spawned", .doc actorA .self, .doc actorA .spawned),
+  ("a collection, in it with what it lists", .doc actorA .self, .doc actorA .lists),
+  ("what it spawned, in what it lists", .doc actorA .spawned, .doc actorA .lists),
+  ("a Doc, in a vault: read from the two targets alone, never", .doc actorA .self, .vault alice true)]
 
 /-- Each target form, its readable form and its CBOR: what a cap's bytes hold (`Aven.Core.TargetCbor`). -/
 def targetForms : List (String × Target) := [
-  ("one Doc", .doc invoice), ("a vault's Docs", .vault alice false), ("and below", .vault alice true),
-  ("a vault's Docs of one type", .vaultType alice invoice false), ("one actor and what it spawned", .actor actorA true),
-  ("a vault's actors of one definition", .vaultDef alice actorA)]
+  ("one Doc", .doc invoice .self), ("one actor and what it spawned", .doc actorA .spawned),
+  ("a collection and what it lists", .doc invoice .lists), ("a vault's Docs", .vault alice false),
+  ("and below", .vault alice true), ("a vault's Docs of one type", .vaultType alice invoice false)]
 
 def targetBytes : List Json :=
   targetForms.map fun (name, t) => vector name t.json (encodes t.value)
@@ -400,23 +401,52 @@ def targets : List Json :=
 def Aven.Core.Step.json (s : Step) : Json :=
   Json.mkObj [("type", s.type.text), ("verb", s.verb.name), ("fields", toJson (s.fields.map utf8Text))]
 
-def Aven.Core.Grant.json (g : Grant) : Json :=
-  Json.mkObj [("type", g.type.text), ("verb", g.verb.name),
-    ("fields", match g.fields with | some fs => toJson (fs.map utf8Text) | none => Json.null)]
+def Aven.Core.Bound.json : Bound → Json
+  | none => Json.null
+  | some vs => Json.arr (vs.map Value.json).toArray
 
-def footprintCases : List (String × List Grant × List Step) := [
-  ("patching the status a grant names", [⟨invoice, .patch, some [k "status"]⟩], [⟨invoice, .patch, [k "status"]⟩]),
-  ("patching a field it doesn't name", [⟨invoice, .patch, some [k "status"]⟩], [⟨invoice, .patch, [k "total"]⟩]),
-  ("any field", [⟨invoice, .patch, none⟩], [⟨invoice, .patch, [k "total"], ⟩]),
-  ("another verb", [⟨invoice, .patch, none⟩], [⟨invoice, .remove, []⟩]),
-  ("a new invoice and its status", [⟨invoice, .putNew, none⟩, ⟨invoice, .patch, some [k "status"]⟩],
-    [⟨invoice, .putNew, [k "total"]⟩, ⟨invoice, .patch, [k "status"]⟩])]
+/-- `core/1`'s ops: each one's stored form and its id. -/
+def coreOps : List Json :=
+  [CoreOp.read, .put, .patch, .remove, .edit, .tell, .keep, .share].map fun o =>
+    vector s!"core/1's {o.name}" o.value.json
+      (Json.mkObj [("id", (o.id blake3).text), ("cbor", hex (encode o.value)), ("writes", toJson o.writes)])
 
-def footprints : List Json :=
-  footprintCases.map fun (name, g, fp) =>
-    vector name (Json.mkObj [("grants", Json.arr (g.map Grant.json).toArray),
-        ("footprint", Json.arr (fp.map Step.json).toArray)])
-      (toJson (covers g fp))
+def status : Value := .text (k "status")
+def total : Value := .text (k "total")
+
+/-- Bounds on a parameter: whether each allows a value, and whether one is within another. -/
+def boundAllows : List (String × Bound × Value × Bool) := [
+  ("any value", none, total, true),
+  ("one of these", some [status], status, true),
+  ("not one of these", some [status], total, false),
+  ("a list, each element one of these", some [status, total], .array [status, total], true),
+  ("a list with one element outside", some [status], .array [status, total], false)]
+
+def boundWithin : List (String × Bound × Bound × Bool) := [
+  ("fewer values, within more", some [status], some [status, total], true),
+  ("more values, within fewer", some [status, total], some [status], false),
+  ("any value, within one of these", none, some [status], false),
+  ("one of these, within any", some [status], none, true)]
+
+#guard boundAllows.all fun (_, b, v, a) => b.allows v == a
+#guard boundWithin.all fun (_, a, b, w) => a.within b == w
+
+/-- A call to `core/1`'s patch: a type Doc and the fields it sets, as an envelope's body carries it. -/
+def patchCall : Call :=
+  ⟨CoreOp.patch.id blake3, [(k "type", .bytes (blake3 (k "type:task")).bytes), (k "fields", .array [status])]⟩
+
+#guard Canon patchCall.value
+
+def calls : List Json :=
+  [vector "a call to core/1's patch: a type and the fields it sets" patchCall.value.json
+    (Json.mkObj [("cbor", hex (encode patchCall.value)), ("op", (CoreOp.patch.id blake3).text)])]
+
+def ops : List Json :=
+  coreOps ++ calls ++
+  (boundAllows.map fun (name, b, v, _) =>
+    vector s!"does it allow? {name}" (Json.mkObj [("bound", b.json), ("value", v.json)]) (toJson (b.allows v))) ++
+  (boundWithin.map fun (name, a, b, _) =>
+    vector s!"is it within? {name}" (Json.arr #[a.json, b.json]) (toJson (a.within b)))
 
 /-! ## Checks before writing -/
 
@@ -455,4 +485,4 @@ def main (args : List String) : IO Unit := do
   write dir "counts.json" countsVectors
   write dir "targets.json" targets
   write dir "target-bytes.json" targetBytes
-  write dir "footprints.json" footprints
+  write dir "ops.json" ops
