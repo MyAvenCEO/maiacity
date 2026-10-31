@@ -1,0 +1,235 @@
+{
+ "title": "Inside data",
+ "slides": [
+  {
+   "title": "Data comes in two kinds.",
+   "text": "A {Doc} is data that changes: a list, a note, a calendar. A {Value} is bytes that never change: a photo, a PDF, a movie. Together they cover everything.",
+   "list": [
+    "Doc: any JSON that changes, merged by Loro.",
+    "Value: any file that never changes, named by its hash."
+   ],
+   "action": "Open a Doc"
+  },
+  {
+   "title": "A Doc looks like JSON.",
+   "text": "Under the hood it's built from Loro {containers}: maps, lists, text, trees and counters. Your to-do list is a map holding a title and a list of items.",
+   "code": {
+    "title": "House",
+    "items": [
+     {
+      "id": "milk",
+      "text": "Buy milk",
+      "done": false
+     },
+     {
+      "id": "tap",
+      "text": "Fix the tap",
+      "done": false
+     }
+    ]
+   },
+   "action": "Look closer"
+  },
+  {
+   "title": "But really, a Doc is a history.",
+   "text": "Every change is an {op} with its own ID: which device made it, and its counter on that device. Each op also says which ops it had already seen. The JSON is just what you get when you play the history.",
+   "code": {
+    "id": "alice:41",
+    "deps": [
+     "alice:40",
+     "bob:17"
+    ],
+    "op": "set",
+    "at": "items/milk/done",
+    "value": true
+   },
+   "action": "Open a Value"
+  },
+  {
+   "title": "A Value never changes.",
+   "text": "Its name is the hash of its bytes, so it can't be swapped without everyone noticing. It travels in chunks, and you fetch only the parts you need: the first minute of a movie, page 3 of a PDF.",
+   "code": {
+    "value": "blake3:9f2c…",
+    "size": "1.4 GB",
+    "chunks": "1 MiB each",
+    "type": "video/mp4"
+   },
+   "action": "And its Doc"
+  },
+  {
+   "title": "Every Value has its own Doc.",
+   "text": "The movie never changes, but its name, its notes and who may see it do. So every Value comes with a small Doc: its metadata. The Doc also holds the Value's key, so whoever may read the Doc can open the Value.",
+   "code": {
+    "doc": "tap-photo",
+    "value": "blake3:9f2c…",
+    "name": "Leaking tap",
+    "notes": "Under the sink",
+    "value_key": "sealed with this Doc's data key"
+   },
+   "action": "Meet Alice and Bob"
+  },
+  {
+   "title": "Alice and Bob share a list.",
+   "text": "Both of them have a full copy on their own devices. There's no master copy on a server. Each copy is complete, and each can be edited on its own.",
+   "action": "Go offline"
+  },
+  {
+   "title": "Both edit offline.",
+   "text": "On a train, Alice ticks “buy milk”. At home, Bob renames the list and adds “call grandma”. Neither knows about the other's changes.",
+   "code": {
+    "alice": [
+     {
+      "id": "alice:41",
+      "set": "items/milk/done",
+      "to": true
+     }
+    ],
+    "bob": [
+     {
+      "id": "bob:18",
+      "set": "title",
+      "to": "Home"
+     },
+     {
+      "id": "bob:19",
+      "insert": "items/2",
+      "to": "Call grandma"
+     }
+    ]
+   },
+   "action": "They meet"
+  },
+  {
+   "title": "They swap only what's missing.",
+   "text": "Each device keeps a {version vector}: the highest op it has seen from every device. They compare vectors and send only the difference. Three small ops, not the whole list.",
+   "code": {
+    "alice_has": {
+     "alice": 41,
+     "bob": 17
+    },
+    "bob_has": {
+     "alice": 40,
+     "bob": 19
+    },
+    "send": {
+     "to_bob": [
+      "alice:41"
+     ],
+     "to_alice": [
+      "bob:18",
+      "bob:19"
+     ]
+    }
+   },
+   "action": "Merge"
+  },
+  {
+   "title": "They end up the same.",
+   "text": "However the ops arrive, in any order, twice or late, every copy ends in the same state. This is what makes Loro a {CRDT}: no server, no locking, no “who was first?”.",
+   "code": {
+    "title": "Home",
+    "items": [
+     {
+      "text": "Buy milk",
+      "done": true
+     },
+     {
+      "text": "Fix the tap",
+      "done": false
+     },
+     {
+      "text": "Call grandma",
+      "done": false
+     }
+    ]
+   },
+   "action": "Same field, twice"
+  },
+  {
+   "title": "Both rename the list.",
+   "text": "Alice types “Our home”, Bob types “Home”. For one field, one value has to win. Loro picks the op with the later logical clock, and if those tie, the higher device ID. Every copy picks the same one.",
+   "code": {
+    "alice": {
+     "id": "alice:42",
+     "lamport": 61,
+     "title": "Our home"
+    },
+    "bob": {
+     "id": "bob:20",
+     "lamport": 61,
+     "title": "Home"
+    },
+    "winner": "same clock, higher device ID"
+   },
+   "action": "Type together"
+  },
+  {
+   "title": "Text merges letter by letter.",
+   "text": "In a note, both type into the same sentence at once. Text in Loro is a list of characters, each with its own ID, so both edits survive and never get shuffled into each other.",
+   "code": {
+    "before": "Fix the tap",
+    "alice": "Fix the kitchen tap",
+    "bob": "Fix the tap today",
+    "merged": "Fix the kitchen tap today"
+   },
+   "action": "Now with caps"
+  },
+  {
+   "title": "Every op is checked on arrival.",
+   "text": "Before Alice's device merges Bob's ops, it checks each one against the rules in the Doc's own history. Bob's role has update, so his ops go in. A stranger's op on the same list is dropped, quietly, everywhere.",
+   "code": {
+    "op": "bob:19",
+    "kind": "insert",
+    "by": "bob",
+    "in": "home",
+    "home_may": [
+     "create",
+     "read",
+     "update"
+    ],
+    "result": "merge"
+   },
+   "action": "Bob loses update"
+  },
+  {
+   "title": "Bob loses update.",
+   "text": "You take update away from “home” for Bob's role. A rule is an op too, so it syncs like everything else. Ops Bob makes after it, or at the same time as it, are dropped on every device. Bob's op had not seen the revoke, so it ran at the same time, and removal wins. His earlier ops stay.",
+   "code": {
+    "rule": {
+     "id": "you:88",
+     "revoke": "update",
+     "from": "home"
+    },
+    "bob": {
+     "id": "bob:21",
+     "seen": [
+      "bob:20"
+     ],
+     "result": "dropped"
+    }
+   },
+   "action": "What does the server see?"
+  },
+  {
+   "title": "What the server sees.",
+   "text": "Encrypted ops for Docs, encrypted chunks for Values, and the IDs it needs to route them. It can store, count and forward them. It can't read a title, a tick or a frame of the movie.",
+   "code": {
+    "doc": "ed25519:7Hq…",
+    "op": "bob:19",
+    "bytes": "e4 1a 9c 07 …"
+   },
+   "action": "Sum it up"
+  },
+  {
+   "title": "Inside data, in short.",
+   "list": [
+    "A Doc is JSON that changes: a history of ops that merges.",
+    "A Value is bytes that never change, named by its hash.",
+    "Every Value has a Doc for its metadata and its key.",
+    "Copies swap only what's missing and always end the same.",
+    "Every op is checked against the rules on arrival."
+   ],
+   "action": ""
+  }
+ ]
+}

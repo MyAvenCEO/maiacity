@@ -1,5 +1,5 @@
 // theID, told as stories in text. Each slide is one moment; {word} marks a term the moment introduces, and a slide may
-// show a small JSON example and a flow of steps. The hash is #<story>-<n>.
+// show a small JSON example, a flow of steps or a table. The hash is #<story>-<n>.
 const $ = (s) => document.querySelector(s);
 const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 const rich = (t) => esc(t).replace(/\{([^}]+)\}/g, '<b>$1</b>');
@@ -10,12 +10,12 @@ let stories = [], story = null, deck = [], at = 0;
 function json(v, ind = '') {
   const pad = ind + '  ';
   if (Array.isArray(v)) {
-    const flat = v.every((x) => typeof x !== 'object');
+    const flat = v.every((x) => typeof x !== 'object') && JSON.stringify(v).length + ind.length < 40;
     return flat ? `[${v.map((x) => json(x)).join(', ')}]` : `[\n${v.map((x) => pad + json(x, pad)).join(',\n')}\n${ind}]`;
   }
   if (v && typeof v === 'object') {
     const e = Object.entries(v);
-    if (JSON.stringify(v).length < 44) return `{ ${e.map(([k, x]) => `<i>"${esc(k)}"</i>: ${json(x)}`).join(', ')} }`;
+    if (JSON.stringify(v).length + ind.length < 36) return `{ ${e.map(([k, x]) => `<i>"${esc(k)}"</i>: ${json(x)}`).join(', ')} }`;
     return `{\n${e.map(([k, x]) => `${pad}<i>"${esc(k)}"</i>: ${json(x, pad)}`).join(',\n')}\n${ind}}`;
   }
   if (typeof v === 'string') return `<u>"${esc(v)}"</u>`;
@@ -35,7 +35,10 @@ function render() {
   $('#code').hidden = !s.code;
   $('#flow').innerHTML = (s.flow || []).map((f) => `<span>${esc(f)}</span>`).join('<i>→</i>');
   $('#flow').hidden = !s.flow;
-  card.classList.toggle('has-code', Boolean(s.code || s.flow));
+  $('#table').innerHTML = s.table ? `<thead><tr>${s.table.head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>` +
+    `<tbody>${s.table.rows.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody>` : '';
+  $('#table').hidden = !s.table;
+  card.classList.toggle('has-code', Boolean(s.code || s.flow || s.table));
   document.querySelectorAll('#stories button').forEach((b) => b.classList.toggle('on', b.dataset.story === story.id));
   const fresh = new Set(termsOf(s));
   const known = [...new Set(deck.slice(0, at + 1).flatMap(termsOf))];

@@ -175,6 +175,77 @@
     "learn the revoke",
     "wipe keys and copies"
    ],
+   "action": "Where does the data key live?"
+  },
+  {
+   "title": "Where does the data key live?",
+   "text": "Nobody holds it for the data. It travels with the data itself: every piece of data carries a small {keyring} next to its rules. The keyring holds the data key in envelopes, one for each role that may read. Carriers store it like everything else, sealed and unreadable.",
+   "code": {
+    "data": "house-list",
+    "rules": {
+     "owners": "admin, CRUD",
+     "home": "create, read, update"
+    },
+    "keyring": {
+     "epoch": 2,
+     "envelopes": {
+      "owners": "K2 → owners role key",
+      "home": "K2 → home role key"
+     },
+     "back": "K2 opens K1"
+    }
+   },
+   "action": "Which key turns when?"
+  },
+  {
+   "title": "Which key turns when.",
+   "text": "Only read changes keys. A new data key always opens the one before it, so whoever may read now can still read the history.",
+   "table": {
+    "head": [
+     "Step",
+     "Identity key",
+     "Role key",
+     "Data key"
+    ],
+    "rows": [
+     [
+      "Add someone to a role",
+      "–",
+      "–",
+      "–"
+     ],
+     [
+      "Remove someone from a role",
+      "–",
+      "new",
+      "new on next write"
+     ],
+     [
+      "Give a role read",
+      "–",
+      "–",
+      "–"
+     ],
+     [
+      "Take read from a role",
+      "–",
+      "–",
+      "new now"
+     ],
+     [
+      "Change create, update, delete, admin",
+      "–",
+      "–",
+      "–"
+     ],
+     [
+      "A device is stolen",
+      "new",
+      "new, for every role",
+      "new on next write"
+     ]
+    ]
+   },
    "action": "Sum it up"
   },
   {
