@@ -43,19 +43,19 @@ def editedFields (r0 r : Record Value) : List (Bytes × Option Value) :=
   (r0.fields.filter fun (f, _) => (get r.fields f).isNone).map fun (f, _) => (f, none)
 
 /-- One Record as an edit, given its type id. -/
-def edited (ver : DocId → Version) (r0 r : Record Value) : RecordChange :=
+def edited (ver : DocId → Docs.Version) (r0 r : Record Value) : RecordChange :=
   ⟨r.id.bytes, ver r.type, .edited, editedFields r0 r⟩
 
 /-- What a reader sees of one Record after: new, edited, or nothing when no field of it changed. A Record's type is fixed
 at birth (docs, "A Doc"); the verdict refuses a change of it (`typesKept`), so the change view never shows one. -/
-def changeOf (ver : DocId → Version) (s : List (Record Value)) (r : Record Value) : Option RecordChange :=
+def changeOf (ver : DocId → Docs.Version) (s : List (Record Value)) (r : Record Value) : Option RecordChange :=
   match s.find? (·.id == r.id) with
   | none => some ⟨r.id.bytes, ver r.type, .new, r.fields.map fun (f, v) => (f, some v)⟩
   | some r0 => if (edited ver r0 r).fields.isEmpty then none else some (edited ver r0 r)
 
 /-- The changes a reader sees from a Doc's Records before to after. `ver` gives the type id each type Doc is written
 under. -/
-def changesFrom (ver : DocId → Version) (s s' : List (Record Value)) : List RecordChange :=
+def changesFrom (ver : DocId → Docs.Version) (s s' : List (Record Value)) : List RecordChange :=
   s'.filterMap (changeOf ver s) ++
   (s.filter fun r0 => !s'.any (·.id == r0.id)).map fun r0 => ⟨r0.id.bytes, ver r0.type, .gone, []⟩
 
@@ -72,10 +72,10 @@ def typesKept (s s' : List (Record Value)) : Bool :=
 
 /-- The verdict's footprint part for a commit from Records `s` to `s'`: no Record changes its type, and the changes stay
 within the footprint of the ops it calls. -/
-def verdictFootprint (ver : DocId → Version) (fp : List Step) (s s' : List (Record Value)) : Bool :=
+def verdictFootprint (ver : DocId → Docs.Version) (fp : List Step) (s s' : List (Record Value)) : Bool :=
   typesKept s s' && footprintOk fp (changesFrom ver s s')
 
-theorem verdictFootprint_iff {ver : DocId → Version} {fp : List Step} {s s' : List (Record Value)} :
+theorem verdictFootprint_iff {ver : DocId → Docs.Version} {fp : List Step} {s s' : List (Record Value)} :
     verdictFootprint ver fp s s' = true ↔ typesKept s s' = true ∧ footprintOk fp (changesFrom ver s s') = true := by
   simp [verdictFootprint]
 
@@ -88,7 +88,7 @@ theorem typesKept_type {s s' : List (Record Value)} (h : typesKept s s' = true) 
   · exact h
 
 /-- **An edited change names at least one field:** the change view leaves a Record none of whose fields changed out. -/
-theorem changesFrom_edited_names {ver : DocId → Version} {s s' : List (Record Value)} {ch : RecordChange}
+theorem changesFrom_edited_names {ver : DocId → Docs.Version} {s s' : List (Record Value)} {ch : RecordChange}
     (m : ch ∈ changesFrom ver s s') (k : ch.kind = .edited) : ch.names ≠ [] := by
   simp only [changesFrom, List.mem_append, List.mem_filterMap, List.mem_map, List.mem_filter] at m
   rcases m with ⟨r, _, hc⟩ | ⟨r0, _, rfl⟩
@@ -149,7 +149,7 @@ theorem mem_editedFields_of_removed {r0 r : Record Value} {f : Bytes} (hf : f �
   exact .inr ⟨(g, v), ⟨hg, by simp [hnone]⟩, rfl⟩
 
 /-- **A diff within the footprint passes the verdict's footprint part,** on a Doc whose Records have distinct ids. -/
-theorem diff_footprint (ver : DocId → Version) (hver : ∀ t, (ver t).type = t) (fp : List Step)
+theorem diff_footprint (ver : DocId → Docs.Version) (hver : ∀ t, (ver t).type = t) (fp : List Step)
     (s s' : List (Record Value)) (hn : (s.map (·.id)).Nodup) (h : diffWithin valEq fp s s' = true) :
     footprintOk fp (changesFrom ver s s') = true := by
   have wr : ∀ ty f, Writes fp ty f → (fieldsOf fp ty).contains f = true := by
@@ -263,7 +263,7 @@ theorem commit_types_kept (ofId : NewId → Value) (w c : Nat) (s s' : List (Rec
 
 /-- **An honest writer passes the verdict's footprint part:** its commit ran as its ops say, on a Doc whose Records
 have distinct ids, under a fresh counter (`Fresh`, the engine's one statement of it). -/
-theorem honest_footprint (ver : DocId → Version) (hver : ∀ t, (ver t).type = t) (ofId : NewId → Value) (w c : Nat)
+theorem honest_footprint (ver : DocId → Docs.Version) (hver : ∀ t, (ver t).type = t) (ofId : NewId → Value) (w c : Nat)
     (s s' : List (Record Value)) (ops : List (Op Value)) (hn : (s.map (·.id)).Nodup) (fresh : Fresh w c s)
     (h : commit valEq ofId w c s ops = .ok s') :
     verdictFootprint ver (footprint ops) s s' = true :=
@@ -303,7 +303,7 @@ alone names) against the merged Records, not on the commit that settles conflict
 (`Aven.ID.merge_covered`). When the verdict passes, every Record of main the merge changes or removes, and every Record
 it brings, is made by those steps, field by field. The same holds of any before and after; a merge only chooses which
 before. -/
-theorem merge_steps (ver : DocId → Version) (hver : ∀ t, (ver t).type = t) (fp : List Step)
+theorem merge_steps (ver : DocId → Docs.Version) (hver : ∀ t, (ver t).type = t) (fp : List Step)
     (main merged : List (Record Value)) (hn : (main.map (·.id)).Nodup)
     (h : verdictFootprint ver fp main merged = true) :
     -- a Record main had, changed: every field whose value differs is written by a step of its type
