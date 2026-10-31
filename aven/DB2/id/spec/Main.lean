@@ -3,8 +3,9 @@ import Aven.ID.CapsModel
 
 /-! # The running model
 
-`aven-id-model` reads one case per line, a tree and its queries as JSON, a cap chain, or a Doc of envelopes and its
-revocations, and answers each line with one line (`Aven.ID.Json`, `Aven.ID.CapsModel`):
+`aven-id-model` reads one case per line, a tree and its queries as JSON, a cap chain, who keeps a Doc, a Doc of
+envelopes and its revocations, or an envelope's authority, and answers each line with one line (`Aven.ID.Json`,
+`Aven.ID.CapsModel`):
 
 ```
 {"keys":["k"],"vaults":[{"id":"a","name":"A's vault","kind":"person","owners":["key:k"]}],"queries":[["governs","a"],["accounts",null]]}
