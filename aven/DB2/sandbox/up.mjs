@@ -213,6 +213,7 @@ async function check() {
 		(await keeps(run)) &&
 		(await inEngines(run)) &&
 		(await inlines(run)) &&
+		(await drawers(run)) &&
 		(await claims(run)) &&
 		(await members(run)) &&
 		(await chats(run)) &&
@@ -303,6 +304,15 @@ async function inEngines(run) {
 	const built = Date.now() - timed;
 	const ok = (await $`${compose} exec -T browsers node sandbox/engines.mjs ${run}`.env(env).nothrow()).exitCode === 0;
 	say(`${ok ? 'Chromium, WebKit and Firefox run avenOS, its release build and its passkeys' : 'the engines step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s, the build ${(built / 1000).toFixed(1)} s)`);
+	return ok;
+}
+
+// The tree drawer (os/web/runtimes/draw.js), held to aven/runtimes' vectors in all three engines: sandbox/drawer.mjs, in
+// the box, which mounts aven/runtimes beside aven/DB2.
+async function drawers(run) {
+	const timed = Date.now();
+	const ok = (await inBox(['node', 'sandbox/drawer.mjs', run])) === 0;
+	say(`${ok ? 'the drawer draws only what the model passes, in Chromium, WebKit and Firefox' : 'the drawer step FAILED'} (${((Date.now() - timed) / 1000).toFixed(1)} s)`);
 	return ok;
 }
 
