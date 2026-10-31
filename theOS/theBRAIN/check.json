@@ -33,7 +33,7 @@
   },
   {
    "title": "Under the hood, a rule is a capability.",
-   "text": "Each rule is a signed token, a {capability}. It carries its own proof: who signed it, and why they were allowed to, all the way back to the seal. Any device can check it offline. Nobody can forge it.",
+   "text": "Each rule is a signed token, a {capability}. It carries its own {proof}: who signed it, and why they were allowed to, all the way back to the seal. Any device can check it offline. Nobody can forge it.",
    "code": {
     "rule": {
      "role": "home",
@@ -50,14 +50,14 @@
      "you → home"
     ]
    },
-   "deep": "Like a Biscuit or UCAN token: a chain of signed blocks, each signed by the holder of the previous one, verifiable offline without any server."
+   "deep": "Like a Biscuit or UCAN token: a chain of signed blocks, each signed by the holder of the previous one, verifiable offline without any server. Like every signed or hashed thing, it is encoded as canonical CBOR, so the same rule always gives the same bytes."
   },
   {
    "title": "Every device checks the same four things.",
    "text": "Before a change goes in, or before a single byte goes out, a device checks the rule behind it.",
    "list": [
     "Every signature in the proof is valid, back to the seal.",
-    "The rule hasn't ended.",
+    "The rule hasn't ended (expired or revoked: Endings chapter).",
     "The operation is listed in the rule.",
     "Every condition holds."
    ],

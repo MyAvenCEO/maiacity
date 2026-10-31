@@ -69,7 +69,7 @@
      ]
     }
    },
-   "deep": "A version vector maps each peer to the highest counter seen from it. Comparing two vectors yields exactly which ops each side lacks. Over the network we compare sealed chunks instead (story 4)."
+   "deep": "A version vector maps each peer to the highest counter seen from it. Comparing two vectors yields exactly which ops each side lacks. Over the network we compare sealed chunks instead (Sync chapter)."
   },
   {
    "title": "They end up the same.",

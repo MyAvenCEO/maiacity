@@ -10,12 +10,12 @@
     "update",
     "delete"
    ],
-   "deep": "A rule is a signed certificate: role, data, list of operations, conditions, expiry, plus the proof chain back to the seal. Rules are written only by the owner (D30). Conditions, expiry and proofs come in story 5, Rules."
+   "deep": "A rule is a signed certificate: role, data, list of operations, conditions, expiry, plus the proof chain back to the seal. Rules are written only by the owner (D30). Conditions come later in this chapter, proofs in Checking, expiry in Endings."
   },
   {
    "title": "You share the list with Mia.",
    "text": "You make a role “home”, give it read, create and update on the list, and add Mia. She can see the list, add things and tick them off. She can't delete it, and she can't change the rules.",
-   "deep": "Mia's identity is added to the role “home”. Technically: the owner signs a membership change and wraps the role key for Mia's identity key (both explained in story 2). The data's rules don't change at all."
+   "deep": "Mia's identity is added to the role “home”. Technically: the owner signs a membership change and wraps the role key for Mia's identity key (both explained in the Keys chapter). The data's rules don't change at all."
   },
   {
    "title": "The plumber gets one item.",
@@ -24,7 +24,7 @@
   },
   {
    "title": "Every rule is one sentence.",
-   "text": "A rule says: this role may perform these operations, on this data, until then. Nothing more. Everything anyone may ever do with your data is written in rules like this one.",
+   "text": "A rule says: this role may perform these operations, on this data, until a date: its {expiry}. Nothing more. Everything anyone may ever do with your data is written in rules like this one.",
    "code": {
     "rule": {
      "role": "home",
@@ -46,7 +46,7 @@
   },
   {
    "title": "What a rule can allow.",
-   "text": "Each operation is one thing a role may do. Some are about the content, some about carrying it, and one, share, passes a rule on.",
+   "text": "Each operation is one thing a role may do. Some are about the content, and one, {share}, passes a narrower copy of a rule on. Want, keep and sync are about carrying data; they come in the Carriers chapter.",
    "list": [
     "Content: create, read, update, delete.",
     "Carrying: want, keep, sync.",
@@ -126,9 +126,7 @@
    "list": [
     "A rule: this role may perform these operations, on this data, until then.",
     "The owner writes the first rules; roles with share pass narrower copies on.",
-    "Conditions narrow a rule; nothing can widen it.",
-    "A revoke or a lapse is an ending: it wins, turns the key if it gave read, wipes copies, and takes everything passed on under it.",
-    "Under the hood: a signed token any device checks offline."
+    "Conditions narrow a rule; nothing can widen it."
    ],
    "deep": "Rules are capabilities attached to roles, granted only by the owner, narrowable, expiring by default, ended by events, and checked offline by every peer."
   }

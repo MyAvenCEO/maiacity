@@ -26,14 +26,14 @@
    "file": "check.json"
   },
   {
-   "id": "end",
-   "title": "Endings",
-   "file": "end.json"
-  },
-  {
    "id": "keys",
    "title": "Keys",
    "file": "keys.json"
+  },
+  {
+   "id": "end",
+   "title": "Endings",
+   "file": "end.json"
   },
   {
    "id": "time",

@@ -3,7 +3,7 @@
  "slides": [
   {
    "title": "Sealed in chunks, not one by one.",
-   "text": "Sealing every CRDT op on its own would make data huge. So a device seals {chunks}: a run of changes, compressed, then encrypted. Chunk boundaries come from the changes' hashes, so every device splits at the same places. Old small chunks get merged into bigger ones, like layers of sediment.",
+   "text": "Sealing every CRDT op on its own would make data huge. So a device seals {chunks}: a run of changes, compressed, then encrypted. Where a chunk ends is decided by the changes' hashes, as the next slide shows.",
    "code": {
     "chunk": "blake3:a91f…",
     "holds": "bob:18 – bob:40",
@@ -34,7 +34,7 @@
   },
   {
    "title": "Finding what's missing, cheaply.",
-   "text": "Two devices may hold the same data and differ by only a little. They never list everything. Inside one piece of data they compare {fingerprints}; across thousands of pieces of data they swap a few tiny {summaries}. Both cost about as much as the difference, not the whole.",
+   "text": "Two devices may hold the same data and differ by only a little. They never list everything. Inside one piece of data they compare {fingerprints}, short keyed hashes of each layer; across thousands of pieces of data they swap a few tiny {summaries}. Both cost about as much as the difference, not the whole.",
    "code": {
     "inside_one": "fingerprints of its layers",
     "across_many": "summaries that peel apart"
@@ -86,8 +86,8 @@
    "deep": "Rateless Invertible Bloom Lookup Tables (arXiv 2402.02668). Each coded symbol is the XOR of a pseudo-random subset of item hashes plus a count and a checksum. Peel pure symbols iteratively. About 1.35 to 1.7 × d symbols for d differences."
   },
   {
-   "title": "A Value streams in checked chunks.",
-   "text": "Bob asks for a Value by its hash. Every chunk is checked against that hash as it arrives, so nobody can slip in a wrong byte. He can ask for just a range, and from several devices at once.",
+   "title": "A Value streams in checked ranges.",
+   "text": "Bob asks for a Value by its hash. Every range is checked against that hash as it arrives, so nobody can slip in a wrong byte. He can ask for just a range, and from several devices at once.",
    "code": {
     "want": "blake3:9f2c…",
     "range": "chunks 0–60",

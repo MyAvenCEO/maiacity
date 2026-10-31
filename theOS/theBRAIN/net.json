@@ -58,8 +58,8 @@
    "title": "One line, three languages.",
    "text": "Over one connection, devices speak a small {protocol} for each kind of work.",
    "list": [
-    "Docs: find the missing sealed chunks, then swap them.",
-    "Values: stream chunks by hash, checked as they arrive.",
+    "Docs: find the missing sealed chunks (Sync chapter), then swap them.",
+    "Values: stream ranges by hash, checked as they arrive.",
     "News: tell interested peers “there's something new”."
    ],
    "deep": "Each protocol is an ALPN on the same endpoint: chunk sync for Docs, blob ranges for Values, gossip for announcements."

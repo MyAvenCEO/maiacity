@@ -3,12 +3,12 @@
  "slides": [
   {
    "title": "It starts with your phone.",
-   "text": "Your phone is a {device}: an identity of its own. Inside it sits a {signer}, a key that can say one thing: “this really comes from this phone.” A signer is only a key. The device never owns anything.",
+   "text": "Your phone is a {device}: an {identity} of its own, something that can act. Inside it sits a {signer}: a {key}, a secret only the phone holds, that can say one thing: “this really comes from this phone.” A signer is only a key. The device never owns anything.",
    "deep": "A device identity's ID is the hash of its birth record, so it outlives its keys. Its signer is a key it holds and registers in its own history. How it is kept is up to the device: on a phone, derived from the passkey's PRF plus a per-device salt; on a laptop, the keychain; on a server, an environment variable, a secret manager or an HSM."
   },
   {
    "title": "Your devices act for you.",
-   "text": "You are an {identity} too: a human. Your phone, laptop and watch are your devices, your hands, and each signs with its own signer. Lose one, add another, and you're still you.",
+   "text": "You are an identity too: a {human}. Your phone, laptop and watch are your devices, your hands, and each signs with its own signer. Each device belongs to exactly one identity: you, or, for a shared server, a group you'll meet next. Lose a device, add another, and you're still you.",
    "deep": "A human identity's members are device identities. Its history lists them and commits to the next ones in advance (KERI-style pre-rotation). Identity types: device, human, coop."
   },
   {
@@ -38,7 +38,7 @@
   },
   {
    "title": "A coop decides by its own signing rules.",
-   "text": "A coop has members, and its own {signing rules}: who must agree for the coop to act. They know only three kinds of act. Acting: ordinary changes. Owning: writing rules, handing data over. Governing: changing its own members and signing rules. Signing rules never mention a piece of data.",
+   "text": "A coop has members, and its own {signing rules}: who must agree for the coop to act. They know only three kinds of act. Acting: ordinary changes. Owning: writing the rules for data it owns, and handing data over (Data chapter). Governing: changing its own members and signing rules. Signing rules never mention a piece of data.",
    "code": {
     "coop": "home",
     "members": [
@@ -55,7 +55,7 @@
   },
   {
    "title": "Losing your phone.",
-   "text": "Your identity named its next keys when it was born, so you can switch to them. You mark the lost phone as gone, and from then on it can sign nothing for you. What it could still read, and how keys turn after that, comes in the Keys chapter.",
+   "text": "Every identity keeps a signed {history} of its keys and members. When it was born, that history named its next keys, so you can switch to them. You mark the lost phone as gone, and from then on it can sign nothing for you. What it could still read comes in the Keys chapter.",
    "flow": [
     "next keys",
     "switch",

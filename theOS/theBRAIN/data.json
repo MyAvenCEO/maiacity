@@ -4,7 +4,7 @@
   {
    "title": "You write a to-do list.",
    "text": "Everything you keep is {data}. Your list keeps changing; the photo of the leaking tap you attach never will. Both are data.",
-   "deep": "The list is a Doc (story 3): CRDT maps, lists and text. The photo is a Value: immutable bytes named by their BLAKE3 hash, streamed in verified chunks."
+   "deep": "The list is a Doc (next slides): CRDT maps, lists and text. The photo is a Value: immutable bytes named by their BLAKE3 hash, streamed in verified ranges."
   },
   {
    "title": "The list starts from itself.",
@@ -27,14 +27,14 @@
   },
   {
    "title": "Its first rule makes you the owner.",
-   "text": "The seal's one signature names a single {owner}: you. The owner may do everything, for good, including writing the rules for everyone else. There is always exactly one owner: an identity, never a group.",
+   "text": "The seal's one signature names a single {owner}: you. The owner may do everything, for good, including writing the rules for everyone else. There is always exactly one owner: one identity, a person or a coop, never a list of people.",
    "deep": "The owner is an identity ID inside the first certificate. Its authority never expires and only the owner can sign a hand-over. Ownership is never a set, so there is no removing someone from it. (D5, D30)"
   },
   {
    "title": "Data comes in two kinds.",
    "text": "A {Doc} is data that changes: a list, a note, a calendar. A {Value} is bytes that never change: a photo, a PDF, a movie. Together they cover everything.",
    "list": [
-    "Doc: any JSON that changes, built from CRDT data types that merge by themselves.",
+    "Doc: any JSON that changes, built from data types that merge by themselves (Merging chapter).",
     "Value: any file that never changes, named by its hash."
    ],
    "deep": "Doc: a Loro document, a history of CRDT ops. Value: immutable bytes addressed by BLAKE3, fetched in verified ranges (iroh-blobs style)."
@@ -78,7 +78,7 @@
     "value": "blake3:9f2c…",
     "name": "Leaking tap",
     "notes": "Under the sink",
-    "value_key": "sealed with this Doc's data key"
+    "value_key": "sealed with this Doc's key"
    },
    "deep": "A Value's data key is stored inside its metadata Doc, under that Doc's own data key. Read on the Doc implies read on the Value. Taking read away protects only future versions of an immutable Value."
   },

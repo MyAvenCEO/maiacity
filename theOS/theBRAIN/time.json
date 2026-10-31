@@ -36,7 +36,7 @@
   },
   {
    "title": "Snapshots let the past go.",
-   "text": "At key turns older than 30 days, the history is cut: newcomers get a snapshot of the state, not the old CRDT ops, so they never see what was deleted. The older keys go to the owner's archive. A writer who comes back from before the cut loses, and sees what was not adopted.",
+   "text": "At key turns older than 30 days, the history is {cut}: newcomers get a {snapshot}, the current state with no history, so they never see what was deleted. The older keys go to the owner's archive. A writer who comes back from before the cut loses, and gets a conflict view of what was not adopted.",
    "code": {
     "cut_at": "a key turn > 30 days old",
     "newcomers_get": "snapshot + later CRDT ops",
@@ -52,7 +52,7 @@
   },
   {
    "title": "Erasing works on any text.",
-   "text": "A note names ten people, and one of them asks to be forgotten. You delete their name. Then the note is {cut}: a fresh {snapshot}, the current state with no history, without the name, under a new key. The keys of everything before the cut are {shredded} on every honest device and in the archive. The name is gone for good, even from the history.",
+   "text": "A note names ten people, and one of them asks to be forgotten. You delete their name. Then the note is cut: a fresh snapshot without the name, under a new key. The keys of everything before the cut are {shredded} on every honest device and in the archive. The name is gone for good, even from the history.",
    "flow": [
     "delete",
     "cut",
@@ -81,7 +81,7 @@
    "text": "Whatever someone once saw, they can remember, screenshot or copy. That's true of every app today, and no system can change it. What we can promise is the rest.",
    "list": [
     "Nothing new: rotation keeps the future out.",
-    "Nothing kept, on honest devices: the next step.",
+    "Nothing kept, on honest devices: endings wipe what they gave (Endings chapter).",
     "Read is per piece of data, so what you share alone is its own data."
    ],
    "deep": "The analogue hole is real for every system: whatever a reader saw can be copied. Read granularity equals key granularity, so a part shared on its own must be its own data."

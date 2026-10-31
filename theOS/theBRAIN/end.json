@@ -3,7 +3,7 @@
  "slides": [
   {
    "title": "Every rule expires.",
-   "text": "No rule lasts forever by accident. Each one has an {expiry}, 30 days unless you choose otherwise. A forgotten share closes by itself.",
+   "text": "No rule lasts forever by accident. Each one has an expiry, 30 days unless you choose otherwise. A forgotten share closes by itself.",
    "code": {
     "role": "plumber",
     "data": "fix-tap",
@@ -32,7 +32,7 @@
   },
   {
    "title": "Ending a rule early.",
-   "text": "You don't have to wait for the expiry. The owner writes a revoke: a signed event in the history that says “this rule is over”. It travels like any other change.",
+   "text": "You don't have to wait for the expiry. The owner writes a {revoke}: a signed event in the history that says “this rule is over”. It travels like any other change.",
    "code": {
     "ending": "revoke",
     "rule": "home → plumber",
@@ -43,7 +43,7 @@
   },
   {
    "title": "When time runs out, anyone may say so.",
-   "text": "Devices are often offline, and a device can lie about its time, so no clock decides. Once a rule's date has passed for it, any peer that can read the rules writes a lapse: the same kind of event as a revoke. It can only end a rule, never grant anything. From then on, the history decides.",
+   "text": "Devices are often offline, and a device can lie about its time, so no clock decides. Once a rule's date has passed for it, any peer that can read the rules writes a {lapse}: the same kind of event as a revoke. It can only end a rule, never grant anything. From then on, the history decides.",
    "code": {
     "ending": "lapse",
     "rule": "home → plumber",
@@ -54,7 +54,7 @@
   },
   {
    "title": "Revoke or lapse: one ending, same effect.",
-   "text": "Whoever wrote it, an ending does the same things on every device. Changes that never saw it are dropped, because the ending wins. If the rule gave read, the data key turns. And every honest device wipes the keys and copies the rule gave it. Validity follows from the history alone, so every copy agrees.",
+   "text": "Whoever wrote it, an {ending} does the same things on every device. Changes that never saw it are dropped, because the ending wins. If the rule gave read, the data key turns. And every honest device wipes the keys and copies the rule gave it. Validity follows from the history alone, so every copy agrees.",
    "code": {
     "ending": "lapse",
     "rule": "home → plumber",
@@ -92,7 +92,7 @@
   },
   {
    "title": "Ended means forgotten.",
-   "text": "The moment a device meets any peer that holds an {ending}, either a {revoke} by the owner or a {lapse} written once a rule's date has passed, it applies it like a {delete trigger}: it wipes the keys and the plaintext copies of everything it may no longer read. It happens offline-first and without a server, on every honest device, the plumber's included.",
+   "text": "The moment a device meets any peer that holds an ending, either a revoke by the owner or a lapse written once a rule's date has passed, it applies it like a {delete trigger}: it wipes the keys and the plaintext copies of everything it may no longer read. It happens offline-first and without a server, on every honest device, the plumber's included.",
    "code": {
     "on": "ending (revoke or lapse)",
     "data": "fix-tap",
@@ -118,7 +118,8 @@
     "An ending wins over changes that never saw it.",
     "Honest devices forget what an ended rule gave them."
    ],
-   "deep": "Endings are events in the causal history, so no clock has to be trusted."
+   "deep": "Endings are events in the causal history, so no clock has to be trusted.",
+   "text": ""
   }
  ]
 }

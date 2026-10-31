@@ -3,7 +3,7 @@
  "slides": [
   {
    "title": "Who may even get the bytes?",
-   "text": "Read decides who can open data. Three more things a rule can allow decide who can carry it: want, keep and sync. Carriers never see the rules themselves: those are sealed for readers. Whoever asks shows their own proof.",
+   "text": "Read decides who can open data. Three more things a rule can allow decide who can carry it: {want}, {keep} and {sync}. Carriers never see the rules themselves: those are sealed for readers. Whoever asks shows their own proof.",
    "list": [
     "want: may ask for this data and receive it, sealed.",
     "keep: may store it for good.",
@@ -13,7 +13,7 @@
   },
   {
    "title": "want",
-   "text": "Before a device sends anything, even sealed chunks, the asker shows a proof that a rule gives them {want}. The carrier checks the signatures and nothing else. A stranger gets nothing at all, not even ciphertext to count or keep. Read includes want.",
+   "text": "Before a device sends anything, even sealed chunks, the asker shows a proof that a rule gives them want. The carrier checks the signatures and nothing else. A stranger gets nothing at all, not even ciphertext to count or keep. Read includes want.",
    "code": {
     "asker": "bob-laptop",
     "proof": [
@@ -27,7 +27,7 @@
   },
   {
    "title": "keep",
-   "text": "Your backup gets want and {keep}. It holds every sealed chunk, for good, and gives them back to your new phone. It has no read, so to it they're just sealed bytes.",
+   "text": "Your backup gets want and keep. It holds every sealed chunk, for good, and gives them back to your new phone. It has no read, so to it they're just sealed bytes.",
    "code": {
     "role": "backup",
     "data": "house-list",
@@ -40,7 +40,7 @@
   },
   {
    "title": "sync",
-   "text": "The street's always-on peer gets {sync}. It passes your changes between Alice and Bob when they're never online at the same time. It keeps them only as long as it has to.",
+   "text": "The street's always-on peer gets sync. It passes your changes between Alice and Bob when they're never online at the same time. It keeps them only as long as it has to.",
    "code": {
     "role": "street",
     "data": "house-list",
@@ -53,7 +53,7 @@
   },
   {
    "title": "What a carrier sees.",
-   "text": "Sealed chunks, the hashes that link them, and the {proofs}, signed chains from the seal to whoever asks, it needs to decide whom to give them to. It can store, count and forward them. It can't read a title, a tick, a rule or a frame of the movie.",
+   "text": "Sealed chunks, the hashes that link them, and the proofs it needs to decide whom to give them to. It can store, count and forward them. It can't read a title, a tick, a rule or a frame of the movie.",
    "code": {
     "chunk": "blake3:a91f…",
     "after": [

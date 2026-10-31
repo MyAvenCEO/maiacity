@@ -38,7 +38,7 @@
    "id": "D3",
    "title": "Two kinds of identity: human and coop",
    "status": "decided",
-   "decision": "A human identity is controlled by signers only. A coop identity is controlled by one or more identities (human or coop), never by signers directly. Cycles are not allowed. Each identity has its own signing rules, like a Gnosis Safe: which members must sign, how many, for what. Open question: may a coop contain other coops, or only human identities?",
+   "decision": "A human identity is controlled by signers only. A coop identity is controlled by one or more identities (human or coop), never by signers directly. Cycles are not allowed. Each identity has its own signing rules, like a Gnosis Safe: which members must sign, how many, for what. Coops may contain coops, never in a circle.",
    "why": "Families, teams and organisations are identities of identities; one model covers all of them.",
    "sources": [
     {
@@ -51,7 +51,9 @@
     }
    ],
    "slides": [
+    "identity-2",
     "identity-3",
+    "identity-4",
     "identity-5"
    ],
    "date": "2026-10-31"
@@ -97,8 +99,7 @@
    ],
    "slides": [
     "data-3",
-    "rules-8",
-    "identity-3"
+    "rules-8"
    ],
    "date": "2026-10-31"
   },
@@ -228,7 +229,8 @@
    "sources": [],
    "slides": [
     "ops-9",
-    "time-5"
+    "time-5",
+    "rules-3"
    ],
    "date": "2026-10-31"
   },
@@ -236,7 +238,7 @@
    "id": "D12",
    "title": "Every rule expires and renews itself",
    "status": "decided",
-   "decision": "Rules expire after 30 days unless set otherwise. An admin's device renews unchanged rules a week before they end. The owner's first rule never expires.",
+   "decision": "Rules expire after 30 days unless set otherwise. The owner renews unchanged rules a week before they end, under its own signing rules (a coop can let one member do renewals). The owner's first rule never expires.",
    "why": "Forgotten shares close by themselves; families are never locked out.",
    "sources": [],
    "slides": [
@@ -350,7 +352,7 @@
    "id": "D17",
    "title": "The keyring travels with the data",
    "status": "decided",
-   "decision": "Each piece of data carries its keyring (envelopes, epoch, back-links) next to its rules, sealed.",
+   "decision": "Each piece of data carries its keyring (envelopes, generation, back-links) next to its rules, sealed.",
    "why": "No one keeps keys for the data; it is self-contained wherever it goes.",
    "sources": [
     {
@@ -367,7 +369,7 @@
    "id": "D18",
    "title": "Which key turns when",
    "status": "decided",
-   "decision": "Adding a member or giving read: nothing turns. Removing a member: new role key, data keys on next write. Removing an admin: successor role. Taking read: new data key now. Stolen device: identity key and every role it is in. Concurrent rotations are both kept until the next one.",
+   "decision": "Adding a member or giving read: nothing turns. Removing a member: new role key, data keys on next write. Taking read: new data key now. Stolen device: identity key and every role it is in. Concurrent rotations are both kept until the next one.",
    "why": "Only read touches keys; the rest is signed rules.",
    "sources": [
     {
@@ -472,9 +474,9 @@
     }
    ],
    "slides": [
-    "ops-3",
-    "rules-5",
-    "merge-1"
+    "rules-1",
+    "merge-1",
+    "ops-3"
    ],
    "date": "2026-10-31"
   },
@@ -523,7 +525,10 @@
      "url": "https://github.com/inkandswitch/keyhive/blob/main/design/convergent_capabilities.md"
     }
    ],
-   "slides": [],
+   "slides": [
+    "end-4",
+    "end-7"
+   ],
    "date": "2026-10-31"
   },
   {
@@ -620,6 +625,7 @@
     }
    ],
    "slides": [
+    "sync-2",
     "sync-3"
    ],
    "date": "2026-10-31"
@@ -640,7 +646,9 @@
    "slides": [
     "rules-1",
     "identity-5",
-    "rules-5"
+    "rules-5",
+    "rules-8",
+    "time-4"
    ],
    "date": "2026-10-31"
   },
@@ -667,7 +675,8 @@
    ],
    "slides": [
     "identity-1",
-    "identity-2"
+    "identity-2",
+    "sync-1"
    ],
    "date": "2026-10-31"
   },
@@ -746,10 +755,7 @@
      "url": "https://www.inkandswitch.com/keyhive/notebook/06/"
     }
    ],
-   "slides": [
-    "merge-8",
-    "time-2"
-   ],
+   "slides": [],
    "date": "2026-10-31",
    "superseded_by": "D39"
   },
@@ -794,9 +800,7 @@
      "url": "https://w3c.github.io/webauthn/#prf-extension"
     }
    ],
-   "slides": [
-    "time-1"
-   ],
+   "slides": [],
    "date": "2026-10-31",
    "superseded_by": "D40"
   },
@@ -938,7 +942,9 @@
      "url": "https://www.rfc-editor.org/rfc/rfc9052"
     }
    ],
-   "slides": [],
+   "slides": [
+    "check-3"
+   ],
    "date": "2026-10-31"
   },
   {
@@ -949,7 +955,8 @@
    "why": "Servers and shared machines belong to organisations, not to one person. A coop still never contains a signer, because a device is an identity.",
    "sources": [],
    "slides": [
-    "identity-1"
+    "identity-2",
+    "net-5"
    ],
    "date": "2026-10-31"
   },

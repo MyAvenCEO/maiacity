@@ -8,7 +8,7 @@
   },
   {
    "title": "Four kinds of keys.",
-   "text": "Each has one job. Your {identity key} is your {lock}: a public key anyone can seal something to, which only you can open. A {role key} is a lock all members of a role share. A {data key} encrypts the data itself.",
+   "text": "Besides the seal, three kinds of keys. Your {identity key} is your {lock}: a public key anyone can seal something to, which only you can open; it sits in an envelope for each of your devices' own locks, so every device of yours can open it. A {role key} is a lock all members of a role share. A {data key} encrypts the data itself.",
    "list": [
     "Seal: signs a piece of data's first rule, then is destroyed.",
     "Identity key: your lock. Each of your devices also publishes a lock of its own.",
@@ -46,7 +46,7 @@
   },
   {
    "title": "Adding Mia to a role: one envelope.",
-   "text": "The owner puts the role key in an envelope for Mia's identity key. That's all. Mia can now read everything the role can read, including the last 30 days. Anything older is in the owner's archive.",
+   "text": "The owner puts the role key in an envelope for Mia's identity key. That's all. Mia can now read everything the role can read, including recent history. How older history is kept comes in the Time chapter.",
    "code": {
     "by": "you (owner)",
     "role": "home",
@@ -100,7 +100,7 @@
   },
   {
    "title": "Where does the data key live?",
-   "text": "Nobody holds it for the data. It travels with the data itself: every piece of data carries a small {keyring} next to its rules. The keyring holds the data key in envelopes: one for the owner, one for each role that may read. {Carriers}, devices that store or forward data they can't read, like a backup, store it like everything else, sealed and unreadable.",
+   "text": "Nobody holds it for the data. It travels with the data itself: every piece of data carries a small {keyring} next to its rules. Its generation counts how often the data key has turned. The keyring holds the data key in envelopes: one for the owner, one for each role that may read. {Carriers}, devices that store or forward data they can't read, like a backup, store it like everything else, sealed and unreadable.",
    "code": {
     "data": "house-list",
     "rules": {
@@ -120,7 +120,7 @@
   },
   {
    "title": "Which key turns when.",
-   "text": "Only read changes keys. Within the hot window, each new data key opens the one before it; older keys sit in the owner's archive.",
+   "text": "Only read changes keys. Recent data keys each open the one before; how older keys are kept comes in the Time chapter.",
    "table": {
     "head": [
      "Step",
@@ -170,12 +170,6 @@
       "–",
       "both kept, until the next rotation",
       "–"
-     ],
-     [
-      "Erase",
-      "–",
-      "–",
-      "history before the cut shredded"
      ]
     ]
    },
@@ -187,7 +181,7 @@
     "Data is born with a seal that is used once and destroyed.",
     "Read is a chain of envelopes: identity key, role key, data key.",
     "Everything else is a chain of signatures, checked by every peer.",
-    "Keys live hot, then cold in the owner's archive, and can be erased."
+    "How keys age, and how they are archived or erased, comes in the Time chapter."
    ],
    "deep": "Seal → owner → rules for roles. Read: identity key → role key → data key. Everything else: signature chains checked by every peer. Endings win, rotate keys and wipe copies."
   }
