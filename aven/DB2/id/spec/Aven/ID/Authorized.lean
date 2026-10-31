@@ -49,7 +49,7 @@ The theorems:
   within its device cap, on either path, so under a chain every step is allowed both by the chain for its vault and by
   the device cap for the device; a device whose cap is for proposals, as an agent's removals go, never writes on main;
   and a merge into main read whole stays within the merging device's cap;
-- `host_never_own`, `actor_within_device`, `host_never_beyond`: an authorized envelope a host signed rests on a chain
+- `host_chain_only`, `actor_within_device`, `host_never_beyond`: an authorized envelope a host signed rests on a chain
   and names its actor; it stays within the host's device cap; and every step is allowed both by the chain the actor's
   message carried and by that outer bound (A27);
 - `counts_iff`: an envelope counts exactly when everything in its past is signed, fresh, authorized, live and fit, and
@@ -265,7 +265,7 @@ theorem merge_within_device {whole : Envelope → List Step} (wm : r.WholeMerges
 
 /-- **A host never writes on its vault's own authority** (A27): an authorized envelope an actor host's device signed
 rests on a chain, the one the acting actor's message carried, and names that actor. -/
-theorem host_never_own {e : Envelope} (h : r.Authorized gov spawned e) (host : r.HostSigned e) :
+theorem host_chain_only {e : Envelope} (h : r.Authorized gov spawned e) (host : r.HostSigned e) :
     r.ByChain gov spawned e ∧ (r.actorOf e).isSome = true := by
   rcases h.2 with ⟨_, nh⟩ | ⟨c, named⟩
   · exact absurd host nh
@@ -289,7 +289,7 @@ theorem host_never_beyond {e : Envelope} (h : r.Authorized gov spawned e) (host 
     (r.actorOf e).isSome = true ∧ ∃ dc last f, r.deviceCap e.signer = some dc ∧ dc.host = true ∧
       (r.chain e).getLast? = some last ∧ r.facts e.doc = some f ∧
       ∀ s ∈ r.footprint e, dc.allows gov spawned f s ∧ (last.grants r.ctx.roles).allows gov spawned f s := by
-  obtain ⟨c, named⟩ := host_never_own r gov spawned h host
+  obtain ⟨c, named⟩ := host_chain_only r gov spawned h host
   obtain ⟨dc, last, f, hd, hl, hf, steps⟩ := device_and_chain r gov spawned h c
   obtain ⟨dc', hd', ht⟩ := host
   rw [hd] at hd'

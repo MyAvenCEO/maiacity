@@ -423,10 +423,11 @@ messages and queries. For people with keys, reading is whole Docs; for actors an
 - **Actor hosts** (A27, Samuel, 31 Oct 2026). Actors hold no keys: a host's kernel signs every write of the actors it
   hosts with one device of its own, a narrow device vault, never a member's personal device. Its device cap is the
   union of its hosted actors' standing caps, the outer bound a misbehaving runtime can't exceed. A host device never
-  writes on its vault's own authority, only under the chain the acting actor's message carried (narrowed per hop, D16),
-  and each envelope it signs names that actor (`host_never_own`). So every step is within the actor's chain and within
-  the host's device cap (`actor_within_device`, `host_never_beyond`). The Aven Peer signs with Aven's own device, under
-  a chain the owner issued to Aven's vault for that actor's Docs and its owners approved (D14).
+  writes on its vault's own authority, only under the chain the acting actor's message carried, as it came, and each
+  envelope it signs names that actor (`host_chain_only`). The actor's narrowing for a write is its footprint, which the
+  reader checks against that chain (D16), never a link added to it. So every step is within the actor's chain and
+  within the host's device cap (`actor_within_device`, `host_never_beyond`). The Aven Peer signs with Aven's own
+  device, under a chain the owner issued to Aven's vault for that actor's Docs and its owners approved (D14).
 - **Groups** (Samuel, 30 Oct 2026: a cap goes to one vault or a group of vaults). A group is a Doc whose readers are
   its members. It holds caps for them: a team editing the team's Docs, a family reading the family's photos. A write
   under a group's cap carries, inside the seal, the writer's read cap on the group. Groups aren't vaults, so they
@@ -1178,7 +1179,7 @@ target is narrower (`Target.le`), its verb the same and its footprint grants no 
 | | `merge_covered` | A merge into main counts only when the merger's grant covers the whole merge: for a reader that judges merges whole (the engine's `changesFrom` from main's version at the merge's `prev`, `merge_granted`), a merge under a chain has a last cap that writes on main and allows every step of the whole merge; on own authority the device cap covers it (`merge_within_device`) |
 | | `device_within_cap`, `device_and_chain` | The signing device acts within its device cap on either path, a cap from the vault it serves: it lets the device write on the envelope's branch and allows every step, so under a chain each step is allowed both by the chain for the vault and by the device cap for the device (rule 1) |
 | | `device_proposals_never_main`, `merge_within_device` | A device whose cap is for proposals, as an agent's removals go, never writes on main whatever chain it names; a merge into main read whole stays within the merging device's cap |
-| | `host_never_own`, `actor_within_device`, `host_never_beyond` | An authorized envelope an actor host's device signed rests on a chain, the one the acting actor's message carried, and names that actor; every step of it is allowed both by that chain's last cap and by the host's device cap, the union of its hosted actors' standing caps (A27) |
+| | `host_chain_only`, `actor_within_device`, `host_never_beyond` | An authorized envelope an actor host's device signed rests on a chain, the one the acting actor's message carried, and names that actor; every step of it is allowed both by that chain's last cap and by the host's device cap, the union of its hosted actors' standing caps (A27) |
 | `Caps` | `narrow_chain`, `narrow_steps` | No cap in a chain lets a verb reach a Doc, or allows a write step, that its root doesn't |
 | | `root_authority` | Every line a chain grants lies in its root issuer's authority: its own vault, one it governs, or a Doc of one |
 | | `chain_short` | A chain is no longer than its root may be shared |
