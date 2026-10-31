@@ -22,6 +22,11 @@ come from (README, rule 10). Each case is one JSON object, read in the form its 
   (`Reader.authorizedB`, which `authorizedB_iff` makes `Authorized`).
 - The same with `"tree"` and `"founded": [{"claim", "vault"}]`, as `member.json` writes a case, answers
   `{"authorized", "members"}`: whether caps authorizes it and the vaults it makes members (`Reader.membersB`, A38).
+- `{"authority": Value}`, the Value in its readable form as `authority.json` writes a case, answers what caps reads of
+  an envelope's authority: `{"reads": false}`, or `{"reads": true, "caps": [name…], "acks": [name…], "actor"}`, the
+  actor a Doc on an actor host's envelope and null on any other (`Authority.ofValue?`, A45, A188).
+- `{"context", "keys", "members", "held": [cap…], "doc", "signer"}`, as `reach.json` writes a case, answers
+  `{"reaches": bool}`: whether the signer's chain reaches the Doc at all, the docs layer's step 4 (`Reader.reachesB`).
 
 A Doc's names are taken as each entry gives them, with the vault, caps and acks it lists and the envelope's `prev`
 and `deps`; aven-core's tests own the hashing. -/
@@ -307,13 +312,33 @@ def membersAnswer (j : Json) : Except String Json := do
   return Json.mkObj [("authorized", toJson (r.authorizedB gov noDocs noDocs e)),
     ("members", toJson (r.membersB tree gov noDocs noDocs founded e))]
 
+/-- What caps reads of an envelope's authority, as `authority.json` writes a case (`Authority.ofValue?`). -/
+def authorityAnswer (j : Json) : Except String Json := do
+  return Authority.readJson (Authority.ofValue? (← valueOf (← j.getObjVal? "authority")))
+
+/-- Whether a signer's chain reaches a Doc at all, as `reach.json` writes a case (`Reader.reachesB`). -/
+def reachAnswer (j : Json) : Except String Json := do
+  let x ← ctxOf (← j.getObjVal? "context")
+  let keys ← (← j.getObjValAs? (Array Json) "keys").toList.mapM fun k =>
+    return (← bytesOf (← k.getObjValAs? String "key"), ← k.getObjValAs? String "vault")
+  let ms ← j.getObjValAs? (List String) "members"
+  let held ← (← j.getObjValAs? (Array Json) "held").toList.mapM capOf
+  let r : Reader :=
+    { ctx := x, chain := fun _ => [], calls := fun _ => [], lower := fun _ => [], signer := fun _ => [],
+      vaultOf := fun k => (keys.find? (·.1 == k)).map (·.2), member := ms.contains, facts := x.facts,
+      deviceCap := fun _ => none, actorOf := fun _ => none }
+  return Json.mkObj [("reaches", toJson (r.reachesB (govOf x) noDocs noDocs held
+    (← docId (← j.getObjValAs? String "doc")) (← bytesOf (← j.getObjValAs? String "signer"))))]
+
 /-- A caps case, or `none` when the object is none: a tree's case then. Malformed input is a `format` result. -/
 def answer? (j : Json) : Option Json :=
   let format (r : Except String Json) : Json :=
     match r with
     | .ok a => a
     | .error why => Json.mkObj [("format", why)]
-  if (j.getObjVal? "founded").toOption.isSome then some (format (membersAnswer j))
+  if (j.getObjVal? "authority").toOption.isSome then some (format (authorityAnswer j))
+  else if (j.getObjVal? "held").toOption.isSome then some (format (reachAnswer j))
+  else if (j.getObjVal? "founded").toOption.isSome then some (format (membersAnswer j))
   else if (j.getObjVal? "deviceCaps").toOption.isSome then some (format (authorizedAnswer j))
   else if (j.getObjVal? "chain").toOption.isSome then
     some (format do

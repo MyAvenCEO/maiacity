@@ -5,4 +5,5 @@ import Aven.DB.Engine.Footprint
 import Aven.DB.Engine.Changes
 import Aven.DB.Engine.Index
 import Aven.DB.Engine.Probe
+import Aven.DB.Engine.Lower
 import Aven.DB.Engine.Examples

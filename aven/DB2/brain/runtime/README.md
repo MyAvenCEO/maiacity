@@ -9,7 +9,7 @@ without trusting it.
 - [The contract and its failures](#the-contract-and-its-failures): what goes in, what comes out, the six failures.
 - [The module and its ABI](#the-module-and-its-abi): a module that imports nothing, `alloc` and `run`.
 - [The host](#the-host): wasmi with fuel and memory limits; no floats, threads or SIMD; `auto-dispatch`.
-- [Where runtimes live](#where-runtimes-live): with their publisher's vault; the bootstrap manifest until Docs run.
+- [Where runtimes live](#where-runtimes-live): files in this repository, the manifest and the frozen bytes.
 - [Frozen bytes, loading by hash, and versions](#frozen-bytes-loading-by-hash-and-versions): appended, never changed,
   always loadable; withdrawals.
 - [Pins](#pins): the runtime a verdict runs is the hash an envelope names, pinned in its past.
@@ -148,16 +148,16 @@ A runtime too slow under wasmi is made to do less first (a smaller raster, fewer
 
 ## Where runtimes live
 
-A runtime lives with the vault that publishes it: Aven's vault for the built-ins. Its module is a blob, and its
-manifest a typed Doc owned by that vault, kept where the vault's keep caps say and fetched by hash. A runtime runs on
-the reader's device, in a worker of its own, apart from the device key.
+A runtime is a file in this repository (A206): its source in this package, its frozen bytes committed. A runtime runs
+on the reader's device, in a worker of its own, apart from the device key. Moving runtimes into avenDB, as blobs in a
+vault's typed Doc, and who may publish one then, are parked for a later decision.
 
-Until Docs run, git holds both:
+Git holds both:
 - **`manifest.json`, the bootstrap manifest:** every frozen module and every withdrawal, append-only;
 - **`frozen/<hex>.wasm`:** each frozen module's bytes, committed and named by its hash. Nothing else sits beside them:
   no sourcemap, no debug build.
 
-**Until Docs run, only from this repository.** A runtime is code that runs on every member's device, so it arrives
+**Only from this repository.** A runtime is code that runs on every member's device, so it arrives
 only as the rest of the code does:
 - built from source in this package, its dependencies pinned exactly, each at its newest stable release when it comes
   in;
@@ -180,7 +180,7 @@ receiver's own release lists. Parts are data and come from anyone; runtimes are 
 
 There are no floors and no schemas in the manifest: each runtime's schemas are its Lean model's.
 
-**Decided:** A44, A45, A89, A102, A180, A196; runtimes 1 · **Lean:** `Aven.Runtime.Contract` — `listed`,
+**Decided:** A44, A45, A89, A102, A180, A196, A206; runtimes 1 · **Lean:** `Aven.Runtime.Contract` — `listed`,
 `loads`
 
 ## Frozen bytes, loading by hash, and versions
@@ -487,7 +487,7 @@ move, each module gets one new version, appended. The file registry takes no dep
 |---|---|---|---|---|
 | Contract, failures, ABI | `Contract` | `aven-runtimes-contract`, `aven-runtimes-abi` | — | built |
 | Native host | `Contract` (`admit`) | `aven-runtimes-host` (#1704) | — | built; floats and a second memory refused in Rust only |
-| Bootstrap manifest, frozen bytes | `Contract` | `freeze.sh`, the host's tests (`frozen`, `refusals`) | — | built (#1704, #1719); as blobs and a typed Doc of Aven's vault once Docs run |
+| Bootstrap manifest, frozen bytes | `Contract` | `freeze.sh`, the host's tests (`frozen`, `refusals`) | — | built (#1704, #1719) |
 | Browser host | — | `aven-runtimes-web` | `host.js`, `runtimes.js` | built (#1719), three engines |
 | Node tree and drawer | `Tree` | `aven-runtimes-tree` (#1631) | `draw.js`'s `checkTree` (#1650, #1709, #1723) | built |
 | face-runtime | `Markup`, `Face`, `Style`, `FaceRuntime` | `aven-runtimes-face` (#1643, #1691) | — | v1 and v2 frozen; avenBRAIN's slides drawn by it (#1707, #1719) |
@@ -531,8 +531,6 @@ move, each module gets one new version, appended. The file registry takes no dep
 
 ## Open questions
 
-- **Who may publish a runtime once Docs run:** only Aven's vault, from this repository and reviewed, or any vault,
-  and under what review. Samuel decides.
 - **Which `users` label avenOS's own pages load a runtime as:** markdown-runtime is listed for `file`, yet it runs
   avenBRAIN's first-party pages on avenOS's origin; a `page` user, or `file` read as including first-party content.
   avenMAIA decides, with the runtimes thread.

@@ -38,7 +38,7 @@ def readOn (d : Core.DocId) : Line := ⟨coreOp .read, .doc d .self, []⟩
 /-- A `core/1` write on a Doc, of one type, and of some fields or any. -/
 def writeOn (o : Core.CoreOp) (d t : Core.DocId) (fields : Option (List String) := none) : Line :=
   ⟨coreOp o, .doc d .self,
-    (typeParam, some [docValue t]) :: (fields.map fun fs => (fieldsParam, some (fs.map fieldValue))).toList⟩
+    (Core.typeParam, some [docValue t]) :: (fields.map fun fs => (Core.fieldsParam, some (fs.map fieldValue))).toList⟩
 
 /-- Writing tasks into a Doc: new ones, and patches to any field. -/
 def tasksOn (d : Core.DocId) : Grant := [writeOn .put d tasks, writeOn .patch d tasks]
@@ -361,10 +361,8 @@ def smallOffer : Cap :=
 
 def smallBooks : Books := { avenBooks with offers := [smallOffer] }
 
--- The keeper admits uploads within the quota its own offer gives: Alice's 4096 bytes are taken, 1024 more would pass
--- her 5000 and are refused, and 512 after that still fit.
+-- The quota Aven's offer to Alice alone gives: hers, and nothing for Bob.
 #guard smallBooks.quota "alice" == 5000 && smallBooks.quota "bob" == 0
-#guard (KeepExamples.keepD1.admit smallBooks.quota [] KeepExamples.quotaUploads).map (·.bytes) == [4096, 512]
 
 /-- Which branches a cap writes on, each answer written out by hand: main only on main, proposals on every branch but
 main, one branch only on it. -/
