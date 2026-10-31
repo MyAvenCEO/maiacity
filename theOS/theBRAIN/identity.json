@@ -60,7 +60,7 @@
   },
   {
    "title": "A coop decides by its own rules.",
-   "text": "A coop's rules say who must agree for it to act. They know only three kinds of act. Acting: ordinary changes. Owning: writing rules for what it owns, and handing things over. Governing: changing its own members and rules. Each comes with its own count of signatures.",
+   "text": "A coop's rules say which members may act for it. They know only three kinds of act. Acting: ordinary changes. Owning: writing rules for what it owns, and handing things over. Governing: changing its own members and rules. For now, one member's signature is enough for each.",
    "code": {
     "coop": "home",
     "members": [
@@ -68,12 +68,12 @@
      "mia"
     ],
     "rules": {
-     "act": "1 of 2",
-     "own": "2 of 2",
-     "govern": "2 of 2, then 7 days to object"
+     "act": "any one member",
+     "own": "any one member",
+     "govern": "any one member"
     }
    },
-   "deep": "Same shape as every rule: who (its members), on what (the coop itself), operations (act, own, govern), conditions (threshold, weights, time locks). Conditions are plugins; an unknown one counts as not satisfied."
+   "deep": "Same shape as every rule: who (its members), on what (the coop itself), operations (act, own, govern), conditions. The default condition is one signature (1 of 1). Counts like 2 of 3, weights or a waiting time can be plugged in later as condition plugins; a device that does not know one treats it as not satisfied."
   },
   {
    "title": "Losing your phone.",
