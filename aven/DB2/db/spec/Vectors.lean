@@ -73,6 +73,9 @@ import Aven.DB.Docs
 - `keeper.json`: uploads from devices to a keeper, one Doc, from an empty store; after each, the items held (number,
   hash, uploaders) and the next number, the pages of what came after each asked number, and where a device at that
   number holding 11 and 12 is after catching up, with what it holds (`Aven.Peer.Keeper`).
+- `fetch.json`: what a peer holds for which Doc and each item's length, the Docs proven on a connection, a fetch; the
+  answer (refused, or the hashes served, missing and later); and items' lengths with their parts' offsets and lengths
+  (`Aven.Peer.Fetch`).
 
 `aven-db-core`'s and `aven-db-store`'s tests load them. `bun run up --check` runs this again and fails when the files
 differ from what is committed. -/
@@ -1315,6 +1318,52 @@ def keeper : List Json :=
   keeperExamples.map (fun (name, ups, asks) => keeperVector name ups asks) ++
   (List.range generated).map fun i => keeperVector s!"seed {i + 1}" (randomUploads (i + 1)) [0, 3, 8]
 
+/-! ## The fetch gate -/
+
+open Aven.Peer.Fetch in
+def fetchVector (name : String) (table : List (Nat × String × Nat)) (proven : List String) (doc : String)
+    (hs : List Nat) : Json :=
+  let held : Held := fun h => (table.find? (·.1 == h)).map fun (_, d, n) => (d, List.replicate n 0)
+  vector name
+    (Json.mkObj [("held", Json.arr (table.map fun (h, d, n) =>
+        Json.mkObj [("hash", toJson h), ("doc", Json.str d), ("bytes", toJson n)]).toArray),
+      ("proven", toJson proven), ("doc", Json.str doc), ("hashes", toJson hs)])
+    (match answer proven held doc hs with
+     | none => Json.mkObj [("refused", toJson true)]
+     | some a => Json.mkObj [("served", toJson (a.served.map (·.1))), ("missing", toJson a.missing),
+        ("later", toJson a.later)])
+
+open Aven.Peer.Fetch in
+def partsVector (n : Nat) : Json :=
+  vector s!"an item of {n} bytes in parts" (Json.mkObj [("bytes", toJson n)])
+    (Json.arr ((parts 1 (List.replicate n 0)).map fun p =>
+      Json.arr #[toJson p.at_, toJson p.bytes.length]).toArray)
+
+def fetchTable : List (Nat × String × Nat) :=
+  [(1, "d1", 500 * 1024), (2, "d1", 600 * 1024), (3, "d1", 1024), (9, "d2", 10)]
+
+def fetchCases : List Json :=
+  [fetchVector "another Doc's hash is missing; what doesn't fit waits, in order" fetchTable ["d1"] "d1" [9, 1, 2, 3, 7],
+   fetchVector "one item larger than the bytes in flight is served alone" fetchTable ["d1"] "d1" [2],
+   fetchVector "a Doc not proven gets nothing" fetchTable ["d2"] "d1" [1],
+   fetchVector "too many hashes get nothing" fetchTable ["d1"] "d1" (List.replicate 129 1),
+   fetchVector "128 hashes are answered" fetchTable ["d1", "d2"] "d2" ((List.range 127).map (· + 100) ++ [9]),
+   fetchVector "nothing held: all missing" fetchTable ["d1"] "d1" [5, 6],
+   fetchVector "once one waits, nothing after it is served, not even an empty item"
+     (fetchTable ++ [(4, "d1", 0)]) ["d1"] "d1" [1, 2, 4]] ++
+  [0, 1, 49151, 49152, 49153, 100 * 1024, 1024 * 1024 + 3].map partsVector ++
+  (List.range generated).map fun i => Id.run do
+    let (k, r) := (Rng.seed (i + 1)).below 12
+    let (table, r) := r.many (k + 1) fun r =>
+      let (h, r) := r.below 20
+      let (d, r) := r.below 2
+      let (n, r) := r.below (400 * 1024)
+      ((h, if d = 0 then "d1" else "d2", n), r)
+    let (len, r) := r.below 10
+    let (hs, r) := r.many (len + 1) fun r => r.below 24
+    let (p, _) := r.below 3
+    return fetchVector s!"seed {i + 1}" table (if p = 0 then [] else if p = 1 then ["d1"] else ["d1", "d2"]) "d1" hs
+
 def main (args : List String) : IO Unit := do
   let dir : System.FilePath := args.headD "vectors"
   IO.FS.createDirAll dir
@@ -1326,5 +1375,5 @@ def main (args : List String) : IO Unit := do
       ("checkpoints.json", checkpoints), ("fit.json", fit), ("logs.json", logs),
       ("counts.json", counts), ("genesis.json", genesisVectors), ("bodies.json", bodyVectors),
       ("segments.json", segmentVectors), ("heads.json", headVectors), ("loro.json", loroVectors),
-      ("placements.json", placementVectors), ("builtins.json", builtinVectors), ("keeper.json", keeper)] do
+      ("placements.json", placementVectors), ("builtins.json", builtinVectors), ("keeper.json", keeper), ("fetch.json", fetchCases)] do
     IO.FS.writeFile (dir / file) (render vs)

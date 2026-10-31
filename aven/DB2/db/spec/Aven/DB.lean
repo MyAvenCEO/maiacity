@@ -3,6 +3,7 @@ import Aven.DB.Presence
 import Aven.DB.Timeline
 import Aven.DB.Wire
 import Aven.Peer.Keeper
+import Aven.Peer.Fetch
 import Aven.DB.WireCbor
 import Aven.DB.Blake3
 import Aven.DB.Store

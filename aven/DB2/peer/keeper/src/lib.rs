@@ -16,6 +16,8 @@
 
 use std::collections::BTreeMap;
 
+pub mod fetch;
+
 /// The most entries in one page of "what came after" (`Aven.DB.Wire.pageSize`).
 pub const PAGE: usize = 128;
 
