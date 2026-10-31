@@ -188,7 +188,7 @@ def collectionVector (name : String) (S : List Aven.Core.Envelope) (c d : Aven.C
       ("depth", toJson collectionDepth),
       ("envelopes", Json.arr (S.map fun e => Json.mkObj [("name", (nm e).text), ("doc", e.doc.text),
         ("branch", Aven.Core.utf8Text e.branch), ("writer", toJson e.writer), ("seq", toJson e.seq),
-        ("body", e.body.json), ("signer", Aven.Core.hex e.signer)]).toArray),
+        ("body", e.body.json), ("signers", toJson (e.sigs.map (Aven.Core.hex ·.signer)))]).toArray),
       ("collection", c.id.text), ("doc", d.id.text)])
     (Json.mkObj [("lists", toJson (listed S c d))])
 
@@ -202,7 +202,7 @@ def writeVector (name : String) (S : List Aven.Core.Envelope) (w : Aven.Core.Env
       ("depth", toJson collectionDepth),
       ("envelopes", Json.arr (S.map fun e => Json.mkObj [("name", (nm e).text), ("doc", e.doc.text),
         ("seq", toJson e.seq), ("prev", toJson (e.prev.map (·.text))), ("deps", toJson (e.deps.map (·.text))),
-        ("body", e.body.json), ("signer", Aven.Core.hex e.signer)]).toArray),
+        ("body", e.body.json), ("signers", toJson (e.sigs.map (Aven.Core.hex ·.signer)))]).toArray),
       ("write", (nm w).text), ("collection", c.id.text), ("doc", d.id.text)])
     (Json.mkObj [("listedInItsPast", toJson (listedAt S w c d))])
 

@@ -842,7 +842,7 @@ def writers : List Json :=
 /-- Envelopes of one Doc, with the op ids a reader learns of each: its last op, and the Loro dependencies it carries. -/
 def opEnv (writer seq : Nat) (prev : Option Hash) (deps : List Hash) (post : String) : Envelope :=
   ⟨docOf "a Doc's genesis", "main".toUTF8.toList, writer, seq, prev, deps,
-    .map [("post".toUTF8.toList, .text post.toUTF8.toList)], List.replicate 32 7, List.replicate 64 9⟩
+    .map [("post".toUTF8.toList, .text post.toUTF8.toList)], [⟨List.replicate 32 7, List.replicate 64 9⟩]⟩
 
 def a1 : Envelope := opEnv 1 1 none [] "first"
 def b1 : Envelope := opEnv 2 1 none [] "another writer's first"

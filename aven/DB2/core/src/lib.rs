@@ -27,5 +27,5 @@ pub use log::{ENVELOPE_LABEL, Envelope, Held, Log, LogId, Refused, is_chain, spl
 pub use names::{DocId, Hash, TypeId, blake3, name_of};
 pub use op::{Bound, Call, CoreOp, OpId, type_of_types};
 pub use past::Parents;
-pub use signed::{Signed, Verify, signing_bytes};
+pub use signed::{Sig, Signed, Verify, add_sig, signing_bytes, sigs_ok};
 pub use target::{Facts, Reach, Step, StepVerb, Target};

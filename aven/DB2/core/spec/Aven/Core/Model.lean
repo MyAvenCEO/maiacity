@@ -14,7 +14,7 @@ property tests and the vectors ask the same Lean. Envelopes are named by BLAKE3 
 A **world** is envelopes, which of them a reader holds (`S`), which are bad (`ok` is false for an envelope with a bad
 one's name: what the other verdicts, fit and authorized, would refuse) and a version's tips. Its answer gives, for each
 envelope `a` of the world: its name; `past`, the names before it among `S`; `inPast`, whether each envelope of `S` is
-before it; `split` with each envelope of the world; and whether it is `discounted`, `counts` and is held by the version.
+before it; `split` with each envelope of the world; and whether its whole past is held (`closed`), it is `discounted`, `counts` and is held by the version.
 -/
 
 namespace Aven.Core.Model
@@ -77,6 +77,7 @@ def answer (w : World) : Json :=
     ("past", toJson (w.all.map fun a => (past nm S a).map Hash.text)),
     ("inPast", toJson (w.all.map fun a => S.map fun b => inPast nm S a b)),
     ("split", toJson (w.all.map fun a => w.all.map fun b => splitB nm a b)),
+    ("closed", toJson (w.all.map (closedB nm S))),
     ("discounted", toJson (w.all.map (discountedB nm S))),
     ("counts", toJson (w.all.map (countsB nm (w.ok nm) S))),
     ("holds", toJson (w.all.map (holdsB nm S (w.version nm))))]

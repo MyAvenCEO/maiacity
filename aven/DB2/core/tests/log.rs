@@ -6,12 +6,12 @@ mod common;
 
 use aven_core::limits::{
     MAX_BRANCH_BYTES, MAX_DEPS, MAX_ENVELOPE_BYTES, MAX_LABEL_BYTES, MAX_SIG_BYTES,
-    MAX_SIGNER_BYTES,
+    MAX_SIGNER_BYTES, MAX_SIGS,
 };
 use aven_core::past::{in_past, past};
 use aven_core::{
-    DocId, ENVELOPE_LABEL, Envelope, Hash, Held, Log, LogId, MAX_DEPTH, Refused, Signed, Value,
-    blake3, decode, encode, is_chain, signing_bytes, split,
+    DocId, ENVELOPE_LABEL, Envelope, Hash, Held, Log, LogId, MAX_DEPTH, Refused, Sig, Signed,
+    Value, add_sig, blake3, decode, encode, is_chain, signing_bytes, sigs_ok, split,
 };
 use common::{bools, envelope, hex, indices, names, signed, unhex, vectors};
 use proptest::prelude::*;
@@ -69,13 +69,17 @@ fn vectors_chain() {
         .collect();
     // the first two are one writer's log; the third, another writer's, builds on both
     assert!(is_chain(&es[..2]) && !is_chain(&es));
-    assert!(is_chain(&es[2..]) && es[2].deps == [es[1].name(), es[0].name()]);
+    assert!(is_chain(&es[2..3]) && es[2].deps == [es[1].name(), es[0].name()]);
+    // the fourth is the second, approved by another: one name, two signatures
+    assert_eq!(es[3].name(), es[1].name());
+    assert_eq!(es[3].sigs.len(), 2);
     let mut log = Log::new(es[0].log());
     assert_eq!(log.push(es[1].clone()), Err(Refused::NotNext));
     log.push(es[0].clone()).unwrap();
     log.push(es[1].clone()).unwrap();
-    log.push(es[1].clone()).unwrap();
+    log.push(es[3].clone()).unwrap();
     assert_eq!(log.head(), Some(es[1].name()));
+    assert_eq!(log.envelopes()[1].sigs, es[3].sigs);
     let pair = &vectors("logs.json")[2]["input"];
     assert_eq!(log.push(envelope(&pair[1])), Err(Refused::Split));
     let mut other = es[0].clone();
@@ -101,11 +105,35 @@ fn labels_and_signing() {
     );
     // verification is a parameter: here, a scheme whose signature is the hash of the key and the message
     let scheme = |key: &[u8], msg: &[u8], sig: &[u8]| blake3(&[key, msg].concat()).0 == sig;
+    let key = e.sigs[0].signer.clone();
+    let writes = |k: &[u8], _: &Envelope| k == key.as_slice();
     let mut signed = e.clone();
-    signed.sig = blake3(&[&e.signer[..], &e.signing()].concat()).0.to_vec();
-    assert!(signed.valid(&scheme));
-    assert!(!e.valid(&scheme));
+    signed.sigs[0].sig = blake3(&[&key[..], &e.signing()].concat()).0.to_vec();
+    assert!(signed.placed(&scheme, writes));
+    assert!(!e.placed(&scheme, writes));
     assert_eq!(signed.name(), e.name());
+    // an approval beside it: the same name, placed still, and one more signature that verifies
+    let other = vec![1u8; 32];
+    let mut approved = signed.clone();
+    approved.add_sig(Sig {
+        signer: other.clone(),
+        sig: blake3(&[&other[..], &e.signing()].concat()).0.to_vec(),
+    });
+    assert_eq!(approved.name(), e.name());
+    assert!(approved.placed(&scheme, writes) && !split(&signed, &approved));
+    assert_eq!(
+        (
+            signed.approvals(&scheme).len(),
+            approved.approvals(&scheme).len()
+        ),
+        (1, 2)
+    );
+    // signed only by a key that doesn't write the log: not placed, an approval at most
+    let only_other = Envelope {
+        sigs: vec![approved.sigs[0].clone()],
+        ..e.clone()
+    };
+    assert!(!only_other.placed(&scheme, writes));
 }
 
 /// Every input has a limit (rule 10), and only the envelope's own shape reads back.
@@ -181,6 +209,7 @@ fn limits_vectors() {
     assert_eq!(MAX_SIGNER_BYTES, num("maxSignerBytes"));
     assert_eq!(MAX_SIG_BYTES, num("maxSigBytes"));
     assert_eq!(MAX_DEPTH, num("maxDepth"));
+    assert_eq!(MAX_SIGS, num("maxSigs"));
     let (mut accepted, mut refused) = (0, 0);
     for v in &vs[1..] {
         let name = v["name"].as_str().unwrap();
@@ -290,6 +319,11 @@ fn counts_vectors() {
         let x = &v["expected"];
         let got = |f: &dyn Fn(&Envelope) -> bool| all.iter().map(f).collect::<Vec<bool>>();
         assert_eq!(
+            got(&|e| held.closed(e)),
+            bools(&x["closed"]),
+            "{name}: closed"
+        );
+        assert_eq!(
             got(&|e| held.discounted(e)),
             bools(&x["discounted"]),
             "{name}: discounted"
@@ -355,11 +389,10 @@ fn any_envelope() -> impl Strategy<Value = Envelope> {
         proptest::option::of(any::<[u8; 32]>()),
         proptest::collection::vec(any::<[u8; 32]>(), 0..4),
         any_value(),
-        proptest::collection::vec(any::<u8>(), 0..64),
-        proptest::collection::vec(any::<u8>(), 0..96),
+        any_sigs(),
     )
         .prop_map(
-            |(doc, branch, writer, seq, prev, deps, body, signer, sig)| Envelope {
+            |(doc, branch, writer, seq, prev, deps, body, sigs)| Envelope {
                 doc: DocId(Hash(doc)),
                 branch,
                 writer,
@@ -367,10 +400,28 @@ fn any_envelope() -> impl Strategy<Value = Envelope> {
                 prev: prev.map(Hash),
                 deps: deps.into_iter().map(Hash).collect(),
                 body: canonical(body),
-                signer,
-                sig,
+                sigs,
             },
         )
+}
+
+fn any_sig() -> impl Strategy<Value = Sig> {
+    (
+        proptest::collection::vec(any::<u8>(), 0..40),
+        proptest::collection::vec(any::<u8>(), 0..80),
+    )
+        .prop_map(|(signer, sig)| Sig { signer, sig })
+}
+
+/// A set of signatures in its one form, built by adding: sorted by signer, one each.
+fn any_sigs() -> impl Strategy<Value = Vec<Sig>> {
+    proptest::collection::vec(any_sig(), 0..5).prop_map(|xs| {
+        let mut sigs = vec![];
+        for x in xs {
+            add_sig(&mut sigs, x);
+        }
+        sigs
+    })
 }
 
 proptest! {
@@ -391,23 +442,30 @@ proptest! {
 
     /// A signed thing reads back too, and its name is its label's and body's alone.
     #[test]
-    fn signed_round_trip(label in ".{0,12}", body in any_value(),
-        signer in proptest::collection::vec(any::<u8>(), 0..40),
-        sig in proptest::collection::vec(any::<u8>(), 0..80), sig2 in proptest::collection::vec(any::<u8>(), 0..80)) {
-        let s = Signed { label, body: canonical(body), signer, sig };
+    fn signed_round_trip(label in ".{0,12}", body in any_value(), sigs in any_sigs(), more in any_sig()) {
+        let s = Signed { label, body: canonical(body), sigs };
+        prop_assert!(sigs_ok(&s.sigs));
         prop_assert_eq!(Signed::decode(&s.encode()), Some(s.clone()));
         prop_assert_eq!(s.name(), blake3(&signing_bytes(&s.label, &s.body)));
-        let again = Signed { sig: sig2, signer: vec![1, 2, 3], ..s.clone() };
-        prop_assert_eq!(again.name(), s.name()); // Signed.name_resign
+        let mut again = s.clone();
+        add_sig(&mut again.sigs, more.clone());
+        prop_assert_eq!(again.name(), s.name()); // Signed.name_addSig
+        prop_assert!(s.sigs.iter().all(|x| again.sigs.contains(x))); // addSig_mono
+        prop_assert!(again.sigs.iter().any(|x| x.signer == more.signer)); // addSig_signed
+        prop_assert!(sigs_ok(&again.sigs));
     }
 
-    /// Signing again keeps the name and makes no split (`Envelope.name_resign`, `resign_no_split`); any change to
-    /// what is signed changes the name (`Envelope.name_inj`, under BLAKE3).
+    /// Signing again, by anyone, keeps the name and makes no split (`Envelope.name_addSig`, `addSig_no_split`); any
+    /// change to what is signed changes the name (`Envelope.name_inj`, under BLAKE3).
     #[test]
-    fn resign(e in any_envelope(), sig in proptest::collection::vec(any::<u8>(), 0..96), body in any_value()) {
-        let again = Envelope { sig, ..e.clone() };
+    fn resign(e in any_envelope(), x in any_sig(), sigs in any_sigs(), body in any_value()) {
+        let mut again = e.clone();
+        again.add_sig(x);
         prop_assert_eq!(again.name(), e.name());
         prop_assert!(!split(&e, &again));
+        let others = Envelope { sigs, ..e.clone() };
+        prop_assert_eq!(others.name(), e.name());
+        prop_assert!(!split(&e, &others));
         let other = Envelope { body: canonical(body), ..e.clone() };
         prop_assert_eq!(other.name() == e.name(), other.unsigned() == e.unsigned());
         prop_assert_eq!(split(&e, &other), other.unsigned() != e.unsigned());
@@ -423,7 +481,7 @@ proptest! {
             for &b in bodies {
                 let e = Envelope {
                     doc: id.doc, branch: id.branch.clone(), writer: id.writer, seq: log.next_seq(), prev: log.head(),
-                    deps: vec![], body: Value::Uint(b), signer: vec![7; 32], sig: vec![9; 64],
+                    deps: vec![], body: Value::Uint(b), sigs: vec![Sig { signer: vec![7; 32], sig: vec![9; 64] }],
                 };
                 log.push(e).unwrap();
             }
