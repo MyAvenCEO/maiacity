@@ -138,11 +138,16 @@ const specVolumes = () => {
 	return out.concat(['-v', `${db2}:/aven/DB2`]);
 };
 
+// aven/runtimes whole, read-only, beside /work as it sits beside aven/DB2 in a checkout: what avenDB's own tests read
+// by its path there (the brain's tests read the runtimes' vectors at ../../../runtimes). The Peers' builds take only its
+// registry there (`rustVolumes`), which this covers.
+const besideWork = () => (existsSync(join(db2, '..', 'runtimes')) ? ['-v', `${join(db2, '..', 'runtimes')}:/runtimes:ro`] : []);
+
 export async function inBox(args) {
 	await ensureDocker();
 	await ensureImages();
 	const tty = process.stdout.isTTY ? ['-t'] : [];
-	const volumes = ['-v', `${db2}:/work`, '-v', 'avensandbox_node_modules:/work/node_modules', ...rustVolumes, ...specVolumes()];
+	const volumes = ['-v', `${db2}:/work`, '-v', 'avensandbox_node_modules:/work/node_modules', ...besideWork(), ...rustVolumes, ...specVolumes()];
 	return (await $`docker run --rm -i ${tty} ${network()} ${volumes} -w /work ${image} ${args}`.env(env).nothrow()).exitCode;
 }
 
