@@ -15,7 +15,7 @@ import { boxTag } from '../sandbox/box/tag.mjs';
 const db2 = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const fixed = ['deploy/peer.Dockerfile', 'deploy/peer.Dockerfile.dockerignore', 'deploy/tag.mjs', 'Cargo.toml', 'Cargo.lock'];
 // the workspace's members, whole (Cargo.toml's members, and the fork store holds)
-const whole = ['db/core', 'store', 'id/core', 'peer/native', 'peer/light'];
+const whole = ['core', 'db/core', 'store', 'id/core', 'peer/native', 'peer/light'];
 // what the .dockerignore leaves out wherever it is
 const skipped = new Set(['target', 'node_modules', '.git', '.lake', 'runs', 'dist', 'deliverables']);
 
