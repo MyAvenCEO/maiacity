@@ -22,7 +22,7 @@ XChaCha20-Poly1305 stays outside Lean, held to its standard's known answers, as 
 a parameter with its one law, that opening what was sealed under the same key, nonce and AAD gives it back
 (`Aead.correct`). What goes into it and what comes out around it is fixed here, byte for byte (`seals.json`).
 
-What it proves: `unpad_pad`, `open_seal`, `open_checks_commit`. -/
+What it proves: `unpad_pad`, `open_seal`, `open_checks_commit`, `kindOf_sound`. -/
 
 namespace Aven.ID.Seal
 
@@ -130,6 +130,17 @@ def openWith (A : Aead) (k : Kind) (epochKey : Bytes) (s : Sealed) : Option Byte
   if commit k epochKey a s.nonce = s.commit then
     (A.dec (cipherKey k epochKey) s.nonce a s.ct).bind unpad
   else none
+
+/-- The kind a sealed thing was sealed as, found by its commitment alone, before anything is decrypted: what a reader
+does with an item a keeper served, the keeper knowing only hashes (D13). Each kind's commitment key is its own. -/
+def kindOf (epochKey : Bytes) (s : Sealed) : Option Kind :=
+  [Kind.envelope, .segment, .snapshot].find? fun k => commit k epochKey (aad k s.doc s.epoch) s.nonce == s.commit
+
+/-- A kind found is one whose commitment the sealed thing carries, so opening it as that kind passes the commitment. -/
+theorem kindOf_sound {key : Bytes} {s : Sealed} {k : Kind} (h : kindOf key s = some k) :
+    commit k key (aad k s.doc s.epoch) s.nonce = s.commit := by
+  have := List.find?_some h
+  simpa using this
 
 theorem open_seal (A : Aead) (k : Kind) (key : Bytes) (doc : DocId) (epoch : Hash) (nonce pt : Bytes) :
     openWith A k key (sealWith A k key doc epoch nonce pt) = some pt := by

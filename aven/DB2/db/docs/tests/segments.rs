@@ -323,4 +323,30 @@ fn a_mixed_sealed_page_lands_in_one_batch() {
     assert!(matches!(r[2], Err(Unopened::Epoch(_))));
     assert_eq!(r[3], Err(Unopened::Form));
     assert_eq!(reader.snapshot(), writer.snapshot());
+    // the same page as a keeper serves it: no kinds, each found by its commitment
+    let mut blind = open(&g);
+    let page = [
+        SealedItem::Sealed(&later),
+        SealedItem::Sealed(&seg),
+        SealedItem::Sealed(&unknown),
+    ];
+    let r = blind.import_sealed_page(
+        &page,
+        |n| keys.iter().copied().find(|k| k.name == *n),
+        &Allow,
+    );
+    assert_eq!(r[0], Ok(vec![Ok(Imported::Counts)]));
+    assert_eq!(r[1].as_ref().map(Vec::len), Ok(4));
+    assert!(matches!(r[2], Err(Unopened::Epoch(_))));
+    assert_eq!(blind.snapshot(), writer.snapshot());
+    // a kind found by the commitment alone, and none under another epoch's key
+    assert_eq!(
+        aven_db_docs::seal::kind_of(&e1, &seg, 1 << 21),
+        Some(Kind::Segment)
+    );
+    assert_eq!(
+        aven_db_docs::seal::kind_of(&e2, &later, 1 << 21),
+        Some(Kind::Envelope)
+    );
+    assert_eq!(aven_db_docs::seal::kind_of(&e2, &seg, 1 << 21), None);
 }

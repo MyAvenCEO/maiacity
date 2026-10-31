@@ -438,6 +438,8 @@ fn changes_of(
 pub enum SealedItem<'a> {
     Loose(&'a [u8]),
     Segment(&'a [u8]),
+    /// Of a kind the reader doesn't know, as a keeper serves it: found by its commitment ([`crate::seal::kind_of`]).
+    Sealed(&'a [u8]),
 }
 
 /// Why a sealed thing in a page didn't open.
@@ -668,7 +670,7 @@ impl Doc {
         let mut opened: Vec<Result<Vec<Vec<u8>>, Unopened>> = Vec::with_capacity(items.len());
         for item in items {
             let bytes = match item {
-                SealedItem::Loose(b) | SealedItem::Segment(b) => *b,
+                SealedItem::Loose(b) | SealedItem::Segment(b) | SealedItem::Sealed(b) => *b,
             };
             let Some(out) = crate::seal::outside(bytes, limit.max(seg_limit)) else {
                 opened.push(Err(Unopened::Form));
@@ -682,7 +684,20 @@ impl Doc {
                 opened.push(Err(Unopened::Epoch(out.epoch)));
                 continue;
             };
+            let item = match item {
+                SealedItem::Sealed(b) => match crate::seal::kind_of(epoch, b, limit.max(seg_limit))
+                {
+                    Some(Kind::Envelope) => SealedItem::Loose(b),
+                    Some(Kind::Segment) => SealedItem::Segment(b),
+                    _ => {
+                        opened.push(Err(Unopened::Seal));
+                        continue;
+                    }
+                },
+                other => *other,
+            };
             opened.push(match item {
+                SealedItem::Sealed(_) => unreachable!("its kind was found above"),
                 SealedItem::Loose(b) => match open(Kind::Envelope, epoch, b, limit) {
                     Some((d, pt)) if d == self.id => Ok(vec![pt]),
                     _ => Err(Unopened::Seal),
