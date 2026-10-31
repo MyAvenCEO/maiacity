@@ -7,7 +7,7 @@
 //      slide style left in the page's own sheets; #/brain/glossary/vault marks that term;
 //   4. the decision log shows a card per row of DECISIONS.md; a search narrows it to rows holding the word, "only what
 //      still stands" hides some, and #/brain/decisions/A192 opens and marks that row (A203);
-//   5. no page scrolls sideways: a wide table scrolls inside its own box;
+//   5. no page scrolls sideways: a wide table scrolls inside its own box; an in-page link lands on its heading;
 //   6. every text has 4.5:1 against the background under it (3:1 when large), as WCAG has it, and no text on a slide is
 //      under 9 px at a phone's width (brain/STYLE.md, "A slide");
 //   7. a screenshot of each, in the run's folder.
@@ -127,6 +127,19 @@ async function read(engine) {
 						seen.standing = await count();
 						if (!(seen.standing < rows && seen.standing > 0)) say(`"only what still stands" shows ${seen.standing} of ${rows}`);
 						await page.getByTestId('decisions-standing').uncheck();
+					}
+					// an in-page link goes to the page's own route and lands on its heading (caps' "Owns" list links its headings)
+					if (view === 'caps') {
+						const link = page.locator('main a[href^="#/brain/caps/"]').first();
+						const href = await link.getAttribute('href').catch(() => null);
+						if (!href) say('no in-page link on the caps page');
+						else {
+							await link.click();
+							const id = decodeURIComponent(href.split('/').pop());
+							seen.inPage = await page.waitForFunction((x) => { const h = document.getElementById(x); return h && Math.abs(h.getBoundingClientRect().top) < 120; }, id, { timeout: 10_000 }).then(() => true, () => false);
+							if (!seen.inPage) say(`${href} did not land on its heading`);
+							await page.evaluate(() => scrollTo(0, 0));
+						}
 					}
 					if (view === 'decision-A192') {
 						seen.open = await page.locator('#d-A192').evaluate((d) => d.open && d.getBoundingClientRect().top < innerHeight);

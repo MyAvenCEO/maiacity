@@ -36,11 +36,13 @@ const trees = new Map();
 function markdown(path, idPrefix = '') {
 	if (!trees.has(path)) {
 		const input = { links: rules, base: `${home}${path}`, idPrefix };
-		// the runtime's tree, checked again by the drawer's own check before the page draws it, as a face's is
+		// the runtime's tree, checked again by the drawer's own check before the page draws it, as a face's is; an
+		// in-page link (`#heading`) goes to the page's own route, since avenOS routes by the hash
+		const owner = (packages.find((p) => p.page === path) ?? packages.find((p) => path.startsWith(`${p.id}/`)))?.id;
 		const tree = runtime('markdown-runtime', { bytes: hex(file(path) ?? '') }, input).then((root) => {
 			const bad = root[2].find((node) => !checkTree(node));
 			if (bad) throw new Error(`${path}: a node outside the allowlist: ${JSON.stringify(bad).slice(0, 120)}`);
-			return root[2];
+			return owner ? root[2].map((node) => inPage(node, owner)) : root[2];
 		});
 		// a refusal isn't kept: the next ask runs it again
 		tree.catch(() => trees.delete(path));
@@ -48,6 +50,16 @@ function markdown(path, idPrefix = '') {
 	}
 	return trees.get(path);
 }
+
+// A link to a heading of its own page, `#heading`, as the page's route, `#/brain/<page>/heading`
+const inPage = (node, page) =>
+	typeof node === 'string'
+		? node
+		: [
+				node[0],
+				node[1].map(([k, v]) => [k, k === 'href' && v.startsWith('#') && !v.startsWith('#/') ? `#/brain/${page}/${v.slice(1)}` : v]),
+				node[2].map((kid) => inPage(kid, page)),
+			];
 
 // A page's tree, its decisions' ids made links: an `A<n>` in its text that the log holds goes to that row (A203)
 export const page = async (path) => linkIds(structuredClone(await markdown(path)), await known());
