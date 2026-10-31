@@ -196,7 +196,7 @@ def authorizedVectors : List Json :=
     vector c.name
       (Json.mkObj [("context", castCtxJson),
         ("envelope", Json.mkObj [("doc", e.doc.text), ("branch", Aven.Core.utf8Text e.branch),
-          ("signer", Aven.Core.hex e.signer)]),
+          ("signer", Aven.Core.hex (c.reader.signer e))]),
         ("calls", Json.arr (c.calls.map call).toArray), ("chain", Json.arr (c.chain.map Cap.json).toArray),
         ("keys", Json.arr (castKeys.map fun (k, v) => Json.mkObj [("key", Aven.Core.hex k), ("vault", v)]).toArray),
         ("deviceCaps", Json.arr (castDeviceCaps.map fun (k, dc) => deviceCap k dc).toArray),

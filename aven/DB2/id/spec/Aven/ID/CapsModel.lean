@@ -185,7 +185,7 @@ def entryOf (j : Json) : Except String Entry := do
   let env : Envelope :=
     { doc := ← docId (← e.getObjValAs? String "doc"), branch := (← e.getObjValAs? String "branch").toUTF8.toList,
       writer := ← e.getObjValAs? Nat "writer", seq := ← e.getObjValAs? Nat "seq", prev, deps,
-      body := .bytes name.bytes, signer := [], sig := [] }
+      body := .bytes name.bytes, sigs := [] }
   return { env, name, vault := ← j.getObjValAs? String "vault",
            caps := ← (← j.getObjValAs? (List String) "caps").mapM hashOf,
            acks := ← (← j.getObjValAs? (List String) "acks").mapM hashOf, delete }
@@ -264,10 +264,10 @@ network's members, and the actor an actor host's envelope names. -/
 def authorizedAnswer (j : Json) : Except String Json := do
   let x ← ctxOf (← j.getObjVal? "context")
   let ej ← j.getObjVal? "envelope"
+  let signer ← bytesOf (← ej.getObjValAs? String "signer")
   let e : Envelope :=
     { doc := ← docId (← ej.getObjValAs? String "doc"), branch := (← ej.getObjValAs? String "branch").toUTF8.toList,
-      writer := 0, seq := 0, prev := none, deps := [], body := .null,
-      signer := ← bytesOf (← ej.getObjValAs? String "signer"), sig := [] }
+      writer := 0, seq := 0, prev := none, deps := [], body := .null, sigs := [⟨signer, []⟩] }
   let calls ← (← j.getObjValAs? (Array Json) "calls").toList.mapM callOf
   let chain ← (← j.getObjValAs? (Array Json) "chain").toList.mapM capOf
   let keys ← (← j.getObjValAs? (Array Json) "keys").toList.mapM fun k =>
@@ -278,7 +278,7 @@ def authorizedAnswer (j : Json) : Except String Json := do
     | .null => pure none
     | a => do pure (some (← docId (← fromJson? a)))
   let r : Reader :=
-    { ctx := x, chain := fun _ => chain, calls := fun _ => calls, lower := fun _ => [],
+    { ctx := x, chain := fun _ => chain, calls := fun _ => calls, lower := fun _ => [], signer := fun _ => signer,
       vaultOf := fun k => (keys.find? (·.1 == k)).map (·.2), member := ms.contains, facts := x.facts,
       deviceCap := fun k => (dcs.find? (·.1 == k)).map (·.2), actorOf := fun _ => actor }
   let gov := govOf x

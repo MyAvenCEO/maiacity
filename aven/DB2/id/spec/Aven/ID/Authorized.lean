@@ -359,25 +359,25 @@ theorem DeviceCap.allowsB_iff {dc : DeviceCap} {f : Facts} {c : Call} :
 variable (r : Reader)
 
 def Reader.withinDeviceB (e : Envelope) : Bool :=
-  match r.deviceCap e.signer, r.facts e.doc with
-  | some dc, some f => r.vaultOf e.signer == some dc.vault && dc.branches.allows e.branch &&
+  match r.deviceCap (r.signer e), r.facts e.doc with
+  | some dc, some f => r.vaultOf (r.signer e) == some dc.vault && dc.branches.allows e.branch &&
       (r.calls e).all (dc.allowsB gov spawned lists f)
   | _, _ => false
 
 def Reader.ownB (e : Envelope) : Bool :=
-  match r.vaultOf e.signer, r.facts e.doc with
+  match r.vaultOf (r.signer e), r.facts e.doc with
   | some v, some f => f.vault == vaultId v || gov (vaultId v) f.vault
   | _, _ => false
 
 def Reader.byChainB (e : Envelope) : Bool :=
   chainOk r.ctx (r.chain e) &&
-    match (r.chain e).getLast?, r.vaultOf e.signer, r.facts e.doc with
+    match (r.chain e).getLast?, r.vaultOf (r.signer e), r.facts e.doc with
     | some last, some v, some f => r.holdsAt last v && last.conditions.branches.allows e.branch &&
         (r.calls e).all ((last.grants r.ctx.roles).allowsB gov spawned lists f)
     | _, _, _ => false
 
 def Reader.hostSignedB (e : Envelope) : Bool :=
-  match r.deviceCap e.signer with
+  match r.deviceCap (r.signer e) with
   | some dc => dc.host
   | none => false
 
@@ -392,23 +392,23 @@ theorem Reader.withinDeviceB_iff :
     r.withinDeviceB gov spawned lists e = true ↔
       r.WithinDevice (gov · · = true) (spawned · · = true) (lists · · = true) e := by
   unfold Reader.withinDeviceB Reader.WithinDevice
-  cases hd : r.deviceCap e.signer <;> cases hf : r.facts e.doc <;>
+  cases hd : r.deviceCap (r.signer e) <;> cases hf : r.facts e.doc <;>
     simp [List.all_eq_true, DeviceCap.allowsB_iff, and_assoc]
 
 theorem Reader.ownB_iff : r.ownB gov e = true ↔ r.Own (gov · · = true) e := by
   unfold Reader.ownB Reader.Own
-  cases hv : r.vaultOf e.signer <;> cases hf : r.facts e.doc <;> simp
+  cases hv : r.vaultOf (r.signer e) <;> cases hf : r.facts e.doc <;> simp
 
 theorem Reader.byChainB_iff :
     r.byChainB gov spawned lists e = true ↔
       r.ByChain (gov · · = true) (spawned · · = true) (lists · · = true) e := by
   unfold Reader.byChainB Reader.ByChain
-  cases hl : (r.chain e).getLast? <;> cases hv : r.vaultOf e.signer <;> cases hf : r.facts e.doc <;>
+  cases hl : (r.chain e).getLast? <;> cases hv : r.vaultOf (r.signer e) <;> cases hf : r.facts e.doc <;>
     simp [List.all_eq_true, Grant.allowsB_iff, and_assoc]
 
 theorem Reader.hostSignedB_iff : r.hostSignedB e = true ↔ r.HostSigned e := by
   unfold Reader.hostSignedB Reader.HostSigned
-  cases h : r.deviceCap e.signer <;> simp
+  cases h : r.deviceCap (r.signer e) <;> simp
 
 /-- **The verdict a reader computes is caps' verdict** (`Authorized`, decided). -/
 theorem Reader.authorizedB_iff :
