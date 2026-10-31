@@ -955,11 +955,17 @@ and avenOS learns at sign-up whether PRF answered, never by guessing from the br
 | 1Password | Its output isn't spec-compliant | |
 | Bitwarden, Dashlane | No (June 2026) | |
 
-**Without PRF:**
-- **Pairing** from a device already in: the new browser shows a QR with a one-time X-Wing key, both screens show a short
-  code, and the old device seals the keyring to it after the person confirms (Matrix's and Signal's device linking).
-- **A recovery kit**, or **MaiaCityGuardian** for now.
-- Without PRF, that passkey's owner signatures are ES256 only, so classical.
+**Without PRF, no vault** (Samuel, 31 Oct 2026). A passkey whose provider has no PRF never makes a vault: sign-up
+refuses and says plainly to use a passkey provider that can open the vault on any device. There is no ES256-only owner
+path, no record of a passkey without PRF and no second kind of vault, so every vault is post-quantum and opens
+anywhere.
+- avenOS learns it from the ceremony: `create()`'s `prf.enabled` saying no, or no PRF output from the claim's first
+  `get()`. Never from the user agent.
+- Nothing is sent or kept before the PRF has answered: no claim, no statement in the store.
+- **Pairing** from a device already in (the new browser shows a QR with a one-time X-Wing key, both screens show a
+  short code, and the old device seals the keyring to it after the person confirms; Matrix's and Signal's device
+  linking), **a recovery kit**, and **MaiaCityGuardian** for now, still cover a lost passkey or a new device whose
+  passkey can't answer.
 
 **Caveats:**
 - Deleting a passkey loses its PRF, so every vault keeps at least two ways in: its devices and the keyring's other
@@ -1041,8 +1047,8 @@ the suite byte, and each rotation moves to it.
 - an ML-DSA-65 public key is 1,952 bytes, a signature 3,309.
 
 **Passkeys, honestly.** ES256 falls to a quantum computer; the PRF-derived hybrid key doesn't. An owner's act needs
-both, so a quantum attacker would also need the PRF output. A passkey without PRF is classical until authenticators sign
-with ML-DSA, which COSE is standardising and no authenticator we know of ships.
+both, so a quantum attacker would also need the PRF output. A passkey without PRF makes no vault (Samuel, 31 Oct 2026),
+so no owner is classical only.
 
 ## Metadata: what hosts still see
 

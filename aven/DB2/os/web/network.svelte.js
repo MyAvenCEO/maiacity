@@ -48,10 +48,10 @@ export const net = $state({
 	opened: null,
 });
 
-// What sign-up does when the passkey has no PRF (Samuel's to decide): 'stop' says so plainly and makes no claim. It is
-// the one switch; no ES256-only owner path exists behind it.
-export const WITHOUT_PRF = 'stop';
-export const NO_PRF_MESSAGE = "this passkey provider can't open your vault on a new device; use one that can";
+// A passkey without PRF never makes a vault (Samuel, 31 Oct 2026; id/caps/README.md, "Passkeys and the PRF step"):
+// sign-up refuses and says why, before anything is sent or kept. No ES256-only owner path, no second kind of vault.
+export const NO_PRF_MESSAGE =
+	"This passkey provider can't open your vault on another device. Use a passkey provider that can, such as iCloud Keychain or Google Password Manager.";
 
 // The owner's epoch, which the PRF input names. No register carries one yet (the tree's ops will): until then, 1.
 export const ownerEpoch = (_vault) => 1;
@@ -205,7 +205,7 @@ export async function claim(config, { name, deliberate = false }) {
 	// a platform that says outright it has no PRF stops here, before anything is signed
 	if (created.getClientExtensionResults?.().prf?.enabled === false) {
 		net.prf = false;
-		if (WITHOUT_PRF === 'stop') throw new Error(NO_PRF_MESSAGE);
+		throw new Error(NO_PRF_MESSAGE);
 	}
 	if (created.response.getPublicKeyAlgorithm() !== -7) throw new Error('the passkey is not ES256');
 	const spki = hex(created.response.getPublicKey());
@@ -219,7 +219,7 @@ export async function claim(config, { name, deliberate = false }) {
 	const text = await claimText(statement.network, statement.person, name, statement.passkey.id, spki, statement.device.id, net.key);
 	// the claim's own assertion asks the PRF too, for the vault it founds: no extra tap at sign-up
 	const { credential: _, ...signed } = await assertion(config, text, created.rawId, statement.person);
-	if (!net.prf && WITHOUT_PRF === 'stop') throw new Error(NO_PRF_MESSAGE);
+	if (!net.prf) throw new Error(NO_PRF_MESSAGE);
 	statement.assertion = signed;
 	send({ frame: 'claim', statement: JSON.stringify(statement) });
 }
