@@ -500,7 +500,7 @@ and a panic in the browser kills the worker, then kills it again on every catch-
   nothing there. The Peer-Light runs the judge in its own wasm instance; when it dies, that envelope is unfit, recorded
   by its name, and the judge restarts. This comes when the Peer-Light wires the docs layer in.
 
-Import's decoding is fuzzed (`db/docs/fuzz`, `cargo +nightly fuzz run import`, every release): random bytes as an
+Import's decoding is fuzzed (`db/docs/fuzz`; in the box, `bun run box sh sandbox/fuzz.sh`, every release): random bytes as an
 envelope, as the Loro update inside a member's signed envelope, and as a sealed segment. `tests/hostile.rs` runs the
 same inputs, and bit-flipped real updates, on every check.
 
