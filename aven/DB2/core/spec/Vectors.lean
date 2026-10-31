@@ -443,6 +443,7 @@ def calls : List Json :=
 
 def ops : List Json :=
   coreOps ++ calls ++
+  [vector "the type of types" (utf8Text (k "avenDB type of types 1")) (typeOfTypes blake3).text] ++
   (boundAllows.map fun (name, b, v, _) =>
     vector s!"does it allow? {name}" (Json.mkObj [("bound", b.json), ("value", v.json)]) (toJson (b.allows v))) ++
   (boundWithin.map fun (name, a, b, _) =>
