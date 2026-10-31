@@ -41,35 +41,6 @@
 	background: var(--brain-facet-deep);
 }
 
-/* a plot: a soft rounded lot with a gold line round it */
-.slide .plot {
-	background: var(--brain-plot);
-	border: 0.18cqw solid var(--brain-gold);
-	border-radius: 46% 54% 50% 50% / 52% 44% 56% 48%;
-}
-
-/* a shadow on the ground */
-.slide .shadow {
-	background: var(--brain-shadow);
-	border-radius: 50%;
-	filter: blur(0.5cqw);
-}
-
-/* the dotted ochre path: a relation between two things. An arc is the lower half of a dotted ellipse, turned to run
-   from one end to the other */
-.slide .path {
-	border: 0.5cqw dotted var(--brain-path);
-	border-radius: 50%;
-	clip-path: inset(50% -1cqw -1cqw -1cqw);
-}
-
-.slide .path-end {
-	width: 1.3cqw;
-	height: 1.3cqw;
-	background: var(--brain-path);
-	border-radius: 50%;
-}
-
 /* a panel: rounded off-white, a thin gold border */
 .slide .panel {
 	position: absolute;
@@ -106,138 +77,93 @@
 	transform: translateX(-50%);
 }
 
-/* a tag: a relation's name, a chip on its path */
-.slide .tag {
-	padding: 0.45cqw 1.1cqw;
-	font: 700 1.1cqw/1 var(--brain-sans);
+/* in flow: a part laid out by its content, not placed */
+.slide .flow {
+	position: relative;
+}
+
+/* an arrow: a relation from one thing to another, drawn in ink, its name above it */
+.slide .arrow {
+	height: 2cqw;
+}
+
+.slide .arrow-line {
+	left: 0;
+	right: 1.6cqw;
+	top: 0.8cqw;
+	height: 0.35cqw;
+	background: var(--brain-ink);
+	border-radius: 0.2cqw;
+}
+
+.slide .arrow-head {
+	right: 0;
+	top: 0;
+	width: 2cqw;
+	height: 2cqw;
+	clip-path: polygon(0 0, 100% 50%, 0 100%);
+	background: var(--brain-ink);
+}
+
+.slide .relation {
+	font-weight: 700;
+	letter-spacing: 0.14em;
+}
+
+/* a vault: a record of who it is and who owns it, on a low-poly slab lit from the top left */
+.slide .vault-base {
+	left: 1.2cqw;
+	top: 1.2cqw;
+	right: -1.2cqw;
+	bottom: -1.2cqw;
+	background: linear-gradient(135deg, var(--brain-teal) 0 60%, var(--brain-teal-deep) 60%);
+	border-radius: 1.6cqw;
+}
+
+.slide .vault-card {
+	inset: 0;
+	padding: 2.2cqw 2.6cqw;
+	background: linear-gradient(135deg, var(--brain-panel) 0 55%, var(--brain-facet) 55%);
+	border-radius: 1.6cqw;
+}
+
+.slide .vault-kind,
+.slide .vault-section {
+	margin: 0;
+	color: var(--brain-quiet);
+	font: 600 1.1cqw/1.3 var(--brain-sans);
 	letter-spacing: 0.12em;
 	text-transform: uppercase;
-	background: var(--brain-panel);
-	border: 0.14cqw solid var(--brain-gold);
-	border-radius: 2cqw;
-	transform: translateX(-50%);
 }
 
-/* trees: a conifer is a triangle lit on its left; a round tree an octagon */
-.slide .conifer {
-	width: 2.6cqw;
-	height: 6.4cqw;
+.slide .vault-name {
+	margin: 0.4cqw 0 2.4cqw;
+	font: 500 3cqw/1.1 var(--brain-serif);
 }
 
-.slide .conifer .crown {
-	inset: 0 0 14% 0;
-	clip-path: polygon(50% 0, 100% 100%, 0 100%);
-	background: linear-gradient(90deg, var(--brain-conifer-light) 0 50%, var(--brain-conifer-deep) 50%);
+.slide .vault-section {
+	padding-top: 1.6cqw;
+	border-top: 0.14cqw solid var(--brain-gold);
 }
 
-.slide .conifer .trunk,
-.slide .round-tree .trunk {
-	left: 42%;
-	bottom: 0;
-	width: 16%;
-	height: 18%;
-	background: var(--brain-timber-deep);
+.slide .owner {
+	height: 4.6cqw;
+	margin-top: 1.4cqw;
 }
 
-.slide .round-tree {
-	width: 4.6cqw;
-	height: 6cqw;
+.slide .owner-name {
+	margin: 0;
+	padding: 1.3cqw 0 0 9.4cqw;
+	font: 600 1.6cqw/1.3 var(--brain-sans);
 }
 
-.slide .round-tree .crown {
-	inset: 0 0 22% 0;
-	clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%);
-	background: linear-gradient(135deg, var(--brain-sage-light) 0 45%, var(--brain-conifer-light) 45% 72%, var(--brain-conifer) 72%);
-}
-
-/* a rock: low-poly terracotta */
-.slide .rock {
-	clip-path: polygon(18% 0, 62% 6%, 100% 48%, 88% 100%, 8% 100%, 0 40%);
-	background: linear-gradient(120deg, var(--brain-terracotta-light) 0 44%, var(--brain-terracotta) 44% 70%, var(--brain-terracotta-deep) 70%);
-}
-
-/* a settler: hooded, in a blue-grey coat */
-.slide .settler .legs {
-	left: 32%;
-	top: 70%;
-	width: 36%;
-	height: 26%;
-	background: #4a4e55;
-	border-radius: 0 0 0.4cqw 0.4cqw;
-}
-
-.slide .settler .body {
-	left: 14%;
-	top: 30%;
-	width: 72%;
-	height: 46%;
-	background: linear-gradient(100deg, var(--brain-coat-light) 0 46%, var(--brain-coat) 46%);
-	border-radius: 46% 46% 16% 16% / 40% 40% 12% 12%;
-}
-
-.slide .settler .arm {
-	width: 22%;
-	height: 34%;
-	background: var(--brain-coat);
-	border-radius: 1cqw;
-	transform-origin: 50% 10%;
-}
-
-.slide .settler .head {
-	left: 22%;
-	top: 4%;
-	width: 56%;
-	height: 30%;
-	background: linear-gradient(100deg, var(--brain-coat-light) 0 46%, var(--brain-coat) 46%);
-	border-radius: 50% 50% 44% 44%;
-}
-
-.slide .settler .face {
-	left: 36%;
-	top: 13%;
-	width: 34%;
-	height: 17%;
-	background: var(--brain-skin);
-	border-radius: 50%;
-}
-
-/* a geodesic dome: a white lattice over facets lit from the top left, on a timber ring, with its door to the front */
-.slide .dome .ring {
-	left: 1%;
-	top: 72%;
-	width: 98%;
-	height: 24%;
-	background: linear-gradient(180deg, var(--brain-timber) 0 50%, var(--brain-timber-deep) 50%);
-	border-radius: 50%;
-}
-
-.slide .dome .shell {
-	left: 4%;
-	top: 0;
-	width: 92%;
-	height: 86%;
-	border-radius: 50% 50% 50% 50% / 100% 100% 22% 22%;
-	background:
-		repeating-linear-gradient(60deg, transparent 0 3.1cqw, var(--brain-lattice-deep) 3.1cqw 3.3cqw),
-		repeating-linear-gradient(-60deg, transparent 0 3.1cqw, var(--brain-lattice-deep) 3.1cqw 3.3cqw),
-		repeating-linear-gradient(0deg, transparent 0 3.1cqw, var(--brain-lattice-deep) 3.1cqw 3.3cqw),
-		linear-gradient(125deg, var(--brain-lattice) 0 42%, var(--brain-lattice-shade) 42% 68%, var(--brain-lattice-deep) 68%);
-}
-
-.slide .dome .door {
-	width: 20%;
-	height: 34%;
-	background: var(--brain-timber);
-	border-radius: 50% 50% 0 0 / 40% 40% 0 0;
-}
-
-.slide .dome .doorway {
-	left: 20%;
-	top: 22%;
-	width: 60%;
-	height: 78%;
-	background: #4a3a30;
-	border-radius: 50% 50% 0 0 / 40% 40% 0 0;
+.slide .key.mini {
+	left: 0.4cqw;
+	top: 1.2cqw;
+	width: 12cqw;
+	height: 5cqw;
+	transform: scale(0.62);
+	transform-origin: 0 0;
 }
 
 /* a key: a hexagonal bow, a shaft and two bits, in ochre */

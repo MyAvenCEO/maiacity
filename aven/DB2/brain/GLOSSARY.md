@@ -343,7 +343,7 @@ means something else in another part, and that part's meaning is named.
 - **slide**: one concept on one 16:9 still: an illustration and its text in Markdown. Its markup is allowlisted HTML
   with classes only, so the face-runtime can draw it later.
 - **layer**: one visual element of a slide, with a stable class, so a motion version can move it.
-- **path** (on a slide): the dotted ochre line that shows a relation, named on its **tag**.
+- **arrow** (on a slide): a relation from one thing to another, its name above it.
 
 ## Words with two meanings
 

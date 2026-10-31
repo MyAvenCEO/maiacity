@@ -36,7 +36,7 @@ One concept, in three files under `<package>/slides/`, named by the slide's id:
   (`aven/runtimes/spec/Aven/Runtime/Tree.lean`), so no `svg`, `style` or `script` and no inline `style`, and
   classes only. Every element is a layer with a stable class, so a motion version can move each one later.
 - **`<id>.css`, where each layer stands.** Class rules only, every length in `cqw` (a hundredth of the frame's width).
-  The parts themselves (a dome, a key, a settler, a path) are in `style/slide.css`, shared by every slide.
+  The parts themselves (a key, an arrow, a vault's record) are in `style/slide.css`, shared by every slide.
 - **`<id>.md`, its text.** Markdown, shown on the page under the still. `[vault](glossary:vault)` links a term to the
   glossary.
 
@@ -65,14 +65,14 @@ the CSS a slide needs:
 
 | Property | Used for |
 |---|---|
-| `clip-path` (`polygon`, `inset`) | low-poly shapes: facets, trees, rocks, the key's bow; the half of an ellipse a path is |
-| `transform` (`rotate`, `translateX`) and `transform-origin` | a key held at an angle, an arm, a path from one thing to another, centred labels |
-| `filter` (`drop-shadow`, `blur`) | the thin dark outline round a layer, and the soft shadow to the lower right |
-| `linear-gradient`, `repeating-linear-gradient` with hard stops | the lit and shaded faces; a dome's lattice |
+| `clip-path` (`polygon`, `inset`) | low-poly shapes: facets, the key's bow, an arrow's head |
+| `transform` (`rotate`, `translateX`) and `transform-origin` | a key at an angle, scaled down in a list, centred labels |
+| `filter` (`drop-shadow`) | the thin dark outline round a layer, and the soft shadow to the lower right |
+| `linear-gradient`, `repeating-linear-gradient` with hard stops | the lit and shaded faces, as hard stops |
 | `position: absolute`, `inset`, `left`, `top`, `width`, `height` | where each layer stands in the frame |
 | `container-type: inline-size` and `cqw` lengths | a still that scales as one picture |
 | `aspect-ratio` | the 16:9 frame |
-| `border` (`dotted`), `border-radius` (elliptical) | the dotted path, domes, plots, chips |
+| `border`, `border-radius` | panels, a vault's card |
 | `letter-spacing`, `text-transform`, `white-space`, `font` | the uppercase labels and the serif titles |
 | `box-shadow`, `overflow` | panels |
 | `animation`, `@keyframes`, `transition` | not used yet: the motion version of a slide will |

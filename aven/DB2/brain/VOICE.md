@@ -12,6 +12,7 @@ date; the rest is a proposal.
 - **Exact.** Every claim says what the specs mean, in their words ([`GLOSSARY.md`](GLOSSARY.md)); a simplification
   says so ("That comes later"), it never says something false.
 - **English.** The docs are in English (Samuel, 31 Oct 2026).
+- **No metaphors from the game** (Samuel, 31 Oct 2026). Say and draw what a thing is: a vault, not a dome.
 
 ## The story map
 
@@ -22,5 +23,3 @@ Each package's page opens with its story: the concepts in the order a reader mee
 
 1. **avenID's story order** (`id/README.md`): nine slides, from "a key signs" to "a cap".
 2. **The first slide's words** (`id/slides/owns.md`), and its title, "A key owns a vault".
-3. **The metaphor:** a vault as a dome on its plot, a person as a settler, a relation as a dotted path with its name
-   on a tag.

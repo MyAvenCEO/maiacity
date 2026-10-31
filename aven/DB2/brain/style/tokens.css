@@ -1,7 +1,7 @@
 /* avenBRAIN's tokens (STYLE.md): the maiaCITY look, sampled from style/reference/. Scoped to `.brain`, the root of
    every docs view, so avenOS's own tokens (os/web/style.css) stay as they are. Components read these and define none. */
 .brain {
-	/* the ground: warm cream, its faint low-poly facets, a plot */
+	/* the ground: warm cream, its faint low-poly facets; a marked row */
 	--brain-cream: #fbf1e1;
 	--brain-panel: #fef8ec;
 	--brain-facet: #f5e8d3;
@@ -31,14 +31,6 @@
 	--brain-ochre-deep: #b98a59;
 	--brain-glass: #aac5d6;
 	--brain-glass-deep: #7d9db6;
-	--brain-lattice: #fcf7ef;
-	--brain-lattice-shade: #e8dfd3;
-	--brain-lattice-deep: #d3c7ba;
-	--brain-timber: #a77a5f;
-	--brain-timber-deep: #7c5845;
-	--brain-coat: #6f8496;
-	--brain-coat-light: #8ea1b2;
-	--brain-skin: #e7c4a3;
 
 	/* type: serif titles, small uppercase sans labels, both bundled (os/web/main.js) */
 	--brain-serif: 'Fraunces Variable', Georgia, serif;

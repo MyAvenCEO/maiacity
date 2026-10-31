@@ -1,14 +1,16 @@
 # The look
 
-The maiaCITY look, from Samuel's references in [`style/reference/`](style/reference/): a calm settlement game seen
-from above. The tokens are in [`style/tokens.css`](style/tokens.css); the parts every slide is drawn from in
+The maiaCITY look, from Samuel's references in [`style/reference/`](style/reference/). They set the look only:
+**no metaphors from the game** (Samuel, 31 Oct 2026). A slide draws the concept itself (a key, a vault and its list of
+owners, an arrow for a relation), never a dome, a settler or a settlement standing for it.
+
+The tokens are in [`style/tokens.css`](style/tokens.css); the parts every slide is drawn from in
 [`style/slide.css`](style/slide.css). What Samuel agrees is marked with his name and the date; the rest is a proposal.
 
 ## The ground
 
 - **Warm cream**, `--brain-cream` `#fbf1e1`, with large, faint low-poly **facets** a shade or two darker
   (`--brain-facet`, `--brain-facet-deep`). Facets are big and few, at the edges of the frame, never behind the subject.
-- A **plot** is a soft rounded lot, `--brain-plot`, with a thin gold line: a place that belongs to someone.
 
 ## The objects
 
@@ -24,20 +26,19 @@ Sampled from the references (the values are in `tokens.css`):
 
 | Colour | Light / mid / deep | Where |
 |---|---|---|
-| Teal | `#78a0a3` `#588087` `#3f646b` | water; avenID's mark |
-| Terracotta | `#dca183` `#c98a6c` `#a5675a` | rocks, spires; avenDB's mark |
-| Conifer green | `#6f8270` `#56695b` `#405246` | conifers; avenPEER's mark |
-| Sage | `#aeb495` `#939a7c` | round trees, fields |
-| Ochre | `#efcf9f` `#dbb17d` `#b98a59` | timber domes, a key, the glossary's mark |
-| Glass blue | `#aac5d6` `#7d9db6` | glass domes, solar panels; avenOS's mark |
-| Lattice white | `#fcf7ef` `#e8dfd3` `#d3c7ba` | geodesic domes |
+| Teal | `#78a0a3` `#588087` `#3f646b` | a vault's slab; avenID's mark |
+| Terracotta | `#dca183` `#c98a6c` `#a5675a` | avenDB's mark |
+| Conifer green | `#6f8270` `#56695b` `#405246` | avenPEER's mark |
+| Sage | `#aeb495` `#939a7c` | the architecture's mark |
+| Ochre | `#efcf9f` `#dbb17d` `#b98a59` | a key; the glossary's mark |
+| Glass blue | `#aac5d6` `#7d9db6` | avenOS's mark |
 | Ink | `#3b322b`, quiet `#6c5847` | outlines and text: 11.9:1 and 5.6:1 on the cream |
 
 ## The chrome
 
 - **A panel:** rounded, off-white (`--brain-panel`), a thin gold border (`--brain-gold`), a soft lift.
-- **A path:** a dotted ochre line (`--brain-path`) between two things, ending in a dot at each. It shows a relation.
-- **A tag:** the relation's name, a small chip on its path: `OWNS`.
+- **An arrow:** a relation from one thing to another, in ink, its name above it in small uppercase: `OWNS`.
+- **A record:** a thing the system keeps (a vault), drawn as a card on a low-poly slab, with its fields in it.
 - **Titles** in a serif, Fraunces. **Labels** in small uppercase sans, Inter, spaced out. Both are bundled with
   avenOS, which makes no request off its origin.
 
@@ -47,14 +48,3 @@ Sampled from the references (the values are in `tokens.css`):
 - **Every element a layer** with a stable class, so a motion version can animate each one.
 - The text that explains it is on the page under the frame, in Markdown, never crowded into the picture.
 - Text in the frame has 4.5:1 against what is under it.
-
-## The world as metaphor
-
-| In the system | On a slide |
-|---|---|
-| a vault | a dome, a home, on its plot |
-| a person | a settler |
-| a device | a settler's tool |
-| a key | a key, held by whoever keeps it |
-| a relation | a dotted path, named on its tag |
-| a coop (Maia City) | a settlement of domes |
