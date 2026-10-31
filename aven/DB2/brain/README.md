@@ -38,10 +38,10 @@ One concept, in files under `<package>/slides/`, named by the slide's id:
   classes only. Every element is a layer with a stable class, so a motion version can move each one later.
 - **`<id>.style.json`, where each layer stands.** The face-runtime's style data (`Style.lean`), one rule per line:
   classes only, every length in `cqw` or `%`, a colour as `{ "bytes": "rrggbb" }`. It is the only source of the
-  slide's style: avenOS checks each rule with the drawer's `ruleOk` and writes its CSS with `ruleCss`
-  (`os/web/runtimes/draw.js`). The objects are images by hash (`art/img/`), drawn in code (`art/objects.mjs`).
+  slide's style. The objects are images by hash (`art/img/`), drawn in code (`art/objects.mjs`).
 - **`<id>.part.json`, the whole face part.** Its markup in `FaceRuntime.lean`'s forms and every rule it needs,
-  `style/slide.style.json`'s first: what the face-runtime takes.
+  `style/slide.style.json`'s first: what avenOS draws. `art/slides.mjs` writes it from the `.html` and the
+  `.style.json`, which stay its sources and the tests' references.
 - **`<id>.md`, its text.** Markdown, shown on the page under the slide. `[vault](glossary:vault)` links a term to the
   glossary.
 
@@ -56,14 +56,16 @@ on the page:
 - **Markdown** becomes a node tree through `render/markdown.js`, the markdown-runtime's job: GitHub's Markdown as the
   brain writes it, raw HTML as text, links rewritten or dropped. It is checked against the allowlist, and
   `Node.svelte` draws it.
-- **A slide is a face.** Its markup becomes one tree through `render/tree.js`, checked against the allowlist, and its
-  style is its rules, `style/slide.style.json`'s first. The face-runtime's drawer (`os/web/runtimes/draw.js`) checks
-  both again, builds the slide node by node into a shadow root of its own and writes its CSS there from the rules. No
-  slide style is in avenOS's own sheets, and none of avenOS's reaches a slide. The drawer asks avenOS where each
-  `/files/<hash>` drawing is, and avenOS serves the brain's own from its bundle.
+- **A slide is a face.** Its part, `<id>.part.json`, goes through the frozen face-runtime, loaded by its hash in
+  avenOS's runtimes worker, a worker of its own (`aven/runtimes`, README, "The browser host"). face-runtime checks the
+  tree against the allowlist, every rule's range, the text's size and contrast, and the a11y, and answers the tree and
+  the style; a part it refuses draws nothing, and the slide says why (`data-refused`). The drawer
+  (`os/web/runtimes/draw.js`) checks both again, builds the slide node by node into a shadow root of its own and
+  writes its CSS there from the rules. No slide style is in avenOS's own sheets, and none of avenOS's reaches a slide.
+  The drawer asks avenOS where each `/files/<hash>` drawing is, and avenOS serves the brain's own from its bundle.
 
-`<id>.part.json` is the same face as the face-runtime takes it. Once the face-runtime runs in avenOS's worker, it
-hands the drawer that tree and style, and the page draws them the same way.
+Markdown goes the same way next: through markdown-runtime, held to `render/markdown.js`'s tree, links included, and
+then `render/` goes.
 
 ## Drawing
 
