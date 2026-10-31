@@ -96,208 +96,208 @@ Production moves from the first generation to this architecture in seven stages 
 
 ## Every decision
 
-Every A-number in [the log](DECISIONS.md): what it decided, the page that states it now, and whether it still holds.
-A decision superseded in part still holds for the rest. The table is generated from the log; a decision's own text,
-reasons and Lean are its row there.
+Every A-number in [the log](DECISIONS.md), the newest first: what it decided, the page that states it now, and
+whether it still holds. A decision superseded in part still holds for the rest. The table is generated from the log; a
+decision's own text, reasons and Lean are its row there.
 
 | Decision | What | Page | Holds |
 |---|---|---|---|
-| [A1](DECISIONS.md) | One vocabulary | [glossary](GLOSSARY.md) | superseded by A175 in part |
-| [A2](DECISIONS.md) | One codec and signing rule | [core](core/README.md) | superseded by A174 in part |
-| [A3](DECISIONS.md) | Envelopes name what they build on by hash | [core](core/README.md) | yes |
-| [A4](DECISIONS.md) | Splits are final | [core](core/README.md) | yes |
-| [A5](DECISIONS.md) | Checkpoints travel | [docs](docs/README.md) | yes |
-| [A6](DECISIONS.md) | Collections that grow without end are chains of period Docs | [docs](docs/README.md) | yes |
-| [A7](DECISIONS.md) | A Doc pins the type versions it accepts | [docs](docs/README.md) | yes |
-| [A8](DECISIONS.md) | One target grammar | [core](core/README.md) | yes |
-| [A9](DECISIONS.md) | The want queue | [ops](ops/README.md) | yes |
-| [A10](DECISIONS.md) | The network is a group | [caps](caps/README.md) | yes |
-| [A11](DECISIONS.md) | A signed genesis | [caps](caps/README.md) | yes |
-| [A12](DECISIONS.md) | The tree is a Doc of signed statements | [caps](caps/README.md) | superseded by A63 in part |
-| [A13](DECISIONS.md) | The guardian is named, with hybrid keys, in every claim and join text | [id](id/README.md) | yes |
-| [A14](DECISIONS.md) | A dedicated passkey RP ID for avenOS | [os](os/README.md) | yes |
-| [A15](DECISIONS.md) | Three origins | [os](os/README.md) | yes |
-| [A16](DECISIONS.md) | Hosting an actor on the Aven Peer is an explicit read cap | [actors](actors/README.md) | yes |
-| [A17](DECISIONS.md) | Actors fold into docs | [actors](actors/README.md) | yes |
-| [A18](DECISIONS.md) | Plugins are runtimes | [ops](ops/README.md) | yes |
-| [A19](DECISIONS.md) | One update grammar | [ops](ops/README.md) | yes |
-| [A20](DECISIONS.md) | Facts for relations, Records for documents | [ops](ops/README.md) | yes |
-| [A21](DECISIONS.md) | Search is local first | [ops](ops/README.md) | yes |
-| [A22](DECISIONS.md) | A peer that keeps sealed data for others checks who may add or fetch it, without reading it | [caps](caps/README.md) | superseded by A141 in part |
-| [A23](DECISIONS.md) | Acks can't launder | [caps](caps/README.md) | superseded by A182 |
-| [A24](DECISIONS.md) | The layers | this page | yes |
-| [A25](DECISIONS.md) | Publish the six audits | process | yes |
-| [A26](DECISIONS.md) | Sealed indexes | [ops](ops/README.md) | yes |
-| [A27](DECISIONS.md) | An actor host writes only under its actors' chains | [actors](actors/README.md) | yes |
-| [A28](DECISIONS.md) | Vaults own; signers only sign | [caps](caps/README.md) | yes |
-| [A29](DECISIONS.md) | Frames in CBOR | [peers](peers/README.md) | yes |
-| [A30](DECISIONS.md) | One name for a signed thing | [core](core/README.md) | yes |
-| [A31](DECISIONS.md) | Two kinds of signed thing | [core](core/README.md) | yes |
-| [A32](DECISIONS.md) | Caps are built from ops | [caps](caps/README.md) | yes |
-| [A33](DECISIONS.md) | An actor's message is an envelope | [actors](actors/README.md) | yes |
-| [A34](DECISIONS.md) | Catch-up on Doc logs only | [peers](peers/README.md) | yes |
-| [A35](DECISIONS.md) | One presence | [peers](peers/README.md) | yes |
-| [A36](DECISIONS.md) | Releases | [sandbox](sandbox/README.md) | yes |
-| [A37](DECISIONS.md) | state-runtime returns K8's steps | [runtime](runtime/README.md) | yes |
-| [A38](DECISIONS.md) | Membership is a cap | [caps](caps/README.md) | yes |
-| [A39](DECISIONS.md) | Every Doc has a type, always | [docs](docs/README.md) | yes |
-| [A40](DECISIONS.md) | Holdings follow caps | [caps](caps/README.md) | yes |
-| [A41](DECISIONS.md) | avenOS's documentation is "Brain" | [os](os/README.md) | yes |
-| [A42](DECISIONS.md) | The contradictions of 31 Oct | [caps](caps/README.md) | superseded by A148 in part |
-| [A43](DECISIONS.md) | The Doc foundation comes first | process | superseded by A112 in part |
-| [A44](DECISIONS.md) | Placement has one source: the owner's vault | [caps](caps/README.md) | superseded by A144 in part |
-| [A45](DECISIONS.md) | One concept, one owner | this page | superseded by A159 in part |
-| [A46](DECISIONS.md) | `Aven.ID.Past` moves into Core as `Aven.Core.Past` | [core](core/README.md) | yes |
-| [A47](DECISIONS.md) | A writer id's exact layout (derive_key `avenDB writer 1`, first 8 bytes LE) | [docs](docs/README.md) | superseded by A48 in part |
-| [A48](DECISIONS.md) | A writer id is the first of four windows that isn't Loro's reserved value; 0 if none | [docs](docs/README.md) | yes |
-| [A49](DECISIONS.md) | avenBRAIN holds all documentation: a visual wiki, one concept per slide, the glossary | [os](os/README.md) | yes |
-| [A50](DECISIONS.md) | The docs are in English | [os](os/README.md) | yes |
-| [A51](DECISIONS.md) | `aven-core` lives at `aven/DB2/core`; `aven/runtimes` is its own workspace | [core](core/README.md) | yes |
-| [A52](DECISIONS.md) | Core's CBOR nests at most 512 deep | [core](core/README.md) | yes |
-| [A53](DECISIONS.md) | Node trees ≤ 20,000 nodes; markdown-runtime: raw HTML as text, images only by hash | [runtime](runtime/README.md) | yes |
-| [A54](DECISIONS.md) | face-runtime's contrast check (ancestors, full-bleed siblings; partial layers unseen) | [runtime](runtime/README.md) | yes |
-| [A55](DECISIONS.md) | Production's migration: checked on the real store, pre-flight then switch, no dual mode | [peers](peers/README.md) | yes |
-| [A56](DECISIONS.md) | Only a write line allows a step; footprints only on write lines | [id](id/README.md) | yes |
-| [A57](DECISIONS.md) | The wire version is in the hello and the room's topic name; `update`, no fallback | [peers](peers/README.md) | yes |
-| [A58](DECISIONS.md) | Slides render through face-runtime; CSS compiled to Style; no `url()` or custom properties | [os](os/README.md) | superseded by A111 in part |
-| [A59](DECISIONS.md) | A delete on the vault's own authority ends a Doc for every reader | [id](id/README.md) | yes |
-| [A60](DECISIONS.md) | A sign-in is a device cap; removing a device revokes it | [id](id/README.md) | yes |
-| [A61](DECISIONS.md) | One list of file types (the registry replaces `passive`, `kind()`, keep.rs's `mime`) | [runtime](runtime/README.md) | yes |
-| [A62](DECISIONS.md) | A collection is one target for every op; directories and keep scopes become collections | [id](id/README.md) | yes |
-| [A63](DECISIONS.md) | Confirming a claim: a standing, revocable cap from Maia City to Aven's vault | [id](id/README.md) | yes |
-| [A64](DECISIONS.md) | Production's members get member caps at the switch | [peers](peers/README.md) | yes |
-| [A65](DECISIONS.md) | `Signed.name` leaves the signer out | [core](core/README.md) | yes |
-| [A66](DECISIONS.md) | A cap line is `{op, doc, params}`; bounds are enumerations | [id](id/README.md) | yes |
-| [A67](DECISIONS.md) | Built-in root types `keyring`, `safe`, `group`; Core's type of types | [id](id/README.md) | yes |
-| [A68](DECISIONS.md) | The tree's statements are op calls of `tree/1`; full rewrite, no bridge | [id](id/README.md) | yes |
-| [A69](DECISIONS.md) | Slide text ≥ 2.6cqw (≥ 9 px at a 356 px slide) | [runtime](runtime/README.md) | yes |
-| [A70](DECISIONS.md) | Core's past is generic over named things; `Past.tips` → `parents` | [core](core/README.md) | yes |
-| [A71](DECISIONS.md) | One registry crate, shared by the Peer (by path) and the browser (Peer-Light's wasm) | [runtime](runtime/README.md) | yes |
-| [A72](DECISIONS.md) | avenID's key formats: BLAKE3 modes, hybrid encoding, KeyFormats, key-committing stanzas | [id](id/README.md) | yes |
-| [A73](DECISIONS.md) | Core's limits (`Aven.Core.Limits`; ≤ 16 sigs) | [core](core/README.md) | yes |
-| [A74](DECISIONS.md) | An epoch is named without its stanzas | [id](id/README.md) | yes |
-| [A75](DECISIONS.md) | `OpId := Hash`; fixed ids `{plugin, op}`; one call form `{op, params}` | [core](core/README.md) | yes |
-| [A76](DECISIONS.md) | Collections nest at most 8 deep; `CapKind` → `CapForm` | [id](id/README.md) | yes |
-| [A77](DECISIONS.md) | The PRF step's browser half; the output only inside the Peer-Light's wasm | [id](id/README.md) | yes |
-| [A78](DECISIONS.md) | `user.id` names the vault (two taps on a new browser) | [id](id/README.md) | superseded by A80 |
-| [A79](DECISIONS.md) | A missing PRF is detected from `prf.enabled` or a missing output, never the user agent | [id](id/README.md) | yes |
-| [A80](DECISIONS.md) | The passkey record `{credential, spki, owner, seal, epoch}` and the sign-in, exactly | [id](id/README.md) | yes |
-| [A81](DECISIONS.md) | The docs formats: genesis, body, segment, head, built-in types, crate | [docs](docs/README.md) | superseded by A106 in part |
-| [A82](DECISIONS.md) | One seal (`Aven.ID.Seal`) for envelopes, segments and checkpoints | [id](id/README.md) | yes |
-| [A83](DECISIONS.md) | A Record's type never changes (`typesKept`) | [ops](ops/README.md) | yes |
-| [A84](DECISIONS.md) | A face never draws outside its host (`:host` containment) | [runtime](runtime/README.md) | yes |
-| [A85](DECISIONS.md) | A slide's style has one source, `.style.json`; CSS only by `ruleCss` after `ruleOk` | [os](os/README.md) | yes |
-| [A86](DECISIONS.md) | A file's bytes decide its type; no head means an attachment | [runtime](runtime/README.md) | yes |
-| [A87](DECISIONS.md) | Strangers never reach Loro; `catch_unwind`; judge worker; fuzzing; page-at-a-time imports | [docs](docs/README.md) | superseded by A119 in part |
-| [A88](DECISIONS.md) | A call is canonical or isn't one; ids are 32 bytes | [core](core/README.md) | yes |
-| [A89](DECISIONS.md) | The runtime manifest (no floor, append-only) and a deterministic host (no floats, threads, SIMD) | [runtime](runtime/README.md) | yes |
-| [A90](DECISIONS.md) | `core/1`'s lowering is the engine's; `lower` a parameter; a removed field counts as written | [ops](ops/README.md) | yes |
-| [A91](DECISIONS.md) | `id/1` is avenID's plugin | [id](id/README.md) | yes |
-| [A92](DECISIONS.md) | A refused sign-up signals its orphan passkey; older vaults without PRF still sign in | [id](id/README.md) | superseded by A97 in part |
-| [A93](DECISIONS.md) | One Padmé, `Aven.ID.Padme` | [id](id/README.md) | yes |
-| [A94](DECISIONS.md) | Many signatures beside one name, exactly (`Sig`, `writes`, `placed`, `Closed`) | [core](core/README.md) | yes |
-| [A95](DECISIONS.md) | The genesis rides exactly in a log's first envelope; `builtinFit` by the definer | [docs](docs/README.md) | yes |
-| [A96](DECISIONS.md) | A Record id's Loro key is lowercase hex; one `Version {type, schema?}` | [ops](ops/README.md) | yes |
-| [A97](DECISIONS.md) | A migrated passkey gets its owner by the owner-epoch op | [peers](peers/README.md) | yes |
-| [A98](DECISIONS.md) | The codec is its own crate, `aven-codec` | [core](core/README.md) | yes |
-| [A99](DECISIONS.md) | Every face draws border-box | [runtime](runtime/README.md) | yes |
-| [A100](DECISIONS.md) | Authority runs down through quorums; a cap's issuer is a vault, proven by sigs | [id](id/README.md) | yes |
-| [A101](DECISIONS.md) | `put` mints a new Record; one freshness hypothesis, the engine's `Fresh` | [ops](ops/README.md) | yes |
-| [A102](DECISIONS.md) | Frozen runtime bytes are committed in git until runtimes are avenDB blobs | [runtime](runtime/README.md) | yes |
-| [A103](DECISIONS.md) | Sign-ins go into the migration snapshot | [peers](peers/README.md) | yes |
-| [A104](DECISIONS.md) | avenID's cap, revoke and epoch Records inside a Doc; `idBuiltinFit` | [id](id/README.md) | yes |
-| [A105](DECISIONS.md) | The confirm envelope is the issuance of a member cap | [id](id/README.md) | yes |
-| [A106](DECISIONS.md) | An envelope's authority is one Value `{acks, caps}` (`Aven.ID.Authority`) | [id](id/README.md) | yes |
-| [A107](DECISIONS.md) | The member cap's lines; caps and revocations named by A30 | [id](id/README.md) | yes |
-| [A108](DECISIONS.md) | "core" means only Core: `aven-db-core` → `aven-gen1` | [core](core/README.md) | yes |
-| [A109](DECISIONS.md) | Core names every plugin's ops (`OpId.ofPlugin`) and built-in types (`builtinType ns name`) | [core](core/README.md) | yes |
-| [A110](DECISIONS.md) | markdown-runtime resolves links itself, lexically; `base` and prefixes are params | [runtime](runtime/README.md) | yes |
-| [A111](DECISIONS.md) | One node-tree allowlist, the runtimes'; tree.js's check goes | [runtime](runtime/README.md) | yes |
-| [A112](DECISIONS.md) | The clean-slate cutover in seven stages | process | yes |
-| [A113](DECISIONS.md) | Readers sync by version; keepers serve by arrival number; both the Peers' | [peers](peers/README.md) | yes |
-| [A114](DECISIONS.md) | k of n on the tree; an ownerless passkey counts only for adding its owner | [id](id/README.md) | yes |
-| [A115](DECISIONS.md) | The tree counts with Core; belonging is `e.doc = pinned` plus docs' genesis check | [id](id/README.md) | yes |
-| [A116](DECISIONS.md) | Owner changes settle one way everywhere; a removal beats the removed (`removal_beats`) | [id](id/README.md) | yes |
-| [A117](DECISIONS.md) | The keeper's store layout and pure crate; `dropped_listed` | [peers](peers/README.md) | superseded by A122 |
-| [A118](DECISIONS.md) | Docs in the Peers: a topic per Doc, blind gossip, frames by topic, local first without a Peer | [peers](peers/README.md) | superseded by A122 in part, A143 |
-| [A119](DECISIONS.md) | One docs worker judges every open Doc; unfit only when it crashes again alone | [docs](docs/README.md) | yes |
-| [A120](DECISIONS.md) | A device's ML-DSA key: generated beside `device-key`, bound by its owner | [id](id/README.md) | superseded by A156 |
-| [A121](DECISIONS.md) | The keyring is a vault's own Doc, the only Doc sealed to devices | [id](id/README.md) | yes |
-| [A122](DECISIONS.md) | The fetch gate's frames and bounds on aven/db/1 | [peers](peers/README.md) | superseded by A133 in part |
-| [A123](DECISIONS.md) | Stanza lists padded to `padme (max n 4)`; tag seeds from the epoch before (D18) | [id](id/README.md) | yes |
-| [A124](DECISIONS.md) | The fetch gate names a Doc by id; prove only to known holders | [peers](peers/README.md) | superseded by A143 |
-| [A125](DECISIONS.md) | ARCHITECTURE.md and the Lean are avenDB's single source of truth (#1728) | process | yes |
-| [A126](DECISIONS.md) | All architecture moves into one document and its chapters; READMEs keep no design | process | superseded by A158 in part |
-| [A127](DECISIONS.md) | A commit is `prepare` → `signing` → `finish` | [docs](docs/README.md) | yes |
-| [A128](DECISIONS.md) | A Held page reopens a Doc | [docs](docs/README.md) | yes |
-| [A129](DECISIONS.md) | `Doc::held()` by name; the unfit set is local and never stored | [docs](docs/README.md) | yes |
-| [A130](DECISIONS.md) | A device's ML-DSA ξ exists only while a segment closes | [id](id/README.md) | yes |
-| [A131](DECISIONS.md) | The keyring's Records are EpochRecords, one per epoch | [id](id/README.md) | superseded by A170 in part |
-| [A132](DECISIONS.md) | A device's X-Wing seal seed is derived from its own Ed25519 seed | [id](id/README.md) | yes |
-| [A133](DECISIONS.md) | The fetch gate's frames exactly (`prove_refused`, ≤ 128 hashes, parts ≤ 48 KiB, `keep_`) | [peers](peers/README.md) | superseded by A143 |
-| [A134](DECISIONS.md) | The wire moves to `aven-peer-wire`; `doc_tips`' keys | [peers](peers/README.md) | superseded by A143 in part |
-| [A135](DECISIONS.md) | The tree on the Doc host: its `BuiltinFit` and `Authorize` | [id](id/README.md) | yes |
-| [A136](DECISIONS.md) | Tips are log heads `{writer, seq, name}` | [peers](peers/README.md) | yes |
-| [A137](DECISIONS.md) | Authorize judges an envelope on its own counted past | [docs](docs/README.md) | yes |
-| [A138](DECISIONS.md) | The decision log is append-only; the architect is its only writer | process | yes |
-| [A139](DECISIONS.md) | Held and spent in caps' Keep | [id](id/README.md) | superseded by A141 |
-| [A140](DECISIONS.md) | The Peer image takes its crates from one list (`tag.mjs` reads `Cargo.toml`) | [peers](peers/README.md) | yes |
-| [A141](DECISIONS.md) | The keeper owns its bill and admission; the earliest remaining uploader's vault pays | [peers](peers/README.md) | yes |
-| [A142](DECISIONS.md) | The fetch proof's TLS exporter (`EXPORTER-avenDB-fetch-1`, 32 bytes) | [peers](peers/README.md) | yes |
-| [A143](DECISIONS.md) | Gossip per group, not per Doc; `doc_tips`/`doc_have` name their Doc | [peers](peers/README.md) | yes |
-| [A144](DECISIONS.md) | After the cutover a file's chunks are Doc Values behind the one gate | [store](store/README.md) | yes |
-| [A145](DECISIONS.md) | A limit follows its primitive's owner | [core](core/README.md) | yes |
-| [A146](DECISIONS.md) | The tree's setup is its root Record | [id](id/README.md) | yes |
-| [A147](DECISIONS.md) | Authorize = f(envelope, its counted past); concurrency only in the tree's settle | [docs](docs/README.md) | superseded by A182 |
-| [A148](DECISIONS.md) | "Public" means the network's members | [id](id/README.md) | yes |
-| [A149](DECISIONS.md) | A genesis stays exact; birth references live in the root Record | [docs](docs/README.md) | yes |
-| [A150](DECISIONS.md) | Checkpoints come after the cutover; their kind is the uploader's word | [docs](docs/README.md) | yes |
-| [A151](DECISIONS.md) | A peer's Doc shelf: blobs by hash, `doc-<id>-held` then `doc-<id>` by CAS | [peers](peers/README.md) | yes |
-| [A152](DECISIONS.md) | A live gossip message `{sealed}` or `{hash}` | [peers](peers/README.md) | superseded by A154 in part |
-| [A153](DECISIONS.md) | A keeper takes an upload when the bill after it fits the quota or doesn't grow | [peers](peers/README.md) | yes |
-| [A154](DECISIONS.md) | Group topics `groupTopic(wire, key)`; Live `{sealed}`/`{doc, hash}`/`{doc, version}`; the members' and keyring groups | [peers](peers/README.md) | yes |
-| [A155](DECISIONS.md) | A sealed live message names its Doc once (the seal's outside) | [peers](peers/README.md) | yes |
-| [A156](DECISIONS.md) | A device's ML-DSA ξ and X-Wing seed derived from its Ed25519 seed, as built (#1731) | [id](id/README.md) | yes |
-| [A157](DECISIONS.md) | Package names: avenDB, avenCORE, avenID, avenCAPS, avenDOCS, avenOPS, avenSTORE, avenPEERS, avenRUNTIME, avenACTORS, avenOS, avenBRAIN, avenSANDBOX | process | yes |
-| [A158](DECISIONS.md) | avenBRAIN is the architecture's one location: index, log, glossary, a page per package | process | yes |
-| [A159](DECISIONS.md) | avenCAPS is its own package; avenID is keys, sealing, vaults and owners | [caps](caps/README.md) | yes |
-| [A160](DECISIONS.md) | The register (`tree/1`) is avenCAPS's | [caps](caps/README.md) | yes |
-| [A161](DECISIONS.md) | Fetch keys Ed25519 from `avenDB fetch key 1`; the proof's form is caps' | [caps](caps/README.md) | yes |
-| [A162](DECISIONS.md) | A vault is named by 32 bytes in every format | [id](id/README.md) | yes |
-| [A163](DECISIONS.md) | Who signs the keeper's records; listing, link, order, choice shapes; no nulls | [caps](caps/README.md) | yes |
-| [A164](DECISIONS.md) | A vault's name is the A30 name of `["avenID vault 1", {kind, nonce}]` | [id](id/README.md) | yes |
-| [A165](DECISIONS.md) | The Claude Doc is superseded by avenBRAIN | process | yes |
-| [A166](DECISIONS.md) | A reader finds a keeper's item's kind by commitment | [docs](docs/README.md) | yes |
-| [A167](DECISIONS.md) | Rule 10 stays composed over the keeper's and caps' theorems | process | yes |
-| [A168](DECISIONS.md) | Box checks run the real path; no keys from cast config | [sandbox](sandbox/README.md) | yes |
-| [A169](DECISIONS.md) | avenDOCS defines Authorize; avenCAPS a pure verdict; avenPEERS the adapter | [peers](peers/README.md) | yes |
-| [A170](DECISIONS.md) | The keyring's `epoch` Records are write-once; a reseal adds a Record | [id](id/README.md) | superseded by A185 in part |
-| [A171](DECISIONS.md) | Threads never add A-numbers or architecture prose | process | yes |
-| [A172](DECISIONS.md) | A pinned schema lives in its type Doc's version Record `{at, name, schema}` | [docs](docs/README.md) | yes |
-| [A173](DECISIONS.md) | The keeper's byte forms, as built (keep-bytes.json); caps' half of the gate | [caps](caps/README.md) | yes |
-| [A174](DECISIONS.md) | Bytes in JSON are `{"bytes": hex}`, as built | [core](core/README.md) | yes |
-| [A175](DECISIONS.md) | Versions are avenCORE's | [core](core/README.md) | yes |
-| [A176](DECISIONS.md) | One padding for every sealed byte: 256 B, 1 KiB, 4 KiB, then Padmé | [id](id/README.md) | yes |
-| [A177](DECISIONS.md) | The seal names what it seals (`seals`), and a checkpoint is a checkpoint | [id](id/README.md) | yes |
-| [A178](DECISIONS.md) | A device's vault: its key signs, the vault it serves owns | [id](id/README.md) | yes |
-| [A179](DECISIONS.md) | Threads keep their page's Status table current | process | yes |
-| [A180](DECISIONS.md) | Runtimes have no release of their own; they ship inside `@aven/os` and the avenPEER image | [runtime](runtime/README.md) | yes |
-| [A181](DECISIONS.md) | A checkpoint carries a `state`, sealed as a checkpoint | [docs](docs/README.md) | yes |
-| [A182](DECISIONS.md) | A revocation discounts, as a split does: Core's counting takes avenCAPS' `revoked` | [caps](caps/README.md) | yes |
-| [A183](DECISIONS.md) | A cap is its content: no nonce | [caps](caps/README.md) | yes |
-| [A184](DECISIONS.md) | Built-in bodies carry no nulls | [core](core/README.md) | yes |
-| [A185](DECISIONS.md) | One owner for each of the pages' shared parts | this page | yes |
-| [A186](DECISIONS.md) | No wiping in production (Samuel, 30 Oct) | [peers](peers/README.md) | yes |
-| [A187](DECISIONS.md) | The keyring Doc travels unsealed | [id](id/README.md) | yes |
-| [A188](DECISIONS.md) | An actor host's envelope names its actor in its authority | [caps](caps/README.md) | yes |
-| [A189](DECISIONS.md) | Approvals are Core signatures, and Lean's vectors sign for real | [caps](caps/README.md) | yes |
-| [A190](DECISIONS.md) | Core names vaults by plain 32 bytes; one switch, two PRs back to back | [core](core/README.md) | yes |
-| [A191](DECISIONS.md) | A removal never undoes finality | [caps](caps/README.md) | yes |
-| [A192](DECISIONS.md) | markdown-runtime v3: links resolve against their document | [runtime](runtime/README.md) | yes |
-| [A193](DECISIONS.md) | Peer records are avenPEERS' | [peers](peers/README.md) | superseded by A194 in part |
 | [A194](DECISIONS.md) | History entries: `Aven.Peer.History`, one-key bodies, no tree-tip beat | [peers](peers/README.md) | yes |
+| [A193](DECISIONS.md) | Peer records are avenPEERS' | [peers](peers/README.md) | superseded by A194 in part |
+| [A192](DECISIONS.md) | markdown-runtime v3: links resolve against their document | [runtime](runtime/README.md) | yes |
+| [A191](DECISIONS.md) | A removal never undoes finality | [caps](caps/README.md) | yes |
+| [A190](DECISIONS.md) | Core names vaults by plain 32 bytes; one switch, two PRs back to back | [core](core/README.md) | yes |
+| [A189](DECISIONS.md) | Approvals are Core signatures, and Lean's vectors sign for real | [caps](caps/README.md) | yes |
+| [A188](DECISIONS.md) | An actor host's envelope names its actor in its authority | [caps](caps/README.md) | yes |
+| [A187](DECISIONS.md) | The keyring Doc travels unsealed | [id](id/README.md) | yes |
+| [A186](DECISIONS.md) | No wiping in production (Samuel, 30 Oct) | [peers](peers/README.md) | yes |
+| [A185](DECISIONS.md) | One owner for each of the pages' shared parts | this page | yes |
+| [A184](DECISIONS.md) | Built-in bodies carry no nulls | [core](core/README.md) | yes |
+| [A183](DECISIONS.md) | A cap is its content: no nonce | [caps](caps/README.md) | yes |
+| [A182](DECISIONS.md) | A revocation discounts, as a split does: Core's counting takes avenCAPS' `revoked` | [caps](caps/README.md) | yes |
+| [A181](DECISIONS.md) | A checkpoint carries a `state`, sealed as a checkpoint | [docs](docs/README.md) | yes |
+| [A180](DECISIONS.md) | Runtimes have no release of their own; they ship inside `@aven/os` and the avenPEER image | [runtime](runtime/README.md) | yes |
+| [A179](DECISIONS.md) | Threads keep their page's Status table current | process | yes |
+| [A178](DECISIONS.md) | A device's vault: its key signs, the vault it serves owns | [id](id/README.md) | yes |
+| [A177](DECISIONS.md) | The seal names what it seals (`seals`), and a checkpoint is a checkpoint | [id](id/README.md) | yes |
+| [A176](DECISIONS.md) | One padding for every sealed byte: 256 B, 1 KiB, 4 KiB, then Padmé | [id](id/README.md) | yes |
+| [A175](DECISIONS.md) | Versions are avenCORE's | [core](core/README.md) | yes |
+| [A174](DECISIONS.md) | Bytes in JSON are `{"bytes": hex}`, as built | [core](core/README.md) | yes |
+| [A173](DECISIONS.md) | The keeper's byte forms, as built (keep-bytes.json); caps' half of the gate | [caps](caps/README.md) | yes |
+| [A172](DECISIONS.md) | A pinned schema lives in its type Doc's version Record `{at, name, schema}` | [docs](docs/README.md) | yes |
+| [A171](DECISIONS.md) | Threads never add A-numbers or architecture prose | process | yes |
+| [A170](DECISIONS.md) | The keyring's `epoch` Records are write-once; a reseal adds a Record | [id](id/README.md) | superseded by A185 in part |
+| [A169](DECISIONS.md) | avenDOCS defines Authorize; avenCAPS a pure verdict; avenPEERS the adapter | [peers](peers/README.md) | yes |
+| [A168](DECISIONS.md) | Box checks run the real path; no keys from cast config | [sandbox](sandbox/README.md) | yes |
+| [A167](DECISIONS.md) | Rule 10 stays composed over the keeper's and caps' theorems | process | yes |
+| [A166](DECISIONS.md) | A reader finds a keeper's item's kind by commitment | [docs](docs/README.md) | yes |
+| [A165](DECISIONS.md) | The Claude Doc is superseded by avenBRAIN | process | yes |
+| [A164](DECISIONS.md) | A vault's name is the A30 name of `["avenID vault 1", {kind, nonce}]` | [id](id/README.md) | yes |
+| [A163](DECISIONS.md) | Who signs the keeper's records; listing, link, order, choice shapes; no nulls | [caps](caps/README.md) | yes |
+| [A162](DECISIONS.md) | A vault is named by 32 bytes in every format | [id](id/README.md) | yes |
+| [A161](DECISIONS.md) | Fetch keys Ed25519 from `avenDB fetch key 1`; the proof's form is caps' | [caps](caps/README.md) | yes |
+| [A160](DECISIONS.md) | The register (`tree/1`) is avenCAPS's | [caps](caps/README.md) | yes |
+| [A159](DECISIONS.md) | avenCAPS is its own package; avenID is keys, sealing, vaults and owners | [caps](caps/README.md) | yes |
+| [A158](DECISIONS.md) | avenBRAIN is the architecture's one location: index, log, glossary, a page per package | process | yes |
+| [A157](DECISIONS.md) | Package names: avenDB, avenCORE, avenID, avenCAPS, avenDOCS, avenOPS, avenSTORE, avenPEERS, avenRUNTIME, avenACTORS, avenOS, avenBRAIN, avenSANDBOX | process | yes |
+| [A156](DECISIONS.md) | A device's ML-DSA ξ and X-Wing seed derived from its Ed25519 seed, as built (#1731) | [id](id/README.md) | yes |
+| [A155](DECISIONS.md) | A sealed live message names its Doc once (the seal's outside) | [peers](peers/README.md) | yes |
+| [A154](DECISIONS.md) | Group topics `groupTopic(wire, key)`; Live `{sealed}`/`{doc, hash}`/`{doc, version}`; the members' and keyring groups | [peers](peers/README.md) | yes |
+| [A153](DECISIONS.md) | A keeper takes an upload when the bill after it fits the quota or doesn't grow | [peers](peers/README.md) | yes |
+| [A152](DECISIONS.md) | A live gossip message `{sealed}` or `{hash}` | [peers](peers/README.md) | superseded by A154 in part |
+| [A151](DECISIONS.md) | A peer's Doc shelf: blobs by hash, `doc-<id>-held` then `doc-<id>` by CAS | [peers](peers/README.md) | yes |
+| [A150](DECISIONS.md) | Checkpoints come after the cutover; their kind is the uploader's word | [docs](docs/README.md) | yes |
+| [A149](DECISIONS.md) | A genesis stays exact; birth references live in the root Record | [docs](docs/README.md) | yes |
+| [A148](DECISIONS.md) | "Public" means the network's members | [id](id/README.md) | yes |
+| [A147](DECISIONS.md) | Authorize = f(envelope, its counted past); concurrency only in the tree's settle | [docs](docs/README.md) | yes |
+| [A146](DECISIONS.md) | The tree's setup is its root Record | [id](id/README.md) | yes |
+| [A145](DECISIONS.md) | A limit follows its primitive's owner | [core](core/README.md) | yes |
+| [A144](DECISIONS.md) | After the cutover a file's chunks are Doc Values behind the one gate | [store](store/README.md) | yes |
+| [A143](DECISIONS.md) | Gossip per group, not per Doc; `doc_tips`/`doc_have` name their Doc | [peers](peers/README.md) | yes |
+| [A142](DECISIONS.md) | The fetch proof's TLS exporter (`EXPORTER-avenDB-fetch-1`, 32 bytes) | [peers](peers/README.md) | yes |
+| [A141](DECISIONS.md) | The keeper owns its bill and admission; the earliest remaining uploader's vault pays | [peers](peers/README.md) | yes |
+| [A140](DECISIONS.md) | The Peer image takes its crates from one list (`tag.mjs` reads `Cargo.toml`) | [peers](peers/README.md) | yes |
+| [A139](DECISIONS.md) | Held and spent in caps' Keep | [id](id/README.md) | superseded by A141 |
+| [A138](DECISIONS.md) | The decision log is append-only; the architect is its only writer | process | yes |
+| [A137](DECISIONS.md) | Authorize judges an envelope on its own counted past | [docs](docs/README.md) | yes |
+| [A136](DECISIONS.md) | Tips are log heads `{writer, seq, name}` | [peers](peers/README.md) | yes |
+| [A135](DECISIONS.md) | The tree on the Doc host: its `BuiltinFit` and `Authorize` | [id](id/README.md) | yes |
+| [A134](DECISIONS.md) | The wire moves to `aven-peer-wire`; `doc_tips`' keys | [peers](peers/README.md) | superseded by A143 in part |
+| [A133](DECISIONS.md) | The fetch gate's frames exactly (`prove_refused`, ≤ 128 hashes, parts ≤ 48 KiB, `keep_`) | [peers](peers/README.md) | superseded by A143 |
+| [A132](DECISIONS.md) | A device's X-Wing seal seed is derived from its own Ed25519 seed | [id](id/README.md) | yes |
+| [A131](DECISIONS.md) | The keyring's Records are EpochRecords, one per epoch | [id](id/README.md) | superseded by A170 in part |
+| [A130](DECISIONS.md) | A device's ML-DSA ξ exists only while a segment closes | [id](id/README.md) | yes |
+| [A129](DECISIONS.md) | `Doc::held()` by name; the unfit set is local and never stored | [docs](docs/README.md) | yes |
+| [A128](DECISIONS.md) | A Held page reopens a Doc | [docs](docs/README.md) | yes |
+| [A127](DECISIONS.md) | A commit is `prepare` → `signing` → `finish` | [docs](docs/README.md) | yes |
+| [A126](DECISIONS.md) | All architecture moves into one document and its chapters; READMEs keep no design | process | superseded by A158 in part |
+| [A125](DECISIONS.md) | ARCHITECTURE.md and the Lean are avenDB's single source of truth (#1728) | process | yes |
+| [A124](DECISIONS.md) | The fetch gate names a Doc by id; prove only to known holders | [peers](peers/README.md) | superseded by A143 |
+| [A123](DECISIONS.md) | Stanza lists padded to `padme (max n 4)`; tag seeds from the epoch before (D18) | [id](id/README.md) | yes |
+| [A122](DECISIONS.md) | The fetch gate's frames and bounds on aven/db/1 | [peers](peers/README.md) | superseded by A133 in part |
+| [A121](DECISIONS.md) | The keyring is a vault's own Doc, the only Doc sealed to devices | [id](id/README.md) | yes |
+| [A120](DECISIONS.md) | A device's ML-DSA key: generated beside `device-key`, bound by its owner | [id](id/README.md) | superseded by A156 |
+| [A119](DECISIONS.md) | One docs worker judges every open Doc; unfit only when it crashes again alone | [docs](docs/README.md) | yes |
+| [A118](DECISIONS.md) | Docs in the Peers: a topic per Doc, blind gossip, frames by topic, local first without a Peer | [peers](peers/README.md) | superseded by A122 in part, A143 |
+| [A117](DECISIONS.md) | The keeper's store layout and pure crate; `dropped_listed` | [peers](peers/README.md) | superseded by A122 |
+| [A116](DECISIONS.md) | Owner changes settle one way everywhere; a removal beats the removed (`removal_beats`) | [id](id/README.md) | yes |
+| [A115](DECISIONS.md) | The tree counts with Core; belonging is `e.doc = pinned` plus docs' genesis check | [id](id/README.md) | yes |
+| [A114](DECISIONS.md) | k of n on the tree; an ownerless passkey counts only for adding its owner | [id](id/README.md) | yes |
+| [A113](DECISIONS.md) | Readers sync by version; keepers serve by arrival number; both the Peers' | [peers](peers/README.md) | yes |
+| [A112](DECISIONS.md) | The clean-slate cutover in seven stages | process | yes |
+| [A111](DECISIONS.md) | One node-tree allowlist, the runtimes'; tree.js's check goes | [runtime](runtime/README.md) | yes |
+| [A110](DECISIONS.md) | markdown-runtime resolves links itself, lexically; `base` and prefixes are params | [runtime](runtime/README.md) | yes |
+| [A109](DECISIONS.md) | Core names every plugin's ops (`OpId.ofPlugin`) and built-in types (`builtinType ns name`) | [core](core/README.md) | yes |
+| [A108](DECISIONS.md) | "core" means only Core: `aven-db-core` → `aven-gen1` | [core](core/README.md) | yes |
+| [A107](DECISIONS.md) | The member cap's lines; caps and revocations named by A30 | [id](id/README.md) | yes |
+| [A106](DECISIONS.md) | An envelope's authority is one Value `{acks, caps}` (`Aven.ID.Authority`) | [id](id/README.md) | yes |
+| [A105](DECISIONS.md) | The confirm envelope is the issuance of a member cap | [id](id/README.md) | yes |
+| [A104](DECISIONS.md) | avenID's cap, revoke and epoch Records inside a Doc; `idBuiltinFit` | [id](id/README.md) | yes |
+| [A103](DECISIONS.md) | Sign-ins go into the migration snapshot | [peers](peers/README.md) | yes |
+| [A102](DECISIONS.md) | Frozen runtime bytes are committed in git until runtimes are avenDB blobs | [runtime](runtime/README.md) | yes |
+| [A101](DECISIONS.md) | `put` mints a new Record; one freshness hypothesis, the engine's `Fresh` | [ops](ops/README.md) | yes |
+| [A100](DECISIONS.md) | Authority runs down through quorums; a cap's issuer is a vault, proven by sigs | [id](id/README.md) | yes |
+| [A99](DECISIONS.md) | Every face draws border-box | [runtime](runtime/README.md) | yes |
+| [A98](DECISIONS.md) | The codec is its own crate, `aven-codec` | [core](core/README.md) | yes |
+| [A97](DECISIONS.md) | A migrated passkey gets its owner by the owner-epoch op | [peers](peers/README.md) | yes |
+| [A96](DECISIONS.md) | A Record id's Loro key is lowercase hex; one `Version {type, schema?}` | [ops](ops/README.md) | yes |
+| [A95](DECISIONS.md) | The genesis rides exactly in a log's first envelope; `builtinFit` by the definer | [docs](docs/README.md) | yes |
+| [A94](DECISIONS.md) | Many signatures beside one name, exactly (`Sig`, `writes`, `placed`, `Closed`) | [core](core/README.md) | yes |
+| [A93](DECISIONS.md) | One Padmé, `Aven.ID.Padme` | [id](id/README.md) | yes |
+| [A92](DECISIONS.md) | A refused sign-up signals its orphan passkey; older vaults without PRF still sign in | [id](id/README.md) | superseded by A97 in part |
+| [A91](DECISIONS.md) | `id/1` is avenID's plugin | [id](id/README.md) | yes |
+| [A90](DECISIONS.md) | `core/1`'s lowering is the engine's; `lower` a parameter; a removed field counts as written | [ops](ops/README.md) | yes |
+| [A89](DECISIONS.md) | The runtime manifest (no floor, append-only) and a deterministic host (no floats, threads, SIMD) | [runtime](runtime/README.md) | yes |
+| [A88](DECISIONS.md) | A call is canonical or isn't one; ids are 32 bytes | [core](core/README.md) | yes |
+| [A87](DECISIONS.md) | Strangers never reach Loro; `catch_unwind`; judge worker; fuzzing; page-at-a-time imports | [docs](docs/README.md) | superseded by A119 in part |
+| [A86](DECISIONS.md) | A file's bytes decide its type; no head means an attachment | [runtime](runtime/README.md) | yes |
+| [A85](DECISIONS.md) | A slide's style has one source, `.style.json`; CSS only by `ruleCss` after `ruleOk` | [os](os/README.md) | yes |
+| [A84](DECISIONS.md) | A face never draws outside its host (`:host` containment) | [runtime](runtime/README.md) | yes |
+| [A83](DECISIONS.md) | A Record's type never changes (`typesKept`) | [ops](ops/README.md) | yes |
+| [A82](DECISIONS.md) | One seal (`Aven.ID.Seal`) for envelopes, segments and checkpoints | [id](id/README.md) | yes |
+| [A81](DECISIONS.md) | The docs formats: genesis, body, segment, head, built-in types, crate | [docs](docs/README.md) | superseded by A106 in part |
+| [A80](DECISIONS.md) | The passkey record `{credential, spki, owner, seal, epoch}` and the sign-in, exactly | [id](id/README.md) | yes |
+| [A79](DECISIONS.md) | A missing PRF is detected from `prf.enabled` or a missing output, never the user agent | [id](id/README.md) | yes |
+| [A78](DECISIONS.md) | `user.id` names the vault (two taps on a new browser) | [id](id/README.md) | superseded by A80 |
+| [A77](DECISIONS.md) | The PRF step's browser half; the output only inside the Peer-Light's wasm | [id](id/README.md) | yes |
+| [A76](DECISIONS.md) | Collections nest at most 8 deep; `CapKind` → `CapForm` | [id](id/README.md) | yes |
+| [A75](DECISIONS.md) | `OpId := Hash`; fixed ids `{plugin, op}`; one call form `{op, params}` | [core](core/README.md) | yes |
+| [A74](DECISIONS.md) | An epoch is named without its stanzas | [id](id/README.md) | yes |
+| [A73](DECISIONS.md) | Core's limits (`Aven.Core.Limits`; ≤ 16 sigs) | [core](core/README.md) | yes |
+| [A72](DECISIONS.md) | avenID's key formats: BLAKE3 modes, hybrid encoding, KeyFormats, key-committing stanzas | [id](id/README.md) | yes |
+| [A71](DECISIONS.md) | One registry crate, shared by the Peer (by path) and the browser (Peer-Light's wasm) | [runtime](runtime/README.md) | yes |
+| [A70](DECISIONS.md) | Core's past is generic over named things; `Past.tips` → `parents` | [core](core/README.md) | yes |
+| [A69](DECISIONS.md) | Slide text ≥ 2.6cqw (≥ 9 px at a 356 px slide) | [runtime](runtime/README.md) | yes |
+| [A68](DECISIONS.md) | The tree's statements are op calls of `tree/1`; full rewrite, no bridge | [id](id/README.md) | yes |
+| [A67](DECISIONS.md) | Built-in root types `keyring`, `safe`, `group`; Core's type of types | [id](id/README.md) | yes |
+| [A66](DECISIONS.md) | A cap line is `{op, doc, params}`; bounds are enumerations | [id](id/README.md) | yes |
+| [A65](DECISIONS.md) | `Signed.name` leaves the signer out | [core](core/README.md) | yes |
+| [A64](DECISIONS.md) | Production's members get member caps at the switch | [peers](peers/README.md) | yes |
+| [A63](DECISIONS.md) | Confirming a claim: a standing, revocable cap from Maia City to Aven's vault | [id](id/README.md) | yes |
+| [A62](DECISIONS.md) | A collection is one target for every op; directories and keep scopes become collections | [id](id/README.md) | yes |
+| [A61](DECISIONS.md) | One list of file types (the registry replaces `passive`, `kind()`, keep.rs's `mime`) | [runtime](runtime/README.md) | yes |
+| [A60](DECISIONS.md) | A sign-in is a device cap; removing a device revokes it | [id](id/README.md) | yes |
+| [A59](DECISIONS.md) | A delete on the vault's own authority ends a Doc for every reader | [id](id/README.md) | yes |
+| [A58](DECISIONS.md) | Slides render through face-runtime; CSS compiled to Style; no `url()` or custom properties | [os](os/README.md) | superseded by A111 in part |
+| [A57](DECISIONS.md) | The wire version is in the hello and the room's topic name; `update`, no fallback | [peers](peers/README.md) | yes |
+| [A56](DECISIONS.md) | Only a write line allows a step; footprints only on write lines | [id](id/README.md) | yes |
+| [A55](DECISIONS.md) | Production's migration: checked on the real store, pre-flight then switch, no dual mode | [peers](peers/README.md) | yes |
+| [A54](DECISIONS.md) | face-runtime's contrast check (ancestors, full-bleed siblings; partial layers unseen) | [runtime](runtime/README.md) | yes |
+| [A53](DECISIONS.md) | Node trees ≤ 20,000 nodes; markdown-runtime: raw HTML as text, images only by hash | [runtime](runtime/README.md) | yes |
+| [A52](DECISIONS.md) | Core's CBOR nests at most 512 deep | [core](core/README.md) | yes |
+| [A51](DECISIONS.md) | `aven-core` lives at `aven/DB2/core`; `aven/runtimes` is its own workspace | [core](core/README.md) | yes |
+| [A50](DECISIONS.md) | The docs are in English | [os](os/README.md) | yes |
+| [A49](DECISIONS.md) | avenBRAIN holds all documentation: a visual wiki, one concept per slide, the glossary | [os](os/README.md) | yes |
+| [A48](DECISIONS.md) | A writer id is the first of four windows that isn't Loro's reserved value; 0 if none | [docs](docs/README.md) | yes |
+| [A47](DECISIONS.md) | A writer id's exact layout (derive_key `avenDB writer 1`, first 8 bytes LE) | [docs](docs/README.md) | superseded by A48 in part |
+| [A46](DECISIONS.md) | `Aven.ID.Past` moves into Core as `Aven.Core.Past` | [core](core/README.md) | yes |
+| [A45](DECISIONS.md) | One concept, one owner | this page | superseded by A159 in part |
+| [A44](DECISIONS.md) | Placement has one source: the owner's vault | [caps](caps/README.md) | superseded by A144 in part |
+| [A43](DECISIONS.md) | The Doc foundation comes first | process | superseded by A112 in part |
+| [A42](DECISIONS.md) | The contradictions of 31 Oct | [caps](caps/README.md) | superseded by A148 in part |
+| [A41](DECISIONS.md) | avenOS's documentation is "Brain" | [os](os/README.md) | yes |
+| [A40](DECISIONS.md) | Holdings follow caps | [caps](caps/README.md) | yes |
+| [A39](DECISIONS.md) | Every Doc has a type, always | [docs](docs/README.md) | yes |
+| [A38](DECISIONS.md) | Membership is a cap | [caps](caps/README.md) | yes |
+| [A37](DECISIONS.md) | state-runtime returns K8's steps | [runtime](runtime/README.md) | yes |
+| [A36](DECISIONS.md) | Releases | [sandbox](sandbox/README.md) | yes |
+| [A35](DECISIONS.md) | One presence | [peers](peers/README.md) | yes |
+| [A34](DECISIONS.md) | Catch-up on Doc logs only | [peers](peers/README.md) | yes |
+| [A33](DECISIONS.md) | An actor's message is an envelope | [actors](actors/README.md) | yes |
+| [A32](DECISIONS.md) | Caps are built from ops | [caps](caps/README.md) | yes |
+| [A31](DECISIONS.md) | Two kinds of signed thing | [core](core/README.md) | yes |
+| [A30](DECISIONS.md) | One name for a signed thing | [core](core/README.md) | yes |
+| [A29](DECISIONS.md) | Frames in CBOR | [peers](peers/README.md) | yes |
+| [A28](DECISIONS.md) | Vaults own; signers only sign | [caps](caps/README.md) | yes |
+| [A27](DECISIONS.md) | An actor host writes only under its actors' chains | [actors](actors/README.md) | yes |
+| [A26](DECISIONS.md) | Sealed indexes | [ops](ops/README.md) | yes |
+| [A25](DECISIONS.md) | Publish the six audits | process | yes |
+| [A24](DECISIONS.md) | The layers | this page | yes |
+| [A23](DECISIONS.md) | Acks can't launder | [caps](caps/README.md) | yes |
+| [A22](DECISIONS.md) | A peer that keeps sealed data for others checks who may add or fetch it, without reading it | [caps](caps/README.md) | superseded by A141 in part |
+| [A21](DECISIONS.md) | Search is local first | [ops](ops/README.md) | yes |
+| [A20](DECISIONS.md) | Facts for relations, Records for documents | [ops](ops/README.md) | yes |
+| [A19](DECISIONS.md) | One update grammar | [ops](ops/README.md) | yes |
+| [A18](DECISIONS.md) | Plugins are runtimes | [ops](ops/README.md) | yes |
+| [A17](DECISIONS.md) | Actors fold into docs | [actors](actors/README.md) | yes |
+| [A16](DECISIONS.md) | Hosting an actor on the Aven Peer is an explicit read cap | [actors](actors/README.md) | yes |
+| [A15](DECISIONS.md) | Three origins | [os](os/README.md) | yes |
+| [A14](DECISIONS.md) | A dedicated passkey RP ID for avenOS | [os](os/README.md) | yes |
+| [A13](DECISIONS.md) | The guardian is named, with hybrid keys, in every claim and join text | [id](id/README.md) | yes |
+| [A12](DECISIONS.md) | The tree is a Doc of signed statements | [caps](caps/README.md) | superseded by A63 in part |
+| [A11](DECISIONS.md) | A signed genesis | [caps](caps/README.md) | yes |
+| [A10](DECISIONS.md) | The network is a group | [caps](caps/README.md) | yes |
+| [A9](DECISIONS.md) | The want queue | [ops](ops/README.md) | yes |
+| [A8](DECISIONS.md) | One target grammar | [core](core/README.md) | yes |
+| [A7](DECISIONS.md) | A Doc pins the type versions it accepts | [docs](docs/README.md) | yes |
+| [A6](DECISIONS.md) | Collections that grow without end are chains of period Docs | [docs](docs/README.md) | yes |
+| [A5](DECISIONS.md) | Checkpoints travel | [docs](docs/README.md) | yes |
+| [A4](DECISIONS.md) | Splits are final | [core](core/README.md) | yes |
+| [A3](DECISIONS.md) | Envelopes name what they build on by hash | [core](core/README.md) | yes |
+| [A2](DECISIONS.md) | One codec and signing rule | [core](core/README.md) | superseded by A174 in part |
+| [A1](DECISIONS.md) | One vocabulary | [glossary](GLOSSARY.md) | superseded by A175 in part |
 
-Imported decisions that a later entry supersedes (every other imported decision still holds, cited on its page):
+The package lists' decisions, below A1 in the log, that a later decision supersedes (every other one still holds, cited on its page):
 
 | Imported | Superseded by |
 |---|---|
