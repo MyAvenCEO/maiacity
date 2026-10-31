@@ -41,7 +41,7 @@ async function open(name, hash = '') {
 	const cdp = await context.newCDPSession(page);
 	await cdp.send('WebAuthn.enable');
 	await cdp.send('WebAuthn.addVirtualAuthenticator', {
-		options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true },
+		options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, hasPrf: true, isUserVerified: true, automaticPresenceSimulation: true },
 	});
 	await page.goto(`${origin}/${hash}`);
 	return { context, page };

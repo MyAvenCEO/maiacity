@@ -129,10 +129,10 @@ fn rotation_seals_to_the_public_half() {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(16))]
 
-    /// Every vault and owner epoch has its own input, and the same output always derives the same keys.
+    /// Every owner epoch has its own input, and the same output always derives the same keys.
     #[test]
-    fn inputs_differ(a in "[a-z-]{1,12}", b in "[a-z-]{1,12}", m in any::<u64>(), n in any::<u64>()) {
-        prop_assert_eq!(prf_salt(&a, m) == prf_salt(&b, n), a == b && m == n);
+    fn inputs_differ(m in any::<u64>(), n in any::<u64>()) {
+        prop_assert_eq!(prf_salt(m) == prf_salt(n), m == n);
     }
 
     /// A hybrid key, an owner's or a device's: a signature holds for its message under its key, and only with both

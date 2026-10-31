@@ -3,7 +3,20 @@
 // its OPFS (peer/worker.js), and hears from the Aven Peer whether the network is claimed and, once this browser is
 // one of its devices, its tree, whose views the Peer-Light pushes (id.svelte.js). The claim and the sign-in are WebAuthn ceremonies here, on the page, since a worker
 // has no `navigator.credentials`; their statements go to the Aven Peer through the worker.
-import { askThrough, challenge, claimText, deviceId, hearViews, passkeyId, personId, signInText, tree, validPersonName } from './id.svelte.js';
+import {
+	askThrough,
+	challenge,
+	claimText,
+	deviceId,
+	hearViews,
+	passkeyId,
+	personId,
+	prfInput,
+	prfKeys,
+	signInText,
+	tree,
+	validPersonName,
+} from './id.svelte.js';
 import { openWorker } from './peer/open.js';
 import { live, take, timeline } from './peers.svelte.js';
 import { hear, speakThrough } from './room.svelte.js';
@@ -30,7 +43,25 @@ export const net = $state({
 	reset: false,
 	unreachable: null,
 	pending: false,
+	// the passkey's PRF step (id/caps/README.md, "Passkeys and the PRF step"): null until a ceremony has asked, then
+	// whether the passkey answered; `opened`: whether this session derived the owner and seal keys
+	prf: null,
+	opened: false,
+	// the public halves the Peer-Light derived this session, `{owner, seal}` hex: public, shown for checks
+	ownerPublic: null,
 });
+
+// A passkey without PRF never makes a vault (Samuel, 31 Oct 2026; id/caps/README.md, "Passkeys and the PRF step"):
+// sign-up refuses and says why, before anything is sent or kept. No ES256-only owner path, no second kind of vault.
+export const NO_PRF_MESSAGE =
+	"This passkey provider can't open your vault on another device. Use a passkey provider that can, such as iCloud Keychain or Google Password Manager.";
+
+// The owner epoch of a passkey, by its credential id, which the PRF input names. The register will carry it (the
+// tree's ops); until then, and for a browser that knows nothing yet, 1.
+export const ownerEpoch = (_credential) => 1;
+const prfAsk = async (epoch) => ({ prf: { eval: { first: unhex(await prfInput(epoch)) } } });
+
+const unhex = (s) => Uint8Array.from(s.match(/../g) ?? [], (b) => parseInt(b, 16));
 
 let port;
 // the start this page gives its Peer-Light, sent again with every statement (peer/worker.js)
@@ -116,14 +147,37 @@ export function runNetwork(config) {
 const hex = (buffer) => [...new Uint8Array(buffer)].map((b) => b.toString(16).padStart(2, '0')).join('');
 const unbase64url = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
 
-// The passkey signs a statement's text: its challenge is the text's SHA-256, so the assertion holds for nothing else
-export async function assertion(config, text, credential) {
+// The passkey signs a statement's text: its challenge is the text's SHA-256, so the assertion holds for nothing else.
+// With `prf`, the same tap asks the passkey's PRF for its owner epoch (no vault: A43), so a new browser opens its keys
+// in its one sign-in tap.
+export async function assertion(config, text, credential, { prf = false } = {}) {
 	const allowCredentials = credential ? [{ type: 'public-key', id: credential }] : [];
+	const epoch = ownerEpoch(credential);
+	const extensions = prf ? await prfAsk(epoch) : undefined;
 	const got = await navigator.credentials.get({
-		publicKey: { challenge: unbase64url(await challenge(text)), rpId: config.rpId, userVerification: 'required', allowCredentials },
+		publicKey: { challenge: unbase64url(await challenge(text)), rpId: config.rpId, userVerification: 'required', allowCredentials, extensions },
 	});
 	const r = got.response;
+	if (prf) await openWith(got, epoch);
 	return { clientData: new TextDecoder().decode(r.clientDataJSON), authData: hex(r.authenticatorData), signature: hex(r.signature) };
+}
+
+const base64url = (buffer) => btoa(String.fromCharCode(...new Uint8Array(buffer))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+// The PRF output goes straight into the Peer-Light, which derives the owner and seal keys and keeps only their public
+// halves; the page's copy is wiped at once. Whether the passkey answered is learnt here, never guessed (`net.prf`).
+async function openWith(credential, epoch) {
+	const first = credential.getClientExtensionResults?.().prf?.results?.first;
+	net.prf = !!first;
+	if (!first) return;
+	const output = new Uint8Array(first);
+	try {
+		net.ownerPublic = await prfKeys(epoch, base64url(credential.rawId), output);
+		net.opened = true;
+	} finally {
+		output.fill(0);
+		if (first instanceof ArrayBuffer) new Uint8Array(first).fill(0);
+	}
 }
 
 export function send(frame) {
@@ -150,8 +204,35 @@ export async function claim(config, { name, deliberate = false }) {
 			pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
 			authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
 			attestation: 'none',
+			extensions: await prfAsk(1),
 		},
 	});
+	// The owner and seal keys exist before the claim's assertion, which will sign them (A43): from create() where the
+	// platform answers there; else, where it only says the PRF is enabled, from a get() of its own, one tap more at
+	// sign-up only. A passkey without PRF stops here, before anything is signed, sent or kept.
+	const prf = created.getClientExtensionResults?.().prf;
+	if (prf?.enabled === false) {
+		net.prf = false;
+		await forget(config, created);
+		throw new Error(NO_PRF_MESSAGE);
+	}
+	if (prf?.results?.first) await openWith(created, 1);
+	else {
+		const got = await navigator.credentials.get({
+			publicKey: {
+				challenge: crypto.getRandomValues(new Uint8Array(32)),
+				rpId: config.rpId,
+				userVerification: 'required',
+				allowCredentials: [{ type: 'public-key', id: created.rawId }],
+				extensions: await prfAsk(1),
+			},
+		});
+		await openWith(got, 1);
+	}
+	if (!net.prf) {
+		await forget(config, created);
+		throw new Error(NO_PRF_MESSAGE);
+	}
 	if (created.response.getPublicKeyAlgorithm() !== -7) throw new Error('the passkey is not ES256');
 	const spki = hex(created.response.getPublicKey());
 	const statement = {
@@ -169,10 +250,29 @@ export async function claim(config, { name, deliberate = false }) {
 // Sign in with your passkey, the admin's or a member's: this browser becomes one more device of the vault it owns. The
 // page asks for any passkey of this RP ID and needn't know whose: the Aven Peer finds the vault by the assertion
 // (Aven.ID.SignIn), and a passkey that owns none is refused with a word to ask for an invite.
+// A refused signup's passkey will never own anything: the browser tells its passkey manager, which drops it, where
+// it supports the Signal API. Feature-detected, with no fallback.
+async function forget(config, created) {
+	await PublicKeyCredential.signalUnknownCredential?.({ rpId: config.rpId, credentialId: base64url(created.rawId) }).catch(() => {});
+}
+
+// A new browser opens its keys in its one sign-in tap: the same assertion asks the passkey's PRF (A43). A passkey
+// without PRF still signs in: existing vaults predate the owner key, and their move to owner keys, and what a passkey
+// without PRF does then, is decided when the tree becomes the first Doc, not here.
 export async function signIn(config) {
 	const statement = { network: config.network, device: { id: await deviceId(net.key), key: net.key } };
-	statement.assertion = await assertion(config, await signInText(config.network, statement.device.id, net.key));
+	statement.assertion = await assertion(config, await signInText(config.network, statement.device.id, net.key), null, { prf: true });
 	send({ frame: 'sign_in', statement: JSON.stringify(statement) });
+}
+
+// Each later session's first tap: the passkey's PRF opens the owner and seal keys in the Peer-Light again, since they
+// are never stored (A42). Its assertion signs only a fresh challenge and goes nowhere.
+export async function openVault(config) {
+	const got = await navigator.credentials.get({
+		publicKey: { challenge: crypto.getRandomValues(new Uint8Array(32)), rpId: config.rpId, userVerification: 'required', extensions: await prfAsk(ownerEpoch(null)) },
+	});
+	await openWith(got, ownerEpoch(got.rawId));
+	if (!net.prf) throw new Error(NO_PRF_MESSAGE);
 }
 
 // Sign out of this browser: the Peer-Light's worker ends, then this origin's storage, where its device key lives, is

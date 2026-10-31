@@ -10,8 +10,11 @@ and XChaCha20-Poly1305 stay outside Lean, held to their standards' known answers
 comes out of them is fixed here.
 
 **The PRF step.**
-- The PRF input is `encode(["avenID prf 1", {epoch, vault}])`: the vault's id and its owner's epoch. Rotating the
-  epoch changes the input and every key derived from it.
+- The PRF input is `encode(["avenID prf 1", {epoch}])`: the owner's epoch, and no vault (A43, 31 Oct 2026). The
+  authenticator's PRF secret is already its credential's own, and a passkey belongs to one vault, so the vault would
+  separate nothing; without it a new browser asks the PRF in its one sign-in tap, before it knows its vault, and the
+  claim's keys exist before the assertion that signs them. Rotating the epoch changes the input and every key derived
+  from it, so a leaked output never opens a later epoch.
 - The browser hands the authenticator `SHA-256("WebAuthn PRF" ‖ 0 ‖ input)` (WebAuthn Level 3, `prf`).
 - From the 32-byte output: `derive_key("avenID owner 1")` read for 64 bytes, the first 32 the owner key's Ed25519
   seed and the next 32 its ML-DSA-65 ξ; `derive_key("avenID seal 1")`, the seal key's X-Wing seed. Device keys never
@@ -47,18 +50,18 @@ def prfLabel : String := "avenID prf 1"
 def ownerLabel : String := "avenID owner 1"
 def sealLabel : String := "avenID seal 1"
 
-/-- The bytes a proof reads: `avenID prf 1` and `epoch` (Core's `keyVault` is `vault`). -/
+/-- The bytes a proof reads: `avenID prf 1` and `epoch`. -/
 def prfLabelBytes : Bytes := [0x61, 0x76, 0x65, 0x6E, 0x49, 0x44, 0x20, 0x70, 0x72, 0x66, 0x20, 0x31]
 def keyEpoch : Bytes := [0x65, 0x70, 0x6F, 0x63, 0x68]
 
-#guard prfLabelBytes = t prfLabel ∧ keyEpoch = t "epoch" ∧ keyVault = t "vault"
+#guard prfLabelBytes = t prfLabel ∧ keyEpoch = t "epoch"
 
-def prfBody (vault : String) (epoch : Nat) : Value := .map [(keyEpoch, .uint epoch), (keyVault, .text (t vault))]
+def prfBody (epoch : Nat) : Value := .map [(keyEpoch, .uint epoch)]
 
-def prfInput (vault : String) (epoch : Nat) : Bytes := encode (.array [.text prfLabelBytes, prfBody vault epoch])
+def prfInput (epoch : Nat) : Bytes := encode (.array [.text prfLabelBytes, prfBody epoch])
 
-def prfSalt (vault : String) (epoch : Nat) : Bytes :=
-  Keys.sha256.digest (t "WebAuthn PRF" ++ [0] ++ prfInput vault epoch)
+def prfSalt (epoch : Nat) : Bytes :=
+  Keys.sha256.digest (t "WebAuthn PRF" ++ [0] ++ prfInput epoch)
 
 /-- The owner key's seeds: Ed25519's, then ML-DSA-65's ξ. -/
 def ownerSeeds (prf : Bytes) : Bytes × Bytes :=
@@ -67,21 +70,15 @@ def ownerSeeds (prf : Bytes) : Bytes × Bytes :=
 
 def sealSeed (prf : Bytes) : Bytes := Blake3.deriveKey sealLabel prf
 
-theorem prf_shape {v : String} {n : Nat} (hv : textOk (t v) = true) (hn : n < limit) :
-    Shape (.array [.text prfLabelBytes, prfBody v n]) = true := by
-  simp only [textOk, limit, Bool.and_eq_true, decide_eq_true_eq] at hv
-  have closed : utf8 prfLabelBytes = true ∧ lexLt (keyBytes keyEpoch) (keyBytes keyVault) = true ∧
-      utf8 keyEpoch = true ∧ utf8 keyVault = true := by decide
-  simp [Shape, ShapeList, ShapeMap, prfBody, keysSorted, strictlySorted, textOk, closed, hv.1, hv.2, hn, limit]
-  simp_all [prfLabelBytes, keyEpoch, keyVault]
+theorem prf_shape {n : Nat} (hn : n < limit) : Shape (.array [.text prfLabelBytes, prfBody n]) = true := by
+  have closed : utf8 prfLabelBytes = true ∧ utf8 keyEpoch = true := by decide
+  simp [Shape, ShapeList, ShapeMap, prfBody, keysSorted, strictlySorted, textOk, closed, hn, limit]
+  simp_all [prfLabelBytes, keyEpoch]
 
-/-- Two vaults, or two epochs of one, never share a PRF input. -/
-theorem prf_input_separates {v w : String} {m n : Nat} (hv : textOk (t v) = true) (hw : textOk (t w) = true)
-    (hm : m < limit) (hn : n < limit) (h : prfInput v m = prfInput w n) : t v = t w ∧ m = n := by
-  have := encode_inj_shape (prf_shape hv hm) (prf_shape hw hn) h
-  simp only [prfBody, Value.array.injEq, List.cons.injEq, Value.map.injEq, Prod.mk.injEq, Value.uint.injEq,
-    Value.text.injEq, true_and, and_true] at this
-  exact ⟨this.2, this.1⟩
+/-- Two owner epochs never share a PRF input. -/
+theorem prf_input_separates {m n : Nat} (hm : m < limit) (hn : n < limit) (h : prfInput m = prfInput n) : m = n := by
+  have := encode_inj_shape (prf_shape hm) (prf_shape hn) h
+  simpa [prfBody] using this
 
 /-! ## Stanzas -/
 

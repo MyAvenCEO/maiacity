@@ -48,9 +48,9 @@ fn derive(input: &Value) -> Value {
         hasher.finalize_xof().fill(&mut out);
         return hex(&out);
     }
-    if let Some(vault) = input.get("vault") {
-        let (vault, epoch) = (vault.as_str().unwrap(), input["epoch"].as_u64().unwrap());
-        return json!({ "input": hex(&prf_input(vault, epoch)), "salt": hex(&prf_salt(vault, epoch)) });
+    if input.as_object().unwrap().len() == 1 && input.get("epoch").is_some() {
+        let epoch = input["epoch"].as_u64().unwrap();
+        return json!({ "input": hex(&prf_input(epoch)), "salt": hex(&prf_salt(epoch)) });
     }
     if let Some(prf) = input.get("prf") {
         let prf = PrfOutput::new(secret(prf));

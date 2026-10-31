@@ -24,6 +24,7 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { chromium, firefox, webkit } from 'playwright';
 import { served } from './prod.mjs';
+import { withPrf } from './prf.mjs';
 
 const run = process.argv[2] ?? 'runs/latest';
 const origin = 'http://localhost:5174';
@@ -58,6 +59,7 @@ async function launch(engine, name, passkey) {
 	const context = await engine.launchPersistentContext(dir, { viewport: { width: 1000, height: 760 } });
 	if (passkey) await context.credentials.create(passkey.rpId, passkey);
 	await context.credentials.install();
+	await withPrf(context);
 	const page = context.pages()[0] ?? (await context.newPage());
 	await page.goto(`${origin}/`);
 	return { context, page };
@@ -210,6 +212,7 @@ try {
 		const context = await engine.launchPersistentContext(dir, { viewport: { width: 1000, height: 760 } });
 		await context.credentials.create(passkey.rpId, passkey);
 		await context.credentials.install();
+		await withPrf(context);
 		const page = context.pages()[0] ?? (await context.newPage());
 		try {
 			await page.goto(`${at}/`);

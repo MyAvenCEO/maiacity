@@ -3,13 +3,16 @@
 // virtual authenticator over CDP, a passkey on one browser profile copied to another as a synced passkey would be.
 // `bun run up --check` runs it in three phases around what only the host can do, restarting and wiping that peer:
 //
-//   node sandbox/claim.mjs claim <run>      on an empty store: the first signup, a name then a passkey, claims the
+//   node sandbox/claim.mjs claim <run>      on an empty store: a passkey without PRF refused, the network left
+//                                           unclaimed; then the first signup, a name then a passkey, claims the
 //                                           network and opens the dashboard, the admin's vault owned by the passkey
 //                                           and the guardian, owning Maia City, which owns Aven; a
 //                                           second signup with another passkey refused; a sign-in from a second
 //                                           profile with the same passkey, which becomes a second device; that
 //                                           browser's local data then made an older avenOS's, which it resets, and
-//                                           a sign-in with the passkey makes it a device again
+//                                           a sign-in with the passkey makes it a device again. With PRF, the claim
+//                                           opens the vault's keys, and the second browser's one sign-in tap opens
+//                                           them
 //   node sandbox/claim.mjs restarted <run>  after the Aven Peer restarted: both browsers on the same tree
 //   node sandbox/claim.mjs wiped <run>      after its store was wiped: the network unclaimed again
 //
@@ -22,11 +25,12 @@ import { createHash, createPrivateKey, createPublicKey } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { lines } from './records.mjs';
+import { ownerKeys, withPrf } from './prf.mjs';
 
 const [phase, run = 'runs/latest'] = process.argv.slice(2);
 const origin = 'http://localhost:5174';
 const guardian = process.env.AVENSANDBOX_GUARDIAN;
-const profiles = { first: '/tmp/avensandbox-claim-first', second: '/tmp/avensandbox-claim-second' };
+const profiles = { first: '/tmp/avensandbox-claim-first', second: '/tmp/avensandbox-claim-second', noPrf: '/tmp/avensandbox-claim-no-prf' };
 const state = `${run}/claim.json`;
 mkdirSync(run, { recursive: true });
 
@@ -40,13 +44,13 @@ function network(since = 0) {
 	return lines().findLast((line) => line.peer === 'prod-peer' && line.event === 'network' && line.t >= since);
 }
 
-async function open(name) {
+async function open(name, { prf = true } = {}) {
 	const context = await chromium.launchPersistentContext(profiles[name], { viewport: { width: 1100, height: 800 } });
 	const page = context.pages()[0] ?? (await context.newPage());
 	const cdp = await context.newCDPSession(page);
 	await cdp.send('WebAuthn.enable');
 	const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', {
-		options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true },
+		options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, hasPrf: prf, isUserVerified: true, automaticPresenceSimulation: true },
 	});
 	await page.goto(`${origin}/`);
 	return { context, page, cdp, authenticatorId };
@@ -114,6 +118,24 @@ const devices = (line) => (line?.tree ? Object.values(JSON.parse(line.tree).vaul
 if (phase === 'claim') {
 	for (const dir of Object.values(profiles)) rmSync(dir, { recursive: true, force: true });
 	const since = Date.now();
+	// a passkey without PRF never makes a vault (Samuel, 31 Oct 2026): its signup is refused with a plain word, before
+	// anything is sent or kept, and the network stays unclaimed
+	const noPrf = await open('noPrf', { prf: false });
+	if (await view(noPrf.page, 'claim')) {
+		await signUp(noPrf.page);
+		const word = await noPrf.page.getByTestId('refused').textContent({ timeout: 15_000 }).catch(() => '');
+		if (!word.includes('passkey provider')) problems.push(`a passkey without PRF was not refused plainly: "${word}"`);
+		await noPrf.page.screenshot({ path: `${run}/claim-no-prf.png` });
+		await wait(1000);
+		if (said('claimed', since)) problems.push('a passkey without PRF claimed the network');
+		const kept = await noPrf.page.evaluate(async () => (await import('/id.svelte.js')).ownerKeys()).catch((e) => `unread: ${e}`);
+		if (kept !== null) problems.push(`a passkey without PRF left owner keys in the Peer-Light's store: ${kept}`);
+		// the passkey its signup made is dropped from the passkey manager, where the browser has the Signal API (Chromium)
+		const signals = await noPrf.page.evaluate(() => !!PublicKeyCredential.signalUnknownCredential);
+		const left = (await noPrf.cdp.send('WebAuthn.getCredentials', { authenticatorId: noPrf.authenticatorId })).credentials.length;
+		if (signals && left) problems.push(`the refused signup's passkey stayed in the passkey manager (${left} left)`);
+	} else problems.push('an unclaimed network shows the no-PRF browser no claim screen');
+	await noPrf.context.close();
 	const first = await open('first');
 	if (!(await view(first.page, 'claim'))) problems.push('an unclaimed network shows no claim screen');
 	await first.page.screenshot({ path: `${run}/claim-unclaimed.png` });
@@ -126,6 +148,11 @@ if (phase === 'claim') {
 	report.admin = await first.page.locator('[data-view="dashboard"]').first().getAttribute('data-account').catch(() => null);
 	if (!report.admin?.startsWith('person-')) problems.push(`the dashboard acts as ${report.admin}, not the admin's vault`);
 	await first.page.screenshot({ path: `${run}/claim-dashboard.png` });
+	// the claim's own assertion asked the passkey's PRF: its vault's keys are open on this browser, so no "open your
+	// vault" is offered, and the Peer-Light keeps the owner and seal keys' public halves (id/caps, "Passkeys and the PRF step")
+	if (await first.page.getByTestId('open-vault').count()) problems.push('after the claim the vault was not opened by the passkey\'s PRF');
+	report.ownerKeys = await ownerKeys(first.page);
+	if (!report.ownerKeys?.owner || !report.ownerKeys?.seal) problems.push('the claiming browser keeps no owner and seal public halves');
 	const claimed = network(since);
 	if (!claimed?.claimed || devices(claimed) !== 2) problems.push(`after the claim the tree has ${devices(claimed)} devices, not 2`);
 	// the admin's vault is owned by its passkey and by MaiaCityGuardian, the box's test one
@@ -177,6 +204,8 @@ if (phase === 'claim') {
 	// the refused signup made a passkey on the second profile: a person's other browser holds only their own
 	await second.cdp.send('WebAuthn.clearCredentials', { authenticatorId: second.authenticatorId });
 	await second.cdp.send('WebAuthn.addCredential', { authenticatorId: second.authenticatorId, credential: passkey });
+	// Chromium's copy carries no PRF secret, as a synced passkey's would: the box stands in for its PRF (prf.mjs)
+	await withPrf(second.context);
 	await second.page.goto(`${origin}/`);
 	await view(second.page, 'invite-only');
 	const signedAt = Date.now();
@@ -185,6 +214,11 @@ if (phase === 'claim') {
 	report.signInMs = Date.now() - signedAt;
 	const signedIn = await second.page.locator('[data-view="dashboard"]').first().getAttribute('data-account').catch(() => null);
 	if (signedIn !== report.admin) problems.push(`the second browser acts as ${signedIn}, not ${report.admin}`);
+	// a new browser opens its vault with the passkey alone, in its one sign-in tap, which asked the PRF too (A43). That
+	// the same passkey derives the same keys on two browsers is the engines step's (its PRF stand-in on both)
+	if (await second.page.getByTestId('open-vault').count()) problems.push("the sign-in's one tap did not open the vault's keys");
+	if (!(await ownerKeys(second.page))?.owner) problems.push('the signed-in browser keeps no owner public half');
+	await second.page.screenshot({ path: `${run}/claim-opened.png` });
 	await wait(300);
 	report.tree = network(since)?.tree;
 	if (devices(network()) !== 3) problems.push(`after the sign-in the tree has ${devices(network())} devices, not 3`);
