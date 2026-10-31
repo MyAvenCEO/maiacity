@@ -716,6 +716,61 @@ pub async fn device_seal() -> Result<String, JsError> {
     Ok(hex_of(&aven_id::device_seal_key(&seed).public().to_bytes()))
 }
 
+std::thread_local! {
+    /// This session's keyring, once opened or made: its epoch key and the vault key inside. Never stored, never handed
+    /// out; the Docs it opens use them here.
+    static KEYRING: RefCell<Option<aven_id::keyring::Opened>> = const { RefCell::new(None) };
+}
+
+/// Sign-up's keyring (`Aven.ID.Keyring`, the real path): a fresh vault key, sealed in epoch 1 to this device's seal key
+/// (derived from its own seed) and the passkey's PRF seal key from this session's ceremony (`prfKeys`). Gives back only
+/// the genesis Record's bytes (hex), for the keyring Doc's writer; the epoch key and the vault key stay in this
+/// session's keeping.
+#[wasm_bindgen(js_name = keyringGenesis)]
+pub async fn keyring_genesis(vault: String) -> Result<String, JsError> {
+    let passkey = SEAL
+        .with(|s| s.borrow().as_ref().map(|k| k.public()))
+        .ok_or_else(|| JsError::new("no passkey has opened this session"))?;
+    let device = aven_id::device_seal_key(&device_seed().await?).public();
+    let mut entropy = |out: &mut [u8]| getrandom_fill(out);
+    let vault_key = aven_id::SealKey::generate(&mut entropy);
+    let (genesis, key) =
+        aven_id::keyring::genesis(&vault, &vault_key, &[device, passkey], &mut entropy)
+            .map_err(js)?;
+    let bytes = hex_of(&genesis.to_bytes());
+    KEYRING.with(|k| {
+        *k.borrow_mut() = Some(aven_id::keyring::Opened {
+            epoch: genesis,
+            key,
+            vault_key,
+        });
+    });
+    Ok(bytes)
+}
+
+/// The browser's randomness for keys (`crypto.getRandomValues`, through js-sys), in the worker.
+fn getrandom_fill(out: &mut [u8]) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let crypto =
+            js_sys::Reflect::get(&js_sys::global(), &"crypto".into()).expect("a worker has crypto");
+        for chunk in out.chunks_mut(65536) {
+            let array = js_sys::Uint8Array::new_with_length(chunk.len() as u32);
+            let get =
+                js_sys::Reflect::get(&crypto, &"getRandomValues".into()).expect("getRandomValues");
+            js_sys::Function::from(get)
+                .call1(&crypto, &array)
+                .expect("getRandomValues answers");
+            array.copy_to(chunk);
+        }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = out;
+        unreachable!("the Peer-Light's keys are made in a browser");
+    }
+}
+
 /// Starts the Peer-Light `name` with its secret seed (hex), linking through `relay` to the Aven Peer (`aven_key`,
 /// called `aven_name` in the timeline), and tells `notes` every event. Without a name it goes by its key's device id.
 /// In the box's cast, `members` lists the cast's members (`name=key,…`); without them it learns the members from the
