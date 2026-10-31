@@ -300,7 +300,9 @@ How it is built (thread E, 31 Oct 2026):
   `wire`; a hello without one is version 0, the wire before it had versions. `meet` answers any other with
   `{"frame":"update","wire":1}` and closes; `follows` says which side is behind, and only that one updates
   (`meet_speaks`, `meet_refuses`, `follows_newer`, `follows_one`; `upgrades.json`). The topic's name carries it too
-  (`topicName`: `avenDB chat 1\nwire 1\nnetwork <id>`). Both sides say `update` on their timeline, with `mine`,
+  (`topicName`: `avenDB chat 1\nwire 1\nnetwork <id>`). The ALPN stays `aven/db/1`, frozen as a name: the hello's
+  number is the only wire version, and a new one never bumps the ALPN. Moving frames from JSON lines to Core's CBOR
+  (rule 1) is such a later bump, made cheap by this. Both sides say `update` on their timeline, with `mine`,
   `theirs` and `follows`; a link refused that way dials again after a minute, or when woken.
 - **A tab behind** shows "Updating…" and nothing else, keeps its draft, and reloads; a host that still serves the older
   release refuses the reloaded tab again, and it waits a minute before the next reload, so it never loops
