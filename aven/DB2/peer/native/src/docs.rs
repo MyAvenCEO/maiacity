@@ -16,7 +16,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use aven_core::Hash;
+use aven_core::{Hash, Value, decode, encode};
 
 /// The subkey label a Doc's gossip topic is derived under (`Aven.Peer.DocSync.topicLabel`).
 pub const TOPIC_LABEL: &str = "avenDB topic 1";
@@ -24,6 +24,58 @@ pub const TOPIC_LABEL: &str = "avenDB topic 1";
 /// A Doc's gossip topic in one epoch (`Aven.Peer.DocSync.topic`).
 pub fn topic(epoch_key: &[u8; 32]) -> [u8; 32] {
     blake3::derive_key(TOPIC_LABEL, epoch_key)
+}
+
+/// The most one gossip message carries: iroh-gossip's default (`gossipMax`).
+pub const GOSSIP_MAX: usize = 4096;
+
+/// A message on a Doc's topic (`Live`): a commit's loose envelope sealed as it is, or, when that wouldn't fit a gossip
+/// message, its sealed bytes' hash, which readers fetch through the fetch gate on `aven/db/1`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Live {
+    Sealed(Vec<u8>),
+    Hash(Hash),
+}
+
+impl Live {
+    /// What a writer gossips for a sealed envelope (`Live.of`).
+    pub fn of(sealed: &[u8]) -> Live {
+        let whole = Live::Sealed(sealed.to_vec());
+        if whole.encode().len() <= GOSSIP_MAX {
+            whole
+        } else {
+            Live::Hash(aven_core::blake3(sealed))
+        }
+    }
+
+    pub fn value(&self) -> Value {
+        match self {
+            Live::Sealed(b) => Value::Map(vec![("sealed".into(), Value::Bytes(b.clone()))]),
+            Live::Hash(h) => Value::Map(vec![("hash".into(), Value::Bytes(h.0.to_vec()))]),
+        }
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        encode(&self.value())
+    }
+
+    /// A message read from exactly its one key, from the one encoding of it (`Live.ofValue?`). The limits on the
+    /// sealed bytes inside are the docs layer's, when it opens them.
+    pub fn decode(bytes: &[u8]) -> Option<Live> {
+        if bytes.len() > GOSSIP_MAX {
+            return None;
+        }
+        let Value::Map(kvs) = decode(bytes)? else {
+            return None;
+        };
+        match kvs.as_slice() {
+            [(k, Value::Bytes(b))] if k == "sealed" => Some(Live::Sealed(b.clone())),
+            [(k, Value::Bytes(b))] if k == "hash" => {
+                Some(Live::Hash(Hash(b.as_slice().try_into().ok()?)))
+            }
+            _ => None,
+        }
+    }
 }
 
 /// An envelope as sync reads it: its name (A30), its place in its log, and what it builds on (`Entry`).

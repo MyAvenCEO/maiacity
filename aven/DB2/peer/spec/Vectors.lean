@@ -8,6 +8,8 @@ import Lean.Data.Json
 (`vectors/` by default), where they are committed. Every vector is `{"name", "input", "expected"}`.
 
 - `topics.json`: an epoch's key and its Doc's gossip topic (`topic`), in hex.
+- `live.json`: sealed envelopes of sizes about the gossip limit: what a writer gossips for each (`Live.of`) and its
+  bytes, in hex; and messages a reader refuses, `expected` null.
 - `doc-sync.json`: generated worlds of two readers. Each world is entries (an envelope as sync reads it: its name, its
   writer, its place, `prev` and `deps`, by name) and which of them each reader holds, each a version; expected are each
   reader's tips, what each answers the other's tips with (`beyond`), whether each holds a split in each writer's log,
@@ -40,6 +42,21 @@ def keys : List Bytes :=
 def topics : List Json :=
   keys.zipIdx.map fun (k, i) =>
     vector s!"epoch key {i + 1}" (Json.mkObj [("key", hex k)]) (Json.mkObj [("topic", hex (topic k))])
+
+/-! ## What a Doc's topic carries -/
+
+def liveVectors : List Json :=
+  ([0, 1, 100, 4085, 4086, 70000].map fun n =>
+    let b := (List.range n).map Nat.toUInt8
+    let l := Live.of b
+    vector s!"a sealed envelope of {n} bytes" (Json.mkObj [("sealed", hex b)])
+      (Json.mkObj [("kind", match l with | .sealed _ => "sealed" | .hash _ => "hash"),
+        ("bytes", hex (encode l.value))])) ++
+  ([("a hash of 31 bytes", Value.map [(text "hash", .bytes (List.replicate 31 1))]),
+    ("another key", .map [(text "line", .bytes [1])]),
+    ("a key extra", .map [(text "sealed", .bytes [1]), (text "x", .null)]),
+    ("text, not bytes", .map [(text "sealed", .text (text "a"))])].map fun (name, v) =>
+    vector name (Json.mkObj [("bytes", hex (encode v))]) Json.null)
 
 /-! ## Sync between two readers -/
 
@@ -129,4 +146,5 @@ def main (args : List String) : IO Unit := do
   let dir : System.FilePath := args.headD "vectors"
   IO.FS.createDirAll dir
   write dir "topics.json" topics
+  write dir "live.json" liveVectors
   write dir "doc-sync.json" syncVectors

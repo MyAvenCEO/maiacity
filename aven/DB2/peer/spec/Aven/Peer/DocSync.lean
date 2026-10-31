@@ -1,4 +1,6 @@
 import Aven.Core.Past
+import Aven.Core.CborLaws
+import Aven.Core.Text
 
 /-!
 # Docs in the Peers: the topic, and sync between readers by version
@@ -34,7 +36,8 @@ What it proves:
 - `sync_union`: after one exchange both readers hold everything either held, by name;
 - `split_sent`, `split_shows`: a split is never left out, held or shown;
 - `beyond_new`: nothing the tips name is sent;
-- `sync_moves`: a page that moves makes the names held strictly more.
+- `sync_moves`: a page that moves makes the names held strictly more;
+- `Live.ofValue_value`, `Live.of_fits`: what a Doc's topic carries reads back, and fits a gossip message.
 
 Catch-up from keepers, by arrival number, is another exchange (stage 5), never this one.
 -/
@@ -50,6 +53,54 @@ def topicLabel : String := "avenDB topic 1"
 
 /-- A Doc's gossip topic in one epoch: BLAKE3's key derivation under `topicLabel` over the epoch's key. -/
 def topic (epochKey : Bytes) : Bytes := Blake3.deriveKey topicLabel epochKey
+
+/-! ## What a Doc's topic carries
+
+A commit's loose envelope goes out on its Doc's topic sealed, as it is. One too large for a gossip message goes out as
+its sealed bytes' hash, and readers fetch it through the fetch gate on `aven/db/1` (`prove`, `fetch`, `items`), as they
+fetch a `doc_have`'s. A message is a Value with exactly one key, read back from exactly that (`Live.ofValue_value`). -/
+
+/-- The most one gossip message carries: iroh-gossip's default. -/
+def gossipMax : Nat := 4096
+
+/-- A message on a Doc's topic. -/
+inductive Live where
+  /-- a loose envelope, sealed with the `envelope` kind -/
+  | sealed (bytes : Bytes)
+  /-- the hash of one too large to gossip, to fetch -/
+  | hash (h : Hash)
+  deriving DecidableEq, Repr
+
+def Live.value : Live → Value
+  | .sealed b => .map [(text "sealed", .bytes b)]
+  | .hash h => .map [(text "hash", .bytes h.bytes)]
+
+/-- A message read from exactly its one key; a hash is 32 bytes. -/
+def Live.ofValue? : Value → Option Live
+  | .map [(k, .bytes b)] =>
+    if k = text "sealed" then some (.sealed b)
+    else if k = text "hash" ∧ b.length = 32 then some (.hash ⟨b⟩)
+    else none
+  | _ => none
+
+/-- **One form:** a message reads back from its Value. -/
+theorem Live.ofValue_value (l : Live) (h : ∀ x, l = .hash x → x.bytes.length = 32) : Live.ofValue? l.value = some l := by
+  cases l with
+  | sealed b => simp [Live.value, Live.ofValue?]
+  | hash x =>
+    have := h x rfl
+    simp [Live.value, Live.ofValue?, text_inj, this]
+
+/-- What a writer gossips for a sealed envelope: itself when it fits a message, else its hash. -/
+def Live.of (sealed : Bytes) : Live :=
+  if (encode (Live.sealed sealed).value).length ≤ gossipMax then .sealed sealed else .hash (blake3 sealed)
+
+/-- **It fits:** a sealed envelope goes out as itself only when its message fits. -/
+theorem Live.of_fits {b : Bytes} (h : Live.of b = .sealed b) : (encode (Live.sealed b).value).length ≤ gossipMax := by
+  unfold Live.of at h
+  split at h
+  · assumption
+  · cases h
 
 /-! ## What sync reads of an envelope -/
 
@@ -307,6 +358,16 @@ def both : List Entry := alice ++ [e 5 1 3 (some 1) []]
 -- a page of names already held doesn't move; one with a new name does
 #guard !moves alice [e 1 1 2 (some 0) []]
 #guard moves alice [e 3 2 1 none []]
+-- what a topic carries: up to 4085 sealed bytes as they are, more as their hash; each reads back from its bytes
+#guard (Live.of (List.replicate 4085 7)) == .sealed (List.replicate 4085 7)
+#guard (Live.of (List.replicate 4086 7)) == .hash (blake3 (List.replicate 4086 7))
+#guard (encode (Live.of (List.replicate 100000 7)).value).length ≤ gossipMax
+#guard [Live.sealed [1, 2, 3], Live.sealed [], Live.hash (blake3 [1])].all fun l =>
+  (decodeAll (encode l.value)).bind Live.ofValue? == some l
+-- a hash that isn't 32 bytes, another key, a key extra: none
+#guard Live.ofValue? (.map [(text "hash", .bytes [1])]) == none
+#guard Live.ofValue? (.map [(text "line", .bytes [1])]) == none
+#guard Live.ofValue? (.map [(text "sealed", .bytes [1]), (text "x", .null)]) == none
 -- a topic is 32 bytes
 #guard (topic (List.replicate 32 0)).length = 32
 

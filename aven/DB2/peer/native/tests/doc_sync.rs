@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 
 use aven_core::Hash;
-use aven_peer::docs::{Entry, Tip, beyond, split, tips, topic};
+use aven_peer::docs::{Entry, Live, Tip, beyond, split, tips, topic};
 use serde_json::Value;
 
 fn vectors(file: &str) -> Vec<Value> {
@@ -140,5 +140,29 @@ fn sync_is_the_models() {
             x["heldB"].as_u64().unwrap(),
             "{name}: what B holds after"
         );
+    }
+}
+
+#[test]
+fn live_is_the_models() {
+    let vs = vectors("live.json");
+    assert!(vs.len() >= 10);
+    for v in vs {
+        let name = &v["name"];
+        if v["expected"].is_null() {
+            let bytes = unhex(v["input"]["bytes"].as_str().unwrap());
+            assert_eq!(Live::decode(&bytes), None, "{name}");
+            continue;
+        }
+        let sealed = unhex(v["input"]["sealed"].as_str().unwrap());
+        let live = Live::of(&sealed);
+        let kind = match live {
+            Live::Sealed(_) => "sealed",
+            Live::Hash(_) => "hash",
+        };
+        assert_eq!(kind, v["expected"]["kind"], "{name}");
+        let bytes = unhex(v["expected"]["bytes"].as_str().unwrap());
+        assert_eq!(live.encode(), bytes, "{name}");
+        assert_eq!(Live::decode(&bytes), Some(live), "{name}: read back");
     }
 }
