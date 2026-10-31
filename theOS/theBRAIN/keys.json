@@ -10,7 +10,7 @@
    "title": "Four kinds of keys.",
    "text": "Each one has exactly one job.",
    "list": [
-    "Seal: signs a piece of data's first rule, then is destroyed.",
+    "Seal: signs a piece of data's first caps, then is destroyed.",
     "Identity key: a lock only you can open, grown from your passkey.",
     "Role key: a lock all members of a role can open.",
     "Data key: the key the data itself is encrypted with."
@@ -19,10 +19,10 @@
   },
   {
    "title": "Data is born.",
-   "text": "Your device makes a fresh seal. Its public half becomes the data's ID. It signs the first rule, and the private half is wiped. From now on, the rules can only change through someone the rules allow.",
+   "text": "Your device makes a fresh seal. Its public half becomes the data's ID. It signs the first caps, and the private half is wiped. From now on, caps can only change through a role whose cap includes admin.",
    "code": {
     "id": "ed25519:7Hq…",
-    "first": {
+    "caps": {
      "role": "owners",
      "ops": [
       "admin",
@@ -37,7 +37,7 @@
    },
    "flow": [
     "new seal",
-    "sign first rule",
+    "sign first caps",
     "wipe seal"
    ],
    "action": "Lock the content"
@@ -83,8 +83,8 @@
    "action": "Give a cap"
   },
   {
-   "title": "Giving a cap: read needs a key, the rest needs a rule.",
-   "text": "Giving “plumber” read on the tap item puts the item's data key in an envelope for the plumber role. Giving update needs no key at all: it's a signed rule in the item's history, and every device enforces it.",
+   "title": "Giving a cap: read needs a key, the other ops need only a signature.",
+   "text": "Giving “plumber” read on the tap item puts the item's data key in an envelope for the plumber role. Giving update needs no key at all: it's a signed cap change in the item's history, and every device enforces it.",
    "code": {
     "data": "fix-tap",
     "op": "admin",
@@ -111,7 +111,7 @@
   },
   {
    "title": "Taking a cap away.",
-   "text": "Taking update away is just a new rule. Taking read away rotates the data key, and the new one goes to every reading role except that one.",
+   "text": "Taking update away is just a signed cap change. Taking read away rotates the data key, and the new one goes to every reading role except that one.",
    "code": {
     "data": "house-list",
     "op": "admin",
@@ -137,7 +137,7 @@
   },
   {
    "title": "Two things at once.",
-   "text": "Mia edits the list on a train, offline, at the same moment you remove her. When both devices meet, the removal wins: her edit is dropped everywhere. Every device applies the same rule, so they all end up agreeing.",
+   "text": "Mia edits the list on a train, offline, at the same moment you remove her. When both devices meet, the removal wins: her edit is dropped everywhere. Every device decides the same way, so they all end up agreeing.",
    "code": {
     "concurrent": [
      "you: remove mia from home",
@@ -179,10 +179,10 @@
   },
   {
    "title": "Where does the data key live?",
-   "text": "Nobody holds it for the data. It travels with the data itself: every piece of data carries a small {keyring} next to its rules. The keyring holds the data key in envelopes, one for each role that may read. Carriers store it like everything else, sealed and unreadable.",
+   "text": "Nobody holds it for the data. It travels with the data itself: every piece of data carries a small {keyring} next to its caps. The keyring holds the data key in envelopes, one for each role that may read. Carriers store it like everything else, sealed and unreadable.",
    "code": {
     "data": "house-list",
-    "rules": {
+    "caps": {
      "owners": "admin, CRUD",
      "home": "create, read, update"
     },
@@ -233,7 +233,7 @@
       "new now"
      ],
      [
-      "Change create, update, delete, admin",
+      "Change any other op",
       "–",
       "–",
       "–"

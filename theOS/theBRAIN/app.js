@@ -77,9 +77,12 @@ async function start() {
   $('#prev').addEventListener('click', () => at > 0 && go(at - 1));
   $('#next').addEventListener('click', () => go(at + 1));
   $('#card').addEventListener('click', (e) => { if (!e.target.closest('pre')) go(at + 1); });
+  // Arrows always move, wherever focus is; space and Enter leave a focused button to do its own job.
   addEventListener('keydown', (e) => {
-    if (['ArrowRight', ' ', 'PageDown', 'Enter'].includes(e.key) && !e.target.closest('button')) { e.preventDefault(); go(at + 1); }
-    if (['ArrowLeft', 'PageUp'].includes(e.key) && at > 0) { e.preventDefault(); go(at - 1); }
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const onButton = e.target instanceof Element && e.target.closest('button');
+    if (e.key === 'ArrowRight' || e.key === 'PageDown' || ((e.key === ' ' || e.key === 'Enter') && !onButton)) { e.preventDefault(); go(at + 1); }
+    if ((e.key === 'ArrowLeft' || e.key === 'PageUp') && at > 0) { e.preventDefault(); go(at - 1); }
   });
   let x0 = null;
   addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });

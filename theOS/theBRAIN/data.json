@@ -176,7 +176,7 @@
   },
   {
    "title": "Every op is checked on arrival.",
-   "text": "Before Alice's device merges Bob's ops, it checks each one against the rules in the Doc's own history. Bob's role has update, so his ops go in. A stranger's op on the same list is dropped, quietly, everywhere.",
+   "text": "Before Alice's device merges Bob's ops, it checks each one against the caps in the Doc's own history. Bob's role has update, so his ops go in. A stranger's op on the same list is dropped, quietly, everywhere.",
    "code": {
     "op": "bob:19",
     "kind": "insert",
@@ -193,9 +193,9 @@
   },
   {
    "title": "Bob loses update.",
-   "text": "You take update away from “home” for Bob's role. A rule is an op too, so it syncs like everything else. Ops Bob makes after it, or at the same time as it, are dropped on every device. Bob's op had not seen the revoke, so it ran at the same time, and removal wins. His earlier ops stay.",
+   "text": "You take update away from “home” for Bob's role. A cap change is an op too, so it syncs like everything else. Ops Bob makes after it, or at the same time as it, are dropped on every device. Bob's op had not seen the revoke, so it ran at the same time, and removal wins. His earlier ops stay.",
    "code": {
-    "rule": {
+    "cap": {
      "id": "you:88",
      "revoke": "update",
      "from": "home"
@@ -227,7 +227,7 @@
     "A Value is bytes that never change, named by its hash.",
     "Every Value has a Doc for its metadata and its key.",
     "Copies swap only what's missing and always end the same.",
-    "Every op is checked against the rules on arrival."
+    "Every op is checked against the caps on arrival."
    ],
    "action": ""
   }
