@@ -1265,7 +1265,7 @@ changed. A refinement names what it refines; a change of mind names what it supe
   Service Worker and the chat use it through the Peer-Light's wasm. QuickTime is added in Lean first.
 - **Why:** (c) would mean two sniffers, the very duplication being removed, and (b) would split the registry from its
   Lean home.
-- **Supersedes:** —
+- **Supersedes:** runtimes 4 (in part: "which the Service Worker and the chat load")
 - **Lean or code then:** #1678 (merged 08:24); the wiring in #1689 (merged 09:17).
 
 ### A72 · avenID's key formats
@@ -1789,7 +1789,8 @@ changed. A refinement names what it refines; a change of mind names what it supe
   stay avenBRAIN's tooling if they want it (10:49). In avenOS, the drawer's `checkTree` is the one check, for Markdown
   too (#1723, 10:59).
 - **Why:** one allowlist, one owner (A45).
-- **Supersedes:** A58 (in part: the interim JS allowlist mirror)
+- **Supersedes:** A58 (in part: the interim JS allowlist mirror); runtimes 9 (in part: the applier lives with the
+  drawer, in `draw.js`)
 - **Lean or code then:** `tree.json`; #1723 (merged 10:59).
 
 ### A112 · The clean-slate cutover, in seven stages
@@ -2545,3 +2546,22 @@ changed. A refinement names what it refines; a change of mind names what it supe
   builds it can't drift from the code.
 - **Supersedes:** — (refines A171)
 - **Lean or code then:** none; the rule is in `aven/DB2/CLAUDE.md`.
+
+### A180 · Runtimes have no release of their own
+- **Decided by:** the architect, for the avenRUNTIME page (12:36)
+- **Decision:** a runtime ships inside what loads it: its frozen bytes are committed (A102) and go out in `@aven/os` and
+  in the avenPEER image, each named by its hash. `aven/runtimes` gets no dated release of its own, and the manifest is
+  its version list.
+- **Why:** a module is named by its hash, so a separate release would add a second name for the same bytes;
+  `avensandbox.yml` never made one.
+- **Supersedes:** — (refines A36 for runtimes)
+- **Lean or code then:** none; the runtimes README and `avensandbox.yml` already agree.
+
+### A181 · A checkpoint carries a state, sealed as a checkpoint
+- **Decided by:** the architect, for the avenDOCS page (12:37)
+- **Decision:** a checkpoint's body names its Loro export under the key `state`, not `snapshot`, and that export is
+  sealed as `checkpoint`, under the same Doc and epoch as the checkpoint that names it.
+- **Why:** what travels is a checkpoint, never a snapshot (A1), and one seal for a checkpoint and its state leaves a
+  keeper nothing to tell them apart by.
+- **Supersedes:** — (applies A1 and A177 to checkpoints)
+- **Lean or code then:** to come with checkpoints: `Aven.DB.Docs` checkpoint body, its vectors.
