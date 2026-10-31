@@ -37,4 +37,39 @@ def Head.ok (h : Head) : Bool :=
 
 #guard keysSorted [(k "doc", .null), (k "branches", .null)] = true
 
+/-! ## What a peer holds of a Doc
+
+The head's companion, kept beside it under the Doc's own ref and replaced by compare-and-set, never travelling: every
+envelope the peer holds, counted or not (a split's halves are proofs), in the order it held them, each by its name and
+the hash of its encoded bytes, which the store keeps as a Value. Reopening a Doc is its genesis, then these envelopes
+imported again in this order: every verdict is worked out afresh from them, and what counts is the same
+(`Loro.converges`, `Counts`). The envelope's own bytes are the reader's; a sealed form is the keeper's. -/
+
+structure Held where
+  doc : DocId
+  envelopes : List (Hash × Hash)
+
+def Held.value (h : Held) : Value :=
+  .map [(k "doc", .bytes h.doc.hash.bytes),
+    (k "envelopes", .array (h.envelopes.map fun (n, b) => .array [n.value, b.value]))]
+
+def held32? : Value → Option Hash
+  | .bytes b => if b.length == 32 then some ⟨b⟩ else none
+  | _ => none
+
+def heldPair? : Value → Option (Hash × Hash)
+  | .array [n, b] => (held32? n).bind fun n => (held32? b).map (n, ·)
+  | _ => none
+
+/-- Read back strictly: exactly its two keys, each pair two 32-byte hashes, no envelope named twice. -/
+def Held.ofValue? : Value → Option Held
+  | .map [(d, .bytes doc), (e, .array es)] =>
+    if d == k "doc" && e == k "envelopes" && doc.length == 32 then
+      (es.mapM heldPair?).bind fun ps =>
+        if (ps.map (·.1.bytes)).Nodup then some ⟨⟨⟨doc⟩⟩, ps⟩ else none
+    else none
+  | _ => none
+
+#guard keysSorted [(k "doc", .null), (k "envelopes", .null)] = true
+
 end Aven.DB.Docs
