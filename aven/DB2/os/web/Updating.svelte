@@ -1,12 +1,6 @@
 <script>
 	// What a tab shows while it follows an `update` refusal (update.svelte.js): "Updating…", over everything else.
 	import { update } from './update.svelte.js';
-
-	// nothing else shows meanwhile: the app is hidden, not only covered
-	$effect(() => {
-		const app = document.getElementById('app');
-		if (app) app.style.display = update.now ? 'none' : '';
-	});
 </script>
 
 {#if update.now}
@@ -14,6 +8,11 @@
 {/if}
 
 <style>
+	/* nothing else shows meanwhile: the app is hidden, not only covered, in the same render as this */
+	:global(body:has(.updating) #app) {
+		display: none;
+	}
+
 	.updating {
 		position: fixed;
 		inset: 0;

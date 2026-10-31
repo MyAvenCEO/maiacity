@@ -144,12 +144,24 @@ try {
 	await page.locator('[data-view="control-room"][data-account="alice"]').waitFor({ timeout: 20_000 });
 	await host('alice-behind');
 	const card = page.locator('[data-peer="alice-peer"] [data-testid="peer-update"]');
-	// watched together: the timeline shows its last lines only, and the Peer's redials soon follow its update
-	const [update, timeline] = await Promise.all([seen(card, 30_000), seen(page.getByTestId('timeline').locator('[data-event="update"]'), 30_000)]);
-	report.native = { update, timeline };
+	// the timeline the Control Room follows, whole: on screen it shows only its last lines, and Alice Peer-Light's
+	// frame soon fills them
+	const timeline = page.evaluate(
+		() =>
+			new Promise((done) => {
+				const events = new EventSource('/events');
+				const end = (found) => (events.close(), done(found));
+				setTimeout(() => end(false), 30_000);
+				events.onmessage = ({ data }) => {
+					const line = JSON.parse(data);
+					if (line.event === 'update' && line.peer === 'alice-peer' && line.follows) end(true);
+				};
+			}),
+	);
+	report.native = { update: await seen(card, 30_000), timeline: await timeline };
 	if (!report.native.update) problems.push('Alice Peer, a wire version behind: its card says no update');
 	else report.native.said = await text(card);
-	if (!report.native.timeline) problems.push("Alice Peer, a wire version behind: no update in the Control Room's timeline");
+	if (!report.native.timeline) problems.push("Alice Peer, a wire version behind: no update in the timeline the Control Room follows");
 	await shot(page, 'alice-peer-behind');
 	await host('alice-back');
 	report.native.cleared = await card
