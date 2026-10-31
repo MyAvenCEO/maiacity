@@ -158,10 +158,10 @@
    "action": "Forget on revoke"
   },
   {
-   "title": "Revoked means forgotten.",
-   "text": "The moment a device meets any peer that holds the revoke, it applies it like a {delete trigger}: it wipes the keys and the plaintext copies of everything it may no longer read. It happens offline-first and without a server, on every honest device, the plumber's included.",
+   "title": "Ended means forgotten.",
+   "text": "The moment a device meets any peer that holds an ending, a revoke or a lapse, it applies it like a {delete trigger}: it wipes the keys and the plaintext copies of everything it may no longer read. It happens offline-first and without a server, on every honest device, the plumber's included.",
    "code": {
-    "on": "revoke",
+    "on": "ending (revoke or lapse)",
     "data": "fix-tap",
     "role": "plumber",
     "then": [
@@ -172,7 +172,7 @@
    },
    "flow": [
     "meet a peer",
-    "learn the revoke",
+    "learn the ending",
     "wipe keys and copies"
    ],
    "action": "Where does the data key live?"
