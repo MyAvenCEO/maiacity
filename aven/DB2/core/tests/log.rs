@@ -1,69 +1,21 @@
-//! Envelopes, logs, splits and the past against Lean (README rule 10): `spec/vectors/envelopes.json` and `logs.json`
-//! byte for byte, and on random envelopes the Lean definitions themselves, transcribed below as they read
-//! (`Aven.Core.Log`, `Aven.Core.Past`): `pastNames` in its rounds, `Before` as its two rules, `Reaches`, `Split`,
-//! `Discounted`, `Counts` and `Version.holds`. The crate's own walk must give their answers, and the theorems
-//! (`split_final`, `counts_past`, `resign_no_split`, `chain_no_split`, `Version.holds_mono`) must hold of it.
+//! Signed things, envelopes, logs, splits, the past and the limits against Lean's vectors (README rule 10), byte for
+//! byte: `envelopes.json`, `logs.json`, `signed.json`, `limits.json`, `past.json` and `counts.json`; and properties
+//! that need no model: round trips, signing again, a writer's log. `model.rs` asks the running model on random inputs.
 
-use aven_core::limits::{MAX_DEPS, MAX_ENVELOPE_BYTES};
+mod common;
+
+use aven_core::limits::{
+    MAX_BRANCH_BYTES, MAX_DEPS, MAX_ENVELOPE_BYTES, MAX_LABEL_BYTES, MAX_SIG_BYTES,
+    MAX_SIGNER_BYTES,
+};
 use aven_core::past::{in_past, past};
 use aven_core::{
-    DocId, ENVELOPE_LABEL, Envelope, Hash, Held, Log, LogId, Parents, Refused, Signed, Value,
+    DocId, ENVELOPE_LABEL, Envelope, Hash, Held, Log, LogId, MAX_DEPTH, Refused, Signed, Value,
     blake3, decode, encode, is_chain, signing_bytes, split,
 };
+use common::{bools, envelope, hex, indices, names, signed, unhex, vectors};
 use proptest::prelude::*;
 use serde_json::Value as Json;
-
-fn vectors(file: &str) -> Vec<Json> {
-    let path = format!("{}/spec/vectors/{file}", env!("CARGO_MANIFEST_DIR"));
-    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
-    text.lines()
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| serde_json::from_str(l).unwrap())
-        .collect()
-}
-
-fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02x}")).collect()
-}
-
-fn unhex(s: &str) -> Vec<u8> {
-    (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
-        .collect()
-}
-
-/// A body from its readable form (`Aven.Core.Json`); the vectors' bodies are maps of text and integers.
-fn value(j: &Json) -> Value {
-    match j {
-        Json::Null => Value::Null,
-        Json::Bool(b) => Value::Bool(*b),
-        Json::Number(n) => Value::Uint(n.as_u64().unwrap()),
-        Json::String(s) => Value::Text(s.clone()),
-        Json::Array(xs) => Value::Array(xs.iter().map(value).collect()),
-        Json::Object(o) => Value::Map(o.iter().map(|(k, v)| (k.clone(), value(v))).collect()),
-    }
-}
-
-/// An envelope from its readable form (`Envelope.json` in `Vectors.lean`).
-fn envelope(j: &Json) -> Envelope {
-    Envelope {
-        doc: DocId::parse(j["doc"].as_str().unwrap()).unwrap(),
-        branch: j["branch"].as_str().unwrap().into(),
-        writer: j["writer"].as_u64().unwrap(),
-        seq: j["seq"].as_u64().unwrap(),
-        prev: j["prev"].as_str().map(|h| Hash::parse(h).unwrap()),
-        deps: j["deps"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|h| Hash::parse(h.as_str().unwrap()).unwrap())
-            .collect(),
-        body: value(&j["body"]),
-        signer: unhex(j["signer"].as_str().unwrap()),
-        sig: unhex(j["sig"].as_str().unwrap()),
-    }
-}
 
 #[test]
 fn envelopes() {
@@ -90,7 +42,7 @@ fn envelopes() {
         );
         n += 1;
     }
-    assert!(n >= 2);
+    assert!(n >= 3);
 }
 
 #[test]
@@ -115,7 +67,9 @@ fn vectors_chain() {
         .iter()
         .map(|v| envelope(&v["input"]))
         .collect();
-    assert!(is_chain(&es));
+    // the first two are one writer's log; the third, another writer's, builds on both
+    assert!(is_chain(&es[..2]) && !is_chain(&es));
+    assert!(is_chain(&es[2..]) && es[2].deps == [es[1].name(), es[0].name()]);
     let mut log = Log::new(es[0].log());
     assert_eq!(log.push(es[1].clone()), Err(Refused::NotNext));
     log.push(es[0].clone()).unwrap();
@@ -186,185 +140,173 @@ fn limits() {
     assert_eq!(Envelope::decode(&encode(&e.value())), Some(e));
 }
 
-// ---- Lean's definitions, transcribed as they read ----
+#[test]
+fn signed_things() {
+    let mut n = 0;
+    for v in vectors("signed.json") {
+        let name = v["name"].as_str().unwrap();
+        let s = signed(&v["input"]);
+        let x = &v["expected"];
+        assert_eq!(
+            hex(&s.signing()),
+            x["signs"].as_str().unwrap(),
+            "{name}: signs"
+        );
+        assert_eq!(
+            hex(&s.encode()),
+            x["cbor"].as_str().unwrap(),
+            "{name}: cbor"
+        );
+        assert_eq!(s.name().text(), x["name"].as_str().unwrap(), "{name}: name");
+        assert_eq!(
+            Signed::decode(&unhex(x["cbor"].as_str().unwrap())),
+            Some(s),
+            "{name}: read back"
+        );
+        n += 1;
+    }
+    assert!(n >= 3);
+}
 
-/// `dedup`: each name once, its last coming kept.
-fn dedup(l: &[Hash]) -> Vec<Hash> {
-    match l.split_first() {
-        None => vec![],
-        Some((x, xs)) => {
-            let d = dedup(xs);
-            if d.contains(x) {
-                d
-            } else {
-                [vec![*x], d].concat()
+/// `limits.rs` holds Lean's numbers, and a reader accepts exactly at each limit and refuses one past it.
+#[test]
+fn limits_vectors() {
+    let vs = vectors("limits.json");
+    let l = &vs[0]["expected"];
+    let num = |k: &str| l[k].as_u64().unwrap() as usize;
+    assert_eq!(MAX_ENVELOPE_BYTES, num("maxEnvelopeBytes"));
+    assert_eq!(MAX_DEPS, num("maxDeps"));
+    assert_eq!(MAX_BRANCH_BYTES, num("maxBranchBytes"));
+    assert_eq!(MAX_LABEL_BYTES, num("maxLabelBytes"));
+    assert_eq!(MAX_SIGNER_BYTES, num("maxSignerBytes"));
+    assert_eq!(MAX_SIG_BYTES, num("maxSigBytes"));
+    assert_eq!(MAX_DEPTH, num("maxDepth"));
+    let (mut accepted, mut refused) = (0, 0);
+    for v in &vs[1..] {
+        let name = v["name"].as_str().unwrap();
+        let i = &v["input"];
+        let zeros = i
+            .get("bodyZeros")
+            .map(|n| Value::Bytes(vec![0; n.as_u64().unwrap() as usize]));
+        let (bytes, ok) = if let Some(e) = i.get("envelope") {
+            let mut e = envelope(e);
+            if let Some(z) = zeros {
+                e.body = z;
             }
-        }
-    }
-}
-
-/// `fresh`: names of things of `S` not yet known, built on by one already known.
-fn fresh(s: &[Envelope], k: &[Hash]) -> Vec<Hash> {
-    let found: Vec<Hash> = s
-        .iter()
-        .filter(|c| {
-            !k.contains(&c.name())
-                && s.iter()
-                    .any(|b| k.contains(&b.name()) && b.parents().contains(&c.name()))
-        })
-        .map(Envelope::name)
-        .collect();
-    dedup(&found)
-}
-
-/// `pastNames S a n`, and `past S a = pastNames S a (S.length + 1)`.
-fn lean_past(s: &[Envelope], a: &Envelope) -> Vec<Hash> {
-    let first: Vec<Hash> = s
-        .iter()
-        .filter(|b| a.parents().contains(&b.name()))
-        .map(Envelope::name)
-        .collect();
-    let mut names = dedup(&first);
-    for _ in 0..s.len() + 1 {
-        let more = fresh(s, &names);
-        names.extend(more);
-    }
-    names
-}
-
-/// `Before S a`: the indices of `S` its two rules reach, `tip` then `step` until nothing is added.
-fn lean_before(s: &[Envelope], a: &Envelope) -> Vec<bool> {
-    let mut b: Vec<bool> = s.iter().map(|x| a.parents().contains(&x.name())).collect();
-    loop {
-        let next: Vec<bool> = s
-            .iter()
-            .enumerate()
-            .map(|(i, c)| {
-                b[i] || s
-                    .iter()
-                    .zip(&b)
-                    .any(|(x, &bx)| bx && x.parents().contains(&c.name()))
-            })
-            .collect();
-        if next == b {
-            return b;
-        }
-        b = next;
-    }
-}
-
-/// `Reaches S e`: `e` itself (`refl`) and what is `Before` it (`reaches_iff`).
-fn lean_reaches(s: &[Envelope], e: &Envelope) -> Vec<Envelope> {
-    let mut r = vec![e.clone()];
-    r.extend(
-        s.iter()
-            .zip(lean_before(s, e))
-            .filter(|(_, b)| *b)
-            .map(|(x, _)| x.clone()),
-    );
-    r
-}
-
-/// `Split`: one log, one place, two names.
-fn lean_split(a: &Envelope, b: &Envelope) -> bool {
-    a.doc == b.doc
-        && a.branch == b.branch
-        && a.writer == b.writer
-        && a.seq == b.seq
-        && a.name() != b.name()
-}
-
-fn lean_discounted(s: &[Envelope], e: &Envelope) -> bool {
-    lean_reaches(s, e)
-        .iter()
-        .any(|x| s.iter().any(|y| lean_split(x, y)))
-}
-
-fn lean_counts(s: &[Envelope], e: &Envelope, ok: impl Fn(&Envelope) -> bool) -> bool {
-    lean_reaches(s, e)
-        .iter()
-        .all(|x| ok(x) && s.iter().all(|y| !lean_split(x, y)))
-}
-
-/// `Version.holds S v e`: a tip of `v` in `S` reaches `e`.
-fn lean_holds(s: &[Envelope], v: &[Hash], e: &Envelope) -> bool {
-    s.iter()
-        .any(|t| v.contains(&t.name()) && lean_reaches(s, t).contains(e))
-}
-
-// ---- random envelopes ----
-
-/// A small world where splits and shared parents are common: two Docs, two writers, three places, bodies from four.
-/// Each envelope names earlier ones (or a name nobody holds) as its prev and deps.
-#[derive(Clone, Debug)]
-struct Draw {
-    doc: u8,
-    writer: u64,
-    seq: u64,
-    prev: Option<u8>,
-    deps: Vec<u8>,
-    body: u64,
-}
-
-fn draw() -> impl Strategy<Value = Draw> {
-    (
-        0u8..2,
-        0u64..2,
-        1u64..4,
-        proptest::option::of(any::<u8>()),
-        proptest::collection::vec(any::<u8>(), 0..3),
-        0u64..4,
-    )
-        .prop_map(|(doc, writer, seq, prev, deps, body)| Draw {
-            doc,
-            writer,
-            seq,
-            prev,
-            deps,
-            body,
-        })
-}
-
-fn build(draws: &[Draw]) -> Vec<Envelope> {
-    let mut out: Vec<Envelope> = vec![];
-    let pick = |out: &Vec<Envelope>, i: u8| {
-        if out.is_empty() || i as usize % (out.len() + 1) == out.len() {
-            blake3(&[i]) // a name nobody holds
+            let bytes = e.encode();
+            let back = Envelope::decode(&bytes);
+            assert!(back.is_none() || back == Some(e), "{name}: read back");
+            (bytes.len(), back.is_some())
         } else {
-            out[i as usize % (out.len() + 1)].name()
-        }
-    };
-    for d in draws {
-        let e = Envelope {
-            doc: DocId(blake3(&[d.doc])),
-            branch: "main".into(),
-            writer: d.writer,
-            seq: d.seq,
-            prev: d.prev.map(|i| pick(&out, i)),
-            deps: d.deps.iter().map(|&i| pick(&out, i)).collect(),
-            body: Value::Uint(d.body),
-            signer: vec![7; 32],
-            sig: vec![9; 64],
+            let mut s = signed(&i["signed"]);
+            if let Some(z) = zeros {
+                s.body = z;
+            }
+            let bytes = s.encode();
+            let back = Signed::decode(&bytes);
+            assert!(back.is_none() || back == Some(s), "{name}: read back");
+            (bytes.len(), back.is_some())
         };
-        out.push(e);
+        assert_eq!(
+            bytes as u64,
+            v["expected"]["bytes"].as_u64().unwrap(),
+            "{name}: size"
+        );
+        let want = v["expected"]["accepted"].as_bool().unwrap();
+        assert_eq!(ok, want, "{name}");
+        if want { accepted += 1 } else { refused += 1 }
     }
-    out
+    assert!(
+        accepted >= 9 && refused >= 9,
+        "{accepted} accepted, {refused} refused"
+    );
 }
 
-/// Envelopes, and which of them a reader holds: `S` a subset of `S'`, all of them.
-fn world() -> impl Strategy<Value = (Vec<Envelope>, Vec<bool>)> {
-    proptest::collection::vec((draw(), any::<bool>()), 1..14).prop_map(|ds| {
-        let (draws, held): (Vec<Draw>, Vec<bool>) = ds.into_iter().unzip();
-        (build(&draws), held)
-    })
-}
-
-fn subset(all: &[Envelope], held: &[bool]) -> Vec<Envelope> {
-    all.iter()
-        .zip(held)
+/// A world of `past.json` or `counts.json`: its envelopes, and those a reader holds.
+fn world(i: &Json) -> (Vec<Envelope>, Vec<Envelope>) {
+    let all: Vec<Envelope> = i["envelopes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(envelope)
+        .collect();
+    let held = bools(&i["held"]);
+    let s = all
+        .iter()
+        .zip(&held)
         .filter(|(_, h)| **h)
         .map(|(e, _)| e.clone())
-        .collect()
+        .collect();
+    (all, s)
+}
+
+#[test]
+fn past_vectors() {
+    let mut n = 0;
+    for v in vectors("past.json") {
+        let name = v["name"].as_str().unwrap();
+        let (all, s) = world(&v["input"]);
+        let held = Held::new(&s);
+        for (k, a) in all.iter().enumerate() {
+            let want: std::collections::BTreeSet<Hash> =
+                names(&v["expected"]["past"][k]).into_iter().collect();
+            assert_eq!(
+                past(Envelope::name, &s, a),
+                want,
+                "{name}, envelope {k}: past"
+            );
+            assert_eq!(held.past(a), want, "{name}, envelope {k}: past");
+            let before: Vec<bool> = s
+                .iter()
+                .map(|b| in_past(Envelope::name, &s, a, b))
+                .collect();
+            assert_eq!(
+                before,
+                bools(&v["expected"]["inPast"][k]),
+                "{name}, envelope {k}: inPast"
+            );
+            n += 1;
+        }
+    }
+    assert!(n >= 100);
+}
+
+#[test]
+fn counts_vectors() {
+    let mut n = 0;
+    for v in vectors("counts.json") {
+        let name = v["name"].as_str().unwrap();
+        let (all, s) = world(&v["input"]);
+        let bad: Vec<Hash> = indices(&v["input"]["bad"])
+            .iter()
+            .map(|&i| all[i].name())
+            .collect();
+        let tips: Vec<Hash> = indices(&v["input"]["tips"])
+            .iter()
+            .map(|&i| all[i].name())
+            .collect();
+        let held = Held::new(&s);
+        let ok = |x: &Envelope| !bad.contains(&x.name());
+        let x = &v["expected"];
+        let got = |f: &dyn Fn(&Envelope) -> bool| all.iter().map(f).collect::<Vec<bool>>();
+        assert_eq!(
+            got(&|e| held.discounted(e)),
+            bools(&x["discounted"]),
+            "{name}: discounted"
+        );
+        assert_eq!(
+            got(&|e| held.counts(e, ok)),
+            bools(&x["counts"]),
+            "{name}: counts"
+        );
+        assert_eq!(
+            got(&|e| held.holds(&tips, e)),
+            bools(&x["holds"]),
+            "{name}: holds"
+        );
+        n += all.len();
+    }
+    assert!(n >= 100);
 }
 
 /// A Value of every form, a few levels deep.
@@ -468,63 +410,6 @@ proptest! {
         let other = Envelope { body: canonical(body), ..e.clone() };
         prop_assert_eq!(other.name() == e.name(), other.unsigned() == e.unsigned());
         prop_assert_eq!(split(&e, &other), other.unsigned() != e.unsigned());
-    }
-
-    /// The walk finds exactly Lean's past (`found_iff`), and decides `Before` for what is held (`inPast_iff`).
-    #[test]
-    fn past_is_leans((all, held) in world()) {
-        let s = subset(&all, &held);
-        for a in &all {
-            let ours = past(Envelope::name, &s, a);
-            let lean: std::collections::BTreeSet<Hash> = lean_past(&s, a).into_iter().collect();
-            prop_assert_eq!(&ours, &lean);
-            prop_assert_eq!(Held::new(&s).past(a), ours);
-            for (b, before) in s.iter().zip(lean_before(&s, a)) {
-                prop_assert_eq!(in_past(Envelope::name, &s, a, b), before);
-            }
-        }
-    }
-
-    /// Splits, discounting and counting are Lean's, and splits are final: what is discounted among `S` never counts
-    /// among any `S'` that holds more (`split_final`). What counts builds on what counts (`counts_past`).
-    #[test]
-    fn splits_are_final((all, held) in world(), bad in any::<u8>()) {
-        let s = subset(&all, &held);
-        let (h, h_all) = (Held::new(&s), Held::new(&all));
-        let ok = |x: &Envelope| x.body != Value::Uint(u64::from(bad % 8));
-        for e in &all {
-            prop_assert_eq!(h.discounted(e), lean_discounted(&s, e));
-            prop_assert_eq!(h.counts(e, ok), lean_counts(&s, e, ok));
-            prop_assert_eq!(h_all.counts(e, ok), lean_counts(&all, e, ok));
-            if h.discounted(e) {
-                prop_assert!(h_all.discounted(e));
-                prop_assert!(!h_all.counts(e, |_| true));
-            }
-            if h.counts(e, ok) {
-                for x in lean_reaches(&s, e) {
-                    prop_assert!(h.counts(&x, ok));
-                }
-            }
-        }
-        for a in &all {
-            for b in &all {
-                prop_assert_eq!(split(a, b), lean_split(a, b));
-            }
-        }
-    }
-
-    /// A version holds what Lean's does, and more as more arrives (`Version.holds_mono`).
-    #[test]
-    fn versions((all, held) in world(), tips in proptest::collection::vec(any::<u8>(), 0..3)) {
-        let s = subset(&all, &held);
-        let v: Vec<Hash> = tips.iter().map(|&i| all[i as usize % all.len()].name()).collect();
-        let (h, h_all) = (Held::new(&s), Held::new(&all));
-        for e in &all {
-            prop_assert_eq!(h.holds(&v, e), lean_holds(&s, &v, e));
-            if h.holds(&v, e) {
-                prop_assert!(h_all.holds(&v, e));
-            }
-        }
     }
 
     /// A writer's log is a chain and holds no split (`chain_no_split`); two readers' chains of one log agree wherever
