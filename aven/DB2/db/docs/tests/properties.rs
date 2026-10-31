@@ -21,7 +21,7 @@ fn history(steps: &[(usize, u8, u8)]) -> (aven_db_docs::Genesis, Vec<Vec<u8>>) {
     for &(who, mask, val) in steps {
         for (i, b) in all.iter().enumerate() {
             if mask >> (i % 8) & 1 == 1 {
-                docs[who].import(b, &allow).unwrap();
+                docs[who].import(b, &Allow).unwrap();
             }
         }
         let id = format!("t{}", val % 4);
@@ -40,7 +40,7 @@ fn history(steps: &[(usize, u8, u8)]) -> (aven_db_docs::Genesis, Vec<Vec<u8>>) {
             &[w],
             "2026-10-31T12:00:00Z",
             aven_db_docs::Act::default(),
-            &allow,
+            &Allow,
         ) {
             Ok(b) => all.push(b),
             // a write of the value a field already holds changes nothing, so there is nothing to commit
@@ -59,7 +59,7 @@ proptest! {
         let (g, all) = history(&steps);
         let mut a = open(&g);
         for b in &all {
-            a.import(b, &allow).unwrap();
+            a.import(b, &Allow).unwrap();
         }
         // the same envelopes in another order: what waits is taken once its past arrives
         let mut order: Vec<usize> = (0..all.len()).collect();
@@ -70,7 +70,7 @@ proptest! {
         }
         let mut b = open(&g);
         for i in order {
-            b.import(&all[i], &allow).unwrap();
+            b.import(&all[i], &Allow).unwrap();
         }
         prop_assert_eq!(b.waiting(), 0);
         prop_assert_eq!(a.snapshot(), b.snapshot());
@@ -85,11 +85,11 @@ proptest! {
         let denied: BTreeSet<_> = envs.iter().enumerate().filter(|(i, _)| deny >> (i % 16) & 1 == 1).map(|(_, e)| e.name()).collect();
         let mut d = open(&g);
         for b in &all {
-            d.import(b, &allow).unwrap();
+            d.import(b, &Allow).unwrap();
         }
         let before: BTreeSet<_> = envs.iter().map(Envelope::name).filter(|n| d.counts(n)).collect();
         let dn = denied.clone();
-        d.reauthorize(&move |e: &Envelope, _: &Body| !dn.contains(&e.name()));
+        d.reauthorize(&When(move |e: &Envelope, _: &Body| !dn.contains(&e.name())));
         let held = Held::new(&envs);
         for e in &envs {
             prop_assert_eq!(d.counts(&e.name()), held.counts(e, |x| !denied.contains(&x.name())));

@@ -3,7 +3,9 @@
 
 use aven_core::{DocId, Envelope, Hash, Value, blake3};
 use aven_db_docs::schema::{Kind, Schema, builtin_type};
-use aven_db_docs::{Act, Body, Device, Doc, EpochKey, Genesis, Limits, RecordWrite, Version};
+use aven_db_docs::{
+    Act, Authorize, Body, Device, Doc, EpochKey, Genesis, Limits, RecordWrite, Version,
+};
 use aven_id::{Secret, TestEntropy};
 
 pub fn device(name: &str) -> Device {
@@ -11,8 +13,30 @@ pub fn device(name: &str) -> Device {
     Device::from_seeds(&Secret::generate(&mut e), &Secret::generate(&mut e))
 }
 
-pub fn allow(_: &Envelope, _: &Body) -> bool {
-    true
+/// Caps' answer in the tests: every signer reaches the Doc, and `F` says who is authorized.
+pub struct When<F>(pub F);
+
+impl<F: Fn(&Envelope, &Body) -> bool> Authorize for When<F> {
+    fn reaches(&self, _: &Genesis, _: &[u8]) -> bool {
+        true
+    }
+
+    fn authorized(&self, _: &Genesis, e: &Envelope, body: &Body) -> bool {
+        (self.0)(e, body)
+    }
+}
+
+/// Everyone reaches the Doc and is authorized.
+pub struct Allow;
+
+impl Authorize for Allow {
+    fn reaches(&self, _: &Genesis, _: &[u8]) -> bool {
+        true
+    }
+
+    fn authorized(&self, _: &Genesis, _: &Envelope, _: &Body) -> bool {
+        true
+    }
 }
 
 /// A todo type, pinned by the genesis: a title, and a count of at most 100.
@@ -69,7 +93,7 @@ pub fn todo_put(id: &str, title: &str) -> RecordWrite {
 }
 
 pub fn commit(doc: &mut Doc, d: &Device, batch: &[RecordWrite]) -> Vec<u8> {
-    doc.commit(d, 0, batch, "2026-10-31T12:00:00Z", Act::default(), &allow)
+    doc.commit(d, 0, batch, "2026-10-31T12:00:00Z", Act::default(), &Allow)
         .expect("commits")
 }
 

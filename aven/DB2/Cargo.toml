@@ -4,6 +4,8 @@
 [workspace]
 resolver = "3"
 members = ["core", "db/core", "db/docs", "store", "id/core", "peer/native", "peer/light"]
+# The docs layer's fuzz targets are a workspace of their own (db/docs/fuzz), built only by cargo-fuzz.
+exclude = ["db/docs/fuzz"]
 
 [workspace.package]
 edition = "2024"

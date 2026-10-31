@@ -20,7 +20,7 @@ fn history(n: usize) -> (aven_db_docs::Genesis, Vec<Vec<u8>>) {
     for k in 0..n {
         let who = k % 3;
         for b in &all[seen[who]..] {
-            docs[who].import(b, &allow).unwrap();
+            docs[who].import(b, &Allow).unwrap();
         }
         let id = format!("t{}", k % 50);
         let w = if docs[who].snapshot().records.contains_key(&id) {
@@ -38,7 +38,7 @@ fn history(n: usize) -> (aven_db_docs::Genesis, Vec<Vec<u8>>) {
             &[w],
             "now",
             aven_db_docs::Act::default(),
-            &allow,
+            &Allow,
         ) {
             Ok(b) => all.push(b),
             Err(aven_db_docs::CommitError::Empty) => {}
@@ -55,7 +55,7 @@ fn five_hundred_envelopes_in_one_page() {
     let page: Vec<&[u8]> = all.iter().map(Vec::as_slice).collect();
     let mut reader = open(&g);
     let t = Instant::now();
-    let r = reader.import_page(&page, &allow);
+    let r = reader.import_page(&page, &Allow);
     let took = t.elapsed();
     assert!(
         r.iter().all(|x| *x == Ok(Imported::Counts)),
@@ -75,7 +75,7 @@ fn five_hundred_envelopes_in_one_page() {
     let mut one = open(&g);
     let t = Instant::now();
     for b in &all {
-        one.import(b, &allow).unwrap();
+        one.import(b, &Allow).unwrap();
     }
     eprintln!(
         "catch-up: the same one by one: {:.0} ms",
@@ -94,18 +94,18 @@ fn five_hundred_envelopes_in_one_page() {
 fn a_page_in_any_split_lands_the_same() {
     let (g, all) = history(60);
     let mut whole = open(&g);
-    whole.import_page(&all.iter().map(Vec::as_slice).collect::<Vec<_>>(), &allow);
+    whole.import_page(&all.iter().map(Vec::as_slice).collect::<Vec<_>>(), &Allow);
     for size in [1, 7, 25] {
         let mut d = open(&g);
         for chunk in all.chunks(size) {
-            d.import_page(&chunk.iter().map(Vec::as_slice).collect::<Vec<_>>(), &allow);
+            d.import_page(&chunk.iter().map(Vec::as_slice).collect::<Vec<_>>(), &Allow);
         }
         assert_eq!(d.snapshot(), whole.snapshot(), "pages of {size}");
     }
     // backwards: everything waits until its past arrives, then the page settles at once
     let mut back = open(&g);
     let rev: Vec<&[u8]> = all.iter().rev().map(Vec::as_slice).collect();
-    back.import_page(&rev, &allow);
+    back.import_page(&rev, &Allow);
     assert_eq!(back.waiting(), 0);
     assert_eq!(back.snapshot(), whole.snapshot());
 }

@@ -47,9 +47,9 @@ fn genesis_names_the_doc() {
     let second = commit(&mut doc, &a, &[todo_put("t2", "second")]);
     assert_eq!(body(&second).genesis, None);
     let (mut reader, r) =
-        Doc::from_first(&first, &[todo()], Limits::DEFAULTS, &allow).expect("opens from it");
+        Doc::from_first(&first, &[todo()], Limits::DEFAULTS, &Allow).expect("opens from it");
     assert_eq!(r, Imported::Counts);
-    reader.import(&second, &allow).unwrap();
+    reader.import(&second, &Allow).unwrap();
     assert_eq!(reader.snapshot(), doc.snapshot());
 }
 
@@ -105,7 +105,7 @@ fn commit_reads_and_feed() {
     );
     // nothing changes, nothing is committed
     assert_eq!(
-        doc.commit(&a, 0, &[], "now", Act::default(), &allow),
+        doc.commit(&a, 0, &[], "now", Act::default(), &Allow),
         Err(CommitError::Empty)
     );
 }
@@ -116,8 +116,8 @@ fn two_peers_converge() {
     let g = genesis(&a);
     let (mut da, mut db) = (open(&g), open(&g));
     let x1 = commit(&mut da, &a, &[todo_put("t1", "Order seeds")]);
-    assert_eq!(db.import(&x1, &allow), Ok(Imported::Counts));
-    assert_eq!(db.import(&x1, &allow), Ok(Imported::Known));
+    assert_eq!(db.import(&x1, &Allow), Ok(Imported::Counts));
+    assert_eq!(db.import(&x1, &Allow), Ok(Imported::Known));
     // concurrent edits of one field, and each its own Record
     let y1 = commit(
         &mut db,
@@ -132,8 +132,8 @@ fn two_peers_converge() {
         &a,
         &[put("t1", todo_type(), vec![("count", Value::Uint(9))])],
     );
-    assert_eq!(da.import(&y1, &allow), Ok(Imported::Counts));
-    assert_eq!(db.import(&x2, &allow), Ok(Imported::Counts));
+    assert_eq!(da.import(&y1, &Allow), Ok(Imported::Counts));
+    assert_eq!(db.import(&x2, &Allow), Ok(Imported::Counts));
     assert_eq!(da.snapshot().records, db.snapshot().records);
     let mut va = da.snapshot().version.clone();
     let mut vb = db.snapshot().version.clone();
@@ -146,7 +146,7 @@ fn two_peers_converge() {
     let e3 = Envelope::decode(&x3).unwrap();
     assert_eq!(e3.prev, Some(Envelope::decode(&x2).unwrap().name()));
     assert_eq!(e3.deps, vec![Envelope::decode(&y1).unwrap().name()]);
-    assert_eq!(db.import(&x3, &allow), Ok(Imported::Counts));
+    assert_eq!(db.import(&x3, &Allow), Ok(Imported::Counts));
     assert_eq!(da.snapshot(), db.snapshot());
 }
 
@@ -156,11 +156,11 @@ fn waits_for_what_it_names() {
     let g = genesis(&a);
     let (mut da, mut db, mut dc) = (open(&g), open(&g), open(&g));
     let x1 = commit(&mut da, &a, &[todo_put("t1", "first")]);
-    db.import(&x1, &allow).unwrap();
+    db.import(&x1, &Allow).unwrap();
     let y1 = commit(&mut db, &b, &[todo_put("t2", "builds on it")]);
-    assert_eq!(dc.import(&y1, &allow), Ok(Imported::Waits));
+    assert_eq!(dc.import(&y1, &Allow), Ok(Imported::Waits));
     assert_eq!(dc.waiting(), 1);
-    assert_eq!(dc.import(&x1, &allow), Ok(Imported::Counts));
+    assert_eq!(dc.import(&x1, &Allow), Ok(Imported::Counts));
     assert_eq!(dc.waiting(), 0);
     assert_eq!(dc.snapshot(), db.snapshot());
 }
@@ -210,7 +210,7 @@ fn unfit_writes_never_enter() {
             std::slice::from_ref(&c),
             "now",
             Act::default(),
-            &allow,
+            &Allow,
         );
         assert!(matches!(r, Err(CommitError::Unfit(_))), "{c:?}: {r:?}");
     }
@@ -235,7 +235,7 @@ fn unfit_writes_never_enter() {
     r.set.clear();
     r.unset = vec!["title".into()];
     assert_eq!(
-        doc.commit(&a, 0, &[r], "now", Act::default(), &allow),
+        doc.commit(&a, 0, &[r], "now", Act::default(), &Allow),
         Err(CommitError::Unfit(Unfit::Removed(
             "t1".into(),
             "title".into()
@@ -314,7 +314,7 @@ fn a_reader_refuses_what_doesnt_fit_and_the_log_sticks() {
         todo_type(),
     );
     assert!(matches!(
-        doc.import(&bad, &allow),
+        doc.import(&bad, &Allow),
         Ok(Imported::NotCounted(Why::Unfit(Unfit::Value(..))))
     ));
     assert!(doc.snapshot().records.is_empty());
@@ -328,12 +328,12 @@ fn a_reader_refuses_what_doesnt_fit_and_the_log_sticks() {
         todo_type(),
     );
     assert!(matches!(
-        doc.import(&float, &allow),
+        doc.import(&float, &Allow),
         Ok(Imported::NotCounted(Why::Unfit(Unfit::Op(_))))
     ));
     // the hostile device's log is stuck: its next commit is refused, its next generation writes
     let mut md = open(&g);
-    md.import(&bad, &allow).unwrap();
+    md.import(&bad, &Allow).unwrap();
     assert_eq!(
         md.commit(
             &m,
@@ -341,7 +341,7 @@ fn a_reader_refuses_what_doesnt_fit_and_the_log_sticks() {
             &[todo_put("t3", "ok")],
             "now",
             Act::default(),
-            &allow
+            &Allow
         ),
         Err(CommitError::Stuck)
     );
@@ -352,10 +352,10 @@ fn a_reader_refuses_what_doesnt_fit_and_the_log_sticks() {
             &[todo_put("t3", "ok")],
             "now",
             Act::default(),
-            &allow,
+            &Allow,
         )
         .unwrap();
-    assert_eq!(doc.import(&next, &allow), Ok(Imported::Counts));
+    assert_eq!(doc.import(&next, &Allow), Ok(Imported::Counts));
 }
 
 #[test]
@@ -368,11 +368,11 @@ fn refused_before_loro() {
     for i in [10, x1.len() / 2, x1.len() - 3] {
         let mut t = x1.clone();
         t[i] ^= 1;
-        assert!(doc.import(&t, &allow).is_err(), "byte {i}");
+        assert!(doc.import(&t, &Allow).is_err(), "byte {i}");
     }
     // too big, before decoding
     assert_eq!(
-        doc.import(&vec![0; Limits::DEFAULTS.sealed + 1], &allow),
+        doc.import(&vec![0; Limits::DEFAULTS.sealed + 1], &Allow),
         Err(Refused::Limits)
     );
     // another Doc's
@@ -384,17 +384,17 @@ fn refused_before_loro() {
     );
     let mut od = Doc::open(other, &[todo()], Limits::DEFAULTS).unwrap();
     let y = commit(&mut od, &a, &[todo_put("t1", "x")]);
-    assert_eq!(doc.import(&y, &allow), Err(Refused::Doc));
+    assert_eq!(doc.import(&y, &Allow), Err(Refused::Doc));
     // re-signed by another device: its writer id isn't the signer's
     let mut e = Envelope::decode(&x1).unwrap();
     b.sign_envelope(&mut e);
-    assert_eq!(doc.import(&e.encode(), &allow), Err(Refused::Writer));
+    assert_eq!(doc.import(&e.encode(), &Allow), Err(Refused::Writer));
     // rule 7: an envelope that names a past its Loro dependencies don't hold
     let mut da = open(&g);
     let x1 = commit(&mut da, &a, &[todo_put("t1", "x")]);
     let mut db = open(&g);
     let lone = commit(&mut db, &b, &[todo_put("t2", "y")]);
-    doc.import(&x1, &allow).unwrap();
+    doc.import(&x1, &Allow).unwrap();
     let mut e = Envelope::decode(&lone).unwrap();
     e.deps = vec![Envelope::decode(&x1).unwrap().name()];
     // without the genesis its own first envelope carried, so only rule 7 stands in its way
@@ -402,7 +402,7 @@ fn refused_before_loro() {
     body.genesis = None;
     e.body = body.value();
     b.sign_envelope(&mut e);
-    assert_eq!(doc.import(&e.encode(), &allow), Err(Refused::OpIds));
+    assert_eq!(doc.import(&e.encode(), &Allow), Err(Refused::OpIds));
     assert!(
         doc.snapshot().records.contains_key("t1") && !doc.snapshot().records.contains_key("t2")
     );
@@ -416,7 +416,7 @@ fn a_split_is_final_and_matches_the_model() {
     let mut d1 = open(&g);
     let x1 = commit(&mut d1, &x, &[todo_put("t1", "first")]);
     let mut d2 = open(&g);
-    d2.import(&x1, &allow).unwrap();
+    d2.import(&x1, &Allow).unwrap();
     let x2 = commit(&mut d1, &x, &[todo_put("t2", "second")]);
     let x2c = commit(&mut d2, &x, &[todo_put("t2", "a copy says otherwise")]);
     let y1 = commit(&mut d1, &y, &[todo_put("t3", "on the second")]);
@@ -426,7 +426,7 @@ fn a_split_is_final_and_matches_the_model() {
     let mut reader = open(&g);
     let mut feed = 0;
     for (i, b) in order.iter().enumerate() {
-        let r = reader.import(b, &allow).unwrap();
+        let r = reader.import(b, &Allow).unwrap();
         if i == 3 {
             assert_eq!(r, Imported::NotCounted(Why::Split));
             assert!(reader.feed(feed).contains(&Feed::Rebuilt));
@@ -454,13 +454,13 @@ fn a_split_is_final_and_matches_the_model() {
     // the cloned device starts its next generation
     let mut r2 = open(&g);
     for b in order {
-        r2.import(b, &allow).unwrap();
+        r2.import(b, &Allow).unwrap();
     }
     assert_eq!(
-        r2.commit(&x, 0, &[todo_put("t6", "x")], "now", Act::default(), &allow),
+        r2.commit(&x, 0, &[todo_put("t6", "x")], "now", Act::default(), &Allow),
         Err(CommitError::Stuck)
     );
-    r2.commit(&x, 1, &[todo_put("t6", "x")], "now", Act::default(), &allow)
+    r2.commit(&x, 1, &[todo_put("t6", "x")], "now", Act::default(), &Allow)
         .unwrap();
 }
 
@@ -472,18 +472,55 @@ fn a_revocation_rebuilds() {
     commit(&mut doc, &a, &[todo_put("t1", "alice's")]);
     let mut db = open(&g);
     for e in doc.envelopes().map(Envelope::encode).collect::<Vec<_>>() {
-        db.import(&e, &allow).unwrap();
+        db.import(&e, &Allow).unwrap();
     }
     let y = commit(&mut db, &b, &[todo_put("t2", "bob's")]);
-    doc.import(&y, &allow).unwrap();
+    doc.import(&y, &Allow).unwrap();
     commit(&mut doc, &a, &[todo_put("t3", "on bob's")]);
     assert_eq!(doc.snapshot().records.len(), 3);
     let bob = b.public().to_vec();
-    doc.reauthorize(&move |e: &Envelope, _: &Body| e.signer != bob);
+    doc.reauthorize(&When(move |e: &Envelope, _: &Body| e.signer != bob));
     assert_eq!(
         doc.snapshot().records.keys().collect::<Vec<_>>(),
         ["t1"],
         "bob's and what built on it drop"
     );
     assert_eq!(doc.feed(0).last(), Some(&Feed::Rebuilt));
+}
+
+/// Caps says mallory's chain reaches no grant on the Doc.
+struct NotMallory(Vec<u8>);
+
+impl aven_db_docs::Authorize for NotMallory {
+    fn reaches(&self, _: &Genesis, signer: &[u8]) -> bool {
+        signer != self.0.as_slice()
+    }
+
+    fn authorized(&self, _: &Genesis, _: &Envelope, _: &Body) -> bool {
+        true
+    }
+}
+
+#[test]
+fn a_stranger_never_reaches_loro() {
+    let (a, m) = (device("alice"), device("mallory"));
+    let g = genesis(&a);
+    let mut doc = open(&g);
+    // a well-formed, signed envelope whose Loro bytes are garbage: refused for its signer before Loro would read them
+    let mut hostile = unchecked(&doc, &m, &g, "t1", vec![("title", "x".into())], todo_type());
+    let mut e = Envelope::decode(&hostile).unwrap();
+    let mut body = Body::of_value(&e.body).unwrap();
+    body.changes = vec![0xff; 64];
+    e.body = body.value();
+    m.sign_envelope(&mut e);
+    hostile = e.encode();
+    let caps = NotMallory(m.public().to_vec());
+    assert_eq!(doc.import(&hostile, &caps), Err(Refused::Stranger));
+    assert_eq!(
+        doc.envelopes().count(),
+        0,
+        "a stranger's envelope is never held"
+    );
+    // a member's garbage reaches only Loro's metadata decoding, and is refused there
+    assert_eq!(doc.import(&hostile, &Allow), Err(Refused::Loro));
 }

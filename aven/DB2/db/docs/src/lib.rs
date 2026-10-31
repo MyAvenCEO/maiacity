@@ -21,6 +21,14 @@
 
 #![forbid(unsafe_code)]
 
+// Loro can panic on bytes it should have refused. Natively the judge catches that on its scratch copy, which needs
+// panics to unwind: a profile with `panic = "abort"` would let one member's envelope kill the peer, and again on every
+// catch-up (db/docs/README.md, "Importing"). In the browser, where wasm32 aborts, the judge runs in a worker of its own.
+#[cfg(all(not(target_arch = "wasm32"), not(panic = "unwind")))]
+compile_error!(
+    "aven-db-docs needs panic = \"unwind\" natively: the judge catches Loro's panics on its scratch copy"
+);
+
 mod body;
 mod device;
 mod doc;

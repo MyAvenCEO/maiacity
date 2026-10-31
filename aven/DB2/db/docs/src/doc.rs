@@ -51,13 +51,12 @@ pub const TYPE_FIELD: &str = "t";
 /// Whether an envelope's signer may write it: caps' minimal checks implement this (the signer served the vault, the cap
 /// chain is valid, live and covering, the epoch is fresh). Its verdict can turn by a later revocation.
 pub trait Authorize {
-    fn authorized(&self, genesis: &Genesis, e: &Envelope, body: &Body) -> bool;
-}
+    /// Step 4: the signer's chain reaches this Doc at all: the device served a vault that holds some grant on it. A
+    /// stranger's envelope is refused here, before any of its bytes reaches Loro, and is never held.
+    fn reaches(&self, genesis: &Genesis, signer: &[u8]) -> bool;
 
-impl<F: Fn(&Envelope, &Body) -> bool> Authorize for F {
-    fn authorized(&self, _: &Genesis, e: &Envelope, body: &Body) -> bool {
-        self(e, body)
-    }
+    /// Step 7: the cap chain is valid, live and covering. This verdict can turn by a later revocation.
+    fn authorized(&self, genesis: &Genesis, e: &Envelope, body: &Body) -> bool;
 }
 
 /// One Record at a version: its type Doc and its fields.
@@ -127,6 +126,8 @@ pub enum Refused {
     /// Another Doc or branch.
     Doc,
     Signature,
+    /// Its signer's chain doesn't reach this Doc: a stranger, refused before Loro sees a byte.
+    Stranger,
     /// Its writer id isn't `writer(signer, doc, branch, generation)`.
     Writer,
     /// Its `seq`, `prev` or counters don't continue its log.
@@ -673,6 +674,10 @@ impl Doc {
         }
         if !e.valid(&Ed25519) {
             return Err(Refused::Signature);
+        }
+        // 4. the signer's chain reaches this Doc: strangers never reach Loro
+        if !auth.reaches(&self.genesis, &e.signer) {
+            return Err(Refused::Stranger);
         }
         if body.to <= body.from {
             return Err(Refused::Form);

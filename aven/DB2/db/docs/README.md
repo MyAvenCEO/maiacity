@@ -484,8 +484,29 @@ When a verdict turns after import, the branch's state is rebuilt from the envelo
 ops back out). Honest edits built on a discounted envelope are shown as not counted, with the reason, and their devices
 re-apply them as new commits on top.
 
-**Loro sees only bytes that passed the limits and a member's signature.** Its decoding is fuzzed (`cargo-fuzz`, every
-release), and a decoding failure refuses one envelope without touching the live state.
+**Loro is a hole until proven otherwise** (the architect, 31 Oct 2026). It can panic on bytes it should have refused,
+and a panic in the browser kills the worker, then kills it again on every catch-up. Three defences:
+
+- **(a) Strangers never reach Loro.** Steps 1 to 8 run before a byte of an envelope's changes is read: the limits, strict
+  decoding, the device's signature, that the signer's chain reaches this Doc at all (caps' `reaches`; a stranger's
+  envelope is refused and never held), the writer id, its place in its log, and rule 7 from the update's metadata.
+  Only a member's signed envelope, in its right place, reaches Loro's decoding.
+- **(b) Natively, the judge catches.** Fit is judged on a scratch copy, inside `catch_unwind`; a panic there makes one
+  envelope unfit, recorded by its name and never judged again, and the live state is never touched. That needs
+  `panic = "unwind"`: aven-db-docs refuses to compile natively without it, and no profile of the workspace or the
+  Peer sets `abort`.
+- **(c) In the browser, the judge runs in a worker of its own.** wasm32 aborts on a panic, so `catch_unwind` does
+  nothing there. The Peer-Light runs the judge in its own wasm instance; when it dies, that envelope is unfit, recorded
+  by its name, and the judge restarts. This comes when the Peer-Light wires the docs layer in.
+
+Import's decoding is fuzzed (`db/docs/fuzz`, `cargo +nightly fuzz run import`, every release): random bytes as an
+envelope, as the Loro update inside a member's signed envelope, and as a sealed segment. `tests/hostile.rs` runs the
+same inputs, and bit-flipped real updates, on every check.
+
+**Imports go by page.** A page's envelopes all pass steps 1 to 8 first, and whatever waited on them joins; the page is
+then judged on one scratch copy, each envelope read by two checkouts (at itself, at its dependencies), and what counts
+enters the live state in one `import_batch`: one diff, one snapshot, one event. Measured natively: 500 envelopes of
+one Doc in one page in 76 ms (release), against about 0.7 s one by one (`tests/catchup.rs`).
 
 ## Splits
 

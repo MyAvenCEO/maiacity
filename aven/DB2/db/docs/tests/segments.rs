@@ -61,7 +61,7 @@ fn a_segment_closes_at_rotation_and_imports() {
     // a reader takes both segments, in order, and holds what the writer holds
     let mut reader = open(&g);
     for (s, e) in [(&s1, &e1), (&s2, &e2)] {
-        let r = reader.import_segment(s, e, &allow).unwrap();
+        let r = reader.import_segment(s, e, &Allow).unwrap();
         assert!(r.iter().all(|x| *x == Ok(Imported::Counts)), "{r:?}");
     }
     assert_eq!(reader.snapshot(), doc.snapshot());
@@ -160,7 +160,7 @@ fn a_loose_envelope_travels_sealed() {
     assert!(unseal(Kind::Segment, &e1, &sealed, 1 << 21).is_none());
     let mut reader = open(&g);
     assert_eq!(
-        reader.import_sealed(&sealed, &e1, &allow),
+        reader.import_sealed(&sealed, &e1, &Allow),
         Ok(Imported::Counts)
     );
 }
