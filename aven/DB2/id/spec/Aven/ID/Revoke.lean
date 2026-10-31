@@ -1,9 +1,9 @@
-import Aven.ID.Past
+import Aven.Core
 
 /-! # Revocations and acks
 
 A revocation ends a cap and every cap resting on it, and wins over what it had not seen (`id/caps/README.md`,
-rule 14). An envelope is `Aven.Core`'s, named by `nm`, and its past is Core's `Reaches`, which `Aven.ID.Past` decides.
+rule 14). An envelope is `Aven.Core`'s, named by `nm`, and its past is Core's `Reaches`, which `Aven.Core.Past` decides.
 Caps reads three things of it, as the docs layer hands them from inside its seal (`Reads`): the vault it writes for,
 the ids of the cap chain it writes under (every link, root first, so revoking any link reaches it), and the
 revocations it acknowledges. A Doc is the list of envelopes a reader holds.
@@ -24,7 +24,7 @@ the Doc, or through another writer's ack. The verdict:
 
 namespace Aven.ID
 
-open Aven.Core Past
+open Aven.Core Aven.Core.Past
 
 /-- What caps reads of an envelope, from inside its seal. -/
 structure Reads where
