@@ -5,8 +5,9 @@ import Aven.ID.Seal
 
 For each case, the inputs (the kind, the epoch's key, the Doc, the epoch, the nonce and the plaintext) and what the
 seal makes of them around the AEAD: the cipher's key, the commitment's key, the AAD, the commitment, the padded
-plaintext, and the outside's encoding with a fixture ciphertext (bytes in a pattern, of the padded length plus the
-16-byte tag, as aven-id's stanza fixtures are). aven-db-docs checks every byte, and seals and opens through
+plaintext, the outside's encoding with a fixture ciphertext (bytes in a pattern, of the padded length plus the
+16-byte tag, as aven-id's stanza fixtures are), and the kind a reader finds by the commitment (`kindOf`). Then
+things whose commitment matches no kind. aven-db-docs checks every byte, and seals and opens through
 XChaCha20-Poly1305 itself. Then Padmé's lengths, and paddings a reader must refuse. Bytes are lowercase hex. -/
 
 open Lean Aven.Core Aven.ID.Padme
@@ -29,6 +30,27 @@ def cases : List (String × Kind × String × Bytes) :=
    ("an empty plaintext", .envelope, "another Doc", []),
    ("the same plaintext, another kind", .segment, "a Doc", t "an envelope's bytes")]
 
+/-- The kind a reader finds by the commitment (`kindOf`), `null` for none. -/
+def kindJson (key : Bytes) (s : Sealed) : Json := match kindOf key s with | some k => k.text | none => Json.null
+
+/-- Things whose commitment matches no kind under the key: another epoch's key, and a commitment one byte off. -/
+def noKind : List Json :=
+  let key := testBytes "avenSANDBOX test epoch key 0"
+  let doc : DocId := ⟨blake3 (t "a Doc")⟩
+  let epoch := blake3 (t "avenSANDBOX test epoch 0")
+  let nonce := (testBytes "avenSANDBOX test nonce 0").take 24
+  let other := testBytes "avenSANDBOX test epoch key 1"
+  let c := commit .segment other (aad .segment doc epoch) nonce
+  let flipped := match commit .envelope key (aad .envelope doc epoch) nonce with
+    | b :: rest => (b ^^^ 1) :: rest
+    | [] => []
+  [("matching no kind: another key's commitment", c), ("matching no kind: a commitment one byte off", flipped)].map
+    fun (name, cm) =>
+      let s : Sealed := { ct := ramp 0 (padme 1 + 16), doc, epoch, nonce, commit := cm }
+      vec name
+        (Json.mkObj [("epochKey", h key), ("outside", h (encode s.value))])
+        (Json.mkObj [("kind", kindJson key s)])
+
 def sealVectors : List Json :=
   let sealed := cases.zipIdx.map fun ((name, k, d, pt), i) =>
     let key := testBytes s!"avenSANDBOX test epoch key {i % 2}"
@@ -43,12 +65,12 @@ def sealVectors : List Json :=
       (Json.mkObj [("kind", k.text), ("epochKey", h key), ("doc", Json.str doc.text), ("epoch", h epoch.bytes),
         ("nonce", h nonce), ("plaintext", h pt), ("ct", h ct)])
       (Json.mkObj [("cipherKey", h (cipherKey k key)), ("commitKey", h (commitKey k key)), ("aad", h a),
-        ("commit", h s.commit), ("padded", h padded), ("outside", h (encode s.value))])
+        ("commit", h s.commit), ("padded", h padded), ("outside", h (encode s.value)), ("kind", kindJson key s)])
   let lengths := [0, 1, 2, 9, 15, 16, 17, 100, 129, 1000, 1025, 65536, 1048577].map fun l =>
     vec s!"Padmé of {l}" (toJson l) (toJson (padme l))
   let unpads := [("no 0x80", [1, 2, 0, 0]), ("all zeros", [0, 0]), ("a short padding", [1, 2, 3, 0x80, 0]),
       ("a whole padding", pad [1, 2, 3]), ("a long padding", [1, 0x80, 0, 0, 0, 0, 0, 0])].map
     fun (name, p) => vec s!"unpad: {name}" (h p) (match unpad p with | some x => h x | none => Json.null)
-  sealed ++ lengths ++ unpads
+  sealed ++ noKind ++ lengths ++ unpads
 
 end Aven.ID.Seal

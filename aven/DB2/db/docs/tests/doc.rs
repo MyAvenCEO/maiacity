@@ -4,10 +4,12 @@
 
 mod common;
 
-use aven_core::{Envelope, Held, Value};
+use std::sync::Arc;
+
+use aven_core::{DocId, Envelope, Held, Value, blake3};
 use aven_db_docs::{
-    Act, Body, ChangeKind, CommitError, Doc, Feed, Genesis, Imported, Limits, Refused, Unfit, Why,
-    envelope_valid,
+    Act, Body, ChangeKind, CommitError, Doc, Feed, Genesis, Imported, Limits, Refused, Snapshot,
+    Unfit, Unopenable, Version, Why, envelope_valid,
 };
 use common::*;
 
@@ -25,9 +27,24 @@ fn genesis_names_the_doc() {
         g.id(),
         "the nonce makes two Docs born alike different"
     );
-    assert!(
-        Doc::open(g.clone(), &[], Limits::DEFAULTS).is_none(),
-        "a pinned schema it doesn't have"
+    let unpinned = Unopenable::Pin {
+        r#type: todo_type().r#type,
+        schema: todo().hash(),
+    };
+    assert_eq!(
+        Doc::open(g.clone(), |_| None, Limits::DEFAULTS).err(),
+        Some(unpinned.clone()),
+        "a type Doc it doesn't hold: refused by the pin's name"
+    );
+    assert_eq!(
+        Doc::open(
+            g.clone(),
+            |_| Some(Arc::new(Snapshot::default())),
+            Limits::DEFAULTS
+        )
+        .err(),
+        Some(unpinned),
+        "a type Doc without the pinned version"
     );
     let builtin = Genesis::new(
         b"v",
@@ -35,8 +52,9 @@ fn genesis_names_the_doc() {
         &[(version_type().r#type, hash("x"))],
         [5; 32],
     );
-    assert!(
-        Doc::open(builtin, &[todo()], Limits::DEFAULTS).is_none(),
+    assert_eq!(
+        Doc::open(builtin, types, Limits::DEFAULTS).err(),
+        Some(Unopenable::Genesis),
         "a built-in type is never pinned"
     );
     // the first envelope carries the genesis, and a reader opens the Doc from it
@@ -46,8 +64,9 @@ fn genesis_names_the_doc() {
     assert_eq!(body(&first).genesis, Some(g.clone()));
     let second = commit(&mut doc, &a, &[todo_put("t2", "second")]);
     assert_eq!(body(&second).genesis, None);
-    let (mut reader, r) =
-        Doc::from_first(&first, &[todo()], Limits::DEFAULTS, &Allow).expect("opens from it");
+    let (mut reader, r) = Doc::from_first(&first, types, Limits::DEFAULTS, &Allow)
+        .expect("its genesis")
+        .expect("opens from it");
     assert_eq!(r, Imported::Counts);
     reader.import(&second, &Allow).unwrap();
     assert_eq!(reader.snapshot(), doc.snapshot());
@@ -381,7 +400,7 @@ fn refused_before_loro() {
         &[(todo_type().r#type, todo().hash())],
         [6; 32],
     );
-    let mut od = Doc::open(other, &[todo()], Limits::DEFAULTS).unwrap();
+    let mut od = Doc::open(other, types, Limits::DEFAULTS).unwrap();
     let y = commit(&mut od, &a, &[todo_put("t1", "x")]);
     assert_eq!(doc.import(&y, &Allow), Err(Refused::Doc));
     // signed by another device alone: no signature is by the device its writer id names
@@ -763,4 +782,108 @@ fn authority_is_judged_on_the_envelopes_own_past_in_any_order() {
         snaps.push(r.snapshot());
     }
     assert_eq!(snaps[0], snaps[1], "any order, one verdict");
+}
+
+#[test]
+fn pins_resolve_in_the_type_doc() {
+    // a type Doc made for real: its Records are its versions, each holding its schema whole
+    let a = device("alice");
+    let tg = Genesis::new(b"alice's vault", aven_core::type_of_types(), &[], [7; 32]);
+    let mut type_doc = Doc::open(tg, |_| None, Limits::DEFAULTS).expect("a type Doc pins nothing");
+    let v1 = |name: &str, schema: Value| {
+        put(
+            name,
+            schema_type(),
+            vec![
+                ("at", Value::Array(vec![])),
+                ("name", Value::Text(name.into())),
+                ("schema", schema),
+            ],
+        )
+    };
+    commit(&mut type_doc, &a, &[v1("v1", todo().value())]);
+    // a version whose schema isn't in its one form doesn't fit
+    let bad = Value::Map(vec![("title".into(), Value::Text("todo".into()))]);
+    assert!(
+        type_doc
+            .commit(
+                &a,
+                0,
+                &[v1("v2", bad)],
+                "2026-10-31T12:00:00Z",
+                Act::default(),
+                &Allow
+            )
+            .is_err()
+    );
+    // a named version on the type Doc is no version of the type: only `schema` Records are
+    commit(
+        &mut type_doc,
+        &a,
+        &[put(
+            "release",
+            version_type(),
+            vec![
+                ("at", Value::Array(vec![])),
+                ("name", Value::Text("release".into())),
+            ],
+        )],
+    );
+    let snap = type_doc.snapshot();
+    assert_eq!(
+        snap.versions().into_iter().collect::<Vec<_>>(),
+        vec![(todo().hash(), todo())]
+    );
+    // a Doc of that type opens with the pinned schema read from it, and judges by it
+    let t = type_doc.id();
+    let g = Genesis::new(b"alice's vault", t, &[(t, todo().hash())], [8; 32]);
+    let held = |x: &DocId| (*x == t).then(|| type_doc.snapshot());
+    let mut doc = Doc::open(g.clone(), held, Limits::DEFAULTS).expect("its pin resolves");
+    let todo_v = Version {
+        r#type: t,
+        schema: Some(todo().hash()),
+    };
+    commit(
+        &mut doc,
+        &a,
+        &[put(
+            "t1",
+            todo_v,
+            vec![("title", Value::Text("seeds".into()))],
+        )],
+    );
+    assert!(
+        doc.commit(
+            &a,
+            0,
+            &[put(
+                "t2",
+                todo_v,
+                vec![
+                    ("title", Value::Text("x".into())),
+                    ("count", Value::Uint(101))
+                ]
+            )],
+            "2026-10-31T12:00:00Z",
+            Act::default(),
+            &Allow
+        )
+        .is_err(),
+        "the pinned schema bounds count at 100"
+    );
+    // a pin of a schema the type Doc has no version of is refused by its name
+    let other = blake3(b"another schema");
+    let mut pins = vec![todo().hash(), other];
+    pins.sort();
+    let g2 = Genesis {
+        pins: vec![(t, pins)],
+        ..g
+    };
+    assert_eq!(
+        Doc::open(g2, held, Limits::DEFAULTS).err(),
+        Some(Unopenable::Pin {
+            r#type: t,
+            schema: other
+        })
+    );
 }

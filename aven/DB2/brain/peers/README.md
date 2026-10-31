@@ -118,8 +118,8 @@ let it into gossip, so no host is the way in.
   entries: a reader learns a Doc's tips from `doc_tips`, and gen1's log tips go with it (A197). It counts by Core's
   `Counts`, with fit as the entry's shape and `authorized` as who may sign it: a device about itself, admitted by the
   door, or a release signer for a release. The newest entry about one thing is the counting one with the greatest
-  (generation, seq), and splits are Core's. Its Lean is `Aven.ID.Records` until it moves to `peer/spec` as
-  `Aven.Peer.History`.
+  (generation, seq), and splits are Core's. Every entry names the one at the place before it in its own log, places
+  from 1 (`chained`), so nothing after a split skips past it. Its Lean is `Aven.Peer.History`.
 - **Every peer keeps the newest entry per device** and feeds it into iroh's `MemoryLookup`. Which entry is newest
   depends only on the set held, never on the order or on who passed it on (`newest_set`, `newest_signed`,
   `newest_agree`, `newest_grows`). An entry from a device the door doesn't admit is dropped. A re-homed device's new
@@ -133,8 +133,8 @@ let it into gossip, so no host is the way in.
   Doc id and its tips, all signed, so it can join through any listed relay. A returning browser has all of it in OPFS.
   `/aven.json` is one more source.
 
-**Decided:** A197, peers 2, peers 3, A31, A42, A193, A194 · **Lean:** `Aven.ID.Records` — `newest_set`, `newest_signed`,
-`newest_agree`, `newest_grows`, `split_final`, `split_spares_next`; `Aven.ID.Node` — `rehome_newest`,
+**Decided:** A197, peers 2, peers 3, A31, A42, A193, A194 · **Lean:** `Aven.Peer.History` — `newest_set`,
+`newest_signed`, `newest_agree`, `newest_grows`, `split_final`, `split_spares_next`, `rehome_newest`,
 `rehome_new_generation`
 
 ## The door
@@ -448,7 +448,7 @@ counts connections.
   a peer holds and when it heard them (`present_set`).
 - **"Who joined"** is the first beat after a claim settles, and each peer says it itself.
 
-**Decided:** rule 12, A31, A35, A42, A194 · **Lean:** `Aven.ID.CatchUp` — `present_set`, `present_signed`,
+**Decided:** rule 12, A31, A35, A42, A194 · **Lean:** `Aven.Peer.CatchUp` — `present_set`, `present_signed`,
 `present_heard`, `present_ages`
 
 ## Upgrades
@@ -546,20 +546,20 @@ what runs.
 | The fetch gate | `Aven.Peer.Fetch`, #1722 | `aven-peer-keeper`'s `fetch`, #1722; caps' half in aven-id's `keep` (#1734) | not started | #1722 |
 | Keepers and catch-up from them | `Aven.Peer.Keeper`, `Aven.Peer.Serve` in `peer/spec`, #1722, #1745 | `aven-peer-keeper`, #1722, with catch-up end to end natively over avenDOCS' sealed pages (`tests/catchup.rs`: 500 envelopes, about 0.5 s in a debug build); the `Gate` adapter over aven-id's `keep`, and the native keeper (`--keep`, the keeper's store): not started | the catch-up client: not started | #1722 |
 | The door | `settle_door` | the first generation's door, from stored refs | the same | the door from the register, with stage 4 |
-| Relays, address entries, bootstrap, links | `Aven.ID.Node`, `Aven.ID.Records` | not started: one relay in the Aven Peer, `--aven`, `--aven-key` | one relay URL | history: `Aven.ID.Records` to `peer/spec` as `Aven.Peer.History`, `records.json` as `history.json` (A193, A194): thread E, stacked on the wire split (#1745); the rest: no stage named yet |
-| Presence by signed beats | `Aven.ID.CatchUp` | not started: the hub counts connections | — | `Aven.ID.CatchUp` to `Aven.Peer.CatchUp`, with the history (A194); the rest: no stage named yet |
+| Relays, address entries, bootstrap, links | `Aven.ID.Node`, `Aven.Peer.History` (#1755) | not started: one relay in the Aven Peer, `--aven`, `--aven-key` | one relay URL | history entries in Rust; the rest: no stage named yet |
+| Presence by signed beats | `Aven.Peer.CatchUp` (#1755) | not started: the hub counts connections | — | no stage named yet |
 | Upgrades | `meet`, `follows` (#1649, #1714) | done | the tab follows `update` | signed release entries, later |
 | Deploy | — | the slim image and its tag (#1730) | — | — |
 
 Known gaps, code and Lean:
-- `Aven.ID.CatchUp`'s catch-up from members by signed log tips retires in favour of `Aven.Peer.DocSync` and
-  `Aven.Peer.Keeper`; its presence moves into `Aven.Peer.CatchUp` with the history (A194).
-- `Aven.ID.Records.speaks_same` restates `meet_speaks`; `speaks` moves into `Aven.Peer.Wire` with the history (A194).
+- `Aven.Peer.CatchUp`'s catch-up from members by signed log tips retires in favour of `Aven.Peer.DocSync` and
+  `Aven.Peer.Keeper`.
 - `Aven.Peer.Presence` models the hub's count, and retires with the first generation.
 - `rule10_quota` is still to be composed over `Aven.Peer.Serve`'s `admitted_within` and `over_quota_sheds` with caps'
   quota, once #1722 lands; caps' `Keep` still holds a bill of its own (`uploader_pays`, `quota_holds`), which leaves it
   then.
-- `records.json` and `node.json` are read only by Lean: no Rust or JavaScript replays them yet.
+- `history.json`, `catchup.json`, `failures.json` and `node.json` are read only by Lean: no Rust or JavaScript replays
+  them yet.
 - The Peer-Light serves its store's blobs to members over iroh-blobs, the first generation's files, until the cutover.
 - Across an `update` reload only the chat's draft survives: a file half put isn't resumed, other screens' drafts are
   lost, and there is one draft per origin, not per tab.

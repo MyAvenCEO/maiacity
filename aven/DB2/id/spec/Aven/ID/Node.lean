@@ -1,5 +1,4 @@
 import Aven.Core
-import Aven.ID.Records
 import Aven.ID.Keeping
 
 /-! # What a node guarantees (PEERS.md; `Aven.Architecture`'s R3, R7 and R9)
@@ -11,12 +10,12 @@ new envelope, never on another peer, a link or a learned head (`write_fits`, `wr
 reaches every reader that syncs, directly or through others, with a peer holding it, after which nothing built on
 the split counts there (`split_spreads`).
 
-**R7, no peer is the only source.** Devices reach each other through the relays on the settled relay list (PEERS §1),
-at the home relay each one's newest address record names (§2). The admin lists only relays every member can use. With
-two relays listed, losing any one peer leaves every member reachable by every other (`no_only_relay`); with one, losing
-it leaves nobody reachable through a relay (`one_relay_only_source`). A device that re-homes signs a newer address
-record, which every peer takes as newest (`rehome_newest`). A Doc held by two members stays fetchable by every member
-when any one peer is lost (`no_only_holder`). Who keeps a Doc is its vault's choice, by keep caps
+**R7, no peer is the only source.** Devices reach each other through the relays on the settled relay list (PEERS §1), at
+the home relay each one's newest address record names (§2). The admin lists only relays every member can use. With two
+relays listed, losing any one peer leaves every member reachable by every other (`no_only_relay`); with one, losing it
+leaves nobody reachable through a relay (`one_relay_only_source`). A device that re-homes signs a newer address entry,
+which every peer takes as newest (`Aven.Peer.History.rehome_newest`). A Doc held by two members stays fetchable by every
+member when any one peer is lost (`no_only_holder`). Who keeps a Doc is its vault's choice, by keep caps
 (`Aven.ID.Keeping`): every new vault starts with one for everything of its own to Maia City's keeper, approved by its
 owner (`default_kept`), and a second keeper of its own choice makes the Doc survive the Aven Peer's loss
 (`kept_fetchable`).
@@ -164,42 +163,6 @@ list holds two. -/
 theorem one_relay_only_source {n : Net} {r : String} (one : n.relays = [r]) (a b : String) :
     reaches n r a b = false := by
   simp [reaches, home, one]
-
-/-- **`rehome_newest`:** a device that re-homes signs an address record at the next place of its own log, after
-every one it signed before, and every peer takes it as newest (`Aven.ID.Records`), as long as the device never split
-that generation (A4, A31). -/
-theorem rehome_newest {admits releasers : String → Bool} {rs : List Records.PeerRecord} {b : String} {g c body : Nat}
-    (ad : admits b = true)
-    (older : ∀ s ∈ rs, s.kind = .address → s.about = b → s.generation < g ∨ (s.generation = g ∧ s.counter < c))
-    (honest : ∀ s ∈ rs, ∀ t ∈ rs, s.kind = .address → s.about = b → t.kind = .address → t.about = b →
-      s.generation = g → t.generation = g → s.counter = t.counter → s.body = t.body) :
-    Records.isNewest admits releasers (⟨.address, b, b, g, c, body⟩ :: rs) ⟨.address, b, b, g, c, body⟩ = true := by
-  have cnt : Records.counts admits releasers (⟨.address, b, b, g, c, body⟩ :: rs) ⟨.address, b, b, g, c, body⟩ =
-      true := by
-    refine Records.split_spares_next _ fun s ms t mt gs gt e => ?_
-    obtain ⟨ms, _, ks, as⟩ := Records.mem_candidates.mp ms
-    obtain ⟨mt, _, kt, at_⟩ := Records.mem_candidates.mp mt
-    rcases List.mem_cons.mp ms with rfl | ms <;> rcases List.mem_cons.mp mt with rfl | mt
-    · rfl
-    · have := older t mt kt at_; dsimp only at gt e; omega
-    · have := older s ms ks as; dsimp only at gs e; omega
-    · exact honest s ms t mt ks as kt at_ gs gt e
-  refine Records.isNewest_iff.mpr ⟨⟨⟨List.mem_cons_self .., by simp [Records.takes, ad]⟩, cnt⟩, ?_⟩
-  intro s ms _ k a _
-  rcases List.mem_cons.mp ms with e | ms
-  · subst e; simp [Records.newer]
-  · have := older s ms k a
-    simp only [Records.newer, Bool.or_eq_false_iff, decide_eq_false_iff_not, Bool.and_eq_false_iff,
-      beq_eq_false_iff_ne, ne_eq]
-    omega
-
-/-- **`rehome_new_generation`:** a device that split its log re-homes in a new generation, later than every one it
-signed before, and every peer takes its new address as newest: a split ends a generation, not the device (A42). -/
-theorem rehome_new_generation {admits releasers : String → Bool} {rs : List Records.PeerRecord} {b : String}
-    {g c body : Nat} (ad : admits b = true) (later : ∀ s ∈ rs, s.kind = .address → s.about = b → s.generation < g) :
-    Records.isNewest admits releasers (⟨.address, b, b, g, c, body⟩ :: rs) ⟨.address, b, b, g, c, body⟩ = true :=
-  rehome_newest ad (fun s ms k a => .inl (later s ms k a))
-    (fun s ms _ _ k a _ _ gs _ _ => absurd gs (Nat.ne_of_lt (later s ms k a)))
 
 /-- A Doc is fetchable by `a` once `gone` is lost: `a` holds it, or reaches a holder. -/
 def fetchable (n : Net) (gone a doc : String) : Bool :=
