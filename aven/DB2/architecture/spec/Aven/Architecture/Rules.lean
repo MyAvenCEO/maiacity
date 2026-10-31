@@ -237,10 +237,13 @@ theorem rule4_merge_whole (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spaw
     {step : List (DB.Engine.Record Value) → Envelope → List (DB.Engine.Record Value)} {e : Envelope}
     (main : e.branch = ID.mainBranch) (hn : ((before e).map (·.id)).Nodup) (h : r.Authorized gov spawned lists e)
     (hc : contentOk ver r.footprint rule before step e) :
-    -- every Record of main the merge touches is handled by a step the whole merge's calls lower to
+    -- every Record of main the merge touches, every field it changes or removes, is handled by a step the whole merge's
+    -- calls lower to
     ((∀ r' ∈ step (before e) e, ∀ r0 ∈ before e, r0.id = r'.id → ∀ fl v, (fl, v) ∈ r'.fields →
         DB.Engine.optEq DB.Engine.valEq (DB.Engine.get r0.fields fl) (DB.Engine.get r'.fields fl) = false →
           ∃ st ∈ r.footprint e, st.type = r'.type ∧ fl ∈ st.fields) ∧
+      (∀ r' ∈ step (before e) e, ∀ r0 ∈ before e, r0.id = r'.id → ∀ fl ∈ r0.fields.map Prod.fst,
+        DB.Engine.get r'.fields fl = none → ∃ st ∈ r.footprint e, st.type = r'.type ∧ fl ∈ st.fields) ∧
       (∀ r' ∈ step (before e) e, (∀ r0 ∈ before e, r0.id ≠ r'.id) →
         (∃ st ∈ r.footprint e, st.type = r'.type ∧ st.verb = .putNew) ∧
         ∀ fl ∈ r'.fields.map Prod.fst, ∃ st ∈ r.footprint e, st.type = r'.type ∧ fl ∈ st.fields) ∧
@@ -254,9 +257,9 @@ theorem rule4_merge_whole (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spaw
       ∃ last, (r.chain e).getLast? = some last ∧ last.conditions.branches.allows ID.mainBranch = true ∧
         ∃ f, r.facts e.doc = some f ∧ ∀ c ∈ r.calls e, (last.grants r.ctx.roles).allows gov spawned lists f c) := by
   have wm : r.WholeMerges r.calls := fun _ _ _ m => m
-  have ⟨hchg, hnew, hgone⟩ :=
+  have ⟨hchg, hrm, hnew, hgone⟩ :=
     DB.Engine.merge_steps ver hver (r.footprint e) (before e) (step (before e) e) hn hc.1
-  refine ⟨⟨hchg, hnew, hgone⟩, ID.merge_within_device r gov spawned lists wm main h, ?_⟩
+  refine ⟨⟨hchg, hrm, hnew, hgone⟩, ID.merge_within_device r gov spawned lists wm main h, ?_⟩
   rcases ID.authorized_by r gov spawned lists h with own | chain
   · exact .inl own
   · exact .inr (ID.merge_covered r gov spawned lists wm main chain)

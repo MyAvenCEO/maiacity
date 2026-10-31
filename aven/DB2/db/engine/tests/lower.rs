@@ -36,12 +36,34 @@ fn lowering() {
     }
 }
 
+/// A change's fields as Lean writes them, `[field, value]` or `[field]` for a removal, sorted by field: the vectors'
+/// Records give their fields as JSON objects, which keep no order.
+fn fields_json(fs: &[(String, Option<aven_core::Value>)]) -> Json {
+    let mut out: Vec<Json> = fs
+        .iter()
+        .map(|(f, v)| match v {
+            Some(v) => json!([f, json_value(v)]),
+            None => json!([f]),
+        })
+        .collect();
+    out.sort_by(|a, b| a[0].as_str().cmp(&b[0].as_str()));
+    Json::Array(out)
+}
+
+fn sorted_fields(c: &Json) -> Json {
+    let mut c = c.clone();
+    if let Some(fs) = c.get_mut("fields").and_then(Json::as_array_mut) {
+        fs.sort_by(|a, b| a[0].as_str().cmp(&b[0].as_str()));
+    }
+    c
+}
+
 fn change_json(c: &RecordChange) -> Json {
     json!({
         "id": hex_of(&c.id),
         "type": c.r#type.text(),
         "kind": c.kind.name(),
-        "fields": tuple_json(&c.fields),
+        "fields": fields_json(&c.fields),
     })
 }
 
@@ -58,7 +80,8 @@ fn checks(file: &str) {
         let fp = list(&i["footprint"], step);
         let cs = changes_from(&ver, &before, &after);
         let got: Vec<Json> = cs.iter().map(change_json).collect();
-        assert_eq!(json!(got), v["expected"]["changes"], "{name}: changes");
+        let want: Vec<Json> = list(&v["expected"]["changes"], sorted_fields);
+        assert_eq!(got, want, "{name}: changes");
         assert_eq!(
             json!(verdict_footprint(&fp, &cs)),
             v["expected"]["verdict"],

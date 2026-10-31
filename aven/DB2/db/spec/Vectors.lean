@@ -38,7 +38,8 @@ import Aven.DB.Docs
 - `lower.json`: `core/1`'s calls, their params in order; each call's encoding and the steps it lowers to, or null when
   it is refused; and committers' ops with the call each names (`Aven.DB.Engine.Lower`).
 - `changes.json`: a Doc's Records before and after a commit (some tampered with after), every type at one schema, and
-  the commit's footprint; the changes a reader sees and the verdict's footprint part (`Aven.DB.Engine.Changes`).
+  the commit's footprint; the changes a reader sees, a change's fields in order as `[field, value]`, or `[field]` for
+  one it removes, and the verdict's footprint part (`Aven.DB.Engine.Changes`).
 - `merge-check.json`: main's Records before a merge, the merged Records and the footprint of the calls the merge
   brings; the changes the merge makes on main and the verdict's footprint part on them (`merge_steps`).
 - `lookups.json`: a shape, the Records and Docs at version V, the Records now, the Docs unfolded since and listed now, a
@@ -714,7 +715,9 @@ def kindName : Docs.ChangeKind → String
 
 def changeJson (c : Docs.RecordChange) : Json :=
   Json.mkObj [("id", toJson (hex c.id)), ("type", toJson c.type.text), ("kind", toJson (kindName c.kind)),
-    ("fields", tupleJson c.fields)]
+    ("fields", Json.arr (c.fields.map fun (f, v) => match v with
+      | some x => Json.arr #[toJson (utf8Text f), x.json]
+      | none => Json.arr #[toJson (utf8Text f)]).toArray)]
 
 /-- Records before and after, and a footprint; the changes a reader sees, under `ver` (every type at one schema), and
 the verdict's footprint part on them. -/

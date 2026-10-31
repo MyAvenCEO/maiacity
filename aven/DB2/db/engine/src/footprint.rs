@@ -3,9 +3,10 @@
 //!
 //! Every lowered op has a footprint [`Step`]: the type it writes, its verb and its fields. A cap names the ops a holder
 //! may call, never steps; the steps are the op's lowering, which every reader computes alike, and then checks what the
-//! envelope actually changed against it ([`diff_within`]): a new Record by a `put-new` of its type writing its fields,
-//! a changed Record keeping its id and type and changing only fields the footprint writes, a gone Record by a `remove`
-//! of its type. A commit that ran as its ops say always passes (`commit_within`).
+//! envelope actually changed against it ([`diff_within`]): a new Record, no Record before having its id, by a `put-new`
+//! of its type writing its fields, a changed Record keeping its id and type and changing only fields the footprint
+//! writes, a gone Record by a `remove` of its type. A commit that ran as its ops say, under a (writer, counter) the Doc
+//! hasn't seen, always passes (`commit_within`).
 
 use alloc::vec;
 use alloc::vec::Vec;
@@ -88,12 +89,13 @@ fn new_ok(fp: &[Step], r: &Record) -> bool {
 
 /// What every reader checks: the Doc before, the Doc after, and the footprint (`diffWithin`).
 pub fn diff_within(fp: &[Step], s: &[Record], s2: &[Record]) -> bool {
-    s2.iter()
-        .all(|r| s.iter().any(|r0| changed_ok(fp, r0, r)) || new_ok(fp, r))
-        && s.iter().all(|r0| {
-            s2.iter().any(|r| r.id == r0.id && r.r#type == r0.r#type)
-                || has_verb(fp, &r0.r#type, StepVerb::Remove)
-        })
+    s2.iter().all(|r| {
+        s.iter().any(|r0| changed_ok(fp, r0, r))
+            || (new_ok(fp, r) && !s.iter().any(|r0| r0.id == r.id))
+    }) && s.iter().all(|r0| {
+        s2.iter().any(|r| r.id == r0.id && r.r#type == r0.r#type)
+            || has_verb(fp, &r0.r#type, StepVerb::Remove)
+    })
 }
 
 /// A reader accepts a commit's diff when it stays within the footprint of the ops it lowers to (`check`).

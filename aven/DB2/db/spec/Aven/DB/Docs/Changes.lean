@@ -32,12 +32,14 @@ inductive ChangeKind
   deriving DecidableEq, Repr
 
 /-- One Record an envelope touches: its id, its type id, the kind, and the fields it writes with their new values:
-every field the Record carries when `new`, the fields whose value differs when `edited`, none when `gone`. -/
+every field the Record carries when `new`, the fields whose value differs when `edited`, none when `gone`. A field the
+envelope removes (a Loro map delete) is written too, with no value: `(f, none)`, and a footprint must cover it like any
+other write (the architect, 31 Oct 2026). -/
 structure RecordChange where
   id : Bytes
   type : TypeId
   kind : ChangeKind
-  fields : List (Bytes × Value)
+  fields : List (Bytes × Option Value)
   deriving DecidableEq
 
 /-- The fields a change writes, without their values: what a footprint reads. -/
@@ -49,28 +51,31 @@ the envelope touches: a Record it leaves alone has no change, not an `edited` on
 structure Reading (Base : Type) where
   changesOf : Base → Envelope → Option (List RecordChange)
 
-/-- A change fits when each field it writes keeps its type's schema rule for that field. -/
+/-- A change fits when each value it writes keeps its type's schema rule for that field. Whether a removal fits (a
+required field stays unless its Record goes) is the docs layer's fit. -/
 def RecordChange.fits (rule : TypeId → Bytes → Value → Prop) (c : RecordChange) : Prop :=
-  ∀ f ∈ c.fields, rule c.type f.1 f.2
+  ∀ f ∈ c.fields, ∀ v, f.2 = some v → rule c.type f.1 v
 
 /-- An envelope's changes fit when each one does. -/
 def FitsAll (rule : TypeId → Bytes → Value → Prop) (cs : List RecordChange) : Prop :=
   ∀ c ∈ cs, c.fits rule
 
 /-- Every write of one field of one Record, across envelopes' changes stamped by their envelopes, each with the type
-of the change that wrote it. -/
-def recordWrites (id f : Bytes) (es : List (Nat × List RecordChange)) : List (Write (TypeId × Value)) :=
+of the change that wrote it; a removal writes no value. -/
+def recordWrites (id f : Bytes) (es : List (Nat × List RecordChange)) : List (Write (TypeId × Option Value)) :=
   es.flatMap fun e => (e.2.filter (·.id = id)).flatMap fun c =>
     (c.fields.filter (·.1 = f)).map fun v => ⟨e.1, (c.type, v.2)⟩
 
-/-- A field's merged value, over envelopes whose changes all fit, fits the schema of the type that wrote it. -/
+/-- A field's merged value, over envelopes whose changes all fit, fits the schema of the type that wrote it; a field
+whose last write removed it has none. -/
 theorem fit_records (rule : TypeId → Bytes → Value → Prop) {es : List (Nat × List RecordChange)}
-    (h : ∀ e ∈ es, FitsAll rule e.2) (id f : Bytes) {w : Write (TypeId × Value)}
-    (hw : latest (recordWrites id f es) = some w) : rule w.value.1 f w.value.2 := by
+    (h : ∀ e ∈ es, FitsAll rule e.2) (id f : Bytes) {w : Write (TypeId × Option Value)}
+    (hw : latest (recordWrites id f es) = some w) : ∀ x, w.value.2 = some x → rule w.value.1 f x := by
   have hm := latest_mem hw
   simp only [recordWrites, List.mem_flatMap, List.mem_map, List.mem_filter, decide_eq_true_eq] at hm
   obtain ⟨e, he, c, ⟨hc, _⟩, v, ⟨hv, hf⟩, rfl⟩ := hm
-  exact hf ▸ h e he c hc v hv
+  intro x hx
+  exact hf ▸ h e he c hc v hv x hx
 
 /-- The obligation linking a reading to the engine's diff: for an envelope that decodes against a base, its changes
 are, as a set, the diff from the base to the version it makes. -/

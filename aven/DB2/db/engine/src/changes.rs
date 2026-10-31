@@ -12,6 +12,7 @@
 //! The types are `Aven.DB.Docs.Changes`' in the Lean. They live here, in the pure engine, and the docs layer, which
 //! applies the engine's output, uses them from here.
 
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use aven_core::{DocId, Step, StepVerb, TypeId, Value};
@@ -39,14 +40,14 @@ impl ChangeKind {
 }
 
 /// One Record an envelope touches: its id, its type id, the kind, and the fields it writes with their new values:
-/// every field the Record carries when new, the fields whose value differs when edited, none when gone
-/// (`RecordChange`).
+/// every field the Record carries when new, the fields whose value differs when edited, none when gone. A field the
+/// envelope removes is written too, with no value, `(f, None)` (`RecordChange`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RecordChange {
     pub id: Vec<u8>,
     pub r#type: TypeId,
     pub kind: ChangeKind,
-    pub fields: Vec<(alloc::string::String, Value)>,
+    pub fields: Vec<(String, Option<Value>)>,
 }
 
 impl RecordChange {
@@ -56,18 +57,29 @@ impl RecordChange {
     }
 }
 
+/// The fields an edit writes: those whose value differs, with their new values, then those it removes, with none
+/// (`editedFields`).
+fn edited_fields(r0: &Record, r: &Record) -> Vec<(String, Option<Value>)> {
+    let changed = r
+        .fields
+        .iter()
+        .filter(|(f, _)| !opt_eq(get(&r0.fields, f), get(&r.fields, f)))
+        .map(|(f, v)| (f.clone(), Some(v.clone())));
+    let removed = r0
+        .fields
+        .iter()
+        .filter(|(f, _)| get(&r.fields, f).is_none())
+        .map(|(f, _)| (f.clone(), None));
+    changed.chain(removed).collect()
+}
+
 /// One Record as an edit, given its type id (`edited`).
 fn edited(ver: &impl Fn(&DocId) -> TypeId, r0: &Record, r: &Record) -> RecordChange {
     RecordChange {
         id: r.id.bytes(),
         r#type: ver(&r.r#type),
         kind: ChangeKind::Edited,
-        fields: r
-            .fields
-            .iter()
-            .filter(|(f, _)| !opt_eq(get(&r0.fields, f), get(&r.fields, f)))
-            .cloned()
-            .collect(),
+        fields: edited_fields(r0, r),
     }
 }
 
@@ -82,7 +94,11 @@ pub fn change_of(
             id: r.id.bytes(),
             r#type: ver(&r.r#type),
             kind: ChangeKind::New,
-            fields: r.fields.clone(),
+            fields: r
+                .fields
+                .iter()
+                .map(|(f, v)| (f.clone(), Some(v.clone())))
+                .collect(),
         }),
         Some(r0) => {
             let e = edited(ver, r0, r);
@@ -131,4 +147,33 @@ pub fn footprint_ok(fp: &[Step], cs: &[RecordChange]) -> bool {
 /// (`verdictFootprint`).
 pub fn verdict_footprint(fp: &[Step], cs: &[RecordChange]) -> bool {
     footprint_ok(fp, cs)
+}
+
+/// A Record's id as a key: the lowercase hex of its bytes, the key the docs layer writes it under in a Doc's `records`
+/// map (`idKey`). One encoding: it reads back ([`id_of_key`]), so two ids have two keys.
+pub fn id_key(id: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut s = String::with_capacity(2 * id.len());
+    for b in id {
+        s.push(DIGITS[(b >> 4) as usize] as char);
+        s.push(DIGITS[(b & 15) as usize] as char);
+    }
+    s
+}
+
+/// A key read back as an id's bytes; `None` for anything but lowercase hex of whole bytes (`idOfKey?`).
+pub fn id_of_key(key: &str) -> Option<Vec<u8>> {
+    let digit = |c: u8| match c {
+        b'0'..=b'9' => Some(c - b'0'),
+        b'a'..=b'f' => Some(c - b'a' + 10),
+        _ => None,
+    };
+    let bytes = key.as_bytes();
+    if !bytes.len().is_multiple_of(2) {
+        return None;
+    }
+    bytes
+        .chunks(2)
+        .map(|p| Some((digit(p[0])? << 4) | digit(p[1])?))
+        .collect()
 }

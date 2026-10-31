@@ -2,15 +2,16 @@
 //! - `length_le_bound`, `work_le_cost`: what a query yields never exceeds its bound, nor its work its cost;
 //! - `refused_changes_nothing`: a refused commit leaves the Doc as it was;
 //! - `refs_point_backward`: in an accepted commit every reference names an earlier `put`;
-//! - `commit_within`, `honest_footprint`: a commit that ran as its ops say passes every reader's check of its diff,
+//! - `commit_within`, `honest_footprint`: a commit that ran as its ops say, under a fresh counter, passes every reader's check of its diff,
 //!   and the verdict's footprint part on the changes it makes, on a Doc whose Records have distinct ids;
 //! - `lower_call`: an op's call lowers to its own footprint step;
+//! - `idOfKey_idKey`: a Record's id as a key reads back;
 //! - `created_distinct`, `ids_differ_across`: one commit's new ids differ, and differ from another commit's.
 
 use aven_core::{DocId, Hash, TypeId, Value};
 use aven_db_engine::{
     Cell, Cmp, NewId, Op, Query, Rec, Record, apply, bound, changes_from, check, commit, cost,
-    created, eval, footprint, in_scope, lower_core, verdict_footprint, work,
+    created, eval, footprint, id_key, id_of_key, in_scope, lower_core, verdict_footprint, work,
 };
 use proptest::prelude::*;
 
@@ -134,6 +135,14 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(2000))]
 
     #[test]
+    fn id_keys(id in prop::collection::vec(any::<u8>(), 0..12), junk in "[0-9a-fA-Z]{0,5}") {
+        prop_assert_eq!(id_of_key(&id_key(&id)), Some(id));
+        // a reader refuses what isn't lowercase hex of whole bytes
+        let ok = junk.len() % 2 == 0 && junk.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c));
+        prop_assert_eq!(id_of_key(&junk).is_some(), ok);
+    }
+
+    #[test]
     fn length_le_bound_and_work_le_cost(
         db in prop::collection::vec(rec(), 0..8),
         held in prop::collection::vec(any::<bool>(), 3),
@@ -159,9 +168,13 @@ proptest! {
             Err(_) => prop_assert_eq!(apply(w, c, &s, &ops), s),
             Ok(after) => {
                 prop_assert_eq!(apply(w, c, &s, &ops), after.clone());
-                prop_assert!(check(&ops, &s, &after));
+                // `Fresh`: no Record of the Doc was made under this writer's counter
+                let fresh = s.iter().all(|r| !(r.id.writer == w && r.id.counter == c));
+                if fresh {
+                    prop_assert!(check(&ops, &s, &after));
+                }
                 let distinct = s.iter().enumerate().all(|(i, r)| s[i + 1..].iter().all(|x| x.id != r.id));
-                if distinct {
+                if fresh && distinct {
                     let ver = |t: &DocId| TypeId { r#type: *t, schema: Hash([7; 32]) };
                     prop_assert!(verdict_footprint(&footprint(&ops), &changes_from(&ver, &s, &after)));
                 }

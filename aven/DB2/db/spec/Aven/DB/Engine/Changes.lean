@@ -36,14 +36,19 @@ def valEq (a b : Value) : Bool := decide (a = b)
 
 theorem valEq_refl (x : Value) : valEq x x = true := by simp [valEq]
 
-/-- One Record as a change, given its type id. -/
+/-- The fields an edit writes: those whose value differs, with their new values, then those it removes, with none. -/
+def editedFields (r0 r : Record Value) : List (Bytes × Option Value) :=
+  (r.fields.filter fun (f, _) => !optEq valEq (get r0.fields f) (get r.fields f)).map (fun (f, v) => (f, some v)) ++
+  (r0.fields.filter fun (f, _) => (get r.fields f).isNone).map fun (f, _) => (f, none)
+
+/-- One Record as an edit, given its type id. -/
 def edited (ver : DocId → TypeId) (r0 r : Record Value) : RecordChange :=
-  ⟨r.id.bytes, ver r.type, .edited, r.fields.filter fun (f, _) => !optEq valEq (get r0.fields f) (get r.fields f)⟩
+  ⟨r.id.bytes, ver r.type, .edited, editedFields r0 r⟩
 
 /-- What a reader sees of one Record after: new, edited, or nothing when it is as it was. -/
 def changeOf (ver : DocId → TypeId) (s : List (Record Value)) (r : Record Value) : Option RecordChange :=
   match s.find? (·.id == r.id) with
-  | none => some ⟨r.id.bytes, ver r.type, .new, r.fields⟩
+  | none => some ⟨r.id.bytes, ver r.type, .new, r.fields.map fun (f, v) => (f, some v)⟩
   | some r0 => if (edited ver r0 r).fields.isEmpty && r0.type == r.type then none else some (edited ver r0 r)
 
 /-- The changes a reader sees from a Doc's Records before to after. `ver` gives the type id each type Doc is written
@@ -80,73 +85,90 @@ theorem find_id {s : List (Record Value)} (hn : (s.map (·.id)).Nodup) {r0 r : R
       simp only [this]
       exact ih hs e
 
+/-- Every field an edit writes is one of the Record's, before or after, whose value it changed or removed. -/
+theorem editedFields_names {r0 r : Record Value} {f : Bytes} (h : f ∈ (editedFields r0 r).map Prod.fst) :
+    f ∈ r0.fields.map (·.1) ++ r.fields.map (·.1) ∧ optEq valEq (get r0.fields f) (get r.fields f) = false := by
+  simp only [editedFields, List.map_append, List.map_map, List.mem_append, List.mem_map, List.mem_filter,
+    Function.comp_def] at h
+  rcases h with ⟨⟨g, v⟩, ⟨hg, hne⟩, rfl⟩ | ⟨⟨g, v⟩, ⟨hg, hnone⟩, rfl⟩
+  · exact ⟨List.mem_append_right _ (List.mem_map_of_mem (f := (·.1)) hg), by simpa using hne⟩
+  · refine ⟨List.mem_append_left _ (List.mem_map_of_mem (f := (·.1)) hg), ?_⟩
+    have hs : (get r0.fields g).isSome = true := lookup_of_mem _ g v hg
+    simp only [Option.isNone_iff_eq_none] at hnone
+    cases h0 : get r0.fields g with
+    | none => rw [h0] at hs; cases hs
+    | some x => simp [optEq, hnone]
+
+/-- A field the Record has after with a changed value is one an edit writes. -/
+theorem mem_editedFields_of_ne {r0 r : Record Value} {f : Bytes} {v : Value} (hfv : (f, v) ∈ r.fields)
+    (hne : optEq valEq (get r0.fields f) (get r.fields f) = false) : f ∈ (editedFields r0 r).map Prod.fst := by
+  simp only [editedFields, List.map_append, List.mem_append, List.map_map, List.mem_map, List.mem_filter,
+    Function.comp_def]
+  exact .inl ⟨(f, v), ⟨hfv, by simp [hne]⟩, rfl⟩
+
+/-- A field the Record had and no longer has is one an edit writes. -/
+theorem mem_editedFields_of_removed {r0 r : Record Value} {f : Bytes} (hf : f ∈ r0.fields.map Prod.fst)
+    (hnone : get r.fields f = none) : f ∈ (editedFields r0 r).map Prod.fst := by
+  obtain ⟨⟨g, v⟩, hg, rfl⟩ := List.mem_map.mp hf
+  simp only [editedFields, List.map_append, List.mem_append, List.map_map, List.mem_map, List.mem_filter,
+    Function.comp_def]
+  exact .inr ⟨(g, v), ⟨hg, by simp [hnone]⟩, rfl⟩
+
 /-- **A diff within the footprint passes the verdict's footprint part,** on a Doc whose Records have distinct ids. -/
 theorem diff_footprint (ver : DocId → TypeId) (hver : ∀ t, (ver t).type = t) (fp : List Step)
     (s s' : List (Record Value)) (hn : (s.map (·.id)).Nodup) (h : diffWithin valEq fp s s' = true) :
     footprintOk fp (changesFrom ver s s') = true := by
+  have wr : ∀ ty f, Writes fp ty f → (fieldsOf fp ty).contains f = true := by
+    rintro ty f ⟨st, hst, hty, hf⟩
+    simp only [fieldsOf, List.contains_iff_mem, List.mem_flatMap, List.mem_filter, beq_iff_eq]
+    exact ⟨st, ⟨hst, hty⟩, hf⟩
   simp only [diffWithin, Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true, List.any_eq_true] at h
   obtain ⟨hnow, hbefore⟩ := h
   simp only [footprintOk, changesFrom, List.all_eq_true, List.mem_append, List.mem_filterMap, List.mem_map,
     List.mem_filter]
   rintro c (⟨r, hr, hc⟩ | ⟨r0, ⟨hr0, hgone⟩, rfl⟩)
-  · -- an edited Record, as its fields say
-    have hedit : ∀ r0, (edited ver r0 r).names.all (fieldsOf fp (edited ver r0 r).type.type).contains = true →
-        c = edited ver r0 r → (match c.kind with
-          | .new => hasVerb fp c.type.type .putNew && c.names.all (fieldsOf fp c.type.type).contains
-          | .edited => c.names.all (fieldsOf fp c.type.type).contains
-          | .gone => hasVerb fp c.type.type .remove) = true := by
-      rintro r0 h rfl; simpa [edited] using h
-    unfold changeOf at hc
-    rcases hnow r hr with ⟨r0, hr0, hok⟩ | hnew
-    · -- an earlier Record with r's id: edited
+  · rcases hnow r hr with ⟨r0, hr0, hok⟩ | ⟨hnew, hfresh⟩
+    · -- an earlier Record with r's id: an edit, of fields the footprint writes
       simp only [changedOk, Bool.and_eq_true, beq_iff_eq, List.all_eq_true, Bool.or_eq_true] at hok
-      obtain ⟨⟨hid, hty⟩, hf⟩ := hok
-      rw [find_id hn hr0 hid] at hc
-      simp only at hc
+      obtain ⟨⟨hid, _⟩, hf⟩ := hok
+      simp only [changeOf, find_id hn hr0 hid] at hc
       split at hc
       · cases hc
       · simp only [Option.some.injEq] at hc
-        refine hedit r0 ?_ hc.symm
-        simp only [edited, RecordChange.names, hver, List.all_eq_true, List.mem_map, List.mem_filter,
-          List.contains_iff_mem]
-        rintro f ⟨⟨f', v⟩, ⟨hfv, hne⟩, rfl⟩
-        have := hf f' (List.mem_append_right _ (List.mem_map_of_mem (f := (·.1)) hfv))
-        rcases this with h | h
-        · simp [h] at hne
-        · exact List.contains_iff_mem.mp h
-    · simp only [newOk, Bool.and_eq_true, List.all_eq_true] at hnew
-      obtain ⟨hv, hf⟩ := hnew
-      cases hfind : s.find? (·.id == r.id) with
-      | none =>
-        rw [hfind] at hc
-        simp only [Option.some.injEq] at hc
         subst hc
-        simp only [hver, hv, Bool.true_and, RecordChange.names, List.all_eq_true, List.mem_map]
-        rintro f ⟨⟨f', v⟩, hfv, rfl⟩
-        exact hf (f', v) hfv
-      | some r0 =>
-        rw [hfind] at hc
-        simp only at hc
-        split at hc
-        · cases hc
-        · simp only [Option.some.injEq] at hc
-          refine hedit r0 ?_ hc.symm
-          simp only [edited, RecordChange.names, hver, List.all_eq_true, List.mem_map, List.mem_filter]
-          rintro f ⟨⟨f', v⟩, ⟨hfv, _⟩, rfl⟩
-          exact hf (f', v) hfv
+        simp only [edited, RecordChange.names, hver, List.all_eq_true]
+        intro f hf'
+        obtain ⟨hmem, hne⟩ := editedFields_names hf'
+        rcases hf f hmem with h | h
+        · rw [hne] at h; cases h
+        · exact h
+    · -- no earlier Record with r's id: new, with fields the footprint writes
+      simp only [newOk, Bool.and_eq_true, List.all_eq_true] at hnew
+      obtain ⟨hv, hf⟩ := hnew
+      have hfind : s.find? (·.id == r.id) = none := by
+        rw [List.find?_eq_none]
+        intro r0 hr0 e
+        simp only [Bool.not_eq_true', List.any_eq_false] at hfresh
+        exact hfresh r0 hr0 e
+      simp only [changeOf, hfind, Option.some.injEq] at hc
+      subst hc
+      simp only [hver, hv, Bool.true_and, RecordChange.names, List.all_eq_true, List.map_map, List.mem_map,
+        Function.comp_def]
+      rintro f ⟨⟨f', v⟩, hfv, rfl⟩
+      exact hf (f', v) hfv
   · rcases hbefore r0 hr0 with ⟨r, hr, hid⟩ | hrm
     · exfalso
       simp only [Bool.not_eq_true', List.any_eq_false, beq_iff_eq] at hgone
       exact hgone r hr (by simpa using hid.1)
     · simpa [hver] using hrm
 
-/-- **An honest writer passes the verdict's footprint part:** its commit ran as its ops say, on a Doc whose Records
-have distinct ids. -/
+/-- **An honest writer passes the verdict's footprint part:** its commit ran as its ops say, under a fresh counter, on
+a Doc whose Records have distinct ids. -/
 theorem honest_footprint (ver : DocId → TypeId) (hver : ∀ t, (ver t).type = t) (ofId : NewId → Value) (w c : Nat)
-    (s s' : List (Record Value)) (ops : List (Op Value)) (hn : (s.map (·.id)).Nodup)
+    (s s' : List (Record Value)) (ops : List (Op Value)) (hn : (s.map (·.id)).Nodup) (hfresh : Fresh w c s)
     (h : commit valEq ofId w c s ops = .ok s') :
     verdictFootprint (footprint ops) (changesFrom ver s s') = true :=
-  diff_footprint ver hver _ s s' hn (commit_within valEq valEq_refl ofId w c s s' ops h)
+  diff_footprint ver hver _ s s' hn (commit_within valEq valEq_refl ofId w c s s' ops hfresh h)
 
 /-- **What passes is the footprint's:** every change is made by a footprint step: a new Record by a `put-new` of its
 type, with each of its fields written by a step of its type; an edit's fields likewise; a gone Record by a `remove` of
@@ -188,6 +210,9 @@ theorem merge_steps (ver : DocId → TypeId) (hver : ∀ t, (ver t).type = t) (f
     (∀ r ∈ merged, ∀ r0 ∈ main, r0.id = r.id → ∀ f v, (f, v) ∈ r.fields →
       optEq valEq (get r0.fields f) (get r.fields f) = false →
         ∃ st ∈ fp, st.type = r.type ∧ f ∈ st.fields) ∧
+    -- a Record main had, a field removed: written by a step of its type too
+    (∀ r ∈ merged, ∀ r0 ∈ main, r0.id = r.id → ∀ f ∈ r0.fields.map Prod.fst, get r.fields f = none →
+        ∃ st ∈ fp, st.type = r.type ∧ f ∈ st.fields) ∧
     -- a Record the merge brings: its type is created, and every field it carries is written by a step of its type
     (∀ r ∈ merged, (∀ r0 ∈ main, r0.id ≠ r.id) →
       (∃ st ∈ fp, st.type = r.type ∧ st.verb = .putNew) ∧
@@ -195,38 +220,40 @@ theorem merge_steps (ver : DocId → TypeId) (hver : ∀ t, (ver t).type = t) (f
     -- a Record of main the merge removes: its type is removed
     (∀ r0 ∈ main, (∀ r ∈ merged, r.id ≠ r0.id) → ∃ st ∈ fp, st.type = r0.type ∧ st.verb = .remove) := by
   have hc := footprint_steps fp _ h
-  refine ⟨?_, ?_, ?_⟩
-  · intro r hr r0 hr0 hid f v hfv hne
-    have hfind := find_id hn hr0 hid
-    -- the change the reader sees for r is an edit naming f
+  -- an edit's every field is written by a step of its type
+  have hedit : ∀ r ∈ merged, ∀ r0 ∈ main, r0.id = r.id → ∀ f ∈ (editedFields r0 r).map Prod.fst,
+      ∃ st ∈ fp, st.type = r.type ∧ f ∈ st.fields := by
+    intro r hr r0 hr0 hid f hf
     have hmem : edited ver r0 r ∈ changesFrom ver main merged := by
       apply List.mem_append_left
       refine List.mem_filterMap.mpr ⟨r, hr, ?_⟩
-      simp only [changeOf, hfind]
+      simp only [changeOf, find_id hn hr0 hid]
       split
       · rename_i hempty
         simp only [Bool.and_eq_true, List.isEmpty_iff] at hempty
-        have : (f, v) ∈ (edited ver r0 r).fields := by
-          simp only [edited, List.mem_filter]
-          exact ⟨hfv, by simp [hne]⟩
-        rw [hempty.1] at this; cases this
+        have e : editedFields r0 r = [] := hempty.1
+        rw [e] at hf
+        simp at hf
       · rfl
-    have ⟨_, _, hf⟩ := hc _ hmem
-    have := hf (by simp [edited]) f (by
-      simp only [RecordChange.names, edited, List.mem_map, List.mem_filter]
-      exact ⟨(f, v), ⟨hfv, by simp [hne]⟩, rfl⟩)
-    simpa [edited, hver] using this
+    have ⟨_, _, hw⟩ := hc _ hmem
+    simpa [edited, hver] using hw (by simp [edited]) f (by simpa [RecordChange.names, edited] using hf)
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro r hr r0 hr0 hid f v hfv hne
+    exact hedit r hr r0 hr0 hid f (mem_editedFields_of_ne hfv hne)
+  · intro r hr r0 hr0 hid f hf hnone
+    exact hedit r hr r0 hr0 hid f (mem_editedFields_of_removed hf hnone)
   · intro r hr hnone
     have hfind : main.find? (·.id == r.id) = none := by
       rw [List.find?_eq_none]
       intro r0 hr0
       simpa using hnone r0 hr0
-    have hmem : (⟨r.id.bytes, ver r.type, .new, r.fields⟩ : RecordChange) ∈ changesFrom ver main merged := by
+    have hmem : (⟨r.id.bytes, ver r.type, .new, r.fields.map fun (f, v) => (f, some v)⟩ : RecordChange) ∈
+        changesFrom ver main merged := by
       apply List.mem_append_left
       exact List.mem_filterMap.mpr ⟨r, hr, by simp [changeOf, hfind]⟩
     have ⟨hnew, _, hf⟩ := hc _ hmem
     refine ⟨by simpa [hver] using hnew rfl, fun f hf' => ?_⟩
-    simpa [hver] using hf (by simp) f hf'
+    simpa [hver] using hf (by simp) f (by simpa [RecordChange.names, List.map_map, Function.comp_def] using hf')
   · intro r0 hr0 hgone
     have hmem : (⟨r0.id.bytes, ver r0.type, .gone, []⟩ : RecordChange) ∈ changesFrom ver main merged := by
       apply List.mem_append_right
@@ -236,5 +263,61 @@ theorem merge_steps (ver : DocId → TypeId) (hver : ∀ t, (ver t).type = t) (f
       exact hgone r hr e
     have ⟨_, hrm, _⟩ := hc _ hmem
     simpa [hver] using hrm rfl
+
+/-! ## A Record's id as a key -/
+
+/-- One hex digit, lowercase. -/
+def keyDigit (n : Nat) : Char := if n < 10 then Char.ofNat (48 + n) else Char.ofNat (87 + n)
+
+/-- A hex digit's value: `0`–`9` and `a`–`f` only. -/
+def keyDigitValue (c : Char) : Option Nat :=
+  if 48 ≤ c.toNat ∧ c.toNat ≤ 57 then some (c.toNat - 48)
+  else if 97 ≤ c.toNat ∧ c.toNat ≤ 102 then some (c.toNat - 87)
+  else none
+
+def keyChars : Bytes → List Char
+  | [] => []
+  | b :: bs => keyDigit (b.toNat / 16) :: keyDigit (b.toNat % 16) :: keyChars bs
+
+def keyBytes? : List Char → Option Bytes
+  | [] => some []
+  | a :: b :: rest => do
+    let x ← keyDigitValue a
+    let y ← keyDigitValue b
+    pure ((16 * x + y).toUInt8 :: (← keyBytes? rest))
+  | [_] => none
+
+/-- **A Record's id as a key:** the lowercase hex of its bytes, the key the docs layer writes it under in a Doc's
+`records` map (Loro's map keys are text). One encoding: it reads back (`idOfKey_idKey`), so two ids have two keys
+(`idKey_inj`), and a reader refuses a key that isn't lowercase hex of whole bytes. -/
+def idKey (id : Bytes) : String := String.ofList (keyChars id)
+
+def idOfKey? (key : String) : Option Bytes := keyBytes? key.toList
+
+theorem keyDigitValue_keyDigit : ∀ n, n < 16 → keyDigitValue (keyDigit n) = some n := by
+  decide
+
+theorem keyBytes_keyChars : ∀ bs : Bytes, keyBytes? (keyChars bs) = some bs
+  | [] => rfl
+  | b :: bs => by
+    have h1 := keyDigitValue_keyDigit (b.toNat / 16) (by have := b.toNat_lt; omega)
+    have h2 := keyDigitValue_keyDigit (b.toNat % 16) (Nat.mod_lt _ (by decide))
+    simp only [keyChars, keyBytes?, h1, h2, keyBytes_keyChars bs, Option.bind_eq_bind, Option.bind_some,
+      Option.pure_def, Option.some.injEq, List.cons.injEq, and_true]
+    rw [Nat.div_add_mod]
+    exact UInt8.ofNat_toNat
+
+theorem idOfKey_idKey (id : Bytes) : idOfKey? (idKey id) = some id := by
+  simp [idOfKey?, idKey, keyBytes_keyChars]
+
+theorem idKey_inj {a b : Bytes} (h : idKey a = idKey b) : a = b := by
+  have := idOfKey_idKey a
+  rw [h, idOfKey_idKey b] at this
+  exact (Option.some.inj this).symm
+
+-- the key is the hex every vector writes
+#guard idKey [0x00, 0x0f, 0xa5, 0xff] = "000fa5ff"
+#guard idOfKey? "000FA5FF" = none
+#guard idOfKey? "abc" = none
 
 end Aven.DB.Engine

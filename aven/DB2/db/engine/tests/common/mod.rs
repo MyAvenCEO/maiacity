@@ -310,3 +310,7 @@ pub fn call(j: &Json) -> aven_core::Call {
         params: list(&j["params"], |p| (text(&p[0]), value(&p[1]))),
     }
 }
+
+pub fn json_value(v: &Value) -> Json {
+    json(v)
+}
