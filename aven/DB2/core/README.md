@@ -21,6 +21,13 @@ primitives everything shares" and rules 1 to 3). It is one Lean package, in [`sp
 The hash and signatures are parameters: a theorem that needs the hash collision-free assumes it (`Injective`), and
 signatures are taken as sound, as in every Aven model. `Blake3` is the hash the examples and vectors use.
 
+**In Rust: `aven-core`** (this folder, a member of aven/DB2's workspace). For now the codec and names: `Value`,
+`encode` and `decode` in the strict profile, held to `spec/vectors/cbor.json` both ways (every encoding written and
+read back, every refusal refused), and BLAKE3 names, Doc ids and type ids, held to `names.json`. `no_std`, no
+`unsafe`; it builds for wasm32, so the runtimes in aven/runtimes use it by path. One limit the Lean decoder doesn't
+have yet: nesting deeper than 512 is refused (`MAX_DEPTH`), so a hostile input can't exhaust the stack (ARCHITECTURE
+rule 10); the model should state it too. Other threads extend the crate (envelopes, logs) Lean-first, as here.
+
 **Run it in the box,** from `aven/DB2`: `bun run box sh -c 'cd core/spec && lake build'`; `bun run box sh
 sandbox/vectors.sh` writes the vectors in [`spec/vectors`](spec/vectors), and `--check` compares them with what's
 committed. Lean 4.35.0, pinned exactly; no `sorry`, no axioms.
