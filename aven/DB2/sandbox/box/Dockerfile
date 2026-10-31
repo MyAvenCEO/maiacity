@@ -16,6 +16,8 @@ ARG WASM_BINDGEN_VERSION=0.2.130
 ARG BUN_VERSION=1.4.4
 ARG ELAN_VERSION=v4.2.4
 ARG LEAN_VERSION=v4.35.0
+ARG RUST_NIGHTLY=nightly-2026-10-30
+ARG CARGO_FUZZ_VERSION=0.13.2
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential pkg-config curl ca-certificates xz-utils \
@@ -57,6 +59,15 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends clang llvm \
     && rm -rf /var/lib/apt/lists/* \
     && clang --version > /dev/null && llvm-ar --version > /dev/null
+
+# The fuzzer (db/docs/README.md, "Importing"): libFuzzer's sanitizers need a nightly, pinned by date, used only by
+# `cargo fuzz` (sandbox/fuzz.sh); every build and test stays on the stable toolchain above. cargo-fuzz itself builds on
+# stable. A layer of its own near the end, so the layers above stay cached.
+ENV AVEN_NIGHTLY=${RUST_NIGHTLY}
+RUN rustup toolchain install "${RUST_NIGHTLY}" --profile minimal \
+    && cargo install cargo-fuzz --version "${CARGO_FUZZ_VERSION}" --locked \
+    && rm -rf /opt/cargo/registry /opt/cargo/git \
+    && cargo fuzz --version
 
 WORKDIR /work
 

@@ -8,8 +8,8 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use aven_db_core::wire::Frame;
 use aven_db_store::backend::{self, DalStore};
+use aven_gen1::wire::Frame;
 use aven_id::{Members, Relying};
 use aven_peer::door::Door;
 use aven_peer::door::Statement;

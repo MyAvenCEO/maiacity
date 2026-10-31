@@ -128,6 +128,71 @@ theorem genesis_iff_first {e : Envelope} {b : Body} (h : genesisPlaced e b = tru
   simp only [genesisPlaced, beq_iff_eq] at h
   rw [h]
 
+/-- The reader's genesis check: placed exactly in a log's first envelope, and when there, the genesis of the Doc the
+envelope says it belongs to. -/
+def genesisOk (H : Bytes → Hash) (e : Envelope) (b : Body) : Bool :=
+  genesisPlaced e b && b.genesis.all (·.id H == e.doc)
+
+/-- A genesis an envelope carries, past the check, names the envelope's own Doc. -/
+theorem genesis_names_doc {H : Bytes → Hash} {e : Envelope} {b : Body} {g : Genesis} (h : genesisOk H e b = true)
+    (hg : b.genesis = some g) : g.id H = e.doc := by
+  simp only [genesisOk, Bool.and_eq_true, hg, Option.all_some, beq_iff_eq] at h
+  exact h.2
+
+/-- An envelope that builds on nothing is its log's first (the log's rule: sequence number 1 exactly when there is no
+`prev`), so past the check it carries its Doc's genesis: every Doc's history starts at the genesis that names it. -/
+theorem root_carries_genesis {H : Bytes → Hash} {e : Envelope} {b : Body} (h : genesisOk H e b = true)
+    (hlog : e.seq = 1 ↔ e.prev = none) (hprev : e.prev = none) (hdeps : e.deps = []) :
+    ∃ g, b.genesis = some g ∧ g.id H = e.doc := by
+  have hfirst : isFirst e = true := by simp [isFirst, hlog.mpr hprev, hprev, hdeps]
+  have hok := h
+  simp only [genesisOk, Bool.and_eq_true] at h
+  have hsome := (genesis_iff_first h.1).mpr hfirst
+  obtain ⟨g, hg⟩ := Option.isSome_iff_exists.mp hsome
+  exact ⟨g, hg, genesis_names_doc hok hg⟩
+
+/-- **Every envelope of a Doc descends from the genesis that names it.** Among held envelopes `S` that each pass the
+reader's genesis check, keep the log's rule (`seq = 1` exactly when there is no `prev`) and belong to Doc `d`, an
+envelope of `d` whose whole past is held (Core's `Closed`) reaches a root carrying `d`'s genesis. The past is finite and
+acyclic, which the model takes as a rank that drops along every parent, as Core takes names: a parent's hash is in its
+child, so no cycle can be held. -/
+theorem closed_reaches_genesis {H : Bytes → Hash} {nm : Envelope → Hash} {S : List Envelope} {d : DocId}
+    (bodyOf : Envelope → Body) (rank : Envelope → Nat) (hrank : ∀ a b, BuildsOn nm a b → rank b < rank a)
+    (hgood : ∀ x ∈ S, genesisOk H x (bodyOf x) = true)
+    (hlog : ∀ x : Envelope, x.seq = 1 ↔ x.prev = none) (hdoc : ∀ x ∈ S, x.doc = d) :
+    ∀ (e : Envelope), genesisOk H e (bodyOf e) = true → e.doc = d → Closed nm S e →
+      ∃ r g, Reaches nm S e r ∧ (bodyOf r).genesis = some g ∧ g.id H = d := by
+  suffices aux : ∀ n (e : Envelope), rank e < n → genesisOk H e (bodyOf e) = true → e.doc = d → Closed nm S e →
+      ∃ r g, Reaches nm S e r ∧ (bodyOf r).genesis = some g ∧ g.id H = d by
+    intro e hok he hc
+    exact aux (rank e + 1) e (Nat.lt_succ_self _) hok he hc
+  intro n
+  induction n with
+  | zero => intro e h; exact absurd h (Nat.not_lt_zero _)
+  | succ n ih =>
+    intro e hlt hok he hc
+    by_cases hroot : e.prev = none ∧ e.deps = []
+    · obtain ⟨g, hg, hid⟩ := root_carries_genesis hok (hlog e) hroot.1 hroot.2
+      exact ⟨e, g, .refl _, hg, hid.trans he⟩
+    · -- a parent it names, which `Closed` holds
+      have hpar : ∃ h, e.prev = some h ∨ h ∈ e.deps := by
+        cases hp : e.prev with
+        | some h => exact ⟨h, .inl rfl⟩
+        | none =>
+          cases hd : e.deps with
+          | nil => exact absurd ⟨hp, hd⟩ hroot
+          | cons h _ => exact ⟨h, .inr (by simp)⟩
+      obtain ⟨h, hh⟩ := hpar
+      obtain ⟨y, hy, hny⟩ := hc e (.refl _) h hh
+      have hb : BuildsOn nm e y := by
+        rcases hh with hh | hh
+        · exact .inl (hny ▸ hh)
+        · exact .inr (hny ▸ hh)
+      have hry : Reaches nm S e y := .step hy hb (.refl _)
+      have hylt : rank y < n := Nat.lt_of_lt_of_le (hrank e y hb) (Nat.le_of_lt_succ hlt)
+      obtain ⟨r, g, hr, hg, hid⟩ := ih y hylt (hgood y hy) (hdoc y hy) (closed_past nm hc hry)
+      exact ⟨r, g, .step hy hb hr, hg, hid⟩
+
 /-! ## Ops in one log -/
 
 /-- A log's bodies continue each other's ops: each is non-empty, and each starts where the one before ended. -/

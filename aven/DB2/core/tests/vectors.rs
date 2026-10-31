@@ -109,6 +109,11 @@ fn names() {
                     "{name}: parse"
                 );
             }
+            // a type id whose hashes aren't 32 bytes each: refused
+            (Json::String(bytes), Json::Null) => {
+                let v = decode(&unhex(bytes)).unwrap_or_else(|| panic!("{name}: canonical"));
+                assert_eq!(TypeId::of_value(&v), None, "{name}");
+            }
             (Json::Object(i), Json::Object(e)) => {
                 let t = TypeId {
                     r#type: DocId::parse(i["type"].as_str().unwrap()).unwrap(),

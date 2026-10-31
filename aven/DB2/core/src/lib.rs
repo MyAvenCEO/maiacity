@@ -21,7 +21,7 @@ mod signed;
 mod target;
 
 pub use aven_codec::{DocId, Hash, MAX_DEPTH, TypeId, Value, blake3, decode, encode, name_of};
-pub use log::{ENVELOPE_LABEL, Envelope, Held, Log, LogId, Refused, is_chain, split};
+pub use log::{ENVELOPE_LABEL, Envelope, Held, Log, LogId, Refused, Writes, is_chain, split};
 pub use op::{
     Bound, Call, CoreOp, FIELDS_PARAM, OpId, TYPE_PARAM, builtin_type, op_id, stored_op,
     type_of_types,

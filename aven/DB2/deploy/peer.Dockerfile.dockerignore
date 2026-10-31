@@ -6,7 +6,7 @@
 !Cargo.lock
 !codec
 !core
-!db/core
+!gen1
 !db/docs
 !db/engine
 !store

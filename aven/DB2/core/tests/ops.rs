@@ -8,7 +8,8 @@ use common::{bound, hex, target, unhex, value, vectors};
 
 #[test]
 fn ops() {
-    let (mut core, mut calls, mut allows, mut within, mut types, mut bounds) = (0, 0, 0, 0, 0, 0);
+    let (mut core, mut calls, mut allows, mut within, mut types, mut bounds, mut limits) =
+        (0, 0, 0, 0, 0, 0, 0);
     for v in vectors("ops.json") {
         let name = v["name"].as_str().unwrap();
         let (i, x) = (&v["input"], &v["expected"]);
@@ -26,6 +27,23 @@ fn ops() {
             assert_eq!(o.id().text(), x["id"].as_str().unwrap(), "{name}: id");
             assert_eq!(o.writes(), x["writes"].as_bool().unwrap(), "{name}: writes");
             core += 1;
+        } else if name.starts_with("a call with ") && x.is_boolean() {
+            // the params limit from both sides
+            let bytes = unhex(i.as_str().unwrap());
+            assert_eq!(
+                decode(&bytes).and_then(Call::of_value).is_some(),
+                x.as_bool().unwrap(),
+                "{name}"
+            );
+            limits += 1;
+        } else if name.starts_with("a bound of ") {
+            let bytes = unhex(i.as_str().unwrap());
+            assert_eq!(
+                decode(&bytes).and_then(Bound::of_value).is_some(),
+                x.as_bool().unwrap(),
+                "{name}"
+            );
+            limits += 1;
         } else if name.starts_with("a call") && x.is_null() {
             let bytes = unhex(i.as_str().unwrap());
             assert_eq!(
@@ -135,7 +153,7 @@ fn ops() {
             panic!("{name}: no reader for it");
         }
     }
-    assert_eq!((core, calls, types, bounds), (8, 3, 5, 5));
+    assert_eq!((core, calls, types, bounds, limits), (8, 3, 5, 5, 4));
     assert!(allows >= 5 && within >= 4);
 }
 

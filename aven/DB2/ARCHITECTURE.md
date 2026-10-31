@@ -888,7 +888,7 @@ the spec that owns it.
     only until Docs run. A runtime runs on the reader's device, in a worker of its own, apart from the device key.
   - **Owners are packages, not threads.** The tree (Maia City's register and membership) and the seal are avenID's,
     whichever thread writes them; the wire and its frames are the Peers', with their Lean (today `Aven.DB.Wire`).
-  - **The first generation splits up.** `aven-db-core` holds four jobs today; each goes to its owner as Docs arrive:
+  - **The first generation splits up.** `aven-gen1` holds four jobs today; each goes to its owner as Docs arrive:
     the wire and presence to the Peers, the chat to a Doc, files to the Store and the registry.
 
   - **The wire moves first** (the architect, 31 Oct 2026). Before any Doc frame is added, the wire and presence leave
