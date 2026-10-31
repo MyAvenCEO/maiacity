@@ -18,7 +18,8 @@ one-time key only authorizes the claim and holds nothing (A28, A42).
   City's own.
 - `confirm_only`: the confirm cap allows nothing but a confirm, on the tree Doc;
 - `member_by_confirm`: a reader counts a vault as a member only by an authorized confirm on the tree Doc, naming a claim
-  that founded it, written on its signer's vault's own authority or under a chain whose root allows that confirm.
+  that founded it, written on its signer's vault's own authority or under a chain whose root allows that confirm;
+- `membersB_sound`: the members a reader computes from an envelope (`Reader.membersB`, `member.json`) are members.
 
 `tree/1`'s ops and the calls its statements make are avenPEER's (`Aven.ID.Network`, `TreeOp`, `TreeSays.call`), and so
 is what the tree settles, which claims stand and whom each founded (`Settled.member`): a parameter here, as are the
@@ -40,6 +41,34 @@ def confirmCall (c : Hash) : Call := (TreeSays.confirm c).call blake3
 
 /-- A confirm's one parameter is its claim. -/
 theorem confirmCall_params (c : Hash) : (confirmCall c).params.map (·.1) = [claimParam] := rfl
+
+/-- The claim a call confirms: `tree/1`'s confirm with exactly its one parameter, the claim's name. -/
+def claimOf? (c : Call) : Option Hash :=
+  match c.params with
+  | [(k, .bytes b)] => if c.op == confirmOp && k == claimParam then some ⟨b⟩ else none
+  | _ => none
+
+theorem confirmCall_eq (c : Hash) : confirmCall c = ⟨confirmOp, [(claimParam, .bytes c.bytes)]⟩ := rfl
+
+theorem claimOf?_confirmCall (c : Hash) : claimOf? (confirmCall c) = some c := by
+  simp [claimOf?, confirmCall_eq]
+
+/-- A call whose claim reads back is exactly that claim's confirm. -/
+theorem claimOf?_some {c : Call} {h : Hash} (e : claimOf? c = some h) : c = confirmCall h := by
+  rcases c with ⟨op, ps⟩
+  unfold claimOf? at e
+  rw [confirmCall_eq]
+  split at e
+  · rename_i k b hps
+    simp only at hps
+    subst hps
+    split at e
+    · rename_i hk
+      simp only [Bool.and_eq_true, beq_iff_eq] at hk
+      cases e
+      simp [hk.1, hk.2]
+    · cases e
+  · cases e
 
 section
 variable (tree chat message : DocId)
@@ -97,5 +126,33 @@ theorem member_by_confirm {founded : Hash → Option String} {v : String}
   exact ⟨root, rest, f, hc, hf, calls _ mc⟩
 
 end
+
+section Decided
+variable (tree : DocId) (r : Reader) (gov : Bytes → Bytes → Bool) (spawned lists : DocId → DocId → Bool)
+
+/-- The members a reader counts from one envelope: when caps authorizes it and it is on the tree Doc, the vaults the
+claims its confirms name founded (`founded`, the tree's). -/
+def Reader.membersB (founded : Hash → Option String) (e : Envelope) : List String :=
+  if r.authorizedB gov spawned lists e && e.doc == tree then
+    (r.calls e).filterMap fun c => (claimOf? c).bind founded
+  else []
+
+/-- **What a reader computes is membership** (A38): every vault `Reader.membersB` gives is a member. -/
+theorem membersB_sound {founded : Hash → Option String} {e : Envelope} {v : String}
+    (h : v ∈ r.membersB tree gov spawned lists founded e) :
+    r.Member tree (gov · · = true) (spawned · · = true) (lists · · = true) founded v := by
+  unfold Reader.membersB at h
+  split at h
+  · rename_i c
+    simp only [Bool.and_eq_true, beq_iff_eq] at c
+    obtain ⟨auth, doc⟩ := c
+    simp only [List.mem_filterMap, Option.bind_eq_some_iff] at h
+    obtain ⟨call, mc, claim, hc, fd⟩ := h
+    have e' := claimOf?_some hc
+    subst e'
+    exact ⟨e, claim, ⟨(r.authorizedB_iff gov spawned lists).mp auth, doc, mc⟩, fd⟩
+  · simp at h
+
+end Decided
 
 end Aven.ID
