@@ -143,8 +143,8 @@ theorem own_authorized {e : Envelope} (o : r.Own gov e) (nh : ¬ r.HostSigned e)
     r.Authorized gov spawned e :=
   ⟨wd, .inl ⟨o, nh⟩⟩
 
-/-- An authorized envelope writes on its vault's own authority or under a chain: the two paths, whatever else the verdict
-asks of each. -/
+/-- An authorized envelope writes on its vault's own authority or under a chain: the two paths, whatever else the
+verdict asks of each. -/
 theorem authorized_by {e : Envelope} (h : r.Authorized gov spawned e) : r.Own gov e ∨ r.ByChain gov spawned e :=
   h.2.imp (·.1) (·.1)
 
