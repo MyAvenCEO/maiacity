@@ -15,8 +15,8 @@ import Lean.Data.Json
 - `logs.json`: pairs of envelopes; whether they are a split.
 - `targets.json`: pairs of targets; whether the first narrows the second, and which Docs each covers.
 - `target-bytes.json`: each target form, readable, and its CBOR in hex (`Aven.Core.TargetCbor`).
-- `ops.json`: `core/1`'s ops, each with its stored form and its id; and bounds on a parameter, whether a value is
-  within one, and whether one is within another (`Aven.Core.Op`, A32).
+- `ops.json`: `core/1`'s ops, each with its stored form and its id; a call as an envelope's body carries it; and
+  bounds on a parameter, whether a value is within one, and whether one is within another (`Aven.Core.Op`, A32).
 
 Values are shown in their readable form (`Aven.Core.Json`).
 -/
@@ -293,8 +293,18 @@ def boundWithin : List (String × Bound × Bound × Bool) := [
 #guard boundAllows.all fun (_, b, v, a) => b.allows v == a
 #guard boundWithin.all fun (_, a, b, w) => a.within b == w
 
+/-- A call to `core/1`'s patch: a type Doc and the fields it sets, as an envelope's body carries it. -/
+def patchCall : Call :=
+  ⟨CoreOp.patch.id blake3, [(k "type", .bytes (blake3 (k "type:task")).bytes), (k "fields", .array [status])]⟩
+
+#guard Canon patchCall.value
+
+def calls : List Json :=
+  [vector "a call to core/1's patch: a type and the fields it sets" patchCall.value.json
+    (Json.mkObj [("cbor", hex (encode patchCall.value)), ("op", (CoreOp.patch.id blake3).text)])]
+
 def ops : List Json :=
-  coreOps ++
+  coreOps ++ calls ++
   (boundAllows.map fun (name, b, v, _) =>
     vector s!"does it allow? {name}" (Json.mkObj [("bound", b.json), ("value", v.json)]) (toJson (b.allows v))) ++
   (boundWithin.map fun (name, a, b, _) =>

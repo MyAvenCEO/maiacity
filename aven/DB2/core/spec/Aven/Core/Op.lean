@@ -15,6 +15,8 @@ the holder do (A32, Samuel, 31 Oct 2026: "caps should be built from their ops").
   and field. Read, tell, keep and share lower to no step (`CoreOp.writes`). A stored query is an op by its hash.
 - A bound is an enumeration: any value, or one of some values, and for a list each of its elements one of them. Ranges
   come only when a real op needs them. A narrower bound allows no value a wider one doesn't (`Bound.within_allows`).
+- An envelope names the op it ran and its parameters, a `Call`: `{"op": id, "params": {…}}` (`Call.value`). Another
+  plugin's built-in ops are named as `core/1`'s are, `{"op": name, "plugin": "tree/1"}` for the tree's.
 - Every Doc has a type (A39): a type Doc's own type is the built-in type of types, which is its own type too
   (`typeOfTypes`, `typeOfTypes_typed`).
 -/
@@ -105,6 +107,11 @@ structure Call where
 
 /-- A parameter's value in a call; one the call doesn't give reads as null. -/
 def Call.param (c : Call) (p : Bytes) : Value := (c.params.lookup p).getD .null
+
+/-- A call as an envelope's body carries it: `{"op": id, "params": {name: value, …}}`, its op id as the bytes of its
+hash, its params a map with text keys. A call whose params aren't in the codec's order, or name one twice, isn't
+canonical, so one call has one encoding. -/
+def Call.value (c : Call) : Value := .map [(k "op", .bytes c.op.bytes), (k "params", .map c.params)]
 
 /-! ## The type of types (A39) -/
 
