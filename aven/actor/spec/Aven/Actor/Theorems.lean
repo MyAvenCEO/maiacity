@@ -149,7 +149,7 @@ theorem Inv.retire {lib : Library} {k : Kernel} (hk : Inv lib k) (a : Addr) : In
   refine ⟨?_, h2, h3⟩
   simp only [Kernel.retire, upd]; split <;> simp [h1]
 
-theorem Inv.spawn {lib : Library} {k : Kernel} (hk : Inv lib k) (id dn : String) :
+theorem Inv.spawn {lib : Library} {k : Kernel} (hk : Inv lib k) (id : Bytes) (dn : String) :
     Inv lib (k.spawn lib id dn) := by
   unfold Kernel.spawn
   split
@@ -333,7 +333,7 @@ theorem machine_sound (lib : Library) (es : List Event) (a : Addr) (e : Entry)
   exact judge_machine hd hm (hout ▸ hdone)
 
 /-- A spawn's address is new: never sent to, no journal. A face placed again is a new incarnation. -/
-theorem spawn_fresh (lib : Library) (es : List Event) (id : String) :
+theorem spawn_fresh (lib : Library) (es : List Event) (id : Bytes) :
     let k := Kernel.empty.run lib es
     k.defs (k.next id) = none ∧ k.journal (k.next id) = [] ∧ ∀ s, k.inbox s (k.next id) = [] :=
   (Inv.run lib es).fresh _ (by simp [Kernel.Fresh, Kernel.next])
