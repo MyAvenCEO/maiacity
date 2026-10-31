@@ -34,6 +34,7 @@ import Aven.ID.Restore
 import Aven.ID.RestoreDoor
 import Aven.ID.Records
 import Aven.ID.Node
+import Aven.ID.Forget
 import Aven.ID.CatchUp
 import Aven.ID.Admit
 import Aven.ID.Keep
