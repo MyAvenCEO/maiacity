@@ -40,14 +40,14 @@ def coreOps : List CoreOp := [.read, .put, .patch, .remove, .edit, .tell, .keep,
 def coreOp? (H : Bytes → Hash) (id : OpId) : Option CoreOp := coreOps.find? (·.id H == id)
 
 /-- A write's step verb; `none` for the ops that write nothing. -/
-def CoreOp.verb? : CoreOp → Option StepVerb
+def coreVerb? : CoreOp → Option StepVerb
   | .put => some .putNew
   | .patch => some .patch
   | .remove => some .remove
   | .edit => some .edit
   | .read | .tell | .keep | .share => none
 
-theorem CoreOp.verb?_writes (o : CoreOp) : o.verb?.isSome = o.writes := by
+theorem coreVerb?_writes (o : CoreOp) : (coreVerb? o).isSome = o.writes := by
   cases o <;> rfl
 
 def textOf : Value → Option Bytes
@@ -66,11 +66,11 @@ def writeParams : List (Bytes × Value) → Option (DocId × List Bytes)
 takes them. -/
 def lowerCore (H : Bytes → Hash) (c : Call) : Option (List Step) := do
   let o ← coreOp? H c.op
-  match o.verb? with
+  match coreVerb? o with
   | none => pure []
   | some v =>
     let (ty, fs) ← writeParams c.params
-    if v = .remove ∧ fs ≠ [] then none else pure [⟨ty, v, fs⟩]
+    if v = StepVerb.remove ∧ fs ≠ [] then none else pure [⟨ty, v, fs⟩]
 
 /-- A lowering never yields `put-replace`. -/
 theorem lowerCore_no_replace (H : Bytes → Hash) (c : Call) (sts : List Step) (h : lowerCore H c = some sts) :
@@ -78,7 +78,7 @@ theorem lowerCore_no_replace (H : Bytes → Hash) (c : Call) (sts : List Step) (
   intro st hst
   simp only [lowerCore, Option.bind_eq_bind, Option.bind_eq_some_iff] at h
   obtain ⟨o, _, h⟩ := h
-  cases hv : o.verb? with
+  cases hv : coreVerb? o with
   | none => rw [hv] at h; simp at h; subst h; simp at hst
   | some v =>
     rw [hv] at h
@@ -90,7 +90,7 @@ theorem lowerCore_no_replace (H : Bytes → Hash) (c : Call) (sts : List Step) (
       subst h
       simp only [List.mem_singleton] at hst
       subst hst
-      cases o <;> simp_all [CoreOp.verb?]
+      cases o <;> simp [coreVerb?] at hv <;> (subst hv; simp)
 
 /-! ## A committer's ops and their calls -/
 
@@ -107,7 +107,7 @@ def Op.core : Op Val → CoreOp
 def Op.call (H : Bytes → Hash) (o : Op Val) : Call :=
   ⟨o.core.id H, [(k "type", .bytes o.step.type.hash.bytes), (k "fields", .array (o.step.fields.map .text))]⟩
 
-theorem mapM_textOf (fs : List Bytes) : (fs.map Value.text).mapM textOf = some fs := by
+theorem mapM_textOf (fs : List Bytes) : fs.mapM (textOf ∘ Value.text) = some fs := by
   induction fs with
   | nil => rfl
   | cons f fs ih => simp [List.mapM_cons, textOf, ih]
@@ -121,14 +121,14 @@ theorem coreOp?_id (H : Bytes → Hash) (hH : ∀ a b : CoreOp, a.id H = b.id H 
     · subst h; simp
     · have : a.id H ≠ o.id H := fun e => h (hH _ _ e)
       simp [h, this]
-  cases o <;> simp [coreOp?, coreOps, List.find?_cons, key]
+  cases o <;> simp [coreOp?, coreOps, key]
 
 /-- **An op's call lowers to its own step**, where `core/1`'s ids are distinct and the type is a 32-byte hash. -/
 theorem lower_call (H : Bytes → Hash) (hH : ∀ a b : CoreOp, a.id H = b.id H → a = b) (o : Op Val)
     (hty : o.step.type.hash.bytes.length = 32) : lowerCore H (o.call H) = some [o.step] := by
   have hw : writeParams (o.call H).params = some (o.step.type, o.step.fields) := by
     simp [Op.call, writeParams, hty, mapM_textOf]
-  cases o <;> simp_all [lowerCore, Op.call, coreOp?_id H hH, Op.core, CoreOp.verb?, Op.step]
+  cases o <;> simp_all [lowerCore, Op.call, coreOp?_id H hH, Op.core, coreVerb?, Op.step]
 
 /-- **A commit's calls lower to its footprint**, op by op. -/
 theorem lower_calls (H : Bytes → Hash) (hH : ∀ a b : CoreOp, a.id H = b.id H → a = b) (ops : List (Op Val))

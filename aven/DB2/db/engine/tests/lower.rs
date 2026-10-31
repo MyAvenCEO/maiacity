@@ -23,11 +23,14 @@ fn lowering() {
             }
             None => call(&v["input"]["call"]),
         };
-        assert_eq!(
-            json!(hex_of(&encode(&c.value()))),
-            v["expected"]["cbor"],
-            "{name}: cbor"
-        );
+        // Lean writes no encoding for params out of the codec's order: no encoder writes them
+        if !v["expected"]["cbor"].is_null() {
+            assert_eq!(
+                json!(hex_of(&encode(&c.value()))),
+                v["expected"]["cbor"],
+                "{name}: cbor"
+            );
+        }
         let steps = lower_core(&c).map(|sts| sts.iter().map(step_json).collect::<Vec<_>>());
         assert_eq!(json!(steps), v["expected"]["steps"], "{name}: steps");
     }

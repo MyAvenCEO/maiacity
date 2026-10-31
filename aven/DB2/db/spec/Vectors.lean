@@ -671,11 +671,12 @@ def callJson (c : Call) : Json :=
     ("params", Json.arr (c.params.map fun (p, v) => Json.arr #[toJson (utf8Text p), v.json]).toArray)]
 
 def loweredJson (c : Call) : Json :=
-  Json.mkObj [("cbor", toJson (hex (encode c.value))), ("steps", match lowerCore blake3 c with
+  Json.mkObj [("cbor", if Canon c.value then toJson (hex (encode c.value)) else Json.null), ("steps", match lowerCore blake3 c with
     | some sts => Json.arr (sts.map stepJson).toArray
     | none => Json.null)]
 
-/-- A call, its params in order; its encoding and its steps, or null when it is refused. -/
+/-- A call, its params in order; its encoding (null when its params aren't in the codec's order, as no encoder
+writes them) and its steps, or null when it is refused. -/
 def lowerVector (name : String) (c : Call) : Json := vector name (Json.mkObj [("call", callJson c)]) (loweredJson c)
 
 /-- A committer's op; the call it names, its encoding and its steps, which are the op's own footprint step. -/
@@ -700,8 +701,8 @@ def lowerExamples : List Json :=
      ⟨CoreOp.patch.id blake3, [(utf8 "type", taskType), (utf8 "fields", .array [text "done", .uint 1])]⟩,
    lowerVector "a read with params of its own: no step" ⟨CoreOp.read.id blake3, [(utf8 "query", text "open tasks")]⟩,
    lowerVector "another plugin's op: not core/1's" ⟨blake3 (utf8 "tree/1 move"), params taskType ["parent"]⟩] ++
-  ((bananas ++ tick ++ [.remove task (rows [("done", .uint 1)]), .edit task ⟨2, 4, 0⟩ (utf8 "x2") (text "dawn")]).mapIdx
-    fun i o => opCallVector s!"the call of op {i}, a {o.core.name}" o)
+  ((bananas ++ tick ++ [Op.remove task (rows [("done", .uint 1)]), Op.edit task ⟨2, 4, 0⟩ (utf8 "x2") (text "dawn")]).mapIdx
+    fun i (o : Op Value) => opCallVector s!"the call of op {i}, a {o.core.name}" o)
 
 def lowerVectors : List Json :=
   lowerExamples ++ (List.range generated).map fun i => opCallVector s!"seed {i + 1}" (randomOp (Rng.seed (i + 1 + 9500))).1
@@ -756,13 +757,13 @@ def randomChangesVector (seed : Nat) : Option Json := Id.run do
     let (op, r') := randomOp r
     ops := ops.push op
     r := r'
-  let (c, r) := r.below 9
-  let (t, _) := r.below 3
+  let (c, r1) := r.below 9
+  let (t, _) := r1.below 3
   let tamper : List (Record Value) → List (Record Value) := if t = 0 then retitle else if t = 1 then (·.drop 1) else id
   return commitCheck s!"seed {seed}" 1 c todo ops.toList tamper
 
 def changeVectors : List Json :=
-  changesExamples ++ (List.range generated).filterMap fun i => randomChangesVector (i + 1)
+  changesExamples ++ ((List.range (4 * generated)).filterMap fun i => randomChangesVector (i + 1)).take generated
 
 def rename : List (Op Value) := [.patch task [] (rows [("x2", text "Order bean seeds")])]
 
@@ -795,7 +796,8 @@ def randomMergeVector (seed : Nat) : Json := Id.run do
     else if fate = 2 then merged := merged.push { rec0 with fields := setFields rec0.fields (rows [("x1", text "new")]) }
     else if fate = 3 then merged := merged.push { rec0 with fields := rec0.fields.filter (·.1 != utf8 "done") }
     r := r3
-  let (m, r) := r.below 3
+  let (m, r') := r.below 3
+  r := r'
   for j in [0:m] do
     let (ty, r') := pick r [task, note] task
     merged := merged.push ⟨⟨2, 1, j⟩, ty, rows [("x1", text s!"n{j}")]⟩
