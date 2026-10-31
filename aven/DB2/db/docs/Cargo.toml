@@ -1,0 +1,21 @@
+[package]
+name = "aven-db-docs"
+version = "0.0.0"
+description = "avenDB's docs layer, step 1: Loro Docs, their genesis, writer ids, envelopes, sealed segments, the head, commit and the three verdicts on import (Aven.DB.Docs)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+aven-core = { path = "../../core" }
+aven-id = { path = "../../id/core" }
+blake3 = { version = "=1.8.7", default-features = false }
+chacha20poly1305 = { version = "=0.11.0", default-features = false, features = ["alloc", "zeroize"] }
+ed25519-dalek = "=3.0.0"
+loro = "=1.17.1"
+subtle = { version = "=2.6.1", default-features = false }
+
+[dev-dependencies]
+proptest = "=1.12.0"
+serde_json = { version = "=1.0.154", features = ["arbitrary_precision", "unbounded_depth"] }

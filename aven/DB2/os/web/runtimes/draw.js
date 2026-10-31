@@ -226,6 +226,9 @@ function build(doc, n, file) {
 // them. Paint containment makes the host the containing block of every absolute and fixed descendant and clips them
 // to its box; overflow clips what scrolls; isolation keeps every z-index inside it.
 const HOST = ':host{display:block;position:relative;overflow:hidden;contain:layout paint style;isolation:isolate}';
+// Every face sizes the way avenOS does: a width or a height includes the border and the padding. A shadow root doesn't
+// inherit the page's sizing, and box-sizing isn't in Style, so a face's author never has to remember it.
+const SIZING = '*,*::before,*::after{box-sizing:border-box}';
 
 /**
  * Draws a runtime's answer into `host`'s shadow root, replacing what was there: `{tree, style}`, the style a list of
@@ -239,7 +242,7 @@ export function draw(host, { tree, style = [] }, { onEvent = () => {}, onLink = 
 	const root = host.shadowRoot ?? host.attachShadow({ mode: 'open' });
 	const doc = host.ownerDocument;
 	const sheet = doc.createElement('style');
-	sheet.textContent = [HOST, ...style.map(ruleCss)].join('\n');
+	sheet.textContent = [HOST, SIZING, ...style.map(ruleCss)].join('\n');
 	root.replaceChildren(sheet, build(doc, tree, file));
 	if (!root.__avenDrawn) {
 		root.__avenDrawn = true;
