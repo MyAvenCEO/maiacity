@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 use aven_db_core::chain::{Body, Line};
 use aven_db_core::chat::{self, EVERY_MS, Kind, Message};
 use aven_db_core::files::Announcement;
-use aven_db_core::timeline;
+use aven_db_core::{timeline, wire};
 use aven_db_store::Hash;
 use bytes::Bytes;
 use iroh::{PublicKey, SecretKey};
@@ -30,10 +30,11 @@ use crate::chats::Chats;
 use crate::members::Gate;
 use crate::{Notes, now};
 
-/// The network's topic: the BLAKE3 of its id, named.
+/// The network's topic on this wire version: the BLAKE3 of its name (`wire::topic_name`), so a peer on another version
+/// is in another room.
 pub fn topic(network: &str) -> TopicId {
     TopicId::from_bytes(
-        *Hash::of(format!("avenDB chat 1\nnetwork {network}").as_bytes()).as_bytes(),
+        *Hash::of(wire::topic_name(crate::wire_version(), network).as_bytes()).as_bytes(),
     )
 }
 

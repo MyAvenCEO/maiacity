@@ -6,12 +6,28 @@ import { blocks, slug } from '../../../brain/render/markdown.js';
 import { rewriteLinks } from '../../../brain/render/links.js';
 import { check, parse } from '../../../brain/render/tree.js';
 import '../../../brain/style/tokens.css';
-import '../../../brain/style/slide.css';
 import images from '../../../brain/art/images.json';
+import shared from '../../../brain/style/slide.style.json';
+import { ruleCss, ruleOk } from '../runtimes/draw.js';
 
 const files = import.meta.glob('../../../brain/**/*.{md,html}', { query: '?raw', import: 'default', eager: true });
-import.meta.glob('../../../brain/*/slides/*.css', { eager: true });
 const file = (path) => files[`../../../brain/${path}`];
+
+// The slides' style is data, the face-runtime's (brain/style/slide.style.json, then each slide's <id>.style.json): rules
+// in the JSON form of a Value, a colour `{ bytes }`. Each is checked as the drawer checks it and written by the
+// drawer's own writer, so a rule outside Style can't reach the page.
+const sheets = import.meta.glob('../../../brain/*/slides/*.style.json', { import: 'default', eager: true });
+const value = (v) =>
+	Array.isArray(v) ? v.map(value) : v && typeof v === 'object' && 'bytes' in v ? Uint8Array.from(v.bytes.match(/../g), (b) => parseInt(b, 16)) : v;
+const rules = [shared, ...Object.values(sheets)].flat().map(value);
+const bad = rules.filter((r) => !ruleOk(r));
+if (bad.length) throw new Error(`a slide's style is outside Style: ${JSON.stringify(bad[0])}`);
+if (typeof document !== 'undefined' && !document.getElementById('brain-slides')) {
+	const sheet = document.createElement('style');
+	sheet.id = 'brain-slides';
+	sheet.textContent = rules.map(ruleCss).join('\n');
+	document.head.append(sheet);
+}
 
 export const packages = list.packages;
 

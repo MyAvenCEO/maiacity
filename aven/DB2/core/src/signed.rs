@@ -1,7 +1,7 @@
 //! Signed things (`Aven.Core.Signed`, ARCHITECTURE.md rule 1, A30). Everything signed is a label plus a Value: the
-//! signature covers exactly the encoding of `[label, body]`, so a signature made for one kind of thing can never be read
-//! as another's. A signed thing is named by the hash of exactly those bytes, its signatures beside it: signing one act
-//! twice gives two signatures, never two names (`Signed.name_resign`).
+//! signature covers exactly the encoding of `[label, body]`, so a signature made for one kind of thing can never be
+//! read as another's. A signed thing is named by the hash of exactly those bytes, its signatures beside it: signing one
+//! act twice gives two signatures, never two names (`Signed.name_resign`).
 //!
 //! Verification is a parameter, as in the Lean: [`Verify`]. aven-core holds no keys and checks no signature itself;
 //! avenID implements the schemes.

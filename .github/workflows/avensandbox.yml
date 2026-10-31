@@ -160,7 +160,7 @@ jobs:
           released=()
 
           # avenOS for the browser: released when its sources changed, the Peer-Light it carries at /peer-light/ included
-          os_paths=(aven/DB2/os aven/DB2/brain aven/DB2/vite.config.js aven/DB2/package.json aven/DB2/bun.lock aven/DB2/sandbox/cast.json aven/DB2/id/core aven/DB2/peer aven/DB2/db aven/DB2/Cargo.toml aven/DB2/Cargo.lock)
+          os_paths=(aven/DB2/os aven/DB2/brain aven/DB2/vite.config.js aven/DB2/package.json aven/DB2/bun.lock aven/DB2/sandbox/cast.json aven/DB2/id/core aven/DB2/peer aven/DB2/db aven/DB2/Cargo.toml aven/DB2/Cargo.lock aven/runtimes/registry)
           prev=$(latest os)
           if [ -z "$prev" ] || ! git diff --quiet "$prev" "$SHA" -- "${os_paths[@]}"; then
             v=$(next os)
@@ -214,7 +214,7 @@ jobs:
           if [ -z "$prev" ] || [ "$(digest "$peer:${prev#@aven/peer@}")" != "$now" ]; then
             v=$(next peer)
             docker buildx imagetools create --tag "$peer:$v" "$PEER_IMAGE"
-            peer_paths=(aven/DB2/peer aven/DB2/core aven/DB2/db/core aven/DB2/store aven/DB2/id/core aven/DB2/deploy/peer.Dockerfile aven/DB2/Cargo.toml aven/DB2/Cargo.lock)
+            peer_paths=(aven/DB2/peer aven/DB2/core aven/DB2/db/core aven/DB2/store aven/DB2/id/core aven/DB2/deploy/peer.Dockerfile aven/DB2/Cargo.toml aven/DB2/Cargo.lock aven/runtimes/registry)
             {
               echo "**avenPEER**, the node: \`aven-peer\` on a minimal base (amd64 and arm64)."
               echo "\`--relay\` makes it the Aven Peer."

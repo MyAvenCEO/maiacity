@@ -47,6 +47,7 @@ use aven_peer::iroh_gossip::{self, Gossip};
 use aven_peer::members::{Gate, Hook};
 use aven_peer::room::Room;
 use aven_peer::{Notes, blobs, keys, link, now, record};
+use aven_runtimes_registry as registry;
 use iroh::endpoint::{Connection, presets};
 use iroh::protocol::Router;
 use iroh::{
@@ -567,14 +568,15 @@ pub async fn device_secret(candidate: String) -> Result<String, JsError> {
 }
 
 std::thread_local! {
-    /// The passkey's owner and seal keys, for this session only: derived again at each ceremony, never stored (A42).
-    static OWNER: RefCell<Option<(aven_id::HybridKey, aven_id::SealKey)>> = const { RefCell::new(None) };
+    /// The passkey's seal key, for this session only: derived again at each ceremony, never stored. The owner key is
+    /// never kept at all (A42): each ceremony derives it, signs, and drops it (`ownerSign`).
+    static SEAL: RefCell<Option<aven_id::SealKey>> = const { RefCell::new(None) };
 }
 
 /// The PRF output of the passkey `credential` (its id, base64url) at owner epoch `epoch`, straight from the ceremony
-/// (rule 13): the Peer-Light derives the owner key and the seal key from it, keeps them in memory for this session,
-/// wipes the output, and keeps only the public halves in its store, under the ref `owner-keys`, until the tree's ops
-/// carry them. Gives back `{owner, seal}`, hex: never a secret.
+/// (rule 13): the Peer-Light derives the owner key and the seal key from it, keeps the seal key in memory for this
+/// session and drops the owner key (A42), wipes the output, and keeps only the public halves in its store, under the
+/// ref `owner-keys`, until the tree's ops carry them. Gives back `{owner, seal}`, hex: never a secret.
 #[wasm_bindgen(js_name = prfKeys)]
 pub async fn prf_keys(
     epoch: u32,
@@ -582,11 +584,12 @@ pub async fn prf_keys(
     mut output: Vec<u8>,
 ) -> Result<JsValue, JsError> {
     use aven_db_store::RefName;
-    // the keys go into this session's keeping before anything awaits, so no future carries them
+    // the seal key goes into this session's keeping and the owner key is dropped before anything awaits, so no
+    // future carries them
     let (owner, seal) = {
         let derived = acts::prf_derive(&mut output).map_err(|e| JsError::new(&e))?;
         let public = (derived.owner.clone(), derived.seal.clone());
-        OWNER.with(|o| *o.borrow_mut() = Some((derived.owner_key, derived.seal_key)));
+        SEAL.with(|s| *s.borrow_mut() = Some(derived.seal_key));
         public
     };
     let kept = serde_json::json!({ "credential": credential, "epoch": epoch, "owner": owner, "seal": seal });
@@ -601,23 +604,21 @@ pub async fn prf_keys(
     Ok(object(&[("owner", owner.into()), ("seal", seal.into())]))
 }
 
-/// What the passkey's hybrid owner key signs, inside the Peer-Light: `bytes` (hex) in, the signature's Value's bytes
-/// (hex) out. Refused when no PRF ceremony ran in this session.
+/// What the passkey's hybrid owner key signs, inside the Peer-Light: the ceremony's PRF `output` and `bytes` (hex) in,
+/// the signature's Value's bytes (hex) out. The owner key is derived for this one signature and dropped (A42); the
+/// output is wiped.
 #[wasm_bindgen(js_name = ownerSign)]
-pub fn owner_sign(bytes: String) -> Result<String, JsError> {
-    let msg = unhex(&bytes).ok_or_else(|| JsError::new("not hex"))?;
-    OWNER.with(|o| {
-        let held = o.borrow();
-        let (key, _) = held
-            .as_ref()
-            .ok_or_else(|| JsError::new("no passkey has opened this session"))?;
-        Ok(key
-            .sign(&msg)
-            .to_bytes()
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect())
-    })
+pub fn owner_sign(mut output: Vec<u8>, bytes: String) -> Result<String, JsError> {
+    let msg = unhex(&bytes);
+    let derived = acts::prf_derive(&mut output).map_err(|e| JsError::new(&e))?;
+    let msg = msg.ok_or_else(|| JsError::new("not hex"))?;
+    Ok(derived
+        .owner_key
+        .sign(&msg)
+        .to_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect())
 }
 
 /// The public halves this browser keeps (`owner-keys`), or null.
@@ -970,6 +971,49 @@ fn object(fields: &[(&str, JsValue)]) -> JsValue {
         let _ = js_sys::Reflect::set(&o, &JsValue::from_str(k), v);
     }
     o.into()
+}
+
+/// How the Service Worker serves a file (aven/runtimes' registry, `decideFile`), by its first bytes (at most 64 KiB),
+/// its size and what its sender claims: `{type, mime, inline}`, `inline` the media type to serve it inline as, or null
+/// for an attachment. The bytes decide; the claim only chooses among text formats, and never makes a file inline. No
+/// file runtime runs before the files origin (A15), so a decision is native, framed or a download.
+#[wasm_bindgen]
+pub fn decide(head: &[u8], size: f64, claimed: Option<String>, name: Option<String>) -> JsValue {
+    let claim = registry::Claim {
+        r#type: claimed.as_deref(),
+        name: name.as_deref(),
+    };
+    let d = registry::decide_file(
+        registry::Stage { runtimes: false },
+        head,
+        size as u64,
+        &claim,
+    );
+    let inline = match d.serve {
+        registry::Serve::Inline(m) => JsValue::from_str(m),
+        _ => JsValue::NULL,
+    };
+    object(&[
+        ("type", JsValue::from_str(d.r#type.name())),
+        ("mime", JsValue::from_str(d.r#type.mime())),
+        ("inline", inline),
+    ])
+}
+
+/// What the chat's card for a file is, by the type its sender claims, before its bytes are read: `image`, `audio`,
+/// `video`, `pdf` or `file` (a download link). Only a label: the Service Worker serves the bytes as [`decide`] says,
+/// so a card whose claim lies shows nothing.
+#[wasm_bindgen]
+pub fn file_kind(claimed: &str) -> String {
+    use registry::{Element, Mode};
+    match registry::entry(registry::of_mime(claimed)).mode {
+        Mode::Native(Element::Img) => "image",
+        Mode::Native(Element::Audio) => "audio",
+        Mode::Native(Element::Video) => "video",
+        Mode::Frame => "pdf",
+        _ => "file",
+    }
+    .into()
 }
 
 fn hash(file: &str) -> Result<Hash, JsError> {

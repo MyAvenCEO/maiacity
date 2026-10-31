@@ -11,11 +11,10 @@
 	import Avatar from '../Avatar.svelte';
 	import Offline from '../Offline.svelte';
 	import { tree, vaultName } from '../id.svelte.js';
-	import { remove, room, say, share } from '../room.svelte.js';
+	import { keepDraft, remove, room, say, share } from '../room.svelte.js';
 
 	let { account, device } = $props();
 
-	let text = $state('');
 	let list = $state();
 	let over = $state(false);
 	let picker = $state();
@@ -34,8 +33,9 @@
 
 	function send(event) {
 		event.preventDefault();
-		say(text);
-		text = '';
+		say(room.draft);
+		room.draft = '';
+		keepDraft(true);
 	}
 
 	function drop(event) {
@@ -50,15 +50,11 @@
 	}
 
 	// how a file shows, inline in its bubble (Samuel, 30 Oct 2026: every kind shows and plays in the chat): only through
-	// <img>, <audio>, <video> or a PDF's frame, and only for the passive types the Service Worker serves inline
-	// (public/files-sw.js keeps the same list). Anything else, SVG and HTML included, is a download link
-	const kind = (type) => {
-		const t = String(type ?? '').split(';')[0].trim().toLowerCase();
-		if (/^image\/(png|jpeg|gif|webp|avif|bmp)$/.test(t)) return 'image';
-		if (/^audio\/[a-z0-9.+-]+$/.test(t)) return 'audio';
-		if (/^video\/[a-z0-9.+-]+$/.test(t)) return 'video';
-		return t === 'application/pdf' ? 'pdf' : 'file';
-	};
+	// <img>, <audio>, <video> or a PDF's frame. The kind is the file registry's (aven/runtimes), which the Peer-Light's
+	// worker puts on the file's line from the type its sender claims: `image`, `audio`, `video`, `pdf` or `file`, a
+	// download link, SVG and HTML among them. The Service Worker serves the bytes as the registry decides from them, so a
+	// claim that lies shows nothing and the card says it can't play
+	const kind = (f) => f?.kind ?? 'file';
 	// What became of a file that didn't load, by its name: `waiting` while it is still on its way, with why; `failed`
 	// once it stopped asking; `unplayable` when its bytes are here and this browser can't show or play them (an
 	// iPhone's HEVC movie in a browser without the codec). A card never shows a dead player (Samuel, 30 Oct 2026)
@@ -275,34 +271,34 @@
 						<strong>{who(vault ?? line.from)}</strong>
 						{@const card = cards[f.file]}
 						{@const going = room.files[f.file]}
-						<figure class="file card" data-testid="file" data-file={f.file} data-kind={kind(f.type)} data-state={card?.state ?? 'ok'}>
+						<figure class="file card" data-testid="file" data-file={f.file} data-kind={kind(f)} data-state={card?.state ?? 'ok'}>
 							{#key asked[f.file]}
 							{#if card?.state === 'unplayable'}
 								<p class="note" data-testid="unplayable">
-									This browser can't {kind(f.type) === 'image' ? 'show this image' : `play this ${kind(f.type)}`}. Download it to
+									This browser can't {kind(f) === 'image' ? 'show this image' : `play this ${kind(f)}`}. Download it to
 									open it on this device.
 								</p>
 							{:else if card?.state === 'failed'}
 								<p class="note" data-testid="file-failed">{card.why}</p>
-							{:else if kind(f.type) === 'image'}
+							{:else if kind(f) === 'image'}
 
 								<!-- opened large in a tab of its own on a tap -->
 								<a class="media" href="/files/{f.file}" target="_blank" rel="noopener" aria-label="Open {f.name}"
 									><img src="/files/{f.file}" alt={f.name} loading="lazy" use:retrying={f.file} /></a
 								>
-							{:else if kind(f.type) === 'audio'}
+							{:else if kind(f) === 'audio'}
 								<div class="player" use:lazy={f.file}>
 									<audio controls preload="none" use:retrying={f.file}></audio>
 									<button type="button" class="tap" aria-label="Play {f.name}" data-testid="tap">{@render playIcon()}</button>
 								</div>
-							{:else if kind(f.type) === 'video'}
+							{:else if kind(f) === 'video'}
 								<!-- playsinline: iOS plays it in the bubble, not full-screen; it seeks by ranges (files-sw.js answers 206) -->
 								<!-- svelte-ignore a11y_media_has_caption -->
 								<div class="player" use:lazy={f.file}>
 									<video controls playsinline preload="none" use:retrying={f.file}></video>
 									<button type="button" class="tap" aria-label="Play {f.name}" data-testid="tap">{@render playIcon()}</button>
 								</div>
-							{:else if kind(f.type) === 'pdf'}
+							{:else if kind(f) === 'pdf'}
 								<!-- previewed where the browser shows a PDF in a sandboxed frame; the link opens it in any case -->
 								<iframe src="/files/{f.file}" title={f.name} loading="lazy"></iframe>
 							{/if}
@@ -335,7 +331,7 @@
 								>
 								<a href="/files/{f.file}" download={f.name}>{f.name}</a>
 								<small>{size(f.size)}</small>
-								{#if kind(f.type) === 'pdf'}<a class="open" href="/files/{f.file}" target="_blank" rel="noopener" data-testid="open"
+								{#if kind(f) === 'pdf'}<a class="open" href="/files/{f.file}" target="_blank" rel="noopener" data-testid="open"
 										>Open</a
 									>{/if}
 							</figcaption>
@@ -366,13 +362,13 @@
 			{/each}
 		</ol>
 		<form onsubmit={send}>
-			<input bind:value={text} placeholder="Write to everyone here" aria-label="Line" data-testid="line" />
+			<input bind:value={room.draft} oninput={() => keepDraft()} placeholder="Write to everyone here" aria-label="Line" data-testid="line" />
 			<input type="file" multiple hidden bind:this={picker} onchange={pick} data-testid="file-input" />
 			<button type="button" class="quiet" onclick={() => picker.click()} aria-label="Share a file" data-testid="share"
 				><svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg
 				></button
 			>
-			<button disabled={!text.trim()} data-testid="say"
+			<button disabled={!room.draft.trim()} data-testid="say"
 				><svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg
 				><span>Send</span></button
 			>

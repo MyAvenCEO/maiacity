@@ -98,7 +98,8 @@ export const withdrawText = ask('withdrawText');
 export const joinText = ask('joinText');
 export const oneTimePublic = ask('oneTimePublic');
 export const signJoin = ask('signJoin');
-// the passkey's PRF step (peer/light/src/lib.rs, `prfKeys`): only public halves and signatures come back
+// the passkey's PRF step (peer/light/src/lib.rs, `prfKeys`, `ownerSign`): only public halves and signatures come
+// back; the owner key is derived per ceremony and dropped (A42)
 export const prfInput = ask('prfInput');
 export const prfKeys = ask('prfKeys');
 export const ownerSign = ask('ownerSign');
