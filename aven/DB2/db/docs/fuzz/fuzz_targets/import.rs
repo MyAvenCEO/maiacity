@@ -65,7 +65,7 @@ fuzz_target!(|data: &[u8]| {
                 from: 0,
                 to,
                 records: vec![("r".into(), w.version)],
-                genesis: None,
+                genesis: Some(w.genesis.clone()),
             };
             let mut e = Envelope {
                 doc: w.genesis.id(),

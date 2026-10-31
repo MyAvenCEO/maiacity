@@ -274,7 +274,7 @@ fn unchecked(
         cap: None,
         acks: vec![],
         calls: vec![],
-        genesis: None,
+        genesis: Some(g.clone()),
     };
     l.set_next_commit_message(&body.message());
     l.commit();
@@ -523,4 +523,77 @@ fn a_stranger_never_reaches_loro() {
     );
     // a member's garbage reaches only Loro's metadata decoding, and is refused there
     assert_eq!(doc.import(&hostile, &Allow), Err(Refused::Loro));
+}
+
+#[test]
+fn the_genesis_rides_exactly_in_a_logs_first_envelope() {
+    let (a, b) = (device("alice"), device("bob"));
+    let g = genesis(&a);
+    let mut doc = open(&g);
+    let x1 = commit(&mut doc, &a, &[todo_put("t1", "first")]);
+    let x2 = commit(&mut doc, &a, &[todo_put("t2", "second")]);
+    // another writer's first envelope that builds on nothing carries it too; one that builds on others doesn't
+    let mut lone = open(&g);
+    let y1 = commit(&mut lone, &b, &[todo_put("t3", "bob alone")]);
+    let body = |x: &[u8]| Body::of_value(&Envelope::decode(x).unwrap().body).unwrap();
+    assert!(
+        body(&x1).genesis.is_some() && body(&x2).genesis.is_none() && body(&y1).genesis.is_some()
+    );
+    let mut db = open(&g);
+    db.import(&x1, &Allow).unwrap();
+    let z1 = commit(&mut db, &b, &[todo_put("t4", "bob on alice's")]);
+    assert!(body(&z1).genesis.is_none());
+    // each mismatch is refused: a first without it, a later one with it, and another Doc's genesis
+    let resigned = |x: &[u8], f: &dyn Fn(&mut Body)| {
+        let mut e = Envelope::decode(x).unwrap();
+        let mut bd = Body::of_value(&e.body).unwrap();
+        f(&mut bd);
+        e.body = bd.value();
+        a.sign_envelope(&mut e);
+        e.encode()
+    };
+    let mut reader = open(&g);
+    assert_eq!(
+        reader.import(&resigned(&x1, &|b| b.genesis = None), &Allow),
+        Err(Refused::Doc)
+    );
+    let other = Genesis::new(
+        b"another vault",
+        todo_type().r#type,
+        &[(todo_type().r#type, todo().hash())],
+        [9; 32],
+    );
+    assert_eq!(
+        reader.import(&resigned(&x1, &|b| b.genesis = Some(other.clone())), &Allow),
+        Err(Refused::Doc)
+    );
+    assert_eq!(reader.import(&x1, &Allow), Ok(Imported::Counts));
+    assert_eq!(
+        reader.import(&resigned(&x2, &|b| b.genesis = Some(g.clone())), &Allow),
+        Err(Refused::Doc)
+    );
+    assert_eq!(reader.import(&x2, &Allow), Ok(Imported::Counts));
+}
+
+#[test]
+fn avenids_built_in_types_dont_fit_until_caps_supplies_them() {
+    let a = device("alice");
+    let g = genesis(&a);
+    let mut doc = open(&g);
+    let cap = aven_db_docs::Version {
+        r#type: aven_core::DocId(aven_core::name_of(&Value::Text("avenID cap 1".into()))),
+        schema: None,
+    };
+    let r = doc.commit(
+        &a,
+        0,
+        &[put("c1", cap, vec![("x", Value::Null)])],
+        "now",
+        Act::default(),
+        &Allow,
+    );
+    assert!(
+        matches!(r, Err(CommitError::Unfit(Unfit::Version(_)))),
+        "{r:?}"
+    );
 }

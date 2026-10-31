@@ -303,3 +303,39 @@ fn loro() {
     let _ = Envelope::decode;
     let _ = Value::Null;
 }
+
+#[test]
+fn placements() {
+    for v in vectors("db/spec/vectors/placements.json") {
+        let (name, i, x) = (s(&v["name"]), &v["input"], &v["expected"]);
+        let first = i["seq"].as_u64() == Some(1)
+            && !i["prev"].as_bool().unwrap()
+            && i["deps"].as_u64() == Some(0);
+        assert_eq!(first, x["first"].as_bool().unwrap(), "{name}: first");
+        let placed = i["genesis"].as_bool().unwrap() == first;
+        assert_eq!(placed, x["placed"].as_bool().unwrap(), "{name}: placed");
+    }
+}
+
+#[test]
+fn builtins() {
+    use aven_db_docs::{BuiltinFit, DocsBuiltins};
+    for v in vectors("db/spec/vectors/builtins.json") {
+        let (name, i, x) = (s(&v["name"]), &v["input"], &v["expected"]);
+        let t = DocId::parse(s(&i["type"])).unwrap();
+        let Some(rec) = i.get("record") else {
+            assert_eq!(
+                DocsBuiltins.check(&t, &Value::Map(vec![])).is_some(),
+                x.as_bool().unwrap(),
+                "{name}"
+            );
+            continue;
+        };
+        let record = decode(&unhex(s(rec))).unwrap();
+        assert_eq!(
+            DocsBuiltins.check(&t, &record),
+            x["fits"].as_bool(),
+            "{name}"
+        );
+    }
+}

@@ -4,7 +4,8 @@
 //! new, edited or gone, and each field it writes with its new value (or its removal). The engine's footprint reads
 //! the same view. The checks are the README's:
 //! 1. the Records the ops touch are exactly those the envelope names;
-//! 2. every named version is pinned by the Doc, and is the Record's own type;
+//! 2. every named version is pinned by the Doc, or is a built-in type whose definer checks it, and is the Record's
+//!    own type; a built-in Record is written whole at birth and takes its definer's shape, and is never edited;
 //! 3. every value the ops set is allowed by its field's schema, and within the depth limit;
 //! 4. a new Record's required fields are set;
 //! 5. no op removes a required field.
@@ -15,6 +16,7 @@ use aven_core::{DocId, Value};
 
 use crate::body::Version;
 
+use crate::builtins::BuiltinFit;
 use crate::limits::{Limits, depth};
 use crate::schema::Schema;
 
@@ -62,11 +64,17 @@ pub enum Unfit {
 /// What a Doc's Records were before an envelope: each Record's type Doc, its `t`.
 pub type Types = BTreeMap<String, DocId>;
 
-/// The fit verdict on `changes` that an envelope naming `named` says it makes, with the Doc's pinned schemas.
+/// What fit judges by: the schemas of the user versions a Doc pins, and the checks of the built-in types' definers.
+pub struct Rules {
+    pub pinned: BTreeMap<Version, Schema>,
+    pub builtins: Box<dyn BuiltinFit + Send + Sync>,
+}
+
+/// The fit verdict on `changes` that an envelope naming `named` says it makes.
 pub fn fit(
     changes: &[RecordChange],
     named: &[(String, Version)],
-    pinned: &BTreeMap<Version, Schema>,
+    rules: &Rules,
     limits: &Limits,
 ) -> Result<(), Unfit> {
     let mut touched: Vec<(&str, &Version)> =
@@ -78,12 +86,47 @@ pub fn fit(
         return Err(Unfit::Records);
     }
     for c in changes {
-        let schema = pinned
+        if c.fields
+            .iter()
+            .any(|(_, v)| v.as_ref().is_some_and(|v| depth(v) > limits.depth))
+        {
+            return Err(Unfit::Value(c.id.clone(), "depth".into()));
+        }
+        if c.r#type.schema.is_none() {
+            // a built-in type: its definer checks it, written whole at birth, never edited
+            let record = Value::Map(
+                c.fields
+                    .iter()
+                    .filter_map(|(f, v)| Some((f.clone(), v.clone()?)))
+                    .collect(),
+            );
+            let ok = match c.kind {
+                ChangeKind::Gone => rules
+                    .builtins
+                    .check(&c.r#type.r#type, &record)
+                    .map(|_| true),
+                ChangeKind::Edited => rules
+                    .builtins
+                    .check(&c.r#type.r#type, &record)
+                    .map(|_| false),
+                ChangeKind::New => rules
+                    .builtins
+                    .check(&c.r#type.r#type, &record)
+                    .map(|ok| ok && c.fields.iter().all(|(_, v)| v.is_some())),
+            };
+            match ok {
+                None => return Err(Unfit::Version(c.id.clone())),
+                Some(false) => return Err(Unfit::Value(c.id.clone(), "its built-in shape".into())),
+                Some(true) => continue,
+            }
+        }
+        let schema = rules
+            .pinned
             .get(&c.r#type)
             .ok_or_else(|| Unfit::Version(c.id.clone()))?;
         for (f, v) in &c.fields {
             match v {
-                Some(v) if depth(v) > limits.depth || !schema.allows(f, v) => {
+                Some(v) if !schema.allows(f, v) => {
                     return Err(Unfit::Value(c.id.clone(), f.clone()));
                 }
                 None if schema.field(f).is_some_and(|x| x.2) && c.kind != ChangeKind::Gone => {

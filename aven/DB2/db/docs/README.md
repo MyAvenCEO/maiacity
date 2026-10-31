@@ -260,8 +260,9 @@ A39):
 - **Its id is the genesis's name** by A30, the hash of `["avenDB genesis 1", genesis]`, written `d:<hex>`: the vault
   and root type are sealed into the Doc's name, and nobody can later claim another owner or type without another id
   (Samuel, 30 Oct 2026; `id_fixes`). The label is its version.
-- **It carries no signature of its own.** The Doc's first envelope carries it, in its body's `genesis`, and that
-  envelope's signature and cap authorize it: a `core/1` `put` of the root Record on `vaultType(vault, type)` (A32).
+- **It carries no signature of its own.** It rides in its body's `genesis` exactly in a log's first envelope (sequence
+  number 1, no `prev`, no `deps`) and nowhere else (`genesis_iff_first`); the Doc's first envelope's signature and cap
+  authorize it: a `core/1` `put` of the root Record on `vaultType(vault, type)` (A32).
 - **`pins`** lists only user types, sorted, each with its schema hashes sorted. The built-in types are never pinned.
 - **The nonce** makes two Docs born alike different. A vault's singletons (its profile, its vocabulary) are found by
   name in the vault's vocabulary, never by a guessable id; two made offline at once are both kept, and the vocabulary's
@@ -333,7 +334,7 @@ Core's envelope holds the Doc, the branch, the writer id, `seq`, `prev`, `deps`,
 - **`calls`:** the operations the commit ran, each a `Call` (`{op, params}`, A32). **`cap`**, **`acks`:** the cap it
   writes under and the revocations it acknowledges ([caps](../../id/caps/README.md#checking)).
 - **`at`:** the writer's claimed time (rule 9).
-- **`genesis`:** only in the Doc's first envelope.
+- **`genesis`:** exactly in a log's first envelope, and nowhere else; a reader refuses either mismatch.
 - **The signature:** Ed25519 by the device over Core's `["avenDB envelope 1", unsigned envelope]`. The segment that
   later covers it adds the hybrid signature.
 
@@ -621,8 +622,10 @@ A **type** is a Doc whose Records are its versions:
 - A Record's type is its `t`, a type Doc's id, so Records carry no `kind` field.
 - **Every Record's creator is known:** the device and vault that signed the envelope creating it, read from history
   and never stored as a field anyone could change. Caps' `own` condition reads it.
-- **Built-in types** every Doc pins without asking: caps' access map (`cap`, `revoke`, `epoch`), `branch`, `closed`,
-  `version` and `split`.
+- **Built-in types** every Doc takes without a pin: caps' access map (`cap`, `revoke`, `epoch`), `branch`, `closed`,
+  `version` and `split`. Each is versioned by its label and has no schema; its definer checks its Records' shape, and
+  fit takes those checks as a parameter (`Aven.DB.Docs.Builtins`): docs supplies its four, avenID its three. A
+  built-in Record is written whole at birth, never edited, and may be removed.
 
 ```json
 { "title": "Todo, v1", "type": "object",

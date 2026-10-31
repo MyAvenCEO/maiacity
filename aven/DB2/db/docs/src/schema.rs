@@ -8,8 +8,6 @@
 
 use aven_core::{DocId, Hash, Value, blake3, encode};
 
-use crate::body::Version;
-
 /// What one field may hold, judged on a value replaced whole.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -112,52 +110,4 @@ pub const BUILTIN_NAMES: [&str; 4] = ["branch", "closed", "version", "split"];
 /// Whether a type Doc is one of the docs layer's built-in types (`isBuiltin`).
 pub fn is_builtin(t: &DocId) -> bool {
     BUILTIN_NAMES.iter().any(|n| builtin_type(n) == *t)
-}
-
-/// The built-in types every Doc takes without pinning (docs, "Types are Docs"): each versioned by its label, so its
-/// version has no schema hash; its shape is its Lean structure, which these fields state for fit.
-pub fn builtins() -> Vec<(Version, Schema)> {
-    let f = |n: &str, k: Kind, r: bool| (n.to_string(), k, r);
-    let hashes = || Kind::Array(Box::new(Kind::Hash));
-    [
-        Schema {
-            title: "branch".into(),
-            fields: vec![
-                f("name", Kind::Text, true),
-                f("base", hashes(), true),
-                f("follows", Kind::Text, false),
-                f("nonce", Kind::Hash, true),
-            ],
-            closed: true,
-        },
-        Schema {
-            title: "closed".into(),
-            fields: vec![f("at", hashes(), false)],
-            closed: true,
-        },
-        Schema {
-            title: "version".into(),
-            fields: vec![f("name", Kind::Text, true), f("at", hashes(), true)],
-            closed: true,
-        },
-        Schema {
-            title: "split".into(),
-            fields: vec![
-                f("writer", Kind::Uint(u64::MAX), true),
-                f("after", Kind::Hash, true),
-            ],
-            closed: true,
-        },
-    ]
-    .into_iter()
-    .map(|s| {
-        (
-            Version {
-                r#type: builtin_type(&s.title),
-                schema: None,
-            },
-            s,
-        )
-    })
-    .collect()
 }

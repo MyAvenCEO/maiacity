@@ -10,7 +10,8 @@
 //! - [`ops_agree`] and [`loro_agrees`]: rule 7, op ids against hashes, and on Loro commits with the writer's previous
 //!   op read back in (`Aven.DB.Docs.OpIds`, `envelopes.json`, `loro.json`).
 //! - [`Doc`]: the [`Head`] (`heads.json`), snapshot reads, the change feed, `commit`, and import with its three
-//!   verdicts: fit for the built-in types and pinned user versions ([`fit`], `Aven.DB.Docs.Fit`, `fit.json`),
+//!   verdicts: fit for the pinned user versions ([`fit`], `Aven.DB.Docs.Fit`, `fit.json`) and the built-in types, by
+//!   whoever defines them ([`builtins`], `Aven.DB.Docs.Builtins`, `builtins.json`),
 //!   authorized through [`Authorize`] (caps implements it), and not a split; what counts is held to `logs.json` and
 //!   `counts.json` (`Aven.DB.Docs.Counts`).
 //! - [`Segment`] and [`Closer`]: segments closed per writer and epoch, hybrid-signed (`Aven.DB.Docs.Segment`,
@@ -30,6 +31,7 @@ compile_error!(
 );
 
 mod body;
+pub mod builtins;
 mod device;
 mod doc;
 pub mod fit;
@@ -43,12 +45,13 @@ mod value;
 mod writer;
 
 pub use body::{Body, Call, Version, codec_order};
+pub use builtins::{BuiltinFit, DocsBuiltins, Either};
 pub use device::{Device, Ed25519};
 pub use doc::{
     Act, Authorize, CommitError, Doc, Feed, Head, Imported, MAIN, RECORDS, Record, RecordWrite,
     Refused, Snapshot, TYPE_FIELD, Why, envelope_valid,
 };
-pub use fit::{ChangeKind, RecordChange, Unfit};
+pub use fit::{ChangeKind, RecordChange, Rules, Unfit};
 pub use genesis::{GENESIS_LABEL, Genesis};
 pub use limits::Limits;
 pub use opids::{LoroVerdict, OpId, OpsVerdict, carried_deps, loro_agrees, ops_agree};

@@ -28,7 +28,7 @@ fn around(
         from: 0,
         to,
         records: vec![("t1".into(), todo_type())],
-        genesis: None,
+        genesis: Some(g.clone()),
     };
     let mut e = Envelope {
         doc: g.id(),

@@ -1168,7 +1168,7 @@ def builtinCases : List (String × String × Value) :=
   let h := Value.bytes (blake3 (tb "a tip")).bytes
   [("version", "a named version", .map [(tb "at", .array [h]), (tb "name", .text (tb "v1"))]),
    ("version", "refused: no name", .map [(tb "at", .array [h])]),
-   ("version", "refused: a field it doesn't have", .map [(tb "at", .array [h]), (tb "name", .text (tb "v1")), (tb "x", .null)]),
+   ("version", "refused: a field it doesn't have", .map [(tb "x", .null), (tb "at", .array [h]), (tb "name", .text (tb "v1"))]),
    ("version", "refused: a tip that isn't a hash", .map [(tb "at", .array [.bytes [1]]), (tb "name", .text (tb "v1"))]),
    ("branch", "a proposal", .map [(tb "base", .array [h]), (tb "name", .text (tb "seeds")), (tb "nonce", h)]),
    ("branch", "a variant that follows main", .map [(tb "base", .array [h]), (tb "name", .text (tb "v")), (tb "nonce", h),
@@ -1179,6 +1179,8 @@ def builtinCases : List (String × String × Value) :=
    ("split", "a writer's split", .map [(tb "after", h), (tb "writer", .uint 7)]),
    ("split", "refused: a writer that isn't a number", .map [(tb "after", h), (tb "writer", .text (tb "7"))]),
    ("split", "refused: not a map", .array [])]
+
+#guard builtinCases.all fun (_, _, v) => decodeAll (encode v) == some v
 
 def builtinVectors : List Json :=
   (builtinCases.map fun (ty, name, v) =>

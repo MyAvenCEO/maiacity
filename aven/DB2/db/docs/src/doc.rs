@@ -28,12 +28,14 @@ use loro::{
 };
 
 use crate::body::{Body, Call, Version, codec_order};
+use crate::builtins::{BuiltinFit, DocsBuiltins};
 use crate::device::{Device, Ed25519};
+use crate::fit::Rules;
 use crate::fit::{ChangeKind, RecordChange, Unfit, fit};
 use crate::genesis::Genesis;
 use crate::limits::Limits;
 use crate::opids::{OpId, OpsVerdict, carried_deps, ops_agree};
-use crate::schema::{Schema, builtins, is_builtin};
+use crate::schema::{Schema, is_builtin};
 use crate::seal::{EpochKey, Kind, open};
 use crate::segment::{BadSegment, Segment};
 use crate::value::{of_loro, to_loro};
@@ -214,7 +216,7 @@ pub struct Doc {
     genesis: Genesis,
     id: DocId,
     limits: Limits,
-    pinned: BTreeMap<Version, Schema>,
+    rules: Rules,
     held: Vec<Held>,
     by_name: BTreeMap<Hash, usize>,
     /// Each place of each log, `(writer, seq)`, and the names held there: more than one is a split.
@@ -414,7 +416,7 @@ fn judge(
     h: &Held,
     held: &[Held],
     by_name: &BTreeMap<Hash, usize>,
-    pinned: &BTreeMap<Version, Schema>,
+    rules: &Rules,
     limits: &Limits,
 ) -> Result<Vec<RecordChange>, Unfit> {
     let past: Vec<OpId> =
@@ -428,7 +430,7 @@ fn judge(
         scratch
             .import(&h.body.changes)
             .map_err(|_| Unfit::Op("Loro refused it".into()))?;
-        let r = judge_on(scratch, &past, h.e.writer, &h.body, pinned, limits);
+        let r = judge_on(scratch, &past, h.e.writer, &h.body, rules, limits);
         scratch.checkout_to_latest();
         r
     }))
@@ -441,7 +443,7 @@ fn judge_on(
     past: &Frontiers,
     writer: u64,
     body: &Body,
-    pinned: &BTreeMap<Version, Schema>,
+    rules: &Rules,
     limits: &Limits,
 ) -> Result<Vec<RecordChange>, Unfit> {
     let end = i32::try_from(body.to).map_err(|_| Unfit::Op("counters past Loro's".into()))?;
@@ -459,7 +461,7 @@ fn judge_on(
     if changes.len() > limits.records {
         return Err(Unfit::Records);
     }
-    fit(&changes, &body.records, pinned, limits)?;
+    fit(&changes, &body.records, rules, limits)?;
     Ok(changes)
 }
 
@@ -468,10 +470,21 @@ impl Doc {
     /// `None` when the genesis isn't well formed or a pinned schema is missing. The genesis carries no signature: the
     /// Doc's first envelope carries it, and that envelope's signature and cap authorize it.
     pub fn open(genesis: Genesis, schemas: &[Schema], limits: Limits) -> Option<Doc> {
+        Doc::open_with(genesis, schemas, limits, Box::new(DocsBuiltins))
+    }
+
+    /// [`Doc::open`] with the built-in types' checks given: the docs layer's own, joined with avenID's once caps
+    /// supplies them (`Either(DocsBuiltins, caps)`).
+    pub fn open_with(
+        genesis: Genesis,
+        schemas: &[Schema],
+        limits: Limits,
+        builtins: Box<dyn BuiltinFit + Send + Sync>,
+    ) -> Option<Doc> {
         if !genesis.ok(is_builtin) {
             return None;
         }
-        let mut pinned: BTreeMap<Version, Schema> = builtins().into_iter().collect();
+        let mut pinned: BTreeMap<Version, Schema> = BTreeMap::new();
         for (t, hs) in &genesis.pins {
             for h in hs {
                 let s = schemas.iter().find(|s| s.hash() == *h)?;
@@ -489,7 +502,7 @@ impl Doc {
             genesis,
             id,
             limits,
-            pinned,
+            rules: Rules { pinned, builtins },
             held: vec![],
             by_name: BTreeMap::new(),
             places: BTreeMap::new(),
@@ -662,10 +675,11 @@ impl Doc {
         if e.doc != self.id || e.branch != MAIN {
             return Err(Refused::Doc);
         }
-        // the genesis rides only in the Doc's first envelope, and is this Doc's
-        if body.genesis.as_ref().is_some_and(|g| {
-            *g != self.genesis || e.seq != 1 || e.prev.is_some() || !e.deps.is_empty()
-        }) {
+        // the genesis rides exactly in a log's first envelope, and is this Doc's (`genesis_iff_first`)
+        let first = e.seq == 1 && e.prev.is_none() && e.deps.is_empty();
+        if body.genesis.is_some() != first
+            || body.genesis.as_ref().is_some_and(|g| *g != self.genesis)
+        {
             return Err(Refused::Doc);
         }
         let name = e.name();
@@ -827,7 +841,7 @@ impl Doc {
                         &self.held[i],
                         &self.held,
                         &self.by_name,
-                        &self.pinned,
+                        &self.rules,
                         &self.limits,
                     );
                     self.held[i].fit = Some(v);
@@ -989,7 +1003,7 @@ impl Doc {
             cap: act.cap,
             acks: act.acks,
             calls: act.calls,
-            genesis: self.held.is_empty().then(|| self.genesis.clone()),
+            genesis: None,
         };
         scratch.set_next_commit_message(&body.message());
         scratch.commit();
@@ -1026,9 +1040,11 @@ impl Doc {
             .collect::<Result<Vec<Hash>, _>>()?;
         // fit, before anything is signed
         let past = frontiers(&carried).ok_or(CommitError::Stuck)?;
-        let judged = judge_on(&scratch, &past, w, &body, &self.pinned, &self.limits);
+        let judged = judge_on(&scratch, &past, w, &body, &self.rules, &self.limits);
         scratch.checkout_to_latest();
         judged.map_err(CommitError::Unfit)?;
+        // the genesis rides exactly in a log's first envelope
+        body.genesis = (seq == 1 && deps.is_empty()).then(|| self.genesis.clone());
         let mut e = Envelope {
             doc: self.id,
             branch: MAIN.into(),
