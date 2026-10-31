@@ -65,21 +65,9 @@
     "$id": "data:b3:Op7…@b3:2c4…#operations",
     "type": "object",
     "propertyNames": {
-     "enum": [
-      "create",
-      "read",
-      "update",
-      "delete",
-      "want",
-      "keep",
-      "sync",
-      "act",
-      "own",
-      "govern"
-     ]
+     "$ref": "theos:operation-names"
     },
     "additionalProperties": {
-     "type": "object",
      "properties": {
       "at": {
        "type": [
@@ -92,14 +80,13 @@
        "type": "object"
       },
       "limit": {
-       "type": "integer",
-       "minimum": 1
+       "type": "integer"
       }
      },
      "additionalProperties": false
     }
    },
-   "deep": "One shape, one schema (D56): operations is an object keyed by operation name, so no operation appears twice. Each value holds its conditions: at (a JSON Pointer or a list of them, default \"\", the whole data), where, limit. The engine's operation record (theos/operation@1) uses the same fields for one specific operation. An engine operation is allowed when a policy names its broad operation, its path lies under at, and where and limit hold."
+   "deep": "One shape, one schema (D56): operations is an object keyed by operation name, so no operation appears twice. The names come from the plugin registry (D48): create, read, update, delete, want, keep, sync on data; act, own, govern on identities. Each value holds its conditions: at (a JSON Pointer or a list of them, default \"\", the whole data), where, limit. An engine operation is allowed when a policy names its broad operation, its path lies under at, and where and limit hold."
   },
   {
    "title": "Conditions make a policy narrower.",

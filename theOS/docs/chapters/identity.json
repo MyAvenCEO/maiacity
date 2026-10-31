@@ -39,7 +39,7 @@
      "value": "…"
     }
    },
-   "deep": "One genesis record creates the human identity and its first agent together, so there is no chicken-and-egg problem. The record already commits to the next keys in advance (KERI-style pre-rotation). Both IDs come from this one record: its hash, typed once as human and once as agent (D50). A record can't contain its own hash, so inside it the two are named “this human” and “this agent”."
+   "deep": "One genesis record creates the human and its first agent together: no chicken-and-egg. It commits to the agent's next key in advance (KERI-style pre-rotation). Both IDs are its hash, typed once as human and once as agent (D50); a record can't contain its own hash, so inside it the two are “this human” and “this agent”."
   },
   {
    "title": "Each agent gets only what you give it.",

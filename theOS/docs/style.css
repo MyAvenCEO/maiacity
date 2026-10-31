@@ -157,7 +157,7 @@ body {
 /* One screen, no page scroll: the card takes the free height, one bottom bar. */
 @media (min-width: 901px) {
   html, body { overflow: hidden; }
-  .stage { height: 100vh; box-sizing: border-box; padding-block: 20px; }
+  .stage { height: 100vh; box-sizing: border-box; padding-block: 20px; grid-template-rows: minmax(0, 1fr); }
   .stage > .main { height: 100%; grid-template-rows: minmax(0, 1fr) auto; gap: 14px; }
   .stories { max-height: 100%; overflow-y: auto; }
   .card { min-height: 0; overflow-y: auto; }
@@ -223,4 +223,20 @@ body {
   .concepts td:nth-child(5)::before { content: "Proposal"; }
   .ends td:nth-child(3)::before { content: "Why"; }
   .ends td:nth-child(4)::before { content: "Fix"; }
+}
+
+/* Short windows: type and spacing follow the window's height as well as its width, so every slide fits above the
+   bottom bar without scrolling. */
+@media (min-width: 901px) {
+  .card { padding: clamp(20px, min(4vw, 5vh), 56px); gap: clamp(10px, 2vh, 18px); }
+  .card .body { row-gap: clamp(10px, 2vh, 18px); }
+  .title { font-size: clamp(24px, min(4.6vw, 5.6vh), 48px); }
+  .card.has-code .title { font-size: clamp(22px, min(3.4vw, 4.4vh), 38px); }
+  .text { font-size: clamp(15px, min(2vw, 2.6vh), 21px); }
+  .card.has-code .text { font-size: clamp(14px, min(1.6vw, 2.3vh), 18px); }
+  .list { font-size: clamp(15px, min(2.2vw, 2.8vh), 24px); gap: clamp(5px, 1.2vh, 10px); }
+  .code { font-size: clamp(11px, min(1vw, 1.65vh), 13px); line-height: 1.5; padding: clamp(12px, 2.2vh, 20px) clamp(14px, 2vw, 22px); }
+  .deep { font-size: clamp(11.5px, 1.6vh, 13px); padding-top: clamp(8px, 1.6vh, 14px); }
+  .table { font-size: clamp(11px, min(1.2vw, 1.6vh), 14px); }
+  .table td { padding: clamp(4px, 1vh, 9px) 8px clamp(4px, 1vh, 9px) 0; }
 }

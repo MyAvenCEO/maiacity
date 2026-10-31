@@ -168,7 +168,7 @@
     "rows": [
      [
       "Add someone to a role",
-      "envelopes for their reading agents",
+      "envelopes to their agents",
       "–",
       "–"
      ],
@@ -198,15 +198,15 @@
      ],
      [
       "Remove or lose an agent",
-      "nothing new for it",
-      "new, for every role it read for",
+      "nothing new",
+      "new, for its roles",
       "new on next write"
      ],
      [
       "Two key turns at once",
       "–",
-      "next key only to readers both allowed",
-      "next key only to readers both allowed"
+      "only to readers both allow",
+      "only to readers both allow"
      ]
     ]
    },

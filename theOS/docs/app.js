@@ -89,7 +89,9 @@ async function openDecisions(st, i) {
   document.querySelectorAll('#stories button').forEach((b) => b.classList.toggle('on', b.dataset.story === st.id));
   if (!decisions) decisions = await (await fetch(st.file)).json();
   const titles = Object.fromEntries(stories.filter((x) => !x.kind).map((x) => [x.id, x.title.replace(/^\d+ · /, '')]));
-  const shown = decisions.decisions.filter((d) => filter === 'all' || d.status === filter);
+  // Newest first: D68 at the top.
+  const shown = decisions.decisions.filter((d) => filter === 'all' || d.status === filter)
+    .sort((x, y) => Number(y.id.slice(1)) - Number(x.id.slice(1)));
   const count = (k) => decisions.decisions.filter((d) => d.status === k).length;
   $('#decisions').innerHTML = `<header class="dhead"><h1>${esc(decisions.title)}</h1><p>${esc(decisions.note)}</p>
     <div class="dfilter">${[['all', `All ${decisions.decisions.length}`], ['decided', `Decided ${count('decided')}`], ['proposed', `Proposed ${count('proposed')}`], ['superseded', `Superseded ${count('superseded')}`]]
