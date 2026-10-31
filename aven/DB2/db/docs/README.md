@@ -859,10 +859,12 @@ against the Rust's Loro on random ops, so it can never be simpler than the code.
   the encoding and the name); docs' `envelopes.json` gives what a reader holds, an envelope's names and op ids, and
   whether it agrees, waits or is refused.
 - **Logs and splits:** a split is found by any reader holding both sides; once found, neither side counts for any
-  reader; a stuck log's next envelopes never count. Traces `logs.json`, to come once the decider of an envelope's
-  past is shared (`Aven.ID.Past`); Core's `logs.json` gives pairs and whether they split.
+  reader; a stuck log's next envelopes never count. Traces `logs.json`: two readers holding each side of a split,
+  then both, then a stuck log's next envelope, and what each sees; Core's `logs.json` gives pairs and whether they
+  split.
 - **Counts:** an envelope counts only if all three verdicts hold and its past counts; rebuilding from the envelopes
-  that count equals the live state. Traces `counts.json`, to come with `logs.json`.
+  that count equals the live state. A reader decides it with `countsB`, an envelope's past from Core's `Past`, which
+  is exactly `Counts` (`countsB_iff`). Traces `counts.json`: verdicts per envelope, which count, and the live state.
 - **Convergence:** the same counted envelopes in any order give the same Records and export the same bytes.
 - **Checkpoints:** a checkpoint whose covered segments replay to its state hash, whose version's tips are among what
   it covers, and which names the reader's runtime is accepted; any other is refused (`checked_is_replay`,

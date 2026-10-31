@@ -53,6 +53,51 @@ open Classical in
 noncomputable def live {St : Type} (L : Loro St) (H : Bytes → Hash) (v : Verdicts) (S : List Envelope) : St :=
   L.replay (S.filter fun e => decide (counts H v S e))
 
+/-! ## Counts, decided
+
+What a reader runs: an envelope's past from Core's `Past` (`inPast`, which decides `Reaches`), and each envelope of it
+checked against the verdicts and every envelope held for a split. `countsB` is exactly `Counts` (`countsB_iff`). -/
+
+/-- Two envelopes split, decided. -/
+def splitB (nm : Envelope → Hash) (a b : Envelope) : Bool :=
+  a.doc == b.doc && a.branch == b.branch && a.writer == b.writer && a.seq == b.seq && nm a != nm b
+
+theorem splitB_iff {nm : Envelope → Hash} {a b : Envelope} : splitB nm a b = true ↔ Split nm a b := by
+  simp only [splitB, Bool.and_eq_true, beq_iff_eq, bne_iff_ne, Split, SameLog, and_assoc]
+
+/-- An envelope counts, decided: it and everything in its past pass `ok`, and none of them is half of a split. -/
+def countsB (nm : Envelope → Hash) (ok : Envelope → Bool) (S : List Envelope) (e : Envelope) : Bool :=
+  (e :: S.filter (Past.inPast nm S e)).all fun x => ok x && S.all fun y => !splitB nm x y
+
+theorem countsB_iff {nm : Envelope → Hash} {ok : Envelope → Bool} {S : List Envelope} {e : Envelope} :
+    countsB nm ok S e = true ↔ Counts nm (fun x => ok x = true) S e := by
+  simp only [countsB, List.all_eq_true, List.mem_cons, List.mem_filter, Bool.and_eq_true, Bool.not_eq_true',
+    Counts]
+  have hsplit : ∀ x, (∀ y ∈ S, splitB nm x y = false) ↔ ∀ y ∈ S, ¬ Split nm x y := by
+    intro x
+    constructor
+    · intro h y m sp
+      have := splitB_iff.mpr sp
+      rw [h y m] at this
+      cases this
+    · intro h y m
+      cases hb : splitB nm x y
+      · rfl
+      · exact absurd (splitB_iff.mp hb) (h y m)
+  constructor
+  · intro h x hr
+    rcases Past.reaches_iff.mp hr with rfl | hb
+    · exact ⟨(h x (.inl rfl)).1, (hsplit x).mp (h x (.inl rfl)).2⟩
+    · have m := Past.Before.mem hb
+      have hx := h x (.inr ⟨m, (Past.inPast_iff m).mpr hb⟩)
+      exact ⟨hx.1, (hsplit x).mp hx.2⟩
+  · intro h x hx
+    have hr : Reaches nm S e x := by
+      rcases hx with rfl | ⟨m, hp⟩
+      · exact .refl _
+      · exact Past.reaches_iff.mpr (.inr ((Past.inPast_iff m).mp hp))
+    exact ⟨(h x hr).1, (hsplit x).mpr (h x hr).2⟩
+
 /-! ## Writer ids -/
 
 structure WriterIn where
