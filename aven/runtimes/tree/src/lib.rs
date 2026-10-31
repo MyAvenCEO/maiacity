@@ -11,7 +11,8 @@
 //! - **limits** on depth, nodes and text.
 //!
 //! Every function here is the Lean definition of the same name, and the tests replay the model's vectors
-//! (`spec/vectors/tree.json`, `face.json`). No allocation beyond the tree itself, no imports: it builds for wasm32.
+//! (`spec/vectors/tree.json`, `face.json`). A tree crosses as a Value (`Node::value`), written by aven-core's one codec;
+//! no allocation beyond the tree itself, no imports: it builds for wasm32.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -246,52 +247,6 @@ pub fn check(l: TreeLimits, t: &Node) -> bool {
         }
     }
     true
-}
-
-/// A tree as the Value it crosses in (`Node.value`), in the one codec: text as text, an element as
-/// `[tag, [[name, value], …], [child, …]]`. Only text and arrays appear, so this writes them directly.
-pub fn encode(n: &Node, out: &mut Vec<u8>) {
-    match n {
-        Node::Text(s) => text(s, out),
-        Node::El { tag, attrs, kids } => {
-            head(4, 3, out);
-            text(tag, out);
-            head(4, attrs.len() as u64, out);
-            for (k, v) in attrs {
-                head(4, 2, out);
-                text(k, out);
-                text(v, out);
-            }
-            head(4, kids.len() as u64, out);
-            for k in kids {
-                encode(k, out);
-            }
-        }
-    }
-}
-
-fn text(s: &str, out: &mut Vec<u8>) {
-    head(3, s.len() as u64, out);
-    out.extend_from_slice(s.as_bytes());
-}
-
-/// A data item's head: its major type and its argument, in the shortest form (`Aven.Core.head`).
-fn head(major: u8, n: u64, out: &mut Vec<u8>) {
-    let m = major << 5;
-    if n < 24 {
-        out.push(m | n as u8);
-    } else if n < 256 {
-        out.extend_from_slice(&[m | 24, n as u8]);
-    } else if n < 65_536 {
-        out.push(m | 25);
-        out.extend_from_slice(&(n as u16).to_be_bytes());
-    } else if n < 4_294_967_296 {
-        out.push(m | 26);
-        out.extend_from_slice(&(n as u32).to_be_bytes());
-    } else {
-        out.push(m | 27);
-        out.extend_from_slice(&n.to_be_bytes());
-    }
 }
 
 impl Node {
