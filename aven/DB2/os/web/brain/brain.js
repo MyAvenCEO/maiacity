@@ -49,13 +49,110 @@ function markdown(path, idPrefix = '') {
 	return trees.get(path);
 }
 
-export const page = (path) => markdown(path);
+// A page's tree, its decisions' ids made links: an `A<n>` in its text that the log holds goes to that row (A203)
+export const page = async (path) => linkIds(structuredClone(await markdown(path)), await known());
+
+// the text of a node and all under it
+export const textOf = (node) => (typeof node === 'string' ? node : node[2].map(textOf).join(''));
+const attr = (node, name) => node[1].find(([k]) => k === name)?.[1];
+
+// A page's headings, for its contents: each h2 and h3 with its id, as markdown-runtime gives it
+export const headings = (tree) =>
+	tree.filter((n) => typeof n !== 'string' && (n[0] === 'h2' || n[0] === 'h3') && attr(n, 'id')).map((n) => ({ id: attr(n, 'id'), level: n[0] === 'h2' ? 2 : 3, name: textOf(n) }));
+
+// The decision log (DECISIONS.md, A203): the runtime's tree of the file, read as its table's rows. The Markdown stays
+// the one source and is drawn by markdown-runtime alone; this is page logic over its checked tree, as the glossary's
+// term ids are. A row is its id, when, who decided, its decision's nodes and its title (the first bold run), and what
+// it supersedes: wholly (a bare id) or in part (an id with a note in brackets). "— (refines …)" supersedes nothing.
+// Each row also learns which later rows supersede it.
+const LISTS = ['A', 'rule', 'actors', 'caps D', 'caps E', 'docs', 'engine', 'runtimes', 'peers', 'store', 'milestone2', 'sandbox'];
+const ID = /\b(A\d+|rule \d+|caps [DE] ?\d+|(?:actors|docs|engine|runtimes|peers|store|milestone2|sandbox) \d+)\b/g;
+const norm = (id) => id.replace(/^caps ([DE]) ?/, 'caps $1');
+// an id in a link: `A192`, `caps-D13`, `sandbox-4`
+export const idSlug = (id) => norm(id).replace(/ /g, '-');
+// the list an id is numbered in: `A`, `rule`, `caps D`, `sandbox`, …
+const listOf = (id) => (/^A\d/.test(id) ? 'A' : (/^(caps [DE])/.exec(norm(id))?.[1] ?? id.split(' ')[0]));
+
+let log = null;
+export function decisions() {
+	log ??= markdown('DECISIONS.md').then((tree) => {
+		const at = tree.findIndex((n) => n[0] === 'table');
+		if (at < 0) throw new Error('DECISIONS.md: no table');
+		const body = tree[at][2].find((n) => n[0] === 'tbody')?.[2] ?? [];
+		const rows = body.map((tr) => {
+			const cells = tr[2].filter((n) => n[0] === 'td');
+			const [id, when, by] = cells.slice(0, 3).map((c) => textOf(c).trim());
+			const decision = cells[3]?.[2] ?? [];
+			const supersedes = cells[4]?.[2] ?? [];
+			const plain = textOf(cells[4] ?? '').trim();
+			const replaces = plain.startsWith('—')
+				? []
+				: plain.split(';').flatMap((part) => {
+						const p = part.trim();
+						if (/^(refines|places|applies|realizes|settles|completes|extends)\b/.test(p)) return [];
+						const head = p.split('(')[0];
+						const partly = p.includes('(');
+						return [...head.matchAll(ID)].map((m) => ({ id: norm(m[1]), partly }));
+					});
+			const strong = decision.find((n) => typeof n !== 'string' && n[0] === 'strong');
+			return {
+				id: norm(id),
+				slug: idSlug(id),
+				list: listOf(id),
+				when,
+				by,
+				title: strong ? textOf(strong).trim() : textOf(['p', [], decision]).slice(0, 80),
+				decision,
+				supersedes,
+				replaces,
+				later: [],
+				text: `${id} ${when} ${by} ${textOf(['p', [], decision])} ${plain}`.toLowerCase(),
+			};
+		});
+		const byId = new Map(rows.map((r) => [r.id, r]));
+		for (const r of rows) for (const { id, partly } of r.replaces) byId.get(id)?.later.push({ id: r.id, slug: r.slug, partly });
+		for (const r of rows) r.stands = !r.later.some((x) => !x.partly);
+		const ids = new Set(rows.map((r) => r.id));
+		for (const r of rows) {
+			r.decision = linkIds(structuredClone(r.decision), ids);
+			r.supersedes = linkIds(structuredClone(r.supersedes), ids);
+		}
+		return { intro: linkIds(structuredClone(tree.slice(0, at)), ids), rows, after: linkIds(structuredClone(tree.slice(at + 1)), ids), lists: LISTS.filter((l) => rows.some((r) => r.list === l)) };
+	});
+	log.catch(() => (log = null));
+	return log;
+}
+const known = async () => new Set((await decisions()).rows.map((r) => r.id));
+
+// `A<n>` in text becomes a link to its row, when the log holds it; never inside a link, code or a heading
+const SKIP = new Set(['a', 'code', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
+export function linkIds(tree, ids) {
+	const visit = (node) => {
+		if (typeof node === 'string' || SKIP.has(node[0])) return node;
+		node[2] = node[2].flatMap((kid) => {
+			if (typeof kid !== 'string') return [visit(kid)];
+			const out = [];
+			let last = 0;
+			for (const m of kid.matchAll(/\bA\d+\b/g)) {
+				if (!ids.has(m[0])) continue;
+				if (m.index > last) out.push(kid.slice(last, m.index));
+				out.push(['a', [['href', `#/brain/decisions/${m[0]}`], ['class', 'decision-link']], [m[0]]]);
+				last = m.index + m[0].length;
+			}
+			if (!out.length) return [kid];
+			if (last < kid.length) out.push(kid.slice(last));
+			return out;
+		});
+		return node;
+	};
+	return tree.map(visit);
+}
 
 // a slide: a face's part, and its text's tree
 export async function slide(pkg, id) {
 	const part = parts[`../../../brain/${pkg}/slides/${id}.part.json`];
 	if (!part) throw new Error(`${pkg}/slides/${id}.part.json: no part; bun brain/art/slides.mjs writes it`);
-	return { id, part, text: await markdown(`${pkg}/slides/${id}.md`) };
+	return { id, part, text: await page(`${pkg}/slides/${id}.md`) };
 }
 
 // A Svelte action: face-runtime runs the part (no data: a slide's text is its markup's), and the drawer draws its
@@ -110,7 +207,7 @@ export async function glossary() {
 		node[2].forEach(visit);
 	};
 	tree.forEach(visit);
-	return { tree, terms };
+	return { tree: linkIds(tree, await known()), terms };
 }
 
 // The drawings (brain/art), bundled. A slide names one as the network names a file, `/files/<BLAKE3 hash>`, the only
