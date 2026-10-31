@@ -6,6 +6,7 @@ import Aven.ID.ClaimJson
 import Aven.ID.InviteJson
 import Aven.ID.Before
 import Aven.ID.CapsJson
+import Aven.ID.AuthorizedExamples
 import Aven.ID.SettleJson
 import Aven.ID.FailJson
 import Aven.ID.Expiry
@@ -36,6 +37,10 @@ import Aven.ID.SealJson
 - `caps.json`: cap chains on the cast, each cap with its lines of ops (A32), its CBOR bytes and its hash, with the first
   rule each chain breaks or none (`Aven.ID.Caps`); who keeps a Doc (`Aven.ID.Keeping`); how avenOS shows a cap for a
   passkey tap; and generated chains (`Aven.ID.CapsJson`).
+- `authorized.json`: an envelope's signer, Doc and branch, the calls it makes (a merge into main's whole calls), the
+  chain it names, and what the reader knows: its context, each signing key's vault, each device's cap and the
+  network's members; with each check's verdict, the path, own or chain, and the first check that refuses it
+  (`Aven.ID.Authorized`, `Aven.ID.AuthorizedExamples`).
 - `collections.json`: a collection's envelopes, the Docs a reader knows, who signs for and governs which vault, and
   whether the collection lists a Doc (`Aven.ID.Collections`, A32): removals, strangers' listings, a Doc out of reach,
   nesting, and the depth.
@@ -180,6 +185,27 @@ def capsVectors : List Json :=
   (List.range generatedChains).map fun i =>
     let cs := genChain (i + 1)
     vector s!"generated chain, seed {i + 1}" (chain cs) (chainResult cs)
+
+open AuthorizedExamples in
+/-- The reader's verdict on each case of the cast: the envelope, its calls and chain, and what the reader knows. -/
+def authorizedVectors : List Json :=
+  let call (c : Aven.Core.Call) := Json.mkObj [("op", c.op.text),
+    ("params", Json.mkObj (c.params.map fun (p, v) => (Aven.Core.utf8Text p, v.json)))]
+  let deviceCap (k : Aven.Core.Bytes) (dc : DeviceCap) := Json.mkObj [("key", Aven.Core.hex k),
+    ("device", dc.device), ("vault", dc.vault), ("grants", match dc.grants with
+      | none => Json.null
+      | some g => Json.arr (g.map Line.json).toArray), ("branches", dc.branches.json), ("host", toJson dc.host)]
+  cases.map fun c =>
+    let e := c.envelope
+    vector c.name
+      (Json.mkObj [("context", castCtxJson),
+        ("envelope", Json.mkObj [("doc", e.doc.text), ("branch", Aven.Core.utf8Text e.branch),
+          ("signer", Aven.Core.hex e.signer)]),
+        ("calls", Json.arr (c.calls.map call).toArray), ("chain", Json.arr (c.chain.map Cap.json).toArray),
+        ("keys", Json.arr (castKeys.map fun (k, v) => Json.mkObj [("key", Aven.Core.hex k), ("vault", v)]).toArray),
+        ("deviceCaps", Json.arr (castDeviceCaps.map fun (k, dc) => deviceCap k dc).toArray),
+        ("members", toJson castMembers), ("actor", toJson (c.actor.map (·.text)))])
+      (readerVerdictJson c.answer)
 
 open CollectionExamples in
 /-- Whether collection `c` lists `d` among envelopes `S`, with everything a reader needs to decide it. -/
@@ -331,6 +357,7 @@ def main (args : List String) : IO Unit := do
   IO.FS.writeFile (dir / "claims.json") (render claims)
   IO.FS.writeFile (dir / "invites.json") (render invites)
   IO.FS.writeFile (dir / "caps.json") (render capsVectors)
+  IO.FS.writeFile (dir / "authorized.json") (render authorizedVectors)
   IO.FS.writeFile (dir / "collections.json") (render collectionVectors)
   IO.FS.writeFile (dir / "revocations.json") (render revocationVectors)
   IO.FS.writeFile (dir / "epochs.json") (render epochVectors)
