@@ -5,12 +5,14 @@
 // first, and says when it has gone out (`sent`). A file is a line that announces it; it shows from /files/<hash>.
 // The network's invites and their states come the same way, in its `network` lines. A deleted line is told again as
 // `deleted`, without its text or file, and shows so in its place.
-// `refused`: why the Peer-Light refused the last line written here; `sharing`: files on their way into the store
+// `refused`: why the Peer-Light refused the last line written here; `sharing`: files on their way into the store;
+// `draft`: the line being written, kept in this origin's OPFS by the Peer-Light's worker as it changes, so a reload
+// (an update's above all, PEERS.md §7) finds it again
 import { putChunk, shareFile } from './id.svelte.js';
 
 // `files`: per file, how far it is on its way: `sent` of `size` bytes gone out from this device (its sender's), `held` of
 // `len` here (a viewer's)
-export const room = $state({ lines: [], present: [], invites: null, refused: null, sent: {}, sharing: [], files: {} });
+export const room = $state({ lines: [], present: [], invites: null, refused: null, sent: {}, sharing: [], files: {}, draft: '' });
 
 const chunk = 1 << 20;
 const before = (a, b) => a.at - b.at || (a.key < b.key ? -1 : a.key > b.key ? 1 : a.seq - b.seq);
@@ -47,6 +49,31 @@ export function hear(line) {
 	if (line.event === 'room') room.present = line.present;
 	if (line.event === 'network' && 'invites' in line) room.invites = line.invites ?? null;
 	if (line.event === 'refused') room.refused = line.why;
+	// the draft kept before a reload, unless a line is being written here already
+	if (line.event === 'draft' && !room.draft) room.draft = line.text;
+	if (line.event === 'draft-kept') drafts.get(line.id)?.(line.error);
+}
+
+// The draft as it is now, kept in OPFS a moment after the last keystroke, or at once (`now`, before a reload). Resolves
+// once it is on disk, with why not if it couldn't be kept.
+const drafts = new Map();
+let drafted = 0;
+let later;
+export function keepDraft(now = false) {
+	clearTimeout(later);
+	if (!port) return Promise.resolve('no Peer-Light here');
+	if (!now) return void (later = setTimeout(() => keepDraft(true), 300));
+	const id = `draft-${drafted++}`;
+	return new Promise((done) => {
+		const gaveUp = setTimeout(() => finish('the Peer-Light did not keep the draft in 5 s'), 5_000);
+		const finish = (why) => {
+			clearTimeout(gaveUp);
+			drafts.delete(id);
+			done(why ?? null);
+		};
+		drafts.set(id, finish);
+		port.postMessage({ start: starting, draft: { id, text: room.draft } });
+	});
 }
 
 // a line written here: the Peer-Light signs it with this device's key and gossips it; it comes back as a chat line
