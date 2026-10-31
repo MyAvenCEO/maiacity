@@ -229,7 +229,7 @@
    "sources": [],
    "slides": [
     "ops-10",
-    "keys-13"
+    "keys-15"
    ],
    "date": "2026-10-31"
   },
@@ -271,7 +271,7 @@
     "rules-10",
     "rules-11",
     "rules-12",
-    "keys-14"
+    "keys-16"
    ],
    "date": "2026-10-31"
   },
@@ -320,7 +320,7 @@
    "id": "D16",
    "title": "Keys: identity key, role key, data key",
    "status": "decided",
-   "decision": "Content is encrypted with a data key. The data key is wrapped for the owner and for each reading role. The role key is wrapped for each member's identity key. Each new data key opens the previous one.",
+   "decision": "Content is encrypted with a data key. The data key is wrapped for the owner and for each reading role. The role key is wrapped for each member's identity key. Each new data key opens the previous one, within the hot window only (D39).",
    "why": "Envelope encryption is the proven pattern (HPKE; Keybase teams, Jazz, Cryptree). Removing a member rotates one role key, not every piece of data. Forward secrecy is given up on purpose, because CRDTs need their whole history.",
    "sources": [
     {
@@ -343,7 +343,7 @@
    "slides": [
     "keys-2",
     "keys-4",
-    "keys-16"
+    "keys-18"
    ],
    "date": "2026-10-31"
   },
@@ -360,7 +360,7 @@
     }
    ],
    "slides": [
-    "keys-16"
+    "keys-18"
    ],
    "date": "2026-10-31"
   },
@@ -381,7 +381,7 @@
     }
    ],
    "slides": [
-    "keys-17"
+    "keys-19"
    ],
    "date": "2026-10-31"
   },
@@ -406,7 +406,7 @@
     }
    ],
    "slides": [
-    "keys-15"
+    "keys-17"
    ],
    "date": "2026-10-31"
   },
@@ -728,7 +728,7 @@
   {
    "id": "D35",
    "title": "Compact at stable points; newcomers get snapshots",
-   "status": "proposed",
+   "status": "superseded",
    "decision": "When every writer has seen a version, a device may cut there: newcomers get a snapshot plus the ops after it, never the old history. What lies before the cut is sealed under a new key; honest devices drop the old chunks and keys.",
    "why": "CRDT history keeps deleted text and needs old keys, so forward secrecy is lost. Cutting at stable points gives it back for everything before the cut, without losing any late op.",
    "sources": [
@@ -745,7 +745,8 @@
     "data-12",
     "data-13"
    ],
-   "date": "2026-10-31"
+   "date": "2026-10-31",
+   "superseded_by": "D39"
   },
   {
    "id": "D36",
@@ -779,7 +780,7 @@
   {
    "id": "D37",
    "title": "Lock away: older keys behind a fresh tap",
-   "status": "proposed",
+   "status": "superseded",
    "decision": "Current keys stay ready on the device. Older keys, needed only for scrolling far back or merging a very late CRDT op, are sealed under an archive key derived from the passkey's PRF secret. The secure hardware releases it only after a fresh tap or face scan; afterwards it is wiped from memory.",
    "why": "A thief with the device, or malware reading app storage, gets only the current keys. Limits: malware running during the tap, or a taken-over passkey sync account.",
    "sources": [
@@ -791,7 +792,8 @@
    "slides": [
     "keys-12"
    ],
-   "date": "2026-10-31"
+   "date": "2026-10-31",
+   "superseded_by": "D40"
   },
   {
    "id": "D38",
@@ -807,6 +809,98 @@
    ],
    "slides": [
     "own-11"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D39",
+   "title": "Keys live hot, then cold, and can be erased",
+   "status": "decided",
+   "decision": "Hot: the newest keys, linked by back-links and ready on readers' devices; they turn regularly (D36). Cold: at rotation boundaries older than the hot window, the chain is cut; older keys leave the chain and go to the owner's archive. Erased: on request, keys are shredded everywhere. Late writers from before a cut lose and get a conflict view of what was not adopted. The hot window is 30 days, equal to a rule's lifetime (parameter still open).",
+   "why": "Back-links and an archive cannot coexist for the same keys: a stolen current key would open the whole past. Splitting by age gives heal, archive and erasure one consistent lifecycle.",
+   "supersedes": "D35",
+   "sources": [
+    {
+     "label": "Loro: shallow snapshots",
+     "url": "https://loro.dev/docs/concepts/shallow_snapshots"
+    },
+    {
+     "label": "Keyhive notebook 06: E2EE in the local-first setting",
+     "url": "https://www.inkandswitch.com/keyhive/notebook/06/"
+    }
+   ],
+   "slides": [
+    "keys-12",
+    "data-13"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D40",
+   "title": "The archive belongs to the owner identity",
+   "status": "decided",
+   "decision": "Cold keys are sealed for the owner identity's archive key. Opening the archive follows the owner's own signing rules; for a coop, the archive key is split among its members so it can only be rebuilt under that rule. Never bound to a passkey or a signer. A device may add a local tap as convenience, not as protection.",
+   "why": "The identity owns, never a signer (D2). Ownership of the past follows the same rules as ownership of the present.",
+   "supersedes": "D37",
+   "sources": [],
+   "slides": [
+    "keys-12"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D41",
+   "title": "Words: archive and retain",
+   "status": "decided",
+   "decision": "Archive is the normal cold storage of old keys and history. Retain is legal long-term keeping, for a set period.",
+   "why": "Two different promises, two words.",
+   "sources": [],
+   "slides": [
+    "keys-12",
+    "keys-14"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D42",
+   "title": "Erase: delete, cut, shred",
+   "status": "proposed",
+   "decision": "To erase personal data from any Doc: delete it normally, cut a fresh snapshot without it under a new key, and shred the keys of every chunk before the cut on all honest devices and in the archive; carriers drop those chunks. Works on any text, with no need to plan per piece of data. The history before the cut is lost.",
+   "why": "Tombstones keep no content in the live state; the content lives only in old sealed chunks, so destroying their keys erases it (crypto-shredding). Splitting personal data into its own pieces does not scale.",
+   "rejected": "Personal data as separate erasable pieces of data (does not work for a text naming ten people).",
+   "sources": [
+    {
+     "label": "GDPR Article 17: right to erasure",
+     "url": "https://gdpr-info.eu/art-17-gdpr/"
+    },
+    {
+     "label": "Loro: shallow snapshots",
+     "url": "https://loro.dev/docs/concepts/shallow_snapshots"
+    }
+   ],
+   "slides": [
+    "keys-13"
+   ],
+   "date": "2026-10-31"
+  },
+  {
+   "id": "D43",
+   "title": "Retain: an owner event at any time",
+   "status": "proposed",
+   "decision": "The owner can say “retain until <date>” at any time; the date can only move later. Until then, honest devices refuse cuts, shreds and erasure. A retention role names identities that keep the sealed bytes (want, keep) and may hold a share of the archive key. Stored as canonical CBOR, exported as JSON and PDF/A, resealed periodically under current algorithms.",
+   "why": "Bookkeeping must be kept for years (in Germany 10 years for books, 8 for vouchers since 2025; check with a tax adviser), and a legal retention duty takes priority over erasure (GDPR Art. 17(3)(b)).",
+   "sources": [
+    {
+     "label": "GDPR Article 17: right to erasure",
+     "url": "https://gdpr-info.eu/art-17-gdpr/"
+    },
+    {
+     "label": "RFC 4998: Evidence Record Syntax",
+     "url": "https://www.rfc-editor.org/rfc/rfc4998"
+    }
+   ],
+   "slides": [
+    "keys-14"
    ],
    "date": "2026-10-31"
   }

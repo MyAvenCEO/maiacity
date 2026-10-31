@@ -213,7 +213,7 @@
     "drop the old keys"
    ],
    "action": "Now with rules",
-   "deep": "Loro's shallow snapshot holds the state plus history after a cut. Stability means every writer's frontier includes the cut. Re-sealing and deleting old keys is our part, still open (D35)."
+   "deep": "Loro's shallow snapshot holds the state plus the history after a cut. Cuts happen at key-rotation boundaries older than the hot window; the old chunks' keys go to the owner's archive or are shredded on erase."
   },
   {
    "title": "Every op is checked on arrival.",

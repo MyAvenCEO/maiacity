@@ -153,15 +153,66 @@
    "deep": "Concurrency is resolved toward less authority: a removal and a change made without seeing it count as concurrent, and the removal wins. Every peer applies the same deterministic rule, so all copies converge."
   },
   {
-   "title": "Heal the future, forget the past.",
-   "text": "A CRDT needs its history, so old keys can't simply be deleted, and full {forward secrecy} for live history is impossible. Three layers get close. Keys turn regularly, so a stolen key soon opens nothing new. At stable points, the past is cut, resealed, and the old keys are deleted for good. And older keys a device rarely needs sit behind a fresh tap of your passkey, out of reach of a thief or of malware.",
-   "list": [
-    "Heal: keys turn regularly.",
-    "Forget: cut at stable points, delete the old keys.",
-    "Lock away: older keys only open with a fresh tap."
+   "title": "Every key lives through three windows.",
+   "text": "A key is {hot} for 30 days: ready on every reader's device, and each new key opens the one before. Then it goes {cold}: out of the chain, so today's key no longer opens it. Cold keys go to the owner's archive, opened only by the owner's own signing rules. And on request, keys are {erased} everywhere.",
+   "action": "Erase something",
+   "deep": "Hot: back-links within the window, keys turn regularly (post-compromise security). Cold: at each rotation boundary older than the window, the chain is cut; old keys are sealed for the owner identity's archive key, split among its members by its signing rules. Late writers from before a cut lose and get a conflict view.",
+   "table": {
+    "head": [
+     "Window",
+     "Age",
+     "Keys",
+     "Protects against"
+    ],
+    "rows": [
+     [
+      "hot",
+      "last 30 days",
+      "linked, ready",
+      "a stolen key opens only these 30 days"
+     ],
+     [
+      "cold",
+      "older",
+      "in the owner's archive",
+      "nobody but the owner opens the past"
+     ],
+     [
+      "erased",
+      "on request",
+      "deleted everywhere",
+      "the content is gone for good"
+     ]
+    ]
+   }
+  },
+  {
+   "title": "Erasing works on any text.",
+   "text": "A note names ten people, and one of them asks to be forgotten. You delete their name. Then the note is {cut}: a fresh snapshot without the name, under a new key. The keys of everything before the cut are {shredded} on every honest device and in the archive. The name is gone for good, even from the history.",
+   "flow": [
+    "delete",
+    "cut",
+    "new key",
+    "shred the old keys"
    ],
-   "action": "The limits",
-   "deep": "Heal: post-compromise security through regular rotation (decided). Forget: true forward secrecy before a stable cut (D35, open). Lock away: archive keys sealed under a PRF-derived key, released only after user verification (D37, proposed)."
+   "deep": "In the live state, a deleted character is only an ID; its content survives only in old CRDT ops, inside sealed chunks. Destroying those chunks' keys makes them unreadable everywhere (crypto-shredding). Cost: the history before the cut is gone, not just the name. Legal retention, if set, comes first.",
+   "action": "Keep something for years"
+  },
+  {
+   "title": "Some things must be kept for years.",
+   "text": "Bookkeeping must be kept for ten years. At any time, the owner can say {retain}: keep this until 2036. From then on, nobody can cut, shred or erase it before that date, and the date can only move later. Identities in a retention role, like your tax adviser, help keep it.",
+   "code": {
+    "event": "retain",
+    "data": "invoices-2026",
+    "until": "2036-12-31",
+    "by": "you (owner)",
+    "retainers": [
+     "backup",
+     "tax adviser"
+    ]
+   },
+   "deep": "Retain is an owner-signed event, extend-only; honest devices refuse cuts and erasures before the date (erring toward keeping). The retention role holds want and keep, and optionally a share of the archive key. Stored as canonical CBOR; exported as JSON and PDF/A; resealed periodically under current algorithms.",
+   "action": "The limits"
   },
   {
    "title": "What no cryptography can do, and why that's fine.",
@@ -231,7 +282,7 @@
     }
    },
    "action": "Which key turns when?",
-   "deep": "The keyring: current epoch, one envelope per reader (owner and reading roles), and back-links where each data key decrypts the previous one, like Keyhive's causal encryption. Forward secrecy is given up for live history, on purpose."
+   "deep": "The keyring: current epoch, one envelope per reader (owner and reading roles), and back-links where each data key opens the previous one, within the hot window only. Older keys move to the owner's archive."
   },
   {
    "title": "Which key turns when.",
@@ -285,6 +336,12 @@
       "–",
       "both kept, until the next rotation",
       "–"
+     ],
+     [
+      "Erase",
+      "–",
+      "–",
+      "history before the cut shredded"
      ]
     ]
    },
@@ -296,8 +353,8 @@
    "list": [
     "Data is born with a seal that is used once and destroyed.",
     "Read is a chain of envelopes: identity key, role key, data key.",
-    "Everything else is a chain of signatures, checked by every device.",
-    "Removing someone rotates keys: they lose the future, and honest devices forget the past."
+    "Everything else is a chain of signatures, checked by every peer.",
+    "Keys live hot, then cold in the owner's archive, and can be erased."
    ],
    "action": "",
    "deep": "Seal → owner → rules for roles. Read: identity key → role key → data key. Everything else: signature chains checked by every peer. Endings win, rotate keys and wipe copies."
