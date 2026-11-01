@@ -1,0 +1,29 @@
+{
+ "type": "decision",
+ "id": "d-820e",
+ "title": "Gate B: theOS goes live at aven.maia.city",
+ "subtype": "gate-B",
+ "by": "a-4c7a",
+ "at": "2026-11-01T14:22Z",
+ "session": "s-ac54",
+ "about": [
+  "intents",
+  "gates",
+  "release"
+ ],
+ "quote": "Go.",
+ "means": "Gate B for aip-59ad: theOS/release/deploy.on is switched on, and its merge into production deploys theOS's pages to aven.maia.city in place of avenOS; the Aven Peer stays. If health fails after the deploy, the job switches back by itself. Then the undo is tried once, back to avenOS 26.10.31v6 and forward to theOS, and Samuel looks at the site on his phone and his Mac.",
+ "intents": [
+  "aip-59ad"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-113f",
+  "d-f1a0",
+  "d-6628"
+ ],
+ "reflection": {
+  "checked": "every decision before d-820e that held",
+  "result": "supersedes nothing"
+ }
+}
