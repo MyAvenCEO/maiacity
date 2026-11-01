@@ -31,7 +31,7 @@ the vault that issued the keep cap, which can check caps, signs which branch to 
 against the tree, follows that branch, and later forks from that point change nothing (`grind_settled`,
 `settled_example`).
 
-**What a keeper keeps, and for whom** (A22, Samuel, 31 Oct 2026: "a Vault owner always decides, where its data gets
+**What a keeper keeps, and for whom** (A22, Samuel, 31 Oct 2026: "a vault owner always decides, where its data gets
 shared to"). A keeper keeps a vault's data only under a keep cap that vault's owners approved, naming the keeper. It
 holds its keep caps, so it checks each against the tree: the cap names the keeper's vault, a device of its issuer
 signed it, and its issuer's owners approved it (D14). It can't read a Doc's facts, so it takes the Docs the issuer's
@@ -488,7 +488,7 @@ end Keep
 /-- A keep cap as its keeper holds it: the cap, and the Docs its issuer's device resolved its target to, each with its
 first fetch key (`resolve`). -/
 structure Listing where
-  cap : Cap
+  cap : Cap String
   docs : List (Core.DocId × Nat)
 
 /-- What a device of a keep cap's issuer orders its keeper: withdraw that cap, or delete a Doc. -/
@@ -507,11 +507,11 @@ structure KeepOrder where
 handed, the orders that came, the offers its own vault issued (A44), and who is in each group they name. -/
 structure Books where
   keeper : String
-  tree : Tree
+  tree : Tree String
   threshold : String → Nat := fun _ => 1
   listings : List Listing
   orders : List KeepOrder := []
-  offers : List Cap := []
+  offers : List (Cap String) := []
   inGroup : Core.DocId → String → Bool := fun _ _ => false
 
 namespace Books
@@ -520,7 +520,7 @@ variable (b : Books)
 
 /-- A keep cap the keeper takes: a grant to the keeper's vault, signed by its issuer, by a device or its owners (A28),
 which its issuer's owners approved, an owner vault by its own quorum (D14). -/
-def valid (c : Cap) : Bool :=
+def valid (c : Cap String) : Bool :=
   c.form == .grant && c.holder == .vault b.keeper && b.tree.issued b.threshold c &&
     b.tree.approves b.threshold c.issuer c.id c.approvals
 
@@ -528,19 +528,19 @@ def valid (c : Cap) : Bool :=
 def signedBy (v : String) (o : KeepOrder) : Bool := b.tree.actsFor o.signer == some v
 
 /-- A keep cap a device of its issuer withdrew. -/
-def withdrawn (c : Cap) : Bool := b.orders.any fun o => o.order == .withdraw c.id && b.signedBy c.issuer o
+def withdrawn (c : Cap String) : Bool := b.orders.any fun o => o.order == .withdraw c.id && b.signedBy c.issuer o
 
 /-- A Doc a device of vault `v` deleted. -/
 def deleted (v : String) (d : Core.DocId) : Bool := b.orders.any fun o => o.order == .delete d && b.signedBy v o
 
 /-- An offer the keeper stands by (A44): a grant of its own vault, signed by it and approved by its owners (D14), not
 withdrawn, that offers storage (`keepOffer`). -/
-def offerValid (o : Cap) : Bool :=
+def offerValid (o : Cap String) : Bool :=
   o.form == .grant && o.issuer == b.keeper && b.tree.issued b.threshold o &&
     b.tree.approves b.threshold o.issuer o.id o.approvals && !b.withdrawn o && o.grant.any (·.op == keepOffer)
 
 /-- Whom an offer covers: the vault it names, or every vault in the group it names. -/
-def offeredTo (o : Cap) (v : String) : Bool :=
+def offeredTo (o : Cap String) (v : String) : Bool :=
   match o.holder with
   | .vault w => w == v
   | .group g => b.inGroup g v
@@ -611,8 +611,8 @@ theorem kept_only_by_owner {d : Core.DocId} (h : b.keeps d = true) :
 /-- With every list resolved by its issuer's device from the Docs that vault holds, and every keep cap one its issuer
 checked, a keeper keeps a Doc only when a keep cap its issuer's owners approved covers it by its facts, every line of it
 in its issuer's authority: its own vault, or one it governs. -/
-theorem kept_by_owner (gov : Core.Bytes → Core.Bytes → Bool) (spawned lists : Core.DocId → Core.DocId → Bool)
-    (x : Ctx) (held : String → List (Core.Facts × Nat))
+theorem kept_by_owner (gov : Core.Hash → Core.Hash → Bool) (spawned lists : Core.DocId → Core.DocId → Bool)
+    (x : Ctx String) (held : String → List (Core.Facts × Nat))
     (resolved : ∀ l ∈ b.listings, l.docs = resolve gov spawned lists x.roles l.cap (held l.cap.issuer))
     (checked : ∀ l ∈ b.listings, chainOk x [l.cap] = true) {d : Core.DocId} (h : b.keeps d = true) :
     ∃ l ∈ b.listings, ∃ f, f.id = d ∧ l.cap.keeps gov spawned lists x.roles f = true ∧
@@ -645,7 +645,7 @@ theorem any_congr_mem {α : Type} {p q : α → Bool} : ∀ {l : List α}, (∀ 
     simp only [List.any_cons, h a List.mem_cons_self, any_congr_mem fun x m => h x (List.mem_cons_of_mem _ m)]
 
 /-- Withdrawing a cap changes no other cap's standing. -/
-theorem withdrawn_other {c s : String} {x : Cap} (ne : x.id ≠ c) :
+theorem withdrawn_other {c s : String} {x : Cap String} (ne : x.id ≠ c) :
     ({ b with orders := b.orders ++ [⟨.withdraw c, s⟩] } : Books).withdrawn x = b.withdrawn x := by
   have : (Order.withdraw c == Order.withdraw x.id) = false := by simp [Ne.symm ne]
   simp [withdrawn, signedBy, this]

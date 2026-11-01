@@ -22,10 +22,10 @@ namespace Aven.ID.IssuerExamples
 open Aven.Core
 
 /-- The cast with the garden, a coop Alice and Bob own, and its helper, an agent the coop owns. -/
-def coopTree : Tree :=
+def coopTree : Tree String :=
   { cast with
-    vaults := cast.vaults ++ [⟨"garden", "The garden", .coop, [.vault "alice", .vault "bob"], 1⟩,
-      ⟨"garden-helper", "The garden's helper", .agent, [.vault "garden"], 1⟩] }
+    vaults := cast.vaults ++ [⟨"garden", "The garden", .coop, [.vault "alice", .vault "bob"], 1, none⟩,
+      ⟨"garden-helper", "The garden's helper", .agent, [.vault "garden"], 1, none⟩] }
 
 theorem coopTree_wf : coopTree.WF := by decide
 
@@ -35,30 +35,30 @@ def helperLog : DocId := docOf "helper-log"
 def maiaTree : DocId := docOf "maia-tree"
 
 def coopFacts (d : DocId) : Option Facts :=
-  if d == gardenPlan then some ⟨d, vaultId "garden", notes⟩
-  else if d == helperLog then some ⟨d, vaultId "garden-helper", notes⟩
-  else if d == maiaTree then some ⟨d, vaultId "maia-city", notes⟩
+  if d == gardenPlan then some ⟨d, Named.name "garden", notes⟩
+  else if d == helperLog then some ⟨d, Named.name "garden-helper", notes⟩
+  else if d == maiaTree then some ⟨d, Named.name "maia-city", notes⟩
   else castFacts d
 
 /-- A reader of the cast with the garden, whose owners approve `k` of their two; every other vault needs one. -/
-def coopCtx (k : Nat) : Ctx :=
+def coopCtx (k : Nat) : Ctx String :=
   { castCtx with tree := coopTree, threshold := fun v => if v == "garden" then k else 1, facts := coopFacts }
 
 /-- Both owners of the garden approve cap `id`. -/
 def bothOwners (id : String) : List Sig := [⟨"alice-owner", id⟩, ⟨"bob-owner", id⟩]
 
 /-- Alice lets Aven read the garden's plan, signed by her device and approved by her owner key. -/
-def capAliceGarden : Cap :=
+def capAliceGarden : Cap String :=
   { id := "cap-ag", issuer := "alice", holder := .vault "aven", signer := "alice-peer", grant := [readOn gardenPlan],
     approvals := [⟨"alice-owner", "cap-ag"⟩] }
 
 /-- The garden lets Aven read its plan: no device signs, and both its owners approve. -/
-def capGarden : Cap :=
+def capGarden : Cap String :=
   { id := "cap-garden", issuer := "garden", holder := .vault "aven", grant := [readOn gardenPlan],
     approvals := bothOwners "cap-garden" }
 
 /-- Chains on the garden's cast, each with the garden's quorum and the first rule the chain breaks, or none. -/
-def issuerExamples : List (String × Nat × List Cap × Option ChainError) := [
+def issuerExamples : List (String × Nat × List (Cap String) × Option ChainError) := [
   ("Alice grants over the garden's plan alone: she meets half its quorum", 2, [capAliceGarden],
     some (.authority "cap-ag" (readOn gardenPlan))),
   ("the garden grants as itself, approved by both its owners, no device signing", 2, [capGarden], none),
@@ -92,6 +92,6 @@ def issuerExamples : List (String × Nat × List Cap × Option ChainError) := [
 #guard issuerExamples.all fun (_, k, cs, e) =>
   e != none || cs.head?.all fun r => (r.grants castCtx.roles).all fun l =>
     (lineVault (coopCtx k) l).all fun v => coopTree.vaults.any fun w =>
-      vaultId w.id == v && coopTree.approves (coopCtx k).threshold w.id r.id r.approvals
+      Named.name w.id == v && coopTree.approves (coopCtx k).threshold w.id r.id r.approvals
 
 end Aven.ID.IssuerExamples

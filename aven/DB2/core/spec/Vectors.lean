@@ -419,12 +419,14 @@ def countsVectors : List Json :=
 
 def Aven.Core.Target.json : Target → Json
   | .doc d r => Json.mkObj [("doc", d.text), ("reach", r.name)]
-  | .vault v b => Json.mkObj [("vault", utf8Text v), ("below", toJson b)]
-  | .vaultType v t b => Json.mkObj [("vault", utf8Text v), ("type", t.text), ("below", toJson b)]
+  | .vault v b => Json.mkObj [("vault", v.text), ("below", toJson b)]
+  | .vaultType v t b => Json.mkObj [("vault", v.text), ("type", t.text), ("below", toJson b)]
 
 def invoice : DocId := ⟨blake3 (k "the invoice type's genesis")⟩
-def alice : Bytes := k "v:alice"
-def coop : Bytes := k "v:maia-city"
+/-- Two vaults by their 32-byte names. Core sits below avenID, which makes a vault's name (`Aven.ID.VaultName`);
+here any 32-byte hash stands in for one. -/
+def alice : Hash := blake3 (k "a vault's genesis: alice")
+def coop : Hash := blake3 (k "a vault's genesis: maia-city")
 def actorA : DocId := ⟨blake3 (k "an actor's genesis")⟩
 
 def targetPairs : List (String × Target × Target) := [
@@ -450,7 +452,9 @@ def badTargets : List (String × Target) := [
   ("a Doc id of 31 bytes", .doc ⟨⟨List.replicate 31 1⟩⟩ .self),
   ("a Doc id of 33 bytes", .doc ⟨⟨List.replicate 33 1⟩⟩ .spawned),
   ("a type id of 31 bytes", .vaultType alice ⟨⟨List.replicate 31 1⟩⟩ false),
-  ("a type id of 33 bytes", .vaultType alice ⟨⟨List.replicate 33 1⟩⟩ true)]
+  ("a type id of 33 bytes", .vaultType alice ⟨⟨List.replicate 33 1⟩⟩ true),
+  ("a vault of 31 bytes", .vault ⟨List.replicate 31 1⟩ false),
+  ("a vault of 33 bytes, under a type", .vaultType ⟨List.replicate 33 1⟩ invoice true)]
 
 #guard badTargets.all fun (_, t) => Canon t.value && Target.ofValue? t.value == none
 

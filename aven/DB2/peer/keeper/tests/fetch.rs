@@ -1,4 +1,4 @@
-//! The fetch gate against Lean's cases (`db/spec/vectors/fetch.json`, README rule 10): what a peer holds for which Doc,
+//! The fetch gate against Lean's cases (`peer/spec/vectors/fetch.json`, README rule 10): what a peer holds for which Doc,
 //! the Docs proven on a connection, a fetch; the answer; and items' parts.
 
 use std::path::PathBuf;
@@ -8,7 +8,7 @@ use serde_json::Value;
 
 fn vectors(file: &str) -> Vec<Value> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../db/spec/vectors")
+        .join("../../peer/spec/vectors")
         .join(file);
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     serde_json::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))

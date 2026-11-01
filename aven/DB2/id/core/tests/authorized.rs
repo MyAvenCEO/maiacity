@@ -4,11 +4,9 @@
 
 mod common;
 
-use aven_core::{Call, CoreOp, DocId, Facts, OpId, Value as V};
+use aven_core::{Call, CoreOp, DocId, Facts, Hash, OpId, Value as V};
 use aven_id::Tree;
-use aven_id::caps::{
-    Branches, Cap, DeviceCap, Line, Path, Reader, Reading, World, grant_allows, vault_id,
-};
+use aven_id::caps::{Branches, Cap, DeviceCap, Line, Path, Reader, Reading, World, grant_allows};
 use common::caps::{Context, Names};
 use common::vectors;
 use proptest::prelude::*;
@@ -143,9 +141,13 @@ fn branches(i: usize) -> Branches {
 }
 
 /// The cast's governance, as Core's targets name vaults.
-fn gov(t: &Tree, v: &str, w: &str) -> bool {
-    v.strip_prefix("v:")
-        .is_some_and(|v| t.governs(v).into_iter().any(|g| vault_id(g) == w))
+fn gov(t: &Tree, v: &Hash, w: &Hash) -> bool {
+    t.vaults().iter().any(|a| {
+        aven_id::cast_name(&a.id) == *v
+            && t.governs(&a.id)
+                .into_iter()
+                .any(|g| aven_id::cast_name(g) == *w)
+    })
 }
 
 fn check(case: &Case, d: &Draw) -> Result<(), TestCaseError> {
@@ -205,7 +207,7 @@ fn check(case: &Case, d: &Draw) -> Result<(), TestCaseError> {
     };
     let merge = calls(&d.merge, &ops);
 
-    let gov_ = |v: &str, w: &str| gov(t, v, w);
+    let gov_ = |v: &Hash, w: &Hash| gov(t, v, w);
     let never = |_: &DocId, _: &DocId| false;
     let world = World {
         gov: &gov_,
@@ -268,7 +270,10 @@ fn check(case: &Case, d: &Draw) -> Result<(), TestCaseError> {
                 // `authorized_vault`, own side: the Doc's vault or one it governs
                 Path::Own => {
                     prop_assert!(!host, "host_chain_only");
-                    prop_assert!(f.vault == vault_id(&v) || gov(t, &vault_id(&v), &f.vault));
+                    prop_assert!(
+                        f.vault == aven_id::cast_name(&v)
+                            || gov(t, &aven_id::cast_name(&v), &f.vault)
+                    );
                 }
                 Path::Chain => {
                     prop_assert!(by_chain.is_ok());
@@ -391,7 +396,7 @@ fn both_paths_are_reached() {
         .find(|c| c.ctx.with(|x| x.chain_ok(&c.chain)) && c.chain.len() == 1)
         .expect("a good one-cap chain");
     let t = &case.ctx.tree;
-    let gov_ = |v: &str, w: &str| gov(t, v, w);
+    let gov_ = |v: &Hash, w: &Hash| gov(t, v, w);
     let never = |_: &DocId, _: &DocId| false;
     let member = |_: &str| true;
     let vault_of = |k: &[u8]| {

@@ -5,13 +5,14 @@
 //! narrows (`narrow_chain`, `narrow_ops`), every line it grants lies in its root issuer's authority
 //! (`root_authority`), and it passes its root on no more often than its root may be shared (`chain_short`).
 
-use aven_core::{CoreOp, DocId, Facts};
+use aven_core::{CoreOp, DocId, Facts, Hash};
 
 use super::approve::Sig;
 use super::conditions::{Conditions, Form, Holder};
 use super::line::{Grant, Line, grant_within};
 use super::types::group_type;
 use crate::tree::Tree;
+use crate::vault_name::cast_name;
 
 /// A role: a named bundle of grants, named by its hash, so it never changes under its holders (D6).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -23,11 +24,13 @@ pub struct Role {
 
 /// A cap. Its id is its hash ([`Cap::digest`]); the signature by its issuer's device travels beside it, and its
 /// issuer's owners' approvals over its id, verified, as [`Sig`]s. An attenuation carries none.
+///
+/// Its vaults are `V`s (A210): a fixture's readable handles, or the 32-byte names every format writes ([`Cap::named`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Cap {
+pub struct Cap<V = String> {
     pub id: String,
-    pub issuer: String,
-    pub holder: Holder,
+    pub issuer: V,
+    pub holder: Holder<V>,
     pub parent: Option<String>,
     pub form: Form,
     pub grant: Vec<Line>,
@@ -36,11 +39,47 @@ pub struct Cap {
     pub conditions: Conditions,
     /// The device that signed it, when one did; a vault without devices, such as a coop, issues by its owners'
     /// approvals alone (A28).
-    pub signer: Option<String>,
+    pub signer: Option<V>,
     pub approvals: Vec<Sig>,
 }
 
+impl<V> Holder<V> {
+    /// The holder, its vault named another way (`Holder.map`).
+    pub fn map<W>(&self, f: impl Fn(&V) -> W) -> Holder<W> {
+        match self {
+            Holder::Vault(v) => Holder::Vault(f(v)),
+            Holder::Group(g) => Holder::Group(*g),
+            Holder::Public => Holder::Public,
+        }
+    }
+}
+
+impl<V: Clone> Cap<V> {
+    /// The cap, its vaults named another way (`Cap.map`).
+    pub fn map<W>(&self, f: impl Fn(&V) -> W) -> Cap<W> {
+        Cap {
+            id: self.id.clone(),
+            issuer: f(&self.issuer),
+            holder: self.holder.map(&f),
+            parent: self.parent.clone(),
+            form: self.form,
+            grant: self.grant.clone(),
+            role: self.role.clone(),
+            share: self.share,
+            conditions: self.conditions.clone(),
+            signer: self.signer.as_ref().map(&f),
+            approvals: self.approvals.clone(),
+        }
+    }
+}
+
 impl Cap {
+    /// The cap as every format writes it: each vault by its name, a fixture handle by its cast genesis's
+    /// (`c.map Named.name`, A210).
+    pub fn named(&self) -> Cap<Hash> {
+        self.map(|v| cast_name(v))
+    }
+
     /// What it grants: its role's grant, pinned by the role's id, or its own. A role nobody holds grants nothing
     /// (`Cap.grants`).
     pub fn grants<'a>(&'a self, roles: &'a [Role]) -> &'a Grant {
@@ -122,11 +161,6 @@ impl ChainError {
     }
 }
 
-/// A vault's id as Core's targets name it: `v:` and its id (`vaultId`).
-pub fn vault_id(v: &str) -> String {
-    format!("v:{v}")
-}
-
 /// Its issuer signed cap `c` (`Tree.issued`, A28): the device that signed it acts for the issuer, or, with no device
 /// signing, the issuer's owners approve it by their own quorum.
 pub fn issued(t: &Tree, threshold: &dyn Fn(&str) -> usize, c: &Cap) -> bool {
@@ -142,35 +176,34 @@ pub fn authority_over_vault(
     t: &Tree,
     threshold: &dyn Fn(&str) -> usize,
     issuer: &str,
-    v: &str,
+    v: &Hash,
 ) -> bool {
-    v == vault_id(issuer)
+    *v == cast_name(issuer)
         || t.governs(issuer)
             .into_iter()
-            .any(|w| vault_id(w) == v && t.alone(threshold, issuer, w))
+            .any(|w| cast_name(w) == *v && t.alone(threshold, issuer, w))
 }
 
 impl Ctx<'_> {
     /// Who governs whom as authority runs (`Ctx.governs`, A28), by vault ids: `v` governs `w` when `w` is below it
     /// and `v` meets its quorum alone. It is the `gov` a reader gives targets and its own-authority check.
-    pub fn governs(&self, v: &str, w: &str) -> bool {
-        let Some(a) = v.strip_prefix("v:") else {
-            return false;
-        };
-        self.tree.vault(a).is_some()
-            && self
-                .tree
-                .governs(a)
-                .into_iter()
-                .any(|b| vault_id(b) == w && self.tree.alone(self.threshold, a, b))
+    pub fn governs(&self, v: &Hash, w: &Hash) -> bool {
+        self.tree.vaults().iter().any(|a| {
+            cast_name(&a.id) == *v
+                && self
+                    .tree
+                    .governs(&a.id)
+                    .into_iter()
+                    .any(|b| cast_name(b) == *w && self.tree.alone(self.threshold, &a.id, b))
+        })
     }
 
     /// The vault a line lies in: the vault its target names, or the vault of the Doc it names, as its genesis fixed;
     /// none for a Doc the reader doesn't know (`lineVault`).
-    pub fn line_vault(&self, l: &Line) -> Option<String> {
+    pub fn line_vault(&self, l: &Line) -> Option<Hash> {
         match &l.doc {
             aven_core::Target::Vault { vault, .. } | aven_core::Target::VaultType { vault, .. } => {
-                Some(vault.clone())
+                Some(*vault)
             }
             aven_core::Target::Doc { doc, .. } => (self.facts)(doc).map(|f| f.vault),
         }

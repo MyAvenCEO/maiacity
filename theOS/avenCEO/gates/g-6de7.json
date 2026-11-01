@@ -1,0 +1,10 @@
+{
+ "type": "gate",
+ "subtype": "checkpoint",
+ "id": "g-6de7",
+ "name": "Review gate",
+ "after": "st-50d8",
+ "who": "fresh checkers and a worker",
+ "what": "Fresh checkers that see only the record, the work and what they link, never the conversation that made it. For a spec: two per round, paraphrase and zoom out. For a checkpoint: one critic, the look checker, shown what changed (one view per group of changed views, with the counts, and the diff). Findings are Blocker, Major or Nit, each named by kind. The worker fixes, contests with evidence the checker could read, escalates what only you know, or declines a Nit. The gate passes on a clean round: no open Blocker or Major. Wherever it can, a finding becomes a new mechanical check.",
+ "when": "the spec before Gate A, and every checkpoint; with a screen, the checkers also judge how it looks and behaves"
+}

@@ -1,0 +1,196 @@
+{
+ "title": "Sync",
+ "slides": [
+  {
+   "title": "Sealed in chunks, not one by one.",
+   "text": "Sealing every CRDT op on its own would make data huge. So a device seals {chunks}: a run of changes, compressed, then encrypted. Where a chunk ends is decided by the changes' hashes, as the next slide shows.",
+   "code": {
+    "type": "data:b3:R78…@b3:c7e…#chunk",
+    "id": "chunk:b3:a91f…",
+    "on": "data:b3:7Hq…#house-list",
+    "peer": "a17e02",
+    "ops": "a17e02:18 – a17e02:40",
+    "after": [
+     "chunk:b3:77c2…"
+    ],
+    "bytes": "e4 1a 9c 07 …",
+    "sig": {
+     "by": "agent:b3:b4l…#bob-laptop",
+     "key": "ed25519:Bq3…",
+     "value": "…"
+    }
+   },
+   "flow": [
+    "changes",
+    "compress",
+    "seal",
+    "hash",
+    "link to the chunks before"
+   ],
+   "deep": "A chunk is Loro's exported update bytes for a range of changes: compressed, then sealed with the data key (AEAD). Its BLAKE3 hash names it; its signed header lists the previous chunk hashes and binds Loro's peer ID to the signer."
+  },
+  {
+   "title": "Sealed chunks settle in layers.",
+   "text": "Every sealed change has a hash. About one in 256 hashes starts with a zero byte: that change closes a chunk holding everything since the last one. One in 65,000 starts with two zero bytes and closes a bigger chunk around the smaller ones. Like layers of {sediment}: old history ends up in a few big chunks. Every device, even a carrier that reads nothing, splits at the same places.",
+   "code": {
+    "b3:7c3a…": "depth 0: a loose change",
+    "b3:00b1…": "depth 1: closes a chunk",
+    "b3:0000…": "depth 2: closes a bigger one"
+   },
+   "deep": "Sedimentree (from Ink & Switch's Subduction): depth = number of leading zero bytes of a change's BLAKE3 hash. Depth ≥ 1 closes a chunk; deeper chunks contain shallower ones. Equal content gives an equal minimal hash. (OLD-AIP-33)"
+  },
+  {
+   "title": "Finding what's missing, cheaply.",
+   "text": "Two devices may hold the same data and differ by only a little. They never list everything. Inside one piece of data they compare {fingerprints}, short keyed hashes of each layer; across thousands of pieces of data they swap a few tiny {summaries}. Both cost about as much as the difference, not the whole.",
+   "code": {
+    "inside_one": {
+     "on": "data:b3:7Hq…#house-list",
+     "send": "8-byte fingerprint per layer"
+    },
+    "across_many": {
+     "on": "all data you hold",
+     "send": "RIBLT summaries until all peel"
+    }
+   },
+   "deep": "Two levels (OLD-AIP-34): fingerprints within one piece of data, RIBLT set reconciliation across many. Both cost roughly in proportion to the difference. Summaries cover only data both sides may want, so a peer learns nothing about the rest (OLD-AIP-65)."
+  },
+  {
+   "title": "Fingerprints, step by step.",
+   "text": "Alice picks a fresh random seed. For each layer and loose change she holds, she sends an 8-byte fingerprint: its hash, mixed with the seed. Bob fingerprints his own with the same seed, sends what she lacks and asks for what he lacks. One and a half round trips. Thanks to the layers, even a million changes are only a few hundred fingerprints.",
+   "code": {
+    "seed": "0x3e91…c07a",
+    "alice_sends": [
+     "9f3a01c2…",
+     "04b77e10…",
+     "…"
+    ],
+    "bob_answers": {
+     "chunks": [
+      "chunk:b3:00b1…"
+     ],
+     "want": [
+      "b3:7c3a…"
+     ]
+    }
+   },
+   "flow": [
+    "seed",
+    "fingerprints",
+    "compare",
+    "swap the missing"
+   ],
+   "deep": "SipHash-2-4 keyed with a fresh 128-bit seed per request, giving 8 bytes per item, computed over the item's causal identity. The responder diffs u64 fingerprints and replies with what is missing in both directions: 1.5 round trips."
+  },
+  {
+   "title": "Tiny summaries that peel apart.",
+   "text": "Across all your data, each side mixes the hashes of everything it holds into summaries: each one an XOR of a random handful of hashes, plus a count. Bob subtracts his own summaries from Alice's. Whatever both hold cancels out. A summary left with just one hash names it outright; remove that one everywhere, and the next summary opens, like peeling an onion. Alice sends more summaries until everything has peeled.",
+   "code": {
+    "held_each": 10000,
+    "differ": 5,
+    "summary": {
+     "xor": "b3:5e0c…",
+     "count": 1,
+     "check": "a41f…"
+    },
+    "summaries_sent": 8
+   },
+   "flow": [
+    "mix",
+    "subtract",
+    "peel",
+    "repeat until done"
+   ],
+   "deep": "Rateless Invertible Bloom Lookup Tables (arXiv 2402.02668). Each coded symbol is the XOR of a pseudo-random subset of item hashes plus a count and a checksum. Peel pure symbols iteratively. About 1.35 to 1.7 × d symbols for d differences."
+  },
+  {
+   "title": "A Value streams in checked ranges.",
+   "text": "Bob asks for a Value by its hash. Every range is checked against that hash as it arrives, so nobody can slip in a wrong byte. He can ask for just a range, and from several devices at once.",
+   "code": {
+    "type": "data:b3:Rb5…@b3:f23…#want",
+    "on": "value:b3:9f2c…#movie",
+    "range": "bytes 0–64 MiB",
+    "from": [
+     "agent:b3:a1p…#alice-phone",
+     "agent:b3:k8b…#backup"
+    ],
+    "proof": [
+     "data:b3:Mm3…#movie-meta",
+     "policy:b3:m4r…#household",
+     "role:b3:k1m…#household",
+     "policy:b3:b5l…#bob-laptop"
+    ],
+    "sig": {
+     "by": "agent:b3:b4l…#bob-laptop",
+     "key": "ed25519:Bq3…",
+     "value": "…"
+    }
+   },
+   "deep": "BLAKE3 verified streaming over the sealed bytes: every received range is checked against the Value's name before use, by readers and carriers alike. Ranges can come from several peers at once. The proof runs through the movie's metadata Doc, since a Value has no policies of its own (OLD-AIP-72)."
+  },
+  {
+   "title": "News travels by gossip.",
+   "text": "News travels by {gossip}: each peer passes it on to a few others. When Alice changes the list, her device tells the peers interested in it: “house-list has something new.” Whoever wants it fetches the new sealed chunks.",
+   "code": {
+    "type": "data:b3:R3c…@b3:6bd…#news",
+    "topic": "data:b3:7Hq…#house-list",
+    "chunks": [
+     "chunk:b3:e40d…"
+    ]
+   },
+   "deep": "Gossip topic = data ID. Announcements carry only new chunk hashes, never content, and peers pass news only to peers that showed want (OLD-AIP-65)."
+  },
+  {
+   "title": "Peers sync. They never ask.",
+   "text": "An operation runs only on your own device, over data you can read. No peer ever asks another peer a question about its data. Peers only carry what their policies allow, sealed. There's no client and no server, only peers. An always-on machine is just one more peer.",
+   "flow": [
+    "your device",
+    "your data",
+    "your operation",
+    "your answer"
+   ],
+   "deep": "There is no query protocol between peers, only chunk sync. That removes trust in a remote answerer and inference attacks by repeated questions."
+  },
+  {
+   "title": "Sharing an answer is sharing data.",
+   "text": "The street wants to know how many tasks are open in your home. It can't ask. Instead, your device counts and writes the number into a small piece of data of your home's, with a policy that lets the street read it. The street sees the number and nothing else.",
+   "code": {
+    "on": "data:b3:8Rs…#home-stats",
+    "schema": "data:b3:St2…@b3:5e8…#count",
+    "owner": "coop:b3:c7n2…#home",
+    "content": {
+     "open_tasks": 4
+    },
+    "policy": {
+     "type": "data:b3:R9f…@b3:00f…#policy",
+     "to": "role:b3:s9m…#street/homes",
+     "on": "data:b3:8Rs…#home-stats",
+     "operations": {
+      "read": {}
+     },
+     "proof": [
+      "data:b3:8Rs…#home-stats",
+      "policy:b3:h0g…#home-members",
+      "role:b3:h8m…#home/family",
+      "human:b3:q4x7…#you"
+     ],
+     "sig": {
+      "by": "agent:b3:f2p…#your-phone",
+      "key": "ed25519:Fp2…",
+      "value": "…"
+     }
+    }
+   },
+   "deep": "The answer is written as new data, owned by the home, computed and signed by your own device, with its own policy for the asker. Your phone may write it because the home's policy gives its role “family” own. That policy is revocable and expires like any other."
+  },
+  {
+   "title": "Sync, in short.",
+   "list": [
+    "Changes travel as sealed chunks that settle in layers.",
+    "Fingerprints find what's missing inside one piece of data; summaries across many.",
+    "Values stream in checked ranges; gossip spreads the news.",
+    "Peers never ask each other questions; an answer to share becomes its own data."
+   ],
+   "deep": "Sedimentree, keyed fingerprints and RIBLT: costs grow with the difference, not the total."
+  }
+ ]
+}

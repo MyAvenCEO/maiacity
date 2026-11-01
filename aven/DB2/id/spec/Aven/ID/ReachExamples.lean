@@ -12,7 +12,7 @@ open Aven.Core Aven.ID.AuthorizedExamples
 
 /-- A reader of the cast before any envelope: which vault each key's device serves, the network's members, and what
 each Doc is. -/
-def reader : Reader :=
+def reader : Reader String :=
   { ctx := castCtx, chain := fun _ => [], calls := fun _ => [], lower := fun _ => [], signer := fun _ => [],
     vaultOf := fun k => (castKeys.find? (·.1 == k)).map (·.2), member := castMembers.contains,
     facts := castCtx.facts, deviceCap := fun _ => none, actorOf := fun _ => none }
@@ -22,7 +22,7 @@ structure Case where
   name : String
   signer : String
   doc : DocId
-  held : List Cap := []
+  held : List (Cap String) := []
   answer : Bool
 
 def Case.verdict (c : Case) : Bool := reader.reachesB castGov none' none' c.held c.doc (key c.signer)

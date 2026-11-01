@@ -1,0 +1,35 @@
+{
+ "type": "decision",
+ "id": "d-93eb",
+ "title": "Finish the checks and avenSANDBOX for now",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01T12:47Z",
+ "session": "s-ac54",
+ "about": [
+  "intents",
+  "sessions"
+ ],
+ "quote": "Just the first two for now.",
+ "means": "aip-31df (theOS's check) and aip-6fb1 (avenSANDBOX in theOS) are finished in this session, each through its remaining checkpoints, Gate B with Samuel and Learn, in their own threads. aip-836d (brain) and aip-59ad (the release) stay parked with their next steps in their records.",
+ "intents": [
+  "aip-31df",
+  "aip-6fb1",
+  "aip-836d",
+  "aip-59ad"
+ ],
+ "supersedes": [
+  {
+   "doc": "d-a1af",
+   "part": "whole",
+   "what": "brain stays parked; only aip-31df and aip-6fb1 are finished now."
+  }
+ ],
+ "relates": [
+  "d-8912"
+ ],
+ "reflection": {
+  "checked": "every decision before d-93eb that held",
+  "result": "supersedes d-a1af (whole)"
+ }
+}

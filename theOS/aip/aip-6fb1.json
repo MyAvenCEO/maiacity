@@ -1,0 +1,1355 @@
+{
+ "type": "intent",
+ "id": "aip-6fb1",
+ "title": "theOS owns avenSANDBOX",
+ "kind": "product",
+ "note": "theOS takes avenSANDBOX whole (d-0a23): its name, its image with every tool, its image workflow and its cloud setup. avenDB's release, peer image and deploy stay parked; the release is aip-59ad.",
+ "questions": [
+  {
+   "q": "Move avenSANDBOX into theOS (theOS owns it and its release from then on), or copy it and leave avenDB's release where it is? And who releases the box afterwards?",
+   "options": [
+    "Copy it into theOS; avenDB keeps releasing until theOS's copy passes its gates (recommended: no release path changes before Gate A)",
+    "Move it: theOS owns it and its release now",
+    "Wait until aip-6fb1's Understand"
+   ],
+   "answered": "d-a347"
+  },
+  {
+   "q": "Gate A for aip-6fb1, after its spec review: are its claims, assumptions, checkpoint plan, outcome and mockup what must be true?",
+   "options": [
+    "Yes",
+    "Change: tell me what",
+    "Send it back"
+   ],
+   "answered": "d-9f02"
+  },
+  {
+   "q": "Checkpoint 2's Review gate ran three rounds without a clean one (c2-review: 3, 2 and 1 Major; every finding answered). Round 3's only Major (the smoke could not fail on a wrong platform) is fixed, tried here, and proven by the image workflow's run on the fixed commit (in the events). By the rule, patching stopped: pass the gate with that run as proof, run one more round, or send checkpoint 2 back to Understand?",
+   "options": [
+    "Pass it: the fix is proven by its run (recommended: the open finding was mechanical and a machine now checks it)",
+    "One more round",
+    "Back to Understand"
+   ],
+   "answered": "d-d454"
+  },
+  {
+   "q": "avenCEO changes proposed by aip-6fb1's run (one avenCEO intent each, measured before kept). Which do you want as intents?",
+   "options": [
+    "1. A check is a file: every claim's check names a script in theOS that a machine runs; an event says verified only with that script's run (l-006d, l-9f44). Measured by: checkpoint review findings of kind 'missing check' (7 of 15 in c2, 2 of 4 Blocker/Major in c3).",
+    "2. Events stamped by a machine: a small append script writes at, by and the commit; nobody types a time (l-d7ef). Measured by: lead time per step readable to the minute; errata on times.",
+    "3. Every finding carries a kind, in the review type and both checker prompts (l-f324). Measured by: the share of findings with a kind (today 0 of 55 in spec review).",
+    "4. Spec review stops at one round when you are reachable: the zoom-out lens checks deletions against the source first, and three rounds turn into one round plus your answer (l-18a8). Measured by: spec rounds and your corrections per intent (aip-6fb1: 3 rounds, 6 agents, 55 findings, 1 correction).",
+    "None now"
+   ],
+   "answered": "d-f7b3"
+  },
+  {
+   "q": "Checkpoint 4's Review gate ran three rounds without a clean one (rv-8bd0). Every finding is fixed, and the fixes are proven by the image workflow's run 41308870452 and the three-way comparison on e12ea83. Pass the gate with that as proof, run one more round, or send checkpoint 4 back?",
+   "options": [
+    "Pass it (recommended: the open findings were all mechanical, and machines now check them)",
+    "One more round",
+    "Back to Understand"
+   ],
+   "answered": "d-f20b"
+  },
+  {
+   "q": "Gate B for aip-6fb1: try avenSANDBOX as you would use it. Ship, change, or send back?",
+   "try": [
+    "1. On your Mac, with OrbStack running: in a checkout of claude/theos-aip-2 (or main, once merged), run theOS/sandbox/run.sh uname -m. Yes means it answers aarch64 (the first run pulls the box, several GB).",
+    "2. Then run theOS/sandbox/check.sh. Yes means it ends with exit 0 for theOS's check and for its own test.",
+    "3. Then run node theOS/sandbox/same.mjs theOS/avenCEO/checks/out <the runner's report for the same commit, the theos-check-<sha> artifact of the image workflow's run>. Yes means 'the same' and exit 0.",
+    "4. In the cloud environment's settings, paste theOS/sandbox/environment-setup.sh as the setup script (needs the work on main; environment-setup.previous.sh is the undo). In a new session, theOS/sandbox/run.sh rustc --version answers without a pull. Yes means it answers at once.",
+    "Optional: theOS/sandbox/test.sh on the Mac (green)."
+   ],
+   "options": [
+    "Ship",
+    "Change: tell me what",
+    "Send it back"
+   ],
+   "answered": "d-f20b"
+  }
+ ],
+ "problem": {
+  "who": [
+   "Samuel Andert, who wants one authority for what ships, and runs the box on a Mac.",
+   "avenMAIA, whose sessions start from the environment avenSANDBOX warms, and whose checks run in the box."
+  ],
+  "experience": "avenSANDBOX gives every scenario the same clean box: a cloud session, a GitHub runner, a Mac with OrbStack. But its image is defined and built from avenDB's files, its workflow is parked, and nothing in theOS starts it, so theOS's checks have no box of their own.",
+  "evidence": [
+   {
+    "group": "The pipeline was avenDB's",
+    "items": [
+     {
+      "text": "avensandbox.yml released avenOS, avenSANDBOX and avenPEER from production, each under a dated version; the last release is #1750 (avenOS 26.10.31v6, avenPEER 26.10.31v5, avenSANDBOX 26.10.31v2)."
+     },
+     {
+      "text": "avensandbox-image.yml and avenpeer-image.yml built their images from aven/DB2's Cargo workspace."
+     },
+     {
+      "text": "avendeploy.yml deployed the avenCEO Peer and avenOS at aven.maia.city, by hand."
+     }
+    ]
+   },
+   {
+    "group": "The box is avenDB's",
+    "items": [
+     {
+      "text": "aven/DB2/sandbox/box/Dockerfile compiles avenDB's third-party crates; cloud-setup.sh runs avenDB's bun run up, four avenDB peers, once before the snapshot."
+     },
+     {
+      "text": "This session: dockerd is not running; /var/log/dockerd.log last written 29 Oct; /var/lib/docker holds 24 GB; bun, node and Chromium (/opt/pw-browsers) come with the base image."
+     },
+     {
+      "text": "The environment's setup script looks only for aven/DB2/sandbox/box/cloud-setup.sh, and exits 0 when it is not there (aven/DB2/SANDBOX.md, \"Samuel's part\")."
+     }
+    ]
+   }
+  ],
+  "baseline": "Before the park: four workflows, all avenDB's. theOS has no box, no workflow and no release of its own.",
+  "whys": [
+   "theOS's checks have no clean box of their own. Why? avenSANDBOX's image is defined, tagged and built from avenDB's files, and its workflow is parked with avenDB's.",
+   "Why? It was built for avenDB (29 to 31 Oct) before theOS became the standalone project (d-9351).",
+   "Root cause: avenSANDBOX belongs to a legacy project."
+  ],
+  "truths": [
+   "GitHub runs the workflow files of the branch an event happens on; a file moved out of .github/workflows/ on that branch never runs there.",
+   "A deployed server keeps serving what it was last given until something deploys again.",
+   "An image already published to a registry stays pullable when its workflow stops.",
+   "A workflow file must live in .github/workflows/; what it runs can live in theOS/."
+  ],
+  "assumptions": [
+   "avenSANDBOX keeps every tool (d-0a23): Playwright 1.64.1 with its Chromium, Rust stable with wasm32 and wasm-bindgen, the nightly with cargo-fuzz, bun, elan with Lean, versitygw, clang and llvm.",
+   "Only avenDB's own part stays behind: the step that compiles avenDB's third-party crates. avenDB's bun run up stops working when the box moves; avenDB is parked.",
+   "The image keeps its name, ghcr.io/myavenceo/aven/sandbox, and stays public; the environment already allows ghcr.io and pkg-containers.githubusercontent.com.",
+   "The image is the only source of the browser: theOS's lockfile pins its Playwright (1.64.1).",
+   "The work reaches main through the goal pull request you ask for after Gate B; the environment's snapshot clones main.",
+   "Pasting the environment's script and the Mac run are yours, at Gate B."
+  ],
+  "risk": "Can be undone: the move by git mv back (tried in a scratch checkout); the environment's script by pasting the previous one, kept in theOS/sandbox/; the image's old tags stay pullable. The environment's script is shared by every session in it. production is frozen by its ruleset; it moves with the release (aip-59ad). The environment's undo restores the previous script, which still never fails a session but has no time limit, and its avenDB warm-up (bun run up) fails since the box moved."
+ },
+ "reuse": [
+  {
+   "what": "avensandbox.yml (parked)",
+   "use": "Learned from: production takes changes from main only; one release per changed package, under the date (26.10.29, 26.10.29v2, ...); a push that changes nothing releases nothing."
+  },
+  {
+   "what": "avensandbox-image.yml (parked)",
+   "use": "Learned from: the image is tagged by the hash of the files its build reads, so every checkout runs exactly its own box; built per architecture, then joined."
+  },
+  {
+   "what": "aven/DB2/sandbox/box/cloud-setup.sh and the environment's setup script",
+   "use": "Learned from: warm the box once, before the disk is snapshotted; never fail a session."
+  },
+  {
+   "what": "avendeploy.yml (parked)",
+   "use": "Learned from: run by hand in the environment production; health checks after the deploy; nothing secret printed, the repository is public."
+  }
+ ],
+ "options": [
+  {
+   "name": "Move avenSANDBOX into theOS whole",
+   "note": "Its name, its image with every tool, its image workflow and its cloud setup move under theOS/sandbox/; only avenDB's own parts stay behind (d-0a23).",
+   "chosen": true
+  },
+  {
+   "name": "A setup script only, no image (revision 3)",
+   "note": "Rejected by you (d-0a23): the image is what keeps every scenario the same clean box.",
+   "chosen": false
+  },
+  {
+   "name": "Copy, and keep avenDB building it",
+   "note": "Rejected (d-a347): theOS is the authority now.",
+   "chosen": false
+  }
+ ],
+ "claims": [
+  {
+   "id": "c1",
+   "promise": "Once the park is on main, avenDB's release, peer-image and deploy workflows are gone from main's .github/workflows/, and nothing live changes.",
+   "fails": "A parked workflow still sits on main, or the park takes something down.",
+   "check": "After the merge: main's .github/workflows/ holds none of the three; aven.maia.city answers.",
+   "kind": "mechanical",
+   "result": "open: checked when the goal pull request has put the park on main (main's .github/workflows/ without the three, aven.maia.city answering); this branch's .github/workflows/ holds only avensandbox-image.yml."
+  },
+  {
+   "id": "c2",
+   "promise": "avenSANDBOX's image is built only from theOS/sandbox/box/ by its image workflow, for amd64 and arm64, tagged by the hash of that folder and of the workflow, with every tool working.",
+   "fails": "The build reads a file outside theOS/, a tool is missing or broken, or the same inputs build twice.",
+   "check": "A push that changes theOS/sandbox/box/ builds it; a push with the same inputs builds nothing; inside it, each tool answers its version, rustup lists wasm32, versitygw --help runs, and Playwright launches Chromium.",
+   "kind": "mechanical",
+   "result": "met: built only from theOS/sandbox/box for amd64 and arm64, tagged by the hash of its inputs, smoked on both platforms before the tag exists (runs 41295874265, 41296956609, 41308546512); same inputs built nothing (runs 41296094936, 41297139269, 41296532510)."
+  },
+  {
+   "id": "c4",
+   "promise": "theOS/sandbox/run.sh runs any command inside the image, the same way in a cloud session, on the image workflow's runner and on a Mac; a new cloud session finds the image already pulled, and a warm-up that fails or hangs never stops a session.",
+   "fails": "A session has no way to start the box, or a setup error or hang stops every new session.",
+   "check": "run.sh starts dockerd when it is down and runs a command in the image; the environment's script, with its 600 s limit around everything, exits 0 with a planted failure and a planted hang in a copy of cloud-setup.sh.",
+   "kind": "mechanical",
+   "result": "met in the cloud and on the runner: run.sh started dockerd and ran a command in the box; test.sh --cold green (11 cases), the warm-up and its limit included. The Mac is deferred (d-f20b)."
+  },
+  {
+   "id": "c3",
+   "promise": "theOS's check command (aip-31df) gives the same pass or fail per check, on the same commit, in every scenario: inside the image through run.sh in a cloud session, on the runner and on a Mac.",
+   "fails": "The check passes in one scenario and fails in another.",
+   "check": "The image workflow runs it through run.sh as its last step; the same in a cloud session; the Mac at Gate B.",
+   "kind": "mechanical",
+   "result": "met on GitHub's runner and in a cloud session, in and out of the box: the same verdict, rules and check's own test on e12ea83 (run 41308870452, same.mjs); the Mac is deferred (d-f20b)."
+  }
+ ],
+ "outcome": {
+  "promise": "theOS's check command runs in one avenSANDBOX image built from theOS/, with the same result on the same commit in every scenario; nothing of avenDB is read to build, start or warm it.",
+  "how": "Read off the image workflow's run, a cloud session and your Mac at Gate B.",
+  "kind": "mechanical",
+  "result": "met for GitHub and the cloud, the Mac deferred (d-f20b): theOS's check gives the same result on the same commit on the image workflow's runner, inside the box in a cloud session and outside it (e12ea83, run 41308870452); the image is built from theOS/sandbox/box alone, and nothing in theOS/sandbox or the image workflow reads avenDB (grep: only environment-setup.previous.sh, the undo, names it)."
+ },
+ "checkpoints": [
+  {
+   "n": 1,
+   "adds": "avenDB's four workflows parked in .github/workflows-avendb/. Done at your direct ask (d-a347), commit 2d6f53842.",
+   "claims": [
+    "c1"
+   ]
+  },
+  {
+   "n": 2,
+   "adds": "The box moves: theOS/sandbox/box/Dockerfile with every tool and no avenDB crates; avensandbox-image.yml back in .github/workflows/, tagged by the folder's hash, with the smoke step; the undo tried.",
+   "claims": [
+    "c2"
+   ]
+  },
+  {
+   "n": 3,
+   "adds": "theOS/sandbox/run.sh and cloud-setup.sh (pull only); the environment's new script, with the previous one kept in theOS/sandbox/.",
+   "claims": [
+    "c4"
+   ]
+  },
+  {
+   "n": 4,
+   "adds": "After aip-31df's checkpoint 1: theOS's check run inside the image through run.sh, as the image workflow's last step.",
+   "claims": [
+    "c3"
+   ]
+  }
+ ],
+ "deferred": [
+  {
+   "what": "Compiling theOS's own crates into the image (avenDB's deps step, reborn)",
+   "until": "theOS has a Cargo workspace."
+  },
+  {
+   "what": "Deleting avenDB's remaining sandbox files",
+   "until": "theOS has released once (aip-59ad)."
+  },
+  {
+   "what": "Running avenSANDBOX on Samuel's Mac (OrbStack, arm64): run.sh uname -m, check.sh, same.mjs against the runner's report",
+   "until": "Samuel tries it (d-f20b)."
+  },
+  {
+   "what": "Pasting theOS/sandbox/environment-setup.sh into the cloud environment's setup script (environment-setup.previous.sh is the undo)",
+   "until": "theOS is on main (d-f20b)."
+  }
+ ],
+ "mockup": [
+  "The image workflow's run: built for both platforms, each tool's version, theOS's check green inside it",
+  "A new cloud session: the image there, theOS's check green"
+ ],
+ "events": [
+  {
+   "at": "2026-11-01",
+   "by": "a-4c7a",
+   "what": "source",
+   "text": "Move avenSANDBOX's responsibility and lifecycle into theOS.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "d-dc23"
+   ]
+  },
+  {
+   "at": "2026-11-01T08:51Z",
+   "by": "a-6ffb",
+   "what": "asked",
+   "text": "Move or copy avenSANDBOX, and who releases it.",
+   "how": "in chat",
+   "writes": []
+  },
+  {
+   "at": "2026-11-01T09:12Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "Move it now: theOS is the authority over the release pipeline and avenSANDBOX; avenDB's aven.maia.city pipeline commented out.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "d-a347"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:12Z",
+   "by": "a-6ffb",
+   "what": "understood",
+   "text": "Problem, evidence, whys to the root, truths, assumptions and risk written: the pipeline and the box belonged to avenDB.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:12Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "Checkpoint 1 at your direct ask: avenDB's four workflows parked in .github/workflows-avendb/ with a README; a note atop the repository's CLAUDE.md. What is live stays live.",
+   "how": "by hand, at your direct ask (d-a347), ahead of Gate A",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:12Z",
+   "by": "a-6ffb",
+   "what": "specified",
+   "text": "Claims c1 to c4, the outcome, three checkpoints and two questions drafted.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:21Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "The park is in, commit 2d6f53842: avensandbox.yml, avensandbox-image.yml, avenpeer-image.yml and avendeploy.yml in .github/workflows-avendb/.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t1"
+  },
+  {
+   "at": "2026-11-01T09:21Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Round 1: r1-paraphrase (1 Blocker, 6 Major, 5 Nit); r1-zoom-out (4 Major, 4 Nit). Not clean.",
+   "how": "fresh subagents with the prompts ck-9e70 and ck-b9b9, the record filled in",
+   "writes": [
+    "rv-7427",
+    "rv-6ac3"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:21Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Every finding of round 1 answered: 19 fixed, 1 contested.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t2"
+  },
+  {
+   "at": "2026-11-01T09:21Z",
+   "by": "a-6ffb",
+   "what": "revised",
+   "text": "Revision 2: the release deferred until you say what theOS releases; the box is a setup script, not an image; c3 before c2, which waits for aip-31df's checkpoint 1; risk in avenCEO's levels; the outcome is a new session with no avenDB warm-up; terms added.",
+   "how": "by hand",
+   "writes": [
+    "t-44b0",
+    "t-5ca6",
+    "t-9d07",
+    "t-6f8f",
+    "t-2b6e",
+    "t-8b6e",
+    "t-5435"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:21Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Revision 2 written.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t3"
+  },
+  {
+   "at": "2026-11-01T09:33Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Round 2: r2-paraphrase (5 Major, 4 Nit); r2-zoom-out (5 Major, 2 Nit). Not clean.",
+   "how": "fresh subagents with the prompts ck-9e70 and ck-b9b9, the record filled in",
+   "writes": [
+    "rv-bf9d",
+    "rv-a5a4"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:33Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Round 2 ran.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t4"
+  },
+  {
+   "at": "2026-11-01T09:33Z",
+   "by": "a-6ffb",
+   "what": "revised",
+   "text": "Revision 3: the sandbox only; theOS's box needs no install now, so the environment's script only finds theOS/sandbox/setup.sh; c2 dropped; c1 on main only; the outcome is a new session without avenDB's 24 GB box; the release, its question, production's ruleset and the deploy moved to aip-59ad.",
+   "how": "by hand",
+   "writes": [
+    "aip-59ad",
+    "t-3bf5"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:33Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Every finding of round 2 answered (15 fixed, 1 declined); revision 3 written.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t10"
+  },
+  {
+   "at": "2026-11-01T09:38Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "Keep avenSANDBOX, its image workflow and every tool; it was already a great sandbox.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "d-0a23"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:38Z",
+   "by": "a-6ffb",
+   "what": "revised",
+   "text": "Revision 4: avenSANDBOX whole into theOS (name, image with every tool, image workflow, cloud setup); only avenDB's crates and peers stay behind; theOS's check runs inside the image in every scenario. Revision 3's setup-script-only plan withdrawn; its round 3 stopped unread.",
+   "how": "by hand",
+   "writes": [
+    "t-6bd4",
+    "t-c415"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:38Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Revision 4 written.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t12"
+  },
+  {
+   "at": "2026-11-01T09:48Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "Build avenSANDBOX now, as the first intent through all four steps, and measure how the flow holds up.",
+   "how": "in chat, your words polished and kept in the decision; brain's reflection by hand",
+   "writes": [
+    "d-9f02"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:48Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "The measurement plan for this run written (measure): the outcome, and avenCEO's process metrics read off the trace.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:53Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Round 3 on revision 4: r3-paraphrase (1 Blocker, 6 Major, 4 Nit); r3-zoom-out (3 Major, 5 Nit). Not clean.",
+   "how": "fresh subagents with the prompts ck-9e70 and ck-b9b9, the record filled in",
+   "writes": [
+    "rv-544f",
+    "rv-ef23"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:53Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Round 3 ran.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t11"
+  },
+  {
+   "at": "2026-11-01T09:53Z",
+   "by": "a-6ffb",
+   "what": "revised",
+   "text": "Revision 5: run.sh starts the box in every scenario; the image is the only browser; the tag is the folder's hash; cloud-setup.sh only pulls; checkpoints ordered so only the last waits for aip-31df; how the work reaches main, and your part at Gate B, said.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:53Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Every finding of round 3 answered (18 fixed, 1 declined); revision 5 written.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t14"
+  },
+  {
+   "at": "2026-11-01T09:53Z",
+   "by": "a-4c7a",
+   "what": "gate-A",
+   "text": "Gate A by your go-ahead to build now (d-9f02), with round 3's findings answered and no further round: a deliberate shortcut, to be weighed in Learn.",
+   "how": "in chat, your words polished and kept in the decision",
+   "writes": [
+    "d-9f02"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:53Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Gate A passed (d-9f02).",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t5"
+  },
+  {
+   "at": "2026-11-01T09:54Z",
+   "by": "a-6ffb",
+   "what": "started",
+   "text": "Checkpoint 2: aven/DB2/sandbox/box/Dockerfile moved to theOS/sandbox/box/Dockerfile with every tool and without avenDB's crate step; avensandbox-image.yml back in .github/workflows/, built from theOS/sandbox/box, tagged theos-<hash of the folder and the workflow>, with a smoke step that proves every tool works inside it.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t6"
+  },
+  {
+   "at": "2026-11-01T09:58Z",
+   "by": "a-6ffb",
+   "what": "started",
+   "text": "Checkpoint 3: theOS/sandbox/run.sh (starts dockerd, runs a command in the image with theOS/ mounted), cloud-setup.sh (pull only), environment-setup.sh (to paste at Gate B) and environment-setup.previous.sh (the undo).",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t7"
+  },
+  {
+   "at": "2026-11-01T09:58Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "c4's test: the environment's script exits 0 with a planted failure, with a planted hang (cut at its limit, 3 s in the test) and with no setup file. A first trial of run.sh fell back to avenDB's old latest image (14 GB) and filled the session's disk; run.sh no longer falls back to any other image: it stops and says the image is not published yet.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:00Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "c2 on run 41295117407: the image theos-4d9bc364ffc5f836 built from theOS/sandbox/box for amd64 and arm64 (every tool layer reused from the registry's cache, about 5 s each), joined into one, and the smoke step passed: every tool answered, wasm32 is installed, versitygw runs, Playwright 1.64.1 launched Chromium.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:00Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Checkpoint 2 built and its smoke step green; the undo tried (0.13 s). Its Review gate runs in aip-6fb1's thread.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t6"
+  },
+  {
+   "at": "2026-11-01T10:00Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "This intent runs in its own thread; avenMAIA orchestrates.",
+   "how": "in chat, your words polished and kept in the decision; brain's reflection by hand",
+   "writes": [
+    "d-2519"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:03Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "c4, run.sh for real in a cloud session: with dockerd down and no image here, it started dockerd, pulled theos-4d9bc364ffc5f836 and ran a command inside it with theOS/ mounted at /work (rustc 1.99.1, bun 1.4.4, Lean 4.35.0 answered; exit 0) in 97.7 s; run again with the image present, 0.5 s. The session's /var/lib/docker held 316 KB, not avenDB's old image, so nothing had to be removed.",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [],
+   "reads": [
+    "theOS/sandbox/run.sh"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:05Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Checkpoint 2's Review gate, round 1: c2-review (3 Major, 5 Nit). Not clean.",
+   "how": "a fresh subagent (Agent tool) with the critic prompt kept in the review, seeing only the record, the Review gate, the diff and the files",
+   "writes": [
+    "rv-fc79"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:04Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "Round 1 answered, every finding fixed: smoke per platform and latest only after smoke; a failed build no longer reads as already built; one tag script, theOS/sandbox/tag.sh, for the workflow and run.sh; actions pinned by commit; the base image by digest; the Dockerfile's comments say what each tool is for in theOS.",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [
+    "rv-fc79"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:07Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "c4's test kept as a file, theOS/sandbox/test.sh: the environment's script exits 0 with a planted failure, a planted hang (cut at 3 s) and no setup file, and finds cloud-setup.sh one folder down; then run.sh runs a command in the box with theOS/ at /work. Green at 10:06 against theos-7f2a978d8e9df74f; before that tag was published it failed as it should (run.sh: not published yet).",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [],
+   "reads": [
+    "theOS/sandbox/test.sh"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:07Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Checkpoint 2's Review gate, round 2: c2-review (2 Major, 5 Nit). Not clean: round 1's fixes hold; both Majors are runs not yet on record.",
+   "how": "a fresh subagent (Agent tool) with the critic prompt kept in the review, seeing only the record, the Review gate, round 1, the diff of its fixes and the files",
+   "writes": [
+    "rv-fc79"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:07Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "Round 2 answered: each platform's build is smoked by digest before the join tags it (a failing box is never tagged), the platform is asserted, tag.sh is in the push paths and the hash, the concurrency comment says what it does.",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [
+    "rv-fc79"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:07Z",
+   "by": "a-6ffb",
+   "what": "erratum",
+   "text": "The event 'Checkpoint 2's Review gate, round 1' carries 10:05 by hand; the round ended at about 10:03 (its answer is stamped 10:04). Hand-typed times are a lesson of this run.",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:07Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "c2 at round 1's inputs, run 41295874265 (push of 649608d): theos-7f2a978d8e9df74f built for amd64 and arm64 (layers from the cache, about 5 s each; the base pinned by digest is the same image), joined, and smoked on both platforms, each on its own runner: every tool answered. latest skipped, as off main it should.",
+   "how": "aip-6fb1's thread (d-2519), read off the run's jobs",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:09Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "c2's 'same inputs build nothing', run 41296094936 (workflow_dispatch on the same commit 649608d): the plan found theos-7f2a978d8e9df74f built for both platforms and set complete; both builds and the join were skipped; the smoke still ran and passed on both platforms.",
+   "how": "aip-6fb1's thread (d-2519), read off the run's jobs",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:12Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Checkpoint 3's Review gate, round 1: c3-review (2 Blocker, 2 Major, 6 Nit). Not clean: run.sh broke on a Mac's bash 3.2 without a terminal; test.sh gave a false pass on a Mac and escaped its scratch folder; dockerd's start was never exercised.",
+   "how": "a fresh subagent (Agent tool) with the critic prompt kept in the review, seeing only the record, the Review gate, the diff and the files",
+   "writes": [
+    "rv-89a2"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:11Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "Checkpoint 3's round 1 answered (9 fixed, 1 declined with evidence): run.sh works on bash 3.2, asks the registry before saying 'not published', shows its pull; the environment script kills 30 s after its limit and its search root can be moved for the test; cloud-setup.sh stops the dockerd it started before the snapshot; test.sh skips the environment cases without timeout, asserts the hang started, and --cold tests dockerd's start; the undo's limits are in the risk.",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [
+    "rv-89a2"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:12Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "c2 at round 2's inputs, run 41296312738 (push of c2d6c8e): theos-5c06a62013298353 built for amd64 and arm64, each smoked by digest on its own runner before the join (platform asserted, every tool answered; 88 s and 65 s), then joined; latest skipped off main.",
+   "how": "aip-6fb1's thread (d-2519), read off the run's jobs",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:13Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "c4 after checkpoint 3's round 1: theOS/sandbox/test.sh --cold green against theos-5c06a62013298353 (failure, hang started and cut at 3 s, no setup file, found one folder down, dockerd stopped as after a snapshot, run.sh started it and ran the command). The environment's script for real from /home/user with dockerd down: exit 0 in 5 s (the image already here), dockerd stopped after the warm-up, run.sh worked after.",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [],
+   "reads": [
+    "theOS/sandbox/test.sh",
+    "theOS/sandbox/environment-setup.sh"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:13Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "c2's 'same inputs build nothing' under round 2's workflow, run 41296532510 (workflow_dispatch on c2d6c8e): the plan found theos-5c06a62013298353 built for both platforms; build, join and latest skipped; the run took 14 s.",
+   "how": "aip-6fb1's thread (d-2519), read off the run's jobs",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:16Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Checkpoint 2's Review gate, round 3: c2-review (1 Major, 2 Nit). Not clean: the smoke script could not fail on its platform check and on piped checks. The third round without a clean round: patching stops here; the Major's fix is mechanical and its proof is a machine run; the question goes to Samuel.",
+   "how": "a fresh subagent (Agent tool) with the critic prompt kept in the review",
+   "writes": [
+    "rv-fc79"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:17Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Checkpoint 3's Review gate, round 2: c3-review (0 Blocker, 0 Major, 5 Nit). Clean: checkpoint 3's Review gate passes.",
+   "how": "a fresh subagent (Agent tool) with the critic prompt kept in the review",
+   "writes": [
+    "rv-89a2"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:19Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "Round 3 of checkpoint 2 answered: the smoke script runs under pipefail and fails on a wrong platform (tried here: WANT=aarch64 fails, WANT=x86_64 passes up to npm, which this session's containers can't reach). Checkpoint 3's five Nits fixed: test.sh --cold runs the real warm-up and checks the box is there and dockerd stopped, run.sh's refusal of an unpublished tag is tested, cloud-setup.sh stops only the dockerd run.sh started (by pid), 600 s is said as 600 s killed at 630 s.",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [
+    "rv-fc79",
+    "rv-89a2"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:19Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "theOS/sandbox/test.sh --cold green, 11 cases: the environment's script (failure, hang started and cut, no file, found one folder down), dockerd stopped as after a snapshot, the real warm-up exits 0 and stops the dockerd it started, run.sh refuses an unpublished tag, the box is here after the warm-up, run.sh runs a command with theOS/ at /work and starts dockerd.",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [],
+   "reads": [
+    "theOS/sandbox/test.sh"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:19Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Checkpoint 3 built, its test green and its Review gate passed (c3-review round 2 clean).",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t7"
+  },
+  {
+   "at": "2026-11-01T10:19Z",
+   "by": "a-6ffb",
+   "what": "measured",
+   "text": "The process, as aip-6fb1's measure says (the outcome claim is not measured yet: it needs checkpoint 4 and Gate B). Lead time: asked 08:51, understood 09:12 (21 min); Specify 09:12 to Gate A 09:53 (41 min, 3 spec rounds); Build from 09:54: checkpoint 2 built 10:00, its Review gate 10:02 to 10:16 (3 rounds); checkpoint 3 started 09:58, its gate clean 10:17. Many events share a minute (4 to 6 at 09:12, 09:21, 09:53), so time inside a step is not readable. Sent back: spec 3 rounds, none clean (Gate A by d-9f02's shortcut); checkpoint 2, 3 rounds, none clean; checkpoint 3, 2 rounds, clean on the second. First pass: 0 of 2 checkpoints. Findings: spec rounds 55 (2 Blocker, 29 Major, 24 Nit; 52 fixed, 1 contested, 2 declined; no kind recorded); checkpoint 2, 18 (6 Major, 12 Nit; kinds: missing check 8, bug 3, unclear 4, wrong fact 2, security 1); checkpoint 3, 15 (2 Blocker, 2 Major, 11 Nit; kinds: bug 5, unclear 5, missing check 4, wrong fact 1). Touches: 5 messages from Samuel against the 2 planned (the source; d-a347, an answer to a question asked before the spec; d-0a23, a correction; d-9f02, the go-ahead that was also Gate A; d-2519, how the work runs). Corrections: 1 (d-0a23 reversed revision 3). Escalations: 0 findings needed Samuel; 1 question before the spec (d-a347); 1 now (checkpoint 2's third round). Mechanical share: 4 of 4 claims and the outcome are mechanical. Undos tried: 1 (the move, git mv back, 0.13 s); the environment's undo is Samuel's paste, not tried. Agents spent: 11 fresh checkers (6 spec, 3 for checkpoint 2, 2 for checkpoint 3), no workers: the threads did the work themselves.",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t13"
+  },
+  {
+   "at": "2026-11-01T10:19Z",
+   "by": "a-6ffb",
+   "what": "reflected",
+   "text": "What worked: the fresh critic on real diffs found real defects every time, and cheaply (about 1.5 min and one agent a round): a smoke that skipped the Mac's platform, a latest tag ahead of its smoke, run.sh broken on a Mac's bash 3.2, a test with a false pass on a Mac, a test escaping its scratch folder, a smoke that could not fail. None of these were findable by reading the spec, and the spec rounds had not found them. Keeping the critic's prompt and the commit in the review let each round build on the last without re-raising settled findings (one contested with an event the critic had missed).",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:19Z",
+   "by": "a-6ffb",
+   "what": "reflected",
+   "text": "What cost too much: spec review. Three rounds, six agents and 55 findings before Gate A, then Gate A passed by a shortcut anyway; one round's YAGNI cut (no image) was reversed by Samuel within minutes (d-0a23). The checkpoint rounds then found 33 more findings, 8 Blocker or Major, almost all of a kind no spec reviewer could see (does it run, on which platform, does the test test). The most repeated kind is 'missing check' (12 of 33): claims called verified on one run, a test kept only as an event, a check that could not fail.",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:19Z",
+   "by": "a-6ffb",
+   "what": "reflected",
+   "text": "What to change (proposed to Samuel as a question, not made): a check is a file a machine runs, and 'verified' needs its run; events stamped by a machine; a kind on every finding; one spec round when Samuel is reachable, with deletions checked against the source first. And one thing to keep: the three-round stop held (checkpoint 2 stopped at round 3 with one mechanical Major, now a question) without blocking checkpoint 3.",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:21Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "c2 at round 3's inputs, run 41296956609 (push of eff1a84): theos-e14d0907038db10c built for amd64 and arm64, each smoked by digest under pipefail with the platform asserted (a wrong one now exits 1), then joined; latest skipped off main. Run 41297139269 (dispatch on the same commit): build skipped, the box not built twice. Read back here: run.sh uname -m answered x86_64.",
+   "how": "aip-6fb1's thread (d-2519), read off the runs' jobs",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:23Z",
+   "by": "a-6ffb",
+   "what": "blocked",
+   "text": "Checkpoint 4 waits: aip-31df's branch claude/theos-aip-1 is not on origin (git ls-remote, 10:13 and again now), so theOS's check command does not exist yet. Stopped after checkpoint 3, as the brief says.",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:23Z",
+   "by": "a-6ffb",
+   "what": "asked",
+   "text": "Questions for Samuel written into the record: checkpoint 2's Review gate after three rounds (pass with its run as proof, one more round, or back); Gate B (what to paste, what to run on the Mac); and the avenCEO changes this run proposes.",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:42Z",
+   "by": "a-6ffb",
+   "what": "answer",
+   "text": "Samuel's answers, relayed by avenMAIA and read on its branch at b979bafd6 (merged here): checkpoint 2's Review gate passes, its run as proof (d-d454); all four avenCEO changes become intents, aip-f663 to aip-c455 (d-f7b3). The Gate A question was stale: Gate A passed by d-9f02.",
+   "how": "aip-6fb1's thread (d-2519): avenMAIA's message, checked against d-d454 and d-f7b3 on its branch",
+   "writes": [],
+   "reads": [
+    "d-d454",
+    "d-f7b3"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:42Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Checkpoint 2 passed both gates: its Review gate by d-d454, with run 41296956609 as proof of round 3's fix.",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t6"
+  },
+  {
+   "at": "2026-11-01T10:42Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "Questions marked answered (Gate A: d-9f02; checkpoint 2's gate: d-d454; avenCEO changes: d-f7b3). The lessons point at their intents: a check run by hand and a check claimed before all its parts ran at aip-f663, hand-typed times at aip-6219, a metric with no field at aip-55e6, a YAGNI cut at aip-c455. The Gate B question is taken out until checkpoint 4 is built; its draft, to put back then: paste theOS/sandbox/environment-setup.sh into the environment's setup script (environment-setup.previous.sh is the undo); the work on main first; in a new session theOS/sandbox/run.sh rustc --version answers with no pull; on the Mac with OrbStack, run.sh uname -m says aarch64 and theOS/sandbox/test.sh is green; then theOS's check through run.sh, the same result as the image workflow's last step.",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [
+    "l-9f44",
+    "l-006d",
+    "l-d7ef",
+    "l-f324",
+    "l-18a8"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T11:47Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "aip-31df's branch claude/theos-aip-1 (76f0f00) merged into aip-6fb1's branch: theOS's check command (theOS/avenCEO/checks/check.mjs) and theOS/package.json pinning Playwright 1.64.1. aip-31df's checkpoint 1 is built and green there, but its Review gate stopped after three unclean rounds and waits for Samuel (aip-31df's question 4): checkpoint 4 builds on a check command whose own gate is still open.",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [],
+   "reads": [
+    "aip-31df"
+   ]
+  },
+  {
+   "at": "2026-11-01T11:48Z",
+   "by": "a-6ffb",
+   "what": "started",
+   "text": "Checkpoint 4: Playwright's package (1.64.1) in the image on NODE_PATH, so theOS's check runs inside the box with no install and no network; the smoke step launches Chromium without npm; a last job in the image workflow, theOS's check inside the box through run.sh, its report kept as the run's artifact.",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t9"
+  },
+  {
+   "at": "2026-11-01T11:58Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "c3 here, before the image is rebuilt: in a scratch image (the published box plus playwright@1.64.1 installed through this session's proxy), theOS/sandbox/run.sh env NODE_PATH=/usr/lib/node_modules node avenCEO/checks/check.mjs: green, 1456 states (728 per size), 0 failed, Playwright 1.64.1, 178 s. The same check in this cloud session outside the box: green, 1456 states, 0 failed, 272 s, but with the session's Playwright 1.63.0 (the check warns it is off the pin). Chromium launched in the scratch image with --network none.",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [],
+   "reads": [
+    "theOS/avenCEO/checks/check.mjs"
+   ]
+  },
+  {
+   "at": "2026-11-01T12:02Z",
+   "by": "a-6ffb",
+   "what": "erratum",
+   "text": "A stray git checkout in aip-6fb1's thread detached HEAD at eff1a84 for one command (the first check run in the box failed because check.mjs was not in that tree); the branch was restored at once, and no commit was made in between.",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:04Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Checkpoint 4's Review gate, round 1: rv-8bd0 (2 Major, 4 Nit). Not clean: the workflow ran the check only on box changes, and nothing compared results across scenarios.",
+   "how": "a fresh subagent (Agent tool) with the critic prompt kept in the review",
+   "writes": [
+    "rv-8bd0"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:04Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "Checkpoint 4's round 1 answered (4 fixed, 2 declined with evidence): the image workflow runs on every change to theOS (a box change builds; any other runs only the check); theOS/sandbox/same.mjs compares two check reports state by state; the smoke step fails unless the box's Playwright is theOS/package.json's pin; run.sh says a host's node_modules wins.",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [
+    "rv-8bd0"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:19Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "Run 41304760197 (push of 8a971d3) red, as a gate should be: the arm64 smoke step answered every tool, then stopped at 'PIN: unbound variable' (round 1's fix set PIN in the runner's shell without exporting it, so docker run -e PIN passed nothing); the digest was not kept, so no tag was made. Fixed by exporting PIN. Tried here: the whole new smoke script, offline (--network none), in a scratch image with Playwright 1.64.1 on NODE_PATH: green, Chromium 156 launched; with theOS/package.json changed to 1.64.2 it fails ('Playwright 1.64.1 in the box, theOS/package.json pins 1.64.2').",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:24Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "c3 on commit ca332a8, three scenarios, compared by theOS/sandbox/same.mjs: (1) the image workflow, run 41305824017 green: theos-4304affa59294591 built and smoked on both platforms (the box's Playwright equal to theOS/package.json's pin), then theOS's check inside it through run.sh as the last job, its report kept as the theos-check-report artifact; (2) this cloud session, inside the box through run.sh: green, 1460 states, 0 failed, Playwright 1.64.1, 200 s; (3) this cloud session outside the box: green, 1460 states, 0 failed, Playwright 1.63.0, 287 s. same.mjs: the runner and the box the same, the runner and the session the same, state by state. A first comparison against an older commit's report differed by the 2 states of a doc added in between, as it should. Not yet: the Mac (Gate B), and the check on arm64.",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:31Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Checkpoint 4's Review gate, round 2: rv-8bd0 (1 Major, 3 Nit). Not clean: a push that only bumps theOS/package.json's Playwright pin keeps the tag, so the box is not rebuilt and the pin assertion does not run. Stopped here, as the wrap-up asks: the findings stay open.",
+   "how": "a fresh subagent (Agent tool) with the critic prompt kept in the review",
+   "writes": [
+    "rv-8bd0"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:31Z",
+   "by": "a-6ffb",
+   "what": "erratum",
+   "text": "The 12:24Z event records results written later: the session run outside the box ended 12:28:41 and the runner's report was read at 12:29:02; both before commit 0689d7e (12:29:15).",
+   "how": "aip-6fb1's thread (d-2519), by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:34Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "Checkpoint 4's check on the merged tree (e81c8f9: aip-31df's final checkpoint 1 and aip-836d's migration merged in), both on the same commit: inside the box through theOS/sandbox/run.sh, theos-4304affa59294591: green, 1285 states, 239 view types, 0 failed, Playwright 1.64.1, 106 s; this cloud session outside the box: green, 1274 states, 231 view types, 0 failed, Playwright 1.63.0, 108 s. The verdict is the same, but theOS/sandbox/same.mjs finds 63 states that differ: aip-31df's final check presses buttons only in the first state of each view type it reaches, and with three workers that first state varies, so two runs on one commit reach different sets of states. Its report also no longer carries Playwright's version. same.mjs's state-by-state comparison is now stricter than the check is repeatable: compare per view type, or the states both runs reached, next session.",
+   "how": "aip-6fb1's thread (d-44 relay), by hand",
+   "writes": [],
+   "reads": [
+    "theOS/avenCEO/checks/check.mjs",
+    "theOS/sandbox/same.mjs"
+   ]
+  },
+  {
+   "at": "2026-11-01T12:34Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Checkpoint 4's Review gate as it stands: not passed. rv-8bd0 round 1 (2 Major, 4 Nit) answered; round 2 (1 Major, 3 Nit) open, stopped at the wrap-up (d-8912). Checkpoints 1, 2 and 3 have passed their gates.",
+   "how": "aip-6fb1's thread (d-44 relay), by hand",
+   "writes": [],
+   "reads": [
+    "rv-8bd0"
+   ]
+  },
+  {
+   "at": "2026-11-01T12:34Z",
+   "by": "a-6ffb",
+   "what": "parked",
+   "text": "Parked at the wrap-up (d-8912). Next step: close checkpoint 4's Review gate: (1) the Major: compare the box's Playwright with theOS/package.json's pin inside the check job, or add theOS/package.json to tag.sh's hash; (2) same.mjs: refuse a file that is not a report, compare each state's failing rules, and compare per view type now that the crawl samples; (3) tie a report to its commit (the artifact named by SHA, or the SHA in the report); then one more critic round. Then Gate B, its question put back from the draft in the 10:42Z event: paste theOS/sandbox/environment-setup.sh into the environment's setup script (environment-setup.previous.sh is the undo); the work on main first; in a new session theOS/sandbox/run.sh rustc --version answers with no pull; on the Mac with OrbStack, run.sh uname -m says aarch64, theOS/sandbox/test.sh is green, and theOS's check through run.sh matches the image workflow's report (same.mjs). Also open: the check has not run on arm64 (only the Mac at Gate B covers it); the outcome claim is unmeasured until Gate B; the image workflow now runs on every theOS change (a plan job and a 2 to 5 min check each), which avenMAIA may want to weigh against CI once per goal.",
+   "how": "aip-6fb1's thread (d-44 relay), by hand",
+   "writes": [],
+   "reads": [
+    "rv-8bd0"
+   ]
+  },
+  {
+   "at": "2026-11-01T12:35Z",
+   "by": "a-6ffb",
+   "what": "resumed",
+   "text": "Resumed: Samuel wants aip-6fb1 finished in this session, through checkpoint 4's gate, Gate B and Learn (d-93eb, superseding the wrap-up's parking for this intent). The parked event above stands as history.",
+   "how": "aip-6fb1's thread, by hand, on avenMAIA's relay",
+   "writes": [],
+   "reads": [
+    "d-93eb"
+   ]
+  },
+  {
+   "at": "2026-11-01T12:49Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "Checkpoint 4's round 2 answered (rv-8bd0): theOS/package.json in the box's tag; theOS/sandbox/check.sh runs the check and its own test (the fixtures) in the box or on the host and writes the commit beside the reports; same.mjs refuses non-reports and other commits, compares failing rules on the states both runs reached (the crawl samples since aip-31df's final checkpoint 1, so a state reached by one run only is listed, not counted), and compares the fixtures exactly. check.sh's first runner run (41307490037) could not write commit.txt into the box's root-owned folder and still went green: check.sh now makes the folder as the host's user and fails when commit.txt can't be written.",
+   "how": "aip-6fb1's thread, by hand",
+   "writes": [
+    "rv-8bd0"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T12:49Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "c3 on commit a95dcb8, three scenarios, each through theOS/sandbox/check.sh, compared by same.mjs: the image workflow's runner (run 41308093546, box theos-9bff04ac20567f0b, built and smoked on both platforms by run 41307324250): green, 1279 states (theos-check-a95dcb8… artifact, commit.txt present); inside the box in this cloud session: green, 1286 states, Playwright 1.64.1; this session outside the box: green, 1286 states, Playwright 1.63.0. Every pair the same: the verdict, the failing rules of the 1236 to 1237 states both reached (38 to 42 reached by one only: the crawl samples), and the check's own test (3 fixtures, body-clip red by design, the others green) in each. Not yet: the Mac and arm64 (Gate B).",
+   "how": "aip-6fb1's thread, by hand",
+   "writes": [],
+   "reads": [
+    "theOS/sandbox/check.sh",
+    "theOS/sandbox/same.mjs"
+   ]
+  },
+  {
+   "at": "2026-11-01T12:52Z",
+   "by": "a-6ffb",
+   "what": "erratum",
+   "text": "The 12:49Z event gives the runner 1279 states: its artifact for a95dcb8 has 1283 (1279 was the line of the run before, on 8ef52b2). Its Playwright figures (1.64.1 in the box, 1.63.0 outside) came from the check's console line; check.sh now writes the version into commit.txt.",
+   "how": "aip-6fb1's thread, by hand, from rv-8bd0 round 3",
+   "writes": [],
+   "reads": [
+    "rv-8bd0"
+   ]
+  },
+  {
+   "at": "2026-11-01T13:01Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "c3 on commit e12ea83 (a clean tree), three scenarios through theOS/sandbox/check.sh, each with commit.txt written by the run itself: the image workflow's runner (run 41308870452, box theos-759b99c909cafa6e, built and smoked on both platforms by run 41308546512): green, 1279 states, 227 view types, Playwright 1.64.1; inside the box in this cloud session: green, 1301 states, 243 view types, 1.64.1; this session outside the box: green, 1294 states, 234 view types, 1.63.0. same.mjs, every pair exit 0: the same verdict, the same failing rules on the 1237 to 1240 states both reached (40 to 49 by one only, under its 10% bound; view types within 10%), and the same check's own test (3 fixtures, one red by design). Tried before: a run cut to 5 states, another commit, a flipped fixture and a non-report are each refused; a first try on a dirty tree was refused too, as it should be. Not yet: the Mac and the check on arm64 (Gate B).",
+   "how": "aip-6fb1's thread, by hand",
+   "writes": [],
+   "reads": [
+    "theOS/sandbox/check.sh",
+    "theOS/sandbox/same.mjs"
+   ]
+  },
+  {
+   "at": "2026-11-01T13:01Z",
+   "by": "a-6ffb",
+   "what": "asked",
+   "text": "Checkpoint 4's Review gate ran three rounds without a clean one (rv-8bd0: 2, 1 and 2 Major); every finding is fixed and tried by machine, the last round's fixes proven by run 41308870452 and the comparison above. By the rule the question goes to Samuel, with Gate B's question.",
+   "how": "aip-6fb1's thread, by hand",
+   "writes": [],
+   "reads": [
+    "rv-8bd0"
+   ]
+  },
+  {
+   "at": "2026-11-01T13:04Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "Samuel: checkpoint 4's Review gate passes on the proof from three places; Gate B passes for GitHub and the cloud, the Mac run deferred until he tries it, the environment's paste until theOS is on main (d-f20b).",
+   "how": "in chat with avenMAIA, recorded in the decision; relayed to aip-6fb1's thread",
+   "writes": [],
+   "reads": [
+    "d-f20b"
+   ]
+  },
+  {
+   "at": "2026-11-01T13:04Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Checkpoint 4 passed both gates: its Review gate by d-f20b, on the proof from three places (e12ea83).",
+   "how": "aip-6fb1's thread, by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t9"
+  },
+  {
+   "at": "2026-11-01T13:04Z",
+   "by": "a-4c7a",
+   "what": "gate-B",
+   "text": "Gate B passed for GitHub and the cloud (d-f20b); the Mac run and the environment's paste are in the deferred list.",
+   "how": "aip-6fb1's thread, by hand",
+   "writes": [],
+   "reads": [
+    "d-f20b"
+   ]
+  },
+  {
+   "at": "2026-11-01T13:04Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Gate B passed for GitHub and the cloud (d-f20b).",
+   "how": "aip-6fb1's thread, by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t8"
+  },
+  {
+   "at": "2026-11-01T13:04Z",
+   "by": "a-6ffb",
+   "what": "measured",
+   "text": "The outcome: met for GitHub and the cloud, the Mac deferred. theOS's check gave the same result on one commit (e12ea83) on the image workflow's runner (1279 states), inside the box in a cloud session (1301) and outside it (1294): the same verdict, the same failing rules on the states all reached, the same check's own test (same.mjs). The image is built from theOS/sandbox/box alone; nothing in theOS/sandbox or the workflow reads avenDB. c2 and c4 met, c3 met but for the Mac, c1 open until the park reaches main.",
+   "how": "aip-6fb1's thread, by hand",
+   "writes": [],
+   "reads": [
+    "theOS/sandbox/same.mjs"
+   ]
+  },
+  {
+   "at": "2026-11-01T13:04Z",
+   "by": "a-6ffb",
+   "what": "measured",
+   "text": "The process since the 10:19Z measurement, and the whole run. Lead time: asked 08:51, Gate A 09:53, Build 09:54 to Gate B about 13:03 (3 h 9 min, of which 65 min waiting for aip-31df's branch, 10:42 to 11:47, and about 20 min of the wrap-up's park and resume); about 4 h 15 min from the first question to closed. Review rounds: spec 3 (none clean); checkpoint 2: 3, checkpoint 3: 2, checkpoint 4: 3; first pass 0 of 3 checkpoints (checkpoint 1 was a direct ask). Checkpoint findings 49: 2 Blocker, 13 Major, 34 Nit; by kind missing check 17, bug 13, unclear 10, wrong fact 6, security 3; 45 fixed (one by an erratum), 3 declined with evidence, 1 contested. Spec findings 55 (no kind recorded). Samuel's touches: 10 messages against the 2 the flow plans for (the source, d-24's move, d-33's correction, d-38's go-ahead and Gate A, d-44's threads, d-d454 and d-f7b3, the wrap-up d-8912, the resume d-93eb, d-f20b). Corrections 1 (d-33). Escalations 3: the question before the spec, and two checkpoint gates after three rounds (d-d454, d-f20b), each passed on a run as proof. Mechanical share: 4 of 4 claims and the outcome. Undos tried: 1 (the move, 0.13 s); the environment's undo deferred with its paste. Agents: 14 fresh checkers (6 spec, 8 checkpoint), no workers. Image workflow runs on this branch: 18 today.",
+   "how": "aip-6fb1's thread, by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T13:04Z",
+   "by": "a-6ffb",
+   "what": "reflected",
+   "text": "What worked: the checkpoint critic kept finding real defects the author missed, and every Major ended as a mechanical check (the smoke that can fail, the pin in the tag, the bound in same.mjs, the commit beside each report). The three-round stop held twice and cost Samuel one short answer each time, because each question came with a run as proof. Machine evidence on GitHub caught two of my own fixes failing where they run (an unexported variable, a root-owned folder), which no reading would have.",
+   "how": "aip-6fb1's thread, by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T13:04Z",
+   "by": "a-6ffb",
+   "what": "reflected",
+   "text": "What cost too much: checkpoint 4 took three rounds largely because I wrote evidence and fixes faster than I tried them where they run, and copied figures by hand (two wrong facts). Waiting on aip-31df and the park-and-resume cost about 85 minutes of the 3-hour Build. And a cost going forward: the image workflow now runs on every change to theOS (a plan job of about 15 s and a check of 2 to 4 min on a runner per push, cancelled when superseded); with 20 to 50 threads pushing theOS, that is many runner minutes a day. Narrowing its paths to the check and the box (and running the check once per goal) is a choice for Samuel and avenMAIA, not made here.",
+   "how": "aip-6fb1's thread, by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T13:04Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "Three lessons written: l-b006, l-9291, l-41d9 (a comparison bounded by coverage, a fix tried where it runs, figures copied from the artifact); each points at the avenCEO intent it feeds (aip-f663, aip-6219). brain/ids.json has their entries; the lessons index is avenMAIA's to add them to.",
+   "how": "aip-6fb1's thread, by hand",
+   "writes": [
+    "l-b006",
+    "l-9291",
+    "l-41d9"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T13:04Z",
+   "by": "a-6ffb",
+   "what": "closed",
+   "text": "aip-6fb1 closed: every checkpoint through its gates, Gate B passed for GitHub and the cloud (d-f20b), the outcome measured. Open after closing, in the deferred list: the Mac run, the environment's paste, c1 on main.",
+   "how": "aip-6fb1's thread, by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T13:04Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Learn: the run measured and reflected; lessons written.",
+   "how": "aip-6fb1's thread, by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t13"
+  }
+ ],
+ "reviews": [
+  "rv-7427",
+  "rv-6ac3",
+  "rv-bf9d",
+  "rv-a5a4",
+  "rv-544f",
+  "rv-ef23",
+  "rv-fc79",
+  "rv-89a2",
+  "rv-8bd0"
+ ],
+ "source": {
+  "type": "idea",
+  "by": "a-4c7a",
+  "at": "2026-11-01",
+  "text": "Move the whole responsibility for avenSANDBOX, and its lifecycle, into theOS. That helps our testing gates too: tests, Lean, vectors.",
+  "links": [],
+  "ref": "d-dc23"
+ },
+ "tasks": [
+  {
+   "id": "t1",
+   "what": "Park avenDB's four workflows",
+   "step": 2,
+   "for": "checkpoint 1",
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t2",
+   "what": "Answer spec review round 1",
+   "step": 2,
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t3",
+   "what": "Revision 2",
+   "step": 2,
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t4",
+   "what": "Spec review round 2: paraphrase and zoom-out",
+   "step": 2,
+   "who": "two fresh checkers"
+  },
+  {
+   "id": "t5",
+   "what": "Gate A: approve what must be true",
+   "step": 2,
+   "who": "a-4c7a"
+  },
+  {
+   "id": "t10",
+   "what": "Answer round 2 and write revision 3",
+   "step": 2,
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t12",
+   "what": "Revision 4: avenSANDBOX whole (d-0a23)",
+   "step": 2,
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t11",
+   "what": "Spec review round 3",
+   "step": 2,
+   "who": "two fresh checkers"
+  },
+  {
+   "id": "t8",
+   "what": "Gate B: paste the environment's script, start a session, run the check on your Mac",
+   "step": 3,
+   "who": "a-4c7a"
+  },
+  {
+   "id": "t13",
+   "what": "Learn: measure the run (measure) and reflect on how the flow held up; lessons, and an AIP for any change to avenCEO",
+   "step": 4,
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t14",
+   "what": "Answer round 3 and write revision 5",
+   "step": 2,
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t6",
+   "what": "Checkpoint 2: move the box, its workflow back",
+   "step": 3,
+   "for": "checkpoint 2",
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t7",
+   "what": "Checkpoint 3: run.sh, cloud-setup.sh, the environment's script",
+   "step": 3,
+   "for": "checkpoint 3",
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t9",
+   "what": "Checkpoint 4: theOS's check inside the image (after aip-31df's checkpoint 1)",
+   "step": 3,
+   "for": "checkpoint 4",
+   "who": "a-6ffb"
+  }
+ ],
+ "measure": {
+  "what": "This run is measured as the first intent through all four steps (d-9f02): the product (the outcome claim) and the process (avenCEO's metrics).",
+  "metrics": [
+   {
+    "metric": "m-05db",
+    "how": "from the source event to the measured event, and the time in each step, read off the trace's timestamps"
+   },
+   {
+    "metric": "m-e42c",
+    "how": "spec review rounds before Gate A, and rounds per checkpoint"
+   },
+   {
+    "metric": "m-db7a",
+    "how": "checkpoints that pass both gates in their first round"
+   },
+   {
+    "metric": "m-4c97",
+    "how": "your actions on this intent, against the two the flow plans for (Gate A, Gate B)"
+   },
+   {
+    "metric": "m-c535",
+    "how": "findings that needed your knowledge"
+   },
+   {
+    "metric": "m-296e",
+    "how": "your corrections of this intent's work (d-0a23 counts: it reversed revision 3)"
+   },
+   {
+    "metric": "m-ad06",
+    "how": "claims checked by a machine, of all claims"
+   },
+   {
+    "metric": "m-0ae4",
+    "how": "undos tried, and how long each took"
+   }
+  ],
+  "also": "Findings per round by severity and by kind (unclear, contradiction, YAGNI, wrong fact), and the agents spent per round, to see whether spec review earns its cost."
+ }
+}

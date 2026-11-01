@@ -1,0 +1,302 @@
+{
+ "type": "research",
+ "id": "rs-0844",
+ "intent": "aip-a195",
+ "question": "Which extension points does Claude Code offer today, what can each show or do, and how would a native Claude Code mod show each intent next to its thread (stage, tasks, waiting questions, gate answers) and let Samuel act on it, with avenMAIA as the one master session (d-b43d)? What exists today and what must be built?",
+ "sources": [
+  "src-2bf5",
+  "src-7472",
+  "src-7d19",
+  "src-4bcd",
+  "src-6f75",
+  "src-8e59",
+  "src-2899",
+  "src-bef9",
+  "src-caff",
+  "src-6637",
+  "src-9089",
+  "src-cdad",
+  "src-ee44",
+  "src-9a96",
+  "src-51ce",
+  "src-7292",
+  "src-7982",
+  "src-37da",
+  "src-bdf4",
+  "src-fa4d"
+ ],
+ "reads": [
+  {
+   "source": "src-2bf5",
+   "how": "WebFetch of the official page on code.claude.com, read whole."
+  },
+  {
+   "source": "src-7472",
+   "how": "WebFetch of the official page on code.claude.com, read whole."
+  },
+  {
+   "source": "src-7d19",
+   "how": "Loaded the plugin-authoring skill in this session and read its SKILL.md, reference.md in full and the API declarations (types/claude-code.d.ts, Claude Code 2.1.316) by searching them for the nouns, events and render sites named here."
+  },
+  {
+   "source": "src-4bcd",
+   "how": "WebFetch of the official page on code.claude.com, read whole."
+  },
+  {
+   "source": "src-6f75",
+   "how": "WebFetch of the official page on code.claude.com: first 100,000 of about 284,000 characters."
+  },
+  {
+   "source": "src-8e59",
+   "how": "WebFetch of the official page on code.claude.com: the opening and the lines on input, updates and links, searched in the saved page."
+  },
+  {
+   "source": "src-2899",
+   "how": "WebFetch of the official page on code.claude.com, read whole."
+  },
+  {
+   "source": "src-bef9",
+   "how": "WebFetch of the official page on code.claude.com, read whole."
+  },
+  {
+   "source": "src-caff",
+   "how": "WebFetch of the official page on code.claude.com, read whole."
+  },
+  {
+   "source": "src-6637",
+   "how": "WebFetch of the official page on code.claude.com: first 100,000 of about 148,000 characters."
+  },
+  {
+   "source": "src-9089",
+   "how": "WebFetch of the official page on code.claude.com, read whole."
+  },
+  {
+   "source": "src-cdad",
+   "how": "WebFetch of the official page on code.claude.com: the opening and the lines on server mode, spawn modes and trusted devices, searched in the saved page."
+  },
+  {
+   "source": "src-ee44",
+   "how": "WebFetch of the official page on code.claude.com, read whole."
+  },
+  {
+   "source": "src-9a96",
+   "how": "WebFetch of the official page on code.claude.com: first 100,000 of about 155,000 characters."
+  },
+  {
+   "source": "src-51ce",
+   "how": "WebFetch of the official page on code.claude.com, read whole."
+  },
+  {
+   "source": "src-7292",
+   "how": "WebFetch of the official page on code.claude.com, read whole."
+  },
+  {
+   "source": "src-7982",
+   "how": "WebFetch of the official page on code.claude.com: first 100,000 of about 209,000 characters."
+  },
+  {
+   "source": "src-37da",
+   "how": "WebFetch of the official page on code.claude.com: first 100,000 of about 119,000 characters."
+  },
+  {
+   "source": "src-bdf4",
+   "how": "WebFetch of the official page on code.claude.com: the opening and the lines on triggers, the API endpoint and limits, searched in the saved page."
+  },
+  {
+   "source": "src-fa4d",
+   "how": "Read the tool definitions this cloud session was given; no tool was called."
+  }
+ ],
+ "not_read": [
+  "The rest of the long pages named under reads (hooks, MCP, desktop, agent view, skills); the MCP page's sections on resources, prompts and any UI an MCP server renders.",
+  "The mods pages on events, the API and the reference on code.claude.com: their content was read instead in the bundled reference.md and type declarations, which the docs call the authority for this build.",
+  "The subagents page, the mobile page and the Projects pages past its limitations section.",
+  "The sample mods (anthropics/claude-code-playground) and the built-in mods' source (anthropics/claude-code/mods) on GitHub.",
+  "docs.claude.com and anthropic.com: not needed; code.claude.com held every page. No host was blocked: every fetch succeeded."
+ ],
+ "patterns": [
+  {
+   "name": "pane",
+   "what": "A mod opens a pane ($.ui.open) beside the transcript: one row per intent with its stage, tasks done of total, open questions and its thread's state; a tab or a press opens one intent in full.",
+   "seen_in": [
+    "src-2bf5",
+    "src-7472",
+    "src-7d19"
+   ],
+   "adopt": "now",
+   "why": "It is the only extension that draws an interface Samuel can act in, and it draws in the Desktop Code tab and the terminal, where avenMAIA could run."
+  },
+  {
+   "name": "band",
+   "what": "The band above the prompt shows only what waits for Samuel (a gate, a question), each with its buttons; it collapses when nothing waits.",
+   "seen_in": [
+    "src-7d19",
+    "src-7472"
+   ],
+   "adopt": "now",
+   "why": "Samuel's attention is the scarcest thing (aip-31df); a band puts the two gate moments in front of him without a board to read."
+  },
+  {
+   "name": "status-line",
+   "what": "One line: 'Waiting on you: aip-31df Gate A, aip-836d 1 question'. A mod sets it with $.ui.status, or a status line script reads the records.",
+   "seen_in": [
+    "src-8e59",
+    "src-7d19"
+   ],
+   "adopt": "now",
+   "why": "Cheap and always visible; the pane and band do the rest."
+  },
+  {
+   "name": "commands",
+   "what": "/intents and /intent AIP-n registered by the mod ($.command.register) answer at once with no Claude turn; where nothing draws (a cloud session, claude.ai, the phone over Remote Control) the same commands reply in text.",
+   "seen_in": [
+    "src-2bf5",
+    "src-7d19",
+    "src-37da"
+   ],
+   "adopt": "now",
+   "why": "Works in every session that loads the plugin, so the view degrades to text instead of disappearing."
+  },
+  {
+   "name": "records-as-source",
+   "what": "The mod reads theOS/aip/*.json and computes stage, task status and open questions from the events exactly as the Intents app does (stageOf, taskStatus, W.stepAt in theOS/avenCEO/app.js and theOS/ui/wiki.js); it reads files with $.fs from a checkout and refreshes with $.clock.every and git fetch ($.process.run).",
+   "seen_in": [
+    "src-7d19"
+   ],
+   "adopt": "now",
+   "why": "avenCEO's first rule: the next action is a function of the record. The mod stores nothing of its own, so it cannot drift from theOS."
+  },
+  {
+   "name": "thread-per-intent",
+   "what": "Each intent's thread is a cloud session started with create_session (or claude --cloud), tagged with its AIP, and named in the intent's 'started' event; steered with send_message or SendMessage, read with list_events.",
+   "seen_in": [
+    "src-fa4d",
+    "src-2899",
+    "src-caff"
+   ],
+   "adopt": "now",
+   "why": "It is how avenMAIA works today (aip-a195's own 'started' event); the link from intent to session is already in the record and only needs a field the mod can read instead of text."
+  },
+  {
+   "name": "thread-status",
+   "what": "The mod reads each thread's state (working, blocked, review_ready, completed, failed) with $.mcp.call on the claude-code-remote server's get_session, and shows 'blocked' as waiting on Samuel.",
+   "seen_in": [
+    "src-fa4d",
+    "src-7d19"
+   ],
+   "adopt": "now",
+   "why": "It joins the two worlds d-b43d names. To verify first: whether that server is connected in a local session on the Mac."
+  },
+  {
+   "name": "act-through-avenMAIA",
+   "what": "Buttons and fields never write a record. An answer, a gate approval or a note for a thread is submitted as Samuel's words into avenMAIA's own session ($.prompt.submit), and avenMAIA polishes, records the decision and relays it, as it does with chat today.",
+   "seen_in": [
+    "src-7d19",
+    "src-caff"
+   ],
+   "adopt": "now",
+   "why": "Keeps avenCEO's rules: every human word is Samuel's and kept polished, decisions are written only by avenMAIA, and a message between sessions is never consent."
+  },
+  {
+   "name": "overview-groups",
+   "what": "Group intents the way Projects' Overview and agent view group threads: Waiting on you, Working, Ready for review, Idle, Closed, with the waiting question as the row's summary.",
+   "seen_in": [
+    "src-bef9",
+    "src-6637"
+   ],
+   "adopt": "now",
+   "why": "A proven layout for 'what needs you'; theOS adds the intent's stage and gate."
+  },
+  {
+   "name": "projects-as-host",
+   "what": "Run avenMAIA as a Projects conversation and each AIP as one of its threads: the Overview pane, thread cards, project instructions and memory come built in, on the web, the Desktop app and the phone.",
+   "seen_in": [
+    "src-bef9"
+   ],
+   "adopt": "later",
+   "why": "It is d-b43d's shape already built, but it is a beta on Pro, Max and Ultra only, knows threads and not intents, gates or tasks, and its threads skip a repository's skills, hooks and settings. A mod cannot draw in its cloud conversation. Worth a trial before building, as Samuel's choice."
+  },
+  {
+   "name": "theos-mcp",
+   "what": "A small theOS MCP server (tools: list intents, next action of AIP-n, open questions) added as a connector, so every thread, local or cloud, can ask the record what to do next.",
+   "seen_in": [
+    "src-9a96",
+    "src-4bcd"
+   ],
+   "adopt": "later",
+   "why": "The cloud-side half of the interface, where mods do not draw; it also lets $.mcp.call and avenMAIA share one reader of the records."
+  },
+  {
+   "name": "channels",
+   "what": "An MCP channel pushes 'record changed' or 'thread waiting' into avenMAIA's running local session, or bridges Samuel's phone chat to it.",
+   "seen_in": [
+    "src-9089"
+   ],
+   "adopt": "later",
+   "why": "Useful once avenMAIA runs locally for long; research preview, and a timer in the mod covers the first version."
+  },
+  {
+   "name": "gate-hook",
+   "what": "A Stop or SubagentStop settings hook (or the mod's classic.Stop) keeps a thread from stopping while its gate is open.",
+   "seen_in": [
+    "src-6f75"
+   ],
+   "adopt": "later",
+   "why": "avenCEO already lists it as later; it enforces gates, the mod only shows them. Cloud threads in a project do not run repository hooks."
+  },
+  {
+   "name": "scheduled-router",
+   "what": "A cloud scheduled task with an API trigger computes next(record) for every intent and starts or nudges the thread that should move.",
+   "seen_in": [
+    "src-bdf4"
+   ],
+   "adopt": "later",
+   "why": "Matches avenCEO's later 'router'; not an interface."
+  },
+  {
+   "name": "agent-sdk",
+   "what": "The orchestrator as an Agent SDK program over the records.",
+   "seen_in": [
+    "src-51ce"
+   ],
+   "adopt": "later",
+   "why": "A program, not a view; it needs an API key, and nothing it draws exists."
+  },
+  {
+   "name": "agent-teams",
+   "what": "A lead session with teammates and a shared task list.",
+   "seen_in": [
+    "src-ee44"
+   ],
+   "adopt": "no",
+   "why": "Experimental, one team per session, teammates end with the lead's process: intents live for days."
+  },
+  {
+   "name": "agent-view",
+   "what": "claude agents lists local background sessions with their states.",
+   "seen_in": [
+    "src-6637"
+   ],
+   "adopt": "no",
+   "why": "Local sessions only; theOS's threads are cloud sessions."
+  },
+  {
+   "name": "output-style",
+   "what": "Instructions sent with every request that set tone and format.",
+   "seen_in": [
+    "src-7292"
+   ],
+   "adopt": "no",
+   "why": "Changes how Claude writes, shows nothing."
+  }
+ ],
+ "recommendation": "Today Claude Code has every piece d-b43d needs, but split across two places that do not meet. The intent side (stage, tasks, questions, gates) exists only in theOS's records and its web apps. The thread side exists in claude.ai's sessions: avenMAIA creates, messages and reads them with the claude-code-remote tools, and Projects shows threads by 'waiting on you'. A mod is the only extension that draws an interface Samuel can act in, and it draws only in the terminal, the Desktop app's Code tab and VS Code, never in a cloud session, on claude.ai or on the phone. So the mod is a local cockpit: avenMAIA runs as a local session on Samuel's Mac (Desktop Code tab, with Remote Control so the phone still reaches it), and a theOS plugin in theOS/ adds one mod with an Intents pane, a 'waiting on you' band, a status line entry and /intents commands that answer in text where nothing draws. It reads the records (stage and tasks computed as the Intents app does) and each thread's state (get_session through $.mcp.call), and it acts only by handing Samuel's words to avenMAIA as a prompt. What must be built: the mod; a record field that names each intent's thread (today it is in event text); a port of stageOf and taskStatus that both the apps and the mod use; and a check that the claude-code-remote tools reach a local session. Before Specify, Samuel chooses between this and trying Projects as the host (built in, on every device, but without intents, and no mod drawing there).",
+ "open_questions": [
+  "Where should avenMAIA live: as today in a cloud session (no mod drawing; text commands only), as a local session on the Mac with the mod, or as a Projects conversation?",
+  "Does Samuel's account have Projects? It is a beta on Pro, Max and Ultra only, not Team or Enterprise.",
+  "Is the claude-code-remote MCP server (create_session, get_session, list_events) connected in a local session on the Mac, or only in cloud sessions? If not, thread state would come from SendMessage and ListAgents over Remote Control, or claude -p --cloud, which cannot read state.",
+  "Should the mod only show and hand words to avenMAIA (recommended), or also write events itself? Writing would break 'decisions are written by avenMAIA'.",
+  "Where should the intent-to-thread link be stored: a new field on the intent, or computed from its 'started' events?",
+  "On the phone a mod draws nothing: is the published Intents app plus the session list enough there?"
+ ]
+}

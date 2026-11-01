@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "d-6b87",
+ "n": 54,
+ "title": "theOS threads start in theOS/",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "threads",
+  "memory"
+ ],
+ "quote": "Choose what you think is best.",
+ "means": "Left to avenMAIA, which chose: theOS threads start with theOS/ as their working folder, so theOS/CLAUDE.md and brain's start-of-session hook load; the repository root's .claude stays legacy.",
+ "intents": [
+  "aip-836d"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-b43d"
+ ],
+ "reflection": {
+  "checked": "every decision before d-6b87 that held",
+  "result": "supersedes nothing"
+ }
+}

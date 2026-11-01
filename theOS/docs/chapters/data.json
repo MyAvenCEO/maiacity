@@ -1,0 +1,265 @@
+{
+ "title": "Data",
+ "slides": [
+  {
+   "title": "You write a to-do list.",
+   "text": "Everything you keep is {data}. Your list keeps changing; the photo of the leaking tap you attach never will. Both are data.",
+   "deep": "The list is a Doc (next slides): CRDT maps, lists and text. The photo is a Value: immutable bytes named by their BLAKE3 hash, streamed in verified ranges."
+  },
+  {
+   "title": "The list starts from itself.",
+   "text": "When data is born, your agent signs its {birth record}: which schema it follows, and its first policy, naming its owner. The data's ID is the hash of that record. So the list is named by its own birth: it doesn't come from any account, and nobody can make a second birth for the same ID.",
+   "deep": "The data ID is data:b3: and the BLAKE3 hash of this record without its signature (OLD-AIP-50, OLD-AIP-64). An agent acting for the owner with own signs it, and a random nonce keeps two births apart. A second birth record would simply be different data, so no key has to be kept secret or destroyed.",
+   "code": {
+    "type": "data:b3:Rfe…@b3:105…#genesis",
+    "nonce": "b3:4f1…",
+    "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
+    "policy": {
+     "to": "human:b3:q4x7…#you",
+     "operations": {
+      "own": {}
+     },
+     "expires": null
+    },
+    "proof": [
+     "human:b3:q4x7…#you"
+    ],
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
+   },
+   "flow": [
+    "write the birth record",
+    "sign it",
+    "its hash is the data ID"
+   ],
+   "spec": {
+    "summary": "A piece of data is named by the hash of its birth record; the record fixes its schema version, its owner and, optionally, the data it continues.",
+    "records": [
+     {
+      "name": "genesis record (data)",
+      "fields": [
+       [
+        "type",
+        "schema ref",
+        "the root genesis schema (OLD-AIP-90)"
+       ],
+       [
+        "nonce",
+        "b3 hash",
+        "random; keeps two births apart"
+       ],
+       [
+        "schema",
+        "schema ref",
+        "the exact version the data follows (OLD-AIP-66)"
+       ],
+       [
+        "policy",
+        "policy body",
+        "to the owner, operations own, expires null"
+       ],
+       [
+        "predecessor",
+        "optional",
+        "{data: old data ID, frontier: hash of the old frontier} when this data continues another (OLD-AIP-71)"
+       ],
+       [
+        "proof",
+        "record IDs",
+        "from the owner's birth record to the signing agent"
+       ],
+       [
+        "sig",
+        "signature",
+        "by an agent acting for the owner with own"
+       ]
+      ]
+     }
+    ],
+    "rules": [
+     {
+      "id": "data.id",
+      "text": "The data ID is data:b3: and b3(cbor(record without sig)); a second birth record is different data."
+     },
+     {
+      "id": "data.signed_by_own",
+      "text": "The birth record is valid only if signed along a chain that carries own on the named owner (OLD-AIP-91)."
+     },
+     {
+      "id": "data.owner_policy",
+      "text": "Its policy names exactly one owner, an identity, with own and no expiry (OLD-AIP-5)."
+     },
+     {
+      "id": "data.sub_birth",
+      "text": "Data born inside other data is born under the parent's create policy and follows the parent's owner and policies by link (OLD-AIP-64)."
+     },
+     {
+      "id": "data.predecessor",
+      "text": "A predecessor counts only together with the old data's forward link naming this data (successor.mutual)."
+     }
+    ],
+    "intents": [
+     "OLD-AIP-5",
+     "OLD-AIP-50",
+     "OLD-AIP-64",
+     "OLD-AIP-66",
+     "OLD-AIP-71",
+     "OLD-AIP-91"
+    ]
+   }
+  },
+  {
+   "title": "Its first policy makes you the owner.",
+   "text": "The birth record names a single owner: you. The owner may do everything, for good, including writing the policies for everyone else. There is always exactly one owner: one identity, a person or a coop, never a list of people.",
+   "deep": "The owner is an identity ID inside the birth record. Every ownership act traces back to that identity's guardian (OLD-AIP-91). Its authority never expires and never moves: there is no hand-over. Ownership is never a set, so there is no removing someone from it. (OLD-AIP-5, OLD-AIP-30)",
+   "spec": {
+    "summary": "Exactly one owner per piece of data, an identity; everything the owner does traces back to its guardian.",
+    "rules": [
+     {
+      "id": "owner.identity",
+      "text": "The owner is the one identity named in the data's birth record policy; never a role, never a set, never an agent."
+     },
+     {
+      "id": "owner.acts",
+      "text": "Ownership acts: writing and ending policies, retain, erase, opening the archive, migrating the schema, starting a successor (OLD-AIP-30, OLD-AIP-67, OLD-AIP-71)."
+     },
+     {
+      "id": "owner.through_guardian",
+      "text": "An ownership act is valid only if signed along a chain of own that traces back to the owner's guardian (OLD-AIP-91)."
+     },
+     {
+      "id": "owner.never_moves",
+      "text": "The owner never changes; a successor keeps the same owner (OLD-AIP-54, OLD-AIP-71)."
+     }
+    ],
+    "intents": [
+     "OLD-AIP-5",
+     "OLD-AIP-30",
+     "OLD-AIP-54",
+     "OLD-AIP-71",
+     "OLD-AIP-91"
+    ]
+   }
+  },
+  {
+   "title": "Data comes in two kinds.",
+   "text": "A {Doc} is data that changes: a list, a note, a calendar. A {Value} is bytes that never change: a photo, a PDF, a movie. Together they cover everything.",
+   "list": [
+    "Doc: any JSON that changes, built from data types that merge by themselves (Merging chapter).",
+    "Value: any file that never changes, named by its hash."
+   ],
+   "deep": "Doc: a Loro document, a history of CRDT ops. Value: immutable bytes addressed by BLAKE3, fetched in verified ranges (iroh-blobs style)."
+  },
+  {
+   "title": "A Doc looks like JSON.",
+   "text": "Under the hood it's built from {CRDT} data types: maps, lists, text, trees and counters. CRDT means: copies can be changed separately and always merge back into the same result. Your to-do list is a map holding a title and a list of items.",
+   "code": {
+    "title": "House",
+    "items": [
+     {
+      "id": "milk",
+      "text": "Buy milk",
+      "done": false
+     },
+     {
+      "id": "tap",
+      "text": "Fix the tap",
+      "done": false
+     }
+    ]
+   },
+   "deep": "CRDT containers: map, list, movable list, text, tree, counter. The JSON you see is a projection of their current state."
+  },
+  {
+   "title": "A Value never changes.",
+   "text": "Its name is the hash of its sealed bytes, so it can't be swapped without everyone noticing, and carriers can check every byte without reading any. It travels in ranges, and you fetch only the parts you need: the first minute of a movie, page 3 of a PDF.",
+   "code": {
+    "type": "data:b3:Rf3…@b3:2b6…#value",
+    "id": "value:b3:9f2c…#movie",
+    "size": 1503238554,
+    "sealed": "XChaCha20-Poly1305, 16 KiB segments",
+    "tree": "BLAKE3 over the sealed bytes"
+   },
+   "deep": "The name hashes the sealed bytes, never the plaintext, so nobody can confirm that you hold a file they know; the plaintext's hash sits only inside the sealed metadata Doc. Each 16 KiB segment is sealed on its own, aligned to iroh-blobs' chunk groups, so any range can be fetched, verified and decrypted alone (OLD-AIP-72).",
+   "spec": {
+    "summary": "A Value is immutable sealed bytes, named by the BLAKE3 hash of exactly what carriers store.",
+    "records": [
+     {
+      "name": "value record",
+      "fields": [
+       [
+        "id",
+        "value ID",
+        "value:b3: and the BLAKE3 root over the sealed bytes"
+       ],
+       [
+        "size",
+        "integer",
+        "plaintext length in bytes"
+       ],
+       [
+        "sealed",
+        "cipher, segment size",
+        "XChaCha20-Poly1305, 16 KiB segments"
+       ],
+       [
+        "key",
+        "in its keyring",
+        "sealed to the metadata Doc's data key (OLD-AIP-21)"
+       ]
+      ]
+     }
+    ],
+    "rules": [
+     {
+      "id": "value.name",
+      "text": "A Value's ID is the BLAKE3 root hash of its sealed bytes; carriers and readers verify every range against it."
+     },
+     {
+      "id": "value.segments",
+      "text": "Plaintext is cut into 16 KiB segments; segment i is sealed with the Value's own key and a nonce derived from i, so each segment decrypts alone."
+     },
+     {
+      "id": "value.plain_hash_sealed",
+      "text": "The plaintext hash appears only inside the sealed metadata Doc, never in a name, a want or a news record."
+     },
+     {
+      "id": "value.fresh_key",
+      "text": "Every Value gets a fresh random key; there is no convergent encryption, so equal files sealed twice get different names."
+     }
+    ],
+    "intents": [
+     "OLD-AIP-21",
+     "OLD-AIP-72"
+    ]
+   }
+  },
+  {
+   "title": "Every Value has its own Doc.",
+   "text": "The movie never changes, but its name, its notes and who may see it do. So every Value comes with a small Doc: its metadata. Whoever may read that Doc can open the Value; how, comes in the Keys chapter.",
+   "code": {
+    "type": "data:b3:Rcb…@b3:030…#meta",
+    "id": "data:b3:Mm3…#movie-meta",
+    "value": "value:b3:9f2c…#movie",
+    "plain": "b3:7d1…",
+    "schema": "data:b3:Mt7…@b3:4c2…#media-meta",
+    "name": "Our summer",
+    "notes": "For grandma"
+   },
+   "deep": "A Value has no policies of its own: its keyring holds one envelope, addressed to its metadata Doc's data key (Keys chapter). Taking read away protects only future versions of an immutable Value."
+  },
+  {
+   "title": "Data, in short.",
+   "list": [
+    "Everything you keep is data, and every piece of data starts from itself.",
+    "Its birth record names exactly one owner, an identity.",
+    "A Doc is JSON that changes; a Value is bytes that never change.",
+    "Every Value has a Doc for its metadata and its key."
+   ],
+   "deep": "Data IDs are hashes of birth records; Value names are BLAKE3 hashes; Docs are CRDT documents."
+  }
+ ]
+}

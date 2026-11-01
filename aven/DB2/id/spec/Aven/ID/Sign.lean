@@ -4,60 +4,68 @@ import Aven.ID.Cast
 
 A device signs a statement for the vault it serves, with its own key (aven-id's `sign.rs`). The model knows keys by
 id and takes the signature scheme as sound: a signature verifies for exactly the device, vault and body its key
-signed, and with no other key. Ed25519 itself is mechanics, outside the model. A device's key has the device's id.
+signed, and with no other key. Ed25519 itself is mechanics, outside the model. A device's vault names its key (A211).
 
-`sign` refuses anything but a device, and any key but the device's own; `verify` checks, in this order, that the
-statement's device is one, that it serves the statement's vault, that the device has a key, and that its key signed
-exactly this. `verify_ok` proves what a statement that holds means. -/
+`sign` refuses anything but a device, and any key but the one its vault names; `verify` checks, in this order, that
+the statement's device is one, that it serves the statement's vault, that the device names a key of the tree, and that
+its key signed exactly this. `verify_ok` proves what a statement that holds means. -/
 
 namespace Aven.ID
 
-inductive SignError where
-  | notDevice (id : String)
-  | noKey (id : String)
-  | wrongKey (id : String)
-  | wrongVault (device vault : String)
+variable {V : Type}
+
+inductive SignError (V : Type) where
+  | notDevice (id : V)
+  | noKey (id : V)
+  | wrongKey (id : V)
+  | wrongVault (device vault : V)
   | badSignature
   deriving DecidableEq, Repr
 
 /-- A statement: `device` says `body` for `vault`, and the key that signed it, with what it signed. -/
-structure Statement where
-  device : String
-  vault : String
+structure Statement (V : Type) where
+  device : V
+  vault : V
   body : String
   /-- the key that made the signature -/
   signer : String
   /-- the device, vault and body that key signed -/
-  signed : String × String × String
+  signed : V × V × String
   deriving DecidableEq, Repr
 
 namespace Tree
 
-/-- `device` signs `body` with the key `key`: for the vault it serves, and only with its own key. -/
-def sign (t : Tree) (device key body : String) : Except SignError Statement :=
+variable [DecidableEq V]
+
+/-- The key a device's vault names (A211). -/
+def keyOf? (t : Tree V) (d : V) : Option String := (t.get? d).bind (·.key)
+
+/-- `device` signs `body` with the key `key`: for the vault it serves, and only with the key its vault names. -/
+def sign (t : Tree V) (device : V) (key body : String) : Except (SignError V) (Statement V) :=
   match t.actsFor device with
   | none => .error (.notDevice device)
   | some vault =>
-    if key = device then .ok ⟨device, vault, body, key, (device, vault, body)⟩ else .error (.wrongKey device)
+    if t.keyOf? device = some key then .ok ⟨device, vault, body, key, (device, vault, body)⟩
+    else .error (.wrongKey device)
 
-def verify (t : Tree) (s : Statement) : Except SignError Unit :=
+def verify (t : Tree V) (s : Statement V) : Except (SignError V) Unit :=
   match t.actsFor s.device with
   | none => .error (.notDevice s.device)
   | some vault =>
     if vault ≠ s.vault then .error (.wrongVault s.device s.vault)
-    else if !t.keys.contains s.device then .error (.noKey s.device)
-    else if s.signer = s.device ∧ s.signed = (s.device, s.vault, s.body) then .ok ()
+    else if !(t.keyOf? s.device).any t.keys.contains then .error (.noKey s.device)
+    else if t.keyOf? s.device = some s.signer ∧ s.signed = (s.device, s.vault, s.body) then .ok ()
     else .error .badSignature
 
 /-- A statement acts on `target` when it holds and its device may act on `target`. -/
-def actsOn (t : Tree) (s : Statement) (target : String) : Except SignError Bool :=
+def actsOn (t : Tree V) (s : Statement V) (target : V) : Except (SignError V) Bool :=
   (t.verify s).map fun _ => t.mayActOn s.device target
 
-variable {t : Tree}
+variable {t : Tree V}
 
-/-- A statement holds only when its device serves its vault and the device's own key signed exactly it. -/
-theorem verify_ok {s : Statement} (h : t.verify s = .ok ()) :
-    t.actsFor s.device = some s.vault ∧ s.signer = s.device ∧ s.signed = (s.device, s.vault, s.body) := by
+/-- A statement holds only when its device serves its vault and the key its vault names signed exactly it. -/
+theorem verify_ok {s : Statement V} (h : t.verify s = .ok ()) :
+    t.actsFor s.device = some s.vault ∧ t.keyOf? s.device = some s.signer ∧ s.signed = (s.device, s.vault, s.body) := by
   unfold verify at h
   split at h
   · cases h
@@ -72,8 +80,8 @@ theorem verify_ok {s : Statement} (h : t.verify s = .ok ()) :
         · cases h
     · simp [hv] at h
 
-/-- What a device signs, in a tree whose devices have their keys, holds. -/
-theorem sign_verify (w : t.WF) {d key body : String} {s : Statement} (h : t.sign d key body = .ok s) :
+/-- What a device signs, in a well-formed tree, holds. -/
+theorem sign_verify (w : t.WF) {d : V} {key body : String} {s : Statement V} (h : t.sign d key body = .ok s) :
     t.verify s = .ok () := by
   unfold sign at h
   split at h
@@ -82,14 +90,16 @@ theorem sign_verify (w : t.WF) {d key body : String} {s : Statement} (h : t.sign
     split at h
     · next k =>
       cases h
-      obtain ⟨o, kd⟩ := actsFor_some e
+      obtain ⟨_, kd⟩ := actsFor_some e
       unfold kind? at kd
       cases g : t.get? d with
       | none => simp [g] at kd
       | some vt =>
-        have := w.deviceKey vt (get?_some g).1 (by simpa [g] using kd)
-        rw [(get?_some g).2] at this
-        simpa [verify, e, k] using this
+        have kv : vt.kind = .device := by simpa [g] using kd
+        have := w.deviceKey vt (get?_some g).1 kv
+        have hk : vt.key = some key := by simpa [keyOf?, g] using k
+        simp [keyed, hk] at this
+        simp [verify, e, k, this]
     · cases h
 
 end Tree
@@ -103,7 +113,7 @@ inductive Change where
   | resign (key : String)
   deriving DecidableEq, Repr
 
-def Statement.change (s : Statement) : Change → Statement
+def Statement.change (s : Statement String) : Change → Statement String
   | .device d => { s with device := d }
   | .vault v => { s with vault := v }
   | .body b => { s with body := b }
@@ -118,14 +128,14 @@ structure SignExample where
   changes : List Change
   target : Option String
   /-- `sign`'s answer: the vault the statement is for, or the error -/
-  signs : Except SignError String
+  signs : Except (SignError String) String
   /-- `verify`'s answer on the changed statement, or `actsOn`'s with a target; none when signing is refused -/
-  holds : Option (Except SignError Bool)
+  holds : Option (Except (SignError String) Bool)
 
 deriving instance DecidableEq for Except
 
 /-- The answer for the signed statement, once changed. -/
-def SignExample.holdsOn (e : SignExample) (s : Statement) : Except SignError Bool :=
+def SignExample.holdsOn (e : SignExample) (s : Statement String) : Except (SignError String) Bool :=
   let s := e.changes.foldl Statement.change s
   match e.target with
   | some target => cast.actsOn s target

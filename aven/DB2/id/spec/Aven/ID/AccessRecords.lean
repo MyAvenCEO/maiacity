@@ -31,9 +31,9 @@ open Aven.Core
 
 /-! ## A cap Record -/
 
-/-- A cap Record: a cap and its signatures. -/
+/-- A cap Record: a cap, its vaults named by their 32 bytes (A190, A210), and its signatures. -/
 structure CapRecord where
-  cap : Cap
+  cap : Cap Hash
   sigs : List Core.Sig
 
 def CapRecord.value (r : CapRecord) : Value := withSigs r.cap.body r.sigs

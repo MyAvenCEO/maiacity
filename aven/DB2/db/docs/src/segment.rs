@@ -1,9 +1,10 @@
 //! Segments: a writer's closed run of one log in one epoch (`Aven.DB.Docs.Segment`; docs, rules 11 and 24), held to
 //! `db/spec/vectors/segments.json`.
 //!
-//! A segment is Core's [`Signed`] under [`SEGMENT_LABEL`], hybrid-signed by its writer, sealed with the `segment` kind
+//! A segment is Core's [`Signed`] under [`SEGMENT_LABEL`], hybrid-signed by its writer, sealed as a `segment`
 //! of the one seal. Its body is `{to, from, prev, branch, writer, envelopes, generation}`: `from` and `to` its
-//! envelopes' sequence numbers, half-open; `prev` the name of the writer's segment before it in this log; its
+//! envelopes' sequence numbers, half-open; `prev` the name of the writer's segment before it in this log, absent from
+//! a log's first segment (A200: no nulls); its
 //! envelopes the same signed bytes, so their names stay. A keeper never reads them: the upload names the loose items
 //! it covers by their sealed hashes, beside the segment ([`Closed::covers`]; A44).
 //!
@@ -15,16 +16,17 @@ use aven_id::{Entropy, Hybrid, HybridPublic};
 
 use crate::device::Device;
 use crate::limits::Limits;
-use crate::seal::{EpochKey, Kind, open, seal};
+use crate::seal::{EpochKey, Seals, open, seal};
 
 /// What a segment is signed under.
 pub const SEGMENT_LABEL: &str = "avenDB segment 1";
 
-/// A closed segment of one Doc, in one epoch. Its Doc and epoch are outside its seal, not in its body.
+/// A closed segment of one Doc, in one epoch. Its Doc and epoch are outside its seal, not in its body; a plain segment
+/// (the keyring's, A187) has no epoch.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Segment {
     pub doc: DocId,
-    pub epoch: Hash,
+    pub epoch: Option<Hash>,
     pub branch: String,
     pub writer: u64,
     pub generation: u64,
@@ -59,26 +61,30 @@ fn uint(v: &Value) -> Option<u64> {
 impl Segment {
     /// The body its writer signs (`Segment.value`).
     pub fn body(&self) -> Value {
-        Value::Map(vec![
+        let prev = self.prev.as_ref().map(|h| ("prev".into(), h.value()));
+        let head = [
             ("to".into(), Value::Uint(self.to)),
             ("from".into(), Value::Uint(self.from)),
-            (
-                "prev".into(),
-                self.prev.as_ref().map_or(Value::Null, Hash::value),
-            ),
-            ("branch".into(), Value::Text(self.branch.clone())),
-            ("writer".into(), Value::Uint(self.writer)),
-            (
-                "envelopes".into(),
-                Value::Array(
-                    self.envelopes
-                        .iter()
-                        .map(|e| Value::Bytes(e.clone()))
-                        .collect(),
-                ),
-            ),
-            ("generation".into(), Value::Uint(self.generation)),
-        ])
+        ];
+        Value::Map(
+            head.into_iter()
+                .chain(prev)
+                .chain([
+                    ("branch".into(), Value::Text(self.branch.clone())),
+                    ("writer".into(), Value::Uint(self.writer)),
+                    (
+                        "envelopes".into(),
+                        Value::Array(
+                            self.envelopes
+                                .iter()
+                                .map(|e| Value::Bytes(e.clone()))
+                                .collect(),
+                        ),
+                    ),
+                    ("generation".into(), Value::Uint(self.generation)),
+                ])
+                .collect(),
+        )
     }
 
     /// Its name, the next segment's `prev` (`Segment.name`, A30).
@@ -86,8 +92,9 @@ impl Segment {
         blake3(&signing_bytes(SEGMENT_LABEL, &self.body()))
     }
 
-    /// Read back from its body, for `doc` and `epoch`: exactly its keys, each in its form, within the limit.
-    pub fn of_body(doc: DocId, epoch: Hash, v: &Value, limits: &Limits) -> Option<Segment> {
+    /// Read back from its body, for `doc` and `epoch`: exactly its keys, each in its form, within the limit; `prev`
+    /// present but for a log's first segment, and never null (A200).
+    pub fn of_body(doc: DocId, epoch: Option<Hash>, v: &Value, limits: &Limits) -> Option<Segment> {
         const KEYS: [&str; 7] = [
             "to",
             "from",
@@ -98,10 +105,14 @@ impl Segment {
             "generation",
         ];
         let Value::Map(kvs) = v else { return None };
-        if kvs.len() != KEYS.len() || kvs.iter().zip(KEYS).any(|((k, _), want)| k != want) {
+        let has_prev = kvs.get(2).is_some_and(|(k, _)| k == "prev");
+        let keys = KEYS.iter().filter(|k| has_prev || **k != "prev");
+        if kvs.len() != keys.clone().count() || kvs.iter().zip(keys).any(|((k, _), want)| k != want)
+        {
             return None;
         }
-        let g = |i: usize| &kvs[i].1;
+        // with `prev` left out, the keys after it sit one place earlier
+        let g = |i: usize| &kvs[if has_prev || i < 2 { i } else { i - 1 }].1;
         let (Value::Text(branch), Value::Array(envelopes)) = (g(3), g(5)) else {
             return None;
         };
@@ -113,9 +124,9 @@ impl Segment {
             epoch,
             to: uint(g(0))?,
             from: uint(g(1))?,
-            prev: match g(2) {
-                Value::Null => None,
-                Value::Bytes(b) => Some(Hash(b.as_slice().try_into().ok()?)),
+            prev: match (has_prev, g(2)) {
+                (false, _) => None,
+                (true, Value::Bytes(b)) => Some(Hash(b.as_slice().try_into().ok()?)),
                 _ => return None,
             },
             branch: branch.clone(),
@@ -161,11 +172,26 @@ impl Segment {
     /// Signed by its writer's hybrid key, sealed as a `segment` under its epoch.
     pub fn seal(&self, device: &Device, epoch: &EpochKey, entropy: &mut impl Entropy) -> Vec<u8> {
         assert_eq!(
-            epoch.name, self.epoch,
+            Some(epoch.name),
+            self.epoch,
             "a segment is sealed under its own epoch"
         );
-        let signed = device.hybrid().sign_value(SEGMENT_LABEL, self.body());
-        seal(Kind::Segment, epoch, &self.doc, &signed.encode(), entropy)
+        seal(
+            Seals::Segment,
+            epoch,
+            &self.doc,
+            &self.signed(device),
+            entropy,
+        )
+    }
+
+    /// Signed by its writer's hybrid key, unsealed: what the seal holds, and what the keyring's segments travel as
+    /// (A187).
+    pub fn signed(&self, device: &Device) -> Vec<u8> {
+        device
+            .hybrid()
+            .sign_value(SEGMENT_LABEL, self.body())
+            .encode()
     }
 
     /// Opens and checks a sealed segment of `doc`: it opens under the epoch's key, its hybrid signature holds, it is
@@ -177,13 +203,35 @@ impl Segment {
         epoch: &EpochKey,
         limits: &Limits,
     ) -> Result<(Segment, HybridPublic), BadSegment> {
-        // the seal adds its framing, its nonce and commitment, and Padmé's at most an eighth
-        let limit = limits.segment_bytes + limits.segment_bytes / 8 + 256;
-        let (d, pt) = open(Kind::Segment, epoch, bytes, limit).ok_or(BadSegment::Seal)?;
+        let limit = crate::seal::sealed_limit(limits.segment_bytes);
+        let (d, pt) = open(Seals::Segment, epoch, bytes, limit).ok_or(BadSegment::Seal)?;
         if d != *doc {
             return Err(BadSegment::Seal);
         }
-        let signed = Signed::decode(&pt).ok_or(BadSegment::Form)?;
+        Segment::check(&pt, doc, Some(epoch.name), limits)
+    }
+
+    /// Checks an unsealed segment of `doc`, the keyring's (A187): its hybrid signature holds, it is one run of one log,
+    /// and its signer's Ed25519 half signed every envelope in it.
+    pub fn open_plain(
+        bytes: &[u8],
+        doc: &DocId,
+        limits: &Limits,
+    ) -> Result<(Segment, HybridPublic), BadSegment> {
+        if bytes.len() > crate::seal::sealed_limit(limits.segment_bytes) {
+            return Err(BadSegment::Form);
+        }
+        Segment::check(bytes, doc, None, limits)
+    }
+
+    /// A segment's signed bytes, checked: what both paths share.
+    fn check(
+        bytes: &[u8],
+        doc: &DocId,
+        epoch: Option<Hash>,
+        limits: &Limits,
+    ) -> Result<(Segment, HybridPublic), BadSegment> {
+        let signed = Signed::decode(bytes).ok_or(BadSegment::Form)?;
         if signed.label != SEGMENT_LABEL {
             return Err(BadSegment::Form);
         }
@@ -197,7 +245,7 @@ impl Segment {
         let key = aven_core::decode(&by.signer)
             .and_then(|v| HybridPublic::of_value(&v))
             .ok_or(BadSegment::Signature)?;
-        let s = Segment::of_body(*doc, epoch.name, &signed.body, limits).ok_or(BadSegment::Form)?;
+        let s = Segment::of_body(*doc, epoch, &signed.body, limits).ok_or(BadSegment::Form)?;
         let envs = s.run(limits).ok_or(BadSegment::Run)?;
         if envs
             .iter()
@@ -280,7 +328,7 @@ impl Closer {
         let first = self.loose.first()?;
         let s = Segment {
             doc: self.doc,
-            epoch: self.epoch?,
+            epoch: Some(self.epoch?),
             branch: self.branch.clone(),
             writer: self.writer,
             generation: self.generation,

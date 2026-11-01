@@ -74,7 +74,7 @@ async fn peer(
         .secret_key(secret.clone())
         .relay_mode(RelayMode::Custom(RelayMap::from(relay.clone())))
         .alpns(vec![
-            aven_gen1::wire::ALPN.to_vec(),
+            aven_peer_wire::wire::ALPN.to_vec(),
             iroh_gossip::ALPN.to_vec(),
         ])
         .hooks(Hook {

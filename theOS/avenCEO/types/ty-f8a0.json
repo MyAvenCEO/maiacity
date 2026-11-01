@@ -1,0 +1,36 @@
+{
+ "type": "type",
+ "id": "ty-f8a0",
+ "name": "lesson",
+ "file": "lessons/<slug>.json",
+ "what": "What we learned: the cue it fires on, the operation, the evidence, the confidence.",
+ "subtypes": [
+  "candidate",
+  "kept",
+  "reverted"
+ ],
+ "fields": [
+  {
+   "name": "cue, lesson",
+   "means": "when, and what to do"
+  },
+  {
+   "name": "evidence, confidence",
+   "means": "why we believe it"
+  }
+ ],
+ "written_by": "Samuel approves; the orchestrator writes",
+ "links_to": [
+  "ty-4076",
+  "ty-dca5"
+ ],
+ "trace": {
+  "events": [
+   "learned"
+  ],
+  "step": "4 · Learn",
+  "author": "agent",
+  "note": "A lesson is written in Learn, with its evidence.",
+  "reflection": "Every new one says what it supersedes or merges among the ones of its type that hold; every change to it is an event of an AIP in the same commit (d-f960)."
+ }
+}

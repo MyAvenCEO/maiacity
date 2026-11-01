@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>theOS</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="stage">
+  <nav class="stories" id="stories" aria-label="Chapters"></nav>
+  <div class="main">
+  <div class="cardwrap">
+  <article class="card" id="card" aria-live="polite">
+    <div class="terms" id="terms" aria-label="Terms so far"></div>
+    <div class="body">
+    <span class="num" id="num">01</span>
+    <h1 class="title" id="title"></h1>
+    <p class="text" id="text"></p>
+    <ul class="list" id="list" hidden></ul>
+    <div class="side">
+      <div class="flow" id="flow" hidden></div>
+      <pre class="code" id="code" hidden></pre>
+      <table class="table" id="table" hidden></table>
+    </div>
+    </div>
+    <aside class="deep" id="deep" hidden></aside>
+  </article>
+  <button type="button" class="spectab" id="spectab" aria-controls="spec" aria-expanded="false">Architecture</button>
+  <aside class="spec" id="spec" aria-label="Architecture" hidden></aside>
+  </div>
+  <div class="nav">
+    <button type="button" id="prev">← Back</button>
+    <div class="track" id="track" aria-label="The story so far"></div>
+    <button type="button" id="next">Go on →</button>
+  </div>
+  <section class="intents" id="intents" aria-label="Intents"></section>
+  </div>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

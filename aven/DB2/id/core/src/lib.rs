@@ -70,4 +70,6 @@ pub use sign::{SignError, Statement};
 pub use tree::{
     Invalid, Kind, MAX_NAME, MAX_PERSON_NAME, Owner, Tree, Vault, valid_name, valid_person_name,
 };
-pub use vault_name::{VAULT_LABEL_TEXT, VAULT_NONCE_LEN, VaultGenesis};
+pub use vault_name::{
+    CAST_VAULTS, VAULT_LABEL_TEXT, VAULT_NONCE_LEN, VaultGenesis, cast_name, cast_nonce,
+};

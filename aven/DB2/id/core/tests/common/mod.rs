@@ -46,12 +46,15 @@ pub fn parse(input: &Value) -> Result<(Vec<String>, Vec<Vault>), String> {
             .collect::<Result<_, _>>()?;
         // a tree written before thresholds (A28) has none: its vaults took one owner each
         let threshold = v["threshold"].as_u64().map_or(1, |t| t as usize);
+        // a device names its key (A211)
+        let key = v["key"].as_str().map(str::to_string);
         vaults.push(Vault {
             name,
             id,
             kind,
             owners,
             threshold,
+            key,
         });
     }
     Ok((keys, vaults))
@@ -62,7 +65,11 @@ pub fn case(keys: &[String], vaults: &[Vault]) -> Value {
         .iter()
         .map(|v| {
             let owners: Vec<String> = v.owners.iter().map(Owner::to_string).collect();
-            json!({ "id": v.id, "name": v.name, "kind": v.kind.as_str(), "owners": owners, "threshold": v.threshold })
+            let mut vault = json!({ "id": v.id, "name": v.name, "kind": v.kind.as_str(), "owners": owners, "threshold": v.threshold });
+            if let Some(key) = &v.key {
+                vault["key"] = json!(key);
+            }
+            vault
         })
         .collect();
     json!({ "keys": keys, "vaults": vaults })
@@ -101,10 +108,11 @@ pub fn invalid(why: &Invalid) -> Value {
             json!({ "rule": "deviceOwns", "device": device, "vault": vault })
         }
         Invalid::DeviceKeyless(id) => json!({ "rule": "deviceKeyless", "vault": id }),
-        Invalid::DeviceKeyOwns { device, vault } => {
-            json!({ "rule": "deviceKeyOwns", "device": device, "vault": vault })
+        Invalid::DeviceKeyOwns { key, vault } => {
+            json!({ "rule": "deviceKeyOwns", "key": key, "vault": vault })
         }
         Invalid::Name(id) => json!({ "rule": "name", "vault": id }),
+        Invalid::Keyed(id) => json!({ "rule": "keyed", "vault": id }),
         Invalid::CoopOwner { coop, owner } => {
             json!({ "rule": "coopOwner", "vault": coop, "owner": owner.to_string() })
         }

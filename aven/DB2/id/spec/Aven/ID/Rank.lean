@@ -23,20 +23,22 @@ theorem maxl_le {n : Nat} : ∀ {l : List Nat}, (∀ x ∈ l, x ≤ n) → maxl 
 
 namespace Tree
 
-def height (t : Tree) : Nat → String → Nat
+variable {V : Type} [DecidableEq V]
+
+def height (t : Tree V) : Nat → V → Nat
   | 0, _ => 0
   | f + 1, b => maxl ((t.ownersOf b).map fun a => t.height f a + 1)
 
-theorem height_le (t : Tree) : ∀ (f : Nat) (b : String), t.height f b ≤ f
+theorem height_le (t : Tree V) : ∀ (f : Nat) (b : V), t.height f b ≤ f
   | 0, _ => Nat.le_refl _
   | f + 1, b => maxl_le fun x m => by
     obtain ⟨a, _, e⟩ := List.mem_map.mp m
     subst e
     exact Nat.succ_le_succ (t.height_le f a)
 
-def rank (t : Tree) (b : String) : Nat := t.height t.vaults.length b
+def rank (t : Tree V) (b : V) : Nat := t.height t.vaults.length b
 
-theorem rank_le (t : Tree) (b : String) : t.rank b ≤ t.vaults.length := t.height_le _ _
+theorem rank_le (t : Tree V) (b : V) : t.rank b ≤ t.vaults.length := t.height_le _ _
 
 end Tree
 end Aven.ID

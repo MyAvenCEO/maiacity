@@ -109,6 +109,8 @@ fn trees() -> impl Strategy<Value = (Vec<String>, Vec<Vault>)> {
                         kind,
                         owners,
                         threshold: 1,
+                        // a device names its key, its own id here (A211)
+                        key: (kind == Kind::Device).then(|| format!("v{i}")),
                     }
                 })
                 .collect();

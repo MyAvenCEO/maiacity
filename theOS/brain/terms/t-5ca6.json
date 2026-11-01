@@ -1,0 +1,11 @@
+{
+ "type": "term",
+ "id": "t-5ca6",
+ "word": "Box",
+ "means": "Where theOS's checks run: the session's machine with its tools (bun, Chromium, Playwright), set up from files in theOS/ only (aip-6fb1).",
+ "supersedes": [],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "supersedes nothing"
+ }
+}

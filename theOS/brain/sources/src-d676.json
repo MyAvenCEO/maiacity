@@ -1,0 +1,10 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "src-d676",
+ "title": "Hyperschema",
+ "about": [
+  "schema and migrations"
+ ],
+ "url": "https://github.com/holepunchto/hyperschema"
+}

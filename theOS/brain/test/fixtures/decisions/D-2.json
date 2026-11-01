@@ -1,0 +1,1 @@
+{"type": "decision", "id": "D-2", "n": 2, "title": "Second, superseded in part", "means": "two", "supersedes": [{"decision": "decisions/D-1", "part": "all", "what": "replaced"}]}

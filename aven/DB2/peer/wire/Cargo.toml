@@ -1,0 +1,13 @@
+[package]
+name = "aven-peer-wire"
+version = "0.0.0"
+description = "avenPEERS' wire (aven/db/1): its frozen greeting, its frames in Core's CBOR, and presence (Aven.Peer)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+aven-core = { path = "../../core" }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"

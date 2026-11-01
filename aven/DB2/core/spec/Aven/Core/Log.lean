@@ -194,7 +194,7 @@ def Discounted (S : List Envelope) (e : Envelope) : Prop :=
   ∃ x y, Reaches nm S e x ∧ y ∈ S ∧ Split nm x y
 
 /-- An envelope counts when its whole past is held (`Closed`), everything in it is `fit` and `authorized` and none of it
-is half of a split (docs, rule 13). This is the one counting rule (A45): the docs layer, avenID and the tree each supply
+is half of a split (A4, A30, A45). This is the one counting rule (A45): the docs layer, avenID and the tree each supply
 their verdicts here, and none defines its own. Counting is not monotone in what a reader holds, by
 design: a split learned later discounts (A4, `split_final`), and a parent learned later is the first step to counting
 (`closed_mono`). -/

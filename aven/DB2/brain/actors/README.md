@@ -138,8 +138,9 @@ sets the new home, whose device cap then covers the actor and the old one's no l
   gather. The move starts a new **generation** of the actor's sends: messages order per (sender, generation, seq), and
   the statement names, per pair, the last seq it accepts as seen. Receipts by hash stop true duplicates (A33).
 
-**Decided:** A17, A201, A202; actors §15 · **Lean:** `Aven.Actor.Theorems` — `spawn_fresh`; to come: `Addr {vault,
-id, n}`, `Addr.doc`, `doc_inj`, `handover_single_writer`, `handover_continues`, generations in the per-pair order
+**Decided:** A17, A201, A202; actors §15 · **Lean:** `Aven.Actor.Address` — `Addr {vault, id, n}`, `Addr.doc`,
+`doc_inj`, `incarnation_new_doc`; `Aven.Actor.Handover` — `handover_single_writer`, `handover_continues`,
+`generation_order`; `Aven.Actor.Theorems` — `spawn_fresh`
 
 ## Messages
 
@@ -401,6 +402,8 @@ seed.
 | Hosting (A16) | `Hosting` (#1565) | — | — | Lean only |
 | Actor hosts and chains (A27, kernel half) | `Signing` (#1617, #1623, #1681), `Messaging` (#1628) | — | — | Lean only; the reader's half is avenCAPS' (#1619, #1624, #1626) |
 | Turns as steps (A37) | `Runtimes`, with state-runtime's `State` (#1676) | — | — | Lean only |
+| Addresses as Doc ids (A201) | `Address` (#1756) | — | — | Lean only; the router resolving `[vault, doc]` and state-runtime's `[bytes32, bytes32]` address shape: next, waits for the actor code's go. The actor spec's other vault ids, its tree's, stay text until then (A214) |
+| Moving an actor's home (A202) | `Handover` (this PR) | — | — | Lean only, beside the kernel: version 1 has one home |
 | Carrier Doc (A33) | — | — | — | written down (#1685); for milestone 3 |
 | Version 1: the todo app in memory | — | — | — | not started; actor code waits for its go |
 
@@ -410,7 +413,8 @@ an open/done machine) and the components `field` and `checkbox`. The order: laye
 in-memory Doc, messages) with the vectors; then `state-runtime`, then `js-runtime`, each with hostile parts that must
 fail; the kernel; faces (face-runtime, the drawer, events as tells); the app, its kernel in a worker. Version 1 refuses
 every Value that sets a field kept for later (a message's `cap`, the `now` tier, `loads`, a Doc's `schema` and
-`branch`, the address's vault scope), so nothing depends on it missing; its scope is `local`.
+`branch`), so nothing depends on it missing; every address's vault is the one fixed local vault, 32 bytes of `01`
+(A201).
 
 **Known gaps (code and Lean):**
 - The carrier Doc, receipts by hash and the journal as an avenDB Doc's log aren't modelled: the Lean's inboxes are one

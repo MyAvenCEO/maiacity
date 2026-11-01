@@ -1,0 +1,75 @@
+{
+ "type": "review",
+ "id": "rv-87cf",
+ "intent": "aip-31df",
+ "round": 2,
+ "lens": "zoom-out",
+ "commit": "cb781cef3",
+ "checker": "a fresh agent",
+ "prompt": "You are a \"goldfish\" reviewer with the persona of a skeptical architect: a fresh reader with no history of this project, who hates unnecessary complexity, speculative features (YAGNI), premature optimisation and reinventing what already exists. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nRead this file, plus any repository files it names (paths are relative to /home/user/maiacity):\n  /home/user/maiacity/theOS/docs/aip/AIP-1.json\n\nIt is the record of planned work: building \"avenCEO\", an agent harness that runs inside Claude Code. Its definition is theOS/docs/avenceo.json (skip its \"protocols\" array).\n\nThe record's \"review\" field holds round 1 of this review, with an answer to every finding. Those findings are settled: do not raise them again unless the record shows the fix did not actually happen.\n\nYour job is the zoom-out review:\n1. YAGNI: which claims, checkpoints or parts are not needed for the first useful version? What could be deleted or deferred without losing the root cause the record names?\n2. Reuse: SEARCH the repository (for example aven/ops/checks, aven/ops/devx, .claude/, CLAUDE.md, .claude/skills/devx-speed) for things that already do part of what is proposed, beyond what the record's \"reuse\" list already names. Name files and what they do.\n3. Root problem: does the plan address the root cause it states, or a symptom?\n4. Order: is the checkpoint order really smallest-first, with each one useful on its own?\n5. Dead ends or over-engineering: anything that blocks later change, or is heavier than the problem needs.\n\nFor each finding give: Severity (Blocker | Major | Nit), the affected part, and the reasoning, with a concrete simpler alternative where you have one. At most 600 words, plain text, no praise, lead with what is wrong. If you find no Blocker or Major, say so plainly.",
+ "findings": [
+  {
+   "sev": "Major",
+   "scope": "c1, checkpoint 1",
+   "text": "app-scroll's rule is for /app, not this app: at 390 px theOS/docs scrolls by design, on desktop the page can't scroll at all, and the replays would likely pass where they should fail. Reuse aven/DB2/sandbox/brain.mjs, which checks a hash-routed docs app with screenshots; add 1280x720 and replay faf266961.",
+   "answer": "fix",
+   "note": "Verified: brain.mjs checks views at 1280 and 390 px for sideways scroll, wide tables in their own box, contrast and minimum slide text, and screenshots each. The docs check is written from scratch in theOS with it as the model, adds 1280x720 and 1440x900, and checks reachability instead of page scroll."
+  },
+  {
+   "sev": "Major",
+   "scope": "c2, truth 2",
+   "text": "A text search can't tell \"rule\" (still correct) from \"rule\" (renamed). aven/DB2/brain/GLOSSARY.md already holds decided renames, ⚠ marks and scopes.",
+   "answer": "fix",
+   "note": "Verified; theOS/docs/glossary.json uses that format, written from scratch in theOS."
+  },
+  {
+   "sev": "Major",
+   "scope": "outcome",
+   "text": "Zero sweep escapes is promised but only one sweep is checked; \"published\" has no target.",
+   "answer": "fix",
+   "note": "Narrowed to renamed terms; the operations-shape sweep is a gap; published is defined."
+  },
+  {
+   "sev": "Major",
+   "scope": "root cause, second half",
+   "text": "The ten escapes came from small edits nobody opens an AIP for; corrections on those fall outside the outcome.",
+   "answer": "fix",
+   "note": "The done rule now applies to every theOS/docs commit; an AIP is only for work that needs Gate A; the tally is per session."
+  },
+  {
+   "sev": "Major",
+   "scope": "avenceo.json",
+   "text": "It states as current things the first version lacks: an agent can't stop at an open gate, automatic release, the metrics, the drift check, test scenarios.",
+   "answer": "fix",
+   "note": "avenCEO's definition now has a list of what is live and what comes later, and marks those statements as later."
+  },
+  {
+   "sev": "Nit",
+   "scope": "order",
+   "text": "Checkpoint 2 is smaller than 1; neither check runs until 3; c4 already happens by hand.",
+   "answer": "fix",
+   "note": "Each check is wired into theOS's check command in its own checkpoint, the smallest first; c4 is marked met."
+  },
+  {
+   "sev": "Nit",
+   "scope": "c5",
+   "text": "The no-stage-field test protects one file; event names are undefined; stageOf throws on a source-only record.",
+   "answer": "fix",
+   "note": "Names defined, stageOf fixed, the test deferred."
+  },
+  {
+   "sev": "Nit",
+   "scope": "check.mjs",
+   "text": "aven/ops/ci/test.mjs's inventory() refuses a test that suites.json doesn't list, and discover() never visits theOS/.",
+   "answer": "fix",
+   "note": "Verified (in aven/ops/ci/test.mjs, not check.mjs). Moot after revision 4: the checks and their tests live in theOS/avenCEO and run with theOS's own command."
+  },
+  {
+   "sev": "Nit",
+   "scope": "consistency",
+   "text": "One rule versus two; \"moving the devx tools\" is a deletion, not a deferral; lessons point to a CI-speed table while avenCEO keeps its own lessons.",
+   "answer": "fix",
+   "note": "Two rules; the devx move is deleted; lessons stay in avenCEO's definition, and each change to avenCEO is measured with devx-speed's cycle."
+  }
+ ]
+}

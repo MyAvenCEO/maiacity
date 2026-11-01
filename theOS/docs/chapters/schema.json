@@ -1,0 +1,398 @@
+{
+ "title": "Schemas",
+ "slides": [
+  {
+   "title": "Nothing without a schema.",
+   "text": "Every piece of data names its {schema}: the shape its content must have. Your to-do list says it has a title and items, and each item has a text and a done flag. No piece of data exists without one.",
+   "code": {
+    "type": "data:b3:Rfe…@b3:105…#genesis",
+    "nonce": "b3:4f1…",
+    "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
+    "policy": {
+     "to": "human:b3:q4x7…#you",
+     "operations": {
+      "own": {}
+     },
+     "expires": null
+    },
+    "proof": [
+     "human:b3:q4x7…#you"
+    ],
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
+   },
+   "deep": "The schema reference is part of the data's birth record, so the data's ID fixes it. Docs name a schema for their content; a Value's metadata Doc names one for the Value too."
+  },
+  {
+   "title": "A schema is data too.",
+   "text": "A schema is itself a Doc: a JSON Schema with its own birth record, its own owner and its own policies. Anyone may use a schema they can read, so many lists can share one to-do schema.",
+   "code": {
+    "$schema": "data:b3:Mta…@b3:0e1…#schema",
+    "type": "object",
+    "properties": {
+     "title": {
+      "type": "string"
+     },
+     "items": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "text": {
+         "type": "string"
+        },
+        "done": {
+         "type": "boolean"
+        },
+        "due": {
+         "type": "string",
+         "format": "date-time"
+        },
+        "assignee": {
+         "type": "string"
+        },
+        "link": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "text",
+        "done"
+       ]
+      }
+     }
+    }
+   },
+   "deep": "Schemas are written in JSON Schema and edited as a Loro Doc like any other data, so they sync, merge and carry policies. Each published version is frozen: its canonical CBOR is hashed, and that frozen version travels with every piece of data that pins it (OLD-AIP-66)."
+  },
+  {
+   "title": "Even records follow schemas.",
+   "text": "Policies, roles, endings and changes are records, and every record names the schema version it follows, exactly like data. A small set of root schemas comes built into theOS, named by their hashes. At the root sits the {meta-schema}: the schema every schema follows, itself included.",
+   "code": {
+    "meta": "data:b3:Mta…@b3:0e1…#schema",
+    "records": {
+     "policy": "data:b3:R9f…@b3:00f…#policy",
+     "role": "data:b3:R8d…@b3:ca4…#role",
+     "change": "data:b3:R75…@b3:50b…#change",
+     "ending": "data:b3:R5b…@b3:d4b…#ending",
+     "…": "…"
+    }
+   },
+   "deep": "The engine carries one root manifest: the meta-schema and every record schema, each as data ID @ version. It trusts exactly those hashes, never a name. A new engine release ships a new manifest, with lenses from the old record versions (OLD-AIP-67, OLD-AIP-90).",
+   "spec": {
+    "summary": "The bootstrap: what checks the first schema. A fixed manifest of root schema versions, with the meta-schema validating itself.",
+    "records": [
+     {
+      "name": "root manifest",
+      "about": "Built into each engine release; not signed by anyone, identified by its hash.",
+      "fields": [
+       [
+        "meta",
+        "schema ref",
+        "the meta-schema: JSON Schema 2020-12 plus theOS's vocabulary (stored keys, lenses)"
+       ],
+       [
+        "records",
+        "kind → schema ref",
+        "one entry per record kind: genesis, identity, epoch, invite, policy, role, ending, envelope, keyring, change, chunk, operation, want, news, lens, migration …"
+       ],
+       [
+        "lenses",
+        "list",
+        "lenses from the previous manifest's record versions"
+       ]
+      ]
+     }
+    ],
+    "rules": [
+     {
+      "id": "root.by_hash",
+      "text": "A record's type is a schema ref; it is checked against that exact version, and a type not in the device's manifest (or reachable from it by lenses) waits."
+     },
+     {
+      "id": "root.meta_fixed_point",
+      "text": "The meta-schema validates itself, and every schema version, root or not, validates against it."
+     },
+     {
+      "id": "root.no_names",
+      "text": "No record, operation or policy refers to a schema by a name; the #label after a ref is ignored by every check."
+     },
+     {
+      "id": "root.upgrade",
+      "text": "A new manifest keeps every old root version readable through lenses; old records are never rewritten."
+     }
+    ],
+    "intents": [
+     "OLD-AIP-50",
+     "OLD-AIP-66",
+     "OLD-AIP-67",
+     "OLD-AIP-90"
+    ]
+   }
+  },
+  {
+   "title": "Data pins a version.",
+   "text": "A schema can change over time. So data names the exact version it follows, written after an @: the hash of that version. The version itself travels with the data, so nobody, not even the schema's owner, can take it away from your list.",
+   "code": {
+    "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
+    "@": "b3:1f0…: BLAKE3 of this version as canonical CBOR",
+    "carried": "value:b3:1f0…#todo-list-v1"
+   },
+   "deep": "A version is the BLAKE3 hash of the schema's canonical CBOR, not of the Loro Doc's state, which has no content hash. The frozen version is a Value carried with the data (OLD-AIP-66)."
+  },
+  {
+   "title": "Every change must fit.",
+   "text": "Every change names the version it was written in, and before a device merges it, the device checks it against that version. A tick must be true or false; an item without a text is not an item. A change that doesn't fit is dropped on every device.",
+   "code": {
+    "change": {
+     "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
+     "set": "/items/0/done",
+     "value": "yes"
+    },
+    "schema_says": "boolean",
+    "result": "dropped"
+   },
+   "deep": "Validation is deterministic, so every peer reaches the same verdict. Each change is checked on its own against the version it names (OLD-AIP-63); rules that span the merged list are settled when the view is built. A change naming a version or a lens a device doesn't have yet waits until it arrives."
+  },
+  {
+   "title": "A new version comes with a lens.",
+   "text": "When a schema changes, its author writes a {lens}: how to read the old shape as the new one, and back. Here text becomes title, priority starts at 0, and old phones see an empty link. Applied to the old version, a lens must give exactly the new one, so anyone can check it.",
+   "code": {
+    "type": "data:b3:R45…@b3:d27…#lens",
+    "from": "data:b3:Sc4…@b3:1f0…#todo-list",
+    "to": "data:b3:Sc4…@b3:7a2…#todo-list",
+    "ops": [
+     {
+      "rename": {
+       "at": "/items/*/text",
+       "to": "title"
+      }
+     },
+     {
+      "add": {
+       "at": "/items/*/priority",
+       "default": 0
+      }
+     },
+     {
+      "remove": {
+       "at": "/items/*/link",
+       "back": ""
+      }
+     }
+    ]
+   },
+   "deep": "Operations: rename, add (with a default), remove (with a value for old readers), copy, convert, wrap, hoist. Every lens runs both ways, is named by its hash, and is refused if ambiguous (OLD-AIP-67). After Ink & Switch's Cambria and Jazz's lenses."
+  },
+  {
+   "title": "Moving on rewrites nothing.",
+   "text": "The owner signs one {migration}: this list now follows version 2, through this lens. Nothing in the list is rewritten. Each field keeps the name it is stored under, and every device reads the list in the version its app knows: yours in version 2, Mia's old phone still in version 1.",
+   "code": {
+    "type": "data:b3:Rc5…@b3:590…#migration",
+    "on": "data:b3:7Hq…#house-list",
+    "from": "data:b3:Sc4…@b3:1f0…#todo-list",
+    "to": "data:b3:Sc4…@b3:7a2…#todo-list",
+    "lenses": [
+     "lens:b3:L7q…#v1-v2"
+    ],
+    "proof": [
+     "human:b3:q4x7…#you"
+    ],
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
+   },
+   "deep": "Moving the pin is an ownership act, like writing policies (OLD-AIP-30). The list then accepts changes in every version along its lenses; the owner can retire an old version later, like ending a policy. If two of the owner's agents migrate at once, both stand and the list stays readable in both versions until the owner writes one version with a lens from each (OLD-AIP-67)."
+  },
+  {
+   "title": "Old and new phones write together.",
+   "text": "Mia's phone, still on version 1, ticks an item while yours, on version 2, renames it. Both changes land on the same stored fields, because a renamed field keeps its stored name, so they merge like any other changes. Then each device reads the merged item through the lens, in its own version.",
+   "code": {
+    "stored": {
+     "text": "Fix the kitchen tap",
+     "done": true,
+     "priority~a41": 2
+    },
+    "version 1 sees": {
+     "text": "Fix the kitchen tap",
+     "done": true,
+     "link": ""
+    },
+    "version 2 sees": {
+     "title": "Fix the kitchen tap",
+     "done": true,
+     "priority": 2
+    }
+   },
+   "deep": "Each version maps its paths to stored keys: a rename keeps the key, an added field gets a new one, a removed field's key stays, so old phones never erase new fields. Merging happens first; then each device projects the merged state along the lens path (the shortest, ties to the smaller lens ID), so every device sees the same thing in the same version (OLD-AIP-67)."
+  },
+  {
+   "title": "Breaking changes go through a branch.",
+   "text": "Some changes can't be read both ways, like splitting a name into first and last. Then the owner's device branches the list at its current version, rewrites the branch through the lens, and merges the result back as one change. Every device checks it by doing the same on its own branch. Edits from old phones that never saw it go back to their authors, who apply them again through the lens.",
+   "flow": [
+    "branch at the current version",
+    "rewrite through the lens",
+    "merge back as one change",
+    "every device repeats and compares"
+   ],
+   "deep": "On Loro: fork_at(F) at the frontier F of the valid view, apply the lens, take the diff; then on the main Doc check out F, edit detached under the derived peer ID (OLD-AIP-63), apply the diff and commit one change that depends on F. Ops made on the fork are never signed. Peers verify by repeating the rewrite at F and dropping a mismatch. Old-version changes that never saw it are re-applied by their authors (OLD-AIP-62, OLD-AIP-68). A total break starts a successor instead (next slide)."
+  },
+  {
+   "title": "When nothing fits, the list gets a successor.",
+   "text": "Sometimes a change is too big even for a branch. Then the owner starts new data whose birth record names the old list and the exact point it continues from, and signs a {successor} link on the old list. The old list closes for writing, and every device reading it is led to the new one. Old edits that never saw the link go back to their authors, who apply them again on the new list.",
+   "code": {
+    "type": "data:b3:Rcd…@b3:4d7…#successor",
+    "on": "data:b3:7Hq…#house-list",
+    "successor": "data:b3:9Wn…#house-list-v3",
+    "frontier": "b3:c42…",
+    "proof": [
+     "data:b3:7Hq…#house-list"
+    ],
+    "sig": {
+     "by": "agent:b3:f2p…#your-phone",
+     "key": "ed25519:Fp2…",
+     "value": "…"
+    }
+   },
+   "deep": "Both sides must agree: the new birth record names the predecessor and frontier, and the owner's link on the old data names the successor. Same owner for now (no hand-over, OLD-AIP-54). Every peer checks that the new data starts from the old valid view at that frontier, through the lens if the schema changed (OLD-AIP-71).",
+   "spec": {
+    "summary": "A two-way link that lets data continue as new data, verifiable by every peer, without moving ownership.",
+    "records": [
+     {
+      "name": "successor record",
+      "about": "On the old data, signed under its owner.",
+      "fields": [
+       [
+        "on",
+        "data ID",
+        "the old data"
+       ],
+       [
+        "successor",
+        "data ID",
+        "the new data"
+       ],
+       [
+        "frontier",
+        "b3 hash",
+        "b3 of the canonical list of the old valid view's frontier change IDs"
+       ],
+       [
+        "lens",
+        "lens ID, optional",
+        "when the schema changes on the way"
+       ],
+       [
+        "proof",
+        "record IDs",
+        "from the old data's birth record"
+       ],
+       [
+        "sig",
+        "signature",
+        "by an agent acting for the owner with own"
+       ]
+      ]
+     },
+     {
+      "name": "genesis record (the successor)",
+      "fields": [
+       [
+        "predecessor",
+        "{data, frontier}",
+        "the old data ID and the same frontier hash"
+       ],
+       [
+        "schema",
+        "schema ref",
+        "the new version"
+       ],
+       [
+        "policy",
+        "policy body",
+        "the same owner, own, no expiry"
+       ]
+      ]
+     }
+    ],
+    "rules": [
+     {
+      "id": "successor.mutual",
+      "text": "A succession holds only if the successor record and the new birth record name each other with the same frontier."
+     },
+     {
+      "id": "successor.same_owner",
+      "text": "Old and new data have the same owner; succession never moves ownership (OLD-AIP-54)."
+     },
+     {
+      "id": "successor.unique",
+      "text": "Data has at most one successor; two concurrent successor records both fail until one sees the other."
+     },
+     {
+      "id": "successor.start",
+      "text": "The new data's first state equals the old valid view at frontier, projected through lens if given; every peer can recompute and compare it."
+     },
+     {
+      "id": "successor.closes",
+      "text": "The successor record ends every create, update and delete on the old data; read, want and keep stay until ended separately."
+     },
+     {
+      "id": "successor.late_writes",
+      "text": "Changes on the old data that didn't list the successor record go back to their authors as a conflict view, to be applied again on the successor (OLD-AIP-62)."
+     },
+     {
+      "id": "successor.forward",
+      "text": "Links to the old data resolve forward through the chain of successors."
+     }
+    ],
+    "intents": [
+     "OLD-AIP-54",
+     "OLD-AIP-62",
+     "OLD-AIP-66",
+     "OLD-AIP-67",
+     "OLD-AIP-68",
+     "OLD-AIP-71"
+    ]
+   }
+  },
+  {
+   "title": "Values have schemas too.",
+   "text": "A photo or a PDF never changes, but it still has a shape: its type and its size. A Value's metadata Doc names a schema for the Value and one for itself, so even a file is never just loose bytes.",
+   "code": {
+    "type": "data:b3:Rcb…@b3:030…#meta",
+    "id": "data:b3:Mm3…#movie-meta",
+    "value": "value:b3:9f2c…#movie",
+    "value_schema": "data:b3:Vd1…@b3:8e5…#video",
+    "schema": "data:b3:Mt7…@b3:4c2…#media-meta"
+   },
+   "deep": "A value schema can require a media type, a size limit or a hash algorithm; the metadata Doc is validated like any Doc."
+  },
+  {
+   "title": "Schemas give everything an address.",
+   "text": "Because every piece of data has a known shape, every part of it has a {path}: /items, /items/0/done. Policies will point at these paths, so they can be as precise as one field.",
+   "code": {
+    "/items": "the list of items",
+    "/items/*/done": "every item's done flag",
+    "/title": "the list's title"
+   },
+   "deep": "Paths are JSON Pointers into the schema's shape; a * matches any list index or map key. Policies (at) and operations (at) use them. A policy names the version its paths use, and the data is projected into that version for checking, so policies never need translating (OLD-AIP-67)."
+  },
+  {
+   "title": "Schemas, in short.",
+   "list": [
+    "No piece of data without a schema.",
+    "A schema is a Doc; each version is frozen, hashed and carried with the data.",
+    "Every change names its version and is checked against it.",
+    "New versions come with lenses; moving on rewrites nothing.",
+    "Breaking changes go through a branch; too big a break starts a successor.",
+    "Paths give every part an address."
+   ],
+   "deep": "JSON Schema edited in Loro Docs, versions frozen by hash, lenses between versions, validated by every peer."
+  }
+ ]
+}

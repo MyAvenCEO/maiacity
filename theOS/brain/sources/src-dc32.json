@@ -1,0 +1,10 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "src-dc32",
+ "title": "Keet identity key",
+ "about": [
+  "identity"
+ ],
+ "url": "https://github.com/holepunchto/keet-identity-key"
+}

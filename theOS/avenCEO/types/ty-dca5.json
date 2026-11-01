@@ -1,0 +1,94 @@
+{
+ "type": "type",
+ "id": "ty-dca5",
+ "name": "intent",
+ "file": "aip/AIP-n.json",
+ "what": "Something we want changed that needs your Gate A: its problem, claims, checkpoints, questions for you and its history.",
+ "subtypes": [
+  "product",
+  "avenCEO"
+ ],
+ "fields": [
+  {
+   "name": "problem",
+   "means": "who, what they experience, evidence, whys to the root, truths, assumptions, risk"
+  },
+  {
+   "name": "claims",
+   "means": "promises, each with how it could fail and its check"
+  },
+  {
+   "name": "checkpoints",
+   "means": "smallest slices, each with its claims"
+  },
+  {
+   "name": "tasks",
+   "means": "what is left, each with its step, what it is for and who does it; its status is computed from the events that name it (done once an event of what done does)"
+  },
+  {
+   "name": "questions",
+   "means": "what only you can answer, asked in chat"
+  },
+  {
+   "name": "reviews",
+   "means": "paths of its review docs"
+  },
+  {
+   "name": "events",
+   "means": "the trace, append-only: when, who, what, how, the docs it wrote (writes) and the sources it read or tried to (reads), and a line of text; the step is computed from the events before it"
+  },
+  {
+   "name": "design notes (pixel_diff and the like)",
+   "means": "how a part of the plan works, step by step, where a claim alone would not say it"
+  },
+  {
+   "name": "measure",
+   "means": "what the Learn step measures for this intent: its outcome and the process metrics, read off the trace"
+  }
+ ],
+ "written_by": "the orchestrator",
+ "links_to": [
+  "ty-8a3f",
+  "ty-d737",
+  "ty-ae9a",
+  "ty-3043",
+  "ty-4778",
+  "ty-4076",
+  "ty-1bdc"
+ ],
+ "trace": {
+  "events": [
+   "answer",
+   "asked",
+   "blocked",
+   "changed",
+   "correction",
+   "done",
+   "dropped",
+   "erratum",
+   "gate-A",
+   "gate-B",
+   "measured",
+   "moved",
+   "not read",
+   "read",
+   "reflected",
+   "renamed",
+   "retold",
+   "review",
+   "revised",
+   "sent back",
+   "source",
+   "specified",
+   "started",
+   "stopped",
+   "summarized",
+   "understood",
+   "verified"
+  ],
+  "step": "every step",
+  "author": "human and agent",
+  "note": "Its own events are its trace; its source is your words.",
+  "reflection": "Every new one says what it supersedes or merges among the ones of its type that hold; every change to it is an event of an AIP in the same commit (d-f960)."
+ }
+}

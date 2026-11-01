@@ -9,10 +9,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use aven_db_store::backend::{self, DalStore};
-use aven_gen1::wire::Frame;
 use aven_id::{Members, Relying};
 use aven_peer::door::Door;
 use aven_peer::door::Statement;
+use aven_peer_wire::wire::Frame;
 use p256::ecdsa::signature::Signer;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -79,7 +79,14 @@ fn tree(m: &Members) -> Value {
         .iter()
         .map(|v| {
             let owners: Vec<String> = v.owners.iter().map(ToString::to_string).collect();
-            json!({ "id": v.id, "name": v.name, "kind": v.kind.as_str(), "owners": owners })
+            let mut vault = json!({
+                "id": v.id, "name": v.name, "kind": v.kind.as_str(), "owners": owners, "threshold": v.threshold
+            });
+            // a device names its key (A211)
+            if let Some(key) = &v.key {
+                vault["key"] = json!(key);
+            }
+            vault
         })
         .collect();
     json!({ "keys": keys, "vaults": vaults })
@@ -280,6 +287,12 @@ async fn the_door_reads_what_production_stored_before_the_agent() {
     for v in want["vaults"].as_array_mut().unwrap() {
         let kind = aven_id::Kind::parse(v["kind"].as_str().unwrap()).unwrap();
         v["kind"] = json!(kind.as_str());
+        // stored before thresholds: each vault reads as taking one owner
+        v["threshold"] = json!(1);
+        // and a device's key is its id, as its sign-in made it (A211)
+        if kind == aven_id::Kind::Device {
+            v["key"] = v["id"].clone();
+        }
     }
     assert_ne!(want, old["tree"], "the old tree names a network");
     assert_eq!(tree(&m), want);

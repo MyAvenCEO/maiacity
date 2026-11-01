@@ -13,9 +13,10 @@
 
 use aven_core::{Call, DocId, Facts, Step};
 
-use super::chain::{Cap, ChainError, Ctx, vault_id};
+use super::chain::{Cap, ChainError, Ctx};
 use super::conditions::{Branches, Holder};
 use super::line::{Line, World, grant_allows};
+use crate::vault_name::cast_name;
 
 /// A device cap: what a device may do for the vault it serves, a cap from that vault to the device's own vault. `None`
 /// grants are everything its vault may do except govern, which is never an op (rule 2); an agent's devices and the
@@ -150,7 +151,7 @@ impl Reader<'_> {
         let (Some(v), Some(f)) = ((self.vault_of)(e.signer), self.facts(e)) else {
             return false;
         };
-        let v = vault_id(&v);
+        let v = cast_name(&v);
         f.vault == v || (self.world.gov)(&v, &f.vault)
     }
 
@@ -190,7 +191,7 @@ impl Reader<'_> {
         let (Some(v), Some(f)) = ((self.vault_of)(signer), (self.ctx.facts)(doc)) else {
             return false;
         };
-        let vid = vault_id(&v);
+        let vid = cast_name(&v);
         f.vault == vid
             || (self.world.gov)(&vid, &f.vault)
             || held.iter().any(|c| {

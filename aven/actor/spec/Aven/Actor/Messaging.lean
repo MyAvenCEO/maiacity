@@ -34,27 +34,27 @@ open Aven.ID (Cap CapForm Grant Ctx chainOk narrow_chain narrow_ops)
 
 /-- An attenuation of `parent` to the grant `g`, issued and signed for `parent`'s holder by its host device. It keeps
 the holder, share and conditions, so only its grant narrows. -/
-def attenuation (id issuer signer : String) (parent : Cap) (g : Grant) : Cap :=
+def attenuation (id issuer signer : String) (parent : Cap String) (g : Grant) : Cap String :=
   { id := id, issuer := issuer, holder := parent.holder, parent := some parent.id, form := .attenuate, grant := g,
     role := none, share := parent.share, conditions := parent.conditions, signer := signer, approvals := [] }
 
 /-- The kernel's attenuation for one message: only when the narrowed grant lies within the handled message's own cap
 (`bound`) and within the chain's last cap (`parent`). Otherwise it makes none, and the message goes without it. -/
-def kernelAttenuate (roles : List Aven.ID.Role) (id issuer signer : String) (bound parent : Cap) (g : Grant) :
-    Option Cap :=
+def kernelAttenuate (roles : List Aven.ID.Role) (id issuer signer : String) (bound parent : Cap String) (g : Grant) :
+    Option (Cap String) :=
   if g.within (bound.grants roles) && g.within (parent.grants roles) then
     some (attenuation id issuer signer parent g)
   else none
 
 /-- The chain a message carries: its handled message's chain, and at most one attenuation. -/
-def messageChain (handled : List Cap) (att : Option Cap) : List Cap := handled ++ att.toList
+def messageChain (handled : List (Cap String)) (att : Option (Cap String)) : List (Cap String) := handled ++ att.toList
 
-theorem attenuation_grants (roles : List Aven.ID.Role) (id issuer signer : String) (parent : Cap) (g : Grant) :
+theorem attenuation_grants (roles : List Aven.ID.Role) (id issuer signer : String) (parent : Cap String) (g : Grant) :
     (attenuation id issuer signer parent g).grants roles = g := rfl
 
 /-- The kernel's attenuation reaches and allows nothing beyond the handled message's cap, nor beyond its parent. -/
-theorem attenuation_within_message {roles : List Aven.ID.Role} (gov : Bytes → Bytes → Prop)
-    (spawned lists : DocId → DocId → Prop) {id issuer signer : String} {bound parent : Cap} {g : Grant} {a : Cap}
+theorem attenuation_within_message {roles : List Aven.ID.Role} (gov : Core.Hash → Core.Hash → Prop)
+    (spawned lists : DocId → DocId → Prop) {id issuer signer : String} {bound parent : Cap String} {g : Grant} {a : Cap String}
     (h : kernelAttenuate roles id issuer signer bound parent g = some a) :
     a.form = .attenuate ∧ a.holder = parent.holder ∧
       (∀ f v, (a.grants roles).reaches gov spawned lists f v → (bound.grants roles).reaches gov spawned lists f v) ∧
@@ -75,8 +75,8 @@ theorem attenuation_within_message {roles : List Aven.ID.Role} (gov : Bytes → 
 
 /-- When a reader accepts a message's chain, nothing in it, the attenuation included, lets an op reach a Doc or allows a
 call beyond the chain's root. -/
-theorem message_within_root {x : Ctx} (gov : Bytes → Bytes → Prop) (spawned lists : DocId → DocId → Prop)
-    {r : Cap} {rest : List Cap} {att : Option Cap} (ok : chainOk x (messageChain (r :: rest) att) = true) :
+theorem message_within_root {x : Ctx String} (gov : Core.Hash → Core.Hash → Prop) (spawned lists : DocId → DocId → Prop)
+    {r : Cap String} {rest : List (Cap String)} {att : Option (Cap String)} (ok : chainOk x (messageChain (r :: rest) att) = true) :
     (∀ c ∈ messageChain (r :: rest) att, ∀ f v,
       (c.grants x.roles).reaches gov spawned lists f v → (r.grants x.roles).reaches gov spawned lists f v) ∧
     (∀ c ∈ messageChain (r :: rest) att, ∀ f s,

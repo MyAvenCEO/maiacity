@@ -1,0 +1,10 @@
+{
+ "type": "lesson",
+ "id": "l-f324",
+ "status": "proposed",
+ "cue": "A measurement plan asks for a breakdown that the docs it reads don't record.",
+ "lesson": "Before the run, add the field to the type the metric reads (for example a kind on every finding), or drop the breakdown.",
+ "evidence": "aip-6fb1's measure asked for findings by kind; the six spec review docs have severity and answer but no kind, so only the checkpoint review (where the critic was asked for one) could be counted.",
+ "confidence": "high",
+ "intent": "aip-55e6"
+}

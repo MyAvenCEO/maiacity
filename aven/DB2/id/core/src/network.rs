@@ -140,12 +140,14 @@ impl Network {
 
     /// The tree's vaults, in order, each with its name. Before the claim the agent's vault has no owner.
     pub fn vaults(&self) -> Vec<Vault> {
+        // a device's key, here, is its device vault's id (A211)
         let vault = |id: &str, name: String, kind, owners| Vault {
             id: id.into(),
             name,
             kind,
             owners,
             threshold: 1,
+            key: (kind == Kind::Device).then(|| id.to_string()),
         };
         let network = vault(&self.network, "Aven".into(), Kind::Agent, vec![]);
         let peer = vault(

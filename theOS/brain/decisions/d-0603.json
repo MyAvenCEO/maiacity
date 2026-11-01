@@ -1,0 +1,33 @@
+{
+ "type": "decision",
+ "id": "d-0603",
+ "n": 64,
+ "title": "dropped: no mod for now",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "intents",
+  "apps"
+ ],
+ "quote": "Then let's drop the mod for now, and mark this intent as closed.",
+ "means": "aip-a195 is closed as dropped after its Understand research: no Claude Code mod for now. Its research stays in rs-0844.",
+ "intents": [
+  "aip-a195"
+ ],
+ "supersedes": [
+  {
+   "decision": "d-fef3",
+   "part": "whole",
+   "what": "d-fef3 opened aip-a195 to discover a Claude Code mod; it is dropped for now."
+  }
+ ],
+ "relates": [
+  "d-b43d"
+ ],
+ "reflection": {
+  "checked": "every decision before d-0603 that held",
+  "result": "supersedes d-fef3 (whole); conflicts with d-432d, which moved brain's MCP server into aip-a195 after the drop: asked of you"
+ }
+}

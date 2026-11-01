@@ -119,9 +119,9 @@ layers"): every seal opens a key of the vault it is sealed under, or of a vault 
 `v` is holding `v`'s `below` group. -/
 
 /-- `u` is `v` or a vault `v` governs: what a `below` grant on `v` reaches. -/
-def Down (t : Tree) (v u : String) : Prop := u = v ∨ t.Governs v u
+def Down (t : Tree String) (v u : String) : Prop := u = v ∨ t.Governs v u
 
-theorem Down.trans {t : Tree} {a b c : String} (h : Down t a b) (k : Down t b c) : Down t a c := by
+theorem Down.trans {t : Tree String} {a b c : String} (h : Down t a b) (k : Down t b c) : Down t a c := by
   rcases h with rfl | h
   · exact k
   · rcases k with rfl | k
@@ -129,12 +129,12 @@ theorem Down.trans {t : Tree} {a b c : String} (h : Down t a b) (k : Down t b c)
     · exact .inr (Tree.governs_trans h k)
 
 /-- Every seal goes down: a key of a vault is sealed only under a key of that vault or of a vault that governs it. -/
-def SealsDown (t : Tree) (vaultOf : κ → String) (w : WorldOf κ) : Prop :=
+def SealsDown (t : Tree String) (vaultOf : κ → String) (w : WorldOf κ) : Prop :=
   ∀ s ∈ w.seals, Down t (vaultOf s.2) (vaultOf s.1)
 
 /-- **Authority runs down:** a party learns keys only of the vaults whose keys it holds and of the vaults below them.
 Holding `v`'s `below` group reads `v`'s Docs and those below it. -/
-theorem authority_down {t : Tree} {vaultOf : κ → String} {w : WorldOf κ} {p : String} {vs : List String}
+theorem authority_down {t : Tree String} {vaultOf : κ → String} {w : WorldOf κ} {p : String} {vs : List String}
     (sd : SealsDown t vaultOf w) (own : ∀ k ∈ w.own p, ∃ v ∈ vs, Down t v (vaultOf k)) :
     ∀ n, ∀ k ∈ w.knownAfter p n, ∃ v ∈ vs, Down t v (vaultOf k) := by
   intro n
@@ -149,7 +149,7 @@ theorem authority_down {t : Tree} {vaultOf : κ → String} {w : WorldOf κ} {p 
 
 /-- **Never above:** in a well-formed tree, a party holding keys only of vaults that `u` governs learns no key of `u`.
 A `below` grant on Maia City never reads Alice's vault, which owns Maia City. -/
-theorem never_above {t : Tree} (wf : t.WF) {vaultOf : κ → String} {w : WorldOf κ} {p : String} {vs : List String}
+theorem never_above {t : Tree String} (wf : t.WF) {vaultOf : κ → String} {w : WorldOf κ} {p : String} {vs : List String}
     {u : String} (sd : SealsDown t vaultOf w) (own : ∀ k ∈ w.own p, ∃ v ∈ vs, Down t v (vaultOf k))
     (above : ∀ v ∈ vs, t.Governs u v) : ∀ n, ∀ k ∈ w.knownAfter p n, vaultOf k ≠ u := by
   intro n k m e
@@ -167,9 +167,9 @@ def map {κ' : Type} (f : κ → κ') (w : WorldOf κ) : WorldOf κ' :=
 end WorldOf
 
 /-- `Down`, decided by the `governs` query, for a well-formed tree. -/
-def downB (t : Tree) (v u : String) : Bool := u == v || (t.governs v).contains u
+def downB (t : Tree String) (v u : String) : Bool := u == v || (t.governs v).contains u
 
-theorem downB_iff {t : Tree} (wf : t.WF) {v u : String} : downB t v u = true ↔ WorldOf.Down t v u := by
+theorem downB_iff {t : Tree String} (wf : t.WF) {v u : String} : downB t v u = true ↔ WorldOf.Down t v u := by
   simp [downB, WorldOf.Down, Tree.mem_governs wf]
 
 /-- A world whose keys are names, as the examples and the cross-spec model's rules read it. -/

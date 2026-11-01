@@ -15,6 +15,7 @@ crate-type = ["cdylib", "rlib"]
 aven-peer = { path = "../native", default-features = false }
 aven-core = { path = "../../core" }
 aven-gen1 = { path = "../../gen1" }
+aven-peer-wire = { path = "../wire" }
 aven-db-store = { path = "../../store" }
 aven-id = { path = "../../id/core" }
 # the file registry, aven/runtimes': what a file is by its bytes (at /runtimes in the box and the Peer's image)

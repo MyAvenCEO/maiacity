@@ -1,4 +1,5 @@
 import Aven.ID.Network
+import Aven.ID.Types
 
 /-! # The tree, a Doc of Core envelopes (A30, A39)
 
@@ -21,11 +22,12 @@ namespace TreeDoc
 
 open Core Body
 
-/-- The tree's type (A39). -/
-def treeType : DocId := ⟨⟨utf8 "tree"⟩⟩
+/-- The tree's type (A39): a built-in type, named as caps names its own (`Aven.ID.builtinType`), until the register
+moves with caps into avenCAPS. -/
+def treeType : DocId := builtinType "tree"
 
 /-- The tree Doc's facts: its id, Maia City's vault, and its type. -/
-def facts (doc : DocId) (coop : String) : Facts := ⟨doc, vaultId coop, treeType⟩
+def facts (doc : DocId) (coop : String) : Facts := ⟨doc, Named.name coop, treeType⟩
 
 /-- An envelope as a peer stores it: under its name. -/
 structure Named where

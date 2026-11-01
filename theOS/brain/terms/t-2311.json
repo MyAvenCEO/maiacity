@@ -1,0 +1,16 @@
+{
+ "type": "term",
+ "id": "t-2311",
+ "word": "Decision",
+ "means": "Your words, polished, with the time: an answer, a gate approval or a correction. Numbered d-1b6c, d-e028 and on until brain's hash ids land; it holds until a later decision supersedes it.",
+ "supersedes": [
+  {
+   "term": "t-8112",
+   "how": "redefined: your words polished (d-e9c7), hash ids coming (d-ac7d, d-3a9c)"
+  }
+ ],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "supersedes decision-d-n (redefined)"
+ }
+}

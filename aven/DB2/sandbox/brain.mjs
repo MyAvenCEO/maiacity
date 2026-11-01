@@ -1,13 +1,16 @@
 // Brain, avenOS's documentation (aven/DB2/brain, os/web/brain), in all three of Playwright's engines, in the browsers' container (`bun
 // run up --check`). Read on production's stand-in (localhost:5174) by a browser that never signed in, as anyone reads
 // them, and on the box's own view (localhost:5173). Checked, at a desktop's 1280 px and a phone's 390 px:
-//   1. the dashboard has an item per package, avenID's open and the rest coming; the main nav reaches it;
-//   2. avenID's page draws each slide as 16:9, through the face-runtime's drawer into a shadow root of its own, with no
-//      slide style left in the page's own sheets; the glossary draws, and #/brain/glossary/vault marks that term;
-//   3. no page scrolls sideways;
-//   4. every text has 4.5:1 against the background under it (3:1 when large), as WCAG has it, and no text on a slide is
+//   1. the dashboard has an item per entry of packages.json, in its three bands; the main nav reaches it;
+//   2. every page of packages.json draws (markdown-runtime refused none), with its headings in its contents;
+//   3. avenID's page draws each slide as 16:9, through the face-runtime's drawer into a shadow root of its own, with no
+//      slide style left in the page's own sheets; #/brain/glossary/vault marks that term;
+//   4. the decision log shows a card per row of DECISIONS.md; a search narrows it to rows holding the word, "only what
+//      still stands" hides some, and #/brain/decisions/A192 opens and marks that row (A203);
+//   5. no page scrolls sideways: a wide table scrolls inside its own box; an in-page link lands on its heading;
+//   6. every text has 4.5:1 against the background under it (3:1 when large), as WCAG has it, and no text on a slide is
 //      under 9 px at a phone's width (brain/STYLE.md, "A slide");
-//   5. a screenshot of each, in the run's folder.
+//   7. a screenshot of each, in the run's folder.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { chromium, firefox, webkit } from 'playwright';
 import { linear } from '../brain/render/contrast.js';
@@ -20,7 +23,16 @@ mkdirSync(run, { recursive: true });
 const problems = [];
 const report = {};
 const widths = { desktop: 1280, phone: 390 };
-const pages = { dashboard: 'brain', id: 'brain/id', glossary: 'brain/glossary/vault' };
+// the log's rows, as DECISIONS.md holds them: every table row under its head
+const rows = readFileSync(new URL('../brain/DECISIONS.md', import.meta.url), 'utf8')
+	.split('\n')
+	.filter((l) => l.startsWith('| ') && !l.startsWith('| Id ')).length;
+const pages = {
+	dashboard: 'brain',
+	...Object.fromEntries(packages.filter((p) => p.page && p.id !== 'glossary').map((p) => [p.id, `brain/${p.id}`])),
+	glossary: 'brain/glossary/vault',
+	'decision-A192': 'brain/decisions/A192',
+};
 
 // every element's own text, its colour and the first opaque background behind it, as the page lays it out; the
 // ratio is Face.lean's, in integers over its linear table (brain/render/contrast.js, held to the spec's vectors)
@@ -79,7 +91,9 @@ async function read(engine) {
 						await page.goto(`${origin}/`);
 						await page.getByTestId('nav-brain').first().click({ timeout: 30_000 });
 					} else await page.goto(`${origin}/#/${route}`);
-					const ready = { dashboard: '[data-testid="brain-id"]', id: '[data-testid="slide-owns"] .slide', glossary: '#term-vault.here' }[view];
+					const ready =
+						{ dashboard: '[data-testid="brain-id"]', id: '[data-testid="slide-owns"] .slide', glossary: '#term-vault.here', decisions: '[data-testid="decision"]', 'decision-A192': '#d-A192.here' }[view] ??
+						'main .prose h1, [data-testid="refused"]';
 					if (!(await page.locator(ready).first().waitFor({ timeout: 30_000 }).then(() => true, () => false))) {
 						say(`${ready} never showed`);
 						continue;
@@ -94,6 +108,43 @@ async function read(engine) {
 					}
 					await page.evaluate(() => document.fonts.ready);
 					const seen = {};
+					const refusal = await page.locator('[data-testid="refused"]').count();
+					if (refusal) say(`markdown-runtime refused the page: ${await page.locator('[data-testid="refused"]').innerText()}`);
+					if (view !== 'dashboard') {
+						seen.contents = await page.locator('.contents .sections a').count();
+						if (!seen.contents) say('its contents list no headings');
+					}
+					if (view === 'decisions') {
+						const count = () => page.locator('[data-testid="decision"]').count();
+						seen.cards = await count();
+						if (seen.cards !== rows) say(`${seen.cards} decisions shown, not the log's ${rows}`);
+						await page.getByTestId('decisions-search').fill('keyring');
+						seen.keyring = await count();
+						const off = await page.locator('[data-testid="decision"]').evaluateAll((cards) => cards.filter((c) => !c.textContent.toLowerCase().includes('keyring')).length);
+						if (!seen.keyring || seen.keyring >= rows || off) say(`a search for "keyring" shows ${seen.keyring}, ${off} of them without the word`);
+						await page.getByTestId('decisions-search').fill('');
+						await page.getByTestId('decisions-standing').check();
+						seen.standing = await count();
+						if (!(seen.standing < rows && seen.standing > 0)) say(`"only what still stands" shows ${seen.standing} of ${rows}`);
+						await page.getByTestId('decisions-standing').uncheck();
+					}
+					// an in-page link goes to the page's own route and lands on its heading (caps' "Owns" list links its headings)
+					if (view === 'caps') {
+						const link = page.locator('main a[href^="#/brain/caps/"]').first();
+						const href = await link.getAttribute('href').catch(() => null);
+						if (!href) say('no in-page link on the caps page');
+						else {
+							await link.click();
+							const id = decodeURIComponent(href.split('/').pop());
+							seen.inPage = await page.waitForFunction((x) => { const h = document.getElementById(x); return h && Math.abs(h.getBoundingClientRect().top) < 120; }, id, { timeout: 10_000 }).then(() => true, () => false);
+							if (!seen.inPage) say(`${href} did not land on its heading`);
+							await page.evaluate(() => scrollTo(0, 0));
+						}
+					}
+					if (view === 'decision-A192') {
+						seen.open = await page.locator('#d-A192').evaluate((d) => d.open && d.getBoundingClientRect().top < innerHeight);
+						if (!seen.open) say('#/brain/decisions/A192 did not open its row in view');
+					}
 					if (view === 'dashboard') {
 						seen.items = await page.locator('[data-testid^="brain-"]').count();
 						seen.open = await page.locator('[data-testid^="brain-"] a').count();

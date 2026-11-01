@@ -1,0 +1,40 @@
+{
+ "type": "intent",
+ "id": "aip-55e6",
+ "title": "A kind on every finding",
+ "kind": "avenCEO",
+ "note": "In the inbox: a change to avenCEO proposed by aip-6fb1's reflection (d-f7b3), measured before it is kept.",
+ "source": {
+  "type": "idea",
+  "by": "a-4c7a",
+  "at": "2026-11-01",
+  "text": "Every review finding carries a kind (unclear, contradiction, YAGNI, wrong fact), in the review type and both checker prompts, so the process can be measured.",
+  "links": [
+   "aip-6fb1"
+  ],
+  "ref": "d-f7b3"
+ },
+ "questions": [],
+ "reviews": [],
+ "tasks": [
+  {
+   "id": "t1",
+   "what": "Understand: the problem, from aip-6fb1's run and its lesson",
+   "step": 1,
+   "who": "a-6ffb"
+  }
+ ],
+ "events": [
+  {
+   "at": "2026-11-01T10:41Z",
+   "by": "a-6ffb",
+   "what": "source",
+   "text": "Every review finding carries a kind (unclear, contradiction, YAGNI, wrong fact), in the review type and both checker prompts, so the process can be measured.",
+   "how": "from aip-6fb1's reflection, at your answer (d-f7b3)",
+   "writes": [
+    "d-f7b3"
+   ],
+   "reads": []
+  }
+ ]
+}

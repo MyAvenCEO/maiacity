@@ -45,16 +45,16 @@ The theorems:
 - `admin_by_owners`, `device_not_admin`: an admin act counts only with Maia City's owners' approval (`Tree.approves`),
   resting on an owner key above the coop, never a device's (rule 15, A28).
 
-`settle_restore`, production's ref order, the record kinds and `settled.json` are avenPEER's (`Aven.ID.Restore`,
-`Aven.ID.Records`; PEERS.md, Thread A). -/
+`settle_restore`, production's ref order, the history entries and `settled.json` are avenPEER's (`Aven.ID.Restore`,
+`Aven.Peer.History`; PEERS.md, Thread A). -/
 
 namespace Aven.ID
 
 /-- A write under `c` from `writer`'s vault counts only if `c` isn't public or the writer is a member. -/
-def publicWriter (member : String → Bool) (c : Cap) (writer : String) : Bool :=
+def publicWriter (member : String → Bool) (c : Cap String) (writer : String) : Bool :=
   c.holder != .«public» || member writer
 
-theorem public_member {member : String → Bool} {c : Cap} {writer : String} (h : publicWriter member c writer = true)
+theorem public_member {member : String → Bool} {c : Cap String} {writer : String} (h : publicWriter member c writer = true)
     (p : c.holder = .«public») : member writer = true := by
   simpa [publicWriter, p] using h
 
@@ -205,11 +205,11 @@ def Genesis.consented (g : Genesis) : Bool :=
 /-- The vaults the genesis founds, as `Aven.ID.Approve` reads them: the claimant's vault, owned by its passkey and
 MaiaCityGuardian's vault; the admin coop, owned by the vaults the genesis names; the agent, owned by the coop; and
 MaiaCityGuardian's vault, owned by its key. -/
-def Genesis.tree (g : Genesis) : Tree :=
+def Genesis.tree (g : Genesis) : Tree String :=
   { keys := [g.passkey.spki, g.guardian.ed25519]
-    vaults := [⟨g.claimant, "", .person, [.key g.passkey.spki, .vault g.guardianVault], 1⟩,
-      ⟨g.coop, "", .coop, g.coopOwners.map .vault, g.coopThreshold⟩, ⟨g.agent, "", .agent, [.vault g.coop], 1⟩,
-      ⟨g.guardianVault, "", .agent, [.key g.guardian.ed25519], 1⟩] }
+    vaults := [⟨g.claimant, "", .person, [.key g.passkey.spki, .vault g.guardianVault], 1, none⟩,
+      ⟨g.coop, "", .coop, g.coopOwners.map .vault, g.coopThreshold, none⟩, ⟨g.agent, "", .agent, [.vault g.coop], 1, none⟩,
+      ⟨g.guardianVault, "", .agent, [.key g.guardian.ed25519], 1, none⟩] }
 
 /-- What every tree statement's signer signs, as `Aven.ID.Approve` names a digest: the statement itself. -/
 def stmtDigest : String := "tree statement"
@@ -244,7 +244,7 @@ theorem Genesis.approvesF_own (g : Genesis) (d : String) (f : Nat) :
     g.tree.approvesF g.tree.threshold d [⟨g.passkey.spki, d⟩] (f + 1) g.claimant = true := by
   unfold Tree.approvesF
   have e : g.tree.get? g.claimant =
-      some ⟨g.claimant, "", .person, [.key g.passkey.spki, .vault g.guardianVault], 1⟩ := by
+      some ⟨g.claimant, "", .person, [.key g.passkey.spki, .vault g.guardianVault], 1, none⟩ := by
     simp [Tree.get?, Genesis.tree]
   rw [e, g.threshold_claimant]
   simp only [decide_eq_true_eq]
@@ -264,7 +264,7 @@ theorem Genesis.approves_claimant (g : Genesis) (hc : g.claimant ∈ g.coopOwner
   by_cases e : g.claimant = g.coop
   · rw [← e]; exact key _
   · unfold Tree.approvesF
-    have ec : g.tree.get? g.coop = some ⟨g.coop, "", .coop, g.coopOwners.map .vault, g.coopThreshold⟩ := by
+    have ec : g.tree.get? g.coop = some ⟨g.coop, "", .coop, g.coopOwners.map .vault, g.coopThreshold, none⟩ := by
       simp [Tree.get?, Genesis.tree, e]
     have tc : g.tree.threshold g.coop = 1 := by simp [Tree.threshold, ec, one]
     rw [ec, tc]
@@ -279,9 +279,9 @@ inductive TreeSays where
   /-- A device joins the vault of the passkey that signs it (the register maps the passkey to its vault), which
   needs that passkey's owner beside its ES256 (caps rule 21): the body names no vault. -/
   | signIn (device : String)
-  /-- A ticket (an invite) with its one-time key, signed by an admin passkey. -/
+  /-- A ticket (an invite) with its one-time key, approved by Maia City's owners. -/
   | ticket (key : String)
-  /-- Ticket `ticket` (the ticket statement's name) withdrawn, by an admin passkey. -/
+  /-- Ticket `ticket` (the ticket statement's name) withdrawn, approved by Maia City's owners. -/
   | withdrawal (ticket : Core.Hash)
   /-- A claim of a ticket, signed by its one-time key: it founds `vault` with its passkey's record and its devices
   (a new claim's first device; a migrated join's every device, A42), and names the guardian vault it consents to,
@@ -380,36 +380,40 @@ theorem HybridKey.ofValue_toValue (h : HybridKey) : ofValue h.toValue = some h :
   simp [toValue, ofValue, Body.ofText_text]
 
 open Body in
-/-- An optional Value: null when absent. -/
-def optValue {α : Type} (f : α → Core.Value) : Option α → Core.Value
-  | some a => f a
-  | none => .null
-
-def ofOpt {α : Type} (f : Core.Value → Option α) : Core.Value → Option (Option α)
-  | .null => some none
-  | v => (f v).map some
-
-open Body in
-/-- A passkey record as a map, `{seal, spki, epoch, owner, credential}` in the codec's order; an absent owner or seal is
-null. -/
+/-- A passkey record as a map, `{seal, spki, epoch, owner, credential}` in the codec's order. An absent owner or seal
+is left out, never null (A184). -/
 def Passkey.toValue (k : Passkey) : Core.Value :=
-  .map [(utf8 "seal", optValue text k.sealKey), (utf8 "spki", text k.spki), (utf8 "epoch", .uint k.epoch),
-    (utf8 "owner", optValue HybridKey.toValue k.owner), (utf8 "credential", text k.credential)]
+  .map ((k.sealKey.map fun se => (utf8 "seal", text se)).toList ++
+    [(utf8 "spki", text k.spki), (utf8 "epoch", .uint k.epoch)] ++
+    (k.owner.map fun o => (utf8 "owner", o.toValue)).toList ++ [(utf8 "credential", text k.credential)])
 
 open Body in
+/-- A passkey record read back: one of its four shapes, by which of `seal` and `owner` it holds. A null for either is
+refused, as is any other key. -/
 def Passkey.ofValue : Core.Value → Option Passkey
   | .map [(ks, se), (kk, sp), (ke, .uint ep), (ko, ow), (kc, cr)] =>
     if ks == utf8 "seal" && kk == utf8 "spki" && ke == utf8 "epoch" && ko == utf8 "owner" &&
         kc == utf8 "credential" then
-      do pure ⟨← ofText cr, ← ofText sp, ← ofOpt HybridKey.ofValue ow, ← ofOpt ofText se, ep⟩
+      do pure ⟨← ofText cr, ← ofText sp, some (← HybridKey.ofValue ow), some (← ofText se), ep⟩
+    else none
+  | .map [(ks, se), (kk, sp), (ke, .uint ep), (kc, cr)] =>
+    if ks == utf8 "seal" && kk == utf8 "spki" && ke == utf8 "epoch" && kc == utf8 "credential" then
+      do pure ⟨← ofText cr, ← ofText sp, none, some (← ofText se), ep⟩
+    else none
+  | .map [(kk, sp), (ke, .uint ep), (ko, ow), (kc, cr)] =>
+    if kk == utf8 "spki" && ke == utf8 "epoch" && ko == utf8 "owner" && kc == utf8 "credential" then
+      do pure ⟨← ofText cr, ← ofText sp, some (← HybridKey.ofValue ow), none, ep⟩
+    else none
+  | .map [(kk, sp), (ke, .uint ep), (kc, cr)] =>
+    if kk == utf8 "spki" && ke == utf8 "epoch" && kc == utf8 "credential" then
+      do pure ⟨← ofText cr, ← ofText sp, none, none, ep⟩
     else none
   | _ => none
 
 theorem Passkey.ofValue_toValue (k : Passkey) : ofValue k.toValue = some k := by
   rcases k with ⟨cr, sp, ow, se, ep⟩
   cases ow <;> cases se <;>
-    simp [toValue, ofValue, optValue, Body.text, HybridKey.toValue, ofOpt, Body.ofText, Body.ofUtf8_utf8,
-      HybridKey.ofValue]
+    simp [toValue, ofValue, Body.text, HybridKey.toValue, Body.ofText, Body.ofUtf8_utf8, HybridKey.ofValue]
 
 open Body in
 def Genesis.toValue (g : Genesis) : Core.Value :=
@@ -744,8 +748,9 @@ def guardianNamed (v : View) (c : TreeStatement) (x : String) : Bool :=
   gen v (fun g => g.guardianVault == x) ||
     v.any fun s => configBy v isGuardianSet s && s.says == .setGuardian x && v.past c s
 
-/-- A claim that counts: its ticket was issued by an admin passkey, is in its past and has the one-time key that signed
-the claim, and it names a guardian vault Maia City named, as the claim saw it (`guardianNamed`, A13, A42). -/
+/-- A claim that counts: its ticket was issued with Maia City's owners' approval, is in its past and has the one-time
+key that signed the claim, and it names a guardian vault Maia City named, as the claim saw it (`guardianNamed`, A13,
+A42). -/
 def claimOk (v : View) (c : TreeStatement) : Bool :=
   match c.says with
   | .claim t _ _ _ guardian =>
@@ -760,7 +765,7 @@ def sameTicket (c d : TreeStatement) : Bool := c.ticketOf.isSome && c.ticketOf =
 def final (v : View) (c : TreeStatement) : Bool :=
   claimOk v c && v.any fun a => confirmer v a.signer && a.says == .confirm c.name && v.past a c
 
-/-- `w` wins over claim `c`: an admin passkey's withdrawal of its ticket that didn't have it in its past. -/
+/-- `w` wins over claim `c`: Maia City's owners' withdrawal of its ticket that didn't have it in its past. -/
 def beats (v : View) (w c : TreeStatement) : Bool :=
   match c.ticketOf with
   | some t => byAdmin v w.keys && w.says == .withdrawal t && !v.past w c
@@ -1407,7 +1412,7 @@ theorem ownerless_signs_in_nothing {vault p : String}
       · simp at hc
 
 /-- A signature by a key that owns no vault of the tree never makes an approval: k of n counts owners only. -/
-theorem approvesF_extra {t : Tree} {th : String → Nat} {d : String} {sigs : List Sig} {p : String}
+theorem approvesF_extra {t : Tree String} {th : String → Nat} {d : String} {sigs : List Sig} {p : String}
     (np : ∀ v ∈ t.vaults, p ∉ v.ownerKeys) :
     ∀ {f : Nat} {vault : String}, t.approvesF th d (⟨p, d⟩ :: sigs) f vault = true →
       t.approvesF th d sigs f vault = true

@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "d-3a9c",
+ "n": 49,
+ "title": "Existing docs are renamed to hash ids",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "memory",
+  "ids"
+ ],
+ "quote": "You can rename them.",
+ "means": "Once brain uses hash ids, the existing docs (D-n, AIP-n and the rest) are renamed to hash ids; no number is kept as a label.",
+ "intents": [
+  "aip-836d"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-ac7d"
+ ],
+ "reflection": {
+  "checked": "every decision before d-3a9c that held",
+  "result": "supersedes nothing"
+ }
+}

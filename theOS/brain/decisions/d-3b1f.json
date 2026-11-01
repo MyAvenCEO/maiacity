@@ -1,0 +1,26 @@
+{
+ "type": "decision",
+ "id": "d-3b1f",
+ "n": 6,
+ "title": "theOS is the single source of truth",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "theOS",
+  "memory"
+ ],
+ "quote": "The theOS folder is the single source of truth for every intent and all its stages.",
+ "means": "theOS/ holds every intent and all its stages.",
+ "intents": [
+  "aip-31df",
+  "def-e833"
+ ],
+ "supersedes": [],
+ "relates": [],
+ "reflection": {
+  "checked": "every decision before d-3b1f that held",
+  "result": "supersedes nothing"
+ }
+}

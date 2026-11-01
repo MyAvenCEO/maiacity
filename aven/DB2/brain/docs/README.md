@@ -817,10 +817,10 @@ built in Rust yet.
 |---|---|---|---|
 | A Doc and its genesis | `Genesis`, `Body` (#1694, #1732) | `Genesis`, the genesis checks (#1694, #1732) | — |
 | Records | `recordsRoot` (#1694) | the root map `records`, `t` (#1694) | — |
-| Types are Docs, the vocabulary | not yet | not started (step 3) | — |
-| Built-in types | `Builtins` (#1694); avenID's `idBuiltinFit` (#1716) | `DocsBuiltins`, `Either` (#1694) | — |
-| Pins | at birth (`Genesis.ok`) | at birth | — |
-| Fit | `Fit`, `Changes`; step 1's schema form (`Aven.DB.Docs.Schema`, `schemas.json`) pending on `claude/aven-docs` | `fit`, built-in types and step 1's schema language (#1694) | — |
+| Types are Docs, the vocabulary | `Schema` (one form, read back), `resolvePin`, `pin_resolves_one` (#1742) | `Schema::of_value`, `Snapshot::versions`, `Doc::open` resolving pins (#1742); lenses and the vocabulary: not started | — |
+| Built-in types | `Builtins` (#1694), the `schema` built-in (A207, #1742); avenID's `idBuiltinFit` (#1716) | `DocsBuiltins`, `Either` (#1694), the `schema` built-in (#1742) | — |
+| Pins | at birth (`Genesis.ok`); resolved in the type Doc (#1742) | at birth, resolved in the type Doc (#1742) | — |
+| Fit | `Fit`, `Changes`; step 1's schema form (`Aven.DB.Docs.Schema`, `schemas.json`, #1742) | `fit`, built-in types and step 1's schema language (#1694) | — |
 | Lenses | `Lens`: `lens_merge` only | not started (step 3) | — |
 | The body | `Body` with `ops`, `cap`, `acks` (#1694) | `Body`, the same keys (#1694) | — |
 | Writer ids | `Writers` (#1613, #1615) | `writer` (#1694) | — |
@@ -828,10 +828,10 @@ built in Rust yet.
 | A commit | — | `prepare`, `finish`, `commit` (#1732) | — |
 | Importing: three verdicts | avenCORE's `Counts` (#1710); avenDOCS' own copies | `import`, `import_page`, `Authorize` on the past (#1732) | — |
 | The live state | `Loro.snapshot_load`, `live` | `Snapshot`, `Feed`, the rebuild (#1694) | — |
-| The judge | — | `catch_unwind`, the `panic = "unwind"` guard, three fuzz targets (#1694, #1732) | — (the docs worker and sifting are avenPEERS') |
+| The judge | — | `catch_unwind`, the `panic = "unwind"` guard, three fuzz targets (#1694, #1732), 600 s each with no crashes (#1742) | — (the docs worker and sifting are avenPEERS') |
 | Generations and stuck logs | avenCORE's `split_final` | `Stuck`, a generation per writer (#1694) | — |
-| Segments | `Segment` (#1694) | `Segment`, `Closer`, `Closed {segment, covers}` (#1694, #1732) | — |
-| Sealing and sealed pages | `Aven.ID.Seal` (#1694); found by commitment, pending on `claude/aven-docs` | `seal`, `import_sealed_page` with what each item seals named by its caller (#1732); found by commitment, and `open_sealed_page` without a Doc, pending on `claude/aven-docs` | — |
+| Segments | `Segment` (#1694); `prev` left out of a log's first (A200, `value_no_prev`, #1773) | `Segment`, `Closer`, `Closed {segment, covers}` (#1694, #1732); `prev` left out of a log's first, a null refused (#1773) | — |
+| Sealing and sealed pages | `Aven.ID.Seal` (#1694): what it seals found by commitment (`seals_by_commit`, #1742), `seals` and `checkpoint` (A177), the one padding (`padSealed`, A176) (#1773) | `seal` with `Seals` and `pad_sealed`; `open_page` and `Doc::import_items` over `Item::Sealed`, and `Item::Plain` for the keyring (A187) (#1742, #1773) | — |
 | The head, the held page, the shelf | `Head`, `Held` (#1694, #1732) | `Head`, `HeldPage` (#1732); the shelf in `aven-peer`, pending in #1727 | — |
 | Limits | `Limits` (#1582) | `limits` (#1694) | — |
 | Checkpoints | `Checkpoint`: the check, no Value form | not started (after the cutover) | — |
@@ -870,8 +870,9 @@ one (`tests/catchup.rs`, #1694). In the browsers with Docs in the Peers (#1727).
 - **The Record key:** the lowercase hex key (`idKey`) is pending in #1697; `aven-db-docs` follows it.
 - **Segments:** `Segment.ok` checks no signature, and `device_hybrid_bound` is in no Lean yet.
 - **Checkpoints:** no Value form in Lean or Rust and no vector of the form; `Checkpoint.lean`'s `covers` holds the
-  segments' envelopes, while the form names segments. The body names its Loro export as `state`, sealed as
-  `checkpoint` (A181): `Aven.DB.Docs`' checkpoint body and its vectors, to come with checkpoints.
+  segments' envelopes, while the form names segments. The body names its Loro export `loro`, sealed as `checkpoint`,
+  and `state` stays its Records' hash (A199): `Aven.DB.Docs`' checkpoint body and its vectors, to come with
+  checkpoints. The seal's `checkpoint` is built (A177).
 - **Directories:** `listed_now` and `same_entries`, and avenOPS' `lookup_exact` on them, assume an entry in the same
   commit as its Doc. An entry is its own envelope, so it can lag: avenDOCS and avenOPS restate them, the Doc counting
   as unfolded until its entry counts. No root type exists for a directory or a vocabulary, nor shapes for `entry` and
@@ -879,13 +880,9 @@ one (`tests/catchup.rs`, #1694). In the browsers with Docs in the Peers (#1727).
 - **The chat move:** `Aven.DB.Before`, `db/docs/tests/before/` and `before.json` come with it.
 - **Limits:** avenDOCS' `fanout` repeats avenCORE's `maxDeps`.
 - **The fuzzer** runs by hand in the box; no release gate runs it.
-- **The seal's names (A177):** `kind` becomes `seals`, and `snapshot` becomes `checkpoint` (`avenDB checkpoint 1`,
-  `avenDB checkpoint commit 1`), in avenID's `Aven.ID.Seal` and `seals.json` and in `aven-db-docs`' `seal.rs`
-  (`Kind`, `Kind::Snapshot`, `kind_of`); the AAD becomes `{doc, seals, epoch}`.
-- **The one padding (A176):** the seal pads with Padmé alone, in `Aven.ID.Seal` and `seal.rs`. It takes avenID's one
-  padding (256 B, 1 KiB or 4 KiB, then Padmé) once avenID defines it beside `Aven.ID.Padme`.
-- **The keyring's plain path (A187):** `Item::Plain` beside the sealed items, and the keyring's vectors: to come;
-  draft #1743 holds the keyring Doc.
+- **The keyring's plain path (A187):** `Item::Plain` is built in Rust (`travels_plain`: the genesis's root is avenID's
+  `keyring`), with no Lean of the page API's two paths yet.
+- **No nulls (A200):** the body's `cap` and `genesis` still write null when absent; they go with the body's A45 form.
 - **The authority's second shape (A188):** `{acks, caps, actor}` for an actor host's envelope, carried whole like the
   first, with `Aven.ID.Authority` in draft #1741.
 

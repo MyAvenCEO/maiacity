@@ -20,11 +20,11 @@ use std::sync::Arc;
 use aven_db_store::backend::DalStore;
 use aven_db_store::{Error as StoreError, RefName, Store};
 use aven_gen1::timeline;
-use aven_gen1::wire::Frame;
 use aven_id::{
     Claim, Invite, Join, MemberError, Members, Network, Pending, Relying, SignIn, Withdrawal,
     invite_id,
 };
+use aven_peer_wire::wire::Frame;
 use bytes::Bytes;
 use serde_json::{Value, json};
 use tokio::sync::{Mutex, watch};

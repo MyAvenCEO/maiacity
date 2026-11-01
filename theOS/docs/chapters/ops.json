@@ -1,0 +1,191 @@
+{
+ "title": "Operations",
+ "slides": [
+  {
+   "title": "Everything you do is an operation.",
+   "text": "Reading a list, ticking an item, searching your notes: each is an {operation}, a small piece of JSON that says what to do, on which data, at which path. One engine runs them all.",
+   "code": {
+    "type": "data:b3:Rfc…@b3:b60…#operation",
+    "operation": "get",
+    "on": "data:b3:7Hq…#house-list",
+    "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
+    "at": ""
+   },
+   "deep": "An operation is JSON: {operation, on, schema, at, …arguments}, the record the operation record. One engine parses it, validates it against the schema, runs it locally and returns a result or a set of CRDT ops."
+  },
+  {
+   "title": "A simple query.",
+   "text": "“What's still open, soonest first?” An operation takes data, narrows it and hands back an answer. It runs on your own device, over what you can already read.",
+   "code": {
+    "type": "data:b3:Rfc…@b3:b60…#operation",
+    "operation": "find",
+    "on": "data:b3:7Hq…#house-list",
+    "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
+    "at": "/items",
+    "where": {
+     "done": false
+    },
+    "order": "due",
+    "limit": 10
+   },
+   "deep": "find evaluates over the local decrypted state: filter (where), sort (order) and limit. Indexes are local and rebuilt from data the device can read."
+  },
+  {
+   "title": "Changes are operations too.",
+   "text": "Ticking an item is a {set} at a path. The engine checks it against the schema, turns it into CRDT ops and signs them. An operation is what you mean; CRDT ops are what gets stored.",
+   "code": {
+    "type": "data:b3:Rfc…@b3:b60…#operation",
+    "operation": "set",
+    "on": "data:b3:7Hq…#house-list",
+    "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
+    "at": "/items/0/done",
+    "value": true
+   },
+   "flow": [
+    "operation: set",
+    "check the policy (update)",
+    "CRDT ops",
+    "sign",
+    "sync"
+   ],
+   "deep": "set becomes one or more CRDT ops on the Doc, grouped into a change and signed by the agent's signer."
+  },
+  {
+   "title": "Every operation names its schema.",
+   "text": "An operation says which data, which version of its schema and which path. The engine checks the input against the schema before it runs: a set at /items/0/done must be true or false. A wrong operation fails on your own device, before anything is stored.",
+   "code": {
+    "type": "data:b3:Rfc…@b3:b60…#operation",
+    "operation": "set",
+    "on": "data:b3:7Hq…#house-list",
+    "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
+    "at": "/items/0/done",
+    "value": "yes",
+    "result": "refused: boolean expected"
+   },
+   "deep": "Each operation plugin declares its input shape; the engine validates the input against both the plugin's shape and the data's schema at that path."
+  },
+  {
+   "title": "Walking a graph.",
+   "text": "Data links to data: a list to its items, an item to a photo, a person to their friends. A {walk} follows links hop by hop, and stops wherever you can't read further.",
+   "code": {
+    "type": "data:b3:Rfc…@b3:b60…#operation",
+    "operation": "walk",
+    "on": "data:b3:1Pf…#your-profile",
+    "schema": "data:b3:Pf3…@b3:2d9…#profile",
+    "at": "/friends",
+    "follow": [
+     "lists",
+     "items"
+    ],
+    "depth": 3,
+    "where": {
+     "tag": "garden"
+    }
+   },
+   "deep": "walk follows link fields across Docs to a given depth. Each hop needs the next piece of data to be readable on this device; without it, the walk stops there."
+  },
+  {
+   "title": "Searching by words or by meaning.",
+   "text": "A {search} finds the notes that best match your words; a {near} finds the ones closest in meaning, so “plumbing problems” also finds “water under the sink”. Both indexes are built on your device, from what you can read, and never leave it.",
+   "code": {
+    "type": "data:b3:Rfc…@b3:b60…#operation",
+    "operation": "search",
+    "on": "data:b3:5Wn…#notes",
+    "schema": "data:b3:Nt2…@b3:6b1…#note",
+    "at": [
+     "/title",
+     "/body"
+    ],
+    "text": "leaking tap kitchen",
+    "limit": 5
+   },
+   "deep": "search ranks with BM25 over a local inverted index; near compares embeddings with an approximate nearest-neighbour index. Both only look at data."
+  },
+  {
+   "title": "Operations chain together.",
+   "text": "The answer of one operation is the input of the next. Search by meaning, follow the links to whoever is assigned, keep only what's open.",
+   "code": {
+    "type": "data:b3:Rfc…@b3:b60…#operation",
+    "operation": "chain",
+    "steps": [
+     {
+      "operation": "near",
+      "on": "data:b3:7Hq…#house-list",
+      "schema": "data:b3:Sc4…@b3:1f0…#todo-list",
+      "at": "/items",
+      "text": "plumbing",
+      "k": 20
+     },
+     {
+      "operation": "walk",
+      "at": "/items/*/assignee",
+      "schema": "data:b3:Sc4…@b3:1f0…#todo-list"
+     },
+     {
+      "operation": "find",
+      "where": {
+       "done": false
+      },
+      "schema": "data:b3:Pf3…@b3:2d9…#profile"
+     }
+    ]
+   },
+   "deep": "chain pipes the result set of each step into the next. Every step names the schema version it reads, and the engine checks that the results it receives match it. Each step is validated on its own."
+  },
+  {
+   "title": "New kinds of operations plug in.",
+   "text": "find, walk, search and near are {plugins}. Each one declares its name, the shape of its JSON, and which broad kind of operation it is. A new plugin, say for maps or for time series, slots in the same way.",
+   "code": {
+    "plugin": "search",
+    "spec": "data:b3:Pg6…@b3:6dq…#search",
+    "kind": "read",
+    "input": "data:b3:Pi2…@b3:8a1…#search-input",
+    "runs": "local"
+   },
+   "deep": "One plugin registry for every operation (find, walk, near …); the Policies chapter adds conditions to the same registry. A plugin's specification and its input shape are both data, named by their data ID and version like any schema. Unknown plugins wait until known."
+  },
+  {
+   "title": "Four broad kinds.",
+   "text": "Every engine operation belongs to one of four broad kinds: it reads, creates, updates or deletes. The next chapter, Policies, speaks only in these four.",
+   "table": {
+    "head": [
+     "Broad kind",
+     "Engine operations"
+    ],
+    "rows": [
+     [
+      "read",
+      "get, find, walk, search, near, count"
+     ],
+     [
+      "create",
+      "create (new data), insert (into a list)"
+     ],
+     [
+      "update",
+      "set, move, splice (text)"
+     ],
+     [
+      "delete",
+      "remove (one entry), delete (whole data)"
+     ],
+     [
+      "chain",
+      "each step's own"
+     ]
+    ]
+   },
+   "deep": "The broad kind is what a policy names; the engine resolves each specific operation to it (OLD-AIP-53). Both write an operation with the same fields (OLD-AIP-56)."
+  },
+  {
+   "title": "The engine, in short.",
+   "list": [
+    "Every read, change and search is a JSON operation on a schema path.",
+    "Engine operations are specific; each belongs to one broad kind: read, create, update or delete.",
+    "Operations run only on your device, over what you can read.",
+    "New kinds of operations plug in, each with its own input shape."
+   ],
+   "deep": "JSON operations, local execution, plugins, one broad kind per operation. Your data, your device, your answers."
+  }
+ ]
+}

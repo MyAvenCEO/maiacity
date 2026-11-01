@@ -1,0 +1,10 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "src-adde",
+ "title": "iroh-blobs",
+ "about": [
+  "p2p sync"
+ ],
+ "url": "https://github.com/n0-computer/iroh-blobs"
+}

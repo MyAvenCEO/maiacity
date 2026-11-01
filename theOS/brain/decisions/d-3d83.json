@@ -1,0 +1,33 @@
+{
+ "type": "decision",
+ "id": "d-3d83",
+ "n": 28,
+ "title": "The framework is avenCEO again",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "naming",
+  "avenCEO"
+ ],
+ "quote": "Rename the harness framework back to avenCEO; its instance stays avenMAIA.",
+ "means": "The agent harness framework is avenCEO again; avenMAIA stays its instance.",
+ "intents": [
+  "aip-31df"
+ ],
+ "supersedes": [
+  {
+   "decision": "d-81c7",
+   "part": "part",
+   "what": "d-81c7 named the framework aven; it is avenCEO. Its instance avenMAIA, and authorship, stand."
+  }
+ ],
+ "relates": [
+  "d-e2d9"
+ ],
+ "reflection": {
+  "checked": "every decision before d-3d83 that held",
+  "result": "supersedes d-81c7 (part)"
+ }
+}

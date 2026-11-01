@@ -1,0 +1,157 @@
+{
+ "title": "Merging",
+ "slides": [
+  {
+   "title": "But really, a Doc is a history.",
+   "text": "Every change is a {CRDT op} with its own ID: which device made it, and its counter on that device. Each CRDT op also says which CRDT ops it had already seen. The JSON is just what you get when you play the history.",
+   "code": {
+    "id": "5f3a9c:41",
+    "deps": [
+     "5f3a9c:40",
+     "a17e02:17"
+    ],
+    "op": "set",
+    "at": "/items/0/done",
+    "value": true
+   },
+   "deep": "Every CRDT op has an ID (peer, counter) and depends on the frontier it was made on. Replaying the ops in causal order gives the same state everywhere."
+  },
+  {
+   "title": "Alice and Bob share a list.",
+   "text": "Both of them have a full copy on their own devices. There's no master copy on a server. Each copy is complete, and each can be edited on its own.",
+   "deep": "Every replica is complete and primary; carriers hold secondary, sealed copies. This is the local-first model."
+  },
+  {
+   "title": "Both edit offline.",
+   "text": "On a train, Alice ticks “buy milk”. At home, Bob renames the list and adds “call grandma”. Neither knows about the other's changes.",
+   "code": {
+    "alice-phone": [
+     {
+      "id": "5f3a9c:41",
+      "set": "/items/0/done",
+      "value": true
+     }
+    ],
+    "bob-laptop": [
+     {
+      "id": "a17e02:18",
+      "set": "/title",
+      "value": "Home"
+     },
+     {
+      "id": "a17e02:19",
+      "insert": "/items/2",
+      "value": {
+       "text": "Call grandma",
+       "done": false
+      }
+     }
+    ]
+   },
+   "deep": "Each device appends CRDT ops to its own counter sequence. Nothing coordinates while offline."
+  },
+  {
+   "title": "They swap only what's missing.",
+   "text": "Each device keeps a {version vector}: the highest CRDT op it has seen from every device. They compare vectors and send only the difference. Three small CRDT ops, not the whole list.",
+   "code": {
+    "alice_has": {
+     "5f3a9c": 41,
+     "a17e02": 17
+    },
+    "bob_has": {
+     "5f3a9c": 40,
+     "a17e02": 19
+    },
+    "send": {
+     "to_bob": [
+      "5f3a9c:41"
+     ],
+     "to_alice": [
+      "a17e02:18",
+      "a17e02:19"
+     ]
+    }
+   },
+   "deep": "A version vector maps each peer to the highest counter seen from it. Comparing two vectors yields exactly which ops each side lacks. Over the network we compare sealed chunks instead (Sync chapter)."
+  },
+  {
+   "title": "They end up the same.",
+   "text": "However the CRDT ops arrive, in any order, twice or late, every copy ends in the same state. That's the promise of CRDT data types: no server, no locking, no “who was first?”.",
+   "code": {
+    "title": "Home",
+    "items": [
+     {
+      "text": "Buy milk",
+      "done": true
+     },
+     {
+      "text": "Fix the tap",
+      "done": false
+     },
+     {
+      "text": "Call grandma",
+      "done": false
+     }
+    ]
+   },
+   "deep": "CRDT merge is commutative, associative and idempotent: any order, any duplicates, same result. That is strong eventual consistency."
+  },
+  {
+   "title": "Both rename the list.",
+   "text": "Alice types “Our home”, Bob types “Home”. For one field, one value has to win. The map picks the CRDT op with the later logical clock, and if those tie, the higher device ID. Every copy picks the same one.",
+   "code": {
+    "5f3a9c:42": {
+     "lamport": 61,
+     "set": "/title",
+     "value": "Our home"
+    },
+    "a17e02:20": {
+     "lamport": 61,
+     "set": "/title",
+     "value": "Home"
+    },
+    "winner": "a17e02:20 (same clock, higher peer)"
+   },
+   "deep": "Maps resolve concurrent sets with last-writer-wins by Lamport timestamp, ties broken by peer ID. Deterministic, so every replica picks the same winner."
+  },
+  {
+   "title": "Text merges letter by letter.",
+   "text": "In a note, both type into the same sentence at once. CRDT text is a list of characters, each with its own ID, so both edits survive and never get shuffled into each other.",
+   "code": {
+    "before": "Fix the tap",
+    "alice": "Fix the kitchen tap",
+    "bob": "Fix the tap today",
+    "merged": "Fix the kitchen tap today"
+   },
+   "deep": "Text is a sequence CRDT (Loro uses the Fugue algorithm), which avoids interleaving concurrent insertions character by character."
+  },
+  {
+   "title": "History remembers what you deleted.",
+   "text": "A CRDT keeps every CRDT op, because a device that was offline for weeks may still send a CRDT op that builds on an old state. That also means a sentence you typed and erased is still in the history, and anyone who can read the history can read it. How to really erase it comes in the Time chapter.",
+   "code": {
+    "now": "Fix the tap",
+    "history": [
+     {
+      "id": "0d93e7:12",
+      "insert": "Call the landlord about the tap"
+     },
+     {
+      "id": "0d93e7:43",
+      "delete": "Call the landlord about "
+     }
+    ]
+   },
+   "deep": "A delete in a CRDT is a tombstone: the inserted characters stay in the history. Anyone given the history can reconstruct deleted text."
+  },
+  {
+   "title": "Merging, in short.",
+   "list": [
+    "A Doc is a history of CRDT ops.",
+    "Copies swap only what's missing.",
+    "However CRDT ops arrive, every copy ends the same.",
+    "History keeps what you deleted, until it is cut (Time chapter)."
+   ],
+   "deep": "CRDT merge is commutative, associative and idempotent: strong eventual consistency without a server."
+  }
+ ]
+}

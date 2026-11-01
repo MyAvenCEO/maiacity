@@ -5,13 +5,13 @@ import Aven.DB.Docs.Limits
 # Segments (docs, rules 11 and 24, "Closing a segment"; caps, "Sealing")
 
 A segment is a writer's closed run of one log in one epoch: Core's `Signed` under `avenDB segment 1`, hybrid-signed by
-its writer, then sealed with the `segment` kind (`Aven.ID.Seal`). Its body is
+its writer, then sealed as a `segment` (`Aven.ID.Seal`, A177). Its body is
 `{to, from, prev, branch, writer, envelopes, generation}`, keys in the codec's order:
 
 - `branch`, `writer`, `generation`: the log it is a run of;
 - `from`, `to`: the sequence numbers it covers, half-open as the body's ops are: its first envelope's, and the next
   segment's first;
-- `prev`: the name of the writer's segment before it in this log, or null;
+- `prev`: the name of the writer's segment before it in this log, absent from a log's first segment (A200: no nulls);
 - `envelopes`: its envelopes, each the encoding of Core's `Envelope.value`, the same signed bytes, so their names
   stay. A keeper, which sees only sealed bytes, never reads them: a segment's upload names the loose items it covers
   by their sealed hashes, beside the sealed segment and never inside it, and that is the uploader's own word. The
@@ -44,9 +44,10 @@ structure Segment where
 
 /-- The body its writer signs, its keys in the codec's order. -/
 def Segment.value (s : Segment) : Value :=
-  .map [(k "to", .uint s.segTo), (k "from", .uint s.segFrom), (k "prev", optHash s.prev),
-    (k "branch", .text s.branch), (k "writer", .uint s.writer),
-    (k "envelopes", .array (s.envelopes.map fun e => .bytes (encode e.value))), (k "generation", .uint s.generation)]
+  .map ([(k "to", .uint s.segTo), (k "from", .uint s.segFrom)] ++
+    (match s.prev with | some h => [(k "prev", h.value)] | none => []) ++
+    [(k "branch", .text s.branch), (k "writer", .uint s.writer),
+    (k "envelopes", .array (s.envelopes.map fun e => .bytes (encode e.value))), (k "generation", .uint s.generation)])
 
 /-- A segment's name: the name of what its writer signs (A30); the next segment's `prev`. -/
 def Segment.name (H : Bytes → Hash) (s : Segment) : Hash := H (signingBytes segmentLabel s.value)
@@ -92,5 +93,12 @@ theorem run_bounded {L : Limits} {nm : Envelope → Hash} {s : Segment} (h : s.o
 
 #guard keysSorted [(k "to", .null), (k "from", .null), (k "prev", .null), (k "branch", .null), (k "writer", .null),
   (k "envelopes", .null), (k "generation", .null)] = true
+
+/-- No null in a segment's body (A200): a log's first segment leaves `prev` out. -/
+theorem value_no_prev (s : Segment) (h : s.prev = none) :
+    s.value = .map [(k "to", .uint s.segTo), (k "from", .uint s.segFrom), (k "branch", .text s.branch),
+      (k "writer", .uint s.writer), (k "envelopes", .array (s.envelopes.map fun e => .bytes (encode e.value))),
+      (k "generation", .uint s.generation)] := by
+  simp [Segment.value, h]
 
 end Aven.DB.Docs

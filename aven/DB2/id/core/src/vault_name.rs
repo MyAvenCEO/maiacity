@@ -58,3 +58,37 @@ impl VaultGenesis {
         ])))
     }
 }
+
+/// The cast's vaults and their kinds (`VaultName.castVaults`).
+pub const CAST_VAULTS: &[(&str, Kind)] = &[
+    ("alice", Kind::Person),
+    ("bob", Kind::Person),
+    ("maia-city", Kind::Coop),
+    ("aven", Kind::Agent),
+    ("guardian", Kind::Agent),
+    ("alice-peer", Kind::Device),
+    ("alice-peer-light", Kind::Device),
+    ("aven-peer", Kind::Device),
+    ("bob-peer-light", Kind::Device),
+];
+
+/// A cast vault's fixed nonce, BLAKE3 of `avenSANDBOX vault nonce: <id>` (`VaultName.castNonce`): public on purpose and
+/// valid only in the box, so the cast's names are stable.
+pub fn cast_nonce(id: &str) -> [u8; VAULT_NONCE_LEN] {
+    blake3(format!("avenSANDBOX vault nonce: {id}").as_bytes()).0
+}
+
+/// A fixture handle's name (`VaultName.castName`, A164, A210): its cast genesis, of the kind the cast lists (a
+/// person's for a handle only the examples use), with its fixed nonce. What every format writes for the handle while
+/// the tree and the register still go by handles.
+pub fn cast_name(id: &str) -> Hash {
+    let kind = CAST_VAULTS
+        .iter()
+        .find(|(h, _)| *h == id)
+        .map_or(Kind::Person, |&(_, k)| k);
+    VaultGenesis {
+        kind,
+        nonce: cast_nonce(id),
+    }
+    .name()
+}

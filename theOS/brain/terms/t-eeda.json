@@ -1,0 +1,11 @@
+{
+ "type": "term",
+ "id": "t-eeda",
+ "word": "Correction",
+ "means": "You correcting work that was called done (event: correction). An answer or a new direction from you is an answer (event: answer).",
+ "supersedes": [],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "held when brain's reflection began"
+ }
+}

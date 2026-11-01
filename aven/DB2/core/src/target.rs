@@ -19,7 +19,8 @@ use aven_codec::{DocId, Hash};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Facts {
     pub id: DocId,
-    pub vault: String,
+    /// Its vault, by the vault's 32-byte name: a vault in any format is its name, never text.
+    pub vault: Hash,
     pub r#type: DocId,
 }
 
@@ -65,10 +66,10 @@ pub enum Target {
     /// One Doc, and with its reach the actors it spawned or the Docs it lists.
     Doc { doc: DocId, reach: Reach },
     /// Every Doc of a vault, and with `below` every Doc of the vaults it governs.
-    Vault { vault: String, below: bool },
+    Vault { vault: Hash, below: bool },
     /// A vault's Docs of one root type, a type Doc.
     VaultType {
-        vault: String,
+        vault: Hash,
         r#type: DocId,
         below: bool,
     },
@@ -83,12 +84,12 @@ impl Target {
     /// `spawned(a, b)`: actor `a` spawned actor `b`; `lists(c, d)`: collection `c` lists Doc `d`.
     pub fn covers(
         &self,
-        gov: impl Fn(&str, &str) -> bool,
+        gov: impl Fn(&Hash, &Hash) -> bool,
         spawned: impl Fn(&DocId, &DocId) -> bool,
         lists: impl Fn(&DocId, &DocId) -> bool,
         f: &Facts,
     ) -> bool {
-        let in_vault = |v: &str, below: bool| f.vault == v || (below && gov(v, &f.vault));
+        let in_vault = |v: &Hash, below: bool| f.vault == *v || (below && gov(v, &f.vault));
         match self {
             Target::Doc {
                 doc,
@@ -150,7 +151,7 @@ impl Target {
             ]),
             Target::Vault { vault, below } => Value::Map(vec![
                 ("below".into(), Value::Bool(*below)),
-                ("vault".into(), Value::Text(vault.clone())),
+                ("vault".into(), vault.value()),
             ]),
             Target::VaultType {
                 vault,
@@ -159,7 +160,7 @@ impl Target {
             } => Value::Map(vec![
                 ("type".into(), r#type.0.value()),
                 ("below".into(), Value::Bool(*below)),
-                ("vault".into(), Value::Text(vault.clone())),
+                ("vault".into(), vault.value()),
             ]),
         }
     }
@@ -179,16 +180,19 @@ impl Target {
                     reach: Reach::of_name(&r)?,
                 })
             }
-            (Some((ka, Value::Bool(below))), Some((kb, Value::Text(vault))), None)
+            (Some((ka, Value::Bool(below))), Some((kb, vault)), None)
                 if ka == "below" && kb == "vault" =>
             {
-                Some(Target::Vault { vault, below })
+                Some(Target::Vault {
+                    vault: Hash::of_value(&vault)?,
+                    below,
+                })
             }
-            (Some((ka, t)), Some((kb, Value::Bool(below))), Some((kc, Value::Text(vault))))
+            (Some((ka, t)), Some((kb, Value::Bool(below))), Some((kc, vault)))
                 if ka == "type" && kb == "below" && kc == "vault" =>
             {
                 Some(Target::VaultType {
-                    vault,
+                    vault: Hash::of_value(&vault)?,
                     r#type: doc_id(t)?,
                     below,
                 })

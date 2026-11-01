@@ -237,7 +237,7 @@ def membersAfter (ops : List MemberOp) : Members := ((boxMembers.run ops).getLas
 -- a member's second browser is a device of the member's vault, named after them, and the door lets it in
 #guard
   let m := membersAfter [.claim "a" "1" {}, .invite "a" "1" {}, .join "1" "b" "4" {}, .signIn "b" "5" {}]
-  m.tree.get? (deviceId "5") == some ⟨deviceId "5", "Bea's browser 2", .device, [.vault (personId "b")], 1⟩ &&
+  m.tree.get? (deviceId "5") == some ⟨deviceId "5", "Bea's browser 2", .device, [.vault (personId "b")], 1, some (deviceId "5")⟩ &&
     m.admits (browserKey "5") && m.tree.get? (personId "b") ==
       (membersAfter [.claim "a" "1" {}, .invite "a" "1" {}, .join "1" "b" "4" {}]).tree.get? (personId "b")
 

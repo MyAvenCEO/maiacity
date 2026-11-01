@@ -1,0 +1,10 @@
+{
+ "type": "reference",
+ "subtype": "spec",
+ "id": "src-5198",
+ "title": "MLS: RFC 9420",
+ "about": [
+  "group encryption"
+ ],
+ "url": "https://github.com/mlswg/mls-protocol/blob/main/rfc9420.md"
+}

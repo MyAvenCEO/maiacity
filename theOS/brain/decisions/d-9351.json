@@ -1,0 +1,26 @@
+{
+ "type": "decision",
+ "id": "d-9351",
+ "n": 4,
+ "title": "theOS is standalone, built from scratch",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "theOS",
+  "legacy"
+ ],
+ "quote": "theOS is its own standalone, fresh project: everything we do lives in theOS and is built there from scratch. Don't touch legacy code such as maiacity or avenDB2.",
+ "means": "Everything is built from scratch in theOS/; legacy code is learned from, never touched.",
+ "intents": [
+  "aip-31df",
+  "def-e833"
+ ],
+ "supersedes": [],
+ "relates": [],
+ "reflection": {
+  "checked": "every decision before d-9351 that held",
+  "result": "supersedes nothing"
+ }
+}

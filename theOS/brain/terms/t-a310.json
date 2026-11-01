@@ -1,0 +1,11 @@
+{
+ "type": "term",
+ "id": "t-a310",
+ "word": "Task",
+ "means": "One piece of an intent's work, in a step, done by someone. Its status is computed from the trace: done once an event marks it done.",
+ "supersedes": [],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "supersedes nothing"
+ }
+}

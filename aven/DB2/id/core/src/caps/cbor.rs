@@ -8,6 +8,9 @@
 //! holder: {"vault": v}   {"group": Doc}   "public"
 //! ```
 //!
+//! A cap here is a `Cap<Hash>`: its issuer and a vault holder are their 32-byte names (A190, A210); a fixture's cap
+//! is named first ([`Cap::named`]).
+//!
 //! A cap's id is Core's name of it as a signed thing, the BLAKE3 hash of `[label, body]` ([`Cap::digest`], A30), which
 //! its issuer's owners approve. Its issuing device
 //! signs the body under the label `avenID cap 1` ([`Cap::signing`]), so the signature can't be read as anything
@@ -57,11 +60,11 @@ impl Line {
     }
 }
 
-impl Holder {
+impl Holder<Hash> {
     /// `Holder.value`.
     pub fn value(&self) -> Value {
         match self {
-            Holder::Vault(v) => map(vec![("vault", text(v))]),
+            Holder::Vault(v) => map(vec![("vault", Value::Bytes(v.0.to_vec()))]),
             Holder::Group(g) => map(vec![("group", Value::Bytes(g.0.0.to_vec()))]),
             Holder::Public => text("public"),
         }
@@ -95,7 +98,7 @@ impl Conditions {
     }
 }
 
-impl Cap {
+impl Cap<Hash> {
     /// What a cap says, without its signature and approvals (`Cap.body`).
     pub fn body(&self) -> Value {
         map(vec![
@@ -107,7 +110,7 @@ impl Cap {
             ),
             ("share", Value::Uint(self.share)),
             ("holder", self.holder.value()),
-            ("issuer", text(&self.issuer)),
+            ("issuer", Value::Bytes(self.issuer.0.to_vec())),
             ("parent", opt_text(&self.parent)),
             ("conditions", self.conditions.value()),
         ])
@@ -205,16 +208,16 @@ impl Line {
     }
 }
 
-impl Holder {
+impl Holder<Hash> {
     /// The inverse of [`Holder::value`].
-    pub fn of_value(v: &Value) -> Option<Holder> {
+    pub fn of_value(v: &Value) -> Option<Holder<Hash>> {
         if as_text(v) == Some("public") {
             return Some(Holder::Public);
         }
         let kvs = as_map(v)?;
         let [(k, x)] = kvs else { return None };
         match (k.as_str(), x) {
-            ("vault", Value::Text(t)) => Some(Holder::Vault(t.clone())),
+            ("vault", Value::Bytes(b)) => Some(Holder::Vault(Hash(b.as_slice().try_into().ok()?))),
             ("group", Value::Bytes(b)) => Some(Holder::Group(aven_core::DocId(Hash(
                 b.as_slice().try_into().ok()?,
             )))),
@@ -274,16 +277,16 @@ impl Conditions {
     }
 }
 
-impl Cap {
+impl Cap<Hash> {
     /// A cap read from its bytes, with the id, signer and verified approvals that travel beside them: the inverse of
     /// [`Cap::bytes`]. Bytes that aren't the one encoding of a cap's body are none: Core's `decode` refuses anything
     /// non-canonical, and a body is read back only when it writes back as itself.
     pub fn from_bytes(
         bytes: &[u8],
         id: String,
-        signer: Option<String>,
+        signer: Option<Hash>,
         approvals: Vec<super::approve::Sig>,
-    ) -> Option<Cap> {
+    ) -> Option<Cap<Hash>> {
         let cap = Cap::of_body(&aven_core::decode(bytes)?, id, signer, approvals)?;
         (cap.bytes() == bytes).then_some(cap)
     }
@@ -293,9 +296,9 @@ impl Cap {
     pub fn of_body(
         body: &Value,
         id: String,
-        signer: Option<String>,
+        signer: Option<Hash>,
         approvals: Vec<super::approve::Sig>,
-    ) -> Option<Cap> {
+    ) -> Option<Cap<Hash>> {
         let kvs = as_map(body)?;
         let keys = [
             "form",
@@ -316,7 +319,10 @@ impl Cap {
         };
         Some(Cap {
             id,
-            issuer: as_text(field(kvs, "issuer")?)?.into(),
+            issuer: match field(kvs, "issuer")? {
+                Value::Bytes(b) => Hash(b.as_slice().try_into().ok()?),
+                _ => return None,
+            },
             holder: Holder::of_value(field(kvs, "holder")?)?,
             parent: as_opt_text(field(kvs, "parent")?)?,
             form: super::conditions::Form::parse(as_text(field(kvs, "form")?)?)?,

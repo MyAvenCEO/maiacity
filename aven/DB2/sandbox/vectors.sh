@@ -1,6 +1,6 @@
 #!/bin/sh
 # Lean's test vectors (README, rule 10): each spec's `lake exe vectors` writes its examples and generated cases as
-# JSON beside it, in core/spec/vectors, id/spec/vectors and db/spec/vectors, and outside aven/DB2 in
+# JSON beside it, in core/spec/vectors, id/spec/vectors, db/spec/vectors and peer/spec/vectors, and outside aven/DB2 in
 # aven/runtimes/spec/vectors, where they are committed. aven/actor/spec is built, and checked the same way once it
 # exports vectors. The specs outside aven/DB2 are at /aven/<name>/spec in the box (sandbox/up.mjs, `specVolumes`);
 # one that isn't there yet is skipped. In the box, from aven/DB2:

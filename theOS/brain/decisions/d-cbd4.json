@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "d-cbd4",
+ "n": 15,
+ "title": "Decisions are D-n, kept by a reflection",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "decisions",
+  "memory"
+ ],
+ "quote": "Make every decision a standalone doc, numbered d-1b6c, d-e028 and on, like AIPs. Each needs an automatic reflection step that can supersede an older decision or a group of them, so we always see the decisions that still hold, never outdated ones.",
+ "means": "Each decision is a standalone doc D-n. Every new decision runs the reflection: it records which earlier decisions it supersedes, in whole or in part; which decisions still hold is computed, never edited.",
+ "intents": [
+  "aip-836d"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-b4ce"
+ ],
+ "reflection": {
+  "checked": "every decision before d-cbd4 that held",
+  "result": "supersedes nothing"
+ }
+}

@@ -1,0 +1,30 @@
+{
+ "type": "decision",
+ "id": "d-6628",
+ "title": "main is theOS's source of truth",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01T13:50Z",
+ "session": "s-ac54",
+ "about": [
+  "brain",
+  "threads",
+  "release"
+ ],
+ "quote": "theOS gets its source of truth from the main branch.",
+ "means": "What holds in theOS is what is on main. Every thread starts from main, works on its own branch and comes back to main through a pull request: a draft while it works, ready for review once its goal is in, theOS's check run once on it, merged with a merge commit. avenMAIA's branch is only where a goal is collected. The goal pull request #1780 brings today's theOS to main now, and aip-59ad's release workflow follows in its own pull request; production takes changes from main only.",
+ "intents": [
+  "aip-59ad",
+  "aip-836d"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-f1a0",
+  "d-47c5",
+  "d-b43d"
+ ],
+ "reflection": {
+  "checked": "every decision before d-6628 that held",
+  "result": "supersedes nothing"
+ }
+}

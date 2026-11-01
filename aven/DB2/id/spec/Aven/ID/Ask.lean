@@ -35,7 +35,7 @@ def Kind.name : Kind → String
   | .device => "device"
 
 /-- An owner as the cast writes it. -/
-def Owner.name : Owner → String
+def Owner.name : Owner String → String
   | .key id => s!"key:{id}"
   | .vault id => s!"vault:{id}"
 
@@ -49,13 +49,13 @@ def Kind.parse : String → Option Kind
   | _ => none
 
 /-- `key:<id>` or `vault:<id>`; anything else is not an owner. -/
-def Owner.parse (s : String) : Option Owner :=
+def Owner.parse (s : String) : Option (Owner String) :=
   if s.startsWith "key:" then some (.key (s.drop 4).toString)
   else if s.startsWith "vault:" then some (.vault (s.drop 6).toString)
   else none
 
 /-- What a cast may not write, beside a tree that is not well formed: an unknown kind, an owner without its prefix. -/
-def formatExamples : List (String × Option Kind × Option Owner) :=
+def formatExamples : List (String × Option Kind × Option (Owner String)) :=
   [("ghost", none, none), ("k", none, none), ("person", some .person, none), ("agent", some .agent, none),
    ("network", some .agent, none), ("key:k", none, some (.key "k")),
    ("vault:a", none, some (.vault "a"))]
@@ -65,7 +65,7 @@ def formatExamples : List (String × Option Kind × Option Owner) :=
 
 namespace Tree
 
-def ask (t : Tree) : Query → Answer
+def ask (t : Tree String) : Query → Answer
   | .kind id => .id ((t.kind? id).map Kind.name)
   | .name id => .id ((t.get? id).map (·.name))
   | .owners id => .ids (((t.get? id).map fun v => v.owners.map Owner.name).getD [])
@@ -79,7 +79,7 @@ def ask (t : Tree) : Query → Answer
   | .mayActOn d v => .yes (t.mayActOn d v)
 
 /-- Every query on every vault, and on one the tree doesn't have; every pair for `mayActOn`. -/
-def everyQuery (t : Tree) : List Query :=
+def everyQuery (t : Tree String) : List Query :=
   let ids := t.ids ++ ["nobody"]
   .accounts none :: ids.flatMap fun x =>
     [.kind x, .name x, .owners x, .owned x, .governs x, .chain x, .actsFor x, .actsThrough x, .accounts (some x), .sees x] ++

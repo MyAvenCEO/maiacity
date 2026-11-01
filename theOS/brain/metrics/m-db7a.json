@@ -1,0 +1,9 @@
+{
+ "type": "metric",
+ "id": "m-db7a",
+ "name": "First pass",
+ "what": "checkpoints that pass both gates in the first round",
+ "want": "rising",
+ "how": "by hand, until a metrics script exists",
+ "measurements": []
+}

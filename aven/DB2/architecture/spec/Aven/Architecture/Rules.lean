@@ -1,6 +1,7 @@
 import Aven.Core
 import Aven.ID
 import Aven.DB
+import Aven.Peer.Serve
 import Aven.Runtime.Contract
 import Aven.Architecture.Sealed
 import Aven.Actor.Hosting
@@ -20,6 +21,8 @@ past Core's `Reaches` (`Aven.Core.Past.reaches_iff`, rules 2, 4 and 11).
 namespace Aven.Architecture
 
 open Aven.Core
+
+variable {V : Type} [DecidableEq V] [Aven.ID.Named V]
 
 /-! ## Rule 1: one codec for everything signed -/
 
@@ -141,7 +144,7 @@ deletes the reader holds (`ID.liveWith`), and fit the content check against the 
 calls it authorized lower to (A32). An envelope counts exactly when its whole past is held (Core's `Closed`, rule 11)
 and everything in it is signed, in a fresh epoch, authorized by its cap chain, not revoked, not ended by a delete,
 within its calls' footprint and fit, and none of it is half of a split. -/
-theorem rule4_one_verdict (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spawned lists : DocId → DocId → Prop)
+theorem rule4_one_verdict (r : ID.Reader V) (gov : Hash → Hash → Prop) (spawned lists : DocId → DocId → Prop)
     (signed : Envelope → Prop) (H : Bytes → Hash) (epochOf : Envelope → Nat) (rd : ID.Reads)
     (rs : List ID.Revocation) (isDelete byOwner : Envelope → Bool) (ver : DocId → DB.Docs.Version)
     (rule : DB.Docs.Version → Bytes → Value → Prop) (before : Envelope → List (DB.Engine.Record Value))
@@ -161,7 +164,7 @@ theorem rule4_one_verdict (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spaw
 host's), so the delete is written by a device of the Doc's vault or of one that governs it; and once a reader holds
 it, an envelope that counts is the delete or in its past, whatever cap it writes under. Readers holding the same
 deletes, and the same past of each, agree on it (`ID.deleted_agree`). -/
-theorem rule4_delete_ends (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spawned lists : DocId → DocId → Prop)
+theorem rule4_delete_ends (r : ID.Reader V) (gov : Hash → Hash → Prop) (spawned lists : DocId → DocId → Prop)
     (signed : Envelope → Prop) (H : Bytes → Hash) (epochOf : Envelope → Nat) (rd : ID.Reads)
     (rs : List ID.Revocation) (isDelete byOwner : Envelope → Bool)
     (owner : ∀ x, byOwner x = true → r.Own gov x ∧ ¬ r.HostSigned x) (fit : Envelope → Prop) {S : List Envelope}
@@ -201,11 +204,11 @@ theorem rule4_content {ver : DocId → DB.Docs.Version} {fp : Envelope → List 
 /-- **What an owner approves as reading never writes** (A2, A32): under a chain whose last cap names only ops that lower
 to no step, as `core/1`'s read, tell, keep and share do, an envelope that passes the content check brings no Record,
 removes none and changes no field of one. -/
-theorem rule4_reading_writes_nothing (r : ID.Reader) (gov : Bytes → Bytes → Prop)
+theorem rule4_reading_writes_nothing (r : ID.Reader V) (gov : Hash → Hash → Prop)
     (spawned lists : DocId → DocId → Prop) {ver : DocId → DB.Docs.Version} {rule : DB.Docs.Version → Bytes → Value → Prop}
     {before : Envelope → List (DB.Engine.Record Value)}
     {step : List (DB.Engine.Record Value) → Envelope → List (DB.Engine.Record Value)} {e : Envelope}
-    (h : r.ByChain gov spawned lists e) {last : ID.Cap} (hl : (r.chain e).getLast? = some last)
+    (h : r.ByChain gov spawned lists e) {last : ID.Cap V} (hl : (r.chain e).getLast? = some last)
     (reads : ∀ l ∈ last.grants r.ctx.roles, ∀ c : Call, c.op = l.op → r.lower c = [])
     (hc : contentOk ver r.footprint rule before step e) :
     ∀ ch ∈ DB.Engine.changesFrom ver (before e) (step (before e) e), ch.kind = .edited ∧ ch.names = [] := by
@@ -235,7 +238,7 @@ authorized merge on main that passes the content check: every Record of main it 
 created or removed by a step those calls lower to; the signing device's cap writes on main and allows every such call;
 and the authority is either the signer's vault, which owns or governs the Doc, or a chain whose last cap writes on
 main and allows every such call. A narrow merger can't land a proposal's wider changes. -/
-theorem rule4_merge_whole (r : ID.Reader) (gov : Bytes → Bytes → Prop) (spawned lists : DocId → DocId → Prop)
+theorem rule4_merge_whole (r : ID.Reader V) (gov : Hash → Hash → Prop) (spawned lists : DocId → DocId → Prop)
     {ver : DocId → DB.Docs.Version} (hver : ∀ t, (ver t).type = t) {rule : DB.Docs.Version → Bytes → Value → Prop}
     {before : Envelope → List (DB.Engine.Record Value)}
     {step : List (DB.Engine.Record Value) → Envelope → List (DB.Engine.Record Value)} {e : Envelope}
@@ -295,13 +298,13 @@ theorem rule5_epoch_fresh {nm : Envelope → Hash} {epochOf : Envelope → Nat} 
 
 open Classical in
 /-- What a reader sends: the engine's want queue, where the cap is caps' read grant on the wanted Doc. -/
-noncomputable def served (gov : Bytes → Bytes → Prop) (spawned lists : DocId → DocId → Prop) (facts : DocId → Facts)
+noncomputable def served (gov : Hash → Hash → Prop) (spawned lists : DocId → DocId → Prop) (facts : DocId → Facts)
     (g : ID.Grant) (ws : List (DB.Engine.Want DB.Engine.WantKey)) : List DB.Engine.WantKey :=
   (DB.Engine.queue (fun k => decide (g.reaches gov spawned lists (facts k.doc) (ID.coreOp .read))) ws).map (·.key)
 
 /-- What leaves a reader is wants ∩ caps: a key is served exactly when someone wants it and a line naming `read`
 reaches its Doc. A want alone grants nothing. -/
-theorem rule6_wants_caps (gov : Bytes → Bytes → Prop) (spawned lists : DocId → DocId → Prop) (facts : DocId → Facts)
+theorem rule6_wants_caps (gov : Hash → Hash → Prop) (spawned lists : DocId → DocId → Prop) (facts : DocId → Facts)
     (g : ID.Grant) (ws : List (DB.Engine.Want DB.Engine.WantKey)) (k : DB.Engine.WantKey) :
     k ∈ served gov spawned lists facts g ws ↔
       (∃ w ∈ ws, w.key = k) ∧ g.reaches gov spawned lists (facts k.doc) (ID.coreOp .read) := by
@@ -339,7 +342,7 @@ theorem rule7_no_only_source {n : ID.Node.Net} (hl : n.Listed) {r₁ r₂ : Stri
 
 /-- Hosting is an explicit read cap per actor (A16): a host reads a Doc exactly when a hosting cap of its own, one the
 actor's owner is shown, reaches it with `read`. -/
-theorem rule7_hosting_explicit (w : Actor.World) (caps : List ID.Cap) (host : String) (f : Facts) :
+theorem rule7_hosting_explicit (w : Actor.World) (caps : List (ID.Cap String)) (host : String) (f : Facts) :
     Actor.HostReads w caps host f ↔ ∃ a, ∃ c ∈ Actor.shownTo caps (w.ownerOf a),
       Actor.Hosting w c host a ∧ (c.grants w.roles).reaches w.gov w.spawned w.lists f (ID.coreOp .read) :=
   Actor.hosting_explicit w caps host f

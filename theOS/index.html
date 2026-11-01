@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>theOS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500&display=swap">
+<link rel="stylesheet" href="ui/base.css">
+<style>
+  .dash { min-height: 100%; padding: clamp(20px, 5vw, 64px) max(16px, 5vw); display: grid; gap: 26px; align-content: start; max-width: 1180px; margin: 0 auto; }
+  .dash > header h1 { margin: 0 0 6px; font: 500 clamp(32px, 5vw, 52px)/1.05 var(--display); color: var(--ink); }
+  .dash > header p { margin: 0; max-width: 70ch; color: var(--ink-soft); font-size: 16px; line-height: 1.55; }
+  .apps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .tile { display: grid; gap: 10px; align-content: start; padding: 22px; border-radius: 10px; background: var(--card); color: var(--ink); text-decoration: none; border: 1px solid var(--rule); box-shadow: 0 1px 2px rgba(21, 36, 47, .05); }
+  .tile:hover { border-color: var(--clay); }
+  .tile h2 { margin: 0; font: 500 26px var(--display); } .tile p { margin: 0; font-size: 14.5px; line-height: 1.5; color: var(--ink-soft); }
+  .tile .nums { display: flex; flex-wrap: wrap; gap: 6px; } .tile .k { font: 500 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--clay); }
+  .waiting { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 18px 20px; display: grid; gap: 10px; }
+  .waiting[hidden] { display: none; }
+  .waiting h2 { margin: 0; font: 500 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-soft); }
+  @media (max-width: 900px) { .apps { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<main class="dash">
+  <header><h1>theOS</h1><p>A standalone project, built from scratch: the architecture explained, the intents that shape it, and the sources we learned from. Every intent, decision and source is one JSON doc in theOS/.</p></header>
+  <section class="waiting" id="waiting" hidden><h2>Waiting for you</h2></section>
+  <div class="apps">
+    <a class="tile" href="docs/index.html"><span class="k">Docs</span><h2>The architecture</h2><p>The 13 chapters of theOS, slide by slide, with each slide's Architecture panel. The 91 legacy intents (OLD-AIPs) live here until they are consolidated.</p><span class="nums" id="n-docs"></span></a>
+    <a class="tile" href="avenCEO/index.html"><span class="k">Intents</span><h2>avenCEO</h2><p>Our agent harness, run by avenMAIA: every AIP with its stages and trace, your decisions that hold, the sessions, and avenCEO's own steps, gates and doc types.</p><span class="nums" id="n-ceo"></span></a>
+    <a class="tile" href="brain/index.html"><span class="k">brain</span><h2>What we learned from</h2><p>One doc per source: protocols drawn as flows, articles, repositories and specifications, with what we took; who read it is in the intent that read it.</p><span class="nums" id="n-src"></span></a>
+  </div>
+</main>
+<script src="ui/wiki.js"></script>
+<script>
+// The dashboard only counts and lists; each app reads theOS's docs itself.
+(async () => {
+  W.root = '';
+  await W.ready();
+  const chip = (t) => `<span class="chip">${t}</span>`;
+  const get = (p) => fetch(p).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  const [stories, intents] = await Promise.all(['docs/stories.json', 'docs/intents.json'].map(get));
+  const [aips, decisions, sessions, sources, authors] = await Promise.all(['aip', 'decisions', 'sessions', 'sources', 'authors'].map((f) => W.get(W.indexOf(f))));
+  const chapters = (stories?.stories || []).filter((s) => !s.kind).length;
+  document.getElementById('n-docs').innerHTML = chip(`${chapters} chapters`) + chip(`${intents?.intents.length ?? 0} OLD-AIPs`);
+  document.getElementById('n-ceo').innerHTML = chip(`${aips?.items.length ?? 0} AIPs`) + chip(`${decisions?.items.length ?? 0} decisions`) + chip(`${authors?.items.length ?? 0} authors`) + chip(`${sessions?.items.length ?? 0} sessions`);
+  const refs = await Promise.all((sources?.items || []).map((p) => W.get(p)));
+  document.getElementById('n-src').innerHTML = chip(`${refs.length} sources`) + chip(`${refs.filter((r) => r?.subtype === 'protocol').length} protocols`);
+  // names for the ids in the questions' text (D-75): the decisions and intents are crawled once
+  await W.crawl([...(aips?.items || []), ...(decisions?.items || [])]);
+  const open = (aips?.items || []).flatMap((p) => (W.all.get(p)?.questions || []).filter((q) => !q.answered && !q.replaced_by).map((q) => [p, W.all.get(p), q]));
+  const esc = W.esc;
+  if (open.length) {
+    const w = document.getElementById('waiting'); w.hidden = false;
+    w.insertAdjacentHTML('beforeend', open.map(([p, I, q]) => `<div class="wait"><span class="path"><a class="wl" href="avenCEO/index.html#${esc(p)}">${esc(W.name(I, p))}</a></span><b>${esc(W.named(q.q))}</b><ul>${q.options.map((o) => `<li>${esc(W.named(o))}</li>`).join('')}</ul></div>`).join(''));
+  }
+})();
+</script>
+</body>
+</html>
