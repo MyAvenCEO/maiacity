@@ -68,7 +68,8 @@
     "Withdraw, with its reason, only from an AIP's event (recommended)",
     "Only supersede"
    ],
-   "answered": "decisions/D-48"
+   "answered": "decisions/D-48",
+   "answer": "Only supersede (D-48)."
   },
   {
    "q": "Hash ids (D-45): do D-1 to D-48, AIP-1 to AIP-6 and the other numbered docs keep their names as labels, or are they renamed?",
@@ -87,6 +88,27 @@
    ],
    "answer": "The reviewer judges: \"reviewer to judge\" (Samuel, in the AIP-3 thread, 2026-11-01)",
    "answered": "decisions/D-50"
+  },
+  {
+   "q": "Hash ids for the docs that exist now: you said \"you can rename them\" (D-49). A review points out a third way: old docs keep their D-n and AIP-n ids, and only new docs get hash ids. Old ids were made one at a time and never collide, so this needs no migration, no exception to history only growing, and no rename map, and prose like \"(D-41)\" keeps working. Which?",
+   "options": [
+    "Keep the old ids; only new docs get hash ids (recommended)",
+    "Rename every doc once (D-49 as written)"
+   ]
+  },
+  {
+   "q": "Where do theOS sessions start? The brain prime hook and theOS/CLAUDE.md load only if a session's working folder is theOS/ (the repository root's .claude is legacy and not changed).",
+   "options": [
+    "theOS threads start in theOS/ (recommended)",
+    "At the repository root, with the hook added to the root .claude by an exception"
+   ]
+  },
+  {
+   "q": "The MCP server for brain (D-47): AIP-3 cannot finish while its last checkpoint waits for AIP-4's Gate A. Move the MCP server into AIP-4, with AIP-3 only promising that every verb is a plain function brain.mjs exports?",
+   "options": [
+    "Move it into AIP-4 (recommended)",
+    "Keep it as AIP-3's checkpoint 4"
+   ]
   }
  ],
  "problem": {
@@ -181,7 +203,7 @@
  "claims": [
   {
    "id": "c1",
-   "promise": "Every JSON doc in aip, decisions, sessions, sources, metrics, lessons, authors and avenCEO has a type with a type doc, and matches the JSON Schema inside it; by is always an author doc.",
+   "promise": "Every JSON doc in aip, decisions, sessions, sources, metrics, lessons, authors and avenCEO has a type with a type doc, and matches the JSON Schema inside it. by is always an author doc; every type a newer doc can supersede has about (its topics); a type doc lists the steps (1 to 4) at which its type may be written; a correction event names its cause (outdated-decision, outdated-word, missed-supersede or other).",
    "fails": "A misspelt field, a missing or misspelt type, or a free-text author passes unseen.",
    "check": "Validated with ajv; each schema rejects a planted bad doc of its type; every current doc passes.",
    "kind": "mechanical",
@@ -205,9 +227,9 @@
   },
   {
    "id": "c9",
-   "promise": "Every new doc gets an id that cannot collide across parallel threads, minted by brain add (D-45).",
-   "fails": "Two threads create the same id.",
-   "check": "brain check fails a duplicate id; a test makes two branches each add a decision and merges them: no id clash, the index rewritten by brain index, both events kept.",
+   "promise": "Every new doc gets a hash id minted by brain add (D-45), so parallel threads almost never pick the same one; when two do, the merge fails, and one is minted again.",
+   "fails": "Two threads create the same id and one silently overwrites the other.",
+   "check": "A test makes two branches add a decision each and merges them: no clash, the index written again by brain index, both events kept. A test with two branches adding the same id expects the merge to fail.",
    "kind": "mechanical",
    "result": "open"
   },
@@ -229,11 +251,12 @@
   },
   {
    "id": "c12",
-   "promise": "The existing numbered docs (D-n, AIP-n and the rest) are renamed once to hash ids in one migration commit, written by brain and recorded by one event (D-49): every path field is rewritten, prose is not, and theOS/brain/renames.json maps each old name to its new id. It is the one named exception to c2.",
+   "promise": "If question 11 keeps the rename (D-49): the numbered docs are renamed once to hash ids in one migration commit, written by brain as one event of AIP-3 at Build; every path field (a string brain's link rule accepts) is rewritten, prose is not, and theOS/brain/renames.json maps each old name to its new id. It is the one named exception to c2.",
    "fails": "A path still points at an old name, or an old name in prose can no longer be found.",
    "check": "After the rename no path field holds an old name; brain get resolves every old name in renames.json.",
    "kind": "mechanical",
-   "result": "open"
+   "result": "open",
+   "note": "Waits on question 11; dropped if old ids are kept."
   },
   {
    "id": "c2",
@@ -245,9 +268,9 @@
   },
   {
    "id": "c8",
-   "promise": "Every copied list (the index docs, the definition's lists, a session's decisions and intents) equals what it copies; index docs are written only by brain index.",
-   "fails": "A list drifts, as session.intents did.",
-   "check": "brain check compares each with its folder or backlinks.",
+   "promise": "No list is kept twice: session.decisions, session.intents and the definition's copied lists are deleted and computed by the apps from links; the index docs, which the static apps need, equal their folder because only brain index writes them.",
+   "fails": "A copy drifts, as session.intents did.",
+   "check": "brain check fails an index doc that differs from its folder, and a planted copied list in a session or the definition.",
    "kind": "mechanical",
    "result": "open"
   },
@@ -265,28 +288,20 @@
    "fails": "The mod reaches brain some other way.",
    "check": "One smoke call per verb through the MCP server returns what the command returns.",
    "kind": "mechanical",
-   "result": "open"
-  },
-  {
-   "id": "c5",
-   "promise": "A link's version is computed, never stored: the version cited is the commit that added the citing line, and the check flags a link whose target changed since.",
-   "fails": "A link silently shows content that changed after it was cited.",
-   "check": "A planted citation of a doc that changed after the citing commit is flagged.",
-   "kind": "mechanical",
    "result": "open",
-   "note": "Waits on question 3; recommended deferred."
+   "note": "Waits on question 13: recommended to move into AIP-4."
   }
  ],
  "outcome": {
   "promise": "Over the three sessions after checkpoint 2: no correction whose cause is an outdated decision, an outdated word or a missed supersede.",
-  "how": "Each correction event names its cause; counted per session.",
+  "how": "Each correction event names its cause (c1). At Learn the measurement counts them per session from those events; the baseline is counted the same way at Gate A from this session's events.",
   "kind": "measured",
   "result": "open"
  },
  "checkpoints": [
   {
    "n": 1,
-   "adds": "The door, smallest end to end, on AIP-1's check command, package.json and theOS/CLAUDE.md (AIP-1's checkpoint 1): every supersedes entry moved to {doc, part, what}; holds() moved from avenCEO/app.js into ui/wiki.js; schemas in the type docs; brain prime, holds, get, add (hash ids for new docs), edit, append and index, its skill, the session-start hook and one line in CLAUDE.md; brain check failing a doc changed without an event. avenMAIA updates the definition to match (its rules on the reflection for every type and on edits, live, terms/reflection, terms/decision-d-n, the decision type).",
+   "adds": "The door, smallest end to end, on AIP-1's check command, package.json and theOS/CLAUDE.md (AIP-1's checkpoint 1): every supersedes entry moved to {doc, part, what}; about added to the types that can be superseded; holds() moved from avenCEO/app.js into ui/wiki.js; schemas in the type docs, with each type's steps as data (avenMAIA writes the type docs); brain prime, holds, get, add (hash ids for new docs), edit, append and index, its skill, the hook in theOS/.claude/settings.json and one line in theOS/CLAUDE.md; brain check failing a doc changed without an event.",
    "claims": [
     "c1",
     "c7",
@@ -296,7 +311,7 @@
   },
   {
    "n": 2,
-   "adds": "The reflection (brain reflect; supersedes checked at the parent; left candidates recorded); the link graph and its audit; the one rename of numbered docs; then lists that only grow.",
+   "adds": "The reflection (brain reflect; supersedes checked at the parent; left candidates recorded); the link graph by type and its audit; the rename if question 11 keeps it; then lists that only grow.",
    "claims": [
     "c3",
     "c10",
@@ -306,16 +321,15 @@
   },
   {
    "n": 3,
-   "adds": "Copied lists checked; renames as term docs and the terms check; a link's version only if question 3 keeps it.",
+   "adds": "Copied lists deleted and computed (avenMAIA's docs); renames as term docs and the terms check.",
    "claims": [
     "c8",
-    "c6",
-    "c5"
+    "c6"
    ]
   },
   {
    "n": 4,
-   "adds": "The MCP server over the same functions, started when AIP-4 passes Gate A.",
+   "adds": "The MCP server over the same functions, if question 13 keeps it in AIP-3, after AIP-4 passes Gate A.",
    "claims": [
     "c11"
    ]
@@ -341,12 +355,16 @@
   {
    "what": "brain edit --expect <sha>: refuse an edit of a doc changed since it was read",
    "until": "Two writers share one working tree."
+  },
+  {
+   "what": "A link's version computed from git, flagged when its target changed since it was cited (was c5: A link's version is computed, never stored: the version cited is the commit that added the citing line, and the check flags a link whose target changed since.)",
+   "until": "Question 3 keeps it, or a correction is traced to a link whose target moved."
   }
  ],
  "mockup": [
-  "brain prime at session start: per type the docs that hold now, then 'Waits for Samuel' with the open questions and his tasks (the text the hook injects)",
+  "brain prime at session start: the decisions and terms that hold now, then 'Waits for Samuel' with the open questions and his tasks (the text the hook injects)",
   "brain get on a decision: the doc, 'superseded by' if any, and its links and backlinks grouped by type",
-  "Every list in the Intents app, split into Hold now and Superseded: theOS/avenCEO/index.html#decisions, #terms, #lessons, #metrics"
+  "Every list in the Intents app, split into Hold now and Superseded (there today in avenCEO/app.js, kept by the shared holds()): theOS/avenCEO/index.html#decisions, #terms, #lessons, #metrics"
  ],
  "events": [
   {
@@ -1133,6 +1151,63 @@
    "writes": [],
    "reads": [],
    "task": "t17"
+  },
+  {
+   "at": "2026-11-01T11:10Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "The definition now matches AIP-3: the reflection for every type, the reviewer judging what it left (D-50), a change of meaning as a new doc and a correction as an edit through brain, D-n until hash ids land, Reflection and Decision superseded by new terms, the decision type in polished words (D-36). This answers round 3's finding on the definition as fixed.",
+   "how": "by avenMAIA, the only writer of the definition, at AIP-3's round 3 finding",
+   "writes": [
+    "avenCEO/avenCEO",
+    "avenCEO/terms/reflection-2",
+    "avenCEO/terms/decision-2",
+    "avenCEO/types/decision"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T11:20Z",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Round 4 on revision 6: r4-paraphrase (8 Major, 3 Nit); r4-zoom-out (4 Major, 4 Nit). Not clean.",
+   "how": "fresh subagents with the prompts avenCEO/checkers/paraphrase and avenCEO/checkers/zoom-out, the record filled in",
+   "writes": [
+    "aip/AIP-3/r4-paraphrase",
+    "aip/AIP-3/r4-zoom-out"
+   ],
+   "reads": [],
+   "task": "t18"
+  },
+  {
+   "at": "2026-11-01T11:20Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Round 4 run.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t18"
+  },
+  {
+   "at": "2026-11-01T11:35Z",
+   "by": "authors/avenmaia",
+   "what": "revised",
+   "text": "Revision 7: each type's steps as data and research allowed at Specify; a correction's cause back in the schema; the measurement at Learn; the hash id format defined, a collision failing at merge; merges checked against the first parent; about required where a doc can be superseded; copied lists deleted instead of checked (c8); c5 deferred; prime shorter; get's checkpoint 1 answer said; three findings escalated as questions 11 to 13 (keep old ids, where sessions start, MCP into AIP-4).",
+   "how": "by the AIP-3 thread, answering round 4",
+   "writes": [
+    "aip/AIP-3"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T11:35Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Every finding of round 4 answered (16 fixed, 3 escalated) and revision 7 written.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
   }
  ],
  "reviews": [
@@ -1141,7 +1216,9 @@
   "aip/AIP-3/r2-paraphrase",
   "aip/AIP-3/r2-zoom-out",
   "aip/AIP-3/r3-paraphrase",
-  "aip/AIP-3/r3-zoom-out"
+  "aip/AIP-3/r3-zoom-out",
+  "aip/AIP-3/r4-paraphrase",
+  "aip/AIP-3/r4-zoom-out"
  ],
  "source": {
   "type": "idea",
@@ -1212,14 +1289,14 @@
   },
   {
    "id": "t8",
-   "what": "Checkpoint 3: copied lists, renames as terms, link versions if kept",
+   "what": "Checkpoint 3: copied lists deleted, renames as terms",
    "step": 3,
    "for": "checkpoint 3",
    "who": "authors/avenmaia"
   },
   {
    "id": "t9",
-   "what": "Checkpoint 4: MCP, after AIP-4 passes Gate A",
+   "what": "Checkpoint 4: MCP, if it stays in AIP-3",
    "step": 3,
    "for": "checkpoint 4",
    "who": "authors/avenmaia"
@@ -1259,15 +1336,39 @@
    "what": "Spec review round 4",
    "step": 2,
    "who": "authors/avenmaia"
+  },
+  {
+   "id": "t19",
+   "what": "Answer: old ids kept or renamed (question 11)",
+   "step": 2,
+   "who": "authors/samuel-andert"
+  },
+  {
+   "id": "t20",
+   "what": "Answer: where theOS sessions start (question 12)",
+   "step": 2,
+   "who": "authors/samuel-andert"
+  },
+  {
+   "id": "t21",
+   "what": "Answer: MCP in AIP-4 or AIP-3 (question 13)",
+   "step": 2,
+   "who": "authors/samuel-andert"
+  },
+  {
+   "id": "t22",
+   "what": "Spec review round 5",
+   "step": 2,
+   "who": "authors/avenmaia"
   }
  ],
  "protocol": {
   "name": "brain protocol v1",
-  "what": "The one door to brain (D-41). One program, theOS/brain/brain.mjs, with these verbs. The command line and the skill (theOS/brain/SKILL.json, which teaches only these verbs) call it now; an MCP server calls the same functions for AIP-4's mod (a Claude Code plugin that shows theOS inside Claude Code) once AIP-4 passes Gate A (D-47). Fields keep their meaning forever; v1 only grows (new verbs, new optional fields). brain writes files; the agent commits them with its other work.",
+  "what": "The one door to brain (D-41). One program, theOS/brain/brain.mjs, with these verbs. The command line and the skill (theOS/brain/SKILL.json, which teaches only these verbs) call it now; an MCP server calls the same functions for AIP-4's mod (a Claude Code plugin, AIP-4's work, that shows theOS's intents and brain inside Claude Code) once AIP-4 passes Gate A (D-47). Fields keep their meaning forever; v1 only grows (new verbs, new optional fields). brain writes files; the agent commits them with its other work.",
   "reads": [
    {
     "verb": "brain prime",
-    "does": "Prints, for each type, the docs that hold now (id and title), and what waits for Samuel (open questions and his tasks). A Claude Code session-start hook runs it at the start of a session and after compaction (when Claude Code shortens a long conversation); theOS/CLAUDE.md names it first."
+    "does": "Prints the decisions and terms that hold now (id and title) and what waits for Samuel (open questions and his tasks); brain holds <type> gives the rest. A Claude Code hook runs it at the start of a session and after compaction (when Claude Code shortens a long conversation to fit). The hook lives in theOS/.claude/settings.json and theOS/CLAUDE.md names brain prime first; both load when a session's working folder is theOS/ (question 12)."
    },
    {
     "verb": "brain holds <type>",
@@ -1275,7 +1376,7 @@
    },
    {
     "verb": "brain get <id>",
-    "does": "Returns one doc, what supersedes it, and its links and backlinks grouped by type (a link's type is the field it sits in, such as supersedes, relates, intents or writes). An old name (D-12) is resolved through theOS/brain/renames.json."
+    "does": "Returns one doc, what supersedes it, and its links and backlinks (a link is any string that names a doc's path). From checkpoint 2 the links are grouped by type: the field they sit in, such as supersedes, relates, intents or writes."
    },
    {
     "verb": "brain reflect <type> <draft>",
@@ -1286,7 +1387,7 @@
   "writes": [
    {
     "verb": "brain add <type> <file>",
-    "does": "Mints the doc's id: a type prefix and the first 4 hex characters of a hash of the content, the time and a random salt, longer if taken (D-45); avenMAIA mints a decision's id this way like anyone else. Checks the doc against its type's schema; refuses a supersedes entry ({doc, part, what}) whose doc does not exist or did not hold at the parent commit. Runs brain reflect itself and writes into the event the candidates the doc does not supersede, for the reviewer to judge (D-50). Answers created or unchanged, and lists what the doc supersedes."
+    "does": "Mints the doc's id: <folder>/<prefix>-<hex>, the prefix short for the type (d for a decision, aip for an intent) and the hex the first 4 characters of a hash of the content, the time and a random salt, longer if the path exists on this branch (D-45). avenMAIA mints a decision's id this way like anyone else. Checks the doc against its type's schema; refuses a supersedes entry ({doc, part, what}) whose doc does not exist or did not hold at the parent commit. Runs brain reflect itself and writes into the event the candidates the doc does not supersede, for the reviewer to judge (D-50). Runs brain index when the doc's folder has one. Answers created or unchanged, and lists what the doc supersedes."
    },
    {
     "verb": "brain edit <id> <file>",
@@ -1298,12 +1399,12 @@
    },
    {
     "verb": "brain index",
-    "does": "Writes every index doc from its folder; never edited by hand, so a merge clash in one is resolved by running it again."
+    "does": "Writes every index doc from its folder (the static apps cannot list a folder). It runs inside the write that needs it, and the index is listed in that event's writes; it is never edited by hand, so a merge clash in one is resolved by running it again."
    }
   ],
   "check": {
    "verb": "brain check",
-   "does": "A module that AIP-1's check command runs before every push, by the done rule (theOS has no CI). It runs every claim's check below and fails a commit that changed a doc without an event of that commit (D-46). Two appends to one list at a merge are both kept, the first parent's first."
+   "does": "A module that AIP-1's check command runs on every commit before it is pushed, by the done rule (theOS has no CI). It runs every claim's check below and fails a commit that changed a doc without an event of that commit (D-46). A commit is checked against its parent; a merge commit against its first parent, where only index docs written again by brain index and list entries appended on either side may differ (both kept, the first parent's first)."
   },
   "errors": "Every refusal is a fixed code with the fix, for example no_intent (pass --intent aip/<id>), schema (field x: expected y), step (a <type> is written in <step>; the AIP stands at <step>), not_held (<id> was superseded by <id>).",
   "not": [
