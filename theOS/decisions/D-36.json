@@ -2,6 +2,7 @@
  "type": "decision",
  "id": "D-36",
  "n": 36,
+ "title": "Keep only the polished words",
  "subtype": "answer",
  "by": "authors/samuel-andert",
  "at": "2026-11-01",

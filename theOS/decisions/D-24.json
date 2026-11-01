@@ -2,6 +2,7 @@
  "type": "decision",
  "id": "D-24",
  "n": 24,
+ "title": "theOS owns the sandbox and the release",
  "subtype": "answer",
  "by": "authors/samuel-andert",
  "at": "2026-11-01",

@@ -2,6 +2,7 @@
  "type": "decision",
  "id": "D-26",
  "n": 26,
+ "title": "Agents per AIP, as many as it needs",
  "subtype": "answer",
  "by": "authors/samuel-andert",
  "at": "2026-11-01",

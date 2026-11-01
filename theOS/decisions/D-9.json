@@ -2,6 +2,7 @@
  "type": "decision",
  "id": "D-9",
  "n": 9,
+ "title": "HTML and JSON, not markdown",
  "subtype": "answer",
  "by": "authors/samuel-andert",
  "at": "2026-11-01",

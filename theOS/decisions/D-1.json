@@ -2,6 +2,7 @@
  "type": "decision",
  "id": "D-1",
  "n": 1,
+ "title": "Build avenCEO with its own flow",
  "subtype": "answer",
  "by": "authors/samuel-andert",
  "at": "2026-11-01",

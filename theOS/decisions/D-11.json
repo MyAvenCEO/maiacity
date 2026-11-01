@@ -2,6 +2,7 @@
  "type": "decision",
  "id": "D-11",
  "n": 11,
+ "title": "Checker prompts carry theOS's rule",
  "subtype": "answer",
  "by": "authors/samuel-andert",
  "at": "2026-11-01",

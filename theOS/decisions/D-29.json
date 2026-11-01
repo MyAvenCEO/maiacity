@@ -2,6 +2,7 @@
  "type": "decision",
  "id": "D-29",
  "n": 29,
+ "title": "One trace for every type",
  "subtype": "answer",
  "by": "authors/samuel-andert",
  "at": "2026-11-01",

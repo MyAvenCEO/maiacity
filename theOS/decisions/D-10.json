@@ -2,6 +2,7 @@
  "type": "decision",
  "id": "D-10",
  "n": 10,
+ "title": "Legacy intents are OLD-AIPs",
  "subtype": "answer",
  "by": "authors/samuel-andert",
  "at": "2026-11-01",

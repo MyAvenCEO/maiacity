@@ -19,7 +19,7 @@ const W = {
   },
   appOf: (path) => (path.startsWith('sources/') ? 'sources' : 'avenCEO'),
   href(path, here) { const a = this.appOf(path); return a === here ? `#${path}` : `../${a}/index.html#${path}`; },
-  label: (d, path) => (d && (d.title || d.name || d.word || d.id)) || path.split('/').pop(),
+  label: (d, path) => (d && (d.type === 'decision' ? d.id : d.title || d.name || d.word || d.id)) || path.split('/').pop(),
   // all docs reachable from the starting paths, and who points at whom
   async crawl(starts) {
     const docs = new Map(), back = new Map(), queue = [...starts];
@@ -48,7 +48,8 @@ const W = {
   },
   link(path, here, docs) {
     const d = docs?.get(path);
-    return `<a class="wl" href="${this.href(path, here)}">${this.esc(this.label(d, path))}</a>`;
+    const tip = d?.type === 'decision' && d.title ? ` title="${this.esc(d.title)}"` : '';
+    return `<a class="wl" href="${this.href(path, here)}"${tip}>${this.esc(this.label(d, path))}</a>`;
   },
   who(by, here, docs) { return this.isPath(by) ? this.link(by, here, docs) : this.esc(by); },
   // The trace: every write to brain, and every read of a source, is an event of an intent's lifecycle. The step is where

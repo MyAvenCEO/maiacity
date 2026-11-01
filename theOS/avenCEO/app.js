@@ -90,8 +90,8 @@ function reflected(title, type) {
   const xs = ofType(type).sort((a, b) => (b[1].n ?? 0) - (a[1].n ?? 0) || W.label(a[1], a[0]).localeCompare(W.label(b[1], b[0])));
   const card = ([p, d]) => {
     const part = supersededBy(p).filter((s) => s.part === 'part').map((s) => `${s.p.split('/').pop()}: ${s.what}`).join(' ');
-    return `<a class="card" href="#${p}"><span class="top">${holdChip(p)}${chips(d.about)}</span><b>${e(type === 'decision' ? `${d.id} · ${d.means}` : W.label(d, p))}</b>
-      <small>${e(type === 'decision' ? `“${String(d.quote).slice(0, 160)}”` : d.means)}</small>${part ? `<small><b>Changed by</b> ${e(part)}</small>` : ''}</a>`;
+    return `<a class="card" href="#${p}"><span class="top">${holdChip(p)}${chips(d.about)}</span><b>${e(type === 'decision' ? `${d.id} · ${d.title || d.means}` : W.label(d, p))}</b>
+      <small>${e(d.means)}</small>${part ? `<small><b>Changed by</b> ${e(part)}</small>` : ''}</a>`;
   };
   const now = xs.filter(([p]) => holds(p) !== 'superseded'), old = xs.filter(([p]) => holds(p) === 'superseded');
   return `<article class="doc"><header><h1>${title}</h1><p class="lead">${type === 'decision' ? 'Your decisions, newest first.' : 'The glossary.'} What holds is computed by brain's reflection: one holds until a later one supersedes ${type === 'decision' ? 'it' : 'or merges it'}; superseded in part, the rest still holds.</p></header>
@@ -219,7 +219,7 @@ const PAGES = {
       ${sec('Findings and their answers', table(['Severity', 'Where', 'Finding', 'Answer'], R.findings.map((f) => [`<span class="chip ${e(f.sev.toLowerCase())}">${e(f.sev)}</span>`, T(f.scope), T(f.text), `<b>${e(f.answer || 'open')}</b> ${T(f.note || '')}`])))}`;
   },
   decision(D) {
-    return `${head({ ...D, title: `${D.id} · ${D.means}` }, [holdChip(current()), `<span class="chip clay">${e(D.subtype)}</span>`, chips(D.about)], `<p class="by">${who(D.by)}, in ${L(D.session)}</p>`)}
+    return `${head({ ...D, title: `${D.id} · ${D.title || D.means}` }, [holdChip(current()), `<span class="chip clay">${e(D.subtype)}</span>`, chips(D.about)], `${D.title ? `<p class="lead">${T(D.means)}</p>` : ''}<p class="by">${who(D.by)}, in ${L(D.session)}</p>`)}
       ${sec('Your words', `<blockquote class="lead">“${e(D.quote)}”</blockquote>`)}
       ${reflection(D, current())}
       ${sec('Affects', `<p>${D.intents.map(L).join(' · ')}</p>`)}`;

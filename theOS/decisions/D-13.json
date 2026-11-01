@@ -2,6 +2,7 @@
  "type": "decision",
  "id": "D-13",
  "n": 13,
+ "title": "Move avenSANDBOX into theOS",
  "subtype": "answer",
  "by": "authors/samuel-andert",
  "at": "2026-11-01",

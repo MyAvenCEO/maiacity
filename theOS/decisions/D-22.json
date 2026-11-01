@@ -2,6 +2,7 @@
  "type": "decision",
  "id": "D-22",
  "n": 22,
+ "title": "Sources drop the read flag",
  "subtype": "answer",
  "by": "authors/samuel-andert",
  "at": "2026-11-01",

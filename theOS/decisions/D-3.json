@@ -2,6 +2,7 @@
  "type": "decision",
  "id": "D-3",
  "n": 3,
+ "title": "A new AIP sequence starts at AIP-1",
  "subtype": "answer",
  "by": "authors/samuel-andert",
  "at": "2026-11-01",

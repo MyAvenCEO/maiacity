@@ -2,6 +2,7 @@
  "type": "decision",
  "id": "D-19",
  "n": 19,
+ "title": "Every write to brain is traced",
  "subtype": "answer",
  "by": "authors/samuel-andert",
  "at": "2026-11-01",

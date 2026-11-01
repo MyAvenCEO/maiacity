@@ -2,6 +2,7 @@
  "type": "decision",
  "id": "D-5",
  "n": 5,
+ "title": "The sandbox may be used for testing",
  "subtype": "answer",
  "by": "authors/samuel-andert",
  "at": "2026-11-01",

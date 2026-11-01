@@ -2,6 +2,7 @@
  "type": "decision",
  "id": "D-32",
  "n": 32,
+ "title": "One reflection logic for every type",
  "subtype": "answer",
  "by": "authors/samuel-andert",
  "at": "2026-11-01",

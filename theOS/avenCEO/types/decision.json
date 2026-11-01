@@ -11,12 +11,16 @@
  ],
  "fields": [
   {
-   "name": "quote",
-   "means": "your words, polished: their clean essence, true to what you said and well written"
+   "name": "title",
+   "means": "a short title, 60 characters at most"
   },
   {
    "name": "means",
-   "means": "what it changes"
+   "means": "the longer explanation, shown as the subtitle"
+  },
+  {
+   "name": "quote",
+   "means": "your words, polished: their clean essence, true to what you said and well written"
   },
   {
    "name": "about",

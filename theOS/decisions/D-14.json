@@ -2,6 +2,7 @@
  "type": "decision",
  "id": "D-14",
  "n": 14,
+ "title": "The dashboard is light only",
  "subtype": "answer",
  "by": "authors/samuel-andert",
  "at": "2026-11-01",

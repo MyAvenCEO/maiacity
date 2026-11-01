@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "D-37",
+ "n": 37,
+ "title": "Compact decision titles",
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "style",
+  "decisions"
+ ],
+ "quote": "Keep decision titles compact, with a maximum length, and move the longer explanation into a subtitle.",
+ "means": "Every decision has a short title, 60 characters at most; the longer explanation is its subtitle.",
+ "intents": [
+  "aip/AIP-3"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-35"
+ ],
+ "reflection": {
+  "checked": "every decision before D-37 that held",
+  "result": "supersedes nothing"
+ }
+}

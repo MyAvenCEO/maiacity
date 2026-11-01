@@ -2,6 +2,7 @@
  "type": "decision",
  "id": "D-27",
  "n": 27,
+ "title": "AIP-4: a Claude Code mod as interface",
  "subtype": "answer",
  "by": "authors/samuel-andert",
  "at": "2026-11-01",

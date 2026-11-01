@@ -665,6 +665,65 @@
     "avenCEO/avenCEO"
    ],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T09:42Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Compact decision titles; the explanation as a subtitle.",
+   "how": "in chat, your words polished and kept in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-37"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:42Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Every decision has a title of 60 characters at most; its explanation is the subtitle.",
+   "how": "by hand, at your direct ask (D-37)",
+   "writes": [
+    "decisions/D-1",
+    "decisions/D-2",
+    "decisions/D-3",
+    "decisions/D-4",
+    "decisions/D-5",
+    "decisions/D-6",
+    "decisions/D-7",
+    "decisions/D-8",
+    "decisions/D-9",
+    "decisions/D-10",
+    "decisions/D-11",
+    "decisions/D-12",
+    "decisions/D-13",
+    "decisions/D-14",
+    "decisions/D-15",
+    "decisions/D-16",
+    "decisions/D-17",
+    "decisions/D-18",
+    "decisions/D-19",
+    "decisions/D-20",
+    "decisions/D-21",
+    "decisions/D-22",
+    "decisions/D-23",
+    "decisions/D-24",
+    "decisions/D-25",
+    "decisions/D-26",
+    "decisions/D-27",
+    "decisions/D-28",
+    "decisions/D-29",
+    "decisions/D-30",
+    "decisions/D-31",
+    "decisions/D-32",
+    "decisions/D-33",
+    "decisions/D-34",
+    "decisions/D-35",
+    "decisions/D-36",
+    "decisions/D-37",
+    "avenCEO/types/decision"
+   ],
+   "reads": []
   }
  ],
  "reviews": [

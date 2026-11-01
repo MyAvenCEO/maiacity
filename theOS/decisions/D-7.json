@@ -2,6 +2,7 @@
  "type": "decision",
  "id": "D-7",
  "n": 7,
+ "title": "theOS is our memory, one doc per thing",
  "subtype": "answer",
  "by": "authors/samuel-andert",
  "at": "2026-11-01",

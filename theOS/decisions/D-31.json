@@ -2,6 +2,7 @@
  "type": "decision",
  "id": "D-31",
  "n": 31,
+ "title": "Arrays that grow, versions from git",
  "subtype": "answer",
  "by": "authors/samuel-andert",
  "at": "2026-11-01",
