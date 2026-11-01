@@ -18,7 +18,7 @@ const W = {
     return out;
   },
   appOf: (path) => (path.startsWith('sources/') ? 'sources' : 'avenCEO'),
-  href(path, here) { const a = this.appOf(path); return a === here ? `#${path}` : `../${a}/#${path}`; },
+  href(path, here) { const a = this.appOf(path); return a === here ? `#${path}` : `../${a}/index.html#${path}`; },
   label: (d, path) => (d && (d.title || d.name || d.word || d.id)) || path.split('/').pop(),
   // all docs reachable from the starting paths, and who points at whom
   async crawl(starts) {
@@ -43,7 +43,7 @@ const W = {
   // text with AIP-n linked to its doc, OLD-AIP-n to the Docs app's legacy board, and paths to their docs
   text(t, here, docs) {
     return this.esc(t)
-      .replace(/(?<![\w-])OLD-AIP-(\d+)/g, '<a href="../docs/#intents-$1">OLD-AIP-$1</a>')
+      .replace(/(?<![\w-])OLD-AIP-(\d+)/g, '<a href="../docs/index.html#intents-$1">OLD-AIP-$1</a>')
       .replace(/(?<![\w-])AIP-(\d+)(?![\w-])/g, (m, n) => (docs?.has(`aip/AIP-${n}`) ? `<a href="${this.href(`aip/AIP-${n}`, here)}">${m}</a>` : m));
   },
   link(path, here, docs) {

@@ -96,7 +96,7 @@ function home() {
 function board() {
   const cols = ['Understand', 'Specify', 'Build', 'Learn', 'Closed'];
   const cards = ofType('intent').map(([p, I]) => ({ p, I, s: stageOf(I) }));
-  return `<article class="doc"><header><h1>AIPs</h1><p class="lead">Every intent of avenCEO's sequence, in the step its record says. The 91 legacy intents are the <a href="../docs/#intents-0">OLD-AIPs</a>, until they are consolidated.</p></header>
+  return `<article class="doc"><header><h1>AIPs</h1><p class="lead">Every intent of avenCEO's sequence, in the step its record says. The 91 legacy intents are the <a href="../docs/index.html#intents-0">OLD-AIPs</a>, until they are consolidated.</p></header>
     <div class="cols">${cols.map((c, k) => { const xs = cards.filter((x) => x.s[0] === k + 1); return `<section class="col"><h2>${c}<span>${xs.length}</span></h2>${xs.map(({ p, I, s }) => `<a class="card" href="#${p}"><span class="top"><b>${e(I.id)}</b><span class="chip clay">${e(s[1].replace(/^\w+: /, ''))}</span></span><b>${e(I.title)}</b><small>${e(I.kind)} · ${(I.claims || []).length} claims · ${(I.reviews || []).length} reviews</small></a>`).join('') || '<p class="note">Nothing here.</p>'}</section>`; }).join('')}</div></article>`;
 }
 
@@ -192,7 +192,7 @@ const PAGES = {
 async function show() {
   const h = decodeURIComponent(location.hash.slice(1));
   const route = h || 'home';
-  if (route.startsWith('sources/')) { location.href = `../sources/#${route}`; return; }
+  if (route.startsWith('sources/')) { location.href = `../sources/index.html#${route}`; return; }
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.r === route || (a.dataset.r === 'home' && route === 'avenCEO/avenCEO')));
   let html;
   if (route === 'home' || route === 'avenCEO/avenCEO') html = home();

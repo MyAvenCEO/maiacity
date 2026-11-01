@@ -35,7 +35,7 @@ function page(p, d) {
 
 function show() {
   const route = decodeURIComponent(location.hash.slice(1)) || 'all';
-  if (route && !route.startsWith('sources/') && W.isPath(route)) { location.href = `../avenCEO/#${route}`; return; }
+  if (route && !route.startsWith('sources/') && W.isPath(route)) { location.href = `../avenCEO/index.html#${route}`; return; }
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.r === route));
   const d = G.docs.get(route);
   $('#main').innerHTML = route === 'all' ? list() : GROUPS.some(([k]) => k === route) ? list(route) : d ? page(route, d) : `<article class="doc"><h1>Not found</h1><p class="path">${e(route)}</p></article>`;
