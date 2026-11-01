@@ -671,6 +671,25 @@
    "how": "by hand, aip-59ad's thread",
    "writes": [],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T14:15Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "c1 on GitHub: pull request #1782 (main into production, head 45db01d03), run 41314538756: 'Only from main', 'avenSANDBOX' and 'theOS' green, by those names, from GitHub Actions; merged into production at a908b3c2f; the push run 41314803806 on a908b3c2f green ('avenSANDBOX' and 'theOS' again). production now holds only theOS's two workflows. Not tried on GitHub: a pull request from another branch showing 'Only from main' red, a planted failing page showing 'theOS' red (both tried locally).",
+   "how": "by hand, aip-59ad's thread, from GitHub's run list; merge by avenMAIA",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T14:15Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Checkpoint 1 passed: Mechanical gate green, Review gate rv-d660 (round 2's spoof Major escalated to Samuel, the rest fixed), c1 seen on GitHub, the real merge from main into production at a908b3c2f.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t7"
   }
  ],
  "problem": {
@@ -867,7 +886,7 @@
    "fails": "A pull request from another branch merges; a red check passes; a check name differs from the ruleset's, so production stays blocked; production gets a commit whose box was never built; the commit deployed is not the commit checked.",
    "check": "Job names compared letter for letter with the ruleset's. A pull request from another branch shows 'Only from main' red; a commit whose box tag is not published shows 'avenSANDBOX' red; a commit with a planted failing page shows 'theOS' red, then green without it. Checkpoint 1 ends with a real merge from main into production, all three green.",
    "kind": "mechanical",
-   "result": "open"
+   "result": "pass"
   },
   {
    "id": "c3",
