@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-9d07",
  "word": "Park",
+ "about": [
+  "park"
+ ],
  "means": "Move a workflow out of .github/workflows/ so it stops running, without deleting it; moving it back switches it on.",
  "supersedes": [],
  "reflection": {

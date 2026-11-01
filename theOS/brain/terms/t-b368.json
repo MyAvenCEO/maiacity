@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-b368",
  "word": "Done rule",
+ "about": [
+  "done rule"
+ ],
  "means": "When a change to theOS counts as done: theOS's check command green, a fresh checker's look at every view whose pixels changed, pushed, the theOS docs page republished with its version in the commit message.",
  "supersedes": [],
  "reflection": {

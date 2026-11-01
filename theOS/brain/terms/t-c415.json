@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-c415",
  "word": "Box",
+ "about": [
+  "box"
+ ],
  "means": "The avenSANDBOX image: where every theOS check runs, in every scenario.",
  "supersedes": [
   {

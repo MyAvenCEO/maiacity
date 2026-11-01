@@ -44,7 +44,8 @@ test('the migration renames, moves and rewrites everything, and what holds is un
   assert.deepEqual(new Set(after.holds.decision.map((x) => x.id)), new Set(before.holds.decision.map((x) => id(x.id))));
   for (const x of after.holds.decision) assert.ok(x.name.startsWith(`${x.id} · `), x.name);
   const a4 = after.holds.decision.find((x) => x.id === names['D-4']);
-  assert.equal(a4.title, `${names['aip/AIP-1']} · A fixture intent: builds on ${names['D-2']} · Second, superseded in part`);
+  // an id inside a title shows by itself, so titles stay short
+  assert.equal(a4.title, `${names['aip/AIP-1']}: builds on ${names['D-2']}`);
   const a3 = after.holds.decision.find((x) => x.id === names['D-3']);
   assert.equal(a3.title, 'Third, holds');
   assert.deepEqual(a3.for, [`${names['aip/AIP-1']} · A fixture intent`]);

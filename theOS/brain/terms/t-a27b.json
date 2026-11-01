@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-a27b",
  "word": "Check",
+ "about": [
+  "check"
+ ],
  "means": "What shows a claim holds: mechanical (a test, a proof, a screenshot diff), a review, a person, or a measurement.",
  "supersedes": [],
  "reflection": {

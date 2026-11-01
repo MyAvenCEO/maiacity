@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-a7bd",
  "word": "Orchestrator",
+ "about": [
+  "orchestrator"
+ ],
  "means": "The session that keeps the records and starts every other agent. Today the main session; a program (the router) later.",
  "supersedes": [],
  "reflection": {

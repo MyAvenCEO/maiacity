@@ -33,7 +33,7 @@ const W = {
   appOf(ref) { const f = this.file(ref); return f.startsWith('sources/') || f.startsWith('brain/sources/') ? this.srcApp() : 'avenCEO'; },
   href(path, here) { const a = this.appOf(path); return a === here ? `#${path}` : `../${a}/index.html#${path}`; },
   // What people see (D-76): a doc reads as its id and its title, "aip-69af · brain: theOS's memory", and so does an id
-  // inside text. Inside a title, a second level of ids is shown by title alone, so names stay readable. Links and
+  // inside text. Inside a title, an id is shown by itself, so titles stay short. Links and
   // stored text keep the bare id. Before the migration the id is today's (D-12, AIP-3, the last part of a path).
   all: null, // the docs of the last crawl, to name ids inside text
   idOf(d, ref) { return this.isId(ref) ? ref : d?.id && !String(d.id).includes('/') ? d.id : String(ref ?? d?.id ?? '').split('/').pop(); },
@@ -54,7 +54,8 @@ const W = {
     return String(t ?? '').replace(/(?<![\w/-])[a-z]+-[0-9a-f]{4,}(?![\w-])/g, (m) => {
       if (!this.isId(m) || depth > 4) return m;
       const d = this.all?.get(m);
-      return depth < 2 ? this.name(d, m, depth + 1) : this.title(d, depth + 1) || m;
+      // in text, an id reads as id and title; inside a title, by its id alone, so titles stay short
+      return depth < 1 ? this.name(d, m, depth + 1) : m;
     });
   },
   label(d, path) { return this.name(d, path); },

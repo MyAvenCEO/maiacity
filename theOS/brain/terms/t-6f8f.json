@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-6f8f",
  "word": "Warm",
+ "about": [
+  "warm"
+ ],
  "means": "Set a cloud environment up once before its disk is snapshotted, so new sessions start with their tools already there.",
  "supersedes": [],
  "reflection": {

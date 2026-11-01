@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-defc",
  "word": "Published",
+ "about": [
+  "published"
+ ],
  "means": "The private theOS docs page (an artifact) republished, its version noted.",
  "supersedes": [],
  "reflection": {

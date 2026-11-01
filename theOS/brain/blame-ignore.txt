@@ -1,0 +1,3 @@
+# Commits that touched many docs without changing what they say; brain versions skips them (git blame --ignore-rev).
+21a60a2ee1993b13ece6336b3d56f08c4f7db6fc # decision titles compacted (D-37)
+9661f9da3787f8110665a858df67bd93b16927a6 # schemas and terms' about (aip-836d checkpoint 2)

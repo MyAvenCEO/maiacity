@@ -1,0 +1,146 @@
+{
+ "type": "type",
+ "id": "ty-15fd",
+ "name": "definition",
+ "file": "avenCEO/<id>.json",
+ "what": "avenCEO's definition: its steps, gates, types, checkers and terms, its principles and rules. One doc; its lists of steps, gates, types, checkers, terms and indexes are written by brain index.",
+ "subtypes": [],
+ "fields": [
+  {
+   "name": "steps, gates, types, checkers, terms, indexes",
+   "means": "the docs of each kind, written by brain index"
+  },
+  {
+   "name": "principles, rules",
+   "means": "how avenCEO works"
+  }
+ ],
+ "written_by": "avenMAIA, the only writer of the definition",
+ "links_to": [],
+ "trace": {
+  "events": [
+   "changed"
+  ],
+  "step": "any step",
+  "author": "agent",
+  "note": "Every change is an event of the intent it serves."
+ },
+ "schema": {
+  "type": "object",
+  "required": [
+   "type",
+   "id",
+   "title",
+   "status",
+   "date",
+   "summary",
+   "steps",
+   "bands",
+   "gates",
+   "types",
+   "checkers",
+   "terms",
+   "principles",
+   "rules",
+   "roles",
+   "risk",
+   "stage",
+   "live",
+   "memory",
+   "improve",
+   "checkpoint_cycle",
+   "checkpoint_rules",
+   "added",
+   "deleted",
+   "assumptions",
+   "automate",
+   "indexes"
+  ],
+  "properties": {
+   "type": {
+    "enum": [
+     "definition"
+    ]
+   },
+   "id": {
+    "type": "string",
+    "pattern": "^def-[0-9a-f]{4,}$"
+   },
+   "title": {
+    "type": "string"
+   },
+   "status": {
+    "type": "string"
+   },
+   "date": {
+    "type": "string"
+   },
+   "summary": {
+    "type": "string"
+   },
+   "steps": {
+    "type": "array"
+   },
+   "bands": {
+    "type": "array"
+   },
+   "gates": {
+    "type": "array"
+   },
+   "types": {
+    "type": "array"
+   },
+   "checkers": {
+    "type": "array"
+   },
+   "terms": {
+    "type": "array"
+   },
+   "principles": {
+    "type": "array"
+   },
+   "rules": {
+    "type": "array"
+   },
+   "roles": {
+    "type": "array"
+   },
+   "risk": {
+    "type": "array"
+   },
+   "stage": {
+    "type": "object"
+   },
+   "live": {
+    "type": "object"
+   },
+   "memory": {
+    "type": "object"
+   },
+   "improve": {
+    "type": "object"
+   },
+   "checkpoint_cycle": {
+    "type": "array"
+   },
+   "checkpoint_rules": {
+    "type": "array"
+   },
+   "added": {
+    "type": "array"
+   },
+   "deleted": {
+    "type": "array"
+   },
+   "assumptions": {
+    "type": "array"
+   },
+   "automate": {
+    "type": "object"
+   },
+   "indexes": {
+    "type": "array"
+   }
+  }
+ }
+}

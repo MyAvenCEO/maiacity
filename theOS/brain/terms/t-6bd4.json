@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-6bd4",
  "word": "avenSANDBOX",
+ "about": [
+  "avensandbox"
+ ],
  "means": "theOS's box: one image with every tool (Playwright with Chromium, Rust with wasm, the nightly with cargo-fuzz, bun, Lean, versitygw, clang), built from theOS/sandbox/box/ by its image workflow and the same in a cloud session, on a GitHub runner and on a Mac; the cloud environment of the same name warms it.",
  "supersedes": [
   {

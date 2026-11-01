@@ -1,7 +1,6 @@
-// Sources: one doc per source theOS and avenCEO learned from. A protocol is drawn as its flow. "Used by" follows every
+// brain's app (the Sources app became brain's, d-eaaf): one doc per source theOS and avenCEO learned from. A protocol is drawn as its flow. "Used by" follows every
 // path from avenCEO's definition, the AIPs and their reviews to this source; who read it, when and how, is the trace of
 // the intents that read it. Reads only.
-// this app is brain's (in brain/) after AIP-3's migration, the Sources app (in sources/) before it
 const HERE = location.pathname.includes('/brain/') ? 'brain' : 'sources';
 const $ = (s) => document.querySelector(s);
 // text people see names every doc it mentions (D-75); a path shown as a path is escaped with W.esc alone

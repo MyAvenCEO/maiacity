@@ -21,7 +21,8 @@ const PREFIX = { decision: 'd', intent: 'aip', reference: 'src', term: 't', sess
 function walk(dir, out = []) {
   for (const n of readdirSync(dir)) {
     const p = join(dir, n);
-    if (statSync(p).isDirectory()) walk(p, out);
+    // generated output (a check's report in out/) is not a doc
+    if (statSync(p).isDirectory()) { if (n !== 'out' && n !== 'node_modules') walk(p, out); }
     else if (n.endsWith('.json')) out.push(p);
   }
   return out;

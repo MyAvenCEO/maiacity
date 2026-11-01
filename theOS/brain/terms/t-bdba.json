@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-bdba",
  "word": "aven",
+ "about": [
+  "aven"
+ ],
  "means": "Our agent harness framework (it was avenCEO): its steps, gates, doc types and checkers, and the Intents app that shows them. avenMAIA is the instance we use.",
  "supersedes": [],
  "reflection": {

@@ -1,0 +1,28 @@
+{
+ "type": "decision",
+ "id": "d-be19",
+ "title": "production's checks catch mistakes; write access guards",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "session": "s-ac54",
+ "about": [
+  "release",
+  "security"
+ ],
+ "quote": "Accept it: the checks catch mistakes, and write access is the guard.",
+ "means": "production's three required checks (Only from main, avenSANDBOX, theOS) stay as they are. They catch mistakes, not someone with write access: a pull request can add a workflow that reports the same check names, because GitHub matches a required check by its name and source only. Only Samuel and his sessions have write access, and only they can merge into production, so that access is the guard. No organization ruleset and no approval step for outside contributors' workflow runs (rv-d660, round 2).",
+ "intents": [
+  "aip-59ad"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-fdc7",
+  "d-06a8",
+  "d-820e"
+ ],
+ "reflection": {
+  "checked": "every decision that holds about release and production's checks",
+  "result": "supersedes nothing"
+ },
+ "at": "2026-11-01T15:29Z"
+}

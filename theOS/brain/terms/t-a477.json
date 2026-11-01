@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-a477",
  "word": "Worker",
+ "about": [
+  "worker"
+ ],
  "means": "An agent that writes: understands, specifies, builds, fixes.",
  "supersedes": [],
  "reflection": {

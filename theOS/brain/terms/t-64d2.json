@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-64d2",
  "word": "Reflection",
+ "about": [
+  "reflection"
+ ],
  "means": "brain's step on every new decision or term: check it against every one that still holds, and write on the new one what it supersedes or merges.",
  "supersedes": [],
  "reflection": {

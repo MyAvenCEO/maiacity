@@ -2,6 +2,9 @@
  "type": "term",
  "id": "t-fcf4",
  "word": "Lean, Aeneas, vectors",
+ "about": [
+  "lean, aeneas, vectors"
+ ],
  "means": "Lean proves claims about a model; Aeneas translates Rust into Lean; vectors are examples Lean writes for the Rust tests.",
  "supersedes": [],
  "reflection": {

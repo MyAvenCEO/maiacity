@@ -30,5 +30,43 @@
   "author": "agent",
   "note": "A checker's prompt changes only by an event that names it.",
   "reflection": "Every new one says what it supersedes or merges among the ones of its type that hold; every change to it is an event of an AIP in the same commit (d-f960)."
+ },
+ "schema": {
+  "type": "object",
+  "required": [
+   "type",
+   "id",
+   "lens",
+   "name",
+   "what",
+   "prompt",
+   "record_placeholder"
+  ],
+  "properties": {
+   "type": {
+    "enum": [
+     "checker"
+    ]
+   },
+   "id": {
+    "type": "string",
+    "pattern": "^ck-[0-9a-f]{4,}$"
+   },
+   "lens": {
+    "type": "string"
+   },
+   "name": {
+    "type": "string"
+   },
+   "what": {
+    "type": "string"
+   },
+   "prompt": {
+    "type": "string"
+   },
+   "record_placeholder": {
+    "type": "string"
+   }
+  }
  }
 }
