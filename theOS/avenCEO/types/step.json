@@ -36,7 +36,6 @@
   "step": "AIP-1's steps",
   "author": "agent",
   "note": "avenCEO's definition is built by AIP-1.",
-  "kind": "living",
-  "reflection": "Every new one is checked against the ones of its type that hold and says what it supersedes or merges; it is revised in place, each revision an event in the trace."
+  "reflection": "Every new one says what it supersedes or merges among the ones of its type that hold; every change to it is an event of an AIP in the same commit (D-40)."
  }
 }

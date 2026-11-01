@@ -79,7 +79,7 @@
   "assumptions": [
    "theOS is a standalone, fresh project: everything lives in theOS/, built from scratch. avenCEO touches no code outside theOS/. theOS owns avenSANDBOX (AIP-2) and its release (AIP-5); taking them over is their work.",
    "theOS/ is the single source of truth and our memory: one JSON doc per thing. Three apps show them: Docs (theOS/docs/index.html, with the OLD-AIPs board), Intents (theOS/avenCEO/index.html) and Sources (theOS/sources/index.html), behind the dashboard theOS/index.html.",
-   "The plan adds, all inside theOS/: theOS/CLAUDE.md with the done rule, theOS/package.json with its lockfile (Playwright, pinned to the session's Chromium in /opt/pw-browsers), and theOS/avenCEO/checks/ (the check command, the crawl, the docs check, the pixel diff and the look checker's prompt).",
+   "The plan adds, all inside theOS/: theOS/CLAUDE.md with the done rule, theOS/package.json with its lockfile (Playwright pinned to avenSANDBOX's image, the only source of the browser; until AIP-2 puts the check inside it, the session's Playwright and Chromium), and theOS/avenCEO/checks/ (the check command, the crawl and the docs check).",
    "The 91 OLD-AIPs and their board are legacy: learned from; their decisions and lessons move into avenCEO's format in a later consolidation AIP.",
    "Changes to the apps are ordinary edits under the done rule, not part of this AIP.",
    "You pass Gate A and Gate B; machines pass the Mechanical gate and checkers the Review gate."
@@ -233,7 +233,7 @@
   },
   {
    "what": "Release gating, and where theOS's checks run",
-   "until": "AIP-2, which gives theOS the sandbox and the release pipeline (D-24)."
+   "until": "AIP-5."
   },
   {
    "what": "The pixel diff and the look checker",

@@ -31,7 +31,6 @@
   "step": "any step",
   "author": "agent",
   "note": "Written once per author.",
-  "kind": "kept",
-  "reflection": "Every new one is checked against the ones of its type that hold and says what it supersedes or merges; it is never edited after, only superseded."
+  "reflection": "Every new one says what it supersedes or merges among the ones of its type that hold; every change to it is an event of an AIP in the same commit (D-40)."
  }
 }

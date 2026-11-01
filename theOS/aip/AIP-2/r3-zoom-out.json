@@ -1,0 +1,68 @@
+{
+ "type": "review",
+ "id": "aip/AIP-2/r3-zoom-out",
+ "intent": "aip/AIP-2",
+ "round": 3,
+ "lens": "zoom-out",
+ "commit": "e74702594",
+ "checker": "a fresh agent",
+ "prompt": "You are a \"goldfish\" reviewer: a fresh reader with no history of this project. Your persona is a skeptical architect who hates unnecessary complexity, speculative features (YAGNI), premature optimisation and reinventing what already exists. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nThe project is theOS, a standalone, fresh project in /home/user/maiacity/theOS/. Everything is built from scratch inside theOS/. Code outside theOS/ (maiacity, aven/DB2, aven/ops, the repository's .claude and CLAUDE.md) is legacy: it may be learned from, never changed or depended on. theOS now owns avenSANDBOX and the release pipeline (AIP-2): taking them over is AIP-2's work, nothing else changes legacy code. Do not propose reusing legacy code by import or by editing it.\n\ntheOS keeps one JSON doc per thing, each with a \"type\", linking others by path: a path like \"aip/AIP-1\" is the file theOS/aip/AIP-1.json.\n\nRead this record, plus the docs and files it names:\n  /home/user/maiacity/theOS/aip/AIP-2.json\nIt is one intent of avenCEO, theOS's agent harness. avenCEO's definition is theOS/avenCEO/avenCEO.json; read it and the step, gate and type docs it links.\n\nEarlier review rounds are the review docs listed under the record's \"reviews\", each with an answer to every finding. Those findings are settled: do not raise them again unless the record shows the fix did not actually happen. The record's \"events\" are append-only history: older events may describe earlier revisions; judge the record as it stands now.\n\nYour job is the zoom-out review:\n1. YAGNI: which claims, checkpoints or parts are not needed for the first useful version? What could be deleted or deferred without losing the root cause the record names?\n2. Root problem: does the plan address the root cause it states, or a symptom?\n3. Order: is the checkpoint order really smallest-first, with each one useful on its own?\n4. Dead ends or over-engineering: anything that blocks later change, or is heavier than the problem needs.\n5. Inside theOS/: is anything already there that the plan rebuilds needlessly? Search theOS/ to find out.\n\nFor each finding give: Severity (Blocker | Major | Nit), the affected part, and the reasoning, with a concrete simpler alternative where you have one. At most 500 words, plain text, no praise, lead with what is wrong. If you find no Blocker or Major, say so plainly.",
+ "findings": [
+  {
+   "sev": "Major",
+   "scope": "order, checkpoints 3 and 4",
+   "text": "Checkpoint 3 waits for AIP-1's checkpoint 1, and c4 runs theOS's check in cloud-setup.sh; neither exists, so AIP-2 cannot reach Gate B. Simpler: cloud-setup.sh only pulls the image; the environment switch is a checkpoint with no dependency; each tool's version is the smoke step; theOS's check inside the image comes last.",
+   "answer": "fix",
+   "note": "As proposed: cloud-setup.sh only pulls the image; the environment switch is checkpoint 3, with no dependency; each tool's version is the smoke step; theOS's check inside the image is the last checkpoint."
+  },
+  {
+   "sev": "Major",
+   "scope": "c3, outcome: no runner",
+   "text": "The snapshot keeps files, not processes; dockerd is not running. Something must start dockerd and docker run the image with theOS/ mounted in every scenario; nothing does. Simpler: one theOS/sandbox/run.sh (start dockerd if down, then docker run --rm -v theOS:/work <tag> <cmd>), used by the workflow, a session and a Mac.",
+   "answer": "fix",
+   "note": "As proposed: theOS/sandbox/run.sh."
+  },
+  {
+   "sev": "Major",
+   "scope": "c3: two browsers",
+   "text": "AIP-1 pins Playwright to the session's chromium-1243; the image is playwright:v1.64.1, which expects chromium 1248. Simpler: the image is the only source of the browser; theOS's lockfile pins the image's Playwright.",
+   "answer": "fix",
+   "note": "As proposed: the image is the only source of the browser; AIP-1's assumption says so."
+  },
+  {
+   "sev": "Nit",
+   "scope": "tag.mjs",
+   "text": "It walks avenDB's manifests; git rev-parse HEAD:theOS/sandbox/box gives the folder's hash with no code.",
+   "answer": "fix",
+   "note": "As proposed: the tag is git rev-parse HEAD:theOS/sandbox/box; no tag.mjs."
+  },
+  {
+   "sev": "Nit",
+   "scope": "tools",
+   "text": "versitygw, clang/llvm and the pinned wasm-bindgen exist for avenDB; ask whether every tool covers them.",
+   "answer": "decline",
+   "note": "Kept: you asked to keep every tool and not strip the sandbox (D-33)."
+  },
+  {
+   "sev": "Nit",
+   "scope": "the Mac",
+   "text": "c3 needs a Mac run that no checkpoint or task names.",
+   "answer": "fix",
+   "note": "The Mac run is in Gate B's task."
+  },
+  {
+   "sev": "Nit",
+   "scope": "outcome",
+   "text": "The image workflow runs only on box changes, so it does not check theOS on every change; \"same report\" needs \"on the same commit\".",
+   "answer": "fix",
+   "note": "The outcome says theOS's check command, on the same commit, in every scenario."
+  },
+  {
+   "sev": "Nit",
+   "scope": "measure",
+   "text": "AIP-2 releases nothing: call the undo metric \"undos tried\".",
+   "answer": "fix",
+   "note": "Renamed: undos tried."
+  }
+ ]
+}

@@ -90,7 +90,8 @@
   "decisions/D-36",
   "decisions/D-37",
   "decisions/D-38",
-  "decisions/D-39"
+  "decisions/D-39",
+  "decisions/D-40"
  ],
  "corrections": [
   {
@@ -137,6 +138,9 @@
  "intents": [
   "aip/AIP-1",
   "aip/AIP-2",
-  "aip/AIP-3"
+  "aip/AIP-3",
+  "aip/AIP-4",
+  "aip/AIP-5",
+  "aip/AIP-6"
  ]
 }

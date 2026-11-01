@@ -1,0 +1,29 @@
+{
+ "type": "decision",
+ "id": "D-40",
+ "n": 40,
+ "title": "Metrics are written only by an AIP's flow",
+ "subtype": "answer",
+ "by": "authors/samuel-andert",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "about": [
+  "metrics",
+  "trace",
+  "memory"
+ ],
+ "quote": "Metrics and the like should only ever be authored by an AIP's own flow.",
+ "means": "Metrics, their measurements, lessons and every other doc are written only by an event of an AIP's lifecycle, never directly: a measurement by an AIP's Learn step, a lesson by the Learn step that drew it.",
+ "intents": [
+  "aip/AIP-3"
+ ],
+ "supersedes": [],
+ "relates": [
+  "decisions/D-19",
+  "decisions/D-29"
+ ],
+ "reflection": {
+  "checked": "every decision before D-40 that held",
+  "result": "supersedes nothing"
+ }
+}

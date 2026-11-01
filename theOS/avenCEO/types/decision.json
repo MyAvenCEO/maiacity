@@ -60,7 +60,6 @@
   "step": "any step",
   "author": "human",
   "note": "Your words, recorded in the step that asked you; brain's reflection runs in the same event.",
-  "kind": "kept",
-  "reflection": "Every new one is checked against the ones of its type that hold and says what it supersedes or merges; it is never edited after, only superseded."
+  "reflection": "Every new one says what it supersedes or merges among the ones of its type that hold; every change to it is an event of an AIP in the same commit (D-40)."
  }
 }

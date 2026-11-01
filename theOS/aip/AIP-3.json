@@ -24,6 +24,13 @@
    "answered": "decisions/D-31"
   },
   {
+   "q": "AIP-3's link versions (c5): defer them until a correction is traced to a link whose target moved? Most links point at docs that never change or change all the time, so the flag would carry little signal, and showing it needs a publish step no AIP builds yet.",
+   "options": [
+    "Defer c5 until such a correction (recommended)",
+    "Keep c5 in checkpoint 4"
+   ]
+  },
+  {
    "q": "Gate A for AIP-3, after its spec review: are its claims, assumptions, outcome and mockup what must be true?",
    "options": [
     "Yes",
@@ -75,7 +82,7 @@
   ],
   "assumptions": [
    "One JSON doc per thing stays fast enough for the apps at a few hundred docs.",
-   "Rewriting git history stays forbidden, so a pinned commit never disappears."
+   "Git history is never rewritten, so a version computed from git always resolves."
   ],
   "risk": "Can be undone: every change is files in git."
  },
@@ -112,25 +119,41 @@
  "claims": [
   {
    "id": "c1",
-   "promise": "Every JSON doc in the folders the apps read has a type with a type doc, and matches the schema inside that type doc.",
-   "fails": "A misspelt field, a missing or misspelt type, or a missing author passes unseen.",
-   "check": "Each schema rejects a planted bad doc of its type, and a doc with a misspelt type fails; every current doc passes. docs/ (the OLD-AIPs' data) is out of scope.",
+   "promise": "Every JSON doc in aip, decisions, sessions, sources, metrics, lessons, authors and avenCEO has a type with a type doc, and matches the JSON Schema inside it; by is always an author doc.",
+   "fails": "A misspelt field, a missing or misspelt type, or a free-text author passes unseen.",
+   "check": "Validated with ajv; each schema rejects a planted bad doc of its type; every current doc passes. Index docs and copied lists are checked separately (c8).",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c8",
+   "promise": "Every copied list (the index docs, the definition's lists, a session's decisions and intents) equals what it copies.",
+   "fails": "A list drifts, as session.intents did.",
+   "check": "The check compares each with its folder or backlinks.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c7",
+   "promise": "A command lists what holds for every type, from the same holds() the apps use (ui/wiki.js), and theOS/CLAUDE.md names it as the first thing to read.",
+   "fails": "Agents act on a superseded doc because they read raw files.",
+   "check": "The command and the apps load one holds(); theOS/CLAUDE.md's first rule names the command.",
    "kind": "mechanical",
    "result": "open"
   },
   {
    "id": "c3",
-   "promise": "One reflection for every type: every new doc, of any type, lists the ids of the docs of its type it was checked against (equal to what held) and what it supersedes or merges, in whole or in part, each a doc that exists. A kept doc (decision, term, lesson, metric, reference, review, author) is never edited after, only superseded; a living doc (intent, step, gate, type, checker, check, session) is revised in place. Every path points at a doc that exists.",
-   "fails": "A new doc of some type lands without saying what it replaces, a kept doc is edited, or a link points at nothing.",
-   "check": "For each type, the check fails a planted new doc whose checked list misses a holding doc of its type, an edited kept doc, and a dangling path; each type doc says kept or living.",
+   "promise": "One reflection for every type: what a new doc supersedes or merges ({doc, part, what}) held at the parent commit; what holds is computed, never stored.",
+   "fails": "A doc supersedes something that no longer held, or points at nothing.",
+   "check": "The check fails a planted supersedes of a doc already superseded at the parent, and a dangling path. Missed supersedes are caught by the outcome and the deferred checker, not here.",
    "kind": "mechanical",
    "result": "open"
   },
   {
    "id": "c4",
-   "promise": "Every type is traced the same way: its type doc names the events that write its docs (what, step, kind of author); every doc changed in a change is written by an event added in that change, by an author doc, that fits its type's rule; and every doc shows the same trace.",
-   "fails": "A doc changes that no step wrote, an author is a free string, or a type is traced differently from the rest.",
-   "check": "The check fails a planted edit with no event, an event whose by is not an author doc, and a decision written by an agent's event; every doc page shows the Trace section.",
+   "promise": "Every doc changed in a commit is written by an event added in that commit, by an author doc, in a step its type allows; an intent's own doc is covered by its new events. Metrics, lessons and every other doc are written only this way (D-40).",
+   "fails": "A doc changes that no AIP step wrote.",
+   "check": "The check fails a planted edit with no event, an event by a free string, and a measurement written outside a Learn step.",
    "kind": "mechanical",
    "result": "open"
   },
@@ -139,14 +162,6 @@
    "promise": "A term that renames a word carries the old word and where the rename applies, and the terms check fails when the old word comes back there, and stays quiet where its other meaning is right.",
    "fails": "A rename sweep misses a place, or a word with two meanings raises a false alarm.",
    "check": "A test plants each renamed word once where the rename applies and once where its other meaning is right; renames of avenCEO, aven and OLD-AIP are written as such term docs.",
-   "kind": "mechanical",
-   "result": "open"
-  },
-  {
-   "id": "c7",
-   "promise": "Agents read what holds before they act: a command lists, for every type, the docs that hold and the ones superseded, and theOS/CLAUDE.md names it first. The apps show the same Hold now and Superseded split for every type.",
-   "fails": "Agents act on a superseded doc of any type because they read raw files.",
-   "check": "The command's list equals the apps' lists for every type on the same commit.",
    "kind": "mechanical",
    "result": "open"
   },
@@ -168,23 +183,24 @@
   }
  ],
  "outcome": {
-  "promise": "Over the next three sessions: no correction whose cause is an outdated decision or word.",
-  "how": "Each correction event names its cause (decision, word or other); counted per session, apart from AIP-1's layout and sweep causes.",
+  "promise": "Over the three sessions after checkpoint 2: no correction whose cause is an outdated decision, an outdated word or a missed supersede.",
+  "how": "Each correction event names its cause; counted per session.",
   "kind": "measured",
   "result": "open"
  },
  "checkpoints": [
   {
    "n": 1,
-   "adds": "After AIP-1's checkpoint 1: the schema inside each type doc, type docs for index and definition, kept or living on each type, the dangling-link check; the command that lists what holds for every type, named first in theOS/CLAUDE.md.",
+   "adds": "After AIP-1's checkpoint 1: schemas inside the type docs, validated with ajv; the single supersedes form; copied lists checked; holds() in ui/wiki.js and the command, named first in theOS/CLAUDE.md; the definition's rules and Reflection term updated; a cause field on corrections.",
    "claims": [
     "c1",
+    "c8",
     "c7"
    ]
   },
   {
    "n": 2,
-   "adds": "One reflection and one trace enforced for every type: checked lists, kept docs unchanged, every changed doc written by an event in its change that fits its type's rule; supersedes entries in one form ({doc, part, what}).",
+   "adds": "The reflection and the trace enforced on every commit.",
    "claims": [
     "c3",
     "c4"
@@ -192,14 +208,14 @@
   },
   {
    "n": 3,
-   "adds": "Renames as term docs with their old word and scope; the terms check.",
+   "adds": "Renames as term docs with their old word and scope; the terms check; AIP-1's sweep deleted from the done rule.",
    "claims": [
     "c6"
    ]
   },
   {
    "n": 4,
-   "adds": "Arrays that only grow, checked; a link's version computed from git and its flag in the published artifact.",
+   "adds": "Arrays that only grow; a link's version, as you answer question 3.",
    "claims": [
     "c2",
     "c5"
@@ -724,11 +740,55 @@
     "avenCEO/types/decision"
    ],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T09:53Z",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Round 2 on revision 3: r2-paraphrase (1 Blocker, 6 Major, 3 Nit); r2-zoom-out (1 Blocker, 4 Major, 3 Nit). Not clean.",
+   "how": "fresh subagents with the prompts avenCEO/checkers/paraphrase and avenCEO/checkers/zoom-out, the record filled in",
+   "writes": [
+    "aip/AIP-3/r2-paraphrase",
+    "aip/AIP-3/r2-zoom-out"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:53Z",
+   "by": "authors/samuel-andert",
+   "what": "answer",
+   "text": "Metrics and every other doc are written only by an AIP's own flow.",
+   "how": "in chat, your words polished and kept in the decision; brain's reflection by hand",
+   "writes": [
+    "decisions/D-40"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:53Z",
+   "by": "authors/avenmaia",
+   "what": "revised",
+   "text": "Revision 4: a change is a commit; the kept and living split dropped, every edit through an event (D-40); what held computed at the parent, nothing stored; copied lists checked (c8); one holds() for apps and command; the single supersedes form first; the link versions escalated.",
+   "how": "by hand",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:53Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Every finding of round 2 answered (16 fixed, 2 escalated as question 3); revision 4 written.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t12"
   }
  ],
  "reviews": [
   "aip/AIP-3/r1-paraphrase",
-  "aip/AIP-3/r1-zoom-out"
+  "aip/AIP-3/r1-zoom-out",
+  "aip/AIP-3/r2-paraphrase",
+  "aip/AIP-3/r2-zoom-out"
  ],
  "source": {
   "type": "idea",
@@ -764,12 +824,6 @@
    "what": "Revision 3: one logic for every type (D-32), the simplifications (D-31)",
    "step": 2,
    "who": "authors/avenmaia"
-  },
-  {
-   "id": "t4",
-   "what": "Spec review round 2: paraphrase and zoom-out",
-   "step": 2,
-   "who": "two fresh checkers"
   },
   {
    "id": "t5",
@@ -809,6 +863,24 @@
    "id": "t10",
    "what": "Gate B: try it",
    "step": 3,
+   "who": "authors/samuel-andert"
+  },
+  {
+   "id": "t12",
+   "what": "Answer round 2 and write revision 4",
+   "step": 2,
+   "who": "authors/avenmaia"
+  },
+  {
+   "id": "t4",
+   "what": "Spec review round 3",
+   "step": 2,
+   "who": "two fresh checkers"
+  },
+  {
+   "id": "t13",
+   "what": "Your answer: defer the link versions (question 3)",
+   "step": 2,
    "who": "authors/samuel-andert"
   }
  ]

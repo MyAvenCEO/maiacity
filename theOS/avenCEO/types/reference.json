@@ -50,7 +50,6 @@
   "step": "any step",
   "author": "agent",
   "note": "Reading is an event of the intent that read it; a doc of ours about it is written by an event too.",
-  "kind": "kept",
-  "reflection": "Every new one is checked against the ones of its type that hold and says what it supersedes or merges; it is never edited after, only superseded."
+  "reflection": "Every new one says what it supersedes or merges among the ones of its type that hold; every change to it is an event of an AIP in the same commit (D-40)."
  }
 }
