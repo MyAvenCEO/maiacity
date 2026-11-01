@@ -731,6 +731,15 @@
    "how": "by hand, aip-59ad's thread, run ids relayed by avenMAIA",
    "writes": [],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T14:31Z",
+   "by": "a-6ffb",
+   "what": "verified",
+   "text": "The first real release, run 41316332593 on b20033fa3: 'avenSANDBOX' and 'theOS' green; the deploy job: SSH with pinned host keys, then 'theOS theos-19f774dc916c is current (previous: releases/26.10.31v6)'; health green: /, /docs/index.html, /avenCEO/index.html, /brain/index.html, /brain/ids.json and /aip/aip-59ad.json each 200 with the tree's bytes; /ping 200, /healthz 200, /generate_204 204 and /aven.json 200 (923d12c4c788875c), each as before; the switch-back step skipped. aven.maia.city serves theOS (14:31Z); the Aven Peer untouched.",
+   "how": "by hand, aip-59ad's thread, from the run's jobs and the deploy job's log",
+   "writes": [],
+   "reads": []
   }
  ],
  "problem": {
@@ -935,7 +944,7 @@
    "fails": "The deploy touches the Aven Peer or Caddy's config (d-9364), serves a half-unpacked tree, or serves the dashboard in place of a missing file (Caddy's fallback) and still reports green.",
    "check": "The server script runs against a temporary folder laid out like the server: a listing before and after shows changes only under releases/ and the links, the same tree changes nothing, a broken archive or one without index.html leaves current where it was. After each real deploy the health step fetches /, /docs/index.html, /avenCEO/index.html, /brain/index.html, /brain/ids.json and /aip/aip-59ad.json and compares each body byte for byte with the same file in the commit's tree (six files, not the whole tree); /ping, /healthz and /generate_204 must answer 200 or 204 and as before, /aven.json with the same body.",
    "kind": "mechanical",
-   "result": "open"
+   "result": "pass"
   },
   {
    "id": "c4",
