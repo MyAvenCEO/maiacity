@@ -18,6 +18,7 @@
   .tile h2 { margin: 0; font: 500 26px var(--display); } .tile p { margin: 0; font-size: 14.5px; line-height: 1.5; color: var(--ink-soft); }
   .tile .nums { display: flex; flex-wrap: wrap; gap: 6px; } .tile .k { font: 500 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--clay); }
   .waiting { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 18px 20px; display: grid; gap: 10px; }
+  .waiting[hidden] { display: none; }
   .waiting h2 { margin: 0; font: 500 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-soft); }
   @media (max-width: 900px) { .apps { grid-template-columns: minmax(0, 1fr); } }
 </style>
