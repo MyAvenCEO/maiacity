@@ -1,0 +1,10 @@
+{
+ "type": "lesson",
+ "id": "l-9291",
+ "status": "proposed",
+ "cue": "A fix is tried where it was written, not where it runs.",
+ "lesson": "Try a fix in each place it will run (a runner's non-root user, a step's own shell, the Mac) before calling it fixed.",
+ "evidence": "aip-6fb1: the Playwright pin was set but not exported in the runner's step, so the smoke went red on 'PIN: unbound variable' (run 41304760197); check.sh, tried as root here, could not write commit.txt as the runner's user and still went green (run 41307490037).",
+ "confidence": "high",
+ "intent": "aip-f663"
+}
