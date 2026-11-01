@@ -1,0 +1,10 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "src-65a4",
+ "title": "Holepunch blind-peer",
+ "about": [
+  "p2p sync"
+ ],
+ "url": "https://github.com/holepunchto/blind-peer"
+}

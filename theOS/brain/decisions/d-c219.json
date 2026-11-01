@@ -1,0 +1,40 @@
+{
+ "type": "decision",
+ "id": "d-c219",
+ "n": 70,
+ "title": "avenSANDBOX stays a required check",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "release",
+  "checks"
+ ],
+ "quote": "Why remove avenSANDBOX? We still want it built and published, and aip-6fb1 does that anyway.",
+ "means": "production's ruleset keeps all three required checks: Only from main, avenSANDBOX and theOS. theOS's release workflow reports avenSANDBOX as proof that the box of the commit released is published and works; aip-6fb1's image workflow builds it. Samuel set the source of theOS to GitHub Actions on 1 November, so nothing is left for him in GitHub's settings.",
+ "intents": [
+  "aip-59ad",
+  "aip-6fb1"
+ ],
+ "supersedes": [
+  {
+   "decision": "d-f6da",
+   "part": "avenSANDBOX leaves at Gate B",
+   "what": "avenSANDBOX stays a required check beside Only from main and theOS."
+  },
+  {
+   "decision": "d-fdc7",
+   "part": "in place of the old ones",
+   "what": "theOS's checks join the ruleset beside the old ones instead of replacing them."
+  }
+ ],
+ "relates": [
+  "d-a347",
+  "d-0a23"
+ ],
+ "reflection": {
+  "checked": "every decision before d-c219 that held",
+  "result": "supersedes d-f6da in part (avenSANDBOX leaving at Gate B) and d-fdc7 in part (checks replaced at Gate B)"
+ }
+}

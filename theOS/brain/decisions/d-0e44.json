@@ -1,0 +1,29 @@
+{
+ "type": "decision",
+ "id": "d-0e44",
+ "n": 12,
+ "title": "One schema, links pinned by commit",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "memory",
+  "formats",
+  "references"
+ ],
+ "quote": "Let's settle the schema of our single source of truth for everything we generate in AIPs, learnings and sources: what is a JSON file, what is a list of JSON entries, what is markdown, and what is both. And link every internal git resource by its commit hash, never by a bare file path, because history changes.",
+ "means": "aip-836d starts: one schema for theOS's memory, and internal references pinned by commit.",
+ "intents": [
+  "aip-836d"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-b4ce",
+  "d-9698"
+ ],
+ "reflection": {
+  "checked": "every decision before d-0e44 that held",
+  "result": "supersedes nothing"
+ }
+}

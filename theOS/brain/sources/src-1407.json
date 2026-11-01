@@ -1,0 +1,10 @@
+{
+ "type": "reference",
+ "subtype": "spec",
+ "id": "src-1407",
+ "title": "Distributed MLS (draft)",
+ "about": [
+  "group encryption"
+ ],
+ "url": "https://github.com/germ-mark/distributed-mls-id/blob/main/draft-xue-distributed-mls.md"
+}

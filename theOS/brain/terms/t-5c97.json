@@ -1,0 +1,11 @@
+{
+ "type": "term",
+ "id": "t-5c97",
+ "word": "Work branch",
+ "means": "The git branch the work is pushed to; never main.",
+ "supersedes": [],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "held when brain's reflection began"
+ }
+}

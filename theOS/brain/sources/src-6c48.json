@@ -1,0 +1,10 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "src-6c48",
+ "title": "iroh-gossip",
+ "about": [
+  "p2p sync"
+ ],
+ "url": "https://github.com/n0-computer/iroh-gossip"
+}

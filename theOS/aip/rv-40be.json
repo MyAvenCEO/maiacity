@@ -1,0 +1,54 @@
+{
+ "type": "review",
+ "id": "rv-40be",
+ "intent": "aip-31df",
+ "round": 5,
+ "lens": "zoom-out",
+ "commit": "5c9b5bc97",
+ "checker": "a fresh agent",
+ "prompt": "You are a \"goldfish\" reviewer: a fresh reader with no history of this project. Your persona is a skeptical architect who hates unnecessary complexity, speculative features (YAGNI), premature optimisation and reinventing what already exists. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nThe project is theOS, a standalone, fresh project in /home/user/maiacity/theOS/. Everything is built from scratch inside theOS/. Code outside theOS/ (maiacity, aven/DB2, aven/ops, the repository's .claude and CLAUDE.md) is legacy: it may be learned from, never changed or depended on. theOS now owns avenSANDBOX and the release pipeline (AIP-2): taking them over is AIP-2's work, nothing else changes legacy code. Do not propose reusing legacy code by import or by editing it.\n\ntheOS keeps one JSON doc per thing, each with a \"type\", linking others by path: a path like \"aip/AIP-1\" is the file theOS/aip/AIP-1.json.\n\nRead this record, plus the docs and files it names:\n  /home/user/maiacity/theOS/aip/AIP-1.json\nIt is one intent of avenCEO, theOS's agent harness. avenCEO's definition is theOS/avenCEO/avenCEO.json; read it and the step, gate and type docs it links.\n\nEarlier review rounds are the review docs listed under the record's \"reviews\", each with an answer to every finding. Those findings are settled: do not raise them again unless the record shows the fix did not actually happen. The record's \"events\" are append-only history: older events may describe earlier revisions; judge the record as it stands now.\n\nYour job is the zoom-out review:\n1. YAGNI: which claims, checkpoints or parts are not needed for the first useful version? What could be deleted or deferred without losing the root cause the record names?\n2. Root problem: does the plan address the root cause it states, or a symptom?\n3. Order: is the checkpoint order really smallest-first, with each one useful on its own?\n4. Dead ends or over-engineering: anything that blocks later change, or is heavier than the problem needs.\n5. Inside theOS/: is anything already there that the plan rebuilds needlessly? Search theOS/ to find out.\n\nFor each finding give: Severity (Blocker | Major | Nit), the affected part, and the reasoning, with a concrete simpler alternative where you have one. At most 500 words, plain text, no praise, lead with what is wrong. If you find no Blocker or Major, say so plainly.",
+ "findings": [
+  {
+   "sev": "Major",
+   "scope": "c3",
+   "text": "\"One view per group (by kind and size)\" misses a break that depends on content, and one replay is exactly that: at 3ddc07339's parent only 23 of the 91 intents had scenarios, so only those Learn tabs showed the squeezed table, while the same fix restyled the Weakness label on every Learn tab. The one view shown may have no table; whether the replay passes depends on the pick, never said. Simpler: group views by rendered structure (the set of class names in the view), or show the member of each group with the most changed pixels.",
+   "answer": "fix",
+   "note": "As proposed: grouped by rendered structure and size; the member with the most changed pixels is shown."
+  },
+  {
+   "sev": "Major",
+   "scope": "outcome",
+   "text": "aip-31df still promises zero renamed-term escapes and builds nothing for them; the manual sweep is the agent checking only what it thinks of, the root cause named. Fewer corrections per 10 commits counts judgement corrections nothing here addresses, is confounded by aip-6fb1 to aip-a195 running in the same sessions, and the layout escapes were all in the now-legacy board. The measured sessions still read \"the next three\". Simpler: zero layout escapes over the first three sessions after checkpoint 3 that change view code (.js, .css or .html), with a minimum number of such commits; renamed terms to aip-836d's outcome; total corrections a tracked metric, not this AIP's test.",
+   "answer": "fix",
+   "note": "As proposed: zero layout escapes over the first three sessions after checkpoint 3 that change view code, at least five such commits each; renamed terms to aip-836d; total corrections a tracked metric."
+  },
+  {
+   "sev": "Major",
+   "scope": "checkpoint 1, order",
+   "text": "Checkpoint 1 has no claim and its check command runs nothing, so both gates pass with nothing tested; as the anchor for aip-6fb1 (which installs from a lockfile that arrives in checkpoint 2) it is wrong. Simpler: checkpoint 1 is theOS/CLAUDE.md, package.json, a crawl that follows links only, and c1, the smallest slice that would have caught faf266961; checkpoint 2 states behind buttons, the screenshots and c4; checkpoint 3 the pixel diff and the checker. Point aip-6fb1 and aip-836d at the new checkpoint 1.",
+   "answer": "fix",
+   "note": "As proposed: checkpoint 1 is theOS/CLAUDE.md, package.json, a link-following crawl and c1; checkpoint 2 states behind buttons, screenshots and c4; checkpoint 3 the pixel diff and the look checker. aip-6fb1 and aip-836d point at the new checkpoint 1."
+  },
+  {
+   "sev": "Nit",
+   "scope": "c3",
+   "text": "The replay pairs still need \"the commit that broke a view\", named nowhere; 106ba0e5f's parent c352c39b4 is where the views first appear, so its diff marks every view new. The pair (the fix's parent, the fix) gives both tests: flag the parent, pass the fix.",
+   "answer": "fix",
+   "note": "As proposed: the pair (the fix's parent, the fix)."
+  },
+  {
+   "sev": "Nit",
+   "scope": "c4",
+   "text": "Screenshots \"cached by commit\", but the box is reclaimed and the cache's place is unsaid: the first check of a session renders about 880 screenshots each for base and change. Time c4 with an empty cache, or say where the cache lives.",
+   "answer": "fix",
+   "note": "c4 is timed with an empty cache: the box is reclaimed, so the cache lives only as long as the session."
+  },
+  {
+   "sev": "Nit",
+   "scope": "aip-a195",
+   "text": "aip-a195 may replace the three apps; state that the crawl starts from any HTML entry page.",
+   "answer": "fix",
+   "note": "c2 starts from any HTML entry page given to it; theOS/index.html is the default."
+  }
+ ]
+}

@@ -1,0 +1,10 @@
+{
+ "type": "reference",
+ "subtype": "docs",
+ "id": "src-45e6",
+ "title": "Keyhive: convergent capabilities",
+ "about": [
+  "access control"
+ ],
+ "url": "https://github.com/inkandswitch/keyhive/blob/main/design/convergent_capabilities.md"
+}

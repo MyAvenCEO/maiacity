@@ -1,0 +1,40 @@
+{
+ "type": "intent",
+ "id": "aip-c455",
+ "title": "One spec round while you are reachable",
+ "kind": "avenCEO",
+ "note": "In the inbox: a change to avenCEO proposed by aip-6fb1's reflection (d-f7b3), measured before it is kept.",
+ "source": {
+  "type": "idea",
+  "by": "a-4c7a",
+  "at": "2026-11-01",
+  "text": "Spec review stops at one round when you are reachable: the zoom-out lens checks deletions against the source first, and three rounds become one round plus your answer.",
+  "links": [
+   "aip-6fb1"
+  ],
+  "ref": "d-f7b3"
+ },
+ "questions": [],
+ "reviews": [],
+ "tasks": [
+  {
+   "id": "t1",
+   "what": "Understand: the problem, from aip-6fb1's run and its lesson",
+   "step": 1,
+   "who": "a-6ffb"
+  }
+ ],
+ "events": [
+  {
+   "at": "2026-11-01T10:41Z",
+   "by": "a-6ffb",
+   "what": "source",
+   "text": "Spec review stops at one round when you are reachable: the zoom-out lens checks deletions against the source first, and three rounds become one round plus your answer.",
+   "how": "from aip-6fb1's reflection, at your answer (d-f7b3)",
+   "writes": [
+    "d-f7b3"
+   ],
+   "reads": []
+  }
+ ]
+}

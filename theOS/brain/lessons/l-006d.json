@@ -1,0 +1,10 @@
+{
+ "type": "lesson",
+ "id": "l-006d",
+ "status": "proposed",
+ "cue": "A test is run by hand and only its result is written down.",
+ "lesson": "Keep the test as a file the next agent or machine can run; the event names the file.",
+ "evidence": "aip-6fb1 c4's test (planted failure, planted hang, no setup file) existed only as an event at 09:58; aip-6fb1's thread had to write it again as theOS/sandbox/test.sh to run it a second time.",
+ "confidence": "high",
+ "intent": "aip-f663"
+}

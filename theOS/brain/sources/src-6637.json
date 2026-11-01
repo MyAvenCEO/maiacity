@@ -1,0 +1,23 @@
+{
+ "type": "reference",
+ "subtype": "docs",
+ "id": "src-6637",
+ "title": "Claude Code: Agent view",
+ "about": [
+  "claude code"
+ ],
+ "url": "https://code.claude.com/docs/en/agent-view.md",
+ "by": "Anthropic",
+ "summary": "claude agents opens a terminal screen of all background local sessions: each row has a state (Working, Needs input, Idle, Completed, Failed, Stopped), a one-line summary (the question for a session that needs you) and a PR label, grouped Pinned, Ready for review, Needs input, Working, Completed. Space peeks and replies, Enter attaches. claude agents --json gives scripts the state. Local sessions only, research preview. Only the first 100,000 of about 148,000 characters were read.",
+ "ideas": [
+  "Needs input with the question as the summary is exactly what a gate row needs.",
+  "A JSON listing of session states lets a mod or script read them.",
+  "Local only: it does not list cloud threads."
+ ],
+ "took": [
+  {
+   "idea": "A row per thread with its waiting question",
+   "where": "rs-0844: pattern overview-groups"
+  }
+ ]
+}

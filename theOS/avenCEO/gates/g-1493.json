@@ -1,0 +1,10 @@
+{
+ "type": "gate",
+ "subtype": "checkpoint",
+ "id": "g-1493",
+ "name": "Mechanical gate",
+ "after": "st-50d8",
+ "who": "machines",
+ "what": "Every check a machine can run: tests, vectors from the model, Lean theorems, the Aeneas proof that the Rust keeps the model, the same tests in wasm, and a screenshot diff against the last published version (against the mockup, for a view that is new).",
+ "when": "every checkpoint"
+}

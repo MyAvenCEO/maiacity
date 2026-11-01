@@ -1,0 +1,29 @@
+{
+ "type": "decision",
+ "id": "d-87aa",
+ "n": 19,
+ "title": "Every write to brain is traced",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "memory",
+  "intents",
+  "trace"
+ ],
+ "quote": "brain is maintained by the intents' lifecycles, so it also traces which step did what, when and how.",
+ "means": "Every write to brain is an event of an intent's lifecycle. The event records when, who, what and how, and which docs it wrote; the step is the one the intent stood at, computed from the events before it. A doc's trace is the event that wrote it.",
+ "intents": [
+  "aip-836d"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-3b1f",
+  "d-8725"
+ ],
+ "reflection": {
+  "checked": "every decision before d-87aa that held",
+  "result": "supersedes nothing"
+ }
+}

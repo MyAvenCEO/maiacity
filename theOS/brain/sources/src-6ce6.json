@@ -1,0 +1,11 @@
+{
+ "type": "reference",
+ "subtype": "code",
+ "id": "src-6ce6",
+ "title": "DXOS HALO: credential graph",
+ "about": [
+  "access control",
+  "identity"
+ ],
+ "url": "https://github.com/dxos/dxos/blob/main/packages/core/halo/credentials/src/graph/credential-graph.ts"
+}

@@ -1,0 +1,34 @@
+{
+ "type": "decision",
+ "id": "d-0020",
+ "n": 32,
+ "title": "One reflection logic for every type",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "memory",
+  "types",
+  "reflection"
+ ],
+ "quote": "aip-836d should be fully generic, not only for decisions: metrics, lessons, terms and the rest all follow the same logic. The command that lists what holds is a good idea.",
+ "means": "brain's reflection is one logic for every type, not only decisions and terms: every new doc of any type is checked against the docs of its type that hold and says what it supersedes or merges; what holds is computed the same way for all, and the command lists it for all.",
+ "intents": [
+  "aip-836d"
+ ],
+ "supersedes": [
+  {
+   "decision": "d-8725",
+   "part": "part",
+   "what": "d-8725 gave the reflection to decisions and terms; it governs every type."
+  }
+ ],
+ "relates": [
+  "d-4d06"
+ ],
+ "reflection": {
+  "checked": "every decision before d-0020 that held",
+  "result": "supersedes d-8725 (part)"
+ }
+}

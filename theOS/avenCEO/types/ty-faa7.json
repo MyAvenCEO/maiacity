@@ -1,0 +1,45 @@
+{
+ "type": "type",
+ "id": "ty-faa7",
+ "name": "research",
+ "file": "aip/AIP-n/research.json",
+ "what": "An intent's Understand research: its question, the sources it read and how, the patterns worth adopting (now, later or no), a recommendation, and what only you can answer.",
+ "subtypes": [],
+ "fields": [
+  {
+   "name": "question",
+   "means": "what it set out to learn"
+  },
+  {
+   "name": "sources, reads",
+   "means": "the reference docs it used, and how each was read"
+  },
+  {
+   "name": "patterns",
+   "means": "each with what it is, where it was seen, adopt now, later or no, and why"
+  },
+  {
+   "name": "recommendation",
+   "means": "what to adopt first, as simply as possible"
+  },
+  {
+   "name": "open_questions",
+   "means": "what only you can answer"
+  }
+ ],
+ "written_by": "the intent's thread, in its Understand step",
+ "links_to": [
+  "ty-dca5",
+  "ty-3043"
+ ],
+ "trace": {
+  "events": [
+   "read",
+   "understood"
+  ],
+  "step": "1 · Understand",
+  "author": "agent",
+  "note": "Written by the intent's thread; each source it read is a read event of the intent.",
+  "reflection": "Every new one says what it supersedes or merges among the ones of its type that hold; every change to it is an event of an AIP in the same commit (d-f960)."
+ }
+}

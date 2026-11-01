@@ -1,0 +1,26 @@
+{
+ "type": "decision",
+ "id": "d-7994",
+ "n": 60,
+ "title": "Deploys run from production",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "release"
+ ],
+ "quote": "From production.",
+ "means": "theOS deploys only from the branch production, started by hand in the environment production, as before.",
+ "intents": [
+  "aip-59ad"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-367c"
+ ],
+ "reflection": {
+  "checked": "every decision before d-7994 that held",
+  "result": "supersedes nothing"
+ }
+}

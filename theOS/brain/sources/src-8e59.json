@@ -1,0 +1,23 @@
+{
+ "type": "reference",
+ "subtype": "docs",
+ "id": "src-8e59",
+ "title": "Claude Code: Customize your status line",
+ "about": [
+  "claude code"
+ ],
+ "url": "https://code.claude.com/docs/en/statusline.md",
+ "by": "Anthropic",
+ "summary": "The status line runs a script that gets JSON session data on stdin (model, workspace, cost, context window, rate limits and more) and prints what to show, in a row above the footer. It updates on events, debounced at 300 ms, and on an optional refreshInterval of at least one second. Multi-line output, colours and OSC 8 links are allowed. A mod can also set a status entry with $.ui.status.",
+ "ideas": [
+  "One line, always visible, is enough for 'what waits for you'.",
+  "refreshInterval keeps the line current while the session is idle.",
+  "It shows text and links only; nothing to press beyond a link."
+ ],
+ "took": [
+  {
+   "idea": "A one-line 'waiting on you' count",
+   "where": "rs-0844: pattern status-line"
+  }
+ ]
+}

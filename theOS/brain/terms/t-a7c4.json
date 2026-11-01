@@ -1,0 +1,11 @@
+{
+ "type": "term",
+ "id": "t-a7c4",
+ "word": "Author",
+ "means": "Who wrote something in brain: Samuel Andert for everything human, avenMAIA for every agent session.",
+ "supersedes": [],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "supersedes nothing"
+ }
+}

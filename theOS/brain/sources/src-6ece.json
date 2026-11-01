@@ -1,0 +1,55 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "src-6ece",
+ "title": "Beads (bd): issue memory for coding agents",
+ "about": [
+  "agent memory",
+  "issue tracking",
+  "multi-agent",
+  "git"
+ ],
+ "url": "https://github.com/steveyegge/beads",
+ "by": "Steve Yegge's open-source Go CLI, now maintained under gastownhall. Read: the current README, the docs pages on hash IDs, sync, issues, dependencies, agent setup and the FAQ, and the v0.20.1 README for the earlier JSONL-in-git design (via raw.githubusercontent.com).",
+ "summary": "Beads gives coding agents a dependency graph of work items instead of markdown plans. Every read and write goes through one CLI, bd, with --json output, and agents ask 'bd ready' for work that has no open blockers. Ids are short hashes so parallel agents and branches never mint the same id. Early versions kept the truth in a JSONL file committed to git; today the truth is a Dolt database (a SQL database with git-style history and cell-level merge), and the JSONL file is only an export.",
+ "ideas": [
+  "One command is the only door: bd create, show, list, update, close, dep add, ready, blocked, supersede, remember, prime, with the same --json on every verb, and 'do not use markdown TODO lists'.",
+  "Hash ids (bd-a1b2, from title, time and a random salt) need no coordination, so two branches that each create an item merge cleanly; ids grow from 3 to 8 characters as the database grows, and children get readable ids (bd-a3f8.1).",
+  "'Ready' is computed, never stored: an item is ready when every blocking dependency is closed. Only blocking link types (blocks, parent-child, conditional-blocks, waits-for) count; related, discovered-from, caused-by and supersedes are annotations.",
+  "Claiming is atomic: 'bd update <id> --claim' sets the assignee and in_progress in one step, so two agents never take the same item.",
+  "Session start is deterministic: a SessionStart hook runs 'bd prime', which injects about 1-2k tokens of workflow rules and the memories stored with 'bd remember'; it fires again after context compaction.",
+  "Destructive writes are stricter than reads: comments and deletes need the full id, because a short prefix could silently hit the wrong item, and delete previews unless --force.",
+  "Memory decay: old closed items are summarised ('bd admin compact', earlier 'bd compact --days 90') or removed by 'bd gc', so context stays small without losing the record.",
+  "The JSONL era taught a lesson: an upsert-only import cannot tell a deleted record from one that was never exported, so the git file stopped being the source of truth."
+ ],
+ "took": [
+  {
+   "idea": "One CLI as the only door, every verb with --json",
+   "where": "brain's write command"
+  },
+  {
+   "idea": "Hash or content-derived ids so parallel threads never collide on D-n numbers",
+   "where": "brain's write command (id minting)"
+  },
+  {
+   "idea": "A computed 'ready' or 'current' query, like bd ready, never a stored flag",
+   "where": "holds()"
+  },
+  {
+   "idea": "A prime command run by a SessionStart hook that prints what holds now",
+   "where": "theOS/CLAUDE.md and the brain skill"
+  },
+  {
+   "idea": "supersedes as a typed link next to blocking links",
+   "where": "the reflection"
+  },
+  {
+   "idea": "Full id required for destructive or unconfirmed writes",
+   "where": "the check"
+  },
+  {
+   "idea": "Never treat an upsert-only export as the truth: deletions need their own record",
+   "where": "the reflection"
+  }
+ ]
+}

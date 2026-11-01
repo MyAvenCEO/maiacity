@@ -1,0 +1,26 @@
+{
+ "type": "decision",
+ "id": "d-1ab2",
+ "n": 8,
+ "title": "Three apps behind a dashboard",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "apps"
+ ],
+ "quote": "Split the viewers: Docs, Intents (the avenCEO harness UI) and Sources are three separate apps, behind a dashboard on the index page.",
+ "means": "theOS/index.html is a dashboard of three apps: Docs, Intents (avenCEO) and Sources.",
+ "intents": [
+  "def-e833"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-b4ce"
+ ],
+ "reflection": {
+  "checked": "every decision before d-1ab2 that held",
+  "result": "supersedes nothing"
+ }
+}

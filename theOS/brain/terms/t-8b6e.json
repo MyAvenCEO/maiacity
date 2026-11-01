@@ -1,0 +1,11 @@
+{
+ "type": "term",
+ "id": "t-8b6e",
+ "word": "avenPEER",
+ "means": "avenDB's peer (legacy): the Aven Peer at aven.maia.city runs its last release.",
+ "supersedes": [],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "supersedes nothing"
+ }
+}

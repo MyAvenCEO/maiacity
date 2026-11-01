@@ -1,0 +1,34 @@
+{
+ "type": "decision",
+ "id": "d-8725",
+ "n": 18,
+ "title": "Terms follow brain's reflection too",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "memory",
+  "terms",
+  "decisions"
+ ],
+ "quote": "The reflection that maintains brain and resolves contradictions is part of brain itself, so it should govern terms the same way: superseding and merging them.",
+ "means": "The reflection is brain's: it governs decisions and terms alike. A new term can supersede or merge earlier terms; the current glossary is computed.",
+ "intents": [
+  "aip-836d"
+ ],
+ "supersedes": [
+  {
+   "decision": "d-cbd4",
+   "part": "part",
+   "what": "d-cbd4 gave the reflection to decisions; it is brain's, for decisions and terms alike."
+  }
+ ],
+ "relates": [
+  "d-728e"
+ ],
+ "reflection": {
+  "checked": "every decision before d-8725 that held",
+  "result": "supersedes d-cbd4 (part)"
+ }
+}

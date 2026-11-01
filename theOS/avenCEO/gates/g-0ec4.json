@@ -1,0 +1,10 @@
+{
+ "type": "gate",
+ "subtype": "human",
+ "id": "g-0ec4",
+ "name": "Gate B",
+ "after": "st-50d8",
+ "who": "a-4c7a",
+ "what": "You try it as a person would. One question: ship, change, or send back. Release follows by itself, with a tested undo.",
+ "how": "Asked in chat; your answer is quoted into a decision doc with its time."
+}

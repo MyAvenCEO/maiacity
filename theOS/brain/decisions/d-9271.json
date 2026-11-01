@@ -1,0 +1,34 @@
+{
+ "type": "decision",
+ "id": "d-9271",
+ "n": 72,
+ "title": "brain's MCP server back into aip-836d, last checkpoint",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "brain",
+  "intents"
+ ],
+ "quote": "Yes: put it back into aip-836d as its last checkpoint.",
+ "means": "aip-836d builds brain's MCP server as its own last checkpoint, serving the same verbs brain.mjs exports (d-d9fd). aip-836d gave it to aip-a195 only so it would not wait on aip-a195's Gate A (d-432d); with aip-a195 dropped (d-0603), nothing is left to wait on.",
+ "intents": [
+  "aip-836d"
+ ],
+ "supersedes": [
+  {
+   "decision": "d-432d",
+   "part": "whole",
+   "what": "The MCP server moves back from aip-a195 into aip-836d, as its last checkpoint."
+  }
+ ],
+ "relates": [
+  "d-d9fd",
+  "d-0603"
+ ],
+ "reflection": {
+  "checked": "every decision before d-9271 that held",
+  "result": "supersedes d-432d (whole); closes the conflict d-0603 left with d-432d"
+ }
+}

@@ -1,0 +1,54 @@
+{
+ "type": "review",
+ "id": "rv-ffbe",
+ "intent": "aip-31df",
+ "round": 4,
+ "lens": "zoom-out",
+ "commit": "2d6f53842",
+ "checker": "a fresh agent",
+ "prompt": "You are a \"goldfish\" reviewer: a fresh reader with no history of this project. Your persona is a skeptical architect who hates unnecessary complexity, speculative features (YAGNI), premature optimisation and reinventing what already exists. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nThe project is theOS, a standalone, fresh project in /home/user/maiacity/theOS/. Everything is built from scratch inside theOS/. Code outside theOS/ (maiacity, aven/DB2, aven/ops, the repository's .claude and CLAUDE.md) is legacy: it may be learned from, never changed or depended on. theOS now owns avenSANDBOX and the release pipeline (AIP-2): taking them over is AIP-2's work, nothing else changes legacy code. Do not propose reusing legacy code by import or by editing it.\n\ntheOS keeps one JSON doc per thing, each with a \"type\", linking others by path: a path like \"aip/AIP-1\" is the file theOS/aip/AIP-1.json.\n\nRead this record, plus the docs and files it names:\n  /home/user/maiacity/theOS/aip/AIP-1.json\nIt is one intent of avenCEO, theOS's agent harness. avenCEO's definition is theOS/avenCEO/avenCEO.json; read it and the step, gate and type docs it links.\n\nEarlier review rounds are the review docs listed under the record's \"reviews\", each with an answer to every finding. Those findings are settled: do not raise them again unless the record shows the fix did not actually happen. The record's \"events\" are append-only history: older events may describe earlier revisions; judge the record as it stands now.\n\nYour job is the zoom-out review:\n1. YAGNI: which claims, checkpoints or parts are not needed for the first useful version? What could be deleted or deferred without losing the root cause the record names?\n2. Root problem: does the plan address the root cause it states, or a symptom?\n3. Order: is the checkpoint order really smallest-first, with each one useful on its own?\n4. Dead ends or over-engineering: anything that blocks later change, or is heavier than the problem needs.\n5. Inside theOS/: is anything already there that the plan rebuilds needlessly? Search theOS/ to find out.\n\nFor each finding give: Severity (Blocker | Major | Nit), the affected part, and the reasoning, with a concrete simpler alternative where you have one. At most 500 words, plain text, no praise, lead with what is wrong. If you find no Blocker or Major, say so plainly.",
+ "findings": [
+  {
+   "sev": "Blocker",
+   "scope": "c4, checkpoint 1",
+   "text": "The term docs it reads cannot express a rename: no old word, no scope, no list of places where the old word's other meaning is still correct. No term doc records rule to policy, the one renamed-term escape in the evidence. The only merge is Doc replacing Record; if a merge counts as a rename, theOS fails today (\"record\" 404 times). Adding a scope changes the term schema, which d-1fee gave to aip-836d, so checkpoint 1 waits for aip-836d or writes its schema, while covering 1 of the 10 corrections. Simpler: take c4 out of aip-31df; the rename check moves to aip-836d; until then the done rule says to sweep the old word the decision names. The assumptions still list theOS/docs/glossary.json.",
+   "answer": "fix",
+   "note": "As proposed: the terms check moves to aip-836d (c6), where a term can carry its old word and scope; checkpoint 1 is theOS/CLAUDE.md, the check command and the done rule. Until then the done rule sweeps the old word a decision names."
+  },
+  {
+   "sev": "Major",
+   "scope": "c1, c2 replays",
+   "text": "At the parents of 106ba0e5f, 3ddc07339 and faf266961 there is no theOS/index.html and only one app (theOS/docs); faf266961's parent has no intent pages or Learn tabs. c2's check cannot pass as written, c1 cannot run in the three apps there, and c2 never checks \"every\" state. Simpler: start at theOS/index.html, or theOS/docs/index.html where there is no dashboard yet; check c2 on the current commit against the routes W.crawl, stories.json and intents.json already list.",
+   "answer": "fix",
+   "note": "As proposed: the crawl starts at theOS/index.html, or theOS/docs/index.html where there is no dashboard; c2 is checked on the current commit against the routes the docs already list, plus a planted state behind a button."
+  },
+  {
+   "sev": "Major",
+   "scope": "c3, done rule",
+   "text": "The checker's input has no limit and comes every commit: about 440 states, about 1,300 screenshots at three sizes, rendered for the base and the change. A record edit changes every view that links back to it, so nearly every commit wakes a checker; one edit to ui/base.css hands it hundreds of images. \"Base commit\" is not defined. The done rule is not enforced, so a slow check is the one that gets skipped. Simpler: the base is the commit of the last published version; cache screenshots by commit; group changed views by kind and size, one per group plus counts; drop 1440x900; wait for document.fonts.ready; add a claim with a time limit.",
+   "answer": "fix",
+   "note": "As proposed: the base is the last published version; screenshots are cached by commit; changed views are grouped by kind and size, and the checker sees one per group with the counts; two sizes (390x844, 1280x720); each screenshot waits for document.fonts.ready; new claim c4 limits the check command's time."
+  },
+  {
+   "sev": "Nit",
+   "scope": "checkpoint 1",
+   "text": "package.json comes in checkpoint 1 but its only check reads text: move Playwright to checkpoint 2 and pin it to the box's browser (/opt/pw-browsers), or it downloads browsers.",
+   "answer": "fix",
+   "note": "Playwright moves to checkpoint 2, pinned to the box's browser."
+  },
+  {
+   "sev": "Nit",
+   "scope": "c3",
+   "text": "No bisecting needed: replay each fix as the pair (the fix's parent, the fix).",
+   "answer": "fix",
+   "note": "c3 replays each pair (the commit that broke a view, its parent) and (the fix, its parent); no bisecting."
+  },
+  {
+   "sev": "Nit",
+   "scope": "m-a293, gaps",
+   "text": "m-a293 still defines an escape as after Gate B, per intent, so the outcome's escapes are recorded nowhere. The escape \"the published page was not updated\" has no check and is missing from the gaps.",
+   "answer": "fix",
+   "note": "m-a293 now counts problems found in work already called done, per session. The unpublished artifact joins the gaps."
+  }
+ ]
+}

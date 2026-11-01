@@ -1,0 +1,35 @@
+{
+ "type": "type",
+ "id": "ty-b981",
+ "name": "metric",
+ "file": "metrics/<name>.json",
+ "what": "One number avenCEO learns from: what it counts, which way we want it, how it is measured, and its measurements.",
+ "subtypes": [
+  "by hand",
+  "computed"
+ ],
+ "fields": [
+  {
+   "name": "what, want, how",
+   "means": "the definition"
+  },
+  {
+   "name": "measurements",
+   "means": "one row per session"
+  }
+ ],
+ "written_by": "the orchestrator",
+ "links_to": [
+  "ty-4076"
+ ],
+ "trace": {
+  "events": [
+   "measured",
+   "changed"
+  ],
+  "step": "4 · Learn",
+  "author": "agent",
+  "note": "A measurement is an event of the intent it measures.",
+  "reflection": "Every new one says what it supersedes or merges among the ones of its type that hold; every change to it is an event of an AIP in the same commit (d-f960)."
+ }
+}
