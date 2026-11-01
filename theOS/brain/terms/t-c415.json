@@ -1,0 +1,16 @@
+{
+ "type": "term",
+ "id": "t-c415",
+ "word": "Box",
+ "means": "The avenSANDBOX image: where every theOS check runs, in every scenario.",
+ "supersedes": [
+  {
+   "term": "t-5ca6",
+   "how": "redefined: the image, not the session's own tools"
+  }
+ ],
+ "reflection": {
+  "checked": "every term that held",
+  "result": "supersedes box (redefined)"
+ }
+}

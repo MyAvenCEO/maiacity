@@ -1,0 +1,10 @@
+{
+ "type": "reference",
+ "subtype": "docs",
+ "id": "src-bc6a",
+ "title": "Holochain: capabilities",
+ "about": [
+  "access control"
+ ],
+ "url": "https://github.com/holochain/docs-pages/blob/main/src/pages/concepts/8_calls_capabilities.md"
+}

@@ -1,0 +1,47 @@
+{
+ "type": "reference",
+ "subtype": "docs",
+ "id": "src-4181",
+ "title": "Supermemory",
+ "about": [
+  "agent memory",
+  "supersession",
+  "forgetting",
+  "benchmarks"
+ ],
+ "url": "https://github.com/supermemoryai/supermemory",
+ "by": "Supermemory (supermemoryai), a company with a hosted API and open-source plugins. Read from its README and two doc pages in its repo (apps/docs/concepts/graph-memory and apps/docs/recall/memory-operations). Then from supermemory.ai/docs: the llms.txt index, Graph memory (concepts/graph-memory), Memory Operations (recall/memory-operations), User profiles (concepts/user-profiles), the Memories API overview (api-reference/memories), Update a memory (creates new version), Supermemory MCP (supermemory-mcp/mcp), Agents, skills and MCP (agents-and-mcp) and MemoryBench's Measuring results (memorybench/memscore). Its research page was not read.",
+ "summary": "A hosted memory and retrieval service. You ingest documents into a namespace; a background process it calls dreaming extracts small facts (memories) and links each new one to older ones as updates, extends or derives. An isLatest flag keeps search on the current fact while the history stays in the graph. Forgetting is a soft delete. Agents reach it through MCP tools (search_memory, get_profile, add_memory, forget_memory) and a profile of stable and recent facts. It measures memory with MemoryBench, reporting accuracy, search latency and context tokens side by side.",
+ "ideas": [
+  "Documents are what you hand in; memories are the facts extracted from them, and every memory links back to its document. Memories are meant to be atomic: one topic each, with enough context to stand alone.",
+  "Three link types: updates (the new fact replaces the old for 'what is true now', history kept), extends (adds detail, both stay valid) and derives (a fact inferred from several others).",
+  "isLatest marks the current memory in an update chain. In the v4 API, PATCH /v4/memories writes a new version and keeps the old one with isLatest=false, and a list call returns memories with their history and source documents. v5 has no direct create route: every memory comes from an ingested document.",
+  "Forgetting is a soft delete by id: forgotten memories leave search but are kept. Forgetting by meaning (forget-matching) needs a dryRun preview first, then the chosen ids; it takes at most 100 per request. Temporary facts drop out when they expire, and casual chatter is filtered out.",
+  "Dreaming is the background step that builds the graph. The default, dynamic, groups related documents into coherent units such as a whole conversation; instant processes one document alone so it is searchable at once, at extra cost.",
+  "Memory types behave differently: facts persist until updated, preferences strengthen with repetition, episodes decay unless significant.",
+  "A profile splits stable facts (static) from recent activity (dynamic), and buckets add topics; it is attached once per session instead of a search on every turn. Everything is scoped by a namespace (called a container tag before v5).",
+  "MemoryBench scores providers with an LLM judge (0 or 1 per question) and reports MemScore as three numbers side by side: accuracy, search latency and context tokens, plus per question type, on benchmarks such as LoCoMo and LongMemEval."
+ ],
+ "took": [
+  {
+   "idea": "Name the kind of link a new doc has to an older one: replaces, extends, derives",
+   "where": "the reflection"
+  },
+  {
+   "idea": "Current is a flag computed from the update chain, not a stored overwrite",
+   "where": "holds()"
+  },
+  {
+   "idea": "A short 'what stands now' profile read at the start of a session",
+   "where": "brain's read command"
+  },
+  {
+   "idea": "Removal by meaning only through a preview first, then by exact ids",
+   "where": "brain's write command"
+  },
+  {
+   "idea": "Report accuracy, latency and context size side by side, not as one score",
+   "where": "brain's metric"
+  }
+ ]
+}

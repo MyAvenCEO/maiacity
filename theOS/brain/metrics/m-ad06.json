@@ -1,0 +1,9 @@
+{
+ "type": "metric",
+ "id": "m-ad06",
+ "name": "Mechanical share",
+ "what": "claims checked by a machine, of all claims",
+ "want": "rising",
+ "how": "by hand, until a metrics script exists",
+ "measurements": []
+}

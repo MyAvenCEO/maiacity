@@ -1,0 +1,42 @@
+{
+ "type": "reference",
+ "subtype": "paper",
+ "id": "src-8530",
+ "title": "Mem0: Building Production-Ready AI Agents with Scalable Long-Term Memory",
+ "about": [
+  "agent memory",
+  "memory operations",
+  "conflict resolution",
+  "benchmarks"
+ ],
+ "url": "https://arxiv.org/abs/2504.19413",
+ "by": "Prateek Chhikara, Dev Khant, Saket Aryan, Taranjeet Singh, Deshraj Yadav (Mem0), April 2025. Read in full from the arXiv PDF (v1): method, experiments, appendix with prompts and Algorithm 1.",
+ "summary": "Mem0 extracts short facts from each new pair of messages, then for each fact finds the 10 most similar stored memories and lets a model pick one operation: ADD, UPDATE, DELETE or NOOP. A graph variant (Mem0g) stores entity-relation triples and, on conflict, marks the old relation invalid instead of removing it. On the LoCoMo benchmark, scored by a model acting as judge, Mem0 gets 66.9% and Mem0g 68.4%, below full context (72.9%) but with far fewer tokens and lower latency. The authors ran every baseline themselves, including competitors.",
+ "ideas": [
+  "Writing is two steps: a model extracts candidate facts from the newest message pair (with a rolling summary and the last 10 messages as context), then a second model call decides what each fact does to memory.",
+  "The update step has exactly four operations: ADD (nothing similar exists), UPDATE (the fact adds to a memory), DELETE (the fact contradicts a memory) and NOOP (already known or irrelevant). The paper uses the word NOOP.",
+  "In the base system the choice is made by the model, not by a rule, and DELETE removes the old memory: Algorithm 1 takes it out of the store. Only the graph variant keeps the old relation, marked invalid, 'to enable temporal reasoning'.",
+  "UPDATE replaces a memory only when the new fact carries more information (Algorithm 1 compares 'InformationContent'), keeping the same id.",
+  "Time is handled at read time: the answer prompt tells the model to prefer the most recent memory when memories contradict and to turn relative dates into absolute ones using each memory's timestamp.",
+  "Measured on LoCoMo (10 conversations of about 26,000 tokens, roughly 200 questions each, adversarial questions left out) with an LLM judge run 10 times: overall J 66.88 (Mem0), 68.44 (Mem0g), 65.99 (Zep), 52.90 (OpenAI memory), 72.90 (full context). Mem0 p95 total latency 1.44 s versus 17.1 s for full context.",
+  "Caveats: the authors ran all baselines, including commercial rivals (Zep, OpenAI) through their products; they report Zep needed hours before new memories were retrievable and used over 600k tokens per conversation, claims Zep did not get to answer. There is no ablation of the four operations, so the paper does not show that UPDATE or DELETE help."
+ ],
+ "took": [
+  {
+   "idea": "A closed set of write outcomes, including an explicit no-change outcome (NOOP), returned for every candidate write",
+   "where": "brain's write command"
+  },
+  {
+   "idea": "Do not delete on contradiction (the paper's own graph variant marks the old fact invalid); record the supersession instead",
+   "where": "the reflection"
+  },
+  {
+   "idea": "Most recent wins when two docs conflict, but as a fixed rule in code, not a hint in an answer prompt",
+   "where": "holds()"
+  },
+  {
+   "idea": "Report the benchmark, the judge, who ran the baselines and the token and latency cost together, never one accuracy number alone",
+   "where": "the outcome metric"
+  }
+ ]
+}

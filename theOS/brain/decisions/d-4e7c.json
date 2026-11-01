@@ -1,0 +1,37 @@
+{
+ "type": "decision",
+ "id": "d-4e7c",
+ "n": 76,
+ "title": "Every doc is shown by its hash id and title",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "brain",
+  "links",
+  "apps"
+ ],
+ "quote": "No: reference the hash and the title.",
+ "means": "No D-n or AIP-n numbers. Every doc, decisions and intents included, gets a flat hash id in the migration and is referenced by it (d-f83e, d-eb50). Wherever a doc is shown, in the apps, in brain prime and in text, it reads as its hash id with its title, for example \"aip-<hex> · brain: theOS's memory\". New decisions and intents get hash ids like every other doc, and their order is their time.",
+ "intents": [
+  "aip-836d"
+ ],
+ "supersedes": [
+  {
+   "decision": "d-09f1",
+   "part": "whole",
+   "what": "Not D-n and AIP-n names: every doc is shown by its hash id and its title."
+  }
+ ],
+ "relates": [
+  "d-ac7d",
+  "d-f83e",
+  "d-eb50",
+  "d-6e78"
+ ],
+ "reflection": {
+  "checked": "every decision before d-4e7c that held",
+  "result": "supersedes d-09f1 (whole), which misread the answer; settles what d-ac7d left open: D-n and AIP-n do not stay as labels"
+ }
+}

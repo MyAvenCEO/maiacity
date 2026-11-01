@@ -1,0 +1,10 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "src-d32c",
+ "title": "Harness²: repository, code and prompts",
+ "about": [
+  "agent harness"
+ ],
+ "url": "https://github.com/google-research/harness2"
+}

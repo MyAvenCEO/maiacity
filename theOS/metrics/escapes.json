@@ -1,9 +1,0 @@
-{
- "type": "metric",
- "id": "metrics/escapes",
- "name": "Escapes",
- "what": "problems found in work already called done, per session",
- "want": "falling",
- "how": "by hand, until a metrics script exists",
- "measurements": []
-}

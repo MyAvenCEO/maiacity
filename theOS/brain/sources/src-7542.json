@@ -1,0 +1,11 @@
+{
+ "type": "reference",
+ "subtype": "repo",
+ "id": "src-7542",
+ "title": "Cambria",
+ "about": [
+  "local-first data",
+  "schema and migrations"
+ ],
+ "url": "https://github.com/inkandswitch/cambria-project"
+}

@@ -1,0 +1,28 @@
+{
+ "type": "decision",
+ "id": "d-3d81",
+ "n": 23,
+ "title": "revision 6, then round 4",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "intents",
+  "review"
+ ],
+ "quote": "Revision 6.",
+ "means": "aip-31df goes to revision 6, then spec review round 4: it folds in d-b4ce to d-1fee and hands the memory parts (decisions, terms, the trace) to aip-836d.",
+ "intents": [
+  "aip-31df",
+  "aip-836d"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-d483"
+ ],
+ "reflection": {
+  "checked": "every decision before d-3d81 that held",
+  "result": "supersedes nothing"
+ }
+}

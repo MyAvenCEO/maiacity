@@ -1,0 +1,801 @@
+{
+ "type": "intent",
+ "id": "aip-59ad",
+ "title": "theOS's release and deploy",
+ "kind": "product",
+ "note": "In the inbox: split from aip-6fb1 (its round 2). What theOS releases and where, production's ruleset, and the deploy at aven.maia.city.",
+ "source": {
+  "type": "idea",
+  "by": "a-4c7a",
+  "at": "2026-11-01",
+  "text": "theOS should be the authority over the whole release pipeline, avenSANDBOX included.",
+  "links": [
+   "aip-6fb1"
+  ],
+  "ref": "d-a347"
+ },
+ "questions": [
+  {
+   "q": "What does theOS release, and where?",
+   "options": [
+    "theOS's apps as a site at aven.maia.city, in place of avenOS, once checkpoint 3 is green (recommended)",
+    "Somewhere new: tell me where",
+    "Nothing public yet: releases are versions on GitHub only"
+   ],
+   "answered": "d-367c"
+  },
+  {
+   "q": "aven.maia.city also carries the Aven Peer: its relay (/relay, /ping, /healthz), /aven.json, and your vault and passkey for maia.city. When theOS's apps replace avenOS there, what happens to the Aven Peer?",
+   "options": [
+    "It stays as it is: theOS's release replaces only the pages; the relay, /aven.json and the peer are untouched (recommended)",
+    "It is taken down with avenOS",
+    "Something else: tell me"
+   ],
+   "answer": "Keep the Aven Peer, its relay and the vault's passkey as they are for now, in parallel with theOS's apps; we come back to this later.",
+   "answered": "d-9364"
+  },
+  {
+   "q": "Should avenOS stay reachable anywhere once theOS's apps replace it at aven.maia.city?",
+   "options": [
+    "No: its releases stay on GitHub and the undo can bring it back (recommended)",
+    "Yes, under a path of aven.maia.city: tell me which",
+    "Yes, on another host name: tell me which"
+   ],
+   "answer": "No.",
+   "answered": "d-2154"
+  },
+  {
+   "q": "d-367c says theOS releases its apps once its release is green. What counts as green?",
+   "options": [
+    "theOS's check command (aip-31df's crawl and docs check) passes inside avenSANDBOX's image on the commit released (recommended)",
+    "That, plus your try at Gate B of this intent",
+    "Something else: tell me"
+   ],
+   "answer": "Yes: theOS's check command passes inside avenSANDBOX's image on the commit released.",
+   "answered": "d-4ca4"
+  },
+  {
+   "q": "production's ruleset (aven/DB2/SANDBOX.md, your part 5) requires the checks 'Only from main' and 'avenSANDBOX', which came from avenDB's parked workflow. Is that ruleset set today, and may theOS's release workflow report checks under its own names, which you then put into the ruleset in place of the old ones?",
+   "options": [
+    "Yes: it is set as written; theOS reports its own checks and I change the ruleset at Gate B (recommended)",
+    "It is set; keep the old names, and theOS's workflow reports checks under them",
+    "It is not set yet: tell me"
+   ],
+   "answer": "Yes, with a step-by-step guide for what I need to do.",
+   "answered": "d-fdc7"
+  },
+  {
+   "q": "Who starts theOS's deploy, and from where?",
+   "options": [
+    "By hand, as before, in the environment production, and only from production (you limit the environment's branches to production) (recommended)",
+    "Automatically after every green release from production",
+    "By hand as before, from any branch"
+   ],
+   "answer": "production starts the deploy automatically, the moment a change is merged into production and its release is green.",
+   "note": "Answered first as d-7994 (by hand); d-06a8 supersedes it in part: the deploy starts by itself the moment a change lands in production and its release is green, only from production.",
+   "answered": "d-06a8"
+  },
+  {
+   "q": "The environment production holds a secret MAIA_CITY_GUARDIAN_SECRET, which no file in the repository uses, while PRODUCTION.md says MaiaCityGuardian's secret stays offline with its holder. What is it, and should it stay there once production deploys by itself?",
+   "options": [
+    "Delete it: the guardian's secret belongs offline; I keep my copy (recommended, if it is the guardian's private key)",
+    "Keep it: tell me what it is for",
+    "Keep it, and limit the environment to the branch production"
+   ],
+   "answer": "MaiaCityGuardian is legacy (avenDB's): leave it, we don't care about it here.",
+   "answered": "d-eb51"
+  },
+  {
+   "q": "Gate A for aip-59ad, after spec review round 1 (every finding fixed): are its claims (c1, c3, c4, c5), assumptions, two checkpoints, outcome and mockup what must be true?",
+   "options": [
+    "Yes",
+    "Change: tell me what",
+    "Send it back"
+   ],
+   "answered": "d-113f"
+  }
+ ],
+ "reviews": [
+  "rv-1e9d",
+  "rv-4567"
+ ],
+ "tasks": [
+  {
+   "id": "t1",
+   "what": "Your answer: what theOS releases, and where",
+   "step": 1,
+   "who": "a-4c7a"
+  },
+  {
+   "id": "t2",
+   "what": "Understand: production's ruleset, the deploy, what aven.maia.city serves",
+   "step": 1,
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t3",
+   "what": "Your part: read production's ruleset and the environment production",
+   "step": 1,
+   "who": "a-4c7a",
+   "steps": [
+    "Settings, Rules, Rulesets: the ruleset on production, its enforcement, bypass list and required checks.",
+    "Settings, Environments, production: its deployment branches and required reviewers."
+   ]
+  },
+  {
+   "id": "t13",
+   "what": "Your part in GitHub's settings during Build",
+   "step": 3,
+   "who": "a-4c7a",
+   "steps": [
+    "Checkpoint 1, after theOS's workflow first reports on a pull request to production: set the source of 'theOS' to GitHub Actions in production's ruleset. 'Only from main' and 'avenSANDBOX' stay as they are."
+   ]
+  },
+  {
+   "id": "t4",
+   "what": "Specify: options, claims, outcome, checkpoints, deferred, mockup",
+   "step": 2,
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t5",
+   "what": "Spec review round 1: paraphrase and zoom-out",
+   "step": 2,
+   "who": "two fresh checkers"
+  },
+  {
+   "id": "t6",
+   "what": "Gate A: approve what must be true",
+   "step": 2,
+   "who": "a-4c7a"
+  },
+  {
+   "id": "t7",
+   "what": "Checkpoint 1: the pull request checks",
+   "step": 3,
+   "for": "checkpoint 1",
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t9",
+   "what": "Checkpoint 2: the deploy and its undo",
+   "step": 3,
+   "for": "checkpoint 2",
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t10",
+   "what": "Gate B: the first release, the undo to avenOS and back",
+   "step": 3,
+   "who": "a-4c7a"
+  },
+  {
+   "id": "t11",
+   "what": "Measure the outcome over the first five releases",
+   "step": 4,
+   "for": "the outcome",
+   "who": "a-6ffb"
+  },
+  {
+   "id": "t12",
+   "what": "Answer spec review round 1 and write revision 2",
+   "step": 2,
+   "who": "a-6ffb"
+  }
+ ],
+ "events": [
+  {
+   "at": "2026-11-01T09:33Z",
+   "by": "a-6ffb",
+   "what": "source",
+   "text": "Split from aip-6fb1: the release, its question, production's ruleset and the deploy.",
+   "how": "by hand, from aip-6fb1's round 2 review",
+   "writes": [
+    "aip-59ad"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:38Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "theOS releases its apps as the site at aven.maia.city, in place of avenOS.",
+   "how": "in chat, your words kept verbatim in the decision; brain's reflection by hand",
+   "writes": [
+    "d-367c"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T09:38Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Answered (d-367c).",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t1"
+  },
+  {
+   "at": "2026-11-01T10:00Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "This intent runs in its own thread; avenMAIA orchestrates.",
+   "how": "in chat, your words polished and kept in the decision; brain's reflection by hand",
+   "writes": [
+    "d-2519"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:05Z",
+   "by": "a-6ffb",
+   "what": "understood",
+   "text": "Problem, evidence, whys to the root, truths, assumptions, risk and reuse written: aven.maia.city is served by v1's Caddy from avenDB's parked deploy, production's required checks came from avenDB's parked workflow, and theOS has no release of its own. Five questions for Samuel.",
+   "how": "by hand, aip-59ad's thread; read only: the parked workflows, aven/DB2/PRODUCTION.md and SANDBOX.md, aven/ops/deploy/Caddyfile, caddy.sh, theOS/sandbox, GitHub's releases, tags, branches and avenDEPLOY's runs; no setting, workflow or server touched",
+   "writes": [
+    "aip-59ad"
+   ],
+   "reads": [
+    "d-a347",
+    "d-367c",
+    "aip-6fb1",
+    "aip-31df"
+   ],
+   "task": "t2"
+  },
+  {
+   "at": "2026-11-01T10:05Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Understand written; five questions wait for Samuel.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t2"
+  },
+  {
+   "at": "2026-11-01T10:21Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "Keep the Aven Peer, its relay and the vault's passkey as they are, in parallel, for now; avenOS stays nowhere; green is theOS's check inside the box; yes to the ruleset swap, with a guide; production deploys automatically.",
+   "how": "in chat to aip-59ad's thread, polished; the decisions are avenMAIA's to write",
+   "writes": [
+    "aip-59ad"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:21Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "Answers written on the five questions; assumptions updated (peer kept in parallel, avenOS nowhere, green defined, the deploy automatic); task t3 for Samuel with the ruleset steps.",
+   "how": "by hand, aip-59ad's thread",
+   "writes": [
+    "aip-59ad"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:21Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "The deploy starts the moment a change lands in production.",
+   "how": "in chat to aip-59ad's thread, polished",
+   "writes": [
+    "aip-59ad"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:24Z",
+   "by": "a-4c7a",
+   "what": "observed",
+   "text": "Screenshots of production's ruleset: Active, no bypass, deletions restricted, pull request and status checks required, force pushes blocked.",
+   "how": "in chat to aip-59ad's thread, four screenshots; read by avenMAIA",
+   "writes": [
+    "aip-59ad"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:25Z",
+   "by": "a-4c7a",
+   "what": "observed",
+   "text": "Screenshot of the environment production: no reviewers, no wait timer, no branch restriction; secrets AVEN_PEER_GUARDIAN and MAIA_CITY_GUARDIAN_SECRET.",
+   "how": "in chat to aip-59ad's thread; read by avenMAIA",
+   "writes": [
+    "aip-59ad"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:26Z",
+   "by": "a-4c7a",
+   "what": "observed",
+   "text": "Screenshots of the ruleset's required checks (Only from main, avenSANDBOX, from GitHub Actions), 0 approvals and merge commits only.",
+   "how": "in chat to aip-59ad's thread; read by avenMAIA",
+   "writes": [
+    "aip-59ad"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:26Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Your reading part of t3 is done: production's ruleset and the environment are recorded. The edits wait for Gate B.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t3"
+  },
+  {
+   "at": "2026-11-01T10:33Z",
+   "by": "a-4c7a",
+   "what": "changed",
+   "text": "Limited the environment production to the branch production; added the required check 'theOS' to production's ruleset (any source). MaiaCityGuardian is legacy: leave it.",
+   "how": "in GitHub's settings, by hand; reported in chat to aip-59ad's thread with screenshots",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:43Z",
+   "by": "a-6ffb",
+   "what": "answer",
+   "text": "Questions 1 to 6 linked to d-9364 to d-eb51 (merged from claude/avendb-architect at b979bafd6); d-7994's 'by hand' differs from Samuel's words here, asked of avenMAIA.",
+   "how": "by hand, aip-59ad's thread",
+   "writes": [
+    "aip-59ad"
+   ],
+   "reads": [
+    "d-9364",
+    "d-2154",
+    "d-4ca4",
+    "d-fdc7",
+    "d-7994",
+    "d-eb51"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:43Z",
+   "by": "a-6ffb",
+   "what": "specified",
+   "text": "Four options (one chosen: check, tag, switch the served folder), claims c1 to c5, the outcome, three checkpoints, four deferred, the mockup.",
+   "how": "by hand, aip-59ad's thread",
+   "writes": [
+    "aip-59ad"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:43Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Spec written.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t4"
+  },
+  {
+   "at": "2026-11-01T10:44Z",
+   "by": "a-6ffb",
+   "what": "answer",
+   "text": "Question 5 now points at d-06a8 (the deploy starts by itself, superseding d-7994 in part); c5 cites d-f6da (the environment's branch rule and the ruleset's theOS check).",
+   "how": "by hand, aip-59ad's thread, after merging claude/avendb-architect",
+   "writes": [
+    "aip-59ad"
+   ],
+   "reads": [
+    "d-06a8",
+    "d-f6da"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:46Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Round 1 on 7d453502b: r1-paraphrase (1 Blocker, 7 Major, 4 Nit); r1-zoom-out (3 Major, 3 Nit). Not clean.",
+   "how": "fresh subagents with the prompts ck-9e70 and ck-b9b9, {record} = aip-59ad",
+   "writes": [
+    "rv-1e9d",
+    "rv-4567"
+   ],
+   "reads": [],
+   "task": "t5"
+  },
+  {
+   "at": "2026-11-01T10:46Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Round 1 run.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t5"
+  },
+  {
+   "at": "2026-11-01T10:46Z",
+   "by": "a-6ffb",
+   "what": "revised",
+   "text": "Revision 2: all 18 findings fixed. Tags, release notes and the versioning checkpoint deleted (a build is named by its commit); the health step compares bytes; the check runs again on the push; the deploy secrets move into the environment; Samuel's swap ends checkpoint 1; nothing is pruned; the service worker's premise corrected; terms defined; the outcome has a window.",
+   "how": "by hand, aip-59ad's thread",
+   "writes": [
+    "aip-59ad"
+   ],
+   "reads": [
+    "rv-1e9d",
+    "rv-4567"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:46Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Every finding answered; revision 2 written.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t12"
+  },
+  {
+   "at": "2026-11-01T10:46Z",
+   "by": "a-6ffb",
+   "what": "asked",
+   "text": "Gate A: are the claims, assumptions, checkpoints, outcome and mockup what must be true?",
+   "how": "to avenMAIA, for Samuel",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:50Z",
+   "by": "a-4c7a",
+   "what": "answer",
+   "text": "Keep avenSANDBOX: we still want it built and checked. Keep DEPLOY_SSH_KEY and DEPLOY_KNOWN_HOSTS where they are.",
+   "how": "in chat to aip-59ad's thread, polished; the decision is avenMAIA's to write",
+   "writes": [
+    "aip-59ad"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:50Z",
+   "by": "a-6ffb",
+   "what": "revised",
+   "text": "Revision 3: theOS's workflow reports 'avenSANDBOX' too (this commit's box published and working), so the ruleset keeps all three checks and only 'theOS' is pinned; the deploy secrets stay repository secrets, the risk written down; c5 is about the deploy job only.",
+   "how": "by hand, aip-59ad's thread",
+   "writes": [
+    "aip-59ad"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:52Z",
+   "by": "a-4c7a",
+   "what": "changed",
+   "text": "Set the source of 'theOS' in production's ruleset to GitHub Actions.",
+   "how": "in GitHub's settings, by hand; reported in chat to aip-59ad's thread",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:52Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Samuel's settings for aip-59ad are all in: the ruleset requires three checks from GitHub Actions; nothing is left for him in GitHub's settings.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t13"
+  },
+  {
+   "at": "2026-11-01T10:53Z",
+   "by": "a-6ffb",
+   "what": "revised",
+   "text": "Two stale assumptions deleted (two checks with avenSANDBOX leaving; Samuel's swap and secret move), the deploy's trigger assumption aligned with d-06a8, c3 needs both checks.",
+   "how": "by hand, aip-59ad's thread, while listing the spec for Samuel",
+   "writes": [
+    "aip-59ad"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:55Z",
+   "by": "a-4c7a",
+   "what": "gate-A",
+   "text": "Gate A passed for revision 3 (d-113f).",
+   "how": "in chat to avenMAIA, relayed; your words kept in the decision",
+   "writes": [
+    "d-113f"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:55Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Gate A passed (d-113f). Build waits for aip-31df's checkpoint 1, aip-6fb1's checkpoint 4 and the goal pull request.",
+   "how": "by hand, aip-59ad's thread; time from date -u",
+   "writes": [
+    "aip-59ad"
+   ],
+   "reads": [
+    "d-c219",
+    "d-ca32",
+    "d-113f"
+   ],
+   "task": "t6"
+  }
+ ],
+ "problem": {
+  "who": [
+   "Samuel Andert, who decided that theOS's apps are the site at aven.maia.city (d-367c) and that theOS owns the whole release pipeline (d-a347), and who holds the settings no agent can change: production's ruleset, the environment production and its secrets.",
+   "Anyone who opens aven.maia.city: today they get avenOS, avenDB's app; after the release, theOS's dashboard and its Docs, Intents and Sources apps.",
+   "Samuel's browsers that signed in to avenOS there: they keep its service worker, its storage and a passkey for the RP ID maia.city.",
+   "avenMAIA and the intents' threads, who need one release path that a fresh agent can follow, check and undo."
+  ],
+  "experience": "theOS's apps exist only as files on a work branch. Nobody outside a session can open them, and nothing in theOS can release or deploy them: the only release and deploy that ever reached aven.maia.city are avenDB's, now parked on this branch.",
+  "evidence": [
+   {
+    "group": "How aven.maia.city is served today",
+    "items": [
+     {
+      "text": "avendeploy.yml (parked in .github/workflows-avendb/) is run by hand in the GitHub environment production. It needs the secrets HETZNER_API_KEY, HETZNER_S3_ACCESS_KEY and HETZNER_S3_SECRET_KEY, HETZNER_DNS_TOKEN, DEPLOY_SSH_KEY and DEPLOY_KNOWN_HOSTS, and the variable AVEN_PEER_GUARDIAN; it stops before touching the server when the guardian is missing."
+     },
+     {
+      "text": "One run does six things in order: the bucket city-maia-aven, DNS A and AAAA for aven.maia.city, UDP 7501 and 7842 on the firewall maia-city, the Aven Peer (the image ghcr.io/myavenceo/aven/peer by digest, its own compose project in /opt/aven), Caddy, and health checks (/ping, /healthz and / over HTTPS, a probe peer direct and through the relay, the peer's record in the bucket)."
+     },
+     {
+      "text": "Caddy is v1's container maia-city-caddy on v1's Hetzner server maia-city (Nuremberg). The deploy replaces only the lines between '# >>> aven.maia.city' and '# <<< aven.maia.city' of /opt/maia-city/deploy/Caddyfile (aven/ops/deploy/Caddyfile holds the block), validates the candidate, keeps the old file as /opt/aven/Caddyfile.before-<run>, then reloads."
+     },
+     {
+      "text": "The block sends /relay, /ping, /healthz and /generate_204 to the Aven Peer's relay, serves /aven.json (the peer's key and the RP ID maia.city) from /srv/site/aven, and serves everything else from /srv/site/aven/current as a single-page app (try_files {path} /index.html), with HSTS and nosniff."
+     },
+     {
+      "text": "aven/DB2/deploy/server/caddy.sh unpacks the release's aven-os-web-<version>.tar.gz (checked against SHA256SUMS on the runner) into site/aven/releases/<version>, switches the link site/aven/current, and keeps the three newest builds."
+     },
+     {
+      "text": "The last deploy is run 20 (31 Oct 14:13Z, from production at 5f6768d, PR #1750), successful; by its inputs' defaults it served the newest releases, avenOS 26.10.31v6 and avenPEER 26.10.31v5. Runs 17 to 19 were started from main and also succeeded, so the environment production does not limit which branch deploys."
+     },
+     {
+      "text": "This session cannot reach aven.maia.city: the environment's network policy refuses it (403 from the proxy), so what it serves now was not observed, only read from the last run's record."
+     }
+    ]
+   },
+   {
+    "group": "How releases were made and tagged",
+    "items": [
+     {
+      "text": "avensandbox.yml ran on pull requests to production and on pushes to it. Its job 'Only from main' fails a pull request whose head is not main of this repository; its job 'avenSANDBOX' booted the box and ran bun run up --check."
+     },
+     {
+      "text": "On a push to production, its release job gave each package that changed a GitHub release of its own, tagged @aven/<package>@<date in Berlin>, then <date>v2, v3 and on (@aven/os@26.10.31v6); a push that changed none released nothing. avenOS's release carries aven-os-web-<version>.tar.gz and SHA256SUMS; the box's and the peer's are image tags."
+     },
+     {
+      "text": "23 @aven/os tags exist; the newest releases are avenOS 26.10.31v6, avenSANDBOX 26.10.31v2 and avenPEER 26.10.31v5, all from 31 Oct 14:13Z."
+     }
+    ]
+   },
+   {
+    "group": "What production's ruleset asks",
+    "items": [
+     {
+      "text": "aven/DB2/SANDBOX.md, Samuel's part 5: a ruleset on production, nobody on the bypass list: no deletion, no force push, a pull request with 0 approvals and merge commits only, and the status checks 'Only from main' and 'avenSANDBOX' from GitHub Actions; optionally a tag ruleset 'releases' on ??.??.??* that blocks updates and deletions."
+     },
+     {
+      "text": "Both required checks came from avensandbox.yml, which is parked: if the ruleset is set as written, no pull request to production can merge until a workflow reports checks with those names again."
+     },
+     {
+      "text": "The ruleset itself was not read: this session has no tool that reads rulesets, and changing or reading GitHub settings is outside this step. Parts 1 to 4 of Samuel's part are marked done; part 5 is not marked either way."
+     },
+     {
+      "text": "The optional tag pattern ??.??.??* does not match the tags actually made (@aven/os@26.10.31v6), so as written it would protect none of them."
+     },
+     {
+      "text": "Seen in Samuel's screenshots (1 Nov 10:24Z): a ruleset named production, Active, bypass list empty, targeting the branch production, with Restrict deletions, Require a pull request before merging, Require status checks to pass and Block force pushes on; everything else off. Not yet seen: the required checks' names and the pull request's approvals and merge methods (both under 'Show additional settings'), and the environment production."
+     },
+     {
+      "text": "Seen in Samuel's screenshot of the environment production (1 Nov): no required reviewers, no wait timer, administrators may bypass, Deployment branches and tags 'No restriction'. Its environment secrets are AVEN_PEER_GUARDIAN and MAIA_CITY_GUARDIAN_SECRET, both updated two days ago; the Hetzner and deploy secrets are not among them, so they are repository secrets."
+     },
+     {
+      "text": "No file in this checkout names MAIA_CITY_GUARDIAN_SECRET. aven/DB2/PRODUCTION.md says MaiaCityGuardian's secret 'stays offline with its holder' and that only its public half goes into production. If that secret is the guardian's private key, it is held by GitHub and readable by any workflow run that names the environment production, from any branch, since nothing restricts the branches."
+     },
+     {
+      "text": "Seen in Samuel's screenshots of the additional settings (1 Nov): required status checks 'Only from main' and 'avenSANDBOX', both from GitHub Actions; branches need not be up to date; 0 required approvals; allowed merge method Merge only. production's ruleset is set as aven/DB2/SANDBOX.md wrote it, so no pull request to production can merge until a workflow reports those two checks again."
+     },
+     {
+      "text": "Changed by Samuel (1 Nov 10:33Z): the environment production now allows deployments from the branch production only (1 branch, 0 tags); production's ruleset now also requires a check named 'theOS', from any source, beside 'Only from main' and 'avenSANDBOX'. Until workflows report all three, nothing merges into production."
+     }
+    ]
+   },
+   {
+    "group": "Where theOS stands",
+    "items": [
+     {
+      "text": "theOS's apps are static: theOS/index.html and the Docs, Intents and Sources apps read every JSON doc by a relative fetch (theOS/ui/wiki.js, root '../'); nothing outside theOS/ is read. theOS/ is 1.7 MB in 262 files; its pages load fonts from fonts.googleapis.com."
+     },
+     {
+      "text": "theOS/ is not on main or production yet: main (6f59481, 31 Oct) holds only theOS/theBRAIN, and main's .github/workflows/ still holds avenDB's four workflows. The park (commit 2d6f53842) and theOS's apps live on the theOS work branches until a goal pull request (aip-6fb1's c1)."
+     },
+     {
+      "text": "avenSANDBOX's image is now built from theOS/sandbox/box (avensandbox-image.yml, tag theos-<hash>, 'latest' from main): Playwright 1.64.1 with Chromium, bun 1.4.4, node, Rust stable and a nightly, Lean, versitygw, clang. theOS/sandbox/run.sh runs a command in it with theOS/ mounted. It offers a release the place to run theOS's check (aip-31df); it has no deploy tools (no gh, no AWS CLI, no SSH setup), which ran on the runner itself in avendeploy.yml."
+     },
+     {
+      "text": "avenOS registered a service worker at / on aven.maia.city (/files-sw.js): navigations go to the network first and fall back to its cached shell only when the network fails, so an online browser gets the new site; offline, it still shows avenOS's shell."
+     }
+    ]
+   }
+  ],
+  "baseline": "No theOS release exists: no tag, no GitHub release, no deploy. aven.maia.city serves avenOS 26.10.31v6 and the Aven Peer (avenPEER 26.10.31v5), deployed 31 Oct 14:13Z by avenDB's avendeploy.yml.",
+  "whys": [
+   "theOS's apps cannot be opened at aven.maia.city. Why? Nothing releases or deploys them: the only release and deploy are avenDB's, parked.",
+   "Why? avenDB's pipeline releases avenDB's packages from production, built from aven/DB2, and deploys the Aven Peer and avenOS together in one run; theOS has no release job, no deliverable and no deploy of its own.",
+   "Why? The pipeline was built for avenDB (29 to 31 Oct) before theOS became the standalone project that owns the release (d-9351, d-a347).",
+   "Root cause: the release pipeline and the site at aven.maia.city belong to a legacy project, and theOS has not yet defined what it releases, how it is tagged, what gates it, and how its deploy is undone."
+  ],
+  "truths": [
+   "A deployed server keeps serving what it was last given until something deploys again.",
+   "GitHub runs only workflow files in .github/workflows/ of the branch an event happens on; a status check that no workflow reports leaves a pull request that requires it unmergeable.",
+   "Caddy serves files from a folder; switching a symbolic link changes what it serves at once, and switching it back restores what was served.",
+   "A browser's storage and its passkeys belong to an origin and an RP ID, not to the page served there: a new page on the same origin leaves them as they are, unless the new page clears them.",
+   "A registered service worker stays until it is unregistered or its script answers 404 on an update check; a script answered with another type (HTML) only fails the update, and the old worker stays.",
+   "A GitHub release's assets stay downloadable until someone deletes them; git tags and the repository are public here, and so are Actions logs.",
+   "An Aven Peer's key, once lost, can't be recovered, and production's bucket is never wiped (aven/DB2/PRODUCTION.md).",
+   "A job that names an environment gets that environment's secrets; with 'No restriction', a job from any branch can name it."
+  ],
+  "assumptions": [
+   "theOS's release changes only what aven.maia.city serves at its pages: the Aven Peer, its relay paths, /aven.json, its key, its bucket, DNS, the firewall and the vault's passkey stay as they are, in parallel, until Samuel comes back to them (his answer, 1 Nov).",
+   "A release is the theOS/ tree of one commit on production, taken by git archive and unpacked into its own folder on the server, named by the commit; nothing else is built or kept. No tags or release notes for now (deferred).",
+   "Changes reach production from main only, through a pull request; theOS's apps reach main first through the goal pull request (aip-6fb1).",
+   "The deploy runs by itself after every push to production that changes theOS/ and whose checks are green (d-06a8), in the environment production; its server step is learned from avenDB's caddy.sh (the link switch), never called from aven/.",
+   "'Green' means theOS's check command (aip-31df) passes inside avenSANDBOX's image on the commit released (aip-6fb1's c3) (Samuel's answer, 1 Nov).",
+   "avenOS is not kept reachable anywhere: its releases stay on GitHub, and the undo can bring it back (Samuel's answer, 1 Nov).",
+   "theOS/ is published whole: it is already public in the repository, so serving it adds no exposure.",
+   "The server is reached as deploy@aven.maia.city over SSH with DEPLOY_SSH_KEY, trusting only DEPLOY_KNOWN_HOSTS (pinned under an alias, as v1's prod-ssh did); no Hetzner API is needed, since DNS and the firewall stay as they are.",
+   "aip-59ad builds after aip-31df's checkpoint 1 and aip-6fb1's checkpoint 4, and its first release follows the goal pull request that brings theOS/ to main.",
+   "Terms: v1 is maiaCITY's earlier app, which runs on the Hetzner server maia-city with the Caddy container maia-city-caddy; that Caddy serves /opt/maia-city/site on the server as /srv/site, so site/aven/current means /opt/maia-city/site/aven/current. The goal pull request is the repository's one pull request per goal into main (the repository's CLAUDE.md).",
+   "avenSANDBOX stays a required check on production (d-c219): theOS's workflow reports it, as the proof that the box of the commit released is built and works. The box itself is built and published by aip-6fb1's image workflow, on every push that changes theOS/sandbox/box, whatever production does.",
+   "DEPLOY_SSH_KEY and DEPLOY_KNOWN_HOSTS stay repository secrets (d-ca32). Accepted: a workflow pushed on any branch by someone with write access could read them; the environment's branch rule guards theOS's deploy job, not those secrets.",
+   "production's ruleset is final for aip-59ad (Samuel, 1 Nov 10:52Z): it requires 'Only from main', 'avenSANDBOX' and 'theOS', all three from GitHub Actions; theOS's workflow must report jobs with exactly these names."
+  ],
+  "risk": "Can be undone, as long as the release touches only the served folder: every build stays on the server beside avenOS 26.10.31v6, and the undo switches site/aven/current back (c3). The undo is tried before it counts. Anything that touches the Aven Peer's key, its bucket, the passkeys' RP ID or the browsers' storage can't be undone and stays out of this intent (d-9364)."
+ },
+ "reuse": [
+  {
+   "what": ".github/workflows-avendb/avendeploy.yml (parked)",
+   "use": "Learned from: run by hand in the environment production; release archive checked by SHA256SUMS before the server is touched; health checks from outside by the server's address; nothing secret printed, the repository is public. Its bucket, DNS, firewall and peer steps are not needed to serve static pages."
+  },
+  {
+   "what": "aven/DB2/deploy/server/caddy.sh",
+   "use": "Learned from: the build unpacked beside the last, one link switched, three builds kept for a quick way back; only the marked block of v1's Caddyfile replaced, validated before reload, the old file kept."
+  },
+  {
+   "what": "aven/ops/deploy/Caddyfile, the block aven.maia.city",
+   "use": "Learned from: the relay paths and /aven.json stay with the Aven Peer; the rest is the site's. avenOS's single-page fallback (try_files {path} /index.html) does not fit theOS's several HTML pages."
+  },
+  {
+   "what": ".github/workflows-avendb/avensandbox.yml (parked)",
+   "use": "Learned from: production takes changes from main only ('Only from main'); one release per changed package, tagged by date with v2, v3; a release's notes list its commits since the last tag."
+  },
+  {
+   "what": "aven/DB2/SANDBOX.md, Samuel's part 5",
+   "use": "Learned from: production's ruleset (no deletion, no force push, pull request with merge commits, two required checks); its check names belong to the parked workflow."
+  },
+  {
+   "what": "theOS/sandbox/run.sh and avensandbox-image.yml (aip-6fb1)",
+   "use": "Used: the box a release runs theOS's check in, the same image on the runner and in a session."
+  },
+  {
+   "what": "aven/DB2/os/web/public/files-sw.js",
+   "use": "Learned from: avenOS's service worker on the same origin; navigations go to the network first, so the new site shows when online."
+  }
+ ],
+ "options": [
+  {
+   "name": "Keep as is",
+   "note": "Rejected (d-367c): avenOS stays at aven.maia.city and theOS's apps are seen by nobody.",
+   "chosen": false
+  },
+  {
+   "name": "Switch avenDB's pipeline back on",
+   "note": "Rejected (d-a347): it releases and deploys avenDB's packages, and its deploy also redeploys the Aven Peer, which d-9364 keeps as it is.",
+   "chosen": false
+  },
+  {
+   "name": "One theOS workflow: check, tag, and switch the served folder",
+   "note": "theOS/'s files as they are in git are the release; no build, no tags, no Caddy change: v1's Caddy keeps its aven.maia.city block, and only the folder it serves (site/aven/current) points at the commit's theOS/ tree. A pull request to production reports 'Only from main' and 'theOS'; a push to production that changes theOS/ checks that commit again and deploys it at once (d-06a8).",
+   "chosen": true
+  },
+  {
+   "name": "The same, with theOS's own Caddy block",
+   "note": "Rejected for now: avenOS's block already serves files as they are, sends a missing path to index.html and keeps every page revalidated; a new block would mean editing v1's Caddyfile and reloading it on every first deploy, for no gain a person sees.",
+   "chosen": false
+  }
+ ],
+ "claims": [
+  {
+   "id": "c1",
+   "promise": "theOS's release workflow reports three checks on every pull request to production, the three production's ruleset requires, and 'avenSANDBOX' and 'theOS' again on every push to production: 'Only from main' fails when the head is not main of this repository; 'avenSANDBOX' fails unless the box this commit describes (theOS/sandbox/box, tag theos-<hash>, built by aip-6fb1's image workflow) is published for amd64 and arm64 and its tools answer inside it; 'theOS' runs theOS's check command (aip-31df) inside that box through theOS/sandbox/run.sh and fails when the check fails.",
+   "fails": "A pull request from another branch merges; a red check passes; a check name differs from the ruleset's, so production stays blocked; production gets a commit whose box was never built; the commit deployed is not the commit checked.",
+   "check": "Job names compared letter for letter with the ruleset's. A pull request from another branch shows 'Only from main' red; a commit whose box tag is not published shows 'avenSANDBOX' red; a commit with a planted failing page shows 'theOS' red, then green without it. Checkpoint 1 ends with a real merge from main into production, all three green.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c3",
+   "promise": "On a push to production that changes theOS/ and whose 'avenSANDBOX' and 'theOS' jobs are green, the deploy unpacks that commit's theOS/ tree into its own folder under site/aven/releases/ beside every earlier build, then switches the link site/aven/current to it; it writes nothing else: no Caddyfile, nothing in /opt/aven, no container, no DNS or firewall. aven.maia.city then serves exactly that tree, while /ping, /healthz and /aven.json answer as before. A push that changes nothing under theOS/ deploys nothing.",
+   "fails": "The deploy touches the Aven Peer or Caddy's config (d-9364), serves a half-unpacked tree, or serves the dashboard in place of a missing file (Caddy's fallback) and still reports green.",
+   "check": "The server script runs against a temporary folder laid out like the server: a listing before and after shows changes only under releases/ and the current link, and a failing unpack leaves current where it was. After each real deploy the health step fetches /, /docs/index.html, /avenCEO/index.html, /sources/index.html and /aip/index.json and compares each body byte for byte with the same file in the commit's tree; /ping, /healthz and /aven.json give the same status, and /aven.json the same body, as before the deploy.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c4",
+   "promise": "A theOS deploy is undone by one command that switches site/aven/current back to the build it pointed at before (kept as site/aven/previous): theOS's earlier build or avenOS 26.10.31v6; then aven.maia.city serves that build again.",
+   "fails": "The undo is untested, the earlier build is gone, or the undo leaves a mix.",
+   "check": "Tried in the temporary folder for theOS to theOS and theOS back to avenOS; then once on the server at Gate B with Samuel: deploy, undo to avenOS, deploy again, the health step green each time.",
+   "kind": "mechanical",
+   "result": "open"
+  },
+  {
+   "id": "c5",
+   "promise": "The deploy job runs only for a push to production: it runs in the environment production (branch production only, d-f6da), needs that push's green 'avenSANDBOX' and 'theOS' jobs, and uses only the repository secrets DEPLOY_SSH_KEY and DEPLOY_KNOWN_HOSTS, which stay where they are (Samuel, 1 Nov); the key is written to a file with mode 600 and never printed.",
+   "fails": "theOS's deploy runs from another branch or for a red commit, or reads a secret it does not need (MAIA_CITY_GUARDIAN_SECRET, d-eb51; the Hetzner keys).",
+   "check": "At Gate A and again at checkpoint 2's review: the workflow's trigger, needs and environment read, and a grep of every secrets.* it names compared with the two expected.",
+   "kind": "review",
+   "result": "open"
+  }
+ ],
+ "outcome": {
+  "promise": "Over the first five theOS releases, or the first 30 days after the first one, whichever comes first, every merge into production that changes theOS/ is live at aven.maia.city within 15 minutes with no one starting anything by hand, and none needs an undo (the link switched back because the site served something wrong); Samuel opens aven.maia.city on his phone and his Mac and sees theOS's dashboard.",
+  "how": "Read off the workflow's runs (merge time to the health step's green) and the record's events; Samuel's look at Gate B.",
+  "kind": "measured",
+  "result": "open"
+ },
+ "checkpoints": [
+  {
+   "n": 1,
+   "adds": "theOS's release workflow (.github/workflows/theos.yml) with the jobs 'Only from main', 'avenSANDBOX' (this commit's box published and working) and 'theOS' (theOS's check through run.sh). After aip-31df's checkpoint 1 (the check command), aip-6fb1's checkpoint 4 (the check in the image) and the goal pull request that brings theOS/ to main. Ends with a real merge from main into production: production can merge again.",
+   "claims": [
+    "c1"
+   ]
+  },
+  {
+   "n": 2,
+   "adds": "The deploy: theOS/release/deploy.sh (on the server: unpack beside every earlier build, keep the old target as previous, switch the link) and theOS/release/undo.sh, both tested in a temporary folder; the deploy job with its own SSH setup (no legacy action) and the health step; Gate B: the first real release, the undo to avenOS and back.",
+   "claims": [
+    "c3",
+    "c4",
+    "c5"
+   ]
+  }
+ ],
+ "deferred": [
+  {
+   "what": "Retiring avenOS's service worker (/files-sw.js) in browsers that used avenOS",
+   "until": "Samuel sees avenOS's shell where theOS should be. It stays registered (its script now answers with HTML, so its updates fail), but online its navigations go to the network first, so theOS shows."
+  },
+  {
+   "what": "Tags and release notes for theOS's releases, and a tag ruleset",
+   "until": "Someone needs a named version; until then a build is named by its commit."
+  },
+  {
+   "what": "Pruning old builds on the server",
+   "until": "The undo to avenOS has been tried and the folder grows past what is sensible (each build is about 2 MB)."
+  },
+  {
+   "what": "The Aven Peer, its relay, /aven.json, the vault and passkey at aven.maia.city",
+   "until": "Samuel comes back to them (d-9364)."
+  },
+  {
+   "what": "Deleting avenDB's parked workflows and its deploy files",
+   "until": "theOS has released once and Samuel says so."
+  }
+ ],
+ "mockup": [
+  "The pull request to production: three checks, 'Only from main', 'avenSANDBOX' and 'theOS', green",
+  "The deploy run's summary: the commit, the link switched, each health row green with the bytes matched",
+  "aven.maia.city on a phone and a Mac: theOS's dashboard"
+ ]
+}

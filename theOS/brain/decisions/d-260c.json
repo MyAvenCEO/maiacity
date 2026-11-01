@@ -1,0 +1,39 @@
+{
+ "type": "decision",
+ "id": "d-260c",
+ "n": 31,
+ "title": "Arrays that grow, versions from git",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "memory",
+  "formats",
+  "references"
+ ],
+ "quote": "OK to both of aip-836d's simplifications.",
+ "means": "brain keeps each list that only grows as a JSON array with a prefix check, not JSON Lines, and works out a link's version from git (the commit that added the citing line) instead of storing path@SHA.",
+ "intents": [
+  "aip-836d"
+ ],
+ "supersedes": [
+  {
+   "decision": "d-1fee",
+   "part": "part",
+   "what": "d-1fee's JSON Lines and stored pins: arrays with a prefix check, and versions computed from git."
+  },
+  {
+   "decision": "d-0e44",
+   "part": "part",
+   "what": "d-0e44's references pinned as path@commit: the version is computed from git, not stored."
+  }
+ ],
+ "relates": [
+  "d-1fee"
+ ],
+ "reflection": {
+  "checked": "every decision before d-260c that held",
+  "result": "supersedes d-1fee (part), d-0e44 (part)"
+ }
+}

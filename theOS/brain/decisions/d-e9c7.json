@@ -1,0 +1,31 @@
+{
+ "type": "decision",
+ "id": "d-e9c7",
+ "n": 36,
+ "title": "Keep only the polished words",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "memory",
+  "style"
+ ],
+ "quote": "We don't need my original wording stored exactly; store only the polished version, as long as it stays clear and close to what I originally meant.",
+ "means": "Only the polished words are kept, clear and close to your original intent: in every decision, intent source and session ask, the clean essence replaces what was typed.",
+ "intents": [
+  "aip-836d"
+ ],
+ "supersedes": [
+  {
+   "decision": "d-bca7",
+   "part": "part",
+   "what": "d-bca7 kept your words twice; only the polished words are kept."
+  }
+ ],
+ "relates": [],
+ "reflection": {
+  "checked": "every decision before d-e9c7 that held",
+  "result": "supersedes d-bca7 (part)"
+ }
+}

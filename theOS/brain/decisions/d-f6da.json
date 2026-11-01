@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "d-f6da",
+ "n": 63,
+ "title": "production: one branch, and a theOS check",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "release",
+  "settings"
+ ],
+ "quote": "I set the environment production to deploy from the branch production only, and added a required check named theOS to production's ruleset.",
+ "means": "The environment production deploys only from the branch production. production's ruleset now requires the check theOS beside Only from main and avenSANDBOX; nothing merges into production until all three report. avenSANDBOX's check leaves at aip-59ad's Gate B, and theOS is pinned to GitHub Actions once it has reported.",
+ "intents": [
+  "aip-59ad"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-fdc7"
+ ],
+ "reflection": {
+  "checked": "every decision before d-f6da that held",
+  "result": "supersedes nothing"
+ }
+}

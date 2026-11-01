@@ -1,0 +1,40 @@
+{
+ "type": "decision",
+ "id": "d-a347",
+ "n": 24,
+ "title": "theOS owns the sandbox and the release",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "sandbox",
+  "release",
+  "legacy",
+  "theOS"
+ ],
+ "quote": "Move it now, since this very avenMAIA session lives inside it. Switch off avenDB's aven.maia.city pipeline too: theOS replaces it from now on and becomes the authority over the whole release pipeline, avenSANDBOX included.",
+ "means": "theOS owns avenSANDBOX and the whole release pipeline from now on. avenDB's pipeline (its releases, its box image, avenPEER's image and the aven.maia.city deploy) is parked, not deleted: what is live stays live until theOS releases in its place.",
+ "intents": [
+  "aip-6fb1"
+ ],
+ "supersedes": [
+  {
+   "decision": "d-9351",
+   "part": "part",
+   "what": "d-9351 never touched legacy code; theOS now takes the release pipeline and the sandbox from avenDB, and parks avenDB's workflows."
+  },
+  {
+   "decision": "d-ff11",
+   "part": "part",
+   "what": "d-ff11 used the sandbox for testing only; theOS now owns it."
+  }
+ ],
+ "relates": [
+  "d-dc23"
+ ],
+ "reflection": {
+  "checked": "every decision before d-a347 that held",
+  "result": "supersedes d-9351 (part), d-ff11 (part)"
+ }
+}

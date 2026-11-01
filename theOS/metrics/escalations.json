@@ -1,9 +1,0 @@
-{
- "type": "metric",
- "id": "metrics/escalations",
- "name": "Escalations",
- "what": "findings that needed knowledge only you had",
- "want": "falling, because each answer is written down",
- "how": "by hand, until a metrics script exists",
- "measurements": []
-}

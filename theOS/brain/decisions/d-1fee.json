@@ -1,0 +1,30 @@
+{
+ "type": "decision",
+ "id": "d-1fee",
+ "n": 25,
+ "title": "brain's direction approved",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "memory",
+  "formats",
+  "references"
+ ],
+ "quote": "Yes, do it: move it into aip-836d.",
+ "means": "brain's direction is approved and aip-836d takes it into Understand: one JSON doc per thing, JSON Lines for what only grows, a JSON Schema per type, binaries by content hash, internal references pinned as path@full commit SHA. The memory parts of aip-31df (decisions, terms, the trace, authors) move to aip-836d.",
+ "intents": [
+  "aip-836d",
+  "aip-31df"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-0e44",
+  "d-3d81"
+ ],
+ "reflection": {
+  "checked": "every decision before d-1fee that held",
+  "result": "supersedes nothing"
+ }
+}

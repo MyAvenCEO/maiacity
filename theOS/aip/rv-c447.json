@@ -1,0 +1,93 @@
+{
+ "type": "review",
+ "id": "rv-c447",
+ "intent": "aip-836d",
+ "round": 4,
+ "lens": "paraphrase",
+ "commit": "4aa5a3b99",
+ "checker": "a fresh agent",
+ "prompt": "You are a \"goldfish\" reviewer: a fresh reader with no history of this project. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nThe project is theOS, a standalone, fresh project in /home/user/maiacity/theOS/. Everything is built from scratch inside theOS/. Code outside theOS/ (maiacity, aven/DB2, aven/ops, the repository's .claude and CLAUDE.md) is legacy: it may be learned from, never changed or depended on. theOS now owns avenSANDBOX and the release pipeline (AIP-2): taking them over is AIP-2's work, nothing else changes legacy code. Do not propose reusing legacy code by import or by editing it.\n\ntheOS keeps one JSON doc per thing, each with a \"type\", linking others by path: a path like \"aip/AIP-1\" is the file theOS/aip/AIP-1.json.\n\nRead this record, plus the docs and files it names:\n  /home/user/maiacity/theOS/aip/AIP-3.json\nIt is one intent of avenCEO, theOS's agent harness. avenCEO's definition is theOS/avenCEO/avenCEO.json; read it and the step, gate and type docs it links.\n\nEarlier review rounds are the review docs listed under the record's \"reviews\", each with an answer to every finding. Those findings are settled: do not raise them again unless the record shows the fix did not actually happen. The record's \"events\" are append-only history: older events may describe earlier revisions; judge the record as it stands now.\n\nYour job is the comprehension test.\n1. First, in your own words, write two short paragraphs (2 to 5 sentences each) under these exact headings:\n   **What this proposes**\n   **How the existing system works, per this record**\n   If you cannot paraphrase a part, say so: that is itself a Blocker finding.\n2. Then list findings. Each finding: Severity (Blocker | Major | Nit), the affected part (field name or claim id), and what is unclear, undefined, assumed without saying, or contradictory. Look especially for: terms specific to this project that are never defined (general software terms are fine); places that assume knowledge a newcomer would not have; claims whose check would not actually catch the stated failure; contradictions between the record and avenCEO's definition.\n\nReport in plain text, at most 500 words. No praise, no filler: lead with what is wrong or missing. If you find no Blocker or Major, say so plainly.",
+ "paraphrase": {
+  "proposes": "aip-836d turns brain into a store only one program writes (theOS/brain/brain.mjs), with fixed verbs, a skill and later MCP; every type gets a JSON Schema; new docs get hash ids and numbered docs are renamed once; one {doc, part, what} supersedes form with what holds computed; lists that only grow are prefix-checked; every changed doc is covered by an event at a step its type allows. Outcome: no correction caused by outdated decisions or words over three sessions.",
+  "existing": "Docs are JSON in git linked by bare paths, with no schema or growth check; the apps compute holds, the trace and the step; decisions are D-n with a reflection by hand; there is no CI, and aip-31df's check command runs before a push by the done rule."
+ },
+ "findings": [
+  {
+   "sev": "Major",
+   "scope": "c4 vs the type docs",
+   "text": "The steps where a type may be written are prose in each type doc (\"any step\", \"aip-31df's steps\"); nothing makes them data the check can read.",
+   "answer": "fix",
+   "note": "c1's schema for type docs requires steps as a list of step numbers; checkpoint 1 writes them (avenMAIA, as the definition's writer)."
+  },
+  {
+   "sev": "Major",
+   "scope": "c4 vs research",
+   "text": "research may be written only at Understand, yet rs-a3fa was written while aip-836d stood at Specify; the check would refuse it.",
+   "answer": "fix",
+   "note": "research may be written at Understand and Specify (d-3e01 sent research back during Specify); the type's steps list says so."
+  },
+  {
+   "sev": "Major",
+   "scope": "outcome vs metrics at Learn",
+   "text": "The outcome counts sessions inside Build, but measurements may be written only at Learn.",
+   "answer": "fix",
+   "note": "The window is the three sessions after checkpoint 2; the measurement is written at Learn, counted from those sessions' correction events. Said in the outcome."
+  },
+  {
+   "sev": "Major",
+   "scope": "outcome how",
+   "text": "A correction's cause has no field or vocabulary; no baseline.",
+   "answer": "fix",
+   "note": "c1's schema for a correction event requires cause, one of outdated-decision, outdated-word, missed-supersede, other (revision 4 had it; revision 5 dropped it). The baseline is counted at Gate A from this session's events."
+  },
+  {
+   "sev": "Major",
+   "scope": "c9 collisions across branches",
+   "text": "'longer if taken' sees only the local branch; two branches minting the same id give a git add/add conflict, so 'fails a duplicate id' has nothing to inspect, and the test will not hit a collision.",
+   "answer": "fix",
+   "note": "Reworded: a collision is unlikely and fails at merge (the same path added twice); the fix is to mint again with brain add. The test plants two branches adding the same id and expects the merge to fail."
+  },
+  {
+   "sev": "Major",
+   "scope": "c7 hook location",
+   "text": "The session-start hook and theOS/CLAUDE.md have no stated location; theOS has no .claude and the root .claude is legacy; where sessions start decides whether they load.",
+   "answer": "escalate",
+   "note": "Question: theOS threads start with theOS/ as their working folder, so theOS/.claude/settings.json (the hook) and theOS/CLAUDE.md load (recommended)."
+  },
+  {
+   "sev": "Major",
+   "scope": "c12 rename format",
+   "text": "The record never says what a renamed path looks like, and c12's check cannot tell a path field from prose.",
+   "answer": "fix",
+   "note": "The id format is defined in c9 for every type: <folder>/<prefix>-<hex>, e.g. decisions/d-3f9c, aip/aip-3f9c (its folder aip/aip-3f9c/). A path field is any string brain's link rule (W.isPath) accepts; prose is any other string. Whether old docs are renamed at all is escalated (r4-zoom-out)."
+  },
+  {
+   "sev": "Major",
+   "scope": "writes_rule vs brain index, the migration, merges",
+   "text": "brain index and the migration have no intent or step; merges have no parent rule.",
+   "answer": "fix",
+   "note": "brain index runs inside the write that needs it and is listed in that event's writes; the migration, if kept, is one event of aip-836d at Build. A merge commit is checked against its first parent: only index docs written by brain index and appends kept from both sides may differ."
+  },
+  {
+   "sev": "Nit",
+   "scope": "mockup",
+   "text": "No claim checks the Hold now / Superseded split.",
+   "answer": "fix",
+   "note": "The split exists today (avenCEO/app.js); the mockup says so and c7's shared holds() keeps it."
+  },
+  {
+   "sev": "Nit",
+   "scope": "question 8",
+   "text": "Recommends withdraw though d-072e forbids it; no answer text.",
+   "answer": "fix",
+   "note": "Answer text added: only supersede (d-072e)."
+  },
+  {
+   "sev": "Nit",
+   "scope": "terms",
+   "text": "aip-a195's mod, compaction, the parent commit for merges.",
+   "answer": "fix",
+   "note": "Explained where first used."
+  }
+ ]
+}

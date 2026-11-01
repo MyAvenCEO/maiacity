@@ -1,0 +1,30 @@
+{
+ "type": "decision",
+ "id": "d-2519",
+ "n": 44,
+ "title": "Threads for aip-31df, aip-6fb1, aip-a195 and aip-59ad",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "threads",
+  "intents"
+ ],
+ "quote": "aip-a195 runs in its own thread, and aip-31df, aip-6fb1 and aip-59ad should each have their own thread too.",
+ "means": "aip-31df (build), aip-6fb1 (build), aip-a195 (Understand) and aip-59ad (Understand) each get a thread of their own, as aip-836d has. aip-f4e2 gets its own when it continues.",
+ "intents": [
+  "aip-31df",
+  "aip-6fb1",
+  "aip-a195",
+  "aip-59ad"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-b43d"
+ ],
+ "reflection": {
+  "checked": "every decision before d-2519 that held",
+  "result": "supersedes nothing"
+ }
+}

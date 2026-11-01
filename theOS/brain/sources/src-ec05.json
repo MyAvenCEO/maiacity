@@ -1,0 +1,11 @@
+{
+ "type": "reference",
+ "subtype": "spec",
+ "id": "src-ec05",
+ "title": "Secure Scuttlebutt: group exclusion",
+ "about": [
+  "group encryption",
+  "access control"
+ ],
+ "url": "https://github.com/ssbc/ssb-group-exclusion-spec"
+}

@@ -1,0 +1,27 @@
+{
+ "type": "decision",
+ "id": "d-1372",
+ "n": 3,
+ "title": "A new AIP sequence starts at aip-31df",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "naming",
+  "intents"
+ ],
+ "quote": "Number it aip-31df. We'll consolidate the current AIPs into the new flow format later.",
+ "means": "avenCEO starts a new AIP sequence at aip-31df; the 91 current intents are consolidated later.",
+ "intents": [
+  "aip-31df"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-e028"
+ ],
+ "reflection": {
+  "checked": "every decision before d-1372 that held",
+  "result": "supersedes nothing"
+ }
+}

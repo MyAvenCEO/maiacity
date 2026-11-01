@@ -1,0 +1,96 @@
+{
+ "type": "review",
+ "id": "rv-1e9d",
+ "intent": "aip-59ad",
+ "round": 1,
+ "lens": "paraphrase",
+ "commit": "7d453502b",
+ "checker": "a fresh agent",
+ "prompt": "You are a \"goldfish\" reviewer: a fresh reader with no history of this project. You are strictly read-only: do not edit, write or create any file, and do not run git commands that change anything.\n\nThe project is theOS, a standalone, fresh project in /home/user/maiacity/theOS/. Everything is built from scratch inside theOS/. Code outside theOS/ (maiacity, aven/DB2, aven/ops, the repository's .claude and CLAUDE.md) is legacy: it may be learned from, never changed or depended on. theOS now owns avenSANDBOX and the release pipeline (AIP-2): taking them over is AIP-2's work, nothing else changes legacy code. Do not propose reusing legacy code by import or by editing it.\n\ntheOS keeps one JSON doc per thing, each with a \"type\", linking others by path: a path like \"aip/AIP-1\" is the file theOS/aip/AIP-1.json.\n\nRead this record, plus the docs and files it names:\n  /home/user/maiacity/theOS/aip/AIP-5.json\nIt is one intent of avenCEO, theOS's agent harness. avenCEO's definition is theOS/avenCEO/avenCEO.json; read it and the step, gate and type docs it links.\n\nEarlier review rounds are the review docs listed under the record's \"reviews\", each with an answer to every finding. Those findings are settled: do not raise them again unless the record shows the fix did not actually happen. The record's \"events\" are append-only history: older events may describe earlier revisions; judge the record as it stands now.\n\nYour job is the comprehension test.\n1. First, in your own words, write two short paragraphs (2 to 5 sentences each) under these exact headings:\n   **What this proposes**\n   **How the existing system works, per this record**\n   If you cannot paraphrase a part, say so: that is itself a Blocker finding.\n2. Then list findings. Each finding: Severity (Blocker | Major | Nit), the affected part (field name or claim id), and what is unclear, undefined, assumed without saying, or contradictory. Look especially for: terms specific to this project that are never defined (general software terms are fine); places that assume knowledge a newcomer would not have; claims whose check would not actually catch the stated failure; contradictions between the record and avenCEO's definition.\n\nReport in plain text, at most 500 words. No praise, no filler: lead with what is wrong or missing. If you find no Blocker or Major, say so plainly.",
+ "findings": [
+  {
+   "sev": "Blocker",
+   "scope": "questions[5], d-7994",
+   "text": "d-7994 says by hand; the record specifies automatic.",
+   "answer": "fix",
+   "note": "d-06a8 supersedes d-7994 in part; question 5 now points at d-06a8."
+  },
+  {
+   "sev": "Major",
+   "scope": "checkpoint 1",
+   "text": "Not mergeable while 'avenSANDBOX' is required; the ruleset change must come before Gate B's merge.",
+   "answer": "fix",
+   "note": "Samuel's swap is the end of checkpoint 1 (same fix as zoom-out 1)."
+  },
+  {
+   "sev": "Major",
+   "scope": "task t3, checkpoint 3",
+   "text": "t3's steps repeat what Samuel already did and omit pinning 'theOS' to GitHub Actions.",
+   "answer": "fix",
+   "note": "t3 rewritten: done parts named as done (d-f6da); its open steps are the swap and pin (checkpoint 1) and moving the deploy secrets into the environment (checkpoint 3)."
+  },
+  {
+   "sev": "Major",
+   "scope": "assumptions vs option and c3",
+   "text": "Archive with checksum vs no archive vs git archive.",
+   "answer": "fix",
+   "note": "Same as zoom-out 5."
+  },
+  {
+   "sev": "Major",
+   "scope": "c3's check",
+   "text": "try_files fallback makes '200 each' pass on missing files.",
+   "answer": "fix",
+   "note": "Bodies compared byte for byte with the commit's tree (zoom-out 2)."
+  },
+  {
+   "sev": "Major",
+   "scope": "c1, c5, d-4ca4",
+   "text": "The check runs on the pull request's merge preview; the commit pushed to production can differ.",
+   "answer": "fix",
+   "note": "On a push to production the 'theOS' job runs again on that commit, and the deploy needs it (c1, c5)."
+  },
+  {
+   "sev": "Major",
+   "scope": "c5",
+   "text": "DEPLOY_SSH_KEY and DEPLOY_KNOWN_HOSTS are repository secrets, so the environment's branch rule does not guard them; a static read can't verify 'prints no secret'.",
+   "answer": "fix",
+   "note": "Checkpoint 3 moves both into the environment production (Samuel's step), so only jobs from production get them; the key goes to a file with mode 600 and is never echoed, which GitHub's masking backs; read at Gate A."
+  },
+  {
+   "sev": "Major",
+   "scope": "deferred 1, truths",
+   "text": "Under the fallback /files-sw.js answers index.html with 200; the update check fails and avenOS's worker never unregisters.",
+   "answer": "fix",
+   "note": "Truth corrected (a worker stays when its script answers with the wrong type); the deferral's premise now says it stays registered, and online its network-first navigations still show theOS."
+  },
+  {
+   "sev": "Nit",
+   "scope": "risk",
+   "text": "Cites Caddyfile.before-<run>, but nothing writes a Caddyfile.",
+   "answer": "fix",
+   "note": "Removed."
+  },
+  {
+   "sev": "Nit",
+   "scope": "c2, mockup",
+   "text": "Tag names and date format inconsistent.",
+   "answer": "fix",
+   "note": "Tags deleted (zoom-out 3)."
+  },
+  {
+   "sev": "Nit",
+   "scope": "terms",
+   "text": "'v1', 'the goal pull request', server paths undefined.",
+   "answer": "fix",
+   "note": "Defined in the assumptions: v1, the goal pull request (the repository's CLAUDE.md), and the server's paths in full."
+  },
+  {
+   "sev": "Nit",
+   "scope": "outcome",
+   "text": "No time window; 'undo needed' undefined.",
+   "answer": "fix",
+   "note": "Window: the first five releases or 30 days after the first, whichever comes first; an undo is needed when the link is switched back because aven.maia.city served something wrong."
+  }
+ ]
+}

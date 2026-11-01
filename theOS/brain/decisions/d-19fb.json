@@ -1,0 +1,28 @@
+{
+ "type": "decision",
+ "id": "d-19fb",
+ "n": 77,
+ "title": "checkpoint 1: three fixes, proved by test pages",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "intents",
+  "gates",
+  "checks"
+ ],
+ "quote": "Do it.",
+ "means": "Checkpoint 1's review stopped after three unclean rounds. aip-31df's thread applies round 3's three Major fixes: a fixed box whose content reaches past the window fails whatever its overflow; sideways overflow clipped on body is caught; buttons are told apart by state, position and markup. For each fix it plants a test page the check must catch, and it times the crawl without the hash fast path, deleting that path if the run stays within its time limit. The off-screen bottom sheet is declined. When the check catches every planted page and passes on theOS, the review gate passes, with no fourth round.",
+ "intents": [
+  "aip-31df"
+ ],
+ "supersedes": [],
+ "relates": [
+  "d-23e7"
+ ],
+ "reflection": {
+  "checked": "every decision before d-19fb that held",
+  "result": "supersedes nothing"
+ }
+}

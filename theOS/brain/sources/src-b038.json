@@ -1,0 +1,11 @@
+{
+ "type": "reference",
+ "subtype": "article",
+ "id": "src-b038",
+ "title": "Willow: Timestamps, really?",
+ "about": [
+  "p2p sync",
+  "time and order"
+ ],
+ "url": "https://github.com/earthstar-project/willowprotocol.org/blob/main/src/pages/more/timestamps_really.tsx"
+}

@@ -1,0 +1,36 @@
+{
+ "type": "decision",
+ "id": "d-81c7",
+ "n": 21,
+ "title": "aven the framework, avenMAIA its instance",
+ "subtype": "answer",
+ "by": "a-4c7a",
+ "at": "2026-11-01",
+ "session": "s-ac54",
+ "about": [
+  "naming",
+  "aven",
+  "authors",
+  "trace"
+ ],
+ "quote": "Call the harness framework aven, and the instance we use avenMAIA: I talk to avenMAIA. Everything an agent session writes is authored by avenMAIA; everything human from me is authored by Samuel Andert.",
+ "means": "The harness framework is aven; its instance we use is avenMAIA, the one you talk to. Every agent session writes as avenMAIA; everything human is authored by Samuel Andert.",
+ "intents": [
+  "aip-31df",
+  "aip-836d"
+ ],
+ "supersedes": [
+  {
+   "decision": "d-e2d9",
+   "part": "part",
+   "what": "d-e2d9's name Aven: the framework is aven, and its instance avenMAIA."
+  }
+ ],
+ "relates": [
+  "d-87aa"
+ ],
+ "reflection": {
+  "checked": "every decision before d-81c7 that held",
+  "result": "supersedes d-e2d9 (part)"
+ }
+}
