@@ -52,6 +52,20 @@ const W = {
     return `<a class="wl" href="${this.href(path, here)}"${tip}>${this.esc(this.label(d, path))}</a>`;
   },
   who(by, here, docs) { return this.isPath(by) ? this.link(by, here, docs) : this.esc(by); },
+  // brain's reflection, one rule for every type (AIP-3): a doc holds until a newer doc supersedes it; superseded in
+  // part, the rest still holds. Computed from the supersedes entries, never stored. Shared by the apps and brain.mjs.
+  target: (s) => s.doc || s.decision || s.term,
+  // part is all (also written whole, or left out) or a part; any other text names the part, so the rest still holds
+  whole: (s) => !s.part || s.part === 'all' || s.part === 'whole',
+  supersededBy(docs, path) {
+    const out = [];
+    for (const [p, d] of docs) for (const s of d?.supersedes || []) if (this.target(s) === path) out.push({ p, ...s });
+    return out;
+  },
+  holds(docs, path) {
+    const by = this.supersededBy(docs, path);
+    return by.some((s) => this.whole(s)) ? 'superseded' : by.length ? 'holds in part' : 'holds';
+  },
   // The trace: every write to brain, and every read of a source, is an event of an intent's lifecycle. The step is where
   // the intent stood, computed from the events before it: an AIP stands at the first step whose output is missing.
   STEPS: ['Understand', 'Specify', 'Build', 'Learn', 'Closed'],
