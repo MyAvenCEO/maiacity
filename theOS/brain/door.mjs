@@ -234,7 +234,7 @@ export function merge3(o, a, b) {
 }
 
 const GROW = { metric: ['measurements'], session: ['asks'] }; // an intent's events are checked with the trace
-const PATH = /^(aip|decisions|sessions|sources|metrics|lessons|authors|avenCEO)\/[A-Za-z][\w@-]*(\/[\w@-]+)*$/;
+const PATH = /^(theOS\/)?(aip|decisions|sessions|sources|metrics|lessons|authors|avenCEO|brain)\/[A-Za-z][\w@-]*(\/[\w@-]+)*$/;
 const IDS = /(?<![\w/-])[a-z]+-[0-9a-f]{4,}(?![\w-])/g;
 const PREFIXES = new RegExp(`^(${Object.values(PREFIX).join('|')})-`);
 const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -245,7 +245,9 @@ function allAt(git, sha, prefix, cwd) {
   const out = execFileSync('git', ['cat-file', '--batch'], { cwd, input: files.map((f) => `${sha}:${f}`).join('\n'), maxBuffer: 1 << 28 });
   const all = new Map(); let i = 0;
   for (const f of files) {
-    const nl = out.indexOf(10, i), size = +out.subarray(i, nl).toString().split(' ')[2];
+    const nl = out.indexOf(10, i), head = out.subarray(i, nl).toString();
+    if (head.endsWith(' missing')) { i = nl + 1; continue; }
+    const size = +head.split(' ')[2];
     const body = out.subarray(nl + 1, nl + 1 + size).toString('utf8');
     i = nl + 1 + size + 1;
     try { const d = JSON.parse(body); all.set(d.id, { file: f, doc: d }); } catch { /* not JSON */ }
@@ -257,8 +259,10 @@ function allAt(git, sha, prefix, cwd) {
 // "since" on; then the tree as it is (c8: ids.json, the index docs and the copied lists equal what brain index writes).
 // A merge commit is checked where its result differs from every parent: there it must be what the merge driver gives.
 export function check(root, { range } = {}) {
-  const git = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', maxBuffer: 1 << 26, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-  const top = git('rev-parse', '--show-toplevel'), prefix = relative(top, root) || '.';
+  const top = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: root, encoding: 'utf8' }).trim();
+  // every git call runs from the repository's top, so a path filter and a path mean the same there (theOS is a subfolder)
+  const git = (...a) => execFileSync('git', a, { cwd: top, encoding: 'utf8', maxBuffer: 1 << 26, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  const prefix = relative(top, root) || '.';
   const door = existsSync(join(root, 'brain', 'door.json')) ? JSON.parse(readFileSync(join(root, 'brain', 'door.json'), 'utf8')).since : null;
   let r = range, shas;
   if (!r) { try { git('rev-parse', '--verify', 'origin/main'); r = 'origin/main..HEAD'; } catch { r = 'HEAD~1..HEAD'; } }
@@ -309,11 +313,12 @@ export function check(root, { range } = {}) {
       if (!covered.has(id) && d.type !== 'index') bad.push(`${f}: changed without an event of this commit`);
       const c = checkDoc(d, (t) => types[t], (i) => at(sha, ids[i])); if (c) bad.push(c);
     }
-    // c3: a new doc supersedes only docs that exist and held at the parent
-    const fresh = docs.filter((f) => !at(parents[0], f) && at(sha, f)?.supersedes?.length);
+    // c3: a supersede written in this commit names a doc that exists and held at the parent
+    const newEntries = (f) => { const old = JSON.stringify(at(parents[0], f)?.supersedes || []); return (at(sha, f)?.supersedes || []).filter((x) => !old.includes(JSON.stringify(x))); };
+    const fresh = docs.filter((f) => newEntries(f).length);
     if (fresh.length) {
-      const before = allAt(git, parents[0], prefix, root);
-      for (const f of fresh) for (const sp of at(sha, f).supersedes) {
+      const before = allAt(git, parents[0], prefix, top);
+      for (const f of fresh) for (const sp of newEntries(f)) {
         const t = target(sp);
         if (!ids[t]) bad.push(`${f}: supersedes ${t}, which is no doc`);
         else if (before.has(t) && holdsIn(before, t) === 'superseded') bad.push(`${f}: supersedes ${t}, which no longer held`);
@@ -331,7 +336,10 @@ export function check(root, { range } = {}) {
       for (const k of GROW[d.type] || []) if (b && JSON.stringify((d[k] || []).slice(0, (b[k] || []).length)) !== JSON.stringify(b[k] || [])) bad.push(`${f}: earlier ${k} changed (they only grow)`);
       // c6: a renamed word does not come back where its rename applies
       for (const R of renamesAt(sha)) if (R.in.some((dir) => f.startsWith(`${dir}/`))) {
-        const n = (x) => (JSON.stringify(x || '').match(new RegExp(`(?<![A-Za-z/._-])${esc(R.old)}(?![A-Za-z/._-])`, 'g')) || []).length;
+        // the rename's own field and a person's verbatim words (quote) keep the old word where it is right
+        const text = (x) => { if (!x) return ''; const { renames: _r, quote: _q, ...rest } = x; return strings(rest).join('\n'); };
+        // a word in quotes ('aven') is mentioned, not used: it does not count
+        const n = (x) => (text(x).match(new RegExp(`(?<![A-Za-z/._'‘"“-])${esc(R.old)}(?![A-Za-z/._'’"”-])`, 'g')) || []).length;
         if (n(d) > n(b)) bad.push(`${f}: "${R.old}" is ${R.word} now (${R.term})`);
       }
     }
@@ -339,7 +347,17 @@ export function check(root, { range } = {}) {
   }
   // the tree as it is: what brain index would write must already be there
   try { const { changed } = index(root, { dry: true }); if (changed.length) fails.push({ commit: 'tree', fails: changed.map((c) => `${c}: differs from what brain index writes (run: node brain/brain.mjs index)`) }); } catch (e) { fails.push({ commit: 'tree', fails: [e.message] }); }
-  return { range: r, commits: shas.length, fails };
+  // c10's warning: a doc that holds rests on one that no longer does (for the maintenance pass; it does not fail)
+  const warnings = [];
+  try {
+    const all = docsOf(root);
+    for (const [id, x] of all) {
+      if (!STEADY.includes(x.doc.type) || holdsIn(all, id) === 'superseded') continue;
+      const { supersedes: _s, reflection: _r, ...rest } = x.doc;
+      for (const t of new Set(strings(rest).flatMap((v) => v.match(IDS) || []))) if (t !== id && all.has(t) && holdsIn(all, t) === 'superseded') warnings.push(`${id} cites ${t}, which no longer holds`);
+    }
+  } catch { /* no ids.json here */ }
+  return { range: r, commits: shas.length, fails, warnings };
 }
 function isAncestor(git, a, b) { try { git('merge-base', '--is-ancestor', a, b); return true; } catch { return false; } }
 
@@ -351,22 +369,25 @@ export function versions(root, only) {
   const git = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', maxBuffer: 1 << 28, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   const m = map(root), all = docsOf(root);
   let skip = null; try { skip = JSON.parse(readFileSync(join(root, 'brain', 'renames.json'), 'utf8')).commit; } catch { /* none */ }
+  // bulk commits that touched many docs without changing what they say (the migration, a title sweep, the schemas)
+  const ignoreFile = join(root, 'brain', 'blame-ignore.txt');
+  const bulk = new Set([skip, ...(existsSync(ignoreFile) ? readFileSync(ignoreFile, 'utf8').split('\n').map((l) => l.split('#')[0].trim()).filter(Boolean) : [])].filter(Boolean));
   const old = (() => { try { return Object.fromEntries(Object.entries(JSON.parse(readFileSync(join(root, 'brain', 'renames.json'), 'utf8')).names).filter(([k]) => k.includes('/')).map(([k, v]) => [v, k])); } catch { return {}; } })();
   const changedAt = new Map();
   const lastChange = (id) => {
     if (changedAt.has(id)) return changedAt.get(id);
     let t = 0;
-    for (const line of git('log', '--format=%H %at', '--', `${m.ids[id]}.json`).split('\n').filter(Boolean)) { const [h, ct] = line.split(' '); if (h !== skip) { t = +ct; break; } }
-    if (!t && old[id] && skip) { const x = git('log', '-1', '--format=%at', `${skip}^`, '--', `${old[id]}.json`); t = +x || 0; }
+    for (const line of git('log', '--format=%H %ct', '--', `${m.ids[id]}.json`).split('\n').filter(Boolean)) { const [h, ct] = line.split(' '); if (!bulk.has(h)) { t = +ct; break; } }
+    if (!t && old[id] && skip) { for (const line of git('log', '--format=%H %ct', `${skip}^`, '--', `${old[id]}.json`).split('\n').filter(Boolean)) { const [h, ct] = line.split(' '); if (!bulk.has(h)) { t = +ct; break; } } }
     changedAt.set(id, t); return t;
   };
   const out = {};
   for (const id of only || Object.keys(m.ids)) {
     if (!m.ids[id]) continue;
-    let blame; try { blame = git('blame', '--line-porcelain', ...(skip ? ['--ignore-rev', skip] : []), '--', `${m.ids[id]}.json`); } catch { continue; }
+    let blame; try { blame = git('blame', '--line-porcelain', ...[...bulk].flatMap((h) => ['--ignore-rev', h]), '--', `${m.ids[id]}.json`); } catch { continue; }
     let time = 0;
     for (const line of blame.split('\n')) {
-      if (line.startsWith('author-time ')) time = +line.slice(12);
+      if (line.startsWith('committer-time ')) time = +line.slice(15);
       else if (line.startsWith('\t')) for (const r of line.match(IDS) || []) {
         const t = all.get(r);
         if (!t || r === id || !STEADY.includes(t.doc.type)) continue;

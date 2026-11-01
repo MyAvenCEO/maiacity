@@ -1809,6 +1809,16 @@
    "writes": [],
    "reads": [],
    "task": "t7"
+  },
+  {
+   "at": "2026-11-01T14:36Z",
+   "by": "a-6ffb",
+   "what": "review",
+   "text": "Checkpoint 3 review by a fresh agent: 1 Blocker (with theOS as a subfolder of the repository, brain check's git path filters matched nothing, so its commit checks never ran here), 4 Major (paths under brain/ not caught as links; check printed no warning for a holding doc citing a superseded one; c6 counted the rename's own field and could not allow the old word where it is right; c5 flagged mostly bulk commits, 270 of 318), 4 Nit. All fixed, with tests: git runs from the repository's top, and a test lays theOS out as a subfolder; brain/ paths are links by path and fail; check returns warnings (3 today); c6 leaves out the rename's field, a person's quote and a word written in quotes (mentioned, not used), with a negative plant; brain versions skips the bulk commits listed in brain/blame-ignore.txt and compares commit times; a supersede added to an existing doc is checked too. With the check really running, my own checkpoint 3 event, which quotes the old word, passes only because quoted words are mentions. 25 of 25 tests.",
+   "how": "a fresh subagent reading the record and the commit and trying the verbs in a scratch repository",
+   "writes": [],
+   "reads": [],
+   "task": "t8"
   }
  ],
  "reviews": [

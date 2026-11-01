@@ -323,7 +323,7 @@ async function start() {
   const def = await W.get(W.DEF);
   const sources = await W.get(W.indexOf('sources'));
   G = { ...(await W.crawl([W.DEF, ...def.indexes.filter((p) => p !== W.indexOf('sources'))])), def, sources };
-  G.versions = W.map ? await fetch('../brain/versions.json').then((r) => (r.ok ? r.json() : null)).catch(() => null) : null;
+  G.versions = W.map ? await fetch(`${W.root}brain/versions.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null) : null;
   const n = (type) => ofType(type).length;
   $('#nav').innerHTML = `<a href="#home" data-r="home">avenCEO</a>` + LISTS.map(([k, t, type]) => (k === 'gap' ? '<span class="gap"></span>'
     : `<a href="#${k}" data-r="${k}">${t}<span>${k === 'waiting' ? ofType('intent').reduce((s, [, I]) => s + (I.questions || []).filter((q) => !q.answered && !q.replaced_by).length, 0) : n(type)}</span></a>`)).join('');

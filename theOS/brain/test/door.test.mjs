@@ -23,7 +23,7 @@ function world() {
   migrate(root, { seed: 'door' });
   put(root, 'brain/authors/a-0001', { type: 'author', id: 'a-0001', name: 'Samuel', kind: 'human', what: 'decides' });
   const open = (t, props) => ({ type: 'type', name: t, schema: { type: 'object', required: ['type', 'id'], properties: Object.fromEntries(['type', 'id', ...props].map((k) => [k, {}])) } });
-  put(root, 'avenCEO/types/ty-0001', { id: 'ty-0001', ...open('decision', ['n', 'title', 'means', 'about', 'supersedes', 'relates', 'intents', 'at', 'by', 'session']), schema: { type: 'object', required: ['type', 'id', 'title', 'about'], properties: { type: {}, id: { type: 'string', pattern: '^d-[0-9a-f]{4,}$' }, n: {}, title: {}, means: {}, about: { type: 'array', items: { type: 'string' } }, supersedes: {}, relates: {}, intents: {}, at: {}, by: {}, session: {} } } });
+  put(root, 'avenCEO/types/ty-0001', { id: 'ty-0001', ...open('decision', ['n', 'title', 'means', 'about', 'supersedes', 'relates', 'intents', 'at', 'by', 'session']), schema: { type: 'object', required: ['type', 'id', 'title', 'about'], properties: { type: {}, id: { type: 'string', pattern: '^d-[0-9a-f]{4,}$' }, n: {}, title: {}, means: {}, quote: {}, about: { type: 'array', items: { type: 'string' } }, supersedes: {}, relates: {}, intents: {}, at: {}, by: {}, session: {} } } });
   put(root, 'avenCEO/types/ty-0002', { id: 'ty-0002', ...open('metric', ['name', 'measurements']) });
   put(root, 'avenCEO/types/ty-0003', { id: 'ty-0003', ...open('intent', ['title', 'questions', 'tasks', 'events']) });
   put(root, 'avenCEO/types/ty-0004', { id: 'ty-0004', ...open('author', ['name', 'kind', 'what']) });
@@ -186,4 +186,44 @@ test('brain versions flags a link whose target changed after it was cited (c5)',
   assert.deepEqual(versions(root, [d4])[d4], undefined);
   edit(root, { id: d3, patch: { title: 'Third, changed later' }, intent: I, by: 'a-0001' }); commit('change', '2026-03-01T00:00:00Z');
   assert.deepEqual(versions(root, [d4])[d4].map((x) => x.target), [d3]);
+});
+
+test('check works with theOS as a subfolder of the repository, as it is (not only flat)', () => {
+  const { root: inner, names, I } = world();
+  const top = mkdtempSync(join(tmpdir(), 'top-'));
+  cpSync(inner, join(top, 'theOS'), { recursive: true });
+  const root = join(top, 'theOS');
+  git(top, 'init', '-q'); git(top, 'add', '-A'); git(top, 'commit', '-qm', 'base');
+  const ids = J(root, 'brain/ids').ids;
+  const d4 = J(root, ids[names['D-4']]); d4.means = 'by hand'; put(root, ids[names['D-4']], d4);
+  git(top, 'commit', '-qam', 'by hand');
+  assert.match(check(root, { range: 'HEAD~1..HEAD' }).fails.map((f) => f.fails.join()).join(), /changed without an event/);
+  git(top, 'reset', '-q', '--hard', 'HEAD~1');
+  edit(root, { id: names['D-4'], patch: { relates: [`brain/decisions/${names['D-3']}`] }, intent: I, by: 'a-0001' });
+  git(top, 'commit', '-qam', 'path');
+  assert.match(check(root, { range: 'HEAD~1..HEAD' }).fails.map((f) => f.fails.join()).join(), /is a path; link by id/);
+});
+
+test('c6 stays quiet where the old word is right: a quote, the word in quotes, the rename itself; it fails on use', () => {
+  const { root, names, I } = world();
+  const ids = () => J(root, 'brain/ids').ids;
+  put(root, 'avenCEO/types/ty-0005', { type: 'type', id: 'ty-0005', name: 'term', schema: { type: 'object', properties: Object.fromEntries(['type', 'id', 'word', 'means', 'about', 'supersedes', 'renames'].map((k) => [k, {}])) } });
+  index(root);
+  git(root, 'init', '-q'); git(root, 'add', '-A'); git(root, 'commit', '-qm', 'base');
+  const nw = ids()[names['avenCEO/terms/new-word']];
+  edit(root, { id: names['avenCEO/terms/new-word'], patch: { renames: { old: 'oldword', in: ['brain'] } }, intent: I, by: 'a-0001' });
+  edit(root, { id: names['D-4'], patch: { means: "renamed from 'oldword'", quote: 'Samuel said oldword' }, intent: I, by: 'a-0001' });
+  git(root, 'commit', '-qam', 'quiet');
+  assert.deepEqual(check(root, { range: 'HEAD~1..HEAD' }).fails, []);
+  edit(root, { id: names['D-3'], patch: { means: 'the oldword is used' }, intent: I, by: 'a-0001' });
+  git(root, 'commit', '-qam', 'use');
+  assert.match(check(root, { range: 'HEAD~1..HEAD' }).fails.map((f) => f.fails.join()).join(), /"oldword" is New word now/);
+  assert.ok(nw);
+});
+
+test('check warns when a doc that holds cites one that no longer holds (c10)', () => {
+  const { root, names } = world();
+  git(root, 'init', '-q'); git(root, 'add', '-A'); git(root, 'commit', '-qm', 'base');
+  // D-4 relates D-1 in the fixtures; D-1 is superseded by D-2
+  assert.ok(check(root, { range: 'HEAD..HEAD' }).warnings.includes(`${names['D-4']} cites ${names['D-1']}, which no longer holds`));
 });
