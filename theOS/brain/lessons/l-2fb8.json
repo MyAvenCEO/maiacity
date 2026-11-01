@@ -1,0 +1,10 @@
+{
+ "type": "lesson",
+ "id": "l-2fb8",
+ "status": "proposed",
+ "cue": "A crawl or check is made exhaustive (every button in every state) before it is timed.",
+ "lesson": "Time the check on the real tree before widening it, and choose the unit it repeats on (here the view type) by what the time limit allows.",
+ "evidence": "aip-31df: pressing every button in every state took 361 to 623 s against c4's 300 s; per view type (d-5afb) it took 42 s, and checking every state while pressing buttons per view type took 94 to 101 s.",
+ "confidence": "high",
+ "intent": "aip-31df"
+}

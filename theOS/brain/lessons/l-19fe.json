@@ -1,0 +1,10 @@
+{
+ "type": "lesson",
+ "id": "l-19fe",
+ "status": "proposed",
+ "cue": "A fast path (a hash change instead of a reload) is assumed to reach the same state as the slow one.",
+ "lesson": "Check the fast path's result against the state it should reach, and fall back to the slow path when it misses.",
+ "evidence": "aip-31df: the Docs app kept its Architecture panel open across hash changes, so up to 315 states could not be reached again; comparing the key reached with the expected one and reloading on a miss brought that to 0 to 41 states, each recorded.",
+ "confidence": "high",
+ "intent": "aip-31df"
+}
