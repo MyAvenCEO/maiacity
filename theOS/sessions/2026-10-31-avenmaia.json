@@ -61,7 +61,9 @@
   "decisions/2026-11-01-theos-is-our-memory",
   "decisions/2026-11-01-three-viewers",
   "decisions/2026-11-01-html-and-json",
-  "decisions/2026-11-01-old-aip"
+  "decisions/2026-11-01-old-aip",
+  "decisions/2026-11-01-sandbox-into-theos",
+  "decisions/2026-11-01-schema-and-commit-refs"
  ],
  "corrections": [
   {
@@ -106,6 +108,8 @@
   }
  ],
  "intents": [
-  "aip/AIP-1"
+  "aip/AIP-1",
+  "aip/AIP-2",
+  "aip/AIP-3"
  ]
 }

@@ -3,6 +3,8 @@
  "id": "aip/index",
  "title": "AIPs",
  "items": [
-  "aip/AIP-1"
+  "aip/AIP-1",
+  "aip/AIP-2",
+  "aip/AIP-3"
  ]
 }

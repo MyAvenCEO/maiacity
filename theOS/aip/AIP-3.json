@@ -1,0 +1,31 @@
+{
+ "type": "intent",
+ "id": "AIP-3",
+ "title": "One schema for theOS's memory, with references pinned by commit",
+ "kind": "avenCEO",
+ "note": "In the inbox: only its source so far. A first proposal was given in chat on 1 Nov; it is specified here once you take it up.",
+ "source": {
+  "type": "idea",
+  "by": "Samuel",
+  "at": "2026-11-01",
+  "text": "lets talk about our schema format of SSOT for all related data that we generate on AIPs and learnings and resources etc ... what is a json file or list of json entries, what is markdown or what is both? ... also any kind of our internal git resource should be linked universally via its committed commit hashes, never via just a file path, since history changes too",
+  "links": [
+   "avenCEO/avenCEO"
+  ],
+  "ref": "decisions/2026-11-01-schema-and-commit-refs"
+ },
+ "questions": [],
+ "reviews": [],
+ "decisions": [
+  "decisions/2026-11-01-schema-and-commit-refs"
+ ],
+ "events": [
+  {
+   "at": "2026-11-01",
+   "by": "Samuel",
+   "what": "source",
+   "text": "Define the schema of every kind of doc and list, and link internal resources by commit, never by path alone.",
+   "ref": "decisions/2026-11-01-schema-and-commit-refs"
+  }
+ ]
+}

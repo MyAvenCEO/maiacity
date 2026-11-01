@@ -1,0 +1,13 @@
+{
+ "type": "decision",
+ "subtype": "answer",
+ "id": "decisions/2026-11-01-schema-and-commit-refs",
+ "by": "Samuel",
+ "at": "2026-11-01",
+ "session": "sessions/2026-10-31-avenmaia",
+ "quote": "lets talk about our schema format of SSOT for all related data that we generate on AIPs and learnings and resources etc ... what is a json file or list of json entries, what is markdown or what is both? ... also any kind of our internal git resource should be linked universally via its committed commit hashes, never via just a file path, since history changes too",
+ "means": "AIP-3 starts: one schema for theOS's memory, and internal references pinned by commit.",
+ "intents": [
+  "aip/AIP-3"
+ ]
+}
