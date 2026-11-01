@@ -13,10 +13,12 @@ while [ $# -gt 0 ]; do
 done
 run() { if [ $where = box ]; then "$here/run.sh" node avenCEO/checks/check.mjs --out "/work/$out" "$@"; else (cd "$theos" && node avenCEO/checks/check.mjs --out "$theos/$out" "$@"); fi; }
 rm -rf "${theos:?}/$out"
+# made here, by this host's user: the box runs as root, and a folder it made is not writable by a runner's user
+mkdir -p "$theos/$out" || exit 2
 run; code=$?
 run --fixtures | tail -n 1; fixtures=${PIPESTATUS[0]}
 commit=$(git -C "$theos" rev-parse HEAD)
 [ -z "$(git -C "$theos" status --porcelain -- .)" ] || commit="$commit-dirty"
-echo "$commit $where" > "$theos/$out/commit.txt"
+echo "$commit $where" > "$theos/$out/commit.txt" || { echo "check.sh: could not write $out/commit.txt" >&2; exit 2; }
 echo "theOS's check ($where, $commit): exit $code; its own test: exit $fixtures"
 [ $code = 0 ] && [ $fixtures = 0 ]
