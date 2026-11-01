@@ -1,0 +1,10 @@
+{
+ "type": "lesson",
+ "id": "l-0cfb",
+ "status": "proposed",
+ "cue": "A check's scope is planned from the claim's text before it is run on the escape it should catch.",
+ "lesson": "Replay the escape commit with the smallest version of the check first, then scope it: what the escape's state needs decides what the first checkpoint builds.",
+ "evidence": "aip-31df: a crawl of links alone reached one state per size at faf266961's parent and was green, because that commit's lists sat behind buttons; buttons moved from checkpoint 2 into checkpoint 1 (c1-review rv-7122, round 1).",
+ "confidence": "high",
+ "intent": "aip-31df"
+}

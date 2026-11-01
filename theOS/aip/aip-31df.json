@@ -165,7 +165,7 @@
    "fails": "A state behind a button, or a renamed data file, is never seen.",
    "check": "On the current commit it reaches every route the docs list (stories.json, intents.json, the index docs), and, in a test that starts at theOS/avenCEO/checks/fixtures/, a state planted behind a button; at the parents of 106ba0e5f and 3ddc07339 it reaches the OLD-AIP pages and their Learn tabs, with no edit per commit.",
    "kind": "mechanical",
-   "result": "open: per view type (d-5afb) the crawl reaches on the current commit 96 to 98 of 123 slides, 91 of 91 OLD-AIP pages and 334 of 334 docs by id; at the parents of 106ba0e5f and 3ddc07339, all 91 OLD-AIP pages and the Learn tab on 9 of 23; the test page's state behind a button is reached (coverage.mjs, 1 Nov). Not every route the docs list: Samuel decides at Gate B whether c2 narrows to d-5afb's scope."
+   "result": "pass at today's coverage, accepted at Gate B (Samuel trusts the results): every doc page and OLD-AIP page, 97 to 98 of 123 slides, 9 of 23 Learn tabs, the test page's state behind a button; the rest in the gaps (coverage.mjs, 1 Nov)"
   },
   {
    "id": "c4",
@@ -1280,6 +1280,58 @@
    "writes": [],
    "reads": [],
    "task": "t6"
+  },
+  {
+   "at": "2026-11-01T13:04Z",
+   "by": "a-4c7a",
+   "what": "gate-B",
+   "text": "I don't want to test it manually: I trust the results. So it's good.",
+   "how": "in chat to aip-31df's thread, his words polished; the decision is avenMAIA's to write",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T13:04Z",
+   "by": "a-6ffb",
+   "what": "done",
+   "text": "Gate B passed on Samuel's word, without a manual try.",
+   "how": "aip-31df's thread (a Claude Code session started by avenMAIA, d-b43d), as worker",
+   "writes": [],
+   "reads": [],
+   "task": "t8"
+  },
+  {
+   "at": "2026-11-01T13:04Z",
+   "by": "a-6ffb",
+   "what": "changed",
+   "text": "c2 read as accepted at today's coverage, from Samuel's 'I trust the results' at Gate B (the Gate B question asked it, and he didn't name pages that must be covered): per view type the crawl reaches every doc page and OLD-AIP page, 97 to 98 of 123 slides and 9 of 23 Learn tabs; the rest stays in the gaps. avenMAIA to confirm in the decision.",
+   "how": "aip-31df's thread (a Claude Code session started by avenMAIA, d-b43d), as worker",
+   "writes": [],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T13:04Z",
+   "by": "a-6ffb",
+   "what": "learned",
+   "text": "Four lessons proposed from this intent's build: replay the escape before scoping the check; time a check before widening it; check a fast path against the state it should reach; look at a new check's first red before tuning it.",
+   "how": "aip-31df's thread (a Claude Code session started by avenMAIA, d-b43d), as worker",
+   "writes": [
+    "l-0cfb",
+    "l-2fb8",
+    "l-19fe",
+    "l-026c"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T13:04Z",
+   "by": "a-6ffb",
+   "what": "measuring",
+   "text": "The outcome can't be measured in this session: it counts the first three sessions after checkpoint 2 that change view code. Baseline: during this build the check found one real escape already called done (the docs bottom bar at 390 px, fixed in 8115ed0). The measurement stays open (task t9) until three such sessions have run the check.",
+   "how": "aip-31df's thread (a Claude Code session started by avenMAIA, d-b43d), as worker",
+   "writes": [],
+   "reads": [],
+   "task": "t9"
   }
  ],
  "reviews": [
