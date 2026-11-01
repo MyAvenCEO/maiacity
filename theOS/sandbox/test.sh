@@ -4,8 +4,10 @@
 #     exits 0 with a planted failure, a planted hang (started, then cut at its limit) and no setup file, and finds
 #     cloud-setup.sh one folder down. Only where GNU timeout exists: the script runs in cloud sessions, never on a Mac.
 #  2. run.sh runs a command inside the box with theOS/ mounted at /work.
-#  3. With --cold (as root, where dockerd is installed): dockerd is stopped first, as after a snapshot, and run.sh must
-#     start it again.
+#  3. run.sh refuses a tag that is not published, and says so.
+#  4. With --cold (as root, where dockerd is installed; it stops every running container): dockerd is stopped, as
+#     after a snapshot, and the real cloud-setup.sh must start it, have the box, and stop it again; then run.sh must
+#     start it once more.
 #   theOS/sandbox/test.sh [--no-box | --cold]
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -34,11 +36,17 @@ if [ "$mode" = --cold ]; then
 	if [ "$(id -u)" = 0 ] && command -v dockerd > /dev/null; then
 		pkill -x dockerd; for _ in $(seq 1 30); do pgrep -x dockerd > /dev/null || break; sleep 1; done
 		docker info > /dev/null 2>&1 && bad "dockerd did not stop" || ok "dockerd stopped, as after a snapshot"
+		bash "$here/cloud-setup.sh" > /dev/null 2>&1; code=$?
+		[ $code = 0 ] && ok "the real warm-up exits 0" || bad "the real warm-up exited $code"
+		pgrep -x dockerd > /dev/null && bad "the warm-up left dockerd running" || ok "the warm-up stopped the dockerd it started"
 	else
 		bad "--cold needs root and dockerd"
 	fi
 fi
 if [ "$mode" != --no-box ]; then
+	out=$(AVENSANDBOX_IMAGE=ghcr.io/myavenceo/aven/sandbox:theos-0000000000000000 "$here/run.sh" true 2>&1); code=$?
+	[ $code = 1 ] && grep -q "is not published" <<< "$out" && ok "run.sh refuses a tag that is not published" || bad "unpublished tag: exit $code: $out"
+	[ "$mode" = --cold ] && { docker image inspect "$("$here/tag.sh")" > /dev/null 2>&1 && ok "the box is here after the warm-up" || bad "the box is not here after the warm-up"; }
 	out=$("$here/run.sh" bash -c 'test -f /work/sandbox/run.sh && pwd && rustc --version' 2>&1)
 	[ $? = 0 ] && grep -qx /work <<< "$out" && ok "run.sh runs a command in the box with theOS/ at /work" || bad "run.sh: $out"
 	[ "$mode" = --cold ] && { docker info > /dev/null 2>&1 && ok "run.sh started dockerd" || bad "run.sh did not start dockerd"; }

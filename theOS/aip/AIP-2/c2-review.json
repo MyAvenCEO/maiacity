@@ -143,6 +143,39 @@
      "note": "The header is re-wrapped to the file's width."
     }
    ]
+  },
+  {
+   "round": 3,
+   "commit": "473c9994f",
+   "reviewed": "round 2's fixes (git diff 649608d55 c2d6c8e4c -- .github theOS/sandbox/tag.sh theOS/sandbox/box) and the files at 473c9994f",
+   "prompt": "You are a \"goldfish\" critic: a fresh reader with no history of this project, doing avenCEO's Review gate on one checkpoint. You are strictly read-only: do not edit, write or create any file, do not run git commands that change anything, do not push or call GitHub.\n\nThe project is theOS, in /home/user/maiacity/theOS/. Code outside theOS/ is legacy, except what this intent moves. theOS keeps one JSON doc per thing; a path like \"aip/AIP-2\" is the file theOS/aip/AIP-2.json.\n\nRead the record /home/user/maiacity/theOS/aip/AIP-2.json (focus: claim c2, checkpoint 2, and the events that verify it) and avenCEO's Review gate /home/user/maiacity/theOS/avenCEO/gates/review.json. Rounds 1 and 2 of this review are in /home/user/maiacity/theOS/aip/AIP-2/c2-review.json, with an answer to every finding: those findings are settled; raise one again only if the fix did not actually happen or is wrong. Then review checkpoint 2's work as it stands at commit 473c9994f:\n- round 2's fixes: <scratchpad>/c2-round3.diff\n- the files: /home/user/maiacity/theOS/sandbox/box/Dockerfile, /home/user/maiacity/.github/workflows/avensandbox-image.yml, /home/user/maiacity/theOS/sandbox/tag.sh.\n\nQuestions: Do round 2's fixes work, and did any fix cause a new problem (smoke inside the build job before the digest is kept, the platform assertion, the latest job's condition, tag.sh in the paths and the hash)? Does the work, with the runs recorded in the events, keep c2's promise (built only from theOS/sandbox/box, amd64 and arm64, tagged by the hash of its inputs, same inputs never build twice, every tool working on both platforms)? Security for a public repository?\n\nFor each finding give: Severity (Blocker | Major | Nit), kind (one of: bug, wrong fact, unclear, contradiction, YAGNI, security, missing check), the affected file and line, the reasoning, and a concrete fix. Give evidence a reader can verify. At most 400 words, plain text, no praise, lead with what is wrong. If there is no Blocker or Major, say so plainly.",
+   "result": "1 Major, 2 Nit: not clean. Third round without a clean round: the rule stops patching here; the Major's fix is made and proven by a machine run, and the question goes to Samuel.",
+   "findings": [
+    {
+     "sev": "Major",
+     "kind": "bug",
+     "scope": "workflow: the smoke script could not fail on most checks",
+     "text": "Under bash -euc, '[ uname = WANT ] && echo' and 'versitygw --help && echo' do not stop the script when the test fails, and without pipefail 'clang --version | head' passes with clang missing; round 2's 'platform asserted' was not true. Verified here: the critic's command prints 'continued' twice and exits 0.",
+     "answer": "fix",
+     "note": "bash -euo pipefail -c; the platform check exits 1 on a mismatch; no 'test && echo'. Tried here on the image: WANT=aarch64 on this amd64 session fails with 'wrong platform'; WANT=x86_64 passes every step up to npm (npm is out of reach from containers in this session, exit 124), so the full script's proof is the next GitHub run, recorded in the events."
+    },
+    {
+     "sev": "Nit",
+     "kind": "missing check",
+     "scope": "no-build under the current workflow not on record",
+     "text": "The only no-build run the critic saw was under the old workflow.",
+     "answer": "contest",
+     "note": "Run 41296532510 (dispatch on c2d6c8e, round 2's workflow) is on record in the events at 10:13: build, join and latest skipped. It was written while the round ran. After round 3's fix the hash changes, so the dispatch is repeated on the new commit and recorded."
+    },
+    {
+     "sev": "Nit",
+     "kind": "unclear",
+     "scope": "tag.sh header wrapped short",
+     "text": "",
+     "answer": "fix",
+     "note": "Re-wrapped."
+    }
+   ]
   }
  ]
 }

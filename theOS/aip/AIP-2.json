@@ -25,7 +25,7 @@
   {
    "q": "Gate B for AIP-2: try avenSANDBOX as you would use it. Ship, change, or send back?",
    "try": [
-    "1. In the cloud environment's settings (claude.ai/code, this environment, Setup script), replace the script with the contents of theOS/sandbox/environment-setup.sh. It only finds theOS/sandbox/cloud-setup.sh, which pulls the box; it never fails a session and stops after 600 s. The previous script is kept in theOS/sandbox/environment-setup.previous.sh: pasting it back is the undo.",
+    "1. In the cloud environment's settings (claude.ai/code, this environment, Setup script), replace the script with the contents of theOS/sandbox/environment-setup.sh. It only finds theOS/sandbox/cloud-setup.sh, which pulls the box; it never fails a session and stops after 600 s (killed at 630 s). The previous script is kept in theOS/sandbox/environment-setup.previous.sh: pasting it back is the undo.",
     "2. This needs the work on main first (the snapshot clones main): the goal pull request you ask avenMAIA for.",
     "3. Start a new cloud session and run: theOS/sandbox/run.sh rustc --version. It should answer at once, with no pull (the box was warmed before the snapshot).",
     "4. On your Mac, with OrbStack running, in a checkout of the same commit: theOS/sandbox/run.sh uname -m (it should say aarch64), then theOS/sandbox/test.sh (it should end with \"avenSANDBOX's test: green\").",
@@ -693,6 +693,61 @@
    "how": "AIP-2's thread (D-44), read off the run's jobs",
    "writes": [],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T10:16Z",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Checkpoint 2's Review gate, round 3: c2-review (1 Major, 2 Nit). Not clean: the smoke script could not fail on its platform check and on piped checks. The third round without a clean round: patching stops here; the Major's fix is mechanical and its proof is a machine run; the question goes to Samuel.",
+   "how": "a fresh subagent (Agent tool) with the critic prompt kept in the review",
+   "writes": [
+    "aip/AIP-2/c2-review"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:17Z",
+   "by": "authors/avenmaia",
+   "what": "review",
+   "text": "Checkpoint 3's Review gate, round 2: c3-review (0 Blocker, 0 Major, 5 Nit). Clean: checkpoint 3's Review gate passes.",
+   "how": "a fresh subagent (Agent tool) with the critic prompt kept in the review",
+   "writes": [
+    "aip/AIP-2/c3-review"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:19Z",
+   "by": "authors/avenmaia",
+   "what": "changed",
+   "text": "Round 3 of checkpoint 2 answered: the smoke script runs under pipefail and fails on a wrong platform (tried here: WANT=aarch64 fails, WANT=x86_64 passes up to npm, which this session's containers can't reach). Checkpoint 3's five Nits fixed: test.sh --cold runs the real warm-up and checks the box is there and dockerd stopped, run.sh's refusal of an unpublished tag is tested, cloud-setup.sh stops only the dockerd run.sh started (by pid), 600 s is said as 600 s killed at 630 s.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [
+    "aip/AIP-2/c2-review",
+    "aip/AIP-2/c3-review"
+   ],
+   "reads": []
+  },
+  {
+   "at": "2026-11-01T10:19Z",
+   "by": "authors/avenmaia",
+   "what": "verified",
+   "text": "theOS/sandbox/test.sh --cold green, 11 cases: the environment's script (failure, hang started and cut, no file, found one folder down), dockerd stopped as after a snapshot, the real warm-up exits 0 and stops the dockerd it started, run.sh refuses an unpublished tag, the box is here after the warm-up, run.sh runs a command with theOS/ at /work and starts dockerd.",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": [
+    "theOS/sandbox/test.sh"
+   ]
+  },
+  {
+   "at": "2026-11-01T10:19Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Checkpoint 3 built, its test green and its Review gate passed (c3-review round 2 clean).",
+   "how": "AIP-2's thread (D-44), by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t7"
   }
  ],
  "reviews": [

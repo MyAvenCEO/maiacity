@@ -105,12 +105,13 @@ jobs:
           IMAGE: ${{ needs.plan.outputs.name }}@${{ steps.push.outputs.digest }}
           WANT: ${{ matrix.arch == 'amd64' && 'x86_64' || 'aarch64' }}
         run: |
-          docker run --rm -e WANT "$IMAGE" bash -euc '
-            [ "$(uname -m)" = "$WANT" ] && echo "platform $WANT"
+          # pipefail, and no "test && echo": under -e a failing test before && does not stop the script.
+          docker run --rm -e WANT "$IMAGE" bash -euo pipefail -c '
+            [ "$(uname -m)" = "$WANT" ] || { echo "wrong platform: $(uname -m), want $WANT"; exit 1; }; echo "platform $WANT"
             rustc --version; cargo --version; cargo clippy --version; rustfmt --version
             rustup target list --installed | grep -x wasm32-unknown-unknown
             wasm-bindgen --version; bun --version; node --version; lean --version; lake --version
-            versitygw --help > /dev/null && echo "versitygw ok"
+            versitygw --help > /dev/null; echo "versitygw ok"
             clang --version | head -n 1; llvm-ar --version | head -n 1
             cargo "+$AVEN_NIGHTLY" --version; cargo fuzz --version
             cd /tmp && npm install --no-save --silent playwright@1.64.1 > /dev/null

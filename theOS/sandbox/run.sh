@@ -10,7 +10,7 @@
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 theos=$(cd "$here/.." && pwd)
-image=$("$here/tag.sh")
+image=${AVENSANDBOX_IMAGE:-$("$here/tag.sh")}  # AVENSANDBOX_IMAGE: only for its test
 tag=${image##*:}
 
 if ! docker info > /dev/null 2>&1; then
@@ -20,6 +20,7 @@ if ! docker info > /dev/null 2>&1; then
 		echo "avenSANDBOX: Docker is not running, and only root can start dockerd here: start it yourself" >&2; exit 1
 	fi
 	dockerd --allow-direct-routing > /var/log/dockerd.log 2>&1 &
+	echo $! > /var/run/avensandbox-dockerd.pid  # cloud-setup.sh stops only the dockerd run.sh started
 	for _ in $(seq 1 60); do docker info > /dev/null 2>&1 && break; sleep 1; done
 	docker info > /dev/null 2>&1 || { echo "avenSANDBOX: dockerd did not start (/var/log/dockerd.log)" >&2; exit 1; }
 fi
