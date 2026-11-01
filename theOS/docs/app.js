@@ -127,6 +127,7 @@ async function openDecisions(st, i) {
       ${d.rejected ? `<p class="dwhy"><b>Rejected</b> ${esc(d.rejected)}</p>` : ''}
       ${d.supersedes ? `<p class="dwhy"><b>Supersedes</b> ${esc(d.supersedes)}</p>` : ''}
       ${d.superseded_by ? `<p class="dwhy"><b>Superseded by</b> ${esc(d.superseded_by)}</p>` : ''}
+      ${(audit?.items || []).some((x) => x.decisions.includes(d.id)) ? `<div class="arefs"><b>From theAUDIT</b>${audit.items.filter((x) => x.decisions.includes(d.id)).map((x) => `<a href="#audit-${x.id.slice(1)}">${x.id} · ${esc(x.severity)}</a>`).join('')}</div>` : ''}
       ${d.slides.length ? `<div class="dslides">${d.slides.map((r) => { const [sid, n] = r.split('-'); return `<a href="#${r}">${esc(titles[sid] || sid)} ${n}</a>`; }).join('')}</div>` : ''}
       ${d.sources.length ? `<ul class="dsrc">${d.sources.map((x) => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.label)}</a></li>`).join('')}</ul>` : ''}
     </article>`).join('');
@@ -136,30 +137,53 @@ async function openDecisions(st, i) {
   if (location.hash !== h) history.replaceState(null, '', h);
 }
 
-// theAUDIT: each chapter's concepts with their strengths, weaknesses, what others do and a proposed fix, the most
-// severe first; then whether endings hold, scenario by scenario, and the sources read. #audit-<chapter number>.
-let audit = null;
+// theAUDIT: one item per finding, each linked to the decisions that answer it. An item's status is computed from those
+// decisions (resolved once every one is decided, following supersessions), never stored, so nothing can drift.
+let audit = null, auditFilter = 'open';
+function decisionState(id, seen = new Set()) {
+  const d = (allDecisions || []).find((x) => x.id === id);
+  if (!d || seen.has(id)) return 'open';
+  seen.add(id);
+  if (d.status === 'decided') return 'resolved';
+  if (d.status === 'superseded' && d.superseded_by) return decisionState(d.superseded_by, seen);
+  return 'open';
+}
+const itemState = (ids) => (ids.length && ids.every((d) => decisionState(d) === 'resolved') ? 'resolved' : 'open');
+function decLinks(ids) {
+  const st = Object.fromEntries((allDecisions || []).map((d) => [d.id, d]));
+  const link = (d) => `<a class="${st[d]?.status === 'proposed' ? 'prop' : ''}" href="#decisions-${d.slice(1)}">${d}${st[d] ? ` · ${esc(st[d].status)}` : ''}</a>`;
+  const chain = (d, seen = new Set()) => (st[d]?.status === 'superseded' && st[d].superseded_by && !seen.has(d) ? link(d) + '→' + chain(st[d].superseded_by, seen.add(d)) : link(d));
+  return ids.map((d) => chain(d)).join('');
+}
 async function openAudit(st, i) {
   story = st;
   document.querySelectorAll('#stories button').forEach((b) => b.classList.toggle('on', b.dataset.story === st.id));
   if (!audit) audit = await (await fetch(st.file)).json();
   const ul = (xs) => `<ul>${xs.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`;
   const sev = (s) => `<span class="sev ${s}">${s}</span>`;
-  const nn = (n) => String(n).padStart(2, '0');
+  const state = (s) => `<span class="astate ${s}">${s}</span>`;
   const rank = { critical: 0, high: 1, medium: 2, low: 3 };
-  const top = audit.chapters.flatMap((c) => c.rows.map((r) => ({ ...r, c }))).filter((r) => rank[r.severity] < 2)
-    .sort((a, b) => rank[a.severity] - rank[b.severity] || a.c.n - b.c.n);
-  $('#decisions').innerHTML = `<header class="dhead"><h1>${esc(audit.title)}</h1><p>${esc(audit.note)}</p></header>
-    <article class="dcard"><h2>Most severe first</h2><ol class="atop">${top.map((r) =>
-      `<li>${sev(r.severity)}<a href="#audit-${r.c.n}">${nn(r.c.n)} ${esc(r.c.title)}: ${esc(r.concept)}</a></li>`).join('')}</ol></article>
-    <article class="dcard" id="A0"><h2>${esc(audit.endings.title)}</h2><p class="dwhy">${esc(audit.endings.note)}</p>
-      <table class="atable ends"><thead><tr><th>Scenario</th><th>Verdict</th><th>Why</th><th>Fix</th></tr></thead><tbody>${audit.endings.rows.map((r) =>
-        `<tr><td>${esc(r.scenario)}</td><td><span class="verdict ${r.verdict}">${r.verdict}</span></td><td>${esc(r.why)}</td><td>${esc(r.fix || '–')}</td></tr>`).join('')}</tbody></table></article>` +
-    audit.chapters.map((c) => `<article class="dcard" id="A${c.n}"><div class="dtop"><span class="did">${nn(c.n)}</span><a class="achap" href="#${c.id}-1">${esc(c.title)}</a></div>
-      <table class="atable concepts"><thead><tr><th>Concept</th><th>Strengths</th><th>Weaknesses</th><th>Elsewhere</th><th>Proposal</th></tr></thead><tbody>${c.rows.map((r) => `<tr>
-        <td><b>${esc(r.concept)}</b>${sev(r.severity)}<span class="arefs">${r.refs.map((d) => `<a href="#decisions-${d.slice(1)}">${d}</a>`).join('')}${(r.proposals || []).map((d) => `<a class="prop" href="#decisions-${d.slice(1)}">${d} proposed</a>`).join('')}</span></td>
-        <td>${ul(r.strengths)}</td><td>${ul(r.weaknesses)}</td><td>${ul(r.elsewhere)}</td><td>${ul(r.proposal)}</td></tr>`).join('')}</tbody></table></article>`).join('') +
-    `<article class="dcard"><h2>Sources read</h2><ul class="dsrc">${audit.sources.map((x) => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.label)}</a></li>`).join('')}</ul></article>`;
+  const chap = Object.fromEntries(audit.chapters.map((c) => [c.id, c]));
+  const items = audit.items.map((x) => ({ ...x, state: itemState(x.decisions) }));
+  const count = (s) => items.filter((x) => x.state === s).length;
+  const shown = items.filter((x) => auditFilter === 'all' || x.state === auditFilter)
+    .sort((a, b) => rank[a.severity] - rank[b.severity] || chap[a.chapter].n - chap[b.chapter].n);
+  $('#decisions').innerHTML = `<header class="dhead"><h1>${esc(audit.title)}</h1><p>${esc(audit.note)}</p>
+    <div class="dfilter">${[['open', `Open ${count('open')}`], ['resolved', `Resolved ${count('resolved')}`], ['all', `All ${items.length}`]]
+      .map(([k, l]) => `<button type="button" data-afilter="${k}" class="${auditFilter === k ? 'on' : ''}">${l}</button>`).join('')}</div></header>` +
+    shown.map((x) => `<article class="dcard aitem ${x.state}" id="${x.id}">
+      <div class="dtop"><span class="did">${x.id}</span>${sev(x.severity)}${state(x.state)}<a class="achap" href="#${x.chapter}-1">${String(chap[x.chapter].n).padStart(2, '0')} ${esc(chap[x.chapter].title)}</a></div>
+      <h2>${esc(x.concept)}</h2>
+      <p class="ddec"><b>Weakness</b> ${esc(x.weakness)}</p>
+      <div class="agrid"><div><b>Strengths</b>${ul(x.strengths)}</div><div><b>Elsewhere</b>${ul(x.elsewhere)}</div></div>
+      <div class="arefs"><b>Answered by</b>${decLinks(x.decisions)}</div>
+    </article>`).join('') +
+    `<article class="dcard" id="A0"><h2>${esc(audit.endings.title)}</h2><p class="dwhy">${esc(audit.endings.note)}</p>
+      <table class="atable ends"><thead><tr><th>Scenario</th><th>Verdict</th><th>Why</th><th>Fixed by</th></tr></thead><tbody>${audit.endings.rows.map((r) => {
+        const fixed = r.verdict !== 'holds' && r.decisions.length && itemState(r.decisions) === 'resolved';
+        return `<tr><td>${esc(r.scenario)}</td><td><span class="verdict ${fixed ? 'holds' : r.verdict}">${fixed ? 'fixed' : r.verdict}</span></td><td>${esc(r.why)}</td><td><span class="arefs">${r.decisions.length ? decLinks(r.decisions) : '–'}</span></td></tr>`;
+      }).join('')}</tbody></table></article>
+    <article class="dcard"><h2>Sources read</h2><ul class="dsrc">${audit.sources.map((x) => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.label)}</a></li>`).join('')}</ul></article>`;
   const target = i > 0 && document.getElementById(`A${i}`);
   if (target) target.scrollIntoView({ block: 'start' }); else $('#decisions').scrollTo?.(0, 0);
   const h = `#audit-${i}`;
@@ -174,11 +198,13 @@ async function start() {
     : `<button type="button" data-story="${x.id}"><span class="nn">${String(i + 1).padStart(2, '0')}</span><span class="nt">${esc(x.title)}</span><span class="nc">${counts[i]}</span></button>`).join('');
   $('#stories').addEventListener('click', (e) => { const b = e.target.closest('[data-story]'); if (b) open(stories.find((x) => x.id === b.dataset.story), 0); });
   $('#decisions').addEventListener('click', (e) => { const b = e.target.closest('[data-filter]'); if (b) { filter = b.dataset.filter; openDecisions(story, 0); } });
+  $('#decisions').addEventListener('click', (e) => { const b = e.target.closest('[data-afilter]'); if (b) { auditFilter = b.dataset.afilter; openAudit(story, 0); } });
   $('#track').addEventListener('click', (e) => { const b = e.target.closest('[data-go]'); if (b) go(Number(b.dataset.go)); });
   $('#spectab').addEventListener('click', () => { specOpen = true; renderSpec(); });
   $('#spec').addEventListener('click', (e) => { if (e.target.closest('.sclose')) { specOpen = false; renderSpec(); } });
   addEventListener('keydown', (e) => { if (e.key === 'Escape' && specOpen) { specOpen = false; renderSpec(); } });
   allDecisions = (await (await fetch(stories.find((x) => x.kind === 'decisions').file)).json()).decisions;
+  audit = await (await fetch(stories.find((x) => x.kind === 'audit').file)).json();
   $('#prev').addEventListener('click', () => at > 0 && go(at - 1));
   $('#next').addEventListener('click', () => go(at + 1));
   $('#card').addEventListener('click', (e) => { if (!e.target.closest('pre')) go(at + 1); });

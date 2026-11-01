@@ -267,3 +267,15 @@ body {
 .srules code { display: block; color: #8a4a33; }
 .snone { font-style: italic; }
 @media (max-width: 900px) { .spec { position: fixed; inset: 0; width: auto; border-radius: 0; z-index: 20; } }
+
+/* theAUDIT items: status computed from the linked decisions. */
+.astate { font: 500 10.5px var(--mono); border-radius: 999px; padding: 1px 8px; margin: 6px 6px 0 0; display: inline-block; }
+.astate.open { background: var(--ink); color: var(--paper); }
+.astate.resolved { background: #a9b79a; color: var(--ink); }
+.aitem.resolved { opacity: .78; }
+.aitem .dtop .achap { margin-left: auto; font-size: 13px; }
+.aitem .ddec b, .agrid b, .arefs b { font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); margin-right: 6px; }
+.agrid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; font-size: 13.5px; line-height: 1.45; color: var(--ink-soft); }
+.agrid ul { margin: 4px 0 0; padding-left: 16px; } .agrid li + li { margin-top: 4px; }
+.arefs { align-items: center; }
+@media (max-width: 760px) { .agrid { grid-template-columns: 1fr; } }
