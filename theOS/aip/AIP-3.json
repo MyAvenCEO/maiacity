@@ -94,21 +94,24 @@
    "options": [
     "Keep the old ids; only new docs get hash ids (recommended)",
     "Rename every doc once (D-49 as written)"
-   ]
+   ],
+   "answered": "decisions/D-53"
   },
   {
    "q": "Where do theOS sessions start? The brain prime hook and theOS/CLAUDE.md load only if a session's working folder is theOS/ (the repository root's .claude is legacy and not changed).",
    "options": [
     "theOS threads start in theOS/ (recommended)",
     "At the repository root, with the hook added to the root .claude by an exception"
-   ]
+   ],
+   "answered": "decisions/D-54"
   },
   {
    "q": "The MCP server for brain (D-47): AIP-3 cannot finish while its last checkpoint waits for AIP-4's Gate A. Move the MCP server into AIP-4, with AIP-3 only promising that every verb is a plain function brain.mjs exports?",
    "options": [
     "Move it into AIP-4 (recommended)",
     "Keep it as AIP-3's checkpoint 4"
-   ]
+   ],
+   "answered": "decisions/D-55"
   }
  ],
  "problem": {
@@ -211,9 +214,9 @@
   },
   {
    "id": "c7",
-   "promise": "brain protocol v1 is the one door: the command and the skill give every verb's documented answer and error codes; brain prime runs at session start and theOS/CLAUDE.md names it first.",
+   "promise": "brain protocol v1 is the one door: every verb is a plain function brain.mjs exports (D-55), the command and the skill call them and give every verb's documented answer and error codes; brain prime runs at session start from theOS/.claude/settings.json and theOS/CLAUDE.md names it first (D-54).",
    "fails": "Agents act on a superseded doc because they read raw files, or a verb answers differently than v1 says.",
-   "check": "A test runs every verb of v1 on the fixed docs in theOS/brain/test/ and compares with the expected answers; the hook file and CLAUDE.md's line name brain prime.",
+   "check": "A test calls every exported verb on the fixed docs in theOS/brain/test/ and through the command line, and compares both with the expected answers; theOS/.claude/settings.json's hook and CLAUDE.md's first line name brain prime.",
    "kind": "mechanical",
    "result": "open"
   },
@@ -251,12 +254,11 @@
   },
   {
    "id": "c12",
-   "promise": "If question 11 keeps the rename (D-49): the numbered docs are renamed once to hash ids in one migration commit, written by brain as one event of AIP-3 at Build; every path field (a string brain's link rule accepts) is rewritten, prose is not, and theOS/brain/renames.json maps each old name to its new id. It is the one named exception to c2.",
-   "fails": "A path still points at an old name, or an old name in prose can no longer be found.",
-   "check": "After the rename no path field holds an old name; brain get resolves every old name in renames.json.",
+   "promise": "Every existing doc is renamed once to a hash id, with every reference to it, so theOS has one id scheme (D-49, D-53). One migration commit, written by brain as one event of AIP-3 at Build, rewrites every path and every old name in text (D-12, AIP-3, OLD-AIP-n excepted as legacy), events included: the one named exception to c2. theOS/brain/renames.json keeps each old name and its new id, so names in git history and chats can still be looked up.",
+   "fails": "A doc or text still uses an old name, or an old name can no longer be looked up.",
+   "check": "After the migration brain check finds no old name anywhere in theOS's docs and apps; brain get resolves every old name in renames.json; c2 accepts that one commit by its event.",
    "kind": "mechanical",
-   "result": "open",
-   "note": "Waits on question 11; dropped if old ids are kept."
+   "result": "open"
   },
   {
    "id": "c2",
@@ -281,15 +283,6 @@
    "check": "A test plants each renamed word once where the rename applies and once where its other meaning is right.",
    "kind": "mechanical",
    "result": "open"
-  },
-  {
-   "id": "c11",
-   "promise": "The verbs of v1 are served over MCP from the same functions, for AIP-4's mod (D-47).",
-   "fails": "The mod reaches brain some other way.",
-   "check": "One smoke call per verb through the MCP server returns what the command returns.",
-   "kind": "mechanical",
-   "result": "open",
-   "note": "Waits on question 13: recommended to move into AIP-4."
   }
  ],
  "outcome": {
@@ -301,7 +294,7 @@
  "checkpoints": [
   {
    "n": 1,
-   "adds": "The door, smallest end to end, on AIP-1's check command, package.json and theOS/CLAUDE.md (AIP-1's checkpoint 1): every supersedes entry moved to {doc, part, what}; about added to the types that can be superseded; holds() moved from avenCEO/app.js into ui/wiki.js; schemas in the type docs, with each type's steps as data (avenMAIA writes the type docs); brain prime, holds, get, add (hash ids for new docs), edit, append and index, its skill, the hook in theOS/.claude/settings.json and one line in theOS/CLAUDE.md; brain check failing a doc changed without an event.",
+   "adds": "The door, smallest end to end, on AIP-1's check command, package.json and theOS/CLAUDE.md (AIP-1's checkpoint 1): every supersedes entry moved to {doc, part, what}; about added to the types that can be superseded; holds() moved from avenCEO/app.js into ui/wiki.js; schemas in the type docs, with each type's steps as data (avenMAIA writes the type docs); brain prime, holds, get, add (hash ids for new docs), edit, append and index, each verb a plain exported function, its skill, the hook in theOS/.claude/settings.json and one line in theOS/CLAUDE.md; brain check failing a doc changed without an event.",
    "claims": [
     "c1",
     "c7",
@@ -311,7 +304,7 @@
   },
   {
    "n": 2,
-   "adds": "The reflection (brain reflect; supersedes checked at the parent; left candidates recorded); the link graph by type and its audit; the rename if question 11 keeps it; then lists that only grow.",
+   "adds": "The reflection (brain reflect; supersedes checked at the parent; left candidates recorded); the link graph by type and its audit; the one rename of every doc and every reference (D-53); then lists that only grow.",
    "claims": [
     "c3",
     "c10",
@@ -325,13 +318,6 @@
    "claims": [
     "c8",
     "c6"
-   ]
-  },
-  {
-   "n": 4,
-   "adds": "The MCP server over the same functions, if question 13 keeps it in AIP-3, after AIP-4 passes Gate A.",
-   "claims": [
-    "c11"
    ]
   }
  ],
@@ -1208,6 +1194,51 @@
    "how": "by hand",
    "writes": [],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T11:45Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Answered (D-53): rename every doc and every reference.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t19"
+  },
+  {
+   "at": "2026-11-01T11:45Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Answered (D-54): theOS threads start in theOS/.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t20"
+  },
+  {
+   "at": "2026-11-01T11:45Z",
+   "by": "authors/avenmaia",
+   "what": "done",
+   "text": "Answered (D-55): the MCP server moves into AIP-4.",
+   "how": "by hand",
+   "writes": [],
+   "reads": [],
+   "task": "t21"
+  },
+  {
+   "at": "2026-11-01T11:45Z",
+   "by": "authors/avenmaia",
+   "what": "revised",
+   "text": "Revision 8: the rename covers every doc and every reference, prose and events included, with a lookup of old names (c12, D-53); the hook in theOS/.claude/settings.json (D-54); MCP gone to AIP-4, the verbs plain exported functions (c7, D-55); checkpoint 4 dropped. Question 3 (link versions) stays open.",
+   "how": "by the AIP-3 thread, from D-53 to D-55",
+   "writes": [
+    "aip/AIP-3"
+   ],
+   "reads": [
+    "decisions/D-53",
+    "decisions/D-54",
+    "decisions/D-55"
+   ]
   }
  ],
  "reviews": [
@@ -1295,13 +1326,6 @@
    "who": "authors/avenmaia"
   },
   {
-   "id": "t9",
-   "what": "Checkpoint 4: MCP, if it stays in AIP-3",
-   "step": 3,
-   "for": "checkpoint 4",
-   "who": "authors/avenmaia"
-  },
-  {
    "id": "t10",
    "what": "Gate B: try it",
    "step": 3,
@@ -1364,11 +1388,11 @@
  ],
  "protocol": {
   "name": "brain protocol v1",
-  "what": "The one door to brain (D-41). One program, theOS/brain/brain.mjs, with these verbs. The command line and the skill (theOS/brain/SKILL.json, which teaches only these verbs) call it now; an MCP server calls the same functions for AIP-4's mod (a Claude Code plugin, AIP-4's work, that shows theOS's intents and brain inside Claude Code) once AIP-4 passes Gate A (D-47). Fields keep their meaning forever; v1 only grows (new verbs, new optional fields). brain writes files; the agent commits them with its other work.",
+  "what": "The one door to brain (D-41). One program, theOS/brain/brain.mjs, with these verbs, each a plain function it exports. The command line and the skill (theOS/brain/SKILL.json, which teaches only these verbs) call those functions; AIP-4 builds an MCP server over the same functions for its mod, a Claude Code plugin that shows theOS's intents and brain inside Claude Code (D-47, D-55). Fields keep their meaning forever; v1 only grows (new verbs, new optional fields). brain writes files; the agent commits them with its other work.",
   "reads": [
    {
     "verb": "brain prime",
-    "does": "Prints the decisions and terms that hold now (id and title) and what waits for Samuel (open questions and his tasks); brain holds <type> gives the rest. A Claude Code hook runs it at the start of a session and after compaction (when Claude Code shortens a long conversation to fit). The hook lives in theOS/.claude/settings.json and theOS/CLAUDE.md names brain prime first; both load when a session's working folder is theOS/ (question 12)."
+    "does": "Prints the decisions and terms that hold now (id and title) and what waits for Samuel (open questions and his tasks); brain holds <type> gives the rest. A Claude Code hook runs it at the start of a session and after compaction (when Claude Code shortens a long conversation to fit). The hook lives in theOS/.claude/settings.json and theOS/CLAUDE.md names brain prime first; both load because theOS threads start with theOS/ as their working folder (D-54)."
    },
    {
     "verb": "brain holds <type>",
@@ -1376,7 +1400,7 @@
    },
    {
     "verb": "brain get <id>",
-    "does": "Returns one doc, what supersedes it, and its links and backlinks (a link is any string that names a doc's path). From checkpoint 2 the links are grouped by type: the field they sit in, such as supersedes, relates, intents or writes."
+    "does": "Returns one doc, what supersedes it, and its links and backlinks (a link is any string that names a doc's path). From checkpoint 2 the links are grouped by type: the field they sit in, such as supersedes, relates, intents or writes. An old name (D-12, AIP-3) is resolved through theOS/brain/renames.json."
    },
    {
     "verb": "brain reflect <type> <draft>",
