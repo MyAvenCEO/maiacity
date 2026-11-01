@@ -69,6 +69,14 @@
    ],
    "answer": "production starts the deploy automatically, the moment a change is merged into production and its release is green.",
    "note": "The record shows avenDEPLOY started by hand each time (workflow_dispatch by Samuel; run 20 began 38 s after the release). Read as: every green release from production deploys by itself, which is a change from avendeploy.yml."
+  },
+  {
+   "q": "The environment production holds a secret MAIA_CITY_GUARDIAN_SECRET, which no file in the repository uses, while PRODUCTION.md says MaiaCityGuardian's secret stays offline with its holder. What is it, and should it stay there once production deploys by itself?",
+   "options": [
+    "Delete it: the guardian's secret belongs offline; I keep my copy (recommended, if it is the guardian's private key)",
+    "Keep it: tell me what it is for",
+    "Keep it, and limit the environment to the branch production"
+   ]
   }
  ],
  "reviews": [],
@@ -212,6 +220,17 @@
     "aip/AIP-5"
    ],
    "reads": []
+  },
+  {
+   "at": "2026-11-01T10:55Z",
+   "by": "authors/samuel-andert",
+   "what": "observed",
+   "text": "Screenshot of the environment production: no reviewers, no wait timer, no branch restriction; secrets AVEN_PEER_GUARDIAN and MAIA_CITY_GUARDIAN_SECRET.",
+   "how": "in chat to AIP-5's thread; read by avenMAIA",
+   "writes": [
+    "aip/AIP-5"
+   ],
+   "reads": []
   }
  ],
  "problem": {
@@ -280,6 +299,12 @@
      },
      {
       "text": "Seen in Samuel's screenshots (1 Nov 10:45Z): a ruleset named production, Active, bypass list empty, targeting the branch production, with Restrict deletions, Require a pull request before merging, Require status checks to pass and Block force pushes on; everything else off. Not yet seen: the required checks' names and the pull request's approvals and merge methods (both under 'Show additional settings'), and the environment production."
+     },
+     {
+      "text": "Seen in Samuel's screenshot of the environment production (1 Nov): no required reviewers, no wait timer, administrators may bypass, Deployment branches and tags 'No restriction'. Its environment secrets are AVEN_PEER_GUARDIAN and MAIA_CITY_GUARDIAN_SECRET, both updated two days ago; the Hetzner and deploy secrets are not among them, so they are repository secrets."
+     },
+     {
+      "text": "No file in this checkout names MAIA_CITY_GUARDIAN_SECRET. aven/DB2/PRODUCTION.md says MaiaCityGuardian's secret 'stays offline with its holder' and that only its public half goes into production. If that secret is the guardian's private key, it is held by GitHub and readable by any workflow run that names the environment production, from any branch, since nothing restricts the branches."
      }
     ]
    },
@@ -315,7 +340,8 @@
    "A browser's storage and its passkeys belong to an origin and an RP ID, not to the page served there: a new page on the same origin leaves them as they are, unless the new page clears them.",
    "A registered service worker stays until it is unregistered or its script stops loading on an update check.",
    "A GitHub release's assets stay downloadable until someone deletes them; git tags and the repository are public here, and so are Actions logs.",
-   "An Aven Peer's key, once lost, can't be recovered, and production's bucket is never wiped (aven/DB2/PRODUCTION.md)."
+   "An Aven Peer's key, once lost, can't be recovered, and production's bucket is never wiped (aven/DB2/PRODUCTION.md).",
+   "A job that names an environment gets that environment's secrets; with 'No restriction', a job from any branch can name it."
   ],
   "assumptions": [
    "theOS's release changes only what aven.maia.city serves at its pages: the Aven Peer, its relay paths, /aven.json, its key, its bucket, DNS, the firewall and the vault's passkey stay as they are, in parallel, until Samuel comes back to them (his answer, 1 Nov).",
