@@ -60,6 +60,24 @@
   "sources/p2panda-access-control",
   "sources/p2panda-group-encryption",
   "sources/dcgka-paper-weidner-kleppmann-et-al",
-  "sources/anthropic-redesigning-source-control-at-anthropic-scion"
+  "sources/anthropic-redesigning-source-control-at-anthropic-scion",
+  "sources/gbrain",
+  "sources/supermemory",
+  "sources/hindsight",
+  "sources/mempalace",
+  "sources/mem0",
+  "sources/letta",
+  "sources/graphiti",
+  "sources/cognee",
+  "sources/langmem",
+  "sources/basic-memory",
+  "sources/beads",
+  "sources/anthropic-memory-tool",
+  "sources/claude-code-memory",
+  "sources/hindsight-paper",
+  "sources/mem0-paper",
+  "sources/memgpt-paper",
+  "sources/sleep-time-compute-paper",
+  "sources/zep-paper"
  ]
 }

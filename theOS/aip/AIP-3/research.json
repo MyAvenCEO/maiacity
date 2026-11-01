@@ -1,0 +1,348 @@
+{
+ "type": "research",
+ "id": "aip/AIP-3/research",
+ "intent": "aip/AIP-3",
+ "question": "What do existing agent memory systems do that works, and what should brain's one standard interface (a command and an agent skill, through which every read and write goes) look like?",
+ "sources": [
+  "sources/gbrain",
+  "sources/supermemory",
+  "sources/hindsight",
+  "sources/hindsight-paper",
+  "sources/mempalace",
+  "sources/mem0",
+  "sources/mem0-paper",
+  "sources/letta",
+  "sources/memgpt-paper",
+  "sources/sleep-time-compute-paper",
+  "sources/graphiti",
+  "sources/zep-paper",
+  "sources/cognee",
+  "sources/langmem",
+  "sources/basic-memory",
+  "sources/beads",
+  "sources/anthropic-memory-tool",
+  "sources/claude-code-memory"
+ ],
+ "reads": [
+  {
+   "source": "sources/gbrain",
+   "how": "docs only: README, the frozen protocol MEMORY_VERBS_v1, the system-of-record contract, the memory-boundaries guide and the retrieval architecture; code not read"
+  },
+  {
+   "source": "sources/supermemory",
+   "how": "docs only: README, two doc pages in the repo, and supermemory.ai/docs (graph memory, memory operations, user profiles, the memories API, MCP, MemoryBench)"
+  },
+  {
+   "source": "sources/hindsight",
+   "how": "docs only: README, doc pages in the repo, and hindsight.vectorize.io (overview, retain, observations, mental models, memories API, MCP, memory defense)"
+  },
+  {
+   "source": "sources/hindsight-paper",
+   "how": "read in full (body; arXiv 2512.12818)"
+  },
+  {
+   "source": "sources/mempalace",
+   "how": "docs only: README and three pages of its site source"
+  },
+  {
+   "source": "sources/mem0",
+   "how": "read in full: the prompts, the add/update/delete/history code and the v2-to-v3 migration guide"
+  },
+  {
+   "source": "sources/mem0-paper",
+   "how": "read in full (arXiv 2504.19413)"
+  },
+  {
+   "source": "sources/letta",
+   "how": "read in full: the archived server's memory tools and block schema, both READMEs, and docs.letta.com (memory, MemFS, dreaming, shared memory, the legacy block and archival pages)"
+  },
+  {
+   "source": "sources/memgpt-paper",
+   "how": "read in full (arXiv 2310.08560)"
+  },
+  {
+   "source": "sources/sleep-time-compute-paper",
+   "how": "read in full (arXiv 2504.13171)"
+  },
+  {
+   "source": "sources/graphiti",
+   "how": "read in full: README, the edge schema and invalidation code, help.getzep.com (facts, graph creation, source traceability, manual updates) and two Zep blog posts"
+  },
+  {
+   "source": "sources/zep-paper",
+   "how": "read in full (arXiv 2501.13956)"
+  },
+  {
+   "source": "sources/cognee",
+   "how": "read in full: README, public exports, the improve() orchestrator, the conflict models, and docs.cognee.ai (remember, improve, forget, conflicts, provenance)"
+  },
+  {
+   "source": "sources/langmem",
+   "how": "read in full: README, the Core Concepts guide, the manage-memory tool and memory manager source"
+  },
+  {
+   "source": "sources/basic-memory",
+   "how": "docs only: README and the 1.0 MCP tool guide"
+  },
+  {
+   "source": "sources/beads",
+   "how": "docs only: the current README, the docs on hash ids, sync, issues, dependencies, agent setup and the FAQ, and the v0.20.1 README (the JSONL-in-git design)"
+  },
+  {
+   "source": "sources/anthropic-memory-tool",
+   "how": "read in full: the memory tool page; the context editing page only through a summary"
+  },
+  {
+   "source": "sources/claude-code-memory",
+   "how": "read in full: code.claude.com/docs/en/memory"
+  }
+ ],
+ "answers": [
+  {
+   "q": "Decision ids collide when many threads write at once: number at merge, or hash ids?",
+   "answer": "Switch to hash ids.",
+   "by": "authors/samuel-andert",
+   "at": "2026-11-01"
+  },
+  {
+   "q": "Enforce the brain command as the only door from the start?",
+   "answer": "Yes.",
+   "by": "authors/samuel-andert",
+   "at": "2026-11-01"
+  },
+  {
+   "q": "Serve brain's verbs over MCP as well, so the mod, the apps and other sessions use the same door?",
+   "answer": "Yes.",
+   "by": "authors/samuel-andert",
+   "at": "2026-11-01"
+  },
+  {
+   "q": "A withdraw verb (a doc stops holding with no successor)?",
+   "answer": "Unclear to him; he pointed at the reflection and supersede step, the wiki links already between all docs, gbrain's concepts, and asked that links be maintained and audited too. So: no withdraw; a newer doc supersedes (replaces or drops) through the reflection; links are typed, audited by the check and maintained by a separate pass.",
+   "by": "authors/samuel-andert",
+   "at": "2026-11-01"
+  }
+ ],
+ "patterns": [
+  {
+   "name": "One small set of verbs is the only door",
+   "what": "Agents never write memory files freely. They call a few named operations, each with a fixed meaning, and the same operations serve the CLI, the agent's skill and an MCP server.",
+   "seen_in": [
+    "sources/gbrain",
+    "sources/mempalace",
+    "sources/basic-memory",
+    "sources/beads",
+    "sources/anthropic-memory-tool",
+    "sources/langmem",
+    "sources/letta",
+    "sources/mem0",
+    "sources/supermemory"
+   ],
+   "adopt": "now",
+   "why": "Samuel's ask, and every system read does it. Beads tells its agents outright not to keep their own lists. Served over MCP too (Samuel's answer), so the AIP-4 mod and other sessions use the same door."
+  },
+  {
+   "name": "A frozen, versioned contract with a conformance test",
+   "what": "The verbs and their fields are written down as protocol v1. Fields never change meaning; new things are only added. A test checks that the command keeps the contract.",
+   "seen_in": [
+    "sources/gbrain"
+   ],
+   "adopt": "now",
+   "why": "Deterministic means testable."
+  },
+  {
+   "name": "Never overwrite or delete: supersede with an explicit link",
+   "what": "A new doc does not replace an old one in place. It points at the one it replaces, and the old one stays, marked as replaced. Dropping something is also a supersede: a newer decision says it drops it.",
+   "seen_in": [
+    "sources/gbrain",
+    "sources/supermemory",
+    "sources/mempalace",
+    "sources/graphiti",
+    "sources/zep-paper",
+    "sources/hindsight",
+    "sources/mem0",
+    "sources/beads"
+   ],
+   "adopt": "now",
+   "why": "It is brain's reflection already (D-25, c3). mem0 v3 moved from model-chosen UPDATE and DELETE to add-only with links. The MemGPT and mem0 papers overwrite and delete, and lose history doing it."
+  },
+  {
+   "name": "The reflection is its own step: a program proposes, the author decides, a rule checks",
+   "what": "Before a new doc is written, a read lists what holds of the same type and topics: the candidates it may supersede. The author decides which, with the part and the reason. A fixed rule then checks the result. Models only propose conflicts; no model applies a change.",
+   "seen_in": [
+    "sources/graphiti",
+    "sources/zep-paper",
+    "sources/cognee",
+    "sources/hindsight-paper",
+    "sources/gbrain",
+    "sources/beads",
+    "sources/mem0-paper"
+   ],
+   "adopt": "now",
+   "why": "Every system uses a model to spot conflicts, and none is trustworthy end to end; the workable form is a proposal plus a recorded choice (Cognee's resolve_conflict with a reason) or a fixed rule (Zep's dates). brain's choice is the author's, recorded in the doc's reflection field."
+  },
+  {
+   "name": "What is current is computed, never stored, and does not depend on write order",
+   "what": "Systems keep history and compute the current view (isLatest, valid_to is empty, bd ready). Zep makes the result the same whatever order facts arrived in.",
+   "seen_in": [
+    "sources/supermemory",
+    "sources/graphiti",
+    "sources/mempalace",
+    "sources/gbrain",
+    "sources/beads",
+    "sources/basic-memory"
+   ],
+   "adopt": "now",
+   "why": "It is holds() (c7). Order independence matters because task branches merge in any order."
+  },
+  {
+   "name": "A closed set of write outcomes",
+   "what": "Each write answers with one of a few outcomes, including an explicit 'nothing changed' (mem0's NOOP, gbrain's duplicate).",
+   "seen_in": [
+    "sources/mem0-paper",
+    "sources/gbrain",
+    "sources/cognee"
+   ],
+   "adopt": "now",
+   "why": "The agent branches on the outcome instead of guessing; a rerun that changes nothing says so (Cognee's already_completed)."
+  },
+  {
+   "name": "No write without provenance",
+   "what": "A write that does not say where it came from is refused with a fixed error. Derived docs cite the raw record they came from.",
+   "seen_in": [
+    "sources/gbrain",
+    "sources/graphiti",
+    "sources/zep-paper",
+    "sources/mempalace",
+    "sources/hindsight",
+    "sources/cognee"
+   ],
+   "adopt": "now",
+   "why": "brain's provenance is an intent, a step and an author doc (c4); the command refuses a write missing any of them."
+  },
+  {
+   "name": "Links typed, found by a program, audited and maintained",
+   "what": "Links between docs are found by pattern, not by a model, and carry a type. Backlinks are computed. A check finds dangling links; a separate maintenance pass fixes stale ones through ordinary writes.",
+   "seen_in": [
+    "sources/gbrain",
+    "sources/graphiti",
+    "sources/basic-memory"
+   ],
+   "adopt": "now",
+   "why": "brain already links by path anywhere in a doc and computes backlinks (ui/wiki.js crawl). The type can be the field the link sits in (supersedes, relates, intents, writes). Samuel asked that links be audited and maintained."
+  },
+  {
+   "name": "Guarded edits name the version they change",
+   "what": "An edit must quote the version it read (a checksum or revision). If the file changed since, the edit is refused and the agent re-reads.",
+   "seen_in": [
+    "sources/basic-memory",
+    "sources/gbrain",
+    "sources/anthropic-memory-tool",
+    "sources/letta",
+    "sources/beads"
+   ],
+   "adopt": "now",
+   "why": "Many threads write in parallel; this stops one silently undoing another."
+  },
+  {
+   "name": "Ids that cannot collide across parallel writers",
+   "what": "Ids from a hash plus randomness instead of a counter, short at first and growing with the store, so two branches never create the same id.",
+   "seen_in": [
+    "sources/beads"
+   ],
+   "adopt": "now",
+   "why": "Samuel's answer: switch to hash ids. 20 to 50 threads write at once."
+  },
+  {
+   "name": "Fixed error codes, each with its fix",
+   "what": "Every refusal has a short code and a suggestion that says what to do instead.",
+   "seen_in": [
+    "sources/gbrain",
+    "sources/anthropic-memory-tool",
+    "sources/memgpt-paper"
+   ],
+   "adopt": "now",
+   "why": "Agents recover by themselves when the error tells them how (MemGPT feeds errors back to the model for this)."
+  },
+  {
+   "name": "An enforced read at session start",
+   "what": "A hook runs one command at session start and after compaction that injects a short, current index. Instructions alone are advisory; only a hook always runs.",
+   "seen_in": [
+    "sources/beads",
+    "sources/anthropic-memory-tool",
+    "sources/claude-code-memory",
+    "sources/letta"
+   ],
+   "adopt": "now",
+   "why": "Claude Code's docs say CLAUDE.md is advisory. Letta loads root files every turn and lists the rest in an index, the same split."
+  },
+  {
+   "name": "What changed since a cursor",
+   "what": "A read that returns only what changed after a given point.",
+   "seen_in": [
+    "sources/gbrain"
+   ],
+   "adopt": "later",
+   "why": "In git the cursor is a commit SHA; useful once many threads come back to brain often."
+  },
+  {
+   "name": "Two timelines: when it held, and when it was written",
+   "what": "A fact carries when it became true apart from when it was recorded.",
+   "seen_in": [
+    "sources/graphiti",
+    "sources/zep-paper",
+    "sources/gbrain",
+    "sources/mempalace",
+    "sources/hindsight-paper"
+   ],
+   "adopt": "later",
+   "why": "Git already gives the write time; brain needs a valid-from only if a decision is recorded after it took effect."
+  },
+  {
+   "name": "Consolidation and maintenance as a separate pass, with a stale flag",
+   "what": "A background pass merges, reviews or repairs memory apart from ordinary writes, runs in its own worktree, and a view is marked stale while new facts wait.",
+   "seen_in": [
+    "sources/hindsight",
+    "sources/letta",
+    "sources/sleep-time-compute-paper",
+    "sources/cognee",
+    "sources/langmem",
+    "sources/supermemory",
+    "sources/beads",
+    "sources/gbrain"
+   ],
+   "adopt": "later",
+   "why": "AIP-3 already defers the fresh reflection checker; when it comes it writes only through brain's verbs in an intent's step. The check's stale-link warnings are its input."
+  },
+  {
+   "name": "Withdraw: a doc stops holding with no successor",
+   "what": "gbrain's forget and MemPalace's invalidate stop a fact holding without anything replacing it.",
+   "seen_in": [
+    "sources/gbrain",
+    "sources/supermemory",
+    "sources/mempalace"
+   ],
+   "adopt": "no",
+   "why": "In brain only a newer doc, written through the reflection, changes what holds; a drop is a supersede by the decision that drops it. One way, with a reason, instead of two."
+  },
+  {
+   "name": "Memory extracted by a model and found by vectors or a graph",
+   "what": "A model pulls facts out of chat; search runs over embeddings or a knowledge graph.",
+   "seen_in": [
+    "sources/mem0",
+    "sources/supermemory",
+    "sources/cognee",
+    "sources/graphiti",
+    "sources/hindsight",
+    "sources/mempalace"
+   ],
+   "adopt": "no",
+   "why": "brain records decisions explicitly at a few hundred docs; reading JSON by path and type is exact. Their benchmarks (LoCoMo, LongMemEval, DMR) measure recall of chat facts, the authors ran their rivals themselves, and Zep's paper calls DMR too weak to tell systems apart. brain measures its own outcome: corrections caused by an outdated decision, word or missed supersede."
+  }
+ ],
+ "recommendation": "One command, brain, enforced as the only door from the start, served as a CLI, an agent skill and an MCP server with the same verbs, written down as protocol v1 (add only) and tested against it. Reads: 'brain prime' prints what holds for each type and what waits, run by a SessionStart hook and after compaction. 'brain holds <type>' lists what holds now from the one holds() the apps use, the same whatever order branches merged in. 'brain get <path>' returns one doc with its links and backlinks grouped by type (the field they sit in) and what supersedes it. Writes, each refused without --intent, --step and --by (an author doc), each adding the doc and its event in one commit, each answering a fixed outcome (inserted, unchanged, superseded): 'brain reflect <draft>' lists what holds of the same type and topics, the candidates the author must judge; 'brain add <type> <file>' gives the new doc a hash id, validates its schema and refuses it without a reflection (what was checked, what it supersedes and which part, why) or with a supersede of a doc that did not hold at the parent; 'brain edit <path> --expect <sha>' changes a doc only if it is the version the agent read; 'brain append <path> <list> <entry>' only grows a list. Nothing is deleted and there is no withdraw: dropping something is a newer doc superseding it. 'brain check' is the gate, in a pre-commit hook and CI: schemas, reflection, trace, lists that only grow, copied lists, and links (every path resolves; a supersede points at a doc that held); it warns, without failing, about a holding doc that cites a superseded one. Every refusal is a fixed code with its fix. Later: a cursor read, valid-from dates, and a maintenance pass that turns the warnings into proposed writes through these same verbs. Not: embeddings or model-extracted memory.",
+ "open_questions": [
+  "Hash ids: do the existing D-1 to D-43 and AIP-1 to AIP-6 keep their names as labels (D-12 stays readable, the file is named by its hash id), or are they renamed?",
+  "Should 'brain add' also refuse a decision whose reflection lists no checked candidates when 'brain reflect' found some, or only record that and let a reviewer judge?"
+ ]
+}
